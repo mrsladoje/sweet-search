@@ -1,0 +1,13 @@
+{
+  "name": "query_router_wasm",
+  "description": "Ultra-fast query router for code search (<5μs)",
+  "version": "1.0.0",
+  "license": "MIT",
+  "files": [
+    "query_router_wasm_bg.wasm",
+    "query_router_wasm.js",
+    "query_router_wasm.d.ts"
+  ],
+  "main": "query_router_wasm.js",
+  "types": "query_router_wasm.d.ts"
+}

@@ -1,0 +1,242 @@
+{
+  "schemaVersion": "1.0",
+  "category": "english-novel-identifier",
+  "expectedRoute": "lexical",
+  "codebaseCommit": "4a83c54906d6e2b1b6d4dbf1ed1b51ec7eb3e8a0",
+  "validatedDate": "2026-01-08",
+  "description": "Novel English identifier queries NOT in training data. Tests lexical routing for exact class/method names. Focus: production-relevant identifiers.",
+  "queries": [
+    {
+      "id": "ENI-001",
+      "query": "ApiKeyService",
+      "expected": {
+        "exact": [
+          { "file": "ApiKeyService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-002",
+      "query": "InstallerService",
+      "expected": {
+        "exact": [
+          { "file": "InstallerService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-003",
+      "query": "ManagerService",
+      "expected": {
+        "exact": [
+          { "file": "ManagerService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-004",
+      "query": "JwtService",
+      "expected": {
+        "exact": [
+          { "file": "JwtService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-005",
+      "query": "RefreshTokenService",
+      "expected": {
+        "exact": [
+          { "file": "RefreshTokenService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-006",
+      "query": "AuthenticationService",
+      "expected": {
+        "exact": [
+          { "file": "AuthenticationService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-007",
+      "query": "GlobalExceptionHandler",
+      "expected": {
+        "exact": [
+          { "file": "GlobalExceptionHandler.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-008",
+      "query": "EquipmentTypeService",
+      "expected": {
+        "exact": [
+          { "file": "EquipmentTypeService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-009",
+      "query": "HolidayTypeService",
+      "expected": {
+        "exact": [
+          { "file": "HolidayTypeService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-010",
+      "query": "AbsenceSearchService",
+      "expected": {
+        "exact": [
+          { "file": "AbsenceSearchService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-011",
+      "query": "NeuromotorConsistencyTracker",
+      "expected": {
+        "exact": [
+          { "file": "NeuromotorConsistencyTracker.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-012",
+      "query": "TrajectoryHasher",
+      "expected": {
+        "exact": [
+          { "file": "TrajectoryHasher.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-013",
+      "query": "PowerLawViolationHeuristic",
+      "expected": {
+        "exact": [
+          { "file": "PowerLawViolationHeuristic.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-014",
+      "query": "KeyboardSpamHeuristic",
+      "expected": {
+        "exact": [
+          { "file": "KeyboardSpamHeuristic.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-015",
+      "query": "GhostCursorHeuristic",
+      "expected": {
+        "exact": [
+          { "file": "GhostCursorHeuristic.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-016",
+      "query": "BotDetectionDashboard",
+      "notes": "React component for bot detection display",
+      "expected": {
+        "contains": [
+          { "filePattern": "**/BotDetectionDashboard.jsx" }
+        ]
+      }
+    },
+    {
+      "id": "ENI-017",
+      "query": "LeaderboardCard",
+      "notes": "React component for leaderboard",
+      "expected": {
+        "contains": [
+          { "filePattern": "**/LeaderboardCard.jsx" }
+        ]
+      }
+    },
+    {
+      "id": "ENI-018",
+      "query": "PaginationControls",
+      "notes": "React pagination component",
+      "expected": {
+        "contains": [
+          { "filePattern": "**/PaginationControls.jsx" }
+        ]
+      }
+    },
+    {
+      "id": "ENI-019",
+      "query": "NeoBrutalistSelect",
+      "notes": "React select component",
+      "expected": {
+        "contains": [
+          { "filePattern": "**/NeoBrutalistSelect.jsx" }
+        ]
+      }
+    },
+    {
+      "id": "ENI-020",
+      "query": "AdminPasswordResetModal",
+      "notes": "React modal component",
+      "expected": {
+        "contains": [
+          { "filePattern": "**/AdminPasswordResetModal.jsx" }
+        ]
+      }
+    },
+    {
+      "id": "ENI-021",
+      "query": "ApiKeyAuthenticationFilter",
+      "expected": {
+        "exact": [
+          { "file": "ApiKeyAuthenticationFilter.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-022",
+      "query": "JwtAuthenticationFilter",
+      "expected": {
+        "exact": [
+          { "file": "JwtAuthenticationFilter.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-023",
+      "query": "EquipmentSearchService",
+      "expected": {
+        "exact": [
+          { "file": "EquipmentSearchService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENI-024",
+      "query": "BotDetectionTrendChart",
+      "notes": "React chart component",
+      "expected": {
+        "contains": [
+          { "filePattern": "**/BotDetectionTrendChart.jsx" }
+        ]
+      }
+    },
+    {
+      "id": "ENI-025",
+      "query": "EmployeeLineChart",
+      "notes": "React chart component",
+      "expected": {
+        "contains": [
+          { "filePattern": "**/EmployeeLineChart.jsx" }
+        ]
+      }
+    }
+  ]
+}

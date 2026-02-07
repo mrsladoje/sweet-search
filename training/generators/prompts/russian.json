@@ -1,0 +1,14 @@
+{
+  "language": "ru",
+  "count": 80,
+  "percentage": 8,
+  "script": "Cyrillic",
+  "prompt": "Generate 80 code search queries in Russian (Cyrillic script).\n\nGuidelines:\n- Use Cyrillic script\n- Question words: как, что, почему, где, когда\n- Technical terms: can transliterate (Аутентификация) or keep English\n\nCategory Examples:\n\nLEXICAL (30%) - Same as English\n- AuthService, getUserById, config.yml\n\nSEMANTIC (30%) - Russian questions\n- как работает аутентификация (how does authentication work)\n- почему нужно кеширование (why is caching needed)\n- процесс входа пользователя (user login process)\n- стратегия обработки ошибок (error handling strategy)\n\nSTRUCTURAL (20%) - Russian + Identifier\n- что вызывает AuthService (what calls AuthService)\n- зависимости AuthService (dependencies of AuthService)\n- классы, реализующие Repository (classes implementing Repository)\n\nHYBRID (20%) - Russian Concept + Identifier\n- AuthService процесс входа (AuthService login process)\n- как getUserById обрабатывает ошибки (how getUserById handles errors)\n\nOutput: JSON array [{\"query\": \"...\", \"label\": \"...\", \"subtype\": \"...\"}]",
+  "examples": [
+    {"query": "как работает аутентификация", "label": "SEMANTIC", "subtype": "question"},
+    {"query": "процесс входа пользователя", "label": "SEMANTIC", "subtype": "process"},
+    {"query": "что вызывает AuthService", "label": "STRUCTURAL", "subtype": "callers"},
+    {"query": "зависимости AuthService", "label": "STRUCTURAL", "subtype": "callees"},
+    {"query": "AuthService процесс входа", "label": "HYBRID", "subtype": "identifier_with_concept"}
+  ]
+}

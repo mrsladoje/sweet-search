@@ -1,0 +1,212 @@
+{
+  "schemaVersion": "1.0",
+  "category": "mixed",
+  "expectedRoute": "hybrid",
+  "codebaseCommit": "bc23643cd07cbd5bed6a85e0951fad76b9aefeeb",
+  "validatedDate": "2026-01-04",
+  "description": "Ambiguous queries that require hybrid routing (both lexical and semantic). These queries have characteristics of multiple search modes.",
+  "queries": [
+    {
+      "id": "MIX-001",
+      "query": "auth",
+      "expected": {
+        "anyOf": [
+          { "files": ["AuthController.java", "AuthenticationService.java", "JwtTokenFilter.java", "WebSecurityConfig.java"], "minMatches": 1 }
+        ]
+      },
+      "notes": "Short ambiguous query - could be class name or concept"
+    },
+    {
+      "id": "MIX-002",
+      "query": "employee time tracking",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Employee|Session|Time|Realization" }
+        ]
+      },
+      "minRelevant": 2
+    },
+    {
+      "id": "MIX-003",
+      "query": "session management",
+      "expected": {
+        "anyOf": [
+          { "files": ["SessionService.java", "SessionController.java", "RefreshTokenService.java"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "MIX-004",
+      "query": "absence types",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "AbsenceType|Absence" }
+        ]
+      }
+    },
+    {
+      "id": "MIX-005",
+      "query": "process events",
+      "expected": {
+        "anyOf": [
+          { "files": ["ProcessService.java", "ProcessController.java", "EventService.java"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "MIX-006",
+      "query": "notification sending",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Notification|Email|Send" }
+        ]
+      }
+    },
+    {
+      "id": "MIX-007",
+      "query": "screenshot upload",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Screenshot|Upload|Capture" }
+        ]
+      }
+    },
+    {
+      "id": "MIX-008",
+      "query": "team projects",
+      "expected": {
+        "anyOf": [
+          { "files": ["TeamService.java", "ProjectTeamController.java", "ProjectService.java"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "MIX-009",
+      "query": "login validation",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Login|Auth|Valid|Security" }
+        ]
+      }
+    },
+    {
+      "id": "MIX-010",
+      "query": "equipment management",
+      "expected": {
+        "anyOf": [
+          { "files": ["EquipmentService.java", "EquipmentController.java"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "MIX-011",
+      "query": "config encryption",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Config|Encrypt|Jasypt|Key" }
+        ]
+      }
+    },
+    {
+      "id": "MIX-012",
+      "query": "mouse heuristics",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Mouse|Heuristic|Click" }
+        ]
+      }
+    },
+    {
+      "id": "MIX-013",
+      "query": "realization status",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Realization|Status" }
+        ]
+      }
+    },
+    {
+      "id": "MIX-014",
+      "query": "document handling",
+      "expected": {
+        "anyOf": [
+          { "files": ["DocumentController.java", "DocumentService.java", "EmployeeDocumentController.java"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "MIX-015",
+      "query": "client controller api",
+      "expected": {
+        "exact": [
+          { "file": "ClientController.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "MIX-016",
+      "query": "holiday balance",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Holiday|Balance|Absence" }
+        ]
+      }
+    },
+    {
+      "id": "MIX-017",
+      "query": "gui components",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "GUI|Panel|Dialog|Component" }
+        ]
+      }
+    },
+    {
+      "id": "MIX-018",
+      "query": "velocity analysis",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Velocity|Trajectory|Neuromotor" }
+        ]
+      }
+    },
+    {
+      "id": "MIX-019",
+      "query": "spring security config",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Security|Config|WebSecurity" }
+        ]
+      }
+    },
+    {
+      "id": "MIX-020",
+      "query": "highscore leaderboard",
+      "expected": {
+        "anyOf": [
+          { "files": ["HighscoreService.java", "HighscoreController.java"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "MIX-021",
+      "query": "Employe",
+      "notes": "Typo test - missing 'e' in Employee. Tests trigram fuzzy matching.",
+      "expected": {
+        "contains": [
+          { "filePattern": "**/Employee*.java" }
+        ]
+      }
+    },
+    {
+      "id": "MIX-022",
+      "query": "sesion",
+      "notes": "Typo test - misspelling of 'session'. Tests trigram fuzzy matching.",
+      "expected": {
+        "contains": [
+          { "filePattern": "**/Session*.java" }
+        ]
+      }
+    }
+  ]
+}

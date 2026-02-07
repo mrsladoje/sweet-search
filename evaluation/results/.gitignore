@@ -1,0 +1,3 @@
+# Evaluation results are local - don't commit
+*.json
+!.gitignore

@@ -1,0 +1,14 @@
+{
+  "language": "zh",
+  "count": 100,
+  "percentage": 10,
+  "script": "CJK",
+  "prompt": "Generate 100 code search queries in Chinese (Simplified).\n\nGuidelines:\n- Use simplified characters (简体)\n- Question patterns: 如何, 什么, 为什么, 哪里, 怎么\n- Technical terms: can translate (认证) or keep English (Auth)\n\nCategory Examples:\n\nLEXICAL (30%) - Same as English\n- AuthService, getUserById, config.yml\n\nSEMANTIC (30%) - Chinese questions\n- 身份验证如何工作 (how does authentication work)\n- 为什么需要缓存 (why is caching needed)\n- 用户登录流程 (user login flow)\n- 错误处理策略 (error handling strategy)\n\nSTRUCTURAL (20%) - Chinese + Identifier\n- 什么调用AuthService (what calls AuthService)\n- AuthService的依赖项 (dependencies of AuthService)\n- 实现Repository的类 (classes implementing Repository)\n\nHYBRID (20%) - Chinese Concept + Identifier\n- AuthService登录流程 (AuthService login flow)\n- getUserById如何处理错误 (how getUserById handles errors)\n\nOutput: JSON array [{\"query\": \"...\", \"label\": \"...\", \"subtype\": \"...\"}]",
+  "examples": [
+    {"query": "身份验证如何工作", "label": "SEMANTIC", "subtype": "question"},
+    {"query": "用户登录流程", "label": "SEMANTIC", "subtype": "process"},
+    {"query": "什么调用AuthService", "label": "STRUCTURAL", "subtype": "callers"},
+    {"query": "AuthService的依赖项", "label": "STRUCTURAL", "subtype": "callees"},
+    {"query": "AuthService登录流程", "label": "HYBRID", "subtype": "identifier_with_concept"}
+  ]
+}

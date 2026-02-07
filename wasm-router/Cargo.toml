@@ -1,0 +1,28 @@
+[package]
+name = "query_router_wasm"
+version = "1.0.0"
+edition = "2021"
+description = "Ultra-fast query router for code search (<5μs)"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["console_error_panic_hook"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+
+# Error handling in WASM
+console_error_panic_hook = { version = "0.1", optional = true }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[profile.release]
+# Optimize for size and speed
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

@@ -1,0 +1,114 @@
+{
+  "name": "sweet-search",
+  "version": "2.3.0",
+  "description": "Sweet Search - SOTA Hybrid Code Search Engine with WASM CatBoost Query Router, Semantic/Lexical/Structural Search, and Multilingual Support",
+  "type": "module",
+  "main": "smart-search-v21.js",
+  "license": "Apache-2.0",
+  "author": "Marko Sladojevic <marko@panonit.com> (https://panonit.com)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/panonitorg/sweet-search"
+  },
+  "bugs": {
+    "url": "https://github.com/panonitorg/sweet-search/issues"
+  },
+  "homepage": "https://github.com/panonitorg/sweet-search#readme",
+  "keywords": [
+    "sweet-search",
+    "code-search",
+    "semantic-search",
+    "lexical-search",
+    "hybrid-search",
+    "wasm",
+    "catboost",
+    "machine-learning",
+    "query-routing",
+    "claude-code",
+    "developer-tools",
+    "panonit"
+  ],
+  "bin": {
+    "ss": "./ss"
+  },
+  "files": [
+    "smart-search-v21.js",
+    "query-router.js",
+    "query-router-catboost.js",
+    "query-router-ml.js",
+    "graph-search.js",
+    "config.js",
+    "embedding-service.js",
+    "flashrank.js",
+    "hnsw-index.js",
+    "binary-hnsw-index.js",
+    "colbert-index.js",
+    "graph-extractor.js",
+    "incremental-tracker.js",
+    "hcgs-generator.js",
+    "index-codebase-v21.js",
+    "prewarm-vocab.js",
+    "vocabulary-warmup.js",
+    "translation/",
+    "training/features/extractor.js",
+    "training/output/",
+    "wasm-router/pkg/",
+    "ss",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "scripts": {
+    "search": "node smart-search-v21.js",
+    "index": "node index-codebase-v21.js",
+    "index:full": "node index-codebase-v21.js --full",
+    "hcgs": "node hcgs-generator.js generate",
+    "hcgs:stats": "node hcgs-generator.js stats",
+    "warmup": "node prewarm-vocab.js",
+    "warmup:full": "node vocabulary-warmup.js",
+    "benchmark": "node benchmark.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:bench": "vitest bench",
+    "eval": "node evaluation/run-evaluation.js",
+    "eval:by-lang": "node evaluation/run-evaluation.js --by-language",
+    "features": "node training/features/extractor.js",
+    "features:benchmark": "node training/features/extractor.js --benchmark",
+    "features:names": "node training/features/extractor.js --names",
+    "identifiers": "node training/generators/multilingual-identifiers.js",
+    "generate": "node training/generators/generate.js",
+    "generate:multilingual": "node training/generators/generate.js --multilingual --samples 5000 --output training/output/multilingual_5k.json",
+    "train": "node training/models/decision-tree.js train",
+    "anti-leak": "node training/validation/anti-leak-check.js",
+    "anti-leak:ci": "node training/validation/anti-leak-check.js --ci",
+    "validate": "node training/validation/heuristic-validator.js",
+    "outliers": "node training/validation/outlier-detector.js",
+    "spot-check": "node training/validation/spot-check-sampler.js",
+    "paraphrase": "node training/validation/paraphraser.js"
+  },
+  "dependencies": {
+    "@babel/helper-validator-identifier": "^7.28.5",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "better-sqlite3": "^11.7.0",
+    "catboost": "^1.26.0",
+    "fast-glob": "^3.3.3",
+    "p-limit": "^6.2.0"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.16",
+    "minimatch": "^10.1.1",
+    "p-map": "^7.0.4",
+    "vitest": "^4.0.16"
+  },
+  "optionalDependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "@huggingface/transformers": "^3.8.1",
+    "@xenova/transformers": "^2.17.2",
+    "sql.js": "^1.13.0",
+    "usearch": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

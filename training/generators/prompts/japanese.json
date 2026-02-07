@@ -1,0 +1,14 @@
+{
+  "language": "ja",
+  "count": 80,
+  "percentage": 8,
+  "script": "Hiragana/Katakana/Kanji",
+  "prompt": "Generate 80 code search queries in Japanese.\n\nGuidelines:\n- Mix kanji, hiragana, katakana naturally\n- Technical terms often in katakana: サービス, メソッド\n- Question patterns: どのように, 何が, なぜ\n\nCategory Examples:\n\nLEXICAL (30%) - Same as English\n- AuthService, getUserById, config.yml\n\nSEMANTIC (30%) - Japanese questions\n- 認証はどのように機能しますか (how does authentication work)\n- なぜキャッシュが必要ですか (why is caching needed)\n- ユーザーログインフロー (user login flow)\n- エラー処理戦略 (error handling strategy)\n\nSTRUCTURAL (20%) - Japanese + Identifier\n- AuthServiceを呼び出すものは何ですか (what calls AuthService)\n- AuthServiceの依存関係 (dependencies of AuthService)\n- Repositoryを実装するクラス (classes implementing Repository)\n\nHYBRID (20%) - Japanese Concept + Identifier\n- AuthServiceログインフロー (AuthService login flow)\n- getUserByIdがエラーを処理する方法 (how getUserById handles errors)\n\nOutput: JSON array [{\"query\": \"...\", \"label\": \"...\", \"subtype\": \"...\"}]",
+  "examples": [
+    {"query": "認証はどのように機能しますか", "label": "SEMANTIC", "subtype": "question"},
+    {"query": "ユーザーログインフロー", "label": "SEMANTIC", "subtype": "process"},
+    {"query": "AuthServiceを呼び出すものは何ですか", "label": "STRUCTURAL", "subtype": "callers"},
+    {"query": "AuthServiceの依存関係", "label": "STRUCTURAL", "subtype": "callees"},
+    {"query": "AuthServiceログインフロー", "label": "HYBRID", "subtype": "identifier_with_concept"}
+  ]
+}

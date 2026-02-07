@@ -1,0 +1,204 @@
+{
+  "schemaVersion": "1.0",
+  "category": "english-novel-conceptual",
+  "expectedRoute": "semantic",
+  "codebaseCommit": "4a83c54906d6e2b1b6d4dbf1ed1b51ec7eb3e8a0",
+  "validatedDate": "2026-01-08",
+  "description": "Novel English conceptual/semantic queries. Tests natural language understanding and concept-based search. Focus: how-does-it-work and architectural questions.",
+  "queries": [
+    {
+      "id": "ENC-001",
+      "query": "how does JWT authentication work in this codebase",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Jwt|Auth|Token|Security" }
+        ]
+      },
+      "minRelevant": 2
+    },
+    {
+      "id": "ENC-002",
+      "query": "explain the bot detection algorithm",
+      "expectedRoute": "hybrid",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "BotDetection|Heuristic|Detection" }
+        ]
+      },
+      "minRelevant": 3
+    },
+    {
+      "id": "ENC-003",
+      "query": "what is the architecture of the authentication system",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Auth|Security|Config|Filter" }
+        ]
+      },
+      "minRelevant": 2
+    },
+    {
+      "id": "ENC-004",
+      "query": "how are mouse movements analyzed for bot detection",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Mouse|Movement|Trajectory|Heuristic" }
+        ]
+      },
+      "minRelevant": 2
+    },
+    {
+      "id": "ENC-005",
+      "query": "describe the neuromotor consistency tracking mechanism",
+      "expectedRoute": "hybrid",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Neuromotor|Consistency|Tracker" }
+        ]
+      }
+    },
+    {
+      "id": "ENC-006",
+      "query": "what design patterns are used for heuristic detection",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Heuristic|Detection|Veto|Rule" }
+        ]
+      },
+      "minRelevant": 2
+    },
+    {
+      "id": "ENC-007",
+      "query": "how does the power law violation check work",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "PowerLaw|Violation|Heuristic" }
+        ]
+      }
+    },
+    {
+      "id": "ENC-008",
+      "query": "explain the veto rule system",
+      "expectedRoute": "hybrid",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Veto|Rule|Composite" }
+        ]
+      },
+      "minRelevant": 2
+    },
+    {
+      "id": "ENC-009",
+      "query": "what is the API key authentication flow",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "ApiKey|Auth|Filter|Token" }
+        ]
+      },
+      "minRelevant": 2
+    },
+    {
+      "id": "ENC-010",
+      "query": "how are equipment assignments managed",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Equipment|Assignment|Service" }
+        ]
+      }
+    },
+    {
+      "id": "ENC-011",
+      "query": "describe the refresh token mechanism",
+      "expectedRoute": "hybrid",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "RefreshToken|Token|Auth" }
+        ]
+      }
+    },
+    {
+      "id": "ENC-012",
+      "query": "what is the purpose of trajectory hashing",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Trajectory|Hash|Store" }
+        ]
+      }
+    },
+    {
+      "id": "ENC-013",
+      "query": "how does the desktop installer service work",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Installer|Desktop|Service" }
+        ]
+      }
+    },
+    {
+      "id": "ENC-014",
+      "query": "explain the Elasticsearch integration for absence search",
+      "expectedRoute": "hybrid",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "AbsenceSearch|Elastic|Search" }
+        ]
+      }
+    },
+    {
+      "id": "ENC-015",
+      "query": "what is the manager authentication process",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Manager|Auth|Login|Service" }
+        ]
+      }
+    },
+    {
+      "id": "ENC-016",
+      "query": "how are global exceptions handled in this application",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Exception|Handler|Global|Error" }
+        ]
+      }
+    },
+    {
+      "id": "ENC-017",
+      "query": "describe the highscore leaderboard system",
+      "expectedRoute": "hybrid",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Highscore|Leaderboard|Score" }
+        ]
+      }
+    },
+    {
+      "id": "ENC-018",
+      "query": "what validation is performed on keyboard input patterns",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Keyboard|Spam|Typing|Cadence" }
+        ]
+      }
+    },
+    {
+      "id": "ENC-019",
+      "query": "how is the Bezier curve fitting used for trajectory analysis",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Bezier|Fit|Trajectory|Heuristic" }
+        ]
+      }
+    },
+    {
+      "id": "ENC-020",
+      "query": "explain the ring buffer implementation",
+      "expectedRoute": "hybrid",
+      "expected": {
+        "exact": [
+          { "file": "RingBuffer.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    }
+  ]
+}

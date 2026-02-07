@@ -1,0 +1,293 @@
+{
+  "timestamp": "2026-01-14T16:10:21.547Z",
+  "latency": {
+    "MiniLM-L6-v2": {
+      "docs_10": {
+        "mean": 42.21,
+        "median": 41.4000860000001,
+        "p50": 41.4000860000001,
+        "p95": 63.850775999999996,
+        "min": 36.83816700000011,
+        "max": 63.850775999999996
+      },
+      "docs_20": {
+        "mean": 92.4,
+        "median": 92.86074000000008,
+        "p50": 92.86074000000008,
+        "p95": 102.53621599999997,
+        "min": 83.59114200000022,
+        "max": 102.53621599999997
+      },
+      "docs_50": {
+        "mean": 252.57,
+        "median": 255.25782699999945,
+        "p50": 255.25782699999945,
+        "p95": 267.8601120000003,
+        "min": 238.7461029999995,
+        "max": 267.8601120000003
+      }
+    },
+    "TinyBERT-L2-v2": {
+      "docs_10": {
+        "mean": 6.02,
+        "median": 5.316380000000208,
+        "p50": 5.316380000000208,
+        "p95": 9.328733000000284,
+        "min": 4.469569000000774,
+        "max": 9.328733000000284
+      },
+      "docs_20": {
+        "mean": 11.41,
+        "median": 11.422607999998945,
+        "p50": 11.422607999998945,
+        "p95": 17.184500999999727,
+        "min": 9.030655000000479,
+        "max": 17.184500999999727
+      },
+      "docs_50": {
+        "mean": 30.78,
+        "median": 30.408895000000484,
+        "p50": 30.408895000000484,
+        "p95": 37.3589690000008,
+        "min": 26.800432,
+        "max": 37.3589690000008
+      }
+    }
+  },
+  "accuracy": {
+    "MiniLM-L6-v2": {
+      "successRate": "60.0%",
+      "mrr": "0.237",
+      "recall": "33.3%",
+      "details": [
+        {
+          "query": "AuthService authentication login",
+          "success": true,
+          "mrr": 1,
+          "recall": 0.6666666666666666,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "employee time tracking",
+          "success": true,
+          "mrr": 0.5,
+          "recall": 0.3333333333333333,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "bot detection heuristic",
+          "success": true,
+          "mrr": 0.25,
+          "recall": 0.3333333333333333,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "file upload document storage",
+          "success": false,
+          "mrr": 0,
+          "recall": 0,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "user permissions access control",
+          "success": false,
+          "mrr": 0,
+          "recall": 0,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "React form validation",
+          "success": true,
+          "mrr": 0.16666666666666666,
+          "recall": 0.5,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "project management service",
+          "success": true,
+          "mrr": 0.3333333333333333,
+          "recall": 1,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "absence leave request",
+          "success": true,
+          "mrr": 0.125,
+          "recall": 0.5,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "notification email sending",
+          "success": false,
+          "mrr": 0,
+          "recall": 0,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "mouse movement tracking",
+          "success": false,
+          "mrr": 0,
+          "recall": 0,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        }
+      ]
+    },
+    "TinyBERT-L2-v2": {
+      "successRate": "60.0%",
+      "mrr": "0.237",
+      "recall": "33.3%",
+      "details": [
+        {
+          "query": "AuthService authentication login",
+          "success": true,
+          "mrr": 1,
+          "recall": 0.6666666666666666,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "employee time tracking",
+          "success": true,
+          "mrr": 0.5,
+          "recall": 0.3333333333333333,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "bot detection heuristic",
+          "success": true,
+          "mrr": 0.25,
+          "recall": 0.3333333333333333,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "file upload document storage",
+          "success": false,
+          "mrr": 0,
+          "recall": 0,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "user permissions access control",
+          "success": false,
+          "mrr": 0,
+          "recall": 0,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "React form validation",
+          "success": true,
+          "mrr": 0.16666666666666666,
+          "recall": 0.5,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "project management service",
+          "success": true,
+          "mrr": 0.3333333333333333,
+          "recall": 1,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "absence leave request",
+          "success": true,
+          "mrr": 0.125,
+          "recall": 0.5,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "notification email sending",
+          "success": false,
+          "mrr": 0,
+          "recall": 0,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        },
+        {
+          "query": "mouse movement tracking",
+          "success": false,
+          "mrr": 0,
+          "recall": 0,
+          "top3": [
+            "AuthService",
+            "EmployeeService",
+            "RealizationController"
+          ]
+        }
+      ]
+    }
+  }
+}
