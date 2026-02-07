@@ -1,0 +1,233 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sloth.codolis.com/search-100x/query-set-schema.json",
+  "title": "SEARCH 100x Query Set Schema",
+  "description": "Schema for ground-truth query sets used in SEARCH 100x evaluation",
+  "type": "object",
+  "required": ["schemaVersion", "category", "expectedRoute", "codebaseCommit", "queries"],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0",
+      "description": "Schema version for compatibility checking"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "identifier", "conceptual", "structural", "mixed",
+        "english-novel-identifier", "english-novel-conceptual",
+        "english-novel-structural", "english-novel-mixed"
+      ],
+      "description": "Query category for routing and metrics grouping. Novel categories are held-out test sets for anti-leak validation."
+    },
+    "expectedRoute": {
+      "type": "string",
+      "enum": ["lexical", "semantic", "structural", "hybrid"],
+      "description": "Default expected route for queries in this set"
+    },
+    "codebaseCommit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$",
+      "description": "Git commit SHA the queries were validated against"
+    },
+    "validatedDate": {
+      "type": "string",
+      "format": "date",
+      "description": "Date the ground truth was last validated (YYYY-MM-DD)"
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of the query set"
+    },
+    "queries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/definitions/query"
+      }
+    }
+  },
+  "definitions": {
+    "query": {
+      "type": "object",
+      "required": ["id", "query", "expected"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}-\\d{3}$",
+          "description": "Unique query identifier (e.g., IDN-001, CON-015)"
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "The search query text"
+        },
+        "expectedRoute": {
+          "type": "string",
+          "enum": ["lexical", "semantic", "structural", "hybrid"],
+          "description": "Override expected route for this specific query"
+        },
+        "structuralSubtype": {
+          "type": "string",
+          "enum": ["callers", "callees", "implementations", "impact"],
+          "description": "Subtype for structural queries"
+        },
+        "minRelevant": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Minimum number of relevant results required for success"
+        },
+        "expected": {
+          "$ref": "#/definitions/expected"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional notes about this query or its ground truth"
+        }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "description": "Expected results specification",
+      "properties": {
+        "exact": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/exactMatch"
+          },
+          "description": "Results that must match exactly"
+        },
+        "anyOf": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/anyOfMatch"
+          },
+          "description": "At least N results from each set must appear"
+        },
+        "contains": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/containsMatch"
+          },
+          "description": "Results matching patterns"
+        },
+        "excluded": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Files/patterns that must NOT appear (negative test)"
+        }
+      },
+      "anyOf": [
+        { "required": ["exact"] },
+        { "required": ["anyOf"] },
+        { "required": ["contains"] }
+      ]
+    },
+    "exactMatch": {
+      "type": "object",
+      "required": ["file"],
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "File name or path (partial match allowed)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Symbol name (class, method, function, etc.)"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["class", "interface", "method", "function", "field", "variable", "import", "component", "hook"],
+          "description": "Symbol type"
+        },
+        "lineRange": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "Line range [start, end] for position matching"
+        },
+        "relevanceGrade": {
+          "type": "integer",
+          "enum": [1, 2, 3],
+          "default": 3,
+          "description": "Relevance grade: 3=highly relevant, 2=relevant, 1=marginal"
+        }
+      }
+    },
+    "anyOfMatch": {
+      "type": "object",
+      "required": ["files"],
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Set of acceptable file matches"
+        },
+        "minMatches": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Minimum number of files from this set that must appear"
+        }
+      }
+    },
+    "containsMatch": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["any", "all"],
+          "default": "any",
+          "description": "Match mode: 'any' = at least one pattern, 'all' = all patterns"
+        },
+        "filePattern": {
+          "type": "string",
+          "description": "Glob pattern for file matching (e.g., '**/Auth*.java')"
+        },
+        "namePattern": {
+          "type": "string",
+          "description": "Regex pattern for symbol name matching (e.g., '^Login.*')"
+        },
+        "typeIn": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["class", "interface", "method", "function", "field", "variable", "import", "component", "hook"]
+          },
+          "description": "Allowed symbol types"
+        }
+      },
+      "anyOf": [
+        { "required": ["filePattern"] },
+        { "required": ["namePattern"] },
+        { "required": ["typeIn"] }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": "1.0",
+      "category": "identifier",
+      "expectedRoute": "lexical",
+      "codebaseCommit": "bc23643cd07cbd5bed6a85e0951fad76b9aefeeb",
+      "validatedDate": "2026-01-04",
+      "queries": [
+        {
+          "id": "IDN-001",
+          "query": "EmployeeService",
+          "expected": {
+            "exact": [
+              { "file": "EmployeeService.java", "type": "class", "relevanceGrade": 3 }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,232 @@
+{
+  "schemaVersion": "1.0",
+  "category": "english-novel-structural",
+  "expectedRoute": "structural",
+  "codebaseCommit": "4a83c54906d6e2b1b6d4dbf1ed1b51ec7eb3e8a0",
+  "validatedDate": "2026-01-08",
+  "description": "Novel English structural/graph queries. Tests code dependency analysis routing. Focus: refactoring and impact analysis use cases.",
+  "queries": [
+    {
+      "id": "ENS-001",
+      "query": "what calls JwtService",
+      "expectedStructuralType": "callers",
+      "expectedEntity": "JwtService",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Auth|Login|Token|Filter" }
+        ]
+      }
+    },
+    {
+      "id": "ENS-002",
+      "query": "callers of ApiKeyService",
+      "expectedStructuralType": "callers",
+      "expectedEntity": "ApiKeyService",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Controller|Filter|Auth" }
+        ]
+      }
+    },
+    {
+      "id": "ENS-003",
+      "query": "what does BotDetectionService call",
+      "expectedStructuralType": "callees",
+      "expectedEntity": "BotDetectionService",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Heuristic|Detection|Veto" }
+        ]
+      }
+    },
+    {
+      "id": "ENS-004",
+      "query": "dependencies of AuthenticationService",
+      "expectedStructuralType": "callees",
+      "expectedEntity": "AuthenticationService",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Repository|Service|Jwt" }
+        ]
+      }
+    },
+    {
+      "id": "ENS-005",
+      "query": "classes that implement DetectionHeuristic interface",
+      "expectedStructuralType": "implementations",
+      "expectedEntity": "DetectionHeuristic",
+      "expected": {
+        "anyOf": [
+          { "files": ["PowerLawViolationHeuristic.java", "KeyboardSpamHeuristic.java", "GhostCursorHeuristic.java"], "minMatches": 2 }
+        ]
+      }
+    },
+    {
+      "id": "ENS-006",
+      "query": "classes implementing VetoRule",
+      "expectedStructuralType": "implementations",
+      "expectedEntity": "VetoRule",
+      "expected": {
+        "anyOf": [
+          { "files": ["PowerLawVetoRule.java", "NeuromotorVetoRule.java", "CompositeVetoRule.java"], "minMatches": 2 }
+        ]
+      }
+    },
+    {
+      "id": "ENS-007",
+      "query": "impact of changing EmployeeService",
+      "expectedStructuralType": "impact",
+      "expectedEntity": "EmployeeService",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Controller|Service|Repository" }
+        ]
+      },
+      "minRelevant": 3
+    },
+    {
+      "id": "ENS-008",
+      "query": "what depends on SessionService",
+      "expectedStructuralType": "callers",
+      "expectedEntity": "SessionService",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Controller|Auth|Login" }
+        ]
+      }
+    },
+    {
+      "id": "ENS-009",
+      "query": "usages of EmailService",
+      "expectedStructuralType": "callers",
+      "expectedEntity": "EmailService",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Controller|Service|Notification" }
+        ]
+      }
+    },
+    {
+      "id": "ENS-010",
+      "query": "where is NotificationService called",
+      "expectedStructuralType": "callers",
+      "expectedEntity": "NotificationService",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Controller|Service" }
+        ]
+      }
+    },
+    {
+      "id": "ENS-011",
+      "query": "what uses EquipmentSearchService",
+      "expectedStructuralType": "callers",
+      "expectedEntity": "EquipmentSearchService",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Controller|Service" }
+        ]
+      }
+    },
+    {
+      "id": "ENS-012",
+      "query": "references to GlobalExceptionHandler",
+      "expectedStructuralType": "callers",
+      "expectedEntity": "GlobalExceptionHandler",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Config|Application|Controller" }
+        ]
+      }
+    },
+    {
+      "id": "ENS-013",
+      "query": "methods called by InstallerService",
+      "expectedStructuralType": "callees",
+      "expectedEntity": "InstallerService",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Repository|Installer" }
+        ]
+      }
+    },
+    {
+      "id": "ENS-014",
+      "query": "affected by changes to ManagerService",
+      "expectedStructuralType": "impact",
+      "expectedEntity": "ManagerService",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Controller|Manager" }
+        ]
+      }
+    },
+    {
+      "id": "ENS-015",
+      "query": "downstream effects of modifying RefreshTokenService",
+      "expectedStructuralType": "impact",
+      "expectedEntity": "RefreshTokenService",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Auth|Login|Token" }
+        ]
+      }
+    },
+    {
+      "id": "ENS-016",
+      "query": "subtypes of Exception",
+      "expectedStructuralType": "implementations",
+      "expectedEntity": "Exception",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Exception|Error" }
+        ]
+      }
+    },
+    {
+      "id": "ENS-017",
+      "query": "call hierarchy of ProjectService",
+      "expectedStructuralType": "hierarchy",
+      "expectedEntity": "ProjectService",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Project|Controller|Service" }
+        ]
+      }
+    },
+    {
+      "id": "ENS-018",
+      "query": "what breaks if I change HolidayService",
+      "expectedStructuralType": "impact",
+      "expectedEntity": "HolidayService",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Controller|Holiday|Absence" }
+        ]
+      }
+    },
+    {
+      "id": "ENS-019",
+      "query": "who extends Repository interface",
+      "expectedStructuralType": "implementations",
+      "expectedEntity": "Repository",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Repository" }
+        ]
+      },
+      "minRelevant": 5
+    },
+    {
+      "id": "ENS-020",
+      "query": "find references to TrajectoryHasher",
+      "expectedStructuralType": "callers",
+      "expectedEntity": "TrajectoryHasher",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Trajectory|Hash|Detection" }
+        ]
+      }
+    }
+  ]
+}

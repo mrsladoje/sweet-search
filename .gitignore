@@ -1,0 +1,47 @@
+# Local environment secrets (never commit)
+.env
+.env.local
+.env.*.local
+
+# Node modules (installed via bun/npm)
+node_modules/
+
+# Runtime/temp files
+*.tmp
+*.log
+.agentdb/
+
+# Compiled binaries
+ss
+ss-fast/ss-fast
+
+# Training artifacts (large, regenerable)
+training/catboost_info/
+training/.venv/
+training/*.cbm
+training/models/*.cbm
+training/output/*.cbm
+training/output/*.json
+training/*.bak
+training/output/v45_router_d10.js
+training/output/v45_router_d11.js
+training/output/v45_router_d12.js
+
+# Local model cache (download on demand)
+models/gte-reranker-int8/
+
+# Local backup files
+*.bak
+
+# WASM build artifacts
+wasm-router/target/
+wasm-router/debug-*.js
+wasm-router/*.bak
+
+# Phase planning docs (regenerable)
+PHASE*_RESULTS.md
+PHASE*_FIXES.md
+
+# Benchmark raw outputs (regenerable)
+evaluation/*.json.bak
+failure-analysis.md

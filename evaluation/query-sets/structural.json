@@ -1,0 +1,248 @@
+{
+  "schemaVersion": "1.0",
+  "category": "structural",
+  "expectedRoute": "structural",
+  "codebaseCommit": "bc23643cd07cbd5bed6a85e0951fad76b9aefeeb",
+  "validatedDate": "2026-01-04",
+  "description": "Structural/relationship queries using GraphRAG. 5 queries per subtype: callers, callees, implementations, impact. Expects structural routing with <50ms latency.",
+  "queries": [
+    {
+      "id": "STR-001",
+      "query": "what calls EmployeeService",
+      "structuralSubtype": "callers",
+      "expected": {
+        "contains": [
+          { "mode": "any", "typeIn": ["class", "method"] }
+        ],
+        "excluded": ["EmployeeService.java"]
+      },
+      "minRelevant": 2,
+      "notes": "Should find controllers and other services that call EmployeeService"
+    },
+    {
+      "id": "STR-002",
+      "query": "who invokes RealizationService",
+      "structuralSubtype": "callers",
+      "expected": {
+        "contains": [
+          { "mode": "any", "typeIn": ["class", "method"] }
+        ],
+        "excluded": ["RealizationService.java"]
+      },
+      "minRelevant": 2
+    },
+    {
+      "id": "STR-003",
+      "query": "callers of SessionService",
+      "structuralSubtype": "callers",
+      "expected": {
+        "contains": [
+          { "mode": "any", "typeIn": ["class", "method"] }
+        ],
+        "excluded": ["SessionService.java"]
+      },
+      "minRelevant": 2
+    },
+    {
+      "id": "STR-004",
+      "query": "what uses NotificationService",
+      "structuralSubtype": "callers",
+      "expected": {
+        "contains": [
+          { "mode": "any", "typeIn": ["class", "method"] }
+        ],
+        "excluded": ["NotificationService.java"]
+      },
+      "minRelevant": 2
+    },
+    {
+      "id": "STR-005",
+      "query": "where is BotDetectionService called",
+      "structuralSubtype": "callers",
+      "expected": {
+        "contains": [
+          { "mode": "any", "typeIn": ["class", "method"] }
+        ],
+        "excluded": ["BotDetectionService.java"]
+      },
+      "minRelevant": 1
+    },
+    {
+      "id": "STR-006",
+      "query": "what does SessionService call",
+      "structuralSubtype": "callees",
+      "expected": {
+        "contains": [
+          { "mode": "any", "typeIn": ["class", "method", "interface"] }
+        ],
+        "excluded": ["SessionService.java"]
+      },
+      "minRelevant": 2,
+      "notes": "Should find dependencies of SessionService"
+    },
+    {
+      "id": "STR-007",
+      "query": "dependencies of EmployeeController",
+      "structuralSubtype": "callees",
+      "expected": {
+        "contains": [
+          { "mode": "any", "typeIn": ["class", "interface"] }
+        ],
+        "excluded": ["EmployeeController.java"]
+      },
+      "minRelevant": 2
+    },
+    {
+      "id": "STR-008",
+      "query": "what does BotDetectionService use",
+      "structuralSubtype": "callees",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Heuristic|Detector|Config" }
+        ],
+        "excluded": ["BotDetectionService.java"]
+      },
+      "minRelevant": 3
+    },
+    {
+      "id": "STR-009",
+      "query": "callees of EmailService",
+      "structuralSubtype": "callees",
+      "expected": {
+        "contains": [
+          { "mode": "any", "typeIn": ["class", "interface"] }
+        ],
+        "excluded": ["EmailService.java"]
+      },
+      "minRelevant": 1
+    },
+    {
+      "id": "STR-010",
+      "query": "what does AbsenceService depend on",
+      "structuralSubtype": "callees",
+      "expected": {
+        "contains": [
+          { "mode": "any", "typeIn": ["class", "interface"] }
+        ],
+        "excluded": ["AbsenceService.java"]
+      },
+      "minRelevant": 2
+    },
+    {
+      "id": "STR-011",
+      "query": "implementations of DetectionHeuristic",
+      "structuralSubtype": "implementations",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Heuristic" }
+        ],
+        "excluded": ["DetectionHeuristic.java"]
+      },
+      "minRelevant": 5,
+      "notes": "Should find 29 heuristic implementations"
+    },
+    {
+      "id": "STR-012",
+      "query": "subclasses of BaseService",
+      "structuralSubtype": "implementations",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Service" }
+        ]
+      },
+      "minRelevant": 1
+    },
+    {
+      "id": "STR-013",
+      "query": "classes implementing JpaRepository",
+      "structuralSubtype": "implementations",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Repository" }
+        ]
+      },
+      "minRelevant": 3
+    },
+    {
+      "id": "STR-014",
+      "query": "who extends EventService",
+      "structuralSubtype": "implementations",
+      "expected": {
+        "contains": [
+          { "mode": "any", "typeIn": ["class"] }
+        ]
+      },
+      "minRelevant": 1
+    },
+    {
+      "id": "STR-015",
+      "query": "implementations of EmployeeEventService",
+      "structuralSubtype": "implementations",
+      "expected": {
+        "contains": [
+          { "mode": "any", "typeIn": ["class"] }
+        ]
+      },
+      "minRelevant": 1
+    },
+    {
+      "id": "STR-016",
+      "query": "impact of changing AuthService",
+      "structuralSubtype": "impact",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Controller|Service|Filter" }
+        ]
+      },
+      "minRelevant": 3,
+      "notes": "Should show ripple effect of changing AuthService"
+    },
+    {
+      "id": "STR-017",
+      "query": "affected by modifying Employee entity",
+      "structuralSubtype": "impact",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Employee|Service|Controller|Repository" }
+        ]
+      },
+      "minRelevant": 5
+    },
+    {
+      "id": "STR-018",
+      "query": "impact of refactoring SessionService",
+      "structuralSubtype": "impact",
+      "expected": {
+        "contains": [
+          { "mode": "any", "typeIn": ["class", "method"] }
+        ],
+        "excluded": ["SessionService.java"]
+      },
+      "minRelevant": 2
+    },
+    {
+      "id": "STR-019",
+      "query": "what breaks if I change JwtTokenUtil",
+      "structuralSubtype": "impact",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Jwt|Auth|Security|Filter" }
+        ],
+        "excluded": ["JwtTokenUtil.java"]
+      },
+      "minRelevant": 2
+    },
+    {
+      "id": "STR-020",
+      "query": "downstream effects of NotificationService changes",
+      "structuralSubtype": "impact",
+      "expected": {
+        "contains": [
+          { "mode": "any", "typeIn": ["class", "method"] }
+        ],
+        "excluded": ["NotificationService.java"]
+      },
+      "minRelevant": 2
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0",
+  "category": "mixed",
+  "expectedRoute": "hybrid",
+  "codebaseCommit": "784f8e4e281e71611fd581e968fd66b8bd741315",
+  "validatedDate": "2026-01-07",
+  "description": "Translation Fallback Evaluation (T1→T2→T3) - Non-ASCII routes to HYBRID (via fallback or explicit)",
+  "frozen": true,
+  "note": "UTILITY ROUTING: CJK triggers low-confidence → hybrid fallback. Cyrillic may stay semantic. Per-query overrides for special cases.",
+  "queries": [
+    { "id": "TFB-001", "query": "аутентификација", "language": "sr", "tier": "T2", "notes": "Serbian: authentication concept", "expected": { "anyOf": [{ "files": ["AuthenticationService.java", "JwtTokenUtil.java", "WebSecurityConfig.java"], "minMatches": 1 }] } },
+    { "id": "TFB-002", "query": "сервис за аутентификацију", "language": "sr", "tier": "T2", "notes": "Serbian: authentication service (multi-word)", "expected": { "anyOf": [{ "files": ["AuthenticationService.java", "AuthController.java"], "minMatches": 1 }] } },
+    { "id": "TFB-003", "query": "праћење времена", "language": "sr", "tier": "T2", "notes": "Serbian: time tracking concept", "expected": { "anyOf": [{ "files": ["ProcessService.java", "RealizationService.java", "SessionService.java"], "minMatches": 1 }] } },
+    { "id": "TFB-004", "query": "запослени", "language": "sr", "tier": "T2", "notes": "Serbian: employee concept", "expected": { "anyOf": [{ "files": ["EmployeeService.java", "EmployeeController.java", "Employee.java"], "minMatches": 1 }] } },
+    { "id": "TFB-005", "query": "конфигурација", "language": "sr", "tier": "T2", "notes": "Serbian: configuration concept", "expected": { "anyOf": [{ "files": ["WebSecurityConfig.java", "application.properties"], "minMatches": 1 }] } },
+    { "id": "TFB-006", "query": "КорисникСервис", "language": "sr", "tier": "T1", "notes": "Serbian: Cyrillic identifier (transliteration)", "expected": { "anyOf": [{ "files": ["UserService.java", "UserServiceImpl.java"], "minMatches": 1 }] } },
+    { "id": "TFB-007", "query": "АутСервис", "language": "sr", "tier": "T2", "notes": "Serbian: identifier alias", "expected": { "anyOf": [{ "files": ["AuthenticationService.java", "AuthController.java"], "minMatches": 1 }] } },
+    { "id": "TFB-008", "query": "СервисАутентификације", "language": "sr", "tier": "T2", "notes": "Serbian: identifier alias (genitive)", "expected": { "anyOf": [{ "files": ["AuthenticationService.java", "AuthController.java"], "minMatches": 1 }] } },
+    { "id": "TFB-009", "query": "КонтролерЗапослених", "language": "sr", "tier": "T1", "notes": "Serbian: T1-only transliteration", "expected": { "anyOf": [{ "files": ["EmployeeController.java", "EmployeesController.java"], "minMatches": 1 }] } },
+    { "id": "TFB-010", "query": "СервисПроцеса", "language": "sr", "tier": "T1", "notes": "Serbian: T1-only transliteration", "expected": { "anyOf": [{ "files": ["ProcessService.java", "ProcessServiceImpl.java"], "minMatches": 1 }] } },
+
+    { "id": "TFB-011", "query": "аутентификация", "language": "ru", "tier": "T2", "notes": "Russian: authentication concept", "expected": { "anyOf": [{ "files": ["AuthenticationService.java", "WebSecurityConfig.java"], "minMatches": 1 }] } },
+    { "id": "TFB-012", "query": "пользователь", "language": "ru", "tier": "T2", "notes": "Russian: user concept", "expected": { "anyOf": [{ "files": ["UserService.java", "User.java"], "minMatches": 1 }] } },
+    { "id": "TFB-013", "query": "сотрудник", "language": "ru", "tier": "T2", "notes": "Russian: employee concept", "expected": { "anyOf": [{ "files": ["EmployeeService.java", "Employee.java"], "minMatches": 1 }] } },
+    { "id": "TFB-014", "query": "сессия", "language": "ru", "tier": "T2", "notes": "Russian: session concept", "expected": { "anyOf": [{ "files": ["SessionService.java", "Session.java", "SessionController.java"], "minMatches": 1 }] } },
+
+    { "id": "TFB-015", "query": "认证服务", "language": "zh", "tier": "T2", "notes": "Chinese: AuthService alias", "expected": { "anyOf": [{ "files": ["AuthenticationService.java", "AuthController.java"], "minMatches": 1 }] } },
+    { "id": "TFB-016", "query": "用户服务", "language": "zh", "tier": "T2", "notes": "Chinese: UserService alias", "expected": { "anyOf": [{ "files": ["UserService.java", "UserServiceImpl.java"], "minMatches": 1 }] } },
+    { "id": "TFB-017", "query": "登录", "language": "zh", "tier": "T2", "notes": "Chinese: login concept", "expected": { "anyOf": [{ "files": ["AuthController.java", "AuthenticationService.java"], "minMatches": 1 }] } },
+    { "id": "TFB-018", "query": "员工", "language": "zh", "tier": "T2", "notes": "Chinese: employee concept", "expected": { "anyOf": [{ "files": ["EmployeeService.java", "Employee.java"], "minMatches": 1 }] } },
+
+    { "id": "TFB-019", "query": "認証", "language": "ja", "tier": "T2", "notes": "Japanese: authentication concept", "expected": { "anyOf": [{ "files": ["AuthenticationService.java", "WebSecurityConfig.java"], "minMatches": 1 }] } },
+    { "id": "TFB-020", "query": "認証サービス", "language": "ja", "tier": "T2", "notes": "Japanese: AuthService alias", "expected": { "anyOf": [{ "files": ["AuthenticationService.java", "AuthController.java"], "minMatches": 1 }] } },
+    { "id": "TFB-021", "query": "ログイン", "language": "ja", "tier": "T2", "notes": "Japanese: login concept (katakana)", "expected": { "anyOf": [{ "files": ["AuthController.java", "AuthenticationService.java"], "minMatches": 1 }] } },
+
+    { "id": "TFB-022", "query": "Authentifizierung", "language": "de", "tier": "T2", "notes": "German: authentication concept", "expected": { "anyOf": [{ "files": ["AuthenticationService.java", "WebSecurityConfig.java"], "minMatches": 1 }] } },
+    { "id": "TFB-023", "query": "Benutzer", "language": "de", "tier": "T2", "notes": "German: user concept", "expected": { "anyOf": [{ "files": ["UserService.java", "User.java"], "minMatches": 1 }] } },
+    { "id": "TFB-024", "query": "Mitarbeiter", "language": "de", "tier": "T2", "notes": "German: employee concept", "expected": { "anyOf": [{ "files": ["EmployeeService.java", "Employee.java"], "minMatches": 1 }] } },
+
+    { "id": "TFB-025", "query": "AuthenticationService аутентификација", "language": "sr", "tier": "T2", "notes": "Mixed script: English + Serbian", "expectedRoute": "hybrid", "expected": { "anyOf": [{ "files": ["AuthenticationService.java", "AuthController.java"], "minMatches": 1 }] } },
+    { "id": "TFB-026", "query": "шта позива AuthenticationService", "language": "sr", "tier": "T3", "notes": "Serbian structural query - routes STRUCTURAL due to ASCII identifier", "expectedRoute": "structural", "expected": { "contains": [{ "namePattern": ".*" }] } },
+    { "id": "TFB-027", "query": "AuthenticationService 如何工作", "language": "zh", "tier": "T3", "notes": "Chinese question with ASCII identifier - HYBRID for max recall", "expectedRoute": "hybrid", "expected": { "anyOf": [{ "files": ["AuthenticationService.java", "AuthController.java", "WebSecurityConfig.java"], "minMatches": 1 }] } },
+
+    { "id": "TFB-028", "query": "AuthenticationService", "language": "en", "tier": null, "notes": "English: no translation needed", "expectedRoute": "lexical", "expected": { "exact": [{ "file": "AuthenticationService.java", "type": "class" }] } },
+    { "id": "TFB-029", "query": "how does authentication work", "language": "en", "tier": null, "notes": "English: no translation needed", "expectedRoute": "semantic", "expected": { "anyOf": [{ "files": ["AuthenticationService.java", "WebSecurityConfig.java", "JwtTokenUtil.java"], "minMatches": 1 }] } },
+    { "id": "TFB-030", "query": "EmployeeService", "language": "en", "tier": null, "notes": "English: no translation needed", "expectedRoute": "lexical", "expected": { "exact": [{ "file": "EmployeeService.java", "type": "class" }] } }
+  ]
+}

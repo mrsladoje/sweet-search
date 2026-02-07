@@ -1,0 +1,14 @@
+{
+  "language": "de",
+  "count": 100,
+  "percentage": 10,
+  "script": "Latin",
+  "prompt": "Generate 100 code search queries in German.\n\nGuidelines:\n- Use formal register (Sie)\n- Question words: wie, was, warum, wo, wann, welche\n- Technical terms often stay English: Cache, Repository, Service\n\nCategory Examples:\n\nLEXICAL (30%) - Same as English\n- AuthService, getUserById, config.yml\n\nSEMANTIC (30%) - German questions\n- wie funktioniert die Authentifizierung (how does authentication work)\n- warum wird Caching benötigt (why is caching needed)\n- was ist der Login-Prozess (what is the login process)\n- Fehlerbehandlungsstrategie (error handling strategy)\n\nSTRUCTURAL (20%) - German + Identifier\n- was ruft AuthService auf (what calls AuthService)\n- Abhängigkeiten von UserRepository (dependencies of UserRepository)\n- Klassen, die Repository implementieren (classes implementing Repository)\n\nHYBRID (20%) - German Concept + Identifier\n- AuthService Anmeldeablauf (AuthService login flow)\n- wie getUserById Fehler behandelt (how getUserById handles errors)\n- Validierung im AuthController (validation in AuthController)\n\nOutput: JSON array [{\"query\": \"...\", \"label\": \"...\", \"subtype\": \"...\"}]",
+  "examples": [
+    {"query": "wie funktioniert die Authentifizierung", "label": "SEMANTIC", "subtype": "question"},
+    {"query": "was ruft AuthService auf", "label": "STRUCTURAL", "subtype": "callers"},
+    {"query": "Abhängigkeiten von UserRepository", "label": "STRUCTURAL", "subtype": "callees"},
+    {"query": "AuthService Anmeldeablauf", "label": "HYBRID", "subtype": "identifier_with_concept"},
+    {"query": "Fehlerbehandlung im SessionService", "label": "HYBRID", "subtype": "identifier_with_concept"}
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "language": "sr",
+  "count": 120,
+  "percentage": 12,
+  "script": "Cyrillic",
+  "priority": true,
+  "prompt": "Generate 120 code search queries in SERBIAN using CYRILLIC script.\n\nCRITICAL Rules:\n1. Use CYRILLIC script for Serbian text (not Latin transliteration)\n2. Code identifiers ALWAYS stay in ASCII (AuthService, not АутхСервис)\n3. Include proper Serbian grammar (cases: nominative, genitive, accusative, locative, instrumental)\n4. Mix formal and informal register\n\nCategory Examples:\n\nLEXICAL (30%) - Same as English (identifiers are universal)\n- AuthService, getUserById, config.yml\n\nSEMANTIC (30%) - Pure Serbian Questions\n- како функционише аутентификација (how does authentication work)\n- шта је процес валидације корисника (what is user validation process)\n- објасни механизам кеширања (explain caching mechanism)\n- зашто се користи JWT токен (why is JWT token used)\n- где се обрађују грешке (where are errors handled)\n- процес регистрације корисника (user registration process)\n- како систем шаље обавештења (how does system send notifications)\n\nSTRUCTURAL (20%) - Serbian + Identifier\n- шта позива AuthService (what calls AuthService)\n- ко користи LoginController (who uses LoginController)\n- зависности од UserRepository (dependencies of UserRepository)\n- имплементације интерфејса Repository (implementations of Repository interface)\n- утицај промене на EmployeeService (impact of changing EmployeeService)\n- позиваоци методе validateToken (callers of validateToken method)\n\nHYBRID (20%) - Serbian Concept + Identifier\n- AuthService механизам пријаве (AuthService login mechanism)\n- како getUserById обрађује грешке (how getUserById handles errors)\n- процес у LoginController (process in LoginController)\n- валидација у AuthService (validation in AuthService)\n\nGrammatical Variations:\n- Nominative: AuthService је сервис\n- Genitive: зависности од AuthService\n- Accusative: позива AuthService\n- Locative: у AuthService\n- Instrumental: са AuthService\n\nOutput: JSON array [{\"query\": \"...\", \"label\": \"...\", \"subtype\": \"...\", \"case\": \"nominative|genitive|accusative|locative|instrumental\"}]",
+  "examples": [
+    {"query": "AuthService", "label": "LEXICAL", "subtype": "class_name", "language": "neutral"},
+    {"query": "како функционише аутентификација", "label": "SEMANTIC", "subtype": "question", "case": "nominative"},
+    {"query": "шта је процес валидације корисника", "label": "SEMANTIC", "subtype": "question", "case": "genitive"},
+    {"query": "објасни механизам кеширања", "label": "SEMANTIC", "subtype": "explanation", "case": "genitive"},
+    {"query": "шта позива AuthService", "label": "STRUCTURAL", "subtype": "callers", "case": "accusative"},
+    {"query": "зависности од UserRepository", "label": "STRUCTURAL", "subtype": "callees", "case": "genitive"},
+    {"query": "имплементације интерфејса Repository", "label": "STRUCTURAL", "subtype": "implementations", "case": "genitive"},
+    {"query": "AuthService механизам пријаве", "label": "HYBRID", "subtype": "identifier_with_concept", "case": "genitive"},
+    {"query": "како getUserById обрађује грешке", "label": "HYBRID", "subtype": "identifier_with_concept", "case": "accusative"},
+    {"query": "валидација у AuthService", "label": "HYBRID", "subtype": "identifier_with_concept", "case": "locative"}
+  ]
+}

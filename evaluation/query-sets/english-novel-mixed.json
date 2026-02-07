@@ -1,0 +1,283 @@
+{
+  "schemaVersion": "1.0",
+  "category": "english-novel-mixed",
+  "expectedRoute": "hybrid",
+  "codebaseCommit": "4a83c54906d6e2b1b6d4dbf1ed1b51ec7eb3e8a0",
+  "validatedDate": "2026-01-08",
+  "description": "Novel English ambiguous queries requiring hybrid routing. Mix of partial identifiers, domain terms, and ambiguous phrases. Focus: real-world production queries.",
+  "queries": [
+    {
+      "id": "ENM-001",
+      "query": "jwt token",
+      "expected": {
+        "anyOf": [
+          { "files": ["JwtService.java", "JwtTokenFilter.java", "JwtAuthenticationFilter.java"], "minMatches": 1 }
+        ]
+      },
+      "notes": "Short ambiguous - could be class prefix or concept"
+    },
+    {
+      "id": "ENM-002",
+      "query": "api key filter",
+      "expected": {
+        "anyOf": [
+          { "files": ["ApiKeyAuthenticationFilter.java", "ApiKeyService.java"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "ENM-003",
+      "query": "refresh token logic",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "RefreshToken|Token|Auth" }
+        ]
+      }
+    },
+    {
+      "id": "ENM-004",
+      "query": "bot detection status",
+      "expected": {
+        "anyOf": [
+          { "files": ["BotDetectionService.java", "BotDetectionStatusIndicator.jsx"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "ENM-005",
+      "query": "neuromotor tracking",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Neuromotor|Trajectory|Movement" }
+        ]
+      }
+    },
+    {
+      "id": "ENM-006",
+      "query": "power law heuristic",
+      "expected": {
+        "anyOf": [
+          { "files": ["PowerLawViolationHeuristic.java", "PowerLawVetoRule.java", "PowerLawPerfectHeuristic.java"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "ENM-007",
+      "query": "keyboard spam detector",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "KeyboardSpam|Keyboard|Typing" }
+        ]
+      }
+    },
+    {
+      "id": "ENM-008",
+      "query": "installer download",
+      "expected": {
+        "anyOf": [
+          { "files": ["InstallerService.java", "InstallerController.java", "DesktopAppInstaller.java"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "ENM-009",
+      "query": "manager authentication",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Manager|Auth|Login" }
+        ]
+      }
+    },
+    {
+      "id": "ENM-010",
+      "query": "exception handling",
+      "expected": {
+        "anyOf": [
+          { "files": ["GlobalExceptionHandler.java", "CustomExceptionHandler.java"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "ENM-011",
+      "query": "absence elasticsearch",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "AbsenceSearch|AbsenceDocument|Elastic" }
+        ]
+      }
+    },
+    {
+      "id": "ENM-012",
+      "query": "equipment search",
+      "expected": {
+        "anyOf": [
+          { "files": ["EquipmentSearchService.java", "EquipmentSearchRepository.java"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "ENM-013",
+      "query": "ghost cursor check",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "GhostCursor|Cursor|Mouse" }
+        ]
+      }
+    },
+    {
+      "id": "ENM-014",
+      "query": "trend chart",
+      "expected": {
+        "anyOf": [
+          { "files": ["BotDetectionTrendChart.jsx", "SimpleLineChart.jsx"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "ENM-015",
+      "query": "select component",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Select|Multiselect" }
+        ]
+      },
+      "minRelevant": 2
+    },
+    {
+      "id": "ENM-016",
+      "query": "table crud",
+      "expected": {
+        "contains": [
+          { "filePattern": "**/BasicTableCRUD.jsx" }
+        ]
+      }
+    },
+    {
+      "id": "ENM-017",
+      "query": "dashboard section",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Dashboard|Section|Header" }
+        ]
+      }
+    },
+    {
+      "id": "ENM-018",
+      "query": "holiday types",
+      "expected": {
+        "anyOf": [
+          { "files": ["HolidayTypeService.java", "HolidayTypeController.java"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "ENM-019",
+      "query": "veto rules",
+      "expected": {
+        "anyOf": [
+          { "files": ["VetoRule.java", "PowerLawVetoRule.java", "NeuromotorVetoRule.java"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "ENM-020",
+      "query": "ring buffer",
+      "expected": {
+        "exact": [
+          { "file": "RingBuffer.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENM-021",
+      "query": "password reset",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Password|Reset|Admin" }
+        ]
+      }
+    },
+    {
+      "id": "ENM-022",
+      "query": "pie chart component",
+      "expected": {
+        "anyOf": [
+          { "files": ["SimplePieChart.jsx", "ActivityPieChart.jsx"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "ENM-023",
+      "query": "central api",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Central|Api|Controller" }
+        ]
+      },
+      "notes": "Could mean CentralApplication or API-related"
+    },
+    {
+      "id": "ENM-024",
+      "query": "movement vector",
+      "expected": {
+        "exact": [
+          { "file": "MovementVector.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENM-025",
+      "query": "acceleration heuristic",
+      "expected": {
+        "anyOf": [
+          { "files": ["AccelerationProfileHeuristic.java", "AccelAlwaysZeroHeuristic.java"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "ENM-026",
+      "query": "bezier fitting",
+      "expected": {
+        "exact": [
+          { "file": "BezierFitHeuristic.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ENM-027",
+      "query": "toast notification",
+      "expected": {
+        "anyOf": [
+          { "files": ["SlothiaToast.jsx", "NeoBrutalistToast.jsx"], "minMatches": 1 }
+        ]
+      }
+    },
+    {
+      "id": "ENM-028",
+      "query": "date range picker",
+      "expected": {
+        "contains": [
+          { "filePattern": "**/ControlledDateRange.jsx" }
+        ]
+      }
+    },
+    {
+      "id": "ENM-029",
+      "query": "image upload handler",
+      "expected": {
+        "contains": [
+          { "filePattern": "**/ImageUpload.jsx" }
+        ]
+      }
+    },
+    {
+      "id": "ENM-030",
+      "query": "trajectory repetition",
+      "expected": {
+        "exact": [
+          { "file": "TrajectoryRepetitionHeuristic.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    }
+  ]
+}

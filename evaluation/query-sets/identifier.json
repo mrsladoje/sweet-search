@@ -1,0 +1,220 @@
+{
+  "schemaVersion": "1.0",
+  "category": "identifier",
+  "expectedRoute": "lexical",
+  "codebaseCommit": "bc23643cd07cbd5bed6a85e0951fad76b9aefeeb",
+  "validatedDate": "2026-01-04",
+  "description": "Exact identifier queries for Java classes, services, controllers, and React components. Expects lexical routing with <10ms latency.",
+  "queries": [
+    {
+      "id": "IDN-001",
+      "query": "EmployeeService",
+      "expected": {
+        "exact": [
+          { "file": "EmployeeService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-002",
+      "query": "SessionController",
+      "expected": {
+        "exact": [
+          { "file": "SessionController.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-003",
+      "query": "AbsenceController",
+      "expected": {
+        "exact": [
+          { "file": "AbsenceController.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-004",
+      "query": "ProjectService",
+      "expected": {
+        "exact": [
+          { "file": "ProjectService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-005",
+      "query": "BotDetectionService",
+      "expected": {
+        "exact": [
+          { "file": "BotDetectionService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-006",
+      "query": "NotificationService",
+      "expected": {
+        "exact": [
+          { "file": "NotificationService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-007",
+      "query": "RealizationService",
+      "expected": {
+        "exact": [
+          { "file": "RealizationService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-008",
+      "query": "TeamController",
+      "expected": {
+        "exact": [
+          { "file": "TeamController.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-009",
+      "query": "EmailService",
+      "expected": {
+        "exact": [
+          { "file": "EmailService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-010",
+      "query": "JwtTokenFilter",
+      "expected": {
+        "exact": [
+          { "file": "JwtTokenFilter.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-011",
+      "query": "ScreenshotService",
+      "expected": {
+        "exact": [
+          { "file": "ScreenshotService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-012",
+      "query": "ProcessController",
+      "expected": {
+        "exact": [
+          { "file": "ProcessController.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-013",
+      "query": "DetectionHeuristic",
+      "expected": {
+        "exact": [
+          { "file": "DetectionHeuristic.java", "type": "interface", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-014",
+      "query": "ConfigHandler",
+      "expected": {
+        "exact": [
+          { "file": "ConfigHandler.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-015",
+      "query": "LoginService",
+      "expected": {
+        "exact": [
+          { "file": "LoginService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-016",
+      "query": "SettingsController",
+      "expected": {
+        "exact": [
+          { "file": "SettingsController.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-017",
+      "query": "ClientController",
+      "expected": {
+        "exact": [
+          { "file": "ClientController.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-018",
+      "query": "EquipmentService",
+      "expected": {
+        "exact": [
+          { "file": "EquipmentService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-019",
+      "query": "HolidayService",
+      "expected": {
+        "exact": [
+          { "file": "HolidayService.java", "type": "class", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-020",
+      "query": "EmployeeRepository",
+      "expected": {
+        "exact": [
+          { "file": "EmployeeRepository.java", "type": "interface", "relevanceGrade": 3 }
+        ]
+      }
+    },
+    {
+      "id": "IDN-050",
+      "query": "BasicTable",
+      "notes": "React component for basic table display (replaced non-existent EmployeeTable)",
+      "expected": {
+        "contains": [
+          { "filePattern": "**/BasicTable.jsx", "typeIn": ["component", "function"] }
+        ]
+      }
+    },
+    {
+      "id": "IDN-051",
+      "query": "useEmployeesQuery",
+      "notes": "React query hook for fetching employees (replaced non-existent useAuth)",
+      "expected": {
+        "contains": [
+          { "filePattern": "**/useEmployeesQuery.jsx", "namePattern": "useEmployeesQuery" }
+        ]
+      }
+    },
+    {
+      "id": "IDN-052",
+      "query": "PasswordResetForm",
+      "notes": "React password reset form component (replaced non-existent LoginForm)",
+      "expected": {
+        "contains": [
+          { "filePattern": "**/PasswordResetForm.jsx" }
+        ]
+      }
+    }
+  ]
+}

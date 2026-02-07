@@ -1,0 +1,14 @@
+{
+  "language": "es",
+  "count": 70,
+  "percentage": 7,
+  "script": "Latin",
+  "prompt": "Generate 70 code search queries in Spanish (Latin American).\n\nGuidelines:\n- Latin American Spanish preferred\n- Accents required: qué, cómo, dónde, cuál\n- Question patterns: cómo, qué, por qué, dónde\n\nCategory Examples:\n\nLEXICAL (30%) - Same as English\n- AuthService, getUserById, config.yml\n\nSEMANTIC (30%) - Spanish questions\n- cómo funciona la autenticación (how does authentication work)\n- por qué se necesita el caché (why is caching needed)\n- flujo de inicio de sesión (login flow)\n- estrategia de manejo de errores (error handling strategy)\n\nSTRUCTURAL (20%) - Spanish + Identifier\n- qué llama a AuthService (what calls AuthService)\n- dependencias de AuthService (dependencies of AuthService)\n- clases que implementan Repository (classes implementing Repository)\n\nHYBRID (20%) - Spanish Concept + Identifier\n- AuthService flujo de inicio de sesión (AuthService login flow)\n- cómo getUserById maneja errores (how getUserById handles errors)\n\nOutput: JSON array [{\"query\": \"...\", \"label\": \"...\", \"subtype\": \"...\"}]",
+  "examples": [
+    {"query": "cómo funciona la autenticación", "label": "SEMANTIC", "subtype": "question"},
+    {"query": "flujo de inicio de sesión", "label": "SEMANTIC", "subtype": "process"},
+    {"query": "qué llama a AuthService", "label": "STRUCTURAL", "subtype": "callers"},
+    {"query": "dependencias de AuthService", "label": "STRUCTURAL", "subtype": "callees"},
+    {"query": "AuthService flujo de inicio de sesión", "label": "HYBRID", "subtype": "identifier_with_concept"}
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "language": "en",
+  "count": 450,
+  "percentage": 45,
+  "script": "Latin",
+  "prompt": "Generate 450 diverse code search queries in English.\n\nSTRICT Category Definitions:\n\nLEXICAL (30%) - Exact identifier search\n- PascalCase: AuthService, UserRepository, HttpClient\n- camelCase: getUserById, validateToken, handleRequest\n- snake_case: max_retry_count, api_base_url, db_pool_size\n- SCREAMING_SNAKE: MAX_CONNECTIONS, DEFAULT_TIMEOUT, API_VERSION\n- File paths: AuthService.java, utils/helpers.ts, config.yml\n- Glob patterns: *Controller.java, get*, *.proto\n- Package names: com.example.service, @angular/core\n\nSEMANTIC (30%) - Conceptual understanding\n- Questions: how does authentication work, why is caching needed\n- Processes: user login flow, data validation process\n- Architecture: system design for notifications, error handling strategy\n\nSTRUCTURAL (20%) - Code relationships\n- Callers: what calls AuthService, callers of validateToken\n- Callees: what does AuthService call, dependencies of UserRepository\n- Implementations: classes implementing Repository, who extends BaseService\n- Impact: impact of changing AuthService, what depends on UserModel\n\nHYBRID (20%) - Mixed identifier + concept\n- AuthService login flow, how getUserById handles errors\n- UserRepository caching strategy, validation in AuthController\n\nOutput format: JSON array [{\"query\": \"...\", \"label\": \"LEXICAL|SEMANTIC|STRUCTURAL|HYBRID\", \"subtype\": \"...\", \"difficulty\": \"easy|medium|hard\"}]",
+  "examples": [
+    {"query": "AuthService", "label": "LEXICAL", "subtype": "class_name", "difficulty": "easy"},
+    {"query": "getUserById", "label": "LEXICAL", "subtype": "method_name", "difficulty": "easy"},
+    {"query": "src/auth/*.ts", "label": "LEXICAL", "subtype": "glob", "difficulty": "medium"},
+    {"query": "how does authentication work", "label": "SEMANTIC", "subtype": "question", "difficulty": "easy"},
+    {"query": "password reset flow", "label": "SEMANTIC", "subtype": "process", "difficulty": "easy"},
+    {"query": "error handling strategy", "label": "SEMANTIC", "subtype": "architecture", "difficulty": "medium"},
+    {"query": "what calls AuthService", "label": "STRUCTURAL", "subtype": "callers", "difficulty": "easy"},
+    {"query": "dependencies of UserRepository", "label": "STRUCTURAL", "subtype": "callees", "difficulty": "easy"},
+    {"query": "classes implementing Repository", "label": "STRUCTURAL", "subtype": "implementations", "difficulty": "medium"},
+    {"query": "AuthService login flow", "label": "HYBRID", "subtype": "identifier_with_concept", "difficulty": "medium"},
+    {"query": "how getUserById handles errors", "label": "HYBRID", "subtype": "identifier_with_concept", "difficulty": "hard"}
+  ]
+}

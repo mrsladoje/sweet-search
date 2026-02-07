@@ -1,0 +1,207 @@
+{
+  "schemaVersion": "1.0",
+  "category": "conceptual",
+  "expectedRoute": "semantic",
+  "codebaseCommit": "bc23643cd07cbd5bed6a85e0951fad76b9aefeeb",
+  "validatedDate": "2026-01-04",
+  "description": "Conceptual queries about how features work, requiring semantic understanding. Expects semantic routing with ~275ms uncached, <10ms cached latency.",
+  "queries": [
+    {
+      "id": "CON-001",
+      "query": "how does authentication work",
+      "expected": {
+        "exact": [
+          { "file": "AuthenticationService.java", "relevanceGrade": 3 },
+          { "file": "JwtTokenFilter.java", "relevanceGrade": 3 },
+          { "file": "WebSecurityConfig.java", "relevanceGrade": 2 },
+          { "file": "LoginService.java", "relevanceGrade": 2 }
+        ],
+        "contains": [
+          { "mode": "any", "namePattern": "Auth|Jwt|Login|Security" }
+        ]
+      },
+      "notes": "Should find JWT-based authentication flow"
+    },
+    {
+      "id": "CON-002",
+      "query": "password reset flow",
+      "expected": {
+        "contains": [
+          { "mode": "any", "filePattern": "**/PasswordReset*.java" }
+        ]
+      }
+    },
+    {
+      "id": "CON-003",
+      "query": "how are screenshots captured",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Screenshot|Capture" }
+        ]
+      }
+    },
+    {
+      "id": "CON-004",
+      "query": "bot detection heuristics",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Heuristic|BotDetection" }
+        ]
+      }
+    },
+    {
+      "id": "CON-005",
+      "query": "employee absence calculation",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Absence|Balance|Leave" }
+        ]
+      }
+    },
+    {
+      "id": "CON-006",
+      "query": "process monitoring system",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Process|Monitor" }
+        ]
+      }
+    },
+    {
+      "id": "CON-007",
+      "query": "email notification sending",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Email|Notification|Send" }
+        ]
+      }
+    },
+    {
+      "id": "CON-008",
+      "query": "time tracking implementation",
+      "expected": {
+        "exact": [
+          { "file": "SessionService.java", "relevanceGrade": 3 },
+          { "file": "RealizationService.java", "relevanceGrade": 3 },
+          { "file": "ProcessService.java", "relevanceGrade": 2 }
+        ],
+        "contains": [
+          { "mode": "any", "namePattern": "Session|Time|Track|Realization" }
+        ]
+      }
+    },
+    {
+      "id": "CON-009",
+      "query": "JWT token refresh mechanism",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "RefreshToken|JwtToken" }
+        ]
+      }
+    },
+    {
+      "id": "CON-010",
+      "query": "keyboard and mouse event capture",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Listener|Event|Input|BioLogger" }
+        ]
+      }
+    },
+    {
+      "id": "CON-011",
+      "query": "rate limiting implementation",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "RateLimit|Bucket" }
+        ]
+      }
+    },
+    {
+      "id": "CON-012",
+      "query": "file upload handling",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Upload|Document|Attachment" }
+        ]
+      }
+    },
+    {
+      "id": "CON-013",
+      "query": "project team assignment",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "ProjectTeam|TeamService" }
+        ]
+      }
+    },
+    {
+      "id": "CON-014",
+      "query": "neuromotor pattern analysis",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Neuromotor|Trajectory" }
+        ]
+      }
+    },
+    {
+      "id": "CON-015",
+      "query": "employee evaluation scoring",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Evaluation|Mark|Score" }
+        ]
+      }
+    },
+    {
+      "id": "CON-016",
+      "query": "gRPC streaming events",
+      "expected": {
+        "exact": [
+          { "file": "EventGrpcClient.java", "relevanceGrade": 3 },
+          { "file": "GrpcAuthInterceptor.java", "relevanceGrade": 2 },
+          { "file": "ProcessGrpcClient.java", "relevanceGrade": 2 }
+        ],
+        "contains": [
+          { "mode": "any", "namePattern": "grpc|Grpc|Stream|Event" }
+        ]
+      }
+    },
+    {
+      "id": "CON-017",
+      "query": "encrypted configuration storage",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Config|Encrypt|Jasypt" }
+        ]
+      }
+    },
+    {
+      "id": "CON-018",
+      "query": "CSRF protection mechanism",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Csrf|Security" }
+        ]
+      }
+    },
+    {
+      "id": "CON-019",
+      "query": "holiday calendar management",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Holiday|Calendar" }
+        ]
+      }
+    },
+    {
+      "id": "CON-020",
+      "query": "network status detection",
+      "expected": {
+        "contains": [
+          { "mode": "any", "namePattern": "Network|Wifi|Ip|Connection" }
+        ]
+      }
+    }
+  ]
+}
