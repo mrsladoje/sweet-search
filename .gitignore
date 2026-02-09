@@ -60,6 +60,7 @@ failure-analysis.md
 .claude/commands/monitoring/
 .claude/commands/optimization/
 .claude/commands/sparc/
+.claude/commands/flow-coach/
 .claude/guidance/
 .claude/helpers/README.md
 .claude/helpers/adr-compliance.sh
