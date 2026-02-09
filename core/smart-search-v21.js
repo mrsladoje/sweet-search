@@ -41,7 +41,7 @@ import {
 } from './embedding-service.js';
 
 // Phase 4: Translation Fallback
-import { TranslationFallback, queryNeedsTranslation } from './translation/index.js';
+import { TranslationFallback, queryNeedsTranslation } from '../translation/index.js';
 
 // Phase 1 Fixes: MMR Diversification (replaces flood control)
 import { applyMMR, shouldApplyMMR, getLambdaForIntent, MMR_CONFIG } from './mmr.js';

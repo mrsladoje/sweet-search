@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 
 // Import the config to get cleaning rules
-import { TRANSLATION_CONFIG } from '../../config.js';
+import { TRANSLATION_CONFIG } from '../../core/config.js';
 
 // Test helper that mirrors the cleaning logic
 function cleanOutput(text, original) {

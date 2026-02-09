@@ -48,7 +48,7 @@ async function loadWasm() {
 }
 
 async function loadJsRouter() {
-  const routerPath = join(__dirname, '..', 'query-router-catboost.js');
+  const routerPath = join(__dirname, '..', 'core', 'query-router-catboost.js');
   return await import(routerPath);
 }
 

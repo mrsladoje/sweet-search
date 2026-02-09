@@ -22,7 +22,7 @@ import { existsSync } from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
 
-import { DB_PATHS, EMBEDDING_CONFIG, EMBEDDING_PROVIDERS } from './config.js';
+import { DB_PATHS, EMBEDDING_CONFIG, EMBEDDING_PROVIDERS } from '../core/config.js';
 
 // =============================================================================
 // CONFIGURATION

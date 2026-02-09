@@ -27,7 +27,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 RESULTS_DIR="$PROJECT_ROOT/.claude/benchmarks/results"
-INDEXER="$SCRIPT_DIR/index-codebase-v21.js"
+INDEXER="$SCRIPT_DIR/../core/index-codebase-v21.js"
 HARNESS="$SCRIPT_DIR/benchmark-harness.js"
 
 # Colors

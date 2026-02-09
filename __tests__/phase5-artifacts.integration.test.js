@@ -50,12 +50,12 @@ describe('Phase 5: Artifact Builder Contract', () => {
 
   beforeAll(async () => {
     // Import modules
-    const artifactBuilder = await import('../artifact-builder.js');
+    const artifactBuilder = await import('../core/artifact-builder.js');
     buildFromCodebaseDb = artifactBuilder.buildFromCodebaseDb;
     getArtifactStats = artifactBuilder.getArtifactStats;
     verifyArtifacts = artifactBuilder.verifyArtifacts;
 
-    const binaryHnswModule = await import('../binary-hnsw-index.js');
+    const binaryHnswModule = await import('../core/binary-hnsw-index.js');
     BinaryHNSWIndex = binaryHnswModule.BinaryHNSWIndex;
 
     // Create test directory
@@ -636,7 +636,7 @@ describe('Phase 5: Edge Cases', () => {
   const TEST_HNSW_INDEX = path.join(TEST_DIR_EDGE, 'test-binary-hnsw.idx');
 
   beforeAll(async () => {
-    const artifactBuilder = await import('../artifact-builder.js');
+    const artifactBuilder = await import('../core/artifact-builder.js');
     buildFromCodebaseDb = artifactBuilder.buildFromCodebaseDb;
 
     if (!existsSync(TEST_DIR_EDGE)) {

@@ -20,8 +20,8 @@
  * - 5-run with disagreement flagging: ~98% accuracy
  */
 
-import { CEREBRAS_CONFIG, isCerebrasAvailable } from '../../config.js';
-import { generateWithRetry } from '../../llm-provider.js';
+import { CEREBRAS_CONFIG, isCerebrasAvailable } from '../../core/config.js';
+import { generateWithRetry } from '../../core/llm-provider.js';
 
 // =============================================================================
 // CONFIGURATION

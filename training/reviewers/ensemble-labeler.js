@@ -20,7 +20,7 @@
  * - Multi-LLM Ensemble + MRRV: ~97-98%
  */
 
-import { CEREBRAS_CONFIG, isCerebrasAvailable } from '../../config.js';
+import { CEREBRAS_CONFIG, isCerebrasAvailable } from '../../core/config.js';
 
 // =============================================================================
 // CONFIGURATION

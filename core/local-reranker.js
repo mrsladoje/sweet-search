@@ -22,7 +22,7 @@ import { fileURLToPath } from 'url';
 import { withOnnxMutex } from './onnx-mutex.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MODEL_CACHE_DIR = join(__dirname, 'models', 'gte-reranker-int8');
+const MODEL_CACHE_DIR = join(__dirname, '..', 'models', 'gte-reranker-int8');
 
 // EXACT model as specified in LOCAL_RERANKER_PLAN.md
 const MODEL_ID = 'Alibaba-NLP/gte-reranker-modernbert-base';

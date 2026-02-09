@@ -19,7 +19,7 @@
  * - BEIR Benchmark: https://github.com/beir-cellar/beir
  */
 
-import { calculateStats } from '../../benchmark-harness.js';
+import { calculateStats } from '../../scripts/benchmark-harness.js';
 
 /**
  * Extract relevance grade from a result object

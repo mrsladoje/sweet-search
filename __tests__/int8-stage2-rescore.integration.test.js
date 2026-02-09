@@ -28,14 +28,14 @@ describe('Int8 Stage-2 Rescoring', () => {
 
   beforeAll(async () => {
     // Import modules
-    const binaryHnswModule = await import('../binary-hnsw-index.js');
+    const binaryHnswModule = await import('../core/binary-hnsw-index.js');
     BinaryHNSWIndex = binaryHnswModule.BinaryHNSWIndex;
 
-    const artifactBuilder = await import('../artifact-builder.js');
+    const artifactBuilder = await import('../core/artifact-builder.js');
     quantizeToInt8 = artifactBuilder.quantizeToInt8;
     quantizeToBinary = artifactBuilder.quantizeToBinary;
 
-    const embeddingService = await import('../embedding-service.js');
+    const embeddingService = await import('../core/embedding-service.js');
     int8DotProduct = embeddingService.int8DotProduct;
 
     // Create test directory

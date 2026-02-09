@@ -19,7 +19,7 @@ import {
   getTranslationProvider,
   isQuietMode,
   LOGGING,
-} from '../config.js';
+} from '../core/config.js';
 import { isLikelyEnglish as isLikelyEnglishDetector } from './language-detector.js';
 import { getTranslationCache } from './translation-cache.js';
 

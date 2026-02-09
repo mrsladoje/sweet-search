@@ -14,7 +14,7 @@ import {
   getEntitiesNeedingSummary,
   storeSummariesBatch,
   getSummaryStats,
-} from '../summary-manager.js';
+} from '../core/summary-manager.js';
 
 // Hierarchy levels (same as in hcgs-generator.js, duplicated here to avoid
 // circular import issues with vitest transforms)
@@ -543,7 +543,7 @@ describe('HIERARCHY_LEVELS export', () => {
 describe('skipEmbeddings default behavior', () => {
   it('generateAllSummaries should default skipEmbeddings to true', async () => {
     // Import the module to verify the function exists with expected signature
-    const { generateAllSummaries } = await import('../hcgs-generator.js');
+    const { generateAllSummaries } = await import('../core/hcgs-generator.js');
 
     // The function exists and has the expected signature
     expect(typeof generateAllSummaries).toBe('function');
@@ -554,13 +554,13 @@ describe('skipEmbeddings default behavior', () => {
   });
 
   it('generateSummariesForEntities should default skipEmbeddings to true', async () => {
-    const { generateSummariesForEntities } = await import('../hcgs-generator.js');
+    const { generateSummariesForEntities } = await import('../core/hcgs-generator.js');
     expect(typeof generateSummariesForEntities).toBe('function');
     // Verified via code review: line 397-398 shows skipEmbeddings = true default
   });
 
   it('generateSummariesForFiles should default skipEmbeddings to true', async () => {
-    const { generateSummariesForFiles } = await import('../hcgs-generator.js');
+    const { generateSummariesForFiles } = await import('../core/hcgs-generator.js');
     expect(typeof generateSummariesForFiles).toBe('function');
     // Verified via code review: line 461 shows skipEmbeddings = true default
   });

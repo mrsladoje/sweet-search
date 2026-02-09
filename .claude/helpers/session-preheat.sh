@@ -33,7 +33,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SEARCH_DIR="${SWEET_SEARCH_DIR:-$PROJECT_ROOT}"
-if [ ! -f "$SEARCH_DIR/smart-search-v21.js" ] && [ -f "$PROJECT_ROOT/.claude/helpers/search-100x/smart-search-v21.js" ]; then
+if [ ! -f "$SEARCH_DIR/core/smart-search-v21.js" ] && [ -f "$PROJECT_ROOT/.claude/helpers/search-100x/smart-search-v21.js" ]; then
     SEARCH_DIR="$PROJECT_ROOT/.claude/helpers/search-100x"
 fi
 LOG_FILE="/tmp/search-100x-preheat.log"
@@ -90,7 +90,7 @@ touch "$LOCK_FILE"
     # 1. Start warm server if not running
     if ! curl -s "http://localhost:9876/health" >/dev/null 2>&1; then
         echo "[$(date '+%H:%M:%S')] Starting warm server..." >> "$LOG_FILE"
-        node "$SEARCH_DIR/smart-search-v21.js" --serve >/dev/null 2>&1 &
+        node "$SEARCH_DIR/core/smart-search-v21.js" --serve >/dev/null 2>&1 &
         SERVER_PID=$!
 
         # Wait for server to be ready (max 5 seconds)
@@ -197,10 +197,10 @@ async function warmFlashRank() {
 async function warmHNSW() {
     const t = timer();
     try {
-        const { DB_PATHS } = await importFromSearch('config.js');
+        const { DB_PATHS } = await importFromSearch('core/config.js');
         const metaPath = DB_PATHS.hnswIndex.replace('.idx', '.meta.json');
         if (!existsSync(metaPath)) return { c: 'hnsw', ok: true, ms: t(), skip: 'not indexed' };
-        const { HNSWIndex } = await importFromSearch('hnsw-index.js');
+        const { HNSWIndex } = await importFromSearch('core/hnsw-index.js');
         const hnsw = new HNSWIndex({ indexPath: DB_PATHS.hnswIndex });
         await hnsw.load();
         return { c: 'hnsw', ok: true, ms: t(), vectors: hnsw.getStats().totalVectors };
@@ -211,10 +211,10 @@ async function warmHNSW() {
 async function warmBinaryHNSW() {
     const t = timer();
     try {
-        const { DB_PATHS } = await importFromSearch('config.js');
+        const { DB_PATHS } = await importFromSearch('core/config.js');
         const metaPath = DB_PATHS.binaryHnswIndex.replace('.idx', '.meta.json');
         if (!existsSync(metaPath)) return { c: 'binary-hnsw', ok: true, ms: t(), skip: 'not indexed' };
-        const { BinaryHNSWIndex } = await importFromSearch('binary-hnsw-index.js');
+        const { BinaryHNSWIndex } = await importFromSearch('core/binary-hnsw-index.js');
         const bh = new BinaryHNSWIndex({ indexPath: DB_PATHS.binaryHnswIndex });
         await bh.load();
         return { c: 'binary-hnsw', ok: true, ms: t(), vectors: bh.getStats().totalVectors };
@@ -225,7 +225,7 @@ async function warmBinaryHNSW() {
 async function warmSQLiteFTS() {
     const t = timer();
     try {
-        const { DB_PATHS } = await importFromSearch('config.js');
+        const { DB_PATHS } = await importFromSearch('core/config.js');
         if (!existsSync(DB_PATHS.codeGraph)) return { c: 'sqlite-fts', ok: true, ms: t(), skip: 'not indexed' };
         const Database = (await import('better-sqlite3')).default;
         const db = new Database(DB_PATHS.codeGraph, { readonly: true });
@@ -240,10 +240,10 @@ async function warmSQLiteFTS() {
 async function warmColBERT() {
     const t = timer();
     try {
-        const { DB_PATHS } = await importFromSearch('config.js');
+        const { DB_PATHS } = await importFromSearch('core/config.js');
         const colbertPath = DB_PATHS.colbert || path.join(projectRoot, '.agentdb', 'colbert-tokens.db');
         if (!existsSync(colbertPath)) return { c: 'colbert', ok: true, ms: t(), skip: 'not indexed' };
-        const { ColBERTIndex } = await importFromSearch('colbert-index.js');
+        const { ColBERTIndex } = await importFromSearch('core/colbert-index.js');
         const cb = new ColBERTIndex({ indexPath: colbertPath });
         await cb.init();
         return { c: 'colbert', ok: true, ms: t(), docs: cb.getStats().documents };
@@ -254,7 +254,7 @@ async function warmColBERT() {
 async function warmVoyageConnection() {
     const t = timer();
     try {
-        const { EMBEDDING_PROVIDERS } = await importFromSearch('config.js');
+        const { EMBEDDING_PROVIDERS } = await importFromSearch('core/config.js');
         if (!EMBEDDING_PROVIDERS.voyage?.enabled || !EMBEDDING_PROVIDERS.voyage?.apiKey) {
             return { c: 'voyage-conn', ok: true, ms: t(), skip: 'not configured' };
         }
@@ -280,7 +280,7 @@ async function warmVoyageConnection() {
 async function warmHCGS() {
     const t = timer();
     try {
-        const { DB_PATHS } = await importFromSearch('config.js');
+        const { DB_PATHS } = await importFromSearch('core/config.js');
         if (!existsSync(DB_PATHS.codeGraph)) return { c: 'hcgs', ok: true, ms: t(), skip: 'not indexed' };
         const Database = (await import('better-sqlite3')).default;
         const db = new Database(DB_PATHS.codeGraph, { readonly: true });
@@ -296,7 +296,7 @@ async function warmHCGS() {
 async function warmQueryRouter() {
     const t = timer();
     try {
-        const { routeQuery } = await importFromSearch('query-router.js');
+        const { routeQuery } = await importFromSearch('core/query-router.js');
         // Trigger WASM load + JIT warmup with a simple query
         routeQuery('AuthService');
         // Second call to ensure JIT is fully warm
@@ -312,7 +312,7 @@ async function warmLocalReranker() {
     const t = timer();
     try {
         // Check if local reranker is configured
-        const { shouldUseLocalReranker } = await importFromSearch('config.js');
+        const { shouldUseLocalReranker } = await importFromSearch('core/config.js');
         if (!shouldUseLocalReranker()) {
             return { c: 'local-reranker', ok: true, ms: t(), skip: 'not configured (set USE_LOCAL_RERANKER=true)' };
         }
@@ -320,7 +320,7 @@ async function warmLocalReranker() {
         // Import and initialize the local reranker
         // Model auto-downloads from HuggingFace on first use (~15s)
         // Subsequent loads from cache are fast (~500ms)
-        const { getGlobalLocalReranker } = await importFromSearch('local-reranker.js');
+        const { getGlobalLocalReranker } = await importFromSearch('core/local-reranker.js');
         const reranker = getGlobalLocalReranker();
 
         // Initialize model (loads ONNX + tokenizer)

@@ -20,7 +20,7 @@ describe('Translation Config', () => {
   });
 
   it('loads default config with no env vars', async () => {
-    const { TRANSLATION_CONFIG, TRANSLATION_PROVIDERS, TRANSLATION_LOCAL_MODELS } = await import('../../config.js');
+    const { TRANSLATION_CONFIG, TRANSLATION_PROVIDERS, TRANSLATION_LOCAL_MODELS } = await import('../../core/config.js');
 
     expect(TRANSLATION_CONFIG).toBeDefined();
     expect(TRANSLATION_PROVIDERS).toBeDefined();
@@ -30,21 +30,21 @@ describe('Translation Config', () => {
   });
 
   it('validates provider exists', async () => {
-    const { getTranslationProvider } = await import('../../config.js');
+    const { getTranslationProvider } = await import('../../core/config.js');
 
     expect(getTranslationProvider('invalid')).toBeNull();
     expect(getTranslationProvider('cerebras')).toBeDefined();
   });
 
   it('validates local model exists', async () => {
-    const { getTranslationLocalModel } = await import('../../config.js');
+    const { getTranslationLocalModel } = await import('../../core/config.js');
 
     expect(getTranslationLocalModel('invalid')).toBeNull();
     expect(getTranslationLocalModel('nllb-200')).toBeDefined();
   });
 
   it('has correct provider structure', async () => {
-    const { TRANSLATION_PROVIDERS } = await import('../../config.js');
+    const { TRANSLATION_PROVIDERS } = await import('../../core/config.js');
 
     // Check Cerebras provider
     expect(TRANSLATION_PROVIDERS.cerebras).toBeDefined();
@@ -57,7 +57,7 @@ describe('Translation Config', () => {
   });
 
   it('has correct local model structure', async () => {
-    const { TRANSLATION_LOCAL_MODELS } = await import('../../config.js');
+    const { TRANSLATION_LOCAL_MODELS } = await import('../../core/config.js');
 
     expect(TRANSLATION_LOCAL_MODELS['nllb-200']).toBeDefined();
     expect(TRANSLATION_LOCAL_MODELS['nllb-200'].model).toBe('Xenova/nllb-200-distilled-600M');
@@ -65,7 +65,7 @@ describe('Translation Config', () => {
   });
 
   it('isTranslationAvailable returns correct value', async () => {
-    const { isTranslationAvailable } = await import('../../config.js');
+    const { isTranslationAvailable } = await import('../../core/config.js');
 
     // Should be available because local models are always available
     expect(isTranslationAvailable()).toBe(true);

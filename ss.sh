@@ -16,7 +16,7 @@ L2="▄▄█ ▀▄█▄▀ ██▄ ██▄  █   ▄▄█ ██▄ █
 
 # Auto-start server with fast polling (100ms intervals, max 5s)
 if [[ ! -S "$SOCKET" ]]; then
-    nohup node "$(dirname "$0")/smart-search-v21.js" --serve &>/dev/null &
+    nohup node "$(dirname "$0")/core/smart-search-v21.js" --serve &>/dev/null &
     for _ in {1..50}; do
         [[ -S "$SOCKET" ]] && break
         sleep 0.1

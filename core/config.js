@@ -42,7 +42,7 @@ try {
   const { existsSync, readFileSync } = await import('fs');
 
   // Priority 1: Local .env (in search-100x directory)
-  const localEnvPath = path.join(__dirname, '.env');
+  const localEnvPath = path.join(__dirname, '..', '.env');
   // Priority 2: Project root .env (in sloth directory)
   const projectEnvPath = path.join(PROJECT_ROOT, '.env');
 

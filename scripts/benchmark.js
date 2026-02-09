@@ -13,12 +13,12 @@ import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import { performance } from 'perf_hooks';
 
-import { DB_PATHS, PERFORMANCE_TARGETS, EMBEDDING_CONFIG } from './config.js';
-import { QueryRouter } from './query-router.js';
-import { GraphSearch } from './graph-search.js';
-import { HNSWIndex } from './hnsw-index.js';
-import { Reranker } from './flashrank.js';
-import SmartSearch from './smart-search-v21.js';
+import { DB_PATHS, PERFORMANCE_TARGETS, EMBEDDING_CONFIG } from '../core/config.js';
+import { QueryRouter } from '../core/query-router.js';
+import { GraphSearch } from '../core/graph-search.js';
+import { HNSWIndex } from '../core/hnsw-index.js';
+import { Reranker } from '../core/flashrank.js';
+import SmartSearch from '../core/smart-search-v21.js';
 
 // =============================================================================
 // BENCHMARK UTILITIES
@@ -564,7 +564,7 @@ async function benchmarkFullIndex(iterations = 3) {
   const { fileURLToPath } = await import('node:url');
 
   const __dirname = dirname(fileURLToPath(import.meta.url));
-  const indexerPath = __dirname + '/index-codebase-v21.js';
+  const indexerPath = __dirname + '/../core/index-codebase-v21.js';
 
   const latencies = [];
 
@@ -614,7 +614,7 @@ async function benchmarkIncrementalIndex(iterations = 3) {
   const { fileURLToPath } = await import('node:url');
 
   const __dirname = dirname(fileURLToPath(import.meta.url));
-  const indexerPath = __dirname + '/index-codebase-v21.js';
+  const indexerPath = __dirname + '/../core/index-codebase-v21.js';
 
   const latencies = [];
 

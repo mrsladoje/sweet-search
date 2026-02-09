@@ -19,7 +19,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Path to HCGS generator
-const HCGS_PATH = join(__dirname, '..', 'hcgs-generator.js');
+const HCGS_PATH = join(__dirname, '..', 'core', 'hcgs-generator.js');
 const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 
 // =============================================================================
@@ -122,7 +122,7 @@ describe('generateAllSummaries defaults', () => {
 
   beforeEach(async () => {
     // Dynamically import to test defaults
-    hcgsModule = await import('../hcgs-generator.js');
+    hcgsModule = await import('../core/hcgs-generator.js');
   });
 
   it('should export generateAllSummaries function', () => {
@@ -153,7 +153,7 @@ describe('Token limit defaults', () => {
   let hcgsModule;
 
   beforeEach(async () => {
-    hcgsModule = await import('../hcgs-generator.js');
+    hcgsModule = await import('../core/hcgs-generator.js');
   });
 
   it('should return reasonable limits for each entity type', () => {
@@ -192,7 +192,7 @@ describe('buildSummaryPrompt defaults', () => {
   let hcgsModule;
 
   beforeEach(async () => {
-    hcgsModule = await import('../hcgs-generator.js');
+    hcgsModule = await import('../core/hcgs-generator.js');
   });
 
   it('should build prompt for entity without children', () => {
@@ -286,7 +286,7 @@ describe('HIERARCHY_LEVELS constants', () => {
   let hcgsModule;
 
   beforeEach(async () => {
-    hcgsModule = await import('../hcgs-generator.js');
+    hcgsModule = await import('../core/hcgs-generator.js');
   });
 
   it('should define level 2 for leaf entities', () => {
