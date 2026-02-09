@@ -92,6 +92,7 @@ failure-analysis.md
 .claude/helpers/v3.sh
 .claude/helpers/validate-v3-config.sh
 .claude/helpers/worker-manager.sh
+.claude/helpers/hook-handler.cjs
 .claude/mcp.json
 .claude/memory.db
 .claude/settings.json
@@ -116,3 +117,4 @@ CLAUDE.md.backup
 .agents/skills/
 .agents/config.toml
 .agents/README.md
+
