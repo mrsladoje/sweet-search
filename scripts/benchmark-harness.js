@@ -52,8 +52,8 @@ const CONFIG = {
   failureThreshold: 0.30,       // 30% regression triggers failure
 
   // Paths
-  indexerPath: path.join(__dirname, 'index-codebase-v21.js'),
-  smartSearchPath: path.join(__dirname, 'ss'),
+  indexerPath: path.join(__dirname, '..', 'core', 'index-codebase-v21.js'),
+  smartSearchPath: path.join(__dirname, '..', 'ss'),
   daemonPath: path.join(PROJECT_ROOT, '.claude/hooks/index-maintainer.mjs'),
   agentdbDir: path.join(PROJECT_ROOT, '.agentdb'),
 };

@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { LocalReranker, getGlobalLocalReranker } from '../local-reranker.js';
+import { LocalReranker, getGlobalLocalReranker } from '../core/local-reranker.js';
 import { existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -278,14 +278,14 @@ describe('LocalReranker', () => {
 
 describe('config integration', () => {
   it('should have LOCAL_RERANKER_CONFIG exported from config.js', async () => {
-    const config = await import('../config.js');
+    const config = await import('../core/config.js');
     expect(config.LOCAL_RERANKER_CONFIG).toBeDefined();
     expect(config.LOCAL_RERANKER_CONFIG.model).toBeDefined();
     expect(config.LOCAL_RERANKER_CONFIG.model.name).toBe('gte-reranker-modernbert-base-int8');
   });
 
   it('should have shouldUseLocalReranker function', async () => {
-    const config = await import('../config.js');
+    const config = await import('../core/config.js');
     expect(typeof config.shouldUseLocalReranker).toBe('function');
     const result = config.shouldUseLocalReranker();
     expect(typeof result).toBe('boolean');
@@ -294,7 +294,7 @@ describe('config integration', () => {
 
 describe('flashrank integration', () => {
   it('should have localReranker in Reranker class', async () => {
-    const { Reranker } = await import('../flashrank.js');
+    const { Reranker } = await import('../core/flashrank.js');
     const reranker = new Reranker();
 
     expect(reranker.localReranker).toBeDefined();
@@ -302,7 +302,7 @@ describe('flashrank integration', () => {
   });
 
   it('should include localReranker in getStatus', async () => {
-    const { Reranker } = await import('../flashrank.js');
+    const { Reranker } = await import('../core/flashrank.js');
     const reranker = new Reranker();
     const status = reranker.getStatus();
 

@@ -28,7 +28,7 @@ import {
   getTranslationLocalModel,
   isQuietMode,
   LOGGING,
-} from '../config.js';
+} from '../core/config.js';
 import { detectLanguage, toNLLBCode, detectLatinLanguage } from './language-detector.js';
 
 /**

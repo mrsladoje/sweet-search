@@ -15,7 +15,7 @@ import path from 'path';
 
 // Import SmartSearch class to test instance methods
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const smartSearchPath = path.join(__dirname, '..', 'smart-search-v21.js');
+const smartSearchPath = path.join(__dirname, '..', 'core', 'smart-search-v21.js');
 
 // Create a minimal SmartSearch instance for testing
 // We'll mock the constructor dependencies to avoid needing real DB

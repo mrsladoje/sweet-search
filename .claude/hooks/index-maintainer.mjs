@@ -161,7 +161,7 @@ export const CONFIG = {
 };
 
 // Indexer paths
-const INDEXER_PATH = join(PROJECT_ROOT, 'index-codebase-v21.js');
+const INDEXER_PATH = join(PROJECT_ROOT, 'core', 'index-codebase-v21.js');
 
 // === Dynamic Module Loaders (A2 FIX: Improved resilience with multiple strategies) ===
 
@@ -945,7 +945,7 @@ async function performMerkleCheck() {
 
   try {
     // Dynamically import incremental tracker
-    const { getChangedFiles, updateState } = await import('../../incremental-tracker.js');
+    const { getChangedFiles, updateState } = await import('../../core/incremental-tracker.js');
 
     // H3 FIX: Use dynamic loader with fallback paths
     const fg = await loadFastGlob();
@@ -1071,7 +1071,7 @@ async function markFilesAsStale(files) {
   console.error(`[index-maintainer] Marking ${files.length} files as stale (soft delete)`);
 
   try {
-    const { DB_PATHS } = await import('../../config.js');
+    const { DB_PATHS } = await import('../../core/config.js');
     // H3 FIX: Use dynamic loader with fallback paths
     const Database = await loadBetterSqlite3();
 
@@ -1114,7 +1114,7 @@ async function markFilesAsStale(files) {
  */
 async function pruneStaleEntries(maxAgeDays = 30) {
   try {
-    const { DB_PATHS } = await import('../../config.js');
+    const { DB_PATHS } = await import('../../core/config.js');
     // H3 FIX: Use dynamic loader with fallback paths
     const Database = await loadBetterSqlite3();
 

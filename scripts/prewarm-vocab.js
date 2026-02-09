@@ -4,7 +4,7 @@
  * This speeds up semantic search for these terms (cache hit vs API call)
  */
 
-import { expandVocabulary } from './embedding-service.js';
+import { expandVocabulary } from '../core/embedding-service.js';
 
 // 100 common Sloth terms - classes, concepts, features
 const SLOTH_TERMS = [

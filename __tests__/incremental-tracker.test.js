@@ -399,7 +399,7 @@ describe('Incremental Tracker - Integration Tests', () => {
     originalEnv = { ...process.env };
 
     // Clear state before each test to ensure isolation
-    const tracker = await import('../incremental-tracker.js');
+    const tracker = await import('../core/incremental-tracker.js');
     await tracker.clearState();
   });
 
@@ -421,7 +421,7 @@ describe('Incremental Tracker - Integration Tests', () => {
       const allFiles = ['a.txt', 'b.txt'];
 
       // Import the module (dynamically to allow env manipulation)
-      const tracker = await import('../incremental-tracker.js');
+      const tracker = await import('../core/incremental-tracker.js');
 
       // First run - all files are "new"
       const result = await tracker.getChangedFiles(allFiles, projectRoot);
@@ -439,7 +439,7 @@ describe('Incremental Tracker - Integration Tests', () => {
       writeFileSync(join(projectRoot, 'keep.txt'), 'keep content');
       writeFileSync(join(projectRoot, 'remove.txt'), 'remove content');
 
-      const tracker = await import('../incremental-tracker.js');
+      const tracker = await import('../core/incremental-tracker.js');
 
       // Index both files
       const firstRun = await tracker.getChangedFiles(['keep.txt', 'remove.txt'], projectRoot);
@@ -455,7 +455,7 @@ describe('Incremental Tracker - Integration Tests', () => {
       const testFile = join(projectRoot, 'modify.txt');
       writeFileSync(testFile, 'original content');
 
-      const tracker = await import('../incremental-tracker.js');
+      const tracker = await import('../core/incremental-tracker.js');
 
       // First index
       const firstRun = await tracker.getChangedFiles(['modify.txt'], projectRoot);
@@ -478,7 +478,7 @@ describe('Incremental Tracker - Integration Tests', () => {
 
       // Note: This test would require controlling STATE_PATH via config
       // For now, we test the logic via updateState/getChangedFiles
-      const tracker = await import('../incremental-tracker.js');
+      const tracker = await import('../core/incremental-tracker.js');
 
       const firstRun = await tracker.getChangedFiles(['persist.txt'], projectRoot);
       expect(firstRun.toIndex).toContain('persist.txt');
@@ -521,7 +521,7 @@ describe('ENOSPC Error Handling (C4)', () => {
   });
 
   it('should export updateState that can handle errors', async () => {
-    const tracker = await import('../incremental-tracker.js');
+    const tracker = await import('../core/incremental-tracker.js');
 
     // updateState should be a function
     expect(typeof tracker.updateState).toBe('function');
@@ -538,7 +538,7 @@ describe('ENOSPC Error Handling (C4)', () => {
 
 describe('Missing vs Corrupt State Detection (E3)', () => {
   it('should return fresh state with appropriate reason for missing file', async () => {
-    const tracker = await import('../incremental-tracker.js');
+    const tracker = await import('../core/incremental-tracker.js');
 
     // clearState to ensure no state file exists
     await tracker.clearState();
@@ -553,7 +553,7 @@ describe('Missing vs Corrupt State Detection (E3)', () => {
   it('should handle corrupt JSON gracefully', async () => {
     // This tests the internal behavior - corrupt JSON should be caught
     // and treated as "no previous state found"
-    const tracker = await import('../incremental-tracker.js');
+    const tracker = await import('../core/incremental-tracker.js');
 
     // The validateCurrentState function exercises the loadState path
     const validation = await tracker.validateCurrentState();
@@ -565,7 +565,7 @@ describe('Missing vs Corrupt State Detection (E3)', () => {
   });
 
   it('should detect provider config changes', async () => {
-    const tracker = await import('../incremental-tracker.js');
+    const tracker = await import('../core/incremental-tracker.js');
 
     // First, get current fingerprint
     const currentFingerprint = tracker.getCurrentConfigFingerprint();
@@ -593,7 +593,7 @@ describe('Atomic Write Pattern', () => {
   });
 
   it('should not leave .tmp files on successful write', async () => {
-    const tracker = await import('../incremental-tracker.js');
+    const tracker = await import('../core/incremental-tracker.js');
 
     // Perform an update
     await tracker.updateState({ 'test.txt': { hash: 'abc', size: 100, mtime_ns: '123' } });
@@ -612,7 +612,7 @@ describe('Atomic Write Pattern', () => {
 describe('Config Fingerprint Integration', () => {
   it('should include all required fields in fingerprint', async () => {
     // Use dynamic import for ESM module
-    const tracker = await import('../incremental-tracker.js');
+    const tracker = await import('../core/incremental-tracker.js');
 
     const fingerprint = tracker.getCurrentConfigFingerprint();
 
@@ -627,7 +627,7 @@ describe('Config Fingerprint Integration', () => {
   });
 
   it('should validate current state without errors', async () => {
-    const tracker = await import('../incremental-tracker.js');
+    const tracker = await import('../core/incremental-tracker.js');
 
     const validation = await tracker.validateCurrentState();
 

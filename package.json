@@ -3,7 +3,7 @@
   "version": "2.3.0",
   "description": "Sweet Search - SOTA Hybrid Code Search Engine with WASM CatBoost Query Router, Semantic/Lexical/Structural Search, and Multilingual Support",
   "type": "module",
-  "main": "smart-search-v21.js",
+  "main": "core/smart-search-v21.js",
   "license": "Apache-2.0",
   "author": "Marko Sladojevic <marko@panonit.com> (https://panonit.com)",
   "repository": {
@@ -29,26 +29,13 @@
     "panonit"
   ],
   "bin": {
-    "ss": "./ss"
+    "ss": "./ss",
+    "sweet-search-mcp": "./mcp/server.js"
   },
   "files": [
-    "smart-search-v21.js",
-    "query-router.js",
-    "query-router-catboost.js",
-    "query-router-ml.js",
-    "graph-search.js",
-    "config.js",
-    "embedding-service.js",
-    "flashrank.js",
-    "hnsw-index.js",
-    "binary-hnsw-index.js",
-    "colbert-index.js",
-    "graph-extractor.js",
-    "incremental-tracker.js",
-    "hcgs-generator.js",
-    "index-codebase-v21.js",
-    "prewarm-vocab.js",
-    "vocabulary-warmup.js",
+    "core/",
+    "mcp/",
+    "scripts/benchmark-harness.js",
     "translation/",
     "training/features/extractor.js",
     "training/output/",
@@ -58,14 +45,15 @@
     "NOTICE"
   ],
   "scripts": {
-    "search": "node smart-search-v21.js",
-    "index": "node index-codebase-v21.js",
-    "index:full": "node index-codebase-v21.js --full",
-    "hcgs": "node hcgs-generator.js generate",
-    "hcgs:stats": "node hcgs-generator.js stats",
-    "warmup": "node prewarm-vocab.js",
-    "warmup:full": "node vocabulary-warmup.js",
-    "benchmark": "node benchmark.js",
+    "search": "node core/smart-search-v21.js",
+    "index": "node core/index-codebase-v21.js",
+    "index:full": "node core/index-codebase-v21.js --full",
+    "hcgs": "node core/hcgs-generator.js generate",
+    "hcgs:stats": "node core/hcgs-generator.js stats",
+    "warmup": "node scripts/prewarm-vocab.js",
+    "warmup:full": "node scripts/vocabulary-warmup.js",
+    "benchmark": "node scripts/benchmark.js",
+    "mcp": "node mcp/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -88,12 +76,14 @@
   },
   "dependencies": {
     "@babel/helper-validator-identifier": "^7.28.5",
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "better-sqlite3": "^11.7.0",
     "catboost": "^1.26.0",
     "fast-glob": "^3.3.3",
-    "p-limit": "^6.2.0"
+    "p-limit": "^6.2.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.0.16",

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import Database from 'better-sqlite3';
-import { resolveRelationshipTargets } from './relationship-resolver.js';
+import { resolveRelationshipTargets } from './core/relationship-resolver.js';
 import fs from 'fs/promises';
 
 const dbPath = '/mnt/c/Users/panonit/IdeaProjects/sloth/.agentdb/test-code-graph.db';

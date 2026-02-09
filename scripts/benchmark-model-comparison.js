@@ -491,7 +491,7 @@ async function main() {
   }
 
   // Save results
-  const outputPath = join(__dirname, 'benchmark-results', 'model-comparison.json');
+  const outputPath = join(__dirname, '..', 'benchmark-results', 'model-comparison.json');
   const output = {
     timestamp: new Date().toISOString(),
     latency: latencyResults,

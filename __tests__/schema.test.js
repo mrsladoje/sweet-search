@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
-import { createGraphSchema, insertGraph } from '../graph-extractor.js';
+import { createGraphSchema, insertGraph } from '../core/graph-extractor.js';
 
 // =============================================================================
 // TEST HELPERS

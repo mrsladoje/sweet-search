@@ -21,7 +21,7 @@ const __dirname = dirname(__filename);
 
 // Paths
 const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
-const INDEXER_PATH = join(__dirname, '..', 'index-codebase-v21.js');
+const INDEXER_PATH = join(__dirname, '..', 'core', 'index-codebase-v21.js');
 
 // =============================================================================
 // Test Helpers

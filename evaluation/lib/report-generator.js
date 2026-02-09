@@ -12,7 +12,7 @@
  * - Regression detection
  */
 
-import { calculateStats } from '../../benchmark-harness.js';
+import { calculateStats } from '../../scripts/benchmark-harness.js';
 import {
   calculateMRR,
   calculateNDCG,

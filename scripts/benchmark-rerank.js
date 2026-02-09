@@ -13,7 +13,7 @@
  *   node benchmark-rerank.js --iterations=50   # Custom iteration count
  */
 
-import { FlashRankReranker } from './flashrank.js';
+import { FlashRankReranker } from '../core/flashrank.js';
 import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -249,14 +249,14 @@ async function main() {
 
     // Save baseline if requested
     if (args.baseline) {
-      const baselinePath = join(__dirname, 'benchmark-results', 'rerank-baseline.json');
+      const baselinePath = join(__dirname, '..', 'benchmark-results', 'rerank-baseline.json');
       writeFileSync(baselinePath, JSON.stringify(results, null, 2));
       console.log(`\nBaseline saved to: ${baselinePath}`);
     }
 
     // Compare to baseline if requested
     if (args.compare) {
-      const baselinePath = join(__dirname, 'benchmark-results', `${args.compare}.json`);
+      const baselinePath = join(__dirname, '..', 'benchmark-results', `${args.compare}.json`);
       if (existsSync(baselinePath)) {
         const baseline = JSON.parse(readFileSync(baselinePath, 'utf-8'));
 

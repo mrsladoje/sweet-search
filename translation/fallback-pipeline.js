@@ -19,7 +19,7 @@ import { AliasLookup, lookupQuery, expandToEnglish } from './alias-lookup.js';
 import { LLMTranslator, needsTranslation } from './llm-translator.js';
 import { isLikelyEnglish } from './language-detector.js';
 import { normalizeNFC, detectPrimaryScript } from '../training/features/unicode-utils.js';
-import { TRANSLATION_CONFIG, isQuietMode, LOGGING } from '../config.js';
+import { TRANSLATION_CONFIG, isQuietMode, LOGGING } from '../core/config.js';
 
 // =============================================================================
 // CONFIGURATION

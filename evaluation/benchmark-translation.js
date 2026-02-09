@@ -6,7 +6,7 @@
  */
 
 import { createFallbackPipeline } from '../translation/fallback-pipeline.js';
-import { SmartSearch } from '../smart-search-v21.js';
+import { SmartSearch } from '../core/smart-search-v21.js';
 
 // Benchmark queries by tier
 const BENCHMARK_QUERIES = [

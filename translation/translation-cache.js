@@ -8,7 +8,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { TRANSLATION_CONFIG, DB_PATHS, isQuietMode, LOGGING } from '../config.js';
+import { TRANSLATION_CONFIG, DB_PATHS, isQuietMode, LOGGING } from '../core/config.js';
 
 // =============================================================================
 // TRANSLATION CACHE CLASS

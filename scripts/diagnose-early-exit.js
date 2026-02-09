@@ -3,7 +3,7 @@
  * Diagnostic: Verify FlashRank is being skipped due to early exit
  */
 
-import { SmartSearch } from './smart-search-v21.js';
+import { SmartSearch } from '../core/smart-search-v21.js';
 
 async function diagnose() {
   const search = new SmartSearch({ verbose: true });
