@@ -1,4 +1,4 @@
-# Plan v2: Reorganize Sweet Search + Add MCP Server (Claude Code + Codex)
+# Plan v3: Reorganize Sweet Search + Add MCP Server (Claude Code + Codex)
 
 ## Context
 
@@ -10,9 +10,31 @@ Sweet Search is a hybrid code search engine with 40+ JS files dumped in the root
 1. Reorganize root files into `core/` and `scripts/`
 2. Add MCP server layer in `mcp/`
 
+### Target Codebase Modes
+
+The MCP server must support two deployment modes:
+
+| Mode | Description | Root Resolution |
+|------|-------------|-----------------|
+| **A: Same-repo** (default) | Sweet Search indexes/searches its own project or the project it's installed in | `process.cwd()` |
+| **C: External project** (plugin) | Sweet Search is installed globally or in one repo, but targets a different project (e.g., `../sloth`) | `SWEET_SEARCH_PROJECT_ROOT` env var or `--project-root <path>` CLI flag |
+
+Root selection is resolved **once at server startup**. Per-tool arbitrary path overrides are NOT supported. The resolved root is validated (must exist, must be a directory) and normalized to an absolute path. Non-existent roots produce a clear MCP error at init time.
+
+### Source-of-Truth Policy
+
+For all standards claims in this plan, only primary documentation is authoritative:
+- [modelcontextprotocol.io/specification](https://modelcontextprotocol.io/specification/2025-11-25) (spec + changelog)
+- [developers.openai.com/codex](https://developers.openai.com/codex/config-reference/) (Codex config reference)
+- [code.claude.com/docs/en/mcp](https://code.claude.com/docs/en/mcp) (Claude Code MCP docs)
+- [github.com/modelcontextprotocol/typescript-sdk](https://github.com/modelcontextprotocol/typescript-sdk) (SDK source)
+- [github.com/modelcontextprotocol/inspector](https://github.com/modelcontextprotocol/inspector) (MCP Inspector)
+
 ---
 
 ## Phase A: File Reorganization
+
+> Phase A is unchanged from v2. All steps (A1–A11) remain valid.
 
 ### A1. Create `core/` — move 24 search engine modules
 
@@ -218,12 +240,12 @@ Specific changes:
 ### A11. Run tests to verify
 
 ```bash
-npm test
+npm test -- --run
 ```
 
 ---
 
-## Phase B: MCP Server
+## Phase B: MCP Server (Protocol Version `2025-11-25`)
 
 ### B1. Install dependencies
 
@@ -231,38 +253,244 @@ npm test
 npm install @modelcontextprotocol/sdk@^1.26.0 zod@^3.23.0
 ```
 
-### B2. Create `mcp/server.js`
+> Note: `zod` is already a transitive dependency of the SDK but is listed as a direct dependency because `mcp/server.js` uses it for tool input schema definitions.
 
-Entry point for MCP stdio transport. Key design:
+### B2. Create `mcp/server.js` — MCP server entry point
 
-- **ESM-safe stdout protection:** Since the project uses `"type": "module"`, static `import` statements are hoisted before any module body code executes. "Override console.log before imports" does NOT work in ESM. Instead, use a **two-file bootstrap pattern:**
-  1. `mcp/server.js` (entry point): overrides `console.log = console.error`, then uses dynamic `await import()` for all application modules.
-  2. OR use a single file with ONLY dynamic imports (no static `import` for search modules).
+**First line MUST be a shebang** for `npx` executability:
+```js
+#!/usr/bin/env node
+```
 
-  The override MUST happen before any search engine module loads, since those modules call `console.log` at import time.
+**Protocol version:** Server declares `protocolVersion: "2025-11-25"` in its `InitializeResult`.
 
-- **Use `getWarmSearcher()` singleton** from `core/smart-search-v21.js:2155`. Note: the HTTP server (`startServer()` at line 2191) does NOT use this — it instantiates `SmartSearch` directly. The MCP server should use `getWarmSearcher()` for the singleton/caching benefit.
+**Server capabilities declared at init:**
 
-- **Three tools:**
+```js
+{
+  capabilities: {
+    tools: { listChanged: true },
+    resources: { subscribe: false, listChanged: true },
+    prompts: { listChanged: false }
+  }
+}
+```
+
+#### B2a. ESM-safe stdout protection
+
+Since the project uses `"type": "module"`, static `import` statements are hoisted before any module body code executes. "Override console.log before imports" does NOT work in ESM. Instead, use a **single-file dynamic-import pattern:**
+
+1. `mcp/server.js` overrides `console.log = console.error` as first executable statement (after shebang)
+2. ALL application module imports use dynamic `await import()` — no static `import` for search modules
+3. SDK imports (`@modelcontextprotocol/sdk`, `zod`) CAN be static since they don't write to stdout
+
+The override MUST happen before any search engine module loads, since those modules call `console.log` at import time.
+
+#### B2b. Project root resolution
+
+Startup resolves the target project root **once**, using this precedence:
+
+1. `--project-root <path>` CLI flag (highest priority)
+2. `SWEET_SEARCH_PROJECT_ROOT` environment variable
+3. `process.cwd()` (default — same-repo mode)
+
+Validation at startup:
+- Resolve to absolute path via `path.resolve()`
+- Verify the path exists and is a directory
+- If validation fails, log error to stderr and exit with code 1 (before MCP transport starts)
+- Pass resolved root to `SmartSearch` constructor and indexer child process
+
+#### B2c. Warm searcher initialization
+
+Use `getWarmSearcher()` singleton from `core/smart-search-v21.js:2155`. Note: the HTTP server (`startServer()` at line 2191) does NOT use this — it instantiates `SmartSearch` directly. The MCP server should use `getWarmSearcher()` for the singleton/caching benefit.
+
+#### B2d. Transport selection
+
+**Default: stdio** (universal baseline for both Claude Code and Codex).
+
+**Optional: Streamable HTTP** via `--transport http --port <port>` flag:
+- Single `/mcp` endpoint supporting GET, POST, DELETE per [spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)
+- Session management via `Mcp-Session-Id` header (cryptographically secure UUID)
+- SSE streaming for server-to-client messages
+- No OAuth/auth in v1 (local-only); document as future work
+
+When running in HTTP mode, stdout protection is not needed (no stdio transport).
+
+#### B2e. Tools (3 tools)
 
 **`search`** (primary tool):
-- Params: `query` (string), `k` (number, default 10), `mode` (auto/lexical/semantic/hybrid, default auto)
+- Params: `query` (string, required), `k` (number, default 10), `mode` (enum: auto/lexical/semantic/hybrid, default auto)
 - Wraps `SmartSearch.search(query, { k, mode, expand: true, rerank: true })`
-- Returns formatted text with file paths, line numbers, scores, signatures
+- Returns both `content` (formatted text with file paths, line numbers, scores, signatures) and `structuredContent` (machine-parseable JSON)
+- **Annotations:** `{ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }`
+- **`outputSchema`:** JSON Schema describing the structured result:
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "file": { "type": "string" },
+            "line": { "type": "integer" },
+            "score": { "type": "number" },
+            "snippet": { "type": "string" },
+            "signature": { "type": "string" },
+            "language": { "type": "string" }
+          },
+          "required": ["file", "score", "snippet"]
+        }
+      },
+      "totalFound": { "type": "integer" },
+      "mode": { "type": "string" },
+      "queryTimeMs": { "type": "number" }
+    },
+    "required": ["results", "totalFound", "mode", "queryTimeMs"]
+  }
+  ```
 
 **`index`** (secondary tool):
-- Params: `mode` (incremental/full, default incremental)
+- Params: `mode` (enum: incremental/full, default incremental)
 - Runs `core/index-codebase-v21.js` as a **child process** via `spawn()` with `--quiet` flag (not in-process, because the indexer calls `process.exit()` on error and writes to stdout). Route child stdout to stderr.
+- **Progress reporting:** Emit MCP progress notifications with `message` field (e.g., "Parsing files... 45/120", "Building HNSW index...") using progress tokens per [spec](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/progress).
+- **Task support (experimental, optional):** Model `ToolExecution.taskSupport` so clients aware of the 2025-11-25 Tasks primitive can poll for completion. Not required for v1 but the tool should return a task handle if the client advertises task support in its capabilities. Can be upgraded to required later.
+- **Annotations:** `{ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }`
+- **`outputSchema`:**
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "success": { "type": "boolean" },
+      "filesIndexed": { "type": "integer" },
+      "durationMs": { "type": "number" },
+      "mode": { "type": "string" },
+      "errors": { "type": "array", "items": { "type": "string" } }
+    },
+    "required": ["success", "mode"]
+  }
+  ```
 
 **`health`** (diagnostic tool):
 - No params
-- Returns JSON status of all subsystems (graph index, HNSW, binary HNSW, ColBERT, etc.)
+- Returns JSON status of all subsystems (graph index, HNSW, binary HNSW, ColBERT, embedding service, reranker, query router, translation)
+- **Annotations:** `{ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }`
+- **`outputSchema`:**
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "healthy": { "type": "boolean" },
+      "projectRoot": { "type": "string" },
+      "subsystems": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "string", "enum": ["ok", "degraded", "error", "not_initialized"] },
+            "details": { "type": "string" }
+          }
+        }
+      },
+      "indexStats": {
+        "type": "object",
+        "properties": {
+          "totalFiles": { "type": "integer" },
+          "lastIndexed": { "type": "string" }
+        }
+      }
+    },
+    "required": ["healthy", "projectRoot", "subsystems"]
+  }
+  ```
 
-### B3. Create `mcp/config-gen.js`
+#### B2f. Resources (2 resources)
 
-Outputs config snippets for both platforms:
+Resources expose read-only data per [spec](https://modelcontextprotocol.io/specification/2025-11-25/server/resources).
 
-**Claude Code** (`.mcp.json`) — note the `mcpServers` wrapper:
+**`sweet-search://status`** — Index health and statistics:
+- Returns: file count, last index time, subsystem status summary, project root
+- MIME type: `application/json`
+
+**`sweet-search://config`** — Current search configuration:
+- Returns: active search mode, reranker status, embedding model, supported languages
+- MIME type: `application/json`
+
+#### B2g. Prompts (2 prompts)
+
+Prompts are reusable templates per [spec](https://modelcontextprotocol.io/specification/2025-11-25/server/prompts).
+
+**`search-codebase`** — Guided codebase search:
+- Arguments: `query` (string, required), `focus` (string, optional — e.g., "functions", "types", "tests")
+- Returns a structured message sequence that instructs the LLM to search, then summarize findings with file paths and code snippets
+
+**`explain-code`** — Find and explain code:
+- Arguments: `topic` (string, required)
+- Returns a message sequence that searches for the topic, then asks the LLM to explain the relevant code with context
+
+### B3. Create `mcp/config-gen.js` — configuration generator
+
+Outputs config snippets for both platforms. Supports two profiles:
+
+#### Profile: `dev-local` (default)
+For development in the same repo where Sweet Search lives.
+
+**Claude Code** (`.mcp.json`):
+```json
+{
+  "mcpServers": {
+    "sweet-search": {
+      "command": "node",
+      "args": ["./mcp/server.js"]
+    }
+  }
+}
+```
+
+**Codex CLI** (`.codex/config.toml`):
+```toml
+[mcp_servers.sweet-search]
+command = "node"
+args = ["./mcp/server.js"]
+```
+
+#### Profile: `external-project`
+For targeting a different codebase (e.g., `../sloth`).
+
+**Claude Code** (`.mcp.json`):
+```json
+{
+  "mcpServers": {
+    "sweet-search": {
+      "command": "node",
+      "args": ["/absolute/path/to/sweet-search/mcp/server.js", "--project-root", "/absolute/path/to/target-project"],
+      "env": {
+        "SWEET_SEARCH_PROJECT_ROOT": "/absolute/path/to/target-project"
+      }
+    }
+  }
+}
+```
+
+**Codex CLI** (`.codex/config.toml`):
+```toml
+[mcp_servers.sweet-search]
+command = "node"
+args = ["/absolute/path/to/sweet-search/mcp/server.js"]
+cwd = "/absolute/path/to/target-project"
+env = { "SWEET_SEARCH_PROJECT_ROOT" = "/absolute/path/to/target-project" }
+# enabled = true
+# startup_timeout_sec = 15
+# tool_timeout_sec = 120
+# enabled_tools = ["search", "health"]
+# disabled_tools = []
+```
+
+#### Profile: `published` (npx)
+For users who install Sweet Search from npm.
+
+**Claude Code** (`.mcp.json`):
 ```json
 {
   "mcpServers": {
@@ -274,18 +502,18 @@ Outputs config snippets for both platforms:
 }
 ```
 
-> **v1 fix:** v1 omitted the `mcpServers` wrapper in the Claude Code snippet.
-
-**Codex CLI** (`~/.codex/config.toml` or `.codex/config.toml`):
+**Codex CLI** (`.codex/config.toml`):
 ```toml
 [mcp_servers.sweet-search]
 command = "npx"
 args = ["-y", "sweet-search-mcp"]
+# env = { "SWEET_SEARCH_PROJECT_ROOT" = "/path/to/project" }
+# enabled = true
+# startup_timeout_sec = 15
+# tool_timeout_sec = 120
 ```
 
-> **v1 fix:** Removed hardcoded `startup_timeout_sec = 30` and `tool_timeout_sec = 120`. Codex defaults are 10/60; users can override if needed. Codex also supports `streamable-http` transport but stdio is the universal baseline — works for both Claude Code and Codex.
-
-Usage: `node mcp/config-gen.js claude` or `node mcp/config-gen.js codex`
+Usage: `node mcp/config-gen.js [claude|codex] [--profile dev-local|external-project|published]`
 
 ### B4. Update `package.json` for MCP
 
@@ -298,11 +526,19 @@ Usage: `node mcp/config-gen.js claude` or `node mcp/config-gen.js codex`
   "files": [
     "core/",
     "mcp/",
-    ...
+    "scripts/benchmark-harness.js",
+    "translation/",
+    "training/features/extractor.js",
+    "training/output/",
+    "wasm-router/pkg/",
+    "ss",
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "mcp": "node mcp/server.js",
-    ...
+    "mcp:http": "node mcp/server.js --transport http --port 3100",
+    ... (existing scripts with updated paths from A10)
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
@@ -312,13 +548,14 @@ Usage: `node mcp/config-gen.js claude` or `node mcp/config-gen.js codex`
 }
 ```
 
-### B5. Update `.mcp.json`
+### B5. Update `.mcp.json` (project development config)
 
-Add sweet-search alongside existing claude-flow:
+This is the project's OWN `.mcp.json` for development. Separate from the published user config templates in B3.
+
 ```json
 {
   "mcpServers": {
-    "claude-flow": { ...existing... },
+    "agentic-qe": { ...existing... },
     "sweet-search": {
       "command": "node",
       "args": ["./mcp/server.js"]
@@ -327,21 +564,65 @@ Add sweet-search alongside existing claude-flow:
 }
 ```
 
-### B6. Test MCP server — validation matrix
+### B6. Verification — Contract Test Matrix
 
-| # | Test | Command | Expected |
-|---|------|---------|----------|
-| 1 | Initialize handshake | `echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \| node mcp/server.js` | Returns capabilities + server info |
-| 2 | Tool listing | Send `tools/list` after init | Returns 3 tools: search, index, health |
-| 3 | No stdout leakage | `node -e "const {stdout,stderr} = require('child_process').spawnSync('node',['mcp/server.js'],{input:'...',encoding:'utf8'}); assert(JSON.parse(stdout))"` | stdout is only valid JSON-RPC, all logs on stderr |
-| 4 | Search invocation | Send `tools/call` with search tool | Returns search results |
-| 5 | npm test | `npm test` | All existing tests pass |
-| 6 | HTTP server | `node core/smart-search-v21.js --serve` | HTTP server starts on expected port |
-| 7 | CLI | `./ss.sh "test query"` | Returns results |
-| 8 | Claude Code integration | Add to `.mcp.json`, start session, invoke search | Tool appears and works |
-| 9 | Codex integration (if available) | Add to `.codex/config.toml`, invoke | Tool appears and works |
+> **v2 → v3 upgrade:** Expanded from manual smoke tests to a structured contract test matrix. `--mcp-debug` is listed as optional troubleshooting guidance, not a hard verification requirement.
 
-> **v1 fix:** v1 only tested `tools/list` directly without initialize handshake. Added full validation matrix.
+#### B6a. Protocol compliance tests
+
+| # | Test | Method | Expected |
+|---|------|--------|----------|
+| 1 | Initialize handshake | `initialize` with `protocolVersion: "2025-11-25"` | Returns `protocolVersion`, `capabilities` (tools, resources, prompts), `serverInfo` |
+| 2 | Tool listing | `tools/list` | Returns 3 tools: `search`, `index`, `health` — each with `inputSchema`, `annotations`, `outputSchema` |
+| 3 | Resource listing | `resources/list` | Returns 2 resources: `sweet-search://status`, `sweet-search://config` |
+| 4 | Resource read | `resources/read` with `uri: "sweet-search://status"` | Returns valid JSON with `healthy`, `projectRoot`, `subsystems` |
+| 5 | Prompt listing | `prompts/list` | Returns 2 prompts: `search-codebase`, `explain-code` with argument schemas |
+| 6 | Prompt get | `prompts/get` with `name: "search-codebase"` and `arguments: { query: "test" }` | Returns `messages` array with user/assistant roles |
+| 7 | Search invocation | `tools/call` with `name: "search"` | Returns `content` (text) + `structuredContent` matching `outputSchema` |
+| 8 | Index invocation | `tools/call` with `name: "index"` | Returns success status; progress notifications emitted during run |
+| 9 | Health invocation | `tools/call` with `name: "health"` | Returns `structuredContent` matching health `outputSchema` |
+
+#### B6b. Structured output validation
+
+| # | Test | Expected |
+|---|------|----------|
+| 10 | `search` outputSchema conformance | `structuredContent` validates against declared `outputSchema` (use `ajv` or `zod`) |
+| 11 | `health` outputSchema conformance | Same — `structuredContent` matches schema |
+| 12 | `index` outputSchema conformance | Same — `structuredContent` matches schema |
+
+#### B6c. Transport & stdout hygiene
+
+| # | Test | Expected |
+|---|------|----------|
+| 13 | No stdout leakage (stdio) | Spawn `node mcp/server.js`, send init + tools/call. Assert stdout contains ONLY valid JSON-RPC lines. All logs on stderr. |
+| 14 | Streamable HTTP init (optional) | `node mcp/server.js --transport http --port 3100` starts and responds to POST `/mcp` with initialize |
+
+#### B6d. Sloth compatibility (external project targeting)
+
+| # | Test | Expected |
+|---|------|----------|
+| 15 | Start with `--project-root ../sloth` | Server initializes, `health` tool returns `projectRoot` pointing at sloth |
+| 16 | Index sloth | `index` tool completes, indexes files under `../sloth` |
+| 17 | Search sloth | `search` tool returns results with file paths that resolve under `../sloth` |
+| 18 | Artifact cleanup | Generated index artifacts (`.sweet-search/`, `.agentdb/`) are created under `../sloth`, not under sweet-search root. Document cleanup expectations. (Alternative: use a disposable sloth worktree.) |
+
+#### B6e. Existing functionality regression
+
+| # | Test | Expected |
+|---|------|----------|
+| 19 | `npm test -- --run` | All existing unit/integration tests pass |
+| 20 | HTTP server | `node core/smart-search-v21.js --serve` starts on expected port |
+| 21 | CLI | `./ss.sh "test query"` returns results |
+
+#### B6f. Integration tests (manual, not gated)
+
+| # | Test | Expected |
+|---|------|----------|
+| 22 | Claude Code integration | Add to `.mcp.json`, start session, invoke search tool | Tool appears and works |
+| 23 | Codex integration | Add to `.codex/config.toml`, invoke search tool | Tool appears and works |
+| 24 | MCP Inspector | `npx @modelcontextprotocol/inspector node mcp/server.js` — interactive tool testing works |
+
+> **Troubleshooting tip:** Claude Code's `--mcp-debug` flag enables detailed MCP communication logging. Use when investigating connection or protocol issues.
 
 ---
 
@@ -375,8 +656,8 @@ Add sweet-search alongside existing claude-flow:
 | `.claude/hooks/index-maintainer.mjs` | FIX 4 path references | A8 |
 | `.claude/helpers/session-preheat.sh` | FIX 14+ path references | A9 |
 | `package.json` | UPDATE paths + deps + bin | A10, B4 |
-| `mcp/server.js` | CREATE (ESM-safe bootstrap) | B2 |
-| `mcp/config-gen.js` | CREATE | B3 |
+| `mcp/server.js` | CREATE (ESM-safe, shebang, 2025-11-25) | B2 |
+| `mcp/config-gen.js` | CREATE (3 profiles) | B3 |
 | `.mcp.json` | ADD sweet-search entry | B5 |
 
 ---
@@ -385,27 +666,63 @@ Add sweet-search alongside existing claude-flow:
 
 | Risk | Mitigation |
 |------|-----------|
-| Broken imports after move | All core files move together (mutual imports unchanged). Cross-dir imports are mechanical `../` → `../core/` changes. **Exhaustive file list** (not "3+ files"). Run `npm test` after. |
+| Broken imports after move | All core files move together (mutual imports unchanged). Cross-dir imports are mechanical `../` → `../core/` changes. **Exhaustive file list** (not "3+ files"). Run `npm test -- --run` after. |
 | `__dirname` path breakage | 3 core files + 4 script files need `..` insertion. Each explicitly listed with line numbers. |
-| `console.log` corrupts MCP stdio | **ESM-safe:** bootstrap file overrides `console.log` then uses dynamic `import()` for all search modules. No static imports of search code. |
-| `process.exit()` in indexer kills MCP | Run indexer as child process with `--quiet`; route child stdout → stderr |
-| Cold start latency | `getWarmSearcher()` caches (note: HTTP server does NOT use this, MCP server will) |
+| `console.log` corrupts MCP stdio | **ESM-safe:** bootstrap overrides `console.log` then uses dynamic `import()` for all search modules. No static imports of search code. SDK imports can be static (they don't write to stdout). |
+| `process.exit()` in indexer kills MCP | Run indexer as child process with `--quiet`; route child stdout → stderr. |
+| Cold start latency | `getWarmSearcher()` caches (note: HTTP server does NOT use this, MCP server will). |
 | session-preheat.sh breakage | 14+ paths explicitly enumerated. Claude-only concern (Codex ignores `.claude/` hooks). |
 | index-maintainer.mjs breakage | 4 references explicitly enumerated with line numbers. |
 | Codex compatibility | Use stdio (universal baseline). Don't hardcode timeouts — let Codex use its defaults (10s startup, 60s tool). |
+| External project root resolution | Validated once at startup. Non-existent roots fail fast with clear error before MCP transport starts. |
+| Index artifacts in wrong directory | Indexer child process receives `--root <resolved_path>`; artifacts are written under the target project, not the sweet-search installation. |
+| `outputSchema` conformance drift | Contract tests (B6b) validate structured output against declared schemas on every test run. |
+| Streamable HTTP security | HTTP transport is local-only in v1 (no auth). Document OAuth as future work per [MCP auth spec](https://modelcontextprotocol.io/docs/tutorials/security/authorization). |
 
-## Verification
+---
 
-Full validation matrix in B6 above. Summary:
+## Verification Summary
 
-1. `npm test` — all existing tests pass after reorganization
+1. `npm test -- --run` — all existing tests pass after reorganization
 2. `node core/smart-search-v21.js --serve` — HTTP server still works
 3. `./ss.sh "test query"` — CLI still works
-4. MCP initialize handshake + tools/list — protocol compliance
-5. MCP search tool invocation — end-to-end search works
-6. No stdout leakage — only JSON-RPC on stdout
-7. Configure in `.mcp.json`, use from Claude Code session
-8. Configure in `.codex/config.toml`, use from Codex session (if available)
+4. MCP initialize handshake (protocol `2025-11-25`) — capabilities include tools, resources, prompts
+5. `tools/list` — 3 tools with annotations + outputSchema
+6. `resources/list` + `resources/read` — 2 resources return valid JSON
+7. `prompts/list` + `prompts/get` — 2 prompts with argument schemas
+8. `tools/call` search — returns `content` + `structuredContent` matching schema
+9. `tools/call` index — returns success; progress notifications during run
+10. No stdout leakage — only JSON-RPC on stdout
+11. External project targeting — index + search `../sloth` with correct paths
+12. `outputSchema` conformance — structured output validates against declared schemas
+13. MCP Inspector — `npx @modelcontextprotocol/inspector node mcp/server.js` works
+14. Configure in `.mcp.json`, use from Claude Code session
+15. Configure in `.codex/config.toml`, use from Codex session (if available)
+
+---
+
+## Changelog from v2
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 1 | Protocol version `2024-11-05` (obsolete) | Updated to `2025-11-25` (latest stable, Nov 2025). Three spec revisions shipped since v2's target. |
+| 2 | No tool annotations | Added `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` to all 3 tools per 2025-03-26 spec. |
+| 3 | No `outputSchema` / structured output | Added `outputSchema` + `structuredContent` to all 3 tools per 2025-06-18 spec. |
+| 4 | No Resources or Prompts | Added 2 Resources (`status`, `config`) and 2 Prompts (`search-codebase`, `explain-code`) — full MCP primitive coverage. |
+| 5 | Missing shebang `#!/usr/bin/env node` | Added to `mcp/server.js` — required for `npx` executability. |
+| 6 | stdio only, no Streamable HTTP option | Added optional `--transport http` flag for local Streamable HTTP per 2025-03-26 spec. Default remains stdio. |
+| 7 | No project root selection | Added `SWEET_SEARCH_PROJECT_ROOT` env var + `--project-root` flag, resolved once at startup with validation. |
+| 8 | No external-project (plugin mode) support | Added Mode A (same-repo) and Mode C (external project) with explicit config profiles. |
+| 9 | No sloth compatibility testing | Added B6d section: start targeting `../sloth`, index, search, verify file paths resolve under sloth. |
+| 10 | B6 was manual smoke tests only | Expanded to full contract test matrix: protocol compliance (B6a), structured output validation (B6b), transport hygiene (B6c), sloth compat (B6d), regression (B6e), integration (B6f). |
+| 11 | No progress reporting for index | Added MCP progress notifications with `message` field during indexing. |
+| 12 | No task support for long-running index | Added experimental 2025-11-25 Tasks primitive support for `index` tool (optional, upgradeable). |
+| 13 | Codex config too minimal | Config-gen now produces full Codex fields: `enabled`, `env`, `env_vars`, `cwd`, `startup_timeout_sec`, `tool_timeout_sec`, `enabled_tools`, `disabled_tools` (commented out as examples). |
+| 14 | No separation of dev vs published config | Config-gen now supports 3 profiles: `dev-local`, `external-project`, `published`. |
+| 15 | No MCP Inspector testing | Added to B6f: `npx @modelcontextprotocol/inspector node mcp/server.js`. |
+| 16 | `--mcp-debug` listed as hard requirement | Downgraded to optional troubleshooting guidance — not always available by version. |
+| 17 | No source-of-truth policy | Added policy: only primary docs (modelcontextprotocol.io, Codex config reference, Claude Code MCP docs) are authoritative. |
+| 18 | Index artifacts may land in wrong directory | Documented: indexer child process receives `--root <resolved_path>`, artifacts go under target project. |
 
 ---
 
@@ -419,9 +736,9 @@ Full validation matrix in B6 above. Summary:
 | 4 | `benchmark-constrained.sh` missing | Added to A2 (move) and A4 (path fix) |
 | 5 | `.claude/hooks/index-maintainer.mjs` — "check" with no details | 4 references enumerated with line numbers (A8) |
 | 6 | `.claude/helpers/session-preheat.sh` — "check" with no details | 14+ references enumerated (A9) |
-| 7 | ESM `console.log` override impossible with static imports | Two-file bootstrap or dynamic-import-only pattern (B2) |
-| 8 | "same warm cache pattern used by HTTP server" — incorrect | Corrected: HTTP server instantiates directly; MCP should use `getWarmSearcher()` |
+| 7 | ESM `console.log` override impossible with static imports | Two-file bootstrap or dynamic-import-only pattern (B2a) |
+| 8 | "same warm cache pattern used by HTTP server" — incorrect | Corrected: HTTP server instantiates directly; MCP should use `getWarmSearcher()` (B2c) |
 | 9 | B3 Claude Code snippet missing `mcpServers` wrapper | Fixed |
 | 10 | Codex hardcoded timeouts 30/120 without rationale | Removed; let Codex use defaults |
 | 11 | `ensemble-labeler.js` grouped with `llm-labeler.js` incorrectly | Separated: ensemble-labeler only imports config, not llm-provider |
-| 12 | Verification was `tools/list` only | Full validation matrix with initialize handshake + 9 test scenarios |
+| 12 | Verification was `tools/list` only | Full contract test matrix with 24 test scenarios across 6 categories |
