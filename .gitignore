@@ -113,4 +113,6 @@ CLAUDE.md.backup
 .env
 .env.local
 .env.*.local
-.agents/
+.agents/skills/
+.agents/config.toml
+.agents/README.md
