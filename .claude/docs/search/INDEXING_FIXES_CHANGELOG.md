@@ -106,15 +106,15 @@ This document tracks all fixes implemented in the indexing system through multip
 
 ## Security Fixes (S1-S5)
 
-### S1: Lock Files Moved to .agentdb [IMPLEMENTED]
+### S1: Lock Files Moved to .sweet-search [IMPLEMENTED]
 
 **Problem:** Lock files in `/tmp` were insecure (world-readable).
 
-**Fix:** Move all lock files to `.agentdb/` directory.
+**Fix:** Move all lock files to `.sweet-search/` directory.
 
 **Files:**
-- `.agentdb/index-maintainer.lock`
-- `.agentdb/indexing.lock`
+- `.sweet-search/index-maintainer.lock`
+- `.sweet-search/indexing.lock`
 
 ---
 
@@ -484,7 +484,7 @@ grep -q "circuitBreaker" .claude/helpers/search-100x/embedding-service.js && ech
 grep -q "ENOSPC" .claude/hooks/index-maintainer.mjs && echo "OK"
 
 # Performance
-sqlite3 .agentdb/code-graph.db ".indexes entities" | grep -q "idx_entities_active" && echo "OK"
+sqlite3 .sweet-search/code-graph.db ".indexes entities" | grep -q "idx_entities_active" && echo "OK"
 
 # Documentation
 grep -q "30 seconds" CLAUDE.md && echo "OK"

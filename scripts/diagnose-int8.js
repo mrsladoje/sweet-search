@@ -35,7 +35,7 @@ async function diagnose() {
   console.log(`Int8 Min/Max: ${Math.min(...int8)} / ${Math.max(...int8)}`);
 
   // 4. Load BinaryHNSW index and get a candidate's Int8 vector
-  const binaryHnswPath = path.join(process.env.HOME, 'projects/sloth/.agentdb/codebase-binary-hnsw.idx');
+  const binaryHnswPath = process.argv[2] || path.join(process.cwd(), '.sweet-search/codebase-binary-hnsw.idx');
   console.log(`\nLoading BinaryHNSW from: ${binaryHnswPath}`);
 
   const binaryHnsw = new BinaryHNSWIndex({ dimensions: 512 });

@@ -13,7 +13,7 @@ import { dirname, resolve } from 'path';
 import { existsSync } from 'fs';
 
 export class MerkleTracker {
-  constructor(statePath = '.agentdb/merkle/sloth-codebase.json') {
+  constructor(statePath = '.sweet-search/merkle/codebase-state.json') {
     this.statePath = resolve(statePath);
     this.state = {
       version: 1,

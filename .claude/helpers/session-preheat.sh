@@ -36,8 +36,8 @@ SEARCH_DIR="${SWEET_SEARCH_DIR:-$PROJECT_ROOT}"
 if [ ! -f "$SEARCH_DIR/core/sweet-search.js" ] && [ -f "$PROJECT_ROOT/.claude/helpers/search-100x/sweet-search.js" ]; then
     SEARCH_DIR="$PROJECT_ROOT/.claude/helpers/search-100x"
 fi
-LOG_FILE="/tmp/search-100x-preheat.log"
-LOCK_FILE="/tmp/search-100x-preheat.lock"
+LOG_FILE="/tmp/sweet-search-preheat.log"
+LOCK_FILE="/tmp/sweet-search-preheat.lock"
 
 # === Stale Session Slug Cleanup (Parallel Session Safe) ===
 # Remove session slug files older than 4 hours (prevents stale attribution)
@@ -161,9 +161,9 @@ async function warmLocalModel() {
 async function warmVocabulary() {
     const t = timer();
     try {
-        const binaryPath = path.join(projectRoot, '.agentdb', 'vocabulary.bin');
-        const binaryMetaPath = path.join(projectRoot, '.agentdb', 'vocabulary.meta.json');
-        const jsonPath = path.join(projectRoot, '.agentdb', 'query-vocabulary.json');
+        const binaryPath = path.join(projectRoot, '.sweet-search', 'vocabulary.bin');
+        const binaryMetaPath = path.join(projectRoot, '.sweet-search', 'vocabulary.meta.json');
+        const jsonPath = path.join(projectRoot, '.sweet-search', 'query-vocabulary.json');
 
         // Try binary vocabulary first (75% smaller, 4x faster load)
         if (existsSync(binaryPath) && existsSync(binaryMetaPath)) {
@@ -242,7 +242,7 @@ async function warmColBERT() {
     const t = timer();
     try {
         const { DB_PATHS } = await importFromSearch('core/config.js');
-        const colbertPath = DB_PATHS.colbert || path.join(projectRoot, '.agentdb', 'colbert-tokens.db');
+        const colbertPath = DB_PATHS.colbert || path.join(projectRoot, '.sweet-search', 'colbert-tokens.db');
         if (!existsSync(colbertPath)) return { c: 'colbert', ok: true, ms: t(), skip: 'not indexed' };
         const { ColBERTIndex } = await importFromSearch('core/colbert-index.js');
         const cb = new ColBERTIndex({ indexPath: colbertPath });

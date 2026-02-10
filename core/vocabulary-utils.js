@@ -77,11 +77,11 @@ const CONFIG = {
 // Project root is resolved in config.js (cwd/env-aware for standalone and host repos).
 
 const PATHS = {
-  jsonVocab: path.join(PROJECT_ROOT, '.agentdb', 'query-vocabulary.json'),
-  binaryVocab: path.join(PROJECT_ROOT, '.agentdb', 'vocabulary.bin'),
-  binaryMeta: path.join(PROJECT_ROOT, '.agentdb', 'vocabulary.meta.json'),
-  queryStats: path.join(PROJECT_ROOT, '.agentdb', 'query-vocabulary-stats.json'),
-  codeGraph: path.join(PROJECT_ROOT, '.agentdb', 'code-graph.db'),
+  jsonVocab: path.join(PROJECT_ROOT, '.sweet-search', 'query-vocabulary.json'),
+  binaryVocab: path.join(PROJECT_ROOT, '.sweet-search', 'vocabulary.bin'),
+  binaryMeta: path.join(PROJECT_ROOT, '.sweet-search', 'vocabulary.meta.json'),
+  queryStats: path.join(PROJECT_ROOT, '.sweet-search', 'query-vocabulary-stats.json'),
+  codeGraph: path.join(PROJECT_ROOT, '.sweet-search', 'code-graph.db'),
 };
 
 // =============================================================================

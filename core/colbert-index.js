@@ -25,7 +25,7 @@ const COLBERT_CONFIG = {
   tokenDim: 64,           // Reduced from 128 (1.5% accuracy loss, 50% storage savings)
   maxTokensPerDoc: 256,   // Max tokens to store per document
   useInt8: true,          // int8 quantization (4x compression)
-  indexPath: DB_PATHS.colbert || path.join(process.cwd(), '.agentdb', 'colbert-tokens.db'),
+  indexPath: DB_PATHS.colbert || path.join(process.cwd(), '.sweet-search', 'colbert-tokens.db'),
 };
 
 /**

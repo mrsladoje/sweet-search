@@ -16,7 +16,7 @@ export default defineConfig({
     },
     benchmark: {
       include: ['__tests__/**/*.bench.js'],
-      outputFile: '../../../.agentdb/benchmark-results.json',
+      outputFile: '../../../.sweet-search/benchmark-results.json',
     },
   },
 });

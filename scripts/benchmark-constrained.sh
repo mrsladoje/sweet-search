@@ -316,7 +316,7 @@ quick_index_test() {
   create_cgroup "$cgroup_name" "$cores" "$memory_mb"
 
   # Clean artifacts
-  rm -f "$PROJECT_ROOT/.agentdb/"*.db "$PROJECT_ROOT/.agentdb/"*.json 2>/dev/null || true
+  rm -f "$PROJECT_ROOT/.sweet-search/"*.db "$PROJECT_ROOT/.sweet-search/"*.json 2>/dev/null || true
 
   # Run full index with timing
   local start_time=$(date +%s%N)
@@ -342,7 +342,7 @@ quick_search_test() {
 
   log "Quick Search Test (cores=$cores, memory=${memory_mb}MB, iterations=$iterations)"
 
-  if [ ! -f "$PROJECT_ROOT/.agentdb/codebase.db" ]; then
+  if [ ! -f "$PROJECT_ROOT/.sweet-search/codebase.db" ]; then
     log_warn "No index found, running full index first..."
     quick_index_test "$cores" "$memory_mb"
   fi

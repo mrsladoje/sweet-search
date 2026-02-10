@@ -47,8 +47,8 @@ Self-maintaining background daemon that keeps the search index current:
 - **Detection**: Merkle hash comparison every 45 seconds
 - **Catches**: Claude Code edits, external IDE edits, git operations
 - **Updates**: FTS5 lexical index, HNSW semantic vectors, code graph
-- **Lock**: `.agentdb/indexing.lock` prevents race with manual `/index-codebase`
-- **Single-instance**: `.agentdb/index-maintainer.lock`
+- **Lock**: `.sweet-search/indexing.lock` prevents race with manual `/index-codebase`
+- **Single-instance**: `.sweet-search/index-maintainer.lock`
 
 ---
 

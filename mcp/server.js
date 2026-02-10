@@ -270,7 +270,7 @@ async function checkHealth() {
       { name: 'graph-index', check: () => existsSync(config.DB_PATHS.codeGraph) },
       { name: 'hnsw', check: () => existsSync(config.DB_PATHS.hnswIndex.replace('.idx', '.meta.json')) },
       { name: 'binary-hnsw', check: () => existsSync(config.DB_PATHS.binaryHnswIndex?.replace('.idx', '.meta.json')) },
-      { name: 'colbert', check: () => existsSync(config.DB_PATHS.colbert || path.join(PROJECT_ROOT, '.agentdb', 'colbert-tokens.db')) },
+      { name: 'colbert', check: () => existsSync(config.DB_PATHS.colbert || path.join(PROJECT_ROOT, '.sweet-search', 'colbert-tokens.db')) },
       { name: 'embedding-service', check: () => true },
       { name: 'reranker', check: () => true },
       { name: 'query-router', check: () => true },
