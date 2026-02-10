@@ -22,7 +22,7 @@ import pMap from 'p-map';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 
-import { SmartSearch } from '../core/smart-search-v21.js';
+import { SweetSearch } from '../core/sweet-search.js';
 import { calculateAllMetrics } from './lib/metrics.js';
 import { CostTracker } from './lib/cost-tracker.js';
 import { ResultMatcher, evaluateQuery } from './lib/result-matcher.js';
@@ -59,7 +59,7 @@ class ServerSearchClient {
       }
       return true;
     } catch (e) {
-      throw new Error(`Preheated server not running. Start with: node smart-search-v21.js --serve`);
+      throw new Error(`Preheated server not running. Start with: node sweet-search.js --serve`);
     }
   }
 
@@ -442,8 +442,8 @@ async function runEvaluation(args) {
       process.exit(EXIT_CODES.INFRASTRUCTURE_ERROR);
     }
   } else {
-    console.log('Initializing fresh SmartSearch instance...');
-    search = new SmartSearch({ verbose: false });
+    console.log('Initializing fresh SweetSearch instance...');
+    search = new SweetSearch({ verbose: false });
     await search.init();
   }
 

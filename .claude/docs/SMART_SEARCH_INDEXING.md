@@ -705,7 +705,7 @@ node .claude/helpers/search-100x/hnsw-index.js <command>
 The search system includes an auto-starting HTTP server for index preheating:
 
 ```javascript
-// smart-search-v21.js
+// sweet-search.js
 const SEARCH_SERVER_PORT = 9876;
 const SEARCH_SERVER_SOCKET = '/tmp/search.sock';
 
@@ -773,7 +773,7 @@ async init() {
 
 > **Sources of truth:**
 > - Targets: `PERFORMANCE_TARGETS` in `config.js` (lines 597-607)
-> - Typical: Code comments in `smart-search-v21.js` header (~275ms semantic)
+> - Typical: Code comments in `sweet-search.js` header (~275ms semantic)
 > - Measured: Run `node benchmark.js` for actual measurements
 
 ### Indexing Performance
@@ -797,7 +797,7 @@ async init() {
 | Lexical (actual) | 6-10ms | (typical) code observation |
 | HNSW lookup | <1ms | (target) `hnswLookupP50: 1` |
 | Semantic (end-to-end) | <150ms | (target) `semanticP50: 150` |
-| Semantic (actual) | ~275ms | (typical) smart-search-v21.js header |
+| Semantic (actual) | ~275ms | (typical) sweet-search.js header |
 | Reranking (FlashRank only) | ~15ms | (typical) cascaded Stage 1 |
 | Reranking (cascaded full) | ~100-350ms | (typical) FlashRank + Voyage/Jina |
 | Semantic (cached) | <10ms | (typical) vocabulary/LRU hit |

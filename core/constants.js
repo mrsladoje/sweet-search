@@ -1,6 +1,6 @@
 /**
  * Shared constants for search-100x
- * Extracted to prevent drift between graph-search.js and smart-search-v21.js
+ * Extracted to prevent drift between graph-search.js and sweet-search.js
  */
 
 export const SYMBOL_KIND_WEIGHTS = {

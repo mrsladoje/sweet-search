@@ -13,9 +13,9 @@ Achieved through: Robust CC Fusion (Convex Combination with RRF fallback) + Post
 
 ## Source Files
 
-- **Primary**: `.claude/helpers/search-100x/smart-search-v21.js`
-  - `grep -n "async hybridSearch" smart-search-v21.js` → main hybrid function
-  - `grep -n "convexCombination" smart-search-v21.js` → CC fusion
+- **Primary**: `core/sweet-search.js`
+  - `grep -n "async hybridSearch" sweet-search.js` → main hybrid function
+  - `grep -n "convexCombination" sweet-search.js` → CC fusion
 - **MMR**: `.claude/helpers/search-100x/mmr.js`
   - `grep -n "applyMMR" mmr.js` → diversity-aware reranking
 - **Config**: `.claude/helpers/search-100x/config.js`
@@ -34,7 +34,7 @@ Hybrid search combines lexical (BM25/FTS5) and semantic (HNSW ANN) results using
 
 ### 1. Robust CC Fusion - Current Default
 
-**Source**: `hybridSearchV2()` method calling `robustCCFusion()` (`grep -n "robustCCFusion" smart-search-v21.js`)
+**Source**: `hybridSearchV2()` method calling `robustCCFusion()` (`grep -n "robustCCFusion" sweet-search.js`)
 
 **Strategy**: Convex Combination (CC) with quantile normalization as the primary fusion method, with RRF fallback for edge cases (sparse results, extreme score ranges).
 
@@ -67,7 +67,7 @@ Where `k=60` (standard RRF parameter).
 
 ### 2. Legacy Convex Combination (CC) - Deprecated
 
-**Source**: `hybridSearch()` method (`grep -n "async hybridSearch" smart-search-v21.js`) - marked `@deprecated`
+**Source**: `hybridSearch()` method (`grep -n "async hybridSearch" sweet-search.js`) - marked `@deprecated`
 
 The old `hybridSearch()` method used naive min-max normalization and applied boosts during lexical retrieval (unfair to semantic path). It has been superseded by `hybridSearchV2()` with `robustCCFusion()`.
 
@@ -75,7 +75,7 @@ The old `hybridSearch()` method used naive min-max normalization and applied boo
 
 ## Execution Flow
 
-**Source**: `hybridSearchV2()` method (`grep -n "hybridSearchV2" smart-search-v21.js`)
+**Source**: `hybridSearchV2()` method (`grep -n "hybridSearchV2" sweet-search.js`)
 
 ```javascript
 async hybridSearchV2(query, options = {}) {
@@ -118,7 +118,7 @@ async hybridSearchV2(query, options = {}) {
 
 ## Quantile Normalization
 
-**Source**: `quantileNormalize()` method (`grep -n "quantileNormalize" smart-search-v21.js`)
+**Source**: `quantileNormalize()` method (`grep -n "quantileNormalize" sweet-search.js`)
 
 Scores are normalized using quantile clipping (5th-95th percentile) before CC fusion. This is more robust to outliers than min-max normalization:
 ```javascript
@@ -135,7 +135,7 @@ quantileNormalize(scores, lowerQ = 0.05, upperQ = 0.95) {
 
 ## Result Merging
 
-**Source**: `robustCCFusion()` method (`grep -n "robustCCFusion" smart-search-v21.js`)
+**Source**: `robustCCFusion()` method (`grep -n "robustCCFusion" sweet-search.js`)
 
 Results are merged by unique key (`getResultKey()` method):
 1. Build score maps for each path
@@ -185,7 +185,7 @@ export const ROUTING_CONFIG = {
 
 ## CLI Options
 
-**Source**: `grep -n "yargs" smart-search-v21.js` (CLI parsing)
+**Source**: `grep -n "yargs" sweet-search.js` (CLI parsing)
 
 ```bash
 # Default: Robust CC fusion + Post-fusion boosts + MMR diversification

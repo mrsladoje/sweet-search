@@ -6,8 +6,8 @@ Documentation of the ss-fast C client and its interaction with the search server
 
 - **C Client**: `.claude/helpers/search-100x/ss-fast/ss-fast.c`
 - **Shell Wrapper**: `.claude/helpers/search-100x/ss.sh`
-- **Node.js Server**: `.claude/helpers/search-100x/smart-search-v21.js`
-  - `grep -n "async function startServer" smart-search-v21.js` → server entry point
+- **Node.js Server**: `core/sweet-search.js`
+  - `grep -n "async function startServer" sweet-search.js` → server entry point
 
 ## Architecture Overview
 
@@ -22,7 +22,7 @@ User Command
 /tmp/search.sock
     |
     v
-[smart-search-v21.js HTTP server]
+[sweet-search.js HTTP server]
     |
     v
 [SmartSearch class: routing -> lexical/semantic/hybrid]
@@ -46,7 +46,7 @@ User Command
 /* From do_request() - grep "access(SOCKET_PATH" ss-fast.c */
 if (access(SOCKET_PATH, F_OK) != 0) {
     fprintf(stderr, FA "Error:" R " Socket %s not found\n", SOCKET_PATH);
-    fprintf(stderr, "Start server: node smart-search-v21.js --serve\n");
+    fprintf(stderr, "Start server: node sweet-search.js --serve\n");
     return 1;
 }
 ```
@@ -70,7 +70,7 @@ gcc -O3 -march=native -flto -s -o ss ss-fast.c
 ```bash
 # Auto-start server with fast polling - grep "nohup node" ss.sh
 if [[ ! -S "$SOCKET" ]]; then
-    nohup node "$(dirname "$0")/smart-search-v21.js" --serve &>/dev/null &
+    nohup node "$(dirname "$0")/sweet-search.js" --serve &>/dev/null &
     for _ in {1..50}; do
         [[ -S "$SOCKET" ]] && break
         sleep 0.1
@@ -78,9 +78,9 @@ if [[ ! -S "$SOCKET" ]]; then
 fi
 ```
 
-### smart-search-v21.js (Server)
+### sweet-search.js (Server)
 
-**Source**: `grep -n "async function startServer" smart-search-v21.js`
+**Source**: `grep -n "async function startServer" sweet-search.js`
 
 **Purpose**: HTTP server exposing search functionality via Unix socket and TCP
 
@@ -90,7 +90,7 @@ fi
 - Handles search requests, formatting, server control
 
 ```javascript
-// Server configuration - grep "SEARCH_SERVER_PORT" smart-search-v21.js
+// Server configuration - grep "SEARCH_SERVER_PORT" sweet-search.js
 const SEARCH_SERVER_PORT = 9876;
 const SEARCH_SERVER_SOCKET = '/tmp/search.sock';
 const SEARCH_SERVER_PIDFILE = '/tmp/smart-search-server.pid';
@@ -189,7 +189,7 @@ static int do_request(const char *path, int print_header_flag, const char *query
 
 ## Server API Endpoints
 
-**Source**: `grep -n "handleRequest" smart-search-v21.js`
+**Source**: `grep -n "handleRequest" sweet-search.js`
 
 ### GET /search
 
@@ -217,7 +217,7 @@ Gracefully shuts down both TCP and Unix socket servers.
 
 ## Server Startup
 
-**Source**: `startServer()` function (`grep -n "async function startServer" smart-search-v21.js`)
+**Source**: `startServer()` function (`grep -n "async function startServer" sweet-search.js`)
 
 ```javascript
 async function startServer() {
@@ -244,7 +244,7 @@ async function startServer() {
 
 ## Auto-Spawn in Node.js CLI
 
-**Source**: `autoSpawnServer()` function (`grep -n "async function autoSpawnServer" smart-search-v21.js`)
+**Source**: `autoSpawnServer()` function (`grep -n "async function autoSpawnServer" sweet-search.js`)
 
 The Node.js CLI can auto-spawn the server (unlike ss-fast):
 
@@ -317,7 +317,7 @@ async function autoSpawnServer() {
 | Compiled binary | `.claude/helpers/search-100x/ss-fast/ss` (after compile) |
 | Shell wrapper | `.claude/helpers/search-100x/ss.sh` |
 | Symlink (recommended) | `.claude/helpers/search-100x/ss` -> `ss-fast/ss` or `ss.sh` |
-| Server | `.claude/helpers/search-100x/smart-search-v21.js` |
+| Server | `core/sweet-search.js` |
 | Unix socket | `/tmp/search.sock` |
 | PID file | `/tmp/smart-search-server.pid` |
 

@@ -3,10 +3,10 @@
  * Diagnose actual Int8 score distribution for proper threshold calibration
  */
 
-import { SmartSearch } from '../core/smart-search-v21.js';
+import { SweetSearch } from '../core/sweet-search.js';
 
 async function diagnose() {
-  const search = new SmartSearch({ verbose: false });
+  const search = new SweetSearch({ verbose: false });
   await search.init();
 
   // Test queries representing different types

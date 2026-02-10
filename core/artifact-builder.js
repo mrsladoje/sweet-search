@@ -13,7 +13,7 @@
  *
  * CANONICAL INT8 STORAGE (Workstream H resolution):
  *   Int8 vectors are stored in .int8.json sidecar file alongside the binary HNSW index.
- *   This is the ONLY source of int8 vectors for stage-2 rescoring in smart-search.
+ *   This is the ONLY source of int8 vectors for stage-2 rescoring in sweet-search.
  *   Rationale: O(1) Map lookup vs O(log n) + I/O for SQLite, loaded with HNSW index.
  *   The SQLite approach (codebase-int8.db) was REMOVED as it was never used by search.
  *
@@ -368,7 +368,7 @@ export async function buildHnswIndex(items, options = {}) {
  * This provides O(1) lookup during stage-2 rescoring vs O(log n) + I/O for SQLite.
  *
  * The SQLite functions below are kept for backward compatibility but are NOT used
- * by the search pipeline. smart-search-v21.js calls binaryHnswIndex.getInt8Vector()
+ * by the search pipeline. sweet-search.js calls binaryHnswIndex.getInt8Vector()
  * which reads from the in-memory Map populated from .int8.json.
  */
 

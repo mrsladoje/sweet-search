@@ -50,7 +50,7 @@ import { applyMMR, shouldApplyMMR, getLambdaForIntent, MMR_CONFIG } from './mmr.
 // SMART SEARCH CLASS
 // =============================================================================
 
-export class SmartSearch {
+export class SweetSearch {
   constructor(options = {}) {
     this.graphSearch = new GraphSearch(options.graphDbPath || DB_PATHS.codeGraph);
     this.hnswIndex = new HNSWIndex({ indexPath: options.hnswPath || DB_PATHS.hnswIndex });
@@ -162,7 +162,7 @@ export class SmartSearch {
     }
 
     this.initialized = true;
-    this.log(`SmartSearch: Initialized in ${Date.now() - start}ms`);
+    this.log(`SweetSearch: Initialized in ${Date.now() - start}ms`);
   }
 
   /**
@@ -1335,7 +1335,7 @@ export class SmartSearch {
    */
   applyPostFusionBoosts(fusedResults, query, routerMode, routerConfidence) {
     const boostIntent = this.getBoostIntent(routerMode, routerConfidence);
-    const policy = SmartSearch.BOOST_POLICY[boostIntent] || SmartSearch.BOOST_POLICY.general;
+    const policy = SweetSearch.BOOST_POLICY[boostIntent] || SweetSearch.BOOST_POLICY.general;
 
     const queryLower = query.toLowerCase().trim();
     const queryTokens = this.extractQueryTokens(query);
@@ -1837,7 +1837,7 @@ export class SmartSearch {
    */
   log(message) {
     if (this.verbose) {
-      console.error(`[SmartSearch] ${message}`);
+      console.error(`[SweetSearch] ${message}`);
     }
   }
 
@@ -2149,7 +2149,7 @@ let _warmSearcher = null;
 let _warmInitPromise = null;
 
 /**
- * Get or create a warm SmartSearch instance (singleton pattern)
+ * Get or create a warm SweetSearch instance (singleton pattern)
  * First call loads indexes (~400ms), subsequent calls are instant
  */
 export async function getWarmSearcher(options = {}) {
@@ -2162,7 +2162,7 @@ export async function getWarmSearcher(options = {}) {
     return _warmSearcher;
   }
 
-  _warmSearcher = new SmartSearch(options);
+  _warmSearcher = new SweetSearch(options);
   _warmInitPromise = _warmSearcher.init();
   await _warmInitPromise;
 
@@ -2182,13 +2182,14 @@ export async function warmSearch(query, options = {}) {
 // =============================================================================
 
 const SEARCH_SERVER_PORT = 9876;
-const SEARCH_SERVER_SOCKET = '/tmp/search.sock';
-const SEARCH_SERVER_PIDFILE = '/tmp/smart-search-server.pid';
+const SEARCH_SERVER_SOCKET = '/tmp/sweet-search.sock';
+const SEARCH_SERVER_SOCKET_LEGACY = '/tmp/search.sock';
+const SEARCH_SERVER_PIDFILE = '/tmp/sweet-search-server.pid';
 
 async function startServer() {
   const http = await import('http');
 
-  const searcher = new SmartSearch({ verbose: false });
+  const searcher = new SweetSearch({ verbose: false });
   console.log('[Server] Initializing indexes (one-time cost)...');
   const initStart = Date.now();
   await searcher.init();
@@ -2377,6 +2378,7 @@ async function startServer() {
       unixServer.close();
       try { await fs.unlink(SEARCH_SERVER_PIDFILE); } catch {}
       try { await fs.unlink(SEARCH_SERVER_SOCKET); } catch {}
+      try { await fs.unlink(SEARCH_SERVER_SOCKET_LEGACY); } catch {}
       process.exit(0);
     } else {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -2389,12 +2391,16 @@ async function startServer() {
   tcpServer.listen(SEARCH_SERVER_PORT);
   console.log(`[Server] TCP listening on http://localhost:${SEARCH_SERVER_PORT}`);
 
-  // Unix socket server (/tmp/search.sock) - 30-50% faster
+  // Unix socket server (/tmp/sweet-search.sock) - 30-50% faster
   const unixServer = http.createServer(handleRequest);
   try { await fs.unlink(SEARCH_SERVER_SOCKET); } catch {} // Remove stale socket
   unixServer.listen(SEARCH_SERVER_SOCKET);
   console.log(`[Server] Unix socket listening on ${SEARCH_SERVER_SOCKET}`);
   console.log(`[Server] Fast access: curl --unix-socket ${SEARCH_SERVER_SOCKET} "http://localhost/search?q=query"`);
+
+  // Legacy socket symlink for backward compatibility (/tmp/search.sock → /tmp/sweet-search.sock)
+  try { await fs.unlink(SEARCH_SERVER_SOCKET_LEGACY); } catch {}
+  try { await fs.symlink(SEARCH_SERVER_SOCKET, SEARCH_SERVER_SOCKET_LEGACY); } catch {}
 
   // Alias for graceful shutdown
   const server = tcpServer;
@@ -2407,6 +2413,7 @@ async function startServer() {
     searcher.close();
     try { await fs.unlink(SEARCH_SERVER_PIDFILE); } catch {}
     try { await fs.unlink(SEARCH_SERVER_SOCKET); } catch {}
+    try { await fs.unlink(SEARCH_SERVER_SOCKET_LEGACY); } catch {}
     process.exit(0);
   });
 }
@@ -2558,7 +2565,7 @@ const STYLE = (() => {
   const bg256 = (c) => `\x1b[48;5;${rgbToAnsi256(c.r, c.g, c.b)}m`;
 
   const detectColorMode = () => {
-    const forced = (process.env.SMART_SEARCH_COLOR_MODE || '').trim().toLowerCase();
+    const forced = (process.env.SWEET_SEARCH_COLOR_MODE || process.env.SMART_SEARCH_COLOR_MODE || '').trim().toLowerCase();
     if (forced === 'none' || forced === '0' || forced === 'off') return 'none';
     if (forced === '256' || forced === 'ansi256' || forced === 'xterm256') return 'ansi256';
     if (forced === 'truecolor' || forced === '24bit' || forced === 'rgb') return 'truecolor';
@@ -2581,7 +2588,7 @@ const STYLE = (() => {
   const fg = colorMode === 'truecolor' ? fg24 : colorMode === 'ansi256' ? fg256 : () => '';
   const bg = colorMode === 'truecolor' ? bg24 : colorMode === 'ansi256' ? bg256 : () => '';
 
-  const headerStyleEnv = (process.env.SMART_SEARCH_HEADER_STYLE || '').trim().toLowerCase();
+  const headerStyleEnv = (process.env.SWEET_SEARCH_HEADER_STYLE || process.env.SMART_SEARCH_HEADER_STYLE || '').trim().toLowerCase();
   const headerStyle =
     headerStyleEnv === 'zones' || headerStyleEnv === 'gradient'
       ? headerStyleEnv
@@ -2699,11 +2706,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     console.log(`
-Smart Search v2.3 - Unified Code Search with Auto-Warm Server
+Sweet Search v2.3 - Unified Code Search with Auto-Warm Server
 
 Usage:
-  smart-search-v21.js <query> [options]
-  smart-search-v21.js --stop               Stop warm server
+  sweet-search <query> [options]
+  sweet-search --stop               Stop warm server
 
 Options:
   --mode <mode>     Search mode: auto, lexical, semantic, hybrid (default: auto)
@@ -2727,10 +2734,10 @@ Auto-Warm Server (automatic):
   Server runs in background until explicitly stopped or system restart.
 
 Examples:
-  smart-search-v21.js "AuthService"        # Auto-starts server, uses warm cache
-  smart-search-v21.js "how does auth work" # Semantic search
-  smart-search-v21.js "auth" --cold        # Skip server, cold start only
-  smart-search-v21.js --stop               # Stop warm server
+  sweet-search "AuthService"        # Auto-starts server, uses warm cache
+  sweet-search "how does auth work" # Semantic search
+  sweet-search "auth" --cold        # Skip server, cold start only
+  sweet-search --stop               # Stop warm server
 `);
     process.exit(0);
   }
@@ -2837,7 +2844,7 @@ Examples:
             printStyledStats(stats, true);
 
             // Simple format for server results
-            const searcher = new SmartSearch();
+            const searcher = new SweetSearch();
             if (stats.path === 'structural') {
               console.log(searcher.formatStructuralResults(results, stats));
             } else if (summaryFirst) {
@@ -2856,7 +2863,7 @@ Examples:
       }
 
       // Cold start (server auto-start failed or --cold flag)
-      const searcher = new SmartSearch({
+      const searcher = new SweetSearch({
         verbose,
         returnSummaryFirst: summaryFirst,
         useColBERT
@@ -2907,4 +2914,5 @@ Examples:
   }
 }
 
-export default SmartSearch;
+export default SweetSearch;
+export { SweetSearch as SmartSearch };

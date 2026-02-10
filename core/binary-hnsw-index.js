@@ -13,7 +13,7 @@
  *   This file is saved/loaded alongside the binary HNSW index artifacts.
  *   - save(): Writes .int8.json with { id: Int8Array[], ... } format
  *   - load(): Populates this.int8Vectors Map from .int8.json
- *   - getInt8Vector(id): O(1) lookup used by smart-search-v21.js during stage-2
+ *   - getInt8Vector(id): O(1) lookup used by sweet-search.js during stage-2
  *
  *   This is the ONLY source of int8 vectors. The SQLite approach (codebase-int8.db)
  *   was removed as redundant - it was created but never used by search.

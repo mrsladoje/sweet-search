@@ -33,7 +33,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SEARCH_DIR="${SWEET_SEARCH_DIR:-$PROJECT_ROOT}"
-if [ ! -f "$SEARCH_DIR/core/smart-search-v21.js" ] && [ -f "$PROJECT_ROOT/.claude/helpers/search-100x/smart-search-v21.js" ]; then
+if [ ! -f "$SEARCH_DIR/core/sweet-search.js" ] && [ -f "$PROJECT_ROOT/.claude/helpers/search-100x/sweet-search.js" ]; then
     SEARCH_DIR="$PROJECT_ROOT/.claude/helpers/search-100x"
 fi
 LOG_FILE="/tmp/search-100x-preheat.log"
@@ -90,7 +90,7 @@ touch "$LOCK_FILE"
     # 1. Start warm server if not running
     if ! curl -s "http://localhost:9876/health" >/dev/null 2>&1; then
         echo "[$(date '+%H:%M:%S')] Starting warm server..." >> "$LOG_FILE"
-        node "$SEARCH_DIR/core/smart-search-v21.js" --serve >/dev/null 2>&1 &
+        node "$SEARCH_DIR/core/sweet-search.js" --serve >/dev/null 2>&1 &
         SERVER_PID=$!
 
         # Wait for server to be ready (max 5 seconds)
@@ -106,7 +106,8 @@ touch "$LOCK_FILE"
     fi
 
     # 1b. Unix socket warmup - preestablish connection for blazing fast ss queries
-    SOCKET="/tmp/search.sock"
+    SOCKET="/tmp/sweet-search.sock"
+    [[ ! -S "$SOCKET" ]] && SOCKET="/tmp/search.sock"
     if [ -S "$SOCKET" ]; then
         echo "[$(date '+%H:%M:%S')] Prewarming Unix socket..." >> "$LOG_FILE"
         curl -s --unix-socket "$SOCKET" "http://l/health" >/dev/null 2>&1
