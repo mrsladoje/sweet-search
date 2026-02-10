@@ -91,7 +91,8 @@ const PROTO_PATTERNS = {
 // =============================================================================
 
 export class GraphExtractor {
-  constructor() {
+  constructor(options) {
+    this.projectRoot = options?.projectRoot || process.cwd();
     this.entities = new Map();
     this.relationships = [];
     this.currentFile = null;
@@ -590,7 +591,7 @@ export class GraphExtractor {
    * @returns {string} 16-char hex ID
    */
   makeId(filePath, type, name, options = {}) {
-    const relativePath = filePath.replace(/^.*[/\\]sloth[/\\]/, '');
+    const relativePath = this.projectRoot ? path.relative(this.projectRoot, filePath) : filePath;
 
     // Build disambiguator for overloaded methods or same-name entities
     let disambiguator = '';
