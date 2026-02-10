@@ -23,7 +23,7 @@ import {
   atomicAcquireQueue,
   cleanupProcessingFile,
   requeueEntries,
-  ensureAgentDbDir,
+  ensureDataDir,
   CONFIG,
 } from '../.claude/hooks/index-maintainer.mjs';
 
