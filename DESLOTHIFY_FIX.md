@@ -7,6 +7,12 @@
 **Date:** 2026-02-10  
 **Goal:** Capture all good actionable suggestions from both reviews, deduplicated, prioritized, and traceable.
 
+**Hard-cutover policy (locked):**
+- This project is pre-release with no external users yet.
+- Do **not** implement legacy `.agentdb` migration flows.
+- Do **not** keep `AGENTDB_PATH` runtime compatibility aliases.
+- Runtime/storage contract is `.sweet-search` only.
+
 ---
 
 ## 1) Review Quality Comparison
@@ -50,11 +56,10 @@ Each fix item includes source trace IDs:
 - Verify hook/indexer scanners also exclude `.sweet-search`.
 - **Sources:** C-03, CR-04.
 
-### F-04 Legacy migration flow not implemented
-- Implement locked migration policy:
-  - interactive: prompt
-  - non-interactive: warn-only unless explicit migrate flag
-- Ensure users with existing `.agentdb/` are not silently broken.
+### F-04 Hard cutover to `.sweet-search` only (no legacy `.agentdb` support)
+- Remove runtime compatibility code for `AGENTDB_PATH` alias.
+- Do not add/keep migration prompt/warn-only flows for `.agentdb`.
+- If stale `.agentdb` is detected, fail fast with a clear one-line action: re-index into `.sweet-search`.
 - **Sources:** C-04, CR-03.
 
 ### F-05 Fix broken integration test import (`ensureAgentDbDir` -> `ensureDataDir`)
@@ -135,10 +140,10 @@ Each fix item includes source trace IDs:
 - Prevent leaked resources and DB/session corruption.
 - **Sources:** HI-11.
 
-### F-19 Project detector + compatibility test coverage
+### F-19 Project detector + debranding compatibility test coverage
 - Add tests for:
   - `core/project-detector.js`
-  - migration aliases (`SmartSearch` alias, `AGENTDB_PATH` fallback, default data dir)
+  - debranding compatibility (`SmartSearch` alias if retained, `.sweet-search` default data dir)
 - **Sources:** HI-15, HI-16.
 
 ### F-20 Fix known translation test baseline failures
@@ -156,9 +161,10 @@ Each fix item includes source trace IDs:
 - Synchronize hardcoded MCP server version with `package.json` version.
 - **Sources:** HI-09, ME-12.
 
-### F-23 `.agentdb` orphan handling and ignore policy
-- Ensure stale `.agentdb/` cannot be accidentally committed during migration window.
-- Clarify whether `.agentdb/` stays ignored for transition period.
+### F-23 `.agentdb` artifact purge and hygiene
+- Remove stale `.agentdb/` artifacts from working tree and CI flows.
+- Enforce that runtime paths do not read/write `.agentdb`.
+- Keep `.agentdb/` ignored only as a safety net against accidental local residue commits.
 - **Sources:** CR-02.
 
 ---

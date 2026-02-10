@@ -31,7 +31,7 @@ import { existsSync } from 'fs';
 import path from 'path';
 import fg from 'fast-glob';
 
-import { DB_PATHS, FILE_PATTERNS, EMBEDDING_CONFIG, HNSW_CONFIG, PROJECT_ROOT, setQuietMode as setGlobalQuietMode, isQuietMode as isGlobalQuietMode } from './config.js';
+import { DB_PATHS, FILE_PATTERNS, EMBEDDING_CONFIG, HNSW_CONFIG, PROJECT_ROOT, setQuietMode as setGlobalQuietMode, isQuietMode as isGlobalQuietMode, loadProjectConfig } from './config.js';
 import { GraphExtractor, createGraphSchema, insertGraph } from './graph-extractor.js';
 import { resolveRelationshipTargets } from './relationship-resolver.js';
 import { HNSWIndex } from './hnsw-index.js';
@@ -315,8 +315,9 @@ async function readFilesFromStdin() {
 async function discoverFiles() {
   log('\n━━━ Discovering Files ━━━', 'bright');
 
-  const files = await glob(FILE_PATTERNS.include, {
-    ignore: FILE_PATTERNS.exclude,
+  const projectConfig = loadProjectConfig(PROJECT_ROOT);
+  const files = await glob(projectConfig.include, {
+    ignore: projectConfig.exclude,
     cwd: PROJECT_ROOT,
     absolute: false,
     onlyFiles: true,
