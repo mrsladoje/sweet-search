@@ -64,7 +64,7 @@ const results = {
   identifier: { correct: 0, total: 0 },
 };
 
-console.log('SEARCH 100x Router Phase 1 Tests');
+console.log('Sweet Search Router Phase 1 Tests');
 console.log('='.repeat(95));
 console.log('Query                                          | Expected    | Actual      | Match | Latency');
 console.log('='.repeat(95));

@@ -435,7 +435,7 @@ CREATE INDEX idx_entities_active ON entities(file_path) WHERE stale_since IS NUL
 
 **Problem:** Inconsistent branding.
 
-**Fix:** Changed all references to "SEARCH 100x".
+**Fix:** Changed all references to "Sweet Search".
 
 ---
 

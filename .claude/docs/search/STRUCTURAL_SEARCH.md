@@ -206,7 +206,7 @@ async findImpact(entityName, options = {}) {
 }
 ```
 
-## Integration in SmartSearch
+## Integration in SweetSearch
 
 **Source**: `grep -n "structuralSearch" sweet-search.js`
 

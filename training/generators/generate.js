@@ -634,7 +634,7 @@ Examples:
   }
 
   console.log('\n' + '='.repeat(60));
-  console.log('SEARCH 100x Training Data Generator (Phase 3)');
+  console.log('Sweet Search Training Data Generator (Phase 3)');
   console.log('='.repeat(60));
   console.log(`Target: ${totalSamples} samples`);
   console.log(`Output: ${outputPath}`);

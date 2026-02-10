@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * SEARCH 100x Performance Benchmark Harness
+ * Sweet Search Performance Benchmark Harness
  *
  * Comprehensive benchmarking for indexing and search performance.
  * Implements methodology from docs/benchmarking/PERFORMANCE_BENCHMARKING_METHODOLOGY.md
@@ -53,7 +53,7 @@ const CONFIG = {
 
   // Paths
   indexerPath: path.join(__dirname, '..', 'core', 'index-codebase-v21.js'),
-  smartSearchPath: path.join(__dirname, '..', 'ss'),
+  sweetSearchPath: path.join(__dirname, '..', 'ss'),
   daemonPath: path.join(PROJECT_ROOT, '.claude/hooks/index-maintainer.mjs'),
   dataDir: path.join(PROJECT_ROOT, '.sweet-search'),
 };
@@ -453,7 +453,7 @@ async function benchmarkSearchLatency(iterations = CONFIG.searchIterations) {
 
   // Warmup
   log('\nWarming up search system...', 'dim');
-  await runCommand(CONFIG.smartSearchPath, ['test', '--quiet']);
+  await runCommand(CONFIG.sweetSearchPath, ['test', '--quiet']);
 
   for (const [mode, queryList] of Object.entries(queries)) {
     log(`\nBenchmarking ${mode} queries (${iterations} per query)...`, 'cyan');
@@ -464,7 +464,7 @@ async function benchmarkSearchLatency(iterations = CONFIG.searchIterations) {
       const modeArg = mode === 'structural' ? '--mode=lexical' : `--mode=${mode}`;
 
       const start = performance.now();
-      await runCommand(CONFIG.smartSearchPath, [query, modeArg, '--quiet', '--top', '10']);
+      await runCommand(CONFIG.sweetSearchPath, [query, modeArg, '--quiet', '--top', '10']);
       const duration = performance.now() - start;
 
       latencies.push(duration);
@@ -694,7 +694,7 @@ async function main() {
   const compareFile = compareIndex !== -1 ? args[compareIndex + 1] : null;
 
   log('\n' + '='.repeat(60), 'bright');
-  log('SEARCH 100x PERFORMANCE BENCHMARK', 'bright');
+  log('Sweet Search PERFORMANCE BENCHMARK', 'bright');
   log('='.repeat(60), 'bright');
 
   const results = {

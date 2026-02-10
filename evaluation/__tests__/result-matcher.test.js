@@ -1,5 +1,5 @@
 /**
- * Unit tests for SEARCH 100x Result Matcher
+ * Unit tests for Sweet Search Result Matcher
  *
  * Tests matching logic including:
  * - Exact matches (file, name, type, lineRange)

@@ -353,7 +353,7 @@ The search system maintains a warm HTTP server for fast subsequent searches:
 ### Server Ports
 
 - TCP: `localhost:9876`
-- Unix socket: `/tmp/search.sock` (30-50% faster)
+- Unix socket: `/tmp/sweet-search.sock` (30-50% faster)
 
 ## Configuration Reference
 

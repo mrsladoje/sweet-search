@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 
 /**
  * Generic project boundary detection using marker files.
- * Replaces hardcoded Sloth directory detection with auto-discovery.
+ * Replaces hardcoded directory detection with auto-discovery.
  *
  * Works by walking up from a file path to find the nearest directory
  * containing a project marker file (package.json, pom.xml, build.gradle, etc.)
@@ -76,7 +76,7 @@ function _walkUpForBoundary(dir, projectRoot) {
 
 /**
  * Convert a directory name to kebab-case for use as a project tag.
- * Examples: "Sloth-Central" -> "sloth-central", "My App" -> "my-app"
+ * Examples: "My-Project" -> "my-project", "My App" -> "my-app"
  */
 function toKebabCase(str) {
   return str

@@ -1,5 +1,5 @@
 /**
- * Unit tests for SEARCH 100x Evaluation Metrics
+ * Unit tests for Sweet Search Evaluation Metrics
  *
  * Tests all metric calculations including:
  * - MRR@K (Mean Reciprocal Rank)

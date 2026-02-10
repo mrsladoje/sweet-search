@@ -3,7 +3,7 @@
 /**
  * Codebase Indexer v2.3
  *
- * Full indexing pipeline for SEARCH 100x:
+ * Full indexing pipeline for Sweet Search:
  * 1. Code Graph: Extract entities and relationships, build FTS5 index
  * 2. Vector Embeddings: Generate embeddings with transformers.js
  * 3. HNSW Index: Build in-memory ANN index for fast semantic search
@@ -1650,7 +1650,7 @@ async function main() {
   }
 
   log(`${colors.bright}╔═══════════════════════════════════════════════════╗${colors.reset}`, 'bright');
-  log(`${colors.bright}║   SEARCH 100x Codebase Indexer v2.3 (SOTA Dec'25) ║${colors.reset}`, 'bright');
+  log(`${colors.bright}║   Sweet Search Codebase Indexer v2.3 (SOTA Dec'25) ║${colors.reset}`, 'bright');
   log(`${colors.bright}╚═══════════════════════════════════════════════════╝${colors.reset}`, 'bright');
 
   // Warn about --vectors-only since it skips code graph (breaks GraphRAG)

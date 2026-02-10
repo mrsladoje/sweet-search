@@ -2,8 +2,8 @@
  * Incremental Tracker Tests
  *
  * Tests for the incremental indexing tracker (v2.3):
- * - mtime/size fast-path optimization (SEARCH 100x v2.3)
- * - Config fingerprint validation (SEARCH 100x v2.3)
+ * - mtime/size fast-path optimization (Sweet Search v2.3)
+ * - Config fingerprint validation (Sweet Search v2.3)
  * - ENOSPC (disk full) error handling (C4)
  * - Missing vs corrupt state file detection (E3)
  *

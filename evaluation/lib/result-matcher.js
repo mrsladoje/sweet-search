@@ -1,5 +1,5 @@
 /**
- * SEARCH 100x Result Matcher
+ * Sweet Search Result Matcher
  *
  * Matches search results against ground truth expectations.
  * Supports four match types:

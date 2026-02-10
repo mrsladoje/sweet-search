@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * SEARCH 100x Evaluation Runner
+ * Sweet Search Evaluation Runner
  *
  * Main CLI for running quality evaluation on the search system.
  *
@@ -38,7 +38,7 @@ import {
 // =============================================================================
 
 const SEARCH_SERVER_PORT = 9876;
-const SEARCH_SERVER_SOCKET = '/tmp/search.sock';
+const SEARCH_SERVER_SOCKET = '/tmp/sweet-search.sock';
 
 /**
  * Client for the preheated search server.
@@ -219,7 +219,7 @@ function validatePath(userPath, baseDir = __dirname) {
  */
 function printHelp() {
   console.log(`
-SEARCH 100x Evaluation Runner
+Sweet Search Evaluation Runner
 
 Usage:
   node run-evaluation.js [options]

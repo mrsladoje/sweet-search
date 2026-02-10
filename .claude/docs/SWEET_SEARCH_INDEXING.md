@@ -1,6 +1,6 @@
 # Smart Search Indexing System - Complete Technical Specification
 
-> **Version:** 2.3 (SEARCH 100x)
+> **Version:** 2.3 (Sweet Search)
 > **Last Updated:** 2026-01-02
 > **Location:** `./`
 
@@ -707,10 +707,10 @@ The search system includes an auto-starting HTTP server for index preheating:
 ```javascript
 // sweet-search.js
 const SEARCH_SERVER_PORT = 9876;
-const SEARCH_SERVER_SOCKET = '/tmp/search.sock';
+const SEARCH_SERVER_SOCKET = '/tmp/sweet-search.sock';
 
 async function startServer() {
-  const searcher = new SmartSearch({ verbose: false });
+  const searcher = new SweetSearch({ verbose: false });
   await searcher.init();  // Loads all indexes into memory
 
   // TCP server (backward compatible)
