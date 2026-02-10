@@ -17,6 +17,7 @@
  */
 
 import path from 'path';
+import { existsSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -978,20 +979,29 @@ export const ROUTING_CONFIG = {
 
 export const FILE_PATTERNS = {
   include: [
-    'Sloth Vita/biologger/src/**/*.java',
-    'Sloth Web/Sloth-Central/src/**/*.java',
-    'Sloth Web/Sloth-Local/src/main/java/**/*.java',
-    'Sloth Web/Sloth-Central/src/main/Frontend/src/**/*.{js,jsx,ts,tsx}',
-    'Sloth Web/Sloth-Local/src/main/Sloth-Front/src/**/*.{js,jsx,ts,tsx}',
-    '**/*.proto',
-    'CLAUDE.md',
-    'ARCHITECTURE.md',
-    'DEVELOPMENT.md',
-    'GRPC.md',
-    'Sloth Vita/CLAUDE.md',
-    'Sloth Web/Sloth-Central/CLAUDE.md',
-    'Sloth Web/Sloth-Local/CLAUDE.md',
-    'Sloth Web/Sloth-Local/src/main/Sloth-Front/CLAUDE.md',
+    // Source code (all major languages)
+    '**/*.{js,jsx,ts,tsx,mjs,cjs}',      // JavaScript/TypeScript
+    '**/*.{java,kt,kts,scala,groovy}',    // JVM
+    '**/*.{py,pyi}',                       // Python
+    '**/*.{go}',                           // Go
+    '**/*.{rs}',                           // Rust
+    '**/*.{c,cpp,cc,cxx,h,hpp,hxx}',      // C/C++
+    '**/*.{cs,fs,vb}',                     // .NET
+    '**/*.{rb,erb}',                       // Ruby
+    '**/*.{php}',                          // PHP
+    '**/*.{swift,m,mm}',                   // Apple
+    '**/*.{lua,zig,nim,ex,exs}',           // Other
+    '**/*.{sh,bash,zsh,fish,ps1}',         // Shell
+    '**/*.{sql}',                          // SQL
+    '**/*.{proto}',                        // Protobuf
+    '**/*.{graphql,gql}',                  // GraphQL
+    // Config & docs
+    '**/*.{json,yaml,yml,toml,xml}',       // Config
+    '**/*.{md,mdx,rst,txt}',               // Documentation
+    '**/*.{html,css,scss,less,svg}',        // Web
+    // Project markers
+    '**/CLAUDE.md',
+    '**/README.md',
   ],
   exclude: [
     '**/node_modules/**',
@@ -1008,6 +1018,43 @@ export const FILE_PATTERNS = {
     '**/package-lock.json',
   ],
 };
+
+/**
+ * Load per-project configuration from .sweet-search.config.json
+ * Precedence: config file > defaults. Environment variables > config file.
+ *
+ * @param {string} [projectRoot] - Project root to search for config file
+ * @returns {{ include: string[], exclude: string[], projectRoot?: string }}
+ */
+export function loadProjectConfig(projectRoot = process.cwd()) {
+  const configPath = path.join(projectRoot, '.sweet-search.config.json');
+
+  if (!existsSync(configPath)) {
+    return { include: FILE_PATTERNS.include, exclude: FILE_PATTERNS.exclude };
+  }
+
+  try {
+    const raw = readFileSync(configPath, 'utf-8');
+    const config = JSON.parse(raw);
+
+    // Validate known keys, warn on unknown
+    const knownKeys = new Set(['include', 'exclude', 'projectRoot', 'indexDocs', 'maxFileSize']);
+    for (const key of Object.keys(config)) {
+      if (!knownKeys.has(key)) {
+        console.error(`[sweet-search] Warning: unknown key "${key}" in .sweet-search.config.json`);
+      }
+    }
+
+    return {
+      include: Array.isArray(config.include) ? config.include : FILE_PATTERNS.include,
+      exclude: Array.isArray(config.exclude) ? [...FILE_PATTERNS.exclude, ...config.exclude] : FILE_PATTERNS.exclude,
+      ...(config.projectRoot ? { projectRoot: config.projectRoot } : {}),
+    };
+  } catch (err) {
+    console.error(`[sweet-search] Error loading .sweet-search.config.json: ${err.message}`);
+    return { include: FILE_PATTERNS.include, exclude: FILE_PATTERNS.exclude };
+  }
+}
 
 // =============================================================================
 // PERFORMANCE TARGETS
