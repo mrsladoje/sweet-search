@@ -49,6 +49,7 @@ failure-analysis.md
 
 # Claude Flow and AgenticQE
 .agentic-qe/
+.agentdb/
 .claude-flow/
 .claude/agents/
 .claude/commands/analysis/
