@@ -13,6 +13,7 @@
 import { createHash } from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
+import { detectProjectBoundary } from './core/project-detector.js';
 
 const MAX_CHUNK_SIZE = 2000;
 
@@ -21,7 +22,8 @@ const MAX_CHUNK_SIZE = 2000;
  * Uses regex patterns to identify code boundaries
  */
 export class ASTChunker {
-  constructor() {
+  constructor(options) {
+    this.projectRoot = options?.projectRoot || process.cwd();
     this.patterns = {
       java: {
         class: /(?:public|private|protected)?\s*(?:static)?\s*(?:final)?\s*class\s+(\w+)/,
@@ -150,7 +152,7 @@ export class ASTChunker {
 
   buildChunk(content, filePath, language, chunkType, symbol, lineStart, lineEnd) {
     const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
-    const relativePath = filePath.replace(/^.*\/sloth\//, '');
+    const relativePath = this.projectRoot ? path.relative(this.projectRoot, filePath) : filePath;
 
     return {
       text: content.trim(),
@@ -171,11 +173,8 @@ export class ASTChunker {
   }
 
   inferProjectTag(filePath) {
-    if (filePath.includes('Sloth-Central')) return 'sloth-central';
-    if (filePath.includes('Sloth-Local') && filePath.includes('Sloth-Front')) return 'sloth-frontend';
-    if (filePath.includes('Sloth-Local')) return 'sloth-local';
-    if (filePath.includes('Sloth Vita') || filePath.includes('biologger')) return 'sloth-vita';
-    return 'sloth';
+    const { name } = detectProjectBoundary(filePath, this.projectRoot || process.cwd());
+    return name;
   }
 
   async parseFiles(filePaths) {

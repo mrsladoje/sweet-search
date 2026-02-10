@@ -10,6 +10,7 @@ node_modules/
 *.tmp
 *.log
 .sweet-search/
+# .sweet-search.config.json  # Uncomment to exclude per-project search config
 
 # Compiled binaries
 ss

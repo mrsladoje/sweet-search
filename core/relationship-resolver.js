@@ -14,29 +14,23 @@
  * - uses/throws: General reference, prefer same project
  */
 
+import { detectProjectBoundary } from './project-detector.js';
+
 // =============================================================================
 // PROJECT DETECTION
 // =============================================================================
 
 /**
- * Detect which Sloth project a file belongs to based on its path.
- * Returns a project identifier for same-project matching.
+ * Detect which project a file belongs to based on its path.
+ * Uses marker-file detection to find nearest project boundary.
  *
  * @param {string} filePath - File path to analyze
- * @returns {string} Project identifier: 'local', 'central', 'vita', 'front-local', 'front-central', or 'unknown'
+ * @returns {string} Project identifier (kebab-cased directory name) or 'unknown'
  */
 function detectProject(filePath) {
   if (!filePath) return 'unknown';
-  const normalized = filePath.replace(/\\/g, '/');
-
-  // Order matters: check more specific paths first
-  if (normalized.includes('Sloth Web/Sloth-Local/src/main/Sloth-Front')) return 'front-local';
-  if (normalized.includes('Sloth Web/Sloth-Central/src/main/Sloth-Front')) return 'front-central';
-  if (normalized.includes('Sloth Web/Sloth-Local')) return 'local';
-  if (normalized.includes('Sloth Web/Sloth-Central')) return 'central';
-  if (normalized.includes('Sloth Vita')) return 'vita';
-
-  return 'unknown';
+  const { name } = detectProjectBoundary(filePath, process.cwd());
+  return name;
 }
 
 /**
