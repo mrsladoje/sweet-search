@@ -131,8 +131,8 @@ const HealthOutputSchema = z.object({
 server.registerTool('search', {
   description: 'Search the codebase using hybrid semantic/lexical/structural search',
   inputSchema: {
-    query: z.string().describe('Search query'),
-    k: z.number().default(10).describe('Number of results to return'),
+    query: z.string().min(1).max(1000).describe('Search query (1-1000 chars)'),
+    k: z.number().int().min(1).max(200).default(10).describe('Number of results (1-200)'),
     mode: z.enum(['auto', 'lexical', 'semantic', 'hybrid']).default('auto')
       .describe('Search mode'),
   },
@@ -144,39 +144,51 @@ server.registerTool('search', {
     openWorldHint: false,
   },
 }, async ({ query, k, mode }) => {
-  const searcher = await getSearcher();
-  const { results, stats } = await searcher.search(query, {
-    k,
-    mode,
-    expand: true,
-    rerank: true,
-  });
+  try {
+    const searcher = await getSearcher();
+    const { results, stats } = await searcher.search(query, {
+      k,
+      mode,
+      expand: true,
+      rerank: true,
+    });
 
-  const structured = {
-    results: (results || []).map(r => ({
-      file: r.file || r.file_path || r.metadata?.file || '',
-      line: r.startLine || r.start_line || undefined,
-      score: r.score || 0,
-      snippet: r.snippet || r.signature || r.name || '',
-      signature: r.signature || '',
-      language: r.language || r.metadata?.language || '',
-    })),
-    totalFound: stats.results_count || 0,
-    mode: stats.routing?.mode || mode,
-    queryTimeMs: stats.total_ms || 0,
-  };
+    const structured = {
+      results: (results || []).map(r => ({
+        file: r.file || r.file_path || r.metadata?.file || '',
+        line: r.startLine || r.start_line || undefined,
+        score: r.score || 0,
+        snippet: r.snippet || r.signature || r.name || '',
+        signature: r.signature || '',
+        language: r.language || r.metadata?.language || '',
+      })),
+      totalFound: stats.results_count || 0,
+      mode: stats.routing?.mode || mode,
+      queryTimeMs: stats.total_ms || 0,
+    };
 
-  const lines = structured.results.map((r, i) =>
-    `${i + 1}. ${r.file}${r.line ? ':' + r.line : ''} (score: ${r.score.toFixed(3)})${r.signature ? '\n   ' + r.signature : ''}`
-  );
-  const text = lines.length > 0
-    ? `Found ${structured.totalFound} results (${structured.queryTimeMs}ms, ${structured.mode}):\n\n${lines.join('\n\n')}`
-    : `No results found for "${query}" (${structured.queryTimeMs}ms)`;
+    const lines = structured.results.map((r, i) =>
+      `${i + 1}. ${r.file}${r.line ? ':' + r.line : ''} (score: ${r.score.toFixed(3)})${r.signature ? '\n   ' + r.signature : ''}`
+    );
+    const text = lines.length > 0
+      ? `Found ${structured.totalFound} results (${structured.queryTimeMs}ms, ${structured.mode}):\n\n${lines.join('\n\n')}`
+      : `No results found for "${query}" (${structured.queryTimeMs}ms)`;
 
-  return {
-    content: [{ type: 'text', text }],
-    structuredContent: structured,
-  };
+    return {
+      content: [{ type: 'text', text }],
+      structuredContent: structured,
+    };
+  } catch (err) {
+    const safeMessage = (err.message || 'Search failed')
+      .split('\n')[0]                          // Strip stack traces
+      .replace(/\/[^\s:]+/g, '<path>')         // Unix paths
+      .replace(/[A-Z]:\\[^\s:]+/gi, '<path>')  // Windows paths
+      .replace(/\\\\[^\s:]+/g, '<path>');      // UNC paths
+    return {
+      content: [{ type: 'text', text: `Search error: ${safeMessage}` }],
+      isError: true,
+    };
+  }
 });
 
 server.registerTool('index', {
@@ -206,6 +218,14 @@ server.registerTool('index', {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
+    // F-11: Timeout to prevent indefinite hanging
+    const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+    const timeout = setTimeout(() => {
+      child.kill('SIGTERM');
+      // Give 5s grace period, then SIGKILL
+      setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 5000);
+    }, TIMEOUT_MS);
+
     let stdout = '';
     let stderr = '';
 
@@ -225,8 +245,10 @@ server.registerTool('index', {
     });
 
     child.on('close', (code) => {
+      clearTimeout(timeout);
       const durationMs = Date.now() - start;
       const success = code === 0;
+      const timedOut = code === null || code === 143; // SIGTERM = 143
 
       const filesMatch = stdout.match(/(\d+)\s+files?/i) || stderr.match(/(\d+)\s+files?/i);
       const filesIndexed = filesMatch ? parseInt(filesMatch[1], 10) : undefined;
@@ -236,7 +258,7 @@ server.registerTool('index', {
         filesIndexed,
         durationMs,
         mode,
-        errors: success ? [] : [stderr.trim() || `Indexer exited with code ${code}`],
+        errors: success ? [] : [timedOut ? `Indexing timed out after ${TIMEOUT_MS / 1000}s` : (stderr.trim() || `Indexer exited with code ${code}`)],
       };
 
       const text = success

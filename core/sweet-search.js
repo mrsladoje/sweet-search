@@ -2372,6 +2372,13 @@ async function startServer() {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', warm: true }));
     } else if (req.method === 'GET' && req.url === '/stop') {
+      // F-06: Only allow /stop via Unix socket (OS-level access control)
+      const isUnixSocket = !req.socket.remoteAddress;
+      if (!isUnixSocket) {
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
+        res.end('Forbidden: /stop is only available via Unix socket\n');
+        return;
+      }
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end('Shutting down...\n');
       tcpServer.close();
