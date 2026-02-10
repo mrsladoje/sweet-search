@@ -14,7 +14,7 @@
  * - Merkle check fast-path optimization
  * - Global index lock with 2-minute stale threshold (H1)
  *
- * Note: index-maintainer.mjs is in .claude/hooks/, but we test it from search-100x/__tests__
+ * Note: index-maintainer.mjs is in .claude/hooks/, but we test it from sweet-search/__tests__
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

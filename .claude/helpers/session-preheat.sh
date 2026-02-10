@@ -33,8 +33,8 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SEARCH_DIR="${SWEET_SEARCH_DIR:-$PROJECT_ROOT}"
-if [ ! -f "$SEARCH_DIR/core/sweet-search.js" ] && [ -f "$PROJECT_ROOT/.claude/helpers/search-100x/sweet-search.js" ]; then
-    SEARCH_DIR="$PROJECT_ROOT/.claude/helpers/search-100x"
+if [ ! -f "$SEARCH_DIR/core/sweet-search.js" ]; then
+    SEARCH_DIR="$PROJECT_ROOT"
 fi
 LOG_FILE="/tmp/sweet-search-preheat.log"
 LOCK_FILE="/tmp/sweet-search-preheat.lock"

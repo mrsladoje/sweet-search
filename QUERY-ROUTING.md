@@ -60,7 +60,7 @@ Compared to alternatives:
 ## File Structure
 
 ```
-search-100x/
+sweet-search/
 ├── query-router.js              # Main entry point (WASM loader + JS pre-checks)
 └── wasm-router/
     ├── pkg/

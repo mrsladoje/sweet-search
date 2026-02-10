@@ -4,8 +4,8 @@ Documentation of the ss-fast C client and its interaction with the search server
 
 ## Source Files
 
-- **C Client**: `.claude/helpers/search-100x/ss-fast/ss-fast.c`
-- **Shell Wrapper**: `.claude/helpers/search-100x/ss.sh`
+- **C Client**: `./ss-fast/ss-fast.c`
+- **Shell Wrapper**: `./ss.sh`
 - **Node.js Server**: `core/sweet-search.js`
   - `grep -n "async function startServer" sweet-search.js` → server entry point
 
@@ -313,10 +313,10 @@ async function autoSpawnServer() {
 
 | File | Path |
 |------|------|
-| C binary source | `.claude/helpers/search-100x/ss-fast/ss-fast.c` |
-| Compiled binary | `.claude/helpers/search-100x/ss-fast/ss` (after compile) |
-| Shell wrapper | `.claude/helpers/search-100x/ss.sh` |
-| Symlink (recommended) | `.claude/helpers/search-100x/ss` -> `ss-fast/ss` or `ss.sh` |
+| C binary source | `./ss-fast/ss-fast.c` |
+| Compiled binary | `./ss-fast/ss` (after compile) |
+| Shell wrapper | `./ss.sh` |
+| Symlink (recommended) | `./ss` -> `ss-fast/ss` or `ss.sh` |
 | Server | `core/sweet-search.js` |
 | Unix socket | `/tmp/search.sock` |
 | PID file | `/tmp/smart-search-server.pid` |
