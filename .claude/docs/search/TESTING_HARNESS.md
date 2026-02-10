@@ -1,8 +1,8 @@
-# SEARCH 100x Evaluation Harness
+# Sweet Search Evaluation Harness
 
 > **Status:** Production-ready | **Location:** `./evaluation/`
 
-A comprehensive quality evaluation framework for the SEARCH 100x hybrid code search engine. Measures retrieval quality using standard IR metrics (MRR, NDCG, MAP, Recall) with ground-truth query sets.
+A comprehensive quality evaluation framework for the Sweet Search hybrid code search engine. Measures retrieval quality using standard IR metrics (MRR, NDCG, MAP, Recall) with ground-truth query sets.
 
 ---
 
@@ -274,7 +274,7 @@ Success@10 = |queries with ≥1 relevant in top 10| / |total queries|
 ### Console Report (Default)
 
 ```
-SEARCH 100x EVALUATION REPORT
+Sweet Search EVALUATION REPORT
 ==================================================
 Timestamp: 2026-01-04T04:00:00.000Z
 Queries: 80
@@ -592,5 +592,5 @@ node evaluation/run-evaluation.js --category=identifier  # Second run shows cach
 
 _Document created: January 4, 2026_
 _Harness version: 1.0_
-_Tested with: SEARCH 100x v2.3.0_
+_Tested with: Sweet Search v2.3.0_
 

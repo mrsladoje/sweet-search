@@ -6,12 +6,12 @@
  * Tracks file changes using content hashes to enable incremental reindexing.
  * Only files that have changed since last index are reprocessed.
  *
- * SEARCH 100x v2.3: Config-aware cache invalidation
+ * Sweet Search v2.3: Config-aware cache invalidation
  * - Detects embedding provider/model/dimension changes
  * - Forces full reindex when config fingerprint mismatches
  * - Prevents silent dimension mismatch corruption
  *
- * SEARCH 100x v2.3: mtime/size fast-path optimization (Phase 0.3)
+ * Sweet Search v2.3: mtime/size fast-path optimization (Phase 0.3)
  * - Stores { hash, size, mtime_ns } per file instead of just hash
  * - Fast-path: skip content read if (size, mtime_ns) match stored values
  * - 10-50x speedup for typical incremental checks when few/no files changed
@@ -29,7 +29,7 @@ import { DB_PATHS, EMBEDDING_CONFIG } from './config.js';
 const STATE_PATH = DB_PATHS.merkle;
 
 // =============================================================================
-// CONFIG FINGERPRINT (SEARCH 100x v2.3)
+// CONFIG FINGERPRINT (Sweet Search v2.3)
 // Detects embedding provider/dimension changes that require full reindex
 // =============================================================================
 
@@ -162,7 +162,7 @@ function hashContent(content) {
 }
 
 // =============================================================================
-// MTIME/SIZE FAST-PATH (SEARCH 100x v2.3)
+// MTIME/SIZE FAST-PATH (Sweet Search v2.3)
 // Skip content reads when file metadata hasn't changed
 // =============================================================================
 
@@ -308,7 +308,7 @@ async function saveState(state) {
 /**
  * Determine which files need reindexing
  *
- * SEARCH 100x v2.3: mtime/size fast-path optimization
+ * Sweet Search v2.3: mtime/size fast-path optimization
  * - First: fs.stat() to get size and mtime (single syscall, ~0.1ms)
  * - If metadata matches stored values: skip content read (fast-path)
  * - If metadata differs: read content and compute hash (slow-path)
@@ -338,7 +338,7 @@ export async function getChangedFiles(allFiles, projectRoot) {
 
   // Check if config changed - force full reindex
   if (!configValidation.valid) {
-    console.warn(`\n[SEARCH 100x] CONFIG CHANGE DETECTED - Full reindex required`);
+    console.warn(`\n[Sweet Search] CONFIG CHANGE DETECTED - Full reindex required`);
     console.warn(`  Reason: ${configValidation.reason}`);
     if (configValidation.details) {
       console.warn(`  ${configValidation.details.message}`);
@@ -395,7 +395,7 @@ export async function getChangedFiles(allFiles, projectRoot) {
 
   // Log migration if applicable
   if (configValidation.migrated) {
-    console.log(`[SEARCH 100x] ${configValidation.details?.message || 'State migrated'}`);
+    console.log(`[Sweet Search] ${configValidation.details?.message || 'State migrated'}`);
   }
 
   const toIndex = [];
@@ -498,7 +498,7 @@ export async function getChangedFiles(allFiles, projectRoot) {
   if (allFiles.length > 0) {
     const fastPathRatio = ((fastPathStats.hits / allFiles.length) * 100).toFixed(1);
     console.log(
-      `[SEARCH 100x] Fast-path: ${fastPathStats.hits}/${allFiles.length} files (${fastPathRatio}%), ` +
+      `[Sweet Search] Fast-path: ${fastPathStats.hits}/${allFiles.length} files (${fastPathRatio}%), ` +
         `content reads: ${fastPathStats.contentReads}`,
     );
   }
@@ -641,7 +641,7 @@ Usage:
   node incremental-tracker.js --validate  Validate config fingerprint
   node incremental-tracker.js --clear     Clear state (force full reindex)
 
-Config-Aware Cache Invalidation (SEARCH 100x v2.3):
+Config-Aware Cache Invalidation (Sweet Search v2.3):
   The tracker now stores a config fingerprint with each index state.
   If the embedding provider, model, or dimensions change, the index
   is automatically invalidated and a full reindex is triggered.
@@ -649,7 +649,7 @@ Config-Aware Cache Invalidation (SEARCH 100x v2.3):
   This prevents silent dimension mismatch corruption when switching
   between providers (e.g., Voyage -> Mistral).
 
-mtime/size Fast-Path Optimization (SEARCH 100x v2.3):
+mtime/size Fast-Path Optimization (Sweet Search v2.3):
   Each file entry now stores { hash, size, mtime_ns } instead of just hash.
   On incremental checks, fs.stat() is called first (~0.1ms per file).
   If (size, mtime_ns) match stored values, content read is skipped entirely.

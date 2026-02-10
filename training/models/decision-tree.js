@@ -502,7 +502,7 @@ Examples:
     }
 
     console.log('\n' + '='.repeat(60));
-    console.log('SEARCH 100x ML Query Router Training');
+    console.log('Sweet Search ML Query Router Training');
     console.log('='.repeat(60));
 
     trainFromFile(dataPath, outputPath, { maxDepth, minSamples })

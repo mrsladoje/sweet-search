@@ -1,5 +1,5 @@
 /**
- * SEARCH 100x Report Generator
+ * Sweet Search Report Generator
  *
  * Generates evaluation reports in multiple formats:
  * - Console (human-readable with colors)
@@ -277,7 +277,7 @@ export function formatConsoleReport(report, useColors = true) {
   const lines = [];
 
   // Header
-  lines.push(`${c.bold}${c.cyan}SEARCH 100x EVALUATION REPORT${c.reset}`);
+  lines.push(`${c.bold}${c.cyan}Sweet Search EVALUATION REPORT${c.reset}`);
   lines.push('='.repeat(50));
   lines.push(`${c.dim}Timestamp: ${report.timestamp}${c.reset}`);
   lines.push(`${c.dim}Queries: ${report.queryCount}${c.reset}`);
@@ -413,11 +413,11 @@ export function formatJsonReport(report) {
  *
  * @param {object} report - Report object from generateReport
  * @param {object} options - Formatting options
- * @param {string} options.suiteName - Test suite name (default: 'SEARCH 100x Evaluation')
+ * @param {string} options.suiteName - Test suite name (default: 'Sweet Search Evaluation')
  * @returns {string} JUnit XML string
  */
 export function formatJUnitReport(report, options = {}) {
-  const { suiteName = 'SEARCH 100x Evaluation' } = options;
+  const { suiteName = 'Sweet Search Evaluation' } = options;
   const testCases = [];
 
   // Calculate total execution time from report (in seconds)

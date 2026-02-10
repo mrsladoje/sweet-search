@@ -30,12 +30,12 @@ Smart Search is a hybrid code search system with a client-server architecture op
        v                            +-----------------------+
 +----------------+                           |
 | C Binary (ss)  |  Unix Socket             |
-| ~2-5ms client  |  /tmp/search.sock        v
+| ~2-5ms client  |  /tmp/sweet-search.sock        v
 | overhead       |                  +-----------------------+
 +----------------+                  | Node.js Server        |
        |                            | (sweet-search.js) |
        | HTTP/1.0 GET               |                       |
-       v                            | - SmartSearch class   |
+       v                            | - SweetSearch class   |
 +----------------+                  | - Warm singleton      |
 | Unix Socket    |<---------------->| - All indexes in RAM  |
 | /tmp/search.   |                  +-----------------------+
@@ -327,7 +327,7 @@ const floodControlStats = null;
 
 The C binary is a minimal HTTP client that:
 1. Parses command-line arguments (query, flags like `--mode`, `--summary`, `--top`)
-2. Opens a Unix domain socket connection to `/tmp/search.sock`
+2. Opens a Unix domain socket connection to `/tmp/sweet-search.sock`
 3. Sends an HTTP/1.0 GET request with URL-encoded query parameters
 4. Streams the response body directly to stdout (skipping HTTP headers)
 5. Exits immediately after response is complete
@@ -347,7 +347,7 @@ The C binary is a minimal HTTP client that:
 ### Socket Connection Details
 
 ```c
-#define SOCKET_PATH "/tmp/search.sock"
+#define SOCKET_PATH "/tmp/sweet-search.sock"
 #define BUFFER_SIZE 16384
 
 // Create Unix domain socket
@@ -403,7 +403,7 @@ The shell wrapper serves as a fallback when the C binary is not compiled or as a
 ```bash
 #!/bin/bash
 # ss.sh - Sweet Search: Blazing fast (~5-10ms total)
-SOCKET="/tmp/search.sock"
+SOCKET="/tmp/sweet-search.sock"
 Q="${1:-}" K="${2:-10}"
 
 # Auto-start server if not running
@@ -439,10 +439,10 @@ printf "GET /search?q=%s&k=%s&format=text HTTP/1.0\r\nHost: l\r\n\r\n" "$Q_ENC" 
 ### Server Mode
 
 When started with `--serve`, the server:
-1. Creates a `SmartSearch` instance
+1. Creates a `SweetSearch` instance
 2. Loads all indexes into memory (one-time ~400-1000ms cost)
 3. Warms up embedding service (vocabulary + semantic cache)
-4. Listens on both TCP (port 9876) and Unix socket (`/tmp/search.sock`)
+4. Listens on both TCP (port 9876) and Unix socket (`/tmp/sweet-search.sock`)
 5. Stays resident in memory until stopped
 
 ### Dual Protocol Support
@@ -452,7 +452,7 @@ When started with `--serve`, the server:
 const tcpServer = http.createServer(handleRequest);
 tcpServer.listen(SEARCH_SERVER_PORT);
 
-// Unix socket server (/tmp/search.sock) - 30-50% faster
+// Unix socket server (/tmp/sweet-search.sock) - 30-50% faster
 const unixServer = http.createServer(handleRequest);
 unixServer.listen(SEARCH_SERVER_SOCKET);
 ```
@@ -952,7 +952,7 @@ User: ss "AuthService"  (server dead)
 | Shell wrapper detects missing socket | 1ms | 1ms |
 | nohup spawn node | 50-100ms | 51-101ms |
 | Node.js initialization | 100-200ms | 151-301ms |
-| SmartSearch.init() | 200-500ms | 351-801ms |
+| SweetSearch.init() | 200-500ms | 351-801ms |
 | Index loading | 200-500ms | 551-1301ms |
 | Embedding warmup | 200-500ms | 751-1801ms |
 | Socket ready | - | 751-1801ms |
@@ -1014,8 +1014,8 @@ ss "novel complex query"   # ~75-130ms (FlashRank skip) or ~150-480ms (with remo
 | `benchmark.js` | Performance benchmarks |
 | `.sweet-search/query-vocabulary.json` | Primary vocabulary cache (JSON, 1024d) |
 | `.sweet-search/vocabulary.bin` | Optional binary vocabulary (256d Matryoshka) |
-| `/tmp/search.sock` | Unix domain socket |
-| `/tmp/smart-search-server.pid` | Server PID file |
+| `/tmp/sweet-search.sock` | Unix domain socket |
+| `/tmp/sweet-search-server.pid` | Server PID file |
 
 ---
 

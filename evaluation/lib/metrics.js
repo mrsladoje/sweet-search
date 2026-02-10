@@ -1,5 +1,5 @@
 /**
- * SEARCH 100x Evaluation Metrics
+ * Sweet Search Evaluation Metrics
  *
  * Implements standard IR metrics:
  * - MRR@K (Mean Reciprocal Rank)

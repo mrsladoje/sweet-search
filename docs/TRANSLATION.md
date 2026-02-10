@@ -1,6 +1,6 @@
 # Multilingual Translation System
 
-> **Search 100x** supports non-English queries through a three-tier translation pipeline.
+> **Sweet Search** supports non-English queries through a three-tier translation pipeline.
 
 ---
 
