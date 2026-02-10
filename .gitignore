@@ -13,7 +13,6 @@ node_modules/
 # .sweet-search.config.json  # Uncomment to exclude per-project search config
 
 # Compiled binaries
-ss
 ss-fast/ss-fast
 
 # Training artifacts (large, regenerable)

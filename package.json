@@ -38,7 +38,7 @@
     "scripts/benchmark-harness.js",
     "translation/",
     "training/features/extractor.js",
-    "training/output/",
+    "training/output/v45_router_d4.js",
     "wasm-router/pkg/",
     "ss",
     "LICENSE",
