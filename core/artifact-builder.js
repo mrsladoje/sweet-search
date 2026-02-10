@@ -9,7 +9,7 @@
  *   Stage 3: Rerank (top 20 → k)
  *
  * Artifacts produced:
- *   - .agentdb/codebase-binary-hnsw.idx (+ .meta.json, .vectors.json, .graph.json, .int8.json)
+ *   - .sweet-search/codebase-binary-hnsw.idx (+ .meta.json, .vectors.json, .graph.json, .int8.json)
  *
  * CANONICAL INT8 STORAGE (Workstream H resolution):
  *   Int8 vectors are stored in .int8.json sidecar file alongside the binary HNSW index.
@@ -49,7 +49,7 @@ export const ARTIFACT_THRESHOLDS = {
   maxAgeSinceRebuild: 5 * 60 * 1000,
 
   /** State file tracking last rebuild timestamp */
-  stateFile: '.agentdb/artifact-rebuild-state.json',
+  stateFile: '.sweet-search/artifact-rebuild-state.json',
 };
 
 import { BinaryHNSWIndex } from './binary-hnsw-index.js';
@@ -742,8 +742,8 @@ Commands:
   test      Run performance benchmark
 
 Options:
-  --codebase <path>   Path to codebase.db (default: .agentdb/codebase.db)
-  --hnsw <path>       Path for HNSW index (default: .agentdb/codebase-binary-hnsw.idx)
+  --codebase <path>   Path to codebase.db (default: .sweet-search/codebase.db)
+  --hnsw <path>       Path for HNSW index (default: .sweet-search/codebase-binary-hnsw.idx)
 
 Note: Int8 vectors are stored in .int8.json sidecar alongside HNSW index.
       This is the canonical source for stage-2 rescoring.

@@ -209,7 +209,7 @@ TRANSLATION_CONFIG.cache = {
   ttl: 3600000,      // 1 hour
   maxEntries: 10000,
   keyVersion: 1,     // Bump to invalidate on config changes
-  filePath: '.agentdb/translation-cache.json'
+  filePath: '.sweet-search/translation-cache.json'
 }
 ```
 

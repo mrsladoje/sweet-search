@@ -96,7 +96,7 @@ cache: {
 
 **Storage Path** (`grep -n "vocabulary:" config.js`):
 ```javascript
-vocabulary: path.join(PROJECT_ROOT, '.agentdb', 'query-vocabulary.json'),
+vocabulary: path.join(PROJECT_ROOT, '.sweet-search', 'query-vocabulary.json'),
 ```
 
 **File Format**:
@@ -317,34 +317,34 @@ export async function getEmbedding(text, options = {}) {
 ```javascript
 export const DB_PATHS = {
   // Main codebase vectors
-  codebase: path.join(PROJECT_ROOT, '.agentdb', 'codebase.db'),
+  codebase: path.join(PROJECT_ROOT, '.sweet-search', 'codebase.db'),
 
   // Code graph (entities + relationships + FTS5 + summaries)
-  codeGraph: path.join(PROJECT_ROOT, '.agentdb', 'code-graph.db'),
+  codeGraph: path.join(PROJECT_ROOT, '.sweet-search', 'code-graph.db'),
 
   // HNSW index (in-memory at query time)
-  hnswIndex: path.join(PROJECT_ROOT, '.agentdb', 'codebase-hnsw.idx'),
+  hnswIndex: path.join(PROJECT_ROOT, '.sweet-search', 'codebase-hnsw.idx'),
 
   // Binary HNSW index (32x smaller, Hamming distance)
   // Files: .meta.json, .vectors.json, .graph.json, .int8.json
-  binaryHnswIndex: path.join(PROJECT_ROOT, '.agentdb', 'codebase-binary-hnsw.idx'),
+  binaryHnswIndex: path.join(PROJECT_ROOT, '.sweet-search', 'codebase-binary-hnsw.idx'),
 
   // Int8 vectors for rescore stage
   // DEPRECATED: This SQLite path is no longer used. Int8 vectors are stored in
   // .int8.json sidecar alongside binary HNSW index. See binary-hnsw-index.js.
-  int8Vectors: path.join(PROJECT_ROOT, '.agentdb', 'codebase-int8.db'),
+  int8Vectors: path.join(PROJECT_ROOT, '.sweet-search', 'codebase-int8.db'),
 
   // ColBERT token embeddings (late interaction)
-  colbert: path.join(PROJECT_ROOT, '.agentdb', 'codebase-colbert.db'),
+  colbert: path.join(PROJECT_ROOT, '.sweet-search', 'codebase-colbert.db'),
 
   // Merkle state for incremental indexing
-  merkle: path.join(PROJECT_ROOT, '.agentdb', 'merkle-state.json'),
+  merkle: path.join(PROJECT_ROOT, '.sweet-search', 'merkle-state.json'),
 
   // Query vocabulary cache
-  vocabulary: path.join(PROJECT_ROOT, '.agentdb', 'query-vocabulary.json'),
+  vocabulary: path.join(PROJECT_ROOT, '.sweet-search', 'query-vocabulary.json'),
 
   // HCGS summaries cache
-  summaries: path.join(PROJECT_ROOT, '.agentdb', 'code-summaries.json'),
+  summaries: path.join(PROJECT_ROOT, '.sweet-search', 'code-summaries.json'),
 };
 ```
 

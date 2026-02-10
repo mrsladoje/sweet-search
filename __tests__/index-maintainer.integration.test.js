@@ -508,7 +508,7 @@ describe('CONFIG Export', () => {
   it('should export configuration constants', () => {
     expect(CONFIG).toBeDefined();
     expect(CONFIG.PROJECT_ROOT).toBeDefined();
-    expect(CONFIG.AGENTDB_DIR).toBeDefined();
+    expect(CONFIG.DATA_DIR).toBeDefined();
     expect(CONFIG.QUEUE_FILE).toBeDefined();
     expect(CONFIG.PROCESSING_FILE).toBeDefined();
     expect(CONFIG.LOCK_FILE).toBeDefined();
@@ -516,8 +516,8 @@ describe('CONFIG Export', () => {
   });
 
   it('should have consistent paths', () => {
-    expect(CONFIG.QUEUE_FILE).toContain('.agentdb');
-    expect(CONFIG.PROCESSING_FILE).toContain('.agentdb');
-    expect(CONFIG.DEADLETTER_FILE).toContain('.agentdb');
+    expect(CONFIG.QUEUE_FILE).toContain('.sweet-search');
+    expect(CONFIG.PROCESSING_FILE).toContain('.sweet-search');
+    expect(CONFIG.DEADLETTER_FILE).toContain('.sweet-search');
   });
 });

@@ -15,8 +15,8 @@
  *   node evaluation/run-translation-benchmarks.js --runs=5 --warmup-runs=1
  *
  * Output:
- *   .agentdb/translation-benchmarks/translation-providers-{timestamp}.json
- *   .agentdb/translation-benchmarks/search-eval-matrix-{timestamp}.json
+ *   .sweet-search/translation-benchmarks/translation-providers-{timestamp}.json
+ *   .sweet-search/translation-benchmarks/search-eval-matrix-{timestamp}.json
  *
  * Security: API keys loaded from .env, never printed (only last 4 chars shown)
  */
@@ -190,8 +190,8 @@ Environment Variables:
   TRANSLATION_MODEL             Override custom provider model
 
 Output:
-  .agentdb/translation-benchmarks/translation-providers-{timestamp}.json
-  .agentdb/translation-benchmarks/search-eval-matrix-{timestamp}.json
+  .sweet-search/translation-benchmarks/translation-providers-{timestamp}.json
+  .sweet-search/translation-benchmarks/search-eval-matrix-{timestamp}.json
 
 Scoring Rule:
   1. Primary: maximize Success@10 (end-to-end)
@@ -1054,7 +1054,7 @@ async function main() {
   }
 
   // Ensure output directory exists
-  const outputDir = path.join(PROJECT_ROOT, '.agentdb', 'translation-benchmarks');
+  const outputDir = path.join(PROJECT_ROOT, '.sweet-search', 'translation-benchmarks');
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dbPath = path.join(__dirname, '../../.agentdb/code-graph.db');
+const dbPath = path.join(__dirname, '../../.sweet-search/code-graph.db');
 
 console.log(`Opening database: ${dbPath}`);
 const db = new Database(dbPath, { readonly: true });
