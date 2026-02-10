@@ -1,68 +1,98 @@
 #!/usr/bin/env node
 /**
- * Pre-warm vocabulary with common Sloth terms
- * This speeds up semantic search for these terms (cache hit vs API call)
+ * Pre-warm vocabulary with common terms for semantic search.
+ * Terms can be sourced from:
+ *   1. A JSON file passed as the first CLI argument
+ *   2. .sweet-search/vocab-terms.json (default, if it exists)
+ *   3. A built-in generic programming term list (fallback)
+ *
+ * Usage:
+ *   node prewarm-vocab.js [terms-file]
  */
 
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { expandVocabulary } from '../core/embedding-service.js';
 
-// 100 common Sloth terms - classes, concepts, features
-const SLOTH_TERMS = [
-  // Core entities
-  'Employee', 'Manager', 'User', 'Admin', 'Team', 'Project', 'Client',
-  'Session', 'Process', 'Absence', 'Realization', 'Document', 'Notification',
+const DEFAULT_TERMS_PATH = resolve(process.cwd(), '.sweet-search/vocab-terms.json');
 
-  // Auth & Security
-  'JWT', 'authentication', 'authorization', 'login', 'logout', 'token',
-  'JwtService', 'JwtAuthenticationFilter', 'ApiKey', 'WebSecurityConfig',
-  'password', 'credentials', 'refresh token', 'access token',
-
-  // Services
-  'EmployeeService', 'ManagerService', 'UserService', 'LoginService',
-  'EventService', 'ProcessService', 'ScreenshotService', 'EmailService',
-  'RefreshTokenService', 'NetworkDetectionService', 'BotDetectionService',
-
-  // Controllers
-  'AuthController', 'EmployeeController', 'ProjectController', 'TeamController',
-  'UserController', 'ManagerController', 'InstallerController', 'SessionController',
-
-  // Vita Desktop
-  'BioLogger', 'Listener', 'Buffer', 'TrajectoryBuffer', 'NeuromotorAnalyzer',
-  'ConfigHandler', 'GrpcChannelManager', 'EventGrpcClient', 'TrayManager',
-  'GUI', 'LoginGUI', 'SettingsGUI', 'NeoBrutalist',
-
-  // Bot Detection
-  'DetectionHeuristic', 'HeuristicResult', 'VetoRule', 'TrajectoryHasher',
-  'AccelerationProfile', 'PowerLawViolation', 'BezierFit', 'MouseOnly',
-
-  // Events & Metrics
-  'BioEvent', 'BioClickEvent', 'BioKeystrokeEvent', 'BioMotionEvent',
-  'EventMetrics', 'TrajectoryStats', 'AccelerationStats', 'ClickStats',
-
-  // gRPC
-  'grpc', 'protobuf', 'streaming', 'GrpcClient', 'GrpcBatchResult',
-  'sloth_monitoring.proto', 'EmployeeEventGrpcClient', 'ProcessGrpcClient',
-
-  // Frontend
-  'React', 'Vite', 'TanStack', 'axios', 'UserContext', 'ProtectedRoutes',
-  'Tailwind', 'dashboard', 'time tracking', 'stopwatch',
-
-  // Database & Models
-  'JPA', 'Hibernate', 'Repository', 'tblemployees', 'tblprojects', 'tblsessions',
-  'EmployeeRepository', 'ProjectRepository', 'SettingsModel',
-
-  // Common queries
-  'how does authentication work', 'where is login handled',
-  'employee time tracking', 'screenshot capture', 'process monitoring',
-  'bot detection heuristics', 'neuromotor analysis', 'trajectory analysis',
-  'installer management', 'email verification', 'API key authentication',
+const GENERIC_TERMS = [
+  // Common code search patterns
+  'authentication', 'authorization', 'login', 'logout',
+  'user', 'config', 'database', 'connection',
+  'request', 'response', 'handler', 'controller',
+  'service', 'repository', 'model', 'entity',
+  'error', 'exception', 'validation', 'middleware',
+  'route', 'endpoint', 'API', 'REST',
+  'test', 'mock', 'fixture', 'setup',
+  'import', 'export', 'module', 'package',
+  'class', 'interface', 'function', 'method',
+  'constructor', 'initialize', 'factory', 'builder',
+  'cache', 'queue', 'event', 'listener',
+  'how does authentication work',
+  'where is the database connection configured',
+  'find all API endpoints',
+  'error handling patterns',
 ];
 
-console.log('\nPre-warming vocabulary with ' + SLOTH_TERMS.length + ' Sloth terms...');
+/**
+ * Load terms from a JSON file. Expects a JSON array of strings.
+ * @param {string} filePath - Absolute path to the JSON terms file
+ * @returns {string[]} The parsed array of term strings
+ */
+function loadTermsFromFile(filePath) {
+  const raw = readFileSync(filePath, 'utf-8');
+  const parsed = JSON.parse(raw);
+
+  if (!Array.isArray(parsed)) {
+    throw new Error(`Terms file must contain a JSON array, got ${typeof parsed}`);
+  }
+
+  const nonStrings = parsed.filter((t) => typeof t !== 'string');
+  if (nonStrings.length > 0) {
+    throw new Error(`Terms file contains ${nonStrings.length} non-string entries`);
+  }
+
+  return parsed;
+}
+
+/**
+ * Resolve the term list from CLI argument, default file, or generic fallback.
+ * @returns {{ terms: string[], source: string }}
+ */
+function resolveTerms() {
+  const cliArg = process.argv[2];
+
+  // 1. CLI argument takes priority
+  if (cliArg) {
+    const filePath = resolve(process.cwd(), cliArg);
+    if (!existsSync(filePath)) {
+      console.error(`Error: terms file not found: ${filePath}`);
+      process.exit(1);
+    }
+    const terms = loadTermsFromFile(filePath);
+    return { terms, source: `CLI argument (${filePath})` };
+  }
+
+  // 2. Default terms file
+  if (existsSync(DEFAULT_TERMS_PATH)) {
+    const terms = loadTermsFromFile(DEFAULT_TERMS_PATH);
+    return { terms, source: `default file (${DEFAULT_TERMS_PATH})` };
+  }
+
+  // 3. Generic fallback
+  return { terms: GENERIC_TERMS, source: 'generic fallback (built-in programming terms)' };
+}
+
+const { terms, source } = resolveTerms();
+
+console.log(`\nPre-warming vocabulary with ${terms.length} terms...`);
+console.log(`Source: ${source}`);
+
 const start = Date.now();
 
 try {
-  await expandVocabulary(SLOTH_TERMS);
+  await expandVocabulary(terms);
   console.log('Done in ' + (Date.now() - start) + 'ms');
 } catch (err) {
   console.error('Error:', err.message);
