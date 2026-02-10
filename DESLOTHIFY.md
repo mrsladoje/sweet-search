@@ -4,6 +4,24 @@
 
 **Decision date:** 2026-02-10
 **Scope:** All source code, docs, and scripts. Tests + evaluation harnesses are EXCLUDED from Sloth-specific changes (they stay tied to Sloth for development). However, imports/class references MUST be updated everywhere when files are renamed.
+**Merged status:** This file incorporates `DESLOTHIFY_ENHANCE.md` and is now the single execution plan.
+**Execution rule:** If any instructions conflict, Section 10 (`Merged Enhancement Notes`) is authoritative.
+
+## 0. Final Decisions (Locked)
+
+These decisions are finalized for execution in this document.
+
+1. **Canonical data env var:** `SWEET_SEARCH_DATA_DIR`  
+   - Temporary alias support: `AGENTDB_PATH` (deprecation warning, one release window).
+2. **Internal data directory constant:** `DATA_DIR` (preferred over legacy `AGENTDB_DIR` naming).
+3. **Data directory migration mode:** **Hybrid**  
+   - Interactive runs: prompt before migrating `.agentdb/` -> `.sweet-search/`.  
+   - Non-interactive runs: warn-only unless explicit migration flag is provided.
+4. **`index-codebase-v21.js` rename:** **Deferred** in this migration (stability-first).
+5. **Socket path rename:** **In scope** (`/tmp/search.sock` -> `/tmp/sweet-search.sock`) with temporary compatibility fallback.
+6. **Build verification policy:** add a concrete `build` script in `package.json`, then require `npm run build` in verification.
+7. **`.sweet-search.config.json` contract:** include `include`, `exclude`, optional `projectRoot`, with explicit precedence rules.
+8. **Absolute path policy:** only approved fixture/test paths may remain absolute; all portability-risk absolute paths must be replaced.
 
 ---
 
@@ -220,8 +238,10 @@ These docs reference the old location. All `.claude/helpers/search-100x/` paths 
 | `.claude/docs/CURRENT_MCP_AND_HOOKS.md` | ~2 | Source file paths |
 | `QUERY-ROUTING.md` | ~1 | Directory tree |
 | `STRUCTURAL-QUERIES.md` | ~3 | File path references |
-| `docs/TRANSLATION.md` | — | Check for any old path refs |
-| `.claude/commands/index-codebase.md` | — | Check for smart-search refs |
+| `docs/TRANSLATION.md` | — | Update old path refs and `.agentdb` examples to `.sweet-search` |
+| `docs/search/MCP_INTEGRATION.md` | — | Update any `core/smart-search-v21.js` and stale naming refs |
+| `HYBRID_SEARCH.md` | — | Update `SmartSearch` examples and stale internal names |
+| `.claude/commands/index-codebase.md` | — | Update smart-search refs and `.agentdb/*` table paths to current names |
 
 ### 2.5 `codolis` → `example` in Comments/Docs
 
@@ -280,7 +300,7 @@ Lines 80-84: 5 paths, all `.agentdb/` → `.sweet-search/`:
 
 | File | Line(s) | Change |
 |------|---------|--------|
-| `.claude/hooks/index-maintainer.mjs` | 147 | `AGENTDB_DIR` constant → `SWEET_SEARCH_DIR` (or `DATA_DIR`) |
+| `.claude/hooks/index-maintainer.mjs` | 147 | `AGENTDB_DIR` constant → `DATA_DIR` |
 | `.claude/hooks/index-maintainer.mjs` | 274 | Exclude pattern: `'**/.agentdb/**'` → `'**/.sweet-search/**'` |
 | `.claude/hooks/index-maintainer.mjs` | 494,1498 | Comments about `.agentdb` directory |
 | `.claude/helpers/session-preheat.sh` | 163-165,244 | Vocabulary + ColBERT paths |
@@ -289,8 +309,9 @@ Lines 80-84: 5 paths, all `.agentdb/` → `.sweet-search/`:
 
 ### 3.5 Environment Variable
 
-- `AGENTDB_PATH` env var → `SWEET_SEARCH_DATA` (or `SWEET_SEARCH_PATH`)
-- Update everywhere including tests (per decision — consistency over backwards compat)
+- `AGENTDB_PATH` env var → `SWEET_SEARCH_DATA_DIR` (canonical)
+- Keep temporary alias support for `AGENTDB_PATH` with deprecation warning (one release window)
+- Update everywhere including tests
 - Used in: `.claude/docs/search/INDEXING_TESTING_PLAN.md` test examples, potentially in runtime code
 
 ### 3.6 Config & Meta Files
@@ -336,18 +357,18 @@ All `.claude/docs/` files referencing `.agentdb/` paths — update to `.sweet-se
 | `.claude/docs/CURRENT_MCP_AND_HOOKS.md` | ~2 |
 | `docs/SEARCH_100x.md` | ~1 (directory tree diagram) |
 
-### 3.9 Migration Strategy
+### 3.9 Migration Strategy (Locked)
 
 When users have an existing `.agentdb/` directory from a previous version:
-- On first run, Sweet Search should check for `.agentdb/` and log a message: `"Found legacy .agentdb/ directory. Please rename to .sweet-search/ or re-index with /index-codebase"`
-- OR: auto-migrate by renaming `.agentdb/` → `.sweet-search/` with a log message
-- Decision: plan both options, decide during implementation
+- Interactive runs: prompt before migrating `.agentdb/` → `.sweet-search/`
+- Non-interactive runs: warn-only by default unless explicit migration flag is provided
+- Always log clear rollback/recovery guidance if migration fails
 
 ---
 
 ## 4. Scripts
 
-### 3.1 `scripts/prewarm-vocab.js` — Full rewrite as auto-discovery skill
+### 4.1 `scripts/prewarm-vocab.js` — Full rewrite as auto-discovery skill
 
 **Current:** Hardcoded 100 Sloth-specific terms (EmployeeService, BioLogger, etc.)
 
@@ -356,62 +377,62 @@ When users have an existing `.agentdb/` directory from a previous version:
    - Scans the existing codebase index (FTS5 DB) for the most frequent symbols/terms
    - Extracts class names, method names, package names from the code graph DB
    - Optionally includes terms from CLAUDE.md / README.md
-   - Writes the discovered terms to `.agentdb/vocab-terms.json`
+   - Writes the discovered terms to `.sweet-search/vocab-terms.json`
 2. Rewrite `scripts/prewarm-vocab.js` to:
    - Accept a terms file as input: `node prewarm-vocab.js [terms-file]`
-   - Default to `.agentdb/vocab-terms.json` if it exists
+   - Default to `.sweet-search/vocab-terms.json` if it exists
    - Fall back to a minimal generic term list (common programming terms) if no file
 3. The skill generates the terms file, the script prewarms them — clean separation
 
-### 3.2 `scripts/test-router-phase1.js` — Keep as-is
+### 4.2 `scripts/test-router-phase1.js` — Keep as-is
 
 **Lines 55-56:** `sloth_api.conf`, `com.codolis.sloth.vita` are test data for the router.
 **Decision:** Keep — this is test/evaluation tooling tied to Sloth development.
 
-### 3.3 `scripts/benchmark-rerank.js` — Keep as-is
+### 4.3 `scripts/benchmark-rerank.js` — Keep as-is
 
 **Line 29:** Comment about "Sloth codebase".
 **Decision:** Keep — benchmark scripts stay tied to Sloth.
 
-### 3.4 `scripts/benchmark-harness.js` — Keep as-is
+### 4.4 `scripts/benchmark-harness.js` — Keep as-is
 
 **Line 367:** References `'Sloth Web'` directory for finding Java files.
 **Decision:** Keep — benchmark scripts stay tied to Sloth.
 
-### 3.5 `scripts/diagnose-int8.js` — Make path configurable
+### 4.5 `scripts/diagnose-int8.js` — Make path configurable
 
 **Line 38:** Hardcoded `projects/sloth/.agentdb/codebase-binary-hnsw.idx`
 
 **Fix:**
 - Accept index path as CLI argument: `node diagnose-int8.js [path-to-index]`
-- Default to `.agentdb/codebase-binary-hnsw.idx` (local project)
+- Default to `.sweet-search/codebase-binary-hnsw.idx` (local project)
 - Keep the rest of the diagnostic logic unchanged
 
 ---
 
-## 4. Documentation Changes (Sloth-specific)
+## 5. Documentation Changes (Sloth-specific)
 
-### 4.1 DELETE: `MIGRATION_FROM_SLOTH.md` (root)
+### 5.1 DELETE: `MIGRATION_FROM_SLOTH.md` (root)
 
 Internal migration log. Served its purpose during extraction. Delete entirely.
 
-### 4.2 DELETE: `.claude/docs/DATABASE-SCHEMAS.md`
+### 5.2 DELETE: `.claude/docs/DATABASE-SCHEMAS.md`
 
 100% Sloth application documentation (MySQL schemas, Docker commands). Zero relevance to Sweet Search.
 
-### 4.3 UPDATE: `.claude/docs/CURRENT_MCP_AND_HOOKS.md`
+### 5.3 UPDATE: `.claude/docs/CURRENT_MCP_AND_HOOKS.md`
 
 Remove the "Proto-Sync Hook" section (lines 63-69) that references Sloth proto paths. Keep everything else.
 
-### 4.4 UPDATE: `.claude/docs/search/HYBRID_SEARCH.md`
+### 5.4 UPDATE: `.claude/docs/search/HYBRID_SEARCH.md`
 
 **Line 74:** Change `"on the Sloth codebase"` → `"on tested codebases"`
 
-### 4.5 UPDATE: `.claude/docs/RERANKING_DOCUMENTATION_AUDIT.md`
+### 5.5 UPDATE: `.claude/docs/RERANKING_DOCUMENTATION_AUDIT.md`
 
 **Line 296:** Change `/home/panonit/projects/sloth/.claude/helpers/search-100x/` → relative path `./` (current Sweet Search root)
 
-### 4.6 UPDATE: `.claude/docs/SMART_SEARCH_PERFORMANCE_ARCHITECTURE.md` (before rename)
+### 5.6 UPDATE: `.claude/docs/SMART_SEARCH_PERFORMANCE_ARCHITECTURE.md` (before rename)
 
 **Lines 741-747:** Replace the `SLOTH_TERMS` code snippet with a generic `PROJECT_TERMS` example:
 ```javascript
@@ -423,32 +444,32 @@ const PROJECT_TERMS = [
 await expandVocabulary(PROJECT_TERMS);
 ```
 
-### 4.7 KEEP: `.claude/docs/search/INDEXING_TESTING_PLAN.md`
+### 5.7 KEEP: `.claude/docs/search/INDEXING_TESTING_PLAN.md`
 
 3 Sloth references are testing notes. Keep as-is per decision.
 
-### 4.8 KEEP: `.claude/docs/search/RALPH_WIGGUM_TESTING_INTEGRATION.md`
+### 5.8 KEEP: `.claude/docs/search/RALPH_WIGGUM_TESTING_INTEGRATION.md`
 
 1 Sloth reference is a testing note. Keep as-is per decision.
 
-### 4.9 UPDATE: `docs/SEARCH_100x.md`
+### 5.9 UPDATE: `docs/SEARCH_100x.md`
 
 - **Lines 562, 643:** Change `"/dev/shm/sloth-embedder"` → `"/dev/shm/sweet-search-embedder"` (code examples)
 - **Line 1043:** Change `sloth-vectors.db` → `vectors.db` in directory tree diagram
 - Verified: no functional code uses these paths (doc-only references)
 - **Note:** This is a historical design plan — keep the SEARCH_100x title/name unchanged per decision
 
-### 4.10 KEEP: `RANKING_FIX_PLAN.md`
+### 5.10 KEEP: `RANKING_FIX_PLAN.md`
 
 Architectural decision records. Sloth context is historically meaningful for understanding WHY strategies were dropped. Keep as-is.
 
-### 4.11 KEEP: `docs/SEARCH_200X.md`
+### 5.11 KEEP: `docs/SEARCH_200X.md`
 
 Historical design plan document. Keep as-is per decision.
 
 ---
 
-## 5. Files to Delete
+## 6. Files to Delete
 
 | File | Reason |
 |------|--------|
@@ -458,7 +479,7 @@ Historical design plan document. Keep as-is per decision.
 
 ---
 
-## 6. Excluded from Sloth Changes (tests + evaluation + ADRs)
+## 7. Excluded from Sloth Changes (tests + evaluation + ADRs)
 
 These files have Sloth references but are intentionally kept as-is:
 
@@ -484,7 +505,7 @@ These files have Sloth references but are intentionally kept as-is:
 
 ---
 
-## 7. Execution Order
+## 8. Execution Order
 
 ### Phase 1 — Deletes (safe, no dependencies)
 - Delete `MIGRATION_FROM_SLOTH.md`, `.claude/docs/DATABASE-SCHEMAS.md`, `test-resolution.mjs`
@@ -494,8 +515,10 @@ These files have Sloth references but are intentionally kept as-is:
 - Rename class `SmartSearch` → `SweetSearch` throughout the file
 - Update all env vars: `SMART_SEARCH_*` → `SWEET_SEARCH_*`
 - Update PID file path: `/tmp/smart-search-server.pid` → `/tmp/sweet-search-server.pid`
+- Rename socket path `/tmp/search.sock` → `/tmp/sweet-search.sock` (with temporary compatibility fallback)
 - Update help text / usage examples in the file
-- Update `package.json` main field
+- Update `package.json` main field and scripts (`search`, and other direct entrypoint scripts)
+- Add concrete `build` script in `package.json` (required for verification gate)
 - Update ALL import paths in every file that imports from it (Section 2.3 table)
 - **Run tests immediately** to catch any missed imports
 
@@ -503,15 +526,15 @@ These files have Sloth references but are intentionally kept as-is:
 - Update `core/config.js` `DB_PATHS` — the single source of truth (10+ paths)
 - Update `core/vocabulary-utils.js` (5 paths)
 - Update all other core files: `artifact-builder.js`, `hnsw-index.js`, `colbert-index.js`, `incremental-tracker.js`, `index-codebase-v21.js`, `merkle-tracker.js`, `mcp/server.js`
-- Rename `AGENTDB_DIR` constant → `SWEET_SEARCH_DIR` in `index-maintainer.mjs`
-- Rename `AGENTDB_PATH` env var → `SWEET_SEARCH_DATA` everywhere (including tests)
+- Rename `AGENTDB_DIR` constant → `DATA_DIR` in `index-maintainer.mjs`
+- Rename `AGENTDB_PATH` env var → `SWEET_SEARCH_DATA_DIR` everywhere (including tests), keep temporary alias
 - Update exclude patterns: `'**/.agentdb/**'` → `'**/.sweet-search/**'`
 - Update `.gitignore`: `.agentdb/` → `.sweet-search/`
 - Update hooks/helpers: `session-preheat.sh`, `statusline.cjs`, `hook-handler.cjs`
 - Update all tests/evaluation/scripts with `.agentdb` paths
 - Update all documentation with `.agentdb` references (~12 doc files)
 - Update `.claude/commands/index-codebase.md` file table
-- Add migration check: detect legacy `.agentdb/` dir and log guidance
+- Add migration flow: interactive prompt migration, non-interactive warn-only by default, explicit-flag migration path
 - **Run tests immediately** to catch any missed paths
 
 ### Phase 4 — Doc file renames
@@ -556,35 +579,37 @@ These files have Sloth references but are intentionally kept as-is:
 - Run evaluation harness against Sloth codebase (separate repo)
 - Verify no remaining issues:
   ```bash
-  # Check for remaining Sloth refs in source (excluding allowed locations)
-  grep -ri sloth --include='*.js' --include='*.mjs' --include='*.json' \
-    --exclude-dir=__tests__ --exclude-dir=evaluation --exclude-dir=training \
+  # Content debranding pass (exclude approved historical/test fixtures where needed)
+  grep -riE 'sloth|SLOTH_|sloth-|sloth/|Sloth Web|Sloth-Local|Sloth-Central' \
+    --include='*.js' --include='*.mjs' --include='*.md' --include='*.json' \
     --exclude-dir=node_modules --exclude=DESLOTHIFY.md --exclude=RANKING_FIX_PLAN.md
 
-  # Check for remaining smart-search refs (excluding allowed docs)
-  grep -ri 'smart.search' --include='*.js' --include='*.mjs' --include='*.sh' --include='*.c' \
+  # Structural integrity pass (include tests/evaluation to catch broken imports/paths)
+  grep -riE 'smart-search|SmartSearch|SMART_SEARCH|smart-search-v21' \
+    --include='*.js' --include='*.mjs' --include='*.sh' --include='*.c' --include='*.md' \
     --exclude-dir=node_modules --exclude=SEARCH_100x.md --exclude=SEARCH_200X.md --exclude=RANKING_FIX_PLAN.md
 
-  # Check for remaining search-100x refs
-  grep -ri 'search-100x' --include='*.js' --include='*.mjs' --include='*.sh' --include='*.md' \
+  grep -riE 'search-100x|SEARCH 100x|Search 100x' \
+    --include='*.js' --include='*.mjs' --include='*.sh' --include='*.md' --include='*.c' \
     --exclude-dir=node_modules --exclude=SEARCH_100x.md --exclude=SEARCH_200X.md --exclude=RANKING_FIX_PLAN.md
 
-  # Check for remaining codolis refs
-  grep -ri codolis --include='*.js' --include='*.md' \
-    --exclude-dir=__tests__ --exclude-dir=evaluation --exclude-dir=training \
-    --exclude-dir=node_modules
-
-  # Check for remaining agentdb refs
-  grep -ri agentdb --include='*.js' --include='*.mjs' --include='*.sh' --include='*.md' \
-    --include='*.cjs' --include='*.c' \
+  grep -riE '\\.agentdb/|AGENTDB_PATH|AGENTDB_DIR' \
+    --include='*.js' --include='*.mjs' --include='*.sh' --include='*.md' --include='*.cjs' --include='*.c' \
     --exclude-dir=node_modules --exclude=DESLOTHIFY.md
+
+  grep -riE 'codolis' --include='*.js' --include='*.md' --exclude-dir=node_modules
+
+  # Portability audit
+  grep -riE '/home/|/mnt/c/|[A-Za-z]:\\\\' \
+    --include='*.js' --include='*.mjs' --include='*.md' --include='*.json' --include='*.sh' --include='*.c' \
+    --exclude-dir=node_modules
   ```
 - Build check: `npm run build`
 - Smoke test: index a non-Sloth codebase and run queries
 
 ---
 
-## Summary Statistics
+## 9. Summary Statistics
 
 | Category | Count |
 |----------|-------|
@@ -598,3 +623,426 @@ These files have Sloth references but are intentionally kept as-is:
 | New files to create | 2 (`core/project-detector.js`, `/sweet-prewarm-vocab` skill) |
 | Excluded files (intentionally kept) | 15 |
 | **Total files touched** | **~80+** |
+
+---
+
+## 10. Merged Enhancement Notes (Authoritative)
+
+The following content from `DESLOTHIFY_ENHANCE.md` is now inlined into this plan.
+Use this section as the source of truth for additional corrections, migration policy, verification gates, and execution safeguards.
+
+### Inlined: DESLOTHIFY Enhancement Notes (Consolidated)
+
+> Master addendum to `DESLOTHIFY.md`, merging relevant fixes and optimizations from all model reviews.
+
+**Date:** 2026-02-10  
+**Purpose:** Capture every relevant improvement (high to low priority) so execution can happen with minimal surprises.
+
+---
+
+### 10.1 Must-Fix Plan Corrections (Before Any Code Changes)
+
+#### 1.1 Plan structure and consistency
+
+- Fix duplicate/inconsistent section numbering in `DESLOTHIFY.md` (currently two section-4 blocks and misnumbered script subsections).
+- Resolve all placeholder items like "check for..." into explicit actions and target files.
+- Reconcile summary counts after final scope is frozen (files renamed/deleted/updated).
+
+#### 1.2 `.agentdb` -> `.sweet-search` consistency holes
+
+The plan still contains stale `.agentdb` references in some sections:
+
+- Prewarm terms output path (should be `.sweet-search/vocab-terms.json`).
+- `diagnose-int8` default index path (should be `.sweet-search/codebase-binary-hnsw.idx`).
+
+Action:
+- Normalize all post-migration runtime paths to `.sweet-search/*`.
+- Keep `.agentdb` only in migration/compatibility notes.
+
+#### 1.3 Missing updates in active docs/commands
+
+Add explicit update scope for:
+
+- `docs/search/MCP_INTEGRATION.md` (still points to `core/smart-search-v21.js`)
+- `HYBRID_SEARCH.md` (`SmartSearch` examples)
+- `docs/TRANSLATION.md` (`.agentdb/translation-cache.json`)
+- `.claude/commands/index-codebase.md` (`smart-search-v21.js` and `.agentdb/*` file tables)
+
+#### 1.4 Keep historical exceptions explicit and minimal
+
+Allowed legacy references should remain only where approved:
+
+- `docs/SEARCH_100x.md`
+- `docs/SEARCH_200X.md`
+- `RANKING_FIX_PLAN.md`
+
+Everything else should be normalized.
+
+#### 1.5 Absolute path hygiene audit (missing explicit scope)
+
+Add a dedicated pass for machine-specific absolute paths and local dev artifacts:
+
+- Detect hardcoded absolute paths such as `/home/...`, `/mnt/c/...`, and `C:\...`.
+- Classify each as:
+  - intentional fixture/test data (allowlist), or
+  - portability risk (replace with relative/project-root based pathing).
+- Include release-surface and tooling files in this audit (package metadata, MCP config, scripts, docs).
+
+---
+
+### 10.2 Rename Coverage Additions
+
+#### 2.1 `smart-search` / `SmartSearch` / `SMART_SEARCH_*`
+
+- Update `package.json` beyond `main`:
+  - scripts and any CLI entrypoints that still call `core/smart-search-v21.js`
+- Ensure all runtime/help strings are updated (not only imports/class names).
+- Include shell/C wrappers:
+  - `ss.sh`
+  - `ss-fast/ss-fast.c`
+
+#### 2.2 `search-100x` and `SEARCH 100x` variants
+
+Include both hyphen and space forms in runtime code/logs/comments:
+
+- `search-100x`
+- `SEARCH 100x`
+- `Search 100x`
+
+Known runtime candidates include:
+
+- `core/config.js`
+- `core/index-codebase-v21.js`
+- `core/incremental-tracker.js`
+- `.claude/helpers/session-preheat.sh`
+
+#### 2.3 Socket path rename (in scope)
+
+Include:
+
+- `/tmp/search.sock` -> `/tmp/sweet-search.sock`
+
+Audit all references in:
+
+- core server implementation
+- `ss.sh`
+- `ss-fast/ss-fast.c`
+- eval scripts and docs that mention socket path
+
+#### 2.4 Decision: `index-codebase-v21.js` filename
+
+For this migration, keep `core/index-codebase-v21.js` unchanged (stability-first).
+
+- Rationale: avoids broad additional blast radius while core debranding/data-dir migration is in flight.
+- Follow-up (separate migration): rename to `core/index-codebase.js` after stabilization.
+
+---
+
+### 10.3 `.agentdb` -> `.sweet-search` Full Coverage
+
+#### 3.1 Config + constants + exports
+
+- Update central `DB_PATHS` in `core/config.js` (single source of truth).
+- Update any fallback hardcoded paths not derived from `DB_PATHS` (e.g. ColBERT fallback checks).
+- In `.claude/hooks/index-maintainer.mjs`:
+  - `AGENTDB_DIR` rename (`DATA_DIR`)
+  - update `CONFIG` export shape
+  - update all consumers/tests using `CONFIG.AGENTDB_DIR`
+
+#### 3.2 Exclude patterns and self-index protection
+
+Ensure `.sweet-search/` replaces `.agentdb/` in all exclude globs and scanners, so the tool does not index its own artifacts.
+
+#### 3.3 Two merkle paths must both be handled
+
+There are two distinct states to migrate:
+
+- `DB_PATHS.merkle`: `.agentdb/merkle-state.json`
+- `merkle-tracker` state: `.agentdb/merkle/sloth-codebase.json` -> `.sweet-search/merkle/codebase-state.json`
+
+Add explicit migration mapping for both, to avoid accidental full reindex due to missed state files.
+
+#### 3.4 Statusline/hook handler ownership check (important)
+
+`.claude/helpers/statusline.cjs` and `.claude/helpers/hook-handler.cjs` include `memory.db`/AgentDB-related probes used by broader tooling.
+
+Action:
+- Determine which paths are Sweet Search runtime data vs external Claude Flow/AQE ecosystem paths.
+- Rename only Sweet Search-owned paths; avoid breaking unrelated systems.
+
+#### 3.5 Root tooling cleanup
+
+- `check-db.js` in repo root: move to `scripts/` (unless explicitly retained as diagnostic utility with documented rationale).
+
+#### 3.6 Environment variable naming contract (locked)
+
+- Canonical: `SWEET_SEARCH_DATA_DIR`
+- Temporary alias: `AGENTDB_PATH` (compatibility window with deprecation warning)
+
+#### 3.7 `.sweet-search.config.json` contract (define before implementation)
+
+Do not leave this implicit. Define a minimal schema up front so implementation is consistent:
+
+- Required/optional keys (minimum):
+  - `include: string[]`
+  - `exclude: string[]`
+  - `projectRoot?: string`
+  - optional tuning flags as needed (`indexDocs`, file size caps, etc.)
+- Decide validation behavior:
+  - reject unknown keys, or
+  - allow passthrough with warnings.
+- Document precedence rules between defaults, env, and config file.
+
+---
+
+### 10.4 Migration and Backward Compatibility
+
+#### 4.1 Choose migration behavior now
+
+Do not defer this to implementation. Pick one:
+
+- **Warn-only**: keep user control, more manual work
+- **Auto-migrate**: better UX, higher safety requirements
+- **Hybrid** (recommended): detect legacy `.agentdb`, perform safe one-time migration with clear logs and fallback handling
+
+#### 4.2 Compatibility window (recommended for one release)
+
+- Keep thin shim `core/smart-search-v21.js` re-exporting `core/sweet-search.js`
+- Accept old env vars with warning:
+  - `SMART_SEARCH_*` -> `SWEET_SEARCH_*`
+  - `AGENTDB_PATH` -> `SWEET_SEARCH_DATA_DIR`
+- If `.sweet-search/` absent and `.agentdb/` present:
+  - read legacy path or migrate immediately (per chosen strategy)
+
+#### 4.3 Symlink compatibility (optional)
+
+Optional transitional strategy:
+
+- Create `.agentdb -> .sweet-search` symlink after migration for older scripts.
+
+Use carefully (cross-platform and tooling caveats apply).
+
+#### 4.4 Release/migration note
+
+Document both breaking changes clearly for CI/users:
+
+- `.agentdb` -> `.sweet-search`
+- env var rename(s)
+
+#### 4.5 Migration guardrails (prompt/opt-in safety)
+
+If auto-migrate is enabled, add explicit safety controls:
+
+- Interactive mode: show first-run prompt/confirmation before directory move.
+- Non-interactive mode (CI/automation): default to safe warning-only unless explicit migration flag is provided.
+- Emit clear rollback guidance if migration fails mid-operation.
+
+---
+
+### 10.5 Build/Packaging/Distribution Gaps
+
+#### 5.1 `npm run build` resolution
+
+`DESLOTHIFY.md` requires `npm run build`.
+
+Action:
+- Add a concrete `build` script in `package.json` as part of this migration.
+- Ensure CI and local verification both execute `npm run build`.
+
+#### 5.2 `ss` binary generation
+
+`package.json` bin includes `ss`, but repository currently uses `ss.sh` and C sources.
+
+Action:
+- Make build step explicit for `ss-fast` compilation (if shipping binary).
+- Ensure instructions and CI align with actual artifact expectations.
+
+#### 5.3 Lockfile regeneration
+
+Do not rely on "auto-update eventually" for `bun.lock`/lockfile entries after rename.
+
+Action:
+- add explicit lockfile refresh step post-rename.
+
+#### 5.4 Package identity audit
+
+Before release, verify:
+
+- `name`, `bin`, `files`, scripts, entrypoints
+- no stale internal names in publish surface.
+
+---
+
+### 10.6 Verification Upgrade (Content vs Structural)
+
+#### 6.1 Separate two verification passes
+
+1) **Content debranding pass** (can exclude approved historical/test fixtures)  
+2) **Structural integrity pass** (must include tests/evaluation for import/path breakage)
+
+#### 6.2 Pattern set should include variants
+
+Use comprehensive patterns:
+
+- `smart-search|SmartSearch|SMART_SEARCH|smart-search-v21`
+- `search-100x|SEARCH 100x|Search 100x`
+- `\.agentdb/|AGENTDB_PATH|AGENTDB_DIR`
+- `codolis`
+- `sloth|SLOTH_|sloth-|sloth/|Sloth Web|Sloth-Local|Sloth-Central`
+
+#### 6.3 Include command/hook surfaces in audits
+
+Always include:
+
+- `.claude/commands/**`
+- `.claude/hooks/**`
+- `.claude/helpers/**`
+
+These frequently retain stale names after core code is cleaned.
+
+#### 6.4 Add targeted checks
+
+- Any remaining `/tmp/search.sock` and `/tmp/search-100x*` artifacts
+- Remaining `CONFIG.AGENTDB_*` usage
+- Remaining `AGENTDB_PATH` references (unless intentionally aliased)
+- Remaining stale entries in docs/commands tables
+- Remaining machine-specific absolute paths (`/home/`, `/mnt/c/`, `C:\`) outside approved fixtures
+
+---
+
+### 10.7 Execution Strategy Improvements
+
+#### 7.1 Resolve "split vs atomic" tension with a hybrid approach
+
+Two opposing suggestions are both valid:
+
+- Split huge phases for easier debugging
+- Keep high-risk renames close to avoid long broken intermediate states
+
+Recommended hybrid:
+
+- One execution session/branch for breaking changes
+- Internally split into sub-phases with immediate checks after each sub-phase
+- Avoid merging partial broken states
+
+#### 7.2 Sub-phase checkpoints for high-risk work
+
+After each major rename block:
+
+1. run tests (`npm test -- --run`)
+2. run build command(s) that actually exist
+3. run pattern audits
+4. smoke query paths (lexical, semantic, hybrid)
+
+#### 7.3 Rollback plan
+
+- Use one commit per major phase/sub-phase.
+- If a phase regresses behavior, revert only that phase.
+
+#### 7.4 Ordering constraints that should be explicit
+
+Add explicit sequence constraints to reduce drift and ambiguous failures:
+
+- Perform `.agentdb` -> `.sweet-search` core path migration before implementing prewarm-vocab output path changes, so a third location is not introduced accidentally.
+- After `SmartSearch`/entrypoint rename, run a quick import-resolution sanity pass before bulk doc/path rewrites.
+- For `SMART_SEARCH_PERFORMANCE_ARCHITECTURE` docs: apply content updates before or in the same change set as filename rename, to avoid stale transitional references.
+
+---
+
+### 10.8 Performance/Architecture Optimizations (Low Priority but Valuable)
+
+#### 8.1 Project detector caching
+
+In new `project-detector` utility, cache directory-boundary lookups (`Map`) to avoid repeated filesystem walks during indexing.
+
+#### 8.2 File pattern broadening guardrails
+
+When making include patterns generic:
+
+- maintain strong excludes for generated/vendor/large artifacts
+- consider docs indexing as opt-in or lower weight
+
+This prevents index bloat and slowdowns on large repos.
+
+#### 8.3 Single source of truth for data-dir naming
+
+Avoid repeating `.sweet-search` literals across modules.
+
+Recommendation:
+- centralize data-dir constant in one module and consume it everywhere (core + hooks).
+
+#### 8.4 XDG support (optional nice-to-have)
+
+Optional Linux improvement:
+
+- support `XDG_DATA_HOME` / `XDG_CACHE_HOME` for data placement
+- keep `.sweet-search/` as default local-project mode.
+
+#### 8.5 MCP tool name collision check (optional)
+
+Current MCP tool name `search` is likely fine, but in multi-server environments it may be generic.
+
+Optional:
+- evaluate namespacing strategy if conflicts are observed.
+
+#### 8.6 Shell alias/user environment reminder
+
+If users have shell aliases/scripts pinned to old names/paths, include migration guidance in release notes.
+
+---
+
+### 10.9 Resolved Decision Record
+
+- [x] Canonical data env var name: `SWEET_SEARCH_DATA_DIR`.
+- [x] Constant naming: `DATA_DIR`.
+- [x] `.agentdb` migration mode: hybrid (interactive prompt, non-interactive warn-only unless explicit flag).
+- [x] `index-codebase-v21.js` rename: deferred in this migration.
+- [x] Socket path rename `/tmp/search.sock` -> `/tmp/sweet-search.sock` with temporary compatibility fallback.
+- [x] Ownership decision for `statusline.cjs`/`hook-handler.cjs` memory paths: rename only Sweet Search-owned paths.
+- [x] Disposition of root `check-db.js`: move to `scripts/` unless explicitly retained as diagnostic utility.
+- [x] Handling of `training/evaluate-catboost-router.js` legacy refs: keep only if training-only historical context; otherwise normalize.
+- [x] `.sweet-search.config.json` schema and validation policy: required keys and precedence defined in Section 3.7.
+- [x] Absolute path policy: allowlist fixture/test-only; replace portability-risk absolute paths.
+- [x] Migration prompt/opt-in requirement: enforced by Section 4.5.
+
+---
+
+### 10.10 Consolidated Pre-Execution Checklist
+
+- [x] Fix numbering/structure drift in `DESLOTHIFY.md`.
+- [x] Remove stale `.agentdb` references in plan sections (except migration notes).
+- [x] Add missing files to planned scope:
+  - [x] `docs/search/MCP_INTEGRATION.md`
+  - [x] `HYBRID_SEARCH.md`
+  - [x] `docs/TRANSLATION.md`
+  - [x] `.claude/commands/index-codebase.md`
+- [ ] Update `package.json` scripts and entrypoints comprehensively.
+- [ ] Include `SEARCH 100x` (space variant) replacements in runtime scope.
+- [ ] Include command/hook/helper surfaces in rename scope.
+- [ ] Add explicit lockfile regeneration step.
+- [ ] Make build verification executable (add `build` script and enforce `npm run build`).
+- [ ] Add migration/release note tasks.
+- [ ] Add structural verification pass that includes tests/evaluation.
+- [ ] Define rollback strategy (phase-level commits).
+- [x] Add absolute-path audit task with allowlist policy.
+- [x] Document `.sweet-search.config.json` schema and precedence rules.
+- [x] Add explicit ordering constraints (data-dir before prewarm; import sanity before bulk docs).
+
+---
+
+### 10.11 Minimal Phase Gate (Updated)
+
+After each high-risk sub-phase:
+
+1. `npm test -- --run`
+2. `npm run build`
+3. Pattern audit (content + structural):
+   - `smart-search|SmartSearch|SMART_SEARCH|smart-search-v21`
+   - `search-100x|SEARCH 100x|Search 100x`
+   - `\.agentdb/|AGENTDB_PATH|AGENTDB_DIR`
+   - `codolis`
+   - `sloth|SLOTH_|sloth-|sloth/|Sloth Web|Sloth-Local|Sloth-Central`
+4. Smoke test:
+   - index a non-Sloth codebase
+   - run lexical + semantic + hybrid queries
+5. If regressions appear, revert only the phase commit and retry.
