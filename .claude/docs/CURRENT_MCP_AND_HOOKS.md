@@ -58,12 +58,3 @@ Self-maintaining background daemon that keeps the search index current:
 - **`ss.sh`** (bash wrapper): Auto-spawns `sweet-search.js --serve` if socket not present.
 - First-run cost applies only to `ss.sh` or manual `node sweet-search.js --serve` startup.
 
----
-
-## Proto-Sync Hook
-
-On `.proto` file edits, automatically checks sync status between:
-- `Sloth Web/Sloth-Local/src/main/proto`
-- `Sloth Vita/biologger/src/main/proto`
-
-**Script:** `.claude/helpers/proto-sync.sh check`

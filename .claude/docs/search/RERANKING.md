@@ -4,8 +4,8 @@ Documentation for the cascaded reranking system in Smart Search v2.3.
 
 ## Source Files
 
-- **Primary**: `.claude/helpers/search-100x/flashrank.js`
-- **Config**: `.claude/helpers/search-100x/config.js` (lines 669-712)
+- **Primary**: `core/flashrank.js`
+- **Config**: `core/config.js` (lines 669-712)
 - **Integration**: `core/sweet-search.js`
 
 ## Overview
@@ -845,13 +845,13 @@ node flashrank.js rerank "query" --cascaded    # Two-stage cascade (default)
 
 ```bash
 # Default: cascaded reranking enabled
-.claude/helpers/search-100x/ss "how does auth work" --mode semantic
+./ss "how does auth work" --mode semantic
 
 # Disable reranking
-.claude/helpers/search-100x/ss "query" --no-rerank
+./ss "query" --no-rerank
 
 # JSON output shows rerank info
-.claude/helpers/search-100x/ss "query" --json
+./ss "query" --json
 # -> earlyExit: true, skipReason: "tight_cluster (spread=0.000)"
 ```
 

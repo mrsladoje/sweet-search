@@ -5,11 +5,11 @@ Semantic search provides conceptual code search using vector embeddings and appr
 ## Source Files
 
 - **Main Pipeline**: `core/sweet-search.js`
-- **Embedding Service**: `.claude/helpers/search-100x/embedding-service.js`
-- **HNSW Index**: `.claude/helpers/search-100x/hnsw-index.js`
-- **Binary HNSW Index**: `.claude/helpers/search-100x/binary-hnsw-index.js`
-- **Reranking**: `.claude/helpers/search-100x/flashrank.js` (see [RERANKING.md](./RERANKING.md) for details)
-- **Configuration**: `.claude/helpers/search-100x/config.js`
+- **Embedding Service**: `core/embedding-service.js`
+- **HNSW Index**: `core/hnsw-index.js`
+- **Binary HNSW Index**: `core/binary-hnsw-index.js`
+- **Reranking**: `core/flashrank.js` (see [RERANKING.md](./RERANKING.md) for details)
+- **Configuration**: `core/config.js`
 
 ## Performance
 

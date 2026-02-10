@@ -1,6 +1,6 @@
 # SEARCH 100x Evaluation Harness
 
-> **Status:** Production-ready | **Location:** `.claude/helpers/search-100x/evaluation/`
+> **Status:** Production-ready | **Location:** `./evaluation/`
 
 A comprehensive quality evaluation framework for the SEARCH 100x hybrid code search engine. Measures retrieval quality using standard IR metrics (MRR, NDCG, MAP, Recall) with ground-truth query sets.
 
@@ -10,7 +10,7 @@ A comprehensive quality evaluation framework for the SEARCH 100x hybrid code sea
 
 ```bash
 # Navigate to search directory
-cd .claude/helpers/search-100x
+cd .
 
 # Install dependencies (first time only)
 npm install
@@ -393,19 +393,19 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd .claude/helpers/search-100x
+          cd .
           npm ci
 
       - name: Run evaluation
         run: |
-          cd .claude/helpers/search-100x
+          cd .
           node evaluation/run-evaluation.js --ci --output=report.json
 
       - name: Upload report
         uses: actions/upload-artifact@v4
         with:
           name: search-quality-report
-          path: .claude/helpers/search-100x/report.json
+          path: ./report.json
 ```
 
 ### Exit Code Handling
@@ -537,7 +537,7 @@ Cache hits and rerank skips (via score spread analysis) reduce costs.
 ## Running Unit Tests
 
 ```bash
-cd .claude/helpers/search-100x
+cd .
 
 # Run all tests
 npm test

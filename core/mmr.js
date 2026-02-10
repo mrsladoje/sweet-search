@@ -128,7 +128,7 @@ export function computeSimilarity(a, b, weights = MMR_CONFIG.weights) {
  * Extract package/namespace from file path.
  *
  * Examples:
- *   "com/codolis/sloth/service/AuthService.java" → "com.codolis.sloth.service"
+ *   "com/example/service/AuthService.java" → "com.example.service"
  *   "src/main/java/com/foo/Bar.java" → "com.foo"
  *
  * @param {string} filePath - File path

@@ -105,7 +105,7 @@ function getExpectedRoute(query) {
 }
 
 // Check if prediction matches expected (utility grading)
-// MATCHES: .claude/helpers/search-100x/evaluation/lib/metrics.js::calculateUtilityRouteAccuracy
+// MATCHES: evaluation/lib/metrics.js::calculateUtilityRouteAccuracy
 function isUtilityMatch(predicted, expected, queryText) {
   // Strict match always counts
   if (predicted === expected) {

@@ -293,7 +293,7 @@ This audit verified accuracy by:
 4. Checking API endpoint specifications
 5. Validating environment variable handling
 
-All code references are at line numbers in `/home/panonit/projects/sloth/.claude/helpers/search-100x/`
+All code references are at line numbers in `./`
 
 ---
 

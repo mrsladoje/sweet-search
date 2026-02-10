@@ -190,12 +190,12 @@ const options = {
 
 ## Files Modified
 
-1. **`.claude/helpers/search-100x/query-router.js`**
+1. **`core/query-router.js`**
    - `STRUCTURAL_PATTERNS` constant with 8 pattern types
    - Structural detection runs FIRST (before WASM CatBoost ML)
    - Returns `mode: 'structural'` with `confidence: 0.95` and `targetEntity`
 
-2. **`.claude/helpers/search-100x/graph-search.js`**
+2. **`core/graph-search.js`**
    - `findCallers()` - Find all entities that call the target
    - `findCallees()` - Find all entities called by the target
    - `findImplementations()` - Find implementations/subclasses

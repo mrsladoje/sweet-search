@@ -480,7 +480,7 @@ grep -A10 "function refreshLock" .claude/hooks/index-maintainer.mjs | grep -q "p
 grep -A15 "function releaseGlobalIndexLock" .claude/hooks/index-maintainer.mjs | grep -q "process.pid" && echo "OK"
 
 # Error Handling
-grep -q "circuitBreaker" .claude/helpers/search-100x/embedding-service.js && echo "OK"
+grep -q "circuitBreaker" core/embedding-service.js && echo "OK"
 grep -q "ENOSPC" .claude/hooks/index-maintainer.mjs && echo "OK"
 
 # Performance
@@ -490,7 +490,7 @@ sqlite3 .sweet-search/code-graph.db ".indexes entities" | grep -q "idx_entities_
 grep -q "30 seconds" CLAUDE.md && echo "OK"
 
 # Tests
-test -f .claude/helpers/search-100x/__tests__/lock-ownership.test.js && echo "OK"
+test -f core/__tests__/lock-ownership.test.js && echo "OK"
 ```
 
 ---

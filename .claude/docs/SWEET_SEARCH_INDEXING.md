@@ -2,7 +2,7 @@
 
 > **Version:** 2.3 (SEARCH 100x)
 > **Last Updated:** 2026-01-02
-> **Location:** `.claude/helpers/search-100x/`
+> **Location:** `./`
 
 ## Table of Contents
 
@@ -61,7 +61,7 @@ Source Files
 
 **Location:** `.claude/commands/index-codebase.md`
 
-**Underlying Script:** `node .claude/helpers/search-100x/index-codebase-v21.js`
+**Underlying Script:** `node ./index-codebase-v21.js`
 
 ```bash
 # Incremental index (DEFAULT - only changed files)
@@ -86,8 +86,8 @@ Source Files
 ### 2. Search Client: `ss` (C binary) / `ss.sh` (Bash fallback)
 
 **Location:**
-- `.claude/helpers/search-100x/ss` - Compiled C binary (from `ss-fast/ss-fast.c`)
-- `.claude/helpers/search-100x/ss.sh` - Bash fallback wrapper
+- `./ss` - Compiled C binary (from `ss-fast/ss-fast.c`)
+- `./ss.sh` - Bash fallback wrapper
 
 The `ss` binary is a compiled C program (~19KB), NOT a symlink. It provides the primary search interface with ~2-5ms client overhead (vs ~10-20ms for shell wrapper).
 
@@ -97,34 +97,34 @@ The `ss` binary is a compiled C program (~19KB), NOT a symlink. It provides the 
 
 ```bash
 # Search (not indexing)
-.claude/helpers/search-100x/ss "AuthService"
-.claude/helpers/search-100x/ss "how does auth work" --mode semantic
+./ss "AuthService"
+./ss "how does auth work" --mode semantic
 ```
 
 ### 3. Direct Script Invocation
 
 ```bash
 # Main indexer
-node .claude/helpers/search-100x/index-codebase-v21.js [options]
+node ./index-codebase-v21.js [options]
 
 # Graph extraction only
-node .claude/helpers/search-100x/graph-extractor.js
+node ./graph-extractor.js
 
 # HNSW index building
-node .claude/helpers/search-100x/hnsw-index.js build
+node ./hnsw-index.js build
 
 # Binary HNSW building
-node .claude/helpers/search-100x/binary-hnsw-index.js build
+node ./binary-hnsw-index.js build
 
 # ColBERT token indexing
-node .claude/helpers/search-100x/colbert-index.js index
+node ./colbert-index.js index
 
 # Vocabulary warmup
-node .claude/helpers/search-100x/vocabulary-warmup.js
-node .claude/helpers/search-100x/prewarm-vocab.js
+node ./vocabulary-warmup.js
+node ./prewarm-vocab.js
 
 # Embedding service warmup
-node .claude/helpers/search-100x/embedding-service.js warmup
+node ./embedding-service.js warmup
 ```
 
 ---
@@ -673,7 +673,7 @@ For faster loading, `vocabulary-utils.js` provides a binary format:
 ### Graph Search Command
 
 ```bash
-node .claude/helpers/search-100x/graph-search.js <query> [options]
+node ./graph-search.js <query> [options]
 ```
 
 | Flag | Description | Default |
@@ -687,7 +687,7 @@ node .claude/helpers/search-100x/graph-search.js <query> [options]
 ### HNSW Index Command
 
 ```bash
-node .claude/helpers/search-100x/hnsw-index.js <command>
+node ./hnsw-index.js <command>
 ```
 
 | Command | Description |
@@ -993,7 +993,7 @@ function releaseGlobalIndexLock() {
 
 ### Circuit Breaker for Voyage API
 
-> **Source:** `.claude/helpers/search-100x/embedding-service.js`
+> **Source:** `./embedding-service.js`
 
 Prevents cascading failures during API outages:
 
@@ -1027,7 +1027,7 @@ const circuitBreaker = {
 
 ### ENOSPC (Disk Full) Handling
 
-> **Source:** `.claude/hooks/index-maintainer.mjs`, `.claude/helpers/search-100x/incremental-tracker.js`
+> **Source:** `.claude/hooks/index-maintainer.mjs`, `./incremental-tracker.js`
 
 Safe write with atomic temp+rename pattern:
 

@@ -2,13 +2,13 @@
 
 Documentation of structural query patterns and graph-based code search.
 
-> **Full query routing documentation:** [QUERY-ROUTING.md](../../helpers/search-100x/QUERY-ROUTING.md)
+> **Full query routing documentation:** [QUERY-ROUTING.md](../../QUERY-ROUTING.md)
 
 ## Source Files
 
-- **Query Router**: `.claude/helpers/search-100x/query-router.js` (WASM CatBoost + regex pre-checks)
-- **WASM Router**: `.claude/helpers/search-100x/wasm-router/` (499 trees, depth 4, ~10μs)
-- **Graph Search**: `.claude/helpers/search-100x/graph-search.js`
+- **Query Router**: `core/query-router.js` (WASM CatBoost + regex pre-checks)
+- **WASM Router**: `core/wasm-router/` (499 trees, depth 4, ~10μs)
+- **Graph Search**: `core/graph-search.js`
 - **Smart Search Integration**: `core/sweet-search.js`
 
 ## Overview
@@ -38,7 +38,7 @@ All patterns capture the target entity in the last capture group.
 
 ## Query Routing Pipeline
 
-**3-Stage Pipeline** (see [QUERY-ROUTING.md](../../helpers/search-100x/QUERY-ROUTING.md) for details):
+**3-Stage Pipeline** (see [QUERY-ROUTING.md](../../QUERY-ROUTING.md) for details):
 
 ```
 Query Input
@@ -283,7 +283,7 @@ CREATE TABLE relationships (
   type TEXT,                -- 'calls', 'implements', 'extends', 'uses', 'throws', 'imports'
   weight REAL,
   context_line INTEGER,
-  full_import_path TEXT,    -- Full Java import path (e.g., "com.codolis.AuthService")
+  full_import_path TEXT,    -- Full Java import path (e.g., "com.example.AuthService")
   is_static INTEGER,        -- 1 if static import
   is_wildcard INTEGER       -- 1 if wildcard import (e.g., "com.foo.*")
 );

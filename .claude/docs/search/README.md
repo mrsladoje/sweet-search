@@ -14,19 +14,19 @@ Smart Search is a hybrid code search pipeline that intelligently routes queries 
 
 | Document | Description |
 |----------|-------------|
-| [**QUERY-ROUTING.md**](../../helpers/search-100x/QUERY-ROUTING.md) | **WASM CatBoost query router (authoritative)** |
+| [**QUERY-ROUTING.md**](../../QUERY-ROUTING.md) | **WASM CatBoost query router (authoritative)** |
 | [QUERY_ROUTER.md](./QUERY_ROUTER.md) | Quick reference (redirects to QUERY-ROUTING.md) |
-| [STRUCTURAL-QUERIES.md](../../helpers/search-100x/STRUCTURAL-QUERIES.md) | GraphRAG structural query patterns |
+| [STRUCTURAL-QUERIES.md](../../STRUCTURAL-QUERIES.md) | GraphRAG structural query patterns |
 | [LEXICAL_SEARCH.md](./LEXICAL_SEARCH.md) | FTS5/BM25 + Code Graph lexical search |
 | [SEMANTIC_SEARCH.md](./SEMANTIC_SEARCH.md) | HNSW ANN + embedding + reranking pipeline |
 | [HYBRID_SEARCH.md](./HYBRID_SEARCH.md) | Convex Combination fusion for hybrid queries |
 | [RERANKING.md](./RERANKING.md) | Cascaded reranking (FlashRank → Voyage/Jina) |
 | [TESTING_HARNESS.md](./TESTING_HARNESS.md) | Evaluation harness (MRR/Success@K) + baselines/regression checks |
-| [**TRANSLATION.md**](../../helpers/search-100x/docs/TRANSLATION.md) | **Multilingual query translation (T1→T2→T3 pipeline)** |
+| [**TRANSLATION.md**](../../docs/TRANSLATION.md) | **Multilingual query translation (T1→T2→T3 pipeline)** |
 
 ## Source Files
 
-All source files are located in `.claude/helpers/search-100x/`:
+All source files are located in the project root (`core/`, `./`):
 
 | File | Purpose |
 |------|---------|

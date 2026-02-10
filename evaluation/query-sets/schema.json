@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://sloth.codolis.com/search-100x/query-set-schema.json",
-  "title": "SEARCH 100x Query Set Schema",
-  "description": "Schema for ground-truth query sets used in SEARCH 100x evaluation",
+  "$id": "https://sweet-search.dev/query-set-schema.json",
+  "title": "Sweet Search Query Set Schema",
+  "description": "Schema for ground-truth query sets used in Sweet Search evaluation",
   "type": "object",
   "required": ["schemaVersion", "category", "expectedRoute", "codebaseCommit", "queries"],
   "properties": {

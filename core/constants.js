@@ -1,5 +1,5 @@
 /**
- * Shared constants for search-100x
+ * Shared constants for sweet-search
  * Extracted to prevent drift between graph-search.js and sweet-search.js
  */
 
