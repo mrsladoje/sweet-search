@@ -362,7 +362,7 @@ async function runDistillation(options = {}) {
   console.log(`  Input queries: ${samples.length}`);
   console.log(`  Training samples: ${trainingData.length}`);
   console.log(`  Model: ${CONFIG.catboostModel}`);
-  console.log('\nTo use the model in smart-search:');
+  console.log('\nTo use the model in sweet-search:');
   console.log(`  const catboost = require('catboost');`);
   console.log(`  const model = new catboost.Model('${CONFIG.catboostModel}');`);
   console.log('═══════════════════════════════════════════════════════════════\n');

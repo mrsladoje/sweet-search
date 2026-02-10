@@ -3,7 +3,7 @@
   "version": "2.3.0",
   "description": "Sweet Search - SOTA Hybrid Code Search Engine with WASM CatBoost Query Router, Semantic/Lexical/Structural Search, and Multilingual Support",
   "type": "module",
-  "main": "core/smart-search-v21.js",
+  "main": "core/sweet-search.js",
   "license": "Apache-2.0",
   "author": "Marko Sladojevic <marko@panonit.com> (https://panonit.com)",
   "repository": {
@@ -45,7 +45,7 @@
     "NOTICE"
   ],
   "scripts": {
-    "search": "node core/smart-search-v21.js",
+    "search": "node core/sweet-search.js",
     "index": "node core/index-codebase-v21.js",
     "index:full": "node core/index-codebase-v21.js --full",
     "hcgs": "node core/hcgs-generator.js generate",

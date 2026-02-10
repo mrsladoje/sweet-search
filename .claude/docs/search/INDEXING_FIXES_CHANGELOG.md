@@ -497,6 +497,6 @@ test -f .claude/helpers/search-100x/__tests__/lock-ownership.test.js && echo "OK
 
 ## Related Documentation
 
-- [SMART_SEARCH_INDEXING.md](../SMART_SEARCH_INDEXING.md) - Complete indexing specification
+- [SWEET_SEARCH_INDEXING.md](../SWEET_SEARCH_INDEXING.md) - Complete indexing specification
 - [INDEX_MAINTAINER.md](./INDEX_MAINTAINER.md) - Daemon technical documentation
 - [CACHE_STRATEGY.md](./CACHE_STRATEGY.md) - 4-tier cache hierarchy

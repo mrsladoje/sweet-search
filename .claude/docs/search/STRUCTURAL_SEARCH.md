@@ -9,7 +9,7 @@ Documentation of structural query patterns and graph-based code search.
 - **Query Router**: `.claude/helpers/search-100x/query-router.js` (WASM CatBoost + regex pre-checks)
 - **WASM Router**: `.claude/helpers/search-100x/wasm-router/` (499 trees, depth 4, ~10μs)
 - **Graph Search**: `.claude/helpers/search-100x/graph-search.js`
-- **Smart Search Integration**: `.claude/helpers/search-100x/smart-search-v21.js`
+- **Smart Search Integration**: `core/sweet-search.js`
 
 ## Overview
 
@@ -208,7 +208,7 @@ async findImpact(entityName, options = {}) {
 
 ## Integration in SmartSearch
 
-**Source**: `grep -n "structuralSearch" smart-search-v21.js`
+**Source**: `grep -n "structuralSearch" sweet-search.js`
 
 ```javascript
 async structuralSearch(query, routing, options = {}) {

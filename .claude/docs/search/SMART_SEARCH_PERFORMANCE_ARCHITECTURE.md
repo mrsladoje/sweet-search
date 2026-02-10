@@ -7,7 +7,7 @@ This document provides a detailed technical analysis of the Smart Search system'
 > **Sources of Truth:**
 > - C binary: `ss-fast/ss-fast.c`
 > - Bash fallback: `ss.sh`
-> - Server: `smart-search-v21.js`
+> - Server: `sweet-search.js`
 > - Query Router: `query-router.js` + `wasm-router/` (WASM CatBoost, ~10us)
 > - Config: `config.js` (`PERFORMANCE_TARGETS`, `DB_PATHS`)
 > - Embedding service: `embedding-service.js`
@@ -33,7 +33,7 @@ Smart Search is a hybrid code search system with a client-server architecture op
 | ~2-5ms client  |  /tmp/search.sock        v
 | overhead       |                  +-----------------------+
 +----------------+                  | Node.js Server        |
-       |                            | (smart-search-v21.js) |
+       |                            | (sweet-search.js) |
        | HTTP/1.0 GET               |                       |
        v                            | - SmartSearch class   |
 +----------------+                  | - Warm singleton      |
@@ -174,7 +174,7 @@ async graphExpandedSearch(query, opts = {}) {
     // ...
 }
 
-// smart-search-v21.js - hybridSearchV2 uses skipBoosts=true
+// sweet-search.js - hybridSearchV2 uses skipBoosts=true
 async hybridSearchV2(query, options = {}) {
     const [lexicalSearchResult, semanticSearchResult] = await Promise.all([
         this.graphSearch.graphExpandedSearch(query, {
@@ -438,7 +438,7 @@ Q="${1:-}" K="${2:-10}"
 
 # Auto-start server if not running
 if [[ ! -S "$SOCKET" ]]; then
-    nohup node "$(dirname "$0")/smart-search-v21.js" --serve &>/dev/null &
+    nohup node "$(dirname "$0")/sweet-search.js" --serve &>/dev/null &
     for _ in {1..50}; do
         [[ -S "$SOCKET" ]] && break
         sleep 0.1
@@ -464,7 +464,7 @@ printf "GET /search?q=%s&k=%s&format=text HTTP/1.0\r\nHost: l\r\n\r\n" "$Q_ENC" 
 
 ---
 
-## Node.js Server (`smart-search-v21.js`)
+## Node.js Server (`sweet-search.js`)
 
 ### Server Mode
 
@@ -763,7 +763,7 @@ ss "novel complex query"   # ~75-130ms (FlashRank skip) or ~150-480ms (with remo
 | `ss-fast/ss-fast.c` | C source code for binary client |
 | `ss-fast/Makefile` | Build configuration |
 | `ss.sh` | Bash shell wrapper fallback |
-| `smart-search-v21.js` | Main Node.js server (hybridSearchV2 default) |
+| `sweet-search.js` | Main Node.js server (hybridSearchV2 default) |
 | `graph-search.js` | BM25/FTS5 search, skipBoosts support |
 | `config.js` | All configuration (`DB_PATHS`, `PERFORMANCE_TARGETS`, providers) |
 | `embedding-service.js` | Multi-layer caching, API calls, `query-vocabulary.json` |
@@ -787,12 +787,12 @@ ss "novel complex query"   # ~75-130ms (FlashRank skip) or ~150-480ms (with remo
 | ss.sh fallback | `ss.sh` | Bash script |
 | Index paths | `config.js` | `DB_PATHS` (lines 55-85) |
 | Performance targets | `config.js` | `PERFORMANCE_TARGETS` (lines 597-607) |
-| **hybridSearchV2** | `smart-search-v21.js` | `hybridSearchV2()`, `robustCCFusion()`, `applyPostFusionBoosts()` |
+| **hybridSearchV2** | `sweet-search.js` | `hybridSearchV2()`, `robustCCFusion()`, `applyPostFusionBoosts()` |
 | skipBoosts chain | `graph-search.js` | `bm25Search()`, `hybridDefinitionSearch()`, `graphExpandedSearch()` |
-| Quantile normalization | `smart-search-v21.js` | `quantileNormalize()` |
-| RRF fallback | `smart-search-v21.js` | `shouldFallbackToRRF()`, `rrfFusion()` |
-| Post-fusion boosts | `smart-search-v21.js` | `BOOST_POLICY`, `getBoostIntent()` |
+| Quantile normalization | `sweet-search.js` | `quantileNormalize()` |
+| RRF fallback | `sweet-search.js` | `shouldFallbackToRRF()`, `rrfFusion()` |
+| Post-fusion boosts | `sweet-search.js` | `BOOST_POLICY`, `getBoostIntent()` |
 | MMR diversity | `mmr.js` | `applyMMR()` |
 | Vocabulary (JSON) | `embedding-service.js` | `Vocabulary` class, `query-vocabulary.json` |
 | Semantic cache | `embedding-service.js` | `SemanticCache` class |
-| Typical latency | `smart-search-v21.js` | Header comment (~275ms semantic) |
+| Typical latency | `sweet-search.js` | Header comment (~275ms semantic) |

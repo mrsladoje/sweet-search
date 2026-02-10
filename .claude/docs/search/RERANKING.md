@@ -6,7 +6,7 @@ Documentation for the cascaded reranking system in Smart Search v2.3.
 
 - **Primary**: `.claude/helpers/search-100x/flashrank.js`
 - **Config**: `.claude/helpers/search-100x/config.js` (lines 669-712)
-- **Integration**: `.claude/helpers/search-100x/smart-search-v21.js`
+- **Integration**: `core/sweet-search.js`
 
 ## Overview
 
@@ -27,7 +27,7 @@ The pipeline varies by search path:
 3. **Flood Control (Strategy #21)**: Per-file/type caps, implementation clustering
 4. Results returned directly (no cross-encoder reranking)
 
-**Semantic Path (in `smart-search-v21.js`):**
+**Semantic Path (in `sweet-search.js`):**
 1. **HNSW Retrieval**: Binary HNSW → Int8 rescore → candidates
 2. **Cross-Encoder Reranking**: FlashRank → optional Voyage/Jina (cascaded)
 3. **No flood control applied** (reranking handles score-based filtering)
@@ -45,7 +45,7 @@ The pipeline varies by search path:
 
 ### Fair Fusion Approach
 
-**Source**: `smart-search-v21.js`, `hybridSearchV2()` method (lines 1451-1513)
+**Source**: `sweet-search.js`, `hybridSearchV2()` method (lines 1451-1513)
 
 The hybrid search pipeline uses a **fair fusion** approach to ensure both lexical and semantic paths are treated equally:
 
@@ -95,11 +95,11 @@ Boosts applied **uniformly after fusion** so both lexical and semantic paths ben
 
 ## Scoring Pipeline
 
-**Source**: `smart-search-v21.js`, lines 1004-1440
+**Source**: `sweet-search.js`, lines 1004-1440
 
 ### Quantile Normalization
 
-**Source**: `smart-search-v21.js`, `quantileNormalize()` (lines 1017-1038)
+**Source**: `sweet-search.js`, `quantileNormalize()` (lines 1017-1038)
 
 Replaces min-max normalization for robustness to score outliers:
 
@@ -122,7 +122,7 @@ quantileNormalize(scores, lowQuantile = 0.05, highQuantile = 0.95) {
 
 ### RRF Fallback Detection
 
-**Source**: `smart-search-v21.js`, `shouldFallbackToRRF()` (lines 1047-1085)
+**Source**: `sweet-search.js`, `shouldFallbackToRRF()` (lines 1047-1085)
 
 Detects when CC fusion would be unreliable:
 
@@ -148,7 +148,7 @@ if ((lexTop5PctThreshold / lexMax) > 0.95 && (lexMedian / lexMax) < 0.3) {
 
 ### RRF Fusion (Fallback)
 
-**Source**: `smart-search-v21.js`, `rrfFusion()` (lines 1095-1118)
+**Source**: `sweet-search.js`, `rrfFusion()` (lines 1095-1118)
 
 Rank-based fusion when CC is unreliable:
 
@@ -172,7 +172,7 @@ rrfFusion(lexicalResults, semanticResults, k = 60) {
 
 ### getBoostIntent Function
 
-**Source**: `smart-search-v21.js`, `getBoostIntent()` (lines 1213-1240)
+**Source**: `sweet-search.js`, `getBoostIntent()` (lines 1213-1240)
 
 Maps query router output to boost intensity:
 
@@ -221,7 +221,7 @@ getBoostIntent(routerMode, routerConfidence) {
 
 ### Boost Policy Configuration
 
-**Source**: `smart-search-v21.js`, `BOOST_POLICY` (lines 1245-1276)
+**Source**: `sweet-search.js`, `BOOST_POLICY` (lines 1245-1276)
 
 ```javascript
 static BOOST_POLICY = {
@@ -260,7 +260,7 @@ static BOOST_POLICY = {
 
 ### Post-Fusion Boost Computation
 
-**Source**: `smart-search-v21.js`, `applyPostFusionBoosts()` (lines 1292-1356)
+**Source**: `sweet-search.js`, `applyPostFusionBoosts()` (lines 1292-1356)
 
 Applies boosts **after** fusion for uniform treatment of both paths:
 
@@ -539,7 +539,7 @@ In practice, **60-80% of queries skip Stage 2** due to:
 
 ## MMR Diversification
 
-**Source**: `smart-search-v21.js`, `mmrDiversify()` method
+**Source**: `sweet-search.js`, `mmrDiversify()` method
 
 MMR (Maximal Marginal Relevance) replaces flood control for result diversity. Instead of arbitrary per-file/type caps, MMR uses a principled approach that balances relevance with diversity.
 

@@ -490,7 +490,7 @@ If any check fails, implement the fix before proceeding with tests.
 ├── index-codebase-v21.js      # Main indexer (8 phases)
 ├── hcgs-generator.js          # HCGS summaries (4-tier fallback)
 ├── embedding-service.js       # Embeddings (4-tier cache, 4 providers)
-├── smart-search-v21.js        # Search entry point
+├── sweet-search.js        # Search entry point
 ├── binary-hnsw-index.js       # Vector index
 ├── flashrank.js               # Reranking fallback
 ├── llm-provider.js            # LLM abstraction

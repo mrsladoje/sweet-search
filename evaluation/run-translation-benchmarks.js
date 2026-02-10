@@ -788,8 +788,8 @@ async function runE2EMatrixBenchmark(args) {
 }
 
 async function runEvaluationWithEnv(envOverrides, args) {
-  // Import SmartSearch dynamically
-  const { SmartSearch } = await import('../core/smart-search-v21.js');
+  // Import SweetSearch dynamically
+  const { SweetSearch } = await import('../core/sweet-search.js');
 
   // Apply env overrides
   const originalEnv = {};
@@ -802,7 +802,7 @@ async function runEvaluationWithEnv(envOverrides, args) {
     // Reload config to pick up new env
     const { TRANSLATION_CONFIG } = await import('../core/config.js');
 
-    const search = new SmartSearch({ verbose: false });
+    const search = new SweetSearch({ verbose: false });
     await search.init();
 
     // Load multilingual queries

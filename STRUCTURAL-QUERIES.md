@@ -36,7 +36,7 @@ Added 4 new methods to GraphSearch class:
 3. **`findImplementations(interfaceName, options)`** - Find implementations/subclasses
 4. **`findImpact(entityName, options)`** - Impact analysis with BFS traversal (up to 3 levels)
 
-### Phase 3: SmartSearch Integration (smart-search-v21.js)
+### Phase 3: SweetSearch Integration (sweet-search.js)
 
 - Added `structuralSearch()` method to route to appropriate graph query
 - Added `formatStructuralResults()` for specialized output formatting
@@ -201,7 +201,7 @@ const options = {
    - `findImplementations()` - Find implementations/subclasses
    - `findImpact()` - Impact analysis with BFS traversal (up to 3 levels)
 
-3. **`.claude/helpers/search-100x/smart-search-v21.js`**
+3. **`core/sweet-search.js`**
    - `structuralSearch()` - Routes to appropriate graph query
    - `formatStructuralResults()` - Specialized output formatting
    - `search()` switch handles 'structural' mode

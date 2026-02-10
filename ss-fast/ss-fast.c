@@ -1,7 +1,7 @@
 /*
  * ss-fast.c - Blazing fast search client (~2-5ms)
  *
- * Full-featured C client for smart-search server with all Node.js flags.
+ * Full-featured C client for sweet-search server with all Node.js flags.
  * Connects via Unix socket for maximum speed.
  *
  * Usage: ss "query" [options]
@@ -33,7 +33,7 @@
 #include <errno.h>
 #include <getopt.h>
 
-#define SOCKET_PATH "/tmp/search.sock"
+#define SOCKET_PATH "/tmp/sweet-search.sock"
 #define BUFFER_SIZE 16384
 
 /* ANSI color codes */
@@ -282,7 +282,7 @@ static int do_request(const char *path, int print_header_flag, const char *query
     /* Check if socket exists */
     if (access(SOCKET_PATH, F_OK) != 0) {
         fprintf(stderr, FA "Error:" R " Socket %s not found\n", SOCKET_PATH);
-        fprintf(stderr, "Start server: node smart-search-v21.js --serve\n");
+        fprintf(stderr, "Start server: node sweet-search.js --serve\n");
         return 1;
     }
 
