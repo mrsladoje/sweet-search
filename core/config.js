@@ -70,14 +70,10 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 // DATABASE PATHS
 // =============================================================================
 
-// Data directory: SWEET_SEARCH_DATA_DIR (canonical) or AGENTDB_PATH (deprecated fallback)
+// Data directory: SWEET_SEARCH_DATA_DIR env or default .sweet-search
 const DATA_DIR_NAME = (() => {
   if (process.env.SWEET_SEARCH_DATA_DIR) {
     return process.env.SWEET_SEARCH_DATA_DIR;
-  }
-  if (process.env.AGENTDB_PATH) {
-    console.error('[sweet-search] AGENTDB_PATH is deprecated. Use SWEET_SEARCH_DATA_DIR instead.');
-    return process.env.AGENTDB_PATH;
   }
   return '.sweet-search';
 })();
@@ -1016,6 +1012,7 @@ export const FILE_PATTERNS = {
     '**/*.log',
     '**/bun.lock',
     '**/package-lock.json',
+    '**/.sweet-search/**',
   ],
 };
 

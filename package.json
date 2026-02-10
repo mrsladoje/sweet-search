@@ -45,6 +45,7 @@
     "NOTICE"
   ],
   "scripts": {
+    "build": "node -e \"import('./core/sweet-search.js')\" && echo 'Build OK'",
     "search": "node core/sweet-search.js",
     "index": "node core/index-codebase-v21.js",
     "index:full": "node core/index-codebase-v21.js --full",
