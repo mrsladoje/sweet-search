@@ -1,5 +1,5 @@
 /**
- * Unit tests for SEARCH 100x Report Generator
+ * Unit tests for Sweet Search Report Generator
  *
  * Tests report generation including:
  * - Latency categorization
@@ -337,7 +337,7 @@ describe('formatConsoleReport', () => {
     }]);
     const consoleOutput = formatConsoleReport(report, false);  // No colors
 
-    expect(consoleOutput).toContain('SEARCH 100x EVALUATION REPORT');
+    expect(consoleOutput).toContain('Sweet Search EVALUATION REPORT');
     expect(consoleOutput).toContain('Aggregate Metrics');
     expect(consoleOutput).toContain('MRR@10');
     expect(consoleOutput).toContain('Routing');

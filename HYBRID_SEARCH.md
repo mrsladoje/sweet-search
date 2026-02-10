@@ -1,6 +1,6 @@
 # Hybrid Search Architecture
 
-This document describes the hybrid search fusion implementation in Search 100x, including the Jan 2026 improvements for robust score fusion and fair boost application.
+This document describes the hybrid search fusion implementation in Sweet Search, including the Jan 2026 improvements for robust score fusion and fair boost application.
 
 ## Overview
 
@@ -375,8 +375,8 @@ MMR advantages:
 ### Default (Hybrid Search V2)
 
 ```javascript
-const smartSearch = new SweetSearch();
-const { results, stats } = await smartSearch.search('AuthService', {
+const sweetSearch = new SweetSearch();
+const { results, stats } = await sweetSearch.search('AuthService', {
   k: 10,
   mode: 'auto',  // Routes to hybrid for mixed queries
 });
@@ -389,7 +389,7 @@ const { results, stats } = await smartSearch.search('AuthService', {
 
 ```javascript
 // Force hybrid mode
-const result = await smartSearch.search(query, {
+const result = await sweetSearch.search(query, {
   mode: 'hybrid',
   fusion: 'cc',  // 'cc' (Convex Combination) or 'rrf' (Reciprocal Rank)
 });

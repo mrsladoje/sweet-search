@@ -1,5 +1,5 @@
 /**
- * SEARCH 100x Cost Tracker
+ * Sweet Search Cost Tracker
  *
  * Tracks API costs for embedding and reranking calls.
  * Supports Voyage, Jina, and Mistral providers.

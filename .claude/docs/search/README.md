@@ -1,6 +1,6 @@
 # Smart Search System Documentation
 
-This directory contains documentation for the Smart Search (SEARCH 100x) hybrid code search system.
+This directory contains documentation for the Sweet Search hybrid code search system.
 
 ## Overview
 

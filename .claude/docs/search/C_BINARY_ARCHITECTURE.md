@@ -19,13 +19,13 @@ User Command
     |
     | Unix socket connection
     v
-/tmp/search.sock
+/tmp/sweet-search.sock
     |
     v
 [sweet-search.js HTTP server]
     |
     v
-[SmartSearch class: routing -> lexical/semantic/hybrid]
+[SweetSearch class: routing -> lexical/semantic/hybrid]
 ```
 
 ## Component Roles
@@ -38,7 +38,7 @@ User Command
 
 **Key Points**:
 - **Does NOT auto-spawn server** (`grep -n "access(SOCKET_PATH" ss-fast.c`)
-- Connects directly to Unix socket `/tmp/search.sock`
+- Connects directly to Unix socket `/tmp/sweet-search.sock`
 - Exits with error if socket doesn't exist
 - Full feature parity with Node.js CLI
 
@@ -85,15 +85,15 @@ fi
 **Purpose**: HTTP server exposing search functionality via Unix socket and TCP
 
 **Key Points**:
-- Listens on both Unix socket (`/tmp/search.sock`) and TCP port 9876
+- Listens on both Unix socket (`/tmp/sweet-search.sock`) and TCP port 9876
 - Pre-loads all indexes on startup (one-time cost)
 - Handles search requests, formatting, server control
 
 ```javascript
 // Server configuration - grep "SEARCH_SERVER_PORT" sweet-search.js
 const SEARCH_SERVER_PORT = 9876;
-const SEARCH_SERVER_SOCKET = '/tmp/search.sock';
-const SEARCH_SERVER_PIDFILE = '/tmp/smart-search-server.pid';
+const SEARCH_SERVER_SOCKET = '/tmp/sweet-search.sock';
+const SEARCH_SERVER_PIDFILE = '/tmp/sweet-search-server.pid';
 ```
 
 ## ss-fast.c Implementation Details
@@ -221,8 +221,8 @@ Gracefully shuts down both TCP and Unix socket servers.
 
 ```javascript
 async function startServer() {
-  // 1. Initialize SmartSearch with all indexes
-  const searcher = new SmartSearch({ verbose: false });
+  // 1. Initialize SweetSearch with all indexes
+  const searcher = new SweetSearch({ verbose: false });
   await searcher.init();  // ~400ms, loads HNSW, graph, etc.
 
   // 2. Write PID file
@@ -232,7 +232,7 @@ async function startServer() {
   const tcpServer = http.createServer(handleRequest);
   tcpServer.listen(SEARCH_SERVER_PORT);
 
-  // 4. Create Unix socket server (/tmp/search.sock)
+  // 4. Create Unix socket server (/tmp/sweet-search.sock)
   const unixServer = http.createServer(handleRequest);
   await fs.unlink(SEARCH_SERVER_SOCKET);  // Remove stale socket
   unixServer.listen(SEARCH_SERVER_SOCKET);
@@ -318,8 +318,8 @@ async function autoSpawnServer() {
 | Shell wrapper | `./ss.sh` |
 | Symlink (recommended) | `./ss` -> `ss-fast/ss` or `ss.sh` |
 | Server | `core/sweet-search.js` |
-| Unix socket | `/tmp/search.sock` |
-| PID file | `/tmp/smart-search-server.pid` |
+| Unix socket | `/tmp/sweet-search.sock` |
+| PID file | `/tmp/sweet-search-server.pid` |
 
 ## Key Differences: ss-fast vs ss.sh
 

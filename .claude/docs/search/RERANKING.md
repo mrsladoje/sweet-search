@@ -267,7 +267,7 @@ Applies boosts **after** fusion for uniform treatment of both paths:
 ```javascript
 applyPostFusionBoosts(fusedResults, query, routerMode, routerConfidence) {
   const boostIntent = this.getBoostIntent(routerMode, routerConfidence);
-  const policy = SmartSearch.BOOST_POLICY[boostIntent];
+  const policy = SweetSearch.BOOST_POLICY[boostIntent];
 
   return fusedResults.map(result => {
     let totalBoost = 1.0;

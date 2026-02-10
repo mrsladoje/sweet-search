@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * SEARCH 100x Performance Benchmarks
+ * Sweet Search Performance Benchmarks
  *
  * Validates that the implementation meets the performance targets:
  * - Lexical p50: <10ms
@@ -659,7 +659,7 @@ async function benchmarkIncrementalIndex(iterations = 3) {
 
 async function main() {
   console.log('╔═══════════════════════════════════════════════════════════════╗');
-  console.log('║            SEARCH 100x Performance Benchmarks                 ║');
+  console.log('║            Sweet Search Performance Benchmarks                 ║');
   console.log('╚═══════════════════════════════════════════════════════════════╝');
 
   // Check for --index flag to run indexing benchmarks
@@ -674,7 +674,7 @@ async function main() {
     results.lexical = await benchmarkLexical(50);
     results.semantic = await benchmarkSemantic(20);
     results.rerank = await benchmarkRerank(10);
-    results.smartSearch = await benchmarkSweetSearch(20);
+    results.sweetSearch = await benchmarkSweetSearch(20);
 
     // Indexing benchmarks (optional, run with --index flag)
     if (runIndexBench) {
@@ -728,8 +728,8 @@ async function main() {
     console.log(`Rerank (FlashRank)     ${p50.toFixed(2).padEnd(9)}ms ~${targets.rerankP50}ms    (varies)`);
   }
 
-  if (results.smartSearch) {
-    const p50 = results.smartSearch.p50;
+  if (results.sweetSearch) {
+    const p50 = results.sweetSearch.p50;
     console.log(`Smart Search (full)    ${p50.toFixed(2).padEnd(9)}ms (depends on path)`);
   }
 

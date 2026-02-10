@@ -1,5 +1,5 @@
 /**
- * SEARCH 100x Configuration v2.3 (SOTA December 2025)
+ * Sweet Search Configuration v2.3 (SOTA December 2025)
  *
  * Hybrid search stack with tiered embedding providers:
  * - Tier 1: Voyage Code 3 (best for code, 1024d, Matryoshka)
@@ -1166,8 +1166,8 @@ export function getOptimalBatchSize() {
 
 // Active configuration (silent by default, set SEARCH_DEBUG=1 to enable)
 if (process.env.SEARCH_DEBUG) {
-  console.log(`[SEARCH 100x] Active provider: ${EMBEDDING_CONFIG.provider} (${EMBEDDING_CONFIG.model})`);
-  console.log(`[SEARCH 100x] Dimensions: ${EMBEDDING_CONFIG.dimension}d full, ${EMBEDDING_CONFIG.hnswDimension}d HNSW`);
+  console.log(`[Sweet Search] Active provider: ${EMBEDDING_CONFIG.provider} (${EMBEDDING_CONFIG.model})`);
+  console.log(`[Sweet Search] Dimensions: ${EMBEDDING_CONFIG.dimension}d full, ${EMBEDDING_CONFIG.hnswDimension}d HNSW`);
 }
 
 export default {

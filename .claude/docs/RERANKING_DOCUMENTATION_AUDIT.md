@@ -136,7 +136,7 @@ This statement is technically accurate but **incomplete**. It suggests FlashRank
 
 ```javascript
 /**
- * SEARCH 100x Configuration v2.3 (SOTA December 2025)
+ * Sweet Search Configuration v2.3 (SOTA December 2025)
  *
  * Reranking: Voyage rerank-2 → Jina reranker v3 → FlashRank local
  * Late Interaction: Jina ColBERT v2 (code + 89 languages)

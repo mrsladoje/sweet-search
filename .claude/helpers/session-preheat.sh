@@ -361,7 +361,7 @@ const results = await Promise.all([
 const totalMs = Math.round(performance.now() - totalStart);
 
 // Print results
-console.log('[SEARCH 100x] Parallel warmup complete in ' + totalMs + 'ms');
+console.log('[Sweet Search] Parallel warmup complete in ' + totalMs + 'ms');
 for (const r of results) {
     const icon = r.ok ? (r.skip ? '○' : '✓') : '✗';
     let detail = '';
@@ -387,7 +387,7 @@ for (const r of results) {
 const ok = results.filter(r => r.ok && !r.skip).length;
 const skip = results.filter(r => r.skip).length;
 const err = results.filter(r => !r.ok).length;
-console.log('[SEARCH 100x] Summary: ' + ok + ' ok, ' + skip + ' skipped, ' + err + ' errors');
+console.log('[Sweet Search] Summary: ' + ok + ' ok, ' + skip + ' skipped, ' + err + ' errors');
     " >> "$LOG_FILE" 2>&1
 
     # --- Index Maintainer Daemon (search index self-maintenance) ---
