@@ -10,7 +10,7 @@
  *   node evaluation/benchmark-translation-providers.js --local-only
  *   node evaluation/benchmark-translation-providers.js --provider=groq
  *
- * Output: .agentdb/translation-benchmarks/*.json
+ * Output: .sweet-search/translation-benchmarks/*.json
  */
 
 import fs from 'fs';
@@ -600,7 +600,7 @@ Environment Variables:
   TRANSLATION_MODEL       Model for custom provider
 
 Output:
-  Results saved to: .agentdb/translation-benchmarks/benchmark-{timestamp}.json
+  Results saved to: .sweet-search/translation-benchmarks/benchmark-{timestamp}.json
 `);
     process.exit(0);
   }
@@ -669,7 +669,7 @@ Output:
   }
 
   // Save results
-  const outputDir = path.join(PROJECT_ROOT, '.agentdb', 'translation-benchmarks');
+  const outputDir = path.join(PROJECT_ROOT, '.sweet-search', 'translation-benchmarks');
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }

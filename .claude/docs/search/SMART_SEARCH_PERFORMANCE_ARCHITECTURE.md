@@ -525,7 +525,7 @@ const queryCache = new LRUCache(EMBEDDING_CONFIG.cache?.maxSize || 1000);
 
 ### Layer 2: Persistent Vocabulary Cache
 
-**Location:** `.agentdb/query-vocabulary.json` (from `DB_PATHS.vocabulary` in config.js)
+**Location:** `.sweet-search/query-vocabulary.json` (from `DB_PATHS.vocabulary` in config.js)
 
 Pre-computed Voyage embeddings stored as JSON:
 - All entity names from code graph (classes, methods, etc.)
@@ -772,8 +772,8 @@ ss "novel complex query"   # ~75-130ms (FlashRank skip) or ~150-480ms (with remo
 | `vocabulary-utils.js` | Binary vocabulary format (`vocabulary.bin`) |
 | `prewarm-vocab.js` | Project-specific term warming |
 | `benchmark.js` | Performance benchmarks |
-| `.agentdb/query-vocabulary.json` | Primary vocabulary cache (JSON, 1024d) |
-| `.agentdb/vocabulary.bin` | Optional binary vocabulary (256d Matryoshka) |
+| `.sweet-search/query-vocabulary.json` | Primary vocabulary cache (JSON, 1024d) |
+| `.sweet-search/vocabulary.bin` | Optional binary vocabulary (256d Matryoshka) |
 | `/tmp/search.sock` | Unix domain socket |
 | `/tmp/smart-search-server.pid` | Server PID file |
 

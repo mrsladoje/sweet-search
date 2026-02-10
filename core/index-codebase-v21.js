@@ -1708,10 +1708,10 @@ GraphRAG structural queries ("what calls X", "implementations of Y") are accurat
 This is intentional since relationships span across files.
 
 Output:
-  .agentdb/code-graph.db      Code graph with FTS5 (lexical search)
-  .agentdb/codebase.db        Vector embeddings (semantic search)
-  .agentdb/codebase-hnsw.idx  HNSW index (fast ANN)
-  .agentdb/merkle-state.json  Incremental indexing state
+  .sweet-search/code-graph.db      Code graph with FTS5 (lexical search)
+  .sweet-search/codebase.db        Vector embeddings (semantic search)
+  .sweet-search/codebase-hnsw.idx  HNSW index (fast ANN)
+  .sweet-search/merkle-state.json  Incremental indexing state
 `);
     process.exit(0);
   }

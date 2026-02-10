@@ -832,7 +832,7 @@ async function main() {
   }
 
   // Save JSON results
-  const outputDir = path.join(PROJECT_ROOT, '.agentdb', 'translation-benchmarks');
+  const outputDir = path.join(PROJECT_ROOT, '.sweet-search', 'translation-benchmarks');
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }

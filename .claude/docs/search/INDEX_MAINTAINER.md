@@ -70,7 +70,7 @@ const INDEXABLE_EXTENSIONS = [
 
 const EXCLUDED_DIRS = [
   '**/node_modules/**', '**/target/**', '**/build/**',
-  '**/dist/**', '**/.git/**', '**/.agentdb/**'
+  '**/dist/**', '**/.git/**', '**/.sweet-search/**'
 ];
 ```
 
@@ -78,7 +78,7 @@ const EXCLUDED_DIRS = [
 
 ### Lock Files
 
-All lock files are stored in `.agentdb/` directory (not `/tmp`) for security:
+All lock files are stored in `.sweet-search/` directory (not `/tmp`) for security:
 
 | Lock File | Purpose | Format |
 |-----------|---------|--------|
@@ -97,7 +97,7 @@ All lock files are stored in `.agentdb/` directory (not `/tmp`) for security:
 
 ```javascript
 function acquireLock() {
-  const lockFile = path.join(AGENTDB_DIR, 'index-maintainer.lock');
+  const lockFile = path.join(DATA_DIR, 'index-maintainer.lock');
 
   try {
     // Try to create lock file exclusively
@@ -168,7 +168,7 @@ function releaseGlobalIndexLock() {
 
 ### Queue File Format
 
-Queue file: `.agentdb/index-maintainer-queue.jsonl`
+Queue file: `.sweet-search/index-maintainer-queue.jsonl`
 
 ```jsonl
 {"type":"edit","file_path":"src/AuthService.java","timestamp":1735689600000}
@@ -560,7 +560,7 @@ The daemon is started via `session-preheat.sh`:
 # .claude/helpers/session-preheat.sh
 start_index_maintainer() {
   local maintainer="$PROJECT_ROOT/.claude/hooks/index-maintainer.mjs"
-  local lock_file="$PROJECT_ROOT/.agentdb/index-maintainer.lock"
+  local lock_file="$PROJECT_ROOT/.sweet-search/index-maintainer.lock"
 
   # Check if already running
   if [ -f "$lock_file" ]; then
@@ -596,13 +596,13 @@ start_index_maintainer &
 
 ```bash
 # Check for existing lock
-cat .agentdb/index-maintainer.lock
+cat .sweet-search/index-maintainer.lock
 
 # Check if PID is alive
 kill -0 <PID> 2>/dev/null && echo "Running" || echo "Dead"
 
 # Remove stale lock
-rm .agentdb/index-maintainer.lock
+rm .sweet-search/index-maintainer.lock
 
 # Start manually
 node .claude/hooks/index-maintainer.mjs --verbose
@@ -615,7 +615,7 @@ node .claude/hooks/index-maintainer.mjs --verbose
 node .claude/hooks/index-maintainer.mjs --once --verbose
 
 # Check merkle state
-cat .agentdb/merkle-state.json | jq '.stats'
+cat .sweet-search/merkle-state.json | jq '.stats'
 
 # Force full reindex
 /index-codebase --full
@@ -625,8 +625,8 @@ cat .agentdb/merkle-state.json | jq '.stats'
 
 ```bash
 # Check global index lock
-cat .agentdb/indexing.lock
+cat .sweet-search/indexing.lock
 
 # If stuck, verify ownership and remove
-rm .agentdb/indexing.lock
+rm .sweet-search/indexing.lock
 ```

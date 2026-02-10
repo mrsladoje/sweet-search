@@ -77,15 +77,15 @@ There is NO `pre-task` hook.
 
 ### 2. Queue File Path and Format Wrong
 
-**Problem:** Plan uses `.agentdb/index-queue.json` (JSON format).
+**Problem:** Plan uses `.sweet-search/index-queue.json` (JSON format).
 
-**Reality:** Actual queue is `.agentdb/index-maintainer-queue.jsonl` (JSONL format, one JSON object per line).
+**Reality:** Actual queue is `.sweet-search/index-maintainer-queue.jsonl` (JSONL format, one JSON object per line).
 
 **Fix Required:**
 ```diff
-- const queuePath = '.agentdb/index-queue.json';
+- const queuePath = '.sweet-search/index-queue.json';
 - await fs.writeFile(queuePath, JSON.stringify({ files: entries }));
-+ const queuePath = '.agentdb/index-maintainer-queue.jsonl';
++ const queuePath = '.sweet-search/index-maintainer-queue.jsonl';
 + const jsonlContent = entries.map(e => JSON.stringify(e)).join('\n') + '\n';
 + await fs.appendFile(queuePath, jsonlContent);
 ```
@@ -837,9 +837,9 @@ test('HCGS generates automatically during indexing', async () => {
 
 1. SHA-256 content hash (truncated to 16 hex chars)
 2. mtime/size fast-path (~0.1ms/file)
-3. Merkle state file (`.agentdb/merkle-state.json`)
-4. Hook queue (`.agentdb/index-queue.json`)
-5. Lock file coordination (`.agentdb/indexing.lock`)
+3. Merkle state file (`.sweet-search/merkle-state.json`)
+4. Hook queue (`.sweet-search/index-queue.json`)
+5. Lock file coordination (`.sweet-search/indexing.lock`)
 6. Stale-since soft delete (30-day retention)
 7. Processing file recovery (`.processing` crash recovery)
 8. Binary HNSW rebuild threshold (>5% change)
@@ -933,7 +933,7 @@ test('detects external IDE edits within merkle interval', async () => {
 
 #### TC-INC-011: Hook Queue Overflow (CORRECTED)
 
-> **Note:** Actual queue is `.agentdb/index-maintainer-queue.jsonl` (JSONL format).
+> **Note:** Actual queue is `.sweet-search/index-maintainer-queue.jsonl` (JSONL format).
 > Format: one JSON object per line, NOT a JSON array.
 
 ```javascript
@@ -942,7 +942,7 @@ test('handles hook queue overflow gracefully', async () => {
 
   // Simulate 10,000 rapid file edits
   // CORRECT path and format (JSONL, not JSON)
-  const queuePath = '.agentdb/index-maintainer-queue.jsonl';
+  const queuePath = '.sweet-search/index-maintainer-queue.jsonl';
 
   // Generate JSONL entries (one JSON object per line)
   const jsonlLines = [];
@@ -986,7 +986,7 @@ test('recovers from crash during mid-batch processing', async () => {
   await benchmarkFullIndex('./fixtures/small-codebase');
 
   // Create queue with 1000 entries
-  const queuePath = '.agentdb/index-maintainer-queue.jsonl';
+  const queuePath = '.sweet-search/index-maintainer-queue.jsonl';
   const processingPath = queuePath + '.processing.jsonl';
 
   const entries = [];
@@ -1874,7 +1874,7 @@ describe('First-Time User Experience', () => {
       expect(elapsed).toBeLessThan(300000);
 
       // Verify index files created
-      const indexFiles = await fs.readdir(path.join(tempDir, '.agentdb')).catch(() => []);
+      const indexFiles = await fs.readdir(path.join(tempDir, '.sweet-search')).catch(() => []);
       expect(indexFiles.length).toBeGreaterThan(0);
 
       console.log(`SETUP-002: Indexing completed in ${elapsed}ms`);
@@ -1932,7 +1932,7 @@ describe('First-Time User Experience', () => {
     try {
       // Attempt to create index in read-only location
       const result = await exec('node .claude/helpers/search-100x/index-codebase-v21.js', {
-        env: { ...process.env, AGENTDB_PATH: path.join(readOnlyDir, '.agentdb') }
+        env: { ...process.env, SWEET_SEARCH_DATA_DIR: path.join(readOnlyDir, '.sweet-search') }
       }).catch(e => e);
 
       // Error should be actionable
@@ -2184,7 +2184,7 @@ describe('Adversarial Embedding Prevention', () => {
 // security/cache-poisoning.test.js
 describe('Cache Poisoning Prevention', () => {
   test('SEC-CACHE-001: vocabulary cache integrity verified', async () => {
-    const vocabPath = '.agentdb/query-vocabulary.json';
+    const vocabPath = '.sweet-search/query-vocabulary.json';
 
     // Corrupt the cache
     const original = await fs.readFile(vocabPath, 'utf-8');
@@ -2202,7 +2202,7 @@ describe('Cache Poisoning Prevention', () => {
   });
 
   test('SEC-CACHE-002: embedding cache validates dimensions', async () => {
-    const cachePath = '.agentdb/embedding-cache.json';
+    const cachePath = '.sweet-search/embedding-cache.json';
 
     // Inject invalid dimensions
     const maliciousCache = {
@@ -2224,7 +2224,7 @@ describe('Cache Poisoning Prevention', () => {
   });
 
   test('SEC-CACHE-003: merkle state has integrity check', async () => {
-    const merklePath = '.agentdb/merkle-state.json';
+    const merklePath = '.sweet-search/merkle-state.json';
 
     const original = await fs.readFile(merklePath, 'utf-8');
     const parsed = JSON.parse(original);
@@ -2323,7 +2323,7 @@ describe('Critical Edge Cases', () => {
   });
 
   test('EC-CRIT-003: queue overflow during network outage', async () => {
-    const queuePath = '.agentdb/index-maintainer-queue.jsonl';
+    const queuePath = '.sweet-search/index-maintainer-queue.jsonl';
 
     // Simulate network outage by blocking API
     const originalFetch = global.fetch;
@@ -2351,7 +2351,7 @@ describe('Critical Edge Cases', () => {
   });
 
   test('EC-CRIT-004: merkle state corruption recovery', async () => {
-    const merklePath = '.agentdb/merkle-state.json';
+    const merklePath = '.sweet-search/merkle-state.json';
 
     // Completely corrupt the file
     await fs.writeFile(merklePath, 'not valid json {{{');
@@ -2366,7 +2366,7 @@ describe('Critical Edge Cases', () => {
 
   test('EC-CRIT-005: vocabulary cache stampede prevention', async () => {
     // Clear cache
-    await fs.rm('.agentdb/query-vocabulary.json', { force: true });
+    await fs.rm('.sweet-search/query-vocabulary.json', { force: true });
 
     // Fire 20 concurrent warmup requests
     const requests = Array(20).fill().map(() => warmupVocabulary());
@@ -2384,7 +2384,7 @@ describe('Critical Edge Cases', () => {
 // edge-cases/high.test.js
 describe('High Priority Edge Cases', () => {
   test('EC-HIGH-003: JSONL corruption handling', async () => {
-    const queuePath = '.agentdb/test-queue.jsonl';
+    const queuePath = '.sweet-search/test-queue.jsonl';
 
     // Write valid + corrupt + valid entries
     await fs.writeFile(queuePath, [
@@ -2902,7 +2902,7 @@ describe('Chaos Engineering', () => {
 
     try {
       // Point index files to ramdisk
-      process.env.AGENTDB_PATH = ramdisk;
+      process.env.SWEET_SEARCH_DATA_DIR = ramdisk;
 
       // Run indexing until it fails
       const result = await benchmarkFullIndex('./fixtures/medium-codebase');
@@ -4626,7 +4626,7 @@ describe('Adversarial Robustness Tests', () => {
 ```javascript
 // monitoring/embedding-drift.test.js
 describe('Embedding Drift Detection', () => {
-  const DRIFT_BASELINE_PATH = '.agentdb/embedding-drift-baseline.json';
+  const DRIFT_BASELINE_PATH = '.sweet-search/embedding-drift-baseline.json';
 
   /**
    * DRIFT-001: Reference Embedding Stability
@@ -5494,7 +5494,7 @@ test('quality consistent across embedding providers', async () => {
 // benchmarks/quality-regression.test.js
 describe('Search Quality Regression Detection', () => {
   const GOLDEN_QUERIES_PATH = './fixtures/golden-queries.json';
-  const QUALITY_BASELINE_PATH = '.agentdb/quality-baseline.json';
+  const QUALITY_BASELINE_PATH = '.sweet-search/quality-baseline.json';
 
   /**
    * Load or create quality baseline
@@ -6066,7 +6066,7 @@ test('WSL2-FS-001: handles EBUSY on database swap', async () => {
   // EBUSY occurs when another process has the file open
   // This is common in WSL2 when Windows indexer or antivirus scans the file
 
-  const testDbPath = '.agentdb/test-ebusy.db';
+  const testDbPath = '.sweet-search/test-ebusy.db';
 
   // Create test database
   const db = new Database(testDbPath);
@@ -6438,7 +6438,7 @@ export default {
     isolate: true,
     // Separate databases per worker
     env: {
-      AGENTDB_PATH: '.agentdb/test-worker-${process.env.VITEST_WORKER_ID}'
+      SWEET_SEARCH_DATA_DIR: '.sweet-search/test-worker-${process.env.VITEST_WORKER_ID}'
     },
   },
   // Define test groups
@@ -6476,17 +6476,17 @@ import path from 'path';
 import fs from 'fs/promises';
 
 const WORKER_ID = process.env.VITEST_WORKER_ID || '0';
-const WORKER_DB_PATH = `.agentdb/test-worker-${WORKER_ID}`;
+const WORKER_DB_PATH = `.sweet-search/test-worker-${WORKER_ID}`;
 
 beforeAll(async () => {
   // Create isolated database directory for this worker
   await fs.mkdir(WORKER_DB_PATH, { recursive: true });
 
   // Copy fixtures
-  await fs.cp('.agentdb/fixtures', path.join(WORKER_DB_PATH, 'fixtures'), { recursive: true });
+  await fs.cp('.sweet-search/fixtures', path.join(WORKER_DB_PATH, 'fixtures'), { recursive: true });
 
   // Set environment
-  process.env.AGENTDB_PATH = WORKER_DB_PATH;
+  process.env.SWEET_SEARCH_DATA_DIR = WORKER_DB_PATH;
   process.env.DB_PATHS_CODEBASE = path.join(WORKER_DB_PATH, 'codebase.db');
   process.env.DB_PATHS_CODE_GRAPH = path.join(WORKER_DB_PATH, 'code-graph.db');
 
@@ -6630,8 +6630,8 @@ jobs:
         with:
           name: integration-test-logs
           path: |
-            .agentdb/*.log
-            .agentdb/*.db
+            .sweet-search/*.log
+            .sweet-search/*.db
 
   benchmark-tests:
     name: Benchmark Tests
@@ -6667,7 +6667,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
-          path: .agentdb/benchmark-results.json
+          path: .sweet-search/benchmark-results.json
 
   nightly-full-suite:
     name: Nightly Full Test Suite
@@ -6734,7 +6734,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: api-cost-report
-          path: .agentdb/api-cost-report.json
+          path: .sweet-search/api-cost-report.json
 ```
 
 ### Local CI Simulation

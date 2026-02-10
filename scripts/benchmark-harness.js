@@ -55,7 +55,7 @@ const CONFIG = {
   indexerPath: path.join(__dirname, '..', 'core', 'index-codebase-v21.js'),
   smartSearchPath: path.join(__dirname, '..', 'ss'),
   daemonPath: path.join(PROJECT_ROOT, '.claude/hooks/index-maintainer.mjs'),
-  agentdbDir: path.join(PROJECT_ROOT, '.agentdb'),
+  dataDir: path.join(PROJECT_ROOT, '.sweet-search'),
 };
 
 // =============================================================================
@@ -176,7 +176,7 @@ async function cleanIndexArtifacts() {
   ];
 
   for (const artifact of artifacts) {
-    const filePath = path.join(CONFIG.agentdbDir, artifact);
+    const filePath = path.join(CONFIG.dataDir, artifact);
     try {
       await fs.unlink(filePath);
     } catch {
@@ -352,7 +352,7 @@ async function benchmarkIncremental(fileCount, iterations = CONFIG.incrementalIt
   log(`\nIncremental ${fileCount} files (${iterations} iterations)...`, 'cyan');
 
   // First ensure we have a full index to work from
-  if (!existsSync(path.join(CONFIG.agentdbDir, 'merkle-state.json'))) {
+  if (!existsSync(path.join(CONFIG.dataDir, 'merkle-state.json'))) {
     log('  Building initial index...', 'dim');
     await runCommand('node', [CONFIG.indexerPath, '--full', '--quiet'], {
       timeout: CONFIG.fullIndexTimeoutMs,
@@ -415,7 +415,7 @@ async function benchmarkSearchLatency(iterations = CONFIG.searchIterations) {
   logSection('SEARCH LATENCY BENCHMARK');
 
   // Ensure index exists
-  if (!existsSync(path.join(CONFIG.agentdbDir, 'codebase.db'))) {
+  if (!existsSync(path.join(CONFIG.dataDir, 'codebase.db'))) {
     log('Building index first...', 'yellow');
     await runCommand('node', [CONFIG.indexerPath, '--full', '--quiet'], {
       timeout: CONFIG.fullIndexTimeoutMs,

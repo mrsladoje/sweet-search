@@ -57,7 +57,7 @@ The indexer tracks file changes via content hashes:
 # No changes detected - index is up to date!
 ```
 
-State is stored in `.agentdb/merkle-state.json`
+State is stored in `.sweet-search/merkle-state.json`
 
 ## Model Prewarming
 
@@ -129,12 +129,12 @@ node query-router.js "your query here"
 
 | File | Purpose | Size (typical) |
 |------|---------|----------------|
-| `.agentdb/code-graph.db` | FTS5 + entities + relationships | 2-5 MB |
-| `.agentdb/codebase.db` | Vector embeddings | 30-50 MB |
-| `.agentdb/codebase-hnsw.idx` | HNSW index | 5-10 MB |
-| `.agentdb/codebase-hnsw.meta.json` | HNSW metadata | <1 KB |
-| `.agentdb/merkle-state.json` | Incremental indexing state | ~200 KB |
-| `.agentdb/colbert-tokens.db` | ColBERT token embeddings | ~200-700 MB |
+| `.sweet-search/code-graph.db` | FTS5 + entities + relationships | 2-5 MB |
+| `.sweet-search/codebase.db` | Vector embeddings | 30-50 MB |
+| `.sweet-search/codebase-hnsw.idx` | HNSW index | 5-10 MB |
+| `.sweet-search/codebase-hnsw.meta.json` | HNSW metadata | <1 KB |
+| `.sweet-search/merkle-state.json` | Incremental indexing state | ~200 KB |
+| `.sweet-search/colbert-tokens.db` | ColBERT token embeddings | ~200-700 MB |
 
 ## Implementation
 

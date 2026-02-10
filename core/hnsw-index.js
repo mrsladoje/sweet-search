@@ -464,7 +464,7 @@ Usage:
   hnsw-index.js search <query>  Search with query text (requires embedding model)
 
 Options:
-  --index <path>   Path to index file (default: .agentdb/codebase-hnsw.idx)
+  --index <path>   Path to index file (default: .sweet-search/codebase-hnsw.idx)
 `);
 
   const command = args[0];

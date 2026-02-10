@@ -8,7 +8,7 @@
  * 4. Code graph extraction throughput
  *
  * Run with: npx vitest bench
- * Results saved to: .agentdb/benchmark-results.json
+ * Results saved to: .sweet-search/benchmark-results.json
  */
 
 import { describe, bench, beforeAll, afterAll } from 'vitest';

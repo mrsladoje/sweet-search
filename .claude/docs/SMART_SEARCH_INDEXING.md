@@ -131,7 +131,7 @@ node .claude/helpers/search-100x/embedding-service.js warmup
 
 ## Index Files Created
 
-All index files are stored in `.agentdb/` directory.
+All index files are stored in `.sweet-search/` directory.
 
 > **Sources of truth:** `DB_PATHS` in `config.js` (lines 55-85)
 
@@ -824,7 +824,7 @@ The indexing system automatically detects and processes ALL file changes, regard
 ┌─────────────────────────────────────────────────────────────────────┐
 │  index-maintainer.mjs (Daemon v3)                                    │
 │  ├─ DEFERRED first check (7s delay, ZERO startup latency)           │
-│  ├─ Global lock file (.agentdb/indexing.lock) - RACE PROTECTION     │
+│  ├─ Global lock file (.sweet-search/indexing.lock) - RACE PROTECTION     │
 │  └─ Every 45 seconds: Full filesystem merkle check                  │
 │      ├─ fs.stat() for all indexable files (~0.1ms each)             │
 │      ├─ Compare (size, mtime_ns) with stored values                 │
@@ -935,9 +935,9 @@ All lock files use a security-first pattern with ownership verification:
 // Pattern: read lock file → verify PID matches process.pid → then release
 // This prevents Process A from accidentally releasing Process B's lock.
 
-// Lock file locations (in .agentdb directory, not /tmp)
-const LOCK_FILE = path.join(AGENTDB_DIR, 'index-maintainer.lock');
-const GLOBAL_INDEX_LOCK = path.join(AGENTDB_DIR, 'indexing.lock');
+// Lock file locations (in .sweet-search directory, not /tmp)
+const LOCK_FILE = path.join(DATA_DIR, 'index-maintainer.lock');
+const GLOBAL_INDEX_LOCK = path.join(DATA_DIR, 'indexing.lock');
 
 // Lock file format
 `${process.pid}\n${Date.now()}\n`
@@ -1109,7 +1109,7 @@ async function loadMerkleState() {
 | H1 | Circuit breaker for Voyage API | embedding-service.js |
 | H2 | Corrected latency claims (~30s queue, ~45s merkle) | CLAUDE.md |
 | H3 | ENOSPC handling with atomic writes | index-maintainer.mjs |
-| S1 | Lock files moved to .agentdb | index-maintainer.mjs |
+| S1 | Lock files moved to .sweet-search | index-maintainer.mjs |
 | S2 | Lock file permissions 0o600 | index-maintainer.mjs |
 | P1 | stale_since column + covering index | graph-extractor.js |
 

@@ -17,7 +17,7 @@
  * - 10-50x speedup for typical incremental checks when few/no files changed
  * - Backward compatible migration from v2.2 (hash-only format)
  *
- * Storage: .agentdb/merkle-state.json
+ * Storage: .sweet-search/merkle-state.json
  */
 
 import fs from 'fs/promises';

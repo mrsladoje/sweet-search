@@ -69,39 +69,51 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 // DATABASE PATHS
 // =============================================================================
 
+// Data directory: SWEET_SEARCH_DATA_DIR (canonical) or AGENTDB_PATH (deprecated fallback)
+const DATA_DIR_NAME = (() => {
+  if (process.env.SWEET_SEARCH_DATA_DIR) {
+    return process.env.SWEET_SEARCH_DATA_DIR;
+  }
+  if (process.env.AGENTDB_PATH) {
+    console.error('[sweet-search] AGENTDB_PATH is deprecated. Use SWEET_SEARCH_DATA_DIR instead.');
+    return process.env.AGENTDB_PATH;
+  }
+  return '.sweet-search';
+})();
+
 export const DB_PATHS = {
   // Main codebase vectors
-  codebase: path.join(PROJECT_ROOT, '.agentdb', 'codebase.db'),
+  codebase: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'codebase.db'),
 
   // Code graph (entities + relationships + FTS5 + summaries)
-  codeGraph: path.join(PROJECT_ROOT, '.agentdb', 'code-graph.db'),
+  codeGraph: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'code-graph.db'),
 
   // HNSW index (in-memory at query time)
-  hnswIndex: path.join(PROJECT_ROOT, '.agentdb', 'codebase-hnsw.idx'),
+  hnswIndex: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'codebase-hnsw.idx'),
 
   // Binary HNSW index (32x smaller, Hamming distance)
-  binaryHnswIndex: path.join(PROJECT_ROOT, '.agentdb', 'codebase-binary-hnsw.idx'),
+  binaryHnswIndex: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'codebase-binary-hnsw.idx'),
 
   // Int8 vectors for rescore stage
   // DEPRECATED: This SQLite DB path is no longer used. Int8 vectors are stored in
   // .int8.json sidecar alongside binary HNSW index. See binary-hnsw-index.js.
   // Kept for backward compatibility - getArtifactStats() warns if this file exists.
-  int8Vectors: path.join(PROJECT_ROOT, '.agentdb', 'codebase-int8.db'),
+  int8Vectors: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'codebase-int8.db'),
 
   // ColBERT token embeddings (late interaction)
-  colbert: path.join(PROJECT_ROOT, '.agentdb', 'codebase-colbert.db'),
+  colbert: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'codebase-colbert.db'),
 
   // Merkle state for incremental indexing
-  merkle: path.join(PROJECT_ROOT, '.agentdb', 'merkle-state.json'),
+  merkle: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'merkle-state.json'),
 
   // Query vocabulary cache
-  vocabulary: path.join(PROJECT_ROOT, '.agentdb', 'query-vocabulary.json'),
+  vocabulary: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'query-vocabulary.json'),
 
   // HCGS summaries cache (hierarchical code graph summaries)
-  summaries: path.join(PROJECT_ROOT, '.agentdb', 'code-summaries.json'),
+  summaries: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'code-summaries.json'),
 
   // Translation cache
-  translationCache: path.join(PROJECT_ROOT, '.agentdb', 'translation-cache.json'),
+  translationCache: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'translation-cache.json'),
 };
 
 // =============================================================================
@@ -562,7 +574,7 @@ Translation:`,
     },
   },
 
-  // Caching (uses .agentdb/ for consistency)
+  // Caching (uses .sweet-search/ for consistency)
   cache: {
     enabled: true,
     ttl: 3600000,  // 1 hour

@@ -14,7 +14,7 @@ Before using these loops, ensure you've read and applied the fixes in
 `INDEXING_TESTING_PLAN.md` Section "Plan vs Reality Mismatches":
 
 1. **Hook types**: Use `post-command`, `post-edit`, `post-task`, `post-search` (NOT `pre-task`)
-2. **Queue file**: `.agentdb/index-maintainer-queue.jsonl` (JSONL format)
+2. **Queue file**: `.sweet-search/index-maintainer-queue.jsonl` (JSONL format)
 3. **Git tests**: Must run in isolated temp repo (not real working tree)
 4. **Dimensions**: Stored vectors are 512d (not 1024d)
 5. **EMB-005**: SKIP - partial batch retry not implemented

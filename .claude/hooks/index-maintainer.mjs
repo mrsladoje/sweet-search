@@ -144,16 +144,16 @@ export function normalizePathSeparators(filePath) {
 
 // === Configuration ===
 const PROJECT_ROOT = join(__dirname, '../..');
-const AGENTDB_DIR = join(PROJECT_ROOT, '.agentdb');
-const QUEUE_FILE = join(AGENTDB_DIR, 'index-maintainer-queue.jsonl');
-const PROCESSING_FILE = join(AGENTDB_DIR, 'index-maintainer-queue.processing.jsonl');
-const LOCK_FILE = join(AGENTDB_DIR, 'index-maintainer.lock');
-const DEADLETTER_FILE = join(AGENTDB_DIR, 'index-maintainer-deadletter.jsonl');
+const DATA_DIR = join(PROJECT_ROOT, '.sweet-search');
+const QUEUE_FILE = join(DATA_DIR, 'index-maintainer-queue.jsonl');
+const PROCESSING_FILE = join(DATA_DIR, 'index-maintainer-queue.processing.jsonl');
+const LOCK_FILE = join(DATA_DIR, 'index-maintainer.lock');
+const DEADLETTER_FILE = join(DATA_DIR, 'index-maintainer-deadletter.jsonl');
 
 // Export configuration for testing
 export const CONFIG = {
   PROJECT_ROOT,
-  AGENTDB_DIR,
+  DATA_DIR,
   QUEUE_FILE,
   PROCESSING_FILE,
   LOCK_FILE,
@@ -176,8 +176,8 @@ async function loadFastGlob() {
       const fg = await import('fast-glob');
       return fg.default || fg;
     }},
-    // 2. Relative to search-100x (has its own node_modules)
-    { name: 'search-100x node_modules', fn: async () => {
+    // 2. Relative to sweet-search (has its own node_modules)
+    { name: 'sweet-search node_modules', fn: async () => {
       const fg = await import(join(PROJECT_ROOT, 'node_modules/fast-glob/out/index.js'));
       return fg.default || fg;
     }},
@@ -217,8 +217,8 @@ async function loadBetterSqlite3() {
       const db = await import('better-sqlite3');
       return db.default || db;
     }},
-    // 2. Relative to search-100x (has its own node_modules)
-    { name: 'search-100x node_modules', fn: async () => {
+    // 2. Relative to sweet-search (has its own node_modules)
+    { name: 'sweet-search node_modules', fn: async () => {
       const db = await import(join(PROJECT_ROOT, 'node_modules/better-sqlite3/lib/index.js'));
       return db.default || db;
     }},
@@ -271,11 +271,11 @@ const INDEXABLE_EXTENSIONS = [
 
 const EXCLUDED_DIRS = [
   '**/node_modules/**', '**/target/**', '**/build/**',
-  '**/dist/**', '**/.git/**', '**/.agentdb/**'
+  '**/dist/**', '**/.git/**', '**/.sweet-search/**'
 ];
 
 // Global indexing lock (prevents race with manual /index-codebase)
-const GLOBAL_INDEX_LOCK = join(AGENTDB_DIR, 'indexing.lock');
+const GLOBAL_INDEX_LOCK = join(DATA_DIR, 'indexing.lock');
 
 // State
 let shutdownRequested = false;
@@ -491,11 +491,11 @@ function refreshLock() {
 // === Queue Management (Exported for testing) ===
 
 /**
- * Ensure the .agentdb directory exists
+ * Ensure the .sweet-search directory exists
  */
-export function ensureAgentDbDir() {
-  if (!existsSync(AGENTDB_DIR)) {
-    mkdirSync(AGENTDB_DIR, { recursive: true });
+export function ensureDataDir() {
+  if (!existsSync(DATA_DIR)) {
+    mkdirSync(DATA_DIR, { recursive: true });
   }
 }
 
@@ -669,7 +669,7 @@ export function cleanupProcessingFile(processingFile = PROCESSING_FILE) {
 export function requeueEntries(entries, queueFile = QUEUE_FILE) {
   if (!entries || entries.length === 0) return;
 
-  ensureAgentDbDir();
+  ensureDataDir();
 
   for (const entry of entries) {
     try {
@@ -692,7 +692,7 @@ export function requeueEntries(entries, queueFile = QUEUE_FILE) {
  * H3 FIX: Uses safeAppendFileSync for ENOSPC detection
  */
 function writeToDeadletter(entry, error) {
-  ensureAgentDbDir();
+  ensureDataDir();
 
   try {
     const deadletterEntry = {
@@ -1495,8 +1495,8 @@ async function main() {
   // L1 FIX: Updated version to v3
   log('INFO', 'Starting index maintainer daemon v3...');
 
-  // Ensure .agentdb directory exists
-  ensureAgentDbDir();
+  // Ensure .sweet-search directory exists
+  ensureDataDir();
 
   // H1 FIX: Clean up potentially stale global lock on startup
   cleanupStaleGlobalLock();

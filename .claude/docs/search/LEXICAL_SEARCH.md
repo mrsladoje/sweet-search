@@ -6,7 +6,7 @@ Lexical search provides fast text-based search using FTS5/BM25 with optional cod
 
 - **Primary**: `.claude/helpers/search-100x/graph-search.js`
 - **Configuration**: `.claude/helpers/search-100x/config.js` (GRAPH_CONFIG section)
-- **Database**: `.agentdb/code-graph.db` (SQLite with FTS5)
+- **Database**: `.sweet-search/code-graph.db` (SQLite with FTS5)
 
 ## Performance
 

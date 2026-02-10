@@ -159,8 +159,8 @@ describe('Help output accuracy', () => {
   });
 
   it('should list output files', () => {
-    expect(helpOutput).toContain('.agentdb/code-graph.db');
-    expect(helpOutput).toContain('.agentdb/codebase.db');
+    expect(helpOutput).toContain('.sweet-search/code-graph.db');
+    expect(helpOutput).toContain('.sweet-search/codebase.db');
     expect(helpOutput).toContain('hnsw');
     expect(helpOutput).toContain('merkle-state.json');
   });

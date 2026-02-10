@@ -9,7 +9,7 @@ node_modules/
 # Runtime/temp files
 *.tmp
 *.log
-.agentdb/
+.sweet-search/
 
 # Compiled binaries
 ss

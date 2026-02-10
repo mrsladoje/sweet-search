@@ -1035,7 +1035,7 @@ search-100x/
 ├── benchmark.js                  # Performance benchmarks
 └── index-codebase-v21.js         # Full indexing pipeline
 
-.agentdb/
+.sweet-search/
 ├── code-graph.db                 # SQLite: entities + relationships
 ├── codebase-hnsw.db              # 256-dim HNSW vectors
 ├── codebase-colbert.db           # Token-level embeddings

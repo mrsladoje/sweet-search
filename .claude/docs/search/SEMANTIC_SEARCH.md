@@ -56,7 +56,7 @@ The `getEmbedding()` function uses a 4-tier cache hierarchy:
 
 ```javascript
 // Query vocabulary cache
-vocabulary: path.join(PROJECT_ROOT, '.agentdb', 'query-vocabulary.json'),
+vocabulary: path.join(PROJECT_ROOT, '.sweet-search', 'query-vocabulary.json'),
 ```
 
 ### Vocabulary Class
