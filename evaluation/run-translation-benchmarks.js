@@ -35,7 +35,7 @@ const SEARCH_100X_ROOT = path.resolve(__dirname, '..');
 // CONFIGURATION
 // =============================================================================
 
-// Load .env from search-100x directory first, then project root
+// Load .env from sweet-search directory first, then project root
 function loadEnv() {
   const envPaths = [
     path.join(SEARCH_100X_ROOT, '.env'),

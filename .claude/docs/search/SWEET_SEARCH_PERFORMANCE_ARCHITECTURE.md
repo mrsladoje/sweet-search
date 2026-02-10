@@ -13,7 +13,7 @@ This document provides a detailed technical analysis of the Smart Search system'
 > - Embedding service: `embedding-service.js`
 > - Graph search: `graph-search.js`
 >
-> **Related:** [QUERY-ROUTING.md](../helpers/search-100x/QUERY-ROUTING.md) (full query router documentation)
+> **Related:** [QUERY-ROUTING.md](../QUERY-ROUTING.md) (full query router documentation)
 
 ---
 
@@ -347,9 +347,9 @@ function applyMMR(results, options = {}) {
 > **Source of truth:** `ss-fast/ss-fast.c`
 
 ### Location
-- Source: `.claude/helpers/search-100x/ss-fast/ss-fast.c`
-- Compiled binary: `.claude/helpers/search-100x/ss` (ELF 64-bit executable, ~19KB)
-- Makefile: `.claude/helpers/search-100x/ss-fast/Makefile`
+- Source: `./ss-fast/ss-fast.c`
+- Compiled binary: `./ss` (ELF 64-bit executable, ~19KB)
+- Makefile: `./ss-fast/Makefile`
 
 **IMPORTANT:** The `ss` file is a **compiled C binary**, NOT a symlink to `ss.sh`. The `ss.sh` file is a separate Bash fallback script.
 

@@ -4,7 +4,7 @@
  * Converts non-Latin scripts to Latin equivalents for fuzzy matching.
  *
  * Supports:
- * - Serbian Cyrillic → Latin (priority for Sloth project)
+ * - Serbian Cyrillic → Latin (priority for Serbian codebases)
  * - Russian Cyrillic → Latin
  * - Ukrainian Cyrillic → Latin
  * - Greek → Latin
@@ -190,7 +190,7 @@ export function transliterate(text, script = 'auto') {
       break;
     case 'cyrillic':
     default:
-      // Combined map with Serbian taking priority (for Sloth project)
+      // Combined map with Serbian taking priority (default)
       map = { ...RUSSIAN_CYRILLIC, ...SERBIAN_CYRILLIC };
       break;
   }

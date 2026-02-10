@@ -559,7 +559,7 @@ import { createServer } from "net";
 import mmap from "mmap-io";
 import fs from "fs";
 
-const SHM_PATH = "/dev/shm/sloth-embedder";
+const SHM_PATH = "/dev/shm/sweet-search-embedder";
 const SHM_SIZE = 512 * 1024; // 512KB
 
 // Create shared memory region
@@ -640,7 +640,7 @@ warmup().then(processLoop);
 import mmap from "mmap-io";
 import fs from "fs";
 
-const SHM_PATH = "/dev/shm/sloth-embedder";
+const SHM_PATH = "/dev/shm/sweet-search-embedder";
 const SHM_SIZE = 512 * 1024;
 
 class MmapEmbeddingClient {
@@ -1040,7 +1040,7 @@ search-100x/
 ├── codebase-hnsw.db              # 256-dim HNSW vectors
 ├── codebase-colbert.db           # Token-level embeddings
 ├── codebase-fts.db               # FTS5 BM25 index
-└── sloth-vectors.db              # Existing learning episodes
+└── vectors.db                    # Existing learning episodes
 ```
 
 ---

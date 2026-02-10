@@ -234,7 +234,7 @@ function resolveTarget(
           const sameFile = candidates.find(c => c.file_path === sourceEntity.file_path);
           if (sameFile) return sameFile.id;
 
-          // Same project (prefer matches within the same Sloth component)
+          // Same project (prefer matches within the same project component)
           const sameProjectMatch = candidates.find(c => isSameProject(c.file_path, sourceEntity.file_path));
           if (sameProjectMatch) return sameProjectMatch.id;
         }
@@ -306,11 +306,11 @@ function resolveTarget(
         return candidates[0].id;
       } else if (fullImportPath) {
         // Multiple matches - use full_import_path for disambiguation
-        // fullImportPath: "com.codolis.sloth.vita.services.AuthService"
+        // fullImportPath: "com.example.app.services.AuthService"
         // We need to match entity by file_path that corresponds to this package
 
         // Convert Java package path to file path pattern
-        // "com.codolis.sloth.vita.services.AuthService" -> "com/codolis/sloth/vita/services/AuthService.java"
+        // "com.example.app.services.AuthService" -> "com/example/app/services/AuthService.java"
         const expectedPathSuffix = fullImportPath.replace(/\.\*$/, '').replace(/\./g, '/') + '.java';
 
         // Find candidate whose file_path ends with this pattern

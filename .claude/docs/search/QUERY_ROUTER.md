@@ -3,7 +3,7 @@
 > **This document has moved.**
 >
 > The authoritative Query Router documentation is now at:
-> **[`.claude/helpers/search-100x/QUERY-ROUTING.md`](../../helpers/search-100x/QUERY-ROUTING.md)**
+> **[`QUERY-ROUTING.md`](../../QUERY-ROUTING.md)**
 
 ## Summary
 
@@ -32,7 +32,7 @@ const result = routeQuery("how does authentication work");
 // { mode: 'semantic', confidence: 0.92, method: 'wasm_catboost', routingLatency_us: 12 }
 ```
 
-See the full documentation at [QUERY-ROUTING.md](../../helpers/search-100x/QUERY-ROUTING.md) for:
+See the full documentation at [QUERY-ROUTING.md](../../QUERY-ROUTING.md) for:
 - Complete 50-feature reference
 - Reject option thresholds
 - Structural pattern detection
@@ -41,4 +41,4 @@ See the full documentation at [QUERY-ROUTING.md](../../helpers/search-100x/QUERY
 
 ## Related
 
-- **[TRANSLATION.md](../../helpers/search-100x/docs/TRANSLATION.md)** - Multilingual query translation (non-English queries are translated before routing)
+- **[TRANSLATION.md](../../docs/TRANSLATION.md)** - Multilingual query translation (non-English queries are translated before routing)

@@ -154,7 +154,7 @@ When ANY error occurs, the ENTIRE batch falls back to local - no partial retry.
 
 **Problem:** Plan creates parallel testing infrastructure in `.claude/tests/indexing-validation/`.
 
-**Reality:** There are 19 existing test files in `.claude/helpers/search-100x/__tests__/`:
+**Reality:** There are 19 existing test files in `./__tests__/`:
 - `index-maintainer.test.js` (unit tests)
 - `index-maintainer.integration.test.js` (integration tests)
 - `incremental-tracker.test.js`
@@ -165,7 +165,7 @@ When ANY error occurs, the ENTIRE batch falls back to local - no partial retry.
 **Fix Required:** Extend existing test suite instead of creating new infrastructure:
 ```diff
 - .claude/tests/indexing-validation/integration/fallback-chains.test.js
-+ .claude/helpers/search-100x/__tests__/fallback-chains.integration.test.js
++ ./__tests__/fallback-chains.integration.test.js
 ```
 
 ### 7. WSL2 Chaos Testing Limitations
@@ -443,16 +443,16 @@ Before running the test suite, verify these fixes are implemented:
 
 ```bash
 # CP-001: Check for timeout in embedding API calls
-grep -n "AbortSignal\|timeout" .claude/helpers/search-100x/embedding-service.js | head -20
+grep -n "AbortSignal\|timeout" ./embedding-service.js | head -20
 
 # CP-002: Check for dimension validation in generateEmbeddings
-grep -A5 "fallback to local" .claude/helpers/search-100x/embedding-service.js | grep -i "dimension\|length"
+grep -A5 "fallback to local" ./embedding-service.js | grep -i "dimension\|length"
 
 # CP-003: Check for timeout in flashrank rerank
-grep -n "timeout\|Promise.race" .claude/helpers/search-100x/flashrank.js
+grep -n "timeout\|Promise.race" ./flashrank.js
 
 # CP-004: Check for exact model matching in Ollama
-grep -A3 "isOllamaAvailable" .claude/helpers/search-100x/llm-provider.js | grep -v "startsWith"
+grep -A3 "isOllamaAvailable" ./llm-provider.js | grep -v "startsWith"
 ```
 
 If any check fails, implement the fix before proceeding with tests.
@@ -486,7 +486,7 @@ If any check fails, implement the fix before proceeding with tests.
 ### System Under Test
 
 ```
-.claude/helpers/search-100x/
+./
 ├── index-codebase-v21.js      # Main indexer (8 phases)
 ├── hcgs-generator.js          # HCGS summaries (4-tier fallback)
 ├── embedding-service.js       # Embeddings (4-tier cache, 4 providers)
@@ -1323,7 +1323,7 @@ describe('CircuitBreaker Integration with API Calls', () => {
 });
 ```
 
-**Test File Location:** `.claude/helpers/search-100x/__tests__/circuit-breaker.test.js`
+**Test File Location:** `./__tests__/circuit-breaker.test.js`
 
 **Verification Commands:**
 ```bash
@@ -1433,7 +1433,7 @@ test('daemon and manual CLI respect global index lock', async () => {
   // Now try to run manual indexing while daemon holds lock
   const manualStart = Date.now();
   const manual = spawn('node', ['index-codebase-v21.js', '--full'], {
-    cwd: '.claude/helpers/search-100x',
+    cwd: '.',
     stdio: 'pipe'
   });
 
@@ -1836,7 +1836,7 @@ describe('First-Time User Experience', () => {
       delete process.env.CEREBRAS_API_KEY;
 
       // Attempt indexing
-      const result = await exec('node .claude/helpers/search-100x/index-codebase-v21.js', {
+      const result = await exec('node ./index-codebase-v21.js', {
         cwd: tempDir,
         env: { ...process.env, VOYAGE_API_KEY: '', CEREBRAS_API_KEY: '' }
       }).catch(e => e);
@@ -1857,11 +1857,11 @@ describe('First-Time User Experience', () => {
     try {
       // Clone minimal fixture
       await fs.cp('./fixtures/small-codebase', path.join(tempDir, 'src'), { recursive: true });
-      await fs.cp('.claude/helpers/search-100x', path.join(tempDir, '.claude/helpers/search-100x'), { recursive: true });
+      await fs.cp('.', path.join(tempDir, 'sweet-search'), { recursive: true });
 
       // Run indexing with real keys
       const startTime = Date.now();
-      const result = await exec('node .claude/helpers/search-100x/index-codebase-v21.js', {
+      const result = await exec('node ./index-codebase-v21.js', {
         cwd: tempDir,
         env: process.env,
         timeout: 300000 // 5 minutes
@@ -1887,7 +1887,7 @@ describe('First-Time User Experience', () => {
     // Capture stdout/stderr during indexing
     const progressMessages = [];
 
-    const indexer = spawn('node', ['.claude/helpers/search-100x/index-codebase-v21.js', '--full'], {
+    const indexer = spawn('node', ['./index-codebase-v21.js', '--full'], {
       cwd: process.cwd(),
       stdio: ['pipe', 'pipe', 'pipe']
     });
@@ -1931,7 +1931,7 @@ describe('First-Time User Experience', () => {
 
     try {
       // Attempt to create index in read-only location
-      const result = await exec('node .claude/helpers/search-100x/index-codebase-v21.js', {
+      const result = await exec('node ./index-codebase-v21.js', {
         env: { ...process.env, SWEET_SEARCH_DATA_DIR: path.join(readOnlyDir, '.sweet-search') }
       }).catch(e => e);
 
@@ -1952,7 +1952,7 @@ describe('First-Time User Experience', () => {
     const commandBlocks = claudeMd.match(/```bash\n([\s\S]*?)```/g) || [];
     const commands = commandBlocks
       .flatMap(block => block.split('\n'))
-      .filter(line => line.match(/^\s*\.claude\/helpers\/search-100x\/ss/))
+      .filter(line => line.match(/^\s*\.\/ss/))
       .map(line => line.trim());
 
     console.log(`Found ${commands.length} ss commands in CLAUDE.md`);
@@ -2879,7 +2879,7 @@ describe('Differential Testing - Embedding Quality', () => {
 describe('Chaos Engineering', () => {
   test('recovers from SIGKILL during indexing', async () => {
     const indexer = spawn('node', ['index-codebase-v21.js', '--full'], {
-      cwd: '.claude/helpers/search-100x'
+      cwd: '.'
     });
 
     // Kill after 5 seconds
@@ -2922,7 +2922,7 @@ describe('Chaos Engineering', () => {
   test('recovers after network partition', async () => {
     // Start indexing
     const indexer = spawn('node', ['index-codebase-v21.js'], {
-      cwd: '.claude/helpers/search-100x'
+      cwd: '.'
     });
 
     await sleep(2000);
@@ -6538,12 +6538,12 @@ on:
   push:
     branches: [master, main]
     paths:
-      - '.claude/helpers/search-100x/**'
+      - './**'
       - '.claude/hooks/**'
   pull_request:
     branches: [master, main]
     paths:
-      - '.claude/helpers/search-100x/**'
+      - './**'
       - '.claude/hooks/**'
   schedule:
     # Nightly at 2 AM UTC

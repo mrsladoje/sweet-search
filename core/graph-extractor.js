@@ -146,10 +146,10 @@ export class GraphExtractor {
       const importLine = (content.substring(0, match.index).match(/\n/g) || []).length + 1;
 
       // Extract the class name for target resolution
-      // For "com.codolis.sloth.services.AuthService" -> target_name = "AuthService"
-      // For "com.codolis.sloth.services.*" -> target_name = "services" (package - won't resolve)
-      // For static "com.codolis.utils.Constants.MAX_VALUE" -> target_name = "Constants" (class only)
-      // For static "com.codolis.utils.Constants.*" -> target_name = "Constants" (class only)
+      // For "com.example.services.AuthService" -> target_name = "AuthService"
+      // For "com.example.services.*" -> target_name = "services" (package - won't resolve)
+      // For static "com.example.utils.Constants.MAX_VALUE" -> target_name = "Constants" (class only)
+      // For static "com.example.utils.Constants.*" -> target_name = "Constants" (class only)
       const pathWithoutWildcard = importPath.replace(/\.\*$/, '');
       const parts = pathWithoutWildcard.split('.');
 

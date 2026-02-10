@@ -16,9 +16,9 @@ Achieved through: Robust CC Fusion (Convex Combination with RRF fallback) + Post
 - **Primary**: `core/sweet-search.js`
   - `grep -n "async hybridSearch" sweet-search.js` → main hybrid function
   - `grep -n "convexCombination" sweet-search.js` → CC fusion
-- **MMR**: `.claude/helpers/search-100x/mmr.js`
+- **MMR**: `core/mmr.js`
   - `grep -n "applyMMR" mmr.js` → diversity-aware reranking
-- **Config**: `.claude/helpers/search-100x/config.js`
+- **Config**: `core/config.js`
   - `grep -n "ROUTING_CONFIG" config.js` → routing patterns
 
 ## Overview
@@ -71,7 +71,7 @@ Where `k=60` (standard RRF parameter).
 
 The old `hybridSearch()` method used naive min-max normalization and applied boosts during lexical retrieval (unfair to semantic path). It has been superseded by `hybridSearchV2()` with `robustCCFusion()`.
 
-**Note**: CC can outperform RRF by +7-18% MRR on some benchmarks (ACM TOIS 2023). The current robust CC implementation with quantile normalization achieves better results than both naive CC and pure RRF on the Sloth codebase.
+**Note**: CC can outperform RRF by +7-18% MRR on some benchmarks (ACM TOIS 2023). The current robust CC implementation with quantile normalization achieves better results than both naive CC and pure RRF on tested codebases.
 
 ## Execution Flow
 
@@ -189,17 +189,17 @@ export const ROUTING_CONFIG = {
 
 ```bash
 # Default: Robust CC fusion + Post-fusion boosts + MMR diversification
-.claude/helpers/search-100x/ss "query"
+./ss "query"
 
 # Force specific mode (bypasses hybrid fusion)
-.claude/helpers/search-100x/ss "query" --mode lexical
-.claude/helpers/search-100x/ss "query" --mode semantic
+./ss "query" --mode lexical
+./ss "query" --mode semantic
 
 # Adjust result count (default: 10)
-.claude/helpers/search-100x/ss "query" --top 20
+./ss "query" --top 20
 
 # Token-efficient exploration mode
-.claude/helpers/search-100x/ss "query" --summary
+./ss "query" --summary
 ```
 
 ## Reranking
@@ -212,7 +212,7 @@ For reranking details, see [RERANKING.md](./RERANKING.md).
 
 ## MMR Diversification
 
-**Source**: `.claude/helpers/search-100x/mmr.js`
+**Source**: `core/mmr.js`
 
 MMR (Maximal Marginal Relevance) replaces the previous flood control mechanism with intelligent diversity-aware reranking. Instead of hard caps on results per file/type, MMR balances relevance and diversity through a principled algorithm.
 

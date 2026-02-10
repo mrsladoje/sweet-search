@@ -4,11 +4,11 @@ Documentation of the embedding service's multi-tier caching architecture.
 
 ## Source Files
 
-- **Embedding Service**: `.claude/helpers/search-100x/embedding-service.js`
+- **Embedding Service**: `core/embedding-service.js`
   - `grep -n "async getEmbedding" embedding-service.js` → main entry point
   - `grep -n "class LRUCache" embedding-service.js` → Tier 1
   - `grep -n "class SemanticCache" embedding-service.js` → Tier 3
-- **Config DB_PATHS**: `.claude/helpers/search-100x/config.js`
+- **Config DB_PATHS**: `core/config.js`
   - `grep -n "DB_PATHS" config.js` → all database paths
 
 ## Overview

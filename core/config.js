@@ -41,9 +41,9 @@ export const PROJECT_ROOT = resolveProjectRoot();
 try {
   const { existsSync, readFileSync } = await import('fs');
 
-  // Priority 1: Local .env (in search-100x directory)
+  // Priority 1: Local .env (in sweet-search directory)
   const localEnvPath = path.join(__dirname, '..', '.env');
-  // Priority 2: Project root .env (in sloth directory)
+  // Priority 2: Project root .env
   const projectEnvPath = path.join(PROJECT_ROOT, '.env');
 
   const dotenvPath = existsSync(localEnvPath) ? localEnvPath : projectEnvPath;
