@@ -157,7 +157,7 @@ hnsw-index.js             # Native HNSW wrapper
 colbert-index.js          # Token-level embeddings
 flashrank.js              # Local reranker
 query-router.js           # Lexical vs semantic routing
-smart-search-v21.js       # Unified search pipeline
+sweet-search.js       # Unified search pipeline
 benchmark.js              # Performance tests
 ```
 

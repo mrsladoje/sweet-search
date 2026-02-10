@@ -18,7 +18,7 @@ import { QueryRouter } from '../core/query-router.js';
 import { GraphSearch } from '../core/graph-search.js';
 import { HNSWIndex } from '../core/hnsw-index.js';
 import { Reranker } from '../core/flashrank.js';
-import SmartSearch from '../core/smart-search-v21.js';
+import SweetSearch from '../core/sweet-search.js';
 
 // =============================================================================
 // BENCHMARK UTILITIES
@@ -284,7 +284,7 @@ async function benchmarkSemantic(iterations = 20) {
     return null;
   }
 
-  const searcher = new SmartSearch({ verbose: false });
+  const searcher = new SweetSearch({ verbose: false });
 
   // Warmup
   console.log('  Warming up embedding model...');
@@ -397,10 +397,10 @@ async function benchmarkRerank(iterations = 10) {
 /**
  * Benchmark full smart search
  */
-async function benchmarkSmartSearch(iterations = 20) {
+async function benchmarkSweetSearch(iterations = 20) {
   console.log('\n=== Smart Search (Full Pipeline) Benchmark ===');
 
-  const searcher = new SmartSearch({ verbose: false });
+  const searcher = new SweetSearch({ verbose: false });
 
   // Warmup
   console.log('  Warming up...');
@@ -674,7 +674,7 @@ async function main() {
     results.lexical = await benchmarkLexical(50);
     results.semantic = await benchmarkSemantic(20);
     results.rerank = await benchmarkRerank(10);
-    results.smartSearch = await benchmarkSmartSearch(20);
+    results.smartSearch = await benchmarkSweetSearch(20);
 
     // Indexing benchmarks (optional, run with --index flag)
     if (runIndexBench) {
@@ -771,7 +771,7 @@ export {
   benchmarkLexical,
   benchmarkSemantic,
   benchmarkRerank,
-  benchmarkSmartSearch,
+  benchmarkSweetSearch,
   benchmarkHCGSGeneration,
   benchmarkFullIndex,
   benchmarkIncrementalIndex,

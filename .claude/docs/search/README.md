@@ -30,7 +30,7 @@ All source files are located in `.claude/helpers/search-100x/`:
 
 | File | Purpose |
 |------|---------|
-| `smart-search-v21.js` | Main unified search pipeline (orchestrates all components) |
+| `sweet-search.js` | Main unified search pipeline (orchestrates all components) |
 | `query-router.js` | Query classification and routing |
 | `graph-search.js` | FTS5/BM25 lexical search + code graph |
 | `embedding-service.js` | Multi-provider embedding service with caching |

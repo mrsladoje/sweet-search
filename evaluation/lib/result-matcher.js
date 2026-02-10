@@ -310,7 +310,7 @@ export class ResultMatcher {
    */
   matchContains(result, containsList) {
     // P2 DRY: Use normalizeResult for consistent extraction (but keep raw file for glob matching)
-    // P1 FIX: Also check metadata.file for SmartSearch results which store file path there
+    // P1 FIX: Also check metadata.file for SweetSearch results which store file path there
     const rawFile = result.file || result.filePath || result.metadata?.file || '';
     const normalized = this.normalizeResult(result);
     const resultName = result.name || result.metadata?.name || ''; // Use original case for regex matching
@@ -517,7 +517,7 @@ export class ResultMatcher {
  *
  * @param {object} query - Query object from query set { id, query, expected, minRelevant }
  * @param {Array} results - Search results
- * @param {object} stats - Stats from SmartSearch
+ * @param {object} stats - Stats from SweetSearch
  * @param {object} options - Matcher options
  * @returns {object} Evaluated query object
  */

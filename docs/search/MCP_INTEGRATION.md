@@ -38,7 +38,7 @@ Behavior:
 
 ### Searcher lifecycle
 
-- Search engine is lazy-loaded via dynamic import from `core/smart-search-v21.js`
+- Search engine is lazy-loaded via dynamic import from `core/sweet-search.js`
 - Singleton warm searcher is obtained with `getWarmSearcher({ verbose: false })`
 
 ## MCP Server Surface

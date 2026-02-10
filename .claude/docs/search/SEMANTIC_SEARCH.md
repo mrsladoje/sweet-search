@@ -4,7 +4,7 @@ Semantic search provides conceptual code search using vector embeddings and appr
 
 ## Source Files
 
-- **Main Pipeline**: `.claude/helpers/search-100x/smart-search-v21.js`
+- **Main Pipeline**: `core/sweet-search.js`
 - **Embedding Service**: `.claude/helpers/search-100x/embedding-service.js`
 - **HNSW Index**: `.claude/helpers/search-100x/hnsw-index.js`
 - **Binary HNSW Index**: `.claude/helpers/search-100x/binary-hnsw-index.js`
@@ -20,7 +20,7 @@ Semantic search provides conceptual code search using vector embeddings and appr
 | HNSW lookup p50 | <1ms | 50-500us | `hnsw-index.js` header: "Target: <1ms p50 ANN lookup (often 50-500us)" |
 | Binary HNSW search | ~100us | 50-200us | `binary-hnsw-index.js` header: "Stage 1: Binary HNSW (1000 candidates, ~100us)" |
 | Reranking (cascaded) | ~15-350ms | 15-330ms | See [RERANKING.md](./RERANKING.md) - FlashRank (~15ms) + Voyage/Jina conditional |
-| Total semantic | <150ms | 60-275ms | `smart-search-v21.js` header: "Semantic: ~275ms (bottleneck: Voyage API ~250ms)" |
+| Total semantic | <150ms | 60-275ms | `sweet-search.js` header: "Semantic: ~275ms (bottleneck: Voyage API ~250ms)" |
 
 ## Embedding Service
 
@@ -240,7 +240,7 @@ export const HNSW_CONFIG = {
 
 ### 3-Stage Retrieval Pipeline
 
-**Source**: `smart-search-v21.js`, lines 270-459
+**Source**: `sweet-search.js`, lines 270-459
 
 The semantic search uses a 3-stage pipeline for efficiency:
 
@@ -252,7 +252,7 @@ The semantic search uses a 3-stage pipeline for efficiency:
 
 #### Stage 2: Int8 Rescoring Details
 
-**Source**: `smart-search-v21.js`, Stage 2 rescoring
+**Source**: `sweet-search.js`, Stage 2 rescoring
 
 Stage 2 uses `int8CosineSimilarity` to refine the top candidates from Stage 1. Documents are rescored using their pre-computed int8 vectors.
 
@@ -302,11 +302,11 @@ The 3-stage pipeline uses **cascaded two-stage reranking**:
 
 ## Hybrid Search
 
-**Source**: `smart-search-v21.js`, lines 747-830
+**Source**: `sweet-search.js`, lines 747-830
 
 ### Convex Combination Fusion
 
-**Source**: `smart-search-v21.js`, lines 648-730
+**Source**: `sweet-search.js`, lines 648-730
 
 Hybrid search uses Convex Combination (CC) fusion with route-specific alpha weights:
 
@@ -324,7 +324,7 @@ const ccScore = alpha * normLex + (1 - alpha) * normSem;
 
 ### RRF Fallback
 
-**Source**: `smart-search-v21.js`, lines 775-824
+**Source**: `sweet-search.js`, lines 775-824
 
 Reciprocal Rank Fusion available via `fusion='rrf'`:
 
@@ -335,7 +335,7 @@ const rrfContrib = 1 / (rrf_k + rank + 1);
 
 ## Warm Server Architecture
 
-**Source**: `smart-search-v21.js`, lines 1295-1513
+**Source**: `sweet-search.js`, lines 1295-1513
 
 The search system maintains a warm HTTP server for fast subsequent searches:
 
@@ -401,7 +401,7 @@ export const PERFORMANCE_TARGETS = {
 ### Programmatic API
 
 ```javascript
-import { SmartSearch, warmSearch } from './smart-search-v21.js';
+import { SweetSearch, warmSearch } from './sweet-search.js';
 
 // Using warm singleton
 const { results, stats } = await warmSearch("how does auth work", {
@@ -411,7 +411,7 @@ const { results, stats } = await warmSearch("how does auth work", {
 });
 
 // Full control
-const searcher = new SmartSearch({ verbose: true });
+const searcher = new SweetSearch({ verbose: true });
 await searcher.init();
 const { results } = await searcher.semanticSearch("auth", { k: 10 });
 ```

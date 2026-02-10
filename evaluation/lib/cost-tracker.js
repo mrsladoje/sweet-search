@@ -111,7 +111,7 @@ export class CostTracker {
   /**
    * Track embedding from query stats
    *
-   * @param {object} stats - Query stats from SmartSearch { embedding: { source, tokens } }
+   * @param {object} stats - Query stats from SweetSearch { embedding: { source, tokens } }
    */
   trackEmbeddingFromStats(stats) {
     if (!stats?.embedding) return;
@@ -160,7 +160,7 @@ export class CostTracker {
   /**
    * Track reranking from query stats
    *
-   * @param {object} stats - Query stats from SmartSearch { rerank: { provider, skipped, documents } }
+   * @param {object} stats - Query stats from SweetSearch { rerank: { provider, skipped, documents } }
    */
   trackRerankFromStats(stats) {
     if (!stats?.rerank) return;
@@ -175,7 +175,7 @@ export class CostTracker {
   /**
    * Track all costs from a query's stats object
    *
-   * @param {object} stats - Full query stats from SmartSearch
+   * @param {object} stats - Full query stats from SweetSearch
    */
   trackFromStats(stats) {
     this.trackEmbeddingFromStats(stats);

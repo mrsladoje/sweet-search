@@ -55,8 +55,8 @@ Self-maintaining background daemon that keeps the search index current:
 ## Smart Search Performance
 
 - **`ss`** (C binary, ~19KB): HTTP client only. Sends params to socket server. Fails fast if socket missing.
-- **`ss.sh`** (bash wrapper): Auto-spawns `smart-search-v21.js --serve` if socket not present.
-- First-run cost applies only to `ss.sh` or manual `node smart-search-v21.js --serve` startup.
+- **`ss.sh`** (bash wrapper): Auto-spawns `sweet-search.js --serve` if socket not present.
+- First-run cost applies only to `ss.sh` or manual `node sweet-search.js --serve` startup.
 
 ---
 

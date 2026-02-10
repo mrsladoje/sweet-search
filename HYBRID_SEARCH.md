@@ -375,7 +375,7 @@ MMR advantages:
 ### Default (Hybrid Search V2)
 
 ```javascript
-const smartSearch = new SmartSearch();
+const smartSearch = new SweetSearch();
 const { results, stats } = await smartSearch.search('AuthService', {
   k: 10,
   mode: 'auto',  // Routes to hybrid for mixed queries

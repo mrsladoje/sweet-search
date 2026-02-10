@@ -1,7 +1,7 @@
 /**
  * PHASE_1_FIXES Unit Tests
  *
- * Tests for the Phase 1 ranking fix helper functions in smart-search-v21.js:
+ * Tests for the Phase 1 ranking fix helper functions in sweet-search.js:
  * - quantileNormalize: Robust score normalization with outlier handling
  * - shouldFallbackToRRF: Detection of CC fusion edge cases
  * - robustCCFusion: Quantile-normalized CC fusion with RRF fallback
@@ -13,22 +13,22 @@ import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
-// Import SmartSearch class to test instance methods
+// Import SweetSearch class to test instance methods
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const smartSearchPath = path.join(__dirname, '..', 'core', 'smart-search-v21.js');
+const sweetSearchPath = path.join(__dirname, '..', 'core', 'sweet-search.js');
 
-// Create a minimal SmartSearch instance for testing
+// Create a minimal SweetSearch instance for testing
 // We'll mock the constructor dependencies to avoid needing real DB
-let SmartSearch;
+let SweetSearch;
 let searchInstance;
 
 beforeAll(async () => {
-  // Dynamically import SmartSearch class
-  const module = await import(smartSearchPath);
-  SmartSearch = module.default || module.SmartSearch;
+  // Dynamically import SweetSearch class
+  const module = await import(sweetSearchPath);
+  SweetSearch = module.default || module.SweetSearch;
 
   // Create instance with minimal config (methods don't need DB for these tests)
-  searchInstance = Object.create(SmartSearch.prototype);
+  searchInstance = Object.create(SweetSearch.prototype);
 
   // Bind the log method to suppress output during tests
   searchInstance.log = vi.fn();

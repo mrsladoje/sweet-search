@@ -200,10 +200,10 @@ if (useSemanticCache && EMBEDDING_CONFIG.isRemote) {
 - Local model (warm): 2-3ms
 - Local model (cold): ~3-5s (model loading)
 
-> **Note:** Typical uncached *semantic* requests are documented as **~275ms** in the `smart-search-v21.js` header (environment-dependent).
+> **Note:** Typical uncached *semantic* requests are documented as **~275ms** in the `sweet-search.js` header (environment-dependent).
 > That "~275ms" figure reflects the overall semantic path in typical conditions; whether it includes reranking depends on flags (`--no-rerank`) and mode.
 > The ~50-100ms figures above are just the embedding API call portion (batch call), not end-to-end search latency.
-> See `SEMANTIC_SEARCH.md` and the `smart-search-v21.js` header for the full target/typical framing.
+> See `SEMANTIC_SEARCH.md` and the `sweet-search.js` header for the full target/typical framing.
 
 ### Circuit Breaker (API Stability)
 
