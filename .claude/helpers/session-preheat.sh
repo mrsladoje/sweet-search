@@ -1,7 +1,7 @@
 #!/bin/bash
 # Session Preheat - PARALLEL warmup for Sweet Search v2.8
 #
-# Pre-warms ALL Smart Search components in PARALLEL during the ~4s local model load window.
+# Pre-warms ALL Sweet Search components in PARALLEL during the ~4s local model load window.
 # Since the local embedding model takes ~4s to load (the bottleneck), we use
 # that time to load everything else concurrently via Promise.all().
 #

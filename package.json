@@ -59,6 +59,7 @@
     "warmup:full": "node scripts/vocabulary-warmup.js",
     "benchmark": "node scripts/benchmark.js",
     "mcp": "node mcp/server.js",
+    "check-db": "node scripts/check-db.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
