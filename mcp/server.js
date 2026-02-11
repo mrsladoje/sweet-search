@@ -61,6 +61,7 @@ process.env.SWEET_SEARCH_PROJECT_ROOT = PROJECT_ROOT;
 // ---------------------------------------------------------------------------
 
 let _searcher = null;
+let _healthDb = null;
 
 async function getSearcher() {
   if (_searcher) return _searcher;
@@ -86,9 +87,9 @@ const server = new McpServer({
   version: PKG_VERSION,
 }, {
   capabilities: {
-    tools: { listChanged: true },
-    resources: { subscribe: false, listChanged: true },
-    prompts: { listChanged: true },
+    tools: { listChanged: false },
+    resources: { subscribe: false, listChanged: false },
+    prompts: { listChanged: false },
   },
 });
 
@@ -208,10 +209,10 @@ server.registerTool('index', {
   annotations: {
     readOnlyHint: false,
     destructiveHint: false,
-    idempotentHint: true,
+    idempotentHint: false,
     openWorldHint: false,
   },
-}, async ({ mode }, { sendNotification }) => {
+}, async ({ mode }) => {
   const indexerPath = path.join(__dirname, '..', 'core', 'index-codebase-v21.js');
   const args = ['--quiet'];
   if (mode === 'full') args.push('--full');
@@ -244,11 +245,7 @@ server.registerTool('index', {
     child.stderr.on('data', (data) => {
       stderr += data.toString();
       const line = data.toString().trim();
-      if (line && sendNotification) {
-        try {
-          sendNotification({ method: 'notifications/progress', params: { message: line } });
-        } catch { /* ignore notification errors */ }
-      }
+      if (line) console.error(`[sweet-search-mcp] index: ${line}`);
     });
 
     child.on('close', (code) => {
@@ -318,21 +315,26 @@ async function checkHealth() {
     }
 
     try {
-      const Database = (await import('better-sqlite3')).default;
       if (existsSync(config.DB_PATHS.codeGraph)) {
-        const db = new Database(config.DB_PATHS.codeGraph, { readonly: true });
-        const count = db.prepare('SELECT count(*) as cnt FROM entities').get();
+        if (!_healthDb) {
+          const Database = (await import('better-sqlite3')).default;
+          _healthDb = new Database(config.DB_PATHS.codeGraph, { readonly: true, timeout: 5000 });
+        }
+        const count = _healthDb.prepare('SELECT count(*) as cnt FROM entities').get();
         indexStats.totalFiles = count?.cnt || 0;
-        db.close();
       }
-    } catch { /* stats are optional */ }
+    } catch (e) {
+      // SQLITE_BUSY or stale connection — reset cache and continue
+      try { _healthDb?.close(); } catch {}
+      _healthDb = null;
+    }
 
   } catch (e) {
     healthy = false;
     subsystems['config'] = { status: 'error', details: e.message };
   }
 
-  return { healthy, projectRoot: PROJECT_ROOT, subsystems, indexStats };
+  return { healthy, projectRoot: path.basename(PROJECT_ROOT), subsystems, indexStats };
 }
 
 server.registerTool('health', {
@@ -350,7 +352,7 @@ server.registerTool('health', {
   const statusLines = Object.entries(structured.subsystems).map(
     ([name, s]) => `  ${s.status === 'ok' ? '+' : s.status === 'not_initialized' ? '-' : 'x'} ${name}: ${s.status}${s.details ? ' (' + s.details + ')' : ''}`
   );
-  const text = `Health: ${structured.healthy ? 'OK' : 'DEGRADED'}\nProject: ${PROJECT_ROOT}\n\n${statusLines.join('\n')}`;
+  const text = `Health: ${structured.healthy ? 'OK' : 'DEGRADED'}\nProject: ${path.basename(PROJECT_ROOT)}\n\n${statusLines.join('\n')}`;
 
   return {
     content: [{ type: 'text', text }],
@@ -388,7 +390,7 @@ server.resource(
         },
         embeddingModel: config.EMBEDDING_CONFIG?.model || 'unknown',
         supportedLanguages: ['en', 'de', 'fr', 'es', 'pl', 'ja', 'ko', 'zh', 'ru'],
-        projectRoot: PROJECT_ROOT,
+        projectRoot: path.basename(PROJECT_ROOT),
       };
     } catch (e) {
       data = { error: e.message };
