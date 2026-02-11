@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Smart Search v2.3 - Unified Search Pipeline with Auto-Warm Server
+ * Sweet Search v2.3 - Unified Search Pipeline with Auto-Warm Server
  *
  * Combines all search components into a single intelligent system:
  * - Query routing (lexical vs semantic vs hybrid)

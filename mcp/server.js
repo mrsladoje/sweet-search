@@ -9,12 +9,19 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { spawn } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, statSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const PKG_VERSION = (() => {
+  try {
+    const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    return pkg.version || '0.0.0';
+  } catch { return '0.0.0'; }
+})();
 
 // ---------------------------------------------------------------------------
 // Project root resolution (once at startup)
@@ -76,7 +83,7 @@ async function getConfig() {
 
 const server = new McpServer({
   name: 'sweet-search',
-  version: '2.3.0',
+  version: PKG_VERSION,
 }, {
   capabilities: {
     tools: { listChanged: true },
@@ -434,6 +441,19 @@ server.prompt(
 
 // TODO: Streamable HTTP transport (--transport http --port <port>) — future work.
 // Currently only stdio is implemented (universal baseline for Claude Code + Codex).
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown (F-18)
+// ---------------------------------------------------------------------------
+
+function shutdown(signal) {
+  console.error(`[sweet-search-mcp] ${signal} received, shutting down`);
+  try { server.close(); } catch {}
+  process.exit(0);
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 async function main() {
   const transport = new StdioServerTransport();
