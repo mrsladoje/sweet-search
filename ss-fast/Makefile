@@ -38,7 +38,7 @@ test: $(TARGET)
 	@echo "Testing ss-fast..."
 	@./$(TARGET) --help
 	@echo ""
-	@if [ -S /tmp/search.sock ]; then \
+	@if [ -S /tmp/sweet-search.sock ] || [ -S /tmp/search.sock ]; then \
 		echo "=== Server running, testing queries... ==="; \
 		echo ""; \
 		echo "1. Basic query:"; \
@@ -50,5 +50,5 @@ test: $(TARGET)
 		echo "3. Force lexical:"; \
 		./$(TARGET) "BotDetection" -m lexical -k 2; \
 	else \
-		echo "Server not running (socket not found)"; \
+		echo "Server not running (no socket at /tmp/sweet-search.sock or /tmp/search.sock)"; \
 	fi
