@@ -177,7 +177,7 @@ export const SUMMARY_EMBEDDING_CONFIG = {
 };
 ```
 
-**Fallback behavior**: If no `SUMMARY_EMBEDDING_PROVIDER` is set, summaries use the same provider as code chunks. This maintains backward compatibility — the dual-model approach is opt-in.
+**Fallback behavior**: If no `SUMMARY_EMBEDDING_PROVIDER` is set, summaries use the same provider as code chunks (dual-model is opt-in).
 
 ### 4.2 Search Pipeline Changes
 
@@ -253,8 +253,7 @@ For code chunks, `voyage-code-3` does **not** share an embedding space with the 
 
 1. Add `SUMMARY_EMBEDDING_CONFIG` section
 2. Support `SUMMARY_EMBEDDING_PROVIDER` env variable
-3. Default: same as `EMBEDDING_CONFIG.provider` (backward compatible)
-4. When Voyage keys are present and `voyage-4` is available: auto-select `voyage-4` for summaries
+3. When Voyage keys are present and `voyage-4` is available: auto-select `voyage-4` for summaries
 
 ### 5.3 Phase 3: Dual-Model Embedding in HCGS Generator
 
@@ -279,23 +278,12 @@ For code chunks, `voyage-code-3` does **not** share an embedding space with the 
 **Files changed**: `core/config.js`, `core/embedding-service.js`
 
 1. Add `VOYAGE_INDEX_MODEL` / `VOYAGE_QUERY_MODEL` config
-2. Default: same model for both (backward compatible)
-3. When set: use `voyage-4-large` for indexing, `voyage-4-lite` for queries
+2. When set: use `voyage-4-large` for indexing, `voyage-4-lite` for queries
 4. Track index model in metadata to detect mismatches
 
 ---
 
-## 6. Backward Compatibility
-
-- **Default behavior unchanged**: If no `SUMMARY_EMBEDDING_PROVIDER` is set, everything works exactly as today
-- **Single-model path preserved**: The dual-model path is opt-in via environment variables
-- **Local provider unaffected**: `all-MiniLM-L6-v2` handles both code and NL well enough at 384d — no need for dual models in local mode
-- **Existing indexes remain valid**: No schema changes to `code-graph.db` or `codebase.db`
-- **GLM-4.6 still available**: Just no longer the default for HCGS; users can set `HCGS_MODEL=zai-glm-4.6` to restore old behavior
-
----
-
-## 7. Success Metrics
+## 6. Success Metrics
 
 | Metric | Current (GLM-4.6) | Target (Groq 3B) | Target (Cerebras 8B) |
 |--------|-------------------|-------------------|----------------------|
@@ -308,7 +296,7 @@ For code chunks, `voyage-code-3` does **not** share an embedding space with the 
 
 ---
 
-## 8. Open Questions
+## 7. Open Questions
 
 1. **Groq 3B quality validation**: The `llama-3.2-3b-preview` model is in "preview" status on Groq. Need to validate summary quality against a test set before making it the default. Fallback to Cerebras 8B if quality is insufficient.
 
@@ -322,7 +310,7 @@ For code chunks, `voyage-code-3` does **not** share an embedding space with the 
 
 ---
 
-## 9. Research Sources
+## 8. Research Sources
 
 ### Inference Providers
 - [Groq Models Documentation](https://console.groq.com/docs/models)
