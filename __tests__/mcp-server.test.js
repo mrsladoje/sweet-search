@@ -170,11 +170,11 @@ describe('MCP Server Protocol Compliance', () => {
       expect(search.annotations.idempotentHint).toBe(true);
     });
 
-    it('index tool is not readOnly but idempotent', () => {
+    it('index tool is not readOnly and not idempotent', () => {
       const index = toolsResponse.result.tools.find(t => t.name === 'index');
       expect(index.annotations.readOnlyHint).toBe(false);
       expect(index.annotations.destructiveHint).toBe(false);
-      expect(index.annotations.idempotentHint).toBe(true);
+      expect(index.annotations.idempotentHint).toBe(false);
     });
 
     // B6b: outputSchema

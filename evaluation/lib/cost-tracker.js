@@ -40,7 +40,7 @@ const PRICING = {
   },
 };
 
-// Average tokens per query (estimated based on Sloth codebase)
+// Average tokens per query (estimated from typical code search workloads)
 const AVG_TOKENS_PER_QUERY = 15;         // Short queries like "AuthService"
 const AVG_TOKENS_PER_DOCUMENT = 150;     // Code chunks for reranking
 
