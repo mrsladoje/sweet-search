@@ -10,6 +10,7 @@ node_modules/
 *.tmp
 *.log
 .sweet-search/
+vectors.db
 # .sweet-search.config.json  # Uncomment to exclude per-project search config
 
 # Compiled binaries
@@ -41,6 +42,9 @@ wasm-router/*.bak
 # Phase planning docs (regenerable)
 PHASE*_RESULTS.md
 PHASE*_FIXES.md
+
+# Test coverage output (regenerable)
+coverage/
 
 # Benchmark raw outputs (regenerable)
 evaluation/*.json.bak
