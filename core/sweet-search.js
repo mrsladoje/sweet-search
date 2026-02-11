@@ -2196,7 +2196,7 @@ async function startServer() {
   console.log(`[Server] Indexes loaded in ${Date.now() - initStart}ms`);
 
   // Write PID file
-  await fs.writeFile(SEARCH_SERVER_PIDFILE, process.pid.toString());
+  await fs.writeFile(SEARCH_SERVER_PIDFILE, process.pid.toString(), { mode: 0o644 });
 
   // P6 FIX: Track request count for periodic cache clearing
   let requestCount = 0;
@@ -2402,6 +2402,8 @@ async function startServer() {
   const unixServer = http.createServer(handleRequest);
   try { await fs.unlink(SEARCH_SERVER_SOCKET); } catch {} // Remove stale socket
   unixServer.listen(SEARCH_SERVER_SOCKET);
+  // F-35: Restrict socket permissions to owner only
+  try { (await import('node:fs')).chmodSync(SEARCH_SERVER_SOCKET, 0o700); } catch {}
   console.log(`[Server] Unix socket listening on ${SEARCH_SERVER_SOCKET}`);
   console.log(`[Server] Fast access: curl --unix-socket ${SEARCH_SERVER_SOCKET} "http://localhost/search?q=query"`);
 
@@ -2922,4 +2924,5 @@ Examples:
 }
 
 export default SweetSearch;
+/** @deprecated Use SweetSearch instead. SmartSearch is a legacy alias. */
 export { SweetSearch as SmartSearch };
