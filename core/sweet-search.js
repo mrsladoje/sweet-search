@@ -47,7 +47,7 @@ import { TranslationFallback, queryNeedsTranslation } from '../translation/index
 import { applyMMR, shouldApplyMMR, getLambdaForIntent, MMR_CONFIG } from './mmr.js';
 
 // =============================================================================
-// SMART SEARCH CLASS
+// SWEET SEARCH CLASS
 // =============================================================================
 
 export class SweetSearch {
@@ -2758,8 +2758,51 @@ Examples:
     (async () => {
       try {
         const http = await import('http');
-        http.get(`http://localhost:${SEARCH_SERVER_PORT}/stop`);
-        console.log('Stop signal sent');
+        const requestStop = (requestOptions) => new Promise((resolve, reject) => {
+          const req = http.request(requestOptions, (res) => {
+            let body = '';
+            res.on('data', chunk => { body += chunk; });
+            res.on('end', () => resolve({
+              statusCode: res.statusCode || 0,
+              body: body.trim(),
+            }));
+          });
+
+          req.on('error', reject);
+          req.setTimeout(1500, () => req.destroy(new Error('timeout')));
+          req.end();
+        });
+
+        // F-06: Stop via Unix socket first so CLI behavior matches server policy.
+        let stopResponse = null;
+        if (existsSync(SEARCH_SERVER_SOCKET)) {
+          stopResponse = await requestStop({
+            socketPath: SEARCH_SERVER_SOCKET,
+            path: '/stop',
+            method: 'GET',
+          });
+        } else if (existsSync(SEARCH_SERVER_SOCKET_LEGACY)) {
+          stopResponse = await requestStop({
+            socketPath: SEARCH_SERVER_SOCKET_LEGACY,
+            path: '/stop',
+            method: 'GET',
+          });
+        } else {
+          // Backward-compatible fallback for older servers without Unix socket.
+          stopResponse = await requestStop({
+            hostname: 'localhost',
+            port: SEARCH_SERVER_PORT,
+            path: '/stop',
+            method: 'GET',
+          });
+        }
+
+        if (stopResponse.statusCode === 200) {
+          console.log('Stop signal sent');
+        } else {
+          const message = stopResponse.body || `HTTP ${stopResponse.statusCode}`;
+          console.log(`Stop request failed: ${message}`);
+        }
       } catch {
         console.log('Server not running');
       }

@@ -262,17 +262,20 @@ const MERKLE_CHECK_INTERVAL = 45000;   // 45 seconds between merkle checks
 const STARTUP_DELAY = 7000;            // 7 seconds deferred first check (zero startup latency)
 const INDEXING_TIMEOUT = 5 * 60 * 1000; // 5 minutes timeout
 
-const INDEXABLE_EXTENSIONS = [
+const DEFAULT_INDEXABLE_EXTENSIONS = [
   '**/*.java', '**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/*.mjs',
   '**/*.py', '**/*.go', '**/*.rs', '**/*.sql', '**/*.md',
   '**/*.yml', '**/*.yaml', '**/*.json', '**/*.xml', '**/*.properties',
   '**/*.html', '**/*.css', '**/*.scss', '**/*.proto'
 ];
 
-const EXCLUDED_DIRS = [
+const DEFAULT_EXCLUDED_DIRS = [
   '**/node_modules/**', '**/target/**', '**/build/**',
   '**/dist/**', '**/.git/**', '**/.sweet-search/**'
 ];
+
+let INDEXABLE_EXTENSIONS = DEFAULT_INDEXABLE_EXTENSIONS;
+let EXCLUDED_DIRS = DEFAULT_EXCLUDED_DIRS;
 
 // Global indexing lock (prevents race with manual /index-codebase)
 const GLOBAL_INDEX_LOCK = join(DATA_DIR, 'indexing.lock');
@@ -297,6 +300,30 @@ function log(level, message) {
   const timestamp = new Date().toISOString().slice(11, 19);
   console.error(`[${timestamp}] [${level}] [index-maintainer] ${message}`);
 }
+
+/**
+ * Load include/exclude patterns from .sweet-search.config.json via shared config loader.
+ * Falls back to built-in defaults if config cannot be loaded.
+ */
+async function loadIndexingPatterns() {
+  try {
+    const { loadProjectConfig } = await import('../../core/config.js');
+    const projectConfig = loadProjectConfig(PROJECT_ROOT);
+
+    if (Array.isArray(projectConfig.include) && projectConfig.include.length > 0) {
+      INDEXABLE_EXTENSIONS = projectConfig.include;
+    }
+    if (Array.isArray(projectConfig.exclude) && projectConfig.exclude.length > 0) {
+      EXCLUDED_DIRS = projectConfig.exclude;
+    }
+
+    log('INFO', `Loaded indexing config: include=${INDEXABLE_EXTENSIONS.length}, exclude=${EXCLUDED_DIRS.length}`);
+  } catch (err) {
+    log('WARN', `Failed to load .sweet-search.config.json (using defaults): ${err.message}`);
+  }
+}
+
+await loadIndexingPatterns();
 
 // === Lock File Management ===
 // SECURITY INVARIANT: All lock release functions MUST verify ownership before releasing.
