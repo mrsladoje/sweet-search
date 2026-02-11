@@ -27,9 +27,15 @@ All `npx @claude-flow/cli@latest` commands resolve the memory DB (and often conf
 # Start (or resume) session
 cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks session-start --project "my-project"
 
+# Prewarm HNSW cache (run right after session-start)
+cd PROJECT_ROOT && npx @claude-flow/cli@latest memory search --query "patterns and lessons learned" --limit 10
+cd PROJECT_ROOT && npx @claude-flow/cli@latest memory search --query "recent work and implementation context" --namespace sweet-search --limit 10
+
 # End session and export metrics
 cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks session-end --export-metrics true
 ```
+
+**Why prewarm?** These broad searches load embeddings into the HNSW in-memory index. Later targeted searches during work hit cache instead of disk (~78% → 90%+ hit rate).
 
 ### Memory
 
@@ -55,9 +61,35 @@ cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks pre-task --task-id "fix-aut
 
 # Post-task: record outcome
 cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks post-task --task-id "fix-auth" --success true
+
+# Model feedback: train the router (CRITICAL — without this, router defaults to Opus)
+cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks model-outcome --task "Harden login validation" --model sonnet --outcome success
 ```
 
+**Model feedback matters:** The router starts biased toward Opus as a safe default. `model-outcome` records whether the chosen model actually succeeded. Over time this calibrates the router to trust Haiku/Sonnet for low-complexity tasks (currently 0% Haiku usage despite 33% avg complexity).
+
 **Use both route outputs:** (1) **Model** — if route suggests Haiku/Sonnet/Opus, pass that when spawning (e.g. `model="haiku"` for simple tasks). (2) **Agent types** — route can suggest which agents to use (e.g. coder, reviewer, security-auditor, tester); spawn those. Examples: bug fix → researcher, coder, tester; security → coder, security-auditor; feature → architect, coder, tester, reviewer.
+
+### SONA Learning (trajectory tracking)
+
+SONA (Self-Optimizing Neural Architecture) learns which agent+action patterns lead to success. Without it, every session starts cold — no learning carries over.
+
+```bash
+# Start trajectory when beginning a unit of work (after pre-task)
+cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks intelligence trajectory-start --task "Harden login validation" --agent coder
+
+# Record significant steps during work (not every micro-action — just milestones)
+cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks intelligence trajectory-step --trajectory-id "TRAJ_ID" --action "wrote implementation" --result "3 files changed" --quality 0.8
+cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks intelligence trajectory-step --trajectory-id "TRAJ_ID" --action "ran tests" --result "all passing" --quality 1.0
+
+# End trajectory when unit of work is done (before post-task)
+# This triggers EWC++ consolidation — learning is preserved across sessions
+cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks intelligence trajectory-end --trajectory-id "TRAJ_ID" --success true
+```
+
+**When to use trajectory-step:** Only for meaningful milestones — "wrote implementation", "ran tests", "fixed failing test", "security review passed". Not for every file read or small edit.
+
+**TRAJ_ID** is returned by `trajectory-start`. Pass it to all subsequent step/end calls.
 
 ### Optional (when they fit)
 
@@ -74,17 +106,31 @@ cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks worker-dispatch --trigger a
 
 ## What to use when
 
-**Every session:** session-start → memory search → for each unit of work: route → pre-task → work → reviewer (and tester/security if needed) → build + test → post-task → memory store → commit; then session-end.
+**Every session:** session-start → prewarm searches → memory search → for each unit of work: route → pre-task → trajectory-start → work → reviewer (and tester/security if needed) → build + test → trajectory-end → post-task → model-outcome → memory store → commit; then session-end.
 
-**Only when they fit:** hive-mind init (multi-batch), worker dispatch (background checks), parallel coders, security auditor (security-sensitive batch), tester agent (test-heavy batch).
+**Only when they fit:** hive-mind init (multi-batch), worker dispatch (background checks), parallel coders, security auditor (security-sensitive batch), tester agent (test-heavy batch), trajectory-steps (for complex multi-action units of work).
 
 ---
 
 ## Minimal workflow (any task)
 
 1. `cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks session-start --project "my-project"`
-2. `cd PROJECT_ROOT && npx @claude-flow/cli@latest memory search --query "relevant context" --limit 5`
-3. For **this** unit of work: **route** → **pre-task** (stable task-id) → do work using **route’s model + agent-type hints** (e.g. Haiku for simple, Sonnet for complex; coder + reviewer, or coder + security-auditor when route suggests it) → build + test → **post-task** → **memory store** (same key as task-id) → commit.
-4. When fully done: `cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks session-end --export-metrics true`
+2. Prewarm HNSW cache (broad searches to load embeddings into memory):
+   - `cd PROJECT_ROOT && npx @claude-flow/cli@latest memory search --query "patterns and lessons learned" --limit 10`
+   - `cd PROJECT_ROOT && npx @claude-flow/cli@latest memory search --query "recent work and context" --limit 10`
+3. `cd PROJECT_ROOT && npx @claude-flow/cli@latest memory search --query "relevant context for this task" --limit 5`
+4. For **this** unit of work:
+   - **route** → get model + agent-type hints
+   - **pre-task** (stable task-id)
+   - **trajectory-start** (returns TRAJ_ID)
+   - do work using route's hints (Haiku for simple, Sonnet for moderate, Opus for complex)
+   - optionally record **trajectory-steps** for major milestones
+   - build + test
+   - **trajectory-end** (TRAJ_ID, triggers EWC++ learning)
+   - **post-task** (same task-id)
+   - **model-outcome** (task description, model used, success/failure — trains the router)
+   - **memory store** (same key as task-id)
+   - commit
+5. When fully done: `cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks session-end --export-metrics true`
 
-Scale “unit of work” to the task: one fix = one task-id; a 6-batch migration = 6 task-ids (batch-1 … batch-6).
+Scale "unit of work" to the task: one fix = one task-id; a 6-batch migration = 6 task-ids (batch-1 … batch-6).
