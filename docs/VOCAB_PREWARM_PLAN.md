@@ -13,8 +13,8 @@ The current warmup system has three independent layers, all flawed in the same w
 | File | What it does | Problem |
 |------|-------------|---------|
 | `scripts/prewarm-vocab.js` | Falls back to 36 hardcoded `GENERIC_TERMS` ("authentication", "database", etc.) | Completely project-agnostic. Useless for a Rust game engine or a Go microservice. |
-| `scripts/vocabulary-warmup.js` | Extracts entities from `code-graph.db`, generates question variants | Better, but (a) only warms Voyage semantic embeddings, (b) requires a prior full indexing run, (c) no lexical or hybrid warmup. |
-| `core/vocabulary-utils.js` | Binary format + query log mining + graph templates | Most advanced, but still Voyage-only, and the "learning" is reactive (waits for user to query 3+ times before promoting). |
+| `scripts/vocabulary-warmup.js` | Extracts entities from `code-graph.db`, generates question variants | Better, but (a) only warms semantic embeddings for a single provider, (b) requires a prior full indexing run, (c) no lexical or hybrid warmup. |
+| `core/vocabulary-utils.js` | Binary format + query log mining + graph templates | Most advanced, but still single-provider, and the "learning" is reactive (waits for user to query 3+ times before promoting). |
 | `.claude/helpers/session-preheat.sh` | Parallel component warmup | Vocabulary step just loads the file; **FTS5 warmup is literally `WHERE name MATCH "warmup"`** — a term that exists in zero codebases. |
 
 ### What's warm vs. cold today
@@ -93,7 +93,7 @@ Code search terms follow a Zipf's law distribution: the Nth most-common term app
 
 | Technique | Impact | Source |
 |-----------|--------|--------|
-| **Voyage-code-3 + int8 quantization** | +13.8-16.8% vs competitors, 83% cost reduction | [Voyage AI](https://blog.voyageai.com/2024/12/04/voyage-code-3/) |
+| **Voyage-code-3 + int8 quantization** (SOTA for code, Jan 2026) | +13.8-16.8% vs competitors, 83% cost reduction | [Voyage AI](https://blog.voyageai.com/2024/12/04/voyage-code-3/) |
 | **Matryoshka embeddings** | 8.3% of size retains 98.37% of performance | [HuggingFace](https://huggingface.co/blog/matryoshka) |
 | **GoVector hybrid caching** | 46% fewer I/O ops, 1.73x throughput | [arXiv 2508.15694](https://www.arxiv.org/pdf/2508.15694) |
 | **StorInfer precomputation** | 150K precomputed queries, 17.3% latency reduction | [arXiv 2503.17603](https://arxiv.org/html/2503.17603v1) |
@@ -136,7 +136,7 @@ Then execute actual `MATCH` queries with **real terms from the codebase** to for
 
 ### 3.1 Core Thesis
 
-**The warmup command should itself contain the intelligence to scan any codebase and build a dynamic vocabulary. No preset words. No prior indexing required. All three search modes warmed.**
+**The warmup command should itself contain the intelligence to scan any codebase and build a dynamic vocabulary. No preset words. No prior indexing required. All three search modes warmed. Provider-agnostic — works with whatever embedding provider is active (`EMBEDDING_CONFIG.provider`).**
 
 The command becomes a 4-phase pipeline:
 
@@ -144,9 +144,11 @@ The command becomes a 4-phase pipeline:
 /sweet-vocab-prewarm
     Phase 1: MINE the codebase (extract terms)        → 1-5s
     Phase 2: RANK terms by importance                  → <1s
-    Phase 3: WARM each search mode with ranked terms   → 2-8s
+    Phase 3: WARM each search mode with ranked terms   → varies by provider (see §3.5)
     Phase 4: PERSIST for incremental updates           → <1s
 ```
+
+**Note on time budgets**: Phase 3 timing depends heavily on the active embedding provider. Local models (Xenova/all-MiniLM-L6-v2, 384d) generate embeddings at ~50-100ms per batch of 32. Remote APIs (Voyage, Mistral, Jina) add network latency (~200-500ms per batch) but produce higher-dimensional embeddings. All time estimates in this document assume the **local provider** as the default. Remote providers may add 2-3x to semantic warmup times.
 
 ### 3.2 Multi-Tier Cache Architecture
 
@@ -288,28 +290,39 @@ final_score = bm25_score * heuristic_multiplier * (1 + pagerank_score)
 
 **Goal**: Pre-compute embeddings for likely queries and warm HNSW traversal paths.
 
+**Provider-agnostic design**: All embedding calls go through `generateEmbeddings()` from `embedding-service.js`, which routes to the active provider automatically (`EMBEDDING_CONFIG.provider`). The vocabulary cache already tracks which provider generated the embeddings and **invalidates on provider change** (see `Vocabulary.load()` in `embedding-service.js`). No Voyage-specific or provider-specific code in the warmup path.
+
 **Strategy**:
-1. **Generate embeddings** for top-N terms (whole identifiers + split tokens):
+1. **Generate embeddings** for top-N terms (whole identifiers + split tokens) via `generateEmbeddings()`:
    - Entity names: `AuthService`, `LoginController`
    - Qualified names: `auth.AuthService`, `user.getProfile`
 2. **Generate question variant embeddings** for top-M terms:
    - `"what is {X}"`, `"how does {X} work"`, `"where is {X} defined"`
    - Research shows these templates cover the main natural language query patterns
-3. **Store in vocabulary cache** (binary format, 256d Matryoshka)
+3. **Store in vocabulary cache** (binary format, dimension = `EMBEDDING_CONFIG.hnswDimension`)
 4. **Execute HNSW searches** with these embeddings to warm traversal paths:
    ```js
    for (const embedding of topEmbeddings) {
      await hnswIndex.search(embedding, { k: 10 });
    }
    ```
-5. **Use Matryoshka multi-resolution** for cache efficiency:
-   - 256d for HNSW index (fast traversal, small footprint)
-   - 1024d for final reranking (full precision)
-   - 8.3% of full embedding size retains 98.37% of performance
+5. **Use Matryoshka multi-resolution** for providers that support it (Voyage, Jina):
+   - `EMBEDDING_CONFIG.hnswDimension` for HNSW index (fast traversal, small footprint)
+   - `EMBEDDING_CONFIG.dimension` for final reranking (full precision)
+   - Local provider (all-MiniLM-L6-v2): 256d HNSW / 384d full — no Matryoshka, but dimensions are already compact
 
 **Why this matters**: DiskANN research shows preloading entry points + neighbors reduces cold-start latency. Running actual searches warms exactly the graph regions users will hit.
 
-**Time budget**: ~2-5s (embedding generation is the bottleneck; batch at 128 per request).
+**Time budget** (provider-dependent):
+
+| Provider | Batch of 32 | 200 terms (light) | 1000 terms (medium) | Notes |
+|----------|-------------|--------------------|-----------------------|-------|
+| **Local** (all-MiniLM-L6-v2) | ~50-100ms | **~1-2s** | **~3-5s** | No network overhead, 384d |
+| **Voyage** (code-3 / 4) | ~200-400ms | ~3-5s | ~8-15s | Rate limit: 300 req/min |
+| **Mistral** (codestral) | ~200-300ms | ~3-5s | ~8-12s | Rate limit: 100 req/min |
+| **Jina** (v3) | ~150-300ms | ~2-4s | ~6-10s | Rate limit: 500 req/min |
+
+Question variants (~5x multiplier) are only generated for top-M terms (M = top 50-100), not all N terms, to keep the budget manageable regardless of provider.
 
 #### 3.5.3 Hybrid Warmup (Full Pipeline)
 
@@ -326,7 +339,7 @@ final_score = bm25_score * heuristic_multiplier * (1 + pagerank_score)
 
 **Why this matters**: A cold hybrid query hits every component in sequence. Pre-running 10-20 representative queries eliminates the cold-start cascade. Research shows this can reduce cold-start times by **65%**.
 
-**Time budget**: ~1-3s for 10-20 full pipeline queries.
+**Time budget** (provider-dependent): ~1-2s with local provider (embedding is fast), ~2-5s with remote providers (network latency per query).
 
 ### 3.6 Phase 4: Persist and Track
 
@@ -397,7 +410,8 @@ Options:
   --modes semantic Warm only embedding + HNSW
   --modes hybrid  Warm only full pipeline
   --top N         Warm top N terms (default: 1000)
-  --provider P    Embedding provider (voyage/mistral/jina/local, default: auto-detect)
+  --provider P    Override embedding provider (voyage/mistral/jina/local, default: uses EMBEDDING_CONFIG.provider)
+  --local-warmup  Force local model for warmup even when remote provider is active (faster warmup)
 ```
 
 ### 5.2 MCP Tool: `sweet-search/vocab-prewarm`
@@ -418,12 +432,12 @@ Options:
 
 ### 5.3 Integration Points
 
-| Integration | When | Depth | Time Budget |
-|-------------|------|-------|-------------|
-| **Session preheat** (`session-preheat.sh`) | Every session start | `light` (200 terms) | <3s |
-| **Post-indexing hook** (after `/index-codebase`) | After full index | `medium` (1000 terms) | <8s |
-| **On-demand** (`/sweet-vocab-prewarm`) | User-triggered | `deep` (2000 terms) | <20s |
-| **MCP tool** (programmatic) | API consumers | Configurable | Configurable |
+| Integration | When | Depth | Time Budget (local) | Time Budget (remote) |
+|-------------|------|-------|---------------------|----------------------|
+| **Session preheat** (`session-preheat.sh`) | Every session start | `light` (200 terms) | <3s | <5s |
+| **Post-indexing hook** (after `/index-codebase`) | After full index | `medium` (1000 terms) | <8s | <15s |
+| **On-demand** (`/sweet-vocab-prewarm`) | User-triggered | `deep` (2000 terms) | <15s | <30s |
+| **MCP tool** (programmatic) | API consumers | Configurable | Configurable | Configurable |
 
 ---
 
@@ -512,16 +526,18 @@ Top 5 Cache Misses (candidates for next warmup):
 
 ## 9. Success Metrics
 
-| Metric | Current | Target | How |
-|--------|---------|--------|-----|
-| Vocabulary cache hit rate (first 100 queries) | ~20% (generic terms) | **>80%** | Codebase-mined terms match actual queries |
-| First lexical query (warm) | ~6-10ms (FTS5 pages cold) | **<3ms** | Real MATCH queries prime FTS5 B-tree |
-| First semantic query (warm, cached term) | ~150ms (HNSW cold) | **<15ms** | Precomputed embedding + warmed HNSW paths |
-| First hybrid query (warm) | ~200ms (both paths cold) | **<50ms** | Full pipeline pre-exercised |
-| Warmup time (light, 200 terms) | N/A | **<3s** | Fits in session preheat window |
-| Warmup time (medium, 1000 terms) | N/A | **<8s** | Post-indexing hook |
-| Warmup time (deep, 2000 terms) | N/A | **<20s** | On-demand / swarm |
-| Cold-start reduction | 0% | **65%+** | All components pre-warmed |
+| Metric | Current | Target (local provider) | Target (remote provider) | How |
+|--------|---------|-------------------------|--------------------------|-----|
+| Vocabulary cache hit rate (first 100 queries) | ~20% (generic terms) | **>80%** | **>80%** | Codebase-mined terms match actual queries |
+| First lexical query (warm) | ~6-10ms (FTS5 pages cold) | **<3ms** | **<3ms** | Real MATCH queries prime FTS5 B-tree |
+| First semantic query (warm, cached term) | ~150ms (HNSW cold) | **<15ms** | **<15ms** | Precomputed embedding + warmed HNSW paths |
+| First hybrid query (warm) | ~200ms (both paths cold) | **<50ms** | **<50ms** | Full pipeline pre-exercised |
+| Warmup time (light, 200 terms) | N/A | **<3s** | **<5s** | Fits in session preheat window |
+| Warmup time (medium, 1000 terms) | N/A | **<8s** | **<15s** | Post-indexing hook |
+| Warmup time (deep, 2000 terms) | N/A | **<15s** | **<30s** | On-demand / swarm |
+| Cold-start reduction | 0% | **65%+** | **65%+** | All components pre-warmed |
+
+**Note**: Post-warmup latency targets (rows 1-4) are the same regardless of provider — once embeddings are cached, the provider no longer matters. Only warmup *generation time* differs. The local provider (Xenova/all-MiniLM-L6-v2) is the default and provides the fastest warmup.
 
 ---
 
@@ -581,13 +597,13 @@ Top 5 Cache Misses (candidates for next warmup):
 
 1. **Tree-sitter dependency**: Should we bundle Tree-sitter grammars, or make it optional with regex fallback? Tree-sitter adds ~10MB of grammars but provides better accuracy for 100+ languages.
 
-2. **Embedding provider flexibility**: Current warmup is Voyage-only. The new system should be provider-agnostic (Voyage/Mistral/Jina/local). The binary vocab format already stores raw Float32 — just need to handle different dimensions.
+2. **~~Embedding provider flexibility~~** *(Resolved)*: The warmup uses `EMBEDDING_CONFIG.provider` — whatever provider is active (local by default, remote if API keys are configured). The vocabulary cache already invalidates on provider change. No provider-specific code in the warmup path. Dimension handling adapts automatically via `EMBEDDING_CONFIG.dimension` and `EMBEDDING_CONFIG.hnswDimension`.
 
 3. **Warmup during first indexing**: Should `/index-codebase` automatically trigger a medium-depth warmup after indexing completes? Probably yes — the code graph is fresh, and the user's about to start searching.
 
 4. **Cross-session vocabulary persistence**: How long should a vocabulary be considered "fresh"? Proposal: content hash of `package.json` + top-level dir listing. If unchanged, skip re-mining.
 
-5. **Rate limiting for remote embeddings**: At 1000 terms + question variants (~5000 embeddings), Voyage API costs ~$0.005 per warmup. Acceptable? Should we offer a "local-only" mode that uses all-MiniLM-L6-v2 for warmup even when Voyage is the main provider?
+5. **Remote provider cost/rate considerations**: When a remote provider is active, warmup generates more API calls. At 1000 terms + 500 question variants (~1500 embeddings), the cost per warmup is roughly: Voyage ~$0.002, Mistral ~$0.001, Jina ~$0.001. The rate limiters in `embedding-service.js` already handle throttling. For users who want fast warmup regardless of their search provider, a `--local-warmup` flag could force warmup to use the local model even when a remote provider is the active search provider (the warmed HNSW paths still benefit from any-provider traversal).
 
 ---
 
