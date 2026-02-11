@@ -128,9 +128,52 @@ cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks worker-dispatch --trigger a
    - build + test
    - **trajectory-end** (TRAJ_ID, triggers EWC++ learning)
    - **post-task** (same task-id)
-   - **model-outcome** (task description, model used, success/failure — trains the router)
+   - **model-outcome** (task description, model used, success/failure — trains the router) **← DON'T SKIP — without this the router stays stuck on Opus**
    - **memory store** (same key as task-id)
    - commit
 5. When fully done: `cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks session-end --export-metrics true`
 
 Scale "unit of work" to the task: one fix = one task-id; a 6-batch migration = 6 task-ids (batch-1 … batch-6).
+
+---
+
+## Copy-paste: full per-task loop
+
+Replace the three variables at the top. Copy the whole block into a session after step 3.
+
+```bash
+# ── Set these ──
+TASK_ID="fix-login-validation"
+TASK_DESC="Harden login validation"
+CF="cd PROJECT_ROOT && npx @claude-flow/cli@latest"
+
+# ── Route (read the model + agent-type suggestions from the output) ──
+$CF hooks route --task "$TASK_DESC"
+
+# ── Register task ──
+$CF hooks pre-task --task-id "$TASK_ID" --description "$TASK_DESC"
+
+# ── Start trajectory (copy the TRAJ_ID from the output) ──
+$CF hooks intelligence trajectory-start --task "$TASK_DESC" --agent coder
+TRAJ_ID="<paste from output>"
+
+# ── ... do the actual work here ... ──
+
+# ── (optional) Record milestones ──
+$CF hooks intelligence trajectory-step --trajectory-id "$TRAJ_ID" --action "wrote implementation" --result "3 files changed" --quality 0.8
+$CF hooks intelligence trajectory-step --trajectory-id "$TRAJ_ID" --action "ran tests" --result "all passing" --quality 1.0
+
+# ── Close trajectory (triggers EWC++ learning) ──
+$CF hooks intelligence trajectory-end --trajectory-id "$TRAJ_ID" --success true
+
+# ── Record outcome ──
+$CF hooks post-task --task-id "$TASK_ID" --success true
+
+# ── Train the router (USE THE MODEL YOU ACTUALLY USED — haiku / sonnet / opus) ──
+$CF hooks model-outcome --task "$TASK_DESC" --model sonnet --outcome success
+
+# ── Persist to memory ──
+$CF memory store --key "$TASK_ID" --value "Done: $TASK_DESC" --namespace sweet-search
+```
+
+**Tip — lite mode for trivial fixes:** For a one-liner, skip trajectory and just do: route → work → model-outcome → commit.
