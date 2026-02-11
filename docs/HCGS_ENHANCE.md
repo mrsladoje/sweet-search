@@ -228,7 +228,13 @@ For code chunks, `voyage-code-3` does **not** share an embedding space with the 
 
 ## 5. Implementation Plan
 
-### 5.1 Phase 1: Faster Summary Generation (config change + provider addition)
+This plan is split into two independent phases. Phase 1 is a quick win (config changes, 1-2 hours). Phase 2 is an architectural change (days of work). Phase 1 can ship without Phase 2.
+
+---
+
+### Phase 1: Faster Summary Generation
+
+**Scope**: Replace GLM-4.6 with faster/cheaper models for HCGS summary generation. No embedding or search pipeline changes.
 
 **Files changed**: `core/config.js`, `core/llm-provider.js`
 
@@ -247,7 +253,15 @@ For code chunks, `voyage-code-3` does **not** share an embedding space with the 
    ```
 4. Add `HCGS_MODEL` env override: `HCGS_MODEL=llama-3.2-3b-preview` for user control
 
-### 5.2 Phase 2: Summary Embedding Config (new config section)
+**Validation**: Re-index a test project, compare summary quality (GLM-4.6 vs Groq 3B vs Cerebras 8B) on a sample of 50 entities. Acceptable = summaries are coherent, capture the entity's purpose, no hallucinated details.
+
+---
+
+### Phase 2: Dual-Model Embedding for Summaries
+
+**Scope**: Use general-purpose embeddings (Voyage-4) for NL summaries instead of code-specific embeddings. Affects indexing, search, and config. Independent of Phase 1.
+
+**Step 2.1: Summary Embedding Config** (new config section)
 
 **Files changed**: `core/config.js`
 
@@ -255,7 +269,7 @@ For code chunks, `voyage-code-3` does **not** share an embedding space with the 
 2. Support `SUMMARY_EMBEDDING_PROVIDER` env variable
 3. When Voyage keys are present and `voyage-4` is available: auto-select `voyage-4` for summaries
 
-### 5.3 Phase 3: Dual-Model Embedding in HCGS Generator
+**Step 2.2: Dual-Model Embedding in HCGS Generator**
 
 **Files changed**: `core/hcgs-generator.js`, `core/embedding-service.js`
 
@@ -264,7 +278,7 @@ For code chunks, `voyage-code-3` does **not** share an embedding space with the 
 3. When both providers are the same: no change in behavior
 4. When different: two separate embedding calls during indexing
 
-### 5.4 Phase 4: Search Pipeline Update
+**Step 2.3: Search Pipeline Update**
 
 **Files changed**: `core/sweet-search.js`
 
@@ -273,13 +287,13 @@ For code chunks, `voyage-code-3` does **not** share an embedding space with the 
 3. Merge results before reranking (existing RRF fusion handles this)
 4. When single model: no change in behavior
 
-### 5.5 Phase 5: Asymmetric Retrieval Support (Voyage-4 only)
+**Step 2.4: Asymmetric Retrieval Support (Voyage-4 only)**
 
 **Files changed**: `core/config.js`, `core/embedding-service.js`
 
 1. Add `VOYAGE_INDEX_MODEL` / `VOYAGE_QUERY_MODEL` config
 2. When set: use `voyage-4-large` for indexing, `voyage-4-lite` for queries
-4. Track index model in metadata to detect mismatches
+3. Track index model in metadata to detect mismatches
 
 ---
 
