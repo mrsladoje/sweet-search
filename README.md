@@ -57,6 +57,24 @@ const results = await search.search('class UserService', {
 });
 ```
 
+## CLI (Fast Native Client)
+
+The `ss` command is a compiled C binary (~19KB) that queries the warm search server
+via Unix socket for sub-millisecond search invocations:
+
+```bash
+# Start the warm server (auto-starts on first search, or manually):
+npm run search -- --server
+
+# Search from the command line:
+ss "authentication middleware" -k 10
+ss "class UserService" -m lexical -k 5
+ss "how does caching work" -s        # summary mode
+```
+
+The `ss` binary requires a running warm server. It connects via `/tmp/sweet-search.sock`
+(with fallback to TCP port 9876). Linux and macOS only.
+
 ## MCP Server Setup
 
 Sweet Search includes a Model Context Protocol (MCP) server for integration with Claude Code, Codex, and other MCP-compatible tools.
@@ -115,10 +133,8 @@ Project-specific configuration can be set in `.sweet-search.config.json`:
 
 ```json
 {
-  "embeddingProvider": "voyage",
-  "indexingBatchSize": 100,
-  "maxFileSize": 1048576,
-  "excludePatterns": ["node_modules/**", "dist/**"]
+  "include": ["**/*.{js,ts,py,go,rs,java}"],
+  "exclude": ["vendor/**", "generated/**"]
 }
 ```
 
