@@ -513,18 +513,7 @@ Top 5 Cache Misses (candidates for next warmup):
 
 ---
 
-## 8. Backward Compatibility
-
-- `prewarm-vocab.js` continues to work (falls back to `GENERIC_TERMS` if no codebase mining available)
-- `vocabulary-warmup.js` continues to work (entity extraction from code graph)
-- `vocabulary-utils.js` binary format is reused (new terms get appended)
-- The new system produces the same output format (vocabulary.bin + vocabulary.meta.json)
-- Existing query log mining is preserved as an additional input to the term ranker
-- New system adds lexical + hybrid warmup without breaking existing semantic warmup
-
----
-
-## 9. Success Metrics
+## 8. Success Metrics
 
 | Metric | Current | Target (local provider) | Target (remote provider) | How |
 |--------|---------|-------------------------|--------------------------|-----|
@@ -541,7 +530,7 @@ Top 5 Cache Misses (candidates for next warmup):
 
 ---
 
-## 10. Non-Goals (Out of Scope)
+## 9. Non-Goals (Out of Scope)
 
 - Full AST parsing per-language (too slow, too fragile — regex + Tree-sitter is 90% as good at 10% complexity)
 - Training custom embedding models per-codebase (overkill for warmup)
@@ -551,7 +540,7 @@ Top 5 Cache Misses (candidates for next warmup):
 
 ---
 
-## 11. Implementation Order
+## 10. Implementation Order
 
 1. **Term extractor module** — `core/vocab-miner.js`
    - Structural miner (file paths, dirs, manifests)
@@ -593,7 +582,7 @@ Top 5 Cache Misses (candidates for next warmup):
 
 ---
 
-## 12. Open Questions
+## 11. Open Questions
 
 1. **Tree-sitter dependency**: Should we bundle Tree-sitter grammars, or make it optional with regex fallback? Tree-sitter adds ~10MB of grammars but provides better accuracy for 100+ languages.
 
