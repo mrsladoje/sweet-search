@@ -84,9 +84,11 @@ function _walkUpForBoundary(dir, projectRoot) {
  */
 function toKebabCase(str) {
   return str
-    .replace(/([a-z])([A-Z])/g, '$1-$2')  // camelCase -> camel-Case
-    .replace(/[\s_]+/g, '-')                // spaces/underscores -> hyphens
-    .replace(/[^a-zA-Z0-9-]/g, '')          // remove special chars
+    .normalize('NFD')                        // decompose diacritics (ä → a + combining ¨)
+    .replace(/[\u0300-\u036f]/g, '')         // strip combining marks
+    .replace(/([a-z])([A-Z])/g, '$1-$2')    // camelCase -> camel-Case
+    .replace(/[\s_]+/g, '-')                 // spaces/underscores -> hyphens
+    .replace(/[^a-zA-Z0-9-]/g, '')           // remove remaining special chars
     .toLowerCase();
 }
 

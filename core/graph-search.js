@@ -1247,7 +1247,7 @@ export class GraphSearch {
    */
   sanitizeFtsQuery(query) {
     // Remove FTS5 special characters
-    let sanitized = query.replace(/[":*^~()]/g, ' ');
+    let sanitized = query.replace(/[":*^~()\-]/g, ' ');
 
     // Convert to prefix match if single word
     const words = sanitized.trim().split(/\s+/).filter(w => w.length > 0);
