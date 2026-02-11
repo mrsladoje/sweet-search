@@ -2,6 +2,7 @@
 
 **Status**: Plan (not yet implemented)
 **Date**: 2026-02-11
+**Prerequisite**: VOCAB_PREWARM_PLAN must be implemented first. Step 4 of the new preheat flow calls `warmAll({ depth: 'light' })` from the vocab warmup system. Without it, FTS5, HNSW traversal, and hybrid pipeline warming have no term source.
 **Scope**: Restructure `session-preheat.sh` to stop loading models in a throwaway process. The search server already loads everything itself — the preheat script should start the server and verify readiness, not duplicate the work.
 
 ---
