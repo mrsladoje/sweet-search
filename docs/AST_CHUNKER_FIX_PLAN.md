@@ -455,21 +455,37 @@ Each extractor produces the same output format: `{ entities: [], relationships: 
 }
 ```
 
-### 5.4 Phase 4: Testing
+### 5.4 Phase 4: Testing & Validation (QE-Orchestrated)
 
-- Add test files for each new language (small representative snippets)
-- Verify entity extraction counts match expected values
-- Verify chunk boundaries are sensible (no split functions)
-- Verify graph connectivity (relationships resolve correctly)
-- Run existing test suite to ensure no regressions
+Use `qe-queen-coordinator` to orchestrate comprehensive release validation with a **90% code coverage target** across all new language patterns.
 
-### 5.5 Phase 5: Integration Verification
+**Test strategy**:
 
-After implementation, verify the full pipeline works for non-JS/Java codebases:
-1. Index a Python project → verify entities in code-graph.db
-2. Index a Rust project → verify HCGS summaries generate
-3. Index a Go project → verify FTS5 search finds Go entities
-4. Search works across all modes for all languages
+1. **Unit tests per language** — One test file per language containing real-world code snippets:
+   - Chunker tests: verify chunk boundaries (no split functions), correct metadata (symbol, type, language)
+   - Graph tests: verify entity extraction counts, relationship types, visibility detection
+   - Edge cases: multi-line signatures, nested classes, decorators/attributes, generics
+
+2. **QE orchestration** — Use Agentic QE v3 for automated test generation and validation:
+   ```js
+   Task({ prompt: "Generate comprehensive tests for language-patterns.js, ast-chunker.js, and graph-extractor.js covering all 22 languages with 90% coverage target", subagent_type: "qe-queen-coordinator" })
+   ```
+   The QE queen will coordinate:
+   - `qe-test-architect` — Generate test suites from the language patterns
+   - `qe-coverage-specialist` — Identify coverage gaps and generate targeted tests
+   - `qe-property-tester` — Property-based testing for regex pattern edge cases (randomized inputs)
+   - `qe-integration-tester` — End-to-end indexing pipeline verification
+
+3. **Integration verification** — Full pipeline tests for non-JS/Java codebases:
+   - Index a Python project → verify entities in code-graph.db
+   - Index a Rust project → verify HCGS summaries generate
+   - Index a Go project → verify FTS5 search finds Go entities
+   - Search works across all modes for all languages
+
+4. **Coverage gate**: The QE quality gate must report ≥90% line coverage on:
+   - `core/language-patterns.js` (new file)
+   - Modified sections of `ast-chunker.js`
+   - Modified sections of `core/graph-extractor.js`
 
 ---
 
@@ -511,6 +527,8 @@ After implementation, verify the full pipeline works for non-JS/Java codebases:
 
 ## 8. Implementation Priority
 
+All tiers are implemented in a single pass. The priority order below guides **implementation sequence within that pass** (start with the highest-impact languages, finish with minimal-pattern ones):
+
 1. **Python** — #2 most-used language, huge gap
 2. **Go** — Common in cloud/infra, simple syntax (easy to parse)
 3. **Rust** — Growing rapidly, `impl` blocks need special handling
@@ -520,6 +538,8 @@ After implementation, verify the full pipeline works for non-JS/Java codebases:
 7. **PHP/Ruby/Swift/Scala/Dart** — Lower priority but still used
 8. **Shell/SQL/GraphQL/Lua/Zig/Elixir** — Minimal patterns, low effort
 
+All 22 languages ship together. No incremental rollout — the regex patterns for Tier 2/3 languages are simple enough that splitting them into separate releases adds coordination overhead without reducing risk.
+
 ---
 
 ## 9. Open Questions
@@ -528,9 +548,9 @@ After implementation, verify the full pipeline works for non-JS/Java codebases:
 
 2. **TypeScript-specific patterns**: Currently TS is treated as JS. Should we add TS-specific patterns for interfaces, type aliases, enums, decorators? These are common search targets.
 
-3. **Test fixture strategy**: Should we use real open-source project snippets as test fixtures, or synthetic examples? Real code catches edge cases but may have licensing concerns.
+3. ~~**Test fixture strategy**~~ *(Resolved)*: Use synthetic examples for unit tests (clear expected outputs, no licensing issues). QE property-based testing will generate randomized edge cases. Integration tests use real indexing of the Sweet Search codebase itself (JS/TS) plus small synthetic projects for other languages.
 
-4. **Incremental rollout**: Should we ship Tier 1 first and iterate, or batch all tiers? Tier 1 alone covers ~80% of professional codebases.
+4. ~~**Incremental rollout**~~ *(Resolved)*: All 22 languages ship together in a single pass. Tier 2/3 patterns are simple enough that splitting adds coordination overhead without reducing risk.
 
 ---
 
