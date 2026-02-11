@@ -47,9 +47,9 @@ Behavior:
 
 The server is created with:
 
-- `tools: { listChanged: true }`
-- `resources: { subscribe: false, listChanged: true }`
-- `prompts: { listChanged: true }`
+- `tools: { listChanged: false }`
+- `resources: { subscribe: false, listChanged: false }`
+- `prompts: { listChanged: false }`
 
 Server info:
 
@@ -102,9 +102,8 @@ Execution:
 
 Progress and output:
 
-- For each stderr line, emits MCP notification:
-  - `method: "notifications/progress"`
-  - `params: { message: <line> }`
+- Indexer stderr is logged to MCP server stderr (`[sweet-search-mcp] index: ...`)
+- No `notifications/progress` messages are emitted by the current implementation
 - Returns `structuredContent`:
   - `success`
   - `filesIndexed?` (regex extracted from output)
@@ -117,7 +116,7 @@ Annotations:
 
 - `readOnlyHint: false`
 - `destructiveHint: false`
-- `idempotentHint: true`
+- `idempotentHint: false`
 - `openWorldHint: false`
 
 ### 3) `health`

@@ -1,16 +1,32 @@
+#!/usr/bin/env node
+
 import Database from 'better-sqlite3';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dbPath = path.join(__dirname, '../../.sweet-search/code-graph.db');
+const PROJECT_ROOT = path.resolve(__dirname, '..');
+
+// Optional CLI override:
+//   node scripts/check-db.js /path/to/code-graph.db
+//   node scripts/check-db.js .sweet-search/code-graph.db
+const inputPath = process.argv[2];
+const dbPath = inputPath
+  ? path.resolve(PROJECT_ROOT, inputPath)
+  : path.join(PROJECT_ROOT, '.sweet-search', 'code-graph.db');
+
+if (!existsSync(dbPath)) {
+  console.error(`Database not found: ${dbPath}`);
+  process.exit(1);
+}
 
 console.log(`Opening database: ${dbPath}`);
 const db = new Database(dbPath, { readonly: true });
 
-console.log('=== Tables in codebase.db ===');
-const tables = db.prepare(`SELECT name FROM sqlite_master WHERE type='table'`).all();
+console.log('=== Tables in code-graph.db ===');
+const tables = db.prepare('SELECT name FROM sqlite_master WHERE type=\'table\'').all();
 tables.forEach(t => console.log(`  - ${t.name}`));
 
 console.log('\n=== Relationships stats ===');
@@ -44,7 +60,6 @@ try {
   console.log('\n=== Sample calls relationship ===');
   const call = db.prepare('SELECT * FROM relationships WHERE type="calls" LIMIT 1').get();
   console.log(call);
-
 } catch (err) {
   console.error('Error:', err.message);
 }

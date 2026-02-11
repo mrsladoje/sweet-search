@@ -9,13 +9,19 @@
 
 import { normalizeNFC, SCRIPT_RANGES } from '../training/features/unicode-utils.js';
 
-// Defensive import: TRANSLATION_CONFIG may not exist yet (Phase 1 adds it to config.js)
+// Defensive import: keep translation detection functional even if config import fails.
 let TRANSLATION_CONFIG = null;
 try {
-  const configModule = await import('../config.js');
+  const configModule = await import('../core/config.js');
   TRANSLATION_CONFIG = configModule.TRANSLATION_CONFIG || null;
 } catch {
-  // Config not available or doesn't export TRANSLATION_CONFIG yet
+  // Legacy fallback for older layouts.
+  try {
+    const legacyConfigModule = await import('../config.js');
+    TRANSLATION_CONFIG = legacyConfigModule.TRANSLATION_CONFIG || null;
+  } catch {
+    // Config not available or doesn't export TRANSLATION_CONFIG.
+  }
 }
 
 // =============================================================================
