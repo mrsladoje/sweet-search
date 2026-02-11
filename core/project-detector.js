@@ -44,6 +44,10 @@ export function detectProjectBoundary(filePath, projectRoot) {
   }
 
   const result = _walkUpForBoundary(dir, projectRoot);
+  if (_boundaryCache.size >= 10000) {
+    const firstKey = _boundaryCache.keys().next().value;
+    _boundaryCache.delete(firstKey);
+  }
   _boundaryCache.set(cacheKey, result);
   return result;
 }
