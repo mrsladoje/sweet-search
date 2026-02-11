@@ -13,6 +13,15 @@
 - Do **not** keep `AGENTDB_PATH` runtime compatibility aliases.
 - Runtime/storage contract is `.sweet-search` only.
 
+**Architectural decision: ship compiled C binary for `ss` CLI (locked):**
+- The `ss` binary is a compiled C client (`ss-fast/ss-fast.c`) that talks to the warm
+  server via Unix socket. This provides extreme speed (sub-ms CLI invocations).
+- The compiled Linux x86-64 ELF binary (~19KB) is committed to git and shipped in the
+  npm package. This is intentional — not everyone has gcc, and the binary is tiny.
+- Target audience is Linux/Mac developers. No Windows support for the `ss` CLI.
+- The MCP server (`sweet-search-mcp`) remains Node.js for cross-platform use.
+- Do **not** replace `ss` with a Node.js wrapper — that defeats the speed purpose.
+
 ---
 
 ## 1) Review Quality Comparison
@@ -78,11 +87,11 @@ Each fix item includes source trace IDs:
 - Keep only runtime-required router/model artifacts.
 - **Sources:** CR-05, CR-10.
 
-### F-08 Broken `bin.ss` distribution contract
-- `bin.ss` currently points to non-existent `./ss` after install.
-- Either:
-  - ship a real wrapper script, or
-  - remove `bin.ss` entry until artifact strategy is stable.
+### F-08 Broken `bin.ss` distribution contract — RESOLVED
+- `bin.ss` now ships the compiled C binary from `ss-fast/ss-fast.c`.
+- The binary is a native Unix socket client to the warm search server (~19KB, sub-ms).
+- Compiled on Linux x86-64, committed to git, shipped in npm package.
+- Architectural decision: ship compiled binary, not a Node.js wrapper (speed is the point).
 - **Sources:** CR-06, ME-11.
 
 ### F-09 MCP search handler hardening
