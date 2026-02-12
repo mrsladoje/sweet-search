@@ -992,9 +992,20 @@ export const FILE_PATTERNS = {
     '**/*.{proto}',                        // Protobuf
     '**/*.{graphql,gql}',                  // GraphQL
     // Config & docs
-    '**/*.{json,yaml,yml,toml,xml}',       // Config
+    '**/*.{json,jsonc,json5}',              // JSON
+    '**/*.{yaml,yml}',                      // YAML
+    '**/*.{toml}',                          // TOML
+    '**/*.{xml,xsl,xsd,wsdl,pom,csproj}',  // XML
     '**/*.{md,mdx,rst,txt}',               // Documentation
-    '**/*.{html,css,scss,less,svg}',        // Web
+    '**/*.{html,htm,xhtml,vue,svelte}',    // Web markup/SFC
+    '**/*.{css,scss,sass,less}',           // Stylesheets
+    '**/*.{svg}',                          // SVG
+    // Build & deploy
+    '**/Dockerfile',                       // Dockerfile
+    '**/Dockerfile.*',                     // Dockerfile variants
+    '**/*.dockerfile',                     // Dockerfile alt extension
+    '**/Makefile',                         // Makefile
+    '**/*.mk',                            // Makefile includes
     // Project markers
     '**/CLAUDE.md',
     '**/README.md',

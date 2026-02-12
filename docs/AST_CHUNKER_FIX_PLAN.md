@@ -2,7 +2,7 @@
 
 **Status**: Plan (not yet implemented)
 **Date**: 2026-02-11
-**Scope**: Expand `ast-chunker.js` and `core/graph-extractor.js` to support 20+ programming languages instead of the current 3 (Java, JS/TS, Proto).
+**Scope**: Expand `ast-chunker.js` and `core/graph-extractor.js` to support 35 programming languages, markup, config, and build formats instead of the current 3 (Java, JS/TS, Proto).
 
 ---
 
@@ -103,20 +103,33 @@ Based on the [Stack Overflow Developer Survey 2024](https://survey.stackoverflow
 | **Swift** | `.swift` | #12 | None |
 | **Scala** | `.scala` | #13 | None |
 | **Dart** | `.dart` | (Flutter) | None |
+| **Groovy** | `.groovy` | (JVM/Gradle) | None |
+| **Objective-C** | `.m`, `.mm` | (Apple legacy) | None |
+| **HTML/Templating** | `.html`, `.htm`, `.xhtml`, `.vue`, `.svelte` | #1 web markup | None |
+| **CSS/Preprocessors** | `.css`, `.scss`, `.sass`, `.less` | #1 web styling | None |
 
 ### Tier 3: Useful (niche but indexed by FILE_PATTERNS)
 
 | Language | Extensions | Current Support |
 |----------|-----------|-----------------|
 | **Lua** | `.lua` | None |
-| **Shell/Bash** | `.sh`, `.bash`, `.zsh` | None |
+| **Shell/Bash** | `.sh`, `.bash`, `.zsh`, `.fish` | None |
+| **PowerShell** | `.ps1` | None |
 | **SQL** | `.sql` | None |
 | **GraphQL** | `.graphql`, `.gql` | None |
 | **Protobuf** | `.proto` | Chunker + Graph |
 | **Zig** | `.zig` | None |
 | **Elixir** | `.ex`, `.exs` | None |
+| **Nim** | `.nim` | None |
+| **F#** | `.fs`, `.fsx` | None |
+| **JSON** | `.json`, `.jsonc`, `.json5` | None |
+| **YAML** | `.yaml`, `.yml` | None |
+| **TOML** | `.toml` | None |
+| **XML** | `.xml`, `.xsl`, `.xsd`, `.wsdl`, `.pom`, `.csproj` | None |
+| **Dockerfile** | `Dockerfile`, `Dockerfile.*`, `*.dockerfile` | None |
+| **Makefile** | `Makefile`, `*.mk` | None |
 
-**Total**: ~22 languages covering 95%+ of professional codebases.
+**Total**: ~35 languages/formats covering 95%+ of professional codebases.
 
 ---
 
@@ -378,13 +391,239 @@ input:     /input\s+(\w+)/
 query:     /(?:query|mutation|subscription)\s+(\w+)/
 ```
 
-### 4.15 Lua, Zig, Elixir
+### 4.15 Lua, Zig, Elixir, Nim, F#
 
 Minimal patterns for function/module detection:
 
 - **Lua**: `function (\w+)`, `local function (\w+)`, `(\w+) = function`
 - **Zig**: `(?:pub\s+)?fn\s+(\w+)`, `const\s+(\w+)\s*=\s*struct`
 - **Elixir**: `defmodule\s+(\w+)`, `def\s+(\w+)`, `defp\s+(\w+)`
+- **Nim**: `proc\s+(\w+)`, `func\s+(\w+)`, `type\s+(\w+)`, `method\s+(\w+)`
+- **F#**: `let\s+(\w+)`, `type\s+(\w+)`, `module\s+(\w+)`, `member\s+(?:this|_)\.(\w+)`
+
+### 4.16 HTML/Templating
+
+**Chunker patterns** (tag-based, split on major structural elements):
+```
+section:   /<(section|article|nav|header|footer|main|aside|template|form)\b[^>]*>/i
+component: /<([A-Z]\w+)\b/                       → framework components (React JSX in .html, Vue custom elements)
+id:        /<\w+[^>]+\bid=["']([^"']+)["']/       → named elements
+script:    /<script\b[^>]*>/i                      → script blocks
+style:     /<style\b[^>]*>/i                       → style blocks
+```
+
+**Graph patterns**:
+```
+link:      /<link[^>]+href=["']([^"']+)["']/i      → imports (stylesheets, icons)
+script:    /<script[^>]+src=["']([^"']+)["']/i      → imports (external scripts)
+img:       /<img[^>]+src=["']([^"']+)["']/i         → uses (assets)
+a_href:    /<a[^>]+href=["']([^"']+)["']/i          → uses (navigation)
+form:      /<form[^>]+action=["']([^"']+)["']/i     → calls (API endpoints)
+```
+
+**Vue SFC** (`.vue`): Split into `<template>`, `<script>`, `<style>` blocks. Parse `<script>` with JS patterns, `<style>` with CSS patterns. Extract component name from `export default { name: '...' }` or filename.
+
+**Svelte** (`.svelte`): Similar to Vue — `<script>`, `<style>`, and top-level template. Extract exports from `<script>` block and `export let` props.
+
+**Special handling**: HTML is not indent-based or brace-based. Chunk boundaries are defined by semantic block elements. The chunker should avoid splitting mid-tag.
+
+### 4.17 CSS/Preprocessors
+
+**Chunker patterns** (split on top-level rules and at-rules):
+```
+rule:      /^[.#\w\[\*:][^{]*\{/                   → selector block
+media:     /^@media\s+[^{]+\{/                     → media query block
+keyframes: /^@keyframes\s+(\w[\w-]*)\s*\{/          → animation definition
+fontface:  /^@font-face\s*\{/                       → font definition
+layer:     /^@layer\s+(\w[\w-]*)/                   → cascade layer
+container: /^@container\s+(\w[\w-]*)/               → container query
+```
+
+**SCSS-specific patterns**:
+```
+mixin:     /^@mixin\s+([\w-]+)/                     → entity (reusable block)
+function:  /^@function\s+([\w-]+)/                  → entity
+include:   /^@include\s+([\w-]+)/                   → calls relationship
+extend:    /^@extend\s+([.%][\w-]+)/                → extends relationship
+variable:  /^\$([\w-]+)\s*:/                         → field entity
+use:       /^@use\s+['"]([^'"]+)['"]/                → imports relationship
+forward:   /^@forward\s+['"]([^'"]+)['"]/            → imports relationship
+```
+
+**LESS-specific patterns**:
+```
+mixin:     /^\.(\w[\w-]*)\s*\(/                     → mixin definition (parametric)
+variable:  /^@([\w-]+)\s*:/                          → field entity
+import:    /^@import\s+['"]([^'"]+)['"]/             → imports relationship
+```
+
+**Sass (indent-based)**: Same patterns as SCSS but uses indentation for nesting instead of braces. Requires indent-based scope tracking (like Python).
+
+**Graph patterns**:
+```
+import:    /^@(?:import|use|forward)\s+['"]([^'"]+)['"]/  → imports
+selector:  /^([.#][\w-]+)/                                → entity (named selector)
+variable:  /^[\$@]([\w-]+)\s*:/                            → field entity
+mixin:     /^@mixin\s+([\w-]+)/                            → entity
+```
+
+**Special handling**: CSS has no functions/classes in the traditional sense. Entity types map as: selectors → `type`, mixins → `function`, variables → `field`, `@keyframes` → `type`.
+
+### 4.18 Groovy
+
+**Chunker patterns**:
+```
+class:     /(?:abstract\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?/
+interface: /interface\s+(\w+)/
+method:    /(?:def|void|[\w<>\[\]]+)\s+(\w+)\s*\(/
+closure:   /(\w+)\s*=\s*\{/                          → named closures
+```
+
+**Graph patterns**: Very similar to Java. Groovy-specific: `def` keyword, closures as variables, `@Grab` for dependencies, `trait` keyword.
+
+```
+import:    /^import\s+([\w.]+)/                       → imports
+trait:     /trait\s+(\w+)/                             → entity (like interface)
+grab:      /@Grab\s*\(\s*'([^']+)'\s*\)/              → dependency
+```
+
+### 4.19 Objective-C
+
+**Chunker patterns**:
+```
+interface: /^@interface\s+(\w+)\s*(?::\s*(\w+))?/     → class declaration
+impl:      /^@implementation\s+(\w+)/                  → class implementation
+protocol:  /^@protocol\s+(\w+)/                        → like interface
+method:    /^[+-]\s*\([^)]*\)\s*(\w+)/                 → instance/class method
+property:  /^@property\s*\([^)]*\)\s*\w+\s+\*?(\w+)/  → field
+```
+
+**Graph patterns**:
+```
+import:    /^#import\s+[<"]([^>"]+)[>"]/               → imports
+inherit:   /^@interface\s+\w+\s*:\s*(\w+)/             → extends
+protocol:  /^@interface\s+\w+\s*:\s*\w+\s*<([^>]+)>/   → implements (protocol conformance)
+category:  /^@interface\s+(\w+)\s*\((\w+)\)/           → category extension
+```
+
+**Special handling**: `.m` files are implementation, `.h` files are declarations. Both produce entities. Method signatures use `- (Type)name:(Type)param` syntax which is unique.
+
+### 4.20 PowerShell
+
+Minimal patterns:
+```
+function:  /^function\s+([\w-]+)/                      → function entity
+class:     /^class\s+(\w+)/                            → class (PS 5+)
+param:     /^\[CmdletBinding\(\)\]/                    → marks advanced function
+import:    /^(?:Import-Module|using\s+module)\s+(\S+)/ → imports
+```
+
+### 4.21 JSON
+
+**Chunker patterns** (split on top-level keys):
+```
+key:       /^  "(\w[\w-]*)"\s*:/                       → top-level key boundary
+```
+
+**Graph patterns** (context-dependent — some JSON files are highly structured):
+```
+dep:       /"(dependencies|devDependencies|peerDependencies)"/  → package.json deps section
+ref:       /"\$ref"\s*:\s*"([^"]+)"/                            → JSON Schema / OpenAPI references
+script:    /"scripts"\s*:\s*\{/                                  → package.json scripts section
+```
+
+**Special handling**: JSON has no functions/classes. Entity types: top-level keys → `field`, `$ref` targets → `type`, dependency names → `module`. For `package.json` specifically, extract dependency names as `imports` relationships. Chunk on top-level keys since JSON files are often deeply nested.
+
+### 4.22 YAML
+
+**Chunker patterns** (split on top-level keys, indent-based):
+```
+key:       /^(\w[\w-]*)\s*:/                           → top-level key boundary
+doc:       /^---/                                      → document separator
+```
+
+**Graph patterns**:
+```
+anchor:    /&(\w+)/                                    → named anchor (entity)
+alias:     /\*(\w+)/                                   → alias reference (uses relationship)
+include:   /!\s*include\s+(\S+)/                       → file inclusion
+ref:       /\$ref:\s*['"]?([^'"#\s]+)/                 → OpenAPI / JSON Schema reference
+```
+
+**Special handling**: YAML is indent-based like Python. For CI/CD files (`*.github/workflows/*.yml`, `.gitlab-ci.yml`), extract job/stage names as entities. For Docker Compose, extract service names. For Kubernetes manifests, extract `kind` + `metadata.name`.
+
+### 4.23 TOML
+
+**Chunker patterns** (split on section headers):
+```
+section:   /^\[([^\]]+)\]/                             → section header
+array:     /^\[\[([^\]]+)\]\]/                         → array of tables
+```
+
+**Graph patterns**:
+```
+section:   /^\[([^\]]+)\]/                             → entity (module-like)
+dep:       /^\[(?:dependencies|dev-dependencies)\]/    → Cargo.toml / pyproject.toml deps
+key_val:   /^(\w[\w-]*)\s*=/                           → field entity
+```
+
+**Special handling**: For `Cargo.toml`, extract dependency names under `[dependencies]` as `imports`. For `pyproject.toml`, extract project metadata and dependencies. Section names become `module`-type entities.
+
+### 4.24 XML
+
+**Chunker patterns** (split on major elements):
+```
+element:   /<(\w+:?\w+)\b[^>]*(?:>|$)/                → element boundary
+root:      /^<\?xml\b/                                 → XML declaration
+```
+
+**Graph patterns**:
+```
+namespace: /xmlns(?::(\w+))?=["']([^"']+)["']/        → namespace declaration (entity)
+import:    /<(?:xs:)?(?:import|include)\s[^>]*schemaLocation=["']([^"']+)["']/  → imports
+ref:       /ref=["']([^"']+)["']/                      → uses relationship
+```
+
+**Subformat-specific patterns**:
+- **Maven POM** (`.pom`, `pom.xml`): Extract `<groupId>`, `<artifactId>`, `<dependency>` blocks as `imports`
+- **C# project** (`.csproj`): Extract `<PackageReference>` as `imports`, `<ProjectReference>` as `uses`
+- **XSD/WSDL**: Extract `<xs:element>`, `<xs:complexType>` as type entities
+- **XSLT** (`.xsl`): Extract `<xsl:template>` names as function entities
+
+**Special handling**: XML is tag-based like HTML but often more deeply nested. Chunk on direct children of root element. For known subformats (POM, csproj, etc.), apply specialized extraction.
+
+### 4.25 Dockerfile
+
+**Chunker patterns** (split on stages and major instructions):
+```
+from:      /^FROM\s+(\S+)(?:\s+AS\s+(\w+))?/i         → stage boundary (primary chunk split)
+run:       /^RUN\s+/i                                  → build step
+copy:      /^COPY\s+/i                                 → file copy
+```
+
+**Graph patterns**:
+```
+from:      /^FROM\s+(\S+?)(?::(\S+))?\s*/i             → base image (imports relationship)
+copy_from: /^COPY\s+--from=(\w+)/i                     → multi-stage reference (uses relationship)
+expose:    /^EXPOSE\s+(\d+)/i                           → port entity (field)
+entrypoint: /^(?:ENTRYPOINT|CMD)\s+/i                  → entry point entity
+arg:       /^ARG\s+(\w+)/i                             → build argument (field)
+env:       /^ENV\s+(\w+)/i                             → environment variable (field)
+label:     /^LABEL\s+(\S+)/i                           → metadata (field)
+```
+
+**Special handling**: Dockerfile instructions are line-based (with `\` continuation). Multi-stage builds (`FROM ... AS stage`) create named entities. `COPY --from=stage` creates cross-stage `uses` relationships. Each `FROM` starts a new chunk.
+
+### 4.26 Makefile
+
+Minimal patterns:
+```
+target:    /^([\w.-]+)\s*:/                            → make target (function-like entity)
+variable:  /^(\w+)\s*[:?+]?=/                          → variable definition (field entity)
+include:   /^-?include\s+(\S+)/                        → file inclusion (imports)
+```
+
+**Special handling**: Targets are the primary entities (analogous to functions). Prerequisites after `:` create `uses` relationships. `.PHONY` targets are still entities but flagged as non-file.
 
 ---
 
@@ -408,7 +647,7 @@ export function getSupportedExtensions() {
 
 Both `ast-chunker.js` and `graph-extractor.js` import from this single source.
 
-**Estimate**: ~400-500 lines for all 22 languages.
+**Estimate**: ~800-900 lines for all 35 languages/formats.
 
 ### 5.2 Phase 2: Chunker Expansion (`ast-chunker.js`)
 
@@ -426,8 +665,8 @@ Both `ast-chunker.js` and `graph-extractor.js` import from this single source.
 
 1. Replace hardcoded if/else chain with registry lookup
 2. Add `extract*()` methods for Tier 1 languages (Python, Go, Rust, C/C++, C#)
-3. Add simplified extractors for Tier 2 (PHP, Ruby, Kotlin, Swift, Scala, Dart)
-4. Add minimal extractors for Tier 3 (Lua, Shell, SQL, GraphQL, Zig, Elixir)
+3. Add simplified extractors for Tier 2 (PHP, Ruby, Kotlin, Swift, Scala, Dart, Groovy, Objective-C, HTML, CSS)
+4. Add minimal extractors for Tier 3 (Lua, Shell, PowerShell, SQL, GraphQL, Zig, Elixir, Nim, F#, JSON, YAML, TOML, XML, Dockerfile, Makefile)
 
 Each extractor produces the same output format: `{ entities: [], relationships: [] }`.
 
@@ -468,7 +707,7 @@ Use `qe-queen-coordinator` to orchestrate comprehensive release validation with 
 
 2. **QE orchestration** — Use Agentic QE v3 for automated test generation and validation:
    ```js
-   Task({ prompt: "Generate comprehensive tests for language-patterns.js, ast-chunker.js, and graph-extractor.js covering all 22 languages with 90% coverage target", subagent_type: "qe-queen-coordinator" })
+   Task({ prompt: "Generate comprehensive tests for language-patterns.js, ast-chunker.js, and graph-extractor.js covering all 35 languages/formats with 90% coverage target", subagent_type: "qe-queen-coordinator" })
    ```
    The QE queen will coordinate:
    - `qe-test-architect` — Generate test suites from the language patterns
@@ -496,8 +735,10 @@ Use `qe-queen-coordinator` to orchestrate comprehensive release validation with 
 - `core/graph-extractor.js` — expanded `extractFromFile()` with new language extractors
 - New: `core/language-patterns.js` — shared pattern registry
 
+### What Also Changes (minor)
+- `core/config.js` — `FILE_PATTERNS` updated to add `.htm`, `.xhtml`, `.vue`, `.svelte`, `.sass`, `.jsonc`, `.json5`, `.xsl`, `.xsd`, `.wsdl`, `.pom`, `.csproj`, `Dockerfile`, `Dockerfile.*`, `*.dockerfile`, `Makefile`, `*.mk` (previously missing formats)
+
 ### What Does NOT Change
-- `core/config.js` — `FILE_PATTERNS` already includes all these languages
 - `core/index-codebase-v21.js` — pipeline logic unchanged, just receives better chunks/entities
 - `core/embedding-service.js` — embeds whatever text it receives
 - `core/hnsw-index.js` — builds index from whatever vectors it receives
@@ -517,11 +758,11 @@ Use `qe-queen-coordinator` to orchestrate comprehensive release validation with 
 | Language registry | 1 new file | Medium (pattern research) | Low |
 | Chunker expansion | 1 file edit | Low (pattern + extMap) | Low |
 | Graph extractor (Tier 1) | 1 file edit | Medium-High (5 languages) | Medium |
-| Graph extractor (Tier 2) | Same file | Medium (6 languages, simpler) | Low |
-| Graph extractor (Tier 3) | Same file | Low (5 languages, minimal) | Low |
+| Graph extractor (Tier 2) | Same file | Medium (10 languages, simpler) | Low |
+| Graph extractor (Tier 3) | Same file | Low (15 languages/formats, minimal) | Low |
 | Testing | New test files | Medium | Low |
 
-**Total estimate**: ~1000-1500 lines of new pattern code, plus ~500 lines of tests.
+**Total estimate**: ~1800-2300 lines of new pattern code, plus ~700 lines of tests.
 
 ---
 
@@ -536,9 +777,13 @@ All tiers are implemented in a single pass. The priority order below guides **im
 5. **C#** — Enterprise-heavy, very similar to Java (low effort)
 6. **Kotlin** — Android development, very similar to Java
 7. **PHP/Ruby/Swift/Scala/Dart** — Lower priority but still used
-8. **Shell/SQL/GraphQL/Lua/Zig/Elixir** — Minimal patterns, low effort
+8. **HTML/CSS** — Web markup/styling, entity model differs from code but high coverage impact
+9. **Groovy/Objective-C** — Already indexed, patterns similar to Java/C respectively
+10. **JSON/YAML/TOML/XML** — Config/data formats, key-based chunking, dep extraction
+11. **Dockerfile/Makefile** — Build/deploy formats, instruction/target-based chunking
+12. **Shell/PowerShell/SQL/GraphQL/Lua/Zig/Elixir/Nim/F#** — Minimal patterns, low effort
 
-All 22 languages ship together. No incremental rollout — the regex patterns for Tier 2/3 languages are simple enough that splitting them into separate releases adds coordination overhead without reducing risk.
+All 35 languages/formats ship together. No incremental rollout — the regex patterns for Tier 2/3 languages are simple enough that splitting them into separate releases adds coordination overhead without reducing risk.
 
 ---
 
@@ -550,7 +795,7 @@ All 22 languages ship together. No incremental rollout — the regex patterns fo
 
 3. ~~**Test fixture strategy**~~ *(Resolved)*: Use synthetic examples for unit tests (clear expected outputs, no licensing issues). QE property-based testing will generate randomized edge cases. Integration tests use real indexing of the Sweet Search codebase itself (JS/TS) plus small synthetic projects for other languages.
 
-4. ~~**Incremental rollout**~~ *(Resolved)*: All 22 languages ship together in a single pass. Tier 2/3 patterns are simple enough that splitting adds coordination overhead without reducing risk.
+4. ~~**Incremental rollout**~~ *(Resolved)*: All 35 languages/formats ship together in a single pass. Tier 2/3 patterns are simple enough that splitting adds coordination overhead without reducing risk.
 
 ---
 
@@ -558,8 +803,8 @@ All 22 languages ship together. No incremental rollout — the regex patterns fo
 
 | Metric | Current | Target |
 |--------|---------|--------|
-| Languages with structural chunking | 3 (Java, JS/TS, Proto) | **22** |
-| Languages with graph extraction | 3 | **22** |
+| Languages with structural chunking | 3 (Java, JS/TS, Proto) | **35** |
+| Languages with graph extraction | 3 | **35** |
 | Entity extraction for Python files | 0 | **>85% of classes/functions** |
 | Entity extraction for Go files | 0 | **>85% of types/functions** |
 | Entity extraction for Rust files | 0 | **>85% of structs/traits/functions** |

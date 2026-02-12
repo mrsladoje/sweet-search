@@ -14,6 +14,7 @@ import { createHash } from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
 import { GRAPH_CONFIG, DB_PATHS } from './config.js';
+import { getLanguageByPath } from './language-patterns.js';
 
 // Schema version - increment when schema changes require full reindex
 // Users should run `/index-codebase --full` after upgrading
@@ -101,20 +102,33 @@ export class GraphExtractor {
   }
 
   /**
-   * Extract entities and relationships from a file
+   * Extract entities and relationships from a file.
+   * Dispatches to specialized extractors for Java/JS/Proto,
+   * generic registry-based extractor for all other languages.
    */
   async extractFromFile(filePath, content) {
     this.currentFile = filePath;
-    const ext = path.extname(filePath).toLowerCase();
-
     const lines = content.split('\n');
+    const langInfo = getLanguageByPath(filePath);
 
-    if (ext === '.java') {
+    if (!langInfo) {
+      return { entities: [], relationships: [] };
+    }
+
+    // Specialized extractors for languages with complex logic
+    if (langInfo.id === 'java') {
       return this.extractJava(content, lines, filePath);
-    } else if (['.js', '.jsx', '.ts', '.tsx'].includes(ext)) {
+    }
+    if (langInfo.id === 'javascript') {
       return this.extractJavaScript(content, lines, filePath);
-    } else if (ext === '.proto') {
+    }
+    if (langInfo.id === 'proto') {
       return this.extractProto(content, lines, filePath);
+    }
+
+    // Generic registry-based extraction for all other languages
+    if (langInfo.graph) {
+      return this.extractGeneric(content, lines, filePath, langInfo);
     }
 
     return { entities: [], relationships: [] };
@@ -570,6 +584,91 @@ export class GraphExtractor {
           type: 'uses',
           weight: GRAPH_CONFIG.relationshipWeights.uses,
         });
+      }
+    }
+
+    return { entities, relationships };
+  }
+
+  /**
+   * Generic extraction using registry patterns.
+   * Works for all languages that have graph patterns in language-patterns.js.
+   */
+  extractGeneric(content, lines, filePath, langInfo) {
+    const entities = [];
+    const relationships = [];
+    const { graph, id: language } = langInfo;
+    const skipCallObjects = new Set(graph.skipCallObjects || []);
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trimStart();
+      const lineNum = i + 1;
+
+      // Entity extraction
+      for (const [type, pattern] of Object.entries(graph.entities)) {
+        const match = trimmed.match(pattern);
+        if (match) {
+          const name = match[1];
+          if (!name) continue;
+          const sig = trimmed.slice(0, 120);
+          const sigHash = this.makeSignatureHash(sig);
+
+          entities.push({
+            id: this.makeId(filePath, type, name, { signature: sig, startLine: lineNum }),
+            file_path: filePath,
+            type,
+            name,
+            signature: sig,
+            signature_hash: sigHash,
+            doc_comment: this.extractDocComment(lines, i),
+            start_line: lineNum,
+            end_line: this.findEndLine(lines, i),
+          });
+          break; // one entity per line
+        }
+      }
+
+      // Relationship extraction
+      for (const [relType, pattern] of Object.entries(graph.relationships)) {
+        if (relType === 'methodCall') {
+          // Method calls need special handling: group1=object, group2=method
+          const callPattern = new RegExp(pattern.source, 'g');
+          for (const m of trimmed.matchAll(callPattern)) {
+            const obj = m[1];
+            const method = m[2];
+            if (skipCallObjects.has(obj)) continue;
+            relationships.push({
+              source_id: null,
+              target_id: null,
+              target_name: `${obj}.${method}`,
+              type: 'calls',
+              weight: GRAPH_CONFIG.relationshipWeights.calls,
+              context_line: lineNum,
+            });
+          }
+        } else {
+          const match = trimmed.match(pattern);
+          if (match && match[1]) {
+            const relMapping = {
+              import: 'imports', extends: 'extends', implements: 'implements',
+              decorator: 'uses', include: 'imports', require: 'imports',
+              use: 'imports', mixin: 'extends', embed: 'uses',
+              inherit: 'extends', prepend: 'imports', extend: 'uses',
+            };
+            const mappedType = relMapping[relType] || 'uses';
+            const weight = GRAPH_CONFIG.relationshipWeights[mappedType] || 1.0;
+
+            relationships.push({
+              source_id: this.makeId(filePath, 'file', path.basename(filePath)),
+              target_id: null,
+              target_name: match[1],
+              type: mappedType,
+              weight,
+              context_line: lineNum,
+            });
+          }
+        }
       }
     }
 
