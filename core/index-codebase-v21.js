@@ -28,10 +28,11 @@
 
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
+import { spawn } from 'child_process';
 import path from 'path';
 import fg from 'fast-glob';
 
-import { DB_PATHS, FILE_PATTERNS, EMBEDDING_CONFIG, HNSW_CONFIG, PROJECT_ROOT, setQuietMode as setGlobalQuietMode, isQuietMode as isGlobalQuietMode, loadProjectConfig } from './config.js';
+import { DB_PATHS, FILE_PATTERNS, EMBEDDING_CONFIG, HNSW_CONFIG, PROJECT_ROOT, setQuietMode as setGlobalQuietMode, isQuietMode as isGlobalQuietMode, loadProjectConfig, AGENTIC_GITIGNORE_ALLOWLIST } from './config.js';
 import { GraphExtractor, createGraphSchema, insertGraph } from './graph-extractor.js';
 import { resolveRelationshipTargets } from './relationship-resolver.js';
 import { HNSWIndex } from './hnsw-index.js';
@@ -312,18 +313,158 @@ async function readFilesFromStdin() {
 // FILE DISCOVERY
 // =============================================================================
 
+function toPosixPath(filePath) {
+  return filePath.replace(/\\/g, '/');
+}
+
+function isGitignoreAllowlistedAgenticPath(relativePath) {
+  const normalized = toPosixPath(relativePath).replace(/^\.\//, '');
+  const basename = path.posix.basename(normalized);
+
+  if (AGENTIC_GITIGNORE_ALLOWLIST.files.includes(basename)) {
+    return true;
+  }
+
+  if (AGENTIC_GITIGNORE_ALLOWLIST.filePrefixes.some(prefix => basename.startsWith(prefix))) {
+    return true;
+  }
+
+  return AGENTIC_GITIGNORE_ALLOWLIST.directories.some(dirPrefix =>
+    normalized.startsWith(dirPrefix) || normalized.includes(`/${dirPrefix}`)
+  );
+}
+
+async function getGitIgnoredPathSet(paths) {
+  if (paths.length === 0) {
+    return new Set();
+  }
+
+  return await new Promise((resolve) => {
+    const ignoredChunks = [];
+    const errorChunks = [];
+    let settled = false;
+
+    const git = spawn('git', ['check-ignore', '-z', '--stdin'], { cwd: PROJECT_ROOT });
+
+    git.stdout.on('data', chunk => ignoredChunks.push(chunk));
+    git.stderr.on('data', chunk => errorChunks.push(chunk));
+
+    git.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      logError(`WARN: Unable to run git check-ignore (${err.message})`);
+      resolve(null);
+    });
+
+    git.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+
+      // git check-ignore exits with:
+      // 0 => at least one path is ignored
+      // 1 => no ignored paths
+      if (code !== 0 && code !== 1) {
+        const stderr = Buffer.concat(errorChunks).toString('utf8').trim();
+        logError(`WARN: git check-ignore failed${stderr ? `: ${stderr}` : ''}`);
+        resolve(null);
+        return;
+      }
+
+      const ignored = new Set(
+        Buffer.concat(ignoredChunks)
+          .toString('utf8')
+          .split('\0')
+          .filter(Boolean)
+          .map(toPosixPath)
+      );
+
+      resolve(ignored);
+    });
+
+    const stdinPayload = `${paths.map(toPosixPath).join('\0')}\0`;
+    git.stdin.end(stdinPayload);
+  });
+}
+
+async function applyGitignoreAlignment(files, respectGitignore) {
+  if (!respectGitignore || !existsSync(path.join(PROJECT_ROOT, '.gitignore')) || !existsSync(path.join(PROJECT_ROOT, '.git'))) {
+    return { files, gitignored: 0 };
+  }
+
+  const bypassGitignore = new Set();
+  const candidates = [];
+  for (const file of files) {
+    if (isGitignoreAllowlistedAgenticPath(file)) {
+      bypassGitignore.add(file);
+    } else {
+      candidates.push(file);
+    }
+  }
+
+  const ignoredSet = await getGitIgnoredPathSet(candidates);
+  if (!ignoredSet) {
+    return { files, gitignored: 0 };
+  }
+
+  const kept = [];
+  let gitignored = 0;
+  for (const file of files) {
+    if (bypassGitignore.has(file)) {
+      kept.push(file);
+      continue;
+    }
+
+    const normalized = toPosixPath(file);
+    if (ignoredSet.has(normalized)) {
+      gitignored++;
+      continue;
+    }
+    kept.push(file);
+  }
+
+  return { files: kept, gitignored };
+}
+
 async function discoverFiles() {
   log('\n━━━ Discovering Files ━━━', 'bright');
 
   const projectConfig = loadProjectConfig(PROJECT_ROOT);
-  const files = await glob(projectConfig.include, {
+  const respectGitignore = projectConfig.respectGitignore !== false;
+  const maxFileSize = projectConfig.maxFileSize || (1 * 1024 * 1024); // default 1 MB
+
+  const discovered = await glob(projectConfig.include, {
     ignore: projectConfig.exclude,
     cwd: PROJECT_ROOT,
     absolute: false,
     onlyFiles: true,
+    dot: true,
   });
 
+  const { files: allFiles, gitignored } = await applyGitignoreAlignment(discovered, respectGitignore);
+
+  // Filter out files exceeding maxFileSize
+  const files = [];
+  let oversized = 0;
+  for (const file of allFiles) {
+    try {
+      const stat = await fs.stat(path.join(PROJECT_ROOT, file));
+      if (stat.size > maxFileSize) {
+        oversized++;
+      } else {
+        files.push(file);
+      }
+    } catch {
+      // File disappeared between glob and stat — skip silently
+    }
+  }
+
   log(`✓ Found ${files.length} files to index`, 'green');
+  if (gitignored > 0) {
+    log(`  Skipped ${gitignored} files via .gitignore alignment`, 'yellow');
+  }
+  if (oversized > 0) {
+    log(`  Skipped ${oversized} files exceeding ${(maxFileSize / 1024 / 1024).toFixed(1)} MB size limit`, 'yellow');
+  }
 
   // Group by type
   const byType = {};
