@@ -8,9 +8,11 @@
  * 4. Default concurrency is set correctly
  *
  * These tests verify that the performance-optimized defaults are maintained.
+ *
+ * Optimization: all unique process spawns run in parallel in beforeAll.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { spawn } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +22,7 @@ const __dirname = dirname(__filename);
 
 // Path to HCGS generator
 const HCGS_PATH = join(__dirname, '..', 'core', 'hcgs-generator.js');
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
+const PROJECT_ROOT = join(__dirname, '..');
 
 // =============================================================================
 // Test Helpers
@@ -70,46 +72,50 @@ function runHCGS(args = [], options = {}) {
 }
 
 // =============================================================================
+// Pre-computed results: all unique invocations run in parallel
+// =============================================================================
+
+let generateDryResult, generateNoEmbedDryResult, helpResult, generateConcurrencyDryResult;
+
+beforeAll(async () => {
+  [generateDryResult, generateNoEmbedDryResult, helpResult, generateConcurrencyDryResult] =
+    await Promise.all([
+      runHCGS(['generate', '--dry-run']),
+      runHCGS(['generate', '--dry-run', '--no-embeddings']),
+      runHCGS(['help']),
+      runHCGS(['generate', '--concurrency=3', '--dry-run']),
+    ]);
+}, 60000);
+
+// =============================================================================
 // skipEmbeddings Default Tests
 // =============================================================================
 
 describe('skipEmbeddings default behavior', () => {
-  it('should log skip embeddings message when entities exist and dry-run', async () => {
-    // The "Skipping summary embeddings" message only appears when there are
-    // entities to process. When there are no entities, it logs "No entities
-    // without summaries found" instead.
-    const result = await runHCGS(['generate', '--dry-run']);
-
+  it('should log skip embeddings message when entities exist and dry-run', () => {
     // Should complete without error
-    expect(result.exitCode).toBe(0);
+    expect(generateDryResult.exitCode).toBe(0);
 
     // If entities exist, the skip message appears
     // If no entities, "No entities without summaries found" appears
-    const hasEntities = !result.stdout.includes('No entities without summaries found');
+    const hasEntities = !generateDryResult.stdout.includes('No entities without summaries found');
 
     if (hasEntities) {
-      expect(result.stdout).toContain('Skipping summary embeddings');
-      expect(result.stdout).toContain('not used in search');
+      expect(generateDryResult.stdout).toContain('Skipping summary embeddings');
+      expect(generateDryResult.stdout).toContain('not used in search');
     } else {
       // When no entities need summaries, the skip message is not logged
-      expect(result.stdout).toContain('HCGS:');
+      expect(generateDryResult.stdout).toContain('HCGS:');
     }
   });
 
-  it('should work with --no-embeddings flag', async () => {
-    // --no-embeddings is the CLI flag to skip embeddings (redundant when
-    // skipEmbeddings already defaults to true in generateAllSummaries)
-    const result = await runHCGS(['generate', '--dry-run', '--no-embeddings']);
-
-    // Should work without error
-    expect(result.exitCode).toBe(0);
+  it('should work with --no-embeddings flag', () => {
+    expect(generateNoEmbedDryResult.exitCode).toBe(0);
   });
 
-  it('help output should document embedding behavior', async () => {
-    const result = await runHCGS(['help']);
-
-    expect(result.stdout).toContain('--no-embeddings');
-    expect(result.stdout).toContain('Skip embedding generation');
+  it('help output should document embedding behavior', () => {
+    expect(helpResult.stdout).toContain('--no-embeddings');
+    expect(helpResult.stdout).toContain('Skip embedding generation');
   });
 });
 
@@ -121,7 +127,6 @@ describe('generateAllSummaries defaults', () => {
   let hcgsModule;
 
   beforeEach(async () => {
-    // Dynamically import to test defaults
     hcgsModule = await import('../core/hcgs-generator.js');
   });
 
@@ -333,19 +338,13 @@ describe('HIERARCHY_LEVELS constants', () => {
 // =============================================================================
 
 describe('Default concurrency', () => {
-  it('should have reasonable default concurrency in help', async () => {
-    const result = await runHCGS(['help']);
-
-    // Help should mention concurrency
-    expect(result.stdout).toContain('--concurrency');
-    expect(result.stdout).toContain('default');
-    // Default is 5
-    expect(result.stdout).toContain('5');
+  it('should have reasonable default concurrency in help', () => {
+    expect(helpResult.stdout).toContain('--concurrency');
+    expect(helpResult.stdout).toContain('default');
+    expect(helpResult.stdout).toContain('5');
   });
 
-  it('should accept custom concurrency', async () => {
-    const result = await runHCGS(['generate', '--concurrency=3', '--dry-run']);
-
-    expect(result.exitCode).toBe(0);
+  it('should accept custom concurrency', () => {
+    expect(generateConcurrencyDryResult.exitCode).toBe(0);
   });
 });

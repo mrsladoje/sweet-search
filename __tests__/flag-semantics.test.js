@@ -18,7 +18,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Paths
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
+const PROJECT_ROOT = join(__dirname, '..');
 const INDEXER_PATH = join(__dirname, '..', 'core', 'index-codebase-v21.js');
 
 // =============================================================================
