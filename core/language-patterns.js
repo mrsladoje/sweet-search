@@ -127,6 +127,11 @@ export const EXTENSION_MAP = {
 
   // F# / VB (.NET additional)
   // '.vb' omitted — no LANGUAGES.vb entry exists
+
+  // Document formats (dispatched to DocumentChunker in ast-chunker.js)
+  '.md': 'markdown', '.mdx': 'markdown',
+  '.rst': 'rst',
+  '.txt': 'plaintext',
 };
 
 // Files detected by exact filename (no extension or special names)
