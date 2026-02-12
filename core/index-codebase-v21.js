@@ -1626,6 +1626,31 @@ function printSummaryPhase(options) {
 }
 
 // =============================================================================
+// CLI ARGUMENT PARSING
+// =============================================================================
+
+/**
+ * Parse CLI arguments into a structured flags object.
+ * @param {string[]} [argv] - Arguments to parse (defaults to process.argv.slice(2))
+ */
+function parseArgs(argv) {
+  const args = argv ?? process.argv.slice(2);
+  return {
+    dryRun: args.includes('--dry-run'),
+    graphOnly: args.includes('--graph-only'),
+    vectorsOnly: args.includes('--vectors-only'),
+    fullReindex: args.includes('--full'),
+    showStats: args.includes('--stats'),
+    resolveOnly: args.includes('--resolve-only'),
+    skipSummaryRegen: args.includes('--skip-summary-regen'),
+    filesFromStdin: args.includes('--files-from-stdin'),
+    quiet: args.includes('--quiet'),
+    forceArtifacts: args.includes('--force-artifacts'),
+    help: args.includes('--help') || args.includes('-h'),
+  };
+}
+
+// =============================================================================
 // MAIN
 // =============================================================================
 
@@ -1633,17 +1658,8 @@ async function main() {
   const startTime = Date.now();
 
   // Parse arguments FIRST (before any logging) to handle --quiet
-  const args = process.argv.slice(2);
-  const dryRun = args.includes('--dry-run');
-  const graphOnly = args.includes('--graph-only');
-  const vectorsOnly = args.includes('--vectors-only');
-  const fullReindex = args.includes('--full');
-  const showStats = args.includes('--stats');
-  const resolveOnly = args.includes('--resolve-only');
-  const skipSummaryRegen = args.includes('--skip-summary-regen');
-  const filesFromStdin = args.includes('--files-from-stdin');
-  const quiet = args.includes('--quiet');
-  const forceArtifacts = args.includes('--force-artifacts');
+  const { dryRun, graphOnly, vectorsOnly, fullReindex, showStats, resolveOnly,
+          skipSummaryRegen, filesFromStdin, quiet, forceArtifacts, help } = parseArgs();
 
   // Set quiet mode before any logging
   if (quiet) {
@@ -1662,7 +1678,7 @@ async function main() {
     log('', 'reset');
   }
 
-  if (args.includes('--help') || args.includes('-h')) {
+  if (help) {
     console.log(`
 Usage:
   node index-codebase-v21.js [options]
@@ -1922,6 +1938,7 @@ export {
   buildColBERTIndex,
   buildQuantizedArtifactsPhase,
   // CLI support exports (for testing)
+  parseArgs,
   readFilesFromStdin,
   setQuietMode,
   isQuietMode,
