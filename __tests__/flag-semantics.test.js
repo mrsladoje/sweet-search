@@ -5,7 +5,7 @@
  * 1. parseArgs() unit tests — in-process, no spawning
  * 2. Integration tests — grouped by command, run concurrently
  *
- * Optimized from ~20 sequential spawns to 5 parallel spawns + in-process unit tests.
+ * Optimized: all 9 process spawns run concurrently via Promise.all + 13 in-process unit tests.
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
@@ -164,20 +164,43 @@ describe('parseArgs() unit tests', () => {
 });
 
 // =============================================================================
-// Section B — Integration tests (concurrent spawns)
+// Section B — Integration tests (all 9 spawns run concurrently)
 // =============================================================================
 
 describe('Flag behavior (integration)', () => {
+  // All process spawns launched in parallel — wall time = slowest single spawn
+  let helpResult, helpPrecedenceResult, dryRunResult, quietDryRunResult,
+      skipSummaryResult, skipSummaryQuietResult, statsResult,
+      quietStdinResult, unknownFlagResult;
+
+  beforeAll(async () => {
+    [
+      helpResult,
+      helpPrecedenceResult,
+      dryRunResult,
+      quietDryRunResult,
+      skipSummaryResult,
+      skipSummaryQuietResult,
+      statsResult,
+      quietStdinResult,
+      unknownFlagResult,
+    ] = await Promise.all([
+      runIndexer(['--help']),
+      runIndexer(['--help', '--full', '--graph-only']),
+      runIndexer(['--dry-run']),
+      runIndexer(['--quiet', '--dry-run']),
+      runIndexer(['--skip-summary-regen', '--dry-run']),
+      runIndexer(['--skip-summary-regen', '--quiet', '--dry-run']),
+      runIndexer(['--stats']),
+      runIndexer(['--quiet', '--files-from-stdin'], { stdinInput: '' }),
+      runIndexer(['--unknown-test-flag-xyz', '--dry-run']),
+    ]);
+  });
+
   // -------------------------------------------------------------------------
-  // --help output (1 spawn, many assertions)
+  // --help output (assertions on helpResult)
   // -------------------------------------------------------------------------
   describe('--help output', () => {
-    let helpResult;
-
-    beforeAll(async () => {
-      helpResult = await runIndexer(['--help']);
-    });
-
     it('--help should exit with 0', () => {
       expect(helpResult.exitCode).toBe(0);
     });
@@ -249,25 +272,18 @@ describe('Flag behavior (integration)', () => {
       expect(helpResult.stdout).toMatch(/skip.*summary.*regen|preserves.*summar/i);
     });
 
-    it('--help should take precedence over other flags', async () => {
-      const result = await runIndexer(['--help', '--full', '--graph-only']);
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('Usage:');
+    it('--help should take precedence over other flags', () => {
+      expect(helpPrecedenceResult.exitCode).toBe(0);
+      expect(helpPrecedenceResult.stdout).toContain('Usage:');
       // Should not actually run indexing
-      expect(result.stdout).not.toContain('Discovering Files');
+      expect(helpPrecedenceResult.stdout).not.toContain('Discovering Files');
     });
   });
 
   // -------------------------------------------------------------------------
-  // --dry-run output (1 spawn)
+  // --dry-run output
   // -------------------------------------------------------------------------
   describe('--dry-run output', () => {
-    let dryRunResult;
-
-    beforeAll(async () => {
-      dryRunResult = await runIndexer(['--dry-run']);
-    });
-
     it('--dry-run should exit with 0', () => {
       expect(dryRunResult.exitCode).toBe(0);
     });
@@ -282,15 +298,9 @@ describe('Flag behavior (integration)', () => {
   });
 
   // -------------------------------------------------------------------------
-  // --quiet --dry-run output (1 spawn)
+  // --quiet --dry-run output
   // -------------------------------------------------------------------------
   describe('--quiet --dry-run output', () => {
-    let quietDryRunResult;
-
-    beforeAll(async () => {
-      quietDryRunResult = await runIndexer(['--quiet', '--dry-run']);
-    });
-
     it('--quiet + --dry-run should exit with 0', () => {
       expect(quietDryRunResult.exitCode).toBe(0);
     });
@@ -303,15 +313,9 @@ describe('Flag behavior (integration)', () => {
   });
 
   // -------------------------------------------------------------------------
-  // --skip-summary-regen --dry-run output (1 spawn)
+  // --skip-summary-regen --dry-run output
   // -------------------------------------------------------------------------
   describe('--skip-summary-regen --dry-run output', () => {
-    let skipSummaryResult;
-
-    beforeAll(async () => {
-      skipSummaryResult = await runIndexer(['--skip-summary-regen', '--dry-run']);
-    });
-
     it('should be recognized as a valid flag', () => {
       expect(skipSummaryResult.exitCode).toBe(0);
       expect(skipSummaryResult.stderr).not.toContain('Unknown flag');
@@ -323,22 +327,15 @@ describe('Flag behavior (integration)', () => {
       expect(skipSummaryResult.stdout).toContain('--skip-summary-regen');
     });
 
-    it('should work with --quiet flag', async () => {
-      const result = await runIndexer(['--skip-summary-regen', '--quiet', '--dry-run']);
-      expect(result.exitCode).toBe(0);
+    it('should work with --quiet flag', () => {
+      expect(skipSummaryQuietResult.exitCode).toBe(0);
     });
   });
 
   // -------------------------------------------------------------------------
-  // --stats output (1 spawn)
+  // --stats output
   // -------------------------------------------------------------------------
   describe('--stats output', () => {
-    let statsResult;
-
-    beforeAll(async () => {
-      statsResult = await runIndexer(['--stats']);
-    });
-
     it('--stats should exit with 0', () => {
       expect(statsResult.exitCode).toBe(0);
     });
@@ -349,34 +346,29 @@ describe('Flag behavior (integration)', () => {
   });
 
   // -------------------------------------------------------------------------
-  // --quiet --files-from-stdin output (1 spawn)
+  // --quiet --files-from-stdin output
   // -------------------------------------------------------------------------
   describe('--quiet --files-from-stdin output', () => {
-    it('--quiet mode should allow JSON parsing (no junk)', async () => {
-      const result = await runIndexer(['--quiet', '--files-from-stdin'], {
-        stdinInput: '',
-      });
-
-      const lines = result.stdout.trim().split('\n').filter(l => l.trim());
+    it('--quiet mode should allow JSON parsing (no junk)', () => {
+      const lines = quietStdinResult.stdout.trim().split('\n').filter(l => l.trim());
       if (lines.length > 0) {
         const lastLine = lines[lines.length - 1];
         try {
           const parsed = JSON.parse(lastLine);
           expect(parsed).toBeDefined();
         } catch (e) {
-          expect(result.stdout.length).toBeLessThan(1000);
+          expect(quietStdinResult.stdout.length).toBeLessThan(1000);
         }
       }
     });
   });
 
   // -------------------------------------------------------------------------
-  // Unknown flags (1 spawn)
+  // Unknown flags
   // -------------------------------------------------------------------------
   describe('Unknown flags', () => {
-    it('should handle unknown flags gracefully in real process', async () => {
-      const result = await runIndexer(['--unknown-test-flag-xyz', '--dry-run']);
-      expect(typeof result.exitCode).toBe('number');
+    it('should handle unknown flags gracefully in real process', () => {
+      expect(typeof unknownFlagResult.exitCode).toBe('number');
     });
   });
 });
