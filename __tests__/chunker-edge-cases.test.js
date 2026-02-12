@@ -25,19 +25,18 @@ const extractor = new GraphExtractor({ projectRoot: '/test' });
 // =============================================================================
 
 describe('brace-based depth tracking', () => {
-  it('tracks braces in string literals (may miscount)', async () => {
-    // The chunker counts ALL { and } on a line, including those in strings.
-    // This is a known simplification — testing actual behavior.
+  it('correctly ignores unbalanced string braces', async () => {
+    // String "open { only" has 1 unbalanced open brace.
+    // Without stripping, braceDepth would be 2 after line 1, and the
+    // closing } on line 3 would only bring depth to 1, never closing the chunk.
     const chunks = await chunker.parseFile('/test/format.js', [
       'function formatJson(obj) {',
-      '  const template = "{ name: {name} }";',
-      '  return template.replace("{name}", obj.name);',
-      '  return obj;',
+      '  let template = "open { only";',
+      '  return template + obj.name;',
       '}',
     ].join('\n'));
-    // Even with string braces, the function should produce at least one chunk
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
-    expect(chunks[0].metadata.language).toBe('javascript');
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.symbol).toBe('formatJson');
   });
 
   it('handles consecutive closing braces', async () => {
@@ -53,6 +52,232 @@ describe('brace-based depth tracking', () => {
     expect(chunks.length).toBeGreaterThanOrEqual(1);
     const summary = chunks.map(c => c.metadata.chunk_type);
     expect(summary).toContain('class');
+  });
+});
+
+// =============================================================================
+// _stripNonCode unit tests — directly verify the scanner output
+// =============================================================================
+
+describe('_stripNonCode scanner', () => {
+  const jsComment = { line: '//', block: ['/*', '*/'] };
+  const goComment = { line: '//', block: ['/*', '*/'] };
+  const shellComment = { line: '#', block: null };
+
+  it('strips double-quoted string content', () => {
+    const state = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
+    const result = chunker._stripNonCode('let s = "{ open";', state, jsComment, true);
+    expect(result).toBe('let s = ;');
+  });
+
+  it('strips single-quoted string content', () => {
+    const state = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
+    const result = chunker._stripNonCode("let s = '} close';", state, jsComment, true);
+    expect(result).toBe('let s = ;');
+  });
+
+  it('handles escaped quotes inside strings', () => {
+    const state = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
+    const result = chunker._stripNonCode('let s = "say \\"{ hi";', state, jsComment, true);
+    expect(result).toBe('let s = ;');
+  });
+
+  it('strips line comment after code', () => {
+    const state = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
+    const result = chunker._stripNonCode('code(); // { comment', state, jsComment, true);
+    expect(result).toBe('code(); ');
+  });
+
+  it('strips inline block comment', () => {
+    const state = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
+    const result = chunker._stripNonCode('a /* { } { */ b', state, jsComment, true);
+    expect(result).toBe('a  b');
+  });
+
+  it('tracks block comment across lines', () => {
+    const state = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
+    const r1 = chunker._stripNonCode('a /* { start', state, jsComment, true);
+    expect(r1).toBe('a ');
+    expect(state.inBlockComment).toBe(true);
+    const r2 = chunker._stripNonCode('  still { comment */ b', state, jsComment, true);
+    expect(r2).toBe(' b');
+    expect(state.inBlockComment).toBe(false);
+  });
+
+  it('strips JS template literal body, keeps interpolation code', () => {
+    const state = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
+    const result = chunker._stripNonCode('let x = `text ${ val }`;', state, jsComment, true);
+    // backtick body "text " stripped; ${ and } are interp delimiters (stripped);
+    // " val " is code inside interpolation (emitted); backtick close; ;
+    expect(result).toBe('let x =  val ;');
+  });
+
+  it('strips template literal but keeps structural braces in interpolation', () => {
+    const state = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
+    const result = chunker._stripNonCode('let x = `${arr.map(v => { return v; })}`;', state, jsComment, true);
+    // ${ stripped, arr.map(v => { return v; }) emitted, } (interp close) stripped
+    expect(result).toBe('let x = arr.map(v => { return v; });');
+  });
+
+  it('strips Go raw string (backtick, no interpolation)', () => {
+    const state = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
+    const result = chunker._stripNonCode('s := `{ raw }`', state, goComment, false);
+    expect(result).toBe('s := ');
+  });
+
+  it('tracks Go multi-line raw string across lines', () => {
+    const state = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
+    const r1 = chunker._stripNonCode('s := `{ start', state, goComment, false);
+    expect(r1).toBe('s := ');
+    expect(state.inTemplateLiteral).toBe(true);
+    const r2 = chunker._stripNonCode('  still { raw` + rest', state, goComment, false);
+    expect(r2).toBe(' + rest');
+    expect(state.inTemplateLiteral).toBe(false);
+  });
+
+  it('strips shell line comment', () => {
+    const state = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
+    const result = chunker._stripNonCode('code # { comment', state, shellComment, false);
+    expect(result).toBe('code ');
+  });
+
+  it('handles null comment config (like JSON)', () => {
+    const state = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
+    const result = chunker._stripNonCode('"key": "{value}"', state, null, false);
+    // Strings stripped, no comments to handle
+    expect(result).toBe(': ');
+  });
+
+  it('multiple strings on one line', () => {
+    const state = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
+    const result = chunker._stripNonCode('f("{", "}", "{")', state, jsComment, true);
+    expect(result).toBe('f(, , )');
+  });
+});
+
+// =============================================================================
+// Integration: string/comment brace stripping in chunker
+// =============================================================================
+
+describe('string and comment aware brace counting (integration)', () => {
+  // Each test uses TWO functions so that depth corruption in the first
+  // would prevent the second from getting its own chunk. _pushFinalChunk
+  // cannot save these — only correct stripping produces 2 separate chunks.
+
+  it('string brace does not corrupt next function', async () => {
+    const chunks = await chunker.parseFile('/test/str.js', [
+      'function first() {',
+      '  let s = "{ open";',
+      '  return s;',
+      '}',
+      'function second() {',
+      '  return 2;',
+      '}',
+    ].join('\n'));
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('first');
+    expect(chunks[1].metadata.symbol).toBe('second');
+    // Discriminating: without stripping, depth corruption causes first chunk
+    // to extend past its } until the next boundary match, bleeding into second
+    expect(chunks[0].text).not.toContain('function second');
+  });
+
+  it('line comment brace does not corrupt next function', async () => {
+    const chunks = await chunker.parseFile('/test/lc.js', [
+      'function first() { // extra {',
+      '  return 1;',
+      '}',
+      'function second() {',
+      '  return 2;',
+      '}',
+    ].join('\n'));
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('first');
+    expect(chunks[1].metadata.symbol).toBe('second');
+    expect(chunks[0].text).not.toContain('function second');
+  });
+
+  it('block comment brace does not corrupt next function', async () => {
+    const chunks = await chunker.parseFile('/test/bc.js', [
+      'function first() {',
+      '  /* extra { */',
+      '  return 1;',
+      '}',
+      'function second() {',
+      '  return 2;',
+      '}',
+    ].join('\n'));
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('first');
+    expect(chunks[1].metadata.symbol).toBe('second');
+    expect(chunks[0].text).not.toContain('function second');
+  });
+
+  it('multi-line block comment brace does not corrupt next function', async () => {
+    const chunks = await chunker.parseFile('/test/mbc.js', [
+      'function first() {',
+      '  /* {{{ unclosed',
+      '  across lines */',
+      '  return 1;',
+      '}',
+      'function second() {',
+      '  return 2;',
+      '}',
+    ].join('\n'));
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('first');
+    expect(chunks[1].metadata.symbol).toBe('second');
+    expect(chunks[0].text).not.toContain('function second');
+  });
+
+  it('escaped-quote string brace does not corrupt next function', async () => {
+    const chunks = await chunker.parseFile('/test/esc.js', [
+      'function first() {',
+      '  let s = "say \\"{ hi";',
+      '  return s;',
+      '}',
+      'function second() {',
+      '  return 2;',
+      '}',
+    ].join('\n'));
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('first');
+    expect(chunks[1].metadata.symbol).toBe('second');
+    expect(chunks[0].text).not.toContain('function second');
+  });
+
+  it('template literal brace does not corrupt next function', async () => {
+    // Template text contains unbalanced { — without stripping, depth is corrupted
+    const chunks = await chunker.parseFile('/test/tmpl.js', [
+      'function first() {',
+      '  let x = `text { ${ val }`;',
+      '  return x;',
+      '}',
+      'function second() {',
+      '  return 2;',
+      '}',
+    ].join('\n'));
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('first');
+    expect(chunks[1].metadata.symbol).toBe('second');
+    expect(chunks[0].text).not.toContain('function second');
+  });
+
+  it('Go raw string brace does not corrupt next function', async () => {
+    const chunks = await chunker.parseFile('/test/raw.go', [
+      'func first() {',
+      '  s := `extra { here`',
+      '  return s',
+      '}',
+      'func second() {',
+      '  result := 2 + 1',
+      '  return result',
+      '}',
+    ].join('\n'));
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('first');
+    expect(chunks[1].metadata.symbol).toBe('second');
+    expect(chunks[0].text).not.toContain('func second');
   });
 });
 

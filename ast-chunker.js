@@ -13,6 +13,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { detectProjectBoundary } from './core/project-detector.js';
 import { getLanguageByPath } from './core/language-patterns.js';
+import { DocumentChunker } from './core/document-chunker.js';
 
 const MAX_CHUNK_SIZE = 2000;
 
@@ -27,12 +28,21 @@ export class ASTChunker {
   }
 
   async parseFile(filePath, content) {
+    // Dispatch document files (markdown, plaintext) to DocumentChunker
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.md' || ext === '.mdx' || ext === '.rst' || ext === '.txt') {
+      if (!this._docChunker) {
+        this._docChunker = new DocumentChunker({ projectRoot: this.projectRoot });
+      }
+      return this._docChunker.parseFile(filePath, content);
+    }
+
     const langInfo = getLanguageByPath(filePath);
     if (!langInfo || !langInfo.chunker) {
       return this.parseGenericFile(filePath, content);
     }
 
-    const { id: language, chunker: patterns, indentBased, endKeyword } = langInfo;
+    const { id: language, chunker: patterns, indentBased, endKeyword, comment } = langInfo;
 
     if (indentBased) {
       return this.parseIndentBasedFile(filePath, content, language, patterns);
@@ -40,22 +50,25 @@ export class ASTChunker {
     if (endKeyword) {
       return this.parseEndKeywordFile(filePath, content, language, patterns, endKeyword);
     }
-    return this.parseBraceBasedFile(filePath, content, language, patterns);
+    return this.parseBraceBasedFile(filePath, content, language, patterns, comment);
   }
 
-  parseBraceBasedFile(filePath, content, language, patterns) {
+  parseBraceBasedFile(filePath, content, language, patterns, comment) {
     const chunks = [];
     const lines = content.split('\n');
+    const hasTemplateInterpolation = (language === 'javascript');
 
     let currentChunk = null;
     let braceDepth = 0;
     let chunkStart = 0;
+    const stripState = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      const stripped = this._stripNonCode(line, stripState, comment, hasTemplateInterpolation);
 
-      braceDepth += (line.match(/{/g) || []).length;
-      braceDepth -= (line.match(/}/g) || []).length;
+      braceDepth += (stripped.match(/{/g) || []).length;
+      braceDepth -= (stripped.match(/}/g) || []).length;
 
       const { name: matched, type: matchType } = this._matchBoundary(line, patterns);
 
@@ -177,6 +190,103 @@ export class ASTChunker {
       }
     }
     return { name: null, type: null };
+  }
+
+  _stripNonCode(line, state, comment, hasTemplateInterpolation) {
+    let result = '';
+    const lineComment = comment?.line || null;
+    const blockOpen = comment?.block?.[0] || null;
+    const blockClose = comment?.block?.[1] || null;
+
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+
+      // In block comment → scan for block-close delimiter
+      if (state.inBlockComment) {
+        if (blockClose && line.startsWith(blockClose, i)) {
+          state.inBlockComment = false;
+          i += blockClose.length - 1;
+        }
+        continue;
+      }
+
+      // In template/raw literal body
+      if (state.inTemplateLiteral) {
+        if (hasTemplateInterpolation && ch === '\\') {
+          i++;
+          continue;
+        }
+        if (hasTemplateInterpolation && ch === '$' && i + 1 < line.length && line[i + 1] === '{') {
+          state.interpolationDepth = 1;
+          state.inTemplateLiteral = false;
+          i++;
+          continue;
+        }
+        if (ch === '`') {
+          state.inTemplateLiteral = false;
+          continue;
+        }
+        continue;
+      }
+
+      // Code mode
+
+      // Block comment open
+      if (blockOpen && line.startsWith(blockOpen, i)) {
+        state.inBlockComment = true;
+        i += blockOpen.length - 1;
+        continue;
+      }
+
+      // Line comment
+      if (lineComment && line.startsWith(lineComment, i)) {
+        break;
+      }
+
+      // Double-quoted string
+      if (ch === '"') {
+        for (i++; i < line.length; i++) {
+          if (line[i] === '\\') { i++; continue; }
+          if (line[i] === '"') break;
+        }
+        continue;
+      }
+
+      // Single-quoted string
+      if (ch === "'") {
+        for (i++; i < line.length; i++) {
+          if (line[i] === '\\') { i++; continue; }
+          if (line[i] === "'") break;
+        }
+        continue;
+      }
+
+      // Backtick string
+      if (ch === '`') {
+        state.inTemplateLiteral = true;
+        continue;
+      }
+
+      // Closing brace in template interpolation
+      if (ch === '}' && state.interpolationDepth > 0) {
+        state.interpolationDepth--;
+        if (state.interpolationDepth === 0) {
+          state.inTemplateLiteral = true;
+          continue;
+        }
+        result += ch;
+        continue;
+      }
+
+      // Opening brace in template interpolation
+      if (ch === '{' && state.interpolationDepth > 0) {
+        state.interpolationDepth++;
+      }
+
+      result += ch;
+    }
+
+    return result;
   }
 
   _pushFinalChunk(chunks, lines, chunkStart, filePath, language, currentChunk) {
