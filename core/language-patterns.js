@@ -126,7 +126,7 @@ export const EXTENSION_MAP = {
   '.mk': 'makefile',
 
   // F# / VB (.NET additional)
-  '.vb': 'vb',
+  // '.vb' omitted — no LANGUAGES.vb entry exists
 };
 
 // Files detected by exact filename (no extension or special names)
@@ -727,7 +727,7 @@ export const LANGUAGES = {
     comment: { line: null, block: ['/*', '*/'] },
 
     chunker: {
-      rule:       /^[.#\w\[\*:][^{]*\{/,
+      rule:       /^(?!(?:if|else|for|while|switch|return|function|var|let|const)\s)[.#\w\[\*:][^{]*\{/,
       media:      /^@media\s+[^{]+\{/,
       keyframes:  /^@keyframes\s+([\w-]+)\s*\{/,
       fontface:   /^@font-face\s*\{/,
@@ -758,7 +758,7 @@ export const LANGUAGES = {
     chunker: {
       mixin:    /^@mixin\s+([\w-]+)/,
       function: /^@function\s+([\w-]+)/,
-      rule:     /^[.#\w\[\*:&][^{]*\{/,
+      rule:     /^(?!(?:if|else|for|while|switch|return|function|var|let|const)\s)[.#\w\[\*:&][^{]*\{/,
       media:    /^@media\s+[^{]+\{/,
     },
 
@@ -813,7 +813,7 @@ export const LANGUAGES = {
 
     chunker: {
       mixin: /^\.([\w-]+)\s*\(/,
-      rule:  /^[.#\w\[\*:&][^{]*\{/,
+      rule:  /^(?!(?:if|else|for|while|switch|return|function|var|let|const)\s)[.#\w\[\*:&][^{]*\{/,
     },
 
     graph: {
@@ -1088,7 +1088,7 @@ export const LANGUAGES = {
       },
       relationships: {
         ref:  /"\$ref"\s*:\s*"([^"]+)"/,
-        dep:  /"(dependencies|devDependencies|peerDependencies)"/,
+        dep:  /^"(dependencies|devDependencies|peerDependencies)"\s*:\s*\{/,
       },
       skipCallObjects: [],
     },
@@ -1158,7 +1158,7 @@ export const LANGUAGES = {
         element: /<(\w+:?\w+)\b[^>]*(?:>|$)/,
       },
       relationships: {
-        namespace: /xmlns(?::(\w+))?=["']([^"']+)["']/,
+        namespace: /xmlns(?::\w+)?=["']([^"']+)["']/,
         import:    /<(?:xs:)?(?:import|include)\s[^>]*(?:schemaLocation|href)=["']([^"']+)["']/,
         ref:       /ref=["']([^"']+)["']/,
       },
@@ -1203,13 +1203,13 @@ export const LANGUAGES = {
     comment: { line: '#', block: null },
 
     chunker: {
-      target:   /^([\w.-]+)\s*:/,
+      target:   /^([\w.-]+)\s*:(?!=)/,
       variable: /^(\w+)\s*[:?+]?=/,
     },
 
     graph: {
       entities: {
-        target:   /^([\w.-]+)\s*:/,
+        target:   /^([\w.-]+)\s*:(?!=)/,
         variable: /^(\w+)\s*[:?+]?=/,
       },
       relationships: {

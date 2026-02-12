@@ -71,6 +71,32 @@ describe('JSON relationship extraction', () => {
     expect(result.relationships.some(r => r.target_name === '#/definitions/User')).toBe(true);
     expect(result.relationships.some(r => r.target_name === '#/definitions/Settings')).toBe(true);
   });
+
+  it('extracts dependency package names as imports', async () => {
+    const result = await extractor.extractFromFile('/test/package.json', [
+      '{',
+      '  "dependencies": {',
+      '    "express": "^4.18.0",',
+      '    "lodash": "~4.17.21"',
+      '  },',
+      '  "devDependencies": {',
+      '    "vitest": "^4.0.16"',
+      '  },',
+      '  "scripts": {',
+      '    "test": "vitest run"',
+      '  }',
+      '}',
+    ].join('\n'));
+
+    expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'express')).toBe(true);
+    expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'lodash')).toBe(true);
+    expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'vitest')).toBe(true);
+
+    // Section names and non-dependency keys should not be emitted as imports.
+    expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'dependencies')).toBe(false);
+    expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'devDependencies')).toBe(false);
+    expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'test')).toBe(false);
+  });
 });
 
 // =============================================================================
@@ -203,6 +229,7 @@ describe('XML entity extraction', () => {
     ].join('\n'));
     expect(result.entities.some(e => e.type === 'element')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'types.xsd')).toBe(true);
+    expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'http://www.w3.org/2001/XMLSchema')).toBe(true);
   });
 });
 
