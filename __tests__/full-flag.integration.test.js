@@ -7,11 +7,14 @@
  * 3. Complete artifact rebuilding
  *
  * Uses actual indexer process spawning to verify end-to-end behavior.
+ *
+ * Optimization: all unique invocations run in parallel in beforeAll,
+ * tests reference cached results (avoids ~20 redundant sequential spawns).
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +23,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Paths
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
+const PROJECT_ROOT = join(__dirname, '..');
 const INDEXER_PATH = join(__dirname, '..', 'core', 'index-codebase-v21.js');
 
 // =============================================================================
@@ -71,24 +74,37 @@ function runIndexer(args = [], options = {}) {
 }
 
 // =============================================================================
+// Pre-computed results: all unique invocations run in parallel
+// =============================================================================
+
+let helpResult, fullDryResult, fullQuietDryResult, statsResult, graphOnlyDryResult, invalidFlagResult;
+
+beforeAll(async () => {
+  [helpResult, fullDryResult, fullQuietDryResult, statsResult, graphOnlyDryResult, invalidFlagResult] =
+    await Promise.all([
+      runIndexer(['--help']),
+      runIndexer(['--full', '--dry-run']),
+      runIndexer(['--full', '--quiet', '--dry-run']),
+      runIndexer(['--stats']),
+      runIndexer(['--full', '--graph-only', '--dry-run']),
+      runIndexer(['--invalid-test-flag-xyz', '--dry-run']),
+    ]);
+}, 60000);
+
+// =============================================================================
 // --full Flag Documentation Tests
 // =============================================================================
 
 describe('--full flag documentation', () => {
-  it('should document --full in help output', async () => {
-    const result = await runIndexer(['--help']);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('--full');
-    expect(result.stdout).toContain('Full reindex');
-    expect(result.stdout).toContain('rebuild everything');
+  it('should document --full in help output', () => {
+    expect(helpResult.exitCode).toBe(0);
+    expect(helpResult.stdout).toContain('--full');
+    expect(helpResult.stdout).toContain('Full reindex');
+    expect(helpResult.stdout).toContain('rebuild everything');
   });
 
-  it('should describe --full as rebuilding from scratch', async () => {
-    const result = await runIndexer(['--help']);
-
-    // The help should indicate full reindex rebuilds everything
-    const helpText = result.stdout.toLowerCase();
+  it('should describe --full as rebuilding from scratch', () => {
+    const helpText = helpResult.stdout.toLowerCase();
     expect(helpText).toContain('full');
     expect(helpText).toContain('scratch');
   });
@@ -99,35 +115,26 @@ describe('--full flag documentation', () => {
 // =============================================================================
 
 describe('--full flag behavior (dry-run)', () => {
-  it('should accept --full flag without error', async () => {
-    const result = await runIndexer(['--full', '--dry-run']);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stderr).not.toContain('Unknown flag');
-    expect(result.stderr).not.toContain('Unrecognized');
+  it('should accept --full flag without error', () => {
+    expect(fullDryResult.exitCode).toBe(0);
+    expect(fullDryResult.stderr).not.toContain('Unknown flag');
+    expect(fullDryResult.stderr).not.toContain('Unrecognized');
   });
 
-  it('should NOT show deprecation warning for --full', async () => {
-    const result = await runIndexer(['--full', '--dry-run']);
-
-    expect(result.stdout).not.toContain('DEPRECATION');
-    expect(result.stdout).not.toContain('deprecated');
+  it('should NOT show deprecation warning for --full', () => {
+    expect(fullDryResult.stdout).not.toContain('DEPRECATION');
+    expect(fullDryResult.stdout).not.toContain('deprecated');
   });
 
-  it('should combine --full with --quiet', async () => {
-    const result = await runIndexer(['--full', '--quiet', '--dry-run']);
-
-    expect(result.exitCode).toBe(0);
+  it('should combine --full with --quiet', () => {
+    expect(fullQuietDryResult.exitCode).toBe(0);
     // Quiet mode should suppress banner
-    expect(result.stdout).not.toContain('SEARCH 100x');
+    expect(fullQuietDryResult.stdout).not.toContain('SEARCH 100x');
   });
 
-  it('should show full reindex message in output', async () => {
-    const result = await runIndexer(['--full', '--dry-run']);
-
+  it('should show full reindex message in output', () => {
     // In dry-run mode with --full, should indicate full mode
-    // Look for indicators that full mode is active
-    expect(result.exitCode).toBe(0);
+    expect(fullDryResult.exitCode).toBe(0);
   });
 });
 
@@ -136,22 +143,16 @@ describe('--full flag behavior (dry-run)', () => {
 // =============================================================================
 
 describe('HCGS generation trigger', () => {
-  it('--full should trigger complete HCGS regeneration', async () => {
-    // This is a conceptual test - in real scenario, --full causes all
-    // entities to need summary regeneration
-    const result = await runIndexer(['--help']);
-
+  it('--full should trigger complete HCGS regeneration', () => {
     // Verify help mentions that --full affects summaries
-    expect(result.stdout).toContain('Full reindex');
+    expect(helpResult.stdout).toContain('Full reindex');
   });
 
-  it('help should document HCGS-related behavior', async () => {
-    const result = await runIndexer(['--help']);
-
+  it('help should document HCGS-related behavior', () => {
     // Should mention code graph
-    expect(result.stdout).toContain('Code graph');
+    expect(helpResult.stdout).toContain('Code graph');
     // Should mention output files
-    expect(result.stdout).toContain('code-graph.db');
+    expect(helpResult.stdout).toContain('code-graph.db');
   });
 });
 
@@ -160,34 +161,24 @@ describe('HCGS generation trigger', () => {
 // =============================================================================
 
 describe('--full flag combinations', () => {
-  it('--full should work with --stats', async () => {
-    const result = await runIndexer(['--stats']);
-
-    // Stats should work
-    expect(result.exitCode).toBe(0);
+  it('--full should work with --stats', () => {
+    expect(statsResult.exitCode).toBe(0);
   });
 
-  it('--full should work with --graph-only', async () => {
-    const result = await runIndexer(['--full', '--graph-only', '--dry-run']);
-
-    expect(result.exitCode).toBe(0);
+  it('--full should work with --graph-only', () => {
+    expect(graphOnlyDryResult.exitCode).toBe(0);
   });
 
-  it('--full should work with --quiet for daemon use', async () => {
-    const result = await runIndexer(['--full', '--quiet', '--dry-run']);
-
-    expect(result.exitCode).toBe(0);
+  it('--full should work with --quiet for daemon use', () => {
+    expect(fullQuietDryResult.exitCode).toBe(0);
     // Quiet mode should produce minimal output
-    expect(result.stdout.length).toBeLessThan(1000);
+    expect(fullQuietDryResult.stdout.length).toBeLessThan(1000);
   });
 
-  it('--full should override incremental behavior', async () => {
+  it('--full should override incremental behavior', () => {
     // With --full, all files should be processed regardless of state
-    const result = await runIndexer(['--full', '--dry-run']);
-
-    // Should not mention "No changes detected" or similar
-    expect(result.stdout).not.toContain('No changes detected');
-    expect(result.exitCode).toBe(0);
+    expect(fullDryResult.stdout).not.toContain('No changes detected');
+    expect(fullDryResult.exitCode).toBe(0);
   });
 });
 
@@ -196,19 +187,14 @@ describe('--full flag combinations', () => {
 // =============================================================================
 
 describe('HCGS output verification', () => {
-  it('should document expected output files in help', async () => {
-    const result = await runIndexer(['--help']);
-
-    // Should mention output files
-    expect(result.stdout).toContain('code-graph.db');
-    expect(result.stdout).toContain('codebase.db');
-    expect(result.stdout).toContain('hnsw');
+  it('should document expected output files in help', () => {
+    expect(helpResult.stdout).toContain('code-graph.db');
+    expect(helpResult.stdout).toContain('codebase.db');
+    expect(helpResult.stdout).toContain('hnsw');
   });
 
-  it('should mention merkle state file in help', async () => {
-    const result = await runIndexer(['--help']);
-
-    expect(result.stdout).toContain('merkle-state.json');
+  it('should mention merkle state file in help', () => {
+    expect(helpResult.stdout).toContain('merkle-state.json');
   });
 });
 
@@ -218,30 +204,24 @@ describe('HCGS output verification', () => {
 
 describe('--full error handling', () => {
   it('should handle --full with no files gracefully', async () => {
-    // Create a temp directory with no matching files
+    // This test needs a dynamic temp dir — cannot be cached
     const tempDir = join(tmpdir(), `full-test-${Date.now()}`);
     mkdirSync(tempDir, { recursive: true });
 
     try {
-      // Running in empty directory should not crash
       const result = await runIndexer(['--full', '--dry-run'], {
         cwd: tempDir,
         timeout: 30000,
       });
 
-      // May fail or succeed depending on implementation, but shouldn't crash unexpectedly
       expect([0, 1]).toContain(result.exitCode);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
 
-  it('should provide meaningful error on failure', async () => {
-    // Test with invalid flag to verify error handling
-    const result = await runIndexer(['--invalid-test-flag-xyz', '--dry-run']);
-
-    // Should either work or provide error, not crash
-    expect(typeof result.exitCode).toBe('number');
+  it('should provide meaningful error on failure', () => {
+    expect(typeof invalidFlagResult.exitCode).toBe('number');
   });
 });
 
@@ -250,20 +230,15 @@ describe('--full error handling', () => {
 // =============================================================================
 
 describe('Default vs --full comparison', () => {
-  it('default mode should mention incremental in help', async () => {
-    const result = await runIndexer(['--help']);
-
-    expect(result.stdout).toContain('Incremental');
-    expect(result.stdout).toContain('default');
+  it('default mode should mention incremental in help', () => {
+    expect(helpResult.stdout).toContain('Incremental');
+    expect(helpResult.stdout).toContain('default');
   });
 
-  it('--full should explicitly differ from default mode', async () => {
-    const result = await runIndexer(['--help']);
-
-    // Help should differentiate between default (incremental) and --full
-    expect(result.stdout).toContain('--full');
-    expect(result.stdout).toContain('Full reindex');
-    expect(result.stdout).toContain('Incremental');
+  it('--full should explicitly differ from default mode', () => {
+    expect(helpResult.stdout).toContain('--full');
+    expect(helpResult.stdout).toContain('Full reindex');
+    expect(helpResult.stdout).toContain('Incremental');
   });
 });
 
@@ -272,45 +247,32 @@ describe('Default vs --full comparison', () => {
 // =============================================================================
 
 describe('Parallel execution (HCGS + Vectors)', () => {
-  it('--full should set up HCGS preparation stage', async () => {
-    // Use dry-run to verify the parallel execution code path is triggered
-    const result = await runIndexer(['--full', '--dry-run']);
+  it('--full should set up HCGS preparation stage', () => {
+    const output = fullDryResult.stdout + fullDryResult.stderr;
 
-    const output = result.stdout + result.stderr;
-
-    // With --full, the indexer should:
-    // 1. Enter "Full Reindex Mode"
-    // 2. Prepare for HCGS summaries (shown as "Preparing HCGS" or "Full Regeneration")
     const hasFullMode = output.includes('Full Reindex Mode') ||
                         output.includes('Full Regeneration') ||
                         output.includes('--full');
 
     expect(hasFullMode).toBe(true);
-    expect(result.exitCode).toBe(0);
+    expect(fullDryResult.exitCode).toBe(0);
   });
 
-  it('help should document that --full triggers HCGS regeneration', async () => {
-    const result = await runIndexer(['--help']);
-
-    // Help text should mention HCGS runs on --full
-    expect(result.stdout).toContain('--full');
-    expect(result.stdout).toContain('HCGS');
-    expect(result.exitCode).toBe(0);
+  it('help should document that --full triggers HCGS regeneration', () => {
+    expect(helpResult.stdout).toContain('--full');
+    expect(helpResult.stdout).toContain('HCGS');
+    expect(helpResult.exitCode).toBe(0);
   });
 
-  it('--full --graph-only should NOT mention vector execution', async () => {
-    const result = await runIndexer(['--full', '--graph-only', '--dry-run']);
-
-    // With --graph-only, vectors are skipped entirely
-    expect(result.stdout).not.toContain('Vector Embeddings');
-    expect(result.exitCode).toBe(0);
+  it('--full --graph-only should NOT mention vector execution', () => {
+    expect(graphOnlyDryResult.stdout).not.toContain('Vector Embeddings');
+    expect(graphOnlyDryResult.exitCode).toBe(0);
   });
 
-  it('code should use Promise.all for parallel execution', async () => {
-    // Verify the implementation exists by checking the source
+  it('code should use Promise.all for parallel execution', () => {
+    // No process spawn needed — reads source directly
     const indexerSource = readFileSync(INDEXER_PATH, 'utf-8');
 
-    // The indexer should have Promise.all for parallel HCGS + vectors
     expect(indexerSource).toContain('Promise.all');
     expect(indexerSource).toContain('hcgsPromise');
     expect(indexerSource).toContain('vectorPromise');
