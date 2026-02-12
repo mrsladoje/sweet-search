@@ -278,9 +278,10 @@ describe('Static Summary Generation', () => {
 
 describe('Provider Priority Logic', () => {
   const providers = [
-    { name: 'cerebras', priority: 1, isLocal: false },
-    { name: 'ollama', priority: 2, isLocal: true },
-    { name: 'transformers', priority: 3, isLocal: true },
+    { name: 'groq', priority: 1, isLocal: false },
+    { name: 'cerebras', priority: 2, isLocal: false },
+    { name: 'ollama', priority: 3, isLocal: true },
+    { name: 'transformers', priority: 4, isLocal: true },
     { name: 'static', priority: 99, isLocal: true },
   ];
 
@@ -304,7 +305,7 @@ describe('Provider Priority Logic', () => {
   it('should select by priority normally', () => {
     const provider = selectProvider(providers);
 
-    expect(provider.name).toBe('cerebras');
+    expect(provider.name).toBe('groq');
   });
 
   it('should prefer local when requested', () => {
