@@ -698,7 +698,7 @@ export class GraphExtractor {
             relationships.push({
               source_id: this.makeId(filePath, 'file', path.basename(filePath)),
               target_id: null,
-              target_name: match[1],
+              target_name: typeof match[1] === 'string' ? match[1].trim() : match[1],
               type: mappedType,
               weight,
               context_line: lineNum,
