@@ -599,11 +599,35 @@ export class GraphExtractor {
     const relationships = [];
     const { graph, id: language } = langInfo;
     const skipCallObjects = new Set(graph.skipCallObjects || []);
+    const jsonDependencySections = new Set(['dependencies', 'devDependencies', 'peerDependencies']);
+    let jsonBraceDepth = 0;
+    let activeJsonDependencyDepth = null;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trimStart();
       const lineNum = i + 1;
+      const openBraces = (line.match(/{/g) || []).length;
+      const closeBraces = (line.match(/}/g) || []).length;
+      const depthBefore = jsonBraceDepth;
+      const depthAfter = depthBefore + openBraces - closeBraces;
+
+      // JSON dependency extraction:
+      // "dependencies"/"devDependencies"/"peerDependencies" are section markers.
+      // Actual imports are package keys inside those objects.
+      if (language === 'json' && activeJsonDependencyDepth !== null && depthBefore === activeJsonDependencyDepth) {
+        const depEntry = trimmed.match(/^"([^"]+)"\s*:\s*"([^"]+)"/);
+        if (depEntry && depEntry[1]) {
+          relationships.push({
+            source_id: this.makeId(filePath, 'file', path.basename(filePath)),
+            target_id: null,
+            target_name: depEntry[1],
+            type: 'imports',
+            weight: GRAPH_CONFIG.relationshipWeights.imports,
+            context_line: lineNum,
+          });
+        }
+      }
 
       // Entity extraction
       for (const [type, pattern] of Object.entries(graph.entities)) {
@@ -649,6 +673,12 @@ export class GraphExtractor {
           }
         } else {
           const match = trimmed.match(pattern);
+          if (relType === 'dep' && language === 'json') {
+            if (match && match[1] && jsonDependencySections.has(match[1]) && depthAfter > depthBefore) {
+              activeJsonDependencyDepth = depthAfter;
+            }
+            continue;
+          }
           if (match && match[1]) {
             const relMapping = {
               import: 'imports', extends: 'extends', implements: 'implements',
@@ -658,7 +688,9 @@ export class GraphExtractor {
               open: 'imports', source: 'imports', from: 'imports',
               with: 'extends', forward: 'imports', using: 'imports',
               protocol: 'implements', link: 'imports', script: 'imports',
-              copyFrom: 'imports',
+              copyFrom: 'imports', alias: 'imports', anchor: 'uses',
+              namespace: 'imports', category: 'extends', ref: 'imports',
+              dep: 'imports',
             };
             const mappedType = relMapping[relType] || 'uses';
             const weight = GRAPH_CONFIG.relationshipWeights[mappedType] || 1.0;
@@ -673,6 +705,13 @@ export class GraphExtractor {
             });
           }
         }
+      }
+
+      if (language === 'json') {
+        if (activeJsonDependencyDepth !== null && depthAfter < activeJsonDependencyDepth) {
+          activeJsonDependencyDepth = null;
+        }
+        jsonBraceDepth = depthAfter;
       }
     }
 
