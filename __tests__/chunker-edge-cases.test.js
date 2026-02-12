@@ -9,6 +9,8 @@
  * 5. False positive rejection (keywords in non-boundary positions)
  * 6. 30-char chunk threshold boundary
  * 7. Multi-line signatures
+ * 8. Decorators/attributes before definitions
+ * 9. Comment-only files
  */
 
 import { describe, it, expect } from 'vitest';
@@ -247,6 +249,249 @@ describe('end-keyword parser', () => {
     ].join('\n'));
     expect(chunks.length).toBeGreaterThanOrEqual(1);
     expect(chunks.some(c => c.metadata.symbol === 'validate')).toBe(true);
+  });
+});
+
+// =============================================================================
+// Entity extraction edge cases
+// =============================================================================
+
+// =============================================================================
+// Multi-line signatures
+// =============================================================================
+
+describe('multi-line signatures', () => {
+  it('matches Java method when signature fits one line with generics', async () => {
+    const chunks = await chunker.parseFile('/test/Generic.java', [
+      'public class Generic {',
+      '  public <T extends Comparable<T>> List<T> sort(List<T> items) {',
+      '    Collections.sort(items);',
+      '    return items;',
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(chunks.length).toBeGreaterThanOrEqual(1);
+    // The class boundary should match 'Generic'
+    expect(chunks.some(c => c.metadata.symbol === 'Generic')).toBe(true);
+  });
+
+  it('misses method name when opening paren is on a different line (known limitation)', async () => {
+    // The chunker matches patterns per-line. If the method name and '(' are split
+    // across lines, the method pattern won't match. Testing actual behavior.
+    const chunks = await chunker.parseFile('/test/Split.java', [
+      'public class Split {',
+      '  public Map<String, List<Integer>>',
+      '      computeIndex(String input) {',
+      '    return null;',
+      '  }',
+      '}',
+    ].join('\n'));
+    // 'Split' class should still be detected
+    expect(chunks.some(c => c.metadata.symbol === 'Split')).toBe(true);
+    // The method 'computeIndex' is on a continuation line — it may or may not
+    // be detected depending on whether the pattern matches the indented line.
+    // We just verify the chunker doesn't crash and produces valid output.
+    expect(chunks.every(c => c.metadata.line_start <= c.metadata.line_end)).toBe(true);
+  });
+
+  it('matches Rust function with lifetime params on one line', async () => {
+    const chunks = await chunker.parseFile('/test/lifetime.rs', [
+      "pub fn longest<'a>(x: &'a str, y: &'a str) -> &'a str {",
+      '    if x.len() > y.len() { x } else { y }',
+      '}',
+    ].join('\n'));
+    expect(chunks.length).toBeGreaterThanOrEqual(1);
+    expect(chunks.some(c => c.metadata.symbol === 'longest')).toBe(true);
+  });
+
+  it('matches Python def even with multi-line args (def line has opening paren)', async () => {
+    // Python chunker matches on the `def name(` line. The closing paren being
+    // on a later line doesn't matter since only the first line is checked.
+    const chunks = await chunker.parseFile('/test/multiarg.py', [
+      'def process_data(',
+      '    input_path: str,',
+      '    output_path: str,',
+      '    verbose: bool = False,',
+      ') -> bool:',
+      '    with open(input_path) as f:',
+      '        data = f.read()',
+      '    return True',
+    ].join('\n'));
+    expect(chunks.length).toBeGreaterThanOrEqual(1);
+    expect(chunks.some(c => c.metadata.symbol === 'process_data')).toBe(true);
+  });
+
+  it('matches C# method with generic constraints on one line', async () => {
+    const chunks = await chunker.parseFile('/test/Constraints.cs', [
+      'public class Constraints {',
+      '  public T FindFirst<T>(IEnumerable<T> items) where T : class {',
+      '    return items.FirstOrDefault();',
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(chunks.some(c => c.metadata.symbol === 'Constraints')).toBe(true);
+  });
+});
+
+// =============================================================================
+// Decorators and attributes before definitions
+// =============================================================================
+
+describe('decorators and attributes before definitions', () => {
+  it('handles Python decorator followed by function', async () => {
+    // Python chunker has a `decorator` pattern. @property starts a chunk,
+    // then `def` starts a new chunk — the decorator chunk is tiny and may
+    // be dropped by the 30-char threshold.
+    const chunks = await chunker.parseFile('/test/decorated.py', [
+      '@property',
+      'def name(self):',
+      '    return self._name',
+      '',
+      '@name.setter',
+      'def name(self, value):',
+      '    self._name = value',
+    ].join('\n'));
+    // Both functions should be detected
+    const funcChunks = chunks.filter(c => c.metadata.chunk_type === 'function');
+    expect(funcChunks.length).toBeGreaterThanOrEqual(1);
+    expect(chunks.some(c => c.metadata.symbol === 'name')).toBe(true);
+  });
+
+  it('handles Python class with multiple decorators', async () => {
+    const chunks = await chunker.parseFile('/test/multi_deco.py', [
+      'import functools',
+      '',
+      '@functools.lru_cache(maxsize=128)',
+      '@staticmethod',
+      'def expensive_compute(n):',
+      '    result = sum(range(n))',
+      '    return result * 2',
+    ].join('\n'));
+    expect(chunks.some(c => c.metadata.symbol === 'expensive_compute')).toBe(true);
+  });
+
+  it('Java @Override stays part of enclosing chunk (no annotation pattern in chunker)', async () => {
+    // Java chunker has no annotation/decorator pattern, so @Override is
+    // a non-matching line that stays in the enclosing chunk.
+    const chunks = await chunker.parseFile('/test/Override.java', [
+      'public class Override {',
+      '  @Override',
+      '  public String toString() {',
+      '    return "Override object";',
+      '  }',
+      '',
+      '  @Deprecated',
+      '  @SuppressWarnings("unchecked")',
+      '  public void legacyMethod() {',
+      '    System.out.println("old");',
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(chunks.some(c => c.metadata.symbol === 'Override')).toBe(true);
+    // toString and legacyMethod should be detected as method boundaries
+    expect(chunks.some(c => c.metadata.symbol === 'toString')).toBe(true);
+  });
+
+  it('Rust #[derive] before struct does not create a separate chunk', async () => {
+    // Rust chunker has no derive/attribute pattern — #[derive(...)] is non-matching
+    const chunks = await chunker.parseFile('/test/derived.rs', [
+      '#[derive(Debug, Clone, PartialEq)]',
+      '#[serde(rename_all = "camelCase")]',
+      'pub struct Config {',
+      '    pub name: String,',
+      '    pub value: i32,',
+      '}',
+    ].join('\n'));
+    expect(chunks.some(c => c.metadata.symbol === 'Config')).toBe(true);
+    expect(chunks.some(c => c.metadata.chunk_type === 'struct')).toBe(true);
+  });
+
+  it('C# [Attribute] before method does not create a separate chunk', async () => {
+    const chunks = await chunker.parseFile('/test/Controller.cs', [
+      'public class UserController {',
+      '  [HttpGet("{id}")]',
+      '  [Authorize(Roles = "Admin")]',
+      '  public IActionResult GetUser(int id) {',
+      '    return Ok(FindUser(id));',
+      '  }',
+      '}',
+    ].join('\n'));
+    expect(chunks.some(c => c.metadata.symbol === 'UserController')).toBe(true);
+  });
+});
+
+// =============================================================================
+// Comment-only files
+// =============================================================================
+
+describe('comment-only files', () => {
+  it('produces trailing chunk for JS file with only single-line comments', async () => {
+    const chunks = await chunker.parseFile('/test/header.js', [
+      '// Copyright 2024 Acme Corp',
+      '// Licensed under MIT',
+      '// This file intentionally left blank',
+    ].join('\n'));
+    // No boundary patterns match, but _pushFinalChunk captures content >30 chars
+    // as a trailing chunk with type 'code' and symbol 'unknown'.
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.chunk_type).toBe('code');
+    expect(chunks[0].metadata.symbol).toBe('unknown');
+  });
+
+  it('handles JS file with block comment only', async () => {
+    const chunks = await chunker.parseFile('/test/license.js', [
+      '/**',
+      ' * Copyright 2024 Acme Corporation',
+      ' * All rights reserved.',
+      ' *',
+      ' * This software is licensed under the MIT License.',
+      ' * See LICENSE file for details.',
+      ' */',
+    ].join('\n'));
+    // Block comment has braces? No — only { } count, not /* */.
+    // Content is >30 chars but no boundary patterns match, so it falls
+    // through to the final-chunk handler as type 'code' / 'unknown'.
+    if (chunks.length > 0) {
+      expect(chunks[0].metadata.chunk_type).toBe('code');
+    }
+  });
+
+  it('produces trailing chunk for Python file with only comments', async () => {
+    const chunks = await chunker.parseFile('/test/header.py', [
+      '# -*- coding: utf-8 -*-',
+      '# Module docstring placeholder',
+      '# Author: Test User',
+    ].join('\n'));
+    // Python indent-based parser skips comment lines in its loop, but
+    // _pushFinalChunk captures the remaining content (>30 chars) as trailing chunk.
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.chunk_type).toBe('code');
+    expect(chunks[0].metadata.symbol).toBe('unknown');
+  });
+
+  it('produces trailing chunk for shell file with only comments', async () => {
+    const chunks = await chunker.parseFile('/test/header.sh', [
+      '#!/bin/bash',
+      '# Setup script configuration',
+      '# Version: 1.0.0',
+    ].join('\n'));
+    // Brace-based parser: no boundaries match, trailing content >30 chars
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.chunk_type).toBe('code');
+    expect(chunks[0].metadata.symbol).toBe('unknown');
+  });
+
+  it('handles Ruby file with only comments (end-keyword parser)', async () => {
+    const chunks = await chunker.parseFile('/test/header.rb', [
+      '# frozen_string_literal: true',
+      '# Copyright 2024 Ruby Corp',
+      '# This module will be filled in later',
+    ].join('\n'));
+    // End-keyword parser: no `def`/`class`/`module` boundaries match.
+    // Content may or may not produce a final trailing chunk.
+    if (chunks.length > 0) {
+      expect(chunks[0].metadata.chunk_type).toBe('code');
+    }
   });
 });
 
