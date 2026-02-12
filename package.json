@@ -90,6 +90,7 @@
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.0.16",
+    "fast-check": "^4.5.3",
     "minimatch": "^10.1.1",
     "p-map": "^7.0.4",
     "vitest": "^4.0.16"
