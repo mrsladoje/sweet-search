@@ -1127,14 +1127,14 @@ export const LANGUAGES = {
     comment: { line: '#', block: null },
 
     chunker: {
-      section: /^\[([^\]]+)\]/,
       array:   /^\[\[([^\]]+)\]\]/,
+      section: /^\[(?!\[)([^\]]+)\]/,
     },
 
     graph: {
       entities: {
-        section: /^\[([^\]]+)\]/,
         array:   /^\[\[([^\]]+)\]\]/,
+        section: /^\[(?!\[)([^\]]+)\]/,
         keyVal:  /^(\w[\w-]*)\s*=/,
       },
       relationships: {},
@@ -1174,21 +1174,21 @@ export const LANGUAGES = {
     comment: { line: '#', block: null },
 
     chunker: {
-      from: /^FROM\s+(\S+)(?:\s+AS\s+(\w+))?/i,
+      from: /^FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\w+))?/i,
       run:  /^RUN\s+/i,
       copy: /^COPY\s+/i,
     },
 
     graph: {
       entities: {
-        stage:      /^FROM\s+\S+\s+AS\s+(\w+)/i,
+        stage:      /^FROM\s+(?:--platform=\S+\s+)?\S+\s+AS\s+(\w+)/i,
         expose:     /^EXPOSE\s+(\d+)/i,
         entrypoint: /^(?:ENTRYPOINT|CMD)\s+/i,
         arg:        /^ARG\s+(\w+)/i,
         env:        /^ENV\s+(\w+)/i,
       },
       relationships: {
-        from:     /^FROM\s+(\S+?)(?::(\S+))?\s*/i,
+        from:     /^FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+\w+)?\s*/i,
         copyFrom: /^COPY\s+--from=(\w+)/i,
       },
       skipCallObjects: [],
