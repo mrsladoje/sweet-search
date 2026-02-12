@@ -657,7 +657,7 @@ export const CEREBRAS_CONFIG = {
     fast: 'zai-glm-4.6',           // Speed + quality balance
     coding: 'llama-3.3-70b',       // Best for code
     simple: 'llama3.1-8b',         // Quick simple tasks
-    hcgs: 'zai-glm-4.6',           // Summary generation
+    hcgs: 'llama3.1-8b',           // Summary generation (fast, cheap — GLM-4.6 is overkill)
     complex: 'qwen-3-235b-a22b-instruct-2507',  // Complex reasoning
   },
 
