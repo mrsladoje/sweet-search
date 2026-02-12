@@ -996,7 +996,7 @@ export const FILE_PATTERNS = {
     '**/*.{yaml,yml}',                      // YAML
     '**/*.{toml}',                          // TOML
     '**/*.{xml,xsl,xsd,wsdl,pom,csproj}',  // XML
-    '**/*.{md,mdx,rst,txt}',               // Documentation
+    '**/*.{md,mdx,mdc,rst,txt}',           // Documentation + Cursor rules
     '**/*.{html,htm,xhtml,vue,svelte}',    // Web markup/SFC
     '**/*.{css,scss,sass,less}',           // Stylesheets
     '**/*.{svg}',                          // SVG
@@ -1008,22 +1008,236 @@ export const FILE_PATTERNS = {
     '**/*.mk',                            // Makefile includes
     // Project markers
     '**/CLAUDE.md',
+    '**/AGENTS.md',
     '**/README.md',
+    '**/.cursorrules',
+    '**/.clinerules',
+    '**/.roorules',
+    '**/.roorules-*',
+    '**/.windsurfrules',
+    '**/.aider.conf.yml',
   ],
   exclude: [
+    // ── Package manager dependencies ──────────────────────────────────────
     '**/node_modules/**',
+    '**/bower_components/**',
+    '**/.yarn/**',
+    '**/.pnp.*',
+    '**/vendor/**',
+    '**/vendors/**',
+    '**/.cargo/**',
+    '**/Godeps/**',
+    '**/Pods/**',
+    '**/Carthage/**',
+    '**/.gradle/**',
+    '**/.mvn/**',
+    '**/venv/**',
+    '**/.venv/**',
+    '**/site-packages/**',
+    '**/_esy/**',
+
+    // ── Build outputs & generated code ────────────────────────────────────
     '**/target/**',
     '**/build/**',
     '**/dist/**',
+    '**/out/**',
+    '**/.next/**',
+    '**/.nuxt/**',
+    '**/.output/**',
+    '**/.svelte-kit/**',
+    '**/.turbo/**',
+    '**/.angular/**',
+    '**/.parcel-cache/**',
+    '**/storybook-static/**',
+    '**/__generated__/**',
+    '**/generated/**',
+    '**/.vercel/**',
+    '**/.netlify/**',
+    '**/.serverless/**',
+    '**/.aws-sam/**',
+    '**/.terraform/**',
+
+    // ── VCS & IDE ─────────────────────────────────────────────────────────
     '**/.git/**',
+    '**/.idea/**',
+    '**/.vscode/**',
+    '**/.vs/**',
+    '**/.eclipse/**',
+    '**/.settings/**',
+
+    // ── Caches & temp ─────────────────────────────────────────────────────
     '**/.vite/**',
     '**/coverage/**',
     '**/__pycache__/**',
-    '**/*.class',
-    '**/*.log',
-    '**/bun.lock',
+    '**/.mypy_cache/**',
+    '**/.pytest_cache/**',
+    '**/.ruff_cache/**',
+    '**/.tox/**',
+    '**/.eggs/**',
+    '**/*.egg-info/**',
+    '**/.pytype/**',
+    '**/htmlcov/**',
+    '**/.cache/**',
+    '**/.nx/**',
+    '**/.eslintcache',
+    '**/.stylelintcache',
+    '**/tmp/**',
+    '**/.tmp/**',
+    '**/.temp/**',
+
+    // ── Lock files (all ecosystems) ───────────────────────────────────────
     '**/package-lock.json',
+    '**/bun.lock',
+    '**/bun.lockb',
+    '**/yarn.lock',
+    '**/pnpm-lock.yaml',
+    '**/composer.lock',
+    '**/Cargo.lock',
+    '**/Gemfile.lock',
+    '**/poetry.lock',
+    '**/pdm.lock',
+    '**/uv.lock',
+    '**/Pipfile.lock',
+    '**/npm-shrinkwrap.json',
+    '**/deno.lock',
+    '**/pixi.lock',
+    '**/flake.lock',
+    '**/gradle.lockfile',
+    '**/.terraform.lock.hcl',
+    '**/go.sum',
+    '**/Package.resolved',
+
+    // ── Minified / bundled / sourcemaps ───────────────────────────────────
+    '**/*.min.js',
+    '**/*.min.css',
+    '**/*.bundle.js',
+    '**/*.chunk.js',
+    '**/*.map',
+
+    // ── Binary & compiled artifacts ───────────────────────────────────────
+    '**/*.class',
+    '**/*.pyc',
+    '**/*.pyo',
+    '**/*.o',
+    '**/*.so',
+    '**/*.dylib',
+    '**/*.dll',
+    '**/*.exe',
+    '**/*.wasm',
+
+    // ── OS metadata & misc ────────────────────────────────────────────────
+    '**/*.log',
+    '**/.DS_Store',
+    '**/Thumbs.db',
+    '**/*.swp',
+    '**/*.swo',
+
+    // ── Secrets & environment files (all stacks) ────────────────────────
+    '**/.env',
+    '**/.env.*',
+
+    // ── .NET secrets & env-specific config ────────────────────────────────
+    '**/appsettings.Development.json',
+    '**/appsettings.Local.json',
+    '**/appsettings.Staging.json',
+    '**/appsettings.Production.json',
+    '**/secrets.json',
+    '**/*.user',
+
+    // ── Python (Django, FastAPI, Flask) secrets ───────────────────────────
+    '**/local_settings.py',
+    '**/settings/local.py',
+    '**/settings/dev.py',
+    '**/secrets.py',
+    '**/config/local.py',
+
+    // ── Java/Kotlin (Spring) env-specific config ─────────────────────────
+    '**/application-dev.properties',
+    '**/application-local.properties',
+    '**/application-test.properties',
+    '**/application-*-local.yml',
+    '**/application-*-local.yaml',
+
+    // ── Node/JS/TS secrets ────────────────────────────────────────────────
+    '**/config/secrets.js',
+    '**/config/secrets.ts',
+    '**/config/local.js',
+    '**/config/local.ts',
+    '**/config.local.js',
+    '**/config.local.ts',
+    '**/.firebaserc',
+
+    // ── Ruby (Rails) ──────────────────────────────────────────────────────
+    '**/config/credentials.yml.enc',
+
+    // ── PHP (Laravel) ─────────────────────────────────────────────────────
+    '**/config/local.php',
+
+    // ── Go / Rust / generic local config ──────────────────────────────────
+    '**/config.local.*',
+    '**/config/local.*',
+
+    // ── Mobile: iOS ───────────────────────────────────────────────────────
+    '**/Secrets.plist',
+    '**/GoogleService-Info.plist',
+    '**/*-Credentials.plist',
+    '**/Config/Secrets.swift',
+
+    // ── Mobile: Android ───────────────────────────────────────────────────
+    '**/local.properties',
+    '**/google-services.json',
+    '**/keystore.properties',
+    '**/secrets.properties',
+
+    // ── Embedded (Arduino, ESP-IDF, PlatformIO) ──────────────────────────
+    '**/credentials.h',
+    '**/secrets.h',
+    '**/config_private.h',
+    '**/sdkconfig.local',
+    '**/platformio.ini.local',
+    '**/*_credentials.*',
+
+    // ── Sweet Search data ─────────────────────────────────────────────────
     '**/.sweet-search/**',
+  ],
+
+  // Default max file size for indexing (1 MB). Files larger than this are
+  // almost always generated data, minified bundles, or binary blobs that
+  // add noise without meaningful search value.  Override per-project via
+  // "maxFileSize" in .sweet-search.config.json (value in bytes).
+  maxFileSize: 1 * 1024 * 1024,
+
+  // Align indexing with .gitignore by default. Agentic paths are allowlisted
+  // in AGENTIC_GITIGNORE_ALLOWLIST so local AI setup remains searchable.
+  respectGitignore: true,
+};
+
+// Agentic tooling paths that should stay indexable even when listed in
+// .gitignore. This supports local AI workflow files without requiring users
+// to maintain extra include rules.
+export const AGENTIC_GITIGNORE_ALLOWLIST = {
+  directories: [
+    '.claude/',
+    '.agents/',
+    '.cursor/',
+    '.codex/',
+    '.cline/',
+    '.clinerules/',
+    '.roo/',
+    '.continue/',
+    '.windsurf/',
+  ],
+  files: [
+    '.cursorrules',
+    '.clinerules',
+    '.roorules',
+    '.windsurfrules',
+    '.aider.conf.yml',
+    '.aider.conf.yaml',
+  ],
+  filePrefixes: [
+    '.roorules-',
+    '.aider.',
   ],
 };
 
@@ -1032,13 +1246,18 @@ export const FILE_PATTERNS = {
  * Precedence: config file > defaults. Environment variables > config file.
  *
  * @param {string} [projectRoot] - Project root to search for config file
- * @returns {{ include: string[], exclude: string[], projectRoot?: string }}
+ * @returns {{ include: string[], exclude: string[], maxFileSize: number, respectGitignore: boolean, projectRoot?: string }}
  */
 export function loadProjectConfig(projectRoot = process.cwd()) {
   const configPath = path.join(projectRoot, '.sweet-search.config.json');
 
   if (!existsSync(configPath)) {
-    return { include: FILE_PATTERNS.include, exclude: FILE_PATTERNS.exclude };
+    return {
+      include: FILE_PATTERNS.include,
+      exclude: FILE_PATTERNS.exclude,
+      maxFileSize: FILE_PATTERNS.maxFileSize,
+      respectGitignore: FILE_PATTERNS.respectGitignore,
+    };
   }
 
   try {
@@ -1046,7 +1265,7 @@ export function loadProjectConfig(projectRoot = process.cwd()) {
     const config = JSON.parse(raw);
 
     // Validate known keys, warn on unknown
-    const knownKeys = new Set(['include', 'exclude', 'projectRoot', 'indexDocs', 'maxFileSize']);
+    const knownKeys = new Set(['include', 'exclude', 'projectRoot', 'indexDocs', 'maxFileSize', 'respectGitignore']);
     for (const key of Object.keys(config)) {
       if (!knownKeys.has(key)) {
         console.error(`[sweet-search] Warning: unknown key "${key}" in .sweet-search.config.json`);
@@ -1056,11 +1275,18 @@ export function loadProjectConfig(projectRoot = process.cwd()) {
     return {
       include: Array.isArray(config.include) ? config.include : FILE_PATTERNS.include,
       exclude: Array.isArray(config.exclude) ? [...FILE_PATTERNS.exclude, ...config.exclude] : FILE_PATTERNS.exclude,
+      maxFileSize: typeof config.maxFileSize === 'number' ? config.maxFileSize : FILE_PATTERNS.maxFileSize,
+      respectGitignore: typeof config.respectGitignore === 'boolean' ? config.respectGitignore : FILE_PATTERNS.respectGitignore,
       ...(config.projectRoot ? { projectRoot: config.projectRoot } : {}),
     };
   } catch (err) {
     console.error(`[sweet-search] Error loading .sweet-search.config.json: ${err.message}`);
-    return { include: FILE_PATTERNS.include, exclude: FILE_PATTERNS.exclude };
+    return {
+      include: FILE_PATTERNS.include,
+      exclude: FILE_PATTERNS.exclude,
+      maxFileSize: FILE_PATTERNS.maxFileSize,
+      respectGitignore: FILE_PATTERNS.respectGitignore,
+    };
   }
 }
 
