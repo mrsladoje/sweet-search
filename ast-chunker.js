@@ -1,7 +1,5 @@
-#!/usr/bin/env node
-
 /**
- * AST-based semantic code chunking using Tree-sitter
+ * AST-based semantic code chunking
  *
  * Extracts meaningful code chunks (classes, methods, functions, components)
  * with contextual information for AgentDB storage and semantic search.
@@ -14,60 +12,40 @@ import { createHash } from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
 import { detectProjectBoundary } from './core/project-detector.js';
+import { getLanguageByPath } from './core/language-patterns.js';
 
 const MAX_CHUNK_SIZE = 2000;
 
 /**
- * Simple AST-like chunker that works without tree-sitter
- * Uses regex patterns to identify code boundaries
+ * AST-like semantic code chunker supporting 35+ languages.
+ * Uses regex boundary patterns from core/language-patterns.js registry.
+ * Three parsing strategies: brace-based, indent-based, end-keyword.
  */
 export class ASTChunker {
   constructor(options) {
     this.projectRoot = options?.projectRoot || process.cwd();
-    this.patterns = {
-      java: {
-        class: /(?:public|private|protected)?\s*(?:static)?\s*(?:final)?\s*class\s+(\w+)/,
-        method: /(?:public|private|protected)?\s*(?:static)?\s*(?:final)?\s*[\w<>\[\]]+\s+(\w+)\s*\(/,
-        interface: /(?:public)?\s*interface\s+(\w+)/,
-        enum: /(?:public)?\s*enum\s+(\w+)/
-      },
-      javascript: {
-        function: /(?:export\s+)?(?:const|function|async\s+function)\s+(\w+)\s*[=:(]/,
-        class: /(?:export\s+)?class\s+(\w+)/,
-        component: /(?:export\s+)?(?:const|function)\s+([A-Z]\w+)\s*[=:]/,
-        arrow: /const\s+(\w+)\s*=\s*(?:async\s*)?\(/
-      },
-      proto: {
-        message: /message\s+(\w+)/,
-        service: /service\s+(\w+)/,
-        enum: /enum\s+(\w+)/,
-        rpc: /rpc\s+(\w+)/
-      }
-    };
-  }
-
-  detectLanguage(filePath) {
-    const ext = path.extname(filePath).toLowerCase();
-    const extMap = {
-      '.java': 'java',
-      '.js': 'javascript',
-      '.jsx': 'javascript',
-      '.ts': 'javascript',
-      '.tsx': 'javascript',
-      '.proto': 'proto'
-    };
-    return extMap[ext] || null;
   }
 
   async parseFile(filePath, content) {
-    const language = this.detectLanguage(filePath);
-    if (!language) {
+    const langInfo = getLanguageByPath(filePath);
+    if (!langInfo || !langInfo.chunker) {
       return this.parseGenericFile(filePath, content);
     }
 
+    const { id: language, chunker: patterns, indentBased, endKeyword } = langInfo;
+
+    if (indentBased) {
+      return this.parseIndentBasedFile(filePath, content, language, patterns);
+    }
+    if (endKeyword) {
+      return this.parseEndKeywordFile(filePath, content, language, patterns, endKeyword);
+    }
+    return this.parseBraceBasedFile(filePath, content, language, patterns);
+  }
+
+  parseBraceBasedFile(filePath, content, language, patterns) {
     const chunks = [];
     const lines = content.split('\n');
-    const patterns = this.patterns[language];
 
     let currentChunk = null;
     let braceDepth = 0;
@@ -76,24 +54,11 @@ export class ASTChunker {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
-      // Track brace depth
       braceDepth += (line.match(/{/g) || []).length;
       braceDepth -= (line.match(/}/g) || []).length;
 
-      // Check for code boundaries
-      let matched = null;
-      let matchType = null;
+      const { name: matched, type: matchType } = this._matchBoundary(line, patterns);
 
-      for (const [type, pattern] of Object.entries(patterns)) {
-        const match = line.match(pattern);
-        if (match) {
-          matched = match[1];
-          matchType = type;
-          break;
-        }
-      }
-
-      // Create chunk at boundaries
       if ((matched && currentChunk) || (braceDepth === 0 && currentChunk)) {
         const chunkContent = lines.slice(chunkStart, i + 1).join('\n');
         if (chunkContent.trim().length > 30) {
@@ -109,23 +74,123 @@ export class ASTChunker {
       }
     }
 
-    // Final chunk
+    this._pushFinalChunk(chunks, lines, chunkStart, filePath, language, currentChunk);
+    return chunks;
+  }
+
+  parseIndentBasedFile(filePath, content, language, patterns) {
+    const chunks = [];
+    const lines = content.split('\n');
+
+    let currentChunk = null;
+    let chunkStart = 0;
+    let chunkIndent = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trimStart();
+      if (!trimmed || trimmed.startsWith('#')) continue; // skip blank/comment lines
+
+      const indent = line.length - trimmed.length;
+
+      // If we're inside a chunk and hit a line at the same or lesser indent, close
+      if (currentChunk && indent <= chunkIndent && i > chunkStart) {
+        const chunkContent = lines.slice(chunkStart, i).join('\n');
+        if (chunkContent.trim().length > 30) {
+          chunks.push(this.buildChunk(chunkContent, filePath, language, currentChunk.type, currentChunk.name, chunkStart, i - 1));
+        }
+        currentChunk = null;
+        chunkStart = i;
+      }
+
+      const { name: matched, type: matchType } = this._matchBoundary(line, patterns);
+
+      if (matched) {
+        // Close prior chunk if any non-empty content
+        if (currentChunk && chunkStart < i) {
+          const chunkContent = lines.slice(chunkStart, i).join('\n');
+          if (chunkContent.trim().length > 30) {
+            chunks.push(this.buildChunk(chunkContent, filePath, language, currentChunk.type, currentChunk.name, chunkStart, i - 1));
+          }
+        }
+        currentChunk = { type: matchType, name: matched };
+        chunkStart = i;
+        chunkIndent = indent;
+      }
+    }
+
+    this._pushFinalChunk(chunks, lines, chunkStart, filePath, language, currentChunk);
+    return chunks;
+  }
+
+  parseEndKeywordFile(filePath, content, language, patterns, endKeyword) {
+    const chunks = [];
+    const lines = content.split('\n');
+    const endRe = new RegExp(`^\\s*${endKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+
+    let currentChunk = null;
+    let depth = 0;
+    let chunkStart = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      const { name: matched, type: matchType } = this._matchBoundary(line, patterns);
+
+      if (matched) {
+        if (currentChunk && depth === 0) {
+          const chunkContent = lines.slice(chunkStart, i).join('\n');
+          if (chunkContent.trim().length > 30) {
+            chunks.push(this.buildChunk(chunkContent, filePath, language, currentChunk.type, currentChunk.name, chunkStart, i - 1));
+          }
+        }
+        if (!currentChunk || depth === 0) {
+          currentChunk = { type: matchType, name: matched };
+          chunkStart = i;
+        }
+        depth++;
+      }
+
+      if (endRe.test(line) && depth > 0) {
+        depth--;
+        if (depth === 0 && currentChunk) {
+          const chunkContent = lines.slice(chunkStart, i + 1).join('\n');
+          if (chunkContent.trim().length > 30) {
+            chunks.push(this.buildChunk(chunkContent, filePath, language, currentChunk.type, currentChunk.name, chunkStart, i));
+          }
+          currentChunk = null;
+          chunkStart = i + 1;
+        }
+      }
+    }
+
+    this._pushFinalChunk(chunks, lines, chunkStart, filePath, language, currentChunk);
+    return chunks;
+  }
+
+  _matchBoundary(line, patterns) {
+    const trimmed = line.trimStart();
+    for (const [type, pattern] of Object.entries(patterns)) {
+      const match = trimmed.match(pattern);
+      if (match) {
+        return { name: match[1], type };
+      }
+    }
+    return { name: null, type: null };
+  }
+
+  _pushFinalChunk(chunks, lines, chunkStart, filePath, language, currentChunk) {
     if (chunkStart < lines.length) {
       const chunkContent = lines.slice(chunkStart).join('\n');
       if (chunkContent.trim().length > 30) {
         chunks.push(this.buildChunk(
-          chunkContent,
-          filePath,
-          language,
+          chunkContent, filePath, language,
           currentChunk?.type || 'code',
           currentChunk?.name || 'unknown',
-          chunkStart,
-          lines.length
+          chunkStart, lines.length
         ));
       }
     }
-
-    return chunks;
   }
 
   parseGenericFile(filePath, content) {
