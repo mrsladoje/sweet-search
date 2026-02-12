@@ -655,6 +655,10 @@ export class GraphExtractor {
               decorator: 'uses', include: 'imports', require: 'imports',
               use: 'imports', mixin: 'extends', embed: 'uses',
               inherit: 'extends', prepend: 'imports', extend: 'uses',
+              open: 'imports', source: 'imports', from: 'imports',
+              with: 'extends', forward: 'imports', using: 'imports',
+              protocol: 'implements', link: 'imports', script: 'imports',
+              copyFrom: 'imports',
             };
             const mappedType = relMapping[relType] || 'uses';
             const weight = GRAPH_CONFIG.relationshipWeights[mappedType] || 1.0;

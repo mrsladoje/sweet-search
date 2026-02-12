@@ -258,7 +258,7 @@ export const LANGUAGES = {
       entities: {
         class:    /^class\s+(\w+)(?:\(([^)]*)\))?:/,
         function: /^(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)/,
-        field:    /^(\w+)\s*(?::\s*([\w\[\],\s|]+))?\s*=/,
+        field:    /^(\w+)\s*:\s*([\w\[\],\s|]+)\s*=/,
       },
       relationships: {
         import:       /^(?:from\s+([\w.]+)\s+)?import\s+(.+)/,
@@ -295,7 +295,7 @@ export const LANGUAGES = {
       },
       relationships: {
         import:    /^\s*"([^"]+)"/,
-        embed:     /^\s+(\w+)\s*$/,
+        embed:     /^\s+([A-Z]\w*)\s*$/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
       },
       // Go: exported = starts with uppercase
@@ -604,7 +604,7 @@ export const LANGUAGES = {
     chunker: {
       class: /(?:abstract\s+)?class\s+(\w+)/,
       mixin: /mixin\s+(\w+)/,
-      function: /(?:[\w<>?]+)\s+(\w+)\s*\(/,
+      function: /^(?!(?:return|if|else|for|while|switch|throw|new|await|yield|assert|var|final|const)\s)(?:static\s+)?(?:[\w<>?]+)\s+(\w+)\s*\(/,
       enum: /enum\s+(\w+)/,
     },
 
@@ -612,7 +612,7 @@ export const LANGUAGES = {
       entities: {
         class:    /(?:abstract\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?/,
         mixin:    /mixin\s+(\w+)/,
-        function: /(?:static\s+)?(?:[\w<>?]+)\s+(\w+)\s*\(([^)]*)\)/,
+        function: /^(?!(?:return|if|else|for|while|switch|throw|new|await|yield|assert|var|final|const)\s)(?:static\s+)?(?:[\w<>?]+)\s+(\w+)\s*\(([^)]*)\)/,
         enum:     /enum\s+(\w+)/,
       },
       relationships: {
@@ -844,7 +844,7 @@ export const LANGUAGES = {
         function: /^(?:function\s+)?(\w+)\s*\(\)\s*\{/,
       },
       relationships: {
-        source: /^(?:source|\.)?\s+(.+)/,
+        source: /^(?:source|\.)\s+(.+)/,
       },
       skipCallObjects: ['echo', 'printf', 'cd', 'export', 'local', 'readonly'],
     },
@@ -926,7 +926,7 @@ export const LANGUAGES = {
       },
       relationships: {
         implements: /type\s+\w+\s+implements\s+([\w&\s]+)/,
-        fieldType:  /:\s*\[?(\w+)\]?/,
+        // fieldType intentionally omitted — too noisy (matches every field's type, generating thousands of false relationships)
       },
       skipCallObjects: [],
     },
