@@ -74,17 +74,26 @@ cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks model-outcome --task "Harde
 
 SONA (Self-Optimizing Neural Architecture) learns which agent+action patterns lead to success. Without it, every session starts cold — no learning carries over.
 
-```bash
+> **Why MCP tools instead of CLI?** The CLI `hooks intelligence trajectory-start/step/end` commands crash with `TypeError: Cannot read properties of undefined (reading 'toFixed')` — the CLI's `intelligenceCommand` doesn't route these subcommands and then hits uninitialized SONA stats. The MCP tools work correctly.
+
+Use the MCP tools directly (these are called by Claude, not in bash):
+
+```
 # Start trajectory when beginning a unit of work (after pre-task)
-cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks intelligence trajectory-start --task "Harden login validation" --agent coder
+mcp__claude-flow__hooks_intelligence_trajectory-start
+  { task: "Harden login validation", agent: "coder" }
+  # → returns { trajectoryId: "traj-...", status: "recording" }
 
 # Record significant steps during work (not every micro-action — just milestones)
-cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks intelligence trajectory-step --trajectory-id "TRAJ_ID" --action "wrote implementation" --result "3 files changed" --quality 0.8
-cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks intelligence trajectory-step --trajectory-id "TRAJ_ID" --action "ran tests" --result "all passing" --quality 1.0
+mcp__claude-flow__hooks_intelligence_trajectory-step
+  { trajectoryId: "TRAJ_ID", action: "wrote implementation", result: "3 files changed", quality: 0.8 }
+mcp__claude-flow__hooks_intelligence_trajectory-step
+  { trajectoryId: "TRAJ_ID", action: "ran tests", result: "all passing", quality: 1.0 }
 
 # End trajectory when unit of work is done (before post-task)
 # This triggers EWC++ consolidation — learning is preserved across sessions
-cd PROJECT_ROOT && npx @claude-flow/cli@latest hooks intelligence trajectory-end --trajectory-id "TRAJ_ID" --success true
+mcp__claude-flow__hooks_intelligence_trajectory-end
+  { trajectoryId: "TRAJ_ID", success: true }
 ```
 
 **When to use trajectory-step:** Only for meaningful milestones — "wrote implementation", "ran tests", "fixed failing test", "security review passed". Not for every file read or small edit.
@@ -153,18 +162,18 @@ $CF hooks route --task "$TASK_DESC"
 # ── Register task ──
 $CF hooks pre-task --task-id "$TASK_ID" --description "$TASK_DESC"
 
-# ── Start trajectory (copy the TRAJ_ID from the output) ──
-$CF hooks intelligence trajectory-start --task "$TASK_DESC" --agent coder
-TRAJ_ID="<paste from output>"
+# ── Start trajectory (use MCP tool — CLI version crashes) ──
+# Call: mcp__claude-flow__hooks_intelligence_trajectory-start { task: "$TASK_DESC", agent: "coder" }
+# Save the returned trajectoryId as TRAJ_ID
 
 # ── ... do the actual work here ... ──
 
-# ── (optional) Record milestones ──
-$CF hooks intelligence trajectory-step --trajectory-id "$TRAJ_ID" --action "wrote implementation" --result "3 files changed" --quality 0.8
-$CF hooks intelligence trajectory-step --trajectory-id "$TRAJ_ID" --action "ran tests" --result "all passing" --quality 1.0
+# ── (optional) Record milestones via MCP ──
+# Call: mcp__claude-flow__hooks_intelligence_trajectory-step { trajectoryId: "TRAJ_ID", action: "wrote implementation", result: "3 files changed", quality: 0.8 }
+# Call: mcp__claude-flow__hooks_intelligence_trajectory-step { trajectoryId: "TRAJ_ID", action: "ran tests", result: "all passing", quality: 1.0 }
 
-# ── Close trajectory (triggers EWC++ learning) ──
-$CF hooks intelligence trajectory-end --trajectory-id "$TRAJ_ID" --success true
+# ── Close trajectory (triggers EWC++ learning) via MCP ──
+# Call: mcp__claude-flow__hooks_intelligence_trajectory-end { trajectoryId: "TRAJ_ID", success: true }
 
 # ── Record outcome ──
 $CF hooks post-task --task-id "$TASK_ID" --success true
