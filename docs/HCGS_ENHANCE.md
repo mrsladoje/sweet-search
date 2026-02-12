@@ -1,6 +1,6 @@
 # HCGS Enhancement Plan: Faster Summaries + Dual-Model Embedding
 
-**Status**: Plan (not yet implemented)
+**Status**: Phase 1 COMPLETED (2026-02-12), Phase 2 planned
 **Date**: 2026-02-11
 **Scope**: Two improvements to the HCGS pipeline: (1) Replace GLM-4.6 with a faster/cheaper model for summary generation, (2) Use general-purpose embeddings (Voyage-4 series) for NL summaries instead of code-specific embeddings (voyage-code-3), with implications for indexing, search, and reranking.
 
@@ -232,7 +232,7 @@ This plan is split into two independent phases. Phase 1 is a quick win (config c
 
 ---
 
-### Phase 1: Faster Summary Generation
+### Phase 1: Faster Summary Generation — COMPLETED (2026-02-12)
 
 **Scope**: Replace GLM-4.6 with faster/cheaper models for HCGS summary generation. No embedding or search pipeline changes.
 

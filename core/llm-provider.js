@@ -2,10 +2,14 @@
  * LLM Provider Fallback Chain for HCGS Summary Generation
  *
  * Tiered approach for generating code summaries:
- * 1. Cerebras GLM-4.6 (primary) - ~1000 tok/s, excellent for code
- * 2. Ollama (local GPU) - qwen2.5-coder:7b-instruct at localhost:11434
- * 3. Transformers.js (local CPU) - phi-3-mini-4k-instruct via @xenova/transformers
- * 4. Static fallback (no LLM) - uses doc_comment, signature, or "{type} {name}"
+ * 1. Groq (primary) - llama-3.2-3b-preview, ~2800 tok/s, $0.06/M (cheapest)
+ *    └─ internal fallback: llama-3.1-8b-instant (~560 tok/s) if 3B model fails
+ * 2. Cerebras (fallback) - llama3.1-8b, ~2200 tok/s, $0.10/M
+ * 3. Ollama (local GPU) - qwen2.5-coder:7b-instruct at localhost:11434
+ * 4. Transformers.js (local CPU) - phi-3-mini-4k-instruct via @xenova/transformers
+ * 5. Static fallback (no LLM) - uses doc_comment, signature, or "{type} {name}"
+ *
+ * Override model for any provider: HCGS_MODEL=model-name
  *
  * Features:
  * - Auto-detection of best available provider
@@ -19,6 +23,16 @@ import { CEREBRAS_CONFIG, HCGS_CONFIG, getCerebrasModel, isCerebrasAvailable } f
 // =============================================================================
 // PROVIDER CONFIGURATION
 // =============================================================================
+
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
+
+const GROQ_HCGS_CONFIG = {
+  apiKey: GROQ_API_KEY,
+  baseUrl: 'https://api.groq.com/openai/v1',
+  model: 'llama-3.2-3b-preview',     // ~2800 tok/s, $0.06/M — fastest & cheapest
+  fallbackModel: 'llama-3.1-8b-instant', // ~560 tok/s, $0.08/M — better quality fallback
+  timeout: 15000,
+};
 
 const OLLAMA_CONFIG = {
   baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
@@ -129,11 +143,83 @@ export async function generateWithRetry(fn, options = {}) {
 }
 
 // =============================================================================
-// PROVIDER: CEREBRAS GLM-4.6
+// PROVIDER: GROQ (Primary — fastest, cheapest)
 // =============================================================================
 
 /**
- * Generates summary using Cerebras GLM-4.6
+ * Calls the Groq chat completions API with a specific model
+ * @param {string} model - Groq model ID
+ * @param {string} prompt - The prompt to send
+ * @param {number} maxTokens - Maximum tokens to generate
+ * @returns {Promise<string>} - Generated text
+ */
+async function callGroqCompletion(model, prompt, maxTokens) {
+  const requestBody = {
+    model,
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a code documentation assistant. Generate concise, accurate summaries of code entities. Focus on what the code does, not how. Be brief and direct.',
+      },
+      {
+        role: 'user',
+        content: prompt,
+      },
+    ],
+    max_tokens: maxTokens,
+    temperature: 0.3,
+  };
+
+  const response = await fetch(`${GROQ_HCGS_CONFIG.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${GROQ_API_KEY}`,
+    },
+    body: JSON.stringify(requestBody),
+    signal: AbortSignal.timeout(GROQ_HCGS_CONFIG.timeout),
+  });
+
+  if (!response.ok) {
+    const error = new Error(`Groq API error: ${response.status} ${response.statusText}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content?.trim() || '';
+}
+
+async function generateWithGroq(prompt, options = {}) {
+  if (!GROQ_API_KEY) {
+    throw new Error('Groq API key not configured');
+  }
+
+  const primaryModel = process.env.HCGS_MODEL || GROQ_HCGS_CONFIG.model;
+  const maxTokens = options.maxTokens ?? 150;
+
+  try {
+    return await callGroqCompletion(primaryModel, prompt, maxTokens);
+  } catch (primaryError) {
+    // If user overrode model via HCGS_MODEL, respect their choice — don't fallback
+    if (process.env.HCGS_MODEL || !GROQ_HCGS_CONFIG.fallbackModel) {
+      throw primaryError;
+    }
+
+    if (process.env.SEARCH_DEBUG) {
+      console.log(`[LLM] Groq ${primaryModel} failed, trying fallback ${GROQ_HCGS_CONFIG.fallbackModel}: ${primaryError.message}`);
+    }
+
+    return await callGroqCompletion(GROQ_HCGS_CONFIG.fallbackModel, prompt, maxTokens);
+  }
+}
+
+// =============================================================================
+// PROVIDER: CEREBRAS (Fallback — fast, good quality)
+// =============================================================================
+
+/**
+ * Generates summary using Cerebras
  * @param {string} prompt - The prompt to send
  * @param {object} options - Generation options
  * @returns {Promise<string>} - Generated summary
@@ -143,7 +229,7 @@ async function generateWithCerebras(prompt, options = {}) {
     throw new Error('Cerebras API key not configured');
   }
 
-  const model = getCerebrasModel('hcgs');
+  const model = process.env.HCGS_MODEL || getCerebrasModel('hcgs');
   const maxTokens = options.maxTokens ?? 150;
 
   const requestBody = {
@@ -383,26 +469,33 @@ function generateStaticSummary(entity) {
  * @property {Function} generate - Generation function
  */
 
-// Provider registry
+// Provider registry (priority order: Groq → Cerebras → Ollama → Transformers.js → Static)
 const providers = {
+  groq: {
+    name: 'groq',
+    isLocal: false,
+    priority: 1,
+    checkAvailable: () => Promise.resolve(GROQ_API_KEY.length > 0),
+    generate: generateWithGroq,
+  },
   cerebras: {
     name: 'cerebras',
     isLocal: false,
-    priority: 1,
+    priority: 2,
     checkAvailable: () => Promise.resolve(isCerebrasAvailable()),
     generate: generateWithCerebras,
   },
   ollama: {
     name: 'ollama',
     isLocal: true,
-    priority: 2,
+    priority: 3,
     checkAvailable: isOllamaAvailable,
     generate: generateWithOllama,
   },
   transformers: {
     name: 'transformers',
     isLocal: true,
-    priority: 3,
+    priority: 4,
     checkAvailable: isTransformersAvailable,
     generate: generateWithTransformers,
   },
@@ -517,7 +610,7 @@ export async function generateSummary(prompt, options = {}) {
     }
 
     // Try fallback providers
-    const fallbackOrder = ['ollama', 'transformers', 'static'];
+    const fallbackOrder = ['groq', 'cerebras', 'ollama', 'transformers', 'static'];
     for (const fallbackName of fallbackOrder) {
       if (fallbackName === provider.name) continue;
 
@@ -614,6 +707,7 @@ export function createSummaryPrompt(entity) {
 // =============================================================================
 
 export {
+  generateWithGroq,
   generateWithCerebras,
   generateWithOllama,
   generateWithTransformers,
@@ -621,6 +715,7 @@ export {
   isOllamaAvailable,
   isTransformersAvailable,
   providers,
+  GROQ_HCGS_CONFIG,
   OLLAMA_CONFIG,
   TRANSFORMERS_CONFIG,
   RETRY_CONFIG,
