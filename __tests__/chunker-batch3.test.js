@@ -37,6 +37,7 @@ describe('Shell chunker', () => {
       '  return $?',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(2);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'function' && s.name === 'setup_env')).toBe(true);
     expect(summary.some(s => s.type === 'function' && s.name === 'run_tests')).toBe(true);
@@ -51,6 +52,7 @@ describe('Shell chunker', () => {
       '  echo "Done"',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(1);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'function' && s.name === 'cleanup')).toBe(true);
   });
@@ -67,6 +69,8 @@ describe('Shell entity extraction', () => {
       '  run_tests',
       '}',
     ].join('\n'));
+    expect(result.entities.length).toBe(1);
+    expect(result.relationships.length).toBe(2);
     expect(result.entities.some(e => e.type === 'function' && e.name === 'main')).toBe(true);
     expect(result.relationships.some(r => r.target_name === './config.sh')).toBe(true);
     expect(result.relationships.some(r => r.target_name === './utils.sh')).toBe(true);
@@ -92,6 +96,7 @@ describe('PowerShell chunker', () => {
       '  [bool]$Secure',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(2);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'function' && s.name === 'Get-UserProfile')).toBe(true);
     expect(summary.some(s => s.type === 'class' && s.name === 'ServerConfig')).toBe(true);
@@ -109,6 +114,8 @@ describe('PowerShell entity extraction', () => {
       '  return $Settings',
       '}',
     ].join('\n'));
+    expect(result.entities.length).toBe(1);
+    expect(result.relationships.length).toBe(1);
     expect(result.entities.some(e => e.type === 'function' && e.name === 'Set-Config')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'ActiveDirectory')).toBe(true);
   });
@@ -135,6 +142,7 @@ describe('Nim chunker', () => {
       '  echo "Stopping server"',
       '  echo "Goodbye"',
     ].join('\n'));
+    expect(chunks.length).toBe(3);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'type' && s.name === 'ServerConfig')).toBe(true);
     expect(summary.some(s => s.type === 'proc' && s.name === 'start')).toBe(true);
@@ -155,6 +163,8 @@ describe('Nim entity extraction', () => {
       'func calculate(x: int): int =',
       '  return x * 2',
     ].join('\n'));
+    expect(result.entities.length).toBe(2);
+    expect(result.relationships.length).toBe(2);
     expect(result.entities.some(e => e.type === 'proc' && e.name === 'validate')).toBe(true);
     expect(result.entities.some(e => e.type === 'func' && e.name === 'calculate')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'strutils')).toBe(true);
@@ -181,6 +191,7 @@ describe('F# chunker', () => {
       '    items |> List.filter (fun x -> x > 0)',
       '    items |> List.sum',
     ].join('\n'));
+    expect(chunks.length).toBe(3);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'type' && s.name === 'UserService')).toBe(true);
     expect(summary.some(s => s.type === 'let' && s.name === 'processData')).toBe(true);
@@ -201,6 +212,8 @@ describe('F# entity extraction', () => {
       '    if n <= 1 then n',
       '    else fibonacci (n-1) + fibonacci (n-2)',
     ].join('\n'));
+    expect(result.entities.length).toBe(3);
+    expect(result.relationships.length).toBe(1);
     expect(result.entities.some(e => e.type === 'module' && e.name === 'Cache')).toBe(true);
     expect(result.entities.some(e => e.type === 'type' && e.name === 'Config')).toBe(true);
     expect(result.entities.some(e => e.type === 'let' && e.name === 'fibonacci')).toBe(true);
@@ -225,6 +238,7 @@ describe('Sass chunker', () => {
       '  justify-content: center',
       '  align-items: center',
     ].join('\n'));
+    expect(chunks.length).toBe(2);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'mixin' && s.name === 'responsive-grid')).toBe(true);
     expect(summary.some(s => s.type === 'mixin' && s.name === 'flex-center')).toBe(true);
@@ -244,6 +258,8 @@ describe('Sass entity extraction', () => {
       '  background: $primary-color',
       '  font-size: $font-size',
     ].join('\n'));
+    expect(result.entities.length).toBe(3);
+    expect(result.relationships.length).toBe(1);
     expect(result.entities.some(e => e.type === 'mixin' && e.name === 'button-style')).toBe(true);
     expect(result.entities.some(e => e.type === 'variable' && e.name === 'primary-color')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'variables')).toBe(true);

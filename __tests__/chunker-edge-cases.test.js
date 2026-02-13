@@ -49,7 +49,7 @@ describe('brace-based depth tracking', () => {
       '  }',
       '}',
     ].join('\n'));
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
+    expect(chunks.length).toBe(1);
     const summary = chunks.map(c => c.metadata.chunk_type);
     expect(summary).toContain('class');
   });
@@ -298,9 +298,9 @@ describe('nested classes', () => {
       '  }',
       '}',
     ].join('\n'));
-    // Should produce at least one chunk for the outer class
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
-    expect(chunks.some(c => c.metadata.symbol === 'Container')).toBe(true);
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('Container');
+    expect(chunks[1].metadata.symbol).toBe('Inner');
   });
 });
 
@@ -321,10 +321,8 @@ describe('comments and non-code patterns', () => {
       '    return True',
       '    print("real")',
     ].join('\n'));
-    // Python is indent-based, so both commented and real function may match
-    // At minimum the real function should produce a chunk
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
-    expect(chunks.some(c => c.metadata.symbol === 'real_function')).toBe(true);
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.symbol).toBe('real_function');
   });
 });
 
@@ -354,10 +352,10 @@ describe('empty and minimal files', () => {
       'It should fall through to generic chunking.',
       'Generic chunks use a 50-line sliding window.',
     ].join('\n'));
-    if (chunks.length > 0) {
-      expect(chunks[0].metadata.language).toBe('text');
-      expect(chunks[0].metadata.chunk_type).toBe('code');
-    }
+    // 133 chars > generic threshold of 20 → must produce a chunk
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.language).toBe('text');
+    expect(chunks[0].metadata.chunk_type).toBe('code');
   });
 });
 
@@ -365,16 +363,41 @@ describe('empty and minimal files', () => {
 // 30-char chunk threshold boundary
 // =============================================================================
 
-describe('chunk size threshold (> 30 chars)', () => {
-  it('drops chunks at exactly 30 chars', async () => {
-    // A chunk with exactly 30 trimmed chars should be dropped (> 30, not >=)
-    const chunks = await chunker.parseFile('/test/threshold.go', [
-      'func a() {',
-      '  return 12345678901234567',  // total: "func a() {\n  return 12345678901234567\n}" = 40 chars
+describe('chunk size threshold (> 30 chars, strict)', () => {
+  it('drops chunk at exactly 30 trimmed chars (kills >= mutation)', async () => {
+    // "func xx() {\n  return 1234567\n}" = exactly 30 trimmed chars.
+    // With > 30: 30 > 30 is false → DROPPED.
+    // If mutated to >= 30: 30 >= 30 is true → KEPT → test fails → mutation killed!
+    const chunks = await chunker.parseFile('/test/boundary30.go', [
+      'func xx() {',         // 11 chars
+      '  return 1234567',    // 16 chars
+      '}',                   // 1 char = 11+1+16+1+1 = 30
+      'func keepMe() {',
+      '  result := "this content is long enough to be kept easily by the chunker"',
+      '  return result',
       '}',
     ].join('\n'));
-    // This should be > 30 chars and produce a chunk
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
+    // First function (30 chars) should be dropped, only second kept
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.symbol).toBe('keepMe');
+  });
+
+  it('keeps chunk at exactly 31 trimmed chars (just above threshold)', async () => {
+    // "func xx() {\n  return 12345678\n}" = exactly 31 trimmed chars.
+    // 31 > 30 is true → KEPT.
+    const chunks = await chunker.parseFile('/test/boundary31.go', [
+      'func xx() {',          // 11 chars
+      '  return 12345678',    // 17 chars
+      '}',                    // 1 char = 11+1+17+1+1 = 31
+      'func keepMe() {',
+      '  result := "this content is long enough to be kept easily by the chunker"',
+      '  return result',
+      '}',
+    ].join('\n'));
+    // Both functions should be kept (31 > 30 and ~95 > 30)
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('xx');
+    expect(chunks[1].metadata.symbol).toBe('keepMe');
   });
 
   it('keeps chunks well above 30 chars', async () => {
@@ -386,7 +409,7 @@ describe('chunk size threshold (> 30 chars)', () => {
       '  }',
       '}',
     ].join('\n'));
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
+    expect(chunks.length).toBe(1);
     expect(chunks[0].metadata.symbol).toBe('processLargeDataSet');
   });
 });
@@ -455,9 +478,9 @@ describe('end-keyword parser', () => {
       '  end',
       'end',
     ].join('\n'));
-    // Should produce at least the class chunk
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
-    expect(chunks.some(c => c.metadata.symbol === 'Account')).toBe(true);
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('Account');
+    expect(chunks[1].metadata.symbol).toBe('withdraw');
   });
 
   it('handles Lua function with nested if/end', async () => {
@@ -472,8 +495,8 @@ describe('end-keyword parser', () => {
       '    return true',
       'end',
     ].join('\n'));
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
-    expect(chunks.some(c => c.metadata.symbol === 'validate')).toBe(true);
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('validate');
   });
 });
 
@@ -495,9 +518,9 @@ describe('multi-line signatures', () => {
       '  }',
       '}',
     ].join('\n'));
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
-    // The class boundary should match 'Generic'
-    expect(chunks.some(c => c.metadata.symbol === 'Generic')).toBe(true);
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('Generic');
+    expect(chunks[1].metadata.symbol).toBe('sort');
   });
 
   it('misses method name when opening paren is on a different line (known limitation)', async () => {
@@ -511,11 +534,10 @@ describe('multi-line signatures', () => {
       '  }',
       '}',
     ].join('\n'));
-    // 'Split' class should still be detected
-    expect(chunks.some(c => c.metadata.symbol === 'Split')).toBe(true);
-    // The method 'computeIndex' is on a continuation line — it may or may not
-    // be detected depending on whether the pattern matches the indented line.
-    // We just verify the chunker doesn't crash and produces valid output.
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.symbol).toBe('Split');
+    // computeIndex is on a continuation line — not matched (known limitation).
+    // Verify the chunker doesn't crash and produces valid line ranges.
     expect(chunks.every(c => c.metadata.line_start <= c.metadata.line_end)).toBe(true);
   });
 
@@ -525,8 +547,8 @@ describe('multi-line signatures', () => {
       '    if x.len() > y.len() { x } else { y }',
       '}',
     ].join('\n'));
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
-    expect(chunks.some(c => c.metadata.symbol === 'longest')).toBe(true);
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.symbol).toBe('longest');
   });
 
   it('matches Python def even with multi-line args (def line has opening paren)', async () => {
@@ -542,8 +564,8 @@ describe('multi-line signatures', () => {
       '        data = f.read()',
       '    return True',
     ].join('\n'));
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
-    expect(chunks.some(c => c.metadata.symbol === 'process_data')).toBe(true);
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('process_data');
   });
 
   it('matches C# method with generic constraints on one line', async () => {
@@ -554,7 +576,8 @@ describe('multi-line signatures', () => {
       '  }',
       '}',
     ].join('\n'));
-    expect(chunks.some(c => c.metadata.symbol === 'Constraints')).toBe(true);
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.symbol).toBe('Constraints');
   });
 });
 
@@ -576,10 +599,9 @@ describe('decorators and attributes before definitions', () => {
       'def name(self, value):',
       '    self._name = value',
     ].join('\n'));
-    // Both functions should be detected
     const funcChunks = chunks.filter(c => c.metadata.chunk_type === 'function');
-    expect(funcChunks.length).toBeGreaterThanOrEqual(1);
-    expect(chunks.some(c => c.metadata.symbol === 'name')).toBe(true);
+    expect(funcChunks.length).toBe(2);
+    expect(funcChunks.every(c => c.metadata.symbol === 'name')).toBe(true);
   });
 
   it('handles Python class with multiple decorators', async () => {
@@ -592,7 +614,9 @@ describe('decorators and attributes before definitions', () => {
       '    result = sum(range(n))',
       '    return result * 2',
     ].join('\n'));
-    expect(chunks.some(c => c.metadata.symbol === 'expensive_compute')).toBe(true);
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.chunk_type).toBe('decorator');
+    expect(chunks[1].metadata.symbol).toBe('expensive_compute');
   });
 
   it('Java @Override stays part of enclosing chunk (no annotation pattern in chunker)', async () => {
@@ -612,9 +636,10 @@ describe('decorators and attributes before definitions', () => {
       '  }',
       '}',
     ].join('\n'));
-    expect(chunks.some(c => c.metadata.symbol === 'Override')).toBe(true);
-    // toString and legacyMethod should be detected as method boundaries
-    expect(chunks.some(c => c.metadata.symbol === 'toString')).toBe(true);
+    expect(chunks.length).toBe(3);
+    expect(chunks[0].metadata.symbol).toBe('Override');
+    expect(chunks[1].metadata.symbol).toBe('toString');
+    expect(chunks[2].metadata.symbol).toBe('legacyMethod');
   });
 
   it('Rust #[derive] before struct does not create a separate chunk', async () => {
@@ -627,8 +652,9 @@ describe('decorators and attributes before definitions', () => {
       '    pub value: i32,',
       '}',
     ].join('\n'));
-    expect(chunks.some(c => c.metadata.symbol === 'Config')).toBe(true);
-    expect(chunks.some(c => c.metadata.chunk_type === 'struct')).toBe(true);
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.symbol).toBe('Config');
+    expect(chunks[0].metadata.chunk_type).toBe('struct');
   });
 
   it('C# [Attribute] before method does not create a separate chunk', async () => {
@@ -641,7 +667,9 @@ describe('decorators and attributes before definitions', () => {
       '  }',
       '}',
     ].join('\n'));
-    expect(chunks.some(c => c.metadata.symbol === 'UserController')).toBe(true);
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('UserController');
+    expect(chunks[1].metadata.symbol).toBe('GetUser');
   });
 });
 
@@ -673,12 +701,10 @@ describe('comment-only files', () => {
       ' * See LICENSE file for details.',
       ' */',
     ].join('\n'));
-    // Block comment has braces? No — only { } count, not /* */.
-    // Content is >30 chars but no boundary patterns match, so it falls
-    // through to the final-chunk handler as type 'code' / 'unknown'.
-    if (chunks.length > 0) {
-      expect(chunks[0].metadata.chunk_type).toBe('code');
-    }
+    // No boundary patterns match. Content (~145 chars) > 30 → _pushFinalChunk captures it.
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.chunk_type).toBe('code');
+    expect(chunks[0].metadata.symbol).toBe('unknown');
   });
 
   it('produces trailing chunk for Python file with only comments', async () => {
@@ -713,10 +739,129 @@ describe('comment-only files', () => {
       '# This module will be filled in later',
     ].join('\n'));
     // End-keyword parser: no `def`/`class`/`module` boundaries match.
-    // Content may or may not produce a final trailing chunk.
-    if (chunks.length > 0) {
-      expect(chunks[0].metadata.chunk_type).toBe('code');
+    // Content (~94 chars) > 30 → _pushFinalChunk captures as trailing chunk.
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.chunk_type).toBe('code');
+    expect(chunks[0].metadata.symbol).toBe('unknown');
+  });
+});
+
+// =============================================================================
+// Binary, Unicode, and Large File Robustness
+// =============================================================================
+
+describe('binary and non-text content', () => {
+  it('handles content with null bytes without throwing', async () => {
+    const content = 'function a() {\x00  return 1;\x00}';
+    const chunks = await chunker.parseFile('/test/binary.js', content);
+    // Must not throw; null bytes disrupt pattern matching so no chunks extracted
+    expect(chunks.length).toBe(0);
+  });
+
+  it('handles pure binary content (all null bytes)', async () => {
+    const content = '\x00'.repeat(100);
+    const chunks = await chunker.parseFile('/test/pure-binary.js', content);
+    expect(Array.isArray(chunks)).toBe(true);
+    // Null bytes aren't whitespace, so trim() doesn't remove them.
+    // No boundary patterns match → _pushFinalChunk captures as trailing chunk.
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.chunk_type).toBe('code');
+  });
+
+  it('handles mixed binary and valid code', async () => {
+    const content = [
+      'function valid() {',
+      '  return "hello";',
+      '}',
+      '\x00\x01\x02\x03\x04\x05\x06\x07',
+      'function another() {',
+      '  return "world";',
+      '}',
+    ].join('\n');
+    const chunks = await chunker.parseFile('/test/mixed-binary.js', content);
+    expect(Array.isArray(chunks)).toBe(true);
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('valid');
+    expect(chunks[1].metadata.symbol).toBe('another');
+  });
+});
+
+describe('unicode content handling', () => {
+  it('handles emoji in strings without affecting chunk boundaries', async () => {
+    // Uses Go to avoid JS const-matching extra boundaries
+    const chunks = await chunker.parseFile('/test/emoji.go', [
+      'func processData() {',
+      '  msg := "Hello \u{1F30D} World \u{1F389}"',
+      '  fmt.Println(msg + " \u{1F680}")',
+      '}',
+    ].join('\n'));
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.symbol).toBe('processData');
+  });
+
+  it('handles CJK characters in strings', async () => {
+    const chunks = await chunker.parseFile('/test/cjk.go', [
+      'func translate() {',
+      '  greeting := "\u3053\u3093\u306B\u3061\u306F\u4E16\u754C"',
+      '  chinese := "\u4F60\u597D\u4E16\u754C"',
+      '  fmt.Println(greeting + chinese)',
+      '}',
+    ].join('\n'));
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.symbol).toBe('translate');
+  });
+
+  it('handles RTL characters in strings', async () => {
+    const chunks = await chunker.parseFile('/test/rtl.go', [
+      'func renderText() {',
+      '  arabic := "\u0645\u0631\u062D\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645"',
+      '  hebrew := "\u05E9\u05DC\u05D5\u05DD \u05E2\u05D5\u05DC\u05DD"',
+      '  fmt.Println(arabic + hebrew)',
+      '}',
+    ].join('\n'));
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.symbol).toBe('renderText');
+  });
+
+  it('handles combining characters and diacritics', async () => {
+    const chunks = await chunker.parseFile('/test/diacritics.go', [
+      'func formatName() {',
+      '  name := "caf\u00E9 r\u00E9sum\u00E9 na\u00EFve"',
+      '  fmt.Println(name)',
+      '}',
+    ].join('\n'));
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.symbol).toBe('formatName');
+  });
+});
+
+describe('large file handling', () => {
+  it('handles file with 200 functions', async () => {
+    const lines = [];
+    for (let i = 0; i < 200; i++) {
+      lines.push(`function fn${i}() {`);
+      lines.push(`  return ${i} + Math.random();`);
+      lines.push('}');
+      lines.push('');
     }
+    const chunks = await chunker.parseFile('/test/many-functions.js', lines.join('\n'));
+    expect(chunks.length).toBe(200);
+    expect(chunks[0].metadata.symbol).toBe('fn0');
+    expect(chunks[199].metadata.symbol).toBe('fn199');
+  });
+
+  it('handles very long lines without crashing', async () => {
+    const longLine = 'x'.repeat(10000);
+    // Use Go to avoid JS const-matching extra boundaries
+    const content = [
+      'func processLongData() {',
+      `  data := "${longLine}"`,
+      '  fmt.Println(len(data))',
+      '}',
+    ].join('\n');
+    const chunks = await chunker.parseFile('/test/long-lines.go', content);
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.symbol).toBe('processLongData');
   });
 });
 

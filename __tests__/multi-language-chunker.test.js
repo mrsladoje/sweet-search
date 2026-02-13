@@ -38,8 +38,13 @@ public class App {
   }
 }
 `);
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
-    expect(chunks.some(c => c.metadata.chunk_type === 'class')).toBe(true);
+    expect(chunks.length).toBe(3);
+    expect(chunks[0].metadata.chunk_type).toBe('class');
+    expect(chunks[0].metadata.symbol).toBe('App');
+    expect(chunks[1].metadata.chunk_type).toBe('method');
+    expect(chunks[1].metadata.symbol).toBe('run');
+    expect(chunks[2].metadata.chunk_type).toBe('method');
+    expect(chunks[2].metadata.symbol).toBe('getValue');
     expect(chunks[0].metadata.language).toBe('java');
   });
 
@@ -61,8 +66,13 @@ func NewConfig() *Config {
 }
 `);
     const summary = chunkSummary(chunks);
-    expect(summary.some(s => s.type === 'function' && s.name === 'main')).toBe(true);
-    expect(summary.some(s => s.type === 'struct')).toBe(true);
+    expect(chunks.length).toBe(3);
+    expect(summary[0].type).toBe('function');
+    expect(summary[0].name).toBe('main');
+    expect(summary[1].type).toBe('struct');
+    expect(summary[1].name).toBe('Config');
+    expect(summary[2].type).toBe('function');
+    expect(summary[2].name).toBe('NewConfig');
     expect(chunks[0].metadata.language).toBe('go');
   });
 
@@ -76,9 +86,11 @@ pub fn start(port: u16) {
     println!("Starting on {}", port);
 }
 `);
-    const summary = chunkSummary(chunks);
-    expect(summary.some(s => s.type === 'struct')).toBe(true);
-    expect(summary.some(s => s.type === 'function' && s.name === 'start')).toBe(true);
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.chunk_type).toBe('struct');
+    expect(chunks[0].metadata.symbol).toBe('Server');
+    expect(chunks[1].metadata.chunk_type).toBe('function');
+    expect(chunks[1].metadata.symbol).toBe('start');
     expect(chunks[0].metadata.language).toBe('rust');
   });
 
@@ -90,7 +102,11 @@ public class Program {
   }
 }
 `);
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.chunk_type).toBe('class');
+    expect(chunks[0].metadata.symbol).toBe('Program');
+    expect(chunks[1].metadata.chunk_type).toBe('method');
+    expect(chunks[1].metadata.symbol).toBe('Main');
     expect(chunks[0].metadata.language).toBe('csharp');
   });
 
@@ -103,7 +119,11 @@ public class Program {
       '  }',
       '}',
     ].join('\n'));
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.chunk_type).toBe('class');
+    expect(chunks[0].metadata.symbol).toBe('UserController');
+    expect(chunks[1].metadata.chunk_type).toBe('function');
+    expect(chunks[1].metadata.symbol).toBe('index');
     expect(chunks[0].metadata.language).toBe('php');
   });
 });
@@ -128,8 +148,15 @@ def standalone():
     return 42
 `);
     const summary = chunkSummary(chunks);
-    expect(summary.some(s => s.type === 'function' && s.name === '__init__')).toBe(true);
-    expect(summary.some(s => s.type === 'function' && s.name === 'run')).toBe(true);
+    expect(chunks.length).toBe(3);
+    expect(summary[0].type).toBe('function');
+    expect(summary[0].name).toBe('__init__');
+    expect(summary[1].type).toBe('function');
+    expect(summary[1].name).toBe('run');
+    expect(summary[2].type).toBe('function');
+    expect(summary[2].name).toBe('standalone');
+    // Class header too short for 30-char threshold → not a separate chunk
+    expect(summary.some(s => s.type === 'class')).toBe(false);
     expect(chunks[0].metadata.language).toBe('python');
   });
 
@@ -143,7 +170,9 @@ def goodbye():
     print("bye")
     print("farewell")
 `);
-    expect(chunks.length).toBeGreaterThanOrEqual(2);
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('hello');
+    expect(chunks[1].metadata.symbol).toBe('goodbye');
     expect(chunks[0].metadata.language).toBe('python');
   });
 });
@@ -172,8 +201,13 @@ module Helpers
 end
 `);
     const summary = chunkSummary(chunks);
-    expect(summary.some(s => s.type === 'class' && s.name === 'UserService')).toBe(true);
-    expect(summary.some(s => s.type === 'module' && s.name === 'Helpers')).toBe(true);
+    expect(chunks.length).toBe(2);
+    expect(summary[0].type).toBe('class');
+    expect(summary[0].name).toBe('UserService');
+    expect(summary[1].type).toBe('module');
+    expect(summary[1].name).toBe('Helpers');
+    // Nested methods stay within class/module chunks (depth > 0)
+    expect(summary.some(s => s.type === 'method')).toBe(false);
     expect(chunks[0].metadata.language).toBe('ruby');
   });
 
@@ -185,8 +219,11 @@ defmodule MyApp do
   end
 end
 `);
-    const summary = chunkSummary(chunks);
-    expect(summary.some(s => s.type === 'module' && s.name === 'MyApp')).toBe(true);
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.chunk_type).toBe('module');
+    expect(chunks[0].metadata.symbol).toBe('MyApp');
+    // Nested def stays inside module chunk (depth > 0)
+    expect(chunks.some(c => c.metadata.chunk_type === 'function')).toBe(false);
     expect(chunks[0].metadata.language).toBe('elixir');
   });
 });
@@ -199,8 +236,10 @@ describe('generic fallback', () => {
   it('uses line-based chunking for unknown extensions', async () => {
     const content = Array(100).fill('some content line here for testing purposes!!!').join('\n');
     const chunks = await chunker.parseFile('/test/data.xyz', content);
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
+    // Generic fallback: 50-line windows with 10-line overlap → 3 chunks for 100 lines
+    expect(chunks.length).toBe(3);
     expect(chunks[0].metadata.language).toBe('text');
+    expect(chunks[0].metadata.chunk_type).toBe('code');
   });
 
   it('returns chunks with correct metadata shape', async () => {
