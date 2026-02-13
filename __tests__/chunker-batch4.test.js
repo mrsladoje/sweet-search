@@ -36,6 +36,7 @@ describe('HTML chunker', () => {
       '  </section>',
       '</main>',
     ].join('\n'));
+    expect(chunks.length).toBe(4);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'section' && s.name === 'header')).toBe(true);
     expect(chunks[0].metadata.language).toBe('html');
@@ -52,6 +53,7 @@ describe('HTML chunker', () => {
       '  </AnotherWidget>',
       '</div>',
     ].join('\n'));
+    expect(chunks.length).toBe(3);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'component' && s.name === 'MyComponent')).toBe(true);
     expect(summary.some(s => s.type === 'component' && s.name === 'AnotherWidget')).toBe(true);
@@ -70,6 +72,8 @@ describe('HTML entity extraction', () => {
       '  <input type="text">',
       '</form>',
     ].join('\n'));
+    expect(result.entities.length).toBe(2);
+    expect(result.relationships.length).toBe(3);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'styles.css')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'app.js')).toBe(true);
   });
@@ -92,6 +96,7 @@ describe('CSS chunker', () => {
       '  100% { transform: translateY(0); opacity: 1; }',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(2);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'keyframes' && s.name === 'fadeIn')).toBe(true);
     expect(summary.some(s => s.type === 'keyframes' && s.name === 'slideUp')).toBe(true);
@@ -113,6 +118,8 @@ describe('CSS entity extraction', () => {
       '  to { transform: rotate(360deg); }',
       '}',
     ].join('\n'));
+    expect(result.entities.length).toBe(3);
+    expect(result.relationships.length).toBe(1);
     expect(result.entities.some(e => e.type === 'keyframes' && e.name === 'spin')).toBe(true);
     expect(result.entities.some(e => e.type === 'selector' && e.name === '.button-primary')).toBe(true);
     expect(result.entities.some(e => e.type === 'variable' && e.name === 'primary-color')).toBe(true);
@@ -138,6 +145,7 @@ describe('SCSS chunker', () => {
       '  @return adjust-hue($color, 10deg);',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(2);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'mixin' && s.name === 'responsive-grid')).toBe(true);
     expect(summary.some(s => s.type === 'function' && s.name === 'darken-color')).toBe(true);
@@ -159,6 +167,8 @@ describe('SCSS entity extraction', () => {
       '  padding: $spacing;',
       '}',
     ].join('\n'));
+    expect(result.entities.length).toBe(2);
+    expect(result.relationships.length).toBe(4);
     expect(result.entities.some(e => e.type === 'mixin' && e.name === 'card-style')).toBe(true);
     expect(result.entities.some(e => e.type === 'variable' && e.name === 'spacing')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'variables')).toBe(true);
@@ -186,6 +196,7 @@ describe('Less chunker', () => {
       '  box-shadow: @x @y @blur;',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(2);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'mixin' && s.name === 'border-radius')).toBe(true);
     expect(summary.some(s => s.type === 'mixin' && s.name === 'box-shadow')).toBe(true);
@@ -205,6 +216,8 @@ describe('Less entity extraction', () => {
       '  background: linear-gradient(@start, @end);',
       '}',
     ].join('\n'));
+    expect(result.entities.length).toBe(3);
+    expect(result.relationships.length).toBe(1);
     expect(result.entities.some(e => e.type === 'mixin' && e.name === 'gradient')).toBe(true);
     expect(result.entities.some(e => e.type === 'variable' && e.name === 'primary')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'colors.less')).toBe(true);
@@ -236,6 +249,7 @@ describe('GraphQL chunker', () => {
       '  MODERATOR',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(3);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'type' && s.name === 'User')).toBe(true);
     expect(summary.some(s => s.type === 'input' && s.name === 'CreateUserInput')).toBe(true);
@@ -258,6 +272,7 @@ describe('GraphQL chunker', () => {
       '  }',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(2);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'interface' && s.name === 'Node')).toBe(true);
     expect(summary.some(s => s.type === 'query' && s.name === 'GetUsers')).toBe(true);
@@ -275,6 +290,8 @@ describe('GraphQL entity extraction', () => {
       '',
       'scalar DateTime',
     ].join('\n'));
+    expect(result.entities.length).toBe(2);
+    expect(result.relationships.length).toBe(1);
     expect(result.entities.some(e => e.type === 'type' && e.name === 'Post')).toBe(true);
     expect(result.entities.some(e => e.type === 'scalar' && e.name === 'DateTime')).toBe(true);
     expect(result.relationships.some(r => r.type === 'implements' && r.target_name.includes('Node'))).toBe(true);

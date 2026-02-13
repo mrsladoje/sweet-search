@@ -1107,7 +1107,7 @@ export const LANGUAGES = {
     comment: { line: '#', block: null },
 
     chunker: {
-      key: /^(\w[\w-]*)\s*:/,
+      key: /^(\w[\w-]*)\s*:\s*(?:[|>].*|#.*)?$/,
       doc: /^---/,
     },
 

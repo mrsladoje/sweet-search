@@ -50,7 +50,7 @@ describe('JSON chunker', () => {
       '  }',
       '}',
     ].join('\n'));
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
+    expect(chunks.length).toBe(1);
     expect(chunks[0].metadata.language).toBe('json');
   });
 });
@@ -68,6 +68,7 @@ describe('JSON relationship extraction', () => {
       '}',
     ].join('\n'));
     // $ref pattern works because it doesn't require leading whitespace
+    expect(result.relationships.length).toBe(2);
     expect(result.relationships.some(r => r.target_name === '#/definitions/User')).toBe(true);
     expect(result.relationships.some(r => r.target_name === '#/definitions/Settings')).toBe(true);
   });
@@ -88,6 +89,7 @@ describe('JSON relationship extraction', () => {
       '}',
     ].join('\n'));
 
+    expect(result.relationships.length).toBe(3);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'express')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'lodash')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'vitest')).toBe(true);
@@ -100,13 +102,17 @@ describe('JSON relationship extraction', () => {
 });
 
 // =============================================================================
-// YAML — indent-based parser, but _matchBoundary trims whitespace so
-// ^(\w[\w-]*)\s*: matches every key:value line, creating sub-30-char chunks.
+// YAML — indent-based parser. The chunker pattern only matches section headers
+// (keys with no inline value or block scalar indicators |/>). Nested key:value
+// lines are accumulated into the parent section chunk.
 // Entity extraction works because extractGeneric matches ALL key:value lines.
 // =============================================================================
 
 describe('YAML chunker', () => {
-  it('detects yaml language from extension', async () => {
+  it('chunks top-level YAML sections (nested keys are NOT boundaries)', async () => {
+    // The chunker pattern only matches section headers (keys with no inline value
+    // or block scalar indicators |/>). Nested key:value lines like "host: localhost"
+    // are NOT boundaries, so they accumulate into the parent section chunk.
     const chunks = await chunker.parseFile('/test/config.yaml', [
       'server:',
       '  host: localhost',
@@ -117,18 +123,75 @@ describe('YAML chunker', () => {
       '  driver: postgres',
       '  name: mydb',
       '  pool: 10',
-      '',
-      'logging:',
-      '  level: info',
-      '  format: json',
-      '  output: stdout',
     ].join('\n'));
-    // Chunks may be empty (all sub-30-char due to trimming) or contain final chunk
-    if (chunks.length > 0) {
-      expect(chunks[0].metadata.language).toBe('yaml');
-    }
-    // Verify language detection at least works via the patterns
-    expect(true).toBe(true); // Language detection verified by entity test below
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.chunk_type).toBe('key');
+    expect(chunks[0].metadata.symbol).toBe('server');
+    expect(chunks[0].text).toContain('host: localhost');
+    expect(chunks[1].metadata.chunk_type).toBe('key');
+    expect(chunks[1].metadata.symbol).toBe('database');
+    expect(chunks[1].text).toContain('driver: postgres');
+    expect(chunks[0].metadata.language).toBe('yaml');
+  });
+
+  it('produces chunks for YAML with block scalar content', async () => {
+    // Block scalars (|, >) don't have key: patterns, so they accumulate
+    // into chunks large enough to survive the 30-char threshold.
+    const chunks = await chunker.parseFile('/test/readme.yaml', [
+      'description: |',
+      '  This is a multi-line description',
+      '  that spans several lines without',
+      '  any key-value patterns inside it',
+      '  so the chunker accumulates content',
+      '',
+      'notes: |',
+      '  Another block scalar section with',
+      '  plenty of content that should be',
+      '  long enough to survive thresholds',
+    ].join('\n'));
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.chunk_type).toBe('key');
+    expect(chunks[0].metadata.symbol).toBe('description');
+    expect(chunks[0].text).toContain('multi-line description');
+    expect(chunks[1].metadata.chunk_type).toBe('key');
+    expect(chunks[1].metadata.symbol).toBe('notes');
+    expect(chunks[1].text).toContain('block scalar section');
+    expect(chunks[0].metadata.language).toBe('yaml');
+  });
+
+  it('chunks YAML section headers with trailing comments', async () => {
+    // Common YAML style: "server: # main section" should be a boundary
+    const chunks = await chunker.parseFile('/test/commented.yaml', [
+      'server: # main section',
+      '  host: localhost',
+      '  port: 8080',
+      '  timeout: 30',
+      '',
+      'database: # data layer',
+      '  driver: postgres',
+      '  name: mydb',
+      '  pool: 10',
+    ].join('\n'));
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.symbol).toBe('server');
+    expect(chunks[0].text).toContain('host: localhost');
+    expect(chunks[1].metadata.symbol).toBe('database');
+  });
+
+  it('drops sections shorter than 30 characters (threshold behavior)', async () => {
+    // The chunker drops chunks whose trimmed content is <= 30 characters.
+    // Short YAML sections can fall below this threshold.
+    const chunks = await chunker.parseFile('/test/short.yaml', [
+      'tiny:',
+      '  x: 1',
+      '',
+      'adequate:',
+      '  description: this value is long enough to exceed the thirty character threshold easily',
+    ].join('\n'));
+    // 'tiny' section: "tiny:\n  x: 1\n" trimmed = ~13 chars -> dropped
+    // 'adequate' section: well over 30 chars -> kept
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].metadata.symbol).toBe('adequate');
   });
 });
 
@@ -142,6 +205,7 @@ describe('YAML entity extraction', () => {
       '  <<: *defaults',
       '  host: prod.example.com',
     ].join('\n'));
+    expect(result.entities.length).toBe(4);
     expect(result.entities.some(e => e.type === 'topKey' && e.name === 'defaults')).toBe(true);
     expect(result.entities.some(e => e.type === 'topKey' && e.name === 'production')).toBe(true);
   });
@@ -173,10 +237,8 @@ describe('TOML chunker', () => {
       'path = "src/main.rs"',
       'required-features = ["full"]',
     ].join('\n'));
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
-    // At minimum the final chunk or a generic chunk exists
-    const hasTomlLang = chunks.some(c => c.metadata.language === 'toml');
-    expect(hasTomlLang).toBe(true);
+    expect(chunks.length).toBe(2);
+    expect(chunks[0].metadata.language).toBe('toml');
   });
 });
 
@@ -190,6 +252,7 @@ describe('TOML entity extraction', () => {
       '[[tool.poetry.dependencies]]',
       'python = "^3.9"',
     ].join('\n'));
+    expect(result.entities.length).toBe(5);
     expect(result.entities.some(e => e.type === 'section' && e.name === 'tool.poetry')).toBe(true);
     expect(result.entities.some(e => e.type === 'keyVal' && e.name === 'name')).toBe(true);
   });
@@ -214,7 +277,7 @@ describe('XML chunker', () => {
       '  </dependencies>',
       '</project>',
     ].join('\n'));
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
+    expect(chunks.length).toBe(9);
     expect(chunks[0].metadata.language).toBe('xml');
   });
 });
@@ -227,7 +290,9 @@ describe('XML entity extraction', () => {
       '  <xs:element name="user" ref="userType"/>',
       '</xs:schema>',
     ].join('\n'));
+    expect(result.entities.length).toBe(3);
     expect(result.entities.some(e => e.type === 'element')).toBe(true);
+    expect(result.relationships.length).toBe(3);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'types.xsd')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'http://www.w3.org/2001/XMLSchema')).toBe(true);
   });
@@ -251,6 +316,7 @@ describe('Dockerfile chunker', () => {
       'EXPOSE 3000',
       'CMD ["node", "server.js"]',
     ].join('\n'));
+    expect(chunks.length).toBe(3);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'from' && s.name === 'node:18-alpine')).toBe(true);
     expect(chunks[0].metadata.language).toBe('dockerfile');
@@ -265,9 +331,11 @@ describe('Dockerfile entity extraction', () => {
       'EXPOSE 8080',
       'COPY --from=deps /app/node_modules .',
     ].join('\n'));
+    expect(result.entities.length).toBe(3);
     expect(result.entities.some(e => e.type === 'stage' && e.name === 'build')).toBe(true);
     expect(result.entities.some(e => e.type === 'arg' && e.name === 'NODE_VERSION')).toBe(true);
     // COPY --from=deps extracts 'deps' via copyFrom pattern
+    expect(result.relationships.length).toBe(2);
     expect(result.relationships.some(r => r.target_name === 'deps')).toBe(true);
   });
 });
@@ -294,6 +362,7 @@ describe('Makefile chunker', () => {
       '\trm -rf build/ dist/',
       '\techo "Cleaned"',
     ].join('\n'));
+    expect(chunks.length).toBe(4);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'variable' && s.name === 'CC')).toBe(true);
     expect(summary.some(s => s.type === 'target' && s.name === 'build')).toBe(true);
@@ -312,8 +381,10 @@ describe('Makefile entity extraction', () => {
       'all:',
       '\t$(MAKE) build test',
     ].join('\n'));
+    expect(result.entities.length).toBe(2);
     expect(result.entities.some(e => e.type === 'variable' && e.name === 'BINARY')).toBe(true);
     expect(result.entities.some(e => e.type === 'target' && e.name === 'all')).toBe(true);
+    expect(result.relationships.length).toBe(1);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'common.mk')).toBe(true);
   });
 });
