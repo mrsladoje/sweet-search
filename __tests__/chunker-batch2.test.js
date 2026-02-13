@@ -35,6 +35,7 @@ describe('Groovy chunker', () => {
       '  boolean active',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(2);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'interface' && s.name === 'Serializable')).toBe(true);
     expect(summary.some(s => s.type === 'class' && s.name === 'UserService')).toBe(true);
@@ -49,6 +50,7 @@ describe('Groovy chunker', () => {
       '  boolean flying = false',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(1);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'trait' && s.name === 'Flyable')).toBe(true);
   });
@@ -65,6 +67,8 @@ describe('Groovy entity extraction', () => {
       '  }',
       '}',
     ].join('\n'));
+    expect(result.entities.length).toBe(2);
+    expect(result.relationships.length).toBe(4);
     expect(result.entities.some(e => e.type === 'class' && e.name === 'UserService')).toBe(true);
     expect(result.entities.some(e => e.type === 'method' && e.name === 'findById')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'com.example.UserRepo')).toBe(true);
@@ -89,6 +93,7 @@ describe('Objective-C chunker', () => {
       '@property (nonatomic, copy) NSString *titleText;',
       '@end',
     ].join('\n'));
+    expect(chunks.length).toBe(1);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'interface' && s.name === 'ViewController')).toBe(true);
     expect(chunks[0].metadata.language).toBe('objc');
@@ -102,6 +107,7 @@ describe('Objective-C chunker', () => {
       '@property (nonatomic, readonly) BOOL isSelectable;',
       '@end',
     ].join('\n'));
+    expect(chunks.length).toBe(1);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'protocol' && s.name === 'TableViewDelegate')).toBe(true);
   });
@@ -117,6 +123,8 @@ describe('Objective-C entity extraction', () => {
       '- (void)applicationDidFinishLaunching;',
       '@end',
     ].join('\n'));
+    expect(result.entities.length).toBe(2);
+    expect(result.relationships.length).toBe(4);
     expect(result.entities.some(e => e.type === 'interface' && e.name === 'AppDelegate')).toBe(true);
     expect(result.entities.some(e => e.type === 'method' && e.name === 'applicationDidFinishLaunching')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'UIKit/UIKit.h')).toBe(true);
@@ -152,6 +160,7 @@ describe('Zig chunker', () => {
       '    _ = x;',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(3);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'struct' && s.name === 'Server')).toBe(true);
     expect(summary.some(s => s.type === 'function' && s.name === 'start')).toBe(true);
@@ -168,6 +177,7 @@ describe('Zig chunker', () => {
       '    alpha,',
       '};',
     ].join('\n'));
+    expect(chunks.length).toBe(1);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'enum' && s.name === 'Color')).toBe(true);
   });
@@ -183,6 +193,8 @@ describe('Zig entity extraction', () => {
       '    log.info("starting");',
       '}',
     ].join('\n'));
+    expect(result.entities.length).toBe(3);
+    expect(result.relationships.length).toBe(2);
     expect(result.entities.some(e => e.type === 'function' && e.name === 'init')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'std')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'log')).toBe(true);
@@ -207,6 +219,7 @@ describe('Lua chunker', () => {
       '    return result + 1',
       'end',
     ].join('\n'));
+    expect(chunks.length).toBe(2);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'function' && s.name === 'greet')).toBe(true);
     expect(summary.some(s => s.type === 'function' && s.name === 'helper')).toBe(true);
@@ -228,7 +241,7 @@ describe('Lua chunker', () => {
     const summary = chunkSummary(chunks);
     // The regex /^(?:local\s+)?(\w+)\s*=\s*function/ won't match M.process
     // because \w doesn't include dot. This tests what the pattern actually catches.
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
+    expect(chunks.length).toBe(1);
   });
 });
 
@@ -246,6 +259,8 @@ describe('Lua entity extraction', () => {
       '    return data ~= nil',
       'end',
     ].join('\n'));
+    expect(result.entities.length).toBe(2);
+    expect(result.relationships.length).toBe(2);
     expect(result.entities.some(e => e.type === 'function' && e.name === 'M.start')).toBe(true);
     expect(result.entities.some(e => e.type === 'function' && e.name === 'validate')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'cjson')).toBe(true);

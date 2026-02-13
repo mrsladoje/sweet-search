@@ -39,6 +39,7 @@ describe('C chunker', () => {
       '    printf("Stopping\\n");',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(3);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'struct' && s.name === 'ServerConfig')).toBe(true);
     expect(summary.some(s => s.type === 'function' && s.name === 'start_server')).toBe(true);
@@ -59,6 +60,7 @@ describe('C chunker', () => {
       '    return 0;',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(3);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'enum' && s.name === 'Color')).toBe(true);
     expect(summary.some(s => s.type === 'function' && s.name === 'main')).toBe(true);
@@ -84,6 +86,8 @@ describe('C entity extraction', () => {
       '    return 0;',
       '}',
     ].join('\n'));
+    expect(result.entities.length).toBe(4);
+    expect(result.relationships.length).toBe(2);
     expect(result.entities.some(e => e.type === 'struct' && e.name === 'Buffer')).toBe(true);
     expect(result.entities.some(e => e.type === 'function' && e.name === 'buffer_init')).toBe(true);
     expect(result.entities.some(e => e.type === 'macro' && e.name === 'MAX_SIZE')).toBe(true);
@@ -117,6 +121,7 @@ describe('C++ chunker', () => {
       '',
       '} // namespace server',
     ].join('\n'));
+    expect(chunks.length).toBe(4);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'namespace' && s.name === 'server')).toBe(true);
     expect(summary.some(s => s.type === 'class' && s.name === 'HttpServer')).toBe(true);
@@ -132,6 +137,7 @@ describe('C++ chunker', () => {
       '    }',
       '};',
     ].join('\n'));
+    expect(chunks.length).toBe(2);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'class' && s.name === 'Widget')).toBe(true);
   });
@@ -156,6 +162,8 @@ describe('C++ entity extraction', () => {
       '',
       '} // namespace game',
     ].join('\n'));
+    expect(result.entities.length).toBe(4);
+    expect(result.relationships.length).toBe(4);
     expect(result.entities.some(e => e.type === 'class' && e.name === 'Engine')).toBe(true);
     expect(result.entities.some(e => e.type === 'namespace' && e.name === 'game')).toBe(true);
     expect(result.entities.some(e => e.type === 'enum' && e.name === 'State')).toBe(true);
@@ -200,6 +208,7 @@ describe('Swift chunker', () => {
       '    }',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(7);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'protocol' && s.name === 'Drawable')).toBe(true);
     expect(summary.some(s => s.type === 'class' && s.name === 'Canvas')).toBe(true);
@@ -225,6 +234,8 @@ describe('Swift entity extraction', () => {
       '    }',
       '}',
     ].join('\n'));
+    expect(result.entities.length).toBe(3);
+    expect(result.relationships.length).toBe(4);
     expect(result.entities.some(e => e.type === 'class' && e.name === 'ViewController')).toBe(true);
     expect(result.entities.some(e => e.type === 'func' && e.name === 'viewDidLoad')).toBe(true);
     expect(result.entities.some(e => e.type === 'func' && e.name === 'setupUI')).toBe(true);
@@ -255,6 +266,7 @@ describe('Scala chunker', () => {
       '  }',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(5);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'trait' && s.name === 'Serializable')).toBe(true);
     expect(summary.some(s => s.type === 'class' && s.name === 'User')).toBe(true);
@@ -278,6 +290,8 @@ describe('Scala entity extraction', () => {
       '  }',
       '}',
     ].join('\n'));
+    expect(result.entities.length).toBe(4);
+    expect(result.relationships.length).toBe(4);
     expect(result.entities.some(e => e.type === 'trait' && e.name === 'Repository')).toBe(true);
     expect(result.entities.some(e => e.type === 'class' && e.name === 'UserService')).toBe(true);
     expect(result.entities.some(e => e.type === 'def' && e.name === 'find')).toBe(true);
@@ -317,6 +331,7 @@ describe('Dart chunker', () => {
       '  Bird(this.color, this.species);',
       '}',
     ].join('\n'));
+    expect(chunks.length).toBe(4);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'class' && s.name === 'Animal')).toBe(true);
     expect(summary.some(s => s.type === 'mixin' && s.name === 'Flyable')).toBe(true);
@@ -353,6 +368,8 @@ describe('Dart entity extraction', () => {
       '  }',
       '}',
     ].join('\n'));
+    expect(result.entities.length).toBe(2);
+    expect(result.relationships.length).toBe(2);
     expect(result.entities.some(e => e.type === 'class' && e.name === 'MyWidget')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'package:flutter/material.dart')).toBe(true);
     expect(result.relationships.some(r => r.type === 'extends' && r.target_name === 'StatelessWidget')).toBe(true);
