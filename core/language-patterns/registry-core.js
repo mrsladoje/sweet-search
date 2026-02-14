@@ -84,7 +84,8 @@ export const CORE_LANGUAGES = {
         field: /^(\w+)\s*:\s*([\w\[\],\s|]+)\s*=/,
       },
       relationships: {
-        import: /^(?:from\s+([\w.]+)\s+)?import\s+(.+)/,
+        import: /^from\s+([\w.]+)\s+import/,
+        plainImport: /^import\s+([\w.,\s]+)/,
         extends: /^class\s+\w+\(([^)]+)\)/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
         decorator: /^@(\w+(?:\.\w+)*)/,
@@ -102,7 +103,7 @@ export const CORE_LANGUAGES = {
     },
     chunker: {
       function: /^func\s+(\w+)\s*\(/,
-      method: /^func\s+\(\w+\s+\*?(\w+)\)\s+(\w+)\s*\(/,
+      method: /^func\s+\(\w+\s+\*?\w+\)\s+(\w+)\s*\(/,
       struct: /^type\s+(\w+)\s+struct\s*\{/,
       interface: /^type\s+(\w+)\s+interface\s*\{/,
     },
@@ -137,7 +138,7 @@ export const CORE_LANGUAGES = {
       struct: /^(?:pub\s+)?struct\s+(\w+)/,
       enum: /^(?:pub\s+)?enum\s+(\w+)/,
       trait: /^(?:pub\s+)?trait\s+(\w+)/,
-      impl: /^impl(?:<[^>]+>)?\s+(?:(\w+)\s+for\s+)?(\w+)/,
+      impl: /^impl(?:<[^>]+>)?\s+(?:\w+\s+for\s+)?(\w+)/,
     },
     graph: {
       entities: {
@@ -145,7 +146,7 @@ export const CORE_LANGUAGES = {
         struct: /^(?:pub\s+)?struct\s+(\w+)/,
         enum: /^(?:pub\s+)?enum\s+(\w+)/,
         trait: /^(?:pub\s+)?trait\s+(\w+)/,
-        impl: /^impl(?:<[^>]+>)?\s+(?:(\w+)\s+for\s+)?(\w+)/,
+        impl: /^impl(?:<[^>]+>)?\s+(?:\w+\s+for\s+)?(\w+)/,
         type: /^(?:pub\s+)?type\s+(\w+)/,
         const: /^(?:pub\s+)?const\s+(\w+)\s*:/,
         static: /^(?:pub\s+)?static\s+(\w+)\s*:/,
@@ -199,7 +200,7 @@ export const CORE_LANGUAGES = {
       class: /^(?:class|struct)\s+(\w+)(?:\s*:\s*(?:public|protected|private)\s+(\w+))?/,
       function: /^(?:[\w:*&<>\s]+)\s+(\w+)\s*\([^)]*\)\s*(?:const)?\s*(?:override)?\s*\{/,
       namespace: /^namespace\s+(\w+)/,
-      template: /^template\s*<[^>]+>/,
+      template: /^template\s*(<[^>]+>)/,
     },
     graph: {
       entities: {

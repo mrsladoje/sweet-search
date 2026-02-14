@@ -91,7 +91,7 @@ export const DATA_QUERY_LANGUAGES = {
     },
     chunker: {
       key: /^(\w[\w-]*)\s*:\s*(?:[|>].*|#.*)?$/,
-      doc: /^---/,
+      doc: /^(---)/,
     },
     graph: {
       entities: {
