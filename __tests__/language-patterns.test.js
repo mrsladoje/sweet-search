@@ -248,6 +248,12 @@ describe('chunker pattern matching', () => {
     expect('pub fn new() -> Self {'.match(p.function)?.[1]).toBe('new');
     expect('fn helper(x: i32) {'.match(p.function)?.[1]).toBe('helper');
   });
+
+  it('Rust impl chunker captures impl target type in group 1', () => {
+    const p = getChunkerPatterns('rust');
+    expect('impl User {'.match(p.impl)?.[1]).toBe('User');
+    expect('impl Validator for User {'.match(p.impl)?.[1]).toBe('User');
+  });
 });
 
 describe('graph entity pattern matching', () => {

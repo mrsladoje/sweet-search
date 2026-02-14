@@ -159,6 +159,26 @@ end
     expect(result.entities.some(e => e.type === 'method' && e.name === 'find')).toBe(true);
   });
 
+  it('computes Ruby end_line correctly with nested methods', async () => {
+    const source = [
+      'class Account',
+      '  def deposit(amount)',
+      '    if amount > 0',
+      '      @balance += amount',
+      '    end',
+      '  end',
+      '',
+      '  def withdraw(amount)',
+      '    @balance -= amount',
+      '  end',
+      'end',
+    ].join('\n');
+    const result = await extractor.extractFromFile('/test/account.rb', source);
+    const classEntity = result.entities.find(e => e.type === 'class' && e.name === 'Account');
+    expect(classEntity).toBeDefined();
+    expect(classEntity.end_line).toBe(source.split('\n').length);
+  });
+
   it('extracts Kotlin classes and functions', async () => {
     const result = await extractor.extractFromFile('/test/App.kt', `
 class UserService(val name: String) {
@@ -183,11 +203,13 @@ interface Repository {
 describe('generic extractor — relationships', () => {
   it('extracts Python imports', async () => {
     const result = await extractor.extractFromFile('/test/app.py', `
-import os
+import os, sys
 from flask import Flask, jsonify
 class App:
     pass
 `);
+    expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'os')).toBe(true);
+    expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'sys')).toBe(true);
     expect(result.relationships.some(r => r.type === 'imports' && r.target_name === 'flask')).toBe(true);
   });
 
@@ -222,6 +244,27 @@ func main() {
     expect(result.relationships.some(r => r.target_name === 'fmt.Println')).toBe(false);
   });
 
+  it('attributes call source_id by active entity scope', async () => {
+    const source = [
+      'class Worker:',
+      '    def work(self):',
+      '        svc.run()',
+      '',
+      'outside.run()',
+    ].join('\n');
+    const result = await extractor.extractFromFile('/test/app.py', source);
+    const workEntity = result.entities.find(e => e.type === 'function' && e.name === 'work');
+    expect(workEntity).toBeDefined();
+
+    const scopedCall = result.relationships.find(r => r.type === 'calls' && r.target_name === 'svc.run');
+    expect(scopedCall).toBeDefined();
+    expect(scopedCall.source_id).toBe(workEntity.id);
+
+    const topLevelCall = result.relationships.find(r => r.type === 'calls' && r.target_name === 'outside.run');
+    expect(topLevelCall).toBeDefined();
+    expect(topLevelCall.source_id).toBeNull();
+  });
+
   it('extracts Ruby extends', async () => {
     const result = await extractor.extractFromFile('/test/app.rb', `
 class Admin < User
@@ -230,7 +273,11 @@ class Admin < User
   end
 end
 `);
-    expect(result.relationships.some(r => r.type === 'extends' && r.target_name === 'User')).toBe(true);
+    const adminEntity = result.entities.find(e => e.type === 'class' && e.name === 'Admin');
+    expect(adminEntity).toBeDefined();
+    const extendsRel = result.relationships.find(r => r.type === 'extends' && r.target_name === 'User');
+    expect(extendsRel).toBeDefined();
+    expect(extendsRel.source_id).toBe(adminEntity.id);
   });
 });
 

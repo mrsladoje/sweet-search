@@ -25,6 +25,16 @@ const MAX_CHUNK_SIZE = 2000;
 export class ASTChunker {
   constructor(options) {
     this.projectRoot = options?.projectRoot || process.cwd();
+    this.warnOnPatternDrop = options?.warnOnPatternDrop || false;
+    this.maxRegexLineLength = options?.maxRegexLineLength || 4000;
+    this.debugCounters = {
+      emptyCapture: {
+        boundary: 0,
+      },
+      skippedLongLines: 0,
+      byLanguage: {},
+      byPattern: {},
+    };
   }
 
   async parseFile(filePath, content) {
@@ -42,13 +52,13 @@ export class ASTChunker {
       return this.parseGenericFile(filePath, content);
     }
 
-    const { id: language, chunker: patterns, indentBased, endKeyword, comment } = langInfo;
+    const { id: language, chunker: patterns, indentBased, endKeyword, comment, blockKeywords } = langInfo;
 
     if (indentBased) {
       return this.parseIndentBasedFile(filePath, content, language, patterns);
     }
     if (endKeyword) {
-      return this.parseEndKeywordFile(filePath, content, language, patterns, endKeyword);
+      return this.parseEndKeywordFile(filePath, content, language, patterns, endKeyword, blockKeywords);
     }
     return this.parseBraceBasedFile(filePath, content, language, patterns, comment);
   }
@@ -70,7 +80,7 @@ export class ASTChunker {
       braceDepth += (stripped.match(/{/g) || []).length;
       braceDepth -= (stripped.match(/}/g) || []).length;
 
-      const { name: matched, type: matchType } = this._matchBoundary(line, patterns);
+      const { name: matched, type: matchType } = this._matchBoundary(line, patterns, language);
 
       if ((matched && currentChunk) || (braceDepth === 0 && currentChunk)) {
         const chunkContent = lines.slice(chunkStart, i + 1).join('\n');
@@ -116,7 +126,7 @@ export class ASTChunker {
         chunkStart = i;
       }
 
-      const { name: matched, type: matchType } = this._matchBoundary(line, patterns);
+      const { name: matched, type: matchType } = this._matchBoundary(line, patterns, language);
 
       if (matched) {
         // Close prior chunk if any non-empty content
@@ -136,10 +146,15 @@ export class ASTChunker {
     return chunks;
   }
 
-  parseEndKeywordFile(filePath, content, language, patterns, endKeyword) {
+  parseEndKeywordFile(filePath, content, language, patterns, endKeyword, blockKeywords) {
     const chunks = [];
     const lines = content.split('\n');
     const endRe = new RegExp(`^\\s*${endKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+    // Build regex to detect non-boundary block-start keywords (if/case/while etc.)
+    // These increment depth but don't start new chunks
+    const blockStartRe = blockKeywords?.length
+      ? new RegExp(`^\\s*(?:${blockKeywords.join('|')})\\b`)
+      : null;
 
     let currentChunk = null;
     let depth = 0;
@@ -148,7 +163,7 @@ export class ASTChunker {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
-      const { name: matched, type: matchType } = this._matchBoundary(line, patterns);
+      const { name: matched, type: matchType } = this._matchBoundary(line, patterns, language);
 
       if (matched) {
         if (currentChunk && depth === 0) {
@@ -161,6 +176,9 @@ export class ASTChunker {
           currentChunk = { type: matchType, name: matched };
           chunkStart = i;
         }
+        depth++;
+      } else if (blockStartRe && blockStartRe.test(line)) {
+        // Non-boundary block opener (if/case/while etc.) — track depth
         depth++;
       }
 
@@ -181,15 +199,62 @@ export class ASTChunker {
     return chunks;
   }
 
-  _matchBoundary(line, patterns) {
+  _matchBoundary(line, patterns, language) {
     const trimmed = line.trimStart();
+    if (trimmed.length > this.maxRegexLineLength) {
+      this._recordLongLineSkip(language, trimmed.length);
+      return { name: null, type: null };
+    }
     for (const [type, pattern] of Object.entries(patterns)) {
       const match = trimmed.match(pattern);
       if (match) {
+        if (!match[1]) {
+          this._recordEmptyCapture(language, type, trimmed);
+          continue;
+        }
         return { name: match[1], type };
       }
     }
     return { name: null, type: null };
+  }
+
+  _recordEmptyCapture(language, patternType, line) {
+    this.debugCounters.emptyCapture.boundary += 1;
+    if (!this.debugCounters.byLanguage[language]) {
+      this.debugCounters.byLanguage[language] = { boundary: 0, skippedLongLines: 0 };
+    }
+    this.debugCounters.byLanguage[language].boundary += 1;
+
+    const key = `${language}:boundary:${patternType}`;
+    this.debugCounters.byPattern[key] = (this.debugCounters.byPattern[key] || 0) + 1;
+
+    if (this.warnOnPatternDrop && this.debugCounters.byPattern[key] <= 3) {
+      console.warn(`[ast-chunker] Empty capture dropped for ${key}: ${line.slice(0, 120)}`);
+    }
+  }
+
+  _recordLongLineSkip(language, lineLength) {
+    this.debugCounters.skippedLongLines += 1;
+    if (!this.debugCounters.byLanguage[language]) {
+      this.debugCounters.byLanguage[language] = { boundary: 0, skippedLongLines: 0 };
+    }
+    this.debugCounters.byLanguage[language].skippedLongLines += 1;
+    if (this.warnOnPatternDrop && this.debugCounters.byLanguage[language].skippedLongLines <= 3) {
+      console.warn(`[ast-chunker] Skipping boundary regex on long line (${lineLength} chars) for ${language}`);
+    }
+  }
+
+  getDebugCounters() {
+    const byLanguage = {};
+    for (const [language, counts] of Object.entries(this.debugCounters.byLanguage)) {
+      byLanguage[language] = { ...counts };
+    }
+    return {
+      emptyCapture: { ...this.debugCounters.emptyCapture },
+      skippedLongLines: this.debugCounters.skippedLongLines,
+      byLanguage,
+      byPattern: { ...this.debugCounters.byPattern },
+    };
   }
 
   _stripNonCode(line, state, comment, hasTemplateInterpolation) {
@@ -297,7 +362,7 @@ export class ASTChunker {
           chunkContent, filePath, language,
           currentChunk?.type || 'code',
           currentChunk?.name || 'unknown',
-          chunkStart, lines.length
+          chunkStart, lines.length - 1
         ));
       }
     }
@@ -315,7 +380,7 @@ export class ASTChunker {
       const chunkContent = lines.slice(start, end).join('\n');
 
       if (chunkContent.trim().length > 20) {
-        chunks.push(this.buildChunk(chunkContent, filePath, 'text', 'code', 'unknown', start, end));
+        chunks.push(this.buildChunk(chunkContent, filePath, 'text', 'code', 'unknown', start, end - 1));
       }
 
       start = end - OVERLAP;
@@ -340,7 +405,7 @@ export class ASTChunker {
         chunk_type: chunkType,
         symbol,
         line_start: lineStart + 1,
-        line_end: lineEnd,
+        line_end: lineEnd + 1,
         hash
       },
       tags: ['codebase', language, this.inferProjectTag(filePath)]
