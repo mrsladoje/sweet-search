@@ -52,6 +52,7 @@ export const TOOLING_LANGUAGES = {
   lua: {
     indentBased: false,
     endKeyword: "end",
+    blockKeywords: ['function', 'if', 'while', 'for'],
     comment: {
       line: "--",
       block: ["--[[", "]]"],
@@ -101,6 +102,7 @@ export const TOOLING_LANGUAGES = {
   elixir: {
     indentBased: false,
     endKeyword: "end",
+    blockKeywords: ['defmodule', 'defmacro', 'defp', 'def', 'fn', 'if', 'unless', 'case', 'cond', 'with', 'try', 'receive'],
     comment: {
       line: "#",
       block: null,
@@ -192,14 +194,14 @@ export const TOOLING_LANGUAGES = {
     },
     chunker: {
       from: /^FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\w+))?/i,
-      run: /^RUN\s+/i,
-      copy: /^COPY\s+/i,
+      run: /^RUN\s+(.+)/i,
+      copy: /^COPY\s+(.+)/i,
     },
     graph: {
       entities: {
         stage: /^FROM\s+(?:--platform=\S+\s+)?\S+\s+AS\s+(\w+)/i,
         expose: /^EXPOSE\s+(\d+)/i,
-        entrypoint: /^(?:ENTRYPOINT|CMD)\s+/i,
+        entrypoint: /^(?:ENTRYPOINT|CMD)\s+(.+)/i,
         arg: /^ARG\s+(\w+)/i,
         env: /^ENV\s+(\w+)/i,
       },

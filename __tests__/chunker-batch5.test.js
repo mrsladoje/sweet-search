@@ -299,11 +299,11 @@ describe('XML entity extraction', () => {
 });
 
 // =============================================================================
-// DOCKERFILE (brace-based — FROM has capture, RUN/COPY don't)
+// DOCKERFILE (brace-based — FROM/RUN/COPY all create boundaries)
 // =============================================================================
 
 describe('Dockerfile chunker', () => {
-  it('chunks Dockerfile FROM stages', async () => {
+  it('chunks Dockerfile instructions', async () => {
     const chunks = await chunker.parseFile('/test/Dockerfile', [
       'FROM node:18-alpine AS builder',
       'WORKDIR /app',
@@ -316,9 +316,10 @@ describe('Dockerfile chunker', () => {
       'EXPOSE 3000',
       'CMD ["node", "server.js"]',
     ].join('\n'));
-    expect(chunks.length).toBe(3);
+    expect(chunks.length).toBeGreaterThanOrEqual(3);
     const summary = chunkSummary(chunks);
     expect(summary.some(s => s.type === 'from' && s.name === 'node:18-alpine')).toBe(true);
+    expect(summary.some(s => s.type === 'copy' || s.type === 'run')).toBe(true);
     expect(chunks[0].metadata.language).toBe('dockerfile');
   });
 });

@@ -87,6 +87,48 @@ const PROTO_PATTERNS = {
   enum: /enum\s+(\w+)\s*\{/g,
 };
 
+export const GENERIC_RELATIONSHIP_MAPPING = Object.freeze({
+  import: 'imports',
+  plainImport: 'imports',
+  include: 'imports',
+  require: 'imports',
+  use: 'imports',
+  prepend: 'imports',
+  open: 'imports',
+  source: 'imports',
+  from: 'imports',
+  forward: 'imports',
+  using: 'imports',
+  link: 'imports',
+  script: 'imports',
+  copyFrom: 'imports',
+  alias: 'imports',
+  namespace: 'imports',
+  ref: 'imports',
+  dep: 'imports',
+  package: 'imports',
+  extends: 'extends',
+  inherit: 'extends',
+  mixin: 'extends',
+  with: 'extends',
+  category: 'extends',
+  implements: 'implements',
+  protocol: 'implements',
+  implFor: 'implements',
+  decorator: 'uses',
+  embed: 'uses',
+  extend: 'uses',
+  anchor: 'uses',
+  derive: 'uses',
+  throw: 'uses',
+  img: 'uses',
+  form: 'uses',
+  methodOf: 'uses',
+});
+
+export const INTENTIONAL_DEFAULT_RELATIONSHIP_TYPES = Object.freeze([]);
+const escapeRegexLiteral = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // =============================================================================
 // GRAPH EXTRACTOR CLASS
 // =============================================================================
@@ -99,6 +141,20 @@ export class GraphExtractor {
     this.currentFile = null;
     this.currentClass = null;
     this.packageName = '';
+    this.warnOnPatternDrop = options?.warnOnPatternDrop || false;
+    this.maxRegexLineLength = options?.maxRegexLineLength || 4000;
+    this.debugCounters = {
+      emptyCapture: {
+        entity: 0,
+        relationship: 0,
+      },
+      skippedLongLines: 0,
+      byLanguage: {},
+      byPattern: {},
+    };
+    this.patternPrefilterCache = new Map();
+    this.methodCallRegexCache = new Map();
+    this.genericPatternPlanCache = new Map();
   }
 
   /**
@@ -598,19 +654,55 @@ export class GraphExtractor {
     const entities = [];
     const relationships = [];
     const { graph, id: language } = langInfo;
+    const {
+      entityPatterns,
+      relationshipPatterns,
+      methodCallPattern,
+      methodCallPrefilter,
+    } = this.getGenericPatternPlan(language, graph);
     const skipCallObjects = new Set(graph.skipCallObjects || []);
+    const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
     const jsonDependencySections = new Set(['dependencies', 'devDependencies', 'peerDependencies']);
     let jsonBraceDepth = 0;
     let activeJsonDependencyDepth = null;
+    // Track active entity scopes to attribute call source_id by lexical range.
+    const activeEntityScopes = [];
+
+    // Choose findEndLine strategy based on language type
+    const findEndLineFn = (startIdx) => {
+      if (langInfo.indentBased) {
+        return this.findEndLineIndent(lines, startIdx);
+      }
+      if (langInfo.endKeyword) {
+        return this.findEndLineKeyword(lines, startIdx, langInfo.endKeyword, langInfo.blockKeywords);
+      }
+      return this.findEndLine(lines, startIdx);
+    };
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trimStart();
       const lineNum = i + 1;
+      while (
+        activeEntityScopes.length > 0 &&
+        activeEntityScopes[activeEntityScopes.length - 1].end_line < lineNum
+      ) {
+        activeEntityScopes.pop();
+      }
       const openBraces = (line.match(/{/g) || []).length;
       const closeBraces = (line.match(/}/g) || []).length;
       const depthBefore = jsonBraceDepth;
       const depthAfter = depthBefore + openBraces - closeBraces;
+      if (trimmed.length > this.maxRegexLineLength) {
+        this._recordLongLineSkip(language, lineNum, trimmed.length);
+        if (language === 'json') {
+          if (activeJsonDependencyDepth !== null && depthAfter < activeJsonDependencyDepth) {
+            activeJsonDependencyDepth = null;
+          }
+          jsonBraceDepth = depthAfter;
+        }
+        continue;
+      }
 
       // JSON dependency extraction:
       // "dependencies"/"devDependencies"/"peerDependencies" are section markers.
@@ -619,7 +711,7 @@ export class GraphExtractor {
         const depEntry = trimmed.match(/^"([^"]+)"\s*:\s*"([^"]+)"/);
         if (depEntry && depEntry[1]) {
           relationships.push({
-            source_id: this.makeId(filePath, 'file', path.basename(filePath)),
+            source_id: fileEntityId,
             target_id: null,
             target_name: depEntry[1],
             type: 'imports',
@@ -630,16 +722,22 @@ export class GraphExtractor {
       }
 
       // Entity extraction
-      for (const [type, pattern] of Object.entries(graph.entities)) {
+      for (const { type, pattern, prefilter } of entityPatterns) {
+        if (prefilter && !prefilter(trimmed)) continue;
         const match = trimmed.match(pattern);
         if (match) {
           const name = match[1];
-          if (!name) continue;
+          if (!name) {
+            this._recordEmptyCapture('entity', language, type, lineNum, trimmed);
+            continue;
+          }
           const sig = trimmed.slice(0, 120);
           const sigHash = this.makeSignatureHash(sig);
+          const entityId = this.makeId(filePath, type, name, { signature: sig, startLine: lineNum });
+          const endLine = findEndLineFn(i);
 
           entities.push({
-            id: this.makeId(filePath, type, name, { signature: sig, startLine: lineNum }),
+            id: entityId,
             file_path: filePath,
             type,
             name,
@@ -647,58 +745,71 @@ export class GraphExtractor {
             signature_hash: sigHash,
             doc_comment: this.extractDocComment(lines, i),
             start_line: lineNum,
-            end_line: this.findEndLine(lines, i),
+            end_line: endLine,
           });
+          activeEntityScopes.push({ id: entityId, start_line: lineNum, end_line: endLine });
           break; // one entity per line
         }
       }
 
       // Relationship extraction
-      for (const [relType, pattern] of Object.entries(graph.relationships)) {
-        if (relType === 'methodCall') {
-          // Method calls need special handling: group1=object, group2=method
-          const callPattern = new RegExp(pattern.source, 'g');
-          for (const m of trimmed.matchAll(callPattern)) {
-            const obj = m[1];
-            const method = m[2];
-            if (skipCallObjects.has(obj)) continue;
-            relationships.push({
-              source_id: null,
-              target_id: null,
-              target_name: `${obj}.${method}`,
-              type: 'calls',
-              weight: GRAPH_CONFIG.relationshipWeights.calls,
-              context_line: lineNum,
-            });
-          }
-        } else {
-          const match = trimmed.match(pattern);
-          if (relType === 'dep' && language === 'json') {
-            if (match && match[1] && jsonDependencySections.has(match[1]) && depthAfter > depthBefore) {
-              activeJsonDependencyDepth = depthAfter;
-            }
+      const sourceEntityId = activeEntityScopes.length > 0
+        ? activeEntityScopes[activeEntityScopes.length - 1].id
+        : null;
+      // Method calls need special handling: group1=object, group2=method.
+      // Reuse compiled global regex to avoid per-line RegExp allocations.
+      if (methodCallPattern && (!methodCallPrefilter || methodCallPrefilter(trimmed))) {
+        methodCallPattern.lastIndex = 0;
+        let m;
+        while ((m = methodCallPattern.exec(trimmed)) !== null) {
+          const obj = m[1];
+          const method = m[2];
+          if (!obj || !method) {
+            this._recordEmptyCapture('relationship', language, 'methodCall', lineNum, trimmed);
+            if (m[0] === '') methodCallPattern.lastIndex++;
             continue;
           }
-          if (match && match[1]) {
-            const relMapping = {
-              import: 'imports', extends: 'extends', implements: 'implements',
-              decorator: 'uses', include: 'imports', require: 'imports',
-              use: 'imports', mixin: 'extends', embed: 'uses',
-              inherit: 'extends', prepend: 'imports', extend: 'uses',
-              open: 'imports', source: 'imports', from: 'imports',
-              with: 'extends', forward: 'imports', using: 'imports',
-              protocol: 'implements', link: 'imports', script: 'imports',
-              copyFrom: 'imports', alias: 'imports', anchor: 'uses',
-              namespace: 'imports', category: 'extends', ref: 'imports',
-              dep: 'imports',
-            };
-            const mappedType = relMapping[relType] || 'uses';
-            const weight = GRAPH_CONFIG.relationshipWeights[mappedType] || 1.0;
+          if (skipCallObjects.has(obj)) {
+            if (m[0] === '') methodCallPattern.lastIndex++;
+            continue;
+          }
+          relationships.push({
+            source_id: sourceEntityId,
+            target_id: null,
+            target_name: `${obj}.${method}`,
+            type: 'calls',
+            weight: GRAPH_CONFIG.relationshipWeights.calls,
+            context_line: lineNum,
+          });
+          if (m[0] === '') methodCallPattern.lastIndex++;
+        }
+      }
 
+      for (const { type: relType, pattern, prefilter } of relationshipPatterns) {
+        if (relType === 'methodCall') continue;
+        if (prefilter && !prefilter(trimmed)) continue;
+
+        const match = trimmed.match(pattern);
+        if (relType === 'dep' && language === 'json') {
+          if (match && match[1] && jsonDependencySections.has(match[1]) && depthAfter > depthBefore) {
+            activeJsonDependencyDepth = depthAfter;
+          }
+          continue;
+        }
+        if (match) {
+          if (!match[1]) {
+            this._recordEmptyCapture('relationship', language, relType, lineNum, trimmed);
+            continue;
+          }
+          const mappedType = GENERIC_RELATIONSHIP_MAPPING[relType] || 'uses';
+          const weight = GRAPH_CONFIG.relationshipWeights[mappedType] || 1.0;
+          const rawTarget = typeof match[1] === 'string' ? match[1].trim() : match[1];
+          const targets = this.expandRelationshipTargets(relType, rawTarget);
+          for (const target of targets) {
             relationships.push({
-              source_id: this.makeId(filePath, 'file', path.basename(filePath)),
+              source_id: sourceEntityId || fileEntityId,
               target_id: null,
-              target_name: typeof match[1] === 'string' ? match[1].trim() : match[1],
+              target_name: target,
               type: mappedType,
               weight,
               context_line: lineNum,
@@ -716,6 +827,227 @@ export class GraphExtractor {
     }
 
     return { entities, relationships };
+  }
+
+  getGenericPatternPlan(language, graph) {
+    const cached = this.genericPatternPlanCache.get(language);
+    if (cached) return cached;
+
+    const entityPatterns = Object.entries(graph.entities || {}).map(([type, pattern]) => ({
+      type,
+      pattern,
+      prefilter: this.getPatternPrefilter(pattern),
+    }));
+    const relationshipPatterns = Object.entries(graph.relationships || {}).map(([type, pattern]) => ({
+      type,
+      pattern,
+      prefilter: this.getPatternPrefilter(pattern),
+    }));
+
+    const methodCallEntry = relationshipPatterns.find((entry) => entry.type === 'methodCall');
+    const methodCallPattern = methodCallEntry
+      ? this.getCachedGlobalRegex(language, methodCallEntry.pattern)
+      : null;
+    const plan = {
+      entityPatterns,
+      relationshipPatterns,
+      methodCallPattern,
+      methodCallPrefilter: methodCallEntry?.prefilter || null,
+    };
+    this.genericPatternPlanCache.set(language, plan);
+    return plan;
+  }
+
+  getCachedGlobalRegex(language, pattern) {
+    const key = `${language}:${pattern.source}:${pattern.flags}`;
+    const cached = this.methodCallRegexCache.get(key);
+    if (cached) return cached;
+
+    const uniqueFlags = [...new Set(`${pattern.flags || ''}g`)].join('');
+    const compiled = new RegExp(pattern.source, uniqueFlags);
+    this.methodCallRegexCache.set(key, compiled);
+    return compiled;
+  }
+
+  getPatternPrefilter(pattern) {
+    const key = `${pattern.source}:${pattern.flags}`;
+    if (this.patternPrefilterCache.has(key)) {
+      return this.patternPrefilterCache.get(key);
+    }
+
+    const caseInsensitive = pattern.flags.includes('i');
+    let tokens = this.extractLineStartTokens(pattern.source);
+    const optionalPrefixMatch = pattern.source.match(/^\^(\\?.)\?/);
+    if (optionalPrefixMatch && tokens.length > 0) {
+      const prefix = optionalPrefixMatch[1].startsWith('\\')
+        ? optionalPrefixMatch[1].slice(1)
+        : optionalPrefixMatch[1];
+      tokens = [...tokens, ...tokens.map((token) => `${prefix}${token}`)];
+    }
+    if (tokens.length === 0) {
+      this.patternPrefilterCache.set(key, null);
+      return null;
+    }
+
+    const normalizedTokens = caseInsensitive
+      ? [...new Set(tokens.map((t) => t.toLowerCase()))]
+      : [...new Set(tokens)];
+    const prefilter = (line) => {
+      const value = caseInsensitive ? line.toLowerCase() : line;
+      return normalizedTokens.some((token) => value.startsWith(token));
+    };
+    this.patternPrefilterCache.set(key, prefilter);
+    return prefilter;
+  }
+
+  extractLineStartTokens(source) {
+    if (!source.startsWith('^')) return [];
+
+    let i = 1;
+    const tokens = [];
+
+    const skipLeadingWhitespace = () => {
+      if (source.slice(i).startsWith('\\s*')) {
+        i += 3;
+        return true;
+      }
+      if (source.slice(i).startsWith('\\s+')) {
+        i += 3;
+        return true;
+      }
+      return false;
+    };
+
+    while (skipLeadingWhitespace()) {}
+
+    while (source.slice(i).startsWith('(?:')) {
+      const start = i + 3;
+      let depth = 1;
+      let j = start;
+      let inClass = false;
+      while (j < source.length && depth > 0) {
+        const ch = source[j];
+        if (ch === '\\') {
+          j += 2;
+          continue;
+        }
+        if (ch === '[') inClass = true;
+        else if (ch === ']' && inClass) inClass = false;
+        else if (!inClass && ch === '(') depth++;
+        else if (!inClass && ch === ')') depth--;
+        j++;
+      }
+      if (depth !== 0) return [];
+
+      const groupEnd = j - 1;
+      const groupContent = source.slice(start, groupEnd);
+      const isOptional = source[groupEnd + 1] === '?';
+      if (!isOptional) {
+        const alternatives = groupContent.split('|').map((alt) => alt.trim()).filter(Boolean);
+        const altTokens = [];
+        for (const alt of alternatives) {
+          const token = this.extractLiteralPrefix(alt);
+          if (!token) return [];
+          altTokens.push(token);
+        }
+        tokens.push(...altTokens);
+        return [...new Set(tokens)];
+      }
+      const optionalAlternatives = groupContent.split('|').map((alt) => alt.trim()).filter(Boolean);
+      for (const alt of optionalAlternatives) {
+        const token = this.extractLiteralPrefix(alt);
+        if (token) tokens.push(token);
+      }
+      i = groupEnd + 2;
+      while (skipLeadingWhitespace()) {}
+    }
+
+    const literal = this.extractLiteralPrefix(source.slice(i));
+    if (!literal) {
+      // If no mandatory literal prefix can be derived, disable prefilter to avoid false negatives.
+      return [];
+    }
+    tokens.push(literal);
+    return [...new Set(tokens)];
+  }
+
+  extractLiteralPrefix(fragment) {
+    let result = '';
+
+    for (let i = 0; i < fragment.length; i++) {
+      const ch = fragment[i];
+      if (ch === '\\') {
+        const next = fragment[i + 1];
+        if (!next) break;
+        if (/[A-Za-z0-9]/.test(next)) break;
+        result += next;
+        i++;
+        continue;
+      }
+      if (fragment[i + 1] === '?' && result.length === 0 && /[@#<./:_-]/.test(ch)) {
+        // Skip optional leading literal chars (e.g. -?include).
+        i++;
+        continue;
+      }
+      if (/[A-Za-z0-9_@#<./:-]/.test(ch)) {
+        result += ch;
+        continue;
+      }
+      break;
+    }
+
+    return result;
+  }
+
+  expandRelationshipTargets(relType, target) {
+    if (relType !== 'plainImport' || typeof target !== 'string') {
+      return [target];
+    }
+
+    return target
+      .split(',')
+      .map((entry) => entry.trim().replace(/\s+as\s+\w+$/i, '').trim())
+      .filter(Boolean);
+  }
+
+  _recordEmptyCapture(kind, language, patternType, lineNum, line) {
+    this.debugCounters.emptyCapture[kind] = (this.debugCounters.emptyCapture[kind] || 0) + 1;
+
+    if (!this.debugCounters.byLanguage[language]) {
+      this.debugCounters.byLanguage[language] = { entity: 0, relationship: 0, skippedLongLines: 0 };
+    }
+    this.debugCounters.byLanguage[language][kind] += 1;
+
+    const key = `${language}:${kind}:${patternType}`;
+    this.debugCounters.byPattern[key] = (this.debugCounters.byPattern[key] || 0) + 1;
+
+    if (this.warnOnPatternDrop && this.debugCounters.byPattern[key] <= 3) {
+      console.warn(`[graph-extractor] Empty capture dropped for ${key} at line ${lineNum}: ${line.slice(0, 120)}`);
+    }
+  }
+
+  _recordLongLineSkip(language, lineNum, lineLength) {
+    this.debugCounters.skippedLongLines += 1;
+    if (!this.debugCounters.byLanguage[language]) {
+      this.debugCounters.byLanguage[language] = { entity: 0, relationship: 0, skippedLongLines: 0 };
+    }
+    this.debugCounters.byLanguage[language].skippedLongLines += 1;
+    if (this.warnOnPatternDrop && this.debugCounters.byLanguage[language].skippedLongLines <= 3) {
+      console.warn(`[graph-extractor] Skipping regex extraction for long line (${lineLength} chars) at ${language}:${lineNum}`);
+    }
+  }
+
+  getDebugCounters() {
+    const byLanguage = {};
+    for (const [language, counts] of Object.entries(this.debugCounters.byLanguage)) {
+      byLanguage[language] = { ...counts };
+    }
+    return {
+      emptyCapture: { ...this.debugCounters.emptyCapture },
+      skippedLongLines: this.debugCounters.skippedLongLines,
+      byLanguage,
+      byPattern: { ...this.debugCounters.byPattern },
+    };
   }
 
   /**
@@ -803,6 +1135,55 @@ export class GraphExtractor {
 
       if (started && braceDepth === 0) {
         return i + 1;
+      }
+    }
+
+    return lines.length;
+  }
+
+  /**
+   * Find end line for indent-based languages (Python, YAML, etc.)
+   * Scans forward until a line at the same or lesser indentation is found.
+   */
+  findEndLineIndent(lines, startIndex) {
+    const startLine = lines[startIndex];
+    const startIndent = startLine.length - startLine.trimStart().length;
+
+    for (let i = startIndex + 1; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trimStart();
+      if (!trimmed) continue; // skip blank lines
+      const indent = line.length - trimmed.length;
+      if (indent <= startIndent) {
+        return i; // 0-based exclusive → 1-based line number
+      }
+    }
+
+    return lines.length;
+  }
+
+  /**
+   * Find end line for end-keyword languages (Ruby, Elixir, Lua, Obj-C).
+   * Counts matching keyword pairs to find the closing end/keyword.
+   */
+  findEndLineKeyword(lines, startIndex, endKeyword, blockKeywords) {
+    const endRe = new RegExp(`^\\s*${escapeRegexLiteral(endKeyword)}\\b`);
+    const blockStartRe = blockKeywords?.length
+      ? new RegExp(`^\\s*(?:${blockKeywords.join('|')})\\b`)
+      : null;
+    let depth = 1; // start inside the opening block
+
+    for (let i = startIndex + 1; i < lines.length; i++) {
+      const line = lines[i];
+      // Check for nested block openers (boundary patterns or block keywords)
+      if (blockStartRe && blockStartRe.test(line)) {
+        depth++;
+      }
+      if (endRe.test(line)) {
+        depth--;
+        if (depth === 0) {
+          return i + 1; // 1-based
+        }
       }
     }
 

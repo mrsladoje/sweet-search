@@ -15,8 +15,8 @@ export const WEB_STYLE_LANGUAGES = {
     chunker: {
       section: /<(section|article|nav|header|footer|main|aside|template|form)\b[^>]*>/i,
       component: /<([A-Z]\w+)\b/,
-      script: /<script\b[^>]*>/i,
-      style: /<style\b[^>]*>/i,
+      script: /<(script)\b[^>]*>/i,
+      style: /<(style)\b[^>]*>/i,
     },
     graph: {
       entities: {
@@ -42,10 +42,10 @@ export const WEB_STYLE_LANGUAGES = {
       block: ["/*", "*/"],
     },
     chunker: {
-      rule: /^(?!(?:if|else|for|while|switch|return|function|var|let|const)\s)[.#\w\[\*:][^{]*\{/,
-      media: /^@media\s+[^{]+\{/,
+      rule: /^(?!(?:if|else|for|while|switch|return|function|var|let|const|from|to)\s)(?!\d+%)([.#\w\[\*:][^{]*?)\s*\{/,
+      media: /^(@media\s+[^{]+)\{/,
       keyframes: /^@keyframes\s+([\w-]+)\s*\{/,
-      fontface: /^@font-face\s*\{/,
+      fontface: /^(@font-face)\s*\{/,
       layer: /^@layer\s+([\w-]+)/,
       container: /^@container\s+([\w-]+)/,
     },
@@ -72,8 +72,8 @@ export const WEB_STYLE_LANGUAGES = {
     chunker: {
       mixin: /^@mixin\s+([\w-]+)/,
       function: /^@function\s+([\w-]+)/,
-      rule: /^(?!(?:if|else|for|while|switch|return|function|var|let|const)\s)[.#\w\[\*:&][^{]*\{/,
-      media: /^@media\s+[^{]+\{/,
+      rule: /^(?!(?:if|else|for|while|switch|return|function|var|let|const|from|to)\s)(?!\d+%)([.#\w\[\*:&][^{]*?)\s*\{/,
+      media: /^(@media\s+[^{]+)\{/,
     },
     graph: {
       entities: {
@@ -101,7 +101,7 @@ export const WEB_STYLE_LANGUAGES = {
     },
     chunker: {
       mixin: /^[=+]([\w-]+)/,
-      rule: /^[.#\w\[\*:&]/,
+      rule: /^([.#&\[\*:][^\s,{]*)/,
     },
     graph: {
       entities: {
@@ -125,7 +125,7 @@ export const WEB_STYLE_LANGUAGES = {
     },
     chunker: {
       mixin: /^\.([\w-]+)\s*\(/,
-      rule: /^(?!(?:if|else|for|while|switch|return|function|var|let|const)\s)[.#\w\[\*:&][^{]*\{/,
+      rule: /^(?!(?:if|else|for|while|switch|return|function|var|let|const|from|to)\s)(?!\d+%)([.#\w\[\*:&][^{]*?)\s*\{/,
     },
     graph: {
       entities: {

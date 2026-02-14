@@ -64,6 +64,7 @@ export const OBJECT_ORIENTED_LANGUAGES = {
   ruby: {
     indentBased: false,
     endKeyword: "end",
+    blockKeywords: ['class', 'module', 'def', 'if', 'unless', 'while', 'until', 'case', 'for', 'begin', 'do'],
     comment: {
       line: "#",
       block: ["=begin", "=end"],

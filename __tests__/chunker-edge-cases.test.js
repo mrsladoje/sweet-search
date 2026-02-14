@@ -478,9 +478,10 @@ describe('end-keyword parser', () => {
       '  end',
       'end',
     ].join('\n'));
-    expect(chunks.length).toBe(2);
+    // With correct depth tracking, the entire class is one chunk
+    // (if/end inside deposit no longer prematurely closes the class)
+    expect(chunks.length).toBe(1);
     expect(chunks[0].metadata.symbol).toBe('Account');
-    expect(chunks[1].metadata.symbol).toBe('withdraw');
   });
 
   it('handles Lua function with nested if/end', async () => {
@@ -495,7 +496,7 @@ describe('end-keyword parser', () => {
       '    return true',
       'end',
     ].join('\n'));
-    expect(chunks.length).toBe(2);
+    expect(chunks.length).toBe(1);
     expect(chunks[0].metadata.symbol).toBe('validate');
   });
 });
