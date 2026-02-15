@@ -50,6 +50,11 @@ coverage/
 evaluation/*.json.bak
 failure-analysis.md
 
+# Eval benchmark results and data (regenerable)
+eval/results/
+eval/data/
+eval/corpus/
+
 # Claude Flow and AgenticQE
 .agentic-qe/
 .agentdb/
