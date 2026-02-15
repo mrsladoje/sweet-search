@@ -46,6 +46,12 @@ function parseArgs() {
   const opts = {
     benchmarks: 'available', maxQueries: 0, mode: 'auto', skipIndex: false,
     verbose: false, concurrency: 5, k: 20, list: false, help: false,
+    profile: 'balanced',
+    useColBERT: null,      // null = use profile default
+    buildColBERT: null,    // null = use profile default
+    requireNativeAnn: false,
+    indexMode: 'single',
+    sqliteFast: false,
   };
   for (const arg of args) {
     if (arg.startsWith('--benchmarks=')) opts.benchmarks = arg.split('=')[1];
@@ -57,8 +63,35 @@ function parseArgs() {
     else if (arg.startsWith('--k=')) opts.k = parseInt(arg.split('=')[1], 10);
     else if (arg === '--list') opts.list = true;
     else if (arg === '--help' || arg === '-h') opts.help = true;
+    else if (arg.startsWith('--profile=')) opts.profile = arg.split('=')[1];
+    else if (arg.startsWith('--use-colbert=')) opts.useColBERT = arg.split('=')[1] === 'true';
+    else if (arg.startsWith('--build-colbert=')) opts.buildColBERT = arg.split('=')[1] === 'true';
+    else if (arg === '--require-native-ann') opts.requireNativeAnn = true;
+    else if (arg.startsWith('--index-mode=')) opts.indexMode = arg.split('=')[1];
+    else if (arg === '--sqlite-fast') opts.sqliteFast = true;
   }
   return opts;
+}
+
+/**
+ * Resolve profile defaults with CLI overrides.
+ */
+function resolveProfile(opts) {
+  const profiles = {
+    fast: { buildColBERT: false, useColBERT: false, sqliteFast: true, indexMode: 'single' },
+    balanced: { buildColBERT: false, useColBERT: false, sqliteFast: false, indexMode: 'single' },
+    full: { buildColBERT: true, useColBERT: true, sqliteFast: false, indexMode: 'single' },
+  };
+
+  const profile = profiles[opts.profile] || profiles.balanced;
+
+  return {
+    buildColBERT: opts.buildColBERT ?? profile.buildColBERT,
+    useColBERT: opts.useColBERT ?? profile.useColBERT,
+    sqliteFast: opts.sqliteFast || profile.sqliteFast,
+    indexMode: opts.indexMode || profile.indexMode,
+    requireNativeAnn: opts.requireNativeAnn,
+  };
 }
 
 function printHelp() {
@@ -76,6 +109,12 @@ Options:
   --concurrency=N     Parallel query execution [default: 5]
   --k=N               Top-k results [default: 20]
   --list              List all registered benchmarks and exit
+  --profile=PROFILE   Benchmark profile (fast|balanced|full) [default: balanced]
+  --use-colbert=BOOL  Override ColBERT usage for queries [default: profile]
+  --build-colbert=BOOL Override ColBERT index building [default: profile]
+  --require-native-ann  Fail if native ANN backend (usearch) is unavailable
+  --index-mode=MODE   Indexing mode (single|two-phase) [default: single]
+  --sqlite-fast       Enable fast SQLite pragmas for benchmarking
   --help, -h          Show help`);
 }
 
@@ -113,7 +152,7 @@ function resolveBenchmarks(selection) {
 
 // ─── Run a Single Benchmark ──────────────────────────────────────────────────
 
-async function runBenchmark(benchmark, opts) {
+async function runBenchmark(benchmark, opts, profileOpts) {
   const benchStart = Date.now();
   console.log(`\n${'='.repeat(70)}`);
   console.log(`  Benchmark: ${benchmark.name} - ${benchmark.description}`);
@@ -147,10 +186,16 @@ async function runBenchmark(benchmark, opts) {
   }
 
   // 4. Index if needed
+  let indexResult;
   if (!opts.skipIndex) {
     console.log('\n  [3/5] Indexing corpus...');
     try {
-      await indexCorpus(corpusDir, PROJECT_ROOT);
+      indexResult = await indexCorpus(corpusDir, PROJECT_ROOT, {
+        indexMode: profileOpts.indexMode,
+        buildColBERT: profileOpts.buildColBERT,
+        sqliteFastMode: profileOpts.sqliteFast,
+        requireNativeAnn: profileOpts.requireNativeAnn,
+      });
     } catch (err) {
       console.error(`  Indexing failed: ${err.message}`);
       return null;
@@ -163,7 +208,7 @@ async function runBenchmark(benchmark, opts) {
   console.log('\n  [4/5] Running queries...');
   let search;
   try {
-    search = await initSearch(corpusDir, PROJECT_ROOT);
+    search = await initSearch(corpusDir, PROJECT_ROOT, { useColBERT: profileOpts.useColBERT });
   } catch (err) {
     console.error(`  Failed to initialize search: ${err.message}`);
     return null;
@@ -222,13 +267,14 @@ async function runBenchmark(benchmark, opts) {
   const report = buildReport({
     dataset: benchmark.name, queryCount: queries.length, corpusSize: corpus.length,
     searchMode: opts.mode, totalTimeMs: totalTime, errorCount: errors.length,
+    indexTimings: indexResult?.timings || null,
     metrics, perLanguage, evaluatedQueries,
   });
   const { timestampedFile } = saveResults(benchmark.name, report, path.join(EVAL_DIR, 'results'));
   console.log(`  Results saved to: ${timestampedFile}`);
 
   try { await search.close?.(); } catch {}
-  return { dataset: benchmark.name, metrics, perLanguage, totalTime, queryCount: queries.length };
+  return { dataset: benchmark.name, metrics, perLanguage, totalTime, queryCount: queries.length, indexTimings: indexResult?.timings || null };
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -254,11 +300,14 @@ async function main() {
   console.log(`  Max queries: ${opts.maxQueries || 'all'}`);
   console.log(`  Search mode: ${opts.mode}  |  Concurrency: ${opts.concurrency}  |  Top-k: ${opts.k}`);
   console.log(`  Skip index:  ${opts.skipIndex}`);
+  const profileOpts = resolveProfile(opts);
+  console.log(`  Profile:     ${opts.profile} (ColBERT build: ${profileOpts.buildColBERT}, query: ${profileOpts.useColBERT})`);
+  console.log(`  Index mode:  ${profileOpts.indexMode}  |  SQLite fast: ${profileOpts.sqliteFast}`);
 
   // Run each benchmark sequentially (each needs its own index/search instance)
   const allResults = [];
   for (const benchmark of benchmarks) {
-    const result = await runBenchmark(benchmark, opts);
+    const result = await runBenchmark(benchmark, opts, profileOpts);
     if (result) allResults.push(result);
   }
 
@@ -274,6 +323,7 @@ async function main() {
       timestamp: new Date().toISOString(),
       totalTimeMs: Date.now() - runStart,
       benchmarkCount: allResults.length,
+      profile: opts.profile, profileOpts,
       benchmarks: allResults.map(r => ({
         dataset: r.dataset, queryCount: r.queryCount,
         totalTimeMs: r.totalTime, metrics: r.metrics, perLanguage: r.perLanguage,
@@ -292,3 +342,5 @@ main().catch(err => {
   console.error(err.stack);
   process.exit(1);
 });
+
+export { resolveProfile };

@@ -51,6 +51,12 @@ function parseArgs() {
     k: 20,                  // top-k results to retrieve
     verbose: false,
     concurrency: 5,
+    profile: 'balanced',
+    useColBERT: null,      // null = use profile default
+    buildColBERT: null,    // null = use profile default
+    requireNativeAnn: false,
+    indexMode: 'single',
+    sqliteFast: false,
   };
 
   for (const arg of args) {
@@ -60,6 +66,12 @@ function parseArgs() {
     else if (arg === '--skip-index') opts.skipIndex = true;
     else if (arg === '--verbose' || arg === '-v') opts.verbose = true;
     else if (arg.startsWith('--concurrency=')) opts.concurrency = parseInt(arg.split('=')[1]);
+    else if (arg.startsWith('--profile=')) opts.profile = arg.split('=')[1];
+    else if (arg.startsWith('--use-colbert=')) opts.useColBERT = arg.split('=')[1] === 'true';
+    else if (arg.startsWith('--build-colbert=')) opts.buildColBERT = arg.split('=')[1] === 'true';
+    else if (arg === '--require-native-ann') opts.requireNativeAnn = true;
+    else if (arg.startsWith('--index-mode=')) opts.indexMode = arg.split('=')[1];
+    else if (arg === '--sqlite-fast') opts.sqliteFast = true;
     else if (arg === '--help' || arg === '-h') {
       console.log(`
 Sweet Search Benchmark Runner
@@ -73,6 +85,12 @@ Options:
   --skip-index         Skip corpus indexing (reuse existing index)
   --verbose, -v        Show per-query details
   --concurrency=N      Parallel query execution [default: 5]
+  --profile=PROFILE    Benchmark profile (fast|balanced|full) [default: balanced]
+  --use-colbert=BOOL   Override ColBERT usage for queries [default: profile]
+  --build-colbert=BOOL Override ColBERT index building [default: profile]
+  --require-native-ann Fail if native ANN backend (usearch) is unavailable
+  --index-mode=MODE    Indexing mode (single|two-phase) [default: single]
+  --sqlite-fast        Enable fast SQLite pragmas for benchmarking
   --help, -h           Show this help
 `);
       process.exit(0);
@@ -80,6 +98,27 @@ Options:
   }
 
   return opts;
+}
+
+/**
+ * Resolve profile defaults with CLI overrides.
+ */
+function resolveProfile(opts) {
+  const profiles = {
+    fast: { buildColBERT: false, useColBERT: false, sqliteFast: true, indexMode: 'single' },
+    balanced: { buildColBERT: false, useColBERT: false, sqliteFast: false, indexMode: 'single' },
+    full: { buildColBERT: true, useColBERT: true, sqliteFast: false, indexMode: 'single' },
+  };
+
+  const profile = profiles[opts.profile] || profiles.balanced;
+
+  return {
+    buildColBERT: opts.buildColBERT ?? profile.buildColBERT,
+    useColBERT: opts.useColBERT ?? profile.useColBERT,
+    sqliteFast: opts.sqliteFast || profile.sqliteFast,
+    indexMode: opts.indexMode || profile.indexMode,
+    requireNativeAnn: opts.requireNativeAnn,
+  };
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -95,6 +134,8 @@ async function main() {
   console.log(`  Max queries: ${opts.maxQueries || 'all'}`);
   console.log(`  Search mode: ${opts.mode}`);
   console.log(`  Skip index:  ${opts.skipIndex}`);
+  const profileOpts = resolveProfile(opts);
+  console.log(`  Profile:     ${opts.profile}`);
 
   // 1. Load data
   const dataDir = path.join(__dirname, 'data', opts.dataset);
@@ -130,10 +171,16 @@ async function main() {
   }
 
   // 3. Index corpus with Sweet Search
+  let indexResult;
   if (!opts.skipIndex) {
     console.log('\n[3/5] Indexing corpus with Sweet Search...');
     try {
-      await indexCorpus(corpusDir, PROJECT_ROOT);
+      indexResult = await indexCorpus(corpusDir, PROJECT_ROOT, {
+        indexMode: profileOpts.indexMode,
+        buildColBERT: profileOpts.buildColBERT,
+        sqliteFastMode: profileOpts.sqliteFast,
+        requireNativeAnn: profileOpts.requireNativeAnn,
+      });
     } catch (err) {
       console.error(`  Indexing failed: ${err.message}`);
       console.error('  Try running with EMBEDDING_PROVIDER=local or ensure API keys are set');
@@ -147,7 +194,7 @@ async function main() {
   console.log('\n[4/5] Running queries...');
   let search;
   try {
-    search = await initSearch(corpusDir, PROJECT_ROOT);
+    search = await initSearch(corpusDir, PROJECT_ROOT, { useColBERT: profileOpts.useColBERT });
   } catch (err) {
     console.error(`  Failed to initialize search: ${err.message}`);
     process.exit(3);
@@ -220,6 +267,8 @@ async function main() {
     searchMode: opts.mode,
     totalTimeMs: totalTime,
     errorCount: errors.length,
+    profile: opts.profile,
+    indexTimings: indexResult?.timings || null,
     metrics,
     perLanguage,
     evaluatedQueries,
