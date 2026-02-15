@@ -374,7 +374,12 @@ class SemanticCache {
     this.loadPromise = (async () => {
       const start = Date.now();
       console.log('[SemanticCache] Loading local model for cache keys...');
-      const { pipeline } = await import('@xenova/transformers');
+      let pipeline;
+      try {
+        ({ pipeline } = await import('@huggingface/transformers'));
+      } catch {
+        ({ pipeline } = await import('@xenova/transformers'));
+      }
       this.localModel = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
       console.log(`[SemanticCache] Local model loaded in ${Date.now() - start}ms`);
       this.loadingModel = false;
@@ -658,7 +663,8 @@ async function callMistralAPI(texts, config) {
   return data.data.map(d => d.embedding);
 }
 
-async function callJinaAPI(texts, config) {
+async function callJinaAPI(texts, config, options = {}) {
+  const { task = 'retrieval.passage' } = options;
   const response = await fetch(config.endpoint, {
     method: 'POST',
     headers: {
@@ -668,7 +674,7 @@ async function callJinaAPI(texts, config) {
     body: JSON.stringify({
       model: config.model,
       input: texts,
-      task: 'retrieval.passage',
+      task,
     }),
   });
 
@@ -697,7 +703,13 @@ async function getLocalPipeline() {
   loadPromise = (async () => {
     const start = Date.now();
     console.log(`Loading local model: ${EMBEDDING_PROVIDERS.local.model}...`);
-    const { pipeline } = await import('@xenova/transformers');
+    // Use @huggingface/transformers when available (newer ONNX runtime, fixes crashes on some platforms)
+    let pipeline;
+    try {
+      ({ pipeline } = await import('@huggingface/transformers'));
+    } catch {
+      ({ pipeline } = await import('@xenova/transformers'));
+    }
     localPipeline = await pipeline('feature-extraction', EMBEDDING_PROVIDERS.local.model, { quantized: true });
     console.log(`Local model loaded in ${Date.now() - start}ms`);
     isLoadingLocal = false;
@@ -737,14 +749,33 @@ const rateLimiters = {
 let cacheStats = { hits: 0, misses: 0, vocabularyHits: 0, apiCalls: 0 };
 
 /**
+ * Apply query prefix for local models that require it (e.g. CodeRankEmbed).
+ * Called before any callLocalModel() invocation for query embeddings.
+ */
+function applyLocalQueryPrefix(text) {
+  const prefix = EMBEDDING_PROVIDERS.local?.queryPrefix || '';
+  if (prefix && !text.startsWith(prefix)) {
+    return prefix + text;
+  }
+  return text;
+}
+
+/**
  * Generate embedding using the active provider
  * Integrates circuit breaker to prevent cascading failures during API outages
+ *
+ * @param {string} text - Text to embed
+ * @param {string} provider - Provider name
+ * @param {boolean} isQuery - If true, applies query prefix for local model (e.g. CodeRankEmbed)
  */
-async function generateEmbedding(text, provider = EMBEDDING_CONFIG.provider) {
+async function generateEmbedding(text, provider = EMBEDDING_CONFIG.provider, isQuery = false) {
+  // Apply query prefix when calling local model (direct or fallback from remote)
+  const localText = isQuery ? applyLocalQueryPrefix(text) : text;
+
   const config = EMBEDDING_PROVIDERS[provider];
   if (!config || !config.enabled) {
     // Fallback to local
-    return (await callLocalModel([text]))[0];
+    return (await callLocalModel([localText]))[0];
   }
 
   // Circuit breaker check for remote providers
@@ -752,7 +783,7 @@ async function generateEmbedding(text, provider = EMBEDDING_CONFIG.provider) {
     const circuitCheck = circuitBreaker.canRequest();
     if (!circuitCheck.allowed) {
       console.warn(`[embedding-service] Circuit breaker blocked request: ${circuitCheck.reason}, falling back to local`);
-      return (await callLocalModel([text]))[0];
+      return (await callLocalModel([localText]))[0];
     }
   }
 
@@ -770,16 +801,16 @@ async function generateEmbedding(text, provider = EMBEDDING_CONFIG.provider) {
       let result;
       switch (provider) {
         case 'voyage':
-          result = (await callVoyageAPI([text], config))[0];
+          result = (await callVoyageAPI([text], config, { inputType: isQuery ? 'query' : 'document' }))[0];
           break;
         case 'mistral':
           result = (await callMistralAPI([text], config))[0];
           break;
         case 'jina':
-          result = (await callJinaAPI([text], config))[0];
+          result = (await callJinaAPI([text], config, { task: isQuery ? 'retrieval.query' : 'retrieval.passage' }))[0];
           break;
         case 'local':
-          result = (await callLocalModel([text]))[0];
+          result = (await callLocalModel([localText]))[0];
           break;
         default:
           throw new Error(`Unknown provider: ${provider}`);
@@ -807,7 +838,7 @@ async function generateEmbedding(text, provider = EMBEDDING_CONFIG.provider) {
 
   // Fallback to local on failure
   console.warn(`All attempts failed for ${provider}, falling back to local model`);
-  return (await callLocalModel([text]))[0];
+  return (await callLocalModel([localText]))[0];
 }
 
 /**
@@ -871,36 +902,44 @@ async function generateEmbeddings(texts, provider = EMBEDDING_CONFIG.provider) {
  * 4. Remote API (Voyage, ~250ms)
  */
 export async function getEmbedding(text, options = {}) {
-  const { useCache = true, useSemanticCache = true } = options;
+  const { useCache = true, useSemanticCache = true, isQuery = false } = options;
+
   const start = performance.now();
+
+  // Cache key includes mode to prevent query/document embedding collisions.
+  // Models like CodeRankEmbed produce different embeddings for queries (prefixed)
+  // vs documents, and Voyage uses inputType='query' vs 'document'.
+  const cacheKey = isQuery ? `q:${text}` : text;
 
   // Check LRU cache (exact match)
   if (useCache && EMBEDDING_CONFIG.cache?.enabled) {
-    const cached = queryCache.get(text);
+    const cached = queryCache.get(cacheKey);
     if (cached) {
       cacheStats.hits++;
       return { embedding: cached, cached: true, source: 'lru', latency_us: Math.round((performance.now() - start) * 1000) };
     }
 
-    // Check vocabulary (pre-computed)
-    await vocabulary.load();
-    const vocabHit = vocabulary.get(text);
-    if (vocabHit) {
-      cacheStats.vocabularyHits++;
-      queryCache.set(text, vocabHit);
-      return { embedding: vocabHit, cached: true, source: 'vocabulary', latency_us: Math.round((performance.now() - start) * 1000) };
+    // Check vocabulary (pre-computed) — only for queries
+    if (isQuery) {
+      await vocabulary.load();
+      const vocabHit = vocabulary.get(text);
+      if (vocabHit) {
+        cacheStats.vocabularyHits++;
+        queryCache.set(cacheKey, vocabHit);
+        return { embedding: vocabHit, cached: true, source: 'vocabulary', latency_us: Math.round((performance.now() - start) * 1000) };
+      }
     }
   }
 
   // Check semantic cache (similarity-based, uses local model)
   // Only use for remote providers (local model is fast enough)
-  if (useSemanticCache && EMBEDDING_CONFIG.isRemote) {
+  if (isQuery && useSemanticCache && EMBEDDING_CONFIG.isRemote) {
     const semanticResult = await semanticCache.findSimilar(text);
     if (semanticResult?.voyageEmb) {
       cacheStats.hits++;
       // Also store in LRU for exact match next time
       if (useCache && EMBEDDING_CONFIG.cache?.enabled) {
-        queryCache.set(text, semanticResult.voyageEmb);
+        queryCache.set(cacheKey, semanticResult.voyageEmb);
       }
       return {
         embedding: semanticResult.voyageEmb,
@@ -919,28 +958,28 @@ export async function getEmbedding(text, options = {}) {
   cacheStats.misses++;
 
   // Check if same query is already in-flight (deduplication)
-  const inflight = queryDeduplicator.get(text);
+  const inflight = queryDeduplicator.get(cacheKey);
   if (inflight) {
     const result = await inflight;
     return { ...result, source: 'deduplicated', latency_us: Math.round((performance.now() - start) * 1000) };
   }
 
   // Generate embedding via API (with deduplication tracking)
-  const embeddingPromise = generateEmbedding(text);
-  queryDeduplicator.set(text, embeddingPromise.then(emb => ({ embedding: emb })));
+  const embeddingPromise = generateEmbedding(text, EMBEDDING_CONFIG.provider, isQuery);
+  queryDeduplicator.set(cacheKey, embeddingPromise.then(emb => ({ embedding: emb })));
   const embedding = await embeddingPromise;
 
   // Store in caches
   if (useCache && EMBEDDING_CONFIG.cache?.enabled) {
-    queryCache.set(text, embedding);
+    queryCache.set(cacheKey, embedding);
 
     // Add to semantic cache if we have the local embedding
     if (localEmbForCache) {
       semanticCache.add(text, localEmbForCache, embedding);
     }
 
-    // Track cross-session usage and auto-expand vocabulary
-    if (EMBEDDING_CONFIG.cache?.autoExpand) {
+    // Track cross-session query usage and auto-expand vocabulary (query-only)
+    if (isQuery && EMBEDDING_CONFIG.cache?.autoExpand) {
       await queryStats.load();
       const usageCount = queryStats.increment(text);
       queryStats.save().catch(() => {}); // Async save
@@ -982,9 +1021,8 @@ export async function getEmbeddings(texts, options = {}) {
   const uncachedTexts = [];
 
   if (useCache && EMBEDDING_CONFIG.cache?.enabled) {
-    await vocabulary.load();
     for (let i = 0; i < texts.length; i++) {
-      const cached = queryCache.get(texts[i]) || vocabulary.get(texts[i]);
+      const cached = queryCache.get(texts[i]);
       if (cached) {
         results[i] = { embedding: cached, cached: true };
         cacheStats.hits++;
@@ -1223,7 +1261,7 @@ export async function getBinaryEmbedding(text) {
   }
 
   // Fallback: get float embedding and convert locally
-  const floatResult = await getEmbedding(text);
+  const floatResult = await getEmbedding(text, { isQuery: true });
   const truncated = truncateForHNSW(floatResult.embedding);
   const binary = floatToBinary(truncated);
 
@@ -1299,7 +1337,7 @@ export async function getInt8Embedding(text) {
   }
 
   // Fallback: get float embedding and convert locally
-  const floatResult = await getEmbedding(text);
+  const floatResult = await getEmbedding(text, { isQuery: true });
   const truncated = truncateForHNSW(floatResult.embedding);
   const int8 = floatToInt8(truncated);
 

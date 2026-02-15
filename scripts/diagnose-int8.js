@@ -18,7 +18,7 @@ async function diagnose() {
   const query = 'how does authentication work';
   console.log(`Query: "${query}"\n`);
 
-  const embedResult = await getEmbedding(query);
+  const embedResult = await getEmbedding(query, { isQuery: true });
   console.log(`Float embedding dimension: ${embedResult.embedding.length}`);
   console.log(`First 5 values: ${embedResult.embedding.slice(0, 5).map(v => v.toFixed(4)).join(', ')}`);
   console.log(`Min/Max: ${Math.min(...embedResult.embedding).toFixed(4)} / ${Math.max(...embedResult.embedding).toFixed(4)}`);

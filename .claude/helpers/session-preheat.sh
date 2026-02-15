@@ -7,7 +7,7 @@
 #
 # Components warmed in parallel:
 # 0. Search server (TCP + Unix socket) - one-time, ~3s
-# 1. Local embedding model (all-MiniLM-L6-v2) - ~4s (bottleneck)
+# 1. Local embedding model (CodeRankEmbed-onnx) - ~2-4s (bottleneck)
 # 2. Vocabulary cache (~700ms)
 # 3. FlashRank reranker model (ms-marco-MiniLM-L-6-v2) - ~1.5s
 # 4. HNSW index - ~100-200ms
@@ -147,13 +147,15 @@ const timer = () => { const s = performance.now(); return () => Math.round(perfo
 // PARALLEL WARMUP FUNCTIONS
 // ============================================================================
 
-// 1. Local embedding model (~4s - the bottleneck)
+// 1. Local embedding model - CodeRankEmbed (code-specialized, 768d)
 async function warmLocalModel() {
     const t = timer();
     try {
+        const { EMBEDDING_PROVIDERS } = await importFromSearch('core/config.js');
+        const modelName = EMBEDDING_PROVIDERS.local?.model || 'jalipalo/CodeRankEmbed-onnx';
         const { pipeline } = await import('@xenova/transformers');
-        await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
-        return { c: 'local-model', ok: true, ms: t() };
+        await pipeline('feature-extraction', modelName, { quantized: true });
+        return { c: 'local-model', ok: true, ms: t(), model: modelName };
     } catch (e) { return { c: 'local-model', ok: false, ms: t(), err: e.message }; }
 }
 

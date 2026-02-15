@@ -194,16 +194,19 @@ export const EMBEDDING_PROVIDERS = {
     pricing: { perMillionTokens: 0.02 },
   },
 
-  // Tier 4: Local Xenova - Offline fallback (always available)
+  // Tier 4: Local CodeRankEmbed - Code-specialized offline model (always available)
+  // 137M params, 768d, 8192 token context, Apache 2.0
+  // CodeSearchNet MRR: 77.9% (vs Voyage Code 3: ~81.7%)
   local: {
     enabled: true,
     priority: 99,
-    model: 'Xenova/all-MiniLM-L6-v2',
+    model: 'jalipalo/CodeRankEmbed-onnx',
+    queryPrefix: 'Represent this query for searching relevant code: ',
     dimensions: {
-      full: 384,
-      hnsw: 256,
+      full: 768,
+      hnsw: 512,
     },
-    contextLength: 512,
+    contextLength: 8192,
     batchSize: 32,
   },
 };
@@ -214,6 +217,12 @@ export const EMBEDDING_PROVIDERS = {
 
 // Select best available provider
 function selectProvider() {
+  // Explicit override via EMBEDDING_PROVIDER env var
+  const override = process.env.EMBEDDING_PROVIDER;
+  if (override && EMBEDDING_PROVIDERS[override]) {
+    return { name: override, config: EMBEDDING_PROVIDERS[override] };
+  }
+
   const available = Object.entries(EMBEDDING_PROVIDERS)
     .filter(([_, p]) => p.enabled)
     .sort((a, b) => a[1].priority - b[1].priority);
@@ -979,27 +988,27 @@ export const FILE_PATTERNS = {
     '**/*.{js,jsx,ts,tsx,mjs,cjs}',      // JavaScript/TypeScript
     '**/*.{java,kt,kts,scala,groovy}',    // JVM
     '**/*.{py,pyi}',                       // Python
-    '**/*.{go}',                           // Go
-    '**/*.{rs}',                           // Rust
+    '**/*.go',                              // Go
+    '**/*.rs',                              // Rust
     '**/*.{c,cpp,cc,cxx,h,hpp,hxx}',      // C/C++
     '**/*.{cs,fs,vb}',                     // .NET
     '**/*.{rb,erb}',                       // Ruby
-    '**/*.{php}',                          // PHP
+    '**/*.php',                             // PHP
     '**/*.{swift,m,mm}',                   // Apple
     '**/*.{lua,zig,nim,ex,exs}',           // Other
     '**/*.{sh,bash,zsh,fish,ps1}',         // Shell
-    '**/*.{sql}',                          // SQL
-    '**/*.{proto}',                        // Protobuf
+    '**/*.sql',                             // SQL
+    '**/*.proto',                           // Protobuf
     '**/*.{graphql,gql}',                  // GraphQL
     // Config & docs
     '**/*.{json,jsonc,json5}',              // JSON
     '**/*.{yaml,yml}',                      // YAML
-    '**/*.{toml}',                          // TOML
+    '**/*.toml',                             // TOML
     '**/*.{xml,xsl,xsd,wsdl,pom,csproj}',  // XML
     '**/*.{md,mdx,mdc,rst,txt}',           // Documentation + Cursor rules
     '**/*.{html,htm,xhtml,vue,svelte}',    // Web markup/SFC
     '**/*.{css,scss,sass,less}',           // Stylesheets
-    '**/*.{svg}',                          // SVG
+    '**/*.svg',                             // SVG
     // Build & deploy
     '**/Dockerfile',                       // Dockerfile
     '**/Dockerfile.*',                     // Dockerfile variants

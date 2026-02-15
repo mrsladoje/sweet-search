@@ -48,7 +48,13 @@ export class FlashRankReranker {
     if (this.pipeline) return;
 
     try {
-      const transformers = await import('@xenova/transformers');
+      // Use @huggingface/transformers when available (newer ONNX runtime, fixes crashes on some platforms)
+      let transformers;
+      try {
+        transformers = await import('@huggingface/transformers');
+      } catch {
+        transformers = await import('@xenova/transformers');
+      }
 
       // Use feature-extraction with CLS pooling for cross-encoder relevance scores
       // text-classification pipeline is WRONG - it outputs binary probabilities (always ~1)
