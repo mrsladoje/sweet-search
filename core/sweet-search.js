@@ -20,7 +20,7 @@ import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 
-import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, COLBERT_CONFIG, shouldUseLocalReranker } from './config.js';
+import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, COLBERT_CONFIG, EMBEDDING_CONFIG, shouldUseLocalReranker } from './config.js';
 import { getGlobalLocalReranker } from './local-reranker.js';
 import { QueryRouter, routeQuery } from './query-router.js';
 import { GraphSearch } from './graph-search.js';
@@ -468,7 +468,7 @@ export class SweetSearch {
     stats.embedding = {
       source: embedResult.source || (embedResult.cached ? 'cache' : 'api'),
       tokens: embedResult.tokens || Math.ceil(query.length / 4),
-      provider: 'voyage',
+      provider: EMBEDDING_CONFIG.provider,
       cached: embedResult.cached || embedResult.source === 'vocabulary' || embedResult.source === 'lru' || false,
       latency_us: stats.embed_us,
     };
@@ -700,7 +700,7 @@ export class SweetSearch {
 
     // Generate query embedding (with caching)
     const embedStart = performance.now();
-    const embedResult = await getEmbedding(query);
+    const embedResult = await getEmbedding(query, { isQuery: true });
     const fullEmbedding = embedResult.embedding || embedResult; // Handle both new and old API
     const embedLatency_us = embedResult.latency_us || Math.round((performance.now() - embedStart) * 1000);
     const cacheStatus = embedResult.source || 'unknown';
@@ -710,7 +710,7 @@ export class SweetSearch {
     stats.embedding = {
       source: embedResult.source || (embedResult.cached ? 'cache' : 'api'),
       tokens: embedResult.tokens || Math.ceil(query.length / 4),
-      provider: 'voyage',
+      provider: EMBEDDING_CONFIG.provider,
       cached: embedResult.cached || embedResult.source === 'vocabulary' || embedResult.source === 'lru' || false,
       latency_us: embedLatency_us,
     };
