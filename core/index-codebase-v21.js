@@ -702,7 +702,7 @@ function insertVectors(db, chunks, embeddings, modelInfo) {
 async function buildVectorIndex(files, dryRun = false, options = {}) {
   log('\n━━━ Phase 2: Vector Embeddings ━━━', 'bright');
 
-  const { fullRebuild = false, filesToRemove = [] } = options;
+  const { fullRebuild = false, filesToRemove = [], sqliteFastMode = false } = options;
 
   if (dryRun) {
     log('DRY RUN: Skipping vector indexing', 'magenta');
@@ -801,9 +801,16 @@ async function buildVectorIndex(files, dryRun = false, options = {}) {
 
     const db = new Database(tmpPath);
 
-    // Disable WAL mode for Windows filesystem compatibility (WSL + drvfs)
-    db.pragma('journal_mode = DELETE');
-    db.pragma('synchronous = NORMAL');
+    // SQLite build-mode pragmas
+    if (sqliteFastMode) {
+      db.pragma('synchronous = OFF');
+      db.pragma('journal_mode = MEMORY');
+      db.pragma('cache_size = -64000');
+      log('SQLite fast-build mode enabled (benchmarking only)', 'yellow');
+    } else {
+      db.pragma('journal_mode = DELETE');
+      db.pragma('synchronous = NORMAL');
+    }
 
     createVectorSchema(db);
     insertVectors(db, allChunks, embeddings, modelInfo);
@@ -827,8 +834,15 @@ async function buildVectorIndex(files, dryRun = false, options = {}) {
     // Check if database exists
     if (existsSync(DB_PATHS.codebase)) {
       db = new Database(DB_PATHS.codebase);
-      db.pragma('journal_mode = DELETE');
-      db.pragma('synchronous = NORMAL');
+      if (sqliteFastMode) {
+        db.pragma('synchronous = OFF');
+        db.pragma('journal_mode = MEMORY');
+        db.pragma('cache_size = -64000');
+        log('SQLite fast-build mode enabled (benchmarking only)', 'yellow');
+      } else {
+        db.pragma('journal_mode = DELETE');
+        db.pragma('synchronous = NORMAL');
+      }
 
       // Ensure schema is up-to-date (adds file_path column if missing)
       ensureVectorSchema(db);
@@ -858,8 +872,15 @@ async function buildVectorIndex(files, dryRun = false, options = {}) {
       // Database doesn't exist, create new one
       log('No existing database, creating new...', 'yellow');
       db = new Database(DB_PATHS.codebase);
-      db.pragma('journal_mode = DELETE');
-      db.pragma('synchronous = NORMAL');
+      if (sqliteFastMode) {
+        db.pragma('synchronous = OFF');
+        db.pragma('journal_mode = MEMORY');
+        db.pragma('cache_size = -64000');
+        log('SQLite fast-build mode enabled (benchmarking only)', 'yellow');
+      } else {
+        db.pragma('journal_mode = DELETE');
+        db.pragma('synchronous = NORMAL');
+      }
       createVectorSchema(db);
     }
 
@@ -1571,12 +1592,15 @@ async function buildVectorsAndArtifactsPhase(options = {}) {
     incrementalInfo,
     forceArtifacts,
     hcgsPromise,
+    noColbert,
+    sqliteFastMode,
   } = options;
 
   // Build vectors
   const vectorOptions = {
     fullRebuild: fullReindex,
     filesToRemove: incrementalInfo?.toRemove || [],
+    sqliteFastMode,
   };
 
   const vectorPromise = buildVectorIndex(filesToIndex, dryRun, vectorOptions);
@@ -1619,7 +1643,7 @@ async function buildVectorsAndArtifactsPhase(options = {}) {
   }
 
   // Build ColBERT index
-  if (!dryRun && vectorResult && vectorResult.allChunks && vectorResult.allChunks.length > 0) {
+  if (!dryRun && !noColbert && vectorResult && vectorResult.allChunks && vectorResult.allChunks.length > 0) {
     const filesToRemoveFromColBERT = incrementalInfo && !fullReindex
       ? [...incrementalInfo.toIndex, ...(incrementalInfo.toRemove || [])]
       : [];
@@ -1788,6 +1812,8 @@ function parseArgs(argv) {
     quiet: args.includes('--quiet'),
     forceArtifacts: args.includes('--force-artifacts'),
     help: args.includes('--help') || args.includes('-h'),
+    noColbert: args.includes('--no-colbert'),
+    sqliteFastMode: args.includes('--sqlite-fast') || process.env.SWEET_SEARCH_SQLITE_FAST_MODE === '1',
   };
 }
 
@@ -1800,7 +1826,8 @@ async function main() {
 
   // Parse arguments FIRST (before any logging) to handle --quiet
   const { dryRun, graphOnly, vectorsOnly, fullReindex, showStats, resolveOnly,
-          skipSummaryRegen, filesFromStdin, quiet, forceArtifacts, help } = parseArgs();
+          skipSummaryRegen, filesFromStdin, quiet, forceArtifacts, help,
+          noColbert, sqliteFastMode } = parseArgs();
 
   // Set quiet mode before any logging
   if (quiet) {
@@ -1840,6 +1867,10 @@ Options:
                        Automatically runs HCGS for the specified files.
   --force-artifacts    Force binary HNSW + Int8 artifact rebuild regardless of change count.
                        Default: skip rebuild if <${ARTIFACT_THRESHOLDS.skipThreshold} files changed (Float HNSW serves search).
+  --no-colbert     Skip ColBERT index build (faster indexing when ColBERT not needed)
+  --sqlite-fast    Use unsafe SQLite pragmas for faster builds (benchmarking only).
+                   Can also be set via SWEET_SEARCH_SQLITE_FAST_MODE=1.
+                   WARNING: Data may be lost on crash - do NOT use in production.
   --quiet          Suppress progress bars and non-essential output (for daemon use).
                    Errors still go to stderr.
   --dry-run        Preview without indexing
@@ -2000,6 +2031,8 @@ Output:
         incrementalInfo,
         forceArtifacts,
         hcgsPromise,
+        noColbert,
+        sqliteFastMode,
       });
 
       if (!vectorsResult.success) {

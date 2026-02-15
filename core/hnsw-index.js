@@ -536,4 +536,37 @@ Options:
   })();
 }
 
+/**
+ * Check if native ANN backend (usearch) is available.
+ * @returns {Promise<{ available: boolean, engine: string, error?: string }>}
+ */
+export async function checkNativeBackend() {
+  try {
+    const mod = await import('usearch');
+    const Index = mod.Index || mod.default?.Index;
+    if (!Index) {
+      return { available: false, engine: 'js-fallback', error: 'Index class not found in usearch module' };
+    }
+    return { available: true, engine: 'usearch' };
+  } catch (err) {
+    return { available: false, engine: 'js-fallback', error: err.message };
+  }
+}
+
+/**
+ * Require native ANN backend. Throws if usearch is not available.
+ * Use this in benchmark runs to prevent accidentally benchmarking the slow JS fallback.
+ * @throws {Error} If usearch is not available
+ */
+export async function requireNativeAnn() {
+  const result = await checkNativeBackend();
+  if (!result.available) {
+    throw new Error(
+      `Native ANN backend (usearch) is required but not available: ${result.error}. ` +
+      'Install usearch or remove --require-native-ann flag.'
+    );
+  }
+  return result;
+}
+
 export default HNSWIndex;
