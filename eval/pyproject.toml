@@ -1,0 +1,12 @@
+[project]
+name = "sweet-search-eval"
+version = "0.1.0"
+description = "Benchmark evaluation harness for Sweet Search"
+requires-python = ">=3.11"
+dependencies = [
+    "datasets>=3.0.0",
+    "huggingface-hub>=0.25.0",
+]
+
+[tool.uv]
+dev-dependencies = []

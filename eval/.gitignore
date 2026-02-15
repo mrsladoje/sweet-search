@@ -1,0 +1,11 @@
+# Downloaded benchmark data (regenerate with: python download_data.py)
+data/
+# Generated corpus files and search index
+corpus/
+# Python virtual environment
+.venv/
+__pycache__/
+# uv lock (regenerate with: uv lock)
+uv.lock
+# Intermediate benchmark results (only baseline is committed)
+results/codesearchnet_2026-*.json
