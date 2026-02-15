@@ -8,13 +8,25 @@ import { spawn } from 'child_process';
 
 /**
  * Run Sweet Search indexer on a corpus directory.
- * Uses two-phase indexing to avoid ONNX model loading conflicts.
  *
  * @param {string} corpusDir - Directory containing corpus files
  * @param {string} projectRoot - Sweet Search project root
+ * @param {Object} [options]
+ * @param {string} [options.indexMode='single'] - 'single' or 'two-phase'
+ * @param {boolean} [options.buildColBERT=true]
+ * @param {boolean} [options.useColBERT=true]
+ * @param {boolean} [options.sqliteFastMode=false]
+ * @param {boolean} [options.requireNativeAnn=false]
+ * @returns {Promise<{ elapsed: number, indexMode: string, timings: Object }>}
  */
-export async function indexCorpus(corpusDir, projectRoot) {
-  console.log(`\n  Indexing corpus at ${corpusDir}...`);
+export async function indexCorpus(corpusDir, projectRoot, options = {}) {
+  const {
+    indexMode = 'single',
+    buildColBERT = true,
+    sqliteFastMode = false,
+  } = options;
+
+  console.log(`\n  Indexing corpus at ${corpusDir} (mode: ${indexMode})...`);
   const start = Date.now();
 
   const indexer = path.join(projectRoot, 'core', 'index-codebase-v21.js');
@@ -23,30 +35,62 @@ export async function indexCorpus(corpusDir, projectRoot) {
     SWEET_SEARCH_PROJECT_ROOT: corpusDir,
     EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER || 'local',
     VOYAGEAI_API_KEY: '',
+    ...(sqliteFastMode ? { SWEET_SEARCH_SQLITE_FAST_MODE: '1' } : {}),
   };
 
-  // Phase 1: Code graph only
-  await runIndexerPhase(indexer, ['--graph-only', '--quiet'], corpusDir, indexEnv, 'graph');
+  let graphPhaseMs = null;
+  let vectorsPhaseMs = null;
 
-  // Delete merkle state so vectors phase sees all files as new
-  const merkleState = path.join(corpusDir, '.sweet-search', 'merkle-state.json');
-  try { await fs.unlink(merkleState); } catch {}
+  if (indexMode === 'two-phase') {
+    // Phase 1: Code graph only
+    const graphStart = Date.now();
+    await runIndexerPhase(indexer, ['--graph-only', '--quiet'], corpusDir, indexEnv, 'graph');
+    graphPhaseMs = Date.now() - graphStart;
 
-  // Phase 2: Vectors + HNSW + ColBERT
-  await runIndexerPhase(indexer, ['--vectors-only', '--quiet'], corpusDir, indexEnv, 'vectors');
+    // Delete merkle state so vectors phase sees all files as new
+    const merkleState = path.join(corpusDir, '.sweet-search', 'merkle-state.json');
+    try { await fs.unlink(merkleState); } catch {}
 
-  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+    // Phase 2: Vectors + HNSW + ColBERT
+    const vectorsStart = Date.now();
+    const vectorArgs = ['--vectors-only', '--quiet'];
+    if (!buildColBERT) vectorArgs.push('--no-colbert');
+    await runIndexerPhase(indexer, vectorArgs, corpusDir, indexEnv, 'vectors');
+    vectorsPhaseMs = Date.now() - vectorsStart;
+  } else {
+    // Single-pass mode: one indexer invocation handles everything
+    const args = ['--quiet'];
+    if (!buildColBERT) args.push('--no-colbert');
+    await runIndexerPhase(indexer, args, corpusDir, indexEnv, 'index');
+  }
+
+  const totalMs = Date.now() - start;
+  const elapsed = parseFloat((totalMs / 1000).toFixed(1));
   console.log(`  Indexing completed in ${elapsed}s`);
+
+  return {
+    elapsed,
+    indexMode,
+    timings: {
+      total: totalMs,
+      graphPhase: graphPhaseMs,
+      vectorsPhase: vectorsPhaseMs,
+    },
+  };
 }
 
 /**
- * Initialize Sweet Search pointed at a corpus index.
+ * Initialize Sweet Search for querying.
  *
  * @param {string} corpusDir - Directory containing .sweet-search/ index
  * @param {string} projectRoot - Sweet Search project root
- * @returns {Object} Initialized SweetSearch instance
+ * @param {Object} [options]
+ * @param {boolean} [options.useColBERT=true]
+ * @returns {Promise<Object>} Initialized SweetSearch instance
  */
-export async function initSearch(corpusDir, projectRoot) {
+export async function initSearch(corpusDir, projectRoot, options = {}) {
+  const { useColBERT = true } = options;
+
   process.env.SWEET_SEARCH_PROJECT_ROOT = corpusDir;
   process.env.EMBEDDING_PROVIDER = 'local';
 
@@ -58,7 +102,7 @@ export async function initSearch(corpusDir, projectRoot) {
     hnswPath: path.join(dataDir, 'codebase-hnsw.idx'),
     binaryHnswPath: path.join(dataDir, 'codebase-binary-hnsw.idx'),
     codebaseDbPath: path.join(dataDir, 'codebase.db'),
-    useColBERT: true,
+    useColBERT,
     verbose: false,
     timing: false,
   });
