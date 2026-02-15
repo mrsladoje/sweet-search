@@ -124,3 +124,7 @@ CLAUDE.md.backup
 .agents/config.toml
 .agents/README.md
 
+# python
+.venv/ 
+
+
