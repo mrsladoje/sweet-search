@@ -1,8 +1,8 @@
 // HCGS Indexer Integration Tests
 // Tests backup/restore/regeneration workflow with REAL modules from summary-manager.js
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync } from 'node:fs';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { copyFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
@@ -129,27 +129,41 @@ function populateTestData(db) {
   return ids;
 }
 
+function createSeedFixture() {
+  const testDir = createTestDir();
+  const seedPath = join(testDir, 'seed-code-graph.db');
+  const dbPath = join(testDir, 'code-graph.db');
+
+  const seedDb = new Database(seedPath);
+  createCodeGraphSchema(seedDb);
+  const entityIds = populateTestData(seedDb);
+  seedDb.close();
+
+  return { testDir, seedPath, dbPath, entityIds };
+}
+
+function resetFromSeed(fixture) {
+  copyFileSync(fixture.seedPath, fixture.dbPath);
+}
+
 describe('HCGS Backup/Restore (Real Implementation)', () => {
-  let testDir;
-  let dbPath;
+  let fixture;
 
-  beforeEach(() => {
-    testDir = createTestDir();
-    dbPath = join(testDir, 'code-graph.db');
-
-    const db = new Database(dbPath);
-    createCodeGraphSchema(db);
-    populateTestData(db);
-    db.close();
+  beforeAll(() => {
+    fixture = createSeedFixture();
   });
 
-  afterEach(() => {
-    cleanupTestDir(testDir);
+  beforeEach(() => {
+    resetFromSeed(fixture);
+  });
+
+  afterAll(() => {
+    cleanupTestDir(fixture.testDir);
   });
 
   describe('backupSummaries', () => {
     it('should capture all entities with non-null summaries', async () => {
-      const result = await backupSummaries(dbPath);
+      const result = await backupSummaries(fixture.dbPath);
 
       expect(result.count).toBe(5);
       expect(result.summaries.length).toBe(5);
@@ -165,7 +179,7 @@ describe('HCGS Backup/Restore (Real Implementation)', () => {
     });
 
     it('should include type for validation during restore', async () => {
-      const result = await backupSummaries(dbPath);
+      const result = await backupSummaries(fixture.dbPath);
 
       const authService = result.summaries.find(s => s.name === 'AuthService');
       expect(authService.type).toBe('class');
@@ -174,7 +188,7 @@ describe('HCGS Backup/Restore (Real Implementation)', () => {
     });
 
     it('should return empty result for non-existent database', async () => {
-      const result = await backupSummaries(join(testDir, 'nonexistent.db'));
+      const result = await backupSummaries(join(fixture.testDir, 'nonexistent.db'));
 
       expect(result.count).toBe(0);
       expect(result.summaries).toEqual([]);
@@ -183,34 +197,34 @@ describe('HCGS Backup/Restore (Real Implementation)', () => {
 
   describe('restoreSummaries', () => {
     it('should restore summaries to matching entities', async () => {
-      const backup = await backupSummaries(dbPath);
+      const backup = await backupSummaries(fixture.dbPath);
       expect(backup.count).toBe(5);
 
-      const db = new Database(dbPath);
+      const db = new Database(fixture.dbPath);
       db.exec('UPDATE entities SET summary = NULL, summary_embedding = NULL');
       db.close();
 
-      const clearedStats = await getSummaryStats(dbPath);
+      const clearedStats = await getSummaryStats(fixture.dbPath);
       expect(clearedStats.withSummary).toBe(0);
 
-      const result = await restoreSummaries(dbPath, backup);
+      const result = await restoreSummaries(fixture.dbPath, backup);
 
       expect(result.restored).toBe(5);
 
-      const restoredStats = await getSummaryStats(dbPath);
+      const restoredStats = await getSummaryStats(fixture.dbPath);
       expect(restoredStats.withSummary).toBe(5);
     });
 
     it('should restore via ID match even when type changes (Strategy 1)', async () => {
       // Strategy 1: ID match takes precedence over type matching
-      const backup = await backupSummaries(dbPath);
+      const backup = await backupSummaries(fixture.dbPath);
 
-      const db = new Database(dbPath);
+      const db = new Database(fixture.dbPath);
       db.exec("UPDATE entities SET type = 'interface' WHERE name = 'AuthService'");
       db.exec('UPDATE entities SET summary = NULL');
       db.close();
 
-      const result = await restoreSummaries(dbPath, backup);
+      const result = await restoreSummaries(fixture.dbPath, backup);
 
       // All 5 are restored via ID match (Strategy 1) - type change doesn't block it
       expect(result.restored).toBe(5);
@@ -219,10 +233,10 @@ describe('HCGS Backup/Restore (Real Implementation)', () => {
 
     it('should fall back to type matching when IDs are different', async () => {
       // When IDs don't match, falls back to Strategy 3 (file_path + type + name)
-      const backup = await backupSummaries(dbPath);
+      const backup = await backupSummaries(fixture.dbPath);
 
       // Simulate ID change by recreating entity with different ID but same (file_path, type, name)
-      const db = new Database(dbPath);
+      const db = new Database(fixture.dbPath);
       const authServiceBackup = backup.summaries.find(s => s.name === 'AuthService');
 
       // Delete children first (they have FK to AuthService), then recreate with new ID
@@ -246,7 +260,7 @@ describe('HCGS Backup/Restore (Real Implementation)', () => {
       db.exec('UPDATE entities SET summary = NULL');
       db.close();
 
-      const result = await restoreSummaries(dbPath, backup);
+      const result = await restoreSummaries(fixture.dbPath, backup);
 
       // 2 restored (only UserRepository entities remain - AuthService file was deleted)
       // AuthService: ID doesn't match (deleted), signature_hash is null, type changed from class->interface
@@ -255,14 +269,14 @@ describe('HCGS Backup/Restore (Real Implementation)', () => {
     });
 
     it('should handle empty backup gracefully', async () => {
-      const result = await restoreSummaries(dbPath, { summaries: [] });
+      const result = await restoreSummaries(fixture.dbPath, { summaries: [] });
 
       expect(result.restored).toBe(0);
       expect(result.skipped.total).toBe(0);
     });
 
     it('should handle null backup gracefully', async () => {
-      const result = await restoreSummaries(dbPath, null);
+      const result = await restoreSummaries(fixture.dbPath, null);
 
       expect(result.restored).toBe(0);
     });
@@ -270,35 +284,32 @@ describe('HCGS Backup/Restore (Real Implementation)', () => {
 });
 
 describe('markForRegeneration (Real Implementation)', () => {
-  let testDir;
-  let dbPath;
+  let fixture;
 
-  beforeEach(() => {
-    testDir = createTestDir();
-    dbPath = join(testDir, 'code-graph.db');
-
-    const db = new Database(dbPath);
-    createCodeGraphSchema(db);
-    populateTestData(db);
-    db.close();
+  beforeAll(() => {
+    fixture = createSeedFixture();
   });
 
-  afterEach(() => {
-    cleanupTestDir(testDir);
+  beforeEach(() => {
+    resetFromSeed(fixture);
+  });
+
+  afterAll(() => {
+    cleanupTestDir(fixture.testDir);
   });
 
   it('should clear summaries only for specified files', async () => {
-    const beforeStats = await getSummaryStats(dbPath);
+    const beforeStats = await getSummaryStats(fixture.dbPath);
     expect(beforeStats.withSummary).toBe(5);
 
-    const result = await markForRegeneration(dbPath, ['src/AuthService.java']);
+    const result = await markForRegeneration(fixture.dbPath, ['src/AuthService.java']);
 
     expect(result.marked).toBe(3);
 
-    const afterStats = await getSummaryStats(dbPath);
+    const afterStats = await getSummaryStats(fixture.dbPath);
     expect(afterStats.withSummary).toBe(2);
 
-    const db = new Database(dbPath, { readonly: true });
+    const db = new Database(fixture.dbPath, { readonly: true });
     const userRepo = db.prepare("SELECT summary FROM entities WHERE file_path = 'src/UserRepository.java'").all();
     db.close();
 
@@ -306,53 +317,50 @@ describe('markForRegeneration (Real Implementation)', () => {
   });
 
   it('should handle multiple files at once', async () => {
-    const result = await markForRegeneration(dbPath, [
+    const result = await markForRegeneration(fixture.dbPath, [
       'src/AuthService.java',
       'src/UserRepository.java',
     ]);
 
     expect(result.marked).toBe(5);
 
-    const afterStats = await getSummaryStats(dbPath);
+    const afterStats = await getSummaryStats(fixture.dbPath);
     expect(afterStats.withSummary).toBe(0);
   });
 
   it('should handle non-existent file paths gracefully', async () => {
-    const result = await markForRegeneration(dbPath, ['src/NonExistent.java']);
+    const result = await markForRegeneration(fixture.dbPath, ['src/NonExistent.java']);
 
     expect(result.marked).toBe(0);
 
-    const afterStats = await getSummaryStats(dbPath);
+    const afterStats = await getSummaryStats(fixture.dbPath);
     expect(afterStats.withSummary).toBe(5);
   });
 
   it('should return zero for empty file list', async () => {
-    const result = await markForRegeneration(dbPath, []);
+    const result = await markForRegeneration(fixture.dbPath, []);
 
     expect(result.marked).toBe(0);
   });
 });
 
 describe('getEntitiesNeedingSummary (Real Implementation)', () => {
-  let testDir;
-  let dbPath;
+  let fixture;
 
-  beforeEach(() => {
-    testDir = createTestDir();
-    dbPath = join(testDir, 'code-graph.db');
-
-    const db = new Database(dbPath);
-    createCodeGraphSchema(db);
-    populateTestData(db);
-    db.close();
+  beforeAll(() => {
+    fixture = createSeedFixture();
   });
 
-  afterEach(() => {
-    cleanupTestDir(testDir);
+  beforeEach(() => {
+    resetFromSeed(fixture);
+  });
+
+  afterAll(() => {
+    cleanupTestDir(fixture.testDir);
   });
 
   it('should return only entities without summaries', async () => {
-    const entities = await getEntitiesNeedingSummary(dbPath);
+    const entities = await getEntitiesNeedingSummary(fixture.dbPath);
 
     expect(entities.length).toBe(2);
 
@@ -362,14 +370,14 @@ describe('getEntitiesNeedingSummary (Real Implementation)', () => {
   });
 
   it('should order by hierarchy_level DESC (deepest first)', async () => {
-    const entities = await getEntitiesNeedingSummary(dbPath);
+    const entities = await getEntitiesNeedingSummary(fixture.dbPath);
 
     const levels = entities.map(e => e.hierarchy_level);
     expect(levels[0]).toBeGreaterThanOrEqual(levels[levels.length - 1]);
   });
 
   it('should include parent_id for aggregation', async () => {
-    const entities = await getEntitiesNeedingSummary(dbPath);
+    const entities = await getEntitiesNeedingSummary(fixture.dbPath);
 
     const getConfig = entities.find(e => e.name === 'getConfig');
     expect(getConfig.parent_id).toBeDefined();
@@ -380,39 +388,35 @@ describe('getEntitiesNeedingSummary (Real Implementation)', () => {
 });
 
 describe('storeSummariesBatch (Real Implementation)', () => {
-  let testDir;
-  let dbPath;
-  let entityIds;
+  let fixture;
 
-  beforeEach(() => {
-    testDir = createTestDir();
-    dbPath = join(testDir, 'code-graph.db');
-
-    const db = new Database(dbPath);
-    createCodeGraphSchema(db);
-    entityIds = populateTestData(db);
-    db.close();
+  beforeAll(() => {
+    fixture = createSeedFixture();
   });
 
-  afterEach(() => {
-    cleanupTestDir(testDir);
+  beforeEach(() => {
+    resetFromSeed(fixture);
+  });
+
+  afterAll(() => {
+    cleanupTestDir(fixture.testDir);
   });
 
   it('should store summaries in batch transaction', async () => {
-    await markForRegeneration(dbPath, ['src/ConfigService.java']);
+    await markForRegeneration(fixture.dbPath, ['src/ConfigService.java']);
 
     const summaries = [
-      { id: entityIds.ConfigService, summary: 'Configuration management service.', embedding: null },
-      { id: entityIds.getConfig, summary: 'Retrieves configuration by key.', embedding: null },
+      { id: fixture.entityIds.ConfigService, summary: 'Configuration management service.', embedding: null },
+      { id: fixture.entityIds.getConfig, summary: 'Retrieves configuration by key.', embedding: null },
     ];
 
-    const result = await storeSummariesBatch(dbPath, summaries);
+    const result = await storeSummariesBatch(fixture.dbPath, summaries);
 
     expect(result.stored).toBe(2);
 
-    const db = new Database(dbPath, { readonly: true });
-    const configService = db.prepare('SELECT summary FROM entities WHERE id = ?').get(entityIds.ConfigService);
-    const getConfig = db.prepare('SELECT summary FROM entities WHERE id = ?').get(entityIds.getConfig);
+    const db = new Database(fixture.dbPath, { readonly: true });
+    const configService = db.prepare('SELECT summary FROM entities WHERE id = ?').get(fixture.entityIds.ConfigService);
+    const getConfig = db.prepare('SELECT summary FROM entities WHERE id = ?').get(fixture.entityIds.getConfig);
     db.close();
 
     expect(configService.summary).toBe('Configuration management service.');
@@ -422,14 +426,14 @@ describe('storeSummariesBatch (Real Implementation)', () => {
   it('should store binary embeddings correctly', async () => {
     const embedding = Buffer.from([0xAA, 0xBB, 0xCC, 0xDD]);
 
-    const result = await storeSummariesBatch(dbPath, [
-      { id: entityIds.ConfigService, summary: 'Test summary', embedding },
+    const result = await storeSummariesBatch(fixture.dbPath, [
+      { id: fixture.entityIds.ConfigService, summary: 'Test summary', embedding },
     ]);
 
     expect(result.stored).toBe(1);
 
-    const db = new Database(dbPath, { readonly: true });
-    const entity = db.prepare('SELECT summary_embedding FROM entities WHERE id = ?').get(entityIds.ConfigService);
+    const db = new Database(fixture.dbPath, { readonly: true });
+    const entity = db.prepare('SELECT summary_embedding FROM entities WHERE id = ?').get(fixture.entityIds.ConfigService);
     db.close();
 
     expect(Buffer.isBuffer(entity.summary_embedding)).toBe(true);
@@ -438,39 +442,36 @@ describe('storeSummariesBatch (Real Implementation)', () => {
   });
 
   it('should handle empty batch gracefully', async () => {
-    const result = await storeSummariesBatch(dbPath, []);
+    const result = await storeSummariesBatch(fixture.dbPath, []);
 
     expect(result.stored).toBe(0);
   });
 });
 
 describe('Incremental HCGS Workflow (End-to-End)', () => {
-  let testDir;
-  let dbPath;
+  let fixture;
 
-  beforeEach(() => {
-    testDir = createTestDir();
-    dbPath = join(testDir, 'code-graph.db');
-
-    const db = new Database(dbPath);
-    createCodeGraphSchema(db);
-    populateTestData(db);
-    db.close();
+  beforeAll(() => {
+    fixture = createSeedFixture();
   });
 
-  afterEach(() => {
-    cleanupTestDir(testDir);
+  beforeEach(() => {
+    resetFromSeed(fixture);
+  });
+
+  afterAll(() => {
+    cleanupTestDir(fixture.testDir);
   });
 
   it('should preserve unchanged file summaries after rebuild', async () => {
-    const initialStats = await getSummaryStats(dbPath);
+    const initialStats = await getSummaryStats(fixture.dbPath);
     expect(initialStats.withSummary).toBe(5);
 
-    const backup = await backupSummaries(dbPath);
-    await markForRegeneration(dbPath, ['src/AuthService.java']);
-    await restoreSummaries(dbPath, backup);
+    const backup = await backupSummaries(fixture.dbPath);
+    await markForRegeneration(fixture.dbPath, ['src/AuthService.java']);
+    await restoreSummaries(fixture.dbPath, backup);
 
-    const db = new Database(dbPath, { readonly: true });
+    const db = new Database(fixture.dbPath, { readonly: true });
     const userRepoSummaries = db.prepare(
       "SELECT name, summary FROM entities WHERE file_path = 'src/UserRepository.java'"
     ).all();
@@ -484,12 +485,12 @@ describe('Incremental HCGS Workflow (End-to-End)', () => {
   });
 
   it('should correctly identify changed vs unchanged files', async () => {
-    const entitiesNeeding = await getEntitiesNeedingSummary(dbPath);
+    const entitiesNeeding = await getEntitiesNeedingSummary(fixture.dbPath);
     expect(entitiesNeeding.length).toBe(2);
 
-    await markForRegeneration(dbPath, ['src/AuthService.java']);
+    await markForRegeneration(fixture.dbPath, ['src/AuthService.java']);
 
-    const afterMark = await getEntitiesNeedingSummary(dbPath);
+    const afterMark = await getEntitiesNeedingSummary(fixture.dbPath);
     expect(afterMark.length).toBe(5);
 
     const userRepoEntities = afterMark.filter(e => e.file_path === 'src/UserRepository.java');
@@ -497,7 +498,7 @@ describe('Incremental HCGS Workflow (End-to-End)', () => {
   });
 
   it('should prevent overwrite via backup-restore pattern', async () => {
-    const db1 = new Database(dbPath, { readonly: true });
+    const db1 = new Database(fixture.dbPath, { readonly: true });
     const originalSummary = db1.prepare(
       "SELECT summary FROM entities WHERE name = 'UserRepository'"
     ).get().summary;
@@ -505,15 +506,15 @@ describe('Incremental HCGS Workflow (End-to-End)', () => {
 
     expect(originalSummary).toBe('Repository interface for user data operations.');
 
-    const backup = await backupSummaries(dbPath);
+    const backup = await backupSummaries(fixture.dbPath);
 
-    const db2 = new Database(dbPath);
+    const db2 = new Database(fixture.dbPath);
     db2.exec('UPDATE entities SET summary = NULL, summary_embedding = NULL');
     db2.close();
 
-    await restoreSummaries(dbPath, backup);
+    await restoreSummaries(fixture.dbPath, backup);
 
-    const db3 = new Database(dbPath, { readonly: true });
+    const db3 = new Database(fixture.dbPath, { readonly: true });
     const restoredSummary = db3.prepare(
       "SELECT summary FROM entities WHERE name = 'UserRepository'"
     ).get().summary;

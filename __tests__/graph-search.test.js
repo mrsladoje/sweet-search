@@ -134,42 +134,30 @@ function insertTestRelationships(db) {
 describe('GraphSearch - Stale Entry Filtering (C1)', () => {
   let testDir;
   let dbPath;
-  let db;
   let graphSearch;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     testDir = mkdtempSync(join(tmpdir(), 'graph-search-test-'));
     dbPath = join(testDir, 'test-graph.db');
-  });
-
-  afterAll(() => {
-    rmSync(testDir, { recursive: true, force: true });
-  });
-
-  beforeEach(() => {
-    // Create fresh database with test data
-    db = createTestDatabase(dbPath);
+    const db = createTestDatabase(dbPath);
     insertTestEntities(db);
     insertTestRelationships(db);
     db.close();
+
+    graphSearch = new GraphSearch(dbPath);
+    await graphSearch.init();
   });
 
-  afterEach(() => {
+  afterAll(() => {
     if (graphSearch) {
       graphSearch.close();
       graphSearch = null;
     }
-    // Remove database file for clean slate
-    try {
-      rmSync(dbPath, { force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
+    rmSync(testDir, { recursive: true, force: true });
   });
 
   describe('bm25Search - Stale Filtering', () => {
     it('should exclude stale entries from BM25 search results', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const { results } = await graphSearch.bm25Search('Service', 20);
 
       const names = results.map(r => r.name);
@@ -182,7 +170,6 @@ describe('GraphSearch - Stale Entry Filtering (C1)', () => {
     });
 
     it('should return only active entities for generic query', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const { results } = await graphSearch.bm25Search('controller', 20);
 
       const names = results.map(r => r.name);
@@ -192,7 +179,6 @@ describe('GraphSearch - Stale Entry Filtering (C1)', () => {
     });
 
     it('should return empty for query matching only stale entities', async () => {
-      graphSearch = new GraphSearch(dbPath);
       // "Stale" only appears in stale entity names
       const { results } = await graphSearch.bm25Search('StaleService', 20);
 
@@ -203,14 +189,12 @@ describe('GraphSearch - Stale Entry Filtering (C1)', () => {
 
   describe('searchByName - Stale Filtering', () => {
     it('should exclude stale entries from exact name search', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const results = await graphSearch.searchByName('StaleService');
 
       expect(results).toHaveLength(0);
     });
 
     it('should return active entries for exact name match', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const results = await graphSearch.searchByName('ActiveService');
 
       expect(results).toHaveLength(1);
@@ -220,14 +204,12 @@ describe('GraphSearch - Stale Entry Filtering (C1)', () => {
 
   describe('searchByFile - Stale Filtering', () => {
     it('should exclude stale entries from file path search', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const results = await graphSearch.searchByFile('StaleService.java');
 
       expect(results).toHaveLength(0);
     });
 
     it('should return active entries for file path match', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const results = await graphSearch.searchByFile('ActiveService.java');
 
       expect(results.length).toBeGreaterThan(0);
@@ -237,14 +219,12 @@ describe('GraphSearch - Stale Entry Filtering (C1)', () => {
 
   describe('getEntity - Stale Filtering', () => {
     it('should return null for stale entity ID', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const result = await graphSearch.getEntity(5); // StaleService ID
 
       expect(result).toBeNull();
     });
 
     it('should return entity for active entity ID', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const result = await graphSearch.getEntity(1); // ActiveService ID
 
       expect(result).not.toBeNull();
@@ -254,7 +234,6 @@ describe('GraphSearch - Stale Entry Filtering (C1)', () => {
 
   describe('getRelated - Stale Filtering', () => {
     it('should exclude stale entities from related results', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const results = await graphSearch.getRelated(1); // ActiveService
 
       const names = results.map(r => r.name);
@@ -276,40 +255,30 @@ describe('GraphSearch - Stale Entry Filtering (C1)', () => {
 describe('GraphSearch - Caller/Callee Queries', () => {
   let testDir;
   let dbPath;
-  let db;
   let graphSearch;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     testDir = mkdtempSync(join(tmpdir(), 'graph-callers-test-'));
     dbPath = join(testDir, 'test-graph.db');
-  });
-
-  afterAll(() => {
-    rmSync(testDir, { recursive: true, force: true });
-  });
-
-  beforeEach(() => {
-    db = createTestDatabase(dbPath);
+    const db = createTestDatabase(dbPath);
     insertTestEntities(db);
     insertTestRelationships(db);
     db.close();
+
+    graphSearch = new GraphSearch(dbPath);
+    await graphSearch.init();
   });
 
-  afterEach(() => {
+  afterAll(() => {
     if (graphSearch) {
       graphSearch.close();
       graphSearch = null;
     }
-    try {
-      rmSync(dbPath, { force: true });
-    } catch {
-      // Ignore
-    }
+    rmSync(testDir, { recursive: true, force: true });
   });
 
   describe('findCallers - Stale Filtering', () => {
     it('should exclude stale callers from results', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const { results, stats } = await graphSearch.findCallers('ActiveService');
 
       const callerNames = results.map(r => r.name);
@@ -324,7 +293,6 @@ describe('GraphSearch - Caller/Callee Queries', () => {
     });
 
     it('should return empty for entity with only stale callers', async () => {
-      graphSearch = new GraphSearch(dbPath);
       // ActiveRepository is only called by ActiveService
       const { results } = await graphSearch.findCallers('ActiveRepository');
 
@@ -336,7 +304,6 @@ describe('GraphSearch - Caller/Callee Queries', () => {
 
   describe('findCallees - Stale Filtering', () => {
     it('should exclude stale callees from results', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const { results, stats } = await graphSearch.findCallees('ActiveService');
 
       const calleeNames = results.map(r => r.name);
@@ -355,7 +322,6 @@ describe('GraphSearch - Caller/Callee Queries', () => {
 
   describe('findImplementations - Stale Filtering', () => {
     it('should exclude stale implementations from results', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const { results } = await graphSearch.findImplementations('Repository');
 
       const implNames = results.map(r => r.name);
@@ -370,7 +336,6 @@ describe('GraphSearch - Caller/Callee Queries', () => {
 
   describe('findImpact - Stale Filtering', () => {
     it('should exclude stale dependents from impact analysis', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const { results, stats } = await graphSearch.findImpact('ActiveService');
 
       const impactedNames = results.map(r => r.name);
@@ -394,40 +359,30 @@ describe('GraphSearch - Caller/Callee Queries', () => {
 describe('GraphSearch - Graph Expanded Search', () => {
   let testDir;
   let dbPath;
-  let db;
   let graphSearch;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     testDir = mkdtempSync(join(tmpdir(), 'graph-expanded-test-'));
     dbPath = join(testDir, 'test-graph.db');
-  });
-
-  afterAll(() => {
-    rmSync(testDir, { recursive: true, force: true });
-  });
-
-  beforeEach(() => {
-    db = createTestDatabase(dbPath);
+    const db = createTestDatabase(dbPath);
     insertTestEntities(db);
     insertTestRelationships(db);
     db.close();
+
+    graphSearch = new GraphSearch(dbPath);
+    await graphSearch.init();
   });
 
-  afterEach(() => {
+  afterAll(() => {
     if (graphSearch) {
       graphSearch.close();
       graphSearch = null;
     }
-    try {
-      rmSync(dbPath, { force: true });
-    } catch {
-      // Ignore
-    }
+    rmSync(testDir, { recursive: true, force: true });
   });
 
   describe('graphExpandedSearch - Stale Filtering', () => {
     it('should exclude stale entities from expanded search', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const { results, stats } = await graphSearch.graphExpandedSearch('Service', { k: 20 });
 
       const names = results.map(r => r.name);
@@ -442,7 +397,6 @@ describe('GraphSearch - Graph Expanded Search', () => {
     });
 
     it('should return stats with correct mode', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const { stats } = await graphSearch.graphExpandedSearch('ActiveService', { k: 5 });
 
       // Should have either bm25_exact_match or bm25_graph mode
@@ -450,7 +404,6 @@ describe('GraphSearch - Graph Expanded Search', () => {
     });
 
     it('should respect expand=false option', async () => {
-      graphSearch = new GraphSearch(dbPath);
       const { results, stats } = await graphSearch.graphExpandedSearch('Service', {
         k: 10,
         expand: false,
@@ -469,39 +422,29 @@ describe('GraphSearch - Graph Expanded Search', () => {
 describe('GraphSearch - Database Statistics', () => {
   let testDir;
   let dbPath;
-  let db;
   let graphSearch;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     testDir = mkdtempSync(join(tmpdir(), 'graph-stats-test-'));
     dbPath = join(testDir, 'test-graph.db');
-  });
-
-  afterAll(() => {
-    rmSync(testDir, { recursive: true, force: true });
-  });
-
-  beforeEach(() => {
-    db = createTestDatabase(dbPath);
+    const db = createTestDatabase(dbPath);
     insertTestEntities(db);
     insertTestRelationships(db);
     db.close();
+
+    graphSearch = new GraphSearch(dbPath);
+    await graphSearch.init();
   });
 
-  afterEach(() => {
+  afterAll(() => {
     if (graphSearch) {
       graphSearch.close();
       graphSearch = null;
     }
-    try {
-      rmSync(dbPath, { force: true });
-    } catch {
-      // Ignore
-    }
+    rmSync(testDir, { recursive: true, force: true });
   });
 
   it('should return entity and relationship counts', async () => {
-    graphSearch = new GraphSearch(dbPath);
     const stats = await graphSearch.getStats();
 
     // We inserted 7 entities (4 active + 3 stale)
@@ -514,7 +457,6 @@ describe('GraphSearch - Database Statistics', () => {
   });
 
   it('should return entity type breakdown', async () => {
-    graphSearch = new GraphSearch(dbPath);
     const stats = await graphSearch.getStats();
 
     expect(stats.entityTypes).toBeDefined();
@@ -523,7 +465,6 @@ describe('GraphSearch - Database Statistics', () => {
   });
 
   it('should return relationship type breakdown', async () => {
-    graphSearch = new GraphSearch(dbPath);
     const stats = await graphSearch.getStats();
 
     expect(stats.relationshipTypes).toBeDefined();
@@ -575,35 +516,25 @@ describe('GraphSearch - Error Handling', () => {
 describe('GraphSearch - FTS5 Query Sanitization', () => {
   let testDir;
   let dbPath;
-  let db;
   let graphSearch;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     testDir = mkdtempSync(join(tmpdir(), 'graph-fts-test-'));
     dbPath = join(testDir, 'test-graph.db');
+    const db = createTestDatabase(dbPath);
+    insertTestEntities(db);
+    db.close();
+
+    graphSearch = new GraphSearch(dbPath);
+    await graphSearch.init();
   });
 
   afterAll(() => {
-    rmSync(testDir, { recursive: true, force: true });
-  });
-
-  beforeEach(() => {
-    db = createTestDatabase(dbPath);
-    insertTestEntities(db);
-    db.close();
-    graphSearch = new GraphSearch(dbPath);
-  });
-
-  afterEach(() => {
     if (graphSearch) {
       graphSearch.close();
       graphSearch = null;
     }
-    try {
-      rmSync(dbPath, { force: true });
-    } catch {
-      // Ignore
-    }
+    rmSync(testDir, { recursive: true, force: true });
   });
 
   it('should handle special FTS5 characters', async () => {

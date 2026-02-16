@@ -124,12 +124,8 @@ describe('TimeWindowRateLimiter', () => {
       limiter.acquire().then(() => timestamps.push(Date.now()))
     );
 
-    // Advance time in steps to let blocked requests proceed
-    for (let t = 0; t < 180_000; t += 1_000) {
-      await vi.advanceTimersByTimeAsync(1_000);
-      // Check if all done
-      if (timestamps.length >= TOTAL_REQUESTS) break;
-    }
+    // Advance fake clock enough for all blocked requests to drain.
+    await vi.advanceTimersByTimeAsync(180_000);
 
     await Promise.all(promises);
 
@@ -152,11 +148,8 @@ describe('TimeWindowRateLimiter', () => {
       limiter.acquire().then(() => timestamps.push(Date.now()))
     );
 
-    // Advance time to let them all through
-    for (let t = 0; t < 10_000; t += 100) {
-      await vi.advanceTimersByTimeAsync(100);
-      if (timestamps.length >= 6) break;
-    }
+    // Advance fake clock enough for all requests to pass through limiter.
+    await vi.advanceTimersByTimeAsync(10_000);
 
     await Promise.all(promises);
     expect(timestamps).toHaveLength(6);
@@ -193,11 +186,8 @@ describe('TimeWindowRateLimiter', () => {
       limiter.acquire().then(() => timestamps.push(Date.now()))
     );
 
-    // Need to advance enough time for all 3 to complete (each needs its own 60s window)
-    for (let t = 0; t < 180_000; t += 1_000) {
-      await vi.advanceTimersByTimeAsync(1_000);
-      if (timestamps.length >= 3) break;
-    }
+    // Need enough virtual time for all 3 to complete (each needs its own 60s window).
+    await vi.advanceTimersByTimeAsync(180_000);
 
     await Promise.all(promises);
     expect(timestamps).toHaveLength(3);
