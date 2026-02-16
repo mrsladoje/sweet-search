@@ -142,12 +142,12 @@ export class LocalReranker {
    * @returns {Promise<{results: Array, latency_ms: number, model: string}>}
    */
   async rerank(query, documents, topK = 10) {
-    if (!this.ready) {
-      await this.init();
-    }
-
     if (!documents || documents.length === 0) {
       return { results: [], latency_ms: 0, model: 'gte-reranker-modernbert-base-int8' };
+    }
+
+    if (!this.ready) {
+      await this.init();
     }
 
     // Use global ONNX mutex to serialize ALL transformer inference across server
@@ -230,12 +230,12 @@ export class LocalReranker {
    * @returns {Promise<{results: Array, latency_ms: number, model: string}>}
    */
   async rerankBatched(query, documents, topK = 10, batchSize = 16) {
-    if (!this.ready) {
-      await this.init();
-    }
-
     if (!documents || documents.length === 0) {
       return { results: [], latency_ms: 0, model: 'gte-reranker-modernbert-base-int8' };
+    }
+
+    if (!this.ready) {
+      await this.init();
     }
 
     const start = Date.now();

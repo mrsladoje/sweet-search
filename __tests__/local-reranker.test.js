@@ -255,23 +255,17 @@ describe('LocalReranker', () => {
   describe('init idempotency', () => {
     it('should only initialize once', async () => {
       const reranker = new LocalReranker();
+      const initSpy = vi.spyOn(reranker, '_doInit').mockImplementation(async () => {
+        // Simulate successful initialization without loading a real model.
+        reranker.ready = true;
+      });
 
-      // If model is available, init should succeed
-      // If model is not available, init should throw
-      // Either way, calling init twice shouldn't cause issues
+      const initPromise1 = reranker.init();
+      const initPromise2 = reranker.init();
+      await Promise.all([initPromise1, initPromise2]);
 
-      if (reranker.isAvailable()) {
-        // Model exists, test idempotency
-        const initPromise1 = reranker.init();
-        const initPromise2 = reranker.init();
-
-        // Both should resolve to the same result
-        await Promise.all([initPromise1, initPromise2]);
-        expect(reranker.ready).toBe(true);
-      } else {
-        // Model doesn't exist, just verify isAvailable returns false
-        expect(reranker.isAvailable()).toBe(false);
-      }
+      expect(initSpy).toHaveBeenCalledTimes(1);
+      expect(reranker.ready).toBe(true);
     });
   });
 });

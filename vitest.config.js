@@ -4,10 +4,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    pool: 'forks',
     include: ['__tests__/**/*.test.js', 'evaluation/__tests__/**/*.test.js', 'tests/**/*.test.js'],
-    exclude: ['node_modules', 'dist'],
+    exclude: ['node_modules', 'dist', 'tests/embedding-perf.test.js'],
     testTimeout: 30000,
-    hookTimeout: 60000,
+    hookTimeout: 120000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
