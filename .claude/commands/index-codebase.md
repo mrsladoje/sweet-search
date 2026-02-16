@@ -3,14 +3,22 @@ description: Index codebase for semantic search (Sweet Search)
 command: /index-codebase [options]
 ---
 
-# Codebase Indexer v2.2 (Sweet Search)
+# Codebase Indexer v2.3 (Sweet Search)
 
 Index the codebase with the hybrid search stack:
 - **Lexical path**: FTS5/BM25 + Code Graph (for identifiers, exact tokens)
 - **Semantic path**: HNSW ANN + ColBERT Reranking (for conceptual queries)
 - **Hybrid path**: Both paths merged (for ambiguous queries)
 
-## What's New in v2.2
+## What's New in v2.3
+
+- **`--no-colbert`**: Skip ColBERT index build for faster indexing when not needed
+- **`--require-native-ann`**: Fail fast if usearch is unavailable (prevents silent JS fallback)
+- **`--sqlite-fast`**: Unsafe but fast SQLite pragmas for disposable indices (benchmarking)
+- **Single-pass indexing**: Eval harness defaults to one indexer invocation (no graph/vectors split)
+- **Benchmark profiles**: `fast|balanced|full` presets in eval runners
+
+### Carried from v2.2
 
 - **ColBERT Active**: Late-interaction token-level reranking (72k tokens)
 - **Incremental Indexing**: Only reindex changed files (default)
@@ -34,6 +42,15 @@ Index the codebase with the hybrid search stack:
 
 # Index only vectors + HNSW (semantic search)
 /index-codebase --vectors-only
+
+# Skip ColBERT build (faster indexing)
+/index-codebase --no-colbert
+
+# Fail fast if native ANN (usearch) is unavailable
+/index-codebase --require-native-ann
+
+# Fast SQLite pragmas (benchmarking only, unsafe on crash)
+/index-codebase --sqlite-fast
 
 # Show indexing statistics
 /index-codebase --stats
@@ -87,7 +104,7 @@ node embedding-service.js warmup
 ### HNSW Index (Phase 3)
 - **256-dim vectors**: Truncated for fast ANN search
 - **In-memory**: Loaded once, us-scale lookups
-- **Native hnswlib-node**: Falls back to pure JS if unavailable
+- **Native usearch**: Falls back to pure JS if unavailable (use `--require-native-ann` to prevent fallback)
 
 ### ColBERT Tokens (Phase 4)
 - **64-dim token embeddings**: 50% smaller than standard 128d
@@ -138,11 +155,13 @@ node query-router.js "your query here"
 
 ## Implementation
 
-The command runs the v2.2 indexer:
+The command runs the v2.3 indexer:
 
 ```bash
 node index-codebase-v21.js $ARGS
 ```
+
+For benchmark-specific usage (profiles, eval harness), see `docs/BENCHMARKING.md`.
 
 ## Files
 
