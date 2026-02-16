@@ -24,6 +24,7 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
     indexMode = 'single',
     buildColBERT = true,
     sqliteFastMode = false,
+    requireNativeAnn = false,
   } = options;
 
   console.log(`\n  Indexing corpus at ${corpusDir} (mode: ${indexMode})...`);
@@ -35,8 +36,13 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
     SWEET_SEARCH_PROJECT_ROOT: corpusDir,
     EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER || 'local',
     VOYAGEAI_API_KEY: '',
-    ...(sqliteFastMode ? { SWEET_SEARCH_SQLITE_FAST_MODE: '1' } : {}),
   };
+  if (sqliteFastMode) {
+    indexEnv.SWEET_SEARCH_SQLITE_FAST_MODE = '1';
+  } else {
+    // Prevent parent-shell leakage from accidentally enabling unsafe mode.
+    delete indexEnv.SWEET_SEARCH_SQLITE_FAST_MODE;
+  }
 
   let graphPhaseMs = null;
   let vectorsPhaseMs = null;
@@ -44,7 +50,9 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
   if (indexMode === 'two-phase') {
     // Phase 1: Code graph only
     const graphStart = Date.now();
-    await runIndexerPhase(indexer, ['--graph-only', '--quiet'], corpusDir, indexEnv, 'graph');
+    const graphArgs = ['--graph-only', '--quiet'];
+    if (requireNativeAnn) graphArgs.push('--require-native-ann');
+    await runIndexerPhase(indexer, graphArgs, corpusDir, indexEnv, 'graph');
     graphPhaseMs = Date.now() - graphStart;
 
     // Delete merkle state so vectors phase sees all files as new
@@ -55,12 +63,14 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
     const vectorsStart = Date.now();
     const vectorArgs = ['--vectors-only', '--quiet'];
     if (!buildColBERT) vectorArgs.push('--no-colbert');
+    if (requireNativeAnn) vectorArgs.push('--require-native-ann');
     await runIndexerPhase(indexer, vectorArgs, corpusDir, indexEnv, 'vectors');
     vectorsPhaseMs = Date.now() - vectorsStart;
   } else {
     // Single-pass mode: one indexer invocation handles everything
     const args = ['--quiet'];
     if (!buildColBERT) args.push('--no-colbert');
+    if (requireNativeAnn) args.push('--require-native-ann');
     await runIndexerPhase(indexer, args, corpusDir, indexEnv, 'index');
   }
 

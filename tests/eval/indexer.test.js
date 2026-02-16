@@ -102,6 +102,28 @@ describe('indexCorpus', () => {
     if (original !== undefined) process.env.SWEET_SEARCH_SQLITE_FAST_MODE = original;
   });
 
+  it('sqliteFastMode=false strips inherited env variable from child process', async () => {
+    const original = process.env.SWEET_SEARCH_SQLITE_FAST_MODE;
+    process.env.SWEET_SEARCH_SQLITE_FAST_MODE = '1';
+
+    await indexCorpus('/corpus', '/project', { sqliteFastMode: false });
+
+    const env = mockSpawn.mock.calls[0][2].env;
+    expect(env.SWEET_SEARCH_SQLITE_FAST_MODE).toBeUndefined();
+
+    if (original === undefined) {
+      delete process.env.SWEET_SEARCH_SQLITE_FAST_MODE;
+    } else {
+      process.env.SWEET_SEARCH_SQLITE_FAST_MODE = original;
+    }
+  });
+
+  it('requireNativeAnn=true forwards --require-native-ann', async () => {
+    await indexCorpus('/corpus', '/project', { requireNativeAnn: true });
+    const args = mockSpawn.mock.calls[0][1];
+    expect(args).toContain('--require-native-ann');
+  });
+
   it('returns timing info with correct shape', async () => {
     const result = await indexCorpus('/corpus', '/project');
 

@@ -13,11 +13,12 @@ describe('parseArgs (index-codebase-v21)', () => {
     }
   });
 
-  it('defaults have noColbert=false and sqliteFastMode=false', () => {
+  it('defaults have noColbert=false, requireNativeAnn=false, and sqliteFastMode=false', () => {
     delete process.env.SWEET_SEARCH_SQLITE_FAST_MODE;
     const result = parseArgs([]);
 
     expect(result.noColbert).toBe(false);
+    expect(result.requireNativeAnn).toBe(false);
     expect(result.sqliteFastMode).toBe(false);
   });
 
@@ -31,12 +32,18 @@ describe('parseArgs (index-codebase-v21)', () => {
     expect(result.sqliteFastMode).toBe(true);
   });
 
+  it('--require-native-ann sets requireNativeAnn=true', () => {
+    const result = parseArgs(['--require-native-ann']);
+    expect(result.requireNativeAnn).toBe(true);
+  });
+
   it('preserves existing flags', () => {
     const result = parseArgs(['--full', '--quiet']);
 
     expect(result.fullReindex).toBe(true);
     expect(result.quiet).toBe(true);
     expect(result.noColbert).toBe(false);
+    expect(result.requireNativeAnn).toBe(false);
     expect(result.sqliteFastMode).toBe(false);
   });
 
@@ -66,7 +73,7 @@ describe('parseArgs (index-codebase-v21)', () => {
       '--dry-run', '--graph-only', '--vectors-only', '--full',
       '--stats', '--resolve-only', '--skip-summary-regen',
       '--files-from-stdin', '--quiet', '--force-artifacts',
-      '--no-colbert', '--sqlite-fast',
+      '--no-colbert', '--require-native-ann', '--sqlite-fast',
     ]);
 
     expect(result.dryRun).toBe(true);
@@ -80,6 +87,7 @@ describe('parseArgs (index-codebase-v21)', () => {
     expect(result.quiet).toBe(true);
     expect(result.forceArtifacts).toBe(true);
     expect(result.noColbert).toBe(true);
+    expect(result.requireNativeAnn).toBe(true);
     expect(result.sqliteFastMode).toBe(true);
   });
 
