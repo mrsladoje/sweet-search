@@ -73,22 +73,18 @@ describe('Embedding Truncation Sentinel', () => {
     await generateEmbedding('warmup text', 'local');
   }, 120_000);
 
-  it('long text: max_length parameter is forwarded (diagnostic)', async () => {
+  it('long text: max_length parameter is enforced', async () => {
     const [emb512] = await callLocalModelBucketed([LONG_TEXT], { maxLength: 512 });
     const [emb1024] = await callLocalModelBucketed([LONG_TEXT], { maxLength: 1024 });
 
     const cos = cosineSimilarity(emb512, emb1024);
 
-    // If the pipeline forwards max_length, truncation at 512 vs 1024 should
-    // produce different embeddings for text longer than 512 tokens (~2048 chars).
-    // If cos ≈ 1.0, the pipeline is NOT forwarding max_length — the plan notes
-    // this as a possible outcome and flags it for L7 promotion.
-    if (cos > 0.999) {
-      console.warn(
-        `  [L2 DIAGNOSTIC] max_length not forwarded: cosSim(512,1024)=${cos.toFixed(8)}.` +
-        ' Pipeline ignores truncation param. Consider L7 (direct ORT session) for true truncation control.'
-      );
-    }
+    // Truncation boundary must be real for long text.
+    // If cos ~= 1.0, max_length isn't effectively applied.
+    expect(
+      cos,
+      `Expected long-text embeddings to differ between max_length=512 and 1024, got cosSim=${cos.toFixed(8)}`
+    ).toBeLessThan(0.999);
 
     // Embeddings should at least be valid 768d Float32Arrays
     expect(emb512).toBeInstanceOf(Float32Array);

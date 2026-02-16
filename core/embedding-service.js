@@ -863,6 +863,11 @@ function bestIntraOpThreads() {
   return Math.min(Math.max(1, physicalCores - 1), 8);
 }
 
+function isIntelCpu() {
+  const model = os.cpus()?.[0]?.model || '';
+  return model.toLowerCase().includes('intel');
+}
+
 /**
  * L3b: Return path for the ORT-optimized model graph cache.
  * Deterministic key: ORT version + model name hash → stable across restarts.
@@ -897,6 +902,139 @@ function getCalibrationFactor() {
   return 4;
 }
 
+function buildLocalSessionOptions() {
+  const sessionOptions = {
+    graphOptimizationLevel: 'all',
+    intraOpNumThreads: bestIntraOpThreads(),
+    interOpNumThreads: 2,
+    executionMode: 'parallel',
+    enableCpuMemArena: true,
+    enableMemPattern: true,
+    optimizedModelFilePath: getOptimizedModelPath(),
+  };
+
+  // L5: OpenVINO EP support (optional, Intel-only, opt-in)
+  if (process.env.SWEET_SEARCH_USE_OPENVINO === '1' && isIntelCpu()) {
+    sessionOptions.executionProviders = [
+      { name: 'OpenVINOExecutionProvider' },
+      'CPUExecutionProvider',
+    ];
+  }
+
+  return sessionOptions;
+}
+
+async function createLocalPipeline(pipelineFactory, sessionOptions) {
+  const modelName = EMBEDDING_PROVIDERS.local.model;
+  const keyCandidates = ['session_options', 'sessionOptions'];
+  let lastError = null;
+
+  for (const key of keyCandidates) {
+    try {
+      const candidate = await pipelineFactory('feature-extraction', modelName, {
+        quantized: true,
+        [key]: sessionOptions,
+      });
+      candidate.__sweetSessionKey = key;
+      return candidate;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('Failed to create local embedding pipeline');
+}
+
+function maskIsActive(maskValue) {
+  return typeof maskValue === 'bigint' ? maskValue !== 0n : maskValue !== 0;
+}
+
+function l2NormalizeRowsInPlace(data, rows, cols) {
+  for (let r = 0; r < rows; r++) {
+    const offset = r * cols;
+    let normSq = 0;
+    for (let c = 0; c < cols; c++) {
+      const v = data[offset + c];
+      normSq += v * v;
+    }
+
+    const norm = Math.sqrt(normSq);
+    if (norm > 0) {
+      const inv = 1 / norm;
+      for (let c = 0; c < cols; c++) {
+        data[offset + c] *= inv;
+      }
+    }
+  }
+}
+
+function meanPoolWithAttentionMask(tokenEmbeddings, attentionMask, normalize = true) {
+  const dims = tokenEmbeddings?.dims || [];
+  if (dims.length !== 3) {
+    throw new Error(`[L1] Expected dims [batch, seq, hidden], got [${dims.join(', ')}]`);
+  }
+
+  const [batchSize, seqLength, hiddenSize] = dims;
+  const pooled = new Float32Array(batchSize * hiddenSize);
+  const tokenData = tokenEmbeddings.data;
+  const maskData = attentionMask?.data || null;
+
+  for (let b = 0; b < batchSize; b++) {
+    const rowOffset = b * hiddenSize;
+    let validTokens = 0;
+
+    for (let t = 0; t < seqLength; t++) {
+      const maskOffset = b * seqLength + t;
+      if (maskData && !maskIsActive(maskData[maskOffset])) continue;
+
+      validTokens++;
+      const tokenOffset = (b * seqLength + t) * hiddenSize;
+      for (let h = 0; h < hiddenSize; h++) {
+        pooled[rowOffset + h] += tokenData[tokenOffset + h];
+      }
+    }
+
+    const denom = validTokens > 0 ? validTokens : 1;
+    const inv = 1 / denom;
+    for (let h = 0; h < hiddenSize; h++) {
+      pooled[rowOffset + h] *= inv;
+    }
+  }
+
+  if (normalize) {
+    l2NormalizeRowsInPlace(pooled, batchSize, hiddenSize);
+  }
+
+  return {
+    data: pooled,
+    batchSize,
+    dim: hiddenSize,
+  };
+}
+
+function extractPooledEmbeddings(outputs, attentionMask, normalize = true) {
+  const candidate = outputs?.last_hidden_state || outputs?.logits || outputs?.token_embeddings;
+  if (!candidate?.dims || !candidate?.data) {
+    throw new Error('[L1] Model output missing tensor data for feature extraction');
+  }
+
+  if (candidate.dims.length === 3) {
+    return meanPoolWithAttentionMask(candidate, attentionMask, normalize);
+  }
+
+  if (candidate.dims.length === 2) {
+    const [batchSize, dim] = candidate.dims;
+    const data = new Float32Array(candidate.data.length);
+    data.set(candidate.data);
+    if (normalize) {
+      l2NormalizeRowsInPlace(data, batchSize, dim);
+    }
+    return { data, batchSize, dim };
+  }
+
+  throw new Error(`[L1] Unsupported tensor shape: [${candidate.dims.join(', ')}]`);
+}
+
 let localPipeline = null;
 let isLoadingLocal = false;
 let loadPromise = null;
@@ -916,21 +1054,31 @@ async function getLocalPipeline() {
     } catch {
       ({ pipeline } = await import('@xenova/transformers'));
     }
-    localPipeline = await pipeline('feature-extraction', EMBEDDING_PROVIDERS.local.model, {
-      quantized: true,
-      session_options: {
-        graphOptimizationLevel: 'all',
-        intraOpNumThreads: bestIntraOpThreads(),
-        interOpNumThreads: 2,
-        executionMode: 'parallel',
-        enableCpuMemArena: true,
-        enableMemPattern: true,
-        optimizedModelFilePath: getOptimizedModelPath(),  // L3b: persist optimized graph
-      },
-    });
+
+    const sessionOptions = buildLocalSessionOptions();
+
+    try {
+      localPipeline = await createLocalPipeline(pipeline, sessionOptions);
+    } catch (err) {
+      // If OpenVINO is enabled and unavailable, retry CPU-only once.
+      if (sessionOptions.executionProviders) {
+        console.warn(`[L5] OpenVINO session init failed (${err.message}), retrying with CPUExecutionProvider only`);
+        const cpuOnlyOptions = buildLocalSessionOptions();
+        delete cpuOnlyOptions.executionProviders;
+        localPipeline = await createLocalPipeline(pipeline, cpuOnlyOptions);
+      } else {
+        throw err;
+      }
+    }
+
     // Warmup call to prime memory arena and allocation patterns
     await localPipeline(["warmup"], { pooling: 'mean', normalize: true, truncation: true, max_length: 64 });
-    console.log(`Local model loaded in ${Date.now() - start}ms (threads: ${bestIntraOpThreads()})`);
+    const optimizedPath = getOptimizedModelPath();
+    if (!existsSync(optimizedPath)) {
+      console.warn(`[L3b] Optimized model file was not materialized at ${optimizedPath}. Session options may not be fully forwarded.`);
+    }
+
+    console.log(`Local model loaded in ${Date.now() - start}ms (threads: ${bestIntraOpThreads()}, sessionKey: ${localPipeline.__sweetSessionKey || 'unknown'})`);
     isLoadingLocal = false;
     return localPipeline;
   })();
@@ -948,41 +1096,35 @@ async function getLocalPipeline() {
  * @returns {Float32Array[]} Array of Float32Array subarray views (one per text)
  */
 async function callLocalModel(texts, options = {}) {
+  if (!texts || texts.length === 0) return [];
+
   const model = await getLocalPipeline();
   const { maxLength = INDEXING_MAX_LENGTH } = options;
 
-  const rawOutput = await model(texts, {
-    pooling: 'mean',
-    normalize: true,
+  // IMPORTANT: FeatureExtractionPipeline currently hardcodes tokenizer options
+  // (padding/truncation) and ignores caller-provided max_length. We therefore
+  // run tokenizer + model directly here to enforce maxLength deterministically.
+  const modelInputs = model.tokenizer(texts, {
     padding: true,
     truncation: true,
     max_length: maxLength,
   });
+  const outputs = await model.model(modelInputs);
+  const pooled = extractPooledEmbeddings(outputs, modelInputs.attention_mask, true);
+  const { data, batchSize, dim } = pooled;
 
-  // Normalize output shape: HF JS pipeline may return either:
-  //   - one object with flat .data (batch × dim) — fast path
-  //   - array of per-input objects — slow fallback
-  const dim = EMBEDDING_PROVIDERS.local.dimensions.full; // 768
-  // Allocate pool buffer up front — used by both fast and slow paths
-  const pool = new Float32Array(texts.length * dim);
-  const needed = texts.length * dim;
-
-  if (Array.isArray(rawOutput)) {
-    // Slow path: HF returned array-of-objects. Single-pass copy into pool.
-    console.warn('  [L1] Pipeline returned array-of-objects — slow path. Consider L7 (direct ORT session).');
-    if (rawOutput.length !== texts.length) {
-      throw new Error(`[L1] Output count mismatch: got ${rawOutput.length} embeddings for ${texts.length} texts`);
-    }
-    for (let i = 0; i < rawOutput.length; i++) {
-      pool.set(rawOutput[i].data, i * dim);
-    }
-  } else {
-    // Fast path: flat Float32Array — single bulk copy into pool
-    if (rawOutput.data.length < needed) {
-      throw new Error(`[L1] Unexpected output size: got ${rawOutput.data.length} floats, need ${needed} (${texts.length} × ${dim})`);
-    }
-    pool.set(rawOutput.data.subarray(0, needed));
+  if (batchSize !== texts.length) {
+    throw new Error(`[L1] Output count mismatch: got ${batchSize} embeddings for ${texts.length} texts`);
   }
+
+  const expectedDim = EMBEDDING_PROVIDERS.local.dimensions.full;
+  if (dim !== expectedDim) {
+    console.warn(`[L1] Local embedding dim mismatch: expected ${expectedDim}, got ${dim}`);
+  }
+
+  // Allocate owned pool buffer and create view slices for zero-copy downstream.
+  const pool = new Float32Array(batchSize * dim);
+  pool.set(data);
 
   const embeddings = new Array(texts.length);
   for (let i = 0; i < texts.length; i++) {
@@ -1284,9 +1426,18 @@ async function generateEmbedding(text, provider = EMBEDDING_CONFIG.provider, isQ
  * @param {object} options - { outputDimension, inputType, concurrency }
  */
 async function generateEmbeddings(texts, provider = EMBEDDING_CONFIG.provider, options = {}) {
+  if (!texts || texts.length === 0) return [];
+
+  const localBucketOptions = {
+    maxLength: options.maxLength,
+    hardCap: options.hardCap,
+    resolveHardCap: options.resolveHardCap,
+    batchingSafety: options.batchingSafety,
+  };
+
   const config = EMBEDDING_PROVIDERS[provider];
   if (!config || !config.enabled) {
-    return callLocalModelBucketed(texts);
+    return callLocalModelBucketed(texts, localBucketOptions);
   }
 
   const batchSize = config.batchSize || 32;
@@ -1330,7 +1481,7 @@ async function generateEmbeddings(texts, provider = EMBEDDING_CONFIG.provider, o
       case 'jina':
         return callJinaAPI(batch, config, apiOptions);
       case 'local':
-        return callLocalModelBucketed(batch);
+        return callLocalModelBucketed(batch, localBucketOptions);
       default:
         throw new Error(`Unknown provider: ${provider}`);
     }
@@ -1345,7 +1496,7 @@ async function generateEmbeddings(texts, provider = EMBEDDING_CONFIG.provider, o
           return await embedBatch(batch);
         } catch (err) {
           console.warn(`Batch embedding failed: ${err.message}, falling back to local`);
-          return callLocalModelBucketed(batch);
+          return callLocalModelBucketed(batch, localBucketOptions);
         }
       })
     );
@@ -1478,14 +1629,26 @@ export async function embed(text, options = {}) {
  * Batch embeddings
  */
 export async function getEmbeddings(texts, options = {}) {
-  const { useCache = true } = options;
+  const {
+    useCache = true,
+    provider = EMBEDDING_CONFIG.provider,
+    providerOptions = {},
+  } = options;
+
+  const hasShapeAffectingProviderOptions =
+    provider !== EMBEDDING_CONFIG.provider ||
+    providerOptions.maxLength !== undefined ||
+    providerOptions.outputDimension !== undefined ||
+    providerOptions.outputDtype !== undefined ||
+    providerOptions.inputType !== undefined;
+  const allowCache = useCache && !hasShapeAffectingProviderOptions;
 
   // Check cache for all texts
   const results = new Array(texts.length);
   const uncachedIndices = [];
   const uncachedTexts = [];
 
-  if (useCache && EMBEDDING_CONFIG.cache?.enabled) {
+  if (allowCache && EMBEDDING_CONFIG.cache?.enabled) {
     for (let i = 0; i < texts.length; i++) {
       const cached = queryCache.get(texts[i]);
       if (cached) {
@@ -1506,12 +1669,12 @@ export async function getEmbeddings(texts, options = {}) {
 
   // Generate embeddings for uncached
   if (uncachedTexts.length > 0) {
-    const newEmbeddings = await generateEmbeddings(uncachedTexts);
+    const newEmbeddings = await generateEmbeddings(uncachedTexts, provider, providerOptions);
     for (let i = 0; i < uncachedIndices.length; i++) {
       const idx = uncachedIndices[i];
       results[idx] = { embedding: newEmbeddings[i], cached: false };
 
-      if (useCache && EMBEDDING_CONFIG.cache?.enabled) {
+      if (allowCache && EMBEDDING_CONFIG.cache?.enabled) {
         queryCache.set(texts[idx], newEmbeddings[i]);
       }
     }
