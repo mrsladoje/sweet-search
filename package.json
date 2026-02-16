@@ -58,6 +58,7 @@
     "warmup": "node scripts/prewarm-vocab.js",
     "warmup:full": "node scripts/vocabulary-warmup.js",
     "benchmark": "node scripts/benchmark.js",
+    "optimize:onnx": "bash scripts/optimize-onnx-model.sh",
     "mcp": "node mcp/server.js",
     "check-db": "node scripts/check-db.js",
     "test": "vitest run",

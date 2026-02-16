@@ -764,10 +764,11 @@ function insertVectors(db, chunks, embeddings, modelInfo) {
  * @param {number} batchSize - Embedding batch size
  * @param {Object} modelInfo - Model provider info
  * @param {Function} logProgressFn - Progress logging function
+ * @param {object} embeddingOptions - Options forwarded to getEmbeddings()
  * @param {Function} logFn - General log function
  * @returns {Promise<Array>} All embeddings in order (for HNSW/ColBERT downstream)
  */
-async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgressFn, logFn) {
+async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgressFn, embeddingOptions = {}, logFn) {
   const BATCH_INSERT_SIZE = 2000;
   const embeddings = [];
   let prevBatchItems = null;
@@ -788,7 +789,7 @@ async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInf
     const batchChunks = allChunks.slice(i, i + batchSize);
 
     // Start embedding current batch
-    const batchResultsPromise = getEmbeddings(batch);
+    const batchResultsPromise = getEmbeddings(batch, embeddingOptions);
 
     // While waiting for embeddings, write previous batch to DB (if any)
     if (prevBatchItems && prevBatchItems.length > 0) {
@@ -899,6 +900,30 @@ async function buildVectorIndex(files, dryRun = false, options = {}) {
   });
 
   const batchSize = EMBEDDING_CONFIG.batchSize;
+  const embeddingOptions = { useCache: false };
+  let effectiveEmbeddingDimension = modelInfo.dimension;
+
+  // V1: Use server-side Matryoshka truncation during indexing for remote providers.
+  // This reduces payload size and transfer overhead while keeping local behavior unchanged.
+  if (modelInfo.isRemote) {
+    const configuredOutputDim = parseInt(
+      process.env.SWEET_SEARCH_INDEXING_OUTPUT_DIMENSION || `${modelInfo.hnswDimension}`,
+      10
+    );
+    if (
+      Number.isFinite(configuredOutputDim) &&
+      configuredOutputDim > 0 &&
+      configuredOutputDim <= modelInfo.dimension
+    ) {
+      embeddingOptions.providerOptions = {
+        outputDimension: configuredOutputDim,
+        inputType: 'document',
+        concurrency: parseInt(process.env.SWEET_SEARCH_EMBEDDING_CONCURRENCY || '4', 10),
+      };
+      effectiveEmbeddingDimension = configuredOutputDim;
+      log(`Server-side embedding dimension: ${modelInfo.dimension}d → ${configuredOutputDim}d`, 'dim');
+    }
+  }
 
   // P2: Open DB BEFORE embedding so we can pipeline embed + write
   await fs.mkdir(path.dirname(DB_PATHS.codebase), { recursive: true });
@@ -929,11 +954,11 @@ async function buildVectorIndex(files, dryRun = false, options = {}) {
     createVectorSchema(db);
 
     // P2: Pipeline embedding + DB insertion (embed batch N+1 while writing batch N)
-    embeddings = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, log);
+    embeddings = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, embeddingOptions, log);
 
     db.close();
 
-    log(`\n✓ Generated ${embeddings.length} embeddings (${modelInfo.dimension}d)`, 'green');
+    log(`\n✓ Generated ${embeddings.length} embeddings (${effectiveEmbeddingDimension}d)`, 'green');
 
     // ATOMIC SWAP with EBUSY retry logic for Windows/WSL
     await atomicSwapDatabase(tmpPath, DB_PATHS.codebase);
@@ -993,9 +1018,9 @@ async function buildVectorIndex(files, dryRun = false, options = {}) {
     }
 
     // P2: Pipeline embedding + DB insertion for incremental path too
-    embeddings = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, log);
+    embeddings = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, embeddingOptions, log);
 
-    log(`\n✓ Generated ${embeddings.length} embeddings (${modelInfo.dimension}d)`, 'green');
+    log(`\n✓ Generated ${embeddings.length} embeddings (${effectiveEmbeddingDimension}d)`, 'green');
 
     // Get count after changes
     const newCount = db.prepare('SELECT COUNT(*) as count FROM vectors').get().count;
@@ -1287,7 +1312,13 @@ async function buildColBERTIndex(chunks, dryRun = false, filesToRemove = []) {
     const megaBatch = allLines.slice(megaStart, megaEnd);
 
     // L0 bucketing applies inside getEmbeddings — sorts, adaptive batch sizing
-    const megaResults = await getEmbeddings(megaBatch);
+    const megaResults = await getEmbeddings(megaBatch, {
+      useCache: false,
+      providerOptions: {
+        maxLength: 256,
+        resolveHardCap: (candidateLongest) => (candidateLongest <= 128 ? 128 : 64),
+      },
+    });
     const megaEmbeddings = megaResults.map(r => r.embedding);
 
     embedded += megaEmbeddings.length;
