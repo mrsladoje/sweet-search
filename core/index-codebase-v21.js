@@ -45,6 +45,50 @@ import { buildFromCodebaseDb as buildQuantizedArtifacts, getArtifactStats, shoul
 const glob = fg.glob || fg;
 
 // =============================================================================
+// P0: SQLITE WRITE OPTIMIZATION (WAL Mode + Batch Insert Chunking)
+// =============================================================================
+
+/**
+ * P0: Detect if WAL mode is safe for the given database path.
+ * WAL is safe on native Linux and WSL2 with ext4.
+ * Not safe on Windows drvfs mounts (WSL1 or /mnt/c paths).
+ */
+function isWalSafe(dbPath) {
+  if (process.platform !== 'linux') return false;
+  // WSL with drvfs (Windows filesystem) doesn't support WAL
+  if (process.env.WSL_DISTRO_NAME && dbPath && /^\/mnt\/[a-zA-Z]\//.test(dbPath)) return false;
+  // Native Linux or WSL2 with ext4 paths (like /home/*)
+  return true;
+}
+
+/**
+ * P0: Configure optimal SQLite journal mode based on platform and build mode.
+ * @param {import('better-sqlite3').Database} db - better-sqlite3 database instance
+ * @param {string} dbPath - Path to the database file (used for WAL safety check)
+ * @param {boolean} sqliteFastMode - If true, use unsafe fast-build pragmas
+ * @returns {string} The journal mode that was set ('MEMORY', 'WAL', or 'DELETE')
+ */
+function configureJournalMode(db, dbPath, sqliteFastMode) {
+  if (sqliteFastMode) {
+    db.pragma('synchronous = OFF');
+    db.pragma('journal_mode = MEMORY');
+    db.pragma('cache_size = -64000');
+    return 'MEMORY';
+  }
+
+  if (isWalSafe(dbPath)) {
+    db.pragma('journal_mode = WAL');
+    db.pragma('synchronous = NORMAL');
+    db.pragma('wal_autocheckpoint = 1000');
+    return 'WAL';
+  }
+
+  db.pragma('journal_mode = DELETE');
+  db.pragma('synchronous = NORMAL');
+  return 'DELETE';
+}
+
+// =============================================================================
 // COLORS AND LOGGING (quiet-mode aware)
 // =============================================================================
 
@@ -539,9 +583,8 @@ async function buildCodeGraph(files, dryRun = false) {
   const Database = (await import('better-sqlite3')).default;
   const db = new Database(tmpPath);
 
-  // Disable WAL mode for Windows filesystem compatibility (WSL + drvfs)
-  db.pragma('journal_mode = DELETE');
-  db.pragma('synchronous = NORMAL');
+  // P0: Use optimal journal mode for platform
+  configureJournalMode(db, tmpPath, false);
 
   const hasFts5 = createGraphSchema(db);
   insertGraph(db, allEntities, allRelationships, hasFts5);
@@ -632,29 +675,15 @@ function ensureVectorSchema(db) {
 }
 
 /**
- * Insert vectors into database.
+ * Build insert items array from chunks and their corresponding embeddings.
+ * Shared by insertVectors() and pipelinedEmbedAndInsert().
+ *
+ * @param {Array} chunks - Chunk objects with id, file, text/content, metadata
+ * @param {Array} embeddings - Embedding arrays (Float32Array or plain Array)
+ * @param {Object} modelInfo - Model info with provider and dimension
+ * @returns {Array} Array of item objects ready for DB insertion
  */
-function insertVectors(db, chunks, embeddings, modelInfo) {
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO vectors (id, file_path, embedding, text, metadata, session_id, tags, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const insertMany = db.transaction((items) => {
-    for (const item of items) {
-      stmt.run(
-        item.id,
-        item.filePath,
-        item.embeddingBlob,
-        item.text,
-        item.metadata,
-        item.sessionId,
-        item.tags,
-        item.createdAt
-      );
-    }
-  });
-
+function buildInsertItems(chunks, embeddings, modelInfo) {
   const items = [];
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
@@ -665,7 +694,9 @@ function insertVectors(db, chunks, embeddings, modelInfo) {
     items.push({
       id: chunk.id,
       filePath: chunk.file,
-      embeddingBlob: Buffer.from(new Float32Array(embedding).buffer),
+      embeddingBlob: embedding instanceof Float32Array
+        ? Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength)
+        : Buffer.from(new Float32Array(embedding).buffer),
       text: (chunk.text || chunk.content || '').slice(0, 2000),
       metadata: JSON.stringify({
         file: chunk.file,
@@ -682,8 +713,110 @@ function insertVectors(db, chunks, embeddings, modelInfo) {
       createdAt: new Date().toISOString(),
     });
   }
+  return items;
+}
 
-  insertMany(items);
+/**
+ * Insert vectors into database with P0 batch chunking.
+ * Splits large item sets into transactions of BATCH_INSERT_SIZE rows
+ * to bound memory pressure and WAL file growth.
+ */
+function insertVectors(db, chunks, embeddings, modelInfo) {
+  const BATCH_INSERT_SIZE = 2000;
+
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO vectors (id, file_path, embedding, text, metadata, session_id, tags, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const insertBatch = db.transaction((items) => {
+    for (const item of items) {
+      stmt.run(
+        item.id,
+        item.filePath,
+        item.embeddingBlob,
+        item.text,
+        item.metadata,
+        item.sessionId,
+        item.tags,
+        item.createdAt
+      );
+    }
+  });
+
+  const items = buildInsertItems(chunks, embeddings, modelInfo);
+
+  // P0: Chunked transactions to bound memory pressure
+  for (let i = 0; i < items.length; i += BATCH_INSERT_SIZE) {
+    insertBatch(items.slice(i, i + BATCH_INSERT_SIZE));
+  }
+}
+
+/**
+ * P2: Pipeline embedding and DB insertion to reduce peak memory.
+ * Embeds batch N+1 while preparing (serializing) items from batch N.
+ * Writes each batch to DB as soon as items are ready, rather than
+ * accumulating all embeddings first.
+ *
+ * @param {import('better-sqlite3').Database} db - Open database with schema created
+ * @param {Array} allChunks - All chunks to embed and insert
+ * @param {string[]} texts - Pre-formatted text strings for embedding
+ * @param {number} batchSize - Embedding batch size
+ * @param {Object} modelInfo - Model provider info
+ * @param {Function} logProgressFn - Progress logging function
+ * @param {Function} logFn - General log function
+ * @returns {Promise<Array>} All embeddings in order (for HNSW/ColBERT downstream)
+ */
+async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgressFn, logFn) {
+  const BATCH_INSERT_SIZE = 2000;
+  const embeddings = [];
+  let prevBatchItems = null;
+
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO vectors (id, file_path, embedding, text, metadata, session_id, tags, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const insertBatch = db.transaction((items) => {
+    for (const item of items) {
+      stmt.run(item.id, item.filePath, item.embeddingBlob, item.text, item.metadata, item.sessionId, item.tags, item.createdAt);
+    }
+  });
+
+  for (let i = 0; i < texts.length; i += batchSize) {
+    const batch = texts.slice(i, i + batchSize);
+    const batchChunks = allChunks.slice(i, i + batchSize);
+
+    // Start embedding current batch
+    const batchResultsPromise = getEmbeddings(batch);
+
+    // While waiting for embeddings, write previous batch to DB (if any)
+    if (prevBatchItems && prevBatchItems.length > 0) {
+      for (let j = 0; j < prevBatchItems.length; j += BATCH_INSERT_SIZE) {
+        insertBatch(prevBatchItems.slice(j, j + BATCH_INSERT_SIZE));
+      }
+    }
+
+    const batchResults = await batchResultsPromise;
+    const batchEmbeddings = batchResults.map(r => r.embedding);
+    embeddings.push(...batchEmbeddings);
+
+    // Prepare items for current batch (will be written next iteration or after loop)
+    prevBatchItems = buildInsertItems(batchChunks, batchEmbeddings, modelInfo);
+
+    if ((i + batchSize) % 100 === 0 || i + batchSize >= texts.length) {
+      logProgressFn(Math.min(i + batchSize, texts.length), texts.length, 'Embedding');
+    }
+  }
+
+  // Write last batch
+  if (prevBatchItems && prevBatchItems.length > 0) {
+    for (let j = 0; j < prevBatchItems.length; j += BATCH_INSERT_SIZE) {
+      insertBatch(prevBatchItems.slice(j, j + BATCH_INSERT_SIZE));
+    }
+  }
+
+  return embeddings;
 }
 
 /**
@@ -756,7 +889,7 @@ async function buildVectorIndex(files, dryRun = false, options = {}) {
 
   log(`\n✓ Created ${allChunks.length} chunks`, 'green');
 
-  // Generate embeddings using multi-provider service
+  // Generate embeddings and write to SQLite
   log('Generating embeddings...', 'yellow');
 
   // Prepare texts for batch embedding
@@ -765,26 +898,13 @@ async function buildVectorIndex(files, dryRun = false, options = {}) {
     return text;
   });
 
-  // Use the embedding service (handles batching, rate limiting, fallback)
   const batchSize = EMBEDDING_CONFIG.batchSize;
-  const embeddings = [];
 
-  for (let i = 0; i < texts.length; i += batchSize) {
-    const batch = texts.slice(i, i + batchSize);
-    const batchResults = await getEmbeddings(batch);
-    embeddings.push(...batchResults.map(r => r.embedding));
-
-    if ((i + batchSize) % 100 === 0 || i + batchSize >= texts.length) {
-      logProgress(Math.min(i + batchSize, texts.length), texts.length, 'Embedding');
-    }
-  }
-
-  log(`\n✓ Generated ${embeddings.length} embeddings (${modelInfo.dimension}d)`, 'green');
-
-  // Save to SQLite (for O(N) fallback search) using better-sqlite3
+  // P2: Open DB BEFORE embedding so we can pipeline embed + write
   await fs.mkdir(path.dirname(DB_PATHS.codebase), { recursive: true });
-
   const Database = (await import('better-sqlite3')).default;
+
+  let embeddings;
 
   if (fullRebuild) {
     // FULL REBUILD: Atomic swap pattern - build to temp, then swap
@@ -801,21 +921,19 @@ async function buildVectorIndex(files, dryRun = false, options = {}) {
 
     const db = new Database(tmpPath);
 
-    // SQLite build-mode pragmas
-    if (sqliteFastMode) {
-      db.pragma('synchronous = OFF');
-      db.pragma('journal_mode = MEMORY');
-      db.pragma('cache_size = -64000');
-      log('SQLite fast-build mode enabled (benchmarking only)', 'yellow');
-    } else {
-      db.pragma('journal_mode = DELETE');
-      db.pragma('synchronous = NORMAL');
-    }
+    // P0: Use optimal journal mode for platform
+    const journalMode = configureJournalMode(db, tmpPath, sqliteFastMode);
+    if (sqliteFastMode) log('SQLite fast-build mode enabled (benchmarking only)', 'yellow');
+    else if (journalMode === 'WAL') log('SQLite WAL mode enabled', 'dim');
 
     createVectorSchema(db);
-    insertVectors(db, allChunks, embeddings, modelInfo);
+
+    // P2: Pipeline embedding + DB insertion (embed batch N+1 while writing batch N)
+    embeddings = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, log);
 
     db.close();
+
+    log(`\n✓ Generated ${embeddings.length} embeddings (${modelInfo.dimension}d)`, 'green');
 
     // ATOMIC SWAP with EBUSY retry logic for Windows/WSL
     await atomicSwapDatabase(tmpPath, DB_PATHS.codebase);
@@ -834,15 +952,10 @@ async function buildVectorIndex(files, dryRun = false, options = {}) {
     // Check if database exists
     if (existsSync(DB_PATHS.codebase)) {
       db = new Database(DB_PATHS.codebase);
-      if (sqliteFastMode) {
-        db.pragma('synchronous = OFF');
-        db.pragma('journal_mode = MEMORY');
-        db.pragma('cache_size = -64000');
-        log('SQLite fast-build mode enabled (benchmarking only)', 'yellow');
-      } else {
-        db.pragma('journal_mode = DELETE');
-        db.pragma('synchronous = NORMAL');
-      }
+      // P0: Use optimal journal mode for platform
+      const journalModeIncr = configureJournalMode(db, DB_PATHS.codebase, sqliteFastMode);
+      if (sqliteFastMode) log('SQLite fast-build mode enabled (benchmarking only)', 'yellow');
+      else if (journalModeIncr === 'WAL') log('SQLite WAL mode enabled', 'dim');
 
       // Ensure schema is up-to-date (adds file_path column if missing)
       ensureVectorSchema(db);
@@ -872,20 +985,17 @@ async function buildVectorIndex(files, dryRun = false, options = {}) {
       // Database doesn't exist, create new one
       log('No existing database, creating new...', 'yellow');
       db = new Database(DB_PATHS.codebase);
-      if (sqliteFastMode) {
-        db.pragma('synchronous = OFF');
-        db.pragma('journal_mode = MEMORY');
-        db.pragma('cache_size = -64000');
-        log('SQLite fast-build mode enabled (benchmarking only)', 'yellow');
-      } else {
-        db.pragma('journal_mode = DELETE');
-        db.pragma('synchronous = NORMAL');
-      }
+      // P0: Use optimal journal mode for platform
+      const journalModeNew = configureJournalMode(db, DB_PATHS.codebase, sqliteFastMode);
+      if (sqliteFastMode) log('SQLite fast-build mode enabled (benchmarking only)', 'yellow');
+      else if (journalModeNew === 'WAL') log('SQLite WAL mode enabled', 'dim');
       createVectorSchema(db);
     }
 
-    // Step 2: Insert new vectors
-    insertVectors(db, allChunks, embeddings, modelInfo);
+    // P2: Pipeline embedding + DB insertion for incremental path too
+    embeddings = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, log);
+
+    log(`\n✓ Generated ${embeddings.length} embeddings (${modelInfo.dimension}d)`, 'green');
 
     // Get count after changes
     const newCount = db.prepare('SELECT COUNT(*) as count FROM vectors').get().count;
@@ -1158,49 +1268,57 @@ async function buildColBERTIndex(chunks, dryRun = false, filesToRemove = []) {
     return;
   }
 
-  // Batch embed all lines
-  log('ColBERT: Generating line embeddings...', 'yellow');
+  // Mega-batch processing: process lines in chunks of MEGA_BATCH_SIZE to cap RSS
+  // Each mega-batch flows through full L0 bucketing pipeline independently.
+  // Pool buffers from previous mega-batch are GC-eligible after ColBERT insertion.
+  const MEGA_BATCH_SIZE = 10_000;
 
-  const batchSize = EMBEDDING_CONFIG.batchSize;
-  const lineEmbeddings = [];
+  log('ColBERT: Generating line embeddings (mega-batch)...', 'yellow');
 
-  for (let i = 0; i < allLines.length; i += batchSize) {
-    const batch = allLines.slice(i, i + batchSize);
-    const results = await getEmbeddings(batch);
-    lineEmbeddings.push(...results.map(r => r.embedding));
+  // Progress reporting: ~20 updates during ColBERT embedding
+  const totalLines = allLines.length;
+  let embedded = 0;
+  const reportInterval = Math.max(1000, Math.floor(totalLines / 20));
 
-    if ((i + batchSize) % 500 === 0 || i + batchSize >= allLines.length) {
-      logProgress(Math.min(i + batchSize, allLines.length), allLines.length, 'ColBERT Embedding');
+  let totalAdded = 0;
+
+  for (let megaStart = 0; megaStart < allLines.length; megaStart += MEGA_BATCH_SIZE) {
+    const megaEnd = Math.min(megaStart + MEGA_BATCH_SIZE, allLines.length);
+    const megaBatch = allLines.slice(megaStart, megaEnd);
+
+    // L0 bucketing applies inside getEmbeddings — sorts, adaptive batch sizing
+    const megaResults = await getEmbeddings(megaBatch);
+    const megaEmbeddings = megaResults.map(r => r.embedding);
+
+    embedded += megaEmbeddings.length;
+    if (embedded % reportInterval < megaEmbeddings.length || embedded === totalLines) {
+      log(`  ColBERT: ${embedded}/${totalLines} lines (${Math.round(embedded / totalLines * 100)}%)`, 'dim');
     }
+
+    // Stream-insert: group by chunk within this mega-batch, then add to ColBERT index.
+    // Lines for a given chunk appear contiguously (guaranteed by sequential build above).
+    const chunkTokens = new Map();
+    for (let j = 0; j < megaEmbeddings.length; j++) {
+      const chunkIdx = lineToChunk[megaStart + j];
+      if (!chunkTokens.has(chunkIdx)) {
+        chunkTokens.set(chunkIdx, []);
+      }
+      chunkTokens.get(chunkIdx).push(megaEmbeddings[j]);
+    }
+
+    // Add to ColBERT index per mega-batch (keeps memory bounded)
+    for (const [chunkIdx, tokens] of chunkTokens) {
+      const chunk = chunks[chunkIdx];
+      await colbert.add(chunk.id, tokens, {
+        file: chunk.file,
+        name: chunk.metadata?.symbol,
+      });
+      totalAdded++;
+    }
+    // Pool buffers from this mega-batch are now GC-eligible
   }
 
-  // Group embeddings by chunk
-  log('\nColBERT: Building token index...', 'yellow');
-
-  const chunkTokens = new Map();  // chunk index -> array of embeddings
-
-  for (let i = 0; i < lineEmbeddings.length; i++) {
-    const chunkIdx = lineToChunk[i];
-    if (!chunkTokens.has(chunkIdx)) {
-      chunkTokens.set(chunkIdx, []);
-    }
-    chunkTokens.get(chunkIdx).push(lineEmbeddings[i]);
-  }
-
-  // Add to ColBERT index
-  let added = 0;
-  for (const [chunkIdx, tokens] of chunkTokens) {
-    const chunk = chunks[chunkIdx];
-    await colbert.add(chunk.id, tokens, {
-      file: chunk.file,
-      name: chunk.metadata?.symbol,
-    });
-    added++;
-
-    if (added % 500 === 0 || added === chunkTokens.size) {
-      logProgress(added, chunkTokens.size, 'ColBERT Indexing');
-    }
-  }
+  log(`\nColBERT: Building token index... (${totalAdded} chunks indexed)`, 'yellow');
 
   // Save index
   await colbert.save();
@@ -2129,4 +2247,10 @@ export {
   insertVectors,
   // Database utilities (for testing and external use)
   atomicSwapDatabase,
+  // P0: WAL mode helpers (for testing)
+  isWalSafe,
+  configureJournalMode,
+  // P2: Pipeline helpers (for testing)
+  buildInsertItems,
+  pipelinedEmbedAndInsert,
 };
