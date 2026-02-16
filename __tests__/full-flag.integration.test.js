@@ -270,11 +270,11 @@ describe('Parallel execution (HCGS + Vectors)', () => {
   });
 
   it('code should use Promise.all for parallel execution', () => {
-    // No process spawn needed — reads source directly
-    const indexerSource = readFileSync(INDEXER_PATH, 'utf-8');
+    // Parallel execution logic lives in indexer-phases.js (extracted from facade)
+    const phasesSource = readFileSync(join(__dirname, '..', 'core', 'indexer-phases.js'), 'utf-8');
 
-    expect(indexerSource).toContain('Promise.all');
-    expect(indexerSource).toContain('hcgsPromise');
-    expect(indexerSource).toContain('vectorPromise');
+    expect(phasesSource).toContain('Promise.all');
+    expect(phasesSource).toContain('hcgsPromise');
+    expect(phasesSource).toContain('vectorPromise');
   });
 });
