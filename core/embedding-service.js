@@ -23,10 +23,19 @@
  *   Local model (cold): ~3-5s (model loading)
  */
 
+import crypto from 'crypto';
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync, mkdirSync } from 'fs';
 import path from 'path';
+import os from 'os';
+import { gzipSync, gunzipSync, brotliDecompressSync } from 'zlib';
 import { EMBEDDING_CONFIG, EMBEDDING_PROVIDERS, DB_PATHS } from './config.js';
+
+// =============================================================================
+// SEQUENCE LENGTH CONSTANTS (L2: configurable via env)
+// =============================================================================
+const INDEXING_MAX_LENGTH = parseInt(process.env.SWEET_SEARCH_INDEXING_MAX_LENGTH || '512', 10);
+const QUERY_MAX_LENGTH = parseInt(process.env.SWEET_SEARCH_QUERY_MAX_LENGTH || '512', 10);
 
 // =============================================================================
 // CIRCUIT BREAKER FOR API STABILITY
@@ -121,6 +130,151 @@ const circuitBreaker = {
 
 // Export for testing and monitoring
 export { circuitBreaker };
+
+// =============================================================================
+// V2b: REQUEST/RESPONSE COMPRESSION
+// =============================================================================
+
+// Per-provider request compression support cache.
+// Tracks whether each provider accepts gzip-encoded request bodies.
+// Starts optimistic (true); set to false on 415/400 rejection.
+const _providerCompressionSupport = new Map(); // provider -> boolean
+
+function providerSupportsRequestCompression(provider) {
+  return _providerCompressionSupport.get(provider) !== false;
+}
+
+function markProviderNoCompression(provider) {
+  _providerCompressionSupport.set(provider, false);
+}
+
+/**
+ * Quick check if data looks like JSON (starts with '{' or '[' after whitespace).
+ * Used to guard against double-decompression when undici auto-decompresses
+ * but still reports the original Content-Encoding header.
+ */
+function looksLikeJson(data) {
+  const u8 = new Uint8Array(
+    data instanceof Buffer
+      ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+      : data
+  );
+  if (u8.length === 0) return false;
+  for (let i = 0; i < u8.length; i++) {
+    const c = u8[i];
+    if (c === 0x20 || c === 0x0A || c === 0x0D || c === 0x09) continue; // whitespace
+    return c === 0x7B || c === 0x5B; // '{' or '['
+  }
+  return false;
+}
+
+/**
+ * Parse a potentially compressed API response.
+ * Handles gzip/brotli decompression with a double-decompression guard:
+ * some undici versions auto-decompress yet still report the original
+ * Content-Encoding header.
+ *
+ * @param {object} response - { body, statusCode, headers }
+ * @returns {object} Parsed JSON response body
+ */
+async function parseCompressedResponse({ body, statusCode, headers: resHeaders }) {
+  if (statusCode !== 200) {
+    const error = await body.text();
+    throw new Error(`API error: ${statusCode} - ${error}`);
+  }
+
+  const encoding = resHeaders?.['content-encoding'];
+  let responseData = await body.arrayBuffer();
+
+  // Only manually decompress if encoding header present AND data is not already JSON
+  // (undici may auto-decompress depending on version)
+  if (encoding && !looksLikeJson(responseData)) {
+    try {
+      if (encoding === 'gzip') {
+        responseData = gunzipSync(Buffer.from(responseData));
+      } else if (encoding === 'br') {
+        responseData = brotliDecompressSync(Buffer.from(responseData));
+      }
+    } catch {
+      // Decompression failed — data was likely already decompressed by undici
+    }
+  }
+
+  // Parse JSON from buffer
+  const text = typeof responseData === 'string'
+    ? responseData
+    : Buffer.isBuffer(responseData)
+      ? responseData.toString('utf8')
+      : new TextDecoder().decode(responseData);
+  return JSON.parse(text);
+}
+
+/**
+ * V2b: Make an API request with optional gzip request compression and
+ * response decompression via an undici pool.
+ *
+ * Request compression flow:
+ * 1. Serialize request body to JSON
+ * 2. If provider accepts compression, gzip the body
+ * 3. Only use compressed body if it saves >10% space
+ * 4. On 415/400 with Content-Encoding, mark provider as no-compression and retry
+ *
+ * @param {object} pool - undici Pool instance
+ * @param {string} provider - provider name for compression support tracking
+ * @param {string} apiPath - API endpoint path (e.g., '/v1/embeddings')
+ * @param {object} requestBody - request payload (will be JSON-serialized)
+ * @param {string} apiKey - authorization bearer token
+ * @returns {object} parsed JSON response
+ */
+async function compressedApiRequest(pool, provider, apiPath, requestBody, apiKey) {
+  const jsonBody = JSON.stringify(requestBody);
+
+  const headers = {
+    'Authorization': `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+    'Accept-Encoding': 'gzip, br',
+  };
+
+  let body = jsonBody;
+  if (providerSupportsRequestCompression(provider)) {
+    try {
+      const compressed = gzipSync(Buffer.from(jsonBody));
+      // Only use compression if it actually saves space (>10% reduction)
+      if (compressed.length < jsonBody.length * 0.9) {
+        headers['Content-Encoding'] = 'gzip';
+        body = compressed;
+      }
+    } catch {
+      // gzip failed — send uncompressed
+    }
+  }
+
+  const response = await pool.request({
+    path: apiPath,
+    method: 'POST',
+    headers,
+    body,
+  });
+
+  // Handle 415 (Unsupported Media Type) or 400 from providers that reject
+  // compressed request bodies — retry once without compression
+  if ((response.statusCode === 415 || response.statusCode === 400) && headers['Content-Encoding']) {
+    // Drain the error body to avoid undici leak warnings
+    try { await response.body.text(); } catch { /* best-effort drain */ }
+
+    markProviderNoCompression(provider);
+    delete headers['Content-Encoding'];
+    const retryResponse = await pool.request({
+      path: apiPath,
+      method: 'POST',
+      headers,
+      body: jsonBody,
+    });
+    return parseCompressedResponse(retryResponse);
+  }
+
+  return parseCompressedResponse(response);
+}
 
 // =============================================================================
 // RATE LIMITER
@@ -588,30 +742,15 @@ async function callVoyageAPI(texts, config, options = {}) {
     requestBody.output_dtype = outputDtype;
   }
 
-  // Try HTTP/2 via undici first (20-50ms faster)
+  // Try HTTP/2 via undici first (20-50ms faster) with V2b compression
   const pool = await getUndiciPool();
   if (pool) {
     try {
-      const { body, statusCode } = await pool.request({
-        path: '/v1/embeddings',
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (statusCode !== 200) {
-        const error = await body.text();
-        throw new Error(`Voyage API error: ${statusCode} - ${error}`);
-      }
-
-      const data = await body.json();
+      const data = await compressedApiRequest(pool, 'voyage', '/v1/embeddings', requestBody, config.apiKey);
       return data.data.map(d => d.embedding);
     } catch (err) {
-      // If undici fails, fall through to fetch
-      if (!err.message.includes('Voyage API error')) {
+      // If it's an API-level error (4xx/5xx), propagate it
+      if (!err.message.includes('API error')) {
         console.warn('[HTTP/2] Falling back to fetch:', err.message);
       } else {
         throw err;
@@ -620,12 +759,14 @@ async function callVoyageAPI(texts, config, options = {}) {
   }
 
   // Fallback: Use standard fetch with connection pooling
+  // (native fetch handles response decompression automatically)
   const fetchOptions = {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json',
       'Connection': 'keep-alive',
+      'Accept-Encoding': 'gzip, br',
     },
     body: JSON.stringify(requestBody),
   };
@@ -641,17 +782,27 @@ async function callVoyageAPI(texts, config, options = {}) {
   return data.data.map(d => d.embedding);
 }
 
-async function callMistralAPI(texts, config) {
+async function callMistralAPI(texts, config, options = {}) {
+  const { outputDimension } = options;
+
+  const requestBody = {
+    model: config.model,
+    input: texts,
+  };
+
+  // Mistral Codestral Embed supports Matryoshka via 'dimensions' parameter
+  if (outputDimension) {
+    requestBody.dimensions = outputDimension;
+  }
+
   const response = await fetch(config.endpoint, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json',
+      'Accept-Encoding': 'gzip, br',
     },
-    body: JSON.stringify({
-      model: config.model,
-      input: texts,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
@@ -664,18 +815,30 @@ async function callMistralAPI(texts, config) {
 }
 
 async function callJinaAPI(texts, config, options = {}) {
-  const { task = 'retrieval.passage' } = options;
+  const {
+    task = 'retrieval.passage',
+    outputDimension,
+  } = options;
+
+  const requestBody = {
+    model: config.model,
+    input: texts,
+    task,
+  };
+
+  // Jina Embeddings v3 supports Matryoshka via 'dimensions' parameter
+  if (outputDimension) {
+    requestBody.dimensions = outputDimension;
+  }
+
   const response = await fetch(config.endpoint, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json',
+      'Accept-Encoding': 'gzip, br',
     },
-    body: JSON.stringify({
-      model: config.model,
-      input: texts,
-      task,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
@@ -690,6 +853,49 @@ async function callJinaAPI(texts, config, options = {}) {
 // =============================================================================
 // LOCAL MODEL (Xenova)
 // =============================================================================
+
+/**
+ * L3c: Determine optimal intra-op thread count for ONNX Runtime.
+ * Uses physical cores (not hyperthreads), reserves one for Node/event loop, cap at 8.
+ */
+function bestIntraOpThreads() {
+  const physicalCores = Math.ceil(os.cpus().length / 2);
+  return Math.min(Math.max(1, physicalCores - 1), 8);
+}
+
+/**
+ * L3b: Return path for the ORT-optimized model graph cache.
+ * Deterministic key: ORT version + model name hash → stable across restarts.
+ */
+function getOptimizedModelPath() {
+  const cacheDir = path.join(os.homedir(), '.cache', 'sweet-search');
+  mkdirSync(cacheDir, { recursive: true });
+
+  let ortVersion = 'unknown';
+  try {
+    const ortPkg = JSON.parse(readFileSync(
+      path.resolve('node_modules/onnxruntime-node/package.json'), 'utf8'
+    ));
+    ortVersion = ortPkg.version;
+  } catch {
+    // ORT pulled in transitively; version unknown is fine
+  }
+
+  const modelHash = crypto.createHash('sha256')
+    .update(EMBEDDING_PROVIDERS.local.model)
+    .digest('hex')
+    .slice(0, 12);
+
+  return path.join(cacheDir, `coderankembed-optimized-ort${ortVersion}-${modelHash}.onnx`);
+}
+
+/**
+ * Token estimation calibration factor.
+ * Default ~4 chars/token is safe for code. Can be tuned per-project.
+ */
+function getCalibrationFactor() {
+  return 4;
+}
 
 let localPipeline = null;
 let isLoadingLocal = false;
@@ -710,8 +916,21 @@ async function getLocalPipeline() {
     } catch {
       ({ pipeline } = await import('@xenova/transformers'));
     }
-    localPipeline = await pipeline('feature-extraction', EMBEDDING_PROVIDERS.local.model, { quantized: true });
-    console.log(`Local model loaded in ${Date.now() - start}ms`);
+    localPipeline = await pipeline('feature-extraction', EMBEDDING_PROVIDERS.local.model, {
+      quantized: true,
+      session_options: {
+        graphOptimizationLevel: 'all',
+        intraOpNumThreads: bestIntraOpThreads(),
+        interOpNumThreads: 2,
+        executionMode: 'parallel',
+        enableCpuMemArena: true,
+        enableMemPattern: true,
+        optimizedModelFilePath: getOptimizedModelPath(),  // L3b: persist optimized graph
+      },
+    });
+    // Warmup call to prime memory arena and allocation patterns
+    await localPipeline(["warmup"], { pooling: 'mean', normalize: true, truncation: true, max_length: 64 });
+    console.log(`Local model loaded in ${Date.now() - start}ms (threads: ${bestIntraOpThreads()})`);
     isLoadingLocal = false;
     return localPipeline;
   })();
@@ -719,13 +938,125 @@ async function getLocalPipeline() {
   return loadPromise;
 }
 
-async function callLocalModel(texts) {
+/**
+ * L1: True batch inference for local model.
+ * Passes entire batch to pipeline in one call with padding and truncation.
+ * Returns Float32Array subarray views from a per-batch pool (zero-copy downstream).
+ *
+ * @param {string[]} texts - Texts to embed
+ * @param {object} options - Options including maxLength
+ * @returns {Float32Array[]} Array of Float32Array subarray views (one per text)
+ */
+async function callLocalModel(texts, options = {}) {
   const model = await getLocalPipeline();
-  const embeddings = [];
-  for (const text of texts) {
-    const output = await model(text, { pooling: 'mean', normalize: true });
-    embeddings.push(Array.from(output.data));
+  const { maxLength = INDEXING_MAX_LENGTH } = options;
+
+  const rawOutput = await model(texts, {
+    pooling: 'mean',
+    normalize: true,
+    padding: true,
+    truncation: true,
+    max_length: maxLength,
+  });
+
+  // Normalize output shape: HF JS pipeline may return either:
+  //   - one object with flat .data (batch × dim) — fast path
+  //   - array of per-input objects — slow fallback
+  const dim = EMBEDDING_PROVIDERS.local.dimensions.full; // 768
+  // Allocate pool buffer up front — used by both fast and slow paths
+  const pool = new Float32Array(texts.length * dim);
+  const needed = texts.length * dim;
+
+  if (Array.isArray(rawOutput)) {
+    // Slow path: HF returned array-of-objects. Single-pass copy into pool.
+    console.warn('  [L1] Pipeline returned array-of-objects — slow path. Consider L7 (direct ORT session).');
+    if (rawOutput.length !== texts.length) {
+      throw new Error(`[L1] Output count mismatch: got ${rawOutput.length} embeddings for ${texts.length} texts`);
+    }
+    for (let i = 0; i < rawOutput.length; i++) {
+      pool.set(rawOutput[i].data, i * dim);
+    }
+  } else {
+    // Fast path: flat Float32Array — single bulk copy into pool
+    if (rawOutput.data.length < needed) {
+      throw new Error(`[L1] Unexpected output size: got ${rawOutput.data.length} floats, need ${needed} (${texts.length} × ${dim})`);
+    }
+    pool.set(rawOutput.data.subarray(0, needed));
   }
+
+  const embeddings = new Array(texts.length);
+  for (let i = 0; i < texts.length; i++) {
+    embeddings[i] = pool.subarray(i * dim, (i + 1) * dim);
+  }
+  // Dev-only guard: catches accidental container mutation (embeddings[i] = ...)
+  if (process.env.NODE_ENV !== 'production') Object.freeze(embeddings);
+  return embeddings;
+}
+
+/**
+ * L0: Length-sorted bucketing for local model batch inference.
+ * Sorts texts by estimated token length, groups into adaptive-sized batches
+ * based on a token budget, and un-sorts results via origIdx.
+ *
+ * @param {string[]} texts - Texts to embed
+ * @param {object} options - Options including maxLength, hardCap, batchingSafety
+ * @returns {Float32Array[]} Array of Float32Array subarray views (original order)
+ */
+async function callLocalModelBucketed(texts, options = {}) {
+  const maxLength = options.maxLength ?? INDEXING_MAX_LENGTH;
+
+  const charPerToken = getCalibrationFactor();
+  const batchingSafety = options.batchingSafety
+    ?? Number(process.env.SWEET_SEARCH_BATCHING_SAFETY ?? 1.15);
+  const indexed = texts.map((text, i) => {
+    const est = Math.ceil((text.length / charPerToken) * batchingSafety);
+    const estTokens = Math.max(1, Math.min(est, maxLength));
+    return { text, origIdx: i, estTokens };
+  });
+  indexed.sort((a, b) => a.estTokens - b.estTokens);
+
+  // Adaptive batch sizing: bigger batches for short texts, smaller for long
+  const embeddings = new Array(texts.length);
+  let i = 0;
+
+  while (i < indexed.length) {
+    const tokenBudget = 16384;
+    const baseHardCap = options.hardCap ?? (maxLength <= 256 ? 128 : 64);
+    const resolveHardCap = options.resolveHardCap ?? (() => baseHardCap);
+    const memCapBytes = 512 * 1024 * 1024; // 512MB RSS headroom cap
+    const memGuardHighWatermark = 0.85;
+
+    // Peek ahead to find batch size where longest doc * count <= budget
+    let batchSize = 1;
+    while (i + batchSize < indexed.length) {
+      const rawEst = indexed[i + batchSize].estTokens;
+      const candidateLongest = Math.min(rawEst, maxLength);
+      const candidateCount = batchSize + 1;
+      const candidateHardCap = resolveHardCap(candidateLongest);
+      if (candidateCount > candidateHardCap) break;
+      if (candidateLongest * candidateCount > tokenBudget) break;
+      batchSize = candidateCount;
+    }
+
+    // RAM guard (OOM prevention only, not batch shaping)
+    const rss = process.memoryUsage().rss;
+    if (
+      !process.env.SWEET_SEARCH_DISABLE_MEM_GUARD &&
+      rss > memCapBytes * memGuardHighWatermark
+    ) {
+      batchSize = Math.max(1, Math.floor(batchSize / 2));
+    }
+
+    const batch = indexed.slice(i, i + batchSize);
+    const batchTexts = batch.map(b => b.text);
+    const batchEmbeddings = await callLocalModel(batchTexts, { maxLength });
+
+    for (let j = 0; j < batch.length; j++) {
+      embeddings[batch[j].origIdx] = batchEmbeddings[j];
+    }
+    i += batchSize;
+  }
+
   return embeddings;
 }
 
@@ -736,7 +1067,92 @@ async function callLocalModel(texts) {
 const queryCache = new LRUCache(EMBEDDING_CONFIG.cache?.maxSize || 1000);
 const vocabulary = new Vocabulary(DB_PATHS.vocabulary);
 
-// Rate limiters per provider
+// =============================================================================
+// TIME-WINDOW RATE LIMITER (V2: concurrent-safe for Promise.all)
+// =============================================================================
+
+/**
+ * Sliding-window rate limiter with mutex serialization for concurrent safety.
+ * Unlike the basic RateLimiter, this is safe under Promise.all — a chained
+ * promise mutex prevents multiple callers from stampeding past the check.
+ *
+ * Time-window based with no release() needed: permits expire as timestamps
+ * fall out of the 60-second window. No deadlock risk.
+ *
+ * Optional per-second microburst smoother reduces provider-side 429 spikes.
+ */
+class TimeWindowRateLimiter {
+  constructor(maxRPM, options = {}) {
+    this.windowMs = 60_000;
+    this.maxInWindow = maxRPM;
+    this.timestamps = [];
+
+    // Optional microburst smoother
+    this.secondWindowMs = 1_000;
+    this.maxPerSecond = options.maxPerSecond ?? (Math.floor(maxRPM / 60) + 1);
+    this.secondTimestamps = [];
+
+    this._mutex = Promise.resolve();
+  }
+
+  async acquire() {
+    const prev = this._mutex;
+    let releaseMutex;
+    this._mutex = new Promise(resolve => { releaseMutex = resolve; });
+    await prev;
+
+    try {
+      while (this._atMinuteCapacity() || this._atSecondCapacity()) {
+        const waitMs = this._nextWaitMs();
+        await new Promise(r => setTimeout(r, waitMs));
+        this._pruneWindows();
+      }
+
+      const now = Date.now();
+      this.timestamps.push(now);
+      this.secondTimestamps.push(now);
+    } finally {
+      releaseMutex();
+    }
+  }
+
+  _atMinuteCapacity() {
+    this._pruneWindows();
+    return this.timestamps.length >= this.maxInWindow;
+  }
+
+  _atSecondCapacity() {
+    this._pruneWindows();
+    return this.secondTimestamps.length >= this.maxPerSecond;
+  }
+
+  _nextWaitMs() {
+    const now = Date.now();
+    const minuteWait = this.timestamps.length > 0
+      ? Math.max(1, this.windowMs - (now - this.timestamps[0]))
+      : 1;
+    const secondWait = this.secondTimestamps.length > 0
+      ? Math.max(1, this.secondWindowMs - (now - this.secondTimestamps[0]))
+      : 1;
+    return Math.min(minuteWait, secondWait);
+  }
+
+  _pruneWindows() {
+    const now = Date.now();
+    const minuteCutoff = now - this.windowMs;
+    const secondCutoff = now - this.secondWindowMs;
+    while (this.timestamps.length > 0 && this.timestamps[0] < minuteCutoff) {
+      this.timestamps.shift();
+    }
+    while (this.secondTimestamps.length > 0 && this.secondTimestamps[0] < secondCutoff) {
+      this.secondTimestamps.shift();
+    }
+  }
+}
+
+export { TimeWindowRateLimiter };
+
+// Rate limiters per provider (legacy sequential)
 const rateLimiters = {
   voyage: new RateLimiter(
     EMBEDDING_PROVIDERS.voyage.rateLimit?.requestsPerMinute || 300,
@@ -744,6 +1160,19 @@ const rateLimiters = {
   ),
   mistral: new RateLimiter(EMBEDDING_PROVIDERS.mistral.rateLimit?.requestsPerMinute || 100),
   jina: new RateLimiter(EMBEDDING_PROVIDERS.jina.rateLimit?.requestsPerMinute || 500),
+};
+
+// Concurrent-safe rate limiters for V2 batch processing
+const timeWindowLimiters = {
+  voyage: new TimeWindowRateLimiter(
+    EMBEDDING_PROVIDERS.voyage.rateLimit?.requestsPerMinute || 300
+  ),
+  mistral: new TimeWindowRateLimiter(
+    EMBEDDING_PROVIDERS.mistral.rateLimit?.requestsPerMinute || 100
+  ),
+  jina: new TimeWindowRateLimiter(
+    EMBEDDING_PROVIDERS.jina.rateLimit?.requestsPerMinute || 500
+  ),
 };
 
 let cacheStats = { hits: 0, misses: 0, vocabularyHits: 0, apiCalls: 0 };
@@ -771,11 +1200,12 @@ function applyLocalQueryPrefix(text) {
 async function generateEmbedding(text, provider = EMBEDDING_CONFIG.provider, isQuery = false) {
   // Apply query prefix when calling local model (direct or fallback from remote)
   const localText = isQuery ? applyLocalQueryPrefix(text) : text;
+  const localMaxLength = isQuery ? QUERY_MAX_LENGTH : INDEXING_MAX_LENGTH;
 
   const config = EMBEDDING_PROVIDERS[provider];
   if (!config || !config.enabled) {
     // Fallback to local
-    return (await callLocalModel([localText]))[0];
+    return (await callLocalModel([localText], { maxLength: localMaxLength }))[0];
   }
 
   // Circuit breaker check for remote providers
@@ -783,7 +1213,7 @@ async function generateEmbedding(text, provider = EMBEDDING_CONFIG.provider, isQ
     const circuitCheck = circuitBreaker.canRequest();
     if (!circuitCheck.allowed) {
       console.warn(`[embedding-service] Circuit breaker blocked request: ${circuitCheck.reason}, falling back to local`);
-      return (await callLocalModel([localText]))[0];
+      return (await callLocalModel([localText], { maxLength: localMaxLength }))[0];
     }
   }
 
@@ -810,7 +1240,7 @@ async function generateEmbedding(text, provider = EMBEDDING_CONFIG.provider, isQ
           result = (await callJinaAPI([text], config, { task: isQuery ? 'retrieval.query' : 'retrieval.passage' }))[0];
           break;
         case 'local':
-          result = (await callLocalModel([localText]))[0];
+          result = (await callLocalModel([localText], { maxLength: localMaxLength }))[0];
           break;
         default:
           throw new Error(`Unknown provider: ${provider}`);
@@ -838,54 +1268,89 @@ async function generateEmbedding(text, provider = EMBEDDING_CONFIG.provider, isQ
 
   // Fallback to local on failure
   console.warn(`All attempts failed for ${provider}, falling back to local model`);
-  return (await callLocalModel([localText]))[0];
+  return (await callLocalModel([localText], { maxLength: localMaxLength }))[0];
 }
 
 /**
- * Generate embeddings for multiple texts (batched)
+ * Generate embeddings for multiple texts (batched).
+ *
+ * V1: Accepts options.outputDimension and options.inputType for server-side
+ *     Matryoshka truncation (Voyage, Mistral, Jina).
+ * V2: Sends up to options.concurrency (default 4) batches in parallel,
+ *     using TimeWindowRateLimiter for concurrent safety.
+ *
+ * @param {string[]} texts - Texts to embed
+ * @param {string} provider - Provider name
+ * @param {object} options - { outputDimension, inputType, concurrency }
  */
-async function generateEmbeddings(texts, provider = EMBEDDING_CONFIG.provider) {
+async function generateEmbeddings(texts, provider = EMBEDDING_CONFIG.provider, options = {}) {
   const config = EMBEDDING_PROVIDERS[provider];
   if (!config || !config.enabled) {
-    return callLocalModel(texts);
+    return callLocalModelBucketed(texts);
   }
 
   const batchSize = config.batchSize || 32;
+  const concurrency = options.concurrency || 4;
+
+  // Build provider-specific API options (V1: server-side Matryoshka)
+  const apiOptions = {};
+  if (options.outputDimension) {
+    apiOptions.outputDimension = options.outputDimension;
+  }
+  if (options.inputType) {
+    apiOptions.inputType = options.inputType;
+  }
+
+  // Split texts into batches
+  const batches = [];
+  for (let i = 0; i < texts.length; i += batchSize) {
+    batches.push(texts.slice(i, i + batchSize));
+  }
+
+  // V2: Concurrent batch processing for remote providers
   const results = [];
 
-  for (let i = 0; i < texts.length; i += batchSize) {
-    const batch = texts.slice(i, i + batchSize);
-
-    if (rateLimiters[provider]) {
-      const totalChars = batch.reduce((sum, t) => sum + t.length, 0);
-      await rateLimiters[provider].waitForSlot(totalChars);
+  /**
+   * Embed a single batch through the appropriate provider API.
+   * Uses TimeWindowRateLimiter for concurrent safety under Promise.all.
+   */
+  async function embedBatch(batch) {
+    // V2: Use time-window limiter for concurrent safety
+    if (timeWindowLimiters[provider]) {
+      await timeWindowLimiters[provider].acquire();
     }
 
     cacheStats.apiCalls++;
 
-    try {
-      let batchEmbeddings;
-      switch (provider) {
-        case 'voyage':
-          batchEmbeddings = await callVoyageAPI(batch, config);
-          break;
-        case 'mistral':
-          batchEmbeddings = await callMistralAPI(batch, config);
-          break;
-        case 'jina':
-          batchEmbeddings = await callJinaAPI(batch, config);
-          break;
-        case 'local':
-          batchEmbeddings = await callLocalModel(batch);
-          break;
-        default:
-          throw new Error(`Unknown provider: ${provider}`);
-      }
-      results.push(...batchEmbeddings);
-    } catch (err) {
-      console.warn(`Batch embedding failed: ${err.message}, falling back to local`);
-      const localEmbeddings = await callLocalModel(batch);
-      results.push(...localEmbeddings);
+    switch (provider) {
+      case 'voyage':
+        return callVoyageAPI(batch, config, apiOptions);
+      case 'mistral':
+        return callMistralAPI(batch, config, apiOptions);
+      case 'jina':
+        return callJinaAPI(batch, config, apiOptions);
+      case 'local':
+        return callLocalModelBucketed(batch);
+      default:
+        throw new Error(`Unknown provider: ${provider}`);
+    }
+  }
+
+  // Process batches in concurrent groups
+  for (let i = 0; i < batches.length; i += concurrency) {
+    const concurrent = batches.slice(i, i + concurrency);
+    const batchResults = await Promise.all(
+      concurrent.map(async (batch) => {
+        try {
+          return await embedBatch(batch);
+        } catch (err) {
+          console.warn(`Batch embedding failed: ${err.message}, falling back to local`);
+          return callLocalModelBucketed(batch);
+        }
+      })
+    );
+    for (const batchResult of batchResults) {
+      results.push(...batchResult);
     }
   }
 
@@ -1639,4 +2104,13 @@ export default {
   getFrequentQueries,
   generateEmbedding,
   generateEmbeddings,
+  // L0/L2: Batch inference constants and bucketed entry point
+  INDEXING_MAX_LENGTH,
+  QUERY_MAX_LENGTH,
+  callLocalModelBucketed,
+  // V2: Concurrent-safe rate limiter
+  TimeWindowRateLimiter,
+  // V2b: Compression internals (exported for testing)
+  looksLikeJson,
+  _providerCompressionSupport,
 };
