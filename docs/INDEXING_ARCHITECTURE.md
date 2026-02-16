@@ -149,10 +149,35 @@ Saves the ORT-optimized graph to `~/.cache/sweet-search/` with a filename that
 encodes the ORT version and model hash. Subsequent runs skip the optimization pass
 entirely. Upgrading ORT or changing the model automatically invalidates the cache.
 
-### OpenVINO (Opt-in)
+### OpenVINO (Intel Auto Mode)
 
-Set `SWEET_SEARCH_USE_OPENVINO=1` on Intel CPUs. Falls back to CPU-only if the
-OpenVINO execution provider fails to load.
+OpenVINO is auto-enabled on Intel CPUs by default only when OpenVINO provider
+artifacts are present in the ONNX runtime bundle. Otherwise it stays on CPU-only.
+
+Overrides:
+- `SWEET_SEARCH_USE_OPENVINO=0` disables OpenVINO even on Intel
+- `SWEET_SEARCH_USE_OPENVINO=1` explicitly requests OpenVINO (still Intel-gated
+  and provider-availability gated)
+
+### L7: Direct ORT Session Bypass
+
+`runDirectOrt()` in `embedding-local-model.js:329`
+
+Bypasses the HuggingFace pipeline wrapper (`pick()`, `validateInputs()`, `replaceTensors()`,
+HF Tensor wrapping/unwrapping) by extracting the raw ORT session from
+`pipeline.model.sessions['model']` and calling `session.run()` directly with `.ort_tensor`
+references from the tokenizer output. For models expecting `token_type_ids` (not CodeRankEmbed),
+a zeros `BigInt64Array` is synthesized matching the `input_ids` shape.
+
+Output is bit-identical to the pipeline path: same ORT session, same input tensors, same
+`extractPooledEmbeddings()` pooling and L2 normalization.
+
+Safety:
+- Env kill switch: `SWEET_SEARCH_DIRECT_ORT=0` disables (default: enabled)
+- Init-time probe: logs `[L7] Direct ORT: inputs=[...], outputs=[...]` on model load
+- Runtime try/catch: first failure sets sticky `directOrtFailed` flag, all subsequent calls
+  fall back to `pipeline.model()` for the process lifetime
+- `unloadLocalModel()` resets the failure flag
 
 ---
 
@@ -346,7 +371,7 @@ Rules:
 | `SWEET_SEARCH_QUERY_MAX_LENGTH` | 512 | Token cap for query embeddings |
 | `SWEET_SEARCH_BATCHING_SAFETY` | 1.15 | Safety multiplier for token estimation |
 | `SWEET_SEARCH_DISABLE_MEM_GUARD` | (unset) | Disable RSS-based batch size reduction |
-| `SWEET_SEARCH_USE_OPENVINO` | (unset) | Set to `1` to enable OpenVINO on Intel CPUs |
+| `SWEET_SEARCH_USE_OPENVINO` | (auto) | OpenVINO auto-enabled on Intel only when provider is available; set `0` to disable |
 | `SWEET_SEARCH_INDEXING_OUTPUT_DIMENSION` | (HNSW dim) | Server-side Matryoshka dimension |
 | `SWEET_SEARCH_EMBEDDING_CONCURRENCY` | 4 | Max concurrent API batch requests |
 
@@ -406,9 +431,6 @@ regrouping logic.
 These were analyzed but deferred because Phases 1-3 brought indexing from ~30 minutes
 (chunks only) / ~8.5 hours (with ColBERT) to well under 5 minutes:
 
-- **L7: Direct ORT session** - bypass HuggingFace pipeline overhead entirely. Would also
-  fix the `max_length` forwarding issue cleanly. Promote if pipeline overhead exceeds 15%
-  of embedding wall time.
 - **P3: Worker threads** - multi-process parallelism with N model instances. Each worker
   loads ~200 MB. Only pursue if single-process throughput is insufficient.
 - **P1: Pre-tokenization cache** - cache tokenized tensors by content hash. Most useful

@@ -4,7 +4,7 @@
  */
 
 import crypto from 'crypto';
-import { existsSync, readFileSync, mkdirSync } from 'fs';
+import { existsSync, readFileSync, mkdirSync, readdirSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { EMBEDDING_PROVIDERS } from './config.js';
@@ -21,13 +21,71 @@ export const QUERY_MAX_LENGTH = parseInt(process.env.SWEET_SEARCH_QUERY_MAX_LENG
 // =============================================================================
 
 export function bestIntraOpThreads() {
-  const physicalCores = Math.ceil(os.cpus().length / 2);
-  return Math.min(Math.max(1, physicalCores - 1), 8);
+  const logicalCores = Math.max(1, os.cpus().length);
+  const override = Number.parseInt(process.env.SWEET_SEARCH_INTRA_OP_THREADS ?? '', 10);
+  if (Number.isFinite(override) && override > 0) {
+    return Math.min(override, logicalCores);
+  }
+
+  const physicalCores = Math.max(1, Math.ceil(logicalCores / 2));
+  const baseline = Math.min(Math.max(1, physicalCores - 1), 8);
+
+  // Avoid single-thread inference bottlenecks on small but multi-core machines.
+  if (logicalCores >= 4) return Math.max(2, baseline);
+  return baseline;
 }
 
 export function isIntelCpu() {
   const model = os.cpus()?.[0]?.model || '';
   return model.toLowerCase().includes('intel');
+}
+
+let openVinoProviderAvailable = null;
+
+export function isOpenVinoProviderAvailable() {
+  if (openVinoProviderAvailable !== null) return openVinoProviderAvailable;
+
+  const candidateRoots = [
+    path.resolve('node_modules/onnxruntime-node/bin'),
+    path.resolve('node_modules/@huggingface/transformers/node_modules/onnxruntime-node/bin'),
+  ];
+
+  const stack = candidateRoots.filter(existsSync);
+  while (stack.length > 0) {
+    const current = stack.pop();
+    try {
+      const entries = readdirSync(current, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(current, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(fullPath);
+          continue;
+        }
+        if (entry.name.toLowerCase().includes('openvino')) {
+          openVinoProviderAvailable = true;
+          return true;
+        }
+      }
+    } catch {
+      // Ignore unreadable directories.
+    }
+  }
+
+  openVinoProviderAvailable = false;
+  return false;
+}
+
+export function shouldUseOpenVino(openVinoAvailable = isOpenVinoProviderAvailable()) {
+  const raw = (process.env.SWEET_SEARCH_USE_OPENVINO ?? '').trim().toLowerCase();
+  if (raw === '0' || raw === 'false' || raw === 'off') return false;
+  if (!isIntelCpu()) return false;
+
+  const autoMode = raw === '' || raw === 'auto';
+  const explicitOn = raw === '1' || raw === 'true' || raw === 'on';
+  if (!autoMode && !explicitOn) return false;
+
+  // Enable only when the runtime bundle exposes OpenVINO provider artifacts.
+  return openVinoAvailable;
 }
 
 /**
@@ -70,7 +128,7 @@ export function buildLocalSessionOptions() {
     optimizedModelFilePath: getOptimizedModelPath(),
   };
 
-  if (process.env.SWEET_SEARCH_USE_OPENVINO === '1' && isIntelCpu()) {
+  if (shouldUseOpenVino()) {
     sessionOptions.executionProviders = [
       { name: 'OpenVINOExecutionProvider' },
       'CPUExecutionProvider',
@@ -203,6 +261,9 @@ let localPipeline = null;
 let isLoadingLocal = false;
 let loadPromise = null;
 
+const DIRECT_ORT_ENABLED = (process.env.SWEET_SEARCH_DIRECT_ORT ?? '1') !== '0';
+let directOrtFailed = false;
+
 export async function getLocalPipeline() {
   if (localPipeline) return localPipeline;
   if (isLoadingLocal && loadPromise) return loadPromise;
@@ -219,6 +280,7 @@ export async function getLocalPipeline() {
     }
 
     const sessionOptions = buildLocalSessionOptions();
+    let backend = sessionOptions.executionProviders ? 'openvino+cpu' : 'cpu';
 
     try {
       localPipeline = await createLocalPipeline(pipeline, sessionOptions);
@@ -228,23 +290,61 @@ export async function getLocalPipeline() {
         const cpuOnlyOptions = buildLocalSessionOptions();
         delete cpuOnlyOptions.executionProviders;
         localPipeline = await createLocalPipeline(pipeline, cpuOnlyOptions);
+        backend = 'cpu';
       } else {
         throw err;
       }
     }
 
     await localPipeline(["warmup"], { pooling: 'mean', normalize: true, truncation: true, max_length: 64 });
+
+    if (DIRECT_ORT_ENABLED) {
+      const ortSession = localPipeline.model?.sessions?.['model'];
+      if (ortSession?.run && ortSession?.inputNames) {
+        console.log(`[L7] Direct ORT: inputs=[${ortSession.inputNames}], outputs=[${ortSession.outputNames}]`);
+      }
+    }
+
     const optimizedPath = getOptimizedModelPath();
     if (!existsSync(optimizedPath)) {
       console.warn(`[L3b] Optimized model file was not materialized at ${optimizedPath}. Session options may not be fully forwarded.`);
     }
 
-    console.log(`Local model loaded in ${Date.now() - start}ms (threads: ${bestIntraOpThreads()}, sessionKey: ${localPipeline.__sweetSessionKey || 'unknown'})`);
+    console.log(`Local model loaded in ${Date.now() - start}ms (threads: ${bestIntraOpThreads()}, backend: ${backend}, sessionKey: ${localPipeline.__sweetSessionKey || 'unknown'})`);
     isLoadingLocal = false;
     return localPipeline;
   })();
 
   return loadPromise;
+}
+
+// =============================================================================
+// L7: DIRECT ORT SESSION BYPASS
+// =============================================================================
+
+/**
+ * L7: Direct ORT session bypass — skip HuggingFace pipeline wrapper overhead.
+ * Uses the same ORT session and tokenized inputs for bit-identical output.
+ */
+async function runDirectOrt(pipeline, modelInputs) {
+  const session = pipeline.model.sessions['model'];
+  const feed = {};
+
+  for (const name of session.inputNames) {
+    const hfTensor = modelInputs[name];
+    if (hfTensor?.ort_tensor) {
+      feed[name] = hfTensor.ort_tensor;
+    } else if (name === 'token_type_ids') {
+      // Replicate encoderForward's zeros_like(input_ids) for models expecting token_type_ids
+      const ref = modelInputs.input_ids.ort_tensor;
+      const size = ref.dims.reduce((a, b) => a * b, 1);
+      feed[name] = new ref.constructor('int64', new BigInt64Array(size), ref.dims);
+    } else {
+      throw new Error(`[L7] Missing model input: ${name}`);
+    }
+  }
+
+  return session.run(feed);
 }
 
 // =============================================================================
@@ -258,15 +358,28 @@ export async function getLocalPipeline() {
 export async function callLocalModel(texts, options = {}) {
   if (!texts || texts.length === 0) return [];
 
-  const model = await getLocalPipeline();
+  const pipeline = await getLocalPipeline();
   const { maxLength = INDEXING_MAX_LENGTH } = options;
 
-  const modelInputs = model.tokenizer(texts, {
+  const modelInputs = pipeline.tokenizer(texts, {
     padding: true,
     truncation: true,
     max_length: maxLength,
   });
-  const outputs = await model.model(modelInputs);
+
+  let outputs;
+  if (DIRECT_ORT_ENABLED && !directOrtFailed && pipeline.model?.sessions?.['model']) {
+    try {
+      outputs = await runDirectOrt(pipeline, modelInputs);
+    } catch (err) {
+      directOrtFailed = true;
+      console.warn(`[L7] Direct ORT failed, falling back to pipeline: ${err.message}`);
+      outputs = await pipeline.model(modelInputs);
+    }
+  } else {
+    outputs = await pipeline.model(modelInputs);
+  }
+
   const pooled = extractPooledEmbeddings(outputs, modelInputs.attention_mask, true);
   const { data, batchSize, dim } = pooled;
 
@@ -368,6 +481,7 @@ export function unloadLocalModel() {
   localPipeline = null;
   isLoadingLocal = false;
   loadPromise = null;
+  directOrtFailed = false;
 }
 
 export function isLocalModelLoaded() {

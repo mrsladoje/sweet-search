@@ -151,10 +151,13 @@ const timer = () => { const s = performance.now(); return () => Math.round(perfo
 async function warmLocalModel() {
     const t = timer();
     try {
-        const { EMBEDDING_PROVIDERS } = await importFromSearch('core/config.js');
+        const [{ getLocalPipeline }, { EMBEDDING_PROVIDERS }] = await Promise.all([
+            importFromSearch('core/embedding-local-model.js'),
+            importFromSearch('core/config.js'),
+        ]);
         const modelName = EMBEDDING_PROVIDERS.local?.model || 'jalipalo/CodeRankEmbed-onnx';
-        const { pipeline } = await import('@xenova/transformers');
-        await pipeline('feature-extraction', modelName, { quantized: true });
+        // Use the exact production loader/session options path.
+        await getLocalPipeline();
         return { c: 'local-model', ok: true, ms: t(), model: modelName };
     } catch (e) { return { c: 'local-model', ok: false, ms: t(), err: e.message }; }
 }
