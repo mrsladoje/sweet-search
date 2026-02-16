@@ -35,7 +35,7 @@ import fg from 'fast-glob';
 import { DB_PATHS, FILE_PATTERNS, EMBEDDING_CONFIG, HNSW_CONFIG, PROJECT_ROOT, setQuietMode as setGlobalQuietMode, isQuietMode as isGlobalQuietMode, loadProjectConfig, AGENTIC_GITIGNORE_ALLOWLIST } from './config.js';
 import { GraphExtractor, createGraphSchema, insertGraph } from './graph-extractor.js';
 import { resolveRelationshipTargets } from './relationship-resolver.js';
-import { HNSWIndex } from './hnsw-index.js';
+import { HNSWIndex, requireNativeAnn as requireNativeAnnBackend } from './hnsw-index.js';
 import { ColBERTIndex } from './colbert-index.js';
 import { getChangedFiles, updateState, getStats as getIncrementalStats } from './incremental-tracker.js';
 import { getEmbeddings, truncateForHNSW, warmup as warmupEmbeddings, getModelInfo } from './embedding-service.js';
@@ -1813,6 +1813,7 @@ function parseArgs(argv) {
     forceArtifacts: args.includes('--force-artifacts'),
     help: args.includes('--help') || args.includes('-h'),
     noColbert: args.includes('--no-colbert'),
+    requireNativeAnn: args.includes('--require-native-ann'),
     sqliteFastMode: args.includes('--sqlite-fast') || process.env.SWEET_SEARCH_SQLITE_FAST_MODE === '1',
   };
 }
@@ -1827,7 +1828,7 @@ async function main() {
   // Parse arguments FIRST (before any logging) to handle --quiet
   const { dryRun, graphOnly, vectorsOnly, fullReindex, showStats, resolveOnly,
           skipSummaryRegen, filesFromStdin, quiet, forceArtifacts, help,
-          noColbert, sqliteFastMode } = parseArgs();
+          noColbert, requireNativeAnn, sqliteFastMode } = parseArgs();
 
   // Set quiet mode before any logging
   if (quiet) {
@@ -1868,6 +1869,8 @@ Options:
   --force-artifacts    Force binary HNSW + Int8 artifact rebuild regardless of change count.
                        Default: skip rebuild if <${ARTIFACT_THRESHOLDS.skipThreshold} files changed (Float HNSW serves search).
   --no-colbert     Skip ColBERT index build (faster indexing when ColBERT not needed)
+  --require-native-ann  Fail fast if native ANN backend (usearch) is unavailable.
+                   Prevents accidental fallback to slower JS ANN in benchmarks.
   --sqlite-fast    Use unsafe SQLite pragmas for faster builds (benchmarking only).
                    Can also be set via SWEET_SEARCH_SQLITE_FAST_MODE=1.
                    WARNING: Data may be lost on crash - do NOT use in production.
@@ -1944,6 +1947,10 @@ Output:
     }
 
     return;
+  }
+
+  if (requireNativeAnn) {
+    await requireNativeAnnBackend();
   }
 
   try {

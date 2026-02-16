@@ -52,6 +52,7 @@ function parseArgs() {
     requireNativeAnn: false,
     indexMode: 'single',
     sqliteFast: false,
+    sqliteSafe: false,
   };
   for (const arg of args) {
     if (arg.startsWith('--benchmarks=')) opts.benchmarks = arg.split('=')[1];
@@ -69,6 +70,7 @@ function parseArgs() {
     else if (arg === '--require-native-ann') opts.requireNativeAnn = true;
     else if (arg.startsWith('--index-mode=')) opts.indexMode = arg.split('=')[1];
     else if (arg === '--sqlite-fast') opts.sqliteFast = true;
+    else if (arg === '--sqlite-safe') opts.sqliteSafe = true;
   }
   return opts;
 }
@@ -79,8 +81,8 @@ function parseArgs() {
 function resolveProfile(opts) {
   const profiles = {
     fast: { buildColBERT: false, useColBERT: false, sqliteFast: true, indexMode: 'single' },
-    balanced: { buildColBERT: false, useColBERT: false, sqliteFast: false, indexMode: 'single' },
-    full: { buildColBERT: true, useColBERT: true, sqliteFast: false, indexMode: 'single' },
+    balanced: { buildColBERT: false, useColBERT: false, sqliteFast: true, indexMode: 'single' },
+    full: { buildColBERT: true, useColBERT: true, sqliteFast: true, indexMode: 'single' },
   };
 
   const profile = profiles[opts.profile] || profiles.balanced;
@@ -88,7 +90,7 @@ function resolveProfile(opts) {
   return {
     buildColBERT: opts.buildColBERT ?? profile.buildColBERT,
     useColBERT: opts.useColBERT ?? profile.useColBERT,
-    sqliteFast: opts.sqliteFast || profile.sqliteFast,
+    sqliteFast: opts.sqliteSafe ? false : (opts.sqliteFast || profile.sqliteFast),
     indexMode: opts.indexMode || profile.indexMode,
     requireNativeAnn: opts.requireNativeAnn,
   };
@@ -115,6 +117,7 @@ Options:
   --require-native-ann  Fail if native ANN backend (usearch) is unavailable
   --index-mode=MODE   Indexing mode (single|two-phase) [default: single]
   --sqlite-fast       Enable fast SQLite pragmas for benchmarking
+  --sqlite-safe       Force durable SQLite mode (disables fast pragmas)
   --help, -h          Show help`);
 }
 
@@ -326,7 +329,10 @@ async function main() {
       profile: opts.profile, profileOpts,
       benchmarks: allResults.map(r => ({
         dataset: r.dataset, queryCount: r.queryCount,
-        totalTimeMs: r.totalTime, metrics: r.metrics, perLanguage: r.perLanguage,
+        totalTimeMs: r.totalTime,
+        indexTimings: r.indexTimings || null,
+        metrics: r.metrics,
+        perLanguage: r.perLanguage,
       })),
     }, null, 2));
     console.log(`\n  Combined results saved to: ${combinedFile}`);
@@ -337,10 +343,12 @@ async function main() {
   process.exit(0);
 }
 
-main().catch(err => {
-  console.error(`\nFatal error: ${err.message}`);
-  console.error(err.stack);
-  process.exit(1);
-});
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(err => {
+    console.error(`\nFatal error: ${err.message}`);
+    console.error(err.stack);
+    process.exit(1);
+  });
+}
 
 export { resolveProfile };
