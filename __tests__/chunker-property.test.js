@@ -18,7 +18,7 @@ import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import { ASTChunker } from '../ast-chunker.js';
 
-const chunker = new ASTChunker({ projectRoot: '/test' });
+const chunker = new ASTChunker({ projectRoot: '/test', useTreeSitter: false });
 
 // ---------------------------------------------------------------------------
 // Arbitrary generators

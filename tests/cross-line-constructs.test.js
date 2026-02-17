@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { ASTChunker } from '../ast-chunker.js';
 
 describe('Cross-line construct handling', () => {
-  const chunker = new ASTChunker({ projectRoot: '/test' });
+  const chunker = new ASTChunker({ projectRoot: '/test', useTreeSitter: false });
 
   describe('_matchBoundary with cross-line joining', () => {
     const jsPatterns = {

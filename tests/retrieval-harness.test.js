@@ -50,12 +50,12 @@ describe('RetrievalHarness', () => {
       expect(harness.recallAtK([], 5)).toBe(0);
     });
 
-    it('handles multiple relevant docs per query', () => {
+    it('handles multiple relevant docs per query (proportion-based)', () => {
       const results = [
         { retrieved: ['a', 'b', 'c'], relevant: ['b', 'd'] },
       ];
-      // 'b' is in top-3, so this query is a hit
-      expect(harness.recallAtK(results, 3)).toBe(1.0);
+      // 1 of 2 relevant docs found in top-3 → 0.5
+      expect(harness.recallAtK(results, 3)).toBe(0.5);
     });
   });
 

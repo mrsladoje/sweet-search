@@ -40,12 +40,32 @@ export class RetrievalHarness {
   }
 
   /**
-   * Compute Recall@k: fraction of queries where at least one relevant doc is in top-k.
+   * Compute Recall@k: average fraction of relevant docs found in top-k.
+   * For each query, recall = (# relevant found in top-k) / (# total relevant).
+   * Equivalent to Success@k when each query has exactly 1 relevant doc.
    * @param {Array<{retrieved: string[], relevant: string[]}>} results
    * @param {number} k
    * @returns {number}
    */
   recallAtK(results, k) {
+    if (results.length === 0) return 0;
+    let totalRecall = 0;
+    for (const r of results) {
+      if (r.relevant.length === 0) continue;
+      const topK = new Set(r.retrieved.slice(0, k));
+      const found = r.relevant.filter(doc => topK.has(doc)).length;
+      totalRecall += found / r.relevant.length;
+    }
+    return totalRecall / results.length;
+  }
+
+  /**
+   * Compute Success@k (hit rate): fraction of queries with at least one relevant doc in top-k.
+   * @param {Array<{retrieved: string[], relevant: string[]}>} results
+   * @param {number} k
+   * @returns {number}
+   */
+  successAtK(results, k) {
     if (results.length === 0) return 0;
     let hits = 0;
     for (const r of results) {
@@ -195,11 +215,15 @@ export class RetrievalHarness {
 
     lines.push('Metrics:');
     for (const k of this.k_values) {
-      lines.push(`  Recall@${k}:  ${(metrics[`recall@${k}`] * 100).toFixed(1)}%`);
+      if (metrics[`recall@${k}`] !== undefined) {
+        lines.push(`  Recall@${k}:  ${(metrics[`recall@${k}`] * 100).toFixed(1)}%`);
+      }
     }
     lines.push(`  MRR:        ${(metrics.mrr * 100).toFixed(1)}%`);
     for (const k of this.k_values) {
-      lines.push(`  NDCG@${k}:   ${(metrics[`ndcg@${k}`] * 100).toFixed(1)}%`);
+      if (metrics[`ndcg@${k}`] !== undefined) {
+        lines.push(`  NDCG@${k}:   ${(metrics[`ndcg@${k}`] * 100).toFixed(1)}%`);
+      }
     }
     lines.push(`  Queries:    ${metrics.totalQueries}`);
 
@@ -235,8 +259,12 @@ export class RetrievalHarness {
 
     const metrics = {};
     for (const k of this.k_values) {
-      metrics[`recall@${k}`] = agg[`recall_at_${k}`] || 0;
-      metrics[`ndcg@${k}`] = agg[`ndcg_at_${k}`] || 0;
+      if (agg[`recall_at_${k}`] !== undefined) {
+        metrics[`recall@${k}`] = agg[`recall_at_${k}`];
+      }
+      if (agg[`ndcg_at_${k}`] !== undefined) {
+        metrics[`ndcg@${k}`] = agg[`ndcg_at_${k}`];
+      }
     }
     metrics.mrr = agg.mrr_at_10 || 0;
     metrics.totalQueries = data.queryCount || 0;
@@ -283,7 +311,7 @@ Options:
 
   const harness = new RetrievalHarness({
     resultsDir,
-    baselineFile: baselineOverride || path.join(resultsDir, `${dataset}_retrieval_baseline.json`),
+    baselineFile: baselineOverride || path.join(resultsDir, `${dataset}_baseline.json`),
   });
 
   if (flags.has('--import')) {
