@@ -100,7 +100,8 @@
     "vitest": "^4.0.16"
   },
   "optionalDependencies": {
-    "@huggingface/transformers": "^3.8.1"
+    "@huggingface/transformers": "^3.8.1",
+    "web-tree-sitter": "^0.25.10"
   },
   "engines": {
     "node": ">=18.0.0"

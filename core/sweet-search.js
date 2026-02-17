@@ -20,7 +20,7 @@ import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 
-import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, COLBERT_CONFIG, EMBEDDING_CONFIG, shouldUseLocalReranker } from './config.js';
+import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, COLBERT_CONFIG, EMBEDDING_CONFIG, SEISMIC_CONFIG, shouldUseLocalReranker } from './config.js';
 import { getGlobalLocalReranker } from './local-reranker.js';
 import { QueryRouter, routeQuery } from './query-router.js';
 import { GraphSearch } from './graph-search.js';
@@ -43,8 +43,18 @@ import {
 // Phase 4: Translation Fallback
 import { TranslationFallback, queryNeedsTranslation } from '../translation/index.js';
 
+// P1.3: 1-Hop Graph Expansion
+import { expandResults } from './graph-expansion.js';
+
 // Phase 1 Fixes: MMR Diversification (replaces flood control)
 import { applyMMR, shouldApplyMMR, getLambdaForIntent, MMR_CONFIG } from './mmr.js';
+
+// P2.3: Quality-Aware Chunk Weighting
+import { QualityScorer, setRepoMapModule } from './quality-scorer.js';
+import { pageRank, loadGraph, buildAdjacency } from './repo-map.js';
+
+// P2.2: Intent-Aware Retrieval Routing
+import { classifyIntent, getIntentPolicy } from './intent-router.js';
 
 // =============================================================================
 // SWEET SEARCH CLASS
@@ -82,6 +92,14 @@ export class SweetSearch {
     // Phase 4: Translation Fallback configuration
     this.enableTranslationFallback = options.enableTranslationFallback ?? true;
     this.translationFallback = new TranslationFallback(options.translation || {});
+
+    // SEISMIC sparse vector path (lazy-loaded when SEISMIC_CONFIG.enabled)
+    this._seismicIndex = null;
+
+    // P2.3: Quality-Aware Chunk Weighting (opt-in, default disabled)
+    this.qualityWeight = options.qualityWeight ?? 0;
+    setRepoMapModule({ pageRank, loadGraph, buildAdjacency });
+    this._qualityScorer = null; // lazy init
 
     this.initialized = false;
   }
@@ -166,7 +184,26 @@ export class SweetSearch {
   }
 
   /**
-   * Main search entry point
+   * Main search entry point.
+   *
+   * @param {string} query - The search query
+   * @param {Object} [options]
+   * @param {number} [options.k=10] - Number of results to return
+   * @param {string} [options.mode='auto'] - Search mode: 'auto' | 'structural' | 'lexical' | 'semantic' | 'hybrid'
+   * @param {boolean} [options.expand=true] - Enable lexical expansion
+   * @param {boolean} [options.rerank=true] - Enable reranking
+   * @param {string} [options.fusion='cc'] - Fusion method: 'cc' (Convex Combination) | 'rrf' (Reciprocal Rank Fusion)
+   * @param {boolean} [options.useColBERT] - Enable ColBERT reranking (defaults to instance setting)
+   * @param {string} [options.translate='auto'] - Translation fallback: 'auto' | 'true' | 'false'
+   * @param {string} [options.graphExpand='none'] - Graph expansion mode: 'none' | '1hop' | '2hop'
+   * @param {Object} [options.graphExpandOptions={}] - Options passed to expandResults (maxExpanded, tokenBudget, edgeTypes)
+   * @param {boolean} [options.adaptiveHop2=false] - Enable adaptive 2-hop expansion with priority-based
+   *   edge ranking, token budget tracking, and score decay modulation. When true and graphExpand is '2hop',
+   *   the second hop uses edge priority scores (extends/implements > imports > calls > uses) and
+   *   per-hop token budgets instead of naive expansion. Reranking boosts same-file and structural entities.
+   * @param {string} [options.intent='auto'] - Intent classification: 'auto' | specific intent string
+   * @param {number} [options.qualityWeight] - Quality weight for blending (0 = disabled, 0-1 = blend weight)
+   * @returns {Promise<{results: Array, stats: Object}>}
    */
   async search(query, options = {}) {
     await this.init();
@@ -179,10 +216,38 @@ export class SweetSearch {
       fusion = 'cc',  // 'cc' (Convex Combination) or 'rrf' (Reciprocal Rank Fusion)
       useColBERT = this.useColBERT,  // Per-request override, defaults to instance setting
       translate = 'auto',  // Phase 4: Translation fallback ('auto', 'true', 'false')
+      graphExpand = 'none',  // P1.3: 'none' | '1hop' | '2hop'
+      graphExpandOptions = {},  // P1.3: { maxExpanded, tokenBudget, edgeTypes }
+      adaptiveHop2 = false,  // P2.5: Enable adaptive 2-hop with priority ranking & token budgeting
+      intent = 'auto',  // P2.2: 'auto' | specific intent string
+      qualityWeight = this.qualityWeight,  // P2.3: 0 = disabled, 0-1 = blend weight
     } = options;
 
     const start = Date.now();
     const stats = { query };
+
+    // P2.2: Intent-aware retrieval routing
+    let effectiveGraphExpand = graphExpand;
+    let intentResult;
+    let intentPolicy = null;
+    if (intent === 'auto') {
+      intentResult = classifyIntent(query);
+    } else if (intent && intent !== 'none') {
+      intentResult = { intent, confidence: 1, scores: {} };
+    }
+    if (intentResult) {
+      intentPolicy = getIntentPolicy(intentResult.intent);
+      stats.intent = {
+        classified: intentResult.intent,
+        confidence: intentResult.confidence,
+        expandMode: intentPolicy.expandMode,
+        maxResults: intentPolicy.maxResults,
+      };
+      // Apply policy: override graphExpand if caller left it at default
+      if (graphExpand === 'none' && intentPolicy.expandMode !== 'none') {
+        effectiveGraphExpand = intentPolicy.expandMode;
+      }
+    }
 
     // Step 1: Route query (P9 FIX: compute once, pass to sub-methods)
     const routing = mode === 'auto' ? routeQuery(query) : null;
@@ -278,6 +343,56 @@ export class SweetSearch {
     }
 
     // =========================================================================
+    // SEISMIC Sparse Vector Path (gated by SEISMIC_CONFIG.enabled)
+    // =========================================================================
+    // Prerequisites: sparse encoder (SPLADE or code-specific) not yet available.
+    // When enabled, will provide third retrieval pathway for learned sparse embeddings.
+    // See docs/AST_OPTIMIZATIONS.md #12 for architecture and integration plan.
+    if (SEISMIC_CONFIG.enabled && this._seismicIndex) {
+      try {
+        const sparseStart = Date.now();
+        // TODO: Generate sparse query embedding via encoder
+        // const sparseQuery = await sparseEncoder.encode(query);
+        // const sparseResults = this._seismicIndex.query(sparseQuery, k);
+        // results = reciprocalRankFuse(results, sparseResults, SEISMIC_CONFIG.weight);
+        stats.seismic = { enabled: true, latency_ms: Date.now() - sparseStart, status: 'awaiting_sparse_encoder' };
+      } catch (err) {
+        stats.seismic = { enabled: true, error: err.message };
+      }
+    }
+
+    // =========================================================================
+    // P1.3: Graph Expansion (post-processing)
+    // =========================================================================
+    if (effectiveGraphExpand !== 'none' && this.hasGraphIndex && Array.isArray(results) && results.length > 0) {
+      try {
+        await this.graphSearch.init();
+        const graphDb = this.graphSearch.db;
+        if (graphDb) {
+          const expandStart = Date.now();
+          // P2.2: Pass intent-derived edgeTypes to graph expansion
+          const intentEdgeTypes = intentPolicy?.edgeTypePriority
+            ? new Set(intentPolicy.edgeTypePriority)
+            : undefined;
+          results = expandResults(graphDb, results, {
+            expandMode: effectiveGraphExpand,
+            adaptiveHop2,
+            ...(intentEdgeTypes && !graphExpandOptions.edgeTypes ? { edgeTypes: intentEdgeTypes } : {}),
+            ...graphExpandOptions,
+          });
+          stats.graphExpansion = {
+            mode: effectiveGraphExpand,
+            latency_ms: Date.now() - expandStart,
+            total: results.length,
+          };
+        }
+      } catch (err) {
+        this.log(`GraphExpansion: ${err.message}`);
+        stats.graphExpansion = { mode: effectiveGraphExpand, error: err.message };
+      }
+    }
+
+    // =========================================================================
     // Phase 4: Translation Fallback
     // =========================================================================
     // Trigger conditions:
@@ -338,6 +453,81 @@ export class SweetSearch {
         }
       } else {
         stats.translation = { triggered: false };
+      }
+    }
+
+    // =========================================================================
+    // P2.3: Quality-Aware Chunk Weighting (opt-in)
+    // =========================================================================
+    if (qualityWeight > 0 && Array.isArray(results) && results.length > 0) {
+      const qStart = Date.now();
+      if (!this._qualityScorer) {
+        this._qualityScorer = new QualityScorer({
+          dbPath: this.graphSearch?.dbPath || DB_PATHS.codeGraph,
+        });
+      }
+      results = this._qualityScorer.scoreResults(results);
+
+      // Blend: final = (1 - w) * original + w * quality
+      const w = Math.max(0, Math.min(1, qualityWeight));
+      for (const r of results) {
+        const orig = r.score ?? r.hybridScore ?? r.rerankScore ?? 0;
+        r._preQualityScore = orig;
+        r.score = (1 - w) * orig + w * r.quality_score;
+      }
+      results.sort((a, b) => b.score - a.score);
+
+      // Per-result quality factor logging (top 5)
+      if (this.verbose) {
+        for (const r of results.slice(0, 5)) {
+          this.log(`Quality[${r.metadata?.symbol || r.name || '?'}]: score=${r.quality_score?.toFixed(3)} factors=${JSON.stringify(r.quality_factors)}`);
+        }
+      }
+
+      stats.qualityScoring = {
+        weight: w,
+        latency_ms: Date.now() - qStart,
+        topFactors: results.slice(0, 5).map(r => ({
+          symbol: r.metadata?.symbol || r.name,
+          score: r.quality_score,
+          factors: r.quality_factors,
+        })),
+      };
+    }
+
+    // =========================================================================
+    // P2.2: Apply intent policy — chunkTypeBoosts, maxResults, rerankerWeight
+    // =========================================================================
+    if (intentPolicy && Array.isArray(results) && results.length > 0) {
+      // (a) chunkTypeBoosts: Multiply result scores by per-chunk-type boost factors
+      if (intentPolicy.chunkTypeBoosts && Object.keys(intentPolicy.chunkTypeBoosts).length > 0) {
+        for (const r of results) {
+          const chunkType = r.metadata?.chunk_type || r.chunk_type || r.type;
+          const boost = intentPolicy.chunkTypeBoosts[chunkType];
+          if (boost && boost !== 1.0) {
+            r._preIntentBoostScore = r.score;
+            r.score = (r.score || 0) * boost;
+          }
+        }
+        results.sort((a, b) => (b.score || 0) - (a.score || 0));
+      }
+
+      // (b) rerankerWeight: Modulate rerankScore blending when present
+      if (intentPolicy.rerankerWeight != null) {
+        const rw = intentPolicy.rerankerWeight;
+        for (const r of results) {
+          if (r.rerankScore != null && r.originalScore != null) {
+            r._preIntentRerankScore = r.score;
+            r.score = rw * r.rerankScore + (1 - rw) * r.originalScore;
+          }
+        }
+        results.sort((a, b) => (b.score || 0) - (a.score || 0));
+      }
+
+      // (c) maxResults: Cap output size per intent policy
+      if (intentPolicy.maxResults) {
+        const effectiveK = Math.min(k, intentPolicy.maxResults);
+        results = results.slice(0, effectiveK);
       }
     }
 

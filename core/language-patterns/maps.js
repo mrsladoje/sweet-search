@@ -1,7 +1,9 @@
 export const EXTENSION_MAP = {
-  // JavaScript / TypeScript (TS treated as JS — same patterns suffice for entity extraction)
+  // JavaScript
   '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
-  '.ts': 'javascript', '.tsx': 'javascript',
+
+  // TypeScript
+  '.ts': 'typescript', '.tsx': 'typescript',
 
   // Java
   '.java': 'java',
