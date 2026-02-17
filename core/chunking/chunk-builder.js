@@ -48,9 +48,21 @@ function buildDocChunk(content, filePath, language, chunkType, symbol, lineStart
   const relativePath = projectRoot ? path.relative(projectRoot, filePath) : filePath;
   const { name: projectTag } = detectProjectBoundary(filePath, projectRoot || process.cwd());
 
+  // Build contextualized embedding text for document chunks
+  const embeddingParts = [];
+  embeddingParts.push(`# ${relativePath}`);
+  if (symbol && symbol !== 'unknown') {
+    embeddingParts.push(`# ${chunkType}: ${symbol}`);
+  }
+  if (language && language !== 'text') {
+    embeddingParts.push(`# Language: ${language}`);
+  }
+  embeddingParts.push(trimmed);
+
   return {
     text: trimmed,
     content: trimmed,
+    embedding_text: embeddingParts.join('\n').slice(0, 2000),
     metadata: {
       type: 'document',
       file: path.basename(filePath),

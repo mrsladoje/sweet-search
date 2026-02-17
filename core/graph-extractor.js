@@ -15,6 +15,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { GRAPH_CONFIG, DB_PATHS } from './config.js';
 import { getLanguageByPath } from './language-patterns.js';
+import { getTreeSitterProvider } from './tree-sitter-provider.js';
 
 // Schema version - increment when schema changes require full reindex
 // Users should run `/index-codebase --full` after upgrading
@@ -141,6 +142,7 @@ export class GraphExtractor {
     this.currentFile = null;
     this.currentClass = null;
     this.packageName = '';
+    this._useTreeSitter = options?.useTreeSitter !== false;
     this.warnOnPatternDrop = options?.warnOnPatternDrop || false;
     this.maxRegexLineLength = options?.maxRegexLineLength || 4000;
     this.debugCounters = {
@@ -169,6 +171,33 @@ export class GraphExtractor {
 
     if (!langInfo) {
       return { entities: [], relationships: [] };
+    }
+
+    // Try tree-sitter extraction first (more accurate than regex)
+    if (this._useTreeSitter) {
+      try {
+        const provider = getTreeSitterProvider();
+        if (await provider.isAvailable() && provider.hasLanguage(langInfo.id)) {
+          const symbols = await provider.extractSymbols(content, langInfo.id);
+          if (symbols && symbols.length > 0) {
+            // Convert tree-sitter symbols to graph entities format
+            const entities = symbols.map(sym => ({
+              id: this._makeEntityId(filePath, sym.name, sym.type, sym.startLine),
+              file_path: filePath,
+              type: sym.type,
+              name: sym.name,
+              signature: sym.signature || null,
+              start_line: sym.startLine + 1,  // tree-sitter is 0-indexed
+              end_line: sym.endLine + 1,
+            }));
+            // Still extract relationships with regex (tree-sitter only gives definitions)
+            const relationships = this._extractRelationships(content, lines, filePath, langInfo, entities);
+            return { entities, relationships };
+          }
+        }
+      } catch {
+        // Fall through to regex extraction
+      }
     }
 
     // Specialized extractors for languages with complex logic
@@ -1008,6 +1037,111 @@ export class GraphExtractor {
       .split(',')
       .map((entry) => entry.trim().replace(/\s+as\s+\w+$/i, '').trim())
       .filter(Boolean);
+  }
+
+  /**
+   * Generate a deterministic entity ID for tree-sitter symbols.
+   * Uses the same hash pattern as makeId() for consistency.
+   */
+  _makeEntityId(filePath, name, type, startLine) {
+    const relativePath = this.projectRoot ? path.relative(this.projectRoot, filePath) : filePath;
+    const key = `${relativePath}:${type}:${name}:${startLine}`;
+    return createHash('sha256').update(key).digest('hex').slice(0, 16);
+  }
+
+  /**
+   * Extract relationships using regex patterns from langInfo.graph.
+   * Used by tree-sitter path where entities come from AST but relationships
+   * still need regex (tree-sitter tags.scm only gives definitions).
+   */
+  _extractRelationships(content, lines, filePath, langInfo, entities) {
+    const relationships = [];
+    if (!langInfo.graph) return relationships;
+
+    const { graph, id: language } = langInfo;
+    const {
+      relationshipPatterns,
+      methodCallPattern,
+      methodCallPrefilter,
+    } = this.getGenericPatternPlan(language, graph);
+    const skipCallObjects = new Set(graph.skipCallObjects || []);
+    const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
+
+    // Build scope lookup from tree-sitter entities for source_id attribution
+    const sortedEntities = [...entities].sort((a, b) => a.start_line - b.start_line);
+
+    const findScopeEntity = (lineNum) => {
+      for (let i = sortedEntities.length - 1; i >= 0; i--) {
+        const e = sortedEntities[i];
+        if (e.start_line <= lineNum && e.end_line >= lineNum) {
+          return e.id;
+        }
+      }
+      return null;
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trimStart();
+      const lineNum = i + 1;
+
+      if (trimmed.length > this.maxRegexLineLength) continue;
+
+      const sourceEntityId = findScopeEntity(lineNum);
+
+      // Method calls
+      if (methodCallPattern && (!methodCallPrefilter || methodCallPrefilter(trimmed))) {
+        methodCallPattern.lastIndex = 0;
+        let m;
+        while ((m = methodCallPattern.exec(trimmed)) !== null) {
+          const obj = m[1];
+          const method = m[2];
+          if (!obj || !method) {
+            if (m[0] === '') methodCallPattern.lastIndex++;
+            continue;
+          }
+          if (skipCallObjects.has(obj)) {
+            if (m[0] === '') methodCallPattern.lastIndex++;
+            continue;
+          }
+          relationships.push({
+            source_id: sourceEntityId,
+            target_id: null,
+            target_name: `${obj}.${method}`,
+            type: 'calls',
+            weight: GRAPH_CONFIG.relationshipWeights.calls,
+            context_line: lineNum,
+          });
+          if (m[0] === '') methodCallPattern.lastIndex++;
+        }
+      }
+
+      // Other relationships (imports, extends, etc.)
+      for (const { type: relType, pattern, prefilter } of relationshipPatterns) {
+        if (relType === 'methodCall') continue;
+        if (prefilter && !prefilter(trimmed)) continue;
+
+        const match = trimmed.match(pattern);
+        if (match && match[1]) {
+          const mappedType = GENERIC_RELATIONSHIP_MAPPING[relType] || 'uses';
+          const weight = GRAPH_CONFIG.relationshipWeights[mappedType] || 1.0;
+          const rawTarget = typeof match[1] === 'string' ? match[1].trim() : match[1];
+          const targets = this.expandRelationshipTargets(relType, rawTarget);
+          for (const target of targets) {
+            relationships.push({
+              source_id: sourceEntityId || fileEntityId,
+              target_id: null,
+              target_name: target,
+              type: mappedType,
+              weight,
+              context_line: lineNum,
+            });
+          }
+        }
+      }
+    }
+
+    return relationships;
   }
 
   _recordEmptyCapture(kind, language, patternType, lineNum, line) {

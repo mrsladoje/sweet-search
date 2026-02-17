@@ -27,6 +27,7 @@ export class ASTChunker {
     this.projectRoot = options?.projectRoot || process.cwd();
     this.warnOnPatternDrop = options?.warnOnPatternDrop || false;
     this.maxRegexLineLength = options?.maxRegexLineLength || 4000;
+    this._useTreeSitter = options?.useTreeSitter !== false; // enabled by default
     this.debugCounters = {
       emptyCapture: {
         boundary: 0,
@@ -52,18 +53,56 @@ export class ASTChunker {
       return this.parseGenericFile(filePath, content);
     }
 
+    // Try tree-sitter WASM first for supported languages
+    if (this._useTreeSitter) {
+      try {
+        const tsChunks = await this._parseWithTreeSitter(filePath, content, langInfo);
+        if (tsChunks) return tsChunks;
+      } catch {
+        // Tree-sitter failed silently, fall back to regex
+      }
+    }
+
+    // Fallback: regex-based parsing
     const { id: language, chunker: patterns, indentBased, endKeyword, comment, blockKeywords } = langInfo;
 
+    const multiLine = !!langInfo.multiLinePatterns;
+
     if (indentBased) {
-      return this.parseIndentBasedFile(filePath, content, language, patterns);
+      return this.parseIndentBasedFile(filePath, content, language, patterns, multiLine);
     }
     if (endKeyword) {
-      return this.parseEndKeywordFile(filePath, content, language, patterns, endKeyword, blockKeywords);
+      return this.parseEndKeywordFile(filePath, content, language, patterns, endKeyword, blockKeywords, multiLine);
     }
-    return this.parseBraceBasedFile(filePath, content, language, patterns, comment);
+    return this.parseBraceBasedFile(filePath, content, language, patterns, comment, multiLine);
   }
 
-  parseBraceBasedFile(filePath, content, language, patterns, comment) {
+  /** Attempt tree-sitter WASM parse, returns chunks array or null */
+  async _parseWithTreeSitter(filePath, content, langInfo) {
+    const { getTreeSitterProvider } = await import('./core/tree-sitter-provider.js');
+    const provider = getTreeSitterProvider();
+
+    if (!await provider.isAvailable()) return null;
+    if (!provider.hasLanguage(langInfo.id)) return null;
+
+    const tsChunks = await provider.parseFileToChunks(content, langInfo.id);
+    if (!tsChunks || tsChunks.length === 0) return null;
+
+    return tsChunks.map(chunk =>
+      this.buildChunk(
+        chunk.text, filePath, langInfo.id, chunk.type, chunk.name,
+        chunk.startLine, chunk.endLine,
+        {
+          chunkId: chunk.chunkId,
+          parentChunkId: chunk.parentChunkId,
+          parentSymbol: chunk.parentSymbol,
+          parentType: chunk.parentType,
+        }
+      )
+    );
+  }
+
+  parseBraceBasedFile(filePath, content, language, patterns, comment, multiLine) {
     const chunks = [];
     const lines = content.split('\n');
     const hasTemplateInterpolation = (language === 'javascript');
@@ -80,7 +119,7 @@ export class ASTChunker {
       braceDepth += (stripped.match(/{/g) || []).length;
       braceDepth -= (stripped.match(/}/g) || []).length;
 
-      const { name: matched, type: matchType } = this._matchBoundary(line, patterns, language);
+      const { name: matched, type: matchType, joinedLines } = this._matchBoundary(line, patterns, language, lines, i, multiLine);
 
       if ((matched && currentChunk) || (braceDepth === 0 && currentChunk)) {
         const chunkContent = lines.slice(chunkStart, i + 1).join('\n');
@@ -94,14 +133,24 @@ export class ASTChunker {
       if (matched) {
         currentChunk = { type: matchType, name: matched };
         chunkStart = i;
+        // Skip lines consumed by cross-line joining so they aren't double-processed
+        if (joinedLines > 0) {
+          // Count braces on the skipped lines to keep depth accurate
+          for (let s = 1; s <= joinedLines; s++) {
+            const skippedStripped = this._stripNonCode(lines[i + s], stripState, comment, hasTemplateInterpolation);
+            braceDepth += (skippedStripped.match(/{/g) || []).length;
+            braceDepth -= (skippedStripped.match(/}/g) || []).length;
+          }
+          i += joinedLines;
+        }
       }
     }
 
     this._pushFinalChunk(chunks, lines, chunkStart, filePath, language, currentChunk);
-    return chunks;
+    return this._splitOversizedRegexChunks(chunks, filePath, language, patterns, comment);
   }
 
-  parseIndentBasedFile(filePath, content, language, patterns) {
+  parseIndentBasedFile(filePath, content, language, patterns, multiLine) {
     const chunks = [];
     const lines = content.split('\n');
 
@@ -126,7 +175,7 @@ export class ASTChunker {
         chunkStart = i;
       }
 
-      const { name: matched, type: matchType } = this._matchBoundary(line, patterns, language);
+      const { name: matched, type: matchType, joinedLines } = this._matchBoundary(line, patterns, language, lines, i, multiLine);
 
       if (matched) {
         // Close prior chunk if any non-empty content
@@ -139,14 +188,18 @@ export class ASTChunker {
         currentChunk = { type: matchType, name: matched };
         chunkStart = i;
         chunkIndent = indent;
+        // Skip lines consumed by cross-line joining so they aren't double-processed
+        if (joinedLines > 0) {
+          i += joinedLines;
+        }
       }
     }
 
     this._pushFinalChunk(chunks, lines, chunkStart, filePath, language, currentChunk);
-    return chunks;
+    return this._splitOversizedRegexChunks(chunks, filePath, language, patterns, null);
   }
 
-  parseEndKeywordFile(filePath, content, language, patterns, endKeyword, blockKeywords) {
+  parseEndKeywordFile(filePath, content, language, patterns, endKeyword, blockKeywords, multiLine) {
     const chunks = [];
     const lines = content.split('\n');
     const endRe = new RegExp(`^\\s*${endKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
@@ -163,7 +216,7 @@ export class ASTChunker {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
-      const { name: matched, type: matchType } = this._matchBoundary(line, patterns, language);
+      const { name: matched, type: matchType, joinedLines } = this._matchBoundary(line, patterns, language, lines, i, multiLine);
 
       if (matched) {
         if (currentChunk && depth === 0) {
@@ -177,6 +230,10 @@ export class ASTChunker {
           chunkStart = i;
         }
         depth++;
+        // Skip lines consumed by cross-line joining so they aren't double-processed
+        if (joinedLines > 0) {
+          i += joinedLines;
+        }
       } else if (blockStartRe && blockStartRe.test(line)) {
         // Non-boundary block opener (if/case/while etc.) — track depth
         depth++;
@@ -196,15 +253,54 @@ export class ASTChunker {
     }
 
     this._pushFinalChunk(chunks, lines, chunkStart, filePath, language, currentChunk);
-    return chunks;
+    return this._splitOversizedRegexChunks(chunks, filePath, language, patterns, null);
   }
 
-  _matchBoundary(line, patterns, language) {
+  /**
+   * Match a line against boundary patterns. Optionally joins continuation lines
+   * (up to 3 ahead) when the line ends with `(`, `,`, or `\` and the language
+   * opts in via `multiLinePatterns`.
+   *
+   * @param {string} line - Current source line
+   * @param {object} patterns - Chunker boundary patterns
+   * @param {string} language - Language ID
+   * @param {string[]|null} [lines] - Full lines array (enables cross-line matching)
+   * @param {number|null} [lineIndex] - Current index into lines
+   * @param {boolean} [multiLine] - Whether cross-line matching is enabled for this language
+   * @returns {{ name: string|null, type: string|null, joinedLines?: number }}
+   */
+  _matchBoundary(line, patterns, language, lines, lineIndex, multiLine) {
     const trimmed = line.trimStart();
     if (trimmed.length > this.maxRegexLineLength) {
       this._recordLongLineSkip(language, trimmed.length);
       return { name: null, type: null };
     }
+
+    // Cross-line joining: if enabled and line ends with continuation char
+    if (multiLine && lines && lineIndex != null) {
+      const trimmedEnd = line.trimEnd();
+      const lastChar = trimmedEnd[trimmedEnd.length - 1];
+      if (lastChar === '(' || lastChar === ',' || lastChar === '\\') {
+        const maxPeek = Math.min(3, lines.length - lineIndex - 1);
+        if (maxPeek > 0) {
+          let joined = line;
+          for (let p = 1; p <= maxPeek; p++) {
+            joined += ' ' + lines[lineIndex + p].trim();
+          }
+          const joinedTrimmed = joined.trimStart();
+          if (joinedTrimmed.length <= this.maxRegexLineLength) {
+            for (const [type, pattern] of Object.entries(patterns)) {
+              const match = joinedTrimmed.match(pattern);
+              if (match && match[1]) {
+                return { name: match[1], type, joinedLines: maxPeek };
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Single-line match (original behavior)
     for (const [type, pattern] of Object.entries(patterns)) {
       const match = trimmed.match(pattern);
       if (match) {
@@ -368,6 +464,119 @@ export class ASTChunker {
     }
   }
 
+  /**
+   * Post-process regex-produced chunks: split oversized ones at depth boundaries.
+   * Approximates cAST recursive split for the regex fallback tier.
+   *
+   * @param {Array} chunks - Chunks from brace/indent/end-keyword parsing
+   * @param {string} filePath - Source file path
+   * @param {string} language - Language ID
+   * @param {object} patterns - Chunker boundary patterns for sub-boundary detection
+   * @param {object} comment - Comment syntax config
+   * @returns {Array} Chunks with oversized ones split and parent_chunk_id linked
+   */
+  _splitOversizedRegexChunks(chunks, filePath, language, patterns, comment) {
+    const result = [];
+    let parentCounter = 0;
+
+    for (const chunk of chunks) {
+      if (chunk.content.length <= MAX_CHUNK_SIZE) {
+        result.push(chunk);
+        continue;
+      }
+
+      // Oversized chunk: attempt to split at sub-boundary points
+      parentCounter++;
+      const parentId = `rx-p${parentCounter}`;
+      const parentSymbol = chunk.metadata.symbol;
+      const parentType = chunk.metadata.chunk_type;
+      const lineStart = chunk.metadata.line_start - 1; // back to 0-indexed
+
+      const subChunks = this._splitAtSubBoundaries(
+        chunk.content, filePath, language, patterns, comment,
+        lineStart, parentId, parentSymbol, parentType
+      );
+
+      if (subChunks.length > 1) {
+        result.push(...subChunks);
+      } else {
+        // Couldn't split further — emit as-is
+        result.push(chunk);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Split oversized content at sub-boundary points (brace depth transitions,
+   * boundary pattern matches within the chunk).
+   */
+  _splitAtSubBoundaries(content, filePath, language, patterns, comment, lineOffset, parentId, parentSymbol, parentType) {
+    const lines = content.split('\n');
+    const subChunks = [];
+    const hierarchyInfo = {
+      parentChunkId: parentId,
+      parentSymbol,
+      parentType,
+    };
+
+    let segStart = 0;
+    let segSize = 0;
+    let childCounter = 0;
+    let braceDepth = 0;
+    const stripState = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
+    const hasTemplateInterpolation = (language === 'javascript');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lineSize = line.length + 1; // +1 for newline
+      const stripped = this._stripNonCode(line, stripState, comment, hasTemplateInterpolation);
+
+      braceDepth += (stripped.match(/{/g) || []).length;
+      braceDepth -= (stripped.match(/}/g) || []).length;
+
+      // Check if this line is a sub-boundary (a new construct starting at depth >= 1)
+      const { name: matched, type: matchType } = this._matchBoundary(line, patterns, language, lines, i, false);
+      const isSubBoundary = matched && i > segStart;
+
+      // Split condition: at a sub-boundary, or accumulated segment exceeds max
+      if ((isSubBoundary || (segSize + lineSize > MAX_CHUNK_SIZE && segSize > 0)) && i > segStart) {
+        const segContent = lines.slice(segStart, i).join('\n');
+        if (segContent.trim().length > 30) {
+          childCounter++;
+          subChunks.push(this.buildChunk(
+            segContent, filePath, language,
+            subChunks.length === 0 ? parentSymbol || 'code' : (matchType || 'code'),
+            subChunks.length === 0 ? parentSymbol : (matched || 'unknown'),
+            lineOffset + segStart, lineOffset + i - 1,
+            { ...hierarchyInfo, chunkId: `${parentId}-${childCounter}` }
+          ));
+        }
+        segStart = i;
+        segSize = 0;
+      }
+
+      segSize += lineSize;
+    }
+
+    // Flush remaining
+    if (segStart < lines.length) {
+      const segContent = lines.slice(segStart).join('\n');
+      if (segContent.trim().length > 30) {
+        childCounter++;
+        subChunks.push(this.buildChunk(
+          segContent, filePath, language,
+          'code', 'unknown',
+          lineOffset + segStart, lineOffset + lines.length - 1,
+          { ...hierarchyInfo, chunkId: `${parentId}-${childCounter}` }
+        ));
+      }
+    }
+
+    return subChunks;
+  }
+
   parseGenericFile(filePath, content) {
     const lines = content.split('\n');
     const chunks = [];
@@ -390,26 +599,84 @@ export class ASTChunker {
     return chunks;
   }
 
-  buildChunk(content, filePath, language, chunkType, symbol, lineStart, lineEnd) {
+  buildChunk(content, filePath, language, chunkType, symbol, lineStart, lineEnd, hierarchyInfo) {
     const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
     const relativePath = this.projectRoot ? path.relative(this.projectRoot, filePath) : filePath;
+
+    // Build contextualized embedding text
+    const embeddingParts = [];
+    embeddingParts.push(`# ${relativePath}`);
+    if (hierarchyInfo?.parentSymbol) {
+      embeddingParts.push(`# Parent: ${hierarchyInfo.parentType} ${hierarchyInfo.parentSymbol}`);
+    }
+    if (symbol && symbol !== 'unknown') {
+      embeddingParts.push(`# ${chunkType}: ${symbol}`);
+    }
+    if (language && language !== 'text') {
+      embeddingParts.push(`# Language: ${language}`);
+    }
+    embeddingParts.push(content.trim());
+
+    const metadata = {
+      type: 'codebase',
+      file: path.basename(filePath),
+      path: relativePath,
+      language,
+      chunk_type: chunkType,
+      symbol,
+      line_start: lineStart + 1,
+      line_end: lineEnd + 1,
+      hash,
+    };
+
+    // Hierarchical chunk linking (cAST parent/child)
+    if (hierarchyInfo?.chunkId) {
+      metadata.chunk_id = hierarchyInfo.chunkId;
+    }
+    if (hierarchyInfo?.parentChunkId) {
+      metadata.parent_chunk_id = hierarchyInfo.parentChunkId;
+    }
+    if (hierarchyInfo?.parentSymbol) {
+      metadata.parent_symbol = hierarchyInfo.parentSymbol;
+      metadata.parent_type = hierarchyInfo.parentType;
+    }
 
     return {
       text: content.trim(),
       content: content.trim(),
-      metadata: {
-        type: 'codebase',
-        file: path.basename(filePath),
-        path: relativePath,
-        language,
-        chunk_type: chunkType,
-        symbol,
-        line_start: lineStart + 1,
-        line_end: lineEnd + 1,
-        hash
-      },
+      embedding_text: embeddingParts.join('\n').slice(0, 2000),
+      metadata,
       tags: ['codebase', language, this.inferProjectTag(filePath)]
     };
+  }
+
+  /**
+   * Enrich a chunk's embedding_text with scope chain and import information.
+   * Called after initial chunking when scope info is available.
+   */
+  static enrichEmbeddingText(chunk, scopeChain, imports) {
+    const parts = [];
+    parts.push(`# ${chunk.metadata.path}`);
+
+    if (scopeChain && scopeChain.length > 0) {
+      parts.push(`# Scope: ${scopeChain.join(' > ')}`);
+    }
+
+    if (chunk.metadata.symbol && chunk.metadata.symbol !== 'unknown') {
+      parts.push(`# Defines: ${chunk.metadata.chunk_type} ${chunk.metadata.symbol}`);
+    }
+
+    if (imports && imports.length > 0) {
+      parts.push(`# Uses: ${imports.slice(0, 5).join(', ')}`);
+    }
+
+    if (chunk.metadata.language && chunk.metadata.language !== 'text') {
+      parts.push(`# Language: ${chunk.metadata.language}`);
+    }
+
+    parts.push(chunk.content);
+    chunk.embedding_text = parts.join('\n').slice(0, 2000);
+    return chunk;
   }
 
   inferProjectTag(filePath) {

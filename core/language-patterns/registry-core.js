@@ -8,6 +8,7 @@ export const CORE_LANGUAGES = {
   javascript: {
     indentBased: false,
     endKeyword: null,
+    multiLinePatterns: true,
     comment: {
       line: "//",
       block: ["/*", "*/"],
@@ -33,10 +34,51 @@ export const CORE_LANGUAGES = {
       skipCallObjects: ["console", "Math", "JSON", "Object", "Array", "Promise", "process", "Buffer", "Date"],
     },
   },
+  // ─── TypeScript ────────────────────────────────────────────────────────────
+  typescript: {
+    indentBased: false,
+    endKeyword: null,
+    multiLinePatterns: true,
+    comment: {
+      line: "//",
+      block: ["/*", "*/"],
+    },
+    chunker: {
+      class: /(?:export\s+)?(?:abstract\s+)?class\s+(\w+)/,
+      function: /(?:export\s+)?(?:const|function|async\s+function)\s+(\w+)\s*[=:(]/,
+      component: /(?:export\s+)?(?:const|function)\s+([A-Z]\w+)\s*[=:]/,
+      arrow: /const\s+(\w+)\s*=\s*(?:async\s*)?\(/,
+      interface: /^(?:export\s+)?interface\s+(\w+)/,
+      typeAlias: /^(?:export\s+)?type\s+(\w+)\s*[=<]/,
+      enum: /^(?:export\s+)?(?:const\s+)?enum\s+(\w+)/,
+      namespace: /^(?:export\s+)?(?:declare\s+)?namespace\s+(\w+)/,
+    },
+    graph: {
+      entities: {
+        class: /(?:export\s+)?(?:abstract\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?(?:\s+implements\s+([\w,\s]+))?/,
+        function: /(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/,
+        arrowFunction: /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>/,
+        component: /(?:export\s+)?(?:const|function)\s+([A-Z]\w+)\s*[=:]/,
+        interface: /(?:export\s+)?interface\s+(\w+)(?:\s+extends\s+([\w,\s]+))?/,
+        typeAlias: /(?:export\s+)?type\s+(\w+)\s*[=<]/,
+        enum: /(?:export\s+)?(?:const\s+)?enum\s+(\w+)/,
+        namespace: /(?:export\s+)?(?:declare\s+)?namespace\s+(\w+)/,
+      },
+      relationships: {
+        extends: /class\s+\w+\s+extends\s+(\w+)/,
+        implements: /class\s+\w+(?:\s+extends\s+\w+)?\s+implements\s+([\w,\s]+)/,
+        import: /import\s+(?:\{([^}]+)\}|(\w+))\s+from\s+['"]([^'"]+)['"]/,
+        methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
+        decorator: /^@(\w+(?:\.\w+)*)/,
+      },
+      skipCallObjects: ["console", "Math", "JSON", "Object", "Array", "Promise", "process", "Buffer", "Date"],
+    },
+  },
   // ─── Java ──────────────────────────────────────────────────────────────────
   java: {
     indentBased: false,
     endKeyword: null,
+    multiLinePatterns: true,
     comment: {
       line: "//",
       block: ["/*", "*/"],
@@ -68,6 +110,7 @@ export const CORE_LANGUAGES = {
   python: {
     indentBased: true,
     endKeyword: null,
+    multiLinePatterns: true,
     comment: {
       line: "#",
       block: ["\"\"\"", "\"\"\""],

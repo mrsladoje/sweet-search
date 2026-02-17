@@ -30,7 +30,7 @@ import {
 describe('EXTENSION_MAP', () => {
   it('maps common extensions', () => {
     expect(EXTENSION_MAP['.js']).toBe('javascript');
-    expect(EXTENSION_MAP['.ts']).toBe('javascript');
+    expect(EXTENSION_MAP['.ts']).toBe('typescript');
     expect(EXTENSION_MAP['.java']).toBe('java');
     expect(EXTENSION_MAP['.py']).toBe('python');
     expect(EXTENSION_MAP['.go']).toBe('go');

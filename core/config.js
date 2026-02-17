@@ -865,6 +865,21 @@ export const BINARY_HNSW_CONFIG = {
 };
 
 // =============================================================================
+// SEISMIC SPARSE VECTOR INDEX CONFIGURATION
+// =============================================================================
+// SEISMIC: block-based inverted index with summary pruning for learned sparse
+// embeddings (SPLADE, etc.). Third retrieval pathway alongside FTS5 + HNSW.
+// Currently DISABLED: requires a code-specific sparse encoder (SPLADE or similar)
+// that is not yet available. See docs/AST_OPTIMIZATIONS.md #12 for full plan.
+
+export const SEISMIC_CONFIG = {
+  enabled: false,  // Disabled by default until sparse encoder is available
+  blockSize: 64,   // Postings per block in inverted lists
+  alpha: 0.8,      // Importance fraction (reserved for future scoring tuning)
+  weight: 0.2,     // Weight in reciprocal rank fusion (when enabled)
+};
+
+// =============================================================================
 // CODE GRAPH CONFIGURATION
 // =============================================================================
 
@@ -1427,6 +1442,7 @@ export default {
   COLBERT_CONFIG,
   HNSW_CONFIG,
   BINARY_HNSW_CONFIG,
+  SEISMIC_CONFIG,
   GRAPH_CONFIG,
   HCGS_CONFIG,
   ROUTING_CONFIG,
