@@ -3,6 +3,7 @@
  * Extracted from index-codebase-v21.js for file size compliance (<500 lines).
  */
 
+import { createHash } from 'crypto';
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
@@ -12,6 +13,89 @@ import { GraphExtractor, createGraphSchema, insertGraph } from './graph-extracto
 import { resolveRelationshipTargets } from './relationship-resolver.js';
 import { getEmbeddings, getModelInfo } from './embedding-service.js';
 import { configureJournalMode, atomicSwapDatabase, log, logProgress } from './indexer-utils.js';
+
+// =============================================================================
+// CHUNK ENRICHMENT — scope chains + imports from code-graph.db
+// =============================================================================
+
+/**
+ * Enrich chunks with scope chain and import context from the code graph.
+ * Queries entities (by file path + line range overlap) and import relationships,
+ * then calls ASTChunker.enrichEmbeddingText() to rebuild each chunk's embedding_text.
+ *
+ * @param {Array} chunks - All chunks from ASTChunker.parseFile()
+ * @param {typeof import('../ast-chunker.js').ASTChunker} ASTChunker - ASTChunker class (for static method)
+ * @returns {Promise<number>} Number of chunks enriched
+ */
+async function enrichChunksFromGraph(chunks, ASTChunker) {
+  const Database = (await import('better-sqlite3')).default;
+  const db = new Database(DB_PATHS.codeGraph, { readonly: true });
+
+  try {
+    // Pre-fetch entities and imports grouped by file
+    const entityStmt = db.prepare(
+      'SELECT type, name, start_line, end_line FROM entities WHERE file_path = ? ORDER BY start_line ASC'
+    );
+    const importStmt = db.prepare(
+      `SELECT DISTINCT target_name FROM relationships
+       WHERE source_id = ? AND type IN ('imports', 'plainImport')
+       ORDER BY target_name`
+    );
+
+    // Cache per-file lookups
+    const entityCache = new Map();
+    const importCache = new Map();
+
+    let enriched = 0;
+
+    for (const chunk of chunks) {
+      const filePath = chunk.file || chunk.metadata?.path;
+      if (!filePath) continue;
+
+      // Only enrich chunks with a known symbol (skip generic 'unknown' text chunks)
+      const symbol = chunk.metadata?.symbol;
+      if (!symbol || symbol === 'unknown') continue;
+
+      // Get entities for this file (cached)
+      if (!entityCache.has(filePath)) {
+        entityCache.set(filePath, entityStmt.all(filePath));
+      }
+      const entities = entityCache.get(filePath);
+
+      // Get imports for this file (cached)
+      if (!importCache.has(filePath)) {
+        // Replicate GraphExtractor.makeId(filePath, 'file', basename) to get the exact source_id
+        const key = `${filePath}:file:${path.basename(filePath)}`;
+        const fileEntityId = createHash('sha256').update(key).digest('hex').slice(0, 16);
+        const importRows = importStmt.all(fileEntityId);
+        importCache.set(filePath, importRows.map(r => r.target_name));
+      }
+      const imports = importCache.get(filePath);
+
+      // Build scope chain: find entities whose line range contains this chunk
+      const chunkStart = chunk.metadata?.line_start || 0;
+      const chunkEnd = chunk.metadata?.line_end || chunkStart;
+      const scopeChain = [];
+
+      for (const entity of entities) {
+        // Entity contains this chunk (or overlaps significantly)
+        if (entity.start_line <= chunkStart && entity.end_line >= chunkEnd) {
+          scopeChain.push(entity.name);
+        }
+      }
+
+      // Only enrich if we found scope or import context
+      if (scopeChain.length > 0 || imports.length > 0) {
+        ASTChunker.enrichEmbeddingText(chunk, scopeChain, imports);
+        enriched++;
+      }
+    }
+
+    return enriched;
+  } finally {
+    db.close();
+  }
+}
 
 // =============================================================================
 // PHASE 1: CODE GRAPH INDEXING
@@ -271,7 +355,7 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
   log(`Dimensions: ${modelInfo.dimension}d full → ${modelInfo.hnswDimension}d HNSW`, 'dim');
 
   const { ASTChunker } = await import('../ast-chunker.js');
-  const chunker = new ASTChunker();
+  const chunker = new ASTChunker({ projectRoot: PROJECT_ROOT });
 
   log('Parsing files into chunks...', 'yellow');
   const allChunks = [];
@@ -305,6 +389,18 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
   }
 
   log(`\n✓ Created ${allChunks.length} chunks`, 'green');
+
+  // Enrich chunks with scope chains and imports from code-graph.db
+  if (existsSync(DB_PATHS.codeGraph) && allChunks.length > 0) {
+    try {
+      const enriched = await enrichChunksFromGraph(allChunks, ASTChunker);
+      if (enriched > 0) {
+        log(`✓ Enriched ${enriched}/${allChunks.length} chunks with scope/import context`, 'green');
+      }
+    } catch (err) {
+      log(`⚠ Chunk enrichment skipped: ${err.message}`, 'yellow');
+    }
+  }
 
   log('Generating embeddings...', 'yellow');
 

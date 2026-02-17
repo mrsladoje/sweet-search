@@ -130,15 +130,18 @@ describe('tags.scm Symbol Extraction', () => {
     });
 
     it('returns null when language grammar cannot be loaded', async () => {
-      provider._available = true;
-      // loadLanguage will fail (no WASM files in test env)
-      const result = await provider.extractSymbols('const x = 1;', 'javascript');
+      const isolated = new TreeSitterProvider();
+      isolated._available = true;
+      // Force _findGrammarWasm to return null (simulates missing grammars)
+      isolated._findGrammarWasm = vi.fn().mockResolvedValue(null);
+      const result = await isolated.extractSymbols('const x = 1;', 'javascript');
       expect(result).toBeNull();
     });
 
     it('processes captures correctly with mocked tree-sitter', async () => {
       // Mock the full tree-sitter pipeline
       const mockNode = {
+        type: 'function_declaration',
         startPosition: { row: 0 },
         endPosition: { row: 2 },
         startIndex: 0,
@@ -152,14 +155,12 @@ describe('tags.scm Symbol Extraction', () => {
         { name: 'function.definition', node: mockNode },
       ];
 
-      const mockQuery = { captures: () => mockCaptures };
+      const mockQuery = { captures: () => mockCaptures, delete: vi.fn() };
       const mockTree = {
         rootNode: {},
         delete: vi.fn(),
       };
-      const mockLanguage = {
-        query: () => mockQuery,
-      };
+      const mockLanguage = {};
 
       provider._available = true;
       provider._parser = {
@@ -167,6 +168,7 @@ describe('tags.scm Symbol Extraction', () => {
         parse: () => mockTree,
       };
       provider._languages.set('javascript', mockLanguage);
+      provider._createQuery = vi.fn().mockResolvedValue(mockQuery);
 
       const content = 'function myFunc() {\n  return 1;\n}';
       const result = await provider.extractSymbols(content, 'javascript');
@@ -181,17 +183,20 @@ describe('tags.scm Symbol Extraction', () => {
         signature: 'function myFunc() {',
       });
       expect(mockTree.delete).toHaveBeenCalled();
+      expect(mockQuery.delete).toHaveBeenCalled();
     });
 
     it('handles multiple captures in a single file', async () => {
       const mockNodes = [
         {
+          type: 'class_declaration',
           startPosition: { row: 0 }, endPosition: { row: 2 },
           startIndex: 0, endIndex: 30,
           childForFieldName: (f) => f === 'name' ? { text: 'Foo' } : null,
           childCount: 0, child: () => null,
         },
         {
+          type: 'method_definition',
           startPosition: { row: 4 }, endPosition: { row: 6 },
           startIndex: 31, endIndex: 55,
           childForFieldName: (f) => f === 'name' ? { text: 'bar' } : null,
@@ -204,12 +209,13 @@ describe('tags.scm Symbol Extraction', () => {
         { name: 'method.definition', node: mockNodes[1] },
       ];
 
+      const mockQuery = { captures: () => mockCaptures, delete: vi.fn() };
       const mockTree = { rootNode: {}, delete: vi.fn() };
-      const mockLanguage = { query: () => ({ captures: () => mockCaptures }) };
 
       provider._available = true;
       provider._parser = { setLanguage: vi.fn(), parse: () => mockTree };
-      provider._languages.set('javascript', mockLanguage);
+      provider._languages.set('javascript', {});
+      provider._createQuery = vi.fn().mockResolvedValue(mockQuery);
 
       const content = 'class Foo {\n  constructor() {}\n}\n\n  bar() {\n    return 1;\n  }';
       const result = await provider.extractSymbols(content, 'javascript');
@@ -223,6 +229,7 @@ describe('tags.scm Symbol Extraction', () => {
 
     it('skips captures with unknown capture names', async () => {
       const mockNode = {
+        type: 'unknown_node',
         startPosition: { row: 0 }, endPosition: { row: 0 },
         startIndex: 0, endIndex: 10,
         childForFieldName: () => null, childCount: 0, child: () => null,
@@ -232,12 +239,13 @@ describe('tags.scm Symbol Extraction', () => {
         { name: 'unknown.capture', node: mockNode },
       ];
 
+      const mockQuery = { captures: () => mockCaptures, delete: vi.fn() };
       const mockTree = { rootNode: {}, delete: vi.fn() };
-      const mockLanguage = { query: () => ({ captures: () => mockCaptures }) };
 
       provider._available = true;
       provider._parser = { setLanguage: vi.fn(), parse: () => mockTree };
-      provider._languages.set('javascript', mockLanguage);
+      provider._languages.set('javascript', {});
+      provider._createQuery = vi.fn().mockResolvedValue(mockQuery);
 
       const result = await provider.extractSymbols('const x = 1;', 'javascript');
       expect(result).toEqual([]);
@@ -245,6 +253,7 @@ describe('tags.scm Symbol Extraction', () => {
 
     it('falls back to _extractNodeName when no name field', async () => {
       const mockNode = {
+        type: 'function_declaration',
         startPosition: { row: 0 }, endPosition: { row: 0 },
         startIndex: 0, endIndex: 20,
         childForFieldName: () => null,
@@ -253,12 +262,13 @@ describe('tags.scm Symbol Extraction', () => {
       };
 
       const mockCaptures = [{ name: 'function.definition', node: mockNode }];
+      const mockQuery = { captures: () => mockCaptures, delete: vi.fn() };
       const mockTree = { rootNode: {}, delete: vi.fn() };
-      const mockLanguage = { query: () => ({ captures: () => mockCaptures }) };
 
       provider._available = true;
       provider._parser = { setLanguage: vi.fn(), parse: () => mockTree };
-      provider._languages.set('javascript', mockLanguage);
+      provider._languages.set('javascript', {});
+      provider._createQuery = vi.fn().mockResolvedValue(mockQuery);
 
       const content = 'function fallbackName';
       const result = await provider.extractSymbols(content, 'javascript');
@@ -268,6 +278,7 @@ describe('tags.scm Symbol Extraction', () => {
 
     it('uses anonymous label when no name can be extracted', async () => {
       const mockNode = {
+        type: 'arrow_function',
         startPosition: { row: 0 }, endPosition: { row: 0 },
         startIndex: 0, endIndex: 10,
         childForFieldName: () => null,
@@ -275,12 +286,13 @@ describe('tags.scm Symbol Extraction', () => {
       };
 
       const mockCaptures = [{ name: 'arrow.definition', node: mockNode }];
+      const mockQuery = { captures: () => mockCaptures, delete: vi.fn() };
       const mockTree = { rootNode: {}, delete: vi.fn() };
-      const mockLanguage = { query: () => ({ captures: () => mockCaptures }) };
 
       provider._available = true;
       provider._parser = { setLanguage: vi.fn(), parse: () => mockTree };
-      provider._languages.set('javascript', mockLanguage);
+      provider._languages.set('javascript', {});
+      provider._createQuery = vi.fn().mockResolvedValue(mockQuery);
 
       const result = await provider.extractSymbols('() => 42', 'javascript');
       expect(result[0].name).toBe('<anonymous:arrowFunction>');
@@ -289,6 +301,7 @@ describe('tags.scm Symbol Extraction', () => {
     it('truncates long signatures to 120 chars', async () => {
       const longLine = 'function ' + 'a'.repeat(200) + '() {';
       const mockNode = {
+        type: 'function_declaration',
         startPosition: { row: 0 }, endPosition: { row: 0 },
         startIndex: 0, endIndex: longLine.length,
         childForFieldName: (f) => f === 'name' ? { text: 'longFunc' } : null,
@@ -296,12 +309,13 @@ describe('tags.scm Symbol Extraction', () => {
       };
 
       const mockCaptures = [{ name: 'function.definition', node: mockNode }];
+      const mockQuery = { captures: () => mockCaptures, delete: vi.fn() };
       const mockTree = { rootNode: {}, delete: vi.fn() };
-      const mockLanguage = { query: () => ({ captures: () => mockCaptures }) };
 
       provider._available = true;
       provider._parser = { setLanguage: vi.fn(), parse: () => mockTree };
-      provider._languages.set('javascript', mockLanguage);
+      provider._languages.set('javascript', {});
+      provider._createQuery = vi.fn().mockResolvedValue(mockQuery);
 
       const result = await provider.extractSymbols(longLine, 'javascript');
       expect(result[0].signature.length).toBe(120);
@@ -310,13 +324,11 @@ describe('tags.scm Symbol Extraction', () => {
 
     it('returns null when query creation throws', async () => {
       const mockTree = { rootNode: {}, delete: vi.fn() };
-      const mockLanguage = {
-        query: () => { throw new Error('Invalid query syntax'); },
-      };
 
       provider._available = true;
       provider._parser = { setLanguage: vi.fn(), parse: () => mockTree };
-      provider._languages.set('javascript', mockLanguage);
+      provider._languages.set('javascript', {});
+      provider._createQuery = vi.fn().mockRejectedValue(new Error('Invalid query syntax'));
 
       const result = await provider.extractSymbols('const x = 1;', 'javascript');
       expect(result).toBeNull();
@@ -324,15 +336,17 @@ describe('tags.scm Symbol Extraction', () => {
     });
 
     it('cleans up tree even on success', async () => {
+      const mockQuery = { captures: () => [], delete: vi.fn() };
       const mockTree = { rootNode: {}, delete: vi.fn() };
-      const mockLanguage = { query: () => ({ captures: () => [] }) };
 
       provider._available = true;
       provider._parser = { setLanguage: vi.fn(), parse: () => mockTree };
-      provider._languages.set('javascript', mockLanguage);
+      provider._languages.set('javascript', {});
+      provider._createQuery = vi.fn().mockResolvedValue(mockQuery);
 
       await provider.extractSymbols('const x = 1;', 'javascript');
       expect(mockTree.delete).toHaveBeenCalledOnce();
+      expect(mockQuery.delete).toHaveBeenCalledOnce();
     });
   });
 });

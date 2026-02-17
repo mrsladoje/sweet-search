@@ -63,7 +63,7 @@ describe('extractor/chunker optimization guards', () => {
   });
 
   it('skips regex extraction on excessively long lines', async () => {
-    const extractor = new GraphExtractor({ projectRoot: '/test', maxRegexLineLength: 40 });
+    const extractor = new GraphExtractor({ projectRoot: '/test', maxRegexLineLength: 40, useTreeSitter: false });
     const result = await extractor.extractFromFile('/test/app.py', [
       `import ${'module,'.repeat(20)}tail`,
       'def run():',
