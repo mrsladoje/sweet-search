@@ -94,6 +94,7 @@ export const OBJECT_ORIENTED_LANGUAGES = {
   kotlin: {
     indentBased: false,
     endKeyword: null,
+    multiLinePatterns: true,
     comment: {
       line: "//",
       block: ["/*", "*/"],

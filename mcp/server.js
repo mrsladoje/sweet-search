@@ -314,6 +314,13 @@ async function checkHealth() {
       }
     }
 
+    // SEISMIC sparse vector subsystem (separate from loop — uses 'disabled' semantics, not 'not_initialized')
+    const seismicEnabled = config.SEISMIC_CONFIG?.enabled ?? false;
+    subsystems['seismic'] = {
+      status: seismicEnabled ? 'ok' : 'not_initialized',
+      details: seismicEnabled ? '' : 'Disabled (awaiting sparse encoder)',
+    };
+
     try {
       if (existsSync(config.DB_PATHS.codeGraph)) {
         if (!_healthDb) {
@@ -358,6 +365,67 @@ server.registerTool('health', {
     content: [{ type: 'text', text }],
     structuredContent: structured,
   };
+});
+
+// ---------------------------------------------------------------------------
+// Repo Map output schema
+// ---------------------------------------------------------------------------
+
+const RepoMapOutputSchema = z.object({
+  text: z.string(),
+  entityCount: z.number().int(),
+  fileCount: z.number().int(),
+  totalEntities: z.number().int(),
+  pageRankTimeMs: z.number(),
+});
+
+server.registerTool('repo-map', {
+  description: 'Generate a PageRank-scored repository map showing the most important symbols in the codebase, fitted to a token budget. Useful for giving LLMs a compressed structural overview.',
+  inputSchema: {
+    tokenBudget: z.number().int().min(100).max(100000).default(1024)
+      .describe('Maximum token budget for the output (default: 1024)'),
+    focusFiles: z.array(z.string()).optional()
+      .describe('Boost importance of entities in these files'),
+    focusEntities: z.array(z.string()).optional()
+      .describe('Boost importance of entities with these names'),
+  },
+  outputSchema: RepoMapOutputSchema,
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+}, async ({ tokenBudget, focusFiles, focusEntities }) => {
+  try {
+    const { generateRepoMap } = await import(
+      path.join(__dirname, '..', 'core', 'repo-map.js')
+    );
+
+    const result = generateRepoMap({
+      tokenBudget,
+      focusFiles,
+      focusEntities,
+    });
+
+    const summary = `Repo map: ${result.entityCount}/${result.totalEntities} entities across ${result.fileCount} files (${result.pageRankTimeMs}ms)`;
+    const text = `${summary}\n\n${result.text}`;
+
+    return {
+      content: [{ type: 'text', text }],
+      structuredContent: result,
+    };
+  } catch (err) {
+    const safeMessage = (err.message || 'Repo map generation failed')
+      .split('\n')[0]
+      .replace(/\/[^\s:]+/g, '<path>')
+      .replace(/[A-Z]:\\[^\s:]+/gi, '<path>')
+      .replace(/\\\\[^\s:]+/g, '<path>');
+    return {
+      content: [{ type: 'text', text: `Repo map error: ${safeMessage}` }],
+      isError: true,
+    };
+  }
 });
 
 // ---------------------------------------------------------------------------

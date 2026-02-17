@@ -136,13 +136,13 @@ describe('MCP Server Protocol Compliance', () => {
 
   // B6a #2: Tool listing
   describe('Tool listing', () => {
-    it('returns 3 tools: search, index, health', () => {
+    it('returns 4 tools: search, index, health, repo-map', () => {
       expect(toolsResponse).toBeDefined();
       const tools = toolsResponse.result.tools;
-      expect(tools).toHaveLength(3);
+      expect(tools).toHaveLength(4);
 
       const names = tools.map(t => t.name).sort();
-      expect(names).toEqual(['health', 'index', 'search']);
+      expect(names).toEqual(['health', 'index', 'repo-map', 'search']);
     });
 
     it('each tool has inputSchema', () => {

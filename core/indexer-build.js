@@ -309,6 +309,11 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
   log('Generating embeddings...', 'yellow');
 
   const texts = allChunks.map(chunk => {
+    // Use contextualized embedding_text when available (from AST chunker)
+    if (chunk.embedding_text) {
+      return chunk.embedding_text.slice(0, 2000);
+    }
+    // Fallback for chunks without embedding_text
     const text = `${chunk.file} ${chunk.metadata?.symbol || ''}\n${(chunk.text || chunk.content || '').slice(0, 1500)}`;
     return text;
   });
