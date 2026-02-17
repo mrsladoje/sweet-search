@@ -21,7 +21,8 @@ import { indexCorpus, initSearch } from './lib/indexer.js';
 import { runQuery, evaluateQuery } from './lib/evaluator.js';
 import { computeMetrics, computePerLanguageMetrics } from './lib/metrics.js';
 import { printReport, printCombinedReport } from './lib/reporter.js';
-import { saveResults, buildReport } from './lib/results.js';
+import { saveResults, saveBaseline, buildReport } from './lib/results.js';
+import { RetrievalHarness } from './retrieval-harness.js';
 import { BenchmarkRegistry } from './benchmarks/registry.js';
 
 // Import all benchmarks to trigger registration
@@ -53,6 +54,9 @@ function parseArgs() {
     indexMode: 'single',
     sqliteFast: false,
     sqliteSafe: false,
+    regressionCheck: false,
+    saveBaseline: false,
+    regressionThreshold: -0.02,
   };
   for (const arg of args) {
     if (arg.startsWith('--benchmarks=')) opts.benchmarks = arg.split('=')[1];
@@ -71,6 +75,9 @@ function parseArgs() {
     else if (arg.startsWith('--index-mode=')) opts.indexMode = arg.split('=')[1];
     else if (arg === '--sqlite-fast') opts.sqliteFast = true;
     else if (arg === '--sqlite-safe') opts.sqliteSafe = true;
+    else if (arg === '--regression-check') opts.regressionCheck = true;
+    else if (arg === '--save-baseline') opts.saveBaseline = true;
+    else if (arg.startsWith('--regression-threshold=')) opts.regressionThreshold = parseFloat(arg.split('=')[1]);
   }
   return opts;
 }
@@ -118,6 +125,9 @@ Options:
   --index-mode=MODE   Indexing mode (single|two-phase) [default: single]
   --sqlite-fast       Enable fast SQLite pragmas for benchmarking
   --sqlite-safe       Force durable SQLite mode (disables fast pragmas)
+  --regression-check  Compare results against baseline after each benchmark (exit 1 if regression)
+  --save-baseline     Save current run as the new baseline for future comparisons
+  --regression-threshold=N  Max allowed regression (default: -0.02 = 2%)
   --help, -h          Show help`);
 }
 
@@ -273,11 +283,51 @@ async function runBenchmark(benchmark, opts, profileOpts) {
     indexTimings: indexResult?.timings || null,
     metrics, perLanguage, evaluatedQueries,
   });
-  const { timestampedFile } = saveResults(benchmark.name, report, path.join(EVAL_DIR, 'results'));
+  const resultsDir = path.join(EVAL_DIR, 'results');
+  const { timestampedFile } = saveResults(benchmark.name, report, resultsDir);
   console.log(`  Results saved to: ${timestampedFile}`);
 
+  // Save as baseline if requested
+  if (opts.saveBaseline) {
+    const baselinePath = saveBaseline(benchmark.name, report, resultsDir);
+    console.log(`  Baseline saved to: ${baselinePath}`);
+  }
+
+  // Regression check against existing baseline
+  let regressionPassed = true;
+  if (opts.regressionCheck) {
+    const threshold = opts.regressionThreshold ?? -0.02;
+    const harness = new RetrievalHarness({
+      resultsDir,
+      baselineFile: path.join(resultsDir, `${benchmark.name}_baseline.json`),
+      deltaThresholds: {
+        'recall@5': threshold,
+        'recall@10': threshold,
+        'recall@20': threshold,
+        'mrr': threshold,
+      },
+    });
+    const normalized = await harness.importBenchmarkResult(timestampedFile);
+    const comparison = await harness.compareToBaseline(normalized);
+    const regressionReport = harness.formatReport(normalized, comparison);
+    console.log('\n' + regressionReport);
+
+    if (comparison.hasBaseline && !comparison.passed) {
+      regressionPassed = false;
+      console.log('\n  ⚠ REGRESSION DETECTED — results are worse than baseline');
+    } else if (!comparison.hasBaseline) {
+      console.log('\n  No baseline found. Use --save-baseline to create one.');
+    } else {
+      console.log('\n  ✓ No regression — results meet baseline thresholds');
+    }
+  }
+
   try { await search.close?.(); } catch {}
-  return { dataset: benchmark.name, metrics, perLanguage, totalTime, queryCount: queries.length, indexTimings: indexResult?.timings || null };
+  return {
+    dataset: benchmark.name, metrics, perLanguage, totalTime,
+    queryCount: queries.length, indexTimings: indexResult?.timings || null,
+    regressionPassed,
+  };
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -306,6 +356,8 @@ async function main() {
   const profileOpts = resolveProfile(opts);
   console.log(`  Profile:     ${opts.profile} (ColBERT build: ${profileOpts.buildColBERT}, query: ${profileOpts.useColBERT})`);
   console.log(`  Index mode:  ${profileOpts.indexMode}  |  SQLite fast: ${profileOpts.sqliteFast}`);
+  if (opts.regressionCheck) console.log(`  Regression:  check enabled (threshold: ${opts.regressionThreshold})`);
+  if (opts.saveBaseline) console.log(`  Baseline:    will save after each benchmark`);
 
   // Run each benchmark sequentially (each needs its own index/search instance)
   const allResults = [];
@@ -340,6 +392,12 @@ async function main() {
 
   const totalElapsed = ((Date.now() - runStart) / 1000).toFixed(1);
   console.log(`\n  Total elapsed: ${totalElapsed}s  |  Benchmarks run: ${allResults.length}/${benchmarks.length}`);
+
+  // Exit 1 if any benchmark failed regression check
+  if (opts.regressionCheck && allResults.some(r => r.regressionPassed === false)) {
+    console.log('\n  EXIT 1: One or more benchmarks regressed beyond threshold.');
+    process.exit(1);
+  }
   process.exit(0);
 }
 

@@ -329,6 +329,12 @@ and alter chunk expansion/ranking policy per intent.
 - Combine quality score with FTS + vector score in reranker.
 - Log quality score contributions for debuggability.
 
+**Quality weight default:**
+- Current: `qualityWeight` defaults to 0 (disabled). May be moved to 0.05 or 0.1
+  once validated.
+- TODO: Benchmark `qualityWeight: 0 vs 0.05 vs 0.1 vs 0.2` on eval harness; gate
+  default change on MRR/Recall delta.
+
 **Sources:**
 - CoQuIR (quality-aware code retrieval): https://arxiv.org/abs/2505.17173
 
