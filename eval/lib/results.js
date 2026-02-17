@@ -6,7 +6,8 @@ import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import path from 'path';
 
 /**
- * Save benchmark results to JSON files.
+ * Save benchmark results to a timestamped JSON file.
+ * Does NOT overwrite the baseline — use saveBaseline() explicitly.
  *
  * @param {string} dataset - Dataset name
  * @param {Object} report - Full report object
@@ -21,9 +22,28 @@ export function saveResults(dataset, report, resultsDir) {
   const baselineFile = path.join(resultsDir, `${dataset}_baseline.json`);
 
   writeFileSync(timestampedFile, JSON.stringify(report, null, 2));
-  writeFileSync(baselineFile, JSON.stringify(report, null, 2));
+
+  // Auto-create baseline if none exists (first run bootstrap)
+  if (!existsSync(baselineFile)) {
+    writeFileSync(baselineFile, JSON.stringify(report, null, 2));
+  }
 
   return { timestampedFile, baselineFile };
+}
+
+/**
+ * Explicitly save current results as the new baseline.
+ *
+ * @param {string} dataset - Dataset name
+ * @param {Object} report - Full report object
+ * @param {string} resultsDir - Directory to save results
+ * @returns {string} Path to the baseline file
+ */
+export function saveBaseline(dataset, report, resultsDir) {
+  if (!existsSync(resultsDir)) mkdirSync(resultsDir, { recursive: true });
+  const baselineFile = path.join(resultsDir, `${dataset}_baseline.json`);
+  writeFileSync(baselineFile, JSON.stringify(report, null, 2));
+  return baselineFile;
 }
 
 /**
