@@ -65,10 +65,13 @@ export function pageRank(outEdges, allNodes, opts = {}) {
     }
   }
 
-  // Pre-compute out-degree
+  // Pre-compute out-degree and collect dangling nodes
   const outDegree = new Map();
+  const danglingNodes = [];
   for (const node of allNodes) {
-    outDegree.set(node, (outEdges.get(node)?.size) || 0);
+    const deg = (outEdges.get(node)?.size) || 0;
+    outDegree.set(node, deg);
+    if (deg === 0) danglingNodes.push(node);
   }
 
   // Initialize uniform scores
@@ -78,6 +81,13 @@ export function pageRank(outEdges, allNodes, opts = {}) {
 
   // Power iteration
   for (let iter = 0; iter < maxIter; iter++) {
+    // Redistribute dangling node mass uniformly
+    let danglingSum = 0;
+    for (const node of danglingNodes) {
+      danglingSum += scores.get(node);
+    }
+    const danglingContrib = damping * danglingSum / n;
+
     const nextScores = new Map();
     let delta = 0;
 
@@ -89,7 +99,7 @@ export function pageRank(outEdges, allNodes, opts = {}) {
           sum += scores.get(src) / deg;
         }
       }
-      const newScore = base + damping * sum;
+      const newScore = base + damping * sum + danglingContrib;
       nextScores.set(node, newScore);
       delta += Math.abs(newScore - scores.get(node));
     }
@@ -353,9 +363,14 @@ export function generateRepoMap(opts = {}) {
 
   // 4. Apply focus boosts (personalized PageRank approximation)
   if (opts.focusFiles?.length) {
-    const focusSet = new Set(opts.focusFiles.map(f => path.resolve(f)));
     for (const [nodeId, ent] of entityMap) {
-      if (focusSet.has(path.resolve(ent.file_path))) {
+      const entPath = ent.file_path;
+      const matched = opts.focusFiles.some(f =>
+        entPath === f ||
+        entPath.endsWith('/' + f) ||
+        path.resolve(entPath) === path.resolve(f)
+      );
+      if (matched) {
         scores.set(nodeId, (scores.get(nodeId) || 0) * 3);
       }
     }

@@ -663,6 +663,9 @@ export class ASTChunker {
 
     if (scopeChain && scopeChain.length > 0) {
       parts.push(`# Scope: ${scopeChain.join(' > ')}`);
+    } else if (chunk.metadata.parent_symbol) {
+      // Preserve cAST parent context when no scope chain from code graph
+      parts.push(`# Parent: ${chunk.metadata.parent_type} ${chunk.metadata.parent_symbol}`);
     }
 
     if (chunk.metadata.symbol && chunk.metadata.symbol !== 'unknown') {

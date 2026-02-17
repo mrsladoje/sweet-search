@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { ASTChunker } from '../ast-chunker.js';
 
-const chunker = new ASTChunker({ projectRoot: '/test' });
+const chunker = new ASTChunker({ projectRoot: '/test', useTreeSitter: false });
 
 function chunkSummary(chunks) {
   return chunks.map(c => ({

@@ -217,35 +217,51 @@ export class TreeSitterProvider {
     if (!language) return null;
 
     let tree;
+    let query;
     try {
       this._parser.setLanguage(language);
       tree = this._parser.parse(content);
       if (!tree) return null;
 
-      const query = language.query(queryString);
+      query = await this._createQuery(language, queryString);
       const captures = query.captures(tree.rootNode);
-      const lines = content.split('\n');
 
       const symbols = [];
+      const seen = new Set(); // deduplicate by startIndex
       for (const capture of captures) {
         const { name: captureName, node } = capture;
         const entityType = CAPTURE_TO_ENTITY_TYPE[captureName];
         if (!entityType) continue;
 
-        const startLine = node.startPosition.row;
-        const endLine = node.endPosition.row;
+        // When queries capture an identifier (e.g. `name: (identifier) @x`),
+        // the node is the identifier leaf — use node.text for the name and
+        // node.parent for the extent (start/end lines, signature).
+        const IDENT_TYPES = new Set([
+          'identifier', 'type_identifier', 'property_identifier', 'field_identifier',
+        ]);
+        const isLeafIdent = IDENT_TYPES.has(node.type);
+        const extentNode = isLeafIdent && node.parent ? node.parent : node;
 
-        // Build signature from the first line of the node text
-        const nodeText = content.substring(node.startIndex, node.endIndex);
+        // Deduplicate: multiple captures can match the same declaration
+        const key = `${extentNode.startIndex}:${entityType}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const startLine = extentNode.startPosition.row;
+        const endLine = extentNode.endPosition.row;
+
+        // Build signature from the extent node's first line
+        const nodeText = content.substring(extentNode.startIndex, extentNode.endIndex);
         const firstLine = nodeText.split('\n')[0].trim();
         const signature = firstLine.length > 120
           ? firstLine.substring(0, 117) + '...'
           : firstLine;
 
-        // Extract name: prefer the 'name' field, fall back to _extractNodeName
-        const symbolName = node.childForFieldName?.('name')?.text
-          || this._extractNodeName(node)
-          || `<anonymous:${entityType}>`;
+        const symbolName = isLeafIdent
+          ? node.text
+          : (node.childForFieldName?.('name')?.text
+            || this._extractNodeName(node)
+            || `<anonymous:${entityType}>`);
 
         symbols.push({
           name: symbolName,
@@ -260,6 +276,7 @@ export class TreeSitterProvider {
     } catch {
       return null;
     } finally {
+      if (query) query.delete();
       if (tree) tree.delete();
     }
   }
@@ -361,13 +378,23 @@ export class TreeSitterProvider {
           if (node.childCount > 0) {
             const name = this._extractNodeName(node);
             const type = NODE_TYPE_MAP[node.type] || 'code';
-            const parentId = this._nextChunkId();
+
+            // Transparent nodes (e.g., statement_block, block) that have no
+            // name and aren't boundary types should pass through the caller's
+            // parent context instead of creating an anonymous level.
+            let subParent;
+            if (!name && !BOUNDARY_TYPES.has(node.type) && parentInfo) {
+              subParent = parentInfo;
+            } else {
+              const parentId = this._nextChunkId();
+              subParent = { chunkId: parentId, name: name || 'unknown', type };
+            }
 
             const subChunks = this.recursiveChunk(
               this._getChildren(node),
               content,
               maxSize,
-              { chunkId: parentId, name: name || 'unknown', type }
+              subParent
             );
             chunks.push(...subChunks);
           } else {
@@ -414,6 +441,12 @@ export class TreeSitterProvider {
     return null;
   }
 
+  /** Create a tree-sitter query (mockable seam for tests) */
+  async _createQuery(language, queryString) {
+    const { Query } = await import('web-tree-sitter');
+    return new Query(language, queryString);
+  }
+
   /** Find grammar WASM file on disk */
   async _findGrammarWasm(languageId, grammarName) {
     const fs = await import('fs');
@@ -430,7 +463,19 @@ export class TreeSitterProvider {
     const dataPath = pathMod.join(process.cwd(), dataDir, 'grammars', `${grammarName}.wasm`);
     if (fs.existsSync(dataPath)) return dataPath;
 
-    // Strategy 3: node_modules
+    // Strategy 3: tree-sitter-wasms bundle (all grammars in one package)
+    try {
+      const bundlePkg = await import.meta.resolve?.('tree-sitter-wasms/package.json');
+      if (bundlePkg) {
+        const bundleDir = pathMod.dirname(new URL(bundlePkg).pathname);
+        const bundlePath = pathMod.join(bundleDir, 'out', `${grammarName}.wasm`);
+        if (fs.existsSync(bundlePath)) return bundlePath;
+      }
+    } catch {
+      // tree-sitter-wasms not installed
+    }
+
+    // Strategy 4: individual grammar packages in node_modules
     try {
       const pkgPath = await import.meta.resolve?.(`${grammarName}/package.json`);
       if (pkgPath) {
