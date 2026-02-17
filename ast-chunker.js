@@ -16,6 +16,9 @@ import { getLanguageByPath } from './core/language-patterns.js';
 import { DocumentChunker } from './core/document-chunker.js';
 
 const MAX_CHUNK_SIZE = 2000;
+const MIN_CONTENT_LENGTH = 30;
+const MAX_PEEK_LINES = 3;
+const DEFAULT_MAX_REGEX_LINE_LENGTH = 4000;
 
 /**
  * AST-like semantic code chunker supporting 35+ languages.
@@ -26,7 +29,7 @@ export class ASTChunker {
   constructor(options) {
     this.projectRoot = options?.projectRoot || process.cwd();
     this.warnOnPatternDrop = options?.warnOnPatternDrop || false;
-    this.maxRegexLineLength = options?.maxRegexLineLength || 4000;
+    this.maxRegexLineLength = options?.maxRegexLineLength || DEFAULT_MAX_REGEX_LINE_LENGTH;
     this._useTreeSitter = options?.useTreeSitter !== false; // enabled by default
     this.debugCounters = {
       emptyCapture: {
@@ -123,7 +126,7 @@ export class ASTChunker {
 
       if ((matched && currentChunk) || (braceDepth === 0 && currentChunk)) {
         const chunkContent = lines.slice(chunkStart, i + 1).join('\n');
-        if (chunkContent.trim().length > 30) {
+        if (chunkContent.trim().length > MIN_CONTENT_LENGTH) {
           chunks.push(this.buildChunk(chunkContent, filePath, language, currentChunk.type, currentChunk.name, chunkStart, i));
         }
         currentChunk = null;
@@ -168,7 +171,7 @@ export class ASTChunker {
       // If we're inside a chunk and hit a line at the same or lesser indent, close
       if (currentChunk && indent <= chunkIndent && i > chunkStart) {
         const chunkContent = lines.slice(chunkStart, i).join('\n');
-        if (chunkContent.trim().length > 30) {
+        if (chunkContent.trim().length > MIN_CONTENT_LENGTH) {
           chunks.push(this.buildChunk(chunkContent, filePath, language, currentChunk.type, currentChunk.name, chunkStart, i - 1));
         }
         currentChunk = null;
@@ -181,7 +184,7 @@ export class ASTChunker {
         // Close prior chunk if any non-empty content
         if (currentChunk && chunkStart < i) {
           const chunkContent = lines.slice(chunkStart, i).join('\n');
-          if (chunkContent.trim().length > 30) {
+          if (chunkContent.trim().length > MIN_CONTENT_LENGTH) {
             chunks.push(this.buildChunk(chunkContent, filePath, language, currentChunk.type, currentChunk.name, chunkStart, i - 1));
           }
         }
@@ -221,7 +224,7 @@ export class ASTChunker {
       if (matched) {
         if (currentChunk && depth === 0) {
           const chunkContent = lines.slice(chunkStart, i).join('\n');
-          if (chunkContent.trim().length > 30) {
+          if (chunkContent.trim().length > MIN_CONTENT_LENGTH) {
             chunks.push(this.buildChunk(chunkContent, filePath, language, currentChunk.type, currentChunk.name, chunkStart, i - 1));
           }
         }
@@ -243,7 +246,7 @@ export class ASTChunker {
         depth--;
         if (depth === 0 && currentChunk) {
           const chunkContent = lines.slice(chunkStart, i + 1).join('\n');
-          if (chunkContent.trim().length > 30) {
+          if (chunkContent.trim().length > MIN_CONTENT_LENGTH) {
             chunks.push(this.buildChunk(chunkContent, filePath, language, currentChunk.type, currentChunk.name, chunkStart, i));
           }
           currentChunk = null;
@@ -281,7 +284,7 @@ export class ASTChunker {
       const trimmedEnd = line.trimEnd();
       const lastChar = trimmedEnd[trimmedEnd.length - 1];
       if (lastChar === '(' || lastChar === ',' || lastChar === '\\') {
-        const maxPeek = Math.min(3, lines.length - lineIndex - 1);
+        const maxPeek = Math.min(MAX_PEEK_LINES, lines.length - lineIndex - 1);
         if (maxPeek > 0) {
           let joined = line;
           for (let p = 1; p <= maxPeek; p++) {
@@ -453,7 +456,7 @@ export class ASTChunker {
   _pushFinalChunk(chunks, lines, chunkStart, filePath, language, currentChunk) {
     if (chunkStart < lines.length) {
       const chunkContent = lines.slice(chunkStart).join('\n');
-      if (chunkContent.trim().length > 30) {
+      if (chunkContent.trim().length > MIN_CONTENT_LENGTH) {
         chunks.push(this.buildChunk(
           chunkContent, filePath, language,
           currentChunk?.type || 'code',
@@ -543,11 +546,11 @@ export class ASTChunker {
       // Split condition: at a sub-boundary, or accumulated segment exceeds max
       if ((isSubBoundary || (segSize + lineSize > MAX_CHUNK_SIZE && segSize > 0)) && i > segStart) {
         const segContent = lines.slice(segStart, i).join('\n');
-        if (segContent.trim().length > 30) {
+        if (segContent.trim().length > MIN_CONTENT_LENGTH) {
           childCounter++;
           subChunks.push(this.buildChunk(
             segContent, filePath, language,
-            subChunks.length === 0 ? parentSymbol || 'code' : (matchType || 'code'),
+            subChunks.length === 0 ? parentType || 'code' : (matchType || 'code'),
             subChunks.length === 0 ? parentSymbol : (matched || 'unknown'),
             lineOffset + segStart, lineOffset + i - 1,
             { ...hierarchyInfo, chunkId: `${parentId}-${childCounter}` }
@@ -563,7 +566,7 @@ export class ASTChunker {
     // Flush remaining
     if (segStart < lines.length) {
       const segContent = lines.slice(segStart).join('\n');
-      if (segContent.trim().length > 30) {
+      if (segContent.trim().length > MIN_CONTENT_LENGTH) {
         childCounter++;
         subChunks.push(this.buildChunk(
           segContent, filePath, language,

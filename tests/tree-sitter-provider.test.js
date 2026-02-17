@@ -656,18 +656,16 @@ describe('ASTChunker regex oversized splitting', () => {
     // Large function with inner function boundaries for sub-splitting.
     // Use `let` (not `const`) for filler lines — `const` matches JS chunker boundary.
     const lines = ['function outerBig() {'];
-    // Plain statements (no boundary matches) to bulk up the chunk
     for (let i = 0; i < 25; i++) {
       lines.push(`  let v${i} = "${'z'.repeat(70)}";`);
     }
-    // Then some inner functions as sub-boundaries for splitting
     for (let i = 0; i < 5; i++) {
       lines.push(`  function helper${i}() { return "${i}"; }`);
     }
     lines.push('}');
     const content = lines.join('\n');
 
-    if (content.length <= 2000) return; // skip if not actually oversized
+    expect(content.length).toBeGreaterThan(2000); // fail-fast if fixture is wrong
 
     const chunks = await chunker.parseFile('/test/outer.js', content);
     const withParent = chunks.filter(c => c.metadata.parent_chunk_id);
@@ -676,6 +674,182 @@ describe('ASTChunker regex oversized splitting', () => {
     for (const c of withParent) {
       expect(c.metadata.parent_symbol).toBeDefined();
     }
+  });
+
+  it('first sub-chunk uses parentType (not parentSymbol) for chunk_type', async () => {
+    const chunker = new ASTChunker({ projectRoot: '/test', useTreeSitter: false });
+
+    const lines = ['function outerBig() {'];
+    for (let i = 0; i < 25; i++) {
+      lines.push(`  let v${i} = "${'z'.repeat(70)}";`);
+    }
+    for (let i = 0; i < 5; i++) {
+      lines.push(`  function helper${i}() { return "${i}"; }`);
+    }
+    lines.push('}');
+    const content = lines.join('\n');
+
+    expect(content.length).toBeGreaterThan(2000);
+
+    const chunks = await chunker.parseFile('/test/outer.js', content);
+    const withParent = chunks.filter(c => c.metadata.parent_chunk_id);
+    expect(withParent.length).toBeGreaterThan(0);
+
+    const first = withParent[0];
+    expect(first.metadata.chunk_type).toBe('function');
+    expect(first.metadata.parent_symbol).toBe('outerBig');
+  });
+});
+
+// =============================================================================
+// P1 fix coverage: singleton, MIN_CONTENT_LENGTH, sub-chunk edge cases
+// =============================================================================
+
+describe('getTreeSitterProvider singleton with grammarsDir', () => {
+  afterEach(() => resetTreeSitterProvider());
+
+  it('returns same instance when called without options', () => {
+    resetTreeSitterProvider();
+    const a = getTreeSitterProvider();
+    const b = getTreeSitterProvider();
+    expect(a).toBe(b);
+  });
+
+  it('recreates instance when grammarsDir changes', () => {
+    resetTreeSitterProvider();
+    const a = getTreeSitterProvider({ grammarsDir: '/path/a' });
+    expect(a.grammarsDir).toBe('/path/a');
+    const b = getTreeSitterProvider({ grammarsDir: '/path/b' });
+    expect(b.grammarsDir).toBe('/path/b');
+    expect(b).not.toBe(a);
+  });
+
+  it('calls reset() on previous instance when grammarsDir changes', () => {
+    resetTreeSitterProvider();
+    const a = getTreeSitterProvider({ grammarsDir: '/old' });
+    const resetSpy = vi.spyOn(a, 'reset');
+    getTreeSitterProvider({ grammarsDir: '/new' });
+    expect(resetSpy).toHaveBeenCalledOnce();
+    resetSpy.mockRestore();
+  });
+
+  it('keeps instance when grammarsDir is the same', () => {
+    resetTreeSitterProvider();
+    const a = getTreeSitterProvider({ grammarsDir: '/same' });
+    const b = getTreeSitterProvider({ grammarsDir: '/same' });
+    expect(b).toBe(a);
+  });
+
+  it('keeps instance when subsequent call has no options', () => {
+    resetTreeSitterProvider();
+    const a = getTreeSitterProvider({ grammarsDir: '/init' });
+    const b = getTreeSitterProvider();
+    expect(b).toBe(a);
+  });
+});
+
+describe('MIN_CONTENT_LENGTH boundary (30 chars)', () => {
+  const chunker = new ASTChunker({ projectRoot: '/test', useTreeSitter: false });
+
+  it('drops chunk whose trimmed content is exactly 30 chars', () => {
+    // _splitAtSubBoundaries checks `content.trim().length > MIN_CONTENT_LENGTH`
+    // 30 chars is NOT > 30, so the flush segment should be dropped
+    const padded = 'x'.repeat(30);
+    expect(padded.trim().length).toBe(30);
+
+    const jsPatterns = { function: /(?:export\s+)?(?:const|function|async\s+function)\s+(\w+)\s*[=:(]/ };
+    const result = chunker._splitAtSubBoundaries(
+      padded, '/test/f.js', 'javascript', jsPatterns, { line: '//' }, 0,
+      'rx-test', 'sym', 'function'
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  it('keeps chunk whose trimmed content is 31 chars', () => {
+    const padded = 'x'.repeat(31);
+    expect(padded.trim().length).toBe(31);
+
+    const jsPatterns = { function: /(?:export\s+)?(?:const|function|async\s+function)\s+(\w+)\s*[=:(]/ };
+    const result = chunker._splitAtSubBoundaries(
+      padded, '/test/f.js', 'javascript', jsPatterns, { line: '//' }, 0,
+      'rx-test', 'sym', 'function'
+    );
+    expect(result).toHaveLength(1);
+  });
+});
+
+describe('_splitAtSubBoundaries edge cases', () => {
+  const chunker = new ASTChunker({ projectRoot: '/test', useTreeSitter: false });
+
+  it('first sub-chunk of oversized class uses parentType "class"', async () => {
+    const lines = ['class BigService {'];
+    for (let i = 0; i < 25; i++) {
+      lines.push(`  let v${i} = "${'z'.repeat(70)}";`);
+    }
+    for (let i = 0; i < 3; i++) {
+      lines.push(`  function method${i}() { return ${i}; }`);
+    }
+    lines.push('}');
+    const content = lines.join('\n');
+
+    expect(content.length).toBeGreaterThan(2000);
+
+    const chunks = await chunker.parseFile('/test/big-class.js', content);
+    const withParent = chunks.filter(c => c.metadata.parent_chunk_id);
+    expect(withParent.length).toBeGreaterThan(0);
+
+    const first = withParent[0];
+    expect(first.metadata.chunk_type).toBe('class');
+    expect(first.metadata.parent_symbol).toBe('BigService');
+    expect(first.metadata.parent_type).toBe('class');
+  });
+
+  it('parentType falls back to "code" when parentType is null', () => {
+    const jsPatterns = { function: /(?:export\s+)?(?:const|function|async\s+function)\s+(\w+)\s*[=:(]/ };
+    const lines = [];
+    for (let i = 0; i < 30; i++) {
+      lines.push(`let line${i} = "${'x'.repeat(60)}";`);
+    }
+    lines.push('function inner() { return 1; }');
+    const content = lines.join('\n');
+
+    const subChunks = chunker._splitAtSubBoundaries(
+      content, '/test/f.js', 'javascript', jsPatterns, { line: '//' }, 0,
+      'rx-test', 'orphan', null
+    );
+
+    expect(subChunks.length).toBeGreaterThan(1);
+    expect(subChunks[0].metadata.chunk_type).toBe('code');
+  });
+
+  it('subsequent sub-chunks use their own matchType, not parentType', async () => {
+    // 28 padding lines to ensure the class chunk exceeds MAX_CHUNK_SIZE (2000)
+    // so _splitOversizedRegexChunks triggers _splitAtSubBoundaries
+    const lines = ['class Container {'];
+    for (let i = 0; i < 28; i++) {
+      lines.push(`  let pad${i} = "${'y'.repeat(70)}";`);
+    }
+    lines.push('  function alpha() { return "a"; }');
+    for (let i = 0; i < 5; i++) {
+      lines.push(`  let more${i} = "${'w'.repeat(70)}";`);
+    }
+    lines.push('  function beta() { return "b"; }');
+    lines.push('}');
+    const content = lines.join('\n');
+
+    expect(content.length).toBeGreaterThan(2000);
+
+    const chunks = await chunker.parseFile('/test/multi.js', content);
+    const withParent = chunks.filter(c => c.metadata.parent_chunk_id);
+    expect(withParent.length).toBeGreaterThanOrEqual(2);
+
+    // First sub-chunk inherits parentType
+    expect(withParent[0].metadata.chunk_type).toBe('class');
+
+    // Later sub-chunks at function boundaries should use 'function', not 'class'
+    const funcChunk = withParent.find(c => c.metadata.symbol === 'alpha');
+    expect(funcChunk).toBeDefined();
+    expect(funcChunk.metadata.chunk_type).toBe('function');
   });
 });
 
