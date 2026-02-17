@@ -219,7 +219,7 @@ export class SweetSearch {
       graphExpand = 'none',  // P1.3: 'none' | '1hop' | '2hop'
       graphExpandOptions = {},  // P1.3: { maxExpanded, tokenBudget, edgeTypes }
       adaptiveHop2 = false,  // P2.5: Enable adaptive 2-hop with priority ranking & token budgeting
-      intent = 'auto',  // P2.2: 'auto' | specific intent string
+      intent = 'none',  // P2.2: DISABLED (2026-02-17) — keyword classifier unvalidated. See docs/TODO.md §2. Was 'auto'.
       qualityWeight = this.qualityWeight,  // P2.3: 0 = disabled, 0-1 = blend weight
     } = options;
 
