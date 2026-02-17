@@ -479,6 +479,9 @@ let _instance = null;
 export function getTreeSitterProvider(options) {
   if (!_instance) {
     _instance = new TreeSitterProvider(options);
+  } else if (options?.grammarsDir && options.grammarsDir !== _instance.grammarsDir) {
+    _instance.reset();
+    _instance = new TreeSitterProvider(options);
   }
   return _instance;
 }
