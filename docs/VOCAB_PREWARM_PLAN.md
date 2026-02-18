@@ -94,7 +94,7 @@ Code search terms follow a Zipf's law distribution: the Nth most-common term app
 
 | Technique | Impact | Source |
 |-----------|--------|--------|
-| **Voyage-code-3 + int8 quantization** (SOTA for code, Jan 2026) | +13.8-16.8% vs competitors, 83% cost reduction | [Voyage AI](https://blog.voyageai.com/2024/12/04/voyage-code-3/) |
+| **Voyage-code-3 + int8 quantization** (leading code-specific embedding model) | +13.8-16.8% vs competitors, 83% cost reduction | [Voyage AI](https://blog.voyageai.com/2024/12/04/voyage-code-3/) |
 | **Matryoshka embeddings** | 8.3% of size retains 98.37% of performance | [HuggingFace](https://huggingface.co/blog/matryoshka) |
 | **GoVector hybrid caching** | 46% fewer I/O ops, 1.73x throughput | [arXiv 2508.15694](https://www.arxiv.org/pdf/2508.15694) |
 | **StorInfer precomputation** | 150K precomputed queries, 17.3% latency reduction | [arXiv 2503.17603](https://arxiv.org/html/2503.17603v1) |
@@ -165,7 +165,7 @@ The challenge for semantic/hybrid warmup is predicting NL queries before they ha
 The command is a 4-phase pipeline:
 
 ```
-/sweet-vocab-prewarm
+/sweet-prewarm-vocab
     Phase 1: MINE the codebase (identifiers + community phrases)    → 2-8s
     Phase 2: RANK + CLASSIFY warm mode per term                     → <1s
     Phase 3: WARM each search mode with appropriately typed seeds   → varies by provider
@@ -208,7 +208,7 @@ L3: Disk (Cold Data)
 
 ### 3.3 Phase 1: Mine the Codebase (Term Extraction)
 
-Multiple mining strategies run in parallel. This is **Heavy tier** work — it runs at indexing time (post `/index-codebase`) or on manual `/sweet-vocab-prewarm`, never at session start. Total budget: **2-8 seconds** depending on depth and whether code-graph.db exists.
+Multiple mining strategies run in parallel. This is **Heavy tier** work — it runs at indexing time (post `/index-codebase`) or on manual `/sweet-prewarm-vocab`, never at session start. Total budget: **2-8 seconds** depending on depth and whether code-graph.db exists.
 
 #### 3.3.1 Structural Mining (Fast, ~500ms)
 
@@ -271,6 +271,8 @@ Output: community membership per entity
 
 **Output feeds into**: §3.3.5 (community-aware NL mining), §3.4 (community c-TF-IDF ranking), and §3.6 (community map persistence).
 
+**Hard cutoffs**: If `code-graph.db` has >50,000 entities or >200,000 relationships, skip Leiden and fall back to directory grouping. If Leiden exceeds 2x its wall-clock budget (1s), abort, emit partial results from the best completed iteration, and mark the community map as `stale: true` in `communities.json`. Stale maps are still used for warmup but flagged in `--stats` output.
+
 **Fallback when code-graph.db is absent**: Fall back to top-2 directory path grouping. Semantic warmup quality degrades but remains functional.
 
 #### 3.3.5 Community-Aware NL Content Mining (requires code-graph.db, ~1-3s)
@@ -290,6 +292,12 @@ For each detected community:
 4. Output: `{ communityId, phrases: [{ text, score, type: 'bigram'|'trigram' }] }` per community
 
 **Why bigrams/trigrams matter**: A developer in a project with `apps/local/` and `apps/central/` will search "authentication local instance" not "authentication". The community phrase extraction captures exactly this vocabulary because it's statistically distinctive within that project. Unigram extraction misses it entirely.
+
+**NL language awareness**: Bigram/trigram extraction assumes whitespace-segmented text and works well for English and other Latin-script languages. For CJK-dominant codebases (detected via Unicode script sampling of the first 5,000 lines of comment text): if >80% of NL text is a single non-Latin script, use `Intl.Segmenter` for word boundary detection before n-gram extraction; otherwise fall back to unigram extraction for that script. Default: detect dominant NL from comments/docs; if mixed (<80% single script), extract n-grams per script separately to avoid TF-IDF contamination across languages.
+
+**Redaction before persistence**: Before any mined phrase is persisted to `.sweet-search/` artifacts, apply a redaction pass. Filter out phrases matching common secret patterns: base64 blobs >32 chars, prefixes `sk-`, `ghp_`, `Bearer `, `token=`, `password=`, and any string literal containing `secret`, `password`, `api_key`, or `credential` unless the term also appears as an identifier name in the code graph (where it's a variable name, not a secret value). Never persist raw string literal values from `.env` files.
+
+**Hard cutoffs**: If phrase extraction exceeds 2x its wall-clock budget (6s), emit partial results from completed communities and mark remaining communities as `phrasesMined: false` in `communities.json`. Warmup proceeds with whatever was extracted; stale communities are prioritized for the next incremental run.
 
 **Time budget**: ~1-3s for bigram/trigram extraction across a typical codebase (~100 communities, ~500 characteristic phrases total).
 
@@ -374,9 +382,11 @@ Two source streams feed three warm paths. The CatBoost WASM query router is alre
    PRAGMA cache_size = -100000;  -- 100MB (tunable)
    INSERT INTO entities_fts(entities_fts) VALUES('optimize');
    ```
-2. **Execute MATCH queries** for top-N entity names from the mined vocabulary:
+2. **Execute MATCH queries** for top-N entity names in a single read transaction (batch to reduce round-trip overhead):
    ```sql
-   SELECT rowid FROM entities_fts WHERE name MATCH ? LIMIT 1;
+   BEGIN;
+   SELECT rowid FROM entities_fts WHERE name MATCH ? LIMIT 1;  -- repeated for top-N
+   COMMIT;
    ```
 3. **Exercise trigram index** (if available) with substring queries
 4. **Touch relationship table** to warm join pages:
@@ -419,6 +429,12 @@ const phraseEmbeddings = await generateEmbeddings([
 ]);
 
 // Warm HNSW traversal paths for both tracks
+// Note: HNSW warming is inherently neighborhood-aware — warming with
+// "local instance auth" also warms graph paths for similar queries like
+// "auth in local instance" because they land in the same embedding region.
+// Additionally, SemanticCache (cosine threshold 0.85) provides similarity-aware
+// cache hits at query time for remote providers, so slight query variations
+// still benefit from precomputed seeds.
 for (const embedding of [...hubEmbeddings, ...phraseEmbeddings]) {
   await hnswIndex.search(embedding, { k: 10 });
 }
@@ -430,6 +446,7 @@ for (const embedding of [...hubEmbeddings, ...phraseEmbeddings]) {
 - `EMBEDDING_CONFIG.hnswDimension` for HNSW index (fast traversal, small footprint)
 - `EMBEDDING_CONFIG.dimension` for final reranking (full precision)
 - Local provider (all-MiniLM-L6-v2): 256d HNSW / 384d full — no Matryoshka, dimensions are already compact
+- **Dimension consistency invariant**: Seed embeddings are produced and stored at the same dimensions used at query time — `EMBEDDING_CONFIG.hnswDimension` for HNSW seeds, `EMBEDDING_CONFIG.dimension` for rerank. No separate warmup dimension config; warmup inherits production dimensions via the same `generateEmbeddings()` call path.
 
 **Time budget** (provider-dependent):
 
@@ -446,9 +463,9 @@ for (const embedding of [...hubEmbeddings, ...phraseEmbeddings]) {
 
 **The CatBoost WASM router is already warm** (pre-initialized in session preheat). This step warms the data paths.
 
-**Strategy**: Select **10-20 representative queries** derived from the community phrase seeds (not generic hardcoded queries):
-- Top-1 identifier query per community (from Stream A hub entities)
-- Top-1 NL phrase per community (from Stream B)
+**Strategy**: Select **10-20 representative queries** derived from the community phrase seeds, weighted by community size (entity count) to avoid over-representing small communities:
+- Top-1 identifier query per community (from Stream A hub entities), weighted by community entity count
+- Top-1 NL phrase per community (from Stream B), weighted by community entity count
 - 2-3 cross-community queries (phrases that span multiple communities)
 - Run full hybrid searches through `sweet-search.js` unified pipeline
 
@@ -470,8 +487,8 @@ Persisted artifacts:
 | `.sweet-search/vocab-dynamic.json` | Full ranked term list with scores, sources, warm_mode | Any mining run |
 
 **Freshness tracking** — two separate hashes:
-- **Import graph hash**: sha256 of `(entity_count, relationship_count, top-100 import edges)` — changes when module structure changes. Gates community re-detection.
-- **NL content hash**: sha256 of `(comment text, README, recent commits)` — changes when descriptions change. Gates phrase re-extraction.
+- **Import graph hash**: sha256 streaming over all `(source_id, target_id, rel_type)` tuples sorted lexicographically from the `relationships` table — O(E) time, constant memory. Catches any structural change (new modules, removed imports, added files) regardless of whether it affects "top" edges. Gates community re-detection.
+- **NL content hash**: sha256 of `(comment text, README, recent commits)` — changes when descriptions change. Gates phrase re-extraction. "Recent commits" is bounded: last 200 commits on the default branch or 30 days, whichever is smaller. Total text input to hash is capped at 100KB to keep hashing fast and predictable.
 
 On subsequent runs, only re-run steps whose input hash changed (incremental mode).
 
@@ -520,10 +537,10 @@ If WSS is stable → converged; only update on code changes
 
 ## 5. Slash Command & MCP Tool Design
 
-### 5.1 Command: `/sweet-vocab-prewarm`
+### 5.1 Command: `/sweet-prewarm-vocab`
 
 ```
-/sweet-vocab-prewarm [options]
+/sweet-prewarm-vocab [options]
 
 Options:
   --full          Full mine + warm (first time or after major changes)
@@ -565,8 +582,8 @@ Options:
 | Tier | Trigger | What runs | Time budget (local) | Time budget (remote) |
 |------|---------|-----------|---------------------|----------------------|
 | **Heavy** | Post `/index-codebase` (automatic) | Leiden community detection, phrase extraction, embedding generation, HNSW seeding, persist all artifacts | ~8-30s | ~15-60s |
-| **Heavy** | `/sweet-vocab-prewarm --full` (manual) | Same as above | ~8-30s | ~15-60s |
-| **Heavy** | `/sweet-vocab-prewarm --incremental` (manual) | Re-run only changed-hash steps | ~3-10s | ~5-20s |
+| **Heavy** | `/sweet-prewarm-vocab --full` (manual) | Same as above | ~8-30s | ~15-60s |
+| **Heavy** | `/sweet-prewarm-vocab --incremental` (manual) | Re-run only changed-hash steps | ~3-10s | ~5-20s |
 | **Light** | Every session start (`session-preheat.sh`) | Load cached binary, FTS5 MATCH warmup, HNSW traversal with cached embeddings — **no recomputation** | <3s | <3s (no embeddings generated) |
 | **Lookup** | Every query | Embedding cache hit check | <1ms | <1ms |
 
@@ -587,7 +604,7 @@ For maximum coverage on large codebases, the warmup can dispatch parallel sub-ag
 | **graph-scout** | Code graph entities + PageRank connectivity (if DB exists) | Graph-weighted terms + scores | ~1s |
 | **git-scout** | Recent commits, hot files, branch names | Activity-weighted terms + scores | ~2s |
 
-The coordinator merges all term lists, deduplicates, applies ranking weights, and feeds the result to Phase 3.
+The coordinator merges all scout outputs: union by normalized term key, rank by Stream A/B scoring logic (§3.4), dedup by keeping the highest-scoring source for each term. Deep mode is triggered when repo exceeds 5,000 files or the user passes `--depth deep`.
 
 This is optional — the default path runs all mining in-process sequentially. Sub-agents are for when the user wants maximum coverage on a large codebase.
 
@@ -611,11 +628,11 @@ class WarmupMetrics {
 
 ### 7.2 What Constitutes a "Hit"
 
-| Mode | Cache Hit Definition |
-|------|---------------------|
-| **Lexical** | FTS5 query served from OS page cache (no disk I/O) |
-| **Semantic** | Query embedding found in vocabulary cache (no API call or model inference needed) |
-| **Hybrid** | Both lexical and semantic paths served from cache |
+| Mode | Cache Hit Definition | Measurement |
+|------|---------------------|-------------|
+| **Lexical** | FTS5 query latency below post-warmup baseline threshold (proxy for OS page cache hit — direct I/O accounting is not portable from userspace) | Latency < 5ms = hit; > 5ms = miss |
+| **Semantic** | Query embedding found in vocabulary cache (`source: 'vocabulary'`, no inference at all) or SemanticCache (`source: 'semantic-cache'`, avoids remote API call but still runs local MiniLM inference for the cosine lookup) | `source: 'vocabulary'` or `source: 'semantic-cache'` in embedding result |
+| **Hybrid** | Both lexical and semantic paths served from cache | Both sub-mode hits |
 
 ### 7.3 Reporting (via `--stats`)
 
@@ -659,7 +676,7 @@ Communities (Leiden):
 
 | Metric | Current | Target (local provider) | Target (remote provider) | How |
 |--------|---------|-------------------------|--------------------------|-----|
-| Vocabulary cache hit rate (first 100 queries) | ~20% (generic terms) | **>80%** | **>80%** | Codebase-mined identifiers + community phrases match actual queries |
+| Vocabulary cache hit rate (first 100 queries) | ~20% (generic terms) | **>80%** (target to validate with Step 0 telemetry — Zipf extrapolation, not a guarantee; iterate if actual rate is lower) | **>80%** | Codebase-mined identifiers + community phrases match actual queries |
 | Semantic cache hit rate specifically | ~5% (no NL seeds) | **>70%** | **>70%** | Community phrase seeds cover project-specific NL queries |
 | First lexical query (warm) | ~6-10ms (FTS5 pages cold) | **<3ms** | **<3ms** | Real MATCH queries prime FTS5 B-tree |
 | First semantic query (warm, cached term) | ~150ms (HNSW cold) | **<15ms** | **<15ms** | Precomputed embedding + warmed HNSW paths |
@@ -677,13 +694,19 @@ Communities (Leiden):
 - Full AST parsing per-language (too slow, too fragile — regex + Tree-sitter is 90% as good at 10% complexity)
 - Training custom embedding models per-codebase (overkill for warmup)
 - Replacing the indexing pipeline (warmup complements indexing, doesn't replace it)
-- Multi-language NLP for comment extraction (simple heuristics are sufficient)
+- Full multi-language NLP pipelines for comment extraction (lightweight `Intl.Segmenter` + script detection handles non-Latin scripts; see §3.3.5 NL language awareness)
 - Real-time re-warmup on every file save (too expensive; incremental triggered by hash change is enough)
 - Building a query router (the CatBoost WASM router already handles this at sub-ms)
 
 ---
 
 ## 10. Implementation Order
+
+0. **Per-mode cache-hit telemetry** — extend `core/embedding-cache.js`
+   - Instrument every query with `{ mode, lexicalHit, semanticHit, hybridHit, latencyMs, timestamp }`
+   - Current `cacheStats` (line 322) tracks aggregate hits/misses only — add per-mode breakdown
+   - Persist to `.sweet-search/query-telemetry.jsonl` (append-only, rotated at 10k lines)
+   - This is the measurement baseline that validates the 80% target. Ship before any mining work.
 
 1. **Community detector module** — `core/community-detector.js`
    - Build weighted adjacency from `code-graph.db` relationships (imports=3, calls=1)
@@ -709,7 +732,7 @@ Communities (Leiden):
    - `warmSemantic(hubEntities, communityPhrases)` — two-track embedding + HNSW search
    - `warmHybrid(representativeQueries)` — full pipeline, queries derived from community phrase seeds
 
-5. **Slash command** — `.claude/commands/sweet-vocab-prewarm.md`
+5. **Slash command** — `.claude/commands/sweet-prewarm-vocab.md`
 
 6. **MCP tool** — Add to `mcp/server.js` as `sweet-search/vocab-prewarm`
 
@@ -741,11 +764,11 @@ Communities (Leiden):
 
 1. **~~Embedding provider flexibility~~** *(Resolved)*: The warmup uses `EMBEDDING_CONFIG.provider` — whatever provider is active (local by default, remote if API keys are configured). The vocabulary cache already invalidates on provider change. No provider-specific code in the warmup path. Dimension handling adapts automatically via `EMBEDDING_CONFIG.dimension` and `EMBEDDING_CONFIG.hnswDimension`.
 
-2. **Leiden pure-JS implementation vs. library**: Leiden is ~200-300 lines (modularity optimization + refinement phase + connectivity guarantee). Implementing it directly avoids a dependency. Alternative: use `graphology` + `graphology-communities-louvain` (Louvain, not Leiden) which is already packaged for JS. Decision: implement Leiden directly for correctness guarantees, or accept Louvain quality as sufficient for code graphs (empirically similar on typical sizes).
+2. **Leiden pure-JS implementation vs. library**: Leiden is ~200-300 lines (modularity optimization + refinement phase + connectivity guarantee). Implementing it directly avoids a dependency. Alternative: use `graphology` + `graphology-communities-louvain` (Louvain, not Leiden) which is already packaged for JS. Decision: implement Leiden directly for correctness guarantees, or accept Louvain quality as sufficient for code graphs (empirically similar on typical sizes). **Regardless of choice, add a per-community connectivity sanity check** (verify each community's induced subgraph is connected) to catch implementation bugs that could produce disconnected subcommunities and weak phrases.
 
 3. **Community granularity tuning**: Leiden's resolution parameter controls how fine-grained communities are. Too coarse: `apps/local/` and `apps/central/` merge into one. Too fine: single files become their own communities. Proposal: start with resolution=1.0 and validate on a few representative projects; expose as a config option.
 
-4. **Community staleness**: The community map should be re-computed when the import graph changes significantly. The import graph hash (§3.6) gates this. But minor changes (new file added to an existing module) should not trigger full re-detection. Proposal: re-run Leiden only when the graph hash delta exceeds a threshold (e.g., >5% change in edge count).
+4. **~~Community staleness~~** *(Resolved)*: The import graph hash (§3.6) is now a full edge-set sha256 — any structural change triggers re-detection. This is the correct behavior: even a single new import edge can create a new community or merge two existing ones. The cost of re-running Leiden on change is low (~500ms) relative to the cost of stale communities producing irrelevant phrases.
 
 5. **Warmup during first indexing**: `/index-codebase` should automatically trigger medium-depth warmup after indexing completes — the code graph is fresh and the user is about to start searching. This is step 8 in §10.
 
