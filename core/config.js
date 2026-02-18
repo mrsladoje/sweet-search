@@ -263,13 +263,13 @@ export const EMBEDDING_CONFIG = {
   },
 
   /** Outer indexer batch size (how many texts per getEmbeddings() call).
-   *  Decoupled from provider batchSize so bucketing sees a larger pool.
-   *  Benchmarked: batch=32 is fastest for local (less padding waste in ONNX).
-   *  Hardware-dependent — override via SWEET_SEARCH_INDEXER_BATCH_SIZE. */
+   *  Benchmarked on 137M model (CodeRankEmbed): batch=1 is fastest on CPU
+   *  due to padding waste exceeding any parallelism benefit.
+   *  Override via SWEET_SEARCH_INDEXER_BATCH_SIZE for GPU or larger models. */
   get indexerBatchSize() {
     const envVal = parseInt(process.env.SWEET_SEARCH_INDEXER_BATCH_SIZE || '', 10);
     if (Number.isFinite(envVal) && envVal > 0) return envVal;
-    return this.providerConfig.batchSize;
+    return this.provider === 'local' ? 1 : this.providerConfig.batchSize;
   },
 
   /** Rows to accumulate before flushing a DB write transaction.
