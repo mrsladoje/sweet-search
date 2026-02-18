@@ -171,5 +171,48 @@ describe('P2 Async I/O Pipeline', () => {
       expect(embedOrder).toEqual(['a', 'c', 'e']);
       expect(writeOrder).toEqual([2, 2, 2]); // 3 writes for 3 batches
     });
+
+    it('buffers writes until writeFlushRows threshold', async () => {
+      // Simulate buffered write pipeline: accumulate items, flush when >= threshold
+      const batchSize = 2;
+      const writeFlushRows = 4; // flush after accumulating 4+ rows
+      const texts = ['a', 'b', 'c', 'd', 'e', 'f']; // 6 items, 3 batches of 2
+      const flushSizes = [];
+
+      async function mockEmbed(batch) {
+        return batch.map(() => ({ embedding: new Float32Array([1]) }));
+      }
+
+      const embeddings = [];
+      let writeBuffer = [];
+
+      function flushWriteBuffer() {
+        if (writeBuffer.length === 0) return;
+        flushSizes.push(writeBuffer.length);
+        writeBuffer = [];
+      }
+
+      for (let i = 0; i < texts.length; i += batchSize) {
+        const batch = texts.slice(i, i + batchSize);
+        const batchResultsPromise = mockEmbed(batch);
+
+        if (writeBuffer.length >= writeFlushRows) {
+          flushWriteBuffer();
+        }
+
+        const results = await batchResultsPromise;
+        embeddings.push(...results.map(r => r.embedding));
+        // Each batch produces 2 items
+        writeBuffer.push(...results);
+      }
+      flushWriteBuffer();
+
+      expect(embeddings).toHaveLength(6);
+      // Batch 1 (2 items): buffer=2, < 4, no flush
+      // Batch 2 (2 items): buffer=4, >= 4, flush 4
+      // Batch 3 (2 items): buffer=2, < 4, no flush
+      // Final flush: 2 items
+      expect(flushSizes).toEqual([4, 2]); // 2 transactions instead of 3
+    });
   });
 });
