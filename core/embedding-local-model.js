@@ -166,12 +166,16 @@ export function resolveQuantizationMode() {
 export async function createLocalPipeline(pipelineFactory, sessionOptions) {
   const { quantized, label } = resolveQuantizationMode();
   const modelName = resolveLocalModelName(quantized);
+  // When loading from a dedicated INT8 repo, the file is model.onnx (not model_quantized.onnx),
+  // so tell transformers.js quantized=false to resolve the correct filename.
+  const usesQuantizedRepo = quantized && EMBEDDING_PROVIDERS.local.quantizedModel;
+  const pipelineQuantized = usesQuantizedRepo ? false : quantized;
   const keyCandidates = ['session_options', 'sessionOptions'];
   let lastError = null;
 
   for (const key of keyCandidates) {
     try {
-      const opts = { quantized, [key]: sessionOptions };
+      const opts = { quantized: pipelineQuantized, [key]: sessionOptions };
       const candidate = await pipelineFactory('feature-extraction', modelName, opts);
       candidate.__sweetSessionKey = key;
       candidate.__sweetQuantized = label;
