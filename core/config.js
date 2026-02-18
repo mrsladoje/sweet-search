@@ -200,7 +200,11 @@ export const EMBEDDING_PROVIDERS = {
   local: {
     enabled: true,
     priority: 99,
+    // FP32 baseline model (522 MB)
     model: 'jalipalo/CodeRankEmbed-onnx',
+    // Dynamic INT8 quantized model: 4× smaller (132 MB), ~2× faster, ≥0.96 cosine fidelity
+    // Set SWEET_SEARCH_LOCAL_QUANTIZED=false to use the FP32 model instead
+    quantizedModel: 'mrsladoje/CodeRankEmbed-onnx-int8',
     queryPrefix: 'Represent this query for searching relevant code: ',
     dimensions: {
       full: 768,
