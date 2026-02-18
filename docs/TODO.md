@@ -249,6 +249,52 @@ scoring and token budgets is **implemented but never called**.
 
 ---
 
+## 6. GPU-Accelerated Indexing (Optional)
+
+**Status**: Not started. CPU batch=1 is the current default (~220s for 1200 docs).
+
+### 6.1 Motivation
+
+The 137M CodeRankEmbed model fits easily in any modern GPU's VRAM (~500MB).
+On GPU, batched inference is drastically faster — kernel launch overhead dominates,
+so batch=32-64 gives real throughput gains. Estimated: 1200 docs in ~10-20s vs
+~220s on CPU (10-20x speedup).
+
+### 6.2 Implementation Options
+
+| Provider | Package | Platform | Pros | Cons |
+|----------|---------|----------|------|------|
+| CUDA EP | `onnxruntime-node-gpu` | NVIDIA only | Fastest, mature | ~200-500MB, requires CUDA runtime |
+| DirectML EP | `onnxruntime-node-directml` | Windows (any GPU) | Works on AMD/Intel/NVIDIA | Windows only, slower than CUDA |
+| WebGPU | `@huggingface/transformers` (device: 'webgpu') | Cross-platform | No native deps | Experimental in Node.js |
+
+### 6.3 Design Considerations
+
+- `onnxruntime-node` and `onnxruntime-node-gpu` are **mutually exclusive** npm
+  packages — can't install both. Need optional dependency + runtime detection.
+- Auto-detect GPU availability, fall back to CPU seamlessly.
+- When GPU is available, switch `indexerBatchSize` default from 1 to 32-64.
+- Model weights are identical — no separate model needed, just a different EP.
+- Test matrix expands: CPU-only, CUDA, DirectML across OS variants.
+
+### 6.4 Action Items
+
+- [ ] Research: can `onnxruntime-node` load CUDA EP dynamically if the user has
+  CUDA installed, without requiring the `-gpu` package?
+- [ ] Prototype: add `SWEET_SEARCH_USE_GPU=1` env var that swaps execution provider
+- [ ] Benchmark on a CUDA machine with batch sizes 1, 8, 32, 64
+- [ ] If viable: make GPU an optional dependency (`optionalDependencies` in package.json)
+- [ ] Add GPU detection to `bestIntraOpThreads()` or a new `resolveExecutionProvider()`
+- [ ] Document setup instructions for CUDA and DirectML
+
+### 6.5 Priority
+
+Low — current CPU performance is usable, and incremental indexing (Merkle state)
+means the full-index cost is a first-run thing. Revisit when indexing speed becomes
+a user complaint or when targeting server deployments.
+
+---
+
 ## Cross-Cutting: No P2 Item Has Been A/B Tested
 
 The single biggest gap across all P2 features is the absence of benchmarking.
