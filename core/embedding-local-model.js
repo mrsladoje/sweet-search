@@ -91,7 +91,7 @@ export function shouldUseOpenVino(openVinoAvailable = isOpenVinoProviderAvailabl
 /**
  * L3b: Return path for the ORT-optimized model graph cache.
  */
-export function getOptimizedModelPath() {
+export function getOptimizedModelPath(quantLabel = 'q8') {
   const cacheDir = path.join(os.homedir(), '.cache', 'sweet-search');
   mkdirSync(cacheDir, { recursive: true });
 
@@ -110,14 +110,14 @@ export function getOptimizedModelPath() {
     .digest('hex')
     .slice(0, 12);
 
-  return path.join(cacheDir, `coderankembed-optimized-ort${ortVersion}-${modelHash}.onnx`);
+  return path.join(cacheDir, `coderankembed-optimized-ort${ortVersion}-${quantLabel}-${modelHash}.onnx`);
 }
 
 export function getCalibrationFactor() {
   return 4;
 }
 
-export function buildLocalSessionOptions() {
+export function buildLocalSessionOptions(quantLabel = 'q8') {
   const sessionOptions = {
     graphOptimizationLevel: 'all',
     intraOpNumThreads: bestIntraOpThreads(),
@@ -125,7 +125,7 @@ export function buildLocalSessionOptions() {
     executionMode: 'parallel',
     enableCpuMemArena: true,
     enableMemPattern: true,
-    optimizedModelFilePath: getOptimizedModelPath(),
+    optimizedModelFilePath: getOptimizedModelPath(quantLabel),
   };
 
   if (shouldUseOpenVino()) {
@@ -138,18 +138,28 @@ export function buildLocalSessionOptions() {
   return sessionOptions;
 }
 
+/**
+ * Resolve quantization mode from env var.
+ * Returns { quantized: bool, label: string }
+ */
+export function resolveQuantizationMode() {
+  const raw = (process.env.SWEET_SEARCH_LOCAL_QUANTIZED ?? '').trim().toLowerCase();
+  if (raw === '0' || raw === 'false') return { quantized: false, label: 'fp32' };
+  return { quantized: true, label: 'q8' };
+}
+
 export async function createLocalPipeline(pipelineFactory, sessionOptions) {
   const modelName = EMBEDDING_PROVIDERS.local.model;
+  const { quantized, label } = resolveQuantizationMode();
   const keyCandidates = ['session_options', 'sessionOptions'];
   let lastError = null;
 
   for (const key of keyCandidates) {
     try {
-      const candidate = await pipelineFactory('feature-extraction', modelName, {
-        quantized: true,
-        [key]: sessionOptions,
-      });
+      const opts = { quantized, [key]: sessionOptions };
+      const candidate = await pipelineFactory('feature-extraction', modelName, opts);
       candidate.__sweetSessionKey = key;
+      candidate.__sweetQuantized = label;
       return candidate;
     } catch (err) {
       lastError = err;
@@ -279,7 +289,9 @@ export async function getLocalPipeline() {
       ({ pipeline } = await import('@xenova/transformers'));
     }
 
-    const sessionOptions = buildLocalSessionOptions();
+    const { label: quantLabel } = resolveQuantizationMode();
+
+    const sessionOptions = buildLocalSessionOptions(quantLabel);
     let backend = sessionOptions.executionProviders ? 'openvino+cpu' : 'cpu';
 
     try {
@@ -287,7 +299,7 @@ export async function getLocalPipeline() {
     } catch (err) {
       if (sessionOptions.executionProviders) {
         console.warn(`[L5] OpenVINO session init failed (${err.message}), retrying with CPUExecutionProvider only`);
-        const cpuOnlyOptions = buildLocalSessionOptions();
+        const cpuOnlyOptions = buildLocalSessionOptions(quantLabel);
         delete cpuOnlyOptions.executionProviders;
         localPipeline = await createLocalPipeline(pipeline, cpuOnlyOptions);
         backend = 'cpu';
@@ -305,12 +317,12 @@ export async function getLocalPipeline() {
       }
     }
 
-    const optimizedPath = getOptimizedModelPath();
+    const optimizedPath = getOptimizedModelPath(quantLabel);
     if (!existsSync(optimizedPath)) {
       console.warn(`[L3b] Optimized model file was not materialized at ${optimizedPath}. Session options may not be fully forwarded.`);
     }
 
-    console.log(`Local model loaded in ${Date.now() - start}ms (threads: ${bestIntraOpThreads()}, backend: ${backend}, sessionKey: ${localPipeline.__sweetSessionKey || 'unknown'})`);
+    console.log(`Local model loaded in ${Date.now() - start}ms (threads: ${bestIntraOpThreads()}, backend: ${backend}, quantized: ${localPipeline.__sweetQuantized ?? true}, sessionKey: ${localPipeline.__sweetSessionKey || 'unknown'})`);
     isLoadingLocal = false;
     return localPipeline;
   })();
