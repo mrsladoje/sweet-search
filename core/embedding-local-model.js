@@ -89,7 +89,20 @@ export function shouldUseOpenVino(openVinoAvailable = isOpenVinoProviderAvailabl
 }
 
 /**
+ * Resolve which model repo to load based on quantization mode.
+ * - quantized=true  → quantizedModel (INT8, ~132 MB, ~2× faster)
+ * - quantized=false → model (FP32, ~522 MB, baseline)
+ */
+export function resolveLocalModelName(quantized) {
+  if (quantized && EMBEDDING_PROVIDERS.local.quantizedModel) {
+    return EMBEDDING_PROVIDERS.local.quantizedModel;
+  }
+  return EMBEDDING_PROVIDERS.local.model;
+}
+
+/**
  * L3b: Return path for the ORT-optimized model graph cache.
+ * Uses the actual model name in the hash so FP32 and INT8 never share a cache file.
  */
 export function getOptimizedModelPath(quantLabel = 'q8') {
   const cacheDir = path.join(os.homedir(), '.cache', 'sweet-search');
@@ -105,8 +118,10 @@ export function getOptimizedModelPath(quantLabel = 'q8') {
     // ORT pulled in transitively; version unknown is fine
   }
 
+  const isQuantized = quantLabel !== 'fp32';
+  const modelName = resolveLocalModelName(isQuantized);
   const modelHash = crypto.createHash('sha256')
-    .update(EMBEDDING_PROVIDERS.local.model)
+    .update(modelName)
     .digest('hex')
     .slice(0, 12);
 
@@ -149,8 +164,8 @@ export function resolveQuantizationMode() {
 }
 
 export async function createLocalPipeline(pipelineFactory, sessionOptions) {
-  const modelName = EMBEDDING_PROVIDERS.local.model;
   const { quantized, label } = resolveQuantizationMode();
+  const modelName = resolveLocalModelName(quantized);
   const keyCandidates = ['session_options', 'sessionOptions'];
   let lastError = null;
 
@@ -281,7 +296,8 @@ export async function getLocalPipeline() {
   isLoadingLocal = true;
   loadPromise = (async () => {
     const start = Date.now();
-    console.log(`Loading local model: ${EMBEDDING_PROVIDERS.local.model}...`);
+    const { quantized: isQuantized } = resolveQuantizationMode();
+    console.log(`Loading local model: ${resolveLocalModelName(isQuantized)}...`);
     let pipeline;
     try {
       ({ pipeline } = await import('@huggingface/transformers'));
