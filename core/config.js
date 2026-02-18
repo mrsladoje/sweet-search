@@ -258,6 +258,25 @@ export const EMBEDDING_CONFIG = {
     return this.providerConfig.batchSize;
   },
 
+  /** Outer indexer batch size (how many texts per getEmbeddings() call).
+   *  Decoupled from provider batchSize so bucketing sees a larger pool.
+   *  Benchmarked: batch=32 is fastest for local (less padding waste in ONNX).
+   *  Hardware-dependent — override via SWEET_SEARCH_INDEXER_BATCH_SIZE. */
+  get indexerBatchSize() {
+    const envVal = parseInt(process.env.SWEET_SEARCH_INDEXER_BATCH_SIZE || '', 10);
+    if (Number.isFinite(envVal) && envVal > 0) return envVal;
+    return this.providerConfig.batchSize;
+  },
+
+  /** Rows to accumulate before flushing a DB write transaction.
+   *  Reduces transaction count vs writing every embed batch.
+   *  Benchmarked: flush size has minimal impact; 128 is slightly best. */
+  get indexerWriteFlushRows() {
+    const envVal = parseInt(process.env.SWEET_SEARCH_INDEXER_WRITE_FLUSH_ROWS || '', 10);
+    if (Number.isFinite(envVal) && envVal > 0) return envVal;
+    return 128;
+  },
+
   get contextLength() {
     return this.providerConfig.contextLength;
   },

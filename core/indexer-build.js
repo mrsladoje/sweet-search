@@ -292,10 +292,9 @@ export function insertVectors(db, chunks, embeddings, modelInfo) {
   }
 }
 
-export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgressFn, embeddingOptions = {}, logFn) {
-  const BATCH_INSERT_SIZE = 2000;
+export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgressFn, embeddingOptions = {}, logFn, writeFlushRows = 128) {
   const embeddings = [];
-  let prevBatchItems = null;
+  let writeBuffer = [];
 
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO vectors (id, file_path, embedding, text, metadata, session_id, tags, created_at)
@@ -308,34 +307,37 @@ export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, m
     }
   });
 
+  function flushWriteBuffer() {
+    if (writeBuffer.length === 0) return;
+    insertBatch(writeBuffer);
+    writeBuffer = [];
+  }
+
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
     const batchChunks = allChunks.slice(i, i + batchSize);
 
+    // Overlap: flush accumulated writes while embedding is in-flight
     const batchResultsPromise = getEmbeddings(batch, embeddingOptions);
 
-    if (prevBatchItems && prevBatchItems.length > 0) {
-      for (let j = 0; j < prevBatchItems.length; j += BATCH_INSERT_SIZE) {
-        insertBatch(prevBatchItems.slice(j, j + BATCH_INSERT_SIZE));
-      }
+    if (writeBuffer.length >= writeFlushRows) {
+      flushWriteBuffer();
     }
 
     const batchResults = await batchResultsPromise;
     const batchEmbeddings = batchResults.map(r => r.embedding);
     embeddings.push(...batchEmbeddings);
 
-    prevBatchItems = buildInsertItems(batchChunks, batchEmbeddings, modelInfo);
+    const batchItems = buildInsertItems(batchChunks, batchEmbeddings, modelInfo);
+    writeBuffer.push(...batchItems);
 
     if ((i + batchSize) % 100 === 0 || i + batchSize >= texts.length) {
       logProgressFn(Math.min(i + batchSize, texts.length), texts.length, 'Embedding');
     }
   }
 
-  if (prevBatchItems && prevBatchItems.length > 0) {
-    for (let j = 0; j < prevBatchItems.length; j += BATCH_INSERT_SIZE) {
-      insertBatch(prevBatchItems.slice(j, j + BATCH_INSERT_SIZE));
-    }
-  }
+  // Flush remaining buffered writes
+  flushWriteBuffer();
 
   return embeddings;
 }
@@ -414,9 +416,12 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
     return text;
   });
 
-  const batchSize = EMBEDDING_CONFIG.batchSize;
+  const batchSize = EMBEDDING_CONFIG.indexerBatchSize;
+  const writeFlushRows = EMBEDDING_CONFIG.indexerWriteFlushRows;
   const embeddingOptions = { useCache: false };
   let effectiveEmbeddingDimension = modelInfo.dimension;
+
+  log(`Indexer: batchSize=${batchSize}, writeFlushRows=${writeFlushRows}`, 'dim');
 
   if (modelInfo.isRemote) {
     const configuredOutputDim = parseInt(
@@ -462,7 +467,7 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
 
     createVectorSchema(db);
 
-    embeddings = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, embeddingOptions, log);
+    embeddings = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, embeddingOptions, log, writeFlushRows);
 
     db.close();
 
@@ -516,7 +521,7 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
       createVectorSchema(db);
     }
 
-    embeddings = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, embeddingOptions, log);
+    embeddings = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, embeddingOptions, log, writeFlushRows);
 
     log(`\n✓ Generated ${embeddings.length} embeddings (${effectiveEmbeddingDimension}d)`, 'green');
 
