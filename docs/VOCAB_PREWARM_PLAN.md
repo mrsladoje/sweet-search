@@ -447,6 +447,7 @@ for (const embedding of [...hubEmbeddings, ...phraseEmbeddings]) {
 - `EMBEDDING_CONFIG.dimension` for final reranking (full precision)
 - Local provider (all-MiniLM-L6-v2): 256d HNSW / 384d full — no Matryoshka, dimensions are already compact
 - **Dimension consistency invariant**: Seed embeddings are produced and stored at the same dimensions used at query time — `EMBEDDING_CONFIG.hnswDimension` for HNSW seeds, `EMBEDDING_CONFIG.dimension` for rerank. No separate warmup dimension config; warmup inherits production dimensions via the same `generateEmbeddings()` call path.
+- **Provider capability guard**: Only use Matryoshka truncation (`hnswDimension` < `dimension`) when the active provider's model was specifically trained with Matryoshka loss (e.g., Voyage-code-3, OpenAI v3). For models without Matryoshka training, `hnswDimension` must equal `dimension` — truncating destroys recall.
 
 **Time budget** (provider-dependent):
 
