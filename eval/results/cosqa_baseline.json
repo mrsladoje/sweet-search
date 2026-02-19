@@ -1,0 +1,220 @@
+{
+  "timestamp": "2026-02-18T00:44:06.360Z",
+  "dataset": "cosqa",
+  "queryCount": 100,
+  "corpusSize": 100,
+  "searchMode": "auto",
+  "totalTimeMs": 130899,
+  "errors": 0,
+  "aggregate": {
+    "mrr_at_10": 0.7195,
+    "ndcg_at_10": 0.7372,
+    "map_at_10": 0.7195,
+    "recall_at_5": 0.78,
+    "recall_at_10": 0.79,
+    "recall_at_20": 0.8,
+    "success_at_1": 0.67,
+    "success_at_5": 0.78,
+    "latency_p50_ms": 370.5157,
+    "latency_p95_ms": 862.1197,
+    "latency_mean_ms": 363.5306
+  },
+  "perLanguage": {
+    "python": {
+      "count": 100,
+      "mrr_at_10": 0.7195,
+      "ndcg_at_10": 0.7372,
+      "map_at_10": 0.7195,
+      "recall_at_5": 0.78,
+      "recall_at_10": 0.79,
+      "recall_at_20": 0.8,
+      "success_at_1": 0.67,
+      "success_at_5": 0.78,
+      "latency_p50_ms": 370.5157,
+      "latency_p95_ms": 862.1197,
+      "latency_mean_ms": 363.5306
+    }
+  },
+  "failedQueries": [
+    {
+      "queryId": "CQ0001",
+      "query": "Downloads Sina videos by URL.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ0004",
+      "query": "Print an error log message.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ0006",
+      "query": "str->None",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ0008",
+      "query": "str->list of str\n        Give you the real URLs.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ0018",
+      "query": "JSON, int, int, int->str\n    \n    Get a proper title with courseid+topicID+partID.",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CQ0017",
+      "query": "str->str",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "queryId": "CQ0019",
+      "query": "int->None\n    \n    Download a WHOLE course.\n    Reuse the API call to save time.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ0020",
+      "query": "int, int, int->None\n    \n    Download ONE PART of the course.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ0027",
+      "query": "Runs forever, monitoring the child processes of @gunicorn_master_proc and\n    restarting workers occ",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CQ0028",
+      "query": "Translate a string or list of strings.\n\n        See https://cloud.google.com/translate/docs/translat",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CQ0031",
+      "query": "Creates a new database inside a Cloud SQL instance.\n\n        :param instance: Database instance ID. ",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CQ0032",
+      "query": "Updates a database resource inside a Cloud SQL instance.\n\n        This method supports patch semanti",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CQ0033",
+      "query": "Exports data from a Cloud SQL instance to a Cloud Storage bucket as a SQL dump\n        or CSV file.\n",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CQ0038",
+      "query": "Retrieve Cloud SQL Proxy runner. It is used to manage the proxy\n        lifecycle per task.\n\n       ",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CQ0035",
+      "query": "Create connection in the Connection table, according to whether it uses\n        proxy, TCP, UNIX soc",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ0051",
+      "query": "Performs the request\n\n        :param endpoint: the endpoint to be called i.e. resource/v1/query?\n   ",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CQ0050",
+      "query": "Returns http session for use with requests\n\n        :param headers: additional headers to be passed ",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ0053",
+      "query": "Grabs extra options like timeout and actually runs the request,\n        checking for the result\n\n   ",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ0059",
+      "query": "Checks if a collection exists in CosmosDB.",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CQ0060",
+      "query": "Creates a new collection in the CosmosDB database.",
+      "language": "python",
+      "topRelevance": []
+    }
+  ]
+}

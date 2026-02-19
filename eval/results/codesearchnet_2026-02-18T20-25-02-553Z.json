@@ -1,0 +1,332 @@
+{
+  "timestamp": "2026-02-18T20:25:02.552Z",
+  "dataset": "codesearchnet",
+  "queryCount": 1200,
+  "corpusSize": 1200,
+  "searchMode": "auto",
+  "totalTimeMs": 339939,
+  "errors": 0,
+  "aggregate": {
+    "mrr_at_10": 0.6641,
+    "ndcg_at_10": 0.6915,
+    "map_at_10": 0.6641,
+    "recall_at_5": 0.7367,
+    "recall_at_10": 0.7775,
+    "recall_at_20": 0.8092,
+    "success_at_1": 0.6058,
+    "success_at_5": 0.7367,
+    "latency_p50_ms": 191.0564,
+    "latency_p95_ms": 339.2781,
+    "latency_mean_ms": 348.3709
+  },
+  "perLanguage": {
+    "python": {
+      "count": 200,
+      "mrr_at_10": 0.7657,
+      "ndcg_at_10": 0.7911,
+      "map_at_10": 0.7657,
+      "recall_at_5": 0.835,
+      "recall_at_10": 0.87,
+      "recall_at_20": 0.89,
+      "success_at_1": 0.71,
+      "success_at_5": 0.835,
+      "latency_p50_ms": 227.8657,
+      "latency_p95_ms": 535.3394,
+      "latency_mean_ms": 464.8064
+    },
+    "javascript": {
+      "count": 200,
+      "mrr_at_10": 0.5173,
+      "ndcg_at_10": 0.5365,
+      "map_at_10": 0.5173,
+      "recall_at_5": 0.575,
+      "recall_at_10": 0.595,
+      "recall_at_20": 0.625,
+      "success_at_1": 0.47,
+      "success_at_5": 0.575,
+      "latency_p50_ms": 106.8603,
+      "latency_p95_ms": 199.2556,
+      "latency_mean_ms": 307.7096
+    },
+    "go": {
+      "count": 200,
+      "mrr_at_10": 0.9358,
+      "ndcg_at_10": 0.9407,
+      "map_at_10": 0.9358,
+      "recall_at_5": 0.95,
+      "recall_at_10": 0.955,
+      "recall_at_20": 0.975,
+      "success_at_1": 0.92,
+      "success_at_5": 0.95,
+      "latency_p50_ms": 253.8393,
+      "latency_p95_ms": 345.4517,
+      "latency_mean_ms": 280.3563
+    },
+    "ruby": {
+      "count": 200,
+      "mrr_at_10": 0.7499,
+      "ndcg_at_10": 0.7829,
+      "map_at_10": 0.7499,
+      "recall_at_5": 0.845,
+      "recall_at_10": 0.885,
+      "recall_at_20": 0.89,
+      "success_at_1": 0.675,
+      "success_at_5": 0.845,
+      "latency_p50_ms": 142.1656,
+      "latency_p95_ms": 225.7014,
+      "latency_mean_ms": 523.8385
+    },
+    "java": {
+      "count": 200,
+      "mrr_at_10": 0.3482,
+      "ndcg_at_10": 0.4111,
+      "map_at_10": 0.3482,
+      "recall_at_5": 0.485,
+      "recall_at_10": 0.615,
+      "recall_at_20": 0.71,
+      "success_at_1": 0.24,
+      "success_at_5": 0.485,
+      "latency_p50_ms": 201.0454,
+      "latency_p95_ms": 294.005,
+      "latency_mean_ms": 275.2007
+    },
+    "php": {
+      "count": 200,
+      "mrr_at_10": 0.6676,
+      "ndcg_at_10": 0.6868,
+      "map_at_10": 0.6676,
+      "recall_at_5": 0.73,
+      "recall_at_10": 0.745,
+      "recall_at_20": 0.765,
+      "success_at_1": 0.62,
+      "success_at_5": 0.73,
+      "latency_p50_ms": 246.3564,
+      "latency_p95_ms": 358.2162,
+      "latency_mean_ms": 238.3137
+    }
+  },
+  "failedQueries": [
+    {
+      "queryId": "Q00002",
+      "query": "From http://cdn37.atwikiimg.com/sitescript/pub/dksitescript/FC2.site.js",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "Q00004",
+      "query": "http://stackoverflow.com/a/30923963/2946714",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "Q00000",
+      "query": "Extracts video ID from URL.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00005",
+      "query": "video page",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00006",
+      "query": "course page",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00009",
+      "query": "Downloads Sina videos by URL.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00010",
+      "query": "Get item_id",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00012",
+      "query": "self, str->None",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00019",
+      "query": "Source: Android mobile",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00020",
+      "query": "str/int->None",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "Q00016",
+      "query": "Print an error log message.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00024",
+      "query": "Extracts video ID from URL.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00021",
+      "query": "try:",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00022",
+      "query": "str->dict",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00025",
+      "query": "str->list of str",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00030",
+      "query": "Override the original one",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00031",
+      "query": "str, str, str, bool, bool ->None",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00033",
+      "query": "str, str->True",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00043",
+      "query": "Source: Android mobile",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "Q00045",
+      "query": "int->None",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

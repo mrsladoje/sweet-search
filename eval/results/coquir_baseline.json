@@ -1,0 +1,280 @@
+{
+  "timestamp": "2026-02-18T21:47:42.794Z",
+  "dataset": "coquir",
+  "queryCount": 2467,
+  "corpusSize": 2467,
+  "searchMode": "auto",
+  "totalTimeMs": 2049979,
+  "errors": 0,
+  "aggregate": {
+    "mrr_at_10": 0.4435,
+    "ndcg_at_10": 0.4646,
+    "map_at_10": 0.4435,
+    "recall_at_5": 0.4949,
+    "recall_at_10": 0.5314,
+    "recall_at_20": 0.5861,
+    "success_at_1": 0.4025,
+    "success_at_5": 0.4949,
+    "latency_p50_ms": 278.3021,
+    "latency_p95_ms": 8374.5337,
+    "latency_mean_ms": 1188.2527
+  },
+  "perLanguage": {
+    "java": {
+      "count": 467,
+      "mrr_at_10": 0.6527,
+      "ndcg_at_10": 0.6674,
+      "map_at_10": 0.6527,
+      "recall_at_5": 0.7024,
+      "recall_at_10": 0.7109,
+      "recall_at_20": 0.7216,
+      "success_at_1": 0.6103,
+      "success_at_5": 0.7024,
+      "latency_p50_ms": 852.227,
+      "latency_p95_ms": 1009.7643,
+      "latency_mean_ms": 699.4986
+    },
+    "c": {
+      "count": 500,
+      "mrr_at_10": 0.7593,
+      "ndcg_at_10": 0.7761,
+      "map_at_10": 0.7593,
+      "recall_at_5": 0.79,
+      "recall_at_10": 0.83,
+      "recall_at_20": 0.89,
+      "success_at_1": 0.728,
+      "success_at_5": 0.79,
+      "latency_p50_ms": 277.0539,
+      "latency_p95_ms": 17427.3448,
+      "latency_mean_ms": 2546.3406
+    },
+    "python": {
+      "count": 1000,
+      "mrr_at_10": 0.3144,
+      "ndcg_at_10": 0.3271,
+      "map_at_10": 0.3144,
+      "recall_at_5": 0.352,
+      "recall_at_10": 0.366,
+      "recall_at_20": 0.392,
+      "success_at_1": 0.285,
+      "success_at_5": 0.352,
+      "latency_p50_ms": 36.3377,
+      "latency_p95_ms": 12214.2746,
+      "latency_mean_ms": 985.8636
+    },
+    "sql": {
+      "count": 500,
+      "mrr_at_10": 0.1905,
+      "ndcg_at_10": 0.2386,
+      "map_at_10": 0.1905,
+      "recall_at_5": 0.292,
+      "recall_at_10": 0.396,
+      "recall_at_20": 0.544,
+      "success_at_1": 0.118,
+      "success_at_5": 0.292,
+      "latency_p50_ms": 601.086,
+      "latency_p95_ms": 927.0744,
+      "latency_mean_ms": 691.4392
+    }
+  },
+  "failedQueries": [
+    {
+      "queryId": "CQR00000",
+      "query": "The provided Java code defines a method `parseInputs()` that processes JavaScript inputs and externs",
+      "language": "java",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CQR00001",
+      "query": "The provided Java code defines a static method named `newStringIso8859_1` that takes a byte array as",
+      "language": "java",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CQR00007",
+      "query": "The provided Java code defines a method `canInlineReferenceDirectly` that determines whether a funct",
+      "language": "java",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CQR00009",
+      "query": "The provided Java code defines a method `nextToken()` that retrieves the next JSON token while apply",
+      "language": "java",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQR00016",
+      "query": "The provided Java code defines a static method `mayBeString` that checks if a given `Node` object `n",
+      "language": "java",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQR00013",
+      "query": "The provided Java code defines a method `computeMillis` that calculates the milliseconds from a give",
+      "language": "java",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQR00019",
+      "query": "The provided Java code defines a constructor for the `ValueMarker` class, which initializes an insta",
+      "language": "java",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQR00015",
+      "query": "The provided Java code defines a static method `create` that takes a string parameter `opt` and retu",
+      "language": "java",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQR00020",
+      "query": "The provided Java code defines a method `process` that handles various types of HTML tokens (such as",
+      "language": "java",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQR00026",
+      "query": "The provided Java code defines a static method `areEqual` that checks if two objects, `o1` and `o2`,",
+      "language": "java",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CQR00027",
+      "query": "The provided Java code defines a static method `encodeBase64String` that takes a byte array (`binary",
+      "language": "java",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CQR00023",
+      "query": "The provided Java code defines a method `isInlinableObject` that checks if a list of `Reference` obj",
+      "language": "java",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQR00025",
+      "query": "The provided Java code defines a method `nextToken()` that processes XML tokens and converts them in",
+      "language": "java",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQR00032",
+      "query": "The provided Java code defines a method `read` that reads a JSON value from a `JsonReader` and retur",
+      "language": "java",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQR00033",
+      "query": "The provided Java code defines a method `getCorrelationPValues()` that calculates the p-values for t",
+      "language": "java",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CQR00030",
+      "query": "The provided Java code implements a numerical integration method for solving first-order differentia",
+      "language": "java",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQR00034",
+      "query": "The provided Java code defines a method `process` that handles various types of HTML tokens (such as",
+      "language": "java",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "CQR00045",
+      "query": "The provided Java code defines a static method `parseByteData` that takes a `ByteBuffer`, a characte",
+      "language": "java",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQR00049",
+      "query": "The provided Java code is a method that completes the deserialization of a bean object using a `Json",
+      "language": "java",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQR00056",
+      "query": "The provided Java code defines a static method `parseByteData` that reads a `ByteBuffer` containing ",
+      "language": "java",
+      "topRelevance": []
+    }
+  ]
+}

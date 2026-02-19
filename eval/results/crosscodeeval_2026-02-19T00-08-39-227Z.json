@@ -1,0 +1,310 @@
+{
+  "timestamp": "2026-02-19T00:08:39.226Z",
+  "dataset": "crosscodeeval",
+  "queryCount": 4000,
+  "corpusSize": 4000,
+  "searchMode": "auto",
+  "totalTimeMs": 6176731,
+  "errors": 0,
+  "aggregate": {
+    "mrr_at_10": 0.1203,
+    "ndcg_at_10": 0.1476,
+    "map_at_10": 0.1203,
+    "recall_at_5": 0.183,
+    "recall_at_10": 0.2355,
+    "recall_at_20": 0.2778,
+    "success_at_1": 0.0738,
+    "success_at_5": 0.183,
+    "latency_p50_ms": 145.5044,
+    "latency_p95_ms": 979.499,
+    "latency_mean_ms": 587.9576
+  },
+  "perLanguage": {
+    "python": {
+      "count": 1000,
+      "mrr_at_10": 0.1653,
+      "ndcg_at_10": 0.1998,
+      "map_at_10": 0.1653,
+      "recall_at_5": 0.25,
+      "recall_at_10": 0.31,
+      "recall_at_20": 0.362,
+      "success_at_1": 0.101,
+      "success_at_5": 0.25,
+      "latency_p50_ms": 148.5025,
+      "latency_p95_ms": 905.9472,
+      "latency_mean_ms": 709.7905
+    },
+    "java": {
+      "count": 1000,
+      "mrr_at_10": 0.1087,
+      "ndcg_at_10": 0.1363,
+      "map_at_10": 0.1087,
+      "recall_at_5": 0.176,
+      "recall_at_10": 0.225,
+      "recall_at_20": 0.269,
+      "success_at_1": 0.063,
+      "success_at_5": 0.176,
+      "latency_p50_ms": 293.8134,
+      "latency_p95_ms": 741.989,
+      "latency_mean_ms": 483.7057
+    },
+    "typescript": {
+      "count": 1000,
+      "mrr_at_10": 0.0787,
+      "ndcg_at_10": 0.1051,
+      "map_at_10": 0.0787,
+      "recall_at_5": 0.127,
+      "recall_at_10": 0.192,
+      "recall_at_20": 0.234,
+      "success_at_1": 0.039,
+      "success_at_5": 0.127,
+      "latency_p50_ms": 184.8677,
+      "latency_p95_ms": 768.9488,
+      "latency_mean_ms": 793.8583
+    },
+    "csharp": {
+      "count": 1000,
+      "mrr_at_10": 0.1286,
+      "ndcg_at_10": 0.1492,
+      "map_at_10": 0.1286,
+      "recall_at_5": 0.179,
+      "recall_at_10": 0.215,
+      "recall_at_20": 0.246,
+      "success_at_1": 0.092,
+      "success_at_5": 0.179,
+      "latency_p50_ms": 118.7427,
+      "latency_p95_ms": 1290.2027,
+      "latency_mean_ms": 364.4759
+    }
+  },
+  "failedQueries": [
+    {
+      "queryId": "CC00000",
+      "query": "old_tail = tokenizer.decode(generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00002",
+      "query": "generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00004",
+      "query": "generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00001",
+      "query": "generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00003",
+      "query": "utilized_prompt = tokenizer.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00005",
+      "query": "ids, mask = tokenizer.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00006",
+      "query": "output = tokenizer.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00009",
+      "query": "config.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00007",
+      "query": "config.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00008",
+      "query": "output = generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00014",
+      "query": "config.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00010",
+      "query": "logits = model.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00018",
+      "query": "generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00013",
+      "query": "compile.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00020",
+      "query": "final_options.",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CC00015",
+      "query": "sampled_token, _ = generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00016",
+      "query": "logits = model.forward(generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00017",
+      "query": "json.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00024",
+      "query": "cmd_class.",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CC00019",
+      "query": "opt = json.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    }
+  ]
+}
