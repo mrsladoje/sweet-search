@@ -104,7 +104,7 @@ Code search terms follow a Zipf's law distribution: the Nth most-common term app
 
 ### 2.5 Hybrid Search Warming
 
-**RRF (Reciprocal Rank Fusion)** is the gold standard for combining BM25 + vector search:
+**RRF (Reciprocal Rank Fusion)** is widely used and effective for combining BM25 + vector search:
 ```
 RRF_score(d) = Sum[ 1 / (k + rank_in_method_i) ]    k = 60
 ```
@@ -112,8 +112,9 @@ RRF_score(d) = Sum[ 1 / (k + rank_in_method_i) ]    k = 60
 - No tuning required, rank-based (immune to mismatched score scales)
 - Both paths MUST be warm independently for hybrid to be fast
 - Warming only one path leaves the other cold — hybrid latency = max(lexical, semantic)
+- **Weakest-link phenomenon** (arXiv:2508.01405, "Balancing the Blend", 2025): a weak retrieval path substantially degrades overall RRF accuracy. This directly motivates this plan's dual-path warmup strategy — if FTS5 is cold while HNSW is warm (or vice versa), hybrid quality degrades even though one path is fast.
 
-**Sources**: [Microsoft Azure RRF](https://learn.microsoft.com/en-us/azure/search/hybrid-search-ranking), [Weaviate Hybrid Search](https://weaviate.io/blog/hybrid-search-explained), [Elasticsearch Caching Deep Dive](https://www.elastic.co/blog/elasticsearch-caching-deep-dive-boosting-query-speed-one-cache-at-a-time)
+**Sources**: [Microsoft Azure RRF](https://learn.microsoft.com/en-us/azure/search/hybrid-search-ranking), [Weaviate Hybrid Search](https://weaviate.io/blog/hybrid-search-explained), [Elasticsearch Caching Deep Dive](https://www.elastic.co/blog/elasticsearch-caching-deep-dive-boosting-query-speed-one-cache-at-a-time), [Balancing the Blend — Weakest Link in RRF](https://arxiv.org/abs/2508.01405)
 
 ### 2.6 SQLite FTS5 Proper Warming
 
@@ -303,7 +304,7 @@ For each detected community:
 
 #### 3.3.6 Git Mining (Deep mode only, ~1-3s)
 
-- **Recent commit messages**: What developers talk about = what they search for
+- **Recent commit messages**: What developers talk about = what they search for. Bounded to last **200 commits or 30 days** (whichever is smaller) on the default branch — same bound used for NL content hashing in §3.6. Use `git log --max-count=200` to avoid scanning large histories.
 - **Frequently changed files**: Hot files have hot vocabulary
 - **Branch names**: `feature/oauth2-integration` -> `oauth2`, `integration`
 
@@ -557,8 +558,10 @@ Options:
   --modes hybrid  Warm only full pipeline
   --top N         Warm top N terms (default: 1000)
   --provider P    Override embedding provider (voyage/mistral/jina/local, default: uses EMBEDDING_CONFIG.provider)
-  --local-warmup  Force local model for warmup even when remote provider is active (faster warmup)
+  --local-warmup  Force local model for warmup even when remote provider is active (see note below)
 ```
+
+**`--local-warmup` dimension safety**: When the active provider uses a different dimension than the local model (e.g., Voyage 1024d vs MiniLM 384d), `--local-warmup` embeddings **cannot** be stored in the main vocabulary cache — they would produce dimension mismatches at query time. Behavior: `--local-warmup` warms HNSW traversal paths (the `hnswIndex.search()` calls in §3.5.2 still exercise graph neighborhoods) and primes the FTS5 page cache (dimension-independent), but the generated embeddings are stored in a **separate `local-warmup` cache namespace** that is never consulted at query time. The flag is useful for fast path-warming when you don't need query-time cache hits from the warmup pass.
 
 ### 5.2 MCP Tool: `sweet-search/vocab-prewarm`
 
