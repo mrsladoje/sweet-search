@@ -1,0 +1,240 @@
+{
+  "timestamp": "2026-02-19T00:17:05.440Z",
+  "dataset": "clarc",
+  "queryCount": 995,
+  "corpusSize": 995,
+  "searchMode": "auto",
+  "totalTimeMs": 506210,
+  "errors": 0,
+  "aggregate": {
+    "mrr_at_10": 0.6056,
+    "ndcg_at_10": 0.6471,
+    "map_at_10": 0.6056,
+    "recall_at_5": 0.7176,
+    "recall_at_10": 0.7779,
+    "recall_at_20": 0.8442,
+    "success_at_1": 0.5196,
+    "success_at_5": 0.7176,
+    "latency_p50_ms": 308.9686,
+    "latency_p95_ms": 14595.9597,
+    "latency_mean_ms": 1622.6375
+  },
+  "perLanguage": {
+    "cpp": {
+      "count": 106,
+      "mrr_at_10": 0.5418,
+      "ndcg_at_10": 0.5645,
+      "map_at_10": 0.5418,
+      "recall_at_5": 0.6321,
+      "recall_at_10": 0.6321,
+      "recall_at_20": 0.6698,
+      "success_at_1": 0.4811,
+      "success_at_5": 0.6321,
+      "latency_p50_ms": 262.4198,
+      "latency_p95_ms": 12777.3405,
+      "latency_mean_ms": 1321.5826
+    },
+    "c": {
+      "count": 889,
+      "mrr_at_10": 0.6132,
+      "ndcg_at_10": 0.6569,
+      "map_at_10": 0.6132,
+      "recall_at_5": 0.7278,
+      "recall_at_10": 0.7953,
+      "recall_at_20": 0.865,
+      "success_at_1": 0.5242,
+      "success_at_5": 0.7278,
+      "latency_p50_ms": 316.7761,
+      "latency_p95_ms": 15064.815,
+      "latency_mean_ms": 1658.5338
+    }
+  },
+  "failedQueries": [
+    {
+      "queryId": "CL00000",
+      "query": "The function receives a constant reference to a string as input. It checks whether the input string ",
+      "language": "cpp",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CL00001",
+      "query": "The function accepts a constant character string as its sole input and immediately returns the integ",
+      "language": "c",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CL00003",
+      "query": "The function accepts a boolean input and immediately returns that identical boolean value. It perfor",
+      "language": "c",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CL00004",
+      "query": "This function is intended to write output to the standard error stream. It accepts no input paramete",
+      "language": "c",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CL00007",
+      "query": "The function accepts an integer representing a file descriptor and determines whether it is associat",
+      "language": "c",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CL00008",
+      "query": "The function takes two input parameters, both of which are pointers to constant characters (C-style ",
+      "language": "c",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CL00010",
+      "query": "The function accepts a single character string input that specifies a directory path. Its role is to",
+      "language": "c",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CL00012",
+      "query": "This function reopens an existing file stream using a new file path and mode. It takes three paramet",
+      "language": "c",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "queryId": "CL00019",
+      "query": "This function converts the content of a string stream into a standard string. It processes each char",
+      "language": "cpp",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CL00017",
+      "query": "The function takes an integer input that represents an error code and returns a string describing th",
+      "language": "c",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CL00025",
+      "query": "The function accepts two inputs: a pointer to a null-terminated constant character array and an inte",
+      "language": "c",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CL00024",
+      "query": "The function takes an input of type int, where the value determines the number of space characters. ",
+      "language": "cpp",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CL00028",
+      "query": "This function takes no input parameters and returns a reference to a stream used for standard output",
+      "language": "cpp",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CL00029",
+      "query": "This function retrieves the standard error output stream by returning a reference to the underlying ",
+      "language": "cpp",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CL00030",
+      "query": "The function returns a reference to the program’s standard logging stream. It takes no input paramet",
+      "language": "cpp",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CL00032",
+      "query": "The function accepts three parameters: a reference to a modifiable string and two constant strings r",
+      "language": "cpp",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CL00034",
+      "query": "The function accepts a string input provided as a constant reference and returns a string. On Window",
+      "language": "cpp",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CL00035",
+      "query": "The function takes no input and returns a boolean value. It determines whether color output should b",
+      "language": "c",
+      "topRelevance": []
+    },
+    {
+      "queryId": "CL00031",
+      "query": "The function takes no input arguments. It retrieves the current system time with high precision by u",
+      "language": "cpp",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CL00033",
+      "query": "The function takes a single input—a character of type char. It then checks whether this character is",
+      "language": "cpp",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

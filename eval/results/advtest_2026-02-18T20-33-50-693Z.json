@@ -1,0 +1,244 @@
+{
+  "timestamp": "2026-02-18T20:33:50.693Z",
+  "dataset": "advtest",
+  "queryCount": 1000,
+  "corpusSize": 1000,
+  "searchMode": "auto",
+  "totalTimeMs": 488743,
+  "errors": 0,
+  "aggregate": {
+    "mrr_at_10": 0.9151,
+    "ndcg_at_10": 0.9258,
+    "map_at_10": 0.9151,
+    "recall_at_5": 0.951,
+    "recall_at_10": 0.958,
+    "recall_at_20": 0.969,
+    "success_at_1": 0.888,
+    "success_at_5": 0.951,
+    "latency_p50_ms": 268.0059,
+    "latency_p95_ms": 373.5923,
+    "latency_mean_ms": 367.1576
+  },
+  "perLanguage": {
+    "python": {
+      "count": 1000,
+      "mrr_at_10": 0.9151,
+      "ndcg_at_10": 0.9258,
+      "map_at_10": 0.9151,
+      "recall_at_5": 0.951,
+      "recall_at_10": 0.958,
+      "recall_at_20": 0.969,
+      "success_at_1": 0.888,
+      "success_at_5": 0.951,
+      "latency_p50_ms": 268.0059,
+      "latency_p95_ms": 373.5923,
+      "latency_mean_ms": 367.1576
+    }
+  },
+  "failedQueries": [
+    {
+      "queryId": "AT00005",
+      "query": "Print an error log message.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00011",
+      "query": "Converts a string to a valid filename.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00008",
+      "query": "str->dict",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00010",
+      "query": "str->list of str",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00014",
+      "query": "str, str, str, bool, bool ->None",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00020",
+      "query": "JSON, int, int, int->str",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00021",
+      "query": "int->None",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00022",
+      "query": "int, int, int->None",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00032",
+      "query": "Returns a mysql connection object",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00062",
+      "query": "Override the scheduler heartbeat to determine when the test is complete",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00067",
+      "query": "Make a naive datetime.datetime in a given time zone aware.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00073",
+      "query": "Checks the status code and raise an AirflowException exception on non 2XX or 3XX",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "AT00071",
+      "query": "Returns http session for use with requests",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00072",
+      "query": "Performs the request",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00076",
+      "query": "Function decorator that provides a session if it isn't provided.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00084",
+      "query": "Checks if a collection exists in CosmosDB.",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "AT00085",
+      "query": "Creates a new collection in the CosmosDB database.",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "AT00086",
+      "query": "Checks if a database exists in CosmosDB.",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "AT00087",
+      "query": "Creates a new database in CosmosDB.",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "AT00093",
+      "query": "Get a list of documents from an existing collection in the CosmosDB database via SQL query.",
+      "language": "python",
+      "topRelevance": []
+    }
+  ]
+}

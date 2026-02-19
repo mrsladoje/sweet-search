@@ -1,0 +1,649 @@
+{
+  "timestamp": "2026-02-19T00:17:05.442Z",
+  "totalTimeMs": 14262831,
+  "benchmarkCount": 8,
+  "profile": "balanced",
+  "profileOpts": {
+    "buildColBERT": false,
+    "useColBERT": false,
+    "sqliteFast": true,
+    "indexMode": "single",
+    "requireNativeAnn": false
+  },
+  "benchmarks": [
+    {
+      "dataset": "codesearchnet",
+      "queryCount": 1200,
+      "totalTimeMs": 339939,
+      "indexTimings": {
+        "total": 253523,
+        "graphPhase": null,
+        "vectorsPhase": null
+      },
+      "metrics": {
+        "mrr_at_10": 0.6641,
+        "ndcg_at_10": 0.6915,
+        "map_at_10": 0.6641,
+        "recall_at_5": 0.7367,
+        "recall_at_10": 0.7775,
+        "recall_at_20": 0.8092,
+        "success_at_1": 0.6058,
+        "success_at_5": 0.7367,
+        "latency_p50_ms": 191.0564,
+        "latency_p95_ms": 339.2781,
+        "latency_mean_ms": 348.3709
+      },
+      "perLanguage": {
+        "python": {
+          "count": 200,
+          "mrr_at_10": 0.7657,
+          "ndcg_at_10": 0.7911,
+          "map_at_10": 0.7657,
+          "recall_at_5": 0.835,
+          "recall_at_10": 0.87,
+          "recall_at_20": 0.89,
+          "success_at_1": 0.71,
+          "success_at_5": 0.835,
+          "latency_p50_ms": 227.8657,
+          "latency_p95_ms": 535.3394,
+          "latency_mean_ms": 464.8064
+        },
+        "javascript": {
+          "count": 200,
+          "mrr_at_10": 0.5173,
+          "ndcg_at_10": 0.5365,
+          "map_at_10": 0.5173,
+          "recall_at_5": 0.575,
+          "recall_at_10": 0.595,
+          "recall_at_20": 0.625,
+          "success_at_1": 0.47,
+          "success_at_5": 0.575,
+          "latency_p50_ms": 106.8603,
+          "latency_p95_ms": 199.2556,
+          "latency_mean_ms": 307.7096
+        },
+        "go": {
+          "count": 200,
+          "mrr_at_10": 0.9358,
+          "ndcg_at_10": 0.9407,
+          "map_at_10": 0.9358,
+          "recall_at_5": 0.95,
+          "recall_at_10": 0.955,
+          "recall_at_20": 0.975,
+          "success_at_1": 0.92,
+          "success_at_5": 0.95,
+          "latency_p50_ms": 253.8393,
+          "latency_p95_ms": 345.4517,
+          "latency_mean_ms": 280.3563
+        },
+        "ruby": {
+          "count": 200,
+          "mrr_at_10": 0.7499,
+          "ndcg_at_10": 0.7829,
+          "map_at_10": 0.7499,
+          "recall_at_5": 0.845,
+          "recall_at_10": 0.885,
+          "recall_at_20": 0.89,
+          "success_at_1": 0.675,
+          "success_at_5": 0.845,
+          "latency_p50_ms": 142.1656,
+          "latency_p95_ms": 225.7014,
+          "latency_mean_ms": 523.8385
+        },
+        "java": {
+          "count": 200,
+          "mrr_at_10": 0.3482,
+          "ndcg_at_10": 0.4111,
+          "map_at_10": 0.3482,
+          "recall_at_5": 0.485,
+          "recall_at_10": 0.615,
+          "recall_at_20": 0.71,
+          "success_at_1": 0.24,
+          "success_at_5": 0.485,
+          "latency_p50_ms": 201.0454,
+          "latency_p95_ms": 294.005,
+          "latency_mean_ms": 275.2007
+        },
+        "php": {
+          "count": 200,
+          "mrr_at_10": 0.6676,
+          "ndcg_at_10": 0.6868,
+          "map_at_10": 0.6676,
+          "recall_at_5": 0.73,
+          "recall_at_10": 0.745,
+          "recall_at_20": 0.765,
+          "success_at_1": 0.62,
+          "success_at_5": 0.73,
+          "latency_p50_ms": 246.3564,
+          "latency_p95_ms": 358.2162,
+          "latency_mean_ms": 238.3137
+        }
+      }
+    },
+    {
+      "dataset": "cosqa",
+      "queryCount": 100,
+      "totalTimeMs": 39360,
+      "indexTimings": {
+        "total": 34522,
+        "graphPhase": null,
+        "vectorsPhase": null
+      },
+      "metrics": {
+        "mrr_at_10": 0.7048,
+        "ndcg_at_10": 0.7186,
+        "map_at_10": 0.7048,
+        "recall_at_5": 0.75,
+        "recall_at_10": 0.76,
+        "recall_at_20": 0.77,
+        "success_at_1": 0.67,
+        "success_at_5": 0.75,
+        "latency_p50_ms": 242.4763,
+        "latency_p95_ms": 619.4809,
+        "latency_mean_ms": 232.6113
+      },
+      "perLanguage": {
+        "python": {
+          "count": 100,
+          "mrr_at_10": 0.7048,
+          "ndcg_at_10": 0.7186,
+          "map_at_10": 0.7048,
+          "recall_at_5": 0.75,
+          "recall_at_10": 0.76,
+          "recall_at_20": 0.77,
+          "success_at_1": 0.67,
+          "success_at_5": 0.75,
+          "latency_p50_ms": 242.4763,
+          "latency_p95_ms": 619.4809,
+          "latency_mean_ms": 232.6113
+        }
+      }
+    },
+    {
+      "dataset": "advtest",
+      "queryCount": 1000,
+      "totalTimeMs": 488743,
+      "indexTimings": {
+        "total": 413575,
+        "graphPhase": null,
+        "vectorsPhase": null
+      },
+      "metrics": {
+        "mrr_at_10": 0.9151,
+        "ndcg_at_10": 0.9258,
+        "map_at_10": 0.9151,
+        "recall_at_5": 0.951,
+        "recall_at_10": 0.958,
+        "recall_at_20": 0.969,
+        "success_at_1": 0.888,
+        "success_at_5": 0.951,
+        "latency_p50_ms": 268.0059,
+        "latency_p95_ms": 373.5923,
+        "latency_mean_ms": 367.1576
+      },
+      "perLanguage": {
+        "python": {
+          "count": 1000,
+          "mrr_at_10": 0.9151,
+          "ndcg_at_10": 0.9258,
+          "map_at_10": 0.9151,
+          "recall_at_5": 0.951,
+          "recall_at_10": 0.958,
+          "recall_at_20": 0.969,
+          "success_at_1": 0.888,
+          "success_at_5": 0.951,
+          "latency_p50_ms": 268.0059,
+          "latency_p95_ms": 373.5923,
+          "latency_mean_ms": 367.1576
+        }
+      }
+    },
+    {
+      "dataset": "coir",
+      "queryCount": 4500,
+      "totalTimeMs": 2382116,
+      "indexTimings": {
+        "total": 1366651,
+        "graphPhase": null,
+        "vectorsPhase": null
+      },
+      "metrics": {
+        "mrr_at_10": 0.5733,
+        "ndcg_at_10": 0.5926,
+        "map_at_10": 0.5733,
+        "recall_at_5": 0.6204,
+        "recall_at_10": 0.654,
+        "recall_at_20": 0.6958,
+        "success_at_1": 0.5344,
+        "success_at_5": 0.6204,
+        "latency_p50_ms": 160.2607,
+        "latency_p95_ms": 8073.104,
+        "latency_mean_ms": 1125.7362
+      },
+      "perLanguage": {
+        "python": {
+          "count": 1227,
+          "mrr_at_10": 0.5114,
+          "ndcg_at_10": 0.5368,
+          "map_at_10": 0.5114,
+          "recall_at_5": 0.5811,
+          "recall_at_10": 0.6153,
+          "recall_at_20": 0.6438,
+          "success_at_1": 0.4531,
+          "success_at_5": 0.5811,
+          "latency_p50_ms": 171.8626,
+          "latency_p95_ms": 5929.0577,
+          "latency_mean_ms": 1221.0819
+        },
+        "unknown": {
+          "count": 2102,
+          "mrr_at_10": 0.4635,
+          "ndcg_at_10": 0.4834,
+          "map_at_10": 0.4635,
+          "recall_at_5": 0.5147,
+          "recall_at_10": 0.5466,
+          "recall_at_20": 0.5785,
+          "success_at_1": 0.4248,
+          "success_at_5": 0.5147,
+          "latency_p50_ms": 190.4119,
+          "latency_p95_ms": 10022.3595,
+          "latency_mean_ms": 1042.1095
+        },
+        "javascript": {
+          "count": 143,
+          "mrr_at_10": 0.7298,
+          "ndcg_at_10": 0.7409,
+          "map_at_10": 0.7298,
+          "recall_at_5": 0.7552,
+          "recall_at_10": 0.7762,
+          "recall_at_20": 0.8042,
+          "success_at_1": 0.7063,
+          "success_at_5": 0.7552,
+          "latency_p50_ms": 212.2791,
+          "latency_p95_ms": 480.0158,
+          "latency_mean_ms": 1027.7512
+        },
+        "java": {
+          "count": 17,
+          "mrr_at_10": 0.6471,
+          "ndcg_at_10": 0.6471,
+          "map_at_10": 0.6471,
+          "recall_at_5": 0.6471,
+          "recall_at_10": 0.6471,
+          "recall_at_20": 0.6471,
+          "success_at_1": 0.6471,
+          "success_at_5": 0.6471,
+          "latency_p50_ms": 181.6125,
+          "latency_p95_ms": 14257.3203,
+          "latency_mean_ms": 979.6107
+        },
+        "go": {
+          "count": 9,
+          "mrr_at_10": 0.7778,
+          "ndcg_at_10": 0.7778,
+          "map_at_10": 0.7778,
+          "recall_at_5": 0.7778,
+          "recall_at_10": 0.7778,
+          "recall_at_20": 0.7778,
+          "success_at_1": 0.7778,
+          "success_at_5": 0.7778,
+          "latency_p50_ms": 204.6132,
+          "latency_p95_ms": 11519.0393,
+          "latency_mean_ms": 1440.4638
+        },
+        "php": {
+          "count": 2,
+          "mrr_at_10": 0.5,
+          "ndcg_at_10": 0.5,
+          "map_at_10": 0.5,
+          "recall_at_5": 0.5,
+          "recall_at_10": 0.5,
+          "recall_at_20": 0.5,
+          "success_at_1": 0.5,
+          "success_at_5": 0.5,
+          "latency_p50_ms": 155.8267,
+          "latency_p95_ms": 155.8267,
+          "latency_mean_ms": 132.3356
+        },
+        "sql": {
+          "count": 1000,
+          "mrr_at_10": 0.8548,
+          "ndcg_at_10": 0.8673,
+          "map_at_10": 0.8548,
+          "recall_at_5": 0.87,
+          "recall_at_10": 0.909,
+          "recall_at_20": 0.991,
+          "success_at_1": 0.836,
+          "success_at_5": 0.87,
+          "latency_p50_ms": 133.9838,
+          "latency_p95_ms": 7900.7049,
+          "latency_mean_ms": 1200.1805
+        }
+      }
+    },
+    {
+      "dataset": "coquir",
+      "queryCount": 2467,
+      "totalTimeMs": 2049979,
+      "indexTimings": {
+        "total": 1459600,
+        "graphPhase": null,
+        "vectorsPhase": null
+      },
+      "metrics": {
+        "mrr_at_10": 0.4435,
+        "ndcg_at_10": 0.4646,
+        "map_at_10": 0.4435,
+        "recall_at_5": 0.4949,
+        "recall_at_10": 0.5314,
+        "recall_at_20": 0.5861,
+        "success_at_1": 0.4025,
+        "success_at_5": 0.4949,
+        "latency_p50_ms": 278.3021,
+        "latency_p95_ms": 8374.5337,
+        "latency_mean_ms": 1188.2527
+      },
+      "perLanguage": {
+        "java": {
+          "count": 467,
+          "mrr_at_10": 0.6527,
+          "ndcg_at_10": 0.6674,
+          "map_at_10": 0.6527,
+          "recall_at_5": 0.7024,
+          "recall_at_10": 0.7109,
+          "recall_at_20": 0.7216,
+          "success_at_1": 0.6103,
+          "success_at_5": 0.7024,
+          "latency_p50_ms": 852.227,
+          "latency_p95_ms": 1009.7643,
+          "latency_mean_ms": 699.4986
+        },
+        "c": {
+          "count": 500,
+          "mrr_at_10": 0.7593,
+          "ndcg_at_10": 0.7761,
+          "map_at_10": 0.7593,
+          "recall_at_5": 0.79,
+          "recall_at_10": 0.83,
+          "recall_at_20": 0.89,
+          "success_at_1": 0.728,
+          "success_at_5": 0.79,
+          "latency_p50_ms": 277.0539,
+          "latency_p95_ms": 17427.3448,
+          "latency_mean_ms": 2546.3406
+        },
+        "python": {
+          "count": 1000,
+          "mrr_at_10": 0.3144,
+          "ndcg_at_10": 0.3271,
+          "map_at_10": 0.3144,
+          "recall_at_5": 0.352,
+          "recall_at_10": 0.366,
+          "recall_at_20": 0.392,
+          "success_at_1": 0.285,
+          "success_at_5": 0.352,
+          "latency_p50_ms": 36.3377,
+          "latency_p95_ms": 12214.2746,
+          "latency_mean_ms": 985.8636
+        },
+        "sql": {
+          "count": 500,
+          "mrr_at_10": 0.1905,
+          "ndcg_at_10": 0.2386,
+          "map_at_10": 0.1905,
+          "recall_at_5": 0.292,
+          "recall_at_10": 0.396,
+          "recall_at_20": 0.544,
+          "success_at_1": 0.118,
+          "success_at_5": 0.292,
+          "latency_p50_ms": 601.086,
+          "latency_p95_ms": 927.0744,
+          "latency_mean_ms": 691.4392
+        }
+      }
+    },
+    {
+      "dataset": "gencodesearchnet",
+      "queryCount": 6000,
+      "totalTimeMs": 2279694,
+      "indexTimings": {
+        "total": 1576804,
+        "graphPhase": null,
+        "vectorsPhase": null
+      },
+      "metrics": {
+        "mrr_at_10": 0.7916,
+        "ndcg_at_10": 0.8142,
+        "map_at_10": 0.7916,
+        "recall_at_5": 0.8612,
+        "recall_at_10": 0.8837,
+        "recall_at_20": 0.9018,
+        "success_at_1": 0.7378,
+        "success_at_5": 0.8612,
+        "latency_p50_ms": 405.7555,
+        "latency_p95_ms": 569.0258,
+        "latency_mean_ms": 584.0903
+      },
+      "perLanguage": {
+        "python": {
+          "count": 1000,
+          "mrr_at_10": 0.8977,
+          "ndcg_at_10": 0.9096,
+          "map_at_10": 0.8977,
+          "recall_at_5": 0.934,
+          "recall_at_10": 0.946,
+          "recall_at_20": 0.956,
+          "success_at_1": 0.868,
+          "success_at_5": 0.934,
+          "latency_p50_ms": 396.5156,
+          "latency_p95_ms": 610.1018,
+          "latency_mean_ms": 633.1774
+        },
+        "javascript": {
+          "count": 1000,
+          "mrr_at_10": 0.6554,
+          "ndcg_at_10": 0.6803,
+          "map_at_10": 0.6554,
+          "recall_at_5": 0.729,
+          "recall_at_10": 0.757,
+          "recall_at_20": 0.795,
+          "success_at_1": 0.598,
+          "success_at_5": 0.729,
+          "latency_p50_ms": 405.7878,
+          "latency_p95_ms": 542.8258,
+          "latency_mean_ms": 546.7535
+        },
+        "go": {
+          "count": 1000,
+          "mrr_at_10": 0.9357,
+          "ndcg_at_10": 0.9458,
+          "map_at_10": 0.9357,
+          "recall_at_5": 0.969,
+          "recall_at_10": 0.976,
+          "recall_at_20": 0.982,
+          "success_at_1": 0.907,
+          "success_at_5": 0.969,
+          "latency_p50_ms": 509.0998,
+          "latency_p95_ms": 557.6261,
+          "latency_mean_ms": 532.3695
+        },
+        "ruby": {
+          "count": 1000,
+          "mrr_at_10": 0.7244,
+          "ndcg_at_10": 0.7552,
+          "map_at_10": 0.7244,
+          "recall_at_5": 0.816,
+          "recall_at_10": 0.85,
+          "recall_at_20": 0.869,
+          "success_at_1": 0.654,
+          "success_at_5": 0.816,
+          "latency_p50_ms": 234.5665,
+          "latency_p95_ms": 425.651,
+          "latency_mean_ms": 707.1921
+        },
+        "java": {
+          "count": 1000,
+          "mrr_at_10": 0.7897,
+          "ndcg_at_10": 0.815,
+          "map_at_10": 0.7897,
+          "recall_at_5": 0.868,
+          "recall_at_10": 0.893,
+          "recall_at_20": 0.91,
+          "success_at_1": 0.731,
+          "success_at_5": 0.868,
+          "latency_p50_ms": 446.2491,
+          "latency_p95_ms": 562.5571,
+          "latency_mean_ms": 515.7002
+        },
+        "php": {
+          "count": 1000,
+          "mrr_at_10": 0.7466,
+          "ndcg_at_10": 0.7795,
+          "map_at_10": 0.7466,
+          "recall_at_5": 0.851,
+          "recall_at_10": 0.88,
+          "recall_at_20": 0.899,
+          "success_at_1": 0.669,
+          "success_at_5": 0.851,
+          "latency_p50_ms": 403.0017,
+          "latency_p95_ms": 557.2232,
+          "latency_mean_ms": 569.3491
+        }
+      }
+    },
+    {
+      "dataset": "crosscodeeval",
+      "queryCount": 4000,
+      "totalTimeMs": 6176731,
+      "indexTimings": {
+        "total": 5703752,
+        "graphPhase": null,
+        "vectorsPhase": null
+      },
+      "metrics": {
+        "mrr_at_10": 0.1203,
+        "ndcg_at_10": 0.1476,
+        "map_at_10": 0.1203,
+        "recall_at_5": 0.183,
+        "recall_at_10": 0.2355,
+        "recall_at_20": 0.2778,
+        "success_at_1": 0.0738,
+        "success_at_5": 0.183,
+        "latency_p50_ms": 145.5044,
+        "latency_p95_ms": 979.499,
+        "latency_mean_ms": 587.9576
+      },
+      "perLanguage": {
+        "python": {
+          "count": 1000,
+          "mrr_at_10": 0.1653,
+          "ndcg_at_10": 0.1998,
+          "map_at_10": 0.1653,
+          "recall_at_5": 0.25,
+          "recall_at_10": 0.31,
+          "recall_at_20": 0.362,
+          "success_at_1": 0.101,
+          "success_at_5": 0.25,
+          "latency_p50_ms": 148.5025,
+          "latency_p95_ms": 905.9472,
+          "latency_mean_ms": 709.7905
+        },
+        "java": {
+          "count": 1000,
+          "mrr_at_10": 0.1087,
+          "ndcg_at_10": 0.1363,
+          "map_at_10": 0.1087,
+          "recall_at_5": 0.176,
+          "recall_at_10": 0.225,
+          "recall_at_20": 0.269,
+          "success_at_1": 0.063,
+          "success_at_5": 0.176,
+          "latency_p50_ms": 293.8134,
+          "latency_p95_ms": 741.989,
+          "latency_mean_ms": 483.7057
+        },
+        "typescript": {
+          "count": 1000,
+          "mrr_at_10": 0.0787,
+          "ndcg_at_10": 0.1051,
+          "map_at_10": 0.0787,
+          "recall_at_5": 0.127,
+          "recall_at_10": 0.192,
+          "recall_at_20": 0.234,
+          "success_at_1": 0.039,
+          "success_at_5": 0.127,
+          "latency_p50_ms": 184.8677,
+          "latency_p95_ms": 768.9488,
+          "latency_mean_ms": 793.8583
+        },
+        "csharp": {
+          "count": 1000,
+          "mrr_at_10": 0.1286,
+          "ndcg_at_10": 0.1492,
+          "map_at_10": 0.1286,
+          "recall_at_5": 0.179,
+          "recall_at_10": 0.215,
+          "recall_at_20": 0.246,
+          "success_at_1": 0.092,
+          "success_at_5": 0.179,
+          "latency_p50_ms": 118.7427,
+          "latency_p95_ms": 1290.2027,
+          "latency_mean_ms": 364.4759
+        }
+      }
+    },
+    {
+      "dataset": "clarc",
+      "queryCount": 995,
+      "totalTimeMs": 506210,
+      "indexTimings": {
+        "total": 177914,
+        "graphPhase": null,
+        "vectorsPhase": null
+      },
+      "metrics": {
+        "mrr_at_10": 0.6056,
+        "ndcg_at_10": 0.6471,
+        "map_at_10": 0.6056,
+        "recall_at_5": 0.7176,
+        "recall_at_10": 0.7779,
+        "recall_at_20": 0.8442,
+        "success_at_1": 0.5196,
+        "success_at_5": 0.7176,
+        "latency_p50_ms": 308.9686,
+        "latency_p95_ms": 14595.9597,
+        "latency_mean_ms": 1622.6375
+      },
+      "perLanguage": {
+        "cpp": {
+          "count": 106,
+          "mrr_at_10": 0.5418,
+          "ndcg_at_10": 0.5645,
+          "map_at_10": 0.5418,
+          "recall_at_5": 0.6321,
+          "recall_at_10": 0.6321,
+          "recall_at_20": 0.6698,
+          "success_at_1": 0.4811,
+          "success_at_5": 0.6321,
+          "latency_p50_ms": 262.4198,
+          "latency_p95_ms": 12777.3405,
+          "latency_mean_ms": 1321.5826
+        },
+        "c": {
+          "count": 889,
+          "mrr_at_10": 0.6132,
+          "ndcg_at_10": 0.6569,
+          "map_at_10": 0.6132,
+          "recall_at_5": 0.7278,
+          "recall_at_10": 0.7953,
+          "recall_at_20": 0.865,
+          "success_at_1": 0.5242,
+          "success_at_5": 0.7278,
+          "latency_p50_ms": 316.7761,
+          "latency_p95_ms": 15064.815,
+          "latency_mean_ms": 1658.5338
+        }
+      }
+    }
+  ]
+}

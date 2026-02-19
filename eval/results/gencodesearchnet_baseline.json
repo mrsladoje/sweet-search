@@ -1,0 +1,338 @@
+{
+  "timestamp": "2026-02-18T22:25:42.492Z",
+  "dataset": "gencodesearchnet",
+  "queryCount": 6000,
+  "corpusSize": 6000,
+  "searchMode": "auto",
+  "totalTimeMs": 2279694,
+  "errors": 0,
+  "aggregate": {
+    "mrr_at_10": 0.7916,
+    "ndcg_at_10": 0.8142,
+    "map_at_10": 0.7916,
+    "recall_at_5": 0.8612,
+    "recall_at_10": 0.8837,
+    "recall_at_20": 0.9018,
+    "success_at_1": 0.7378,
+    "success_at_5": 0.8612,
+    "latency_p50_ms": 405.7555,
+    "latency_p95_ms": 569.0258,
+    "latency_mean_ms": 584.0903
+  },
+  "perLanguage": {
+    "python": {
+      "count": 1000,
+      "mrr_at_10": 0.8977,
+      "ndcg_at_10": 0.9096,
+      "map_at_10": 0.8977,
+      "recall_at_5": 0.934,
+      "recall_at_10": 0.946,
+      "recall_at_20": 0.956,
+      "success_at_1": 0.868,
+      "success_at_5": 0.934,
+      "latency_p50_ms": 396.5156,
+      "latency_p95_ms": 610.1018,
+      "latency_mean_ms": 633.1774
+    },
+    "javascript": {
+      "count": 1000,
+      "mrr_at_10": 0.6554,
+      "ndcg_at_10": 0.6803,
+      "map_at_10": 0.6554,
+      "recall_at_5": 0.729,
+      "recall_at_10": 0.757,
+      "recall_at_20": 0.795,
+      "success_at_1": 0.598,
+      "success_at_5": 0.729,
+      "latency_p50_ms": 405.7878,
+      "latency_p95_ms": 542.8258,
+      "latency_mean_ms": 546.7535
+    },
+    "go": {
+      "count": 1000,
+      "mrr_at_10": 0.9357,
+      "ndcg_at_10": 0.9458,
+      "map_at_10": 0.9357,
+      "recall_at_5": 0.969,
+      "recall_at_10": 0.976,
+      "recall_at_20": 0.982,
+      "success_at_1": 0.907,
+      "success_at_5": 0.969,
+      "latency_p50_ms": 509.0998,
+      "latency_p95_ms": 557.6261,
+      "latency_mean_ms": 532.3695
+    },
+    "ruby": {
+      "count": 1000,
+      "mrr_at_10": 0.7244,
+      "ndcg_at_10": 0.7552,
+      "map_at_10": 0.7244,
+      "recall_at_5": 0.816,
+      "recall_at_10": 0.85,
+      "recall_at_20": 0.869,
+      "success_at_1": 0.654,
+      "success_at_5": 0.816,
+      "latency_p50_ms": 234.5665,
+      "latency_p95_ms": 425.651,
+      "latency_mean_ms": 707.1921
+    },
+    "java": {
+      "count": 1000,
+      "mrr_at_10": 0.7897,
+      "ndcg_at_10": 0.815,
+      "map_at_10": 0.7897,
+      "recall_at_5": 0.868,
+      "recall_at_10": 0.893,
+      "recall_at_20": 0.91,
+      "success_at_1": 0.731,
+      "success_at_5": 0.868,
+      "latency_p50_ms": 446.2491,
+      "latency_p95_ms": 562.5571,
+      "latency_mean_ms": 515.7002
+    },
+    "php": {
+      "count": 1000,
+      "mrr_at_10": 0.7466,
+      "ndcg_at_10": 0.7795,
+      "map_at_10": 0.7466,
+      "recall_at_5": 0.851,
+      "recall_at_10": 0.88,
+      "recall_at_20": 0.899,
+      "success_at_1": 0.669,
+      "success_at_5": 0.851,
+      "latency_p50_ms": 403.0017,
+      "latency_p95_ms": 557.2232,
+      "latency_mean_ms": 569.3491
+    }
+  },
+  "failedQueries": [
+    {
+      "queryId": "GC00000",
+      "query": "str->list",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "queryId": "GC00005",
+      "query": "Print an error log message.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00008",
+      "query": "str->dict",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00010",
+      "query": "str->list of str",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00011",
+      "query": "Converts a string to a valid filename.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00013",
+      "query": "Override the original one",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00014",
+      "query": "str, str, str, bool, bool ->None",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00017",
+      "query": "Gets the content of a URL via sending a HTTP GET request.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00018",
+      "query": "Post the content of a URL via sending a HTTP POST request.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00020",
+      "query": "JSON, int, int, int->str",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00021",
+      "query": "int->None",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00022",
+      "query": "int, int, int->None",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00032",
+      "query": "Returns a mysql connection object",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00062",
+      "query": "Override the scheduler heartbeat to determine when the test is complete",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00067",
+      "query": "Make a naive datetime.datetime in a given time zone aware.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00073",
+      "query": "Checks the status code and raise an AirflowException exception on non 2XX or 3XX",
+      "language": "python",
+      "topRelevance": []
+    },
+    {
+      "queryId": "GC00071",
+      "query": "Returns http session for use with requests",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00072",
+      "query": "Performs the request",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "GC00076",
+      "query": "Function decorator that provides a session if it isn't provided.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "queryId": "GC00084",
+      "query": "Checks if a collection exists in CosmosDB.",
+      "language": "python",
+      "topRelevance": []
+    }
+  ]
+}
