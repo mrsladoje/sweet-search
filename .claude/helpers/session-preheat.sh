@@ -227,18 +227,26 @@ async function warmBinaryHNSW() {
     } catch (e) { return { c: 'binary-hnsw', ok: false, ms: t(), err: e.message }; }
 }
 
-// 6. SQLite FTS5 page cache (~50ms)
+// 6. FTS5 page cache + vocabulary-based warmup
 async function warmSQLiteFTS() {
     const t = timer();
     try {
-        const { DB_PATHS } = await importFromSearch('core/config.js');
-        if (!existsSync(DB_PATHS.codeGraph)) return { c: 'sqlite-fts', ok: true, ms: t(), skip: 'not indexed' };
-        const Database = (await import('better-sqlite3')).default;
-        const db = new Database(DB_PATHS.codeGraph, { readonly: true });
-        try { db.prepare('SELECT count(*) FROM entities_fts WHERE name MATCH \"warmup\"').get(); } catch {}
-        try { db.prepare('SELECT count(*) FROM relationships').get(); } catch {}
-        db.close();
-        return { c: 'sqlite-fts', ok: true, ms: t() };
+        // Try vocab-warmer cache-based warmup first (richer than raw FTS5 touch)
+        try {
+            const { warmFromCache } = await importFromSearch('core/vocab-warmer.js');
+            const result = await warmFromCache({ maxFts5Queries: 50, maxHnswTraversals: 100 });
+            return { c: 'fts5+vocab', ok: true, ms: t(), ...result };
+        } catch {
+            // Fallback: original basic FTS5 warmup (vocab-warmer not available yet)
+            const { DB_PATHS } = await importFromSearch('core/config.js');
+            if (!existsSync(DB_PATHS.codeGraph)) return { c: 'sqlite-fts', ok: true, ms: t(), skip: 'not indexed' };
+            const Database = (await import('better-sqlite3')).default;
+            const db = new Database(DB_PATHS.codeGraph, { readonly: true });
+            try { db.prepare('SELECT count(*) FROM entities_fts WHERE name MATCH \"warmup\"').get(); } catch {}
+            try { db.prepare('SELECT count(*) FROM relationships').get(); } catch {}
+            db.close();
+            return { c: 'sqlite-fts', ok: true, ms: t() };
+        }
     } catch (e) { return { c: 'sqlite-fts', ok: false, ms: t(), err: e.message }; }
 }
 
