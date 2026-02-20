@@ -350,6 +350,18 @@ Output:
       startTime,
     });
 
+    // =========================================================================
+    // PHASE 7: Post-Indexing Vocabulary Warmup (non-fatal)
+    // =========================================================================
+    try {
+      const { runFullWarmup } = await import('./vocab-warmer.js');
+      await runFullWarmup({ depth: 'medium', top: 1000 });
+      if (!quiet) log('Vocabulary warmup complete', 'green');
+    } catch (err) {
+      // Non-fatal: warmup failure should not block indexing
+      if (!quiet) log(`[vocab-prewarm] Post-indexing warmup skipped: ${err.message}`, 'dim');
+    }
+
   } catch (err) {
     logError(`Fatal error: ${err.message}`);
     if (process.env.DEBUG) {

@@ -429,6 +429,111 @@ server.registerTool('repo-map', {
 });
 
 // ---------------------------------------------------------------------------
+// Vocabulary Prewarm output schema
+// ---------------------------------------------------------------------------
+
+const VocabPrewarmOutputSchema = z.object({
+  termsMined: z.number().int(),
+  communitiesDetected: z.number().int(),
+  warmupTimeMs: z.number(),
+  perMode: z.record(z.string(), z.object({
+    queriesWarmed: z.number().int(),
+    timeMs: z.number(),
+  })).optional(),
+  hitRateProjection: z.number().optional(),
+  dryRun: z.boolean().optional(),
+});
+
+server.registerTool('vocab-prewarm', {
+  description: 'Mine the codebase for search vocabulary and warm all search modes (lexical, semantic, hybrid) with project-specific terms',
+  inputSchema: {
+    depth: z.enum(['light', 'medium', 'deep']).default('medium').describe('Mining depth'),
+    modes: z.array(z.enum(['lexical', 'semantic', 'hybrid'])).default(['lexical', 'semantic', 'hybrid']).describe('Search modes to warm'),
+    top: z.number().int().min(50).max(5000).default(1000).describe('Number of top terms to warm'),
+    incremental: z.boolean().default(true).describe('Only process changes since last warmup'),
+    dryRun: z.boolean().default(false).describe('Show what would be mined without actually warming'),
+    stats: z.boolean().default(false).describe('Return current warmup statistics'),
+  },
+  outputSchema: VocabPrewarmOutputSchema,
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true,
+  },
+}, async ({ depth, modes, top, incremental, dryRun, stats }) => {
+  try {
+    if (stats) {
+      const { getTelemetryReport } = await import(
+        path.join(__dirname, '..', 'core', 'embedding-cache.js')
+      );
+      const { WarmupMetrics, formatStatsReport } = await import(
+        path.join(__dirname, '..', 'core', 'warmup-metrics.js')
+      );
+      const report = await getTelemetryReport(500);
+      const metrics = new WarmupMetrics();
+      metrics.loadFromReport(report);
+      const text = formatStatsReport(metrics);
+      return {
+        content: [{ type: 'text', text }],
+        structuredContent: {
+          termsMined: 0,
+          communitiesDetected: 0,
+          warmupTimeMs: 0,
+          hitRateProjection: metrics.overallHitRate(),
+        },
+      };
+    }
+
+    const { runFullWarmup } = await import(
+      path.join(__dirname, '..', 'core', 'vocab-warmer.js')
+    );
+
+    const result = await runFullWarmup({
+      depth,
+      top,
+      modes,
+      incremental,
+      dryRun,
+    });
+
+    const structured = {
+      termsMined: result.termsMined || 0,
+      communitiesDetected: result.communitiesDetected || 0,
+      warmupTimeMs: result.warmupTimeMs || 0,
+      perMode: result.perMode || {},
+      hitRateProjection: result.hitRateProjection || 0,
+      dryRun: dryRun || false,
+    };
+
+    const modeLines = structured.perMode
+      ? Object.entries(structured.perMode).map(
+        ([mode, s]) => `  ${mode}: ${s.queriesWarmed || 0} queries warmed (${s.timeMs || 0}ms)`,
+      )
+      : [];
+
+    const text = dryRun
+      ? `[dry-run] Would mine ${structured.termsMined} terms, ${structured.communitiesDetected} communities`
+      : `Vocab prewarm complete: ${structured.termsMined} terms, ${structured.communitiesDetected} communities (${structured.warmupTimeMs}ms)\n${modeLines.join('\n')}`;
+
+    return {
+      content: [{ type: 'text', text }],
+      structuredContent: structured,
+    };
+  } catch (err) {
+    const safeMessage = (err.message || 'Vocab prewarm failed')
+      .split('\n')[0]
+      .replace(/\/[^\s:]+/g, '<path>')
+      .replace(/[A-Z]:\\[^\s:]+/gi, '<path>')
+      .replace(/\\\\[^\s:]+/g, '<path>');
+    return {
+      content: [{ type: 'text', text: `Vocab prewarm error: ${safeMessage}` }],
+      isError: true,
+    };
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Resources
 // ---------------------------------------------------------------------------
 
