@@ -58,9 +58,7 @@ export const BOOST_POLICY = {
  * Map router mode to boost intent (PHASE_1_FIXES Change 3)
  *
  * Replaces intent-detector.js with query router as single source of truth.
- *
- * Uses `this` — must be wired onto prototype (though current impl doesn't
- * actually reference `this`, kept as regular function for consistency).
+ * Pure function — does not reference `this`. On prototype for call-site convenience.
  *
  * @param {string} routerMode - Mode from query router
  * @param {number} routerConfidence - Confidence score from router

@@ -81,17 +81,23 @@ describe('getResultKey', () => {
     expect(getResultKey({ name: 'myFunc' })).toBe('myFunc');
   });
 
-  it('falls back to JSON slice when no id/file/name', () => {
+  it('falls back to MD5 hash when no id/file/name', () => {
     const result = { score: 0.5, type: 'variable' };
     const key = getResultKey(result);
-    expect(key).toContain('score');
-    expect(key.length).toBeLessThanOrEqual(100);
+    // P0.1 fix: MD5 hex digest (32 chars) avoids truncation collisions
+    expect(key).toMatch(/^[a-f0-9]{32}$/);
   });
 
   it('falls back gracefully for empty object', () => {
     const key = getResultKey({});
     expect(typeof key).toBe('string');
-    expect(key.length).toBeGreaterThan(0);
+    expect(key).toMatch(/^[a-f0-9]{32}$/);
+  });
+
+  it('produces distinct keys for different objects (no collision)', () => {
+    const a = getResultKey({ score: 0.5, type: 'variable' });
+    const b = getResultKey({ score: 0.9, type: 'function' });
+    expect(a).not.toBe(b);
   });
 });
 

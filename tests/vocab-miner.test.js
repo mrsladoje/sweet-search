@@ -10,9 +10,9 @@ import path from 'path';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 
-// Mock child_process for git commands
+// Mock child_process for git commands (execFileSync used for shell-safe invocation)
 vi.mock('child_process', () => ({
-  execSync: vi.fn(() => ''),
+  execFileSync: vi.fn(() => ''),
 }));
 
 // Mock better-sqlite3 for code graph
@@ -47,7 +47,7 @@ import {
   mineAll,
 } from '../core/vocab-miner.js';
 
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { loadGraph, buildAdjacency, pageRank } from '../core/repo-map.js';
 
 // ---------------------------------------------------------------------------
@@ -408,8 +408,8 @@ describe('mineGit', () => {
   });
 
   it('extracts terms from commit messages', () => {
-    execSync.mockImplementation((cmd) => {
-      if (cmd.includes('git log --format="%s"')) {
+    execFileSync.mockImplementation((cmd, args) => {
+      if (cmd === 'git' && args?.includes('--format=%s')) {
         return 'feat: add authentication\nfix: resolve login bug\nrefactor: clean up user service\n';
       }
       return '';
@@ -422,8 +422,8 @@ describe('mineGit', () => {
   });
 
   it('extracts terms from branch names', () => {
-    execSync.mockImplementation((cmd) => {
-      if (cmd.includes('git branch')) {
+    execFileSync.mockImplementation((cmd, args) => {
+      if (cmd === 'git' && args?.includes('branch')) {
         return 'feature/user-dashboard\nfix/payment-flow\nmain\n';
       }
       return '';
@@ -437,8 +437,8 @@ describe('mineGit', () => {
   });
 
   it('extracts hot file terms', () => {
-    execSync.mockImplementation((cmd) => {
-      if (cmd.includes('--name-only')) {
+    execFileSync.mockImplementation((cmd, args) => {
+      if (cmd === 'git' && args?.includes('--name-only')) {
         return 'src/AuthService.js\nsrc/AuthService.js\nsrc/AuthService.js\nsrc/UserModel.js\n';
       }
       return '';
@@ -451,7 +451,7 @@ describe('mineGit', () => {
   });
 
   it('handles git not available gracefully', () => {
-    execSync.mockImplementation(() => { throw new Error('git not found'); });
+    execFileSync.mockImplementation(() => { throw new Error('git not found'); });
     const result = mineGit('/fake/project');
     expect(result.terms).toEqual([]);
   });
@@ -502,8 +502,8 @@ describe('mineAll', () => {
   });
 
   it('includes git mining in deep mode', () => {
-    execSync.mockImplementation((cmd) => {
-      if (cmd.includes('git log --format="%s"')) return 'add feature\n';
+    execFileSync.mockImplementation((cmd, args) => {
+      if (cmd === 'git' && args?.includes('--format=%s')) return 'add feature\n';
       return '';
     });
     loadGraph.mockReturnValueOnce({ entities: [], relationships: [] });
