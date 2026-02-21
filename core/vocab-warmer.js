@@ -125,11 +125,12 @@ export async function warmLexical(terms, dbPath) {
 
     // Touch relationship table to warm join pages
     if (matchedIds.length > 0) {
-      const idList = matchedIds.slice(0, 20).join(',');
+      const subset = matchedIds.slice(0, 20);
+      const placeholders = subset.map(() => '?').join(',');
       try {
         db.prepare(
-          `SELECT count(*) FROM relationships WHERE source_id IN (${idList})`
-        ).get();
+          `SELECT count(*) FROM relationships WHERE source_id IN (${placeholders})`
+        ).get(...subset);
       } catch (err) {
         if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
       }

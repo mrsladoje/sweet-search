@@ -44,6 +44,7 @@ import {
   recordQueryTelemetry,
   getTelemetryReport,
   resetTelemetryStats,
+  flushTelemetry,
 } from '../core/embedding-cache.js';
 
 // ---------------------------------------------------------------------------
@@ -96,6 +97,7 @@ describe('recordQueryTelemetry', () => {
 
   it('appends JSONL entry to file', async () => {
     await recordQueryTelemetry('lexical', true, 3.0);
+    await flushTelemetry();
     expect(mockAppendFile).toHaveBeenCalled();
     const writtenData = mockAppendFile.mock.calls[0][1];
     const entry = JSON.parse(writtenData.trim());
@@ -107,6 +109,7 @@ describe('recordQueryTelemetry', () => {
 
   it('rounds latency to 2 decimal places', async () => {
     await recordQueryTelemetry('hybrid', true, 1.23456789);
+    await flushTelemetry();
     const writtenData = mockAppendFile.mock.calls[0][1];
     const entry = JSON.parse(writtenData.trim());
     expect(entry.latencyMs).toBe(1.23);
@@ -122,6 +125,7 @@ describe('recordQueryTelemetry', () => {
 
   it('creates directory before writing', async () => {
     await recordQueryTelemetry('lexical', true, 1);
+    await flushTelemetry();
     expect(mockMkdir).toHaveBeenCalled();
   });
 
@@ -131,6 +135,7 @@ describe('recordQueryTelemetry', () => {
     mockReadFile.mockResolvedValueOnce('{"a":1}\n'.repeat(10000));
 
     await recordQueryTelemetry('lexical', true, 1);
+    await flushTelemetry();
     expect(mockRename).toHaveBeenCalled();
   });
 
@@ -139,6 +144,7 @@ describe('recordQueryTelemetry', () => {
     mockReadFile.mockResolvedValueOnce('{"a":1}\n'.repeat(100));
 
     await recordQueryTelemetry('lexical', true, 1);
+    await flushTelemetry();
     expect(mockRename).not.toHaveBeenCalled();
   });
 
@@ -146,6 +152,7 @@ describe('recordQueryTelemetry', () => {
     mockAppendFile.mockRejectedValueOnce(new Error('EACCES'));
     // Should not throw
     await recordQueryTelemetry('lexical', true, 1);
+    await flushTelemetry();
     // In-memory stats should still be updated
     expect(telemetryStats.lexical.hits).toBe(1);
   });
@@ -168,6 +175,7 @@ describe('recordQueryTelemetry', () => {
 
 describe('getTelemetryReport', () => {
   beforeEach(() => {
+    resetTelemetryStats();
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(false);
   });

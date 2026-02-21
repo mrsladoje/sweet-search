@@ -102,17 +102,31 @@ export function mineNLContent(communities, projectRoot, options = {}) {
     return { communityId, tf, totalTokens: tokens.length };
   });
 
-  // Document frequency
+  // Document frequency (unigrams)
   for (const { tf } of communityTermFreqs) {
     for (const term of tf.keys()) {
       dfMap.set(term, (dfMap.get(term) || 0) + 1);
     }
   }
 
+  // P1.4: Build per-ngram document frequency maps so bigram/trigram IDF
+  // reflects actual cross-community distinctiveness (not constant 1).
+  const bigramDfMap = new Map();
+  const trigramDfMap = new Map();
+  const communityNgrams = communityTermFreqs.map(({ communityId, tf, totalTokens }) => {
+    const tokens = tokenizeNL(communityTexts.find(c => c.communityId === communityId)?.text || '');
+    const bigrams = extractBigrams(tokens);
+    const trigrams = extractTrigrams(tokens);
+    for (const bg of bigrams.keys()) bigramDfMap.set(bg, (bigramDfMap.get(bg) || 0) + 1);
+    for (const tg of trigrams.keys()) trigramDfMap.set(tg, (trigramDfMap.get(tg) || 0) + 1);
+    return { communityId, bigrams, trigrams, tokens };
+  });
+
   // Phase 3: c-TF-IDF scoring
   const communityPhrases = [];
 
-  for (const { communityId, tf, totalTokens } of communityTermFreqs) {
+  for (let ci = 0; ci < communityTermFreqs.length; ci++) {
+    const { communityId, tf, totalTokens } = communityTermFreqs[ci];
     if (Date.now() > deadline) {
       communityPhrases.push({ communityId, phrases: [], partial: true });
       continue;
@@ -134,18 +148,16 @@ export function mineNLContent(communities, projectRoot, options = {}) {
       scored.push({ text: term, score: ctfIdf, type: 'unigram' });
     }
 
-    // Also extract bigrams and trigrams from the text
-    const nlTokens = tokenizeNL(communityTexts.find(c => c.communityId === communityId)?.text || '');
-    const bigrams = extractBigrams(nlTokens);
+    // Bigrams and trigrams using their own DF maps
+    const { bigrams, trigrams } = communityNgrams[ci];
     for (const [bigram, count] of bigrams) {
       const termFreq = count / Math.max(totalTokens - 1, 1);
-      const idf = Math.log(1 + totalDocs / (dfMap.get(bigram) || 1));
+      const idf = Math.log(1 + totalDocs / (bigramDfMap.get(bigram) || 1));
       scored.push({ text: bigram, score: termFreq * idf * 1.5, type: 'bigram' });
     }
-    const trigrams = extractTrigrams(nlTokens);
     for (const [trigram, count] of trigrams) {
       const termFreq = count / Math.max(totalTokens - 2, 1);
-      const idf = Math.log(1 + totalDocs / (dfMap.get(trigram) || 1));
+      const idf = Math.log(1 + totalDocs / (trigramDfMap.get(trigram) || 1));
       scored.push({ text: trigram, score: termFreq * idf * 1.8, type: 'trigram' });
     }
 
