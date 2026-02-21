@@ -133,6 +133,62 @@ describe('leidenCommunities', () => {
     const result = leidenCommunities(adjacency, { maxIterations: 1 });
     expect(result.iterations).toBeLessThanOrEqual(1);
   });
+
+  it('flattens transitive community assignments after aggregation', () => {
+    // Build a graph with two dense clusters linked by a weak bridge.
+    // This triggers multi-level aggregation where super-nodes from
+    // iteration 1 get re-assigned in iteration 2, creating transitive
+    // chains (node→c, c→cc) that must be flattened before returning.
+    //
+    // Cluster A: nodes 1-5 (dense, weight=10)
+    // Cluster B: nodes 6-10 (dense, weight=10)
+    // Bridge: 5↔6 (weight=1)
+    const adjacency = new Map();
+    for (let i = 1; i <= 10; i++) adjacency.set(i, new Map());
+    // Cluster A
+    for (let i = 1; i <= 5; i++) {
+      for (let j = i + 1; j <= 5; j++) {
+        adjacency.get(i).set(j, 10);
+        adjacency.get(j).set(i, 10);
+      }
+    }
+    // Cluster B
+    for (let i = 6; i <= 10; i++) {
+      for (let j = i + 1; j <= 10; j++) {
+        adjacency.get(i).set(j, 10);
+        adjacency.get(j).set(i, 10);
+      }
+    }
+    // Weak bridge
+    adjacency.get(5).set(6, 1);
+    adjacency.get(6).set(5, 1);
+
+    const result = leidenCommunities(adjacency, { maxIterations: 20 });
+    const { assignment } = result;
+
+    // The invariant: every node's community must be a terminal (fixed-point).
+    // No node should point to a community ID that itself maps to a different ID.
+    for (const [node, comm] of assignment) {
+      if (assignment.has(comm)) {
+        expect(assignment.get(comm)).toBe(comm);
+      }
+    }
+
+    // All original nodes (1-10) should still be in the assignment
+    for (let i = 1; i <= 10; i++) {
+      expect(assignment.has(i)).toBe(true);
+    }
+
+    // Nodes in the same cluster should share a community
+    const commA = assignment.get(1);
+    for (let i = 2; i <= 5; i++) {
+      expect(assignment.get(i)).toBe(commA);
+    }
+    const commB = assignment.get(6);
+    for (let i = 7; i <= 10; i++) {
+      expect(assignment.get(i)).toBe(commB);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

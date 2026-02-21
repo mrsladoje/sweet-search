@@ -334,7 +334,7 @@ export const cacheStats = { hits: 0, misses: 0, vocabularyHits: 0, apiCalls: 0 }
 // TELEMETRY (barrel re-exports from ./embedding-telemetry.js)
 // =============================================================================
 
-export { telemetryStats, recordQueryTelemetry, getTelemetryReport, resetTelemetryStats } from './embedding-telemetry.js';
+export { telemetryStats, recordQueryTelemetry, getTelemetryReport, resetTelemetryStats, flushTelemetry } from './embedding-telemetry.js';
 
 // =============================================================================
 // CACHE MANAGEMENT

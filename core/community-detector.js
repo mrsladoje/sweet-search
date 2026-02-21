@@ -61,8 +61,9 @@ export function leidenCommunities(adjacency, options = {}) {
   const threshold = options.convergenceThreshold ?? DEFAULT_CONVERGENCE_THRESHOLD;
   const deadline = options.timeoutMs ? Date.now() + options.timeoutMs : Infinity;
 
-  const nodes = [...adjacency.keys()];
-  const n = nodes.length;
+  let currentAdj = adjacency;
+  let currentNodes = [...adjacency.keys()];
+  const n = currentNodes.length;
   if (n === 0) return { assignment: new Map(), converged: true, iterations: 0 };
 
   // Total edge weight (m = sum of all edge weights / 2 for undirected)
@@ -76,32 +77,33 @@ export function leidenCommunities(adjacency, options = {}) {
   if (m2 === 0) {
     // No edges: each node is its own community
     const assignment = new Map();
-    for (let i = 0; i < n; i++) assignment.set(nodes[i], i);
+    for (let i = 0; i < n; i++) assignment.set(currentNodes[i], i);
     return { assignment, converged: true, iterations: 0 };
   }
 
   // Initialize: each node in its own community
   const community = new Map();    // node -> communityId
-  for (let i = 0; i < n; i++) community.set(nodes[i], nodes[i]);
+  for (let i = 0; i < n; i++) community.set(currentNodes[i], currentNodes[i]);
 
   // Weighted degree per node: ki = sum of edge weights incident to node i
   const degree = new Map();
-  for (const node of nodes) {
+  for (const node of currentNodes) {
     let d = 0;
-    const neighbors = adjacency.get(node);
+    const neighbors = currentAdj.get(node);
     if (neighbors) for (const w of neighbors.values()) d += w;
     degree.set(node, d);
   }
 
   let converged = false;
   let iter = 0;
+  let prevQ = 0;
 
   for (iter = 0; iter < maxIter; iter++) {
     if (Date.now() > deadline) break;
 
     // --- Phase 1: Local moving ---
     const moved = localMovingPhase(
-      nodes, adjacency, community, degree, m2, resolution, deadline
+      currentNodes, currentAdj, community, degree, m2, resolution, deadline
     );
 
     if (!moved) {
@@ -110,26 +112,54 @@ export function leidenCommunities(adjacency, options = {}) {
     }
 
     // --- Phase 2: Refinement (Leiden-specific) ---
-    refinementPhase(nodes, adjacency, community, degree, m2, resolution, deadline);
+    refinementPhase(currentNodes, currentAdj, community, degree, m2, resolution, deadline);
 
-    // --- Phase 3: Aggregation ---
-    const agg = aggregateGraph(nodes, adjacency, community);
-    if (!agg || agg.nodes.length >= nodes.length) {
+    // --- Phase 3: Aggregation — collapse communities into super-nodes ---
+    const agg = aggregateGraph(currentNodes, currentAdj, community, degree);
+    if (!agg) {
       // No further aggregation possible
       converged = true;
       break;
     }
 
     // Check convergence: modularity delta
-    const q = computeModularity(adjacency, community, degree, m2, resolution);
-    if (iter > 0 && Math.abs(q - (options._prevQ || 0)) < threshold) {
+    const q = computeModularity(currentAdj, community, degree, m2, resolution);
+    if (iter > 0 && Math.abs(q - prevQ) < threshold) {
       converged = true;
       break;
     }
-    options._prevQ = q;
+    prevQ = q;
+
+    // Replace working graph with aggregated super-node graph for next iteration
+    currentAdj = agg.adjacency;
+    currentNodes = agg.nodes;
   }
 
+  // Flatten hierarchical mappings: after aggregation, `community` may contain
+  // transitive chains (node→c, c→cc) where c is a super-node from a prior
+  // iteration. detectCommunities reads the map as node→final-community, so
+  // every chain must be resolved to its terminal fixed-point.
+  _flattenAssignment(community);
+
   return { assignment: community, converged, iterations: iter };
+}
+
+/**
+ * Flatten transitive community assignments to fixed-point.
+ * E.g. node 1→5, 5→9, 9→9 becomes node 1→9.
+ * @param {Map<number, number>} community
+ */
+function _flattenAssignment(community) {
+  for (const [node] of community) {
+    let cur = community.get(node);
+    // Follow chain to fixed-point (max 100 hops as safety)
+    let hops = 0;
+    while (community.has(cur) && community.get(cur) !== cur && hops < 100) {
+      cur = community.get(cur);
+      hops++;
+    }
+    community.set(node, cur);
+  }
 }
 
 /**
@@ -254,14 +284,46 @@ function refinementPhase(nodes, adjacency, community, degree, m2, resolution, de
 }
 
 /**
- * Aggregate graph: collapse communities into super-nodes.
- * Returns null if no aggregation possible.
+ * Aggregate graph: collapse communities into super-nodes with merged edges.
+ * Builds a new adjacency where each node is a community ID, and edge weights
+ * are the sum of all inter-community edges.
+ *
+ * @returns {{ nodes: number[], adjacency: Map<number, Map<number, number>> } | null}
+ *   null if no aggregation possible (every node is its own community)
  */
-function aggregateGraph(nodes, adjacency, community) {
+function aggregateGraph(nodes, adjacency, community, degree) {
   const uniqueComms = new Set(community.values());
   if (uniqueComms.size >= nodes.length) return null; // No aggregation happened
 
-  return { nodes: [...uniqueComms] };
+  // Build super-node adjacency: community -> Map(community -> weight)
+  const superAdj = new Map();
+  for (const c of uniqueComms) superAdj.set(c, new Map());
+
+  for (const node of nodes) {
+    const srcComm = community.get(node);
+    const neighbors = adjacency.get(node);
+    if (!neighbors) continue;
+
+    for (const [neighbor, w] of neighbors) {
+      const tgtComm = community.get(neighbor);
+      if (srcComm === tgtComm) continue; // Skip intra-community edges
+      const superNeighbors = superAdj.get(srcComm);
+      superNeighbors.set(tgtComm, (superNeighbors.get(tgtComm) || 0) + w);
+    }
+  }
+
+  // Update degree map for super-nodes
+  for (const c of uniqueComms) {
+    let d = 0;
+    const neighbors = superAdj.get(c);
+    if (neighbors) for (const w of neighbors.values()) d += w;
+    degree.set(c, d);
+  }
+
+  // Update community map: each super-node starts in its own community
+  for (const c of uniqueComms) community.set(c, c);
+
+  return { nodes: [...uniqueComms], adjacency: superAdj };
 }
 
 /**
@@ -301,10 +363,11 @@ function findConnectedComponents(nodes, adjacency) {
 
     const component = [];
     const queue = [start];
+    let head = 0;  // Index pointer avoids O(n) shift()
     visited.add(start);
 
-    while (queue.length > 0) {
-      const current = queue.shift();
+    while (head < queue.length) {
+      const current = queue[head++];
       component.push(current);
 
       const neighbors = adjacency.get(current);
@@ -507,13 +570,16 @@ export function detectCommunities(dbPath, options = {}) {
       const components = findConnectedComponents(group.entityIds, subAdj);
       for (const comp of components) {
         const fileIds = new Set();
+        const entityNames = [];
         for (const nodeId of comp) {
           const ent = entityMap.get(nodeId);
           if (ent?.file_path) fileIds.add(ent.file_path);
+          if (ent?.name) entityNames.push(ent.name);
         }
         finalCommunities.push({
           id: nextId++,
           entityIds: comp,
+          entityNames,
           fileIds: [...fileIds],
           entityCount: comp.length,
         });
@@ -570,15 +636,13 @@ function buildWeightedAdjacency(entities, relationships) {
 
 /**
  * Compute graph hash from relationship rows (avoids re-querying DB).
+ * Sort order matches the SQL ORDER BY in computeGraphHash():
+ *   numeric on source_id, then target_id, then lexicographic on type.
  */
 function computeGraphHashFromRows(relationships) {
   const sorted = [...relationships].sort((a, b) => {
-    const sa = `${a.source_id}`;
-    const sb = `${b.source_id}`;
-    if (sa !== sb) return sa < sb ? -1 : 1;
-    const ta = `${a.target_id}`;
-    const tb = `${b.target_id}`;
-    if (ta !== tb) return ta < tb ? -1 : 1;
+    if (a.source_id !== b.source_id) return a.source_id - b.source_id;
+    if (a.target_id !== b.target_id) return a.target_id - b.target_id;
     return (a.type || '') < (b.type || '') ? -1 : (a.type || '') > (b.type || '') ? 1 : 0;
   });
 

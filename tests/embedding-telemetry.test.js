@@ -30,6 +30,7 @@ const {
   resetTelemetryStats,
   recordQueryTelemetry,
   getTelemetryReport,
+  flushTelemetry,
 } = await import('../core/embedding-telemetry.js');
 
 // ---------------------------------------------------------------------------
@@ -136,6 +137,7 @@ describe('recordQueryTelemetry', () => {
 
   it('writes to JSONL file', async () => {
     await recordQueryTelemetry('lexical', true, 5.5, 'test query', 'api');
+    await flushTelemetry();
 
     const { readFileSync } = await import('fs');
     const content = readFileSync(testTelemetryPath, 'utf-8');
@@ -151,6 +153,7 @@ describe('recordQueryTelemetry', () => {
 
   it('includes optional fields when provided', async () => {
     await recordQueryTelemetry('hybrid', true, 10, 'find user', 'vocabulary', true, false);
+    await flushTelemetry();
 
     const { readFileSync } = await import('fs');
     const content = readFileSync(testTelemetryPath, 'utf-8');
@@ -163,6 +166,7 @@ describe('recordQueryTelemetry', () => {
 
   it('omits optional fields when not provided', async () => {
     await recordQueryTelemetry('semantic', false, 20);
+    await flushTelemetry();
 
     const { readFileSync } = await import('fs');
     const content = readFileSync(testTelemetryPath, 'utf-8');

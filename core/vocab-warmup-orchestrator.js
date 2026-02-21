@@ -285,11 +285,15 @@ async function _runFullWarmupInner(options, start) {
         .filter(p => p.communityId === comm.id)
         .slice(0, 20)
         .map(p => p.phrase);
-      // Top entities by score from this community's entity IDs
-      const commTopEntities = (ranked.identifiers || [])
-        .filter(id => comm.entityIds && comm.entityIds.includes(id.entityId))
-        .slice(0, 10)
-        .map(id => id.term);
+      // Top entities by score: match ranked identifiers whose term name
+      // appears in this community's entity names (from detectCommunities).
+      const nameSet = comm.entityNames ? new Set(comm.entityNames.map(n => n.toLowerCase())) : new Set();
+      const commTopEntities = nameSet.size > 0
+        ? (ranked.identifiers || [])
+            .filter(id => nameSet.has(id.term.toLowerCase()))
+            .slice(0, 10)
+            .map(id => id.term)
+        : [];
       return {
         ...comm,
         phrases: commPhrases,
