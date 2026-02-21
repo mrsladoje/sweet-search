@@ -8,6 +8,8 @@
  * so they work correctly when wired onto SweetSearch.prototype.
  */
 
+import { createHash } from 'crypto';
+
 // =============================================================================
 // ROUTE_ALPHAS (shared constant for CC fusion)
 // =============================================================================
@@ -35,8 +37,9 @@ export function getResultKey(result) {
   if (result.id) return String(result.id);
   if (result.file && result.startLine != null) return `${result.file}:${result.startLine}`;
   if (result.name) return String(result.name);
-  // Fallback: hash first 100 chars of JSON representation
-  return JSON.stringify(result || {}).slice(0, 100);
+  // Fallback: deterministic hash of the full result to avoid key collisions.
+  // Truncated JSON (the previous approach) could merge distinct results during fusion.
+  return createHash('md5').update(JSON.stringify(result || {})).digest('hex');
 }
 
 /**

@@ -4,14 +4,10 @@
  * Full warmup pipeline: mine -> detect communities -> rank -> warm -> persist.
  * Extracted from vocab-warmer.js for SOLID single-responsibility.
  *
- * This module imports from ./vocab-warmer.js which re-exports from here
- * (circular).  Safe ONLY because every access to ARTIFACT_PATHS / DATA_DIR
- * is inside a function body (runtime), never at module scope.
- *
- * WARNING: Do NOT read ARTIFACT_PATHS or DATA_DIR at the top level here.
- * They are `export const` in vocab-warmer.js and will be in the Temporal
- * Dead Zone during the circular module resolution.  Function declarations
- * (warmLexical etc.) are hoisted and safe to import.
+ * Constants (ARTIFACT_PATHS, DATA_DIR) live in vocab-constants.js — a
+ * dependency-free module shared by both this file and vocab-warmer.js.
+ * This eliminates the previous circular import between this module and
+ * vocab-warmer.js.
  */
 
 import { existsSync } from 'fs';
@@ -22,13 +18,8 @@ import { DB_PATHS, PROJECT_ROOT, EMBEDDING_CONFIG } from './config.js';
 import { detectCommunities, computeGraphHash } from './community-detector.js';
 import { mineAll, computeNLContentHash } from './vocab-miner.js';
 import { rankAll } from './vocab-ranker.js';
-import {
-  warmLexical,
-  warmSemantic,
-  warmHybrid,
-  ARTIFACT_PATHS,
-  DATA_DIR,
-} from './vocab-warmer.js';
+import { warmLexical, warmSemantic, warmHybrid } from './vocab-warmer.js';
+import { ARTIFACT_PATHS, DATA_DIR } from './vocab-constants.js';
 
 // ---------------------------------------------------------------------------
 // 4e. Full Warmup Orchestrator (Heavy Tier)

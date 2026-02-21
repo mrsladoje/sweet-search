@@ -14,7 +14,7 @@
 
 import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
 import { join, basename, extname, relative, sep } from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import Database from 'better-sqlite3';
 import { DB_PATHS, PROJECT_ROOT } from './config.js';
 import { pageRank, loadGraph, buildAdjacency } from './repo-map.js';
@@ -342,9 +342,8 @@ export function mineGit(projectRoot, options = {}) {
 
   // Commit messages
   try {
-    const since = `--since="${maxDays} days ago"`;
-    const log = execSync(
-      `git log --format="%s" -n ${maxCommits} ${since}`,
+    const log = execFileSync(
+      'git', ['log', `--format=%s`, '-n', String(maxCommits), `--since=${maxDays} days ago`],
       { cwd: root, encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
     );
 
@@ -360,8 +359,8 @@ export function mineGit(projectRoot, options = {}) {
 
   // Branch names
   try {
-    const branches = execSync(
-      'git branch --all --format="%(refname:short)"',
+    const branches = execFileSync(
+      'git', ['branch', '--all', '--format=%(refname:short)'],
       { cwd: root, encoding: 'utf-8', timeout: 3000, stdio: ['pipe', 'pipe', 'pipe'] }
     );
 
@@ -380,8 +379,8 @@ export function mineGit(projectRoot, options = {}) {
 
   // Frequently changed files (hot files)
   try {
-    const hotFiles = execSync(
-      `git log --format="" --name-only -n ${maxCommits} --since="${maxDays} days ago"`,
+    const hotFiles = execFileSync(
+      'git', ['log', '--format=', '--name-only', '-n', String(maxCommits), `--since=${maxDays} days ago`],
       { cwd: root, encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
     );
 

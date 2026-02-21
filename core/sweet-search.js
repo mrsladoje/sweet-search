@@ -62,6 +62,7 @@ export class SweetSearch {
     this.fullCodeTokenBudget = options.fullCodeTokenBudget ?? HCGS_CONFIG.fullCodeTokenBudget;
     this.enableTranslationFallback = options.enableTranslationFallback ?? true;
     this.translationFallback = new TranslationFallback(options.translation || {});
+    // SEISMIC sparse vector path (lazy-loaded when SEISMIC_CONFIG.enabled)
     this._seismicIndex = null;
     this.qualityWeight = options.qualityWeight ?? 0;
     setRepoMapModule({ pageRank, loadGraph, buildAdjacency });
