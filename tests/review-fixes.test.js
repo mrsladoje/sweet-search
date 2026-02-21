@@ -53,6 +53,7 @@ vi.mock('fs', () => ({
 import {
   recordQueryTelemetry,
   resetTelemetryStats,
+  flushTelemetry,
 } from '../core/embedding-cache.js';
 
 // ---------------------------------------------------------------------------
@@ -67,18 +68,21 @@ describe('recordQueryTelemetry extended fields (F2)', () => {
 
   it('includes query field when provided', async () => {
     await recordQueryTelemetry('lexical', true, 2, 'AuthService');
+    await flushTelemetry();
     const entry = JSON.parse(mockAppendFile.mock.calls[0][1].trim());
     expect(entry.query).toBe('AuthService');
   });
 
   it('includes source field when provided', async () => {
     await recordQueryTelemetry('semantic', true, 10, 'test', 'vocabulary');
+    await flushTelemetry();
     const entry = JSON.parse(mockAppendFile.mock.calls[0][1].trim());
     expect(entry.source).toBe('vocabulary');
   });
 
   it('includes lexicalHit and semanticHit for hybrid mode', async () => {
     await recordQueryTelemetry('hybrid', true, 30, 'test', 'cache', true, false);
+    await flushTelemetry();
     const entry = JSON.parse(mockAppendFile.mock.calls[0][1].trim());
     expect(entry.lexicalHit).toBe(true);
     expect(entry.semanticHit).toBe(false);
@@ -86,6 +90,7 @@ describe('recordQueryTelemetry extended fields (F2)', () => {
 
   it('omits optional fields when not provided', async () => {
     await recordQueryTelemetry('lexical', true, 2);
+    await flushTelemetry();
     const entry = JSON.parse(mockAppendFile.mock.calls[0][1].trim());
     expect(entry).not.toHaveProperty('query');
     expect(entry).not.toHaveProperty('source');
@@ -318,12 +323,14 @@ describe('hybrid cacheHit logic (H1)', () => {
 
   it('lexical mode: lexHit is true when total latency < 5', async () => {
     await recordQueryTelemetry('lexical', true, 2, 'test');
+    await flushTelemetry();
     const entry = JSON.parse(mockAppendFile.mock.calls[0][1].trim());
     expect(entry.hit).toBe(true);
   });
 
   it('lexical mode: lexHit is false when total latency >= 5', async () => {
     await recordQueryTelemetry('lexical', false, 50, 'test');
+    await flushTelemetry();
     const entry = JSON.parse(mockAppendFile.mock.calls[0][1].trim());
     expect(entry.hit).toBe(false);
   });
@@ -343,6 +350,7 @@ describe('hybrid cacheHit logic (H1)', () => {
 
     // Also verify the telemetry recording captures both sub-mode fields
     await recordQueryTelemetry('hybrid', lexHit && semHit, totalMs, 'test', 'vocabulary', lexHit, semHit);
+    await flushTelemetry();
     const entry = JSON.parse(mockAppendFile.mock.calls[0][1].trim());
     expect(entry.hit).toBe(true); // hybrid hit because both sub-modes hit
     expect(entry.lexicalHit).toBe(true);
@@ -360,6 +368,7 @@ describe('hybrid cacheHit logic (H1)', () => {
     expect(lexHit).toBe(false);
 
     await recordQueryTelemetry('hybrid', lexHit && semHit, totalMs, 'test', 'vocabulary', lexHit, semHit);
+    await flushTelemetry();
     const entry = JSON.parse(mockAppendFile.mock.calls[0][1].trim());
     expect(entry.hit).toBe(false);
     expect(entry.lexicalHit).toBe(false);
