@@ -20,24 +20,17 @@ import fs from 'fs/promises';
 import path from 'path';
 
 import Database from 'better-sqlite3';
-import { DB_PATHS, PROJECT_ROOT, EMBEDDING_CONFIG } from './config.js';
+import { DB_PATHS, EMBEDDING_CONFIG } from './config.js';
 import { generateEmbeddings, truncateForHNSW } from './embedding-service.js';
 import { BinaryVocabulary } from './vocabulary-utils.js';
 
 // ---------------------------------------------------------------------------
-// Constants (also consumed by vocab-warmup-orchestrator.js)
+// Constants — imported from vocab-constants.js (shared with orchestrator,
+// no circular dependency).  Re-exported for backward compatibility.
 // ---------------------------------------------------------------------------
 
-export const DATA_DIR = path.join(PROJECT_ROOT, '.sweet-search');
-
-export const ARTIFACT_PATHS = {
-  identifiersBin: path.join(DATA_DIR, 'vocab-identifiers.bin'),
-  identifiersMeta: path.join(DATA_DIR, 'vocab-identifiers.meta.json'),
-  semanticSeedsBin: path.join(DATA_DIR, 'vocab-semantic-seeds.bin'),
-  semanticSeedsMeta: path.join(DATA_DIR, 'vocab-semantic-seeds.meta.json'),
-  communities: path.join(DATA_DIR, 'communities.json'),
-  dynamicVocab: path.join(DATA_DIR, 'vocab-dynamic.json'),
-};
+import { DATA_DIR, ARTIFACT_PATHS } from './vocab-constants.js';
+export { DATA_DIR, ARTIFACT_PATHS };
 
 const DEFAULT_TIME_BUDGET_MS = 2000;
 
@@ -417,44 +410,52 @@ export function _loadEntityMetadata(hubEntities) {
   const dbPath = DB_PATHS.codeGraph;
   if (!existsSync(dbPath)) return meta;
 
+  // Collect unique term names for a single batch query.
+  const terms = [];
+  for (const ent of hubEntities) {
+    const term = typeof ent === 'string' ? ent : ent.term;
+    if (term) terms.push(term);
+  }
+  if (terms.length === 0) return meta;
+
   let db;
   try {
     db = new Database(dbPath, { readonly: true, timeout: 5000 });
-    // Fetch entity + any parent relationship for scope context
-    const stmt = db.prepare(
-      `SELECT e.name, e.type, e.file_path,
-              p.name AS parent_name, p.type AS parent_type
-       FROM entities e
-       LEFT JOIN relationships r ON r.source_id = e.id AND r.type IN ('childOf','memberOf','nestedIn')
-       LEFT JOIN entities p ON p.id = r.target_id
-       WHERE e.name = ? ORDER BY r.type LIMIT 1`
-    );
-    for (const ent of hubEntities) {
-      const term = typeof ent === 'string' ? ent : ent.term;
-      if (!term) continue;
-      try {
-        const row = stmt.get(term);
-        if (row) {
-          // Infer language from file extension
-          const ext = row.file_path ? path.extname(row.file_path).slice(1) : null;
-          meta.set(term, {
-            type: row.type,
-            file_path: row.file_path,
-            language: ext || null,
-            parentType: row.parent_type || null,
-            parentSymbol: row.parent_name || null,
-          });
-        }
-      } catch (err) {
-        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+
+    // Batch query: fetch all entities + parent scope in one shot.
+    // Chunk into batches of 500 to stay within SQLite variable limits.
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < terms.length; i += BATCH_SIZE) {
+      const batch = terms.slice(i, i + BATCH_SIZE);
+      const placeholders = batch.map(() => '?').join(',');
+      const rows = db.prepare(
+        `SELECT e.name, e.type, e.file_path,
+                p.name AS parent_name, p.type AS parent_type
+         FROM entities e
+         LEFT JOIN relationships r ON r.source_id = e.id AND r.type IN ('childOf','memberOf','nestedIn')
+         LEFT JOIN entities p ON p.id = r.target_id
+         WHERE e.name IN (${placeholders})
+         GROUP BY e.name`
+      ).all(...batch);
+
+      for (const row of rows) {
+        const ext = row.file_path ? path.extname(row.file_path).slice(1) : null;
+        meta.set(row.name, {
+          type: row.type,
+          file_path: row.file_path,
+          language: ext || null,
+          parentType: row.parent_type || null,
+          parentSymbol: row.parent_name || null,
+        });
       }
     }
   } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+  } finally {
+    if (db) try { db.close(); } catch (err) {
+      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+    }
   }
-  finally { if (db) try { db.close(); } catch (err) {
-    if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
-  } }
 
   return meta;
 }
@@ -463,10 +464,9 @@ export function _loadEntityMetadata(hubEntities) {
 // Exports
 // ---------------------------------------------------------------------------
 
-// Import runFullWarmup for the default export object.
-// This dynamic import pattern avoids issues: the re-export above handles
-// named exports, but we need a reference for the default export object.
-// We use a lazy getter so the circular dep resolves at call time.
+// No circular dependency: runFullWarmup is re-exported via named export
+// (line 41) and also included in the default export object here.
+// Both this module and the orchestrator import constants from vocab-constants.js.
 import { runFullWarmup } from './vocab-warmup-orchestrator.js';
 
 export default {

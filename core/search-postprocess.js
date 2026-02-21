@@ -11,6 +11,11 @@
 import { SEISMIC_CONFIG } from './config.js';
 import { DB_PATHS } from './config.js';
 import { expandResults } from './graph-expansion.js';
+
+// Threshold (ms) below which a lexical sub-query is considered a "cache hit"
+// for telemetry purposes. Derived empirically: FTS5 page-cache hits typically
+// complete in <2ms; 5ms gives headroom for slow I/O without inflating miss rates.
+const LEXICAL_HIT_THRESHOLD_MS = 5;
 import { QualityScorer } from './quality-scorer.js';
 import { classifyIntent, getIntentPolicy } from './intent-router.js';
 import { recordQueryTelemetry } from './embedding-cache.js';
@@ -92,9 +97,16 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   // =========================================================================
   // SEISMIC Sparse Vector Path (gated by SEISMIC_CONFIG.enabled)
   // =========================================================================
+  // Prerequisites: sparse encoder (SPLADE or code-specific) not yet available.
+  // When enabled, will provide third retrieval pathway for learned sparse embeddings.
+  // See docs/AST_OPTIMIZATIONS.md #12 for architecture and integration plan.
   if (SEISMIC_CONFIG.enabled && this._seismicIndex) {
     try {
       const sparseStart = Date.now();
+      // TODO: Generate sparse query embedding via encoder
+      // const sparseQuery = await sparseEncoder.encode(query);
+      // const sparseResults = this._seismicIndex.query(sparseQuery, k);
+      // results = reciprocalRankFuse(results, sparseResults, SEISMIC_CONFIG.weight);
       stats.seismic = { enabled: true, latency_ms: Date.now() - sparseStart, status: 'awaiting_sparse_encoder' };
     } catch (err) {
       stats.seismic = { enabled: true, error: err.message };
@@ -281,7 +293,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   const lexSubLatency = telemetryMode === 'hybrid'
     ? Math.max(0, latency - embedLatencyMs)
     : latency;
-  const lexHit = lexSubLatency < 5;
+  const lexHit = lexSubLatency < LEXICAL_HIT_THRESHOLD_MS;
   const semHit = embeddingSource === 'vocabulary' || embeddingSource === 'semantic-cache';
   const cacheHit = telemetryMode === 'lexical'
     ? lexHit

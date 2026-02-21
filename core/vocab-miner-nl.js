@@ -7,7 +7,7 @@
 
 import { readFileSync, existsSync, statSync } from 'fs';
 import { join, extname } from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import { PROJECT_ROOT } from './config.js';
 import { STOP_WORDS, splitIdentifier } from './vocab-miner-utils.js';
@@ -93,13 +93,16 @@ export function mineNLContent(communities, projectRoot, options = {}) {
   const totalDocs = communityTexts.length;
   const dfMap = new Map(); // term -> number of communities containing it
 
+  // Tokenize once per community, reuse for TF, bigrams, and trigrams.
   const communityTermFreqs = communityTexts.map(({ communityId, text }) => {
     const tokens = tokenizeNL(text);
     const tf = new Map();
     for (const token of tokens) {
       tf.set(token, (tf.get(token) || 0) + 1);
     }
-    return { communityId, tf, totalTokens: tokens.length };
+    const bigrams = extractBigrams(tokens);
+    const trigrams = extractTrigrams(tokens);
+    return { communityId, tf, totalTokens: tokens.length, tokens, bigrams, trigrams };
   });
 
   // Document frequency (unigrams)
@@ -109,18 +112,14 @@ export function mineNLContent(communities, projectRoot, options = {}) {
     }
   }
 
-  // P1.4: Build per-ngram document frequency maps so bigram/trigram IDF
+  // Per-ngram document frequency maps so bigram/trigram IDF
   // reflects actual cross-community distinctiveness (not constant 1).
   const bigramDfMap = new Map();
   const trigramDfMap = new Map();
-  const communityNgrams = communityTermFreqs.map(({ communityId, tf, totalTokens }) => {
-    const tokens = tokenizeNL(communityTexts.find(c => c.communityId === communityId)?.text || '');
-    const bigrams = extractBigrams(tokens);
-    const trigrams = extractTrigrams(tokens);
+  for (const { bigrams, trigrams } of communityTermFreqs) {
     for (const bg of bigrams.keys()) bigramDfMap.set(bg, (bigramDfMap.get(bg) || 0) + 1);
     for (const tg of trigrams.keys()) trigramDfMap.set(tg, (trigramDfMap.get(tg) || 0) + 1);
-    return { communityId, bigrams, trigrams, tokens };
-  });
+  }
 
   // Phase 3: c-TF-IDF scoring
   const communityPhrases = [];
@@ -149,7 +148,7 @@ export function mineNLContent(communities, projectRoot, options = {}) {
     }
 
     // Bigrams and trigrams using their own DF maps
-    const { bigrams, trigrams } = communityNgrams[ci];
+    const { bigrams, trigrams } = communityTermFreqs[ci];
     for (const [bigram, count] of bigrams) {
       const termFreq = count / Math.max(totalTokens - 1, 1);
       const idf = Math.log(1 + totalDocs / (bigramDfMap.get(bigram) || 1));
@@ -238,9 +237,8 @@ export function computeNLContentHash(communities, projectRoot, options = {}) {
   try {
     const maxCommits = options.maxCommits ?? 200;
     const maxDays = options.maxDays ?? 30;
-    const since = `--since="${maxDays} days ago"`;
-    const log = execSync(
-      `git log --format="%s" -n ${maxCommits} ${since}`,
+    const log = execFileSync(
+      'git', ['log', '--format=%s', '-n', String(maxCommits), `--since=${maxDays} days ago`],
       { cwd: root, encoding: 'utf-8', timeout: 5000 }
     ).trim();
     if (log && totalBytes < maxBytes) {

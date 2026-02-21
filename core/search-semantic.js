@@ -421,10 +421,8 @@ export async function semanticSearchStandard(query, options = {}) {
 // =============================================================================
 
 /**
- * Score spread analysis for intelligent rerank skipping
- *
- * Uses `this` — must be wired onto prototype (though current impl doesn't
- * reference `this`, kept as regular function for consistency).
+ * Score spread analysis for intelligent rerank skipping.
+ * Pure function — does not reference `this`. On prototype for call-site convenience.
  */
 export function shouldSkipRerank(scores, options = {}) {
   const {
