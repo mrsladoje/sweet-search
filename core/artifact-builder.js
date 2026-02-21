@@ -444,6 +444,7 @@ export async function saveArtifacts(hnswIndex) {
  * }>}
  */
 export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, options = {}) {
+  const overallStartTime = performance.now();
   const {
     hnswIndexPath = DB_PATHS.binaryHnswIndex,
     floatDimension = EMBEDDING_CONFIG.hnswDimension,
@@ -502,13 +503,21 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
   console.log(`Saving HNSW index + Int8 sidecar to ${hnswIndexPath}...`);
   await hnswIndex.save(hnswIndexPath);
 
+  const totalBuildTimeMs = Math.round(performance.now() - overallStartTime);
+  const vectorsPerSecond = totalBuildTimeMs > 0
+    ? Math.round(items.length / (totalBuildTimeMs / 1000))
+    : Infinity;
+
   const hnswStats = hnswIndex.getStats();
 
   return {
     hnsw: {
       ...hnswStats,
-      buildTimeMs: hnswBuildStats.buildTimeMs,
-      vectorsPerSecond: hnswBuildStats.vectorsPerSecond,
+      // Report end-to-end artifact build timing (load + parse + build + save).
+      buildTimeMs: totalBuildTimeMs,
+      vectorsPerSecond,
+      // Keep inner build phase timing available for debugging/regression triage.
+      indexBuildTimeMs: hnswBuildStats.buildTimeMs,
       path: hnswIndexPath,
       int8SidecarPath: hnswIndexPath.replace('.idx', '.int8.json'),
     },
