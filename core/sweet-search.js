@@ -39,6 +39,7 @@ import {
   isWarm,
   registerAutoPersistOnExit,
 } from './embedding-service.js';
+import { recordQueryTelemetry } from './embedding-cache.js';
 
 // Phase 4: Translation Fallback
 import { TranslationFallback, queryNeedsTranslation } from '../translation/index.js';
@@ -319,12 +320,13 @@ export class SweetSearch {
           typeof semanticStats.embedding.provider === 'string') {
         stats.embedding = semanticStats.embedding;
       } else if (semanticStats.embedding) {
-        // Partial embedding stats - fill in defaults
+        // Partial embedding stats - fill in defaults, preserve latency_us for telemetry
         stats.embedding = {
           source: semanticStats.embedding.source || 'unknown',
           tokens: semanticStats.embedding.tokens || Math.ceil(query.length / 4),
           provider: semanticStats.embedding.provider || 'voyage',
           cached: semanticStats.embedding.cached || false,
+          latency_us: semanticStats.embedding.latency_us,
         };
       }
 
@@ -538,6 +540,32 @@ export class SweetSearch {
     if (this.timing) {
       this.logPerformance(stats);
     }
+
+    // Record per-mode telemetry for vocabulary prewarm analytics (Step 0)
+    const telemetryMode = searchMode === 'structural' ? 'lexical' : searchMode;
+    const latency = stats.total_ms;
+    const embeddingSource = stats.embedding?.source || null;
+    // Lexical hit: for pure lexical mode, total_ms < 5 is a valid proxy.
+    // For hybrid mode, estimate lexical sub-latency by subtracting the
+    // semantic embedding time (available as latency_us on semantic stats).
+    const embedLatencyMs = (stats.embedding?.latency_us || 0) / 1000;
+    const lexSubLatency = telemetryMode === 'hybrid'
+      ? Math.max(0, latency - embedLatencyMs)
+      : latency;
+    const lexHit = lexSubLatency < 5;
+    const semHit = embeddingSource === 'vocabulary' || embeddingSource === 'semantic-cache';
+    const cacheHit = telemetryMode === 'lexical'
+      ? lexHit
+      : telemetryMode === 'semantic'
+        ? semHit
+        : telemetryMode === 'hybrid'
+          ? lexHit && semHit
+          : false;
+    recordQueryTelemetry(
+      telemetryMode, cacheHit, latency, query, embeddingSource,
+      telemetryMode === 'hybrid' ? lexHit : undefined,
+      telemetryMode === 'hybrid' ? semHit : undefined,
+    ).catch(() => {}); // best-effort, never block search
 
     return { results, stats };
   }

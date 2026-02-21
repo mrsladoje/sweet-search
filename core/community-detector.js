@@ -239,6 +239,8 @@ function refinementPhase(nodes, adjacency, community, degree, m2, resolution, de
     // Check connectivity via BFS; if disconnected, split into components
     const components = findConnectedComponents(members, subAdj);
     if (components.length > 1) {
+      // F10: Log when splitting disconnected communities (stderr to avoid corrupting MCP JSON-RPC)
+      process.stderr.write(`[CommunityDetector] Splitting disconnected community into ${components.length} connected components (${members.length} nodes)\n`);
       // Assign each disconnected component its own community
       // Keep first component with original community ID
       for (let ci = 1; ci < components.length; ci++) {

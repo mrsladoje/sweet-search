@@ -344,8 +344,12 @@ export const telemetryStats = {
  * @param {'lexical'|'semantic'|'hybrid'} mode - Search mode used
  * @param {boolean} hit - Whether the cache was hit
  * @param {number} latencyMs - Query latency in milliseconds
+ * @param {string} [query] - The query text (for promotion/demotion analysis)
+ * @param {string} [source] - Embedding source ('vocabulary', 'semantic-cache', 'api', 'local')
+ * @param {boolean} [lexicalHit] - For hybrid mode: whether lexical sub-path was a hit
+ * @param {boolean} [semanticHit] - For hybrid mode: whether semantic sub-path was a hit
  */
-export async function recordQueryTelemetry(mode, hit, latencyMs) {
+export async function recordQueryTelemetry(mode, hit, latencyMs, query, source, lexicalHit, semanticHit) {
   const bucket = telemetryStats[mode];
   if (!bucket) return;
 
@@ -358,6 +362,10 @@ export async function recordQueryTelemetry(mode, hit, latencyMs) {
     hit,
     latencyMs: Math.round(latencyMs * 100) / 100,
     timestamp: new Date().toISOString(),
+    ...(query ? { query } : {}),
+    ...(source ? { source } : {}),
+    ...(lexicalHit != null ? { lexicalHit } : {}),
+    ...(semanticHit != null ? { semanticHit } : {}),
   });
 
   try {
