@@ -15,6 +15,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
 import { join, basename, extname, relative, sep } from 'path';
 import { execSync } from 'child_process';
+import { createHash } from 'crypto';
 import Database from 'better-sqlite3';
 import { DB_PATHS, PROJECT_ROOT } from './config.js';
 import { pageRank, loadGraph, buildAdjacency } from './repo-map.js';
@@ -366,6 +367,7 @@ export function mineNLContent(communities, projectRoot, options = {}) {
   const root = projectRoot || PROJECT_ROOT;
   const timeoutMs = options.timeoutMs ?? NL_MINING_TIMEOUT_MS;
   const maxFileSize = options.maxFileSize ?? 100_000;
+  const codeGraphNames = options.codeGraphNames || null;
   const deadline = Date.now() + timeoutMs;
 
   if (!communities || communities.length === 0) {
@@ -391,7 +393,7 @@ export function mineNLContent(communities, projectRoot, options = {}) {
         const stat = statSync(fullPath);
         if (stat.size > maxFileSize) continue;
         const content = readFileSync(fullPath, 'utf-8');
-        const nlText = extractNLText(content, extname(filePath));
+        const nlText = extractNLText(content, extname(filePath), codeGraphNames);
         if (nlText) texts.push(nlText);
       } catch { continue; }
     }
@@ -590,9 +592,22 @@ export function mineAll(projectRoot, dbPath, communities, options = {}) {
   mergeTerms(mergedTerms, graph.terms);
   pageRankScores = graph.pageRankScores;
 
+  // F9: Load entity names from code-graph.db for secret exemption
+  let codeGraphNames = null;
+  const resolvedDbPath = dbPath || DB_PATHS.codeGraph;
+  if (existsSync(resolvedDbPath)) {
+    try {
+      const db = new Database(resolvedDbPath, { readonly: true, timeout: 3000 });
+      try {
+        const rows = db.prepare('SELECT DISTINCT name FROM entities').all();
+        codeGraphNames = new Set(rows.map(r => r.name));
+      } finally { db.close(); }
+    } catch { /* non-fatal */ }
+  }
+
   // 4. Community NL mining
   if (!options.skipNL && communities && communities.length > 0) {
-    const nl = mineNLContent(communities, root, options);
+    const nl = mineNLContent(communities, root, { ...options, codeGraphNames });
     communityPhrases = nl.communityPhrases;
 
     // Flatten community phrases into terms
@@ -614,6 +629,81 @@ export function mineAll(projectRoot, dbPath, communities, options = {}) {
     pageRankScores,
     communityPhrases,
   };
+}
+
+// ---------------------------------------------------------------------------
+// NL Content Hash (F3: dual-hash freshness)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute sha256 hash of NL content sources (comments, README, recent commits).
+ * Used for incremental gating: only re-run NL phrase extraction when hash changes.
+ *
+ * @param {Array<{fileIds: string[]}>} communities - Communities with file paths
+ * @param {string} [projectRoot]
+ * @param {object} [options]
+ * @param {number} [options.maxBytes=102400] - Max total text to hash (100KB)
+ * @param {number} [options.maxCommits=200]
+ * @param {number} [options.maxDays=30]
+ * @returns {string} hex digest
+ */
+export function computeNLContentHash(communities, projectRoot, options = {}) {
+  const root = projectRoot || PROJECT_ROOT;
+  const maxBytes = options.maxBytes ?? 102_400;
+  const hash = createHash('sha256');
+  let totalBytes = 0;
+
+  // Hash NL text from community files (comments, docstrings)
+  const seenFiles = new Set();
+  for (const comm of (communities || [])) {
+    for (const filePath of (comm.fileIds || [])) {
+      if (seenFiles.has(filePath) || totalBytes >= maxBytes) continue;
+      seenFiles.add(filePath);
+      const fullPath = filePath.startsWith('/') ? filePath : join(root, filePath);
+      try {
+        if (!existsSync(fullPath)) continue;
+        const stat = statSync(fullPath);
+        if (stat.size > 100_000) continue;
+        const content = readFileSync(fullPath, 'utf-8');
+        const nlText = extractNLText(content, extname(filePath));
+        if (nlText) {
+          const chunk = nlText.slice(0, maxBytes - totalBytes);
+          hash.update(chunk);
+          totalBytes += chunk.length;
+        }
+      } catch { continue; }
+    }
+  }
+
+  // Hash README content
+  for (const readme of ['README.md', 'README.rst', 'README.txt', 'README']) {
+    const readmePath = join(root, readme);
+    try {
+      if (existsSync(readmePath) && totalBytes < maxBytes) {
+        const content = readFileSync(readmePath, 'utf-8');
+        const chunk = content.slice(0, maxBytes - totalBytes);
+        hash.update(chunk);
+        totalBytes += chunk.length;
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Hash recent commit messages (bounded)
+  try {
+    const maxCommits = options.maxCommits ?? 200;
+    const maxDays = options.maxDays ?? 30;
+    const since = `--since="${maxDays} days ago"`;
+    const log = execSync(
+      `git log --format="%s" -n ${maxCommits} ${since}`,
+      { cwd: root, encoding: 'utf-8', timeout: 5000 }
+    ).trim();
+    if (log && totalBytes < maxBytes) {
+      const chunk = log.slice(0, maxBytes - totalBytes);
+      hash.update(chunk);
+    }
+  } catch { /* git not available */ }
+
+  return hash.digest('hex');
 }
 
 // ---------------------------------------------------------------------------
@@ -857,8 +947,11 @@ function extractPyprojectDeps(content) {
 
 /**
  * Extract natural language text from source code (comments, docstrings).
+ * @param {string} content
+ * @param {string} ext
+ * @param {Set<string>} [codeGraphNames] - Known entity names for secret exemption
  */
-function extractNLText(content, ext) {
+function extractNLText(content, ext, codeGraphNames) {
   const texts = [];
 
   // Line comments: // or #
@@ -866,7 +959,7 @@ function extractNLText(content, ext) {
   let match;
   while ((match = lineCommentRe.exec(content))) {
     const text = match[1].trim();
-    if (text.length > 5 && !isSecretLike(text)) {
+    if (text.length > 5 && !isSecretLike(text, codeGraphNames)) {
       texts.push(text);
     }
   }
@@ -877,7 +970,7 @@ function extractNLText(content, ext) {
     const text = (match[1] || match[2] || match[3] || '')
       .replace(/^\s*\*\s?/gm, '') // strip leading * in JSDoc
       .trim();
-    if (text.length > 5 && !isSecretLike(text)) {
+    if (text.length > 5 && !isSecretLike(text, codeGraphNames)) {
       texts.push(text);
     }
   }
@@ -887,19 +980,72 @@ function extractNLText(content, ext) {
 
 /**
  * Check if text looks like it contains a secret/credential.
+ * F9: If the term also appears as an identifier name in the code graph,
+ * it's a variable name, not a secret value — exempt it.
+ *
+ * @param {string} text
+ * @param {Set<string>} [codeGraphNames] - Known entity names from code-graph.db
+ * @returns {boolean}
  */
-function isSecretLike(text) {
-  return SECRET_PATTERNS.some(pattern => pattern.test(text));
+function isSecretLike(text, codeGraphNames) {
+  if (!SECRET_PATTERNS.some(pattern => pattern.test(text))) return false;
+  // F9: If any word in the text appears as a code graph identifier, exempt it.
+  // Comments like "// Validates password_hash" contain entity names embedded
+  // in natural language — check each word, not the full string.
+  if (codeGraphNames && codeGraphNames.size > 0) {
+    const words = text.trim().split(/[\s.,;:()[\]{}<>!?'"=+\-*/&|^~#@]+/);
+    if (words.some(w => w.length > 1 && codeGraphNames.has(w))) return false;
+  }
+  return true;
+}
+
+/**
+ * Detect dominant Unicode script of text.
+ * Returns 'latin', 'cjk', or 'other' based on first 5000 chars.
+ */
+function detectScript(text) {
+  const sample = text.slice(0, 5000);
+  let latin = 0, cjk = 0, other = 0;
+  for (const ch of sample) {
+    const code = ch.codePointAt(0);
+    if (code <= 0x7F || (code >= 0xC0 && code <= 0x024F)) latin++;
+    else if ((code >= 0x4E00 && code <= 0x9FFF) ||
+             (code >= 0x3400 && code <= 0x4DBF) ||
+             (code >= 0x3040 && code <= 0x30FF) ||
+             (code >= 0xAC00 && code <= 0xD7AF)) cjk++;
+    else other++;
+  }
+  const total = latin + cjk + other || 1;
+  if (cjk / total > 0.8) return 'cjk';
+  if (latin / total > 0.5) return 'latin';
+  return 'other';
 }
 
 /**
  * Tokenize NL text into lowercase words, filtering stop words and short tokens.
+ * F8: CJK/non-Latin support via Intl.Segmenter when >80% is CJK script.
  */
 function tokenizeNL(text) {
   if (!text) return [];
+
+  const script = detectScript(text);
+
+  // F8: Use Intl.Segmenter for CJK-dominant text
+  if (script === 'cjk' && typeof Intl !== 'undefined' && Intl.Segmenter) {
+    try {
+      const segmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
+      const segments = segmenter.segment(text.toLowerCase());
+      return [...segments]
+        .filter(s => s.isWordLike && s.segment.length > 1)
+        .map(s => s.segment);
+    } catch {
+      // Fall through to default tokenizer
+    }
+  }
+
   return text
     .toLowerCase()
-    .replace(/[^a-z0-9\s_-]/g, ' ')
+    .replace(/[^a-z0-9\s_\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af-]/g, ' ')
     .split(/\s+/)
     .filter(t => t.length > 2 && !STOP_WORDS.has(t));
 }

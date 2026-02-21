@@ -293,7 +293,33 @@ export function estimateWorkingSetSize(
     }
   }
 
-  const wss = uniqueQueries.size;
+  // F12: Basic string-similarity clustering (Jaccard on word sets) to avoid
+  // counting near-duplicate queries as separate working set entries.
+  const queryList = [...uniqueQueries];
+  const clusters = [];
+  const assigned = new Set();
+
+  for (let i = 0; i < queryList.length; i++) {
+    if (assigned.has(i)) continue;
+    const cluster = [queryList[i]];
+    assigned.add(i);
+    const wordsI = new Set(queryList[i].split(/\s+/));
+    for (let j = i + 1; j < queryList.length; j++) {
+      if (assigned.has(j)) continue;
+      const wordsJ = new Set(queryList[j].split(/\s+/));
+      // Jaccard similarity
+      let intersection = 0;
+      for (const w of wordsI) { if (wordsJ.has(w)) intersection++; }
+      const union = wordsI.size + wordsJ.size - intersection;
+      if (union > 0 && intersection / union >= 0.6) {
+        cluster.push(queryList[j]);
+        assigned.add(j);
+      }
+    }
+    clusters.push(cluster);
+  }
+
+  const wss = clusters.length;
   let recommendation;
 
   if (warmupSize === 0 && wss === 0) {
@@ -459,15 +485,17 @@ export function formatStatsReport(metrics, communities = [], vocabInfo = {}) {
     }
   }
 
-  // Community breakdown (optional)
+  // F5: Community breakdown with phrases and topEntities
   if (communities.length > 0) {
     lines.push('');
-    lines.push('Community Breakdown:');
+    lines.push('Communities (Leiden):');
     for (let i = 0; i < Math.min(communities.length, 10); i++) {
       const c = communities[i];
-      const name = c.name || `Community ${c.id ?? i}`;
-      const size = c.size || 0;
-      lines.push(`  ${name}: ${size} terms`);
+      const name = c.name || `community-${c.id ?? i}`;
+      const fileCount = c.fileIds?.length || c.size || c.entityCount || 0;
+      const phraseList = (c.phrases || []).slice(0, 3).map(p => `"${p}"`).join(', ');
+      const detail = phraseList ? ` \u2014 phrases: ${phraseList}` : '';
+      lines.push(`  ${name}: ${fileCount} files${detail}`);
     }
   }
 

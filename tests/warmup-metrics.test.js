@@ -447,7 +447,7 @@ describe('formatStatsReport', () => {
     ];
 
     const report = formatStatsReport(metrics, communities);
-    expect(report).toContain('Community Breakdown');
+    expect(report).toContain('Communities (Leiden)');
     expect(report).toContain('Auth Module');
     expect(report).toContain('User Module');
   });

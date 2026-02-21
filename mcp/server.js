@@ -453,6 +453,8 @@ server.registerTool('vocab-prewarm', {
     incremental: z.boolean().default(true).describe('Only process changes since last warmup'),
     dryRun: z.boolean().default(false).describe('Show what would be mined without actually warming'),
     stats: z.boolean().default(false).describe('Return current warmup statistics'),
+    localWarmup: z.boolean().default(false).describe('Force local model for warmup even when remote provider is active').optional(),
+    provider: z.string().describe('Override embedding provider (voyage/mistral/jina/local)').optional(),
   },
   outputSchema: VocabPrewarmOutputSchema,
   annotations: {
@@ -461,7 +463,7 @@ server.registerTool('vocab-prewarm', {
     idempotentHint: true,
     openWorldHint: true,
   },
-}, async ({ depth, modes, top, incremental, dryRun, stats }) => {
+}, async ({ depth, modes, top, incremental, dryRun, stats, localWarmup, provider }) => {
   try {
     if (stats) {
       const { getTelemetryReport } = await import(
@@ -495,22 +497,22 @@ server.registerTool('vocab-prewarm', {
       modes,
       incremental,
       dryRun,
+      localWarmup,
+      provider,
     });
 
     const structured = {
-      termsMined: result.termsMined || 0,
-      communitiesDetected: result.communitiesDetected || 0,
-      warmupTimeMs: result.warmupTimeMs || 0,
-      perMode: result.perMode || {},
-      hitRateProjection: result.hitRateProjection || 0,
+      termsMined: result.terms ?? 0,
+      communitiesDetected: result.communities ?? 0,
+      warmupTimeMs: result.timing?.total || 0,
+      perMode: result.timing || {},
+      hitRateProjection: 0,
       dryRun: dryRun || false,
     };
 
-    const modeLines = structured.perMode
-      ? Object.entries(structured.perMode).map(
-        ([mode, s]) => `  ${mode}: ${s.queriesWarmed || 0} queries warmed (${s.timeMs || 0}ms)`,
-      )
-      : [];
+    const modeLines = ['lexical', 'semantic', 'hybrid']
+      .filter(m => structured.perMode[m] != null)
+      .map(m => `  ${m}: ${structured.perMode[m]}ms`);
 
     const text = dryRun
       ? `[dry-run] Would mine ${structured.termsMined} terms, ${structured.communitiesDetected} communities`

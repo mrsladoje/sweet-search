@@ -13,15 +13,15 @@
  * All functions return timing/stats objects. Failures never crash the caller.
  */
 
-import Database from 'better-sqlite3';
 import { existsSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 
+import Database from 'better-sqlite3';
 import { DB_PATHS, PROJECT_ROOT, EMBEDDING_CONFIG } from './config.js';
 import { generateEmbeddings, truncateForHNSW } from './embedding-service.js';
 import { detectCommunities, computeGraphHash } from './community-detector.js';
-import { mineAll } from './vocab-miner.js';
+import { mineAll, computeNLContentHash } from './vocab-miner.js';
 import { rankAll } from './vocab-ranker.js';
 import { BinaryVocabulary } from './vocabulary-utils.js';
 
@@ -160,14 +160,29 @@ export async function warmSemantic(hubEntities, communityPhrases, options = {}) 
   const textsToEmbed = [];
   const textLabels = []; // parallel array tracking origin
 
-  // Track A: Hub entity names
+  // Track A: Hub entity embeddings using enriched text format (F4)
+  // Query entity metadata from code-graph.db for scope/type context
+  const entityMeta = _loadEntityMetadata(hubEntities);
   if (hubEntities && hubEntities.length > 0) {
     for (const ent of hubEntities) {
       const term = typeof ent === 'string' ? ent : ent.term;
-      if (term) {
-        textsToEmbed.push(term);
-        textLabels.push('hub');
+      if (!term) continue;
+      const meta = entityMeta.get(term);
+      // F4: Build enriched text matching indexer's enrichEmbeddingText() output
+      // Format: # file_path \n # Scope: parent > symbol \n # Defines: type symbol
+      const parts = [];
+      if (meta) {
+        if (meta.file_path) parts.push(`# ${meta.file_path}`);
+        if (meta.parentSymbol) {
+          parts.push(`# Scope: ${meta.parentType || 'unknown'} ${meta.parentSymbol} > ${term}`);
+        }
+        parts.push(`# Defines: ${meta.type || 'symbol'} ${term}`);
+        if (meta.language) parts.push(`# Language: ${meta.language}`);
       }
+      parts.push(term);
+      const enrichedText = parts.join('\n');
+      textsToEmbed.push(enrichedText);
+      textLabels.push('hub');
     }
   }
 
@@ -380,6 +395,36 @@ export async function warmFromCache(options = {}) {
  */
 export async function runFullWarmup(options = {}) {
   const start = performance.now();
+  const localWarmup = options.localWarmup || false;
+  const provider = options.provider || null;
+
+  // Apply provider override for this warmup session
+  const _restoreProvider = _applyProviderOverride(provider, localWarmup);
+
+  try { return await _runFullWarmupInner(options, start); }
+  finally { _restoreProvider(); }
+}
+
+/**
+ * Apply a temporary provider override to EMBEDDING_CONFIG.
+ * Returns a restore function that MUST be called (in a finally block) to undo the mutation.
+ * @returns {() => void}
+ */
+function _applyProviderOverride(provider, localWarmup) {
+  if (provider && EMBEDDING_CONFIG) {
+    const saved = EMBEDDING_CONFIG.provider;
+    EMBEDDING_CONFIG.provider = provider;
+    return () => { EMBEDDING_CONFIG.provider = saved; };
+  }
+  if (localWarmup && EMBEDDING_CONFIG) {
+    const saved = EMBEDDING_CONFIG.provider;
+    EMBEDDING_CONFIG.provider = 'local';
+    return () => { EMBEDDING_CONFIG.provider = saved; };
+  }
+  return () => {}; // no-op
+}
+
+async function _runFullWarmupInner(options, start) {
   const depth = options.depth || 'medium';
   const top = options.top || 1000;
   const modes = options.modes || ['lexical', 'semantic'];
@@ -422,13 +467,32 @@ export async function runFullWarmup(options = {}) {
   timing.communities = Math.round(performance.now() - commStart);
 
   // -----------------------------------------------------------------------
-  // Step 2: Mine terms
+  // Step 2: Mine terms (F3: check NL content hash for incremental gating)
   // -----------------------------------------------------------------------
+  let skipNLMining = false;
+  if (incremental && existsSync(ARTIFACT_PATHS.communities)) {
+    try {
+      const cached = JSON.parse(await fs.readFile(ARTIFACT_PATHS.communities, 'utf-8'));
+      // Only skip NL mining if BOTH graph hash AND NL hash are unchanged.
+      // If graph hash changed, communities were re-detected — NL content
+      // must be re-mined against the new community structure even if file
+      // contents haven't changed (different files per community).
+      const graphUnchanged = cached.graphHash && cached.graphHash === graphHash;
+      if (graphUnchanged && cached.nlHash && communities.length > 0) {
+        const currentNLHash = computeNLContentHash(communities, PROJECT_ROOT);
+        if (currentNLHash === cached.nlHash) {
+          skipNLMining = true;
+        }
+      }
+    } catch { /* re-mine on error */ }
+  }
+
   const mineStart = performance.now();
   let minedResult;
   try {
     minedResult = mineAll(PROJECT_ROOT, dbPath, communities, {
       deep: depth === 'deep',
+      skipNL: skipNLMining,
     });
   } catch {
     minedResult = { terms: [], pageRankScores: new Map(), communityPhrases: [] };
@@ -504,15 +568,40 @@ export async function runFullWarmup(options = {}) {
     timing.semantic = Math.round(performance.now() - semStart);
   }
 
-  // 4c. Hybrid warmup (select representative queries from phrases)
+  // 4c. Hybrid warmup (select representative queries weighted by community size — F6)
   if (modes.includes('hybrid') && options.searcher) {
     const hybStart = performance.now();
     try {
-      // Select top 10-20 representative queries, weighted by community size
-      const repQueries = ranked.phrases.slice(0, 15).map(p => ({
-        query: p.phrase,
-        communityId: p.communityId,
+      // F6: Weight by community entity count, select top-1 per community + cross-community
+      const commSizeMap = new Map();
+      for (const c of communities) {
+        commSizeMap.set(c.id, c.entityCount || c.entityIds?.length || 1);
+      }
+      // Sort phrases by community size * score (not just global score)
+      const weightedPhrases = (ranked.phrases || []).map(p => ({
+        ...p,
+        weightedScore: (p.score || 0) * Math.log2(1 + (commSizeMap.get(p.communityId) || 1)),
       }));
+      weightedPhrases.sort((a, b) => b.weightedScore - a.weightedScore);
+
+      // Select top-1 phrase per community, then fill remaining slots
+      const seenCommunities = new Set();
+      const repQueries = [];
+      for (const p of weightedPhrases) {
+        if (repQueries.length >= 20) break;
+        if (!seenCommunities.has(p.communityId)) {
+          seenCommunities.add(p.communityId);
+          repQueries.push({ query: p.phrase, communityId: p.communityId });
+        }
+      }
+      // Fill remaining slots with cross-community phrases
+      for (const p of weightedPhrases) {
+        if (repQueries.length >= 20) break;
+        if (!repQueries.some(r => r.query === p.phrase)) {
+          repQueries.push({ query: p.phrase, communityId: p.communityId });
+        }
+      }
+
       await warmHybrid(repQueries, options.searcher);
     } catch { /* non-fatal */ }
     timing.hybrid = Math.round(performance.now() - hybStart);
@@ -525,10 +614,35 @@ export async function runFullWarmup(options = {}) {
   try {
     await fs.mkdir(DATA_DIR, { recursive: true });
 
-    // Persist communities.json
+    // F5: Persist communities.json with phrases[] and topEntities[]
+    const enrichedCommunities = communities.map(comm => {
+      // Find matching ranked phrases for this community
+      const commPhrases = (ranked.phrases || [])
+        .filter(p => p.communityId === comm.id)
+        .slice(0, 20)
+        .map(p => p.phrase);
+      // Top entities by score from this community's entity IDs
+      const commTopEntities = (ranked.identifiers || [])
+        .filter(id => comm.entityIds && comm.entityIds.includes(id.entityId))
+        .slice(0, 10)
+        .map(id => id.term);
+      return {
+        ...comm,
+        phrases: commPhrases,
+        topEntities: commTopEntities,
+      };
+    });
+
+    // F3: Compute NL content hash for incremental gating
+    let nlHash = '';
+    try {
+      nlHash = computeNLContentHash(communities, PROJECT_ROOT);
+    } catch { /* non-fatal */ }
+
     await fs.writeFile(ARTIFACT_PATHS.communities, JSON.stringify({
       graphHash,
-      communities,
+      nlHash,
+      communities: enrichedCommunities,
       createdAt: new Date().toISOString(),
     }));
 
@@ -646,6 +760,64 @@ async function saveBinaryArtifact(binPath, metaPath, embeddingMap) {
     terms,
     createdAt: new Date().toISOString(),
   }, null, 2));
+}
+
+// ---------------------------------------------------------------------------
+// Internal Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * F4: Load entity metadata from code-graph.db for hub entities.
+ * Fetches type, file_path, and parent scope info to build enriched
+ * embedding text matching the indexer's enrichEmbeddingText() format:
+ *   # file_path
+ *   # Scope: parent_type > symbol  (or # Defines: type symbol)
+ *   # Language: language
+ *
+ * @param {Array<{term: string}|string>} hubEntities
+ * @returns {Map<string, {type: string, file_path: string, language: string|null, parentType: string|null, parentSymbol: string|null}>}
+ */
+function _loadEntityMetadata(hubEntities) {
+  const meta = new Map();
+  if (!hubEntities || hubEntities.length === 0) return meta;
+
+  const dbPath = DB_PATHS.codeGraph;
+  if (!existsSync(dbPath)) return meta;
+
+  let db;
+  try {
+    db = new Database(dbPath, { readonly: true, timeout: 5000 });
+    // Fetch entity + any parent relationship for scope context
+    const stmt = db.prepare(
+      `SELECT e.name, e.type, e.file_path,
+              p.name AS parent_name, p.type AS parent_type
+       FROM entities e
+       LEFT JOIN relationships r ON r.source_id = e.id AND r.type IN ('childOf','memberOf','nestedIn')
+       LEFT JOIN entities p ON p.id = r.target_id
+       WHERE e.name = ? ORDER BY r.type LIMIT 1`
+    );
+    for (const ent of hubEntities) {
+      const term = typeof ent === 'string' ? ent : ent.term;
+      if (!term) continue;
+      try {
+        const row = stmt.get(term);
+        if (row) {
+          // Infer language from file extension
+          const ext = row.file_path ? path.extname(row.file_path).slice(1) : null;
+          meta.set(term, {
+            type: row.type,
+            file_path: row.file_path,
+            language: ext || null,
+            parentType: row.parent_type || null,
+            parentSymbol: row.parent_name || null,
+          });
+        }
+      } catch { /* skip */ }
+    }
+  } catch { /* DB not available */ }
+  finally { if (db) try { db.close(); } catch { /* ignore */ } }
+
+  return meta;
 }
 
 // ---------------------------------------------------------------------------
