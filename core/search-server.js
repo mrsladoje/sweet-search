@@ -1,0 +1,390 @@
+/**
+ * Search Server Module
+ *
+ * Extracted from sweet-search.js (SOLID refactor).
+ * Contains HTTP/Unix socket server for warm search and server management.
+ *
+ * IMPORTANT: Uses dynamic import() for sweet-search.js references
+ * to avoid circular dependencies.
+ */
+
+import fs from 'fs/promises';
+import { existsSync } from 'fs';
+import { COLBERT_CONFIG } from './config.js';
+
+// =============================================================================
+// Server constants
+// =============================================================================
+
+export const SEARCH_SERVER_PORT = 9876;
+export const SEARCH_SERVER_SOCKET = '/tmp/sweet-search.sock';
+export const SEARCH_SERVER_SOCKET_LEGACY = '/tmp/search.sock';
+export const SEARCH_SERVER_PIDFILE = '/tmp/sweet-search-server.pid';
+
+// =============================================================================
+// Server implementation
+// =============================================================================
+
+export async function startServer() {
+  const http = await import('http');
+
+  // Dynamic import to avoid circular dependency
+  const { default: SweetSearch } = await import('./sweet-search.js');
+
+  const searcher = new SweetSearch({ verbose: false });
+  console.log('[Server] Initializing indexes (one-time cost)...');
+  const initStart = Date.now();
+  await searcher.init();
+  console.log(`[Server] Indexes loaded in ${Date.now() - initStart}ms`);
+
+  // Write PID file
+  await fs.writeFile(SEARCH_SERVER_PIDFILE, process.pid.toString(), { mode: 0o644 });
+
+  // P6 FIX: Track request count for periodic cache clearing
+  let requestCount = 0;
+  const CACHE_CLEAR_INTERVAL = 1000;  // Clear caches every 1000 requests
+
+  // Shared request handler for both TCP and Unix socket
+  const handleRequest = async (req, res) => {
+    // P6 FIX: Periodic cache clearing to prevent memory growth
+    requestCount++;
+    if (requestCount % CACHE_CLEAR_INTERVAL === 0) {
+      // Clear embedding cache if it exists
+      if (searcher.embeddingCache) {
+        searcher.embeddingCache.clear();
+      }
+      // Force garbage collection if available (run with --expose-gc)
+      if (global.gc) {
+        global.gc();
+      }
+      console.log(`[Server] Cache cleared after ${requestCount} requests`);
+    }
+
+    if (req.method === 'GET' && req.url.startsWith('/search?')) {
+      const url = new URL(req.url, `http://localhost:${SEARCH_SERVER_PORT}`);
+      const query = url.searchParams.get('q') || '';
+      const mode = url.searchParams.get('mode') || 'auto';
+      const topK = parseInt(url.searchParams.get('k') || '10', 10);
+
+      // Additional search options
+      const expand = url.searchParams.get('expand') !== 'false';
+      const rerank = url.searchParams.get('rerank') !== 'false';
+      const fusion = url.searchParams.get('fusion') || 'cc';  // Legacy (ignored for hybrid)
+      // ColBERT: explicit param overrides config, else use config default
+      const useColBERT = url.searchParams.has('colbert')
+        ? url.searchParams.get('colbert') === 'true'
+        : COLBERT_CONFIG.enabled;
+
+      // Output format options
+      const format = url.searchParams.get('format') || 'json';
+      const summary = url.searchParams.get('summary') === 'true';
+      const mid = url.searchParams.get('mid') === 'true';
+
+      // Phase 4: Translation fallback
+      const translate = url.searchParams.get('translate') || 'auto';
+
+      if (!query) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Missing query parameter ?q=' }));
+        return;
+      }
+
+      try {
+        const start = Date.now();
+        let { results, stats } = await searcher.search(query, {
+          k: topK,
+          mode,
+          expand,
+          rerank,
+          fusion,
+          useColBERT,
+          translate,
+        });
+
+        // Enrich with summaries if summary mode
+        if (summary) {
+          results = await searcher.enrichWithSummaries(results);
+        }
+
+        const totalTime = Date.now() - start;
+
+        if (format === 'text') {
+          // Pre-formatted text output (eliminates client-side parsing)
+          const routeMode = stats?.routing?.mode || 'auto';
+          const icon = routeMode === 'lexical' ? '⚡' : routeMode === 'semantic' ? '🧠' : '✨';
+          const W = '\x1b[1;38;5;231m', D = '\x1b[38;5;245m', G = '\x1b[38;5;114m', R = '\x1b[0m';
+          const Y = '\x1b[38;5;220m', C = '\x1b[38;5;51m';
+
+          let out = `  ${icon} ${W}${routeMode}${R} ${D}|${R} ${W}${totalTime}ms${R} ${G}●${R}\n`;
+
+          // Phase 4: Show translation info if fallback was used
+          if (stats.translation?.triggered && stats.translation?.changed) {
+            const T = '\x1b[38;5;208m'; // Orange for translation
+            out += `  ${T}🌐 Translated: "${stats.translation.translated}" (${stats.translation.tier})${R}\n`;
+            if (stats.translation.resultsAdded > 0) {
+              out += `  ${T}   +${stats.translation.resultsAdded} results from translation${R}\n`;
+            }
+          }
+          out += '\n';
+
+          if (!results || results.length === 0) {
+            out += 'No results\n';
+          } else if (summary) {
+            // Summary-first format (10x token reduction)
+            out += `${Y}SUMMARY VIEW${R} (${results.length} results) - 10x fewer tokens\n`;
+            out += `${'─'.repeat(50)}\n\n`;
+            results.forEach((r, i) => {
+              const m = r.metadata || {};
+              const name = r.name || m.name || '?';
+              const type = r.type || m.type || '?';
+              const file = r.file || r.file_path || m.file || '?';
+              const idParts = r.id?.split(':') || [];
+              const line = r.startLine || r.start_line || (idParts.length >= 2 ? idParts[1].split('-')[0] : '?');
+              const summ = r.summary || r.signature?.slice(0, 100) || '';
+
+              out += `${W}${i + 1}. [${type}] ${name}${R}\n`;
+              out += `   ${C}${file}:${line}${R}\n`;
+              if (summ) out += `   ${summ}\n`;
+              out += '\n';
+            });
+            out += `${D}Use: Read <file:line> for full code${R}\n`;
+          } else if (mid) {
+            // Middle-res format (5x token reduction)
+            out += `${Y}MIDDLE-RES VIEW${R} (${results.length} results) - Signature + Doc\n`;
+            out += `${'─'.repeat(50)}\n\n`;
+            results.forEach((r, i) => {
+              const m = r.metadata || {};
+              const name = r.name || m.name || '?';
+              const type = r.type || m.type || '?';
+              const file = r.file || r.file_path || m.file || '?';
+              const idParts = r.id?.split(':') || [];
+              const line = r.startLine || r.start_line || (idParts.length >= 2 ? idParts[1].split('-')[0] : '?');
+              const sig = r.signature || '';
+              const doc = (r.docComment || r.doc_comment || '').slice(0, 150);
+
+              out += `${W}${i + 1}. [${type}] ${name}${R}\n`;
+              out += `   ${C}${file}:${line}${R}\n`;
+              if (sig) out += `   ${sig}\n`;
+              if (doc) out += `   ${D}${doc}${R}\n`;
+              out += '\n';
+            });
+          } else {
+            // Full format (default)
+            out += `${results.length} results:\n\n`;
+            results.forEach((r, i) => {
+              const m = r.metadata || {};
+              const name = r.name || m.name || '?';
+              const type = r.type || m.type || '?';
+              const file = r.file || r.file_path || m.file || '?';
+              const idParts = r.id?.split(':') || [];
+              const line = r.startLine || r.start_line || (idParts.length >= 2 ? idParts[1].split('-')[0] : '?');
+              const score = (r.score || 0).toFixed(4);
+              const path = r.searchPath || '?';
+              const sig = (r.signature || r.docComment || m.signature || '').slice(0, 70);
+
+              out += `${W}${i + 1}. ${name}${R} (${type})\n`;
+              out += `   File: ${file}:${line}\n`;
+              out += `   Path: ${path}\n`;
+              out += `   Score: ${score}\n`;
+              if (sig) out += `   ${sig}\n`;
+              out += '\n';
+            });
+          }
+
+          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end(out);
+        } else {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            results,
+            stats: { ...stats, server_ms: totalTime },
+          }));
+        }
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    } else if (req.method === 'GET' && req.url === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', warm: true }));
+    } else if (req.method === 'GET' && req.url === '/stop') {
+      // F-06: Only allow /stop via Unix socket (OS-level access control)
+      const isUnixSocket = !req.socket.remoteAddress;
+      if (!isUnixSocket) {
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
+        res.end('Forbidden: /stop is only available via Unix socket\n');
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('Shutting down...\n');
+      tcpServer.close();
+      unixServer.close();
+      try { await fs.unlink(SEARCH_SERVER_PIDFILE); } catch (err) {
+        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+      }
+      try { await fs.unlink(SEARCH_SERVER_SOCKET); } catch (err) {
+        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+      }
+      try { await fs.unlink(SEARCH_SERVER_SOCKET_LEGACY); } catch (err) {
+        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+      }
+      process.exit(0);
+    } else {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not found. Use GET /search?q=<query>&mode=auto&k=10\n');
+    }
+  };
+
+  // TCP server (port 9876) - backward compatible
+  const tcpServer = http.createServer(handleRequest);
+  tcpServer.listen(SEARCH_SERVER_PORT);
+  console.log(`[Server] TCP listening on http://localhost:${SEARCH_SERVER_PORT}`);
+
+  // Unix socket server (/tmp/sweet-search.sock) - 30-50% faster
+  const unixServer = http.createServer(handleRequest);
+  try { await fs.unlink(SEARCH_SERVER_SOCKET); } catch (err) {
+    if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+  } // Remove stale socket
+  unixServer.listen(SEARCH_SERVER_SOCKET);
+  // F-35: Restrict socket permissions to owner only
+  try { (await import('node:fs')).chmodSync(SEARCH_SERVER_SOCKET, 0o700); } catch (err) {
+    if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+  }
+  console.log(`[Server] Unix socket listening on ${SEARCH_SERVER_SOCKET}`);
+  console.log(`[Server] Fast access: curl --unix-socket ${SEARCH_SERVER_SOCKET} "http://localhost/search?q=query"`);
+
+  // Legacy socket symlink for backward compatibility (/tmp/search.sock -> /tmp/sweet-search.sock)
+  try { await fs.unlink(SEARCH_SERVER_SOCKET_LEGACY); } catch (err) {
+    if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+  }
+  try { await fs.symlink(SEARCH_SERVER_SOCKET, SEARCH_SERVER_SOCKET_LEGACY); } catch (err) {
+    if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+  }
+
+  // Alias for graceful shutdown
+  const server = tcpServer;
+
+  // Handle graceful shutdown
+  process.on('SIGINT', async () => {
+    console.log('\n[Server] Shutting down...');
+    tcpServer.close();
+    unixServer.close();
+    searcher.close();
+    try { await fs.unlink(SEARCH_SERVER_PIDFILE); } catch (err) {
+      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+    }
+    try { await fs.unlink(SEARCH_SERVER_SOCKET); } catch (err) {
+      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+    }
+    try { await fs.unlink(SEARCH_SERVER_SOCKET_LEGACY); } catch (err) {
+      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+    }
+    process.exit(0);
+  });
+}
+
+// =============================================================================
+// Server query and management
+// =============================================================================
+
+export async function queryServer(query, options = {}) {
+  const http = await import('http');
+  const {
+    mode = 'auto',
+    topK = 10,
+    expand = true,
+    rerank = true,
+    fusion = 'cc',  // Legacy (ignored for hybrid)
+    useColBERT = true,
+    summary = false,
+    mid = false,
+  } = options;
+
+  return new Promise((resolve, reject) => {
+    // Build URL with all parameters
+    const params = new URLSearchParams({
+      q: query,
+      mode,
+      k: topK.toString(),
+      fusion,
+    });
+    if (!expand) params.set('expand', 'false');
+    if (!rerank) params.set('rerank', 'false');
+    if (!useColBERT) params.set('colbert', 'false');
+    if (summary) params.set('summary', 'true');
+    if (mid) params.set('mid', 'true');
+
+    const url = `http://localhost:${SEARCH_SERVER_PORT}/search?${params.toString()}`;
+
+    http.get(url, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch (err) {
+          reject(new Error('Invalid server response'));
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
+export async function isServerRunning() {
+  try {
+    const http = await import('http');
+    return new Promise((resolve) => {
+      const req = http.get(`http://localhost:${SEARCH_SERVER_PORT}/health`, (res) => {
+        resolve(res.statusCode === 200);
+      });
+      req.on('error', () => resolve(false));
+      req.setTimeout(500, () => { req.destroy(); resolve(false); });
+    });
+  } catch (err) {
+    if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+    return false;
+  }
+}
+
+/**
+ * Auto-spawn warm server in background
+ * Returns true if server started successfully
+ */
+export async function autoSpawnServer() {
+  const { spawn } = await import('child_process');
+  const { fileURLToPath } = await import('url');
+  const path = await import('path');
+
+  // Dynamic import to get the sweet-search.js file path
+  const __filename = fileURLToPath(import.meta.url);
+  const sweetSearchPath = path.join(path.dirname(__filename), 'sweet-search.js');
+
+  console.error('[AutoStart] Starting warm server in background...');
+
+  // Spawn detached process — run sweet-search.js with --serve
+  const child = spawn(process.execPath, [sweetSearchPath, '--serve'], {
+    detached: true,
+    stdio: 'ignore',
+    cwd: path.dirname(__filename),
+  });
+
+  child.unref();
+
+  // Wait for server to be ready (up to 5 seconds)
+  const maxWait = 5000;
+  const checkInterval = 100;
+  let waited = 0;
+
+  while (waited < maxWait) {
+    await new Promise(resolve => setTimeout(resolve, checkInterval));
+    waited += checkInterval;
+
+    if (await isServerRunning()) {
+      console.error(`[AutoStart] Server ready in ${waited}ms`);
+      return true;
+    }
+  }
+
+  console.error('[AutoStart] Server startup timeout, using cold start');
+  return false;
+}
