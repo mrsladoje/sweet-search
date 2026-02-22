@@ -6,6 +6,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import fsPromises from 'fs/promises';
+import { readFile as fsReadFile, writeFile as fsWriteFile, mkdir as fsMkdir } from 'fs/promises';
 
 // Shared mock DB reference that tests can override
 let _mockDbInstance = null;
@@ -111,11 +113,14 @@ import {
   warmHybrid,
   warmFromCache,
   runFullWarmup,
+  saveBinaryArtifact,
+  _loadEntityMetadata,
 } from '../core/vocab-warmer.js';
 
 import Database from 'better-sqlite3';
 import { existsSync } from 'fs';
 import { generateEmbeddings } from '../core/embedding-service.js';
+import { ARTIFACT_PATHS } from '../core/vocab-constants.js';
 
 beforeEach(() => {
   _mockDbInstance = null;
@@ -343,6 +348,157 @@ describe('warmFromCache', () => {
     existsSync.mockReturnValue(false);
     const result = await warmFromCache();
     expect(typeof result.elapsedMs).toBe('number');
+  });
+
+  it('loads persisted semantic seeds and traverses HNSW (round-trip)', async () => {
+    const memfs = new Map();
+    const mkdirImpl = async () => {};
+    const writeImpl = async (filePath, data) => {
+      const key = String(filePath);
+      if (typeof data === 'string' || Buffer.isBuffer(data)) {
+        memfs.set(key, data);
+      } else {
+        memfs.set(key, Buffer.from(data));
+      }
+    };
+    const readImpl = async (filePath, encoding) => {
+      const key = String(filePath);
+      if (!memfs.has(key)) throw new Error(`ENOENT: ${key}`);
+      const data = memfs.get(key);
+      if (encoding === 'utf-8') {
+        return Buffer.isBuffer(data) ? data.toString('utf-8') : String(data);
+      }
+      return Buffer.isBuffer(data) ? data : Buffer.from(String(data));
+    };
+    fsMkdir.mockImplementation(mkdirImpl);
+    fsPromises.mkdir.mockImplementation(mkdirImpl);
+    fsWriteFile.mockImplementation(writeImpl);
+    fsPromises.writeFile.mockImplementation(writeImpl);
+    fsReadFile.mockImplementation(readImpl);
+    fsPromises.readFile.mockImplementation(readImpl);
+    existsSync.mockImplementation((filePath) => memfs.has(String(filePath)));
+
+    const seeds = new Map([
+      ['auth', [1, 2, 3]],
+      ['user', [4, 5, 6]],
+    ]);
+    await saveBinaryArtifact(
+      ARTIFACT_PATHS.semanticSeedsBin,
+      ARTIFACT_PATHS.semanticSeedsMeta,
+      seeds
+    );
+
+    const hnswIndex = { search: vi.fn(async () => []) };
+    const result = await warmFromCache({
+      maxFts5Queries: 0,
+      maxHnswTraversals: 10,
+      hnswIndex,
+    });
+
+    expect(result.hnswTraversals).toBe(2);
+    expect(hnswIndex.search).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// saveBinaryArtifact
+// ---------------------------------------------------------------------------
+
+describe('saveBinaryArtifact', () => {
+  it('no-ops on empty map', async () => {
+    await saveBinaryArtifact('/tmp/none.bin', '/tmp/none.meta.json', new Map());
+    expect(fsWriteFile).not.toHaveBeenCalled();
+  });
+
+  it('writes valid SSWV header + metadata sidecar', async () => {
+    const writes = [];
+    const mkdirImpl = async () => {};
+    const writeImpl = async (filePath, data) => {
+      writes.push([String(filePath), data]);
+    };
+    fsMkdir.mockImplementation(mkdirImpl);
+    fsPromises.mkdir.mockImplementation(mkdirImpl);
+    fsWriteFile.mockImplementation(writeImpl);
+    fsPromises.writeFile.mockImplementation(writeImpl);
+
+    const embeddings = new Map([
+      ['foo', [1, 2, 3]],
+      ['bar', new Float32Array([4, 5, 6])],
+    ]);
+    await saveBinaryArtifact('/tmp/test.bin', '/tmp/test.meta.json', embeddings);
+
+    expect(writes.length).toBe(2);
+    const binWrite = writes.find(([p]) => p.endsWith('.bin'));
+    const metaWrite = writes.find(([p]) => p.endsWith('.json'));
+    expect(binWrite).toBeDefined();
+    expect(metaWrite).toBeDefined();
+
+    const bin = binWrite[1];
+    expect(Buffer.isBuffer(bin)).toBe(true);
+    expect(bin.slice(0, 4).toString('utf-8')).toBe('SSWV');
+    expect(bin.readUInt32LE(8)).toBe(3);   // dimension
+    expect(bin.readUInt32LE(12)).toBe(2);  // term count
+
+    const meta = JSON.parse(String(metaWrite[1]));
+    expect(meta.dimension).toBe(3);
+    expect(meta.termCount).toBe(2);
+    expect(meta.terms).toEqual(['foo', 'bar']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _loadEntityMetadata
+// ---------------------------------------------------------------------------
+
+describe('_loadEntityMetadata', () => {
+  it('uses external DB without closing it', () => {
+    const close = vi.fn();
+    const extDb = {
+      prepare: vi.fn(() => ({
+        all: vi.fn(() => ([
+          {
+            name: 'AuthService',
+            type: 'class',
+            file_path: 'src/auth.js',
+            parent_name: 'AuthModule',
+            parent_type: 'module',
+          },
+        ])),
+      })),
+      close,
+    };
+
+    const meta = _loadEntityMetadata([{ term: 'AuthService' }], { db: extDb });
+    expect(meta.get('AuthService')).toMatchObject({
+      type: 'class',
+      file_path: 'src/auth.js',
+      parentType: 'module',
+      parentSymbol: 'AuthModule',
+    });
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('opens and closes owned DB connection when no external DB is provided', () => {
+    existsSync.mockReturnValue(true);
+    const close = vi.fn();
+    _mockDbInstance = {
+      prepare: vi.fn(() => ({
+        all: vi.fn(() => ([
+          {
+            name: 'UserModel',
+            type: 'class',
+            file_path: 'src/user.js',
+            parent_name: null,
+            parent_type: null,
+          },
+        ])),
+      })),
+      close,
+    };
+
+    const meta = _loadEntityMetadata([{ term: 'UserModel' }]);
+    expect(meta.has('UserModel')).toBe(true);
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });
 

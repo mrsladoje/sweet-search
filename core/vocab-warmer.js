@@ -22,7 +22,6 @@ import path from 'path';
 import Database from 'better-sqlite3';
 import { DB_PATHS, EMBEDDING_CONFIG } from './config.js';
 import { generateEmbeddings, truncateForHNSW } from './embedding-service.js';
-import { BinaryVocabulary } from './vocabulary-utils.js';
 
 // ---------------------------------------------------------------------------
 // Constants — imported from vocab-constants.js (shared with orchestrator,
@@ -35,11 +34,19 @@ export { DATA_DIR, ARTIFACT_PATHS };
 const DEFAULT_TIME_BUDGET_MS = 2000;
 
 // ---------------------------------------------------------------------------
-// Re-export orchestrator functions for backward compatibility
+// Backward-compatible orchestrator wrappers.
+// Dynamic import avoids a static warmup-orchestrator <-> warmer cycle.
 // ---------------------------------------------------------------------------
 
-import { runFullWarmup, saveBinaryArtifact } from './vocab-warmup-orchestrator.js';
-export { runFullWarmup, saveBinaryArtifact };
+export async function runFullWarmup(options = {}) {
+  const mod = await import('./vocab-warmup-orchestrator.js');
+  return mod.runFullWarmup(options);
+}
+
+export async function saveBinaryArtifact(binPath, metaPath, embeddingMap) {
+  const mod = await import('./vocab-warmup-orchestrator.js');
+  return mod.saveBinaryArtifact(binPath, metaPath, embeddingMap);
+}
 
 // ---------------------------------------------------------------------------
 // 4a. Lexical Warmup
@@ -325,11 +332,9 @@ export async function warmFromCache(options = {}) {
   let fts5Queries = 0;
   let hnswTraversals = 0;
 
-  // Load identifier binary
-  const idBinVocab = new BinaryVocabulary();
+  // Load identifier binary metadata
   let idTerms = [];
   try {
-    // BinaryVocabulary uses its own fixed paths, so we load custom paths here
     if (existsSync(ARTIFACT_PATHS.identifiersBin) && existsSync(ARTIFACT_PATHS.identifiersMeta)) {
       const meta = JSON.parse(await fs.readFile(ARTIFACT_PATHS.identifiersMeta, 'utf-8'));
       idTerms = meta.terms || [];

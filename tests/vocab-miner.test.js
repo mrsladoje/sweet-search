@@ -504,6 +504,8 @@ describe('mineAll', () => {
     const result = mineAll(tmpDir, '/fake/db');
     expect(result.terms.length).toBeGreaterThan(0);
     expect(result.pageRankScores).toBeInstanceOf(Map);
+    expect(typeof result.totalFiles).toBe('number');
+    expect(result.totalFiles).toBeGreaterThan(0);
   });
 
   it('includes NL mining when communities provided', () => {
@@ -543,5 +545,16 @@ describe('mineAll', () => {
     for (let i = 1; i < result.terms.length; i++) {
       expect(result.terms[i].score).toBeLessThanOrEqual(result.terms[i - 1].score);
     }
+  });
+
+  it('counts deeply nested source files for totalFiles', () => {
+    loadGraph.mockReturnValueOnce({ entities: [], relationships: [] });
+    const deepDir = path.join(tmpDir, 'a', 'b', 'c', 'd', 'e', 'f');
+    mkdirSync(deepDir, { recursive: true });
+    writeFileSync(path.join(deepDir, 'DeepFeature.ts'), 'export const deep = true;\n');
+
+    const result = mineAll(tmpDir, '/fake/db');
+    // Base fixture has src/App.js (1) + deeply nested DeepFeature.ts (1)
+    expect(result.totalFiles).toBeGreaterThanOrEqual(2);
   });
 });

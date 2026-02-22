@@ -74,6 +74,66 @@ const MANIFEST_FILES = [
   { file: 'pyproject.toml', extract: extractPyprojectDeps },
 ];
 
+const COUNT_SKIP_DIRS = new Set([
+  'node_modules', '.git', '.sweet-search', '.agentic-qe',
+  'dist', 'build', 'out', '.next', '.nuxt', 'coverage',
+  '__pycache__', '.venv', 'venv', 'target', '.swarm',
+]);
+
+/**
+ * Count source files for ranking IDF.
+ *
+ * Fast path uses `git ls-files` (cheap and accurate for tracked files).
+ * Fallback performs iterative directory traversal (avoids recursion depth limits).
+ */
+function estimateTotalSourceFiles(root) {
+  // Fast path: ask git for tracked files, then filter by source extensions.
+  try {
+    const listed = execFileSync(
+      'git',
+      ['-C', root, 'ls-files'],
+      { encoding: 'utf-8', timeout: 3000, stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+    if (listed) {
+      let count = 0;
+      for (const relPath of listed.split('\n')) {
+        if (!relPath) continue;
+        if (SOURCE_EXTENSIONS.has(extname(relPath))) count++;
+      }
+      if (count > 0) return count;
+    }
+  } catch (err) {
+    if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+  }
+
+  // Fallback: full traversal (still bounded by skip-dir rules).
+  const stack = [root];
+  let count = 0;
+
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch (err) {
+      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (COUNT_SKIP_DIRS.has(entry.name)) continue;
+        if (entry.name.startsWith('.') && dir !== root) continue;
+        stack.push(join(dir, entry.name));
+      } else if (entry.isFile()) {
+        if (SOURCE_EXTENSIONS.has(extname(entry.name))) count++;
+      }
+    }
+  }
+
+  return count;
+}
+
 // ---------------------------------------------------------------------------
 // 1. Structural Mining
 // ---------------------------------------------------------------------------
@@ -427,13 +487,14 @@ export function mineGit(projectRoot, options = {}) {
  * @param {object} [options]
  * @param {boolean} [options.deep=false] - Include git mining
  * @param {boolean} [options.skipNL=false] - Skip NL mining
- * @returns {{ terms: Array<{term: string, score: number, source: string}>, pageRankScores: Map, communityPhrases: Array }}
+ * @returns {{ terms: Array<{term: string, score: number, source: string}>, pageRankScores: Map, communityPhrases: Array, totalFiles: number }}
  */
 export function mineAll(projectRoot, dbPath, communities, options = {}) {
   const root = projectRoot || PROJECT_ROOT;
   const mergedTerms = new Map();
   let pageRankScores = new Map();
   let communityPhrases = [];
+  let totalFiles = 0;
 
   // 1. Structural mining
   const structural = mineStructural(root);
@@ -483,10 +544,19 @@ export function mineAll(projectRoot, dbPath, communities, options = {}) {
     mergeTerms(mergedTerms, git.terms);
   }
 
+  // Estimate real file count for BM25 IDF when ranking.
+  try {
+    totalFiles = estimateTotalSourceFiles(root);
+  } catch (err) {
+    if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+    totalFiles = 0;
+  }
+
   return {
     terms: termsToArray(mergedTerms),
     pageRankScores,
     communityPhrases,
+    totalFiles,
   };
 }
 

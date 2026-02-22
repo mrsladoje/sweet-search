@@ -69,9 +69,11 @@ const RE_CODE_TOKEN = /[A-Z]{2}|[a-z][A-Z]|_|\.\w|[a-z]\d|\d[a-z]/;
 // ---------------------------------------------------------------------------
 
 /**
- * Compute IDF for a term given total document count and document frequency.
- * @param {number} totalDocs - N (total files in codebase)
- * @param {number} docFreq - df (files containing this term)
+ * Compute IDF-like rarity score for a term given total bucket count and frequency.
+ * NOTE: In prewarm mining this is source-bucket rarity (import/export/graph-entity...)
+ * unless caller supplies a real `options.totalFiles`.
+ * @param {number} totalDocs - N (total buckets, or total files if provided)
+ * @param {number} docFreq - df (bucket frequency)
  * @returns {number} IDF score
  */
 function computeIDF(totalDocs, docFreq) {
@@ -262,7 +264,7 @@ export function rankIdentifiers(minedTerms, pageRankScores, options = {}) {
   }
 
   // --- BM25 prerequisites ---
-  const totalFiles = options.totalFiles || estimateTotalFiles(termMap);
+  const totalFiles = options.totalFiles || estimateTotalSourceBuckets(termMap);
   const terms = [...termMap.values()];
 
   // Average "document length" ≈ average source count per term
@@ -303,16 +305,18 @@ export function rankIdentifiers(minedTerms, pageRankScores, options = {}) {
 }
 
 /**
- * Estimate total file count from term source diversity.
+ * Estimate total source-bucket count from term source diversity.
+ * This is an approximation used when real file counts are unavailable.
+ * Pass `options.totalFiles` to rankIdentifiers() for true file-based BM25 IDF.
  * @param {Map} termMap
  * @returns {number}
  */
-function estimateTotalFiles(termMap) {
+function estimateTotalSourceBuckets(termMap) {
   const allSources = new Set();
   for (const t of termMap.values()) {
     for (const s of t.sources) allSources.add(s);
   }
-  // Rough estimate: unique sources ≈ total files (may undercount)
+  // Source-type buckets are small but stable; keep floor at 1.
   return Math.max(allSources.size, 1);
 }
 
@@ -470,7 +474,9 @@ export const _internals = {
   bm25Score,
   computeHeuristicMultiplier,
   deduplicatePhrases,
-  estimateTotalFiles,
+  estimateTotalSourceBuckets,
+  // Backward compatibility export name
+  estimateTotalFiles: estimateTotalSourceBuckets,
   MULTIPLIERS,
   DEPTH_CUTOFFS,
   QUESTION_TEMPLATES,
