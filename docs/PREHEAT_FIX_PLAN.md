@@ -2,7 +2,7 @@
 
 **Status**: Plan (not yet implemented)
 **Date**: 2026-02-11
-**Prerequisite**: VOCAB_PREWARM_PLAN must be implemented first. Step 4 of the new preheat flow calls `warmAll({ depth: 'light' })` from the vocab warmup system. Without it, FTS5, HNSW traversal, and hybrid pipeline warming have no term source.
+**Prerequisite**: VOCAB_PREWARM must be implemented first. Step 4 of the new preheat flow calls `warmAll({ depth: 'light' })` from the vocab warmup system. Without it, FTS5, HNSW traversal, and hybrid pipeline warming have no term source.
 **Scope**: Restructure `session-preheat.sh` to stop loading models in a throwaway process. The search server already loads everything itself — the preheat script should start the server and verify readiness, not duplicate the work.
 
 ---
@@ -47,7 +47,7 @@ session-preheat.sh (simplified)
     3. Start search server if not running              → spawn & detach
     4. Wait for /health to return ready                → poll, max 10s
     5. Warm non-server components (parallel):
-       a. FTS5 page cache (real terms)                 → ~200ms  (VOCAB_PREWARM_PLAN fixes this)
+       a. FTS5 page cache (real terms)                 → ~200ms  (VOCAB_PREWARM fixes this)
        b. WASM Query Router                            → ~6ms
        c. Voyage TLS handshake (if configured)         → ~100ms
        d. HCGS summary table touch                     → ~50ms
@@ -121,7 +121,7 @@ After the changes, `session-preheat.sh` shrinks from ~440 lines to ~80 lines:
 2. Start server if not running
 3. Poll /health until status=ready (max 10s)
 4. Warm remaining non-server items:
-   - FTS5 with real terms (via VOCAB_PREWARM_PLAN's warmLexical)
+   - FTS5 with real terms (via VOCAB_PREWARM's warmLexical)
    - Voyage TLS handshake (if configured)
    - HCGS summary table touch
 5. Start index maintainer daemon
@@ -135,11 +135,11 @@ The inline Node.js block drops from ~230 lines (11 async functions + Promise.all
 
 | Plan | What it fixes | Interaction |
 |------|--------------|-------------|
-| **VOCAB_PREWARM_PLAN** | FTS5 with real terms, vocabulary with codebase terms, HNSW traversal warming, hybrid pipeline warming | Preheat calls `warmAll({ depth: 'light' })` after server is ready. The server handles model loading; vocab warmup handles the search-mode warming. |
+| **VOCAB_PREWARM** | FTS5 with real terms, vocabulary with codebase terms, HNSW traversal warming, hybrid pipeline warming | Preheat calls `warmAll({ depth: 'light' })` after server is ready. The server handles model loading; vocab warmup handles the search-mode warming. |
 | **HCGS_ENHANCE** | Faster summarization, dual-model embedding | No interaction with preheat. HCGS changes affect indexing pipeline, not session startup. |
 | **AST_CHUNKER_FIX_PLAN** | Expand chunker to 22 languages | No interaction with preheat. Chunker runs during indexing, not startup. |
 
-The key integration point: after the server reports `status: "ready"`, the preheat calls the vocab warmup at `light` depth (200 terms, <3s). This is where the VOCAB_PREWARM_PLAN's `warmLexical`, `warmSemantic` (HNSW traversal), and `warmHybrid` run — using the server's already-loaded models via HTTP, not loading separate copies.
+The key integration point: after the server reports `status: "ready"`, the preheat calls the vocab warmup at `light` depth (200 terms, <3s). This is where the VOCAB_PREWARM's `warmLexical`, `warmSemantic` (HNSW traversal), and `warmHybrid` run — using the server's already-loaded models via HTTP, not loading separate copies.
 
 ---
 
@@ -158,7 +158,7 @@ The key integration point: after the server reports `status: "ready"`, the prehe
    - Keep: FTS5 real-term warmup, Voyage TLS, HCGS touch
    - Add: poll `/health` until `status === "ready"`
 
-4. **Integrate VOCAB_PREWARM_PLAN's light warmup**
+4. **Integrate VOCAB_PREWARM's light warmup**
    - After server ready, call `warmAll({ depth: 'light' })` via the server or direct import
    - This replaces the 3 remaining non-server warmups (FTS5, HNSW traversal, hybrid pipeline)
 
