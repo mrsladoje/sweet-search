@@ -12,6 +12,7 @@
 import { RERANK_CONFIG, LOCAL_RERANKER_CONFIG, isVoyageAvailable, getVoyageApiKey, isJinaRerankerAvailable, getJinaRerankerApiKey, shouldUseLocalReranker } from './config.js';
 import { getGlobalLocalReranker } from './local-reranker.js';
 import { withOnnxMutex } from './onnx-mutex.js';
+import { buildSessionOptions, loadModelWithSessionOptions, warnIfGraphNotMaterialized } from './onnx-session-utils.js';
 
 // =============================================================================
 // FLASHRANK RERANKER
@@ -56,14 +57,14 @@ export class FlashRankReranker {
         transformers = await import('@xenova/transformers');
       }
 
-      // Use feature-extraction with CLS pooling for cross-encoder relevance scores
-      // text-classification pipeline is WRONG - it outputs binary probabilities (always ~1)
       const modelPath = this.modelOverride || 'Xenova/ms-marco-TinyBERT-L-2-v2';
-      this.pipeline = await transformers.pipeline(
-        'feature-extraction',
-        modelPath,
-        { quantized: true }
+      const sessionOpts = buildSessionOptions(`${modelPath}:flashrank:q8`, 'flashrank');
+      this.pipeline = await loadModelWithSessionOptions(
+        (opts) => transformers.pipeline('feature-extraction', modelPath, opts),
+        { quantized: true },
+        sessionOpts,
       );
+      warnIfGraphNotMaterialized('FlashRank', sessionOpts);
 
       console.log(`FlashRank: Loaded local reranker model (${modelPath})`);
     } catch (err) {
