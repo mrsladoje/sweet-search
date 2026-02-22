@@ -267,17 +267,17 @@ function buildWeightedAdjacency(entities, relationships) {
 
 /**
  * Compute graph hash from relationship rows (avoids re-querying DB).
- * Sorts in-place — callers (buildWeightedAdjacency) are order-independent.
+ * Sorts a copy to avoid mutating caller-owned arrays.
  */
 function computeGraphHashFromRows(relationships) {
-  relationships.sort((a, b) => {
+  const sorted = [...relationships].sort((a, b) => {
     if (a.source_id !== b.source_id) return a.source_id - b.source_id;
     if (a.target_id !== b.target_id) return a.target_id - b.target_id;
     return (a.type || '') < (b.type || '') ? -1 : (a.type || '') > (b.type || '') ? 1 : 0;
   });
 
   const hash = createHash('sha256');
-  for (const row of relationships) {
+  for (const row of sorted) {
     hash.update(`${row.source_id}\t${row.target_id}\t${row.type}\n`);
   }
   return hash.digest('hex');

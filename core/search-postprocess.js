@@ -8,8 +8,7 @@
  * so they work correctly when wired onto SweetSearch.prototype.
  */
 
-import { SEISMIC_CONFIG } from './config.js';
-import { DB_PATHS } from './config.js';
+import { SEISMIC_CONFIG, DB_PATHS } from './config.js';
 import { expandResults } from './graph-expansion.js';
 
 // Threshold (ms) below which a lexical sub-query is considered a "cache hit"
@@ -290,23 +289,13 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   const latency = stats.total_ms;
   const embeddingSource = stats.embedding?.source || null;
   const embedLatencyMs = (stats.embedding?.latency_us || 0) / 1000;
-  // P1.3 FIX: Use direct lexical latency from hybrid fusionStats when available.
-  // The residual heuristic (total - embedding) incorrectly includes fusion/MMR overhead.
-  const directLexMs = stats.lexicalLatencyMs;
-  const lexSubLatency = (telemetryMode === 'hybrid' && directLexMs != null)
-    ? directLexMs
-    : telemetryMode === 'hybrid'
-      ? Math.max(0, latency - embedLatencyMs)
-      : latency;
-  const lexHit = lexSubLatency < LEXICAL_HIT_THRESHOLD_MS;
-  const semHit = embeddingSource === 'vocabulary' || embeddingSource === 'semantic-cache';
-  const cacheHit = telemetryMode === 'lexical'
-    ? lexHit
-    : telemetryMode === 'semantic'
-      ? semHit
-      : telemetryMode === 'hybrid'
-        ? lexHit && semHit
-        : false;
+  const { lexHit, semHit, cacheHit } = computeCacheHit(telemetryMode, {
+    latency,
+    embedLatencyMs,
+    directLexMs: stats.lexicalLatencyMs,
+    embeddingSource,
+    lexicalHitThresholdMs: LEXICAL_HIT_THRESHOLD_MS,
+  });
   recordQueryTelemetry(
     telemetryMode, cacheHit, latency, query, embeddingSource,
     telemetryMode === 'hybrid' ? lexHit : undefined,
@@ -314,4 +303,35 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   ).catch(() => {}); // best-effort, never block search
 
   return { results, stats };
+}
+
+/**
+ * Compute per-mode cache hit signals for telemetry.
+ * Extracted as a pure helper to keep logic testable and auditable.
+ */
+export function computeCacheHit(mode, {
+  latency = 0,
+  embedLatencyMs = 0,
+  directLexMs = null,
+  embeddingSource = null,
+  lexicalHitThresholdMs = LEXICAL_HIT_THRESHOLD_MS,
+} = {}) {
+  // Use direct lexical timing when available; fallback to residual heuristic.
+  const lexSubLatency = (mode === 'hybrid' && directLexMs != null)
+    ? directLexMs
+    : mode === 'hybrid'
+      ? Math.max(0, latency - embedLatencyMs)
+      : latency;
+
+  const lexHit = lexSubLatency < lexicalHitThresholdMs;
+  const semHit = embeddingSource === 'vocabulary' || embeddingSource === 'semantic-cache';
+  const cacheHit = mode === 'lexical'
+    ? lexHit
+    : mode === 'semantic'
+      ? semHit
+      : mode === 'hybrid'
+        ? lexHit && semHit
+        : false;
+
+  return { lexSubLatency, lexHit, semHit, cacheHit };
 }

@@ -77,12 +77,7 @@ export async function warmLexical(terms, dbPath) {
       return { queriesRun: 0, elapsedMs: Math.round(performance.now() - start), skip: 'no FTS5 table' };
     }
 
-    // Optimize FTS5 index
-    try {
-      db.exec("INSERT INTO entities_fts(entities_fts) VALUES('optimize')");
-    } catch (err) {
-      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
-    }
+    // Keep warmup read-only; skip FTS5 optimize (write operation).
 
     // Prepare statements
     const matchStmt = db.prepare(
