@@ -110,18 +110,18 @@ export function termsToArray(terms) {
     .sort((a, b) => b.score - a.score);
 }
 
+const SKIP_DIRS = new Set([
+  'node_modules', '.git', '.sweet-search', '.agentic-qe',
+  'dist', 'build', 'out', '.next', '.nuxt', 'coverage',
+  '__pycache__', '.venv', 'venv', 'target', '.swarm',
+]);
+
 /**
  * Walk directory tree up to maxDepth levels deep. Returns file paths.
  * Skips hidden dirs, node_modules, .git, and other noise.
  */
 export function walkShallow(dir, maxDepth, depth = 0) {
   if (depth >= maxDepth) return [];
-
-  const SKIP_DIRS = new Set([
-    'node_modules', '.git', '.sweet-search', '.agentic-qe',
-    'dist', 'build', 'out', '.next', '.nuxt', 'coverage',
-    '__pycache__', '.venv', 'venv', 'target', '.swarm',
-  ]);
 
   const results = [];
   let entries;

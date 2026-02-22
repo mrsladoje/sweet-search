@@ -281,6 +281,7 @@ export function estimateWorkingSetSize(
   warmupSize = 0,
   maxWarmup = 2000,
 ) {
+  const MAX_CLUSTER_QUERIES = 1000;
   const cutoff = Date.now() - windowMs;
   const uniqueQueries = new Set();
 
@@ -296,6 +297,12 @@ export function estimateWorkingSetSize(
   // F12: Basic string-similarity clustering (Jaccard on word sets) to avoid
   // counting near-duplicate queries as separate working set entries.
   const queryList = [...uniqueQueries];
+  // Guard against O(n^2) blow-ups on very large telemetry windows.
+  // Deterministic truncation keeps behavior stable across runs/tests.
+  if (queryList.length > MAX_CLUSTER_QUERIES) {
+    queryList.sort();
+    queryList.length = MAX_CLUSTER_QUERIES;
+  }
   const clusters = [];
   const assigned = new Set();
 

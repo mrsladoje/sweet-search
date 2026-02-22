@@ -15,7 +15,7 @@ import fs from 'fs/promises';
 import path from 'path';
 
 import Database from 'better-sqlite3';
-import { DB_PATHS, PROJECT_ROOT } from './config.js';
+import { DB_PATHS, PROJECT_ROOT, EMBEDDING_CONFIG } from './config.js';
 import { detectCommunities, computeGraphHash } from './community-detector.js';
 import { mineAll, computeNLContentHash } from './vocab-miner.js';
 import { rankAll } from './vocab-ranker.js';
@@ -135,7 +135,11 @@ async function _runFullWarmupInner(options, start, effectiveProvider) {
       minedResult.terms,
       minedResult.communityPhrases,
       minedResult.pageRankScores,
-      { depth, topN: top }
+      {
+        depth,
+        topN: top,
+        ...(minedResult.totalFiles > 0 ? { totalFiles: minedResult.totalFiles } : {}),
+      }
     );
   } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
