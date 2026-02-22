@@ -18,7 +18,7 @@ import { STOP_WORDS, splitIdentifier } from './vocab-miner-utils.js';
 
 // Secret patterns to redact from NL content
 export const SECRET_PATTERNS = [
-  /[A-Za-z0-9+/]{32,}={0,2}/,   // base64 > 32 chars
+  /(?=[A-Za-z0-9+/]*[+/=])[A-Za-z0-9+/]{40,}={0,2}/,   // base64 > 40 chars with at least one +, /, or =
   /sk-[A-Za-z0-9]{20,}/,          // OpenAI keys
   /ghp_[A-Za-z0-9]{30,}/,         // GitHub PATs
   /gho_[A-Za-z0-9]{30,}/,         // GitHub OAuth

@@ -14,7 +14,8 @@ import { existsSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 
-import { DB_PATHS, PROJECT_ROOT, EMBEDDING_CONFIG } from './config.js';
+import Database from 'better-sqlite3';
+import { DB_PATHS, PROJECT_ROOT } from './config.js';
 import { detectCommunities, computeGraphHash } from './community-detector.js';
 import { mineAll, computeNLContentHash } from './vocab-miner.js';
 import { rankAll } from './vocab-ranker.js';
@@ -40,36 +41,13 @@ import { ARTIFACT_PATHS, DATA_DIR } from './vocab-constants.js';
  */
 export async function runFullWarmup(options = {}) {
   const start = performance.now();
-  const localWarmup = options.localWarmup || false;
-  const provider = options.provider || null;
-
-  // Apply provider override for this warmup session
-  const _restoreProvider = _applyProviderOverride(provider, localWarmup);
-
-  try { return await _runFullWarmupInner(options, start); }
-  finally { _restoreProvider(); }
+  // P1.2 FIX: Compute effective provider without mutating global EMBEDDING_CONFIG.
+  // Provider is passed explicitly through the call chain to generateEmbeddings().
+  const effectiveProvider = options.provider || (options.localWarmup ? 'local' : null);
+  return _runFullWarmupInner(options, start, effectiveProvider);
 }
 
-/**
- * Apply a temporary provider override to EMBEDDING_CONFIG.
- * Returns a restore function that MUST be called (in a finally block) to undo the mutation.
- * @returns {() => void}
- */
-function _applyProviderOverride(provider, localWarmup) {
-  if (provider && EMBEDDING_CONFIG) {
-    const saved = EMBEDDING_CONFIG.provider;
-    EMBEDDING_CONFIG.provider = provider;
-    return () => { EMBEDDING_CONFIG.provider = saved; };
-  }
-  if (localWarmup && EMBEDDING_CONFIG) {
-    const saved = EMBEDDING_CONFIG.provider;
-    EMBEDDING_CONFIG.provider = 'local';
-    return () => { EMBEDDING_CONFIG.provider = saved; };
-  }
-  return () => {}; // no-op
-}
-
-async function _runFullWarmupInner(options, start) {
+async function _runFullWarmupInner(options, start, effectiveProvider) {
   const depth = options.depth || 'medium';
   const top = options.top || 1000;
   const modes = options.modes || ['lexical', 'semantic'];
@@ -206,17 +184,34 @@ async function _runFullWarmupInner(options, start) {
   let semanticEmbeddings = new Map();
   if (modes.includes('semantic')) {
     const semStart = performance.now();
+    // P0.3 FIX: Open a single shared DB for entity metadata queries
+    let sharedDb = null;
+    try {
+      if (existsSync(dbPath)) {
+        sharedDb = new Database(dbPath, { readonly: true, timeout: 5000 });
+      }
+    } catch (err) {
+      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+    }
     try {
       const semResult = await warmSemantic(
         semanticTerms,
         ranked.phrases,
-        { hnswIndex: options.hnswIndex }
+        {
+          hnswIndex: options.hnswIndex,
+          ...(effectiveProvider && { provider: effectiveProvider }),
+          ...(sharedDb && { db: sharedDb }),
+        }
       );
       if (semResult.embeddings) {
         semanticEmbeddings = semResult.embeddings;
       }
     } catch (err) {
       if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+    } finally {
+      if (sharedDb) try { sharedDb.close(); } catch (err) {
+        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+      }
     }
     timing.semantic = Math.round(performance.now() - semStart);
   }

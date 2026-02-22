@@ -247,6 +247,10 @@ function buildWeightedAdjacency(entities, relationships) {
   for (const rel of relationships) {
     const src = rel.source_id;
     const tgt = rel.target_id;
+    // Self-edges (src === tgt) are intentionally dropped: they have no
+    // effect on community structure (same-node edges don't influence
+    // modularity delta-Q), and Leiden's self-loop handling in local
+    // moving already skips them (leiden-algorithm.js line 172).
     if (!src || !tgt || src === tgt) continue;
     if (!entityIds.has(src) || !entityIds.has(tgt)) continue;
 
@@ -263,16 +267,17 @@ function buildWeightedAdjacency(entities, relationships) {
 
 /**
  * Compute graph hash from relationship rows (avoids re-querying DB).
+ * Sorts in-place — callers (buildWeightedAdjacency) are order-independent.
  */
 function computeGraphHashFromRows(relationships) {
-  const sorted = [...relationships].sort((a, b) => {
+  relationships.sort((a, b) => {
     if (a.source_id !== b.source_id) return a.source_id - b.source_id;
     if (a.target_id !== b.target_id) return a.target_id - b.target_id;
     return (a.type || '') < (b.type || '') ? -1 : (a.type || '') > (b.type || '') ? 1 : 0;
   });
 
   const hash = createHash('sha256');
-  for (const row of sorted) {
+  for (const row of relationships) {
     hash.update(`${row.source_id}\t${row.target_id}\t${row.type}\n`);
   }
   return hash.digest('hex');

@@ -43,6 +43,8 @@ export async function hybridSearchV2(query, options = {}) {
   }));
   const semanticResults = semanticSearchResult.results;
   const semanticStats = semanticSearchResult.stats;
+  // P1.3 FIX: Capture direct lexical latency for accurate telemetry
+  const lexicalLatencyMs = lexicalSearchResult.stats?.bm25_ms ?? null;
 
   // Step 2: Robust CC fusion with RRF fallback for edge cases
   const { results: fused, method, fallbackReason } = this.robustCCFusion(
@@ -91,6 +93,7 @@ export async function hybridSearchV2(query, options = {}) {
       mmrStats,
       routerMode: routing.mode,
       routerConfidence: routing.confidence,
+      lexicalLatencyMs,
     },
   };
 }
