@@ -93,12 +93,14 @@ export async function warmLexical(terms, dbPath) {
         const term = typeof entry === 'string' ? entry : entry.term;
         if (!term || term.length < 2) continue;
 
-        // Escape FTS5 special chars
-        const safeTerm = term.replace(/['"*()]/g, '');
+        // Wrap in FTS5 double-quoted phrase to neutralise all operator chars
+        // (AND, OR, NOT, NEAR, -, +, ^, etc.). Internal double-quotes are
+        // escaped by doubling them per the FTS5 string-literal spec.
+        const safeTerm = term.replace(/"/g, '""'); // escape internal quotes for FTS5
         if (!safeTerm) continue;
 
         try {
-          const row = matchStmt.get(safeTerm);
+          const row = matchStmt.get('"' + safeTerm + '"');
           queriesRun++;
           if (row) matchedIds.push(row.rowid);
         } catch (err) {
@@ -285,7 +287,11 @@ export async function warmHybrid(representativeQueries, searcher) {
     if (!query) continue;
 
     try {
-      await searcher.search(query, { mode: 'hybrid', k: 5 });
+      const result = await Promise.race([
+        searcher.search(query, { mode: 'hybrid', k: 5 }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('query timeout')), 5000)),
+      ]);
+      void result; // consumed for side-effect (cache warm); suppress unused-var linters
       queriesRun++;
     } catch (err) {
       if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);

@@ -8,8 +8,6 @@
  * so they work correctly when wired onto SweetSearch.prototype.
  */
 
-import fs from 'fs/promises';
-import { DB_PATHS } from './config.js';
 
 // =============================================================================
 // Result formatting
@@ -115,7 +113,7 @@ export function formatResults(results, stats = {}) {
  * 2. File location for drill-down
  * 3. Full code only if needed
  *
- * Uses `this` — reads this.hasGraphIndex, this.log.
+ * Uses `this` — reads this.hasGraphIndex, this.log, this.graphSearch.
  */
 export async function enrichWithSummaries(results) {
   if (!this.hasGraphIndex || results.length === 0) {
@@ -123,10 +121,27 @@ export async function enrichWithSummaries(results) {
   }
 
   try {
-    const initSqlJs = (await import('sql.js')).default;
-    const SQL = await initSqlJs();
-    const dbBuffer = await fs.readFile(DB_PATHS.codeGraph);
-    const db = new SQL.Database(dbBuffer);
+    if (!this.graphSearch.db) {
+      await this.graphSearch.init();
+    }
+
+    const db = this.graphSearch.db;
+
+    const stmtByName = db.prepare(`
+      SELECT id, name, type, signature, summary, file_path, start_line
+      FROM entities
+      WHERE name = ?
+        AND stale_since IS NULL
+      LIMIT 1
+    `);
+
+    const stmtByLocation = db.prepare(`
+      SELECT id, name, type, signature, summary, file_path, start_line
+      FROM entities
+      WHERE file_path LIKE ? AND start_line <= ? AND end_line >= ?
+        AND stale_since IS NULL
+      LIMIT 1
+    `);
 
     const enriched = [];
 
@@ -139,33 +154,11 @@ export async function enrichWithSummaries(results) {
       let entity = null;
 
       if (name) {
-        const stmt = db.prepare(`
-          SELECT id, name, type, signature, summary, file_path, start_line
-          FROM entities
-          WHERE name = ?
-            AND stale_since IS NULL
-          LIMIT 1
-        `);
-        stmt.bind([name]);
-        if (stmt.step()) {
-          entity = stmt.getAsObject();
-        }
-        stmt.free();
+        entity = stmtByName.get(name) || null;
       }
 
       if (!entity && file && line) {
-        const stmt = db.prepare(`
-          SELECT id, name, type, signature, summary, file_path, start_line
-          FROM entities
-          WHERE file_path LIKE ? AND start_line <= ? AND end_line >= ?
-            AND stale_since IS NULL
-          LIMIT 1
-        `);
-        stmt.bind([`%${file}%`, line, line]);
-        if (stmt.step()) {
-          entity = stmt.getAsObject();
-        }
-        stmt.free();
+        entity = stmtByLocation.get(`%${file}%`, line, line) || null;
       }
 
       if (entity && entity.summary) {
@@ -179,7 +172,6 @@ export async function enrichWithSummaries(results) {
       }
     }
 
-    db.close();
     return enriched;
   } catch (err) {
     this.log(`Summary enrichment failed: ${err.message}`);
@@ -253,12 +245,12 @@ export function formatMiddleRes(results) {
     const location = `${file}${line ? `:${line}` : ''}`;
 
     output += `${i + 1}. [${type}] ${name}\n`;
-    output += `   📍 ${location}\n`;
+    output += `   loc: ${location}\n`;
 
     // Full signature
     const sig = r.signature || '';
     if (sig) {
-      output += `   📝 ${sig}\n`;
+      output += `   sig: ${sig}\n`;
       totalTokens += Math.ceil(sig.length / 4);
     }
 
@@ -266,13 +258,13 @@ export function formatMiddleRes(results) {
     const doc = r.docComment || r.doc_comment || '';
     if (doc) {
       const truncDoc = doc.length > 200 ? doc.slice(0, 200) + '...' : doc;
-      output += `   📖 ${truncDoc.replace(/\n/g, ' ')}\n`;
+      output += `   doc: ${truncDoc.replace(/\n/g, ' ')}\n`;
       totalTokens += Math.ceil(truncDoc.length / 4);
     }
 
     // Summary if available
     if (r.summary) {
-      output += `   💡 ${r.summary}\n`;
+      output += `   sum: ${r.summary}\n`;
       totalTokens += Math.ceil(r.summary.length / 4);
     }
 

@@ -123,17 +123,60 @@ export function leidenCommunities(adjacency, options = {}) {
 /**
  * Flatten transitive community assignments to fixed-point.
  * E.g. node 1→5, 5→9, 9→9 becomes node 1→9.
+ *
+ * Uses Floyd's tortoise-and-hare cycle detection. If a cycle is found the
+ * node is assigned to itself (singleton community) as a safe fallback.
+ * The 100-hop limit is kept as a belt-and-suspenders guard.
+ *
  * @param {Map<number, number>} community
  */
 function _flattenAssignment(community) {
+  // Helper: advance one step along the chain; returns the same value if
+  // already at a fixed-point (self-mapping or not in map).
+  const step = (v) => {
+    const next = community.get(v);
+    return (next !== undefined && next !== v) ? next : v;
+  };
+
   for (const [node] of community) {
-    let cur = community.get(node);
+    const start = community.get(node);
+    if (start === undefined) continue;
+
+    // Floyd's tortoise-and-hare — detect cycles without extra allocations.
+    let slow = start;
+    let fast = start;
     let hops = 0;
-    while (community.has(cur) && community.get(cur) !== cur && hops < 100) {
-      cur = community.get(cur);
+    let cycleDetected = false;
+
+    while (hops < 100) {
+      const slowNext = step(slow);
+      const fastNext = step(step(fast));
+
+      // Both pointers are already at fixed-points — normal termination.
+      if (slowNext === slow && fastNext === fast) break;
+
+      slow = slowNext;
+      fast = fastNext;
       hops++;
+
+      if (slow === fast && slow !== step(slow)) {
+        // Pointers met but are NOT at a fixed-point — genuine cycle.
+        cycleDetected = true;
+        break;
+      }
     }
-    community.set(node, cur);
+
+    if (cycleDetected) {
+      if (process.env.DEBUG_CATCHES) {
+        process.stderr.write(
+          `[leiden] _flattenAssignment: cycle detected for node ${node}, ` +
+          `assigning singleton community.\n`
+        );
+      }
+      community.set(node, node);
+    } else {
+      community.set(node, slow);
+    }
   }
 }
 

@@ -342,6 +342,17 @@ export function rankCommunityPhrases(communityPhrases, pageRankScores, options =
     return { phrases: [], totalMined: 0 };
   }
 
+  // Pre-filter high-PR entities ONCE before the phrase loop (O(N*M) → O(N+M)).
+  // Build a pre-lowercased array so each phrase only iterates the small filtered set.
+  const highPrEntities = []; // { nameLower: string, score: number }
+  if (pageRankScores) {
+    for (const [entity, prScore] of pageRankScores) {
+      if (prScore > 0.01) {
+        highPrEntities.push({ nameLower: entity.toLowerCase(), score: prScore });
+      }
+    }
+  }
+
   let totalMined = 0;
   const allPhrases = []; // { phrase, communityId, score }
 
@@ -353,10 +364,12 @@ export function rankCommunityPhrases(communityPhrases, pageRankScores, options =
     // Score each phrase: base c-TF-IDF score + PageRank boost for entity mentions
     const scored = phrases.map(p => {
       let boost = 0;
-      if (pageRankScores) {
-        // Check if phrase text contains any high-PageRank entity name
-        for (const [entity, prScore] of pageRankScores) {
-          if (prScore > 0.01 && p.text.toLowerCase().includes(entity.toLowerCase())) {
+      if (highPrEntities.length > 0) {
+        // Check if phrase text contains any high-PageRank entity name.
+        // Uses pre-lowercased filtered set — avoids repeated toLowerCase() on all N entries.
+        const textLower = p.text.toLowerCase();
+        for (const { nameLower, score: prScore } of highPrEntities) {
+          if (textLower.includes(nameLower)) {
             boost = Math.max(boost, prScore);
           }
         }

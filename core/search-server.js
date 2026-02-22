@@ -25,6 +25,98 @@ export const SEARCH_SERVER_TIMEOUT_MS = 30_000;
 export const SEARCH_SERVER_MAX_URL_LENGTH = 16_384;
 export const SEARCH_SERVER_MAX_QUERY_LENGTH = 2_000;
 
+function buildTextSearchResponse(results, stats, totalTime, { summary = false, mid = false } = {}) {
+  const routeMode = stats?.routing?.mode || 'auto';
+  const icon = routeMode === 'lexical' ? '⚡' : routeMode === 'semantic' ? '🧠' : '✨';
+  const W = '\x1b[1;38;5;231m';
+  const D = '\x1b[38;5;245m';
+  const G = '\x1b[38;5;114m';
+  const R = '\x1b[0m';
+  const Y = '\x1b[38;5;220m';
+  const C = '\x1b[38;5;51m';
+
+  let out = `  ${icon} ${W}${routeMode}${R} ${D}|${R} ${W}${totalTime}ms${R} ${G}●${R}\n`;
+
+  if (stats.translation?.triggered && stats.translation?.changed) {
+    const T = '\x1b[38;5;208m';
+    out += `  ${T}🌐 Translated: "${stats.translation.translated}" (${stats.translation.tier})${R}\n`;
+    if (stats.translation.resultsAdded > 0) {
+      out += `  ${T}   +${stats.translation.resultsAdded} results from translation${R}\n`;
+    }
+  }
+  out += '\n';
+
+  if (!results || results.length === 0) {
+    out += 'No results\n';
+  } else if (summary) {
+    out += `${Y}SUMMARY VIEW${R} (${results.length} results) - 10x fewer tokens\n`;
+    out += `${'─'.repeat(50)}\n\n`;
+    results.forEach((r, i) => {
+      const m = r.metadata || {};
+      const name = r.name || m.name || '?';
+      const type = r.type || m.type || '?';
+      const file = r.file || r.file_path || m.file || '?';
+      const idParts = r.id?.split(':') || [];
+      const line = r.startLine || r.start_line || (idParts.length >= 2 ? idParts[1].split('-')[0] : '?');
+      const summ = r.summary || r.signature?.slice(0, 100) || '';
+
+      out += `${W}${i + 1}. [${type}] ${name}${R}\n`;
+      out += `   ${C}${file}:${line}${R}\n`;
+      if (summ) out += `   ${summ}\n`;
+      out += '\n';
+    });
+    out += `${D}Use: Read <file:line> for full code${R}\n`;
+  } else if (mid) {
+    out += `${Y}MIDDLE-RES VIEW${R} (${results.length} results) - Signature + Doc\n`;
+    out += `${'─'.repeat(50)}\n\n`;
+    results.forEach((r, i) => {
+      const m = r.metadata || {};
+      const name = r.name || m.name || '?';
+      const type = r.type || m.type || '?';
+      const file = r.file || r.file_path || m.file || '?';
+      const idParts = r.id?.split(':') || [];
+      const line = r.startLine || r.start_line || (idParts.length >= 2 ? idParts[1].split('-')[0] : '?');
+      const sig = r.signature || '';
+      const doc = (r.docComment || r.doc_comment || '').slice(0, 150);
+
+      out += `${W}${i + 1}. [${type}] ${name}${R}\n`;
+      out += `   ${C}${file}:${line}${R}\n`;
+      if (sig) out += `   ${sig}\n`;
+      if (doc) out += `   ${D}${doc}${R}\n`;
+      out += '\n';
+    });
+  } else {
+    out += `${results.length} results:\n\n`;
+    results.forEach((r, i) => {
+      const m = r.metadata || {};
+      const name = r.name || m.name || '?';
+      const type = r.type || m.type || '?';
+      const file = r.file || r.file_path || m.file || '?';
+      const idParts = r.id?.split(':') || [];
+      const line = r.startLine || r.start_line || (idParts.length >= 2 ? idParts[1].split('-')[0] : '?');
+      const score = (r.score || 0).toFixed(4);
+      const path = r.searchPath || '?';
+      const sig = (r.signature || r.docComment || m.signature || '').slice(0, 70);
+
+      out += `${W}${i + 1}. ${name}${R} (${type})\n`;
+      out += `   File: ${file}:${line}\n`;
+      out += `   Path: ${path}\n`;
+      out += `   Score: ${score}\n`;
+      if (sig) out += `   ${sig}\n`;
+      out += '\n';
+    });
+  }
+
+  return out;
+}
+
+function buildJsonSearchResponse(results, stats, totalTime) {
+  return JSON.stringify({
+    results,
+    stats: { ...stats, server_ms: totalTime },
+  });
+}
+
 // =============================================================================
 // Server implementation
 // =============================================================================
@@ -44,15 +136,18 @@ export async function startServer() {
   // Write PID file
   await fs.writeFile(SEARCH_SERVER_PIDFILE, process.pid.toString(), { mode: 0o644 });
 
-  // P6 FIX: Track request count for periodic cache clearing
+  // Track request count for periodic cache clearing in long-running sessions.
   let requestCount = 0;
   const CACHE_CLEAR_INTERVAL = 1000;  // Clear caches every 1000 requests
+
+  let tcpServer;
+  let unixServer;
 
   // Shared request handler for both TCP and Unix socket
   const handleRequest = async (req, res) => {
     const reqUrl = req.url || '';
 
-    // P6 FIX: Periodic cache clearing to prevent memory growth
+    // Periodic cache clearing to prevent unbounded memory growth.
     requestCount++;
     if (requestCount % CACHE_CLEAR_INTERVAL === 0) {
       // Clear module-level embedding cache singleton
@@ -123,96 +218,12 @@ export async function startServer() {
         const totalTime = Date.now() - start;
 
         if (format === 'text') {
-          // Pre-formatted text output (eliminates client-side parsing)
-          const routeMode = stats?.routing?.mode || 'auto';
-          const icon = routeMode === 'lexical' ? '⚡' : routeMode === 'semantic' ? '🧠' : '✨';
-          const W = '\x1b[1;38;5;231m', D = '\x1b[38;5;245m', G = '\x1b[38;5;114m', R = '\x1b[0m';
-          const Y = '\x1b[38;5;220m', C = '\x1b[38;5;51m';
-
-          let out = `  ${icon} ${W}${routeMode}${R} ${D}|${R} ${W}${totalTime}ms${R} ${G}●${R}\n`;
-
-          // Phase 4: Show translation info if fallback was used
-          if (stats.translation?.triggered && stats.translation?.changed) {
-            const T = '\x1b[38;5;208m'; // Orange for translation
-            out += `  ${T}🌐 Translated: "${stats.translation.translated}" (${stats.translation.tier})${R}\n`;
-            if (stats.translation.resultsAdded > 0) {
-              out += `  ${T}   +${stats.translation.resultsAdded} results from translation${R}\n`;
-            }
-          }
-          out += '\n';
-
-          if (!results || results.length === 0) {
-            out += 'No results\n';
-          } else if (summary) {
-            // Summary-first format (10x token reduction)
-            out += `${Y}SUMMARY VIEW${R} (${results.length} results) - 10x fewer tokens\n`;
-            out += `${'─'.repeat(50)}\n\n`;
-            results.forEach((r, i) => {
-              const m = r.metadata || {};
-              const name = r.name || m.name || '?';
-              const type = r.type || m.type || '?';
-              const file = r.file || r.file_path || m.file || '?';
-              const idParts = r.id?.split(':') || [];
-              const line = r.startLine || r.start_line || (idParts.length >= 2 ? idParts[1].split('-')[0] : '?');
-              const summ = r.summary || r.signature?.slice(0, 100) || '';
-
-              out += `${W}${i + 1}. [${type}] ${name}${R}\n`;
-              out += `   ${C}${file}:${line}${R}\n`;
-              if (summ) out += `   ${summ}\n`;
-              out += '\n';
-            });
-            out += `${D}Use: Read <file:line> for full code${R}\n`;
-          } else if (mid) {
-            // Middle-res format (5x token reduction)
-            out += `${Y}MIDDLE-RES VIEW${R} (${results.length} results) - Signature + Doc\n`;
-            out += `${'─'.repeat(50)}\n\n`;
-            results.forEach((r, i) => {
-              const m = r.metadata || {};
-              const name = r.name || m.name || '?';
-              const type = r.type || m.type || '?';
-              const file = r.file || r.file_path || m.file || '?';
-              const idParts = r.id?.split(':') || [];
-              const line = r.startLine || r.start_line || (idParts.length >= 2 ? idParts[1].split('-')[0] : '?');
-              const sig = r.signature || '';
-              const doc = (r.docComment || r.doc_comment || '').slice(0, 150);
-
-              out += `${W}${i + 1}. [${type}] ${name}${R}\n`;
-              out += `   ${C}${file}:${line}${R}\n`;
-              if (sig) out += `   ${sig}\n`;
-              if (doc) out += `   ${D}${doc}${R}\n`;
-              out += '\n';
-            });
-          } else {
-            // Full format (default)
-            out += `${results.length} results:\n\n`;
-            results.forEach((r, i) => {
-              const m = r.metadata || {};
-              const name = r.name || m.name || '?';
-              const type = r.type || m.type || '?';
-              const file = r.file || r.file_path || m.file || '?';
-              const idParts = r.id?.split(':') || [];
-              const line = r.startLine || r.start_line || (idParts.length >= 2 ? idParts[1].split('-')[0] : '?');
-              const score = (r.score || 0).toFixed(4);
-              const path = r.searchPath || '?';
-              const sig = (r.signature || r.docComment || m.signature || '').slice(0, 70);
-
-              out += `${W}${i + 1}. ${name}${R} (${type})\n`;
-              out += `   File: ${file}:${line}\n`;
-              out += `   Path: ${path}\n`;
-              out += `   Score: ${score}\n`;
-              if (sig) out += `   ${sig}\n`;
-              out += '\n';
-            });
-          }
-
+          const out = buildTextSearchResponse(results, stats, totalTime, { summary, mid });
           res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
           res.end(out);
         } else {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            results,
-            stats: { ...stats, server_ms: totalTime },
-          }));
+          res.end(buildJsonSearchResponse(results, stats, totalTime));
         }
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -222,7 +233,7 @@ export async function startServer() {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', warm: true }));
     } else if (req.method === 'GET' && reqUrl === '/stop') {
-      // F-06: Only allow /stop via Unix socket (OS-level access control)
+      // Only allow /stop via Unix socket (OS-level access control).
       const isUnixSocket = !req.socket.remoteAddress;
       if (!isUnixSocket) {
         res.writeHead(403, { 'Content-Type': 'text/plain' });
@@ -250,7 +261,7 @@ export async function startServer() {
   };
 
   // TCP server (port 9876) - backward compatible
-  const tcpServer = http.createServer(handleRequest);
+  tcpServer = http.createServer(handleRequest);
   tcpServer.setTimeout(SEARCH_SERVER_TIMEOUT_MS);
   if ('requestTimeout' in tcpServer) tcpServer.requestTimeout = SEARCH_SERVER_TIMEOUT_MS;
   if ('headersTimeout' in tcpServer) tcpServer.headersTimeout = SEARCH_SERVER_TIMEOUT_MS + 5_000;
@@ -258,15 +269,33 @@ export async function startServer() {
   console.log(`[Server] TCP listening on http://localhost:${SEARCH_SERVER_PORT}`);
 
   // Unix socket server (/tmp/sweet-search.sock) - 30-50% faster
-  const unixServer = http.createServer(handleRequest);
+  unixServer = http.createServer(handleRequest);
   unixServer.setTimeout(SEARCH_SERVER_TIMEOUT_MS);
   if ('requestTimeout' in unixServer) unixServer.requestTimeout = SEARCH_SERVER_TIMEOUT_MS;
   if ('headersTimeout' in unixServer) unixServer.headersTimeout = SEARCH_SERVER_TIMEOUT_MS + 5_000;
   try { await fs.unlink(SEARCH_SERVER_SOCKET); } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   } // Remove stale socket
-  unixServer.listen(SEARCH_SERVER_SOCKET);
-  // F-35: Restrict socket permissions to owner only
+  // Set restrictive umask while the socket file is created.
+  const prevUmask = process.umask(0o077);
+  try {
+    await new Promise((resolve, reject) => {
+      const onListening = () => {
+        unixServer.off('error', onError);
+        resolve();
+      };
+      const onError = (err) => {
+        unixServer.off('listening', onListening);
+        reject(err);
+      };
+      unixServer.once('listening', onListening);
+      unixServer.once('error', onError);
+      unixServer.listen(SEARCH_SERVER_SOCKET);
+    });
+  } finally {
+    process.umask(prevUmask);
+  }
+  // Belt-and-suspenders: also chmod explicitly in case umask was ineffective.
   try { (await import('node:fs')).chmodSync(SEARCH_SERVER_SOCKET, 0o700); } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   }
