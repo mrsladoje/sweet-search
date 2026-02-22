@@ -16,8 +16,8 @@
  * a transformer that sees both query and document together.
  */
 
-import { existsSync } from 'fs';
 import { join, dirname } from 'path';
+import { buildSessionOptions, loadModelWithSessionOptions, warnIfGraphNotMaterialized } from './onnx-session-utils.js';
 import { fileURLToPath } from 'url';
 import { withOnnxMutex } from './onnx-mutex.js';
 
@@ -115,13 +115,16 @@ export class LocalReranker {
         cache_dir: MODEL_CACHE_DIR,
       });
 
-      this.model = await AutoModelForSequenceClassification.from_pretrained(MODEL_ID, {
-        cache_dir: MODEL_CACHE_DIR,
-        dtype: MODEL_DTYPE,  // INT8 quantization
-      });
+      const sessionOpts = buildSessionOptions(`${MODEL_ID}:${MODEL_DTYPE}`, 'local-reranker');
+      this.model = await loadModelWithSessionOptions(
+        (opts) => AutoModelForSequenceClassification.from_pretrained(MODEL_ID, opts),
+        { cache_dir: MODEL_CACHE_DIR, dtype: MODEL_DTYPE },
+        sessionOpts,
+      );
 
       this.ready = true;
       this.transformersAvailable = true;
+      warnIfGraphNotMaterialized('LocalReranker', sessionOpts);
       console.log(`LocalReranker: Model loaded in ${Date.now() - startLoad}ms (gte-reranker-modernbert-base INT8)`);
     } catch (err) {
       this.transformersAvailable = false;
