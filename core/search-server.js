@@ -128,13 +128,10 @@ export async function startServer() {
   const { default: SweetSearch } = await import('./sweet-search.js');
 
   const searcher = new SweetSearch({ verbose: false });
-  console.log('[Server] Initializing indexes (one-time cost)...');
-  const initStart = Date.now();
-  await searcher.init();
-  console.log(`[Server] Indexes loaded in ${Date.now() - initStart}ms`);
-
-  // Write PID file
-  await fs.writeFile(SEARCH_SERVER_PIDFILE, process.pid.toString(), { mode: 0o644 });
+  const initStartedAt = Date.now();
+  let serverReady = false;
+  let initError = null;
+  let initTimeMs = null;
 
   // Track request count for periodic cache clearing in long-running sessions.
   let requestCount = 0;
@@ -146,6 +143,16 @@ export async function startServer() {
   // Shared request handler for both TCP and Unix socket
   const handleRequest = async (req, res) => {
     const reqUrl = req.url || '';
+
+    const componentState = {
+      graphIndex: Boolean(searcher.hasGraphIndex),
+      hnswIndex: Boolean(searcher.hasHnswIndex),
+      binaryHnswIndex: Boolean(searcher.hasBinaryHnswIndex),
+      colbertIndex: Boolean(searcher.hasColbertIndex && searcher.useColBERT),
+      translationFallback: Boolean(searcher.enableTranslationFallback),
+      embeddingService: serverReady,
+      reranker: serverReady,
+    };
 
     // Periodic cache clearing to prevent unbounded memory growth.
     requestCount++;
@@ -160,6 +167,15 @@ export async function startServer() {
     }
 
     if (req.method === 'GET' && reqUrl.startsWith('/search?')) {
+      if (!serverReady) {
+        const reason = initError?.message
+          ? `Server initialization failed: ${initError.message}`
+          : 'Server is starting, please retry';
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: reason, status: initError ? 'failed' : 'starting' }));
+        return;
+      }
+
       if (reqUrl.length > SEARCH_SERVER_MAX_URL_LENGTH) {
         res.writeHead(414, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: `Request URL too long (max ${SEARCH_SERVER_MAX_URL_LENGTH} chars)` }));
@@ -230,8 +246,20 @@ export async function startServer() {
         res.end(JSON.stringify({ error: err.message }));
       }
     } else if (req.method === 'GET' && reqUrl === '/health') {
+      const status = initError ? 'failed' : (serverReady ? 'ready' : 'starting');
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', warm: true }));
+      res.end(JSON.stringify({
+        status,
+        warm: serverReady,
+        pid: process.pid,
+        uptimeSec: Math.round(process.uptime()),
+        init: {
+          startedAt: new Date(initStartedAt).toISOString(),
+          elapsedMs: initTimeMs ?? (Date.now() - initStartedAt),
+          error: initError?.message || null,
+        },
+        components: componentState,
+      }));
     } else if (req.method === 'GET' && reqUrl === '/stop') {
       // Only allow /stop via Unix socket (OS-level access control).
       const isUnixSocket = !req.socket.remoteAddress;
@@ -310,6 +338,21 @@ export async function startServer() {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   }
 
+  console.log('[Server] Initializing indexes (one-time cost)...');
+  (async () => {
+    try {
+      await searcher.init();
+      initTimeMs = Date.now() - initStartedAt;
+      serverReady = true;
+      await fs.writeFile(SEARCH_SERVER_PIDFILE, process.pid.toString(), { mode: 0o644 });
+      console.log(`[Server] Indexes loaded in ${initTimeMs}ms`);
+    } catch (err) {
+      initError = err;
+      initTimeMs = Date.now() - initStartedAt;
+      console.error(`[Server] Initialization failed after ${initTimeMs}ms: ${err?.message || err}`);
+    }
+  })();
+
   // Alias for graceful shutdown
   const server = tcpServer;
 
@@ -384,7 +427,20 @@ export async function isServerRunning() {
     const http = await import('http');
     return new Promise((resolve) => {
       const req = http.get(`http://localhost:${SEARCH_SERVER_PORT}/health`, (res) => {
-        resolve(res.statusCode === 200);
+        let payload = '';
+        res.on('data', chunk => { payload += chunk; });
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            resolve(false);
+            return;
+          }
+          try {
+            const body = JSON.parse(payload);
+            resolve(body?.status === 'ready' || body?.warm === true);
+          } catch {
+            resolve(false);
+          }
+        });
       });
       req.on('error', () => resolve(false));
       req.setTimeout(500, () => { req.destroy(); resolve(false); });
