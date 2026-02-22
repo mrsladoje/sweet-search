@@ -10,6 +10,8 @@
 
 import { createHash } from 'crypto';
 
+let _fallbackKeyCount = 0;
+
 // =============================================================================
 // ROUTE_ALPHAS (shared constant for CC fusion)
 // =============================================================================
@@ -37,6 +39,12 @@ export function getResultKey(result) {
   if (result.id) return String(result.id);
   if (result.file && result.startLine != null) return `${result.file}:${result.startLine}`;
   if (result.name) return String(result.name);
+  if (process.env.DEBUG_CATCHES) {
+    _fallbackKeyCount++;
+    if (_fallbackKeyCount <= 5 || _fallbackKeyCount % 100 === 0) {
+      process.stderr.write(`[search-fusion] fallback hash dedup path used (${_fallbackKeyCount})\n`);
+    }
+  }
   // Fallback: deterministic hash of the full result to avoid key collisions.
   // Truncated JSON (the previous approach) could merge distinct results during fusion.
   return createHash('md5').update(JSON.stringify(result || {})).digest('hex');

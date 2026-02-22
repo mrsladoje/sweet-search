@@ -34,8 +34,8 @@ export class LRUCache {
   set(key, value) {
     if (this.cache.has(key)) this.cache.delete(key);
     if (this.cache.size >= this.maxSize) {
-      const oldest = this.cache.keys().next().value;
-      this.cache.delete(oldest);
+      const oldestEntry = this.cache.entries().next().value;
+      if (oldestEntry) this.cache.delete(oldestEntry[0]);
     }
     this.cache.set(key, value);
   }

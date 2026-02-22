@@ -11,6 +11,7 @@
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import { COLBERT_CONFIG } from './config.js';
+import { clearCache } from './embedding-cache.js';
 
 // =============================================================================
 // Server constants
@@ -20,6 +21,9 @@ export const SEARCH_SERVER_PORT = 9876;
 export const SEARCH_SERVER_SOCKET = '/tmp/sweet-search.sock';
 export const SEARCH_SERVER_SOCKET_LEGACY = '/tmp/search.sock';
 export const SEARCH_SERVER_PIDFILE = '/tmp/sweet-search-server.pid';
+export const SEARCH_SERVER_TIMEOUT_MS = 30_000;
+export const SEARCH_SERVER_MAX_URL_LENGTH = 16_384;
+export const SEARCH_SERVER_MAX_QUERY_LENGTH = 2_000;
 
 // =============================================================================
 // Server implementation
@@ -46,13 +50,13 @@ export async function startServer() {
 
   // Shared request handler for both TCP and Unix socket
   const handleRequest = async (req, res) => {
+    const reqUrl = req.url || '';
+
     // P6 FIX: Periodic cache clearing to prevent memory growth
     requestCount++;
     if (requestCount % CACHE_CLEAR_INTERVAL === 0) {
-      // Clear embedding cache if it exists
-      if (searcher.embeddingCache) {
-        searcher.embeddingCache.clear();
-      }
+      // Clear module-level embedding cache singleton
+      clearCache();
       // Force garbage collection if available (run with --expose-gc)
       if (global.gc) {
         global.gc();
@@ -60,8 +64,13 @@ export async function startServer() {
       console.log(`[Server] Cache cleared after ${requestCount} requests`);
     }
 
-    if (req.method === 'GET' && req.url.startsWith('/search?')) {
-      const url = new URL(req.url, `http://localhost:${SEARCH_SERVER_PORT}`);
+    if (req.method === 'GET' && reqUrl.startsWith('/search?')) {
+      if (reqUrl.length > SEARCH_SERVER_MAX_URL_LENGTH) {
+        res.writeHead(414, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Request URL too long (max ${SEARCH_SERVER_MAX_URL_LENGTH} chars)` }));
+        return;
+      }
+      const url = new URL(reqUrl, `http://localhost:${SEARCH_SERVER_PORT}`);
       const query = url.searchParams.get('q') || '';
       const mode = url.searchParams.get('mode') || 'auto';
       const topK = parseInt(url.searchParams.get('k') || '10', 10);
@@ -86,6 +95,11 @@ export async function startServer() {
       if (!query) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Missing query parameter ?q=' }));
+        return;
+      }
+      if (query.length > SEARCH_SERVER_MAX_QUERY_LENGTH) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Query too long (max ${SEARCH_SERVER_MAX_QUERY_LENGTH} chars)` }));
         return;
       }
 
@@ -204,10 +218,10 @@ export async function startServer() {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
       }
-    } else if (req.method === 'GET' && req.url === '/health') {
+    } else if (req.method === 'GET' && reqUrl === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', warm: true }));
-    } else if (req.method === 'GET' && req.url === '/stop') {
+    } else if (req.method === 'GET' && reqUrl === '/stop') {
       // F-06: Only allow /stop via Unix socket (OS-level access control)
       const isUnixSocket = !req.socket.remoteAddress;
       if (!isUnixSocket) {
@@ -217,8 +231,8 @@ export async function startServer() {
       }
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end('Shutting down...\n');
-      tcpServer.close();
-      unixServer.close();
+      if (tcpServer) tcpServer.close();
+      if (unixServer) unixServer.close();
       try { await fs.unlink(SEARCH_SERVER_PIDFILE); } catch (err) {
         if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
       }
@@ -237,11 +251,17 @@ export async function startServer() {
 
   // TCP server (port 9876) - backward compatible
   const tcpServer = http.createServer(handleRequest);
+  tcpServer.setTimeout(SEARCH_SERVER_TIMEOUT_MS);
+  if ('requestTimeout' in tcpServer) tcpServer.requestTimeout = SEARCH_SERVER_TIMEOUT_MS;
+  if ('headersTimeout' in tcpServer) tcpServer.headersTimeout = SEARCH_SERVER_TIMEOUT_MS + 5_000;
   tcpServer.listen(SEARCH_SERVER_PORT);
   console.log(`[Server] TCP listening on http://localhost:${SEARCH_SERVER_PORT}`);
 
   // Unix socket server (/tmp/sweet-search.sock) - 30-50% faster
   const unixServer = http.createServer(handleRequest);
+  unixServer.setTimeout(SEARCH_SERVER_TIMEOUT_MS);
+  if ('requestTimeout' in unixServer) unixServer.requestTimeout = SEARCH_SERVER_TIMEOUT_MS;
+  if ('headersTimeout' in unixServer) unixServer.headersTimeout = SEARCH_SERVER_TIMEOUT_MS + 5_000;
   try { await fs.unlink(SEARCH_SERVER_SOCKET); } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   } // Remove stale socket
