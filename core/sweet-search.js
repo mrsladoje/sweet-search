@@ -213,6 +213,7 @@ export class SweetSearch {
         stats.path = 'hybrid';
         stats.fusion = hybridResult.fusionStats?.method || 'cc';
         stats.fusionFallback = hybridResult.fusionStats?.fallbackReason || null;
+        stats.lexicalLatencyMs = hybridResult.fusionStats?.lexicalLatencyMs ?? null;
         break;
       }
     }

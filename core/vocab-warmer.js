@@ -38,7 +38,8 @@ const DEFAULT_TIME_BUDGET_MS = 2000;
 // Re-export orchestrator functions for backward compatibility
 // ---------------------------------------------------------------------------
 
-export { runFullWarmup, saveBinaryArtifact } from './vocab-warmup-orchestrator.js';
+import { runFullWarmup, saveBinaryArtifact } from './vocab-warmup-orchestrator.js';
+export { runFullWarmup, saveBinaryArtifact };
 
 // ---------------------------------------------------------------------------
 // 4a. Lexical Warmup
@@ -152,12 +153,14 @@ export async function warmLexical(terms, dbPath) {
  *
  * @param {Array<{term: string}>} hubEntities - High-PageRank entities (warm_mode "both")
  * @param {Array<{phrase: string, variants?: string[]}>} communityPhrases
- * @param {object} [options] - { hnswIndex, dimension }
+ * @param {object} [options] - { hnswIndex, dimension, provider, db }
+ * @param {string} [options.provider] - Embedding provider override (passed to generateEmbeddings)
+ * @param {import('better-sqlite3').Database} [options.db] - Pre-opened code-graph.db to reuse
  * @returns {Promise<{embeddingsGenerated: number, hnswTraversals: number, elapsedMs: number, embeddings: Map}>}
  */
 export async function warmSemantic(hubEntities, communityPhrases, options = {}) {
   const start = performance.now();
-  const { hnswIndex, dimension } = options;
+  const { hnswIndex, dimension, provider, db } = options;
   let embeddingsGenerated = 0;
   let hnswTraversals = 0;
 
@@ -167,7 +170,7 @@ export async function warmSemantic(hubEntities, communityPhrases, options = {}) 
 
   // Track A: Hub entity embeddings using enriched text format (F4)
   // Query entity metadata from code-graph.db for scope/type context
-  const entityMeta = _loadEntityMetadata(hubEntities);
+  const entityMeta = _loadEntityMetadata(hubEntities, { db });
   if (hubEntities && hubEntities.length > 0) {
     for (const ent of hubEntities) {
       const term = typeof ent === 'string' ? ent : ent.term;
@@ -215,7 +218,9 @@ export async function warmSemantic(hubEntities, communityPhrases, options = {}) 
   // Generate embeddings (provider-agnostic via embedding-service)
   let allEmbeddings;
   try {
-    allEmbeddings = await generateEmbeddings(textsToEmbed);
+    allEmbeddings = provider
+      ? await generateEmbeddings(textsToEmbed, provider)
+      : await generateEmbeddings(textsToEmbed);
     embeddingsGenerated = allEmbeddings.length;
   } catch (err) {
     return {
@@ -345,7 +350,16 @@ export async function warmFromCache(options = {}) {
       for (let i = 0; i < Math.min(count, maxHnsw); i++) {
         const offset = headerSize + i * dim * 4;
         if (offset + dim * 4 <= buf.length) {
-          const emb = new Float32Array(buf.buffer, buf.byteOffset + offset, dim);
+          // P1.4 FIX: Guard against unaligned byteOffset from Buffer pool.
+          const byteOff = buf.byteOffset + offset;
+          let emb;
+          if (byteOff % 4 === 0) {
+            emb = new Float32Array(buf.buffer, byteOff, dim);
+          } else {
+            const copy = new Uint8Array(dim * 4);
+            copy.set(buf.subarray(offset, offset + dim * 4));
+            emb = new Float32Array(copy.buffer);
+          }
           seedEmbeddings.push(Array.from(emb));
         }
       }
@@ -401,14 +415,13 @@ export async function warmFromCache(options = {}) {
  *   # Language: language
  *
  * @param {Array<{term: string}|string>} hubEntities
+ * @param {object} [options]
+ * @param {import('better-sqlite3').Database} [options.db] - Pre-opened DB to reuse (caller must close)
  * @returns {Map<string, {type: string, file_path: string, language: string|null, parentType: string|null, parentSymbol: string|null}>}
  */
-export function _loadEntityMetadata(hubEntities) {
+export function _loadEntityMetadata(hubEntities, options = {}) {
   const meta = new Map();
   if (!hubEntities || hubEntities.length === 0) return meta;
-
-  const dbPath = DB_PATHS.codeGraph;
-  if (!existsSync(dbPath)) return meta;
 
   // Collect unique term names for a single batch query.
   const terms = [];
@@ -418,9 +431,15 @@ export function _loadEntityMetadata(hubEntities) {
   }
   if (terms.length === 0) return meta;
 
-  let db;
+  // Reuse caller's DB connection if provided; otherwise open our own.
+  const externalDb = options.db || null;
+  let db = externalDb;
   try {
-    db = new Database(dbPath, { readonly: true, timeout: 5000 });
+    if (!db) {
+      const dbPath = DB_PATHS.codeGraph;
+      if (!existsSync(dbPath)) return meta;
+      db = new Database(dbPath, { readonly: true, timeout: 5000 });
+    }
 
     // Batch query: fetch all entities + parent scope in one shot.
     // Chunk into batches of 500 to stay within SQLite variable limits.
@@ -429,13 +448,36 @@ export function _loadEntityMetadata(hubEntities) {
       const batch = terms.slice(i, i + BATCH_SIZE);
       const placeholders = batch.map(() => '?').join(',');
       const rows = db.prepare(
-        `SELECT e.name, e.type, e.file_path,
-                p.name AS parent_name, p.type AS parent_type
-         FROM entities e
-         LEFT JOIN relationships r ON r.source_id = e.id AND r.type IN ('childOf','memberOf','nestedIn')
-         LEFT JOIN entities p ON p.id = r.target_id
-         WHERE e.name IN (${placeholders})
-         GROUP BY e.name`
+        `WITH ranked AS (
+           SELECT
+             e.name,
+             e.type,
+             e.file_path,
+             p.name AS parent_name,
+             p.type AS parent_type,
+             ROW_NUMBER() OVER (
+               PARTITION BY e.name
+               ORDER BY
+                 CASE r.type
+                   WHEN 'childOf' THEN 1
+                   WHEN 'memberOf' THEN 2
+                   WHEN 'nestedIn' THEN 3
+                   ELSE 4
+                 END,
+                 COALESCE(p.name, ''),
+                 COALESCE(p.type, ''),
+                 COALESCE(e.file_path, ''),
+                 e.id,
+                 COALESCE(p.id, 0)
+             ) AS rn
+           FROM entities e
+           LEFT JOIN relationships r ON r.source_id = e.id AND r.type IN ('childOf','memberOf','nestedIn')
+           LEFT JOIN entities p ON p.id = r.target_id
+           WHERE e.name IN (${placeholders})
+         )
+         SELECT name, type, file_path, parent_name, parent_type
+         FROM ranked
+         WHERE rn = 1`
       ).all(...batch);
 
       for (const row of rows) {
@@ -452,8 +494,11 @@ export function _loadEntityMetadata(hubEntities) {
   } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   } finally {
-    if (db) try { db.close(); } catch (err) {
-      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+    // Only close if we opened it ourselves
+    if (db && !externalDb) {
+      try { db.close(); } catch (err) {
+        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
+      }
     }
   }
 
@@ -463,11 +508,6 @@ export function _loadEntityMetadata(hubEntities) {
 // ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
-
-// No circular dependency: runFullWarmup is re-exported via named export
-// (line 41) and also included in the default export object here.
-// Both this module and the orchestrator import constants from vocab-constants.js.
-import { runFullWarmup } from './vocab-warmup-orchestrator.js';
 
 export default {
   warmLexical,

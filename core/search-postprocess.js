@@ -290,9 +290,14 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   const latency = stats.total_ms;
   const embeddingSource = stats.embedding?.source || null;
   const embedLatencyMs = (stats.embedding?.latency_us || 0) / 1000;
-  const lexSubLatency = telemetryMode === 'hybrid'
-    ? Math.max(0, latency - embedLatencyMs)
-    : latency;
+  // P1.3 FIX: Use direct lexical latency from hybrid fusionStats when available.
+  // The residual heuristic (total - embedding) incorrectly includes fusion/MMR overhead.
+  const directLexMs = stats.lexicalLatencyMs;
+  const lexSubLatency = (telemetryMode === 'hybrid' && directLexMs != null)
+    ? directLexMs
+    : telemetryMode === 'hybrid'
+      ? Math.max(0, latency - embedLatencyMs)
+      : latency;
   const lexHit = lexSubLatency < LEXICAL_HIT_THRESHOLD_MS;
   const semHit = embeddingSource === 'vocabulary' || embeddingSource === 'semantic-cache';
   const cacheHit = telemetryMode === 'lexical'

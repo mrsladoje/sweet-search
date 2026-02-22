@@ -482,20 +482,23 @@ function shuffleArray(arr, randomFn) {
 
 /**
  * Create deterministic RNG from a numeric seed, or fall back to Math.random.
- * Uses a simple LCG for reproducible test runs.
+ * Uses Mulberry32 — a fast 32-bit PRNG with full 2^32 period.
+ * (Credited with passing BigCrush per https://gist.github.com/tommyettinger/46a874533244883189143505d203312c)
+ *
  * @param {number | undefined} seed
- * @returns {() => number}
+ * @returns {() => number}  values in [0, 1)
  */
 function createRandomGenerator(seed) {
   if (seed == null) return Math.random;
   if (!Number.isFinite(seed)) return Math.random;
 
-  let state = (Math.trunc(seed) >>> 0);
-  // Avoid a degenerate all-zero stream for the chosen LCG parameters.
-  if (state === 0) state = 1;
+  // Mulberry32: period 2^32, no known bias patterns.
+  let state = (Math.trunc(seed) >>> 0) || 1;
 
   return () => {
-    state = (Math.imul(1664525, state) + 1013904223) >>> 0;
-    return state / 0x1_0000_0000;
+    state = (state + 0x6D2B79F5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), state | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 0x1_0000_0000;
   };
 }
