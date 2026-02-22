@@ -11,6 +11,12 @@
 import { existsSync } from 'fs';
 import { COLBERT_CONFIG } from './config.js';
 import { registerAutoPersistOnExit } from './embedding-service.js';
+import {
+  formatResults as formatSearchResults,
+  formatStructuralResults,
+  formatSummaryFirst,
+  formatMiddleRes,
+} from './search-format.js';
 
 // =============================================================================
 // CLI STYLING (ANSI truecolor w/ fallback)
@@ -374,16 +380,19 @@ Examples:
           printStyledHeader(query);
           printStyledStats(stats, true);
 
-          // Simple format for server results
-          const searcher = new SweetSearch();
+          // Use pure formatting helpers (no full SweetSearch instantiation needed).
+          // Contract note: formatResults currently only depends on `this` for
+          // structural delegation via this.formatStructuralResults(...).
+          // If search-format.js adds more `this.*` usages, revisit this context.
+          const formatContext = { formatStructuralResults };
           if (stats.path === 'structural') {
-            console.log(searcher.formatStructuralResults(results, stats));
+            console.log(formatStructuralResults(results, stats));
           } else if (summaryFirst) {
-            console.log(searcher.formatSummaryFirst(results));
+            console.log(formatSummaryFirst(results));
           } else if (middleRes) {
-            console.log(searcher.formatMiddleRes(results));
+            console.log(formatMiddleRes(results));
           } else {
-            console.log(searcher.formatResults(results, stats));
+            console.log(formatSearchResults.call(formatContext, results, stats));
           }
         }
       } catch (err) {
