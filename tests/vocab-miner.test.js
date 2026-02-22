@@ -197,6 +197,30 @@ describe('mineSymbols', () => {
     expect(termNames).toContain('UserModel');
   });
 
+  it('extracts namespace and combo import names from JS files', () => {
+    writeFileSync(path.join(tmpDir, 'src', 'imports.js'),
+      "import * as React from 'react';\n" +
+      "import lodash, { map as mapFn, filter } from 'lodash';\n");
+    const result = mineSymbols(tmpDir);
+    const termNames = result.terms.map(t => t.term);
+    expect(termNames).toContain('React');
+    expect(termNames).toContain('lodash');
+    expect(termNames).toContain('map');
+    expect(termNames).toContain('filter');
+  });
+
+  it('extracts CommonJS require names from JS files', () => {
+    writeFileSync(path.join(tmpDir, 'src', 'legacy.cjs'),
+      "const path = require('path');\n" +
+      "const { readFileSync, writeFile: wf } = require('fs');\n");
+    const result = mineSymbols(tmpDir);
+    const termNames = result.terms.map(t => t.term);
+    expect(termNames).toContain('path');
+    expect(termNames).toContain('readFileSync');
+    expect(termNames).toContain('writeFile');
+    expect(termNames).toContain('fs');
+  });
+
   it('extracts export names from JS files', () => {
     writeFileSync(path.join(tmpDir, 'src', 'service.js'),
       'export class PaymentService {}\nexport function processOrder() {}\n');

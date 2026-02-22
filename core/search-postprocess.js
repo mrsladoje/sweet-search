@@ -10,14 +10,14 @@
 
 import { SEISMIC_CONFIG, DB_PATHS } from './config.js';
 import { expandResults } from './graph-expansion.js';
+import { QualityScorer } from './quality-scorer.js';
+import { classifyIntent, getIntentPolicy } from './intent-router.js';
+import { recordQueryTelemetry } from './embedding-cache.js';
 
 // Threshold (ms) below which a lexical sub-query is considered a "cache hit"
 // for telemetry purposes. Derived empirically: FTS5 page-cache hits typically
 // complete in <2ms; 5ms gives headroom for slow I/O without inflating miss rates.
 const LEXICAL_HIT_THRESHOLD_MS = 5;
-import { QualityScorer } from './quality-scorer.js';
-import { classifyIntent, getIntentPolicy } from './intent-router.js';
-import { recordQueryTelemetry } from './embedding-cache.js';
 
 // =============================================================================
 // Post-retrieval processing
@@ -61,7 +61,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     start,
   } = searchContext;
 
-  // P0 FIX: Merge semantic stats (embedding/rerank) into main stats for CostTracker
+  // Merge semantic stats (embedding/rerank) into main stats for CostTracker.
   if (semanticStats) {
     // Validate embedding stats have required fields for cost tracking
     if (semanticStats.embedding &&
@@ -113,7 +113,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   }
 
   // =========================================================================
-  // P1.3: Graph Expansion (post-processing)
+  // Graph Expansion (post-processing)
   // =========================================================================
   if (effectiveGraphExpand !== 'none' && this.hasGraphIndex && Array.isArray(results) && results.length > 0) {
     try {
@@ -121,7 +121,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       const graphDb = this.graphSearch.db;
       if (graphDb) {
         const expandStart = Date.now();
-        // P2.2: Pass intent-derived edgeTypes to graph expansion
+        // Pass intent-derived edge types unless explicitly overridden.
         const intentEdgeTypes = intentPolicy?.edgeTypePriority
           ? new Set(intentPolicy.edgeTypePriority)
           : undefined;
@@ -202,7 +202,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   }
 
   // =========================================================================
-  // P2.3: Quality-Aware Chunk Weighting (opt-in)
+  // Quality-Aware Chunk Weighting (opt-in)
   // =========================================================================
   if (qualityWeight > 0 && Array.isArray(results) && results.length > 0) {
     const qStart = Date.now();
@@ -241,7 +241,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   }
 
   // =========================================================================
-  // P2.2: Apply intent policy — chunkTypeBoosts, maxResults, rerankerWeight
+  // Apply intent policy — chunkTypeBoosts, maxResults, rerankerWeight
   // =========================================================================
   if (intentPolicy && Array.isArray(results) && results.length > 0) {
     // (a) chunkTypeBoosts: Multiply result scores by per-chunk-type boost factors

@@ -35,7 +35,7 @@ export const ROUTE_ALPHAS = {
  * Pure function — no `this`. On prototype because callers use this.getResultKey().
  */
 export function getResultKey(result) {
-  // P0 FIX: Add null-safety for all fields to prevent undefined keys
+  // Use stable identity fields first.
   if (result.id) return String(result.id);
   if (result.file && result.startLine != null) return `${result.file}:${result.startLine}`;
   if (result.name) return String(result.name);
@@ -130,14 +130,21 @@ export function convexCombination(lexicalResults, semanticResults, routeType = '
   const lexScores = Array.from(lexicalScoreMap.values());
   const semScores = Array.from(semanticScoreMap.values());
 
-  // Min-max normalize
-  const lexMin = lexScores.length > 0 ? Math.min(...lexScores) : 0;
-  const lexMax = lexScores.length > 0 ? Math.max(...lexScores) : 1;
-  const lexRange = lexMax - lexMin || 1;
-
-  const semMin = semScores.length > 0 ? Math.min(...semScores) : 0;
-  const semMax = semScores.length > 0 ? Math.max(...semScores) : 1;
-  const semRange = semMax - semMin || 1;
+  // Reuse shared normalization helper to keep behavior consistent.
+  // Preserve historical CC behavior for uniform sets (all zeros after normalization).
+  const normalize = typeof this?.minMaxNormalize === 'function'
+    ? this.minMaxNormalize.bind(this)
+    : minMaxNormalize;
+  const lexNorm = normalize(lexScores);
+  const semNorm = normalize(semScores);
+  const lexUniform = lexScores.length > 0 && lexNorm.every(v => v === 1);
+  const semUniform = semScores.length > 0 && semNorm.every(v => v === 1);
+  const lexNormMap = new Map();
+  const semNormMap = new Map();
+  const lexKeys = Array.from(lexicalScoreMap.keys());
+  const semKeys = Array.from(semanticScoreMap.keys());
+  for (let i = 0; i < lexKeys.length; i++) lexNormMap.set(lexKeys[i], lexUniform ? 0 : (lexNorm[i] ?? 0));
+  for (let i = 0; i < semKeys.length; i++) semNormMap.set(semKeys[i], semUniform ? 0 : (semNorm[i] ?? 0));
 
   // Compute CC scores
   const ccResults = [];
@@ -149,8 +156,8 @@ export function convexCombination(lexicalResults, semanticResults, routeType = '
     const semScore = semanticScoreMap.get(key);
 
     // Normalize scores (missing results get 0)
-    const normLex = lexScore !== undefined ? (lexScore - lexMin) / lexRange : 0;
-    const normSem = semScore !== undefined ? (semScore - semMin) / semRange : 0;
+    const normLex = lexScore !== undefined ? (lexNormMap.get(key) ?? 0) : 0;
+    const normSem = semScore !== undefined ? (semNormMap.get(key) ?? 0) : 0;
 
     // Convex combination
     const ccScore = alpha * normLex + (1 - alpha) * normSem;
@@ -192,7 +199,7 @@ export function shouldFallbackToRRF(lexicalResults, semanticResults) {
   }
 
   // Case 2: Near-zero variance (degenerate range)
-  // P0 FIX: Filter out undefined/NaN scores to prevent variance errors
+  // Filter out undefined/NaN scores to keep variance robust.
   const lexScores = lexicalResults.map(r => r.score ?? 0).filter(s => !isNaN(s));
   const semScores = semanticResults.map(r => r.score ?? 0).filter(s => !isNaN(s));
 
