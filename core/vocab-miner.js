@@ -37,8 +37,13 @@ import {
 } from './vocab-miner-nl.js';
 
 // ---------------------------------------------------------------------------
-// Barrel Re-exports (preserve all previously-exported symbols)
+// Barrel Re-exports (backward compatibility layer)
 // ---------------------------------------------------------------------------
+// Prefer direct imports from leaf modules for new code:
+//   - ./vocab-miner-utils.js
+//   - ./vocab-miner-extractors.js
+//   - ./vocab-miner-nl.js
+// This barrel remains to avoid breaking existing callers.
 
 export {
   splitIdentifier, STOP_WORDS, SOURCE_EXTENSIONS,
@@ -443,7 +448,8 @@ export function mineAll(projectRoot, dbPath, communities, options = {}) {
   mergeTerms(mergedTerms, graph.terms);
   pageRankScores = graph.pageRankScores;
 
-  // F9: Load entity names from code-graph.db for secret exemption
+  // Load entity names from code-graph.db so secret detection can exempt
+  // identifiers that are known to belong to the current code graph.
   let codeGraphNames = null;
   const resolvedDbPath = dbPath || DB_PATHS.codeGraph;
   if (existsSync(resolvedDbPath)) {
@@ -484,10 +490,7 @@ export function mineAll(projectRoot, dbPath, communities, options = {}) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Default Export
-// ---------------------------------------------------------------------------
-
+// Backward compatibility for existing default-import callers.
 export default {
   mineStructural,
   mineSymbols,

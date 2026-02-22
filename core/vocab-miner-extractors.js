@@ -22,29 +22,82 @@ import { splitIdentifier, addTerm, STOP_WORDS } from './vocab-miner-utils.js';
 export function extractImports(content, ext, terms) {
   // JS/TS: import { X, Y } from 'module'; import X from 'module'
   if (['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'].includes(ext)) {
+    const addImportedName = (name) => {
+      if (!name || name.length <= 1) return;
+      addTerm(terms, name, 0.6, 'import');
+      for (const part of splitIdentifier(name)) {
+        if (part.length > 2 && !STOP_WORDS.has(part)) {
+          addTerm(terms, part, 0.4, 'import-part');
+        }
+      }
+    };
+    const addModuleTerm = (modulePath) => {
+      if (!modulePath || modulePath.startsWith('.')) return;
+      const modName = modulePath.replace(/^@[^/]+\//, '');
+      addTerm(terms, modName, 0.4, 'import-module');
+    };
+    const parseImportedList = (names, aliasSep = /\s+as\s+/, aliasPart = 'first') =>
+      names
+        .split(',')
+        .map((n) => n.trim())
+        .filter(Boolean)
+        .map((n) => {
+          const parts = n.split(aliasSep).map((p) => p.trim()).filter(Boolean);
+          if (parts.length === 0) return '';
+          return aliasPart === 'last' ? parts[parts.length - 1] : parts[0];
+        })
+        .filter(Boolean);
+
     const importRe = /import\s+(?:{([^}]+)}|(\w+))\s+from\s+['"]([^'"]+)['"]/g;
     let match;
     while ((match = importRe.exec(content))) {
       const names = match[1] || match[2];
       const modulePath = match[3];
       if (names) {
-        for (const name of names.split(',').map(n => n.trim().split(/\s+as\s+/)[0].trim())) {
-          if (name && name.length > 1) {
-            addTerm(terms, name, 0.6, 'import');
-            for (const part of splitIdentifier(name)) {
-              if (part.length > 2 && !STOP_WORDS.has(part)) {
-                addTerm(terms, part, 0.4, 'import-part');
-              }
-            }
-          }
-        }
+        for (const name of parseImportedList(names)) addImportedName(name);
       }
-      // Module name
-      if (modulePath && !modulePath.startsWith('.')) {
-        const modName = modulePath.replace(/^@[^/]+\//, '');
-        addTerm(terms, modName, 0.4, 'import-module');
-      }
+      addModuleTerm(modulePath);
     }
+
+    // Namespace imports: import * as X from 'Y'
+    const namespaceRe = /import\s+\*\s+as\s+(\w+)\s+from\s+['"]([^'"]+)['"]/g;
+    while ((match = namespaceRe.exec(content))) {
+      const name = match[1];
+      const modulePath = match[2];
+      addImportedName(name);
+      addModuleTerm(modulePath);
+    }
+
+    // Default + named combo imports: import X, { Y, Z } from 'W'
+    const comboRe = /import\s+(\w+)\s*,\s*\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]/g;
+    while ((match = comboRe.exec(content))) {
+      const defaultName = match[1];
+      const namedNames = match[2];
+      const modulePath = match[3];
+      addImportedName(defaultName);
+      for (const name of parseImportedList(namedNames)) addImportedName(name);
+      addModuleTerm(modulePath);
+    }
+
+    // CommonJS requires:
+    //   const X = require('mod')
+    //   const { A, B: C } = require('mod')
+    const requireDefaultRe = /\b(?:const|let|var)\s+(\w+)\s*=\s*require\(\s*['"]([^'"]+)['"]\s*\)/g;
+    while ((match = requireDefaultRe.exec(content))) {
+      const localName = match[1];
+      const modulePath = match[2];
+      addImportedName(localName);
+      addModuleTerm(modulePath);
+    }
+
+    const requireDestructuredRe = /\b(?:const|let|var)\s+\{([^}]+)\}\s*=\s*require\(\s*['"]([^'"]+)['"]\s*\)/g;
+    while ((match = requireDestructuredRe.exec(content))) {
+      const names = match[1];
+      const modulePath = match[2];
+      for (const name of parseImportedList(names, /\s*:\s*/)) addImportedName(name);
+      addModuleTerm(modulePath);
+    }
+
     return;
   }
 
@@ -205,13 +258,13 @@ export function extractDefinitions(content, ext, terms) {
  * @returns {void}
  */
 export function extractConstants(content, terms) {
-  // SCREAMING_SNAKE_CASE constants
-  const constRe = /\b([A-Z][A-Z0-9_]{2,})\b/g;
+  // SCREAMING_SNAKE_CASE constants (minimum 4 chars total: 1 leading + 3 more)
+  const constRe = /\b([A-Z][A-Z0-9_]{3,})\b/g;
   let match;
   while ((match = constRe.exec(content))) {
     const name = match[1];
-    // Skip common non-terms
-    if (['TODO', 'FIXME', 'NOTE', 'HACK', 'XXX', 'BUG'].includes(name)) continue;
+    // Skip common annotation tokens and generic abbreviations that add no search value
+    if (['TODO', 'FIXME', 'NOTE', 'HACK', 'XXX', 'BUG', 'WARN', 'INFO', 'DEBUG', 'ERROR', 'TRUE', 'FALSE', 'NULL', 'NONE', 'SELF', 'THIS', 'VOID', 'ENUM', 'TYPE', 'CHAR', 'BYTE', 'INT8', 'UINT'].includes(name)) continue;
     addTerm(terms, name, 0.4, 'constant');
     for (const part of splitIdentifier(name)) {
       if (part.length > 2 && !STOP_WORDS.has(part)) {
