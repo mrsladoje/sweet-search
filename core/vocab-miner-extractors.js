@@ -7,6 +7,14 @@
 
 import { splitIdentifier, addTerm, STOP_WORDS } from './vocab-miner-utils.js';
 
+const NON_TERM_CONSTANTS = new Set([
+  'TODO', 'FIXME', 'NOTE', 'HACK', 'XXX', 'BUG',
+  'WARN', 'INFO', 'DEBUG', 'ERROR',
+  'TRUE', 'FALSE', 'NULL', 'NONE',
+  'SELF', 'THIS', 'VOID', 'ENUM', 'TYPE',
+  'CHAR', 'BYTE', 'INT8', 'UINT',
+]);
+
 // ---------------------------------------------------------------------------
 // Import Extraction
 // ---------------------------------------------------------------------------
@@ -264,7 +272,7 @@ export function extractConstants(content, terms) {
   while ((match = constRe.exec(content))) {
     const name = match[1];
     // Skip common annotation tokens and generic abbreviations that add no search value
-    if (['TODO', 'FIXME', 'NOTE', 'HACK', 'XXX', 'BUG', 'WARN', 'INFO', 'DEBUG', 'ERROR', 'TRUE', 'FALSE', 'NULL', 'NONE', 'SELF', 'THIS', 'VOID', 'ENUM', 'TYPE', 'CHAR', 'BYTE', 'INT8', 'UINT'].includes(name)) continue;
+    if (NON_TERM_CONSTANTS.has(name)) continue;
     addTerm(terms, name, 0.4, 'constant');
     for (const part of splitIdentifier(name)) {
       if (part.length > 2 && !STOP_WORDS.has(part)) {

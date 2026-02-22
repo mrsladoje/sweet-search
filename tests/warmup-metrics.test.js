@@ -409,6 +409,16 @@ describe('estimateWorkingSetSize', () => {
     const result = estimateWorkingSetSize(entries, 7 * 86400000, 0, 2000);
     expect(result.wss).toBe(1);
   });
+
+  it('caps clustering input size to avoid O(n^2) blow-up', () => {
+    const now = Date.now();
+    const entries = Array.from({ length: 1500 }, (_, i) => ({
+      query: `q-${i}`,
+      timestamp: new Date(now - 1000).toISOString(),
+    }));
+    const result = estimateWorkingSetSize(entries, 7 * 86400000, 0, 2000);
+    expect(result.wss).toBeLessThanOrEqual(1000);
+  });
 });
 
 // ---------------------------------------------------------------------------
