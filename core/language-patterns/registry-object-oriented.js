@@ -55,6 +55,8 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       relationships: {
         use: /^use\s+([\w\\]+)(?:\s+as\s+(\w+))?/,
         namespace: /^namespace\s+([\w\\]+)/,
+        extends: /^(?:abstract\s+|final\s+)?(?:class|interface)\s+\w+\s+extends\s+([\w\\]+(?:\s*,\s*[\w\\]+)*)/,
+        implements: /^(?:abstract\s+|final\s+)?class\s+\w+(?:\s+extends\s+[\w\\]+)?\s+implements\s+([\w\\,\s]+)/,
         methodCall: /(\w+)\s*(?:->|::)\s*(\w+)\s*\(/,
       },
       skipCallObjects: ["$this", "self", "parent", "static", "echo", "print", "var_dump"],
@@ -86,8 +88,9 @@ export const OBJECT_ORIENTED_LANGUAGES = {
         extend: /^\s*extend\s+(\w+)/,
         prepend: /^\s*prepend\s+(\w+)/,
         inherit: /^class\s+\w+\s*<\s*(\w+)/,
+        methodCall: /(\w+)\s*\.\s*(\w+)\s*[(!]/,
       },
-      skipCallObjects: ["puts", "print", "p", "raise", "require", "attr_accessor", "attr_reader"],
+      skipCallObjects: ["puts", "print", "p", "raise", "require", "attr_accessor", "attr_reader", "attr_writer"],
     },
   },
   // ─── Kotlin ────────────────────────────────────────────────────────────────
@@ -149,7 +152,7 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       },
       relationships: {
         import: /^import\s+(\w+)/,
-        inherit: /(?:class|struct|enum)\s+\w+\s*:\s*([\w,\s]+)/,
+        inherit: /(?:class|struct|enum|extension)\s+\w+\s*:\s*([\w,\s]+)/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
       },
       skipCallObjects: ["print", "fatalError", "precondition", "assert", "String", "Int", "Double"],
@@ -210,7 +213,7 @@ export const OBJECT_ORIENTED_LANGUAGES = {
         import: /^import\s+['"]([^'"]+)['"]/,
         extends: /class\s+\w+\s+extends\s+(\w+)/,
         implements: /(?:class|mixin)\s+\w+(?:\s+extends\s+\w+)?\s+(?:with\s+[\w,\s]+\s+)?implements\s+([\w,\s]+)/,
-        with: /\bwith\s+([\w,\s]+)/,
+        with: /\bwith\s+([\w,\s]+?)(?=\s+implements|\s*\{|\s*$)/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
       },
       skipCallObjects: ["print", "debugPrint", "setState", "Navigator", "MediaQuery"],
