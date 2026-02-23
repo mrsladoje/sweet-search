@@ -130,6 +130,33 @@ export const GENERIC_RELATIONSHIP_MAPPING = Object.freeze({
 export const INTENTIONAL_DEFAULT_RELATIONSHIP_TYPES = Object.freeze([]);
 const escapeRegexLiteral = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// Types whose regex capture groups commonly contain comma-separated lists.
+// Module-scope constant to avoid per-call Set allocation.
+const MULTI_TARGET_TYPES = new Set([
+  'plainImport', 'implements', 'inherit', 'protocol', 'with',
+]);
+
+/**
+ * Split a string on commas, but only at the top level — ignoring commas
+ * inside <>, (), [], or {} brackets.
+ */
+export function splitTopLevelCommas(str) {
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (ch === '<' || ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === '>' || ch === ')' || ch === ']' || ch === '}') depth = Math.max(0, depth - 1);
+    else if (ch === ',' && depth === 0) {
+      parts.push(str.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(str.slice(start));
+  return parts;
+}
+
 // =============================================================================
 // GRAPH EXTRACTOR CLASS
 // =============================================================================
@@ -1029,13 +1056,22 @@ export class GraphExtractor {
   }
 
   expandRelationshipTargets(relType, target) {
-    if (relType !== 'plainImport' || typeof target !== 'string') {
-      return [target];
-    }
+    if (typeof target !== 'string') return [target];
+    if (!MULTI_TARGET_TYPES.has(relType)) return [target];
 
-    return target
-      .split(',')
-      .map((entry) => entry.trim().replace(/\s+as\s+\w+$/i, '').trim())
+    // Bracket-depth-aware top-level comma splitter.
+    // Naive .split(',') would break generics: Base<Foo, Bar>, IFace
+    const parts = splitTopLevelCommas(target);
+
+    return parts
+      .map((entry) => entry.trim()
+        .replace(/\s+as\s+\w+$/i, '')               // import aliases
+        .replace(/^(?:(?:public|protected|private|virtual)\s+)+/, '')  // C++ access specifiers
+        .replace(/<.*$/, '')                          // strip generics from first <: Map<K, V> → Map
+        .replace(/\([^)]*\)/g, '')                    // strip constructor args: Base(x) → Base
+        .replace(/[;{}]+$/, '')                       // strip trailing punctuation
+        .trim()
+      )
       .filter(Boolean);
   }
 
