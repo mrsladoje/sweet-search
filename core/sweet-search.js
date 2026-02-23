@@ -145,7 +145,7 @@ export class SweetSearch {
       k = 10, mode = 'auto', expand = true, rerank = true,
       fusion: fusionOpt = 'cc', useColBERT = this.useColBERT,
       translate = 'auto', graphExpand = 'none', graphExpandOptions = {},
-      adaptiveHop2 = false, intent = 'none', qualityWeight = this.qualityWeight,
+      adaptiveHop2 = true, intent = 'none', qualityWeight = this.qualityWeight,
     } = options;
 
     const start = Date.now();

@@ -48,7 +48,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     k = 10,
     translate = 'auto',
     graphExpandOptions = {},
-    adaptiveHop2 = false,
+    adaptiveHop2 = true,
     qualityWeight = this.qualityWeight,
   } = options;
 
