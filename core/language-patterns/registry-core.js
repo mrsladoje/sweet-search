@@ -255,7 +255,7 @@ export const CORE_LANGUAGES = {
       },
       relationships: {
         include: /^#include\s+[<"]([^>"]+)[>"]/,
-        inherit: /:\s*(?:public|protected|private)\s+(\w+)/,
+        inherit: /(?:class|struct)\s+\w+\s*:\s*([^{]+)/,
         methodOf: /(\w+)\s*::\s*(\w+)\s*\(/,
         methodCall: /(\w+)\s*(?:\.|->)\s*(\w+)\s*\(/,
       },
