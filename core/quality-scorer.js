@@ -12,8 +12,7 @@
  *   const scored = scorer.scoreResults(results);
  */
 
-import { existsSync } from 'fs';
-import { spawnSync } from 'child_process';
+import { existsSync, statSync } from 'fs';
 import path from 'path';
 import { DB_PATHS } from './config.js';
 
@@ -45,6 +44,9 @@ const TEST_DIRS = ['__tests__', 'tests', 'test', 'spec'];
 // Factor helpers
 // ---------------------------------------------------------------------------
 
+/** @type {Map<string, number>} filePath -> testProximity score */
+const _testProximityCache = new Map();
+
 /**
  * Test proximity: does a companion test file exist for the given source path?
  * @param {string} filePath - Source file path
@@ -52,7 +54,14 @@ const TEST_DIRS = ['__tests__', 'tests', 'test', 'spec'];
  */
 export function scoreTestProximity(filePath) {
   if (!filePath) return 0.3;
+  if (_testProximityCache.has(filePath)) return _testProximityCache.get(filePath);
 
+  const score = _computeTestProximity(filePath);
+  _testProximityCache.set(filePath, score);
+  return score;
+}
+
+function _computeTestProximity(filePath) {
   const dir = path.dirname(filePath);
   const ext = path.extname(filePath);
   const base = path.basename(filePath, ext);
@@ -145,44 +154,25 @@ export function scoreSizePreference(text) {
 const _recencyCache = new Map();
 
 /**
- * Recency: how recently was this file last modified (via git log)?
+ * Recency: how recently was this file last modified on disk?
  * Files edited today score 1.0; files untouched for a year score 0.1.
+ * Uses filesystem mtime (fast, works on any filesystem).
  * This is a FILE-level score: all chunks from the same file share it.
  *
  * @param {string} filePath - Source file path
- * @returns {number} 0.1-1.0 (0.5 neutral if git unavailable)
+ * @returns {number} 0.1-1.0 (0.5 neutral if stat fails)
  */
 export function scoreRecency(filePath) {
   if (!filePath) return 0.5;
-
   if (_recencyCache.has(filePath)) return _recencyCache.get(filePath);
 
-  let score = 0.5; // neutral default
+  let score = 0.5;
   try {
-    const result = spawnSync('git', ['log', '-1', '--format=%ct', '--', filePath], {
-      encoding: 'utf-8',
-      timeout: 5000,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
-
-    if (result.error || result.status !== 0) {
-      throw result.error || new Error(result.stderr || `git exited with status ${result.status}`);
-    }
-
-    const stdout = (result.stdout || '').trim();
-
-    if (stdout) {
-      const lastCommitEpoch = parseInt(stdout, 10);
-      if (!Number.isNaN(lastCommitEpoch)) {
-        const nowSec = Math.floor(Date.now() / 1000);
-        const daysSinceLastEdit = (nowSec - lastCommitEpoch) / 86400;
-        score = Math.max(0.1, 1.0 - daysSinceLastEdit / 365);
-      }
-    }
+    const mtimeMs = statSync(filePath).mtimeMs;
+    const daysSinceLastEdit = (Date.now() - mtimeMs) / 86_400_000;
+    score = Math.max(0.1, 1.0 - daysSinceLastEdit / 365);
   } catch {
-    // Not a git repo, file not tracked, or git not available
-    score = 0.5;
+    score = 0.5; // file not found or permission error
   }
 
   _recencyCache.set(filePath, score);
@@ -194,6 +184,13 @@ export function scoreRecency(filePath) {
  */
 export function clearRecencyCache() {
   _recencyCache.clear();
+}
+
+/**
+ * Clear the test proximity cache (useful for testing or long-running processes).
+ */
+export function clearTestProximityCache() {
+  _testProximityCache.clear();
 }
 
 // ---------------------------------------------------------------------------

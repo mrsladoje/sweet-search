@@ -1,7 +1,7 @@
 # Sweet Search TODO
 
 Tracked gaps, vulnerabilities, and future work. Items are ordered by priority
-within each section. Updated 2026-02-19 with full benchmark findings.
+within each section. Updated 2026-02-23 with completed items removed.
 
 ## Full Benchmark Baseline (2026-02-19)
 
@@ -42,7 +42,7 @@ Results: `eval/results/all_benchmarks_2026-02-19T00-17-05-442Z.json`
 | Intent Router | B+ | Yes | Yes (full pipeline) | DISABLED (was auto) |
 | Quality Scorer | C+ | Yes (6 factors) | Yes (but qualityWeight=0) | No (disabled) |
 | tags.scm (P2.4) | B- | Partial (hand-written queries) | Yes (in tree-sitter provider) | Yes (for 5 langs) |
-| 2-Hop Adaptive Expansion | B | Yes | Simple 2-hop only | No (adaptive variant unused) |
+| 2-Hop Adaptive Expansion | B+ | Yes | Yes (SOTA scoring, enabled by default) | Yes (adaptiveHop2=true) |
 
 **No P2 item has been A/B tested against a baseline.**
 
@@ -150,14 +150,12 @@ benchmarked against the eval harness.
 
 ### 1.2 Known Implementation Issues
 
-- **REMOVE `scoreRecency()` git dependency**: `git log` is called synchronously
-  (spawnSync, 5s timeout) -- blocks the search thread on large repos. Git can be
-  arbitrarily slow on networked filesystems, large monorepos, or shallow clones.
-  **Recommendation: remove the git log factor entirely.** If recency is needed,
-  use `fs.statSync().mtimeMs` instead (instant, no git dependency). Or pre-compute
-  during indexing and store in the DB.
-- `scoreTestProximity()` does uncached `fs.existsSync()` per chunk -- O(n) syscalls
-  for batch scoring. Add a per-session cache.
+- ~~**REMOVE `scoreRecency()` git dependency**~~ — DONE (2026-02-23). Replaced
+  `spawnSync('git', ['log', ...])` with `fs.statSync().mtimeMs`. Note: mtime !=
+  git commit time — on fresh clones all files score ~1.0. Acceptable tradeoff for
+  a search engine running in a dev's working tree.
+- ~~`scoreTestProximity()` uncached `fs.existsSync()`~~ — DONE (2026-02-23). Added
+  module-level `_testProximityCache` Map + `clearTestProximityCache()` export.
 - PageRank lazy-loading via `setRepoMapModule()` has a fragile circular dependency.
   If `QualityScorer` is instantiated outside `sweet-search.js`, it crashes.
 - Comment regex `/^\s*(\/\/|#(?!!)|\/\*|\*(?!\/)|\*\/)/` is fragile for
@@ -324,20 +322,16 @@ approximations, not the official `tags.scm` files shipped with grammar packages.
 
 ---
 
-## 5. 2-Hop Adaptive Graph Expansion: Adaptive Variant Unused
+## 5. 2-Hop Adaptive Graph Expansion: Remaining Work
 
-**Status**: Simple 1-hop and 2-hop expansion are live and working. The adaptive
-variant (`expandSecondHopAdaptive()` in `core/graph-expansion.js`) with priority
-scoring and token budgets is **implemented but never called**.
+**Status**: Adaptive 2-hop is **wired in and enabled by default** (2026-02-23).
+`adaptiveHop2` defaults to `true` in `sweet-search.js`. Scoring upgraded to
+PathRAG/LEGO-GraphRAG SOTA: per-edge-type `effectiveAlpha^2` decay, degree
+normalization (`1/sqrt(outDegree)`), flow-based early stopping (`FLOW_THRESHOLD`).
+Old magic constants (0.45/0.25) replaced.
 
-### 5.1 Current State
+### 5.1 Remaining Issues
 
-- `expandResults()` dispatches to `expandSecondHop()` (simple) not
-  `expandSecondHopAdaptive()` for 2-hop mode.
-- `adaptiveHop2` parameter exists in the search API but is never set to true by
-  any code path (including intent policies).
-- Score decay multipliers (0.6, 0.45, 0.25) are magic numbers with no empirical
-  justification.
 - `collectSeedIds()` fallback matching (file_path + line range overlap) is fragile --
   false positives when two entities in the same file have overlapping line ranges.
 - Performance not analyzed: querying all forward + reverse edges for 1-hop could be
@@ -350,13 +344,11 @@ scoring and token budgets is **implemented but never called**.
 
 ### 5.2 What's Missing
 
-- [ ] **Wire adaptive 2-hop into the search pipeline**: When `adaptiveHop2: true`,
-  `expandResults()` should call `expandSecondHopAdaptive()` instead of
-  `expandSecondHop()`.
+- [x] ~~**Wire adaptive 2-hop into the search pipeline**~~ — DONE (2026-02-23)
 - [ ] **Benchmark adaptive vs simple 2-hop**: Measure Recall/MRR delta on eval
-  harness. If adaptive doesn't help, remove the dead code.
-- [ ] **Justify or tune magic decay constants**: 0.6 (1-hop), 0.45 (priority 2-hop),
-  0.25 (non-priority 2-hop) need sensitivity analysis or empirical tuning.
+  harness. If adaptive doesn't help, revert.
+- [x] ~~**Justify or tune magic decay constants**~~ — DONE (2026-02-23). Replaced
+  with per-edge-type `effectiveAlpha^2` from `BASE_ALPHA + EDGE_ALPHA_BONUS[type]`.
 - [ ] **Token budget validation**: Verify that token estimates (10 tokens/line) are
   reasonable across different languages and codebases.
 - [ ] **Intent policy integration**: Consider having intent policies set
@@ -613,24 +605,22 @@ Java (deep class hierarchies in single files) and C++ (header+impl patterns).
 
 ### 10.2 Use Case: Graph Expansion Pruning (Query Time)
 
-When doing 2-hop graph expansion, we currently expand greedily with arbitrary
-score decay constants (0.6 for 1-hop, 0.45/0.25 for 2-hop). MinCut identifies
+When doing 2-hop graph expansion, we now use PathRAG-style per-edge-type alpha
+decay with degree normalization. MinCut could further improve this by identifying
 the **most important bridge edges** — if removing a single edge disconnects a
 large subgraph from the query seed, that edge (and the entity it connects to) is
 critical context that must be included.
 
-This replaces magic numbers with principled importance scoring: edges that are part
-of the minimum cut between the query seed and the rest of the graph are structurally
-important regardless of semantic similarity.
+MinCut-based edge importance would complement the current SOTA scoring (which uses
+per-edge-type alpha decay + degree normalization) with structural importance that
+is independent of edge type or weight.
 
 **Integration point**: `core/graph-expansion.js` — specifically
-`expandSecondHopAdaptive()` which already has token budgets and priority scoring but
-uses arbitrary decay constants. MinCut-based edge importance would replace or
-complement the current score decay.
+`expandSecondHopAdaptive()` which already has token budgets, per-edge-type alpha
+decay, and degree normalization. MinCut would add a structural importance signal.
 
 **Expected benefit**: More relevant 2-hop expansions, fewer irrelevant context
-entities consuming token budget. Directly addresses Section 5 (adaptive 2-hop
-magic numbers).
+entities consuming token budget.
 
 ### 10.3 Use Case: Module Boundary Detection (Index Time)
 
@@ -1049,28 +1039,26 @@ Sources:
 
 ---
 
-## 20. web-tree-sitter Version Update
+## 20. web-tree-sitter Version Update — BLOCKED
 
-**Status**: We're on `web-tree-sitter@0.25.10`, latest is `0.26.5` (one minor
-version behind). `tree-sitter-wasms@0.1.13` is latest.
+**Status**: BLOCKED. Attempted upgrade to `web-tree-sitter@0.26.5` on 2026-02-23.
+**ABI incompatible** with `tree-sitter-wasms@0.1.13` (latest available). All 12
+grammar WASM files fail to load — the compiled grammars target the 0.25.x ABI.
 
-### 20.1 Why Update
+### 20.1 What Happened
 
-- Bug fixes in grammar parsing that may affect chunking boundary detection
-- Performance improvements in WASM module loading
-- Potential new node types or query syntax features
+- Bumped `web-tree-sitter` to `^0.26.5`, ran `npm install` — installed fine.
+- `npm test -- --run` showed 12 failures in `tests/p0-gaps.test.js` — every
+  tree-sitter grammar loading test failed with ABI mismatch errors.
+- No compatible `tree-sitter-wasms` version exists for 0.26.x.
+- Reverted to `^0.25.10`.
 
-### 20.2 Action Items
+### 20.2 Unblocking
 
-- [ ] Check web-tree-sitter changelog for 0.25.10 → 0.26.5 breaking changes
-- [ ] Update `web-tree-sitter` to 0.26.5 in package.json
-- [ ] Run full test suite to verify no regressions in chunking or entity extraction
-- [ ] Verify `tree-sitter-wasms@0.1.13` is compatible with the newer runtime
-
-### 20.3 Priority
-
-**LOW** — Minor version bump, unlikely to cause issues, but worth doing as
-housekeeping.
+- [ ] Wait for `tree-sitter-wasms` to release a version compiled against
+  `web-tree-sitter@0.26.x`
+- [ ] Alternatively, compile WASM grammars ourselves using `tree-sitter-cli`
+  with the 0.26.x runtime (significant effort, 12 languages)
 
 ---
 
@@ -1136,8 +1124,8 @@ point for A/B testing. Before investing more engineering effort in any P2 item:
 1. **ColBERT enable** (Section 0) — highest expected impact, infrastructure exists
 2. **JS/TS chunking hardening** (Section 9) — directly impacts #2 most common language
 3. **Quality scorer qualityWeight** (Section 1.1) — quick to A/B test
-4. **Graph expansion 1-hop default-on** (Section 5) — moderate expected impact
-5. **MinCut graph expansion** (Section 10.2) — principled replacement for magic numbers
+4. **Graph expansion adaptive 2-hop benchmarking** (Section 5) — now enabled, needs A/B validation
+5. **MinCut graph expansion** (Section 10.2) — structural importance complement to SOTA scoring
 6. **Intent router** (Section 2) — requires CatBoost training first, defer
 7. **SEISMIC sparse** (Section 3) — requires SPLADE integration first, defer
 8. **CrossCodeEval structural routing** (Section 11) — niche but tests graph infra

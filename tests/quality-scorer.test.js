@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { spawnSync } from 'child_process';
+import { existsSync, statSync } from 'fs';
 import {
   QualityScorer,
   scoreTestProximity,
@@ -8,6 +8,7 @@ import {
   scoreSizePreference,
   scoreRecency,
   clearRecencyCache,
+  clearTestProximityCache,
   setRepoMapModule,
 } from '../core/quality-scorer.js';
 
@@ -28,18 +29,7 @@ vi.mock('fs', async (importOriginal) => {
       // Default: delegate to real check for quality-scorer.js itself (DB path)
       return actual.existsSync(p);
     }),
-  };
-});
-
-// ---------------------------------------------------------------------------
-// Mock child_process.spawnSync for recency tests
-// ---------------------------------------------------------------------------
-
-vi.mock('child_process', async (importOriginal) => {
-  const actual = await importOriginal();
-  return {
-    ...actual,
-    spawnSync: vi.fn((...args) => actual.spawnSync(...args)),
+    statSync: vi.fn((p) => actual.statSync(p)),
   };
 });
 
@@ -100,6 +90,20 @@ describe('scoreTestProximity', () => {
     expect(scoreTestProximity('')).toBe(0.3);
     expect(scoreTestProximity(null)).toBe(0.3);
     expect(scoreTestProximity(undefined)).toBe(0.3);
+  });
+
+  it('caches results (no duplicate existsSync calls for same path)', () => {
+    clearTestProximityCache();
+    vi.mocked(existsSync).mockClear();
+
+    const score1 = scoreTestProximity('/src/cache-test-file.js');
+    const callsAfterFirst = vi.mocked(existsSync).mock.calls.length;
+
+    const score2 = scoreTestProximity('/src/cache-test-file.js');
+    const callsAfterSecond = vi.mocked(existsSync).mock.calls.length;
+
+    expect(score1).toBe(score2);
+    expect(callsAfterSecond).toBe(callsAfterFirst);
   });
 });
 
@@ -221,15 +225,11 @@ describe('scoreSizePreference', () => {
 describe('scoreRecency', () => {
   beforeEach(() => {
     clearRecencyCache();
-    vi.mocked(spawnSync).mockReset();
+    vi.mocked(statSync).mockReset();
   });
 
-  it('returns 0.5 when git fails (not a repo)', () => {
-    vi.mocked(spawnSync).mockReturnValue({
-      status: 128,
-      stdout: '',
-      stderr: 'fatal: not a git repository',
-    });
+  it('returns 0.5 when stat fails (file not found)', () => {
+    vi.mocked(statSync).mockImplementation(() => { throw new Error('ENOENT: no such file'); });
     expect(scoreRecency('/some/random/file.js')).toBe(0.5);
   });
 
@@ -240,90 +240,43 @@ describe('scoreRecency', () => {
   });
 
   it('returns high score for recently modified file', () => {
-    // Simulate file modified 1 day ago
-    const oneDayAgoEpoch = Math.floor(Date.now() / 1000) - 86400;
-    vi.mocked(spawnSync).mockReturnValue({
-      status: 0,
-      stdout: `${oneDayAgoEpoch}\n`,
-      stderr: '',
-    });
+    const oneDayAgoMs = Date.now() - 86_400_000;
+    vi.mocked(statSync).mockReturnValue({ mtimeMs: oneDayAgoMs });
 
     const score = scoreRecency('/src/recent.js');
-    // 1 day / 365 = ~0.003, so score = 1.0 - 0.003 ≈ 0.997
+    // 1 day / 365 ≈ 0.003, so score ≈ 0.997
     expect(score).toBeGreaterThan(0.99);
     expect(score).toBeLessThanOrEqual(1.0);
   });
 
   it('returns low score for old file', () => {
-    // Simulate file modified 300 days ago
-    const oldEpoch = Math.floor(Date.now() / 1000) - 300 * 86400;
-    vi.mocked(spawnSync).mockReturnValue({
-      status: 0,
-      stdout: `${oldEpoch}\n`,
-      stderr: '',
-    });
+    const oldMs = Date.now() - 300 * 86_400_000;
+    vi.mocked(statSync).mockReturnValue({ mtimeMs: oldMs });
 
     const score = scoreRecency('/src/old.js');
-    // 300/365 ≈ 0.822, so score = 1.0 - 0.822 ≈ 0.178
+    // 300/365 ≈ 0.822, so score ≈ 0.178
     expect(score).toBeGreaterThanOrEqual(0.1);
     expect(score).toBeLessThan(0.3);
   });
 
   it('floors at 0.1 for very old files', () => {
-    // Simulate file modified 2 years ago
-    const veryOldEpoch = Math.floor(Date.now() / 1000) - 730 * 86400;
-    vi.mocked(spawnSync).mockReturnValue({
-      status: 0,
-      stdout: `${veryOldEpoch}\n`,
-      stderr: '',
-    });
+    const veryOldMs = Date.now() - 730 * 86_400_000;
+    vi.mocked(statSync).mockReturnValue({ mtimeMs: veryOldMs });
 
     const score = scoreRecency('/src/ancient.js');
     expect(score).toBe(0.1);
   });
 
   it('caches results per file path', () => {
-    const recentEpoch = Math.floor(Date.now() / 1000) - 86400;
-    vi.mocked(spawnSync).mockReturnValue({
-      status: 0,
-      stdout: `${recentEpoch}\n`,
-      stderr: '',
-    });
+    const recentMs = Date.now() - 86_400_000;
+    vi.mocked(statSync).mockReturnValue({ mtimeMs: recentMs });
 
     const score1 = scoreRecency('/src/cached-file.js');
     const score2 = scoreRecency('/src/cached-file.js');
 
     expect(score1).toBe(score2);
-    // spawnSync should only be called once due to caching
-    expect(spawnSync).toHaveBeenCalledTimes(1);
-  });
-
-  it('returns 0.5 when git returns empty output (untracked file)', () => {
-    vi.mocked(spawnSync).mockReturnValue({
-      status: 0,
-      stdout: '   \n',
-      stderr: '',
-    });
-
-    const score = scoreRecency('/src/untracked.js');
-    expect(score).toBe(0.5);
-  });
-
-  it('passes file path as argv to prevent shell injection', () => {
-    vi.mocked(spawnSync).mockReturnValue({
-      status: 0,
-      stdout: '0\n',
-      stderr: '',
-    });
-
-    const filePath = '"; touch /tmp/should-not-run; #';
-    scoreRecency(filePath);
-
-    expect(spawnSync).toHaveBeenCalledTimes(1);
-    const [cmd, args, options] = vi.mocked(spawnSync).mock.calls[0];
-    expect(cmd).toBe('git');
-    expect(args).toEqual(['log', '-1', '--format=%ct', '--', filePath]);
-    expect(options?.shell).not.toBe(true);
+    // statSync should only be called once due to caching
+    expect(statSync).toHaveBeenCalledTimes(1);
   });
 });
 

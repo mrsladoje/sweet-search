@@ -13,11 +13,11 @@ import { expandResults, applyTokenBudget, rerankExpanded } from '../core/graph-e
  *                  D --uses------> K (weight=1.0, non-priority)
  *   A --uses-----> G
  *
- * Edge priority ranking (extends=4, implements=4, imports=3, calls=2, uses=1):
- *   J: implements * 3.0 = 12 (highest)
- *   C: extends * 2.0 = 8
- *   H: calls * 1.0 = 2
- *   K: uses * 1.0 = 1 (lowest)
+ * Adaptive scoring: (effectiveAlpha^2 * weight * EDGE_PRIORITY) / sqrt(outDegree)
+ *   J: (0.80^2 * 3.0 * 4) / sqrt(2) ≈ 5.43 (highest)
+ *   C: (0.80^2 * 2.0 * 4) / sqrt(4) ≈ 2.56
+ *   H: (0.60^2 * 1.0 * 2) / sqrt(4) ≈ 0.36
+ *   K: (0.55^2 * 1.0 * 1) / sqrt(2) ≈ 0.21 (lowest)
  */
 function createAdaptiveTestDb() {
   const db = new Database(':memory:');
@@ -69,13 +69,13 @@ function createAdaptiveTestDb() {
   insertRel.run('a', 'g', 'SharedG', 'uses', 1.0);
 
   // 2-hop edges from B
-  insertRel.run('b', 'c', 'BaseC', 'extends', 2.0);      // priority, score=4*2=8, 200 tokens
-  insertRel.run('b', 'h', 'UtilH', 'calls', 1.0);        // non-priority, score=2*1=2, 500 tokens
+  insertRel.run('b', 'c', 'BaseC', 'extends', 2.0);      // score ≈ 2.56, 200 tokens
+  insertRel.run('b', 'h', 'UtilH', 'calls', 1.0);        // score ≈ 0.36, 500 tokens
   insertRel.run('b', 'g', 'SharedG', 'calls', 1.0);       // dedup: G already in 1-hop
 
   // 2-hop edges from D
-  insertRel.run('d', 'j', 'InterfaceJ', 'implements', 3.0); // priority, score=4*3=12, 150 tokens
-  insertRel.run('d', 'k', 'HelperK', 'uses', 1.0);          // non-priority, score=1*1=1, 400 tokens
+  insertRel.run('d', 'j', 'InterfaceJ', 'implements', 3.0); // score ≈ 5.43, 150 tokens
+  insertRel.run('d', 'k', 'HelperK', 'uses', 1.0);          // score ≈ 0.21, 400 tokens
 
   // Edge to stale entity (should be excluded by JOIN filter)
   insertRel.run('b', 'stale1', 'Stale', 'imports', 1.0);
@@ -126,7 +126,7 @@ describe('adaptive graph expansion', () => {
 
       const hop2Items = expanded.filter(r => r.expansion?.hops === 2);
       expect(hop2Items.length).toBe(1);
-      expect(hop2Items[0].id).toBe('j'); // highest score: implements*3.0 = 12
+      expect(hop2Items[0].id).toBe('j'); // highest score ≈ 5.43
     });
   });
 
@@ -145,8 +145,8 @@ describe('adaptive graph expansion', () => {
       // All 4 candidates should be included with large budget
       expect(hop2Items.length).toBe(4);
 
-      // Priority edges (extends/implements) get higher scores via decay=0.45
-      // Non-priority edges (calls/uses) get lower scores via decay=0.25
+      // Priority edges (extends/implements) get higher effectiveAlpha (0.80) and thus higher decay
+      // Non-priority edges (calls/uses) get lower effectiveAlpha (0.55-0.60) and thus lower decay
       const j = hop2Items.find(r => r.id === 'j'); // implements (priority)
       const c = hop2Items.find(r => r.id === 'c'); // extends (priority)
       const h = hop2Items.find(r => r.id === 'h'); // calls (non-priority)
@@ -171,8 +171,8 @@ describe('adaptive graph expansion', () => {
       });
 
       const hop2Items = expanded.filter(r => r.expansion?.hops === 2);
-      // J: implements*3.0 → adaptiveScore=12, C: extends*2.0 → adaptiveScore=8
-      // Both priority edges with same decay, but J has higher composite score stored in expansion
+      // J (implements, alpha=0.80): score = 0.64*3*4/sqrt(deg) > C (extends, alpha=0.80): score = 0.64*2*4/sqrt(deg)
+      // J has higher composite score because of higher edge weight
       const j = hop2Items.find(r => r.id === 'j');
       const c = hop2Items.find(r => r.id === 'c');
       expect(j.expansion.adaptiveScore).toBeGreaterThan(c.expansion.adaptiveScore);
@@ -180,7 +180,7 @@ describe('adaptive graph expansion', () => {
   });
 
   describe('score decay modulation', () => {
-    it('priority edges get 0.45 decay, non-priority get 0.25', () => {
+    it('uses effectiveAlpha^2 decay with degree normalization', () => {
       const results = [{ id: 'a', score: 10, file: 'src/a.js', start_line: 1, end_line: 50 }];
       const expanded = expandResults(db, results, {
         expandMode: '2hop',
@@ -190,17 +190,72 @@ describe('adaptive graph expansion', () => {
         maxExpanded: 20,
       });
 
-      // J is a priority edge (implements) → decay=0.45, then reranked with interface boost (1.3x)
-      // score = 10 * 0.45 * 1.3 = 5.85
+      // J: implements, effectiveAlpha = 0.80, decay = 0.64, interface boost (1.3x)
+      // score = 10 * 0.64 * 1.3 = 8.32
       const j = expanded.find(r => r.id === 'j');
       expect(j).toBeDefined();
-      expect(j.score).toBeCloseTo(10 * 0.45 * 1.3);
+      expect(j.score).toBeCloseTo(10 * 0.64 * 1.3);
 
-      // H is non-priority (calls) → decay=0.25, H is a class (1.3x type boost)
-      // score = 10 * 0.25 * 1.3 = 3.25
+      // H: calls, effectiveAlpha = 0.60, decay = 0.36, class boost (1.3x)
+      // score = 10 * 0.36 * 1.3 = 4.68
       const h = expanded.find(r => r.id === 'h');
       expect(h).toBeDefined();
-      expect(h.score).toBeCloseTo(10 * 0.25 * 1.3);
+      expect(h.score).toBeCloseTo(10 * 0.36 * 1.3);
+    });
+
+    it('stores sourceOutDegree in expansion metadata', () => {
+      const results = [{ id: 'a', score: 10, file: 'src/a.js', start_line: 1, end_line: 50 }];
+      const expanded = expandResults(db, results, {
+        expandMode: '2hop',
+        adaptiveHop2: true,
+        hop2TokenBudget: 100000,
+        tokenBudget: 100000,
+        maxExpanded: 20,
+      });
+
+      // J comes from D (2 outgoing edges), H comes from B (4 outgoing edges)
+      const j = expanded.find(r => r.id === 'j');
+      expect(j.expansion.sourceOutDegree).toBe(2);
+
+      const h = expanded.find(r => r.id === 'h');
+      expect(h.expansion.sourceOutDegree).toBe(4);
+    });
+
+    it('skips candidates below flow threshold', () => {
+      const ftDb = new Database(':memory:');
+      ftDb.exec(`
+        CREATE TABLE entities (id TEXT PRIMARY KEY, file_path TEXT, type TEXT, name TEXT, signature TEXT, start_line INTEGER, end_line INTEGER, stale_since INTEGER);
+        CREATE TABLE relationships (source_id TEXT, target_id TEXT, target_name TEXT, type TEXT, weight REAL);
+      `);
+
+      const ie = ftDb.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+      const ir = ftDb.prepare('INSERT INTO relationships VALUES (?, ?, ?, ?, ?)');
+
+      ie.run('seed', 'src/seed.js', 'class', 'Seed', 'class Seed', 1, 10, null);
+      ie.run('hop1', 'src/hop1.js', 'class', 'Hop1', 'class Hop1', 1, 10, null);
+      ie.run('good', 'src/good.js', 'class', 'Good', 'class Good', 1, 10, null);
+      ie.run('weak', 'src/weak.js', 'class', 'Weak', 'class Weak', 1, 10, null);
+
+      ir.run('seed', 'hop1', 'Hop1', 'imports', 1.0);
+      // Strong edge: score = (0.80^2 * 2.0 * 4) / sqrt(2) ≈ 3.62 >> 0.05
+      ir.run('hop1', 'good', 'Good', 'extends', 2.0);
+      // Very weak edge: score = (0.55^2 * 0.001 * 1) / sqrt(2) ≈ 0.0002 < 0.05 threshold
+      ir.run('hop1', 'weak', 'Weak', 'uses', 0.001);
+
+      const results = [{ id: 'seed', score: 10, file: 'src/seed.js', start_line: 1, end_line: 10 }];
+      const expanded = expandResults(ftDb, results, {
+        expandMode: '2hop',
+        adaptiveHop2: true,
+        hop2TokenBudget: 100000,
+        tokenBudget: 100000,
+        maxExpanded: 20,
+      });
+
+      const ids = expanded.map(r => r.id);
+      expect(ids).toContain('good');
+      expect(ids).not.toContain('weak');
+
+      ftDb.close();
     });
 
     it('1-hop results still use HOP_DECAY (0.6)', () => {

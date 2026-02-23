@@ -25,6 +25,17 @@ const EDGE_PRIORITY = {
   uses: 1,
 };
 
+// PathRAG/LEGO-GraphRAG SOTA scoring constants for adaptive 2-hop
+const BASE_ALPHA = 0.55;
+const EDGE_ALPHA_BONUS = {
+  extends: 0.25,     // effective alpha = 0.80
+  implements: 0.25,  // effective alpha = 0.80
+  imports: 0.10,     // effective alpha = 0.65
+  calls: 0.05,       // effective alpha = 0.60
+  uses: 0.00,        // effective alpha = 0.55
+};
+const FLOW_THRESHOLD = 0.05;
+
 /**
  * Expand search results using the entity relationship graph.
  *
@@ -45,7 +56,6 @@ export function expandResults(db, results, options = {}) {
     edgeTypes = DEFAULT_EDGE_TYPES,
     adaptiveHop2 = false,
     hop2TokenBudget = 4000,
-    priorityEdges = ['extends', 'implements'],
     expandedBudget,
   } = options;
 
@@ -64,7 +74,6 @@ export function expandResults(db, results, options = {}) {
       expandSecondHopAdaptive(db, seedIds, expanded, edgeTypes, {
         maxHop2: maxExpanded,
         tokenBudget: hop2TokenBudget,
-        priorityEdges,
       });
     } else {
       expandSecondHop(db, seedIds, expanded, edgeTypes);
@@ -226,8 +235,8 @@ function expandSecondHop(db, seedIds, expanded, edgeTypes) {
 }
 
 /**
- * Perform adaptive 2nd-hop expansion with priority-based edge ranking,
- * token budget tracking, and score decay modulation.
+ * Perform adaptive 2nd-hop expansion with per-edge-type alpha decay,
+ * degree normalization, and flow-based early stopping (PathRAG-style).
  *
  * @param {import('better-sqlite3').Database} db
  * @param {Set<string>} seedIds - Original seed entity IDs
@@ -236,23 +245,39 @@ function expandSecondHop(db, seedIds, expanded, edgeTypes) {
  * @param {Object} options
  * @param {number} options.maxHop2 - Max 2-hop entities to add
  * @param {number} options.tokenBudget - Token budget for 2-hop expansion
- * @param {string[]} options.priorityEdges - Edge types to prioritize
  * @returns {{ added: number, budgetUsed: number, candidates: number }}
  */
 function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, options = {}) {
-  const { maxHop2 = 5, tokenBudget = 4000, priorityEdges = ['extends', 'implements'] } = options;
+  const { maxHop2 = 5, tokenBudget = 4000 } = options;
 
   const hop1Ids = [...hop1Expanded.keys()];
   if (hop1Ids.length === 0) return { added: 0, budgetUsed: 0, candidates: 0 };
 
   const ph = hop1Ids.map(() => '?').join(',');
-  const prioritySet = new Set(priorityEdges);
 
-  // Query candidate 2-hop targets with weights and line ranges
+  // Query out-degrees for hop-1 nodes, filtered to active edge types only.
+  // Counting all edge types would over-penalize nodes with many irrelevant edges.
+  // Safety: edgeTypes is always code-controlled (DEFAULT_EDGE_TYPES or intent policy
+  // constants). Not parameterized because better-sqlite3 doesn't support mixing
+  // positional params across two IN clauses cleanly. Never pass user input here.
+  const typeList = [...edgeTypes].map(t => `'${t}'`).join(',');
+  let degreeMap;
+  try {
+    const degRows = db.prepare(`
+      SELECT source_id, COUNT(*) as deg FROM relationships
+      WHERE source_id IN (${ph}) AND type IN (${typeList})
+      GROUP BY source_id
+    `).all(...hop1Ids);
+    degreeMap = new Map(degRows.map(r => [r.source_id, r.deg]));
+  } catch {
+    degreeMap = new Map();
+  }
+
+  // Query candidate 2-hop targets with source, weights, and line ranges
   let rawCandidates;
   try {
     rawCandidates = db.prepare(`
-      SELECT r.target_id, r.type, r.weight, e.start_line, e.end_line
+      SELECT r.source_id, r.target_id, r.type, r.weight, e.start_line, e.end_line
       FROM relationships r
       JOIN entities e ON e.id = r.target_id AND e.stale_since IS NULL
       WHERE r.source_id IN (${ph}) AND r.target_id IS NOT NULL
@@ -261,29 +286,42 @@ function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, options =
     return { added: 0, budgetUsed: 0, candidates: 0 };
   }
 
-  // Filter by edge types, dedup against seeds + 1-hop + within candidates
-  const seen = new Set([...seedIds, ...hop1Expanded.keys()]);
-  const scored = [];
+  // Filter by edge types, score all paths, keep the best per target.
+  // Multiple hop-1 sources may reach the same target — we want the highest score.
+  const excluded = new Set([...seedIds, ...hop1Expanded.keys()]);
+  const bestByTarget = new Map(); // target_id -> best scored entry
 
   for (const c of rawCandidates) {
-    if (!edgeTypes.has(c.type) || seen.has(c.target_id)) continue;
-    seen.add(c.target_id);
+    if (!edgeTypes.has(c.type) || excluded.has(c.target_id)) continue;
 
-    const priority = EDGE_PRIORITY[c.type] || 1;
+    const effectiveAlpha = BASE_ALPHA + (EDGE_ALPHA_BONUS[c.type] || 0);
+    const edgePriority = EDGE_PRIORITY[c.type] || 1;
     const weight = c.weight || 1.0;
-    const score = priority * weight;
+    const outDegree = degreeMap.get(c.source_id) || 1;
+    const score = (effectiveAlpha * effectiveAlpha * weight * edgePriority) / Math.sqrt(outDegree);
+
+    // PathRAG-style early stopping
+    if (score < FLOW_THRESHOLD) continue;
+
+    const prev = bestByTarget.get(c.target_id);
+    if (prev && prev.score >= score) continue;
+
     const startLine = c.start_line || 0;
     const endLine = c.end_line || startLine;
     const estimatedTokens = Math.max(1, (endLine - startLine + 1)) * 10;
 
-    scored.push({
+    bestByTarget.set(c.target_id, {
       target_id: c.target_id,
+      source_id: c.source_id,
       type: c.type,
       score,
       estimatedTokens,
-      isPriority: prioritySet.has(c.type),
+      effectiveAlpha,
+      outDegree,
     });
   }
+
+  const scored = [...bestByTarget.values()];
 
   // Sort by composite score descending
   scored.sort((a, b) => b.score - a.score);
@@ -296,7 +334,7 @@ function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, options =
     if (count >= maxHop2) break;
     if (budgetUsed + s.estimatedTokens > tokenBudget && count > 0) break;
 
-    const decay = s.isPriority ? 0.45 : 0.25;
+    const decay = s.effectiveAlpha * s.effectiveAlpha;
 
     hop1Expanded.set(s.target_id, {
       via: s.type,
@@ -304,6 +342,7 @@ function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, options =
       hops: 2,
       adaptiveScore: s.score,
       decay,
+      sourceOutDegree: s.outDegree,
     });
 
     budgetUsed += s.estimatedTokens;
