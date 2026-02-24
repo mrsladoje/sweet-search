@@ -13,6 +13,7 @@ Datasets:
   6. GenCodeSearchNet - Generalization testing (6 languages)
   7. CrossCodeEval   - Cross-file retrieval (4 languages)
   8. CLARC           - C/C++ code retrieval
+  9. M2CRB           - Multilingual NL→code (ES/PT/DE/FR × Python/Java/JS)
 
 Output: eval/data/{dataset_name}/{corpus,queries}.jsonl
 
@@ -35,6 +36,7 @@ DATASETS = {
     "gencodesearchnet": "GenCodeSearchNet (generalization, 6 langs)",
     "crosscodeeval":    "CrossCodeEval (cross-file, 4 langs)",
     "clarc":            "CLARC (C/C++ retrieval)",
+    "m2crb":            "M2CRB (multilingual NL→code, ES/PT/DE/FR × Py/Java/JS)",
 }
 
 # --- Helpers ---------------------------------------------------------------
@@ -593,12 +595,81 @@ def download_clarc(max_per_lang=1000):
     print(f"    Total: {len(entries)}"); return len(entries)
 
 
+# --- 9. M2CRB ---------------------------------------------------------------
+
+# Language code mapping for M2CRB
+_M2CRB_LANG_MAP = {"python": "python", "java": "java", "javascript": "javascript"}
+
+def download_m2crb(max_per_lang=1000):
+    """Download M2CRB: multilingual NL→code (ES/PT/DE/FR × Python/Java/JS)."""
+    out_dir = DATA_DIR / "m2crb"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cached = _cached(out_dir)
+    if cached:
+        print(f"    Cached: {cached}"); return cached
+
+    try:
+        load_ds = _hf_load()
+    except Exception as e:
+        print(f"    Failed: {e}"); return 0
+
+    ds = _try_hf(["blindsubmissions/M2CRB"], load_ds)
+    if ds is None:
+        print("    Not found on HuggingFace"); return 0
+
+    entries, seen = [], set()
+    # M2CRB may have train/test splits or just 'train'
+    for split_name in ds:
+        print(f"    {split_name}...", end=" ")
+        ct = 0
+        lang_counts = {}
+        for row in ds[split_name]:
+            prog_lang = str(row.get("language", "")).lower().strip()
+            if prog_lang not in _M2CRB_LANG_MAP:
+                continue
+            lang = _M2CRB_LANG_MAP[prog_lang]
+
+            # Per-language cap
+            lang_counts.setdefault(lang, 0)
+            if max_per_lang and lang_counts[lang] >= max_per_lang:
+                continue
+
+            code = row.get("function", "")
+            query = row.get("docstring", "") or row.get("docstring_summary", "")
+            ident = row.get("identifier", "")
+            doc_lang = str(row.get("docstring_language", "")).lower().strip()
+            if not code or not query:
+                continue
+
+            doc_id = f"m2crb/{lang}/{ident}" if ident else f"m2crb/{lang}/{ct}"
+            if doc_id in seen:
+                continue
+            seen.add(doc_id)
+
+            entries.append({
+                "query": _q(query),
+                "doc_id": doc_id,
+                "code": code,
+                "language": lang,
+                "func_name": ident,
+                "path": f"{doc_lang}/{lang}/{ident}",
+                "repo": f"m2crb-{doc_lang}",
+            })
+            lang_counts[lang] = lang_counts.get(lang, 0) + 1
+            ct += 1
+        print(f"{ct}")
+
+    if entries:
+        _write_output(out_dir, entries, "M2")
+    print(f"    Total: {len(entries)}"); return len(entries)
+
+
 # --- Main -------------------------------------------------------------------
 
 _DOWNLOADERS = [
     ("codesearchnet", "CodeSearchNet"), ("cosqa", "CosQA"), ("advtest", "AdvTest"),
     ("coir", "COIR"), ("coquir", "CoQuIR"), ("gencodesearchnet", "GenCodeSearchNet"),
-    ("crosscodeeval", "CrossCodeEval"), ("clarc", "CLARC"),
+    ("crosscodeeval", "CrossCodeEval"), ("clarc", "CLARC"), ("m2crb", "M2CRB"),
 ]
 
 _DISPATCH = {
@@ -610,6 +681,7 @@ _DISPATCH = {
     "gencodesearchnet": lambda m: download_gencodesearchnet(max_per_lang=m),
     "crosscodeeval": lambda m: download_crosscodeeval(max_per_lang=m),
     "clarc":         lambda m: download_clarc(max_per_lang=m),
+    "m2crb":         lambda m: download_m2crb(max_per_lang=m),
 }
 
 
