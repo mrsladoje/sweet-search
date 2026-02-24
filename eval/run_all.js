@@ -34,6 +34,7 @@ import './benchmarks/coquir.js';
 import './benchmarks/gencodesearchnet.js';
 import './benchmarks/crosscodeeval.js';
 import './benchmarks/clarc.js';
+import './benchmarks/m2crb.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
