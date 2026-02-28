@@ -150,12 +150,6 @@ benchmarked against the eval harness.
 
 ### 1.2 Known Implementation Issues
 
-- ~~**REMOVE `scoreRecency()` git dependency**~~ — DONE (2026-02-23). Replaced
-  `spawnSync('git', ['log', ...])` with `fs.statSync().mtimeMs`. Note: mtime !=
-  git commit time — on fresh clones all files score ~1.0. Acceptable tradeoff for
-  a search engine running in a dev's working tree.
-- ~~`scoreTestProximity()` uncached `fs.existsSync()`~~ — DONE (2026-02-23). Added
-  module-level `_testProximityCache` Map + `clearTestProximityCache()` export.
 - PageRank lazy-loading via `setRepoMapModule()` has a fragile circular dependency.
   If `QualityScorer` is instantiated outside `sweet-search.js`, it crashes.
 - Comment regex `/^\s*(\/\/|#(?!!)|\/\*|\*(?!\/)|\*\/)/` is fragile for
@@ -320,6 +314,60 @@ approximations, not the official `tags.scm` files shipped with grammar packages.
 - [ ] **Dedicated P2.4 test coverage** -- no test file specifically validates
   tags.scm queries against real grammar outputs.
 
+### 4.3 Entity Extraction → Embedding Quality Causality Chain
+
+The connection between missing TAGS_QUERIES languages and benchmark MRR scores is
+not obvious from the code structure. This section makes the mechanism explicit.
+
+**The causal chain for Java (and any language absent from TAGS_QUERIES):**
+
+```
+extractSymbols() returns null for Java              (tree-sitter-provider.js:214)
+        ↓
+graph-extractor.js falls through to extractJava()  (regex-based fallback)
+        ↓
+Entity metadata is lower quality:
+  - Cannot determine scope chain: sees handleLogin() but not that it's inside
+    AuthController, not BaseController or an anonymous inner class
+  - Misses annotations on the preceding line (@Override, @Deprecated, @RequestMapping)
+    that change the entity's semantic meaning
+  - Fails on multi-line declarations: return type, name, and throws clause can
+    span 3+ lines with formatters; regex gets the name wrong or misses the entity
+  - Generic type parameters confuse name extraction: Map<String, List<T>> parsed
+    as "Map" with garbage suffix
+        ↓
+enrichEmbeddingText() receives incomplete or wrong parent/scope info
+        ↓
+Embedding text becomes:
+  "# path\n# Scope: ?\n# Language: java"           ← regex fallback result
+instead of:
+  "# path\n# Scope: AuthController > handleLogin\n# Language: java"  ← tree-sitter
+        ↓
+CodeRankEmbed produces a less precise vector — it cannot distinguish
+AuthController.handleLogin() from BaseController.handleLogin()
+        ↓
+HNSW nearest-neighbor search returns wrong candidates → lower MRR
+```
+
+**Why tree-sitter extraction is structurally superior to regex:**
+Tree-sitter gives you the entity's full structural context from the parsed AST. The
+surrounding `class_declaration` node tells you exactly which class a method belongs
+to — this is already in the parse tree, not inferred from line patterns. Regex cannot
+reliably recover scope from line-by-line scanning without re-implementing a full
+language parser, which is exactly what tree-sitter is.
+
+**The benchmark evidence:** Java CSN 34.8% vs GenCSN 79.0% — a 44-point gap. The gap
+is mostly CodeSearchNet's garbage queries, but the embedding precision deficit is real
+and shows up on legitimate Java queries where the wrong overloaded method or wrong
+inner class variant is retrieved at rank 1.
+
+**Priority implication:** Adding Java (and the other 6 missing languages) to
+TAGS_QUERIES is not a completeness checkbox — it is a direct embedding quality fix
+with measurable MRR impact. The entity extraction quality directly determines what
+`enrichEmbeddingText()` can produce, which directly determines what the embedding
+model encodes. This is Section 4's highest-priority action item. See Section 7 for
+benchmark evidence and Section 4.2 for the specific action items.
+
 ---
 
 ## 5. 2-Hop Adaptive Graph Expansion: Remaining Work
@@ -344,15 +392,17 @@ Old magic constants (0.45/0.25) replaced.
 
 ### 5.2 What's Missing
 
-- [x] ~~**Wire adaptive 2-hop into the search pipeline**~~ — DONE (2026-02-23)
 - [ ] **Benchmark adaptive vs simple 2-hop**: Measure Recall/MRR delta on eval
   harness. If adaptive doesn't help, revert.
-- [x] ~~**Justify or tune magic decay constants**~~ — DONE (2026-02-23). Replaced
-  with per-edge-type `effectiveAlpha^2` from `BASE_ALPHA + EDGE_ALPHA_BONUS[type]`.
 - [ ] **Token budget validation**: Verify that token estimates (10 tokens/line) are
   reasonable across different languages and codebases.
 - [ ] **Intent policy integration**: Consider having intent policies set
   `adaptiveHop2: true` for appropriate intents (e.g., refactor, bug_fix).
+- [ ] **Turn on graph expansion by default**: `graphExpand` defaults to `'none'`
+  in `sweet-search.js:147`. Change to `'2hop'` (with `adaptiveHop2: true`) so
+  every query benefits from graph enrichment without explicit configuration. Gate
+  on: (a) adaptive vs simple A/B test showing adaptive wins, and (b) regression
+  test confirming expansion doesn't degrade queries with no relevant graph context.
 
 ---
 
@@ -1107,14 +1157,391 @@ will also type vague or incomplete queries:
 
 ---
 
+## 22. Token Estimation: Replace 10 Tokens/Line Heuristic
+
+**Status**: Not started. `applyTokenBudget` in `core/graph-expansion.js` estimates
+token cost as `(endLine - startLine + 1) * 10`. This is systematically wrong across
+languages: Java averages ~15 tokens/line, Python ~8, Go ~12. In a mixed-language
+codebase this causes incorrect budget cutoffs and corrupts density-based allocation
+(Section 25) if that is added later.
+
+### 22.1 Options
+
+| Approach | Latency added | Accuracy | Notes |
+|----------|---------------|----------|-------|
+| Current: `lines × 10` | 0ms | ±50% | Systematically wrong for Java |
+| Language-specific multipliers | 0ms | ±20% | Java×1.5, Python×0.8, etc. |
+| Fetch chunk text + BPE count | +2ms | ±5% | SQLite lookup per result |
+
+Language-specific multipliers are the right first step: zero latency, no I/O, and
+capture the main source of error. Per-language rough averages from CodeSearchNet:
+Java ~15, Go ~12, PHP ~11, JS ~10, Ruby ~9, Python ~8.
+
+### 22.2 Action Items
+
+- [ ] **Add language-specific multipliers** to `applyTokenBudget`: look up file
+  extension for each result and apply the appropriate factor. Zero latency cost.
+- [ ] **Prerequisite for Section 25** (knapsack allocation): fix token counts before
+  implementing density sorting — sorting by `score / inaccurateTokens` is worse than
+  sorting by score alone.
+- [ ] Measure impact after fix: re-run CodeSearchNet and compare budget utilization
+  stats (tokens spent on originals vs hop-1 vs hop-2).
+
+### 22.3 Priority
+
+**LOW-MEDIUM** — blocking prerequisite for Section 25. On its own, only meaningfully
+affects mixed-language repos. Low effort; implement before knapsack work.
+
+---
+
+## 23. Path-Level Scoring for 2-Hop Graph Expansion
+
+**Status**: Not implemented. `expandSecondHopAdaptive` in `core/graph-expansion.js`
+scores each hop-2 entity using only the hop-2 edge type. The hop-1 entity's relevance
+(how strongly it connects to the original seed) is not propagated.
+
+### 23.1 The Problem
+
+A hop-2 entity reached via:
+- `seed → (extends, hop1_score=0.8) → hop1 → (extends) → hop2`
+scores identically to:
+- `seed → (uses, hop1_score=0.2) → hop1 → (extends) → hop2`
+
+Both use the same `effectiveAlpha^2` for the hop-2 edge type. The first path is
+far stronger evidence but the signal is lost.
+
+### 23.2 Fix
+
+Pass hop-1 scores into `expandSecondHopAdaptive` and include them in the formula:
+
+```
+path_score = hop1_score × effectiveAlpha(hop2_edge_type) × weight / sqrt(outDegree)
+```
+
+`expandOneHop` currently returns `Map<entityId, {via, direction}>` — extend it to
+also carry the hop-1 entity's score.
+
+### 23.3 Expected Impact
+
+**Medium-low**. Current per-edge-type alpha already captures most of the signal.
+The missing piece matters most when hop-1 entities have widely varying relevance,
+which is only common when original search results are themselves mixed in quality.
+**Zero latency addition** — pure data plumbing, no new computation.
+
+### 23.4 Action Items
+
+- [ ] Modify `expandOneHop` to return `Map<entityId, {score, via, direction}>`
+- [ ] Pass hop-1 scores into `expandSecondHopAdaptive` and use in path formula
+- [ ] Add tests for score propagation through hop-1 → hop-2
+- [ ] Benchmark MRR delta on CodeSearchNet
+
+---
+
+## 24. Query-Dependent Graph Expansion Scoring
+
+**Status**: Not implemented. Both stages of graph expansion are completely
+query-agnostic:
+
+- `expandSecondHopAdaptive` — candidate selection scores by graph topology only
+  (edge type, degree, hop distance)
+- `rerankExpanded` — post-lookup reranking applies ×1.5 same-file and ×1.2–1.3
+  entity-type boosts, identical regardless of what the query asked
+
+The same multipliers apply to "how does authentication work" and "what's the database
+schema." Semantic relevance of expanded entities to the query is never checked at any
+stage of graph expansion.
+
+### 24.1 The Problem
+
+An entity can be graph-connected to a seed but semantically unrelated to the query.
+Example:
+- Query: "handle null pointer exception"
+- Seed: `UserService.getUser()`
+- Hop-2 A: `NullPointerExceptionHandler` — graph score 0.3 (weak calls path),
+  query similarity 0.85 → combined 0.52
+- Hop-2 B: `UserPreferences` — graph score 0.5 (strong uses path),
+  query similarity 0.1 → combined 0.34
+
+Without query-dependent scoring B wins. With it, A wins — correctly.
+
+### 24.2 Fix
+
+Blend graph score with cosine similarity between query embedding and entity embedding:
+
+```js
+final_score = 0.6 × graph_score + 0.4 × cosine(query_embedding, entity_embedding)
+```
+
+Entity embeddings are already stored in the HNSW index. The query embedding is already
+computed in the semantic search step — it needs to be threaded into `expandResults()`.
+
+### 24.3 Expected Impact
+
+**HIGH** — single highest-ROI improvement to graph expansion. Directly attacks false
+positives (graph-connected but semantically irrelevant entities). No training data,
+no new indexes, minimal code change. **~2ms latency addition**: 20 SQLite lookups +
+20 dot products on 512-dim vectors.
+
+### 24.4 SOTA Position
+
+Every graph RAG system from 2024 onward uses query embedding similarity as a core
+scoring signal for expanded nodes. We are currently below this baseline:
+
+| System | Year | Query-aware expansion scoring |
+|--------|------|-------------------------------|
+| **Our rerankExpanded** | — | **No — pure structural heuristics** |
+| Early GraphRAG (naive) | 2023 | No |
+| LEGO-GraphRAG (cat. 2) | 2024 | Yes — embedding cosine similarity |
+| PathRAG (arxiv 2502.14902) | Feb 2025 | Yes — flow reliability + path-level |
+| PankRAG | 2025 | Yes — semantic sim to query answer |
+| ProGraph-R1 (arxiv 2601.17755) | Jan 2026 | Yes — RL with structural + semantic |
+
+The minimum viable fix to reach **2024 LEGO-GraphRAG category 2** is adding cosine
+similarity between query embedding and entity embedding to both `expandSecondHopAdaptive`
+(candidate selection) and `rerankExpanded` (post-lookup scoring). Both the query
+embedding and entity embeddings already exist — this is a data-plumbing change.
+
+Note: Section 26 (pipeline restructuring) will ultimately supersede `rerankExpanded`
+by routing expanded entities through the learned cross-encoder reranker. But Section 26
+is a larger refactor. Section 24 is the fix within the current architecture.
+
+### 24.5 Action Items
+
+- [ ] Thread `queryEmbedding` (already computed in semantic search) into
+  `expandResults()` via the options object
+- [ ] In `expandSecondHopAdaptive`, look up entity embeddings from the HNSW index
+  for each hop-2 candidate and blend cosine similarity with graph score
+- [ ] In `rerankExpanded`, apply the same cosine blend — replace the query-agnostic
+  ×1.5/×1.3 multipliers with `w₁ × graph_score + w₂ × cosine(query, entity)`
+- [ ] A/B test blend weights (0.6/0.4 is a starting point) on eval harness
+- [ ] Benchmark MRR delta on CodeSearchNet + GenCodeSearchNet
+
+### 24.6 Priority
+
+**HIGH** — negligible latency, no training data, uses existing infrastructure.
+The query-agnostic nature of `rerankExpanded` is the specific gap vs 2024 SOTA.
+Most impactful graph expansion improvement available in the current architecture.
+
+---
+
+## 25. Budget Allocation: Greedy vs Knapsack
+
+**Status**: Not started. `applyTokenBudget` in `core/graph-expansion.js` walks
+results sorted by score and stops when the running token total exceeds the budget.
+This greedy approach can discard many small, collectively high-value results in favor
+of one large, high-scoring result.
+
+### 25.1 The Problem
+
+```
+Result A: score=0.8, tokens=500
+Result B: score=0.75, tokens=50
+Result C: score=0.70, tokens=50
+Budget = 600
+
+Greedy:  A (500 tokens) → budget gone          → total value 0.8
+Optimal: B + C (100 tokens) → skip A           → total value 1.45
+```
+
+### 25.2 Candidate Approaches
+
+**Fractional knapsack** (sort by score/tokens ratio — value density):
+- O(n log n), ~5 lines of code change
+- Provably optimal for the fractional relaxation; within 5% of DP optimal in practice
+
+**DP 0/1 knapsack** (exact):
+- O(n × B/unit) — with B=800 discrete units and n=20 results: ~16,000 ops, <1ms
+- Exact optimal
+
+**Important caveat**: for code search, a single large function containing the exact
+answer may be more useful than several small snippets. Fractional knapsack would
+penalize it. A/B test before committing to either approach.
+
+### 25.3 Prerequisites
+
+Section 22 (token estimation fix) must be done first. Sorting by
+`score / inaccurateTokens` adds noise to the density signal and can be worse than
+sorting by score alone.
+
+### 25.4 Action Items
+
+- [ ] Complete Section 22 (token estimation) first
+- [ ] Implement fractional knapsack as a configurable option alongside greedy
+- [ ] A/B test greedy vs fractional knapsack vs DP on CodeSearchNet
+- [ ] Decide on method based on results — do not assume fractional is better
+
+### 25.5 Priority
+
+**LOW-MEDIUM** — depends on token estimation fix (Section 22). Largest impact in
+Java-heavy codebases with mixed result sizes.
+
+---
+
+## 26. Pipeline Restructuring: Expand Before Late Interaction, Single Reranker Pass
+
+**Status**: Not started. Identified 2026-02-28 as the highest-value architectural
+improvement to the retrieval pipeline.
+
+### 26.1 Current Architecture (Problem)
+
+```
+lexicalSearch()            ← BM25 FTS5
+semanticSearch3Stage()     ← Binary → Int8 → ColBERT → Reranker  ← here
+hybridSearchV2()           ← CC fusion + MMR
+expandResults()            ← graph expansion with heuristic scoring only
+applyTokenBudget()
+```
+
+The cross-encoder reranker — the most powerful scorer in the pipeline — never sees
+expanded entities. Expanded entities get only heuristic scores (topology decay +
+1.5× file proximity + 1.3× type boost), while original retrieval results get full
+learned scoring. This is a structural asymmetry.
+
+### 26.2 Proposed Architecture Per Query Type
+
+**LEXICAL-ONLY** (identifier search):
+```
+BM25 → expand → reranker (NEW — currently never applied) → budget
+```
+
+**SEMANTIC-ONLY** (conceptual questions):
+```
+Binary → Int8 → expand → ColBERT → reranker → budget
+```
+
+**HYBRID** (most common — expansion must follow fusion because seeds require both paths):
+```
+BM25 ‖ (Binary → Int8) → CC fusion (Int8 scores) + MMR → expand → ColBERT → reranker → budget
+```
+
+**STRUCTURAL** (relationship/navigation queries):
+```
+BM25 structural → expand (primary mechanism) → optional reranker → budget
+```
+
+### 26.3 Latency Analysis
+
+The restructuring is net-faster despite adding expanded entities to the reranker:
+
+| Step | Current | Proposed |
+|------|---------|----------|
+| ColBERT (20 semantic-only) | ~15ms | — (moved to shared stage) |
+| Reranker (50 pre-diversity candidates) | ~80ms | — |
+| ColBERT (30 merged post-MMR results) | — | ~18ms |
+| Reranker (30 merged+expanded results) | — | ~50ms |
+
+The reranker gets ~30 diverse, post-MMR candidates instead of ~50 redundant,
+pre-diversity candidates. Fewer inputs, higher-quality inputs.
+
+### 26.4 Fusion with Int8 Scores
+
+Moving the reranker to after fusion means CC fusion uses Int8 cosine scores instead
+of reranker scores for the semantic side. This is acceptable: Int8 cosine preserves
+relative ordering within 1–3% of float32 cosine, and fusion cares about ordering
+rather than absolute score magnitude.
+
+### 26.5 Notes on Existing Token Budgets
+
+The internal `hop2TokenBudget` (4000 tokens) inside `expandSecondHopAdaptive` is NOT
+affected — it limits candidate generation during graph traversal and stays in place.
+Only the final `applyTokenBudget` (8000 tokens) moves to after the reranker pass.
+
+### 26.6 Action Items
+
+- [ ] **Extract ColBERT + reranker from `semanticSearch3Stage`** into a standalone
+  `lateInteractionRerank(candidates, query)` function
+- [ ] **Semantic path**: remove ColBERT/reranker from Stage 3, call after expansion
+- [ ] **Hybrid path**: remove ColBERT/reranker from Stage 3, call on merged+expanded
+  set post-fusion
+- [ ] **Lexical path**: add optional reranker pass after expansion (currently zero
+  reranking on lexical-only queries)
+- [ ] **Move `applyTokenBudget`** to after the single reranker pass in all paths
+- [ ] **Regression tests**: verify each query type doesn't degrade
+- [ ] **Benchmark before/after** on CodeSearchNet + GenCodeSearchNet — latency + MRR
+
+### 26.7 Priority
+
+**HIGH** — architectural correctness issue. Expanded entities currently get
+second-class scoring even when they are the correct answer. This restructuring gives
+ColBERT and the reranker visibility over the full candidate set. Combined with Section
+24 (query-dependent expansion scoring), graph expansion becomes a genuine quality
+lever rather than a heuristic supplement.
+
+---
+
+## 27. PathRAG Prompt Positioning: "Lost in the Middle" Mitigation
+
+**Status**: Not implemented. PathRAG (arxiv 2502.14902, Feb 2025) identified that
+result ordering in the LLM context window matters significantly: LLMs systematically
+underweight information in the middle of long contexts and overweight content at the
+beginning and end. They term this "lost in the middle" degradation.
+
+### 27.1 The Problem
+
+When we return 10 results to the LLM (via MCP or the search API), we currently order
+them by score descending — highest score first. The LLM receives:
+
+```
+[Rank 1 — most relevant]   ← LLM pays high attention
+[Rank 2]
+[Rank 3]
+...
+[Rank 9]
+[Rank 10 — least relevant] ← LLM pays high attention (end-of-context effect)
+```
+
+If the correct answer is Rank 3 or 4, it lands in the middle of the context window
+where LLM attention is lowest. PathRAG's solution: place the most reliable/relevant
+results at the **end** of the context, not the beginning.
+
+### 27.2 PathRAG's Approach
+
+PathRAG orders retrieved paths by reliability score ascending, then places the most
+reliable path last. Their empirical result: this ordering alone improves answer quality
+on multi-hop QA benchmarks without changing what is retrieved — only how it is presented.
+
+For our use case, the analogous approach would be to return results in reverse score
+order (lowest score first, highest score last) so the most relevant chunk is the last
+thing the LLM reads before generating its answer.
+
+### 27.3 Considerations
+
+This is a simple reordering of the output array. There is no latency cost.
+
+The tradeoff: for users who inspect search results directly (not via LLM), the
+highest-relevance result should be at the top (current behavior). For LLM consumption,
+it should be at the bottom (PathRAG recommendation). These are in conflict.
+
+Options:
+- Add an `outputOrder: 'asc' | 'desc'` option to the search API, default `'desc'`
+  for display, with MCP callers passing `'asc'` for LLM context construction
+- Or: only reverse in the MCP tool handler, not in the core search API
+
+### 27.4 Action Items
+
+- [ ] **Research**: does "lost in the middle" apply to our primary LLM targets
+  (Claude 3.5+, GPT-4o)? Both have improved long-context handling. Check if the
+  effect is still significant at 10 results vs 50+.
+- [ ] **Prototype**: add `reverseForLLM: true` option to MCP tool handler, benchmark
+  on a QA task where the correct code answer is known (CosQA or CoQuIR are suitable)
+- [ ] **Measure**: compare answer quality with score-descending vs score-ascending
+  result ordering at the MCP layer
+- [ ] If positive: make score-ascending the default in the MCP tool handler
+
+### 27.5 Priority
+
+**LOW-MEDIUM** — zero implementation cost if the reordering is confirmed beneficial.
+The main question is whether modern LLMs still exhibit "lost in the middle" degradation
+at our result set sizes (10–30 chunks). Worth a quick experiment before committing.
+
+---
+
 ## Cross-Cutting: No P2 Item Has Been A/B Tested
 
 The single biggest gap across all P2 features is the absence of benchmarking.
 The 2026-02-19 baseline (balanced profile, no ColBERT) now provides the reference
 point for A/B testing. Before investing more engineering effort in any P2 item:
 
-- [x] Run eval harness baseline with ALL P2 features disabled — DONE (2026-02-19,
-  20,262 queries, 8 benchmarks, balanced profile)
 - [ ] Enable each P2 feature individually and measure MRR/Recall delta
 - [ ] Only invest further in features that show measurable improvement
 - [ ] Gate all default-on changes on statistically significant benchmark wins
@@ -1122,10 +1549,18 @@ point for A/B testing. Before investing more engineering effort in any P2 item:
 ### Recommended A/B Test Priority Order
 
 1. **ColBERT enable** (Section 0) — highest expected impact, infrastructure exists
-2. **JS/TS chunking hardening** (Section 9) — directly impacts #2 most common language
-3. **Quality scorer qualityWeight** (Section 1.1) — quick to A/B test
-4. **Graph expansion adaptive 2-hop benchmarking** (Section 5) — now enabled, needs A/B validation
-5. **MinCut graph expansion** (Section 10.2) — structural importance complement to SOTA scoring
-6. **Intent router** (Section 2) — requires CatBoost training first, defer
-7. **SEISMIC sparse** (Section 3) — requires SPLADE integration first, defer
-8. **CrossCodeEval structural routing** (Section 11) — niche but tests graph infra
+2. **Pipeline restructuring** (Section 26) — single reranker pass covers expanded
+   entities; likely net-faster; architectural correctness
+3. **Query-dependent expansion scoring** (Section 24) — ~2ms latency, no training
+   data, uses existing embeddings; highest-ROI graph improvement
+4. **JS/TS chunking hardening** (Section 9) — directly impacts #2 most common language
+5. **Graph expansion on by default** (Section 5) — gate on A/B validation first
+6. **Quality scorer qualityWeight** (Section 1.1) — quick to A/B test
+7. **Graph expansion adaptive 2-hop benchmarking** (Section 5) — needs A/B validation
+8. **Token estimation fix** (Section 22) — prerequisite for knapsack; zero latency
+9. **MinCut graph expansion** (Section 10.2) — structural importance complement
+10. **Path-level scoring** (Section 23) — medium-low impact, zero latency
+11. **Budget allocation knapsack** (Section 25) — depends on Section 22; A/B first
+12. **Intent router** (Section 2) — requires CatBoost training first, defer
+13. **SEISMIC sparse** (Section 3) — requires SPLADE integration first, defer
+14. **CrossCodeEval structural routing** (Section 11) — niche but tests graph infra
