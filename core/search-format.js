@@ -79,11 +79,11 @@ export function formatResults(results, stats = {}) {
       output += `   Score: ${r.hybridScore.toFixed(4)} (sources: ${r.sources?.join(', ')})\n`;
     } else if (r.rerankScore !== undefined) {
       output += `   Score: ${r.rerankScore.toFixed(4)} (reranked from ${r.originalScore?.toFixed(4)})\n`;
-      if (r.colbertScore !== undefined && r.preColbertScore !== undefined) {
-        output += `   ColBERT: ${r.colbertScore.toFixed(4)} (boosted from ${r.preColbertScore.toFixed(4)})\n`;
+      if (r.lateInteractionScore !== undefined && r.preLateInteractionScore !== undefined) {
+        output += `   LateInteraction: ${r.lateInteractionScore.toFixed(4)} (boosted from ${r.preLateInteractionScore.toFixed(4)})\n`;
       }
-    } else if (r.colbertScore !== undefined && r.preColbertScore !== undefined) {
-      output += `   Score: ${r.int8Score?.toFixed(4)} (ColBERT: ${r.colbertScore.toFixed(4)}, pre: ${r.preColbertScore.toFixed(4)})\n`;
+    } else if (r.lateInteractionScore !== undefined && r.preLateInteractionScore !== undefined) {
+      output += `   Score: ${r.int8Score?.toFixed(4)} (LateInteraction: ${r.lateInteractionScore.toFixed(4)}, pre: ${r.preLateInteractionScore.toFixed(4)})\n`;
     } else {
       output += `   Score: ${r.score?.toFixed(4)}\n`;
     }

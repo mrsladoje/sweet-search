@@ -24,7 +24,7 @@ import { applyMMR, shouldApplyMMR, getLambdaForIntent } from './mmr.js';
  * Uses `this` extensively.
  */
 export async function hybridSearchV2(query, options = {}) {
-  const { k = 10, useColBERT = this.useColBERT, routing: passedRouting } = options;
+  const { k = 10, useLateInteraction = this.useLateInteraction, routing: passedRouting } = options;
 
   // P9 FIX: Use passed routing or compute if not provided
   const routing = passedRouting || routeQuery(query);
@@ -33,7 +33,7 @@ export async function hybridSearchV2(query, options = {}) {
   // Step 1: Retrieval from both paths (raw scores, no pre-fusion boosts)
   const [lexicalSearchResult, semanticSearchResult] = await Promise.all([
     this.graphSearch.graphExpandedSearch(query, { k: 50, expand: true, skipBoosts: true }),
-    this.semanticSearch(query, { k: 50, rerank: false, useColBERT }),
+    this.semanticSearch(query, { k: 50, rerank: false, useLateInteraction }),
   ]);
 
   // Normalize lexical results format (graphExpandedSearch returns { results, stats })
@@ -111,7 +111,7 @@ export async function hybridSearchV2(query, options = {}) {
  * Uses `this` extensively.
  */
 export async function hybridSearch(query, options = {}) {
-  const { k = 10, expand = true, rrf_k = 60, fusion = 'cc', useColBERT = this.useColBERT, routing: passedRouting } = options;
+  const { k = 10, expand = true, rrf_k = 60, fusion = 'cc', useLateInteraction = this.useLateInteraction, routing: passedRouting } = options;
 
   // P9 FIX: Use passed routing or compute if not provided (avoids redundant call)
   const routing = passedRouting || routeQuery(query);
@@ -120,7 +120,7 @@ export async function hybridSearch(query, options = {}) {
   // Run both paths in parallel
   const [lexicalResults, semanticSearchResult] = await Promise.all([
     this.lexicalSearch(query, { k: Math.ceil(k * 1.5), expand }),
-    this.semanticSearch(query, { k: Math.ceil(k * 1.5), rerank: false, useColBERT }),
+    this.semanticSearch(query, { k: Math.ceil(k * 1.5), rerank: false, useLateInteraction }),
   ]);
 
   // P0 FIX: Extract semantic results and stats

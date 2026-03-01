@@ -11,7 +11,7 @@
  * Implementation split across:
  *   indexer-utils.js   - SQLite config, logging, atomic swap, paths, file discovery
  *   indexer-build.js   - Code graph + vector embedding building
- *   indexer-ann.js     - HNSW, ColBERT, quantized artifact building
+ *   indexer-ann.js     - HNSW, late interaction, quantized artifact building
  *   indexer-phases.js  - Phase runner + phase wrappers
  *
  * Incremental Mode (default - RECOMMENDED):
@@ -30,7 +30,7 @@
 
 import { existsSync } from 'fs';
 
-import { DB_PATHS } from './config.js';
+import { DB_PATHS, LATE_INTERACTION_CONFIG } from './config.js';
 import { resolveRelationshipTargets } from './relationship-resolver.js';
 import { requireNativeAnn as requireNativeAnnBackend } from './hnsw-index.js';
 import { getStats as getIncrementalStats } from './incremental-tracker.js';
@@ -52,7 +52,7 @@ import {
 
 import {
   incrementalUpdateHNSW, buildHNSWIndex,
-  buildColBERTIndex, buildQuantizedArtifactsPhase,
+  buildLateInteractionIndex, buildQuantizedArtifactsPhase,
 } from './indexer-ann.js';
 
 import {
@@ -84,7 +84,10 @@ function parseArgs(argv) {
     quiet: args.includes('--quiet'),
     forceArtifacts: args.includes('--force-artifacts'),
     help: args.includes('--help') || args.includes('-h'),
-    noColbert: args.includes('--no-colbert'),
+    noLateInteraction: args.includes('--no-late-interaction'),
+    lateInteractionModel: args.find(a => a.startsWith('--late-interaction-model='))?.split('=')[1] || null,
+    lateInteractionPool: parseInt(args.find(a => a.startsWith('--late-interaction-pool='))?.split('=')[1] || '1', 10),
+    lateInteractionExtendedSkiplist: args.includes('--late-interaction-skiplist=extended'),
     requireNativeAnn: args.includes('--require-native-ann'),
     sqliteFastMode: args.includes('--sqlite-fast') || process.env.SWEET_SEARCH_SQLITE_FAST_MODE === '1',
   };
@@ -99,10 +102,18 @@ async function main() {
 
   const { dryRun, graphOnly, vectorsOnly, fullReindex, showStats, resolveOnly,
           skipSummaryRegen, filesFromStdin, quiet, forceArtifacts, help,
-          noColbert, requireNativeAnn, sqliteFastMode } = parseArgs();
+          noLateInteraction, lateInteractionModel, lateInteractionPool, lateInteractionExtendedSkiplist,
+          requireNativeAnn, sqliteFastMode } = parseArgs();
 
   if (quiet) {
     setQuietMode(true);
+  }
+
+  // Apply late interaction model overrides before any model code runs
+  if (noLateInteraction) {
+    LATE_INTERACTION_CONFIG.model = false;
+  } else if (lateInteractionModel) {
+    LATE_INTERACTION_CONFIG.model = lateInteractionModel;
   }
 
   log(`${colors.bright}╔═══════════════════════════════════════════════════╗${colors.reset}`, 'bright');
@@ -137,7 +148,10 @@ Options:
                        Automatically runs HCGS for the specified files.
   --force-artifacts    Force binary HNSW + Int8 artifact rebuild regardless of change count.
                        Default: skip rebuild if <${ARTIFACT_THRESHOLDS.skipThreshold} files changed (Float HNSW serves search).
-  --no-colbert     Skip ColBERT index build (faster indexing when ColBERT not needed)
+  --no-late-interaction  Skip late interaction index build (faster indexing when not needed)
+  --late-interaction-model=ID  Use specific model (lateon-code or lateon-code-edge)
+  --late-interaction-pool=N    Token pooling factor (2=halve tokens, 3=third). Reduces index size.
+  --late-interaction-skiplist=extended  Extend skiplist with code-noise tokens (whitespace, semicolons)
   --require-native-ann  Fail fast if native ANN backend (usearch) is unavailable.
                    Prevents accidental fallback to slower JS ANN in benchmarks.
   --sqlite-fast    Use unsafe SQLite pragmas for faster builds (benchmarking only).
@@ -305,7 +319,9 @@ Output:
         incrementalInfo,
         forceArtifacts,
         hcgsPromise,
-        noColbert,
+        noLateInteraction,
+        lateInteractionPool,
+        lateInteractionExtendedSkiplist,
         sqliteFastMode,
       });
 
@@ -392,7 +408,7 @@ export {
   buildCodeGraph,
   buildVectorIndex,
   buildHNSWIndex,
-  buildColBERTIndex,
+  buildLateInteractionIndex,
   buildQuantizedArtifactsPhase,
   parseArgs,
   readFilesFromStdin,

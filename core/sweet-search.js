@@ -12,7 +12,7 @@
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
-import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, COLBERT_CONFIG, EMBEDDING_CONFIG, SEISMIC_CONFIG, shouldUseLocalReranker } from './config.js';
+import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, LATE_INTERACTION_CONFIG, EMBEDDING_CONFIG, SEISMIC_CONFIG, shouldUseLocalReranker } from './config.js';
 import { getGlobalLocalReranker } from './local-reranker.js';
 import { QueryRouter, routeQuery } from './query-router.js';
 import { GraphSearch } from './graph-search.js';
@@ -20,7 +20,7 @@ import { SYMBOL_KIND_WEIGHTS, DEFINITION_TYPES } from './constants.js';
 import { HNSWIndex } from './hnsw-index.js';
 import { BinaryHNSWIndex } from './binary-hnsw-index.js';
 import { Reranker } from './flashrank.js';
-import { ColBERTIndex } from './colbert-index.js';
+import { LateInteractionIndex } from './late-interaction-index.js';
 import { getEmbedding, getBinaryEmbedding, truncateForHNSW, floatToInt8, int8CosineSimilarity, warmup as warmupEmbedding, isWarm, registerAutoPersistOnExit } from './embedding-service.js';
 import { recordQueryTelemetry } from './embedding-cache.js';
 import { TranslationFallback, queryNeedsTranslation } from '../translation/index.js';
@@ -46,7 +46,7 @@ export class SweetSearch {
     this.hnswIndex = new HNSWIndex({ indexPath: options.hnswPath || DB_PATHS.hnswIndex });
     this.binaryHnswIndex = new BinaryHNSWIndex({ indexPath: options.binaryHnswPath || DB_PATHS.binaryHnswIndex });
     this.reranker = new Reranker(options);
-    this.colbertIndex = new ColBERTIndex(options.colbertOptions || {});
+    this.lateInteractionIndex = new LateInteractionIndex(options.lateInteractionOptions || {});
     this.router = new QueryRouter();
     this.codebaseDbPath = options.codebaseDbPath || DB_PATHS.codebase;
     this.verbose = options.verbose ?? LOGGING.verbose;
@@ -55,8 +55,8 @@ export class SweetSearch {
     this.stage1Candidates = options.stage1Candidates ?? BINARY_HNSW_CONFIG.retrieval.stage1Candidates;
     this.stage2Candidates = options.stage2Candidates ?? BINARY_HNSW_CONFIG.retrieval.stage2Candidates;
     this.stage3Candidates = options.stage3Candidates ?? BINARY_HNSW_CONFIG.retrieval.stage3Candidates;
-    this.useColBERT = options.useColBERT ?? COLBERT_CONFIG.enabled;
-    this.colbertBlendWeight = options.colbertBlendWeight ?? COLBERT_CONFIG.blendWeight ?? 0.3;
+    this.useLateInteraction = options.useLateInteraction ?? LATE_INTERACTION_CONFIG.enabled;
+    this.lateInteractionBlendWeight = options.lateInteractionBlendWeight ?? LATE_INTERACTION_CONFIG.blendWeight ?? 0.3;
     this.returnSummaryFirst = options.returnSummaryFirst ?? HCGS_CONFIG.returnSummaryFirst;
     this.summaryTokenBudget = options.summaryTokenBudget ?? HCGS_CONFIG.summaryTokenBudget;
     this.fullCodeTokenBudget = options.fullCodeTokenBudget ?? HCGS_CONFIG.fullCodeTokenBudget;
@@ -79,7 +79,7 @@ export class SweetSearch {
     this.hasHnswIndex = existsSync(DB_PATHS.hnswIndex.replace('.idx', '.meta.json'));
     this.hasBinaryHnswIndex = existsSync(DB_PATHS.binaryHnswIndex.replace('.idx', '.meta.json'));
     this.hasCodebaseIndex = existsSync(this.codebaseDbPath);
-    this.hasColbertIndex = existsSync(this.colbertIndex.indexPath);
+    this.hasLateInteractionIndex = existsSync(this.lateInteractionIndex.indexPath);
 
     if (!this.hasGraphIndex && !this.hasCodebaseIndex) {
       throw new Error('No search indexes found. Run indexing first.');
@@ -106,14 +106,14 @@ export class SweetSearch {
       }
     }
 
-    if (this.hasColbertIndex && this.useColBERT) {
+    if (this.hasLateInteractionIndex && this.useLateInteraction) {
       try {
-        await this.colbertIndex.init();
-        const stats = this.colbertIndex.getStats();
-        this.log(`ColBERT: Loaded ${stats.documents} documents (${stats.estimatedSizeMB} MB, ${stats.avgTokensPerDoc} avg tokens)`);
+        await this.lateInteractionIndex.init();
+        const stats = this.lateInteractionIndex.getStats();
+        this.log(`LateInteraction: Loaded ${stats.documents} documents (${stats.estimatedSizeMB} MB, ${stats.avgTokensPerDoc} avg tokens)`);
       } catch (err) {
-        this.log(`ColBERT: Failed to load: ${err.message}`);
-        this.hasColbertIndex = false;
+        this.log(`LateInteraction: Failed to load: ${err.message}`);
+        this.hasLateInteractionIndex = false;
       }
     }
 
@@ -143,7 +143,7 @@ export class SweetSearch {
     await this.init();
     const {
       k = 10, mode = 'auto', expand = true, rerank = true,
-      fusion: fusionOpt = 'cc', useColBERT = this.useColBERT,
+      fusion: fusionOpt = 'cc', useLateInteraction = this.useLateInteraction,
       translate = 'auto', graphExpand = 'none', graphExpandOptions = {},
       adaptiveHop2 = true, intent = 'none', qualityWeight = this.qualityWeight,
     } = options;
@@ -199,7 +199,7 @@ export class SweetSearch {
         stats.path = 'lexical';
         break;
       case 'semantic': {
-        const semanticResult = await this.semanticSearch(query, { k, rerank, useColBERT });
+        const semanticResult = await this.semanticSearch(query, { k, rerank, useLateInteraction });
         results = semanticResult.results;
         semanticStats = semanticResult.stats;
         stats.path = 'semantic';
@@ -207,7 +207,7 @@ export class SweetSearch {
       }
       case 'hybrid':
       default: {
-        const hybridResult = await this.hybridSearchV2(query, { k, useColBERT, routing });
+        const hybridResult = await this.hybridSearchV2(query, { k, useLateInteraction, routing });
         results = hybridResult.results || hybridResult;
         semanticStats = hybridResult.semanticStats || null;
         stats.path = 'hybrid';
@@ -266,9 +266,9 @@ export class SweetSearch {
 
   /** Semantic search dispatcher. Delegates to 3Stage or Standard based on config. */
   async semanticSearch(query, options = {}) {
-    const { k = 10, rerank = true, useColBERT = this.useColBERT } = options;
+    const { k = 10, rerank = true, useLateInteraction = this.useLateInteraction } = options;
     if (this.hasBinaryHnswIndex && this.use3Stage) {
-      return this.semanticSearch3Stage(query, { k, rerank, useColBERT });
+      return this.semanticSearch3Stage(query, { k, rerank, useLateInteraction });
     }
     return this.semanticSearchStandard(query, { k, rerank });
   }
@@ -339,14 +339,8 @@ export class SweetSearch {
     return dot / (Math.sqrt(normA) * Math.sqrt(normB));
   }
 
-  /** Approximate ColBERT score using sentence-level query embedding */
-  approximateColBERTScore(queryEmbedding, docTokens) {
-    if (!docTokens || docTokens.length === 0) return 0;
-    const queryVec = Array.isArray(queryEmbedding) ? queryEmbedding : Array.from(queryEmbedding);
-    let totalSim = 0;
-    for (const docToken of docTokens) { totalSim += Math.max(0, this.cosineSimilarity(queryVec, docToken)); }
-    return totalSim / docTokens.length;
-  }
+  // approximateLateInteractionScore removed — replaced by real per-token MaxSim via LateOn-Code
+  // in search-semantic.js (Phase 4 of LATE_INTERACTION.md)
 
   /** Log message (if verbose). Uses stderr to avoid corrupting JSON output. */
   log(message) { if (this.verbose) console.error(`[SweetSearch] ${message}`); }

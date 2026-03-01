@@ -15,7 +15,7 @@
  *       --no-expand     Disable graph expansion
  *       --no-rerank     Disable reranking
  *   -f, --fusion <type> Fusion method: cc (default) or rrf
- *       --no-colbert    Disable ColBERT (enabled by default from config)
+ *       --no-late-interaction  Disable late interaction (enabled by default from config)
  *       --stop          Stop the search server
  *   -v, --verbose       Verbose output
  *   -h, --help          Show help
@@ -60,7 +60,7 @@ typedef struct {
     int json;
     int no_expand;
     int no_rerank;
-    int no_colbert;  /* Disable ColBERT (enabled by default from server config) */
+    int no_late_interaction;  /* Disable late interaction (enabled by default from server config) */
     int stop;
     int verbose;
     int help;
@@ -76,7 +76,7 @@ static struct option long_options[] = {
     {"no-expand",  no_argument,       0, 'E'},
     {"no-rerank",  no_argument,       0, 'R'},
     {"fusion",     required_argument, 0, 'f'},
-    {"no-colbert", no_argument,       0, 'C'},  /* Disable ColBERT */
+    {"no-late-interaction", no_argument, 0, 'C'},  /* Disable late interaction */
     {"stop",       no_argument,       0, 'S'},
     {"verbose",    no_argument,       0, 'v'},
     {"help",       no_argument,       0, 'h'},
@@ -140,7 +140,7 @@ static void print_usage(const char *prog) {
     printf("      --no-expand     Disable graph expansion\n");
     printf("      --no-rerank     Disable reranking\n");
     printf("  -f, --fusion <type> Fusion method: cc (default) or rrf\n");
-    printf("      --no-colbert    Disable ColBERT " FY "(enabled by default)" R "\n");
+    printf("      --no-late-interaction  Disable late interaction " FY "(enabled by default)" R "\n");
     printf("      --stop          Stop the search server\n");
     printf("  -v, --verbose       Verbose output\n");
     printf("  -h, --help          Show this help\n");
@@ -164,7 +164,7 @@ static int parse_args(int argc, char *argv[], Options *opts) {
     opts->json = 0;
     opts->no_expand = 0;
     opts->no_rerank = 0;
-    opts->no_colbert = 0;  /* ColBERT enabled by default (server config) */
+    opts->no_late_interaction = 0;  /* Late interaction enabled by default (server config) */
     opts->stop = 0;
     opts->verbose = 0;
     opts->help = 0;
@@ -203,7 +203,7 @@ static int parse_args(int argc, char *argv[], Options *opts) {
                 opts->fusion = optarg;
                 break;
             case 'C':
-                opts->no_colbert = 1;
+                opts->no_late_interaction = 1;
                 break;
             case 'S':
                 opts->stop = 1;
@@ -261,9 +261,9 @@ static char *build_url(const Options *opts, char *buffer, size_t bufsize) {
     if (strcmp(opts->fusion, "cc") != 0) {
         len += snprintf(buffer + len, bufsize - len, "&fusion=%s", opts->fusion);
     }
-    /* Only send colbert param if explicitly disabling (server defaults to config) */
-    if (opts->no_colbert) {
-        len += snprintf(buffer + len, bufsize - len, "&colbert=false");
+    /* Only send late-interaction param if explicitly disabling (server defaults to config) */
+    if (opts->no_late_interaction) {
+        len += snprintf(buffer + len, bufsize - len, "&late-interaction=false");
     }
 
     return buffer;
@@ -388,7 +388,7 @@ int main(int argc, char *argv[]) {
         if (opts.mid) printf(FG "Format:" R " mid\n");
         if (opts.no_expand) printf(FG "Graph expansion:" R " disabled\n");
         if (opts.no_rerank) printf(FG "Reranking:" R " disabled\n");
-        if (opts.no_colbert) printf(FG "ColBERT:" R " disabled\n");
+        if (opts.no_late_interaction) printf(FG "Late Interaction:" R " disabled\n");
         printf("\n");
     }
 

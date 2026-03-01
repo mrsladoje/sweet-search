@@ -9,7 +9,7 @@
  */
 
 import { existsSync } from 'fs';
-import { COLBERT_CONFIG } from './config.js';
+import { LATE_INTERACTION_CONFIG } from './config.js';
 import { registerAutoPersistOnExit } from './embedding-service.js';
 import {
   formatResults as formatSearchResults,
@@ -214,7 +214,8 @@ Options:
   --no-expand       Disable graph expansion
   --no-rerank       Disable reranking
   --fusion <type>   Legacy: cc or rrf (ignored for hybrid - always uses robust CC fusion)
-  --colbert         Enable ColBERT late interaction (if index available)
+  --late-interaction Enable late interaction reranking (if index available)
+  --late-interaction-model=ID Use specific model (lateon-code or lateon-code-edge)
   --summary         HCGS summary-first output (10x token reduction)
   --mid             Middle-res view: signature + docstring (5x token reduction)
   --json            Output as JSON
@@ -301,7 +302,7 @@ Examples:
     let expand = true;
     let rerank = true;
     let fusion = 'cc';
-    let useColBERT = COLBERT_CONFIG.enabled;
+    let useLateInteraction = LATE_INTERACTION_CONFIG.enabled;
     let json = false;
     let verbose = false;
     let summaryFirst = false;
@@ -321,10 +322,14 @@ Examples:
         rerank = false;
       } else if (arg === '--fusion' && args[i + 1]) {
         fusion = args[++i];
-      } else if (arg === '--colbert') {
-        useColBERT = true;
-      } else if (arg === '--no-colbert') {
-        useColBERT = false;
+      } else if (arg === '--late-interaction') {
+        useLateInteraction = true;
+      } else if (arg === '--no-late-interaction') {
+        useLateInteraction = false;
+      } else if (arg.startsWith('--late-interaction-model=')) {
+        useLateInteraction = true;
+        const { LATE_INTERACTION_CONFIG } = await import('./config.js');
+        LATE_INTERACTION_CONFIG.model = arg.split('=')[1];
       } else if (arg === '--json') {
         json = true;
       } else if (arg === '--summary') {
@@ -362,7 +367,7 @@ Examples:
           expand,
           rerank,
           fusion,
-          useColBERT,
+          useLateInteraction,
           summary: summaryFirst,
           mid: middleRes,
         });
@@ -406,7 +411,7 @@ Examples:
     const searcher = new SweetSearch({
       verbose,
       returnSummaryFirst: summaryFirst,
-      useColBERT
+      useLateInteraction,
     });
 
     // Auto-persist frequent queries to vocabulary on exit
@@ -419,7 +424,7 @@ Examples:
         expand,
         rerank,
         fusion,
-        useColBERT,
+        useLateInteraction,
       });
 
       // HCGS: Enrich with summaries if summary-first mode

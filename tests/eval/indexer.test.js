@@ -67,18 +67,18 @@ describe('indexCorpus', () => {
     expect(mockUnlink.mock.calls[0][0]).toContain('merkle-state.json');
   });
 
-  it('buildColBERT=false passes --no-colbert', async () => {
-    await indexCorpus('/corpus', '/project', { buildColBERT: false });
+  it('buildLateInteraction=false passes --no-late-interaction', async () => {
+    await indexCorpus('/corpus', '/project', { buildLateInteraction: false });
 
     const args = mockSpawn.mock.calls[0][1];
-    expect(args).toContain('--no-colbert');
+    expect(args).toContain('--no-late-interaction');
   });
 
-  it('buildColBERT=true (default) does not pass --no-colbert', async () => {
+  it('buildLateInteraction=true (default) does not pass --no-late-interaction', async () => {
     await indexCorpus('/corpus', '/project');
 
     const args = mockSpawn.mock.calls[0][1];
-    expect(args).not.toContain('--no-colbert');
+    expect(args).not.toContain('--no-late-interaction');
   });
 
   it('sqliteFastMode=true sets env variable', async () => {
@@ -153,16 +153,16 @@ describe('indexCorpus', () => {
     expect(typeof result.timings.vectorsPhase).toBe('number');
   });
 
-  it('two-phase with buildColBERT=false passes --no-colbert only to vectors phase', async () => {
-    await indexCorpus('/corpus', '/project', { indexMode: 'two-phase', buildColBERT: false });
+  it('two-phase with buildLateInteraction=false passes --no-late-interaction only to vectors phase', async () => {
+    await indexCorpus('/corpus', '/project', { indexMode: 'two-phase', buildLateInteraction: false });
 
-    // Phase 1 (graph) should NOT have --no-colbert
+    // Phase 1 (graph) should NOT have --no-late-interaction
     const args1 = mockSpawn.mock.calls[0][1];
-    expect(args1).not.toContain('--no-colbert');
+    expect(args1).not.toContain('--no-late-interaction');
 
-    // Phase 2 (vectors) should have --no-colbert
+    // Phase 2 (vectors) should have --no-late-interaction
     const args2 = mockSpawn.mock.calls[1][1];
-    expect(args2).toContain('--no-colbert');
+    expect(args2).toContain('--no-late-interaction');
   });
 
   // initSearch requires a real SweetSearch instance with database files.
