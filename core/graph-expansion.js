@@ -36,6 +36,32 @@ const EDGE_ALPHA_BONUS = {
 };
 const FLOW_THRESHOLD = 0.05;
 
+// Structural entity type boosts for reranking
+const TYPE_BOOST = {
+  class: 1.3,
+  function: 1.2,
+  method: 1.2,
+  interface: 1.3,
+  struct: 1.2,
+};
+
+function clampSemanticWeight(value) {
+  if (!Number.isFinite(value)) return 0.4;
+  return Math.max(0, Math.min(1, value));
+}
+
+function normalizeMinMax(values) {
+  if (values.length === 0) return [];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (max === min) return values.map(() => 0.5);
+  return values.map(v => (v - min) / (max - min));
+}
+
+function blendScores(graphScore, cosineSim, weight) {
+  return (1 - weight) * graphScore + weight * cosineSim;
+}
+
 /**
  * Expand search results using the entity relationship graph.
  *
@@ -57,7 +83,12 @@ export function expandResults(db, results, options = {}) {
     adaptiveHop2 = false,
     hop2TokenBudget = 4000,
     expandedBudget,
+    queryInt8 = null,
+    hnswIndex = null,
+    semanticWeight = 0.4,
+    cosineSimilarity = null,
   } = options;
+  const clampedSemanticWeight = clampSemanticWeight(semanticWeight);
 
   if (expandMode === 'none' || results.length === 0) return results;
 
@@ -74,9 +105,18 @@ export function expandResults(db, results, options = {}) {
       expandSecondHopAdaptive(db, seedIds, expanded, edgeTypes, {
         maxHop2: maxExpanded,
         tokenBudget: hop2TokenBudget,
+        queryInt8,
+        hnswIndex,
+        semanticWeight: clampedSemanticWeight,
+        cosineSimilarity,
       });
     } else {
-      expandSecondHop(db, seedIds, expanded, edgeTypes);
+      expandSecondHop(db, seedIds, expanded, edgeTypes, {
+        queryInt8,
+        hnswIndex,
+        semanticWeight: clampedSemanticWeight,
+        cosineSimilarity,
+      });
     }
   }
 
@@ -94,8 +134,13 @@ export function expandResults(db, results, options = {}) {
     er.score = maxOriginalScore * decay;
   }
 
-  // Rerank expanded results using composite scoring (file proximity + entity type)
-  rerankExpanded(expandedResults, results);
+  // Rerank expanded results using composite scoring (file proximity + entity type + semantic)
+  rerankExpanded(expandedResults, results, {
+    queryInt8,
+    hnswIndex,
+    semanticWeight: clampedSemanticWeight,
+    cosineSimilarity,
+  });
 
   // Apply token budget
   const { results: budgeted, stats: budgetStats } = applyTokenBudget(
@@ -211,7 +256,15 @@ function expandOneHop(db, seedIds, edgeTypes) {
  * @param {Map<string, Object>} expanded - 1-hop expansion map (mutated in place)
  * @param {Set<string>} edgeTypes
  */
-function expandSecondHop(db, seedIds, expanded, edgeTypes) {
+function expandSecondHop(db, seedIds, expanded, edgeTypes, options = {}) {
+  const {
+    queryInt8 = null,
+    hnswIndex = null,
+    semanticWeight = 0.4,
+    cosineSimilarity = null,
+  } = options;
+  const semanticEnabled = !!(queryInt8 && hnswIndex && cosineSimilarity && semanticWeight > 0);
+
   const hop1Ids = [...expanded.keys()];
   if (hop1Ids.length === 0) return;
 
@@ -227,10 +280,55 @@ function expandSecondHop(db, seedIds, expanded, edgeTypes) {
     return;
   }
 
-  for (const rel of hop2Forward) {
-    if (edgeTypes.has(rel.type) && !seedIds.has(rel.target_id) && !expanded.has(rel.target_id)) {
-      expanded.set(rel.target_id, { via: rel.type, direction: 'forward', hops: 2 });
+  if (!semanticEnabled) {
+    for (const rel of hop2Forward) {
+      if (edgeTypes.has(rel.type) && !seedIds.has(rel.target_id) && !expanded.has(rel.target_id)) {
+        expanded.set(rel.target_id, { via: rel.type, direction: 'forward', hops: 2 });
+      }
     }
+    return;
+  }
+
+  const excluded = new Set([...seedIds, ...expanded.keys()]);
+  const candidates = [];
+  for (const rel of hop2Forward) {
+    if (!edgeTypes.has(rel.type) || excluded.has(rel.target_id)) continue;
+
+    const graphScore = (EDGE_PRIORITY[rel.type] || 1) * (rel.weight || 1.0);
+    let normSim = null;
+    const entityInt8 = hnswIndex.getInt8Vector(rel.target_id);
+    if (entityInt8) {
+      const cosSim = cosineSimilarity(queryInt8, entityInt8);
+      normSim = (cosSim + 1) / 2;
+    }
+    candidates.push({ rel, graphScore, normSim });
+  }
+
+  if (candidates.length === 0) return;
+  const normalizedGraphScores = normalizeMinMax(candidates.map(c => c.graphScore));
+  const bestByTarget = new Map();
+
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+    const normGraph = normalizedGraphScores[i];
+    let score = normGraph;
+    if (c.normSim != null) {
+      score = blendScores(normGraph, c.normSim, semanticWeight);
+    }
+
+    const prev = bestByTarget.get(c.rel.target_id);
+    if (!prev || score > prev.score) {
+      bestByTarget.set(c.rel.target_id, { rel: c.rel, score });
+    }
+  }
+
+  const ranked = [...bestByTarget.values()].sort((a, b) => b.score - a.score);
+  for (const c of ranked) {
+    expanded.set(c.rel.target_id, {
+      via: c.rel.type,
+      direction: 'forward',
+      hops: 2,
+    });
   }
 }
 
@@ -248,7 +346,15 @@ function expandSecondHop(db, seedIds, expanded, edgeTypes) {
  * @returns {{ added: number, budgetUsed: number, candidates: number }}
  */
 function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, options = {}) {
-  const { maxHop2 = 5, tokenBudget = 4000 } = options;
+  const {
+    maxHop2 = 5,
+    tokenBudget = 4000,
+    queryInt8 = null,
+    hnswIndex = null,
+    semanticWeight = 0.4,
+    cosineSimilarity = null,
+  } = options;
+  const semanticEnabled = !!(queryInt8 && hnswIndex && cosineSimilarity && semanticWeight > 0);
 
   const hop1Ids = [...hop1Expanded.keys()];
   if (hop1Ids.length === 0) return { added: 0, budgetUsed: 0, candidates: 0 };
@@ -286,10 +392,10 @@ function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, options =
     return { added: 0, budgetUsed: 0, candidates: 0 };
   }
 
-  // Filter by edge types, score all paths, keep the best per target.
-  // Multiple hop-1 sources may reach the same target — we want the highest score.
+  // Filter by edge types and score all paths.
   const excluded = new Set([...seedIds, ...hop1Expanded.keys()]);
-  const bestByTarget = new Map(); // target_id -> best scored entry
+  const vectorCache = semanticEnabled ? new Map() : null;
+  const scoredCandidates = [];
 
   for (const c of rawCandidates) {
     if (!edgeTypes.has(c.type) || excluded.has(c.target_id)) continue;
@@ -298,27 +404,62 @@ function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, options =
     const edgePriority = EDGE_PRIORITY[c.type] || 1;
     const weight = c.weight || 1.0;
     const outDegree = degreeMap.get(c.source_id) || 1;
-    const score = (effectiveAlpha * effectiveAlpha * weight * edgePriority) / Math.sqrt(outDegree);
+    const graphScore = (effectiveAlpha * effectiveAlpha * weight * edgePriority) / Math.sqrt(outDegree);
+
+    let normSim = null;
+    if (semanticEnabled) {
+      if (!vectorCache.has(c.target_id)) {
+        vectorCache.set(c.target_id, hnswIndex.getInt8Vector(c.target_id));
+      }
+      const entityInt8 = vectorCache.get(c.target_id);
+      if (entityInt8) {
+        const cosSim = cosineSimilarity(queryInt8, entityInt8);
+        normSim = (cosSim + 1) / 2;
+      }
+    }
+
+    const startLine = c.start_line || 0;
+    const endLine = c.end_line || startLine;
+    const estimatedTokens = Math.max(1, (endLine - startLine + 1)) * 10;
+
+    scoredCandidates.push({
+      target_id: c.target_id,
+      source_id: c.source_id,
+      type: c.type,
+      graphScore,
+      normSim,
+      estimatedTokens,
+      effectiveAlpha,
+      outDegree,
+    });
+  }
+
+  if (scoredCandidates.length === 0) return { added: 0, budgetUsed: 0, candidates: 0 };
+
+  const normalizedGraphScores = semanticEnabled
+    ? normalizeMinMax(scoredCandidates.map(c => c.graphScore))
+    : [];
+
+  // Multiple hop-1 sources may reach the same target — keep the highest score.
+  const bestByTarget = new Map(); // target_id -> best scored entry
+  for (let i = 0; i < scoredCandidates.length; i++) {
+    const c = scoredCandidates[i];
+    let score = c.graphScore;
+
+    if (semanticEnabled) {
+      const normGraph = normalizedGraphScores[i];
+      score = normGraph;
+      if (c.normSim != null) {
+        score = blendScores(normGraph, c.normSim, semanticWeight);
+      }
+    }
 
     // PathRAG-style early stopping
     if (score < FLOW_THRESHOLD) continue;
 
     const prev = bestByTarget.get(c.target_id);
     if (prev && prev.score >= score) continue;
-
-    const startLine = c.start_line || 0;
-    const endLine = c.end_line || startLine;
-    const estimatedTokens = Math.max(1, (endLine - startLine + 1)) * 10;
-
-    bestByTarget.set(c.target_id, {
-      target_id: c.target_id,
-      source_id: c.source_id,
-      type: c.type,
-      score,
-      estimatedTokens,
-      effectiveAlpha,
-      outDegree,
-    });
+    bestByTarget.set(c.target_id, { ...c, score });
   }
 
   const scored = [...bestByTarget.values()];
@@ -408,20 +549,23 @@ function lookupEntities(db, expandedIds, expansionMeta) {
  * @param {Array} seedResults - Original seed results (used to determine file proximity)
  * @returns {Array} The same array, sorted by reranked score descending
  */
-export function rerankExpanded(expandedResults, seedResults) {
+export function rerankExpanded(expandedResults, seedResults, options = {}) {
+  const {
+    queryInt8 = null,
+    hnswIndex = null,
+    semanticWeight = 0.4,
+    cosineSimilarity = null,
+  } = options;
+  const clampedSemanticWeight = clampSemanticWeight(semanticWeight);
+  const semanticEnabled = !!(queryInt8 && hnswIndex && cosineSimilarity && clampedSemanticWeight > 0);
+
   if (expandedResults.length === 0) return expandedResults;
 
   const seedFiles = new Set(
     seedResults.map(r => r.file_path || r.file || r.metadata?.path).filter(Boolean)
   );
 
-  const TYPE_BOOST = {
-    class: 1.3,
-    function: 1.2,
-    method: 1.2,
-    interface: 1.3,
-    struct: 1.2,
-  };
+  const baseScores = [];
 
   for (const er of expandedResults) {
     let rerankScore = er.score || 0;
@@ -438,7 +582,28 @@ export function rerankExpanded(expandedResults, seedResults) {
       rerankScore *= TYPE_BOOST[entType];
     }
 
-    er.score = rerankScore;
+    baseScores.push(rerankScore);
+  }
+
+  if (!semanticEnabled) {
+    for (let i = 0; i < expandedResults.length; i++) {
+      expandedResults[i].score = baseScores[i];
+    }
+  } else {
+    const normalizedGraphScores = normalizeMinMax(baseScores);
+    for (let i = 0; i < expandedResults.length; i++) {
+      const er = expandedResults[i];
+      const normGraph = normalizedGraphScores[i];
+      let rerankScore = normGraph;
+      const entityId = er.entity_id || er.id;
+      const entityInt8 = hnswIndex.getInt8Vector(entityId);
+      if (entityInt8) {
+        const cosSim = cosineSimilarity(queryInt8, entityInt8);
+        const normSim = (cosSim + 1) / 2;
+        rerankScore = blendScores(normGraph, normSim, clampedSemanticWeight);
+      }
+      er.score = rerankScore;
+    }
   }
 
   // Re-sort by reranked score descending

@@ -10,6 +10,7 @@
 
 import { SEISMIC_CONFIG, DB_PATHS } from './config.js';
 import { expandResults } from './graph-expansion.js';
+import { int8CosineSimilarity } from './embedding-service.js';
 import { QualityScorer } from './quality-scorer.js';
 import { classifyIntent, getIntentPolicy } from './intent-router.js';
 import { recordQueryTelemetry } from './embedding-cache.js';
@@ -93,6 +94,9 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     if (semanticStats.stages) stats.stages = semanticStats.stages;
   }
 
+  // Extract query embedding for query-dependent graph expansion scoring
+  const queryInt8 = semanticStats?.queryInt8 || null;
+
   // =========================================================================
   // SEISMIC Sparse Vector Path (gated by SEISMIC_CONFIG.enabled)
   // =========================================================================
@@ -128,6 +132,9 @@ export async function applyPostRetrieval(results, query, options, searchContext)
         results = expandResults(graphDb, results, {
           expandMode: effectiveGraphExpand,
           adaptiveHop2,
+          queryInt8,
+          hnswIndex: this.binaryHnswIndex,
+          cosineSimilarity: int8CosineSimilarity,
           ...(intentEdgeTypes && !graphExpandOptions.edgeTypes ? { edgeTypes: intentEdgeTypes } : {}),
           ...graphExpandOptions,
         });
