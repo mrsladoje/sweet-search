@@ -7,7 +7,7 @@ within each section. Updated 2026-02-23 with completed items removed.
 
 20,262 queries across 8 benchmarks, ~4 hours wall time. Zero errors.
 
-**Profile**: `balanced` — NO ColBERT (disabled at index+query time), WITH cascaded
+**Profile**: `balanced` — NO late interaction (disabled at index+query time), WITH cascaded
 reranking (FlashRank TinyBERT → GTE-ModernBERT-Base INT8).
 
 **Embedding model**: CodeRankEmbed INT8 (`mrsladoje/CodeRankEmbed-onnx-int8`, 137M,
@@ -48,46 +48,50 @@ Results: `eval/results/all_benchmarks_2026-02-19T00-17-05-442Z.json`
 
 ---
 
-## 0. ColBERT: Upgrade to LateOn-Code + Enable by Default
+## 0. Late Interaction: Upgrade to LateOn-Code + Enable by Default
 
-**Status**: ColBERT infrastructure is complete (`core/colbert-index.js`) but was
-DISABLED in all benchmark runs (`buildColBERT: false, useColBERT: false` in the
-`balanced` profile). The configured model is `jinaai/jina-colbert-v2` — **no longer
-SOTA as of 2026-02-12.**
+**Status**: Late interaction infrastructure is complete (`core/late-interaction-index.js`,
+`core/late-interaction-model.js`). Model upgraded from Jina ColBERT v2 to LateOn-Code
+(2026-03-01). Rename from `colbert` → `late-interaction` complete across all code.
+Phase 1 ONNX validation PASSED (both models). Projection gap FIXED (defensive fallback
+for manual projection, verified baked in ONNX). DISABLED in all benchmark runs
+(`buildLateInteraction: false, useLateInteraction: false` in the `balanced` profile).
+Blend weight (α=0.3) untested with real MaxSim scores — see Section 28.6.
 
-### 0.1 Current ColBERT Model Is Outdated
+### 0.1 Model Upgrade: DONE (2026-03-01)
 
-Jina ColBERT v2 (560M, 2024) has been superseded by **LateOn-Code** (LightOn AI,
-released 2026-02-12):
+~~Jina ColBERT v2 (560M, 2024) has been superseded by~~ **COMPLETED** — upgraded to
+LateOn-Code (LightOn AI, released 2026-02-12):
 
 | Model | Size | MTEB Code v1 Avg | CSN MRR | Architecture |
 |-------|------|------------------|---------|--------------|
-| LateOn-Code | 130M | 74.12 | 90.40% | ModernBERT + PyLate |
+| LateOn-Code | 149M | 74.12 | 89.6% | ModernBERT + PyLate |
 | EmbeddingGemma-300M | 300M | 68.76 | — | Gemma |
-| LateOn-Code-edge | 17M | 66.64 | — | ModernBERT (small) |
-| Jina ColBERT v2 | 560M | < LateOn | — | XLM-RoBERTa |
+| LateOn-Code-edge | 17M | 66.64 | 86.9% | ModernBERT (small) |
+| Jina ColBERT v2 (old) | 560M | < LateOn | — | XLM-RoBERTa |
 
 Key facts:
-- LateOn-Code is purpose-built for code (trained on CoRNStack: Go, Java, JS, PHP,
-  Python, Ruby — same 6 languages as CodeSearchNet).
-- 130M params — almost identical to CodeRankEmbed (137M). Would NOT increase memory
-  footprint vs current Jina ColBERT v2 (560M is 4x larger).
-- Uses ModernBERT — same architecture family as our GTE-Reranker. Potential for
-  shared ONNX runtime session pooling.
-- HuggingFace: `lightonai/lateon-code` (full), `lightonai/lateon-code-edge` (17M).
-- PyLate framework — needs ONNX export or `@huggingface/transformers` integration.
+- LateOn-Code is purpose-built for **text→code** retrieval (trained on CoRNStack:
+  docstring queries → code functions). Covers Go, Java, JS, PHP, Python, Ruby.
+- Training modality: NL queries → code documents. Exactly matches Sweet Search's
+  primary use case (agents write NL queries, search returns code).
+- 149M params — almost identical to CodeRankEmbed (137M).
+- ONNX exports have projection layers baked in (verified by Phase 1 validation).
+- Full model: 128d tokens, p50=9.8ms, discrimination=0.6275.
+- Edge model: 48d tokens, p50=2.1ms, discrimination=0.4454.
+- Config: `LATE_INTERACTION_CONFIG` in `core/config.js` with both model variants.
 
 ### 0.2 Expected Impact on Benchmark Scores
 
-Late interaction (ColBERT) adds token-level matching on top of chunk-level
+Late interaction adds token-level matching on top of chunk-level
 embeddings. This helps most when:
 - Queries contain specific identifiers that dense embeddings average away
 - Code has verbose signatures (Java `AbstractFactoryBuilder.createWidget()`)
 - Language has many synonymous patterns (JS `function`/`=>`/`class method`)
 
-**Estimated MRR deltas from enabling ColBERT (conservative):**
+**Estimated MRR deltas from enabling late interaction (conservative):**
 
-| Benchmark | Current MRR | Expected w/ ColBERT | Delta | Confidence |
+| Benchmark | Current MRR | Expected w/ LateInteraction | Delta | Confidence |
 |-----------|-------------|---------------------|-------|------------|
 | Java (CSN) | 34.8% | 50-60% | +15-25 | HIGH — Java benefits most from token matching |
 | JavaScript (CSN) | 51.7% | 60-68% | +8-16 | MEDIUM — helps with identifier matching |
@@ -107,28 +111,26 @@ parameters, meaning near-zero latency overhead.
 
 ### 0.3 Action Items
 
-- [ ] **ONNX export of LateOn-Code**: Export `lightonai/lateon-code` to ONNX INT8
-  (same pattern as CodeRankEmbed). Verify token-level output shape matches our
-  ColBERT index schema (per-token 128d vectors).
-- [ ] **Update `COLBERT_CONFIG.model`** from `jinaai/jina-colbert-v2` to the new
-  model ID in `core/config.js`.
-- [ ] **Also evaluate LateOn-Code-edge** (17M): If quality is acceptable, the
-  tiny model makes ColBERT essentially free at query time.
-- [ ] **Re-run CodeSearchNet + GenCodeSearchNet with ColBERT enabled**: Use
-  `--profile=full` on just these two benchmarks (~1-2h extra for ColBERT indexing).
-  Measure per-language MRR delta.
-- [ ] **If Java MRR improves >10 points**: Enable ColBERT in the `balanced` profile
-  by default (`buildColBERT: true, useColBERT: true`).
-- [ ] **ColBERT indexing cost**: Current ColBERT does per-line embedding (up to 16
-  lines/chunk × 200 chars). For 1200 chunks that's ~9600 extra embed calls. Measure
-  actual wall time and decide if it's acceptable for default indexing.
+- [x] ~~ONNX export of LateOn-Code~~ — DONE. Both models use pre-exported ONNX
+  (`model_int8.onnx` for full, `model.onnx` for edge). Downloaded from HuggingFace.
+- [x] ~~Update config model~~ — DONE. `LATE_INTERACTION_CONFIG` in `core/config.js`.
+- [x] ~~Evaluate LateOn-Code-edge~~ — DONE. Phase 1 validation passed both models.
+- [x] ~~Rename colbert → late-interaction~~ — DONE. 31 files, zero backward compat.
+- [x] ~~Fix projection gap~~ — DONE. Defensive fallback in `late-interaction-model.js`.
+- [ ] **Run Phase 5 benchmarks**: CodeSearchNet + GenCodeSearchNet with late
+  interaction enabled. Measure per-language MRR delta. See Section 28.6 for blend
+  weight tuning plan.
+- [ ] **If Java MRR improves >10 points**: Enable late interaction in the `balanced`
+  profile by default (`buildLateInteraction: true, useLateInteraction: true`).
+- [ ] **Measure late interaction indexing cost**: LateOn-Code encodes entire chunks
+  (not per-line). For 1200 chunks at p50=9.8ms → ~12 seconds total. Edge model
+  at p50=2.1ms → ~2.5 seconds. Verify in practice.
 
 ### 0.4 Priority
 
-**HIGH** — This is the single highest-ROI improvement available. ColBERT
-infrastructure already exists and works. Swapping the model is a config change.
-The benchmark run proved the pipeline is stable (0 errors across 20K queries).
-The only blocker is ONNX export of LateOn-Code.
+**HIGH** — This is the single highest-ROI improvement available. Infrastructure is
+complete and validated. Only remaining work is benchmarking (Phase 5) and blend weight
+tuning (Section 28.6).
 
 ---
 
@@ -476,7 +478,7 @@ can reasonably match. GenCodeSearchNet has cleaner, more natural queries.
 **Dense embedding limitations:** CodeRankEmbed is good but still compresses a whole
 code chunk into a single 768d vector. Java's verbose signatures
 (`AbstractFactoryBuilderImpl.createWidgetFromConfig()`) contain many tokens that
-get averaged away. Late interaction (ColBERT) would help by preserving token-level
+get averaged away. Late interaction would help by preserving token-level
 information.
 
 **JavaScript syntax diversity:** JS has many equivalent patterns (`function`,
@@ -492,7 +494,7 @@ improve entity extraction for graph-based features.
 
 ### 7.3 Action Items
 
-- [ ] **Enable ColBERT** (Section 0) — expected to help Java most (+15-25 MRR pts)
+- [ ] **Enable late interaction** (Section 0) — expected to help Java most (+15-25 MRR pts)
 - [ ] **Add Java to TAGS_QUERIES** in `tree-sitter-provider.js` — currently only
   JS, TS, Python, Go, Rust have hand-written queries
 - [ ] **Error analysis on CodeSearchNet JS/Java failures**: Sample 50 failed queries
@@ -508,39 +510,40 @@ improve entity extraction for graph-based features.
 ## 8. Benchmark Configuration: Run Full Profile
 
 **Status**: The 2026-02-19 baseline used the `balanced` profile which disables
-ColBERT. A full-profile run is needed for a complete picture.
+late interaction. A full-profile run is needed for a complete picture.
 
 ### 8.1 What Was Missing
 
 The `balanced` profile in `eval/run_all.js` sets:
 ```js
-{ buildColBERT: false, useColBERT: false, sqliteFast: true,
+{ buildLateInteraction: false, useLateInteraction: false, sqliteFast: true,
   indexMode: 'single', requireNativeAnn: false }
 ```
 
 This means the benchmark results are CodeRankEmbed + FlashRank/ModernBERT
-reranking only. ColBERT late interaction, which is the main retrieval feature
-differentiator, was never tested.
+reranking only. Late interaction (LateOn-Code MaxSim), which is the main retrieval
+feature differentiator, was never tested.
 
 ### 8.2 Indexing Time Concern
 
-The balanced run took ~4 hours for 20K queries. ColBERT adds per-line embedding
-(up to 16 lines × 200 chars per chunk). Rough estimate for full ColBERT indexing
-across all 8 benchmarks: +8-20 hours.
+The balanced run took ~4 hours for 20K queries. Late interaction adds per-chunk
+encoding via LateOn-Code. Estimated: full model at p50=9.8ms/chunk ≈ 12s per 1200
+chunks. Edge model at p50=2.1ms ≈ 2.5s. Dramatically cheaper than the old per-line
+approach (the old Jina ColBERT v2 required per-line embedding).
 
-**Recommendation**: Don't run all 8 with ColBERT. Run selectively:
-- CodeSearchNet (1,200 queries) — to see per-language ColBERT impact
+**Recommendation**: Don't run all 8 with late interaction. Run selectively:
+- CodeSearchNet (1,200 queries) — to see per-language late interaction impact
 - GenCodeSearchNet (6,000 queries) — largest dataset, most representative
 - COIR (4,500 queries) — mixed tasks, good diversity
 
 Skip: AdvTest (already 91.5%), CosQA (too small), CrossCodeEval (fundamentally
-different task), CoQuIR (quality-focused, ColBERT won't help much).
+different task), CoQuIR (quality-focused, late interaction won't help much).
 
 ### 8.3 Action Items
 
-- [ ] **Run selective ColBERT benchmark** on CSN + GCSN + COIR (~3 benchmarks)
+- [ ] **Run selective late interaction benchmark** on CSN + GCSN + COIR (~3 benchmarks)
 - [ ] **Compare balanced vs full profile** per-language and per-benchmark
-- [ ] **Measure ColBERT indexing overhead** to decide if it can be default-on
+- [ ] **Measure late interaction indexing overhead** to decide if it can be default-on
 - [ ] **Document the full vs balanced delta** in eval/results/
 
 ---
@@ -611,7 +614,7 @@ What we detect:
 **HIGH** — JavaScript and TypeScript are the most common languages for Claude Code
 users. Improving chunking boundaries and entity extraction directly impacts how
 well we chunk JS files and how many entities appear in the graph. Even without
-ColBERT, better chunking means better embedding quality (chunks aligned to
+late interaction, better chunking means better embedding quality (chunks aligned to
 semantic boundaries embed better than arbitrary line splits).
 
 ### 9.4 Action Items
@@ -1377,95 +1380,231 @@ Java-heavy codebases with mixed result sizes.
 
 ---
 
-## 26. Pipeline Restructuring: Expand Before Late Interaction, Single Reranker Pass
+## 26. Pipeline Restructuring: Cascaded Scoring with Conditional Cross-Encoder
 
 **Status**: Not started. Identified 2026-02-28 as the highest-value architectural
-improvement to the retrieval pipeline.
+improvement to the retrieval pipeline. Updated 2026-03-01 with cascaded late
+interaction analysis and conditional reranking design.
 
-### 26.1 Current Architecture (Problem)
+### 26.1 Current Architecture (Two Problems)
 
 ```
 lexicalSearch()            ← BM25 FTS5
-semanticSearch3Stage()     ← Binary → Int8 → ColBERT → Reranker  ← here
+semanticSearch3Stage()     ← Binary → Int8 → LateInteraction → Reranker  ← here
 hybridSearchV2()           ← CC fusion + MMR
 expandResults()            ← graph expansion with heuristic scoring only
 applyTokenBudget()
 ```
 
-The cross-encoder reranker — the most powerful scorer in the pipeline — never sees
-expanded entities. Expanded entities get only heuristic scores (topology decay +
-1.5× file proximity + 1.3× type boost), while original retrieval results get full
-learned scoring. This is a structural asymmetry.
+**Problem 1 — Expanded entities never see the reranker.** The cross-encoder reranker
+(the most powerful scorer in the pipeline) only scores candidates BEFORE graph
+expansion. Expanded entities get only heuristic scores (topology decay + 1.5× file
+proximity + 1.3× type boost). This is a structural asymmetry.
 
-### 26.2 Proposed Architecture Per Query Type
+**Problem 2 — Late interaction and cross-encoder are redundant on the same candidates.**
+Currently both run on the same top-20 from HNSW. The cross-encoder does full query-
+document attention (every query token attends to every document token). MaxSim only
+finds max per-query-token. The cross-encoder is strictly more powerful — it will
+largely override late interaction's ranking. When both run on the same candidates,
+late interaction's contribution is near-zero.
+
+### 26.2 Key Insight: Late Interaction as Stage 1, Not Parallel Reranker
+
+Late interaction with pre-indexed token vectors is essentially **free** at query time.
+Document tokens are already in the index. We only need one query encoding (~2ms edge,
+~10ms full model) then MaxSim scoring is pure arithmetic on pre-computed vectors.
+
+Compare this to our current Stage 1 (FlashRank TinyBERT, 22M):
+- FlashRank: re-encodes each (query, document) pair. ~15ms for 20 candidates.
+- MaxSim on pre-indexed tokens: ~0.04ms for 20 candidates (just dot products).
+
+Late interaction is a natural replacement for FlashRank as the fast filter in a
+cascaded scoring pipeline. It's faster, uses richer signal (per-token vs pooled),
+and the token vectors are already stored.
+
+### 26.3 Proposed Architecture: Conditional Cascade
+
+**Core idea**: use late interaction as the primary reranker, only invoke the expensive
+cross-encoder when MaxSim confidence is low (scores are close together, ranking is
+uncertain).
+
+```
+HNSW (top 50)
+  → expand (graph expansion on broader candidate set)
+  → MaxSim rerank all candidates (~2-10ms)
+  → confidence check:
+      HIGH (score gap decisive):  DONE           (~5-15ms total, est. 60-70% of queries)
+      LOW  (scores clustered):    cross-encoder   (~350-700ms total, est. 30-40% of queries)
+  → budget
+```
+
+**Confidence heuristic (needs benchmarking):** if the MaxSim score gap between rank 1
+and rank 2 exceeds a threshold (e.g., 0.15), the ranking is decisive — the cross-
+encoder won't change it. If the gap is small (e.g., 0.02), the ranking is uncertain
+and the cross-encoder might reorder.
+
+**Expected average latency**: ~50-100ms (vs current ~700ms), because the cross-encoder
+only fires on the ~30-40% of queries where cheap scorers disagree. Identifier lookups
+(where MaxSim excels) skip the cross-encoder entirely.
+
+### 26.4 Model Choice Matters: Full vs Edge
+
+The cascade design changes the full-vs-edge model tradeoff:
+
+| Model | Query encode | MaxSim discrimination | Cross-encoder skip rate |
+|-------|-------------|----------------------|------------------------|
+| **Edge (17M, 48d)** | 2.1ms | 0.4454 | Lower — smaller score gaps mean more queries need cross-encoder |
+| **Full (149M, 128d)** | 9.8ms | 0.6275 | Higher — larger score gaps mean more queries are decisive |
+
+The edge model is faster per-query, but its lower discrimination (0.45 vs 0.63) means
+the confidence threshold is hit less often, so more queries fall through to the cross-
+encoder. The full model is slower per-query but may produce **lower average latency**
+overall because it skips the cross-encoder more often.
+
+This is a critical benchmarking question:
+- Edge: 2ms query + cross-encoder 40% of the time = 2 + 0.4×350 = **142ms avg**
+- Full: 10ms query + cross-encoder 25% of the time = 10 + 0.25×350 = **97ms avg**
+
+These numbers are speculative — the actual skip rates depend on the query distribution
+and the threshold. **Must benchmark both models with real queries before deciding.**
+
+### 26.5 Per Query Type Pipelines
 
 **LEXICAL-ONLY** (identifier search):
 ```
-BM25 → expand → reranker (NEW — currently never applied) → budget
+BM25 → expand → MaxSim rerank → [confidence gate] → optional cross-encoder → budget
 ```
+Currently lexical gets ZERO reranking. MaxSim adds token-level scoring for free.
 
 **SEMANTIC-ONLY** (conceptual questions):
 ```
-Binary → Int8 → expand → ColBERT → reranker → budget
+Binary → Int8 → expand → MaxSim rerank → [confidence gate] → cross-encoder → budget
 ```
 
-**HYBRID** (most common — expansion must follow fusion because seeds require both paths):
+**HYBRID** (most common):
 ```
-BM25 ‖ (Binary → Int8) → CC fusion (Int8 scores) + MMR → expand → ColBERT → reranker → budget
+BM25 ‖ (Binary → Int8) → CC fusion + MMR → expand → MaxSim → [gate] → cross-encoder → budget
 ```
 
 **STRUCTURAL** (relationship/navigation queries):
 ```
-BM25 structural → expand (primary mechanism) → optional reranker → budget
+BM25 structural → expand → MaxSim rerank → [gate] → optional cross-encoder → budget
 ```
 
-### 26.3 Latency Analysis
+### 26.6 Fusion with Int8 Scores
 
-The restructuring is net-faster despite adding expanded entities to the reranker:
+Moving the cross-encoder to after fusion means CC fusion uses Int8 cosine scores
+instead of reranker scores for the semantic side. This is acceptable: Int8 cosine
+preserves relative ordering within 1–3% of float32 cosine, and fusion cares about
+ordering rather than absolute score magnitude.
 
-| Step | Current | Proposed |
-|------|---------|----------|
-| ColBERT (20 semantic-only) | ~15ms | — (moved to shared stage) |
-| Reranker (50 pre-diversity candidates) | ~80ms | — |
-| ColBERT (30 merged post-MMR results) | — | ~18ms |
-| Reranker (30 merged+expanded results) | — | ~50ms |
-
-The reranker gets ~30 diverse, post-MMR candidates instead of ~50 redundant,
-pre-diversity candidates. Fewer inputs, higher-quality inputs.
-
-### 26.4 Fusion with Int8 Scores
-
-Moving the reranker to after fusion means CC fusion uses Int8 cosine scores instead
-of reranker scores for the semantic side. This is acceptable: Int8 cosine preserves
-relative ordering within 1–3% of float32 cosine, and fusion cares about ordering
-rather than absolute score magnitude.
-
-### 26.5 Notes on Existing Token Budgets
+### 26.7 Notes on Existing Token Budgets
 
 The internal `hop2TokenBudget` (4000 tokens) inside `expandSecondHopAdaptive` is NOT
 affected — it limits candidate generation during graph traversal and stays in place.
-Only the final `applyTokenBudget` (8000 tokens) moves to after the reranker pass.
+Only the final `applyTokenBudget` (8000 tokens) moves to after the scoring cascade.
 
-### 26.6 Action Items
+### 26.8 Session Warmup: Pre-Load Late Interaction Model
 
-- [ ] **Extract ColBERT + reranker from `semanticSearch3Stage`** into a standalone
-  `lateInteractionRerank(candidates, query)` function
-- [ ] **Semantic path**: remove ColBERT/reranker from Stage 3, call after expansion
-- [ ] **Hybrid path**: remove ColBERT/reranker from Stage 3, call on merged+expanded
-  set post-fusion
-- [ ] **Lexical path**: add optional reranker pass after expansion (currently zero
-  reranking on lexical-only queries)
-- [ ] **Move `applyTokenBudget`** to after the single reranker pass in all paths
-- [ ] **Regression tests**: verify each query type doesn't degrade
-- [ ] **Benchmark before/after** on CodeSearchNet + GenCodeSearchNet — latency + MRR
+The late interaction model MUST be pre-loaded during session warmup for this cascade
+to work. A cold-start query that triggers model download + ONNX session creation
+would be catastrophic for latency.
 
-### 26.7 Priority
+Current state: session warmup already pre-loads the late interaction model
+(`session-warmup.js:508-521`, `pre-ready` phase, gated on
+`LATE_INTERACTION_CONFIG.enabled`). This loads the ONNX session, tokenizer, and
+skiplist. The warmup fires for whichever model is configured (full or edge).
 
-**HIGH** — architectural correctness issue. Expanded entities currently get
-second-class scoring even when they are the correct answer. This restructuring gives
-ColBERT and the reranker visibility over the full candidate set. Combined with Section
-24 (query-dependent expansion scoring), graph expansion becomes a genuine quality
-lever rather than a heuristic supplement.
+What's needed:
+- [ ] **Verify warmup includes probe inference** — the `loadModel()` in
+  `late-interaction-model.js` runs a probe inference to detect projection dimensions.
+  Confirm this runs during warmup, not deferred to first query.
+- [ ] **Measure warmup latency for both models**: full model ONNX session creation
+  was 815ms in validation; edge was 294ms. These are one-time costs that must complete
+  before the first search.
+- [ ] **Consider pre-encoding a warmup query** during session warmup to prime any
+  lazy caches in the ONNX runtime (thread pool startup, memory allocation). A single
+  `encodeQuery("warmup")` call during warmup would ensure the first real query doesn't
+  pay cold-start overhead.
+
+### 26.9 Open Questions (Needs Discussion + Benchmarking)
+
+These questions cannot be answered without benchmarking. They should be resolved
+during Phase 5 benchmarks (Section 0.3) or in a dedicated pipeline restructuring
+benchmark pass.
+
+1. **Does the confidence gate actually work?** The score-gap heuristic assumes that
+   large MaxSim gaps correlate with correct rankings. This may not hold — a document
+   could score high on MaxSim due to token overlap but be semantically wrong. The
+   cross-encoder would catch this. Benchmark: measure MRR with and without the gate
+   at various thresholds.
+
+2. **Full vs edge for the cascade?** The full model gives better discrimination but
+   adds ~8ms per query. If the cross-encoder skip rate is significantly higher, the
+   full model wins on average latency. If skip rates are similar, edge wins. This is
+   query-distribution-dependent and must be measured on real benchmarks.
+
+3. **What replaces FlashRank Stage 1?** If MaxSim becomes Stage 1, FlashRank becomes
+   redundant. But FlashRank is a general-purpose reranker that works on any text, while
+   MaxSim requires pre-indexed token vectors. Queries that hit chunks without late
+   interaction tokens (e.g., newly added files not yet re-indexed) would have no MaxSim
+   scores. FlashRank could serve as the fallback for un-indexed chunks.
+
+4. **Should the cross-encoder run on fewer candidates?** Currently it scores 20. If
+   MaxSim already identified a clear winner, we could pass only the top 5-10 to the
+   cross-encoder, cutting its latency by 50-75%. The confidence gate could also
+   modulate HOW MANY candidates go to the cross-encoder (not just whether it runs).
+
+5. **Is MaxSim redundant with the cross-encoder on the same candidates?** Yes, when
+   both score the same set. The restructuring avoids this by making them sequential
+   stages with the gate between them, not parallel scorers on the same input. But if
+   the gate threshold is set too low (always passes through), we're back to the
+   redundancy problem.
+
+6. **Graph expansion on a broader candidate set?** Currently we expand the top 20.
+   If MaxSim can cheaply score 50+ candidates, we could expand the top 50, then let
+   MaxSim + the gate determine which make the final cut. More candidates = better
+   recall at the expansion stage, at negligible cost (MaxSim is ~0.04ms per candidate).
+
+### 26.10 Action Items
+
+**Phase A: Benchmark current pipeline components (prerequisite)**
+- [ ] **Measure MaxSim scoring latency** on pre-indexed tokens: time per candidate
+  at 20, 50, 100 candidates with both full and edge model tokens
+- [ ] **Measure FlashRank latency** at 20, 50 candidates for comparison
+- [ ] **Compute score gap distributions** on CodeSearchNet: what fraction of queries
+  have decisive MaxSim gaps (>0.15) vs ambiguous gaps (<0.05)?
+- [ ] **Measure cross-encoder impact on MaxSim-reranked results**: after MaxSim
+  reranking, does the cross-encoder change the top-1 result? If rarely, the gate
+  threshold can be aggressive. Count: "cross-encoder changed rank-1 in X% of queries"
+
+**Phase B: Restructure pipeline (after benchmarks inform design)**
+- [ ] **Extract late interaction + reranker from `semanticSearch3Stage`** into a
+  standalone `cascadedRerank(candidates, query)` function
+- [ ] **Implement confidence gate**: configurable threshold, fallback to full
+  cross-encoder when MaxSim scores are ambiguous
+- [ ] **All search paths**: route through the shared cascade (lexical, semantic,
+  hybrid, structural)
+- [ ] **Fallback for un-indexed chunks**: if a candidate has no late interaction
+  tokens (not indexed or index stale), fall through to FlashRank or cross-encoder
+- [ ] **Move `applyTokenBudget`** to after the cascade in all paths
+
+**Phase C: Validate**
+- [ ] **A/B benchmark** on CodeSearchNet + GenCodeSearchNet: compare MRR + latency
+  of current pipeline vs restructured cascade at various gate thresholds
+- [ ] **Per-model comparison**: run cascade with full model vs edge model, measure
+  average latency including cross-encoder skip rates
+- [ ] **Regression test**: verify each query type doesn't degrade
+- [ ] **Latency distribution**: p50, p95, p99 before and after — the p95 matters
+  more than p50 for user experience
+
+### 26.11 Priority
+
+**HIGH** — two architectural issues (expanded entities unranked, redundant scorers)
+plus a major latency optimization opportunity (conditional cross-encoder). Combined
+with Section 24 (query-dependent expansion scoring), this restructuring makes the
+pipeline both faster and more accurate. But the design depends on benchmarking results
+— don't implement before Phase A measurements.
 
 ---
 
@@ -1536,10 +1675,219 @@ at our result set sizes (10–30 chunks). Worth a quick experiment before commit
 
 ---
 
+## 28. ColGrep Integration: Hybrid Regex+Semantic Search + PLAID Index
+
+**Status**: Not started. Research complete. LightOn released ColGrep (Rust CLI) and
+NextPlaid (PLAID multi-vector engine) alongside the LateOn-Code models we already use.
+
+### 28.1 What ColGrep Is
+
+ColGrep is a semantic code search CLI built on NextPlaid (a pure Rust PLAID engine).
+It combines grep-style regex filtering with LateOn-Code semantic ranking. Key stats
+from LightOn's eval (Claude Opus 4.5, 135 questions across HuggingFace repos):
+
+- 70% win rate vs vanilla grep
+- 15.7% average token reduction for the agent
+- 56% fewer search operations per question
+- Grep still wins when function names are highly descriptive (TRL)
+
+Architecture: single Rust binary, no server, ONNX baked in. Incremental indexing
+(detects file changes automatically). PLAID compressed multi-vector index. Unit-aware
+chunking via tree-sitter.
+
+Source: `lightonai/next-plaid` on GitHub. Apache-2.0 license.
+
+### 28.2 Why This Matters for Sweet Search
+
+We have 4 search modes: `lexical`, `semantic`, `hybrid`, `structural`. None support
+"find all code matching a regex pattern, then rank by semantic relevance." This is a
+real gap — agents frequently need "show me all implementations of X pattern, ranked
+by relevance to concept Y."
+
+ColGrep's hybrid query model (`-e "regex" "semantic query"`) solves this directly.
+Their eval proves it works better than plain grep for agentic code navigation.
+
+### 28.3 Integration Plan: Hybrid Pattern+Semantic Search Mode
+
+Add a 5th search mode: `pattern` — regex filter then late interaction rerank.
+
+```
+ss -e "fn.*sort" "sorting algorithm"
+ss --mode=pattern --regex="class.*Service" "authentication"
+```
+
+Pipeline:
+```
+1. Regex scan (ripgrep or FTS5 trigram)  →  matched files/chunks
+2. Late interaction encode query          →  token vectors
+3. Late interaction encode matched chunks →  token vectors (from index if available)
+4. MaxSim rerank matched chunks           →  sorted by semantic relevance
+5. Apply token budget                     →  final results
+```
+
+This fills the gap identified in TODO Section 14 (Code-to-Code Search). When the
+"query" is a code pattern (regex), we can't embed it meaningfully. But we CAN regex-
+match first, then semantically rank the matches using a natural language intent string.
+
+#### Implementation Steps
+
+- [ ] **Add `pattern` mode to search-cli.js**: `--mode=pattern`, `-e <regex>` flag
+      for the regex component, remaining positional args as the semantic query
+- [ ] **Add `pattern` mode to search-server.js**: `?mode=pattern&regex=<regex>&q=<query>`
+- [ ] **Core implementation in sweet-search.js**: new `patternSearch()` method that:
+      (a) runs ripgrep or FTS5 trigram to find regex matches,
+      (b) maps matches to indexed chunks,
+      (c) runs late interaction rerank on matched chunks
+- [ ] **Update ss-fast.c**: add `-e, --regex <pattern>` flag
+- [ ] **MCP tool support**: add `regex` parameter to the search MCP tool
+- [ ] **Benchmark**: measure on COIR "unknown" language queries (46.4% MRR currently)
+      where queries are code snippets — extract identifiers as regex, use the snippet's
+      intent as the semantic query
+
+### 28.4 PLAID Index: When and Why
+
+PLAID (Performance-optimized Late Interaction using Approximate Dimensions) is the
+compressed multi-vector index format used by ColBERTv2, NextPlaid, and ColGrep.
+
+**How PLAID works:**
+1. K-means cluster ALL document token embeddings → centroid codebook
+2. Store each token as: centroid ID (4 bytes) + quantized residual (16-32 bytes)
+3. Build an IVF mapping centroids → documents containing those tokens
+4. At query time, 3-stage pipeline:
+   - Centroid routing: find most relevant centroids for query tokens
+   - Centroid interaction: score documents using ONLY centroid IDs (no decompression)
+   - Exact MaxSim: decompress and score only the top ~100 candidates
+
+Storage: 36 bytes per 128d token (vs 512 bytes float32, vs 128 bytes our int8).
+This is ~3.5x smaller than our current int8 quantization.
+
+**Why PLAID does NOT help our current pipeline:**
+
+Our late interaction is a **reranker** on 20 candidates, not a **retriever** over the
+full index. We only ever run MaxSim on ~20 docs × ~50 tokens = 6,000 dot products.
+That's microseconds. PLAID's multi-stage centroid routing was designed to avoid brute-
+force MaxSim over MILLIONS of documents (MS MARCO = 8.8M passages). At our scale,
+PLAID's overhead would make scoring *slower* than our brute-force approach.
+
+| Our scale (11K chunks, 550K tokens) | PLAID designed for |
+|--------------------------------------|-------------------|
+| MaxSim reranker on 20 candidates     | Primary retriever over 8.8M passages |
+| 6,000 dot products per query         | Would be 550M without pruning |
+| Brute-force: ~0.01ms                 | Brute-force: impossible |
+| int8 index: ~69 MB                   | Uncompressed: 170+ GB |
+
+**When PLAID becomes useful:**
+
+1. **Monorepo scale** (100K+ chunks): int8 index grows to 600+ MB. PLAID's 3.5x
+   compression brings it to ~170 MB and the multi-stage pipeline starts paying off
+   because brute-force MaxSim on 5M tokens per query is no longer microseconds.
+
+2. **Late interaction as primary retriever**: If we ever want to skip HNSW entirely
+   and use PLAID for first-stage retrieval (like ColGrep does), we need the centroid
+   routing infrastructure. This would eliminate the dense embedding model dependency
+   for the semantic path — LateOn-Code does both retrieval and reranking.
+
+3. **ColGrep ecosystem interop**: ColGrep uses PLAID natively. If we want to share
+   indexes (e.g., ColGrep indexes the repo, Sweet Search reads the same index for
+   its reranking), we need PLAID-compatible storage.
+
+**Recommendation**: Defer PLAID until either (a) a monorepo user reports storage/
+perf issues, or (b) we decide to use late interaction as a primary retriever. For now,
+our int8 JSON index is fine for the reranker role.
+
+#### PLAID Implementation Steps (When Ready)
+
+- [ ] **Implement K-means clustering** of token vectors at index time (or use existing
+      HNSW centroids from the dense index as starting points)
+- [ ] **Replace `late-interaction-index.js`** JSON storage with centroid ID + 2-bit
+      residual binary format
+- [ ] **Add centroid interaction scoring** as a fast pre-filter before exact MaxSim
+      (only relevant if candidate count grows beyond ~100)
+- [ ] **Evaluate NextPlaid Rust crate** (`next-plaid` on crates.io) as a potential
+      FFI dependency instead of reimplementing in JS. Their crate is pure Rust,
+      CPU-only, Apache-2.0. Could be called via `napi-rs` bindings.
+- [ ] **Index compatibility**: ensure our PLAID index can be read by ColGrep and
+      vice versa (same centroid format, same residual encoding)
+- [ ] **Benchmark**: storage reduction and scoring latency at 10K, 50K, 100K chunks
+
+### 28.5 Future: ColGrep as MCP Tool Alternative
+
+A longer-term option is exposing ColGrep directly as an MCP tool alongside Sweet
+Search's existing search tool. This gives agents two complementary interfaces:
+
+- **Sweet Search**: full pipeline (BM25 + semantic + graph expansion + reranking +
+  late interaction + quality scoring + token budget). Best for complex queries.
+- **ColGrep**: fast regex+semantic hybrid. Best for "find this pattern and rank by
+  relevance." Single binary, no server dependency.
+
+This is NOT a replacement — Sweet Search has graph expansion, translation fallback,
+vocabulary prewarm, cascaded reranking, and HCGS summaries that ColGrep can't do.
+ColGrep is a focused tool for a specific query pattern.
+
+- [ ] **Evaluate ColGrep as optional MCP tool** — measure whether agents benefit from
+      having both tools available vs Sweet Search's `pattern` mode alone
+- [ ] **Shared index**: if both tools read the same PLAID index, users don't pay
+      double indexing cost
+
+### 28.6 Blend Weight: SONA Adaptive Learning
+
+The current late interaction blend weight (`α = 0.3` in `search-postprocess.js`) was
+set for the old pseudo-ColBERT approximation and never tuned for real MaxSim scores.
+
+Research consensus (arXiv 2508.01405, "Balancing the Blend"): optimal blend weight
+varies per dataset. No universal constant exists. Production systems use RRF (rank-
+based, no tuning), learned weights (train on dev set), or query-dependent blending.
+
+**Problems with fixed 0.3:**
+- MaxSim scores range ~0.14–0.77. BM25 scores can be 0–30+. Cosine scores are 0–1.
+  Linear blending without score normalization is comparing different distributions.
+- LateOn-Code was trained for text→code (docstring queries → function documents).
+  Identifier-heavy queries may benefit from higher α. NL-concept queries may not.
+
+**Proposed SONA adaptive approach** (builds on TODO Section 1.3):
+
+1. Store per-codebase blend weight in AgentDB, keyed by repo fingerprint
+2. Cold start: use benchmark-tuned default (TBD from Phase 5 benchmarks)
+3. Feedback signal from MCP usage: file opens (positive), re-searches (negative)
+4. Per-query-type α: intent router (when re-enabled) routes identifier queries to
+   higher α, conceptual queries to lower α
+5. Score normalization: min-max normalize MaxSim and base scores to [0,1] before
+   blending, so α is meaningful regardless of score distribution
+
+**Action items:**
+- [ ] **Phase 5 benchmarks first**: establish baseline default α across CodeSearchNet +
+      GenCodeSearchNet with α ∈ {0.1, 0.2, 0.3, 0.5, 0.7} and RRF as comparison
+- [ ] **Score normalization**: add min-max normalization in `search-postprocess.js`
+      before blending (zero-cost: we already have the score array)
+- [ ] **RRF alternative**: test `1/(k + rank_lateInteraction) + 1/(k + rank_base)` as
+      a tuning-free fusion method, compare MRR to weighted sum at best α
+- [ ] **SONA wiring**: connect MCP file-open events to blend weight adjustment.
+      Convergence: ~50-100 searches per codebase to stabilize
+- [ ] **Per-intent α**: when intent router returns (TODO Section 2), add per-intent
+      blend weight overrides to intent policies
+
+### 28.7 Priority
+
+**Pattern mode (28.3)**: HIGH — fills a real search capability gap, low implementation
+effort (mostly wiring existing components), directly addresses COIR benchmark weakness.
+
+**PLAID index (28.4)**: LOW — our current int8 reranker index works fine at typical
+codebase scale. Revisit when monorepo users report issues or when we want to use late
+interaction as a primary retriever.
+
+**ColGrep MCP tool (28.5)**: MEDIUM — depends on whether the `pattern` mode alone is
+sufficient. Evaluate after implementing 28.3.
+
+**SONA blend weight (28.6)**: MEDIUM — requires Phase 5 benchmarks as prerequisite.
+Score normalization can be done immediately (zero risk, zero cost). SONA trajectory
+hooks are a larger investment that also benefits TODO Section 1.3 (quality scorer).
+
+---
+
 ## Cross-Cutting: No P2 Item Has Been A/B Tested
 
 The single biggest gap across all P2 features is the absence of benchmarking.
-The 2026-02-19 baseline (balanced profile, no ColBERT) now provides the reference
+The 2026-02-19 baseline (balanced profile, no late interaction) now provides the reference
 point for A/B testing. Before investing more engineering effort in any P2 item:
 
 - [ ] Enable each P2 feature individually and measure MRR/Recall delta
@@ -1548,19 +1896,23 @@ point for A/B testing. Before investing more engineering effort in any P2 item:
 
 ### Recommended A/B Test Priority Order
 
-1. **ColBERT enable** (Section 0) — highest expected impact, infrastructure exists
-2. **Pipeline restructuring** (Section 26) — single reranker pass covers expanded
+1. **Late interaction enable** (Section 0) — highest expected impact, infrastructure exists
+2. **Late interaction blend weight tuning** (Section 28.6) — score normalization + α sweep
+3. **Pipeline restructuring** (Section 26) — single reranker pass covers expanded
    entities; likely net-faster; architectural correctness
-3. **Query-dependent expansion scoring** (Section 24) — ~2ms latency, no training
+4. **Query-dependent expansion scoring** (Section 24) — ~2ms latency, no training
    data, uses existing embeddings; highest-ROI graph improvement
-4. **JS/TS chunking hardening** (Section 9) — directly impacts #2 most common language
-5. **Graph expansion on by default** (Section 5) — gate on A/B validation first
-6. **Quality scorer qualityWeight** (Section 1.1) — quick to A/B test
-7. **Graph expansion adaptive 2-hop benchmarking** (Section 5) — needs A/B validation
-8. **Token estimation fix** (Section 22) — prerequisite for knapsack; zero latency
-9. **MinCut graph expansion** (Section 10.2) — structural importance complement
-10. **Path-level scoring** (Section 23) — medium-low impact, zero latency
-11. **Budget allocation knapsack** (Section 25) — depends on Section 22; A/B first
-12. **Intent router** (Section 2) — requires CatBoost training first, defer
-13. **SEISMIC sparse** (Section 3) — requires SPLADE integration first, defer
-14. **CrossCodeEval structural routing** (Section 11) — niche but tests graph infra
+5. **Pattern search mode** (Section 28.3) — regex+semantic hybrid, fills real gap
+6. **JS/TS chunking hardening** (Section 9) — directly impacts #2 most common language
+7. **Graph expansion on by default** (Section 5) — gate on A/B validation first
+8. **Quality scorer qualityWeight** (Section 1.1) — quick to A/B test
+9. **Graph expansion adaptive 2-hop benchmarking** (Section 5) — needs A/B validation
+10. **Token estimation fix** (Section 22) — prerequisite for knapsack; zero latency
+11. **MinCut graph expansion** (Section 10.2) — structural importance complement
+12. **Path-level scoring** (Section 23) — medium-low impact, zero latency
+13. **Budget allocation knapsack** (Section 25) — depends on Section 22; A/B first
+14. **Intent router** (Section 2) — requires CatBoost training first, defer
+15. **SEISMIC sparse** (Section 3) — requires SPLADE integration first, defer
+16. **CrossCodeEval structural routing** (Section 11) — niche but tests graph infra
+17. **PLAID index** (Section 28.4) — defer until monorepo scale demands it
+18. **ColGrep MCP tool** (Section 28.5) — evaluate after pattern mode proves value
