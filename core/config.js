@@ -8,12 +8,12 @@
  * - Tier 4: Local Xenova (offline fallback)
  *
  * Reranking: Voyage rerank-2 → Jina reranker v3 → FlashRank local
- * Late Interaction: Jina ColBERT v2 (code + 89 languages)
+ * Late Interaction: LateOn-Code (code + 89 languages)
  *
  * References:
  * - https://blog.voyageai.com/2024/12/04/voyage-code-3/
  * - https://mistral.ai/news/codestral-embed
- * - https://jina.ai/news/jina-colbert-v2-multilingual-late-interaction-retriever-for-embedding-and-reranking/
+ * - https://huggingface.co/lightonai/LateOn-Code
  */
 
 import path from 'path';
@@ -97,8 +97,8 @@ export const DB_PATHS = {
   // Kept for backward compatibility - getArtifactStats() warns if this file exists.
   int8Vectors: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'codebase-int8.db'),
 
-  // ColBERT token embeddings (late interaction)
-  colbert: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'codebase-colbert.db'),
+  // Late interaction token embeddings
+  lateInteraction: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'codebase-late-interaction.db'),
 
   // Merkle state for incremental indexing
   merkle: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'merkle-state.json'),
@@ -809,20 +809,56 @@ export function shouldUseLocalReranker() {
 }
 
 // =============================================================================
-// COLBERT LATE INTERACTION CONFIGURATION
+// LATE INTERACTION CONFIGURATION
 // =============================================================================
 
-export const COLBERT_CONFIG = {
-  // Jina ColBERT v2 - Multilingual + code support
-  // 6.5% better than ColBERT v2, 89 languages including programming
-  enabled: true,              // Master switch: auto-enable ColBERT for uncached queries
-  model: 'jinaai/jina-colbert-v2',
-  tokenDimension: 128,        // Full token dimension
-  compressedDimension: 64,    // 50% compression, 1.5% accuracy loss
-  maxTokensPerDoc: 512,
-  quantization: 'int8',       // 4x compression
-  useLocal: true,             // Use local model via transformers.js
-  blendWeight: 0.3,           // 30% ColBERT, 70% int8 score
+export const LATE_INTERACTION_CONFIG = {
+  // false = disabled, 'lateon-code' = full 149M, 'lateon-code-edge' = 17M
+  model: process.env.SWEET_SEARCH_LATE_INTERACTION_MODEL || 'lateon-code',
+
+  get enabled() {
+    return !!this.model && this.model !== 'false';
+  },
+
+  models: {
+    'lateon-code': {
+      hfId: 'lightonai/LateOn-Code',
+      onnxFile: 'model_int8.onnx',          // 150 MB INT8
+      backboneDim: 768,                      // raw ModernBERT hidden size
+      tokenDimension: 128,                   // final output after projection
+      projectionPaths: ['1_Dense/model.safetensors'],  // 768→128 single stage
+      maxQueryLength: 256,
+      maxDocLength: 2048,
+      queryPrefix: '[Q] ',
+      docPrefix: '[D] ',
+    },
+    'lateon-code-edge': {
+      hfId: 'lightonai/LateOn-Code-edge',
+      onnxFile: 'model.onnx',               // 68 MB FP32
+      backboneDim: 256,                      // raw ModernBERT hidden size
+      tokenDimension: 48,                    // final output after 2-stage projection
+      projectionPaths: ['1_Dense/model.safetensors', '2_Dense/model.safetensors'],  // 256→512→48
+      maxQueryLength: 256,
+      maxDocLength: 2048,
+      queryPrefix: '[Q] ',
+      docPrefix: '[D] ',
+    },
+  },
+
+  get activeModel() { return this.models[this.model] || null; },
+  get tokenDimension() { return this.activeModel?.tokenDimension || 128; },
+  get hfModelId() { return this.activeModel?.hfId || null; },
+
+  // Storage: always int8-quantize the token vectors for the index
+  quantization: 'int8',
+  blendWeight: 0.3,     // tune per-model in Phase 5
+
+  // 32 skiplist punctuation characters (filtered from doc tokens, NOT query tokens)
+  skiplistChars: new Set([
+    '!', '"', '#', '$', '%', '&', "'", '(', ')', '*', '+', ',', '-', '.',
+    '/', ':', ';', '<', '=', '>', '?', '@', '[', '\\', ']', '^', '_', '`',
+    '{', '|', '}', '~',
+  ]),
 };
 
 // =============================================================================
@@ -1312,7 +1348,7 @@ export function loadProjectConfig(projectRoot = process.cwd()) {
     const config = JSON.parse(raw);
 
     // Validate known keys, warn on unknown
-    const knownKeys = new Set(['include', 'exclude', 'projectRoot', 'indexDocs', 'maxFileSize', 'respectGitignore']);
+    const knownKeys = new Set(['include', 'exclude', 'projectRoot', 'indexDocs', 'maxFileSize', 'respectGitignore', 'lateInteractionModel']);
     for (const key of Object.keys(config)) {
       if (!knownKeys.has(key)) {
         console.error(`[sweet-search] Warning: unknown key "${key}" in .sweet-search.config.json`);
@@ -1325,6 +1361,7 @@ export function loadProjectConfig(projectRoot = process.cwd()) {
       maxFileSize: typeof config.maxFileSize === 'number' ? config.maxFileSize : FILE_PATTERNS.maxFileSize,
       respectGitignore: typeof config.respectGitignore === 'boolean' ? config.respectGitignore : FILE_PATTERNS.respectGitignore,
       ...(config.projectRoot ? { projectRoot: config.projectRoot } : {}),
+      ...(config.lateInteractionModel !== undefined ? { lateInteractionModel: config.lateInteractionModel } : {}),
     };
   } catch (err) {
     console.error(`[sweet-search] Error loading .sweet-search.config.json: ${err.message}`);
@@ -1462,7 +1499,7 @@ export default {
   TRANSLATION_CONFIG,
   RERANK_CONFIG,
   LOCAL_RERANKER_CONFIG,
-  COLBERT_CONFIG,
+  LATE_INTERACTION_CONFIG,
   HNSW_CONFIG,
   BINARY_HNSW_CONFIG,
   SEISMIC_CONFIG,

@@ -35,7 +35,7 @@ import { EMBEDDING_CONFIG } from './config.js';
  * Uses `this` extensively.
  */
 export async function semanticSearch3Stage(query, options = {}) {
-  const { k = 10, rerank = true, useColBERT = this.useColBERT } = options;
+  const { k = 10, rerank = true, useLateInteraction = this.useLateInteraction } = options;
   const stats = { stages: {} };
 
   // Generate binary embedding (with caching)
@@ -104,7 +104,7 @@ export async function semanticSearch3Stage(query, options = {}) {
   };
   this.log(`Stage 2 (Int8): ${stats.stages.int8.latency_us}us, ${scoredCandidates.length} rescored`);
 
-  // EARLY EXIT: Use score spread analysis to skip ColBERT and reranking
+  // EARLY EXIT: Use score spread analysis to skip reranking
   const topCandidatesWithInt8 = scoredCandidates
     .slice(0, Math.min(10, scoredCandidates.length))
     .filter(c => !c.missingInt8);
@@ -134,57 +134,9 @@ export async function semanticSearch3Stage(query, options = {}) {
     return { results, stats };
   }
 
-  // Stage 2.5: ColBERT late interaction (ONLY for uncached queries)
-  const shouldRunColBERT = this.hasColbertIndex &&
-                           useColBERT &&
-                           !embedResult.cached &&
-                           scoredCandidates.length > 0;
-
-  if (shouldRunColBERT) {
-    try {
-      const colbertStart = performance.now();
-      const topCandidates = scoredCandidates.slice(0, this.stage3Candidates || 20);
-
-      // Rescore top candidates with ColBERT MaxSim
-      for (const candidate of topCandidates) {
-        const docId = candidate.id || candidate.chunkId;
-        const docTokens = this.colbertIndex.getTokens(docId);
-
-        if (docTokens && docTokens.length > 0) {
-          const colbertScore = this.approximateColBERTScore(embedResult.float, docTokens);
-
-          // Blend ColBERT score with int8 score
-          const blendedScore = (colbertScore * this.colbertBlendWeight) +
-                              (candidate.int8Score * (1 - this.colbertBlendWeight));
-
-          candidate.colbertScore = colbertScore;
-          candidate.preColbertScore = candidate.int8Score;
-          candidate.int8Score = blendedScore; // Update score for sorting
-        }
-      }
-
-      // Re-sort by blended score
-      topCandidates.sort((a, b) => b.int8Score - a.int8Score);
-
-      // Update scoredCandidates with re-ranked top results
-      scoredCandidates = [
-        ...topCandidates,
-        ...scoredCandidates.slice(this.stage3Candidates || 20)
-      ];
-
-      stats.stages.colbert = {
-        latency_us: Math.round((performance.now() - colbertStart) * 1000),
-        candidates: topCandidates.length,
-        skippedCache: embedResult.cached,
-      };
-      this.log(`Stage 2.5 (ColBERT): ${stats.stages.colbert.latency_us}us for ${topCandidates.length} candidates`);
-    } catch (err) {
-      this.log(`ColBERT rescore failed: ${err.message}`);
-      // Continue with int8 scores
-    }
-  } else if (this.hasColbertIndex && useColBERT && embedResult.cached) {
-    this.log(`ColBERT: Skipped (using cached embedding)`);
-  }
+  // Late interaction moved to post-expansion pipeline (Phase 6).
+  // See search-postprocess.js — runs after graph expansion so expanded
+  // candidates also benefit from MaxSim scoring.
 
   // Stage 3: Rerank (if enabled)
   let results = scoredCandidates;
@@ -202,8 +154,8 @@ export async function semanticSearch3Stage(query, options = {}) {
         rerankScore: r.jinaScore || r.voyageScore || r.flashRankScore,
         originalScore: topCandidates[r.originalIndex].int8Score,
         binaryScore: topCandidates[r.originalIndex].score,
-        colbertScore: topCandidates[r.originalIndex].colbertScore,
-        preColbertScore: topCandidates[r.originalIndex].preColbertScore,
+        lateInteractionScore: topCandidates[r.originalIndex].lateInteractionScore,
+        preLateInteractionScore: topCandidates[r.originalIndex].preLateInteractionScore,
         newRank: i + 1,
       }));
 

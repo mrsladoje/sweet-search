@@ -13,18 +13,18 @@ describe('parseArgs (index-codebase-v21)', () => {
     }
   });
 
-  it('defaults have noColbert=false, requireNativeAnn=false, and sqliteFastMode=false', () => {
+  it('defaults have noLateInteraction=false, requireNativeAnn=false, and sqliteFastMode=false', () => {
     delete process.env.SWEET_SEARCH_SQLITE_FAST_MODE;
     const result = parseArgs([]);
 
-    expect(result.noColbert).toBe(false);
+    expect(result.noLateInteraction).toBe(false);
     expect(result.requireNativeAnn).toBe(false);
     expect(result.sqliteFastMode).toBe(false);
   });
 
-  it('--no-colbert sets noColbert=true', () => {
-    const result = parseArgs(['--no-colbert']);
-    expect(result.noColbert).toBe(true);
+  it('--no-late-interaction sets noLateInteraction=true', () => {
+    const result = parseArgs(['--no-late-interaction']);
+    expect(result.noLateInteraction).toBe(true);
   });
 
   it('--sqlite-fast sets sqliteFastMode=true', () => {
@@ -42,15 +42,15 @@ describe('parseArgs (index-codebase-v21)', () => {
 
     expect(result.fullReindex).toBe(true);
     expect(result.quiet).toBe(true);
-    expect(result.noColbert).toBe(false);
+    expect(result.noLateInteraction).toBe(false);
     expect(result.requireNativeAnn).toBe(false);
     expect(result.sqliteFastMode).toBe(false);
   });
 
   it('multiple new flags together', () => {
-    const result = parseArgs(['--no-colbert', '--sqlite-fast']);
+    const result = parseArgs(['--no-late-interaction', '--sqlite-fast']);
 
-    expect(result.noColbert).toBe(true);
+    expect(result.noLateInteraction).toBe(true);
     expect(result.sqliteFastMode).toBe(true);
   });
 
@@ -73,7 +73,7 @@ describe('parseArgs (index-codebase-v21)', () => {
       '--dry-run', '--graph-only', '--vectors-only', '--full',
       '--stats', '--resolve-only', '--skip-summary-regen',
       '--files-from-stdin', '--quiet', '--force-artifacts',
-      '--no-colbert', '--require-native-ann', '--sqlite-fast',
+      '--no-late-interaction', '--require-native-ann', '--sqlite-fast',
     ]);
 
     expect(result.dryRun).toBe(true);
@@ -86,9 +86,39 @@ describe('parseArgs (index-codebase-v21)', () => {
     expect(result.filesFromStdin).toBe(true);
     expect(result.quiet).toBe(true);
     expect(result.forceArtifacts).toBe(true);
-    expect(result.noColbert).toBe(true);
+    expect(result.noLateInteraction).toBe(true);
     expect(result.requireNativeAnn).toBe(true);
     expect(result.sqliteFastMode).toBe(true);
+  });
+
+  it('--late-interaction-model=lateon-code-edge sets lateInteractionModel', () => {
+    const result = parseArgs(['--late-interaction-model=lateon-code-edge']);
+    expect(result.lateInteractionModel).toBe('lateon-code-edge');
+  });
+
+  it('--late-interaction-model default is null', () => {
+    const result = parseArgs([]);
+    expect(result.lateInteractionModel).toBeNull();
+  });
+
+  it('--late-interaction-pool=2 sets lateInteractionPool', () => {
+    const result = parseArgs(['--late-interaction-pool=2']);
+    expect(result.lateInteractionPool).toBe(2);
+  });
+
+  it('lateInteractionPool defaults to 1', () => {
+    const result = parseArgs([]);
+    expect(result.lateInteractionPool).toBe(1);
+  });
+
+  it('--late-interaction-skiplist=extended sets lateInteractionExtendedSkiplist', () => {
+    const result = parseArgs(['--late-interaction-skiplist=extended']);
+    expect(result.lateInteractionExtendedSkiplist).toBe(true);
+  });
+
+  it('lateInteractionExtendedSkiplist defaults to false', () => {
+    const result = parseArgs([]);
+    expect(result.lateInteractionExtendedSkiplist).toBe(false);
   });
 
   it('uses process.argv when no argument is passed', () => {
@@ -97,6 +127,6 @@ describe('parseArgs (index-codebase-v21)', () => {
     // it doesn't throw when called without arguments
     const result = parseArgs();
     expect(result).toBeDefined();
-    expect(typeof result.noColbert).toBe('boolean');
+    expect(typeof result.noLateInteraction).toBe('boolean');
   });
 });

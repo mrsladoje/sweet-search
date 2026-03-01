@@ -49,8 +49,9 @@ function parseArgs() {
     benchmarks: 'available', maxQueries: 0, mode: 'auto', skipIndex: false,
     verbose: false, concurrency: 5, k: 20, list: false, help: false,
     profile: 'balanced',
-    useColBERT: null,      // null = use profile default
-    buildColBERT: null,    // null = use profile default
+    useLateInteraction: null,      // null = use profile default
+    buildLateInteraction: null,    // null = use profile default
+    lateInteractionModel: null,    // null = use config.js default (lateon-code)
     requireNativeAnn: false,
     indexMode: 'single',
     sqliteFast: false,
@@ -70,8 +71,9 @@ function parseArgs() {
     else if (arg === '--list') opts.list = true;
     else if (arg === '--help' || arg === '-h') opts.help = true;
     else if (arg.startsWith('--profile=')) opts.profile = arg.split('=')[1];
-    else if (arg.startsWith('--use-colbert=')) opts.useColBERT = arg.split('=')[1] === 'true';
-    else if (arg.startsWith('--build-colbert=')) opts.buildColBERT = arg.split('=')[1] === 'true';
+    else if (arg.startsWith('--use-late-interaction=')) opts.useLateInteraction = arg.split('=')[1] === 'true';
+    else if (arg.startsWith('--build-late-interaction=')) opts.buildLateInteraction = arg.split('=')[1] === 'true';
+    else if (arg.startsWith('--late-interaction-model=')) opts.lateInteractionModel = arg.split('=')[1];
     else if (arg === '--require-native-ann') opts.requireNativeAnn = true;
     else if (arg.startsWith('--index-mode=')) opts.indexMode = arg.split('=')[1];
     else if (arg === '--sqlite-fast') opts.sqliteFast = true;
@@ -88,16 +90,17 @@ function parseArgs() {
  */
 function resolveProfile(opts) {
   const profiles = {
-    fast: { buildColBERT: false, useColBERT: false, sqliteFast: true, indexMode: 'single' },
-    balanced: { buildColBERT: false, useColBERT: false, sqliteFast: true, indexMode: 'single' },
-    full: { buildColBERT: true, useColBERT: true, sqliteFast: true, indexMode: 'single' },
+    fast: { buildLateInteraction: false, useLateInteraction: false, lateInteractionModel: null, sqliteFast: true, indexMode: 'single' },
+    balanced: { buildLateInteraction: false, useLateInteraction: false, lateInteractionModel: null, sqliteFast: true, indexMode: 'single' },
+    full: { buildLateInteraction: true, useLateInteraction: true, lateInteractionModel: null, sqliteFast: true, indexMode: 'single' },
   };
 
   const profile = profiles[opts.profile] || profiles.balanced;
 
   return {
-    buildColBERT: opts.buildColBERT ?? profile.buildColBERT,
-    useColBERT: opts.useColBERT ?? profile.useColBERT,
+    buildLateInteraction: opts.buildLateInteraction ?? profile.buildLateInteraction,
+    useLateInteraction: opts.useLateInteraction ?? profile.useLateInteraction,
+    lateInteractionModel: opts.lateInteractionModel || profile.lateInteractionModel,
     sqliteFast: opts.sqliteSafe ? false : (opts.sqliteFast || profile.sqliteFast),
     indexMode: opts.indexMode || profile.indexMode,
     requireNativeAnn: opts.requireNativeAnn,
@@ -120,8 +123,9 @@ Options:
   --k=N               Top-k results [default: 20]
   --list              List all registered benchmarks and exit
   --profile=PROFILE   Benchmark profile (fast|balanced|full) [default: balanced]
-  --use-colbert=BOOL  Override ColBERT usage for queries [default: profile]
-  --build-colbert=BOOL Override ColBERT index building [default: profile]
+  --use-late-interaction=BOOL  Override late-interaction usage for queries [default: profile]
+  --build-late-interaction=BOOL Override late-interaction index building [default: profile]
+  --late-interaction-model=ID  Late-interaction model variant (lateon-code, lateon-code-edge) [default: config]
   --require-native-ann  Fail if native ANN backend (usearch) is unavailable
   --index-mode=MODE   Indexing mode (single|two-phase) [default: single]
   --sqlite-fast       Enable fast SQLite pragmas for benchmarking
@@ -206,7 +210,8 @@ async function runBenchmark(benchmark, opts, profileOpts) {
     try {
       indexResult = await indexCorpus(corpusDir, PROJECT_ROOT, {
         indexMode: profileOpts.indexMode,
-        buildColBERT: profileOpts.buildColBERT,
+        buildLateInteraction: profileOpts.buildLateInteraction,
+        lateInteractionModel: profileOpts.lateInteractionModel,
         sqliteFastMode: profileOpts.sqliteFast,
         requireNativeAnn: profileOpts.requireNativeAnn,
       });
@@ -222,7 +227,7 @@ async function runBenchmark(benchmark, opts, profileOpts) {
   console.log('\n  [4/5] Running queries...');
   let search;
   try {
-    search = await initSearch(corpusDir, PROJECT_ROOT, { useColBERT: profileOpts.useColBERT });
+    search = await initSearch(corpusDir, PROJECT_ROOT, { useLateInteraction: profileOpts.useLateInteraction, lateInteractionModel: profileOpts.lateInteractionModel });
   } catch (err) {
     console.error(`  Failed to initialize search: ${err.message}`);
     return null;
@@ -355,7 +360,7 @@ async function main() {
   console.log(`  Search mode: ${opts.mode}  |  Concurrency: ${opts.concurrency}  |  Top-k: ${opts.k}`);
   console.log(`  Skip index:  ${opts.skipIndex}`);
   const profileOpts = resolveProfile(opts);
-  console.log(`  Profile:     ${opts.profile} (ColBERT build: ${profileOpts.buildColBERT}, query: ${profileOpts.useColBERT})`);
+  console.log(`  Profile:     ${opts.profile} (late-interaction build: ${profileOpts.buildLateInteraction}, query: ${profileOpts.useLateInteraction}, model: ${profileOpts.lateInteractionModel || 'default'})`);
   console.log(`  Index mode:  ${profileOpts.indexMode}  |  SQLite fast: ${profileOpts.sqliteFast}`);
   if (opts.regressionCheck) console.log(`  Regression:  check enabled (threshold: ${opts.regressionThreshold})`);
   if (opts.saveBaseline) console.log(`  Baseline:    will save after each benchmark`);

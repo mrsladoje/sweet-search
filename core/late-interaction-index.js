@@ -1,32 +1,18 @@
 #!/usr/bin/env node
 
 /**
- * ColBERT Late Interaction Index
+ * Late Interaction Index
  *
  * Token-level embeddings with compression for MaxSim scoring.
- * Achieves cross-encoder quality at bi-encoder speed.
+ * Uses LateOn-Code models for real late interaction.
  *
- * Storage optimization (from research):
- * - 64-dim instead of 128-dim (1.5% accuracy loss, 50% storage savings)
- * - int8 quantization (4x compression)
- * - Result: ~200-700MB for 11k chunks instead of 25GB
- *
- * References:
- * - Jina ColBERT v2: https://jina.ai/news/jina-colbert-v2-multilingual-late-interaction-retriever-for-embedding-and-reranking/
- * - ColBERT pooling: https://www.answer.ai/posts/colbert-pooling.html
+ * Index format v2.0: stores modelId in header for cross-model consistency checks.
  */
 
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
-import { DB_PATHS } from './config.js';
-
-const COLBERT_CONFIG = {
-  tokenDim: 64,           // Reduced from 128 (1.5% accuracy loss, 50% storage savings)
-  maxTokensPerDoc: 256,   // Max tokens to store per document
-  useInt8: true,          // int8 quantization (4x compression)
-  indexPath: DB_PATHS.colbert || path.join(process.cwd(), '.sweet-search', 'colbert-tokens.db'),
-};
+import { DB_PATHS, LATE_INTERACTION_CONFIG } from './config.js';
 
 /**
  * Quantize float32 to int8 for storage
@@ -91,14 +77,16 @@ function cosineSimilarity(a, b) {
 }
 
 /**
- * ColBERT Index Class
+ * Late Interaction Index Class
  */
-export class ColBERTIndex {
+export class LateInteractionIndex {
   constructor(options = {}) {
-    this.tokenDim = options.tokenDim || COLBERT_CONFIG.tokenDim;
-    this.maxTokens = options.maxTokens || COLBERT_CONFIG.maxTokensPerDoc;
-    this.useInt8 = options.useInt8 ?? COLBERT_CONFIG.useInt8;
-    this.indexPath = options.indexPath || COLBERT_CONFIG.indexPath;
+    this.tokenDim = options.tokenDim || LATE_INTERACTION_CONFIG.tokenDimension;
+    this.maxTokens = options.maxTokens || 512;
+    this.useInt8 = options.useInt8 ?? (LATE_INTERACTION_CONFIG.quantization === 'int8');
+    this.indexPath = options.indexPath || DB_PATHS.lateInteraction || path.join(process.cwd(), '.sweet-search', 'late-interaction-tokens.db');
+    this.modelId = options.modelId || LATE_INTERACTION_CONFIG.model || null;
+    this.poolFactor = options.poolFactor || 1;
 
     // In-memory storage
     this.documents = new Map(); // id -> { tokens, metadata }
@@ -181,7 +169,7 @@ export class ColBERTIndex {
   }
 
   /**
-   * MaxSim scoring - ColBERT late interaction
+   * MaxSim scoring - late interaction
    *
    * For each query token, find max similarity with any document token.
    * Sum these max similarities for final score.
@@ -206,13 +194,13 @@ export class ColBERTIndex {
   }
 
   /**
-   * Score candidates using ColBERT MaxSim
+   * Score candidates using MaxSim late interaction
    *
    * @param {number[][]} queryTokenEmbeddings - Query token embeddings
    * @param {Array} candidates - Array of { id, ... } candidates
-   * @returns {Array} Candidates with colbertScore added
+   * @returns {Array} Candidates with lateInteractionScore added
    */
-  async scoreWithColBERT(queryTokenEmbeddings, candidates) {
+  async scoreWithLateInteraction(queryTokenEmbeddings, candidates) {
     await this.init();
 
     const queryTokens = queryTokenEmbeddings.map(emb =>
@@ -225,23 +213,23 @@ export class ColBERTIndex {
       const docTokens = this.getTokens(candidate.id);
 
       if (docTokens) {
-        const colbertScore = this.maxSimScore(queryTokens, docTokens);
+        const lateInteractionScore = this.maxSimScore(queryTokens, docTokens);
         scored.push({
           ...candidate,
-          colbertScore,
+          lateInteractionScore,
           originalScore: candidate.score
         });
       } else {
         scored.push({
           ...candidate,
-          colbertScore: candidate.score || 0,
+          lateInteractionScore: candidate.score || 0,
           originalScore: candidate.score
         });
       }
     }
 
-    // Sort by ColBERT score
-    scored.sort((a, b) => b.colbertScore - a.colbertScore);
+    // Sort by late interaction score
+    scored.sort((a, b) => b.lateInteractionScore - a.lateInteractionScore);
 
     return scored;
   }
@@ -253,10 +241,12 @@ export class ColBERTIndex {
     await fs.mkdir(path.dirname(this.indexPath), { recursive: true });
 
     const state = {
-      version: '1.0',
+      version: '2.1',
+      modelId: this.modelId,
       tokenDim: this.tokenDim,
       maxTokens: this.maxTokens,
       useInt8: this.useInt8,
+      poolFactor: this.poolFactor,
       documents: []
     };
 
@@ -275,7 +265,7 @@ export class ColBERTIndex {
     await fs.writeFile(this.indexPath, JSON.stringify(state));
 
     const size = (JSON.stringify(state).length / 1024 / 1024).toFixed(2);
-    console.log(`ColBERT: Saved ${this.documents.size} documents (${size} MB)`);
+    console.log(`LateInteraction: Saved ${this.documents.size} documents (${size} MB)`);
   }
 
   /**
@@ -286,9 +276,21 @@ export class ColBERTIndex {
       const data = await fs.readFile(this.indexPath, 'utf-8');
       const state = JSON.parse(data);
 
+      // Model consistency check (v2.0+)
+      if (state.modelId && this.modelId && state.modelId !== this.modelId) {
+        const indexDim = state.tokenDim;
+        const configDim = this.tokenDim;
+        console.warn(`[LateInteraction] Index built with ${state.modelId} (${indexDim}d) but config says ${this.modelId} (${configDim}d).`);
+        console.warn(`          Skipping late interaction scoring. Re-index to use the new model.`);
+        this.modelMismatch = true;
+        return;
+      }
+
       this.tokenDim = state.tokenDim;
       this.maxTokens = state.maxTokens;
       this.useInt8 = state.useInt8;
+      this.poolFactor = state.poolFactor || 1;
+      if (state.modelId) this.modelId = state.modelId;
 
       this.documents.clear();
       for (const doc of state.documents) {
@@ -306,9 +308,9 @@ export class ColBERTIndex {
         });
       }
 
-      console.log(`ColBERT: Loaded ${this.documents.size} documents`);
+      console.log(`LateInteraction: Loaded ${this.documents.size} documents (model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)`);
     } catch (err) {
-      console.log('ColBERT: No existing index found');
+      console.log('LateInteraction: No existing index found');
     }
   }
 
@@ -334,7 +336,9 @@ export class ColBERTIndex {
       avgTokensPerDoc: avgTokens,
       tokenDim: this.tokenDim,
       useInt8: this.useInt8,
-      estimatedSizeMB: estimatedMB
+      estimatedSizeMB: estimatedMB,
+      modelId: this.modelId,
+      poolFactor: this.poolFactor,
     };
   }
 }
@@ -344,9 +348,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
 
   if (args.includes('--test')) {
-    console.log('Testing ColBERT Index...\n');
+    console.log('Testing Late Interaction Index...\n');
 
-    const index = new ColBERTIndex();
+    const index = new LateInteractionIndex();
     await index.init();
 
     // Add test documents with fake token embeddings
@@ -368,33 +372,33 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     );
 
     const candidates = [{ id: 'doc1', score: 0.5 }, { id: 'doc2', score: 0.6 }];
-    const scored = await index.scoreWithColBERT(queryTokens, candidates);
+    const scored = await index.scoreWithLateInteraction(queryTokens, candidates);
 
     console.log('\nMaxSim Scores:');
     for (const s of scored) {
-      console.log(`  ${s.id}: ${s.colbertScore.toFixed(4)}`);
+      console.log(`  ${s.id}: ${s.lateInteractionScore.toFixed(4)}`);
     }
 
     // Save and reload
     await index.save();
     console.log('\nSaved and reloading...');
 
-    const index2 = new ColBERTIndex();
+    const index2 = new LateInteractionIndex();
     await index2.init();
     console.log('Reloaded stats:', index2.getStats());
 
   } else if (args.includes('--stats')) {
-    const index = new ColBERTIndex();
+    const index = new LateInteractionIndex();
     await index.init();
-    console.log('ColBERT Index Stats:', index.getStats());
+    console.log('Late Interaction Index Stats:', index.getStats());
 
   } else {
     console.log(`
-ColBERT Late Interaction Index
+Late Interaction Index
 
 Usage:
-  node colbert-index.js --test    Run test with fake data
-  node colbert-index.js --stats   Show index statistics
+  node late-interaction-index.js --test    Run test with fake data
+  node late-interaction-index.js --stats   Show index statistics
 
 Storage Optimization:
   - 64-dim tokens (vs 128): 50% smaller, 1.5% accuracy loss
@@ -409,4 +413,4 @@ How it works:
   }
 }
 
-export default ColBERTIndex;
+export default LateInteractionIndex;

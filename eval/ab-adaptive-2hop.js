@@ -151,7 +151,7 @@ async function main() {
     // Initialize search once per dataset (shared across conditions)
     let search;
     try {
-      search = await initSearch(corpusDir, PROJECT_ROOT, { useColBERT: false });
+      search = await initSearch(corpusDir, PROJECT_ROOT, { useLateInteraction: false });
     } catch (err) {
       console.log(`  SKIP: init failed — ${err.message}`);
       continue;

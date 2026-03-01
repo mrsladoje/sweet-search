@@ -10,7 +10,7 @@
 
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
-import { COLBERT_CONFIG } from './config.js';
+import { LATE_INTERACTION_CONFIG } from './config.js';
 import { clearCache } from './embedding-cache.js';
 
 // =============================================================================
@@ -148,7 +148,7 @@ export async function startServer() {
       graphIndex: Boolean(searcher.hasGraphIndex),
       hnswIndex: Boolean(searcher.hasHnswIndex),
       binaryHnswIndex: Boolean(searcher.hasBinaryHnswIndex),
-      colbertIndex: Boolean(searcher.hasColbertIndex && searcher.useColBERT),
+      lateInteractionIndex: Boolean(searcher.hasLateInteractionIndex && searcher.useLateInteraction),
       translationFallback: Boolean(searcher.enableTranslationFallback),
       embeddingService: serverReady,
       reranker: serverReady,
@@ -190,10 +190,10 @@ export async function startServer() {
       const expand = url.searchParams.get('expand') !== 'false';
       const rerank = url.searchParams.get('rerank') !== 'false';
       const fusion = url.searchParams.get('fusion') || 'cc';  // Legacy (ignored for hybrid)
-      // ColBERT: explicit param overrides config, else use config default
-      const useColBERT = url.searchParams.has('colbert')
-        ? url.searchParams.get('colbert') === 'true'
-        : COLBERT_CONFIG.enabled;
+      // Late interaction: explicit param overrides config, else use config default
+      const useLateInteraction = url.searchParams.has('late-interaction')
+        ? url.searchParams.get('late-interaction') === 'true'
+        : LATE_INTERACTION_CONFIG.enabled;
 
       // Output format options
       const format = url.searchParams.get('format') || 'json';
@@ -222,7 +222,7 @@ export async function startServer() {
           expand,
           rerank,
           fusion,
-          useColBERT,
+          useLateInteraction,
           translate,
         });
 
@@ -387,7 +387,7 @@ export async function queryServer(query, options = {}) {
     expand = true,
     rerank = true,
     fusion = 'cc',  // Legacy (ignored for hybrid)
-    useColBERT = true,
+    useLateInteraction = true,
     summary = false,
     mid = false,
   } = options;
@@ -402,7 +402,7 @@ export async function queryServer(query, options = {}) {
     });
     if (!expand) params.set('expand', 'false');
     if (!rerank) params.set('rerank', 'false');
-    if (!useColBERT) params.set('colbert', 'false');
+    if (!useLateInteraction) params.set('late-interaction', 'false');
     if (summary) params.set('summary', 'true');
     if (mid) params.set('mid', 'true');
 

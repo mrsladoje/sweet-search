@@ -12,7 +12,7 @@ import { getChangedFiles, updateState, getStats as getIncrementalStats } from '.
 import { backupSummaries, restoreSummaries, markForRegeneration } from './summary-manager.js';
 import { colors, log, logProgress, logError, discoverFiles, readFilesFromStdin } from './indexer-utils.js';
 import { buildCodeGraph, buildVectorIndex } from './indexer-build.js';
-import { incrementalUpdateHNSW, buildHNSWIndex, buildColBERTIndex, buildQuantizedArtifactsPhase } from './indexer-ann.js';
+import { incrementalUpdateHNSW, buildHNSWIndex, buildLateInteractionIndex, buildQuantizedArtifactsPhase } from './indexer-ann.js';
 
 // =============================================================================
 // PHASE RUNNER HELPER
@@ -224,7 +224,9 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     incrementalInfo,
     forceArtifacts,
     hcgsPromise,
-    noColbert,
+    noLateInteraction,
+    lateInteractionPool,
+    lateInteractionExtendedSkiplist,
     sqliteFastMode,
   } = options;
 
@@ -268,11 +270,14 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     }
   }
 
-  if (!dryRun && !noColbert && vectorResult && vectorResult.allChunks && vectorResult.allChunks.length > 0) {
-    const filesToRemoveFromColBERT = incrementalInfo && !fullReindex
+  if (!dryRun && !noLateInteraction && vectorResult && vectorResult.allChunks && vectorResult.allChunks.length > 0) {
+    const filesToRemoveFromLI = incrementalInfo && !fullReindex
       ? [...incrementalInfo.toIndex, ...(incrementalInfo.toRemove || [])]
       : [];
-    await buildColBERTIndex(vectorResult.allChunks, dryRun, filesToRemoveFromColBERT);
+    await buildLateInteractionIndex(vectorResult.allChunks, dryRun, filesToRemoveFromLI, {
+      poolFactor: lateInteractionPool,
+      extendedSkiplist: lateInteractionExtendedSkiplist,
+    });
   }
 
   if (!dryRun && vectorStats.embeddings > 0) {
