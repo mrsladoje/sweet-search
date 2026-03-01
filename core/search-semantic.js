@@ -77,6 +77,7 @@ export async function semanticSearch3Stage(query, options = {}) {
   // Stage 2: Int8 rescore
   const stage2Start = performance.now();
   const queryInt8 = floatToInt8(truncateForHNSW(embedResult.float));
+  stats.queryInt8 = queryInt8;
 
   // P5 FIX: Load int8 vectors for candidates and compute dot product
   let scoredCandidates = [];
@@ -244,6 +245,7 @@ export async function semanticSearchStandard(query, options = {}) {
 
   // Truncate to HNSW dimension (1024d -> 512d Matryoshka)
   const queryEmbedding = truncateForHNSW(fullEmbedding);
+  stats.queryInt8 = floatToInt8(queryEmbedding);
 
   let candidates;
 

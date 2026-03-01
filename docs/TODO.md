@@ -1242,17 +1242,13 @@ which is only common when original search results are themselves mixed in qualit
 
 ## 24. Query-Dependent Graph Expansion Scoring
 
-**Status**: Not implemented. Both stages of graph expansion are completely
-query-agnostic:
-
-- `expandSecondHopAdaptive` — candidate selection scores by graph topology only
-  (edge type, degree, hop distance)
-- `rerankExpanded` — post-lookup reranking applies ×1.5 same-file and ×1.2–1.3
-  entity-type boosts, identical regardless of what the query asked
-
-The same multipliers apply to "how does authentication work" and "what's the database
-schema." Semantic relevance of expanded entities to the query is never checked at any
-stage of graph expansion.
+**Status**: DONE (2026-03-01). Query embedding threaded through pipeline.
+Min-max normalized graph scores blended with cosine similarity in both
+`expandSecondHopAdaptive`, `expandSecondHop`, and `rerankExpanded`.
+`cosineSimilarity` injected via options (DI — no import coupling in graph-expansion.js).
+Default `semanticWeight: 0.4`, configurable via `graphExpandOptions`.
+14 tests in `tests/query-dependent-expansion.test.js` + 1 in
+`tests/search-postprocess-graph-options.test.js`. Benchmark sweep pending.
 
 ### 24.1 The Problem
 
@@ -1310,11 +1306,11 @@ is a larger refactor. Section 24 is the fix within the current architecture.
 
 ### 24.5 Action Items
 
-- [ ] Thread `queryEmbedding` (already computed in semantic search) into
+- [x] Thread `queryEmbedding` (already computed in semantic search) into
   `expandResults()` via the options object
-- [ ] In `expandSecondHopAdaptive`, look up entity embeddings from the HNSW index
+- [x] In `expandSecondHopAdaptive`, look up entity embeddings from the HNSW index
   for each hop-2 candidate and blend cosine similarity with graph score
-- [ ] In `rerankExpanded`, apply the same cosine blend — replace the query-agnostic
+- [x] In `rerankExpanded`, apply the same cosine blend — replace the query-agnostic
   ×1.5/×1.3 multipliers with `w₁ × graph_score + w₂ × cosine(query, entity)`
 - [ ] A/B test blend weights (0.6/0.4 is a starting point) on eval harness
 - [ ] Benchmark MRR delta on CodeSearchNet + GenCodeSearchNet
