@@ -1,6 +1,7 @@
 # Late Interaction: LateOn-Code Migration Plan
 
 Extracted from `docs/TODO.md` Sections 0, 8, and 26. Updated 2026-02-28.
+SOTA review applied 2026-02-28 — see "SOTA Landscape" section.
 
 ## Critical Finding: Current "ColBERT" Is a Pseudo-Approximation
 
@@ -50,12 +51,24 @@ cross-encoder-quality scoring that real ColBERT provides.
 
 - HuggingFace: `lightonai/LateOn-Code-edge`
 - Architecture: ModernBERT (7 layers, hidden_size=256)
-- Token output: 256 → **48d** per token
+- **⚠️ Token output: TWO-STAGE projection** — 256 → 512 → **48d** per token
+  (NOT a single 256→48 projection. The HuggingFace model card shows two Dense
+  layers: `Dense(256→512)` then `Dense(512→48)`, both no bias, identity
+  activation. Manual projection code MUST apply both multiplies sequentially.)
 - Same prefixes, max lengths, tokenizer, skiplist
 - **ONNX already exported on HuggingFace:**
   - `model.onnx` — 68 MB
   - (no INT8 variant yet — could quantize ourselves, target ~20MB)
 - MTEB Code v1 avg: **66.64**
+
+Full HuggingFace architecture string:
+```
+ColBERT(
+  (0): Transformer({'max_seq_length': 2047, 'do_lower_case': True, 'architecture': 'ModernBertModel'})
+  (1): Dense({'in_features': 256, 'out_features': 512, 'bias': False, 'activation_function': 'torch.nn.modules.linear.Identity'})
+  (2): Dense({'in_features': 512, 'out_features': 48, 'bias': False, 'activation_function': 'torch.nn.modules.linear.Identity'})
+)
+```
 
 ### Cross-compatibility
 
@@ -63,20 +76,199 @@ cross-encoder-quality scoring that real ColBERT provides.
 outputs 48d tokens. An index built with one model cannot be queried with the
 other. The model ID must be stored in the index and checked at query time.
 
-### Pipeline structure (both models)
+### Pipeline structure
 
 ```
-Input text
-  → Tokenizer (shared vocab, 50370 tokens)
-  → ModernBERT backbone (per-token hidden states)
-  → Linear projection (768→128 or 256→48, no bias, identity activation)
-  → L2 normalize per token
-  → Skiplist filter (remove punctuation tokens)
-  → Output: number[][] (variable-length array of token vectors)
+Full model (lateon-code):
+  Input text
+    → Tokenizer (shared vocab, 50370 tokens)
+    → ModernBERT backbone (22 layers, per-token hidden states, 768d)
+    → Dense projection: 768 → 128 (single layer, no bias)
+    → L2 normalize per token
+    → [Documents only] Skiplist filter (remove punctuation tokens)
+    → Output: number[][] (variable-length array of 128d token vectors)
+
+Edge model (lateon-code-edge):
+  Input text
+    → Tokenizer (shared vocab, 50370 tokens)
+    → ModernBERT backbone (7 layers, per-token hidden states, 256d)
+    → Dense projection 1: 256 → 512 (no bias)
+    → Dense projection 2: 512 → 48 (no bias)
+    → L2 normalize per token
+    → [Documents only] Skiplist filter (remove punctuation tokens)
+    → Output: number[][] (variable-length array of 48d token vectors)
 ```
 
 This is different from a dense embedding call. The output is **multiple vectors
 per input**, not one.
+
+### Query encoding — NO [MASK] padding
+
+**Verified from the actual LateOn-Code `config_sentence_transformers.json`
+on HuggingFace (fetched 2026-02-28):**
+
+```json
+{
+  "query_prefix": "[Q] ",
+  "document_prefix": "[D] ",
+  "query_length": 256,
+  "document_length": 2048,
+  "do_query_expansion": false,
+  "attend_to_expansion_tokens": false,
+  "skiplist_words": ["!", "\"", "#", "$", "%", "&", "'", "(", ")", "*", "+", ",", "-", ".", "/", ":", ";", "<", "=", ">", "?", "@", "[", "\\", "]", "^", "_", "`", "{", "|", "}", "~"]
+}
+```
+
+**Key facts:**
+- `do_query_expansion = false` — LateOn-Code was NOT trained with [MASK]
+  query expansion. Do NOT pad queries with [MASK] tokens.
+- `query_length = 256` — max query token length is 256 (NOT 32).
+- `attend_to_expansion_tokens = false` — expansion tokens are not used.
+
+**⚠️ Note:** PyLate's library defaults are `do_query_expansion=True` and
+`query_length=32`, but the model's saved config overrides these defaults.
+The LateOn-Code authors explicitly disabled query expansion. Respect the
+model's config, not the library defaults.
+
+When encoding queries:
+1. Prepend `[Q] ` prefix to the text
+2. Tokenize (up to `query_length` = 256 tokens)
+3. Forward through the model
+4. Project (768→128 or 256→512→48)
+5. L2 normalize per token
+6. Keep ALL token embeddings — **no skiplist filtering on queries**
+
+When encoding documents:
+1. Prepend `[D] ` prefix to the text
+2. Tokenize (up to `document_length` = 2048 tokens)
+3. Forward through the model
+4. Project (768→128 or 256→512→48)
+5. L2 normalize per token
+6. Apply skiplist filtering (remove punctuation token embeddings)
+
+**Critical asymmetry:** Queries keep ALL tokens. Documents filter skiplist.
+This asymmetry comes from PyLate's encoding logic and is confirmed by the
+skiplist_words config. Since we load via ONNX (not PyLate), `encodeQuery()`
+and `encodeDocuments()` MUST replicate this asymmetry correctly.
+
+---
+
+## SOTA Landscape (February 2026)
+
+### Why LateOn-Code is the right model
+
+LateOn-Code is the current SOTA for late interaction code retrieval. No
+competing multi-vector model targets code specifically. Context:
+
+- Built by LightOn (Antoine Chaffin, Raphael Sourty) — the same team behind
+  PyLate, GTE-ModernColBERT, ModernBERT, and the PyLate training library.
+- Base LateOn model crosses 57 on BEIR — SOTA by 2.5 points for late interaction.
+- Fine-tuned on CoIR training sets with nv-retriever hard negative mining.
+- On MTEB Code v1: 74.12 avg (full), 66.64 avg (edge). The edge model (17M)
+  matches embeddinggemma-300M performance; the full model (149M) matches
+  Qwen3-embedding-0.6B — models 2-4x larger.
+- Apache 2.0 license.
+
+The dense model CoIR leaderboard top is SFR-Embedding-Code-2B (2B params,
+67.41 avg). LateOn-Code achieves 74.12 at 149M params — the multi-vector
+architecture provides a fundamental quality advantage for code retrieval.
+
+### Ecosystem advances we must not ignore
+
+The late interaction field has advanced significantly since ColBERT v1 (2020).
+Our integration plan must incorporate these, not just the model swap:
+
+**1. FastPLAID / NextPLAID (LightOn, Feb 2026)**
+
+LightOn ships two purpose-built multi-vector indexes:
+- **FastPLAID**: Offline bulk indexing with centroid-based compression.
+- **NextPLAID**: Streaming multi-vector database server for serving.
+
+These implement PLAID (CIKM 2022): centroid pruning + residual compression.
+PLAID reduces CPU latency ~45x vs brute-force MaxSim for **full-corpus
+retrieval** (millions of passages).
+
+**Scale check:** Sweet Search uses ColBERT as a **reranker over ~20 candidates**
+(config: `stage3Candidates: 20`), not a first-stage retriever. MaxSim over 20
+documents × ~100 tokens each takes microseconds on CPU. PLAID-style centroid
+pruning is designed for scoring millions of passages — it's irrelevant at our
+reranking scale. Even after Phase 6 increases the candidate set to 50-100
+(post graph expansion), brute-force MaxSim remains fast.
+
+**Decision**: PLAID/centroid pruning is NOT needed for our architecture. If we
+ever promote ColBERT to a first-stage retriever (replacing the binary→int8 ANN
+pipeline), revisit this. For now, brute-force MaxSim on the candidate set is
+the correct approach.
+
+However, NextPLAID/FastPLAID IS relevant for **index storage compression** —
+PLAID's residual compression reduces on-disk token storage ~10x. See Phase 7.
+
+**2. MUVERA (Google, NeurIPS 2024)**
+
+Converts multi-vector retrieval to single-vector MIPS via Fixed Dimensional
+Encodings (FDEs). Already integrated in Weaviate 1.31 and Qdrant 0.7.2+.
+
+**Scale check:** Same as PLAID — MUVERA is for full-corpus first-stage
+retrieval. Since we use ColBERT as a reranker, MUVERA is not applicable to our
+current architecture. Noted for awareness only.
+
+**3. Token pruning and storage reduction (ECIR 2025)**
+
+Multiple techniques reduce ColBERT index storage:
+- **Static pruning**: Remove low-impact token embeddings. 50% reduction, ~3%
+  quality loss on NL benchmarks. **⚠️ Code caveat**: IDF-based pruning is
+  riskier for code than for natural language. Common code tokens like `return`,
+  `function`, `class`, `async` carry structural meaning. The skiplist already
+  handles punctuation (`{`, `}`, `(`, `)`, etc.). Additional pruning beyond
+  the skiplist needs code-specific validation.
+- **ConstBERT** (Pinecone): Requires retraining a new model architecture.
+  NOT applicable to pre-trained LateOn-Code.
+- **LeapMV**: Requires training a neural pruning classifier. NOT applicable
+  to pre-trained LateOn-Code.
+- **PyLate native token pooling**: Library feature that aggregates nearby
+  token embeddings. Supported by PyLate at encode time (`pool_factor`
+  parameter). Could be applied during indexing without retraining.
+
+**Decision**: Phase 3 stores all tokens (correctness first). Phase 7 explores
+PyLate's `pool_factor` (document-only, no retraining needed) and skiplist-based
+pruning as opt-in storage reduction. IDF-based pruning deferred until
+code-specific validation shows it's safe. See Phase 7 below.
+
+**4. ColGrep (LightOn, Feb 2026)**
+
+Rust-based search tool for coding agents, using LateOn-Code + NextPLAID.
+Benchmarked against Claude Code's grep: 70% win rate, 56% fewer search ops,
+60K fewer tokens per complex query. This is the **reference implementation**
+for LateOn-Code in a code search context.
+
+**Decision**: Study ColGrep's query processing pipeline in Phase 1 to validate
+our own `encodeQuery()` / `encodeDocuments()` implementation — especially
+prefix handling, skiplist token IDs, and encoding asymmetry (no skiplist on
+queries, skiplist on documents).
+
+**5. pylate-rs (LightOn, Feb 2026)**
+
+Rust/Candle-based ColBERT inference without PyTorch/Transformers dependencies.
+Model spawning in milliseconds. Could serve as an alternative inference backend
+to ONNX Runtime for Node.js (via N-API bindings or subprocess).
+
+**Decision**: ONNX Runtime is our primary path (proven, existing pattern).
+Note pylate-rs as Fallback C in Phase 1 if both transformers.js and direct
+ORT paths have issues.
+
+**6. Reason-ModernColBERT (LightOn, 2026)**
+
+150M model outperforming 7B models on BRIGHT (reasoning-intensive retrieval).
+Not code-specific, but demonstrates late interaction's strength on complex
+queries. Potential future model candidate if reasoning-heavy code queries
+(e.g., "find the function that handles race conditions in the connection pool")
+prove to be a bottleneck.
+
+**7. Transformers.js v4 (released Feb 9, 2026)**
+
+Better ONNX support, WebGPU acceleration. Phase 1 validation script MUST
+test with v4 specifically (not v3). Check `@huggingface/transformers` version
+in package.json.
 
 ---
 
@@ -138,6 +330,7 @@ export const COLBERT_CONFIG = {
       hfId: 'lightonai/LateOn-Code',
       onnxFile: 'model_int8.onnx',          // 150 MB INT8
       tokenDimension: 128,                   // output of 1_Dense projection
+      projectionLayers: 1,                   // 768→128 (single stage)
       maxQueryLength: 256,
       maxDocLength: 2048,
       queryPrefix: '[Q] ',
@@ -147,7 +340,8 @@ export const COLBERT_CONFIG = {
     'lateon-code-edge': {
       hfId: 'lightonai/LateOn-Code-edge',
       onnxFile: 'model.onnx',               // 68 MB FP32 (no INT8 yet)
-      tokenDimension: 48,                    // output of 1_Dense projection
+      tokenDimension: 48,                    // final output after TWO projections
+      projectionLayers: 2,                   // 256→512→48 (not single-stage!)
       maxQueryLength: 256,
       maxDocLength: 2048,
       queryPrefix: '[Q] ',
@@ -240,6 +434,9 @@ caching, and ONNX Runtime session creation.
 
 ### 1.1 Verify ONNX models load in Node.js
 
+**Prerequisite:** Ensure `@huggingface/transformers` is v4+ (released Feb 9,
+2026). Check `package.json` — if v3, upgrade first.
+
 Write a throwaway script `scripts/test-lateon-onnx.mjs`:
 
 ```js
@@ -261,36 +458,116 @@ console.log('Output shape:', outputs.last_hidden_state.dims);
 ```
 
 Key questions this script answers:
-- Does `@huggingface/transformers` load PyLate ONNX models?
+- Does `@huggingface/transformers` v4 load PyLate ONNX models?
 - Does it auto-apply the `1_Dense` linear projection, or do we get raw 768d?
 - If raw 768d: we need to load `1_Dense/model.safetensors` (393KB) and apply
   the 768→128 projection manually (single matrix multiply, no bias).
 - What is the actual inference latency on CPU?
 
-### 1.2 Test edge model
+### 1.2 Test edge model — TWO-STAGE PROJECTION
 
-Same script with `lightonai/LateOn-Code-edge`. Verify 256→48d output.
+Same script with `lightonai/LateOn-Code-edge`. **Critical**: the edge model
+has TWO Dense layers (256→512→48), not one. Verify:
+- Raw backbone output is 256d
+- After projection 1: 512d
+- After projection 2: 48d
+- If projections are manual, load BOTH weight matrices from `1_Dense/` and
+  `2_Dense/` (or however the ONNX export names them — inspect the model files)
 
-### 1.3 Measure latency
+```js
+// Edge model: two sequential projections
+function projectEdge(hiddenState, weight1, weight2) {
+  // Step 1: 256d → 512d
+  const intermediate = new Float32Array(512);
+  for (let i = 0; i < 512; i++) {
+    let sum = 0;
+    for (let j = 0; j < 256; j++) {
+      sum += weight1[i * 256 + j] * hiddenState[j];
+    }
+    intermediate[i] = sum;
+  }
+  // Step 2: 512d → 48d
+  const result = new Float32Array(48);
+  for (let i = 0; i < 48; i++) {
+    let sum = 0;
+    for (let j = 0; j < 512; j++) {
+      sum += weight2[i * 512 + j] * intermediate[j];
+    }
+    result[i] = sum;
+  }
+  return result;
+}
+```
+
+### 1.3 Validate query/document encoding asymmetry
+
+**Confirmed from LateOn-Code config:** `do_query_expansion=false`,
+`query_length=256`. No [MASK] padding is used.
+
+Validate the encoding pipeline:
+```js
+// Query encoding:
+// 1. Prepend "[Q] " prefix to text
+// 2. Tokenize (max_length=256, truncation=true, padding=true)
+// 3. Forward through model
+// 4. Project (768→128 or 256→512→48)
+// 5. L2 normalize per token
+// 6. Keep ALL tokens — NO skiplist filtering
+
+// Document encoding:
+// 1. Prepend "[D] " prefix to text
+// 2. Tokenize (max_length=2048, truncation=true, padding=true)
+// 3. Forward through model
+// 4. Project (768→128 or 256→512→48)
+// 5. L2 normalize per token
+// 6. Apply skiplist: remove embeddings for punctuation tokens
+```
+
+Validate by checking:
+- Query output retains all token embeddings (no filtering)
+- Document output has fewer tokens than input (skiplist removes punctuation)
+- Skiplist token IDs match the 32 punctuation chars from the model config
+
+### 1.4 Study ColGrep reference implementation
+
+Before writing production code, study ColGrep's query/document processing
+pipeline as a reference for correctness:
+- How does ColGrep handle `[Q] `/`[D] ` prefixes?
+- Does ColGrep apply skiplist only to documents (not queries)?
+- What skiplist token IDs does ColGrep filter? Match our 32-char list.
+- How does ColGrep handle the edge model's two-stage projection?
+- Does ColGrep use `query_length=256` (matching LateOn-Code config)?
+
+ColGrep source: `github.com/lightonai/next-plaid` (includes ColGrep).
+Also check `pylate/models/colbert.py` for the Python reference.
+
+### 1.5 Measure latency
 
 Run 100 queries through each model, measure:
 - Full model (INT8): expected ~15-30ms per query on CPU
 - Edge model (FP32): expected ~1-5ms per query on CPU
 - Both: tokenization time separately from inference time
+- Latency vs query length (short queries vs near-256-token queries)
 
-### 1.4 Gate
+### 1.6 Gate
 
 Phase 1 is complete when:
 - Both ONNX models load and produce per-token vectors in Node.js
-- We know whether `1_Dense` projection is automatic or manual
+- We know whether projection layers are automatic or manual
+- Edge model's two-stage projection (256→512→48) is confirmed working
+- Query encoding confirmed: no [MASK] padding, max 256 tokens, no skiplist
+- Document encoding confirmed: skiplist filtering applied, max 2048 tokens
+- ColGrep's processing pipeline is reviewed for correctness validation
 - Latency is measured for both models
 - We have confirmed the output dimensions (128d full, 48d edge)
 
-If `@huggingface/transformers` does NOT support PyLate models:
+If `@huggingface/transformers` v4 does NOT support PyLate models:
 - Fallback A: load the ONNX model directly via `onnxruntime-node` (same as
   CodeRankEmbed's direct ORT path in `embedding-local-model.js`)
 - Fallback B: use the `pylate-onnx-export` tool to produce a self-contained
-  ONNX that includes the projection layer
+  ONNX that includes the projection layer(s)
+- Fallback C: use `pylate-rs` (Rust/Candle inference) as a subprocess or
+  N-API native addon — zero PyTorch dependency, millisecond model spawning
 
 ---
 
@@ -321,30 +598,61 @@ export async function getColbertPipeline() {
 
 Exposed API:
 - `getColbertPipeline()` — lazy singleton, returns null if disabled
-- `encodeQuery(text) → Float32Array[]` — tokenize with `[Q] ` prefix,
-  forward, project to 128d/48d, normalize, filter skiplist tokens
-- `encodeDocuments(texts) → Float32Array[][]` — batch, `[D] ` prefix,
-  same pipeline. Returns array of (array of token vectors) per document.
+- `encodeQuery(text) → Float32Array[]` — tokenize with `[Q] ` prefix
+  (max 256 tokens), forward, project, L2 normalize. **NO skiplist
+  filtering on queries** — keep ALL token embeddings. No [MASK] padding
+  (LateOn-Code config: `do_query_expansion=false`).
+- `encodeDocuments(texts) → Float32Array[][]` — batch, `[D] ` prefix
+  (max 2048 tokens), forward, project, L2 normalize, **then apply skiplist
+  filtering** (remove punctuation token embeddings). Returns array of
+  (array of token vectors) per document.
 - `unloadColbertModel()` — release memory (mirrors `unloadLocalModel()`)
 - `isColbertModelLoaded()` — status check
 
-The projection step (768→128 or 256→48) may need to be applied manually if
-`@huggingface/transformers` doesn't handle it. This is a single matrix multiply:
+The projection step may need to be applied manually if `@huggingface/transformers`
+doesn't handle it. **The two models have different projection architectures:**
 
 ```js
-// projection_weight: Float32Array of shape [128, 768] from 1_Dense/model.safetensors
-function project(hiddenState, projectionWeight, outDim) {
-  const result = new Float32Array(outDim);
-  for (let i = 0; i < outDim; i++) {
+// Full model: SINGLE projection (768 → 128)
+// weight: Float32Array of shape [128, 768] from 1_Dense/model.safetensors
+function projectFull(hiddenState, weight) {
+  const result = new Float32Array(128);
+  for (let i = 0; i < 128; i++) {
     let sum = 0;
-    for (let j = 0; j < hiddenState.length; j++) {
-      sum += projectionWeight[i * hiddenState.length + j] * hiddenState[j];
+    for (let j = 0; j < 768; j++) {
+      sum += weight[i * 768 + j] * hiddenState[j];
+    }
+    result[i] = sum;
+  }
+  return result;
+}
+
+// Edge model: TWO projections (256 → 512 → 48)
+// weight1: Float32Array [512, 256], weight2: Float32Array [48, 512]
+function projectEdge(hiddenState, weight1, weight2) {
+  const intermediate = new Float32Array(512);
+  for (let i = 0; i < 512; i++) {
+    let sum = 0;
+    for (let j = 0; j < 256; j++) {
+      sum += weight1[i * 256 + j] * hiddenState[j];
+    }
+    intermediate[i] = sum;
+  }
+  const result = new Float32Array(48);
+  for (let i = 0; i < 48; i++) {
+    let sum = 0;
+    for (let j = 0; j < 512; j++) {
+      sum += weight2[i * 512 + j] * intermediate[j];
     }
     result[i] = sum;
   }
   return result;
 }
 ```
+
+Generalize with a `projectTokens(hiddenStates, projectionLayers)` function
+that applies N sequential matrix multiplies. The model config's
+`projectionLayers` count (1 for full, 2 for edge) drives this.
 
 Both indexing (`indexer-ann.js`) and querying (`search-semantic.js`) import from
 `colbert-model.js`. The singleton ensures the model is loaded once and shared.
@@ -360,10 +668,15 @@ Both indexing (`indexer-ann.js`) and querying (`search-semantic.js`) import from
 ### 2.4 Tests
 
 - `tests/colbert-model.test.js`: model loading (mock ONNX), query encoding
-  shape validation, document encoding, skiplist filtering, prefix insertion
+  shape validation (max 256 tokens), document encoding (max 2048 tokens),
+  prefix insertion (`[Q] ` / `[D] `), **no [MASK] padding on queries**
+  (verify `do_query_expansion=false` is respected), **skiplist asymmetry**
+  (verify queries keep ALL tokens, documents filter punctuation),
+  **edge model two-stage projection** (verify 256→512→48 produces different
+  results than a hypothetical single 256→48)
 - `tests/colbert-config.test.js`: config from env, from project config, from
   default. `enabled` getter. Model registry lookup. Unknown model ID → null.
-  `false` / `"false"` disables.
+  `false` / `"false"` disables. **`projectionLayers` count per model.**
 
 ### 2.5 Gate
 
@@ -410,16 +723,28 @@ else if (arg.startsWith('--colbert-model=')) colbertModel = arg.split('=')[1];
 ### 3.3 Index format migration
 
 - Bump serialized version from `'1.0'` to `'2.0'` in `colbert-index.js:256`
-- Add `modelId` and `tokenDim` to the serialized header
+- Add `modelId`, `tokenDim`, and `tokenPruning` to the serialized header
 - On load: if version < 2.0 or modelId mismatch, discard and log re-index message
+- Reserve header fields for future: `centroidCount`, `compressionType`
 
-### 3.4 Gate
+### 3.4 Storage budget tracking
+
+Log per-index storage stats after build:
+```
+[ColBERT] Index built: 12,847 chunks, 1,284,700 tokens (avg 100/chunk)
+[ColBERT] Storage: 157 MB (128d × int8), Model: lateon-code
+```
+
+This data informs Phase 7 decisions on whether pruning/compression is needed.
+
+### 3.5 Gate
 
 - `node core/index-codebase-v21.js` builds v2.0 ColBERT index with `lateon-code`
 - `--colbert-model=lateon-code-edge` works (48d tokens)
 - `--no-colbert` still skips entirely
 - Indexing wall time measured for both variants
 - Index sizes measured (expect: ~50-200MB for full, ~15-60MB for edge)
+- Storage stats logged per build
 
 ---
 
@@ -475,6 +800,9 @@ per model variant on CodeSearchNet:
 - `blendWeight: 0.2, 0.3, 0.4, 0.5, 0.6`
 - Measure MRR per language per value
 - Store optimal per-model in the model registry if they differ significantly
+- Consider log-linear interpolation (standard in hybrid retrieval) as an
+  alternative to the current linear blend:
+  `score = α * log(1 + semanticScore) + (1-α) * log(1 + colbertScore)`
 
 ### 4.6 Query token caching
 
@@ -553,18 +881,83 @@ Add three-config comparison to `eval/results/`.
 
 ---
 
-## Phase 6 (Future): Pipeline Restructuring (TODO Section 26)
+## Phase 6: Pipeline Restructuring — COMPLETE (2026-02-28)
 
-Separate project. Currently ColBERT runs inside `semanticSearch3Stage` BEFORE
-graph expansion, so expanded entities never get ColBERT scoring.
+ColBERT moved from `semanticSearch3Stage` (Stage 2.5) to `_applyPostRetrieval`
+(after graph expansion). All search modes now benefit from ColBERT scoring on
+expanded candidate sets.
 
-Target:
+Pipeline achieved:
 ```
-Current: BM25 || (Binary -> Int8 -> ColBERT -> Reranker) -> Fusion -> Expand -> Budget
-Target:  BM25 || (Binary -> Int8) -> Fusion -> Expand -> ColBERT -> Reranker -> Budget
+BM25 || (Binary -> Int8) -> Fusion -> Expand -> ColBERT -> Reranker -> Budget
 ```
 
-Do not combine with the model migration PR.
+### 6.1 Implementation (done)
+
+- Removed Stage 2.5 ColBERT block from `search-semantic.js` (lines 137-187)
+- Added ColBERT rerank in `search-postprocess.js` after graph expansion, before
+  translation fallback and quality scoring
+- Blend formula: `0.3 * colbertScore + 0.7 * baseScore` (works across all modes —
+  fused scores, int8 scores, and expanded scores are all in [0,1] range)
+- Only top `stage3Candidates` (default 20) are scored, remainder preserved
+- Graceful fallback: encoding failures log error and preserve original scores
+- `stats.colbert.position = 'post-expansion'` for diagnostics
+
+### 6.2 Tests (done)
+
+9 new tests in `tests/search-postprocess.test.js`:
+- ColBERT runs and blends scores correctly
+- Blend weight math verified (0.3*colbert + 0.7*base)
+- Skip when useColBERT=false, no index, model mismatch, empty results
+- Graceful failure on ONNX encoding error
+- Only top N candidates scored (remainder preserved)
+- Falls back to `this.useColBERT` when not specified in options
+
+97 files, 2560 tests, 0 failures.
+
+### 6.3 Benchmark comparison (pending)
+
+Run `eval/run_benchmark.js` with graph expansion enabled to measure
+ColBERT's effect on expanded candidates. The CodeSearchNet benchmark
+doesn't use graph expansion, so a CrossCodeEval or project-specific
+benchmark is needed to see the full benefit.
+
+---
+
+## Phase 7: Storage Optimization — 7.1+7.2 COMPLETE (2026-02-28), 7.3 DEFERRED
+
+### 7.1 Token pooling — COMPLETE
+
+`poolTokens()` in `colbert-model.js`: groups consecutive tokens and averages
+their vectors, then L2 re-normalizes. First token always protected (PyLate
+convention). Applied at indexing time only (documents, never queries).
+
+- CLI: `--colbert-pool=N` (default 1 = no pooling)
+- Passed through: `index-codebase-v21.js` → `indexer-phases.js` → `indexer-ann.js` → `encodeDocuments()`
+- Index format v2.1: stores `poolFactor` in header
+- `ColBERTIndex.getStats()` includes `poolFactor`
+
+### 7.2 Extended skiplist — COMPLETE
+
+`buildExtendedSkiplist()` in `colbert-model.js`: adds code-noise tokens to
+the base 32-char punctuation skiplist. Explicitly curated (NOT IDF-based):
+`\t`, `\n`, `\r`, `;`, `,`, `\`, `` ` ``. Cached after first build.
+
+- CLI: `--colbert-skiplist=extended`
+- Passed through same pipeline as poolFactor
+
+### 7.3 PLAID residual compression — DEFERRED
+
+Deferred until pooling + extended skiplist are insufficient. Would add K-means
+clustering + quantized residuals for ~10x storage reduction. Complex to implement.
+
+### Tests (13 new)
+
+- `tests/colbert-model.test.js`: 7 new tests (poolTokens: 5, buildExtendedSkiplist: 2)
+- `tests/eval/core-indexer-flags.test.js`: 4 new tests (--colbert-pool, --colbert-skiplist=extended)
+- `tests/colbert-model.test.js`: 2 new tests (ColBERTIndex poolFactor)
+
+97 files, 2573 tests, 0 failures.
 
 ---
 
@@ -572,10 +965,10 @@ Do not combine with the model migration PR.
 
 | File | What to change | Phase |
 |------|----------------|-------|
-| `scripts/test-lateon-onnx.mjs` | **NEW** — throwaway ONNX validation | 1 |
-| `core/config.js:815` | New `COLBERT_CONFIG` with model registry | 2 |
+| `scripts/test-lateon-onnx.mjs` | **NEW** — throwaway ONNX loading + projection + encoding asymmetry validation | 1 |
+| `core/config.js:815` | New `COLBERT_CONFIG` with model registry + `projectionLayers` | 2 |
 | `core/config.js:1315` | Add `colbertModel` to `loadProjectConfig` | 2 |
-| `core/colbert-model.js` | **NEW** — model singleton, encode API | 2 |
+| `core/colbert-model.js` | **NEW** — model singleton, encode API, skiplist asymmetry, N-stage projection | 2 |
 | `core/colbert-index.js:24` | Remove local config, import global, store modelId | 2-3 |
 | `core/indexer-ann.js:171` | Replace `getEmbeddings()` with ColBERT model | 3 |
 | `core/index-codebase-v21.js:87` | Add `--colbert-model` arg | 3 |
@@ -587,8 +980,11 @@ Do not combine with the model migration PR.
 | `eval/run_benchmark.js:112` | Add `--colbert-model`, update profiles | 5 |
 | `eval/run_all.js:92` | Same | 5 |
 | `eval/lib/indexer.js` | Pass colbertModel through | 5 |
-| `tests/colbert-model.test.js` | **NEW** | 2 |
-| `tests/colbert-config.test.js` | **NEW** | 2 |
+| `core/search-semantic.js` | Extract ColBERT into standalone rerank function, move after expansion | 6 |
+| `core/search-fusion.js` | Wire ColBERT rerank into post-expansion pipeline | 6 |
+| `core/colbert-index.js` | Add pool_factor support, extended skiplist, PLAID compression (optional) | 7 |
+| `tests/colbert-model.test.js` | **NEW** — includes encoding asymmetry + two-stage projection tests | 2 |
+| `tests/colbert-config.test.js` | **NEW** — includes `projectionLayers` per model | 2 |
 
 ## Existing Tests (4 files, no changes needed unless they break)
 
@@ -602,6 +998,8 @@ Do not combine with the model migration PR.
 - Phase 1: delete throwaway script
 - Phase 2-3: delete new files, no existing code modified yet
 - Phase 4: revert `search-semantic.js`, restore `approximateColBERTScore`
+- Phase 6: revert pipeline restructuring, ColBERT returns to pre-expansion position
+- Phase 7: revert efficiency opts, fall back to brute-force MaxSim
 - Any time: `SWEET_SEARCH_COLBERT_MODEL=false` disables entirely
 - Each phase = separate commit/PR for clean revert
 
@@ -609,9 +1007,25 @@ Do not combine with the model migration PR.
 
 | Risk | Likelihood | Mitigation |
 |------|-----------|------------|
-| `@huggingface/transformers` can't load PyLate ONNX | MEDIUM | Load via `onnxruntime-node` directly (existing pattern in `embedding-local-model.js`) |
-| `1_Dense` projection not auto-applied | HIGH | Manual matrix multiply (393KB weight file, trivial) |
-| Full model latency >50ms on CPU | MEDIUM | Default to edge model, offer full as opt-in |
+| `@huggingface/transformers` v4 can't load PyLate ONNX | MEDIUM | Fallback A: `onnxruntime-node` directly. Fallback B: `pylate-onnx-export`. Fallback C: `pylate-rs` subprocess |
+| Full model: single `1_Dense` projection not auto-applied | HIGH | Manual matrix multiply (393KB weight file, trivial) |
+| Edge model: two-stage projection not auto-applied | HIGH | Manual two-stage multiply — must load both weight matrices. Incorrect single-stage projection would silently produce wrong embeddings |
+| Accidental [MASK] padding on queries | LOW | LateOn-Code config: `do_query_expansion=false`. Do NOT pad queries with [MASK] tokens. PyLate library defaults differ — always use model-saved config, not library defaults. |
+| Skiplist applied to queries (should be doc-only) | MEDIUM | Queries keep ALL tokens. Only documents get skiplist filtering. Easy to get backwards in implementation. |
+| Full model latency >50ms per query on CPU | MEDIUM | Default to edge model, offer full as opt-in. Query-time ColBERT is reranking (~20 candidates), so model inference dominates, not MaxSim scoring. |
 | User indexes with model A, queries with B | CERTAIN | Model ID in index header, graceful skip + warning |
-| MRR improvement < expected | LOW | If real ColBERT scores low, it's an integration bug (check prefixes, projection, normalization) |
+| MRR improvement < expected | LOW | Check in order: (1) no [MASK] padding on queries (model config: `do_query_expansion=false`), (2) skiplist NOT applied to queries, (3) projection correctness (2-stage for edge), (4) `[Q] `/`[D] ` prefixes present, (5) pipeline position (Phase 6), (6) blend weight |
+| ColBERT before expansion limits gains | HIGH | Phase 6 moves ColBERT after expansion. Benchmark both positions. |
+| Index too large (>500MB) on big repos | MEDIUM | Phase 7: PyLate pool_factor, extended skiplist, PLAID residual compression |
 | First-run download annoys user | LOW | Same UX as CodeRankEmbed download; log progress |
+
+## Reference Implementations (for validation)
+
+When debugging quality or correctness issues, cross-reference against:
+
+| Implementation | Language | What to check |
+|----------------|----------|---------------|
+| PyLate (`pylate/models/colbert.py`) | Python | Prefix handling, skiplist asymmetry, projection, config override logic |
+| ColGrep (`lightonai/next-plaid`) | Rust | Query processing, skiplist token IDs, scoring |
+| pylate-rs | Rust | Candle-based inference, projection layer handling |
+| Stanford ColBERT (`stanford-futuredata/ColBERT`) | Python | MaxSim reference, PLAID indexing |
