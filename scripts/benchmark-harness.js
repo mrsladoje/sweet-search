@@ -168,7 +168,7 @@ async function cleanIndexArtifacts() {
     'codebase-binary-hnsw.idx',
     'codebase-binary-hnsw.meta.json',
     'codebase-binary-hnsw.int8.json',
-    'codebase-colbert.db',
+    'codebase-late-interaction.db',
     'merkle-state.json',
     'query-vocabulary.json',
     'code-summaries.json',

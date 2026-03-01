@@ -25,7 +25,7 @@ import {
   EMBEDDING_PROVIDERS,
   RERANK_CONFIG,
   shouldUseLocalReranker,
-  COLBERT_CONFIG,
+  LATE_INTERACTION_CONFIG,
 } from './config.js';
 import { ARTIFACT_PATHS } from './vocab-constants.js';
 
@@ -421,24 +421,24 @@ async function warmFlashRankViaServer(baseUrl) {
   }
 }
 
-async function warmColbertViaServer(baseUrl) {
+async function warmLateInteractionViaServer(baseUrl) {
   const started = Date.now();
-  if (!COLBERT_CONFIG.enabled) {
-    return skip('colbert', started, 'disabled');
+  if (!LATE_INTERACTION_CONFIG.enabled) {
+    return skip('late-interaction', started, 'disabled');
   }
   if (!existsSync(DB_PATHS.codeGraph) && !existsSync(DB_PATHS.codebase)) {
-    return skip('colbert', started, 'no indexes');
+    return skip('late-interaction', started, 'no indexes');
   }
 
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 7000);
     const params = new URLSearchParams({
-      q: 'warmup colbert rerank signal',
+      q: 'warmup late interaction rerank signal',
       mode: 'semantic',
       k: '20',
       rerank: 'false',
-      colbert: 'true',
+      'late-interaction': 'true',
       format: 'json',
     });
 
@@ -448,11 +448,11 @@ async function warmColbertViaServer(baseUrl) {
     });
     clearTimeout(timer);
     if (!response.ok) {
-      return fail('colbert', started, `HTTP ${response.status}`);
+      return fail('late-interaction', started, `HTTP ${response.status}`);
     }
-    return ok('colbert', started);
+    return ok('late-interaction', started);
   } catch (err) {
-    return fail('colbert', started, err);
+    return fail('late-interaction', started, err);
   }
 }
 
@@ -505,10 +505,25 @@ function buildWarmupPlan() {
       fn: warmFlashRankViaServer,
     },
     {
-      name: 'colbert',
+      name: 'late-interaction-model',
+      phase: 'pre-ready',
+      when: () => LATE_INTERACTION_CONFIG.enabled,
+      fn: async () => {
+        const started = Date.now();
+        try {
+          const { getLateInteractionPipeline } = await import('./late-interaction-model.js');
+          await getLateInteractionPipeline();
+          return ok('late-interaction-model', started);
+        } catch (err) {
+          return fail('late-interaction-model', started, err);
+        }
+      },
+    },
+    {
+      name: 'late-interaction',
       phase: 'post-ready',
-      when: () => COLBERT_CONFIG.enabled,
-      fn: warmColbertViaServer,
+      when: () => LATE_INTERACTION_CONFIG.enabled,
+      fn: warmLateInteractionViaServer,
     },
   ];
 }

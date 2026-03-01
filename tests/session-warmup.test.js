@@ -32,7 +32,7 @@ vi.mock('../core/config.js', () => {
     jina: { enabled: false, apiKey: '', model: 'jina-reranker-v3', endpoint: 'https://api.jina.ai/v1/rerank' },
   };
   const LOCAL_RERANKER_CONFIG = { useLocalReranker: true };
-  const COLBERT_CONFIG = { enabled: true };
+  const LATE_INTERACTION_CONFIG = { enabled: true };
   const shouldUseLocalReranker = () => LOCAL_RERANKER_CONFIG.useLocalReranker;
   return {
     DB_PATHS,
@@ -40,7 +40,7 @@ vi.mock('../core/config.js', () => {
     EMBEDDING_PROVIDERS,
     RERANK_CONFIG,
     LOCAL_RERANKER_CONFIG,
-    COLBERT_CONFIG,
+    LATE_INTERACTION_CONFIG,
     shouldUseLocalReranker,
   };
 });
@@ -86,6 +86,12 @@ vi.mock('../core/vocab-warmer.js', () => ({
   warmFromCache: mockWarmFromCache,
 }));
 
+// Mock late-interaction-model (loaded dynamically by session-warmup's late-interaction-model warmup entry)
+const mockGetLateInteractionPipeline = vi.fn(async () => ({ session: {}, tokenizer: {} }));
+vi.mock('../core/late-interaction-model.js', () => ({
+  getLateInteractionPipeline: mockGetLateInteractionPipeline,
+}));
+
 // Mock global fetch
 const mockFetch = vi.fn(async () => ({ ok: true, json: async () => ({ status: 'ready' }) }));
 
@@ -105,7 +111,7 @@ vi.mock('undici', () => ({ Pool: MockPool }));
 // ---------------------------------------------------------------------------
 
 const { warmSession, readHealth, waitForReady, isHealthReady, getPoolForEndpoint, postJsonWithKeepAlive, closeConnectionPools } = await import('../core/session-warmup.js');
-const { EMBEDDING_CONFIG, EMBEDDING_PROVIDERS, RERANK_CONFIG, LOCAL_RERANKER_CONFIG, COLBERT_CONFIG } = await import('../core/config.js');
+const { EMBEDDING_CONFIG, EMBEDDING_PROVIDERS, RERANK_CONFIG, LOCAL_RERANKER_CONFIG, LATE_INTERACTION_CONFIG } = await import('../core/config.js');
 
 // ---------------------------------------------------------------------------
 // Shared mock reset (single source of truth for both describe blocks)
@@ -125,7 +131,7 @@ function resetMockState() {
   RERANK_CONFIG.jina.enabled = false;
   RERANK_CONFIG.jina.apiKey = '';
   LOCAL_RERANKER_CONFIG.useLocalReranker = true;
-  COLBERT_CONFIG.enabled = true;
+  LATE_INTERACTION_CONFIG.enabled = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -322,7 +328,9 @@ describe('session-warmup', () => {
         .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'ready' }) }); // poll: ready
 
       const result = await warmSession({ baseUrl: 'http://localhost:9876', warmServerPath: false });
-      expect(result.components.length).toBe(0);
+      // late-interaction-model warmup still runs (doesn't depend on index existence)
+      const nonLateInteractionComponents = result.components.filter((c) => c.component !== 'late-interaction-model');
+      expect(nonLateInteractionComponents.length).toBe(0);
       expect(mockWarmFromCache).not.toHaveBeenCalled();
     });
   });
@@ -422,14 +430,14 @@ describe('session-warmup', () => {
       expect(searchCalls).toHaveLength(3);
       expect(searchCalls.some((u) => u.searchParams.get('mode') === 'auto')).toBe(true);
       expect(searchCalls.some((u) => u.searchParams.get('mode') === 'semantic')).toBe(true);
-      expect(searchCalls.some((u) => u.searchParams.get('colbert') === 'true')).toBe(true);
+      expect(searchCalls.some((u) => u.searchParams.get('late-interaction') === 'true')).toBe(true);
 
       const qr = result.components.find((c) => c.component === 'query-router');
       const fr = result.components.find((c) => c.component === 'flashrank');
-      const colbert = result.components.find((c) => c.component === 'colbert');
+      const lateInteraction = result.components.find((c) => c.component === 'late-interaction');
       expect(qr?.ok).toBe(true);
       expect(fr?.ok).toBe(true);
-      expect(colbert?.ok).toBe(true);
+      expect(lateInteraction?.ok).toBe(true);
     });
 
     it('does not run server-path warmups when warmServerPath=false', async () => {
@@ -479,13 +487,13 @@ describe('session-warmup', () => {
 
       const qr = result.components.find((c) => c.component === 'query-router');
       const fr = result.components.find((c) => c.component === 'flashrank');
-      const colbert = result.components.find((c) => c.component === 'colbert');
+      const lateInteraction = result.components.find((c) => c.component === 'late-interaction');
       expect(qr?.ok).toBe(false);
       expect(fr?.ok).toBe(false);
-      expect(colbert?.ok).toBe(false);
+      expect(lateInteraction?.ok).toBe(false);
       expect(String(qr?.error)).toContain('HTTP 503');
       expect(String(fr?.error)).toContain('HTTP 502');
-      expect(String(colbert?.error)).toContain('HTTP 502');
+      expect(String(lateInteraction?.error)).toContain('HTTP 502');
     });
   });
 

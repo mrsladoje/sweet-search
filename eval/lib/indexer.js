@@ -13,8 +13,9 @@ import { spawn } from 'child_process';
  * @param {string} projectRoot - Sweet Search project root
  * @param {Object} [options]
  * @param {string} [options.indexMode='single'] - 'single' or 'two-phase'
- * @param {boolean} [options.buildColBERT=true]
- * @param {boolean} [options.useColBERT=true]
+ * @param {boolean} [options.buildLateInteraction=true]
+ * @param {boolean} [options.useLateInteraction=true]
+ * @param {string|null} [options.lateInteractionModel=null] - Model ID override (e.g. 'lateon-code-edge')
  * @param {boolean} [options.sqliteFastMode=false]
  * @param {boolean} [options.requireNativeAnn=false]
  * @returns {Promise<{ elapsed: number, indexMode: string, timings: Object }>}
@@ -22,7 +23,8 @@ import { spawn } from 'child_process';
 export async function indexCorpus(corpusDir, projectRoot, options = {}) {
   const {
     indexMode = 'single',
-    buildColBERT = true,
+    buildLateInteraction = true,
+    lateInteractionModel = null,
     sqliteFastMode = false,
     requireNativeAnn = false,
   } = options;
@@ -47,6 +49,11 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
   let graphPhaseMs = null;
   let vectorsPhaseMs = null;
 
+  // Set late interaction model env var if specified (overrides config.js default)
+  if (lateInteractionModel) {
+    indexEnv.SWEET_SEARCH_LATE_INTERACTION_MODEL = lateInteractionModel;
+  }
+
   if (indexMode === 'two-phase') {
     // Phase 1: Code graph only
     const graphStart = Date.now();
@@ -59,17 +66,19 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
     const merkleState = path.join(corpusDir, '.sweet-search', 'merkle-state.json');
     try { await fs.unlink(merkleState); } catch {}
 
-    // Phase 2: Vectors + HNSW + ColBERT
+    // Phase 2: Vectors + HNSW + Late Interaction
     const vectorsStart = Date.now();
     const vectorArgs = ['--vectors-only', '--quiet'];
-    if (!buildColBERT) vectorArgs.push('--no-colbert');
+    if (!buildLateInteraction) vectorArgs.push('--no-late-interaction');
+    else if (lateInteractionModel) vectorArgs.push(`--late-interaction-model=${lateInteractionModel}`);
     if (requireNativeAnn) vectorArgs.push('--require-native-ann');
     await runIndexerPhase(indexer, vectorArgs, corpusDir, indexEnv, 'vectors');
     vectorsPhaseMs = Date.now() - vectorsStart;
   } else {
     // Single-pass mode: one indexer invocation handles everything
     const args = ['--quiet'];
-    if (!buildColBERT) args.push('--no-colbert');
+    if (!buildLateInteraction) args.push('--no-late-interaction');
+    else if (lateInteractionModel) args.push(`--late-interaction-model=${lateInteractionModel}`);
     if (requireNativeAnn) args.push('--require-native-ann');
     await runIndexerPhase(indexer, args, corpusDir, indexEnv, 'index');
   }
@@ -95,14 +104,18 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
  * @param {string} corpusDir - Directory containing .sweet-search/ index
  * @param {string} projectRoot - Sweet Search project root
  * @param {Object} [options]
- * @param {boolean} [options.useColBERT=true]
+ * @param {boolean} [options.useLateInteraction=true]
+ * @param {string|null} [options.lateInteractionModel=null] - Model ID override
  * @returns {Promise<Object>} Initialized SweetSearch instance
  */
 export async function initSearch(corpusDir, projectRoot, options = {}) {
-  const { useColBERT = true } = options;
+  const { useLateInteraction = true, lateInteractionModel = null } = options;
 
   process.env.SWEET_SEARCH_PROJECT_ROOT = corpusDir;
   process.env.EMBEDDING_PROVIDER = 'local';
+  if (lateInteractionModel) {
+    process.env.SWEET_SEARCH_LATE_INTERACTION_MODEL = lateInteractionModel;
+  }
 
   const dataDir = path.join(corpusDir, '.sweet-search');
   const { SweetSearch } = await import(path.join(projectRoot, 'core', 'sweet-search.js'));
@@ -112,7 +125,7 @@ export async function initSearch(corpusDir, projectRoot, options = {}) {
     hnswPath: path.join(dataDir, 'codebase-hnsw.idx'),
     binaryHnswPath: path.join(dataDir, 'codebase-binary-hnsw.idx'),
     codebaseDbPath: path.join(dataDir, 'codebase.db'),
-    useColBERT,
+    useLateInteraction,
     verbose: false,
     timing: false,
   });

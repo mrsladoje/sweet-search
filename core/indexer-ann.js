@@ -1,5 +1,5 @@
 /**
- * Indexer ANN - HNSW, ColBERT, and quantized artifact building.
+ * Indexer ANN - HNSW, late interaction, and quantized artifact building.
  * Extracted from index-codebase-v21.js for file size compliance (<500 lines).
  */
 
@@ -7,7 +7,7 @@ import { existsSync } from 'fs';
 
 import { DB_PATHS, HNSW_CONFIG } from './config.js';
 import { HNSWIndex } from './hnsw-index.js';
-import { ColBERTIndex } from './colbert-index.js';
+import { LateInteractionIndex } from './late-interaction-index.js';
 import { truncateForHNSW, getEmbeddings, getModelInfo } from './embedding-service.js';
 import { buildFromCodebaseDb as buildQuantizedArtifacts, shouldSkipArtifactRebuild, updateArtifactState, ARTIFACT_THRESHOLDS } from './artifact-builder.js';
 import { log, logProgress } from './indexer-utils.js';
@@ -165,14 +165,15 @@ export async function buildHNSWIndex(chunks, embeddings, dryRun = false) {
 }
 
 // =============================================================================
-// PHASE 4: COLBERT INDEX (Late Interaction)
+// PHASE 4: LATE INTERACTION INDEX
 // =============================================================================
 
-export async function buildColBERTIndex(chunks, dryRun = false, filesToRemove = []) {
-  log('\n━━━ Phase 4: ColBERT Index ━━━', 'bright');
+export async function buildLateInteractionIndex(chunks, dryRun = false, filesToRemove = [], options = {}) {
+  const { poolFactor = 1, extendedSkiplist = false } = options;
+  log('\n━━━ Phase 4: Late Interaction Index (LateOn-Code) ━━━', 'bright');
 
   if (dryRun) {
-    log('DRY RUN: Skipping ColBERT index', 'magenta');
+    log('DRY RUN: Skipping late interaction index', 'magenta');
     return;
   }
 
@@ -181,22 +182,29 @@ export async function buildColBERTIndex(chunks, dryRun = false, filesToRemove = 
     return;
   }
 
-  const colbert = new ColBERTIndex({
-    tokenDim: 64,
-    maxTokens: 32,
+  const { LATE_INTERACTION_CONFIG } = await import('./config.js');
+  if (!LATE_INTERACTION_CONFIG.enabled) {
+    log('LateInteraction: Disabled via config', 'yellow');
+    return;
+  }
+
+  const liIndex = new LateInteractionIndex({
+    tokenDim: LATE_INTERACTION_CONFIG.tokenDimension,
+    maxTokens: 512,
     useInt8: true,
+    modelId: LATE_INTERACTION_CONFIG.model,
   });
 
-  await colbert.init();
+  await liIndex.init();
 
   if (filesToRemove && filesToRemove.length > 0) {
     log(`Removing entries for ${filesToRemove.length} changed/deleted files...`, 'yellow');
 
     let removed = 0;
-    for (const [id, doc] of colbert.documents.entries()) {
+    for (const [id, doc] of liIndex.documents.entries()) {
       const docFile = doc.metadata?.file || id.split(':')[0];
       if (filesToRemove.includes(docFile)) {
-        colbert.documents.delete(id);
+        liIndex.documents.delete(id);
         removed++;
       }
     }
@@ -204,94 +212,54 @@ export async function buildColBERTIndex(chunks, dryRun = false, filesToRemove = 
     log(`  Removed ${removed} existing entries`, 'dim');
   }
 
-  const MAX_LINES_PER_CHUNK = 16;
-  const MIN_LINE_LENGTH = 10;
-  const MAX_LINE_LENGTH = 200;
+  // Use real LateOn-Code model for per-token embeddings
+  const { encodeDocuments } = await import('./late-interaction-model.js');
 
-  log(`ColBERT: Extracting pseudo-tokens from ${chunks.length} chunks...`, 'yellow');
-
-  const allLines = [];
-  const lineToChunk = [];
-
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-    const text = chunk.text || chunk.content || '';
-
-    const lines = text.split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length >= MIN_LINE_LENGTH)
-      .slice(0, MAX_LINES_PER_CHUNK)
-      .map(line => line.slice(0, MAX_LINE_LENGTH));
-
-    for (const line of lines) {
-      allLines.push(line);
-      lineToChunk.push(i);
-    }
-  }
-
-  log(`  Extracted ${allLines.length} lines from ${chunks.length} chunks`, 'dim');
-
-  if (allLines.length === 0) {
-    log('No valid lines found for ColBERT indexing', 'yellow');
-    return;
-  }
-
-  const MEGA_BATCH_SIZE = 10_000;
-
-  log('ColBERT: Generating line embeddings (mega-batch)...', 'yellow');
-
-  const totalLines = allLines.length;
-  let embedded = 0;
-  const reportInterval = Math.max(1000, Math.floor(totalLines / 20));
-
+  const BATCH_SIZE = 16; // encode 16 chunks at a time
+  const totalChunks = chunks.length;
   let totalAdded = 0;
+  const reportInterval = Math.max(1, Math.floor(totalChunks / 20));
 
-  for (let megaStart = 0; megaStart < allLines.length; megaStart += MEGA_BATCH_SIZE) {
-    const megaEnd = Math.min(megaStart + MEGA_BATCH_SIZE, allLines.length);
-    const megaBatch = allLines.slice(megaStart, megaEnd);
+  const encodeOpts = {};
+  if (poolFactor > 1) encodeOpts.poolFactor = poolFactor;
+  if (extendedSkiplist) encodeOpts.extendedSkiplist = true;
 
-    const megaResults = await getEmbeddings(megaBatch, {
-      useCache: false,
-      providerOptions: {
-        maxLength: 256,
-        resolveHardCap: (candidateLongest) => (candidateLongest <= 128 ? 128 : 64),
-      },
-    });
-    const megaEmbeddings = megaResults.map(r => r.embedding);
+  const poolLabel = poolFactor > 1 ? `, pool=${poolFactor}` : '';
+  const skipLabel = extendedSkiplist ? ', skiplist=extended' : '';
+  log(`LateInteraction: Encoding ${totalChunks} chunks with ${LATE_INTERACTION_CONFIG.model} (${LATE_INTERACTION_CONFIG.tokenDimension}d${poolLabel}${skipLabel})...`, 'yellow');
 
-    embedded += megaEmbeddings.length;
-    if (embedded % reportInterval < megaEmbeddings.length || embedded === totalLines) {
-      log(`  ColBERT: ${embedded}/${totalLines} lines (${Math.round(embedded / totalLines * 100)}%)`, 'dim');
-    }
+  for (let batchStart = 0; batchStart < totalChunks; batchStart += BATCH_SIZE) {
+    const batchEnd = Math.min(batchStart + BATCH_SIZE, totalChunks);
+    const batchChunks = chunks.slice(batchStart, batchEnd);
+    const batchTexts = batchChunks.map(c => c.text || c.content || '');
 
-    const chunkTokens = new Map();
-    for (let j = 0; j < megaEmbeddings.length; j++) {
-      const chunkIdx = lineToChunk[megaStart + j];
-      if (!chunkTokens.has(chunkIdx)) {
-        chunkTokens.set(chunkIdx, []);
+    // encodeDocuments handles [D] prefix, tokenization, skiplist filtering, pooling
+    const tokenArrays = await encodeDocuments(batchTexts, encodeOpts);
+
+    for (let j = 0; j < batchChunks.length; j++) {
+      const chunk = batchChunks[j];
+      const tokens = tokenArrays[j];
+      if (tokens && tokens.length > 0) {
+        await liIndex.add(chunk.id, tokens, {
+          file: chunk.file,
+          name: chunk.metadata?.symbol,
+        });
+        totalAdded++;
       }
-      chunkTokens.get(chunkIdx).push(megaEmbeddings[j]);
     }
 
-    for (const [chunkIdx, tokens] of chunkTokens) {
-      const chunk = chunks[chunkIdx];
-      await colbert.add(chunk.id, tokens, {
-        file: chunk.file,
-        name: chunk.metadata?.symbol,
-      });
-      totalAdded++;
+    if ((batchStart + BATCH_SIZE) % (reportInterval * BATCH_SIZE) < BATCH_SIZE || batchEnd === totalChunks) {
+      log(`  LateInteraction: ${batchEnd}/${totalChunks} chunks (${Math.round(batchEnd / totalChunks * 100)}%)`, 'dim');
     }
   }
 
-  log(`\nColBERT: Building token index... (${totalAdded} chunks indexed)`, 'yellow');
+  await liIndex.save();
 
-  await colbert.save();
+  const liStats = liIndex.getStats();
+  log(`\n✓ Late interaction index built: ${liStats.documents} docs, ${liStats.totalTokens} tokens (model: ${liStats.modelId})`, 'green');
+  log(`  Avg tokens/doc: ${liStats.avgTokensPerDoc}, Dim: ${liStats.tokenDim}d, Size: ${liStats.estimatedSizeMB} MB`, 'dim');
 
-  const colbertStats = colbert.getStats();
-  log(`\n✓ ColBERT index built: ${colbertStats.documents} docs, ${colbertStats.totalTokens} tokens`, 'green');
-  log(`  Avg tokens/doc: ${colbertStats.avgTokensPerDoc}, Size: ${colbertStats.estimatedSizeMB} MB`, 'dim');
-
-  return colbertStats;
+  return liStats;
 }
 
 // =============================================================================

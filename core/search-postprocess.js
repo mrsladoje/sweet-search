@@ -144,6 +144,66 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   }
 
   // =========================================================================
+  // Late Interaction Reranking (post-expansion, Phase 6)
+  // =========================================================================
+  // Runs after graph expansion so expanded candidates also benefit from MaxSim.
+  // Pipeline: (Binary -> Int8) -> Fusion -> Expand -> LateInteraction -> Reranker -> Budget
+  const shouldRunLateInteraction = this.hasLateInteractionIndex &&
+                           (options.useLateInteraction ?? this.useLateInteraction) &&
+                           !this.lateInteractionIndex.modelMismatch &&
+                           Array.isArray(results) && results.length > 0;
+
+  if (shouldRunLateInteraction) {
+    try {
+      const liStart = performance.now();
+      const liCandidateCount = this.stage3Candidates || 20;
+      const topCandidates = results.slice(0, liCandidateCount);
+
+      // Encode query into per-token vectors (real late interaction via LateOn-Code)
+      const { encodeQuery } = await import('./late-interaction-model.js');
+      const queryTokens = await encodeQuery(query);
+
+      if (queryTokens && queryTokens.length > 0) {
+        // Score with real MaxSim
+        const scored = await this.lateInteractionIndex.scoreWithLateInteraction(queryTokens, topCandidates);
+
+        // Blend late interaction score with current score (works across all search modes —
+        // fused scores, int8 scores, and expanded scores are all in [0,1] range)
+        for (const candidate of scored) {
+          const baseScore = candidate.score ?? candidate.int8Score ?? 0;
+          const blendedScore = (candidate.lateInteractionScore * this.lateInteractionBlendWeight) +
+                              (baseScore * (1 - this.lateInteractionBlendWeight));
+
+          candidate.preLateInteractionScore = baseScore;
+          candidate.score = blendedScore;
+        }
+
+        // Re-sort by blended score
+        scored.sort((a, b) => b.score - a.score);
+
+        // Merge re-ranked top with remaining candidates
+        results = [
+          ...scored,
+          ...results.slice(liCandidateCount),
+        ];
+      }
+
+      stats.lateInteraction = {
+        position: 'post-expansion',
+        latency_us: Math.round((performance.now() - liStart) * 1000),
+        candidates: topCandidates.length,
+        queryTokens: queryTokens?.length || 0,
+      };
+      this.log(`LateInteraction (post-expansion): ${stats.lateInteraction.latency_us}us for ${topCandidates.length} candidates (${queryTokens?.length || 0} query tokens)`);
+    } catch (err) {
+      this.log(`LateInteraction rerank failed: ${err.message}`);
+      stats.lateInteraction = { position: 'post-expansion', error: err.message };
+    }
+  } else if (this.hasLateInteractionIndex && (options.useLateInteraction ?? this.useLateInteraction) && this.lateInteractionIndex.modelMismatch) {
+    this.log('LateInteraction: Skipped (model mismatch — re-index to fix)');
+  }
+
+  // =========================================================================
   // Phase 4: Translation Fallback
   // =========================================================================
   if (this.enableTranslationFallback && translate !== 'false') {
@@ -173,7 +233,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
         for (const translatedQuery of translatedQueries.slice(0, 2)) { // Max 2 retries
           const retryResult = await this.searchWithoutFallback(translatedQuery, {
             k, mode: options.mode, expand: options.expand, rerank: options.rerank,
-            fusion: options.fusion, useColBERT: options.useColBERT,
+            fusion: options.fusion, useLateInteraction: options.useLateInteraction,
           });
 
           if (retryResult.results && retryResult.results.length > 0) {
