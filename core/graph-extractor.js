@@ -138,7 +138,7 @@ const MULTI_TARGET_TYPES = new Set([
   'plainImport', 'implements', 'inherit', 'protocol', 'with',
 ]);
 
-const TREE_SITTER_ENTITY_PRIORITY = Object.freeze({
+export const TREE_SITTER_ENTITY_PRIORITY = Object.freeze({
   component: 40,
   class: 35,
   function: 30,
@@ -148,6 +148,12 @@ const TREE_SITTER_ENTITY_PRIORITY = Object.freeze({
   typeAlias: 20,
   enum: 20,
   namespace: 20,
+  struct: 30,
+  record: 30,
+  module: 25,
+  trait: 25,
+  impl: 20,
+  decorator: 15,
 });
 
 // Module-scope constants for extractJavaScript() — avoid per-call/per-line allocation.

@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import GraphExtractor from '../core/graph-extractor.js';
 
-const extractor = new GraphExtractor({ projectRoot: '/test' });
+const extractor = new GraphExtractor({ projectRoot: '/test', useTreeSitter: false });
 
 // =============================================================================
 // C LANGUAGE
