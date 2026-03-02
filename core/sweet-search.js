@@ -23,6 +23,7 @@ import { Reranker } from './flashrank.js';
 import { LateInteractionIndex } from './late-interaction-index.js';
 import { getEmbedding, getBinaryEmbedding, truncateForHNSW, floatToInt8, int8CosineSimilarity, warmup as warmupEmbedding, isWarm, registerAutoPersistOnExit } from './embedding-service.js';
 import { recordQueryTelemetry } from './embedding-cache.js';
+import Database from 'better-sqlite3';
 import { TranslationFallback, queryNeedsTranslation } from '../translation/index.js';
 import { expandResults } from './graph-expansion.js';
 import { applyMMR, shouldApplyMMR, getLambdaForIntent, MMR_CONFIG } from './mmr.js';
@@ -67,7 +68,20 @@ export class SweetSearch {
     this.qualityWeight = options.qualityWeight ?? 0;
     setRepoMapModule({ pageRank, loadGraph, buildAdjacency });
     this._qualityScorer = null;
+    this._codebaseDb = null;
     this.initialized = false;
+  }
+
+  /** Lazy read-only connection to codebase.db (for token estimation). */
+  get codebaseDb() {
+    if (!this._codebaseDb && this.hasCodebaseIndex) {
+      try {
+        this._codebaseDb = new Database(this.codebaseDbPath, { readonly: true });
+      } catch {
+        // Fall back to language multipliers if DB can't be opened
+      }
+    }
+    return this._codebaseDb;
   }
 
   /** Initialize all search components */
@@ -355,7 +369,11 @@ export class SweetSearch {
   }
 
   /** Close all connections */
-  close() { this.graphSearch.close(); }
+  close() {
+    this.graphSearch.close();
+    this._codebaseDb?.close();
+    this._codebaseDb = null;
+  }
 }
 
 // Prototype wiring (extracted module functions)

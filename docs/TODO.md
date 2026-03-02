@@ -41,7 +41,7 @@ Results: `eval/results/all_benchmarks_2026-02-19T00-17-05-442Z.json`
 | SEISMIC Sparse Index | A code / F integration | Yes (complete algorithm) | No (dead code) | No |
 | Intent Router | B+ | Yes | Yes (full pipeline) | DISABLED (was auto) |
 | Quality Scorer | C+ | Yes (6 factors) | Yes (but qualityWeight=0) | No (disabled) |
-| tags.scm (P2.4) | B- | Partial (hand-written queries) | Yes (in tree-sitter provider) | Yes (for 5 langs) |
+| tags.scm (P2.4) | B+ | Yes (hand-written, all 12 langs) | Yes (in tree-sitter provider) | Yes (all 12 langs) |
 | 2-Hop Adaptive Expansion | B+ | Yes | Yes (SOTA scoring, enabled by default) | Yes (adaptiveHop2=true) |
 
 **No P2 item has been A/B tested against a baseline.**
@@ -290,85 +290,34 @@ the dual-model embedding work.
 
 ## 4. Tree-Sitter tags.scm: Further Research + Official Grammar Queries
 
-**Status**: Partial. Hand-written s-expression queries exist in
-`core/tree-sitter-provider.js` (TAGS_QUERIES object, 5 languages). These are
-approximations, not the official `tags.scm` files shipped with grammar packages.
+**Status**: TAGS_QUERIES for all 12 languages COMPLETE (2026-03-02, commit 19f093b).
+Remaining work: official grammar queries and relationship extraction.
 
 ### 4.1 Current State
 
 - P0 tree-sitter (DONE): WASM grammar loading, boundary detection, cAST recursive
   split-merge for **chunking**.
-- P2.4 tags.scm (PARTIAL): `extractSymbols()` uses hand-written query patterns for
-  symbol **entity extraction** (JS, TS, Python, Go, Rust). Integrated into
-  `graph-extractor.js` as first-try before regex fallback.
+- P2.4 tags.scm (DONE for all 12 languages): `extractSymbols()` uses hand-written
+  query patterns for symbol **entity extraction** across JS, TS, Python, Go, Rust,
+  Java, Ruby, PHP, Kotlin, Swift, C, C++. Integrated into `graph-extractor.js` as
+  first-try before regex fallback. IDENT_TYPES, BOUNDARY_TYPES, NODE_TYPE_MAP,
+  CAPTURE_TO_ENTITY_TYPE, and TREE_SITTER_ENTITY_PRIORITY all expanded. 60 new tests
+  across 5 phases in `tests/tags-queries-all-languages.test.js`; 101 files, 2757
+  tests, 0 failures.
 
 ### 4.2 What's Missing
 
+- [x] ~~**Extend to all 12 supported languages**~~ — DONE (2026-03-02, commit 19f093b).
+  Java, Ruby, PHP, Kotlin, Swift, C, C++ added to TAGS_QUERIES.
+- [x] ~~**Dedicated P2.4 test coverage**~~ — DONE. `tests/tags-queries-all-languages.test.js`
+  (60 tests) + `tests/tags-scm-extraction.test.js`.
 - [ ] **Load official tags.scm from grammar packages** instead of hand-written
   approximations. Most tree-sitter grammars ship standard query files.
 - [ ] **Validate queries against official grammar-provided tags.scm** -- current
   hand-written queries may miss node types or capture groups.
-- [ ] **Extend to all 12 supported languages** (currently only 5 have queries;
-  Ruby, PHP, Kotlin, Swift, C, C++, Java are missing from TAGS_QUERIES).
 - [ ] **Relationship extraction via queries** -- currently only definitions are
   extracted via tree-sitter; relationships still use regex entirely. tags.scm
   `@reference` captures could replace regex relationship patterns.
-- [ ] **Dedicated P2.4 test coverage** -- no test file specifically validates
-  tags.scm queries against real grammar outputs.
-
-### 4.3 Entity Extraction → Embedding Quality Causality Chain
-
-The connection between missing TAGS_QUERIES languages and benchmark MRR scores is
-not obvious from the code structure. This section makes the mechanism explicit.
-
-**The causal chain for Java (and any language absent from TAGS_QUERIES):**
-
-```
-extractSymbols() returns null for Java              (tree-sitter-provider.js:214)
-        ↓
-graph-extractor.js falls through to extractJava()  (regex-based fallback)
-        ↓
-Entity metadata is lower quality:
-  - Cannot determine scope chain: sees handleLogin() but not that it's inside
-    AuthController, not BaseController or an anonymous inner class
-  - Misses annotations on the preceding line (@Override, @Deprecated, @RequestMapping)
-    that change the entity's semantic meaning
-  - Fails on multi-line declarations: return type, name, and throws clause can
-    span 3+ lines with formatters; regex gets the name wrong or misses the entity
-  - Generic type parameters confuse name extraction: Map<String, List<T>> parsed
-    as "Map" with garbage suffix
-        ↓
-enrichEmbeddingText() receives incomplete or wrong parent/scope info
-        ↓
-Embedding text becomes:
-  "# path\n# Scope: ?\n# Language: java"           ← regex fallback result
-instead of:
-  "# path\n# Scope: AuthController > handleLogin\n# Language: java"  ← tree-sitter
-        ↓
-CodeRankEmbed produces a less precise vector — it cannot distinguish
-AuthController.handleLogin() from BaseController.handleLogin()
-        ↓
-HNSW nearest-neighbor search returns wrong candidates → lower MRR
-```
-
-**Why tree-sitter extraction is structurally superior to regex:**
-Tree-sitter gives you the entity's full structural context from the parsed AST. The
-surrounding `class_declaration` node tells you exactly which class a method belongs
-to — this is already in the parse tree, not inferred from line patterns. Regex cannot
-reliably recover scope from line-by-line scanning without re-implementing a full
-language parser, which is exactly what tree-sitter is.
-
-**The benchmark evidence:** Java CSN 34.8% vs GenCSN 79.0% — a 44-point gap. The gap
-is mostly CodeSearchNet's garbage queries, but the embedding precision deficit is real
-and shows up on legitimate Java queries where the wrong overloaded method or wrong
-inner class variant is retrieved at rank 1.
-
-**Priority implication:** Adding Java (and the other 6 missing languages) to
-TAGS_QUERIES is not a completeness checkbox — it is a direct embedding quality fix
-with measurable MRR impact. The entity extraction quality directly determines what
-`enrichEmbeddingText()` can produce, which directly determines what the embedding
-model encodes. This is Section 4's highest-priority action item. See Section 7 for
-benchmark evidence and Section 4.2 for the specific action items.
 
 ---
 
@@ -486,17 +435,16 @@ information.
 mean the same thing semantically. Dense embeddings handle this better than keyword
 search, but the variety still hurts compared to Go's single `func` pattern.
 
-**Tree-sitter is NOT the issue:** We use the standard tree-sitter grammars
-(tree-sitter-wasms@0.1.13, same as VS Code/Neovim). These are high-quality.
-However, our tags.scm queries are hand-written and only cover 5 languages —
-Java is MISSING from TAGS_QUERIES. Adding Java tags.scm queries (Section 4) could
-improve entity extraction for graph-based features.
+**Tree-sitter entity extraction is now complete for all 12 languages** (2026-03-02,
+commit 19f093b). Java, Ruby, PHP, Kotlin, Swift, C, C++ added to TAGS_QUERIES.
+This fixes the entity extraction quality gap — `extractSymbols()` now returns
+scope-aware entities for Java instead of falling back to regex.
 
 ### 7.3 Action Items
 
 - [ ] **Enable late interaction** (Section 0) — expected to help Java most (+15-25 MRR pts)
-- [ ] **Add Java to TAGS_QUERIES** in `tree-sitter-provider.js` — currently only
-  JS, TS, Python, Go, Rust have hand-written queries
+- [x] ~~**Add Java to TAGS_QUERIES**~~ — DONE (2026-03-02, commit 19f093b). All 12
+  languages now have tree-sitter entity extraction
 - [ ] **Error analysis on CodeSearchNet JS/Java failures**: Sample 50 failed queries
   per language, categorize as: (a) garbage query, (b) relevant query but wrong
   result, (c) relevant query but result not in top-10. This tells us whether to
@@ -1104,40 +1052,25 @@ will also type vague or incomplete queries:
 
 ---
 
-## 22. Token Estimation: Replace 10 Tokens/Line Heuristic
+## 22. Token Estimation: Replace 10 Tokens/Line Heuristic — DONE
 
-**Status**: Not started. `applyTokenBudget` in `core/graph-expansion.js` estimates
-token cost as `(endLine - startLine + 1) * 10`. This is systematically wrong across
-languages: Java averages ~15 tokens/line, Python ~8, Go ~12. In a mixed-language
-codebase this causes incorrect budget cutoffs and corrupts density-based allocation
-(Section 25) if that is added later.
+**Status**: COMPLETE (2026-03-02). Implemented two-tier token estimation:
 
-### 22.1 Options
+1. **Accurate**: Word-split of actual chunk text from codebase.db (originals) or
+   disk (expanded results via `readFileLines` dependency injection). ±10-15% of BPE.
+2. **Fallback**: Language-specific per-line multipliers (Java 15, Go 12, PHP 11,
+   JS/TS 10, Ruby 9, Python 8). ±20% — still much better than the old flat ×10.
 
-| Approach | Latency added | Accuracy | Notes |
-|----------|---------------|----------|-------|
-| Current: `lines × 10` | 0ms | ±50% | Systematically wrong for Java |
-| Language-specific multipliers | 0ms | ±20% | Java×1.5, Python×0.8, etc. |
-| Fetch chunk text + BPE count | +2ms | ±5% | SQLite lookup per result |
+**Files modified**: `graph-expansion.js` (4 new functions + updated `applyTokenBudget`
+and `expandResults`), `search-postprocess.js` (readFileLines closure + codebaseDb
+threading), `sweet-search.js` (lazy `codebaseDb` getter + `close()` update).
 
-Language-specific multipliers are the right first step: zero latency, no I/O, and
-capture the main source of error. Per-language rough averages from CodeSearchNet:
-Java ~15, Go ~12, PHP ~11, JS ~10, Ruby ~9, Python ~8.
+**Tests**: 45 new tests across `tests/token-estimation.test.js` (30 unit) and
+`tests/token-estimation-integration.test.js` (15 integration). All 2802 tests pass.
 
-### 22.2 Action Items
-
-- [ ] **Add language-specific multipliers** to `applyTokenBudget`: look up file
-  extension for each result and apply the appropriate factor. Zero latency cost.
-- [ ] **Prerequisite for Section 25** (knapsack allocation): fix token counts before
-  implementing density sorting — sorting by `score / inaccurateTokens` is worse than
-  sorting by score alone.
-- [ ] Measure impact after fix: re-run CodeSearchNet and compare budget utilization
-  stats (tokens spent on originals vs hop-1 vs hop-2).
-
-### 22.3 Priority
-
-**LOW-MEDIUM** — blocking prerequisite for Section 25. On its own, only meaningfully
-affects mixed-language repos. Low effort; implement before knapsack work.
+- [x] Add language-specific multipliers + accurate word-split estimation
+- [x] Prerequisite for Section 25 (knapsack allocation) — now unblocked
+- [ ] Measure impact: re-run CodeSearchNet and compare budget utilization stats
 
 ---
 
