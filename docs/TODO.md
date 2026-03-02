@@ -550,82 +550,26 @@ different task), CoQuIR (quality-focused, late interaction won't help much).
 
 ## 9. JavaScript/TypeScript Chunking + Entity Extraction Hardening
 
-**Status**: Current JS patterns cover basic cases but miss several modern JS/TS
-patterns that are common in real-world codebases. This directly impacts benchmark
-performance (JS at 65.5% MRR on GenCSN vs Go at 93.6%).
+**Status**: COMPLETE (2026-03-02, commit bb254f7).
 
-### 9.1 Current JS Chunker Patterns (registry-core.js)
+Implemented full JS_TS_CHUNKING_HARDENING.md plan across 4 phases:
+- Phase 1: Chunker patterns (arrowNoParen, let/var arrows, generators, getters/setters,
+  objectMethod, moduleExport/moduleExportObj, export default class/function)
+- Phase 2: Graph entities (objectArrow, objectMethod, arrowFunction type fix, export
+  default) + relationships (require, reexport, dynamicImport, destructured require
+  per-name imports)
+- Phase 3: Tree-sitter queries (generator_function_declaration, abstract_class_declaration,
+  variable_declarator+arrow_function combined capture, pair queries for object
+  methods/arrows, namespace module/internal_module, type_identifier for TS class,
+  export_statement class declarations)
+- Phase 4: 91-test dedicated file with multiset parity comparators (tree-sitter vs
+  regex), 87 tests added to typescript-patterns.test.js
+- Simplify pass: hoisted constants, DRY'd relationship blocks, if-else entity chain
+- Tree-sitter packages moved to required dependencies; parity tests hard-fail
 
-What we detect:
-- `function foo()` — function declarations
-- `const foo = (` — arrow function assignments (parenthesized params only)
-- `class Foo` — class declarations
-- `export function/const/class` — exported declarations
-
-### 9.2 Missing Modern JS Patterns
-
-**Chunker gaps** (boundary detection in `document-chunker.js`):
-
-- [ ] **Arrow functions without parens**: `const fn = x => x + 1` — the `arrow`
-  pattern requires `\(` so single-param arrows without parens are missed.
-- [ ] **Object method shorthand**: `{ foo() {}, bar: function() {} }` — common in
-  Express route handlers, test suites, Vue options API, config objects. Not detected
-  as boundaries.
-- [ ] **Destructured exports**: `const { foo, bar } = require('./utils')` — CJS
-  destructured imports create entities we never see.
-- [ ] **`module.exports = { ... }`**: CJS default export pattern. The object's
-  methods are invisible to the chunker.
-- [ ] **`module.exports = function()`**: CJS function export — no name to capture.
-- [ ] **`export default function/class`**: Default exports without a name binding.
-  The regex sees `export` but there's no `const` or named `function` after it.
-- [ ] **Getter/setter syntax**: `get foo() {}`, `set foo(v) {}` — class accessors
-  and object literal accessors. Not matched by any pattern.
-- [ ] **Computed property methods**: `[Symbol.iterator]() {}`, `['method']() {}` —
-  the method name isn't a simple identifier.
-- [ ] **Generator functions**: `function* gen()`, `async function* gen()` — the `*`
-  breaks the function pattern.
-- [ ] **`let`/`var` arrow functions**: The arrow pattern only matches `const`. Real
-  code uses `let` for reassignable arrow functions.
-
-**Graph entity gaps** (entity extraction in `graph-extractor.js`):
-
-- [ ] **`require()` calls**: `const x = require('module')` — CJS imports are not
-  captured by the `import` relationship pattern which only matches ESM `import`.
-- [ ] **Dynamic imports**: `const mod = await import('./module')` — not matched.
-- [ ] **Re-exports**: `export { foo } from './bar'`, `export * from './utils'` —
-  the import pattern expects `import` keyword, not `export ... from`.
-- [ ] **Named arrow functions in objects**: `const routes = { getUser: async (req) => {} }`
-  — the arrow pattern expects top-level `const name = async (`, not nested.
-- [ ] **Callback patterns**: `app.get('/path', (req, res) => {})` — anonymous
-  callbacks that define significant behavior but have no name to extract.
-
-**Tree-sitter tags.scm gaps** (`tree-sitter-provider.js`):
-
-- [ ] **Named arrow function assignment**: The query `(arrow_function) @arrow.definition`
-  captures the arrow but loses the variable name. Should use
-  `(variable_declarator name: (identifier) @arrow.definition value: (arrow_function))`.
-- [ ] **Object methods**: `(pair key: (property_identifier) @method.definition value: (function_expression))`
-  — Express/Koa route handlers.
-- [ ] **Generator functions**: `(generator_function_declaration name: (identifier) @function.definition)`
-- [ ] **Export default**: `(export_statement value: (class_declaration name: (identifier) @class.definition))`
-
-### 9.3 Priority
-
-**HIGH** — JavaScript and TypeScript are the most common languages for Claude Code
-users. Improving chunking boundaries and entity extraction directly impacts how
-well we chunk JS files and how many entities appear in the graph. Even without
-late interaction, better chunking means better embedding quality (chunks aligned to
-semantic boundaries embed better than arbitrary line splits).
-
-### 9.4 Action Items
-
-- [ ] Add missing chunker patterns for modern JS (arrow without parens, generators,
-  getters/setters, object method shorthand, `let`/`var` arrows)
-- [ ] Add `require()` and `export ... from` to JS/TS graph relationship patterns
-- [ ] Fix tree-sitter arrow function query to capture the variable name, not
-  just the arrow_function node
-- [ ] Add tree-sitter queries for object methods, generators, export defaults
-- [ ] Add tests for each new pattern (use existing chunker test structure)
+Remaining out-of-scope items (deferred):
+- [ ] Computed property methods (`[Symbol.iterator]() {}`) — regex can't reliably match
+- [ ] Callback patterns (`app.get('/path', (req, res) => {})`) — anonymous, no name
 - [ ] Re-run GenCodeSearchNet JS subset before/after to measure MRR delta
 
 ---
@@ -1899,7 +1843,7 @@ point for A/B testing. Before investing more engineering effort in any P2 item:
 4. **Query-dependent expansion scoring** (Section 24) — ~2ms latency, no training
    data, uses existing embeddings; highest-ROI graph improvement
 5. **Pattern search mode** (Section 28.3) — regex+semantic hybrid, fills real gap
-6. **JS/TS chunking hardening** (Section 9) — directly impacts #2 most common language
+6. ~~**JS/TS chunking hardening** (Section 9)~~ — DONE (2026-03-02)
 7. **Graph expansion on by default** (Section 5) — gate on A/B validation first
 8. **Quality scorer qualityWeight** (Section 1.1) — quick to A/B test
 9. **Graph expansion adaptive 2-hop benchmarking** (Section 5) — needs A/B validation
