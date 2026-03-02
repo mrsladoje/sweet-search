@@ -93,6 +93,8 @@ export const GENERIC_RELATIONSHIP_MAPPING = Object.freeze({
   plainImport: 'imports',
   include: 'imports',
   require: 'imports',
+  reexport: 'imports',
+  dynamicImport: 'imports',
   use: 'imports',
   prepend: 'imports',
   open: 'imports',
@@ -135,6 +137,34 @@ const escapeRegexLiteral = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&
 const MULTI_TARGET_TYPES = new Set([
   'plainImport', 'implements', 'inherit', 'protocol', 'with',
 ]);
+
+const TREE_SITTER_ENTITY_PRIORITY = Object.freeze({
+  component: 40,
+  class: 35,
+  function: 30,
+  method: 25,
+  arrowFunction: 20,
+  interface: 20,
+  typeAlias: 20,
+  enum: 20,
+  namespace: 20,
+});
+
+// Module-scope constants for extractJavaScript() — avoid per-call/per-line allocation.
+const JS_CALL_SKIP_OBJECTS = new Set([
+  'console', 'Math', 'JSON', 'Object', 'Array', 'Promise', 'process', 'Buffer', 'Date',
+]);
+const JS_RESERVED_WORDS = new Set([
+  'if', 'else', 'for', 'while', 'switch', 'catch', 'with', 'do', 'try', 'return',
+]);
+
+// Import-like relationship patterns for extractJavaScript() — DRYs up five inline blocks.
+const JS_IMPORT_PATTERNS = [
+  { regex: /import\s+(?:\{[^}]+\}|\w+)\s+from\s+['"]([^'"]+)['"]/, group: 1 },
+  { regex: /(?:const|let|var)\s+(?:\{[^}]+\}|\w+)\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)/, group: 1 },
+  { regex: /export\s+(?:\{[^}]+\}|\*)\s+from\s+['"]([^'"]+)['"]/, group: 1 },
+  { regex: /(?:await\s+)?import\s*\(\s*['"]([^'"]+)['"]\s*\)/, group: 1 },
+];
 
 /**
  * Split a string on commas, but only at the top level — ignoring commas
@@ -207,16 +237,9 @@ export class GraphExtractor {
         if (await provider.isAvailable() && provider.hasLanguage(langInfo.id)) {
           const symbols = await provider.extractSymbols(content, langInfo.id);
           if (symbols && symbols.length > 0) {
-            // Convert tree-sitter symbols to graph entities format
-            const entities = symbols.map(sym => ({
-              id: this._makeEntityId(filePath, sym.name, sym.type, sym.startLine),
-              file_path: filePath,
-              type: sym.type,
-              name: sym.name,
-              signature: sym.signature || null,
-              start_line: sym.startLine + 1,  // tree-sitter is 0-indexed
-              end_line: sym.endLine + 1,
-            }));
+            // Convert tree-sitter symbols to graph entities format and align
+            // labels with regex semantics (component/object arrow distinctions).
+            const entities = this._normalizeTreeSitterEntities(filePath, symbols, langInfo.id);
             // Still extract relationships with regex (tree-sitter only gives definitions)
             const relationships = this._extractRelationships(content, lines, filePath, langInfo, entities);
             return { entities, relationships };
@@ -505,18 +528,18 @@ export class GraphExtractor {
   extractJavaScript(content, lines, filePath) {
     const entities = [];
     const relationships = [];
+    const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const lineNum = i + 1;
 
-      // Class declarations
-      const classMatch = line.match(/(?:export\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?/);
+      // --- Entity extraction (if-else chain: first match wins per line) ---
+
+      const classMatch = line.match(/(?:export\s+(?:default\s+)?)?class\s+(\w+)(?:\s+extends\s+(\w+))?/);
       if (classMatch) {
         const className = classMatch[1];
-        const extendsClass = classMatch[2];
         const id = this.makeId(filePath, 'class', className);
-
         entities.push({
           id,
           file_path: filePath,
@@ -527,94 +550,128 @@ export class GraphExtractor {
           start_line: lineNum,
           end_line: this.findEndLine(lines, i),
         });
-
-        if (extendsClass) {
+        if (classMatch[2]) {
           relationships.push({
             source_id: id,
             target_id: null,
-            target_name: extendsClass,
+            target_name: classMatch[2],
             type: 'extends',
             weight: GRAPH_CONFIG.relationshipWeights.extends,
           });
         }
-      }
-
-      // Function declarations
-      const funcMatch = line.match(/(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/);
-      if (funcMatch) {
-        const funcName = funcMatch[1];
-        const funcSignature = line.trim().slice(0, 100);
-        const signatureHash = this.makeSignatureHash(funcSignature);
-
-        entities.push({
-          id: this.makeId(filePath, 'function', funcName, { signature: funcSignature, startLine: lineNum }),
-          file_path: filePath,
-          type: 'function',
-          name: funcName,
-          signature: funcSignature,
-          signature_hash: signatureHash,
-          doc_comment: this.extractDocComment(lines, i),
-          start_line: lineNum,
-          end_line: this.findEndLine(lines, i),
-        });
-      }
-
-      // React components (capitalized)
-      const componentMatch = line.match(/(?:export\s+)?(?:const|function)\s+([A-Z]\w+)\s*[=:]/);
-      if (componentMatch) {
-        const compName = componentMatch[1];
-        const compSignature = line.trim().slice(0, 100);
-        const signatureHash = this.makeSignatureHash(compSignature);
-
-        entities.push({
-          id: this.makeId(filePath, 'component', compName, { startLine: lineNum }),
-          file_path: filePath,
-          type: 'component',
-          name: compName,
-          signature: compSignature,
-          signature_hash: signatureHash,
-          doc_comment: this.extractDocComment(lines, i),
-          start_line: lineNum,
-          end_line: this.findEndLine(lines, i),
-        });
-      }
-
-      // Arrow functions with const
-      const arrowMatch = line.match(/(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>/);
-      if (arrowMatch && !componentMatch) {
-        const funcName = arrowMatch[1];
-        const arrowSignature = line.trim().slice(0, 100);
-        const signatureHash = this.makeSignatureHash(arrowSignature);
-
-        entities.push({
-          id: this.makeId(filePath, 'function', funcName, { signature: arrowSignature, startLine: lineNum }),
-          file_path: filePath,
-          type: 'function',
-          name: funcName,
-          signature: arrowSignature,
-          signature_hash: signatureHash,
-          doc_comment: this.extractDocComment(lines, i),
-          start_line: lineNum,
-          end_line: this.findEndLine(lines, i),
-        });
-      }
-
-      // Import relationships
-      const importMatch = line.match(/import\s+(?:{([^}]+)}|(\w+))\s+from\s+['"]([^'"]+)['"]/);
-      if (importMatch) {
-        const imports = importMatch[1] || importMatch[2];
-        const source = importMatch[3];
-
-        if (imports && !source.startsWith('.')) {
-          // External import
-          relationships.push({
-            source_id: this.makeId(filePath, 'file', path.basename(filePath)),
-            target_id: null,
-            target_name: source,
-            type: 'imports',
-            weight: GRAPH_CONFIG.relationshipWeights.imports,
+      } else {
+        const funcMatch = line.match(/(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s*\*?\s+(\w+)\s*\(/);
+        if (funcMatch) {
+          const sig = line.trim().slice(0, 100);
+          entities.push({
+            id: this.makeId(filePath, 'function', funcMatch[1], { signature: sig, startLine: lineNum }),
+            file_path: filePath,
+            type: 'function',
+            name: funcMatch[1],
+            signature: sig,
+            signature_hash: this.makeSignatureHash(sig),
+            doc_comment: this.extractDocComment(lines, i),
+            start_line: lineNum,
+            end_line: this.findEndLine(lines, i),
           });
+        } else {
+          const componentMatch = line.match(/(?:export\s+)?(?:const|function)\s+([A-Z]\w+)\s*[=:]/);
+          if (componentMatch) {
+            const sig = line.trim().slice(0, 100);
+            entities.push({
+              id: this.makeId(filePath, 'component', componentMatch[1], { startLine: lineNum }),
+              file_path: filePath,
+              type: 'component',
+              name: componentMatch[1],
+              signature: sig,
+              signature_hash: this.makeSignatureHash(sig),
+              doc_comment: this.extractDocComment(lines, i),
+              start_line: lineNum,
+              end_line: this.findEndLine(lines, i),
+            });
+          } else {
+            const arrowMatch = line.match(/(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>/);
+            if (arrowMatch) {
+              const sig = line.trim().slice(0, 100);
+              entities.push({
+                id: this.makeId(filePath, 'arrowFunction', arrowMatch[1], { signature: sig, startLine: lineNum }),
+                file_path: filePath,
+                type: 'arrowFunction',
+                name: arrowMatch[1],
+                signature: sig,
+                signature_hash: this.makeSignatureHash(sig),
+                doc_comment: this.extractDocComment(lines, i),
+                start_line: lineNum,
+                end_line: this.findEndLine(lines, i),
+              });
+            } else {
+              const objArrowMatch = line.match(/(\w+)\s*:\s*(?:async\s*)?\([^)]*\)\s*=>/);
+              if (objArrowMatch) {
+                entities.push({
+                  id: this.makeId(filePath, 'arrowFunction', objArrowMatch[1], { startLine: lineNum }),
+                  file_path: filePath,
+                  type: 'arrowFunction',
+                  name: objArrowMatch[1],
+                  signature: line.trim().slice(0, 100),
+                  doc_comment: this.extractDocComment(lines, i),
+                  start_line: lineNum,
+                  end_line: this.findEndLine(lines, i),
+                });
+              } else {
+                const objMethodMatch = line.match(/^\s+(\w+)\s*\([^)]*\)\s*\{/);
+                if (objMethodMatch && !JS_RESERVED_WORDS.has(objMethodMatch[1])) {
+                  entities.push({
+                    id: this.makeId(filePath, 'method', objMethodMatch[1], { startLine: lineNum }),
+                    file_path: filePath,
+                    type: 'method',
+                    name: objMethodMatch[1],
+                    signature: line.trim().slice(0, 100),
+                    doc_comment: this.extractDocComment(lines, i),
+                    start_line: lineNum,
+                    end_line: this.findEndLine(lines, i),
+                  });
+                }
+              }
+            }
+          }
         }
+      }
+
+      // --- Relationship extraction ---
+
+      // Module-level import patterns (ESM import, CJS require, re-export, dynamic import)
+      for (const { regex, group } of JS_IMPORT_PATTERNS) {
+        const m = line.match(regex);
+        if (m) {
+          const source = m[group];
+          if (source && !source.startsWith('.')) {
+            relationships.push({
+              source_id: fileEntityId,
+              target_id: null,
+              target_name: source,
+              type: 'imports',
+              weight: GRAPH_CONFIG.relationshipWeights.imports,
+            });
+          }
+        }
+      }
+
+      // Destructured require — per-name import relationships
+      this._appendDestructuredRequireRelationships(line, fileEntityId, relationships);
+
+      // Method call relationships
+      const methodCalls = line.matchAll(/(\w+)\s*\.\s*(\w+)\s*\(/g);
+      for (const callMatch of methodCalls) {
+        const obj = callMatch[1];
+        const method = callMatch[2];
+        if (!obj || !method || JS_CALL_SKIP_OBJECTS.has(obj)) continue;
+        relationships.push({
+          source_id: fileEntityId,
+          target_id: null,
+          target_name: `${obj}.${method}`,
+          type: 'calls',
+          weight: GRAPH_CONFIG.relationshipWeights.calls,
+        });
       }
     }
 
@@ -841,6 +898,8 @@ export class GraphExtractor {
         }
       }
 
+      this._appendDestructuredRequireRelationships(trimmed, sourceEntityId || fileEntityId, relationships);
+
       for (const { type: relType, pattern, prefilter } of relationshipPatterns) {
         if (relType === 'methodCall') continue;
         if (prefilter && !prefilter(trimmed)) continue;
@@ -853,14 +912,13 @@ export class GraphExtractor {
           continue;
         }
         if (match) {
-          if (!match[1]) {
-            this._recordEmptyCapture('relationship', language, relType, lineNum, trimmed);
+          const { targets, filtered } = this._resolveRelationshipTargets(relType, match, language);
+          if (targets.length === 0) {
+            if (!filtered) this._recordEmptyCapture('relationship', language, relType, lineNum, trimmed);
             continue;
           }
           const mappedType = GENERIC_RELATIONSHIP_MAPPING[relType] || 'uses';
           const weight = GRAPH_CONFIG.relationshipWeights[mappedType] || 1.0;
-          const rawTarget = typeof match[1] === 'string' ? match[1].trim() : match[1];
-          const targets = this.expandRelationshipTargets(relType, rawTarget);
           for (const target of targets) {
             relationships.push({
               source_id: sourceEntityId || fileEntityId,
@@ -1075,6 +1133,116 @@ export class GraphExtractor {
       .filter(Boolean);
   }
 
+  _normalizeTreeSitterEntities(filePath, symbols, language) {
+    const dedupedBySymbolAndLine = new Map();
+
+    for (const sym of symbols) {
+      if (!sym?.name || !sym?.type) continue;
+      const normalizedType = this._normalizeTreeSitterSymbolType(sym.type, sym.name);
+      if ((language === 'javascript' || language === 'typescript') && normalizedType === 'variable') {
+        continue;
+      }
+      const startLine = Number.isInteger(sym.startLine) ? sym.startLine : 0;
+      const endLine = Number.isInteger(sym.endLine) ? sym.endLine : startLine;
+      const rank = TREE_SITTER_ENTITY_PRIORITY[normalizedType] || 0;
+      const key = `${sym.name}:${startLine}`;
+      const existing = dedupedBySymbolAndLine.get(key);
+
+      if (!existing || rank > existing.rank) {
+        dedupedBySymbolAndLine.set(key, {
+          id: this._makeEntityId(filePath, sym.name, normalizedType, startLine),
+          file_path: filePath,
+          type: normalizedType,
+          name: sym.name,
+          signature: sym.signature || null,
+          start_line: startLine + 1, // tree-sitter is 0-indexed
+          end_line: endLine + 1,
+          rank,
+        });
+      }
+    }
+
+    return Array.from(dedupedBySymbolAndLine.values())
+      .sort((a, b) => a.start_line - b.start_line)
+      .map(({ rank, ...entity }) => entity);
+  }
+
+  _normalizeTreeSitterSymbolType(type, name) {
+    if (type === 'arrowFunction' && /^[A-Z]/.test(name)) {
+      return 'component';
+    }
+    return type;
+  }
+
+  _resolveRelationshipTargets(relType, match, language) {
+    const isJsTs = language === 'javascript' || language === 'typescript';
+
+    if (isJsTs && relType === 'import') {
+      const source = match[3]?.trim();
+      if (!source) return { targets: [], filtered: false };
+      if (source.startsWith('.')) return { targets: [], filtered: true };
+      return { targets: [source], filtered: false };
+    }
+
+    if (isJsTs && (relType === 'require' || relType === 'reexport' || relType === 'dynamicImport')) {
+      const source = match[1]?.trim();
+      if (!source) return { targets: [], filtered: false };
+      if (source.startsWith('.')) return { targets: [], filtered: true };
+      return { targets: [source], filtered: false };
+    }
+
+    const rawTarget = typeof match[1] === 'string' ? match[1].trim() : match[1];
+    if (!rawTarget) return { targets: [], filtered: false };
+
+    return {
+      targets: this.expandRelationshipTargets(relType, rawTarget),
+      filtered: false,
+    };
+  }
+
+  _appendDestructuredRequireRelationships(line, sourceId, relationships) {
+    const destructuredRequire = line.match(/(?:const|let|var)\s+\{([^}]+)\}\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)/);
+    if (!destructuredRequire) return;
+
+    const names = this._extractDestructuredRequireNames(destructuredRequire[1]);
+    for (const name of names) {
+      relationships.push({
+        source_id: sourceId,
+        target_id: null,
+        target_name: name,
+        type: 'imports',
+        weight: GRAPH_CONFIG.relationshipWeights.imports,
+      });
+    }
+  }
+
+  _extractDestructuredRequireNames(rawNames) {
+    return rawNames
+      .split(',')
+      .map(part => part.trim())
+      .map((name) => {
+        if (!name) return null;
+
+        // JS destructuring alias: { readFile: read }.
+        if (name.includes(':')) {
+          name = name.split(':').pop().trim();
+        }
+
+        // TS-style docs aliasing: { foo as bar }.
+        const asAlias = name.match(/\bas\s+([A-Za-z_$][\w$]*)$/);
+        if (asAlias) {
+          name = asAlias[1];
+        }
+
+        // Remove default value patterns: { foo = fallback }.
+        name = name.replace(/=.*/, '').trim();
+        name = name.replace(/^\.\.\./, '').trim();
+
+        return /^[A-Za-z_$][\w$]*$/.test(name) ? name : null;
+      })
+      .filter(Boolean);
+  }
+
   /**
    * Generate a deterministic entity ID for tree-sitter symbols.
    * Uses the same hash pattern as makeId() for consistency.
@@ -1152,17 +1320,22 @@ export class GraphExtractor {
         }
       }
 
+      this._appendDestructuredRequireRelationships(trimmed, sourceEntityId || fileEntityId, relationships);
+
       // Other relationships (imports, extends, etc.)
       for (const { type: relType, pattern, prefilter } of relationshipPatterns) {
         if (relType === 'methodCall') continue;
         if (prefilter && !prefilter(trimmed)) continue;
 
         const match = trimmed.match(pattern);
-        if (match && match[1]) {
+        if (match) {
+          const { targets, filtered } = this._resolveRelationshipTargets(relType, match, language);
+          if (targets.length === 0) {
+            if (!filtered) this._recordEmptyCapture('relationship', language, relType, lineNum, trimmed);
+            continue;
+          }
           const mappedType = GENERIC_RELATIONSHIP_MAPPING[relType] || 'uses';
           const weight = GRAPH_CONFIG.relationshipWeights[mappedType] || 1.0;
-          const rawTarget = typeof match[1] === 'string' ? match[1].trim() : match[1];
-          const targets = this.expandRelationshipTargets(relType, rawTarget);
           for (const target of targets) {
             relationships.push({
               source_id: sourceEntityId || fileEntityId,
