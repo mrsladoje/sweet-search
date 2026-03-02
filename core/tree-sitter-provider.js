@@ -27,6 +27,11 @@ const GRAMMAR_MAP = {
   swift: 'tree-sitter-swift',
 };
 
+// Identifier node types — used to detect leaf-ident captures in extractSymbols()
+const IDENT_TYPES = new Set([
+  'identifier', 'type_identifier', 'property_identifier', 'field_identifier',
+]);
+
 // AST node types that represent meaningful chunk boundaries
 const BOUNDARY_TYPES = new Set([
   // Functions
@@ -73,20 +78,46 @@ const NODE_TYPE_MAP = {
 const TAGS_QUERIES = {
   javascript: `
     (function_declaration name: (identifier) @function.definition)
+    (generator_function_declaration name: (identifier) @function.definition)
     (class_declaration name: (identifier) @class.definition)
     (method_definition name: (property_identifier) @method.definition)
-    (arrow_function) @arrow.definition
-    (variable_declarator name: (identifier) @variable.definition)
+    (variable_declarator
+      name: (identifier) @arrow.definition
+      value: (arrow_function))
     (export_statement (function_declaration name: (identifier) @function.definition))
+    (export_statement
+      declaration: (class_declaration name: (identifier) @class.definition))
+    (pair
+      key: (property_identifier) @method.definition
+      value: (function_expression))
+    (pair
+      key: (property_identifier) @arrow.definition
+      value: (arrow_function))
   `,
   typescript: `
     (function_declaration name: (identifier) @function.definition)
-    (class_declaration name: (identifier) @class.definition)
+    (generator_function_declaration name: (identifier) @function.definition)
+    (class_declaration name: (type_identifier) @class.definition)
+    (abstract_class_declaration name: (type_identifier) @class.definition)
     (method_definition name: (property_identifier) @method.definition)
     (interface_declaration name: (type_identifier) @interface.definition)
     (type_alias_declaration name: (type_identifier) @type.definition)
     (enum_declaration name: (identifier) @enum.definition)
-    (arrow_function) @arrow.definition
+    (variable_declarator
+      name: (identifier) @arrow.definition
+      value: (arrow_function))
+    (export_statement
+      declaration: (class_declaration name: (type_identifier) @class.definition))
+    (export_statement
+      declaration: (abstract_class_declaration name: (type_identifier) @class.definition))
+    (pair
+      key: (property_identifier) @method.definition
+      value: (function_expression))
+    (pair
+      key: (property_identifier) @arrow.definition
+      value: (arrow_function))
+    (module name: (identifier) @namespace.definition)
+    (internal_module name: (identifier) @namespace.definition)
   `,
   python: `
     (function_definition name: (identifier) @function.definition)
@@ -120,7 +151,7 @@ const CAPTURE_TO_ENTITY_TYPE = {
   'trait.definition': 'trait',
   'arrow.definition': 'arrowFunction',
   'decorator.definition': 'decorator',
-  'variable.definition': 'variable',
+  'namespace.definition': 'namespace',
 };
 
 export class TreeSitterProvider {
@@ -236,9 +267,6 @@ export class TreeSitterProvider {
         // When queries capture an identifier (e.g. `name: (identifier) @x`),
         // the node is the identifier leaf — use node.text for the name and
         // node.parent for the extent (start/end lines, signature).
-        const IDENT_TYPES = new Set([
-          'identifier', 'type_identifier', 'property_identifier', 'field_identifier',
-        ]);
         const isLeafIdent = IDENT_TYPES.has(node.type);
         const extentNode = isLeafIdent && node.parent ? node.parent : node;
 

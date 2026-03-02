@@ -38,13 +38,12 @@ describe('tags.scm Symbol Extraction', () => {
       }
     });
 
-    it('javascript query captures function, class, method, arrow, variable', () => {
+    it('javascript query captures function, class, method, arrow', () => {
       const q = TAGS_QUERIES.javascript;
       expect(q).toContain('@function.definition');
       expect(q).toContain('@class.definition');
       expect(q).toContain('@method.definition');
       expect(q).toContain('@arrow.definition');
-      expect(q).toContain('@variable.definition');
     });
 
     it('typescript query captures interface, type, enum', () => {
@@ -107,7 +106,6 @@ describe('tags.scm Symbol Extraction', () => {
       expect(CAPTURE_TO_ENTITY_TYPE['trait.definition']).toBe('trait');
       expect(CAPTURE_TO_ENTITY_TYPE['arrow.definition']).toBe('arrowFunction');
       expect(CAPTURE_TO_ENTITY_TYPE['decorator.definition']).toBe('decorator');
-      expect(CAPTURE_TO_ENTITY_TYPE['variable.definition']).toBe('variable');
     });
 
     it('has 12 entries total', () => {
