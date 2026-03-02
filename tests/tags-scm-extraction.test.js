@@ -108,8 +108,8 @@ describe('tags.scm Symbol Extraction', () => {
       expect(CAPTURE_TO_ENTITY_TYPE['decorator.definition']).toBe('decorator');
     });
 
-    it('has 12 entries total', () => {
-      expect(Object.keys(CAPTURE_TO_ENTITY_TYPE).length).toBe(12);
+    it('has 15 entries total', () => {
+      expect(Object.keys(CAPTURE_TO_ENTITY_TYPE).length).toBe(15);
     });
   });
 
@@ -123,7 +123,7 @@ describe('tags.scm Symbol Extraction', () => {
     it('returns null for unsupported language (no query)', async () => {
       // Force available=true but use a language with no TAGS_QUERIES entry
       provider._available = true;
-      const result = await provider.extractSymbols('puts "hello"', 'ruby');
+      const result = await provider.extractSymbols('main = putStrLn "hello"', 'haskell');
       expect(result).toBeNull();
     });
 

@@ -30,6 +30,11 @@ const GRAMMAR_MAP = {
 // Identifier node types — used to detect leaf-ident captures in extractSymbols()
 const IDENT_TYPES = new Set([
   'identifier', 'type_identifier', 'property_identifier', 'field_identifier',
+  // Needed by Ruby, PHP, Kotlin, Swift, C++
+  'constant',             // Ruby class/module names
+  'name',                 // PHP all identifiers
+  'simple_identifier',    // Kotlin functions, Swift functions
+  'namespace_identifier', // C++ namespace names
 ]);
 
 // AST node types that represent meaningful chunk boundaries
@@ -48,6 +53,20 @@ const BOUNDARY_TYPES = new Set([
   'module', 'namespace_declaration',
   // Python
   'decorated_definition',
+  // Java
+  'record_declaration', 'constructor_declaration',
+  // Ruby
+  'singleton_method',
+  // PHP
+  'trait_declaration',
+  // Kotlin
+  'object_declaration',
+  // Swift
+  'protocol_declaration', 'protocol_function_declaration', 'init_declaration',
+  // C
+  'struct_specifier', 'enum_specifier', 'type_definition',
+  // C++
+  'class_specifier', 'namespace_definition',
 ]);
 
 // Map tree-sitter node type -> our chunk type label
@@ -71,6 +90,27 @@ const NODE_TYPE_MAP = {
   'module': 'module',
   'namespace_declaration': 'namespace',
   'decorated_definition': 'decorator',
+  // Java
+  'record_declaration': 'record',
+  'constructor_declaration': 'method',
+  // Ruby
+  'method': 'method',
+  'singleton_method': 'method',
+  // PHP
+  'trait_declaration': 'trait',
+  // Kotlin
+  'object_declaration': 'class',
+  // Swift
+  'protocol_declaration': 'interface',
+  'protocol_function_declaration': 'method',
+  'init_declaration': 'method',
+  // C
+  'struct_specifier': 'struct',
+  'enum_specifier': 'enum',
+  'type_definition': 'typeAlias',
+  // C++
+  'class_specifier': 'class',
+  'namespace_definition': 'namespace',
 };
 
 // Standard tags.scm query patterns for symbol extraction
@@ -136,6 +176,60 @@ const TAGS_QUERIES = {
     (trait_item name: (type_identifier) @trait.definition)
     (enum_item name: (type_identifier) @enum.definition)
   `,
+  java: `
+    (class_declaration name: (identifier) @class.definition)
+    (interface_declaration name: (identifier) @interface.definition)
+    (enum_declaration name: (identifier) @enum.definition)
+    (record_declaration name: (identifier) @record.definition)
+    (method_declaration name: (identifier) @method.definition)
+    (constructor_declaration name: (identifier) @method.definition)
+  `,
+  ruby: `
+    (class name: (constant) @class.definition)
+    (module name: (constant) @module.definition)
+    (method name: (identifier) @method.definition)
+    (singleton_method name: (identifier) @method.definition)
+  `,
+  php: `
+    (class_declaration name: (name) @class.definition)
+    (interface_declaration name: (name) @interface.definition)
+    (enum_declaration name: (name) @enum.definition)
+    (trait_declaration name: (name) @trait.definition)
+    (function_definition name: (name) @function.definition)
+    (method_declaration name: (name) @method.definition)
+  `,
+  // Kotlin: positional children — no `name:` field on declarations
+  kotlin: `
+    (class_declaration (type_identifier) @class.definition)
+    (object_declaration (type_identifier) @object.definition)
+    (function_declaration (simple_identifier) @function.definition)
+  `,
+  // Swift: init_declaration has no name child — captured at node level
+  swift: `
+    (class_declaration name: (type_identifier) @class.definition)
+    (protocol_declaration name: (type_identifier) @interface.definition)
+    (function_declaration name: (simple_identifier) @function.definition)
+    (protocol_function_declaration name: (simple_identifier) @method.definition)
+    (init_declaration) @method.definition
+  `,
+  // C/C++: function name nested inside declarator chain
+  c: `
+    (function_definition
+      declarator: (function_declarator
+        declarator: (identifier) @function.definition))
+    (struct_specifier name: (type_identifier) @struct.definition)
+    (enum_specifier name: (type_identifier) @enum.definition)
+    (type_definition declarator: (type_identifier) @type.definition)
+  `,
+  cpp: `
+    (function_definition
+      declarator: (function_declarator
+        declarator: (identifier) @function.definition))
+    (class_specifier name: (type_identifier) @class.definition)
+    (struct_specifier name: (type_identifier) @struct.definition)
+    (enum_specifier name: (type_identifier) @enum.definition)
+    (namespace_definition name: (namespace_identifier) @namespace.definition)
+  `,
 };
 
 // Map capture names from tags.scm queries to entity types
@@ -152,6 +246,10 @@ const CAPTURE_TO_ENTITY_TYPE = {
   'arrow.definition': 'arrowFunction',
   'decorator.definition': 'decorator',
   'namespace.definition': 'namespace',
+  // New: Java, Ruby, PHP, Kotlin
+  'record.definition': 'record',
+  'module.definition': 'module',
+  'object.definition': 'class',
 };
 
 export class TreeSitterProvider {
@@ -454,14 +552,10 @@ export class TreeSitterProvider {
     const nameNode = node.childForFieldName('name');
     if (nameNode) return nameNode.text;
 
-    // Fallback: look for identifier-type children
+    // Fallback: look for identifier-type children (uses IDENT_TYPES set)
     for (let i = 0; i < node.childCount; i++) {
       const child = node.child(i);
-      if (
-        child.type === 'identifier' ||
-        child.type === 'type_identifier' ||
-        child.type === 'property_identifier'
-      ) {
+      if (IDENT_TYPES.has(child.type)) {
         return child.text;
       }
     }
@@ -568,4 +662,4 @@ export function resetTreeSitterProvider() {
 }
 
 // Re-export constants for testing
-export { GRAMMAR_MAP, BOUNDARY_TYPES, NODE_TYPE_MAP, TAGS_QUERIES, CAPTURE_TO_ENTITY_TYPE };
+export { GRAMMAR_MAP, IDENT_TYPES, BOUNDARY_TYPES, NODE_TYPE_MAP, TAGS_QUERIES, CAPTURE_TO_ENTITY_TYPE };

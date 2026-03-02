@@ -8,7 +8,7 @@ import { ASTChunker } from '../ast-chunker.js';
 import GraphExtractor from '../core/graph-extractor.js';
 
 const chunker = new ASTChunker({ projectRoot: '/test', useTreeSitter: false });
-const extractor = new GraphExtractor({ projectRoot: '/test' });
+const extractor = new GraphExtractor({ projectRoot: '/test', useTreeSitter: false });
 
 function chunkSummary(chunks) {
   return chunks.map(c => ({
