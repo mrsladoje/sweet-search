@@ -8,6 +8,7 @@
  * so they work correctly when wired onto SweetSearch.prototype.
  */
 
+import { readFileSync } from 'fs';
 import { SEISMIC_CONFIG, DB_PATHS } from './config.js';
 import { expandResults } from './graph-expansion.js';
 import { int8CosineSimilarity } from './embedding-service.js';
@@ -129,12 +130,31 @@ export async function applyPostRetrieval(results, query, options, searchContext)
         const intentEdgeTypes = intentPolicy?.edgeTypePriority
           ? new Set(intentPolicy.edgeTypePriority)
           : undefined;
+        // Provide readFileLines closure for expanded result token estimation
+        // (dependency injection — keeps graph-expansion.js import-free)
+        // Per-search file cache avoids re-reading the same file for multiple expanded results
+        const fileCache = new Map();
+        const readFileLines = (filePath, startLine, endLine) => {
+          try {
+            let lines = fileCache.get(filePath);
+            if (!lines) {
+              lines = readFileSync(filePath, 'utf-8').split('\n');
+              fileCache.set(filePath, lines);
+            }
+            return lines.slice((startLine || 1) - 1, endLine || startLine).join('\n');
+          } catch {
+            return null;
+          }
+        };
+
         results = expandResults(graphDb, results, {
           expandMode: effectiveGraphExpand,
           adaptiveHop2,
           queryInt8,
           hnswIndex: this.binaryHnswIndex,
           cosineSimilarity: int8CosineSimilarity,
+          codebaseDb: this.codebaseDb,
+          readFileLines,
           ...(intentEdgeTypes && !graphExpandOptions.edgeTypes ? { edgeTypes: intentEdgeTypes } : {}),
           ...graphExpandOptions,
         });
