@@ -109,8 +109,12 @@ describe('Late interaction post-expansion reranking', () => {
     expect(searcher.lateInteractionIndex.scoreWithLateInteraction).toHaveBeenCalledOnce();
   });
 
-  it('blends late interaction score with base score using lateInteractionBlendWeight', async () => {
-    // With blendWeight 0.3: blended = 0.3*lateInteraction + 0.7*base
+  it('blends late interaction score with base score using normalized scores', async () => {
+    // 2 candidates: base=[0.8, 0.6], LI=[0.9, 0.8] (from mock: 0.9 - i*0.1)
+    // normBase = [(0.8-0.6)/0.2, (0.6-0.6)/0.2] = [1.0, 0.0]
+    // normLI   = [(0.9-0.8)/0.1, (0.8-0.8)/0.1] = [1.0, 0.0]
+    // blended[0] = 0.3*1.0 + 0.7*1.0 = 1.0
+    // blended[1] = 0.3*0.0 + 0.7*0.0 = 0.0
     const results = [
       { id: 'a', score: 0.8, name: 'a' },
       { id: 'b', score: 0.6, name: 'b' },
@@ -118,9 +122,10 @@ describe('Late interaction post-expansion reranking', () => {
 
     const { results: output } = await runPostRetrieval(results);
 
-    // First candidate: lateInteraction=0.9, base=0.8 → blended = 0.3*0.9 + 0.7*0.8 = 0.27+0.56 = 0.83
     expect(output[0].preLateInteractionScore).toBe(0.8);
-    expect(output[0].score).toBeCloseTo(0.3 * 0.9 + 0.7 * 0.8, 5);
+    expect(output[0].score).toBeCloseTo(1.0, 5);
+    expect(output[1].preLateInteractionScore).toBe(0.6);
+    expect(output[1].score).toBeCloseTo(0.0, 5);
   });
 
   it('skips late interaction when useLateInteraction=false in options', async () => {

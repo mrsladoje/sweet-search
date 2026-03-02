@@ -1069,7 +1069,6 @@ threading), `sweet-search.js` (lazy `codebaseDb` getter + `close()` update).
 `tests/token-estimation-integration.test.js` (15 integration). All 2802 tests pass.
 
 - [x] Add language-specific multipliers + accurate word-split estimation
-- [x] Prerequisite for Section 25 (knapsack allocation) — now unblocked
 - [ ] Measure impact: re-run CodeSearchNet and compare budget utilization stats
 
 ---
@@ -1200,56 +1199,62 @@ Most impactful graph expansion improvement available in the current architecture
 
 ---
 
-## 25. Budget Allocation: Greedy vs Knapsack
+## 25. Budget Allocation: Greedy is Correct — CLOSED
 
-**Status**: Not started. `applyTokenBudget` in `core/graph-expansion.js` walks
-results sorted by score and stops when the running token total exceeds the budget.
-This greedy approach can discard many small, collectively high-value results in favor
-of one large, high-scoring result.
+**Status**: CLOSED (2026-03-02). Research concluded knapsack is wrong for code search.
+Greedy `applyTokenBudget` in `core/graph-expansion.js` is the correct approach.
 
-### 25.1 The Problem
+### 25.1 Why Knapsack Was Considered
 
-```
-Result A: score=0.8, tokens=500
-Result B: score=0.75, tokens=50
-Result C: score=0.70, tokens=50
-Budget = 600
+The greedy approach can discard many small results in favor of one large high-scoring
+result. Knapsack would optimize total "value" within the budget by preferring
+high-density (score/tokens) items.
 
-Greedy:  A (500 tokens) → budget gone          → total value 0.8
-Optimal: B + C (100 tokens) → skip A           → total value 1.45
-```
+### 25.2 Why Knapsack is Wrong for Code Search
 
-### 25.2 Candidate Approaches
+Research review (2026-03-02) found:
 
-**Fractional knapsack** (sort by score/tokens ratio — value density):
-- O(n log n), ~5 lines of code change
-- Provably optimal for the fractional relaxation; within 5% of DP optimal in practice
+1. **No production system uses knapsack.** Sourcegraph Cody, GitHub Copilot, Cursor,
+   Haystack — all use greedy top-k. The only knapsack user (Doctopus, VLDB 2025)
+   solves a different problem (strategy allocation, not retrieval ranking).
 
-**DP 0/1 knapsack** (exact):
-- O(n × B/unit) — with B=800 discrete units and n=20 results: ~16,000 ops, <1ms
-- Exact optimal
+2. **Fewer high-quality results beat many mediocre ones.** "Lost in the Middle"
+   (Stanford/UW 2023): 30%+ performance degradation from adding documents. Pinecone:
+   ~20% accuracy drop going from 5 to 30 docs. SEAL-RAG: fixed k=5 beats adaptive
+   expansion by +8 MRR points. Databricks: performance saturates then *declines*
+   with more context.
 
-**Important caveat**: for code search, a single large function containing the exact
-answer may be more useful than several small snippets. Fractional knapsack would
-penalize it. A/B test before committing to either approach.
+3. **Value density (score/tokens) is broken for code.** A 500-line function with
+   score 0.8 IS the answer — density 0.0016. Ten 50-line snippets at 0.7 each have
+   density 0.014 but are probably redundant imports. Knapsack would pick the noise.
 
-### 25.3 Prerequisites
+4. **Code has cliff-function value, not linear value.** Returning 80% of a function
+   is meaningless. You can't take the "fractional" in fractional knapsack.
 
-Section 22 (token estimation fix) must be done first. Sorting by
-`score / inaccurateTokens` adds noise to the density signal and can be worse than
-sorting by score alone.
+5. **Items are not independently valuable.** Knapsack assumes value(A) + value(B).
+   Code results are often redundant — the sum overstates real information.
 
-### 25.4 Action Items
+### 25.3 Redundancy is Already Handled by MMR
 
-- [ ] Complete Section 22 (token estimation) first
-- [ ] Implement fractional knapsack as a configurable option alongside greedy
-- [ ] A/B test greedy vs fractional knapsack vs DP on CodeSearchNet
-- [ ] Decide on method based on results — do not assume fractional is better
+The actual failure mode (redundant results wasting budget) is addressed by our
+existing MMR implementation in `core/mmr.js`:
 
-### 25.5 Priority
+- `applyMMR()` runs in `hybridSearchV2()` (search-hybrid.js:64) **before** graph
+  expansion and budget allocation
+- λ=0.9 (relevance-heavy) with file/type/package/semantic similarity features
+- `shouldApplyMMR()` triggers when file concentration exceeds 40% of top-20
+- This is exactly the AdaGReS-style redundancy-aware greedy that research recommends
 
-**LOW-MEDIUM** — depends on token estimation fix (Section 22). Largest impact in
-Java-heavy codebases with mixed result sizes.
+The pipeline is: `fusion → MMR diversification → graph expansion → budget allocation`.
+MMR removes redundant results before they reach the budget step, so the greedy
+budget allocator sees already-diversified input.
+
+### 25.4 Sources
+
+- AdaGReS (arXiv:2512.25052) — redundancy-aware greedy for token-budgeted RAG
+- Lost in the Middle (arXiv:2307.03172) — fewer documents = better performance
+- SEAL-RAG (arXiv:2512.10787) — fixed k=5 beats adaptive expansion
+- Pinecone research — 25% of tokens preserves 95% of accuracy
 
 ---
 
@@ -1730,7 +1735,7 @@ based, no tuning), learned weights (train on dev set), or query-dependent blendi
 **Action items:**
 - [ ] **Phase 5 benchmarks first**: establish baseline default α across CodeSearchNet +
       GenCodeSearchNet with α ∈ {0.1, 0.2, 0.3, 0.5, 0.7} and RRF as comparison
-- [ ] **Score normalization**: add min-max normalization in `search-postprocess.js`
+- [x] **Score normalization**: add min-max normalization in `search-postprocess.js`
       before blending (zero-cost: we already have the score array)
 - [ ] **RRF alternative**: test `1/(k + rank_lateInteraction) + 1/(k + rank_base)` as
       a tuning-free fusion method, compare MRR to weighted sum at best α
@@ -1780,12 +1785,10 @@ point for A/B testing. Before investing more engineering effort in any P2 item:
 7. **Graph expansion on by default** (Section 5) — gate on A/B validation first
 8. **Quality scorer qualityWeight** (Section 1.1) — quick to A/B test
 9. **Graph expansion adaptive 2-hop benchmarking** (Section 5) — needs A/B validation
-10. **Token estimation fix** (Section 22) — prerequisite for knapsack; zero latency
-11. **MinCut graph expansion** (Section 10.2) — structural importance complement
-12. **Path-level scoring** (Section 23) — medium-low impact, zero latency
-13. **Budget allocation knapsack** (Section 25) — depends on Section 22; A/B first
-14. **Intent router** (Section 2) — requires CatBoost training first, defer
-15. **SEISMIC sparse** (Section 3) — requires SPLADE integration first, defer
-16. **CrossCodeEval structural routing** (Section 11) — niche but tests graph infra
-17. **PLAID index** (Section 28.4) — defer until monorepo scale demands it
-18. **ColGrep MCP tool** (Section 28.5) — evaluate after pattern mode proves value
+10. **MinCut graph expansion** (Section 10.2) — structural importance complement
+11. **Path-level scoring** (Section 23) — medium-low impact, zero latency
+12. **Intent router** (Section 2) — requires CatBoost training first, defer
+13. **SEISMIC sparse** (Section 3) — requires SPLADE integration first, defer
+14. **CrossCodeEval structural routing** (Section 11) — niche but tests graph infra
+15. **PLAID index** (Section 28.4) — defer until monorepo scale demands it
+16. **ColGrep MCP tool** (Section 28.5) — evaluate after pattern mode proves value

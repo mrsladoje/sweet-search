@@ -16,6 +16,18 @@ import { QualityScorer } from './quality-scorer.js';
 import { classifyIntent, getIntentPolicy } from './intent-router.js';
 import { recordQueryTelemetry } from './embedding-cache.js';
 
+/**
+ * Min-max normalize an array of scores to [0, 1].
+ * Returns 0.5 for all values if min === max (no discrimination).
+ */
+export function minMaxNormalize(values) {
+  if (values.length === 0) return [];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  if (max === min) return values.map(() => 0.5);
+  return values.map(v => (v - min) / (max - min));
+}
+
 // Threshold (ms) below which a lexical sub-query is considered a "cache hit"
 // for telemetry purposes. Derived empirically: FTS5 page-cache hits typically
 // complete in <2ms; 5ms gives headroom for slow I/O without inflating miss rates.
@@ -190,20 +202,31 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       const { encodeQuery } = await import('./late-interaction-model.js');
       const queryTokens = await encodeQuery(query);
 
+      let baseScoreRange = null;
+      let liScoreRange = null;
+
       if (queryTokens && queryTokens.length > 0) {
         // Score with real MaxSim
         const scored = await this.lateInteractionIndex.scoreWithLateInteraction(queryTokens, topCandidates);
 
-        // Blend late interaction score with current score (works across all search modes —
-        // fused scores, int8 scores, and expanded scores are all in [0,1] range)
-        for (const candidate of scored) {
-          const baseScore = candidate.score ?? candidate.int8Score ?? 0;
-          const blendedScore = (candidate.lateInteractionScore * this.lateInteractionBlendWeight) +
-                              (baseScore * (1 - this.lateInteractionBlendWeight));
+        // Min-max normalize both score distributions before blending so that
+        // the blend weight (alpha) controls actual influence regardless of the
+        // score type that produced the base score (CC-fused, RRF, expanded, etc.)
+        const finiteScore = (v) => Number.isFinite(v) ? v : 0;
+        const baseScoresRaw = scored.map(c => finiteScore(c.score ?? c.int8Score ?? 0));
+        const liScoresRaw = scored.map(c => finiteScore(c.lateInteractionScore ?? 0));
+        const normBase = minMaxNormalize(baseScoresRaw);
+        const normLI = minMaxNormalize(liScoresRaw);
+        const alpha = this.lateInteractionBlendWeight;
 
-          candidate.preLateInteractionScore = baseScore;
-          candidate.score = blendedScore;
+        for (let i = 0; i < scored.length; i++) {
+          const candidate = scored[i];
+          candidate.preLateInteractionScore = baseScoresRaw[i];
+          candidate.score = alpha * normLI[i] + (1 - alpha) * normBase[i];
         }
+
+        baseScoreRange = [Math.min(...baseScoresRaw), Math.max(...baseScoresRaw)];
+        liScoreRange = [Math.min(...liScoresRaw), Math.max(...liScoresRaw)];
 
         // Re-sort by blended score
         scored.sort((a, b) => b.score - a.score);
@@ -220,6 +243,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
         latency_us: Math.round((performance.now() - liStart) * 1000),
         candidates: topCandidates.length,
         queryTokens: queryTokens?.length || 0,
+        ...(baseScoreRange && { baseScoreRange, liScoreRange }),
       };
       this.log(`LateInteraction (post-expansion): ${stats.lateInteraction.latency_us}us for ${topCandidates.length} candidates (${queryTokens?.length || 0} query tokens)`);
     } catch (err) {
