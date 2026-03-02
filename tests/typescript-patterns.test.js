@@ -154,6 +154,44 @@ describe('TypeScript chunker patterns', () => {
   it('matches declare namespace', () => {
     expect('export declare namespace Express {'.match(chunker.namespace)?.[1]).toBe('Express');
   });
+
+  // --- Hardening additions ---
+
+  it('matches generator function', () => {
+    expect('function* iterate() {'.match(chunker.function)?.[1]).toBe('iterate');
+  });
+
+  it('matches async generator function', () => {
+    expect('async function* stream() {'.match(chunker.function)?.[1]).toBe('stream');
+  });
+
+  it('matches export default class', () => {
+    expect('export default class MyService {'.match(chunker.class)?.[1]).toBe('MyService');
+  });
+
+  it('matches export default function', () => {
+    expect('export default function main() {'.match(chunker.function)?.[1]).toBe('main');
+  });
+
+  it('matches getter accessor', () => {
+    expect('get name() {'.match(chunker.accessor)?.[1]).toBe('name');
+  });
+
+  it('matches setter accessor', () => {
+    expect('set value(v) {'.match(chunker.accessor)?.[1]).toBe('value');
+  });
+
+  it('matches arrowNoParen', () => {
+    expect('const fn = x => x + 1'.match(chunker.arrowNoParen)?.[1]).toBe('fn');
+  });
+
+  it('matches let arrow', () => {
+    expect('let handler = async ('.match(chunker.arrow)?.[1]).toBe('handler');
+  });
+
+  it('matches object method shorthand', () => {
+    expect('  getUser() {'.match(chunker.objectMethod)?.[1]).toBe('getUser');
+  });
 });
 
 // =============================================================================
@@ -220,6 +258,28 @@ describe('TypeScript graph entity patterns', () => {
   it('matches declare namespace', () => {
     expect('declare namespace Express {'.match(entities.namespace)?.[1]).toBe('Express');
   });
+
+  // --- Hardening additions ---
+
+  it('matches generator function entity', () => {
+    expect('function* iterate('.match(entities.function)?.[1]).toBe('iterate');
+  });
+
+  it('matches export default class entity', () => {
+    expect('export default class Svc {'.match(entities.class)?.[1]).toBe('Svc');
+  });
+
+  it('matches export default function entity', () => {
+    expect('export default function run('.match(entities.function)?.[1]).toBe('run');
+  });
+
+  it('matches objectArrow entity', () => {
+    expect('handler: async (data) => {'.match(entities.objectArrow)?.[1]).toBe('handler');
+  });
+
+  it('matches objectMethod entity', () => {
+    expect('  getUser(id) {'.match(entities.objectMethod)?.[1]).toBe('getUser');
+  });
 });
 
 // =============================================================================
@@ -268,6 +328,33 @@ describe('TypeScript graph relationship patterns', () => {
 
   it('matches dotted decorator', () => {
     expect('@Module.Config'.match(relationships.decorator)?.[1]).toBe('Module.Config');
+  });
+
+  // --- Hardening additions ---
+
+  it('matches require relationship', () => {
+    const m = "const fs = require('fs')".match(relationships.require);
+    expect(m?.[1]).toBe('fs');
+  });
+
+  it('matches destructured require relationship', () => {
+    const m = "const { readFile } = require('fs')".match(relationships.require);
+    expect(m?.[1]).toBe('fs');
+  });
+
+  it('matches reexport relationship', () => {
+    const m = "export { Foo } from 'bar'".match(relationships.reexport);
+    expect(m?.[1]).toBe('bar');
+  });
+
+  it('matches star reexport', () => {
+    const m = "export * from 'utils'".match(relationships.reexport);
+    expect(m?.[1]).toBe('utils');
+  });
+
+  it('matches dynamic import relationship', () => {
+    const m = "await import('lodash')".match(relationships.dynamicImport);
+    expect(m?.[1]).toBe('lodash');
   });
 });
 
