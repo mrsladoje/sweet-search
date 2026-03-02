@@ -118,6 +118,9 @@ export const CORE_LANGUAGES = {
       relationships: {
         import: /import\s+(?:static\s+)?([a-zA-Z_][\w.]*(?:\.\*)?)\s*;/,
         package: /package\s+([\w.]+)\s*;/,
+        // Capture qualified targets; generic suffixes are normalized downstream.
+        extends: /(?:class|interface)\s+\w+(?:<[^>]*>)?\s+extends\s+([A-Za-z_][\w$.]*)/,
+        implements: /implements\s+([A-Za-z_][\w$.,\s<>?]+)\s*\{/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
         throw: /throw\s+new\s+(\w+)/,
       },
