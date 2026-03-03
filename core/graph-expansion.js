@@ -313,9 +313,9 @@ function collectSeedIds(db, results) {
  * @param {import('better-sqlite3').Database} db
  * @param {Set<string>} seedIds
  * @param {Set<string>} edgeTypes
- * @returns {Map<string, {via: string, direction: string, hops?: number}>}
+ * @returns {Map<string, {via: string, direction: string, score: number, hops?: number}>}
  */
-function expandOneHop(db, seedIds, edgeTypes) {
+export function expandOneHop(db, seedIds, edgeTypes) {
   const expanded = new Map();
   const seedArray = [...seedIds];
   const placeholders = seedArray.map(() => '?').join(',');
@@ -342,15 +342,20 @@ function expandOneHop(db, seedIds, edgeTypes) {
     reverseRels = [];
   }
 
-  for (const rel of forwardRels) {
-    if (edgeTypes.has(rel.type) && !seedIds.has(rel.target_id)) {
-      expanded.set(rel.target_id, { via: rel.type, direction: 'forward' });
-    }
-  }
-
-  for (const rel of reverseRels) {
-    if (edgeTypes.has(rel.type) && !seedIds.has(rel.source_id)) {
-      expanded.set(rel.source_id, { via: rel.type, direction: 'reverse' });
+  for (const { rels, idField, direction } of [
+    { rels: forwardRels, idField: 'target_id', direction: 'forward' },
+    { rels: reverseRels, idField: 'source_id', direction: 'reverse' },
+  ]) {
+    for (const rel of rels) {
+      const neighborId = rel[idField];
+      if (edgeTypes.has(rel.type) && !seedIds.has(neighborId)) {
+        const effectiveAlpha = BASE_ALPHA + (EDGE_ALPHA_BONUS[rel.type] || 0);
+        const score = effectiveAlpha;
+        const existing = expanded.get(neighborId);
+        if (!existing || score > existing.score) {
+          expanded.set(neighborId, { via: rel.type, direction, score });
+        }
+      }
     }
   }
 
@@ -365,7 +370,7 @@ function expandOneHop(db, seedIds, edgeTypes) {
  * @param {Map<string, Object>} expanded - 1-hop expansion map (mutated in place)
  * @param {Set<string>} edgeTypes
  */
-function expandSecondHop(db, seedIds, expanded, edgeTypes, options = {}) {
+export function expandSecondHop(db, seedIds, expanded, edgeTypes, options = {}) {
   const {
     queryInt8 = null,
     hnswIndex = null,
@@ -382,7 +387,7 @@ function expandSecondHop(db, seedIds, expanded, edgeTypes, options = {}) {
   let hop2Forward;
   try {
     hop2Forward = db.prepare(`
-      SELECT DISTINCT target_id, type FROM relationships
+      SELECT source_id, target_id, type FROM relationships
       WHERE source_id IN (${ph}) AND target_id IS NOT NULL
     `).all(...hop1Ids);
   } catch {
@@ -403,7 +408,9 @@ function expandSecondHop(db, seedIds, expanded, edgeTypes, options = {}) {
   for (const rel of hop2Forward) {
     if (!edgeTypes.has(rel.type) || excluded.has(rel.target_id)) continue;
 
-    const graphScore = (EDGE_PRIORITY[rel.type] || 1) * (rel.weight || 1.0);
+    const hop1Entry = expanded.get(rel.source_id);
+    const hop1Score = hop1Entry?.score ?? 1;  // identity: preserves old edgePriority × weight
+    const graphScore = hop1Score * (EDGE_PRIORITY[rel.type] || 1) * (rel.weight || 1.0);
     let normSim = null;
     const entityInt8 = hnswIndex.getInt8Vector(rel.target_id);
     if (entityInt8) {
@@ -454,7 +461,7 @@ function expandSecondHop(db, seedIds, expanded, edgeTypes, options = {}) {
  * @param {number} options.tokenBudget - Token budget for 2-hop expansion
  * @returns {{ added: number, budgetUsed: number, candidates: number }}
  */
-function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, options = {}) {
+export function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, options = {}) {
   const {
     maxHop2 = 5,
     tokenBudget = 4000,
@@ -513,7 +520,9 @@ function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, options =
     const edgePriority = EDGE_PRIORITY[c.type] || 1;
     const weight = c.weight || 1.0;
     const outDegree = degreeMap.get(c.source_id) || 1;
-    const graphScore = (effectiveAlpha * effectiveAlpha * weight * edgePriority) / Math.sqrt(outDegree);
+    const hop1Entry = hop1Expanded.get(c.source_id);
+    const hop1Score = hop1Entry?.score ?? effectiveAlpha;
+    const graphScore = (hop1Score * effectiveAlpha * weight * edgePriority) / Math.sqrt(outDegree);
 
     let normSim = null;
     if (semanticEnabled) {
