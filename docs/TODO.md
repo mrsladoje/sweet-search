@@ -1075,9 +1075,12 @@ threading), `sweet-search.js` (lazy `codebaseDb` getter + `close()` update).
 
 ## 23. Path-Level Scoring for 2-Hop Graph Expansion
 
-**Status**: Not implemented. `expandSecondHopAdaptive` in `core/graph-expansion.js`
-scores each hop-2 entity using only the hop-2 edge type. The hop-1 entity's relevance
-(how strongly it connects to the original seed) is not propagated.
+**Status**: DONE (2026-03-02). Hop-1 scores propagated through path formula.
+`expandOneHop` now returns `{via, direction, score}` with max-score-wins dedup.
+`expandSecondHopAdaptive` uses `hop1Score × effectiveAlpha × edgePriority` (vs
+`effectiveAlpha² × edgePriority`), and semantic `expandSecondHop` uses
+`hop1Score × edgePriority × weight`. 13 tests in `tests/path-level-scoring.test.js`.
+Benchmark MRR delta pending.
 
 ### 23.1 The Problem
 
@@ -1109,9 +1112,9 @@ which is only common when original search results are themselves mixed in qualit
 
 ### 23.4 Action Items
 
-- [ ] Modify `expandOneHop` to return `Map<entityId, {score, via, direction}>`
-- [ ] Pass hop-1 scores into `expandSecondHopAdaptive` and use in path formula
-- [ ] Add tests for score propagation through hop-1 → hop-2
+- [x] Modify `expandOneHop` to return `Map<entityId, {score, via, direction}>`
+- [x] Pass hop-1 scores into `expandSecondHopAdaptive` and use in path formula
+- [x] Add tests for score propagation through hop-1 → hop-2
 - [ ] Benchmark MRR delta on CodeSearchNet
 
 ---
@@ -1786,7 +1789,7 @@ point for A/B testing. Before investing more engineering effort in any P2 item:
 8. **Quality scorer qualityWeight** (Section 1.1) — quick to A/B test
 9. **Graph expansion adaptive 2-hop benchmarking** (Section 5) — needs A/B validation
 10. **MinCut graph expansion** (Section 10.2) — structural importance complement
-11. **Path-level scoring** (Section 23) — medium-low impact, zero latency
+11. ~~**Path-level scoring** (Section 23)~~ — DONE (2026-03-02), benchmark pending
 12. **Intent router** (Section 2) — requires CatBoost training first, defer
 13. **SEISMIC sparse** (Section 3) — requires SPLADE integration first, defer
 14. **CrossCodeEval structural routing** (Section 11) — niche but tests graph infra
