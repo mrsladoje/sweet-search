@@ -315,6 +315,21 @@ export class LateInteractionIndex {
   }
 
   /**
+   * Check which chunk IDs have pre-indexed token vectors.
+   * Synchronous O(n) Map lookup — no SQL, no async needed.
+   *
+   * @param {Iterable<string>} chunkIds
+   * @returns {Set<string>} IDs that have tokens in the index
+   */
+  hasTokens(chunkIds) {
+    const available = new Set();
+    for (const id of chunkIds) {
+      if (this.documents.has(id)) available.add(id);
+    }
+    return available;
+  }
+
+  /**
    * Get index statistics
    */
   getStats() {
