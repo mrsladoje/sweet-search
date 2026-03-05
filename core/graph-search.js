@@ -989,6 +989,7 @@ export class GraphSearch {
       skipExpansionForExactMatch = true, // Adaptive expansion (default: enabled)
       useDefinitionFirst = null, // Auto-detect if null, force on/off if boolean
       skipBoosts = false, // Skip ranking boosts (for fair hybrid fusion)
+      deferExpansion = false, // When true, ambiguous queries skip internal expansion (lexical-only path)
     } = options;
 
     const start = Date.now();
@@ -1022,13 +1023,35 @@ export class GraphSearch {
               direct_matches: definitionResults.length,
               expanded_total: definitionResults.length,
               mode: 'definition_first_exact',
+              confidence: 'exact',
               definition_count: defStats.definition_count,
               skipped_expansion: true,
             },
           };
         }
 
-        // Graph expand from definition results
+        if (deferExpansion) {
+          // Lexical-only path: defer expansion to postprocess expandResults()
+          // (adaptive hop2, alpha decay, degree normalization, cosine scoring)
+          this.log(`Definition-first ambiguous: deferring expansion to postprocess`);
+          return {
+            results: definitionResults.slice(0, k),
+            stats: {
+              bm25_ms: defStats.fts5_latency_ms,
+              definition_ms: defStats.latency_ms,
+              graph_ms: 0,
+              total_ms: Date.now() - start,
+              direct_matches: definitionResults.length,
+              expanded_total: definitionResults.length,
+              mode: 'definition_first_ambiguous',
+              confidence: 'ambiguous',
+              definition_count: defStats.definition_count,
+              skipped_expansion: true,
+            },
+          };
+        }
+
+        // Internal expansion (used by hybrid and direct callers)
         const graphStart = Date.now();
         const expanded = new Map();
 
@@ -1081,6 +1104,7 @@ export class GraphSearch {
             direct_matches: definitionResults.length,
             expanded_total: expanded.size,
             mode: 'definition_first_graph',
+            confidence: 'ambiguous',
             definition_count: defStats.definition_count,
             skipped_expansion: false,
           },
@@ -1098,6 +1122,7 @@ export class GraphSearch {
           direct_matches: definitionResults.length,
           expanded_total: definitionResults.length,
           mode: 'definition_first_only',
+          confidence: 'exact',
           definition_count: defStats.definition_count,
           skipped_expansion: true,
         },
@@ -1116,6 +1141,7 @@ export class GraphSearch {
           bm25_ms: bm25Latency,
           total_ms: Date.now() - start,
           mode: 'bm25_only',
+          confidence: 'exact',
         },
       };
     }
@@ -1127,6 +1153,7 @@ export class GraphSearch {
           bm25_ms: bm25Latency,
           total_ms: Date.now() - start,
           mode: 'bm25_only',
+          confidence: 'exact',
         },
       };
     }
@@ -1149,29 +1176,45 @@ export class GraphSearch {
           direct_matches: bm25Results.length,
           expanded_total: bm25Results.length,
           mode: 'bm25_exact_match',
+          confidence: 'exact',
           skipped_expansion: true,
         },
       };
     }
 
-    // Step 2: Graph expansion (only for non-exact matches)
+    if (deferExpansion) {
+      // Lexical-only path: defer expansion to postprocess expandResults()
+      this.log(`BM25 ambiguous: deferring expansion to postprocess`);
+      return {
+        results: bm25Results.slice(0, k),
+        stats: {
+          bm25_ms: bm25Latency,
+          graph_ms: 0,
+          total_ms: Date.now() - start,
+          direct_matches: bm25Results.length,
+          expanded_total: bm25Results.length,
+          mode: 'bm25_ambiguous',
+          confidence: 'ambiguous',
+          skipped_expansion: true,
+        },
+      };
+    }
+
+    // Internal expansion (used by hybrid and direct callers)
     const graphStart = Date.now();
     const expanded = new Map();
 
-    // Add BM25 results first
     for (const result of bm25Results) {
       expanded.set(result.id, { ...result, source: 'direct' });
     }
 
-    // Expand graph from BM25 results
     const entityIds = bm25Results.map(r => r.id);
     for (let hop = 1; hop <= maxHops && expanded.size < maxExpanded; hop++) {
-      for (const entityId of entityIds.slice(0, 5)) { // Limit expansion from top 5
+      for (const entityId of entityIds.slice(0, 5)) {
         const related = await this.getRelated(entityId);
 
         for (const rel of related) {
           if (!expanded.has(rel.id)) {
-            // Score based on relationship type and weight
             const relMultiplier = this.getRelTypeMultiplier(rel.rel_type);
             const parentResult = bm25Results.find(r => r.id === entityId);
             const relScore = (parentResult?.score || 1) * rel.rel_weight * relMultiplier * 0.8;
@@ -1197,7 +1240,6 @@ export class GraphSearch {
 
     const graphLatency = Date.now() - graphStart;
 
-    // Step 3: Rank by combined score
     const ranked = Array.from(expanded.values())
       .sort((a, b) => b.score - a.score)
       .slice(0, k);
@@ -1211,6 +1253,7 @@ export class GraphSearch {
         direct_matches: bm25Results.length,
         expanded_total: expanded.size,
         mode: 'bm25_graph',
+        confidence: 'ambiguous',
         skipped_expansion: false,
       },
     };
