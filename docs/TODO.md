@@ -1351,11 +1351,15 @@ and the threshold. **Must benchmark both models with real queries before decidin
 
 ### 26.5 Per Query Type Pipelines
 
-**LEXICAL-ONLY** (identifier search):
+**LEXICAL-ONLY** (identifier search): ✅ DONE (LEXICAL_PIPELINE.md)
 ```
-BM25 → expand → MaxSim rerank → [confidence gate] → optional cross-encoder → budget
+BM25 → [confidence gate] → expand (ambiguous only, deferred to postprocess) → MaxSim (ambiguous only) → budget
 ```
-Currently lexical gets ZERO reranking. MaxSim adds token-level scoring for free.
+Confidence signal (`exact`/`high`/`ambiguous`) propagated from `graphExpandedSearch` through
+`lexicalSearch` → `search()` → `applyPostRetrieval`. Exact/high hits skip expansion + MaxSim.
+Ambiguous queries defer expansion to postprocess `expandResults()` (adaptive hop2, alpha decay).
+Hybrid path unaffected — keeps internal expansion via `deferExpansion: false` default.
+See `docs/LEXICAL_PIPELINE.md` for full design rationale.
 
 **SEMANTIC-ONLY** (conceptual questions):
 ```
@@ -1489,70 +1493,34 @@ pipeline both faster and more accurate. But the design depends on benchmarking r
 
 ---
 
-## 27. PathRAG Prompt Positioning: "Lost in the Middle" Mitigation
+## 27. PathRAG Prompt Positioning: "Lost in the Middle" Mitigation — CLOSED
 
-**Status**: Not implemented. PathRAG (arxiv 2502.14902, Feb 2025) identified that
-result ordering in the LLM context window matters significantly: LLMs systematically
-underweight information in the middle of long contexts and overweight content at the
-beginning and end. They term this "lost in the middle" degradation.
+**Status**: CLOSED / WONTFIX (2026-03-03).
 
-### 27.1 The Problem
+### 27.1 Why Closed
 
-When we return 10 results to the LLM (via MCP or the search API), we currently order
-them by score descending — highest score first. The LLM receives:
+Two independent reasons make this unnecessary:
 
-```
-[Rank 1 — most relevant]   ← LLM pays high attention
-[Rank 2]
-[Rank 3]
-...
-[Rank 9]
-[Rank 10 — least relevant] ← LLM pays high attention (end-of-context effect)
-```
+**1. Modern LLMs no longer exhibit "lost in the middle" degradation.**
+The original paper (Liu et al., 2023) tested GPT-3.5 and early Claude. By 2025-2026,
+both Anthropic and OpenAI trained specifically to eliminate positional attention bias.
+Claude Opus 4.6 achieves 76% Mean Match Ratio on the 8-needle 1M-token MRCR v2
+benchmark (vs Sonnet 4.5's 18.5%), demonstrating uniform attention across the full
+context window. GPT-5.3-Codex similarly handles long-horizon agentic tasks without
+positional degradation. The U-shaped attention curve that PathRAG exploited no longer
+exists in frontier models.
 
-If the correct answer is Rank 3 or 4, it lands in the middle of the context window
-where LLM attention is lowest. PathRAG's solution: place the most reliable/relevant
-results at the **end** of the context, not the beginning.
+**2. Our MCP response is a short structured list, not a prose context.**
+The MCP search handler (`tool-handlers.js:106-107`) returns a numbered list of
+`file:line (score) + signature` — typically 10-15 lines total for 5 results. There
+is no "middle" to get lost in. The LLM reads the list, picks the best match, then
+uses the Read tool to fetch actual code. Result ordering in a 15-line structured
+list is irrelevant to LLM attention.
 
-### 27.2 PathRAG's Approach
-
-PathRAG orders retrieved paths by reliability score ascending, then places the most
-reliable path last. Their empirical result: this ordering alone improves answer quality
-on multi-hop QA benchmarks without changing what is retrieved — only how it is presented.
-
-For our use case, the analogous approach would be to return results in reverse score
-order (lowest score first, highest score last) so the most relevant chunk is the last
-thing the LLM reads before generating its answer.
-
-### 27.3 Considerations
-
-This is a simple reordering of the output array. There is no latency cost.
-
-The tradeoff: for users who inspect search results directly (not via LLM), the
-highest-relevance result should be at the top (current behavior). For LLM consumption,
-it should be at the bottom (PathRAG recommendation). These are in conflict.
-
-Options:
-- Add an `outputOrder: 'asc' | 'desc'` option to the search API, default `'desc'`
-  for display, with MCP callers passing `'asc'` for LLM context construction
-- Or: only reverse in the MCP tool handler, not in the core search API
-
-### 27.4 Action Items
-
-- [ ] **Research**: does "lost in the middle" apply to our primary LLM targets
-  (Claude 3.5+, GPT-4o)? Both have improved long-context handling. Check if the
-  effect is still significant at 10 results vs 50+.
-- [ ] **Prototype**: add `reverseForLLM: true` option to MCP tool handler, benchmark
-  on a QA task where the correct code answer is known (CosQA or CoQuIR are suitable)
-- [ ] **Measure**: compare answer quality with score-descending vs score-ascending
-  result ordering at the MCP layer
-- [ ] If positive: make score-ascending the default in the MCP tool handler
-
-### 27.5 Priority
-
-**LOW-MEDIUM** — zero implementation cost if the reordering is confirmed beneficial.
-The main question is whether modern LLMs still exhibit "lost in the middle" degradation
-at our result set sizes (10–30 chunks). Worth a quick experiment before committing.
+- [x] ~~Research: does "lost in the middle" apply to our primary LLM targets~~ — NO.
+  Claude Opus 4.6 and GPT-5.3-Codex have solved this at the model level.
+- [x] ~~Prototype reverseForLLM~~ — WONTFIX. No benefit expected.
+- [x] ~~Measure~~ — WONTFIX. No benefit expected.
 
 ---
 
@@ -1765,6 +1733,223 @@ hooks are a larger investment that also benefits TODO Section 1.3 (quality score
 
 ---
 
+## 29. MCP Inline Code Snippet: Eliminate Read Tool Round-Trip
+
+**Status**: Not started. Requires further discussion before implementation.
+Identified 2026-03-03.
+
+### 29.0 Open Questions (Needs Discussion)
+
+- **Small chunks**: If result #1's chunk is only 5-10 lines (e.g., a short helper),
+  the snippet alone may lack context. Should we expand to include surrounding code
+  (N lines above/below)? How many? Should expansion respect function/class boundaries
+  (tree-sitter-aware expansion) or be line-based?
+- **Chunk ≠ useful unit**: A chunk boundary may cut mid-function or mid-class. The
+  inline snippet could show a truncated function that confuses the LLM more than
+  a file:line reference would.
+- **Multiple small results**: If results #1-#3 are all 10-line functions in the same
+  file, should we inline all three instead of just #1? Or merge them into a single
+  file excerpt with `...` gaps?
+- **Token budget vs value**: Inlining a 150-line chunk costs ~1500 tokens. If the
+  LLM would have skipped this result after seeing the signature, we wasted tokens.
+  Should inlining be opt-in (MCP parameter) or always-on?
+- **Backward compatibility**: Renaming `line` → `startLine` and adding `endLine`
+  changes the schema. Existing MCP clients may depend on `line`. Migration strategy?
+- **Graph-expanded results**: Expanded entities (from 2-hop graph expansion) have
+  file/line info but no chunk in `codebase.db`. Should we fall back to reading from
+  disk for these, or only inline HNSW-sourced results?
+- **How many results get inline code?** The current proposal inlines only result #1.
+  But if the top 3 results are all short (10-20 lines each), inlining all three
+  costs ~300-600 tokens total and saves up to 3 Read calls. Options:
+  - **Only #1** — simplest, predictable token cost, covers the most common case.
+  - **Top 3** — covers "compare implementations" use cases where the LLM needs to
+    see several candidates. Higher token cost but eliminates most Read calls.
+  - **All results** — maximum convenience, but a 10-result response with 100-line
+    chunks each = ~10,000 tokens. Likely too expensive for the default.
+  - **Adaptive** — inline results until a token budget is hit (e.g., 2000 tokens
+    of code total). Small chunks: many get inlined. Large chunks: only #1.
+  Need to decide which strategy is the default and whether it's configurable.
+- **File path + lines are always required**: Even when code is inlined, the response
+  MUST always include `file:startLine-endLine` for every result. The LLM needs the
+  location to: (a) open the file in an editor, (b) make edits via the Edit tool
+  targeting exact lines, (c) understand which file the code belongs to, (d) read
+  surrounding context if the chunk isn't enough. The inline code is a convenience
+  that supplements the location — it never replaces it.
+
+### 29.1 The Problem
+
+When an LLM calls our MCP `search` tool, it gets back a list of locations:
+
+```
+Found 5 results (142ms, hybrid):
+
+1. src/auth/validate.js:42 (score: 0.891)
+   async function validateCredentials(username, password)
+
+2. src/auth/session.js:15 (score: 0.823)
+   class SessionManager
+
+3. src/auth/token.js:88 (score: 0.756)
+   function refreshToken(token, secret)
+```
+
+To actually **see the code**, the LLM must then call the `Read` tool on the file.
+This Read round-trip is slow — 500ms-2s per file depending on tool overhead,
+file size, and network latency in hosted environments. For the most common case
+(result #1 IS the answer), this is a mandatory extra tool call that delays every
+search-driven task.
+
+Additionally, the MCP response is missing critical information:
+- **No end line.** The schema has `line: number` (singular). The LLM doesn't know
+  whether the result is a 5-line function or a 500-line class, so it can't do a
+  targeted Read with `offset`/`limit` — it has to guess or read the whole file.
+- **No code content.** The `snippet` field falls through to `r.signature || r.name`
+  which is just the function signature, not the implementation.
+
+### 29.2 Proposed Design
+
+**Result #1 (top result):** Return the full code chunk inline. The LLM gets the
+answer immediately — no Read tool call needed.
+
+**Results #2-N:** Return file path, **start line AND end line**, score, and
+signature. The LLM can make an informed decision about which to read and can do
+a precise `Read` with exact `offset`/`limit` instead of guessing.
+
+Example MCP response:
+
+```
+Found 5 results (142ms, hybrid):
+
+1. src/auth/validate.js:42-67 (score: 0.891)
+   async function validateCredentials(username, password)
+
+   async function validateCredentials(username, password) {
+     const user = await db.query('SELECT * FROM users WHERE username = ?', [username]);
+     if (!user) return { valid: false, reason: 'not_found' };
+     const match = await bcrypt.compare(password, user.password_hash);
+     if (!match) return { valid: false, reason: 'bad_password' };
+     if (user.locked_until && user.locked_until > Date.now()) {
+       return { valid: false, reason: 'locked' };
+     }
+     return { valid: true, user: { id: user.id, role: user.role } };
+   }
+
+2. src/auth/session.js:15-48 (score: 0.823)
+   class SessionManager
+
+3. src/auth/token.js:88-112 (score: 0.756)
+   function refreshToken(token, secret)
+
+4. src/auth/hash.js:31-45 (score: 0.701)
+   function hashPassword(password, rounds)
+
+5. src/user/login.js:12-29 (score: 0.688)
+   async function loginUser(req, res)
+```
+
+The LLM can now:
+- Use result #1's code directly (no Read call, saving 500ms-2s)
+- Decide whether to read result #2 knowing it's 33 lines (worth it) vs result #4
+  at 14 lines (maybe skip it)
+- Do targeted reads: `Read src/auth/session.js offset=15 limit=33` instead of
+  reading the entire file
+
+### 29.3 Data Availability
+
+Everything needed is already in `codebase.db`:
+- **`vectors.text`** column: chunk content, up to 2000 chars (indexed at build time
+  by `indexer-build.js:246`)
+- **`vectors.metadata`** JSON: contains `startLine`, `endLine`, `file`, `name`,
+  `type`, `language` (indexed at build time by `indexer-build.js:247-256`)
+
+The MCP handler (`tool-handlers.js:92-104`) currently reads `r.file`, `r.startLine`,
+`r.score`, `r.signature` but ignores `r.endLine` (present on the result object from
+graph-search and semantic paths) and `r.content`/`r.text` (present on HNSW results
+that carry the vectors table `text` field).
+
+### 29.4 Schema Changes
+
+Current `SearchOutputSchema`:
+```js
+results: z.array(z.object({
+  file: z.string(),
+  line: z.number().int().optional(),          // start line only
+  score: z.number(),
+  snippet: z.string(),                        // signature or name
+  signature: z.string().optional(),
+  language: z.string().optional(),
+}))
+```
+
+Proposed:
+```js
+results: z.array(z.object({
+  file: z.string(),
+  startLine: z.number().int().optional(),     // renamed from `line`
+  endLine: z.number().int().optional(),        // NEW
+  score: z.number(),
+  snippet: z.string(),                        // signature for #2-N, code for #1
+  signature: z.string().optional(),
+  language: z.string().optional(),
+}))
+```
+
+The `snippet` field for result #1 contains the full chunk text; for results #2-N
+it remains the signature. The `line` → `startLine` rename is breaking — gate on
+a major version bump or keep `line` as a deprecated alias.
+
+### 29.5 Token Budget Consideration
+
+A typical code chunk is 30-150 lines (300-1500 tokens). Including the top result's
+code adds ~300-1500 tokens to the MCP response. This is well within reason — the
+alternative (a Read tool call) returns the same content plus the overhead of an
+entire tool round-trip.
+
+**Cap at 200 lines / ~2000 tokens.** If result #1's chunk exceeds 200 lines (rare —
+our chunker targets 50-150 lines), truncate and append `... (truncated, 312 lines
+total — use Read src/file.js:42-354 for full code)`. This prevents pathological
+cases (e.g., a single 800-line file indexed as one chunk) from bloating the MCP
+response.
+
+### 29.6 Implementation Steps
+
+- [ ] **Add `endLine` to MCP handler**: Map `r.endLine || r.end_line || r.metadata?.endLine`
+  in `tool-handlers.js:92-104`. Update `SearchOutputSchema`. Update text formatting
+  to show `file:startLine-endLine`.
+- [ ] **Add chunk text for result #1**: Load `r.content || r.text` for the top result.
+  If not already on the result object, do a single `SELECT text FROM vectors WHERE
+  id = ?` lookup from `codebaseDb` (lazy-opened, already wired in `sweet-search.js`).
+  Cap at 200 lines.
+- [ ] **Keep `line` as alias**: For backward compatibility, keep `line` in the schema
+  as an alias for `startLine` until the next major version.
+- [ ] **Update text format**: Change line 107 from
+  `${r.file}${r.line ? ':' + r.line : ''}` to
+  `${r.file}:${r.startLine}-${r.endLine}` and append code block for result #1.
+- [ ] **Test**: Verify MCP response includes code for #1, line ranges for all,
+  truncation for large chunks. Add test in `tests/mcp-tool-handlers.test.js`.
+
+### 29.7 Expected Impact
+
+**Latency**: Eliminates 1 Read tool round-trip (500ms-2s) for the most common case
+(top result is the answer). Net effect: **~40-60% faster search-to-answer for LLM
+agents.** The LLM saves one full tool call cycle.
+
+**Accuracy**: No change to search quality. But the LLM gets better information to
+decide which additional results to read (line ranges show chunk size), which may
+improve downstream task completion.
+
+**Token cost**: +300-1500 tokens per search response (top result's code). Offset by
+the Read tool call it replaces (which would return the same content plus file header
+overhead).
+
+### 29.8 Priority
+
+**HIGH** — simple implementation (data already exists, just wiring), immediate UX
+improvement for every LLM-driven search. The end line addition alone is valuable
+even without the inline code snippet.
+
+---
+
 ## Cross-Cutting: No P2 Item Has Been A/B Tested
 
 The single biggest gap across all P2 features is the absence of benchmarking.
@@ -1778,20 +1963,24 @@ point for A/B testing. Before investing more engineering effort in any P2 item:
 ### Recommended A/B Test Priority Order
 
 1. **Late interaction enable** (Section 0) — highest expected impact, infrastructure exists
-2. **Late interaction blend weight tuning** (Section 28.6) — score normalization + α sweep
-3. **Pipeline restructuring** (Section 26) — single reranker pass covers expanded
+2. **MCP inline code snippet + end lines** (Section 29) — eliminates Read round-trip,
+   simple wiring, immediate UX win for every LLM-driven search
+3. **Late interaction blend weight tuning** (Section 28.6) — score normalization + α sweep
+4. **Pipeline restructuring** (Section 26) — single reranker pass covers expanded
    entities; likely net-faster; architectural correctness
-4. **Query-dependent expansion scoring** (Section 24) — ~2ms latency, no training
+5. **Query-dependent expansion scoring** (Section 24) — ~2ms latency, no training
    data, uses existing embeddings; highest-ROI graph improvement
-5. **Pattern search mode** (Section 28.3) — regex+semantic hybrid, fills real gap
-6. ~~**JS/TS chunking hardening** (Section 9)~~ — DONE (2026-03-02)
-7. **Graph expansion on by default** (Section 5) — gate on A/B validation first
-8. **Quality scorer qualityWeight** (Section 1.1) — quick to A/B test
-9. **Graph expansion adaptive 2-hop benchmarking** (Section 5) — needs A/B validation
-10. **MinCut graph expansion** (Section 10.2) — structural importance complement
-11. ~~**Path-level scoring** (Section 23)~~ — DONE (2026-03-02), benchmark pending
-12. **Intent router** (Section 2) — requires CatBoost training first, defer
-13. **SEISMIC sparse** (Section 3) — requires SPLADE integration first, defer
-14. **CrossCodeEval structural routing** (Section 11) — niche but tests graph infra
-15. **PLAID index** (Section 28.4) — defer until monorepo scale demands it
-16. **ColGrep MCP tool** (Section 28.5) — evaluate after pattern mode proves value
+6. **Pattern search mode** (Section 28.3) — regex+semantic hybrid, fills real gap
+7. ~~**JS/TS chunking hardening** (Section 9)~~ — DONE (2026-03-02)
+8. **Graph expansion on by default** (Section 5) — gate on A/B validation first
+9. **Quality scorer qualityWeight** (Section 1.1) — quick to A/B test
+10. **Graph expansion adaptive 2-hop benchmarking** (Section 5) — needs A/B validation
+11. **MinCut graph expansion** (Section 10.2) — structural importance complement
+12. ~~**Path-level scoring** (Section 23)~~ — DONE (2026-03-02), benchmark pending
+13. ~~**PathRAG prompt positioning** (Section 27)~~ — CLOSED (2026-03-03), modern LLMs
+    don't have "lost in the middle"; our output is a short structured list anyway
+14. **Intent router** (Section 2) — requires CatBoost training first, defer
+15. **SEISMIC sparse** (Section 3) — requires SPLADE integration first, defer
+16. **CrossCodeEval structural routing** (Section 11) — niche but tests graph infra
+17. **PLAID index** (Section 28.4) — defer until monorepo scale demands it
+18. **ColGrep MCP tool** (Section 28.5) — evaluate after pattern mode proves value
