@@ -208,10 +208,19 @@ export class SweetSearch {
         stats.structuralType = routing.structuralType;
         stats.targetEntity = routing.targetEntity;
         break;
-      case 'lexical':
-        results = await this.lexicalSearch(query, { k, expand });
+      case 'lexical': {
+        const lexResult = await this.lexicalSearch(query, { k, expand });
+        results = lexResult.results;
         stats.path = 'lexical';
+        stats.confidence = lexResult.stats?.confidence;
+        stats.lexicalMode = lexResult.stats?.mode;
+        // When expansion was deferred (ambiguous + expand=true), ensure
+        // postprocess expansion runs by promoting graphExpand from 'none'.
+        if (stats.confidence === 'ambiguous' && expand && effectiveGraphExpand === 'none') {
+          effectiveGraphExpand = '1hop';
+        }
         break;
+      }
       case 'semantic': {
         const semanticResult = await this.semanticSearch(query, { k, rerank, useLateInteraction });
         results = semanticResult.results;
@@ -271,11 +280,16 @@ export class SweetSearch {
     const { k = 10, expand = true } = options;
     if (!this.hasGraphIndex) {
       this.log('Lexical search unavailable: no graph index');
-      return [];
+      return { results: [], stats: { confidence: 'exact' } };
     }
-    const { results, stats } = await this.graphSearch.graphExpandedSearch(query, { k, expand });
-    this.log(`Lexical: ${stats.bm25_ms}ms BM25, ${stats.graph_ms || 0}ms graph`);
-    return results.map(r => ({ ...r, searchPath: 'lexical' }));
+    const { results, stats } = await this.graphSearch.graphExpandedSearch(query, {
+      k, expand, deferExpansion: expand,
+    });
+    this.log(`Lexical: ${stats.bm25_ms}ms BM25, ${stats.graph_ms || 0}ms graph (confidence: ${stats.confidence})`);
+    return {
+      results: results.map(r => ({ ...r, searchPath: 'lexical' })),
+      stats,
+    };
   }
 
   /** Semantic search dispatcher. Delegates to 3Stage or Standard based on config. */

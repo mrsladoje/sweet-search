@@ -399,8 +399,8 @@ describe('GraphSearch - Graph Expanded Search', () => {
     it('should return stats with correct mode', async () => {
       const { stats } = await graphSearch.graphExpandedSearch('ActiveService', { k: 5 });
 
-      // Should have either bm25_exact_match or bm25_graph mode
-      expect(['bm25_only', 'bm25_exact_match', 'bm25_graph', 'definition_first_exact']).toContain(stats.mode);
+      // Should have a recognized mode (exact, ambiguous, graph, or only)
+      expect(['bm25_only', 'bm25_exact_match', 'bm25_graph', 'bm25_ambiguous', 'definition_first_exact', 'definition_first_graph', 'definition_first_ambiguous', 'definition_first_only']).toContain(stats.mode);
     });
 
     it('should respect expand=false option', async () => {

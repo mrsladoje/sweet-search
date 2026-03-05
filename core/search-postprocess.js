@@ -107,6 +107,11 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     if (semanticStats.stages) stats.stages = semanticStats.stages;
   }
 
+  // Confident lexical queries skip expansion and MaxSim — BM25 exact matching
+  // and definition-first ranking are the correct signals for identifier lookup.
+  const isConfidentLexical = stats.path === 'lexical'
+    && (stats.confidence === 'exact' || stats.confidence === 'high');
+
   // Extract query embedding for query-dependent graph expansion scoring
   const queryInt8 = semanticStats?.queryInt8 || null;
 
@@ -132,7 +137,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   // =========================================================================
   // Graph Expansion (post-processing)
   // =========================================================================
-  if (effectiveGraphExpand !== 'none' && this.hasGraphIndex && Array.isArray(results) && results.length > 0) {
+  if (effectiveGraphExpand !== 'none' && this.hasGraphIndex && Array.isArray(results) && results.length > 0 && !isConfidentLexical) {
     try {
       await this.graphSearch.init();
       const graphDb = this.graphSearch.db;
@@ -185,12 +190,18 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   // =========================================================================
   // Late Interaction Reranking (post-expansion, Phase 6)
   // =========================================================================
+  // POLICY: Lexical queries never invoke the cross-encoder by default.
+  // BM25 exact matching + definition-first ranking are the correct signals
+  // for identifier lookup. MaxSim serves as a tiebreaker for ambiguous sets only.
+  // If Section 26 moves the cross-encoder to postprocess, gate it on:
+  //   stats.path !== 'lexical' || stats.confidence === 'ambiguous'
   // Runs after graph expansion so expanded candidates also benefit from MaxSim.
   // Pipeline: (Binary -> Int8) -> Fusion -> Expand -> LateInteraction -> Reranker -> Budget
   const shouldRunLateInteraction = this.hasLateInteractionIndex &&
                            (options.useLateInteraction ?? this.useLateInteraction) &&
                            !this.lateInteractionIndex.modelMismatch &&
-                           Array.isArray(results) && results.length > 0;
+                           Array.isArray(results) && results.length > 0 &&
+                           !isConfidentLexical;
 
   if (shouldRunLateInteraction) {
     try {

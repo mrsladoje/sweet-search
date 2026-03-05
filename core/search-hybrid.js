@@ -118,10 +118,11 @@ export async function hybridSearch(query, options = {}) {
   const routeType = routing.mode === 'hybrid' ? 'mixed' : routing.mode;
 
   // Run both paths in parallel
-  const [lexicalResults, semanticSearchResult] = await Promise.all([
+  const [lexicalSearchResult, semanticSearchResult] = await Promise.all([
     this.lexicalSearch(query, { k: Math.ceil(k * 1.5), expand }),
     this.semanticSearch(query, { k: Math.ceil(k * 1.5), rerank: false, useLateInteraction }),
   ]);
+  const lexicalResults = lexicalSearchResult.results;
 
   // P0 FIX: Extract semantic results and stats
   const semanticResults = semanticSearchResult.results;
