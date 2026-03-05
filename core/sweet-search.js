@@ -12,7 +12,7 @@
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
-import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, LATE_INTERACTION_CONFIG, EMBEDDING_CONFIG, SEISMIC_CONFIG, shouldUseLocalReranker } from './config.js';
+import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, LATE_INTERACTION_CONFIG, EMBEDDING_CONFIG, SEISMIC_CONFIG, CASCADE_CONFIG, loadProjectConfig, shouldUseLocalReranker } from './config.js';
 import { getGlobalLocalReranker } from './local-reranker.js';
 import { QueryRouter, routeQuery } from './query-router.js';
 import { GraphSearch } from './graph-search.js';
@@ -43,6 +43,12 @@ export { ROUTE_ALPHAS } from './search-fusion.js';
 
 export class SweetSearch {
   constructor(options = {}) {
+    const projectRoot = options.projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
+    const projectConfig = loadProjectConfig(projectRoot);
+    const projectCascade = projectConfig.cascade || {};
+    const envOrProject = (envKey, cascadeKey, configKey) =>
+      process.env[envKey] != null ? CASCADE_CONFIG[configKey] : projectCascade[cascadeKey];
+
     this.graphSearch = new GraphSearch(options.graphDbPath || DB_PATHS.codeGraph);
     this.hnswIndex = new HNSWIndex({ indexPath: options.hnswPath || DB_PATHS.hnswIndex });
     this.binaryHnswIndex = new BinaryHNSWIndex({ indexPath: options.binaryHnswPath || DB_PATHS.binaryHnswIndex });
@@ -66,6 +72,19 @@ export class SweetSearch {
     // SEISMIC sparse vector path (lazy-loaded when SEISMIC_CONFIG.enabled)
     this._seismicIndex = null;
     this.qualityWeight = options.qualityWeight ?? 0;
+    // Cascade scoring (Section 26): MaxSim → gate → conditional CE
+    this.cascadeEnabled = options.cascadeEnabled
+      ?? envOrProject('SWEET_SEARCH_CASCADE_ENABLED', 'enabled', 'enabled')
+      ?? CASCADE_CONFIG.enabled;
+    this.cascadeCeTopK = options.cascadeCeTopK
+      ?? envOrProject('SWEET_SEARCH_CASCADE_CE_TOP_K', 'ceTopK', 'ceTopK')
+      ?? CASCADE_CONFIG.ceTopK;
+    this.cascadeGateThreshold = options.cascadeGateThreshold
+      ?? envOrProject('SWEET_SEARCH_CASCADE_GATE_THRESHOLD', 'gateThreshold', 'gateThreshold')
+      ?? CASCADE_CONFIG.gateThreshold;
+    this.cascadeForceFullCE = options.cascadeForceFullCE
+      ?? envOrProject('SWEET_SEARCH_FORCE_FULL_CE', 'forceFullCrossEncoder', 'forceFullCrossEncoder')
+      ?? CASCADE_CONFIG.forceFullCrossEncoder;
     setRepoMapModule({ pageRank, loadGraph, buildAdjacency });
     this._qualityScorer = null;
     this._codebaseDb = null;

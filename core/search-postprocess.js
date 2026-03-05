@@ -188,81 +188,119 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   }
 
   // =========================================================================
-  // Late Interaction Reranking (post-expansion, Phase 6)
+  // Cascaded Scoring (MaxSim → confidence gate → conditional cross-encoder)
   // =========================================================================
-  // POLICY: Lexical queries never invoke the cross-encoder by default.
-  // BM25 exact matching + definition-first ranking are the correct signals
-  // for identifier lookup. MaxSim serves as a tiebreaker for ambiguous sets only.
-  // If Section 26 moves the cross-encoder to postprocess, gate it on:
-  //   stats.path !== 'lexical' || stats.confidence === 'ambiguous'
-  // Runs after graph expansion so expanded candidates also benefit from MaxSim.
-  // Pipeline: (Binary -> Int8) -> Fusion -> Expand -> LateInteraction -> Reranker -> Budget
-  const shouldRunLateInteraction = this.hasLateInteractionIndex &&
-                           (options.useLateInteraction ?? this.useLateInteraction) &&
-                           !this.lateInteractionIndex.modelMismatch &&
-                           Array.isArray(results) && results.length > 0 &&
-                           !isConfidentLexical;
+  // Runs after graph expansion so expanded candidates also get scored.
+  // Replaces the old separate "late interaction blend" block when cascade is enabled.
+  // POLICY: Lexical confident queries skip this entirely (handled by isConfidentLexical).
+  //
+  // Guard does NOT require hasLateInteractionIndex. When LI is unavailable
+  // (missing index, model mismatch), cascadedScore() handles it internally:
+  // all candidates are treated as unscored → CE-only fallback.
+  // Cascade runs when enabled, regardless of useLateInteraction.
+  // When LI is unavailable, cascadedScore() receives null → CE-only fallback.
+  const shouldRunCascade = this.cascadeEnabled
+    && !isConfidentLexical
+    && Array.isArray(results) && results.length > 1;
 
-  if (shouldRunLateInteraction) {
+  if (shouldRunCascade) {
+    // Pass LI index only if available, model matches, AND useLateInteraction is enabled.
+    // When null, cascadedScore() treats all candidates as unscored → CE-only path.
+    const liIndex = (this.hasLateInteractionIndex
+      && !this.lateInteractionIndex.modelMismatch
+      && (options.useLateInteraction ?? this.useLateInteraction))
+      ? this.lateInteractionIndex
+      : null;
+
     try {
-      const liStart = performance.now();
-      const liCandidateCount = this.stage3Candidates || 20;
-      const topCandidates = results.slice(0, liCandidateCount);
+      const { cascadedScore } = await import('./cascaded-scorer.js');
+      const cascadeResult = await cascadedScore(query, results, {
+        lateInteractionIndex: liIndex,
+        crossEncoder: this.reranker,
+        ceTopK: this.cascadeCeTopK || 8,
+        gateThreshold: this.cascadeGateThreshold || 0.12,
+        forceFullCrossEncoder: this.cascadeForceFullCE || false,
+        loadDocumentContent: this.loadDocumentContent.bind(this),
+      });
+      results = cascadeResult.results;
+      stats.cascade = cascadeResult.stats;
 
-      // Encode query into per-token vectors (real late interaction via LateOn-Code)
-      const { encodeQuery } = await import('./late-interaction-model.js');
-      const queryTokens = await encodeQuery(query);
+      // Emit stats.rerank for CostTracker compatibility (cost-tracker.js:168 reads it).
+      stats.rerank = {
+        skipped: !cascadeResult.stats.ceInvoked,
+        provider: cascadeResult.stats.ceProvider || null,
+        documents: cascadeResult.stats.ceCandidates || 0,
+        tokens: cascadeResult.stats.ceTokens || 0,
+        reason: cascadeResult.stats.ceInvoked ? undefined : cascadeResult.stats.gateReason,
+      };
+    } catch (err) {
+      this.log(`Cascade scoring failed: ${err.message}`);
+      stats.cascade = { error: err.message };
+    }
+  } else if (!this.cascadeEnabled) {
+    // =========================================================================
+    // Late Interaction Reranking (legacy, flag OFF — post-expansion, Phase 6)
+    // =========================================================================
+    const shouldRunLateInteraction = this.hasLateInteractionIndex &&
+                             (options.useLateInteraction ?? this.useLateInteraction) &&
+                             !this.lateInteractionIndex.modelMismatch &&
+                             Array.isArray(results) && results.length > 0 &&
+                             !isConfidentLexical;
 
-      let baseScoreRange = null;
-      let liScoreRange = null;
+    if (shouldRunLateInteraction) {
+      try {
+        const liStart = performance.now();
+        const liCandidateCount = this.stage3Candidates || 20;
+        const topCandidates = results.slice(0, liCandidateCount);
 
-      if (queryTokens && queryTokens.length > 0) {
-        // Score with real MaxSim
-        const scored = await this.lateInteractionIndex.scoreWithLateInteraction(queryTokens, topCandidates);
+        const { encodeQuery } = await import('./late-interaction-model.js');
+        const queryTokens = await encodeQuery(query);
 
-        // Min-max normalize both score distributions before blending so that
-        // the blend weight (alpha) controls actual influence regardless of the
-        // score type that produced the base score (CC-fused, RRF, expanded, etc.)
-        const finiteScore = (v) => Number.isFinite(v) ? v : 0;
-        const baseScoresRaw = scored.map(c => finiteScore(c.score ?? c.int8Score ?? 0));
-        const liScoresRaw = scored.map(c => finiteScore(c.lateInteractionScore ?? 0));
-        const normBase = minMaxNormalize(baseScoresRaw);
-        const normLI = minMaxNormalize(liScoresRaw);
-        const alpha = this.lateInteractionBlendWeight;
+        let baseScoreRange = null;
+        let liScoreRange = null;
 
-        for (let i = 0; i < scored.length; i++) {
-          const candidate = scored[i];
-          candidate.preLateInteractionScore = baseScoresRaw[i];
-          candidate.score = alpha * normLI[i] + (1 - alpha) * normBase[i];
+        if (queryTokens && queryTokens.length > 0) {
+          const scored = await this.lateInteractionIndex.scoreWithLateInteraction(queryTokens, topCandidates);
+
+          const finiteScore = (v) => Number.isFinite(v) ? v : 0;
+          const baseScoresRaw = scored.map(c => finiteScore(c.score ?? c.int8Score ?? 0));
+          const liScoresRaw = scored.map(c => finiteScore(c.lateInteractionScore ?? 0));
+          const normBase = minMaxNormalize(baseScoresRaw);
+          const normLI = minMaxNormalize(liScoresRaw);
+          const alpha = this.lateInteractionBlendWeight;
+
+          for (let i = 0; i < scored.length; i++) {
+            const candidate = scored[i];
+            candidate.preLateInteractionScore = baseScoresRaw[i];
+            candidate.score = alpha * normLI[i] + (1 - alpha) * normBase[i];
+          }
+
+          baseScoreRange = [Math.min(...baseScoresRaw), Math.max(...baseScoresRaw)];
+          liScoreRange = [Math.min(...liScoresRaw), Math.max(...liScoresRaw)];
+
+          scored.sort((a, b) => b.score - a.score);
+
+          results = [
+            ...scored,
+            ...results.slice(liCandidateCount),
+          ];
         }
 
-        baseScoreRange = [Math.min(...baseScoresRaw), Math.max(...baseScoresRaw)];
-        liScoreRange = [Math.min(...liScoresRaw), Math.max(...liScoresRaw)];
-
-        // Re-sort by blended score
-        scored.sort((a, b) => b.score - a.score);
-
-        // Merge re-ranked top with remaining candidates
-        results = [
-          ...scored,
-          ...results.slice(liCandidateCount),
-        ];
+        stats.lateInteraction = {
+          position: 'post-expansion',
+          latency_us: Math.round((performance.now() - liStart) * 1000),
+          candidates: topCandidates.length,
+          queryTokens: queryTokens?.length || 0,
+          ...(baseScoreRange && { baseScoreRange, liScoreRange }),
+        };
+        this.log(`LateInteraction (post-expansion): ${stats.lateInteraction.latency_us}us for ${topCandidates.length} candidates (${queryTokens?.length || 0} query tokens)`);
+      } catch (err) {
+        this.log(`LateInteraction rerank failed: ${err.message}`);
+        stats.lateInteraction = { position: 'post-expansion', error: err.message };
       }
-
-      stats.lateInteraction = {
-        position: 'post-expansion',
-        latency_us: Math.round((performance.now() - liStart) * 1000),
-        candidates: topCandidates.length,
-        queryTokens: queryTokens?.length || 0,
-        ...(baseScoreRange && { baseScoreRange, liScoreRange }),
-      };
-      this.log(`LateInteraction (post-expansion): ${stats.lateInteraction.latency_us}us for ${topCandidates.length} candidates (${queryTokens?.length || 0} query tokens)`);
-    } catch (err) {
-      this.log(`LateInteraction rerank failed: ${err.message}`);
-      stats.lateInteraction = { position: 'post-expansion', error: err.message };
+    } else if (this.hasLateInteractionIndex && (options.useLateInteraction ?? this.useLateInteraction) && this.lateInteractionIndex.modelMismatch) {
+      this.log('LateInteraction: Skipped (model mismatch — re-index to fix)');
     }
-  } else if (this.hasLateInteractionIndex && (options.useLateInteraction ?? this.useLateInteraction) && this.lateInteractionIndex.modelMismatch) {
-    this.log('LateInteraction: Skipped (model mismatch — re-index to fix)');
   }
 
   // =========================================================================

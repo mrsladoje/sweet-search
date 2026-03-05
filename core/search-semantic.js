@@ -17,6 +17,14 @@ import {
 } from './embedding-service.js';
 import { EMBEDDING_CONFIG } from './config.js';
 
+const CASCADE_DEFERRED_STATS = { skipped: true, reason: 'cascade_deferred', provider: null, documents: 0, tokens: 0 };
+
+function cascadeDefer(candidates, stats, searchPath, k = 50) {
+  const results = candidates.slice(0, k).map(r => ({ ...r, searchPath }));
+  stats.rerank = CASCADE_DEFERRED_STATS;
+  return { results, stats };
+}
+
 // =============================================================================
 // 3-Stage Semantic Search
 // =============================================================================
@@ -104,6 +112,15 @@ export async function semanticSearch3Stage(query, options = {}) {
     candidates: scoredCandidates.length,
   };
   this.log(`Stage 2 (Int8): ${stats.stages.int8.latency_us}us, ${scoredCandidates.length} rescored`);
+
+  // CASCADE MODE: Return broad candidate set, let postprocess handle scoring.
+  if (this.cascadeEnabled) {
+    return cascadeDefer(scoredCandidates, stats, 'semantic-3stage', options.cascadeK);
+  }
+
+  // =========================================================================
+  // FLAG OFF: Existing Stage 3 rerank path, completely unchanged.
+  // =========================================================================
 
   // EARLY EXIT: Use score spread analysis to skip reranking
   const topCandidatesWithInt8 = scoredCandidates
@@ -284,6 +301,15 @@ export async function semanticSearchStandard(query, options = {}) {
     };
     return { results: [], stats };
   }
+
+  // CASCADE MODE: Return broad candidate set, let postprocess handle scoring.
+  if (this.cascadeEnabled) {
+    return cascadeDefer(candidates, stats, 'semantic');
+  }
+
+  // =========================================================================
+  // FLAG OFF: Existing rerank path, completely unchanged.
+  // =========================================================================
 
   // EARLY EXIT: Use score spread analysis to skip reranking
   const topScores = candidates.slice(0, Math.min(10, candidates.length)).map(c => c.score);

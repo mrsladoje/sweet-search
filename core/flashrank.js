@@ -815,6 +815,29 @@ export class Reranker {
   }
 
   /**
+   * Direct cross-encoder reranking, bypassing FlashRank.
+   * Uses the best available code-aware reranker: local ModernBERT > Jina > Voyage.
+   * Called by the cascaded scorer (Section 26) for ambiguous/unscored candidates.
+   *
+   * @param {string} query
+   * @param {Array} documents
+   * @param {number} topK
+   * @returns {Promise<{results: Array, latency_ms: number, model: string}>}
+   */
+  async rerankDirect(query, documents, topK = 10) {
+    if (this.useLocalReranker && this.localReranker.isAvailable()) {
+      return this.localReranker.rerank(query, documents, topK);
+    }
+    if (this.preferJina && this.jinaReranker.isAvailable()) {
+      return this.jinaReranker.rerank(query, documents, topK);
+    }
+    if (this.preferVoyage && this.voyageReranker.isAvailable()) {
+      return this.voyageReranker.rerank(query, documents, topK);
+    }
+    throw new Error('No direct cross-encoder available');
+  }
+
+  /**
    * Fast local reranking only (FlashRank, ~15ms)
    * Use when embeddings are cached and you don't want remote reranker latency
    */
