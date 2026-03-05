@@ -1263,9 +1263,13 @@ budget allocator sees already-diversified input.
 
 ## 26. Pipeline Restructuring: Cascaded Scoring with Conditional Cross-Encoder
 
-**Status**: Not started. Identified 2026-02-28 as the highest-value architectural
-improvement to the retrieval pipeline. Updated 2026-03-01 with cascaded late
-interaction analysis and conditional reranking design.
+**Status**: ✅ DONE (2026-03-05). Implemented cascaded scoring pipeline behind
+`CASCADE_CONFIG.enabled` feature flag. New files: `core/cascaded-scorer.js`,
+`tests/cascaded-scorer.test.js`, `tests/cascade-api.test.js`. Modified:
+`search-semantic.js` (cascade deferral), `search-postprocess.js` (cascade gate +
+CE invocation), `sweet-search.js` (config priority chain), `flashrank.js`
+(`rerankDirect`), `late-interaction-index.js` (`hasTokens`), `config.js`
+(`CASCADE_CONFIG`). 109 test files, 2881 tests green.
 
 ### 26.1 Current Architecture (Two Problems)
 
@@ -1966,8 +1970,7 @@ point for A/B testing. Before investing more engineering effort in any P2 item:
 2. **MCP inline code snippet + end lines** (Section 29) — eliminates Read round-trip,
    simple wiring, immediate UX win for every LLM-driven search
 3. **Late interaction blend weight tuning** (Section 28.6) — score normalization + α sweep
-4. **Pipeline restructuring** (Section 26) — single reranker pass covers expanded
-   entities; likely net-faster; architectural correctness
+4. ~~**Pipeline restructuring** (Section 26)~~ — DONE (2026-03-05)
 5. **Query-dependent expansion scoring** (Section 24) — ~2ms latency, no training
    data, uses existing embeddings; highest-ROI graph improvement
 6. **Pattern search mode** (Section 28.3) — regex+semantic hybrid, fills real gap

@@ -939,6 +939,25 @@ export const SEISMIC_CONFIG = {
 };
 
 // =============================================================================
+// CASCADE SCORING CONFIGURATION (Section 26)
+// =============================================================================
+// Streamlined semantic pipeline: HNSW → expand → MaxSim → gate → conditional CE.
+// Ships disabled by default. Flip to true after regression + benchmark pass.
+
+export const CASCADE_CONFIG = {
+  enabled: process.env.SWEET_SEARCH_CASCADE_ENABLED === 'true',
+
+  // MaxSim score gap threshold for decisive classification
+  gateThreshold: parseFloat(process.env.SWEET_SEARCH_CASCADE_GATE_THRESHOLD) || 0.12,
+
+  // Max candidates sent to cross-encoder when gate fires
+  ceTopK: parseInt(process.env.SWEET_SEARCH_CASCADE_CE_TOP_K) || 8,
+
+  // Whether to force cross-encoder on ALL candidates (bypass gate, for benchmarking)
+  forceFullCrossEncoder: process.env.SWEET_SEARCH_FORCE_FULL_CE === 'true',
+};
+
+// =============================================================================
 // CODE GRAPH CONFIGURATION
 // =============================================================================
 
@@ -1348,7 +1367,7 @@ export function loadProjectConfig(projectRoot = process.cwd()) {
     const config = JSON.parse(raw);
 
     // Validate known keys, warn on unknown
-    const knownKeys = new Set(['include', 'exclude', 'projectRoot', 'indexDocs', 'maxFileSize', 'respectGitignore', 'lateInteractionModel']);
+    const knownKeys = new Set(['include', 'exclude', 'projectRoot', 'indexDocs', 'maxFileSize', 'respectGitignore', 'lateInteractionModel', 'cascade']);
     for (const key of Object.keys(config)) {
       if (!knownKeys.has(key)) {
         console.error(`[sweet-search] Warning: unknown key "${key}" in .sweet-search.config.json`);
@@ -1362,6 +1381,7 @@ export function loadProjectConfig(projectRoot = process.cwd()) {
       respectGitignore: typeof config.respectGitignore === 'boolean' ? config.respectGitignore : FILE_PATTERNS.respectGitignore,
       ...(config.projectRoot ? { projectRoot: config.projectRoot } : {}),
       ...(config.lateInteractionModel !== undefined ? { lateInteractionModel: config.lateInteractionModel } : {}),
+      ...(config.cascade ? { cascade: config.cascade } : {}),
     };
   } catch (err) {
     console.error(`[sweet-search] Error loading .sweet-search.config.json: ${err.message}`);
