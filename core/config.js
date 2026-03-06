@@ -7,7 +7,8 @@
  * - Tier 3: Jina Embeddings v3 (8192 tokens, multilingual)
  * - Tier 4: Local Xenova (offline fallback)
  *
- * Reranking: Voyage rerank-2 → Jina reranker v3 → FlashRank local
+ * Default ranking path: Late interaction → gated direct cross-encoder
+ * FlashRank is retained only as an explicit/manual fallback path.
  * Late Interaction: LateOn-Code (code + 89 languages)
  *
  * References:
@@ -748,9 +749,7 @@ export const RERANK_CONFIG = {
     contextLength: 131072,  // 131K context window (64 docs simultaneously)
   },
 
-  // Tier 3: FlashRank (local, no API needed)
-  // TinyBERT: 8x faster than MiniLM (8ms vs 75ms), same accuracy on raw code
-  // Will be fine-tuned on code search data for improved accuracy
+  // Tier 3: FlashRank (manual fallback only)
   flashrank: {
     enabled: true,
     priority: 99,
@@ -768,8 +767,7 @@ export const RERANK_CONFIG = {
 // - Inference: Sequential scoring with global ONNX mutex (onnx-mutex.js)
 // - Latency: ~700ms for 50 docs (~14ms/doc after warmup), ~15s cold start
 //
-// Cascade Priority: FlashRank TinyBERT (~15ms) → Local ModernBERT → Voyage API → Jina API
-// Skip Logic: Stage 2 skipped if FlashRank scores show clear winner (see flashrank.js)
+// Default direct reranker priority: Local ModernBERT → Jina API → Voyage API
 // =============================================================================
 
 export const LOCAL_RERANKER_CONFIG = {
@@ -787,9 +785,9 @@ export const LOCAL_RERANKER_CONFIG = {
     maxLength: 512,  // Max tokens per query-document pair
   },
 
-  // Stage 2 cascade settings
+  // Direct reranker settings
   stage2: {
-    candidateCount: 50,           // Rerank top 50 from FlashRank Stage 1
+    candidateCount: 50,
     requestTimeout: 10000,        // 10s timeout per request
   },
 };
@@ -942,10 +940,10 @@ export const SEISMIC_CONFIG = {
 // CASCADE SCORING CONFIGURATION (Section 26)
 // =============================================================================
 // Streamlined semantic pipeline: HNSW → expand → MaxSim → gate → conditional CE.
-// Ships disabled by default. Flip to true after regression + benchmark pass.
+// Default-on. Set SWEET_SEARCH_CASCADE_ENABLED=false to opt out.
 
 export const CASCADE_CONFIG = {
-  enabled: process.env.SWEET_SEARCH_CASCADE_ENABLED === 'true',
+  enabled: process.env.SWEET_SEARCH_CASCADE_ENABLED !== 'false',
 
   // MaxSim score gap threshold for decisive classification
   gateThreshold: parseFloat(process.env.SWEET_SEARCH_CASCADE_GATE_THRESHOLD) || 0.12,

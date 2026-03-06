@@ -545,30 +545,25 @@ export class Reranker {
     this.localReranker = getGlobalLocalReranker();  // Use preheated global instance
     this.preferVoyage = options.preferVoyage !== false;
     this.preferJina = options.preferJina !== false;
-    this.useCascaded = options.useCascaded ?? true;  // Default: cascaded mode
     this.useLocalReranker = options.useLocalReranker ?? shouldUseLocalReranker();
   }
 
   /**
-   * Rerank documents using best available method
-   *
-   * Modes:
-   * - Cascaded (default): FlashRank always (~15ms) → Jina conditional (~80ms)
-   * - Standard: Voyage → Jina → FlashRank fallback chain
+   * Rerank documents using the best available direct cross-encoder.
+   * FlashRank is intentionally excluded from the default path.
    *
    * @param {string} query
    * @param {Array} documents
    * @param {number} topK
-   * @param {object} options - { forceLocal, forceJina, useCascaded }
+   * @param {object} options - { forceLocal, forceJina }
    */
   async rerank(query, documents, topK = 10, options = {}) {
     const {
       forceLocal = false,
       forceJina = false,
-      useCascaded = this.useCascaded,
     } = options;
 
-    // Use local FlashRank if forced
+    // Preserve the explicit/manual FlashRank escape hatch.
     if (forceLocal) {
       await this.flashRankReranker.init();
       return await this.flashRankReranker.rerank(query, documents, topK);
@@ -579,239 +574,7 @@ export class Reranker {
       return await this.jinaReranker.rerank(query, documents, topK);
     }
 
-    // CASCADED MODE: FlashRank first, then best available reranker (Local > Voyage > Jina)
-    // Cascaded mode works if ANY Stage 2 reranker is available (local OR remote)
-    const hasRemoteReranker = this.voyageReranker.isAvailable() || this.jinaReranker.isAvailable();
-    const hasLocalReranker = this.useLocalReranker && this.localReranker.isAvailable();
-    if (useCascaded && (hasRemoteReranker || hasLocalReranker)) {
-      return await this.cascadedRerank(query, documents, topK, options);
-    }
-
-    // Warn if cascaded mode was requested but no Stage 2 reranker available
-    if (useCascaded && !hasRemoteReranker && !hasLocalReranker) {
-      console.warn('Cascaded mode requested but no Stage 2 reranker available (local ModernBERT or API keys). Falling back to FlashRank-only.');
-    }
-
-    // STANDARD MODE: Voyage → Jina → FlashRank fallback chain
-    if (this.preferVoyage && this.voyageReranker.isAvailable()) {
-      try {
-        return await this.voyageReranker.rerank(query, documents, topK);
-      } catch (err) {
-        console.warn(`Voyage reranking failed, trying Jina: ${err.message}`);
-      }
-    }
-
-    if (this.preferJina && this.jinaReranker.isAvailable()) {
-      try {
-        return await this.jinaReranker.rerank(query, documents, topK);
-      } catch (err) {
-        console.warn(`Jina reranking failed, falling back to FlashRank: ${err.message}`);
-      }
-    }
-
-    // Final fallback: FlashRank
-    await this.flashRankReranker.init();
-    return await this.flashRankReranker.rerank(query, documents, topK);
-  }
-
-  /**
-   * Cascaded reranking: FlashRank always (~15ms) → Best remote conditional
-   *
-   * Strategy:
-   * 1. Always run FlashRank (fast, local, ~15ms)
-   * 2. Analyze score spread to decide if remote reranker is needed
-   * 3. If scores are ambiguous, run best available remote (Voyage > Jina)
-   *
-   * Priority order for Stage 2: Voyage (priority 1) > Jina (priority 2)
-   * Expected impact: 40-60% fewer remote API calls without quality loss
-   */
-  async cascadedRerank(query, documents, topK = 10, options = {}) {
-    const { skipAnalysis = null } = options;
-
-    // Stage 1: FlashRank (always, ~15ms)
-    await this.flashRankReranker.init();
-    const flashResult = await this.flashRankReranker.rerank(query, documents, Math.min(topK * 2, documents.length));
-
-    // Analyze score spread to decide if remote reranker is needed
-    const topScores = flashResult.results
-      .slice(0, Math.min(10, flashResult.results.length))
-      .map(r => r.flashRankScore);
-
-    const analysis = skipAnalysis || this.shouldSkipRerank(topScores);
-
-    if (analysis.skip) {
-      // FlashRank scores are confident enough, skip remote reranker
-      return {
-        results: flashResult.results.slice(0, topK).map(r => ({
-          ...r,
-          rerankScore: r.flashRankScore,
-          source: 'flashrank-cascaded',
-          skipReason: analysis.reason,
-        })),
-        latency_ms: flashResult.latency_ms,
-        model: flashResult.model,
-        cascaded: { stage1: 'flashrank', stage2Skipped: true, reason: analysis.reason },
-      };
-    }
-
-    // Build O(1) lookup map for FlashRank scores (optimization for .find() calls)
-    const flashScoreMap = new Map(
-      flashResult.results.map(r => [r.originalIndex, r.flashRankScore])
-    );
-
-    // Stage 2: Use local ModernBERT INT8 reranker if configured
-    if (this.useLocalReranker && this.localReranker.isAvailable()) {
-      try {
-        const localResult = await this.localReranker.rerank(query, documents, topK);
-        return {
-          results: localResult.results.map(r => ({
-            ...r,
-            rerankScore: r.localRerankerScore,
-            source: 'local-modernbert-cascaded',
-            flashRankScore: flashScoreMap.get(r.originalIndex) ?? 0,
-          })),
-          latency_ms: flashResult.latency_ms + localResult.latency_ms,
-          model: localResult.model,
-          cascaded: {
-            stage1: 'flashrank',
-            stage2: 'local-modernbert-int8',
-            stage1Ms: flashResult.latency_ms,
-            stage2Ms: localResult.latency_ms,
-          },
-        };
-      } catch (err) {
-        console.warn(`Local reranker failed, falling back to API: ${err.message}`);
-        // Fall through to API rerankers
-      }
-    }
-
-    // Stage 2: Best available remote reranker (Voyage > Jina)
-    // Try Voyage first (priority 1, ~700ms but higher quality)
-    if (this.preferVoyage && this.voyageReranker.isAvailable()) {
-      try {
-        const voyageResult = await this.voyageReranker.rerank(query, documents, topK);
-        return {
-          results: voyageResult.results.map(r => ({
-            ...r,
-            rerankScore: r.voyageScore,
-            source: 'voyage-cascaded',
-            flashRankScore: flashScoreMap.get(r.originalIndex) ?? 0,
-          })),
-          latency_ms: flashResult.latency_ms + voyageResult.latency_ms,
-          model: voyageResult.model,
-          cascaded: {
-            stage1: 'flashrank',
-            stage2: 'voyage',
-            stage1Ms: flashResult.latency_ms,
-            stage2Ms: voyageResult.latency_ms,
-          },
-        };
-      } catch (err) {
-        console.warn(`Voyage cascaded rerank failed, trying Jina: ${err.message}`);
-        // Fall through to Jina
-      }
-    }
-
-    // Try Jina (priority 2, ~80ms, good quality)
-    // Note: preferJina check added for consistency with standard mode (line 489)
-    if (this.preferJina && this.jinaReranker.isAvailable()) {
-      try {
-        const jinaResult = await this.jinaReranker.rerank(query, documents, topK);
-        return {
-          results: jinaResult.results.map(r => ({
-            ...r,
-            rerankScore: r.jinaScore,
-            source: 'jina-cascaded',
-            flashRankScore: flashScoreMap.get(r.originalIndex) ?? 0,
-          })),
-          latency_ms: flashResult.latency_ms + jinaResult.latency_ms,
-          model: jinaResult.model,
-          cascaded: {
-            stage1: 'flashrank',
-            stage2: 'jina',
-            stage1Ms: flashResult.latency_ms,
-            stage2Ms: jinaResult.latency_ms,
-          },
-        };
-      } catch (err) {
-        console.warn(`Jina cascaded rerank failed, using FlashRank: ${err.message}`);
-        // Fall through to FlashRank
-      }
-    }
-
-    // Fallback: FlashRank only (no remote available or all failed)
-    return {
-      results: flashResult.results.slice(0, topK).map(r => ({
-        ...r,
-        rerankScore: r.flashRankScore,
-        source: 'flashrank-cascaded',
-      })),
-      latency_ms: flashResult.latency_ms,
-      model: flashResult.model,
-      cascaded: { stage1: 'flashrank', stage2Skipped: true, reason: 'no_remote_available_or_all_failed' },
-    };
-  }
-
-  /**
-   * Score spread analysis for deciding whether to call remote reranker (Voyage/Jina)
-   *
-   * CALIBRATED FOR FLASHRANK RAW LOGIT SCORES (verified empirically):
-   * - Range: approximately [-10, -5] for typical code search queries
-   * - Higher (closer to 0) = more relevant
-   * - Very relevant: > -6.5
-   * - Relevant: -6.5 to -8.0
-   * - Weak: -8.0 to -9.0
-   * - Irrelevant: < -9.0
-   *
-   * Thresholds calibrated for this logit range:
-   * - topGapThreshold: 0.5 (meaningful gap in logit space)
-   * - spreadThreshold: 0.3 (tight cluster = rerank won't help)
-   * - highConfidence: -6.5 (top 30% of typical range)
-   * - minScoreThreshold: -7.5 (below = weak matches, need remote help)
-   */
-  shouldSkipRerank(scores, options = {}) {
-    const {
-      topGapThreshold = 0.5,      // Skip if clear winner (0.5 logit gap = significant)
-      spreadThreshold = 0.3,      // Skip if all scores within 0.3 (tight cluster)
-      highConfidence = -6.5,      // Skip if all above -6.5 (very relevant)
-      minResults = 3,
-      spreadTopK = 10,            // Calculate spread over top K results only
-      minScoreThreshold = -7.5,   // Below this = weak matches, try remote reranker
-    } = options;
-
-    if (!scores || scores.length < minResults) {
-      return { skip: false, reason: 'insufficient_results' };
-    }
-
-    const sorted = [...scores].sort((a, b) => b - a);
-    const topGap = sorted[0] - sorted[1];
-
-    // Calculate spread over top K only (avoid tail results inflating spread)
-    const topK = Math.min(spreadTopK, sorted.length);
-    const spread = sorted[0] - sorted[topK - 1];
-    const topScores = sorted.slice(0, Math.min(3, sorted.length));
-
-    // Never skip if scores are too low (FlashRank not confident, need remote help)
-    if (sorted[0] < minScoreThreshold) {
-      return { skip: false, reason: `low_scores (max=${sorted[0].toFixed(3)}, threshold=${minScoreThreshold})` };
-    }
-
-    // Clear winner: large gap means FlashRank is confident about #1
-    if (topGap > topGapThreshold) {
-      return { skip: true, reason: `clear_winner (gap=${topGap.toFixed(3)})` };
-    }
-
-    // Tight cluster: reranking won't meaningfully change order
-    if (spread < spreadThreshold) {
-      return { skip: true, reason: `tight_cluster (spread=${spread.toFixed(3)})` };
-    }
-
-    // All high confidence: FlashRank strongly confident about all top results
-    if (topScores.every(s => s > highConfidence)) {
-      return { skip: true, reason: `high_confidence (min=${Math.min(...topScores).toFixed(3)})` };
-    }
-
-    return { skip: false, reason: 'needs_rerank' };
+    return this.rerankDirect(query, documents, topK);
   }
 
   /**
@@ -861,7 +624,6 @@ export class Reranker {
       useLocalReranker: this.useLocalReranker,
       preferVoyage: this.preferVoyage,
       preferJina: this.preferJina,
-      useCascaded: this.useCascaded,
     };
   }
 }
@@ -886,7 +648,6 @@ Options:
   --jina          Force Jina Reranker v3 (requires JINA_API_KEY)
   --local         Force local FlashRank (TinyBERT)
   --local-modernbert  Force local ModernBERT INT8 reranker
-  --cascaded      Use cascaded mode (FlashRank → Stage 2 conditional)
 `);
 
   const command = args[0];
@@ -964,26 +725,11 @@ Options:
           console.log('Not available (JINA_API_KEY not set)');
         }
 
-        // Test cascaded mode (if Jina available)
-        if (reranker.jinaReranker.isAvailable()) {
-          console.log('\n--- Cascaded Mode (FlashRank → Jina) ---');
-          const cascadedResult = await reranker.cascadedRerank(query, documents, 5);
-          console.log(`Total Latency: ${cascadedResult.latency_ms}ms`);
-          console.log(`Model: ${cascadedResult.model}`);
-          console.log(`Cascaded: ${JSON.stringify(cascadedResult.cascaded)}`);
-          console.log('Top 5:');
-          cascadedResult.results.forEach((r, i) => {
-            const score = r.rerankScore || r.jinaScore || r.flashRankScore || 0;
-            const text = typeof r === 'string' ? r : documents[r.originalIndex];
-            console.log(`  ${i + 1}. [${score.toFixed(4)}] ${text.slice(0, 50)}...`);
-          });
-        }
       } else if (command === 'rerank' && args[1]) {
         const query = args[1];
         const useVoyage = args.includes('--voyage');
         const useJina = args.includes('--jina');
         const useLocal = args.includes('--local');
-        const useCascaded = args.includes('--cascaded');
 
         // Sample documents for testing
         const documents = [
@@ -1001,8 +747,6 @@ Options:
           result = await reranker.jinaReranker.rerank(query, documents, 5);
         } else if (useVoyage && reranker.voyageReranker.isAvailable()) {
           result = await reranker.voyageReranker.rerank(query, documents, 5);
-        } else if (useCascaded) {
-          result = await reranker.cascadedRerank(query, documents, 5);
         } else {
           result = await reranker.rerank(query, documents, 5);
         }
@@ -1010,9 +754,6 @@ Options:
         console.log(`\nQuery: "${query}"`);
         console.log(`Model: ${result.model}`);
         console.log(`Latency: ${result.latency_ms}ms`);
-        if (result.cascaded) {
-          console.log(`Cascaded: ${JSON.stringify(result.cascaded)}`);
-        }
         console.log('\nResults:');
         result.results.forEach((r, i) => {
           const score = r.rerankScore || r.jinaScore || r.voyageScore || r.flashRankScore || 0;
