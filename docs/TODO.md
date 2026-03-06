@@ -349,9 +349,9 @@ Old magic constants (0.45/0.25) replaced.
   reasonable across different languages and codebases.
 - [ ] **Intent policy integration**: Consider having intent policies set
   `adaptiveHop2: true` for appropriate intents (e.g., refactor, bug_fix).
-- [ ] **Turn on graph expansion by default**: `graphExpand` defaults to `'none'`
-  in `sweet-search.js:147`. Change to `'2hop'` (with `adaptiveHop2: true`) so
-  every query benefits from graph enrichment without explicit configuration. Gate
+- [x] **Turn on graph expansion by default**: ✅ DONE (HYBRID_PIPELINE.md, 2026-03-06).
+  Hybrid + semantic paths now auto-enable `effectiveGraphExpand='2hop'` when `expand=true`.
+  Ambiguous lexical upgraded from `1hop` to `2hop`. Confident lexical still skips. Gate
   on: (a) adaptive vs simple A/B test showing adaptive wins, and (b) regression
   test confirming expansion doesn't degrade queries with no relevant graph context.
 
@@ -1361,19 +1361,21 @@ BM25 → [confidence gate] → expand (ambiguous only, deferred to postprocess) 
 ```
 Confidence signal (`exact`/`high`/`ambiguous`) propagated from `graphExpandedSearch` through
 `lexicalSearch` → `search()` → `applyPostRetrieval`. Exact/high hits skip expansion + MaxSim.
-Ambiguous queries defer expansion to postprocess `expandResults()` (adaptive hop2, alpha decay).
-Hybrid path unaffected — keeps internal expansion via `deferExpansion: false` default.
+Ambiguous queries defer expansion to postprocess `expandResults()` (adaptive 2-hop, alpha decay).
 See `docs/LEXICAL_PIPELINE.md` for full design rationale.
 
-**SEMANTIC-ONLY** (conceptual questions):
+**SEMANTIC-ONLY** (conceptual questions): ✅ DONE (HYBRID_PIPELINE.md, 2026-03-06)
 ```
-Binary → Int8 → expand → MaxSim rerank → [confidence gate] → cross-encoder → budget
+Binary → Int8 → expand (adaptive 2-hop) → MaxSim rerank → [confidence gate] → cross-encoder → budget
 ```
+Expansion now fires by default (`effectiveGraphExpand='2hop'` when `expand=true`).
 
-**HYBRID** (most common):
+**HYBRID** (most common): ✅ DONE (HYBRID_PIPELINE.md, 2026-03-06)
 ```
-BM25 ‖ (Binary → Int8) → CC fusion + MMR → expand → MaxSim → [gate] → cross-encoder → budget
+raw BM25 ‖ (Binary → Int8) → CC fusion + MMR → expand (adaptive 2-hop) → MaxSim → [gate] → cross-encoder → budget
 ```
+Lexical side now uses raw `bm25Search` (not `graphExpandedSearch`) so fusion sees pure BM25
+scores without synthetic graph-expansion scores. Expansion moved to postprocess after fusion.
 
 **STRUCTURAL** (relationship/navigation queries):
 ```
@@ -1472,8 +1474,8 @@ benchmark pass.
   standalone `cascadedRerank(candidates, query)` function
 - [ ] **Implement confidence gate**: configurable threshold, fallback to full
   cross-encoder when MaxSim scores are ambiguous
-- [ ] **All search paths**: route through the shared cascade (lexical, semantic,
-  hybrid, structural)
+- [x] **All search paths**: route through the shared cascade (lexical, semantic,
+  hybrid, structural) — hybrid + semantic done (HYBRID_PIPELINE.md, 2026-03-06)
 - [ ] **Fallback for un-indexed chunks**: if a candidate has no late interaction
   tokens (not indexed or index stale), fall through to FlashRank or cross-encoder
 - [ ] **Move `applyTokenBudget`** to after the cascade in all paths
@@ -1975,7 +1977,7 @@ point for A/B testing. Before investing more engineering effort in any P2 item:
    data, uses existing embeddings; highest-ROI graph improvement
 6. **Pattern search mode** (Section 28.3) — regex+semantic hybrid, fills real gap
 7. ~~**JS/TS chunking hardening** (Section 9)~~ — DONE (2026-03-02)
-8. **Graph expansion on by default** (Section 5) — gate on A/B validation first
+8. ~~**Graph expansion on by default** (Section 5)~~ — DONE (2026-03-06, HYBRID_PIPELINE.md)
 9. **Quality scorer qualityWeight** (Section 1.1) — quick to A/B test
 10. **Graph expansion adaptive 2-hop benchmarking** (Section 5) — needs A/B validation
 11. **MinCut graph expansion** (Section 10.2) — structural importance complement
