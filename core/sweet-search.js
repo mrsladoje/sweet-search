@@ -236,7 +236,7 @@ export class SweetSearch {
         // When expansion was deferred (ambiguous + expand=true), ensure
         // postprocess expansion runs by promoting graphExpand from 'none'.
         if (stats.confidence === 'ambiguous' && expand && effectiveGraphExpand === 'none') {
-          effectiveGraphExpand = '1hop';
+          effectiveGraphExpand = '2hop';
         }
         break;
       }
@@ -258,6 +258,14 @@ export class SweetSearch {
         stats.lexicalLatencyMs = hybridResult.fusionStats?.lexicalLatencyMs ?? null;
         break;
       }
+    }
+
+    // Enable adaptive 2-hop expansion for semantic + hybrid (graph completion
+    // improves recall; cascade handles precision). Lexical ambiguous case is
+    // handled inside its switch block (depends on stats.confidence).
+    if ((searchMode === 'semantic' || searchMode === 'hybrid')
+        && effectiveGraphExpand === 'none' && expand) {
+      effectiveGraphExpand = '2hop';
     }
 
     // Step 3: Post-retrieval processing (delegated to extracted module)

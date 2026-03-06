@@ -31,20 +31,21 @@ export async function hybridSearchV2(query, options = {}) {
   const routeType = routing.mode === 'hybrid' ? 'mixed' : routing.mode;
 
   // Step 1: Retrieval from both paths (raw scores, no pre-fusion boosts)
+  // Uses raw bm25Search (not graphExpandedSearch) so fusion sees pure BM25 scores
+  // without synthetic graph-expansion scores polluting the distribution.
   const [lexicalSearchResult, semanticSearchResult] = await Promise.all([
-    this.graphSearch.graphExpandedSearch(query, { k: 50, expand: true, skipBoosts: true }),
+    this.graphSearch.bm25Search(query, { limit: 50, skipBoosts: true }),
     this.semanticSearch(query, { k: 50, rerank: false, useLateInteraction }),
   ]);
 
-  // Normalize lexical results format (graphExpandedSearch returns { results, stats })
-  const lexicalResults = (lexicalSearchResult.results || lexicalSearchResult).map(r => ({
+  const lexicalResults = lexicalSearchResult.results.map(r => ({
     ...r,
     searchPath: 'lexical',
   }));
   const semanticResults = semanticSearchResult.results;
   const semanticStats = semanticSearchResult.stats;
   // P1.3 FIX: Capture direct lexical latency for accurate telemetry
-  const lexicalLatencyMs = lexicalSearchResult.stats?.bm25_ms ?? null;
+  const lexicalLatencyMs = lexicalSearchResult.latency ?? null;
 
   // Step 2: Robust CC fusion with RRF fallback for edge cases
   const { results: fused, method, fallbackReason } = this.robustCCFusion(
@@ -107,6 +108,8 @@ export async function hybridSearchV2(query, options = {}) {
  * - Applies boosts during lexical retrieval (unfair to semantic path)
  * - Uses naive min-max normalization (vulnerable to outliers)
  * - No RRF fallback for edge cases
+ * - lexicalSearch() calls graphExpandedSearch internally, mixing graph-expanded
+ *   entities with BM25 hits before fusion (pre-fusion expansion is wrong)
  *
  * Uses `this` extensively.
  */
