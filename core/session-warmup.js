@@ -137,7 +137,7 @@ function resolveRerankerStage2Provider() {
   if (shouldUseLocalReranker()) return 'local-modernbert';
   if (RERANK_CONFIG.voyage.enabled && RERANK_CONFIG.voyage.apiKey) return 'voyage';
   if (RERANK_CONFIG.jina.enabled && RERANK_CONFIG.jina.apiKey) return 'jina';
-  return 'flashrank-only';
+  return 'none';
 }
 
 // ---------------------------------------------------------------------------
@@ -314,7 +314,7 @@ async function warmRerankerAPIConnection() {
   const started = Date.now();
   const stage2Provider = resolveRerankerStage2Provider();
 
-  if (stage2Provider === 'local-modernbert' || stage2Provider === 'flashrank-only') {
+  if (stage2Provider === 'local-modernbert' || stage2Provider === 'none') {
     return skip('reranker-api-connection', started, stage2Provider);
   }
 
@@ -387,37 +387,6 @@ async function warmQueryRouterViaServer(baseUrl) {
     return ok('query-router', started);
   } catch (err) {
     return fail('query-router', started, err);
-  }
-}
-
-async function warmFlashRankViaServer(baseUrl) {
-  const started = Date.now();
-  if (!existsSync(DB_PATHS.codeGraph) && !existsSync(DB_PATHS.codebase)) {
-    return skip('flashrank', started, 'no indexes');
-  }
-
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 7000);
-    const params = new URLSearchParams({
-      q: 'authentication service',
-      mode: 'semantic',
-      k: '20',
-      rerank: 'true',
-      format: 'json',
-    });
-
-    const response = await fetch(`${baseUrl}/search?${params.toString()}`, {
-      method: 'GET',
-      signal: ctrl.signal,
-    });
-    clearTimeout(timer);
-    if (!response.ok) {
-      return fail('flashrank', started, `HTTP ${response.status}`);
-    }
-    return ok('flashrank', started);
-  } catch (err) {
-    return fail('flashrank', started, err);
   }
 }
 
@@ -497,12 +466,6 @@ function buildWarmupPlan() {
       phase: 'post-ready',
       when: () => true,
       fn: warmQueryRouterViaServer,
-    },
-    {
-      name: 'flashrank',
-      phase: 'post-ready',
-      when: () => true,
-      fn: warmFlashRankViaServer,
     },
     {
       name: 'late-interaction-model',

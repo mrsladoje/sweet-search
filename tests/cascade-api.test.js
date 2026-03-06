@@ -54,9 +54,47 @@ describe('Reranker.rerankDirect', () => {
     await expect(reranker.rerankDirect('test query', docs, 2))
       .rejects.toThrow('No direct cross-encoder available');
   });
+
+  it('rerank() uses the direct cross-encoder path by default', async () => {
+    const reranker = new Reranker({
+      preferVoyage: false,
+      preferJina: false,
+      useLocalReranker: true,
+    });
+
+    reranker.localReranker.isAvailable = () => true;
+    reranker.localReranker.rerank = vi.fn(async () => ({
+      results: [{ originalIndex: 0, localRerankerScore: 0.9 }],
+      latency_ms: 5,
+      model: 'gte-reranker-modernbert-base-int8',
+    }));
+    reranker.flashRankReranker.rerank = vi.fn(async () => {
+      throw new Error('flashrank should not run');
+    });
+
+    const docs = ['doc1 content'];
+    const result = await reranker.rerank('test query', docs, 1);
+
+    expect(reranker.localReranker.rerank).toHaveBeenCalledOnce();
+    expect(reranker.flashRankReranker.rerank).not.toHaveBeenCalled();
+    expect(result.model).toBe('gte-reranker-modernbert-base-int8');
+  });
 });
 
 describe('SweetSearch cascade project config', () => {
+  it('defaults cascade to enabled when no env or project override is present', () => {
+    const prevEnabled = process.env.SWEET_SEARCH_CASCADE_ENABLED;
+    delete process.env.SWEET_SEARCH_CASCADE_ENABLED;
+
+    try {
+      const searcher = new SweetSearch({});
+      expect(searcher.cascadeEnabled).toBe(true);
+      searcher.close();
+    } finally {
+      process.env.SWEET_SEARCH_CASCADE_ENABLED = prevEnabled;
+    }
+  });
+
   it('reads cascade defaults from .sweet-search.config.json when env is unset', () => {
     const prevEnabled = process.env.SWEET_SEARCH_CASCADE_ENABLED;
     const prevGate = process.env.SWEET_SEARCH_CASCADE_GATE_THRESHOLD;

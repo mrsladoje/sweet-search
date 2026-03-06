@@ -169,7 +169,7 @@ export async function semanticSearch3Stage(query, options = {}) {
       const rerankResult = await this.reranker.rerank(query, documents, k);
       results = rerankResult.results.map((r, i) => ({
         ...topCandidates[r.originalIndex],
-        rerankScore: r.jinaScore || r.voyageScore || r.flashRankScore,
+        rerankScore: r.localRerankerScore || r.jinaScore || r.voyageScore || r.flashRankScore,
         originalScore: topCandidates[r.originalIndex].int8Score,
         binaryScore: topCandidates[r.originalIndex].score,
         lateInteractionScore: topCandidates[r.originalIndex].lateInteractionScore,
@@ -186,7 +186,7 @@ export async function semanticSearch3Stage(query, options = {}) {
       // P0 FIX: Add rerank stats for CostTracker
       stats.rerank = {
         skipped: false,
-        provider: rerankResult.model || 'flashrank',
+        provider: rerankResult.model || 'direct-cross-encoder',
         documents: topCandidates.length,
         tokens: Math.ceil(query.length / 4) + (topCandidates.length * 150),
         latency_ms: rerankResult.latency_ms,
@@ -349,7 +349,7 @@ export async function semanticSearchStandard(query, options = {}) {
       const rerankResult = await this.reranker.rerank(query, documents, k);
       results = rerankResult.results.map((r, i) => ({
         ...candidates[r.originalIndex],
-        rerankScore: r.jinaScore || r.voyageScore || r.flashRankScore,
+        rerankScore: r.localRerankerScore || r.jinaScore || r.voyageScore || r.flashRankScore,
         originalScore: candidates[r.originalIndex].score,
         newRank: i + 1,
       }));
@@ -357,7 +357,7 @@ export async function semanticSearchStandard(query, options = {}) {
       // P0 FIX: Add rerank stats for CostTracker
       stats.rerank = {
         skipped: false,
-        provider: rerankResult.model || 'flashrank',
+        provider: rerankResult.model || 'direct-cross-encoder',
         documents: candidates.length,
         tokens: Math.ceil(query.length / 4) + (candidates.length * 150),
         latency_ms: rerankResult.latency_ms,

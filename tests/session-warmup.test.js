@@ -396,11 +396,11 @@ describe('session-warmup', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Server-path warmups (query-router + flashrank)
+  // Server-path warmups (query-router + late interaction)
   // -------------------------------------------------------------------------
 
   describe('warmSession - server-path warmups', () => {
-    it('warms query-router and flashrank when warmServerPath=true', async () => {
+    it('warms query-router and late interaction when warmServerPath=true', async () => {
       existingPaths.add('/tmp/test-code-graph.db');
 
       let healthCalls = 0;
@@ -427,16 +427,13 @@ describe('session-warmup', () => {
         .filter((u) => u.includes('/search?'))
         .map((u) => new URL(u));
 
-      expect(searchCalls).toHaveLength(3);
+      expect(searchCalls).toHaveLength(2);
       expect(searchCalls.some((u) => u.searchParams.get('mode') === 'auto')).toBe(true);
-      expect(searchCalls.some((u) => u.searchParams.get('mode') === 'semantic')).toBe(true);
       expect(searchCalls.some((u) => u.searchParams.get('late-interaction') === 'true')).toBe(true);
 
       const qr = result.components.find((c) => c.component === 'query-router');
-      const fr = result.components.find((c) => c.component === 'flashrank');
       const lateInteraction = result.components.find((c) => c.component === 'late-interaction');
       expect(qr?.ok).toBe(true);
-      expect(fr?.ok).toBe(true);
       expect(lateInteraction?.ok).toBe(true);
     });
 
@@ -457,7 +454,6 @@ describe('session-warmup', () => {
         .filter((u) => u.includes('/search?'));
       expect(searchCalls).toHaveLength(0);
       expect(result.components.find((c) => c.component === 'query-router')).toBeUndefined();
-      expect(result.components.find((c) => c.component === 'flashrank')).toBeUndefined();
     });
 
     it('reports server-path warmup errors on non-2xx responses', async () => {
@@ -486,13 +482,10 @@ describe('session-warmup', () => {
       });
 
       const qr = result.components.find((c) => c.component === 'query-router');
-      const fr = result.components.find((c) => c.component === 'flashrank');
       const lateInteraction = result.components.find((c) => c.component === 'late-interaction');
       expect(qr?.ok).toBe(false);
-      expect(fr?.ok).toBe(false);
       expect(lateInteraction?.ok).toBe(false);
       expect(String(qr?.error)).toContain('HTTP 503');
-      expect(String(fr?.error)).toContain('HTTP 502');
       expect(String(lateInteraction?.error)).toContain('HTTP 502');
     });
   });
