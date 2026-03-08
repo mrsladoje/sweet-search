@@ -77,12 +77,10 @@ describe('Normalized late interaction blending', () => {
     }
   });
 
-  it('blend with mismatched ranges (RRF base): LI does not dominate', async () => {
-    // RRF base scores in [0.008, 0.016], LI in [0.4, 0.7]
-    // Without normalization, LI would dominate. With normalization, both contribute.
+  it('pure reranker: MaxSim scores determine ranking regardless of base scale', async () => {
+    // Pure reranker: score = lateInteractionScore, base scores ignored for ranking
     const s = await createSearcherWithLIScores(
       { a: 0.4, b: 0.55, c: 0.7 },
-      { lateInteractionBlendWeight: 0.3 }
     );
     const results = [
       { id: 'a', score: 0.016, name: 'a' },
@@ -92,25 +90,19 @@ describe('Normalized late interaction blending', () => {
 
     const { results: output } = await runPostRetrieval(s, results);
 
-    // normBase: a=1.0, b=0.5, c=0.0
-    // normLI:   a=0.0, b=0.5, c=1.0
-    // blended:  a = 0.3*0 + 0.7*1 = 0.7
-    //           b = 0.3*0.5 + 0.7*0.5 = 0.5
-    //           c = 0.3*1 + 0.7*0 = 0.3
-    // Base ranking (a > b > c) is preserved because alpha=0.3 means base dominates
-    const scoreA = output.find(r => r.id === 'a').score;
-    const scoreB = output.find(r => r.id === 'b').score;
-    const scoreC = output.find(r => r.id === 'c').score;
-    expect(scoreA).toBeCloseTo(0.7, 5);
-    expect(scoreB).toBeCloseTo(0.5, 5);
-    expect(scoreC).toBeCloseTo(0.3, 5);
+    // LI ranking: c(0.7) > b(0.55) > a(0.4)
+    expect(output[0].id).toBe('c');
+    expect(output[0].score).toBeCloseTo(0.7, 5);
+    expect(output[1].id).toBe('b');
+    expect(output[1].score).toBeCloseTo(0.55, 5);
+    expect(output[2].id).toBe('a');
+    expect(output[2].score).toBeCloseTo(0.4, 5);
   });
 
-  it('blend with expanded scores (base > 1.0): both contribute', async () => {
-    // Graph-expanded scores can exceed 1.0
+  it('pure reranker: scores are raw MaxSim values (not normalized)', async () => {
+    // Pure reranker uses raw LI scores — no normalization to [0,1]
     const s = await createSearcherWithLIScores(
       { a: 0.3, b: 0.5, c: 0.6 },
-      { lateInteractionBlendWeight: 0.3 }
     );
     const results = [
       { id: 'a', score: 0.5, name: 'a' },
@@ -120,30 +112,23 @@ describe('Normalized late interaction blending', () => {
 
     const { results: output } = await runPostRetrieval(s, results);
 
-    // normBase: a=0, b=(1.2-0.5)/(1.8-0.5)=0.5385, c=1.0
-    // normLI:   a=0, b=(0.5-0.3)/(0.6-0.3)=0.6667, c=1.0
-    // All output scores should be in [0, 1]
-    for (const r of output) {
-      expect(r.score).toBeGreaterThanOrEqual(-0.001);
-      expect(r.score).toBeLessThanOrEqual(1.001);
-    }
-    // Both a and c should be extreme (a near 0, c near 1)
-    const scoreA = output.find(r => r.id === 'a').score;
-    const scoreC = output.find(r => r.id === 'c').score;
-    expect(scoreA).toBeCloseTo(0.0, 5);
-    expect(scoreC).toBeCloseTo(1.0, 5);
+    // Scores are raw LI values, sorted descending
+    expect(output[0].id).toBe('c');
+    expect(output[0].score).toBeCloseTo(0.6, 5);
+    expect(output[1].id).toBe('b');
+    expect(output[1].score).toBeCloseTo(0.5, 5);
+    expect(output[2].id).toBe('a');
+    expect(output[2].score).toBeCloseTo(0.3, 5);
   });
 
   // ---------------------------------------------------------------------------
   // Degenerate cases: uniform scores on one side
   // ---------------------------------------------------------------------------
 
-  it('preserves base ordering when MaxSim is uniform', async () => {
-    // All LI scores identical → normLI = [0.5, 0.5, 0.5]
-    // Blend: alpha*0.5 + (1-alpha)*normBase → base ordering preserved
+  it('uniform MaxSim scores: all candidates get same score', async () => {
+    // All LI scores identical → all get score 0.5
     const s = await createSearcherWithLIScores(
       { a: 0.5, b: 0.5, c: 0.5 },
-      { lateInteractionBlendWeight: 0.3 }
     );
     const results = [
       { id: 'a', score: 0.9, name: 'a' },
@@ -153,15 +138,10 @@ describe('Normalized late interaction blending', () => {
 
     const { results: output } = await runPostRetrieval(s, results);
 
-    // Base ranking preserved: a > b > c
-    expect(output[0].id).toBe('a');
-    expect(output[1].id).toBe('b');
-    expect(output[2].id).toBe('c');
-    // All shifted by constant alpha*0.5, scaled by (1-alpha)
-    // normBase: [1.0, 0.5, 0.0], normLI: [0.5, 0.5, 0.5]
-    expect(output[0].score).toBeCloseTo(0.3 * 0.5 + 0.7 * 1.0, 5); // 0.85
-    expect(output[1].score).toBeCloseTo(0.3 * 0.5 + 0.7 * 0.5, 5); // 0.50
-    expect(output[2].score).toBeCloseTo(0.3 * 0.5 + 0.7 * 0.0, 5); // 0.15
+    // All scores equal (pure reranker, all LI scores = 0.5)
+    for (const r of output) {
+      expect(r.score).toBeCloseTo(0.5, 5);
+    }
   });
 
   it('preserves LI ordering when base is uniform', async () => {
@@ -189,15 +169,14 @@ describe('Normalized late interaction blending', () => {
   // Single candidate
   // ---------------------------------------------------------------------------
 
-  it('single candidate gets score 0.5', async () => {
-    // With 1 candidate, both sides normalize to 0.5
+  it('single candidate gets raw MaxSim score', async () => {
     const s = await createSearcherWithLIScores({ a: 0.65 });
     const results = [{ id: 'a', score: 0.8, name: 'a' }];
 
     const { results: output } = await runPostRetrieval(s, results);
 
-    // 0.3 * 0.5 + 0.7 * 0.5 = 0.5
-    expect(output[0].score).toBeCloseTo(0.5, 5);
+    // Pure reranker: score = lateInteractionScore
+    expect(output[0].score).toBeCloseTo(0.65, 5);
   });
 
   // ---------------------------------------------------------------------------
@@ -234,7 +213,7 @@ describe('Normalized late interaction blending', () => {
   // Stats include normalization ranges
   // ---------------------------------------------------------------------------
 
-  it('stats include baseScoreRange and liScoreRange', async () => {
+  it('stats include mode pure-reranker', async () => {
     const s = await createSearcherWithLIScores(
       { a: 0.4, b: 0.7, c: 0.9 }
     );
@@ -246,22 +225,18 @@ describe('Normalized late interaction blending', () => {
 
     const { stats } = await runPostRetrieval(s, results);
 
-    expect(stats.lateInteraction.baseScoreRange).toBeDefined();
-    expect(stats.lateInteraction.liScoreRange).toBeDefined();
-    expect(stats.lateInteraction.baseScoreRange[0]).toBeCloseTo(0.3, 5);
-    expect(stats.lateInteraction.baseScoreRange[1]).toBeCloseTo(0.8, 5);
-    expect(stats.lateInteraction.liScoreRange[0]).toBeCloseTo(0.4, 5);
-    expect(stats.lateInteraction.liScoreRange[1]).toBeCloseTo(0.9, 5);
+    expect(stats.lateInteraction.mode).toBe('pure-reranker');
+    expect(stats.lateInteraction.candidates).toBe(3);
+    expect(stats.lateInteraction.queryTokens).toBe(2);
   });
 
   // ---------------------------------------------------------------------------
   // Alpha controls actual influence after normalization
   // ---------------------------------------------------------------------------
 
-  it('alpha=0 means base score fully determines ranking', async () => {
+  it('pure reranker: MaxSim always determines ranking (blend weight ignored)', async () => {
     const s = await createSearcherWithLIScores(
       { a: 0.9, b: 0.1 }, // LI strongly favors a
-      { lateInteractionBlendWeight: 0.0 }
     );
     const results = [
       { id: 'a', score: 0.3, name: 'a' }, // low base
@@ -270,44 +245,23 @@ describe('Normalized late interaction blending', () => {
 
     const { results: output } = await runPostRetrieval(s, results);
 
-    // alpha=0: blend = 0*normLI + 1*normBase → pure base ranking
-    expect(output[0].id).toBe('b');
-    expect(output[1].id).toBe('a');
-  });
-
-  it('alpha=1 means LI score fully determines ranking', async () => {
-    const s = await createSearcherWithLIScores(
-      { a: 0.9, b: 0.1 }, // LI strongly favors a
-      { lateInteractionBlendWeight: 1.0 }
-    );
-    const results = [
-      { id: 'a', score: 0.3, name: 'a' }, // low base
-      { id: 'b', score: 0.8, name: 'b' }, // high base
-    ];
-
-    const { results: output } = await runPostRetrieval(s, results);
-
-    // alpha=1: blend = 1*normLI + 0*normBase → pure LI ranking
+    // Pure reranker: LI determines ranking regardless of base scores
     expect(output[0].id).toBe('a');
+    expect(output[0].score).toBeCloseTo(0.9, 5);
     expect(output[1].id).toBe('b');
+    expect(output[1].score).toBeCloseTo(0.1, 5);
   });
 
   // ---------------------------------------------------------------------------
   // Ranking reversal example from the plan
   // ---------------------------------------------------------------------------
 
-  it('normalization can cause ranking reversal (intended behavior)', async () => {
-    // Worked example from SCORE_NORMALIZATION.md
-    // base: A=0.75, B=0.70, C=0.65 → normBase: [1.0, 0.5, 0.0]
-    // LI:   A=0.50, B=0.70, C=0.55 → normLI:  [0.0, 1.0, 0.25]
-    // blend (α=0.3):
-    //   A = 0.3*0.0 + 0.7*1.0 = 0.700
-    //   B = 0.3*1.0 + 0.7*0.5 = 0.650
-    //   C = 0.3*0.25 + 0.7*0.0 = 0.075
-    // Norm order: A, B, C — differs from raw blend order (B, A, C)
+  it('pure reranker: MaxSim reverses base ordering when LI disagrees', async () => {
+    // Base: A=0.75, B=0.70, C=0.65 (A is best)
+    // LI:   A=0.50, B=0.70, C=0.55 (B is best)
+    // Pure reranker → B, C, A (LI ordering)
     const s = await createSearcherWithLIScores(
       { A: 0.50, B: 0.70, C: 0.55 },
-      { lateInteractionBlendWeight: 0.3 }
     );
     const results = [
       { id: 'A', score: 0.75, name: 'A' },
@@ -317,12 +271,12 @@ describe('Normalized late interaction blending', () => {
 
     const { results: output } = await runPostRetrieval(s, results);
 
-    expect(output[0].id).toBe('A');
-    expect(output[1].id).toBe('B');
-    expect(output[2].id).toBe('C');
-    expect(output[0].score).toBeCloseTo(0.700, 3);
-    expect(output[1].score).toBeCloseTo(0.650, 3);
-    expect(output[2].score).toBeCloseTo(0.075, 3);
+    expect(output[0].id).toBe('B');
+    expect(output[0].score).toBeCloseTo(0.70, 3);
+    expect(output[1].id).toBe('C');
+    expect(output[1].score).toBeCloseTo(0.55, 3);
+    expect(output[2].id).toBe('A');
+    expect(output[2].score).toBeCloseTo(0.50, 3);
   });
 
   // ---------------------------------------------------------------------------
@@ -351,11 +305,10 @@ describe('Normalized late interaction blending', () => {
   // Sorted output
   // ---------------------------------------------------------------------------
 
-  it('results are sorted by blended score descending', async () => {
-    // Set up so LI reverses the base order
+  it('results are sorted by MaxSim score descending (pure reranker)', async () => {
+    // Pure reranker: score = lateInteractionScore, so LI reverses the base order
     const s = await createSearcherWithLIScores(
       { a: 0.2, b: 0.5, c: 0.9 },
-      { lateInteractionBlendWeight: 0.7 } // high alpha → LI dominates
     );
     const results = [
       { id: 'a', score: 0.9, name: 'a' },
@@ -365,10 +318,13 @@ describe('Normalized late interaction blending', () => {
 
     const { results: output } = await runPostRetrieval(s, results);
 
-    // Verify sorted descending
+    // Verify sorted descending by MaxSim score
     for (let i = 0; i < output.length - 1; i++) {
       expect(output[i].score).toBeGreaterThanOrEqual(output[i + 1].score);
     }
+    // c should be first (LI=0.9), b second (LI=0.5), a last (LI=0.2)
+    expect(output[0].id).toBe('c');
+    expect(output[2].id).toBe('a');
   });
 
   // ---------------------------------------------------------------------------
@@ -376,12 +332,11 @@ describe('Normalized late interaction blending', () => {
   // ---------------------------------------------------------------------------
 
   it('guards against undefined and non-finite scores (NaN isolation)', async () => {
-    // If scoreWithLateInteraction or base scores contain undefined/NaN/Infinity,
-    // finite fallback guards prevent poisoning all normalized values.
+    // Pure reranker: non-finite LI scores fall back to base score.
+    // Non-finite base scores fall back to 0.
     const s = await createMockSearcher({
       hasLateInteractionIndex: true,
       useLateInteraction: true,
-      lateInteractionBlendWeight: 0.3,
       stage3Candidates: 20,
       hasGraphIndex: false,
       enableTranslationFallback: false,
@@ -399,9 +354,9 @@ describe('Normalized late interaction blending', () => {
       },
     });
     const results = [
-      { id: 'a', score: Number.NaN, name: 'a' }, // non-finite base
-      { id: 'b', score: 0.6, name: 'b' }, // undefined LI
-      { id: 'c', score: 0.4, name: 'c' }, // finite baseline
+      { id: 'a', score: Number.NaN, name: 'a' }, // non-finite base + non-finite LI → 0
+      { id: 'b', score: 0.6, name: 'b' }, // undefined LI → falls back to base 0.6
+      { id: 'c', score: 0.4, name: 'c' }, // finite LI 0.7
     ];
 
     const { results: output } = await runPostRetrieval(s, results, {});
@@ -410,8 +365,6 @@ describe('Normalized late interaction blending', () => {
     for (const r of output) {
       expect(Number.isFinite(r.score)).toBe(true);
       expect(r.score).not.toBeNaN();
-      expect(r.score).toBeGreaterThanOrEqual(0);
-      expect(r.score).toBeLessThanOrEqual(1);
     }
   });
 

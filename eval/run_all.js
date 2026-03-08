@@ -59,6 +59,7 @@ function parseArgs() {
     regressionCheck: false,
     saveBaseline: false,
     regressionThreshold: -0.02,
+    expand: true,
   };
   for (const arg of args) {
     if (arg.startsWith('--benchmarks=')) opts.benchmarks = arg.split('=')[1];
@@ -81,6 +82,7 @@ function parseArgs() {
     else if (arg === '--regression-check') opts.regressionCheck = true;
     else if (arg === '--save-baseline') opts.saveBaseline = true;
     else if (arg.startsWith('--regression-threshold=')) opts.regressionThreshold = parseFloat(arg.split('=')[1]);
+    else if (arg === '--no-expand') opts.expand = false;
   }
   return opts;
 }
@@ -133,6 +135,7 @@ Options:
   --regression-check  Compare results against baseline after each benchmark (exit 1 if regression)
   --save-baseline     Save current run as the new baseline for future comparisons
   --regression-threshold=N  Max allowed regression (default: -0.02 = 2%)
+  --no-expand         Disable graph expansion during search
   --help, -h          Show help`);
 }
 
@@ -214,6 +217,7 @@ async function runBenchmark(benchmark, opts, profileOpts) {
         lateInteractionModel: profileOpts.lateInteractionModel,
         sqliteFastMode: profileOpts.sqliteFast,
         requireNativeAnn: profileOpts.requireNativeAnn,
+        verbose: opts.verbose,
       });
     } catch (err) {
       console.error(`  Indexing failed: ${err.message}`);
@@ -245,7 +249,7 @@ async function runBenchmark(benchmark, opts, profileOpts) {
       try {
         const cleaned = benchmark.cleanQuery(queryObj.query) || queryObj.query;
         const { results, latencyMs, mode } = await runQuery(search, cleaned, {
-          k: opts.k, mode: opts.mode,
+          k: opts.k, mode: opts.mode, expand: opts.expand,
         });
         const evaluated = evaluateQuery(queryObj, results, docIdToFile);
         evaluated.latencyMs = latencyMs;
@@ -361,7 +365,7 @@ async function main() {
   console.log(`  Skip index:  ${opts.skipIndex}`);
   const profileOpts = resolveProfile(opts);
   console.log(`  Profile:     ${opts.profile} (late-interaction build: ${profileOpts.buildLateInteraction}, query: ${profileOpts.useLateInteraction}, model: ${profileOpts.lateInteractionModel || 'default'})`);
-  console.log(`  Index mode:  ${profileOpts.indexMode}  |  SQLite fast: ${profileOpts.sqliteFast}`);
+  console.log(`  Index mode:  ${profileOpts.indexMode}  |  SQLite fast: ${profileOpts.sqliteFast}  |  Expand: ${opts.expand}`);
   if (opts.regressionCheck) console.log(`  Regression:  check enabled (threshold: ${opts.regressionThreshold})`);
   if (opts.saveBaseline) console.log(`  Baseline:    will save after each benchmark`);
 
