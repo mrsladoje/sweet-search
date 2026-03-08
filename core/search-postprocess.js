@@ -256,27 +256,18 @@ export async function applyPostRetrieval(results, query, options, searchContext)
         const { encodeQuery } = await import('./late-interaction-model.js');
         const queryTokens = await encodeQuery(query);
 
-        let baseScoreRange = null;
-        let liScoreRange = null;
-
         if (queryTokens && queryTokens.length > 0) {
           const scored = await this.lateInteractionIndex.scoreWithLateInteraction(queryTokens, topCandidates);
 
-          const finiteScore = (v) => Number.isFinite(v) ? v : 0;
-          const baseScoresRaw = scored.map(c => finiteScore(c.score ?? c.int8Score ?? 0));
-          const liScoresRaw = scored.map(c => finiteScore(c.lateInteractionScore ?? 0));
-          const normBase = minMaxNormalize(baseScoresRaw);
-          const normLI = minMaxNormalize(liScoresRaw);
-          const alpha = this.lateInteractionBlendWeight;
-
-          for (let i = 0; i < scored.length; i++) {
-            const candidate = scored[i];
-            candidate.preLateInteractionScore = baseScoresRaw[i];
-            candidate.score = alpha * normLI[i] + (1 - alpha) * normBase[i];
+          // Pure reranker: sort by MaxSim score directly.
+          // Previous alpha-blend (alpha * normLI + (1-alpha) * normBase) was fragile —
+          // static weights caused -8.6pp MRR regression on GenCodeSearchNet.
+          // MaxSim is a stronger signal than Int8 cosine; let it decide ranking.
+          for (const candidate of scored) {
+            candidate.preLateInteractionScore = candidate.score ?? candidate.int8Score ?? 0;
+            const liScore = candidate.lateInteractionScore;
+            candidate.score = (Number.isFinite(liScore) ? liScore : candidate.preLateInteractionScore) || 0;
           }
-
-          baseScoreRange = [Math.min(...baseScoresRaw), Math.max(...baseScoresRaw)];
-          liScoreRange = [Math.min(...liScoresRaw), Math.max(...liScoresRaw)];
 
           scored.sort((a, b) => b.score - a.score);
 
@@ -288,12 +279,12 @@ export async function applyPostRetrieval(results, query, options, searchContext)
 
         stats.lateInteraction = {
           position: 'post-expansion',
+          mode: 'pure-reranker',
           latency_us: Math.round((performance.now() - liStart) * 1000),
           candidates: topCandidates.length,
           queryTokens: queryTokens?.length || 0,
-          ...(baseScoreRange && { baseScoreRange, liScoreRange }),
         };
-        this.log(`LateInteraction (post-expansion): ${stats.lateInteraction.latency_us}us for ${topCandidates.length} candidates (${queryTokens?.length || 0} query tokens)`);
+        this.log(`LateInteraction (pure reranker): ${stats.lateInteraction.latency_us}us for ${topCandidates.length} candidates (${queryTokens?.length || 0} query tokens)`);
       } catch (err) {
         this.log(`LateInteraction rerank failed: ${err.message}`);
         stats.lateInteraction = { position: 'post-expansion', error: err.message };

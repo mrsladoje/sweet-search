@@ -154,9 +154,9 @@ describe('cascadedScore', () => {
     expect(crossEncoder.rerankDirect).not.toHaveBeenCalled();
   });
 
-  it('ambiguous scores → CE called on top ceTopK', async () => {
+  it('ambiguous scores → pure reranker, CE NOT called', async () => {
     const candidates = makeCandidates(10);
-    // All scores very close (0.80, 0.79, 0.78 ...) — ambiguous
+    // All scores very close (0.80, 0.79, 0.78 ...) — would be ambiguous under old gate
     const liIndex = makeLiIndex(
       candidates.map(c => c.id),
       candidates.map((_, i) => 0.80 - i * 0.01),
@@ -170,13 +170,17 @@ describe('cascadedScore', () => {
       loadDocumentContent,
     });
 
-    expect(stats.decisive).toBe(false);
-    expect(stats.ceInvoked).toBe(true);
-    expect(stats.ceCandidates).toBe(5); // ceTopK = 5, no unscored
-    expect(crossEncoder.rerankDirect).toHaveBeenCalledOnce();
+    // Pure reranker: always decisive, no CE
+    expect(stats.decisive).toBe(true);
+    expect(stats.gateReason).toBe('pure_reranker');
+    expect(stats.ceInvoked).toBe(false);
+    expect(crossEncoder.rerankDirect).not.toHaveBeenCalled();
+    // Results sorted by MaxSim score
+    expect(results[0].score).toBeCloseTo(0.80, 5);
+    expect(results[9].score).toBeCloseTo(0.71, 5);
   });
 
-  it('tight cluster → CE CALLED (model cannot discriminate)', async () => {
+  it('tight cluster → pure reranker, CE NOT called', async () => {
     const candidates = makeCandidates(4);
     // All within 0.02 spread — tight cluster
     const liIndex = makeLiIndex(
@@ -191,19 +195,21 @@ describe('cascadedScore', () => {
       loadDocumentContent,
     });
 
-    expect(stats.decisive).toBe(false);
-    expect(stats.ceInvoked).toBe(true);
+    // Pure reranker: always decisive, no CE even for tight clusters
+    expect(stats.decisive).toBe(true);
+    expect(stats.gateReason).toBe('pure_reranker');
+    expect(stats.ceInvoked).toBe(false);
   });
 
-  it('mixed candidates (some with tokens, some without) → unscored always go to CE', async () => {
+  it('mixed candidates (some with tokens, some without) → scored first, unscored at bottom', async () => {
     const candidates = makeCandidates(6);
     // Only first 3 have tokens — rest are "expanded" without LI vectors
     const liIndex = makeLiIndex(
       ['chunk_0', 'chunk_1', 'chunk_2'],
-      [0.95, 0.5, 0.4], // Decisive gap for scored ones
+      [0.95, 0.5, 0.4],
     );
 
-    const { stats } = await cascadedScore('query', candidates, {
+    const { results, stats } = await cascadedScore('query', candidates, {
       lateInteractionIndex: liIndex,
       crossEncoder,
       ceTopK: 3,
@@ -211,11 +217,14 @@ describe('cascadedScore', () => {
       loadDocumentContent,
     });
 
-    // Even though scored candidates have decisive gap, unscored candidates exist → CE runs
-    expect(stats.ceInvoked).toBe(true);
+    // Pure reranker: no CE, scored candidates first, unscored at bottom
+    expect(stats.ceInvoked).toBe(false);
     expect(stats.withoutTokens).toBe(3);
-    // CE gets ceTopK from scored + ALL unscored = 3 + 3 = 6
-    expect(stats.ceCandidates).toBe(6);
+    expect(stats.gateReason).toBe('pure_reranker');
+    // First 3 results are scored by MaxSim
+    expect(results[0].score).toBeCloseTo(0.95, 5);
+    // Last 3 are unscored (keep original base scores)
+    expect(results.slice(3).every(r => r.preLateInteractionScore === undefined)).toBe(true);
   });
 
   it('no LI tokens on any candidate → all sent to CE', async () => {
@@ -250,11 +259,11 @@ describe('cascadedScore', () => {
     expect(stats.ceCandidates).toBe(5);
   });
 
-  it('cross-encoder failure → falls back to MaxSim order, no crash', async () => {
+  it('cross-encoder failure with forceFullCrossEncoder → falls back to MaxSim order', async () => {
     const candidates = makeCandidates(5);
     const liIndex = makeLiIndex(
       candidates.map(c => c.id),
-      candidates.map((_, i) => 0.80 - i * 0.01), // ambiguous
+      candidates.map((_, i) => 0.80 - i * 0.01),
     );
 
     const failingCE = {
@@ -265,6 +274,7 @@ describe('cascadedScore', () => {
       lateInteractionIndex: liIndex,
       crossEncoder: failingCE,
       gateThreshold: 0.12,
+      forceFullCrossEncoder: true, // force CE to exercise the error path
       loadDocumentContent,
     });
 
@@ -272,7 +282,6 @@ describe('cascadedScore', () => {
     expect(results.length).toBe(5);
     expect(stats.ceError).toBe('CE unavailable');
     expect(stats.ceInvoked).toBe(false); // reset to false on CE error
-    expect(results.some(r => Object.hasOwn(r, '_unscored'))).toBe(false);
   });
 
   it('forceFullCrossEncoder bypasses gate', async () => {
@@ -335,15 +344,14 @@ describe('cascadedScore', () => {
     expect(stats.ceInvoked).toBe(true);
   });
 
-  it('CE results are properly merged with non-CE candidates', async () => {
+  it('CE results are properly merged when forceFullCrossEncoder is set', async () => {
     const candidates = makeCandidates(10);
-    // Ambiguous scores — CE will run on top ceTopK
     const liIndex = makeLiIndex(
       candidates.map(c => c.id),
       candidates.map((_, i) => 0.80 - i * 0.01),
     );
 
-    // CE reorders: reverse the top 5
+    // CE reorders: reverse all
     const reverseCE = {
       rerankDirect: vi.fn(async (query, documents, topK) => ({
         results: documents.map((_, i) => ({
@@ -359,7 +367,7 @@ describe('cascadedScore', () => {
       lateInteractionIndex: liIndex,
       crossEncoder: reverseCE,
       ceTopK: 5,
-      gateThreshold: 0.12,
+      forceFullCrossEncoder: true,
       loadDocumentContent,
     });
 
@@ -368,5 +376,28 @@ describe('cascadedScore', () => {
     // CE-scored candidates should come first
     const ceScored = results.filter(r => r.ceScore !== undefined);
     expect(ceScored.length).toBeGreaterThan(0);
+  });
+
+  it('pure reranker: scores are raw MaxSim values', async () => {
+    const candidates = makeCandidates(5);
+    const liIndex = makeLiIndex(
+      candidates.map(c => c.id),
+      [0.85, 0.72, 0.60, 0.45, 0.30],
+    );
+
+    const { results, stats } = await cascadedScore('query', candidates, {
+      lateInteractionIndex: liIndex,
+      crossEncoder,
+      loadDocumentContent,
+    });
+
+    expect(stats.gateReason).toBe('pure_reranker');
+    expect(stats.ceInvoked).toBe(false);
+    // Scores are raw MaxSim values, sorted descending
+    expect(results[0].score).toBeCloseTo(0.85, 5);
+    expect(results[1].score).toBeCloseTo(0.72, 5);
+    expect(results[4].score).toBeCloseTo(0.30, 5);
+    // preLateInteractionScore stores original base score
+    expect(results[0].preLateInteractionScore).toBeDefined();
   });
 });

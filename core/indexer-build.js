@@ -331,9 +331,7 @@ export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, m
     const batchItems = buildInsertItems(batchChunks, batchEmbeddings, modelInfo);
     writeBuffer.push(...batchItems);
 
-    if ((i + batchSize) % 100 === 0 || i + batchSize >= texts.length) {
-      logProgressFn(Math.min(i + batchSize, texts.length), texts.length, 'Embedding');
-    }
+    logProgressFn(Math.min(i + batchSize, texts.length), texts.length, 'Embedding');
   }
 
   // Flush remaining buffered writes

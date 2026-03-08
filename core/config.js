@@ -295,7 +295,7 @@ export const EMBEDDING_CONFIG = {
     enabled: true,
     maxSize: 1000,
     vocabularyPath: DB_PATHS.vocabulary,
-    autoExpand: true,
+    autoExpand: process.env.SWEET_SEARCH_VOCAB_AUTO_EXPAND !== '0',
     expansionThreshold: 3,
   },
 

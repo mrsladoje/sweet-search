@@ -18,6 +18,7 @@ import { spawn } from 'child_process';
  * @param {string|null} [options.lateInteractionModel=null] - Model ID override (e.g. 'lateon-code-edge')
  * @param {boolean} [options.sqliteFastMode=false]
  * @param {boolean} [options.requireNativeAnn=false]
+ * @param {boolean} [options.verbose=false] - Stream indexer output to console in real-time
  * @returns {Promise<{ elapsed: number, indexMode: string, timings: Object }>}
  */
 export async function indexCorpus(corpusDir, projectRoot, options = {}) {
@@ -27,6 +28,7 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
     lateInteractionModel = null,
     sqliteFastMode = false,
     requireNativeAnn = false,
+    verbose = false,
   } = options;
 
   console.log(`\n  Indexing corpus at ${corpusDir} (mode: ${indexMode})...`);
@@ -54,12 +56,15 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
     indexEnv.SWEET_SEARCH_LATE_INTERACTION_MODEL = lateInteractionModel;
   }
 
+  const streamOutput = !!options.verbose;
+
   if (indexMode === 'two-phase') {
     // Phase 1: Code graph only
     const graphStart = Date.now();
-    const graphArgs = ['--graph-only', '--quiet'];
+    const graphArgs = ['--graph-only'];
+    if (!streamOutput) graphArgs.push('--quiet');
     if (requireNativeAnn) graphArgs.push('--require-native-ann');
-    await runIndexerPhase(indexer, graphArgs, corpusDir, indexEnv, 'graph');
+    await runIndexerPhase(indexer, graphArgs, corpusDir, indexEnv, 'graph', { streamOutput });
     graphPhaseMs = Date.now() - graphStart;
 
     // Delete merkle state so vectors phase sees all files as new
@@ -68,19 +73,21 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
 
     // Phase 2: Vectors + HNSW + Late Interaction
     const vectorsStart = Date.now();
-    const vectorArgs = ['--vectors-only', '--quiet'];
+    const vectorArgs = ['--vectors-only'];
+    if (!streamOutput) vectorArgs.push('--quiet');
     if (!buildLateInteraction) vectorArgs.push('--no-late-interaction');
     else if (lateInteractionModel) vectorArgs.push(`--late-interaction-model=${lateInteractionModel}`);
     if (requireNativeAnn) vectorArgs.push('--require-native-ann');
-    await runIndexerPhase(indexer, vectorArgs, corpusDir, indexEnv, 'vectors');
+    await runIndexerPhase(indexer, vectorArgs, corpusDir, indexEnv, 'vectors', { streamOutput });
     vectorsPhaseMs = Date.now() - vectorsStart;
   } else {
     // Single-pass mode: one indexer invocation handles everything
-    const args = ['--quiet'];
+    const args = [];
+    if (!streamOutput) args.push('--quiet');
     if (!buildLateInteraction) args.push('--no-late-interaction');
     else if (lateInteractionModel) args.push(`--late-interaction-model=${lateInteractionModel}`);
     if (requireNativeAnn) args.push('--require-native-ann');
-    await runIndexerPhase(indexer, args, corpusDir, indexEnv, 'index');
+    await runIndexerPhase(indexer, args, corpusDir, indexEnv, 'index', { streamOutput });
   }
 
   const totalMs = Date.now() - start;
@@ -134,26 +141,34 @@ export async function initSearch(corpusDir, projectRoot, options = {}) {
   return search;
 }
 
-function runIndexerPhase(indexer, args, corpusDir, env, phaseName) {
+function runIndexerPhase(indexer, args, corpusDir, env, phaseName, { streamOutput = false } = {}) {
   return new Promise((resolve, reject) => {
+    const stdio = streamOutput
+      ? ['pipe', 'inherit', 'inherit']   // Stream stdout+stderr to console in real-time
+      : ['pipe', 'pipe', 'pipe'];
+
     const child = spawn('node', [indexer, ...args], {
       cwd: corpusDir,
       env,
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio,
     });
 
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (data) => { stdout += data.toString(); });
-    child.stderr.on('data', (data) => { stderr += data.toString(); });
+    if (!streamOutput) {
+      child.stdout.on('data', (data) => { stdout += data.toString(); });
+      child.stderr.on('data', (data) => { stderr += data.toString(); });
+    }
 
     child.on('close', (code) => {
       if (code === 0) {
         resolve({ stdout, stderr });
       } else {
         console.error(`  Indexer ${phaseName} failed (exit code ${code})`);
-        console.error(`  stdout: ${stdout.slice(-500)}`);
-        console.error(`  stderr: ${stderr.slice(-500)}`);
+        if (!streamOutput) {
+          console.error(`  stdout: ${stdout.slice(-500)}`);
+          console.error(`  stderr: ${stderr.slice(-500)}`);
+        }
         reject(new Error(`Indexer ${phaseName} exited with code ${code}: ${stderr.slice(-200)}`));
       }
     });

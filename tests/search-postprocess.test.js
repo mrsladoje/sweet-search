@@ -109,12 +109,9 @@ describe('Late interaction post-expansion reranking', () => {
     expect(searcher.lateInteractionIndex.scoreWithLateInteraction).toHaveBeenCalledOnce();
   });
 
-  it('blends late interaction score with base score using normalized scores', async () => {
+  it('uses pure MaxSim reranking (no alpha-blend)', async () => {
     // 2 candidates: base=[0.8, 0.6], LI=[0.9, 0.8] (from mock: 0.9 - i*0.1)
-    // normBase = [(0.8-0.6)/0.2, (0.6-0.6)/0.2] = [1.0, 0.0]
-    // normLI   = [(0.9-0.8)/0.1, (0.8-0.8)/0.1] = [1.0, 0.0]
-    // blended[0] = 0.3*1.0 + 0.7*1.0 = 1.0
-    // blended[1] = 0.3*0.0 + 0.7*0.0 = 0.0
+    // Pure reranker: score = lateInteractionScore directly
     const results = [
       { id: 'a', score: 0.8, name: 'a' },
       { id: 'b', score: 0.6, name: 'b' },
@@ -123,9 +120,9 @@ describe('Late interaction post-expansion reranking', () => {
     const { results: output } = await runPostRetrieval(results);
 
     expect(output[0].preLateInteractionScore).toBe(0.8);
-    expect(output[0].score).toBeCloseTo(1.0, 5);
+    expect(output[0].score).toBeCloseTo(0.9, 5); // raw MaxSim score
     expect(output[1].preLateInteractionScore).toBe(0.6);
-    expect(output[1].score).toBeCloseTo(0.0, 5);
+    expect(output[1].score).toBeCloseTo(0.8, 5); // raw MaxSim score
   });
 
   it('skips late interaction when useLateInteraction=false in options', async () => {
