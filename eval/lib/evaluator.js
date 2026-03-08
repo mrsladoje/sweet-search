@@ -15,10 +15,10 @@ import path from 'path';
  * @returns {{ results: Array, latencyMs: number, mode: string }}
  */
 export async function runQuery(search, query, options = {}) {
-  const { k = 20, mode = 'auto' } = options;
+  const { k = 20, mode = 'auto', expand = true } = options;
 
   const start = performance.now();
-  const { results, stats } = await search.search(query, { k, mode, rerank: true });
+  const { results, stats } = await search.search(query, { k, mode, rerank: true, expand });
   const latencyMs = performance.now() - start;
 
   return {

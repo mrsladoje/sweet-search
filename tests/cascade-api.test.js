@@ -91,7 +91,7 @@ describe('SweetSearch cascade project config', () => {
       expect(searcher.cascadeEnabled).toBe(true);
       searcher.close();
     } finally {
-      process.env.SWEET_SEARCH_CASCADE_ENABLED = prevEnabled;
+      if (prevEnabled !== undefined) process.env.SWEET_SEARCH_CASCADE_ENABLED = prevEnabled;
     }
   });
 

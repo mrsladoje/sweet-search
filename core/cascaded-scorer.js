@@ -153,37 +153,32 @@ export async function cascadedScore(query, candidates, options = {}) {
     }
   }
 
-  // Step 4: Confidence gate on MaxSim scores
-  const maxSimScores = scoredWithTokens.map(c => c.lateInteractionScore ?? 0);
-  const gateResult = isDecisive(maxSimScores, gateThreshold);
-  stats.decisive = gateResult.decisive;
-  stats.gateReason = gateResult.reason;
+  // Step 4: Pure MaxSim reranking — set score = lateInteractionScore.
+  // Previous approach used confidence gate + conditional CE, but the gate almost
+  // never fired decisive and CE on only 8 candidates hurt MRR by -8.6pp.
+  // MaxSim from LateOn-Code (149M ModernBERT) is a strong enough signal to
+  // rerank directly without blending or CE overhead.
+  for (const c of scoredWithTokens) {
+    c.preLateInteractionScore = c.score ?? c.int8Score ?? 0;
+    const liScore = c.lateInteractionScore;
+    c.score = Number.isFinite(liScore) ? liScore : (c.preLateInteractionScore || 0);
+  }
+  scoredWithTokens.sort((a, b) => b.score - a.score);
 
-  // Step 5: Merge scored + unscored
-  // Unscored go at bottom with a sentinel score lower than any real MaxSim score
-  const unscoredWithSentinel = withoutTokens.map(c => ({
-    ...c,
-    lateInteractionScore: -Infinity,
-    _unscored: true,
-  }));
-  const allRanked = [...scoredWithTokens, ...unscoredWithSentinel];
+  // Unscored candidates keep their base scores and sort below scored ones
+  const allRanked = [...scoredWithTokens, ...withoutTokens];
 
-  // Step 6: If decisive AND no unscored AND not forcing CE → done
-  if (gateResult.decisive && withoutTokens.length === 0 && !forceFullCrossEncoder) {
-    return { results: allRanked, stats };
+  stats.decisive = true;
+  stats.gateReason = 'pure_reranker';
+
+  // forceFullCrossEncoder: opt-in CE for benchmarking comparison
+  if (forceFullCrossEncoder) {
+    return runCrossEncoder(query, allRanked, allRanked, stats, {
+      crossEncoder, ceTopK: allRanked.length, loadDocumentContent, forceFullCrossEncoder,
+    });
   }
 
-  // Step 7: CE needed — select candidates
-  // forceFullCrossEncoder → ALL scored go to CE (no ceTopK limit)
-  // normal → top ceTopK from scored + ALL unscored
-  const ceCandidatesFromScored = forceFullCrossEncoder
-    ? scoredWithTokens
-    : scoredWithTokens.slice(0, ceTopK);
-  const ceCandidates = [...ceCandidatesFromScored, ...withoutTokens];
-
-  return runCrossEncoder(query, allRanked, ceCandidates, stats, {
-    crossEncoder, ceTopK, loadDocumentContent, forceFullCrossEncoder,
-  });
+  return { results: allRanked, stats };
 }
 
 /**

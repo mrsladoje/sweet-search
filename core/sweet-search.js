@@ -144,6 +144,12 @@ export class SweetSearch {
         await this.lateInteractionIndex.init();
         const stats = this.lateInteractionIndex.getStats();
         this.log(`LateInteraction: Loaded ${stats.documents} documents (${stats.estimatedSizeMB} MB, ${stats.avgTokensPerDoc} avg tokens)`);
+
+        // Preheat LI ONNX inference model (~900ms cold start otherwise).
+        // The index loads token vectors; this loads the query encoder model.
+        const { encodeQuery } = await import('./late-interaction-model.js');
+        await encodeQuery('warmup');
+        this.log('LateInteraction: ONNX model preheated');
       } catch (err) {
         this.log(`LateInteraction: Failed to load: ${err.message}`);
         this.hasLateInteractionIndex = false;

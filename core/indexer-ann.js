@@ -248,9 +248,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
       }
     }
 
-    if ((batchStart + BATCH_SIZE) % (reportInterval * BATCH_SIZE) < BATCH_SIZE || batchEnd === totalChunks) {
-      log(`  LateInteraction: ${batchEnd}/${totalChunks} chunks (${Math.round(batchEnd / totalChunks * 100)}%)`, 'dim');
-    }
+    log(`  LateInteraction: ${batchEnd}/${totalChunks} chunks (${Math.round(batchEnd / totalChunks * 100)}%)`, 'dim');
   }
 
   await liIndex.save();
