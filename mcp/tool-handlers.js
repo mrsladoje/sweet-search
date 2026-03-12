@@ -76,15 +76,16 @@ let _healthDb = null;
 // ---------------------------------------------------------------------------
 
 /**
- * @param {{ query: string, k: number, mode: string }} args
+ * @param {{ query: string, k: number, mode: string, structural?: boolean }} args
  * @param {{ getSearcher: () => Promise<object> }} deps
  */
-export async function handleSearch({ query, k, mode }, { getSearcher }) {
+export async function handleSearch({ query, k, mode, structural }, { getSearcher }) {
   try {
     const searcher = await getSearcher();
+    const searchMode = structural ? 'structural' : mode;
     const { results, stats } = await searcher.search(query, {
       k,
-      mode,
+      mode: searchMode,
       expand: true,
       rerank: true,
     });

@@ -56,34 +56,6 @@ function loadWasm() {
 }
 
 // =============================================================================
-// STRUCTURAL PATTERNS (kept for 100% accuracy on graph queries)
-// =============================================================================
-// These regex patterns catch structural queries that the ML model might miss.
-// They're fast (~1μs) and provide guaranteed accuracy for graph operations.
-
-const STRUCTURAL_PATTERNS = {
-  callers: /\b(?:(?:what|who|show|find|list)\s+(?:calls?|callers?|calling|invokes?|references?|uses)\s+(?:of\s+|to\s+)?|callers?\s+of\s+|what\s+uses\s+|usages?\s+of\s+|references?\s+to\s+)(\w+)/i,
-  whereIsCalled: /\bwhere\s+is\s+(\w+)\s+called\b/i,
-  calleesWhatDoes: /\bwhat\s+does\s+(\w+)\s+(?:call|invoke|use|depend\s+on|import)\b/i,
-  calleesOf: /\b(?:callees?\s+of|dependencies\s+of|(?:methods?|functions?)\s+called\s+by)\s+(\w+)/i,
-  implementations: /\b(?:(?:implementations?|implementers?|implementors?|subclasses?|subtypes?)\s+of|(?:classes?|types?)\s+(?:that\s+)?(?:implementing?|extending?)|(?:who|what)\s+(?:extends?|implements?))\s+(\w+)/i,
-  impact: /\b(?:impact\s+of\s+(?:changing|modifying|refactoring|updating|deleting|removing|renaming|moving)|(?:what\s+)?depends?\s+on|(?:will|what)\s+breaks?\s+if\s+(?:I|we)\s+(?:change|modify|update|delete|remove)|affected\s+by\s+(?:changes?\s+to|modifying)?|(?:downstream|ripple)\s+effects?\s+of|what\s+needs?\s+to\s+change\s+if\s+(?:I|we)\s+(?:refactor|modify))\s+(\w+)/i,
-  definition: /\b(?:definition|declaration)\s+of\s+(\w+)/i,
-  hierarchy: /\b(?:call\s+)?hierarchy\s+(?:of|for)\s+(\w+)/i,
-};
-
-/**
- * Extract entity from structural pattern match.
- */
-function extractEntity(match) {
-  if (!match) return null;
-  for (let i = match.length - 1; i >= 1; i--) {
-    if (match[i] !== undefined) return match[i];
-  }
-  return null;
-}
-
-// =============================================================================
 // QUERY ROUTER CLASS
 // =============================================================================
 
@@ -109,12 +81,13 @@ export class QueryRouter {
    *
    * Pipeline:
    *   1. Input validation - Handles null, undefined, empty, too-long queries
-   *   2. Structural patterns (regex, ~1μs) - 100% accuracy for graph queries
-   *   3. File path check (~0.1μs) - Fast path for file extensions
-   *   4. WASM CatBoost ML (~10μs) - Main routing logic
+   *   2. File path check (~0.1μs) - Fast path for file extensions
+   *   3. WASM CatBoost ML (~10μs) - 3-class routing (lexical/semantic/hybrid)
+   *
+   * Structural mode is opt-in only (explicit --structural flag).
    *
    * @param {string} query - The search query
-   * @returns {{mode: string, confidence: number, entity?: string, structuralType?: string, method: string, routingLatency_us: number}}
+   * @returns {{mode: string, confidence: number, method: string, routingLatency_us: number}}
    */
   route(query) {
     const start = performance.now();
@@ -152,30 +125,6 @@ export class QueryRouter {
         method: 'empty_query',
         routingLatency_us: Math.round((performance.now() - start) * 1000),
       };
-    }
-
-    // === STRUCTURAL PATTERNS (regex, ~1μs) ===
-    // These have 100% accuracy and are fast, so check first
-    for (const [type, pattern] of Object.entries(STRUCTURAL_PATTERNS)) {
-      const match = trimmed.match(pattern);
-      if (match) {
-        const entity = extractEntity(match);
-        if (entity) {
-          // Normalize type names
-          let structuralType = type;
-          if (type.startsWith('callees')) structuralType = 'callees';
-          if (type === 'whereIsCalled') structuralType = 'callers';
-
-          return {
-            mode: 'structural',
-            confidence: 0.95,
-            structuralType,
-            targetEntity: entity,
-            method: 'pattern',
-            routingLatency_us: Math.round((performance.now() - start) * 1000),
-          };
-        }
-      }
     }
 
     // === FILE PATH CHECK (~0.1μs) ===

@@ -21,7 +21,7 @@ from catboost import CatBoostClassifier
 
 # Label mapping (matches train_catboost.py LABEL_TO_INDEX)
 # When model stores integer indices, map back to these strings
-LABELS = ['LEXICAL', 'SEMANTIC', 'STRUCTURAL', 'HYBRID']
+LABELS = ['LEXICAL', 'SEMANTIC', 'HYBRID']
 
 FEATURE_NAMES = [
     # Base features (0-14)
@@ -121,7 +121,7 @@ def generate_js_from_model(model: CatBoostClassifier) -> str:
         ' */',
         'function routeQueryCatBoost(features) {',
         '  // Accumulate scores across all trees',
-        f'  const scores = [0, 0, 0, 0];  // {", ".join(labels)}',
+        f'  const scores = new Array({num_classes}).fill(0);  // {", ".join(labels)}',
         '',
     ]
 
@@ -162,8 +162,8 @@ def generate_js_from_model(model: CatBoostClassifier) -> str:
             start_idx = leaf_idx * num_classes
             values = leaf_values[start_idx:start_idx + num_classes]
             if len(values) == num_classes:
-                values_str = ', '.join(f'{v:.6f}' for v in values)
-                lines.append(f'      case {leaf_idx}: scores[0] += {values[0]:.6f}; scores[1] += {values[1]:.6f}; scores[2] += {values[2]:.6f}; scores[3] += {values[3]:.6f}; break;')
+                score_updates = '; '.join(f'scores[{i}] += {values[i]:.6f}' for i in range(num_classes))
+                lines.append(f'      case {leaf_idx}: {score_updates}; break;')
 
         lines.append('    }')
         lines.append('  }')
@@ -174,7 +174,7 @@ def generate_js_from_model(model: CatBoostClassifier) -> str:
         '  // Find winning class',
         '  let maxIdx = 0;',
         '  let maxScore = scores[0];',
-        '  for (let i = 1; i < 4; i++) {',
+        f'  for (let i = 1; i < {num_classes}; i++) {{',
         '    if (scores[i] > maxScore) {',
         '      maxScore = scores[i];',
         '      maxIdx = i;',

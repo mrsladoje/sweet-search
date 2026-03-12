@@ -5,14 +5,14 @@
  * Each tree has:
  * - 4 split features (indices)
  * - 4 split thresholds (f32)
- * - 16 leaf values × 4 classes = 64 f32 values
+ * - 16 leaf values × 3 classes = 48 f32 values
  *
  * Output: Rust source with static tree data arrays
  */
 
 import fs from 'fs';
 
-const jsFile = process.argv[2] || '../training/output/v45_router_d4.js';
+const jsFile = process.argv[2] || '../training/output/v46_router_d4.js';
 const content = fs.readFileSync(jsFile, 'utf8');
 
 // Parse trees
@@ -24,17 +24,16 @@ while ((match = treeRegex.exec(content)) !== null) {
   const [, treeNum, f0, t0, f1, t1, f2, t2, f3, t3, switchBody] = match;
 
   // Parse leaf values from switch cases
-  const leafValues = new Array(16).fill(null).map(() => [0, 0, 0, 0]);
-  const caseRegex = /case (\d+): scores\[0\] \+= ([\d.e+-]+); scores\[1\] \+= ([\d.e+-]+); scores\[2\] \+= ([\d.e+-]+); scores\[3\] \+= ([\d.e+-]+);/g;
+  const leafValues = new Array(16).fill(null).map(() => [0, 0, 0]);
+  const caseRegex = /case (\d+): scores\[0\] \+= ([\d.e+-]+); scores\[1\] \+= ([\d.e+-]+); scores\[2\] \+= ([\d.e+-]+);/g;
 
   let caseMatch;
   while ((caseMatch = caseRegex.exec(switchBody)) !== null) {
-    const [, caseNum, s0, s1, s2, s3] = caseMatch;
+    const [, caseNum, s0, s1, s2] = caseMatch;
     leafValues[parseInt(caseNum)] = [
       parseFloat(s0),
       parseFloat(s1),
       parseFloat(s2),
-      parseFloat(s3),
     ];
   }
 
@@ -51,13 +50,13 @@ console.error(`Parsed ${trees.length} trees`);
 let rust = `//! CatBoost Decision Trees - Auto-generated
 //!
 //! Trees: ${trees.length}
-//! Classes: 4 (LEXICAL, SEMANTIC, STRUCTURAL, HYBRID)
+//! Classes: 3 (LEXICAL, SEMANTIC, HYBRID)
 //! Depth: 4 (16 leaves per tree)
 //!
 //! Data format:
 //! - SPLIT_FEATURES: [tree_idx * 4 + bit] -> feature index
 //! - SPLIT_THRESHOLDS: [tree_idx * 4 + bit] -> threshold value
-//! - LEAF_VALUES: [tree_idx * 64 + leaf_idx * 4 + class] -> score delta
+//! - LEAF_VALUES: [tree_idx * 48 + leaf_idx * 3 + class] -> score delta
 
 /// Number of trees
 pub const NUM_TREES: usize = ${trees.length};
@@ -84,8 +83,8 @@ for (let i = 0; i < trees.length; i++) {
 }
 rust += `];
 
-/// Leaf values (64 per tree = 16 leaves × 4 classes)
-pub static LEAF_VALUES: [f32; ${trees.length * 64}] = [
+/// Leaf values (48 per tree = 16 leaves × 3 classes)
+pub static LEAF_VALUES: [f32; ${trees.length * 48}] = [
 `;
 
 // Leaf values (compacted)
@@ -101,8 +100,8 @@ rust += `];
 
 /// Route a query using CatBoost model
 /// Returns: (class_index, confidence, [scores])
-pub fn route_catboost(features: &[f32; 50]) -> (usize, f32, [f32; 4]) {
-    let mut scores = [0.0f32; 4];
+pub fn route_catboost(features: &[f32; 50]) -> (usize, f32, [f32; 3]) {
+    let mut scores = [0.0f32; 3];
 
     for tree_idx in 0..NUM_TREES {
         let base = tree_idx * 4;
@@ -115,17 +114,16 @@ pub fn route_catboost(features: &[f32; 50]) -> (usize, f32, [f32; 4]) {
             ((features[SPLIT_FEATURES[base + 3] as usize] > SPLIT_THRESHOLDS[base + 3]) as usize) << 3;
 
         // Add leaf values to scores
-        let leaf_base = tree_idx * 64 + leaf_idx * 4;
+        let leaf_base = tree_idx * 48 + leaf_idx * 3;
         scores[0] += LEAF_VALUES[leaf_base];
         scores[1] += LEAF_VALUES[leaf_base + 1];
         scores[2] += LEAF_VALUES[leaf_base + 2];
-        scores[3] += LEAF_VALUES[leaf_base + 3];
     }
 
     // Find winning class
     let mut max_idx = 0;
     let mut max_score = scores[0];
-    for i in 1..4 {
+    for i in 1..3 {
         if scores[i] > max_score {
             max_score = scores[i];
             max_idx = i;
@@ -133,13 +131,12 @@ pub fn route_catboost(features: &[f32; 50]) -> (usize, f32, [f32; 4]) {
     }
 
     // Calculate confidence via softmax
-    let exp_scores: [f32; 4] = [
+    let exp_scores: [f32; 3] = [
         scores[0].exp(),
         scores[1].exp(),
         scores[2].exp(),
-        scores[3].exp(),
     ];
-    let sum_exp = exp_scores[0] + exp_scores[1] + exp_scores[2] + exp_scores[3];
+    let sum_exp = exp_scores[0] + exp_scores[1] + exp_scores[2];
     let confidence = exp_scores[max_idx] / sum_exp;
 
     (max_idx, confidence, scores)
@@ -158,7 +155,7 @@ mod tests {
     fn test_data_sizes() {
         assert_eq!(SPLIT_FEATURES.len(), NUM_TREES * 4);
         assert_eq!(SPLIT_THRESHOLDS.len(), NUM_TREES * 4);
-        assert_eq!(LEAF_VALUES.len(), NUM_TREES * 64);
+        assert_eq!(LEAF_VALUES.len(), NUM_TREES * 48);
     }
 }
 `;
