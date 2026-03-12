@@ -41,6 +41,46 @@ import * as postprocess from './search-postprocess.js';
 
 export { ROUTE_ALPHAS } from './search-fusion.js';
 
+// =============================================================================
+// STRUCTURAL QUERY PARSING (entity + type extraction for --structural flag)
+// =============================================================================
+
+const STRUCTURAL_PATTERNS = {
+  callers: /\b(?:(?:what|who|show|find|list)\s+(?:calls?|callers?|calling|invokes?|references?|uses)\s+(?:of\s+|to\s+)?|callers?\s+of\s+|what\s+uses\s+|usages?\s+of\s+|references?\s+to\s+)(\w+)/i,
+  callers2: /\bwhere\s+is\s+(\w+)\s+called\b/i,
+  callees: /\bwhat\s+does\s+(\w+)\s+(?:call|invoke|use|depend\s+on|import)\b/i,
+  callees2: /\b(?:callees?\s+of|dependencies\s+of|(?:methods?|functions?)\s+called\s+by)\s+(\w+)/i,
+  implementations: /\b(?:(?:implementations?|implementers?|implementors?|subclasses?|subtypes?)\s+of|(?:classes?|types?)\s+(?:that\s+)?(?:implementing?|extending?)|(?:who|what)\s+(?:extends?|implements?))\s+(\w+)/i,
+  impact: /\b(?:impact\s+of\s+(?:changing|modifying|refactoring|updating|deleting|removing|renaming|moving)|(?:what\s+)?depends?\s+on|(?:will|what)\s+breaks?\s+if\s+(?:I|we)\s+(?:change|modify|update|delete|remove)|affected\s+by\s+(?:changes?\s+to|modifying)?|(?:downstream|ripple)\s+effects?\s+of|what\s+needs?\s+to\s+change\s+if\s+(?:I|we)\s+(?:refactor|modify))\s+(\w+)/i,
+};
+
+/**
+ * Parse a structural query to extract the type and target entity.
+ * Used when structural mode is forced via explicit flag.
+ *
+ * @param {string} query
+ * @returns {{ structuralType: string|null, targetEntity: string|null }}
+ */
+function parseStructuralQuery(query) {
+  for (const [type, pattern] of Object.entries(STRUCTURAL_PATTERNS)) {
+    const match = query.match(pattern);
+    if (match) {
+      // Find last non-undefined capture group
+      let entity = null;
+      for (let i = match.length - 1; i >= 1; i--) {
+        if (match[i] !== undefined) { entity = match[i]; break; }
+      }
+      if (entity) {
+        // Normalize subtypes: callers2→callers, callees2→callees
+        const normalized = type.replace(/\d+$/, '');
+        return { structuralType: normalized, targetEntity: entity };
+      }
+    }
+  }
+  // No pattern matched — caller should fall back to hybrid
+  return { structuralType: null, targetEntity: null };
+}
+
 export class SweetSearch {
   constructor(options = {}) {
     const projectRoot = options.projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
@@ -230,8 +270,8 @@ export class SweetSearch {
       case 'structural':
         results = await this.structuralSearch(query, routing, options);
         stats.path = 'structural';
-        stats.structuralType = routing.structuralType;
-        stats.targetEntity = routing.targetEntity;
+        stats.structuralType = routing?.structuralType;
+        stats.targetEntity = routing?.targetEntity;
         break;
       case 'lexical': {
         const lexResult = await this.lexicalSearch(query, { k, expand });
@@ -291,9 +331,19 @@ export class SweetSearch {
     }
   }
 
-  /** Structural search path (GraphRAG structural queries) */
+  /** Structural search path (GraphRAG structural queries — opt-in via explicit flag) */
   async structuralSearch(query, routing, options = {}) {
-    const { structuralType, targetEntity } = routing;
+    // Extract type+entity from routing (if available) or from query patterns
+    const parsed = routing && routing.structuralType
+      ? routing
+      : parseStructuralQuery(query);
+    const { structuralType, targetEntity } = parsed;
+
+    if (!structuralType || !targetEntity) {
+      this.log('Structural: no pattern match, falling back to hybrid');
+      return this.hybridSearchV2(query, options);
+    }
+
     const start = performance.now();
     let result;
     switch (structuralType) {
@@ -301,7 +351,7 @@ export class SweetSearch {
       case 'callees': result = await this.graphSearch.findCallees(targetEntity); break;
       case 'implementations': result = await this.graphSearch.findImplementations(targetEntity); break;
       case 'impact': result = await this.graphSearch.findImpact(targetEntity); break;
-      default: return [];
+      default: return this.hybridSearchV2(query, options);
     }
     const elapsed = performance.now() - start;
     this.log(`Structural (${structuralType}): ${elapsed.toFixed(1)}ms, ${result.results.length} results`);

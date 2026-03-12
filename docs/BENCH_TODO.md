@@ -1,8 +1,36 @@
 # Benchmark TODO — Post-MaxSim Reranker Investigation
 
-## Current Best: Pure MaxSim Reranker (79.7% MRR)
+## Current Best: 3-Class CatBoost Router + LateOnCode Reranker (80.8% MRR)
 
-LateOn-Code as a full reranker — no blending, no alpha mixing. This is the correct base architecture. Code not yet pushed.
+3-class CatBoost WASM router (LEXICAL/SEMANTIC/HYBRID) + LateOn-Code MaxSim reranker.
+Structural mode is opt-in only via `--structural` flag. No regex auto-detection in router.
+
+### GenCodeSearchNet Results (2026-03-12, 6000 queries, 6 languages)
+
+| Language | MRR@10 | NDCG@10 | Recall@5 | Recall@20 | Success@1 |
+|----------|--------|---------|----------|-----------|-----------|
+| Python | 92.0% | 93.0% | 95.8% | 97.4% | 88.0% |
+| Go | 94.2% | 94.8% | 97.7% | 98.8% | 91.4% |
+| Java | 80.9% | 83.3% | 88.9% | 93.5% | 74.9% |
+| Ruby | 73.7% | 77.0% | 82.8% | 87.8% | 66.5% |
+| PHP | 75.9% | 79.6% | 86.6% | 91.5% | 68.0% |
+| JS | 67.8% | 70.9% | 75.3% | 81.7% | 60.8% |
+| **Overall** | **80.8%** | **83.1%** | **87.9%** | **91.8%** | **75.3%** |
+
+### Delta vs Previous (4-class router, 2026-03-06)
+
+| Language | MRR@10 old | MRR@10 new | Delta |
+|----------|-----------|-----------|-------|
+| Python | 90.5% | 92.0% | **+1.5** |
+| Go | 93.6% | 94.2% | +0.6 |
+| Java | 79.1% | 80.9% | **+1.8** |
+| Ruby | 73.1% | 73.7% | +0.6 |
+| PHP | 76.0% | 75.9% | -0.1 |
+| JS | 66.0% | 67.8% | **+1.8** |
+| **Overall** | **79.7%** | **80.8%** | **+1.1** |
+
+Root cause of improvement: 87 NL queries were misrouted to structural (graph DB → 0 results).
+3-class router eliminates this failure mode entirely.
 
 ## What Could Push Past 79.7%
 
@@ -120,19 +148,16 @@ The recall diagnostic numbers are partially contaminated by the routing bug. Tru
 
 ---
 
-## TODO: Retrain CatBoost Router (HIGH PRIORITY)
+## DONE: Retrain CatBoost Router (2026-03-09)
 
-Retrain the CatBoost model **without the structural class**. The model should only route between:
-- **lexical** — exact identifier/file matches
-- **semantic** — natural language descriptions
-- **hybrid** — mixed queries
+Retrained CatBoost from 4-class → 3-class (LEXICAL/SEMANTIC/HYBRID). Structural removed from ML model.
+Structural mode is opt-in only via `--structural` flag (MCP `structural: true`).
 
-Structural mode should be triggered **explicitly** via `--structural` flag (or MCP parameter).
-No regex fallback, no auto-detection — structural is opt-in only.
-
-Rationale: Sweet Search is used by AI agents, which will know when to use normal search mode
-vs structural graph traversal. The router's only job is lexical/semantic/hybrid classification.
-This eliminates the highest-cost failure mode (0 results from misrouted NL queries).
+- **WASM speed**: p50=2.6us, p95=16.9us, p99=22.4us (well under 1ms)
+- **JS fallback**: ~50us
+- **Model**: 498 trees, depth 4, 196KB WASM binary
+- **Router accuracy**: 95.1% utility on 255-query eval set (English)
+- **Benchmark impact**: +1.1pp MRR@10 overall on GenCodeSearchNet (80.8%)
 
 ---
 

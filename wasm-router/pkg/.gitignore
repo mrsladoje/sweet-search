@@ -1,5 +1,1 @@
-# Keep these production files tracked:
-# - query_router_wasm.js (glue code)
-# - query_router_wasm_bg.wasm (compiled model)
-# - query_router_wasm.d.ts (TypeScript definitions)
-# - package.json (npm metadata)
+*

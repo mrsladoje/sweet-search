@@ -7,8 +7,7 @@
 export enum RouteMode {
   Lexical = 0,
   Semantic = 1,
-  Structural = 2,
-  Hybrid = 3,
+  Hybrid = 2,
 }
 
 export class RouteResult {

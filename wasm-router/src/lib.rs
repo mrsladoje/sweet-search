@@ -26,8 +26,7 @@ pub use catboost_v2::route_catboost_fast as route_catboost;
 pub enum RouteMode {
     Lexical = 0,
     Semantic = 1,
-    Structural = 2,
-    Hybrid = 3,
+    Hybrid = 2,
 }
 
 impl RouteMode {
@@ -35,7 +34,6 @@ impl RouteMode {
         match self {
             RouteMode::Lexical => "lexical",
             RouteMode::Semantic => "semantic",
-            RouteMode::Structural => "structural",
             RouteMode::Hybrid => "hybrid",
         }
     }
@@ -85,25 +83,23 @@ pub fn route_query(query: &str) -> RouteResult {
 }
 
 /// Reject option thresholds (per class)
-const REJECT_THRESHOLDS: [(f32, f32); 4] = [
+const REJECT_THRESHOLDS: [(f32, f32); 3] = [
     (0.92, 0.40),  // LEXICAL: aggressive rejection
     (0.75, 0.25),  // SEMANTIC: moderate
-    (0.60, 0.15),  // STRUCTURAL: conservative
     (0.50, 0.10),  // HYBRID: rarely reject
 ];
 
 /// Apply reject option - fall back to HYBRID when uncertain (zero-allocation)
 #[inline]
-fn apply_reject_option(mode_idx: usize, confidence: f32, scores: &[f32; 4]) -> (RouteMode, bool) {
+fn apply_reject_option(mode_idx: usize, confidence: f32, scores: &[f32; 3]) -> (RouteMode, bool) {
     let mode = match mode_idx {
         0 => RouteMode::Lexical,
         1 => RouteMode::Semantic,
-        2 => RouteMode::Structural,
         _ => RouteMode::Hybrid,
     };
 
     // HYBRID never gets rejected
-    if mode_idx == 3 {
+    if mode_idx == 2 {
         return (mode, false);
     }
 
@@ -127,7 +123,7 @@ fn apply_reject_option(mode_idx: usize, confidence: f32, scores: &[f32; 4]) -> (
 
 /// Find top-2 scores without allocation
 #[inline(always)]
-fn find_top2(scores: &[f32; 4]) -> (f32, f32) {
+fn find_top2(scores: &[f32; 3]) -> (f32, f32) {
     let (mut max, mut second) = if scores[0] > scores[1] {
         (scores[0], scores[1])
     } else {
@@ -167,12 +163,6 @@ mod tests {
     fn test_semantic_routing() {
         let result = route_query("how does authentication work");
         assert_eq!(result.mode, RouteMode::Semantic);
-    }
-
-    #[test]
-    fn test_structural_routing() {
-        let result = route_query("what calls AuthService");
-        assert_eq!(result.mode, RouteMode::Structural);
     }
 
     #[test]
