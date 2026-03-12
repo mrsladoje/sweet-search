@@ -38,7 +38,7 @@
     { "id": "TFB-024", "query": "Mitarbeiter", "language": "de", "tier": "T2", "notes": "German: employee concept", "expected": { "anyOf": [{ "files": ["EmployeeService.java", "Employee.java"], "minMatches": 1 }] } },
 
     { "id": "TFB-025", "query": "AuthenticationService аутентификација", "language": "sr", "tier": "T2", "notes": "Mixed script: English + Serbian", "expectedRoute": "hybrid", "expected": { "anyOf": [{ "files": ["AuthenticationService.java", "AuthController.java"], "minMatches": 1 }] } },
-    { "id": "TFB-026", "query": "шта позива AuthenticationService", "language": "sr", "tier": "T3", "notes": "Serbian structural query - routes STRUCTURAL due to ASCII identifier", "expectedRoute": "structural", "expected": { "contains": [{ "namePattern": ".*" }] } },
+    { "id": "TFB-026", "query": "шта позива AuthenticationService", "language": "sr", "tier": "T3", "notes": "Serbian structural query - structural is opt-in only, ML routes to hybrid", "expectedRoute": "hybrid", "expected": { "contains": [{ "namePattern": ".*" }] } },
     { "id": "TFB-027", "query": "AuthenticationService 如何工作", "language": "zh", "tier": "T3", "notes": "Chinese question with ASCII identifier - HYBRID for max recall", "expectedRoute": "hybrid", "expected": { "anyOf": [{ "files": ["AuthenticationService.java", "AuthController.java", "WebSecurityConfig.java"], "minMatches": 1 }] } },
 
     { "id": "TFB-028", "query": "AuthenticationService", "language": "en", "tier": null, "notes": "English: no translation needed", "expectedRoute": "lexical", "expected": { "exact": [{ "file": "AuthenticationService.java", "type": "class" }] } },

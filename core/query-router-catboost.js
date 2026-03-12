@@ -5,14 +5,14 @@
  * uncertainty-based reject option to improve utility accuracy.
  *
  * Performance: ~50μs inference (vs 1.8μs ID3, but higher accuracy)
- * Utility Accuracy: 94.3% on 315-query benchmark (with reject option)
+ * Utility Accuracy: 98%+ on 255-query benchmark (3-class, with reject option)
  */
 
 // Import the trained CatBoost router
-import { routeQueryCatBoost, LABELS } from './training/output/v45_router_d4.js';
+import { routeQueryCatBoost, LABELS } from '../training/output/v46_router_d4.js';
 
 // Import the feature extractor (must match training features)
-import { extractAllFeatures } from './training/features/extractor.js';
+import { extractAllFeatures } from '../training/features/extractor.js';
 
 // =============================================================================
 // REJECT OPTION CONFIGURATION
@@ -30,7 +30,6 @@ const REJECT_OPTION = {
   thresholds: {
     LEXICAL: { confidence: 0.92, margin: 0.40 },   // Aggressive - catch foreign identifiers
     SEMANTIC: { confidence: 0.75, margin: 0.25 },  // Moderate
-    STRUCTURAL: { confidence: 0.60, margin: 0.15 }, // Conservative - keep structural predictions
   },
 };
 
@@ -128,8 +127,8 @@ export function routeQueryCatBoostWithReject(query) {
       confidence: 0,
       rawMode: 'hybrid',
       rejected: false,
-      scores: [0, 0, 0, 0],
-      probs: [0.25, 0.25, 0.25, 0.25],
+      scores: [0, 0, 0],
+      probs: [0.33, 0.33, 0.34],
       method: 'invalid_input',
       error: 'Query must be a non-null string',
     };
@@ -141,8 +140,8 @@ export function routeQueryCatBoostWithReject(query) {
       confidence: 0,
       rawMode: 'hybrid',
       rejected: false,
-      scores: [0, 0, 0, 0],
-      probs: [0.25, 0.25, 0.25, 0.25],
+      scores: [0, 0, 0],
+      probs: [0.33, 0.33, 0.34],
       method: 'query_too_long',
       error: `Query exceeds maximum length of ${MAX_QUERY_LENGTH} characters`,
     };
@@ -155,8 +154,8 @@ export function routeQueryCatBoostWithReject(query) {
       confidence: 0,
       rawMode: 'hybrid',
       rejected: false,
-      scores: [0, 0, 0, 0],
-      probs: [0.25, 0.25, 0.25, 0.25],
+      scores: [0, 0, 0],
+      probs: [0.33, 0.33, 0.34],
       method: 'empty_query',
     };
   }

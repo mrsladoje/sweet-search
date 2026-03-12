@@ -100,13 +100,12 @@ const RouteResultFinalization = (typeof FinalizationRegistry === 'undefined')
 
 /**
  * Route labels
- * @enum {0 | 1 | 2 | 3}
+ * @enum {0 | 1 | 2}
  */
 const RouteMode = Object.freeze({
     Lexical: 0, "0": "Lexical",
     Semantic: 1, "1": "Semantic",
-    Structural: 2, "2": "Structural",
-    Hybrid: 3, "3": "Hybrid",
+    Hybrid: 2, "2": "Hybrid",
 });
 exports.RouteMode = RouteMode;
 

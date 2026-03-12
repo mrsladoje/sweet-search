@@ -44,7 +44,7 @@ from catboost import CatBoostClassifier, Pool
 # CONSTANTS
 # =============================================================================
 
-LABELS = ['LEXICAL', 'SEMANTIC', 'STRUCTURAL', 'HYBRID']
+LABELS = ['LEXICAL', 'SEMANTIC', 'HYBRID']
 LABEL_TO_INDEX = {label: idx for idx, label in enumerate(LABELS)}
 
 # Feature names (must match extractAllFeatures in extractor.js)
@@ -612,8 +612,8 @@ def train_catboost(
     max_depth=10 recommended for 99%+ accuracy with Final Push features.
 
     Args:
-        class_weights: Dict mapping class index to weight. E.g., {0: 0.5, 1: 1.5, 2: 2.0, 3: 2.0}
-                       for LEXICAL: 0.5, SEMANTIC: 1.5, STRUCTURAL: 2.0, HYBRID: 2.0
+        class_weights: Dict mapping class index to weight. E.g., {0: 1.0, 1: 1.0, 2: 1.5}
+                       for LEXICAL: 1.0, SEMANTIC: 1.0, HYBRID: 1.5
     """
     model = CatBoostClassifier(
         iterations=iterations,
@@ -695,7 +695,7 @@ def export_to_js_lookup_table(model: CatBoostClassifier, output_path: str):
         ' * For production, consider using the npm catboost package instead.',
         ' */',
         '',
-        'const LABELS = ["LEXICAL", "SEMANTIC", "STRUCTURAL", "HYBRID"];',
+        f'const LABELS = {json.dumps(LABELS)};',
         '',
     ]
 
@@ -732,7 +732,7 @@ def main():
     parser.add_argument('--depth', type=int, default=6, help='Tree depth')
     parser.add_argument('--lr', type=float, default=0.1, help='Learning rate')
     parser.add_argument('--val-ratio', type=float, default=0.2, help='Validation split ratio')
-    parser.add_argument('--class-weights', type=str, help='Class weights as "L:w1,S:w2,ST:w3,H:w4" e.g., "L:0.5,S:1.5,ST:2.0,H:2.0"')
+    parser.add_argument('--class-weights', type=str, help='Class weights as "L:w1,S:w2,H:w3" e.g., "L:1.0,S:1.0,H:1.5"')
     parser.add_argument('--test', action='store_true', help='Run test with synthetic data')
 
     args = parser.parse_args()
@@ -744,15 +744,15 @@ def main():
         for pair in args.class_weights.split(','):
             key, val = pair.split(':')
             # Map short names to indices
-            key_map = {'L': 0, 'S': 1, 'ST': 2, 'H': 3}
+            key_map = {'L': 0, 'S': 1, 'H': 2}
             idx = key_map.get(key.strip())
             if idx is not None:
                 cw[idx] = float(val)
-        if len(cw) == 4:
+        if len(cw) == len(LABELS):
             class_weights = cw
             print(f"Using class weights: {class_weights}")
         else:
-            print(f"Warning: Invalid class weights format, ignoring. Expected 'L:w1,S:w2,ST:w3,H:w4'")
+            print(f"Warning: Invalid class weights format, ignoring. Expected 'L:w1,S:w2,H:w3'")
 
     # Validate: --data is required unless --test
     if not args.test and not args.data:
@@ -768,9 +768,8 @@ def main():
             ('config.yaml', 'LEXICAL'),
             ('how does authentication work', 'SEMANTIC'),
             ('password reset flow', 'SEMANTIC'),
-            ('what calls LoginController', 'STRUCTURAL'),
-            ('implementations of UserRepository', 'STRUCTURAL'),
             ('session management', 'HYBRID'),
+            ('jwt token validation', 'HYBRID'),
             ('employee tracking', 'HYBRID'),
         ]
 

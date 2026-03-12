@@ -2,8 +2,12 @@
 /**
  * Evaluate CatBoost Router on Full Evaluation Query Set
  *
- * Tests exported CatBoost JS routers against ALL evaluation queries (315).
+ * Tests exported 3-class CatBoost JS routers against evaluation queries.
  * Reports Strict Accuracy and Utility Accuracy comparable to production baseline.
+ *
+ * Structural query sets (structural.json, english-novel-structural.json) are excluded —
+ * structural mode is opt-in only (explicit --structural flag), so those queries
+ * never pass through the ML router.
  */
 
 import { readFileSync, readdirSync } from 'fs';
@@ -18,8 +22,13 @@ const UTILITY_EQUIVALENT = {
   SEMANTIC: ['SEMANTIC', 'HYBRID'],
   HYBRID: ['SEMANTIC', 'HYBRID'],
   LEXICAL: ['LEXICAL'],
-  STRUCTURAL: ['STRUCTURAL'],
 };
+
+// Structural eval sets excluded from ML accuracy (structural is opt-in via explicit flag)
+const STRUCTURAL_EVAL_SETS = new Set([
+  'structural.json',
+  'english-novel-structural.json',
+]);
 
 // Feature extraction (50 features to match CatBoost training)
 import { extractAllFeatures } from './features/extractor.js';
@@ -75,11 +84,6 @@ function getExpectedRoute(query) {
 
   // Infer from query pattern (matching production router heuristics)
   const q = query.query;
-
-  // Structural patterns
-  if (/\b(calls|callers|uses|implements|extends|who|what|impact|change)\b/i.test(q)) {
-    return 'STRUCTURAL';
-  }
 
   // Semantic patterns (questions, how/why)
   if (/^(how|why|when|what|where|explain|describe)/i.test(q) ||
@@ -144,7 +148,6 @@ const REJECT_OPTION = {
   thresholds: {
     LEXICAL: { confidence: 0.92, margin: 0.40 },   // Aggressive - catch foreign identifiers
     SEMANTIC: { confidence: 0.75, margin: 0.25 },  // Moderate
-    STRUCTURAL: { confidence: 0.60, margin: 0.15 }, // Conservative - keep structural predictions
   },
 };
 
@@ -216,7 +219,7 @@ async function benchmarkRouter(routerPath) {
   const perSource = {};
   // Confusion matrix: [expected][predicted] = count
   const confusion = {};
-  const ROUTES = ['LEXICAL', 'SEMANTIC', 'STRUCTURAL', 'HYBRID'];
+  const ROUTES = ['LEXICAL', 'SEMANTIC', 'HYBRID'];
 
   for (const route of ROUTES) {
     confusion[route] = {};
@@ -225,7 +228,18 @@ async function benchmarkRouter(routerPath) {
     }
   }
 
+  // Separate structural-regex queries from ML queries
+  const structuralRegexQueries = [];
+  const mlQueries = [];
   for (const q of queries) {
+    if (STRUCTURAL_EVAL_SETS.has(q.source)) {
+      structuralRegexQueries.push(q);
+    } else {
+      mlQueries.push(q);
+    }
+  }
+
+  for (const q of mlQueries) {
     const result = evaluateQuery(q, router);
 
     if (result.strictMatch) strictCorrect++;
@@ -264,6 +278,7 @@ async function benchmarkRouter(routerPath) {
     strictCorrect,
     utilityCorrect,
     total,
+    structuralExcluded: structuralRegexQueries.length,
     lines,
     bytes,
     perSource,
@@ -319,7 +334,7 @@ async function main() {
   const depths = options.depths;
 
   console.log('═'.repeat(80));
-  console.log('CatBoost Router Evaluation (Full 315 Query Set)');
+  console.log('CatBoost Router Evaluation (3-class, structural excluded)');
   console.log('═'.repeat(80));
   console.log();
   console.log('Baseline (production): Strict 61.6%, Utility 90.8%');
@@ -330,7 +345,7 @@ async function main() {
   const results = [];
 
   for (const depth of depths) {
-    const routerPath = `v45_router_d${depth}.js`;
+    const routerPath = `v46_router_d${depth}.js`;
     process.stdout.write(`Evaluating depth ${depth}...`);
 
     const result = await benchmarkRouter(routerPath);
@@ -429,7 +444,7 @@ async function main() {
     console.log('CONFUSION MATRIX (Expected → Predicted)');
     console.log('═'.repeat(80));
     console.log();
-    const ROUTES = ['LEXICAL', 'SEMANTIC', 'STRUCTURAL', 'HYBRID'];
+    const ROUTES = ['LEXICAL', 'SEMANTIC', 'HYBRID'];
     console.log('             | ' + ROUTES.map(r => r.slice(0, 4).padStart(5)).join(' | '));
     console.log('-------------|' + ROUTES.map(() => '------').join('|'));
 

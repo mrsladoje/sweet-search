@@ -130,6 +130,8 @@ server.registerTool('search', {
     k: z.number().int().min(1).max(200).default(10).describe('Number of results (1-200)'),
     mode: z.enum(['auto', 'lexical', 'semantic', 'hybrid']).default('auto')
       .describe('Search mode'),
+    structural: z.boolean().default(false)
+      .describe('Force structural graph search mode (callers, callees, implementations)'),
   },
   outputSchema: SearchOutputSchema,
   annotations: {
