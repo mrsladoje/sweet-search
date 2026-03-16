@@ -17,6 +17,7 @@ vectors.db
 ss-fast/ss-fast
 
 # Training artifacts (large, regenerable)
+catboost_info/
 training/catboost_info/
 training/.venv/
 training/*.cbm
