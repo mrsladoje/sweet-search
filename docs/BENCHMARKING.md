@@ -122,6 +122,101 @@ The eval harness threads these flags to `core/index-codebase-v21.js`:
 | `--graph-only` | Build code graph only (two-phase mode) |
 | `--vectors-only` | Build vectors/HNSW only (two-phase mode) |
 
+## GenCodeSearchNet Benchmark (Translation Validation)
+
+This is the standard benchmark for measuring translation impact on search quality.
+6000 queries across 6 languages (Python, JS, Go, Ruby, Java, PHP).
+Translation fallback triggers automatically on non-English queries with poor results.
+
+### Step 1: Download data (one-time)
+
+```bash
+python eval/download_data.py
+```
+
+### Step 2: Index the corpus (one-time, ~5-10 min)
+
+```bash
+node --max-old-space-size=7168 eval/run_benchmark.js \
+  --dataset=gencodesearchnet \
+  --profile=balanced \
+  --sqlite-fast
+```
+
+This creates the index in `eval/corpus/gencodesearchnet/.sweet-search/`.
+
+### Step 3: Run the benchmark (reuse index)
+
+```bash
+# Translation enabled (default) — tests the OPUS-MT local translation fallback
+node --max-old-space-size=7168 eval/run_benchmark.js \
+  --dataset=gencodesearchnet \
+  --skip-index \
+  --profile=balanced \
+  --sqlite-fast \
+  --concurrency=5
+
+# Translation disabled — baseline for A/B comparison
+SWEET_SEARCH_TRANSLATE=false \
+node --max-old-space-size=7168 eval/run_benchmark.js \
+  --dataset=gencodesearchnet \
+  --skip-index \
+  --profile=balanced \
+  --sqlite-fast \
+  --concurrency=5
+```
+
+### Step 4: Compare results
+
+Results are saved to `eval/results/gencodesearchnet_<timestamp>.json`. Key metrics:
+
+| Metric | What it measures |
+|--------|-----------------|
+| MRR@10 | Mean Reciprocal Rank — how high the correct result appears |
+| Recall@5 | Fraction of queries where correct result is in top 5 |
+| Recall@20 | Fraction of queries where correct result is in top 20 |
+| Success@1 | Fraction of queries where top-1 result is correct |
+
+Compare the two runs (translate=on vs translate=off) to measure translation impact.
+
+### Expected timings
+
+| Machine | Concurrency | Time (6000 queries) | Notes |
+|---------|-------------|---------------------|-------|
+| WSL2 10GB RAM | 5 | ~25-40 min | CPU-bound on ONNX mutex |
+| M3 Max | 5 | ~8-15 min (est.) | Metal/ANE acceleration, unified memory |
+
+### Baseline (March 12, 2026 — before OPUS-MT)
+
+```
+MRR@10:      80.8%    Recall@5:  87.8%    Recall@20: 91.8%
+Success@1:   75.3%    Latency p50: 927ms
+```
+
+Per-language: Python 92.0%, Go 94.2%, Java 80.9%, JS 67.8%, PHP 75.9%, Ruby 73.7%
+
+### Important flags
+
+- `--max-old-space-size=7168` — prevents WSL OOM kills (10GB WSL limit).
+  On M3 Max with 36/64GB, you can raise this to 16384 or omit entirely.
+- `--concurrency=5` — number of parallel query workers.
+  On M3 Max, try 8 or 10 (more cores, no WSL overhead).
+- `SWEET_SEARCH_VOCAB_AUTO_EXPAND=0` — disables vocab cache writes during benchmark
+  (reduces I/O noise, optional).
+- `SWEET_SEARCH_TRANSLATE=false` — global kill switch for translation (for A/B testing).
+
+### OPUS-MT Translation Benchmark (standalone)
+
+Tests translation quality and routing directly, without the full search pipeline:
+
+```bash
+# Dry run — verify routing only (instant)
+node evaluation/benchmark-opus-mt.js --dry-run
+
+# Live run — loads real ONNX models, translates 17 queries across 5 slices
+node --max-old-space-size=4096 evaluation/benchmark-opus-mt.js --concurrency=5
+```
+
 ## Architecture
 
 ```

@@ -12,7 +12,7 @@
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
-import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, LATE_INTERACTION_CONFIG, EMBEDDING_CONFIG, SEISMIC_CONFIG, CASCADE_CONFIG, loadProjectConfig, shouldUseLocalReranker } from './config.js';
+import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, LATE_INTERACTION_CONFIG, EMBEDDING_CONFIG, SEISMIC_CONFIG, CASCADE_CONFIG, TRANSLATION_CONFIG, loadProjectConfig, shouldUseLocalReranker } from './config.js';
 import { getGlobalLocalReranker } from './local-reranker.js';
 import { QueryRouter, routeQuery } from './query-router.js';
 import { GraphSearch } from './graph-search.js';
@@ -107,7 +107,9 @@ export class SweetSearch {
     this.returnSummaryFirst = options.returnSummaryFirst ?? HCGS_CONFIG.returnSummaryFirst;
     this.summaryTokenBudget = options.summaryTokenBudget ?? HCGS_CONFIG.summaryTokenBudget;
     this.fullCodeTokenBudget = options.fullCodeTokenBudget ?? HCGS_CONFIG.fullCodeTokenBudget;
-    this.enableTranslationFallback = options.enableTranslationFallback ?? true;
+    this.enableTranslationFallback =
+      (options.enableTranslationFallback ?? true) &&
+      !TRANSLATION_CONFIG.isDisabled;
     this.translationFallback = new TranslationFallback(options.translation || {});
     // SEISMIC sparse vector path (lazy-loaded when SEISMIC_CONFIG.enabled)
     this._seismicIndex = null;

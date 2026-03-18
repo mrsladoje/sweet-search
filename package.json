@@ -89,6 +89,7 @@
     "@modelcontextprotocol/sdk": "^1.26.0",
     "better-sqlite3": "^11.7.0",
     "fast-glob": "^3.3.3",
+    "franc-min": "^6.2.0",
     "p-limit": "^6.2.0",
     "sharp": "^0.34.5",
     "tree-sitter-wasms": "^0.1.13",

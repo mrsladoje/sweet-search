@@ -402,10 +402,22 @@ export const TRANSLATION_PROVIDERS = {
 };
 
 export const TRANSLATION_LOCAL_MODELS = {
-  // Default: NLLB-200 (broad coverage)
-  'nllb-200': {
+  // Primary: OPUS-MT Local Router (verified Xenova pair/family models)
+  'opus-router': {
     enabled: true,
     priority: 1,
+    name: 'OPUS-MT Local Router',
+    type: 'opus-router',
+    device: 'cpu',
+    quantized: true,
+    size: '~105-115MB per loaded model',
+    languages: 'verified set + mul-en fallback',
+  },
+
+  // Legacy: NLLB-200 (broken in practice - kept for rollback)
+  'nllb-200': {
+    enabled: false,
+    priority: 99,
     name: 'NLLB-200 Distilled',
     type: 'translation',  // Transformers.js pipeline type
     model: 'Xenova/nllb-200-distilled-600M',
@@ -416,10 +428,10 @@ export const TRANSLATION_LOCAL_MODELS = {
     avgLatency: '500-1000ms',
   },
 
-  // Faster: Opus-MT many-to-English
+  // Legacy: Opus-MT many-to-English (superseded by opus-router)
   'opus-mt': {
-    enabled: true,
-    priority: 2,
+    enabled: false,
+    priority: 98,
     name: 'Opus-MT Many→English',
     type: 'translation',
     model: 'Helsinki-NLP/opus-mt-mul-en',
@@ -512,6 +524,10 @@ export const TRANSLATION_CONFIG = {
     return process.env.TRANSLATION_OFFLINE === 'true' || !this.isCloudAvailable;
   },
 
+  get isDisabled() {
+    return process.env.SWEET_SEARCH_TRANSLATE === 'false';
+  },
+
   // Prompt templates
   prompts: {
     short: `Translate to English (preserve code identifiers): "{query}"
@@ -554,7 +570,7 @@ Translation:`,
   pipeline: {
     // Fallback order (evaluated in sequence)
     // 'cloud' = active cloud provider, 'local' = active local model
-    fallbackOrder: ['cloud', 'local', 'passthrough'],
+    fallbackOrder: ['local', 'cloud', 'passthrough'],
 
     // CRITICAL FIX: Make "likely English" a SOFT hint, not hard stop
     // When true: skip translation ONLY if isLikelyEnglish AND results are good
@@ -596,6 +612,10 @@ Translation:`,
       // Portuguese: unique chars ã, õ (check before Spanish)
       por_Latn: {
         diacritics: /[ãõ]/i,
+      },
+      // Italian: ì (i-grave) is unique among major Latin languages
+      ita_Latn: {
+        diacritics: /ì/,
       },
       // Spanish: á, é, í, ó, ú, ñ, ¿, ¡ (most common, check last)
       spa_Latn: {

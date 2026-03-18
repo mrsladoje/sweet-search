@@ -109,6 +109,10 @@ describe('Language Detection', () => {
       expect(detectLatinLanguage('garçon')).toBe('fra_Latn');
     });
 
+    it('detects Italian from ì (i-grave)', () => {
+      expect(detectLatinLanguage('perché sì')).toBe('ita_Latn');
+    });
+
     it('detects Polish from ą, ć, ę, ł, etc.', () => {
       expect(detectLatinLanguage('źródło')).toBe('pol_Latn');
     });
@@ -120,6 +124,17 @@ describe('Language Detection', () => {
     it('handles empty input', () => {
       expect(detectLatinLanguage('')).toBeNull();
       expect(detectLatinLanguage(null)).toBeNull();
+    });
+  });
+
+  describe('LANGUAGES map completeness', () => {
+    it('includes newly added languages', async () => {
+      const { LANGUAGES } = await import('../../translation/language-detector.js');
+      expect(LANGUAGES.bg).toBe('Bulgarian');
+      expect(LANGUAGES.he).toBe('Hebrew');
+      expect(LANGUAGES.pl).toBe('Polish');
+      expect(LANGUAGES.cs).toBe('Czech');
+      expect(LANGUAGES.ro).toBe('Romanian');
     });
   });
 

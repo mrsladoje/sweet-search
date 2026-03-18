@@ -2,8 +2,8 @@
  * LLM Translator - T3 Translation Tier
  *
  * Translates complex queries using LLM with fallback chain:
- * 1. Cloud provider (Cerebras/Groq/OpenRouter) - ~50-100ms, cloud API
- * 2. Transformers.js NLLB-200 (local) - ~100-500ms, lazy-loaded, no API key
+ * 1. Local OPUS-MT (pair/family router) - ~100-500ms, lazy-loaded, no API key
+ * 2. Cloud provider (Cerebras/Groq/OpenRouter) - ~50-100ms, cloud API
  * 3. Static passthrough (fallback) - 0ms
  *
  * Multi-provider support via TRANSLATION_CONFIG in config.js.
@@ -206,7 +206,7 @@ async function translateWithRetry(query, providerKey) {
 /**
  * Translate a query using LLM with fallback chain
  *
- * Fallback chain: Cloud → Transformers.js → Passthrough
+ * Fallback chain: Local OPUS-MT → Cloud → Passthrough
  *
  * @param {string} query - Query to translate
  * @param {Object} options - Translation options
@@ -220,21 +220,33 @@ async function translateWithRetry(query, providerKey) {
 export async function translateWithLLM(query, options = {}) {
   const attempts = [];
 
-  // Check cache first
+  // Check cache first — local-first, then cloud
   const cache = getTranslationCache();
   const providerKey = TRANSLATION_CONFIG?.provider;
   // Use getTranslationProvider() helper for consistent config lookup
   const providerConfig = getTranslationProvider(providerKey);
   const model = providerConfig?.model;
 
-  if (cache && providerKey) {
-    const cached = cache.get(query, providerKey, model);
-    if (cached) {
+  if (cache) {
+    // Check local cache (primary path since fallbackOrder is local-first)
+    const localCached = cache.get(query, 'opus-mt', 'auto');
+    if (localCached) {
       return {
-        ...cached,
+        ...localCached,
         fromCache: true,
         attempts: [{ step: 'cache', success: true }],
       };
+    }
+    // Check cloud cache
+    if (providerKey) {
+      const cloudCached = cache.get(query, providerKey, model);
+      if (cloudCached) {
+        return {
+          ...cloudCached,
+          fromCache: true,
+          attempts: [{ step: 'cache', success: true }],
+        };
+      }
     }
   }
 
@@ -261,24 +273,28 @@ export async function translateWithLLM(query, options = {}) {
         }
       }
       else if (step === 'local') {
-        const { getTransformersTranslator } = await import('./transformers-translator.js');
-        const translator = getTransformersTranslator();
+        const { getOpusMTTranslator } = await import('./opus-mt-translator.js');
+        const translator = getOpusMTTranslator();
 
         if (!isQuietMode() && LOGGING?.verbose) {
-          console.log('[T3] Cloud unavailable, using local model...');
+          console.log('[T3] Using local OPUS-MT translator...');
         }
 
         const result = await translator.translate(query);
         attempts.push({ step: 'local', ...result, success: true });
 
         if (!result.skipped && result.translation !== query) {
-          return {
+          const localResult = {
             translation: result.translation,
             provider: 'local',
             model: result.model,
             latency_ms: result.latency_ms,
-            attempts,
           };
+          // Cache local result so repeated queries skip ONNX inference
+          if (cache) {
+            cache.set(query, 'opus-mt', 'auto', localResult);
+          }
+          return { ...localResult, attempts };
         }
       }
       else if (step === 'passthrough') {
