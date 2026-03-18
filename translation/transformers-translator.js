@@ -44,11 +44,28 @@ export class TransformersTranslator {
       type: 'translation',
     };
 
-    this.modelKey = options.modelKey || TRANSLATION_CONFIG?.localModel || 'nllb-200';
-    this.model = options.model || modelConfig.model || 'Xenova/nllb-200-distilled-600M';
-    this.device = options.device || modelConfig.device || 'cpu';
-    this.quantized = options.quantized ?? modelConfig.quantized ?? true;
-    this.pipelineType = modelConfig.type || 'translation';
+    // Guard: if active local model is opus-router (not a Transformers.js pipeline),
+    // fall back to nllb-200 defaults so rollback path stays functional.
+    const activeKey = options.modelKey || TRANSLATION_CONFIG?.localModel || 'nllb-200';
+    const isValidPipeline = modelConfig.type === 'translation' || modelConfig.type === 'text2text-generation';
+    if (!isValidPipeline) {
+      // Active model is not a Transformers.js pipeline (e.g. opus-router).
+      // Use nllb-200 defaults for backward compatibility.
+      const fallbackConfig = getTranslationLocalModel?.('nllb-200') || {
+        model: 'Xenova/nllb-200-distilled-600M', device: 'cpu', quantized: true, type: 'translation',
+      };
+      this.modelKey = 'nllb-200';
+      this.model = options.model || fallbackConfig.model || 'Xenova/nllb-200-distilled-600M';
+      this.device = options.device || fallbackConfig.device || 'cpu';
+      this.quantized = options.quantized ?? fallbackConfig.quantized ?? true;
+      this.pipelineType = 'translation';
+    } else {
+      this.modelKey = activeKey;
+      this.model = options.model || modelConfig.model || 'Xenova/nllb-200-distilled-600M';
+      this.device = options.device || modelConfig.device || 'cpu';
+      this.quantized = options.quantized ?? modelConfig.quantized ?? true;
+      this.pipelineType = modelConfig.type || 'translation';
+    }
 
     this.pipeline = null;
     this.loading = null;

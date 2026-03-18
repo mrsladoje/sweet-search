@@ -46,6 +46,18 @@ export {
   needsTranslation as llmNeedsTranslation,
 } from './llm-translator.js';
 
+// T3: OPUS-MT Local Router
+export {
+  OpusMTTranslator,
+  getOpusMTTranslator,
+  isOpusMTLoaded,
+  unloadOpusMT,
+  OPUS_MODEL_ROUTES,
+  OPUS_FALLBACK_MODEL,
+  protectIdentifiers,
+  restoreIdentifiers,
+} from './opus-mt-translator.js';
+
 // Language Detection
 export {
   detectLanguage,

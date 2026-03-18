@@ -62,6 +62,38 @@ describe('Translation Config', () => {
     expect(TRANSLATION_LOCAL_MODELS['nllb-200']).toBeDefined();
     expect(TRANSLATION_LOCAL_MODELS['nllb-200'].model).toBe('Xenova/nllb-200-distilled-600M');
     expect(TRANSLATION_LOCAL_MODELS['opus-mt']).toBeDefined();
+    expect(TRANSLATION_LOCAL_MODELS['opus-router']).toBeDefined();
+    expect(TRANSLATION_LOCAL_MODELS['opus-router'].type).toBe('opus-router');
+  });
+
+  it('opus-router is the primary local model (priority 1)', async () => {
+    const { TRANSLATION_LOCAL_MODELS } = await import('../../core/config.js');
+
+    expect(TRANSLATION_LOCAL_MODELS['opus-router'].priority).toBe(1);
+    expect(TRANSLATION_LOCAL_MODELS['opus-router'].enabled).toBe(true);
+    // Legacy models are disabled
+    expect(TRANSLATION_LOCAL_MODELS['nllb-200'].enabled).toBe(false);
+    expect(TRANSLATION_LOCAL_MODELS['opus-mt'].enabled).toBe(false);
+  });
+
+  it('pipeline fallbackOrder is local-first', async () => {
+    const { TRANSLATION_CONFIG } = await import('../../core/config.js');
+
+    expect(TRANSLATION_CONFIG.pipeline.fallbackOrder).toEqual(['local', 'cloud', 'passthrough']);
+  });
+
+  it('has isDisabled getter for global kill switch', async () => {
+    const { TRANSLATION_CONFIG } = await import('../../core/config.js');
+
+    expect(typeof TRANSLATION_CONFIG.isDisabled).toBe('boolean');
+    expect(TRANSLATION_CONFIG.isDisabled).toBe(false); // default
+  });
+
+  it('has Italian diacritics in latinDetection', async () => {
+    const { TRANSLATION_CONFIG } = await import('../../core/config.js');
+
+    expect(TRANSLATION_CONFIG.latinDetection.patterns.ita_Latn).toBeDefined();
+    expect(TRANSLATION_CONFIG.latinDetection.patterns.ita_Latn.diacritics.test('ì')).toBe(true);
   });
 
   it('isTranslationAvailable returns correct value', async () => {
