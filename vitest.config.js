@@ -5,6 +5,9 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     pool: 'forks',
+    // Prevent V8 Turboshaft WASM background compilation OOM when loading
+    // multiple tree-sitter grammars (cpp=4.4M, kotlin=3.9M, swift=3M).
+    execArgv: ['--no-wasm-tier-up', '--no-wasm-dynamic-tiering', '--v8-pool-size=1'],
     include: ['__tests__/**/*.test.js', 'evaluation/__tests__/**/*.test.js', 'tests/**/*.test.js'],
     exclude: ['node_modules', 'dist', 'tests/embedding-perf.test.js'],
     testTimeout: 30000,
