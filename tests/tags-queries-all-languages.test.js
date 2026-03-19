@@ -15,21 +15,23 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 // =============================================================================
 
 let provider;
-let TreeSitterProvider;
 let TAGS_QUERIES, CAPTURE_TO_ENTITY_TYPE, IDENT_TYPES, GRAMMAR_MAP;
+let resetTreeSitterProvider;
 
 beforeAll(async () => {
   const mod = await import('../core/tree-sitter-provider.js');
-  TreeSitterProvider = mod.TreeSitterProvider;
   TAGS_QUERIES = mod.TAGS_QUERIES;
   CAPTURE_TO_ENTITY_TYPE = mod.CAPTURE_TO_ENTITY_TYPE;
   IDENT_TYPES = mod.IDENT_TYPES;
   GRAMMAR_MAP = mod.GRAMMAR_MAP;
-  provider = new TreeSitterProvider();
+  resetTreeSitterProvider = mod.resetTreeSitterProvider;
+  // Use the singleton so GraphExtractor (Phase 5) shares the same cached grammars
+  // instead of loading all WASM grammars a second time, which causes V8 OOM.
+  provider = mod.getTreeSitterProvider();
 });
 
 afterAll(() => {
-  if (provider) provider.reset();
+  if (resetTreeSitterProvider) resetTreeSitterProvider();
 });
 
 /** Extract symbols — fails loudly if grammar is unavailable. */
