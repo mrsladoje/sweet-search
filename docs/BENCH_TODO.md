@@ -161,84 +161,45 @@ Structural mode is opt-in only via `--structural` flag (MCP `structural: true`).
 
 ---
 
-## TODO: Replace NLLB Translation Model (HIGH PRIORITY)
+## DONE: Translation Fallback — Benchmarked & Disabled by Default (2026-03-19)
 
-The current local translation fallback (`Xenova/nllb-200-distilled-600M`) is **broken** — ONNX model files
-are truncated stubs (49KB encoder for a 600M param model). Even if fixed, 600M params is too large for
-responsive CPU inference in a code search tool.
+OPUS-MT translation (21 language pairs, int8 quantized MarianMT) was implemented and
+benchmarked extensively on GenCodeSearchNet (6000 queries) and M2CRB (2814 multilingual queries).
 
-### Plan: Helsinki-NLP OPUS-MT (MarianMT) with Int8 Quantization
+### Key Findings
 
-Replace NLLB with per-language-pair OPUS-MT models. Each model is **~7-10M params** (~30-40MB on disk),
-purpose-built for a single translation direction, and blazing fast on CPU.
+1. **CodeRankEmbed is multilingual enough.** French/Portuguese/Spanish queries achieve 86% MRR
+   against same-language code without any translation. The embedding model handles Romance
+   languages natively.
 
-**Architecture:**
-- **Lazy-load per language pair** — only download/load the model when a query in that language is first seen
-- **Int8 quantization** via Transformers.js `dtype: 'q8'` — halves model size, minimal quality loss
-- **Optional: CTranslate2 runtime** — 6-10x faster than vanilla ONNX on CPU, int8 support built-in.
-  Evaluate whether Transformers.js WASM is fast enough first; CTranslate2 adds a native dependency.
-- Once loaded, models stay warm in memory (same pattern as current `TransformersTranslator` singleton)
+2. **Translation adds zero quality and significant latency.** M2CRB A/B test:
+   translate ON = translate OFF = 56.9% MRR, but ON was 2x slower.
 
-**HuggingFace model IDs** (format: `Helsinki-NLP/opus-mt-{src}-en`, ONNX: `Xenova/opus-mt-{src}-en`):
+3. **Translation gate had two bugs** (both fixed):
+   - Late interaction reranker set `score=0` on all results, making the "good results"
+     gate permanently open (translation fired on 100% of queries)
+   - `hasValidFile` check missed `metadata.file`/`metadata.name` fields
 
-| Source Language | ISO 639-1 | Script | OPUS-MT Model | ~Params | Notes |
-|----------------|-----------|--------|---------------|---------|-------|
-| Serbian/Croatian/Bosnian | sr/hr/bs | Cyrillic + Latin | `opus-mt-sh-en` (Serbo-Croatian) | ~7M | One model, both scripts. Detect via Cyrillic markers OR Latin diacritics (č,ć,š,ž,đ) |
-| Russian | ru | Cyrillic | `opus-mt-ru-en` | ~7M | High quality, well-trained |
-| Ukrainian | uk | Cyrillic | `opus-mt-uk-en` | ~7M | |
-| Bulgarian | bg | Cyrillic | `opus-mt-bg-en` | ~7M | Detected via Cyrillic variant |
-| Chinese | zh | CJK | `opus-mt-zh-en` | ~7M | Simplified + Traditional |
-| Japanese | ja | Hiragana/Katakana/CJK | `opus-mt-ja-en` | ~10M | Larger due to script complexity |
-| Korean | ko | Hangul | `opus-mt-ko-en` | ~7M | |
-| German | de | Latin | `opus-mt-de-en` | ~7M | Very high quality |
-| Spanish | es | Latin | `opus-mt-es-en` | ~7M | |
-| French | fr | Latin | `opus-mt-fr-en` | ~7M | |
-| Portuguese | pt | Latin | `opus-mt-pt-en` | ~7M | Covers pt-BR and pt-PT |
-| Italian | it | Latin | `opus-mt-it-en` | ~7M | Fixes the "ripristino stato iniziale" miss |
-| Polish | pl | Latin | `opus-mt-pl-en` | ~7M | In `toNLLBCode` map |
-| Czech | cs | Latin | `opus-mt-cs-en` | ~7M | In `toNLLBCode` map |
-| Greek | el | Greek | `opus-mt-el-en` | ~7M | |
-| Arabic | ar | Arabic | `opus-mt-ar-en` | ~7M | |
-| Hebrew | he | Hebrew | `opus-mt-he-en` | ~7M | In `SCRIPT_LANGUAGE_MAP` |
-| Hindi | hi | Devanagari | `opus-mt-hi-en` | ~7M | |
-| Bengali | bn | Bengali | `opus-mt-bn-en` | ~7M | May need `opus-mt-mul-en` fallback |
-| Tamil | ta | Tamil | `opus-mt-ta-en` | ~7M | May need `opus-mt-mul-en` fallback |
-| Thai | th | Thai | `opus-mt-th-en` | ~7M | May need `opus-mt-mul-en` fallback |
+4. **Right architecture**: Instruct the LLM (via CLAUDE.md) to query in the codebase's
+   natural language. Translation fallback remains as a safety net for LLM language mismatches,
+   but is now **off by default** (`enableTranslationFallback: false`).
 
-**Total: 21 language pairs** — matches all languages in `language-detector.js` `LANGUAGES` + script maps.
+### Benchmark Results (Full Profile, lateon-code)
 
-### Memory Budget
+**GenCodeSearchNet (6000 queries, all English):**
+| Metric | Translate ON | Translate OFF |
+|--------|-------------|---------------|
+| MRR@10 | 81.05% | **81.93%** |
+| Total time | 1560s | **552s** |
 
-- **Per model**: ~15-20MB in memory (int8 quantized MarianMT)
-- **Realistic session**: 1-3 models loaded simultaneously (most codebases are monolingual)
-- **Worst case** (all 21 loaded): ~350-420MB — still less than one NLLB-600M model
-- **Typical case**: ~40-60MB (1-2 European languages + English passthrough)
+**M2CRB (2814 queries, FR/PT/ES/DE):**
+| Metric | Translate ON | Translate OFF |
+|--------|-------------|---------------|
+| MRR@10 | 56.90% | 56.90% |
+| Total time | 505s | **360s** |
 
-### Fallback Strategy
+### To re-enable
 
-```
-Query → detectLanguage() → language code
-  ├─ en → passthrough (no translation)
-  ├─ {lang} → try opus-mt-{lang}-en (lazy load, int8)
-  │    ├─ success → translated query
-  │    └─ model not found → try opus-mt-mul-en (multilingual fallback, ~40M params)
-  │         ├─ success → translated query
-  │         └─ fail → passthrough (original query, best-effort)
-  └─ unknown script → passthrough
-```
-
-### What This Fixes
-
-- **"ripristino stato iniziale"** (Italian) → `opus-mt-it-en` translates to "reset to initial state" → matches `resetToMove.js`
-- **All non-English GenCodeSearchNet queries** that currently fail silently due to broken NLLB
-- **Latency**: ~50-200ms warm inference per query (vs 500ms+ for NLLB-600M, if it worked)
-- **No API keys needed** — fully local, works in offline benchmark runs
-
-### Implementation Steps
-
-1. Create `translation/opus-mt-translator.js` — lazy-loading per-pair translator
-2. Add language-to-model-ID mapping (table above)
-3. Wire into `TranslationFallback` as T3 replacement (keep T1 transliteration + T2 alias as-is)
-4. Verify Xenova ONNX models exist for all 21 pairs; use `opus-mt-mul-en` for gaps
-5. Benchmark: re-run GenCodeSearchNet with translation enabled, measure MRR delta
-6. Optional: evaluate CTranslate2 if Transformers.js WASM latency > 200ms
+Set `enableTranslationFallback: true` in SweetSearch options or `SWEET_SEARCH_TRANSLATE=true` env var.
+The fixed gate now correctly uses pre-reranking embedding scores, so translation only fires on
+genuinely low-confidence queries.
