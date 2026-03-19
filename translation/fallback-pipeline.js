@@ -141,12 +141,26 @@ export class TranslationFallback {
     const minResults = TRANSLATION_CONFIG?.pipeline?.softEnglishMinResults ?? 3;
     const minScore = TRANSLATION_CONFIG?.pipeline?.softEnglishMinScore ?? 0.3;
 
+    // Use the pre-reranking embedding score when available. Late interaction
+    // and cascaded scoring overwrite `score` with a reranker-relative value
+    // (often 0), which would make this gate permanently open. The original
+    // CodeRankEmbed cosine similarity is the correct signal: it measures
+    // whether the embedding model understood the query language/intent.
+    const topResult = results?.[0];
+    const effectiveScore = topResult?.preLateInteractionScore
+      ?? topResult?.int8Score
+      ?? topResult?.score
+      ?? topResult?.rerankScore
+      ?? 0;
+
     const hasGoodResults = results &&
       results.length >= minResults &&
-      (results[0]?.score ?? results[0]?.rerankScore ?? 0) >= minScore &&
+      effectiveScore >= minScore &&
       results.some(r =>
         (r.file && typeof r.file === 'string' && r.file.length > 0) ||
-        (r.name && typeof r.name === 'string' && r.name.length > 0)
+        (r.name && typeof r.name === 'string' && r.name.length > 0) ||
+        (r.metadata?.file && typeof r.metadata.file === 'string' && r.metadata.file.length > 0) ||
+        (r.metadata?.name && typeof r.metadata.name === 'string' && r.metadata.name.length > 0)
       );
 
     // Skip translation for GOOD results - regardless of query language

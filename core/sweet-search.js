@@ -108,7 +108,7 @@ export class SweetSearch {
     this.summaryTokenBudget = options.summaryTokenBudget ?? HCGS_CONFIG.summaryTokenBudget;
     this.fullCodeTokenBudget = options.fullCodeTokenBudget ?? HCGS_CONFIG.fullCodeTokenBudget;
     this.enableTranslationFallback =
-      (options.enableTranslationFallback ?? true) &&
+      (options.enableTranslationFallback ?? false) &&
       !TRANSLATION_CONFIG.isDisabled;
     this.translationFallback = new TranslationFallback(options.translation || {});
     // SEISMIC sparse vector path (lazy-loaded when SEISMIC_CONFIG.enabled)
