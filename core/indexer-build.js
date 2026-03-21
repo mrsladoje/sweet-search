@@ -18,6 +18,16 @@ import { configureJournalMode, atomicSwapDatabase, log, logProgress } from './in
 // CHUNK ENRICHMENT — scope chains + imports from code-graph.db
 // =============================================================================
 
+function closeWithOptimize(db, label) {
+  try {
+    db.pragma('optimize');
+  } catch (err) {
+    log(`SQLite optimize skipped for ${label}: ${err.message}`, 'dim');
+  } finally {
+    db.close();
+  }
+}
+
 /**
  * Enrich chunks with scope chain and import context from the code graph.
  * Queries entities (by file path + line range overlap) and import relationships,
@@ -29,7 +39,9 @@ import { configureJournalMode, atomicSwapDatabase, log, logProgress } from './in
  */
 async function enrichChunksFromGraph(chunks, ASTChunker) {
   const Database = (await import('better-sqlite3')).default;
+  const { applyReadPragmas } = await import('./db-utils.js');
   const db = new Database(DB_PATHS.codeGraph, { readonly: true });
+  applyReadPragmas(db);
 
   try {
     // Pre-fetch entities and imports grouped by file
@@ -162,7 +174,9 @@ export async function buildCodeGraph(files, dryRun = false) {
   log('Resolving relationship targets...', 'yellow');
   const resolutionStats = resolveRelationshipTargets(db);
 
-  db.close();
+  // Update query planner statistics before closing (SQLite 3.46+).
+  // Best-effort only; failure should not strand the temp DB handle.
+  closeWithOptimize(db, 'code graph build');
 
   await atomicSwapDatabase(tmpPath, DB_PATHS.codeGraph);
 
@@ -467,7 +481,7 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
 
     embeddings = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, embeddingOptions, log, writeFlushRows);
 
-    db.close();
+    closeWithOptimize(db, 'vector full rebuild');
 
     log(`\n✓ Generated ${embeddings.length} embeddings (${effectiveEmbeddingDimension}d)`, 'green');
 
@@ -525,7 +539,7 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
 
     const newCount = db.prepare('SELECT COUNT(*) as count FROM vectors').get().count;
 
-    db.close();
+    closeWithOptimize(db, 'vector incremental update');
 
     const vectorStats = await fs.stat(DB_PATHS.codebase);
     const dbSize = (vectorStats.size / 1024 / 1024).toFixed(2);

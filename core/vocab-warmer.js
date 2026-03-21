@@ -18,6 +18,7 @@
 import { existsSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
+import { applyReadPragmas } from './db-utils.js';
 
 import Database from 'better-sqlite3';
 import { DB_PATHS, EMBEDDING_CONFIG } from './config.js';
@@ -71,10 +72,7 @@ export async function warmLexical(terms, dbPath) {
   let db;
   try {
     db = new Database(resolvedPath, { readonly: true, timeout: 5000 });
-
-    // SQLite optimization PRAGMAs for warmup
-    db.pragma('mmap_size = 30000000000');
-    db.pragma('cache_size = -100000');
+    applyReadPragmas(db);
 
     // Check FTS5 table exists
     const ftsCheck = db.prepare(
@@ -445,6 +443,7 @@ export function _loadEntityMetadata(hubEntities, options = {}) {
       const dbPath = DB_PATHS.codeGraph;
       if (!existsSync(dbPath)) return meta;
       db = new Database(dbPath, { readonly: true, timeout: 5000 });
+      applyReadPragmas(db);
     }
 
     // Batch query: fetch all entities + parent scope in one shot.

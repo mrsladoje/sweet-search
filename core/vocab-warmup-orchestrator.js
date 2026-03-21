@@ -16,6 +16,7 @@ import path from 'path';
 
 import Database from 'better-sqlite3';
 import { DB_PATHS, PROJECT_ROOT, EMBEDDING_CONFIG } from './config.js';
+import { applyReadPragmas } from './db-utils.js';
 import { detectCommunities, computeGraphHash } from './community-detector.js';
 import { mineAll, computeNLContentHash } from './vocab-miner.js';
 import { rankAll } from './vocab-ranker.js';
@@ -193,6 +194,7 @@ async function _runFullWarmupInner(options, start, effectiveProvider) {
     try {
       if (existsSync(dbPath)) {
         sharedDb = new Database(dbPath, { readonly: true, timeout: 5000 });
+        applyReadPragmas(sharedDb);
       }
     } catch (err) {
       if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);

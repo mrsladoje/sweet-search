@@ -398,7 +398,9 @@ async function generateSummariesForEntities(entityIds, options = {}) {
   } = options;
 
   const Database = (await import('better-sqlite3')).default;
+  const { applyReadPragmas } = await import('./db-utils.js');
   const db = new Database(dbPath, { readonly: true });
+  applyReadPragmas(db);
 
   try {
     // Fetch entities by IDs
@@ -576,7 +578,9 @@ async function main() {
       case 'test': {
         // Test summary generation on a single entity
         const Database = (await import('better-sqlite3')).default;
+        const { applyReadPragmas: applyRP } = await import('./db-utils.js');
         const db = new Database(dbPath, { readonly: true });
+        applyRP(db);
 
         const entity = db.prepare(`
           SELECT id, file_path, type, name, signature, doc_comment

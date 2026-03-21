@@ -256,7 +256,9 @@ export async function extractEntities() {
   }
 
   const Database = (await import('better-sqlite3')).default;
+  const { applyReadPragmas } = await import('./db-utils.js');
   const db = new Database(PATHS.codeGraph, { readonly: true });
+  applyReadPragmas(db);
 
   const entities = db.prepare(`
     SELECT name, type, COUNT(*) as count

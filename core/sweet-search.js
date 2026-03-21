@@ -24,6 +24,7 @@ import { LateInteractionIndex } from './late-interaction-index.js';
 import { getEmbedding, getBinaryEmbedding, truncateForHNSW, floatToInt8, int8CosineSimilarity, warmup as warmupEmbedding, isWarm, registerAutoPersistOnExit } from './embedding-service.js';
 import { recordQueryTelemetry } from './embedding-cache.js';
 import Database from 'better-sqlite3';
+import { applyReadPragmas } from './db-utils.js';
 import { TranslationFallback, queryNeedsTranslation } from '../translation/index.js';
 import { expandResults } from './graph-expansion.js';
 import { applyMMR, shouldApplyMMR, getLambdaForIntent, MMR_CONFIG } from './mmr.js';
@@ -138,6 +139,7 @@ export class SweetSearch {
     if (!this._codebaseDb && this.hasCodebaseIndex) {
       try {
         this._codebaseDb = new Database(this.codebaseDbPath, { readonly: true });
+        applyReadPragmas(this._codebaseDb);
       } catch {
         // Fall back to language multipliers if DB can't be opened
       }

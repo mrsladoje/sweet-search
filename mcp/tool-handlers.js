@@ -247,6 +247,8 @@ export async function checkHealth({ getConfig, PROJECT_ROOT }) {
         if (!_healthDb) {
           const Database = (await import('better-sqlite3')).default;
           _healthDb = new Database(config.DB_PATHS.codeGraph, { readonly: true, timeout: 5000 });
+          const { applyReadPragmas } = await import('../core/db-utils.js');
+          applyReadPragmas(_healthDb);
         }
         const count = _healthDb.prepare('SELECT count(*) as cnt FROM entities').get();
         indexStats.totalFiles = count?.cnt || 0;
