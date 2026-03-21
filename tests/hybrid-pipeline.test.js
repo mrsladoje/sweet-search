@@ -62,6 +62,10 @@ async function makeSearcher(overrides = {}) {
       init: vi.fn(async () => {}),
       db: { _stubDb: true },
       dbPath: '/tmp/test.db',
+      bm25SearchRaw: vi.fn(async () => ({
+        results: [...defaultLexResults],
+        latency: 3,
+      })),
       bm25Search: vi.fn(async () => ({
         results: [...defaultLexResults],
         latency: 3,
@@ -96,19 +100,40 @@ beforeEach(() => {
 });
 
 // =============================================================================
-// hybridSearchV2 uses raw bm25Search (not graphExpandedSearch)
+// hybridSearchV2 uses bm25SearchRaw (not graphExpandedSearch)
 // =============================================================================
 
-describe('hybridSearchV2 uses raw bm25Search', () => {
-  it('calls bm25Search with limit:50 and skipBoosts:true', async () => {
+describe('hybridSearchV2 uses bm25SearchRaw', () => {
+  it('calls bm25SearchRaw with limit 50', async () => {
     const searcher = await makeSearcher();
     await searcher.hybridSearchV2('auth middleware');
 
-    expect(searcher.graphSearch.bm25Search).toHaveBeenCalledOnce();
-    expect(searcher.graphSearch.bm25Search).toHaveBeenCalledWith(
-      'auth middleware',
-      { limit: 50, skipBoosts: true }
-    );
+    expect(searcher.graphSearch.bm25SearchRaw).toHaveBeenCalledOnce();
+    expect(searcher.graphSearch.bm25SearchRaw).toHaveBeenCalledWith('auth middleware', 50);
+    expect(searcher.graphSearch.bm25Search).not.toHaveBeenCalled();
+  });
+
+  it('ignores lexical telemetry fields and only fuses raw results', async () => {
+    const searcher = await makeSearcher({
+      graphSearch: {
+        init: vi.fn(async () => {}),
+        db: { _stubDb: true },
+        bm25SearchRaw: vi.fn(async () => ({
+          results: [...defaultLexResults],
+          latency: 4,
+          searchQuality: 'exact',
+          lexicalMeta: { lexicalPath: 'fts5', restrictedFallback: false },
+        })),
+        bm25Search: vi.fn(async () => ({ results: [...defaultLexResults], latency: 4 })),
+      },
+    });
+
+    const result = await searcher.hybridSearchV2('auth middleware');
+    const lexicalArg = searcher.robustCCFusion.mock.calls[0][0];
+
+    expect(lexicalArg).toHaveLength(defaultLexResults.length);
+    expect(result.fusionStats.lexicalLatencyMs).toBe(4);
+    expect(result.fusionStats.searchQuality).toBeUndefined();
   });
 
   it('does NOT call graphExpandedSearch', async () => {
@@ -116,6 +141,7 @@ describe('hybridSearchV2 uses raw bm25Search', () => {
       graphSearch: {
         init: vi.fn(async () => {}),
         db: { _stubDb: true },
+        bm25SearchRaw: vi.fn(async () => ({ results: [...defaultLexResults], latency: 2 })),
         bm25Search: vi.fn(async () => ({ results: [...defaultLexResults], latency: 2 })),
         graphExpandedSearch: vi.fn(async () => {
           throw new Error('graphExpandedSearch should NOT be called');
@@ -138,7 +164,7 @@ describe('hybridSearchV2 uses raw bm25Search', () => {
     }
   });
 
-  it('captures latency from bm25Search.latency (not stats.bm25_ms)', async () => {
+  it('captures latency from bm25SearchRaw.latency', async () => {
     const searcher = await makeSearcher();
     const result = await searcher.hybridSearchV2('auth middleware');
     expect(result.fusionStats.lexicalLatencyMs).toBe(3);
@@ -157,6 +183,10 @@ describe('hybridSearchV2 uses raw bm25Search', () => {
       graphSearch: {
         init: vi.fn(async () => {}),
         db: { _stubDb: true },
+        bm25SearchRaw: vi.fn(async () => ({
+          results: rawScores.map((s, i) => ({ id: `b${i}`, name: `func${i}`, score: s, file: `${i}.js` })),
+          latency: 2,
+        })),
         bm25Search: vi.fn(async () => ({
           results: rawScores.map((s, i) => ({ id: `b${i}`, name: `func${i}`, score: s, file: `${i}.js` })),
           latency: 2,
@@ -396,11 +426,15 @@ describe('queryInt8 propagation', () => {
 // =============================================================================
 
 describe('latency tracking', () => {
-  it('stats.lexicalLatencyMs comes from bm25Search latency field', async () => {
+  it('stats.lexicalLatencyMs comes from bm25SearchRaw latency field', async () => {
     const searcher = await makeSearcher({
       graphSearch: {
         init: vi.fn(async () => {}),
         db: { _stubDb: true },
+        bm25SearchRaw: vi.fn(async () => ({
+          results: [{ id: 'r1', name: 'test', score: 10, file: 'test.js' }],
+          latency: 7,
+        })),
         bm25Search: vi.fn(async () => ({
           results: [{ id: 'r1', name: 'test', score: 10, file: 'test.js' }],
           latency: 7,

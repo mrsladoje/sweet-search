@@ -20,6 +20,25 @@ import { detectIntent, getIntentBoost } from './intent-detector.js';
 import { applyMMR, shouldApplyMMR } from './mmr.js';
 import { SYMBOL_KIND_WEIGHTS, DEFINITION_TYPES } from './constants.js';
 
+// Fix 9: Abbreviation expansion dictionary for common software abbreviations
+const ABBREVIATION_EXPANSIONS = {
+  auth: ['authentication', 'authorize'],
+  cfg: ['config', 'configuration'],
+  btn: ['button'],
+  repo: ['repository'],
+  req: ['request'],
+  res: ['response'],
+  impl: ['implementation'],
+  env: ['environment'],
+  msg: ['message'],
+  err: ['error'],
+  ctx: ['context'],
+  db: ['database'],
+  conn: ['connection'],
+  mgr: ['manager'],
+  svc: ['service'],
+};
+
 // =============================================================================
 // GRAPH SEARCH CLASS
 // =============================================================================
@@ -61,6 +80,24 @@ export class GraphSearch {
         this.hasTrigram = false;
       }
 
+      // Detect FTS5 column count to warn about schema mismatches with old databases.
+      // The bm25() weights are positional — wrong column count produces wrong ranking.
+      if (this.hasFts5) {
+        try {
+          const ftsColInfo = db.prepare("SELECT * FROM entities_fts LIMIT 0").columns();
+          this._ftsColumnCount = ftsColInfo.length;
+          const expectedCols = 4; // name, name_alias, signature, doc_comment
+          if (this._ftsColumnCount !== expectedCols) {
+            console.warn(
+              `[GraphSearch] FTS5 schema mismatch: expected ${expectedCols} columns, found ${this._ftsColumnCount}. ` +
+              `BM25 weights will be misaligned. Run \`/index-codebase --full\` to rebuild.`
+            );
+          }
+        } catch {
+          // Non-fatal — continue with FTS5
+        }
+      }
+
       // Cache hot-path prepared statements (eliminates ~8-9µs per prepare() call)
       // Prepare failures on optional FTS paths should degrade to existing fallbacks.
       if (this.hasFts5) {
@@ -69,7 +106,7 @@ export class GraphSearch {
             SELECT
               e.id, e.file_path, e.type, e.name, e.signature,
               e.doc_comment, e.start_line, e.end_line, e.package, e.parent_class,
-              bm25(entities_fts) AS score
+              bm25(entities_fts, 10.0, 4.0, 5.0, 1.0) AS score
             FROM entities_fts
             JOIN entities e ON entities_fts.rowid = e.rowid
             WHERE entities_fts MATCH ?
@@ -89,7 +126,7 @@ export class GraphSearch {
             SELECT
               e.id, e.file_path, e.type, e.name, e.signature,
               e.doc_comment, e.start_line, e.end_line, e.package, e.parent_class,
-              bm25(entities_trigram) AS score
+              bm25(entities_trigram, 10.0, 3.0) AS score
             FROM entities_trigram
             JOIN entities e ON entities_trigram.rowid = e.rowid
             WHERE entities_trigram MATCH ?
@@ -140,6 +177,109 @@ export class GraphSearch {
   }
 
   /**
+   * Map a raw FTS5/trigram/LIKE row to a search result object.
+   */
+  _mapRow(row, source, scoreMultiplier = 1.0) {
+    return {
+      id: row.id,
+      file: row.file_path,
+      type: row.type,
+      name: row.name,
+      signature: row.signature,
+      docComment: row.doc_comment,
+      startLine: row.start_line,
+      endLine: row.end_line,
+      package: row.package,
+      parentClass: row.parent_class,
+      score: Math.abs(row.score) * scoreMultiplier,
+      source,
+    };
+  }
+
+  /**
+   * Merge new rows into results, deduplicating by id.
+   */
+  _mergeRows(results, rows, source, scoreMultiplier = 1.0) {
+    const existingIds = new Set(results.map(r => r.id));
+    for (const row of rows) {
+      if (!existingIds.has(row.id)) {
+        results.push(this._mapRow(row, source, scoreMultiplier));
+        existingIds.add(row.id);
+      }
+    }
+  }
+
+  /**
+   * LIKE-based fallback search (used when FTS5 is unavailable or returns no results).
+   */
+  _likeFallback(results, query, limit, source = 'like') {
+    const searchTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+    const likeConditions = searchTerms.map(() => 'search_text LIKE ?').join(' AND ');
+    const likeParams = searchTerms.map(t => `%${t}%`);
+
+    const stmt = this.db.prepare(`
+      SELECT
+        id, file_path, type, name, signature, doc_comment,
+        start_line, end_line, package, parent_class, search_text
+      FROM entities
+      WHERE ${likeConditions || '1=1'}
+        AND stale_since IS NULL
+      ORDER BY
+        CASE WHEN name LIKE ? THEN 0 ELSE 1 END,
+        length(name)
+      LIMIT ?
+    `);
+
+    const rows = stmt.all(...likeParams, `%${query}%`, limit);
+
+    let rank = 0;
+    for (const row of rows) {
+      rank++;
+      const nameMatch = row.name.toLowerCase().includes(query.toLowerCase()) ? 2 : 0;
+      const exactMatch = row.name.toLowerCase() === query.toLowerCase() ? 5 : 0;
+      row.score = -(10 - rank * 0.1 + nameMatch + exactMatch);
+      const mapped = this._mapRow(row, source);
+      mapped.score = Math.max(0.1, mapped.score);
+      results.push(mapped);
+    }
+  }
+
+  /**
+   * Fix 11: Compute lexical path observability metadata.
+   */
+  _computeLexicalMeta(results, query, options = {}) {
+    const {
+      restrictedAttempted = false,
+      restrictedFallback = false,
+      definitionFirstUsed = false,
+      definitionFirstTopHit = false,
+    } = options;
+    const sources = new Set(results.map(r => r.source));
+    const hasFtsSource = Array.from(sources).some(source => source.startsWith('fts5'));
+    const hasTrigramSource = Array.from(sources).some(source => source.startsWith('trigram'));
+    let searchQuality = 'fallback';
+    if (hasFtsSource) {
+      searchQuality = 'exact';
+    } else if (hasTrigramSource) {
+      searchQuality = 'fuzzy';
+    }
+
+    const lexicalMeta = {
+      searchQuality,
+      lexicalPath: hasFtsSource ? 'fts5' : (hasTrigramSource ? 'trigram' : 'like'),
+      identifierRestricted: restrictedAttempted && !restrictedFallback,
+      restrictedAttempted,
+      restrictedFallback,
+      abbreviationExpanded: sources.has('fts5_abbr'),
+      variantExpanded: sources.has('fts5_expanded'),
+      definitionFirstUsed,
+      definitionFirstTopHit,
+    };
+
+    return { searchQuality, lexicalMeta };
+  }
+
+  /**
    * Close database connection
    */
   close() {
@@ -171,31 +311,37 @@ export class GraphSearch {
 
     const start = Date.now();
     let results = [];
+    let restrictedAttempted = false;
+    let restrictedFallback = false;
 
     if (this.hasFts5) {
-      // Use FTS5 with BM25 ranking (cached prepared statement)
-      try {
-        const rows = this._stmtFts5.all(this.sanitizeFtsQuery(query), limit);
+      // Fix 4: Try name:-restricted FTS5 query first for code-shaped identifiers
+      const useNameRestriction = this.isStrictIdentifierQuery(query);
+      let rows = [];
 
-        for (const row of rows) {
-          results.push({
-            id: row.id,
-            file: row.file_path,
-            type: row.type,
-            name: row.name,
-            signature: row.signature,
-            docComment: row.doc_comment,
-            startLine: row.start_line,
-            endLine: row.end_line,
-            package: row.package,
-            parentClass: row.parent_class,
-            score: Math.abs(row.score), // BM25 scores are negative in sqlite
-            source: 'fts5',
-          });
+      if (useNameRestriction) {
+        restrictedAttempted = true;
+        try {
+          rows = this._stmtFts5.all(`name : ${this.sanitizeFtsQuery(query)}`, limit);
+        } catch (err) {
+          this.log(`[bm25Search] Name-restricted FTS5 query failed: ${err.message}`);
+          rows = [];
         }
-      } catch (err) {
-        // FTS5 failed, will try trigram or LIKE
-        results = [];
+      }
+
+      // Fall back to unrestricted FTS5 if name-restricted returned nothing
+      if (rows.length === 0) {
+        restrictedFallback = restrictedAttempted;
+        try {
+          rows = this._stmtFts5.all(this.sanitizeFtsQuery(query), limit);
+        } catch (err) {
+          this.log(`[bm25Search] FTS5 query failed: ${err.message}`);
+          rows = [];
+        }
+      }
+
+      for (const row of rows) {
+        results.push(this._mapRow(row, 'fts5'));
       }
     }
 
@@ -204,87 +350,43 @@ export class GraphSearch {
     if (this.hasTrigram && results.length < 3 && query.length >= 3) {
       try {
         // Trigram search - just use the raw query (trigram handles substrings)
-        const trigramRows = this._stmtTrigram.all(`"${query}"`, limit);
+        const escaped = query.replace(/"/g, '""');
+        const trigramRows = this._stmtTrigram.all(`"${escaped}"`, limit);
 
-        const existingIds = new Set(results.map(r => r.id));
-        for (const row of trigramRows) {
-          // Avoid duplicates from standard FTS5
-          if (!existingIds.has(row.id)) {
-            results.push({
-              id: row.id,
-              file: row.file_path,
-              type: row.type,
-              name: row.name,
-              signature: row.signature,
-              docComment: row.doc_comment,
-              startLine: row.start_line,
-              endLine: row.end_line,
-              package: row.package,
-              parentClass: row.parent_class,
-              score: Math.abs(row.score) * 0.9, // Slightly lower score for fuzzy matches
-              source: 'trigram',
-            });
-            existingIds.add(row.id);
-          }
+        this._mergeRows(results, trigramRows, 'trigram', 0.9);
+      } catch (err) {
+        this.log(`[bm25Search] Trigram query failed: ${err.message}`);
+      }
+    }
+
+    // Fix 8: Identifier variant expansion — run secondary expanded query for code-shaped identifiers
+    if (this.hasFts5 && results.length < 5 && this.isStrictIdentifierQuery(query)) {
+      try {
+        const expandedForm = this.expandIdentifierQuery(query);
+        if (expandedForm && expandedForm !== this.sanitizeFtsQuery(query)) {
+          const expandedRows = this._stmtFts5.all(expandedForm, limit);
+          this._mergeRows(results, expandedRows, 'fts5_expanded', 0.85);
         }
       } catch (err) {
-        // Trigram failed, continue with existing results
+        this.log(`[bm25Search] Identifier expansion query failed: ${err.message}`);
+      }
+    }
+
+    // Fix 9: Abbreviation expansion — try expanding abbreviations when results are sparse
+    if (this.hasFts5 && results.length < 3) {
+      try {
+        const abbrQuery = this.expandAbbreviations(query);
+        if (abbrQuery) {
+          const abbrRows = this._stmtFts5.all(abbrQuery, limit);
+          this._mergeRows(results, abbrRows, 'fts5_abbr', 0.8);
+        }
+      } catch (err) {
+        this.log(`[bm25Search] Abbreviation expansion failed: ${err.message}`);
       }
     }
 
     if (!this.hasFts5 || results.length === 0) {
-      // Fallback: LIKE-based search on search_text column
-      const searchTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
-      const likeConditions = searchTerms.map(() => 'search_text LIKE ?').join(' AND ');
-      const likeParams = searchTerms.map(t => `%${t}%`);
-
-      const stmt = this.db.prepare(`
-        SELECT
-          id,
-          file_path,
-          type,
-          name,
-          signature,
-          doc_comment,
-          start_line,
-          end_line,
-          package,
-          parent_class,
-          search_text
-        FROM entities
-        WHERE ${likeConditions || '1=1'}
-          AND stale_since IS NULL
-        ORDER BY
-          CASE WHEN name LIKE ? THEN 0 ELSE 1 END,
-          length(name)
-        LIMIT ?
-      `);
-
-      const rows = stmt.all(...likeParams, `%${query}%`, limit);
-
-      let rank = 0;
-      for (const row of rows) {
-        rank++;
-        // Calculate simple relevance score based on match position and name length
-        const nameMatch = row.name.toLowerCase().includes(query.toLowerCase()) ? 2 : 0;
-        const exactMatch = row.name.toLowerCase() === query.toLowerCase() ? 5 : 0;
-        const score = 10 - rank * 0.1 + nameMatch + exactMatch;
-
-        results.push({
-          id: row.id,
-          file: row.file_path,
-          type: row.type,
-          name: row.name,
-          signature: row.signature,
-          docComment: row.doc_comment,
-          startLine: row.start_line,
-          endLine: row.end_line,
-          package: row.package,
-          parentClass: row.parent_class,
-          score: Math.max(0.1, score),
-          source: 'like',
-        });
-      }
+      this._likeFallback(results, query, limit, 'like');
     }
 
     const latency = Date.now() - start;
@@ -293,7 +395,15 @@ export class GraphSearch {
     // Skip boosts if skipBoosts=true (for fair hybrid fusion - boosts applied post-fusion)
     const finalResults = skipBoosts ? results : this.applyRankingBoosts(results, query);
 
-    return { results: finalResults, latency };
+    // Fix 11: Lexical path observability
+    const { searchQuality, lexicalMeta } = this._computeLexicalMeta(finalResults, query, {
+      restrictedAttempted,
+      restrictedFallback,
+    });
+
+    this.log(`[bm25Search] quality=${searchQuality} path=${lexicalMeta.lexicalPath} restricted=${lexicalMeta.identifierRestricted} fallback=${lexicalMeta.restrictedFallback} results=${finalResults.length} latency=${latency}ms`);
+
+    return { results: finalResults, latency, searchQuality, lexicalMeta };
   }
 
   /**
@@ -313,111 +423,47 @@ export class GraphSearch {
     let results = [];
 
     if (this.hasFts5) {
-      try {
-        const rows = this._stmtFts5.all(this.sanitizeFtsQuery(query), limit);
+      // Fix 4: Name-restricted FTS5 query for code-shaped identifiers (plan requires both bm25Search & Raw)
+      const useNameRestriction = this.isStrictIdentifierQuery(query);
+      let rows = [];
 
-        for (const row of rows) {
-          results.push({
-            id: row.id,
-            file: row.file_path,
-            type: row.type,
-            name: row.name,
-            signature: row.signature,
-            docComment: row.doc_comment,
-            startLine: row.start_line,
-            endLine: row.end_line,
-            package: row.package,
-            parentClass: row.parent_class,
-            score: Math.abs(row.score),
-            source: 'fts5_raw',
-          });
+      if (useNameRestriction) {
+        try {
+          rows = this._stmtFts5.all(`name : ${this.sanitizeFtsQuery(query)}`, limit);
+        } catch (err) {
+          this.log(`[bm25SearchRaw] Name-restricted FTS5 query failed: ${err.message}`);
+          rows = [];
         }
-      } catch (err) {
-        // P0 FIX: Add error logging for debugging
-        if (this.log) {
+      }
+
+      if (rows.length === 0) {
+        try {
+          rows = this._stmtFts5.all(this.sanitizeFtsQuery(query), limit);
+        } catch (err) {
           this.log(`[bm25SearchRaw] FTS5 query failed: ${err.message}`);
+          rows = [];
         }
-        results = [];
+      }
+
+      for (const row of rows) {
+        results.push(this._mapRow(row, 'fts5_raw'));
       }
     }
 
     // Try trigram fuzzy search if standard FTS5 returned few results
     if (this.hasTrigram && results.length < 3 && query.length >= 3) {
       try {
-        const trigramRows = this._stmtTrigram.all(`"${query}"`, limit);
-        const existingIds = new Set(results.map(r => r.id));
-
-        for (const row of trigramRows) {
-          if (!existingIds.has(row.id)) {
-            results.push({
-              id: row.id,
-              file: row.file_path,
-              type: row.type,
-              name: row.name,
-              signature: row.signature,
-              docComment: row.doc_comment,
-              startLine: row.start_line,
-              endLine: row.end_line,
-              package: row.package,
-              parentClass: row.parent_class,
-              score: Math.abs(row.score) * 0.9,
-              source: 'trigram_raw',
-            });
-            existingIds.add(row.id);
-          }
-        }
+        const escapedRaw = query.replace(/"/g, '""');
+        const trigramRows = this._stmtTrigram.all(`"${escapedRaw}"`, limit);
+        this._mergeRows(results, trigramRows, 'trigram_raw', 0.9);
       } catch (err) {
-        // P0 FIX: Add error logging for debugging
-        if (this.log) {
-          this.log(`[bm25SearchRaw] Trigram query failed: ${err.message}`);
-        }
-        // Continue with existing results
+        this.log(`[bm25SearchRaw] Trigram query failed: ${err.message}`);
       }
     }
 
     // LIKE fallback for no FTS5
     if (!this.hasFts5 || results.length === 0) {
-      const searchTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
-      const likeConditions = searchTerms.map(() => 'search_text LIKE ?').join(' AND ');
-      const likeParams = searchTerms.map(t => `%${t}%`);
-
-      const stmt = this.db.prepare(`
-        SELECT
-          id, file_path, type, name, signature, doc_comment,
-          start_line, end_line, package, parent_class, search_text
-        FROM entities
-        WHERE ${likeConditions || '1=1'}
-          AND stale_since IS NULL
-        ORDER BY
-          CASE WHEN name LIKE ? THEN 0 ELSE 1 END,
-          length(name)
-        LIMIT ?
-      `);
-
-      const rows = stmt.all(...likeParams, `%${query}%`, limit);
-
-      let rank = 0;
-      for (const row of rows) {
-        rank++;
-        const nameMatch = row.name.toLowerCase().includes(query.toLowerCase()) ? 2 : 0;
-        const exactMatch = row.name.toLowerCase() === query.toLowerCase() ? 5 : 0;
-        const score = 10 - rank * 0.1 + nameMatch + exactMatch;
-
-        results.push({
-          id: row.id,
-          file: row.file_path,
-          type: row.type,
-          name: row.name,
-          signature: row.signature,
-          docComment: row.doc_comment,
-          startLine: row.start_line,
-          endLine: row.end_line,
-          package: row.package,
-          parentClass: row.parent_class,
-          score: Math.max(0.1, score),
-          source: 'like_raw',
-        });
-      }
+      this._likeFallback(results, query, limit, 'like_raw');
     }
 
     const latency = Date.now() - start;
@@ -513,6 +559,13 @@ export class GraphSearch {
         }
       }
 
+      // Fix 6: Path-aware lexical signal boost
+      const pathBoost = this.applyPathBoost(result, queryTokens);
+      if (pathBoost > 1.0) {
+        totalBoost *= pathBoost;
+        boostDetails.push(`path:${pathBoost.toFixed(2)}`);
+      }
+
       const boostedScore = result.score * totalBoost;
 
       if (debugMode && totalBoost > 1.0) {
@@ -555,23 +608,33 @@ export class GraphSearch {
    */
   extractQueryTokens(query) {
     const tokens = new Set();
+    const trimmed = query.trim();
+
+    if (!trimmed) {
+      return [];
+    }
 
     // Add full query as token
-    tokens.add(query.toLowerCase().trim());
+    tokens.add(trimmed.toLowerCase());
 
-    // Split on spaces
-    for (const word of query.split(/\s+/)) {
+    // Split on identifier boundaries and path-like separators.
+    const normalized = trimmed
+      .replace(/([A-Z]{2,})([A-Z][a-z])/g, '$1 $2')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/([a-zA-Z])(\d)/g, '$1 $2')
+      .replace(/(\d)([a-zA-Z])/g, '$1 $2')
+      .replace(/[_\-./:\\]/g, ' ');
+
+    const words = normalized.toLowerCase().split(/\s+/).filter(Boolean);
+    for (const word of words) {
       if (word.length > 0) {
-        tokens.add(word.toLowerCase());
+        tokens.add(word);
       }
     }
 
-    // Split PascalCase/camelCase
-    const camelParts = query.split(/(?=[A-Z])/);
-    for (const part of camelParts) {
-      if (part.length > 1) {
-        tokens.add(part.toLowerCase());
-      }
+    const collapsed = words.join('');
+    if (collapsed) {
+      tokens.add(collapsed);
     }
 
     return Array.from(tokens);
@@ -740,6 +803,37 @@ export class GraphSearch {
 
     // Apply boost: definitions at top get up to 1.3x, at bottom get 1.15x
     return 1 + 0.3 * positionPrior;
+  }
+
+  /**
+   * Fix 6: Path-aware lexical signal boost.
+   * Boosts results where the file path/basename contains query tokens.
+   */
+  applyPathBoost(result, queryTokens) {
+    if (!result.file) return 1.0;
+
+    const filePath = result.file.toLowerCase();
+    const parts = filePath.split('/');
+    const basename = parts[parts.length - 1]?.replace(/\.[^.]+$/, '') || '';
+
+    let boost = 1.0;
+
+    for (const token of queryTokens) {
+      if (token.length < 2) continue;
+
+      if (basename === token) {
+        // Exact basename match: highest boost
+        boost = Math.max(boost, 1.5);
+      } else if (basename.includes(token)) {
+        // Basename contains token
+        boost = Math.max(boost, 1.25);
+      } else if (parts.some(seg => seg.includes(token))) {
+        // Directory segment contains token
+        boost = Math.max(boost, 1.1);
+      }
+    }
+
+    return boost;
   }
 
   /**
@@ -1266,7 +1360,7 @@ export class GraphSearch {
    */
   sanitizeFtsQuery(query) {
     // Remove FTS5 special characters
-    let sanitized = query.replace(/[":*^~()\-]/g, ' ');
+    let sanitized = query.replace(/[":*^~()+\-]/g, ' ');
 
     // Convert to prefix match if single word
     const words = sanitized.trim().split(/\s+/).filter(w => w.length > 0);
@@ -1283,6 +1377,66 @@ export class GraphSearch {
       }
       return `"${w}"`;
     }).join(' ');
+  }
+
+  /**
+   * Fix 8: Expand a code-shaped identifier into split-form FTS5 query.
+   * Preserves the original as primary; this produces the secondary expanded form.
+   *
+   * @example
+   * expandIdentifierQuery('getUserName') // '"get" "user" "name"*'
+   * expandIdentifierQuery('UserService') // '"user" "service"*'
+   */
+  expandIdentifierQuery(query) {
+    const split = query
+      .replace(/([A-Z]{2,})([A-Z][a-z])/g, '$1 $2')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/([a-zA-Z])(\d)/g, '$1 $2')
+      .replace(/(\d)([a-zA-Z])/g, '$1 $2')
+      .replace(/[_\-./:\\]/g, ' ');
+
+    const parts = split.trim().split(/\s+/).filter(w => w.length > 0);
+    if (parts.length <= 1) return null; // No expansion needed for single tokens
+
+    return parts.map((w, i) => {
+      const lower = w.toLowerCase();
+      if (i === parts.length - 1) {
+        return `"${lower}"*`;
+      }
+      return `"${lower}"`;
+    }).join(' ');
+  }
+
+  /**
+   * Fix 9: Expand abbreviations in a query using the curated dictionary.
+   * Returns a grouped FTS5 query, or null if no expansions apply.
+   * Single-word queries expand to OR groups; two-word queries preserve the
+   * non-abbreviation term as an AND requirement to avoid noisy broad matches.
+   */
+  expandAbbreviations(query) {
+    const sanitizedWords = query
+      .replace(/[":*^~()+\-]/g, ' ')
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean);
+
+    // Only expand single-word or two-word queries to avoid explosion
+    if (sanitizedWords.length === 0 || sanitizedWords.length > 2) return null;
+
+    let changed = false;
+    const groups = sanitizedWords.map(word => {
+      const variants = [word, ...(ABBREVIATION_EXPANSIONS[word] || [])];
+      const uniqueVariants = [...new Set(variants)];
+      if (uniqueVariants.length > 1) {
+        changed = true;
+      }
+
+      const clauses = uniqueVariants.map(variant => `"${variant}"*`);
+      return clauses.length === 1 ? clauses[0] : `(${clauses.join(' OR ')})`;
+    });
+
+    return changed ? groups.join(' ') : null;
   }
 
   // =============================================================================
@@ -1318,6 +1472,38 @@ export class GraphSearch {
 
     // Single lowercase word that could be a simple identifier (auth, user)
     if (/^[a-z][a-z0-9]*$/.test(trimmed) && trimmed.length >= 3) return true;
+
+    return false;
+  }
+
+  /**
+   * Check if query is a clearly code-shaped identifier suitable for name: field restriction.
+   * More restrictive than isIdentifierQuery() — excludes generic single lowercase words
+   * like "cache", "error", "token" that should search all fields.
+   *
+   * Matches: PascalCase, camelCase, snake_case, SCREAMING_SNAKE_CASE, dotted identifiers.
+   */
+  isStrictIdentifierQuery(query) {
+    const trimmed = query.trim();
+    if (/\s/.test(trimmed)) return false;
+
+    // PascalCase: UserService, AuthDTO, HTMLParser (uppercase start, has at least one lowercase)
+    if (/^[A-Z][a-zA-Z0-9]+$/.test(trimmed) && /[a-z]/.test(trimmed)) return true;
+
+    // camelCase: getUserName, authService
+    if (/^[a-z][a-zA-Z0-9]*$/.test(trimmed) && /[A-Z]/.test(trimmed)) return true;
+
+    // snake_case: get_user_name
+    if (/^[a-z][a-z0-9_]*$/.test(trimmed) && trimmed.includes('_')) return true;
+
+    // SCREAMING_SNAKE_CASE: MAX_RETRIES
+    if (/^[A-Z][A-Z0-9_]+$/.test(trimmed) && trimmed.includes('_')) return true;
+
+    // All-uppercase code identifiers (2+ chars): JSON, URL, API, HTTP, IO
+    if (/^[A-Z]{2,}$/.test(trimmed)) return true;
+
+    // Dotted identifier: foo.bar.baz
+    if (/^[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)+$/.test(trimmed)) return true;
 
     return false;
   }

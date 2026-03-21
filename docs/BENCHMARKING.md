@@ -186,7 +186,32 @@ Compare the two runs (translate=on vs translate=off) to measure translation impa
 | WSL2 10GB RAM | 5 | ~25-40 min | CPU-bound on ONNX mutex |
 | M3 Max | 5 | ~8-15 min (est.) | Metal/ANE acceleration, unified memory |
 
-### Baseline (March 12, 2026 — before OPUS-MT)
+### Current best (March 22, 2026 — after Lexical Fix Plan)
+
+Profile: `full` (late interaction ON), M3 Max 128GB, concurrency 12.
+
+```
+MRR@10:      81.9%    Recall@5:  89.2%    Recall@20: 92.8%
+Success@1:   76.3%    Latency p50: 1213ms
+```
+
+Per-language: Python 93.3%, Go 94.2%, Java 82.1%, JS 69.0%, PHP 78.7%, Ruby 74.1%
+
+Changes from the Lexical Fix Plan (weighted BM25, name_alias FTS5 column,
+identifier variant expansion, abbreviation expansion, path-aware boost,
+prefix indexes, narrow identifier routing) improved every language vs the
+Feb 2026 baseline (+2.7pp MRR@10 aggregate).
+
+### Baseline (Feb 18, 2026 — before Lexical Fix Plan)
+
+```
+MRR@10:      79.2%    Recall@5:  86.1%    Recall@20: 90.2%
+Success@1:   73.8%    Latency p50: 406ms
+```
+
+Per-language: Python 89.8%, Go 93.6%, Java 80.9%, JS 65.5%, PHP 75.9%, Ruby 72.4%
+
+### Pre-OPUS-MT Baseline (March 12, 2026)
 
 ```
 MRR@10:      80.8%    Recall@5:  87.8%    Recall@20: 91.8%
