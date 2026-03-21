@@ -18,7 +18,7 @@ import { applyMMR, shouldApplyMMR, getLambdaForIntent } from './mmr.js';
 /**
  * Hybrid search V2 with raw paths + post-fusion boosts (PHASE_1_FIXES Change 5)
  *
- * Uses bm25Search(skipBoosts=true) for lexical path to ensure fair fusion.
+ * Uses bm25SearchRaw() for lexical path to ensure fair fusion.
  * Applies boosts AFTER fusion so both paths benefit equally.
  *
  * Uses `this` extensively.
@@ -31,10 +31,10 @@ export async function hybridSearchV2(query, options = {}) {
   const routeType = routing.mode === 'hybrid' ? 'mixed' : routing.mode;
 
   // Step 1: Retrieval from both paths (raw scores, no pre-fusion boosts)
-  // Uses raw bm25Search (not graphExpandedSearch) so fusion sees pure BM25 scores
+  // Uses bm25SearchRaw() (not graphExpandedSearch) so fusion sees pure BM25 scores
   // without synthetic graph-expansion scores polluting the distribution.
   const [lexicalSearchResult, semanticSearchResult] = await Promise.all([
-    this.graphSearch.bm25Search(query, { limit: 50, skipBoosts: true }),
+    this.graphSearch.bm25SearchRaw(query, 50),
     this.semanticSearch(query, { k: 50, rerank: false, useLateInteraction }),
   ]);
 

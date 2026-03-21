@@ -19,7 +19,145 @@ import { getTreeSitterProvider } from './tree-sitter-provider.js';
 
 // Schema version - increment when schema changes require full reindex
 // Users should run `/index-codebase --full` after upgrading
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+
+/**
+ * Normalize an identifier into searchable alias tokens.
+ * Splits camelCase, PascalCase, snake_case, digits and emits both
+ * the split form and the collapsed alnum form.
+ *
+ * @param {string} name - The original identifier name
+ * @returns {string} Space-separated alias tokens (lowercased, deduped)
+ *
+ * @example
+ * normalizeIdentifier('UserService')   // 'user service userservice'
+ * normalizeIdentifier('getUserName')   // 'get user name getusername'
+ * normalizeIdentifier('get_user_name') // 'get user name getusername'
+ * normalizeIdentifier('HTMLParser2')   // 'html parser 2 htmlparser2'
+ * normalizeIdentifier('OAuth2Client')  // 'o auth 2 client oauth2client'
+ * normalizeIdentifier('auth.service')  // 'auth service authservice'
+ */
+export function normalizeIdentifier(name) {
+  if (!name) return '';
+
+  // Step 1-4: Split on separators and camelCase/PascalCase boundaries
+  let split = name
+    // Insert space before acronym→word transitions (e.g. HTMLParser -> HTML Parser)
+    // Requires 2+ uppercase chars to avoid splitting single-letter prefixes (OAuth stays intact)
+    .replace(/([A-Z]{2,})([A-Z][a-z])/g, '$1 $2')
+    // Insert space at camelCase boundaries (e.g. getUser -> get User)
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    // Insert space at digit boundaries (e.g. Parser2 -> Parser 2, v2Handler -> v 2 Handler)
+    .replace(/([a-zA-Z])(\d)/g, '$1 $2')
+    .replace(/(\d)([a-zA-Z])/g, '$1 $2')
+    // Split on separators: _ - . / :
+    .replace(/[_\-./:\\]/g, ' ');
+
+  // Step 5-6: Lowercase and normalize whitespace
+  const tokens = split.toLowerCase().split(/\s+/).filter(t => t.length > 0);
+
+  // Step 7: Emit both split tokens and collapsed form
+  const collapsed = tokens.join('');
+  const uniqueTokens = [...new Set([...tokens, collapsed])];
+
+  return uniqueTokens.join(' ');
+}
+
+/**
+ * Persist the current schema version after schema creation/migration succeeds.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} [version=SCHEMA_VERSION]
+ */
+export function setSchemaVersion(db, version = SCHEMA_VERSION) {
+  db.exec(`CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT)`);
+  db.prepare('INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)').run('version', String(version));
+}
+
+function getTableSql(db, tableName) {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name = ?").get(tableName);
+  return row?.sql || '';
+}
+
+function normalizeSql(sql) {
+  return sql.toLowerCase().replace(/\s+/g, ' ');
+}
+
+function hasExpectedEntitiesFtsSchema(sql) {
+  const normalized = normalizeSql(sql);
+  return normalized.includes('name_alias')
+    && normalized.includes("tokenize='porter unicode61'")
+    && normalized.includes("prefix='2 3 4'");
+}
+
+function hasExpectedTrigramSchema(sql) {
+  const normalized = normalizeSql(sql);
+  return normalized.includes("tokenize='trigram'")
+    && normalized.includes("content='entities'")
+    && normalized.includes("content_rowid='rowid'");
+}
+
+function backfillNameAliases(db) {
+  const rowsNeedingAlias = db.prepare(`
+    SELECT id, name
+    FROM entities
+    WHERE name IS NOT NULL
+      AND (name_alias IS NULL OR trim(name_alias) = '')
+  `).all();
+
+  if (rowsNeedingAlias.length === 0) {
+    return 0;
+  }
+
+  const updateAlias = db.prepare(`UPDATE entities SET name_alias = ? WHERE id = ?`);
+  const applyBackfill = db.transaction((rows) => {
+    for (const row of rows) {
+      updateAlias.run(normalizeIdentifier(row.name), row.id);
+    }
+  });
+
+  applyBackfill(rowsNeedingAlias);
+  return rowsNeedingAlias.length;
+}
+
+function ensureLexicalFtsSchema(db) {
+  const existingFtsSql = getTableSql(db, 'entities_fts');
+  const existingTrigramSql = getTableSql(db, 'entities_trigram');
+  const needsRebuild = !existingFtsSql
+    || !existingTrigramSql
+    || !hasExpectedEntitiesFtsSchema(existingFtsSql)
+    || !hasExpectedTrigramSchema(existingTrigramSql);
+
+  if (needsRebuild) {
+    db.exec(`DROP TABLE IF EXISTS entities_fts`);
+    db.exec(`DROP TABLE IF EXISTS entities_trigram`);
+  }
+
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
+      name,
+      name_alias,
+      signature,
+      doc_comment,
+      content='entities',
+      content_rowid='rowid',
+      tokenize='porter unicode61',
+      prefix='2 3 4'
+    )
+  `);
+
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS entities_trigram USING fts5(
+      name,
+      signature,
+      content='entities',
+      content_rowid='rowid',
+      tokenize='trigram'
+    )
+  `);
+
+  return { rebuilt: needsRebuild };
+}
 
 // =============================================================================
 // ENTITY EXTRACTION PATTERNS
@@ -1627,9 +1765,16 @@ export function checkSchemaVersion(db) {
     const dbVersion = row ? parseInt(row.value, 10) : null;
 
     if (dbVersion === null) {
-      // New database or pre-versioning - set current version
-      db.prepare('INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)').run('version', String(SCHEMA_VERSION));
-      return { compatible: true, dbVersion: SCHEMA_VERSION };
+      const existingTableCount = db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name NOT LIKE 'sqlite_%'
+          AND name != 'schema_meta'
+      `).get().count;
+
+      // Fresh databases can continue; pre-versioning databases must be migrated.
+      return { compatible: existingTableCount === 0, dbVersion: null };
     }
 
     if (dbVersion < SCHEMA_VERSION) {
@@ -1650,6 +1795,11 @@ export function checkSchemaVersion(db) {
  * Uses better-sqlite3 (native SQLite binding with full FTS5 trigram support)
  */
 export function createGraphSchema(db) {
+  const versionStatus = checkSchemaVersion(db);
+  if (!versionStatus.compatible) {
+    console.log(`  Updating schema from ${versionStatus.dbVersion ?? 'unversioned'} to v${SCHEMA_VERSION}`);
+  }
+
   // Entities table with HCGS summary support
   // signature_hash added for collision-proof backup/restore of overloaded methods
   // code column stores actual source code for HCGS summary generation
@@ -1672,6 +1822,7 @@ export function createGraphSchema(db) {
       parent_id TEXT,
       hierarchy_level INTEGER DEFAULT 0,
       code TEXT,
+      name_alias TEXT,
       stale_since INTEGER DEFAULT NULL
     )
   `);
@@ -1684,8 +1835,18 @@ export function createGraphSchema(db) {
       db.exec('ALTER TABLE entities ADD COLUMN code TEXT');
       console.log('  Migrated: added code column to entities table');
     }
+    const hasAliasColumn = columns.some(col => col.name === 'name_alias');
+    if (!hasAliasColumn) {
+      db.exec('ALTER TABLE entities ADD COLUMN name_alias TEXT');
+      console.log('  Migrated: added name_alias column to entities table');
+    }
   } catch (err) {
     // Ignore errors - column might already exist or table not created yet
+  }
+
+  const aliasBackfillCount = backfillNameAliases(db);
+  if (aliasBackfillCount > 0) {
+    console.log(`  Migrated: backfilled name_alias for ${aliasBackfillCount} entities`);
   }
 
   // Migration: Add stale_since column for soft-delete support
@@ -1715,31 +1876,9 @@ export function createGraphSchema(db) {
   // better-sqlite3 bundles SQLite 3.51.1 which has native FTS5 trigram support
   let hasFts5 = false;
   try {
-    // Standard FTS5 with porter stemming for word-based search
-    db.exec(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
-        name,
-        signature,
-        doc_comment,
-        content='entities',
-        content_rowid='rowid',
-        tokenize='porter unicode61'
-      )
-    `);
-
-    // Trigram FTS5 for fuzzy/substring matching (e.g., "Auth" → "AuthenticationService")
-    db.exec(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS entities_trigram USING fts5(
-        name,
-        signature,
-        content='entities',
-        content_rowid='rowid',
-        tokenize='trigram'
-      )
-    `);
-
+    const { rebuilt } = ensureLexicalFtsSchema(db);
     hasFts5 = true;
-    console.log('  FTS5 enabled (porter + trigram)');
+    console.log(rebuilt ? '  FTS5 schema rebuilt (porter + trigram)' : '  FTS5 enabled (porter + trigram)');
   } catch (err) {
     console.log('  FTS5 not available:', err.message);
   }
@@ -1769,8 +1908,7 @@ export function createGraphSchema(db) {
   // Index on target_id for efficient reverse lookups ("what calls X")
   db.exec(`CREATE INDEX IF NOT EXISTS idx_rel_target_id ON relationships(target_id) WHERE target_id IS NOT NULL`);
 
-  // Check schema version compatibility
-  checkSchemaVersion(db);
+  setSchemaVersion(db);
 
   return hasFts5;
 }
@@ -1993,8 +2131,8 @@ export function insertGraph(db, entities, relationships, hasFts5 = false) {
   // Includes signature_hash for collision-proof backup/restore
   const entityStmt = db.prepare(`
     INSERT OR REPLACE INTO entities
-    (id, file_path, type, name, signature, signature_hash, doc_comment, start_line, end_line, package, parent_class, search_text, parent_id, hierarchy_level)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (id, file_path, type, name, signature, signature_hash, doc_comment, start_line, end_line, package, parent_class, search_text, name_alias, parent_id, hierarchy_level)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   // Build parent lookup for hierarchy
@@ -2033,6 +2171,9 @@ export function insertGraph(db, entities, relationships, hasFts5 = false) {
         hierarchyLevel = 0; // Top-level in JS/TS files
       }
 
+      // Fix 7: Generate normalized identifier alias for cross-style search
+      const nameAlias = normalizeIdentifier(e.name);
+
       // better-sqlite3: use spread params instead of array
       entityStmt.run(
         e.id,
@@ -2047,6 +2188,7 @@ export function insertGraph(db, entities, relationships, hasFts5 = false) {
         e.package || null,
         e.parent_class || null,
         searchText,
+        nameAlias || null,
         parentId,
         hierarchyLevel
       );

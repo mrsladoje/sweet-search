@@ -17,7 +17,14 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-/** BM25 tuning constants (optimized for code search) */
+/**
+ * BM25 tuning constants for prewarm vocabulary ranking only.
+ * NOTE: These are NOT used for live FTS5 search. SQLite FTS5 uses its own
+ * built-in BM25 defaults (k1=1.2, b=0.75). Column weights are configured
+ * via bm25() arguments in graph-search.js. Do not add custom rescoring
+ * unless benchmark data proves a real win — column weights and lexical
+ * normalization matter far more than k1/b tuning.
+ */
 const K1 = 1.5;   // Higher saturation for code (many repeated identifiers)
 const B = 0.5;     // Lower length penalty (code file sizes vary widely)
 

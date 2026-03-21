@@ -41,6 +41,7 @@ function createTestDatabase(dbPath) {
       package TEXT,
       parent_class TEXT,
       search_text TEXT,
+      name_alias TEXT,
       stale_since INTEGER DEFAULT NULL
     );
 
@@ -57,25 +58,39 @@ function createTestDatabase(dbPath) {
       is_wildcard INTEGER DEFAULT 0
     );
 
-    -- FTS5 index for text search (simplified for tests)
+    -- FTS5 index matching production schema: name, name_alias, signature, doc_comment
     CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
       name,
+      name_alias,
       signature,
       doc_comment,
-      search_text,
       content='entities',
-      content_rowid='id'
+      content_rowid='id',
+      prefix='2 3 4'
+    );
+
+    -- Trigram FTS5 for fuzzy/substring matching
+    CREATE VIRTUAL TABLE IF NOT EXISTS entities_trigram USING fts5(
+      name,
+      signature,
+      content='entities',
+      content_rowid='id',
+      tokenize='trigram'
     );
 
     -- Triggers to keep FTS in sync
     CREATE TRIGGER IF NOT EXISTS entities_ai AFTER INSERT ON entities BEGIN
-      INSERT INTO entities_fts(rowid, name, signature, doc_comment, search_text)
-      VALUES (NEW.id, NEW.name, NEW.signature, NEW.doc_comment, NEW.search_text);
+      INSERT INTO entities_fts(rowid, name, name_alias, signature, doc_comment)
+      VALUES (NEW.id, NEW.name, NEW.name_alias, NEW.signature, NEW.doc_comment);
+      INSERT INTO entities_trigram(rowid, name, signature)
+      VALUES (NEW.id, NEW.name, NEW.signature);
     END;
 
     CREATE TRIGGER IF NOT EXISTS entities_ad AFTER DELETE ON entities BEGIN
-      INSERT INTO entities_fts(entities_fts, rowid, name, signature, doc_comment, search_text)
-      VALUES('delete', OLD.id, OLD.name, OLD.signature, OLD.doc_comment, OLD.search_text);
+      INSERT INTO entities_fts(entities_fts, rowid, name, name_alias, signature, doc_comment)
+      VALUES('delete', OLD.id, OLD.name, OLD.name_alias, OLD.signature, OLD.doc_comment);
+      INSERT INTO entities_trigram(entities_trigram, rowid, name, signature)
+      VALUES('delete', OLD.id, OLD.name, OLD.signature);
     END;
   `);
 
@@ -87,21 +102,21 @@ function createTestDatabase(dbPath) {
  */
 function insertTestEntities(db) {
   const insertEntity = db.prepare(`
-    INSERT INTO entities (id, name, type, file_path, start_line, end_line, signature, doc_comment, search_text, stale_since)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO entities (id, name, type, file_path, start_line, end_line, signature, doc_comment, search_text, name_alias, stale_since)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   // Active entities (stale_since = NULL)
-  insertEntity.run(1, 'ActiveService', 'class', 'src/service/ActiveService.java', 10, 100, 'public class ActiveService', 'Active service for testing', 'ActiveService service testing', null);
-  insertEntity.run(2, 'ActiveController', 'class', 'src/controller/ActiveController.java', 5, 80, 'public class ActiveController', 'Active controller', 'ActiveController controller', null);
-  insertEntity.run(3, 'ActiveRepository', 'interface', 'src/repo/ActiveRepository.java', 1, 50, 'public interface ActiveRepository', 'Active repository', 'ActiveRepository repository', null);
-  insertEntity.run(4, 'activeMethod', 'method', 'src/service/ActiveService.java', 20, 30, 'public void activeMethod()', 'An active method', 'activeMethod method', null);
+  insertEntity.run(1, 'ActiveService', 'class', 'src/service/ActiveService.java', 10, 100, 'public class ActiveService', 'Active service for testing', 'ActiveService service testing', 'active service activeservice', null);
+  insertEntity.run(2, 'ActiveController', 'class', 'src/controller/ActiveController.java', 5, 80, 'public class ActiveController', 'Active controller', 'ActiveController controller', 'active controller activecontroller', null);
+  insertEntity.run(3, 'ActiveRepository', 'interface', 'src/repo/ActiveRepository.java', 1, 50, 'public interface ActiveRepository', 'Active repository', 'ActiveRepository repository', 'active repository activerepository', null);
+  insertEntity.run(4, 'activeMethod', 'method', 'src/service/ActiveService.java', 20, 30, 'public void activeMethod()', 'An active method', 'activeMethod method', 'active method activemethod', null);
 
   // Stale entities (stale_since = timestamp)
   const staleTimestamp = 1704067200; // 2024-01-01 00:00:00 UTC
-  insertEntity.run(5, 'StaleService', 'class', 'src/service/StaleService.java', 10, 100, 'public class StaleService', 'Stale service', 'StaleService service', staleTimestamp);
-  insertEntity.run(6, 'StaleController', 'class', 'src/controller/StaleController.java', 5, 80, 'public class StaleController', 'Stale controller', 'StaleController controller', staleTimestamp);
-  insertEntity.run(7, 'StaleRepository', 'interface', 'src/repo/StaleRepository.java', 1, 50, 'public interface StaleRepository', 'Stale repository', 'StaleRepository repository', staleTimestamp);
+  insertEntity.run(5, 'StaleService', 'class', 'src/service/StaleService.java', 10, 100, 'public class StaleService', 'Stale service', 'StaleService service', 'stale service staleservice', staleTimestamp);
+  insertEntity.run(6, 'StaleController', 'class', 'src/controller/StaleController.java', 5, 80, 'public class StaleController', 'Stale controller', 'StaleController controller', 'stale controller stalecontroller', staleTimestamp);
+  insertEntity.run(7, 'StaleRepository', 'interface', 'src/repo/StaleRepository.java', 1, 50, 'public interface StaleRepository', 'Stale repository', 'StaleRepository repository', 'stale repository stalerepository', staleTimestamp);
 }
 
 /**
