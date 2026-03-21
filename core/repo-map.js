@@ -16,6 +16,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import { DB_PATHS } from './config.js';
+import { applyReadPragmas } from './db-utils.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -123,6 +124,7 @@ export function pageRank(outEdges, allNodes, opts = {}) {
 export function loadGraph(dbPath) {
   const resolvedPath = dbPath || DB_PATHS.codeGraph;
   const db = new Database(resolvedPath, { readonly: true, timeout: 5000 });
+  applyReadPragmas(db);
 
   try {
     const entities = db.prepare(`

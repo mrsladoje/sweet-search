@@ -39,7 +39,9 @@ export async function backupSummaries(dbPath = DB_PATHS.codeGraph) {
 
   try {
     const Database = (await import('better-sqlite3')).default;
+    const { applyReadPragmas } = await import('./db-utils.js');
     const db = new Database(dbPath, { readonly: true });
+    applyReadPragmas(db);
 
     // Query all entities with summaries, including id and signature_hash for collision-proof restore
     const summaries = db.prepare(`
@@ -203,7 +205,9 @@ export async function getSummaryStats(dbPath = DB_PATHS.codeGraph) {
 
   try {
     const Database = (await import('better-sqlite3')).default;
+    const { applyReadPragmas } = await import('./db-utils.js');
     const db = new Database(dbPath, { readonly: true });
+    applyReadPragmas(db);
 
     const stats = db.prepare(`
       SELECT
@@ -278,7 +282,9 @@ export async function getEntitiesNeedingSummary(dbPath = DB_PATHS.codeGraph) {
   }
 
   const Database = (await import('better-sqlite3')).default;
+  const { applyReadPragmas } = await import('./db-utils.js');
   const db = new Database(dbPath, { readonly: true });
+  applyReadPragmas(db);
 
   const entities = db.prepare(`
     SELECT id, name, file_path, type, signature, signature_hash, doc_comment, hierarchy_level, code, parent_id
@@ -366,7 +372,9 @@ export async function storeSummariesBatch(dbPath = DB_PATHS.codeGraph, summaries
  */
 export async function getChildSummaries(dbPath = DB_PATHS.codeGraph, parentId) {
   const Database = (await import('better-sqlite3')).default;
+  const { applyReadPragmas } = await import('./db-utils.js');
   const db = new Database(dbPath, { readonly: true });
+  applyReadPragmas(db);
 
   try {
     const children = db.prepare(`

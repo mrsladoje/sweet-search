@@ -2119,8 +2119,13 @@ export function insertGraph(db, entities, relationships, hasFts5 = false) {
       db.exec(`INSERT INTO entities_fts(entities_fts) VALUES('rebuild')`);
       db.exec(`INSERT INTO entities_trigram(entities_trigram) VALUES('rebuild')`);
       console.log('  FTS5 indexes rebuilt (porter + trigram)');
+
+      // Best-effort post-build compaction for faster reads.
+      db.exec(`INSERT INTO entities_fts(entities_fts) VALUES('optimize')`);
+      db.exec(`INSERT INTO entities_trigram(entities_trigram) VALUES('optimize')`);
+      console.log('  FTS5 indexes optimized (segments merged)');
     } catch (err) {
-      // FTS5 rebuild failed, ignore
+      // FTS5 rebuild/optimize failed, ignore
     }
   }
 }

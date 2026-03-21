@@ -13,6 +13,7 @@
 import Database from 'better-sqlite3';
 import { createHash } from 'crypto';
 import { DB_PATHS } from './config.js';
+import { applyReadPragmas } from './db-utils.js';
 import { leidenCommunities, findConnectedComponents } from './leiden-algorithm.js';
 
 // Re-export for existing consumers
@@ -48,6 +49,7 @@ const REL_WEIGHTS = {
 export function computeGraphHash(dbPath) {
   const resolvedPath = dbPath || DB_PATHS.codeGraph;
   const db = new Database(resolvedPath, { readonly: true, timeout: 5000 });
+  applyReadPragmas(db);
 
   try {
     const rows = db.prepare(`
@@ -128,6 +130,7 @@ export function detectCommunities(dbPath, options = {}) {
   let db;
   try {
     db = new Database(resolvedPath, { readonly: true, timeout: 5000 });
+    applyReadPragmas(db);
   } catch {
     return { communities: [], graphHash: '', stale: false };
   }

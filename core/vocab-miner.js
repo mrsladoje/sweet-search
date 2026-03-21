@@ -17,6 +17,7 @@ import { join, basename, extname, relative, sep } from 'path';
 import { execFileSync } from 'child_process';
 import Database from 'better-sqlite3';
 import { DB_PATHS, PROJECT_ROOT } from './config.js';
+import { applyReadPragmas } from './db-utils.js';
 import { pageRank, loadGraph, buildAdjacency } from './repo-map.js';
 
 // Import from sub-modules
@@ -516,6 +517,7 @@ export function mineAll(projectRoot, dbPath, communities, options = {}) {
   if (existsSync(resolvedDbPath)) {
     try {
       const db = new Database(resolvedDbPath, { readonly: true, timeout: 3000 });
+      applyReadPragmas(db);
       try {
         const rows = db.prepare('SELECT DISTINCT name FROM entities').all();
         codeGraphNames = new Set(rows.map(r => r.name));

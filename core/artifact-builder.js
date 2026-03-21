@@ -458,7 +458,9 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
   console.log(`\nLoading embeddings from ${codebaseDbPath}...`);
 
   const Database = (await import('better-sqlite3')).default;
+  const { applyReadPragmas } = await import('./db-utils.js');
   const db = new Database(codebaseDbPath, { readonly: true });
+  applyReadPragmas(db);
 
   // Load all vectors
   const rows = db.prepare('SELECT id, embedding, metadata FROM vectors').all();

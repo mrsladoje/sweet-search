@@ -15,6 +15,7 @@
 
 import { existsSync } from 'fs';
 import { DB_PATHS, GRAPH_CONFIG } from './config.js';
+import { applyReadPragmas } from './db-utils.js';
 import { detectIntent, getIntentBoost } from './intent-detector.js';
 import { applyMMR, shouldApplyMMR } from './mmr.js';
 import { SYMBOL_KIND_WEIGHTS, DEFINITION_TYPES } from './constants.js';
@@ -43,18 +44,98 @@ export class GraphSearch {
 
     // Use better-sqlite3 for native FTS5 with trigram support
     const Database = (await import('better-sqlite3')).default;
-    this.db = new Database(this.dbPath, { readonly: true });
+    const db = new Database(this.dbPath, { readonly: true });
 
-    // Check if FTS5 tables exist
     try {
-      const ftsCheck = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='entities_fts'").get();
-      this.hasFts5 = !!ftsCheck;
+      applyReadPragmas(db, { tempStoreMemory: true });
 
-      const trigramCheck = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='entities_trigram'").get();
-      this.hasTrigram = !!trigramCheck;
+      // Check if FTS5 tables exist
+      try {
+        const ftsCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='entities_fts'").get();
+        this.hasFts5 = !!ftsCheck;
+
+        const trigramCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='entities_trigram'").get();
+        this.hasTrigram = !!trigramCheck;
+      } catch {
+        this.hasFts5 = false;
+        this.hasTrigram = false;
+      }
+
+      // Cache hot-path prepared statements (eliminates ~8-9µs per prepare() call)
+      // Prepare failures on optional FTS paths should degrade to existing fallbacks.
+      if (this.hasFts5) {
+        try {
+          this._stmtFts5 = db.prepare(`
+            SELECT
+              e.id, e.file_path, e.type, e.name, e.signature,
+              e.doc_comment, e.start_line, e.end_line, e.package, e.parent_class,
+              bm25(entities_fts) AS score
+            FROM entities_fts
+            JOIN entities e ON entities_fts.rowid = e.rowid
+            WHERE entities_fts MATCH ?
+              AND e.stale_since IS NULL
+            ORDER BY score
+            LIMIT ?
+          `);
+        } catch {
+          this.hasFts5 = false;
+          this._stmtFts5 = null;
+        }
+      }
+
+      if (this.hasTrigram) {
+        try {
+          this._stmtTrigram = db.prepare(`
+            SELECT
+              e.id, e.file_path, e.type, e.name, e.signature,
+              e.doc_comment, e.start_line, e.end_line, e.package, e.parent_class,
+              bm25(entities_trigram) AS score
+            FROM entities_trigram
+            JOIN entities e ON entities_trigram.rowid = e.rowid
+            WHERE entities_trigram MATCH ?
+              AND e.stale_since IS NULL
+            ORDER BY score
+            LIMIT ?
+          `);
+        } catch {
+          this.hasTrigram = false;
+          this._stmtTrigram = null;
+        }
+      }
+
+      this._stmtEntityById = db.prepare(
+        'SELECT * FROM entities WHERE id = ? AND stale_since IS NULL'
+      );
+
+      this._stmtOutRels = db.prepare(`
+        SELECT e.*, r.type as rel_type, r.weight as rel_weight
+        FROM relationships r
+        JOIN entities e ON e.id = r.target_id OR e.name = r.target_name
+        WHERE r.source_id = ?
+          AND e.stale_since IS NULL
+        LIMIT 20
+      `);
+
+      this._stmtInRels = db.prepare(`
+        SELECT e.*, r.type as rel_type, r.weight as rel_weight
+        FROM relationships r
+        JOIN entities e ON e.id = r.source_id
+        WHERE (r.target_id = ? OR r.target_name = (SELECT name FROM entities WHERE id = ?))
+          AND e.stale_since IS NULL
+        LIMIT 20
+      `);
+
+      this.db = db;
     } catch (err) {
       this.hasFts5 = false;
       this.hasTrigram = false;
+      this._stmtFts5 = null;
+      this._stmtTrigram = null;
+      this._stmtEntityById = null;
+      this._stmtOutRels = null;
+      this._stmtInRels = null;
+      db.close();
+      throw err;
     }
   }
 
@@ -62,6 +143,11 @@ export class GraphSearch {
    * Close database connection
    */
   close() {
+    this._stmtFts5 = null;
+    this._stmtTrigram = null;
+    this._stmtEntityById = null;
+    this._stmtOutRels = null;
+    this._stmtInRels = null;
     if (this.db) {
       this.db.close();
       this.db = null;
@@ -87,30 +173,9 @@ export class GraphSearch {
     let results = [];
 
     if (this.hasFts5) {
-      // Use FTS5 with BM25 ranking
+      // Use FTS5 with BM25 ranking (cached prepared statement)
       try {
-        const stmt = this.db.prepare(`
-          SELECT
-            e.id,
-            e.file_path,
-            e.type,
-            e.name,
-            e.signature,
-            e.doc_comment,
-            e.start_line,
-            e.end_line,
-            e.package,
-            e.parent_class,
-            bm25(entities_fts) AS score
-          FROM entities_fts
-          JOIN entities e ON entities_fts.rowid = e.rowid
-          WHERE entities_fts MATCH ?
-            AND e.stale_since IS NULL
-          ORDER BY score
-          LIMIT ?
-        `);
-
-        const rows = stmt.all(this.sanitizeFtsQuery(query), limit);
+        const rows = this._stmtFts5.all(this.sanitizeFtsQuery(query), limit);
 
         for (const row of rows) {
           results.push({
@@ -138,29 +203,8 @@ export class GraphSearch {
     // This enables "Auth" → "AuthenticationService" matching
     if (this.hasTrigram && results.length < 3 && query.length >= 3) {
       try {
-        const trigramStmt = this.db.prepare(`
-          SELECT
-            e.id,
-            e.file_path,
-            e.type,
-            e.name,
-            e.signature,
-            e.doc_comment,
-            e.start_line,
-            e.end_line,
-            e.package,
-            e.parent_class,
-            bm25(entities_trigram) AS score
-          FROM entities_trigram
-          JOIN entities e ON entities_trigram.rowid = e.rowid
-          WHERE entities_trigram MATCH ?
-            AND e.stale_since IS NULL
-          ORDER BY score
-          LIMIT ?
-        `);
-
         // Trigram search - just use the raw query (trigram handles substrings)
-        const trigramRows = trigramStmt.all(`"${query}"`, limit);
+        const trigramRows = this._stmtTrigram.all(`"${query}"`, limit);
 
         const existingIds = new Set(results.map(r => r.id));
         for (const row of trigramRows) {
@@ -270,28 +314,7 @@ export class GraphSearch {
 
     if (this.hasFts5) {
       try {
-        const stmt = this.db.prepare(`
-          SELECT
-            e.id,
-            e.file_path,
-            e.type,
-            e.name,
-            e.signature,
-            e.doc_comment,
-            e.start_line,
-            e.end_line,
-            e.package,
-            e.parent_class,
-            bm25(entities_fts) AS score
-          FROM entities_fts
-          JOIN entities e ON entities_fts.rowid = e.rowid
-          WHERE entities_fts MATCH ?
-            AND e.stale_since IS NULL
-          ORDER BY score
-          LIMIT ?
-        `);
-
-        const rows = stmt.all(this.sanitizeFtsQuery(query), limit);
+        const rows = this._stmtFts5.all(this.sanitizeFtsQuery(query), limit);
 
         for (const row of rows) {
           results.push({
@@ -321,28 +344,7 @@ export class GraphSearch {
     // Try trigram fuzzy search if standard FTS5 returned few results
     if (this.hasTrigram && results.length < 3 && query.length >= 3) {
       try {
-        const trigramStmt = this.db.prepare(`
-          SELECT
-            e.id,
-            e.file_path,
-            e.type,
-            e.name,
-            e.signature,
-            e.doc_comment,
-            e.start_line,
-            e.end_line,
-            e.package,
-            e.parent_class,
-            bm25(entities_trigram) AS score
-          FROM entities_trigram
-          JOIN entities e ON entities_trigram.rowid = e.rowid
-          WHERE entities_trigram MATCH ?
-            AND e.stale_since IS NULL
-          ORDER BY score
-          LIMIT ?
-        `);
-
-        const trigramRows = trigramStmt.all(`"${query}"`, limit);
+        const trigramRows = this._stmtTrigram.all(`"${query}"`, limit);
         const existingIds = new Set(results.map(r => r.id));
 
         for (const row of trigramRows) {
@@ -864,9 +866,7 @@ export class GraphSearch {
    */
   async getEntity(entityId) {
     await this.init();
-
-    const stmt = this.db.prepare('SELECT * FROM entities WHERE id = ? AND stale_since IS NULL');
-    return stmt.get(entityId) || null;
+    return this._stmtEntityById.get(entityId) || null;
   }
 
   /**
@@ -877,20 +877,8 @@ export class GraphSearch {
 
     const results = [];
 
-    // Find outgoing relationships
-    const outStmt = this.db.prepare(`
-      SELECT
-        e.*,
-        r.type as rel_type,
-        r.weight as rel_weight
-      FROM relationships r
-      JOIN entities e ON e.id = r.target_id OR e.name = r.target_name
-      WHERE r.source_id = ?
-        AND e.stale_since IS NULL
-      LIMIT 20
-    `);
-
-    const outRows = outStmt.all(entityId);
+    // Find outgoing relationships (cached prepared statement)
+    const outRows = this._stmtOutRels.all(entityId);
     for (const row of outRows) {
       results.push({
         ...row,
@@ -898,20 +886,8 @@ export class GraphSearch {
       });
     }
 
-    // Find incoming relationships
-    const inStmt = this.db.prepare(`
-      SELECT
-        e.*,
-        r.type as rel_type,
-        r.weight as rel_weight
-      FROM relationships r
-      JOIN entities e ON e.id = r.source_id
-      WHERE (r.target_id = ? OR r.target_name = (SELECT name FROM entities WHERE id = ?))
-        AND e.stale_since IS NULL
-      LIMIT 20
-    `);
-
-    const inRows = inStmt.all(entityId, entityId);
+    // Find incoming relationships (cached prepared statement)
+    const inRows = this._stmtInRels.all(entityId, entityId);
     for (const row of inRows) {
       results.push({
         ...row,

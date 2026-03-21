@@ -18,6 +18,7 @@
 import { existsSync } from 'fs';
 import fs from 'fs/promises';
 import Database from 'better-sqlite3';
+import { applyReadPragmas } from './db-utils.js';
 import { Pool } from 'undici';
 import {
   DB_PATHS,
@@ -206,6 +207,7 @@ async function warmSQLiteCaches() {
   let db;
   try {
     db = new Database(DB_PATHS.codeGraph, { readonly: true, timeout: 5000 });
+    applyReadPragmas(db);
 
     // FTS5 page cache
     try { db.prepare('SELECT count(*) FROM entities_fts WHERE name MATCH "warmup"').get(); } catch { /* table may not exist */ }
