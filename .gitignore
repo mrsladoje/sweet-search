@@ -60,6 +60,7 @@ eval/corpus/
 .agentic-qe/
 .agentdb/
 .claude-flow/
+.claude/agent-overrides/
 .claude/agents/
 .claude/commands/analysis/
 .claude/commands/automation/
@@ -72,8 +73,10 @@ eval/corpus/
 .claude/commands/optimization/
 .claude/commands/sparc/
 .claude/commands/flow-coach/
+.claude/docs/
 .claude/guidance/
 .claude/helpers/
+.claude/hooks/
 .claude/mcp.json
 .claude/memory.db
 .claude/settings.json
