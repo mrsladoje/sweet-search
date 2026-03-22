@@ -9,27 +9,105 @@
  */
 
 /**
- * Determine whether the MaxSim score distribution is decisive enough to skip
- * the cross-encoder. A gap > threshold between #1 and #2 means a clear winner.
- *
- * IMPORTANT: Tight clusters (all scores within a narrow band) are NOT decisive.
- * Clustered MaxSim scores mean the model cannot discriminate — this is exactly
- * when the cross-encoder's full attention is most likely to reorder results.
+ * Determine whether the MaxSim score distribution is confident enough to skip
+ * the cross-encoder. Uses multiple cheap signals for better discrimination
+ * than margin alone.
  *
  * @param {number[]} scores - MaxSim scores (higher = better)
- * @param {number} threshold - Gap required for decisive classification
- * @returns {{ decisive: boolean, reason: string }}
+ * @param {number} marginThreshold - Gap threshold for primary signal
+ * @param {Object} [context] - Optional context signals
+ * @param {boolean} [context.lexicalConfident] - Lexical path was confident
+ * @param {number} [context.withTokens] - How many candidates had LI tokens
+ * @param {number} [context.totalCandidates] - Total candidate count
+ * @returns {{ decisive: boolean, reason: string, signals: Object }}
  */
-export function isDecisive(scores, threshold = 0.12) {
+export function isDecisive(scores, marginThreshold = 0.08, context = {}) {
   if (!scores || scores.length < 2) {
-    return { decisive: true, reason: 'single_candidate' };
+    return { decisive: true, reason: 'single_candidate', signals: {} };
   }
+
   const sorted = [...scores].sort((a, b) => b - a);
   const gap = sorted[0] - sorted[1];
-  if (gap > threshold) {
-    return { decisive: true, reason: `clear_winner (gap=${gap.toFixed(3)})` };
+
+  // Signal 1: Margin (primary) — large gap = clear winner
+  const marginDecisive = gap > marginThreshold;
+
+  // Signal 2: Top-K flatness — low std = model can't discriminate
+  const topK = sorted.slice(0, Math.min(10, sorted.length));
+  const mean = topK.reduce((a, b) => a + b, 0) / topK.length;
+  const std = Math.sqrt(topK.reduce((s, v) => s + (v - mean) ** 2, 0) / topK.length);
+  const flat = std < 0.02;
+
+  // Signal 3: Lexical confidence — if lexical path was already confident, skip CE
+  const lexicalConfident = context.lexicalConfident || false;
+
+  // Signal 4: Token coverage — if most candidates lack LI tokens, CE is more valuable
+  const lowCoverage = context.withTokens !== undefined
+    && context.totalCandidates > 0
+    && (context.withTokens / context.totalCandidates) < 0.5;
+
+  const signals = { gap, std, flat, marginDecisive, lexicalConfident, lowCoverage };
+
+  // Decision logic:
+  // - Lexical confident → always decisive (skip CE)
+  // - Large margin AND not flat → decisive
+  // - Flat scores → NOT decisive (CE needed for discrimination)
+  // - Low token coverage → NOT decisive (MaxSim had limited signal)
+  if (lexicalConfident) {
+    return { decisive: true, reason: 'lexical_confident', signals };
   }
-  return { decisive: false, reason: 'ambiguous' };
+  if (lowCoverage) {
+    return { decisive: false, reason: 'low_coverage', signals };
+  }
+  if (marginDecisive && !flat) {
+    return { decisive: true, reason: `clear_winner (gap=${gap.toFixed(3)})`, signals };
+  }
+  if (flat) {
+    return { decisive: false, reason: `flat_scores (std=${std.toFixed(4)})`, signals };
+  }
+  if (!marginDecisive) {
+    return { decisive: false, reason: 'ambiguous', signals };
+  }
+
+  return { decisive: true, reason: `margin_ok (gap=${gap.toFixed(3)})`, signals };
+}
+
+/**
+ * Compute adaptive K for CE candidate selection.
+ * Finds the largest score gap in the top-K_max as a natural cluster boundary.
+ * - Clear cluster boundary → send the top cluster (fewer candidates)
+ * - Flat scores (no significant gap) → send kMax (CE needs to see more)
+ *
+ * @param {number[]} scores - Sorted MaxSim scores (descending)
+ * @param {number} kMax - Maximum candidates to send (cap)
+ * @param {number} kMin - Minimum candidates to send (floor)
+ * @returns {number}
+ */
+export function computeAdaptiveK(scores, kMax = 20, kMin = 3) {
+  if (scores.length <= kMin) return scores.length;
+
+  const limit = Math.min(scores.length - 1, kMax);
+
+  // Find the largest gap and the overall score range
+  let maxGap = -1;
+  let cutoff = limit;
+
+  for (let i = 0; i < limit; i++) {
+    const gap = scores[i] - scores[i + 1];
+    if (gap > maxGap) {
+      maxGap = gap;
+      cutoff = i + 1;
+    }
+  }
+
+  // If the largest gap is insignificant (flat scores), send kMax.
+  // MaxSim can't discriminate → CE needs maximum context.
+  const range = scores[0] - scores[limit];
+  if (range < 0.01 || maxGap < 0.005) {
+    return Math.min(kMax, scores.length);
+  }
+
+  return Math.max(kMin, Math.min(cutoff, kMax));
 }
 
 /**
@@ -69,9 +147,11 @@ function extractCeScore(r) {
  * @param {Object} options
  * @param {Object|null} options.lateInteractionIndex - LI index for MaxSim, or null for CE-only
  * @param {Object} options.crossEncoder - Reranker instance with rerankDirect()
- * @param {number} [options.ceTopK=8] - Max candidates to send to cross-encoder
- * @param {number} [options.gateThreshold=0.12] - MaxSim score gap for decisive classification
+ * @param {number} [options.ceTopK=20] - K_max for adaptive-K candidate selection
+ * @param {number} [options.gateThreshold=0.08] - MaxSim score gap for decisive classification
  * @param {boolean} [options.forceFullCrossEncoder=false] - Bypass gate, CE on all
+ * @param {boolean} [options.shadowMode=false] - Log gate/CE decisions without changing ranking
+ * @param {boolean} [options.lexicalConfident=false] - Whether lexical path was confident
  * @param {Function} options.loadDocumentContent - Async fn to load full text for CE
  * @returns {Promise<{results: Array, stats: Object}>}
  */
@@ -79,9 +159,11 @@ export async function cascadedScore(query, candidates, options = {}) {
   const {
     lateInteractionIndex = null,
     crossEncoder,
-    ceTopK = 8,
-    gateThreshold = 0.12,
+    ceTopK = 20,
+    gateThreshold = 0.08,
     forceFullCrossEncoder = false,
+    shadowMode = false,
+    lexicalConfident = false,
     loadDocumentContent,
   } = options;
 
@@ -91,10 +173,12 @@ export async function cascadedScore(query, candidates, options = {}) {
     withoutTokens: 0,
     decisive: false,
     gateReason: null,
+    gateSignals: null,
     ceInvoked: false,
     ceProvider: null,
     ceCandidates: 0,
     ceTokens: 0,
+    adaptiveK: null,
   };
 
   if (!candidates || candidates.length === 0) {
@@ -153,11 +237,7 @@ export async function cascadedScore(query, candidates, options = {}) {
     }
   }
 
-  // Step 4: Pure MaxSim reranking — set score = lateInteractionScore.
-  // Previous approach used confidence gate + conditional CE, but the gate almost
-  // never fired decisive and CE on only 8 candidates hurt MRR by -8.6pp.
-  // MaxSim from LateOn-Code (149M ModernBERT) is a strong enough signal to
-  // rerank directly without blending or CE overhead.
+  // Step 4: Score assignment + margin gate
   for (const c of scoredWithTokens) {
     c.preLateInteractionScore = c.score ?? c.int8Score ?? 0;
     const liScore = c.lateInteractionScore;
@@ -165,20 +245,79 @@ export async function cascadedScore(query, candidates, options = {}) {
   }
   scoredWithTokens.sort((a, b) => b.score - a.score);
 
-  // Unscored candidates keep their base scores and sort below scored ones
+  const maxsimScores = scoredWithTokens.map(c => c.score);
+  const { decisive, reason, signals } = isDecisive(maxsimScores, gateThreshold, {
+    lexicalConfident,
+    withTokens: stats.withTokens,
+    totalCandidates: stats.totalCandidates,
+  });
+  stats.decisive = decisive;
+  stats.gateReason = reason;
+  stats.gateSignals = signals;
+
   const allRanked = [...scoredWithTokens, ...withoutTokens];
 
-  stats.decisive = true;
-  stats.gateReason = 'pure_reranker';
+  // Shadow mode: compute CE in shadow, log results, return MaxSim ranking unchanged
+  if (shadowMode && !forceFullCrossEncoder) {
+    try {
+      const adaptiveK = computeAdaptiveK(maxsimScores, ceTopK);
+      const ceCandidates = allRanked.slice(0, adaptiveK);
+      const shadowCeResult = await runCrossEncoder(query, allRanked, ceCandidates, { ...stats }, {
+        crossEncoder, ceTopK: adaptiveK, loadDocumentContent, forceFullCrossEncoder: false,
+      });
 
-  // forceFullCrossEncoder: opt-in CE for benchmarking comparison
+      const ceTop1 = shadowCeResult.results[0]?.id || shadowCeResult.results[0]?.entity_id;
+      const maxsimTop1 = allRanked[0]?.id || allRanked[0]?.entity_id;
+      const ceTop3Set = new Set(shadowCeResult.results.slice(0, 3).map(r => r.id || r.entity_id));
+      const maxsimTop3Set = new Set(allRanked.slice(0, 3).map(r => r.id || r.entity_id));
+      const top3Diff = [...ceTop3Set].filter(id => !maxsimTop3Set.has(id)).length > 0;
+
+      console.log(JSON.stringify({
+        shadow_cascade: true,
+        gap: signals.gap,
+        topKStd: signals.std,
+        flat: signals.flat,
+        adaptiveK,
+        decisive,
+        gateReason: reason,
+        ceChangedTop1: ceTop1 !== maxsimTop1,
+        ceChangedTop3: top3Diff,
+        ceLatencyMs: shadowCeResult.stats.ceLatencyMs,
+        queryLength: query.length,
+      }));
+    } catch (err) {
+      console.log(JSON.stringify({
+        shadow_cascade: true,
+        shadow_error: err.message,
+        decisive,
+        gateReason: reason,
+      }));
+    }
+
+    // Return pure MaxSim ranking unchanged (shadow does not affect results)
+    stats.gateReason = `shadow:${reason}`;
+    return { results: allRanked, stats };
+  }
+
+  // Normal path: decisive → return MaxSim ranking (skip CE)
+  if (decisive && !forceFullCrossEncoder) {
+    return { results: allRanked, stats };
+  }
+
+  // forceFullCrossEncoder: send ALL candidates to CE (bypass adaptive-K)
   if (forceFullCrossEncoder) {
     return runCrossEncoder(query, allRanked, allRanked, stats, {
       crossEncoder, ceTopK: allRanked.length, loadDocumentContent, forceFullCrossEncoder,
     });
   }
 
-  return { results: allRanked, stats };
+  // CE rescue with adaptive-K
+  const adaptiveK = computeAdaptiveK(maxsimScores, ceTopK);
+  stats.adaptiveK = adaptiveK;
+  const ceCandidates = allRanked.slice(0, adaptiveK);
+  return runCrossEncoder(query, allRanked, ceCandidates, stats, {
+    crossEncoder, ceTopK: adaptiveK, loadDocumentContent, forceFullCrossEncoder,
+  });
 }
 
 /**
@@ -191,7 +330,7 @@ async function runCrossEncoder(query, allRanked, ceCandidates, stats, options) {
   stats.ceCandidates = ceCandidates.length;
 
   try {
-    const documents = await loadDocumentContent(ceCandidates);
+    const documents = await loadDocumentContent(ceCandidates, query);
     const ceResult = await crossEncoder.rerankDirect(query, documents, ceCandidates.length);
 
     stats.ceProvider = ceResult.model || 'unknown';
@@ -209,32 +348,25 @@ async function runCrossEncoder(query, allRanked, ceCandidates, stats, options) {
       }
     }
 
-    // Merge CE scores into candidates: CE score overrides MaxSim for reranked candidates
-    const merged = allRanked.map(c => {
-      const id = c.id || c.entity_id;
-      const ceScore = ceScoreMap.get(id);
-      if (ceScore !== undefined) {
-        return {
-          ...stripInternalFields(c),
-          ceScore,
-          preCeScore: c.lateInteractionScore,
-          score: ceScore,
-        };
+    // Merge: CE reranks WITHIN its window, non-CE candidates keep their MaxSim positions.
+    // CE-scored candidates are sorted by ceScore and placed back into the top-K slots.
+    // Candidates outside the CE window stay in their original MaxSim order below.
+    const ceWindow = ceCandidates.length;
+    const ceScoredList = [];
+    for (const r of ceResult.results) {
+      const origCandidate = ceCandidates[r.originalIndex];
+      if (origCandidate) {
+        ceScoredList.push({
+          ...stripInternalFields(origCandidate),
+          ceScore: extractCeScore(r),
+          preCeScore: origCandidate.lateInteractionScore,
+          score: extractCeScore(r),
+        });
       }
-      return c;
-    });
-
-    // Sort: CE-scored first (by ceScore), then MaxSim-scored (by lateInteractionScore),
-    // then unscored at bottom
-    merged.sort((a, b) => {
-      const aHasCe = a.ceScore !== undefined;
-      const bHasCe = b.ceScore !== undefined;
-      if (aHasCe && bHasCe) return b.ceScore - a.ceScore;
-      if (aHasCe && !bHasCe) return -1;
-      if (!aHasCe && bHasCe) return 1;
-      // Both without CE: sort by lateInteractionScore (unscored = -Infinity)
-      return (b.lateInteractionScore ?? 0) - (a.lateInteractionScore ?? 0);
-    });
+    }
+    // CE results are already sorted by score descending from rerankDirect
+    const nonCeCandidates = allRanked.slice(ceWindow);
+    const merged = [...ceScoredList, ...nonCeCandidates];
 
     return { results: merged, stats };
   } catch (err) {

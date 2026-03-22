@@ -217,9 +217,11 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       const cascadeResult = await cascadedScore(query, results, {
         lateInteractionIndex: liIndex,
         crossEncoder: this.reranker,
-        ceTopK: this.cascadeCeTopK || 8,
-        gateThreshold: this.cascadeGateThreshold || 0.12,
+        ceTopK: this.cascadeCeTopK || 20,
+        gateThreshold: this.cascadeGateThreshold || 0.08,
         forceFullCrossEncoder: this.cascadeForceFullCE || false,
+        shadowMode: this.cascadeShadowMode || false,
+        lexicalConfident: false,
         loadDocumentContent: this.loadDocumentContent.bind(this),
       });
       results = cascadeResult.results;

@@ -1,6 +1,6 @@
 # Benchmark TODO — Post-MaxSim Reranker Investigation
 
-## Current Best: 3-Class CatBoost Router + LateOnCode Reranker (80.8% MRR)
+## Current Best: Fixed LI MaxSim + Lexical Fix Plan (83.2% MRR)
 
 3-class CatBoost WASM router (LEXICAL/SEMANTIC/HYBRID) + LateOn-Code MaxSim reranker.
 Structural mode is opt-in only via `--structural` flag. No regex auto-detection in router.
@@ -34,12 +34,12 @@ Root cause of improvement: 87 NL queries were misrouted to structural (graph DB 
 
 ## What Could Push Past 79.7%
 
-### 1. Confidence-Gated CE Rescue (Highest Expected Value)
-- CE alone hit 79.3% on 20+ candidates; MaxSim hit 79.7%
-- They likely fail on **different queries** — union of both models' strengths
-- Gate signal: MaxSim top-1 minus top-2 score gap (simple, natural)
-- CE needs proper candidate pool (20-30, not 8)
-- **Expected gain: +0.2–0.5pp**
+### 1. ~~Confidence-Gated CE Rescue~~ — IMPLEMENTED, NEUTRAL (March 2026)
+- Implemented multi-signal gate + adaptive-K + window-scoped merge
+- Fixed critical LI token bug (`Float32Array.flat()`) → MaxSim now works → +1.23pp MRR
+- With fixed MaxSim (83.2%), gte-reranker-modernbert-base CE shows **zero lift** on GenCodeSearchNet
+- CE rescue defaulted to shadow mode — collecting data to determine if a code-tuned CE would help
+- See `docs/CE_RESCUE_PLAN.md` for full benchmark results
 
 ### 2. Per-Language / Per-Query-Type Routing
 - Go is 93.6% — nearly saturated
@@ -94,12 +94,21 @@ Reranker is NOT the bottleneck for JS — it can only reorder the ~80% that are 
 ## Testing Priority (Ordered)
 
 1. ~~**Recall check**~~: **DONE** — JS is retrieval-limited. 80.6% recall@200, plateau after top-100.
-2. **Voyage Code 3 as reranker benchmark**: Lower priority now — reranker isn't the JS bottleneck.
-3. **Chunk context bleeding**: Still worth checking for the ~20% of retrievable-but-poorly-ranked JS queries.
-4. **2000 char limit for JS**: Still worth checking — could explain some of the 194 misses.
-5. **Benchmark quality audit**: Filter GenCodeSearchNet JS noise (copyright queries, non-English, zero-signal). Measure "clean MRR" on the ~850 valid queries.
-6. **Try COIR JS subset**: Cleaner benchmark for JS — may give more actionable signal than GenCodeSearchNet.
-7. **Benchmark lateon-code-edge as reranker**: Currently using standard lateon-code for late interaction MaxSim reranking. Benchmark lateon-code-edge to see if the upgraded model improves MRR, especially on weak languages (JS/PHP/Ruby).
+2. **CE rescue shadow analysis**: Run full GenCodeSearchNet with `SWEET_SEARCH_CASCADE_SHADOW=true`
+   (already the default). Collect per-query shadow logs and analyze:
+   - CE trigger rate (how often gate fires)
+   - How often CE changes top-1 / top-3
+   - Conditional MRR delta on triggered-only queries (does CE help on the subset it fires on?)
+   - Per-language trigger patterns (does CE fire more on weak languages?)
+   - If conditional lift is positive → tighten gate to trigger only on that subset
+   - If conditional lift is zero → stop investing in gte-reranker-modernbert-base, try
+     jina-reranker-v2-base-multilingual (code-optimized, 71.36 CSN MRR) or Voyage rerank-2.5
+3. **Voyage Code 3 as reranker benchmark**: Lower priority now — reranker isn't the JS bottleneck.
+4. **Chunk context bleeding**: Still worth checking for the ~20% of retrievable-but-poorly-ranked JS queries.
+5. **2000 char limit for JS**: Still worth checking — could explain some of the 194 misses.
+6. **Benchmark quality audit**: Filter GenCodeSearchNet JS noise (copyright queries, non-English, zero-signal). Measure "clean MRR" on the ~850 valid queries.
+7. **Try COIR JS subset**: Cleaner benchmark for JS — may give more actionable signal than GenCodeSearchNet.
+8. **Benchmark lateon-code-edge as reranker**: Currently using standard lateon-code for late interaction MaxSim reranking. Benchmark lateon-code-edge to see if the upgraded model improves MRR, especially on weak languages (JS/PHP/Ruby).
 
 ---
 

@@ -966,13 +966,18 @@ export const CASCADE_CONFIG = {
   enabled: process.env.SWEET_SEARCH_CASCADE_ENABLED !== 'false',
 
   // MaxSim score gap threshold for decisive classification
-  gateThreshold: parseFloat(process.env.SWEET_SEARCH_CASCADE_GATE_THRESHOLD) || 0.12,
+  gateThreshold: parseFloat(process.env.SWEET_SEARCH_CASCADE_GATE_THRESHOLD) || 0.08,
 
-  // Max candidates sent to cross-encoder when gate fires
-  ceTopK: parseInt(process.env.SWEET_SEARCH_CASCADE_CE_TOP_K) || 8,
+  // K_max for adaptive-K candidate selection (actual K is 3..ceTopK based on score distribution)
+  ceTopK: parseInt(process.env.SWEET_SEARCH_CASCADE_CE_TOP_K) || 20,
 
   // Whether to force cross-encoder on ALL candidates (bypass gate, for benchmarking)
   forceFullCrossEncoder: process.env.SWEET_SEARCH_FORCE_FULL_CE === 'true',
+
+  // Shadow mode (default ON): compute gate signals + CE in shadow, log results, keep pure-MaxSim ranking.
+  // CE rescue has no proven lift over MaxSim on GenCodeSearchNet. Shadow mode collects data
+  // to identify the subset where CE helps. Set SWEET_SEARCH_CASCADE_SHADOW=false to activate CE.
+  shadowMode: process.env.SWEET_SEARCH_CASCADE_SHADOW !== 'false',
 };
 
 // =============================================================================
