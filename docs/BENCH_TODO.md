@@ -99,6 +99,7 @@ Reranker is NOT the bottleneck for JS — it can only reorder the ~80% that are 
 4. **2000 char limit for JS**: Still worth checking — could explain some of the 194 misses.
 5. **Benchmark quality audit**: Filter GenCodeSearchNet JS noise (copyright queries, non-English, zero-signal). Measure "clean MRR" on the ~850 valid queries.
 6. **Try COIR JS subset**: Cleaner benchmark for JS — may give more actionable signal than GenCodeSearchNet.
+7. **Benchmark lateon-code-edge as reranker**: Currently using standard lateon-code for late interaction MaxSim reranking. Benchmark lateon-code-edge to see if the upgraded model improves MRR, especially on weak languages (JS/PHP/Ruby).
 
 ---
 
