@@ -209,6 +209,22 @@ async function main() {
     process.exit(3);
   }
 
+  // Warm up local reranker (CE model) if available — prevents cold-start latency on first queries
+  try {
+    const { getGlobalLocalReranker } = await import(path.join(PROJECT_ROOT, 'core', 'local-reranker.js'));
+    const reranker = getGlobalLocalReranker();
+    if (reranker.isAvailable()) {
+      console.log('  Warming up local reranker (gte-reranker-modernbert-base INT8)...');
+      const warmStart = Date.now();
+      await reranker.init();
+      // Run a dummy rerank to fully warm ONNX runtime (JIT compilation, memory allocation)
+      await reranker.rerank('warmup query', ['warmup document content for benchmarking'], 1);
+      console.log(`  Local reranker warm in ${Date.now() - warmStart}ms`);
+    }
+  } catch (err) {
+    console.log(`  Local reranker warmup skipped: ${err.message}`);
+  }
+
   const evaluatedQueries = [];
   let completed = 0;
   const errors = [];
@@ -234,7 +250,7 @@ async function main() {
 
         completed++;
         if (completed % 50 === 0 || completed === queries.length) {
-          process.stdout.write(`\r  Progress: ${completed}/${queries.length} queries`);
+          console.log(`  Progress: ${completed}/${queries.length} queries`);
         }
 
         if (opts.verbose && evaluated.rankedRelevance[0] !== 1) {

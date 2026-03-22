@@ -128,6 +128,8 @@ export class SweetSearch {
     this.cascadeForceFullCE = options.cascadeForceFullCE
       ?? envOrProject('SWEET_SEARCH_FORCE_FULL_CE', 'forceFullCrossEncoder', 'forceFullCrossEncoder')
       ?? CASCADE_CONFIG.forceFullCrossEncoder;
+    this.cascadeShadowMode = options.cascadeShadowMode
+      ?? CASCADE_CONFIG.shadowMode;
     setRepoMapModule({ pageRank, loadGraph, buildAdjacency });
     this._qualityScorer = null;
     this._codebaseDb = null;
@@ -437,14 +439,9 @@ export class SweetSearch {
     return activeResults.sort((a, b) => b.score - a.score).slice(0, limit);
   }
 
-  /** Load document content for reranking */
-  async loadDocumentContent(candidates) {
-    return candidates.map(c => {
-      const content = c.content || c.text || '';
-      const name = c.name || c.metadata?.name || '';
-      const file = c.file || c.metadata?.file || '';
-      return `${file} ${name}\n${content}`.slice(0, 1000);
-    });
+  /** Load document content for CE reranking — pure chunk text, no metadata noise */
+  async loadDocumentContent(candidates, query = '') {
+    return candidates.map(c => c.content || c.text || '');
   }
 
   /** Cosine similarity */

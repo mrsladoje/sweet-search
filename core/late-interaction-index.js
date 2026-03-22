@@ -121,9 +121,15 @@ export class LateInteractionIndex {
       emb.slice(0, this.tokenDim)
     );
 
+    // Flatten typed arrays into a single contiguous buffer.
+    // Array.prototype.flat() does NOT flatten Float32Array elements — it leaves them as objects.
+    const totalElements = truncated.length * this.tokenDim;
+    const flat = new Float32Array(totalElements);
+    for (let i = 0; i < truncated.length; i++) {
+      flat.set(truncated[i], i * this.tokenDim);
+    }
+
     if (this.useInt8) {
-      // Quantize all tokens together for consistent scale
-      const flat = truncated.flat();
       const { data, min, scale } = quantizeToInt8(flat);
 
       this.documents.set(id, {
@@ -136,7 +142,7 @@ export class LateInteractionIndex {
       });
     } else {
       this.documents.set(id, {
-        tokens: new Float32Array(truncated.flat()),
+        tokens: flat,
         numTokens: truncated.length,
         dim: this.tokenDim,
         metadata

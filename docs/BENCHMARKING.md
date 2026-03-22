@@ -186,9 +186,27 @@ Compare the two runs (translate=on vs translate=off) to measure translation impa
 | WSL2 10GB RAM | 5 | ~25-40 min | CPU-bound on ONNX mutex |
 | M3 Max | 5 | ~8-15 min (est.) | Metal/ANE acceleration, unified memory |
 
-### Current best (March 22, 2026 — after Lexical Fix Plan)
+### Current best (March 22, 2026 — LI token fix + Lexical Fix Plan)
 
 Profile: `full` (late interaction ON), M3 Max 128GB, concurrency 12.
+
+```
+MRR@10:      83.2%    Recall@5:  90.2%    Recall@20: 93.0%
+Success@1:   77.8%    Latency p50: 1403ms
+```
+
+Per-language: Python 97.5%, Go 94.5%, Java 84.3%, JS 70.5%, PHP 77.3%, Ruby 74.8%
+
+Fixed a critical bug in `late-interaction-index.js:add()` where `Array.prototype.flat()`
+did not flatten `Float32Array` elements, causing Int8-quantized LI token buffers to be
+truncated to `numTokens` bytes instead of `numTokens × dim`. All MaxSim scores were
+returning 0 since LI was first implemented. The previous 81.9% baseline was actually
+int8 cosine similarity pass-through, not MaxSim. With real MaxSim scoring, Python
+jumped +4.2pp (93.3% → 97.5%).
+
+### Previous best (March 22, 2026 — after Lexical Fix Plan, broken LI)
+
+Profile: `full` (late interaction ON but MaxSim scores were zero), M3 Max 128GB, concurrency 12.
 
 ```
 MRR@10:      81.9%    Recall@5:  89.2%    Recall@20: 92.8%

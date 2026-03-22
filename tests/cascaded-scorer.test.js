@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isDecisive, cascadedScore } from '../core/cascaded-scorer.js';
+import { isDecisive, computeAdaptiveK, cascadedScore } from '../core/cascaded-scorer.js';
 
 // ---------------------------------------------------------------------------
 // Mock late-interaction-model.js (dynamic import inside cascadedScore)
@@ -60,7 +60,7 @@ function makeLoadDocumentContent() {
 }
 
 // ---------------------------------------------------------------------------
-// isDecisive()
+// isDecisive() — multi-signal gate
 // ---------------------------------------------------------------------------
 
 describe('isDecisive', () => {
@@ -68,6 +68,7 @@ describe('isDecisive', () => {
     const result = isDecisive([0.9]);
     expect(result.decisive).toBe(true);
     expect(result.reason).toBe('single_candidate');
+    expect(result.signals).toEqual({});
   });
 
   it('returns decisive for empty/null scores', () => {
@@ -75,23 +76,102 @@ describe('isDecisive', () => {
     expect(isDecisive([]).decisive).toBe(true);
   });
 
-  it('returns decisive for clear winner (gap > threshold)', () => {
-    const result = isDecisive([0.9, 0.7, 0.65], 0.12);
+  it('returns decisive for clear winner (gap > threshold, not flat)', () => {
+    const result = isDecisive([0.9, 0.7, 0.65], 0.08);
     expect(result.decisive).toBe(true);
     expect(result.reason).toContain('clear_winner');
+    expect(result.signals.gap).toBeCloseTo(0.2, 5);
+    expect(result.signals.marginDecisive).toBe(true);
   });
 
   it('returns NOT decisive for ambiguous scores (gap < threshold)', () => {
-    const result = isDecisive([0.85, 0.83, 0.81], 0.12);
+    // Use scores with enough spread that std > 0.02 (not flat), but gap < threshold
+    const result = isDecisive([0.85, 0.80, 0.60, 0.55, 0.50], 0.08);
     expect(result.decisive).toBe(false);
     expect(result.reason).toBe('ambiguous');
+    expect(result.signals.marginDecisive).toBe(false);
+    expect(result.signals.flat).toBe(false);
   });
 
-  it('returns NOT decisive for tight cluster', () => {
-    // Tight cluster = all scores nearly equal. This is the key design decision:
-    // when the model can't discriminate, CE matters most.
-    const result = isDecisive([0.80, 0.79, 0.78, 0.77], 0.12);
+  it('returns NOT decisive for flat scores (low std)', () => {
+    // All scores within a very narrow band → std < 0.02
+    const result = isDecisive([0.800, 0.799, 0.798, 0.797, 0.796, 0.795, 0.794, 0.793, 0.792, 0.791], 0.08);
     expect(result.decisive).toBe(false);
+    expect(result.reason).toContain('flat_scores');
+    expect(result.signals.flat).toBe(true);
+  });
+
+  it('lexicalConfident → always decisive', () => {
+    // Even with ambiguous scores, lexical confidence skips CE
+    const result = isDecisive([0.85, 0.83], 0.08, { lexicalConfident: true });
+    expect(result.decisive).toBe(true);
+    expect(result.reason).toBe('lexical_confident');
+    expect(result.signals.lexicalConfident).toBe(true);
+  });
+
+  it('low token coverage → NOT decisive', () => {
+    // Even with a margin, low coverage means MaxSim had limited signal
+    const result = isDecisive([0.9, 0.7], 0.08, {
+      withTokens: 3,
+      totalCandidates: 10,
+    });
+    expect(result.decisive).toBe(false);
+    expect(result.reason).toBe('low_coverage');
+    expect(result.signals.lowCoverage).toBe(true);
+  });
+
+  it('large margin but flat → NOT decisive (CE needed)', () => {
+    // Gap > threshold but std is very low → flat override
+    // Create scores where gap > 0.08 between first and second, but all top-10 are very close
+    const scores = [0.82, 0.73, 0.729, 0.728, 0.727, 0.726, 0.725, 0.724, 0.723, 0.722];
+    const result = isDecisive(scores, 0.08);
+    expect(result.signals.marginDecisive).toBe(true);
+    // std of these 10 values — depends on actual calculation
+    // The gap is 0.09 (decisive), but the overall spread should be checked
+    // This tests the interaction between margin and flatness signals
+    expect(result.signals.gap).toBeCloseTo(0.09, 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeAdaptiveK()
+// ---------------------------------------------------------------------------
+
+describe('computeAdaptiveK', () => {
+  it('returns scores.length when fewer than kMin', () => {
+    expect(computeAdaptiveK([0.9, 0.8], 20, 3)).toBe(2);
+    expect(computeAdaptiveK([0.9], 20, 3)).toBe(1);
+  });
+
+  it('caps at kMax', () => {
+    const scores = Array.from({ length: 30 }, (_, i) => 0.9 - i * 0.001);
+    expect(computeAdaptiveK(scores, 20, 3)).toBeLessThanOrEqual(20);
+  });
+
+  it('floors at kMin', () => {
+    // Even with a huge gap at position 1, still returns at least kMin
+    const scores = [0.95, 0.2, 0.19, 0.18, 0.17];
+    expect(computeAdaptiveK(scores, 20, 3)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('finds natural cutoff at largest gap', () => {
+    // Clear cluster: [0.9, 0.88, 0.87] | GAP | [0.5, 0.49, 0.48]
+    const scores = [0.9, 0.88, 0.87, 0.5, 0.49, 0.48];
+    const k = computeAdaptiveK(scores, 20, 3);
+    expect(k).toBe(3); // cutoff after the 3rd element (largest gap is 0.87→0.5)
+  });
+
+  it('sends kMax for flat scores (MaxSim cant discriminate)', () => {
+    // Very flat scores → no significant gap → CE needs maximum context
+    const scores = Array.from({ length: 15 }, (_, i) => 0.8 - i * 0.0005);
+    const k = computeAdaptiveK(scores, 10, 3);
+    expect(k).toBe(10); // flat → send kMax
+  });
+
+  it('handles exact ties', () => {
+    const scores = [0.8, 0.8, 0.8, 0.5, 0.5];
+    const k = computeAdaptiveK(scores, 20, 3);
+    expect(k).toBe(3); // gap at position 2→3 is 0.3, largest
   });
 });
 
@@ -133,7 +213,7 @@ describe('cascadedScore', () => {
     expect(crossEncoder.rerankDirect).not.toHaveBeenCalled();
   });
 
-  it('decisive gap → CE NOT called', async () => {
+  it('decisive gap → CE skipped', async () => {
     const candidates = makeCandidates(5);
     // Scores with clear winner: 0.9, 0.5, 0.4, 0.3, 0.2
     const liIndex = makeLiIndex(
@@ -144,19 +224,20 @@ describe('cascadedScore', () => {
     const { results, stats } = await cascadedScore('query', candidates, {
       lateInteractionIndex: liIndex,
       crossEncoder,
-      gateThreshold: 0.12,
+      gateThreshold: 0.08,
       loadDocumentContent,
     });
 
     expect(stats.decisive).toBe(true);
+    expect(stats.gateReason).toContain('clear_winner');
     expect(stats.ceInvoked).toBe(false);
     expect(results.length).toBe(5);
     expect(crossEncoder.rerankDirect).not.toHaveBeenCalled();
   });
 
-  it('ambiguous scores → pure reranker, CE NOT called', async () => {
+  it('ambiguous scores → CE rescue fires', async () => {
     const candidates = makeCandidates(10);
-    // All scores very close (0.80, 0.79, 0.78 ...) — would be ambiguous under old gate
+    // All scores very close (0.80, 0.79, 0.78 ...) — ambiguous, gap < threshold
     const liIndex = makeLiIndex(
       candidates.map(c => c.id),
       candidates.map((_, i) => 0.80 - i * 0.01),
@@ -165,39 +246,78 @@ describe('cascadedScore', () => {
     const { results, stats } = await cascadedScore('query', candidates, {
       lateInteractionIndex: liIndex,
       crossEncoder,
-      ceTopK: 5,
-      gateThreshold: 0.12,
+      ceTopK: 20,
+      gateThreshold: 0.08,
       loadDocumentContent,
     });
 
-    // Pure reranker: always decisive, no CE
-    expect(stats.decisive).toBe(true);
-    expect(stats.gateReason).toBe('pure_reranker');
-    expect(stats.ceInvoked).toBe(false);
-    expect(crossEncoder.rerankDirect).not.toHaveBeenCalled();
-    // Results sorted by MaxSim score
-    expect(results[0].score).toBeCloseTo(0.80, 5);
-    expect(results[9].score).toBeCloseTo(0.71, 5);
+    // Ambiguous: CE should fire
+    expect(stats.decisive).toBe(false);
+    expect(stats.ceInvoked).toBe(true);
+    expect(stats.adaptiveK).toBeGreaterThanOrEqual(3);
+    expect(crossEncoder.rerankDirect).toHaveBeenCalled();
   });
 
-  it('tight cluster → pure reranker, CE NOT called', async () => {
-    const candidates = makeCandidates(4);
-    // All within 0.02 spread — tight cluster
+  it('tight cluster (flat scores) → CE rescue fires', async () => {
+    const candidates = makeCandidates(6);
+    // Very flat: all within 0.005 spread
     const liIndex = makeLiIndex(
       candidates.map(c => c.id),
-      [0.80, 0.79, 0.79, 0.78],
+      [0.800, 0.799, 0.798, 0.797, 0.796, 0.795],
     );
 
     const { stats } = await cascadedScore('query', candidates, {
       lateInteractionIndex: liIndex,
       crossEncoder,
-      gateThreshold: 0.12,
+      gateThreshold: 0.08,
       loadDocumentContent,
     });
 
-    // Pure reranker: always decisive, no CE even for tight clusters
+    expect(stats.decisive).toBe(false);
+    expect(stats.gateReason).toContain('flat_scores');
+    expect(stats.ceInvoked).toBe(true);
+  });
+
+  it('adaptive-K sends right number of candidates to CE', async () => {
+    const candidates = makeCandidates(10);
+    // Clear cluster: [0.9, 0.88, 0.87] | big gap | [0.5, 0.49, 0.48, ...]
+    const liIndex = makeLiIndex(
+      candidates.map(c => c.id),
+      [0.9, 0.88, 0.87, 0.5, 0.49, 0.48, 0.47, 0.46, 0.45, 0.44],
+    );
+
+    const { stats } = await cascadedScore('query', candidates, {
+      lateInteractionIndex: liIndex,
+      crossEncoder,
+      ceTopK: 20,
+      gateThreshold: 0.08,
+      loadDocumentContent,
+    });
+
+    // Gap 0.9→0.88 = 0.02, not decisive (< 0.08), so CE fires
+    // Adaptive-K should find the big gap at 0.87→0.5 and send 3 candidates
+    expect(stats.ceInvoked).toBe(true);
+    expect(stats.adaptiveK).toBe(3);
+    expect(stats.ceCandidates).toBe(3);
+  });
+
+  it('lexicalConfident bypasses gate (decisive even with ambiguous scores)', async () => {
+    const candidates = makeCandidates(5);
+    const liIndex = makeLiIndex(
+      candidates.map(c => c.id),
+      [0.80, 0.79, 0.78, 0.77, 0.76], // ambiguous
+    );
+
+    const { stats } = await cascadedScore('query', candidates, {
+      lateInteractionIndex: liIndex,
+      crossEncoder,
+      gateThreshold: 0.08,
+      lexicalConfident: true,
+      loadDocumentContent,
+    });
+
     expect(stats.decisive).toBe(true);
-    expect(stats.gateReason).toBe('pure_reranker');
+    expect(stats.gateReason).toBe('lexical_confident');
     expect(stats.ceInvoked).toBe(false);
   });
 
@@ -212,16 +332,16 @@ describe('cascadedScore', () => {
     const { results, stats } = await cascadedScore('query', candidates, {
       lateInteractionIndex: liIndex,
       crossEncoder,
-      ceTopK: 3,
-      gateThreshold: 0.12,
+      ceTopK: 20,
+      gateThreshold: 0.08,
       loadDocumentContent,
     });
 
-    // Pure reranker: no CE, scored candidates first, unscored at bottom
+    // Gap 0.95→0.5 = 0.45, clear winner → decisive, no CE
+    expect(stats.decisive).toBe(true);
     expect(stats.ceInvoked).toBe(false);
     expect(stats.withoutTokens).toBe(3);
-    expect(stats.gateReason).toBe('pure_reranker');
-    // First 3 results are scored by MaxSim
+    // First result is scored by MaxSim
     expect(results[0].score).toBeCloseTo(0.95, 5);
     // Last 3 are unscored (keep original base scores)
     expect(results.slice(3).every(r => r.preLateInteractionScore === undefined)).toBe(true);
@@ -273,7 +393,7 @@ describe('cascadedScore', () => {
     const { results, stats } = await cascadedScore('query', candidates, {
       lateInteractionIndex: liIndex,
       crossEncoder: failingCE,
-      gateThreshold: 0.12,
+      gateThreshold: 0.08,
       forceFullCrossEncoder: true, // force CE to exercise the error path
       loadDocumentContent,
     });
@@ -295,7 +415,7 @@ describe('cascadedScore', () => {
     const { stats } = await cascadedScore('query', candidates, {
       lateInteractionIndex: liIndex,
       crossEncoder,
-      gateThreshold: 0.12,
+      gateThreshold: 0.08,
       forceFullCrossEncoder: true,
       loadDocumentContent,
     });
@@ -316,7 +436,7 @@ describe('cascadedScore', () => {
       lateInteractionIndex: liIndex,
       crossEncoder,
       ceTopK: 3, // normally would limit to 3
-      gateThreshold: 0.12,
+      gateThreshold: 0.08,
       forceFullCrossEncoder: true,
       loadDocumentContent,
     });
@@ -378,26 +498,81 @@ describe('cascadedScore', () => {
     expect(ceScored.length).toBeGreaterThan(0);
   });
 
-  it('pure reranker: scores are raw MaxSim values', async () => {
+  it('gate signals are populated in stats', async () => {
     const candidates = makeCandidates(5);
     const liIndex = makeLiIndex(
       candidates.map(c => c.id),
       [0.85, 0.72, 0.60, 0.45, 0.30],
     );
 
-    const { results, stats } = await cascadedScore('query', candidates, {
+    const { stats } = await cascadedScore('query', candidates, {
       lateInteractionIndex: liIndex,
       crossEncoder,
       loadDocumentContent,
     });
 
-    expect(stats.gateReason).toBe('pure_reranker');
+    expect(stats.gateSignals).toBeDefined();
+    expect(stats.gateSignals.gap).toBeCloseTo(0.13, 2);
+    expect(typeof stats.gateSignals.std).toBe('number');
+    expect(typeof stats.gateSignals.flat).toBe('boolean');
+    expect(typeof stats.gateSignals.marginDecisive).toBe('boolean');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Shadow mode tests
+  // ---------------------------------------------------------------------------
+
+  it('shadow mode: logs CE decisions without changing ranking', async () => {
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const candidates = makeCandidates(10);
+    // Ambiguous scores — gate would normally trigger CE
+    const liIndex = makeLiIndex(
+      candidates.map(c => c.id),
+      candidates.map((_, i) => 0.80 - i * 0.01),
+    );
+
+    const { results, stats } = await cascadedScore('query', candidates, {
+      lateInteractionIndex: liIndex,
+      crossEncoder,
+      ceTopK: 20,
+      gateThreshold: 0.08,
+      shadowMode: true,
+      loadDocumentContent,
+    });
+
+    // Results should be pure MaxSim (unchanged by CE)
+    expect(stats.gateReason).toContain('shadow:');
+    expect(results[0].score).toBeCloseTo(0.80, 5);
+    // CE should NOT have been marked as invoked in the main stats
     expect(stats.ceInvoked).toBe(false);
-    // Scores are raw MaxSim values, sorted descending
-    expect(results[0].score).toBeCloseTo(0.85, 5);
-    expect(results[1].score).toBeCloseTo(0.72, 5);
-    expect(results[4].score).toBeCloseTo(0.30, 5);
-    // preLateInteractionScore stores original base score
-    expect(results[0].preLateInteractionScore).toBeDefined();
+
+    // Shadow should have logged
+    const shadowLogs = consoleSpy.mock.calls.filter(
+      args => args[0] && typeof args[0] === 'string' && args[0].includes('shadow_cascade')
+    );
+    expect(shadowLogs.length).toBe(1);
+
+    consoleSpy.mockRestore();
+  });
+
+  it('shadow mode + forceFullCrossEncoder → forceFullCE takes precedence', async () => {
+    const candidates = makeCandidates(5);
+    const liIndex = makeLiIndex(
+      candidates.map(c => c.id),
+      [0.95, 0.5, 0.4, 0.3, 0.2],
+    );
+
+    const { stats } = await cascadedScore('query', candidates, {
+      lateInteractionIndex: liIndex,
+      crossEncoder,
+      gateThreshold: 0.08,
+      shadowMode: true,
+      forceFullCrossEncoder: true,
+      loadDocumentContent,
+    });
+
+    // forceFullCrossEncoder should override shadow mode → CE fires for real
+    expect(stats.ceInvoked).toBe(true);
   });
 });

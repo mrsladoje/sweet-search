@@ -43,7 +43,7 @@ export class LocalReranker {
     this.tokenizer = null;
     this.model = null;
     this.ready = false;
-    this.maxLength = 512;
+    this.maxLength = 512; // testing: revert to original to isolate perf/quality issue
     this.transformersAvailable = null;
     this.initPromise = null;
     // Note: Uses global ONNX mutex (onnx-mutex.js) for cross-model serialization
@@ -159,23 +159,19 @@ export class LocalReranker {
   }
 
   /**
-   * Internal reranking implementation (called within mutex)
+   * Internal reranking implementation (called within mutex).
+   * Sequential scoring: one query-doc pair per forward pass.
    */
   async _doRerank(query, documents, topK) {
     const start = Date.now();
 
-    // Score documents sequentially to avoid ONNX concurrency issues
     const scores = [];
     for (let index = 0; index < documents.length; index++) {
       const doc = documents[index];
       try {
         const text = typeof doc === 'string' ? doc : doc.content || doc.text || '';
-        // Truncate to avoid token overflow
         const truncated = text.slice(0, this.maxLength * 4);
 
-        // Tokenize query-document pair (cross-encoder format)
-        // CRITICAL: Must use array format for text_pair to work correctly
-        // Per HuggingFace docs: tokenizer([query], { text_pair: [document] })
         const inputs = this.tokenizer([query], {
           text_pair: [truncated],
           padding: true,
@@ -183,25 +179,17 @@ export class LocalReranker {
           max_length: this.maxLength,
         });
 
-        // Get model output
         const output = await this.model(inputs);
-
-        // Extract logit and apply sigmoid for relevance score
         const logit = output.logits.data[0];
-        const score = sigmoid(logit);
-
-        scores.push({ index, score, original: doc });
-      } catch (err) {
+        scores.push({ index, score: sigmoid(logit), original: doc });
+      } catch {
         scores.push({ index, score: 0, original: doc });
       }
     }
 
-    // Sort by score descending
     scores.sort((a, b) => b.score - a.score);
 
-    // Return top K results
     const results = scores.slice(0, topK).map((item, rank) => {
-      // Handle both string and object documents
       const base = typeof item.original === 'string'
         ? { content: item.original }
         : item.original;
@@ -214,11 +202,9 @@ export class LocalReranker {
       };
     });
 
-    const latency = Date.now() - start;
-
     return {
       results,
-      latency_ms: latency,
+      latency_ms: Date.now() - start,
       model: 'gte-reranker-modernbert-base-int8',
     };
   }
