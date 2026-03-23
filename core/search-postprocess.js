@@ -199,8 +199,11 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   // all candidates are treated as unscored → CE-only fallback.
   // Cascade runs when enabled, regardless of useLateInteraction.
   // When LI is unavailable, cascadedScore() receives null → CE-only fallback.
+  // Pattern mode already ran MaxSim ranking — skip redundant CE cascade.
+  const isPatternMode = searchMode === 'pattern';
   const shouldRunCascade = this.cascadeEnabled
     && !isConfidentLexical
+    && !isPatternMode
     && Array.isArray(results) && results.length > 1;
 
   if (shouldRunCascade) {

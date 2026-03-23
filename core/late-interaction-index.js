@@ -10,7 +10,7 @@
  */
 
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, createWriteStream, createReadStream } from 'fs';
 import path from 'path';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from './config.js';
 
@@ -241,46 +241,82 @@ export class LateInteractionIndex {
   }
 
   /**
-   * Save index to disk
+   * Save index to disk.
+   *
+   * Streams documents one-by-one to avoid V8's ~512MB string length limit
+   * that JSON.stringify() hits on large indexes (>10K docs).
    */
   async save() {
     await fs.mkdir(path.dirname(this.indexPath), { recursive: true });
 
-    const state = {
+    const header = {
       version: '2.1',
       modelId: this.modelId,
       tokenDim: this.tokenDim,
       maxTokens: this.maxTokens,
       useInt8: this.useInt8,
       poolFactor: this.poolFactor,
-      documents: []
     };
 
-    for (const [id, doc] of this.documents) {
-      state.documents.push({
-        id,
-        tokens: Array.from(doc.tokens),
-        numTokens: doc.numTokens,
-        dim: doc.dim,
-        min: doc.min,
-        scale: doc.scale,
-        metadata: doc.metadata
+    let bytesWritten = 0;
+
+    await new Promise((resolve, reject) => {
+      const ws = createWriteStream(this.indexPath, { encoding: 'utf-8' });
+      ws.on('error', reject);
+
+      // Write header + opening array bracket
+      const headerStr = JSON.stringify(header).slice(0, -1) + ',"documents":[';
+      ws.write(headerStr);
+      bytesWritten += headerStr.length;
+
+      let first = true;
+      for (const [id, doc] of this.documents) {
+        const entry = JSON.stringify({
+          id,
+          tokens: Array.from(doc.tokens),
+          numTokens: doc.numTokens,
+          dim: doc.dim,
+          min: doc.min,
+          scale: doc.scale,
+          metadata: doc.metadata,
+        });
+
+        const chunk = first ? entry : ',' + entry;
+        first = false;
+        ws.write(chunk);
+        bytesWritten += chunk.length;
+      }
+
+      ws.end(']}', () => {
+        bytesWritten += 2;
+        resolve();
       });
-    }
+    });
 
-    await fs.writeFile(this.indexPath, JSON.stringify(state));
-
-    const size = (JSON.stringify(state).length / 1024 / 1024).toFixed(2);
-    console.log(`LateInteraction: Saved ${this.documents.size} documents (${size} MB)`);
+    const sizeMB = (bytesWritten / 1024 / 1024).toFixed(2);
+    console.log(`LateInteraction: Saved ${this.documents.size} documents (${sizeMB} MB)`);
   }
 
   /**
-   * Load index from disk
+   * Load index from disk.
+   *
+   * Uses streaming parse to avoid V8's ~512MB string length limit on large
+   * indexes. Reads the file as a stream, extracts the header, then parses
+   * each document object individually.
    */
   async load() {
     try {
-      const data = await fs.readFile(this.indexPath, 'utf-8');
-      const state = JSON.parse(data);
+      const stat = await fs.stat(this.indexPath);
+      const useStreaming = stat.size > 256 * 1024 * 1024; // >256MB → stream
+
+      let state;
+      if (useStreaming) {
+        state = await this._loadStreaming();
+      } else {
+        // Small files: fast path with readFile
+        const data = await fs.readFile(this.indexPath, 'utf-8');
+        state = JSON.parse(data);
+      }
 
       // Model consistency check (v2.0+)
       if (state.modelId && this.modelId && state.modelId !== this.modelId) {
@@ -298,26 +334,118 @@ export class LateInteractionIndex {
       this.poolFactor = state.poolFactor || 1;
       if (state.modelId) this.modelId = state.modelId;
 
-      this.documents.clear();
-      for (const doc of state.documents) {
-        const tokens = this.useInt8 ?
-          new Int8Array(doc.tokens) :
-          new Float32Array(doc.tokens);
+      // Documents may already be loaded by streaming path
+      if (state.documents && !this._streamLoaded) {
+        this.documents.clear();
+        for (const doc of state.documents) {
+          const tokens = this.useInt8 ?
+            new Int8Array(doc.tokens) :
+            new Float32Array(doc.tokens);
 
-        this.documents.set(doc.id, {
-          tokens,
-          numTokens: doc.numTokens,
-          dim: doc.dim,
-          min: doc.min,
-          scale: doc.scale,
-          metadata: doc.metadata
-        });
+          this.documents.set(doc.id, {
+            tokens,
+            numTokens: doc.numTokens,
+            dim: doc.dim,
+            min: doc.min,
+            scale: doc.scale,
+            metadata: doc.metadata
+          });
+        }
       }
+      this._streamLoaded = false;
 
       console.log(`LateInteraction: Loaded ${this.documents.size} documents (model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)`);
     } catch (err) {
-      console.log('LateInteraction: No existing index found');
+      if (err.code === 'ENOENT') {
+        console.log('LateInteraction: No existing index found');
+      } else {
+        console.error(`LateInteraction: Failed to load index: ${err.message}`);
+      }
     }
+  }
+
+  /**
+   * Stream-parse a large LI index file.
+   *
+   * Strategy: read the file as a Buffer (no V8 string limit), find the
+   * `"documents":[` marker, then extract each document JSON object by
+   * tracking brace depth. Each document is parsed individually (small
+   * string, well under limits).
+   *
+   * @returns {Object} Header fields (version, modelId, tokenDim, etc.) — documents are loaded directly into this.documents
+   */
+  async _loadStreaming() {
+    const buf = await fs.readFile(this.indexPath); // Buffer, not string — no limit
+
+    // Find the "documents":[ marker
+    const marker = Buffer.from('"documents":[');
+    const markerIdx = buf.indexOf(marker);
+    if (markerIdx === -1) throw new Error('Invalid LI index format: no documents array');
+
+    // Parse header (everything before "documents":[)
+    const headerEnd = markerIdx;
+    // Build a valid JSON from the header by closing the object
+    const headerStr = buf.slice(0, headerEnd).toString('utf-8') + '"_":0}';
+    const header = JSON.parse(headerStr);
+
+    // Parse documents one by one from the array
+    this.documents.clear();
+    let pos = markerIdx + marker.length;
+    const end = buf.length;
+    let docCount = 0;
+
+    while (pos < end) {
+      // Skip whitespace and commas
+      while (pos < end && (buf[pos] === 0x20 || buf[pos] === 0x0A || buf[pos] === 0x0D || buf[pos] === 0x09 || buf[pos] === 0x2C)) pos++;
+
+      // Check for end of array
+      if (pos >= end || buf[pos] === 0x5D) break; // ] = end
+
+      // Must be start of object
+      if (buf[pos] !== 0x7B) break; // { expected
+
+      // Find matching closing brace by depth tracking
+      let depth = 0;
+      const objStart = pos;
+      while (pos < end) {
+        const byte = buf[pos];
+        if (byte === 0x7B) depth++;
+        else if (byte === 0x7D) { depth--; if (depth === 0) { pos++; break; } }
+        else if (byte === 0x22) { // skip strings (handle escaped quotes)
+          pos++;
+          while (pos < end && buf[pos] !== 0x22) {
+            if (buf[pos] === 0x5C) pos++; // skip escaped char
+            pos++;
+          }
+        }
+        pos++;
+      }
+
+      // Parse this single document
+      const docStr = buf.slice(objStart, pos).toString('utf-8');
+      const doc = JSON.parse(docStr);
+
+      const tokens = this.useInt8 || header.useInt8 ?
+        new Int8Array(doc.tokens) :
+        new Float32Array(doc.tokens);
+
+      this.documents.set(doc.id, {
+        tokens,
+        numTokens: doc.numTokens,
+        dim: doc.dim,
+        min: doc.min,
+        scale: doc.scale,
+        metadata: doc.metadata,
+      });
+
+      docCount++;
+      if (docCount % 5000 === 0) {
+        console.log(`LateInteraction: Streaming load ${docCount} documents...`);
+      }
+    }
+
+    this._streamLoaded = true;
+    return header;
   }
 
   /**

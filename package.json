@@ -70,6 +70,8 @@
     "eval:bench": "node eval/run_all.js",
     "eval:bench:check": "node eval/run_all.js --regression-check",
     "eval:bench:baseline": "node eval/run_all.js --save-baseline",
+    "eval:pattern": "node eval/run_pattern_benchmark.js",
+    "eval:pattern:baseline": "node eval/run_pattern_benchmark.js --save-baseline",
     "features": "node training/features/extractor.js",
     "features:benchmark": "node training/features/extractor.js --benchmark",
     "features:names": "node training/features/extractor.js --names",

@@ -209,7 +209,8 @@ Usage:
   sweet-search --stop               Stop warm server
 
 Options:
-  --mode <mode>     Search mode: auto, lexical, semantic, hybrid (default: auto)
+  --mode <mode>     Search mode: auto, lexical, semantic, hybrid, pattern (default: auto)
+  -e, --regex <pat> Regex pattern for pattern mode (implies --mode=pattern)
   --top, -k <n>     Number of results (default: 10)
   --no-expand       Disable graph expansion
   --no-rerank       Disable reranking
@@ -231,10 +232,12 @@ Auto-Warm Server (automatic):
   Server runs in background until explicitly stopped or system restart.
 
 Examples:
-  sweet-search "AuthService"        # Auto-starts server, uses warm cache
-  sweet-search "how does auth work" # Semantic search
-  sweet-search "auth" --cold        # Skip server, cold start only
-  sweet-search --stop               # Stop warm server
+  sweet-search "AuthService"                              # Auto-starts server, uses warm cache
+  sweet-search "how does auth work"                       # Semantic search
+  sweet-search -e "class.*Service" "authentication"       # Pattern: regex + semantic ranking
+  sweet-search --regex "fn.*sort" "sorting algorithm"     # Pattern: regex + semantic ranking
+  sweet-search "auth" --cold                              # Skip server, cold start only
+  sweet-search --stop                                     # Stop warm server
 `);
     process.exit(0);
   }
@@ -298,6 +301,7 @@ Examples:
     // Normal query mode
     let query = '';
     let mode = 'auto';
+    let regex = '';
     let topK = 10;
     let expand = true;
     let rerank = true;
@@ -314,6 +318,9 @@ Examples:
 
       if (arg === '--mode' && args[i + 1]) {
         mode = args[++i];
+      } else if ((arg === '-e' || arg === '--regex') && args[i + 1]) {
+        regex = args[++i];
+        mode = 'pattern';
       } else if ((arg === '--top' || arg === '-k') && args[i + 1]) {
         topK = parseInt(args[++i], 10);
       } else if (arg === '--no-expand') {
@@ -363,6 +370,7 @@ Examples:
       try {
         const response = await queryServer(query, {
           mode,
+          regex,
           topK,
           expand,
           rerank,
@@ -421,6 +429,7 @@ Examples:
       let { results, stats } = await searcher.search(query, {
         k: topK,
         mode,
+        regex,
         expand,
         rerank,
         fusion,
