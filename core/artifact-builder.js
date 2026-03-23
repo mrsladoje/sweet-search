@@ -53,7 +53,8 @@ export const ARTIFACT_THRESHOLDS = {
 };
 
 import { BinaryHNSWIndex } from './binary-hnsw-index.js';
-import { truncateForHNSW, fisherYatesShuffle } from './embedding-service.js';
+import { truncateForHNSW, fisherYatesShuffle, normalizedFloatToInt8 } from './embedding-service.js';
+import { FloatVectorStore, getFloatStorePath } from './float-vector-store.js';
 
 // =============================================================================
 // THRESHOLD CHECKING FUNCTIONS
@@ -204,17 +205,12 @@ export async function updateArtifactState(options = {}) {
  * @param {Float32Array|number[]} float32Array - Input float embedding (assumed normalized -1 to 1)
  * @returns {Int8Array} Quantized int8 embedding
  */
+/**
+ * Quantize float32 to int8. Delegates to the canonical implementation in
+ * embedding-service.normalizedFloatToInt8 — single source of truth.
+ */
 export function quantizeToInt8(float32Array) {
-  const int8 = new Int8Array(float32Array.length);
-
-  for (let i = 0; i < float32Array.length; i++) {
-    // Clamp to [-1, 1] and scale to [-127, 127]
-    // We use 127 (not 128) to keep the range symmetric
-    const clamped = Math.max(-1, Math.min(1, float32Array[i]));
-    int8[i] = Math.round(clamped * 127);
-  }
-
-  return int8;
+  return normalizedFloatToInt8(float32Array);
 }
 
 /**
@@ -474,6 +470,19 @@ export async function saveArtifacts(hnswIndex) {
  *   }
  * }>}
  */
+/** Build and save a FloatVectorStore from items with embeddings. */
+async function buildAndSaveFloatStore(items, floatDimension, floatStorePath) {
+  console.log(`Building float vector store (${items.length} vectors, ${floatDimension}d)...`);
+  const floatStore = new FloatVectorStore();
+  const floatEntries = items.map(item => ({
+    id: item.id,
+    vector: truncateForHNSW(item.embedding, floatDimension),
+  }));
+  floatStore.build(floatEntries, floatDimension);
+  await floatStore.save(floatStorePath);
+  console.log(`Float vector store: ${floatStore.memorySizeMB} MB → ${floatStorePath}`);
+}
+
 export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, options = {}) {
   const overallStartTime = performance.now();
   const {
@@ -542,6 +551,10 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
   console.log(`Saving HNSW index + Int8 sidecar to ${hnswIndexPath}...`);
   await hnswIndex.save(hnswIndexPath);
 
+  // Build and save float vector store for Stage 2.5 direct-access rescoring
+  const floatStorePath = getFloatStorePath(hnswIndexPath);
+  await buildAndSaveFloatStore(items, floatDimension, floatStorePath);
+
   const totalBuildTimeMs = Math.round(performance.now() - overallStartTime);
   const vectorsPerSecond = totalBuildTimeMs > 0
     ? Math.round(items.length / (totalBuildTimeMs / 1000))
@@ -559,6 +572,7 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
       indexBuildTimeMs: hnswBuildStats.buildTimeMs,
       path: hnswIndexPath,
       int8SidecarPath: hnswIndexPath.replace('.idx', '.int8.json'),
+      floatStorePath,
     },
     stats: {
       totalVectors: items.length,
@@ -629,6 +643,36 @@ export async function updateArtifacts(newItems, removedIds = [], options = {}) {
 
     // Save updated HNSW (includes .int8.json sidecar)
     await hnswIndex.save(hnswIndexPath);
+  }
+
+  // Rebuild float vector store from codebase.db (full rebuild, covers all entries)
+  const floatStorePath = getFloatStorePath(hnswIndexPath);
+  try {
+    const Database = (await import('better-sqlite3')).default;
+    const { applyReadPragmas } = await import('./db-utils.js');
+    const db = new Database(DB_PATHS.codebase, { readonly: true });
+    applyReadPragmas(db);
+    const rows = db.prepare('SELECT id, embedding FROM vectors').all();
+    db.close();
+
+    const allItems = rows.map(row => ({
+      id: row.id,
+      embedding: Array.from(new Float32Array(
+        row.embedding.buffer, row.embedding.byteOffset, row.embedding.length / 4
+      )),
+    }));
+    await buildAndSaveFloatStore(allItems, floatDimension, floatStorePath);
+  } catch (err) {
+    console.warn(`Float vector store rebuild failed (non-fatal): ${err.message}`);
+    // Remove stale float store so SweetSearch doesn't load outdated vectors.
+    // Stage 2.5 will cleanly fall back to SQLite on next startup.
+    try {
+      const { unlink } = await import('fs/promises');
+      const idsPath = floatStorePath.replace(/\.bin$/, '.ids.json');
+      await unlink(floatStorePath).catch(() => {});
+      await unlink(idsPath).catch(() => {});
+      console.warn('Removed stale float vector store files.');
+    } catch { /* best effort */ }
   }
 
   return {

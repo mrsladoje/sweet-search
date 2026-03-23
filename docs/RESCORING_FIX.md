@@ -1,7 +1,7 @@
 # Rescoring Fix Plan
 
 **Date:** 2026-03-23
-**Status:** Planned
+**Status:** Implemented (Phases 1–3), Phase 0 partial (instrumentation done, benchmark harness and diagnostics CLI not yet updated)
 **Goal:** Improve Stage 2 and Stage 2.5 latency without hurting retrieval quality, and align the rescoring path with current 2026 production practice.
 
 ---
@@ -77,6 +77,43 @@ This plan fixes the rescoring path in phases. The order matters. Do not jump to 
 4. Quantization is simple:
    - `floatToInt8()` uses per-vector max-abs scaling
    - this is easy to implement, but not strong enough to minimize rescoring work
+
+5. Stage 2.5 is mislabeled as "float rescore":
+   - query vector is truncated with `truncateForHNSW()`
+   - document vector is loaded at full stored dimension
+   - `cosineSimilarity()` silently scores only `Math.min(a.length, b.length)`
+   - current behavior is prefix-truncated rescoring, not exact float rescoring
+
+6. Binary-artifact invalidation is incomplete:
+   - binary HNSW metadata stores `pipelineVersion`
+   - binary HNSW load rejects mismatched versions
+   - incremental fingerprinting stores `pipelineVersion` but does not validate it
+   - current failure mode is "binary index fails to load, system falls back" instead of "rebuild required"
+
+7. The HNSW diagnostics helper has at least one bad default:
+   - `tests/eval/hnsw-diagnostics.js profile` defaults to the codebase DB path
+   - the profiler expects a binary HNSW artifact path
+   - this weakens trust in ad hoc benchmark tooling until corrected
+
+8. Direct test coverage for the HNSW approach is still thin:
+   - there are artifact/backend tests and benchmark docs
+   - there are not enough direct behavior tests for heuristic neighbor selection, adaptive ef / early termination, pipeline-version rebuild behavior, or Stage 2.5 exactness
+   - future benchmark claims should be backed by targeted automated tests, not docs alone
+
+### Related Findings From The HNSW Review
+
+The recent HNSW implementation review changes the constraints for this rescoring work:
+
+- The shipped HNSW path is now good enough to treat as a stable baseline.
+- The next latency / quality wins are more likely in Stage 2 and Stage 2.5 than in more ANN tuning.
+- This workstream must not regress the current HNSW baseline or reintroduce ambiguity in benchmark narratives.
+
+Concretely:
+
+- Fix the current "float rescore" correctness bug before optimizing it.
+- Make binary-artifact invalidation deterministic and rebuild-oriented, not silent-fallback-oriented.
+- Repair the diagnostics CLI defaults before using them as evidence in follow-up writeups.
+- Add targeted tests around the HNSW/rescoring boundary so later tuning can be trusted.
 
 ---
 
@@ -172,18 +209,28 @@ This plan follows that model.
    - Phase 2 direct-access path ON
    - Phase 3 adaptive oversampling ON
 
+6. Add correctness tests before optimization work:
+   - Stage 2.5 must have a test that fails if query/document dimensions silently mismatch
+   - binary pipeline-version mismatch must be tested end-to-end and must force rebuild behavior
+   - diagnostics CLI defaults must be smoke-tested
+   - HNSW behavior tests should cover heuristic selection, adaptive ef / early termination visibility, and Stage 1/Stage 2 handoff invariants
+
 ### Files
 
 - `core/search-semantic.js`
 - `eval/run_benchmark.js`
 - `eval/retrieval-harness.js`
 - any stage-timing helper already used elsewhere
+- `tests/eval/hnsw-diagnostics.js`
+- targeted unit/integration tests under `tests/` or `__tests__/`
 
 ### Exit Criteria
 
 - A reproducible baseline exists for current `200/200` behavior.
 - Benchmark output separates Stage 2, Stage 2.5, MaxSim, and CE.
 - Benchmark runs are comparable across branches and flags.
+- There is a direct automated test proving whether Stage 2.5 is exact float rescore or not.
+- There is a direct automated test covering binary artifact invalidation on pipeline-version change.
 
 ### Benchmark Constraints
 
@@ -266,6 +313,12 @@ If quality regresses past tolerance, do not promote the phase by default.
 
 ### Tasks
 
+0. Correct the current implementation before optimizing it:
+   - query and document vectors must be scored at the same intended dimension
+   - remove the current `Math.min(a.length, b.length)` behavior from the normal Stage 2.5 path
+   - if dimensions differ unexpectedly, fail loudly in development / benchmark paths
+   - rename the current behavior in docs/metrics until exact float rescoring is actually true
+
 1. Introduce direct-access float vector storage:
    - flat binary file or mmap-friendly blob
    - offset table keyed by chunk id
@@ -296,12 +349,15 @@ If quality regresses past tolerance, do not promote the phase by default.
 - The direct-access store should be append-friendly and read-only at query time.
 - Preloaded contiguous buffers are the preferred first implementation.
 - mmap is optional only if it provides a measurable operational advantage later.
+- "Float rescore" in this phase means exact intended-dimension float scoring, not truncated-prefix scoring.
+- If exact float rescoring remains too expensive, document any approximation explicitly instead of reusing the same name.
 
 ### Exit Criteria
 
 - Stage 2.5 no longer depends on SQL for vector payload access in the normal path.
 - Float rescoring latency drops materially.
 - Ranking quality is unchanged or better.
+- Stage 2.5 numerics are validated against a reference scorer on golden queries.
 
 ---
 
@@ -455,6 +511,8 @@ This is a separate workstream. Do not mix it into the first rescoring PR.
 - Reduced average number of Stage 2.5 rescored candidates.
 - Clean fallback behavior if new storage or SIMD paths are unavailable.
 - Benchmark output shows which phase created the improvement.
+- HNSW/rescoring boundary behavior is covered by targeted automated tests, not only benchmark docs.
+- Binary artifact invalidation is rebuild-driven and observable, not silent fallback.
 
 ---
 
@@ -464,6 +522,9 @@ This is a separate workstream. Do not mix it into the first rescoring PR.
 - New vector storage can introduce compatibility issues with old indexes.
 - Adaptive oversampling can hurt recall if minimums are too low.
 - SIMD/WASM changes can create platform-specific bugs.
+- Rescoring changes can accidentally invalidate or mask HNSW gains if metric definitions drift.
+- Silent dimension truncation can produce "good-looking" numbers that are not true float rescoring.
+- Weak diagnostics defaults can waste time by producing invalid evidence.
 
 Mitigation:
 
@@ -479,6 +540,8 @@ Mitigation:
 2. Is reindexing acceptable for normalized int8 vectors?
 3. Should Stage 2.5 use float32 only, or should float16 be evaluated as an optional compromise?
 4. What benchmark set is the release gate: GenCodeSearchNet only, or a broader suite?
+5. Should the release gate require direct HNSW behavior tests in addition to end-to-end benchmarks?
+6. Should binary-artifact pipeline invalidation trigger an automatic rebuild during indexing, or a hard fail with explicit operator action?
 
 ---
 
@@ -490,3 +553,5 @@ This work is done when:
 - Stage 2.5 no longer fetches vector payloads from SQLite in the normal path.
 - Pool sizes are adaptive instead of fixed at `200/200`.
 - Benchmarks show equal-or-better quality and better latency.
+- The Stage 2.5 path is exact by contract and covered by tests.
+- The HNSW approach has direct automated coverage for the critical behaviors added in the recent implementation cycle.

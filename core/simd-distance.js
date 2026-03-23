@@ -115,6 +115,102 @@ export function wasmInt8Cosine(a, b) {
 }
 
 // =============================================================================
+// INT8 BATCHED DOT PRODUCT (Phase 1: copy query once, score slab)
+// =============================================================================
+
+/**
+ * Batch int8 dot product: score multiple candidate vectors against one query.
+ * Copies query once to WASM memory, candidates as contiguous slab.
+ * Returns raw int8 dot products (not normalized).
+ *
+ * For normalized int8 vectors (from L2-normalized floats), the raw dot
+ * approximates cosine * 127². Divide by 16129 for cosine-scale scores.
+ *
+ * @param {Int8Array} query - Query int8 vector
+ * @param {Int8Array[]} candidates - Array of candidate int8 vectors
+ * @returns {Int32Array} Raw dot products
+ */
+export function wasmInt8BatchDot(query, candidates) {
+  const dim = query.length;
+  const count = candidates.length;
+  if (count === 0) return new Int32Array(0);
+
+  if (wasmExports && wasmExports.int8_batch_dot) {
+    const queryPtr = DATA_OFFSET;
+    const slabPtr = DATA_OFFSET + dim;
+    // Scores buffer: 4 bytes per candidate, placed after the slab
+    const scoresPtr = slabPtr + count * dim;
+    // Align scores pointer to 4-byte boundary
+    const alignedScoresPtr = (scoresPtr + 3) & ~3;
+    const needed = alignedScoresPtr + count * 4;
+
+    wasmMem = new Uint8Array(wasmExports.memory.buffer);
+    if (needed > wasmMem.length) {
+      return _jsInt8BatchDot(query, candidates);
+    }
+
+    // Copy query once
+    wasmMem.set(new Uint8Array(query.buffer, query.byteOffset, query.byteLength), queryPtr);
+
+    // Copy all candidates as contiguous slab
+    for (let i = 0; i < count; i++) {
+      const v = candidates[i];
+      wasmMem.set(new Uint8Array(v.buffer, v.byteOffset, v.byteLength), slabPtr + i * dim);
+    }
+
+    // Single WASM call: scores all candidates internally, writes to output buffer
+    wasmExports.int8_batch_dot(queryPtr, slabPtr, count, dim, alignedScoresPtr);
+
+    // Read scores from WASM memory
+    return new Int32Array(wasmExports.memory.buffer, alignedScoresPtr, count);
+  }
+
+  return _jsInt8BatchDot(query, candidates);
+}
+
+function _jsInt8BatchDot(query, candidates) {
+  const dim = query.length;
+  const scores = new Int32Array(candidates.length);
+  for (let c = 0; c < candidates.length; c++) {
+    let dot = 0;
+    const v = candidates[c];
+    for (let i = 0; i < dim; i++) dot += query[i] * v[i];
+    scores[c] = dot;
+  }
+  return scores;
+}
+
+// =============================================================================
+// FLOAT32 BATCHED DOT PRODUCT (Phase 2: Stage 2.5 float rescore)
+// =============================================================================
+
+/**
+ * Batch float32 dot product: score multiple float vectors against one query.
+ * Pure JS implementation — V8 JIT is competitive with WASM for float math.
+ *
+ * @param {Float32Array} query - Query float vector
+ * @param {Float32Array[]} candidates - Array of candidate float vectors
+ * @returns {Float64Array} Dot product scores
+ */
+export function float32BatchDot(query, candidates) {
+  const dim = query.length;
+  const scores = new Float64Array(candidates.length);
+  for (let c = 0; c < candidates.length; c++) {
+    const v = candidates[c];
+    if (v.length !== dim) {
+      throw new Error(`float32BatchDot dimension mismatch: query=${dim}, candidate[${c}]=${v.length}`);
+    }
+    let dot = 0;
+    for (let i = 0; i < dim; i++) dot += query[i] * v[i];
+    scores[c] = dot;
+  }
+  return scores;
+}
+
+// For L2-normalized vectors, dot product = cosine similarity.
+// Use float32BatchDot directly — no separate cosine wrapper needed.
+
+// =============================================================================
 // INT8 DOT PRODUCT (raw, for asymmetric distance)
 // =============================================================================
 
