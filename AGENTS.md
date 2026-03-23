@@ -1,44 +1,145 @@
-# Quality Engineering Standards (Agentic QE)
+# sweet-search-private
 
-## AQE MCP Server
+> Multi-agent orchestration framework for agentic coding
 
-This project uses Agentic QE for AI-powered quality engineering. The AQE MCP server provides tools for test generation, coverage analysis, quality assessment, and learning.
+## Project Overview
 
-## Setup
+A Claude Flow powered project
 
-Always call `fleet_init` before using other AQE tools to initialize the QE fleet.
+**Tech Stack**: TypeScript, Node.js
+**Architecture**: Domain-Driven Design with bounded contexts
 
-## Available Tools
+## Quick Start
 
-### Test Generation
-- `test_generate_enhanced` — AI-powered test generation with pattern recognition and anti-pattern detection
-- Supports unit, integration, and e2e test types
+### Installation
+```bash
+npm install
+```
 
-### Coverage Analysis
-- `coverage_analyze_sublinear` — O(log n) coverage gap detection with ML-powered analysis
-- Target: 80% statement coverage minimum, focus on risk-weighted coverage
+### Build
+```bash
+npm run build
+```
 
-### Quality Assessment
-- `quality_assess` — Quality gate evaluation with configurable thresholds
-- Run before marking tasks complete
+### Test
+```bash
+npm test
+```
 
-### Security Scanning
-- `security_scan_comprehensive` — SAST/DAST vulnerability scanning
-- Run after changes to auth, security, or middleware code
+### Development
+```bash
+npm run dev
+```
 
-### Defect Prediction
-- `defect_predict` — AI analysis of code complexity and change history
+## Agent Coordination
 
-### Learning & Memory
-- `memory_store` — Store patterns and learnings for future reference
-- `memory_query` — Query past patterns before starting work
-- Always store successful patterns after task completion
+### Swarm Configuration
 
-## Best Practices
+This project uses hierarchical swarm coordination for complex tasks:
 
-1. **Test Pyramid**: 70% unit, 20% integration, 10% e2e
-2. **AAA Pattern**: Arrange-Act-Assert for clear test structure
-3. **One assertion per test**: Test one behavior at a time
-4. **Descriptive names**: `should_returnValue_when_condition`
-5. **Mock at boundaries**: Only mock external dependencies
-6. **Edge cases first**: Test boundary conditions, not just happy paths
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| Topology | `hierarchical` | Queen-led coordination (anti-drift) |
+| Max Agents | 8 | Optimal team size |
+| Strategy | `specialized` | Clear role boundaries |
+| Consensus | `raft` | Leader-based consistency |
+
+### When to Use Swarms
+
+**Invoke swarm for:**
+- Multi-file changes (3+ files)
+- New feature implementation
+- Cross-module refactoring
+- API changes with tests
+- Security-related changes
+- Performance optimization
+
+**Skip swarm for:**
+- Single file edits
+- Simple bug fixes (1-2 lines)
+- Documentation updates
+- Configuration changes
+
+### Available Skills
+
+Use `$skill-name` syntax to invoke:
+
+| Skill | Use Case |
+|-------|----------|
+| `$swarm-orchestration` | Multi-agent task coordination |
+| `$memory-management` | Pattern storage and retrieval |
+| `$sparc-methodology` | Structured development workflow |
+| `$security-audit` | Security scanning and CVE detection |
+
+### Agent Types
+
+| Type | Role | Use Case |
+|------|------|----------|
+| `researcher` | Requirements analysis | Understanding scope |
+| `architect` | System design | Planning structure |
+| `coder` | Implementation | Writing code |
+| `tester` | Test creation | Quality assurance |
+| `reviewer` | Code review | Security and quality |
+
+## Code Standards
+
+### File Organization
+- **NEVER** save to root folder
+- `/src` - Source code files
+- `/tests` - Test files
+- `/docs` - Documentation
+- `/config` - Configuration files
+
+### Quality Rules
+- Files under 500 lines
+- No hardcoded secrets
+- Input validation at boundaries
+- Typed interfaces for public APIs
+- TDD London School (mock-first) preferred
+
+### Commit Messages
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+Co-Authored-By: claude-flow <ruv@ruv.net>
+```
+
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`
+
+## Security
+
+### Critical Rules
+- NEVER commit secrets, credentials, or .env files
+- NEVER hardcode API keys
+- Always validate user input
+- Use parameterized queries for SQL
+- Sanitize output to prevent XSS
+
+### Path Security
+- Validate all file paths
+- Prevent directory traversal (../)
+- Use absolute paths internally
+
+## Memory System
+
+### Storing Patterns
+```bash
+npx @claude-flow/cli memory store \
+  --key "pattern-name" \
+  --value "pattern description" \
+  --namespace patterns
+```
+
+### Searching Memory
+```bash
+npx @claude-flow/cli memory search \
+  --query "search terms" \
+  --namespace patterns
+```
+
+## Links
+
+- Documentation: https://github.com/ruvnet/claude-flow
+- Issues: https://github.com/ruvnet/claude-flow/issues

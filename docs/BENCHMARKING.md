@@ -206,7 +206,7 @@ Stage 1 metrics (JS, 1000 queries):
 - Ground-truth file recall@200: 86.5% (was 80.6%, +5.9pp, plateau broken)
 - ANN fidelity@200: 97.4% (HNSW finds 97.4% of brute-force top-200)
 
-Changes from HNSW Optimization Plan (`docs/HNSW_OPT_PLAN.md`):
+Changes from HNSW Optimization Plan (`docs/HNSW_APPROACH.md`):
 - Heuristic neighbor selection replaces simple closest-M (better angular diversity)
 - M0=2*M on layer 0 (standard HNSW practice, was missing)
 - Shuffled insertion order (breaks filesystem clustering bias)
