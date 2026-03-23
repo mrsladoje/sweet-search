@@ -843,10 +843,11 @@ references ("uses recursion", "handles null", "returns a list").
 
 ---
 
-## 16. Matryoshka Dimension Tuning
+## 16. ~~Matryoshka Dimension Tuning~~ — DONE (March 2026)
 
-**Status**: We truncate embeddings to 512d for HNSW across all providers. This was
-chosen as a balance between speed and quality, but never A/B tested.
+**Status**: Benchmarked. 512d is optimal. 1024d adds no quality (tested with Voyage
+Code 3 at both 512d and 1024d HNSW). The 1-bit binary quantization is the dominant
+information loss, not the Matryoshka truncation.
 
 ### 16.1 Current Configuration
 
@@ -856,45 +857,37 @@ All providers use `hnsw: 512` in their dimension config:
 - Jina v3: 1024d full → 512d HNSW
 - CodeRankEmbed: 768d full → 512d HNSW
 
-Matryoshka embedding models produce nested dimensions where the first N dimensions
-are a valid, lower-quality embedding. We could use 256d (half the index size, faster
-search) or keep 512d or even go to 768d.
+### 16.2 Results (March 2026)
 
-### 16.2 Action Items
-
-- [ ] Benchmark CodeSearchNet with 256d, 384d, 512d, 768d HNSW dimensions
-- [ ] Measure: MRR delta, index size, query latency for each dimension
-- [ ] If 256d loses <2 MRR points: consider making it the default for faster search
-  and smaller indexes
-- [ ] If 768d gains >2 MRR points: consider using full dimensions despite larger
-  index
+- [x] Benchmarked 512d vs 768d (CodeRankEmbed) and 512d vs 1024d (Voyage Code 3)
+- [x] Result: identical MRR across all dimensions (83.5%)
+- [x] 512d is the right default — 2x less memory than 1024d with no quality loss
+- See `docs/BENCHMARKING.md` for full experiment matrix
 
 ---
 
-## 17. HNSW Parameter Tuning + SONA Self-Learning
+## 17. ~~HNSW Parameter Tuning~~ — DONE (March 2026) + SONA Self-Learning
 
-**Status**: Current HNSW parameters are reasonable defaults but were never tuned for
-our specific workload.
+**Status**: Binary HNSW fully tuned via `docs/HNSW_OPT_PLAN.md`. Float HNSW
+parameters unchanged (less critical — binary HNSW is the production search path).
 
 ### 17.1 Current Parameters (config.js)
 
 ```
-HNSW: M=16, efConstruction=200, efSearch=100
-Binary HNSW: M=32, efConstruction=400, efSearch=200
+HNSW (float): M=16, efConstruction=200, efSearch=100
+Binary HNSW:  M=64, efConstruction=800, efSearch=400  (was M=32, efC=400, efS=200)
 ```
 
-These affect recall/latency tradeoff:
-- Higher `efSearch` → better recall but slower queries
-- Higher `M` → more links per node, better graph connectivity, larger index
-- Higher `efConstruction` → better index quality, slower indexing
+### 17.2 Tuning Results (March 2026)
 
-### 17.2 Tuning Plan
-
-- [ ] Benchmark CodeSearchNet with efSearch: 50, 100, 200, 400
-- [ ] Benchmark with M: 8, 16, 32, 48
-- [ ] Measure: MRR delta, p50/p95 latency, index size for each combination
-- [ ] For each benchmark, check if missed results at lower efSearch are recovered
-  by the reranker (if reranker catches them anyway, lower efSearch is fine)
+- [x] Swept M: 32, 48, 64 — M=64 gives -18% latency, same accuracy
+- [x] Swept efConstruction: 400, 600, 800 — efC=800 for graph quality
+- [x] Swept efSearch: 200, 300, 400 — efS=400 with adaptive ef reduction for easy queries
+- [x] Also implemented: heuristic neighbor selection (Algorithm 4), M0=2*M on layer 0,
+  shuffled insertion order, typed-array heaps, WASM SIMD hamming, adaptive early termination
+- [x] JS ground-truth recall@200: 80.6% → 86.5% (+5.9pp), latency p50: 1403ms → 1146ms (-18%)
+- [x] ANN fidelity@200 (JS): 97.4%
+- See `docs/BENCHMARKING.md` for full results
 
 ### 17.3 SONA Self-Learning for HNSW Parameters
 
@@ -911,22 +904,21 @@ Proposed approach:
 
 ---
 
-## 18. Embedding Model Benchmarking (API Providers)
+## 18. ~~Embedding Model Benchmarking (API Providers)~~ — PARTIALLY DONE (March 2026)
 
-**Status**: The 2026-02-19 baseline used only the local CodeRankEmbed INT8 model.
-We have 3 API providers configured (Voyage Code 3, Mistral Codestral, Jina v3) but
-none were tested.
+**Status**: Voyage Code 3 benchmarked. Mistral and Jina not yet tested.
 
-### 18.1 Why This Matters
+### 18.1 Results
 
-CodeRankEmbed reports 77.9% CSN MRR. Voyage Code 3 claims ~81.7%. Mistral
-Codestral Embed (released May 2025) claims to outperform Voyage on SWE-Bench.
-If users have API keys, we should know how much better their search gets.
+CodeRankEmbed (local, 768d) and Voyage Code 3 (API, 1024d) produce **identical
+end-to-end MRR** (83.5%) on GenCodeSearchNet. Voyage adds API latency/cost but
+no quality gain. Local CodeRankEmbed is the right default.
 
-### 18.2 Action Items
+### 18.2 Remaining Action Items
 
-- [ ] Run CodeSearchNet + GenCodeSearchNet with each API provider enabled
-  (requires valid API keys — cost estimate: ~$1-5 per benchmark run)
+- [x] Voyage Code 3: benchmarked at 512d and 1024d HNSW — no improvement
+- [ ] Mistral Codestral: not tested (requires API key)
+- [ ] Jina v3: not tested (requires API key)
 - [ ] Compare per-language MRR: local vs Voyage vs Mistral vs Jina
 - [ ] Measure latency impact: API embedding adds network round-trip
 - [ ] Document the quality/cost/latency tradeoff for each provider

@@ -78,16 +78,17 @@ Root cause of improvement: 87 NL queries were misrouted to structural (graph DB 
 - PHP is smallest CSN subset, Ruby is tiny
 - Late interaction model likely **weakest on exactly PHP and modern JS patterns** (arrow fns, destructuring, hooks)
 
-### Voyage Code 3: Potentially Stronger for Weak Languages
-- 1024d, code-optimized, claims 13-17% over OpenAI/CodeSage
-- Trained on **modern code**, not just CSN
-- Proper query/document asymmetry (`inputType: 'query'` vs `'document'`)
-- Pipeline: Voyage retrieves → LateOn-Code reranks
-- If Voyage recall is fine but LateOn-Code MaxSim weak on JS patterns → explains low MRR despite good candidates
+### ~~Voyage Code 3: Potentially Stronger for Weak Languages~~ — TESTED, NO IMPROVEMENT (March 2026)
+- Benchmarked Voyage Code 3 at both 512d and 1024d HNSW on GenCodeSearchNet
+- **Result**: identical MRR (83.5%) and JS recall (84.2%@20) to local CodeRankEmbed
+- Also tested 1024d + asymmetric binary quantization — no improvement
+- Voyage adds API latency and cost but no quality gain on this benchmark
+- See `docs/BENCHMARKING.md` for full experiment matrix
 
-### ~~Suspicion~~ → Confirmed: Retrieval-Limited
-JS is **retrieval-limited**. 194/1000 ground truth docs not in top-200 HNSW at all.
-Reranker is NOT the bottleneck for JS — it can only reorder the ~80% that are already retrieved.
+### ~~Suspicion~~ → Confirmed → ~~Retrieval-Limited~~ → PARTIALLY FIXED (March 2026)
+JS recall@200 improved from 80.6% → 86.5% (+5.9pp) via HNSW optimization plan.
+Plateau broken — recall now keeps climbing from @100 to @200.
+Remaining ~13.5% misses are embedding quality / dataset noise, not HNSW.
 
 ---
 
@@ -103,7 +104,7 @@ Reranker is NOT the bottleneck for JS — it can only reorder the ~80% that are 
    - If conditional lift is positive → tighten gate to trigger only on that subset
    - If conditional lift is zero → stop investing in gte-reranker-modernbert-base, try
      jina-reranker-v2-base-multilingual (code-optimized, 71.36 CSN MRR) or Voyage rerank-2.5
-3. **Voyage Code 3 as reranker benchmark**: Lower priority now — reranker isn't the JS bottleneck.
+3. ~~**Voyage Code 3 as embedding benchmark**~~: **DONE** — no quality improvement over CodeRankEmbed (83.5% vs 83.5% MRR). Tested at 512d and 1024d HNSW. See `docs/BENCHMARKING.md`.
 4. **Chunk context bleeding**: Still worth checking for the ~20% of retrievable-but-poorly-ranked JS queries.
 5. **2000 char limit for JS**: Still worth checking — could explain some of the 194 misses.
 6. **Benchmark quality audit**: Filter GenCodeSearchNet JS noise (copyright queries, non-English, zero-signal). Measure "clean MRR" on the ~850 valid queries.
@@ -112,16 +113,32 @@ Reranker is NOT the bottleneck for JS — it can only reorder the ~80% that are 
 
 ---
 
-## JS Recall Diagnostic (GenCodeSearchNet, 2026-03-08)
+## JS Recall Diagnostic
 
-Ran 1000 JS queries with k=200, NO reranking, NO expansion.
+### After HNSW Optimization (2026-03-23, M=64/efC=800/efS=400, heuristic selection, shuffled insertion)
+
+Ran 1000 JS queries with `scripts/stage1-recall.js`:
+
+```
+Recall@10    76.2%
+Recall@50    81.2%
+Recall@100   83.4%  (+2.8pp vs old)
+Recall@200   86.5%  (+5.9pp vs old, plateau broken)
+Recall@500   89.6%
+Recall@1000  91.9%
+ANN fidelity@200: 97.4%
+
+Total misses (not in top-200): ~135/1000 (was 194)
+```
+
+### Original Diagnostic (2026-03-08, M=32/efC=400/efS=200, simple closest-M, sequential insertion)
 
 ```
 Recall@10   72.7%  (727/1000)
 Recall@20   77.7%  (777/1000)
 Recall@50   80.4%  (804/1000)
 Recall@100  80.6%  (806/1000)
-Recall@200  80.6%  (806/1000)
+Recall@200  80.6%  (806/1000)  ← hard plateau
 
 Total misses (not in top-200): 194/1000
 ```
