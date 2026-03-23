@@ -6,6 +6,12 @@
  *
  * Functions that use `this` are regular function declarations (not arrows)
  * so they work correctly when wired onto SweetSearch.prototype.
+ *
+ * Rescoring Fix changes:
+ *   Phase 0: Enhanced per-stage instrumentation, score-distribution signals
+ *   Phase 1: Batched normalized-dot Stage 2 scoring (no per-candidate norms)
+ *   Phase 2: Fixed Stage 2.5 dimension mismatch, float store direct access
+ *   Phase 3: Adaptive oversampling (replaces fixed 200/200 pools)
  */
 
 import {
@@ -13,7 +19,9 @@ import {
   getEmbedding,
   truncateForHNSW,
   floatToInt8,
+  normalizedFloatToInt8,
   int8CosineSimilarity,
+  int8BatchDotScores,
 } from './embedding-service.js';
 import { EMBEDDING_CONFIG, BINARY_HNSW_CONFIG } from './config.js';
 
@@ -26,15 +34,116 @@ function cascadeDefer(candidates, stats, searchPath, k = 50) {
 }
 
 // =============================================================================
+// Phase 0: Score-Spread Analysis (shared signal source)
+// =============================================================================
+
+// Thresholds shared between shouldSkipRerank and adaptive pool sizing.
+// Single source of truth — no parallel heuristic stacks.
+const SCORE_SPREAD = {
+  topGapThreshold: 0.10,   // Gap above this = clear winner
+  spreadThreshold: 0.08,   // Spread below this = tight cluster / ambiguous
+};
+
+/**
+ * Analyze score-spread signals from a set of scores. O(n) single pass —
+ * no sort needed since we only need top-1, top-2, min, mean, and variance.
+ *
+ * Used by both shouldSkipRerank (to skip CE) and adaptive pool sizing
+ * (to shrink/widen candidate pools). Single computation, reused everywhere.
+ */
+function analyzeScoreSpread(scores) {
+  if (!scores || scores.length < 2) return null;
+  const n = scores.length;
+
+  // Single O(n) pass: top1, top2, min, sum, sumSq
+  let top1 = -Infinity, top2 = -Infinity, min = Infinity, sum = 0;
+  for (let i = 0; i < n; i++) {
+    const s = scores[i];
+    sum += s;
+    if (s > top1) { top2 = top1; top1 = s; }
+    else if (s > top2) { top2 = s; }
+    if (s < min) min = s;
+  }
+  const mean = sum / n;
+  let variance = 0;
+  for (let i = 0; i < n; i++) variance += (scores[i] - mean) ** 2;
+  variance /= n;
+
+  const topGap = top1 - top2;
+  const spread = top1 - min;
+
+  return {
+    top1, top2, topGap, spread, mean,
+    stdDev: Math.sqrt(variance),
+    count: n,
+    isDecisive: topGap > SCORE_SPREAD.topGapThreshold,
+    isAmbiguous: spread < SCORE_SPREAD.spreadThreshold,
+  };
+}
+
+// =============================================================================
+// Phase 3: Adaptive Pool Sizing
+// =============================================================================
+
+/**
+ * Compute adaptive Stage 2 pool size based on k and pre-computed score signals.
+ * Uses the same isDecisive/isAmbiguous signals as shouldSkipRerank.
+ */
+function adaptiveStage2Pool(k, analysis, config) {
+  const {
+    minStage2 = 40,
+    maxStage2 = 400,
+    oversample1 = 10,
+  } = config;
+
+  let base = Math.max(minStage2, k * oversample1);
+
+  if (analysis) {
+    if (analysis.isDecisive) {
+      base = Math.max(minStage2, Math.floor(base * 0.6));
+      return { size: Math.min(base, maxStage2), reason: `shrink_decisive (gap=${analysis.topGap.toFixed(3)})` };
+    }
+    if (analysis.isAmbiguous) {
+      base = Math.min(maxStage2, Math.floor(base * 1.5));
+      return { size: base, reason: `widen_ambiguous (spread=${analysis.spread.toFixed(3)})` };
+    }
+  }
+
+  return { size: Math.min(base, maxStage2), reason: 'default' };
+}
+
+/**
+ * Compute adaptive Stage 2.5 pool size.
+ * Always smaller than Stage 2 pool — float rescoring is more expensive.
+ */
+function adaptiveStage2_5Pool(k, analysis, config) {
+  const {
+    minStage2_5 = 20,
+    maxStage2_5 = 200,
+    oversample2 = 5,
+  } = config;
+
+  let base = Math.max(minStage2_5, k * oversample2);
+
+  if (analysis && analysis.isDecisive) {
+    base = Math.max(minStage2_5, Math.floor(base * 0.6));
+    return { size: Math.min(base, maxStage2_5), reason: `shrink_decisive (gap=${analysis.topGap.toFixed(3)})` };
+  }
+
+  return { size: Math.min(base, maxStage2_5), reason: 'default' };
+}
+
+// =============================================================================
 // 3-Stage Semantic Search
 // =============================================================================
 
 /**
- * 3-Stage Semantic Search Pipeline (P0 + P3)
+ * 3-Stage Semantic Search Pipeline
  *
- * Performance targets:
- *   Stage 1 (Binary): ~100us for 1000 candidates (10x faster than float)
- *   Stage 2 (Int8):   ~1ms for 100 candidates
+ * Performance targets (after rescoring fix):
+ *   Stage 1 (Binary): ~100us for 1000 candidates
+ *   Stage 2 (Int8):   ~200-500us for adaptive candidates (batched normalized dot)
+ *   Stage 2.5 (Float): ~500us for adaptive candidates (direct-access store)
  *   Stage 3 (Rerank): ~50-100ms for 20 candidates
  *   Total: <150ms end-to-end
  *
@@ -45,6 +154,7 @@ function cascadeDefer(candidates, stats, searchPath, k = 50) {
 export async function semanticSearch3Stage(query, options = {}) {
   const { k = 10, rerank = true, useLateInteraction = this.useLateInteraction } = options;
   const stats = { stages: {} };
+  const adaptiveConfig = BINARY_HNSW_CONFIG.retrieval.adaptive || {};
 
   // Generate binary embedding (with caching)
   const embedStart = performance.now();
@@ -68,14 +178,16 @@ export async function semanticSearch3Stage(query, options = {}) {
   const stage1Result = await this.binaryHnswIndex.search(
     embedResult.binary, this.stage1Candidates, { floatQuery: truncatedFloat }
   );
+  const stage1Scores = stage1Result.results.map(r => r.score);
+  const stage1Analysis = analyzeScoreSpread(stage1Scores);
   stats.stages.binary = {
     latency_us: stage1Result.latency_us,
     candidates: stage1Result.results.length,
+    scoreDistribution: stage1Analysis,
   };
   this.log(`Stage 1 (Binary): ${stage1Result.latency_us}us, ${stage1Result.results.length} candidates`);
 
   if (stage1Result.results.length === 0) {
-    // P0 FIX: Return proper format with stats even for empty results
     stats.rerank = {
       skipped: true,
       reason: 'no_candidates',
@@ -86,65 +198,168 @@ export async function semanticSearch3Stage(query, options = {}) {
     return { results: [], stats };
   }
 
-  // Stage 2: Int8 rescore
+  // -------------------------------------------------------------------------
+  // Stage 2: Int8 Rescore (Phase 1 — batched normalized dot product)
+  //
+  // Key optimization: use normalizedFloatToInt8 (matches index-time quantizer)
+  // and raw dot product scoring. Since both query and document int8 vectors
+  // are quantized from L2-normalized floats, dot/(127²) ≈ cosine.
+  // No per-candidate norm computation needed.
+  // -------------------------------------------------------------------------
   const stage2Start = performance.now();
-  const queryInt8 = floatToInt8(truncateForHNSW(embedResult.float));
-  stats.queryInt8 = queryInt8;
+  const useBatchedDot = BINARY_HNSW_CONFIG.retrieval.useBatchedDot !== false;
 
-  // P5 FIX: Load int8 vectors for candidates and compute dot product
-  let scoredCandidates = [];
+  // Phase 3: Adaptive Stage 2 pool size (uses shared score-spread analysis)
+  const stage2Pool = adaptiveStage2Pool(k, stage1Analysis, adaptiveConfig);
+  const stage2Count = Math.min(stage2Pool.size, stage1Result.results.length);
+
+  // Collect int8 vectors for scoring
+  const stage2Candidates = stage1Result.results.slice(0, stage2Count);
+  const int8Vectors = [];
+  const validIndices = [];
   let missingInt8Count = 0;
-  for (const candidate of stage1Result.results.slice(0, this.stage2Candidates)) {
-    const int8Vector = this.binaryHnswIndex.getInt8Vector(candidate.id);
+
+  for (let i = 0; i < stage2Candidates.length; i++) {
+    const int8Vector = this.binaryHnswIndex.getInt8Vector(stage2Candidates[i].id);
     if (int8Vector) {
-      candidate.int8Score = int8CosineSimilarity(queryInt8, int8Vector);
+      int8Vectors.push(int8Vector);
+      validIndices.push(i);
     } else {
-      candidate.int8Score = 0.0;  // Neutral - will sort to bottom
-      candidate.missingInt8 = true;
+      stage2Candidates[i].int8Score = 0.0;
+      stage2Candidates[i].missingInt8 = true;
       missingInt8Count++;
     }
-    scoredCandidates.push(candidate);
   }
+
+  if (useBatchedDot) {
+    // Phase 1 NEW PATH: Batched normalized dot product
+    // Use same quantizer as index time. No per-candidate norms.
+    const queryInt8 = normalizedFloatToInt8(truncatedFloat);
+    stats.queryInt8 = queryInt8;
+    if (int8Vectors.length > 0) {
+      const batchScores = int8BatchDotScores(queryInt8, int8Vectors);
+      for (let j = 0; j < validIndices.length; j++) {
+        stage2Candidates[validIndices[j]].int8Score = batchScores[j];
+      }
+    }
+  } else {
+    // Phase 1 OLD PATH (fallback): Per-candidate int8 cosine similarity
+    const queryInt8 = floatToInt8(truncatedFloat);
+    stats.queryInt8 = queryInt8;
+    for (let j = 0; j < validIndices.length; j++) {
+      stage2Candidates[validIndices[j]].int8Score = int8CosineSimilarity(queryInt8, int8Vectors[j]);
+    }
+  }
+
   if (missingInt8Count > 0) {
     this.log(`Warning: ${missingInt8Count} candidates missing int8 vectors (given neutral score)`);
   }
 
   // Sort by int8 score
+  let scoredCandidates = [...stage2Candidates];
   scoredCandidates.sort((a, b) => b.int8Score - a.int8Score);
+
+  const int8Scores = scoredCandidates.filter(c => !c.missingInt8).map(c => c.int8Score);
+  const int8Analysis = analyzeScoreSpread(int8Scores);
   stats.stages.int8 = {
     latency_us: Math.round((performance.now() - stage2Start) * 1000),
     candidates: scoredCandidates.length,
+    missingVectors: missingInt8Count,
+    poolSize: stage2Count,
+    poolReason: stage2Pool.reason,
+    scoringPath: useBatchedDot ? 'batched-dot' : 'per-candidate-cosine',
+    scoreDistribution: int8Analysis,
   };
-  this.log(`Stage 2 (Int8): ${stats.stages.int8.latency_us}us, ${scoredCandidates.length} rescored`);
+  this.log(`Stage 2 (Int8): ${stats.stages.int8.latency_us}us, ${scoredCandidates.length} rescored (pool: ${stage2Count}, ${stage2Pool.reason}, ${useBatchedDot ? 'batched' : 'legacy'})`);
 
-  // Stage 2.5: Float rescore (Fix 5.5) — exact float cosine on top int8 candidates
-  const stage2_5Pool = BINARY_HNSW_CONFIG.retrieval.stage2_5Candidates || 0;
-  if (stage2_5Pool > 0 && this._loadFloatVectors && embedResult.float) {
+  // -------------------------------------------------------------------------
+  // Stage 2.5: Float Rescore (Phase 2 — fixed dimension, direct-access store)
+  //
+  // Fixes from the plan:
+  // 1. Query and document vectors scored at same intended dimension
+  //    (both use truncateForHNSW output, no silent Math.min truncation)
+  // 2. Float vectors loaded from direct-access store (not SQLite)
+  // 3. SQLite retained as fallback if float store not available
+  // -------------------------------------------------------------------------
+  const stage2_5Pool = adaptiveStage2_5Pool(k, int8Analysis, adaptiveConfig);
+  const stage2_5Count = Math.min(stage2_5Pool.size, scoredCandidates.length);
+
+  if (stage2_5Count > 0 && embedResult.float) {
     const stage2_5Start = performance.now();
     try {
-      const pool = scoredCandidates.slice(0, stage2_5Pool);
-      const queryFloat = truncateForHNSW(embedResult.float);
-      const floatVectors = await this._loadFloatVectors(pool.map(c => c.id));
+      const pool = scoredCandidates.slice(0, stage2_5Count);
+      // Phase 2 fix: query at intended dimension (truncated + normalized)
+      const queryFloat = truncatedFloat;
+      const poolIds = pool.map(c => c.id);
 
-      if (floatVectors && floatVectors.size > 0) {
-        for (const c of pool) {
-          const fv = floatVectors.get(c.id);
-          if (fv) {
-            c.floatScore = this.cosineSimilarity(queryFloat, fv);
-          } else {
-            c.floatScore = c.int8Score; // fallback
+      let floatVectors = null;
+      let floatSource = 'none';
+      let missingFloatCount = 0;
+
+      // Prefer direct-access float store (Phase 2)
+      if (this.floatVectorStore && this.floatVectorStore.loaded) {
+        const result = this.floatVectorStore.batchScore(queryFloat, poolIds);
+        if (result.scores.size > 0) {
+          for (const c of pool) {
+            const score = result.scores.get(c.id);
+            if (score !== undefined) {
+              c.floatScore = score;
+            } else {
+              c.floatScore = c.int8Score; // fallback
+            }
           }
+          // result.missing is the authoritative count (IDs not in store)
+          missingFloatCount = result.missing;
+          floatSource = 'float-store';
         }
+      }
+
+      // Fallback: SQLite _loadFloatVectors (if float store unavailable)
+      if (floatSource === 'none' && this._loadFloatVectors) {
+        floatVectors = await this._loadFloatVectors(poolIds);
+        if (floatVectors && floatVectors.size > 0) {
+          for (const c of pool) {
+            const fv = floatVectors.get(c.id);
+            if (fv) {
+              // Phase 2 fix: dimension mismatch is a correctness bug, not a
+              // recoverable condition. Fail loud so it gets fixed at index time.
+              if (fv.length !== queryFloat.length) {
+                throw new Error(
+                  `Stage 2.5 dimension mismatch: query=${queryFloat.length}, doc=${fv.length} (id=${c.id}). ` +
+                  'Re-index to align stored vectors with current hnswDimension.'
+                );
+              }
+              let dot = 0;
+              for (let i = 0; i < queryFloat.length; i++) dot += queryFloat[i] * fv[i];
+              c.floatScore = dot;
+            } else {
+              c.floatScore = c.int8Score; // fallback
+              missingFloatCount++;
+            }
+          }
+          floatSource = 'sqlite-fallback';
+        }
+      }
+
+      if (floatSource !== 'none') {
         pool.sort((a, b) => b.floatScore - a.floatScore);
         scoredCandidates = pool;
       }
 
+      const floatScores = pool.filter(c => c.floatScore !== undefined).map(c => c.floatScore);
       stats.stages.floatRescore = {
         latency_us: Math.round((performance.now() - stage2_5Start) * 1000),
         candidates: pool.length,
+        poolSize: stage2_5Count,
+        poolReason: stage2_5Pool.reason,
+        source: floatSource,
+        missingVectors: missingFloatCount,
+        scoreDistribution: analyzeScoreSpread(floatScores),
       };
-      this.log(`Stage 2.5 (Float): ${stats.stages.floatRescore.latency_us}us, ${pool.length} rescored`);
+      this.log(`Stage 2.5 (Float): ${stats.stages.floatRescore.latency_us}us, ${pool.length} rescored (${floatSource}, pool: ${stage2_5Count})`);
     } catch (err) {
+      // Dimension mismatches are correctness bugs — propagate, don't swallow.
+      if (err.message.includes('dimension mismatch')) throw err;
       this.log(`Stage 2.5 skipped: ${err.message}`);
     }
   }
@@ -162,13 +377,12 @@ export async function semanticSearch3Stage(query, options = {}) {
   const topCandidatesWithInt8 = scoredCandidates
     .slice(0, Math.min(10, scoredCandidates.length))
     .filter(c => !c.missingInt8);
-  const topInt8Scores = topCandidatesWithInt8.map(c => c.int8Score);
+  const topInt8Scores = topCandidatesWithInt8.map(c => c.floatScore ?? c.int8Score);
   const skipAnalysis = this.shouldSkipRerank(topInt8Scores, { highConfidence: 0.90 });
 
   if (skipAnalysis.skip) {
     this.log(`Early exit: ${skipAnalysis.reason} (scores: ${topInt8Scores.slice(0, 3).map(s => s.toFixed(3)).join(', ')})`);
 
-    // P0 FIX: Add rerank stats for CostTracker (skipped case)
     stats.rerank = {
       skipped: true,
       reason: skipAnalysis.reason,
@@ -184,7 +398,6 @@ export async function semanticSearch3Stage(query, options = {}) {
       skipReason: skipAnalysis.reason,
     }));
 
-    // Return both results and stats
     return { results, stats };
   }
 
@@ -219,7 +432,6 @@ export async function semanticSearch3Stage(query, options = {}) {
         candidates: topCandidates.length,
       };
 
-      // P0 FIX: Add rerank stats for CostTracker
       stats.rerank = {
         skipped: false,
         provider: rerankResult.model || 'direct-cross-encoder',
@@ -233,7 +445,6 @@ export async function semanticSearch3Stage(query, options = {}) {
       this.log(`Rerank failed: ${err.message}`);
       results = scoredCandidates.slice(0, k);
 
-      // P0 FIX: Add rerank stats for CostTracker (failed case)
       stats.rerank = {
         skipped: true,
         reason: `error: ${err.message}`,
@@ -245,7 +456,6 @@ export async function semanticSearch3Stage(query, options = {}) {
   } else {
     results = scoredCandidates.slice(0, k);
 
-    // P0 FIX: Add rerank stats for CostTracker (not requested case)
     stats.rerank = {
       skipped: true,
       reason: rerank ? 'insufficient_candidates' : 'disabled',
@@ -298,7 +508,7 @@ export async function semanticSearchStandard(query, options = {}) {
 
   // Truncate to HNSW dimension (1024d -> 512d Matryoshka)
   const queryEmbedding = truncateForHNSW(fullEmbedding);
-  stats.queryInt8 = floatToInt8(queryEmbedding);
+  stats.queryInt8 = normalizedFloatToInt8(queryEmbedding);
 
   let candidates;
 
@@ -315,7 +525,6 @@ export async function semanticSearchStandard(query, options = {}) {
     candidates = await this.vectorScan(queryEmbedding, rerank ? 100 : k);
     this.log(`Vector scan: ${candidates.length} candidates`);
   } else {
-    // P0 FIX: Return proper format with stats even for no index case
     stats.rerank = {
       skipped: true,
       reason: 'no_index_available',
@@ -327,7 +536,6 @@ export async function semanticSearchStandard(query, options = {}) {
   }
 
   if (candidates.length === 0) {
-    // P0 FIX: Return proper format with stats even for empty candidates
     stats.rerank = {
       skipped: true,
       reason: 'no_candidates',
@@ -354,7 +562,6 @@ export async function semanticSearchStandard(query, options = {}) {
   if (skipAnalysis.skip) {
     this.log(`Early exit: ${skipAnalysis.reason} (scores: ${topScores.slice(0, 3).map(s => s.toFixed(3)).join(', ')})`);
 
-    // P0 FIX: Add rerank stats for CostTracker (skipped case)
     stats.rerank = {
       skipped: true,
       reason: skipAnalysis.reason,
@@ -390,7 +597,6 @@ export async function semanticSearchStandard(query, options = {}) {
         newRank: i + 1,
       }));
 
-      // P0 FIX: Add rerank stats for CostTracker
       stats.rerank = {
         skipped: false,
         provider: rerankResult.model || 'direct-cross-encoder',
@@ -404,7 +610,6 @@ export async function semanticSearchStandard(query, options = {}) {
       this.log(`Rerank failed: ${err.message}`);
       results = candidates.slice(0, k);
 
-      // P0 FIX: Add rerank stats for CostTracker (failed case)
       stats.rerank = {
         skipped: true,
         reason: `error: ${err.message}`,
@@ -414,7 +619,6 @@ export async function semanticSearchStandard(query, options = {}) {
       };
     }
   } else {
-    // P0 FIX: Add rerank stats for CostTracker (not requested or insufficient candidates)
     stats.rerank = {
       skipped: true,
       reason: rerank ? 'insufficient_candidates' : 'disabled',
@@ -442,8 +646,8 @@ export async function semanticSearchStandard(query, options = {}) {
  */
 export function shouldSkipRerank(scores, options = {}) {
   const {
-    topGapThreshold = 0.10,
-    spreadThreshold = 0.08,
+    topGapThreshold = SCORE_SPREAD.topGapThreshold,
+    spreadThreshold = SCORE_SPREAD.spreadThreshold,
     highConfidence = 0.85,
     minResults = 3,
     minScoreThreshold = 0.50,

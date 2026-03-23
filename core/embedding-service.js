@@ -9,7 +9,7 @@
  */
 
 import { EMBEDDING_CONFIG, EMBEDDING_PROVIDERS } from './config.js';
-import { wasmHammingDistance, wasmInt8Cosine, wasmAsymmetricDistance, isWasmAvailable } from './simd-distance.js';
+import { wasmHammingDistance, wasmInt8Cosine, wasmAsymmetricDistance, wasmInt8BatchDot, isWasmAvailable } from './simd-distance.js';
 
 // --- Sub-module imports (no circular deps) ---
 import {
@@ -539,6 +539,43 @@ export function floatToInt8(embedding) {
   return int8;
 }
 
+/**
+ * Quantize an L2-normalized float vector to int8: clamp [-1,1], scale by 127.
+ * Canonical implementation — artifact-builder.quantizeToInt8 must stay in sync.
+ * Both query and document must use the same quantizer so raw int8 dot
+ * product approximates cosine × 127² (no norm computation at search time).
+ */
+export function normalizedFloatToInt8(embedding) {
+  const int8 = new Int8Array(embedding.length);
+  for (let i = 0; i < embedding.length; i++) {
+    const clamped = Math.max(-1, Math.min(1, embedding[i]));
+    int8[i] = Math.round(clamped * 127);
+  }
+  return int8;
+}
+
+/**
+ * Batch int8 dot product scoring for normalized vectors.
+ * Returns scores in cosine-similarity scale [~-1, ~1].
+ *
+ * For int8 vectors from L2-normalized floats:
+ *   rawDot ≈ 127² × cos(a_float, b_float)
+ *   normalizedScore = rawDot / (127 * 127)
+ *
+ * @param {Int8Array} query - Query int8 vector (from normalizedFloatToInt8)
+ * @param {Int8Array[]} candidates - Candidate int8 vectors
+ * @returns {Float64Array} Cosine-approximation scores
+ */
+export function int8BatchDotScores(query, candidates) {
+  const rawDots = wasmInt8BatchDot(query, candidates);
+  const scale = 1.0 / (127 * 127);
+  const scores = new Float64Array(rawDots.length);
+  for (let i = 0; i < rawDots.length; i++) {
+    scores[i] = rawDots[i] * scale;
+  }
+  return scores;
+}
+
 const POPCOUNT_TABLE = new Uint8Array(256);
 for (let i = 0; i < 256; i++) {
   POPCOUNT_TABLE[i] = (i & 1) + POPCOUNT_TABLE[i >> 1];
@@ -559,12 +596,14 @@ export function hammingDistance(a, b) {
 }
 
 export function int8CosineSimilarity(a, b) {
+  if (a.length !== b.length) {
+    throw new Error(`int8CosineSimilarity dimension mismatch: ${a.length} vs ${b.length}`);
+  }
   if (isWasmAvailable()) {
     return wasmInt8Cosine(a, b);
   }
   let dot = 0, normA = 0, normB = 0;
-  const len = Math.min(a.length, b.length);
-  for (let i = 0; i < len; i++) {
+  for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
     normA += a[i] * a[i];
     normB += b[i] * b[i];
@@ -575,6 +614,7 @@ export function int8CosineSimilarity(a, b) {
   return dot / (normA * normB);
 }
 
+/** @deprecated Use int8CosineSimilarity (for cosine) or int8BatchDotScores (for normalized dot). */
 export { int8CosineSimilarity as int8DotProduct };
 
 // =============================================================================
@@ -796,9 +836,11 @@ export default {
   truncateForHNSW,
   floatToBinary,
   floatToInt8,
+  normalizedFloatToInt8,
   hammingDistance,
   int8CosineSimilarity,
   int8DotProduct,
+  int8BatchDotScores,
   getBinaryEmbedding,
   getInt8Embedding,
   warmup,

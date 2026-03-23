@@ -87,21 +87,23 @@ const I32x4_EXT_HI_S    = 0xa8; // i32x4.extend_high_i16x8_s
 // ============================================================================
 
 function buildModule() {
-  // Type section: 3 signatures
-  // type 0: (i32,i32,i32) → i32   [hamming, int8_dot]
-  // type 1: (i32,i32) → i32       [int8_norm_sq]
-  // type 2: (i32,i32,i32,i32) → i32 [asymmetric_distance]
+  // Type section: 4 signatures
+  // type 0: (i32,i32,i32) → i32       [hamming, int8_dot]
+  // type 1: (i32,i32) → i32           [int8_norm_sq]
+  // type 2: (i32,i32,i32,i32) → i32   [asymmetric_distance]
+  // type 3: (i32,i32,i32,i32,i32) → () [int8_batch_dot]
   const typeSec = section(1, vec([
     [0x60, ...vec([[I32], [I32], [I32]]), ...vec([[I32]])],
     [0x60, ...vec([[I32], [I32]]), ...vec([[I32]])],
     [0x60, ...vec([[I32], [I32], [I32], [I32]]), ...vec([[I32]])],
+    [0x60, ...vec([[I32], [I32], [I32], [I32], [I32]]), ...[0x00]], // → void
   ]));
 
-  // Function section: 4 functions
-  const funcSec = section(3, vec([[0], [0], [1], [2]]));
+  // Function section: 5 functions
+  const funcSec = section(3, vec([[0], [0], [1], [2], [3]]));
 
-  // Memory: 16 pages (1MB)
-  const memSec = section(5, vec([[0x00, ...leb128u(16)]]));
+  // Memory: 32 pages (2MB — batch scoring needs slab + scores buffer)
+  const memSec = section(5, vec([[0x00, ...leb128u(32)]]));
 
   // Exports
   const exp = (name, kind, idx) => [
@@ -114,6 +116,7 @@ function buildModule() {
     exp('int8_dot', 0, 1),
     exp('int8_norm_sq', 0, 2),
     exp('asymmetric_distance', 0, 3),
+    exp('int8_batch_dot', 0, 4),
   ]));
 
   // -----------------------------------------------------------------------
@@ -340,17 +343,64 @@ function buildModule() {
 
   // -----------------------------------------------------------------------
   // Function 1: int8_dot(a, b, len) → i32
-  //   Tight scalar loop. Called ~100x/search (Stage 2 only), not the
-  //   bottleneck. SIMD hamming (Stage 1, ~1000x/search) is the priority.
+  //   SIMD: i16x8.extmul + i32x4.extadd_pairwise, 16 bytes/iteration.
+  //   Scalar tail for remainder. ~4-8x faster than scalar for dim=512.
   // -----------------------------------------------------------------------
+  // SIMD opcodes for int8 dot product
+  const I16x8_EXTMUL_LO_S = 0x9C;  // i16x8.extmul_low_i8x16_s
+  const I16x8_EXTMUL_HI_S = 0x9D;  // i16x8.extmul_high_i8x16_s
+  const I32x4_EXTADD_S    = 0x7E;  // i32x4.extadd_pairwise_i16x8_s
+
   function int8DotBody() {
     const b = [];
-    // Locals: 3=$end, 4=$dot
-    b.push(...leb128u(1));
-    b.push(...leb128u(2), I32);
+    // params: 0=$a, 1=$b, 2=$len
+    // locals: 3=$simd_end, 4=$scalar_total, 5=$tmp,
+    //         6=$acc(v128), 7=$va(v128), 8=$vb(v128)
+    b.push(...leb128u(2));
+    b.push(...leb128u(3), I32);  // 3,4,5
+    b.push(...leb128u(3), V128); // 6,7,8
 
-    // $end = $a + $len
-    b.push(GET, 0); b.push(GET, 2); b.push(I32_ADD); b.push(SET, 3);
+    // $simd_end = $a + ($len & ~15)
+    b.push(GET, 0); b.push(GET, 2); b.push(I32_CONST, ...leb128s(-16));
+    b.push(I32_AND); b.push(I32_ADD); b.push(SET, 3);
+
+    // SIMD loop: 16 int8 elements per iteration
+    b.push(BLOCK, VOID);
+    b.push(LOOP, VOID);
+    b.push(GET, 0); b.push(GET, 3); b.push(I32_GE_U); b.push(BR_IF, 1);
+
+    // $va = v128.load(a), $vb = v128.load(b)
+    b.push(GET, 0); b.push(...simd(V128_LOAD), 0x00, 0x00); b.push(SET, 7);
+    b.push(GET, 1); b.push(...simd(V128_LOAD), 0x00, 0x00); b.push(SET, 8);
+
+    // Low 8 bytes: extend to i16x8, multiply, pairwise-extend to i32x4, accumulate
+    b.push(GET, 7); b.push(GET, 8);
+    b.push(...simd(I16x8_EXTMUL_LO_S));  // i16x8 products from low 8 bytes
+    b.push(...simd(I32x4_EXTADD_S));     // pairwise sum to i32x4
+    b.push(GET, 6); b.push(...simd(I32x4_ADD)); b.push(SET, 6);
+
+    // High 8 bytes: same pattern
+    b.push(GET, 7); b.push(GET, 8);
+    b.push(...simd(I16x8_EXTMUL_HI_S));  // i16x8 products from high 8 bytes
+    b.push(...simd(I32x4_EXTADD_S));     // pairwise sum to i32x4
+    b.push(GET, 6); b.push(...simd(I32x4_ADD)); b.push(SET, 6);
+
+    // a += 16, b += 16
+    b.push(GET, 0); b.push(I32_CONST, 16); b.push(I32_ADD); b.push(SET, 0);
+    b.push(GET, 1); b.push(I32_CONST, 16); b.push(I32_ADD); b.push(SET, 1);
+    b.push(BR, 0);
+    b.push(END); b.push(END);
+
+    // Extract i32x4 lanes and sum
+    b.push(GET, 6); b.push(...simd(I32x4_EXTRACT), 0);
+    b.push(GET, 6); b.push(...simd(I32x4_EXTRACT), 1); b.push(I32_ADD);
+    b.push(GET, 6); b.push(...simd(I32x4_EXTRACT), 2); b.push(I32_ADD);
+    b.push(GET, 6); b.push(...simd(I32x4_EXTRACT), 3); b.push(I32_ADD);
+    b.push(SET, 4);
+
+    // Scalar tail: $end = $simd_end + (len & 15)
+    b.push(GET, 3); b.push(GET, 2); b.push(I32_CONST, 15); b.push(I32_AND);
+    b.push(I32_ADD); b.push(SET, 3);
 
     b.push(BLOCK, VOID);
     b.push(LOOP, VOID);
@@ -468,11 +518,64 @@ function buildModule() {
     return b;
   }
 
+  // -----------------------------------------------------------------------
+  // Function 4: int8_batch_dot(query, slab, count, dim, scores) → void
+  //   Single WASM call for all candidates. Loops internally, calling
+  //   int8_dot for each candidate, writing i32 scores to output buffer.
+  //   Eliminates per-candidate JS→WASM boundary crossings.
+  // -----------------------------------------------------------------------
+  const I32_SHL = 0x74;
+  const I32_STORE = 0x36;
+  const CALL = 0x10;
+
+  function int8BatchDotBody() {
+    const b = [];
+    // params: 0=$query, 1=$slab, 2=$count, 3=$dim, 4=$scores
+    // locals: 5=$i
+    b.push(...leb128u(1));
+    b.push(...leb128u(1), I32); // local 5 = $i
+
+    b.push(BLOCK, VOID);
+    b.push(LOOP, VOID);
+    // if i >= count: break
+    b.push(GET, 5); b.push(GET, 2); b.push(I32_GE_U); b.push(BR_IF, 1);
+
+    // Address for i32.store: scores + i * 4
+    b.push(GET, 4);       // $scores
+    b.push(GET, 5);       // $i
+    b.push(I32_CONST, 2);
+    b.push(I32_SHL);      // i << 2 = i * 4
+    b.push(I32_ADD);
+
+    // Value: call int8_dot(query, slab + i*dim, dim)
+    b.push(GET, 0);       // $query
+    b.push(GET, 1);       // $slab
+    b.push(GET, 5);       // $i
+    b.push(GET, 3);       // $dim
+    b.push(I32_MUL);      // i * dim
+    b.push(I32_ADD);      // slab + i*dim
+    b.push(GET, 3);       // $dim
+    b.push(CALL, ...leb128u(1)); // call function 1 (int8_dot)
+
+    // i32.store(addr, value) — align=2 (4-byte), offset=0
+    b.push(I32_STORE, 0x02, 0x00);
+
+    // i++
+    b.push(GET, 5); b.push(I32_CONST, 1); b.push(I32_ADD); b.push(SET, 5);
+
+    b.push(BR, 0);
+    b.push(END); b.push(END); // end loop, end block
+
+    b.push(END); // end function
+    return b;
+  }
+
   const codeSec = section(10, vec([
     codeEntry(hammingBody()),
     codeEntry(int8DotBody()),
     codeEntry(normSqBody()),
     codeEntry(asymDistBody()),
+    codeEntry(int8BatchDotBody()),
   ]));
 
   // Assemble
@@ -538,6 +641,24 @@ try {
   mem[0] = 0x00;
   const ad2 = inst.exports.asymmetric_distance(0, 64, 8, 100);
   console.log(`asymmetric_distance(0x00, [1×8], 8, 100) = ${ad2} (expect 116)`);
+
+  // int8_batch_dot: 3 candidates, dim=4
+  // query=[1,2,3,4], cand0=[1,1,1,1], cand1=[2,2,2,2], cand2=[0,0,0,0]
+  // dot0 = 1+2+3+4 = 10, dot1 = 2+4+6+8 = 20, dot2 = 0
+  const queryOff = 0;
+  const slabOff = 16;
+  const scoresOff = 64;
+  const bq = new Int8Array([1,2,3,4]);
+  const bc0 = new Int8Array([1,1,1,1]);
+  const bc1 = new Int8Array([2,2,2,2]);
+  const bc2 = new Int8Array([0,0,0,0]);
+  mem.set(new Uint8Array(bq.buffer), queryOff);
+  mem.set(new Uint8Array(bc0.buffer), slabOff);
+  mem.set(new Uint8Array(bc1.buffer), slabOff + 4);
+  mem.set(new Uint8Array(bc2.buffer), slabOff + 8);
+  inst.exports.int8_batch_dot(queryOff, slabOff, 3, 4, scoresOff);
+  const batchScores = new Int32Array(inst.exports.memory.buffer, scoresOff, 3);
+  console.log(`int8_batch_dot: [${batchScores}] (expect 10,20,0)`);
 
 } catch (err) {
   console.error('FAILED:', err.message);

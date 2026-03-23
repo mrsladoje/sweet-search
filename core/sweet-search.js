@@ -21,7 +21,8 @@ import { HNSWIndex } from './hnsw-index.js';
 import { BinaryHNSWIndex } from './binary-hnsw-index.js';
 import { Reranker } from './flashrank.js';
 import { LateInteractionIndex } from './late-interaction-index.js';
-import { getEmbedding, getBinaryEmbedding, truncateForHNSW, floatToInt8, int8CosineSimilarity, warmup as warmupEmbedding, isWarm, registerAutoPersistOnExit } from './embedding-service.js';
+import { getEmbedding, getBinaryEmbedding, truncateForHNSW, int8CosineSimilarity, warmup as warmupEmbedding, isWarm, registerAutoPersistOnExit } from './embedding-service.js';
+import { FloatVectorStore, getFloatStorePath } from './float-vector-store.js';
 import { recordQueryTelemetry } from './embedding-cache.js';
 import Database from 'better-sqlite3';
 import { applyReadPragmas } from './db-utils.js';
@@ -114,6 +115,8 @@ export class SweetSearch {
     this.translationFallback = new TranslationFallback(options.translation || {});
     // SEISMIC sparse vector path (lazy-loaded when SEISMIC_CONFIG.enabled)
     this._seismicIndex = null;
+    // Direct-access float vector store for Stage 2.5 (replaces SQLite on hot path)
+    this.floatVectorStore = new FloatVectorStore();
     this.qualityWeight = options.qualityWeight ?? 0;
     // Cascade scoring (Section 26): MaxSim → gate → conditional CE
     this.cascadeEnabled = options.cascadeEnabled
@@ -170,8 +173,30 @@ export class SweetSearch {
         const stats = this.binaryHnswIndex.getStats();
         this.log(`BinaryHNSW: Loaded ${stats.totalVectors} vectors (${stats.memorySizeMB} MB)`);
       } catch (err) {
+        const isPipelineMismatch = err.message.includes('Pipeline version mismatch');
+        if (isPipelineMismatch) {
+          console.error(`[SweetSearch] REBUILD REQUIRED: ${err.message}`);
+          console.error('[SweetSearch] Run: node core/artifact-builder.js (or re-index) to rebuild.');
+        }
         this.log(`BinaryHNSW: Failed to load: ${err.message}`);
         this.hasBinaryHnswIndex = false;
+      }
+
+      // Float store loads separately — a corrupt/missing float store must NOT
+      // disable the entire 3-stage pipeline. Stage 2.5 falls back to SQLite.
+      if (this.hasBinaryHnswIndex) {
+        try {
+          const floatStorePath = getFloatStorePath(DB_PATHS.binaryHnswIndex);
+          const floatLoaded = await this.floatVectorStore.load(floatStorePath);
+          if (floatLoaded) {
+            const fStats = this.floatVectorStore.getStats();
+            this.log(`FloatStore: Loaded ${fStats.count} vectors (${fStats.memorySizeMB} MB)`);
+          } else {
+            this.log('FloatStore: Not found, Stage 2.5 will use SQLite fallback');
+          }
+        } catch (err) {
+          this.log(`FloatStore: Failed to load (Stage 2.5 will use SQLite fallback): ${err.message}`);
+        }
       }
     }
 
@@ -444,11 +469,13 @@ export class SweetSearch {
     return candidates.map(c => c.content || c.text || '');
   }
 
-  /** Cosine similarity */
+  /** Cosine similarity — throws on dimension mismatch instead of silently truncating. */
   cosineSimilarity(a, b) {
+    if (a.length !== b.length) {
+      throw new Error(`cosineSimilarity dimension mismatch: ${a.length} vs ${b.length}`);
+    }
     let dot = 0, normA = 0, normB = 0;
-    const len = Math.min(a.length, b.length);
-    for (let i = 0; i < len; i++) { dot += a[i] * b[i]; normA += a[i] * a[i]; normB += b[i] * b[i]; }
+    for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; normA += a[i] * a[i]; normB += b[i] * b[i]; }
     return dot / (Math.sqrt(normA) * Math.sqrt(normB));
   }
 
