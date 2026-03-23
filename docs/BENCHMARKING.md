@@ -189,15 +189,17 @@ Compare the two runs (translate=on vs translate=off) to measure translation impa
 ### Current best (March 23, 2026 — HNSW Optimization Plan)
 
 Profile: `full` (late interaction ON), M3 Max 128GB, concurrency 12.
+Provider: **local CodeRankEmbed** (768d full → 512d HNSW, INT8 quantized ONNX).
 Ship config: M=64, efC=800, efS=400, plain sign-bit Hamming, shuffled insertion,
 heuristic neighbor selection (Algorithm 4), M0=2*M on layer 0.
+Full re-index with ship config (not just HNSW rebuild).
 
 ```
-MRR@10:      83.5%    Recall@5:  90.5%    Recall@20: 93.8%
-Success@1:   78.0%    Latency p50: 1146ms
+MRR@10:      83.5%    Recall@5:  90.4%    Recall@20: 93.8%
+Success@1:   78.1%    Latency p50: 942ms
 ```
 
-Per-language: Python 97.6%, Go 94.4%, Java 84.7%, JS 71.3%, PHP 77.6%, Ruby 75.3%
+Per-language: Python 97.7%, Go 94.4%, Java 84.6%, JS 71.3%, PHP 77.7%, Ruby 75.3%
 
 Stage 1 metrics (JS, 1000 queries):
 - Ground-truth file recall@100: 83.4% (was 80.6%, +2.8pp)

@@ -1,4 +1,44 @@
-# HNSW Optimization Plan (v2)
+# HNSW Optimization — Implementation Record
+
+> **Status: COMPLETED** (March 23, 2026). All fixes implemented, benchmarked, and shipped.
+> Commit `31b26d8` (code) + `a0969fa` (docs).
+
+## Results Summary
+
+**Ship config**: Local CodeRankEmbed, 512d HNSW, M=64, efC=800, efS=400, plain
+sign-bit Hamming, heuristic neighbor selection (Algorithm 4), M0=2*M on layer 0,
+shuffled insertion order. Asymmetric encoding disabled.
+
+| Metric (GenCodeSearchNet) | Before | After | Delta |
+|---------------------------|--------|-------|-------|
+| JS ground-truth recall@200 | 80.6% (plateau) | 86.5% | **+5.9pp** |
+| JS ANN fidelity@200 | unmeasured | 97.4% | — |
+| End-to-end MRR@10 | 83.2% | 83.5% | +0.3pp |
+| Latency p50 | 1403ms | 942ms | **-461ms (-33%)** |
+
+### What worked
+- Heuristic neighbor selection (Algorithm 4) — broke the recall plateau
+- M=64 / efC=800 / efS=400 — denser graph, faster convergence
+- Shuffled insertion order — unbiased graph backbone
+- Typed-array heaps + generation-stamped visited list — zero GC per search
+- Adaptive early termination + adaptive ef — cheap queries finish faster
+- WASM SIMD hamming distance — ~3x faster distance computation
+
+### What didn't work (tested, no improvement)
+- Asymmetric binary quantization (WHT rotation) at 512d — degrades graph connectivity
+- Asymmetric at 1024d with Voyage Code 3 — still no improvement
+- Voyage Code 3 vs local CodeRankEmbed — identical quality (83.5% MRR)
+- 1024d HNSW dimension vs 512d — no quality gain (1-bit quantization dominates)
+- Stage 2.5 float rescore — present but marginal impact with strong Stage 2 int8
+
+### Conclusion
+Stage 1 is no longer the retrieval bottleneck. The remaining MRR ceiling (~83.5%)
+is shared between embedding quality, chunking, and reranker limits. Next levers:
+chunking improvements, query expansion, or stronger reranking models.
+
+---
+
+## Original Plan (v2)
 
 > Goal: Improve Stage 1 candidate recall (currently 80.6% recall@200, plateau at top-100)
 > and reduce latency across the 3-stage retrieval pipeline.
