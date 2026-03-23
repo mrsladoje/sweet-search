@@ -186,7 +186,53 @@ Compare the two runs (translate=on vs translate=off) to measure translation impa
 | WSL2 10GB RAM | 5 | ~25-40 min | CPU-bound on ONNX mutex |
 | M3 Max | 5 | ~8-15 min (est.) | Metal/ANE acceleration, unified memory |
 
-### Current best (March 22, 2026 — LI token fix + Lexical Fix Plan)
+### Current best (March 23, 2026 — HNSW Optimization Plan)
+
+Profile: `full` (late interaction ON), M3 Max 128GB, concurrency 12.
+Ship config: M=64, efC=800, efS=400, plain sign-bit Hamming, shuffled insertion,
+heuristic neighbor selection (Algorithm 4), M0=2*M on layer 0.
+
+```
+MRR@10:      83.5%    Recall@5:  90.5%    Recall@20: 93.8%
+Success@1:   78.0%    Latency p50: 1146ms
+```
+
+Per-language: Python 97.6%, Go 94.4%, Java 84.7%, JS 71.3%, PHP 77.6%, Ruby 75.3%
+
+Stage 1 metrics (JS, 1000 queries):
+- Ground-truth file recall@100: 83.4% (was 80.6%, +2.8pp)
+- Ground-truth file recall@200: 86.5% (was 80.6%, +5.9pp, plateau broken)
+- ANN fidelity@200: 97.4% (HNSW finds 97.4% of brute-force top-200)
+
+Changes from HNSW Optimization Plan (`docs/HNSW_OPT_PLAN.md`):
+- Heuristic neighbor selection replaces simple closest-M (better angular diversity)
+- M0=2*M on layer 0 (standard HNSW practice, was missing)
+- Shuffled insertion order (breaks filesystem clustering bias)
+- Typed-array heaps + generation-stamped visited list (zero GC per search)
+- Adaptive early termination (discovery-rate based, configurable thresholds)
+- Adaptive ef (greedy descent quality adjusts search budget ±40%)
+- WASM SIMD hamming distance (i8x16.popcnt with JS fallback)
+- Stage 2.5 float rescore between int8 and cross-encoder
+- L2 re-normalization after Matryoshka truncation (correctness fix)
+
+Experiment matrix (all tested, none improved quality beyond plain sign-bit):
+
+| Config                        | MRR@10 | JS MRR | Recall@20 | Latency p50 |
+|-------------------------------|--------|--------|-----------|-------------|
+| Local 512d plain (ship)       | 83.5%  | 71.3%  | 93.8%     | 1146ms      |
+| Voyage 512d plain             | 83.5%  | 71.3%  | 93.8%     | 970ms       |
+| Voyage 1024d plain            | 83.5%  | 71.3%  | 93.8%     | 976ms       |
+| Voyage 1024d asymmetric       | 83.4%  | 71.2%  | 93.8%     | 963ms       |
+| Local 512d asymmetric (M=32)  | 83.5%  | 71.2%  | 94.3%     | 1291ms      |
+
+Conclusions:
+- Voyage Code 3 does not improve quality over local CodeRankEmbed on this benchmark.
+- 1024d HNSW does not improve quality over 512d (1-bit quantization dominates).
+- Asymmetric encoding (center→rotate→sign-bit) does not help at 512d or 1024d.
+- Stage 1 is no longer the retrieval bottleneck. Remaining ceiling is shared
+  between embedding quality, chunking, and reranker limits.
+
+### Previous best (March 22, 2026 — LI token fix + Lexical Fix Plan)
 
 Profile: `full` (late interaction ON), M3 Max 128GB, concurrency 12.
 
