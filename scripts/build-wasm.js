@@ -1,0 +1,545 @@
+#!/usr/bin/env node
+
+/**
+ * Emit simd-distance.wasm binary with SIMD v128 instructions.
+ * No external tooling (wabt/wat2wasm) required.
+ *
+ * Functions:
+ *   0: hamming_distance(a_ptr, b_ptr, len) → i32   [i8x16.popcnt SIMD]
+ *   1: int8_dot(a_ptr, b_ptr, len) → i32           [i16x8 extend+mul SIMD]
+ *   2: int8_norm_sq(a_ptr, len) → i32              [i16x8 extend+mul SIMD]
+ *
+ * SIMD path processes 16 bytes/iteration. Scalar tail handles remainder.
+ * Memory: vectors start at offset 0 (no LUT needed with SIMD popcnt).
+ *
+ * Run: node scripts/build-wasm.js
+ */
+
+import { writeFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const outPath = join(__dirname, '..', 'core', 'simd-distance.wasm');
+
+// ============================================================================
+// WASM LEB128 encoding
+// ============================================================================
+
+function leb128u(v) {
+  const b = [];
+  do { let byte = v & 0x7f; v >>>= 7; if (v) byte |= 0x80; b.push(byte); } while (v);
+  return b;
+}
+
+function leb128s(v) {
+  const b = [];
+  let more = true;
+  while (more) {
+    let byte = v & 0x7f; v >>= 7;
+    if ((v === 0 && !(byte & 0x40)) || (v === -1 && (byte & 0x40))) more = false;
+    else byte |= 0x80;
+    b.push(byte);
+  }
+  return b;
+}
+
+function section(id, content) { return [id, ...leb128u(content.length), ...content]; }
+function vec(items) { return [...leb128u(items.length), ...items.flat()]; }
+
+// ============================================================================
+// Opcodes
+// ============================================================================
+
+// Control
+const END = 0x0b, BLOCK = 0x02, LOOP = 0x03, BR = 0x0c, BR_IF = 0x0d;
+// Vars
+const GET = 0x20, SET = 0x21, TEE = 0x22;
+// i32
+const I32 = 0x7f, I32_CONST = 0x41, I32_ADD = 0x6a, I32_SUB = 0x6b;
+const I32_MUL = 0x6c, I32_AND = 0x71, I32_XOR = 0x73;
+const I32_GE_U = 0x4f, I32_LT_U = 0x49, I32_SHR_U = 0x76;
+const I32_LOAD8_U = 0x2d, I32_LOAD8_S = 0x2c;
+const VOID = 0x40;
+
+// v128
+const V128 = 0x7b;
+
+// SIMD prefix + opcode (all SIMD ops start with 0xFD then LEB128 opcode)
+function simd(op) { return [0xfd, ...leb128u(op)]; }
+const V128_LOAD         = 0;    // + memarg
+const V128_XOR          = 81;   // 0x51
+const V128_CONST        = 12;   // 0x0c + 16 bytes
+const I8x16_POPCNT      = 98;   // 0x62
+const I8x16_ADD         = 110;  // 0x6e  (not used — we pairwise-extend instead)
+const I16x8_EXTADD_U    = 124;  // 0x7c  i16x8.extadd_pairwise_i8x16_u
+const I32x4_EXTADD_U    = 127;  // 0x7f  i32x4.extadd_pairwise_i16x8_u
+const I32x4_ADD         = 174;  // 0xae
+const I32x4_EXTRACT     = 27;   // 0x1b + lane
+const I16x8_EXT_LO_S    = 0x87; // i16x8.extend_low_i8x16_s   (multi-byte after prefix)
+const I16x8_EXT_HI_S    = 0x88; // i16x8.extend_high_i8x16_s
+const I16x8_MUL         = 0xd5; // i16x8.mul
+const I32x4_EXT_LO_S    = 0xa7; // i32x4.extend_low_i16x8_s
+const I32x4_EXT_HI_S    = 0xa8; // i32x4.extend_high_i16x8_s
+
+// ============================================================================
+// Module construction
+// ============================================================================
+
+function buildModule() {
+  // Type section: 3 signatures
+  // type 0: (i32,i32,i32) → i32   [hamming, int8_dot]
+  // type 1: (i32,i32) → i32       [int8_norm_sq]
+  // type 2: (i32,i32,i32,i32) → i32 [asymmetric_distance]
+  const typeSec = section(1, vec([
+    [0x60, ...vec([[I32], [I32], [I32]]), ...vec([[I32]])],
+    [0x60, ...vec([[I32], [I32]]), ...vec([[I32]])],
+    [0x60, ...vec([[I32], [I32], [I32], [I32]]), ...vec([[I32]])],
+  ]));
+
+  // Function section: 4 functions
+  const funcSec = section(3, vec([[0], [0], [1], [2]]));
+
+  // Memory: 16 pages (1MB)
+  const memSec = section(5, vec([[0x00, ...leb128u(16)]]));
+
+  // Exports
+  const exp = (name, kind, idx) => [
+    ...leb128u(name.length), ...Array.from(name).map(c => c.charCodeAt(0)),
+    kind, ...leb128u(idx),
+  ];
+  const exportSec = section(7, vec([
+    exp('memory', 2, 0),
+    exp('hamming_distance', 0, 0),
+    exp('int8_dot', 0, 1),
+    exp('int8_norm_sq', 0, 2),
+    exp('asymmetric_distance', 0, 3),
+  ]));
+
+  // -----------------------------------------------------------------------
+  // Function 0: hamming_distance(a, b, len) → i32
+  //   SIMD: v128.load a, v128.load b, v128.xor, i8x16.popcnt,
+  //         pairwise-extend to i32x4, accumulate. 16 bytes/iter.
+  //   Scalar tail for remaining bytes.
+  // -----------------------------------------------------------------------
+  // Locals: $simd_end(i32), $acc(v128), $xored(v128), $scalar_total(i32)
+  const hamming = [
+    // 2 local decl groups: 2×i32, 2×v128
+    ...leb128u(2),
+    ...leb128u(2), I32,  // $simd_end(3), $scalar_total(4)
+    ...leb128u(2), V128, // $acc(5), $xored(6)
+
+    // $simd_end = $a + ($len & ~15)   — round down to multiple of 16
+    GET, 0, // a
+    GET, 2, // len
+    I32_CONST, 0x70, // -16 in signed LEB = 0x70, but we need i32.and with ~15.
+    // Actually ~15 = 0xFFFFFFF0. LEB128 signed: ...
+    // Let's do len >> 4 << 4 instead: (len / 16) * 16
+  ];
+
+  // Simpler approach: $simd_end = $a + (($len >> 4) << 4)
+  // But bit shifts: i32.shr_u by 4, i32.shl by 4 = effectively i32.and with ~15
+  // i32.and with -16 (0xfffffff0): in signed LEB128 = [0x70]... no, -16 = 0xf0 0x7f
+  // Actually for i32.const -16: leb128s(-16) = [0x70]
+  // i32.and(len, -16) gives len rounded down to multiple of 16.
+
+  // Let me just build this properly with a helper for the body bytes.
+
+  function hammingBody() {
+    const b = [];
+    // Locals: 2 groups
+    b.push(...leb128u(2));
+    b.push(...leb128u(2), I32);  // locals 3,4 = i32
+    b.push(...leb128u(1), V128); // local 5 = v128 accumulator
+
+    // $simd_end = $a + ($len & 0xFFFFFFF0)
+    b.push(GET, 0);             // a
+    b.push(GET, 2);             // len
+    b.push(I32_CONST, ...leb128s(-16)); // -16
+    b.push(I32_AND);
+    b.push(I32_ADD);
+    b.push(SET, 3);             // $simd_end
+
+    // $acc = v128.const 0
+    // (initialized to zero by default for v128 locals)
+
+    // SIMD loop: while ($a < $simd_end)
+    b.push(BLOCK, VOID);
+    b.push(LOOP, VOID);
+    b.push(GET, 0); b.push(GET, 3); b.push(I32_GE_U); b.push(BR_IF, 1);
+
+    // xored = v128.load(a) ^ v128.load(b)
+    b.push(GET, 0); b.push(...simd(V128_LOAD), 0x00, 0x00);  // v128.load a, align=0 offset=0
+    b.push(GET, 1); b.push(...simd(V128_LOAD), 0x00, 0x00);  // v128.load b
+    b.push(...simd(V128_XOR));
+
+    // popcnt per lane
+    b.push(...simd(I8x16_POPCNT));
+
+    // pairwise extend: i8x16 → i16x8 → i32x4 (sum adjacent lanes)
+    b.push(...simd(I16x8_EXTADD_U));
+    b.push(...simd(I32x4_EXTADD_U));
+
+    // $acc += result
+    b.push(GET, 5);
+    b.push(...simd(I32x4_ADD));
+    b.push(SET, 5);
+
+    // a += 16, b += 16
+    b.push(GET, 0); b.push(I32_CONST, 16); b.push(I32_ADD); b.push(SET, 0);
+    b.push(GET, 1); b.push(I32_CONST, 16); b.push(I32_ADD); b.push(SET, 1);
+    b.push(BR, 0);
+    b.push(END); // loop
+    b.push(END); // block
+
+    // Extract i32x4 lanes and sum
+    // $scalar_total = acc[0] + acc[1] + acc[2] + acc[3]
+    b.push(GET, 5); b.push(...simd(I32x4_EXTRACT), 0);
+    b.push(GET, 5); b.push(...simd(I32x4_EXTRACT), 1);
+    b.push(I32_ADD);
+    b.push(GET, 5); b.push(...simd(I32x4_EXTRACT), 2);
+    b.push(I32_ADD);
+    b.push(GET, 5); b.push(...simd(I32x4_EXTRACT), 3);
+    b.push(I32_ADD);
+    b.push(SET, 4); // $scalar_total
+
+    // Scalar tail: remaining bytes (a < a_orig + len)
+    // $simd_end now repurposed: $end = original_a + len
+    // But we already incremented $a. $end = $a_start + $len.
+    // We need end pointer. a_start was param 0 but we modified it.
+    // Workaround: $end = $simd_end + (len & 15)
+    b.push(GET, 3); // $simd_end (= original_a + (len & ~15))
+    b.push(GET, 2); // len
+    b.push(I32_CONST, 15);
+    b.push(I32_AND);
+    b.push(I32_ADD);
+    b.push(SET, 3); // $end
+
+    b.push(BLOCK, VOID);
+    b.push(LOOP, VOID);
+    b.push(GET, 0); b.push(GET, 3); b.push(I32_GE_U); b.push(BR_IF, 1);
+
+    // XOR bytes, popcount via Kernighan
+    b.push(GET, 0); b.push(I32_LOAD8_U, 0, 0);
+    b.push(GET, 1); b.push(I32_LOAD8_U, 0, 0);
+    b.push(I32_XOR);
+    // Kernighan popcount loop for a single byte (max 8 iterations)
+    b.push(BLOCK, VOID);
+    b.push(LOOP, VOID);
+    b.push(TEE, 3); // reuse $end as temp (we're past the loop that uses it as end)
+    // Oops, can't reuse $end here since we're still in the tail loop using it.
+    // Let me use a simpler approach: just use a lookup or bit tricks.
+    // For tail bytes, simplest is bit-by-bit count in i32.
+    // Actually let me just accumulate with shifts.
+
+    // Better: use the simple approach since tail is at most 15 bytes.
+    // Pop the XOR value, count bits:
+    // bits = v; v = v - ((v >> 1) & 0x55); v = (v & 0x33) + ((v >> 2) & 0x33); v = (v + (v >> 4)) & 0x0f
+    // But that's a lot of opcodes. Simpler: Kernighan with a local counter.
+    b.length -= 4; // remove the block+loop we just started for Kernighan
+
+    // Instead: inline bit count for byte using arithmetic
+    // count = popcount_byte(xor_byte)
+    // = ((xor * 0x0101010101010101) >> 56) — but that's 64-bit.
+    // Just use Kernighan: while (v) { count++; v &= v-1; }
+    // Need a temp local. But we're out of locals allocated for this purpose.
+    // Let's add another local. Actually, we declared 2 i32 locals (3,4) and 1 v128 (5).
+    // After the SIMD loop, 3 is used as $end and 4 as $scalar_total, 5 as accumulator.
+    // After extracting SIMD result to $scalar_total(4), we repurpose $simd_end(3) as $end for tail.
+    // We need a 6th local for the xor byte. Let's adjust local count.
+
+    // This is getting complex with raw bytecodes. Let me use a simpler tail strategy:
+    // just unrolled bit counting for a byte using shifts.
+    // popcount(byte) = sum of 8 bits. Fastest in WASM scalar:
+    // Use the parallel bit-count method for a byte (8 bits):
+
+    // MUCH simpler: the tail is at most 15 bytes. Just process them one at a time
+    // with a lookup-style approach using shifts.
+    // popcount(x) for a byte:
+    //   x = x - ((x >> 1) & 0x55)
+    //   x = (x & 0x33) + ((x >> 2) & 0x33)
+    //   x = (x + (x >> 4)) & 0x0F
+
+    // Let's do it properly with an extra temp local. Adjust local decl to 3 i32.
+    b.splice(0); // restart
+
+    b.push(...leb128u(2));
+    b.push(...leb128u(3), I32);  // locals 3=$simd_end, 4=$scalar_total, 5=$tmp
+    b.push(...leb128u(1), V128); // local 6 = v128 accumulator
+
+    // Recalculate with new local indices:
+    // params: 0=a, 1=b, 2=len
+    // locals: 3=$simd_end, 4=$scalar_total, 5=$tmp, 6=$v128_acc
+
+    // $simd_end = $a + ($len & ~15)
+    b.push(GET, 0); b.push(GET, 2); b.push(I32_CONST, ...leb128s(-16));
+    b.push(I32_AND); b.push(I32_ADD); b.push(SET, 3);
+
+    // SIMD loop
+    b.push(BLOCK, VOID);
+    b.push(LOOP, VOID);
+    b.push(GET, 0); b.push(GET, 3); b.push(I32_GE_U); b.push(BR_IF, 1);
+
+    b.push(GET, 0); b.push(...simd(V128_LOAD), 0x00, 0x00);
+    b.push(GET, 1); b.push(...simd(V128_LOAD), 0x00, 0x00);
+    b.push(...simd(V128_XOR));
+    b.push(...simd(I8x16_POPCNT));
+    b.push(...simd(I16x8_EXTADD_U));
+    b.push(...simd(I32x4_EXTADD_U));
+    b.push(GET, 6); b.push(...simd(I32x4_ADD)); b.push(SET, 6);
+
+    b.push(GET, 0); b.push(I32_CONST, 16); b.push(I32_ADD); b.push(SET, 0);
+    b.push(GET, 1); b.push(I32_CONST, 16); b.push(I32_ADD); b.push(SET, 1);
+    b.push(BR, 0);
+    b.push(END); b.push(END);
+
+    // Extract SIMD accumulator
+    b.push(GET, 6); b.push(...simd(I32x4_EXTRACT), 0);
+    b.push(GET, 6); b.push(...simd(I32x4_EXTRACT), 1); b.push(I32_ADD);
+    b.push(GET, 6); b.push(...simd(I32x4_EXTRACT), 2); b.push(I32_ADD);
+    b.push(GET, 6); b.push(...simd(I32x4_EXTRACT), 3); b.push(I32_ADD);
+    b.push(SET, 4);
+
+    // Scalar tail: $end = $a_current + remaining bytes
+    // remaining = len - ($a - original_a). But we modified $a.
+    // $end = $simd_end + (len & 15). But $simd_end = original_a + (len & ~15).
+    // So $end = original_a + len. We don't have original_a anymore.
+    // Fix: $end = $simd_end + ($len & 15)
+    b.push(GET, 3); b.push(GET, 2); b.push(I32_CONST, 15); b.push(I32_AND);
+    b.push(I32_ADD); b.push(SET, 3);
+
+    b.push(BLOCK, VOID);
+    b.push(LOOP, VOID);
+    b.push(GET, 0); b.push(GET, 3); b.push(I32_GE_U); b.push(BR_IF, 1);
+
+    // $tmp = mem[a] ^ mem[b]
+    b.push(GET, 0); b.push(I32_LOAD8_U, 0, 0);
+    b.push(GET, 1); b.push(I32_LOAD8_U, 0, 0);
+    b.push(I32_XOR);
+    // popcount byte: x -= (x>>1)&0x55; x=(x&0x33)+((x>>2)&0x33); x=(x+(x>>4))&0x0F
+    b.push(SET, 5); // $tmp = xor
+    b.push(GET, 5); b.push(GET, 5); b.push(I32_CONST, 1); b.push(I32_SHR_U);
+    b.push(I32_CONST, 0x55); b.push(I32_AND); b.push(I32_SUB); b.push(SET, 5);
+    b.push(GET, 5); b.push(I32_CONST, 0x33); b.push(I32_AND);
+    b.push(GET, 5); b.push(I32_CONST, 2); b.push(I32_SHR_U); b.push(I32_CONST, 0x33); b.push(I32_AND);
+    b.push(I32_ADD); b.push(SET, 5);
+    b.push(GET, 5); b.push(GET, 5); b.push(I32_CONST, 4); b.push(I32_SHR_U);
+    b.push(I32_ADD); b.push(I32_CONST, 0x0f); b.push(I32_AND);
+    // $scalar_total += popcount
+    b.push(GET, 4); b.push(I32_ADD); b.push(SET, 4);
+
+    b.push(GET, 0); b.push(I32_CONST, 1); b.push(I32_ADD); b.push(SET, 0);
+    b.push(GET, 1); b.push(I32_CONST, 1); b.push(I32_ADD); b.push(SET, 1);
+    b.push(BR, 0);
+    b.push(END); b.push(END);
+
+    b.push(GET, 4);
+    b.push(END);
+    return b;
+  }
+
+  // -----------------------------------------------------------------------
+  // Function 1: int8_dot(a, b, len) → i32
+  //   Tight scalar loop. Called ~100x/search (Stage 2 only), not the
+  //   bottleneck. SIMD hamming (Stage 1, ~1000x/search) is the priority.
+  // -----------------------------------------------------------------------
+  function int8DotBody() {
+    const b = [];
+    // Locals: 3=$end, 4=$dot
+    b.push(...leb128u(1));
+    b.push(...leb128u(2), I32);
+
+    // $end = $a + $len
+    b.push(GET, 0); b.push(GET, 2); b.push(I32_ADD); b.push(SET, 3);
+
+    b.push(BLOCK, VOID);
+    b.push(LOOP, VOID);
+    b.push(GET, 0); b.push(GET, 3); b.push(I32_GE_U); b.push(BR_IF, 1);
+
+    b.push(GET, 4);
+    b.push(GET, 0); b.push(I32_LOAD8_S, 0, 0);
+    b.push(GET, 1); b.push(I32_LOAD8_S, 0, 0);
+    b.push(I32_MUL); b.push(I32_ADD); b.push(SET, 4);
+
+    b.push(GET, 0); b.push(I32_CONST, 1); b.push(I32_ADD); b.push(SET, 0);
+    b.push(GET, 1); b.push(I32_CONST, 1); b.push(I32_ADD); b.push(SET, 1);
+    b.push(BR, 0);
+    b.push(END); b.push(END);
+
+    b.push(GET, 4);
+    b.push(END);
+    return b;
+  }
+
+  // -----------------------------------------------------------------------
+  // Function 2: int8_norm_sq(a, len) → i32
+  //   Same as int8_dot but a×a instead of a×b.
+  // -----------------------------------------------------------------------
+  function normSqBody() {
+    const b = [];
+    // Locals: 2=$end, 3=$total, 4=$val
+    b.push(...leb128u(1));
+    b.push(...leb128u(3), I32);
+
+    // Scalar-only (norm_sq is called much less frequently than hamming/dot)
+    b.push(GET, 0); b.push(GET, 1); b.push(I32_ADD); b.push(SET, 2); // $end
+
+    b.push(BLOCK, VOID);
+    b.push(LOOP, VOID);
+    b.push(GET, 0); b.push(GET, 2); b.push(I32_GE_U); b.push(BR_IF, 1);
+
+    b.push(GET, 0); b.push(I32_LOAD8_S, 0, 0); b.push(SET, 4);
+    b.push(GET, 3); b.push(GET, 4); b.push(GET, 4); b.push(I32_MUL);
+    b.push(I32_ADD); b.push(SET, 3);
+
+    b.push(GET, 0); b.push(I32_CONST, 1); b.push(I32_ADD); b.push(SET, 0);
+    b.push(BR, 0);
+    b.push(END); b.push(END);
+
+    b.push(GET, 3);
+    b.push(END);
+    return b;
+  }
+
+  // Encode function body with size prefix
+  function codeEntry(body) { return [...leb128u(body.length), ...body]; }
+
+  // -----------------------------------------------------------------------
+  // Function 3: asymmetric_distance(doc_ptr, query_int4_ptr, dim, query_norm_scaled) → i32
+  //   For each dimension: if doc bit set, add queryInt4[i]; else subtract.
+  //   Returns query_norm_scaled - 2 * approxDot (all integer-scaled).
+  // -----------------------------------------------------------------------
+  function asymDistBody() {
+    const b = [];
+    // Pure scalar: iterate dim times, compute byte and bit position each iteration.
+    // params: 0=doc_ptr, 1=query_int4_ptr, 2=dim, 3=queryNorm
+    // Locals: 4=$i, 5=$approxDot, 6=$byteVal, 7=$queryVal
+    b.push(...leb128u(1));
+    b.push(...leb128u(4), I32); // 4=$i, 5=$approxDot, 6=$byteVal, 7=$queryVal
+
+    // Outer loop: i from 0 to dim
+    b.push(BLOCK, VOID);
+    b.push(LOOP, VOID);
+    b.push(GET, 4); b.push(GET, 2); b.push(I32_GE_U); b.push(BR_IF, 1);
+
+    // byteVal = doc[i >> 3]
+    b.push(GET, 0);
+    b.push(GET, 4); b.push(I32_CONST, 3); b.push(I32_SHR_U);
+    b.push(I32_ADD);
+    b.push(I32_LOAD8_U, 0, 0);
+    b.push(SET, 6);
+
+    // queryVal = query[i] (signed)
+    b.push(GET, 1); b.push(GET, 4); b.push(I32_ADD);
+    b.push(I32_LOAD8_S, 0, 0);
+    b.push(SET, 7);
+
+    // bit position = 7 - (i & 7), mask = 1 << bit
+    // if (byteVal & (1 << (7 - (i & 7)))): approxDot += queryVal else -= queryVal
+    b.push(GET, 6);
+    b.push(I32_CONST, 1);
+    b.push(I32_CONST, 7);
+    b.push(GET, 4); b.push(I32_CONST, 7); b.push(I32_AND); // i & 7
+    b.push(I32_SUB);  // 7 - (i & 7)
+    b.push(0x74);     // i32.shl
+    b.push(I32_AND);  // byteVal & mask
+
+    b.push(0x04, 0x40); // if (void)
+    // bit set: approxDot += queryVal
+    b.push(GET, 5); b.push(GET, 7); b.push(I32_ADD); b.push(SET, 5);
+    b.push(0x05); // else
+    // bit clear: approxDot -= queryVal
+    b.push(GET, 5); b.push(GET, 7); b.push(I32_SUB); b.push(SET, 5);
+    b.push(END); // end if
+
+    // i++
+    b.push(GET, 4); b.push(I32_CONST, 1); b.push(I32_ADD); b.push(SET, 4);
+    b.push(BR, 0);
+    b.push(END); b.push(END);
+
+    // return queryNorm - 2 * approxDot
+    b.push(GET, 3); // queryNorm (pre-scaled by caller)
+    b.push(I32_CONST, 2);
+    b.push(GET, 5);
+    b.push(I32_MUL);
+    b.push(I32_SUB);
+
+    b.push(END);
+    return b;
+  }
+
+  const codeSec = section(10, vec([
+    codeEntry(hammingBody()),
+    codeEntry(int8DotBody()),
+    codeEntry(normSqBody()),
+    codeEntry(asymDistBody()),
+  ]));
+
+  // Assemble
+  return new Uint8Array([
+    0x00, 0x61, 0x73, 0x6d, // \0asm
+    0x01, 0x00, 0x00, 0x00, // version 1
+    ...typeSec, ...funcSec, ...memSec, ...exportSec, ...codeSec,
+  ]);
+}
+
+// ============================================================================
+// Build + verify
+// ============================================================================
+
+const wasm = buildModule();
+writeFileSync(outPath, wasm);
+console.log(`Wrote ${wasm.length} bytes to ${outPath}`);
+
+try {
+  const mod = new WebAssembly.Module(wasm);
+  const inst = new WebAssembly.Instance(mod);
+  console.log('Module OK. Exports:', Object.keys(inst.exports));
+  const mem = new Uint8Array(inst.exports.memory.buffer);
+
+  // Hamming: identical = 0
+  mem.set([0xff, 0x00], 0); mem.set([0xff, 0x00], 64);
+  console.log(`hamming(FF00, FF00) = ${inst.exports.hamming_distance(0, 64, 2)} (expect 0)`);
+
+  // Hamming: opposite = 16
+  mem.set([0xff, 0x00], 0); mem.set([0x00, 0xff], 64);
+  console.log(`hamming(FF00, 00FF) = ${inst.exports.hamming_distance(0, 64, 2)} (expect 16)`);
+
+  // Hamming: SIMD path (64 bytes = 4 SIMD iterations)
+  const a64 = new Uint8Array(64).fill(0xAA);
+  const b64 = new Uint8Array(64).fill(0x55);
+  mem.set(a64, 0); mem.set(b64, 128);
+  console.log(`hamming(AA×64, 55×64) = ${inst.exports.hamming_distance(0, 128, 64)} (expect 512)`);
+
+  // int8_dot: [1,2]·[3,4] = 11
+  mem[0] = 1; mem[1] = 2; mem[64] = 3; mem[65] = 4;
+  console.log(`int8_dot([1,2],[3,4]) = ${inst.exports.int8_dot(0, 64, 2)} (expect 11)`);
+
+  // int8_norm_sq: [3,4] → 25
+  mem[0] = 3; mem[1] = 4;
+  console.log(`int8_norm_sq([3,4]) = ${inst.exports.int8_norm_sq(0, 2)} (expect 25)`);
+
+  // int8_dot SIMD path: 32 elements
+  const sa = new Int8Array(32); const sb = new Int8Array(32);
+  for (let i = 0; i < 32; i++) { sa[i] = 2; sb[i] = 3; }
+  mem.set(new Uint8Array(sa.buffer), 0);
+  mem.set(new Uint8Array(sb.buffer), 64);
+  console.log(`int8_dot([2×32],[3×32]) = ${inst.exports.int8_dot(0, 64, 32)} (expect 192)`);
+
+  // asymmetric_distance: doc=0xFF (all bits set, 8 dims), query=[1,1,1,1,1,1,1,1], norm=100
+  // approxDot = 8 (all bits set → all +1). result = 100 - 2*8 = 84
+  mem[0] = 0xFF;
+  const qi = new Int8Array([1,1,1,1,1,1,1,1]);
+  mem.set(new Uint8Array(qi.buffer), 64);
+  const ad = inst.exports.asymmetric_distance(0, 64, 8, 100);
+  console.log(`asymmetric_distance(0xFF, [1×8], 8, 100) = ${ad} (expect 84)`);
+
+  // doc=0x00 (no bits set), same query. approxDot = -8. result = 100 - 2*(-8) = 116
+  mem[0] = 0x00;
+  const ad2 = inst.exports.asymmetric_distance(0, 64, 8, 100);
+  console.log(`asymmetric_distance(0x00, [1×8], 8, 100) = ${ad2} (expect 116)`);
+
+} catch (err) {
+  console.error('FAILED:', err.message);
+  process.exit(1);
+}

@@ -15,7 +15,7 @@ import {
   floatToInt8,
   int8CosineSimilarity,
 } from './embedding-service.js';
-import { EMBEDDING_CONFIG } from './config.js';
+import { EMBEDDING_CONFIG, BINARY_HNSW_CONFIG } from './config.js';
 
 const CASCADE_DEFERRED_STATS = { skipped: true, reason: 'cascade_deferred', provider: null, documents: 0, tokens: 0 };
 
@@ -62,8 +62,12 @@ export async function semanticSearch3Stage(query, options = {}) {
   };
 
   // Stage 1: Binary HNSW search
+  // Pass floatQuery for asymmetric distance during graph traversal
   const stage1Start = performance.now();
-  const stage1Result = await this.binaryHnswIndex.search(embedResult.binary, this.stage1Candidates);
+  const truncatedFloat = truncateForHNSW(embedResult.float);
+  const stage1Result = await this.binaryHnswIndex.search(
+    embedResult.binary, this.stage1Candidates, { floatQuery: truncatedFloat }
+  );
   stats.stages.binary = {
     latency_us: stage1Result.latency_us,
     candidates: stage1Result.results.length,
@@ -112,6 +116,38 @@ export async function semanticSearch3Stage(query, options = {}) {
     candidates: scoredCandidates.length,
   };
   this.log(`Stage 2 (Int8): ${stats.stages.int8.latency_us}us, ${scoredCandidates.length} rescored`);
+
+  // Stage 2.5: Float rescore (Fix 5.5) — exact float cosine on top int8 candidates
+  const stage2_5Pool = BINARY_HNSW_CONFIG.retrieval.stage2_5Candidates || 0;
+  if (stage2_5Pool > 0 && this._loadFloatVectors && embedResult.float) {
+    const stage2_5Start = performance.now();
+    try {
+      const pool = scoredCandidates.slice(0, stage2_5Pool);
+      const queryFloat = truncateForHNSW(embedResult.float);
+      const floatVectors = await this._loadFloatVectors(pool.map(c => c.id));
+
+      if (floatVectors && floatVectors.size > 0) {
+        for (const c of pool) {
+          const fv = floatVectors.get(c.id);
+          if (fv) {
+            c.floatScore = this.cosineSimilarity(queryFloat, fv);
+          } else {
+            c.floatScore = c.int8Score; // fallback
+          }
+        }
+        pool.sort((a, b) => b.floatScore - a.floatScore);
+        scoredCandidates = pool;
+      }
+
+      stats.stages.floatRescore = {
+        latency_us: Math.round((performance.now() - stage2_5Start) * 1000),
+        candidates: pool.length,
+      };
+      this.log(`Stage 2.5 (Float): ${stats.stages.floatRescore.latency_us}us, ${pool.length} rescored`);
+    } catch (err) {
+      this.log(`Stage 2.5 skipped: ${err.message}`);
+    }
+  }
 
   // CASCADE MODE: Return broad candidate set, let postprocess handle scoring.
   if (this.cascadeEnabled) {

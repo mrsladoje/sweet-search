@@ -30,7 +30,17 @@ import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import { BINARY_HNSW_CONFIG, DB_PATHS } from './config.js';
-import { floatToBinary, hammingDistance } from './embedding-service.js';
+import {
+  floatToBinary, hammingDistance,
+  asymmetricDocEncode, asymmetricQueryEncode,
+  computeCentroid, generateSignVector,
+} from './embedding-service.js';
+import { TypedMinHeap, TypedMaxHeap, VisitedList } from './binary-heap.js';
+
+// Current quantization pipeline version. Bump when the encoding pipeline changes
+// (centroid subtraction, rotation, quantization scheme). Indexes built with a
+// different version are incompatible and must be rebuilt.
+const PIPELINE_VERSION = 2;
 
 // =============================================================================
 // BINARY HNSW INDEX CLASS
@@ -62,6 +72,27 @@ export class BinaryHNSWIndex {
     this.graph = [];             // Array of neighbor lists per level
     this.entryPoint = -1;
     this.maxLevel = 0;
+
+    // Pre-allocated visited list (generation-stamped, reused across searches)
+    this._visitedList = new VisitedList(this.maxElements);
+
+    // Asymmetric binary quantization calibration data
+    this.centroid = null;       // Float32Array — dataset centroid
+    this.signVector = null;     // Float32Array — random ±1 for WHT rotation
+    this.useAsymmetric = false; // Enabled after calibration
+  }
+
+  /** Reset to empty state for a fresh build (skips loading from disk). */
+  resetForBuild() {
+    this.vectors = [];
+    this.idToIndex = new Map();
+    this.graph = [];
+    this.entryPoint = -1;
+    this.maxLevel = 0;
+    this.centroid = null;
+    this.signVector = null;
+    this.useAsymmetric = false;
+    this.initialized = true;
   }
 
   /**
@@ -150,7 +181,64 @@ export class BinaryHNSWIndex {
   }
 
   /**
-   * Add node to HNSW graph
+   * Level-aware max degree: M0=2*M on layer 0, M on higher layers.
+   */
+  getMaxM(level) {
+    return level === 0 ? this.M * 2 : this.M;
+  }
+
+  /**
+   * Heuristic neighbor selection (Algorithm 4, Malkov & Yashunin 2016).
+   * Selects diverse neighbors that cover different angular directions,
+   * avoiding clusters of nearby nodes pointing at each other.
+   */
+  selectNeighborsHeuristic(nodeIdx, candidates, maxM) {
+    const selected = [];
+    const nodeBinary = this.vectors[nodeIdx].binary;
+
+    // Sort candidates by distance ascending
+    candidates.sort((a, b) => a.dist - b.dist);
+
+    for (const candidate of candidates) {
+      if (selected.length >= maxM) break;
+
+      // Check if this candidate is closer to any already-selected neighbor
+      // than it is to the node itself — if so, it's redundant (same direction)
+      let tooClose = false;
+      for (const s of selected) {
+        const interDist = hammingDistance(
+          this.vectors[candidate.idx].binary,
+          this.vectors[s.idx].binary
+        );
+        if (interDist < candidate.dist) {
+          tooClose = true;
+          break;
+        }
+      }
+
+      if (!tooClose) {
+        selected.push(candidate);
+      }
+    }
+
+    // Backfill with closest if heuristic was too aggressive
+    if (selected.length < maxM) {
+      const selectedSet = new Set(selected.map(s => s.idx));
+      for (const candidate of candidates) {
+        if (selected.length >= maxM) break;
+        if (!selectedSet.has(candidate.idx)) {
+          selected.push(candidate);
+          selectedSet.add(candidate.idx);
+        }
+      }
+    }
+
+    return selected;
+  }
+
+  /**
+   * Add node to HNSW graph.
+   * Uses heuristic selection + level-aware M0=2*M.
    */
   addToGraph(idx, level) {
     // Ensure graph has enough levels
@@ -180,12 +268,13 @@ export class BinaryHNSWIndex {
       currentNode = this.greedySearch(currentNode, idx, l);
     }
 
-    // At each level from level down to 0, find M neighbors and connect
+    // At each level from level down to 0, find neighbors and connect
     for (let l = level; l >= 0; l--) {
+      const maxM = this.getMaxM(l);
       const neighbors = this.searchLayer(currentNode, idx, this.efConstruction, l);
 
-      // Select best M neighbors
-      const selectedNeighbors = neighbors.slice(0, this.M);
+      // Heuristic selection (Algorithm 4) for angular diversity
+      const selectedNeighbors = this.selectNeighborsHeuristic(idx, neighbors, maxM);
 
       // Connect both directions
       this.graph[l][idx] = selectedNeighbors.map(n => n.idx);
@@ -197,8 +286,8 @@ export class BinaryHNSWIndex {
         if (!this.graph[l][neighbor.idx].includes(idx)) {
           this.graph[l][neighbor.idx].push(idx);
 
-          // Prune if too many neighbors
-          if (this.graph[l][neighbor.idx].length > this.M * 2) {
+          // Prune if too many neighbors (threshold = 2 * maxM for the level)
+          if (this.graph[l][neighbor.idx].length > maxM * 2) {
             this.pruneNeighbors(neighbor.idx, l);
           }
         }
@@ -243,72 +332,92 @@ export class BinaryHNSWIndex {
   }
 
   /**
-   * Search layer returning ef closest candidates
+   * Search layer returning ef closest candidates (construction-time).
+   * Heap-based with generation-stamped visited list.
    */
   searchLayer(startNode, targetIdx, ef, level) {
     const targetBinary = this.vectors[targetIdx].binary;
-    const visited = new Set([startNode]);
-    const candidates = [{ idx: startNode, dist: hammingDistance(this.vectors[startNode].binary, targetBinary) }];
-    const results = [...candidates];
+    const visited = this._visitedList;
+    visited.ensureCapacity(this.vectors.length);
+    visited.reset();
+    visited.mark(startNode);
 
-    while (candidates.length > 0) {
-      // Get closest candidate
-      candidates.sort((a, b) => a.dist - b.dist);
-      const current = candidates.shift();
+    const startDist = hammingDistance(this.vectors[startNode].binary, targetBinary);
 
-      // If current is further than furthest result, stop
-      if (results.length >= ef && current.dist > results[results.length - 1].dist) {
+    // candidates = min-heap (explore closest first)
+    const candidates = new TypedMinHeap(ef * 4);
+    candidates.insert(startNode, startDist);
+
+    // results = max-heap of size ef (peek furthest, replaceMax when closer found)
+    const results = new TypedMaxHeap(ef + 1);
+    results.insert(startNode, startDist);
+
+    while (candidates.size > 0) {
+      const currentDist = candidates.peekVal();
+
+      // If closest candidate is further than furthest result, stop
+      if (results.size >= ef && currentDist > results.peekVal()) {
         break;
       }
 
-      // Explore neighbors
-      const neighbors = this.graph[level]?.[current.idx] || [];
-      for (const neighborIdx of neighbors) {
-        if (!visited.has(neighborIdx)) {
-          visited.add(neighborIdx);
-          const dist = hammingDistance(this.vectors[neighborIdx].binary, targetBinary);
+      const currentIdx = candidates.extractMin();
 
-          if (results.length < ef || dist < results[results.length - 1].dist) {
-            candidates.push({ idx: neighborIdx, dist });
-            results.push({ idx: neighborIdx, dist });
-            results.sort((a, b) => a.dist - b.dist);
-            if (results.length > ef) {
-              results.pop();
-            }
-          }
+      const neighbors = this.graph[level]?.[currentIdx] || [];
+      for (let i = 0; i < neighbors.length; i++) {
+        const neighborIdx = neighbors[i];
+        if (visited.isVisited(neighborIdx)) continue;
+        visited.mark(neighborIdx);
+
+        const dist = hammingDistance(this.vectors[neighborIdx].binary, targetBinary);
+
+        if (results.size < ef) {
+          candidates.insert(neighborIdx, dist);
+          results.insert(neighborIdx, dist);
+        } else if (dist < results.peekVal()) {
+          candidates.insert(neighborIdx, dist);
+          results.replaceMax(neighborIdx, dist);
         }
       }
     }
 
-    return results;
+    // Drain results heap into sorted array (ascending by distance)
+    const sorted = results.drainSorted();
+    const out = [];
+    for (let i = 0; i < sorted.length; i++) {
+      out.push({ idx: sorted.keys[i], dist: sorted.vals[i] });
+    }
+    return out;
   }
 
   /**
-   * Prune neighbors to keep only M best
+   * Prune neighbors using heuristic selection.
+   * Level-aware: M0=2*M on layer 0, M on higher layers.
    */
   pruneNeighbors(nodeIdx, level) {
     const neighbors = this.graph[level][nodeIdx];
     const nodeBinary = this.vectors[nodeIdx].binary;
+    const maxM = this.getMaxM(level);
 
-    // Calculate distances and sort
     const withDist = neighbors.map(idx => ({
       idx,
       dist: hammingDistance(this.vectors[idx].binary, nodeBinary),
     }));
-    withDist.sort((a, b) => a.dist - b.dist);
 
-    // Keep only M best
-    this.graph[level][nodeIdx] = withDist.slice(0, this.M).map(n => n.idx);
+    const selected = this.selectNeighborsHeuristic(nodeIdx, withDist, maxM);
+    this.graph[level][nodeIdx] = selected.map(n => n.idx);
   }
 
   /**
-   * Search for k nearest neighbors
+   * Search for k nearest neighbors.
+   * Supports asymmetric binary quantization.
+   * Fix 7: Adaptive ef based on greedy descent quality.
    *
    * @param {Uint8Array|number[]} queryVector - Binary query vector (or float to convert)
    * @param {number} k - Number of results
+   * @param {object} opts - Optional { floatQuery: Float32Array } for asymmetric mode
    * @returns {Promise<{results: Array, latency_us: number}>}
    */
-  async search(queryVector, k = 10) {
+  async search(queryVector, k = 10, opts = {}) {
     await this.init();
 
     const start = performance.now();
@@ -327,21 +436,36 @@ export class BinaryHNSWIndex {
       queryBinary = new Uint8Array(queryVector);
     }
 
-    // HNSW search
+    // When asymmetric mode is active (future: 1024d+ providers), re-encode
+    // query binary through center→rotate→sign-bit for Hamming consistency.
+    if (this.useAsymmetric && opts.floatQuery) {
+      queryBinary = this.encodeDocument(opts.floatQuery);
+    }
     let currentNode = this.entryPoint;
 
-    // Traverse from top level to level 1
     for (let l = this.maxLevel; l >= 1; l--) {
       currentNode = this.greedySearchQuery(currentNode, queryBinary, l);
     }
 
-    // Search at level 0 with ef candidates
-    const candidates = this.searchLayerQuery(currentNode, queryBinary, Math.max(k, this.efSearch), 0);
+    // Adaptive ef: easy queries get a smaller budget, hard queries get more
+    let ef = Math.max(k, this.efSearch);
+    const greedyDist = hammingDistance(this.vectors[currentNode].binary, queryBinary);
+    const maxDist = this.dimension * 8;
+    const greedyQuality = 1 - (greedyDist / maxDist);
+    if (greedyQuality > 0.85) {
+      ef = Math.max(k, Math.round(ef * 0.6));
+    } else if (greedyQuality < 0.55) {
+      ef = Math.round(ef * 1.5);
+    }
+
+    // Level 0 search — pure Hamming, no asymmetric in the traversal loop
+    const searchResult = this.searchLayerQuery(currentNode, queryBinary, ef, 0);
+    let candidates = searchResult.candidates;
 
     // Return top k
     const results = candidates.slice(0, k).map(c => ({
       id: this.vectors[c.idx].id,
-      score: 1 - (c.dist / (this.dimension * 8)), // Convert distance to similarity
+      score: 1 - (c.dist / maxDist),
       hammingDistance: c.dist,
       metadata: this.vectors[c.idx].metadata,
     }));
@@ -354,6 +478,9 @@ export class BinaryHNSWIndex {
       latency_ms: latency.toFixed(3),
       k,
       total: this.vectors.length,
+      visitedNodes: searchResult.visitedCount,
+      adaptiveEf: ef,
+      useAsymmetric: this.useAsymmetric,
     };
   }
 
@@ -383,40 +510,108 @@ export class BinaryHNSWIndex {
   }
 
   /**
-   * Search layer for query vector
+   * Search layer for query vector.
+   * Pure Hamming distance — heaps are integer-native, no float packing.
+   * Asymmetric rescoring happens in search() after candidates are returned.
    */
   searchLayerQuery(startNode, queryBinary, ef, level) {
-    const visited = new Set([startNode]);
-    const candidates = [{ idx: startNode, dist: hammingDistance(this.vectors[startNode].binary, queryBinary) }];
-    const results = [...candidates];
+    const visited = this._visitedList;
+    visited.ensureCapacity(this.vectors.length);
+    visited.reset();
+    visited.mark(startNode);
 
-    while (candidates.length > 0) {
-      candidates.sort((a, b) => a.dist - b.dist);
-      const current = candidates.shift();
+    const startDist = hammingDistance(this.vectors[startNode].binary, queryBinary);
+    const candidates = new TypedMinHeap(ef * 4);
+    const results = new TypedMaxHeap(ef + 1);
+    candidates.insert(startNode, startDist);
+    results.insert(startNode, startDist);
 
-      if (results.length >= ef && current.dist > results[results.length - 1].dist) {
-        break;
+    const etConfig = BINARY_HNSW_CONFIG.earlyTermination || {};
+    const windowSize = etConfig.windowSize || 16;
+    const etThresholds = etConfig.thresholds || [[0.3, 0.05], [0.6, 0.10]];
+    let visitedCount = 0;
+    let recentDiscoveries = 0;
+    let recentVisits = 0;
+
+    while (candidates.size > 0) {
+      if (results.size >= ef && candidates.peekVal() > results.peekVal()) break;
+
+      const currentIdx = candidates.extractMin();
+      visitedCount++;
+
+      const neighbors = this.graph[level]?.[currentIdx] || [];
+      let foundNew = false;
+      for (let i = 0; i < neighbors.length; i++) {
+        const neighborIdx = neighbors[i];
+        if (visited.isVisited(neighborIdx)) continue;
+        visited.mark(neighborIdx);
+
+        const dist = hammingDistance(this.vectors[neighborIdx].binary, queryBinary);
+
+        if (results.size < ef) {
+          candidates.insert(neighborIdx, dist);
+          results.insert(neighborIdx, dist);
+          foundNew = true;
+        } else if (dist < results.peekVal()) {
+          candidates.insert(neighborIdx, dist);
+          results.replaceMax(neighborIdx, dist);
+          foundNew = true;
+        }
       }
 
-      const neighbors = this.graph[level]?.[current.idx] || [];
-      for (const neighborIdx of neighbors) {
-        if (!visited.has(neighborIdx)) {
-          visited.add(neighborIdx);
-          const dist = hammingDistance(this.vectors[neighborIdx].binary, queryBinary);
-
-          if (results.length < ef || dist < results[results.length - 1].dist) {
-            candidates.push({ idx: neighborIdx, dist });
-            results.push({ idx: neighborIdx, dist });
-            results.sort((a, b) => a.dist - b.dist);
-            if (results.length > ef) {
-              results.pop();
-            }
-          }
-        }
+      recentVisits++;
+      if (foundNew) recentDiscoveries++;
+      if (recentVisits > windowSize) {
+        recentVisits >>= 1;
+        recentDiscoveries >>= 1;
+      }
+      if (recentVisits >= windowSize) {
+        const progress = visitedCount / ef;
+        const rate = recentDiscoveries / recentVisits;
+        if (etThresholds.some(([p, r]) => progress > p && rate < r)) break;
       }
     }
 
-    return results;
+    const sorted = results.drainSorted();
+    const out = new Array(sorted.length);
+    for (let i = 0; i < sorted.length; i++) {
+      out[i] = { idx: sorted.keys[i], dist: sorted.vals[i] };
+    }
+    return { candidates: out, visitedCount };
+  }
+
+  /**
+   * Calibrate asymmetric quantization from float embeddings.
+   * Must be called once per index build, before adding vectors.
+   * Computes centroid and generates sign vector for WHT rotation.
+   */
+  calibrateAsymmetric(floatEmbeddings) {
+    if (!floatEmbeddings || floatEmbeddings.length === 0) return;
+    this.centroid = computeCentroid(floatEmbeddings);
+    this.signVector = generateSignVector(this.centroid.length);
+    this.useAsymmetric = true;
+  }
+
+  /**
+   * Encode a float embedding using the asymmetric pipeline (center→rotate→binarize).
+   * Falls back to simple sign-bit if not calibrated.
+   */
+  encodeDocument(floatEmbedding) {
+    if (this.useAsymmetric && this.centroid && this.signVector) {
+      return asymmetricDocEncode(floatEmbedding, this.centroid, this.signVector);
+    }
+    return floatToBinary(floatEmbedding);
+  }
+
+  /**
+   * Encode a query using the asymmetric pipeline (center→rotate→int4).
+   * Returns { int4, norm } for asymmetric distance, or null if not calibrated.
+   */
+  encodeQuery(floatEmbedding) {
+    if (this.useAsymmetric && this.centroid && this.signVector) {
+      return asymmetricQueryEncode(floatEmbedding, this.centroid, this.signVector);
+    }
+    return null;
   }
 
   /**
@@ -457,6 +652,8 @@ export class BinaryHNSWIndex {
       vectorCount: this.vectors.length,
       maxLevel: this.maxLevel,
       entryPoint: this.entryPoint,
+      useAsymmetric: this.useAsymmetric,
+      pipelineVersion: PIPELINE_VERSION,
       savedAt: new Date().toISOString(),
     };
 
@@ -487,7 +684,16 @@ export class BinaryHNSWIndex {
       await fs.writeFile(int8Path, JSON.stringify(int8Data));
     }
 
-    console.log(`BinaryHNSW: Saved ${this.vectors.length} vectors to ${indexPath}`);
+    // Save asymmetric calibration data (centroid + rotation signs)
+    if (this.useAsymmetric && this.centroid && this.signVector) {
+      const calibPath = indexPath.replace('.idx', '.calibration.json');
+      await fs.writeFile(calibPath, JSON.stringify({
+        centroid: Array.from(this.centroid),
+        signVector: Array.from(this.signVector),
+      }));
+    }
+
+    console.log(`BinaryHNSW: Saved ${this.vectors.length} vectors to ${indexPath} (asymmetric=${this.useAsymmetric})`);
   }
 
   /**
@@ -505,6 +711,16 @@ export class BinaryHNSWIndex {
 
     // Load metadata
     const meta = JSON.parse(await fs.readFile(metaPath, 'utf-8'));
+
+    // Validate pipeline version — mismatched indexes must be rebuilt
+    const storedVersion = meta.pipelineVersion || 1;
+    if (storedVersion !== PIPELINE_VERSION) {
+      throw new Error(
+        `Pipeline version mismatch: index=${storedVersion}, current=${PIPELINE_VERSION}. ` +
+        `Index must be rebuilt (quantization pipeline changed).`
+      );
+    }
+
     this.dimension = meta.dimension;
     this.floatDimension = meta.floatDimension;
     this.M = meta.M;
@@ -512,6 +728,7 @@ export class BinaryHNSWIndex {
     this.efSearch = meta.efSearch;
     this.maxLevel = meta.maxLevel;
     this.entryPoint = meta.entryPoint;
+    this.useAsymmetric = meta.useAsymmetric || false;
 
     // Load vectors
     const vectorsData = JSON.parse(await fs.readFile(vectorsPath, 'utf-8'));
@@ -539,8 +756,19 @@ export class BinaryHNSWIndex {
       }
     }
 
+    // Load asymmetric calibration data
+    const calibPath = indexPath.replace('.idx', '.calibration.json');
+    if (this.useAsymmetric && existsSync(calibPath)) {
+      const calibData = JSON.parse(await fs.readFile(calibPath, 'utf-8'));
+      this.centroid = new Float32Array(calibData.centroid);
+      this.signVector = new Float32Array(calibData.signVector);
+    }
+
+    // Resize visited list to actual vector count
+    this._visitedList.ensureCapacity(this.vectors.length);
+
     this.initialized = true;
-    console.log(`BinaryHNSW: Loaded ${this.vectors.length} vectors from ${indexPath}`);
+    console.log(`BinaryHNSW: Loaded ${this.vectors.length} vectors from ${indexPath} (asymmetric=${this.useAsymmetric})`);
   }
 
   /**

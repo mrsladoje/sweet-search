@@ -9,6 +9,7 @@
  */
 
 import { EMBEDDING_CONFIG, EMBEDDING_PROVIDERS } from './config.js';
+import { wasmHammingDistance, wasmInt8Cosine, wasmAsymmetricDistance, isWasmAvailable } from './simd-distance.js';
 
 // --- Sub-module imports (no circular deps) ---
 import {
@@ -324,14 +325,32 @@ export async function getEmbeddings(texts, options = {}) {
   return results;
 }
 
-export function truncateForHNSW(embedding) {
-  const targetDim = EMBEDDING_CONFIG.hnswDimension;
+/**
+ * Truncate embedding to target dimension and L2 re-normalize.
+ * @param {number[]} embedding
+ * @param {number} [targetDim] - defaults to EMBEDDING_CONFIG.hnswDimension
+ */
+export function truncateForHNSW(embedding, targetDim = EMBEDDING_CONFIG.hnswDimension) {
   if (embedding.length <= targetDim) return embedding;
-  return embedding.slice(0, targetDim);
+  const truncated = embedding.slice(0, targetDim);
+  let norm = 0;
+  for (let i = 0; i < truncated.length; i++) norm += truncated[i] * truncated[i];
+  norm = Math.sqrt(norm);
+  if (norm > 0) for (let i = 0; i < truncated.length; i++) truncated[i] /= norm;
+  return truncated;
+}
+
+/** Fisher-Yates shuffle (in-place). Shared by indexer-ann and artifact-builder. */
+export function fisherYatesShuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+  }
+  return arr;
 }
 
 // =============================================================================
-// QUANTIZATION FUNCTIONS (Binary + Int8)
+// QUANTIZATION FUNCTIONS (Binary + Int8 + Asymmetric)
 // =============================================================================
 
 export function floatToBinary(embedding) {
@@ -343,6 +362,166 @@ export function floatToBinary(embedding) {
     }
   }
   return binary;
+}
+
+// =============================================================================
+// ASYMMETRIC BINARY QUANTIZATION (center → rotate → quantize)
+// =============================================================================
+
+/**
+ * Compute dataset centroid from an array of float embeddings.
+ * The centroid is subtracted before binarization to recenter the
+ * sign-bit threshold at the actual decision boundary.
+ */
+export function computeCentroid(embeddings) {
+  if (!embeddings || embeddings.length === 0) return null;
+  const dim = embeddings[0].length;
+  const centroid = new Float64Array(dim);
+  for (const emb of embeddings) {
+    for (let i = 0; i < dim; i++) centroid[i] += emb[i];
+  }
+  const n = embeddings.length;
+  for (let i = 0; i < dim; i++) centroid[i] /= n;
+  return new Float32Array(centroid); // downcast for storage/use
+}
+
+/**
+ * Generate a random sign vector for Walsh-Hadamard rotation.
+ * Each element is +1 or -1. Deterministic if seed is provided.
+ */
+export function generateSignVector(dim, seed = 42) {
+  const signs = new Float32Array(dim);
+  // Simple deterministic PRNG (mulberry32)
+  let s = seed | 0;
+  for (let i = 0; i < dim; i++) {
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    signs[i] = ((t ^ (t >>> 14)) >>> 31) ? 1.0 : -1.0;
+  }
+  return signs;
+}
+
+/** Next power of 2 >= n. */
+function nextPow2(n) {
+  let p = 1;
+  while (p < n) p <<= 1;
+  return p;
+}
+
+/**
+ * In-place Walsh-Hadamard Transform (normalized).
+ * O(d log d) — much faster than O(d^2) dense rotation.
+ * Input MUST be power-of-2 length — caller pads if needed.
+ */
+export function walshHadamardTransform(v) {
+  const n = v.length;
+  for (let len = 1; len < n; len <<= 1) {
+    for (let i = 0; i < n; i += len << 1) {
+      for (let j = 0; j < len; j++) {
+        const u = v[i + j];
+        const w = v[i + j + len];
+        v[i + j] = u + w;
+        v[i + j + len] = u - w;
+      }
+    }
+  }
+  // Normalize to preserve norms
+  const scale = 1.0 / Math.sqrt(n);
+  for (let i = 0; i < n; i++) v[i] *= scale;
+  return v;
+}
+
+/**
+ * Fast pseudorandom rotation: sign flip + Walsh-Hadamard.
+ * Handles non-power-of-2 dimensions by padding, transforming, and truncating.
+ */
+export function fastRotate(v, signs) {
+  const origDim = v.length;
+  const padDim = nextPow2(origDim);
+
+  // Apply sign flips into a (possibly padded) buffer
+  const buf = new Float32Array(padDim); // zero-padded
+  for (let i = 0; i < origDim; i++) buf[i] = v[i] * signs[i];
+
+  walshHadamardTransform(buf);
+
+  // Return only the original dimensions
+  return padDim === origDim ? buf : buf.subarray(0, origDim);
+}
+
+/**
+ * Full asymmetric preprocessing pipeline for documents:
+ *   center → rotate → sign-bit quantize (1-bit)
+ */
+export function asymmetricDocEncode(embedding, centroid, signs) {
+  const dim = embedding.length;
+  // Center
+  const centered = new Float32Array(dim);
+  for (let i = 0; i < dim; i++) centered[i] = embedding[i] - centroid[i];
+  // Rotate
+  const rotated = fastRotate(centered, signs);
+  // Binarize (sign bit)
+  return floatToBinary(rotated);
+}
+
+/**
+ * Full asymmetric preprocessing pipeline for queries:
+ *   center → rotate → keep as int4 (4-bit precision)
+ * Returns { int4: Int8Array, norm: number }
+ */
+export function asymmetricQueryEncode(embedding, centroid, signs) {
+  const dim = embedding.length;
+  // Center
+  const centered = new Float32Array(dim);
+  for (let i = 0; i < dim; i++) centered[i] = embedding[i] - centroid[i];
+  // Rotate
+  const rotated = fastRotate(centered, signs);
+  // Quantize to 4-bit (range -7..+7, stored as int8 for convenience)
+  let maxAbs = 0;
+  for (let i = 0; i < dim; i++) {
+    const abs = Math.abs(rotated[i]);
+    if (abs > maxAbs) maxAbs = abs;
+  }
+  const int4 = new Int8Array(dim);
+  if (maxAbs > 0) {
+    const scale = 7.0 / maxAbs;
+    for (let i = 0; i < dim; i++) {
+      int4[i] = Math.round(Math.max(-7, Math.min(7, rotated[i] * scale)));
+    }
+  }
+  // Query norm for correction term
+  let norm = 0;
+  for (let i = 0; i < dim; i++) norm += rotated[i] * rotated[i];
+  return { int4, norm };
+}
+
+/**
+ * Asymmetric distance: 1-bit document vs 4-bit query.
+ * Approximates squared distance via asymmetric dot product + correction.
+ */
+export function asymmetricDistance(docBinary, queryInt4, queryNorm) {
+  // Delegate to WASM when available
+  if (isWasmAvailable()) {
+    // WASM version expects integer-scaled queryNorm
+    return wasmAsymmetricDistance(docBinary, queryInt4, Math.round(queryNorm));
+  }
+  let approxDot = 0;
+  const dim = queryInt4.length;
+  for (let byteIdx = 0; byteIdx < docBinary.length; byteIdx++) {
+    let byte = docBinary[byteIdx];
+    const baseIdx = byteIdx * 8;
+    for (let bit = 7; bit >= 0; bit--) {
+      const idx = baseIdx + (7 - bit);
+      if (idx >= dim) break;
+      if (byte & (1 << bit)) {
+        approxDot += queryInt4[idx];
+      } else {
+        approxDot -= queryInt4[idx];
+      }
+    }
+  }
+  return queryNorm - 2 * approxDot;
 }
 
 export function floatToInt8(embedding) {
@@ -360,25 +539,29 @@ export function floatToInt8(embedding) {
   return int8;
 }
 
-export function hammingDistance(a, b) {
-  let distance = 0;
-  const len = Math.min(a.length, b.length);
-  for (let i = 0; i < len; i++) {
-    distance += popcount(a[i] ^ b[i]);
-  }
-  return distance;
-}
-
 const POPCOUNT_TABLE = new Uint8Array(256);
 for (let i = 0; i < 256; i++) {
   POPCOUNT_TABLE[i] = (i & 1) + POPCOUNT_TABLE[i >> 1];
 }
 
-function popcount(byte) {
-  return POPCOUNT_TABLE[byte];
+export function hammingDistance(a, b) {
+  if (a.length !== b.length) {
+    throw new Error(`Hamming dimension mismatch: ${a.length} vs ${b.length}`);
+  }
+  if (isWasmAvailable()) {
+    return wasmHammingDistance(a, b);
+  }
+  let distance = 0;
+  for (let i = 0; i < a.length; i++) {
+    distance += POPCOUNT_TABLE[a[i] ^ b[i]];
+  }
+  return distance;
 }
 
 export function int8CosineSimilarity(a, b) {
+  if (isWasmAvailable()) {
+    return wasmInt8Cosine(a, b);
+  }
   let dot = 0, normA = 0, normB = 0;
   const len = Math.min(a.length, b.length);
   for (let i = 0; i < len; i++) {
@@ -409,27 +592,14 @@ export async function getBinaryEmbedding(text) {
     }
   }
 
-  if (EMBEDDING_CONFIG.provider === 'voyage' && EMBEDDING_PROVIDERS.voyage.enabled) {
-    try {
-      const config = EMBEDDING_PROVIDERS.voyage;
-      await rateLimiters.voyage.waitForSlot(text.length);
-      cacheStats.apiCalls++;
-      const [binaryResult, floatResult] = await Promise.all([
-        callVoyageAPI([text], config, { outputDtype: 'ubinary', inputType: 'query' }),
-        callVoyageAPI([text], config, { inputType: 'query' }),
-      ]);
-      const result = { binary: new Uint8Array(binaryResult[0]), float: floatResult[0], cached: false, source: 'voyage-binary', latency_us: Math.round((performance.now() - start) * 1000) };
-      if (EMBEDDING_CONFIG.cache?.enabled) queryCache.set(cacheKey, { binary: result.binary, float: result.float });
-      return result;
-    } catch (err) {
-      console.warn(`Voyage binary embedding failed: ${err.message}, falling back to local conversion`);
-    }
-  }
+  // Voyage-native binary (outputDtype: 'ubinary') bypasses the asymmetric
+  // quantization pipeline. All providers use client-side quantization so
+  // query vectors match the index-time center→rotate→quantize encoding.
 
   const floatResult = await getEmbedding(text, { isQuery: true });
   const truncated = truncateForHNSW(floatResult.embedding);
   const binary = floatToBinary(truncated);
-  const result = { binary, float: floatResult.embedding, cached: false, source: 'local-conversion', latency_us: Math.round((performance.now() - start) * 1000) };
+  const result = { binary, float: floatResult.embedding, cached: false, source: 'client-quantized', latency_us: Math.round((performance.now() - start) * 1000) };
   if (EMBEDDING_CONFIG.cache?.enabled) queryCache.set(cacheKey, { binary: result.binary, float: result.float });
   return result;
 }
@@ -445,27 +615,12 @@ export async function getInt8Embedding(text) {
     }
   }
 
-  if (EMBEDDING_CONFIG.provider === 'voyage' && EMBEDDING_PROVIDERS.voyage.enabled) {
-    try {
-      const config = EMBEDDING_PROVIDERS.voyage;
-      await rateLimiters.voyage.waitForSlot(text.length);
-      cacheStats.apiCalls++;
-      const [int8Result, floatResult] = await Promise.all([
-        callVoyageAPI([text], config, { outputDtype: 'int8', inputType: 'query' }),
-        callVoyageAPI([text], config, { inputType: 'query' }),
-      ]);
-      const result = { int8: new Int8Array(int8Result[0]), float: floatResult[0], cached: false, source: 'voyage-int8', latency_us: Math.round((performance.now() - start) * 1000) };
-      if (EMBEDDING_CONFIG.cache?.enabled) queryCache.set(cacheKey, { int8: result.int8, float: result.float });
-      return result;
-    } catch (err) {
-      console.warn(`Voyage int8 embedding failed: ${err.message}, falling back to local conversion`);
-    }
-  }
+  // All providers use client-side int8 quantization for consistency.
 
   const floatResult = await getEmbedding(text, { isQuery: true });
   const truncated = truncateForHNSW(floatResult.embedding);
   const int8 = floatToInt8(truncated);
-  const result = { int8, float: floatResult.embedding, cached: false, source: 'local-conversion', latency_us: Math.round((performance.now() - start) * 1000) };
+  const result = { int8, float: floatResult.embedding, cached: false, source: 'client-quantized', latency_us: Math.round((performance.now() - start) * 1000) };
   if (EMBEDDING_CONFIG.cache?.enabled) queryCache.set(cacheKey, { int8: result.int8, float: result.float });
   return result;
 }

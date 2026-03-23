@@ -53,6 +53,7 @@ export const ARTIFACT_THRESHOLDS = {
 };
 
 import { BinaryHNSWIndex } from './binary-hnsw-index.js';
+import { truncateForHNSW, fisherYatesShuffle } from './embedding-service.js';
 
 // =============================================================================
 // THRESHOLD CHECKING FUNCTIONS
@@ -301,12 +302,13 @@ export async function buildHnswIndex(items, options = {}) {
     M = BINARY_HNSW_CONFIG.M,
     efConstruction = BINARY_HNSW_CONFIG.efConstruction,
     efSearch = BINARY_HNSW_CONFIG.efSearch,
-    dimension = BINARY_HNSW_CONFIG.dimension,
     floatDimension = BINARY_HNSW_CONFIG.floatDimension,
     indexPath = DB_PATHS.binaryHnswIndex,
     includeInt8 = true,
     onProgress = null,
   } = options;
+  // Derive binary dimension from float dimension (not from global default)
+  const dimension = options.dimension || Math.ceil(floatDimension / 8);
 
   const index = new BinaryHNSWIndex({
     dimension,
@@ -317,22 +319,49 @@ export async function buildHnswIndex(items, options = {}) {
     indexPath,
   });
 
-  await index.init();
+  index.resetForBuild();
+
+  // Truncate all embeddings once — reused for per-item encoding
+  const truncated = items.map(item => truncateForHNSW(item.embedding, floatDimension));
+
+  // Asymmetric calibration (center→rotate→sign-bit) disabled.
+  // Tested at both 512d and 1024d (Voyage Code 3) — no quality improvement,
+  // slight regression. Plain sign-bit is optimal for this benchmark/task.
+  // index.calibrateAsymmetric(truncated);
+
+  // Build insertion order (index permutation keeps items↔embeddings paired)
+  const insertionOrder = BINARY_HNSW_CONFIG.insertionOrder || 'sequential';
+  const order = Array.from({ length: items.length }, (_, i) => i);
+  if (insertionOrder === 'shuffle') {
+    fisherYatesShuffle(order);
+  } else if (insertionOrder === 'diversity') {
+    const buckets = new Map();
+    for (let i = 0; i < items.length; i++) {
+      const dir = items[i].metadata?.file?.replace(/\/[^/]+$/, '') || '_unknown';
+      if (!buckets.has(dir)) buckets.set(dir, []);
+      buckets.get(dir).push(i);
+    }
+    const dirs = [...buckets.keys()];
+    fisherYatesShuffle(dirs);
+    order.length = 0;
+    let rem = items.length;
+    while (rem > 0) {
+      for (const dir of dirs) {
+        const b = buckets.get(dir);
+        if (b.length > 0) { order.push(b.shift()); rem--; }
+      }
+    }
+  }
 
   const startTime = performance.now();
   let processed = 0;
 
-  for (const item of items) {
-    // Get truncated embedding for HNSW dimension
-    const truncated = item.embedding.length > floatDimension
-      ? item.embedding.slice(0, floatDimension)
-      : item.embedding;
-
-    // Quantize to binary
-    const binary = quantizeToBinary(truncated);
+  for (const idx of order) {
+    const item = items[idx];
+    const binary = index.encodeDocument(truncated[idx]);
 
     // Optionally include int8 for rescoring
-    const int8 = includeInt8 ? quantizeToInt8(truncated) : null;
+    const int8 = includeInt8 ? quantizeToInt8(truncated[idx]) : null;
 
     await index.add(item.id, binary, item.metadata || {}, int8);
 
@@ -354,6 +383,8 @@ export async function buildHnswIndex(items, options = {}) {
       floatDimension,
       M,
       efConstruction,
+      useAsymmetric: index.useAsymmetric,
+      insertionOrder,
     },
   };
 }
@@ -448,6 +479,9 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
   const {
     hnswIndexPath = DB_PATHS.binaryHnswIndex,
     floatDimension = EMBEDDING_CONFIG.hnswDimension,
+    M = BINARY_HNSW_CONFIG.M,
+    efConstruction = BINARY_HNSW_CONFIG.efConstruction,
+    efSearch = BINARY_HNSW_CONFIG.efSearch,
     onProgress = null,
   } = options;
 
@@ -492,6 +526,9 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
   const { index: hnswIndex, stats: hnswBuildStats } = await buildHnswIndex(items, {
     indexPath: hnswIndexPath,
     floatDimension,
+    M,
+    efConstruction,
+    efSearch,
     includeInt8: true, // Int8 vectors stored in BinaryHNSWIndex.int8Vectors Map, saved to .int8.json
     onProgress: (current, total) => {
       if (onProgress) onProgress('hnsw', current, total);
@@ -580,11 +617,10 @@ export async function updateArtifacts(newItems, removedIds = [], options = {}) {
     console.log(`Adding ${newItems.length} new entries...`);
 
     for (const item of newItems) {
-      const truncated = item.embedding.length > floatDimension
-        ? item.embedding.slice(0, floatDimension)
-        : item.embedding;
+      const truncated = truncateForHNSW(item.embedding, floatDimension);
 
-      const binary = quantizeToBinary(truncated);
+      // Asymmetric encode if calibrated, else plain sign-bit
+      const binary = hnswIndex.encodeDocument(truncated);
       const int8 = quantizeToInt8(truncated);
 
       // Add to HNSW index (int8 stored in index.int8Vectors Map)

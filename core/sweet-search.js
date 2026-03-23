@@ -447,8 +447,40 @@ export class SweetSearch {
   /** Cosine similarity */
   cosineSimilarity(a, b) {
     let dot = 0, normA = 0, normB = 0;
-    for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; normA += a[i] * a[i]; normB += b[i] * b[i]; }
+    const len = Math.min(a.length, b.length);
+    for (let i = 0; i < len; i++) { dot += a[i] * b[i]; normA += a[i] * a[i]; normB += b[i] * b[i]; }
     return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
+
+  /**
+   * Fix 5.5: Load float embeddings from SQLite for a set of chunk IDs.
+   * Uses batch WHERE IN query for efficiency (single round-trip).
+   * Returns Map<id, Float32Array>.
+   */
+  async _loadFloatVectors(ids) {
+    if (!this.codebaseDbPath || !existsSync(this.codebaseDbPath)) return null;
+    const uniqueIds = [...new Set(ids)];
+    if (uniqueIds.length === 0) return new Map();
+    const result = new Map();
+    try {
+      const Database = (await import('better-sqlite3')).default;
+      const db = new Database(this.codebaseDbPath, { readonly: true });
+      // Batch query: single SELECT with placeholders
+      const placeholders = uniqueIds.map(() => '?').join(',');
+      const rows = db.prepare(
+        `SELECT id, embedding FROM vectors WHERE id IN (${placeholders})`
+      ).all(...uniqueIds);
+      db.close();
+      for (const row of rows) {
+        const buf = row.embedding;
+        if (buf) {
+          result.set(row.id, new Float32Array(buf.buffer, buf.byteOffset, buf.length / 4));
+        }
+      }
+    } catch (err) {
+      this.log(`_loadFloatVectors failed: ${err.message}`);
+    }
+    return result;
   }
 
   // approximateLateInteractionScore removed — replaced by real per-token MaxSim via LateOn-Code

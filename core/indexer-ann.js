@@ -5,12 +5,64 @@
 
 import { existsSync } from 'fs';
 
-import { DB_PATHS, HNSW_CONFIG } from './config.js';
+import { DB_PATHS, HNSW_CONFIG, BINARY_HNSW_CONFIG } from './config.js';
 import { HNSWIndex } from './hnsw-index.js';
 import { LateInteractionIndex } from './late-interaction-index.js';
-import { truncateForHNSW, getEmbeddings, getModelInfo } from './embedding-service.js';
+import { truncateForHNSW, getEmbeddings, getModelInfo, fisherYatesShuffle } from './embedding-service.js';
 import { buildFromCodebaseDb as buildQuantizedArtifacts, shouldSkipArtifactRebuild, updateArtifactState, ARTIFACT_THRESHOLDS } from './artifact-builder.js';
 import { log, logProgress } from './indexer-utils.js';
+
+// =============================================================================
+// INSERTION ORDER TUNING
+// =============================================================================
+
+/**
+ * Compute a diversity-first index permutation: round-robin by directory
+ * so the graph backbone spans the full codebase before filling local detail.
+ * Returns an array of original indices in diversity-first order.
+ */
+function diversityFirstPermutation(files) {
+  const buckets = new Map(); // dir → [originalIndex]
+  for (let i = 0; i < files.length; i++) {
+    const dir = files[i] ? files[i].replace(/\/[^/]+$/, '') : '_unknown';
+    if (!buckets.has(dir)) buckets.set(dir, []);
+    buckets.get(dir).push(i);
+  }
+  const dirs = [...buckets.keys()];
+  fisherYatesShuffle(dirs);
+  const order = [];
+  let remaining = files.length;
+  while (remaining > 0) {
+    for (const dir of dirs) {
+      const bucket = buckets.get(dir);
+      if (bucket.length > 0) {
+        order.push(bucket.shift());
+        remaining--;
+      }
+    }
+  }
+  return order;
+}
+
+/** Apply configured insertion order to a paired array of chunks+embeddings.
+ *  Uses index permutation — no object copying, no property spread. */
+function applyInsertionOrder(chunks, embeddings) {
+  const order = BINARY_HNSW_CONFIG.insertionOrder || 'sequential';
+  if (order === 'sequential') return { chunks, embeddings };
+
+  let indices = Array.from({ length: chunks.length }, (_, i) => i);
+
+  if (order === 'shuffle') {
+    fisherYatesShuffle(indices);
+  } else if (order === 'diversity') {
+    indices = diversityFirstPermutation(chunks.map(c => c.file));
+  }
+
+  return {
+    chunks: indices.map(i => chunks[i]),
+    embeddings: indices.map(i => embeddings[i]),
+  };
+}
 
 // =============================================================================
 // PHASE 3: HNSW INDEX (Incremental)
@@ -132,13 +184,18 @@ export async function buildHNSWIndex(chunks, embeddings, dryRun = false) {
 
   await index.init();
 
-  log(`Building HNSW index (${modelInfo.dimension}d → ${hnswDim}d Matryoshka, M=${HNSW_CONFIG.M})...`, 'yellow');
+  // Apply insertion order for better graph backbone
+  const ordered = applyInsertionOrder(chunks, embeddings);
+  const orderedChunks = ordered.chunks;
+  const orderedEmbeddings = ordered.embeddings;
+  const orderMode = BINARY_HNSW_CONFIG.insertionOrder || 'sequential';
+  log(`Building HNSW index (${modelInfo.dimension}d → ${hnswDim}d Matryoshka, M=${HNSW_CONFIG.M}, order=${orderMode})...`, 'yellow');
 
   let added = 0;
 
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-    const embedding = embeddings[i];
+  for (let i = 0; i < orderedChunks.length; i++) {
+    const chunk = orderedChunks[i];
+    const embedding = orderedEmbeddings[i];
 
     if (!embedding || embedding.length === 0) continue;
 
@@ -152,8 +209,8 @@ export async function buildHNSWIndex(chunks, embeddings, dryRun = false) {
 
     added++;
 
-    if (added % 500 === 0 || i === chunks.length - 1) {
-      logProgress(added, chunks.length, 'Building HNSW');
+    if (added % 500 === 0 || i === orderedChunks.length - 1) {
+      logProgress(added, orderedChunks.length, 'Building HNSW');
     }
   }
 

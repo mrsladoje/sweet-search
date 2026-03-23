@@ -45,6 +45,8 @@ function buildConfigFingerprint() {
     model: EMBEDDING_CONFIG.model,
     dimension: EMBEDDING_CONFIG.dimension,
     hnswDimension: EMBEDDING_CONFIG.hnswDimension,
+    // Quantization pipeline version — changes invalidate the index.
+    pipelineVersion: 2,
     version: STATE_VERSION,
   };
 }

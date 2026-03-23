@@ -130,7 +130,7 @@ export const EMBEDDING_PROVIDERS = {
     dimensions: {
       full: 1024,           // Default output
       matryoshka: [1024, 512, 256],  // Supported truncations
-      hnsw: 512,            // Optimal for HNSW (balance speed/quality)
+      hnsw: 512,            // 512d sufficient — 1024d and asymmetric add no quality (tested March 2026)
     },
     contextLength: 32000,   // 32K tokens
     batchSize: 128,
@@ -921,11 +921,11 @@ export const BINARY_HNSW_CONFIG = {
   },
 
   // Index construction (can be more aggressive since search is cheap)
-  M: 32,                     // More links for better recall
-  efConstruction: 400,       // Higher ef for better graph quality
+  M: 64,                     // Dense graph for fast convergence + recall
+  efConstruction: 800,       // High ef for quality graph construction
 
   // Search parameters
-  efSearch: 200,             // Higher ef since Hamming is cheap
+  efSearch: 400,             // Higher budget — adaptive ef reduces for easy queries
 
   // Distance metric
   metric: 'hamming',
@@ -936,8 +936,24 @@ export const BINARY_HNSW_CONFIG = {
   // 3-stage retrieval configuration
   retrieval: {
     stage1Candidates: 1000,  // Binary HNSW retrieves top 1000
-    stage2Candidates: 100,   // Int8 rescores top 100
+    stage2Candidates: 200,   // Int8 rescores top 200 (feeds stage 2.5 pool)
+    stage2_5Candidates: 200, // Float rescore pool size (0 = disabled)
     stage3Candidates: 20,    // Reranker sees top 20
+  },
+
+  // Insertion order for graph quality ('sequential' | 'shuffle' | 'diversity')
+  insertionOrder: 'shuffle',
+
+  // Adaptive early termination thresholds (Fix 4).
+  // Tune via parameter sweep; values below are starting heuristics.
+  earlyTermination: {
+    windowSize: 16,             // Sliding window for discovery rate
+    // [progressThreshold, discoveryRateThreshold]
+    // "If progress > X and discoveryRate < Y, stop."
+    thresholds: [
+      [0.3, 0.05],  // Mature search with near-zero discovery
+      [0.6, 0.10],  // Well-explored with diminishing returns
+    ],
   },
 };
 
