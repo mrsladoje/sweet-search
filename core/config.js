@@ -20,6 +20,7 @@
 import path from 'path';
 import { existsSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
+import os from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -241,6 +242,45 @@ function selectProvider() {
 
 const activeProvider = selectProvider();
 
+/**
+ * Platform-aware indexer defaults for local embedding.
+ *
+ * Apple Silicon unified memory architecture benefits from larger batch
+ * sizes and immediate DB flushes. x86/WSL performs best with sequential
+ * single-item batching and buffered writes.
+ *
+ * Override via SWEET_SEARCH_INDEXER_BATCH_SIZE / SWEET_SEARCH_INDEXER_WRITE_FLUSH_ROWS.
+ */
+export function detectIndexerProfile(overrides) {
+  const platform = overrides?.platform ?? process.platform;
+  const arch = overrides?.arch ?? process.arch;
+  const isWSL = overrides?.isWSL ??
+    (!!process.env.WSL_DISTRO_NAME || os.release().toLowerCase().includes('microsoft'));
+  const totalMemBytes = overrides?.totalMemBytes ?? os.totalmem();
+
+  // Default: conservative (x86/WSL-optimized)
+  let batchSize = 1;
+  let flushRows = 128;
+
+  if (platform === 'darwin' && arch === 'arm64' && !isWSL) {
+    // Thresholds use raw bytes to avoid GiB-vs-GB mismatch with Apple's
+    // marketed RAM sizes.  A "32 GB" Mac reports ~34_359_738_368 bytes;
+    // we use 29 GB and 14 GB as safe lower bounds.
+    if (totalMemBytes >= 29_000_000_000) {   // High-memory Apple Silicon (32 GB+)
+      batchSize = 64;
+      flushRows = 1;
+    } else if (totalMemBytes >= 14_000_000_000) { // Mid-memory Apple Silicon (16 GB)
+      batchSize = 32;
+      flushRows = 8;
+    } else {                                       // Low-memory Apple Silicon (8 GB)
+      batchSize = 16;
+      flushRows = 32;
+    }
+  }
+
+  return { batchSize, flushRows };
+}
+
 export const EMBEDDING_CONFIG = {
   // Active provider info
   provider: activeProvider.name,
@@ -264,22 +304,23 @@ export const EMBEDDING_CONFIG = {
   },
 
   /** Outer indexer batch size (how many texts per getEmbeddings() call).
-   *  Benchmarked on 137M model (CodeRankEmbed): batch=1 is fastest on CPU
-   *  due to padding waste exceeding any parallelism benefit.
-   *  Override via SWEET_SEARCH_INDEXER_BATCH_SIZE for GPU or larger models. */
+   *  Platform-aware for local models: Apple Silicon uses larger batches;
+   *  x86/WSL uses batch=1.  Override via SWEET_SEARCH_INDEXER_BATCH_SIZE. */
   get indexerBatchSize() {
     const envVal = parseInt(process.env.SWEET_SEARCH_INDEXER_BATCH_SIZE || '', 10);
     if (Number.isFinite(envVal) && envVal > 0) return envVal;
-    return this.provider === 'local' ? 1 : this.providerConfig.batchSize;
+    if (this.provider !== 'local') return this.providerConfig.batchSize;
+    return detectIndexerProfile().batchSize;
   },
 
   /** Rows to accumulate before flushing a DB write transaction.
-   *  Reduces transaction count vs writing every embed batch.
-   *  Benchmarked: flush size has minimal impact; 128 is slightly best. */
+   *  Platform-aware for local models: Apple Silicon flushes immediately;
+   *  x86/WSL batches writes.  Override via SWEET_SEARCH_INDEXER_WRITE_FLUSH_ROWS. */
   get indexerWriteFlushRows() {
     const envVal = parseInt(process.env.SWEET_SEARCH_INDEXER_WRITE_FLUSH_ROWS || '', 10);
     if (Number.isFinite(envVal) && envVal > 0) return envVal;
-    return 128;
+    if (this.provider !== 'local') return 128;
+    return detectIndexerProfile().flushRows;
   },
 
   get contextLength() {
@@ -936,9 +977,24 @@ export const BINARY_HNSW_CONFIG = {
   // 3-stage retrieval configuration
   retrieval: {
     stage1Candidates: 1000,  // Binary HNSW retrieves top 1000
-    stage2Candidates: 200,   // Int8 rescores top 200 (feeds stage 2.5 pool)
-    stage2_5Candidates: 200, // Float rescore pool size (0 = disabled)
+    stage2Candidates: 200,   // Int8 rescores top 200 (legacy fixed, used as maxStage2 fallback)
+    stage2_5Candidates: 200, // Float rescore pool size (legacy fixed, used as maxStage2_5 fallback)
     stage3Candidates: 20,    // Reranker sees top 20
+
+    // Phase 1 flag: batched normalized-dot Stage 2 scoring.
+    // When false, falls back to per-candidate int8CosineSimilarity.
+    useBatchedDot: true,
+
+    // Phase 3: Adaptive oversampling (replaces fixed 200/200 pools)
+    // Pool sizes derived from k × oversample, adjusted by score spread.
+    adaptive: {
+      minStage2: 40,         // Hard minimum for Stage 2 pool
+      maxStage2: 400,        // Hard maximum for Stage 2 pool
+      oversample1: 10,       // Stage 2 base = k × oversample1
+      minStage2_5: 20,       // Hard minimum for Stage 2.5 pool
+      maxStage2_5: 200,      // Hard maximum for Stage 2.5 pool
+      oversample2: 5,        // Stage 2.5 base = k × oversample2
+    },
   },
 
   // Insertion order for graph quality ('sequential' | 'shuffle' | 'diversity')
@@ -1580,6 +1636,7 @@ export default {
   getTranslationProvider,
   getTranslationLocalModel,
   getOptimalBatchSize,
+  detectIndexerProfile,
   setQuietMode,
   isQuietMode,
   shouldUseLocalReranker,
