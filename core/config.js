@@ -257,12 +257,14 @@ export function detectIndexerProfile(overrides) {
   const isWSL = overrides?.isWSL ??
     (!!process.env.WSL_DISTRO_NAME || os.release().toLowerCase().includes('microsoft'));
   const totalMemBytes = overrides?.totalMemBytes ?? os.totalmem();
+  const cpuCount = overrides?.cpuCount ?? os.cpus().length;
+  const isAppleSilicon = platform === 'darwin' && arch === 'arm64' && !isWSL;
 
   // Default: conservative (x86/WSL-optimized)
   let batchSize = 1;
   let flushRows = 128;
 
-  if (platform === 'darwin' && arch === 'arm64' && !isWSL) {
+  if (isAppleSilicon) {
     // Thresholds use raw bytes to avoid GiB-vs-GB mismatch with Apple's
     // marketed RAM sizes.  A "32 GB" Mac reports ~34_359_738_368 bytes;
     // we use 29 GB and 14 GB as safe lower bounds.
@@ -278,7 +280,13 @@ export function detectIndexerProfile(overrides) {
     }
   }
 
-  return { batchSize, flushRows };
+  // Parallel late interaction requires enough RAM for two ONNX models
+  // (~500 MB combined) and enough cores to avoid severe contention.
+  // Keep the default aligned with the existing Apple Silicon-only
+  // batch/flush profile; other platforms can opt in via env override.
+  const parallelLI = isAppleSilicon && totalMemBytes >= 14_000_000_000 && cpuCount >= 8;
+
+  return { batchSize, flushRows, parallelLI };
 }
 
 export const EMBEDDING_CONFIG = {
@@ -321,6 +329,17 @@ export const EMBEDDING_CONFIG = {
     if (Number.isFinite(envVal) && envVal > 0) return envVal;
     if (this.provider !== 'local') return 128;
     return detectIndexerProfile().flushRows;
+  },
+
+  /** Whether to run late interaction encoding in parallel with vector embeddings.
+   *  Requires sufficient RAM (16+ GB) and CPU cores (8+).
+   *  Override via SWEET_SEARCH_PARALLEL_LI=0 or =1. */
+  get parallelLateInteraction() {
+    const envVal = process.env.SWEET_SEARCH_PARALLEL_LI;
+    if (envVal === '0') return false;
+    if (envVal === '1') return true;
+    if (this.provider !== 'local') return false;
+    return detectIndexerProfile().parallelLI;
   },
 
   get contextLength() {

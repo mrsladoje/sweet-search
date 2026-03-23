@@ -226,7 +226,12 @@ export async function buildHNSWIndex(chunks, embeddings, dryRun = false) {
 // =============================================================================
 
 export async function buildLateInteractionIndex(chunks, dryRun = false, filesToRemove = [], options = {}) {
-  const { poolFactor = 1, extendedSkiplist = false } = options;
+  const {
+    poolFactor = 1,
+    extendedSkiplist = false,
+    loadFromPath = DB_PATHS.lateInteraction,
+    saveToPath = loadFromPath,
+  } = options;
   log('\n━━━ Phase 4: Late Interaction Index (LateOn-Code) ━━━', 'bright');
 
   if (dryRun) {
@@ -234,7 +239,9 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     return;
   }
 
-  if (!chunks || chunks.length === 0) {
+  const hasChunks = Array.isArray(chunks) && chunks.length > 0;
+  const hasRemovals = Array.isArray(filesToRemove) && filesToRemove.length > 0;
+  if (!hasChunks && !hasRemovals) {
     log('No chunks to index', 'yellow');
     return;
   }
@@ -250,14 +257,15 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     maxTokens: 512,
     useInt8: true,
     modelId: LATE_INTERACTION_CONFIG.model,
+    indexPath: loadFromPath,
   });
 
   await liIndex.init();
 
+  let removed = 0;
   if (filesToRemove && filesToRemove.length > 0) {
     log(`Removing entries for ${filesToRemove.length} changed/deleted files...`, 'yellow');
 
-    let removed = 0;
     for (const [id, doc] of liIndex.documents.entries()) {
       const docFile = doc.metadata?.file || id.split(':')[0];
       if (filesToRemove.includes(docFile)) {
@@ -273,7 +281,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
   const { encodeDocuments } = await import('./late-interaction-model.js');
 
   const BATCH_SIZE = 16; // encode 16 chunks at a time
-  const totalChunks = chunks.length;
+  const totalChunks = hasChunks ? chunks.length : 0;
   let totalAdded = 0;
   const reportInterval = Math.max(1, Math.floor(totalChunks / 20));
 
@@ -283,38 +291,46 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
 
   const poolLabel = poolFactor > 1 ? `, pool=${poolFactor}` : '';
   const skipLabel = extendedSkiplist ? ', skiplist=extended' : '';
-  log(`LateInteraction: Encoding ${totalChunks} chunks with ${LATE_INTERACTION_CONFIG.model} (${LATE_INTERACTION_CONFIG.tokenDimension}d${poolLabel}${skipLabel})...`, 'yellow');
+  if (hasChunks) {
+    log(`LateInteraction: Encoding ${totalChunks} chunks with ${LATE_INTERACTION_CONFIG.model} (${LATE_INTERACTION_CONFIG.tokenDimension}d${poolLabel}${skipLabel})...`, 'yellow');
 
-  for (let batchStart = 0; batchStart < totalChunks; batchStart += BATCH_SIZE) {
-    const batchEnd = Math.min(batchStart + BATCH_SIZE, totalChunks);
-    const batchChunks = chunks.slice(batchStart, batchEnd);
-    const batchTexts = batchChunks.map(c => c.text || c.content || '');
+    for (let batchStart = 0; batchStart < totalChunks; batchStart += BATCH_SIZE) {
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalChunks);
+      const batchChunks = chunks.slice(batchStart, batchEnd);
+      const batchTexts = batchChunks.map(c => c.text || c.content || '');
 
-    // encodeDocuments handles [D] prefix, tokenization, skiplist filtering, pooling
-    const tokenArrays = await encodeDocuments(batchTexts, encodeOpts);
+      // encodeDocuments handles [D] prefix, tokenization, skiplist filtering, pooling
+      const tokenArrays = await encodeDocuments(batchTexts, encodeOpts);
 
-    for (let j = 0; j < batchChunks.length; j++) {
-      const chunk = batchChunks[j];
-      const tokens = tokenArrays[j];
-      if (tokens && tokens.length > 0) {
-        await liIndex.add(chunk.id, tokens, {
-          file: chunk.file,
-          name: chunk.metadata?.symbol,
-        });
-        totalAdded++;
+      for (let j = 0; j < batchChunks.length; j++) {
+        const chunk = batchChunks[j];
+        const tokens = tokenArrays[j];
+        if (tokens && tokens.length > 0) {
+          await liIndex.add(chunk.id, tokens, {
+            file: chunk.file,
+            name: chunk.metadata?.symbol,
+            type: chunk.metadata?.chunk_type,
+            startLine: chunk.metadata?.line_start || null,
+            endLine: chunk.metadata?.line_end || null,
+          });
+          totalAdded++;
+        }
       }
-    }
 
-    log(`  LateInteraction: ${batchEnd}/${totalChunks} chunks (${Math.round(batchEnd / totalChunks * 100)}%)`, 'dim');
+      log(`  LateInteraction: ${batchEnd}/${totalChunks} chunks (${Math.round(batchEnd / totalChunks * 100)}%)`, 'dim');
+    }
+  } else {
+    log('LateInteraction: No new chunks to encode; applying removals only', 'dim');
   }
 
+  liIndex.indexPath = saveToPath;
   await liIndex.save();
 
   const liStats = liIndex.getStats();
   log(`\n✓ Late interaction index built: ${liStats.documents} docs, ${liStats.totalTokens} tokens (model: ${liStats.modelId})`, 'green');
   log(`  Avg tokens/doc: ${liStats.avgTokensPerDoc}, Dim: ${liStats.tokenDim}d, Size: ${liStats.estimatedSizeMB} MB`, 'dim');
 
-  return liStats;
+  return { ...liStats, added: totalAdded, removed, saveToPath };
 }
 
 // =============================================================================
