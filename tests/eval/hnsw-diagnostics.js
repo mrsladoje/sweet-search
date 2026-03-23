@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * HNSW Phase 0 Diagnostics (HNSW_OPT_PLAN.md)
+ * HNSW Phase 0 Diagnostics (HNSW_APPROACH.md)
  *
  * Three diagnostic tools:
  *   1. Dimension distribution profiler

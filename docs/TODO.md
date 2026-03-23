@@ -868,7 +868,7 @@ All providers use `hnsw: 512` in their dimension config:
 
 ## 17. ~~HNSW Parameter Tuning~~ — DONE (March 2026) + SONA Self-Learning
 
-**Status**: Binary HNSW fully tuned via `docs/HNSW_OPT_PLAN.md`. Float HNSW
+**Status**: Binary HNSW fully tuned via `docs/HNSW_APPROACH.md`. Float HNSW
 parameters unchanged (less critical — binary HNSW is the production search path).
 
 ### 17.1 Current Parameters (config.js)

@@ -106,3 +106,6 @@ CLAUDE.md.backup
 .venv/ 
 
 
+
+# Claude Code local config
+CLAUDE.local.md
