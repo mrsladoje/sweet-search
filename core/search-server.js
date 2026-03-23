@@ -200,6 +200,9 @@ export async function startServer() {
       const summary = url.searchParams.get('summary') === 'true';
       const mid = url.searchParams.get('mid') === 'true';
 
+      // Pattern mode: regex param (ColGrep hybrid search)
+      const regex = url.searchParams.get('regex') || '';
+
       // Phase 4: Translation fallback
       const translate = url.searchParams.get('translate') || 'auto';
 
@@ -219,6 +222,7 @@ export async function startServer() {
         let { results, stats } = await searcher.search(query, {
           k: topK,
           mode,
+          regex,
           expand,
           rerank,
           fusion,
@@ -383,6 +387,7 @@ export async function queryServer(query, options = {}) {
   const http = await import('http');
   const {
     mode = 'auto',
+    regex = '',
     topK = 10,
     expand = true,
     rerank = true,
@@ -400,6 +405,7 @@ export async function queryServer(query, options = {}) {
       k: topK.toString(),
       fusion,
     });
+    if (regex) params.set('regex', regex);
     if (!expand) params.set('expand', 'false');
     if (!rerank) params.set('rerank', 'false');
     if (!useLateInteraction) params.set('late-interaction', 'false');

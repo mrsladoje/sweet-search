@@ -40,6 +40,7 @@ import * as format from './search-format.js';
 import * as semantic from './search-semantic.js';
 import * as hybrid from './search-hybrid.js';
 import * as postprocess from './search-postprocess.js';
+import * as pattern from './search-pattern.js';
 
 export { ROUTE_ALPHAS } from './search-fusion.js';
 
@@ -252,11 +253,12 @@ export class SweetSearch {
   async search(query, options = {}) {
     await this.init();
     const {
-      k = 10, mode = 'auto', expand = true, rerank = true,
+      k = 10, mode: requestedMode = 'auto', regex = '', expand = true, rerank = true,
       fusion: fusionOpt = 'cc', useLateInteraction = this.useLateInteraction,
       translate = 'auto', graphExpand = 'none', graphExpandOptions = {},
       adaptiveHop2 = true, intent = 'none', qualityWeight = this.qualityWeight,
     } = options;
+    const mode = regex ? 'pattern' : requestedMode;
 
     const start = Date.now();
     const stats = { query };
@@ -289,7 +291,13 @@ export class SweetSearch {
       stats.routing = { mode: routing.mode, confidence: routing.confidence, latency_us: routing.routingLatency_us };
     } else {
       searchMode = mode;
-      stats.routing = { mode, forced: true };
+      stats.routing = {
+        mode,
+        forced: true,
+        ...(regex && requestedMode !== 'auto' && requestedMode !== 'pattern'
+          ? { requestedMode, regexForced: true }
+          : {}),
+      };
     }
     this.log(`Search mode: ${searchMode}`);
 
@@ -298,6 +306,12 @@ export class SweetSearch {
     let semanticStats = null;
 
     switch (searchMode) {
+      case 'pattern': {
+        const patternResult = await this.patternSearch(query, routing, options);
+        results = patternResult.results;
+        Object.assign(stats, patternResult.stats);
+        break;
+      }
       case 'structural':
         results = await this.structuralSearch(query, routing, options);
         stats.path = 'structural';
@@ -560,6 +574,8 @@ Object.assign(SweetSearch.prototype, {
   getAdaptiveCandidateCount: semantic.getAdaptiveCandidateCount,
   hybridSearchV2: hybrid.hybridSearchV2,
   hybridSearch: hybrid.hybridSearch,
+  patternSearch: pattern.patternSearch,
+  getChunkLocationMap: pattern.getChunkLocationMap,
   _applyPostRetrieval: postprocess.applyPostRetrieval,
 });
 

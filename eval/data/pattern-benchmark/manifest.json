@@ -1,0 +1,180 @@
+{
+  "$schema": "pattern-benchmark-manifest-v1",
+  "version": "1.0.0",
+  "frozen": true,
+  "frozenDate": "2026-03-23",
+  "description": "ColGrep pattern benchmark contract — hybrid regex + semantic search evaluation",
+  "references": ["docs/COLGREP_PLAN.md", "Phase 0a: Benchmark Contract Freeze"],
+
+  "repos": [
+    {
+      "id": "sweet-search",
+      "path": ".",
+      "description": "Sweet Search codebase (self-referential benchmark)",
+      "languages": ["javascript"],
+      "size": "medium",
+      "namingQuality": "descriptive",
+      "notes": "Well-named functions and classes; grep should do well on many queries"
+    }
+  ],
+
+  "regexFamilies": {
+    "class": {
+      "description": "Class definition patterns",
+      "examples": ["class.*Service", "class.*Index", "class.*Handler"],
+      "difficulty": "easy-medium"
+    },
+    "function": {
+      "description": "Function/method definition patterns",
+      "examples": ["function.*search", "async function.*", "export.*function"],
+      "difficulty": "easy-medium"
+    },
+    "import": {
+      "description": "Import/require patterns",
+      "examples": ["import.*from", "require\\("],
+      "difficulty": "easy"
+    },
+    "export": {
+      "description": "Export patterns revealing public API surface",
+      "examples": ["export.*class", "export.*function", "export.*const.*CONFIG"],
+      "difficulty": "easy"
+    },
+    "config": {
+      "description": "Configuration constant patterns",
+      "examples": ["const.*CONFIG", "const.*THRESHOLD", "const.*DEFAULT"],
+      "difficulty": "medium"
+    },
+    "method": {
+      "description": "Method patterns inside classes",
+      "examples": ["async.*search\\(", "async.*score\\(", "\\)\\s*\\{"],
+      "difficulty": "medium-hard"
+    },
+    "structural": {
+      "description": "Structural code patterns (loops, conditionals, error handling)",
+      "examples": ["try\\s*\\{", "catch\\s*\\(", "switch\\s*\\("],
+      "difficulty": "hard"
+    },
+    "test": {
+      "description": "Test framework patterns",
+      "examples": ["describe\\(", "it\\(.*should", "expect\\("],
+      "difficulty": "easy"
+    }
+  },
+
+  "baselines": {
+    "rg-only": {
+      "description": "Pure ripgrep — no ranking, file:line output",
+      "mode": null,
+      "usesRegex": true,
+      "usesSemantic": false,
+      "notes": "Baseline for recall ceiling; no relevance ranking"
+    },
+    "hybrid-no-regex": {
+      "description": "Sweet Search hybrid mode (BM25 + semantic) without regex",
+      "mode": "hybrid",
+      "usesRegex": false,
+      "usesSemantic": true,
+      "notes": "Shows whether semantic alone finds the right code"
+    },
+    "pattern-maxsim": {
+      "description": "ColGrep pattern mode — regex candidates + MaxSim ranking",
+      "mode": "pattern",
+      "usesRegex": true,
+      "usesSemantic": true,
+      "notes": "Primary treatment — the feature under test"
+    }
+  },
+
+  "evaluationSlices": {
+    "byLanguage": {
+      "description": "Per-language breakdown",
+      "values": ["javascript"],
+      "extendable": true
+    },
+    "byRegexFamily": {
+      "description": "Per regex family (class, function, import, etc.)",
+      "values": ["class", "function", "import", "export", "config", "method", "structural", "test"]
+    },
+    "byDifficulty": {
+      "description": "Per difficulty level",
+      "values": ["easy", "medium", "hard"]
+    },
+    "byNamingQuality": {
+      "description": "Whether the target code uses descriptive names (grep advantage) or abbreviations",
+      "values": ["descriptive", "abbreviated", "mixed"]
+    }
+  },
+
+  "metrics": {
+    "primary": {
+      "mrr_at_10": { "description": "Mean Reciprocal Rank at 10", "target": 0.7, "regressionThreshold": -0.02 },
+      "recall_at_5": { "description": "Recall at 5", "target": 0.6, "regressionThreshold": -0.03 },
+      "recall_at_10": { "description": "Recall at 10", "target": 0.8, "regressionThreshold": -0.03 }
+    },
+    "secondary": {
+      "latency_p50_ms": { "description": "Median latency", "aspirationalTarget": 100 },
+      "latency_p95_ms": { "description": "95th percentile latency", "aspirationalTarget": 200 },
+      "success_at_1": { "description": "Hit rate at rank 1" },
+      "ndcg_at_10": { "description": "NDCG at 10" }
+    },
+    "pattern_specific": {
+      "grep_match_rate": { "description": "Fraction of queries where regex finds at least one match" },
+      "indexed_chunk_rate": { "description": "Fraction of grep matches that map to indexed chunks" },
+      "win_rate_vs_rg": { "description": "Win rate of pattern mode vs rg-only baseline" },
+      "win_rate_vs_hybrid": { "description": "Win rate of pattern mode vs hybrid-no-regex baseline" }
+    }
+  },
+
+  "statisticalProtocol": {
+    "bootstrapSamples": 1000,
+    "confidenceLevel": 0.95,
+    "significanceTest": "paired-bootstrap",
+    "manualAuditSample": {
+      "minSamples": 20,
+      "focusOn": ["judge-disagreements", "rg-wins", "large-score-gaps"]
+    }
+  },
+
+  "loggingSchema": {
+    "perQuery": {
+      "queryId": "string",
+      "regex": "string",
+      "semanticQuery": "string",
+      "baseline": "string",
+      "grepMatches": "number",
+      "indexedChunks": "number",
+      "maxSimCandidates": "number",
+      "topResult": "string",
+      "topScore": "number",
+      "reciprocalRank": "number",
+      "recall5": "number",
+      "grepTime_ms": "number",
+      "encodeTime_ms": "number",
+      "rerankTime_ms": "number",
+      "totalTime_ms": "number"
+    }
+  },
+
+  "queryFormat": {
+    "description": "Each query in queries.jsonl follows this schema",
+    "fields": {
+      "query_id": "Unique identifier (p001, p002, ...)",
+      "regex": "Regex pattern for ripgrep candidate generation",
+      "semantic_query": "Natural language query for MaxSim ranking",
+      "relevant_files": "Array of file paths containing the expected results",
+      "relevant_chunks": "Array of file:startLine-endLine chunk identifiers (gold labels)",
+      "language": "Programming language of the target code",
+      "regex_family": "One of: class, function, import, export, config, method, structural, test",
+      "difficulty": "One of: easy, medium, hard",
+      "naming_quality": "One of: descriptive, abbreviated, mixed",
+      "notes": "Human-readable explanation of what this query tests"
+    }
+  },
+
+  "exitCriteria": {
+    "phase0a": "Manifest frozen, baseline matrix defined, logging schema locked",
+    "phase1": "Harness can run Track A, B1, and C automatically",
+    "phase2_5": "Gold labels frozen, failure taxonomy locked, agent-eval rubric locked",
+    "shipGate": "All tracks pass, manual audit clean, no systemic judge bias"
+  }
+}
