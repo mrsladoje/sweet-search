@@ -509,7 +509,13 @@ export function applyLocalQueryPrefix(text) {
 // LIFECYCLE
 // =============================================================================
 
-export function unloadLocalModel() {
+export async function unloadLocalModel() {
+  if (localPipeline) {
+    // transformers.js dispose() releases ONNX sessions and tokenizer.
+    // Note: ORT has a known native memory leak in session.release()
+    // (microsoft/onnxruntime#25325) — avoid frequent load/unload cycles.
+    try { await localPipeline.dispose(); } catch { /* best-effort cleanup */ }
+  }
   localPipeline = null;
   isLoadingLocal = false;
   loadPromise = null;

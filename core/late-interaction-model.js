@@ -38,8 +38,19 @@ export function isLateInteractionModelLoaded() { return lateInteractionPipeline 
 
 /** Release model memory */
 export async function unloadLateInteractionModel() {
-  if (lateInteractionPipeline?.session) {
-    try { await lateInteractionPipeline.session.release(); } catch { /* ignore */ }
+  if (lateInteractionPipeline) {
+    // Release ORT session. Note: ORT has a known native memory leak in
+    // session.release() (microsoft/onnxruntime#25325) — avoid frequent
+    // load/unload cycles. Prefer singleton reuse.
+    if (lateInteractionPipeline.session) {
+      try { await lateInteractionPipeline.session.release(); } catch { /* ignore */ }
+    }
+    // Release projection weight buffers
+    if (lateInteractionPipeline.projectionStages) {
+      for (const stage of lateInteractionPipeline.projectionStages) {
+        stage.weight = null;
+      }
+    }
   }
   lateInteractionPipeline = null;
   loadPromise = null;
@@ -107,8 +118,11 @@ async function loadModel() {
 
   // Create ORT session
   const ort = await import('onnxruntime-node');
+  const { bestIntraOpThreads } = await import('./embedding-local-model.js');
   const session = await ort.InferenceSession.create(onnxPath, {
     executionProviders: ['cpu'],
+    intraOpNumThreads: bestIntraOpThreads(),
+    interOpNumThreads: 1,
   });
 
   // Probe: run a single inference to check output dimension

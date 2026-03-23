@@ -354,20 +354,12 @@ export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, m
   return embeddings;
 }
 
-export async function buildVectorIndex(files, dryRun = false, options = {}) {
-  log('\n━━━ Phase 2: Vector Embeddings ━━━', 'bright');
-
-  const { fullRebuild = false, filesToRemove = [], sqliteFastMode = false } = options;
-
-  if (dryRun) {
-    log('DRY RUN: Skipping vector indexing', 'magenta');
-    return { chunks: 0, embeddings: 0 };
-  }
-
-  const modelInfo = getModelInfo();
-  log(`Using: ${modelInfo.provider} (${modelInfo.model})`, 'cyan');
-  log(`Dimensions: ${modelInfo.dimension}d full → ${modelInfo.hnswDimension}d HNSW`, 'dim');
-
+/**
+ * Parse and enrich files into chunks + embedding texts.
+ * Extracted so both vector and late interaction encoding can share chunks
+ * when running in parallel mode (see PARALLEL_INDEXING_PLAN.md).
+ */
+export async function chunkFiles(files) {
   const { ASTChunker } = await import('../ast-chunker.js');
   const chunker = new ASTChunker({ projectRoot: PROJECT_ROOT });
 
@@ -404,7 +396,6 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
 
   log(`\n✓ Created ${allChunks.length} chunks`, 'green');
 
-  // Enrich chunks with scope chains and imports from code-graph.db
   if (existsSync(DB_PATHS.codeGraph) && allChunks.length > 0) {
     try {
       const enriched = await enrichChunksFromGraph(allChunks, ASTChunker);
@@ -416,17 +407,40 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
     }
   }
 
-  log('Generating embeddings...', 'yellow');
-
   const texts = allChunks.map(chunk => {
-    // Use contextualized embedding_text when available (from AST chunker)
     if (chunk.embedding_text) {
       return chunk.embedding_text.slice(0, 2000);
     }
-    // Fallback for chunks without embedding_text
-    const text = `${chunk.file} ${chunk.metadata?.symbol || ''}\n${(chunk.text || chunk.content || '').slice(0, 1500)}`;
-    return text;
+    return `${chunk.file} ${chunk.metadata?.symbol || ''}\n${(chunk.text || chunk.content || '').slice(0, 1500)}`;
   });
+
+  return { allChunks, texts };
+}
+
+export async function buildVectorIndex(files, dryRun = false, options = {}) {
+  log('\n━━━ Phase 2: Vector Embeddings ━━━', 'bright');
+
+  const { fullRebuild = false, filesToRemove = [], sqliteFastMode = false, preChunked } = options;
+
+  if (dryRun) {
+    log('DRY RUN: Skipping vector indexing', 'magenta');
+    return { chunks: 0, embeddings: 0 };
+  }
+
+  const modelInfo = getModelInfo();
+  log(`Using: ${modelInfo.provider} (${modelInfo.model})`, 'cyan');
+  log(`Dimensions: ${modelInfo.dimension}d full → ${modelInfo.hnswDimension}d HNSW`, 'dim');
+
+  let allChunks, texts;
+  if (preChunked) {
+    allChunks = preChunked.allChunks;
+    texts = preChunked.texts;
+    log(`Using ${allChunks.length} pre-chunked items`, 'dim');
+  } else {
+    ({ allChunks, texts } = await chunkFiles(files));
+  }
+
+  log('Generating embeddings...', 'yellow');
 
   const batchSize = EMBEDDING_CONFIG.indexerBatchSize;
   const writeFlushRows = EMBEDDING_CONFIG.indexerWriteFlushRows;

@@ -733,7 +733,7 @@ export function getModelInfo() {
 }
 
 export async function unload() {
-  unloadLocalModel();
+  await unloadLocalModel();
   console.log('Local model unloaded');
 }
 

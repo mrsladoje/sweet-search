@@ -15,7 +15,7 @@ import {
  * - callLocalModel integration via direct ORT path
  */
 describe('L7 Direct ORT Bypass', () => {
-  afterAll(() => unloadLocalModel());
+  afterAll(async () => await unloadLocalModel());
 
   it('ORT session is accessible with run(), inputNames, outputNames', async () => {
     const pipeline = await getLocalPipeline();
