@@ -13,13 +13,19 @@ import fs from 'fs/promises';
 import { existsSync, createWriteStream, createReadStream } from 'fs';
 import path from 'path';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from './config.js';
+import { wasmMaxSimF32, nativeMaxSimBatch, initWasm, isNativeMaxSimAvailable } from './simd-distance.js';
 
 /**
  * Quantize float32 to int8 for storage
  */
 function quantizeToInt8(floatArray) {
-  const min = Math.min(...floatArray);
-  const max = Math.max(...floatArray);
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < floatArray.length; i++) {
+    const v = floatArray[i];
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
 
   // Edge case: if all values are equal (max === min), scale would be 0
   // causing division by zero. In this case, set all int8 values to 0
@@ -60,20 +66,24 @@ function dequantizeFromInt8(int8Array, min, scale) {
 }
 
 /**
- * Cosine similarity between two vectors
+ * Cosine similarity with pre-computed norms.
+ * Avoids recomputing norms on every call (3x fewer FLOPs in inner loop).
  */
-function cosineSimilarity(a, b) {
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-
+function cosineSimilarityFast(a, b, normA, normB) {
+  let dot = 0;
   for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+    dot += a[i] * b[i];
   }
+  return dot / (normA * normB + 1e-8);
+}
 
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-8);
+/**
+ * Compute L2 norm of a vector.
+ */
+function l2Norm(vec) {
+  let sum = 0;
+  for (let i = 0; i < vec.length; i++) sum += vec[i] * vec[i];
+  return Math.sqrt(sum);
 }
 
 /**
@@ -98,6 +108,9 @@ export class LateInteractionIndex {
    */
   async init() {
     if (this.initialized) return;
+
+    // Ensure WASM MaxSim kernel is ready
+    await initWasm();
 
     if (existsSync(this.indexPath)) {
       await this.load();
@@ -129,6 +142,19 @@ export class LateInteractionIndex {
       flat.set(truncated[i], i * this.tokenDim);
     }
 
+    // Pre-compute per-token L2 norms (always useful for fast cosine scoring).
+    // Block-max metadata (maxAbsComp per dimension) is deferred — only computed
+    // lazily on first query if norm variance > 0.05 (never for unit-norm models).
+    const tokenNorms = new Float32Array(truncated.length);
+    for (let t = 0; t < truncated.length; t++) {
+      const offset = t * this.tokenDim;
+      let normSq = 0;
+      for (let d = 0; d < this.tokenDim; d++) {
+        normSq += flat[offset + d] * flat[offset + d];
+      }
+      tokenNorms[t] = Math.sqrt(normSq);
+    }
+
     if (this.useInt8) {
       const { data, min, scale } = quantizeToInt8(flat);
 
@@ -138,14 +164,16 @@ export class LateInteractionIndex {
         dim: this.tokenDim,
         min,
         scale,
-        metadata
+        metadata,
+        tokenNorms,
       });
     } else {
       this.documents.set(id, {
         tokens: flat,
         numTokens: truncated.length,
         dim: this.tokenDim,
-        metadata
+        metadata,
+        tokenNorms,
       });
     }
   }
@@ -175,28 +203,234 @@ export class LateInteractionIndex {
   }
 
   /**
-   * MaxSim scoring - late interaction
+   * Get dequantized tokens as a flat Float32Array + metadata.
+   * Avoids the expensive reshape step (creating N sub-arrays).
+   * Used by the optimized scoreWithLateInteraction path.
+   *
+   * @param {string} id
+   * @returns {{ flat: Float32Array, numTokens: number, dim: number } | null}
+   */
+  getTokensFlat(id) {
+    const doc = this.documents.get(id);
+    if (!doc) return null;
+
+    let flat;
+    if (this.useInt8 && doc.min !== undefined) {
+      // Pool dequantization buffer to avoid 256KB alloc per candidate
+      const size = doc.tokens.length;
+      if (!this._dequantBuf || this._dequantBuf.length < size) {
+        this._dequantBuf = new Float32Array(size);
+      }
+      const buf = this._dequantBuf;
+      const { min, scale } = doc;
+      if (scale === 0) {
+        buf.fill(min);
+      } else {
+        for (let i = 0; i < size; i++) {
+          buf[i] = (doc.tokens[i] + 128) * scale + min;
+        }
+      }
+      flat = buf; // Pooled — caller must consume before next getTokensFlat call
+    } else {
+      flat = doc.tokens instanceof Float32Array ? doc.tokens : new Float32Array(doc.tokens);
+    }
+
+    return { flat, numTokens: doc.numTokens, dim: doc.dim };
+  }
+
+  /**
+   * Prune low-value query tokens before MaxSim scoring.
+   *
+   * Strategies:
+   * - normThreshold: drop tokens with L2 norm below this value (low-information tokens)
+   * - maxQueryTokens: hard cap on query token count (keep highest-norm tokens)
+   *
+   * @param {number[][]} queryTokens
+   * @param {Object} [options]
+   * @param {number} [options.normThreshold=0] - Min L2 norm to keep a token
+   * @param {number} [options.maxQueryTokens=0] - Max tokens (0 = unlimited)
+   * @returns {number[][]} Pruned query tokens
+   */
+  pruneQueryTokens(queryTokens, options = {}) {
+    const { normThreshold = 0, maxQueryTokens = 0 } = options;
+
+    if (!normThreshold && !maxQueryTokens) return queryTokens;
+
+    const withNorms = queryTokens.map(token => ({ token, norm: l2Norm(token) }));
+
+    let filtered = normThreshold > 0
+      ? withNorms.filter(t => t.norm >= normThreshold)
+      : withNorms;
+
+    // Ensure at least 1 token survives pruning
+    if (filtered.length === 0) filtered = [withNorms[0]];
+
+    // Apply budget cap (keep highest-norm tokens)
+    if (maxQueryTokens > 0 && filtered.length > maxQueryTokens) {
+      filtered.sort((a, b) => b.norm - a.norm);
+      filtered = filtered.slice(0, maxQueryTokens);
+    }
+
+    return filtered.map(t => t.token);
+  }
+
+  /**
+   * Subsample document tokens by stride to fit within a budget.
+   * Keeps the first token (CLS-equivalent) plus evenly-spaced tokens.
+   *
+   * @param {number[][]} docTokens
+   * @param {number} maxDocTokens - Budget (0 = unlimited)
+   * @returns {number[][]}
+   */
+  subsampleDocTokens(docTokens, maxDocTokens) {
+    if (!maxDocTokens || docTokens.length <= maxDocTokens) return docTokens;
+
+    const result = [docTokens[0]]; // Keep first token (CLS/special)
+    const remaining = maxDocTokens - 1;
+    const stride = (docTokens.length - 1) / remaining;
+
+    for (let i = 0; i < remaining; i++) {
+      const idx = 1 + Math.round(i * stride);
+      if (idx < docTokens.length) result.push(docTokens[idx]);
+    }
+
+    return result;
+  }
+
+  /**
+   * MaxSim scoring - late interaction (optimized)
    *
    * For each query token, find max similarity with any document token.
    * Sum these max similarities for final score.
+   * Pre-computed norms avoid recomputing per pair (3x fewer FLOPs).
+   *
+   * @param {number[][]} queryTokens
+   * @param {number[][]} docTokens
+   * @param {Object} [options] - Pruning options
+   * @param {number} [options.maxQueryTokens] - Query token budget
+   * @param {number} [options.normThreshold] - Min query token norm
+   * @param {number} [options.maxDocTokens] - Document token budget (stride subsample)
    */
-  maxSimScore(queryTokens, docTokens) {
+  maxSimScore(queryTokens, docTokens, options) {
     if (!docTokens || docTokens.length === 0) return 0;
+
+    const effectiveQuery = (options && (options.maxQueryTokens || options.normThreshold))
+      ? this.pruneQueryTokens(queryTokens, options)
+      : queryTokens;
+
+    const effectiveDocs = (options && options.maxDocTokens)
+      ? this.subsampleDocTokens(docTokens, options.maxDocTokens)
+      : docTokens;
+
+    const qNorms = new Float32Array(effectiveQuery.length);
+    for (let qi = 0; qi < effectiveQuery.length; qi++) {
+      qNorms[qi] = l2Norm(effectiveQuery[qi]);
+    }
+
+    const dNorms = new Float32Array(effectiveDocs.length);
+    for (let di = 0; di < effectiveDocs.length; di++) {
+      dNorms[di] = l2Norm(effectiveDocs[di]);
+    }
 
     let totalScore = 0;
 
-    for (const queryToken of queryTokens) {
+    for (let qi = 0; qi < effectiveQuery.length; qi++) {
+      const queryToken = effectiveQuery[qi];
+      const qNorm = qNorms[qi];
       let maxSim = -Infinity;
 
-      for (const docToken of docTokens) {
-        const sim = cosineSimilarity(queryToken, docToken);
+      for (let di = 0; di < effectiveDocs.length; di++) {
+        const sim = cosineSimilarityFast(queryToken, effectiveDocs[di], qNorm, dNorms[di]);
         if (sim > maxSim) maxSim = sim;
       }
 
       totalScore += Math.max(0, maxSim);
     }
 
+    return totalScore / effectiveQuery.length;
+  }
+
+  /**
+   * MaxSim scoring from flat buffers (avoids reshape/sub-array creation).
+   *
+   * Operates directly on a contiguous Float32Array with offset indexing.
+   * Saves the cost of creating numTokens sub-arrays per candidate.
+   *
+   * @param {number[][]} queryTokens - Array of query token vectors
+   * @param {Float32Array} docFlat - Flat buffer of dequantized doc tokens
+   * @param {number} numDocTokens - Number of document tokens
+   * @param {number} dim - Token dimension
+   * @param {Float32Array} [docTokenNorms] - Pre-computed norms (from add-time)
+   * @returns {number} MaxSim score
+   */
+  maxSimScoreFlat(queryTokens, docFlat, numDocTokens, dim, docTokenNorms, precomputedQueryFlat) {
+    if (!docFlat || numDocTokens === 0) return 0;
+
+    // Try WASM kernel first — pass pre-flattened query if available
+    const queryFlat = precomputedQueryFlat || this._flattenQueryTokens(queryTokens, dim);
+    const wasmScore = wasmMaxSimF32(queryFlat, docFlat, queryTokens.length, numDocTokens, dim);
+    if (wasmScore !== null) return wasmScore;
+
+    // JS fallback
+    let totalScore = 0;
+
+    for (let qi = 0; qi < queryTokens.length; qi++) {
+      const qVec = queryTokens[qi];
+
+      // Compute query norm once
+      let qNormSq = 0;
+      for (let k = 0; k < dim; k++) qNormSq += qVec[k] * qVec[k];
+      const qNorm = Math.sqrt(qNormSq);
+
+      let maxSim = -Infinity;
+
+      for (let di = 0; di < numDocTokens; di++) {
+        const offset = di * dim;
+
+        // Dot product with offset indexing (no sub-array creation)
+        let dot = 0;
+        for (let k = 0; k < dim; k++) {
+          dot += qVec[k] * docFlat[offset + k];
+        }
+
+        // Use pre-computed doc norm if available, else compute
+        let dNorm;
+        if (docTokenNorms) {
+          dNorm = docTokenNorms[di];
+        } else {
+          let dNormSq = 0;
+          for (let k = 0; k < dim; k++) {
+            const v = docFlat[offset + k];
+            dNormSq += v * v;
+          }
+          dNorm = Math.sqrt(dNormSq);
+        }
+
+        const sim = dot / (qNorm * dNorm + 1e-8);
+        if (sim > maxSim) maxSim = sim;
+      }
+
+      if (maxSim > 0) totalScore += maxSim;
+    }
+
     return totalScore / queryTokens.length;
+  }
+
+  /**
+   * Flatten query token arrays into a contiguous Float32Array (reuses pooled buffer).
+   * @private
+   */
+  _flattenQueryTokens(queryTokens, dim) {
+    const numQ = queryTokens.length;
+    if (!this._queryFlatBuf || this._queryFlatBuf.length < numQ * dim) {
+      this._queryFlatBuf = new Float32Array(numQ * dim);
+    }
+    for (let qi = 0; qi < numQ; qi++) {
+      const q = queryTokens[qi];
+      const off = qi * dim;
+      for (let k = 0; k < dim; k++) this._queryFlatBuf[off + k] = q[k];
+    }
+    return this._queryFlatBuf;
   }
 
   /**
@@ -204,39 +438,111 @@ export class LateInteractionIndex {
    *
    * @param {number[][]} queryTokenEmbeddings - Query token embeddings
    * @param {Array} candidates - Array of { id, ... } candidates
+   * @param {Object} [options] - Scoring options
+   * @param {number} [options.maxCandidates] - Max candidates to score with MaxSim (rest keep original score)
+   * @param {number} [options.maxQueryTokens] - Budget cap on query tokens (keep highest-norm tokens)
+   * @param {number} [options.normThreshold] - Min L2 norm for query tokens
+   * @param {number} [options.maxDocTokens] - Budget cap on doc tokens per candidate (stride subsample)
    * @returns {Array} Candidates with lateInteractionScore added
    */
-  async scoreWithLateInteraction(queryTokenEmbeddings, candidates) {
+  async scoreWithLateInteraction(queryTokenEmbeddings, candidates, options = {}) {
     await this.init();
+
+    const { maxCandidates, maxQueryTokens, normThreshold, maxDocTokens } = options;
 
     const queryTokens = queryTokenEmbeddings.map(emb =>
       emb.slice(0, this.tokenDim)
     );
 
+    // Pruning options (passed through to maxSimScore)
+    const pruneOpts = (maxQueryTokens || normThreshold || maxDocTokens)
+      ? { maxQueryTokens, normThreshold, maxDocTokens }
+      : undefined;
+
+    // Candidate pruning: pre-sort by initial score, only MaxSim-score the top N
+    let toScore = candidates;
+    let pruned = [];
+    if (maxCandidates && candidates.length > maxCandidates) {
+      const sorted = [...candidates].sort((a, b) => (b.score || 0) - (a.score || 0));
+      toScore = sorted.slice(0, maxCandidates);
+      pruned = sorted.slice(maxCandidates);
+    }
+
+    // Apply query token pruning once (shared across all candidates)
+    const effectiveQueryTokens = (maxQueryTokens || normThreshold)
+      ? this.pruneQueryTokens(queryTokens, { maxQueryTokens, normThreshold })
+      : queryTokens;
+
     const scored = [];
+    const pushScored = (c, score) => scored.push({ ...c, lateInteractionScore: score, originalScore: c.score });
+    const pushFallback = (c, extra) => scored.push({ ...c, lateInteractionScore: c.score || 0, originalScore: c.score, ...extra });
 
-    for (const candidate of candidates) {
-      const docTokens = this.getTokens(candidate.id);
+    const useFlatPath = !maxDocTokens;
+    const queryFlat = this._flattenQueryTokens(effectiveQueryTokens, this.tokenDim);
 
-      if (docTokens) {
-        const lateInteractionScore = this.maxSimScore(queryTokens, docTokens);
-        scored.push({
-          ...candidate,
-          lateInteractionScore,
-          originalScore: candidate.score
-        });
-      } else {
-        scored.push({
-          ...candidate,
-          lateInteractionScore: candidate.score || 0,
-          originalScore: candidate.score
-        });
+    // Tier 1: Native batch scoring (rayon parallel + SIMD)
+    if (useFlatPath && this.useInt8 && isNativeMaxSimAvailable()) {
+      const nativeCandidates = [];
+      const candidateOrder = [];
+
+      for (const candidate of toScore) {
+        const doc = this.documents.get(candidate.id);
+        if (doc && doc.min !== undefined) {
+          nativeCandidates.push({
+            tokens: Buffer.from(doc.tokens.buffer, doc.tokens.byteOffset, doc.tokens.byteLength),
+            numTokens: doc.numTokens,
+            dim: doc.dim,
+            min: doc.min,
+            scale: doc.scale,
+          });
+          candidateOrder.push(candidate);
+        } else {
+          pushFallback(candidate);
+        }
+      }
+
+      if (nativeCandidates.length > 0) {
+        const scores = nativeMaxSimBatch(
+          queryFlat, effectiveQueryTokens.length, this.tokenDim, nativeCandidates,
+        );
+
+        if (scores) {
+          for (let i = 0; i < candidateOrder.length; i++) {
+            pushScored(candidateOrder[i], scores[i]);
+          }
+          for (const candidate of pruned) pushFallback(candidate, { _pruned: true });
+          scored.sort((a, b) => b.lateInteractionScore - a.lateInteractionScore);
+          return scored;
+        }
       }
     }
 
-    // Sort by late interaction score
-    scored.sort((a, b) => b.lateInteractionScore - a.lateInteractionScore);
+    // Tier 2 & 3: per-candidate scoring (WASM or JS)
+    for (const candidate of toScore) {
+      if (useFlatPath) {
+        const flatData = this.getTokensFlat(candidate.id);
+        if (flatData) {
+          const doc = this.documents.get(candidate.id);
+          pushScored(candidate, this.maxSimScoreFlat(
+            effectiveQueryTokens, flatData.flat, flatData.numTokens, flatData.dim,
+            doc?.tokenNorms, queryFlat,
+          ));
+        } else {
+          pushFallback(candidate);
+        }
+      } else {
+        const docTokens = this.getTokens(candidate.id);
+        if (docTokens) {
+          pushScored(candidate, this.maxSimScore(effectiveQueryTokens, docTokens, pruneOpts));
+        } else {
+          pushFallback(candidate);
+        }
+      }
+    }
 
+    for (const candidate of pruned) pushFallback(candidate, { _pruned: true });
+
+    scored.sort((a, b) => b.lateInteractionScore - a.lateInteractionScore);
     return scored;
   }
 
@@ -354,6 +660,9 @@ export class LateInteractionIndex {
       }
       this._streamLoaded = false;
 
+      // Reconstruct tokenNorms (not persisted — recomputed from tokens on load)
+      this._rebuildTokenNorms();
+
       console.log(`LateInteraction: Loaded ${this.documents.size} documents (model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)`);
     } catch (err) {
       if (err.code === 'ENOENT') {
@@ -446,6 +755,35 @@ export class LateInteractionIndex {
 
     this._streamLoaded = true;
     return header;
+  }
+
+  /**
+   * Reconstruct per-token L2 norms for all loaded documents.
+   * Called after load() since tokenNorms are not persisted in the index file.
+   * @private
+   */
+  _rebuildTokenNorms() {
+    for (const [, doc] of this.documents) {
+      if (doc.tokenNorms) continue; // already has norms (e.g., from add())
+
+      let flat;
+      if (this.useInt8 && doc.min !== undefined) {
+        flat = dequantizeFromInt8(doc.tokens, doc.min, doc.scale);
+      } else {
+        flat = doc.tokens;
+      }
+
+      const norms = new Float32Array(doc.numTokens);
+      for (let t = 0; t < doc.numTokens; t++) {
+        const offset = t * doc.dim;
+        let normSq = 0;
+        for (let d = 0; d < doc.dim; d++) {
+          normSq += flat[offset + d] * flat[offset + d];
+        }
+        norms[t] = Math.sqrt(normSq);
+      }
+      doc.tokenNorms = norms;
+    }
   }
 
   /**

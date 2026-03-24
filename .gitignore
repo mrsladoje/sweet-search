@@ -35,10 +35,13 @@ models/gte-reranker-int8/
 # Local backup files
 *.bak
 
-# WASM build artifacts
+# WASM/Rust build artifacts
 wasm-router/target/
 wasm-router/debug-*.js
 wasm-router/*.bak
+wasm-maxsim/target/
+native-maxsim/target/
+native-maxsim/*.node
 
 # Phase planning docs (regenerable)
 PHASE*_RESULTS.md
