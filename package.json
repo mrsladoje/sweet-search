@@ -50,6 +50,8 @@
   ],
   "scripts": {
     "build": "node -e \"import('./core/sweet-search.js')\" && echo 'Build OK'",
+    "build:wasm": "node scripts/build-wasm.js && cd wasm-maxsim && RUSTFLAGS=\"-C target-feature=+simd128\" cargo build --target wasm32-unknown-unknown --release && cp target/wasm32-unknown-unknown/release/maxsim_wasm.wasm ../core/maxsim.wasm && echo 'WASM build OK'",
+    "build:native": "cd native-maxsim && npx napi build --release --platform && echo 'Native build OK'",
     "search": "node core/sweet-search.js",
     "index": "node core/index-codebase-v21.js",
     "index:full": "node core/index-codebase-v21.js --full",
@@ -101,6 +103,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@napi-rs/cli": "^3.5.1",
     "@vitest/coverage-v8": "^4.0.16",
     "fast-check": "^4.5.3",
     "minimatch": "^10.1.1",

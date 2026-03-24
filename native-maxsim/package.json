@@ -1,0 +1,14 @@
+{
+  "name": "maxsim-native",
+  "version": "0.1.0",
+  "private": true,
+  "napi": {
+    "binaryName": "maxsim",
+    "targets": [
+      "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu"
+    ]
+  }
+}

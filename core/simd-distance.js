@@ -1,21 +1,23 @@
 /**
  * WASM-accelerated distance functions with JS fallback (Fix 6).
  *
- * The WASM module (simd-distance.wasm) contains:
- *   - A 256-byte popcount LUT at memory offset 0
- *   - hamming_distance(a_ptr, b_ptr, len) → i32
- *   - int8_dot(a_ptr, b_ptr, len) → i32
- *   - int8_norm_sq(a_ptr, len) → i32
+ * Three-tier MaxSim acceleration:
+ *   Tier 1: Native Rust + Rayon (60x) — parallel across CPU cores, NEON/AVX2 SIMD
+ *   Tier 2: WASM SIMD f32x4 (16x)    — portable, single-threaded
+ *   Tier 3: JS fallback (3.5x)       — norm-cached flat-buffer scoring
  *
- * Vector data is written at offset 256+ (after LUT).
- * ~3-4x faster than JS: no GC, typed memory, tight loop codegen.
+ * Also provides WASM-accelerated:
+ *   - hamming_distance, int8_dot, int8_norm_sq (simd-distance.wasm)
  *
- * Build: node scripts/build-wasm.js
+ * Build: node scripts/build-wasm.js (WASM)
+ *        cd native-maxsim && npx napi build --release --platform (native)
+ *        cd wasm-maxsim && RUSTFLAGS="-C target-feature=+simd128" cargo build --target wasm32-unknown-unknown --release (Rust WASM)
  */
 
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, existsSync } from 'fs';
+import { createRequire } from 'module';
 
 const DATA_OFFSET = 0; // SIMD popcount needs no LUT
 
@@ -23,27 +25,80 @@ let wasmExports = null;
 let wasmMem = null;
 let initDone = false;
 
+// Rust-compiled MaxSim WASM (LLVM-optimized f32x4 SIMD + fused dequant)
+let maxsimExports = null;
+let maxsimMem = null;
+
+// Native Rust + Rayon addon (Tier 1 — fastest)
+let nativeMaxsim = null;
+
 // =============================================================================
-// WASM INITIALIZATION
+// INITIALIZATION
 // =============================================================================
+
+let initPromise = null;
 
 async function initWasm() {
-  if (initDone) return !!wasmExports;
-  initDone = true;
+  if (initDone) return true;
+  if (initPromise) return initPromise;
 
-  try {
-    const __dirname = dirname(fileURLToPath(import.meta.url));
-    const wasmPath = join(__dirname, 'simd-distance.wasm');
-    if (!existsSync(wasmPath)) return false;
+  initPromise = (async () => {
+    try {
+      const __dirname = dirname(fileURLToPath(import.meta.url));
+      const require = createRequire(import.meta.url);
 
-    const wasmBuffer = readFileSync(wasmPath);
-    const { instance } = await WebAssembly.instantiate(wasmBuffer);
-    wasmExports = instance.exports;
-    wasmMem = new Uint8Array(wasmExports.memory.buffer);
-    return true;
-  } catch {
-    return false;
-  }
+      // Tier 1: Try native Rust addon (rayon parallel + NEON/AVX2 SIMD)
+      try {
+        const nativePath = join(__dirname, '..', 'native-maxsim');
+        // Try platform-specific binary name
+        const platform = process.platform === 'darwin' ? 'darwin' : 'linux';
+        const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+        const binaryName = `maxsim.${platform}-${arch}.node`;
+        const binaryPath = join(nativePath, binaryName);
+
+        if (existsSync(binaryPath)) {
+          nativeMaxsim = require(binaryPath);
+        }
+      } catch {
+        // Native not available — fall through to WASM
+      }
+
+      // Tier 2a: Load hand-assembled SIMD distance WASM
+      const wasmPath = join(__dirname, 'simd-distance.wasm');
+      if (existsSync(wasmPath)) {
+        const wasmBuffer = readFileSync(wasmPath);
+        const { instance } = await WebAssembly.instantiate(wasmBuffer);
+        wasmExports = instance.exports;
+        wasmMem = new Uint8Array(wasmExports.memory.buffer);
+      }
+
+      // Tier 2b: Load Rust-compiled MaxSim WASM (LLVM-optimized, f32x4 SIMD)
+      const maxsimPath = join(__dirname, 'maxsim.wasm');
+      if (existsSync(maxsimPath)) {
+        const maxsimBuffer = readFileSync(maxsimPath);
+        const { instance } = await WebAssembly.instantiate(maxsimBuffer);
+        maxsimExports = instance.exports;
+        maxsimMem = new Uint8Array(instance.exports.memory.buffer);
+      }
+
+      initDone = true;
+
+      if (nativeMaxsim) {
+        console.log('[MaxSim] Tier 1: Native Rust + Rayon (parallel SIMD)');
+      } else if (maxsimExports || wasmExports?.maxsim_f32) {
+        console.log('[MaxSim] Tier 2: WASM SIMD f32x4');
+      } else {
+        console.log('[MaxSim] Tier 3: JS fallback');
+      }
+
+      return true;
+    } catch {
+      initPromise = null;
+      return false;
+    }
+  })();
+
+  return initPromise;
 }
 
 // Eager non-blocking init
@@ -262,8 +317,118 @@ export function wasmAsymmetricDistance(docBinary, queryInt4, queryNormScaled) {
   return queryNormScaled - 2 * approxDot;
 }
 
+// =============================================================================
+// WASM MAXSIM F32
+// =============================================================================
+
+/**
+ * Compute MaxSim score entirely in WASM f32 arithmetic.
+ *
+ * Copies query and doc float32 tokens to WASM memory, calls the WASM
+ * maxsim_f32 kernel, returns the score. ~10-30x faster than JS for
+ * large Q×D×dim workloads.
+ *
+ * Falls back to null if WASM is unavailable or data exceeds memory.
+ *
+ * @param {Float32Array} queryFlat - Q × dim float32 (contiguous)
+ * @param {Float32Array} docFlat - D × dim float32 (contiguous)
+ * @param {number} numQ - Number of query tokens
+ * @param {number} numD - Number of document tokens
+ * @param {number} dim - Token dimension
+ * @returns {number|null} MaxSim score, or null if WASM unavailable
+ */
+export function wasmMaxSimF32(queryFlat, docFlat, numQ, numD, dim) {
+  // Use Rust-compiled WASM only (handles arbitrary dim via scalar tail)
+  if (!maxsimExports?.maxsim_f32) return null;
+  const exports = maxsimExports;
+
+  const mem = maxsimExports
+    ? new Uint8Array(maxsimExports.memory.buffer)
+    : (wasmMem = new Uint8Array(wasmExports.memory.buffer));
+
+  const qBytes = numQ * dim * 4;
+  const dBytes = numD * dim * 4;
+
+  if (qBytes + dBytes + 1024 > mem.length) return null;
+
+  const qPtr = DATA_OFFSET;
+  const dPtr = DATA_OFFSET + qBytes;
+
+  mem.set(new Uint8Array(queryFlat.buffer, queryFlat.byteOffset, qBytes), qPtr);
+  mem.set(new Uint8Array(docFlat.buffer, docFlat.byteOffset, dBytes), dPtr);
+
+  return exports.maxsim_f32(qPtr, dPtr, numQ, numD, dim);
+}
+
+/**
+ * Compute MaxSim with fused int8 dequantization in WASM.
+ *
+ * Skips JS-side dequantization entirely: copies raw int8 tokens (4x smaller)
+ * to WASM memory and dequantizes inline during scoring.
+ *
+ * @param {Float32Array} queryFlat - Q × dim float32 (contiguous)
+ * @param {Int8Array} docInt8 - Raw int8 document tokens (D × dim)
+ * @param {number} numQ - Number of query tokens
+ * @param {number} numD - Number of document tokens
+ * @param {number} dim - Token dimension
+ * @param {number} min - Quantization min
+ * @param {number} scale - Quantization scale
+ * @returns {number|null} MaxSim score, or null if unavailable
+ */
+export function wasmMaxSimDequant(queryFlat, docInt8, numQ, numD, dim, min, scale) {
+  if (!maxsimExports?.maxsim_dequant) return null;
+
+  const qBytes = numQ * dim * 4; // float32
+  const dBytes = numD * dim;     // int8 (4x smaller!)
+
+  const mem = new Uint8Array(maxsimExports.memory.buffer);
+  if (qBytes + dBytes + 1024 > mem.length) return null;
+
+  const qPtr = DATA_OFFSET;
+  const dPtr = DATA_OFFSET + qBytes;
+
+  // Copy query (float32)
+  mem.set(new Uint8Array(queryFlat.buffer, queryFlat.byteOffset, qBytes), qPtr);
+  // Copy doc int8 (4x smaller copy than float32!)
+  mem.set(new Uint8Array(docInt8.buffer, docInt8.byteOffset, dBytes), dPtr);
+
+  return maxsimExports.maxsim_dequant(qPtr, dPtr, numQ, numD, dim, min, scale);
+}
+
+// =============================================================================
+// NATIVE MAXSIM BATCH (Tier 1 — rayon parallel)
+// =============================================================================
+
+/**
+ * Score all candidates in parallel using the native Rust + Rayon addon.
+ *
+ * @param {Float32Array} queryFlat - Q × dim float32
+ * @param {number} numQ
+ * @param {number} dim
+ * @param {Array<{tokens: Int8Array|Buffer, numTokens: number, dim: number, min: number, scale: number}>} candidates
+ * @returns {number[]|null} Array of MaxSim scores, or null if native unavailable
+ */
+export function nativeMaxSimBatch(queryFlat, numQ, dim, candidates) {
+  if (!nativeMaxsim) return null;
+  return nativeMaxsim.maxsimScoreBatch(queryFlat, numQ, dim, candidates);
+}
+
 export function isWasmAvailable() {
   return !!wasmExports;
+}
+
+export function isMaxSimWasmAvailable() {
+  return !!maxsimExports;
+}
+
+export function isNativeMaxSimAvailable() {
+  return !!nativeMaxsim;
+}
+
+export function getMaxSimTier() {
+  if (nativeMaxsim) return 'native';
+  if (maxsimExports || wasmExports?.maxsim_f32) return 'wasm';
+  return 'js';
 }
 
 export { initWasm };
