@@ -326,9 +326,10 @@ export function mapMatchesToChunks(matches, locationMap) {
  * @param {number} endLine - 1-indexed end (inclusive)
  * @returns {string|null}
  */
-export function readFileRange(fileCache, filePath, startLine, endLine) {
+export function readFileRange(fileCache, filePath, startLine, endLine, projectRoot) {
   try {
-    const abs = path.isAbsolute(filePath) ? filePath : path.join(PROJECT_ROOT, filePath);
+    const root = projectRoot || PROJECT_ROOT;
+    const abs = path.isAbsolute(filePath) ? filePath : path.join(root, filePath);
     let lines = fileCache.get(abs);
     if (!lines) {
       lines = readFileSync(abs, 'utf-8').split('\n');
@@ -499,7 +500,7 @@ export async function patternSearch(query, routing, options = {}) {
   const results = scored.slice(0, k).map((s, rank) => {
     const doc = this.lateInteractionIndex.documents.get(s.id);
     const meta = doc?.metadata || {};
-    const text = readFileRange(fileCache, meta.file, meta.startLine, meta.endLine);
+    const text = readFileRange(fileCache, meta.file, meta.startLine, meta.endLine, this.projectRoot);
 
     return {
       id: s.id,
