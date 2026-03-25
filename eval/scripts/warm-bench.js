@@ -31,9 +31,12 @@ await encodeQuery('warmup query two');
 console.log('All models warm.\n');
 
 // ── Load queries ────────────────────────────────────────────────
-const queries = loadJsonl(path.join(PROJECT_ROOT, 'eval/data/pattern-benchmark/queries.jsonl'));
+const splitArg = process.argv.find(a => a.startsWith('--split='));
+const split = splitArg ? splitArg.split('=')[1] : 'all';
+let queries = loadJsonl(path.join(PROJECT_ROOT, 'eval/data/pattern-benchmark/queries.jsonl'));
+if (split !== 'all') queries = queries.filter(q => q.split === split);
 for (const q of queries) getRelevantChunkIds(q);
-console.log(`Queries: ${queries.length}`);
+console.log(`Queries: ${queries.length} (split: ${split})`);
 
 // ── rg-only ─────────────────────────────────────────────────────
 console.log('\nRunning rg-only...');

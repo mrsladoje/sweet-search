@@ -163,11 +163,20 @@
       "semantic_query": "Natural language query for MaxSim ranking",
       "relevant_files": "Array of file paths containing the expected results",
       "relevant_chunks": "Array of file:startLine-endLine chunk identifiers (gold labels)",
+      "relevant_chunk_ids": "Array of gold chunk IDs in format file:startLine-endLine:index",
       "language": "Programming language of the target code",
       "regex_family": "One of: class, function, import, export, config, method, structural, test",
       "difficulty": "One of: easy, medium, hard",
       "naming_quality": "One of: descriptive, abbreviated, mixed",
       "notes": "Human-readable explanation of what this query tests"
+    },
+    "chunkMatchingStrategy": {
+      "description": "How gold chunk IDs are matched against search result IDs during evaluation",
+      "primaryMatch": "Exact string match: goldId === result.id",
+      "fuzzyFallback": "When exact match fails, match by: (1) same file path AND (2) line range overlap > 50% relative to gold chunk length",
+      "rationale": "Fuzzy fallback makes evaluation robust to chunk boundary shifts that occur during re-indexing without changing the gold labels",
+      "goldIdFormat": "file:startLine-endLine:index  (e.g. core/sweet-search.js:88-116:3)",
+      "overlapThreshold": 0.5
     }
   },
 

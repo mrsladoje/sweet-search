@@ -12,6 +12,7 @@ import {
   getRelevantChunkIds,
   computePerSliceMetrics,
   computeWinRate,
+  chunksMatch,
 } from '../eval/lib/pattern-evaluator.js';
 
 import { computeMetrics } from '../eval/lib/metrics.js';
@@ -186,6 +187,58 @@ describe('computePerSliceMetrics', () => {
 // =============================================================================
 // computeWinRate
 // =============================================================================
+
+// =============================================================================
+// chunksMatch
+// =============================================================================
+
+describe('chunksMatch', () => {
+  it('returns true on exact ID match', () => {
+    const goldId = 'core/sweet-search.js:88-116:3';
+    const result = { id: 'core/sweet-search.js:88-116:3', file: 'core/sweet-search.js', startLine: 88, endLine: 116 };
+    expect(chunksMatch(goldId, result)).toBe(true);
+  });
+
+  it('returns true on fuzzy match when line ranges overlap >50%', () => {
+    // Gold: lines 88-116 (29 lines). Result shifted by a few lines: 90-120.
+    // Overlap: 90-116 = 27 lines. 27/29 ≈ 0.93 > 0.5 → match.
+    const goldId = 'core/sweet-search.js:88-116:3';
+    const result = { id: 'core/sweet-search.js:90-120:3', file: 'core/sweet-search.js', startLine: 90, endLine: 120 };
+    expect(chunksMatch(goldId, result)).toBe(true);
+  });
+
+  it('returns false when file paths differ', () => {
+    const goldId = 'core/sweet-search.js:88-116:3';
+    const result = { id: 'core/other-file.js:88-116:3', file: 'core/other-file.js', startLine: 88, endLine: 116 };
+    expect(chunksMatch(goldId, result)).toBe(false);
+  });
+
+  it('returns false when line ranges overlap <=50%', () => {
+    // Gold: lines 1-100. Result: lines 51-200. Overlap: 51-100 = 50 lines. 50/100 = 0.5 — not > 0.5.
+    const goldId = 'core/sweet-search.js:1-100:0';
+    const result = { id: 'core/sweet-search.js:51-200:1', file: 'core/sweet-search.js', startLine: 51, endLine: 200 };
+    expect(chunksMatch(goldId, result)).toBe(false);
+  });
+
+  it('returns false when line ranges do not overlap at all', () => {
+    const goldId = 'core/sweet-search.js:1-50:0';
+    const result = { id: 'core/sweet-search.js:60-100:1', file: 'core/sweet-search.js', startLine: 60, endLine: 100 };
+    expect(chunksMatch(goldId, result)).toBe(false);
+  });
+
+  it('returns false when gold ID format is unparseable and no exact match', () => {
+    const goldId = 'not-a-valid-gold-id';
+    const result = { id: 'core/sweet-search.js:1-10:0', file: 'core/sweet-search.js', startLine: 1, endLine: 10 };
+    expect(chunksMatch(goldId, result)).toBe(false);
+  });
+
+  it('returns false when result has no line range information', () => {
+    const goldId = 'core/sweet-search.js:88-116:3';
+    const result = { id: 'core/sweet-search.js:88-116:3-different', file: 'core/sweet-search.js', startLine: null, endLine: null };
+    // id doesn't match exactly; no line info for fuzzy check
+    expect(chunksMatch(goldId, result)).toBe(false);
+  });
+});
 
 describe('computeWinRate', () => {
   it('counts wins, losses, and ties', () => {

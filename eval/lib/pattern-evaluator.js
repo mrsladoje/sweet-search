@@ -147,22 +147,109 @@ export function getRelevantChunkIds(queryObj) {
 }
 
 /**
+ * Parse a gold chunk ID in the format `file:startLine-endLine:index`.
+ * Returns { file, startLine, endLine } or null if the format doesn't match.
+ *
+ * @param {string} goldId
+ * @returns {{ file: string, startLine: number, endLine: number }|null}
+ */
+function parseGoldId(goldId) {
+  // Format: file:startLine-endLine:index  (index is optional trailing :N)
+  // The file portion may itself contain colons on some platforms, so we match
+  // from the right: the last two colon-separated segments are endLine:index,
+  // and the segment before that contains startLine at the end after a dash.
+  const match = goldId.match(/^(.+):(\d+)-(\d+)(?::\d+)?$/);
+  if (!match) return null;
+  return {
+    file: match[1],
+    startLine: parseInt(match[2], 10),
+    endLine: parseInt(match[3], 10),
+  };
+}
+
+/**
+ * Compute the overlap ratio between two line ranges.
+ * Returns a value in [0, 1]: overlap length / length of the gold range.
+ *
+ * @param {number} goldStart
+ * @param {number} goldEnd
+ * @param {number} resultStart
+ * @param {number} resultEnd
+ * @returns {number}
+ */
+function lineRangeOverlap(goldStart, goldEnd, resultStart, resultEnd) {
+  const overlapStart = Math.max(goldStart, resultStart);
+  const overlapEnd = Math.min(goldEnd, resultEnd);
+  if (overlapEnd < overlapStart) return 0;
+
+  const overlapLen = overlapEnd - overlapStart + 1;
+  const goldLen = goldEnd - goldStart + 1;
+  return goldLen > 0 ? overlapLen / goldLen : 0;
+}
+
+/**
+ * Check whether a search result matches a gold chunk ID.
+ *
+ * Matching strategy:
+ *   1. Exact ID match: `goldId === result.id`
+ *   2. Fuzzy fallback — requires same file AND either:
+ *      a. Both have a non-empty symbol name and they match (case-insensitive), OR
+ *      b. Line range overlap > 50% (overlap relative to gold chunk length)
+ *
+ * @param {string} goldId - Gold chunk ID (e.g. "core/sweet-search.js:88-116:3")
+ * @param {Object} result - Search result with { id, file, name, startLine, endLine }
+ * @returns {boolean}
+ */
+export function chunksMatch(goldId, result) {
+  // 1. Exact match
+  if (goldId === result.id) return true;
+
+  // 2. Fuzzy fallback — parse the gold ID
+  const parsed = parseGoldId(goldId);
+  if (!parsed) return false;
+
+  // Files must match
+  const resultFile = result.file || result.metadata?.file || '';
+  if (parsed.file !== resultFile) return false;
+
+  // 2a. Symbol name match (both must be non-empty)
+  const goldName = null; // gold IDs don't carry a name; only result does
+  const resultName = (result.name || result.metadata?.name || '').trim();
+  // We skip name matching since gold IDs don't encode names — proceed to line overlap.
+
+  void goldName; // suppress unused-variable lint noise
+
+  // 2b. Line range overlap > 50%
+  const resultStart = result.startLine ?? result.metadata?.startLine ?? null;
+  const resultEnd = result.endLine ?? result.metadata?.endLine ?? null;
+  if (resultStart == null || resultEnd == null) return false;
+
+  return lineRangeOverlap(parsed.startLine, parsed.endLine, resultStart, resultEnd) > 0.5;
+}
+
+/**
  * Evaluate a pattern query: check which returned results match ground truth chunks.
+ *
+ * Matching is done via chunksMatch(), which tries exact ID match first and
+ * falls back to fuzzy file + line-range-overlap matching. This makes
+ * evaluation robust to chunk boundary shifts during re-indexing.
  *
  * @param {Object} queryObj - Query with { query_id, relevant_chunk_ids, ... }
  * @param {Array<Object>} searchResults - Results from runPatternQuery
  * @returns {Object} Evaluation result compatible with metrics.computeMetrics
  */
 export function evaluatePatternQuery(queryObj, searchResults) {
-  const relevantChunkIds = new Set(getRelevantChunkIds(queryObj));
-  const matchedChunkIds = new Set();
+  const relevantChunkIds = getRelevantChunkIds(queryObj);
+  const matchedGoldIds = new Set();
   const rankedRelevance = searchResults.map(r => {
-    const resultId = r.id || '';
-    if (!resultId || matchedChunkIds.has(resultId)) return 0;
+    if (!r.id && !r.file) return 0;
 
-    if (relevantChunkIds.has(resultId)) {
-      matchedChunkIds.add(resultId);
-      return 1;
+    for (const goldId of relevantChunkIds) {
+      if (matchedGoldIds.has(goldId)) continue;
+      if (chunksMatch(goldId, r)) {
+        matchedGoldIds.add(goldId);
+        return 1;
+      }
     }
     return 0;
   });
@@ -172,7 +259,7 @@ export function evaluatePatternQuery(queryObj, searchResults) {
     query: `[${queryObj.regex}] ${queryObj.semantic_query}`,
     language: queryObj.language || 'unknown',
     rankedRelevance,
-    totalRelevant: relevantChunkIds.size,
+    totalRelevant: relevantChunkIds.length,
     latencyMs: 0,
     // Pattern-specific metadata for per-slice reporting
     regexFamily: queryObj.regex_family || 'unknown',

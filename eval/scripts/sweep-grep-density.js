@@ -26,8 +26,12 @@ await search.init();
 await encodeQuery('warmup');
 console.log('Ready.\n');
 
-const queries = loadJsonl(path.join(PROJECT_ROOT, 'eval/data/pattern-benchmark/queries.jsonl'));
+const splitArg = process.argv.find(a => a.startsWith('--split='));
+const split = splitArg ? splitArg.split('=')[1] : 'dev';
+let queries = loadJsonl(path.join(PROJECT_ROOT, 'eval/data/pattern-benchmark/queries.jsonl'));
+if (split !== 'all') queries = queries.filter(q => q.split === split);
 for (const q of queries) getRelevantChunkIds(q);
+console.log(`Queries: ${queries.length} (split: ${split} — sweeps use dev by default)`);
 
 const alphas = [0, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3];
 const enhanceModes = [false, true];

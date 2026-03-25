@@ -21,6 +21,8 @@
  *   node eval/run_pattern_benchmark.js --skip-baselines
  *   node eval/run_pattern_benchmark.js --save-baseline
  *   node eval/run_pattern_benchmark.js --concurrency=8
+ *   node eval/run_pattern_benchmark.js --split=dev
+ *   node eval/run_pattern_benchmark.js --split=test
  */
 
 import { existsSync, readFileSync } from 'fs';
@@ -35,7 +37,10 @@ import {
   runRgOnlyQuery,
   evaluatePatternQuery,
   getRelevantChunkIds,
+  classifyFailure,
   computePerSliceMetrics,
+  computeDiagnostics,
+  printDiagnostics,
   computeWinRate,
   printSliceReport,
   printWinRate,
@@ -58,6 +63,7 @@ function parseArgs() {
     skipBaselines: false,
     saveBaselineFlag: false,
     verbose: false,
+    split: 'all',
   };
 
   for (const arg of args) {
@@ -65,6 +71,7 @@ function parseArgs() {
     else if (arg.startsWith('--k=')) opts.k = parseInt(arg.split('=')[1]);
     else if (arg.startsWith('--concurrency=')) opts.concurrency = parseInt(arg.split('=')[1]);
     else if (arg.startsWith('--baselines=')) opts.baselines = arg.split('=')[1].split(',');
+    else if (arg.startsWith('--split=')) opts.split = arg.split('=')[1];
     else if (arg === '--skip-baselines') opts.skipBaselines = true;
     else if (arg === '--save-baseline') opts.saveBaselineFlag = true;
     else if (arg === '--verbose' || arg === '-v') opts.verbose = true;
@@ -79,6 +86,7 @@ Options:
   --k=N                 Top-k results to retrieve [default: 10]
   --concurrency=N       Parallel query execution [default: 5]
   --baselines=LIST      Comma-separated baselines to run [default: rg-only,hybrid-no-regex,pattern-maxsim]
+  --split=SPLIT         Query split to use: all|dev|test [default: all]
   --skip-baselines      Only run pattern-maxsim (treatment), skip comparison baselines
   --save-baseline       Save results as new baseline for regression checks
   --verbose, -v         Show per-query details
@@ -88,11 +96,20 @@ Baselines:
   rg-only           Pure ripgrep (recall ceiling, no ranking)
   hybrid-no-regex   Sweet Search hybrid mode (BM25 + semantic, no regex)
   pattern-maxsim    ColGrep pattern mode (regex candidates + MaxSim ranking)
+
+Splits:
+  all   All 60 queries (default, backward compatible)
+  dev   40 dev queries — for parameter tuning
+  test  20 test queries — for reporting only, do not tune on these
 `);
       process.exit(0);
     }
   }
 
+  if (!['all', 'dev', 'test'].includes(opts.split)) {
+    console.error(`  Invalid --split value: "${opts.split}". Must be all|dev|test.`);
+    process.exit(1);
+  }
   if (opts.skipBaselines) opts.baselines = ['pattern-maxsim'];
   return opts;
 }
@@ -107,6 +124,7 @@ async function main() {
   console.log('  ColGrep Pattern Benchmark Runner');
   console.log('═'.repeat(70));
   console.log(`  Baselines:   ${opts.baselines.join(', ')}`);
+  console.log(`  Split:       ${opts.split}`);
   console.log(`  Max queries: ${opts.maxQueries || 'all'}`);
   console.log(`  Top-k:       ${opts.k}`);
   console.log(`  Concurrency: ${opts.concurrency}`);
@@ -119,6 +137,9 @@ async function main() {
   }
 
   let queries = loadJsonl(queriesFile);
+  if (opts.split !== 'all') {
+    queries = queries.filter(q => q.split === opts.split);
+  }
   if (opts.maxQueries > 0) {
     queries = queries.slice(0, opts.maxQueries);
   }
@@ -188,6 +209,12 @@ async function main() {
           };
         }
 
+        // Classify failure mode for pattern-maxsim pipeline diagnostics
+        if (baseline === 'pattern-maxsim') {
+          const goldIds = new Set(getRelevantChunkIds(queryObj));
+          evaluated._failureMode = classifyFailure(evaluated, result.stats, goldIds);
+        }
+
         evaluatedQueries.push(evaluated);
 
         completed++;
@@ -239,6 +266,13 @@ async function main() {
     console.log(`  Recall@10:   ${(m.recall_at_10 * 100).toFixed(2)}%`);
     console.log(`  NDCG@10:     ${(m.ndcg_at_10 * 100).toFixed(2)}%`);
     console.log(`  Success@1:   ${(m.success_at_1 * 100).toFixed(2)}%`);
+    if (baseline === 'pattern-maxsim') {
+      const diagForMetric = computeDiagnostics(data.evaluatedQueries);
+      const candRecall = diagForMetric.total > 0
+        ? ((diagForMetric.hit + diagForMetric.rerank_miss) / diagForMetric.total * 100).toFixed(2)
+        : '0.00';
+      console.log(`  Candidate recall: ${candRecall}%`);
+    }
     console.log('  ' + '-'.repeat(50));
     console.log(`  Latency p50: ${m.latency_p50_ms.toFixed(1)}ms`);
     console.log(`  Latency p95: ${m.latency_p95_ms.toFixed(1)}ms`);
@@ -263,6 +297,33 @@ async function main() {
         console.log(`  Grep matches:        ${avg(withStats, 'grepMatches').toFixed(0)} avg`);
         console.log(`  Indexed chunks:      ${avg(withStats, 'indexedChunks').toFixed(0)} avg`);
         console.log(`  MaxSim candidates:   ${avg(withStats, 'maxSimCandidates').toFixed(0)} avg`);
+      }
+
+      // Pipeline diagnostics: where do failures happen?
+      printDiagnostics(computeDiagnostics(data.evaluatedQueries));
+
+      // Per-family failure mode breakdown
+      console.log('\n  ── Per-Family Failure Modes ──');
+      console.log('  ' + '-'.repeat(62));
+      console.log('  ' + 'Family'.padEnd(14) + 'Hit'.padStart(6) + 'Rerank'.padStart(8) + 'Map'.padStart(6) + 'Regex'.padStart(7) + '  CandRecall');
+      console.log('  ' + '-'.repeat(62));
+      const byFamily = {};
+      for (const eq of data.evaluatedQueries) {
+        const fam = eq.regexFamily || 'unknown';
+        if (!byFamily[fam]) byFamily[fam] = { hit: 0, rerank_miss: 0, mapping_miss: 0, regex_miss: 0, total: 0 };
+        byFamily[fam][eq._failureMode || 'hit']++;
+        byFamily[fam].total++;
+      }
+      for (const [fam, c] of Object.entries(byFamily)) {
+        const cr = ((c.hit + c.rerank_miss) / c.total * 100).toFixed(0);
+        console.log('  ' +
+          fam.padEnd(14) +
+          String(c.hit).padStart(6) +
+          String(c.rerank_miss).padStart(8) +
+          String(c.mapping_miss).padStart(6) +
+          String(c.regex_miss).padStart(7) +
+          `  ${cr}%`.padStart(12)
+        );
       }
     }
   }
