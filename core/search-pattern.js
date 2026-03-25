@@ -180,6 +180,46 @@ export async function runRipgrep(regex, searchDir, opts = {}) {
 }
 
 // =============================================================================
+// Query enhancement — merge regex tokens into semantic query (ColGrep-style)
+// =============================================================================
+
+/**
+ * Strip regex metacharacters and extract readable tokens from a pattern.
+ * E.g., "class\\s+\\w+" → ["class"], "export async function\\s+\\w+" → ["export", "async", "function"]
+ *
+ * @param {string} regex
+ * @returns {string[]} Readable tokens
+ */
+export function extractRegexTokens(regex) {
+  return regex
+    .replace(/\\[sSdDwWbB]/g, ' ')     // \s, \w, \d, \b → space
+    .replace(/\\[.*+?^${}()|[\]\\]/g, '') // escaped metacharacters → remove
+    .replace(/[.*+?^${}()|[\]\\]/g, ' ') // raw metacharacters → space
+    .split(/\s+/)
+    .filter(t => t.length > 1)           // drop single chars
+    .map(t => t.toLowerCase());
+}
+
+/**
+ * Merge unique regex tokens into the semantic query.
+ * Avoids duplicating tokens already present in the query.
+ *
+ * @param {string} query - Semantic query
+ * @param {string} regex - Regex pattern
+ * @returns {string} Enhanced query
+ */
+export function mergeRegexIntoQuery(query, regex) {
+  const regexTokens = extractRegexTokens(regex);
+  if (regexTokens.length === 0) return query;
+
+  const queryLower = query.toLowerCase();
+  const novel = regexTokens.filter(t => !queryLower.includes(t));
+  if (novel.length === 0) return query;
+
+  return `${query} ${novel.join(' ')}`;
+}
+
+// =============================================================================
 // Chunk location map — maps file:line → chunk IDs
 // =============================================================================
 
@@ -244,13 +284,14 @@ export function findChunkForLine(intervals, lineNumber) {
 
 /**
  * Map ripgrep matches to indexed chunk IDs.
+ * Returns match counts per chunk (grep density) alongside the ID set.
  *
  * @param {Array<{file: string, line: number, content: string}>} matches
  * @param {Map} locationMap - Output of buildChunkLocationMap
- * @returns {{ chunkIds: Set<string>, unindexed: Array }}
+ * @returns {{ chunkIds: Set<string>, chunkMatchCounts: Map<string, number>, unindexed: Array }}
  */
 export function mapMatchesToChunks(matches, locationMap) {
-  const chunkIds = new Set();
+  const chunkMatchCounts = new Map();
   const unindexed = [];
 
   for (const match of matches) {
@@ -258,7 +299,7 @@ export function mapMatchesToChunks(matches, locationMap) {
     if (intervals) {
       const id = findChunkForLine(intervals, match.line);
       if (id) {
-        chunkIds.add(id);
+        chunkMatchCounts.set(id, (chunkMatchCounts.get(id) || 0) + 1);
       } else {
         unindexed.push(match);
       }
@@ -267,7 +308,7 @@ export function mapMatchesToChunks(matches, locationMap) {
     }
   }
 
-  return { chunkIds, unindexed };
+  return { chunkIds: new Set(chunkMatchCounts.keys()), chunkMatchCounts, unindexed };
 }
 
 // =============================================================================
@@ -372,10 +413,17 @@ export async function patternSearch(query, routing, options = {}) {
   const { encodeQuery } = await import('./late-interaction-model.js');
   const searchDir = PROJECT_ROOT;
 
+  // Query enhancement: merge regex tokens into the semantic query (ColGrep-style).
+  // Strips regex metacharacters and appends unique tokens to give the embedding
+  // model structural context alongside the semantic intent.
+  const enhanceQuery = options.enhanceQuery ?? true;
+  const effectiveQuery = enhanceQuery ? mergeRegexIntoQuery(query, regex) : query;
+  log(`Query: "${effectiveQuery}"`);
+
   const parallelStart = performance.now();
   const [grepMatches, queryTokens] = await Promise.all([
     runRipgrep(regex, searchDir),
-    encodeQuery(query),
+    encodeQuery(effectiveQuery),
   ]);
   const parallelTime = performance.now() - parallelStart;
   log(`Parallel phase: ${grepMatches.length} grep matches, ${queryTokens.length} query tokens in ${parallelTime.toFixed(1)}ms`);
@@ -395,15 +443,15 @@ export async function patternSearch(query, routing, options = {}) {
     };
   }
 
-  // Map file:line matches → indexed chunk IDs
-  const { chunkIds, unindexed } = mapMatchesToChunks(grepMatches, locationMap);
+  // Map file:line matches → indexed chunk IDs (with grep density counts)
+  const { chunkIds, chunkMatchCounts, unindexed } = mapMatchesToChunks(grepMatches, locationMap);
   log(`Mapped: ${chunkIds.size} indexed chunks, ${unindexed.length} unindexed matches`);
 
   // Filter to chunks with token embeddings in the LI index
   const available = this.lateInteractionIndex.hasTokens(chunkIds);
   log(`LI index hits: ${available.size}/${chunkIds.size}`);
 
-  // MaxSim rerank
+  // MaxSim rerank + grep density blending
   let scored = [];
   let rerankTime = 0;
   if (available.size > 0 && queryTokens.length > 0) {
@@ -411,6 +459,37 @@ export async function patternSearch(query, routing, options = {}) {
     const rerankStart = performance.now();
     scored = await this.lateInteractionIndex.scoreWithLateInteraction(queryTokens, candidates);
     rerankTime = performance.now() - rerankStart;
+
+    // Blend grep density: finalScore = maxSimScore * (1 + α * log(matchCount))
+    // α controls how much structural match density influences ranking.
+    // log-scaled so a chunk with 50 hits doesn't dominate one with 5.
+    const GREP_DENSITY_ALPHA = options.grepDensityAlpha ?? 0;
+    for (const s of scored) {
+      const matchCount = chunkMatchCounts.get(s.id) || 1;
+      s.grepDensity = matchCount;
+      s.lateInteractionScore = s.lateInteractionScore * (1 + GREP_DENSITY_ALPHA * Math.log(matchCount));
+    }
+    // Test demotion (ColGrep-style): penalize test file chunks when the query
+    // doesn't mention testing. Prevents test files from drowning out implementations.
+    const TEST_DEMOTION = options.testDemotion ?? 0.02;
+    if (TEST_DEMOTION > 0) {
+      const queryLower = query.toLowerCase();
+      const queryMentionsTest = /\btest|spec|describe|it\b/.test(queryLower);
+      if (!queryMentionsTest) {
+        for (const s of scored) {
+          const doc = this.lateInteractionIndex.documents.get(s.id);
+          const file = doc?.metadata?.file || '';
+          const name = doc?.metadata?.name || '';
+          if (/test|spec|__test__|\.test\.|\.spec\./.test(file) ||
+              /test|spec/i.test(name)) {
+            s.lateInteractionScore -= TEST_DEMOTION;
+          }
+        }
+      }
+    }
+
+    scored.sort((a, b) => b.lateInteractionScore - a.lateInteractionScore);
+
     log(`MaxSim rerank: ${scored.length} candidates in ${rerankTime.toFixed(1)}ms`);
   }
 
@@ -473,6 +552,12 @@ export async function patternSearch(query, routing, options = {}) {
 
   const totalTime = performance.now() - start;
 
+  // Expose full candidate pipeline for diagnostic evaluation:
+  // - allCandidateIds: every chunk that had LI embeddings (pre-MaxSim)
+  // - allMappedChunkIds: every chunk mapped from grep (pre-LI filter)
+  const allCandidateIds = [...available];
+  const allMappedChunkIds = [...chunkIds];
+
   return {
     results,
     stats: {
@@ -487,6 +572,8 @@ export async function patternSearch(query, routing, options = {}) {
       parallelTime_ms: Math.round(parallelTime),
       rerankTime_ms: Math.round(rerankTime),
       total_ms: Math.round(totalTime),
+      allCandidateIds,
+      allMappedChunkIds,
     },
   };
 }

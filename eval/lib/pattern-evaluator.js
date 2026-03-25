@@ -182,6 +182,67 @@ export function evaluatePatternQuery(queryObj, searchResults) {
 }
 
 /**
+ * Classify failure mode for a pattern query evaluation.
+ * Separates "grep didn't find it" from "mapping lost it" from "MaxSim ranked it wrong."
+ *
+ * @param {Object} evaluated - Output of evaluatePatternQuery
+ * @param {Object} stats - Pattern search stats (with allCandidateIds, allMappedChunkIds)
+ * @param {Set<string>} relevantChunkIds - Gold chunk IDs for this query
+ * @returns {string} One of: 'hit', 'rerank_miss', 'mapping_miss', 'regex_miss'
+ */
+export function classifyFailure(evaluated, stats, relevantChunkIds) {
+  // Did the system find a gold chunk in top-k?
+  if (evaluated.rankedRelevance.includes(1)) return 'hit';
+
+  const candidateSet = new Set(stats?.allCandidateIds || []);
+  const mappedSet = new Set(stats?.allMappedChunkIds || []);
+
+  // Was any gold chunk in the MaxSim candidate pool?
+  for (const goldId of relevantChunkIds) {
+    if (candidateSet.has(goldId)) return 'rerank_miss'; // MaxSim had it but ranked it below top-k
+  }
+
+  // Was any gold chunk mapped from grep but filtered out (no LI embedding)?
+  for (const goldId of relevantChunkIds) {
+    if (mappedSet.has(goldId)) return 'mapping_miss'; // Grep found it, LI didn't have it
+  }
+
+  // Grep didn't find the right chunk at all
+  return 'regex_miss';
+}
+
+/**
+ * Compute pipeline diagnostic breakdown across all evaluated queries.
+ *
+ * @param {Array<Object>} evaluatedQueries - With .patternStats and .relevantChunkIds attached
+ * @returns {{ hit: number, rerank_miss: number, mapping_miss: number, regex_miss: number, total: number }}
+ */
+export function computeDiagnostics(evaluatedQueries) {
+  const counts = { hit: 0, rerank_miss: 0, mapping_miss: 0, regex_miss: 0 };
+
+  for (const eq of evaluatedQueries) {
+    const classification = eq._failureMode || 'hit';
+    counts[classification] = (counts[classification] || 0) + 1;
+  }
+
+  return { ...counts, total: evaluatedQueries.length };
+}
+
+/**
+ * Print diagnostic breakdown.
+ */
+export function printDiagnostics(diag) {
+  const pct = (n) => ((n / diag.total) * 100).toFixed(1);
+  console.log('\n  ── Pipeline Diagnostics ──');
+  console.log('  ' + '-'.repeat(45));
+  console.log(`  Hit (gold in top-k):       ${diag.hit}/${diag.total} (${pct(diag.hit)}%)`);
+  console.log(`  Rerank miss (in cands):    ${diag.rerank_miss}/${diag.total} (${pct(diag.rerank_miss)}%)`);
+  console.log(`  Mapping miss (no LI emb):  ${diag.mapping_miss}/${diag.total} (${pct(diag.mapping_miss)}%)`);
+  console.log(`  Regex miss (not in grep):  ${diag.regex_miss}/${diag.total} (${pct(diag.regex_miss)}%)`);
+  console.log(`  Candidate recall:          ${pct(diag.hit + diag.rerank_miss)}% (gold was in candidate pool)`);
+}
+
+/**
  * Compute per-slice metrics breakdown for pattern evaluation.
  *
  * Slices: regex_family, difficulty, naming_quality.

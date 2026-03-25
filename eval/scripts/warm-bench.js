@@ -17,7 +17,8 @@ import { loadJsonl } from '../lib/data-loader.js';
 import { computeMetrics } from '../lib/metrics.js';
 import {
   runPatternQuery, runRgOnlyQuery, evaluatePatternQuery,
-  getRelevantChunkIds, computePerSliceMetrics, computeWinRate,
+  getRelevantChunkIds, classifyFailure, computePerSliceMetrics,
+  computeDiagnostics, printDiagnostics, computeWinRate,
   printSliceReport, printWinRate,
 } from '../lib/pattern-evaluator.js';
 
@@ -55,6 +56,12 @@ for (const q of queries) {
   e.regexFamily = q.regex_family || 'unknown';
   e.difficulty = q.difficulty || 'unknown';
   e.namingQuality = q.naming_quality || 'unknown';
+
+  // Classify failure mode
+  const goldIds = new Set(getRelevantChunkIds(q));
+  e._failureMode = classifyFailure(e, r.stats, goldIds);
+  e._relevantChunkIds = [...goldIds];
+
   patResults.push(e);
 }
 
@@ -92,5 +99,33 @@ console.log(`  MaxSim candidates: ${avg('maxSimCandidates').toFixed(0)}`);
 
 const slices = computePerSliceMetrics(patResults, computeMetrics);
 printSliceReport('regexFamily', slices.regexFamily);
+
+// Pipeline diagnostics: where do failures happen?
+const diag = computeDiagnostics(patResults);
+printDiagnostics(diag);
+
+// Show per-family failure breakdown
+console.log('\n  ── Per-Family Failure Modes ──');
+console.log('  ' + '-'.repeat(62));
+console.log('  ' + 'Family'.padEnd(14) + 'Hit'.padStart(6) + 'Rerank'.padStart(8) + 'Map'.padStart(6) + 'Regex'.padStart(7) + '  CandRecall');
+console.log('  ' + '-'.repeat(62));
+const byFamily = {};
+for (const eq of patResults) {
+  const fam = eq.regexFamily;
+  if (!byFamily[fam]) byFamily[fam] = { hit: 0, rerank_miss: 0, mapping_miss: 0, regex_miss: 0, total: 0 };
+  byFamily[fam][eq._failureMode]++;
+  byFamily[fam].total++;
+}
+for (const [fam, c] of Object.entries(byFamily)) {
+  const cr = ((c.hit + c.rerank_miss) / c.total * 100).toFixed(0);
+  console.log('  ' +
+    fam.padEnd(14) +
+    String(c.hit).padStart(6) +
+    String(c.rerank_miss).padStart(8) +
+    String(c.mapping_miss).padStart(6) +
+    String(c.regex_miss).padStart(7) +
+    `  ${cr}%`.padStart(12)
+  );
+}
 
 search.close?.();
