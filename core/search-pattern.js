@@ -286,24 +286,59 @@ export function findChunkForLine(intervals, lineNumber) {
  * Map ripgrep matches to indexed chunk IDs.
  * Returns match counts per chunk (grep density) alongside the ID set.
  *
+ * Adjacent chunk inclusion: when a regex matches a line at the boundary
+ * of a chunk (within 2 lines of the chunk's start or end), the adjacent
+ * chunk is also included as a candidate. This handles the common case
+ * where the AST chunker splits a function signature from its body —
+ * the regex hits the signature line but the gold chunk is the body.
+ *
  * @param {Array<{file: string, line: number, content: string}>} matches
  * @param {Map} locationMap - Output of buildChunkLocationMap
+ * @param {Object} [opts]
+ * @param {boolean} [opts.includeAdjacent=true] - Include adjacent chunks at boundaries
  * @returns {{ chunkIds: Set<string>, chunkMatchCounts: Map<string, number>, unindexed: Array }}
  */
-export function mapMatchesToChunks(matches, locationMap) {
+export function mapMatchesToChunks(matches, locationMap, opts = {}) {
+  const includeAdjacent = opts.includeAdjacent ?? true;
   const chunkMatchCounts = new Map();
   const unindexed = [];
 
   for (const match of matches) {
     const intervals = locationMap.get(match.file);
-    if (intervals) {
-      const id = findChunkForLine(intervals, match.line);
-      if (id) {
-        chunkMatchCounts.set(id, (chunkMatchCounts.get(id) || 0) + 1);
-      } else {
-        unindexed.push(match);
+    if (!intervals) { unindexed.push(match); continue; }
+
+    const id = findChunkForLine(intervals, match.line);
+    if (id) {
+      chunkMatchCounts.set(id, (chunkMatchCounts.get(id) || 0) + 1);
+
+      // Adjacent chunk inclusion: if the match is near a chunk boundary,
+      // also include the next/prev chunk. This catches signature/body splits.
+      if (includeAdjacent) {
+        const idx = intervals.findIndex(iv => iv.id === id);
+        if (idx >= 0) {
+          const iv = intervals[idx];
+          // If match is within 2 lines of chunk end and there's a next chunk
+          if (match.line >= iv.endLine - 1 && idx + 1 < intervals.length) {
+            const nextId = intervals[idx + 1].id;
+            if (!chunkMatchCounts.has(nextId)) chunkMatchCounts.set(nextId, 0);
+          }
+          // If match is within 2 lines of chunk start and there's a prev chunk
+          if (match.line <= iv.startLine + 1 && idx > 0) {
+            const prevId = intervals[idx - 1].id;
+            if (!chunkMatchCounts.has(prevId)) chunkMatchCounts.set(prevId, 0);
+          }
+        }
       }
     } else {
+      // Match falls in a gap — check if there's a chunk starting right after
+      if (includeAdjacent) {
+        for (const iv of intervals) {
+          if (iv.startLine > match.line && iv.startLine - match.line <= 3) {
+            if (!chunkMatchCounts.has(iv.id)) chunkMatchCounts.set(iv.id, 0);
+            break;
+          }
+        }
+      }
       unindexed.push(match);
     }
   }
@@ -423,7 +458,7 @@ export async function patternSearch(query, routing, options = {}) {
 
   const parallelStart = performance.now();
   const [grepMatches, queryTokens] = await Promise.all([
-    runRipgrep(regex, searchDir),
+    runRipgrep(regex, searchDir, { maxMatches: 0 }),  // No raw grep cap — cap at chunk level after dedup
     encodeQuery(effectiveQuery),
   ]);
   const parallelTime = performance.now() - parallelStart;
@@ -449,8 +484,20 @@ export async function patternSearch(query, routing, options = {}) {
   log(`Mapped: ${chunkIds.size} indexed chunks, ${unindexed.length} unindexed matches`);
 
   // Filter to chunks with token embeddings in the LI index
-  const available = this.lateInteractionIndex.hasTokens(chunkIds);
+  let available = this.lateInteractionIndex.hasTokens(chunkIds);
   log(`LI index hits: ${available.size}/${chunkIds.size}`);
+
+  // Chunk-level candidate cap: if too many candidates after dedup, keep
+  // the ones with highest grep density (most regex matches in the chunk).
+  const maxCandidates = options.maxCandidates ?? 0;  // 0 = no cap (best quality); safety valve at caller level
+  if (maxCandidates > 0 && available.size > maxCandidates) {
+    const sorted = [...available]
+      .map(id => ({ id, count: chunkMatchCounts.get(id) || 0 }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, maxCandidates);
+    available = new Set(sorted.map(s => s.id));
+    log(`Candidate cap: ${available.size} (from ${chunkIds.size}, top by grep density)`);
+  }
 
   // MaxSim rerank + grep density blending
   let scored = [];
