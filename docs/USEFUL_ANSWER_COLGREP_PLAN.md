@@ -362,7 +362,7 @@ bugs, and schema drift between modes are possible. After implementation, verify:
 
 | Metric | Target | How to Measure |
 |--------|--------|----------------|
-| Token savings vs grep+read | >30% | Agent-in-the-loop eval (Track B2) |
+| Token savings vs rg+read | >30% | Agent-in-the-loop eval (Track B2) |
 | Search operations saved | >50% | Count tool calls in agent workflow |
 | Self-containment rate | >80% | % of queries where agent doesn't need follow-up reads |
 | Context relevance | >90% | % of returned code that agent actually uses |
@@ -372,7 +372,7 @@ bugs, and schema drift between modes are possible. After implementation, verify:
 
 Run Track B2 (agent-in-the-loop) from COLGREP_PLAN.md:
 1. Generate code questions for each benchmark repo
-2. Run agent with pattern search (agent mode) vs agent with grep+read
+2. Run agent with pattern search (agent mode) vs agent with rg+read
 3. Measure: answer quality, token usage, search operations, turn count
 4. This is the definitive test of whether agent mode helps
 
@@ -436,7 +436,7 @@ the presentation layer and the ranking pipeline.
 ### 15.1 Overview
 
 A head-to-head comparison: an agent answers code questions using ColGrep
-pattern search (agent mode) vs the same agent using standard grep+read.
+pattern search (agent mode) vs the same agent using standard rg+read.
 Measures answer quality, token savings, and search efficiency.
 
 This is the definitive test of whether ColGrep actually helps agents.
@@ -482,7 +482,7 @@ Three systems, each given the same questions:
 
 | System | Tools Available | Description |
 |--------|----------------|-------------|
-| **grep+read** | `grep(regex, dir)` → file:line matches, `read(file, start, end)` → code | Standard agent workflow. Agent greps, reads files, builds understanding. |
+| **rg+read** | `grep(regex, dir)` → file:line matches, `read(file, start, end)` → code | Standard agent workflow. Agent greps, reads files, builds understanding. |
 | **pattern+meta** | `pattern_search(regex, query)` → ranked chunk metadata (no code) | ColGrep ranking but agent must still Read to see code. |
 | **pattern+agent** | `pattern_search(regex, query, format=agent)` → ranked code blocks | ColGrep with full context packages. Agent gets code directly. |
 
@@ -556,15 +556,15 @@ shuffled and anonymized.
 
 | Metric | How Measured | Target for pattern+agent |
 |--------|-------------|-------------------------|
-| **Answer quality** | Judge overall score (1-5) | ≥ grep+read average |
+| **Answer quality** | Judge overall score (1-5) | ≥ rg+read average |
 | **Win rate** | % questions where pattern+agent scores higher | >60% |
-| **Total tokens** | Sum of input + output tokens | <80% of grep+read (>20% savings) |
-| **Input tokens** | Tokens consumed by tool results | <60% of grep+read (>40% savings) |
-| **Search operations** | grep/search tool calls | <50% of grep+read |
-| **Read operations** | file read tool calls | <30% of grep+read |
-| **Turn count** | Agent conversation turns | ≤ grep+read |
+| **Total tokens** | Sum of input + output tokens | <80% of rg+read (>20% savings) |
+| **Input tokens** | Tokens consumed by tool results | <60% of rg+read (>40% savings) |
+| **Search operations** | grep/search tool calls | <50% of rg+read |
+| **Read operations** | file read tool calls | <30% of rg+read |
+| **Turn count** | Agent conversation turns | ≤ rg+read |
 | **Self-containment** | % questions answered without Read calls | >80% |
-| **Time to answer** | Wall clock (agent + tools) | <75% of grep+read |
+| **Time to answer** | Wall clock (agent + tools) | <75% of rg+read |
 
 ### 15.8 Pass/Fail Criteria
 
@@ -578,12 +578,13 @@ shuffled and anonymized.
 
 1. **Generate questions**: Opus generates 30 questions per repo (frozen before baselines)
 2. **Implement tool adapters**: Create tool wrappers for each of the 3 systems
-3. **Run grep+read baseline**: All 150 questions, record answers + metrics
+3. **Run rg+read baseline**: All 150 questions, record answers + metrics
 4. **Run pattern+meta baseline**: Same questions, pattern search without code
 5. **Run pattern+agent treatment**: Same questions, pattern search with code packages
 6. **Blind judging**: Opus rates all 450 answers (150 × 3 systems), shuffled
 7. **Compute metrics**: Per-repo + aggregate, with bootstrap confidence intervals
-8. **Manual audit**: Review 20% of cases where judge scores diverge by >2 points
+8. **Manual audit (mandatory)**: Review 20% of cases where judge scores diverge
+   by >2 points — Claude-as-judge can be biased on architectural questions
 9. **Decision**: Apply pass/fail criteria, decide whether to ship agent mode as default
 
 ### 15.10 Implementation
@@ -606,6 +607,26 @@ eval/
     report.js               # Metrics computation
     results/                # Raw results (gitignored)
 ```
+
+### 15.11 Controlled Experiment Requirements
+
+All 3 systems MUST have identical:
+- Turn limit (10)
+- System prompt (same text, only tool definitions differ)
+- Repo snapshot (same pinned SHAs)
+- Timeout per question (120s)
+- Tool schema style (same parameter naming convention)
+- Token limit per conversation (50K)
+
+### 15.12 Statistical Rigor
+
+Report paired bootstrap confidence intervals (95%) on all metrics, not just
+averages. Use 1000 bootstrap samples. Since each question is answered by all
+3 systems, pair by question ID for the bootstrap.
+
+The judge should receive a brief **reference answer** (2-3 sentences describing
+the expected code locations and key facts) alongside the agent's answer. This
+prevents mushy scoring on architectural questions where the judge lacks context.
 
 **Estimated effort**: 2-3 days for implementation, 1 day for running all baselines,
 0.5 day for judging and analysis.
