@@ -386,7 +386,146 @@ grams during indexing), `core/search-pattern.js` (use gram index for candidate g
 
 ---
 
-## 7. What NOT to Build
+## 7. Phase 5: Bare Grep Mode (No Semantic Ranking)
+
+**Motivation**: Phases 1-4 build a fast, sub-linear regex search engine. But the only way
+to use it today is through `patternSearch()`, which always runs MaxSim reranking, query
+encoding, and late interaction scoring. Many use cases — developer grep, CI lint checks,
+refactoring tools, symbol renaming, dead-code detection — need *all matches* with *zero
+semantic overhead*. They want ripgrep speed with our index-awareness, not a ranked top-K.
+
+Exposing the optimized grep pipeline as a standalone mode gives users the best code search
+tool on the planet for exact-match workloads, without paying for embedding inference or
+MaxSim scoring they don't need.
+
+### 7.1 What "bare grep" means
+
+```
+Full ColGrep pipeline:
+  regex → [Phase 1-4 candidate gen] → chunk mapping → encodeQuery() → MaxSim rerank → top-K
+
+Bare grep pipeline:
+  regex → [Phase 1-4 candidate gen] → file:line matches → done
+```
+
+No query encoding (~6ms saved). No MaxSim scoring. No top-K truncation. All matches
+returned, ordered by file path and line number (deterministic, reproducible). The result
+is a flat list of `{file, line, column, matchText, context}` — the same shape ripgrep
+returns, but produced sub-linearly.
+
+### 7.2 API surface
+
+```javascript
+// New export alongside existing patternSearch()
+const { bareGrep } = require('./core/search-pattern');
+
+const results = await bareGrep(regex, {
+  projectRoot: '/path/to/repo',
+  // Optional: use indexed-file scope (Phase 2). Default: true if index exists.
+  useIndex: true,
+  // Optional: include dirty overlay (Phase 2). Default: true.
+  includeDirty: true,
+  // Optional: use literal extraction (Phase 3). Default: true.
+  useLiteralFilter: true,
+  // Optional: use sparse gram index (Phase 4). Default: true if index exists.
+  useSparseGrams: true,
+  // Optional: context lines around each match (like rg -C).
+  contextLines: 0,
+  // Optional: glob filters (like rg --glob).
+  globs: ['!node_modules', '*.ts'],
+  // Optional: max matches (0 = unlimited). Default: 0.
+  maxMatches: 0,
+});
+
+// results: Array<{ file, line, column, matchText, contextBefore?, contextAfter? }>
+```
+
+This is intentionally a low-level API. It does not depend on the LI index being loaded
+for semantic data — only for the file list (Phase 2) and sparse grams (Phase 4). If
+neither index exists, it falls back to a full ripgrep scan with Phase 1 correctness fixes
+applied.
+
+### 7.3 CLI entry point
+
+```bash
+# Bare grep via sweet-search CLI
+sweet-search grep 'class\s+Auth\w+Service' --context 2
+
+# Equivalent to ripgrep, but uses indexed file scope + literal prefilter
+sweet-search grep -F 'TODO' --glob '*.ts'
+
+# Force full-scan (ignore index)
+sweet-search grep 'pattern' --no-index
+```
+
+The CLI should feel like `rg` with the same flag vocabulary where possible (`-F`, `-l`,
+`-C`, `--glob`, `--type`). Users who know ripgrep should feel at home. The difference is
+invisible: searches are scoped to indexed files and pre-filtered by extracted literals or
+sparse grams, making them faster on large repos without the user doing anything.
+
+### 7.4 Use cases unlocked
+
+| Use Case | Why bare grep, not ColGrep |
+|----------|---------------------------|
+| Symbol renaming / refactoring | Need ALL matches, not top-K ranked |
+| Dead code detection | Searching for zero references — ranking is meaningless |
+| CI lint / policy checks | Exact pattern enforcement, no fuzzy |
+| `grep -c` style counting | Just need counts, not semantic similarity |
+| IDE "find all references" backend | Deterministic, complete results expected |
+| Agent tool: precise code search | When an agent needs exact regex, not "similar code" |
+| Migration scripts | Find all usages of deprecated API |
+
+### 7.5 Performance characteristics
+
+Bare grep inherits all Phase 1-4 optimizations but skips the two most expensive stages
+of the ColGrep pipeline:
+
+| Component | ColGrep | Bare Grep | Saved |
+|-----------|---------|-----------|-------|
+| Query encoding (model inference) | ~6ms | 0ms | 6ms |
+| MaxSim reranking | ~2-8ms (scales with candidates) | 0ms | 2-8ms |
+| Chunk mapping | ~1ms | 0ms (line-level output) | 1ms |
+| Total overhead removed | — | — | **~9-15ms** |
+
+On a warm server, bare grep on an indexed repo should return in **<5ms** for selective
+patterns and **<15ms** even for broad patterns on large repos — competitive with raw
+ripgrep on small repos, but dramatically faster on large ones.
+
+### 7.6 Implementation notes
+
+- `bareGrep()` should share the candidate generation pipeline with `patternSearch()`.
+  Extract the Phase 1-4 logic into a shared `generateCandidates(regex, opts)` function
+  that both code paths call. `patternSearch()` feeds candidates into MaxSim;
+  `bareGrep()` returns them directly.
+- The ripgrep invocation in the final verification step should use `--json` output for
+  structured results, same as today. The only difference is that we return the parsed
+  ripgrep JSON as-is instead of mapping to chunks.
+- Stats reporting should still work: `bareGrep()` returns a `stats` object with timing
+  breakdown (candidate gen time, ripgrep verify time, total matches, files searched,
+  files skipped). This feeds into benchmarking and telemetry.
+
+### 7.7 Relationship to existing grep tools
+
+This is NOT a ripgrep replacement for general terminal use. It's a **project-aware grep**
+that leverages sweet-search's index for speed. The value proposition:
+
+```
+ripgrep alone:       O(corpus) — scans everything, every time
+bare grep mode:      O(result_set) — uses index to skip non-matching files
+ColGrep:             O(result_set) + semantic ranking — for "find similar code"
+```
+
+All three have a place. Bare grep is the middle ground for users who want index-backed
+speed but don't need semantic ranking.
+
+**Effort**: 0.5-1 day (after Phases 1-3 are done — mostly wiring, since the hard parts
+are the candidate generation phases)
+**Files**: `core/search-pattern.js` (extract shared pipeline, add `bareGrep()` export),
+new CLI command in `cli/` or `bin/`
+
+---
+
+## 8. What NOT to Build
 
 1. **Suffix arrays** (livegrep). Can't do incremental updates. Requires concatenating
    the entire corpus into one string. Wrong for local, evolving codebases.
@@ -408,7 +547,7 @@ grams during indexing), `core/search-pattern.js` (use gram index for candidate g
 
 ---
 
-## 8. Priority Order
+## 9. Priority Order
 
 | # | Phase | Effort | Impact | Depends On |
 |---|-------|--------|--------|------------|
@@ -417,13 +556,16 @@ grams during indexing), `core/search-pattern.js` (use gram index for candidate g
 | 3 | Add telemetry for grep component timing | 0.25 day | HIGH (data) | Nothing |
 | 4 | Regex literal extraction fast path (Phase 3) | 1-2 days | MEDIUM | Phase 2 |
 | 5 | Sparse gram index (Phase 4) | 3-5 days | HIGH (at scale) | Phase 3, scale evidence |
+| 6 | Bare grep mode (Phase 5) | 0.5-1 day | MEDIUM (new use cases) | Phase 1-3 |
 
 Items 1-3 should ship immediately. Phase 3 is the sweet spot of effort vs impact.
-Phase 4 is triggered by scale evidence or enterprise users.
+Phase 4 is triggered by scale evidence or enterprise users. Phase 5 can ship any time
+after Phase 3 — it's mostly wiring the candidate generation pipeline into a standalone
+API and CLI.
 
 ---
 
-## 9. Measurement
+## 10. Measurement
 
 Each phase should be validated with Track C component profiling on at least two repos:
 - A small well-named repo (~500 files) — baseline where ripgrep is already fast
@@ -436,13 +578,16 @@ Key metrics per phase:
   candidate reduction ratio (files before/after literal filter)
 - **Phase 4**: Gram index lookup time, posting list intersection time, false positive
   rate (candidates that pass gram filter but fail regex)
+- **Phase 5**: Bare grep latency vs raw ripgrep (end-to-end), throughput (queries/sec),
+  completeness (bare grep matches == ripgrep matches on same corpus)
 
-Add these to the `patternStats` object returned by `patternSearch()` so they flow into
-`eval/run_pattern_benchmark.js` Track C reporting automatically.
+Add these to the `patternStats` object returned by `patternSearch()` (and the new
+`bareGrep()` stats object) so they flow into `eval/run_pattern_benchmark.js` Track C
+reporting automatically.
 
 ---
 
-## 10. References
+## 11. References
 
 | Source | Relevance |
 |--------|-----------|
