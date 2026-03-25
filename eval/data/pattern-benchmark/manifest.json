@@ -10,13 +10,73 @@
     {
       "id": "sweet-search",
       "path": ".",
+      "queryFile": "eval/data/pattern-benchmark/queries.jsonl",
       "description": "Sweet Search codebase (self-referential benchmark)",
       "languages": ["javascript"],
+      "queries": 60,
       "size": "medium",
       "namingQuality": "descriptive",
       "notes": "Well-named functions and classes; grep should do well on many queries"
+    },
+    {
+      "id": "ripgrep",
+      "url": "https://github.com/BurntSushi/ripgrep.git",
+      "sha": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+      "path": "eval/repos/ripgrep",
+      "queryFile": "eval/data/pattern-benchmark-ripgrep/queries.jsonl",
+      "description": "ripgrep — fast regex search tool (Rust)",
+      "languages": ["rust"],
+      "queries": 119,
+      "size": "medium",
+      "namingQuality": "mixed",
+      "notes": "Rust snake_case with abbreviated names; good test for non-JS languages"
+    },
+    {
+      "id": "gin",
+      "url": "https://github.com/gin-gonic/gin.git",
+      "sha": "d3ffc9985281dcf4d3bef604cce4e662b1a327a6",
+      "path": "eval/repos/gin",
+      "queryFile": "eval/data/pattern-benchmark-gin/queries.jsonl",
+      "description": "gin — HTTP web framework (Go)",
+      "languages": ["go"],
+      "queries": 120,
+      "size": "small",
+      "namingQuality": "abbreviated",
+      "notes": "Go-style short names, unexported functions; hardest for grep"
+    },
+    {
+      "id": "flask",
+      "url": "https://github.com/pallets/flask.git",
+      "sha": "7ef2946fb5151b745df30201b8c27790cac53875",
+      "path": "eval/repos/flask",
+      "queryFile": "eval/data/pattern-benchmark-flask/queries.jsonl",
+      "description": "Flask — micro web framework (Python)",
+      "languages": ["python"],
+      "queries": 120,
+      "size": "small",
+      "namingQuality": "descriptive",
+      "notes": "Clean Python with decorators, type hints, dunder methods"
+    },
+    {
+      "id": "fastify",
+      "url": "https://github.com/fastify/fastify.git",
+      "sha": "39f0f24233cf6da2fef48551f51be2f589f7d5d0",
+      "path": "eval/repos/fastify",
+      "queryFile": "eval/data/pattern-benchmark-fastify/queries.jsonl",
+      "description": "Fastify — fast Node.js web framework (JavaScript)",
+      "languages": ["javascript"],
+      "queries": 120,
+      "size": "medium",
+      "namingQuality": "mixed",
+      "notes": "JS with prototype chains, Symbols, async patterns"
     }
   ],
+
+  "totalQueries": 539,
+  "totalRepos": 5,
+  "totalLanguages": 4,
+  "fetchScript": "eval/scripts/fetch-benchmark-repos.js",
+  "multiRepoBench": "eval/scripts/multirepo-bench.js",
 
   "regexFamilies": {
     "class": {
@@ -168,7 +228,8 @@
       "regex_family": "One of: class, function, import, export, config, method, structural, test",
       "difficulty": "One of: easy, medium, hard",
       "naming_quality": "One of: descriptive, abbreviated, mixed",
-      "notes": "Human-readable explanation of what this query tests"
+      "notes": "Human-readable explanation of what this query tests",
+      "split": "One of: dev, test — query split for avoiding overfitting"
     },
     "chunkMatchingStrategy": {
       "description": "How gold chunk IDs are matched against search result IDs during evaluation",
@@ -177,6 +238,30 @@
       "rationale": "Fuzzy fallback makes evaluation robust to chunk boundary shifts that occur during re-indexing without changing the gold labels",
       "goldIdFormat": "file:startLine-endLine:index  (e.g. core/sweet-search.js:88-116:3)",
       "overlapThreshold": 0.5
+    }
+  },
+
+  "splitStrategy": {
+    "description": "Queries are split into dev (tuning) and test (reporting) sets to prevent overfitting",
+    "method": "Stratified by regex_family — last ~1/3 of each family assigned to test",
+    "deterministic": true,
+    "splits": {
+      "dev": { "count": 40, "fraction": 0.67, "use": "Parameter tuning, sweeps, ablations" },
+      "test": { "count": 20, "fraction": 0.33, "use": "Final reporting only — do not tune on these" }
+    },
+    "perFamily": {
+      "class":      { "total": 8,  "dev": 5,  "test": 3, "testIds": ["p035","p036","p037"] },
+      "function":   { "total": 18, "dev": 12, "test": 6, "testIds": ["p040","p043","p044","p045","p046","p047"] },
+      "import":     { "total": 4,  "dev": 3,  "test": 1, "testIds": ["p014"] },
+      "config":     { "total": 11, "dev": 7,  "test": 4, "testIds": ["p050","p051","p052","p053"] },
+      "method":     { "total": 7,  "dev": 5,  "test": 2, "testIds": ["p056","p057"] },
+      "structural": { "total": 8,  "dev": 5,  "test": 3, "testIds": ["p058","p059","p060"] },
+      "test":       { "total": 4,  "dev": 3,  "test": 1, "testIds": ["p034"] }
+    },
+    "cliUsage": {
+      "run_pattern_benchmark": "--split=all|dev|test (default: all)",
+      "warm-bench": "--split=dev|test|all (default: all)",
+      "sweep-grep-density": "--split=dev|test|all (default: dev)"
     }
   },
 

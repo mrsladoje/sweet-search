@@ -391,6 +391,14 @@ async function main() {
       report.baselines[bl] = data.metrics;
     }
 
+    // Diagnostic fields for post-hoc analysis
+    report.diagnostics = computeDiagnostics(patternResults.evaluatedQueries);
+    report.perQueryDiagnostics = patternResults.evaluatedQueries.map(eq => ({
+      queryId: eq.queryId,
+      failureMode: eq._failureMode || 'unknown',
+      reciprocalRank: eq.rankedRelevance.indexOf(1) >= 0 ? 1 / (eq.rankedRelevance.indexOf(1) + 1) : 0,
+    }));
+
     const { timestampedFile, baselineFile } = saveResults('pattern-benchmark', report, resultsDir);
     console.log(`\n  Results saved to: ${timestampedFile}`);
 

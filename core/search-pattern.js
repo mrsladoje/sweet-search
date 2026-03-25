@@ -411,7 +411,7 @@ export async function patternSearch(query, routing, options = {}) {
 
   // Parallel: ripgrep scan + query encode
   const { encodeQuery } = await import('./late-interaction-model.js');
-  const searchDir = PROJECT_ROOT;
+  const searchDir = this.projectRoot || PROJECT_ROOT;
 
   // Query enhancement: merge regex tokens into the semantic query (ColGrep-style).
   // Strips regex metacharacters and appends unique tokens to give the embedding

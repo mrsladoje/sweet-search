@@ -87,6 +87,7 @@ function parseStructuralQuery(query) {
 export class SweetSearch {
   constructor(options = {}) {
     const projectRoot = options.projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
+    this.projectRoot = projectRoot;
     const projectConfig = loadProjectConfig(projectRoot);
     const projectCascade = projectConfig.cascade || {};
     const envOrProject = (envKey, cascadeKey, configKey) =>

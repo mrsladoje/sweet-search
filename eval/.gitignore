@@ -1,5 +1,10 @@
 # Downloaded benchmark data (regenerate with: python download_data.py)
-data/
+data/gencodesearchnet/
+data/m2crb/
+# Track pattern benchmark query files (gold labels + contract)
+!data/pattern-benchmark*/
+!data/pattern-benchmark*/queries.jsonl
+!data/pattern-benchmark*/manifest.json
 # Generated corpus files and search index
 corpus/
 # Python virtual environment

@@ -96,7 +96,8 @@ export async function runRgOnlyQuery(search, queryObj, options = {}) {
   const { k = 10 } = options;
 
   const start = performance.now();
-  const matches = await runRipgrep(queryObj.regex, PROJECT_ROOT, { maxMatches: 0 });
+  const searchDir = search.projectRoot || PROJECT_ROOT;
+  const matches = await runRipgrep(queryObj.regex, searchDir, { maxMatches: 0 });
   const latencyMs = performance.now() - start;
 
   const locationMap = search.getChunkLocationMap();
@@ -225,6 +226,89 @@ export function chunksMatch(goldId, result) {
   if (resultStart == null || resultEnd == null) return false;
 
   return lineRangeOverlap(parsed.startLine, parsed.endLine, resultStart, resultEnd) > 0.5;
+}
+
+/**
+ * Compute a graded relevance score (0-3) for a single result against a gold chunk ID.
+ *
+ * Grade definitions:
+ *   3 — exact ID match OR same file with >80% line overlap
+ *   2 — same file with 50-80% line overlap
+ *   1 — same file with >0% (but ≤50%) line overlap OR same file with matching non-empty symbol name
+ *   0 — no match
+ *
+ * @param {string} goldId - Gold chunk ID (e.g. "core/sweet-search.js:88-116:3")
+ * @param {Object} result - Search result with { id, file, name, startLine, endLine }
+ * @returns {number} Grade in range [0, 3]
+ */
+export function gradedChunkMatch(goldId, result) {
+  // Exact ID match → grade 3
+  if (goldId === result.id) return 3;
+
+  const parsed = parseGoldId(goldId);
+  if (!parsed) return 0;
+
+  const resultFile = result.file || result.metadata?.file || '';
+  if (parsed.file !== resultFile) return 0;
+
+  // Same file — check line overlap
+  const resultStart = result.startLine ?? result.metadata?.startLine ?? null;
+  const resultEnd = result.endLine ?? result.metadata?.endLine ?? null;
+
+  if (resultStart != null && resultEnd != null) {
+    const overlap = lineRangeOverlap(parsed.startLine, parsed.endLine, resultStart, resultEnd);
+    if (overlap > 0.8) return 3;
+    if (overlap > 0.5) return 2;
+    if (overlap > 0) return 1;
+  }
+
+  // Same file, no line range overlap — check symbol name
+  const resultName = (result.name || result.metadata?.name || '').trim();
+  if (resultName.length > 0) {
+    // gold IDs don't encode a name, but a same-file symbol name match is a weak signal
+    return 1;
+  }
+
+  return 0;
+}
+
+/**
+ * Evaluate a pattern query using graded relevance (0-3) instead of binary (0/1).
+ *
+ * For each search result the grade is the maximum grade across all gold chunk IDs
+ * (so a result is not double-counted for different gold IDs at grade 3).
+ *
+ * @param {Object} queryObj - Query with { query_id, relevant_chunk_ids, ... }
+ * @param {Array<Object>} searchResults - Results from runPatternQuery
+ * @returns {Object} Evaluation result with rankedRelevance (grades 0-3), totalRelevant, gradedNDCG:true
+ */
+export function evaluatePatternQueryGraded(queryObj, searchResults) {
+  const relevantChunkIds = getRelevantChunkIds(queryObj);
+
+  const rankedRelevance = searchResults.map(r => {
+    if (!r.id && !r.file) return 0;
+    let maxGrade = 0;
+    for (const goldId of relevantChunkIds) {
+      const grade = gradedChunkMatch(goldId, r);
+      if (grade > maxGrade) maxGrade = grade;
+      if (maxGrade === 3) break; // can't do better
+    }
+    return maxGrade;
+  });
+
+  return {
+    queryId: queryObj.query_id,
+    query: `[${queryObj.regex}] ${queryObj.semantic_query}`,
+    language: queryObj.language || 'unknown',
+    rankedRelevance,
+    totalRelevant: relevantChunkIds.length,
+    latencyMs: 0,
+    gradedNDCG: true,
+    // Pattern-specific metadata for per-slice reporting
+    regexFamily: queryObj.regex_family || 'unknown',
+    difficulty: queryObj.difficulty || 'unknown',
+    namingQuality: queryObj.naming_quality || 'unknown',
+  };
 }
 
 /**
