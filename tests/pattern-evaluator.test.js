@@ -9,10 +9,12 @@ import { describe, it, expect } from 'vitest';
 
 import {
   evaluatePatternQuery,
+  evaluatePatternQueryGraded,
   getRelevantChunkIds,
   computePerSliceMetrics,
   computeWinRate,
   chunksMatch,
+  gradedChunkMatch,
 } from '../eval/lib/pattern-evaluator.js';
 
 import { computeMetrics } from '../eval/lib/metrics.js';
@@ -237,6 +239,170 @@ describe('chunksMatch', () => {
     const result = { id: 'core/sweet-search.js:88-116:3-different', file: 'core/sweet-search.js', startLine: null, endLine: null };
     // id doesn't match exactly; no line info for fuzzy check
     expect(chunksMatch(goldId, result)).toBe(false);
+  });
+});
+
+// =============================================================================
+// gradedChunkMatch
+// =============================================================================
+
+describe('gradedChunkMatch', () => {
+  it('returns 3 on exact ID match', () => {
+    const goldId = 'core/sweet-search.js:88-116:3';
+    const result = { id: 'core/sweet-search.js:88-116:3', file: 'core/sweet-search.js', startLine: 88, endLine: 116 };
+    expect(gradedChunkMatch(goldId, result)).toBe(3);
+  });
+
+  it('returns 3 when same file and overlap >80%', () => {
+    // Gold: 1-100 (100 lines). Result: 1-90 → overlap 1-90 = 90 lines → 90% > 80%
+    const goldId = 'core/foo.js:1-100:0';
+    const result = { id: 'core/foo.js:1-90:0', file: 'core/foo.js', startLine: 1, endLine: 90 };
+    expect(gradedChunkMatch(goldId, result)).toBe(3);
+  });
+
+  it('returns 2 when same file and overlap 50-80%', () => {
+    // Gold: 1-100 (100 lines). Result: 30-100 → overlap 30-100 = 71 lines → 71% in (50%, 80%]
+    const goldId = 'core/foo.js:1-100:0';
+    const result = { id: 'core/foo.js:30-100:1', file: 'core/foo.js', startLine: 30, endLine: 100 };
+    expect(gradedChunkMatch(goldId, result)).toBe(2);
+  });
+
+  it('returns 1 when same file and overlap >0 but <=50%', () => {
+    // Gold: 1-100 (100 lines). Result: 60-100 → overlap 60-100 = 41 lines → 41% in (0%, 50%]
+    const goldId = 'core/foo.js:1-100:0';
+    const result = { id: 'core/foo.js:60-200:1', file: 'core/foo.js', startLine: 60, endLine: 200 };
+    expect(gradedChunkMatch(goldId, result)).toBe(1);
+  });
+
+  it('returns 1 when same file, no line overlap, but non-empty symbol name', () => {
+    const goldId = 'core/foo.js:1-50:0';
+    const result = { id: 'core/foo.js:100-150:1', file: 'core/foo.js', name: 'fooFunction', startLine: 100, endLine: 150 };
+    expect(gradedChunkMatch(goldId, result)).toBe(1);
+  });
+
+  it('returns 0 when files differ', () => {
+    const goldId = 'core/foo.js:1-100:0';
+    const result = { id: 'core/bar.js:1-100:0', file: 'core/bar.js', startLine: 1, endLine: 100 };
+    expect(gradedChunkMatch(goldId, result)).toBe(0);
+  });
+
+  it('returns 0 when no overlap and no symbol name', () => {
+    const goldId = 'core/foo.js:1-50:0';
+    const result = { id: 'core/foo.js:60-100:1', file: 'core/foo.js', name: '', startLine: 60, endLine: 100 };
+    expect(gradedChunkMatch(goldId, result)).toBe(0);
+  });
+
+  it('returns 0 when gold ID is unparseable and no exact match', () => {
+    const goldId = 'not-a-valid-gold-id';
+    const result = { id: 'core/foo.js:1-10:0', file: 'core/foo.js', startLine: 1, endLine: 10 };
+    expect(gradedChunkMatch(goldId, result)).toBe(0);
+  });
+});
+
+// =============================================================================
+// evaluatePatternQueryGraded
+// =============================================================================
+
+describe('evaluatePatternQueryGraded', () => {
+  it('sets gradedNDCG to true', () => {
+    const query = {
+      query_id: 'pg001',
+      regex: 'class.*Search',
+      semantic_query: 'search',
+      relevant_chunk_ids: ['core/sweet-search.js:1-100:0'],
+    };
+    const evaluated = evaluatePatternQueryGraded(query, []);
+    expect(evaluated.gradedNDCG).toBe(true);
+  });
+
+  it('returns grade 3 for exact match at top position', () => {
+    const query = {
+      query_id: 'pg002',
+      regex: 'class.*Search',
+      semantic_query: 'search',
+      relevant_chunk_ids: ['core/sweet-search.js:88-116:3'],
+    };
+    const results = [
+      { id: 'core/sweet-search.js:88-116:3', file: 'core/sweet-search.js', startLine: 88, endLine: 116 },
+      { id: 'core/config.js:1-20:0', file: 'core/config.js', startLine: 1, endLine: 20 },
+    ];
+    const evaluated = evaluatePatternQueryGraded(query, results);
+    expect(evaluated.rankedRelevance[0]).toBe(3);
+    expect(evaluated.rankedRelevance[1]).toBe(0);
+  });
+
+  it('returns max grade across all gold IDs for each result', () => {
+    const query = {
+      query_id: 'pg003',
+      regex: 'function.*search',
+      semantic_query: 'search fn',
+      relevant_chunk_ids: [
+        'core/foo.js:1-100:0',  // gold A — large range
+        'core/bar.js:1-10:0',   // gold B — different file
+      ],
+    };
+    // Result is in foo.js with 90% overlap → grade 3 against gold A
+    const results = [
+      { id: 'core/foo.js:1-90:0', file: 'core/foo.js', startLine: 1, endLine: 90 },
+    ];
+    const evaluated = evaluatePatternQueryGraded(query, results);
+    expect(evaluated.rankedRelevance[0]).toBe(3);
+  });
+
+  it('returns grade 2 for partial overlap result', () => {
+    const query = {
+      query_id: 'pg004',
+      regex: 'fn.*handler',
+      semantic_query: 'handler',
+      relevant_chunk_ids: ['core/foo.js:1-100:0'],
+    };
+    // Overlap: 30-100 = 71 lines / 100 = 71% → grade 2
+    const results = [
+      { id: 'core/foo.js:30-100:1', file: 'core/foo.js', startLine: 30, endLine: 100 },
+    ];
+    const evaluated = evaluatePatternQueryGraded(query, results);
+    expect(evaluated.rankedRelevance[0]).toBe(2);
+  });
+
+  it('returns totalRelevant equal to count of distinct gold chunk IDs', () => {
+    const query = {
+      query_id: 'pg005',
+      regex: 'class',
+      semantic_query: 'cls',
+      relevant_chunk_ids: ['a.js:1-10:0', 'b.js:1-10:0', 'c.js:1-10:0'],
+    };
+    const evaluated = evaluatePatternQueryGraded(query, []);
+    expect(evaluated.totalRelevant).toBe(3);
+  });
+
+  it('returns all zeros when no results match any gold ID', () => {
+    const query = {
+      query_id: 'pg006',
+      regex: 'class.*Missing',
+      semantic_query: 'missing',
+      relevant_chunk_ids: ['core/missing.js:1-10:0'],
+    };
+    const results = [
+      { id: 'core/other.js:1-10:0', file: 'core/other.js', startLine: 1, endLine: 10 },
+    ];
+    const evaluated = evaluatePatternQueryGraded(query, results);
+    expect(evaluated.rankedRelevance).toEqual([0]);
+  });
+
+  it('preserves slice metadata', () => {
+    const query = {
+      query_id: 'pg007',
+      regex: 'class.*',
+      semantic_query: 'test',
+      relevant_chunk_ids: ['test.js:1-10:0'],
+      regex_family: 'class',
+      difficulty: 'hard',
+      naming_quality: 'mixed',
+    };
+    const evaluated = evaluatePatternQueryGraded(query, []);
+    expect(evaluated.regexFamily).toBe('class');
+    expect(evaluated.difficulty).toBe('hard');
+    expect(evaluated.namingQuality).toBe('mixed');
   });
 });
 
