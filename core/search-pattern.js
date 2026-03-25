@@ -472,7 +472,7 @@ export async function patternSearch(query, routing, options = {}) {
     }
     // Test demotion (ColGrep-style): penalize test file chunks when the query
     // doesn't mention testing. Prevents test files from drowning out implementations.
-    const TEST_DEMOTION = options.testDemotion ?? 0.02;
+    const TEST_DEMOTION = options.testDemotion ?? 0.05;
     if (TEST_DEMOTION > 0) {
       const queryLower = query.toLowerCase();
       const queryMentionsTest = /\btest|spec|describe|it\b/.test(queryLower);
