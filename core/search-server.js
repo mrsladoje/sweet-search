@@ -18,7 +18,7 @@ import { clearCache } from './embedding-cache.js';
 // =============================================================================
 
 export const SEARCH_SERVER_PORT = 9876;
-export const SEARCH_SERVER_SOCKET = '/tmp/sweet-search.sock';
+export const SEARCH_SERVER_SOCKET = process.env.SWEET_SEARCH_SOCKET_PATH || '/tmp/sweet-search.sock';
 export const SEARCH_SERVER_SOCKET_LEGACY = '/tmp/search.sock';
 export const SEARCH_SERVER_PIDFILE = '/tmp/sweet-search-server.pid';
 export const SEARCH_SERVER_TIMEOUT_MS = 30_000;

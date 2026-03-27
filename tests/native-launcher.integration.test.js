@@ -202,12 +202,81 @@ describe('native launcher integration', () => {
     serverProcess = null;
   }, 120000);
 
-  // Cold start (native binary auto-starts server) is a known issue:
-  // The Rust CLI spawns `node core/sweet-search.js --serve` with null stdio,
-  // which triggers Node's "unsettled top-level await" behavior and the server
-  // process exits before creating the socket. This is a Rust CLI bug to fix
-  // in Phase 6a (CLI dispatch optimization), not a Phase 5 packaging issue.
-  //
-  // The warm path test above proves the native binary → socket → server
-  // query transport works correctly when the server is running.
+  it.skipIf(skip)('cold start: native binary auto-starts server and returns results', async () => {
+    // Use an isolated socket so this test doesn't collide with the warm-path test
+    // or any running server.
+    const coldSocketPath = join(tmpdir(), `sweet-search-cold-${process.pid}.sock`);
+
+    // Ensure clean state
+    try { unlinkSync(coldSocketPath); } catch { /* ignore */ }
+
+    const binaryPath = join(ROOT, nativeBinary);
+    const env = {
+      ...process.env,
+      SWEET_SEARCH_PROJECT_ROOT: projectDir,
+      SWEET_SEARCH_SOCKET_PATH: coldSocketPath,
+    };
+
+    // First call auto-starts the server. It may return a "starting" response
+    // if the server hasn't finished loading indexes yet.
+    let output;
+    try {
+      output = execFileSync(binaryPath, ['greeting', '--json'], {
+        encoding: 'utf8',
+        timeout: 30000,
+        cwd: ROOT,
+        env,
+      });
+    } catch (err) {
+      output = err.stdout || '';
+      const stderr = err.stderr || '';
+      expect.unreachable(
+        `Native binary cold start failed (exit ${err.status}, signal ${err.signal}).\n` +
+        `stdout: ${output.substring(0, 500)}\n` +
+        `stderr: ${stderr.substring(0, 500)}`
+      );
+    }
+
+    // Server auto-started — socket should exist now
+    expect(existsSync(coldSocketPath), 'Cold-start socket was created').toBe(true);
+
+    // Wait for server to finish loading indexes (may take a few seconds)
+    const deadline = Date.now() + 30000;
+    let queryOutput = '';
+    while (Date.now() < deadline) {
+      try {
+        queryOutput = execFileSync(binaryPath, ['greeting', '--json'], {
+          encoding: 'utf8',
+          timeout: 15000,
+          cwd: ROOT,
+          env,
+        });
+        const j = queryOutput.indexOf('{');
+        if (j >= 0) {
+          const body = JSON.parse(queryOutput.substring(j));
+          if (body.results) break;
+        }
+      } catch { /* ignore */ }
+      execFileSync('sleep', ['1']);
+    }
+
+    const jsonStart = queryOutput.indexOf('{');
+    expect(jsonStart, `No JSON in cold-start output: ${queryOutput.substring(0, 200)}`).toBeGreaterThanOrEqual(0);
+
+    const parsed = JSON.parse(queryOutput.substring(jsonStart));
+    expect(parsed.results).toBeDefined();
+    expect(parsed.results.length).toBeGreaterThan(0);
+
+    // Clean up: stop server via the cold socket, then remove it
+    try {
+      execFileSync(binaryPath, ['--stop'], {
+        encoding: 'utf8',
+        timeout: 10000,
+        cwd: ROOT,
+        env,
+      });
+    } catch { /* ignore — server may have already exited */ }
+    execFileSync('sleep', ['0.5']);
+    try { unlinkSync(coldSocketPath); } catch { /* ignore */ }
+  }, 120000);
 });

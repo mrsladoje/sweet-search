@@ -13,9 +13,14 @@ use std::process::{self, Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
-const SOCKET_PATH: &str = "/tmp/sweet-search.sock";
+const DEFAULT_SOCKET_PATH: &str = "/tmp/sweet-search.sock";
 const SOCKET_PATH_LEGACY: &str = "/tmp/search.sock";
 const BUFFER_SIZE: usize = 16384;
+
+/// Return the socket path from $SWEET_SEARCH_SOCKET_PATH or the default.
+fn socket_path() -> String {
+    env::var("SWEET_SEARCH_SOCKET_PATH").unwrap_or_else(|_| DEFAULT_SOCKET_PATH.to_string())
+}
 
 // ANSI color codes (matching ss-fast.c)
 const D1: &str = "\x1b[48;5;17m";
@@ -184,11 +189,12 @@ fn build_url(opts: &Options) -> String {
     url
 }
 
-fn find_socket() -> Option<&'static str> {
-    if Path::new(SOCKET_PATH).exists() {
-        Some(SOCKET_PATH)
+fn find_socket() -> Option<String> {
+    let primary = socket_path();
+    if Path::new(&primary).exists() {
+        Some(primary)
     } else if Path::new(SOCKET_PATH_LEGACY).exists() {
-        Some(SOCKET_PATH_LEGACY)
+        Some(SOCKET_PATH_LEGACY.to_string())
     } else {
         None
     }
@@ -240,26 +246,31 @@ fn find_header_end(data: &[u8]) -> Option<usize> {
 
 /// Auto-start the Node server and wait for the socket to appear.
 /// Matches ss.sh lines 19-25: spawn in background, poll 100ms intervals, max 5s.
-fn auto_start_server() -> Option<&'static str> {
-    // Find the core/sweet-search.js relative to the binary or cwd
+fn auto_start_server() -> Option<String> {
+    // Find the core/start-server.js relative to the binary or cwd
     let server_script = find_server_script();
     let script = match &server_script {
         Some(s) => s.as_str(),
         None => {
-            eprintln!("{FA}Error:{R} Cannot find core/sweet-search.js");
-            eprintln!("Start server manually: node core/sweet-search.js --serve");
+            eprintln!("{FA}Error:{R} Cannot find core/start-server.js");
+            eprintln!("Start server manually: node core/start-server.js");
             return None;
         }
     };
 
-    // Spawn server in background (nohup-style)
-    let _ = Command::new("node")
+    // Spawn server in background.
+    // Inherit env so SWEET_SEARCH_SOCKET_PATH passes through to the Node server.
+    let spawn_result = Command::new("node")
         .arg(script)
         .arg("--serve")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn();
+    if let Err(e) = spawn_result {
+        eprintln!("{FA}Error:{R} Failed to start server: {e}");
+        return None;
+    }
 
     // Poll for socket (100ms intervals, max 50 attempts = 5s)
     for _ in 0..50 {
@@ -270,15 +281,22 @@ fn auto_start_server() -> Option<&'static str> {
     }
 
     eprintln!("{FA}Error:{R} Server did not start within 5 seconds");
-    eprintln!("Start server manually: node core/sweet-search.js --serve");
+    eprintln!("Start server manually: node core/start-server.js");
     None
 }
 
 fn find_server_script() -> Option<String> {
+    // Use core/start-server.js — a minimal entry point that avoids the circular
+    // import in sweet-search.js which causes Node's "unsettled top-level await" exit.
+    let script_name = "core/start-server.js";
+
     // Try relative to current working directory
-    let cwd_script = "core/sweet-search.js";
-    if Path::new(cwd_script).exists() {
-        return Some(cwd_script.to_string());
+    let cwd_script = Path::new(script_name);
+    if cwd_script.exists() {
+        if let Ok(abs) = cwd_script.canonicalize() {
+            return Some(abs.to_string_lossy().into_owned());
+        }
+        return Some(cwd_script.to_string_lossy().into_owned());
     }
 
     // Try relative to the binary location
@@ -286,7 +304,7 @@ fn find_server_script() -> Option<String> {
         if let Some(dir) = exe.parent() {
             // Binary might be in sweet-search-cli/target/release/ or repo root
             for ancestor in dir.ancestors() {
-                let candidate = ancestor.join("core/sweet-search.js");
+                let candidate = ancestor.join(script_name);
                 if candidate.exists() {
                     return Some(candidate.to_string_lossy().into_owned());
                 }
@@ -328,7 +346,7 @@ fn main() {
             }
         };
         println!("{FA}Stopping server...{R}");
-        if let Err(e) = do_request(socket, "/stop", false, None) {
+        if let Err(e) = do_request(&socket, "/stop", false, None) {
             eprintln!("{FA}Error:{R} {e}");
             process::exit(1);
         }
@@ -367,7 +385,7 @@ fn main() {
     let url = build_url(&opts);
     let show_header = !opts.json;
 
-    if let Err(e) = do_request(socket, &url, show_header, Some(&query)) {
+    if let Err(e) = do_request(&socket, &url, show_header, Some(&query)) {
         eprintln!("{FA}Error:{R} {e}");
         process::exit(1);
     }
