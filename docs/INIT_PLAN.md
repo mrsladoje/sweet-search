@@ -1007,80 +1007,64 @@ Exit criteria:
 
 This phase is profiling-gated. It should only begin after Phases 0-5 are complete and the system is working end-to-end with the Node.js CLI wrapper as the default dispatch mechanism.
 
-#### 6a: CLI dispatch optimization
+#### 6a: CLI dispatch optimization **(done 2026-03-28)**
 
-The Node.js CLI wrapper (`bin/sweet-search.js`) adds measurable startup overhead per invocation. For a CLI tool invoked frequently by agents and developers, this overhead compounds.
+**Cold-start auto-spawn bug — fixed**
 
-This sub-phase does not pre-commit to a specific optimization strategy. The correct approach depends on profiling data from real Sweet Search workflows and on which package manager layouts need to be supported.
+The Rust CLI's `auto_start_server()` failed to start the Node server on cold start. Three root causes were found and fixed:
 
-**Known bug: cold-start auto-spawn fails**
+1. Missing `await` in `core/search-cli.js` — `startServer()` was fire-and-forget, causing `runCli()` to return and Node to exit with code 13 ("unsettled top-level await").
+2. Circular import chain — `sweet-search.js` → `search-cli.js` → `sweet-search.js` caused Node's ESM evaluator to short-circuit. Fixed by adding `core/start-server.js`, a minimal server entry point that imports `search-server.js` directly.
+3. macOS code signing — copying a binary invalidates the Mach-O ad-hoc signature, causing SIGKILL. Added `codesign -s -` steps to the CI smoke-test and publish workflows for darwin platforms.
 
-The Rust CLI's `auto_start_server()` spawns `node core/sweet-search.js --serve` with null stdio (`Stdio::null()` for stdin, stdout, stderr). This causes Node.js to exit before the server creates its Unix socket, resulting in "Server did not start within 5 seconds". The warm path (server already running) works correctly. This must be fixed as part of Phase 6a — the server spawn needs either inherited or piped stdio, or a dedicated server-start script that handles the ESM top-level await lifecycle correctly.
+Additional improvements:
+- `SWEET_SEARCH_SOCKET_PATH` env var added to both Rust CLI and Node server for test isolation and parallel-safe integration tests.
+- `find_server_script()` now canonicalizes paths to absolute before passing to Node, so `import.meta.url` matches `process.argv[1]` in the CLI guard.
+- Cold-start integration test added to `tests/native-launcher.integration.test.js`.
 
-**Prerequisite:**
+**Profiling results (M3 Max, ~17K files indexed):**
 
-- fix the cold-start auto-spawn bug described above
-- measure actual CLI dispatch overhead in representative workflows (single search, batch agent invocations, CI pipelines)
-- determine whether the overhead is user-facing or masked by server startup, model loading, or network I/O
+Warm-query search latency breakdown (p50 = 28ms total):
 
-**Candidate strategies to evaluate after profiling:**
-
-- minimize the Node wrapper itself (strip all unnecessary requires, avoid loading the full runtime for dispatch-only paths)
-- compiled lightweight dispatcher binary (Rust or C) that replaces the Node wrapper
-- shell-based dispatch with robust path resolution (must work across npm, pnpm, yarn, bun)
-- direct native binary exposure via platform package `bin` fields if naming conflicts can be resolved
-
-**Constraints:**
-
-- do not mutate `node_modules/.bin/` — package managers own that directory
-- do not introduce init-dependent state that the CLI requires to function (init should improve performance, not be required for correctness)
-- any optimization must work across npm, pnpm, yarn, and bun without per-manager special cases
-- the Node wrapper remains the safe fallback on all platforms
-
-#### 6b: Expanded napi-rs acceleration
-
-Extend the existing napi-rs crate to cover additional hot paths beyond MaxSim. All new native functions are added to the same crate and compiled into the same `.node` addon — no new packages, no new build targets, same CI matrix.
-
-When the crate grows beyond MaxSim-only functionality, rename it from `native-maxsim` to `sweet-search-native` to reflect its broader scope.
-
-Every native acceleration must have a JS or WASM fallback so unsupported platforms continue to work.
-
-**Prerequisite:**
-
-- profile the actual Sweet Search runtime to identify which hot paths have the highest time share
-- prioritize based on measured data, not assumed bottlenecks
-
-**Candidate hot paths for native acceleration:**
-
-| Hot path | Current implementation | Native opportunity |
+| Component | p50 | % of total |
 |---|---|---|
-| MaxSim scoring | napi-rs (already native) | Done |
-| SIMD distance computation | `core/simd-distance.wasm` | Move to same napi-rs addon |
-| Tokenization | JS via `@huggingface/transformers` | Rust `tokenizers` crate (by HuggingFace) |
-| Leiden clustering | Pure JS in `core/leiden-algorithm.js` | Rust graph crate |
-| Binary HNSW operations | `usearch` (already native) | Already fast |
-| SQLite / FTS5 | `better-sqlite3` (already native) | Already fast |
+| Embedding (ORT, L7 direct) | 5.7ms | 20.4% |
+| LI inference (ORT session.run) | 3.5ms | 12.6% |
+| HNSW binary search (usearch) | 2.6ms | 9.4% |
+| HNSW int8 rescore | 0.2ms | 0.7% |
+| LI tokenization (JS) | 0.105ms | 0.4% |
+| Float rescore | 0.09ms | 0.3% |
+| SIMD distance (WASM) | <0.01ms | <0.1% |
 
-**Expected priority order (subject to profiling):**
+CLI dispatch overhead:
 
-1. **Tokenization** — likely highest impact. The Rust `tokenizers` crate is maintained by HuggingFace and is expected to be substantially faster than the JS pipeline. This also reduces the dependency surface on `@huggingface/transformers`.
-2. **SIMD distances** — already have a WASM implementation; moving to native eliminates the WASM boundary overhead.
-3. **Leiden clustering** — only impactful for large codebases with big graphs. Defer unless profiling shows it as a bottleneck.
+| Path | p50 |
+|---|---|
+| Native Rust (warm) | 2.9ms |
+| Native Rust (cold) | 108ms |
+| JS fallback | 64.7ms |
 
-**Implementation pattern for each new native function:**
+Cross-encoder reranker runs asynchronously in the cascade path (~27ms when invoked).
 
-1. Add the Rust function to the napi-rs crate with `#[napi]`
-2. Add a JS/WASM fallback in the corresponding `core/*.js` module
-3. Add a resolver check: try native import, fall back to JS/WASM
-4. Add a parity test: native and JS/WASM must produce identical results
-5. Rebuild the platform packages — same CI pipeline, same 4 targets
+Profiling harness: `scripts/profile-pipeline.js`
+LI timing probes: `core/late-interaction-model.js` (`getLateInteractionTimings()`)
 
-Exit criteria:
+#### 6b: Expanded napi-rs acceleration — **deferred based on profiling**
 
-- profiling data exists for CLI dispatch and runtime hot paths
-- at least one non-MaxSim hot path has a native acceleration with verified JS/WASM fallback
-- parity tests confirm identical results across native and fallback paths
-- the napi-rs crate is renamed to `sweet-search-native` if it now covers more than MaxSim
+The profiling data from 6a shows that the top three warm-query-latency components (embedding, LI inference, HNSW binary) are **already native** (ORT via `onnxruntime-node`, usearch). JS tokenization is 0.4% of total search time (105 microseconds) — not a warm-query bottleneck.
+
+SIMD distance functions (`simd-distance.wasm`) did not register in profiling — sub-microsecond per call via WASM SIMD.
+
+Remaining candidate: native tokenization via Rust `tokenizers` crate for **indexing throughput** (encoding thousands of documents), not for query latency. This is deferred to Phase 7 where the full `@huggingface/transformers` replacement is scoped.
+
+The napi-rs crate rename (`native-maxsim` → `sweet-search-native`) is deferred until the crate's scope actually expands.
+
+Exit criteria (revised):
+
+- profiling data exists for CLI dispatch and runtime hot paths **(done)**
+- cold-start auto-spawn bug is fixed and proven by integration test **(done)**
+- profiling conclusion recorded: no warm-query hot path justifies new native acceleration at this time **(done)**
+- native tokenization for indexing throughput deferred to Phase 7 **(recorded)**
 
 ### Phase 7: Native End-to-End Model Execution
 
