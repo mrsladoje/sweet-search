@@ -33,18 +33,18 @@
     "panonit"
   ],
   "bin": {
-    "ss": "./ss",
+    "sweet-search": "./bin/sweet-search.js",
     "sweet-search-mcp": "./mcp/server.js"
   },
   "files": [
     "core/",
+    "bin/",
     "mcp/",
     "scripts/benchmark-harness.js",
     "translation/",
     "training/features/extractor.js",
     "training/output/v45_router_d4.js",
     "wasm-router/pkg/",
-    "ss",
     "LICENSE",
     "NOTICE"
   ],
@@ -52,6 +52,7 @@
     "build": "node -e \"import('./core/sweet-search.js')\" && echo 'Build OK'",
     "build:wasm": "node scripts/build-wasm.js && cd wasm-maxsim && RUSTFLAGS=\"-C target-feature=+simd128\" cargo build --target wasm32-unknown-unknown --release && cp target/wasm32-unknown-unknown/release/maxsim_wasm.wasm ../core/maxsim.wasm && echo 'WASM build OK'",
     "build:native": "cd native-maxsim && npx napi build --release --platform && echo 'Native build OK'",
+    "build:cli": "cd sweet-search-cli && cargo build --release && echo 'CLI build OK'",
     "search": "node core/sweet-search.js",
     "index": "node core/index-codebase-v21.js",
     "index:full": "node core/index-codebase-v21.js --full",

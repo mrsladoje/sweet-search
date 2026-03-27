@@ -42,6 +42,7 @@ wasm-router/*.bak
 wasm-maxsim/target/
 native-maxsim/target/
 native-maxsim/*.node
+sweet-search-cli/target/
 
 # Phase planning docs (regenerable)
 PHASE*_RESULTS.md

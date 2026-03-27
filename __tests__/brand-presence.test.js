@@ -10,10 +10,11 @@ describe('Brand presence verification', () => {
     expect(pkg.name).toBe('sweet-search');
   });
 
-  it('package.json bin includes ss and sweet-search-mcp', () => {
+  it('package.json bin includes sweet-search and sweet-search-mcp', () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-    expect(pkg.bin.ss).toBeDefined();
+    expect(pkg.bin['sweet-search']).toBe('./bin/sweet-search.js');
     expect(pkg.bin['sweet-search-mcp']).toBeDefined();
+    expect(pkg.bin.ss).toBeUndefined();
   });
 
   it('NOTICE file references Sweet Search', () => {
