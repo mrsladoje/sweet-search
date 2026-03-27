@@ -1,0 +1,39 @@
+#!/usr/bin/env node
+
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(__dirname, '..');
+const MANIFEST_PATH = join(ROOT, 'assets', 'manifest.json');
+
+const manifest = {
+  version: 1,
+  runtimeAssets: {
+    wasmRouter: 'wasm-router/pkg/query_router_wasm.js',
+    wasmRouterBinary: 'wasm-router/pkg/query_router_wasm_bg.wasm',
+    maxsimWasm: 'core/maxsim.wasm',
+    simdDistanceWasm: 'core/simd-distance.wasm',
+    catboostRouter: 'training/output/v45_router_d4.js',
+    featureExtractor: 'training/features/extractor.js',
+  },
+  nativePackages: {},
+  profiles: {},
+  modelSources: {},
+};
+
+const serialized = `${JSON.stringify(manifest, null, 2)}\n`;
+
+if (process.argv.includes('--check')) {
+  const current = readFileSync(MANIFEST_PATH, 'utf8');
+  if (current !== serialized) {
+    console.error('assets/manifest.json is out of date. Run: node scripts/generate-asset-manifest.js');
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
+mkdirSync(dirname(MANIFEST_PATH), { recursive: true });
+writeFileSync(MANIFEST_PATH, serialized, 'utf8');
+console.log(`Wrote ${MANIFEST_PATH}`);

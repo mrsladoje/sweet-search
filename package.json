@@ -40,6 +40,7 @@
     "core/",
     "bin/",
     "mcp/",
+    "assets/",
     "scripts/benchmark-harness.js",
     "translation/",
     "training/features/extractor.js",
@@ -49,6 +50,7 @@
     "NOTICE"
   ],
   "scripts": {
+    "build:assets": "node scripts/generate-asset-manifest.js",
     "build": "node -e \"import('./core/sweet-search.js')\" && echo 'Build OK'",
     "build:wasm": "node scripts/build-wasm.js && cd wasm-maxsim && RUSTFLAGS=\"-C target-feature=+simd128\" cargo build --target wasm32-unknown-unknown --release && cp target/wasm32-unknown-unknown/release/maxsim_wasm.wasm ../core/maxsim.wasm && echo 'WASM build OK'",
     "build:native": "cd native-maxsim && npx napi build --release --platform && echo 'Native build OK'",
