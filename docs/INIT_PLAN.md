@@ -138,30 +138,51 @@ If init is meant to be self-contained for a given profile, categories 1 through 
 
 ## Current Artifact Inventory
 
-### Already npm-delivered or shippable in the main package
+### Universal assets (shipped in main npm package)
 
 - main JS sources under `core/`
 - MCP server code under `mcp/`
 - translation code under `translation/`
+- JS CLI fallback dispatcher under `bin/sweet-search.js`
 - CatBoost router export under `training/output/v45_router_d4.js`
 - WASM router bundle under `wasm-router/pkg/`
-- MaxSim WASM blobs under `core/*.wasm`
+- MaxSim WASM blobs under `core/*.wasm` (`maxsim.wasm` ~4KB, `simd-distance.wasm` ~1KB)
 - standard npm dependencies such as `better-sqlite3`, `undici`, `tree-sitter-wasms`, `web-tree-sitter`
 
-### Currently not fully npm-managed for a no-download runtime
+### Platform-specific (future `@sweet-search/native-*` optional packages)
 
-- `lightonai/LateOn-Code` artifacts used by `core/late-interaction-model.js`
-- `lightonai/LateOn-Code-edge` artifacts used by `core/late-interaction-model.js`
-- `Alibaba-NLP/gte-reranker-modernbert-base` artifacts used by `core/local-reranker.js`
-- platform-specific native addon packages
-- platform-specific `sweet-search` binary packages
+- native MaxSim addon `.node` (`maxsim.{platform}-{arch}.node`, ~400KB per target, currently only darwin-arm64 built)
+- Rust CLI launcher binary (`sweet-search`, ~350KB per target, built from `sweet-search-cli/`)
+- targets: aarch64-apple-darwin, x86_64-apple-darwin, x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu
 
-### Already third-party npm dependencies and should remain so
+### Third-party model artifacts (init-managed download, Phase 3)
+
+- `lightonai/LateOn-Code` ONNX + projection weights used by `core/late-interaction-model.js`
+- `lightonai/LateOn-Code-edge` ONNX + projection weights used by `core/late-interaction-model.js`
+- `Alibaba-NLP/gte-reranker-modernbert-base` INT8 ONNX used by `core/local-reranker.js`
+- `jalipalo/CodeRankEmbed-onnx` / `mrsladoje/CodeRankEmbed-onnx-int8` used by `core/embedding-local-model.js`
+
+### Transitional dependency (to be removed after migration)
+
+- `@huggingface/transformers` (`optionalDependencies`, `^4.0.0-next.4`) — used for JS tokenization and model loading. Full replacement decided 2026-03-26; see `@huggingface/transformers` policy section.
+
+### Standard npm dependencies (remain as-is)
 
 - parser/runtime dependencies such as `tree-sitter-wasms`
 - core JS libraries already in `package.json`
 
 These should continue to come from npm rather than being re-vendored.
+
+### Not published (development/build only)
+
+- `ss` — Linux x86-64 ELF binary (removed from `files` in Phase 0a)
+- `ss.sh` — bash launcher script (never in `files`)
+- `ss-fast/` — C source for original launcher (reference only)
+- `sweet-search-cli/` — Rust launcher source and build artifacts
+- `native-maxsim/` — napi-rs addon source and build artifacts
+- `wasm-maxsim/` — WASM MaxSim source and build artifacts
+- `training/` (except explicitly listed output files)
+- `eval/`, `evaluation/`, `__tests__/`, `tests/` — test infrastructure
 
 ---
 
@@ -438,60 +459,39 @@ These already download through npm and do not need custom handling.
 
 ### `@huggingface/transformers` policy
 
-This dependency needs to be treated as an explicit architectural decision, not an incidental package.
+#### Decision: full replacement (decided 2026-03-26)
+
+`@huggingface/transformers` will be completely replaced and removed from the dependency tree. This is a fixed end-state decision, not an interim hedge. Options A (keep optional) and B (move to dependencies) were evaluated and rejected.
 
 Current reality:
 
 - it is in `optionalDependencies` today
-- it is used by late interaction tokenization
-- it is used by the local reranker pipeline
-- it is used by the embedding pipeline
-- it is used by Flashrank fallback paths on some platforms
+- it is used by late interaction tokenization (`core/late-interaction-model.js`)
+- it is used by the local reranker pipeline (`core/local-reranker.js`)
+- it is used by the embedding pipeline (`core/embedding-local-model.js`, `core/embedding-cache.js`)
+- it is used by Flashrank fallback paths (`core/flashrank.js`)
 
-The plan must decide one of these paths:
+Rationale for full replacement:
 
-#### Option A: keep `@huggingface/transformers` in `optionalDependencies`
+- the late interaction path already uses `onnxruntime-node` directly for ONNX inference — `@huggingface/transformers` is only used there as a tokenizer
+- the embedding pipeline already bypasses the HF pipeline wrapper via Direct ORT (L7 bypass in `core/embedding-local-model.js`)
+- the Rust `tokenizers` crate (maintained by HuggingFace) is 20-50x faster than the JS tokenizer
+- removing the dependency eliminates ~50MB of transitive install weight and a prerelease version pin (`^4.0.0-next.4`)
+- direct `onnxruntime-node` integration gives tighter control over session options and binary distribution
 
-Use when:
+Replacement architecture:
 
-- Sweet Search still supports degraded operation without local model inference
-- some profiles intentionally skip local model features
+- Rust `tokenizers` crate compiled into the napi-rs addon (same crate as MaxSim) provides native tokenization
+- Direct `onnxruntime-node` sessions for all model inference (late interaction, embeddings, reranker)
+- JS fallback tokenizer for platforms without the native addon
 
-Risk:
+Rollout (the decision is fixed; the rollout is phased):
 
-- users may think the dependency is optional when their chosen profile actually requires it
+1. Phase 3: Rust tokenizer added to napi-rs addon. Late interaction migrated first (highest indexing speedup, cleanest swap — already uses raw ORT).
+2. Phase 6b: Reranker and embedding pipelines migrated to Rust tokenizer + direct ORT.
+3. Final: `@huggingface/transformers` removed from `optionalDependencies` after all 8 modules are migrated.
 
-#### Option B: move `@huggingface/transformers` to `dependencies`
-
-Use when:
-
-- the default `full` profile depends on it in practice
-- local model execution is considered part of the standard product path
-
-Risk:
-
-- larger base install footprint
-
-#### Option C: replace portions of it with direct `onnxruntime-node` integration
-
-Use when:
-
-- Sweet Search wants tighter control over inference/runtime packaging
-- tokenizer and model loading can be handled directly with less indirection
-
-Risk:
-
-- higher implementation complexity
-- more custom runtime code to maintain
-
-Recommended interim decision:
-
-- keep `@huggingface/transformers` explicit in the plan
-- do not finalize model delivery without first deciding whether it remains `optionalDependencies`, moves to `dependencies`, or is partially replaced
-
-Phase ownership:
-
-- this decision belongs to Phase 0 because Phase 3 depends on it
+During the transition, the dependency stays in `optionalDependencies` and existing code continues to work. No code changes in Phase 0.
 
 ### Main package `engines`
 
@@ -905,34 +905,36 @@ Every release should run:
 
 ## Implementation Phases
 
-### Phase 0a: Immediate blockers and namespace reservation
+### Phase 0a: Immediate blockers, namespace reservation, and CLI architecture
 
 Deliverables:
 
-- claim the npm package name `sweet-search`
+- claim the npm package name `sweet-search` **(done 2026-03-26)**
 - claim the npm scope or org intended for native/model packages before implementation begins
 - if `@sweet-search` cannot be claimed, choose and freeze the replacement scope before any package naming work starts
-- remove the Linux-only `ss` ELF from the public npm `bin` and `files` surface
-- replace it with a portable Node.js CLI wrapper exposed as `sweet-search`
-- document the current shipping incompatibility explicitly in release notes and migration notes
+- remove the Linux-only `ss` ELF from the public npm `bin` and `files` surface **(done 2026-03-27)**
+- replace the C CLI launcher with a Rust CLI launcher (`sweet-search-cli/`) that preserves native startup speed **(done 2026-03-27)**
+- add a thin JS fallback dispatcher (`bin/sweet-search.js`) for npm portability — this is a packaging workaround for Phase 0, not the long-term default path
+- the Rust launcher is the long-term CLI direction: one codebase, per-target binaries for aarch64-apple-darwin, x86_64-apple-darwin, x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu (WSL covered by Linux targets, no native Windows)
 
 Exit criteria:
 
 - package naming and npm scope decisions are frozen
 - no platform-incompatible native binary is exposed as the default npm CLI entry point
+- Rust CLI launcher built and validated on at least one platform with no warm-path regression versus the C launcher
 
 ### Phase 0b: Runtime inventory and prerequisite decisions
 
 Deliverables:
 
-- decide the packaging role of `@huggingface/transformers`: remain `optionalDependencies`, move to `dependencies`, or be partially replaced
+- `@huggingface/transformers` decision: **full replacement decided 2026-03-26** (see `@huggingface/transformers` policy section above for rationale and rollout plan)
 - complete list of required artifacts
 - classification into universal, platform-specific, profile-specific
 - size estimates for each package bucket
 
 Exit criteria:
 
-- the `@huggingface/transformers` decision is made before Phase 3 starts
+- the `@huggingface/transformers` full-replacement decision is recorded and Phase 3 can proceed
 - no required runtime asset remains "implicitly downloaded later" without a documented reason
 
 ### Phase 1: Universal asset packaging
@@ -1070,6 +1072,77 @@ Exit criteria:
 - parity tests confirm identical results across native and fallback paths
 - the napi-rs crate is renamed to `sweet-search-native` if it now covers more than MaxSim
 
+### Phase 7: Cross-target validation
+
+This phase is the final verification pass. Its purpose is to prove that Sweet Search works correctly across every supported target, packaging mode, and runtime profile before the plan is considered complete.
+
+Deliverables:
+
+- explicit validation matrix for all supported targets
+- automated smoke tests for every supported platform package
+- profile coverage for `core` and `full`
+- package manager coverage for npm, pnpm, yarn, and bun where supported
+- Linux validation that closes the remaining Rust-vs-C launcher benchmark gap
+- publish-time verification checklist for native package resolution, JS fallback, model delivery, and init flows
+
+Target matrix:
+
+- macOS arm64 (`aarch64-apple-darwin`) on real hardware
+- macOS x64 (`x86_64-apple-darwin`) on Intel hardware or CI
+- Linux x64 GNU (`x86_64-unknown-linux-gnu`) on native Linux or Linux CI
+- Linux arm64 GNU (`aarch64-unknown-linux-gnu`) on native Linux arm64, arm64 VM, or arm64 container host
+- WSL validation on a representative Ubuntu/Debian-based environment using the Linux GNU target
+
+Validation dimensions:
+
+- install path:
+  - fresh install from npm
+  - local pack/install from `npm pack`
+  - upgrade/reinstall path
+- runtime path:
+  - native launcher present and selected
+  - JS fallback path when native package is absent
+  - native addon present
+  - WASM/JS fallback when native addon is absent
+- product profile:
+  - `init --profile core`
+  - `init --profile full`
+- package manager:
+  - npm
+  - pnpm
+  - yarn
+  - bun
+
+Required checks on each supported target:
+
+1. Install `sweet-search` into a fresh temp directory.
+2. Verify the `sweet-search` command resolves and runs.
+3. Run `sweet-search --help`.
+4. Run `sweet-search init --profile core`.
+5. Run `sweet-search init --profile full` where model/network policy allows it.
+6. Execute a real query against a warm server.
+7. Verify native launcher selection where a native package exists.
+8. Verify fallback behavior when the native package is intentionally missing.
+9. Verify native addon selection where supported.
+10. Verify fallback to WASM/JS when native addon is intentionally missing.
+11. Run MCP entrypoint smoke test (`sweet-search-mcp --help` or equivalent startup check).
+12. Capture timing data for launcher startup and warm-path queries.
+
+Benchmark requirements:
+
+- Linux CI or a Linux machine must benchmark the Rust launcher against the previous C launcher baseline to close the remaining Phase 0 verification gap.
+- macOS must benchmark the Rust launcher against `ss.sh` as the secondary baseline.
+- benchmark results must be stored with the release evidence for the validated targets.
+
+Exit criteria:
+
+- every supported target in the matrix has a passing install, init, and query smoke test
+- native launcher and native addon resolution work on all supported targets
+- fallback paths are explicitly tested and pass
+- package-manager-specific install differences are accounted for
+- Linux benchmark evidence exists for Rust-vs-C launcher parity or improvement
+- release evidence exists for all supported targets before public publish
+
 ---
 
 ## Acceptance Criteria
@@ -1083,6 +1156,7 @@ This plan is complete when all of the following are true:
 - supported platforms get native addon and `sweet-search` binary automatically through npm
 - unsupported platforms fall back cleanly to WASM/JS
 - CI verifies package contents and runtime resolution
+- the supported target matrix has passing Phase 7 validation evidence
 - the `ss` binary name is not used for public distribution
 
 ---
