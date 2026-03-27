@@ -887,6 +887,30 @@ export function shouldUseLocalReranker() {
 }
 
 // =============================================================================
+// MODEL DELIVERY CONFIGURATION
+// =============================================================================
+
+function envBool(name, defaultValue) {
+  const raw = (process.env[name] ?? '').trim().toLowerCase();
+  if (raw === '0' || raw === 'false' || raw === 'off') return false;
+  if (raw === '1' || raw === 'true' || raw === 'on') return true;
+  return defaultValue;
+}
+
+export const MODEL_DELIVERY_CONFIG = {
+  // Allow models to be downloaded at runtime (backward compatible default).
+  // Phase 4 `sweet-search init` will set this to false after pre-fetching.
+  allowRuntimeModelDownload: envBool('SWEET_SEARCH_ALLOW_RUNTIME_DOWNLOAD', true),
+
+  // Managed model cache root directory
+  modelCacheRoot: process.env.SWEET_SEARCH_MODEL_CACHE
+    || path.join(os.homedir(), '.cache', 'sweet-search', 'models'),
+
+  // HuggingFace endpoint (overrideable for enterprise mirrors/proxies)
+  hfEndpoint: process.env.SWEET_SEARCH_HF_ENDPOINT || 'https://huggingface.co',
+};
+
+// =============================================================================
 // LATE INTERACTION CONFIGURATION
 // =============================================================================
 

@@ -20,9 +20,10 @@ import { join, dirname } from 'path';
 import { buildSessionOptions, loadModelWithSessionOptions, warnIfGraphNotMaterialized } from './onnx-session-utils.js';
 import { fileURLToPath } from 'url';
 import { withOnnxMutex } from './onnx-mutex.js';
+import { fetchModel, getModelCacheDir } from './model-fetcher.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MODEL_CACHE_DIR = join(__dirname, '..', 'models', 'gte-reranker-int8');
+const LEGACY_CACHE_DIR = join(__dirname, '..', 'models', 'gte-reranker-int8');
 
 // EXACT model as specified in LOCAL_RERANKER_PLAN.md
 const MODEL_ID = 'Alibaba-NLP/gte-reranker-modernbert-base';
@@ -99,26 +100,31 @@ export class LocalReranker {
 
   async _doInit() {
     try {
+      // Gate: verify model availability via managed fetcher.
+      // If allowRuntimeModelDownload=false and model files are missing, this throws
+      // a clear error pointing to `sweet-search init`.
+      // HF transformers still handles actual loading from its own cache format.
+      // Full managed-cache loading replaces HF in Phase 7.
+      await fetchModel('gte-reranker-modernbert-base');
+
       // Dynamically import @huggingface/transformers (v3+)
       const { AutoTokenizer, AutoModelForSequenceClassification, env } = await import('@huggingface/transformers');
 
-      // Configure cache directory
       if (env) {
-        env.cacheDir = MODEL_CACHE_DIR;
+        env.cacheDir = LEGACY_CACHE_DIR;
       }
 
       console.log(`LocalReranker: Loading ${MODEL_ID} with dtype=${MODEL_DTYPE}...`);
       const startLoad = Date.now();
 
-      // Load tokenizer and model with INT8 quantization
       this.tokenizer = await AutoTokenizer.from_pretrained(MODEL_ID, {
-        cache_dir: MODEL_CACHE_DIR,
+        cache_dir: LEGACY_CACHE_DIR,
       });
 
       const sessionOpts = buildSessionOptions(`${MODEL_ID}:${MODEL_DTYPE}`, 'local-reranker');
       this.model = await loadModelWithSessionOptions(
         (opts) => AutoModelForSequenceClassification.from_pretrained(MODEL_ID, opts),
-        { cache_dir: MODEL_CACHE_DIR, dtype: MODEL_DTYPE },
+        { cache_dir: LEGACY_CACHE_DIR, dtype: MODEL_DTYPE },
         sessionOpts,
       );
 
