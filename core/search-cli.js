@@ -245,7 +245,7 @@ Examples:
 
   // Handle --serve
   if (args[0] === '--serve') {
-    startServer();
+    await startServer();
   } else if (args[0] === '--stop') {
     try {
       const http = await import('http');
