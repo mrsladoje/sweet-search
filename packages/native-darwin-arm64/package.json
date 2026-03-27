@@ -1,0 +1,8 @@
+{
+  "name": "@sweet-search/native-darwin-arm64",
+  "version": "2.3.0",
+  "description": "Sweet Search native binaries for macOS ARM64",
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "files": ["manifest.json", "maxsim.node", "sweet-search"]
+}

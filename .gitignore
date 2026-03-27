@@ -43,6 +43,8 @@ wasm-maxsim/target/
 native-maxsim/target/
 native-maxsim/*.node
 sweet-search-cli/target/
+packages/native-*/maxsim.node
+packages/native-*/sweet-search
 
 # Phase planning docs (regenerable)
 PHASE*_RESULTS.md
