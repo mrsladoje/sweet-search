@@ -1,0 +1,9 @@
+{
+  "name": "@sweet-search/native-linux-x64-gnu",
+  "version": "2.3.0",
+  "description": "Sweet Search native binaries for Linux x64 (glibc)",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "libc": ["glibc"],
+  "files": ["manifest.json", "maxsim.node", "sweet-search"]
+}

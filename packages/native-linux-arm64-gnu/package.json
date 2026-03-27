@@ -1,0 +1,9 @@
+{
+  "name": "@sweet-search/native-linux-arm64-gnu",
+  "version": "2.3.0",
+  "description": "Sweet Search native binaries for Linux ARM64 (glibc)",
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "libc": ["glibc"],
+  "files": ["manifest.json", "maxsim.node", "sweet-search"]
+}

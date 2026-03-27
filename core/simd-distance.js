@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, existsSync } from 'fs';
 import { createRequire } from 'module';
+import { resolveNativeAddon } from './native-resolver.js';
 
 const DATA_OFFSET = 0; // SIMD popcount needs no LUT
 
@@ -49,15 +50,9 @@ async function initWasm() {
 
       // Tier 1: Try native Rust addon (rayon parallel + NEON/AVX2 SIMD)
       try {
-        const nativePath = join(__dirname, '..', 'native-maxsim');
-        // Try platform-specific binary name
-        const platform = process.platform === 'darwin' ? 'darwin' : 'linux';
-        const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
-        const binaryName = `maxsim.${platform}-${arch}.node`;
-        const binaryPath = join(nativePath, binaryName);
-
-        if (existsSync(binaryPath)) {
-          nativeMaxsim = require(binaryPath);
+        const addonPath = resolveNativeAddon();
+        if (addonPath) {
+          nativeMaxsim = require(addonPath);
         }
       } catch {
         // Native not available — fall through to WASM
