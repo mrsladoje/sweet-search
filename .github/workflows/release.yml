@@ -1,0 +1,326 @@
+name: Release Build & Smoke Test
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      skip_publish:
+        description: 'Skip npm publish (build and test only)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ─────────────────────────────────────────────────────
+  # Build native CLI binary for each platform
+  # ─────────────────────────────────────────────────────
+  build-cli:
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+            platform: darwin-arm64
+          - target: x86_64-apple-darwin
+            os: macos-13
+            platform: darwin-x64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            platform: linux-x64-gnu
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            platform: linux-arm64-gnu
+            use_cross: true
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross (Linux arm64)
+        if: matrix.use_cross
+        run: cargo install cross --locked
+
+      - name: Build CLI
+        working-directory: sweet-search-cli
+        run: |
+          if [ "${{ matrix.use_cross }}" = "true" ]; then
+            cross build --release --target ${{ matrix.target }}
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
+
+      - name: Upload CLI binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.platform }}
+          path: sweet-search-cli/target/${{ matrix.target }}/release/sweet-search
+
+  # ─────────────────────────────────────────────────────
+  # Build native MaxSim addon for each platform
+  # ─────────────────────────────────────────────────────
+  # Native addon builds — host-native for darwin and linux-x64,
+  # Docker arm64 container for linux-arm64 (no native runner available).
+  build-addon:
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+            platform: darwin-arm64
+          - target: x86_64-apple-darwin
+            os: macos-13
+            platform: darwin-x64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            platform: linux-x64-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build addon
+        working-directory: native-maxsim
+        run: npx @napi-rs/cli build --release --platform --target ${{ matrix.target }}
+
+      - name: Upload addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: addon-${{ matrix.platform }}
+          path: native-maxsim/maxsim.*.node
+
+  # linux-arm64 addon — built inside a Docker arm64 container with cargo
+  # directly, since napi-rs CLI cross-compile requires matching host arch.
+  build-addon-arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build addon in arm64 container
+        run: |
+          docker run --rm --platform linux/arm64 \
+            -v "$PWD/native-maxsim:/src" \
+            -w /src \
+            rust:latest \
+            sh -c '
+              cargo build --release --target-dir /tmp/build 2>&1
+              cp /tmp/build/release/libmaxsim_native.so /src/maxsim.linux-arm64-gnu.node
+            '
+          ls -la native-maxsim/maxsim.linux-arm64-gnu.node
+          file native-maxsim/maxsim.linux-arm64-gnu.node
+
+      - name: Upload addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: addon-linux-arm64-gnu
+          path: native-maxsim/maxsim.linux-arm64-gnu.node
+
+  # ─────────────────────────────────────────────────────
+  # Assemble platform packages and run smoke tests
+  # ─────────────────────────────────────────────────────
+  # Native smoke tests — run on the actual target platform
+  smoke-test:
+    needs: [build-cli, build-addon]
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            platform: darwin-arm64
+          - os: macos-13
+            platform: darwin-x64
+          - os: ubuntu-latest
+            platform: linux-x64-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download CLI binary
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-${{ matrix.platform }}
+          path: packages/native-${{ matrix.platform }}/
+
+      - name: Download addon
+        uses: actions/download-artifact@v4
+        with:
+          name: addon-${{ matrix.platform }}
+          path: packages/native-${{ matrix.platform }}/
+
+      - name: Rename addon
+        run: |
+          cd packages/native-${{ matrix.platform }}
+          mv maxsim.*.node maxsim.node 2>/dev/null || true
+          chmod +x sweet-search
+          ls -la
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run unit tests
+        run: npm test -- --run
+
+      - name: Smoke test (core profile)
+        run: node scripts/smoke-test.js --profile core
+
+      - name: Smoke test (full profile)
+        run: node scripts/smoke-test.js --profile full
+        env:
+          SWEET_SEARCH_TEST_DOWNLOADS: '1'
+
+      - name: Native launcher integration (warm path)
+        run: npm test -- --run tests/native-launcher.integration.test.js
+
+  # linux-arm64 smoke test — must run inside a Docker container to exercise
+  # the arm64 binary, addon, and resolver on the correct architecture.
+  smoke-test-arm64:
+    needs: [build-cli, build-addon-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Download CLI binary
+        uses: actions/download-artifact@v4
+        with:
+          name: cli-linux-arm64-gnu
+          path: packages/native-linux-arm64-gnu/
+
+      - name: Download addon
+        uses: actions/download-artifact@v4
+        with:
+          name: addon-linux-arm64-gnu
+          path: packages/native-linux-arm64-gnu/
+
+      - name: Rename addon and set permissions
+        run: |
+          cd packages/native-linux-arm64-gnu
+          mv maxsim.*.node maxsim.node 2>/dev/null || true
+          chmod +x sweet-search
+          ls -la
+
+      - name: Smoke test (core + full) in arm64 container
+        run: |
+          docker run --rm --platform linux/arm64 \
+            -v "$PWD:/sweet-search-src:ro" \
+            -e SWEET_SEARCH_PROJECT_ROOT=/app \
+            -e SWEET_SEARCH_TEST_DOWNLOADS=1 \
+            node:20-slim \
+            sh -c '
+              apt-get update -qq > /dev/null 2>&1
+              apt-get install -y -qq python3 make g++ > /dev/null 2>&1
+              cp -r /sweet-search-src /app
+              cd /app
+              npm ci --ignore-scripts 2>/dev/null
+              npm rebuild better-sqlite3 2>/dev/null
+              echo "--- core profile ---"
+              node scripts/smoke-test.js --profile core
+              echo "--- full profile ---"
+              node scripts/smoke-test.js --profile full
+            '
+
+  # ─────────────────────────────────────────────────────
+  # Packaging verification
+  # ─────────────────────────────────────────────────────
+  pack-verify:
+    needs: [build-cli, build-addon]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Verify manifest is up to date
+        run: node scripts/generate-asset-manifest.js --check
+
+      - name: Verify npm pack contents
+        run: npm pack --dry-run 2>&1 | tee pack-output.txt
+
+      - name: Run packaging tests
+        run: npm test -- --run tests/packaging.test.js
+
+      - name: Check tarball size
+        run: |
+          npm pack 2>/dev/null
+          ls -lh sweet-search-*.tgz
+          SIZE=$(stat --printf="%s" sweet-search-*.tgz 2>/dev/null || stat -f "%z" sweet-search-*.tgz)
+          echo "Tarball size: $SIZE bytes"
+          # Warn if main package exceeds 5MB (without models)
+          if [ "$SIZE" -gt 5242880 ]; then
+            echo "::warning::Main package tarball exceeds 5MB ($SIZE bytes)"
+          fi
+
+  # ─────────────────────────────────────────────────────
+  # Publish (only on tag push, unless skip_publish)
+  # ─────────────────────────────────────────────────────
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_publish != 'true'
+    needs: [smoke-test, smoke-test-arm64, pack-verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+
+      # Download all platform artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Assemble platform packages
+        run: |
+          for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu; do
+            dir="packages/native-$platform"
+            cp "artifacts/cli-$platform/sweet-search" "$dir/sweet-search"
+            cp artifacts/addon-$platform/maxsim.*.node "$dir/maxsim.node"
+            chmod +x "$dir/sweet-search"
+          done
+
+      # Publish order: platform packages first, then main package
+      - name: Publish platform packages
+        run: |
+          for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu; do
+            cd "packages/native-$platform"
+            npm publish --provenance --access public
+            cd ../..
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish main package
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

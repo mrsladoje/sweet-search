@@ -44,6 +44,7 @@
     "scripts/benchmark-harness.js",
     "scripts/init.js",
     "scripts/verify-runtime.js",
+    "scripts/smoke-test.js",
     "translation/",
     "training/features/extractor.js",
     "training/output/v45_router_d4.js",
