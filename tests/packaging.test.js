@@ -24,7 +24,7 @@ beforeAll(() => {
 
 describe('npm pack contents', () => {
   it('manifest is well-formed with required top-level keys', () => {
-    expect(manifest.version).toBe(1);
+    expect(manifest.version).toBe(2);
     expect(manifest.runtimeAssets).toBeDefined();
     expect(typeof manifest.runtimeAssets).toBe('object');
   });

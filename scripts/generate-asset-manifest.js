@@ -9,7 +9,7 @@ const ROOT = join(__dirname, '..');
 const MANIFEST_PATH = join(ROOT, 'assets', 'manifest.json');
 
 const manifest = {
-  version: 1,
+  version: 2,
   runtimeAssets: {
     wasmRouter: 'wasm-router/pkg/query_router_wasm.js',
     wasmRouterBinary: 'wasm-router/pkg/query_router_wasm_bg.wasm',
@@ -18,9 +18,33 @@ const manifest = {
     catboostRouter: 'training/output/v45_router_d4.js',
     featureExtractor: 'training/features/extractor.js',
   },
-  nativePackages: {},
-  profiles: {},
-  modelSources: {},
+  nativePackages: {
+    'darwin-arm64': '@sweet-search/native-darwin-arm64',
+    'darwin-x64': '@sweet-search/native-darwin-x64',
+    'linux-x64-gnu': '@sweet-search/native-linux-x64-gnu',
+    'linux-arm64-gnu': '@sweet-search/native-linux-arm64-gnu',
+  },
+  profiles: {
+    core: {
+      description: 'Lightweight search (no models)',
+      models: [],
+    },
+    full: {
+      description: 'Full search with all models',
+      models: [
+        'lateon-code',
+        'lateon-code-edge',
+        'gte-reranker-modernbert-base',
+        'coderankembed-int8',
+      ],
+    },
+  },
+  modelSources: {
+    'lateon-code': { type: 'init-managed' },
+    'lateon-code-edge': { type: 'init-managed' },
+    'gte-reranker-modernbert-base': { type: 'init-managed' },
+    'coderankembed-int8': { type: 'init-managed' },
+  },
 };
 
 const serialized = `${JSON.stringify(manifest, null, 2)}\n`;
