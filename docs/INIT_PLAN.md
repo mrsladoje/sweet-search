@@ -965,14 +965,19 @@ Exit criteria:
 
 Deliverables:
 
-- init-managed model fetcher with checksums and resumability
-- runtime local-first resolution
-- full profile install flow
-- model-on-npm decision memo after legal and size review
+- model registry (`core/model-registry.js`) with SHA256 checksums for all full-profile models, verified against HuggingFace API
+- robust model fetcher (`core/model-fetcher.js`) with checksums, resumable downloads, atomic writes, retries, and configurable HF endpoint
+- `MODEL_DELIVERY_CONFIG` in `core/config.js`: `allowRuntimeModelDownload`, `modelCacheRoot`, `hfEndpoint`
+- late interaction fully migrated to managed delivery (download, cache, and load from managed cache)
+- runtime-download gating and model verification for reranker and embeddings (managed fetcher acts as gate; HF transformers still handles actual loading from its own cache format)
+- full managed-cache loading for reranker and embeddings is deferred to Phase 7 (native end-to-end model execution), when `@huggingface/transformers` is replaced entirely
 
 Exit criteria:
 
-- full profile can run without ad hoc runtime downloads during normal command execution
+- late interaction loads exclusively from managed cache with checksum-verified artifacts
+- reranker and embedding paths are gated by `allowRuntimeModelDownload` — blocked with clear error when disabled and model files are unavailable
+- model registry covers all full-profile models with verified checksums
+- `scripts/verify-model-registry.js` can regenerate/verify registry checksums against HuggingFace API
 
 ### Phase 4: Init UX
 
@@ -1072,7 +1077,52 @@ Exit criteria:
 - parity tests confirm identical results across native and fallback paths
 - the napi-rs crate is renamed to `sweet-search-native` if it now covers more than MaxSim
 
-### Phase 7: Cross-target validation
+### Phase 7: Native End-to-End Model Execution
+
+Replace `@huggingface/transformers` completely for all local model paths. Build native Rust pipelines via napi-rs for every model path.
+
+**Prerequisite:** Phase 3 (model delivery) and Phase 6b (expanded napi-rs) must be complete.
+
+**Scope:**
+
+- Replace `@huggingface/transformers` for all local model paths:
+  - late interaction tokenization + pre/post-processing
+  - local embedding pipeline (tokenization, inference orchestration, pooling, normalization)
+  - local reranker pipeline (tokenization, inference, sigmoid)
+- Use Rust `tokenizers` crate directly for all tokenization
+- Use ONNX Runtime directly from native code via the C API / Rust binding for native pipelines; keep Node bindings (`onnxruntime-node`) only for JS fallback paths
+- Do NOT replace ORT internals with custom SIMD — ORT already handles optimized inference kernels
+- Move tensor prep, pooling, normalization, and post-processing into native code
+- Reuse buffers and avoid JS/native allocation churn
+- Add batching and pipeline ownership in native code
+- Use rayon where it actually helps:
+  - batch embedding (parallel across documents)
+  - indexing throughput (parallel chunk encoding)
+  - reranking many documents (parallel scoring)
+  - multi-vector post-processing
+- Do NOT claim rayon helps every step equally — it helps CPU-parallel batch work, not single-query latency
+- Native speedups focus on: tokenization, tensor prep, buffer reuse, batching, pooling, normalization, pipeline overhead reduction
+- Platform-specific optimizations (CoreML, OpenVINO) are incremental gains on top, not the primary speedup source
+
+Deliverables:
+
+- native tokenizer path for all models
+- native embedding pipeline
+- native reranker pipeline
+- native late-interaction tokenizer + pre/post path
+- parity tests against existing JS/ORT behavior
+- throughput benchmarks (indexing, batch embedding) and single-query latency benchmarks
+- clear fallback behavior when native path is unavailable
+
+Exit criteria:
+
+- `@huggingface/transformers` is no longer required for any local model path
+- local model execution works end-to-end through native code paths
+- parity is verified against the previous implementation
+- measured throughput gains exist for indexing and/or batch workloads
+- no regression in warmed single-query latency
+
+### Phase 8: Cross-target validation
 
 This phase is the final verification pass. Its purpose is to prove that Sweet Search works correctly across every supported target, packaging mode, and runtime profile before the plan is considered complete.
 

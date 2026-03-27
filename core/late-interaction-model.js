@@ -15,6 +15,8 @@ import os from 'os';
 import fs from 'fs';
 import path from 'path';
 import { LATE_INTERACTION_CONFIG } from './config.js';
+import { fetchModelFile, getModelCacheDir, resolveModelFile } from './model-fetcher.js';
+import { getModelEntry } from './model-registry.js';
 
 let lateInteractionPipeline = null;
 let loadPromise = null;
@@ -114,7 +116,8 @@ async function loadModel() {
   }
 
   // Download ONNX model if not cached
-  const onnxPath = await downloadHfFile(modelConfig.hfId, modelConfig.onnxFile);
+  const registryKey = LATE_INTERACTION_CONFIG.model;
+  const onnxPath = await resolveOrFetchFile(modelConfig.hfId, modelConfig.onnxFile, registryKey);
 
   // Create ORT session
   const ort = await import('onnxruntime-node');
@@ -144,7 +147,7 @@ async function loadModel() {
     // Stage 1 input dim = backbone dim. Each subsequent stage input = previous output.
     let currentInDim = modelConfig.backboneDim;
     for (let i = 0; i < modelConfig.projectionPaths.length; i++) {
-      const weightPath = await downloadHfFile(modelConfig.hfId, modelConfig.projectionPaths[i]);
+      const weightPath = await resolveOrFetchFile(modelConfig.hfId, modelConfig.projectionPaths[i], registryKey);
       const weight = parseSafetensorsWeight(weightPath);
       // weight is [outDim, inDim] row-major → outDim = weight.length / inDim
       if (weight.length % currentInDim !== 0) {
@@ -413,25 +416,18 @@ async function runRawInference(session, tokenized, ort) {
 // HuggingFace File Download + Cache
 // =========================================================================
 
-function getCachePath(hfId, filename) {
-  const cacheDir = path.join(os.homedir(), '.cache', 'sweet-search', 'lateon-models',
-    hfId.replace('/', '--'));
-  fs.mkdirSync(cacheDir, { recursive: true });
-  return path.join(cacheDir, filename.replace(/\//g, '--'));
-}
+/**
+ * Resolve or download a model file from HuggingFace using the managed model fetcher.
+ * Checks local cache first (with checksum validation for LFS files).
+ * Respects MODEL_DELIVERY_CONFIG.allowRuntimeModelDownload.
+ */
+async function resolveOrFetchFile(hfId, filePath, registryKey) {
+  const entry = getModelEntry(registryKey);
+  const fileInfo = entry?.files.find(f => f.path === filePath);
 
-async function downloadHfFile(hfId, filename) {
-  const cachePath = getCachePath(hfId, filename);
-  if (fs.existsSync(cachePath) && fs.statSync(cachePath).size > 0) {
-    return cachePath;
-  }
-
-  const url = `https://huggingface.co/${hfId}/resolve/main/${filename}`;
-  console.log(`[LateInteraction] Downloading ${filename} from ${hfId}...`);
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`[LateInteraction] HTTP ${resp.status} downloading ${url}`);
-  const buffer = await resp.arrayBuffer();
-  fs.writeFileSync(cachePath, Buffer.from(buffer));
-  console.log(`[LateInteraction] Downloaded ${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB → ${cachePath}`);
-  return cachePath;
+  const destDir = getModelCacheDir(hfId);
+  return fetchModelFile(hfId, filePath, destDir, {
+    sha256: fileInfo?.sha256 || undefined,
+    expectedSize: fileInfo?.sizeBytes || undefined,
+  });
 }

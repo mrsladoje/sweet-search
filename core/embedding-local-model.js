@@ -8,6 +8,7 @@ import { existsSync, readFileSync, mkdirSync, readdirSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { EMBEDDING_PROVIDERS } from './config.js';
+import { fetchModel } from './model-fetcher.js';
 
 // =============================================================================
 // SEQUENCE LENGTH CONSTANTS (L2: configurable via env)
@@ -302,6 +303,14 @@ export async function getLocalPipeline() {
     const start = Date.now();
     const { quantized: isQuantized } = resolveQuantizationMode();
     console.log(`Loading local model: ${resolveLocalModelName(isQuantized)}...`);
+
+    // Gate: verify model availability via managed fetcher.
+    // If allowRuntimeModelDownload=false and model files are missing, this throws
+    // a clear error pointing to `sweet-search init`.
+    // HF transformers still handles actual loading from its own cache format.
+    // Full managed-cache loading replaces HF in Phase 7.
+    await fetchModel('coderankembed-int8');
+
     let pipeline;
     try {
       ({ pipeline } = await import('@huggingface/transformers'));
