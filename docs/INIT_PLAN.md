@@ -1013,8 +1013,13 @@ The Node.js CLI wrapper (`bin/sweet-search.js`) adds measurable startup overhead
 
 This sub-phase does not pre-commit to a specific optimization strategy. The correct approach depends on profiling data from real Sweet Search workflows and on which package manager layouts need to be supported.
 
+**Known bug: cold-start auto-spawn fails**
+
+The Rust CLI's `auto_start_server()` spawns `node core/sweet-search.js --serve` with null stdio (`Stdio::null()` for stdin, stdout, stderr). This causes Node.js to exit before the server creates its Unix socket, resulting in "Server did not start within 5 seconds". The warm path (server already running) works correctly. This must be fixed as part of Phase 6a — the server spawn needs either inherited or piped stdio, or a dedicated server-start script that handles the ESM top-level await lifecycle correctly.
+
 **Prerequisite:**
 
+- fix the cold-start auto-spawn bug described above
 - measure actual CLI dispatch overhead in representative workflows (single search, batch agent invocations, CI pipelines)
 - determine whether the overhead is user-facing or masked by server startup, model loading, or network I/O
 
