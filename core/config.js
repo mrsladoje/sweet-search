@@ -29,7 +29,20 @@ function resolveProjectRoot() {
   const fromEnv = process.env.SWEET_SEARCH_PROJECT_ROOT?.trim();
   if (fromEnv) return path.resolve(fromEnv);
 
-  // In standalone repo and npm scripts, cwd is the workspace root.
+  // Walk up from cwd looking for .git or package.json to find the real
+  // project root, so that running from a subdirectory still finds the
+  // .sweet-search/ data dir and init config.
+  let dir = process.cwd();
+  while (true) {
+    if (existsSync(path.join(dir, '.git')) || existsSync(path.join(dir, 'package.json'))) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break; // filesystem root
+    dir = parent;
+  }
+
+  // Fallback to cwd if no project marker found
   return process.cwd();
 }
 
@@ -898,9 +911,25 @@ function envBool(name, defaultValue) {
 }
 
 export const MODEL_DELIVERY_CONFIG = {
-  // Allow models to be downloaded at runtime (backward compatible default).
-  // Phase 4 `sweet-search init` will set this to false after pre-fetching.
-  allowRuntimeModelDownload: envBool('SWEET_SEARCH_ALLOW_RUNTIME_DOWNLOAD', true),
+  // Allow models to be downloaded at runtime.
+  // Priority: explicit env var > init config (.sweet-search/config.json) > default true.
+  allowRuntimeModelDownload: (() => {
+    // Explicit env var always wins
+    if (process.env.SWEET_SEARCH_ALLOW_RUNTIME_DOWNLOAD !== undefined) {
+      return envBool('SWEET_SEARCH_ALLOW_RUNTIME_DOWNLOAD', true);
+    }
+    // Check init config written by `sweet-search init`
+    try {
+      const initConfigPath = path.join(PROJECT_ROOT, DATA_DIR_NAME, 'config.json');
+      if (existsSync(initConfigPath)) {
+        const initConfig = JSON.parse(readFileSync(initConfigPath, 'utf-8'));
+        if (initConfig.runtime?.allowRuntimeModelDownload !== undefined) {
+          return initConfig.runtime.allowRuntimeModelDownload;
+        }
+      }
+    } catch { /* init config is optional — fall through to default */ }
+    return true; // backward-compatible default
+  })(),
 
   // Managed model cache root directory
   modelCacheRoot: process.env.SWEET_SEARCH_MODEL_CACHE

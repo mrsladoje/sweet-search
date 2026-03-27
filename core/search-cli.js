@@ -206,7 +206,8 @@ Sweet Search v2.3 - Unified Code Search with Auto-Warm Server
 
 Usage:
   sweet-search <query> [options]
-  sweet-search --stop               Stop warm server
+  sweet-search init [--profile <profile>]    Initialize Sweet Search
+  sweet-search --stop                        Stop warm server
 
 Options:
   --mode <mode>     Search mode: auto, lexical, semantic, hybrid, pattern (default: auto)
