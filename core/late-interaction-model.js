@@ -21,6 +21,19 @@ import { getModelEntry } from './model-registry.js';
 let lateInteractionPipeline = null;
 let loadPromise = null;
 
+// Lightweight timing accumulators for profiling (Phase 6a).
+// Cleared on read via getLateInteractionTimings().
+const _timings = { tokenize_us: 0, inference_us: 0, calls: 0 };
+
+/** Read and reset accumulated tokenizer/inference timings. */
+export function getLateInteractionTimings() {
+  const snap = { ..._timings };
+  _timings.tokenize_us = 0;
+  _timings.inference_us = 0;
+  _timings.calls = 0;
+  return snap;
+}
+
 /**
  * Get the late interaction pipeline singleton (lazy-loaded).
  * Returns null if late interaction is disabled.
@@ -194,11 +207,19 @@ export async function encodeQuery(text) {
 
   const { tokenizer, session, modelConfig, ort, projectionStages } = pipeline;
   const prefixed = modelConfig.queryPrefix + text;
+
+  const t0 = performance.now();
   const tokenized = tokenizer(prefixed, {
     padding: true, truncation: true, max_length: modelConfig.maxQueryLength,
   });
-
+  const t1 = performance.now();
   const hidden = await runRawInference(session, tokenized, ort);
+  const t2 = performance.now();
+
+  _timings.tokenize_us += Math.round((t1 - t0) * 1000);
+  _timings.inference_us += Math.round((t2 - t1) * 1000);
+  _timings.calls++;
+
   return projectAndNormalize(hidden, projectionStages);
 }
 
@@ -233,11 +254,18 @@ export async function encodeDocuments(texts, options = {}) {
 
   for (let t = 0; t < texts.length; t++) {
     const prefixed = modelConfig.docPrefix + texts[t];
+
+    const t0 = performance.now();
     const tokenized = tokenizer(prefixed, {
       padding: true, truncation: true, max_length: modelConfig.maxDocLength,
     });
-
+    const t1 = performance.now();
     const hidden = await runRawInference(session, tokenized, ort);
+    const t2 = performance.now();
+
+    _timings.tokenize_us += Math.round((t1 - t0) * 1000);
+    _timings.inference_us += Math.round((t2 - t1) * 1000);
+    _timings.calls++;
     const allVectors = projectAndNormalize(hidden, projectionStages);
     const inputIds = Array.from(tokenized.input_ids.data).map(Number);
 
