@@ -42,6 +42,10 @@ wasm-router/*.bak
 wasm-maxsim/target/
 native-maxsim/target/
 native-maxsim/*.node
+sweet-search-native/target/
+sweet-search-native/*.node
+sweet-search-native/index.js
+sweet-search-native/index.d.ts
 sweet-search-cli/target/
 packages/native-*/maxsim.node
 packages/native-*/sweet-search

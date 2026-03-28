@@ -93,14 +93,14 @@ jobs:
           node-version: 20
 
       - name: Build addon
-        working-directory: native-maxsim
+        working-directory: sweet-search-native
         run: npx @napi-rs/cli build --release --platform --target ${{ matrix.target }}
 
       - name: Upload addon
         uses: actions/upload-artifact@v4
         with:
           name: addon-${{ matrix.platform }}
-          path: native-maxsim/maxsim.*.node
+          path: sweet-search-native/maxsim.*.node
 
   # linux-arm64 addon — built inside a Docker arm64 container with cargo
   # directly, since napi-rs CLI cross-compile requires matching host arch.
@@ -117,21 +117,21 @@ jobs:
       - name: Build addon in arm64 container
         run: |
           docker run --rm --platform linux/arm64 \
-            -v "$PWD/native-maxsim:/src" \
+            -v "$PWD/sweet-search-native:/src" \
             -w /src \
             rust:latest \
             sh -c '
               cargo build --release --target-dir /tmp/build 2>&1
-              cp /tmp/build/release/libmaxsim_native.so /src/maxsim.linux-arm64-gnu.node
+              cp /tmp/build/release/libsweet_search_native.so /src/maxsim.linux-arm64-gnu.node
             '
-          ls -la native-maxsim/maxsim.linux-arm64-gnu.node
-          file native-maxsim/maxsim.linux-arm64-gnu.node
+          ls -la sweet-search-native/maxsim.linux-arm64-gnu.node
+          file sweet-search-native/maxsim.linux-arm64-gnu.node
 
       - name: Upload addon
         uses: actions/upload-artifact@v4
         with:
           name: addon-linux-arm64-gnu
-          path: native-maxsim/maxsim.linux-arm64-gnu.node
+          path: sweet-search-native/maxsim.linux-arm64-gnu.node
 
   # ─────────────────────────────────────────────────────
   # Assemble platform packages and run smoke tests

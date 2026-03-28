@@ -130,8 +130,8 @@ check('platform detection', () => {
 // This is critical for cross-platform Docker smoke tests.
 const skipDevPaths = (p) => false;  // existsSync override that rejects dev paths
 const packageOnlyAddonPath = nativeResolver.resolveNativeAddon({ existsSync: (p) => {
-  // Reject dev build paths (native-maxsim/ and sweet-search-cli/target/)
-  if (p.includes('/native-maxsim/maxsim.') || p.includes('/target/')) return false;
+  // Reject dev build paths (sweet-search-native/ and sweet-search-cli/target/)
+  if (p.includes('/sweet-search-native/maxsim.') || p.includes('/native-maxsim/maxsim.') || p.includes('/target/')) return false;
   return existsSync(p);
 }});
 const packageOnlyBinaryPath = nativeResolver.resolveNativeBinary({ existsSync: (p) => {
