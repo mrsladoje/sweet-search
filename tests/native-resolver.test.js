@@ -108,7 +108,7 @@ describe('native-resolver', () => {
     it('finds the local dev addon on darwin-arm64', async () => {
       const { resolveNativeAddon } = await loadResolver();
       if (process.platform === 'darwin' && process.arch === 'arm64') {
-        const expected = join(ROOT, 'native-maxsim', 'maxsim.darwin-arm64.node');
+        const expected = join(ROOT, 'sweet-search-native', 'maxsim.darwin-arm64.node');
         if (existsSync(expected)) {
           expect(resolveNativeAddon()).toBe(expected);
         }
@@ -216,8 +216,8 @@ describe('native-resolver', () => {
       if (process.platform === 'darwin' && process.arch === 'arm64') {
         const result = resolveNativeAddon();
         if (result !== null) {
-          // Should resolve to native-maxsim/ (local dev), not packages/
-          expect(result).toContain('native-maxsim');
+          // Should resolve to sweet-search-native/ (local dev), not packages/
+          expect(result).toContain('sweet-search-native');
           expect(result).not.toContain('packages');
         }
       }

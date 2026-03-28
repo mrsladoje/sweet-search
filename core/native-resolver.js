@@ -74,9 +74,11 @@ export function resolveNativeAddon(options = {}) {
   const rootDir = options.rootDir ?? root;
   const resolvePackageDir = options.resolvePackageDir ?? defaultPackageDirResolver;
 
-  // 1. Local dev: native-maxsim/ directory
-  const localDev = join(rootDir, 'native-maxsim', binaryName);
+  // 1. Local dev: sweet-search-native/ directory (or legacy native-maxsim/)
+  const localDev = join(rootDir, 'sweet-search-native', binaryName);
   if (exists(localDev)) return localDev;
+  const legacyDev = join(rootDir, 'native-maxsim', binaryName);
+  if (exists(legacyDev)) return legacyDev;
 
   // 2. Local package template: packages/native-*/
   const pkgDir = `native-${platform}-${arch}${libc}`;

@@ -1,13 +1,11 @@
-//! Native MaxSim kernel with rayon parallelism + NEON/AVX2 SIMD.
+//! Sweet Search native addon — MaxSim kernel + tokenizer + future pipelines.
 //!
-//! Scores ALL candidates in parallel across CPU cores.
-//! Zero-copy access to Node.js Float32Array/Int8Array buffers via napi-rs.
+//! MaxSim: Scores candidates in parallel across CPU cores (rayon + NEON/AVX2).
+//! Tokenizer: HuggingFace `tokenizers` crate for native tokenization.
 //!
-//! Architecture:
-//!   JS → maxsim_score_batch(queryFlat, candidates) → [f32 scores]
-//!   where candidates is an array of { tokens: Int8Array, numTokens, min, scale }
-//!
-//! Falls back gracefully: native (rayon+SIMD) > WASM SIMD > JS
+//! Falls back gracefully: native > WASM SIMD > JS
+
+mod tokenizer;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
