@@ -13,6 +13,7 @@ import { RERANK_CONFIG, LOCAL_RERANKER_CONFIG, isVoyageAvailable, getVoyageApiKe
 import { getGlobalLocalReranker } from './local-reranker.js';
 import { withOnnxMutex } from './onnx-mutex.js';
 import { buildSessionOptions, loadModelWithSessionOptions, warnIfGraphNotMaterialized } from './onnx-session-utils.js';
+import { isAppleSilicon, isCoreMLProviderAvailable } from './coreml-provider.js';
 
 // =============================================================================
 // FLASHRANK RERANKER
@@ -58,12 +59,34 @@ export class FlashRankReranker {
       }
 
       const modelPath = this.modelOverride || 'Xenova/ms-marco-TinyBERT-L-2-v2';
-      const sessionOpts = buildSessionOptions(`${modelPath}:flashrank:q8`, 'flashrank');
-      this.pipeline = await loadModelWithSessionOptions(
-        (opts) => transformers.pipeline('feature-extraction', modelPath, opts),
+      const coremlAvailable = isAppleSilicon() ? await isCoreMLProviderAvailable() : false;
+      const sessionOpts = buildSessionOptions(`${modelPath}:flashrank:q8`, 'flashrank', coremlAvailable);
+
+      const loadPipeline = (opts) => loadModelWithSessionOptions(
+        (o) => transformers.pipeline('feature-extraction', modelPath, o),
         { quantized: true },
-        sessionOpts,
+        opts,
       );
+
+      try {
+        this.pipeline = await loadPipeline(sessionOpts);
+      } catch (loadErr) {
+        if (sessionOpts.executionProviders?.some(ep => (typeof ep === 'string' ? ep : ep.name) === 'coreml')) {
+          // MLProgram failed — try NeuralNetwork format
+          console.warn(`FlashRank: CoreML MLProgram failed (${loadErr.message}), trying NeuralNetwork`);
+          const { getCoreMLExecutionProviders } = await import('./coreml-provider.js');
+          const nnOpts = buildSessionOptions(`${modelPath}:flashrank:q8`, 'flashrank');
+          nnOpts.executionProviders = getCoreMLExecutionProviders(false);
+          try {
+            this.pipeline = await loadPipeline(nnOpts);
+          } catch {
+            console.warn('FlashRank: CoreML NeuralNetwork also failed, falling back to CPU');
+            this.pipeline = await loadPipeline(buildSessionOptions(`${modelPath}:flashrank:q8`, 'flashrank'));
+          }
+        } else {
+          throw loadErr;
+        }
+      }
       warnIfGraphNotMaterialized('FlashRank', sessionOpts);
 
       console.log(`FlashRank: Loaded local reranker model (${modelPath})`);

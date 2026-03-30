@@ -17,6 +17,7 @@ import path from 'path';
 import { LATE_INTERACTION_CONFIG } from './config.js';
 import { fetchModelFile, getModelCacheDir, resolveModelFile } from './model-fetcher.js';
 import { getModelEntry } from './model-registry.js';
+// CoreML not used for LI models — see loadModel() comment for benchmarking rationale.
 
 let lateInteractionPipeline = null;
 let loadPromise = null;
@@ -135,11 +136,17 @@ async function loadModel() {
   // Create ORT session
   const ort = await import('onnxruntime-node');
   const { bestIntraOpThreads } = await import('./embedding-local-model.js');
+
+  // CoreML is not used for late-interaction models. Benchmarking shows the
+  // LateOn-Code model partitions poorly onto CoreML (1343/2327 ops), causing
+  // constant CPU↔CoreML data transfer that makes inference ~18x slower.
+  // The MLProgram format fails entirely; NeuralNetwork loads but regresses.
   const session = await ort.InferenceSession.create(onnxPath, {
     executionProviders: ['cpu'],
     intraOpNumThreads: bestIntraOpThreads(),
     interOpNumThreads: 1,
   });
+  const coremlActive = false;
 
   // Probe: run a single inference to check output dimension
   const probeTokenized = tokenizer('[Q] probe', { padding: true, truncation: true, max_length: 8 });
@@ -182,7 +189,8 @@ async function loadModel() {
   }
 
   const elapsed = Date.now() - start;
-  console.log(`[LateInteraction] Loaded ${LATE_INTERACTION_CONFIG.model} in ${elapsed}ms (${modelConfig.tokenDimension}d, skiplist: ${skiplistTokenIds.size} IDs, projection: ${projectionBakedIn ? 'baked' : 'manual'})`);
+  const epLabel = coremlActive ? 'coreml+cpu' : 'cpu';
+  console.log(`[LateInteraction] Loaded ${LATE_INTERACTION_CONFIG.model} in ${elapsed}ms (${modelConfig.tokenDimension}d, ep: ${epLabel}, skiplist: ${skiplistTokenIds.size} IDs, projection: ${projectionBakedIn ? 'baked' : 'manual'})`);
 
   return { tokenizer, session, modelConfig, skiplistTokenIds, ort, projectionStages };
 }

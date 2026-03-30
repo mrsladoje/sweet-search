@@ -9,6 +9,7 @@ import path from 'path';
 import os from 'os';
 import { EMBEDDING_PROVIDERS } from './config.js';
 import { fetchModel } from './model-fetcher.js';
+import { isAppleSilicon, isCoreMLProviderAvailable, shouldUseCoreML, getCoreMLExecutionProviders } from './coreml-provider.js';
 
 // =============================================================================
 // SEQUENCE LENGTH CONSTANTS (L2: configurable via env)
@@ -133,7 +134,7 @@ export function getCalibrationFactor() {
   return 4;
 }
 
-export function buildLocalSessionOptions(quantLabel = 'q8') {
+export function buildLocalSessionOptions(quantLabel = 'q8', coremlAvailable = false) {
   const sessionOptions = {
     graphOptimizationLevel: 'all',
     intraOpNumThreads: bestIntraOpThreads(),
@@ -145,10 +146,14 @@ export function buildLocalSessionOptions(quantLabel = 'q8') {
   };
 
   if (shouldUseOpenVino()) {
+    // Note: OpenVINO EP is not bundled in onnxruntime-node 1.24 for macOS.
+    // On Intel Linux builds where it is bundled, the lowercase name is required.
     sessionOptions.executionProviders = [
-      { name: 'OpenVINOExecutionProvider' },
-      'CPUExecutionProvider',
+      { name: 'openvino' },
+      'cpu',
     ];
+  } else if (shouldUseCoreML(coremlAvailable)) {
+    sessionOptions.executionProviders = getCoreMLExecutionProviders();
   }
 
   return sessionOptions;
@@ -320,18 +325,41 @@ export async function getLocalPipeline() {
 
     const { label: quantLabel } = resolveQuantizationMode();
 
-    const sessionOptions = buildLocalSessionOptions(quantLabel);
-    let backend = sessionOptions.executionProviders ? 'openvino+cpu' : 'cpu';
+    const coremlAvailable = isAppleSilicon() ? await isCoreMLProviderAvailable() : false;
+    const sessionOptions = buildLocalSessionOptions(quantLabel, coremlAvailable);
+    let backend = 'cpu';
+    if (sessionOptions.executionProviders) {
+      const names = sessionOptions.executionProviders.map(ep => typeof ep === 'string' ? ep : ep.name);
+      backend = names.includes('coreml') ? 'coreml+cpu' : 'openvino+cpu';
+    }
 
     try {
       localPipeline = await createLocalPipeline(pipeline, sessionOptions);
     } catch (err) {
       if (sessionOptions.executionProviders) {
-        console.warn(`[L5] OpenVINO session init failed (${err.message}), retrying with CPUExecutionProvider only`);
-        const cpuOnlyOptions = buildLocalSessionOptions(quantLabel);
-        delete cpuOnlyOptions.executionProviders;
-        localPipeline = await createLocalPipeline(pipeline, cpuOnlyOptions);
-        backend = 'cpu';
+        const epName = backend.split('+')[0];
+        if (epName === 'coreml') {
+          // MLProgram failed — try NeuralNetwork format before giving up
+          console.warn(`[L5] CoreML MLProgram failed (${err.message}), trying NeuralNetwork format`);
+          try {
+            const nnOptions = buildLocalSessionOptions(quantLabel);
+            nnOptions.executionProviders = getCoreMLExecutionProviders(false);
+            localPipeline = await createLocalPipeline(pipeline, nnOptions);
+            backend = 'coreml-nn+cpu';
+          } catch {
+            console.warn('[L5] CoreML NeuralNetwork also failed, falling back to CPU only');
+            const cpuOnlyOptions = buildLocalSessionOptions(quantLabel);
+            delete cpuOnlyOptions.executionProviders;
+            localPipeline = await createLocalPipeline(pipeline, cpuOnlyOptions);
+            backend = 'cpu';
+          }
+        } else {
+          console.warn(`[L5] ${epName} session init failed (${err.message}), retrying with CPU only`);
+          const cpuOnlyOptions = buildLocalSessionOptions(quantLabel);
+          delete cpuOnlyOptions.executionProviders;
+          localPipeline = await createLocalPipeline(pipeline, cpuOnlyOptions);
+          backend = 'cpu';
+        }
       } else {
         throw err;
       }
