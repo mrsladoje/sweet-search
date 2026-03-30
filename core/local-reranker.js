@@ -18,6 +18,7 @@
 
 import { join, dirname } from 'path';
 import { buildSessionOptions, loadModelWithSessionOptions, warnIfGraphNotMaterialized } from './onnx-session-utils.js';
+import { isAppleSilicon, isCoreMLProviderAvailable } from './coreml-provider.js';
 import { fileURLToPath } from 'url';
 import { withOnnxMutex } from './onnx-mutex.js';
 import { fetchModel, getModelCacheDir } from './model-fetcher.js';
@@ -121,12 +122,34 @@ export class LocalReranker {
         cache_dir: LEGACY_CACHE_DIR,
       });
 
-      const sessionOpts = buildSessionOptions(`${MODEL_ID}:${MODEL_DTYPE}`, 'local-reranker');
-      this.model = await loadModelWithSessionOptions(
-        (opts) => AutoModelForSequenceClassification.from_pretrained(MODEL_ID, opts),
+      const coremlAvailable = isAppleSilicon() ? await isCoreMLProviderAvailable() : false;
+      const sessionOpts = buildSessionOptions(`${MODEL_ID}:${MODEL_DTYPE}`, 'local-reranker', coremlAvailable);
+
+      const loadModel = (opts) => loadModelWithSessionOptions(
+        (o) => AutoModelForSequenceClassification.from_pretrained(MODEL_ID, o),
         { cache_dir: LEGACY_CACHE_DIR, dtype: MODEL_DTYPE },
-        sessionOpts,
+        opts,
       );
+
+      try {
+        this.model = await loadModel(sessionOpts);
+      } catch (loadErr) {
+        if (sessionOpts.executionProviders?.some(ep => (typeof ep === 'string' ? ep : ep.name) === 'coreml')) {
+          // MLProgram failed — try NeuralNetwork format
+          console.warn(`LocalReranker: CoreML MLProgram failed (${loadErr.message}), trying NeuralNetwork`);
+          const { getCoreMLExecutionProviders } = await import('./coreml-provider.js');
+          const nnOpts = buildSessionOptions(`${MODEL_ID}:${MODEL_DTYPE}`, 'local-reranker');
+          nnOpts.executionProviders = getCoreMLExecutionProviders(false);
+          try {
+            this.model = await loadModel(nnOpts);
+          } catch {
+            console.warn('LocalReranker: CoreML NeuralNetwork also failed, falling back to CPU');
+            this.model = await loadModel(buildSessionOptions(`${MODEL_ID}:${MODEL_DTYPE}`, 'local-reranker'));
+          }
+        } else {
+          throw loadErr;
+        }
+      }
 
       this.ready = true;
       this.transformersAvailable = true;

@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { shouldUseCoreML, getCoreMLExecutionProviders } from './coreml-provider.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let _cacheDirEnsured = false;
@@ -29,9 +30,9 @@ export function getOptimizedGraphPath(modelId, suffix) {
   return path.join(cacheDir, `${suffix}-optimized-ort${getOnnxRuntimeVersion()}-${hash}.onnx`);
 }
 
-export function buildSessionOptions(modelId, suffix) {
+export function buildSessionOptions(modelId, suffix, coremlAvailable = false) {
   const cores = Math.max(1, os.cpus().length);
-  return {
+  const opts = {
     graphOptimizationLevel: 'all',
     intraOpNumThreads: Math.min(8, Math.max(2, Math.ceil(cores / 2))),
     interOpNumThreads: 1,
@@ -40,6 +41,12 @@ export function buildSessionOptions(modelId, suffix) {
     enableMemPattern: true,
     optimizedModelFilePath: getOptimizedGraphPath(modelId, suffix),
   };
+
+  if (shouldUseCoreML(coremlAvailable)) {
+    opts.executionProviders = getCoreMLExecutionProviders();
+  }
+
+  return opts;
 }
 
 /**
