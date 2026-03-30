@@ -11,6 +11,10 @@
 - ALWAYS read a file before editing it
 - NEVER commit secrets, credentials, or .env files
 
+## Web Search
+
+Use the Tavily MCP server (`mcp__tavily__tavily_search`) for web search instead of the built-in WebSearch tool.
+
 ## File Organization
 
 - NEVER save to root folder — use the directories below
