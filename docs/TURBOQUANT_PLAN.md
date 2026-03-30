@@ -6,6 +6,7 @@
 > quality (NDCG@10 regression < 0.5 pp).
 
 **Status**: Research complete, ready for Phase 0 implementation.
+**Related**: `INFERENCE_SPEEDUP_PLAN.md` covers ONNX forward-pass speedups (worker threads, warmup, session config) for both the embedding and LI models. That plan speeds up inference; this plan speeds up storage, loading, and MaxSim scoring. Gains are multiplicative.
 
 ### Performance Impact Summary
 
