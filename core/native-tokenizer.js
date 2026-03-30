@@ -1,6 +1,5 @@
 /**
- * Native tokenizer wrapper — tries Rust `tokenizers` crate via napi-rs addon,
- * falls back to @huggingface/transformers AutoTokenizer.
+ * Native tokenizer wrapper — uses Rust `tokenizers` crate via napi-rs addon.
  *
  * Usage:
  *   import { createTokenizer } from './native-tokenizer.js';
@@ -38,34 +37,44 @@ function loadAddon() {
 }
 
 /**
- * Create a tokenizer that mimics the @huggingface/transformers AutoTokenizer API.
+ * Create a tokenizer from a local tokenizer.json file via the native napi-rs addon.
+ *
+ * Throws if the native addon is unavailable or tokenizer.json is missing.
+ * Callers (getLocalPipeline, FlashRank.init, LocalReranker._doInit) catch this
+ * and fall back to API-based providers or keyword scoring. This is the intended
+ * fallback behavior: local model paths require the native addon; platforms
+ * without it degrade to remote inference.
  *
  * @param {string} tokenizerJsonPath - Absolute path to tokenizer.json
- * @param {object} [options]
- * @param {boolean} [options.forceJs=false] - Force JS fallback (skip native)
- * @param {string} [options.hfModelId] - HuggingFace model ID for JS fallback
  * @returns {Function} Callable tokenizer: (text, opts) → { input_ids, attention_mask }
+ * @throws {Error} If native addon is unavailable or tokenizer.json is missing
  */
-export async function createTokenizer(tokenizerJsonPath, options = {}) {
-  const { forceJs = false, hfModelId } = options;
-
-  // Try native tokenizer
-  if (!forceJs && tokenizerJsonPath && existsSync(tokenizerJsonPath)) {
-    const addon = loadAddon();
-    if (addon) {
-      try {
-        const native = addon.NativeTokenizer.fromFile(tokenizerJsonPath);
-        return createNativeWrapper(native);
-      } catch {
-        // Fall through to JS
-      }
-    }
+export async function createTokenizer(tokenizerJsonPath) {
+  if (!tokenizerJsonPath || !existsSync(tokenizerJsonPath)) {
+    throw new Error(
+      `[NativeTokenizer] tokenizer.json not found: ${tokenizerJsonPath || '(not provided)'}\n` +
+      `  Run \`sweet-search init\` to download model files.`
+    );
   }
 
-  // JS fallback via @huggingface/transformers
-  const modelId = hfModelId || tokenizerJsonPath;
-  const { AutoTokenizer } = await import('@huggingface/transformers');
-  return AutoTokenizer.from_pretrained(modelId);
+  const addon = loadAddon();
+  if (!addon) {
+    throw new Error(
+      `[NativeTokenizer] Native addon (@sweet-search/native-*) not available for this platform.\n` +
+      `  Local model inference requires the native addon.\n` +
+      `  Supported: darwin-arm64, darwin-x64, linux-x64-gnu, linux-arm64-gnu.\n` +
+      `  Sweet Search will fall back to API-based providers.`
+    );
+  }
+
+  try {
+    const native = addon.NativeTokenizer.fromFile(tokenizerJsonPath);
+    return createNativeWrapper(native);
+  } catch (err) {
+    throw new Error(
+      `[NativeTokenizer] Failed to load tokenizer from ${tokenizerJsonPath}: ${err.message}`
+    );
+  }
 }
 
 /**

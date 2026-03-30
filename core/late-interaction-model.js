@@ -1,7 +1,7 @@
 /**
  * Late Interaction Model Singleton — LateOn-Code inference via ONNX Runtime
  *
- * Loads tokenizer from @huggingface/transformers, ONNX model via onnxruntime-node.
+ * Loads tokenizer via native-tokenizer.js, ONNX model via onnxruntime-node.
  * Projection layers are detected at load time: if the ONNX output is raw backbone
  * dimensions (768d full, 256d edge), projection weights are downloaded from
  * safetensors files and applied after inference. If already baked in, skipped.
@@ -14,9 +14,11 @@
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
+import { join } from 'path';
 import { LATE_INTERACTION_CONFIG } from './config.js';
 import { fetchModelFile, getModelCacheDir, resolveModelFile } from './model-fetcher.js';
 import { getModelEntry } from './model-registry.js';
+import { createTokenizer } from './native-tokenizer.js';
 // CoreML not used for LI models — see loadModel() comment for benchmarking rationale.
 
 let lateInteractionPipeline = null;
@@ -117,9 +119,9 @@ async function loadModel() {
   const start = Date.now();
   console.log(`[LateInteraction] Loading ${LATE_INTERACTION_CONFIG.model} (${modelConfig.tokenDimension}d)...`);
 
-  // Load tokenizer from transformers.js
-  const { AutoTokenizer } = await import('@huggingface/transformers');
-  const tokenizer = await AutoTokenizer.from_pretrained(modelConfig.hfId);
+  // Load tokenizer from managed cache (native Rust → JS fallback)
+  const tokenizerPath = join(getModelCacheDir(modelConfig.hfId), 'tokenizer.json');
+  const tokenizer = await createTokenizer(tokenizerPath);
 
   // Build skiplist token IDs from the 32 punctuation chars
   const skiplistTokenIds = new Set();

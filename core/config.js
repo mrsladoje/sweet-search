@@ -856,7 +856,7 @@ export const RERANK_CONFIG = {
 //
 // Architecture:
 // - Model: Alibaba-NLP/gte-reranker-modernbert-base (INT8 quantized)
-// - Library: @huggingface/transformers (auto-downloads model on first use)
+// - Library: Direct onnxruntime-node + native-tokenizer.js
 // - Inference: Sequential scoring with global ONNX mutex (onnx-mutex.js)
 // - Latency: ~700ms for 50 docs (~14ms/doc after warmup), ~15s cold start
 //

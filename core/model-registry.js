@@ -66,6 +66,34 @@ export const MODEL_REGISTRY = {
       { path: 'vocab.txt', sizeBytes: 231508, sha256: null },
     ],
   },
+
+  'ms-marco-tinybert': {
+    hfId: 'Xenova/ms-marco-TinyBERT-L-2-v2',
+    profile: 'full',
+    description: 'FlashRank cross-encoder reranker (quantized, ~4.3MB)',
+    files: [
+      { path: 'onnx/model_quantized.onnx', sizeBytes: 4496298, sha256: '026c2ec3257cd351696e45bbd6040bb83cf818ba89059b4344bd6350138b62ce' },
+      { path: 'tokenizer.json', sizeBytes: 711396, sha256: null },
+      { path: 'tokenizer_config.json', sizeBytes: 1242, sha256: null },
+      { path: 'special_tokens_map.json', sizeBytes: 125, sha256: null },
+      { path: 'config.json', sizeBytes: 824, sha256: null },
+      { path: 'vocab.txt', sizeBytes: 231508, sha256: null },
+    ],
+  },
+
+  'all-minilm-l6-v2': {
+    hfId: 'Xenova/all-MiniLM-L6-v2',
+    profile: 'full',
+    description: 'Semantic cache embedding model (quantized, ~23MB)',
+    files: [
+      { path: 'onnx/model_quantized.onnx', sizeBytes: 22972370, sha256: 'afdb6f1a0e45b715d0bb9b11772f032c399babd23bfc31fed1c170afc848bdb1' },
+      { path: 'tokenizer.json', sizeBytes: 711661, sha256: null },
+      { path: 'tokenizer_config.json', sizeBytes: 366, sha256: null },
+      { path: 'special_tokens_map.json', sizeBytes: 125, sha256: null },
+      { path: 'config.json', sizeBytes: 650, sha256: null },
+      { path: 'vocab.txt', sizeBytes: 231508, sha256: null },
+    ],
+  },
 };
 
 /**
