@@ -6,10 +6,14 @@
 import crypto from 'crypto';
 import { existsSync, readFileSync, mkdirSync, readdirSync } from 'fs';
 import path from 'path';
+import { join } from 'path';
 import os from 'os';
 import { EMBEDDING_PROVIDERS } from './config.js';
-import { fetchModel } from './model-fetcher.js';
+import { fetchModel, getModelCacheDir } from './model-fetcher.js';
+import { getModelEntry } from './model-registry.js';
 import { isAppleSilicon, isCoreMLProviderAvailable, shouldUseCoreML, getCoreMLExecutionProviders } from './coreml-provider.js';
+import { createTokenizer } from './native-tokenizer.js';
+import { initOrt, buildFeed } from './ort-pipeline.js';
 
 // =============================================================================
 // SEQUENCE LENGTH CONSTANTS (L2: configurable via env)
@@ -49,7 +53,6 @@ export function isOpenVinoProviderAvailable() {
 
   const candidateRoots = [
     path.resolve('node_modules/onnxruntime-node/bin'),
-    path.resolve('node_modules/@huggingface/transformers/node_modules/onnxruntime-node/bin'),
   ];
 
   const stack = candidateRoots.filter(existsSync);
@@ -162,36 +165,37 @@ export function buildLocalSessionOptions(quantLabel = 'q8', coremlAvailable = fa
 /**
  * Resolve quantization mode from env var.
  * Returns { quantized: bool, label: string }
+ *
+ * Note: FP32 mode (SWEET_SEARCH_LOCAL_QUANTIZED=0) is not supported with the
+ * managed model cache — the FP32 model (jalipalo/CodeRankEmbed-onnx) is not
+ * in the registry. If explicitly set to false, warn and fall back to INT8.
  */
 export function resolveQuantizationMode() {
   const raw = (process.env.SWEET_SEARCH_LOCAL_QUANTIZED ?? '').trim().toLowerCase();
-  if (raw === '0' || raw === 'false') return { quantized: false, label: 'fp32' };
+  if (raw === '0' || raw === 'false') {
+    console.warn('[L1] SWEET_SEARCH_LOCAL_QUANTIZED=false requested but FP32 model is not in managed cache. Using INT8.');
+  }
   return { quantized: true, label: 'q8' };
 }
 
-export async function createLocalPipeline(pipelineFactory, sessionOptions) {
-  const { quantized, label } = resolveQuantizationMode();
-  const modelName = resolveLocalModelName(quantized);
-  // When loading from a dedicated INT8 repo, the file is model.onnx (not model_quantized.onnx),
-  // so tell transformers.js quantized=false to resolve the correct filename.
-  const usesQuantizedRepo = quantized && EMBEDDING_PROVIDERS.local.quantizedModel;
-  const pipelineQuantized = usesQuantizedRepo ? false : quantized;
-  const keyCandidates = ['session_options', 'sessionOptions'];
-  let lastError = null;
+/** Registry key for the managed embedding model. */
+const EMBEDDING_REGISTRY_KEY = 'coderankembed-int8';
 
-  for (const key of keyCandidates) {
-    try {
-      const opts = { quantized: pipelineQuantized, [key]: sessionOptions };
-      const candidate = await pipelineFactory('feature-extraction', modelName, opts);
-      candidate.__sweetSessionKey = key;
-      candidate.__sweetQuantized = label;
-      return candidate;
-    } catch (err) {
-      lastError = err;
-    }
-  }
+/**
+ * Resolve the ONNX model file path from the managed model cache.
+ */
+function resolveOnnxModelPath() {
+  const entry = getModelEntry(EMBEDDING_REGISTRY_KEY);
+  const onnxFile = entry.files.find(f => f.path.endsWith('.onnx'));
+  return join(getModelCacheDir(entry.hfId), onnxFile.path);
+}
 
-  throw lastError || new Error('Failed to create local embedding pipeline');
+/**
+ * Resolve the tokenizer.json path from the managed model cache.
+ */
+function resolveTokenizerPath() {
+  const entry = getModelEntry(EMBEDDING_REGISTRY_KEY);
+  return join(getModelCacheDir(entry.hfId), 'tokenizer.json');
 }
 
 // =============================================================================
@@ -296,9 +300,6 @@ let localPipeline = null;
 let isLoadingLocal = false;
 let loadPromise = null;
 
-const DIRECT_ORT_ENABLED = (process.env.SWEET_SEARCH_DIRECT_ORT ?? '1') !== '0';
-let directOrtFailed = false;
-
 export async function getLocalPipeline() {
   if (localPipeline) return localPipeline;
   if (isLoadingLocal && loadPromise) return loadPromise;
@@ -306,24 +307,15 @@ export async function getLocalPipeline() {
   isLoadingLocal = true;
   loadPromise = (async () => {
     const start = Date.now();
-    const { quantized: isQuantized } = resolveQuantizationMode();
+    const { quantized: isQuantized, label: quantLabel } = resolveQuantizationMode();
     console.log(`Loading local model: ${resolveLocalModelName(isQuantized)}...`);
 
-    // Gate: verify model availability via managed fetcher.
-    // If allowRuntimeModelDownload=false and model files are missing, this throws
-    // a clear error pointing to `sweet-search init`.
-    // HF transformers still handles actual loading from its own cache format.
-    // Full managed-cache loading replaces HF in Phase 7.
+    // Fetch model files to managed cache (verifies checksums, respects allowRuntimeModelDownload)
     await fetchModel('coderankembed-int8');
 
-    let pipeline;
-    try {
-      ({ pipeline } = await import('@huggingface/transformers'));
-    } catch {
-      ({ pipeline } = await import('@xenova/transformers'));
-    }
-
-    const { label: quantLabel } = resolveQuantizationMode();
+    const ort = await initOrt();
+    const onnxPath = resolveOnnxModelPath();
+    const tokenizerPath = resolveTokenizerPath();
 
     const coremlAvailable = isAppleSilicon() ? await isCoreMLProviderAvailable() : false;
     const sessionOptions = buildLocalSessionOptions(quantLabel, coremlAvailable);
@@ -333,31 +325,31 @@ export async function getLocalPipeline() {
       backend = names.includes('coreml') ? 'coreml+cpu' : 'openvino+cpu';
     }
 
+    let session;
     try {
-      localPipeline = await createLocalPipeline(pipeline, sessionOptions);
+      session = await ort.InferenceSession.create(onnxPath, sessionOptions);
     } catch (err) {
       if (sessionOptions.executionProviders) {
         const epName = backend.split('+')[0];
         if (epName === 'coreml') {
-          // MLProgram failed — try NeuralNetwork format before giving up
           console.warn(`[L5] CoreML MLProgram failed (${err.message}), trying NeuralNetwork format`);
           try {
             const nnOptions = buildLocalSessionOptions(quantLabel);
             nnOptions.executionProviders = getCoreMLExecutionProviders(false);
-            localPipeline = await createLocalPipeline(pipeline, nnOptions);
+            session = await ort.InferenceSession.create(onnxPath, nnOptions);
             backend = 'coreml-nn+cpu';
           } catch {
             console.warn('[L5] CoreML NeuralNetwork also failed, falling back to CPU only');
             const cpuOnlyOptions = buildLocalSessionOptions(quantLabel);
             delete cpuOnlyOptions.executionProviders;
-            localPipeline = await createLocalPipeline(pipeline, cpuOnlyOptions);
+            session = await ort.InferenceSession.create(onnxPath, cpuOnlyOptions);
             backend = 'cpu';
           }
         } else {
           console.warn(`[L5] ${epName} session init failed (${err.message}), retrying with CPU only`);
           const cpuOnlyOptions = buildLocalSessionOptions(quantLabel);
           delete cpuOnlyOptions.executionProviders;
-          localPipeline = await createLocalPipeline(pipeline, cpuOnlyOptions);
+          session = await ort.InferenceSession.create(onnxPath, cpuOnlyOptions);
           backend = 'cpu';
         }
       } else {
@@ -365,21 +357,23 @@ export async function getLocalPipeline() {
       }
     }
 
-    await localPipeline(["warmup"], { pooling: 'mean', normalize: true, truncation: true, max_length: 64 });
+    const tokenizer = await createTokenizer(tokenizerPath);
 
-    if (DIRECT_ORT_ENABLED) {
-      const ortSession = localPipeline.model?.sessions?.['model'];
-      if (ortSession?.run && ortSession?.inputNames) {
-        console.log(`[L7] Direct ORT: inputs=[${ortSession.inputNames}], outputs=[${ortSession.outputNames}]`);
-      }
-    }
+    // Warmup: run a single inference to trigger graph optimization
+    const warmupTokenized = tokenizer(['warmup'], { padding: true, truncation: true, max_length: 64 });
+    const warmupFeed = buildFeed(warmupTokenized, session.inputNames);
+    await session.run(warmupFeed);
+
+    console.log(`[ORT] Direct session: inputs=[${session.inputNames}], outputs=[${session.outputNames}]`);
 
     const optimizedPath = getOptimizedModelPath(quantLabel);
     if (!existsSync(optimizedPath)) {
       console.warn(`[L3b] Optimized model file was not materialized at ${optimizedPath}. Session options may not be fully forwarded.`);
     }
 
-    console.log(`Local model loaded in ${Date.now() - start}ms (threads: ${bestIntraOpThreads()}, backend: ${backend}, quantized: ${localPipeline.__sweetQuantized ?? true}, sessionKey: ${localPipeline.__sweetSessionKey || 'unknown'})`);
+    localPipeline = { session, tokenizer, quantLabel, backend };
+
+    console.log(`Local model loaded in ${Date.now() - start}ms (threads: ${bestIntraOpThreads()}, backend: ${backend}, quantized: ${quantLabel})`);
     isLoadingLocal = false;
     return localPipeline;
   })();
@@ -388,68 +382,29 @@ export async function getLocalPipeline() {
 }
 
 // =============================================================================
-// L7: DIRECT ORT SESSION BYPASS
-// =============================================================================
-
-/**
- * L7: Direct ORT session bypass — skip HuggingFace pipeline wrapper overhead.
- * Uses the same ORT session and tokenized inputs for bit-identical output.
- */
-async function runDirectOrt(pipeline, modelInputs) {
-  const session = pipeline.model.sessions['model'];
-  const feed = {};
-
-  for (const name of session.inputNames) {
-    const hfTensor = modelInputs[name];
-    if (hfTensor?.ort_tensor) {
-      feed[name] = hfTensor.ort_tensor;
-    } else if (name === 'token_type_ids') {
-      // Replicate encoderForward's zeros_like(input_ids) for models expecting token_type_ids
-      const ref = modelInputs.input_ids.ort_tensor;
-      const size = ref.dims.reduce((a, b) => a * b, 1);
-      feed[name] = new ref.constructor('int64', new BigInt64Array(size), ref.dims);
-    } else {
-      throw new Error(`[L7] Missing model input: ${name}`);
-    }
-  }
-
-  return session.run(feed);
-}
-
-// =============================================================================
 // CORE INFERENCE FUNCTIONS
 // =============================================================================
 
 /**
- * L1: True batch inference for local model.
+ * L1: True batch inference for local model via direct ORT session.
  * Returns Float32Array subarray views from a per-batch pool (zero-copy downstream).
  */
 export async function callLocalModel(texts, options = {}) {
   if (!texts || texts.length === 0) return [];
 
-  const pipeline = await getLocalPipeline();
+  const { session, tokenizer } = await getLocalPipeline();
   const { maxLength = INDEXING_MAX_LENGTH } = options;
 
-  const modelInputs = pipeline.tokenizer(texts, {
+  const tokenized = tokenizer(texts, {
     padding: true,
     truncation: true,
     max_length: maxLength,
   });
 
-  let outputs;
-  if (DIRECT_ORT_ENABLED && !directOrtFailed && pipeline.model?.sessions?.['model']) {
-    try {
-      outputs = await runDirectOrt(pipeline, modelInputs);
-    } catch (err) {
-      directOrtFailed = true;
-      console.warn(`[L7] Direct ORT failed, falling back to pipeline: ${err.message}`);
-      outputs = await pipeline.model(modelInputs);
-    }
-  } else {
-    outputs = await pipeline.model(modelInputs);
-  }
+  const feed = buildFeed(tokenized, session.inputNames);
+  const outputs = await session.run(feed);
 
-  const pooled = extractPooledEmbeddings(outputs, modelInputs.attention_mask, true);
+  const pooled = extractPooledEmbeddings(outputs, tokenized.attention_mask, true);
   const { data, batchSize, dim } = pooled;
 
   if (batchSize !== texts.length) {
@@ -547,16 +502,14 @@ export function applyLocalQueryPrefix(text) {
 // =============================================================================
 
 export async function unloadLocalModel() {
-  if (localPipeline) {
-    // transformers.js dispose() releases ONNX sessions and tokenizer.
+  if (localPipeline?.session) {
     // Note: ORT has a known native memory leak in session.release()
     // (microsoft/onnxruntime#25325) — avoid frequent load/unload cycles.
-    try { await localPipeline.dispose(); } catch { /* best-effort cleanup */ }
+    try { await localPipeline.session.release(); } catch { /* best-effort cleanup */ }
   }
   localPipeline = null;
   isLoadingLocal = false;
   loadPromise = null;
-  directOrtFailed = false;
 }
 
 export function isLocalModelLoaded() {

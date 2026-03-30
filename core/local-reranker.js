@@ -6,7 +6,7 @@
  * Uses the EXACT model specified in LOCAL_RERANKER_PLAN.md:
  * - Model: Alibaba-NLP/gte-reranker-modernbert-base
  * - Quantization: INT8 (dtype: "q8")
- * - Package: @huggingface/transformers v3+
+ * - Inference: Direct onnxruntime-node session + native-tokenizer.js
  *
  * No Python, no subprocess - direct ONNX inference in Node.js.
  *
@@ -16,15 +16,13 @@
  * a transformer that sees both query and document together.
  */
 
-import { join, dirname } from 'path';
-import { buildSessionOptions, loadModelWithSessionOptions, warnIfGraphNotMaterialized } from './onnx-session-utils.js';
+import { join } from 'path';
+import { buildSessionOptions, warnIfGraphNotMaterialized } from './onnx-session-utils.js';
 import { isAppleSilicon, isCoreMLProviderAvailable } from './coreml-provider.js';
-import { fileURLToPath } from 'url';
 import { withOnnxMutex } from './onnx-mutex.js';
 import { fetchModel, getModelCacheDir } from './model-fetcher.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const LEGACY_CACHE_DIR = join(__dirname, '..', 'models', 'gte-reranker-int8');
+import { createTokenizer } from './native-tokenizer.js';
+import { initOrt, buildFeed } from './ort-pipeline.js';
 
 // EXACT model as specified in LOCAL_RERANKER_PLAN.md
 const MODEL_ID = 'Alibaba-NLP/gte-reranker-modernbert-base';
@@ -43,10 +41,9 @@ function sigmoid(x) {
 export class LocalReranker {
   constructor() {
     this.tokenizer = null;
-    this.model = null;
+    this.session = null;
     this.ready = false;
-    this.maxLength = 512; // testing: revert to original to isolate perf/quality issue
-    this.transformersAvailable = null;
+    this.maxLength = 512;
     this.initPromise = null;
     // Note: Uses global ONNX mutex (onnx-mutex.js) for cross-model serialization
   }
@@ -64,22 +61,15 @@ export class LocalReranker {
 
   /**
    * Check if local reranker is available.
-   * Returns true if @huggingface/transformers is available.
-   * The model will be auto-downloaded on first use.
+   * Returns true — model files are fetched on init from managed cache.
    * @returns {boolean}
    */
   isAvailable() {
-    try {
-      // Check if @huggingface/transformers can be imported
-      // The model will be auto-downloaded with INT8 quantization on first use
-      return true;
-    } catch {
-      return false;
-    }
+    return true;
   }
 
   /**
-   * Initialize Transformers.js model (idempotent)
+   * Initialize model via direct ORT session (idempotent)
    * @returns {Promise<void>}
    */
   async init() {
@@ -101,62 +91,39 @@ export class LocalReranker {
 
   async _doInit() {
     try {
-      // Gate: verify model availability via managed fetcher.
-      // If allowRuntimeModelDownload=false and model files are missing, this throws
-      // a clear error pointing to `sweet-search init`.
-      // HF transformers still handles actual loading from its own cache format.
-      // Full managed-cache loading replaces HF in Phase 7.
+      // Fetch model files to managed cache (verifies checksums, respects allowRuntimeModelDownload)
       await fetchModel('gte-reranker-modernbert-base');
-
-      // Dynamically import @huggingface/transformers (v3+)
-      const { AutoTokenizer, AutoModelForSequenceClassification, env } = await import('@huggingface/transformers');
-
-      if (env) {
-        env.cacheDir = LEGACY_CACHE_DIR;
-      }
 
       console.log(`LocalReranker: Loading ${MODEL_ID} with dtype=${MODEL_DTYPE}...`);
       const startLoad = Date.now();
 
-      this.tokenizer = await AutoTokenizer.from_pretrained(MODEL_ID, {
-        cache_dir: LEGACY_CACHE_DIR,
-      });
+      // Load tokenizer from managed cache
+      const cacheDir = getModelCacheDir(MODEL_ID);
+      this.tokenizer = await createTokenizer(join(cacheDir, 'tokenizer.json'));
+
+      // Load ORT session directly from managed cache ONNX file
+      const ort = await initOrt();
+      const onnxPath = join(cacheDir, 'onnx', 'model_quantized.onnx');
 
       const coremlAvailable = isAppleSilicon() ? await isCoreMLProviderAvailable() : false;
       const sessionOpts = buildSessionOptions(`${MODEL_ID}:${MODEL_DTYPE}`, 'local-reranker', coremlAvailable);
 
-      const loadModel = (opts) => loadModelWithSessionOptions(
-        (o) => AutoModelForSequenceClassification.from_pretrained(MODEL_ID, o),
-        { cache_dir: LEGACY_CACHE_DIR, dtype: MODEL_DTYPE },
-        opts,
-      );
-
       try {
-        this.model = await loadModel(sessionOpts);
+        this.session = await ort.InferenceSession.create(onnxPath, sessionOpts);
       } catch (loadErr) {
         if (sessionOpts.executionProviders?.some(ep => (typeof ep === 'string' ? ep : ep.name) === 'coreml')) {
-          // MLProgram failed — try NeuralNetwork format
-          console.warn(`LocalReranker: CoreML MLProgram failed (${loadErr.message}), trying NeuralNetwork`);
-          const { getCoreMLExecutionProviders } = await import('./coreml-provider.js');
-          const nnOpts = buildSessionOptions(`${MODEL_ID}:${MODEL_DTYPE}`, 'local-reranker');
-          nnOpts.executionProviders = getCoreMLExecutionProviders(false);
-          try {
-            this.model = await loadModel(nnOpts);
-          } catch {
-            console.warn('LocalReranker: CoreML NeuralNetwork also failed, falling back to CPU');
-            this.model = await loadModel(buildSessionOptions(`${MODEL_ID}:${MODEL_DTYPE}`, 'local-reranker'));
-          }
+          console.warn(`LocalReranker: CoreML failed (${loadErr.message}), falling back to CPU`);
+          const cpuOpts = buildSessionOptions(`${MODEL_ID}:${MODEL_DTYPE}`, 'local-reranker');
+          this.session = await ort.InferenceSession.create(onnxPath, cpuOpts);
         } else {
           throw loadErr;
         }
       }
 
       this.ready = true;
-      this.transformersAvailable = true;
       warnIfGraphNotMaterialized('LocalReranker', sessionOpts);
       console.log(`LocalReranker: Model loaded in ${Date.now() - startLoad}ms (gte-reranker-modernbert-base INT8)`);
     } catch (err) {
-      this.transformersAvailable = false;
       console.error(`LocalReranker: Failed to load model: ${err.message}`);
       throw err;
     }
@@ -201,15 +168,17 @@ export class LocalReranker {
         const text = typeof doc === 'string' ? doc : doc.content || doc.text || '';
         const truncated = text.slice(0, this.maxLength * 4);
 
-        const inputs = this.tokenizer([query], {
-          text_pair: [truncated],
+        const tokenized = this.tokenizer(query, {
+          text_pair: truncated,
           padding: true,
           truncation: true,
           max_length: this.maxLength,
         });
 
-        const output = await this.model(inputs);
-        const logit = output.logits.data[0];
+        const feed = buildFeed(tokenized, this.session.inputNames);
+        const output = await this.session.run(feed);
+        const logitTensor = output[this.session.outputNames[0]];
+        const logit = logitTensor.data[0];
         scores.push({ index, score: sigmoid(logit), original: doc });
       } catch {
         scores.push({ index, score: 0, original: doc });
@@ -239,15 +208,17 @@ export class LocalReranker {
   }
 
   /**
-   * Batched reranking for better throughput (sequential batching)
+   * Batched reranking — sequential scoring within ONNX mutex.
+   *
+   * ORT sessions are not safe for concurrent inference from JS.
+   * All scoring is serialized via withOnnxMutex, same as _doRerank.
    *
    * @param {string} query - Search query
    * @param {Array} documents - Documents to rerank
    * @param {number} topK - Number of results to return
-   * @param {number} batchSize - Batch size (default 16)
    * @returns {Promise<{results: Array, latency_ms: number, model: string}>}
    */
-  async rerankBatched(query, documents, topK = 10, batchSize = 16) {
+  async rerankBatched(query, documents, topK = 10) {
     if (!documents || documents.length === 0) {
       return { results: [], latency_ms: 0, model: 'gte-reranker-modernbert-base-int8' };
     }
@@ -256,69 +227,19 @@ export class LocalReranker {
       await this.init();
     }
 
-    const start = Date.now();
-
-    // Process in batches
-    const allScores = [];
-    for (let i = 0; i < documents.length; i += batchSize) {
-      const batch = documents.slice(i, i + batchSize);
-
-      const batchScores = await Promise.all(
-        batch.map(async (doc, batchIdx) => {
-          const index = i + batchIdx;
-          try {
-            const text = typeof doc === 'string' ? doc : doc.content || doc.text || '';
-            const truncated = text.slice(0, this.maxLength * 4);
-
-            // CRITICAL: Must use array format for text_pair to work correctly
-            const inputs = this.tokenizer([query], {
-              text_pair: [truncated],
-              padding: true,
-              truncation: true,
-              max_length: this.maxLength,
-            });
-
-            const output = await this.model(inputs);
-            const logit = output.logits.data[0];
-            const score = sigmoid(logit);
-
-            return { index, score, original: doc };
-          } catch (err) {
-            return { index, score: 0, original: doc };
-          }
-        })
-      );
-
-      allScores.push(...batchScores);
-    }
-
-    // Sort by score descending
-    allScores.sort((a, b) => b.score - a.score);
-
-    // Return top K results
-    const results = allScores.slice(0, topK).map((item, rank) => ({
-      ...item.original,
-      localRerankerScore: item.score,
-      originalIndex: item.index,
-      newRank: rank + 1,
-      source: 'local-gte-modernbert-int8-batched',
-    }));
-
-    const latency = Date.now() - start;
-
-    return {
-      results,
-      latency_ms: latency,
-      model: 'gte-reranker-modernbert-base-int8',
-    };
+    // Serialize all inference through the global ONNX mutex
+    return await withOnnxMutex(() => this._doRerank(query, documents, topK));
   }
 
   /**
    * Shutdown and release resources
    */
   async shutdown() {
+    if (this.session) {
+      try { await this.session.release(); } catch { /* ORT release can throw */ }
+    }
     this.tokenizer = null;
-    this.model = null;
+    this.session = null;
     this.ready = false;
     this.initPromise = null;
   }
@@ -341,7 +262,7 @@ LocalReranker CLI - gte-reranker-modernbert-base INT8
 
 Model: ${MODEL_ID}
 Dtype: ${MODEL_DTYPE} (INT8 quantization)
-Cache: ${MODEL_CACHE_DIR}
+Cache: ${getModelCacheDir(MODEL_ID)}
 
 Usage:
   local-reranker.js status        Check status and model info
@@ -359,7 +280,7 @@ Usage:
         console.log('\nLocalReranker Status:');
         console.log(`  Model: ${MODEL_ID}`);
         console.log(`  Dtype: ${MODEL_DTYPE} (INT8)`);
-        console.log(`  Cache: ${MODEL_CACHE_DIR}`);
+        console.log(`  Cache: ${getModelCacheDir(MODEL_ID)}`);
         console.log(`  Available: ${reranker.isAvailable()}`);
 
         console.log('\nInitializing model (may download on first run)...');

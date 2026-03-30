@@ -1,7 +1,7 @@
 /**
  * Global ONNX Mutex
  *
- * ONNX Runtime (used by @huggingface/transformers) doesn't handle concurrent
+ * ONNX Runtime doesn't handle concurrent
  * model inference well, especially when multiple models are loaded.
  *
  * This module provides a global mutex to serialize ALL ONNX operations

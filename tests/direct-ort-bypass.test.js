@@ -6,20 +6,47 @@ import {
   extractPooledEmbeddings,
   INDEXING_MAX_LENGTH,
 } from '../core/embedding-local-model.js';
+import { buildFeed } from '../core/ort-pipeline.js';
 
 /**
- * L7 Direct ORT Bypass — targeted coverage for:
- * - ORT session accessibility (embedding-local-model.js:329)
- * - Bit-parity: direct session.run() vs pipeline.model() (embedding-local-model.js:371)
- * - SWEET_SEARCH_DIRECT_ORT env flag evaluation (embedding-local-model.js:264)
+ * Direct ORT Session — targeted coverage for:
+ * - ORT session accessibility via getLocalPipeline()
+ * - session.run() produces valid embeddings
  * - callLocalModel integration via direct ORT path
+ * - Parity: embeddings match golden reference from pre-migration HF pipeline
  */
-describe('L7 Direct ORT Bypass', () => {
+
+// Golden reference: first 8 dimensions of embeddings for deterministic test texts.
+// Generated from CodeRankEmbed-onnx-int8 via the previous HF pipeline path
+// and verified identical from the direct ORT path.
+const GOLDEN = {
+  texts: [
+    'class AuthService { login(user, pass) { return jwt.sign(user); } }',
+    'const x = 42;',
+    'async function fetchData(url) { const r = await fetch(url); return r.json(); }',
+  ],
+  // First 8 dims per text (from callLocalModel with mean pooling + L2 norm)
+  first8: [
+    [-0.046976, -0.036271, 0.012982, 0.057200, -0.063376, 0.002288, -0.016762, -0.037775],
+    [0.031663, 0.047074, 0.002133, -0.034742, 0.013492, 0.031180, -0.008112, -0.018610],
+    [-0.018675, -0.005275, 0.012325, -0.007378, -0.065971, 0.008447, -0.043976, -0.008633],
+  ],
+  // Cosine similarities between pairs
+  cos01: 0.118781,
+  cos02: 0.181010,
+};
+
+function cosine(a, b) {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; na += a[i] ** 2; nb += b[i] ** 2; }
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+describe('Direct ORT Session', () => {
   afterAll(async () => await unloadLocalModel());
 
   it('ORT session is accessible with run(), inputNames, outputNames', async () => {
-    const pipeline = await getLocalPipeline();
-    const session = pipeline.model?.sessions?.['model'];
+    const { session } = await getLocalPipeline();
     expect(session).toBeDefined();
     expect(typeof session.run).toBe('function');
     expect(session.inputNames).toContain('input_ids');
@@ -27,59 +54,33 @@ describe('L7 Direct ORT Bypass', () => {
     expect(session.outputNames.length).toBeGreaterThan(0);
   });
 
-  it('direct session.run() produces bit-identical output to pipeline.model()', async () => {
-    const pipeline = await getLocalPipeline();
-    const texts = [
-      'class AuthService { login(user, pass) { return jwt.sign(user); } }',
-      'const x = 42;',
-      'async function fetchData(url) { const r = await fetch(url); return r.json(); }',
-    ];
+  it('session.run() produces valid pooled embeddings', async () => {
+    const { session, tokenizer } = await getLocalPipeline();
 
-    const modelInputs = pipeline.tokenizer(texts, {
+    const tokenized = tokenizer(GOLDEN.texts, {
       padding: true,
       truncation: true,
       max_length: INDEXING_MAX_LENGTH,
     });
 
-    // Direct ORT path: extract .ort_tensor, call session.run()
-    const session = pipeline.model.sessions['model'];
-    const feed = {};
-    for (const name of session.inputNames) {
-      const hfTensor = modelInputs[name];
-      if (hfTensor?.ort_tensor) {
-        feed[name] = hfTensor.ort_tensor;
+    const feed = buildFeed(tokenized, session.inputNames);
+    const outputs = await session.run(feed);
+    const pooled = extractPooledEmbeddings(outputs, tokenized.attention_mask, true);
+
+    expect(pooled.batchSize).toBe(GOLDEN.texts.length);
+    expect(pooled.dim).toBe(768);
+
+    // Verify L2 normalization
+    for (let b = 0; b < pooled.batchSize; b++) {
+      let normSq = 0;
+      for (let d = 0; d < pooled.dim; d++) {
+        normSq += pooled.data[b * pooled.dim + d] ** 2;
       }
+      expect(Math.abs(Math.sqrt(normSq) - 1.0)).toBeLessThan(1e-4);
     }
-    const directOutputs = await session.run(feed);
-    const directPooled = extractPooledEmbeddings(directOutputs, modelInputs.attention_mask, true);
-
-    // Pipeline path: HF wrapper around same session.run()
-    const pipelineOutputs = await pipeline.model(modelInputs);
-    const pipelinePooled = extractPooledEmbeddings(pipelineOutputs, modelInputs.attention_mask, true);
-
-    expect(directPooled.batchSize).toBe(texts.length);
-    expect(directPooled.dim).toBe(pipelinePooled.dim);
-
-    let maxDiff = 0;
-    for (let i = 0; i < directPooled.data.length; i++) {
-      const diff = Math.abs(directPooled.data[i] - pipelinePooled.data[i]);
-      if (diff > maxDiff) maxDiff = diff;
-    }
-    // Same ORT session + same input tensors → bit-identical pooled output
-    expect(maxDiff).toBe(0);
   });
 
-  it('SWEET_SEARCH_DIRECT_ORT env flag: only "0" disables', () => {
-    // Unit test the flag logic from embedding-local-model.js:264
-    const evaluate = (envVal) => (envVal ?? '1') !== '0';
-    expect(evaluate(undefined)).toBe(true);  // default: enabled
-    expect(evaluate('1')).toBe(true);         // explicit enable
-    expect(evaluate('0')).toBe(false);        // kill switch
-    expect(evaluate('')).toBe(true);          // empty string: enabled
-    expect(evaluate('false')).toBe(true);     // only '0' disables
-  });
-
-  it('callLocalModel produces L2-normalized 768d embeddings via direct ORT', async () => {
+  it('callLocalModel produces L2-normalized 768d embeddings', async () => {
     const embeddings = await callLocalModel([
       'function hello() { return 42; }',
       'import express from "express"; const app = express();',
@@ -92,5 +93,28 @@ describe('L7 Direct ORT Bypass', () => {
       for (let d = 0; d < 768; d++) normSq += emb[d] ** 2;
       expect(Math.abs(Math.sqrt(normSq) - 1.0)).toBeLessThan(1e-4);
     }
+  });
+
+  it('parity: embeddings match golden reference from pre-migration pipeline', async () => {
+    const embeddings = await callLocalModel(GOLDEN.texts);
+    expect(embeddings).toHaveLength(GOLDEN.texts.length);
+
+    // Verify first 8 dimensions match golden reference within FP32 tolerance.
+    // INT8 quantized ORT inference is deterministic for the same model + inputs.
+    for (let t = 0; t < GOLDEN.texts.length; t++) {
+      for (let d = 0; d < 8; d++) {
+        expect(embeddings[t][d]).toBeCloseTo(GOLDEN.first8[t][d], 4);
+      }
+    }
+
+    // Verify cosine similarity relationships are preserved
+    const cos01 = cosine(embeddings[0], embeddings[1]);
+    const cos02 = cosine(embeddings[0], embeddings[2]);
+    expect(cos01).toBeCloseTo(GOLDEN.cos01, 4);
+    expect(cos02).toBeCloseTo(GOLDEN.cos02, 4);
+
+    // Semantic sanity: both code snippets (0, 2) should be more similar to each
+    // other than either is to the trivial assignment (1)
+    expect(cos02).toBeGreaterThan(cos01);
   });
 });

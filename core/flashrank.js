@@ -9,27 +9,28 @@
  * Target: ~15ms for 50 documents reranking
  */
 
+import { join } from 'path';
 import { RERANK_CONFIG, LOCAL_RERANKER_CONFIG, isVoyageAvailable, getVoyageApiKey, isJinaRerankerAvailable, getJinaRerankerApiKey, shouldUseLocalReranker } from './config.js';
 import { getGlobalLocalReranker } from './local-reranker.js';
 import { withOnnxMutex } from './onnx-mutex.js';
-import { buildSessionOptions, loadModelWithSessionOptions, warnIfGraphNotMaterialized } from './onnx-session-utils.js';
+import { buildSessionOptions, warnIfGraphNotMaterialized } from './onnx-session-utils.js';
 import { isAppleSilicon, isCoreMLProviderAvailable } from './coreml-provider.js';
+import { fetchModel, getModelCacheDir } from './model-fetcher.js';
+import { createTokenizer } from './native-tokenizer.js';
+import { initOrt, buildFeed } from './ort-pipeline.js';
 
 // =============================================================================
 // FLASHRANK RERANKER
 // =============================================================================
 
-// Model override via environment variable for A/B testing
-const FLASHRANK_MODEL_OVERRIDE = process.env.FLASHRANK_MODEL || null;
+const FLASHRANK_MODEL_ID = 'Xenova/ms-marco-TinyBERT-L-2-v2';
 
 export class FlashRankReranker {
   constructor(options = {}) {
     this.model = options.model || RERANK_CONFIG.flashrank.model;
     this.maxDocLength = options.maxDocLength || RERANK_CONFIG.flashrank.maxDocLength;
-    this.pipeline = null;
+    this.session = null;
     this.tokenizer = null;
-    // Support model override for A/B testing
-    this.modelOverride = FLASHRANK_MODEL_OVERRIDE;
   }
 
   /**
@@ -47,52 +48,39 @@ export class FlashRankReranker {
    * - Irrelevant: < -9.0
    */
   async init() {
-    if (this.pipeline) return;
+    if (this.session) return;
 
     try {
-      // Use @huggingface/transformers when available (newer ONNX runtime, fixes crashes on some platforms)
-      let transformers;
-      try {
-        transformers = await import('@huggingface/transformers');
-      } catch {
-        transformers = await import('@xenova/transformers');
-      }
+      // Fetch model files to managed cache
+      await fetchModel('ms-marco-tinybert');
 
-      const modelPath = this.modelOverride || 'Xenova/ms-marco-TinyBERT-L-2-v2';
+      const cacheDir = getModelCacheDir(FLASHRANK_MODEL_ID);
+      const onnxPath = join(cacheDir, 'onnx', 'model_quantized.onnx');
+      const tokenizerPath = join(cacheDir, 'tokenizer.json');
+
+      const ort = await initOrt();
       const coremlAvailable = isAppleSilicon() ? await isCoreMLProviderAvailable() : false;
-      const sessionOpts = buildSessionOptions(`${modelPath}:flashrank:q8`, 'flashrank', coremlAvailable);
-
-      const loadPipeline = (opts) => loadModelWithSessionOptions(
-        (o) => transformers.pipeline('feature-extraction', modelPath, o),
-        { quantized: true },
-        opts,
-      );
+      const sessionOpts = buildSessionOptions(`${FLASHRANK_MODEL_ID}:flashrank:q8`, 'flashrank', coremlAvailable);
 
       try {
-        this.pipeline = await loadPipeline(sessionOpts);
+        this.session = await ort.InferenceSession.create(onnxPath, sessionOpts);
       } catch (loadErr) {
         if (sessionOpts.executionProviders?.some(ep => (typeof ep === 'string' ? ep : ep.name) === 'coreml')) {
-          // MLProgram failed — try NeuralNetwork format
-          console.warn(`FlashRank: CoreML MLProgram failed (${loadErr.message}), trying NeuralNetwork`);
-          const { getCoreMLExecutionProviders } = await import('./coreml-provider.js');
-          const nnOpts = buildSessionOptions(`${modelPath}:flashrank:q8`, 'flashrank');
-          nnOpts.executionProviders = getCoreMLExecutionProviders(false);
-          try {
-            this.pipeline = await loadPipeline(nnOpts);
-          } catch {
-            console.warn('FlashRank: CoreML NeuralNetwork also failed, falling back to CPU');
-            this.pipeline = await loadPipeline(buildSessionOptions(`${modelPath}:flashrank:q8`, 'flashrank'));
-          }
+          console.warn(`FlashRank: CoreML failed (${loadErr.message}), falling back to CPU`);
+          const cpuOpts = buildSessionOptions(`${FLASHRANK_MODEL_ID}:flashrank:q8`, 'flashrank');
+          this.session = await ort.InferenceSession.create(onnxPath, cpuOpts);
         } else {
           throw loadErr;
         }
       }
+
+      this.tokenizer = await createTokenizer(tokenizerPath);
       warnIfGraphNotMaterialized('FlashRank', sessionOpts);
 
-      console.log(`FlashRank: Loaded local reranker model (${modelPath})`);
+      console.log(`FlashRank: Loaded local reranker model (${FLASHRANK_MODEL_ID})`);
     } catch (err) {
       console.log(`FlashRank: Could not load model: ${err.message}`);
-      this.pipeline = null;
+      this.session = null;
     }
   }
 
@@ -102,8 +90,8 @@ export class FlashRankReranker {
   async rerank(query, documents, topK = 10) {
     const start = Date.now();
 
-    // CRITICAL: Initialize model BEFORE checking this.pipeline
-    // Previously init() was inside if(this.pipeline), so it never ran on cold call
+    // CRITICAL: Initialize model BEFORE checking this.session
+    // Previously init() was inside if(this.session), so it never ran on cold call
     await this.init();
 
     // Prepare query-document pairs
@@ -121,7 +109,7 @@ export class FlashRankReranker {
 
     let scores;
 
-    if (this.pipeline) {
+    if (this.session) {
       // Use cross-encoder model with CLS pooling
       // Output is raw logit score (higher = more relevant, typically [-10, -5] range)
 
@@ -132,10 +120,13 @@ export class FlashRankReranker {
           try {
             // Cross-encoder takes query + document as input
             const input = `${query} [SEP] ${pair.text}`;
-            const result = await this.pipeline(input, { pooling: 'cls' });
+            const tokenized = this.tokenizer(input, { padding: true, truncation: true, max_length: 512 });
+            const feed = buildFeed(tokenized, this.session.inputNames);
+            const output = await this.session.run(feed);
+            const tensor = output[this.session.outputNames[0]];
 
-            // CLS pooling returns single logit score
-            const score = result.data?.[0] ?? -10;  // Default to low score on failure
+            // CLS token is the first token's hidden state
+            const score = tensor.data?.[0] ?? -10;
             results.push({ ...pair, score });
           } catch (err) {
             results.push({ ...pair, score: -10 });  // Low score on error
@@ -168,7 +159,7 @@ export class FlashRankReranker {
     return {
       results,
       latency_ms: latency,
-      model: this.pipeline ? 'ms-marco-TinyBERT-L-2-v2' : 'keyword-fallback',
+      model: this.session ? 'ms-marco-TinyBERT-L-2-v2' : 'keyword-fallback',
     };
   }
 
@@ -226,7 +217,7 @@ export class FlashRankReranker {
 
     let scores;
 
-    if (this.pipeline) {
+    if (this.session) {
       // Process inputs with CLS pooling for cross-encoder logit scores
       // Use global ONNX mutex to prevent concurrent inference crashes
       const inputs = pairs.map(pair => `${query} [SEP] ${pair.text}`);
@@ -235,9 +226,11 @@ export class FlashRankReranker {
         const results = [];
         for (const input of inputs) {
           try {
-            const result = await this.pipeline(input, { pooling: 'cls' });
-            // CLS pooling returns single logit score in result.data[0]
-            results.push(result.data?.[0] ?? -10);
+            const tokenized = this.tokenizer(input, { padding: true, truncation: true, max_length: 512 });
+            const feed = buildFeed(tokenized, this.session.inputNames);
+            const output = await this.session.run(feed);
+            const tensor = output[this.session.outputNames[0]];
+            results.push(tensor.data?.[0] ?? -10);
           } catch (err) {
             results.push(-10);
           }
@@ -275,7 +268,7 @@ export class FlashRankReranker {
     return {
       results,
       latency_ms: latency,
-      model: this.pipeline ? 'ms-marco-TinyBERT-L-2-v2-batched' : 'keyword-fallback',
+      model: this.session ? 'ms-marco-TinyBERT-L-2-v2-batched' : 'keyword-fallback',
     };
   }
 }

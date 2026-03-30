@@ -17,7 +17,6 @@ const {
   getOnnxRuntimeVersion,
   getOptimizedGraphPath,
   buildSessionOptions,
-  loadModelWithSessionOptions,
   warnIfGraphNotMaterialized,
 } = await import('../core/onnx-session-utils.js');
 
@@ -88,45 +87,6 @@ describe('onnx-session-utils', () => {
       expect(opts.enableCpuMemArena).toBe(true);
       expect(opts.enableMemPattern).toBe(true);
       expect(typeof opts.optimizedModelFilePath).toBe('string');
-    });
-  });
-
-  describe('loadModelWithSessionOptions', () => {
-    it('tries candidates in order and returns first success', async () => {
-      const loader = vi.fn(async (opts) => {
-        if (opts.session_options) return 'loaded-with-session_options';
-        throw new Error('wrong shape');
-      });
-      const result = await loadModelWithSessionOptions(loader, { quantized: true }, { graphOpt: 'all' });
-      expect(result).toBe('loaded-with-session_options');
-      expect(loader).toHaveBeenCalledTimes(1);
-    });
-
-    it('falls through to second candidate on first error', async () => {
-      const loader = vi.fn(async (opts) => {
-        if (opts.session_options) throw new Error('old API');
-        if (opts.sessionOptions) return 'loaded-with-sessionOptions';
-        throw new Error('nope');
-      });
-      const result = await loadModelWithSessionOptions(loader, { quantized: true }, { graphOpt: 'all' });
-      expect(result).toBe('loaded-with-sessionOptions');
-      expect(loader).toHaveBeenCalledTimes(2);
-    });
-
-    it('falls through to bare options on all errors', async () => {
-      const loader = vi.fn(async (opts) => {
-        if (opts.session_options || opts.sessionOptions) throw new Error('no session opts');
-        return 'loaded-bare';
-      });
-      const result = await loadModelWithSessionOptions(loader, { quantized: true }, { graphOpt: 'all' });
-      expect(result).toBe('loaded-bare');
-      expect(loader).toHaveBeenCalledTimes(3);
-    });
-
-    it('throws on all-fail', async () => {
-      const loader = vi.fn(async () => { throw new Error('always fails'); });
-      await expect(loadModelWithSessionOptions(loader, {}, {})).rejects.toThrow('always fails');
-      expect(loader).toHaveBeenCalledTimes(3);
     });
   });
 

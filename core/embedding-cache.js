@@ -9,7 +9,11 @@
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
+import { join } from 'path';
 import { EMBEDDING_CONFIG, DB_PATHS } from './config.js';
+import { fetchModel, getModelCacheDir } from './model-fetcher.js';
+import { createOrtPipeline, buildFeed } from './ort-pipeline.js';
+import { meanPoolWithAttentionMask } from './embedding-local-model.js';
 
 // =============================================================================
 // LRU CACHE
@@ -203,14 +207,13 @@ export class SemanticCache {
     this.loadPromise = (async () => {
       const start = Date.now();
       console.log('[SemanticCache] Loading local model for cache keys...');
-      let pipeline;
-      try {
-        ({ pipeline } = await import('@huggingface/transformers'));
-      } catch (err) {
-        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
-        ({ pipeline } = await import('@xenova/transformers'));
-      }
-      this.localModel = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
+      await fetchModel('all-minilm-l6-v2');
+      const cacheDir = getModelCacheDir('Xenova/all-MiniLM-L6-v2');
+      this.localModel = await createOrtPipeline(
+        join(cacheDir, 'onnx', 'model_quantized.onnx'),
+        join(cacheDir, 'tokenizer.json'),
+        { graphOptimizationLevel: 'all' },
+      );
       console.log(`[SemanticCache] Local model loaded in ${Date.now() - start}ms`);
       this.loadingModel = false;
       return this.localModel;
@@ -220,10 +223,15 @@ export class SemanticCache {
   }
 
   async computeLocalEmbedding(text) {
-    const model = await this.getLocalModel();
+    const { session, tokenizer } = await this.getLocalModel();
     this.stats.localModelCalls++;
-    const output = await model(text, { pooling: 'mean', normalize: true });
-    return Array.from(output.data);
+    const tokenized = tokenizer(text, { padding: true, truncation: true, max_length: 256 });
+    const feed = buildFeed(tokenized, session.inputNames);
+    const output = await session.run(feed);
+    const tensor = output[session.outputNames[0]];
+    // Mean pooling with L2 normalization
+    const pooled = meanPoolWithAttentionMask(tensor, tokenized.attention_mask, true);
+    return Array.from(pooled.data);
   }
 
   cosineSimilarity(a, b) {

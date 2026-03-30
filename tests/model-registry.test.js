@@ -45,7 +45,10 @@ describe('model-registry', () => {
     expect(full).toContain('coderankembed-int8');
   });
 
-  it('does not include flashrank/tinybert', () => {
-    expect(MODEL_REGISTRY['ms-marco-tinybert']).toBeUndefined();
+  it('includes flashrank/tinybert and semantic cache models', () => {
+    expect(MODEL_REGISTRY['ms-marco-tinybert']).toBeDefined();
+    expect(MODEL_REGISTRY['ms-marco-tinybert'].hfId).toBe('Xenova/ms-marco-TinyBERT-L-2-v2');
+    expect(MODEL_REGISTRY['all-minilm-l6-v2']).toBeDefined();
+    expect(MODEL_REGISTRY['all-minilm-l6-v2'].hfId).toBe('Xenova/all-MiniLM-L6-v2');
   });
 });

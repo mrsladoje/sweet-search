@@ -49,27 +49,6 @@ export function buildSessionOptions(modelId, suffix, coremlAvailable = false) {
   return opts;
 }
 
-/**
- * Try multiple option shapes for session_options because @huggingface/transformers
- * has used both `session_options` and `sessionOptions` across versions.
- */
-export async function loadModelWithSessionOptions(loader, baseOptions, sessionOptions) {
-  const candidates = [
-    { ...baseOptions, session_options: sessionOptions },
-    { ...baseOptions, sessionOptions },
-    baseOptions,
-  ];
-  let lastError = null;
-  for (const opts of candidates) {
-    try {
-      return await loader(opts);
-    } catch (err) {
-      lastError = err;
-    }
-  }
-  throw lastError || new Error('Model load failed after all option candidates');
-}
-
 export function warnIfGraphNotMaterialized(label, sessionOptions) {
   if (!existsSync(sessionOptions.optimizedModelFilePath)) {
     console.warn(`[ONNX] ${label} optimized graph not materialized at ${sessionOptions.optimizedModelFilePath}`);
