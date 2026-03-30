@@ -1165,7 +1165,9 @@ Required checks on each supported target:
 9. Verify native addon selection where supported.
 10. Verify fallback to WASM/JS when native addon is intentionally missing.
 11. Run MCP entrypoint smoke test (`sweet-search-mcp --help` or equivalent startup check).
-12. Capture timing data for launcher startup and warm-path queries.
+12. Run `sweet-search uninstall --dry-run` and verify reported artifacts match what init created.
+13. Run `sweet-search uninstall` and verify no orphaned state remains.
+14. Capture timing data for launcher startup and warm-path queries.
 
 Benchmark requirements:
 
@@ -1182,6 +1184,38 @@ Exit criteria:
 - Linux benchmark evidence exists for Rust-vs-C launcher parity or improvement
 - release evidence exists for all supported targets before public publish
 
+### Phase 9: Clean uninstall
+
+An honest install story needs an honest uninstall story. `sweet-search uninstall` reverses everything `sweet-search init` created, leaving no orphaned files, caches, or config on the user's machine.
+
+Deliverables:
+
+- `sweet-search uninstall` command that removes all Sweet Search local state for the current project
+- remove `.sweet-search/` config directory and all generated config
+- remove init-managed model cache contents for the current project, with size reporting before deletion
+- `--dry-run` flag that shows exactly what would be removed and how much disk space would be reclaimed, without deleting anything
+- `--keep-models` flag to preserve the model cache (it may be shared or expensive to re-download) while removing everything else
+- `--purge` flag that additionally runs `npm uninstall sweet-search` and removes scoped `@sweet-search/*` packages from `node_modules`
+- interactive confirmation by default; `--force` flag for CI and scripted use
+- profile-aware: only report and clean artifacts that were actually installed for the active profile
+- idempotent: running uninstall twice does not error; the second run reports "nothing to remove"
+- clear post-uninstall summary showing what was removed, what was kept, and any manual steps remaining (e.g., removing the npm package itself if `--purge` was not used)
+
+Design constraints:
+
+- uninstall must not touch files outside of `.sweet-search/`, the init-managed model cache, and (with `--purge`) `node_modules`
+- uninstall must not delete user source code, indexes, or database files unless they live inside `.sweet-search/`
+- the command must work even if the Sweet Search runtime is partially broken (corrupted config, missing native addon, etc.) — it should degrade gracefully and still clean up what it can
+- the model cache location must be resolved from the same config and defaults that init uses, not hardcoded
+
+Exit criteria:
+
+- `sweet-search uninstall` removes all local state created by `sweet-search init`
+- `sweet-search uninstall --dry-run` accurately reports what would be removed and total disk space to be reclaimed
+- uninstall is idempotent
+- no orphaned model cache, config, or generated files remain after uninstall
+- Phase 8 cross-target validation matrix includes uninstall smoke tests on every supported target
+
 ---
 
 ## Acceptance Criteria
@@ -1197,6 +1231,7 @@ This plan is complete when all of the following are true:
 - CI verifies package contents and runtime resolution
 - the supported target matrix has passing Phase 7 validation evidence
 - the `ss` binary name is not used for public distribution
+- `sweet-search uninstall` cleanly reverses `sweet-search init` with no orphaned state
 
 ---
 

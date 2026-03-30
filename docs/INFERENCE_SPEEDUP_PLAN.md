@@ -2,13 +2,20 @@
 
 **Date:** 2026-03-30
 **Status:** Proposed
-**Scope:** Maximize local embedding inference throughput during indexing across all supported platforms (macOS Apple Silicon, Linux x86, WSL). This plan is complementary to `PARALLEL_SESSIONS_BUG_PLAN.md` which covers search-serving thread safety.
+**Scope:** Maximize local ONNX model inference throughput during indexing across all supported platforms (macOS Apple Silicon, Linux x86, WSL). Covers **both** the embedding model (CodeRankEmbed) and the late interaction model (LateOn-Code) — both run through ORT `session.run()` and benefit from the same optimizations. This plan is complementary to:
+- `PARALLEL_SESSIONS_BUG_PLAN.md` — search-serving thread safety
+- `TURBOQUANT_PLAN.md` — late interaction **scoring and storage** compression (post-inference). That plan speeds up MaxSim scoring, index load, and memory footprint. This plan speeds up the ONNX forward pass that produces the embeddings/token vectors in the first place.
 
 ---
 
 ## Problem Statement
 
-Sweet Search indexes codebases by embedding every code chunk through a local ONNX model (CodeRankEmbed INT8, 132MB). Single-query latency is acceptable (~15ms), but indexing large codebases (10K-100K+ files) compounds this into minutes of wall-clock time because:
+Sweet Search indexes codebases by running code chunks through two local ONNX models:
+
+1. **Embedding model** (CodeRankEmbed INT8, 132MB, d=768) — produces dense vectors for HNSW retrieval
+2. **Late interaction model** (LateOn-Code INT8, ~600MB, d=128) — produces per-token vectors for MaxSim scoring
+
+Both models go through the same ORT `session.run()` pipeline and share the same bottlenecks. Single-query latency is acceptable (~15ms embedding, ~20ms LI), but indexing large codebases (10K-100K+ files) compounds this into minutes of wall-clock time because:
 
 1. **Single session, serialized inference.** One ONNX session uses ~7 intraOp threads on an M3 Max (12 P-cores + 4 E-cores). Most CPU cores sit idle between batches.
 2. **Suboptimal warmup.** The model warms up with `max_length=64`, but indexing uses `max_length=512`. First real batch triggers ORT re-optimization and cache misses.
@@ -18,19 +25,22 @@ Sweet Search indexes codebases by embedding every code chunk through a local ONN
 ### Current Architecture (Indexing Path)
 
 ```
-chunks[] → callLocalModelBucketed() → callLocalModel() → session.run() → embeddings[]
-                                        ↑ single session, ~7 threads
+                    ┌─ callLocalModel() → session.run() → dense embeddings (d=768)
+chunks[] ──────────┤
+                    └─ encodeDocuments() → session.run() → token vectors (d=128)
+                        ↑ both: single session, ~7 threads, serialized
 ```
 
 ### Target Architecture
 
 ```
-chunks[] → IndexerPool.embed() → distribute across N workers
-                                    ├─ Worker 1: session.run() (T threads)
-                                    ├─ Worker 2: session.run() (T threads)
-                                    └─ Worker N: session.run() (T threads)
-                                  ← gather embeddings in original order
+                    ┌─ EmbeddingPool.embed() → N workers → dense embeddings
+chunks[] ──────────┤
+                    └─ LIPool.encode()       → M workers → token vectors
+                        ↑ both: adaptive worker count, parallel sessions
 ```
+
+Both pools share the same `IndexerPool` implementation — they differ only in model path and session options.
 
 ---
 
@@ -40,7 +50,7 @@ chunks[] → IndexerPool.embed() → distribute across N workers
 2. **Indexing-only.** The search-serving path stays single-session + mutex (per PARALLEL_SESSIONS_BUG_PLAN.md).
 3. **Cross-platform.** Must work on macOS ARM64, Linux x86_64, and WSL2 with identical semantics.
 4. **Measure everything.** Every phase has an A/B benchmark gate before merging.
-5. **No model changes.** CodeRankEmbed INT8 stays. Model-level optimizations (INT4, backbone swap) are future work.
+5. **No model changes.** CodeRankEmbed INT8 and LateOn-Code INT8 stay. Model-level optimizations (INT4, backbone swap) are future work.
 6. **Profile before optimizing.** Each phase begins with profiling to confirm the assumed bottleneck. Don't fix what isn't broken.
 
 ---
@@ -87,20 +97,24 @@ node scripts/compare-benchmarks.js /tmp/baseline.json /tmp/candidate.json
 
 ## Phase 1: Warmup Fixes (Quick Win)
 
-**Effort:** Small (1-2 files, ~30 lines)
+**Effort:** Small (2-3 files, ~50 lines)
 **Est. impact:** 10-30% reduction in first-batch latency, 5-10% steady-state improvement
-**Files:** `core/embedding-local-model.js`, `core/session-warmup.js`
+**Files:** `core/embedding-local-model.js`, `core/late-interaction-model.js`, `core/session-warmup.js`
 
 ### Problem
 
-The embedding model warms up with a single text `["warmup"]` at `max_length=64` (`embedding-local-model.js:368`). This doesn't warm:
-- ORT's kernel selection for 512-token sequences
+Both models have suboptimal warmup:
+- **Embedding model:** warms up with a single text `["warmup"]` at `max_length=64` (`embedding-local-model.js:368`)
+- **LI model:** warms up with a single short text (`late-interaction-model.js`, similar pattern)
+
+Neither warms:
+- ORT's kernel selection for real-length sequences
 - CPU instruction/data caches for full-size tensor operations
 - Memory allocation pools for real batch sizes
 
 ### Changes
 
-#### 1a. Realistic warmup input
+#### 1a. Realistic warmup input — Embedding model
 
 Replace the single-token warmup with a batch at realistic dimensions:
 
@@ -117,15 +131,41 @@ await localPipeline(warmupTexts, { pooling: 'mean', normalize: true, truncation:
 await localPipeline(warmupTexts, { pooling: 'mean', normalize: true, truncation: true, max_length: INDEXING_MAX_LENGTH });
 ```
 
-#### 1b. CoreML shape warmup (Apple Silicon only)
+#### 1a-LI. Realistic warmup input — Late interaction model
 
-CoreML compiles a separate program per input shape. Warmup at each expected batch size:
+The LI model produces per-token vectors (not pooled), so warmup uses `encodeDocuments()` with realistic chunk lengths. The LI model uses a different max length (typically 180 tokens for code chunks) and returns variable-count token vectors per document:
 
 ```js
+// In getLateInteractionPipeline(), after model load:
+const LI_WARMUP_BATCH = 4;  // Smaller batch — LI model is ~4.5x larger
+const liWarmupTexts = Array.from({ length: LI_WARMUP_BATCH },
+  () => 'x '.repeat(80)  // ~160 tokens, close to avg 184 tokens/doc
+);
+
+// Pass 1: JIT compile + kernel selection for LI output shape
+await encodeDocuments(liWarmupTexts);
+// Pass 2: Stabilize caches
+await encodeDocuments(liWarmupTexts);
+```
+
+#### 1b. CoreML shape warmup (Apple Silicon only)
+
+CoreML compiles a separate program per input shape. Warmup at each expected batch size for **both models**:
+
+```js
+// Embedding model — pooled output, larger batch sizes
 if (backend === 'coreml') {
   for (const bs of [1, 8, 16, 32]) {
     const texts = Array.from({ length: bs }, () => 'warmup '.repeat(50));
     await localPipeline(texts, { pooling: 'mean', normalize: true, truncation: true, max_length: INDEXING_MAX_LENGTH });
+  }
+}
+
+// LI model — per-token output, smaller batch sizes (larger model)
+if (backend === 'coreml') {
+  for (const bs of [1, 4, 8, 16]) {
+    const texts = Array.from({ length: bs }, () => 'warmup '.repeat(80));
+    await encodeDocuments(texts);
   }
 }
 ```
@@ -247,9 +287,40 @@ const session = await ort.InferenceSession.create(modelPath, {
 
 **Effort:** Medium-Large (new file + integration, ~200-300 lines)
 **Est. impact:** 2-3x indexing throughput
-**Files:** New `core/indexer-pool.js`, modified `core/embedding-local-model.js`, `core/config.js`
+**Files:** New `core/indexer-pool.js`, modified `core/embedding-local-model.js`, `core/late-interaction-model.js`, `core/config.js`
 
 ### Architecture
+
+`IndexerPool` is model-agnostic — it takes a model path and session options, spawns N workers, and distributes batches. Two pool instances run during indexing:
+
+```
+                    Main Thread
+                   ┌──────────────────┐
+                   │ EmbeddingPool     │  (CodeRankEmbed, d=768)
+  chunks[] ──────→ │ .embed()          │ ──────→ dense embeddings[]
+                   └─────┬──┬──┬──────┘
+                   ┌─────┘  │  └─────┐
+                   │ W1     │ W2    │ WN
+                   └────────┴───────┘
+
+                   ┌──────────────────┐
+                   │ LIPool            │  (LateOn-Code, d=128)
+  chunks[] ──────→ │ .encode()         │ ──────→ token vectors[]
+                   └─────┬──┬──┬──────┘
+                   ┌─────┘  │  └─────┐
+                   │ W1     │ W2    │ WM
+                   └────────┴───────┘
+```
+
+Note: N and M may differ. The LI model is ~4.5x larger (600MB vs 132MB), so on memory-constrained machines the LI pool may use fewer sessions. The adaptive formula accounts for this via `modelSizeBytes`:
+
+```js
+// Same formula, different model size input
+const embPool = detectIndexerPoolSize({ modelSizeBytes: 140_000_000 });  // → 3 sessions on M3 Max
+const liPool  = detectIndexerPoolSize({ modelSizeBytes: 630_000_000 });  // → 2 sessions on M3 Max (RAM-gated)
+```
+
+#### Generic worker detail
 
 ```
                     Main Thread
@@ -268,17 +339,29 @@ const session = await ort.InferenceSession.create(modelPath, {
 
 ### Adaptive Session Count
 
+**IMPORTANT:** Both pools (embedding + LI) run simultaneously during indexing. The RAM budget must account for the **combined** footprint of all pools, not each pool in isolation. The function takes a `peerMemoryBytes` parameter — the memory already claimed by the other pool.
+
 ```js
-export function detectIndexerPoolSize(overrides = {}) {
-  const logicalCores = overrides.cpuCount ?? os.cpus().length;
+const EMB_MODEL_SIZE = 140_000_000;   // ~132MB CodeRankEmbed INT8
+const LI_MODEL_SIZE  = 630_000_000;   // ~600MB LateOn-Code INT8
+const HEADROOM       = 1_500_000_000; // 1.5GB for Node.js heap + OS + ORT arenas
+
+/**
+ * Compute session count for one pool, aware of the other pool's footprint.
+ * @param {number} modelSizeBytes  - Size of THIS pool's model
+ * @param {number} peerMemoryBytes - Memory already claimed by the OTHER pool
+ */
+export function detectIndexerPoolSize({ modelSizeBytes, peerMemoryBytes = 0, cpuCount, totalMemBytes } = {}) {
+  const logicalCores = cpuCount ?? os.cpus().length;
   const physicalCores = Math.max(1, Math.ceil(logicalCores / 2));
-  const totalMemBytes = overrides.totalMemBytes ?? os.totalmem();
-  const modelSizeBytes = 140_000_000; // ~132MB INT8 model + overhead
+  const totalMem = totalMemBytes ?? os.totalmem();
 
-  // RAM gate: need at least modelSize * sessions + 1GB headroom
-  const maxByRam = Math.floor((totalMemBytes - 1_000_000_000) / modelSizeBytes);
+  // RAM gate: subtract headroom + peer pool memory, then see how many
+  // sessions of THIS model fit in the remainder
+  const availableForThisPool = totalMem - HEADROOM - peerMemoryBytes;
+  const maxByRam = Math.max(1, Math.floor(availableForThisPool / modelSizeBytes));
 
-  // CPU gate: each session needs ≥2 threads to be useful, and we want
+  // CPU gate: each session needs ≥3 threads to be useful, and we want
   // at least 1 core free for the main thread + I/O
   const maxByCpu = Math.max(1, Math.floor((physicalCores - 1) / 3));
 
@@ -287,17 +370,25 @@ export function detectIndexerPoolSize(overrides = {}) {
 
   return { sessions, threadsPerSession };
 }
+
+// Allocation order: LI pool first (larger model, more constrained),
+// then embedding pool gets whatever is left.
+const liPool  = detectIndexerPoolSize({ modelSizeBytes: LI_MODEL_SIZE, peerMemoryBytes: 0 });
+const embPool = detectIndexerPoolSize({
+  modelSizeBytes: EMB_MODEL_SIZE,
+  peerMemoryBytes: liPool.sessions * LI_MODEL_SIZE,
+});
 ```
 
-**Expected results by platform:**
+**Expected results by platform (both pools combined):**
 
-| Platform | Logical Cores | Physical | RAM | Sessions | Threads/Session |
-|----------|--------------|----------|-----|----------|-----------------|
-| M3 Max 128GB | 16 | ~12 | 128GB | 3 | 3 |
-| M2 Pro 16GB | 12 | ~8 | 16GB | 2 | 3 |
-| M1 Air 8GB | 8 | ~4 | 8GB | 1 | 3 |
-| Intel i7 16GB | 16 | 8 | 16GB | 2 | 3 |
-| 4-core WSL 8GB | 4 | 2 | 8GB | 1 | 2 |
+| Platform | Physical | RAM | LI Sessions | Emb Sessions | Total Model Memory |
+|----------|----------|-----|-------------|-------------|-------------------|
+| M3 Max 128GB | ~12 | 128GB | 3 | 3 | 2.2 GB |
+| M2 Pro 16GB | ~8 | 16GB | 2 | 2 | 1.5 GB |
+| M1 Air 8GB | ~4 | 8GB | 1 | 1 | 0.7 GB |
+| Intel i7 16GB | 8 | 16GB | 2 | 2 | 1.5 GB |
+| 4-core WSL 8GB | 2 | 8GB | 1 | 1 | 0.7 GB |
 
 ### Worker Implementation (`core/indexer-worker.js`)
 
@@ -320,8 +411,50 @@ const session = await ort.InferenceSession.create(modelPath, sessionOptions);
 await warmupSession(session, sessionOptions);
 
 parentPort.on('message', async ({ batchId, texts, maxLength }) => {
-  const embeddings = await runInference(session, texts, maxLength);
-  parentPort.postMessage({ batchId, embeddings }, [embeddings.buffer]);
+  try {
+    const embeddings = await runInference(session, texts, maxLength);
+    parentPort.postMessage({ batchId, embeddings, error: null }, [embeddings.buffer]);
+  } catch (err) {
+    parentPort.postMessage({ batchId, embeddings: null, error: err.message });
+  }
+});
+```
+
+### Worker Fault Tolerance
+
+For a Claude Code plugin running on diverse hardware (WSL, old Intel laptops, various macOS versions), worker crashes are not hypothetical. ORT + CoreML can segfault, WSL memory limits can OOM-kill workers, and unusual ONNX model ops can throw on specific hardware.
+
+**Required resilience mechanisms in `IndexerPool`:**
+
+1. **Per-batch timeout.** If a worker doesn't respond within `batchTimeoutMs` (default: 30s, configurable), the pool:
+   - Marks that worker as dead
+   - Re-queues the batch to another live worker
+   - Logs a warning with the batch ID and worker index
+
+2. **Worker crash recovery.** If a worker exits unexpectedly (`'exit'` event with non-zero code):
+   - The pool spawns a replacement worker (up to `maxRestarts = 3` per worker)
+   - Any in-flight batches from the dead worker are re-queued
+   - If a worker crashes `maxRestarts` times, the pool falls back to N-1 workers (never goes below 1)
+
+3. **Graceful degradation.** If ALL workers crash (catastrophic ORT failure on this platform):
+   - The pool falls back to single-threaded inline inference (the existing `callLocalModel()` path)
+   - Logs an error explaining the fallback
+   - Indexing continues, just slower
+
+4. **Error propagation.** If a batch fails with an ORT error (not a crash), the worker sends the error back. The pool retries once, then propagates to the caller with the batch ID so partial results aren't silently lost.
+
+```js
+// In IndexerPool — worker lifecycle management
+worker.on('exit', (code) => {
+  if (code !== 0 && this.restartCounts[i] < MAX_RESTARTS) {
+    this.restartCounts[i]++;
+    this.workers[i] = this._spawnWorker(i);
+    this._requeueInflightBatches(i);
+  } else if (code !== 0) {
+    this.workers[i] = null;  // Permanently dead
+    this._requeueInflightBatches(i);
+    if (this.liveWorkerCount === 0) this._fallbackToInline();
+  }
 });
 ```
 
@@ -385,33 +518,39 @@ Each batch inference allocates new typed arrays for input_ids, attention_mask, a
 
 ### Changes
 
-Pre-allocate a pool of reusable typed arrays sized to the maximum expected batch:
+Pre-allocate a pool of reusable typed arrays sized to the maximum expected batch. **Each model type needs its own pool** since output dimensions differ:
 
 ```js
-// Buffer pool for inference I/O
-const MAX_BATCH = 64;
-const MAX_SEQ = 512;
-const HIDDEN_DIM = 768;
-
-const inputPool = {
-  inputIds: new BigInt64Array(MAX_BATCH * MAX_SEQ),
-  attentionMask: new BigInt64Array(MAX_BATCH * MAX_SEQ),
-  tokenTypeIds: new BigInt64Array(MAX_BATCH * MAX_SEQ),
-};
-const outputPool = new Float32Array(MAX_BATCH * HIDDEN_DIM);
-
-// Use subarray views instead of allocating new arrays per batch
-function getInputBuffers(batchSize, seqLen) {
-  const len = batchSize * seqLen;
+// Factory — creates a buffer pool for any model type
+function createBufferPool({ maxBatch, maxSeq, outputDim, tokensPerDoc = 1 }) {
   return {
-    inputIds: inputPool.inputIds.subarray(0, len),
-    attentionMask: inputPool.attentionMask.subarray(0, len),
-    tokenTypeIds: inputPool.tokenTypeIds.subarray(0, len),
+    input: {
+      inputIds: new BigInt64Array(maxBatch * maxSeq),
+      attentionMask: new BigInt64Array(maxBatch * maxSeq),
+      tokenTypeIds: new BigInt64Array(maxBatch * maxSeq),
+    },
+    // Embedding model: 1 vector per doc (pooled) → maxBatch * outputDim
+    // LI model: ~tokensPerDoc vectors per doc → maxBatch * tokensPerDoc * outputDim
+    output: new Float32Array(maxBatch * tokensPerDoc * outputDim),
+    getInputBuffers(batchSize, seqLen) {
+      const len = batchSize * seqLen;
+      return {
+        inputIds: this.input.inputIds.subarray(0, len),
+        attentionMask: this.input.attentionMask.subarray(0, len),
+        tokenTypeIds: this.input.tokenTypeIds.subarray(0, len),
+      };
+    },
   };
 }
+
+// Embedding model: pooled output, 1 vector (d=768) per document
+const embBufferPool = createBufferPool({ maxBatch: 64, maxSeq: 512, outputDim: 768 });
+
+// LI model: per-token output, ~200 vectors (d=128) per document
+const liBufferPool = createBufferPool({ maxBatch: 16, maxSeq: 512, outputDim: 128, tokensPerDoc: 200 });
 ```
 
-This eliminates per-batch allocation and reduces GC pauses during sustained indexing.
+This eliminates per-batch allocation and reduces GC pauses during sustained indexing. Each worker thread creates its own pool instance (no cross-thread sharing).
 
 ### A/B Gate
 
@@ -500,10 +639,12 @@ const memCapBytes = os.totalmem() >= 14_000_000_000
 
 ### Changes
 
-#### 5a. Create Olive optimization config
+#### 5a. Create Olive optimization configs
+
+**Both models** need separate Olive configs since they have different architectures:
 
 ```yaml
-# scripts/olive-config.yaml
+# scripts/olive-config-embedding.yaml (CodeRankEmbed, d=768)
 input_model:
   type: OnnxModel
   model_path: models/CodeRankEmbed-onnx-int8/model.onnx
@@ -527,7 +668,6 @@ passes:
       enable_skip_layer_norm_fusion: true
       enable_embed_layer_norm_fusion: true
 
-  # ARM-specific: quantize attention scores to INT8
   dynamic_quantization:
     type: OnnxDynamicQuantization
     per_channel: true
@@ -540,13 +680,51 @@ engine:
   target: local
 ```
 
-#### 5b. Run Olive and ship optimized model
+```yaml
+# scripts/olive-config-li.yaml (LateOn-Code, d=128)
+input_model:
+  type: OnnxModel
+  model_path: models/lateon-code-onnx-int8/model.onnx
 
-```bash
-python -m olive run --config scripts/olive-config.yaml --output models/optimized/
+systems:
+  local:
+    type: LocalSystem
+    accelerators:
+      - device: cpu
+
+passes:
+  optimize:
+    type: OrtTransformersOptimization
+    model_type: bert
+    num_heads: 12        # verify against actual LateOn-Code architecture
+    hidden_size: 128
+    optimization_options:
+      enable_gelu_approximation: true
+      enable_layer_norm_fusion: true
+      enable_attention_fusion: true
+      enable_skip_layer_norm_fusion: true
+      enable_embed_layer_norm_fusion: true
+
+  dynamic_quantization:
+    type: OnnxDynamicQuantization
+    per_channel: true
+    reduce_range: false
+
+engine:
+  evaluator:
+    metric: latency
+  host: local
+  target: local
 ```
 
-Ship the Olive-optimized model as an alternative alongside the current INT8 model. The session loader picks the optimized version if available.
+#### 5b. Run Olive and ship optimized models
+
+```bash
+python -m olive run --config scripts/olive-config-embedding.yaml --output models/optimized-embedding/
+python -m olive run --config scripts/olive-config-li.yaml --output models/optimized-li/
+```
+
+Ship the Olive-optimized models as alternatives alongside the current INT8 models. The session loader picks the optimized version if available.
 
 ### A/B Gate
 
@@ -581,21 +759,31 @@ Additionally, Vespa.ai research (2024) shows INT8 achieves 94-98% quality retent
 
 ### Changes
 
-#### 6a. Quantize model to INT4
+#### 6a. Quantize both models to INT4
 
-Use ONNX Runtime's quantization tools with RTN (Round-to-Nearest) as baseline and GPTQ with calibration data as the quality option:
+Use ONNX Runtime's quantization tools with RTN (Round-to-Nearest) as baseline and GPTQ with calibration data as the quality option. **Both models must be quantized and validated independently** — the LI model's quality is gated by MaxSim Kendall tau (per TurboQuant plan), not just cosine similarity.
 
 ```python
 from onnxruntime.quantization import quantize_dynamic, QuantType
 
-# RTN INT4 (fast, no calibration data needed)
+# Embedding model — RTN INT4
 quantize_dynamic(
     "models/CodeRankEmbed-onnx/model.onnx",
     "models/CodeRankEmbed-onnx-int4/model.onnx",
     weight_type=QuantType.QInt4,
     per_channel=True,
 )
+
+# LI model — RTN INT4 (validate separately — per-token output is more sensitive)
+quantize_dynamic(
+    "models/lateon-code-onnx/model.onnx",
+    "models/lateon-code-onnx-int4/model.onnx",
+    weight_type=QuantType.QInt4,
+    per_channel=True,
+)
 ```
+
+**Note:** The LI model produces per-token vectors that feed into MaxSim scoring. INT4 quantization noise on token vectors may compound differently than on pooled embeddings. The LI model's quality gate should use Kendall tau rank correlation on MaxSim scores (per `TURBOQUANT_PLAN.md` validation), not just pairwise cosine similarity.
 
 #### 6b. Calibration-based INT4 (GPTQ)
 
@@ -687,17 +875,48 @@ Phases 1 and 2 can be done in parallel. Phase 3 is the core deliverable. Phase 3
 
 ## Cumulative Speedup Estimates
 
-Assuming multiplicative gains (each optimization reduces the remaining time):
+Assuming multiplicative gains (each optimization reduces the remaining time). Two tracks shown — **conservative** (what we can commit to) and **optimistic** (if everything works including risky phases).
+
+### Conservative Track (Phases 1-5 only — high confidence)
+
+These phases have no quality risk and no known platform landmines.
 
 | After Phase | Estimated Cumulative Speedup | Confidence |
 |-------------|------------------------------|------------|
 | 1 + 2 | 1.2-1.4x | High |
 | + 3 | 2.5-3.5x | High |
 | + 3b | 2.7-3.8x | High |
-| + 4 | 3.0-4.2x | Medium |
-| + 5 | 3.2-4.8x | Medium |
-| + 6 | 4.0-6.5x | Low (MatMulNBits risk + quality gate) |
-| + 7 | Query: 10-15x, Index: same as above | Low (requires training) |
+| + 4 | 3.0-4.2x | Medium-High |
+| + 5 | **3.2-4.8x** | Medium |
+
+**This is the number to plan around: ~3-5x indexing throughput improvement.**
+
+### Optimistic Track (all phases including risky ones)
+
+Phases 6-7 carry real risk: INT4 may regress quality or hit MatMulNBits performance bugs. KALE requires model training infrastructure.
+
+| After Phase | Estimated Cumulative Speedup | Confidence | Risk |
+|-------------|------------------------------|------------|------|
+| + 6 (INT4) | 4.0-6.5x | Low | MatMulNBits ORT bug, quality regression on code embeddings |
+| + 7 (KALE) | Query: 10-15x, Index: same | Low | Requires training infra, distillation quality unknown |
+
+**Do not plan launch timelines around optimistic estimates. Ship the conservative track first, benchmark, then evaluate Phase 6.**
+
+---
+
+## Related: TurboQuant Plan (Post-Inference Speedups)
+
+`TURBOQUANT_PLAN.md` covers optimizations that happen **after** the ONNX forward pass — late interaction index storage and MaxSim scoring. The two plans target different stages of the pipeline and their gains are multiplicative:
+
+| Stage | This Plan (Inference) | TurboQuant (Scoring/Storage) |
+|-------|----------------------|------------------------------|
+| ONNX `session.run()` | 4-6x faster | No change |
+| Index load from disk | No change | 5-10x faster (binary format) |
+| MaxSim scoring | No change | 2.5-3x faster (norm reuse + 4-bit LUT + token pooling) |
+| Index size on disk | No change | 11x smaller (1.34 GiB → 118 MiB) |
+| Memory footprint | Slight increase (N sessions) | Dramatic reduction (fits 8 GB laptops) |
+
+**Combined end-to-end impact on indexing:** This plan speeds up embedding + LI inference. TurboQuant Phase 0 (binary storage) speeds up index *write* and *load*. Together, the full index pipeline gets faster at every stage.
 
 ---
 
