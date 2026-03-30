@@ -444,6 +444,505 @@ deserves empirical evaluation in Phase 5, not upfront dismissal.
 
 ---
 
+## Community Research Addendum (March 2026)
+
+> **Added after deep research sweep across 30+ papers, community
+> implementations, and production deployments (Oct 2025 – Mar 2026).**
+> These are optimizations discovered *beyond* the original TurboQuant
+> paper that are relevant to our pipeline.
+>
+> **CRITICAL RULE: Every optimization below MUST be A/B tested against
+> the previous baseline before being accepted.** No optimization ships
+> without empirical proof that it helps *our* specific pipeline
+> (LateOn-Code, d=128, code retrieval). Academic gains do not guarantee
+> gains on our data. The eval harness (`eval/retrieval-harness.js`) is
+> the single source of truth. Each item below includes its specific A/B
+> test protocol.
+
+---
+
+### CRA-1: Hierarchical Token Pooling (Upgrades Phase 3)
+
+**What**: Replace our three Phase 3 options (consecutive-pair pooling,
+norm-based pruning, attention-score pruning) with **hierarchical token
+pooling** as the primary strategy.
+
+**Why**: LIR'26 Workshop (Johns Hopkins, [arXiv 2603.22434](https://arxiv.org/abs/2603.22434),
+March 2026) conclusively proved that **token pooling is strictly superior
+to token pruning** for multi-vector retrieval. The gap is large:
+
+| Method | Keep ratio | Rel. nDCG@10 | Rel. Recall@100 |
+|--------|-----------|-------------|-----------------|
+| **Hierarchical Pooling** | 20% (5x) | **95.7%** | **98.1%** |
+| IDF Pruning | 50% (2x) | 92.4% | 98.9% |
+| Attention Pruning | 20% | ~75% | ~80% |
+
+Pooling achieves **2.5x better compression than pruning at equal quality**.
+At extreme compression (10-20% keep), pruning catastrophically fails
+while pooling degrades gracefully.
+
+Two pooling variants worth testing:
+1. **Hierarchical pooling** (Ward clustering + cosine distance) — best
+   overall quality, O(L² · d + L² log L) per document
+2. **Attention-based pooling** — nearly as good, much cheaper O(L·L̃·d),
+   better for online indexing scenarios
+
+Our existing `poolTokens()` averages consecutive pairs — this is the
+*worst* pooling strategy (no semantic awareness). It should be replaced
+with similarity-based clustering.
+
+**A/B test protocol**:
+1. Index the eval corpus with each strategy at keep ratios [0.20, 0.33, 0.50, 0.75]
+2. Measure: nDCG@10, MRR@10, Recall@100, index time, index size
+3. Compare: hierarchical pooling vs attention pooling vs current consecutive-pair pooling vs no pooling baseline
+4. **Ship only if**: nDCG@10 regression < 2pp at 2x+ token reduction
+5. **Reject if**: Index-time cost > 3x increase with no quality gain over attention pooling
+
+---
+
+### CRA-2: Quantile-Based (Non-Uniform) Bucket Boundaries (Upgrades Phase 4)
+
+**What**: Replace uniform INT4 quantization boundaries with
+**quantile-based bucket boundaries** that allocate more quantization
+levels to densely populated data regions.
+
+**Why**: WARP ([arXiv 2501.17788](https://arxiv.org/abs/2501.17788),
+ETH Zurich/Stanford, Jan 2025) uses quantile-based boundaries for their
+4-bit residual quantization, contributing to their 7.3x memory reduction
+and 3x speedup over PLAID. The insight: embedding coordinate values are
+NOT uniformly distributed after rotation — they follow a near-Gaussian
+distribution. Uniform quantization wastes levels in the sparse tails.
+Quantile boundaries match level density to data density.
+
+**Implementation**: During index build, collect a sample of coordinate
+values post-rotation, compute 16 quantile boundaries (for 4-bit),
+store the 16 boundary values in the binary header (16 × f32 = 64 bytes).
+Quantization becomes: `bucket = bisect(boundaries, value)` instead of
+`bucket = clamp(floor((value - min) / scale * 16), 0, 15)`.
+
+**Cost**: Zero runtime cost — same 4-bit storage, same LUT scoring.
+The only change is *which* 16 centroids the LUT contains.
+
+**A/B test protocol**:
+1. Build two indexes: uniform INT4 vs quantile INT4 (same WHT rotation seed)
+2. Measure: Kendall tau vs float32, nDCG@10, MRR@10
+3. **Ship if**: Any measurable quality improvement (even 0.1pp)
+4. **Reject if**: Quality is identical or worse (quantile overhead wasted)
+
+---
+
+### CRA-3: WUSH Data-Aware Calibrated Rotation (Upgrades Phase 2)
+
+**What**: Augment the Phase 2 Walsh-Hadamard rotation with a
+**data-dependent scaling step** calibrated on actual embedding statistics,
+following the WUSH transform.
+
+**Why**: WUSH ([arXiv 2512.00956](https://arxiv.org/abs/2512.00956),
+ETH Zurich/ISTA/Red Hat, Nov 2025) proved that a pure data-oblivious
+Hadamard rotation is the *orthogonal component* of the optimal transform,
+but the full optimal transform is:
+
+```
+T_wush = H × S^(-1/2) × U^T × W'^T
+```
+
+where S, U come from SVD of the data's second-moment matrix. This adds
+a **non-orthogonal scaling** step that compensates for non-uniform
+dimension variance in the actual embeddings. Reported gain: **+2.8
+average accuracy points** over pure Hadamard at W4A4 quantization.
+
+**Implementation** (~40 lines):
+1. During index build, collect a sample of N=10K token embeddings
+2. Compute covariance matrix C = (1/N) × X^T × X
+3. SVD: C = U × S × V^T
+4. Pre-multiply the Hadamard rotation: T = H × diag(S^(-1/2)) × U^T
+5. Apply T instead of bare H at index time; apply T to queries at search time
+6. Store the calibration matrix in the index file (128×128 × f32 = 64 KB)
+
+**Caution**: This violates TurboQuant's "data-oblivious" property. If
+our embeddings are already well-distributed post-WHT (which L2-normalized
+embeddings tend to be), the gain may be negligible. The academic gain
+was measured on LLM weight/activation quantization, NOT retrieval
+embeddings. Must A/B test.
+
+**A/B test protocol**:
+1. Build three indexes: no rotation (baseline), pure WHT (Phase 2), WUSH-calibrated
+2. Measure: Kendall tau vs float32, nDCG@10, MRR@10 at both 8-bit and 4-bit
+3. **Ship if**: Kendall tau improvement >= 0.002 OR nDCG@10 improvement >= 0.3pp
+4. **Reject if**: Gains < noise floor (~0.1pp), since WUSH adds calibration
+   complexity and 64KB to the index
+
+---
+
+### CRA-4: Sequency-Ordered Walsh Matrices (Upgrades Phase 2)
+
+**What**: Replace standard Hadamard ordering in `fastRotate()` with
+**sequency-ordered Walsh matrices** (GSR).
+
+**Why**: GSR ([arXiv 2505.03810](https://arxiv.org/abs/2505.03810),
+Seoul National University, May 2025) showed that sequency ordering
+clusters similar-frequency components together, reducing quantization
+error compared to standard Hadamard. The block-diagonal variant (e.g.,
+32×32 blocks) isolates outlier impact and matches optimization-based
+*learned* rotations — without any training. Especially effective at
+extreme low bit-widths (2-bit).
+
+**Implementation**: Change the Hadamard matrix construction to use
+Walsh (sequency) ordering instead of natural ordering. Same O(d log d)
+transform, same butterfly structure, different permutation. Optionally
+use block-diagonal structure (four 32×32 blocks for d=128).
+
+**Cost**: Zero — identical computation, different matrix ordering.
+
+**A/B test protocol**:
+1. Build indexes with: natural Hadamard vs sequency Walsh vs block-diagonal Walsh (32×32)
+2. Test at both 8-bit (Phase 1) and 4-bit (Phase 4)
+3. Measure: Kendall tau vs float32, coordinate variance uniformity, nDCG@10
+4. **Ship if**: Measurable quality improvement at either bit-width
+5. **Reject if**: No difference (our d=128 already concentrates well enough)
+
+---
+
+### CRA-5: Implicit Decompression / Zero-Alloc Scoring (Upgrades Phase 4)
+
+**What**: Score MaxSim **directly from packed nibbles without ever
+materializing f32 vectors**, following WARP's implicit decompression
+pattern.
+
+**Why**: Our Phase 4 plan already eliminates the per-thread Vec<f32>
+allocation via centroid LUT scoring, but the WARP paper's algebraic
+decomposition goes further: the dot product between a float32 query
+token and a quantized document token can be computed as:
+
+```
+dot(q, d_quantized) = dot(q, centroid) + Σ_i q[i] × bucket_weight[bucket[i]]
+```
+
+The centroid contribution is **pre-computed once** per (query_token,
+cluster) pair and reused across all documents in that cluster. Only the
+residual sum needs per-document computation. This eliminates even the
+LUT gather-and-accumulate step for the centroid component.
+
+**A/B test protocol**:
+1. Implement both: (a) standard LUT scoring (Phase 4 plan), (b) implicit decompression
+2. Measure: MaxSim latency (native + WASM), numerical equivalence to float32
+3. **Ship if**: Latency improvement > 10% on the 50-candidate benchmark
+4. **Reject if**: Complexity increase not justified by latency gain, or
+   numerical divergence from standard path
+
+---
+
+### CRA-6: Learned Token Importance Weights for MaxSim (New — All Phases)
+
+**What**: Add **per-token learned importance weights** to the MaxSim
+scoring function, changing it from:
+
+```
+score(Q, D) = Σ_i max_j (q_i^T · d_j)
+```
+
+to:
+
+```
+score(Q, D) = Σ_i w_i × max_j (q_i^T · d_j)
+```
+
+**Why**: [arXiv 2511.16106](https://arxiv.org/abs/2511.16106) (Nov 2025)
+showed that adding token importance weights (analogous to IDF in BM25)
+improves late interaction retrieval quality. Two approaches:
+1. **Zero-shot (IDF-based)**: Weight each document token by its inverse
+   document frequency. No training needed.
+2. **Few-shot (learned)**: Learn weights via contrastive loss on a small
+   labeled set.
+
+This is **orthogonal to compression** — it improves quality at any
+quantization level. The weights cost only 4 bytes per token (stored
+alongside tokenNorms in the binary format). The weights could also
+**guide adaptive bit allocation**: important tokens get more bits.
+
+**A/B test protocol**:
+1. Implement IDF-based weighting (zero-shot, no training needed)
+2. Measure: nDCG@10, MRR@10 on GenCodeSearchNet with and without weights
+3. Test at multiple compression levels: uncompressed, INT8, INT4
+4. **Ship if**: nDCG@10 improvement >= 0.5pp at any compression level
+5. **Reject if**: No improvement on code retrieval (IDF may not help for
+   code tokens the way it helps natural language)
+
+---
+
+### CRA-7: Metal Constant Memory for Centroid LUT (Upgrades Phase 4)
+
+**What**: Place the 4-bit centroid LUT in **Metal constant memory** on
+Apple Silicon, rather than shared or device memory.
+
+**Why**: TheTom/turboquant_plus ([sparse-v-dequant.md](https://github.com/TheTom/turboquant_plus/blob/main/docs/papers/sparse-v-dequant.md))
+discovered that constant memory has dedicated hardware caching on M-series
+chips. The 16-entry f32 LUT for 4-bit quantization (64 bytes) fits
+perfectly. This is a single annotation change in the Metal/Rust kernel.
+
+**A/B test protocol**:
+1. Benchmark native kernel on M3 Max with LUT in: shared memory vs constant memory
+2. Measure: MaxSim latency over 1000 queries, 50 candidates each
+3. **Ship if**: Measurable latency reduction (even 5%)
+4. **Reject if**: No difference (M3 cache hierarchy may already optimize this)
+
+---
+
+### CRA-8: Matryoshka + Quantization Combo (Upgrades Phase 5)
+
+**What**: If LateOn-Code supports (or can be fine-tuned to support)
+**Matryoshka-style dimensional truncation**, combine dimension reduction
+with 4-bit quantization for extreme compression.
+
+**Why**: SMEC ([arXiv 2510.12474](https://arxiv.org/abs/2510.12474),
+EMNLP 2025) showed Matryoshka embeddings allow flexible truncation where
+prefixes retain semantic utility. Combined with quantization:
+
+| Dimensions | Bits | Bytes/token | Compression vs d=128 INT8 |
+|-----------|------|-------------|---------------------------|
+| 128 | 8 | 128 | 1x (baseline) |
+| 128 | 4 | 64 | 2x |
+| 64 | 4 | 32 | **4x** |
+| 32 | 4 | 16 | **8x** |
+
+At d=64 + 4-bit + pool=2, the index shrinks to ~30 MiB for 17K docs —
+**45x** smaller than current JSON INT8.
+
+**Caution**: Requires model-level changes (Matryoshka fine-tuning of
+LateOn-Code). This is a Phase 5+ direction, not a drop-in optimization.
+
+**A/B test protocol**:
+1. Fine-tune LateOn-Code with Matryoshka objective (if pursued)
+2. Evaluate at d=[32, 64, 96, 128] × bits=[4, 8] on GenCodeSearchNet
+3. Plot Pareto frontier of nDCG@10 vs bytes/token
+4. **Ship if**: d=64 achieves nDCG@10 within 1pp of d=128
+5. **Reject if**: Truncation below d=96 causes > 2pp regression on code retrieval
+
+---
+
+### CRA-9: Voronoi-Guided Token Importance (Upgrades Phase 3)
+
+**What**: Use **Voronoi cell volume** in embedding space as the token
+importance metric for pruning decisions.
+
+**Why**: [arXiv 2603.09933](https://arxiv.org/abs/2603.09933) (Sorbonne,
+March 2026) formalized token pruning as a Voronoi estimation problem.
+Tokens with larger Voronoi regions are more "unique" and harder to
+replace by neighboring tokens. Achieves **70% token removal with <1.5%
+nDCG drop** on in-domain data.
+
+**Use case**: Hybrid strategy — use Voronoi importance to identify tokens
+that are safe to prune (tiny Voronoi cells = redundant tokens), then
+pool the remaining tokens. This could outperform pure pooling.
+
+**A/B test protocol**:
+1. Implement Voronoi cell estimation for document token sets
+2. Compare: Voronoi pruning vs norm pruning vs IDF pruning (all at same keep ratio)
+3. Test hybrid: Voronoi prune bottom 30% → hierarchical pool remaining to target count
+4. **Ship if**: Hybrid outperforms pure hierarchical pooling by >= 0.3pp nDCG@10
+5. **Reject if**: Voronoi computation cost (O(L² · d) per doc) not justified by gain
+
+---
+
+### CRA-10: SAQ-Style Adaptive Bit Allocation per Dimension (Upgrades Phase 4)
+
+**What**: After WHT rotation, allocate **non-uniform bits per dimension
+segment** using dynamic programming optimization.
+
+**Why**: SAQ ([arXiv 2509.12086](https://arxiv.org/abs/2509.12086),
+Wuhan/CUHK/Huawei, Sep 2025) partitions PCA-projected vectors into
+segments and allocates more bits to high-magnitude segments, fewer to
+trailing segments. Uses DP to minimize total quantization error under a
+fixed bit budget.
+
+**Nuance**: After WHT rotation, dimensions *should* be near-uniform —
+that's the whole point. So the gain may be minimal. But if any residual
+non-uniformity remains (e.g., from the structure of code embeddings),
+adaptive allocation captures it.
+
+**A/B test protocol**:
+1. After WHT rotation, measure per-dimension variance across 10K tokens
+2. If variance ratio (max/min) > 1.5, implement DP bit allocation
+3. Compare: uniform 4-bit vs adaptive (avg 4-bit, range 3-6 per segment)
+4. **Ship if**: Kendall tau improvement >= 0.002
+5. **Reject if**: Post-WHT dimensions are already uniform (ratio < 1.2), skip entirely
+
+---
+
+### CRA-11: ConstBERT Fixed-Count Embeddings (Future Direction)
+
+**What**: Train the model to produce a **fixed number of document
+embeddings** (e.g., 32 per document) via learned pooling projection.
+
+**Why**: ConstBERT ([arXiv 2504.01818](https://arxiv.org/abs/2504.01818),
+U Glasgow/Pinecone, Apr 2025) achieves >50% index size reduction with
+comparable nDCG@10 on BEIR. The killer benefit: **uniform memory layout**
+(every document has exactly C vectors), which eliminates variable-length
+token slabs, simplifies the binary format, enables perfect SIMD
+alignment, and dramatically improves OS paging and cache behavior.
+
+**Caution**: Requires model architecture changes to LateOn-Code. This is
+a future model generation decision, not a compression technique.
+
+**A/B test protocol** (if pursued):
+1. Train ConstBERT variant of LateOn-Code with C=[16, 32, 64]
+2. Evaluate on GenCodeSearchNet: nDCG@10, MRR@10
+3. Compare total system performance: index size + load time + query latency
+4. **Ship if**: C=32 matches baseline nDCG@10 within 1pp
+5. **Reject if**: Code retrieval quality degrades (code tokens may be more
+   diverse than natural language, requiring more embeddings)
+
+---
+
+### CRA-12: Per-Vector Learned Quantizers / NVQ (Upgrades Phase 5)
+
+**What**: Replace uniform scalar quantization with **per-vector learned
+nonlinear quantizers** individually calibrated for each indexed vector.
+
+**Why**: NVQ ([arXiv 2509.18471](https://arxiv.org/abs/2509.18471),
+IBM, Sep 2025) achieves 3x storage reduction with <0.01 recall impact
+above 0.95. Each vector gets its own quantization function (not just its
+own min/scale as in Phase 1).
+
+**Caution**: Encoding cost is very high (4,000µs per 1536-d vector for
+Extended RaBitQ's approach). May be prohibitive for our 3.14M tokens.
+Weaviate's RQ approach simplifies encoding to 2µs by falling back to
+scalar quantization.
+
+**A/B test protocol**:
+1. Implement per-token nonlinear quantization with calibration
+2. Compare: per-token linear (Phase 1) vs per-token nonlinear at 4-bit
+3. Measure: Kendall tau, encoding time, nDCG@10
+4. **Ship if**: Quality improvement >= 0.5pp AND encoding time < 10µs/token
+5. **Reject if**: Encoding too slow for re-indexing or quality gain < noise
+
+---
+
+### CRA-13: Fused Kernel with L1 Cache-Resident LUT (Upgrades Phase 4)
+
+**What**: Design the Phase 4 native kernel explicitly for **L1 cache
+residency** of the centroid LUT, and **fuse dot-product + max-reduce**
+into a single pass.
+
+**Why**: The dejan.ai Triton kernel implementation demonstrated that the
+optimal pattern is:
+1. Pre-rotate query (single matmul)
+2. Load uint8 indices from HBM (4x less bandwidth than f32)
+3. Gather centroids from L1-cached LUT (16 entries = 64 bytes = 1 cache line)
+4. Fused dot-product + max-reduce in one kernel launch → ~1.2x speedup
+
+The critical insight: the 16-entry LUT is **reused across all sequence
+positions**, so the bottleneck is HBM bandwidth for index loading, not
+compute. Our kernel should be designed bandwidth-first.
+
+**A/B test protocol**:
+1. Implement two kernel variants: (a) separate dequant + score, (b) fused
+2. Benchmark on M3 Max: 50 candidates, Q=32, D=100, d=128
+3. **Ship if**: Fused kernel is >= 15% faster
+4. **Reject if**: Fusion complexity hurts maintainability with < 10% gain
+
+---
+
+### CRA-14: Fast Pseudo-Random Rotation (Weaviate RQ Approach)
+
+**What**: Evaluate Weaviate's **fast pseudo-random rotation** (7µs) as
+an alternative to full WHT matrix-vector multiply (~1,700µs for dense).
+
+**Why**: Weaviate's 8-bit Rotational Quantization
+([blog](https://weaviate.io/blog/8-bit-rotational-quantization)) uses
+simplified pseudo-random rotations that achieve >99% recall on
+high-dimensional datasets while being **~240x faster** to apply than
+standard matrix-vector multiplication. Trades theoretical unbiased
+guarantees for practical performance.
+
+**Applicability**: Our `fastRotate()` uses the O(d log d) butterfly
+WHT, which is already fast (~0.01ms for d=128). The Weaviate approach
+may not offer meaningful speedup at our dimensionality. More relevant
+if we scale to d=768+ with future models.
+
+**A/B test protocol**:
+1. Implement Weaviate-style fast rotation alongside WHT
+2. Measure: rotation latency, quantization quality (Kendall tau), nDCG@10
+3. **Ship if**: Equivalent quality with measurable latency improvement
+4. **Reject if**: Quality regression > 0.1pp (theoretical guarantees matter for us)
+
+---
+
+### CRA-15: WebGPU Compute Shader Tier (Future — New Tier 0)
+
+**What**: Add a **WebGPU compute shader** tier above the existing 3-tier
+architecture for GPU-accelerated MaxSim scoring in-browser.
+
+**Why**: WebGPU 1.1 (2025 Q1) added subgroup operations enabling
+wave-level parallelism. For 4-bit nibble operations, WebGPU uses bit
+manipulation (`(x >> 4) & 0xF`) in compute shaders. Benchmarks show
+10x+ speedup over CPU for large array operations.
+
+**Tier architecture** (updated):
+- Tier 0: WebGPU compute — GPU-accelerated, in-browser
+- Tier 1: Native N-API (Rust + Rayon + NEON/AVX2) — existing
+- Tier 2: WASM SIMD — existing
+- Tier 3: Pure JS fallback — existing
+
+**Applicability**: Only relevant if Sweet Search runs in-browser. Low
+priority for server-side CLI search.
+
+**A/B test protocol**:
+1. Implement WebGPU MaxSim kernel with 4-bit support
+2. Benchmark vs WASM SIMD tier in Chrome/Safari
+3. **Ship if**: >= 3x speedup over WASM SIMD in supported browsers
+4. **Reject if**: Browser support too fragmented or < 2x gain
+
+---
+
+### Updated Projected Impact (With Community Research Additions)
+
+**Scenario**: 17K docs, 3.14M tokens, d=128, on an 8 GB laptop.
+Assumes CRA-1 (hierarchical pooling) and CRA-2 (quantile boundaries)
+pass A/B testing.
+
+| Phase | CRA Additions | Index Size | Cumulative |
+|-------|--------------|-----------|------------|
+| Current (JSON INT8) | — | 1.34 GiB | — |
+| Phase 0 (binary) | — | 396 MiB | 3.4x |
+| Phase 1 (per-token quant) | — | 419 MiB | 3.2x |
+| Phase 2 (WHT rotation) | +CRA-3 (WUSH calibration), +CRA-4 (sequency ordering) | 419 MiB | 3.2x (quality++) |
+| Phase 3 | **+CRA-1 (hierarchical pooling at 20% keep)** | **84 MiB** | **16x** |
+| Phase 4 (4-bit) | +CRA-2 (quantile buckets), +CRA-5 (implicit decomp), +CRA-7 (Metal LUT) | **47 MiB** | **28.5x** |
+| Phase 5 | +CRA-8 (Matryoshka d=64) | **~24 MiB** | **~56x** |
+
+With CRA-1's 5x token reduction (vs Phase 3's original 2x), the
+combined pipeline could achieve **28x** compression through Phase 4
+alone — up from 11.4x in the original plan. If CRA-8 (Matryoshka)
+proves viable, **56x** is possible.
+
+---
+
+## Community Research References (Added)
+
+- [WUSH: Near-Optimal Adaptive Transforms (arXiv 2512.00956)](https://arxiv.org/abs/2512.00956)
+- [GSR: Grouped Sequency-Arranged Rotation (arXiv 2505.03810)](https://arxiv.org/abs/2505.03810)
+- [LIR'26: Token Pooling vs Pruning (arXiv 2603.22434)](https://arxiv.org/abs/2603.22434)
+- [Voronoi Cell Token Pruning (arXiv 2603.09933)](https://arxiv.org/abs/2603.09933)
+- [Token Importance Weighting (arXiv 2511.16106)](https://arxiv.org/abs/2511.16106)
+- [ConstBERT: Fixed-Count Embeddings (arXiv 2504.01818)](https://arxiv.org/abs/2504.01818)
+- [SAQ: Dimension Segmentation (arXiv 2509.12086)](https://arxiv.org/abs/2509.12086)
+- [NVQ: Per-Vector Quantizers (arXiv 2509.18471)](https://arxiv.org/abs/2509.18471)
+- [SMEC: Matryoshka Compression (arXiv 2510.12474)](https://arxiv.org/abs/2510.12474)
+- [Lossless ColBERT Token Pruning (arXiv 2504.12778)](https://arxiv.org/abs/2504.12778)
+- [ROSAQ: Saliency-Aware Rotation (arXiv 2506.13472)](https://arxiv.org/abs/2506.13472)
+- [OptRot: Data-Free Rotation (arXiv 2512.24124)](https://arxiv.org/abs/2512.24124)
+- [QuEPT: Elastic Precision (arXiv 2602.12609)](https://arxiv.org/abs/2602.12609)
+- [Extended RaBitQ (GitHub)](https://github.com/VectorDB-NTU/Extended-RaBitQ)
+- [Weaviate 8-bit RQ (blog)](https://weaviate.io/blog/8-bit-rotational-quantization)
+- [Milvus IVF_RABITQ (blog)](https://milvus.io/blog/bring-vector-compression-to-the-extreme-how-milvus-serves-3%C3%97-more-queries-with-rabitq.md)
+- [dejan.ai TurboQuant Triton Kernel (blog)](https://dejan.ai/blog/turboquant/)
+- [turboquant_plus sparse-v-dequant (GitHub)](https://github.com/TheTom/turboquant_plus/blob/main/docs/papers/sparse-v-dequant.md)
+- [ColBERT-Att: Late Interaction + Attention (arXiv 2603.25248)](https://arxiv.org/abs/2603.25248)
+- [RSQ: Learning from Important Tokens (arXiv 2503.01820)](https://arxiv.org/abs/2503.01820)
+
+---
+
 ## Projected Impact (All Phases Combined)
 
 **Scenario**: 17K docs, 3.14M tokens, d=128, on an 8 GB laptop
@@ -507,10 +1006,15 @@ configurations and compare metrics side-by-side.
 ```
 Phase 0 (binary storage)     ██████████ Highest ROI, zero quality risk
 Phase 1 (per-token quant)    ████████   Free quality win, small effort
-Phase 3 (token pooling)      ███████    Multiplicative compression lever
-Phase 2 (WHT rotation)       ██████     Prepares for Phase 4, zero kernel changes
-Phase 4 (4-bit quantization) █████      Requires new WASM/Rust kernels
-Phase 5 (full TurboQuant)    ██         Only if Phase 4 insufficient
+Phase 3 + CRA-1 (hier.pool)  ████████   5x tokens (up from 2x), proven superior
+Phase 2 + CRA-4 (seq. Walsh) ██████     Free quality win, zero kernel changes
+CRA-2 (quantile buckets)     ██████     Free quality win, zero runtime cost
+Phase 4 + CRA-5 + CRA-13     █████      New kernels, implicit decomp, L1 LUT
+CRA-3 (WUSH calibration)     ████       A/B test after Phase 2 — may or may not help
+CRA-6 (token weights)        ████       Orthogonal quality win, low effort
+CRA-7 (Metal constant mem)   ███        Single annotation, Apple Silicon only
+Phase 5 / CRA-8 (Matryoshka) ██         Only if model-level changes justified
+CRA-9/10/11/12 (future)      █          Research directions, high effort
 ```
 
 The Pareto-optimal order is: **binary storage first, token count second,
@@ -518,6 +1022,12 @@ rotation third, bit reduction last.** This matches the expert consensus:
 systems people say fix the serialization format; retrieval people say
 reduce token count; vector DB people say rotation + simple scalar
 quantization is proven; hardware people say 4-bit is the sane target.
+
+**Critical addition from community research**: every CRA optimization
+MUST be A/B tested before shipping. Academic gains on LLM KV caches
+or natural language retrieval do **not** guarantee gains on code
+retrieval with L2-normalized embeddings at d=128. The eval harness
+is the single source of truth. Ship what passes; reject what doesn't.
 
 ---
 
@@ -533,6 +1043,25 @@ quantization is proven; hardware people say 4-bit is the sane target.
 - [TheTom/turboquant_plus (Metal implementation)](https://github.com/TheTom/turboquant_plus)
 - [llama.cpp TurboQuant Discussion #20969](https://github.com/ggml-org/llama.cpp/discussions/20969)
 - [OpenSearch Random Rotation Benefits](https://opensearch.org/blog/the-benefits-of-random-rotation-in-quantized-vector-search/)
+
+### Community Research (Added March 2026)
+
+- [WUSH: Near-Optimal Adaptive Transforms (arXiv 2512.00956)](https://arxiv.org/abs/2512.00956)
+- [GSR: Grouped Sequency-Arranged Rotation (arXiv 2505.03810)](https://arxiv.org/abs/2505.03810)
+- [LIR'26: Token Pooling vs Pruning Comparison (arXiv 2603.22434)](https://arxiv.org/abs/2603.22434)
+- [Voronoi Cell Token Pruning (arXiv 2603.09933)](https://arxiv.org/abs/2603.09933)
+- [Token Importance Weighting for ColBERT (arXiv 2511.16106)](https://arxiv.org/abs/2511.16106)
+- [ConstBERT: Constant-Space Multi-Vector (arXiv 2504.01818)](https://arxiv.org/abs/2504.01818)
+- [SAQ: Dimension Segmentation VQ (arXiv 2509.12086)](https://arxiv.org/abs/2509.12086)
+- [NVQ: Per-Vector Learned Quantizers (arXiv 2509.18471)](https://arxiv.org/abs/2509.18471)
+- [SMEC: Matryoshka Embedding Compression (arXiv 2510.12474)](https://arxiv.org/abs/2510.12474)
+- [Lossless ColBERT Token Pruning (arXiv 2504.12778)](https://arxiv.org/abs/2504.12778)
+- [ROSAQ: Saliency-Aware Rotation (arXiv 2506.13472)](https://arxiv.org/abs/2506.13472)
+- [Extended RaBitQ Multi-Bit (GitHub)](https://github.com/VectorDB-NTU/Extended-RaBitQ)
+- [Weaviate 8-bit Rotational Quantization (blog)](https://weaviate.io/blog/8-bit-rotational-quantization)
+- [Milvus IVF_RABITQ (blog)](https://milvus.io/blog/bring-vector-compression-to-the-extreme-how-milvus-serves-3%C3%97-more-queries-with-rabitq.md)
+- [dejan.ai TurboQuant Triton Kernel (blog)](https://dejan.ai/blog/turboquant/)
+- [turboquant_plus sparse-v-dequant (GitHub)](https://github.com/TheTom/turboquant_plus/blob/main/docs/papers/sparse-v-dequant.md)
 
 ### Working Implementations (as of March 2026)
 
