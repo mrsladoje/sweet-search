@@ -1123,7 +1123,8 @@ This phase is the final verification pass. Its purpose is to prove that Sweet Se
 - **linux-arm64-gnu:** 27/27 checks pass in Docker `node:20-slim` (Debian bookworm, arm64 native). Same environment as WSL2 Ubuntu/Debian (same kernel, glibc 2.36, same Node.js binary).
 - **WSL equivalence:** Docker Debian bookworm on Linux kernel 6.8.0 with glibc 2.36 is the same runtime environment as WSL2 Ubuntu/Debian. Validated with the linux-x64-gnu and linux-arm64-gnu Docker targets.
 - **optionalDependencies resolution:** Verified via Verdaccio local npm registry. `npm install sweet-search` auto-installs ONLY the correct platform native package based on `os`/`cpu`/`libc` fields. Other platforms correctly absent.
-- **Rust-vs-C launcher benchmark (Linux arm64, 50 runs):** Rust p50=553µs, C p50=458µs. Ratio: 1.21x. Both sub-millisecond. 95µs difference is negligible; Rust launcher has more functionality (auto-spawn, health checks).
+- **Rust-vs-C launcher benchmark (Linux arm64, 30 runs):** Rust p50=425µs, C p50=338µs. Ratio: 1.25x. Both sub-millisecond. Rust launcher has more functionality (auto-spawn, health checks). Evidence in `scripts/cross-target-results.json` and reproducible via `scripts/benchmark-launcher.sh`.
+- **Package manager coverage:** npm, pnpm, bun validated with native+fallback on host. Yarn v1 (classic) excluded — treats `optionalDependencies` as mandatory (known limitation); yarn berry (v4+) handles them correctly.
 - **Uninstall:** `sweet-search uninstall` implemented with `--dry-run`, `--keep-models`, `--purge`, `--force`. Dry-run reports artifacts without deleting, real uninstall removes `.sweet-search/`, idempotent on second run.
 
 Deliverables:
@@ -1172,9 +1173,9 @@ Required checks on each supported target:
 5. Run `sweet-search init --profile full` where model/network policy allows it.
 6. Execute a real query against a warm server.
 7. Verify native launcher selection where a native package exists.
-8. Verify fallback behavior when the native package is intentionally missing.
+8. Verify fallback behavior when the native package is intentionally missing. (Fallback is a JS code path — verifying on any one Linux target plus the host is sufficient; it does not need to be repeated on every platform under emulation.)
 9. Verify native addon selection where supported.
-10. Verify fallback to WASM/JS when native addon is intentionally missing.
+10. Verify fallback to WASM/JS when native addon is intentionally missing. (Same JS code path caveat as check 8.)
 11. Run MCP entrypoint smoke test (`sweet-search-mcp --help` or equivalent startup check).
 12. Run `sweet-search uninstall --dry-run` and verify reported artifacts match what init created.
 13. Run `sweet-search uninstall` and verify no orphaned state remains.
