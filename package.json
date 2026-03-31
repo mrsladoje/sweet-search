@@ -126,7 +126,12 @@
     "typescript": "^5.9.3",
     "vitest": "^4.0.16"
   },
-  "optionalDependencies": {},
+  "optionalDependencies": {
+    "@sweet-search/native-darwin-arm64": "2.3.0",
+    "@sweet-search/native-darwin-x64": "2.3.0",
+    "@sweet-search/native-linux-x64-gnu": "2.3.0",
+    "@sweet-search/native-linux-arm64-gnu": "2.3.0"
+  },
   "engines": {
     "node": ">=18.0.0"
   }
