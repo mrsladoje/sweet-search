@@ -1,6 +1,24 @@
 [
 {
   "target": "darwin-arm64",
+  "packageManager": "bun",
+  "nativePresent": false,
+  "passed": true,
+  "failed": 0,
+  "timing": { "totalSeconds": 16 }
+}
+,
+{
+  "target": "darwin-arm64",
+  "packageManager": "bun",
+  "nativePresent": true,
+  "passed": true,
+  "failed": 0,
+  "timing": { "totalSeconds": 20 }
+}
+,
+{
+  "target": "darwin-arm64",
   "packageManager": "npm",
   "nativePresent": false,
   "passed": true,
@@ -14,7 +32,25 @@
   "nativePresent": true,
   "passed": true,
   "failed": 0,
-  "timing": { "totalSeconds": 23 }
+  "timing": { "totalSeconds": 27 }
+}
+,
+{
+  "target": "darwin-arm64",
+  "packageManager": "pnpm",
+  "nativePresent": false,
+  "passed": true,
+  "failed": 0,
+  "timing": { "totalSeconds": 4 }
+}
+,
+{
+  "target": "darwin-arm64",
+  "packageManager": "pnpm",
+  "nativePresent": true,
+  "passed": true,
+  "failed": 0,
+  "timing": { "totalSeconds": 7 }
 }
 ,
 {
@@ -35,10 +71,10 @@
   "passed": 22,
   "failed": 0,
   "timing": {
-    "installSeconds": 18,
-    "launcherStartupMs": 25,
+    "installSeconds": 21,
+    "launcherStartupMs": 23,
     "nativeLauncherMs": null,
-    "totalSeconds": 83
+    "totalSeconds": 85
   }
 }
 ,
@@ -54,27 +90,9 @@
   "failed": 0,
   "timing": {
     "installSeconds": 21,
-    "launcherStartupMs": 24,
+    "launcherStartupMs": 26,
     "nativeLauncherMs": 0,
-    "totalSeconds": 83
-  }
-}
-,
-{
-  "target": "linux-x64-gnu",
-  "packageManager": "npm",
-  "nativePresent": false,
-  "skipModels": true,
-  "profile": "both",
-  "platform": "x86_64",
-  "nodeVersion": "v20.20.2",
-  "passed": 22,
-  "failed": 0,
-  "timing": {
-    "installSeconds": 61,
-    "launcherStartupMs": 434,
-    "nativeLauncherMs": null,
-    "totalSeconds": 185
+    "totalSeconds": 84
   }
 }
 ,
@@ -89,10 +107,10 @@
   "passed": 27,
   "failed": 0,
   "timing": {
-    "installSeconds": 55,
-    "launcherStartupMs": 455,
-    "nativeLauncherMs": 28,
-    "totalSeconds": 179
+    "installSeconds": 61,
+    "launcherStartupMs": 459,
+    "nativeLauncherMs": 27,
+    "totalSeconds": 188
   }
 }
 ]

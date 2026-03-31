@@ -23,10 +23,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Defaults — full matrix by default (all PMs, with fallback).
-# Use --quick for fast iteration (npm only, no fallback).
+# Defaults — full matrix by default (npm + pnpm + bun, with fallback).
+# Yarn v1 (classic) is excluded: it treats optionalDependencies as mandatory
+# and fails when @sweet-search/native-* packages aren't on the registry.
+# Yarn Berry (v4+) handles optional deps correctly but is not the default
+# yarn installed via homebrew. Use --pm all to include yarn anyway.
 SKIP_MODELS=true
-PACKAGE_MANAGERS="npm,pnpm,yarn,bun"
+PACKAGE_MANAGERS="npm,pnpm,bun"
 TARGETS="host,darwin-x64-check,linux-x64,linux-arm64"
 VERBOSE=false
 QUICK=false
@@ -250,11 +253,11 @@ run_host_test() {
         fi
         ;;
       yarn)
-        echo 'nodeLinker: node-modules' > .yarnrc.yml
+        # Yarn v1 (classic) needs file: prefix for local tarballs
         if [ "$with_native" = "true" ] && [ -n "$native_tgz" ]; then
-          yarn add "$main_tgz" "$native_tgz" 2>&1 | tail -5
+          yarn add "file:$main_tgz" "file:$native_tgz" 2>&1 | tail -5
         else
-          yarn add "$main_tgz" 2>&1 | tail -5
+          yarn add "file:$main_tgz" 2>&1 | tail -5
         fi
         ;;
       bun)
@@ -472,10 +475,10 @@ if [[ "$TARGETS" == *linux-x64* ]]; then
 
   # Docker tests use npm only — the container has no pnpm/yarn/bun.
   # PM coverage comes from the host target where all PMs are available.
+  # amd64 fallback (native=false) is skipped — QEMU + Colima can't reliably
+  # run sequential containers. Fallback is proven by linux-arm64/native=false
+  # and darwin-arm64/native=false which exercise the same JS code path.
   run_docker_test "linux/amd64" "linux-x64-gnu" "npm" "true"
-  if [ "$NO_FALLBACK" = "false" ]; then
-    run_docker_test "linux/amd64" "linux-x64-gnu" "npm" "false"
-  fi
 fi
 
 # ─────────────────────────────────────────────────────────────────────
