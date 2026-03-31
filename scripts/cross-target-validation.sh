@@ -177,23 +177,27 @@ run_docker_test() {
     -e "PROFILE=both"
   )
 
-  # Brief sync to ensure Colima sees the staged tarballs
-  sync 2>/dev/null || true; sleep 1
+  # Bundle tarballs + run script into a tar and pipe into docker run.
+  # This avoids docker cp which fails under Colima VZ after multiple
+  # container operations (known virtiofs issue).
+  local bundle
+  bundle=$(mktemp -d)
+  cp "$STAGING"/sweet-search-2.*.tgz "$bundle/" 2>/dev/null || true
+  if [ "$with_native" = "true" ]; then
+    cp "$STAGING"/sweet-search-native-${target}-*.tgz "$bundle/" 2>/dev/null || true
+  fi
+  cp "$SCRIPT_DIR/run-validation.sh" "$bundle/"
 
-  # Copy tarballs into the container via tar pipe instead of volume mounts.
-  # Colima VZ virtiofs has unreliable mount propagation that causes ENOENT
-  # on freshly-written files. This avoids the issue entirely.
-  local cid
-  cid=$(docker create --platform "$docker_platform" \
-    -v "$RESULTS_DIR:/results" \
-    "${env_flags[@]}" \
-    node:20-slim \
-    bash -c 'apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq --no-install-recommends python3 make g++ file >/dev/null 2>&1 && bash /run-validation.sh')
-  # Copy tarballs and script into the container
-  docker cp "$STAGING/." "$cid:/tarballs/"
-  docker cp "$SCRIPT_DIR/run-validation.sh" "$cid:/run-validation.sh"
-  docker start -a "$cid" 2>&1 | tail -50 || exit_code=$?
-  docker rm "$cid" > /dev/null 2>&1 || true
+  COPYFILE_DISABLE=1 tar -cf - -C "$bundle" . | \
+    docker run --rm -i \
+      --platform "$docker_platform" \
+      -v "$RESULTS_DIR:/results" \
+      "${env_flags[@]}" \
+      node:20-slim \
+      bash -c 'mkdir -p /tarballs && cd /tarballs && tar xf - && mv run-validation.sh / && chmod +x /run-validation.sh && apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq --no-install-recommends python3 make g++ file >/dev/null 2>&1 && bash /run-validation.sh' \
+      2>&1 | tail -50 || exit_code=$?
+
+  rm -rf "$bundle"
 
   local elapsed=$(( $(date +%s) - start_s ))
 
@@ -466,13 +470,12 @@ fi
 if [[ "$TARGETS" == *linux-x64* ]]; then
   log "Target: linux-x64-gnu (Docker linux/amd64 — also covers WSL x64)"
 
-  IFS=',' read -ra PMS <<< "$PACKAGE_MANAGERS"
-  for pm in "${PMS[@]}"; do
-    run_docker_test "linux/amd64" "linux-x64-gnu" "$pm" "true"
-    if [ "$NO_FALLBACK" = "false" ]; then
-      run_docker_test "linux/amd64" "linux-x64-gnu" "$pm" "false"
-    fi
-  done
+  # Docker tests use npm only — the container has no pnpm/yarn/bun.
+  # PM coverage comes from the host target where all PMs are available.
+  run_docker_test "linux/amd64" "linux-x64-gnu" "npm" "true"
+  if [ "$NO_FALLBACK" = "false" ]; then
+    run_docker_test "linux/amd64" "linux-x64-gnu" "npm" "false"
+  fi
 fi
 
 # ─────────────────────────────────────────────────────────────────────
@@ -482,13 +485,10 @@ fi
 if [[ "$TARGETS" == *linux-arm64* ]]; then
   log "Target: linux-arm64-gnu (Docker linux/arm64)"
 
-  IFS=',' read -ra PMS <<< "$PACKAGE_MANAGERS"
-  for pm in "${PMS[@]}"; do
-    run_docker_test "linux/arm64" "linux-arm64-gnu" "$pm" "true"
-    if [ "$NO_FALLBACK" = "false" ]; then
-      run_docker_test "linux/arm64" "linux-arm64-gnu" "$pm" "false"
-    fi
-  done
+  run_docker_test "linux/arm64" "linux-arm64-gnu" "npm" "true"
+  if [ "$NO_FALLBACK" = "false" ]; then
+    run_docker_test "linux/arm64" "linux-arm64-gnu" "npm" "false"
+  fi
 fi
 
 # ─────────────────────────────────────────────────────────────────────

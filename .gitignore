@@ -126,7 +126,6 @@ CLAUDE.md.backup
 CLAUDE.local.md
 eval/repos/
 
-# Cross-target validation artifacts
-scripts/cross-target-results.json
+# Cross-target validation temp dirs
 .cross-validation-staging/
 .cross-validation-results/

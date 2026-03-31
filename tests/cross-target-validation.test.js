@@ -60,13 +60,47 @@ describe('cross-target validation (Phase 8)', () => {
     const results = JSON.parse(readFileSync(RESULTS_PATH, 'utf8'));
 
     for (const r of results) {
-      // darwin-x64 emits type: "rosetta-execution" or "arch-check"
       if (r.type === 'arch-check' || r.type === 'rosetta-execution') {
         expect(r.pass, `${r.target} ${r.type}`).toBe(true);
         continue;
       }
-      // Docker/host results have a `failed` count
       expect(r.failed, `${r.target}/${r.packageManager}/native=${r.nativePresent}`).toBe(0);
+    }
+  });
+
+  it.skipIf(skip)('full matrix is covered (targets × PMs × native/fallback)', () => {
+    const results = JSON.parse(readFileSync(RESULTS_PATH, 'utf8'));
+    const quick = !!process.env.CROSS_TARGET_QUICK;
+
+    // darwin-x64 must have a rosetta-execution entry
+    expect(results.some(r => r.target === 'darwin-x64'), 'darwin-x64 result').toBe(true);
+
+    // Docker targets: npm with native=true (and native=false unless --quick)
+    for (const target of ['linux-arm64-gnu', 'linux-x64-gnu']) {
+      const withNative = results.find(r =>
+        r.target === target && r.packageManager === 'npm' && r.nativePresent === true
+      );
+      expect(withNative, `${target}/npm/native=true`).toBeDefined();
+
+      if (!quick) {
+        const withoutNative = results.find(r =>
+          r.target === target && r.packageManager === 'npm' && r.nativePresent === false
+        );
+        expect(withoutNative, `${target}/npm/native=false`).toBeDefined();
+      }
+    }
+
+    // Host target: npm must be present (other PMs may be skipped if not installed)
+    const hostNpm = results.find(r =>
+      r.target === 'darwin-arm64' && r.packageManager === 'npm' && r.nativePresent === true
+    );
+    expect(hostNpm, 'darwin-arm64/npm/native=true').toBeDefined();
+
+    if (!quick) {
+      const hostFallback = results.find(r =>
+        r.target === 'darwin-arm64' && r.packageManager === 'npm' && r.nativePresent === false
+      );
+      expect(hostFallback, 'darwin-arm64/npm/native=false').toBeDefined();
     }
   });
 
