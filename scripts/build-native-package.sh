@@ -36,10 +36,10 @@ fi
 
 echo "=== Building for ${PLATFORM}-${ARCH}${LIBC} ==="
 
-# Build MaxSim native addon
+# Build MaxSim + NativeTokenizer addon
 echo "Building MaxSim addon..."
-cd "$REPO_ROOT/native-maxsim"
-npx napi build --release --platform
+cd "$REPO_ROOT/sweet-search-native"
+npx @napi-rs/cli build --release --platform
 ADDON_NAME="maxsim.${PLATFORM}-${ARCH}.node"
 if [ ! -f "$ADDON_NAME" ]; then
   echo "Error: Expected $ADDON_NAME not found after build"
