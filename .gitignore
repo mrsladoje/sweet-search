@@ -125,3 +125,8 @@ CLAUDE.md.backup
 # Claude Code local config
 CLAUDE.local.md
 eval/repos/
+
+# Cross-target validation artifacts
+scripts/cross-target-results.json
+.cross-validation-staging/
+.cross-validation-results/

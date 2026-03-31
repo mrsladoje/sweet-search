@@ -1,0 +1,40 @@
+# Sweet Search Cross-Target Validation Dockerfile
+#
+# Builds a single-arch image matching the Docker host (arm64 on Apple Silicon).
+# Used by scripts/cross-target-validation.sh for the linux-arm64-gnu target.
+#
+# For linux-amd64: the legacy Docker builder cannot produce cross-arch images,
+# so the orchestrator uses node:20-slim directly with inline apt-get setup.
+# See run_docker_test() in cross-target-validation.sh.
+#
+# Usage (from repo root):
+#   docker build -f scripts/Dockerfile.cross-validation -t ss-cross-val:arm64 scripts/
+#   docker run --rm \
+#     -v /path/to/tarballs:/tarballs:ro \
+#     -v /path/to/results:/results \
+#     -e PACKAGE_MANAGER=npm \
+#     -e WITH_NATIVE=true \
+#     -e SKIP_MODELS=true \
+#     -e TARGET=linux-arm64-gnu \
+#     ss-cross-val:arm64
+
+FROM node:20-slim
+
+# System deps for native module compilation (better-sqlite3, usearch fallback)
+RUN apt-get update -qq && \
+    apt-get install -y -qq --no-install-recommends \
+      python3 make g++ file curl ca-certificates unzip && \
+    rm -rf /var/lib/apt/lists/*
+
+# Enable corepack for yarn/pnpm, install bun
+RUN corepack enable && \
+    corepack prepare pnpm@latest --activate && \
+    corepack prepare yarn@stable --activate && \
+    curl -fsSL https://bun.sh/install | bash && \
+    ln -sf /root/.bun/bin/bun /usr/local/bin/bun
+
+# Copy the validation entrypoint (build context is scripts/ directory)
+COPY run-validation.sh /run-validation.sh
+RUN chmod +x /run-validation.sh
+
+ENTRYPOINT ["/run-validation.sh"]
