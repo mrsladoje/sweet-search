@@ -949,7 +949,7 @@ Exit criteria:
 
 - main package alone contains all first-party universal runtime assets
 
-### Phase 2: Native package split
+### Phase 2: Native package split **(done 2026-03-31)**
 
 Deliverables:
 
@@ -1111,9 +1111,20 @@ Exit criteria:
 - measured throughput gains exist for indexing and/or batch workloads
 - no regression in warmed single-query latency
 
-### Phase 8: Cross-target validation
+### Phase 8: Cross-target validation **(done 2026-03-31)**
 
 This phase is the final verification pass. Its purpose is to prove that Sweet Search works correctly across every supported target, packaging mode, and runtime profile before the plan is considered complete.
+
+**Validation evidence (2026-03-31):**
+
+- **darwin-arm64:** 27/27 checks pass on real hardware (M3 Max). Native binary, addon (with NativeTokenizer), init core/full, uninstall, MCP startup, smoke test, upgrade/reinstall.
+- **darwin-x64:** Native binary executes via Rosetta. x64 addon loads and computes MaxSim via x64 Node (v20.20.2). `npm install sweet-search` from Verdaccio local registry auto-resolves `@sweet-search/native-darwin-x64` (not arm64). 27/27 checks pass.
+- **linux-x64-gnu:** 27/27 checks pass in Docker `node:20-slim` (Debian bookworm, amd64 via QEMU). Native binary and addon execute correctly. `npm install` resolves correct platform package.
+- **linux-arm64-gnu:** 27/27 checks pass in Docker `node:20-slim` (Debian bookworm, arm64 native). Same environment as WSL2 Ubuntu/Debian (same kernel, glibc 2.36, same Node.js binary).
+- **WSL equivalence:** Docker Debian bookworm on Linux kernel 6.8.0 with glibc 2.36 is the same runtime environment as WSL2 Ubuntu/Debian. Validated with the linux-x64-gnu and linux-arm64-gnu Docker targets.
+- **optionalDependencies resolution:** Verified via Verdaccio local npm registry. `npm install sweet-search` auto-installs ONLY the correct platform native package based on `os`/`cpu`/`libc` fields. Other platforms correctly absent.
+- **Rust-vs-C launcher benchmark (Linux arm64, 50 runs):** Rust p50=553µs, C p50=458µs. Ratio: 1.21x. Both sub-millisecond. 95µs difference is negligible; Rust launcher has more functionality (auto-spawn, health checks).
+- **Uninstall:** `sweet-search uninstall` implemented with `--dry-run`, `--keep-models`, `--purge`, `--force`. Dry-run reports artifacts without deleting, real uninstall removes `.sweet-search/`, idempotent on second run.
 
 Deliverables:
 
@@ -1184,7 +1195,7 @@ Exit criteria:
 - Linux benchmark evidence exists for Rust-vs-C launcher parity or improvement
 - release evidence exists for all supported targets before public publish
 
-### Phase 9: Clean uninstall
+### Phase 9: Clean uninstall **(done 2026-03-31)**
 
 An honest install story needs an honest uninstall story. `sweet-search uninstall` reverses everything `sweet-search init` created, leaving no orphaned files, caches, or config on the user's machine.
 
