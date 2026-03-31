@@ -23,9 +23,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Defaults
+# Defaults — full matrix by default (all PMs, with fallback).
+# Use --quick for fast iteration (npm only, no fallback).
 SKIP_MODELS=true
-PACKAGE_MANAGERS="npm"
+PACKAGE_MANAGERS="npm,pnpm,yarn,bun"
 TARGETS="host,darwin-x64-check,linux-x64,linux-arm64"
 VERBOSE=false
 QUICK=false
@@ -53,6 +54,8 @@ done
 if [ "$PACKAGE_MANAGERS" = "all" ]; then
   PACKAGE_MANAGERS="npm,pnpm,yarn,bun"
 fi
+# --quick overrides to npm-only for fast iteration
+
 
 # Warn if --with-models is used with Docker targets — the Linux native
 # addons in packages/ don't include NativeTokenizer yet, so full-profile

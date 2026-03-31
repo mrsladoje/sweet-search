@@ -7,9 +7,9 @@
  *   CROSS_TARGET_VALIDATION=1 npm test -- --run tests/cross-target-validation.test.js
  *
  * Options via env:
- *   CROSS_TARGET_PM=npm|all        Package manager(s) to test
- *   CROSS_TARGET_TARGETS=host,...   Target subset
- *   CROSS_TARGET_QUICK=1           Quick mode (npm only, no fallback)
+ *   CROSS_TARGET_PM=npm         Override package managers (default: all)
+ *   CROSS_TARGET_TARGETS=host   Target subset
+ *   CROSS_TARGET_QUICK=1        Quick mode (npm only, no fallback)
  */
 
 import { describe, it, expect } from 'vitest';
@@ -28,7 +28,6 @@ describe('cross-target validation (Phase 8)', () => {
   it.skipIf(skip)('runner script completes without error', () => {
     const args = ['--skip-models'];
 
-    // --quick only if explicitly requested — default runs the full matrix
     if (process.env.CROSS_TARGET_QUICK) {
       args.push('--quick');
     }
@@ -57,24 +56,17 @@ describe('cross-target validation (Phase 8)', () => {
     expect(results.length).toBeGreaterThan(0);
   });
 
-  it.skipIf(skip)('all results report zero failures', () => {
+  it.skipIf(skip)('all results report passing', () => {
     const results = JSON.parse(readFileSync(RESULTS_PATH, 'utf8'));
 
     for (const r of results) {
-      if (r.type === 'arch-check') {
-        expect(r.pass, `${r.target} arch check`).toBe(true);
+      // darwin-x64 emits type: "rosetta-execution" or "arch-check"
+      if (r.type === 'arch-check' || r.type === 'rosetta-execution') {
+        expect(r.pass, `${r.target} ${r.type}`).toBe(true);
         continue;
       }
-      // Docker results have a `failed` count; host results have it too.
+      // Docker/host results have a `failed` count
       expect(r.failed, `${r.target}/${r.packageManager}/native=${r.nativePresent}`).toBe(0);
-    }
-  });
-
-  it.skipIf(skip)('native binaries are correct architecture per target', () => {
-    const results = JSON.parse(readFileSync(RESULTS_PATH, 'utf8'));
-    const archCheck = results.find(r => r.type === 'arch-check' && r.target === 'darwin-x64');
-    if (archCheck) {
-      expect(archCheck.pass).toBe(true);
     }
   });
 
@@ -82,7 +74,7 @@ describe('cross-target validation (Phase 8)', () => {
     const results = JSON.parse(readFileSync(RESULTS_PATH, 'utf8'));
 
     for (const r of results) {
-      if (r.type === 'arch-check') continue;
+      if (r.type === 'arch-check' || r.type === 'rosetta-execution') continue;
       expect(r.timing, `${r.target} timing`).toBeDefined();
       expect(r.timing.totalSeconds).toBeGreaterThan(0);
     }
