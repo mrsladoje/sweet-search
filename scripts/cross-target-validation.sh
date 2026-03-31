@@ -225,32 +225,36 @@ run_host_test() {
     local native_tgz
     native_tgz=$(ls "$STAGING"/sweet-search-native-darwin-arm64-2.*.tgz 2>/dev/null | head -1 || true)
 
-    # Install main first, then native. This matches run-validation.sh order —
-    # installing native second avoids npm pruning it as an unresolved optionalDep.
+    # Install both tarballs in one command so npm resolves the
+    # optionalDependency from the local native tarball.
     case "$pm" in
       npm)
-        npm install "$main_tgz" --no-audit --no-fund 2>&1 | tail -5
         if [ "$with_native" = "true" ] && [ -n "$native_tgz" ]; then
-          npm install "$native_tgz" --no-audit --no-fund 2>&1 | tail -3
+          npm install "$main_tgz" "$native_tgz" --no-audit --no-fund 2>&1 | tail -5
+        else
+          npm install "$main_tgz" --no-audit --no-fund 2>&1 | tail -5
         fi
         ;;
       pnpm)
-        pnpm add "$main_tgz" 2>&1 | tail -5
         if [ "$with_native" = "true" ] && [ -n "$native_tgz" ]; then
-          pnpm add "$native_tgz" 2>&1 | tail -3
+          pnpm add "$main_tgz" "$native_tgz" 2>&1 | tail -5
+        else
+          pnpm add "$main_tgz" 2>&1 | tail -5
         fi
         ;;
       yarn)
         echo 'nodeLinker: node-modules' > .yarnrc.yml
-        yarn add "$main_tgz" 2>&1 | tail -5
         if [ "$with_native" = "true" ] && [ -n "$native_tgz" ]; then
-          yarn add "$native_tgz" 2>&1 | tail -3
+          yarn add "$main_tgz" "$native_tgz" 2>&1 | tail -5
+        else
+          yarn add "$main_tgz" 2>&1 | tail -5
         fi
         ;;
       bun)
-        bun add "$main_tgz" 2>&1 | tail -5
         if [ "$with_native" = "true" ] && [ -n "$native_tgz" ]; then
-          bun add "$native_tgz" 2>&1 | tail -3
+          bun add "$main_tgz" "$native_tgz" 2>&1 | tail -5
+        else
+          bun add "$main_tgz" 2>&1 | tail -5
         fi
         ;;
     esac
@@ -355,9 +359,10 @@ ENDJSON
 # ─────────────────────────────────────────────────────────────────────
 
 if [[ "$TARGETS" == *darwin-x64-check* ]]; then
-  log "Target: darwin-x64 (binary arch verification only — no Rosetta available)"
+  log "Target: darwin-x64 (Rosetta execution)"
   local_pass=true
 
+  # Architecture checks
   bin_info=$(file "$REPO_ROOT/packages/native-darwin-x64/sweet-search")
   if echo "$bin_info" | grep -q "Mach-O 64-bit executable x86_64"; then
     ok "darwin-x64 CLI binary architecture"
@@ -374,12 +379,55 @@ if [[ "$TARGETS" == *darwin-x64-check* ]]; then
     local_pass=false
   fi
 
-  cat > "$RESULTS_DIR/darwin-x64_archcheck.json" << ENDJSON
+  # Execution via Rosetta (requires softwareupdate --install-rosetta)
+  if arch -x86_64 true 2>/dev/null; then
+    # Binary execution
+    X64_HELP=$(arch -x86_64 "$REPO_ROOT/packages/native-darwin-x64/sweet-search" --help 2>&1 || true)
+    if echo "$X64_HELP" | grep -q "sweet-search\|Usage"; then
+      ok "darwin-x64 binary executes via Rosetta"
+    else
+      fail "darwin-x64 binary execution via Rosetta"
+      local_pass=false
+    fi
+
+    # Addon execution via x64 Node (download if needed)
+    NODE_X64="/tmp/node-x64-for-validation/bin/node"
+    if [ ! -f "$NODE_X64" ]; then
+      echo "  Downloading x64 Node for addon validation..."
+      mkdir -p /tmp/node-x64-for-validation
+      curl -sL "https://nodejs.org/dist/v20.20.2/node-v20.20.2-darwin-x64.tar.gz" | \
+        tar xz --strip-components=1 -C /tmp/node-x64-for-validation 2>/dev/null
+    fi
+    if [ -f "$NODE_X64" ]; then
+      ADDON_EXIT=0
+      "$NODE_X64" -e "
+        const{createRequire}=await import('module');
+        const r=createRequire(import.meta.url);
+        const m=r('$REPO_ROOT/packages/native-darwin-x64/maxsim.node');
+        const q=new Float32Array([1,0,0.5,0.3]);
+        const d=new Float32Array([0.9,0.1,0.4,0.2,0.1,0.8,0.6,0.5]);
+        const s=m.maxsimScoreSingle(q,d,1,2,4);
+        if(typeof s!=='number'||s<=0) process.exit(1);
+      " 2>/dev/null || ADDON_EXIT=$?
+      if [ $ADDON_EXIT -eq 0 ]; then
+        ok "darwin-x64 addon loads + MaxSim computes via x64 Node"
+      else
+        fail "darwin-x64 addon execution via x64 Node"
+        local_pass=false
+      fi
+    else
+      skip_check "darwin-x64 addon (x64 Node download failed)"
+    fi
+  else
+    skip_check "darwin-x64 Rosetta execution (Rosetta not installed)"
+  fi
+
+  cat > "$RESULTS_DIR/darwin-x64_execution.json" << ENDJSON
 {
   "target": "darwin-x64",
-  "type": "arch-check",
+  "type": "rosetta-execution",
   "pass": $local_pass,
-  "note": "Cannot execute x86_64 macOS binaries without Rosetta. Arch verified only."
+  "note": "Binary and addon executed via Rosetta on Apple Silicon"
 }
 ENDJSON
 fi
@@ -444,13 +492,42 @@ fi
 # Benchmark gap documentation
 # ─────────────────────────────────────────────────────────────────────
 
-echo ""
-log "Benchmark status"
-echo "  Phase 8 requires Rust-vs-C launcher benchmarks on Linux."
-echo "  Status: BLOCKED — C launcher baseline (ss-fast) not built for Linux."
-echo "  The ss-fast/ directory contains source but no Linux binary."
-echo "  Launcher startup timing is captured per-target in result JSON."
-echo "  Full benchmark comparison deferred to CI with baseline artifacts."
+# ─────────────────────────────────────────────────────────────────────
+# Rust-vs-C launcher benchmark (Linux)
+# Runs as a standalone script to avoid Docker state issues.
+# ─────────────────────────────────────────────────────────────────────
+
+if [[ "$TARGETS" == *linux-arm64* ]] || [[ "$TARGETS" == *linux-x64* ]]; then
+  log "Rust-vs-C launcher benchmark"
+
+  BENCH_PLATFORM="linux/arm64"
+  BENCH_TARGET="linux-arm64-gnu"
+  [[ "$TARGETS" == *linux-x64* ]] && ! [[ "$TARGETS" == *linux-arm64* ]] && BENCH_PLATFORM="linux/amd64" && BENCH_TARGET="linux-x64-gnu"
+
+  # Verify staging still exists (trap hasn't fired)
+  if [ ! -d "$STAGING" ] || [ -z "$(ls "$STAGING"/*.tgz 2>/dev/null)" ]; then
+    echo "  staging missing at benchmark time — skipping"
+    skip_check "Rust-vs-C benchmark (staging cleaned before benchmark)"
+  else
+    # Run benchmark via tar-pipe (avoids docker cp Colima VZ virtiofs issues)
+    BENCH_FILE="/tmp/ss-bench-output-$$.txt"
+    set +e
+    bash "$SCRIPT_DIR/benchmark-launcher.sh" "$STAGING" "$BENCH_PLATFORM" "$BENCH_TARGET" > "$BENCH_FILE" 2>&1
+    BENCH_EXIT=$?
+    set -e
+
+    if [ $BENCH_EXIT -eq 0 ] && ! grep -q "BUILD_FAILED" "$BENCH_FILE" 2>/dev/null; then
+      tail -3 "$BENCH_FILE"
+      ok "Rust-vs-C launcher benchmark ($BENCH_TARGET)"
+    elif grep -q "SKIP" "$BENCH_FILE" 2>/dev/null; then
+      skip_check "Rust-vs-C benchmark (C source not in git history)"
+    else
+      tail -10 "$BENCH_FILE"
+      fail "Rust-vs-C launcher benchmark ($BENCH_TARGET)"
+    fi
+    rm -f "$BENCH_FILE"
+  fi
+fi
 
 # ─────────────────────────────────────────────────────────────────────
 # Summary

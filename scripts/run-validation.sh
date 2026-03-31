@@ -112,40 +112,42 @@ if [ "$WITH_NATIVE" = "true" ]; then
   fi
 fi
 
-# Install main package first, then native package second.
-# npm prunes optionalDependencies it can't resolve from registry when
-# installing from a local tarball. Installing native AFTER main avoids
-# the prune — it's added as a separate explicit install.
+# Install both tarballs in one command so npm resolves the optionalDependency
+# from the local native tarball instead of trying the public registry.
 case "$PM" in
   npm)
-    npm install "$MAIN_TGZ" --no-audit --no-fund 2>&1 | tail -5
     if [ "$WITH_NATIVE" = "true" ] && [ -n "${NATIVE_TGZ:-}" ]; then
-      npm install "$NATIVE_TGZ" --no-audit --no-fund 2>&1 | tail -3
+      npm install "$MAIN_TGZ" "$NATIVE_TGZ" --no-audit --no-fund 2>&1 | tail -5
+    else
+      npm install "$MAIN_TGZ" --no-audit --no-fund 2>&1 | tail -5
     fi
     npm rebuild better-sqlite3 2>&1 | tail -3
     ;;
   pnpm)
     pnpm install 2>/dev/null || true
-    pnpm add "$MAIN_TGZ" 2>&1 | tail -5
     if [ "$WITH_NATIVE" = "true" ] && [ -n "${NATIVE_TGZ:-}" ]; then
-      pnpm add "$NATIVE_TGZ" 2>&1 | tail -3
+      pnpm add "$MAIN_TGZ" "$NATIVE_TGZ" 2>&1 | tail -5
+    else
+      pnpm add "$MAIN_TGZ" 2>&1 | tail -5
     fi
     pnpm rebuild better-sqlite3 2>&1 | tail -3
     ;;
   yarn)
     echo 'nodeLinker: node-modules' > .yarnrc.yml
     yarn install 2>/dev/null || true
-    yarn add "$MAIN_TGZ" 2>&1 | tail -5
     if [ "$WITH_NATIVE" = "true" ] && [ -n "${NATIVE_TGZ:-}" ]; then
-      yarn add "$NATIVE_TGZ" 2>&1 | tail -3
+      yarn add "$MAIN_TGZ" "$NATIVE_TGZ" 2>&1 | tail -5
+    else
+      yarn add "$MAIN_TGZ" 2>&1 | tail -5
     fi
     npm rebuild better-sqlite3 2>&1 | tail -3
     ;;
   bun)
     bun install 2>/dev/null || true
-    bun add "$MAIN_TGZ" 2>&1 | tail -5
     if [ "$WITH_NATIVE" = "true" ] && [ -n "${NATIVE_TGZ:-}" ]; then
-      bun add "$NATIVE_TGZ" 2>&1 | tail -3
+      bun add "$MAIN_TGZ" "$NATIVE_TGZ" 2>&1 | tail -5
+    else
+      bun add "$MAIN_TGZ" 2>&1 | tail -5
     fi
     npm rebuild better-sqlite3 2>&1 | tail -3
     ;;
@@ -165,11 +167,9 @@ if [ ! -d "$SS_PKG" ]; then
 fi
 
 # Verify native package is installed and has correct platform targeting fields.
-# NOTE: In development, optionalDependencies is empty because the native packages
-# aren't published yet. At publish time, the CI release workflow populates
-# optionalDependencies before npm publish. This check validates that the native
-# package's os/cpu/libc fields are correct — which is what npm uses to decide
-# whether to install it on a given platform.
+# The main package declares @sweet-search/native-* as optionalDependencies.
+# When published to npm, npm auto-resolves the correct platform package.
+# For local tarball testing, the native package is installed explicitly.
 NATIVE_PKG_DIR=""
 if [ "$WITH_NATIVE" = "true" ]; then
   NATIVE_PKG_DIR="$WORK_DIR/node_modules/@sweet-search/native-${TARGET}"
