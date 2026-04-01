@@ -1,4 +1,4 @@
-import { QueryRouter } from '../core/query-router.js';
+import { QueryRouter } from '../core/query/query-router.js';
 
 const router = new QueryRouter();
 

@@ -269,7 +269,7 @@ describe('MarkdownChunker', () => {
       const docChunk = docChunks[0];
 
       // Parse a code file with ASTChunker to get reference project tag
-      const { ASTChunker } = await import('../../ast-chunker.js');
+      const { ASTChunker } = await import('../../core/indexing/ast-chunker.js');
       const astChunker = new ASTChunker({ projectRoot: '/test' });
       const jsContent = 'function foo() { return true; }\n\nfunction bar() { return false; }';
       const astChunks = await astChunker.parseFile('/test/docs/helper.js', jsContent);
@@ -682,7 +682,7 @@ describe('DocumentChunker', () => {
 
 describe('ASTChunker integration', () => {
   it('dispatches markdown files to DocumentChunker', async () => {
-    const { ASTChunker } = await import('../../ast-chunker.js');
+    const { ASTChunker } = await import('../../core/indexing/ast-chunker.js');
     const chunker = new ASTChunker({ projectRoot: '/test' });
 
     const md = [
@@ -704,7 +704,7 @@ describe('ASTChunker integration', () => {
   });
 
   it('dispatches text files to DocumentChunker', async () => {
-    const { ASTChunker } = await import('../../ast-chunker.js');
+    const { ASTChunker } = await import('../../core/indexing/ast-chunker.js');
     const chunker = new ASTChunker({ projectRoot: '/test' });
 
     const txt = 'A plain text document with enough content to be indexed and chunked properly.\n\nSecond paragraph.';
@@ -715,7 +715,7 @@ describe('ASTChunker integration', () => {
   });
 
   it('dispatches RST files with proper header detection', async () => {
-    const { ASTChunker } = await import('../../ast-chunker.js');
+    const { ASTChunker } = await import('../../core/indexing/ast-chunker.js');
     const chunker = new ASTChunker({ projectRoot: '/test' });
 
     const rst = [
@@ -732,7 +732,7 @@ describe('ASTChunker integration', () => {
   });
 
   it('still routes code files to AST chunker', async () => {
-    const { ASTChunker } = await import('../../ast-chunker.js');
+    const { ASTChunker } = await import('../../core/indexing/ast-chunker.js');
     const chunker = new ASTChunker({ projectRoot: '/test' });
 
     const js = 'function hello() {\n  console.log("hello");\n  return true;\n}';

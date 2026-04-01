@@ -34,7 +34,7 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
   console.log(`\n  Indexing corpus at ${corpusDir} (mode: ${indexMode})...`);
   const start = Date.now();
 
-  const indexer = path.join(projectRoot, 'core', 'index-codebase-v21.js');
+  const indexer = path.join(projectRoot, 'core', 'indexing', 'index-codebase-v21.js');
   const indexEnv = {
     ...process.env,
     SWEET_SEARCH_PROJECT_ROOT: corpusDir,
@@ -125,7 +125,7 @@ export async function initSearch(corpusDir, projectRoot, options = {}) {
   }
 
   const dataDir = path.join(corpusDir, '.sweet-search');
-  const { SweetSearch } = await import(path.join(projectRoot, 'core', 'sweet-search.js'));
+  const { SweetSearch } = await import(path.join(projectRoot, 'core', 'search', 'sweet-search.js'));
 
   const search = new SweetSearch({
     graphDbPath: path.join(dataDir, 'code-graph.db'),

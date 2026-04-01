@@ -3,7 +3,7 @@
  * Diagnostic: Verify FlashRank is being skipped due to early exit
  */
 
-import { SweetSearch } from '../core/sweet-search.js';
+import { SweetSearch } from '../core/search/sweet-search.js';
 
 async function diagnose() {
   const search = new SweetSearch({ verbose: true });

@@ -51,7 +51,7 @@ async function extractEntities() {
   }
 
   const db = new Database(DB_PATHS.codeGraph, { readonly: true });
-  const { applyReadPragmas } = await import('../core/db-utils.js');
+  const { applyReadPragmas } = await import('../core/infrastructure/db-utils.js');
   applyReadPragmas(db);
 
   const entities = db.prepare(`

@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { ASTChunker } from '../../ast-chunker.js';
+import { ASTChunker } from '../../core/indexing/ast-chunker.js';
 
 const chunker = new ASTChunker({ projectRoot: '/test', useTreeSitter: false });
 

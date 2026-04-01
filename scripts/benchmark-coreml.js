@@ -19,7 +19,7 @@
 
 import { performance } from 'node:perf_hooks';
 import os from 'os';
-import { _resetCoreMLCache, isAppleSilicon, isCoreMLProviderAvailable } from '../core/coreml-provider.js';
+import { _resetCoreMLCache, isAppleSilicon, isCoreMLProviderAvailable } from '../core/infrastructure/coreml-provider.js';
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing
@@ -94,7 +94,7 @@ function fmtMs(ms) {
 // ---------------------------------------------------------------------------
 
 async function measureEmbedding(iterations, warmupCount) {
-  const { getLocalPipeline, unloadLocalModel, callLocalModel } = await import('../core/embedding-local-model.js');
+  const { getLocalPipeline, unloadLocalModel, callLocalModel } = await import('../core/embedding/embedding-local-model.js');
 
   await getLocalPipeline();
 
@@ -121,7 +121,7 @@ async function measureEmbedding(iterations, warmupCount) {
 // ---------------------------------------------------------------------------
 
 async function measureLateInteraction(iterations, warmupCount) {
-  const { getLateInteractionPipeline, unloadLateInteractionModel, encodeQuery } = await import('../core/late-interaction-model.js');
+  const { getLateInteractionPipeline, unloadLateInteractionModel, encodeQuery } = await import('../core/ranking/late-interaction-model.js');
 
   const pipeline = await getLateInteractionPipeline();
   if (!pipeline) {

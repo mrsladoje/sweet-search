@@ -10,13 +10,13 @@
  *   sweet-search init [--profile <core|full>] [--verify-deep] [--force] [--verbose]
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { getModelEntry, getModelsForProfile, MODEL_REGISTRY } from '../core/model-registry.js';
-import { fetchModel, getModelCacheDir } from '../core/model-fetcher.js';
-import { getPlatformInfo, resolveNativeAddon, resolveNativeBinary } from '../core/native-resolver.js';
+import { getModelEntry, getModelsForProfile, MODEL_REGISTRY } from '../core/infrastructure/model-registry.js';
+import { fetchModel, getModelCacheDir } from '../core/infrastructure/model-fetcher.js';
+import { getPlatformInfo, resolveNativeAddon, resolveNativeBinary } from '../core/infrastructure/native-resolver.js';
 import { verifyRuntime, getMaxsimTier, getRouterType } from './verify-runtime.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -405,7 +405,23 @@ export async function runInit(args) {
     process.exit(1);
   }
 
-  // 10. Print report
+  // 10. Install index-maintainer daemon hook
+  try {
+    const hookDir = join(projectRoot, '.claude', 'hooks');
+    const hookDest = join(hookDir, 'index-maintainer.mjs');
+    const hookSrc = join(PACKAGE_ROOT, 'core', 'indexing', 'index-maintainer.mjs');
+    if (!existsSync(hookDest)) {
+      mkdirSync(hookDir, { recursive: true });
+      copyFileSync(hookSrc, hookDest);
+      process.stderr.write(`[init] Installed index-maintainer daemon to ${hookDir}\n`);
+    } else {
+      process.stderr.write(`[init] Index-maintainer daemon already installed\n`);
+    }
+  } catch (e) {
+    process.stderr.write(`[init] Warning: Could not install index-maintainer: ${e.message}\n`);
+  }
+
+  // 11. Print report
   printReport({
     profile,
     maxsimTier,

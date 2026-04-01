@@ -133,7 +133,7 @@ export async function handleSearch({ query, k, mode, structural }, { getSearcher
  * @param {{ PROJECT_ROOT: string, coreDir: string }} deps
  */
 export async function handleIndex({ mode }, { PROJECT_ROOT, coreDir }) {
-  const indexerPath = path.join(coreDir, 'index-codebase-v21.js');
+  const indexerPath = path.join(coreDir, 'indexing', 'index-codebase-v21.js');
   const args = ['--quiet'];
   if (mode === 'full') args.push('--full');
 
@@ -247,7 +247,7 @@ export async function checkHealth({ getConfig, PROJECT_ROOT }) {
         if (!_healthDb) {
           const Database = (await import('better-sqlite3')).default;
           _healthDb = new Database(config.DB_PATHS.codeGraph, { readonly: true, timeout: 5000 });
-          const { applyReadPragmas } = await import('../core/db-utils.js');
+          const { applyReadPragmas } = await import('../core/infrastructure/db-utils.js');
           applyReadPragmas(_healthDb);
         }
         const count = _healthDb.prepare('SELECT count(*) as cnt FROM entities').get();

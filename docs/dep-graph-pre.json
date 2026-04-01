@@ -1,0 +1,314 @@
+{
+  "artifact-builder.js": [
+    "./config.js",
+    "./binary-hnsw-index.js",
+    "./embedding-service.js",
+    "./float-vector-store.js"
+  ],
+  "binary-hnsw-index.js": [
+    "./config.js",
+    "./embedding-service.js",
+    "./binary-heap.js"
+  ],
+  "community-detector.js": [
+    "./config.js",
+    "./db-utils.js",
+    "./leiden-algorithm.js",
+    "./leiden-algorithm.js"
+  ],
+  "document-chunker.js": [
+    "./chunking/markdown-chunker.js",
+    "./chunking/plaintext-chunker.js",
+    "./chunking/chunk-builder.js"
+  ],
+  "embedding-cache.js": [
+    "./config.js",
+    "./model-fetcher.js",
+    "./ort-pipeline.js",
+    "./embedding-local-model.js",
+    "./embedding-telemetry.js"
+  ],
+  "embedding-local-model.js": [
+    "./config.js",
+    "./model-fetcher.js",
+    "./model-registry.js",
+    "./coreml-provider.js",
+    "./native-tokenizer.js",
+    "./ort-pipeline.js"
+  ],
+  "embedding-remote.js": [
+    "./config.js"
+  ],
+  "embedding-service.js": [
+    "./config.js",
+    "./simd-distance.js",
+    "./embedding-remote.js",
+    "./embedding-local-model.js",
+    "./embedding-cache.js"
+  ],
+  "embedding-telemetry.js": [
+    "./config.js"
+  ],
+  "flashrank.js": [
+    "./config.js",
+    "./local-reranker.js",
+    "./onnx-mutex.js",
+    "./onnx-session-utils.js",
+    "./coreml-provider.js",
+    "./model-fetcher.js",
+    "./native-tokenizer.js",
+    "./ort-pipeline.js"
+  ],
+  "float-vector-store.js": [
+    "./simd-distance.js"
+  ],
+  "graph-extractor.js": [
+    "./config.js",
+    "./language-patterns.js",
+    "./tree-sitter-provider.js"
+  ],
+  "graph-search.js": [
+    "./config.js",
+    "./db-utils.js",
+    "./intent-detector.js",
+    "./mmr.js",
+    "./constants.js"
+  ],
+  "hcgs-generator.js": [
+    "./config.js",
+    "./embedding-service.js",
+    "./llm-provider.js",
+    "./summary-manager.js"
+  ],
+  "hnsw-index.js": [
+    "./config.js"
+  ],
+  "incremental-tracker.js": [
+    "./config.js"
+  ],
+  "index-codebase-v21.js": [
+    "./config.js",
+    "./relationship-resolver.js",
+    "./hnsw-index.js",
+    "./incremental-tracker.js",
+    "./artifact-builder.js",
+    "./indexer-utils.js",
+    "./indexer-build.js",
+    "./indexer-ann.js",
+    "./indexer-phases.js"
+  ],
+  "indexer-ann.js": [
+    "./config.js",
+    "./hnsw-index.js",
+    "./late-interaction-index.js",
+    "./embedding-service.js",
+    "./artifact-builder.js",
+    "./indexer-utils.js"
+  ],
+  "indexer-build.js": [
+    "./config.js",
+    "./graph-extractor.js",
+    "./relationship-resolver.js",
+    "./embedding-service.js",
+    "./indexer-utils.js"
+  ],
+  "indexer-phases.js": [
+    "./config.js",
+    "./incremental-tracker.js",
+    "./summary-manager.js",
+    "./indexer-utils.js",
+    "./indexer-build.js",
+    "./indexer-ann.js"
+  ],
+  "indexer-utils.js": [
+    "./config.js"
+  ],
+  "language-patterns.js": [
+    "./language-patterns/maps.js",
+    "./language-patterns/registry.js"
+  ],
+  "late-interaction-index.js": [
+    "./config.js",
+    "./simd-distance.js"
+  ],
+  "late-interaction-model.js": [
+    "./config.js",
+    "./model-fetcher.js",
+    "./model-registry.js",
+    "./native-tokenizer.js"
+  ],
+  "llm-provider.js": [
+    "./config.js"
+  ],
+  "local-reranker.js": [
+    "./onnx-session-utils.js",
+    "./coreml-provider.js",
+    "./onnx-mutex.js",
+    "./model-fetcher.js",
+    "./native-tokenizer.js",
+    "./ort-pipeline.js"
+  ],
+  "model-fetcher.js": [
+    "./config.js",
+    "./model-registry.js"
+  ],
+  "native-tokenizer.js": [
+    "./native-tokenizer.js",
+    "./native-resolver.js"
+  ],
+  "onnx-mutex.js": [
+    "./onnx-mutex.js"
+  ],
+  "onnx-session-utils.js": [
+    "./coreml-provider.js"
+  ],
+  "ort-pipeline.js": [
+    "./native-tokenizer.js"
+  ],
+  "quality-scorer.js": [
+    "./config.js"
+  ],
+  "query-router-catboost.js": [
+    "../training/output/v46_router_d4.js",
+    "../training/features/extractor.js"
+  ],
+  "relationship-resolver.js": [
+    "./project-detector.js"
+  ],
+  "repo-map.js": [
+    "./config.js",
+    "./db-utils.js"
+  ],
+  "search-boost.js": [
+    "./constants.js"
+  ],
+  "search-cli.js": [
+    "./config.js",
+    "./embedding-service.js",
+    "./search-format.js"
+  ],
+  "search-hybrid.js": [
+    "./query-router.js",
+    "./mmr.js"
+  ],
+  "search-pattern.js": [
+    "./config.js"
+  ],
+  "search-postprocess.js": [
+    "./config.js",
+    "./graph-expansion.js",
+    "./embedding-service.js",
+    "./quality-scorer.js",
+    "./intent-router.js",
+    "./embedding-cache.js"
+  ],
+  "search-semantic.js": [
+    "./embedding-service.js",
+    "./config.js"
+  ],
+  "search-server.js": [
+    "./config.js",
+    "./embedding-cache.js"
+  ],
+  "session-warmup.js": [
+    "./db-utils.js",
+    "./config.js",
+    "./vocab-constants.js"
+  ],
+  "simd-distance.js": [
+    "./native-resolver.js"
+  ],
+  "start-server.js": [
+    "./search-server.js"
+  ],
+  "summary-manager.js": [
+    "./config.js"
+  ],
+  "sweet-search.js": [
+    "./config.js",
+    "./local-reranker.js",
+    "./query-router.js",
+    "./graph-search.js",
+    "./constants.js",
+    "./hnsw-index.js",
+    "./binary-hnsw-index.js",
+    "./flashrank.js",
+    "./late-interaction-index.js",
+    "./embedding-service.js",
+    "./float-vector-store.js",
+    "./embedding-cache.js",
+    "./db-utils.js",
+    "../translation/index.js",
+    "./graph-expansion.js",
+    "./mmr.js",
+    "./quality-scorer.js",
+    "./repo-map.js",
+    "./intent-router.js",
+    "./search-fusion.js",
+    "./search-boost.js",
+    "./search-format.js",
+    "./search-semantic.js",
+    "./search-hybrid.js",
+    "./search-postprocess.js",
+    "./search-pattern.js",
+    "./search-fusion.js"
+  ],
+  "tree-sitter-provider.js": [
+    "./core/tree-sitter-provider.js"
+  ],
+  "vocab-constants.js": [
+    "./config.js"
+  ],
+  "vocab-miner-extractors.js": [
+    "./vocab-miner-utils.js"
+  ],
+  "vocab-miner-nl.js": [
+    "./config.js",
+    "./vocab-miner-utils.js"
+  ],
+  "vocab-miner.js": [
+    "./config.js",
+    "./db-utils.js",
+    "./repo-map.js",
+    "./vocab-miner-utils.js",
+    "./vocab-miner-extractors.js",
+    "./vocab-miner-nl.js",
+    "./vocab-miner-utils.js",
+    "./vocab-miner-extractors.js",
+    "./vocab-miner-nl.js"
+  ],
+  "vocab-warmer.js": [
+    "./db-utils.js",
+    "./config.js",
+    "./embedding-service.js",
+    "./vocab-constants.js"
+  ],
+  "vocab-warmup-orchestrator.js": [
+    "./config.js",
+    "./db-utils.js",
+    "./community-detector.js",
+    "./vocab-miner.js",
+    "./vocab-ranker.js",
+    "./vocab-warmer.js",
+    "./vocab-constants.js"
+  ],
+  "vocabulary-utils.js": [
+    "./config.js"
+  ],
+  "chunking/chunk-builder.js": [
+    "../project-detector.js"
+  ],
+  "chunking/markdown-chunker.js": [
+    "./chunk-builder.js"
+  ],
+  "chunking/plaintext-chunker.js": [
+    "./chunk-builder.js"
+  ],
+  "language-patterns/registry.js": [
+    "./registry-core.js",
+    "./registry-object-oriented.js",
+    "./registry-web-style.js",
+    "./registry-data-query.js",
+    "./registry-tooling.js"
+  ]
+}

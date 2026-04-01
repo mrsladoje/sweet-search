@@ -13,8 +13,8 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 
-import SweetSearch from '../../core/sweet-search.js';
-import { encodeQuery } from '../../core/late-interaction-model.js';
+import SweetSearch from '../../core/search/sweet-search.js';
+import { encodeQuery } from '../../core/ranking/late-interaction-model.js';
 import { computeMetrics } from '../lib/metrics.js';
 import { evaluatePatternQuery, getRelevantChunkIds, classifyFailure, computeDiagnostics } from '../lib/pattern-evaluator.js';
 

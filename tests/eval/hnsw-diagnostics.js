@@ -16,9 +16,9 @@
 
 import { existsSync } from 'fs';
 import fs from 'fs/promises';
-import { BinaryHNSWIndex } from '../../core/binary-hnsw-index.js';
+import { BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
 import { DB_PATHS, BINARY_HNSW_CONFIG, EMBEDDING_CONFIG } from '../../core/config.js';
-import { hammingDistance } from '../../core/embedding-service.js';
+import { hammingDistance } from '../../core/embedding/embedding-service.js';
 
 // =============================================================================
 // 1. DIMENSION DISTRIBUTION PROFILER (Float + Binary)
@@ -194,7 +194,7 @@ async function parameterSweep(codebaseDbPath) {
     process.exit(1);
   }
 
-  const { buildFromCodebaseDb } = await import('../../core/artifact-builder.js');
+  const { buildFromCodebaseDb } = await import('../../core/indexing/artifact-builder.js');
 
   // Parameter grid
   const sweeps = {

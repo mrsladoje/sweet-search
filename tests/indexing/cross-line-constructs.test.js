@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ASTChunker } from '../../ast-chunker.js';
+import { ASTChunker } from '../../core/indexing/ast-chunker.js';
 
 describe('Cross-line construct handling', () => {
   const chunker = new ASTChunker({ projectRoot: '/test', useTreeSitter: false });

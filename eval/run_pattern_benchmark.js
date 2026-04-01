@@ -152,7 +152,7 @@ async function main() {
   const indexPath = path.join(PROJECT_ROOT, '.sweet-search');
   if (!existsSync(indexPath)) {
     console.error('\n  No .sweet-search/ index found. Run indexing first:');
-    console.error('    node core/index-codebase-v21.js');
+    console.error('    node core/indexing/index-codebase-v21.js');
     process.exit(2);
   }
 
@@ -162,7 +162,7 @@ async function main() {
   // Set project root so search operates on the correct codebase
   process.env.SWEET_SEARCH_PROJECT_ROOT = PROJECT_ROOT;
 
-  const { default: SweetSearch } = await import(path.join(PROJECT_ROOT, 'core', 'sweet-search.js'));
+  const { default: SweetSearch } = await import(path.join(PROJECT_ROOT, 'core', 'search', 'sweet-search.js'));
   const search = new SweetSearch({ verbose: opts.verbose });
   await search.init();
 

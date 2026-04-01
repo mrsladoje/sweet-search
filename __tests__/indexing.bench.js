@@ -20,16 +20,16 @@ import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import Database from 'better-sqlite3';
 
-import { GraphExtractor, createGraphSchema, insertGraph } from '../core/graph-extractor.js';
-import { buildSummaryPrompt, getTokenLimitForType, HIERARCHY_LEVELS } from '../core/hcgs-generator.js';
-import { QueryRouter } from '../core/query-router.js';
+import { GraphExtractor, createGraphSchema, insertGraph } from '../core/graph/graph-extractor.js';
+import { buildSummaryPrompt, getTokenLimitForType, HIERARCHY_LEVELS } from '../core/graph/hcgs-generator.js';
+import { QueryRouter } from '../core/query/query-router.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Paths
 const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
-const INDEXER_PATH = join(__dirname, '..', 'core', 'index-codebase-v21.js');
+const INDEXER_PATH = join(__dirname, '..', 'core', 'indexing', 'index-codebase-v21.js');
 
 // =============================================================================
 // Test Fixtures

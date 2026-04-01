@@ -8,10 +8,10 @@
  *   node scripts/verify-model-registry.js --update   # Update registry with computed checksums
  *
  * Fetches file metadata from HuggingFace API and compares against
- * the static entries in core/model-registry.js.
+ * the static entries in core/infrastructure/model-registry.js.
  */
 
-import { MODEL_REGISTRY } from '../core/model-registry.js';
+import { MODEL_REGISTRY } from '../core/infrastructure/model-registry.js';
 
 const HF_ENDPOINT = process.env.SWEET_SEARCH_HF_ENDPOINT || 'https://huggingface.co';
 

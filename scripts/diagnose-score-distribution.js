@@ -3,7 +3,7 @@
  * Diagnose actual Int8 score distribution for proper threshold calibration
  */
 
-import { SweetSearch } from '../core/sweet-search.js';
+import { SweetSearch } from '../core/search/sweet-search.js';
 
 async function diagnose() {
   const search = new SweetSearch({ verbose: false });

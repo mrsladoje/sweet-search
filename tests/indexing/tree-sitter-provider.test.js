@@ -15,7 +15,7 @@ import {
   BOUNDARY_TYPES,
   NODE_TYPE_MAP,
 } from '../../core/infrastructure/tree-sitter-provider.js';
-import { ASTChunker } from '../../ast-chunker.js';
+import { ASTChunker } from '../../core/indexing/ast-chunker.js';
 
 // =============================================================================
 // Helper: create mock AST node

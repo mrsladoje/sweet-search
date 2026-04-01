@@ -81,7 +81,7 @@ async function getSearcher() {
   if (_searcher) return _searcher;
 
   const { getWarmSearcher } = await import(
-    path.join(__dirname, '..', 'core', 'sweet-search.js')
+    path.join(__dirname, '..', 'core', 'search', 'sweet-search.js')
   );
 
   _searcher = await getWarmSearcher({ verbose: false });

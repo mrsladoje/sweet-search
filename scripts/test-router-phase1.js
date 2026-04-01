@@ -12,7 +12,7 @@
  * Target: >90% accuracy (27/30 tests)
  */
 
-import { QueryRouter } from '../core/query-router.js';
+import { QueryRouter } from '../core/query/query-router.js';
 
 const router = new QueryRouter();
 

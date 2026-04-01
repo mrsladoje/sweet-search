@@ -27,7 +27,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const sweetSearchPath = path.join(__dirname, '..', '..', 'core', 'sweet-search.js');
+const sweetSearchPath = path.join(__dirname, '..', '..', 'core', 'search', 'sweet-search.js');
 
 let _SweetSearch = null;
 

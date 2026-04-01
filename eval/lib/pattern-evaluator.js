@@ -6,7 +6,7 @@
  * and checks results against gold chunk IDs.
  */
 
-import { runRipgrep, findChunkForLine } from '../../core/search-pattern.js';
+import { runRipgrep, findChunkForLine } from '../../core/search/search-pattern.js';
 import { PROJECT_ROOT } from '../../core/config.js';
 
 /**

@@ -52,7 +52,7 @@ const queries = QUERIES.slice(0, Math.min(numQueries, QUERIES.length));
 function resolveNativeBinary() {
   try {
     const result = execFileSync(process.execPath, ['-e', `
-      import { resolveNativeBinary } from './core/native-resolver.js';
+      import { resolveNativeBinary } from './core/infrastructure/native-resolver.js';
       const p = resolveNativeBinary();
       process.stdout.write(p || '');
     `], { encoding: 'utf8', cwd: ROOT, timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
@@ -125,8 +125,8 @@ async function measureCliDispatch(nativeBin) {
 // ---------------------------------------------------------------------------
 
 async function measurePipelineInternals() {
-  const { default: SweetSearch } = await import(join(ROOT, 'core', 'sweet-search.js'));
-  const { getLateInteractionTimings } = await import(join(ROOT, 'core', 'late-interaction-model.js'));
+  const { default: SweetSearch } = await import(join(ROOT, 'core', 'search', 'sweet-search.js'));
+  const { getLateInteractionTimings } = await import(join(ROOT, 'core', 'ranking', 'late-interaction-model.js'));
 
   const searcher = new SweetSearch({ verbose: false });
   await searcher.init();
