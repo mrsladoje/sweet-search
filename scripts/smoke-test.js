@@ -114,7 +114,7 @@ for (const [key, relPath] of Object.entries(manifest.runtimeAssets)) {
 
 console.log('\n--- Native Resolution ---');
 
-const nativeResolver = await import(join(PACKAGE_ROOT, 'core', 'native-resolver.js'));
+const nativeResolver = await import(join(PACKAGE_ROOT, 'core', 'infrastructure', 'native-resolver.js'));
 const { getPlatformInfo } = nativeResolver;
 
 const platformInfo = getPlatformInfo();
