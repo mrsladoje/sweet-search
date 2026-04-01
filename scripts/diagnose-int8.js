@@ -3,8 +3,8 @@
  * Diagnostic: Check Int8 embedding computation
  */
 
-import { getEmbedding, truncateForHNSW, floatToInt8, int8CosineSimilarity } from '../core/embedding-service.js';
-import { BinaryHNSWIndex } from '../core/binary-hnsw-index.js';
+import { getEmbedding, truncateForHNSW, floatToInt8, int8CosineSimilarity } from '../core/embedding/embedding-service.js';
+import { BinaryHNSWIndex } from '../core/vector-store/binary-hnsw-index.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 

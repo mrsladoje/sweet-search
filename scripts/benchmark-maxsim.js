@@ -17,7 +17,7 @@
  */
 
 import { performance } from 'perf_hooks';
-import { LateInteractionIndex } from '../core/late-interaction-index.js';
+import { LateInteractionIndex } from '../core/ranking/late-interaction-index.js';
 
 // =============================================================================
 // CONFIG

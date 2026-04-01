@@ -289,7 +289,7 @@ await checkAsync('index + search (JS search path)', async () => {
   );
 
   // Step 1: Index the temp project
-  execFileSync(NODE, [join(PACKAGE_ROOT, 'core', 'index-codebase-v21.js'), '--project-root', searchDir], {
+  execFileSync(NODE, [join(PACKAGE_ROOT, 'core', 'indexing', 'index-codebase-v21.js'), '--project-root', searchDir], {
     encoding: 'utf8',
     timeout: 60000,
     env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: searchDir },
@@ -305,7 +305,7 @@ await checkAsync('index + search (JS search path)', async () => {
   const resultFile = join(searchDir, '.sweet-search', 'smoke-result.json');
   execFileSync(NODE, ['-e', `
     import { writeFileSync } from 'fs';
-    const { runCli } = await import(${JSON.stringify(join(PACKAGE_ROOT, 'core', 'search-cli.js'))});
+    const { runCli } = await import(${JSON.stringify(join(PACKAGE_ROOT, 'core', 'search', 'search-cli.js'))});
     // Capture stdout to extract JSON
     const chunks = [];
     const origWrite = process.stdout.write;

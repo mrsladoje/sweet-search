@@ -28,6 +28,10 @@ Use the Tavily MCP server (`mcp__tavily__tavily_search`) for web search instead 
 ## Project Architecture
 
 - Follow Domain-Driven Design with bounded contexts
+- Treat DDD as mandatory for all new or modified code, especially database-facing code
+- Put domain logic in the owning bounded context; keep SQL, persistence, and external I/O behind repositories/adapters
+- Do not bypass domain boundaries with direct cross-context database access or ad hoc queries from scripts, handlers, or entrypoints
+- When changing persistence, preserve the existing dependency direction: infrastructure implements storage, domains own behavior
 - Keep files under 500 lines
 - Use typed interfaces for all public APIs
 - Prefer TDD London School (mock-first) for new code

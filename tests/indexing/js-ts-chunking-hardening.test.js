@@ -10,7 +10,7 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { LANGUAGES } from '../../core/infrastructure/language-patterns/registry.js';
-import { ASTChunker } from '../../ast-chunker.js';
+import { ASTChunker } from '../../core/indexing/ast-chunker.js';
 import GraphExtractor from '../../core/graph/graph-extractor.js';
 import {
   getTreeSitterProvider,

@@ -13,8 +13,8 @@ const manifest = {
   runtimeAssets: {
     wasmRouter: 'wasm-router/pkg/query_router_wasm.js',
     wasmRouterBinary: 'wasm-router/pkg/query_router_wasm_bg.wasm',
-    maxsimWasm: 'core/maxsim.wasm',
-    simdDistanceWasm: 'core/simd-distance.wasm',
+    maxsimWasm: 'core/vector-store/maxsim.wasm',
+    simdDistanceWasm: 'core/vector-store/simd-distance.wasm',
     catboostRouter: 'training/output/v45_router_d4.js',
     featureExtractor: 'training/features/extractor.js',
   },

@@ -13,124 +13,40 @@ const mockIncrementalUpdateHNSW = vi.fn();
 const mockBuildLateInteractionIndex = vi.fn();
 const mockBuildQuantizedArtifactsPhase = vi.fn();
 
-<<<<<<< Updated upstream
 vi.mock('../../core/config.js', () => ({
-  DB_PATHS: {
-    lateInteraction: lateInteractionPath,
-=======
-vi.mock('../../core/config.js', () => ({
-  DB_PATHS: {
-    lateInteraction: lateInteractionPath,
-    vocabulary: path.join(tmpRoot, 'query-vocabulary.json'),
-    codebase: path.join(tmpRoot, 'codebase.db'),
-    codeGraph: path.join(tmpRoot, 'code-graph.db'),
-    hnswIndex: path.join(tmpRoot, 'codebase-hnsw.idx'),
-    binaryHnswIndex: path.join(tmpRoot, 'codebase-binary-hnsw.idx'),
-    translationCache: path.join(tmpRoot, 'translation-cache.json'),
->>>>>>> Stashed changes
-  },
+  DB_PATHS: { lateInteraction: lateInteractionPath, vocabulary: path.join(tmpRoot, 'qv.json'), codebase: path.join(tmpRoot, 'cb.db'), codeGraph: path.join(tmpRoot, 'cg.db'), hnswIndex: path.join(tmpRoot, 'hnsw.idx'), binaryHnswIndex: path.join(tmpRoot, 'bhnsw.idx'), translationCache: path.join(tmpRoot, 'tc.json') },
   PROJECT_ROOT: process.cwd(),
-  EMBEDDING_CONFIG: {
-    parallelLateInteraction: true,
-  },
-<<<<<<< Updated upstream
-}));
-
-vi.mock('../../core/indexer-build.js', () => ({
-  buildCodeGraph: vi.fn(),
-  buildVectorIndex: mockBuildVectorIndex,
-  chunkFiles: mockChunkFiles,
-}));
-
-vi.mock('../../core/indexer-ann.js', () => ({
-  incrementalUpdateHNSW: mockIncrementalUpdateHNSW,
-  buildHNSWIndex: mockBuildHNSWIndex,
-  buildLateInteractionIndex: mockBuildLateInteractionIndex,
-  buildQuantizedArtifactsPhase: mockBuildQuantizedArtifactsPhase,
-}));
-
-vi.mock('../../core/incremental-tracker.js', () => ({
-  getChangedFiles: vi.fn(),
-  updateState: vi.fn(),
-  getStats: vi.fn(),
-}));
-
-vi.mock('../../core/summary-manager.js', () => ({
-  backupSummaries: vi.fn(),
-  restoreSummaries: vi.fn(),
-  markForRegeneration: vi.fn(),
-=======
-  EMBEDDING_PROVIDERS: {
-    voyage: { enabled: false, priority: 1, rateLimit: { requestsPerMinute: 300, tokensPerMinute: 1000000, maxRetries: 3, retryDelay: 1000, backoffMultiplier: 2 } },
-    mistral: { enabled: false, priority: 2, rateLimit: { requestsPerMinute: 100, maxRetries: 3, retryDelay: 1000, backoffMultiplier: 2 } },
-    jina: { enabled: false, priority: 3, rateLimit: { requestsPerMinute: 500, maxRetries: 3, retryDelay: 500, backoffMultiplier: 2 } },
-    local: { enabled: true, priority: 99 },
-  },
+  EMBEDDING_CONFIG: { parallelLateInteraction: true },
+  EMBEDDING_PROVIDERS: { voyage: { enabled: false, priority: 1, rateLimit: { requestsPerMinute: 300, tokensPerMinute: 1000000, maxRetries: 3, retryDelay: 1000, backoffMultiplier: 2 } }, mistral: { enabled: false, priority: 2, rateLimit: { requestsPerMinute: 100, maxRetries: 3, retryDelay: 1000, backoffMultiplier: 2 } }, jina: { enabled: false, priority: 3, rateLimit: { requestsPerMinute: 500, maxRetries: 3, retryDelay: 500, backoffMultiplier: 2 } }, local: { enabled: true, priority: 99 } },
   LATE_INTERACTION_CONFIG: { enabled: true, model: 'lateon-code' },
   HNSW_CONFIG: { dimension: 512, M: 16, efConstruction: 200, efSearch: 100, metric: 'cosine', maxElements: 100000 },
   BINARY_HNSW_CONFIG: { dimension: 64, M: 64, efConstruction: 800, efSearch: 400, metric: 'hamming', maxElements: 500000 },
   LOGGING: { verbose: false, timing: false, debug: false },
-  setQuietMode: () => {},
-  isQuietMode: () => false,
+  setQuietMode: () => {}, isQuietMode: () => false,
 }));
 vi.mock('../../core/infrastructure/config/index.js', () => ({
-  DB_PATHS: {
-    lateInteraction: lateInteractionPath,
-    vocabulary: path.join(tmpRoot, 'query-vocabulary.json'),
-    codebase: path.join(tmpRoot, 'codebase.db'),
-    codeGraph: path.join(tmpRoot, 'code-graph.db'),
-    hnswIndex: path.join(tmpRoot, 'codebase-hnsw.idx'),
-    binaryHnswIndex: path.join(tmpRoot, 'codebase-binary-hnsw.idx'),
-    translationCache: path.join(tmpRoot, 'translation-cache.json'),
-  },
+  DB_PATHS: { lateInteraction: lateInteractionPath, vocabulary: path.join(tmpRoot, 'qv.json'), codebase: path.join(tmpRoot, 'cb.db'), codeGraph: path.join(tmpRoot, 'cg.db'), hnswIndex: path.join(tmpRoot, 'hnsw.idx'), binaryHnswIndex: path.join(tmpRoot, 'bhnsw.idx'), translationCache: path.join(tmpRoot, 'tc.json') },
   PROJECT_ROOT: process.cwd(),
-  EMBEDDING_CONFIG: {
-    parallelLateInteraction: true,
-  },
-  EMBEDDING_PROVIDERS: {
-    voyage: { enabled: false, priority: 1, rateLimit: { requestsPerMinute: 300, tokensPerMinute: 1000000, maxRetries: 3, retryDelay: 1000, backoffMultiplier: 2 } },
-    mistral: { enabled: false, priority: 2, rateLimit: { requestsPerMinute: 100, maxRetries: 3, retryDelay: 1000, backoffMultiplier: 2 } },
-    jina: { enabled: false, priority: 3, rateLimit: { requestsPerMinute: 500, maxRetries: 3, retryDelay: 500, backoffMultiplier: 2 } },
-    local: { enabled: true, priority: 99 },
-  },
+  EMBEDDING_CONFIG: { parallelLateInteraction: true },
+  EMBEDDING_PROVIDERS: { voyage: { enabled: false, priority: 1, rateLimit: { requestsPerMinute: 300, tokensPerMinute: 1000000, maxRetries: 3, retryDelay: 1000, backoffMultiplier: 2 } }, mistral: { enabled: false, priority: 2, rateLimit: { requestsPerMinute: 100, maxRetries: 3, retryDelay: 1000, backoffMultiplier: 2 } }, jina: { enabled: false, priority: 3, rateLimit: { requestsPerMinute: 500, maxRetries: 3, retryDelay: 500, backoffMultiplier: 2 } }, local: { enabled: true, priority: 99 } },
   LATE_INTERACTION_CONFIG: { enabled: true, model: 'lateon-code' },
   HNSW_CONFIG: { dimension: 512, M: 16, efConstruction: 200, efSearch: 100, metric: 'cosine', maxElements: 100000 },
   BINARY_HNSW_CONFIG: { dimension: 64, M: 64, efConstruction: 800, efSearch: 400, metric: 'hamming', maxElements: 500000 },
   LOGGING: { verbose: false, timing: false, debug: false },
-  setQuietMode: () => {},
-  isQuietMode: () => false,
+  setQuietMode: () => {}, isQuietMode: () => false,
 }));
 
-vi.mock('../../core/indexer-build.js', () => ({
-  buildCodeGraph: vi.fn(), buildVectorIndex: mockBuildVectorIndex, chunkFiles: mockChunkFiles,
-}));
-vi.mock('../../core/indexing/indexer-build.js', () => ({
-  buildCodeGraph: vi.fn(), buildVectorIndex: mockBuildVectorIndex, chunkFiles: mockChunkFiles,
-}));
+vi.mock('../../core/indexer-build.js', () => ({ buildCodeGraph: vi.fn(), buildVectorIndex: mockBuildVectorIndex, chunkFiles: mockChunkFiles }));
+vi.mock('../../core/indexing/indexer-build.js', () => ({ buildCodeGraph: vi.fn(), buildVectorIndex: mockBuildVectorIndex, chunkFiles: mockChunkFiles }));
 
-vi.mock('../../core/indexer-ann.js', () => ({
-  incrementalUpdateHNSW: mockIncrementalUpdateHNSW, buildHNSWIndex: mockBuildHNSWIndex,
-  buildLateInteractionIndex: mockBuildLateInteractionIndex, buildQuantizedArtifactsPhase: mockBuildQuantizedArtifactsPhase,
-}));
-vi.mock('../../core/indexing/indexer-ann.js', () => ({
-  incrementalUpdateHNSW: mockIncrementalUpdateHNSW, buildHNSWIndex: mockBuildHNSWIndex,
-  buildLateInteractionIndex: mockBuildLateInteractionIndex, buildQuantizedArtifactsPhase: mockBuildQuantizedArtifactsPhase,
-}));
+vi.mock('../../core/indexer-ann.js', () => ({ incrementalUpdateHNSW: mockIncrementalUpdateHNSW, buildHNSWIndex: mockBuildHNSWIndex, buildLateInteractionIndex: mockBuildLateInteractionIndex, buildQuantizedArtifactsPhase: mockBuildQuantizedArtifactsPhase }));
+vi.mock('../../core/indexing/indexer-ann.js', () => ({ incrementalUpdateHNSW: mockIncrementalUpdateHNSW, buildHNSWIndex: mockBuildHNSWIndex, buildLateInteractionIndex: mockBuildLateInteractionIndex, buildQuantizedArtifactsPhase: mockBuildQuantizedArtifactsPhase }));
 
-vi.mock('../../core/incremental-tracker.js', () => ({
-  getChangedFiles: vi.fn(), updateState: vi.fn(), getStats: vi.fn(),
-}));
-vi.mock('../../core/indexing/incremental-tracker.js', () => ({
-  getChangedFiles: vi.fn(), updateState: vi.fn(), getStats: vi.fn(),
-}));
+vi.mock('../../core/incremental-tracker.js', () => ({ getChangedFiles: vi.fn(), updateState: vi.fn(), getStats: vi.fn() }));
+vi.mock('../../core/indexing/incremental-tracker.js', () => ({ getChangedFiles: vi.fn(), updateState: vi.fn(), getStats: vi.fn() }));
 
-vi.mock('../../core/summary-manager.js', () => ({
-  backupSummaries: vi.fn(), restoreSummaries: vi.fn(), markForRegeneration: vi.fn(),
-}));
-vi.mock('../../core/graph/summary-manager.js', () => ({
-  backupSummaries: vi.fn(), restoreSummaries: vi.fn(), markForRegeneration: vi.fn(),
->>>>>>> Stashed changes
-}));
+vi.mock('../../core/summary-manager.js', () => ({ backupSummaries: vi.fn(), restoreSummaries: vi.fn(), markForRegeneration: vi.fn() }));
+vi.mock('../../core/graph/summary-manager.js', () => ({ backupSummaries: vi.fn(), restoreSummaries: vi.fn(), markForRegeneration: vi.fn() }));
 
 describe('buildVectorsAndArtifactsPhase', () => {
   beforeEach(async () => {
@@ -166,11 +82,7 @@ describe('buildVectorsAndArtifactsPhase', () => {
   it('does not promote staged LI index when vector build fails', async () => {
     mockBuildVectorIndex.mockRejectedValueOnce(new Error('vector boom'));
 
-<<<<<<< Updated upstream
-    const { buildVectorsAndArtifactsPhase } = await import('../../core/indexer-phases.js');
-=======
     const { buildVectorsAndArtifactsPhase } = await import('../../core/indexing/indexer-phases.js');
->>>>>>> Stashed changes
 
     await expect(buildVectorsAndArtifactsPhase({
       filesToIndex: ['src/a.ts'],
@@ -192,11 +104,7 @@ describe('buildVectorsAndArtifactsPhase', () => {
   it('invalidates existing LI index when LI rebuild fails after vector success', async () => {
     mockBuildLateInteractionIndex.mockRejectedValueOnce(new Error('li boom'));
 
-<<<<<<< Updated upstream
-    const { buildVectorsAndArtifactsPhase } = await import('../../core/indexer-phases.js');
-=======
     const { buildVectorsAndArtifactsPhase } = await import('../../core/indexing/indexer-phases.js');
->>>>>>> Stashed changes
 
     const result = await buildVectorsAndArtifactsPhase({
       filesToIndex: ['src/a.ts'],
@@ -220,11 +128,7 @@ describe('buildVectorsAndArtifactsPhase', () => {
   });
 
   it('promotes staged LI index only after vector and HNSW succeed', async () => {
-<<<<<<< Updated upstream
-    const { buildVectorsAndArtifactsPhase } = await import('../../core/indexer-phases.js');
-=======
     const { buildVectorsAndArtifactsPhase } = await import('../../core/indexing/indexer-phases.js');
->>>>>>> Stashed changes
 
     const result = await buildVectorsAndArtifactsPhase({
       filesToIndex: ['src/a.ts'],

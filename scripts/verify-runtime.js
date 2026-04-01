@@ -11,9 +11,9 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { getModelEntry } from '../core/model-registry.js';
-import { computeFileHash, getModelCacheDir } from '../core/model-fetcher.js';
-import { resolveNativeAddon, resolveNativeBinary, getPlatformInfo } from '../core/native-resolver.js';
+import { getModelEntry } from '../core/infrastructure/model-registry.js';
+import { computeFileHash, getModelCacheDir } from '../core/infrastructure/model-fetcher.js';
+import { resolveNativeAddon, resolveNativeBinary, getPlatformInfo } from '../core/infrastructure/native-resolver.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');

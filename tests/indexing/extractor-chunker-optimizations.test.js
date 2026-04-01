@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import GraphExtractor from '../../core/graph/graph-extractor.js';
-import { ASTChunker } from '../../ast-chunker.js';
+import { ASTChunker } from '../../core/indexing/ast-chunker.js';
 
 describe('extractor/chunker optimization guards', () => {
   it('reuses cached methodCall regex per language', async () => {

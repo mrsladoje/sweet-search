@@ -65,7 +65,7 @@ for (const repo of REPOS) {
 
   if (!skipIndex) {
     console.log(`  Indexing...`);
-    const indexer = path.join(ROOT, 'core', 'index-codebase-v21.js');
+    const indexer = path.join(ROOT, 'core', 'indexing', 'index-codebase-v21.js');
     execSync(
       `SWEET_SEARCH_PROJECT_ROOT="${repoDir}" node "${indexer}" --full --sqlite-fast`,
       { stdio: 'inherit', timeout: 600000 }

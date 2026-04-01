@@ -11,7 +11,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 CORPUS="$PROJECT_DIR/eval/corpus/gencodesearchnet/javascript/Semantic-Org_Semantic-UI-React"
-INDEXER="$PROJECT_DIR/core/index-codebase-v21.js"
+INDEXER="$PROJECT_DIR/core/indexing/index-codebase-v21.js"
 RESULTS_FILE="$PROJECT_DIR/scripts/batch-bench-results.txt"
 
 # Batch sizes to test (override via args)

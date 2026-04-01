@@ -31,7 +31,7 @@
 
 import pLimit from 'p-limit';
 import { DB_PATHS, HCGS_CONFIG } from '../infrastructure/config/index.js';
-import { getEmbedding, floatToBinary } from '../embedding/embedding-service.js';
+import { floatToBinary } from '../infrastructure/quantization.js';
 import {
   generateSummary,
   createSummaryPrompt,
@@ -189,6 +189,7 @@ async function generateAllSummaries(options = {}) {
     dryRun = false,
     skipEmbeddings = true,  // Default true: summary embeddings not used in search
     dbPath = DB_PATHS.codeGraph,
+    embedFn = null,         // Injected: (text) => Promise<{embedding: Float32Array}>
   } = options;
 
   const startTime = Date.now();
@@ -305,10 +306,10 @@ async function generateAllSummaries(options = {}) {
           // Generate embedding if not skipped
           // summary_embedding is stored as binary (Uint8Array) for space efficiency
           let embedding = null;
-          if (!dryRun && !skipEmbeddings) {
+          if (!dryRun && !skipEmbeddings && embedFn) {
             try {
-              const embeddingResult = await getEmbedding(result.summary);
-              // getEmbedding returns { embedding: Float32Array, cached, source, latency_us }
+              const embeddingResult = await embedFn(result.summary);
+              // embedFn returns { embedding: Float32Array, ... }
               // floatToBinary expects the float array, not the wrapper object
               if (embeddingResult?.embedding) {
                 embedding = floatToBinary(embeddingResult.embedding);
@@ -540,11 +541,19 @@ async function main() {
           console.log('Info: Skipping embedding generation for faster processing.');
         }
 
+        // Lazy-load embedding function only when embeddings are needed
+        let embedFn = null;
+        if (!skipEmbeddings) {
+          const { getEmbedding } = await import('../embedding/embedding-service.js');
+          embedFn = getEmbedding;
+        }
+
         await generateAllSummaries({
           concurrency,
           verbose,
           dryRun,
           skipEmbeddings,
+          embedFn,
           dbPath,
         });
 

@@ -348,7 +348,7 @@ echo "--- Fallback path (native absent) ---"
 set +e
 "$NODE" -e "
   import {existsSync} from 'fs';
-  import {resolveNativeAddon, resolveNativeBinary} from '$SS_PKG/core/native-resolver.js';
+  import {resolveNativeAddon, resolveNativeBinary} from '$SS_PKG/core/infrastructure/native-resolver.js';
   // Override existsSync to reject all native package paths — simulates
   // the native package not being installed.
   const fakeExists = (p) => {
