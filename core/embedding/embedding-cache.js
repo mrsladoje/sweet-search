@@ -333,7 +333,20 @@ export const vocabulary = new Vocabulary(DB_PATHS.vocabulary);
 export const semanticCache = new SemanticCache({ threshold: 0.85, maxSize: 500 });
 export const queryDeduplicator = new QueryDeduplicator();
 export const queryStats = new QueryStats(DB_PATHS.vocabulary.replace('.json', '-stats.json'));
-export const cacheStats = { hits: 0, misses: 0, vocabularyHits: 0, apiCalls: 0 };
+/** Mutable cache counters — access via getCacheStatsRef() to make singleton dependency explicit. */
+const _cacheStats = { hits: 0, misses: 0, vocabularyHits: 0, apiCalls: 0 };
+
+/**
+ * Returns a reference to the mutable stats object.
+ * Prefer this getter over a bare export so that the singleton
+ * dependency is explicit and mockable in tests.
+ */
+export function getCacheStatsRef() {
+  return _cacheStats;
+}
+
+/** @deprecated Use getCacheStatsRef(). Kept for backward compatibility during migration. */
+export const cacheStats = _cacheStats;
 // Integration point: search modes (lexical/semantic/hybrid) should call
 // recordQueryTelemetry(mode, hit, latencyMs) after each query to feed
 // per-mode cache-hit telemetry for the vocabulary prewarm pipeline.

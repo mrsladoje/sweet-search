@@ -15,7 +15,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import GraphExtractor from '../../core/graph/graph-extractor.js';
+import { GraphExtractor } from '../../core/graph/index.js';
 
 const extractor = new GraphExtractor({ projectRoot: '/test' });
 

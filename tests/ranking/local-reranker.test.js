@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { LocalReranker, getGlobalLocalReranker } from '../../core/ranking/local-reranker.js';
+import { LocalReranker, getGlobalLocalReranker } from '../../core/ranking/index.js';
 import { existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';

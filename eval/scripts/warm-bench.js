@@ -11,8 +11,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 process.env.SWEET_SEARCH_PROJECT_ROOT = PROJECT_ROOT;
 
-import SweetSearch from '../../core/search/sweet-search.js';
-import { encodeQuery } from '../../core/ranking/late-interaction-model.js';
+import SweetSearch from '../../core/search/index.js';
+import { encodeQuery } from '../../core/ranking/index.js';
 import { loadJsonl } from '../lib/data-loader.js';
 import { computeMetrics } from '../lib/metrics.js';
 import {

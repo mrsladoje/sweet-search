@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'fs/promises';
-import { ASTChunker } from '../ast-chunker.js';
+import { ASTChunker } from '../core/indexing/index.js';
 
 const args = process.argv.slice(2);
 

@@ -5,7 +5,7 @@ import {
   expandOneHop,
   expandSecondHop,
   expandSecondHopAdaptive,
-} from '../../core/graph/graph-expansion.js';
+} from '../../core/graph/index.js';
 
 const DEFAULT_EDGE_TYPES = new Set(['imports', 'extends', 'implements', 'uses', 'calls']);
 

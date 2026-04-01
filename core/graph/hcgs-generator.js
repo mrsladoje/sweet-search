@@ -544,7 +544,7 @@ async function main() {
         // Lazy-load embedding function only when embeddings are needed
         let embedFn = null;
         if (!skipEmbeddings) {
-          const { getEmbedding } = await import('../embedding/embedding-service.js');
+          const { getEmbedding } = await import('../embedding/index.js'); // CLI
           embedFn = getEmbedding;
         }
 

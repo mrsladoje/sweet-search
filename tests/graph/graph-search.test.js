@@ -14,7 +14,7 @@ import Database from 'better-sqlite3';
 import { join } from 'path';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
-import { GraphSearch } from '../../core/graph/graph-search.js';
+import { GraphSearch } from '../../core/graph/index.js';
 
 // =============================================================================
 // TEST FIXTURES

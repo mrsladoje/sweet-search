@@ -36,6 +36,16 @@ export * from './merkle-tracker.js';
 // Document chunker
 export * from './document-chunker.js';
 
+// AST Chunker
+export { ASTChunker } from './ast-chunker.js';
+
+// Index maintainer (file watcher queue management)
+export {
+  normalizePathSeparators, CONFIG as INDEX_MAINTAINER_CONFIG,
+  ensureDataDir, normalizePath, parseQueueContent,
+  atomicAcquireQueue, cleanupProcessingFile, requeueEntries,
+} from './index-maintainer.mjs';
+
 // Chunking sub-modules
 export * from './chunking/chunk-builder.js';
 export { default as MarkdownChunker } from './chunking/markdown-chunker.js';

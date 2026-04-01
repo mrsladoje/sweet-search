@@ -11,7 +11,7 @@
  * the static entries in core/infrastructure/model-registry.js.
  */
 
-import { MODEL_REGISTRY } from '../core/infrastructure/model-registry.js';
+import { MODEL_REGISTRY } from '../core/infrastructure/index.js';
 
 const HF_ENDPOINT = process.env.SWEET_SEARCH_HF_ENDPOINT || 'https://huggingface.co';
 

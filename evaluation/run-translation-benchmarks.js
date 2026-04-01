@@ -789,7 +789,7 @@ async function runE2EMatrixBenchmark(args) {
 
 async function runEvaluationWithEnv(envOverrides, args) {
   // Import SweetSearch dynamically
-  const { SweetSearch } = await import('../core/search/sweet-search.js');
+  const { SweetSearch } = await import('../core/search/index.js');
 
   // Apply env overrides
   const originalEnv = {};

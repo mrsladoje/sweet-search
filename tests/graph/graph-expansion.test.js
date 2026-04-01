@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
-import { expandResults, getExpansionStats } from '../../core/graph/graph-expansion.js';
+import { expandResults, getExpansionStats } from '../../core/graph/index.js';
 
 /**
  * Create an in-memory SQLite database with test entities and relationships.

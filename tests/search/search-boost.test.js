@@ -17,7 +17,7 @@ import {
   computeSyntaxBoost,
   computePositionBoost,
   extractQueryTokens,
-} from '../../core/search/search-boost.js';
+} from '../../core/search/index.js';
 
 // ---------------------------------------------------------------------------
 // BOOST_POLICY

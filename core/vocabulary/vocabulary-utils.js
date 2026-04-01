@@ -326,7 +326,7 @@ export function generateAllTerms(entities, frequentQueries) {
 // =============================================================================
 
 async function getVoyageConfig() {
-  const { EMBEDDING_PROVIDERS } = await import('../config.js');
+  const { EMBEDDING_PROVIDERS } = await import('../infrastructure/config/index.js');
   return EMBEDDING_PROVIDERS.voyage;
 }
 

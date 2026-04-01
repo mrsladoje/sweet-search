@@ -247,7 +247,7 @@ export async function checkHealth({ getConfig, PROJECT_ROOT }) {
         if (!_healthDb) {
           const Database = (await import('better-sqlite3')).default;
           _healthDb = new Database(config.DB_PATHS.codeGraph, { readonly: true, timeout: 5000 });
-          const { applyReadPragmas } = await import('../core/infrastructure/db-utils.js');
+          const { applyReadPragmas } = await import('../core/infrastructure/index.js');
           applyReadPragmas(_healthDb);
         }
         const count = _healthDb.prepare('SELECT count(*) as cnt FROM entities').get();
@@ -276,7 +276,7 @@ export async function checkHealth({ getConfig, PROJECT_ROOT }) {
 export async function handleRepoMap({ tokenBudget, focusFiles, focusEntities }, { coreDir }) {
   try {
     const { generateRepoMap } = await import(
-      path.join(coreDir, 'repo-map.js')
+      path.join(coreDir, 'graph', 'index.js')
     );
 
     const result = generateRepoMap({
@@ -313,10 +313,10 @@ export async function handleVocabPrewarm({ depth, modes, top, incremental, dryRu
   try {
     if (stats) {
       const { getTelemetryReport } = await import(
-        path.join(coreDir, 'embedding-cache.js')
+        path.join(coreDir, 'embedding', 'index.js')
       );
       const { WarmupMetrics, formatStatsReport } = await import(
-        path.join(coreDir, 'warmup-metrics.js')
+        path.join(coreDir, 'search', 'index.js')
       );
       const report = await getTelemetryReport(500);
       const metrics = new WarmupMetrics();
@@ -334,7 +334,7 @@ export async function handleVocabPrewarm({ depth, modes, top, incremental, dryRu
     }
 
     const { runFullWarmup } = await import(
-      path.join(coreDir, 'vocab-warmer.js')
+      path.join(coreDir, 'vocabulary', 'index.js')
     );
 
     const result = await runFullWarmup({

@@ -137,7 +137,7 @@ async function loadModel() {
 
   // Create ORT session
   const ort = await import('onnxruntime-node');
-  const { bestIntraOpThreads } = await import('../embedding/embedding-local-model.js');
+  const { bestIntraOpThreads } = await import('../infrastructure/onnx-session-utils.js');
 
   // CoreML is not used for late-interaction models. Benchmarking shows the
   // LateOn-Code model partitions poorly onto CoreML (1343/2327 ops), causing

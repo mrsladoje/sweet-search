@@ -16,9 +16,9 @@
 
 import { existsSync } from 'fs';
 import fs from 'fs/promises';
-import { BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
+import { BinaryHNSWIndex } from '../../core/vector-store/index.js';
 import { DB_PATHS, BINARY_HNSW_CONFIG, EMBEDDING_CONFIG } from '../../core/config.js';
-import { hammingDistance } from '../../core/embedding/embedding-service.js';
+import { hammingDistance } from '../../core/embedding/index.js';
 
 // =============================================================================
 // 1. DIMENSION DISTRIBUTION PROFILER (Float + Binary)

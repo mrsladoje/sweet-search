@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { computeCacheHit } from '../../core/search/search-postprocess.js';
+import { computeCacheHit } from '../../core/search/index.js';
 import { createMockSearcher, createMinimalSearchContext } from '../helpers/prototype-test-helper.js';
 
 // Mock late-interaction-model.js for post-expansion tests

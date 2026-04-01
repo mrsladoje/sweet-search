@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import os from 'os';
-import { bestIntraOpThreads, shouldUseOpenVino } from '../../core/embedding/embedding-local-model.js';
+import { bestIntraOpThreads, shouldUseOpenVino } from '../../core/embedding/index.js';
 
 function mockCpus(count, model = 'Mock CPU') {
   return Array.from({ length: count }, () => ({

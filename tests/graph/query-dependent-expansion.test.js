@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
-import { expandResults, rerankExpanded } from '../../core/graph/graph-expansion.js';
+import { expandResults, rerankExpanded } from '../../core/graph/index.js';
 
 function cosine(a, b) {
   let dot = 0;

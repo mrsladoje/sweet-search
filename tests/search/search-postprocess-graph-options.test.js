@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import Database from 'better-sqlite3';
-import { applyPostRetrieval } from '../../core/search/search-postprocess.js';
+import { applyPostRetrieval } from '../../core/search/index.js';
 
 function createDb() {
   const db = new Database(':memory:');

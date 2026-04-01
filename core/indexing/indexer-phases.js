@@ -216,8 +216,8 @@ export async function buildCodeGraphWithHCGSPhase(options = {}) {
     if (entitiesToRegenerate !== 0) {
       hcgsPromise = (async () => {
         try {
-          const { generateAllSummaries } = await import('../graph/hcgs-generator.js');
-          const { getEmbedding } = await import('../embedding/embedding-service.js');
+          const { generateAllSummaries } = await import('../graph/index.js');
+          const { getEmbedding } = await import('../embedding/index.js');
           const summaryResult = await generateAllSummaries({
             dbPath: DB_PATHS.codeGraph,
             verbose: false,

@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
-import { Reranker } from '../../core/ranking/flashrank.js';
-import { SweetSearch } from '../../core/search/sweet-search.js';
+import { LateInteractionIndex, Reranker } from '../../core/ranking/index.js';
+import { SweetSearch } from '../../core/search/index.js';
 import { mkdtempSync, writeFileSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';

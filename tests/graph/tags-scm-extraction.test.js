@@ -5,7 +5,7 @@ import {
   CAPTURE_TO_ENTITY_TYPE,
   GRAMMAR_MAP,
 } from '../../core/infrastructure/tree-sitter-provider.js';
-import { GraphExtractor } from '../../core/graph/graph-extractor.js';
+import { GraphExtractor } from '../../core/graph/index.js';
 
 describe('tags.scm Symbol Extraction', () => {
   let provider;

@@ -28,7 +28,7 @@ describe('Int8 Stage-2 Rescoring', () => {
 
   beforeAll(async () => {
     // Import modules
-    const binaryHnswModule = await import('../../core/vector-store/binary-hnsw-index.js');
+    const binaryHnswModule = await import('../../core/vector-store/index.js');
     BinaryHNSWIndex = binaryHnswModule.BinaryHNSWIndex;
 
     const artifactBuilder = await import('../../core/indexing/artifact-builder.js');

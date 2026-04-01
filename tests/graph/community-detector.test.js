@@ -29,7 +29,7 @@ import {
   fallbackDirectoryGrouping,
   computeGraphHash,
   detectCommunities,
-} from '../../core/graph/community-detector.js';
+} from '../../core/graph/index.js';
 import Database from 'better-sqlite3';
 
 beforeEach(() => {

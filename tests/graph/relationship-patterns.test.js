@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { GraphExtractor, splitTopLevelCommas } from '../../core/graph/graph-extractor.js';
+import { GraphExtractor, splitTopLevelCommas } from '../../core/graph/index.js';
 
 // =============================================================================
 // splitTopLevelCommas

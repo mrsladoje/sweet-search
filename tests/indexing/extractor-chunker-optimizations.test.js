@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import GraphExtractor from '../../core/graph/graph-extractor.js';
+import { GraphExtractor } from '../../core/graph/index.js';
 import { ASTChunker } from '../../core/indexing/ast-chunker.js';
 
 describe('extractor/chunker optimization guards', () => {

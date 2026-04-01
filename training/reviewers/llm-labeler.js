@@ -21,7 +21,7 @@
  */
 
 import { CEREBRAS_CONFIG, isCerebrasAvailable } from '../../core/config.js';
-import { generateWithRetry } from '../../core/infrastructure/llm-provider.js';
+import { generateWithRetry } from '../../core/infrastructure/index.js';
 
 // =============================================================================
 // CONFIGURATION

@@ -53,7 +53,7 @@ export const ARTIFACT_THRESHOLDS = {
 };
 
 import { BinaryHNSWIndex } from '../vector-store/binary-hnsw-index.js';
-import { truncateForHNSW, fisherYatesShuffle, normalizedFloatToInt8 } from '../embedding/embedding-service.js';
+import { truncateForHNSW, fisherYatesShuffle, normalizedFloatToInt8, floatToBinary } from '../infrastructure/quantization.js';
 import { FloatVectorStore, getFloatStorePath } from '../vector-store/float-vector-store.js';
 
 // =============================================================================
@@ -214,26 +214,11 @@ export function quantizeToInt8(float32Array) {
 }
 
 /**
- * Quantize float32 array to binary (1 bit per dimension)
- * Uses sign-based quantization: positive → 1, negative → 0
- *
- * Memory reduction: 32x (32-bit float → 1-bit)
- * Speed improvement: ~10x (Hamming distance via popcount)
- *
- * @param {Float32Array|number[]} float32Array - Input float embedding
- * @returns {Uint8Array} Binary embedding (dimension/8 bytes)
+ * Quantize float32 array to binary (1 bit per dimension).
+ * Delegates to infrastructure/quantization.js floatToBinary (single source of truth).
  */
 export function quantizeToBinary(float32Array) {
-  const numBytes = Math.ceil(float32Array.length / 8);
-  const binary = new Uint8Array(numBytes);
-
-  for (let i = 0; i < float32Array.length; i++) {
-    if (float32Array[i] > 0) {
-      binary[Math.floor(i / 8)] |= (1 << (7 - (i % 8)));
-    }
-  }
-
-  return binary;
+  return floatToBinary(float32Array);
 }
 
 /**

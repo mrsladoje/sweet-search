@@ -6,7 +6,7 @@
  */
 
 import { createFallbackPipeline } from '../translation/fallback-pipeline.js';
-import { SweetSearch } from '../core/search/sweet-search.js';
+import { SweetSearch } from '../core/search/index.js';
 
 // Benchmark queries by tier
 const BENCHMARK_QUERIES = [

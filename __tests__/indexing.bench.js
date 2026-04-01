@@ -20,9 +20,8 @@ import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import Database from 'better-sqlite3';
 
-import { GraphExtractor, createGraphSchema, insertGraph } from '../core/graph/graph-extractor.js';
-import { buildSummaryPrompt, getTokenLimitForType, HIERARCHY_LEVELS } from '../core/graph/hcgs-generator.js';
-import { QueryRouter } from '../core/query/query-router.js';
+import { GraphExtractor, createGraphSchema, insertGraph, buildSummaryPrompt, getTokenLimitForType, HIERARCHY_LEVELS } from '../core/graph/index.js';
+import { QueryRouter } from '../core/query/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

@@ -14,7 +14,7 @@ import {
   getEntitiesNeedingSummary,
   storeSummariesBatch,
   getSummaryStats,
-} from '../../core/graph/summary-manager.js';
+} from '../../core/graph/index.js';
 
 // Hierarchy levels (same as in hcgs-generator.js, duplicated here to avoid
 // circular import issues with vitest transforms)

@@ -5,8 +5,8 @@ import {
   unloadLocalModel,
   extractPooledEmbeddings,
   INDEXING_MAX_LENGTH,
-} from '../../core/embedding/embedding-local-model.js';
-import { buildFeed } from '../../core/infrastructure/ort-pipeline.js';
+} from '../../core/embedding/index.js';
+import { buildFeed } from '../../core/infrastructure/index.js';
 
 /**
  * Direct ORT Session — targeted coverage for:

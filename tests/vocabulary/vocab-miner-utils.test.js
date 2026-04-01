@@ -18,7 +18,7 @@ import {
   mergeTerms,
   termsToArray,
   walkShallow,
-} from '../../core/vocabulary/vocab-miner-utils.js';
+} from '../../core/vocabulary/index.js';
 
 // ---------------------------------------------------------------------------
 // STOP_WORDS

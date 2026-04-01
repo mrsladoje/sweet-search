@@ -10,8 +10,7 @@ import Database from 'better-sqlite3';
 import { join } from 'path';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
-import { GraphSearch } from '../../core/graph/graph-search.js';
-import { createGraphSchema, normalizeIdentifier, SCHEMA_VERSION } from '../../core/graph/graph-extractor.js';
+import { GraphSearch, createGraphSchema, normalizeIdentifier, SCHEMA_VERSION } from '../../core/graph/index.js';
 
 // =============================================================================
 // SHARED TEST DATABASE

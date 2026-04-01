@@ -22,7 +22,7 @@ import pMap from 'p-map';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 
-import { SweetSearch } from '../core/search/sweet-search.js';
+import { SweetSearch } from '../core/search/index.js';
 import { calculateAllMetrics } from './lib/metrics.js';
 import { CostTracker } from './lib/cost-tracker.js';
 import { ResultMatcher, evaluateQuery } from './lib/result-matcher.js';

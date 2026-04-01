@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
-import { expandResults, applyTokenBudget, rerankExpanded } from '../../core/graph/graph-expansion.js';
+import { expandResults, applyTokenBudget, rerankExpanded } from '../../core/graph/index.js';
 
 /**
  * Create a test graph for adaptive 2-hop expansion.

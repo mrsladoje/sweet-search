@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyIntent, getIntentPolicy, INTENTS } from '../../core/query/intent-router.js';
+import { classifyIntent, getIntentPolicy, INTENTS } from '../../core/query/index.js';
 
 // ---------------------------------------------------------------------------
 // Helper: apply intent policy to results (mirrors logic in sweet-search.js)

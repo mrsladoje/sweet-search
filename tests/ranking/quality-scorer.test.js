@@ -10,7 +10,7 @@ import {
   clearRecencyCache,
   clearTestProximityCache,
   setRepoMapModule,
-} from '../../core/ranking/quality-scorer.js';
+} from '../../core/ranking/index.js';
 
 // ---------------------------------------------------------------------------
 // Mock fs.existsSync for test proximity checks

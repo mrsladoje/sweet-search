@@ -14,9 +14,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { getModelEntry, getModelsForProfile, MODEL_REGISTRY } from '../core/infrastructure/model-registry.js';
-import { fetchModel, getModelCacheDir } from '../core/infrastructure/model-fetcher.js';
-import { getPlatformInfo, resolveNativeAddon, resolveNativeBinary } from '../core/infrastructure/native-resolver.js';
+import { getModelEntry, getModelsForProfile, MODEL_REGISTRY, fetchModel, getModelCacheDir, getPlatformInfo, resolveNativeAddon, resolveNativeBinary } from '../core/infrastructure/index.js';
 import { verifyRuntime, getMaxsimTier, getRouterType } from './verify-runtime.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

@@ -336,7 +336,7 @@ Examples:
         useLateInteraction = false;
       } else if (arg.startsWith('--late-interaction-model=')) {
         useLateInteraction = true;
-        const { LATE_INTERACTION_CONFIG } = await import('../config.js');
+        const { LATE_INTERACTION_CONFIG } = await import('../infrastructure/config/index.js');
         LATE_INTERACTION_CONFIG.model = arg.split('=')[1];
       } else if (arg === '--json') {
         json = true;

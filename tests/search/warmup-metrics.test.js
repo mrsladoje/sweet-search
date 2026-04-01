@@ -16,7 +16,7 @@ import {
   estimateWorkingSetSize,
   formatStatsReport,
   parseTelemetryEntries,
-} from '../../core/search/warmup-metrics.js';
+} from '../../core/search/index.js';
 
 // ---------------------------------------------------------------------------
 // WarmupMetrics class

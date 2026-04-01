@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
-import embeddingService from '../../core/embedding/embedding-service.js';
+import embeddingService from '../../core/embedding/index.js';
 
 const { generateEmbedding, callLocalModelBucketed } = embeddingService;
 

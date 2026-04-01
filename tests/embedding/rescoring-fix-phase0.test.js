@@ -72,7 +72,7 @@ describe('Phase 0: Rescoring Fix Correctness', () => {
   // ===========================================================================
   describe('Pipeline version mismatch', () => {
     it('BinaryHNSWIndex.load rejects mismatched pipeline version', async () => {
-      const { BinaryHNSWIndex } = await import('../../core/vector-store/binary-hnsw-index.js');
+      const { BinaryHNSWIndex } = await import('../../core/vector-store/index.js');
       const { writeFile } = await import('fs/promises');
 
       // Create a fake meta.json with an invalid pipeline version
@@ -104,7 +104,7 @@ describe('Phase 0: Rescoring Fix Correctness', () => {
   describe('Batched vs per-candidate scoring equivalence', () => {
     it('int8BatchDotScores matches per-candidate normalized dot', async () => {
       const { normalizedFloatToInt8, int8BatchDotScores } = await import('../../core/embedding/embedding-service.js');
-      const { wasmInt8Dot } = await import('../../core/vector-store/simd-distance.js');
+      const { wasmInt8Dot } = await import('../../core/vector-store/index.js');
 
       const dim = 64;
       const query = makeUnitVector(dim, 1);
@@ -211,7 +211,7 @@ describe('Phase 0: Rescoring Fix Correctness', () => {
   // ===========================================================================
   describe('Float vector store', () => {
     it('build → save → load → get round-trips correctly', async () => {
-      const { FloatVectorStore } = await import('../../core/vector-store/float-vector-store.js');
+      const { FloatVectorStore } = await import('../../core/vector-store/index.js');
       const storePath = path.join(TEST_DIR, 'test-float-vectors.bin');
 
       const dim = 8;
@@ -249,7 +249,7 @@ describe('Phase 0: Rescoring Fix Correctness', () => {
     });
 
     it('get() returns a copy, not a mutable view', async () => {
-      const { FloatVectorStore } = await import('../../core/vector-store/float-vector-store.js');
+      const { FloatVectorStore } = await import('../../core/vector-store/index.js');
 
       const dim = 4;
       const store = new FloatVectorStore();
@@ -263,7 +263,7 @@ describe('Phase 0: Rescoring Fix Correctness', () => {
     });
 
     it('batchScore computes correct dot products', async () => {
-      const { FloatVectorStore } = await import('../../core/vector-store/float-vector-store.js');
+      const { FloatVectorStore } = await import('../../core/vector-store/index.js');
 
       const dim = 4;
       const store = new FloatVectorStore();
@@ -349,7 +349,7 @@ describe('Phase 0: Rescoring Fix Correctness', () => {
   // ===========================================================================
   describe('WASM batch dot product', () => {
     it('wasmInt8BatchDot returns correct scores', async () => {
-      const { wasmInt8BatchDot } = await import('../../core/vector-store/simd-distance.js');
+      const { wasmInt8BatchDot } = await import('../../core/vector-store/index.js');
 
       const query = new Int8Array([10, 20, 30, 40]);
       const candidates = [
@@ -365,7 +365,7 @@ describe('Phase 0: Rescoring Fix Correctness', () => {
     });
 
     it('wasmInt8BatchDot handles empty candidates', async () => {
-      const { wasmInt8BatchDot } = await import('../../core/vector-store/simd-distance.js');
+      const { wasmInt8BatchDot } = await import('../../core/vector-store/index.js');
       const query = new Int8Array([1, 2]);
       const scores = wasmInt8BatchDot(query, []);
       expect(scores.length).toBe(0);
@@ -377,14 +377,14 @@ describe('Phase 0: Rescoring Fix Correctness', () => {
   // ===========================================================================
   describe('Dimension mismatch propagation', () => {
     it('float32BatchDot throws on dimension mismatch', async () => {
-      const { float32BatchDot } = await import('../../core/vector-store/simd-distance.js');
+      const { float32BatchDot } = await import('../../core/vector-store/index.js');
       const query = new Float32Array([1, 0, 0]);
       const candidates = [new Float32Array([1, 0])]; // wrong dimension
       expect(() => float32BatchDot(query, candidates)).toThrow('dimension mismatch');
     });
 
     it('FloatVectorStore.batchScore throws on query/store dimension mismatch', async () => {
-      const { FloatVectorStore } = await import('../../core/vector-store/float-vector-store.js');
+      const { FloatVectorStore } = await import('../../core/vector-store/index.js');
       const store = new FloatVectorStore();
       store.build([{ id: 'a', vector: new Float32Array([1, 0, 0, 0]) }], 4);
 
