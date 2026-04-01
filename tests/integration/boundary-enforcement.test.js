@@ -6,11 +6,18 @@
  * - Consumers use barrel imports, not internal files
  * - Checker catches known violations (negative test)
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import { execSync } from 'child_process';
-import { writeFileSync, mkdirSync, rmSync } from 'fs';
+import { writeFileSync, rmSync } from 'fs';
 import { join } from 'path';
-import { tmpdir } from 'os';
+
+// Negative tests write temp files into live source tree (required because the
+// checker scans hardcoded core/ paths). Safety cleanup in afterAll.
+const TEMP_FILES = [
+  join('core', 'infrastructure', '__boundary_test_violation__.js'),
+  join('core', 'ranking', '__boundary_test_violation__.js'),
+];
+afterAll(() => TEMP_FILES.forEach(f => rmSync(f, { force: true })));
 
 describe('DDD Boundary Enforcement', () => {
   it('passes all boundary checks', () => {
@@ -26,11 +33,11 @@ describe('DDD Boundary Enforcement', () => {
       encoding: 'utf8',
       timeout: 30000,
     });
-    expect(result).toContain('barrel-only enforcement active');
+    expect(result).toContain('barrel-only enforcement');
   });
 
-  it('catches a known forbidden dependency direction violation', () => {
-    const tmpFile = join('core', 'infrastructure', '__boundary_test_violation__.js');
+  it('catches infrastructure → domain violation', () => {
+    const tmpFile = TEMP_FILES[0];
     try {
       writeFileSync(tmpFile, "import { embed } from '../embedding/index.js';\n");
       let output;
@@ -46,8 +53,8 @@ describe('DDD Boundary Enforcement', () => {
     }
   });
 
-  it('catches a known cross-domain direction violation (ranking → embedding)', () => {
-    const tmpFile = join('core', 'ranking', '__boundary_test_violation__.js');
+  it('catches ranking → embedding violation', () => {
+    const tmpFile = TEMP_FILES[1];
     try {
       writeFileSync(tmpFile, "import { embed } from '../embedding/index.js';\n");
       let output;

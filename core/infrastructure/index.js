@@ -29,8 +29,11 @@ export { withOnnxMutex } from './onnx-mutex.js';
 export { isAppleSilicon, isCoreMLProviderAvailable, shouldUseCoreML, getCoreMLExecutionProviders, _resetCoreMLCache } from './coreml-provider.js';
 
 // Language analysis
-export { getLanguageByPath, getLanguageByExtension, LANGUAGES } from './language-patterns.js';
-export { EXTENSION_MAP } from './language-patterns/maps.js';
+export {
+  getLanguageByPath, getLanguageByExtension, LANGUAGES, EXTENSION_MAP, FILENAME_MAP,
+  getChunkerPatterns, getGraphPatterns, getLanguageMeta, getSupportedExtensions,
+  isIndentBased, getRegisteredLanguages,
+} from './language-patterns.js';
 export { getTreeSitterProvider, TAGS_QUERIES, CAPTURE_TO_ENTITY_TYPE } from './tree-sitter-provider.js';
 export { detectProjectBoundary, clearBoundaryCache } from './project-detector.js';
 
