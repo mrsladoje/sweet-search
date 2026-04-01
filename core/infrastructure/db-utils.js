@@ -18,7 +18,7 @@
  * @param {{ tempStoreMemory?: boolean }} [options]
  */
 export function applyReadPragmas(db, options = {}) {
-  if (typeof db.pragma !== 'function') return;
+  if (!db || typeof db.pragma !== 'function') return;
   const { tempStoreMemory = false } = options;
 
   for (const pragma of [
