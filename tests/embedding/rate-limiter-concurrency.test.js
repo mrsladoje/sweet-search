@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { TimeWindowRateLimiter } from '../../core/embedding/embedding-service.js';
+import { TimeWindowRateLimiter } from '../../core/embedding/index.js';
 
 // ---------------------------------------------------------------------------
 // Helpers

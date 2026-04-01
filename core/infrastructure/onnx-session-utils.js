@@ -54,3 +54,21 @@ export function warnIfGraphNotMaterialized(label, sessionOptions) {
     console.warn(`[ONNX] ${label} optimized graph not materialized at ${sessionOptions.optimizedModelFilePath}`);
   }
 }
+
+/**
+ * Determine optimal intra-op thread count for ONNX Runtime.
+ * Moved from embedding-local-model.js — shared by ranking + embedding.
+ */
+export function bestIntraOpThreads() {
+  const logicalCores = Math.max(1, os.cpus().length);
+  const override = Number.parseInt(process.env.SWEET_SEARCH_INTRA_OP_THREADS ?? '', 10);
+  if (Number.isFinite(override) && override > 0) {
+    return Math.min(override, logicalCores);
+  }
+
+  const physicalCores = Math.max(1, Math.ceil(logicalCores / 2));
+  const baseline = Math.min(Math.max(1, physicalCores - 1), 8);
+
+  if (logicalCores >= 4) return Math.max(2, baseline);
+  return baseline;
+}

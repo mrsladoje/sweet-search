@@ -13,7 +13,7 @@
  *   node benchmark-rerank.js --iterations=50   # Custom iteration count
  */
 
-import { FlashRankReranker } from '../core/ranking/flashrank.js';
+import { FlashRankReranker } from '../core/ranking/index.js';
 import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';

@@ -7,10 +7,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { EXTENSION_MAP } from '../../core/infrastructure/language-patterns/maps.js';
-import { LANGUAGES } from '../../core/infrastructure/language-patterns/registry.js';
-import { getLanguageByExtension, getLanguageByPath } from '../../core/infrastructure/language-patterns.js';
-import GraphExtractor from '../../core/graph/graph-extractor.js';
+import { EXTENSION_MAP, LANGUAGES, getLanguageByExtension, getLanguageByPath } from '../../core/infrastructure/index.js';
+import { GraphExtractor } from '../../core/graph/index.js';
 
 const tsConfig = LANGUAGES.typescript;
 const extractor = new GraphExtractor({ projectRoot: '/test' });

@@ -55,7 +55,7 @@ describe('Phase 5: Artifact Builder Contract', () => {
     getArtifactStats = artifactBuilder.getArtifactStats;
     verifyArtifacts = artifactBuilder.verifyArtifacts;
 
-    const binaryHnswModule = await import('../../core/vector-store/binary-hnsw-index.js');
+    const binaryHnswModule = await import('../../core/vector-store/index.js');
     BinaryHNSWIndex = binaryHnswModule.BinaryHNSWIndex;
 
     // Create test directory

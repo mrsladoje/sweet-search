@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 /**
  * Codebase Indexer v2.3 — Thin facade.
  *

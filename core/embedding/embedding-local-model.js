@@ -26,20 +26,9 @@ export const QUERY_MAX_LENGTH = parseInt(process.env.SWEET_SEARCH_QUERY_MAX_LENG
 // ONNX SESSION HELPERS
 // =============================================================================
 
-export function bestIntraOpThreads() {
-  const logicalCores = Math.max(1, os.cpus().length);
-  const override = Number.parseInt(process.env.SWEET_SEARCH_INTRA_OP_THREADS ?? '', 10);
-  if (Number.isFinite(override) && override > 0) {
-    return Math.min(override, logicalCores);
-  }
-
-  const physicalCores = Math.max(1, Math.ceil(logicalCores / 2));
-  const baseline = Math.min(Math.max(1, physicalCores - 1), 8);
-
-  // Avoid single-thread inference bottlenecks on small but multi-core machines.
-  if (logicalCores >= 4) return Math.max(2, baseline);
-  return baseline;
-}
+// Import + re-export from infrastructure (canonical location)
+import { bestIntraOpThreads } from '../infrastructure/onnx-session-utils.js';
+export { bestIntraOpThreads };
 
 export function isIntelCpu() {
   const model = os.cpus()?.[0]?.model || '';

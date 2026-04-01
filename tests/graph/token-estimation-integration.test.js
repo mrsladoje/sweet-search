@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import Database from 'better-sqlite3';
-import { expandResults, applyTokenBudget, loadChunkTexts, computeTokenEstimates } from '../../core/graph/graph-expansion.js';
+import { expandResults, applyTokenBudget, loadChunkTexts, computeTokenEstimates } from '../../core/graph/index.js';
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'fs';
 import path from 'path';
 import os from 'os';

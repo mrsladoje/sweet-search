@@ -388,37 +388,37 @@ describe('Cross-line construct handling', () => {
 
   describe('multiLinePatterns language config', () => {
     it('javascript has multiLinePatterns enabled', async () => {
-      const { getLanguageByPath } = await import('../../core/infrastructure/language-patterns.js');
+      const { getLanguageByPath } = await import('../../core/infrastructure/index.js');
       const lang = getLanguageByPath('test.js');
       expect(lang.multiLinePatterns).toBe(true);
     });
 
     it('typescript has multiLinePatterns enabled', async () => {
-      const { getLanguageByPath } = await import('../../core/infrastructure/language-patterns.js');
+      const { getLanguageByPath } = await import('../../core/infrastructure/index.js');
       const lang = getLanguageByPath('test.ts');
       expect(lang.multiLinePatterns).toBe(true);
     });
 
     it('python has multiLinePatterns enabled', async () => {
-      const { getLanguageByPath } = await import('../../core/infrastructure/language-patterns.js');
+      const { getLanguageByPath } = await import('../../core/infrastructure/index.js');
       const lang = getLanguageByPath('test.py');
       expect(lang.multiLinePatterns).toBe(true);
     });
 
     it('java has multiLinePatterns enabled', async () => {
-      const { getLanguageByPath } = await import('../../core/infrastructure/language-patterns.js');
+      const { getLanguageByPath } = await import('../../core/infrastructure/index.js');
       const lang = getLanguageByPath('Test.java');
       expect(lang.multiLinePatterns).toBe(true);
     });
 
     it('kotlin has multiLinePatterns enabled', async () => {
-      const { getLanguageByPath } = await import('../../core/infrastructure/language-patterns.js');
+      const { getLanguageByPath } = await import('../../core/infrastructure/index.js');
       const lang = getLanguageByPath('Test.kt');
       expect(lang.multiLinePatterns).toBe(true);
     });
 
     it('go does NOT have multiLinePatterns enabled', async () => {
-      const { getLanguageByPath } = await import('../../core/infrastructure/language-patterns.js');
+      const { getLanguageByPath } = await import('../../core/infrastructure/index.js');
       const lang = getLanguageByPath('test.go');
       expect(lang.multiLinePatterns).toBeFalsy();
     });

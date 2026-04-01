@@ -20,7 +20,7 @@ import {
   patternSearch,
   isRipgrepAvailable,
   _resetRgCache,
-} from '../../core/search/search-pattern.js';
+} from '../../core/search/index.js';
 
 // =============================================================================
 // buildChunkLocationMap

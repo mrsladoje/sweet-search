@@ -14,11 +14,11 @@ import { existsSync } from 'fs';
 import { performance } from 'perf_hooks';
 
 import { DB_PATHS, PERFORMANCE_TARGETS, EMBEDDING_CONFIG } from '../core/config.js';
-import { QueryRouter } from '../core/query/query-router.js';
-import { GraphSearch } from '../core/graph/graph-search.js';
-import { HNSWIndex } from '../core/vector-store/hnsw-index.js';
-import { Reranker } from '../core/ranking/flashrank.js';
-import SweetSearch from '../core/search/sweet-search.js';
+import { QueryRouter } from '../core/query/index.js';
+import { GraphSearch } from '../core/graph/index.js';
+import { HNSWIndex } from '../core/vector-store/index.js';
+import { Reranker } from '../core/ranking/index.js';
+import SweetSearch from '../core/search/index.js';
 
 // =============================================================================
 // BENCHMARK UTILITIES

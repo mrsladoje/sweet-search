@@ -5,7 +5,7 @@ import {
   sparseDotProduct,
   Block,
   InvertedList,
-} from '../../core/vector-store/seismic-index.js';
+} from '../../core/vector-store/index.js';
 
 // =============================================================================
 // HELPERS

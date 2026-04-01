@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { minMaxNormalize } from '../../core/search/search-postprocess.js';
+import { minMaxNormalize } from '../../core/search/index.js';
 
 // =============================================================================
 // Unit Tests: minMaxNormalize

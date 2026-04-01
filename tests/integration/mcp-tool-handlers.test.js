@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 import { handleVocabPrewarm } from '../../mcp/tool-handlers.js';
@@ -9,12 +9,16 @@ describe('MCP tool handlers integration', () => {
   it('handleVocabPrewarm executes stats path via dynamic imports', async () => {
     const coreDir = mkdtempSync(path.join(tmpdir(), 'mcp-vocab-stats-'));
     try {
+      // Create domain directory structure matching barrel imports
+      mkdirSync(path.join(coreDir, 'embedding'), { recursive: true });
+      mkdirSync(path.join(coreDir, 'search'), { recursive: true });
+
       writeFileSync(
-        path.join(coreDir, 'embedding-cache.js'),
+        path.join(coreDir, 'embedding', 'index.js'),
         `export async function getTelemetryReport() { return { modes: { lexical: { hits: 3, misses: 1, avgLatencyMs: 2, count: 4 } } }; }\n`
       );
       writeFileSync(
-        path.join(coreDir, 'warmup-metrics.js'),
+        path.join(coreDir, 'search', 'index.js'),
         `
           export class WarmupMetrics {
             constructor() { this._rate = 0; }
@@ -45,8 +49,10 @@ describe('MCP tool handlers integration', () => {
   it('handleVocabPrewarm executes warmup path and maps structured output', async () => {
     const coreDir = mkdtempSync(path.join(tmpdir(), 'mcp-vocab-run-'));
     try {
+      mkdirSync(path.join(coreDir, 'vocabulary'), { recursive: true });
+
       writeFileSync(
-        path.join(coreDir, 'vocab-warmer.js'),
+        path.join(coreDir, 'vocabulary', 'index.js'),
         `
           export async function runFullWarmup(opts = {}) {
             return {
@@ -83,4 +89,3 @@ describe('MCP tool handlers integration', () => {
     }
   });
 });
-

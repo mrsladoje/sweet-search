@@ -13,8 +13,8 @@ import {
   rankIdentifiers,
   rankCommunityPhrases,
   rankAll,
-  _internals,
-} from '../../core/vocabulary/vocab-ranker.js';
+  rankerInternals as _internals,
+} from '../../core/vocabulary/index.js';
 
 const {
   computeIDF,

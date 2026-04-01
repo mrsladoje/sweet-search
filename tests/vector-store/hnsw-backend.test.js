@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkNativeBackend, requireNativeAnn } from '../../core/vector-store/hnsw-index.js';
+import { checkNativeBackend, requireNativeAnn } from '../../core/vector-store/index.js';
 
 describe('checkNativeBackend', () => {
   it('returns correct shape', async () => {

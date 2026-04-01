@@ -55,7 +55,7 @@ import {
   mineNLContent,
   mineGit,
   mineAll,
-} from '../../core/vocabulary/vocab-miner.js';
+} from '../../core/vocabulary/index.js';
 
 import { execFileSync } from 'child_process';
 import { loadGraph, buildAdjacency, pageRank } from '../../core/graph/repo-map.js';

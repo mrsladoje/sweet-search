@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
-import { GraphExtractor } from '../../core/graph/graph-extractor.js';
-import { expandResults } from '../../core/graph/graph-expansion.js';
+import { GraphExtractor, expandResults } from '../../core/graph/index.js';
 
 /**
  * Integration tests: GraphExtractor → SQLite → expandResults

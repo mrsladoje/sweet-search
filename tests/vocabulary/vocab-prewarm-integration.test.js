@@ -4,11 +4,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
 
-import { detectCommunities } from '../../core/graph/community-detector.js';
-import { mineAll } from '../../core/vocabulary/vocab-miner.js';
-import { rankAll } from '../../core/vocabulary/vocab-ranker.js';
-import { warmLexical, warmFromCache, saveBinaryArtifact } from '../../core/vocabulary/vocab-warmer.js';
-import { ARTIFACT_PATHS } from '../../core/vocabulary/vocab-constants.js';
+import { detectCommunities } from '../../core/graph/index.js';
+import { mineAll, rankAll, warmLexical, warmFromCache, saveBinaryArtifact, ARTIFACT_PATHS } from '../../core/vocabulary/index.js';
 import { DB_PATHS } from '../../core/config.js';
 
 describe('vocab prewarm integration (real SQLite)', () => {

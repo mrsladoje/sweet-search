@@ -35,7 +35,7 @@ import {
   asymmetricDocEncode, asymmetricQueryEncode,
   computeCentroid, generateSignVector,
 } from '../infrastructure/quantization.js';
-import { wasmHammingDistance as hammingDistance } from './simd-distance.js';
+import { wasmHammingDistance as hammingDistance } from '../infrastructure/simd-distance.js';
 import { TypedMinHeap, TypedMaxHeap, VisitedList } from './binary-heap.js';
 
 // Current quantization pipeline version. Bump when the encoding pipeline changes

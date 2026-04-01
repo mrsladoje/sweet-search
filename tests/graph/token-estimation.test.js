@@ -5,7 +5,7 @@ import {
   loadChunkTexts,
   computeTokenEstimates,
   expandResults,
-} from '../../core/graph/graph-expansion.js';
+} from '../../core/graph/index.js';
 
 // =========================================================================
 // 1. estimateTokenCount (internal, tested via computeTokenEstimates)

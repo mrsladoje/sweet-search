@@ -22,8 +22,8 @@ import {
   estimateTokens,
   generateRepoMap,
   loadGraph,
-} from '../../core/graph/repo-map.js';
-import { createGraphSchema } from '../../core/graph/graph-extractor.js';
+  createGraphSchema,
+} from '../../core/graph/index.js';
 
 // =============================================================================
 // PageRank Algorithm

@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import embeddingService from '../../core/embedding/embedding-service.js';
+import embeddingService from '../../core/embedding/index.js';
 
 // These will be exported after V2b implementation
 const { looksLikeJson, _providerCompressionSupport } = embeddingService;

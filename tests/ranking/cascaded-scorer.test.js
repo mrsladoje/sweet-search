@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isDecisive, computeAdaptiveK, cascadedScore } from '../../core/ranking/cascaded-scorer.js';
+import { isDecisive, computeAdaptiveK, cascadedScore } from '../../core/ranking/index.js';
 
 // ---------------------------------------------------------------------------
 // Mock late-interaction-model.js (dynamic import inside cascadedScore)

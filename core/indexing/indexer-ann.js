@@ -246,7 +246,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     return;
   }
 
-  const { LATE_INTERACTION_CONFIG } = await import('../config.js');
+  const { LATE_INTERACTION_CONFIG } = await import('../infrastructure/config/index.js');
   if (!LATE_INTERACTION_CONFIG.enabled) {
     log('LateInteraction: Disabled via config', 'yellow');
     return;

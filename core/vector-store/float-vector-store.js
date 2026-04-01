@@ -28,7 +28,7 @@
 import { readFile, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
-import { float32BatchDot } from './simd-distance.js';
+import { float32BatchDot } from '../infrastructure/simd-distance.js';
 
 const MAGIC = 0x43455646; // "FVEC" in little-endian
 const VERSION = 1;

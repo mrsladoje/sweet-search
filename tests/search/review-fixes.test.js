@@ -54,7 +54,7 @@ import {
   recordQueryTelemetry,
   resetTelemetryStats,
   flushTelemetry,
-} from '../../core/embedding/embedding-cache.js';
+} from '../../core/embedding/index.js';
 
 // ---------------------------------------------------------------------------
 // F2: recordQueryTelemetry extended signature
@@ -103,7 +103,7 @@ describe('recordQueryTelemetry extended fields (F2)', () => {
 // F12: Jaccard-based WSS clustering
 // ---------------------------------------------------------------------------
 
-import { estimateWorkingSetSize } from '../../core/search/warmup-metrics.js';
+import { estimateWorkingSetSize } from '../../core/search/index.js';
 
 describe('estimateWorkingSetSize Jaccard clustering (F12)', () => {
   it('clusters near-duplicate queries (high Jaccard similarity)', () => {
@@ -139,7 +139,7 @@ describe('estimateWorkingSetSize Jaccard clustering (F12)', () => {
 // F8: detectScript + CJK tokenization
 // ---------------------------------------------------------------------------
 
-import { mineNLContent } from '../../core/vocabulary/vocab-miner.js';
+import { mineNLContent } from '../../core/vocabulary/index.js';
 
 describe('CJK NL handling (F8)', () => {
   it('mineNLContent returns communityPhrases array for empty communities', () => {
@@ -231,7 +231,7 @@ describe('vocab-warmer enriched text format (H2/S1)', () => {
 // F3: computeNLContentHash
 // ---------------------------------------------------------------------------
 
-import { computeNLContentHash } from '../../core/vocabulary/vocab-miner.js';
+import { computeNLContentHash } from '../../core/vocabulary/index.js';
 
 describe('computeNLContentHash (F3)', () => {
   it('returns hex string for empty communities', () => {
@@ -392,7 +392,7 @@ describe('community-detector stderr logging (M2)', () => {
 // F5: Stats report community format
 // ---------------------------------------------------------------------------
 
-import { formatStatsReport, WarmupMetrics } from '../../core/search/warmup-metrics.js';
+import { formatStatsReport, WarmupMetrics } from '../../core/search/index.js';
 
 describe('formatStatsReport community enrichment (F5)', () => {
   it('shows file count and phrases in community breakdown', () => {

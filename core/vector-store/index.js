@@ -33,7 +33,7 @@ export {
   isNativeMaxSimAvailable,
   getMaxSimTier,
   initWasm,
-} from './simd-distance.js';
+} from '../infrastructure/simd-distance.js';
 
 // --- Typed binary heaps (HNSW internals) ---
 export { TypedMinHeap, TypedMaxHeap, VisitedList } from './binary-heap.js';

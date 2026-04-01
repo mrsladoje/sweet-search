@@ -3,7 +3,7 @@ import { LANGUAGES } from '../../core/infrastructure/language-patterns.js';
 import {
   GENERIC_RELATIONSHIP_MAPPING,
   INTENTIONAL_DEFAULT_RELATIONSHIP_TYPES,
-} from '../../core/graph/graph-extractor.js';
+} from '../../core/graph/index.js';
 
 function countCapturingGroups(regex) {
   const source = regex.source;

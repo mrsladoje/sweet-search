@@ -80,16 +80,14 @@ let _searcher = null;
 async function getSearcher() {
   if (_searcher) return _searcher;
 
-  const { getWarmSearcher } = await import(
-    path.join(__dirname, '..', 'core', 'search', 'sweet-search.js')
-  );
+  const { getWarmSearcher } = await import('../core/search/index.js');
 
   _searcher = await getWarmSearcher({ verbose: false });
   return _searcher;
 }
 
 async function getConfig() {
-  return import(path.join(__dirname, '..', 'core', 'config.js'));
+  return import('../core/infrastructure/config/index.js');
 }
 
 // ---------------------------------------------------------------------------

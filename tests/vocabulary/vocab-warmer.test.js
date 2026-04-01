@@ -139,12 +139,12 @@ import {
   runFullWarmup,
   saveBinaryArtifact,
   _loadEntityMetadata,
-} from '../../core/vocabulary/vocab-warmer.js';
+} from '../../core/vocabulary/index.js';
 
 import Database from 'better-sqlite3';
 import { existsSync } from 'fs';
 import { generateEmbeddings } from '../../core/embedding/embedding-service.js';
-import { ARTIFACT_PATHS } from '../../core/vocabulary/vocab-constants.js';
+import { ARTIFACT_PATHS } from '../../core/vocabulary/index.js';
 
 beforeEach(() => {
   _mockDbInstance = null;

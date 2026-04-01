@@ -9,7 +9,7 @@
  */
 
 import { EMBEDDING_CONFIG, EMBEDDING_PROVIDERS } from '../infrastructure/config/index.js';
-import { wasmHammingDistance, wasmInt8Cosine, wasmAsymmetricDistance, wasmInt8BatchDot, isWasmAvailable } from '../vector-store/simd-distance.js';
+import { wasmHammingDistance, wasmInt8Cosine, wasmAsymmetricDistance, wasmInt8BatchDot, isWasmAvailable } from '../infrastructure/simd-distance.js';
 
 // --- Sub-module imports (no circular deps) ---
 import {
@@ -325,175 +325,34 @@ export async function getEmbeddings(texts, options = {}) {
   return results;
 }
 
+// =============================================================================
+// QUANTIZATION / MATH RE-EXPORTS (canonical impls in infrastructure/quantization.js)
+// =============================================================================
+
+import {
+  truncateForHNSW as _truncateForHNSW,
+  fisherYatesShuffle,
+  floatToBinary,
+  computeCentroid,
+  generateSignVector,
+  walshHadamardTransform,
+  fastRotate,
+  asymmetricDocEncode,
+  asymmetricQueryEncode,
+  floatToInt8,
+  normalizedFloatToInt8,
+} from '../infrastructure/quantization.js';
+
+export { fisherYatesShuffle, floatToBinary, computeCentroid, generateSignVector, walshHadamardTransform, fastRotate, asymmetricDocEncode, asymmetricQueryEncode };
+
 /**
  * Truncate embedding to target dimension and L2 re-normalize.
+ * Thin wrapper that supplies the domain-specific default dimension.
  * @param {number[]} embedding
  * @param {number} [targetDim] - defaults to EMBEDDING_CONFIG.hnswDimension
  */
 export function truncateForHNSW(embedding, targetDim = EMBEDDING_CONFIG.hnswDimension) {
-  if (embedding.length <= targetDim) return embedding;
-  const truncated = embedding.slice(0, targetDim);
-  let norm = 0;
-  for (let i = 0; i < truncated.length; i++) norm += truncated[i] * truncated[i];
-  norm = Math.sqrt(norm);
-  if (norm > 0) for (let i = 0; i < truncated.length; i++) truncated[i] /= norm;
-  return truncated;
-}
-
-/** Fisher-Yates shuffle (in-place). Shared by indexer-ann and artifact-builder. */
-export function fisherYatesShuffle(arr) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
-  }
-  return arr;
-}
-
-// =============================================================================
-// QUANTIZATION FUNCTIONS (Binary + Int8 + Asymmetric)
-// =============================================================================
-
-export function floatToBinary(embedding) {
-  const numBytes = Math.ceil(embedding.length / 8);
-  const binary = new Uint8Array(numBytes);
-  for (let i = 0; i < embedding.length; i++) {
-    if (embedding[i] > 0) {
-      binary[Math.floor(i / 8)] |= (1 << (7 - (i % 8)));
-    }
-  }
-  return binary;
-}
-
-// =============================================================================
-// ASYMMETRIC BINARY QUANTIZATION (center → rotate → quantize)
-// =============================================================================
-
-/**
- * Compute dataset centroid from an array of float embeddings.
- * The centroid is subtracted before binarization to recenter the
- * sign-bit threshold at the actual decision boundary.
- */
-export function computeCentroid(embeddings) {
-  if (!embeddings || embeddings.length === 0) return null;
-  const dim = embeddings[0].length;
-  const centroid = new Float64Array(dim);
-  for (const emb of embeddings) {
-    for (let i = 0; i < dim; i++) centroid[i] += emb[i];
-  }
-  const n = embeddings.length;
-  for (let i = 0; i < dim; i++) centroid[i] /= n;
-  return new Float32Array(centroid); // downcast for storage/use
-}
-
-/**
- * Generate a random sign vector for Walsh-Hadamard rotation.
- * Each element is +1 or -1. Deterministic if seed is provided.
- */
-export function generateSignVector(dim, seed = 42) {
-  const signs = new Float32Array(dim);
-  // Simple deterministic PRNG (mulberry32)
-  let s = seed | 0;
-  for (let i = 0; i < dim; i++) {
-    s = (s + 0x6D2B79F5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    signs[i] = ((t ^ (t >>> 14)) >>> 31) ? 1.0 : -1.0;
-  }
-  return signs;
-}
-
-/** Next power of 2 >= n. */
-function nextPow2(n) {
-  let p = 1;
-  while (p < n) p <<= 1;
-  return p;
-}
-
-/**
- * In-place Walsh-Hadamard Transform (normalized).
- * O(d log d) — much faster than O(d^2) dense rotation.
- * Input MUST be power-of-2 length — caller pads if needed.
- */
-export function walshHadamardTransform(v) {
-  const n = v.length;
-  for (let len = 1; len < n; len <<= 1) {
-    for (let i = 0; i < n; i += len << 1) {
-      for (let j = 0; j < len; j++) {
-        const u = v[i + j];
-        const w = v[i + j + len];
-        v[i + j] = u + w;
-        v[i + j + len] = u - w;
-      }
-    }
-  }
-  // Normalize to preserve norms
-  const scale = 1.0 / Math.sqrt(n);
-  for (let i = 0; i < n; i++) v[i] *= scale;
-  return v;
-}
-
-/**
- * Fast pseudorandom rotation: sign flip + Walsh-Hadamard.
- * Handles non-power-of-2 dimensions by padding, transforming, and truncating.
- */
-export function fastRotate(v, signs) {
-  const origDim = v.length;
-  const padDim = nextPow2(origDim);
-
-  // Apply sign flips into a (possibly padded) buffer
-  const buf = new Float32Array(padDim); // zero-padded
-  for (let i = 0; i < origDim; i++) buf[i] = v[i] * signs[i];
-
-  walshHadamardTransform(buf);
-
-  // Return only the original dimensions
-  return padDim === origDim ? buf : buf.subarray(0, origDim);
-}
-
-/**
- * Full asymmetric preprocessing pipeline for documents:
- *   center → rotate → sign-bit quantize (1-bit)
- */
-export function asymmetricDocEncode(embedding, centroid, signs) {
-  const dim = embedding.length;
-  // Center
-  const centered = new Float32Array(dim);
-  for (let i = 0; i < dim; i++) centered[i] = embedding[i] - centroid[i];
-  // Rotate
-  const rotated = fastRotate(centered, signs);
-  // Binarize (sign bit)
-  return floatToBinary(rotated);
-}
-
-/**
- * Full asymmetric preprocessing pipeline for queries:
- *   center → rotate → keep as int4 (4-bit precision)
- * Returns { int4: Int8Array, norm: number }
- */
-export function asymmetricQueryEncode(embedding, centroid, signs) {
-  const dim = embedding.length;
-  // Center
-  const centered = new Float32Array(dim);
-  for (let i = 0; i < dim; i++) centered[i] = embedding[i] - centroid[i];
-  // Rotate
-  const rotated = fastRotate(centered, signs);
-  // Quantize to 4-bit (range -7..+7, stored as int8 for convenience)
-  let maxAbs = 0;
-  for (let i = 0; i < dim; i++) {
-    const abs = Math.abs(rotated[i]);
-    if (abs > maxAbs) maxAbs = abs;
-  }
-  const int4 = new Int8Array(dim);
-  if (maxAbs > 0) {
-    const scale = 7.0 / maxAbs;
-    for (let i = 0; i < dim; i++) {
-      int4[i] = Math.round(Math.max(-7, Math.min(7, rotated[i] * scale)));
-    }
-  }
-  // Query norm for correction term
-  let norm = 0;
-  for (let i = 0; i < dim; i++) norm += rotated[i] * rotated[i];
-  return { int4, norm };
+  return _truncateForHNSW(embedding, targetDim);
 }
 
 /**
@@ -524,35 +383,7 @@ export function asymmetricDistance(docBinary, queryInt4, queryNorm) {
   return queryNorm - 2 * approxDot;
 }
 
-export function floatToInt8(embedding) {
-  const int8 = new Int8Array(embedding.length);
-  let maxAbs = 0;
-  for (let i = 0; i < embedding.length; i++) {
-    const abs = Math.abs(embedding[i]);
-    if (abs > maxAbs) maxAbs = abs;
-  }
-  if (maxAbs === 0) return int8;
-  const scale = 127 / maxAbs;
-  for (let i = 0; i < embedding.length; i++) {
-    int8[i] = Math.round(Math.max(-127, Math.min(127, embedding[i] * scale)));
-  }
-  return int8;
-}
-
-/**
- * Quantize an L2-normalized float vector to int8: clamp [-1,1], scale by 127.
- * Canonical implementation — artifact-builder.quantizeToInt8 must stay in sync.
- * Both query and document must use the same quantizer so raw int8 dot
- * product approximates cosine × 127² (no norm computation at search time).
- */
-export function normalizedFloatToInt8(embedding) {
-  const int8 = new Int8Array(embedding.length);
-  for (let i = 0; i < embedding.length; i++) {
-    const clamped = Math.max(-1, Math.min(1, embedding[i]));
-    int8[i] = Math.round(clamped * 127);
-  }
-  return int8;
-}
+export { floatToInt8, normalizedFloatToInt8 };
 
 /**
  * Batch int8 dot product scoring for normalized vectors.

@@ -15,7 +15,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { ASTChunker } from '../../core/indexing/ast-chunker.js';
-import GraphExtractor from '../../core/graph/graph-extractor.js';
+import { GraphExtractor } from '../../core/graph/index.js';
 
 const chunker = new ASTChunker({ projectRoot: '/test', useTreeSitter: false });
 const extractor = new GraphExtractor({ projectRoot: '/test' });

@@ -11,9 +11,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { getModelEntry } from '../core/infrastructure/model-registry.js';
-import { computeFileHash, getModelCacheDir } from '../core/infrastructure/model-fetcher.js';
-import { resolveNativeAddon, resolveNativeBinary, getPlatformInfo } from '../core/infrastructure/native-resolver.js';
+import { getModelEntry, computeFileHash, getModelCacheDir, resolveNativeAddon, resolveNativeBinary, getPlatformInfo } from '../core/infrastructure/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -163,7 +161,7 @@ export async function verifyRuntime(options) {
  */
 export function getMaxsimTier() {
   if (resolveNativeAddon()) return 'native';
-  const wasmPath = join(PACKAGE_ROOT, 'core', 'maxsim.wasm');
+  const wasmPath = join(PACKAGE_ROOT, 'core', 'infrastructure', 'maxsim.wasm');
   if (existsSync(wasmPath)) return 'wasm';
   return 'js-fallback';
 }

@@ -12,7 +12,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { expandVocabulary } from '../core/embedding/embedding-service.js';
+import { expandVocabulary } from '../core/embedding/index.js';
 
 const DEFAULT_TERMS_PATH = resolve(process.cwd(), '.sweet-search/vocab-terms.json');
 

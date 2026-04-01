@@ -13,7 +13,7 @@ import fs from 'fs/promises';
 import { existsSync, createWriteStream, createReadStream } from 'fs';
 import path from 'path';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
-import { wasmMaxSimF32, nativeMaxSimBatch, initWasm, isNativeMaxSimAvailable } from '../vector-store/simd-distance.js';
+import { wasmMaxSimF32, nativeMaxSimBatch, initWasm, isNativeMaxSimAvailable } from '../infrastructure/simd-distance.js';
 
 /**
  * Quantize float32 to int8 for storage

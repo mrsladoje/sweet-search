@@ -18,7 +18,7 @@ const {
   getOptimizedGraphPath,
   buildSessionOptions,
   warnIfGraphNotMaterialized,
-} = await import('../../core/infrastructure/onnx-session-utils.js');
+} = await import('../../core/infrastructure/index.js');
 
 const { existsSync, readFileSync } = await import('fs');
 

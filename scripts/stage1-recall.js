@@ -11,8 +11,8 @@
 
 import { readFileSync, existsSync } from 'fs';
 import path from 'path';
-import { BinaryHNSWIndex } from '../core/vector-store/binary-hnsw-index.js';
-import { truncateForHNSW, floatToBinary, hammingDistance } from '../core/embedding/embedding-service.js';
+import { BinaryHNSWIndex } from '../core/vector-store/index.js';
+import { truncateForHNSW, floatToBinary, hammingDistance } from '../core/embedding/index.js';
 
 const args = Object.fromEntries(
   process.argv.slice(2).filter(a => a.startsWith('--')).map(a => {
@@ -70,7 +70,7 @@ queries = queries.slice(0, MAX_QUERIES);
 console.log(`Queries: ${queries.length}${LANG_FILTER ? ` (${LANG_FILTER})` : ''}\n`);
 
 // Embed queries
-const { getEmbedding } = await import('../core/embedding/embedding-service.js');
+const { getEmbedding } = await import('../core/embedding/index.js');
 
 const ks = [10, 50, 100, 200, 500, 1000];
 const recalls = Object.fromEntries(ks.map(k => [k, []]));

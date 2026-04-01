@@ -11,13 +11,12 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
-import { createGraphSchema, insertGraph } from '../../core/graph/graph-extractor.js';
-import { resolveRelationshipTargets } from '../../core/graph/relationship-resolver.js';
+import { createGraphSchema, insertGraph, resolveRelationshipTargets } from '../../core/graph/index.js';
 import { loadProjectConfig, FILE_PATTERNS } from '../../core/config.js';
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { detectProjectBoundary } from '../../core/infrastructure/project-detector.js';
+import { detectProjectBoundary } from '../../core/infrastructure/index.js';
 
 // Mock project-detector so same-project preference tests can control boundary detection.
 // Default: wraps the original (transparent for non-same-project tests).

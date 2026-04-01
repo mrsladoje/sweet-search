@@ -50,7 +50,7 @@ import {
   getEntitiesNeedingSummary,
   storeSummary,
   storeSummariesBatch,
-} from '../../core/graph/summary-manager.js';
+} from '../../core/graph/index.js';
 import { existsSync } from 'fs';
 
 describe('Summary Backup', () => {

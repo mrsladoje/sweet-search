@@ -18,7 +18,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, existsSync } from 'fs';
 import { createRequire } from 'module';
-import { resolveNativeAddon } from '../infrastructure/native-resolver.js';
+import { resolveNativeAddon } from './native-resolver.js';
 
 const DATA_OFFSET = 0; // SIMD popcount needs no LUT
 

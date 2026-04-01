@@ -15,12 +15,12 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
-      include: ['*.js'],
-      exclude: ['__tests__/**', 'node_modules/**', 'vitest.config.js'],
+      include: ['core/**/*.js', 'core/**/*.mjs'],
+      exclude: ['node_modules/**', 'vitest.config.js'],
     },
     benchmark: {
-      include: ['__tests__/**/*.bench.js'],
-      outputFile: '../../../.sweet-search/benchmark-results.json',
+      include: ['scripts/benchmark*.js', 'training/benchmark*.js', 'eval/scripts/*bench*.js', '__tests__/**/*.bench.js'],
+      outputFile: '.sweet-search/benchmark-results.json',
     },
   },
 });
