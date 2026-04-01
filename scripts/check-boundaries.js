@@ -4,15 +4,15 @@
  *
  * Checks:
  *   1. Forbidden dependency direction (domain layering rules)
- *   2. Barrel-only imports across domains (no cross-domain internal imports)
- *   3. Barrel-only imports from consumers outside core/
+ *   2. Undeclared external dependencies (e.g. core/ → training/)
+ *   3. Barrel-only cross-domain imports within core/
+ *   4. Barrel-only imports from consumers outside core/
  *
  * Run: node scripts/check-boundaries.js [--fix-hints]
- * CI: add to pre-commit or CI pipeline.
+ * CI: runs on every push/PR via .github/workflows/ci.yml
  */
 
 import { execSync } from 'child_process';
-import path from 'path';
 
 const DOMAINS = [
   'embedding', 'graph', 'indexing', 'infrastructure',
@@ -25,7 +25,7 @@ const FORBIDDEN = [
   { from: 'core/infrastructure/', to: ['embedding/', 'indexing/', 'search/', 'ranking/', 'graph/', 'vocabulary/', 'vector-store/', 'query/'], label: 'infrastructure → domain' },
   { from: 'core/vector-store/', to: ['embedding/', 'indexing/', 'search/', 'ranking/', 'graph/', 'vocabulary/', 'query/'], label: 'vector-store → domain' },
   { from: 'core/embedding/', to: ['search/', 'ranking/', 'indexing/', 'query/', 'graph/', 'vocabulary/', 'vector-store/'], label: 'embedding → higher' },
-  { from: 'core/query/', to: ['search/', 'ranking/', 'indexing/', 'embedding/', 'graph/', 'vocabulary/', 'vector-store/'], label: 'query → domain' },
+  { from: 'core/query/', to: ['search/', 'ranking/', 'indexing/', 'embedding/', 'graph/', 'vocabulary/', 'vector-store/', 'training/', 'translation/'], label: 'query → forbidden' },
   { from: 'core/ranking/', to: ['search/', 'indexing/', 'query/', 'graph/', 'vocabulary/', 'vector-store/', 'embedding/'], label: 'ranking → higher' },
   { from: 'core/indexing/', to: ['search/', 'query/'], label: 'indexing → higher' },
   { from: 'core/graph/', to: ['search/', 'indexing/', 'vocabulary/', 'vector-store/', 'embedding/'], label: 'graph → forbidden' },
@@ -34,16 +34,14 @@ const FORBIDDEN = [
 
 const EXCEPTIONS = [
   { from: 'core/indexing/', to: 'ranking/', label: 'indexing → ranking (late-interaction build)', max: 2 },
+  // query-router-catboost imports trained model from training/ — declared dependency
+  { from: 'core/query/', to: 'training/', label: 'query → training (CatBoost model artifact)', max: 2 },
 ];
 
-// ── Section 2: Barrel-only allowlist ─────────────────────────────────────────
-// Files that are allowed to import domain internals (not through barrel).
-// Each entry: { file: glob-ish prefix, domain: allowed domain, reason: string }
+// ── Section 2: Barrel-only allowlist (external consumers) ────────────────────
 
-const BARREL_BYPASS_ALLOWLIST = [
-  // Infrastructure tests may test internals directly
+const EXTERNAL_BARREL_ALLOWLIST = [
   { pattern: 'tests/infrastructure/', domain: 'infrastructure', reason: 'domain unit tests' },
-  // These indexing tests test tree-sitter integration at the module level
   { pattern: 'tests/indexing/', domain: 'indexing', reason: 'domain unit tests' },
   { pattern: 'tests/embedding/', domain: 'embedding', reason: 'domain unit tests' },
   { pattern: 'tests/graph/', domain: 'graph', reason: 'domain unit tests' },
@@ -52,24 +50,29 @@ const BARREL_BYPASS_ALLOWLIST = [
   { pattern: 'tests/query/', domain: 'query', reason: 'domain unit tests' },
   { pattern: 'tests/vector-store/', domain: 'vector-store', reason: 'domain unit tests' },
   { pattern: 'tests/vocabulary/', domain: 'vocabulary', reason: 'domain unit tests' },
-  // Within-domain imports are always allowed
-  { pattern: 'core/', domain: '_self', reason: 'within-domain' },
 ];
 
-function isBarrelBypassAllowed(filePath, domain) {
-  for (const entry of BARREL_BYPASS_ALLOWLIST) {
-    if (!filePath.includes(entry.pattern)) continue;
-    if (entry.domain === '_self') {
-      // Within-domain imports are OK
-      if (filePath.includes(`core/${domain}/`)) return true;
-    } else if (entry.domain === domain) {
-      return true;
-    }
+function isExternalBypassAllowed(filePath, domain) {
+  for (const entry of EXTERNAL_BARREL_ALLOWLIST) {
+    if (filePath.includes(entry.pattern) && entry.domain === domain) return true;
   }
   return false;
 }
 
+// ── Section 3: Internal barrel-only allowlist (within core/) ─────────────────
+// Cross-domain imports within core/ that are too costly to barrel-ify right now.
+// Each entry documents WHY and prevents silent growth.
+
+const INTERNAL_BARREL_ALLOWLIST = [
+  // Infrastructure internals are allowed — infra is a support layer with
+  // module-level utilities (db-utils, model-fetcher, etc.) that domains
+  // import directly for performance/simplicity.
+  'infrastructure',
+];
+
 let violations = 0;
+let barrelViolations = 0;
+let internalBarrelViolations = 0;
 const showHints = process.argv.includes('--fix-hints');
 
 // ── Check 1: Forbidden dependency direction ──────────────────────────────────
@@ -86,6 +89,11 @@ for (const rule of FORBIDDEN) {
         for (const line of result.split('\n')) {
           if (!line) continue;
           if (line.includes('await import(') && line.includes('// CLI')) continue;
+          // Check if it matches a documented exception
+          const isExcepted = EXCEPTIONS.some(exc =>
+            line.includes(exc.from.replace(/\/$/, '')) && line.includes(target)
+          );
+          if (isExcepted) continue;
           console.error(`VIOLATION [${rule.label}]: ${line}`);
           violations++;
         }
@@ -99,8 +107,11 @@ for (const rule of FORBIDDEN) {
       if (dynamicResult) {
         for (const line of dynamicResult.split('\n')) {
           if (!line) continue;
-          // Skip dynamic imports in CLI-only code paths (documented exception)
           if (line.includes('await import(') && line.includes('// CLI')) continue;
+          const isExcepted = EXCEPTIONS.some(exc =>
+            line.includes(exc.from.replace(/\/$/, '')) && line.includes(target)
+          );
+          if (isExcepted) continue;
           console.error(`VIOLATION [${rule.label}] (dynamic): ${line}`);
           violations++;
         }
@@ -127,17 +138,51 @@ for (const exc of EXCEPTIONS) {
   } catch { /* */ }
 }
 
-// ── Check 3: Barrel-only imports for consumers outside core/ ─────────────────
-// Any import from core/<domain>/<file>.js (not index.js) by files outside core/
-// should go through the barrel unless allowlisted.
+// ── Check 3: Barrel-only cross-domain imports WITHIN core/ ───────────────────
+// For each domain, find imports of OTHER domains' internal files (not barrel).
+// Within-domain and infrastructure imports are allowed.
 
-let barrelViolations = 0;
+for (const sourceDomain of DOMAINS) {
+  for (const targetDomain of DOMAINS) {
+    if (sourceDomain === targetDomain) continue;
+    if (INTERNAL_BARREL_ALLOWLIST.includes(targetDomain)) continue;
+
+    try {
+      const result = execSync(
+        `grep -rn --include='*.js' --include='*.mjs' "from '../${targetDomain}/" core/${sourceDomain}/ 2>/dev/null || true`,
+        { encoding: 'utf8' }
+      ).trim();
+
+      if (!result) continue;
+
+      for (const line of result.split('\n')) {
+        if (!line) continue;
+        const match = line.match(/from\s+['"]([^'"]+)['"]/);
+        if (!match) continue;
+        const importPath = match[1];
+
+        // Barrel imports are fine
+        if (importPath.endsWith(`/${targetDomain}/index.js`) || importPath.endsWith(`/${targetDomain}/`)) continue;
+
+        // CLI-excepted dynamic imports
+        if (line.includes('await import(') && line.includes('// CLI')) continue;
+
+        internalBarrelViolations++;
+        console.error(`INTERNAL BYPASS [${sourceDomain} → ${targetDomain}]: ${line.trim()}`);
+        if (showHints) {
+          console.error(`  → import from '../${targetDomain}/index.js' instead`);
+        }
+      }
+    } catch { /* */ }
+  }
+}
+
+// ── Check 4: Barrel-only imports from consumers outside core/ ────────────────
 
 for (const domain of DOMAINS) {
   try {
-    // Find imports that reference domain internals (not /index.js or / alone)
     const result = execSync(
-      `grep -rn --include='*.js' --include='*.mjs' -E "from ['\"].*core/${domain}/[^'\"]+['\"]" tests/ scripts/ eval/ mcp/ training/ translation/ bin/ evaluation/ 2>/dev/null || true`,
+      `grep -rn --include='*.js' --include='*.mjs' -E "from ['\"].*core/${domain}/[^'\"]+['\"]" tests/ scripts/ eval/ mcp/ training/ translation/ bin/ evaluation/ __tests__/ 2>/dev/null || true`,
       { encoding: 'utf8' }
     ).trim();
 
@@ -145,22 +190,15 @@ for (const domain of DOMAINS) {
 
     for (const line of result.split('\n')) {
       if (!line) continue;
-      // Extract the imported path
       const match = line.match(/from\s+['"]([^'"]+)['"]/);
       if (!match) continue;
       const importPath = match[1];
 
-      // Barrel imports (index.js or bare domain path) are fine
       if (importPath.endsWith(`/${domain}/index.js`) || importPath.endsWith(`/${domain}/`)) continue;
-
-      // config.js facade is explicitly allowed for external consumers
       if (importPath.endsWith('/core/config.js')) continue;
 
-      // Extract the file doing the importing
       const filePath = line.split(':')[0];
-
-      // Check allowlist
-      if (isBarrelBypassAllowed(filePath, domain)) continue;
+      if (isExternalBypassAllowed(filePath, domain)) continue;
 
       barrelViolations++;
       console.error(`BARREL BYPASS [${domain}]: ${line.trim()}`);
@@ -169,9 +207,9 @@ for (const domain of DOMAINS) {
       }
     }
 
-    // Also check dynamic imports
+    // Dynamic imports
     const dynamicResult = execSync(
-      `grep -rn --include='*.js' --include='*.mjs' -E "import\\(.*core/${domain}/[^'\"]+['\"]" tests/ scripts/ eval/ mcp/ training/ translation/ bin/ evaluation/ 2>/dev/null || true`,
+      `grep -rn --include='*.js' --include='*.mjs' -E "import\\(.*core/${domain}/[^'\"]+['\"]" tests/ scripts/ eval/ mcp/ training/ translation/ bin/ evaluation/ __tests__/ 2>/dev/null || true`,
       { encoding: 'utf8' }
     ).trim();
 
@@ -187,7 +225,7 @@ for (const domain of DOMAINS) {
       if (importPath.endsWith('/core/config.js')) continue;
 
       const filePath = line.split(':')[0];
-      if (isBarrelBypassAllowed(filePath, domain)) continue;
+      if (isExternalBypassAllowed(filePath, domain)) continue;
 
       barrelViolations++;
       console.error(`BARREL BYPASS [${domain}] (dynamic): ${line.trim()}`);
@@ -200,20 +238,29 @@ for (const domain of DOMAINS) {
 
 // ── Summary ──────────────────────────────────────────────────────────────────
 
+if (internalBarrelViolations > 0) {
+  console.error(`\n${internalBarrelViolations} internal barrel bypass(es) within core/.`);
+}
 if (barrelViolations > 0) {
-  console.error(`\n${barrelViolations} barrel bypass violation(s) found.`);
+  console.error(`${barrelViolations} external barrel bypass(es).`);
   if (!showHints) {
     console.error('Run with --fix-hints for migration suggestions.');
   }
 }
 
 const totalViolations = violations + barrelViolations;
+// Internal barrel bypasses are warnings for now, not hard failures
+const totalWarnings = internalBarrelViolations;
 
 if (totalViolations > 0) {
-  console.error(`\n${totalViolations} total violation(s) found.`);
+  console.error(`\n${totalViolations} violation(s) found.`);
+  if (totalWarnings > 0) console.error(`${totalWarnings} warning(s) (internal barrel bypasses).`);
   process.exit(1);
 } else {
   console.log('\nAll domain boundaries clean.');
-  console.log(`Checked: ${DOMAINS.length} domains, ${FORBIDDEN.length} direction rules, barrel-only enforcement active.`);
+  console.log(`Checked: ${DOMAINS.length} domains, ${FORBIDDEN.length} direction rules, barrel-only enforcement (external + internal).`);
+  if (totalWarnings > 0) {
+    console.log(`${totalWarnings} internal barrel bypass warning(s) — not blocking.`);
+  }
   process.exit(0);
 }

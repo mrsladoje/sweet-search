@@ -15,8 +15,8 @@ export * from './ranking.js';
 // Search patterns, routing, performance targets
 export * from './search.js';
 
-// Indexing profiles (re-export from platform)
-export * from './indexing.js';
+// Indexing profiles — detectIndexerProfile comes from platform.js (not re-exported
+// here from indexing.js to avoid ESM ambiguity with the platform.js export *)
 
 // Code graph config
 export * from './graph.js';

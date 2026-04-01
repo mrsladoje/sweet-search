@@ -67,6 +67,7 @@
   "scripts": {
     "init": "node scripts/init.js",
     "build:assets": "node scripts/generate-asset-manifest.js",
+    "lint": "eslint core/",
     "build": "node -e \"import('./core/search/sweet-search.js')\" && echo 'Build OK'",
     "build:wasm": "node scripts/build-wasm.js && cd wasm-maxsim && RUSTFLAGS=\"-C target-feature=+simd128\" cargo build --target wasm32-unknown-unknown --release && cp target/wasm32-unknown-unknown/release/maxsim_wasm.wasm ../core/infrastructure/maxsim.wasm && echo 'WASM build OK'",
     "build:native": "cd sweet-search-native && npx napi build --release --platform && echo 'Native build OK'",
@@ -115,9 +116,9 @@
     "@babel/helper-validator-identifier": "^7.28.5",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "better-sqlite3": "^11.7.0",
-    "onnxruntime-node": "^1.24.1",
     "fast-glob": "^3.3.3",
     "franc-min": "^6.2.0",
+    "onnxruntime-node": "^1.24.1",
     "p-limit": "^6.2.0",
     "sharp": "^0.34.5",
     "tree-sitter-wasms": "^0.1.13",
@@ -129,6 +130,7 @@
   "devDependencies": {
     "@napi-rs/cli": "^3.5.1",
     "@vitest/coverage-v8": "^4.0.16",
+    "eslint": "^9.39.4",
     "fast-check": "^4.5.3",
     "minimatch": "^10.1.1",
     "p-map": "^7.0.4",
@@ -138,8 +140,8 @@
   "optionalDependencies": {
     "@sweet-search/native-darwin-arm64": "2.3.0",
     "@sweet-search/native-darwin-x64": "2.3.0",
-    "@sweet-search/native-linux-x64-gnu": "2.3.0",
-    "@sweet-search/native-linux-arm64-gnu": "2.3.0"
+    "@sweet-search/native-linux-arm64-gnu": "2.3.0",
+    "@sweet-search/native-linux-x64-gnu": "2.3.0"
   },
   "engines": {
     "node": ">=18.0.0"
