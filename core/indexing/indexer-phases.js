@@ -13,6 +13,7 @@ import { backupSummaries, restoreSummaries, markForRegeneration } from '../graph
 import { colors, log, logProgress, logError, discoverFiles, readFilesFromStdin, atomicSwapDatabase } from './indexer-utils.js';
 import { buildCodeGraph, buildVectorIndex, chunkFiles } from './indexer-build.js';
 import { incrementalUpdateHNSW, buildHNSWIndex, buildLateInteractionIndex, buildQuantizedArtifactsPhase } from './indexer-ann.js';
+import { buildSparseGramArtifact } from './indexer-sparse-gram.js';
 
 async function unlinkIfExists(filePath) {
   try {
@@ -248,6 +249,7 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     lateInteractionPool,
     lateInteractionExtendedSkiplist,
     sqliteFastMode,
+    allFiles,
   } = options;
 
   // Determine if we can parallelize LI encoding with vector embedding.
@@ -372,7 +374,12 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     });
   }
 
-  return { vectorStats, hcgsResult, lateInteractionResult };
+  let sparseGramResult = null;
+  if (!dryRun && Array.isArray(allFiles) && allFiles.length > 0) {
+    sparseGramResult = await buildSparseGramArtifact(allFiles, dryRun);
+  }
+
+  return { vectorStats, hcgsResult, lateInteractionResult, sparseGramResult };
 }
 
 export async function updateIncrementalStatePhase(options = {}) {

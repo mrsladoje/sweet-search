@@ -206,6 +206,7 @@ Sweet Search v2.3 - Unified Code Search with Auto-Warm Server
 
 Usage:
   sweet-search <query> [options]
+  sweet-search grep <pattern> [options]
   sweet-search init [--profile <profile>]    Initialize Sweet Search
   sweet-search --stop                        Stop warm server
 
@@ -213,6 +214,7 @@ Options:
   --mode <mode>     Search mode: auto, lexical, semantic, hybrid, pattern (default: auto)
   -e, --regex <pat> Regex pattern for pattern mode (implies --mode=pattern)
   --top, -k <n>     Number of results (default: 10)
+  --type <kind>     Bare grep symbol type filter: function|class|method|import|type|other
   --no-expand       Disable graph expansion
   --no-rerank       Disable reranking
   --fusion <type>   Legacy: cc or rrf (ignored for hybrid - always uses robust CC fusion)
@@ -237,6 +239,8 @@ Examples:
   sweet-search "how does auth work"                       # Semantic search
   sweet-search -e "class.*Service" "authentication"       # Pattern: regex + semantic ranking
   sweet-search --regex "fn.*sort" "sorting algorithm"     # Pattern: regex + semantic ranking
+  sweet-search grep "class\\s+Auth\\w+Service"            # Bare grep (no semantic ranking)
+  sweet-search grep "auth.*handler" --type function       # Bare grep filtered to function chunks
   sweet-search "auth" --cold                              # Skip server, cold start only
   sweet-search --stop                                     # Stop warm server
 `);
@@ -299,11 +303,19 @@ Examples:
       console.log('Server not running');
     }
   } else {
+    const isGrepCommand = args[0] === 'grep';
     // Normal query mode
     let query = '';
     let mode = 'auto';
     let regex = '';
     let topK = 10;
+    let maxMatches = 0;
+    let contextLines = 0;
+    let fixedString = false;
+    let symbolType = '';
+    const globs = [];
+    let literalFilter = true;
+    let gramIndex = true;
     let expand = true;
     let rerank = true;
     let fusion = 'cc';
@@ -314,7 +326,7 @@ Examples:
     let middleRes = false;
     let forceCold = false;
 
-    for (let i = 0; i < args.length; i++) {
+    for (let i = isGrepCommand ? 1 : 0; i < args.length; i++) {
       const arg = args[i];
 
       if (arg === '--mode' && args[i + 1]) {
@@ -322,6 +334,22 @@ Examples:
       } else if ((arg === '-e' || arg === '--regex') && args[i + 1]) {
         regex = args[++i];
         mode = 'pattern';
+      } else if ((arg === '-C' || arg === '--context') && args[i + 1]) {
+        contextLines = parseInt(args[++i], 10);
+      } else if ((arg === '--max-matches' || arg === '-m') && args[i + 1]) {
+        maxMatches = parseInt(args[++i], 10);
+      } else if (arg === '-F' || arg === '--fixed-strings') {
+        fixedString = true;
+      } else if (arg === '--type' && args[i + 1]) {
+        symbolType = args[++i];
+      } else if (arg === '--glob' && args[i + 1]) {
+        globs.push(args[++i]);
+      } else if (arg === '--no-index') {
+        gramIndex = false;
+      } else if (arg === '--no-literal-filter') {
+        literalFilter = false;
+      } else if (arg === '--no-gram-index') {
+        gramIndex = false;
       } else if ((arg === '--top' || arg === '-k') && args[i + 1]) {
         topK = parseInt(args[++i], 10);
       } else if (arg === '--no-expand') {
@@ -353,6 +381,13 @@ Examples:
       }
     }
 
+    if (isGrepCommand) {
+      mode = 'grep';
+      regex = regex || query;
+      rerank = false;
+      expand = false;
+    }
+
     if (!query) {
       console.error('Error: Query required');
       process.exit(1);
@@ -373,6 +408,13 @@ Examples:
           mode,
           regex,
           topK,
+          maxMatches,
+          contextLines,
+          fixedString,
+          type: symbolType,
+          globs,
+          literalFilter,
+          gramIndex,
           expand,
           rerank,
           fusion,
@@ -431,6 +473,13 @@ Examples:
         k: topK,
         mode,
         regex,
+        maxMatches,
+        contextLines,
+        fixedString,
+        type: symbolType,
+        globs,
+        literalFilter,
+        gramIndex,
         expand,
         rerank,
         fusion,

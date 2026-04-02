@@ -96,6 +96,9 @@ export const DB_PATHS = {
   // Late interaction token embeddings
   lateInteraction: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'codebase-late-interaction.db'),
 
+  // Sparse gram artifact for pattern prefiltering
+  sparseGramIndex: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'codebase-sparse-grams.idx'),
+
   // Merkle state for incremental indexing
   merkle: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'merkle-state.json'),
 

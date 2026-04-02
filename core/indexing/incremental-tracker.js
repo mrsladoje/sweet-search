@@ -233,10 +233,12 @@ function createEmptyState() {
  * E3 FIX: Differentiate missing vs corrupt state file
  * @returns {Object} { state, configValidation }
  */
-async function loadState() {
+async function loadState(silent = false) {
   // E3 FIX: Check if file exists first (separate from parse errors)
   if (!existsSync(STATE_PATH)) {
-    console.log('[incremental-tracker] State file not found, starting fresh');
+    if (!silent) {
+      console.log('[incremental-tracker] State file not found, starting fresh');
+    }
     return { state: createEmptyState(), configValidation: { valid: true, reason: 'new' } };
   }
 
@@ -251,13 +253,17 @@ async function loadState() {
   } catch (err) {
     // E3 FIX: Handle race condition where file deleted between exists check and read
     if (err.code === 'ENOENT') {
-      console.log('[incremental-tracker] State file removed, starting fresh');
+      if (!silent) {
+        console.log('[incremental-tracker] State file removed, starting fresh');
+      }
       return { state: createEmptyState(), configValidation: { valid: true, reason: 'removed' } };
     }
 
     // E3 FIX: Handle corrupt JSON specifically
     if (err instanceof SyntaxError) {
-      console.error('[incremental-tracker] CORRUPT state file detected, backing up and starting fresh');
+      if (!silent) {
+        console.error('[incremental-tracker] CORRUPT state file detected, backing up and starting fresh');
+      }
       try {
         await fs.rename(STATE_PATH, STATE_PATH + '.corrupt.' + Date.now());
       } catch {}
@@ -265,7 +271,9 @@ async function loadState() {
     }
 
     // E3 FIX: Handle other errors (permission, etc.)
-    console.error(`[incremental-tracker] Error reading state: ${err.message}`);
+    if (!silent) {
+      console.error(`[incremental-tracker] Error reading state: ${err.message}`);
+    }
     return { state: createEmptyState(), configValidation: { valid: false, reason: err.message } };
   }
 }
@@ -586,6 +594,21 @@ export async function validateCurrentState() {
   };
 }
 
+/**
+ * Return the persisted tracker snapshot without emitting CLI-oriented logs.
+ * Used by search-time overlays that need "changed since last index" state.
+ */
+export async function getStateSnapshot() {
+  const { state, configValidation } = await loadState(true);
+  return {
+    version: state.version,
+    lastIndex: state.lastIndex,
+    files: state.files || {},
+    stats: state.stats || {},
+    configValidation,
+  };
+}
+
 // CLI interface
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
@@ -672,4 +695,5 @@ export default {
   getStats,
   getCurrentConfigFingerprint,
   validateCurrentState,
+  getStateSnapshot,
 };

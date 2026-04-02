@@ -19,7 +19,10 @@ import { PROJECT_ROOT } from '../../core/config.js';
  * @returns {{ results: Array, latencyMs: number, stats: Object }}
  */
 export async function runPatternQuery(search, queryObj, options = {}) {
-  const { k = 10 } = options;
+  const {
+    k = 10,
+    searchOptions = {},
+  } = options;
 
   const start = performance.now();
   const { results, stats } = await search.search(queryObj.semantic_query, {
@@ -28,6 +31,7 @@ export async function runPatternQuery(search, queryObj, options = {}) {
     regex: queryObj.regex,
     rerank: true,
     expand: false,
+    ...searchOptions,
   });
   const latencyMs = performance.now() - start;
 

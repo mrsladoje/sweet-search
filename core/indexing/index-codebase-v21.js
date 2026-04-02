@@ -321,6 +321,7 @@ Output:
         lateInteractionPool,
         lateInteractionExtendedSkiplist,
         sqliteFastMode,
+        allFiles,
       });
 
       if (!vectorsResult.success) {

@@ -10,17 +10,138 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import path from 'path';
+import fs from 'fs/promises';
+import os from 'os';
 
 import {
+  bareGrep,
   buildChunkLocationMap,
+  extractLiteralClauses,
+  extractLiteralClausesHeuristic,
+  extractRequiredLiteralsHeuristic,
   findChunkForLine,
   mapMatchesToChunks,
+  querySparseGramCandidates,
   readFileRange,
   getChunkLocationMap,
   patternSearch,
   isRipgrepAvailable,
   _resetRgCache,
+  runRipgrep,
 } from '../../core/search/index.js';
+
+// =============================================================================
+// extractRequiredLiteralsHeuristic
+// =============================================================================
+
+describe('extractRequiredLiteralsHeuristic', () => {
+  it('extracts fixed literals from concatenated regex fragments', () => {
+    expect(extractRequiredLiteralsHeuristic('class\\s+Auth\\w+Service')).toEqual([
+      'class',
+      'Auth',
+      'Service',
+    ]);
+  });
+
+  it('returns no literals for alternation-heavy patterns to avoid false negatives', () => {
+    expect(extractRequiredLiteralsHeuristic('(get|set)Config')).toEqual([]);
+    expect(extractRequiredLiteralsHeuristic('foo|bar')).toEqual([]);
+  });
+
+  it('keeps surrounding literals around character classes and quantifiers', () => {
+    expect(extractRequiredLiteralsHeuristic('import\\s+{[^}]+}\\s+from\\s+react')).toEqual([
+      'import',
+      'from',
+      'react',
+    ]);
+  });
+});
+
+describe('extractLiteralClausesHeuristic', () => {
+  it('wraps heuristic literals in a single AND clause', () => {
+    expect(extractLiteralClausesHeuristic('class\\s+Auth\\w+Service')).toEqual([
+      ['class', 'Auth', 'Service'],
+    ]);
+  });
+
+  it('returns no clauses when the heuristic finds no safe literals', () => {
+    expect(extractLiteralClausesHeuristic('foo|bar')).toEqual([]);
+  });
+});
+
+describe('extractLiteralClauses', () => {
+  it('falls back to the heuristic extractor when forced', () => {
+    expect(extractLiteralClauses('class\\s+Auth\\w+Service', { forceHeuristic: true })).toEqual({
+      clauses: [['class', 'Auth', 'Service']],
+      source: 'heuristic',
+    });
+  });
+});
+
+// =============================================================================
+// querySparseGramCandidates
+// =============================================================================
+
+describe('querySparseGramCandidates', () => {
+  it('returns null when gram index is disabled', () => {
+    const searcher = {
+      sparseGramIndex: {
+        queryLiterals: vi.fn(),
+      },
+    };
+
+    expect(querySparseGramCandidates(searcher, [['auth']], { gramIndex: false })).toBeNull();
+    expect(searcher.sparseGramIndex.queryLiterals).not.toHaveBeenCalled();
+  });
+
+  it('returns null when native query is not eligible', () => {
+    const searcher = {
+      sparseGramIndex: {
+        queryLiterals: vi.fn().mockReturnValue({ eligible: false, files: [] }),
+      },
+    };
+
+    expect(querySparseGramCandidates(searcher, [['auth']])).toBeNull();
+  });
+
+  it('returns candidate files from the native sparse gram index', () => {
+    const result = {
+      eligible: true,
+      files: ['src/auth.js', 'docs/guide.md', 'src/session.js'],
+      totalFiles: 42,
+      candidateFiles: 3,
+      gramsUsed: 5,
+    };
+    const searcher = {
+      sparseGramIndex: {
+        queryLiterals: vi.fn().mockReturnValue(result),
+      },
+    };
+
+    expect(querySparseGramCandidates(searcher, [['AuthService']])).toEqual({
+      ...result,
+      denseGramsTouched: 0,
+      candidateFiles: 2,
+      files: ['src/auth.js', 'src/session.js'],
+      sparseGramsTouched: 0,
+    });
+    expect(searcher.sparseGramIndex.queryLiterals).toHaveBeenCalledWith(['AuthService'], 0, 0);
+  });
+
+  it('falls back when gram candidates are too broad', () => {
+    const searcher = {
+      sparseGramIndex: {
+        queryLiterals: vi.fn().mockReturnValue({
+          eligible: true,
+          files: Array.from({ length: 700 }, (_, i) => `src/file-${i}.js`),
+          totalFiles: 1000,
+        }),
+      },
+    };
+
+    expect(querySparseGramCandidates(searcher, [['AuthService']])).toBeNull();
+  });
+});
 
 // =============================================================================
 // buildChunkLocationMap
@@ -440,8 +561,119 @@ describe('patternSearch', () => {
     expect(result.stats).toHaveProperty('path', 'pattern');
     expect(result.stats).toHaveProperty('regex');
     expect(result.stats).toHaveProperty('grepMatches');
+    expect(result.stats).toHaveProperty('candidateGenTime_ms');
+    expect(result.stats).toHaveProperty('grepTime_ms');
+    expect(result.stats).toHaveProperty('literalFilterTime_ms');
+    expect(result.stats).toHaveProperty('gramLookupTime_ms');
+    expect(result.stats).toHaveProperty('encodeTime_ms');
+    expect(result.stats).toHaveProperty('filesConsidered');
+    expect(result.stats).toHaveProperty('filesScanned');
+    expect(result.stats).toHaveProperty('filesSkipped');
+    expect(result.stats).toHaveProperty('dirtyOverlayFiles');
+    expect(result.stats).toHaveProperty('candidateFilesBeforeFilter');
+    expect(result.stats).toHaveProperty('candidateFilesAfterFilter');
+    expect(result.stats).toHaveProperty('candidateReductionRatio');
+    expect(result.stats).toHaveProperty('literalExtractionHit');
     expect(result.stats).toHaveProperty('parallelTime_ms');
     expect(result.stats).toHaveProperty('total_ms');
     expect(typeof result.stats.total_ms).toBe('number');
+  });
+});
+
+describe('bareGrep', () => {
+  it('throws if regex is not provided', async () => {
+    await expect(
+      bareGrep.call({ projectRoot: process.cwd() }, '', null, {})
+    ).rejects.toThrow('requires a regex');
+  });
+
+  it.skipIf(!rgAvailable)('returns empty grep results when no files match', async () => {
+    const impossiblePattern = ['ZZZZ', 'UNLIKELY', 'MATCH', 'PATTERN', 'QXJ_7319'].join('__');
+    const result = await bareGrep.call(
+      { projectRoot: process.cwd(), sparseGramIndex: null },
+      impossiblePattern,
+      null,
+      { regex: impossiblePattern, maxMatches: 10 }
+    );
+
+    expect(result.results).toEqual([]);
+    expect(result.stats.path).toBe('grep');
+    expect(result.stats.totalMatches).toBe(0);
+  });
+
+  it.skipIf(!rgAvailable)('matches raw ripgrep on the same corpus', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-grep-'));
+    try {
+      await fs.writeFile(path.join(tmpDir, 'a.js'), 'class AuthService {}\nconst x = new AuthService();\n');
+      await fs.writeFile(path.join(tmpDir, 'b.js'), 'const y = 1;\n');
+
+      const regex = 'AuthService';
+      const grepResult = await bareGrep.call(
+        { projectRoot: tmpDir, sparseGramIndex: null },
+        regex,
+        null,
+        { regex, gramIndex: false }
+      );
+      const rgMatches = await runRipgrep(regex, tmpDir, { maxMatches: 0 });
+
+      const grepKeys = grepResult.results.map(r => `${r.file}:${r.line}:${r.column}`);
+      const rgKeys = rgMatches.map(r => `${r.file}:${r.line}:${r.column || 1}`);
+
+      expect(grepKeys).toEqual(rgKeys);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!rgAvailable)('filters grep results by symbol type using indexed chunk metadata', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-grep-type-'));
+    try {
+      await fs.writeFile(
+        path.join(tmpDir, 'a.js'),
+        'function authHandler() {}\nconst authValue = authHandler();\nclass AuthBox {}\n'
+      );
+
+      const mockDb = {
+        prepare: vi.fn().mockReturnValue({
+          iterate: () => ([
+            {
+              file_path: 'a.js',
+              metadata: JSON.stringify({
+                type: 'function',
+                name: 'authHandler',
+                startLine: 1,
+                endLine: 2,
+              }),
+            },
+            {
+              file_path: 'a.js',
+              metadata: JSON.stringify({
+                type: 'class',
+                name: 'AuthBox',
+                startLine: 3,
+                endLine: 3,
+              }),
+            },
+          ]),
+        }),
+      };
+
+      const grepResult = await bareGrep.call(
+        {
+          projectRoot: tmpDir,
+          sparseGramIndex: null,
+          codebaseDb: mockDb,
+        },
+        'Auth',
+        null,
+        { regex: 'Auth', gramIndex: false, type: 'class' }
+      );
+
+      expect(grepResult.results).toHaveLength(1);
+      expect(grepResult.results[0].line).toBe(3);
+      expect(grepResult.stats.symbolType).toBe('class');
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 });

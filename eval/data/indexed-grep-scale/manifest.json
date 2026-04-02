@@ -1,0 +1,26 @@
+{
+  "$schema": "indexed-grep-scale-manifest-v1",
+  "version": "1.0.0",
+  "description": "Pinned large-repo corpus and latency-only regex workload for Indexed Grep scale validation.",
+  "repos": [
+    {
+      "id": "typescript",
+      "url": "https://github.com/microsoft/TypeScript.git",
+      "sha": "7b8cb3bdf82f400642b73173f941335775d6f730",
+      "path": "eval/repos/typescript",
+      "size": "large",
+      "languages": ["typescript"],
+      "notes": "Large descriptive TypeScript corpus for cold/warm bare-grep scale checks."
+    }
+  ],
+  "patterns": [
+    { "id": "ts-selective-1", "regex": "createProgram", "kind": "selective" },
+    { "id": "ts-selective-2", "regex": "CompilerHost", "kind": "selective" },
+    { "id": "ts-selective-3", "regex": "resolveModuleName", "kind": "selective" },
+    { "id": "ts-structural-1", "regex": "interface\\s+\\w+", "kind": "broad" },
+    { "id": "ts-structural-2", "regex": "function\\s+\\w+", "kind": "broad" },
+    { "id": "ts-structural-3", "regex": "class\\s+\\w+", "kind": "broad" },
+    { "id": "ts-structural-4", "regex": "export\\s+", "kind": "broad" },
+    { "id": "ts-structural-5", "regex": "import\\s+", "kind": "broad" }
+  ]
+}

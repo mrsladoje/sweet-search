@@ -97,6 +97,7 @@ export class LateInteractionIndex {
     this.indexPath = options.indexPath || DB_PATHS.lateInteraction || path.join(process.cwd(), '.sweet-search', 'late-interaction-tokens.db');
     this.modelId = options.modelId || LATE_INTERACTION_CONFIG.model || null;
     this.poolFactor = options.poolFactor || 1;
+    this.streamChunkSize = options.streamChunkSize || (8 * 1024 * 1024);
 
     // In-memory storage
     this.documents = new Map(); // id -> { tokens, metadata }
@@ -684,57 +685,23 @@ export class LateInteractionIndex {
    * @returns {Object} Header fields (version, modelId, tokenDim, etc.) — documents are loaded directly into this.documents
    */
   async _loadStreaming() {
-    const buf = await fs.readFile(this.indexPath); // Buffer, not string — no limit
-
-    // Find the "documents":[ marker
     const marker = Buffer.from('"documents":[');
-    const markerIdx = buf.indexOf(marker);
-    if (markerIdx === -1) throw new Error('Invalid LI index format: no documents array');
+    const stream = createReadStream(this.indexPath, { highWaterMark: this.streamChunkSize });
 
-    // Parse header (everything before "documents":[)
-    const headerEnd = markerIdx;
-    // Build a valid JSON from the header by closing the object
-    const headerStr = buf.slice(0, headerEnd).toString('utf-8') + '"_":0}';
-    const header = JSON.parse(headerStr);
-
-    // Parse documents one by one from the array
-    this.documents.clear();
-    let pos = markerIdx + marker.length;
-    const end = buf.length;
+    let header = null;
+    let headerParts = [];
+    let pending = Buffer.alloc(0);
+    let docStart = -1;
+    let depth = 0;
+    let inString = false;
+    let escapeNext = false;
     let docCount = 0;
 
-    while (pos < end) {
-      // Skip whitespace and commas
-      while (pos < end && (buf[pos] === 0x20 || buf[pos] === 0x0A || buf[pos] === 0x0D || buf[pos] === 0x09 || buf[pos] === 0x2C)) pos++;
+    this.documents.clear();
 
-      // Check for end of array
-      if (pos >= end || buf[pos] === 0x5D) break; // ] = end
-
-      // Must be start of object
-      if (buf[pos] !== 0x7B) break; // { expected
-
-      // Find matching closing brace by depth tracking
-      let depth = 0;
-      const objStart = pos;
-      while (pos < end) {
-        const byte = buf[pos];
-        if (byte === 0x7B) depth++;
-        else if (byte === 0x7D) { depth--; if (depth === 0) { pos++; break; } }
-        else if (byte === 0x22) { // skip strings (handle escaped quotes)
-          pos++;
-          while (pos < end && buf[pos] !== 0x22) {
-            if (buf[pos] === 0x5C) pos++; // skip escaped char
-            pos++;
-          }
-        }
-        pos++;
-      }
-
-      // Parse this single document
-      const docStr = buf.slice(objStart, pos).toString('utf-8');
-      const doc = JSON.parse(docStr);
-
-      const tokens = this.useInt8 || header.useInt8 ?
+    const parseDocument = (docBuf) => {
+      const doc = JSON.parse(docBuf.toString('utf-8'));
+      const tokens = header.useInt8 ?
         new Int8Array(doc.tokens) :
         new Float32Array(doc.tokens);
 
@@ -751,6 +718,110 @@ export class LateInteractionIndex {
       if (docCount % 5000 === 0) {
         console.log(`LateInteraction: Streaming load ${docCount} documents...`);
       }
+    };
+
+    for await (const chunk of stream) {
+      pending = pending.length > 0 ? Buffer.concat([pending, chunk]) : chunk;
+
+      if (!header) {
+        const markerIdx = pending.indexOf(marker);
+        if (markerIdx === -1) {
+          const keep = Math.min(marker.length - 1, pending.length);
+          const flushLen = pending.length - keep;
+          if (flushLen > 0) {
+            headerParts.push(pending.subarray(0, flushLen));
+            pending = pending.subarray(flushLen);
+          }
+          continue;
+        }
+
+        headerParts.push(pending.subarray(0, markerIdx));
+        const headerStr = Buffer.concat(headerParts).toString('utf-8') + '"_":0}';
+        header = JSON.parse(headerStr);
+        headerParts = [];
+        pending = pending.subarray(markerIdx + marker.length);
+      }
+
+      let i = 0;
+      while (i < pending.length) {
+        const byte = pending[i];
+
+        if (docStart === -1) {
+          if (byte === 0x20 || byte === 0x0A || byte === 0x0D || byte === 0x09 || byte === 0x2C) {
+            i++;
+            continue;
+          }
+          if (byte === 0x5D) {
+            pending = Buffer.alloc(0);
+            i = pending.length;
+            break;
+          }
+          if (byte !== 0x7B) {
+            i++;
+            continue;
+          }
+
+          docStart = i;
+          depth = 1;
+          inString = false;
+          escapeNext = false;
+          i++;
+          continue;
+        }
+
+        if (inString) {
+          if (escapeNext) {
+            escapeNext = false;
+          } else if (byte === 0x5C) {
+            escapeNext = true;
+          } else if (byte === 0x22) {
+            inString = false;
+          }
+          i++;
+          continue;
+        }
+
+        if (byte === 0x22) {
+          inString = true;
+          i++;
+          continue;
+        }
+        if (byte === 0x7B) {
+          depth++;
+          i++;
+          continue;
+        }
+        if (byte === 0x7D) {
+          depth--;
+          i++;
+          if (depth === 0) {
+            parseDocument(pending.subarray(docStart, i));
+            pending = pending.subarray(i);
+            i = 0;
+            docStart = -1;
+          }
+          continue;
+        }
+
+        i++;
+      }
+
+      if (docStart >= 0) {
+        pending = pending.subarray(docStart);
+        docStart = -1;
+        depth = 0;
+        inString = false;
+        escapeNext = false;
+      } else if (docStart === -1 && pending.length > 0) {
+        pending = Buffer.alloc(0);
+      }
+    }
+
+    if (!header) {
+      throw new Error('Invalid LI index format: no documents array');
+    }
+    if (pending.length > 0) {
+      throw new Error('Invalid LI index format: truncated document payload');
     }
 
     this._streamLoaded = true;

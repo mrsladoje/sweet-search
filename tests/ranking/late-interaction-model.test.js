@@ -1,4 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import fsPromises from 'fs/promises';
+import { mkdtempSync, writeFileSync, rmSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 
 // Mock onnxruntime-node and @huggingface/transformers for unit tests
 // (don't download real models in CI)
@@ -245,5 +249,114 @@ describe('LateInteractionIndex v2.0', () => {
     const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
     const idx = new LateInteractionIndex({ tokenDim: 128 });
     expect(idx.poolFactor).toBe(1);
+  });
+
+  it('stream-loads documents across chunk boundaries with quoted metadata', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sweet-search-li-stream-'));
+    const indexPath = join(tmpDir, 'late-interaction.db');
+
+    try {
+      const state = {
+        version: '2.1',
+        modelId: 'lateon-code',
+        tokenDim: 4,
+        maxTokens: 8,
+        useInt8: true,
+        poolFactor: 1,
+        documents: [
+          {
+            id: 'src/a.ts:1-4:0',
+            tokens: [1, -2, 3, -4],
+            numTokens: 1,
+            dim: 4,
+            min: -1,
+            scale: 0.25,
+            metadata: { file: 'src/a.ts', name: 'quote " brace { test }' },
+          },
+          {
+            id: 'src/b.ts:5-9:1',
+            tokens: [5, 6, -7, 8, 9, -10, 11, -12],
+            numTokens: 2,
+            dim: 4,
+            min: -2,
+            scale: 0.5,
+            metadata: { file: 'src/b.ts', name: 'comma, slash \\\\ and quote "' },
+          },
+        ],
+      };
+
+      writeFileSync(indexPath, JSON.stringify(state));
+
+      const idx = new LateInteractionIndex({
+        tokenDim: 4,
+        useInt8: true,
+        modelId: 'lateon-code',
+        indexPath,
+        streamChunkSize: 19,
+      });
+
+      const header = await idx._loadStreaming();
+
+      expect(header.modelId).toBe('lateon-code');
+      expect(idx.documents.size).toBe(2);
+      expect(Array.from(idx.documents.get('src/a.ts:1-4:0').tokens)).toEqual([1, -2, 3, -4]);
+      expect(idx.documents.get('src/b.ts:5-9:1').metadata.name).toBe('comma, slash \\\\ and quote "');
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('load() uses streaming path for large files without fs.readFile', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sweet-search-li-load-'));
+    const indexPath = join(tmpDir, 'late-interaction.db');
+
+    try {
+      writeFileSync(indexPath, JSON.stringify({
+        version: '2.1',
+        modelId: 'lateon-code',
+        tokenDim: 4,
+        maxTokens: 8,
+        useInt8: false,
+        poolFactor: 1,
+        documents: [
+          {
+            id: 'doc-1',
+            tokens: [0.1, 0.2, 0.3, 0.4],
+            numTokens: 1,
+            dim: 4,
+            metadata: { file: 'src/doc-1.ts' },
+          },
+        ],
+      }));
+
+      const statSpy = vi.spyOn(fsPromises, 'stat').mockResolvedValue({ size: 300 * 1024 * 1024 });
+      const readFileSpy = vi.spyOn(fsPromises, 'readFile');
+
+      const idx = new LateInteractionIndex({
+        tokenDim: 4,
+        useInt8: false,
+        modelId: 'lateon-code',
+        indexPath,
+        streamChunkSize: 17,
+      });
+
+      await idx.load();
+
+      expect(readFileSpy).not.toHaveBeenCalledWith(indexPath, 'utf-8');
+      expect(idx.documents.size).toBe(1);
+      const tokens = Array.from(idx.documents.get('doc-1').tokens);
+      expect(tokens[0]).toBeCloseTo(0.1, 6);
+      expect(tokens[1]).toBeCloseTo(0.2, 6);
+      expect(tokens[2]).toBeCloseTo(0.3, 6);
+      expect(tokens[3]).toBeCloseTo(0.4, 6);
+
+      statSpy.mockRestore();
+      readFileSpy.mockRestore();
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+      vi.restoreAllMocks();
+    }
   });
 });

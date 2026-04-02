@@ -48,6 +48,16 @@ function buildTextSearchResponse(results, stats, totalTime, { summary = false, m
 
   if (!results || results.length === 0) {
     out += 'No results\n';
+  } else if (stats?.path === 'grep') {
+    out += `${Y}GREP${R} (${results.length} matches)\n`;
+    out += `${'─'.repeat(50)}\n\n`;
+    results.forEach((r) => {
+      out += `${C}${r.file}:${r.line}:${r.column || 1}${R}\n`;
+      for (const line of r.contextBefore || []) out += `  ${line}\n`;
+      out += `> ${r.content || r.text || ''}\n`;
+      for (const line of r.contextAfter || []) out += `  ${line}\n`;
+      out += '\n';
+    });
   } else if (summary) {
     out += `${Y}SUMMARY VIEW${R} (${results.length} results) - 10x fewer tokens\n`;
     out += `${'─'.repeat(50)}\n\n`;
@@ -202,6 +212,13 @@ export async function startServer() {
 
       // Pattern mode: regex param (ColGrep hybrid search)
       const regex = url.searchParams.get('regex') || '';
+      const maxMatches = parseInt(url.searchParams.get('maxMatches') || '0', 10);
+      const contextLines = parseInt(url.searchParams.get('contextLines') || '0', 10);
+      const fixedString = url.searchParams.get('fixedString') === 'true';
+      const symbolType = url.searchParams.get('type') || '';
+      const useLiteralFilter = url.searchParams.get('literalFilter') !== 'false';
+      const useSparseGrams = url.searchParams.get('gramIndex') !== 'false';
+      const globs = url.searchParams.getAll('glob');
 
       // Phase 4: Translation fallback
       const translate = url.searchParams.get('translate') || 'auto';
@@ -223,6 +240,13 @@ export async function startServer() {
           k: topK,
           mode,
           regex,
+          maxMatches,
+          contextLines,
+          fixedString,
+          type: symbolType,
+          globs,
+          literalFilter: useLiteralFilter,
+          gramIndex: useSparseGrams,
           expand,
           rerank,
           fusion,
@@ -389,6 +413,13 @@ export async function queryServer(query, options = {}) {
     mode = 'auto',
     regex = '',
     topK = 10,
+    maxMatches = 0,
+    contextLines = 0,
+    fixedString = false,
+    type = '',
+    globs = [],
+    literalFilter = true,
+    gramIndex = true,
     expand = true,
     rerank = true,
     fusion = 'cc',  // Legacy (ignored for hybrid)
@@ -406,6 +437,13 @@ export async function queryServer(query, options = {}) {
       fusion,
     });
     if (regex) params.set('regex', regex);
+    if (maxMatches > 0) params.set('maxMatches', maxMatches.toString());
+    if (contextLines > 0) params.set('contextLines', contextLines.toString());
+    if (fixedString) params.set('fixedString', 'true');
+    if (type) params.set('type', type);
+    if (!literalFilter) params.set('literalFilter', 'false');
+    if (!gramIndex) params.set('gramIndex', 'false');
+    for (const glob of globs) params.append('glob', glob);
     if (!expand) params.set('expand', 'false');
     if (!rerank) params.set('rerank', 'false');
     if (!useLateInteraction) params.set('late-interaction', 'false');
