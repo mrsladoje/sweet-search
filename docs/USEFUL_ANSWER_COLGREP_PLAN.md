@@ -419,15 +419,71 @@ post-ranking presentation layer that does not affect:
 The ranking is frozen before the format switch. Agent mode only transforms
 how the already-ranked results are presented.
 
-**Still requires measurement:** Latency overhead from expansion, content-loading
-bugs, and schema drift between modes are possible. After implementation, verify:
-- Run benchmark in both modes, assert identical ranking order
-- Measure latency delta (target: <5ms overhead for expansion)
-- Run existing eval suite to catch any accidental coupling
+That separation is necessary, but it is not enough. This plan needs a benchmark-first
+program with two layers:
+
+### 10.1 Ranking identity and schema invariants
+
+Still measure the basic invariants after every agent-mode change:
+- Run pattern benchmark in both modes, assert identical ranking order
+- Measure latency delta between `format: 'benchmark'` and `format: 'agent'`
+- Run existing eval suite to catch accidental coupling or schema drift
+
+These are CI gates, not optional checks.
+
+### 10.2 Track B1.5: Intrinsic context-quality benchmark
+
+Before relying on agent-in-the-loop results, add an intrinsic benchmark pass to
+`eval/run_pattern_benchmark.js` (or a sibling harness) that evaluates the presentation
+layer without an LLM in the loop.
+
+Report cache state explicitly in any latency numbers:
+- **Warm packaging latency** is the primary metric for Track B1.5 because it isolates
+  the presentation-layer cost after search state is already resident.
+- If the intrinsic harness measures end-to-end search + packaging, publish **cold** and
+  **warm** separately. Do not mix first-query startup costs with steady-state tool
+  latency.
+
+For each benchmark query, run the same ranked results through both formats and measure:
+
+| Metric | What it proves | Measurement |
+|--------|----------------|-------------|
+| Symbol completeness | Result contains a full function/class/method, not a fragment | Parse returned region and verify complete AST/entity boundaries |
+| Expansion accuracy | Expansion added the right code, not adjacent noise | Compare expanded range to gold symbol or frozen chunk-boundary annotations |
+| Header correctness | Header context is useful and not dangling | Imported identifiers or referenced symbols resolve inside the returned block |
+| Token efficiency | Packaging reduces agent context cost instead of inflating it | Compare delivered tokens against metadata mode plus simulated follow-up reads |
+| Staleness accuracy | Dirty overlay metadata is trustworthy | Modify indexed files and verify `stale` is set correctly |
+| Latency overhead | Packaging is cheap enough for default use | `agent_ms - benchmark_ms`, target `<5ms` p50 |
+
+This is the missing bridge between "format-only change" and the full Track B2 study.
+It is cheap, deterministic, and gives fast feedback while the packaging logic evolves.
+
+### 10.3 Track B2 remains the ship gate
+
+Track B2 is still the final product benchmark because only an agent-in-the-loop setup
+can prove savings in turns, tool calls, and final answer quality. But Track B2 should
+not be the first time we discover that expansion is bloated, incomplete, or slow.
 
 ---
 
 ## 11. Success Metrics
+
+Use separate gates for intrinsic quality and agent outcome. Otherwise the plan can pass
+on answer quality while still delivering noisy or wasteful context.
+
+### 11.1 Intrinsic metrics (Track B1.5)
+
+| Metric | Target | How to Measure |
+|--------|--------|----------------|
+| Ranking identity | 100% identical result IDs/order | Compare `benchmark` vs `agent` output on same query |
+| Symbol completeness | >85% top-1 full-symbol coverage | AST/entity-boundary check on returned top result |
+| Expansion accuracy | >90% of top-1 expansions hit intended symbol | Gold boundary or frozen annotation comparison |
+| Header correctness | >90% | Resolution check for header imports/references |
+| Staleness accuracy | 100% on synthetic dirty-file test cases | Modify file after index, assert `stale=true` |
+| Latency overhead | <5ms p50, <10ms p95 | Timer around packaging only |
+| Token efficiency | Agent packaging better than metadata+read baseline on median query | Compare delivered tokens for equivalent usable code |
+
+### 11.2 Outcome metrics (Track B2)
 
 | Metric | Target | How to Measure |
 |--------|--------|----------------|
@@ -435,15 +491,17 @@ bugs, and schema drift between modes are possible. After implementation, verify:
 | Search operations saved | >50% | Count tool calls in agent workflow |
 | Self-containment rate | >80% | % of queries where agent doesn't need follow-up reads |
 | Context relevance | >90% | % of returned code that agent actually uses |
-| Latency overhead | <5ms | Timer around expansion logic |
+| Answer quality | ≥ rg+read baseline | Blind judged agent answers |
 
 ### Evaluation Plan
 
-Run Track B2 (agent-in-the-loop) from COLGREP_PLAN.md:
-1. Generate code questions for each benchmark repo
-2. Run agent with pattern search (agent mode) vs agent with rg+read
-3. Measure: answer quality, token usage, search operations, turn count
-4. This is the definitive test of whether agent mode helps
+Run the benchmark program in this order:
+1. Ranking identity checks on every implementation change
+2. Track B1.5 intrinsic benchmark on the frozen pattern benchmark set
+3. Track B2 agent-in-the-loop evaluation on frozen repo question sets
+
+Track B2 remains the definitive product test, but B1.5 is the fast gate that keeps the
+formatting work honest during implementation.
 
 ---
 
@@ -645,6 +703,11 @@ shuffled and anonymized.
 | **Context recall** | Proportion of gold-standard code locations included in search results | >70% |
 | **Confidence calibration** | ECE (expected calibration error) of confidence signals | <0.15 |
 
+Add one more measurement that is worth the annotation cost:
+- **Gold-context block F1**: compare the blocks returned by `pattern+agent` against a
+  manually annotated minimal sufficient context for a subset of questions. This gives a
+  ground-truth context-quality score independent of final-answer variability.
+
 ### 15.8 Pass/Fail Criteria
 
 | Verdict | Criteria |
@@ -760,12 +823,16 @@ measure intermediate context retrieval behavior:
 
 | # | Phase | Effort | Impact |
 |---|-------|--------|--------|
-| 1 | Basic agent mode (code in results) | 0.5 day | HIGH — eliminates follow-up reads |
-| 2 | Symbol-complete expansion | 1-2 days | HIGH — self-contained results |
-| 3 | Token budget management | 1 day | MEDIUM — predictable context usage |
-| 4 | Header context | 0.5 day | MEDIUM — better code understanding |
-| 5 | Confidence signals | 0.5 day | MEDIUM — agent decision support |
-| 6 | Agent-in-the-loop eval (Track B2) | 2-3 days | HIGH — validates the whole approach |
+| 1 | Ranking identity tests + intrinsic benchmark harness (Track B1.5) | 1 day | CRITICAL — establishes measurement before iteration |
+| 2 | Basic agent mode (code in results) | 0.5 day | HIGH — eliminates follow-up reads |
+| 3 | Symbol-complete expansion | 1-2 days | HIGH — self-contained results |
+| 4 | Token budget management | 1 day | MEDIUM — predictable context usage |
+| 5 | Header context | 0.5 day | MEDIUM — better code understanding |
+| 6 | Confidence signals | 0.5 day | MEDIUM — agent decision support |
+| 7 | Agent-in-the-loop eval (Track B2) | 2-3 days | HIGH — validates the whole approach |
 
-**Critical path**: Phases 1-2, then Track B2 evaluation. Phases 3-5 are
-refinements that can ship incrementally.
+**Critical path**: land ranking identity tests and the Track B1.5 harness first, then
+build Phases 2-3, then run a full Track B1.5 pass, then ship the remaining refinements,
+then run Track B2 as the ship gate. The main correction to the original plan is that
+Track B2 is too expensive and too late to be the first serious benchmark. The intrinsic
+benchmark should catch packaging regressions before the full agent eval.
