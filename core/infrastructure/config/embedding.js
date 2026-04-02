@@ -115,23 +115,44 @@ export const EMBEDDING_PROVIDERS = {
 // ACTIVE EMBEDDING CONFIGURATION
 // =============================================================================
 
-// Select best available provider
+function isRemoteEmbeddingEnabled() {
+  const raw = process.env.USE_REMOTE_EMBEDDING?.trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+}
+
+// Default to the local embedding model unless the user explicitly opts into
+// remote embeddings via USE_REMOTE_EMBEDDING. This keeps indexing and search
+// fully offline by default, even when remote API keys are present.
 function selectProvider() {
-  // Explicit override via EMBEDDING_PROVIDER env var
-  const override = process.env.EMBEDDING_PROVIDER;
+  // Explicit override via SWEET_SEARCH_PROVIDER or EMBEDDING_PROVIDER env var
+  const override =
+    process.env.SWEET_SEARCH_PROVIDER?.trim().toLowerCase()
+    || process.env.EMBEDDING_PROVIDER?.trim().toLowerCase();
+
+  const remoteEnabled = isRemoteEmbeddingEnabled();
   if (override && EMBEDDING_PROVIDERS[override]) {
-    return { name: override, config: EMBEDDING_PROVIDERS[override] };
+    const config = EMBEDDING_PROVIDERS[override];
+    if (override === 'local') {
+      return { name: override, config };
+    }
+    if (remoteEnabled && config.enabled) {
+      return { name: override, config };
+    }
   }
 
-  const available = Object.entries(EMBEDDING_PROVIDERS)
-    .filter(([_, p]) => p.enabled)
-    .sort((a, b) => a[1].priority - b[1].priority);
-
-  if (available.length === 0) {
+  if (!remoteEnabled) {
     return { name: 'local', config: EMBEDDING_PROVIDERS.local };
   }
 
-  return { name: available[0][0], config: available[0][1] };
+  const availableRemote = Object.entries(EMBEDDING_PROVIDERS)
+    .filter(([name, provider]) => name !== 'local' && provider.enabled)
+    .sort((a, b) => a[1].priority - b[1].priority);
+
+  if (availableRemote.length > 0) {
+    return { name: availableRemote[0][0], config: availableRemote[0][1] };
+  }
+
+  return { name: 'local', config: EMBEDDING_PROVIDERS.local };
 }
 
 const activeProvider = selectProvider();

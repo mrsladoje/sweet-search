@@ -49,6 +49,9 @@ export function formatResults(results, stats = {}) {
   if (results.length > 0 && results[0].searchPath === 'structural') {
     return this.formatStructuralResults(results, stats);
   }
+  if ((stats.path === 'grep') || (results.length > 0 && results[0].searchPath === 'grep')) {
+    return formatGrepResults(results, stats);
+  }
 
   if (results.length === 0) {
     return 'No results found';
@@ -99,6 +102,34 @@ export function formatResults(results, stats = {}) {
       output += `   ${preview}${content.length > 150 ? '...' : ''}\n`;
     }
 
+    output += '\n';
+  }
+
+  return output;
+}
+
+export function formatGrepResults(results, stats = {}) {
+  if (results.length === 0) {
+    return 'No matches found';
+  }
+
+  let output = `\n${'='.repeat(80)}\n`;
+  output += `GREP MATCHES (${stats.returnedMatches || results.length}`;
+  if (stats.totalMatches && stats.totalMatches !== (stats.returnedMatches || results.length)) {
+    output += ` of ${stats.totalMatches}`;
+  }
+  output += `)\n`;
+  output += `${'='.repeat(80)}\n\n`;
+
+  for (const result of results) {
+    output += `${result.file}:${result.line}:${result.column}\n`;
+    for (const line of result.contextBefore || []) {
+      output += `  ${line}\n`;
+    }
+    output += `> ${result.content || result.text || ''}\n`;
+    for (const line of result.contextAfter || []) {
+      output += `  ${line}\n`;
+    }
     output += '\n';
   }
 

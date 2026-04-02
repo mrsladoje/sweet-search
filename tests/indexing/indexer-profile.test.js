@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import os from 'os';
+import { execFileSync } from 'child_process';
 import { detectIndexerProfile, EMBEDDING_CONFIG } from '../../core/config.js';
 
 const GB = 1_000_000_000;
@@ -118,7 +119,14 @@ describe('detectIndexerProfile', () => {
 });
 
 describe('EMBEDDING_CONFIG getters respect env overrides', () => {
+  it('defaults to the local embedding provider', () => {
+    expect(EMBEDDING_CONFIG.provider).toBe('local');
+  });
+
   afterEach(() => {
+    delete process.env.USE_REMOTE_EMBEDDING;
+    delete process.env.SWEET_SEARCH_PROVIDER;
+    delete process.env.EMBEDDING_PROVIDER;
     delete process.env.SWEET_SEARCH_INDEXER_BATCH_SIZE;
     delete process.env.SWEET_SEARCH_INDEXER_WRITE_FLUSH_ROWS;
     delete process.env.SWEET_SEARCH_PARALLEL_LI;
@@ -142,6 +150,54 @@ describe('EMBEDDING_CONFIG getters respect env overrides', () => {
   it('SWEET_SEARCH_PARALLEL_LI=1 forces parallelLateInteraction on', () => {
     process.env.SWEET_SEARCH_PARALLEL_LI = '1';
     expect(EMBEDDING_CONFIG.parallelLateInteraction).toBe(true);
+  });
+
+  it('keeps local as the default even when a remote provider is requested without USE_REMOTE_EMBEDDING', () => {
+    const script = `
+      import('./core/infrastructure/config/embedding.js').then((m) => {
+        process.stdout.write(JSON.stringify({
+          provider: m.EMBEDDING_CONFIG.provider,
+          isRemote: m.EMBEDDING_CONFIG.isRemote
+        }));
+      });
+    `;
+    const stdout = execFileSync(process.execPath, ['-e', script], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        SWEET_SEARCH_PROVIDER: 'voyage',
+        USE_REMOTE_EMBEDDING: '0',
+        VOYAGEAI_API_KEY: 'test-key',
+      },
+      encoding: 'utf8',
+    });
+    const parsed = JSON.parse(stdout);
+    expect(parsed.provider).toBe('local');
+    expect(parsed.isRemote).toBe(false);
+  });
+
+  it('allows remote provider selection when USE_REMOTE_EMBEDDING is enabled', () => {
+    const script = `
+      import('./core/infrastructure/config/embedding.js').then((m) => {
+        process.stdout.write(JSON.stringify({
+          provider: m.EMBEDDING_CONFIG.provider,
+          isRemote: m.EMBEDDING_CONFIG.isRemote
+        }));
+      });
+    `;
+    const stdout = execFileSync(process.execPath, ['-e', script], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        SWEET_SEARCH_PROVIDER: 'voyage',
+        USE_REMOTE_EMBEDDING: '1',
+        VOYAGEAI_API_KEY: 'test-key',
+      },
+      encoding: 'utf8',
+    });
+    const parsed = JSON.parse(stdout);
+    expect(parsed.provider).toBe('voyage');
+    expect(parsed.isRemote).toBe(true);
   });
 });
 

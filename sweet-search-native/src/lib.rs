@@ -6,6 +6,8 @@
 //! Falls back gracefully: native > WASM SIMD > JS
 
 mod tokenizer;
+mod sparse_gram;
+mod regex_literals;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;

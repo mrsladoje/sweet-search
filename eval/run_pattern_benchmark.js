@@ -64,6 +64,10 @@ function parseArgs() {
     saveBaselineFlag: false,
     verbose: false,
     split: 'all',
+    compareBaseline: false,
+    noLiteralFilter: false,
+    noGramIndex: false,
+    deprecatedNoIndexedScope: false,
   };
 
   for (const arg of args) {
@@ -74,6 +78,10 @@ function parseArgs() {
     else if (arg.startsWith('--split=')) opts.split = arg.split('=')[1];
     else if (arg === '--skip-baselines') opts.skipBaselines = true;
     else if (arg === '--save-baseline') opts.saveBaselineFlag = true;
+    else if (arg === '--compare-baseline') opts.compareBaseline = true;
+    else if (arg === '--no-indexed-scope') opts.deprecatedNoIndexedScope = true;
+    else if (arg === '--no-literal-filter') opts.noLiteralFilter = true;
+    else if (arg === '--no-gram-index') opts.noGramIndex = true;
     else if (arg === '--verbose' || arg === '-v') opts.verbose = true;
     else if (arg === '--help' || arg === '-h') {
       console.log(`
@@ -89,6 +97,10 @@ Options:
   --split=SPLIT         Query split to use: all|dev|test [default: all]
   --skip-baselines      Only run pattern-maxsim (treatment), skip comparison baselines
   --save-baseline       Save results as new baseline for regression checks
+  --compare-baseline    Run current pattern pipeline and a full-scan baseline side-by-side
+  --no-indexed-scope    Deprecated no-op; scoped file search was removed
+  --no-literal-filter   Disable literal prefilter for pattern-maxsim
+  --no-gram-index       Disable Phase 4 gram index hook (placeholder until Phase 4 lands)
   --verbose, -v         Show per-query details
   --help, -h            Show this help
 
@@ -111,6 +123,9 @@ Splits:
     process.exit(1);
   }
   if (opts.skipBaselines) opts.baselines = ['pattern-maxsim'];
+  if (opts.compareBaseline && opts.baselines.includes('pattern-maxsim') && !opts.baselines.includes('pattern-maxsim-baseline')) {
+    opts.baselines.push('pattern-maxsim-baseline');
+  }
   return opts;
 }
 
@@ -128,6 +143,11 @@ async function main() {
   console.log(`  Max queries: ${opts.maxQueries || 'all'}`);
   console.log(`  Top-k:       ${opts.k}`);
   console.log(`  Concurrency: ${opts.concurrency}`);
+  console.log('  Scoped file search: removed');
+  console.log(`  Literal prefilter: ${opts.noLiteralFilter ? 'disabled' : 'enabled'}`);
+  if (opts.deprecatedNoIndexedScope) {
+    console.log('  Note:        --no-indexed-scope is deprecated and now ignored');
+  }
 
   // 1. Load benchmark queries
   const queriesFile = path.join(__dirname, 'data', 'pattern-benchmark', 'queries.jsonl');
@@ -184,7 +204,21 @@ async function main() {
       try {
         let result;
         if (baseline === 'pattern-maxsim') {
-          result = await runPatternQuery(search, queryObj, { k: opts.k });
+          result = await runPatternQuery(search, queryObj, {
+            k: opts.k,
+            searchOptions: {
+              literalFilter: !opts.noLiteralFilter,
+              gramIndex: !opts.noGramIndex,
+            },
+          });
+        } else if (baseline === 'pattern-maxsim-baseline') {
+          result = await runPatternQuery(search, queryObj, {
+            k: opts.k,
+            searchOptions: {
+              literalFilter: false,
+              gramIndex: false,
+            },
+          });
         } else if (baseline === 'rg-only') {
           result = await runRgOnlyQuery(search, queryObj, { k: opts.k });
         } else if (baseline === 'hybrid-no-regex') {
@@ -202,7 +236,27 @@ async function main() {
             grepMatches: result.stats.grepMatches,
             indexedChunks: result.stats.indexedChunks,
             unindexedMatches: result.stats.unindexedMatches,
+            candidateGenTime_ms: result.stats.candidateGenTime_ms,
+            grepTime_ms: result.stats.grepTime_ms,
+            literalFilterTime_ms: result.stats.literalFilterTime_ms,
+            gramLookupTime_ms: result.stats.gramLookupTime_ms,
+            encodeTime_ms: result.stats.encodeTime_ms,
             maxSimCandidates: result.stats.maxSimCandidates,
+            filesConsidered: result.stats.filesConsidered,
+            filesScanned: result.stats.filesScanned,
+            filesSkipped: result.stats.filesSkipped,
+            dirtyOverlayFiles: result.stats.dirtyOverlayFiles,
+            candidateFilesBeforeFilter: result.stats.candidateFilesBeforeFilter,
+            candidateFilesAfterFilter: result.stats.candidateFilesAfterFilter,
+            candidateReductionRatio: result.stats.candidateReductionRatio,
+            literalExtractionHit: result.stats.literalExtractionHit,
+            literalExtractionSource: result.stats.literalExtractionSource,
+            denseGramsTouched: result.stats.denseGramsTouched,
+            sparseGramsTouched: result.stats.sparseGramsTouched,
+            gramFalsePositiveRatio: result.stats.gramFalsePositiveRatio,
+            prefilterDiscarded: result.stats.prefilterDiscarded,
+            prefilterDiscardedCount: result.stats.prefilterDiscardedCount,
+            grepStrategy: result.stats.grepStrategy,
             mapTime_ms: result.stats.mapTime_ms,
             parallelTime_ms: result.stats.parallelTime_ms,
             rerankTime_ms: result.stats.rerankTime_ms,
@@ -210,7 +264,7 @@ async function main() {
         }
 
         // Classify failure mode for pattern-maxsim pipeline diagnostics
-        if (baseline === 'pattern-maxsim') {
+        if (baseline === 'pattern-maxsim' || baseline === 'pattern-maxsim-baseline') {
           const goldIds = new Set(getRelevantChunkIds(queryObj));
           evaluated._failureMode = classifyFailure(evaluated, result.stats, goldIds);
         }
@@ -266,7 +320,7 @@ async function main() {
     console.log(`  Recall@10:   ${(m.recall_at_10 * 100).toFixed(2)}%`);
     console.log(`  NDCG@10:     ${(m.ndcg_at_10 * 100).toFixed(2)}%`);
     console.log(`  Success@1:   ${(m.success_at_1 * 100).toFixed(2)}%`);
-    if (baseline === 'pattern-maxsim') {
+    if (baseline === 'pattern-maxsim' || baseline === 'pattern-maxsim-baseline') {
       const diagForMetric = computeDiagnostics(data.evaluatedQueries);
       const candRecall = diagForMetric.total > 0
         ? ((diagForMetric.hit + diagForMetric.rerank_miss) / diagForMetric.total * 100).toFixed(2)
@@ -279,7 +333,7 @@ async function main() {
     console.log(`  Latency avg: ${m.latency_mean_ms.toFixed(1)}ms`);
 
     // Per-slice breakdown for pattern mode
-    if (baseline === 'pattern-maxsim') {
+    if (baseline === 'pattern-maxsim' || baseline === 'pattern-maxsim-baseline') {
       const slices = computePerSliceMetrics(data.evaluatedQueries, computeMetrics);
       printSliceReport('regexFamily', slices.regexFamily);
       printSliceReport('difficulty', slices.difficulty);
@@ -291,9 +345,22 @@ async function main() {
         console.log('\n  ── Track C: Component Latency Profiling ──');
         console.log('  ' + '-'.repeat(50));
         const avg = (arr, key) => arr.reduce((s, q) => s + (q.patternStats[key] || 0), 0) / arr.length;
+        const ratio = (arr, key) => arr.reduce((s, q) => s + (q.patternStats[key] ? 1 : 0), 0) / arr.length;
+        console.log(`  Candidate generation: ${avg(withStats, 'candidateGenTime_ms').toFixed(1)}ms avg`);
+        console.log(`  Regex verify:         ${avg(withStats, 'grepTime_ms').toFixed(1)}ms avg`);
+        console.log(`  Literal prefilter:    ${avg(withStats, 'literalFilterTime_ms').toFixed(1)}ms avg`);
+        console.log(`  Gram lookup:          ${avg(withStats, 'gramLookupTime_ms').toFixed(1)}ms avg`);
+        console.log(`  Query encode:         ${avg(withStats, 'encodeTime_ms').toFixed(1)}ms avg`);
         console.log(`  Chunk location map:  ${avg(withStats, 'mapTime_ms').toFixed(1)}ms avg`);
         console.log(`  Parallel (grep+enc): ${avg(withStats, 'parallelTime_ms').toFixed(1)}ms avg`);
         console.log(`  MaxSim rerank:       ${avg(withStats, 'rerankTime_ms').toFixed(1)}ms avg`);
+        console.log(`  Files considered:    ${avg(withStats, 'filesConsidered').toFixed(0)} avg`);
+        console.log(`  Files scanned:       ${avg(withStats, 'filesScanned').toFixed(0)} avg`);
+        console.log(`  Files skipped:       ${avg(withStats, 'filesSkipped').toFixed(0)} avg`);
+        console.log(`  Dirty overlay files: ${avg(withStats, 'dirtyOverlayFiles').toFixed(0)} avg`);
+        console.log(`  Cand files pre/post: ${avg(withStats, 'candidateFilesBeforeFilter').toFixed(0)}/${avg(withStats, 'candidateFilesAfterFilter').toFixed(0)} avg`);
+        console.log(`  Candidate reduction: ${(avg(withStats, 'candidateReductionRatio') * 100).toFixed(1)}% avg`);
+        console.log(`  Literal hit rate:    ${(ratio(withStats, 'literalExtractionHit') * 100).toFixed(1)}%`);
         console.log(`  Grep matches:        ${avg(withStats, 'grepMatches').toFixed(0)} avg`);
         console.log(`  Indexed chunks:      ${avg(withStats, 'indexedChunks').toFixed(0)} avg`);
         console.log(`  MaxSim candidates:   ${avg(withStats, 'maxSimCandidates').toFixed(0)} avg`);
@@ -342,6 +409,13 @@ async function main() {
       allBaselineResults['hybrid-no-regex'].evaluatedQueries,
     );
     printWinRate('Pattern vs Hybrid (win rate)', winRate);
+  }
+  if (allBaselineResults['pattern-maxsim'] && allBaselineResults['pattern-maxsim-baseline']) {
+    const winRate = computeWinRate(
+      allBaselineResults['pattern-maxsim'].evaluatedQueries,
+      allBaselineResults['pattern-maxsim-baseline'].evaluatedQueries,
+    );
+    printWinRate('Pattern current vs full-scan baseline', winRate);
   }
 
   // Summary comparison table

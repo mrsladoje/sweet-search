@@ -1,0 +1,1058 @@
+use memmap2::Mmap;
+use napi::bindgen_prelude::*;
+use napi_derive::napi;
+use std::collections::{HashMap, HashSet};
+use std::fs::{self, File};
+use std::io::{BufWriter, Write};
+use std::path::Path;
+
+const MAGIC: &[u8; 8] = b"SSGRMIDX";
+const VERSION: u32 = 2;
+const ASCII_DIM: usize = 128;
+const WEIGHT_TABLE_LEN: usize = ASCII_DIM * ASCII_DIM;
+const MIN_SPAN_LEN: usize = 3;
+const MAX_GRAM_LEN: usize = 12;
+const MIN_CORPUS_BIGRAMS: u64 = 4096;
+const FLAG_USED_FALLBACK_WEIGHTS: u32 = 1 << 0;
+const FLAG_DENSE_POSTINGS: u8 = 1 << 0;
+
+#[derive(Clone, Debug)]
+struct FileEntry {
+    path: String,
+    symbol_mask: u32,
+}
+
+#[derive(Clone, Debug)]
+struct GramDescriptor {
+    data_offset: u64,
+    data_len: u32,
+    postings_count: u32,
+    flags: u8,
+}
+
+#[derive(Clone, Debug)]
+struct Header {
+    version: u32,
+    flags: u32,
+    total_files: u32,
+    gram_count: u32,
+    total_postings: u32,
+    dense_words: u32,
+    dense_grams: u32,
+    sparse_grams: u32,
+    file_table_offset: u64,
+    gram_table_offset: u64,
+    data_offset: u64,
+    weights_offset: u64,
+}
+
+#[derive(Clone, Debug)]
+struct ColumnBuild {
+    flags: u8,
+    postings_count: u32,
+    data: Vec<u8>,
+}
+
+enum CandidateSet {
+    Dense(Vec<u64>),
+    Sparse(Vec<u32>),
+}
+
+#[napi(object)]
+pub struct SparseGramBuildResult {
+    pub files_indexed: u32,
+    pub grams: u32,
+    pub dense_grams: u32,
+    pub sparse_grams: u32,
+    pub postings: u32,
+    pub used_fallback_weights: bool,
+}
+
+#[napi(object)]
+pub struct SparseGramQueryResult {
+    pub eligible: bool,
+    pub files: Vec<String>,
+    pub grams_used: u32,
+    pub total_files: u32,
+    pub candidate_files: u32,
+    pub dense_grams_touched: u32,
+    pub sparse_grams_touched: u32,
+}
+
+#[napi(object)]
+pub struct SparseGramIndexStats {
+    pub total_files: u32,
+    pub grams: u32,
+    pub dense_grams: u32,
+    pub sparse_grams: u32,
+    pub postings: u32,
+    pub used_fallback_weights: bool,
+}
+
+#[napi]
+pub struct NativeSparseGramIndex {
+    mmap: Mmap,
+    header: Header,
+    files: Vec<FileEntry>,
+    grams: HashMap<String, GramDescriptor>,
+    weights: Vec<f32>,
+}
+
+#[napi]
+impl NativeSparseGramIndex {
+    #[napi(factory)]
+    pub fn load(path: String) -> Result<Self> {
+        let file = File::open(&path)
+            .map_err(|err| Error::from_reason(format!("Failed to open sparse gram index {path}: {err}")))?;
+        let mmap = unsafe { Mmap::map(&file) }
+            .map_err(|err| Error::from_reason(format!("Failed to mmap sparse gram index {path}: {err}")))?;
+
+        let header = parse_header(&mmap)?;
+        if header.version != VERSION {
+            return Err(Error::from_reason(format!(
+                "Unsupported sparse gram index version {}",
+                header.version
+            )));
+        }
+
+        let files = parse_file_table(&mmap, &header)?;
+        let grams = parse_gram_table(&mmap, &header)?;
+        let weights = parse_weights(&mmap, &header)?;
+
+        Ok(Self {
+            mmap,
+            header,
+            files,
+            grams,
+            weights,
+        })
+    }
+
+    #[napi]
+    pub fn query_literals(
+        &self,
+        literals: Vec<String>,
+        max_candidates: Option<u32>,
+        symbol_mask: Option<u32>,
+    ) -> Result<SparseGramQueryResult> {
+        if literals.is_empty() {
+            return Ok(SparseGramQueryResult {
+                eligible: false,
+                files: Vec::new(),
+                grams_used: 0,
+                total_files: self.header.total_files,
+                candidate_files: 0,
+                dense_grams_touched: 0,
+                sparse_grams_touched: 0,
+            });
+        }
+
+        let mut total_grams_used = 0usize;
+        let mut dense_grams_touched = 0u32;
+        let mut sparse_grams_touched = 0u32;
+        let mut combined: Option<CandidateSet> = None;
+
+        for literal in literals {
+            let normalized = match normalize_literal(&literal) {
+                Some(value) => value,
+                None => {
+                    return Ok(SparseGramQueryResult {
+                        eligible: false,
+                        files: Vec::new(),
+                        grams_used: 0,
+                        total_files: self.header.total_files,
+                        candidate_files: 0,
+                        dense_grams_touched: 0,
+                        sparse_grams_touched: 0,
+                    });
+                }
+            };
+
+            let mut grams = extract_sparse_grams(&normalized, &self.weights);
+            if grams.is_empty() {
+                return Ok(SparseGramQueryResult {
+                    eligible: false,
+                    files: Vec::new(),
+                    grams_used: 0,
+                    total_files: self.header.total_files,
+                    candidate_files: 0,
+                    dense_grams_touched: 0,
+                    sparse_grams_touched: 0,
+                });
+            }
+
+            grams.sort_by(|a, b| {
+                let a_desc = self.grams.get(a);
+                let b_desc = self.grams.get(b);
+                let a_count = a_desc.map(|desc| desc.postings_count).unwrap_or(u32::MAX);
+                let b_count = b_desc.map(|desc| desc.postings_count).unwrap_or(u32::MAX);
+                a_count.cmp(&b_count).then_with(|| a.cmp(b))
+            });
+
+            total_grams_used += grams.len();
+
+            let mut literal_candidates: Option<CandidateSet> = None;
+            for gram in grams {
+                let Some(desc) = self.grams.get(&gram) else {
+                    return Ok(SparseGramQueryResult {
+                        eligible: true,
+                        files: Vec::new(),
+                        grams_used: total_grams_used as u32,
+                        total_files: self.header.total_files,
+                        candidate_files: 0,
+                        dense_grams_touched,
+                        sparse_grams_touched,
+                    });
+                };
+
+                if desc.flags & FLAG_DENSE_POSTINGS != 0 {
+                    dense_grams_touched += 1;
+                } else {
+                    sparse_grams_touched += 1;
+                }
+
+                let posting = self.load_posting_set(desc)?;
+                literal_candidates = Some(match literal_candidates {
+                    Some(existing) => intersect_candidate_sets(existing, posting),
+                    None => posting,
+                });
+
+                if literal_candidates
+                    .as_ref()
+                    .is_some_and(|candidates| candidate_set_is_empty(candidates))
+                {
+                    break;
+                }
+            }
+
+            let literal_candidates = literal_candidates.unwrap_or_else(|| CandidateSet::Sparse(Vec::new()));
+            combined = Some(match combined {
+                Some(existing) => intersect_candidate_sets(existing, literal_candidates),
+                None => literal_candidates,
+            });
+
+            if combined
+                .as_ref()
+                .is_some_and(|candidates| candidate_set_is_empty(candidates))
+            {
+                break;
+            }
+        }
+
+        let filtered = if let Some(mask) = symbol_mask.filter(|mask| *mask != 0) {
+            combined.map(|set| filter_candidate_set_by_symbol_mask(set, &self.files, mask))
+        } else {
+            combined
+        };
+
+        let mut file_ids = collect_candidate_ids(filtered.unwrap_or_else(|| CandidateSet::Sparse(Vec::new())));
+        if let Some(limit) = max_candidates.filter(|limit| *limit > 0) {
+            file_ids.truncate(limit as usize);
+        }
+
+        let files = file_ids
+            .iter()
+            .filter_map(|file_id| self.files.get(*file_id as usize).map(|entry| entry.path.clone()))
+            .collect::<Vec<_>>();
+
+        Ok(SparseGramQueryResult {
+            eligible: true,
+            grams_used: total_grams_used as u32,
+            total_files: self.header.total_files,
+            candidate_files: files.len() as u32,
+            files,
+            dense_grams_touched,
+            sparse_grams_touched,
+        })
+    }
+
+    #[napi]
+    pub fn get_stats(&self) -> SparseGramIndexStats {
+        SparseGramIndexStats {
+            total_files: self.header.total_files,
+            grams: self.header.gram_count,
+            dense_grams: self.header.dense_grams,
+            sparse_grams: self.header.sparse_grams,
+            postings: self.header.total_postings,
+            used_fallback_weights: self.header.flags & FLAG_USED_FALLBACK_WEIGHTS != 0,
+        }
+    }
+}
+
+#[napi]
+pub fn build_sparse_gram_index(
+    project_root: String,
+    files: Vec<String>,
+    file_symbol_masks: Option<Vec<u32>>,
+    output_path: String,
+) -> Result<SparseGramBuildResult> {
+    let mut corpus_files = Vec::with_capacity(files.len());
+    let mut bigram_counts = vec![0u32; WEIGHT_TABLE_LEN];
+    let mut total_bigrams = 0u64;
+    let masks = file_symbol_masks.unwrap_or_default();
+
+    for (index, relative_path) in files.iter().enumerate() {
+        let absolute_path = Path::new(&project_root).join(relative_path);
+        let Ok(contents) = fs::read_to_string(&absolute_path) else {
+            continue;
+        };
+        let spans = collect_normalized_spans(&contents);
+        if spans.is_empty() {
+            continue;
+        }
+
+        for span in &spans {
+            if span.len() < 2 {
+                continue;
+            }
+            for pair in span.windows(2) {
+                let idx = pair_index(pair[0], pair[1]);
+                bigram_counts[idx] = bigram_counts[idx].saturating_add(1);
+                total_bigrams += 1;
+            }
+        }
+
+        corpus_files.push((
+            relative_path.clone(),
+            masks.get(index).copied().unwrap_or(0),
+            spans,
+        ));
+    }
+
+    let used_fallback_weights = total_bigrams < MIN_CORPUS_BIGRAMS;
+    let weights = if used_fallback_weights {
+        build_fallback_weights()
+    } else {
+        build_inverse_frequency_weights(&bigram_counts, total_bigrams)
+    };
+
+    let mut postings: HashMap<String, Vec<u32>> = HashMap::new();
+    let mut file_entries = Vec::with_capacity(corpus_files.len());
+    let mut total_postings = 0u32;
+
+    for (file_id, (relative_path, symbol_mask, spans)) in corpus_files.into_iter().enumerate() {
+        file_entries.push(FileEntry {
+            path: relative_path,
+            symbol_mask,
+        });
+
+        let mut grams_for_file = HashSet::new();
+        for span in spans {
+            for gram in extract_sparse_grams(&span, &weights) {
+                grams_for_file.insert(gram);
+            }
+        }
+
+        for gram in grams_for_file {
+            postings.entry(gram).or_default().push(file_id as u32);
+            total_postings = total_postings.saturating_add(1);
+        }
+    }
+
+    for posting_list in postings.values_mut() {
+        posting_list.sort_unstable();
+    }
+
+    let dense_words = dense_words(file_entries.len());
+    let mut dense_grams = 0u32;
+    let mut sparse_grams = 0u32;
+    let mut gram_names = postings.keys().cloned().collect::<Vec<_>>();
+    gram_names.sort_unstable();
+
+    let mut columns = Vec::with_capacity(gram_names.len());
+    for gram in &gram_names {
+        let posting_list = postings
+            .get(gram)
+            .expect("gram name collected from postings map must exist");
+        let dense = should_use_dense(posting_list.len(), dense_words);
+        let column = if dense {
+            dense_grams += 1;
+            encode_dense_column(posting_list, dense_words)
+        } else {
+            sparse_grams += 1;
+            encode_sparse_column(posting_list)
+        };
+        columns.push(column);
+    }
+
+    let file_table_size = file_entries
+        .iter()
+        .map(|entry| 8usize + entry.path.len())
+        .sum::<usize>();
+    let gram_table_size = gram_names
+        .iter()
+        .map(|gram| 20usize + gram.len())
+        .sum::<usize>();
+    let data_size = columns.iter().map(|column| column.data.len()).sum::<usize>();
+    let header_size = encoded_header_size();
+
+    let file_table_offset = header_size as u64;
+    let gram_table_offset = file_table_offset + file_table_size as u64;
+    let data_offset = gram_table_offset + gram_table_size as u64;
+    let weights_offset = data_offset + data_size as u64;
+
+    if let Some(parent) = Path::new(&output_path).parent() {
+        fs::create_dir_all(parent).map_err(|err| {
+            Error::from_reason(format!(
+                "Failed to create sparse gram index directory {}: {err}",
+                parent.display()
+            ))
+        })?;
+    }
+
+    let header = Header {
+        version: VERSION,
+        flags: if used_fallback_weights {
+            FLAG_USED_FALLBACK_WEIGHTS
+        } else {
+            0
+        },
+        total_files: file_entries.len() as u32,
+        gram_count: gram_names.len() as u32,
+        total_postings,
+        dense_words: dense_words as u32,
+        dense_grams,
+        sparse_grams,
+        file_table_offset,
+        gram_table_offset,
+        data_offset,
+        weights_offset,
+    };
+
+    let writer = File::create(&output_path)
+        .map_err(|err| Error::from_reason(format!("Failed to create sparse gram index {output_path}: {err}")))?;
+    let mut writer = BufWriter::new(writer);
+    write_header(&mut writer, &header)?;
+
+    for entry in &file_entries {
+        write_u32(&mut writer, entry.path.len() as u32)?;
+        write_u32(&mut writer, entry.symbol_mask)?;
+        writer
+            .write_all(entry.path.as_bytes())
+            .map_err(|err| Error::from_reason(format!("Failed to write file table: {err}")))?;
+    }
+
+    let mut running_data_offset = data_offset;
+    for (gram, column) in gram_names.iter().zip(columns.iter()) {
+        write_u16(&mut writer, gram.len() as u16)?;
+        write_u8(&mut writer, column.flags)?;
+        write_u8(&mut writer, 0)?;
+        write_u32(&mut writer, column.postings_count)?;
+        write_u32(&mut writer, column.data.len() as u32)?;
+        write_u64(&mut writer, running_data_offset)?;
+        writer
+            .write_all(gram.as_bytes())
+            .map_err(|err| Error::from_reason(format!("Failed to write gram table: {err}")))?;
+        running_data_offset += column.data.len() as u64;
+    }
+
+    for column in &columns {
+        writer
+            .write_all(&column.data)
+            .map_err(|err| Error::from_reason(format!("Failed to write postings: {err}")))?;
+    }
+
+    for weight in &weights {
+        writer
+            .write_all(&weight.to_le_bytes())
+            .map_err(|err| Error::from_reason(format!("Failed to write weight table: {err}")))?;
+    }
+
+    writer
+        .flush()
+        .map_err(|err| Error::from_reason(format!("Failed to flush sparse gram index {output_path}: {err}")))?;
+
+    Ok(SparseGramBuildResult {
+        files_indexed: file_entries.len() as u32,
+        grams: gram_names.len() as u32,
+        dense_grams,
+        sparse_grams,
+        postings: total_postings,
+        used_fallback_weights,
+    })
+}
+
+impl NativeSparseGramIndex {
+    fn load_posting_set(&self, desc: &GramDescriptor) -> Result<CandidateSet> {
+        let data = self.slice(desc.data_offset, desc.data_len as usize)?;
+        if desc.flags & FLAG_DENSE_POSTINGS != 0 {
+            let mut words = Vec::with_capacity(self.header.dense_words as usize);
+            for chunk in data.chunks_exact(8) {
+                words.push(u64::from_le_bytes([
+                    chunk[0], chunk[1], chunk[2], chunk[3],
+                    chunk[4], chunk[5], chunk[6], chunk[7],
+                ]));
+            }
+            Ok(CandidateSet::Dense(words))
+        } else {
+            Ok(CandidateSet::Sparse(decode_sparse_postings(data)))
+        }
+    }
+
+    fn slice(&self, offset: u64, len: usize) -> Result<&[u8]> {
+        let start = offset as usize;
+        let end = start.saturating_add(len);
+        self.mmap.get(start..end).ok_or_else(|| {
+            Error::from_reason(format!(
+                "Sparse gram index slice out of bounds: offset={offset} len={len}"
+            ))
+        })
+    }
+}
+
+fn parse_header(bytes: &[u8]) -> Result<Header> {
+    let mut cursor = 0usize;
+    let magic = read_bytes(bytes, &mut cursor, MAGIC.len())?;
+    if magic != MAGIC {
+        return Err(Error::from_reason("Invalid sparse gram index magic header"));
+    }
+
+    Ok(Header {
+        version: read_u32(bytes, &mut cursor)?,
+        flags: read_u32(bytes, &mut cursor)?,
+        total_files: read_u32(bytes, &mut cursor)?,
+        gram_count: read_u32(bytes, &mut cursor)?,
+        total_postings: read_u32(bytes, &mut cursor)?,
+        dense_words: read_u32(bytes, &mut cursor)?,
+        dense_grams: read_u32(bytes, &mut cursor)?,
+        sparse_grams: read_u32(bytes, &mut cursor)?,
+        file_table_offset: read_u64(bytes, &mut cursor)?,
+        gram_table_offset: read_u64(bytes, &mut cursor)?,
+        data_offset: read_u64(bytes, &mut cursor)?,
+        weights_offset: read_u64(bytes, &mut cursor)?,
+    })
+}
+
+fn parse_file_table(bytes: &[u8], header: &Header) -> Result<Vec<FileEntry>> {
+    let mut cursor = header.file_table_offset as usize;
+    let gram_table_offset = header.gram_table_offset as usize;
+    let mut files = Vec::with_capacity(header.total_files as usize);
+
+    for _ in 0..header.total_files {
+        let path_len = read_u32(bytes, &mut cursor)? as usize;
+        let symbol_mask = read_u32(bytes, &mut cursor)?;
+        let path_bytes = read_bytes(bytes, &mut cursor, path_len)?;
+        let path = String::from_utf8(path_bytes.to_vec())
+            .map_err(|err| Error::from_reason(format!("Invalid UTF-8 in sparse gram file path: {err}")))?;
+        files.push(FileEntry { path, symbol_mask });
+    }
+
+    if cursor != gram_table_offset {
+        return Err(Error::from_reason(format!(
+            "Sparse gram file table size mismatch: cursor={cursor} expected={gram_table_offset}"
+        )));
+    }
+
+    Ok(files)
+}
+
+fn parse_gram_table(bytes: &[u8], header: &Header) -> Result<HashMap<String, GramDescriptor>> {
+    let mut cursor = header.gram_table_offset as usize;
+    let data_offset = header.data_offset as usize;
+    let mut grams = HashMap::with_capacity(header.gram_count as usize);
+
+    for _ in 0..header.gram_count {
+        let gram_len = read_u16(bytes, &mut cursor)? as usize;
+        let flags = read_u8(bytes, &mut cursor)?;
+        let _reserved = read_u8(bytes, &mut cursor)?;
+        let postings_count = read_u32(bytes, &mut cursor)?;
+        let data_len = read_u32(bytes, &mut cursor)?;
+        let data_offset_entry = read_u64(bytes, &mut cursor)?;
+        let gram = String::from_utf8(read_bytes(bytes, &mut cursor, gram_len)?.to_vec())
+            .map_err(|err| Error::from_reason(format!("Invalid UTF-8 in sparse gram key: {err}")))?;
+        grams.insert(
+            gram,
+            GramDescriptor {
+                data_offset: data_offset_entry,
+                data_len,
+                postings_count,
+                flags,
+            },
+        );
+    }
+
+    if cursor != data_offset {
+        return Err(Error::from_reason(format!(
+            "Sparse gram table size mismatch: cursor={cursor} expected={data_offset}"
+        )));
+    }
+
+    Ok(grams)
+}
+
+fn parse_weights(bytes: &[u8], header: &Header) -> Result<Vec<f32>> {
+    let start = header.weights_offset as usize;
+    let end = start + (WEIGHT_TABLE_LEN * 4);
+    let weight_bytes = bytes.get(start..end).ok_or_else(|| {
+        Error::from_reason("Sparse gram weight table out of bounds")
+    })?;
+
+    let mut weights = Vec::with_capacity(WEIGHT_TABLE_LEN);
+    for chunk in weight_bytes.chunks_exact(4) {
+        weights.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+    }
+    Ok(weights)
+}
+
+fn encoded_header_size() -> usize {
+    MAGIC.len() + (8 * 4) + (4 * 8)
+}
+
+fn write_header(writer: &mut BufWriter<File>, header: &Header) -> Result<()> {
+    writer
+        .write_all(MAGIC)
+        .map_err(|err| Error::from_reason(format!("Failed to write sparse gram header: {err}")))?;
+    write_u32(writer, header.version)?;
+    write_u32(writer, header.flags)?;
+    write_u32(writer, header.total_files)?;
+    write_u32(writer, header.gram_count)?;
+    write_u32(writer, header.total_postings)?;
+    write_u32(writer, header.dense_words)?;
+    write_u32(writer, header.dense_grams)?;
+    write_u32(writer, header.sparse_grams)?;
+    write_u64(writer, header.file_table_offset)?;
+    write_u64(writer, header.gram_table_offset)?;
+    write_u64(writer, header.data_offset)?;
+    write_u64(writer, header.weights_offset)?;
+    Ok(())
+}
+
+fn write_u8(writer: &mut BufWriter<File>, value: u8) -> Result<()> {
+    writer
+        .write_all(&[value])
+        .map_err(|err| Error::from_reason(format!("Failed to write sparse gram index: {err}")))
+}
+
+fn write_u16(writer: &mut BufWriter<File>, value: u16) -> Result<()> {
+    writer
+        .write_all(&value.to_le_bytes())
+        .map_err(|err| Error::from_reason(format!("Failed to write sparse gram index: {err}")))
+}
+
+fn write_u32(writer: &mut BufWriter<File>, value: u32) -> Result<()> {
+    writer
+        .write_all(&value.to_le_bytes())
+        .map_err(|err| Error::from_reason(format!("Failed to write sparse gram index: {err}")))
+}
+
+fn write_u64(writer: &mut BufWriter<File>, value: u64) -> Result<()> {
+    writer
+        .write_all(&value.to_le_bytes())
+        .map_err(|err| Error::from_reason(format!("Failed to write sparse gram index: {err}")))
+}
+
+fn read_bytes<'a>(bytes: &'a [u8], cursor: &mut usize, len: usize) -> Result<&'a [u8]> {
+    let start = *cursor;
+    let end = start.saturating_add(len);
+    let slice = bytes.get(start..end).ok_or_else(|| {
+        Error::from_reason(format!("Sparse gram index truncated at byte range {start}..{end}"))
+    })?;
+    *cursor = end;
+    Ok(slice)
+}
+
+fn read_u8(bytes: &[u8], cursor: &mut usize) -> Result<u8> {
+    Ok(read_bytes(bytes, cursor, 1)?[0])
+}
+
+fn read_u16(bytes: &[u8], cursor: &mut usize) -> Result<u16> {
+    let buf = read_bytes(bytes, cursor, 2)?;
+    Ok(u16::from_le_bytes([buf[0], buf[1]]))
+}
+
+fn read_u32(bytes: &[u8], cursor: &mut usize) -> Result<u32> {
+    let buf = read_bytes(bytes, cursor, 4)?;
+    Ok(u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]))
+}
+
+fn read_u64(bytes: &[u8], cursor: &mut usize) -> Result<u64> {
+    let buf = read_bytes(bytes, cursor, 8)?;
+    Ok(u64::from_le_bytes([
+        buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
+    ]))
+}
+
+fn dense_words(file_count: usize) -> usize {
+    usize::max(1, file_count.div_ceil(64))
+}
+
+fn should_use_dense(posting_count: usize, dense_words: usize) -> bool {
+    posting_count.saturating_mul(4) >= dense_words.saturating_mul(8)
+}
+
+fn encode_dense_column(postings: &[u32], dense_words: usize) -> ColumnBuild {
+    let mut words = vec![0u64; dense_words];
+    for &file_id in postings {
+        let index = file_id as usize / 64;
+        let bit = file_id as usize % 64;
+        words[index] |= 1u64 << bit;
+    }
+
+    let mut data = Vec::with_capacity(words.len() * 8);
+    for word in words {
+        data.extend_from_slice(&word.to_le_bytes());
+    }
+
+    ColumnBuild {
+        flags: FLAG_DENSE_POSTINGS,
+        postings_count: postings.len() as u32,
+        data,
+    }
+}
+
+fn encode_sparse_column(postings: &[u32]) -> ColumnBuild {
+    let mut data = Vec::with_capacity(postings.len() * 2);
+    let mut previous = 0u32;
+    for (index, &value) in postings.iter().enumerate() {
+        let delta = if index == 0 { value } else { value - previous };
+        encode_varint(delta, &mut data);
+        previous = value;
+    }
+    ColumnBuild {
+        flags: 0,
+        postings_count: postings.len() as u32,
+        data,
+    }
+}
+
+fn encode_varint(mut value: u32, out: &mut Vec<u8>) {
+    loop {
+        let mut byte = (value & 0x7F) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        out.push(byte);
+        if value == 0 {
+            break;
+        }
+    }
+}
+
+fn decode_sparse_postings(bytes: &[u8]) -> Vec<u32> {
+    let mut postings = Vec::new();
+    let mut index = 0usize;
+    let mut previous = 0u32;
+
+    while index < bytes.len() {
+        let mut shift = 0u32;
+        let mut value = 0u32;
+        loop {
+            let byte = bytes[index];
+            index += 1;
+            value |= ((byte & 0x7F) as u32) << shift;
+            if byte & 0x80 == 0 {
+                break;
+            }
+            shift += 7;
+        }
+        let current = if postings.is_empty() { value } else { previous + value };
+        postings.push(current);
+        previous = current;
+    }
+
+    postings
+}
+
+fn intersect_candidate_sets(left: CandidateSet, right: CandidateSet) -> CandidateSet {
+    match (left, right) {
+        (CandidateSet::Dense(mut left_words), CandidateSet::Dense(right_words)) => {
+            bitand_dense_in_place(&mut left_words, &right_words);
+            CandidateSet::Dense(left_words)
+        }
+        (CandidateSet::Dense(left_words), CandidateSet::Sparse(right_ids)) => {
+            CandidateSet::Sparse(filter_sparse_with_dense(&right_ids, &left_words))
+        }
+        (CandidateSet::Sparse(left_ids), CandidateSet::Dense(right_words)) => {
+            CandidateSet::Sparse(filter_sparse_with_dense(&left_ids, &right_words))
+        }
+        (CandidateSet::Sparse(left_ids), CandidateSet::Sparse(right_ids)) => {
+            CandidateSet::Sparse(intersect_sorted(&left_ids, &right_ids))
+        }
+    }
+}
+
+fn candidate_set_is_empty(set: &CandidateSet) -> bool {
+    match set {
+        CandidateSet::Dense(words) => words.iter().all(|word| *word == 0),
+        CandidateSet::Sparse(ids) => ids.is_empty(),
+    }
+}
+
+fn filter_candidate_set_by_symbol_mask(
+    set: CandidateSet,
+    files: &[FileEntry],
+    symbol_mask: u32,
+) -> CandidateSet {
+    let filtered = match set {
+        CandidateSet::Dense(words) => collect_dense_ids(words.as_slice())
+            .into_iter()
+            .filter(|file_id| {
+                files.get(*file_id as usize)
+                    .is_some_and(|entry| entry.symbol_mask & symbol_mask != 0)
+            })
+            .collect::<Vec<_>>(),
+        CandidateSet::Sparse(ids) => ids
+            .into_iter()
+            .filter(|file_id| {
+                files.get(*file_id as usize)
+                    .is_some_and(|entry| entry.symbol_mask & symbol_mask != 0)
+            })
+            .collect::<Vec<_>>(),
+    };
+    CandidateSet::Sparse(filtered)
+}
+
+fn collect_candidate_ids(set: CandidateSet) -> Vec<u32> {
+    match set {
+        CandidateSet::Dense(words) => collect_dense_ids(words.as_slice()),
+        CandidateSet::Sparse(ids) => ids,
+    }
+}
+
+fn collect_dense_ids(words: &[u64]) -> Vec<u32> {
+    let mut ids = Vec::new();
+    for (word_index, word) in words.iter().enumerate() {
+        let mut bits = *word;
+        while bits != 0 {
+            let tz = bits.trailing_zeros() as usize;
+            ids.push((word_index * 64 + tz) as u32);
+            bits &= bits - 1;
+        }
+    }
+    ids
+}
+
+fn filter_sparse_with_dense(ids: &[u32], dense_words: &[u64]) -> Vec<u32> {
+    ids.iter()
+        .copied()
+        .filter(|file_id| {
+            let word_index = *file_id as usize / 64;
+            let bit = *file_id as usize % 64;
+            dense_words
+                .get(word_index)
+                .is_some_and(|word| ((*word >> bit) & 1) == 1)
+        })
+        .collect()
+}
+
+fn bitand_dense_in_place(left: &mut [u64], right: &[u64]) {
+    debug_assert_eq!(left.len(), right.len());
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::arch::is_x86_feature_detected!("avx2") {
+            unsafe {
+                bitand_dense_in_place_avx2(left, right);
+            }
+            return;
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        unsafe {
+            bitand_dense_in_place_neon(left, right);
+        }
+        return;
+    }
+
+    for (lhs, rhs) in left.iter_mut().zip(right.iter()) {
+        *lhs &= *rhs;
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn bitand_dense_in_place_avx2(left: &mut [u64], right: &[u64]) {
+    use std::arch::x86_64::{_mm256_and_si256, _mm256_loadu_si256, _mm256_storeu_si256, __m256i};
+
+    let chunks = left.len() / 4;
+    for index in 0..chunks {
+        let offset = index * 4;
+        let left_ptr = left.as_mut_ptr().add(offset) as *mut __m256i;
+        let right_ptr = right.as_ptr().add(offset) as *const __m256i;
+        let lhs = _mm256_loadu_si256(left_ptr);
+        let rhs = _mm256_loadu_si256(right_ptr);
+        _mm256_storeu_si256(left_ptr, _mm256_and_si256(lhs, rhs));
+    }
+
+    for index in (chunks * 4)..left.len() {
+        left[index] &= right[index];
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+unsafe fn bitand_dense_in_place_neon(left: &mut [u64], right: &[u64]) {
+    use std::arch::aarch64::{uint64x2_t, vandq_u64, vld1q_u64, vst1q_u64};
+
+    let chunks = left.len() / 2;
+    for index in 0..chunks {
+        let offset = index * 2;
+        let left_ptr = left.as_mut_ptr().add(offset);
+        let right_ptr = right.as_ptr().add(offset);
+        let lhs: uint64x2_t = vld1q_u64(left_ptr);
+        let rhs: uint64x2_t = vld1q_u64(right_ptr);
+        vst1q_u64(left_ptr, vandq_u64(lhs, rhs));
+    }
+
+    for index in (chunks * 2)..left.len() {
+        left[index] &= right[index];
+    }
+}
+
+fn normalize_literal(literal: &str) -> Option<Vec<u8>> {
+    let mut bytes = Vec::with_capacity(literal.len());
+    for byte in literal.bytes() {
+        let normalized = normalize_ascii_byte(byte);
+        if !is_span_byte(normalized) {
+            return None;
+        }
+        bytes.push(normalized);
+    }
+    if bytes.len() < MIN_SPAN_LEN {
+        return None;
+    }
+    Some(bytes)
+}
+
+fn collect_normalized_spans(text: &str) -> Vec<Vec<u8>> {
+    let mut spans = Vec::new();
+    let mut current = Vec::new();
+
+    for byte in text.bytes() {
+        let normalized = normalize_ascii_byte(byte);
+        if is_span_byte(normalized) {
+            current.push(normalized);
+        } else if current.len() >= MIN_SPAN_LEN {
+            spans.push(std::mem::take(&mut current));
+        } else {
+            current.clear();
+        }
+    }
+
+    if current.len() >= MIN_SPAN_LEN {
+        spans.push(current);
+    }
+
+    spans
+}
+
+fn extract_sparse_grams(span: &[u8], weights: &[f32]) -> Vec<String> {
+    if span.len() < MIN_SPAN_LEN {
+        return Vec::new();
+    }
+
+    let pair_weights = span
+        .windows(2)
+        .map(|pair| weights[pair_index(pair[0], pair[1])])
+        .collect::<Vec<_>>();
+
+    let mut grams = Vec::new();
+    let mut seen = HashSet::new();
+
+    for start in 0..=span.len() - MIN_SPAN_LEN {
+        let max_end = usize::min(span.len(), start + MAX_GRAM_LEN);
+        for end in (start + MIN_SPAN_LEN)..=max_end {
+            let first = pair_weights[start];
+            let last = pair_weights[end - 2];
+            let interior_max = if end - start <= 3 {
+                f32::NEG_INFINITY
+            } else {
+                pair_weights[(start + 1)..(end - 2)]
+                    .iter()
+                    .copied()
+                    .fold(f32::NEG_INFINITY, f32::max)
+            };
+
+            if first.min(last) > interior_max {
+                let gram = String::from_utf8_lossy(&span[start..end]).to_string();
+                if seen.insert(gram.clone()) {
+                    grams.push(gram);
+                }
+            }
+        }
+    }
+
+    if grams.is_empty() {
+        for window in span.windows(3) {
+            let gram = String::from_utf8_lossy(window).to_string();
+            if seen.insert(gram.clone()) {
+                grams.push(gram);
+            }
+        }
+    }
+
+    grams
+}
+
+fn intersect_sorted(left: &[u32], right: &[u32]) -> Vec<u32> {
+    let mut output = Vec::with_capacity(left.len().min(right.len()));
+    let mut li = 0usize;
+    let mut ri = 0usize;
+
+    while li < left.len() && ri < right.len() {
+        match left[li].cmp(&right[ri]) {
+            std::cmp::Ordering::Less => li += 1,
+            std::cmp::Ordering::Greater => ri += 1,
+            std::cmp::Ordering::Equal => {
+                output.push(left[li]);
+                li += 1;
+                ri += 1;
+            }
+        }
+    }
+
+    output
+}
+
+fn build_inverse_frequency_weights(counts: &[u32], total_bigrams: u64) -> Vec<f32> {
+    let denominator = (total_bigrams + WEIGHT_TABLE_LEN as u64) as f32;
+    counts
+        .iter()
+        .map(|count| (denominator / (*count as f32 + 1.0)).ln())
+        .collect()
+}
+
+fn build_fallback_weights() -> Vec<f32> {
+    let mut counts = vec![1u32; WEIGHT_TABLE_LEN];
+    for (pair, count) in common_code_bigrams() {
+        let bytes = pair.as_bytes();
+        counts[pair_index(bytes[0], bytes[1])] = count;
+    }
+
+    let total = counts.iter().map(|count| *count as u64).sum();
+    build_inverse_frequency_weights(&counts, total)
+}
+
+fn common_code_bigrams() -> Vec<(&'static str, u32)> {
+    vec![
+        ("th", 5000), ("he", 4800), ("in", 4700), ("er", 4500), ("re", 4300),
+        ("fo", 4200), ("or", 4200), ("fu", 4100), ("un", 4000), ("ct", 3900),
+        ("cl", 3800), ("ss", 3700), ("co", 3600), ("de", 3500), ("nt", 3400),
+        ("io", 3300), ("on", 3200), ("st", 3100), ("te", 3000), ("ra", 2900),
+        ("ri", 2800), ("al", 2700), ("se", 2600), ("it", 2500), ("at", 2400),
+        ("es", 2300), ("is", 2200), ("le", 2100), ("ar", 2000), ("ha", 1900),
+        ("ng", 1800), ("js", 1700), ("ts", 1600), ("py", 1500), ("rs", 1400),
+        ("::", 1300), ("->", 1200), ("=>", 1100), ("__", 1000), ("./", 900),
+    ]
+}
+
+fn is_span_byte(byte: u8) -> bool {
+    matches!(
+        byte,
+        b'a'..=b'z' | b'0'..=b'9' | b'_' | b'.' | b'/' | b':' | b'-'
+    )
+}
+
+fn normalize_ascii_byte(byte: u8) -> u8 {
+    if byte.is_ascii_uppercase() {
+        byte.to_ascii_lowercase()
+    } else {
+        byte
+    }
+}
+
+fn pair_index(left: u8, right: u8) -> usize {
+    ((left as usize) << 7) | right as usize
+}

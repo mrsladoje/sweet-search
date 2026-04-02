@@ -257,7 +257,10 @@ export function isGitignoreAllowlistedAgenticPath(relativePath) {
   );
 }
 
-export async function getGitIgnoredPathSet(paths) {
+export async function getGitIgnoredPathSet(paths, options = {}) {
+  const silent = options.silent ?? false;
+  const reportError = silent ? () => {} : logError;
+
   if (paths.length === 0) {
     return new Set();
   }
@@ -275,7 +278,7 @@ export async function getGitIgnoredPathSet(paths) {
     git.on('error', (err) => {
       if (settled) return;
       settled = true;
-      logError(`WARN: Unable to run git check-ignore (${err.message})`);
+      reportError(`WARN: Unable to run git check-ignore (${err.message})`);
       resolve(null);
     });
 
@@ -285,7 +288,7 @@ export async function getGitIgnoredPathSet(paths) {
 
       if (code !== 0 && code !== 1) {
         const stderr = Buffer.concat(errorChunks).toString('utf8').trim();
-        logError(`WARN: git check-ignore failed${stderr ? `: ${stderr}` : ''}`);
+        reportError(`WARN: git check-ignore failed${stderr ? `: ${stderr}` : ''}`);
         resolve(null);
         return;
       }
@@ -307,7 +310,7 @@ export async function getGitIgnoredPathSet(paths) {
   });
 }
 
-export async function applyGitignoreAlignment(files, respectGitignore) {
+export async function applyGitignoreAlignment(files, respectGitignore, options = {}) {
   if (!respectGitignore || !existsSync(path.join(PROJECT_ROOT, '.gitignore')) || !existsSync(path.join(PROJECT_ROOT, '.git'))) {
     return { files, gitignored: 0 };
   }
@@ -322,7 +325,7 @@ export async function applyGitignoreAlignment(files, respectGitignore) {
     }
   }
 
-  const ignoredSet = await getGitIgnoredPathSet(candidates);
+  const ignoredSet = await getGitIgnoredPathSet(candidates, options);
   if (!ignoredSet) {
     return { files, gitignored: 0 };
   }
@@ -350,28 +353,35 @@ export async function applyGitignoreAlignment(files, respectGitignore) {
 // FILE DISCOVERY
 // =============================================================================
 
-export async function discoverFiles() {
-  log('\n━━━ Discovering Files ━━━', 'bright');
+export async function discoverFiles(options = {}) {
+  const {
+    projectRoot = PROJECT_ROOT,
+    silent = false,
+  } = options;
 
-  const projectConfig = loadProjectConfig(PROJECT_ROOT);
+  const writeLog = silent ? () => {} : log;
+
+  writeLog('\n━━━ Discovering Files ━━━', 'bright');
+
+  const projectConfig = loadProjectConfig(projectRoot);
   const respectGitignore = projectConfig.respectGitignore !== false;
   const maxFileSize = projectConfig.maxFileSize || (1 * 1024 * 1024);
 
   const discovered = await glob(projectConfig.include, {
     ignore: projectConfig.exclude,
-    cwd: PROJECT_ROOT,
+    cwd: projectRoot,
     absolute: false,
     onlyFiles: true,
     dot: true,
   });
 
-  const { files: allFiles, gitignored } = await applyGitignoreAlignment(discovered, respectGitignore);
+  const { files: allFiles, gitignored } = await applyGitignoreAlignment(discovered, respectGitignore, { silent });
 
   const files = [];
   let oversized = 0;
   for (const file of allFiles) {
     try {
-      const stat = await fs.stat(path.join(PROJECT_ROOT, file));
+      const stat = await fs.stat(path.join(projectRoot, file));
       if (stat.size > maxFileSize) {
         oversized++;
       } else {
@@ -382,12 +392,12 @@ export async function discoverFiles() {
     }
   }
 
-  log(`✓ Found ${files.length} files to index`, 'green');
+  writeLog(`✓ Found ${files.length} files to index`, 'green');
   if (gitignored > 0) {
-    log(`  Skipped ${gitignored} files via .gitignore alignment`, 'yellow');
+    writeLog(`  Skipped ${gitignored} files via .gitignore alignment`, 'yellow');
   }
   if (oversized > 0) {
-    log(`  Skipped ${oversized} files exceeding ${(maxFileSize / 1024 / 1024).toFixed(1)} MB size limit`, 'yellow');
+    writeLog(`  Skipped ${oversized} files exceeding ${(maxFileSize / 1024 / 1024).toFixed(1)} MB size limit`, 'yellow');
   }
 
   const byType = {};
@@ -396,7 +406,7 @@ export async function discoverFiles() {
     byType[ext] = (byType[ext] || 0) + 1;
   }
 
-  log('  File types: ' + Object.entries(byType).map(([ext, count]) => `${ext}(${count})`).join(', '), 'dim');
+  writeLog('  File types: ' + Object.entries(byType).map(([ext, count]) => `${ext}(${count})`).join(', '), 'dim');
 
   return files;
 }

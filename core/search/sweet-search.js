@@ -26,6 +26,7 @@ import { FloatVectorStore, getFloatStorePath } from '../vector-store/float-vecto
 import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
 import Database from 'better-sqlite3';
 import { applyReadPragmas } from '../infrastructure/db-utils.js';
+import { loadSparseGramIndex } from '../infrastructure/native-sparse-gram.js';
 import { TranslationFallback, queryNeedsTranslation } from '../../translation/index.js';
 import { expandResults } from '../graph/graph-expansion.js';
 import { applyMMR, shouldApplyMMR, getLambdaForIntent, MMR_CONFIG } from '../ranking/mmr.js';
@@ -100,6 +101,7 @@ export class SweetSearch {
     this.lateInteractionIndex = new LateInteractionIndex(options.lateInteractionOptions || {});
     this.router = new QueryRouter();
     this.codebaseDbPath = options.codebaseDbPath || DB_PATHS.codebase;
+    this.sparseGramIndexPath = options.sparseGramIndexPath || DB_PATHS.sparseGramIndex;
     this.verbose = options.verbose ?? LOGGING.verbose;
     this.timing = options.timing ?? LOGGING.timing;
     this.use3Stage = options.use3Stage ?? true;
@@ -138,6 +140,8 @@ export class SweetSearch {
     setRepoMapModule({ pageRank, loadGraph, buildAdjacency });
     this._qualityScorer = null;
     this._codebaseDb = null;
+    this.sparseGramIndex = null;
+    this.grepInitialized = false;
     this.initialized = false;
   }
 
@@ -164,6 +168,7 @@ export class SweetSearch {
     this.hasBinaryHnswIndex = existsSync(DB_PATHS.binaryHnswIndex.replace('.idx', '.meta.json'));
     this.hasCodebaseIndex = existsSync(this.codebaseDbPath);
     this.hasLateInteractionIndex = existsSync(this.lateInteractionIndex.indexPath);
+    this.hasSparseGramIndex = existsSync(this.sparseGramIndexPath);
 
     if (!this.hasGraphIndex && !this.hasCodebaseIndex) {
       throw new Error('No search indexes found. Run indexing first.');
@@ -229,6 +234,25 @@ export class SweetSearch {
       }
     }
 
+    if (this.hasSparseGramIndex) {
+      try {
+        this.sparseGramIndex = loadSparseGramIndex(this.sparseGramIndexPath);
+        if (this.sparseGramIndex) {
+          const stats = this.sparseGramIndex.getStats();
+          this.log(
+            `SparseGram: Loaded ${stats.grams} grams across ${stats.totalFiles} files ` +
+            `(${stats.postings} postings${stats.usedFallbackWeights ? ', fallback weights' : ''})`
+          );
+        } else {
+          this.hasSparseGramIndex = false;
+        }
+      } catch (err) {
+        this.log(`SparseGram: Failed to load: ${err.message}`);
+        this.hasSparseGramIndex = false;
+        this.sparseGramIndex = null;
+      }
+    }
+
     await warmupEmbedding({ initVocabulary: true, initSemanticCache: true });
 
     if (shouldUseLocalReranker()) {
@@ -250,16 +274,50 @@ export class SweetSearch {
     this.log(`SweetSearch: Initialized in ${Date.now() - start}ms`);
   }
 
+  async initGrepOnly() {
+    if (this.grepInitialized || this.initialized) return;
+    const start = Date.now();
+
+    this.hasCodebaseIndex = existsSync(this.codebaseDbPath);
+    this.hasSparseGramIndex = existsSync(this.sparseGramIndexPath);
+    if (this.hasSparseGramIndex) {
+      try {
+        this.sparseGramIndex = loadSparseGramIndex(this.sparseGramIndexPath);
+        if (this.sparseGramIndex) {
+          const stats = this.sparseGramIndex.getStats();
+          this.log(
+            `SparseGram: Loaded ${stats.grams} grams across ${stats.totalFiles} files ` +
+            `(${stats.postings} postings${stats.usedFallbackWeights ? ', fallback weights' : ''})`
+          );
+        } else {
+          this.hasSparseGramIndex = false;
+        }
+      } catch (err) {
+        this.log(`SparseGram: Failed to load: ${err.message}`);
+        this.hasSparseGramIndex = false;
+        this.sparseGramIndex = null;
+      }
+    }
+
+    this.grepInitialized = true;
+    this.log(`SweetSearch: Grep-only initialized in ${Date.now() - start}ms`);
+  }
+
   /** Main search entry point. */
   async search(query, options = {}) {
-    await this.init();
     const {
       k = 10, mode: requestedMode = 'auto', regex = '', expand = true, rerank = true,
       fusion: fusionOpt = 'cc', useLateInteraction = this.useLateInteraction,
       translate = 'auto', graphExpand = 'none', graphExpandOptions = {},
       adaptiveHop2 = true, intent = 'none', qualityWeight = this.qualityWeight,
     } = options;
-    const mode = regex ? 'pattern' : requestedMode;
+    const mode = requestedMode === 'grep' ? 'grep' : (regex ? 'pattern' : requestedMode);
+
+    if (mode === 'grep') {
+      await this.initGrepOnly();
+    } else {
+      await this.init();
+    }
 
     const start = Date.now();
     const stats = { query };
@@ -307,6 +365,16 @@ export class SweetSearch {
     let semanticStats = null;
 
     switch (searchMode) {
+      case 'grep': {
+        const grepResult = await this.bareGrep(query, routing, {
+          ...options,
+          regex: regex || query,
+        });
+        results = grepResult.results;
+        Object.assign(stats, grepResult.stats);
+        stats.total_ms = grepResult.stats.total_ms ?? (Date.now() - start);
+        return { results, stats };
+      }
       case 'pattern': {
         const patternResult = await this.patternSearch(query, routing, options);
         results = patternResult.results;
@@ -576,6 +644,7 @@ Object.assign(SweetSearch.prototype, {
   hybridSearchV2: hybrid.hybridSearchV2,
   hybridSearch: hybrid.hybridSearch,
   patternSearch: pattern.patternSearch,
+  bareGrep: pattern.bareGrep,
   getChunkLocationMap: pattern.getChunkLocationMap,
   _applyPostRetrieval: postprocess.applyPostRetrieval,
 });
