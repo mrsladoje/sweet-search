@@ -168,7 +168,7 @@ impl NativeSparseGramIndex {
                 }
             };
 
-            let mut grams = extract_sparse_grams(&normalized, &self.weights);
+            let mut grams = extract_covering_grams(&normalized, &self.weights);
             if grams.is_empty() {
                 return Ok(SparseGramQueryResult {
                     eligible: false,
@@ -938,6 +938,113 @@ fn collect_normalized_spans(text: &str) -> Vec<Vec<u8>> {
     spans
 }
 
+/// Extract the minimal covering set of sparse grams from a span (query time).
+///
+/// Unlike `extract_sparse_grams` which finds ALL valid grams at every position
+/// (needed at index time to ensure completeness), this function partitions the
+/// span by recursively splitting at the highest-weight interior bigram. Each
+/// resulting piece is either a valid gram (boundaries dominate interior) or a
+/// base-case trigram. The covering set is a subset of what `extract_sparse_grams`
+/// produces — sufficient for posting list intersection, but with fewer grams to
+/// look up.
+///
+/// Algorithm: iterative stack-based version of the recursive split from
+/// GitHub Blackbird / Cursor's sparse n-gram approach.
+fn extract_covering_grams(span: &[u8], weights: &[f32]) -> Vec<String> {
+    if span.len() < MIN_SPAN_LEN {
+        return Vec::new();
+    }
+
+    let pair_weights = span
+        .windows(2)
+        .map(|pair| weights[pair_index(pair[0], pair[1])])
+        .collect::<Vec<_>>();
+
+    let mut grams = Vec::new();
+    let mut seen = HashSet::new();
+
+    // Stack of (start, end) byte ranges to process.
+    let mut stack: Vec<(usize, usize)> = vec![(0, span.len())];
+
+    while let Some((start, end)) = stack.pop() {
+        let len = end - start;
+
+        if len < MIN_SPAN_LEN {
+            continue;
+        }
+
+        // Base case: trigram — always emit.
+        if len == MIN_SPAN_LEN {
+            let gram = String::from_utf8_lossy(&span[start..end]).to_string();
+            if seen.insert(gram.clone()) {
+                grams.push(gram);
+            }
+            continue;
+        }
+
+        // If within max gram length, check if boundaries dominate interior.
+        if len <= MAX_GRAM_LEN {
+            let first = pair_weights[start];
+            let last = pair_weights[end - 2];
+            let interior_max = pair_weights[(start + 1)..(end - 2)]
+                .iter()
+                .copied()
+                .fold(f32::NEG_INFINITY, f32::max);
+
+            if first.min(last) > interior_max {
+                // Whole range is one valid gram — emit without splitting further.
+                let gram = String::from_utf8_lossy(&span[start..end]).to_string();
+                if seen.insert(gram.clone()) {
+                    grams.push(gram);
+                }
+                continue;
+            }
+        }
+
+        // Find the interior bigram with maximum weight to split at.
+        let search_start = start + 1;
+        let search_end = end - 1;
+        let mut max_w = f32::NEG_INFINITY;
+        let mut max_pos = search_start;
+        for i in search_start..search_end {
+            if pair_weights[i] > max_w {
+                max_w = pair_weights[i];
+                max_pos = i;
+            }
+        }
+
+        // Split: left = [start, max_pos+1), right = [max_pos, end).
+        // One byte overlap at max_pos ensures no coverage gap.
+        let left_end = max_pos + 1;
+        let right_start = max_pos;
+
+        // Push right first (LIFO) so left is processed first.
+        if end - right_start >= MIN_SPAN_LEN {
+            stack.push((right_start, end));
+        }
+        if left_end - start >= MIN_SPAN_LEN {
+            stack.push((start, left_end));
+        }
+    }
+
+    // Fallback: if no covering grams found, use sliding trigrams.
+    if grams.is_empty() {
+        for window in span.windows(MIN_SPAN_LEN) {
+            let gram = String::from_utf8_lossy(window).to_string();
+            if seen.insert(gram.clone()) {
+                grams.push(gram);
+            }
+        }
+    }
+
+    grams
+}
+
+/// Extract ALL sparse grams from a span (index build time).
+///
+/// Enumerates every valid (start, end) window where boundary bigram weights
+/// exceed all interior bigram weights. This is the exhaustive extraction needed
+/// at index time so that any covering query can find its grams in the postings.
 fn extract_sparse_grams(span: &[u8], weights: &[f32]) -> Vec<String> {
     if span.len() < MIN_SPAN_LEN {
         return Vec::new();
@@ -1055,4 +1162,118 @@ fn normalize_ascii_byte(byte: u8) -> u8 {
 
 fn pair_index(left: u8, right: u8) -> usize {
     ((left as usize) << 7) | right as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_weights() -> Vec<f32> {
+        build_fallback_weights()
+    }
+
+    #[test]
+    fn covering_grams_are_subset_of_all_grams() {
+        let weights = test_weights();
+        let cases: Vec<&[u8]> = vec![
+            b"authenticationservice",
+            b"formatstring",
+            b"getconfig",
+            b"interface",
+            b"variable",
+            b"function_handler",
+            b"hello_world",
+            b"zqx",
+        ];
+        for span in cases {
+            let all = extract_sparse_grams(span, &weights);
+            let covering = extract_covering_grams(span, &weights);
+            let all_set: HashSet<_> = all.iter().collect();
+            for gram in &covering {
+                assert!(
+                    all_set.contains(gram),
+                    "Covering gram {:?} from span {:?} not found in all grams {:?}",
+                    gram,
+                    String::from_utf8_lossy(span),
+                    all,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn covering_grams_fewer_or_equal_to_all_grams() {
+        let weights = test_weights();
+        // Longer spans should produce fewer covering grams than all grams.
+        let span = b"authenticationservicefactory";
+        let all = extract_sparse_grams(span, &weights);
+        let covering = extract_covering_grams(span, &weights);
+        assert!(
+            covering.len() <= all.len(),
+            "Covering ({}) should be <= all ({}) for {:?}",
+            covering.len(),
+            all.len(),
+            String::from_utf8_lossy(span),
+        );
+    }
+
+    #[test]
+    fn covering_grams_nonempty_for_valid_spans() {
+        let weights = test_weights();
+        let cases: Vec<&[u8]> = vec![
+            b"abc",       // minimum trigram
+            b"abcdef",    // medium span
+            b"authentication_service_factory_impl", // long span
+        ];
+        for span in cases {
+            let covering = extract_covering_grams(span, &weights);
+            assert!(
+                !covering.is_empty(),
+                "Covering grams should not be empty for span {:?}",
+                String::from_utf8_lossy(span),
+            );
+        }
+    }
+
+    #[test]
+    fn covering_grams_short_span_equals_all_grams() {
+        let weights = test_weights();
+        // For a trigram, both should produce the same result.
+        let span = b"abc";
+        let all = extract_sparse_grams(span, &weights);
+        let covering = extract_covering_grams(span, &weights);
+        assert_eq!(all, covering, "Trigram should produce identical results");
+    }
+
+    #[test]
+    fn covering_grams_respects_max_gram_len() {
+        let weights = test_weights();
+        let span = b"abcdefghijklmnopqrstuvwxyz";
+        let covering = extract_covering_grams(span, &weights);
+        for gram in &covering {
+            assert!(
+                gram.len() <= MAX_GRAM_LEN,
+                "Covering gram {:?} exceeds MAX_GRAM_LEN {}",
+                gram,
+                MAX_GRAM_LEN,
+            );
+            assert!(
+                gram.len() >= MIN_SPAN_LEN,
+                "Covering gram {:?} is shorter than MIN_SPAN_LEN {}",
+                gram,
+                MIN_SPAN_LEN,
+            );
+        }
+    }
+
+    #[test]
+    fn extract_sparse_grams_empty_for_short_spans() {
+        let weights = test_weights();
+        assert!(extract_sparse_grams(b"ab", &weights).is_empty());
+        assert!(extract_sparse_grams(b"a", &weights).is_empty());
+        assert!(extract_sparse_grams(b"", &weights).is_empty());
+        assert!(extract_covering_grams(b"ab", &weights).is_empty());
+        assert!(extract_covering_grams(b"a", &weights).is_empty());
+        assert!(extract_covering_grams(b"", &weights).is_empty());
+    }
 }

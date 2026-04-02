@@ -251,6 +251,7 @@ async function main() {
             candidateReductionRatio: result.stats.candidateReductionRatio,
             literalExtractionHit: result.stats.literalExtractionHit,
             literalExtractionSource: result.stats.literalExtractionSource,
+            gramLookupReason: result.stats.gramLookupReason,
             denseGramsTouched: result.stats.denseGramsTouched,
             sparseGramsTouched: result.stats.sparseGramsTouched,
             gramFalsePositiveRatio: result.stats.gramFalsePositiveRatio,
