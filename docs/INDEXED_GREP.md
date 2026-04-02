@@ -3,7 +3,12 @@
 **Status**: Planning
 **Priority**: HIGH (correctness fixes), MEDIUM (scope restriction), LOW (trigram index)
 **Prerequisites**: Pattern mode MVP (done), late interaction index (done)
-**References**: COLGREP_PLAN.md, Cursor "Fast Regex Search" blog (2026-03-23)
+**References**: COLGREP_PLAN.md, Cursor "Fast Regex Search" blog (2026-03-23),
+USEFUL_ANSWER_COLGREP_PLAN.md (agent context packaging, composes with Phase 4.1/5),
+INIT_STRATEGY.md (native binary packaging for Phase 4 Rust crate)
+**SOTA Review**: 2026-04-02 — Verified against Cursor, GitHub Blackbird, Moderne Trigrep,
+fff/fastgrep. Plan is SOTA with hybrid postings (fff), SIMD intersection, AST metadata
+(Moderne-equivalent via existing tree-sitter chunker), per-codebase frequency weights.
 **Motivation**: On the warm server path, `encodeQuery()` is ~6ms (model preheated at
 startup). Ripgrep at 21-26ms is the latency floor. At enterprise scale (>1GB repos),
 ripgrep grows to seconds. This plan makes Stage A sub-linear.
@@ -13,9 +18,9 @@ ripgrep grows to seconds. This plan makes Stage A sub-linear.
 ## 1. Problem Statement
 
 Pattern search currently runs ripgrep against the entire project root on every query
-(`search-pattern.js:329`). This has three problems:
+(`core/search/search-pattern.js:450`). This has three problems:
 
-1. **Silent truncation**: `maxMatches=1000` hard cap (`search-pattern.js:64-65`) kills
+1. **Silent truncation**: `maxMatches=1000` hard cap (`core/search/search-pattern.js:92-97`) kills
    ripgrep after 1000 matching lines. This directly violates the 100% regex recall goal
    (`COLGREP_PLAN.md:607`). For broad patterns like `function\s+\w+`, the first 1000
    matches are arbitrary — the best semantic match may be #1001.
@@ -104,13 +109,13 @@ matches for files already proven to match. No assumption is made that chunk text
 resident in the LI index.
 
 **Effort**: 0.5 day
-**Files**: `core/search-pattern.js` (modify `runRipgrep`, `patternSearch`)
+**Files**: `core/search/search-pattern.js` (modify `runRipgrep`, `patternSearch`)
 
 ---
 
 ## 4. Phase 2: Restrict Search to Indexed Corpus + Dirty Overlay
 
-**Problem**: `patternSearch()` always searches `PROJECT_ROOT` (`search-pattern.js:329`).
+**Problem**: `patternSearch()` always searches `PROJECT_ROOT` (`core/search/search-pattern.js:450`).
 This scans files we've never indexed (node_modules, build artifacts, media, etc. — even
 though ripgrep has type filters, it still traverses the tree). More importantly, it scans
 every indexed file even when the regex can only match a subset.
@@ -154,8 +159,8 @@ After searching indexed files, also search files that are:
 - Modified since last index (mtime > index time)
 - Untracked by the index (new files)
 
-These matches go into the "unindexed" bucket (existing lazy fallback, `search-pattern.js`
-already handles this). But now they're explicitly identified rather than mixed in with
+These matches go into the "unindexed" bucket (existing lazy fallback,
+`core/search/search-pattern.js` already handles this). But now they're explicitly identified rather than mixed in with
 indexed matches.
 
 Detection should reuse the existing incremental tracker instead of Git state:
@@ -176,8 +181,8 @@ This works outside Git, and it correctly answers "changed since last index" inst
 | Indexed files only, no dirty | Same | Same (no overlay cost) |
 
 **Effort**: 1 day
-**Files**: `core/search-pattern.js` (modify `runRipgrep`, `patternSearch`),
-           `core/indexer-ann.js` (expose indexed file list)
+**Files**: `core/search/search-pattern.js` (modify `runRipgrep`, `patternSearch`),
+           `core/indexing/indexer-ann.js` (expose indexed file list)
 
 ---
 
@@ -265,8 +270,8 @@ behavior — the regex is so broad that no pre-filtering is possible.
 Track the extraction hit rate in stats so we can see how often this fallback triggers.
 
 **Effort**: 1-2 days
-**Files**: `core/search-pattern.js` (new `extractLiterals()` function, modified search
-path)
+**Files**: `core/search/search-pattern.js` (new `extractLiterals()` function, modified
+search path)
 
 ---
 
@@ -291,63 +296,275 @@ interior bigram weights.
 longer grams like `for_each` or `format`. Rare trigrams like `zig` keep their short form.
 Result: fewer grams, much more selective posting lists.
 
-**Character-pair weight table**: Pre-computed from a large open-source corpus (GitHub's
-used terabytes of code). Can also be built from the user's own codebase at index time.
+**Character-pair weight table**: The weight function is the most important component of
+the sparse gram index. It determines n-gram boundaries and therefore the selectivity of
+every posting list. Getting it wrong makes the entire index useless.
 
-### 6.2 Phrase-Aware Masks (GitHub Blackbird "3.5-grams")
+**Implementation requirements**:
 
-Each posting entry stores two 8-bit masks alongside the document ID:
+1. **Must be built in Rust.** The weight table construction is a single-pass byte scan
+   over the indexed corpus — counting `counts[prev_byte][next_byte]` for every adjacent
+   pair. This is L1-cache-bound (128×128 × 4 bytes ≈ 64KB), not compute-bound. On a
+   50MB corpus (~1M LOC), Rust completes this in ~50ms. Even in JS it's under 500ms.
+   Because the sparse gram index itself will be Rust (mmap'd binary, no GC pauses), the
+   weight table builder must also be Rust — same binary, same build step.
+
+2. **Must be built per-codebase.** A React frontend, a Linux kernel module, and a Go
+   microservice have radically different bigram distributions. A generic table will
+   produce poor boundaries for all of them. The weight table is rebuilt at index time
+   alongside the LI embeddings (where it adds negligible cost). Weights are stored in
+   the `.sweet-search/` index directory alongside the sparse gram postings file.
+
+3. **Must ship a built-in fallback for cold start.** When the user adds sweet-search to
+   an empty or tiny codebase (< 1000 LOC), the per-codebase table has insufficient data.
+   In this case, fall back to a static weight table compiled into the Rust binary.
+
+   **Source for the fallback table**: The `danlark1/sparse_ngrams` C++ reference
+   implementation (Boost License 1.0, by the GitHub code search engineer) contains the
+   weight computation algorithm used in GitHub Blackbird. Additionally, Daniel de Kok's
+   `danieldk` gist on GitHub provides measured character-level bigram frequencies across
+   multiple programming languages (Rust, Go, Python, etc.), which can serve as seed data.
+   Either source can be used to pre-compute a "generic code" weight table shipped as a
+   const array in the Rust binary.
+
+   **Note**: GitHub's blog post describes the algorithm ("assume you have some function
+   that given a bigram gives a weight") but does NOT publish their production weight
+   table. Cursor's blog also withholds their weights. Both are proprietary. The algorithm
+   itself is fully open via `danlark1/sparse_ngrams`.
+
+4. **Weight semantics**: Weights are **inverse frequency** — common bigrams like `fo`,
+   `or`, `in` get LOW weight. Rare bigrams like `t_`, `zz`, `q(` get HIGH weight.
+   N-gram boundaries form where the boundary bigram's weight exceeds all interior
+   bigrams. This causes common trigrams (`for`, `int`, `var`) to be absorbed into longer,
+   more selective grams (`format`, `interface`, `variable`).
+
+5. **Must live in the existing native binary.** The sparse gram builder, weight table
+   computation, and posting list intersection are added to the **same Rust crate** as the
+   MaxSim napi-rs addon (`@sweet-search/native-<platform>`). No new package. The existing
+   per-platform packaging model from INIT_STRATEGY.md applies unchanged:
+
+   ```
+   @sweet-search/native-darwin-arm64    ← already ships maxsim.node + Rust CLI
+   @sweet-search/native-darwin-x64
+   @sweet-search/native-linux-x64-gnu
+   @sweet-search/native-linux-arm64-gnu
+   ```
+
+   The CLI dispatch logic (`bin/sweet-search.js` → `native-resolver.js` → Rust binary)
+   already handles native-vs-JS fallback. The sparse gram index is native-only — there is
+   no JS fallback for Phase 4. If the native binary is absent, Phase 4 is skipped and the
+   search pipeline falls back to Phase 3 (literal extraction in JS) or Phase 2 (indexed
+   file scan).
+
+6. **Must use SIMD for posting list intersection.** The hot path is intersecting posting
+   lists across multiple grams. With hybrid storage (see §6.3), dense bitset intersection
+   is bitwise AND — trivially SIMD-able:
+
+   - **x86-64 (AVX2)**: 256-bit registers = 256 files per AND instruction
+   - **ARM (Apple Silicon NEON)**: 128-bit registers = 128 files per AND instruction
+   - **Fallback**: plain `u64` bitwise AND = 64 files per instruction
+
+   Use Rust's `std::arch` or the `wide` crate for portable SIMD with runtime feature
+   detection. Same pattern usearch uses for HNSW distance computation in this codebase.
+
+   SIMD also applies to:
+   - Weight table build (byte pair counting across a buffer)
+   - Dense bitset population count (for density threshold decisions)
+
+   Gram extraction itself is a sequential scan with weight comparisons — harder to
+   vectorize, but it's cache-bound anyway and not on the query hot path (only index
+   build time).
+
+### 6.2 ~~Phrase-Aware Masks~~ — NOT USED (GitHub confirmed ineffective)
+
+An earlier version of this plan proposed position masks and next-character bloom filters
+on posting entries (the "3.5-gram" idea). **GitHub's own engineer confirmed on HN that
+they tried follow masks and they "saturate too quickly to be useful."** (HN thread:
+`news.ycombinator.com/item?id=34682472`, user `100k`, Feb 2023.)
+
+GitHub Blackbird uses covering sparse grams to produce candidate documents, then searches
+the actual content for verification — no positional posting metadata. We follow the same
+approach: sparse gram postings contain only document IDs (delta-encoded), and final match
+verification is done by ripgrep on the candidate file set.
+
+### 6.3 Index structure — Hybrid posting storage
+
+Not all grams are created equal. Some appear in 80% of files (`in`, `re`, `th`), others
+in 0.1% (`zq`, `q(`). Storing both the same way wastes either space or speed.
+
+**Hybrid column storage** (adapted from fff/fastgrep): each gram's posting list uses
+one of two representations, chosen at index build time based on density:
 
 ```
-posting entry: [docId: uint32, locMask: uint8, nextMask: uint8]
-                                  │                    │
-                  position mod 8 ─┘     bloom(next char)─┘
+Dense bitset (gram appears in >D% of files, where D = density threshold):
+┌──────────────────────────────────────────────────┐
+│ bit 0  bit 1  bit 2  bit 3  ...  bit N           │  ← one bit per file
+└──────────────────────────────────────────────────┘
+Size: numFiles / 8 bytes.  For 20K files = 2.5KB per dense column.
+Intersection: bitwise AND — one CPU instruction per 64 files (SIMD: 256+).
+
+Sparse posting list (gram appears in ≤D% of files):
+┌──────────────────────────────────────────────┐
+│ fileId₀  fileId₁  ...  fileIdₖ               │  ← sorted, delta+varint encoded
+└──────────────────────────────────────────────┘
+Size: k × ~2 bytes (varint).  For 12 matching files = ~24 bytes.
+Intersection: merge-intersect two sorted lists — O(smaller list).
 ```
 
-- **locMask**: Bitset of (offset mod 8) positions where the trigram appears. Enables
-  checking that two trigrams appear at compatible distances.
-- **nextMask**: Bloom filter of the character following the trigram. Effectively gives
-  quadgram-level selectivity without storing quadgrams.
+**Density threshold D**: Start with 5%. Profile on real corpora and adjust. The
+threshold determines how many columns get bitsets vs sparse lists. Too low = too many
+bitsets (wastes memory). Too high = too many sparse lists for common grams (slow
+intersection). fff uses 1,280 dense + 3,481 sparse for Chromium (487K files).
 
-**Space overhead**: 2 bytes per posting vs 4 bytes for docId alone = 50% more space, but
-dramatically fewer candidate documents pass the filter.
+**Intersection dispatch** (three cases, chosen at query time):
 
-### 6.3 Index structure
+| Left | Right | Algorithm |
+|------|-------|-----------|
+| Dense | Dense | Bitwise AND (SIMD) — fastest |
+| Dense | Sparse | Iterate sparse, probe bit in dense — O(sparse size) |
+| Sparse | Sparse | Merge-intersect sorted lists — O(min list size) |
+
+**Full index layout:**
 
 ```
 ┌─────────────────────────────┐
-│ Sparse Gram Lookup Table    │  Memory-mapped, hash → offset
-│ (sorted by gram hash)       │  Binary search for lookup
+│ Header                      │  Version, gram count, file count, density threshold
 ├─────────────────────────────┤
-│ Posting Lists               │  Sequential on disk
-│ [docId, locMask, nextMask]  │  Delta-encoded docIds
-│ per sparse gram             │  Read at offset from lookup
+│ Sparse Gram Lookup Table    │  Memory-mapped, gram hash → column descriptor
+│ (sorted by gram hash)       │  Column descriptor: offset + length + isDense flag
+├─────────────────────────────┤
+│ Dense Columns               │  Contiguous bitset blocks
+│ [bit₀ bit₁ ... bitₙ]       │  One block per dense gram
+├─────────────────────────────┤
+│ Sparse Columns              │  Delta+varint encoded posting lists
+│ [delta₀ delta₁ ... deltaₖ] │  One list per sparse gram
+├─────────────────────────────┤
+│ Bigram Weight Table         │  128×128 f32 array (64KB)
+│ (built per-codebase)        │  Fallback: static generic table
 └─────────────────────────────┘
 ```
 
 Built during indexing alongside the LI index. Stored as a compact binary file
-(e.g., `.sweet-search/sparse-grams.idx`). Memory-mapped at load time.
+(e.g., `.sweet-search/sparse-grams.idx`). Memory-mapped at load time. The Rust
+binary owns both build and query; JS never touches this file directly.
 
 ### 6.4 Query pipeline with sparse gram index
 
+Two stages: regex → required literals (boolean formula), then literals → sparse grams
+→ posting list intersection.
+
 ```
-regex "class\s+Auth\w+Service"
-  │
-  ▼
-Extract sparse grams from required literals: ["cla","las","las","Aut","uth","Ser","erv","rvi","vic","ice"]
-  │
-  ▼
-Look up posting lists, intersect with phrase masks
-  │
-  ▼
-Candidate files (typically 0.1-5% of corpus)
-  │
-  ▼
-Run full regex on candidates only
-  │
-  ▼
-Map to chunks → MaxSim rerank (unchanged)
+regex string
+    │
+    ▼
+ ┌────────────────────────────────────────────────────────┐
+ │ Stage A: Regex → AST → Required Literals               │
+ │                                                        │
+ │  Parse regex into syntax tree (Rust: `regex-syntax`    │
+ │  crate by BurntSushi). Walk tree, extract boolean      │
+ │  formula of required literal substrings.               │
+ └────────────────────────────────────────────────────────┘
+    │
+    │  e.g., AND("class", "Auth", "Service")
+    ▼
+ ┌────────────────────────────────────────────────────────┐
+ │ Stage B: Literals → Sparse Grams → Posting Intersection│
+ │                                                        │
+ │  Apply weight function to each literal to decompose    │
+ │  into sparse grams. Look up posting lists. Intersect   │
+ │  (AND) or union (OR) per the boolean formula.          │
+ └────────────────────────────────────────────────────────┘
+    │
+    │  candidate file IDs (typically 0.1-5% of corpus)
+    ▼
+  ripgrep verifies full regex on candidate files only
+    │
+    ▼
+  Map to chunks → MaxSim rerank (unchanged)
 ```
+
+#### Stage A: Regex AST walk for literal extraction
+
+The `regex-syntax` crate (by the author of ripgrep) provides a complete `Hir`
+(high-level IR) for any regex. The literal extraction walk maps each AST node to a
+boolean formula:
+
+| AST Node | Rule | Example |
+|----------|------|---------|
+| `Literal("abc")` | Emit the string | `"abc"` |
+| `Concat(a, b)` | AND — both sides required | `ab` → AND(a, b) |
+| `Alternation(a, b)` | OR — either side sufficient | `a\|b` → OR(a, b) |
+| `Class(\s, \w, [a-z])` | **Break** — no extractable literal | yields empty |
+| `Repetition(*, +, ?)` | **Break** — variable length splits chain | yields empty |
+| `Group(child)` | Transparent — recurse into child | unwrap |
+| `Anchor(^, $), Lookahead` | Ignore — no effect on literals | skip |
+
+Walk example — `class\s+Auth\w+Service`:
+
+```
+Concat
+├─ Literal("class")      → "class"
+├─ \s+                    → BREAK (variable-length, splits literal chain)
+├─ Literal("Auth")        → "Auth"
+├─ \w+                    → BREAK
+└─ Literal("Service")     → "Service"
+
+Result: AND("class", "Auth", "Service")
+```
+
+Walk example — `(get|set)Config`:
+
+```
+Concat
+├─ Alternation
+│  ├─ Literal("get")     → "get"
+│  └─ Literal("set")     → "set"
+│  → OR("get", "set")
+└─ Literal("Config")     → "Config"
+
+Result: AND(OR("get", "set"), "Config")
+```
+
+**When extraction yields nothing**: Regexes like `.*`, `[a-z]+`, `\d{3}-\d{4}` produce
+an empty formula (no required literals). The Rust binary returns "no candidates could be
+eliminated" and the search falls back to Phase 2/3. This is correct — the regex is too
+broad for any prefilter.
+
+The extraction walk is ~100 lines of Rust on top of `regex-syntax::Hir`. It does NOT
+reimplement regex parsing — it delegates entirely to the battle-tested `regex-syntax`
+crate.
+
+```rust
+use regex_syntax::hir::{Hir, HirKind};
+
+fn extract_literals(hir: &Hir) -> BoolFormula {
+    match hir.kind() {
+        HirKind::Literal(lit)       => Formula::Lit(lit.0.clone()),
+        HirKind::Concat(subs)       => Formula::And(subs.iter().map(extract_literals).collect()),
+        HirKind::Alternation(subs)  => Formula::Or(subs.iter().map(extract_literals).collect()),
+        HirKind::Repetition(_)
+        | HirKind::Class(_)         => Formula::Empty,
+        HirKind::Group(g)           => extract_literals(&g.hir),
+        _                           => Formula::Empty,
+    }
+}
+```
+
+#### Stage B: Literals → Sparse Grams → Posting Intersection
+
+Each literal in the boolean formula is decomposed into its constituent sparse grams
+using the weight function (§6.1). For example, `"Service"` with boundary weights might
+produce grams `["Ser", "rvic", "ice"]`.
+
+Intersection follows the boolean formula structure:
+
+- **AND**: intersect posting lists (all grams must match) — uses hybrid dispatch from §6.3
+- **OR**: union posting lists (any gram sufficient)
+- **Nested**: evaluate bottom-up, materializing intermediate candidate sets
+
+The entire Stage A + Stage B pipeline runs inside the Rust binary. Node calls it as a
+single napi-rs function or subprocess invocation: pass regex string in, get candidate
+file IDs out. JS never parses the regex or touches posting lists.
 
 ### 6.5 Expected performance at scale
 
@@ -380,9 +597,64 @@ Two strategies:
 **Recommendation**: Start with A. Our index is local and re-indexes are fast. The overlay
 approach matches our existing incremental indexing model.
 
-**Effort**: 3-5 days
-**Files**: New `core/sparse-gram-index.js`, modifications to `core/indexer-ann.js` (build
-grams during indexing), `core/search-pattern.js` (use gram index for candidate generation)
+### 6.7 AST-aware gram postings (Phase 4.1 enhancement)
+
+The LI index already stores `chunk_type` (class, function, method, import) and `symbol`
+(the entity name) per document, populated by the AST chunker:
+
+```javascript
+// core/indexing/indexer-ann.js:136-140 (existing code)
+await index.add(chunk.id, truncatedEmbedding, {
+  file: chunk.file,
+  name: chunk.metadata?.symbol,      // e.g., "SweetSearch"
+  type: chunk.metadata?.chunk_type,   // e.g., "class", "function", "method"
+});
+```
+
+The sparse gram index can carry the same metadata. During index build, the gram
+builder receives chunks with their AST metadata already attached (from the same
+indexing pipeline). Each posting entry can optionally include a compact symbol-type
+tag (1 byte: function=1, class=2, method=3, import=4, type=5, other=0).
+
+**What this enables:**
+
+- Bare grep (Phase 5) can filter results by symbol type without reading files:
+  `sweet-search grep 'auth.*handler' --type=function` returns only function matches
+- Agent mode context packaging (USEFUL_ANSWER_COLGREP_PLAN.md) can apply symbol-
+  complete expansion to bare grep results, not just ColGrep ranked results
+- Eliminates the grep-then-read-to-confirm cycle that Moderne Trigrep solves with
+  LSTs — we get the same benefit from our existing AST chunker metadata
+
+**Composition with USEFUL_ANSWER plan:**
+
+```
+INDEXED_GREP (this plan):  regex → sparse gram candidates → matches + symbol metadata
+USEFUL_ANSWER (next plan): matches → symbol expansion → token-budgeted context packages
+
+Combined pipeline:
+  regex → sub-linear candidates → matches with chunk_type/symbol
+        → agent mode expansion → self-contained code blocks
+```
+
+The two plans compose naturally. No DDD violation: the indexing domain builds grams +
+metadata, the search domain queries them, the agent presentation layer (USEFUL_ANSWER)
+is post-ranking and works on either pipeline's output.
+
+**Effort**: +0.5 day on top of Phase 4 (metadata is already in the pipeline; this is
+wiring it into the posting format and adding a filter flag to the query API)
+
+**Not required for Phase 4 MVP.** Ship the gram index without symbol tags first,
+add them as a follow-up. The posting format should reserve a byte per entry for the
+tag from day one to avoid a format migration.
+
+---
+
+**Effort**: 3-5 days (Phase 4 core), +0.5 day (Phase 4.1 AST metadata)
+**Files**: Rust code in `@sweet-search/native-<platform>` crate (gram builder, index
+format, query intersection, SIMD kernels), JS bridge in `core/search/sparse-gram-index.js`
+(calls native binary or napi-rs addon), modifications to `core/indexing/indexer-ann.js`
+(trigger gram build during indexing), `core/search/search-pattern.js` (use gram index
+for candidate generation)
 
 ---
 
@@ -417,7 +689,7 @@ returns, but produced sub-linearly.
 
 ```javascript
 // New export alongside existing patternSearch()
-const { bareGrep } = require('./core/search-pattern');
+const { bareGrep } = require('./core/search/search-pattern');
 
 const results = await bareGrep(regex, {
   projectRoot: '/path/to/repo',
@@ -520,8 +792,8 @@ speed but don't need semantic ranking.
 
 **Effort**: 0.5-1 day (after Phases 1-3 are done — mostly wiring, since the hard parts
 are the candidate generation phases)
-**Files**: `core/search-pattern.js` (extract shared pipeline, add `bareGrep()` export),
-new CLI command in `cli/` or `bin/`
+**Files**: `core/search/search-pattern.js` (extract shared pipeline, add `bareGrep()`
+export), new CLI command in `cli/` or `bin/`
 
 ---
 
@@ -531,7 +803,7 @@ new CLI command in `cli/` or `bin/`
    the entire corpus into one string. Wrong for local, evolving codebases.
 
 2. **Full FTS5 trigram on source text**. The existing `entities_trigram` table in
-   `graph-extractor.js:150` only indexes entity names and signatures. Extending it to
+   `core/graph/graph-extractor.js:150` only indexes entity names and signatures. Extending it to
    full source text would bloat the SQLite database enormously, and SQLite's trigram
    tokenizer is primarily a substring / `MATCH` / `LIKE` / `GLOB` accelerator, not a
    general regex engine. Wrong tool for pattern-mode verification.
@@ -540,10 +812,11 @@ new CLI command in `cli/` or `bin/`
    and multi-vector retrieval. They don't help with "make regex faster." They're listed
    in COLGREP_PLAN.md for the semantic ranking side, which is a separate concern.
 
-4. **Custom binary postings format (premature)**. Use simple flat files or SQLite for
-   the sparse gram index until profiling shows the format matters. Cursor's mmap'd
-   postings file is optimized for concurrent agent access — evaluate that only after
-   seeing bursty workload patterns.
+4. **~~Custom binary postings format (premature)~~** — Superseded. §6.3 now specifies a
+   hybrid mmap'd binary format with dense bitsets and sparse posting lists. This is
+   justified by the SIMD intersection requirement (§6.1 item 6) — you can't do bitwise
+   AND on SQLite rows. The format is simple (header + bitsets + varint lists), not a
+   premature abstraction.
 
 ---
 
@@ -555,13 +828,17 @@ new CLI command in `cli/` or `bin/`
 | 2 | Restrict to indexed corpus + overlay (Phase 2) | 1 day | HIGH | Nothing |
 | 3 | Add telemetry for grep component timing | 0.25 day | HIGH (data) | Nothing |
 | 4 | Regex literal extraction fast path (Phase 3) | 1-2 days | MEDIUM | Phase 2 |
-| 5 | Sparse gram index (Phase 4) | 3-5 days | HIGH (at scale) | Phase 3, scale evidence |
+| 5 | Sparse gram index with hybrid postings + SIMD (Phase 4) | 3-5 days | HIGH (at scale) | Phase 3, native crate |
+| 5a | AST metadata on gram postings (Phase 4.1) | +0.5 day | MEDIUM (agent UX) | Phase 4 |
 | 6 | Bare grep mode (Phase 5) | 0.5-1 day | MEDIUM (new use cases) | Phase 1-3 |
 
 Items 1-3 should ship immediately. Phase 3 is the sweet spot of effort vs impact.
-Phase 4 is triggered by scale evidence or enterprise users. Phase 5 can ship any time
-after Phase 3 — it's mostly wiring the candidate generation pipeline into a standalone
-API and CLI.
+Phase 4 lives in the existing `@sweet-search/native-<platform>` Rust crate alongside
+MaxSim — no new package, same per-platform binary packaging from INIT_STRATEGY.md.
+Phase 4.1 (AST metadata) is a follow-up that enables symbol-type filtering in bare grep
+and composes with the agent mode context packaging from USEFUL_ANSWER_COLGREP_PLAN.md.
+Phase 5 can ship any time after Phase 3 — it's mostly wiring the candidate generation
+pipeline into a standalone API and CLI.
 
 ---
 
@@ -599,4 +876,10 @@ reporting automatically.
 | [sparse_ngrams](https://github.com/danlark1/sparse_ngrams) | C++ reference for sparse gram extraction |
 | [ripgrep RFC #1497](https://github.com/BurntSushi/ripgrep/issues/1497) | BurntSushi's design for indexed ripgrep |
 | [fastgrep](https://github.com/awnion/fastgrep) | Lazy trigram index, mtime invalidation |
+| [fff/fastgrep](https://dev.to/dmtrkovalenko/benchmark-oriented-development-is-a-road-to-nowhere-1518) (2026) | Bigram hybrid column storage (dense bitset + sparse list), SIMD extraction |
+| [danieldk bigram gist](https://gist.github.com/danieldk/00a2dd05c8a012b7b049a25f23e23062) | Character-level bigram frequencies across programming languages |
+| [regex-syntax crate](https://docs.rs/regex-syntax) | Rust regex AST parser by BurntSushi — used for literal extraction (§6.4) |
+| [HN: GitHub engineer on sparse grams](https://news.ycombinator.com/item?id=34682472) (2023) | Confirms follow masks abandoned, covering sparse grams used instead |
 | COLGREP_PLAN.md | Parent plan for pattern mode (semantic ranking side) |
+| USEFUL_ANSWER_COLGREP_PLAN.md | Agent context packaging — composes with Phase 4.1/5 |
+| INIT_STRATEGY.md | Native binary packaging model for `@sweet-search/native-<platform>` |
