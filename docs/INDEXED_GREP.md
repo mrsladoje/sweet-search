@@ -1010,29 +1010,114 @@ export), new CLI command in `cli/` or `bin/`
 
 | # | Phase | Effort | Impact | Depends On |
 |---|-------|--------|--------|------------|
-| 1 | Fix silent truncation (Phase 1) | 0.5 day | CRITICAL (correctness) | Nothing |
-| 2 | Restrict to indexed corpus + overlay (Phase 2) | 1 day | HIGH | Nothing |
-| 3 | Add telemetry for grep component timing | 0.25 day | HIGH (data) | Nothing |
+| 1 | Benchmark harness fortification (Track C fields + compare mode + phase toggles) | 0.5-1 day | CRITICAL (baseline truth) | Nothing |
+| 2 | Fix silent truncation (Phase 1) | 0.5 day | CRITICAL (correctness) | Nothing |
+| 3 | Restrict to indexed corpus + overlay (Phase 2) | 1 day | HIGH | Nothing |
 | 4 | Regex literal extraction fast path (Phase 3) | 1-2 days | MEDIUM | Phase 2 |
 | 5 | Sparse gram index with hybrid postings + SIMD (Phase 4) | 3-5 days | HIGH (at scale) | Phase 3, native crate |
 | 5a | AST metadata on gram postings (Phase 4.1) | +0.5 day | MEDIUM (agent UX) | Phase 4 |
 | 6 | Bare grep mode (Phase 5) | 0.5-1 day | MEDIUM (new use cases) | Phase 1-3 |
+| 7 | Large-repo benchmark corpus + scale pass | 0.5 day | HIGH (validates scale claims) | Item 1 |
 
-Items 1-3 should ship immediately. Phase 3 is the sweet spot of effort vs impact.
-Phase 4 lives in the existing `@sweet-search/native-<platform>` Rust crate alongside
-MaxSim — no new package, same per-platform binary packaging from INIT_STRATEGY.md.
-Phase 4.1 (AST metadata) is a follow-up that enables symbol-type filtering in bare grep
-and composes with the agent mode context packaging from USEFUL_ANSWER_COLGREP_PLAN.md.
-Phase 5 can ship any time after Phase 3 — it's mostly wiring the candidate generation
-pipeline into a standalone API and CLI.
+The benchmark harness comes first on purpose. Without phase-level timing and a stable
+baseline, "Phase 3 helped" and "Phase 4 scales" are guesses. Phase 1 still ships as
+the first product change because it fixes correctness, but it must land with the
+fortified instrumentation already in place.
+
+Phase 3 is the sweet spot of effort vs impact. Phase 4 lives in the existing
+`@sweet-search/native-<platform>` Rust crate alongside MaxSim — no new package, same
+per-platform binary packaging from INIT_STRATEGY.md. Phase 4.1 (AST metadata) is a
+follow-up that enables symbol-type filtering in bare grep and composes with the agent
+mode context packaging from USEFUL_ANSWER_COLGREP_PLAN.md. Phase 5 can ship any time
+after Phase 3 — it's mostly wiring the candidate generation pipeline into a standalone
+API and CLI.
 
 ---
 
 ## 10. Measurement
 
+Benchmarking is part of the implementation plan, not a post-hoc validation step. The
+current Track C view (`parallelTime_ms`) is too coarse to justify the new phases. The
+plan requires three additions before Phase 2 or Phase 3 claims are accepted:
+
+### 10.1 Benchmark harness requirements
+
+1. Split the current "parallel" bucket into phase-relevant fields:
+   - `candidateGenTime_ms`
+   - `grepTime_ms`
+   - `literalFilterTime_ms`
+   - `gramLookupTime_ms`
+   - `encodeTime_ms`
+   - `mapTime_ms`
+   - `rerankTime_ms`
+2. Add candidate-set telemetry:
+   - `filesConsidered`
+   - `filesScanned`
+   - `filesSkipped`
+   - `dirtyOverlayFiles`
+   - `candidateFilesBeforeFilter`
+   - `candidateFilesAfterFilter`
+   - `candidateReductionRatio`
+   - `literalExtractionHit`
+   - `grepMatches`
+   - `indexedChunks`
+   - `maxSimCandidates`
+3. Add A/B benchmark runner support in `eval/run_pattern_benchmark.js`:
+   - `--compare-baseline` to run old vs new pipeline on the same queries
+   - `--no-indexed-scope` to disable Phase 2
+   - `--no-literal-filter` to disable Phase 3
+   - `--no-gram-index` to disable Phase 4
+
+Those flags are not product flags. They are evaluation-only controls so we can measure
+the marginal value of each phase and avoid bundling wins together.
+
+### 10.2 Benchmark corpus requirements
+
 Each phase should be validated with Track C component profiling on at least two repos:
 - A small well-named repo (~500 files) — baseline where ripgrep is already fast
 - A large repo (~10K+ files) — where improvements should be measurable
+
+The current 5-repo pattern benchmark set is useful but not sufficient for the scale
+claims in this plan. Add one large benchmark repo to `eval/repos/` and keep it pinned
+at a fixed revision. Reasonable candidates:
+- TypeScript compiler
+- VS Code
+- A Chromium-sized subsystem if the full tree is too large
+
+No "enterprise-scale" latency claim should be made from the existing small benchmark
+set alone.
+
+Benchmark runs must also distinguish cache state:
+- **Cold**: first query after process start and cache purge / equivalent cold-start setup
+- **Warm**: median of queries 2-N after the index, mmap'd gram data, and filesystem page
+  cache are resident
+
+For Phases 1-3, warm latency is still the primary product metric because these are
+interactive repeated queries. For Phase 4, report both cold and warm explicitly because
+the sparse gram index is mmap-backed and startup/page-cache effects can dominate the
+first query. Do not collapse cold and warm results into one headline number.
+
+### 10.3 Correctness invariants
+
+Latency wins are irrelevant if any prefilter introduces false negatives. The benchmark
+contract for Phases 2-4 is:
+
+- `Phase 1`: no silent truncation on the indexed corpus
+- `Phase 2-4`: same matching-file set as raw ripgrep over the indexed corpus
+- `bareGrep()`: same line matches as raw ripgrep over the same file set
+
+Concretely, add a CI-level invariant test that compares:
+
+```text
+raw rg(regex, indexed_files)
+==
+indexed pipeline prefilter -> rg verify(regex, candidate_files)
+```
+
+If the two differ, the change does not ship. False positives are acceptable before the
+verification pass. False negatives are not.
+
+### 10.4 Phase gates and reportable metrics
 
 Key metrics per phase:
 - **Phase 1**: Number of queries where truncation was triggered (should drop to 0)
@@ -1047,6 +1132,17 @@ Key metrics per phase:
 Add these to the `patternStats` object returned by `patternSearch()` (and the new
 `bareGrep()` stats object) so they flow into `eval/run_pattern_benchmark.js` Track C
 reporting automatically.
+
+Recommended execution order:
+1. Land Track C fortification and baseline capture.
+2. Run baseline on small + large repos and save cold-start plus warm median-of-3 results.
+3. Implement Phase 1 and re-run the same benchmark.
+4. Implement Phase 2, measure with and without `--no-indexed-scope`.
+5. Implement Phase 3, measure with and without `--no-literal-filter`.
+6. Implement Phase 4, measure with and without `--no-gram-index`.
+
+This keeps the plan benchmark-grounded at every step instead of relying on a single
+"before/after" result at the end.
 
 ---
 
