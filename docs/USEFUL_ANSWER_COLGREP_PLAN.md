@@ -4,7 +4,16 @@
 **Priority**: HIGH (this is the product value — agents save tokens and search steps)
 **Prerequisites**: Pattern search MVP (done), multi-repo benchmark (done)
 **References**: COLGREP_PLAN.md, ContextBench (arXiv 2602.05892), Context as a Tool
-(arXiv 2512.22087), RepoCoder (EMNLP 2023), CodeRAG (EMNLP 2025), LightOn ColGrep blog
+(arXiv 2512.22087), RepoCoder (EMNLP 2023), CodeRAG (EMNLP 2025), LightOn ColGrep blog,
+"What to Retrieve for Effective RAG Code Generation" (arXiv 2503.20589),
+CodeScout (arXiv 2603.17829), Sourcegraph Cody (arXiv 2408.05344),
+Google "Sufficient Context" (ICLR 2025)
+**SOTA Review**: 2026-04-02 — Verified against ContextBench, LightOn ColGrep, Cursor,
+Claude Code, Copilot, Windsurf, and Sourcegraph Cody. No product publicly documents
+explicit token-budget allocation across ranked results or calibrated confidence signals —
+this plan innovates in both areas. Core architecture (symbol-complete expansion, tiered
+presentation, header context) validated by AST-aware chunking research and the "What to
+Retrieve" empirical study.
 
 ---
 
@@ -73,6 +82,15 @@ results combined) and allocate it smartly:
 - Top-2 and Top-3 get compressed previews (up to 20% each)
 - Remaining results get one-line summaries only
 
+**Precision-recall tradeoff warning** (from ContextBench, arXiv 2602.05892):
+Agents that aggressively expand context achieve higher recall but significantly
+lower precision — and lower overall F1 — than agents with balanced retrieval
+strategies. GPT-5 retrieves broadly and scores worse than Claude Sonnet 4.5,
+which uses moderate retrieval rounds and moderate context sizes. The token
+budget and per-result caps (§4.4) are the primary defense against over-retrieval.
+The 60%/20%/20% allocation is an initial heuristic — instrument deployments to
+empirically validate these ratios against agent task success rates.
+
 ---
 
 ## 3. Agent Mode Output Schema
@@ -105,6 +123,8 @@ results combined) and allocate it smartly:
       expanded: true,          // true if chunk was expanded beyond ranked boundaries
       expandedFrom: "88-116",  // original chunk line range
       presentation: "full",    // "full" | "preview" | "summary"
+      stale: false,            // true if file modified since last index (dirty overlay)
+      indexedAt: "2026-04-01T12:00:00Z",  // when this file was last indexed
 
       // The actual code — this is what the agent reads
       code: "export class SweetSearch {\n  constructor(options = {}) {\n    ...",
@@ -170,6 +190,13 @@ Is chunk a complete symbol (function/class/method)?
 4. **AST parent links**: The cAST chunker stores hierarchical parent/child
    relationships. A method chunk knows its parent class.
 
+**Industry precedent**: Sourcegraph Cody (arXiv 2408.05344) combines local IDE
+context with remote search, ranking file snippets by relevance and supplementing
+with SCIP/LSIF symbol data for compiler-accurate cross-repo navigation. Our
+expansion sources (chunk metadata, code graph, sibling chunks, AST parents) are
+a superset of what Cody uses, with the addition of the code graph entity lookup
+that enables expansion to full symbol boundaries.
+
 ### 4.3 Priority Order for Expansion
 
 1. Check if chunk already covers a full symbol → done
@@ -184,6 +211,17 @@ Each result has a soft cap (default: 2000 tokens for rank 1, 800 for rank 2,
 - Truncate at the end with `// ... (N more lines)`
 - Prefer keeping the beginning (signature + first N lines of body)
 - Never truncate mid-statement
+
+**Expansion vs precision** (from ContextBench, arXiv 2602.05892): Expansion
+beyond the matched chunk region improves recall (more of the relevant code is
+included) but can hurt precision if the expanded region contains unrelated code
+(other methods in the same class, unrelated imports). The per-result token cap
+is the primary defense: it forces expansion to stop before the region becomes
+too broad. ContextBench also identified a "context usage drop" — agents
+successfully retrieve 30-50% more relevant context than they actually use in
+their final outputs. This means over-expanding wastes tokens that the agent
+ignores. The tiered presentation (full/preview/summary) partially addresses
+this by concentrating budget on top-1 where usage is highest.
 
 ---
 
@@ -204,6 +242,26 @@ Confidence is computed from:
 - Candidate recall (from pipeline diagnostics)
 - Number of regex matches (low = very selective regex, likely correct)
 
+**Calibration plan**: The thresholds above (2× gap for "high", within 20% for
+"medium") are initial heuristics. No published standard exists for confidence
+signals in code search results — the Tavily industry survey (April 2026)
+confirmed that Cursor, Copilot, Cody, and Windsurf do not expose calibrated
+confidence to agents. This plan innovates here.
+
+To validate: instrument deployments to log confidence predictions alongside
+binary correctness labels (did the agent use the top-1 result without
+follow-up reads?). After collecting ~500 data points, fit a simple calibration
+model (isotonic regression or logistic) and adjust thresholds. Report
+calibration error (ECE) in Track B2 evaluation.
+
+**Sufficiency signal** (inspired by Google's "Sufficient Context" work, ICLR
+2025): Beyond "is top-1 clearly better than top-2", consider a sufficiency
+heuristic: does the returned context likely contain enough information to
+answer the query? Signals include: (a) the expanded region contains a complete
+symbol (not truncated), (b) header context resolves all referenced imports,
+(c) the score gap suggests the match is specific, not generic. If all three
+hold, the agent can trust the result without follow-up reads.
+
 ---
 
 ## 6. Header Context
@@ -222,6 +280,17 @@ to understand the returned code block.
 
 Implementation: scan the result code for identifiers, cross-reference with the
 file's import block, return only matching imports.
+
+**Research validation** (arXiv 2503.20589, "What to Retrieve for Effective
+RAG Code Generation", Sun Yat-Sen/Huawei, 2025): This empirical study found
+that **contextual code + API information are the two most valuable retrieval
+types** for code generation, improving Pass@1 by up to 20%. Critically, it
+found that **similar code snippets can degrade performance by up to 15%** —
+they introduce noise and excessive input length that hurts the model.
+
+This directly validates our header context design (contextual imports + API
+declarations) and our §16 decision to NOT do cross-file expansion (which would
+bring in "similar code" from other files).
 
 ---
 
@@ -489,6 +558,13 @@ Three systems, each given the same questions:
 Each system runs the same agent model on the same questions with the same
 system prompt. Only the available tools differ.
 
+**Future baseline**: CodeScout (arXiv 2603.17829, March 2026) uses
+reinforcement learning to train code search agents for code localization,
+achieving better search strategies than static tools. If CodeScout or similar
+RL-trained search agents become available as tools, they should be added as a
+fourth baseline to measure whether learned search strategies outperform our
+static ranking + context packaging approach.
+
 ### 15.5 Agent Execution
 
 Each question is answered in an isolated conversation:
@@ -565,6 +641,9 @@ shuffled and anonymized.
 | **Turn count** | Agent conversation turns | ≤ rg+read |
 | **Self-containment** | % questions answered without Read calls | >80% |
 | **Time to answer** | Wall clock (agent + tools) | <75% of rg+read |
+| **Context precision** | ContextBench-style: proportion of returned code agent actually uses | >60% |
+| **Context recall** | Proportion of gold-standard code locations included in search results | >70% |
+| **Confidence calibration** | ECE (expected calibration error) of confidence signals | <0.15 |
 
 ### 15.8 Pass/Fail Criteria
 
@@ -628,10 +707,32 @@ The judge should receive a brief **reference answer** (2-3 sentences describing
 the expected code locations and key facts) alongside the agent's answer. This
 prevents mushy scoring on architectural questions where the judge lacks context.
 
+**LLM-as-Judge best practices** (from arXiv 2510.24367, "LLM-as-a-Judge for
+Software Engineering: Literature Review"):
+- Run 2-3 judge evaluations per answer to measure inter-judge consistency.
+  If agreement is low (>1 point divergence), flag for manual review.
+- Report performance separately on high-agreement vs low-agreement questions —
+  this exposes whether the system excels on clear-cut cases but struggles on
+  ambiguous ones, a distinction that aggregate scores hide.
+- Acknowledge subjectivity in SE tasks: treat the range of judge opinions as
+  signal, not noise. Distribution-aware metrics (e.g., variance of scores per
+  question) are more informative than bare means.
+
+**Process-level metrics** (inspired by ContextBench, arXiv 2602.05892): Beyond
+final answer quality, instrument the agent's search calls during Track B2 to
+measure intermediate context retrieval behavior:
+- **Context precision**: what proportion of returned code did the agent actually
+  reference in its answer? (Measures whether we're over-delivering context.)
+- **Context recall**: what proportion of gold-standard code locations appeared
+  in search results? (Measures whether the search found the right code.)
+- **Context usage drop**: what proportion of relevant retrieved context was
+  NOT used in the final answer? ContextBench found this is 30-50% for SOTA
+  agents — a key inefficiency the tiered presentation aims to reduce.
+
 **Estimated effort**: 2-3 days for implementation, 1 day for running all baselines,
 0.5 day for judging and analysis.
 
-### 15.11 Cost Estimate
+### 15.13 Cost Estimate
 
 - 150 questions × 3 systems × ~20K tokens/conversation = ~9M agent tokens
 - 450 answers × ~2K tokens/judgment = ~900K judge tokens
@@ -644,7 +745,10 @@ prevents mushy scoring on architectural questions where the judge lacks context.
 
 1. **Full-file context**: Never return an entire file. That defeats the purpose.
 2. **Cross-file expansion**: Don't follow imports to other files. That's a
-   different search, not expansion.
+   different search, not expansion. Research confirms this: the "What to
+   Retrieve" study (arXiv 2503.20589) found that retrieving similar code from
+   other files can **degrade** code generation performance by up to 15% —
+   the noise from irrelevant cross-file content outweighs any benefit.
 3. **Summarization**: Don't use an LLM to summarize the code. Return the code
    itself — the agent IS an LLM and can read it directly.
 4. **Speculative pre-fetching**: Don't guess what the agent might need next.
