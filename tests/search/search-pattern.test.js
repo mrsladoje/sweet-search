@@ -83,25 +83,43 @@ describe('extractLiteralClauses', () => {
 // =============================================================================
 
 describe('querySparseGramCandidates', () => {
-  it('returns null when gram index is disabled', () => {
+  it('returns disabled when gram index is disabled', () => {
     const searcher = {
       sparseGramIndex: {
         queryLiterals: vi.fn(),
       },
     };
 
-    expect(querySparseGramCandidates(searcher, [['auth']], { gramIndex: false })).toBeNull();
+    expect(querySparseGramCandidates(searcher, [['auth']], { gramIndex: false })).toEqual({
+      eligible: false,
+      reason: 'disabled',
+      totalFiles: 0,
+      gramsUsed: 0,
+      denseGramsTouched: 0,
+      sparseGramsTouched: 0,
+      candidateFiles: 0,
+      files: null,
+    });
     expect(searcher.sparseGramIndex.queryLiterals).not.toHaveBeenCalled();
   });
 
-  it('returns null when native query is not eligible', () => {
+  it('returns not_eligible when native query is not eligible', () => {
     const searcher = {
       sparseGramIndex: {
         queryLiterals: vi.fn().mockReturnValue({ eligible: false, files: [] }),
       },
     };
 
-    expect(querySparseGramCandidates(searcher, [['auth']])).toBeNull();
+    expect(querySparseGramCandidates(searcher, [['auth']])).toEqual({
+      eligible: false,
+      reason: 'not_eligible',
+      totalFiles: 0,
+      gramsUsed: 0,
+      denseGramsTouched: 0,
+      sparseGramsTouched: 0,
+      candidateFiles: 0,
+      files: null,
+    });
   });
 
   it('returns candidate files from the native sparse gram index', () => {
@@ -121,6 +139,7 @@ describe('querySparseGramCandidates', () => {
     expect(querySparseGramCandidates(searcher, [['AuthService']])).toEqual({
       ...result,
       denseGramsTouched: 0,
+      reason: 'ok',
       candidateFiles: 2,
       files: ['src/auth.js', 'src/session.js'],
       sparseGramsTouched: 0,
@@ -128,7 +147,7 @@ describe('querySparseGramCandidates', () => {
     expect(searcher.sparseGramIndex.queryLiterals).toHaveBeenCalledWith(['AuthService'], 0, 0);
   });
 
-  it('falls back when gram candidates are too broad', () => {
+  it('reports too_broad when gram candidates are too broad', () => {
     const searcher = {
       sparseGramIndex: {
         queryLiterals: vi.fn().mockReturnValue({
@@ -139,7 +158,16 @@ describe('querySparseGramCandidates', () => {
       },
     };
 
-    expect(querySparseGramCandidates(searcher, [['AuthService']])).toBeNull();
+    expect(querySparseGramCandidates(searcher, [['AuthService']])).toEqual({
+      eligible: false,
+      reason: 'too_broad',
+      totalFiles: 1000,
+      gramsUsed: 0,
+      denseGramsTouched: 0,
+      sparseGramsTouched: 0,
+      candidateFiles: 700,
+      files: null,
+    });
   });
 });
 
@@ -574,6 +602,7 @@ describe('patternSearch', () => {
     expect(result.stats).toHaveProperty('candidateFilesAfterFilter');
     expect(result.stats).toHaveProperty('candidateReductionRatio');
     expect(result.stats).toHaveProperty('literalExtractionHit');
+    expect(result.stats).toHaveProperty('gramLookupReason');
     expect(result.stats).toHaveProperty('parallelTime_ms');
     expect(result.stats).toHaveProperty('total_ms');
     expect(typeof result.stats.total_ms).toBe('number');

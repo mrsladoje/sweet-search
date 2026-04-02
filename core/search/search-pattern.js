@@ -580,13 +580,45 @@ function ensureSparseGramIndex(searcher, options = {}) {
 
 export function querySparseGramCandidates(searcher, literalClauses, options = {}) {
   const useGramIndex = options.useGramIndex ?? options.gramIndex ?? true;
-  if (!useGramIndex || !Array.isArray(literalClauses) || literalClauses.length === 0) {
-    return null;
+  if (!useGramIndex) {
+    return {
+      eligible: false,
+      reason: 'disabled',
+      totalFiles: 0,
+      gramsUsed: 0,
+      denseGramsTouched: 0,
+      sparseGramsTouched: 0,
+      candidateFiles: 0,
+      files: null,
+    };
+  }
+  if (!Array.isArray(literalClauses) || literalClauses.length === 0) {
+    return {
+      eligible: false,
+      reason: 'not_eligible',
+      totalFiles: 0,
+      gramsUsed: 0,
+      denseGramsTouched: 0,
+      sparseGramsTouched: 0,
+      candidateFiles: 0,
+      files: null,
+    };
   }
 
   try {
     const sparseGramIndex = ensureSparseGramIndex(searcher, options);
-    if (!sparseGramIndex) return null;
+    if (!sparseGramIndex) {
+      return {
+        eligible: false,
+        reason: 'not_loaded',
+        totalFiles: 0,
+        gramsUsed: 0,
+        denseGramsTouched: 0,
+        sparseGramsTouched: 0,
+        candidateFiles: 0,
+        files: null,
+      };
+    }
 
     const maxCandidateFiles = options.maxGramCandidateFiles ?? 512;
     const maxCandidateRatio = options.maxGramCandidateRatio ?? 0.05;
@@ -598,13 +630,35 @@ export function querySparseGramCandidates(searcher, literalClauses, options = {}
     let sparseGramsTouched = 0;
 
     for (const clause of literalClauses) {
-      if (!Array.isArray(clause) || clause.length === 0) return null;
+      if (!Array.isArray(clause) || clause.length === 0) {
+        return {
+          eligible: false,
+          reason: 'not_eligible',
+          totalFiles,
+          gramsUsed,
+          denseGramsTouched,
+          sparseGramsTouched,
+          candidateFiles: 0,
+          files: null,
+        };
+      }
       const result = sparseGramIndex.queryLiterals(
         clause,
         options.maxGramCandidates ?? 0,
         symbolMask || 0
       );
-      if (!result?.eligible) return null;
+      if (!result?.eligible) {
+        return {
+          eligible: false,
+          reason: 'not_eligible',
+          totalFiles: Math.max(totalFiles, result?.totalFiles || 0),
+          gramsUsed: gramsUsed + (result?.gramsUsed || 0),
+          denseGramsTouched: denseGramsTouched + (result?.denseGramsTouched || 0),
+          sparseGramsTouched: sparseGramsTouched + (result?.sparseGramsTouched || 0),
+          candidateFiles: Array.isArray(result?.files) ? result.files.length : 0,
+          files: null,
+        };
+      }
       totalFiles = Math.max(totalFiles, result.totalFiles || 0);
       gramsUsed += result.gramsUsed || 0;
       denseGramsTouched += result.denseGramsTouched || 0;
@@ -617,7 +671,16 @@ export function querySparseGramCandidates(searcher, literalClauses, options = {}
         clauseFiles.length > maxCandidateFiles ||
         (result.totalFiles > 0 && (clauseFiles.length / result.totalFiles) > maxCandidateRatio)
       ) {
-        return null;
+        return {
+          eligible: false,
+          reason: 'too_broad',
+          totalFiles,
+          gramsUsed,
+          denseGramsTouched,
+          sparseGramsTouched,
+          candidateFiles: clauseFiles.length,
+          files: null,
+        };
       }
       for (const file of clauseFiles) combined.add(file);
     }
@@ -628,11 +691,21 @@ export function querySparseGramCandidates(searcher, literalClauses, options = {}
       files.length > maxCandidateFiles ||
       (totalFiles > 0 && (files.length / totalFiles) > maxCandidateRatio)
     ) {
-      return null;
+      return {
+        eligible: false,
+        reason: 'too_broad',
+        totalFiles,
+        gramsUsed,
+        denseGramsTouched,
+        sparseGramsTouched,
+        candidateFiles: files.length,
+        files: null,
+      };
     }
 
     return {
       eligible: true,
+      reason: 'ok',
       totalFiles,
       gramsUsed,
       denseGramsTouched,
@@ -641,7 +714,16 @@ export function querySparseGramCandidates(searcher, literalClauses, options = {}
       files,
     };
   } catch {
-    return null;
+    return {
+      eligible: false,
+      reason: 'error',
+      totalFiles: 0,
+      gramsUsed: 0,
+      denseGramsTouched: 0,
+      sparseGramsTouched: 0,
+      candidateFiles: 0,
+      files: null,
+    };
   }
 }
 
@@ -671,6 +753,7 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   let literalFilterTime = 0;
   let filteredFiles = searchFiles;
   const usingGramCandidates = Array.isArray(searchFiles);
+  const gramTooBroad = gramLookupResult?.eligible === false && gramLookupResult?.reason === 'too_broad';
   let grepStrategy = 'two_pass';
 
   // Literal prefilter: run when the gram index didn't already narrow the set.
@@ -682,7 +765,7 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   let prefilterDiscarded = false;
   let prefilterDiscardedCount = 0;
 
-  if (literalPlan.clauses.length > 0 && !usingGramCandidates) {
+  if (literalPlan.clauses.length > 0 && !usingGramCandidates && !gramTooBroad) {
     const literalStart = performance.now();
     filteredFiles = await runLiteralPrefilterClauses(literalPlan.clauses, searchDir, searchFiles, {
       caseInsensitive,
@@ -714,7 +797,13 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   let matchingFiles = [];
   let indexedMatches = [];
   if (shouldUseDirectJson) {
-    grepStrategy = prefilterDiscarded ? 'direct_json_prefilter_discarded' : 'direct_json';
+    if (prefilterDiscarded) {
+      grepStrategy = 'direct_json_prefilter_discarded';
+    } else if (gramTooBroad) {
+      grepStrategy = 'direct_json_gram_too_broad';
+    } else {
+      grepStrategy = 'direct_json';
+    }
     indexedMatches = await runRipgrepJson(regex, searchDir, {
       files: filteredFiles,
       fixedString,
@@ -768,6 +857,7 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
         : 0,
       literalExtractionHit: literalPlan.clauses.length > 0,
       literalExtractionSource: literalPlan.source,
+      gramLookupReason: gramLookupResult?.reason || 'not_run',
       prefilterDiscarded,
       prefilterDiscardedCount,
       denseGramsTouched: gramLookupResult?.denseGramsTouched || 0,
@@ -1309,6 +1399,7 @@ export async function patternSearch(query, routing, options = {}) {
         candidateReductionRatio: candidateResult.stats.candidateReductionRatio,
         literalExtractionHit: candidateResult.stats.literalExtractionHit,
         literalExtractionSource: candidateResult.stats.literalExtractionSource,
+        gramLookupReason: candidateResult.stats.gramLookupReason,
         denseGramsTouched: candidateResult.stats.denseGramsTouched,
         sparseGramsTouched: candidateResult.stats.sparseGramsTouched,
         gramFalsePositiveRatio: candidateResult.stats.gramFalsePositiveRatio,
@@ -1476,6 +1567,7 @@ export async function patternSearch(query, routing, options = {}) {
       candidateReductionRatio: candidateResult.stats.candidateReductionRatio,
       literalExtractionHit: candidateResult.stats.literalExtractionHit,
       literalExtractionSource: candidateResult.stats.literalExtractionSource,
+      gramLookupReason: candidateResult.stats.gramLookupReason,
       denseGramsTouched: candidateResult.stats.denseGramsTouched,
       sparseGramsTouched: candidateResult.stats.sparseGramsTouched,
       gramFalsePositiveRatio: candidateResult.stats.gramFalsePositiveRatio,
