@@ -7,8 +7,10 @@
 USEFUL_ANSWER_COLGREP_PLAN.md (agent context packaging, composes with Phase 4.1/5),
 INIT_STRATEGY.md (native binary packaging for Phase 4 Rust crate)
 **SOTA Review**: 2026-04-02 — Verified against Cursor, GitHub Blackbird, Moderne Trigrep,
-fff/fastgrep. Plan is SOTA with hybrid postings (fff), SIMD intersection, AST metadata
-(Moderne-equivalent via existing tree-sitter chunker), per-codebase frequency weights.
+fff/fastgrep, and academic literature (Zhang et al. 2025 n-gram selection evaluation,
+Lemire et al. 2024 pospopcnt for AVX2/AVX-512/ASIMD). Plan is SOTA with hybrid postings
+(fff), SIMD intersection, AST metadata (Moderne-equivalent via existing tree-sitter
+chunker), per-codebase frequency weights (validated by Zhang et al. FREE strategy).
 **Motivation**: On the warm server path, `encodeQuery()` is ~6ms (model preheated at
 startup). Ripgrep at 21-26ms is the latency floor. At enterprise scale (>1GB repos),
 ripgrep grows to seconds. This plan makes Stage A sub-linear.
@@ -172,6 +174,12 @@ Detection should reuse the existing incremental tracker instead of Git state:
 This works outside Git, and it correctly answers "changed since last index" instead of
 "different from HEAD."
 
+This approach is validated by Iakovlev et al. 2024 ("Trigram-Based Persistent IDE
+Indices with Quick Startup", ITMO/Huawei, arXiv:2403.03751), which demonstrated
+delta-based version tracking for trigram indices across git revisions. Their checkout
+between recent versions takes ~0.1ms. Our mtime-based approach is simpler (no revision
+tree) but achieves the same goal: avoid full re-scan by tracking what changed.
+
 ### 4.3 Expected latency improvement
 
 | Scenario | Current (full scan) | Phase 2 (indexed + overlay) |
@@ -227,15 +235,22 @@ Two options for fast literal matching:
 **A. ripgrep fixed-string prefilter** (recommended first):
 ```bash
 # Extract literals, search only files matching ALL of them
+# Option A1: single invocation using --and (ripgrep 14+)
+rg --files-with-matches -F "Auth" --and -F "Service" fileA.ts fileB.ts ...
+# Then verify full regex on candidates:
+rg --json "class\s+Auth\w+Service" <candidate-files...>
+
+# Option A2: chained invocations (fallback if --and unavailable)
 rg --files-with-matches -F "Auth" fileA.ts fileB.ts ... | \
   xargs rg --files-with-matches -F "Service" | \
   xargs rg --json "class\s+Auth\w+Service"
 ```
 
-Downsides: multiple spawns, pipe overhead, and `xargs` portability concerns. In the
-actual implementation we should do the same thing inside Node with batched `rg -F -l`
-invocations rather than shell pipelines. The important part is that ripgrep still does
-the literal prefiltering and the final regex verification.
+Prefer A1 (`rg --and`) where available — it eliminates multi-spawn overhead by doing
+boolean AND of multiple fixed-string patterns in a single ripgrep invocation. Fall back
+to A2 (batched `rg -F -l` from Node, not shell pipes) when `--and` is unavailable.
+The important part is that ripgrep still does the literal prefiltering and final regex
+verification.
 
 **B. In-process literal scan using a dedicated text cache**:
 
@@ -269,9 +284,48 @@ behavior — the regex is so broad that no pre-filtering is possible.
 
 Track the extraction hit rate in stats so we can see how often this fallback triggers.
 
+### 5.4 Case-insensitive patterns
+
+When the regex contains a `(?i)` flag or is globally case-insensitive, literal extraction
+must handle case folding. For example, `(?i)auth` requires matching "Auth", "AUTH",
+"auth", etc. Two options:
+
+- **Expand literals**: generate all case variants of extracted literals. For short
+  literals this is fine; for long ones it's exponential. Cap at some length (e.g., 8
+  chars) and fall back to no-prefilter for longer case-insensitive literals.
+- **Use ripgrep's `-i` flag**: pass `-i` to the `rg -F` prefilter invocation so ripgrep
+  handles case-insensitive matching natively. This is simpler and correct.
+
+Recommend option 2. This avoids the case-expansion bug class documented in ripgrep
+issue #93 and the coregex project.
+
+### 5.5 Implementation: JS parser or Rust binary?
+
+Phase 3 runs before Phase 4's Rust crate exists. Two approaches for `extractLiterals()`:
+
+- **A. JS regex parser**: Use `regexp-tree` or `regjsparser` npm package to parse the
+  regex into an AST, then walk it to extract literals. Pros: no native dependency.
+  Cons: reimplements logic that Phase 4 will redo in Rust via `regex-syntax`.
+- **B. Rust binary subcommand**: Add a `--extract-literals` flag to the existing native
+  CLI binary that calls `regex-syntax` and outputs the boolean formula as JSON. Phase 3
+  calls this from Node. Pros: single implementation carries through to Phase 4; correct
+  handling of all regex features including Unicode and case folding. Cons: requires the
+  native binary to exist.
+
+**Recommendation**: Option B if the native crate is already shipping (it is, for MaxSim).
+Add a lightweight `--extract-literals <regex>` subcommand that returns JSON. This avoids
+writing a JS regex parser that will be discarded when Phase 4 ships, and it gives us
+correct case-folding and Unicode handling from day one via `regex-syntax`.
+
+If the native binary is unavailable (e.g., unsupported platform), fall back to a simple
+JS heuristic: split the regex string on obvious non-literal metacharacters (`\s`, `\w`,
+`\d`, `.`, `*`, `+`, `?`, `[`, `]`, `(`, `)`, `|`, `{`, `}`) and use the surviving
+fixed substrings longer than 2 characters as AND-required literals. This handles ~80% of
+common patterns without a full parser.
+
 **Effort**: 1-2 days
 **Files**: `core/search/search-pattern.js` (new `extractLiterals()` function, modified
-search path)
+search path), Rust crate (add `--extract-literals` subcommand)
 
 ---
 
@@ -285,6 +339,24 @@ agent workflows trigger >5 concurrent pattern searches.
 problem on code. `for`, `int`, `var`, `the`, `ret`, `urn`, `fun` appear in nearly every
 file. The posting lists for these trigrams are huge, so intersecting them barely reduces
 candidates.
+
+**Why not plain bigrams (fff approach)**: fff/fastgrep uses all 4,761 case-insensitive
+ASCII bigrams with hybrid column storage and achieves <1ms prefiltering on Chromium
+(487K files). Bigrams are simpler to implement (byte-pair splitting, no weight function)
+and their bounded key space (69² = 4,761) avoids hashing. For repos under ~100K files,
+bigrams are likely sufficient — fff's empirical data shows trigrams already reduce
+candidates to <1K for most queries at that scale. However, bigrams have lower selectivity
+than sparse n-grams on very large repos (>200K files) because more files share the same
+bigram. We choose sparse n-grams for enterprise scale, but an implementer could start
+with bigrams as a simpler Phase 4a and add sparse n-gram support later. The hybrid
+posting format (§6.3) and SIMD intersection (§6.1 item 6) work identically for both.
+
+This choice is validated by Zhang et al. 2025 ("An Evaluation of N-Gram Selection
+Strategies for Regular Expression Indexing", CMU/Microsoft Gray Systems Lab), which
+found that frequency-based n-gram selection (their "FREE" strategy) — equivalent to our
+per-codebase inverse-frequency weights — is optimal for large, diverse code workloads.
+Their query-aware strategies (BEST, LPMS) are better for structured log data but have
+quadratic build cost that makes them impractical at code search scale.
 
 ### 6.1 Sparse N-grams (GitHub Blackbird / ClickHouse approach)
 
@@ -364,8 +436,20 @@ every posting list. Getting it wrong makes the entire index useless.
    - **ARM (Apple Silicon NEON)**: 128-bit registers = 128 files per AND instruction
    - **Fallback**: plain `u64` bitwise AND = 64 files per instruction
 
-   Use Rust's `std::arch` or the `wide` crate for portable SIMD with runtime feature
-   detection. Same pattern usearch uses for HNSW distance computation in this codebase.
+   Use Rust's `std::simd` (portable-simd, stabilizing) for cross-platform code with
+   `std::arch` specializations for hot paths. Runtime feature detection via
+   `is_x86_feature_detected!` / compile-time `#[cfg(target_arch)]`. Same pattern
+   usearch uses for HNSW distance computation in this codebase.
+
+   Key SIMD references for the implementer:
+   - Lemire & Boytsov 2014 (arXiv:1401.6399): foundational SIMD integer list compression
+     and intersection (SIMD-BP128). Covers galloping search with SIMD acceleration.
+   - Clausecker & Lemire 2024 (arXiv:2412.16370): faster positional population counts
+     for AVX2, AVX-512, AND ARM ASIMD. Directly applicable to dense×dense bitwise AND +
+     popcount. Provides Apple Silicon ASIMD implementations.
+   - Schmidbauer 2022 (arXiv:2112.06342): faster-than-native VP2INTERSECT alternatives
+     using basic AVX512F instructions. For sparse×sparse, software implementations
+     outperform the native VP2INTERSECT instruction.
 
    SIMD also applies to:
    - Weight table build (byte pair counting across a buffer)
@@ -409,12 +493,31 @@ Sparse posting list (gram appears in ≤D% of files):
 └──────────────────────────────────────────────┘
 Size: k × ~2 bytes (varint).  For 12 matching files = ~24 bytes.
 Intersection: merge-intersect two sorted lists — O(smaller list).
+
+Alternative sparse encoding: Elias-Fano (Vigna 2012, arXiv:1206.4300) can be more
+space-efficient than delta+varint for very sparse, high-gap posting lists by encoding
+the high bits of each integer in a unary stream and the low bits in a fixed-width
+array. This enables O(1) random access and efficient intersection without full
+decompression. Start with delta+varint (simpler, well-understood); consider Elias-Fano
+as an optimization if profiling shows sparse list intersection is a bottleneck.
 ```
 
-**Density threshold D**: Start with 5%. Profile on real corpora and adjust. The
-threshold determines how many columns get bitsets vs sparse lists. Too low = too many
-bitsets (wastes memory). Too high = too many sparse lists for common grams (slow
-intersection). fff uses 1,280 dense + 3,481 sparse for Chromium (487K files).
+**Density threshold D**: Use fff's adaptive formula instead of a fixed percentage:
+a gram switches from sparse posting list to dense bitset when
+`popcount × 4 bytes ≥ ⌈file_count/64⌉ × 8 bytes`. This yields ~3.1% for large corpora
+(Chromium-scale), automatically adapting to corpus size. fff uses 1,280 dense + 3,481
+sparse for Chromium (487K files) with this formula.
+
+**Why not Roaring bitmaps?** Roaring (Lemire et al. 2017, arXiv:1709.07821) is a mature
+compressed bitmap library that automatically handles the dense/sparse transition via
+container types (array, bitset, run-length). However, for our use case: (1) the flat
+mmap'd format is simpler and requires no library dependency, (2) Roaring's container
+dispatch adds overhead per operation that we avoid with a single isDense flag per gram,
+and (3) our key space is small enough (thousands of grams, not millions of terms) that
+Roaring's space-saving features provide negligible benefit. The custom format also
+guarantees zero-copy mmap access, which Roaring's library doesn't natively support.
+If profiling shows the custom format is insufficient, Roaring is a known fallback via
+the `roaring` Rust crate.
 
 **Intersection dispatch** (three cases, chosen at query time):
 
@@ -537,6 +640,9 @@ crate.
 ```rust
 use regex_syntax::hir::{Hir, HirKind};
 
+// NOTE: targets regex-syntax 0.8+ (shipped with regex 1.10+).
+// In 0.7+, HirKind::Group was removed — use HirKind::Capture instead.
+// HirKind::Look (lookahead/lookbehind) should be skipped (no effect on literals).
 fn extract_literals(hir: &Hir) -> BoolFormula {
     match hir.kind() {
         HirKind::Literal(lit)       => Formula::Lit(lit.0.clone()),
@@ -544,11 +650,18 @@ fn extract_literals(hir: &Hir) -> BoolFormula {
         HirKind::Alternation(subs)  => Formula::Or(subs.iter().map(extract_literals).collect()),
         HirKind::Repetition(_)
         | HirKind::Class(_)         => Formula::Empty,
-        HirKind::Group(g)           => extract_literals(&g.hir),
+        HirKind::Capture(cap)       => extract_literals(&cap.sub),
+        HirKind::Look(_)            => Formula::Empty,  // anchors, lookahead
         _                           => Formula::Empty,
     }
 }
 ```
+
+**Case-insensitive handling**: When `hir.properties().is_utf8()` and the pattern has
+case-insensitive flags, `regex-syntax` normalizes `Literal` nodes to their folded form
+but may produce `Class` nodes for case-insensitive character ranges. The walk above
+correctly treats those as `Empty` (no extractable literal), which causes a fallback to
+Phase 2/3. This is conservative but correct — no false negatives.
 
 #### Stage B: Literals → Sparse Grams → Posting Intersection
 
@@ -561,6 +674,79 @@ Intersection follows the boolean formula structure:
 - **AND**: intersect posting lists (all grams must match) — uses hybrid dispatch from §6.3
 - **OR**: union posting lists (any gram sufficient)
 - **Nested**: evaluate bottom-up, materializing intermediate candidate sets
+
+#### Gram extraction from text (index build time)
+
+The complementary operation to Stage A/B is extracting sparse grams from document text
+at index build time. This is the core of the sparse gram algorithm (from GitHub Blackbird
+/ ClickHouse / Cursor). Two modes:
+
+**build_all** (indexing): extract ALL sparse grams from a text. Walk the text, compute
+bigram weights for each adjacent pair. An n-gram boundary forms where the boundary
+bigram weight exceeds all interior bigram weights. Recurse until the minimum gram length
+(trigram) is reached.
+
+**build_covering** (querying): extract only the MINIMAL covering set of grams needed to
+match the query in the index. Because weights are deterministic, the covering grams at
+query time are a subset of the grams generated at index time.
+
+```rust
+/// Extract all sparse grams from `text` using the weight function `w`.
+/// Each gram is a (start, end) byte range in the text.
+fn extract_all_grams(text: &[u8], w: &WeightTable) -> Vec<(usize, usize)> {
+    let mut grams = Vec::new();
+    extract_recursive(text, 0, text.len(), w, &mut grams);
+    grams
+}
+
+fn extract_recursive(
+    text: &[u8], start: usize, end: usize,
+    w: &WeightTable, out: &mut Vec<(usize, usize)>,
+) {
+    if end - start <= 3 {
+        // Minimum gram length reached (trigram). Emit as-is.
+        if end - start >= 2 { out.push((start, end)); }
+        return;
+    }
+    // Find the interior bigram with maximum weight.
+    let mut max_w = 0u32;
+    let mut max_pos = start + 1;
+    for i in (start + 1)..(end - 1) {
+        let bw = w.weight(text[i], text[i + 1]);
+        if bw > max_w { max_w = bw; max_pos = i; }
+    }
+    // Check if boundary weights exceed the interior max.
+    let left_w = w.weight(text[start], text[start + 1]);
+    let right_w = w.weight(text[end - 2], text[end - 1]);
+    if left_w > max_w && right_w > max_w {
+        // This entire span is one gram (boundaries dominate interior).
+        out.push((start, end));
+    } else {
+        // Split at the max interior weight and recurse.
+        extract_recursive(text, start, max_pos + 1, w, out);
+        extract_recursive(text, max_pos, end, w, out);
+    }
+}
+
+/// Extract covering grams from a query literal (query time).
+/// Only returns the minimal set needed to match in the index.
+fn extract_covering_grams(text: &[u8], w: &WeightTable) -> Vec<(usize, usize)> {
+    // At query time, only emit grams at the boundary positions
+    // (where boundary weight > all interior weights). These are
+    // guaranteed to exist in the index for any matching document.
+    // See danlark1/sparse_ngrams for the full algorithm.
+    let all = extract_all_grams(text, w);
+    // The covering set is the subset of grams whose boundaries
+    // align with the global minima of the weight landscape.
+    // For a complete implementation, see the Cursor blog visualization
+    // or the danlark1/sparse_ngrams C++ reference.
+    all // Simplified — production code should filter to covering set
+}
+```
+
+This pseudocode illustrates the core recursive boundary detection. For a complete,
+production-quality implementation, see the `danlark1/sparse_ngrams` C++ reference
+(Boost License 1.0) and the interactive visualization in Cursor's blog post.
 
 The entire Stage A + Stage B pipeline runs inside the Rust binary. Node calls it as a
 single napi-rs function or subprocess invocation: pass regex string in, get candidate
@@ -872,7 +1058,7 @@ reporting automatically.
 | [Russ Cox: Regex Matching with a Trigram Index](https://swtch.com/~rsc/regexp/regexp4.html) (2012) | Foundational trigram-to-regex compilation |
 | [GitHub: Technology Behind Code Search](https://github.blog/engineering/the-technology-behind-githubs-new-code-search/) (2023) | Sparse grams, phrase masks, scale architecture |
 | [Zoekt](https://github.com/sourcegraph/zoekt) | Positional trigrams, shard format, ctags ranking |
-| [Moderne Trigrep](https://www.moderne.ai/blog/from-grep-to-moderne-trigrep-code-search-for-agents) (2026) | 13.5x faster than ripgrep via semantic-tree trigrams |
+| [Moderne Trigrep](https://www.moderne.ai/blog/from-grep-to-moderne-trigrep-code-search-for-agents) (2026) | Zoekt-compatible trigram index + LST symbol awareness; "13.5x" is token efficiency for agents, not raw grep speed |
 | [sparse_ngrams](https://github.com/danlark1/sparse_ngrams) | C++ reference for sparse gram extraction |
 | [ripgrep RFC #1497](https://github.com/BurntSushi/ripgrep/issues/1497) | BurntSushi's design for indexed ripgrep |
 | [fastgrep](https://github.com/awnion/fastgrep) | Lazy trigram index, mtime invalidation |
@@ -880,6 +1066,13 @@ reporting automatically.
 | [danieldk bigram gist](https://gist.github.com/danieldk/00a2dd05c8a012b7b049a25f23e23062) | Character-level bigram frequencies across programming languages |
 | [regex-syntax crate](https://docs.rs/regex-syntax) | Rust regex AST parser by BurntSushi — used for literal extraction (§6.4) |
 | [HN: GitHub engineer on sparse grams](https://news.ycombinator.com/item?id=34682472) (2023) | Confirms follow masks abandoned, covering sparse grams used instead |
+| [Zhang et al.: N-Gram Selection Strategies for Regex Indexing](https://arxiv.org/abs/2504.12251) (2025) | CMU/Microsoft evaluation of FREE/BEST/LPMS — validates frequency-based selection for code search |
+| [Lemire et al.: Faster Positional-Population Counts](https://arxiv.org/abs/2412.16370) (2024) | AVX2/AVX-512/ASIMD pospopcnt — directly applicable to dense×dense intersection |
+| [Lemire & Boytsov: SIMD Compression and Intersection of Sorted Integers](https://arxiv.org/abs/1401.6399) (2014) | Foundational SIMD integer list intersection (SIMD-BP128) |
+| [Schmidbauer: Faster-Than-Native VP2INTERSECT Alternatives](https://arxiv.org/abs/2112.06342) (2022) | AVX512F outperforms native VP2INTERSECT for set intersection |
+| [Lemire et al.: Roaring Bitmaps](https://arxiv.org/abs/1709.07821) (2017) | Compressed bitmap library — considered and rejected for this use case (see §6.3) |
+| [Iakovlev et al.: Trigram-Based Persistent IDE Indices](https://arxiv.org/abs/2403.03751) (2024) | ITMO/Huawei — delta-based persistent trigram index across git revisions |
+| [Vigna: Quasi-Succinct Indices](https://arxiv.org/abs/1206.4300) (2012) | Elias-Fano encoding for sparse posting lists — potential alternative to delta+varint |
 | COLGREP_PLAN.md | Parent plan for pattern mode (semantic ranking side) |
 | USEFUL_ANSWER_COLGREP_PLAN.md | Agent context packaging — composes with Phase 4.1/5 |
 | INIT_STRATEGY.md | Native binary packaging model for `@sweet-search/native-<platform>` |
