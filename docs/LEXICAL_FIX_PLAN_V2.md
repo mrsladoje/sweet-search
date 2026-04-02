@@ -2,7 +2,7 @@
 
 **Status**: PLANNED
 **Priority**: HIGH
-**Date**: 2026-03-31
+**Date**: 2026-03-31 (research updated 2026-04-02)
 **Builds on**: LEXICAL_FIX_PLAN (V1, now fully implemented)
 
 ---
@@ -18,20 +18,32 @@ These are done and should not be revisited:
 - `name_alias` normalized identifier field with camelCase/snake_case splitting
 - FTS5 schema: `name, name_alias, signature, doc_comment`
 
-V1 established the foundation. V2 targets the remaining latency and accuracy gaps informed by March 2026 SOTA research.
+V1 established the foundation. V2 targets the remaining latency and accuracy gaps using post-hoc scoring techniques that work within our existing SQLite FTS5 architecture — no neural encoder required at query time. Research basis reviewed April 2026; learned sparse retrieval (SPLADE-Code, SEISMIC) was evaluated and excluded due to encoder-size constraints (see "Evaluated and Excluded").
 
 ---
 
 ## Research Basis
 
-This plan is grounded in four recent papers and SQLite FTS5 internals:
+This plan is grounded in recent IR research and SQLite FTS5 internals. All citations verified April 2026.
 
-| Paper | Date | Key Contribution |
-|-------|------|------------------|
-| **SPLADE-Code** (arXiv 2603.22008, NAVER) | Mar 2026 | First learned sparse retrieval for code. Sub-ms retrieval on 1M docs. Expansion tokens bridge lexical-semantic gap. |
-| **BMX** (arXiv 2408.06643, PolyU/Mixedbread) | Aug 2024 | Entropy-weighted BM25 variant. Outperforms BM25 on 11/15 BEIR datasets with comparable latency. |
-| **RankEvolve** (arXiv 2602.16932, Santa Clara/Walmart) | Feb 2026 | LLM-evolved BM25*. Discovers bigram channels, coordination bonus, log-dampened length normalization. |
-| **Identifier Splitting** (arXiv 2201.01988, SMU) | Jan 2022 | Hybrid split strategy: +6.23% MRR on identifiers. Naive splitting hurts. |
+### Primary References (directly inform fixes)
+
+| Paper | Date | Key Contribution | Informs |
+|-------|------|-------------------|---------|
+| **BMX** (arXiv 2408.06643, PolyU/Mixedbread) | Aug 2024 | Entropy-weighted BM25 variant. Outperforms BM25 on BEIR/LoCo/BRIGHT with comparable latency. Score normalization via max-score estimator. 12 citations. | Fix 5, Fix 8 |
+| **RankEvolve** (arXiv 2602.16932, Santa Clara/Walmart) | Feb 2026 | LLM-evolved BM25*. Both evolutionary seeds independently discover bigram channels, coordination bonus, log-dampened length normalization, rare-term anchoring. | Fix 2, Fix 4, Fix 6, Fix 9 |
+| **Identifier Splitting** (arXiv 2201.01988, SMU) | Jan 2022 | Foundational (not current SOTA). Hybrid split strategy: +6.23% MRR on identifiers. Naive splitting hurts. V1 already implemented the key insight. | V1 (done) |
+| **Query-side BM25** (Ge et al.) | Sep 2025 | BM25-style TF normalization applied to query term vectors. Relevant for long/repetitive queries from LLM-generated contexts. | Fix 4 |
+
+### Context References (validate approach, do not directly inform fixes)
+
+| Paper | Date | Relevance |
+|-------|------|-----------|
+| **CLARC** (arXiv 2603.04484) | Mar 2026 | New C/C++ code search benchmark. Latest dense models (Nomic-emb-code 7B, Voyage-code-3) dominate; BM25 is weak baseline. Validates our hybrid approach. |
+| **Li-LSR** (SIGIR '25, Nardini et al.) | 2025 | Inference-free learned sparse retrieval. Surpasses SPLADE-v3-Doc by +1pt mRR@10. Eliminates query encoding bottleneck — but requires model infrastructure we don't have. |
+| **LACONIC** (arXiv 2601.01684) | Jan 2026 | Dense-level effectiveness for scalable sparse retrieval via two-phase training. State-of-the-art LSR, but requires neural encoder. |
+| **Revisiting Text Ranking in Deep Research** (arXiv 2602.21456) | Feb 2026 | Agent-issued queries favor lexical and learned sparse retrievers. Validates investing in lexical quality. |
+| **BM25F in code search** (Sourcegraph engineering) | 2024-2025 | Per-field boosting (filename, symbol, body) yields ~20% ranking improvement in production code search. Validates our existing BM25F approach. |
 
 ---
 
@@ -162,7 +174,7 @@ Sweep the multiplier strength: `0.25, 0.5, 0.75, 1.0` for the `0.5` coefficient.
 
 ---
 
-## Fix 3: Character Trigram Channel for Rare/Unknown Terms (P1)
+## Fix 3: Character Trigram Channel for Rare/Unknown Terms (P2 — moved to Phase 3)
 
 **Impact**: Accuracy improvement for partial identifier matching
 **Risk**: Medium (index size growth)
@@ -251,10 +263,11 @@ for (const result of results) {
 
 ---
 
-## Fix 5: Entropy-Weighted Term Scoring (P2)
+## Fix 5: Entropy-Weighted Term Scoring (P3 — demoted, most speculative)
 
 **Impact**: Accuracy improvement for informative-vs-common term discrimination
 **Risk**: Medium
+**Caveat**: BMX demonstrated gains on text IR benchmarks (BEIR), but code corpora have different term distributions. This is the least certain fix in V2 — skip if Phase 2+3 already hit targets.
 **A/B metric**: MRR@10, nDCG@10 across full query set
 
 ### Problem
@@ -646,12 +659,21 @@ These are interesting but out of scope for V2:
 
 | Idea | Why Deferred |
 |------|-------------|
-| SPLADE-Code integration | Requires neural inference at query time. Evaluate after V2 baseline is solid. |
 | LLM-based query expansion (BMX WQA) | Requires LLM call per query. Latency cost too high for local-first architecture. |
 | Custom FTS5 tokenizer (code-aware) | SQLite custom tokenizer API is C-only. Major engineering effort. |
 | Abbreviation expansion dictionary (V1 Fix 9) | Low priority until V2 fixes are measured. Carry forward to V3 if needed. |
 | Full RankEvolve-style evolved scoring | Fascinating but requires significant infrastructure. Revisit after V2 measurements. |
 | Sigmoid-capped TF (BMX) | Interesting for repetitive code, but requires replacing BM25 internals. Evaluate if entropy weighting (Fix 5) already covers this. |
+
+### Evaluated and Excluded
+
+These were investigated during V2 research (April 2026) and determined to be incompatible with our architecture:
+
+| Idea | Why Excluded |
+|------|-------------|
+| SPLADE-Code (arXiv 2603.22008) + SEISMIC index (arXiv 2404.18812) | SEISMIC is the ideal serving layer for learned sparse vectors (microsecond retrieval, 21x faster than graph-based alternatives, Rust implementation). However, the smallest code-aware SPLADE model is 600M params (~2.4GB, 50-200ms CPU inference) — 4x our LI model and incompatible with our <100ms p99 latency budget. Text-only distilled SPLADE models (15-66M params) exist but are not trained on code. **Revisit only when a <100M code-aware sparse encoder is published.** |
+| Li-LSR inference-free sparse retrieval | Eliminates query encoding bottleneck but still requires a trained sparse model and custom index infrastructure. Same encoder-size constraint as SPLADE-Code. |
+| LACONIC (arXiv 2601.01684) | Dense-level sparse retrieval effectiveness, but requires neural encoder at query time. Same constraint. |
 
 ---
 
@@ -663,47 +685,50 @@ Build `evaluation/lexical-ab-fixture.js` with fixed corpus, query set, and autom
 
 ### Phase 1: Free Wins (parallel, no schema changes, zero risk)
 
-| Fix | File | Risk |
-|-----|------|------|
-| Fix 1: `ORDER BY rank` | `core/graph-search.js` | None |
-| Fix 11: FTS5 optimize/automerge | `core/graph-extractor.js` | None |
-| Fix 12: Lexical path observability | `core/graph-search.js` | None |
+| Fix | Domain | File(s) | Risk |
+|-----|--------|---------|------|
+| Fix 1: `ORDER BY rank` | graph | `core/graph/graph-search.js` | None |
+| Fix 11: FTS5 optimize/automerge | graph | `core/graph/graph-extractor.js` | None |
+| Fix 12: Lexical path observability | search | `core/search/sweet-search.js`, `core/graph/graph-search.js` | None |
 
 ### Phase 2: Post-hoc Scoring (no schema changes)
 
 Each fix is A/B tested **individually** first. Then winning fixes are combined and tested as a stack to check for interaction effects (multiplier compounding, score distribution shifts).
 
-| Fix | File | Risk |
-|-----|------|------|
-| Fix 2: Coordination bonus | `core/graph-search.js` | Low |
-| Fix 4: Length normalization | `core/graph-search.js` | Low-Med |
-| Fix 8: Score normalization | `core/graph-search.js` | Low |
-| Fix 9: Rare-term anchoring | `core/graph-search.js` | Low |
-| Fix 10: Path-aware lexical signal | `core/graph-search.js` | Low |
-| Fix 13: Narrow identifier routing | `core/graph-search.js` | Low |
+| Fix | Domain | File(s) | Risk |
+|-----|--------|---------|------|
+| Fix 2: Coordination bonus | ranking | `core/ranking/` (new post-hoc scorer) | Low |
+| Fix 4: Length normalization | ranking | `core/ranking/` (new post-hoc scorer) | Low-Med |
+| Fix 8: Score normalization | search | `core/search/search-fusion.js` | Low |
+| Fix 9: Rare-term anchoring | ranking | `core/ranking/` (new post-hoc scorer) | Low |
+| Fix 10: Path-aware lexical signal | ranking | `core/ranking/` (new post-hoc scorer) | Low |
+| Fix 13: Narrow identifier routing | query | `core/query/intent-detector.js` or `core/graph/graph-search.js` | Low |
+
+**DDD note**: Fixes 2, 4, 9, 10 are all post-BM25 re-scoring. They belong in `core/ranking/` as a new lexical post-hoc scorer module, not in the graph domain. Fix 8 (score normalization) belongs in `core/search/search-fusion.js` since it enables hybrid fusion. Fix 13 (identifier routing) is a query classification concern.
 
 **Interaction testing**: After individual A/B passes, stack all winning fixes and run the full regression suite again. If the combined effect regresses any category, bisect to find the conflicting pair and drop the lower-impact fix. Document the final post-hoc pipeline order (multipliers are not commutative when combined with normalization).
 
-### Phase 3: Advanced Scoring (depends on Phase 2 A/B results)
+### Phase 3: Schema Changes (depends on Phase 2 A/B results)
 
-| Fix | File | Risk |
-|-----|------|------|
-| Fix 3: Trigram channel enhancement | `core/graph-search.js` | Medium |
-| Fix 5: Entropy-weighted scoring | `core/graph-search.js`, `core/graph-extractor.js` | Medium |
+| Fix | Domain | File(s) | Risk |
+|-----|--------|---------|------|
+| Fix 3: Trigram channel enhancement | graph | `core/graph/graph-search.js` | Medium |
+| Fix 6: Bigram index | graph | `core/graph/graph-extractor.js`, `core/graph/graph-search.js` | Medium |
+| Fix 7: Contentless FTS5 | graph | `core/graph/graph-extractor.js` | Medium |
 
-### Phase 4: Schema Changes (depends on Phase 3 A/B results)
+### Phase 4: Advanced Scoring (depends on Phase 3 A/B results, most speculative)
 
-| Fix | File | Risk |
-|-----|------|------|
-| Fix 6: Bigram index | `core/graph-extractor.js`, `core/graph-search.js` | Medium |
-| Fix 7: Contentless FTS5 | `core/graph-extractor.js` | Medium |
+| Fix | Domain | File(s) | Risk | Note |
+|-----|--------|---------|------|------|
+| Fix 5: Entropy-weighted scoring | ranking + graph | `core/ranking/` (scorer), `core/graph/graph-extractor.js` (index-time stats) | Medium | Demoted from Phase 3. BMX showed gains on text benchmarks but code corpora have different term distributions. Most speculative fix — skip if Phase 2+3 gains are sufficient. |
 
 ### Decision Gates
 
 - After Phase 1: measure baseline latency improvement. If p95 drops > 15%, proceed.
-- After Phase 2: measure accuracy gains. Each fix ships independently based on its own A/B results. Fixes that regress any metric are dropped.
-- After Phase 3: measure combined accuracy. If diminishing returns, skip Phase 4.
-- After Phase 4: final benchmark. Compare total V2 improvement against V1 baseline.
+- After Phase 2: measure accuracy gains. Each fix ships independently based on its own A/B results. Fixes that regress any metric are dropped. **Watch for multiplier stacking** — three 1.2x boosts compound to 1.73x, which can blow out score distributions.
+- After Phase 3: measure combined accuracy and index size. If index size growth > 25%, drop Fix 6 (bigrams). If diminishing returns, skip Phase 4.
+- After Phase 4 (if attempted): measure entropy weighting in isolation. Skip if Phase 2+3 already hit the 3% MRR@10 target. This is the most speculative fix.
+- Final: benchmark total V2 improvement against V1 baseline.
 
 ---
 
@@ -720,7 +745,16 @@ Each fix is A/B tested **individually** first. Then winning fixes are combined a
 
 ## References
 
-- Lupart et al. "On the Challenges and Opportunities of Learned Sparse Retrieval for Code." arXiv 2603.22008, Mar 2026.
+### Primary
 - Li et al. "BMX: Entropy-weighted Similarity and Semantic-enhanced Lexical Search." arXiv 2408.06643, Aug 2024.
 - Nian et al. "RankEvolve: Automating the Discovery of Retrieval Algorithms via LLM-Driven Evolution." arXiv 2602.16932, Feb 2026.
-- Shi et al. "Can Identifier Splitting Improve Open-Vocabulary Language Model of Code?" arXiv 2201.01988, Jan 2022.
+- Shi et al. "Can Identifier Splitting Improve Open-Vocabulary Language Model of Code?" arXiv 2201.01988, Jan 2022. (Foundational, not current SOTA.)
+- Ge et al. "Query-side BM25 normalization for long queries." Sep 2025.
+
+### Context (validated approach, not directly applied)
+- Lupart et al. "On the Challenges and Opportunities of Learned Sparse Retrieval for Code." arXiv 2603.22008, Mar 2026. (Excluded: no small code-aware model.)
+- Bruch et al. "Efficient Inverted Indexes for Approximate Retrieval over Learned Sparse Representations (SEISMIC)." arXiv 2404.18812, SIGIR 2024 Best Paper. (Excluded: depends on SPLADE encoder.)
+- Nardini et al. "Effective Inference-Free Retrieval for Learned Sparse Representations (Li-LSR)." SIGIR 2025. (Excluded: requires trained sparse model.)
+- Xu et al. "LACONIC: Dense-Level Effectiveness for Scalable Sparse Retrieval." arXiv 2601.01684, Jan 2026. (Excluded: requires neural encoder.)
+- Meng et al. "Revisiting Text Ranking in Deep Research." arXiv 2602.21456, Feb 2026.
+- CLARC: "C/C++ Benchmark for Robust Code Search." arXiv 2603.04484, Mar 2026.
