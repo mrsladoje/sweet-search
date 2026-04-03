@@ -92,3 +92,49 @@ export function extractRegexLiteralClauses(regex) {
   if (!addon) return null;
   return addon.extractRegexLiterals(regex);
 }
+
+/**
+ * In-process regex file matching using the native addon's regex + rayon.
+ * Replaces `rg --files-with-matches` to eliminate spawn overhead (~3ms).
+ * Returns null if the native addon is unavailable (falls back to rg).
+ */
+export function nativeGrepFilesWithMatches(pattern, projectRoot, files, caseInsensitive) {
+  const addon = loadAddon();
+  if (!addon?.nativeGrepFilesWithMatches) return null;
+  try {
+    return addon.nativeGrepFilesWithMatches(pattern, projectRoot, files, caseInsensitive || false);
+  } catch {
+    return null; // Fall back to rg on regex incompatibility
+  }
+}
+
+/**
+ * In-process regex line-level matching using the native addon's regex + rayon + mmap.
+ * Replaces `rg --json` for narrowed queries — eliminates spawn + JSON parse overhead.
+ * Returns null if the native addon is unavailable (falls back to rg).
+ *
+ * @returns {{ matches: Array<{file: string, line: number}>, scannedFiles: number, elapsedUs: number }|null}
+ */
+export function nativeGrepLines(pattern, projectRoot, files, caseInsensitive) {
+  const addon = loadAddon();
+  if (!addon?.nativeGrepLines) return null;
+  try {
+    return addon.nativeGrepLines(pattern, projectRoot, files, caseInsensitive || false);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get all file paths from the sparse gram index.
+ * Used to provide the full file list to native grep for the raw_rg path
+ * (avoids needing a directory walk).
+ */
+export function getSparseGramAllFiles(sparseGramIndex) {
+  if (!sparseGramIndex?.getAllFiles) return null;
+  try {
+    return sparseGramIndex.getAllFiles();
+  } catch {
+    return null;
+  }
+}

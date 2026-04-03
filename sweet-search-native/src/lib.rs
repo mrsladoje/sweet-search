@@ -8,6 +8,7 @@
 mod tokenizer;
 mod sparse_gram;
 mod regex_literals;
+mod native_grep;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;

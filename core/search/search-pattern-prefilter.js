@@ -13,7 +13,15 @@ import {
   extractRegexLiteralClauses,
   loadSparseGramIndex,
   resolveSparseSymbolMask,
+  nativeGrepFilesWithMatches as _nativeGrepFilesWithMatches,
+  nativeGrepLines as _nativeGrepLines,
+  getSparseGramAllFiles as _getSparseGramAllFiles,
 } from '../infrastructure/native-sparse-gram.js';
+
+// Re-export for search-pattern.js (avoids circular import through native-sparse-gram.js)
+export const nativeGrepFilesWithMatches = _nativeGrepFilesWithMatches;
+export const nativeGrepLines = _nativeGrepLines;
+export const getSparseGramAllFiles = _getSparseGramAllFiles;
 import { DB_PATHS } from '../infrastructure/config/index.js';
 import { CODE_FILE_EXTENSIONS } from '../infrastructure/constants.js';
 import { isRipgrepCodePath, resolveSearchSymbolFilter } from './search-pattern-chunks.js';

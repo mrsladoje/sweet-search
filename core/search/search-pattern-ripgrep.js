@@ -11,6 +11,7 @@
 
 import { spawn, execFileSync } from 'child_process';
 import { existsSync, readdirSync } from 'fs';
+import { StringDecoder } from 'string_decoder';
 import path from 'path';
 import { RIPGREP_CODE_TYPE_GLOB } from '../infrastructure/constants.js';
 
@@ -178,6 +179,8 @@ async function executeRipgrep({
   outputMode = 'json',
   timeout = 10000,
   useAnd = false,
+  maxCount = 0,
+  lightweightParse = false,
 }) {
   const rgBin = _findRg();
   if (!rgBin) {
@@ -196,6 +199,7 @@ async function executeRipgrep({
       '--type', 'code',
     ];
 
+    if (maxCount > 0) args.push('--max-count', String(maxCount));
     if (caseInsensitive) args.push('-i');
     for (const glob of globs) {
       if (glob) args.push('--glob', glob);
@@ -251,22 +255,67 @@ async function executeRipgrep({
       }
 
       const matches = [];
-      for (const line of stdout.split('\n')) {
-        if (!line) continue;
-        try {
-          const obj = JSON.parse(line);
-          if (obj.type !== 'match') continue;
-          const file = normalizeSearchPath(searchDir, obj.data?.path?.text);
-          const lineNumber = obj.data?.line_number;
-          const text = obj.data?.lines?.text?.trimEnd() || '';
-          const firstSubmatch = obj.data?.submatches?.[0];
-          const column = typeof firstSubmatch?.start === 'number' ? firstSubmatch.start + 1 : null;
-          const matchText = firstSubmatch?.match?.text || '';
-          if (file && lineNumber != null) {
-            matches.push({ file, line: lineNumber, column, matchText, content: text });
+      if (lightweightParse) {
+        // Fast path: extract only file + line using indexOf (no JSON.parse).
+        // For patternSearch, mapMatchesToChunks only reads .file and .line —
+        // skipping JSON.parse saves ~22ms on 20K-match queries (30ms→8ms parse).
+        // rg --json key order is stable (serde derive): path.text then line_number.
+        const PATH_MARKER = '"path":{"text":"';
+        const PATH_MARKER_LEN = PATH_MARKER.length;
+        const LN_MARKER = '"line_number":';
+        const LN_MARKER_LEN = LN_MARKER.length;
+        const MATCH_PREFIX = '{"type":"match"';
+        const pathCache = new Map();
+
+        let pos = 0;
+        while (pos < stdout.length) {
+          const nl = stdout.indexOf('\n', pos);
+          const end = nl === -1 ? stdout.length : nl;
+
+          if (end - pos > 40 && stdout.startsWith(MATCH_PREFIX, pos)) {
+            const pathIdx = stdout.indexOf(PATH_MARKER, pos + 15);
+            if (pathIdx !== -1 && pathIdx < end) {
+              const pathStart = pathIdx + PATH_MARKER_LEN;
+              const pathEnd = stdout.indexOf('"', pathStart);
+              if (pathEnd !== -1 && pathEnd < end) {
+                const lnIdx = stdout.indexOf(LN_MARKER, pathEnd);
+                if (lnIdx !== -1 && lnIdx < end) {
+                  const lnStart = lnIdx + LN_MARKER_LEN;
+                  let lnEnd = lnStart;
+                  while (lnEnd < end && stdout.charCodeAt(lnEnd) >= 48 && stdout.charCodeAt(lnEnd) <= 57) lnEnd++;
+                  if (lnEnd > lnStart) {
+                    const rawPath = stdout.substring(pathStart, pathEnd);
+                    let file = pathCache.get(rawPath);
+                    if (file === undefined) {
+                      file = normalizeSearchPath(searchDir, rawPath);
+                      pathCache.set(rawPath, file);
+                    }
+                    if (file) matches.push({ file, line: parseInt(stdout.substring(lnStart, lnEnd), 10) });
+                  }
+                }
+              }
+            }
           }
-        } catch {
-          // Skip malformed lines.
+          pos = nl === -1 ? stdout.length : nl + 1;
+        }
+      } else {
+        for (const line of stdout.split('\n')) {
+          if (!line) continue;
+          try {
+            const obj = JSON.parse(line);
+            if (obj.type !== 'match') continue;
+            const file = normalizeSearchPath(searchDir, obj.data?.path?.text);
+            const lineNumber = obj.data?.line_number;
+            const text = obj.data?.lines?.text?.trimEnd() || '';
+            const firstSubmatch = obj.data?.submatches?.[0];
+            const column = typeof firstSubmatch?.start === 'number' ? firstSubmatch.start + 1 : null;
+            const matchText = firstSubmatch?.match?.text || '';
+            if (file && lineNumber != null) {
+              matches.push({ file, line: lineNumber, column, matchText, content: text });
+            }
+          } catch {
+            // Skip malformed lines.
+          }
         }
       }
       resolve(matches);
@@ -274,6 +323,166 @@ async function executeRipgrep({
 
     proc.on('error', (err) => {
       if (err.code === 'ENOENT') {
+        reject(new Error('ripgrep (rg) not found. Install: brew install ripgrep'));
+      } else {
+        reject(err);
+      }
+    });
+  });
+}
+
+// =============================================================================
+// Streaming ripgrep JSON — incremental line-by-line parse with early-exit
+// =============================================================================
+
+/**
+ * Streaming ripgrep JSON executor. Parses rg --json output line-by-line as it
+ * arrives on stdout, avoiding the Buffer.concat + toString + split overhead of
+ * executeRipgrep. Supports --max-count and an onMatch callback that can kill
+ * the rg process for early exit.
+ *
+ * Uses StringDecoder for correct multi-byte UTF-8 handling across chunk
+ * boundaries.
+ */
+async function executeRipgrepStreaming({
+  patterns,
+  searchDir,
+  files = null,
+  fixedString = false,
+  caseInsensitive = false,
+  globs = [],
+  timeout = 10000,
+  useAnd = false,
+  maxCount = 0,
+  onMatch = null,
+}) {
+  const rgBin = _findRg();
+  if (!rgBin) {
+    throw new Error('ripgrep (rg) not found. Install: brew install ripgrep');
+  }
+
+  const effectivePatterns = Array.isArray(patterns)
+    ? patterns.filter(Boolean)
+    : [patterns].filter(Boolean);
+  if (effectivePatterns.length === 0) return [];
+
+  return new Promise((resolve, reject) => {
+    const args = [
+      '--json',
+      '--type-add', RIPGREP_CODE_TYPE,
+      '--type', 'code',
+    ];
+
+    if (maxCount > 0) args.push('--max-count', String(maxCount));
+    if (caseInsensitive) args.push('-i');
+    for (const glob of globs) {
+      if (glob) args.push('--glob', glob);
+    }
+
+    if (useAnd && effectivePatterns.length > 1) {
+      args.push(fixedString ? '-F' : effectivePatterns[0]);
+      if (fixedString) args.push(effectivePatterns[0]);
+      for (const pattern of effectivePatterns.slice(1)) {
+        args.push('--and');
+        if (fixedString) args.push('-F');
+        args.push(pattern);
+      }
+    } else {
+      if (fixedString) args.push('-F');
+      args.push(effectivePatterns[0]);
+    }
+
+    if (Array.isArray(files) && files.length > 0) {
+      args.push('--', ...files);
+    } else {
+      args.push('.');
+    }
+
+    const proc = spawn(rgBin, args, {
+      cwd: searchDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout,
+      env: { ...process.env, ARGV0: 'rg' },
+    });
+
+    const matches = [];
+    let killed = false;
+    const decoder = new StringDecoder('utf-8');
+    let partial = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (chunk) => {
+      if (killed) return;
+
+      partial += decoder.write(chunk);
+      const lines = partial.split('\n');
+      partial = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line || killed) continue;
+        try {
+          const obj = JSON.parse(line);
+          if (obj.type !== 'match') continue;
+          const file = normalizeSearchPath(searchDir, obj.data?.path?.text);
+          const lineNumber = obj.data?.line_number;
+          const text = obj.data?.lines?.text?.trimEnd() || '';
+          const firstSubmatch = obj.data?.submatches?.[0];
+          const column = typeof firstSubmatch?.start === 'number'
+            ? firstSubmatch.start + 1
+            : null;
+          const matchText = firstSubmatch?.match?.text || '';
+          if (file && lineNumber != null) {
+            const match = { file, line: lineNumber, column, matchText, content: text };
+            matches.push(match);
+            if (onMatch && onMatch(match) === false) {
+              killed = true;
+              proc.kill('SIGTERM');
+              return;
+            }
+          }
+        } catch {
+          // Skip malformed lines.
+        }
+      }
+    });
+
+    proc.stderr.on('data', (chunk) => { stderr += chunk; });
+
+    proc.on('close', (code) => {
+      if (!killed) {
+        // Flush decoder and process any remaining partial line
+        partial += decoder.end();
+        if (partial) {
+          try {
+            const obj = JSON.parse(partial);
+            if (obj.type === 'match') {
+              const file = normalizeSearchPath(searchDir, obj.data?.path?.text);
+              const lineNumber = obj.data?.line_number;
+              const text = obj.data?.lines?.text?.trimEnd() || '';
+              const firstSubmatch = obj.data?.submatches?.[0];
+              const column = typeof firstSubmatch?.start === 'number'
+                ? firstSubmatch.start + 1
+                : null;
+              const matchText = firstSubmatch?.match?.text || '';
+              if (file && lineNumber != null) {
+                matches.push({ file, line: lineNumber, column, matchText, content: text });
+              }
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
+      if (killed || code === 0 || code === 1) {
+        resolve(matches);
+        return;
+      }
+      reject(new Error(`ripgrep failed (code ${code}): ${stderr.slice(0, 200)}`));
+    });
+
+    proc.on('error', (err) => {
+      if (killed) {
+        resolve(matches);
+      } else if (err.code === 'ENOENT') {
         reject(new Error('ripgrep (rg) not found. Install: brew install ripgrep'));
       } else {
         reject(err);
@@ -336,6 +545,7 @@ export async function runRipgrepJson(regex, searchDir, opts = {}) {
     fixedString = false,
     globs = [],
     timeout = 10000,
+    lightweightParse = false,
   } = opts;
 
   if (Array.isArray(files) && files.length === 0) return [];
@@ -350,12 +560,13 @@ export async function runRipgrepJson(regex, searchDir, opts = {}) {
       globs,
       outputMode: 'json',
       timeout,
+      lightweightParse,
     });
   }
 
   const batches = chunkRipgrepFiles(files);
-  for (const batch of batches) {
-    const batchMatches = await executeRipgrep({
+  const batchResults = await Promise.all(batches.map(batch =>
+    executeRipgrep({
       patterns: [regex],
       searchDir,
       files: batch,
@@ -363,7 +574,89 @@ export async function runRipgrepJson(regex, searchDir, opts = {}) {
       globs,
       outputMode: 'json',
       timeout,
+      lightweightParse,
+    })
+  ));
+  for (const batchMatches of batchResults) {
+    allMatches.push(...batchMatches);
+  }
+  return allMatches;
+}
+
+// =============================================================================
+// Streaming ripgrep JSON — parallel batches with early-exit support
+// =============================================================================
+
+/**
+ * Streaming variant of runRipgrepJson. Parses rg output incrementally and
+ * supports an onMatch callback for early-exit. Batches run in parallel
+ * (unlike the original sequential loop in runRipgrepJson).
+ *
+ * @param {string} regex - Regex pattern
+ * @param {string} searchDir - Directory to search
+ * @param {Object} opts
+ * @param {string[]|null} opts.files - Explicit file list
+ * @param {boolean} opts.fixedString - Use -F mode
+ * @param {string[]} opts.globs - Glob filters
+ * @param {number} opts.timeout - Spawn timeout
+ * @param {number} opts.maxCount - --max-count per file (0 = unlimited)
+ * @param {function|null} opts.onMatch - Per-match callback; return false to kill rg
+ * @returns {Promise<Array<{file, line, column, matchText, content}>>}
+ */
+export async function runRipgrepJsonStreaming(regex, searchDir, opts = {}) {
+  const {
+    files = null,
+    fixedString = false,
+    globs = [],
+    timeout = 10000,
+    maxCount = 0,
+    onMatch = null,
+  } = opts;
+
+  if (Array.isArray(files) && files.length === 0) return [];
+
+  if (!Array.isArray(files)) {
+    return executeRipgrepStreaming({
+      patterns: [regex],
+      searchDir,
+      files: null,
+      fixedString,
+      globs,
+      timeout,
+      maxCount,
+      onMatch,
     });
+  }
+
+  const batches = chunkRipgrepFiles(files);
+
+  // Shared stop flag: when one batch triggers early-exit, stop all batches.
+  let stopped = false;
+  const sharedOnMatch = onMatch ? (match) => {
+    if (stopped) return false;
+    const result = onMatch(match);
+    if (result === false) {
+      stopped = true;
+      return false;
+    }
+    return result;
+  } : null;
+
+  const batchResults = await Promise.all(batches.map(batch =>
+    executeRipgrepStreaming({
+      patterns: [regex],
+      searchDir,
+      files: batch,
+      fixedString,
+      globs,
+      timeout,
+      maxCount,
+      onMatch: sharedOnMatch,
+    })
+  ));
+
+  const allMatches = [];
+  for (const batchMatches of batchResults) {
     allMatches.push(...batchMatches);
   }
   return allMatches;
