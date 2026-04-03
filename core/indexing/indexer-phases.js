@@ -396,11 +396,19 @@ export async function updateIncrementalStatePhase(options = {}) {
     log('\nIncremental state updated', 'green');
   } else if (fullReindex) {
     const hashes = {};
+    const crypto = await import('crypto');
     for (const file of allFiles) {
       try {
-        const content = await fs.readFile(path.join(PROJECT_ROOT, file), 'utf-8');
-        const crypto = await import('crypto');
-        hashes[file] = crypto.createHash('sha256').update(content).digest('hex').slice(0, 16);
+        const fullPath = path.join(PROJECT_ROOT, file);
+        const [content, stat] = await Promise.all([
+          fs.readFile(fullPath, 'utf-8'),
+          fs.stat(fullPath).catch(() => null),
+        ]);
+        hashes[file] = {
+          hash: crypto.createHash('sha256').update(content).digest('hex').slice(0, 16),
+          size: stat?.size ?? null,
+          mtime_ns: stat ? String(BigInt(Math.round(stat.mtimeMs)) * 1000000n) : null,
+        };
       } catch (e) { /* skip */ }
     }
     await updateState(hashes, {

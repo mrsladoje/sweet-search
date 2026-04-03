@@ -218,11 +218,7 @@ export function chunksMatch(goldId, result) {
   if (parsed.file !== resultFile) return false;
 
   // 2a. Symbol name match (both must be non-empty)
-  const goldName = null; // gold IDs don't carry a name; only result does
-  const resultName = (result.name || result.metadata?.name || '').trim();
-  // We skip name matching since gold IDs don't encode names — proceed to line overlap.
-
-  void goldName; // suppress unused-variable lint noise
+  // Name matching skipped — gold IDs don't encode names, proceed to line overlap.
 
   // 2b. Line range overlap > 50%
   const resultStart = result.startLine ?? result.metadata?.startLine ?? null;

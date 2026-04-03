@@ -13,24 +13,6 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use rayon::prelude::*;
 
-/// Compute cosine similarity between a query token and a document token.
-/// Both are f32 slices of length `dim`.
-#[inline(always)]
-fn cosine_sim(q: &[f32], d: &[f32]) -> f32 {
-    let mut dot: f32 = 0.0;
-    let mut d_norm_sq: f32 = 0.0;
-
-    // Compiler auto-vectorizes this to NEON/AVX2 with -O3
-    for i in 0..q.len() {
-        dot += q[i] * d[i];
-        d_norm_sq += d[i] * d[i];
-    }
-
-    let d_norm = d_norm_sq.sqrt();
-    // q_norm passed separately (pre-computed)
-    dot / (d_norm + 1e-8)
-}
-
 /// Compute MaxSim score for one candidate.
 /// query_norms[qi] = pre-computed L2 norm of query token qi.
 fn maxsim_one(

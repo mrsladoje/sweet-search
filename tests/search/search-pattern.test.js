@@ -16,11 +16,17 @@ import os from 'os';
 import {
   bareGrep,
   buildChunkLocationMap,
+  chunkRipgrepFiles,
   extractLiteralClauses,
   extractLiteralClausesHeuristic,
+  extractRegexTokens,
   extractRequiredLiteralsHeuristic,
   findChunkForLine,
+  isRipgrepCodePath,
   mapMatchesToChunks,
+  mergeRegexIntoQuery,
+  normalizeLiteralClauses,
+  normalizeSearchPath,
   querySparseGramCandidates,
   readFileRange,
   getChunkLocationMap,
@@ -29,6 +35,11 @@ import {
   _resetRgCache,
   runRipgrep,
 } from '../../core/search/index.js';
+
+import {
+  resolveSparseSymbolMask,
+  SPARSE_SYMBOL_MASKS,
+} from '../../core/infrastructure/native-sparse-gram.js';
 
 // =============================================================================
 // extractRequiredLiteralsHeuristic
@@ -43,7 +54,7 @@ describe('extractRequiredLiteralsHeuristic', () => {
     ]);
   });
 
-  it('returns no literals for alternation-heavy patterns to avoid false negatives', () => {
+  it('returns no literals for alternation patterns to avoid false negatives', () => {
     expect(extractRequiredLiteralsHeuristic('(get|set)Config')).toEqual([]);
     expect(extractRequiredLiteralsHeuristic('foo|bar')).toEqual([]);
   });
@@ -704,5 +715,329 @@ describe('bareGrep', () => {
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
+  });
+});
+
+// =============================================================================
+// chunkRipgrepFiles
+// =============================================================================
+
+describe('chunkRipgrepFiles', () => {
+  it('returns empty array for empty input', () => {
+    expect(chunkRipgrepFiles([])).toEqual([]);
+  });
+
+  it('returns single batch for array under 500 files', () => {
+    const files = Array.from({ length: 100 }, (_, i) => `src/file-${i}.js`);
+    const batches = chunkRipgrepFiles(files);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toHaveLength(100);
+  });
+
+  it('returns single batch for exactly 500 files', () => {
+    const files = Array.from({ length: 500 }, (_, i) => `src/file-${i}.js`);
+    const batches = chunkRipgrepFiles(files);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toHaveLength(500);
+  });
+
+  it('returns two batches for 501 files', () => {
+    const files = Array.from({ length: 501 }, (_, i) => `src/file-${i}.js`);
+    const batches = chunkRipgrepFiles(files);
+    expect(batches).toHaveLength(2);
+    expect(batches[0]).toHaveLength(500);
+    expect(batches[1]).toHaveLength(1);
+  });
+
+  it('splits on byte limit before file count limit for very long paths', () => {
+    // Each path is ~1KB, so 96KB limit is hit around 96 files
+    const longSegment = 'a'.repeat(1000);
+    const files = Array.from({ length: 200 }, (_, i) => `${longSegment}/file-${i}.js`);
+    const batches = chunkRipgrepFiles(files);
+    expect(batches.length).toBeGreaterThan(1);
+    // First batch should have fewer than 500 files (byte limit hit first)
+    expect(batches[0].length).toBeLessThan(500);
+  });
+
+  it('never splits a single file across batches', () => {
+    const files = ['src/a.js'];
+    const batches = chunkRipgrepFiles(files);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toEqual(['src/a.js']);
+  });
+
+  it('preserves all files across batches', () => {
+    const files = Array.from({ length: 1200 }, (_, i) => `src/file-${i}.js`);
+    const batches = chunkRipgrepFiles(files);
+    const allFiles = batches.flat();
+    expect(allFiles).toEqual(files);
+  });
+});
+
+// =============================================================================
+// normalizeLiteralClauses
+// =============================================================================
+
+describe('normalizeLiteralClauses', () => {
+  it('returns empty array for null input', () => {
+    expect(normalizeLiteralClauses(null)).toEqual([]);
+  });
+
+  it('returns empty array for undefined input', () => {
+    expect(normalizeLiteralClauses(undefined)).toEqual([]);
+  });
+
+  it('filters out literals shorter than 3 chars', () => {
+    const result = normalizeLiteralClauses([['ab', 'abc', 'a']]);
+    expect(result).toEqual([['abc']]);
+  });
+
+  it('deduplicates identical literals within a clause', () => {
+    const result = normalizeLiteralClauses([['auth', 'auth', 'service']]);
+    expect(result).toEqual([['auth', 'service']]);
+  });
+
+  it('deduplicates identical clauses across the array', () => {
+    const result = normalizeLiteralClauses([
+      ['auth', 'service'],
+      ['auth', 'service'],
+      ['other', 'clause'],
+    ]);
+    expect(result).toEqual([
+      ['auth', 'service'],
+      ['other', 'clause'],
+    ]);
+  });
+
+  it('trims whitespace from literals', () => {
+    const result = normalizeLiteralClauses([['  auth  ', '  service  ']]);
+    expect(result).toEqual([['auth', 'service']]);
+  });
+
+  it('rejects non-string elements', () => {
+    const result = normalizeLiteralClauses([[42, null, undefined, 'valid']]);
+    expect(result).toEqual([['valid']]);
+  });
+
+  it('returns empty array for non-array input', () => {
+    expect(normalizeLiteralClauses('not-an-array')).toEqual([]);
+    expect(normalizeLiteralClauses(42)).toEqual([]);
+  });
+
+  it('skips non-array clauses', () => {
+    const result = normalizeLiteralClauses(['not-a-clause', ['valid', 'clause']]);
+    expect(result).toEqual([['valid', 'clause']]);
+  });
+});
+
+// =============================================================================
+// extractRegexTokens
+// =============================================================================
+
+describe('extractRegexTokens', () => {
+  it('extracts readable tokens from class regex', () => {
+    expect(extractRegexTokens('class\\s+\\w+')).toEqual(['class']);
+  });
+
+  it('extracts multiple tokens from export async function regex', () => {
+    expect(extractRegexTokens('export async function\\s+\\w+')).toEqual([
+      'export',
+      'async',
+      'function',
+    ]);
+  });
+
+  it('extracts tokens from alternation', () => {
+    expect(extractRegexTokens('foo|bar')).toEqual(['foo', 'bar']);
+  });
+
+  it('returns empty array for wildcard-only pattern', () => {
+    expect(extractRegexTokens('.*')).toEqual([]);
+  });
+
+  it('returns empty array for empty string', () => {
+    expect(extractRegexTokens('')).toEqual([]);
+  });
+
+  it('drops single-character tokens', () => {
+    // 'x' is single char, should be dropped
+    expect(extractRegexTokens('x\\s+longtoken')).toEqual(['longtoken']);
+  });
+});
+
+// =============================================================================
+// mergeRegexIntoQuery
+// =============================================================================
+
+describe('mergeRegexIntoQuery', () => {
+  it('appends novel tokens from regex to query', () => {
+    const result = mergeRegexIntoQuery('find auth', 'class\\s+Service\\w+');
+    expect(result).toContain('find auth');
+    expect(result).toContain('class');
+    expect(result).toContain('service');
+  });
+
+  it('does not duplicate tokens already in query', () => {
+    const result = mergeRegexIntoQuery('class service', 'class\\s+Service\\w+');
+    // Both 'class' and 'service' already in query
+    expect(result).toBe('class service');
+  });
+
+  it('returns original query when regex yields no tokens', () => {
+    const result = mergeRegexIntoQuery('my query', '.*');
+    expect(result).toBe('my query');
+  });
+
+  it('appends only novel tokens', () => {
+    const result = mergeRegexIntoQuery('find class', 'class\\s+Service\\w+');
+    // 'class' already present, 'service' is novel
+    expect(result).toContain('find class');
+    expect(result).toContain('service');
+    expect(result).not.toMatch(/class.*class/); // no duplication
+  });
+});
+
+// =============================================================================
+// resolveSparseSymbolMask
+// =============================================================================
+
+describe('resolveSparseSymbolMask', () => {
+  it('returns correct bit for function', () => {
+    expect(resolveSparseSymbolMask('function')).toBe(SPARSE_SYMBOL_MASKS.function);
+  });
+
+  it('returns correct bit for class', () => {
+    expect(resolveSparseSymbolMask('class')).toBe(SPARSE_SYMBOL_MASKS.class);
+  });
+
+  it('returns correct bit for method', () => {
+    expect(resolveSparseSymbolMask('method')).toBe(SPARSE_SYMBOL_MASKS.method);
+  });
+
+  it('returns correct bit for import', () => {
+    expect(resolveSparseSymbolMask('import')).toBe(SPARSE_SYMBOL_MASKS.import);
+  });
+
+  it('returns correct bit for type', () => {
+    expect(resolveSparseSymbolMask('type')).toBe(SPARSE_SYMBOL_MASKS.type);
+  });
+
+  it('returns correct bit for interface', () => {
+    expect(resolveSparseSymbolMask('interface')).toBe(SPARSE_SYMBOL_MASKS.type);
+  });
+
+  it('returns correct bit for enum', () => {
+    expect(resolveSparseSymbolMask('enum')).toBe(SPARSE_SYMBOL_MASKS.type);
+  });
+
+  it('returns correct bit for typedef', () => {
+    expect(resolveSparseSymbolMask('typedef')).toBe(SPARSE_SYMBOL_MASKS.type);
+  });
+
+  it('returns correct bit for other', () => {
+    expect(resolveSparseSymbolMask('other')).toBe(SPARSE_SYMBOL_MASKS.other);
+  });
+
+  it('returns correct bit for unknown string (falls through to other)', () => {
+    expect(resolveSparseSymbolMask('variable')).toBe(SPARSE_SYMBOL_MASKS.other);
+  });
+
+  it('returns 0 for empty string', () => {
+    expect(resolveSparseSymbolMask('')).toBe(0);
+  });
+
+  it('returns 0 for non-string input (number)', () => {
+    expect(resolveSparseSymbolMask(42)).toBe(0);
+  });
+
+  it('returns 0 for non-string input (null)', () => {
+    expect(resolveSparseSymbolMask(null)).toBe(0);
+  });
+
+  it('returns 0 for non-string input (undefined)', () => {
+    expect(resolveSparseSymbolMask(undefined)).toBe(0);
+  });
+
+  it('is case-insensitive', () => {
+    expect(resolveSparseSymbolMask('Function')).toBe(SPARSE_SYMBOL_MASKS.function);
+    expect(resolveSparseSymbolMask('CLASS')).toBe(SPARSE_SYMBOL_MASKS.class);
+  });
+
+  it('handles whitespace-padded input', () => {
+    expect(resolveSparseSymbolMask('  function  ')).toBe(SPARSE_SYMBOL_MASKS.function);
+  });
+});
+
+// =============================================================================
+// isRipgrepCodePath
+// =============================================================================
+
+describe('isRipgrepCodePath', () => {
+  it('returns true for .js files', () => {
+    expect(isRipgrepCodePath('src/app.js')).toBe(true);
+  });
+
+  it('returns true for .ts files', () => {
+    expect(isRipgrepCodePath('lib/index.ts')).toBe(true);
+  });
+
+  it('returns true for .py files', () => {
+    expect(isRipgrepCodePath('scripts/run.py')).toBe(true);
+  });
+
+  it('returns true for .rs files', () => {
+    expect(isRipgrepCodePath('src/lib.rs')).toBe(true);
+  });
+
+  it('returns false for .md files', () => {
+    expect(isRipgrepCodePath('docs/README.md')).toBe(false);
+  });
+
+  it('returns false for .png files', () => {
+    expect(isRipgrepCodePath('assets/logo.png')).toBe(false);
+  });
+
+  it('returns false for .bin files', () => {
+    expect(isRipgrepCodePath('data/file.bin')).toBe(false);
+  });
+
+  it('returns false for empty string', () => {
+    expect(isRipgrepCodePath('')).toBe(false);
+  });
+
+  it('returns false for null', () => {
+    expect(isRipgrepCodePath(null)).toBe(false);
+  });
+
+  it('returns false for undefined', () => {
+    expect(isRipgrepCodePath(undefined)).toBe(false);
+  });
+});
+
+// =============================================================================
+// normalizeSearchPath
+// =============================================================================
+
+describe('normalizeSearchPath', () => {
+  it('returns null for empty/null path', () => {
+    expect(normalizeSearchPath('/project', '')).toBeNull();
+    expect(normalizeSearchPath('/project', null)).toBeNull();
+    expect(normalizeSearchPath('/project', undefined)).toBeNull();
+  });
+
+  it('passes through relative path', () => {
+    expect(normalizeSearchPath('/project', 'src/auth.js')).toBe('src/auth.js');
+  });
+
+  it('makes absolute path relative to searchDir', () => {
+    expect(normalizeSearchPath('/project', '/project/src/auth.js')).toBe('src/auth.js');
+  });
+
+  it('strips leading ./', () => {
+    expect(normalizeSearchPath('/project', './src/auth.js')).toBe('src/auth.js');
+  });
+
+  it('normalizes backslashes to forward slashes', () => {
+    expect(normalizeSearchPath('/project', 'src\\auth\\service.js')).toBe('src/auth/service.js');
   });
 });

@@ -738,6 +738,9 @@ fn decode_sparse_postings(bytes: &[u8]) -> Vec<u32> {
         let mut shift = 0u32;
         let mut value = 0u32;
         loop {
+            if index >= bytes.len() {
+                return postings; // Truncated varint; return what we have
+            }
             let byte = bytes[index];
             index += 1;
             value |= ((byte & 0x7F) as u32) << shift;
@@ -745,6 +748,9 @@ fn decode_sparse_postings(bytes: &[u8]) -> Vec<u32> {
                 break;
             }
             shift += 7;
+            if shift >= 35 {
+                return postings; // Malformed varint; bail
+            }
         }
         let current = if postings.is_empty() { value } else { previous + value };
         postings.push(current);
@@ -837,7 +843,9 @@ fn filter_sparse_with_dense(ids: &[u32], dense_words: &[u64]) -> Vec<u32> {
 }
 
 fn bitand_dense_in_place(left: &mut [u64], right: &[u64]) {
-    debug_assert_eq!(left.len(), right.len());
+    let min_len = left.len().min(right.len());
+    let left = &mut left[..min_len];
+    let right = &right[..min_len];
 
     #[cfg(target_arch = "x86_64")]
     {
@@ -975,7 +983,10 @@ fn extract_covering_grams(span: &[u8], weights: &[f32]) -> Vec<String> {
 
         // Base case: trigram — always emit.
         if len == MIN_SPAN_LEN {
-            let gram = String::from_utf8_lossy(&span[start..end]).to_string();
+            let gram = match std::str::from_utf8(&span[start..end]) {
+                Ok(s) => s.to_string(),
+                Err(_) => continue,
+            };
             if seen.insert(gram.clone()) {
                 grams.push(gram);
             }
@@ -993,7 +1004,10 @@ fn extract_covering_grams(span: &[u8], weights: &[f32]) -> Vec<String> {
 
             if first.min(last) > interior_max {
                 // Whole range is one valid gram — emit without splitting further.
-                let gram = String::from_utf8_lossy(&span[start..end]).to_string();
+                let gram = match std::str::from_utf8(&span[start..end]) {
+                Ok(s) => s.to_string(),
+                Err(_) => continue,
+            };
                 if seen.insert(gram.clone()) {
                     grams.push(gram);
                 }
@@ -1030,9 +1044,11 @@ fn extract_covering_grams(span: &[u8], weights: &[f32]) -> Vec<String> {
     // Fallback: if no covering grams found, use sliding trigrams.
     if grams.is_empty() {
         for window in span.windows(MIN_SPAN_LEN) {
-            let gram = String::from_utf8_lossy(window).to_string();
-            if seen.insert(gram.clone()) {
-                grams.push(gram);
+            if let Ok(gram) = std::str::from_utf8(window) {
+                let gram = gram.to_string();
+                if seen.insert(gram.clone()) {
+                    grams.push(gram);
+                }
             }
         }
     }
@@ -1073,7 +1089,10 @@ fn extract_sparse_grams(span: &[u8], weights: &[f32]) -> Vec<String> {
             };
 
             if first.min(last) > interior_max {
-                let gram = String::from_utf8_lossy(&span[start..end]).to_string();
+                let gram = match std::str::from_utf8(&span[start..end]) {
+                Ok(s) => s.to_string(),
+                Err(_) => continue,
+            };
                 if seen.insert(gram.clone()) {
                     grams.push(gram);
                 }
@@ -1083,9 +1102,11 @@ fn extract_sparse_grams(span: &[u8], weights: &[f32]) -> Vec<String> {
 
     if grams.is_empty() {
         for window in span.windows(3) {
-            let gram = String::from_utf8_lossy(window).to_string();
-            if seen.insert(gram.clone()) {
-                grams.push(gram);
+            if let Ok(gram) = std::str::from_utf8(window) {
+                let gram = gram.to_string();
+                if seen.insert(gram.clone()) {
+                    grams.push(gram);
+                }
             }
         }
     }

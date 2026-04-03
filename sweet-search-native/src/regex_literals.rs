@@ -8,9 +8,17 @@ pub struct RegexLiteralExtractionResult {
     pub clauses: Vec<Vec<String>>,
 }
 
+const MAX_REGEX_LENGTH: usize = 4096;
+const MAX_DNF_CLAUSES: usize = 64;
+
 #[napi]
 pub fn extract_regex_literals(regex: String) -> Result<RegexLiteralExtractionResult> {
+    if regex.len() > MAX_REGEX_LENGTH {
+        return Ok(RegexLiteralExtractionResult { clauses: vec![] });
+    }
+
     let hir = ParserBuilder::new()
+        .nest_limit(100)
         .build()
         .parse(&regex)
         .map_err(|err| Error::from_reason(format!("Failed to parse regex: {err}")))?;
@@ -62,7 +70,10 @@ fn extract_dnf(hir: &Hir) -> Option<Vec<Vec<String>>> {
 }
 
 fn literal_to_clause(bytes: &[u8]) -> Option<Vec<Vec<String>>> {
-    let literal = String::from_utf8_lossy(bytes).to_string();
+    let literal = match String::from_utf8(bytes.to_vec()) {
+        Ok(s) => s,
+        Err(_) => return None,
+    };
     if literal.trim().is_empty() {
         return None;
     }
@@ -73,6 +84,9 @@ fn and_product(left: &[Vec<String>], right: &[Vec<String>]) -> Vec<Vec<String>> 
     let mut out = Vec::new();
     for left_clause in left {
         for right_clause in right {
+            if out.len() >= MAX_DNF_CLAUSES {
+                return out;
+            }
             let mut combined = Vec::with_capacity(left_clause.len() + right_clause.len());
             combined.extend(left_clause.iter().cloned());
             combined.extend(right_clause.iter().cloned());

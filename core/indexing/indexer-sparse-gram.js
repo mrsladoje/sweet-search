@@ -3,22 +3,13 @@ import { existsSync } from 'fs';
 import path from 'path';
 
 import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
+import { CODE_FILE_EXTENSIONS } from '../infrastructure/constants.js';
 import {
   buildSparseGramIndexArtifact,
   hasNativeSparseGramSupport,
   resolveSparseSymbolMask,
 } from '../infrastructure/native-sparse-gram.js';
 import { atomicSwapDatabase, log } from './indexer-utils.js';
-
-// Keep in sync with core/search/search-pattern.js RIPGREP_CODE_TYPE.
-const CODE_FILE_EXTENSIONS = new Set([
-  'js', 'ts', 'jsx', 'tsx', 'py', 'rs', 'go', 'java', 'c', 'cpp', 'h', 'hpp',
-  'cs', 'rb', 'php', 'swift', 'kt', 'scala', 'lua', 'sh', 'zig', 'hs', 'ml',
-  'ex', 'exs', 'clj', 'erl', 'r', 'jl', 'dart', 'v', 'nim', 'cr', 'd', 'f90',
-  'ada', 'pas', 'cob', 'pl', 'pm', 'sql', 'graphql', 'proto', 'yaml', 'yml',
-  'json', 'toml', 'xml', 'html', 'css', 'scss', 'sass', 'less', 'svelte',
-  'vue', 'astro', 'mdx',
-]);
 
 async function unlinkIfExists(filePath) {
   try {
