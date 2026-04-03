@@ -645,6 +645,7 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "rayon",
+ "regex",
  "regex-syntax",
  "serde",
  "serde_json",

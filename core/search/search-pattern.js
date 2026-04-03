@@ -15,7 +15,7 @@
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 
 // Sub-module imports (no circular dependency — sub-modules do not import from this file)
-import { extractLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates, hasCaseInsensitiveRegexFlag } from './search-pattern-prefilter.js';
+import { extractLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates, hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches, nativeGrepLines, getSparseGramAllFiles } from './search-pattern-prefilter.js';
 import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, readFileRange } from './search-pattern-chunks.js';
 import { isRipgrepAvailable, _getRgCapabilities, runRipgrepFilesWithMatches, runRipgrepJson, normalizeSearchPath, chunkRipgrepFiles } from './search-pattern-ripgrep.js';
 
@@ -75,7 +75,10 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   let prefilterDiscarded = false;
   let prefilterDiscardedCount = 0;
 
-  if (literalPlan.clauses.length > 0 && !usingGramCandidates && !skipLiteralPrefilter) {
+  // Skip literal prefilter in filesOnlyMode — rg --files-with-matches is already
+  // fast enough that a separate rg -F prefilter spawn (18-23ms) is pure overhead.
+  const skipInFilesOnly = options.filesOnlyMode ?? false;
+  if (literalPlan.clauses.length > 0 && !usingGramCandidates && !skipLiteralPrefilter && !skipInFilesOnly) {
     const literalStart = performance.now();
     // Pass rg functions to avoid circular import in the prefilter sub-module.
     filteredFiles = await runLiteralPrefilterClauses(literalPlan.clauses, searchDir, searchFiles, {
@@ -158,34 +161,62 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
 
   // --- Execute chosen strategy ---
 
-  // TODO: chunk-level secondary index would reduce downstream mapping cost
-  // for broad files with many line matches. Currently gram index is per-file only.
-  // (Optimization #6 — plan only)
-
   const grepStart = performance.now();
   let matchingFiles = [];
   let indexedMatches = [];
 
+  // lightweightParse: skip JSON.parse, extract only {file, line} using indexOf.
+  // Semantics-preserving — produces identical match tuples, ~22ms faster on
+  // 20K-match queries. Safe for patternSearch (mapMatchesToChunks only reads
+  // .file and .line).
+  const lightweightParse = options.lightweightParse ?? false;
+
+  // Native grep: replaces rg spawns to eliminate fork/exec/pipe overhead (~3ms).
+  // nativeGrepLines replaces rg --json entirely for narrowed queries.
+  // nativeGrepFilesWithMatches replaces rg --files-with-matches for two_pass.
+  // Native grep requires lightweightParse (caller accepts {file, line} only —
+  // no column, matchText, content). patternSearch sets this; bareGrep does not.
+  const canUseNativeGrep = lightweightParse && !fixedString && globs.length === 0 && hasNarrowedFiles;
+
   if (grepStrategy === 'narrowed_json') {
-    // Strategy B: single pass, no double-verify (Optimization #2)
-    indexedMatches = await runRipgrepJson(regex, searchDir, {
-      files: filteredFiles,
-      fixedString,
-      globs,
-    });
-    matchingFiles = [...new Set(indexedMatches.map((match) => match.file))];
+    // Strategy B: single pass on narrowed file set.
+    // Try native line-level grep (eliminates rg spawn entirely).
+    if (canUseNativeGrep) {
+      const nativeResult = nativeGrepLines(regex, searchDir, filteredFiles, caseInsensitive);
+      if (nativeResult) {
+        indexedMatches = nativeResult.matches;
+        matchingFiles = [...new Set(indexedMatches.map((m) => m.file))];
+      }
+    }
+    // Fall back to rg if native grep unavailable or failed
+    if (indexedMatches.length === 0 && filteredFiles.length > 0) {
+      indexedMatches = await runRipgrepJson(regex, searchDir, {
+        files: filteredFiles,
+        fixedString,
+        globs,
+        lightweightParse,
+      });
+      matchingFiles = [...new Set(indexedMatches.map((match) => match.file))];
+    }
   } else if (grepStrategy === 'two_pass') {
-    // Strategy C: files-with-matches first, then JSON on matches
-    matchingFiles = await runRipgrepFilesWithMatches(regex, searchDir, {
-      files: filteredFiles,
-      fixedString,
-      globs,
-    });
+    // Strategy C: files-with-matches first, then line-level on matches.
+    // Use native grep for both passes when available.
+    const nativeFilesResult = canUseNativeGrep
+      ? nativeGrepFilesWithMatches(regex, searchDir, filteredFiles, caseInsensitive)
+      : null;
+    matchingFiles = nativeFilesResult
+      ? nativeFilesResult.matchingFiles
+      : await runRipgrepFilesWithMatches(regex, searchDir, {
+        files: filteredFiles,
+        fixedString,
+        globs,
+      });
     indexedMatches = matchingFiles.length > 0
       ? await runRipgrepJson(regex, searchDir, {
         files: matchingFiles,
         fixedString,
         globs,
+        lightweightParse,
       })
       : [];
   } else {
@@ -194,6 +225,7 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
       files: filteredFiles,
       fixedString,
       globs,
+      lightweightParse,
     });
     matchingFiles = [...new Set(indexedMatches.map((match) => match.file))];
   }
@@ -217,7 +249,9 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   const result = {
     indexedMatches,
     overlayMatches: [],
+    matchingFiles,
     stats: {
+      nativeGrepUsed: canUseNativeGrep,
       candidateGenTime_ms: Math.round(performance.now() - start),
       grepTime_ms: Math.round(grepTime),
       literalFilterTime_ms: Math.round(literalFilterTime),
@@ -465,7 +499,7 @@ export async function patternSearch(query, routing, options = {}) {
 
   const parallelStart = performance.now();
   const [candidateResult, encodedQuery] = await Promise.all([
-    generateRegexMatches(this, regex, searchDir, options),
+    generateRegexMatches(this, regex, searchDir, { ...options, lightweightParse: true }),
     (async () => {
       const encodeStart = performance.now();
       const tokens = await encodeQuery(effectiveQuery);
@@ -698,6 +732,6 @@ export async function patternSearch(query, routing, options = {}) {
 // (barrel export in index.js uses `export * from './search-pattern.js'`)
 // =============================================================================
 
-export { hasCaseInsensitiveRegexFlag, extractRequiredLiteralsHeuristic, extractLiteralClausesHeuristic, extractLiteralClauses, normalizeLiteralClauses, querySparseGramCandidates, ensureSparseGramIndex } from './search-pattern-prefilter.js';
+export { hasCaseInsensitiveRegexFlag, extractRequiredLiteralsHeuristic, extractLiteralClausesHeuristic, extractLiteralClauses, normalizeLiteralClauses, querySparseGramCandidates, ensureSparseGramIndex, nativeGrepFilesWithMatches, nativeGrepLines, getSparseGramAllFiles } from './search-pattern-prefilter.js';
 export { buildChunkLocationMap, findChunkForLine, findChunkIntervalForLine, mapMatchesToChunks, readFileRange, getChunkLocationMap, getCodebaseChunkTypeMap, normalizeSearchSymbolType, resolveSearchSymbolFilter, isRipgrepCodePath, buildBareGrepResults, filterMatchesBySymbolType } from './search-pattern-chunks.js';
 export { isRipgrepAvailable, _resetRgCache, normalizeSearchPath, chunkRipgrepFiles } from './search-pattern-ripgrep.js';

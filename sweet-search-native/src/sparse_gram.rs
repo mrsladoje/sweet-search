@@ -266,6 +266,13 @@ impl NativeSparseGramIndex {
         })
     }
 
+    /// Return all indexed file paths. Used by native grep to get the full
+    /// file list without needing a directory walk.
+    #[napi]
+    pub fn get_all_files(&self) -> Vec<String> {
+        self.files.iter().map(|f| f.path.clone()).collect()
+    }
+
     #[napi]
     pub fn get_stats(&self) -> SparseGramIndexStats {
         SparseGramIndexStats {
