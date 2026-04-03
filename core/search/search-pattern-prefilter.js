@@ -1,0 +1,388 @@
+/**
+ * Regex Prefiltering Module — literal extraction and sparse gram candidate lookup.
+ *
+ * Extracts required literal substrings from regex patterns, then uses either
+ * ripgrep fixed-string prefiltering or the sparse trigram index to narrow the
+ * file set before the full regex scan.  Keeps the hot-path fast by skipping
+ * files that cannot possibly match.
+ *
+ * Split from search-pattern.js for the 500-line-limit rule.
+ */
+
+import {
+  extractRegexLiteralClauses,
+  loadSparseGramIndex,
+  resolveSparseSymbolMask,
+} from '../infrastructure/native-sparse-gram.js';
+import { DB_PATHS } from '../infrastructure/config/index.js';
+import { CODE_FILE_EXTENSIONS } from '../infrastructure/constants.js';
+import { isRipgrepCodePath, resolveSearchSymbolFilter } from './search-pattern-chunks.js';
+
+// =============================================================================
+// Case-insensitive flag detection
+// =============================================================================
+
+export function hasCaseInsensitiveRegexFlag(regex) {
+  return /\(\?[a-z-]*i[a-z-]*:?/.test(regex);
+}
+
+// =============================================================================
+// Literal extraction from regex patterns
+// =============================================================================
+
+export function extractRequiredLiteralsHeuristic(regex) {
+  if (!regex || typeof regex !== 'string') return [];
+
+  let inClass = false;
+  let escape = false;
+  let current = '';
+  const literals = [];
+
+  const pushCurrent = () => {
+    if (current.length >= 3) literals.push(current);
+    current = '';
+  };
+
+  for (const char of regex) {
+    if (escape) {
+      if (/[\w/-]/.test(char)) {
+        current += char;
+      } else {
+        pushCurrent();
+      }
+      escape = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      pushCurrent();
+      escape = true;
+      continue;
+    }
+
+    if (inClass) {
+      if (char === ']') inClass = false;
+      pushCurrent();
+      continue;
+    }
+
+    if (char === '[') {
+      inClass = true;
+      pushCurrent();
+      continue;
+    }
+
+    if (char === '|') {
+      // Alternation means neither side is universally required.
+      // Return empty to avoid false negatives — a prefilter using
+      // literals from one branch would exclude files matching the other.
+      return [];
+    }
+
+    if (/[.*+?^${}()]/.test(char)) {
+      pushCurrent();
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      pushCurrent();
+      continue;
+    }
+
+    current += char;
+  }
+
+  pushCurrent();
+
+  return [...new Set(literals)];
+}
+
+export function extractLiteralClausesHeuristic(regex) {
+  const literals = extractRequiredLiteralsHeuristic(regex);
+  return literals.length > 0 ? [literals] : [];
+}
+
+export function normalizeLiteralClauses(clauses) {
+  if (!Array.isArray(clauses)) return [];
+
+  const normalized = [];
+  for (const clause of clauses) {
+    if (!Array.isArray(clause)) continue;
+    const deduped = [];
+    for (const literal of clause) {
+      if (typeof literal !== 'string') continue;
+      const trimmed = literal.trim();
+      if (trimmed.length < 3 || deduped.includes(trimmed)) continue;
+      deduped.push(trimmed);
+    }
+    if (deduped.length === 0) continue;
+    if (!normalized.some(existing => existing.length === deduped.length && existing.every((value, idx) => value === deduped[idx]))) {
+      normalized.push(deduped);
+    }
+  }
+
+  return normalized;
+}
+
+export function extractLiteralClauses(regex, options = {}) {
+  if (!regex || typeof regex !== 'string') {
+    return { clauses: [], source: 'none' };
+  }
+
+  if (!options.forceHeuristic) {
+    try {
+      const nativeResult = extractRegexLiteralClauses(regex);
+      const nativeClauses = normalizeLiteralClauses(nativeResult?.clauses);
+      if (nativeClauses.length > 0) {
+        return { clauses: nativeClauses, source: 'native' };
+      }
+    } catch {
+      // Fall back to heuristic extraction below.
+    }
+  }
+
+  const heuristicClauses = extractLiteralClausesHeuristic(regex);
+  if (heuristicClauses.length > 0) {
+    return { clauses: heuristicClauses, source: 'heuristic' };
+  }
+
+  return { clauses: [], source: 'none' };
+}
+
+// =============================================================================
+// Literal prefiltering via ripgrep fixed-string mode
+// =============================================================================
+
+/**
+ * Run literal prefilter for a single AND-clause of literals.
+ *
+ * Accepts `rgFunctions` to avoid a circular import with search-pattern.js.
+ * The caller (generateRegexMatches) passes { getRgCapabilities, runRipgrepFilesWithMatches }.
+ */
+async function runLiteralPrefilter(literals, searchDir, files, opts, rgFunctions) {
+  if (!Array.isArray(literals) || literals.length === 0) {
+    return Array.isArray(files) ? [...files] : null;
+  }
+
+  const caseInsensitive = opts.caseInsensitive ?? false;
+  const timeout = opts.timeout ?? 10000;
+  const globs = opts.globs ?? [];
+  const { supportsAnd } = rgFunctions.getRgCapabilities();
+
+  if (supportsAnd && literals.length > 1) {
+    return rgFunctions.runRipgrepFilesWithMatches(literals, searchDir, {
+      files,
+      fixedString: true,
+      caseInsensitive,
+      globs,
+      timeout,
+      useAnd: true,
+    });
+  }
+
+  let currentFiles = files;
+  for (const literal of literals) {
+    currentFiles = await rgFunctions.runRipgrepFilesWithMatches(literal, searchDir, {
+      files: currentFiles,
+      fixedString: true,
+      caseInsensitive,
+      globs,
+      timeout,
+    });
+    if (Array.isArray(currentFiles) && currentFiles.length === 0) {
+      break;
+    }
+  }
+
+  return currentFiles;
+}
+
+/**
+ * Run literal prefilter across OR-clauses (each clause is an AND-set of literals).
+ *
+ * Accepts `rgFunctions` to avoid a circular import with search-pattern.js.
+ */
+export async function runLiteralPrefilterClauses(clauses, searchDir, files = null, opts = {}, rgFunctions = {}) {
+  if (!Array.isArray(clauses) || clauses.length === 0) {
+    return Array.isArray(files) ? [...files] : null;
+  }
+
+  const combined = new Set();
+  for (const clause of clauses) {
+    if (!Array.isArray(clause) || clause.length === 0) {
+      return Array.isArray(files) ? [...files] : null;
+    }
+    const clauseMatches = await runLiteralPrefilter(clause, searchDir, files, opts, rgFunctions);
+    if (!Array.isArray(clauseMatches)) {
+      return null;
+    }
+    for (const file of clauseMatches) combined.add(file);
+  }
+
+  return [...combined];
+}
+
+// =============================================================================
+// Sparse gram index candidate lookup
+// =============================================================================
+
+export function ensureSparseGramIndex(searcher, options = {}) {
+  if (!searcher) return null;
+  if (searcher.sparseGramIndex) return searcher.sparseGramIndex;
+
+  const indexPath = options.sparseGramIndexPath || searcher.sparseGramIndexPath || DB_PATHS.sparseGramIndex;
+  const loaded = loadSparseGramIndex(indexPath);
+  if (loaded) {
+    searcher.sparseGramIndex = loaded;
+  }
+  return loaded;
+}
+
+export function querySparseGramCandidates(searcher, literalClauses, options = {}) {
+  const useGramIndex = options.useGramIndex ?? options.gramIndex ?? true;
+  if (!useGramIndex) {
+    return {
+      eligible: false,
+      reason: 'disabled',
+      totalFiles: 0,
+      gramsUsed: 0,
+      denseGramsTouched: 0,
+      sparseGramsTouched: 0,
+      candidateFiles: 0,
+      files: null,
+    };
+  }
+  if (!Array.isArray(literalClauses) || literalClauses.length === 0) {
+    return {
+      eligible: false,
+      reason: 'not_eligible',
+      totalFiles: 0,
+      gramsUsed: 0,
+      denseGramsTouched: 0,
+      sparseGramsTouched: 0,
+      candidateFiles: 0,
+      files: null,
+    };
+  }
+
+  try {
+    const sparseGramIndex = ensureSparseGramIndex(searcher, options);
+    if (!sparseGramIndex) {
+      return {
+        eligible: false,
+        reason: 'not_loaded',
+        totalFiles: 0,
+        gramsUsed: 0,
+        denseGramsTouched: 0,
+        sparseGramsTouched: 0,
+        candidateFiles: 0,
+        files: null,
+      };
+    }
+
+    const maxCandidateFiles = options.maxGramCandidateFiles ?? 512;
+    const maxCandidateRatio = options.maxGramCandidateRatio ?? 0.05;
+    const symbolMask = resolveSparseSymbolMask(resolveSearchSymbolFilter(options));
+    const combined = new Set();
+    let totalFiles = 0;
+    let gramsUsed = 0;
+    let denseGramsTouched = 0;
+    let sparseGramsTouched = 0;
+
+    for (const clause of literalClauses) {
+      if (!Array.isArray(clause) || clause.length === 0) {
+        return {
+          eligible: false,
+          reason: 'not_eligible',
+          totalFiles,
+          gramsUsed,
+          denseGramsTouched,
+          sparseGramsTouched,
+          candidateFiles: 0,
+          files: null,
+        };
+      }
+      const result = sparseGramIndex.queryLiterals(
+        clause,
+        options.maxGramCandidates ?? 0,
+        symbolMask || 0
+      );
+      if (!result?.eligible) {
+        return {
+          eligible: false,
+          reason: 'not_eligible',
+          totalFiles: Math.max(totalFiles, result?.totalFiles || 0),
+          gramsUsed: gramsUsed + (result?.gramsUsed || 0),
+          denseGramsTouched: denseGramsTouched + (result?.denseGramsTouched || 0),
+          sparseGramsTouched: sparseGramsTouched + (result?.sparseGramsTouched || 0),
+          candidateFiles: Array.isArray(result?.files) ? result.files.length : 0,
+          files: null,
+        };
+      }
+      totalFiles = Math.max(totalFiles, result.totalFiles || 0);
+      gramsUsed += result.gramsUsed || 0;
+      denseGramsTouched += result.denseGramsTouched || 0;
+      sparseGramsTouched += result.sparseGramsTouched || 0;
+      const clauseFiles = Array.isArray(result.files)
+        ? result.files.filter(isRipgrepCodePath)
+        : [];
+      if (
+        clauseFiles.length === 0 ||
+        clauseFiles.length > maxCandidateFiles ||
+        (result.totalFiles > 0 && (clauseFiles.length / result.totalFiles) > maxCandidateRatio)
+      ) {
+        return {
+          eligible: false,
+          reason: 'too_broad',
+          totalFiles,
+          gramsUsed,
+          denseGramsTouched,
+          sparseGramsTouched,
+          candidateFiles: clauseFiles.length,
+          files: null,
+        };
+      }
+      for (const file of clauseFiles) combined.add(file);
+    }
+
+    const files = [...combined];
+    if (
+      files.length === 0 ||
+      files.length > maxCandidateFiles ||
+      (totalFiles > 0 && (files.length / totalFiles) > maxCandidateRatio)
+    ) {
+      return {
+        eligible: false,
+        reason: 'too_broad',
+        totalFiles,
+        gramsUsed,
+        denseGramsTouched,
+        sparseGramsTouched,
+        candidateFiles: files.length,
+        files: null,
+      };
+    }
+
+    return {
+      eligible: true,
+      reason: 'ok',
+      totalFiles,
+      gramsUsed,
+      denseGramsTouched,
+      sparseGramsTouched,
+      candidateFiles: files.length,
+      files,
+    };
+  } catch {
+    return {
+      eligible: false,
+      reason: 'error',
+      totalFiles: 0,
+      gramsUsed: 0,
+      denseGramsTouched: 0,
+      sparseGramsTouched: 0,
+      candidateFiles: 0,
+      files: null,
+    };
+  }
+}

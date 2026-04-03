@@ -212,6 +212,12 @@ export async function startServer() {
 
       // Pattern mode: regex param (ColGrep hybrid search)
       const regex = url.searchParams.get('regex') || '';
+      const SEARCH_SERVER_MAX_REGEX_LENGTH = 4096;
+      if (regex.length > SEARCH_SERVER_MAX_REGEX_LENGTH) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Regex too long (max ${SEARCH_SERVER_MAX_REGEX_LENGTH} chars)` }));
+        return;
+      }
       const maxMatches = parseInt(url.searchParams.get('maxMatches') || '0', 10);
       const contextLines = parseInt(url.searchParams.get('contextLines') || '0', 10);
       const fixedString = url.searchParams.get('fixedString') === 'true';

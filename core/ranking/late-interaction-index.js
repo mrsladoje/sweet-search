@@ -231,7 +231,10 @@ export class LateInteractionIndex {
           buf[i] = (doc.tokens[i] + 128) * scale + min;
         }
       }
-      flat = buf; // Pooled — caller must consume before next getTokensFlat call
+      // SAFETY: Pooled buffer — caller MUST consume or copy contents before the
+      // next getTokensFlat() call, which overwrites this buffer. The native batch
+      // path (maxsim_batch) does not call getTokensFlat, so no aliasing risk there.
+      flat = buf;
     } else {
       flat = doc.tokens instanceof Float32Array ? doc.tokens : new Float32Array(doc.tokens);
     }
@@ -807,6 +810,9 @@ export class LateInteractionIndex {
       }
 
       if (docStart >= 0) {
+        // Carry over incomplete document: slice from docStart so the opening
+        // '{' is at position 0. Reset parser state so the re-scan from the
+        // opening brace correctly re-establishes depth/string tracking.
         pending = pending.subarray(docStart);
         docStart = -1;
         depth = 0;
