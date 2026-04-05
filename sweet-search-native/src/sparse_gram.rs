@@ -8,11 +8,11 @@ use std::path::Path;
 
 const MAGIC: &[u8; 8] = b"SSGRMIDX";
 const VERSION: u32 = 2;
-const ASCII_DIM: usize = 128;
-const WEIGHT_TABLE_LEN: usize = ASCII_DIM * ASCII_DIM;
-const MIN_SPAN_LEN: usize = 3;
-const MAX_GRAM_LEN: usize = 12;
-const MIN_CORPUS_BIGRAMS: u64 = 4096;
+pub(crate) const ASCII_DIM: usize = 128;
+pub(crate) const WEIGHT_TABLE_LEN: usize = ASCII_DIM * ASCII_DIM;
+pub(crate) const MIN_SPAN_LEN: usize = 3;
+pub(crate) const MAX_GRAM_LEN: usize = 12;
+pub(crate) const MIN_CORPUS_BIGRAMS: u64 = 4096;
 const FLAG_USED_FALLBACK_WEIGHTS: u32 = 1 << 0;
 const FLAG_DENSE_POSTINGS: u8 = 1 << 0;
 
@@ -916,7 +916,7 @@ unsafe fn bitand_dense_in_place_neon(left: &mut [u64], right: &[u64]) {
     }
 }
 
-fn normalize_literal(literal: &str) -> Option<Vec<u8>> {
+pub(crate) fn normalize_literal(literal: &str) -> Option<Vec<u8>> {
     let mut bytes = Vec::with_capacity(literal.len());
     for byte in literal.bytes() {
         let normalized = normalize_ascii_byte(byte);
@@ -931,7 +931,7 @@ fn normalize_literal(literal: &str) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
-fn collect_normalized_spans(text: &str) -> Vec<Vec<u8>> {
+pub(crate) fn collect_normalized_spans(text: &str) -> Vec<Vec<u8>> {
     let mut spans = Vec::new();
     let mut current = Vec::new();
 
@@ -965,7 +965,7 @@ fn collect_normalized_spans(text: &str) -> Vec<Vec<u8>> {
 ///
 /// Algorithm: iterative stack-based version of the recursive split from
 /// GitHub Blackbird / Cursor's sparse n-gram approach.
-fn extract_covering_grams(span: &[u8], weights: &[f32]) -> Vec<String> {
+pub(crate) fn extract_covering_grams(span: &[u8], weights: &[f32]) -> Vec<String> {
     if span.len() < MIN_SPAN_LEN {
         return Vec::new();
     }
@@ -1068,7 +1068,7 @@ fn extract_covering_grams(span: &[u8], weights: &[f32]) -> Vec<String> {
 /// Enumerates every valid (start, end) window where boundary bigram weights
 /// exceed all interior bigram weights. This is the exhaustive extraction needed
 /// at index time so that any covering query can find its grams in the postings.
-fn extract_sparse_grams(span: &[u8], weights: &[f32]) -> Vec<String> {
+pub(crate) fn extract_sparse_grams(span: &[u8], weights: &[f32]) -> Vec<String> {
     if span.len() < MIN_SPAN_LEN {
         return Vec::new();
     }
@@ -1141,7 +1141,7 @@ fn intersect_sorted(left: &[u32], right: &[u32]) -> Vec<u32> {
     output
 }
 
-fn build_inverse_frequency_weights(counts: &[u32], total_bigrams: u64) -> Vec<f32> {
+pub(crate) fn build_inverse_frequency_weights(counts: &[u32], total_bigrams: u64) -> Vec<f32> {
     let denominator = (total_bigrams + WEIGHT_TABLE_LEN as u64) as f32;
     counts
         .iter()
@@ -1149,7 +1149,7 @@ fn build_inverse_frequency_weights(counts: &[u32], total_bigrams: u64) -> Vec<f3
         .collect()
 }
 
-fn build_fallback_weights() -> Vec<f32> {
+pub(crate) fn build_fallback_weights() -> Vec<f32> {
     let mut counts = vec![1u32; WEIGHT_TABLE_LEN];
     for (pair, count) in common_code_bigrams() {
         let bytes = pair.as_bytes();
@@ -1160,7 +1160,7 @@ fn build_fallback_weights() -> Vec<f32> {
     build_inverse_frequency_weights(&counts, total)
 }
 
-fn common_code_bigrams() -> Vec<(&'static str, u32)> {
+pub(crate) fn common_code_bigrams() -> Vec<(&'static str, u32)> {
     vec![
         ("th", 5000), ("he", 4800), ("in", 4700), ("er", 4500), ("re", 4300),
         ("fo", 4200), ("or", 4200), ("fu", 4100), ("un", 4000), ("ct", 3900),
@@ -1188,7 +1188,7 @@ fn normalize_ascii_byte(byte: u8) -> u8 {
     }
 }
 
-fn pair_index(left: u8, right: u8) -> usize {
+pub(crate) fn pair_index(left: u8, right: u8) -> usize {
     ((left as usize) << 7) | right as usize
 }
 

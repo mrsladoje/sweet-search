@@ -99,6 +99,9 @@ export const DB_PATHS = {
   // Sparse gram artifact for pattern prefiltering
   sparseGramIndex: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'codebase-sparse-grams.idx'),
 
+  // Chunk-level gram artifact for sub-file pattern prefiltering
+  chunkGramIndex: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'codebase-chunk-grams.idx'),
+
   // Merkle state for incremental indexing
   merkle: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'merkle-state.json'),
 
