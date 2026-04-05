@@ -19,7 +19,7 @@ const MMAP_THRESHOLD: u64 = 64 * 1024;
 
 /// Read file content as a UTF-8 string slice, using mmap for large files.
 /// Returns None for binary files (null byte in first 8KB) or non-UTF-8 files.
-fn read_file_content(path: &std::path::Path) -> Option<FileContent> {
+pub(crate) fn read_file_content(path: &std::path::Path) -> Option<FileContent> {
     let file = std::fs::File::open(path).ok()?;
     let meta = file.metadata().ok()?;
     let len = meta.len();
@@ -46,13 +46,13 @@ fn read_file_content(path: &std::path::Path) -> Option<FileContent> {
     }
 }
 
-enum FileContent {
+pub(crate) enum FileContent {
     Mmap(Mmap),
     Owned(String),
 }
 
 impl FileContent {
-    fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         match self {
             FileContent::Mmap(m) => unsafe { std::str::from_utf8_unchecked(m) },
             FileContent::Owned(s) => s,
@@ -60,7 +60,7 @@ impl FileContent {
     }
 }
 
-fn build_regex(pattern: &str, case_insensitive: bool) -> Result<regex::Regex> {
+pub(crate) fn build_regex(pattern: &str, case_insensitive: bool) -> Result<regex::Regex> {
     regex::RegexBuilder::new(pattern)
         .case_insensitive(case_insensitive)
         .multi_line(true) // ^ and $ match line boundaries (same as rg default)
@@ -148,6 +148,134 @@ pub struct NativeGrepLinesResult {
 /// Equivalent to `rg --json <pattern> -- <files...>` but runs in-process
 /// with rayon + mmap — no fork/exec/pipe/JSON-parse overhead.
 ///
+// =============================================================================
+// Chunk-range verification (verifies regex only within chunk line ranges)
+// =============================================================================
+
+#[napi(object)]
+pub struct ChunkRangeInput {
+    /// Relative file path.
+    pub file: String,
+    /// 1-indexed start line.
+    pub start_line: u32,
+    /// 1-indexed end line (inclusive).
+    pub end_line: u32,
+    /// Opaque chunk ID passed through for mapping.
+    pub chunk_id: u32,
+}
+
+#[napi(object)]
+pub struct VerifiedChunk {
+    /// Relative file path.
+    pub file: String,
+    /// 1-indexed start line.
+    pub start_line: u32,
+    /// 1-indexed end line (inclusive).
+    pub end_line: u32,
+    /// Opaque chunk ID (passed through from input).
+    pub chunk_id: u32,
+    /// Number of matching lines within this chunk's range.
+    pub match_count: u32,
+}
+
+#[napi(object)]
+pub struct ChunkRangeVerifyResult {
+    /// Chunks that have at least one regex match.
+    pub verified: Vec<VerifiedChunk>,
+    /// Number of unique files read.
+    pub files_read: u32,
+    /// Total chunks checked.
+    pub chunks_checked: u32,
+    /// Wall-clock time in microseconds.
+    pub elapsed_us: u32,
+}
+
+/// Verify regex matches within specific chunk line ranges.
+///
+/// Groups chunks by file, reads each file once (mmap for large files),
+/// then scans only the specified line ranges. Returns only chunks that
+/// have at least one regex match, with per-chunk match counts.
+///
+/// Line matching is LINE BY LINE (same as `native_grep_lines` and rg
+/// default) — each line is tested independently.
+#[napi]
+pub fn native_grep_chunk_ranges(
+    pattern: String,
+    project_root: String,
+    chunks: Vec<ChunkRangeInput>,
+    case_insensitive: Option<bool>,
+) -> Result<ChunkRangeVerifyResult> {
+    let start = std::time::Instant::now();
+    let re = build_regex(&pattern, case_insensitive.unwrap_or(false))?;
+    let root = PathBuf::from(&project_root);
+    let total_chunks = chunks.len() as u32;
+
+    // Group chunks by file path for single-read-per-file.
+    let mut file_chunks: std::collections::HashMap<&str, Vec<&ChunkRangeInput>> =
+        std::collections::HashMap::new();
+    for chunk in &chunks {
+        file_chunks.entry(&chunk.file).or_default().push(chunk);
+    }
+
+    // Collect into a Vec for rayon parallel iteration.
+    let file_groups: Vec<(&str, Vec<&ChunkRangeInput>)> =
+        file_chunks.into_iter().collect();
+    let files_read = file_groups.len() as u32;
+
+    let verified: Vec<VerifiedChunk> = file_groups
+        .par_iter()
+        .flat_map(|(file, file_chunk_list)| {
+            let path = root.join(file);
+            let content = match read_file_content(&path) {
+                Some(c) => c,
+                None => return Vec::new(),
+            };
+            let text = content.as_str();
+            let lines: Vec<&str> = text.lines().collect();
+            let total_lines = lines.len();
+
+            let mut results = Vec::new();
+            for chunk in file_chunk_list {
+                // Convert 1-indexed inclusive range to 0-indexed
+                let start_idx = (chunk.start_line.saturating_sub(1)) as usize;
+                let end_idx = (chunk.end_line as usize).min(total_lines);
+                if start_idx >= total_lines || start_idx >= end_idx {
+                    continue;
+                }
+
+                let mut match_count = 0u32;
+                for line in &lines[start_idx..end_idx] {
+                    if re.is_match(line) {
+                        match_count += 1;
+                    }
+                }
+
+                if match_count > 0 {
+                    results.push(VerifiedChunk {
+                        file: file.to_string(),
+                        start_line: chunk.start_line,
+                        end_line: chunk.end_line,
+                        chunk_id: chunk.chunk_id,
+                        match_count,
+                    });
+                }
+            }
+            results
+        })
+        .collect();
+
+    Ok(ChunkRangeVerifyResult {
+        verified,
+        files_read,
+        chunks_checked: total_chunks,
+        elapsed_us: start.elapsed().as_micros() as u32,
+    })
+}
+
+// =============================================================================
+// Line-level matching (replaces rg --json for narrowed queries)
+// =============================================================================
+
 /// Returns 1-indexed line numbers matching rg convention.
 #[napi]
 pub fn native_grep_lines(
@@ -193,3 +321,4 @@ pub fn native_grep_lines(
         elapsed_us: start.elapsed().as_micros() as u32,
     })
 }
+

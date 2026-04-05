@@ -15,8 +15,8 @@
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 
 // Sub-module imports (no circular dependency — sub-modules do not import from this file)
-import { extractLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates, hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches, nativeGrepLines, getSparseGramAllFiles } from './search-pattern-prefilter.js';
-import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, readFileRange } from './search-pattern-chunks.js';
+import { extractLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates, ensureChunkGramIndex, chunkGramSearch, hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches, nativeGrepLines, getSparseGramAllFiles } from './search-pattern-prefilter.js';
+import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, findChunkIntervalForLine, readFileRange } from './search-pattern-chunks.js';
 import { isRipgrepAvailable, _getRgCapabilities, runRipgrepFilesWithMatches, runRipgrepJson, normalizeSearchPath, chunkRipgrepFiles } from './search-pattern-ripgrep.js';
 
 // =============================================================================
@@ -51,18 +51,40 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   const gramTotalFiles = gramLookupResult?.totalFiles || 0;
   const gramSelectivity = gramTotalFiles > 0 ? gramCandidateFiles / gramTotalFiles : null;
 
+  // --- Chunk gram: all-in-one native pipeline (query + merge + verify) ---
+  // When file-level gram says "too_broad", try the native chunk search.
+  // The Rust side does everything: posting intersection, range merging,
+  // file read (mmap, grouped), regex verification. Single NAPI crossing.
+  // Cost model is inside Rust: bails if ratio > 20% or files > 2048.
+  let chunkGramResult = null;
+  const fileGramTooBroad = gramLookupResult?.eligible === false && gramLookupResult?.reason === 'too_broad';
+  const useChunkGram = options.useChunkGram ?? true;
+  if (fileGramTooBroad && useChunkGram && literalPlan.clauses.length > 0 && !Array.isArray(searchFiles) && !fixedString) {
+    const chunkGramIndex = ensureChunkGramIndex(searcher);
+    if (chunkGramIndex) {
+      const flatLiterals = literalPlan.clauses.flat();
+      const cgStart = performance.now();
+      chunkGramResult = chunkGramSearch(
+        chunkGramIndex, regex, searchDir, flatLiterals, caseInsensitive,
+        options.maxChunkGramCandidateRatio ?? 0.20,
+        options.maxChunkGramCandidateFiles ?? 300,
+      );
+      gramLookupTime += performance.now() - cgStart;
+    }
+  }
+
   const candidateFilesBeforeFilter = Array.isArray(searchFiles) ? searchFiles.length : 0;
   let candidateFilesAfterFilter = Array.isArray(searchFiles) ? searchFiles.length : 0;
   let literalFilterTime = 0;
   let filteredFiles = searchFiles;
   const usingGramCandidates = Array.isArray(searchFiles);
-  const gramTooBroad = gramLookupResult?.eligible === false && gramLookupResult?.reason === 'too_broad';
+  const gramTooBroad = fileGramTooBroad && !chunkGramResult?.eligible;
 
   // --- Optimization #4: use gram DF stats to skip literal prefilter when broad ---
   // If the gram index says the query is broad (selectivity > 0.10), skip the
   // literal prefilter entirely — it costs process spawns and the result will
   // be discarded anyway. Go straight to raw rg.
-  const gramSaysBroad = gramSelectivity !== null && gramSelectivity > 0.10;
+  const gramSaysBroad = gramSelectivity !== null && gramSelectivity > 0.10 && !chunkGramResult?.eligible;
   const skipLiteralPrefilter = gramTooBroad || gramSaysBroad;
 
   // Literal prefilter: run when the gram index didn't already narrow the set
@@ -144,13 +166,16 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   } else if (filteredFiles.length <= narrowedThreshold) {
     // Optimization #2: ≤100 files — skip double-verify, go straight to JSON
     plannerRoute = `narrowed_json:${filteredFiles.length}_files`;
-    if (gramSelectivity !== null && gramSelectivity < 0.01) {
+    if (chunkGramResult?.eligible) {
+      plannerRoute += ':chunk_gram';
+    } else if (gramSelectivity !== null && gramSelectivity < 0.01) {
       plannerRoute += ':high_selectivity';
     }
     grepStrategy = 'narrowed_json';
   } else if (filteredFiles.length <= directJsonThreshold) {
     // Two-pass: files-with-matches first to reduce JSON output
     plannerRoute = `two_pass:${filteredFiles.length}_files`;
+    if (chunkGramResult?.eligible) plannerRoute += ':chunk_gram';
     grepStrategy = 'two_pass';
   } else {
     // Too many files for explicit args — fall back to raw rg
@@ -165,6 +190,17 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   let matchingFiles = [];
   let indexedMatches = [];
 
+  // Chunk-level search: the all-in-one native pipeline already ran query +
+  // merge + verify in Rust. If eligible, it returned verified chunks directly.
+  let chunkVerified = null;
+  if (chunkGramResult?.eligible && Array.isArray(chunkGramResult.verified) && chunkGramResult.verified.length > 0) {
+    chunkVerified = chunkGramResult.verified;
+    matchingFiles = [...new Set(chunkVerified.map(v => v.file))];
+    indexedMatches = chunkVerified.map(v => ({ file: v.file, line: v.startLine }));
+    grepStrategy = 'chunk_verified';
+    plannerRoute = `chunk_verified:${chunkGramResult.candidateChunks}_candidates:${chunkVerified.length}_verified:${chunkGramResult.filesRead}_files`;
+  }
+
   // lightweightParse: skip JSON.parse, extract only {file, line} using indexOf.
   // Semantics-preserving — produces identical match tuples, ~22ms faster on
   // 20K-match queries. Safe for patternSearch (mapMatchesToChunks only reads
@@ -178,7 +214,9 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   // no column, matchText, content). patternSearch sets this; bareGrep does not.
   const canUseNativeGrep = lightweightParse && !fixedString && globs.length === 0 && hasNarrowedFiles;
 
-  if (grepStrategy === 'narrowed_json') {
+  if (chunkVerified) {
+    // Already handled above — skip file-level strategies
+  } else if (grepStrategy === 'narrowed_json') {
     // Strategy B: single pass on narrowed file set.
     // Try native line-level grep (eliminates rg spawn entirely).
     if (canUseNativeGrep) {
@@ -250,8 +288,9 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
     indexedMatches,
     overlayMatches: [],
     matchingFiles,
+    chunkVerified,  // When non-null, patternSearch skips mapMatchesToChunks
     stats: {
-      nativeGrepUsed: canUseNativeGrep,
+      nativeGrepUsed: canUseNativeGrep || !!chunkVerified,
       candidateGenTime_ms: Math.round(performance.now() - start),
       grepTime_ms: Math.round(grepTime),
       literalFilterTime_ms: Math.round(literalFilterTime),
@@ -270,6 +309,9 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
       literalExtractionHit: literalPlan.clauses.length > 0,
       literalExtractionSource: literalPlan.source,
       gramLookupReason: gramLookupResult?.reason || 'not_run',
+      chunkGramUsed: chunkGramResult?.eligible || false,
+      chunkGramCandidateChunks: chunkGramResult?.candidateChunks || 0,
+      chunkGramTotalChunks: chunkGramResult?.totalChunks || 0,
       prefilterDiscarded,
       prefilterDiscardedCount,
       denseGramsTouched: gramLookupResult?.denseGramsTouched || 0,
@@ -385,7 +427,9 @@ export async function bareGrep(query, routing, options = {}) {
     throw new Error('Bare grep requires ripgrep (rg). Install: brew install ripgrep');
   }
 
-  const candidateResult = await generateRegexMatches(this || {}, regex, searchDir, options);
+  // Disable chunk gram for bare grep — bare grep uses file:line matches, not chunk IDs.
+  // Chunk search overhead (30-60ms on broad patterns) is pure waste here.
+  const candidateResult = await generateRegexMatches(this || {}, regex, searchDir, { ...options, useChunkGram: false });
   let matches = [...candidateResult.indexedMatches, ...candidateResult.overlayMatches];
   matches = filterMatchesBySymbolType(matches, symbolType, this);
   matches.sort((a, b) =>
@@ -557,10 +601,35 @@ export async function patternSearch(query, routing, options = {}) {
     };
   }
 
-  // Map file:line matches -> indexed chunk IDs (with grep density counts)
-  const { chunkIds, chunkMatchCounts, unindexed } = mapMatchesToChunks(grepMatches, locationMap);
-  const unindexedMatches = [...unindexed, ...overlayMatches];
-  log(`Mapped: ${chunkIds.size} indexed chunks, ${unindexedMatches.length} unindexed matches`);
+  // Map matches -> indexed chunk IDs (with grep density counts).
+  // Two paths: chunk-verified (direct from chunk gram verifier) or classic (mapMatchesToChunks).
+  let chunkIds, chunkMatchCounts, unindexedMatches;
+
+  if (candidateResult.chunkVerified) {
+    // Chunk-level path: verified chunks map directly to LI document IDs.
+    // Use the locationMap to find the exact LI doc ID for each verified chunk range.
+    chunkMatchCounts = new Map();
+    for (const vc of candidateResult.chunkVerified) {
+      const intervals = locationMap.get(vc.file);
+      if (!intervals) continue;
+      // Find the LI chunk whose range matches this verified chunk
+      const found = findChunkIntervalForLine(intervals, vc.startLine);
+      if (found) {
+        const existingCount = chunkMatchCounts.get(found.interval.id) || 0;
+        chunkMatchCounts.set(found.interval.id, existingCount + vc.matchCount);
+      }
+    }
+    chunkIds = new Set(chunkMatchCounts.keys());
+    unindexedMatches = [...overlayMatches];
+    log(`Chunk-verified: ${chunkIds.size} indexed chunks (from ${candidateResult.chunkVerified.length} verified ranges)`);
+  } else {
+    // Classic path: map grep file:line matches to chunks via interval map
+    const mapped = mapMatchesToChunks(grepMatches, locationMap);
+    chunkMatchCounts = mapped.chunkMatchCounts;
+    chunkIds = mapped.chunkIds;
+    unindexedMatches = [...mapped.unindexed, ...overlayMatches];
+    log(`Mapped: ${chunkIds.size} indexed chunks, ${unindexedMatches.length} unindexed matches`);
+  }
 
   // Filter to chunks with token embeddings in the LI index
   let available = this.lateInteractionIndex.hasTokens(chunkIds);
@@ -719,6 +788,10 @@ export async function patternSearch(query, routing, options = {}) {
       prefilterDiscarded: candidateResult.stats.prefilterDiscarded,
       prefilterDiscardedCount: candidateResult.stats.prefilterDiscardedCount,
       grepStrategy: candidateResult.stats.grepStrategy,
+      plannerRoute: candidateResult.stats.plannerRoute,
+      chunkGramUsed: candidateResult.stats.chunkGramUsed,
+      chunkGramCandidateChunks: candidateResult.stats.chunkGramCandidateChunks,
+      chunkGramTotalChunks: candidateResult.stats.chunkGramTotalChunks,
       trackerLastIndex: candidateResult.stats.trackerLastIndex,
       total_ms: Math.round(totalTime),
       allCandidateIds,

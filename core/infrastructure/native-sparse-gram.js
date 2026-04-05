@@ -138,3 +138,75 @@ export function getSparseGramAllFiles(sparseGramIndex) {
     return null;
   }
 }
+
+// =============================================================================
+// Chunk-level gram index wrappers
+// =============================================================================
+
+export function hasNativeChunkGramSupport() {
+  const addon = loadAddon();
+  return !!(addon?.buildChunkGramIndex && addon?.NativeChunkGramIndex?.load);
+}
+
+export function buildChunkGramIndexArtifact({ projectRoot, chunks, outputPath }) {
+  const addon = loadAddon();
+  if (!addon?.buildChunkGramIndex) {
+    throw new Error('Native chunk gram support is unavailable.');
+  }
+  return addon.buildChunkGramIndex(projectRoot, chunks, outputPath);
+}
+
+export function loadChunkGramIndex(indexPath) {
+  if (!indexPath || !existsSync(indexPath)) return null;
+  const addon = loadAddon();
+  if (!addon?.NativeChunkGramIndex?.load) return null;
+  try {
+    return addon.NativeChunkGramIndex.load(indexPath);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verify regex matches within specific chunk line ranges.
+ * Groups chunks by file, reads each file once (mmap for large),
+ * scans only the specified line ranges. Returns only verified chunks.
+ *
+ * @param {string} pattern - Regex pattern
+ * @param {string} projectRoot - Absolute project root
+ * @param {Array<{file: string, startLine: number, endLine: number, chunkId: number}>} chunks
+ * @param {boolean} [caseInsensitive]
+ * @returns {{ verified: Array<{file, startLine, endLine, chunkId, matchCount}>, filesRead, chunksChecked, elapsedUs }|null}
+ */
+export function nativeGrepChunkRanges(pattern, projectRoot, chunks, caseInsensitive) {
+  const addon = loadAddon();
+  if (!addon?.nativeGrepChunkRanges) return null;
+  try {
+    return addon.nativeGrepChunkRanges(pattern, projectRoot, chunks, caseInsensitive || false);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * All-in-one native chunk search: query gram index + merge ranges + verify
+ * regex + return verified chunks. Single NAPI crossing — no intermediate
+ * serialization of candidate lists.
+ *
+ * @param {Object} chunkGramIndex - Loaded NativeChunkGramIndex instance
+ * @param {string} pattern - Regex pattern
+ * @param {string} projectRoot - Absolute project root
+ * @param {string[]} literals - Literal strings extracted from the regex
+ * @param {boolean} [caseInsensitive]
+ * @param {number} [maxRatio=0.20] - Max chunk candidate ratio before bailing
+ * @param {number} [maxFiles=2048] - Max unique files before bailing
+ * @returns {{ eligible, reason, verified, totalChunks, candidateChunks, filesRead, elapsedUs }|null}
+ */
+export function chunkGramSearch(chunkGramIndex, pattern, projectRoot, literals, caseInsensitive, maxRatio, maxFiles) {
+  if (!chunkGramIndex?.search) return null;
+  try {
+    return chunkGramIndex.search(pattern, projectRoot, literals, caseInsensitive || false, maxRatio, maxFiles);
+  } catch {
+    return null;
+  }
+}
