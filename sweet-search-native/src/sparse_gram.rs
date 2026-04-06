@@ -93,12 +93,48 @@ pub struct SparseGramIndexStats {
     pub used_fallback_weights: bool,
 }
 
+/// Sorted gram table — binary search replaces HashMap for zero-allocation lookups.
+/// Grams are written in sorted order at build time, so parse_gram_table naturally
+/// produces a sorted vec. Lookup is O(log n) binary search on &str keys.
+struct SortedGramTable {
+    keys: Vec<String>,
+    vals: Vec<GramDescriptor>,
+}
+
+impl SortedGramTable {
+    fn with_capacity(cap: usize) -> Self {
+        Self {
+            keys: Vec::with_capacity(cap),
+            vals: Vec::with_capacity(cap),
+        }
+    }
+
+    /// Push a gram — caller must push in sorted order.
+    fn push(&mut self, key: String, val: GramDescriptor) {
+        debug_assert!(
+            self.keys.last().map_or(true, |prev| prev.as_str() <= key.as_str()),
+            "SortedGramTable: grams must be pushed in sorted order"
+        );
+        self.keys.push(key);
+        self.vals.push(val);
+    }
+
+    /// O(log n) lookup by &str key.
+    #[inline]
+    fn get(&self, key: &str) -> Option<&GramDescriptor> {
+        self.keys
+            .binary_search_by(|k| k.as_str().cmp(key))
+            .ok()
+            .map(|idx| &self.vals[idx])
+    }
+}
+
 #[napi]
 pub struct NativeSparseGramIndex {
     mmap: Mmap,
     header: Header,
     files: Vec<FileEntry>,
-    grams: HashMap<String, GramDescriptor>,
+    grams: SortedGramTable,
     weights: Vec<f32>,
 }
 
@@ -984,10 +1020,10 @@ fn parse_file_table(bytes: &[u8], header: &Header) -> Result<Vec<FileEntry>> {
     Ok(files)
 }
 
-fn parse_gram_table(bytes: &[u8], header: &Header) -> Result<HashMap<String, GramDescriptor>> {
+fn parse_gram_table(bytes: &[u8], header: &Header) -> Result<SortedGramTable> {
     let mut cursor = header.gram_table_offset as usize;
     let data_offset = header.data_offset as usize;
-    let mut grams = HashMap::with_capacity(header.gram_count as usize);
+    let mut grams = SortedGramTable::with_capacity(header.gram_count as usize);
 
     for _ in 0..header.gram_count {
         let gram_len = read_u16(bytes, &mut cursor)? as usize;
@@ -998,7 +1034,7 @@ fn parse_gram_table(bytes: &[u8], header: &Header) -> Result<HashMap<String, Gra
         let data_offset_entry = read_u64(bytes, &mut cursor)?;
         let gram = String::from_utf8(read_bytes(bytes, &mut cursor, gram_len)?.to_vec())
             .map_err(|err| Error::from_reason(format!("Invalid UTF-8 in sparse gram key: {err}")))?;
-        grams.insert(
+        grams.push(
             gram,
             GramDescriptor {
                 data_offset: data_offset_entry,
