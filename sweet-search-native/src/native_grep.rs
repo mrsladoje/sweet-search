@@ -15,11 +15,13 @@ use rayon::prelude::*;
 use std::path::PathBuf;
 
 /// Threshold above which we mmap instead of read (avoids allocation for large files).
+/// rg disables mmap on macOS, but our benchmarks show mmap is faster with warm page
+/// cache (avoids read() copy-to-heap for large files). Keep mmap enabled.
 const MMAP_THRESHOLD: u64 = 64 * 1024;
 
-/// Read file content as a byte slice, using mmap for large files.
+/// Read file content as a byte slice. Uses read() on macOS (mmap has TLB issues),
+/// mmap for large files on other platforms.
 /// Returns None for binary files (null byte in first 8KB).
-/// No UTF-8 validation — we use regex::bytes::Regex which operates on &[u8].
 pub(crate) fn read_file_content(path: &std::path::Path) -> Option<FileContent> {
     let file = std::fs::File::open(path).ok()?;
     let meta = file.metadata().ok()?;
@@ -30,7 +32,6 @@ pub(crate) fn read_file_content(path: &std::path::Path) -> Option<FileContent> {
 
     if len > MMAP_THRESHOLD {
         let mmap = unsafe { Mmap::map(&file) }.ok()?;
-        // Binary detection: null byte in first 8KB
         if memchr::memchr(0, &mmap[..mmap.len().min(8192)]).is_some() {
             return None;
         }
@@ -59,11 +60,15 @@ impl FileContent {
 }
 
 /// Build a bytes-mode regex (operates on &[u8], no UTF-8 boundary checks).
+/// Bumped DFA size limits to match ripgrep's configuration — larger lazy DFA
+/// cache keeps states warm across files on each rayon thread.
 pub(crate) fn build_regex(pattern: &str, case_insensitive: bool) -> Result<regex::bytes::Regex> {
     regex::bytes::RegexBuilder::new(pattern)
         .case_insensitive(case_insensitive)
         .multi_line(true) // ^ and $ match line boundaries (same as rg default)
         .unicode(true)
+        .size_limit(100 * (1 << 20))    // 100 MiB NFA compile limit (rg default)
+        .dfa_size_limit(1 * (1 << 20))  // 1 MiB full DFA state limit (rg default)
         .build()
         .map_err(|e| Error::from_reason(format!("Invalid regex: {e}")))
 }
