@@ -5,7 +5,13 @@
 //!
 //! Falls back gracefully: native > WASM SIMD > JS
 
+// In test builds the crate type is lib (not cdylib), so #[napi]-exported
+// functions/structs and everything they transitively reference appear unused.
+// All warned items are reachable from JS in the production cdylib build.
+#![cfg_attr(test, allow(dead_code, unreachable_code))]
+
 mod tokenizer;
+mod simd_intersect;
 mod sparse_gram;
 mod regex_literals;
 mod native_grep;

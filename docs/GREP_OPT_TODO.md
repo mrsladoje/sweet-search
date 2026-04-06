@@ -2,18 +2,18 @@
 
 Ordered by impact. Each step changes the cost model, so gate tuning comes last.
 
-## Status: After step 6 (2026-04-06)
+## Status: After step 7 (2026-04-06)
 
 353 realistic queries across 5 repos. Current results:
 
 | Repo         | Files | p50 Speedup vs rg |
 |--------------|-------|--------------------|
-| sweet-search | 570   | **~18.1x**         |
-| fastify      | 356   | **~11.6x**         |
-| flask        | 216   | **~8.3x**          |
-| ripgrep      | 215   | **~9.0x**          |
-| gin          | 118   | **1.2x**           |
-| **ALL**      | —     | **~9.9x** (243W / 77L / 33T) |
+| sweet-search | 571   | **~17.1x**         |
+| fastify      | 356   | **~11.2x**         |
+| flask        | 216   | **~8.7x**          |
+| ripgrep      | 215   | **~9.5x**          |
+| gin          | 118   | **1.23x**          |
+| **ALL**      | —     | **~10.0x** (242W / 73L / 38T) |
 
 Remaining losses: hard regex, method_call, error_string (broad matches where
 gram selectivity is low — native grep eliminates spawn overhead but can't beat
@@ -27,6 +27,17 @@ Combined gram+grep fast path (`combined_gram_grep`) handles the majority of
 narrowable queries (52/71 on sweet-search, 39/71 on fastify, 43/71 on flask).
 The remaining `narrowed_json` routes are queries too broad for gram-only that
 benefit from the literal prefilter fallback.
+
+### Previous baseline (2026-04-06, after step 6)
+
+| Repo         | Files | p50 Speedup vs rg |
+|--------------|-------|--------------------|
+| sweet-search | 570   | **~18.1x**         |
+| fastify      | 356   | **~11.6x**         |
+| flask        | 216   | **~8.3x**          |
+| ripgrep      | 215   | **~9.0x**          |
+| gin          | 118   | **1.2x**           |
+| **ALL**      | —     | **~9.9x** (243W / 77L / 33T) |
 
 ### Previous baseline (2026-04-06, after step 5)
 
@@ -179,20 +190,27 @@ The win is structural: eliminates hash computation and HashMap probing overhead
 on the query hot path, compounding with steps 3-5. Index load time also benefits
 from sequential pushes vs random HashMap inserts.
 
-## 7. SIMD for sparse×sparse posting intersection (Rust)
+## 7. [DONE] SIMD for sparse×sparse posting intersection (Rust)
 
-**Problem:** `intersect_sorted` at `sparse_gram.rs:1124-1142` is a plain scalar
-merge-intersect. The SIMD code (`bitand_dense_in_place` with AVX2/NEON) only covers
-dense×dense. But sparse n-grams produce mostly sparse postings by design — so the
-hot path for our "superior" algorithm hits the un-SIMDified scalar code.
+Extracted duplicated `intersect_sorted` from `sparse_gram.rs` and `chunk_gram.rs` into
+a shared `simd_intersect.rs` module with three dispatch strategies:
 
-**Fix:** Use SIMD for the sparse merge too. Options:
-- Galloping search with SIMD comparison (`_mm256_cmpeq_epi32`)
-- Convert sparse to dense when posting density > threshold, then use existing SIMD AND
-- Use VPCONFLICT / VPERMI2D for set intersection on AVX-512 (M3 is NEON only)
+1. **Galloping search** (exponential + binary) when one side is >=8x smaller — O(n·log m)
+   beats O(n+m) for skewed accumulator-vs-posting-list intersections.
+2. **SIMD 4-wide block merge** for balanced sets >=16 elements:
+   - **NEON (aarch64):** `vceqq_u32` + `vextq_u32` rotations for exhaustive 4×4 comparison.
+   - **SSE2 (x86_64):** `_mm_cmpeq_epi32` + `_mm_shuffle_epi32` rotations + `_mm_movemask_ps`.
+   - Block-skip optimization: non-overlapping blocks (`a_max < b_min`) advance in O(1).
+3. **Scalar merge** fallback for small inputs (<16 elements) and unsupported platforms.
 
-**Expected impact:** 2-4x faster posting intersection for sparse×sparse pairs.
-Small absolute time (~1-3us), but matters when combined with zero-copy (#3).
+All four launch targets supported (darwin-arm64/x64, linux-x64-gnu/arm64-gnu).
+17 tests including stress test across 196 size combinations verifying SIMD matches scalar.
+
+**Actual impact:** p50 holds at ~10.0x (242W / 73L / 38T). Win/loss improved slightly
+(4 former losses became ties). The absolute time savings (~1-3μs) are below the 1ms
+measurement granularity — the win is structural: the sparse×sparse hot path now uses
+platform-optimal SIMD and algorithmic selection (galloping for skewed, block merge for
+balanced), compounding with the zero-copy and allocation-free work from steps 3-5.
 
 ## 8. Aho-Corasick literal-first fast path
 

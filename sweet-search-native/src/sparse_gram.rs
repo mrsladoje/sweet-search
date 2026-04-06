@@ -1247,7 +1247,7 @@ fn intersect_candidate_sets(left: CandidateSet, right: CandidateSet) -> Candidat
             CandidateSet::Sparse(filter_sparse_with_dense(&left_ids, &right_words))
         }
         (CandidateSet::Sparse(left_ids), CandidateSet::Sparse(right_ids)) => {
-            CandidateSet::Sparse(intersect_sorted(&left_ids, &right_ids))
+            CandidateSet::Sparse(crate::simd_intersect::intersect_sorted_u32(&left_ids, &right_ids))
         }
     }
 }
@@ -1642,26 +1642,6 @@ pub(crate) fn extract_sparse_grams(span: &[u8], weights: &[f32]) -> Vec<String> 
     }
 
     grams
-}
-
-fn intersect_sorted(left: &[u32], right: &[u32]) -> Vec<u32> {
-    let mut output = Vec::with_capacity(left.len().min(right.len()));
-    let mut li = 0usize;
-    let mut ri = 0usize;
-
-    while li < left.len() && ri < right.len() {
-        match left[li].cmp(&right[ri]) {
-            std::cmp::Ordering::Less => li += 1,
-            std::cmp::Ordering::Greater => ri += 1,
-            std::cmp::Ordering::Equal => {
-                output.push(left[li]);
-                li += 1;
-                ri += 1;
-            }
-        }
-    }
-
-    output
 }
 
 pub(crate) fn build_inverse_frequency_weights(counts: &[u32], total_bigrams: u64) -> Vec<f32> {
