@@ -534,7 +534,7 @@ impl NativeChunkGramIndex {
 
                 let posting = self.load_posting(desc)?;
                 literal_candidates = Some(match literal_candidates {
-                    Some(existing) => intersect_sorted(&existing, &posting),
+                    Some(existing) => crate::simd_intersect::intersect_sorted_u32(&existing, &posting),
                     None => posting,
                 });
 
@@ -545,7 +545,7 @@ impl NativeChunkGramIndex {
 
             let literal_candidates = literal_candidates.unwrap_or_default();
             combined = Some(match combined {
-                Some(existing) => intersect_sorted(&existing, &literal_candidates),
+                Some(existing) => crate::simd_intersect::intersect_sorted_u32(&existing, &literal_candidates),
                 None => literal_candidates,
             });
 
@@ -650,14 +650,14 @@ impl NativeChunkGramIndex {
                 };
                 let posting = self.load_posting(desc)?;
                 literal_cands = Some(match literal_cands {
-                    Some(existing) => intersect_sorted(&existing, &posting),
+                    Some(existing) => crate::simd_intersect::intersect_sorted_u32(&existing, &posting),
                     None => posting,
                 });
                 if literal_cands.as_ref().is_some_and(|v| v.is_empty()) { break; }
             }
             let literal_cands = literal_cands.unwrap_or_default();
             combined = Some(match combined {
-                Some(existing) => intersect_sorted(&existing, &literal_cands),
+                Some(existing) => crate::simd_intersect::intersect_sorted_u32(&existing, &literal_cands),
                 None => literal_cands,
             });
             if combined.as_ref().is_some_and(|v| v.is_empty()) { break; }
@@ -990,23 +990,6 @@ fn decode_varint_delta(bytes: &[u8]) -> Vec<u32> {
 // Helpers
 // ============================================================================
 
-fn intersect_sorted(a: &[u32], b: &[u32]) -> Vec<u32> {
-    let mut out = Vec::with_capacity(a.len().min(b.len()));
-    let (mut ai, mut bi) = (0, 0);
-    while ai < a.len() && bi < b.len() {
-        match a[ai].cmp(&b[bi]) {
-            std::cmp::Ordering::Less => ai += 1,
-            std::cmp::Ordering::Greater => bi += 1,
-            std::cmp::Ordering::Equal => {
-                out.push(a[ai]);
-                ai += 1;
-                bi += 1;
-            }
-        }
-    }
-    out
-}
-
 fn write_u16(w: &mut BufWriter<File>, v: u16) -> Result<()> {
     w.write_all(&v.to_le_bytes())
         .map_err(|e| Error::from_reason(format!("chunk gram write: {e}")))
@@ -1061,10 +1044,4 @@ mod tests {
         assert_eq!(ids, decoded);
     }
 
-    #[test]
-    fn intersect_sorted_basic() {
-        assert_eq!(intersect_sorted(&[1, 3, 5, 7], &[2, 3, 5, 8]), vec![3, 5]);
-        assert_eq!(intersect_sorted(&[1, 2, 3], &[4, 5, 6]), Vec::<u32>::new());
-        assert_eq!(intersect_sorted(&[], &[1, 2]), Vec::<u32>::new());
-    }
 }
