@@ -257,23 +257,19 @@ export function isGitignoreAllowlistedAgenticPath(relativePath) {
   );
 }
 
-export async function getGitIgnoredPathSet(paths, options = {}) {
-  const silent = options.silent ?? false;
-  const reportError = silent ? () => {} : logError;
-
-  if (paths.length === 0) {
-    return new Set();
-  }
-
-  return await new Promise((resolve) => {
+/**
+ * Run `git check-ignore` on a single batch of paths.
+ * Returns a Set of ignored paths, or null on fatal error.
+ */
+function checkIgnoreBatch(batch, reportError) {
+  return new Promise((resolve) => {
     const ignoredChunks = [];
-    const errorChunks = [];
     let settled = false;
 
     const git = spawn('git', ['check-ignore', '-z', '--stdin'], { cwd: PROJECT_ROOT });
 
     git.stdout.on('data', chunk => ignoredChunks.push(chunk));
-    git.stderr.on('data', chunk => errorChunks.push(chunk));
+    git.stderr.on('data', () => {}); // Suppress — batched caller handles partial failures
 
     git.on('error', (err) => {
       if (settled) return;
@@ -286,28 +282,114 @@ export async function getGitIgnoredPathSet(paths, options = {}) {
       if (settled) return;
       settled = true;
 
-      if (code !== 0 && code !== 1) {
-        const stderr = Buffer.concat(errorChunks).toString('utf8').trim();
-        reportError(`WARN: git check-ignore failed${stderr ? `: ${stderr}` : ''}`);
+      // code 0 = some ignored, code 1 = none ignored, both valid.
+      // code 128 = fatal (e.g. path beyond symlink) — still use partial stdout.
+      if (code !== 0 && code !== 1 && ignoredChunks.length === 0) {
         resolve(null);
         return;
       }
 
-      const ignored = new Set(
-        Buffer.concat(ignoredChunks)
-          .toString('utf8')
-          .split('\0')
-          .filter(Boolean)
-          .map(toPosixPath)
-      );
+      const ignored = Buffer.concat(ignoredChunks)
+        .toString('utf8')
+        .split('\0')
+        .filter(Boolean)
+        .map(toPosixPath);
 
       resolve(ignored);
     });
 
-    const stdinPayload = `${paths.map(toPosixPath).join('\0')}\0`;
+    const stdinPayload = `${batch.map(toPosixPath).join('\0')}\0`;
     git.stdin.on('error', () => {}); // Suppress EPIPE if git exits early
     git.stdin.end(stdinPayload);
   });
+}
+
+const CHECK_IGNORE_BATCH_SIZE = 5000;
+
+/**
+ * Find directory components that are symlinks, so we can filter out paths
+ * that traverse them (git check-ignore fatals on "beyond a symbolic link").
+ */
+async function findSymlinkDirs(paths) {
+  const checked = new Map();
+  const symlinkPrefixes = [];
+
+  for (const p of paths) {
+    const parts = p.split('/');
+    let dir = '';
+    for (let i = 0; i < parts.length - 1; i++) {
+      dir = dir ? `${dir}/${parts[i]}` : parts[i];
+      if (checked.has(dir)) continue;
+      try {
+        const stat = await fs.lstat(path.join(PROJECT_ROOT, dir));
+        const isLink = stat.isSymbolicLink();
+        checked.set(dir, isLink);
+        if (isLink) symlinkPrefixes.push(dir + '/');
+      } catch {
+        checked.set(dir, false);
+      }
+    }
+  }
+
+  return symlinkPrefixes;
+}
+
+export async function getGitIgnoredPathSet(paths, options = {}) {
+  const silent = options.silent ?? false;
+  const reportError = silent ? () => {} : logError;
+
+  if (paths.length === 0) {
+    return new Set();
+  }
+
+  const ignored = new Set();
+
+  // Pre-filter paths that traverse symlinks — git check-ignore fatals on these.
+  // Files beyond symlinks are also checked: if the symlink dir itself is ignored,
+  // all files under it are treated as ignored too.
+  const symlinkPrefixes = await findSymlinkDirs(paths);
+  let safePaths = paths;
+  if (symlinkPrefixes.length > 0) {
+    // Check if the symlink directories themselves are ignored
+    const symlinkDirs = symlinkPrefixes.map(p => p.slice(0, -1)); // remove trailing /
+    const symlinkIgnored = await checkIgnoreBatch(symlinkDirs, reportError);
+    const ignoredSymlinks = new Set(symlinkIgnored || []);
+
+    safePaths = [];
+    for (const p of paths) {
+      const matchedPrefix = symlinkPrefixes.find(prefix => p.startsWith(prefix));
+      if (matchedPrefix) {
+        // Path traverses a symlink — check if symlink dir is gitignored
+        const dir = matchedPrefix.slice(0, -1);
+        if (ignoredSymlinks.has(dir)) {
+          ignored.add(toPosixPath(p)); // inherit parent's ignored status
+        }
+        // Either way, skip git check-ignore (would fatal)
+      } else {
+        safePaths.push(p);
+      }
+    }
+  }
+
+  let failedBatches = 0;
+
+  for (let i = 0; i < safePaths.length; i += CHECK_IGNORE_BATCH_SIZE) {
+    const batch = safePaths.slice(i, i + CHECK_IGNORE_BATCH_SIZE);
+    const result = await checkIgnoreBatch(batch, reportError);
+    if (result) {
+      for (const p of result) ignored.add(p);
+    } else {
+      failedBatches++;
+    }
+  }
+
+  const totalBatches = Math.ceil(safePaths.length / CHECK_IGNORE_BATCH_SIZE);
+  if (failedBatches === totalBatches && totalBatches > 0) {
+    reportError('WARN: git check-ignore failed on all batches — gitignore filtering disabled');
+    return null;
+  }
+
+  return ignored;
 }
 
 export async function applyGitignoreAlignment(files, respectGitignore, options = {}) {
