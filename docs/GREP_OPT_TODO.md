@@ -2,9 +2,28 @@
 
 Ordered by impact. Each step changes the cost model, so gate tuning comes last.
 
-## Status: Baseline (2026-04-05)
+## Status: After step 2 (2026-04-06)
 
 353 realistic queries across 5 repos. Current results:
+
+| Repo         | Files | p50 Speedup vs rg |
+|--------------|-------|--------------------|
+| sweet-search | 570   | **~9-17x**         |
+| fastify      | 356   | **~11x**           |
+| flask        | 216   | **~8.5x**          |
+| ripgrep      | 215   | **~9.5x**          |
+| gin          | 118   | **1.2x**           |
+| **ALL**      | —     | **~10x** (239-249W / 76-77L) |
+
+Remaining losses: hard regex, method_call, error_string (broad matches where
+gram selectivity is low — native grep eliminates spawn overhead but can't beat
+rg on broad scans), mixed_regex on gin (too small for index to pay off).
+
+Field-level parity with rg validated: 0 column, 0 matchText, 0 content
+mismatches across 353 queries. Match count differences are pre-existing
+(.gitignore behavior — gram index includes files rg would skip).
+
+### Previous baseline (2026-04-05, before step 2)
 
 | Repo         | Files | p50 Speedup vs rg |
 |--------------|-------|--------------------|
@@ -14,9 +33,6 @@ Ordered by impact. Each step changes the cost model, so gate tuning comes last.
 | ripgrep      | 215   | **1.40x**          |
 | gin          | 118   | 0.98x (break-even) |
 | **ALL**      | —     | **1.30x** (220W / 125L) |
-
-Losses concentrated in: method_call, error_string, hard regex (broad matches
-where rg spawn overhead dominates), and gin (too small for index to pay off).
 
 ---
 
@@ -31,20 +47,17 @@ Raised thresholds so the index is trusted for broader queries:
 - `narrowedThreshold`: 100 → 300
 - `directJsonThreshold`: 2048 → 4096
 
-## 2. Enable native grep for bareGrep
+## 2. [DONE] Enable native grep for bareGrep
 
-**Problem:** `canUseNativeGrep` at `search-pattern.js:215` requires `lightweightParse`
-which `bareGrep` never sets. So the grep-replacement path always spawns `rg` even when
-native in-process grep is available — adding ~8-15ms fork/exec/pipe overhead per query.
+Added `native_grep_full` Rust NAPI function returning `{file, line, column, matchText,
+content}` per match (using `re.find()` instead of `re.is_match()`). Decoupled
+`canUseNativeGrep` from `lightweightParse` — bareGrep now routes through native grep
+for both Strategy B (narrowed_json) and Strategy C (two_pass). The lean
+`nativeGrepLines` path for patternSearch is unchanged.
 
-**Fix:** Either have `bareGrep` pass `lightweightParse: true`, or decouple native grep
-from the `lightweightParse` flag (native grep can produce full match info if needed).
-The key constraint is that `bareGrep` callers expect `file`, `line`, `column`, and
-`matchText` — so native grep may need to return those fields too (currently only
-returns `{file, line}`).
-
-**Expected impact:** Eliminate ~8-15ms per narrowed query. Should flip most method_call
-and error_string losses to wins.
+**Actual impact:** p50 speedup jumped from 1.30x → ~10x across 353 queries. Eliminated
+rg fork/exec/pipe + JSON serialization/parsing overhead for all narrowed bareGrep
+queries. Field parity with rg validated (0 column/matchText/content mismatches).
 
 ## 3. Zero-copy posting list reads (Rust)
 

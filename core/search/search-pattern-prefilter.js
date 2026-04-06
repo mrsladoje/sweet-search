@@ -18,6 +18,7 @@ import {
   resolveSparseSymbolMask,
   nativeGrepFilesWithMatches as _nativeGrepFilesWithMatches,
   nativeGrepLines as _nativeGrepLines,
+  nativeGrepFull as _nativeGrepFull,
   nativeGrepChunkRanges as _nativeGrepChunkRanges,
   chunkGramSearch as _chunkGramSearch,
   getSparseGramAllFiles as _getSparseGramAllFiles,
@@ -26,6 +27,7 @@ import {
 // Re-export for search-pattern.js (avoids circular import through native-sparse-gram.js)
 export const nativeGrepFilesWithMatches = _nativeGrepFilesWithMatches;
 export const nativeGrepLines = _nativeGrepLines;
+export const nativeGrepFull = _nativeGrepFull;
 export const nativeGrepChunkRanges = _nativeGrepChunkRanges;
 export const chunkGramSearch = _chunkGramSearch;
 export const getSparseGramAllFiles = _getSparseGramAllFiles;
