@@ -15,7 +15,11 @@
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 
 // Sub-module imports (no circular dependency — sub-modules do not import from this file)
-import { extractLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates, ensureChunkGramIndex, chunkGramSearch, hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches, nativeGrepLines, nativeGrepFull, getSparseGramAllFiles } from './search-pattern-prefilter.js';
+import { extractLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates, ensureChunkGramIndex, ensureSparseGramIndex, chunkGramSearch, hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches, nativeGrepLines, nativeGrepFull, getSparseGramAllFiles, queryAndGrepLines, queryAndGrepFull, resolveSparseSymbolMask } from './search-pattern-prefilter.js';
+import { CODE_FILE_EXTENSIONS } from '../infrastructure/constants.js';
+
+// Cached once at module load — passed to Rust for code extension filtering.
+const _codeExtensionsArray = Array.from(CODE_FILE_EXTENSIONS);
 import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, findChunkIntervalForLine, readFileRange } from './search-pattern-chunks.js';
 import { isRipgrepAvailable, _getRgCapabilities, runRipgrepFilesWithMatches, runRipgrepJson, normalizeSearchPath, chunkRipgrepFiles } from './search-pattern-ripgrep.js';
 
@@ -32,11 +36,102 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   const caseInsensitive = hasCaseInsensitiveRegexFlag(regex);
   const literalPlan = useLiteralFilter ? extractLiteralClauses(regex, options) : { clauses: [], source: 'none' };
   const symbolTypeFilter = resolveSearchSymbolFilter(options);
+  const lightweightParse = options.lightweightParse ?? false;
+
+  // --- Fast path: all-in-one gram query + native grep (single NAPI call) ---
+  // Eligible when: has literal clauses, not fixed-string, no globs, gram index enabled,
+  // native addon available. Combines gram lookup + code extension filter + threshold
+  // check + grep in Rust. Zero string copies for the candidate file list across NAPI.
+  const useGramIndex = options.useGramIndex ?? options.gramIndex ?? true;
+  const canUseCombinedPath = useGramIndex && literalPlan.clauses.length > 0 && !fixedString && globs.length === 0;
+  if (canUseCombinedPath) {
+    const sparseGramIndex = ensureSparseGramIndex(searcher, options);
+    if (sparseGramIndex) {
+      const symbolMask = resolveSparseSymbolMask(symbolTypeFilter);
+      const gramStart = performance.now();
+      const combinedResult = lightweightParse
+        ? queryAndGrepLines(sparseGramIndex, literalPlan.clauses, regex, searchDir, {
+            maxGramCandidates: options.maxGramCandidates ?? 0,
+            symbolMask: symbolMask || 0,
+            caseInsensitive,
+            codeExtensions: _codeExtensionsArray,
+            maxCandidateFiles: options.maxGramCandidateFiles ?? 2048,
+            maxCandidateRatio: options.maxGramCandidateRatio ?? 0.30,
+          })
+        : queryAndGrepFull(sparseGramIndex, literalPlan.clauses, regex, searchDir, {
+            maxGramCandidates: options.maxGramCandidates ?? 0,
+            symbolMask: symbolMask || 0,
+            caseInsensitive,
+            codeExtensions: _codeExtensionsArray,
+            maxCandidateFiles: options.maxGramCandidateFiles ?? 2048,
+            maxCandidateRatio: options.maxGramCandidateRatio ?? 0.30,
+          });
+
+      if (combinedResult?.eligible) {
+        const gramLookupTime = performance.now() - gramStart;
+        const indexedMatches = combinedResult.matches;
+        const matchingFiles = [...new Set(indexedMatches.map((m) => m.file))];
+        const candidateFiles = combinedResult.candidateFiles;
+        const totalFiles = combinedResult.totalFiles;
+        return {
+          indexedMatches,
+          overlayMatches: [],
+          matchingFiles,
+          chunkVerified: null,
+          stats: {
+            nativeGrepUsed: true,
+            candidateGenTime_ms: Math.round(performance.now() - start),
+            grepTime_ms: Math.round(combinedResult.grepElapsedUs / 1000),
+            literalFilterTime_ms: 0,
+            gramLookupTime_ms: Math.round(gramLookupTime),
+            filesConsidered: totalFiles,
+            filesScanned: combinedResult.scannedFiles,
+            filesSkipped: 0,
+            dirtyOverlayFiles: 0,
+            candidateFilesBeforeFilter: candidateFiles,
+            candidateFilesAfterFilter: candidateFiles,
+            candidateReductionRatio: 0,
+            literalExtractionHit: true,
+            literalExtractionSource: literalPlan.source,
+            gramLookupReason: 'ok',
+            chunkGramUsed: false,
+            chunkGramCandidateChunks: 0,
+            chunkGramTotalChunks: 0,
+            prefilterDiscarded: false,
+            prefilterDiscardedCount: 0,
+            denseGramsTouched: combinedResult.denseGramsTouched || 0,
+            sparseGramsTouched: combinedResult.sparseGramsTouched || 0,
+            gramFalsePositiveRatio: candidateFiles > 0
+              ? 1 - (matchingFiles.length / candidateFiles)
+              : 0,
+            grepStrategy: 'combined_gram_grep',
+            plannerRoute: `combined_gram_grep:${candidateFiles}_candidates`,
+            gramSelectivity: totalFiles > 0 ? candidateFiles / totalFiles : null,
+            plannerInputs: {
+              narrowedFileCount: candidateFiles,
+              gramCandidateFiles: candidateFiles,
+              gramTotalFiles: totalFiles,
+              narrowedThreshold: options.narrowedJsonThreshold ?? 300,
+              directJsonThreshold: options.directJsonFileThreshold ?? 4096,
+              skipLiteralPrefilter: true,
+            },
+            symbolTypeFilter,
+            trackerLastIndex: null,
+            grepMatches: indexedMatches.length,
+          },
+        };
+      }
+      // Combined method returned not-eligible — fall through to existing path.
+      // Populate gramLookupResult from the combined stats so the fallback logic
+      // (chunk gram, literal prefilter, strategy selection) works correctly.
+    }
+  }
+
+  // --- Fallback: existing multi-step path ---
   let searchFiles = null;
   let gramLookupTime = 0;
   let gramLookupResult = null;
 
-  // --- Step 1-2: Extract literals + query gram index ---
   if (literalPlan.clauses.length > 0) {
     const gramStart = performance.now();
     gramLookupResult = querySparseGramCandidates(searcher, literalPlan.clauses, options);
@@ -200,12 +295,6 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
     grepStrategy = 'chunk_verified';
     plannerRoute = `chunk_verified:${chunkGramResult.candidateChunks}_candidates:${chunkVerified.length}_verified:${chunkGramResult.filesRead}_files`;
   }
-
-  // lightweightParse: skip JSON.parse, extract only {file, line} using indexOf.
-  // Semantics-preserving — produces identical match tuples, ~22ms faster on
-  // 20K-match queries. Safe for patternSearch (mapMatchesToChunks only reads
-  // .file and .line).
-  const lightweightParse = options.lightweightParse ?? false;
 
   // Native grep: replaces rg spawns to eliminate fork/exec/pipe overhead (~3ms).
   // nativeGrepLines: lean {file, line} for lightweightParse callers (patternSearch).

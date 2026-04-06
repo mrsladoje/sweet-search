@@ -15,22 +15,27 @@ import {
   loadChunkGramIndex,
   hasNativeChunkGramSupport,
   buildChunkGramIndexArtifact,
-  resolveSparseSymbolMask,
+  resolveSparseSymbolMask as _resolveSparseSymbolMask,
   nativeGrepFilesWithMatches as _nativeGrepFilesWithMatches,
   nativeGrepLines as _nativeGrepLines,
   nativeGrepFull as _nativeGrepFull,
   nativeGrepChunkRanges as _nativeGrepChunkRanges,
   chunkGramSearch as _chunkGramSearch,
   getSparseGramAllFiles as _getSparseGramAllFiles,
+  queryAndGrepLines as _queryAndGrepLines,
+  queryAndGrepFull as _queryAndGrepFull,
 } from '../infrastructure/native-sparse-gram.js';
 
 // Re-export for search-pattern.js (avoids circular import through native-sparse-gram.js)
+export const resolveSparseSymbolMask = _resolveSparseSymbolMask;
 export const nativeGrepFilesWithMatches = _nativeGrepFilesWithMatches;
 export const nativeGrepLines = _nativeGrepLines;
 export const nativeGrepFull = _nativeGrepFull;
 export const nativeGrepChunkRanges = _nativeGrepChunkRanges;
 export const chunkGramSearch = _chunkGramSearch;
 export const getSparseGramAllFiles = _getSparseGramAllFiles;
+export const queryAndGrepLines = _queryAndGrepLines;
+export const queryAndGrepFull = _queryAndGrepFull;
 import { existsSync, mkdirSync } from 'fs';
 import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { CODE_FILE_EXTENSIONS } from '../infrastructure/constants.js';
@@ -300,7 +305,7 @@ export function querySparseGramCandidates(searcher, literalClauses, options = {}
 
     const maxCandidateFiles = options.maxGramCandidateFiles ?? 2048;
     const maxCandidateRatio = options.maxGramCandidateRatio ?? 0.30;
-    const symbolMask = resolveSparseSymbolMask(resolveSearchSymbolFilter(options));
+    const symbolMask = _resolveSparseSymbolMask(resolveSearchSymbolFilter(options));
     const combined = new Set();
     let totalFiles = 0;
     let gramsUsed = 0;

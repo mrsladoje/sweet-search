@@ -2,9 +2,33 @@
 
 Ordered by impact. Each step changes the cost model, so gate tuning comes last.
 
-## Status: After step 3 (2026-04-06)
+## Status: After step 4 (2026-04-06)
 
 353 realistic queries across 5 repos. Current results:
+
+| Repo         | Files | p50 Speedup vs rg |
+|--------------|-------|--------------------|
+| sweet-search | 570   | **~9.0x**          |
+| fastify      | 356   | **~11.2x**         |
+| flask        | 216   | **~8.5x**          |
+| ripgrep      | 215   | **~10.1x**         |
+| gin          | 118   | **1.17x**          |
+| **ALL**      | —     | **~10x** (236W / 79L / 38T) |
+
+Remaining losses: hard regex, method_call, error_string (broad matches where
+gram selectivity is low — native grep eliminates spawn overhead but can't beat
+rg on broad scans), mixed_regex on gin (too small for index to pay off).
+
+Field-level parity with rg validated: 0 column, 0 matchText, 0 content
+mismatches across 353 queries. Match count differences are pre-existing
+(.gitignore behavior — gram index includes files rg would skip).
+
+Combined gram+grep fast path (`combined_gram_grep`) handles the majority of
+narrowable queries (57/71 on sweet-search, 39/71 on fastify, 45/71 on flask).
+The remaining `narrowed_json` routes are queries too broad for gram-only that
+benefit from the literal prefilter fallback.
+
+### Previous baseline (2026-04-06, after step 3)
 
 | Repo         | Files | p50 Speedup vs rg |
 |--------------|-------|--------------------|
@@ -14,14 +38,6 @@ Ordered by impact. Each step changes the cost model, so gate tuning comes last.
 | ripgrep      | 215   | **~9.3x**          |
 | gin          | 118   | **1.15x**          |
 | **ALL**      | —     | **~10x** (247W / 75L) |
-
-Remaining losses: hard regex, method_call, error_string (broad matches where
-gram selectivity is low — native grep eliminates spawn overhead but can't beat
-rg on broad scans), mixed_regex on gin (too small for index to pay off).
-
-Field-level parity with rg validated: 0 column, 0 matchText, 0 content
-mismatches across 353 queries. Match count differences are pre-existing
-(.gitignore behavior — gram index includes files rg would skip).
 
 ### Previous baseline (2026-04-06, after step 2)
 
@@ -85,19 +101,26 @@ posting intersections (all grams after the first). At current benchmark repo siz
 by measurement granularity. Speedup holds at ~10x (247W/75L). The win is structural:
 the hot path is now allocation-free, compounding with steps 4-6.
 
-## 4. Return integer IDs from Rust, resolve paths in JS
+## 4. [DONE] All-in-one gram query + native grep (zero-copy candidate path)
 
-**Problem:** `sparse_gram.rs:253-256` clones every candidate file path into a
-`Vec<String>` that crosses the NAPI boundary. For 50 candidates, that's 50 heap
-allocations + NAPI serialization.
+Added `query_and_grep_lines` and `query_and_grep_full` methods on `NativeSparseGramIndex`
+that combine gram lookup + code extension filtering + threshold checks + regex verification
+into a single NAPI call. Refactored `query_literals` to delegate to a shared
+`query_file_ids_core` that returns `Vec<u32>` file IDs without path string materialization.
+The all-in-one methods resolve paths from the internal file table and grep directly in Rust
+— candidate file paths never cross the NAPI boundary.
 
-**Fix:** Return `Vec<u32>` file IDs from `query_literals`. Add a separate NAPI method
-to resolve IDs to paths (or cache the file table in JS on index load). Better yet:
-pass integer IDs directly to native grep so the entire candidate-narrowing + verification
-stays in Rust with zero string materialization.
+Multi-clause OR union, per-clause threshold checks, and code extension filtering all happen
+in Rust. Code extensions are passed once per call from JS (`CODE_FILE_EXTENSIONS` array).
+JS fast path short-circuits the entire planner (strategy selection, literal prefilter) when
+the combined method returns eligible.
 
-**Expected impact:** Cuts NAPI crossing cost from ~20-30us to ~5us. Bigger win when
-combined with native grep staying fully in-process.
+**Actual impact:** Eliminated intermediate NAPI string serialization for candidate file paths.
+Two NAPI crossings (gram query → JS → native grep) reduced to one. Single-clause fast path
+(the common case) skips HashSet entirely — Vec<u32> flows straight from gram query to grep.
+Multi-clause OR union still uses HashSet for dedup. Per-match String clones for the NAPI
+output boundary remain (unavoidable — NAPI requires owned Strings). p50 holds at ~10x; 57-80%
+of queries take the single-call combined path.
 
 ## 5. Reduce query-time allocations in `extract_covering_grams` (Rust)
 

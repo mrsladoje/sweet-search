@@ -1,10 +1,13 @@
 use memmap2::Mmap;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use crate::native_grep::{build_regex, read_file_content, NativeGrepFullMatch, NativeGrepMatch};
 
 const MAGIC: &[u8; 8] = b"SSGRMIDX";
 const VERSION: u32 = 2;
@@ -98,6 +101,76 @@ pub struct NativeSparseGramIndex {
     weights: Vec<f32>,
 }
 
+/// Internal query result — file IDs without path string materialization.
+struct ResolvedClauses {
+    eligible: bool,
+    file_ids: Vec<u32>,
+    total_files: u32,
+    candidate_files: u32,
+    grams_used: u32,
+    dense_grams_touched: u32,
+    sparse_grams_touched: u32,
+}
+
+struct QueryFileIdsResult {
+    eligible: bool,
+    file_ids: Vec<u32>,
+    grams_used: u32,
+    total_files: u32,
+    dense_grams_touched: u32,
+    sparse_grams_touched: u32,
+}
+
+/// Combined gram query + native grep result (lean: file + line only).
+#[napi(object)]
+pub struct GramGrepLinesResult {
+    /// Whether the gram query produced an eligible (narrow) candidate set.
+    pub eligible: bool,
+    pub total_files: u32,
+    /// Candidate files after code-extension filtering.
+    pub candidate_files: u32,
+    pub grams_used: u32,
+    pub dense_grams_touched: u32,
+    pub sparse_grams_touched: u32,
+    /// Grep matches (empty when not eligible).
+    pub matches: Vec<NativeGrepMatch>,
+    /// Number of candidate files scanned by grep.
+    pub scanned_files: u32,
+    /// Grep wall-clock time in microseconds.
+    pub grep_elapsed_us: u32,
+}
+
+/// Combined gram query + native grep result (full: file + line + column + matchText + content).
+#[napi(object)]
+pub struct GramGrepFullResult {
+    pub eligible: bool,
+    pub total_files: u32,
+    pub candidate_files: u32,
+    pub grams_used: u32,
+    pub dense_grams_touched: u32,
+    pub sparse_grams_touched: u32,
+    pub matches: Vec<NativeGrepFullMatch>,
+    pub scanned_files: u32,
+    pub grep_elapsed_us: u32,
+}
+
+/// Check if a file path has an extension in the allowed set.
+fn has_code_extension(path: &str, extensions: &HashSet<&str>) -> bool {
+    match path.rfind('.') {
+        Some(dot_pos) if dot_pos + 1 < path.len() => {
+            let ext = &path[dot_pos + 1..];
+            // Fast path: most extensions are already lowercase ASCII
+            if ext.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) {
+                extensions.contains(ext)
+            } else {
+                let lower = ext.to_ascii_lowercase();
+                extensions.contains(lower.as_str())
+            }
+        }
+        _ => false,
+    }
+}
+
 #[napi]
 impl NativeSparseGramIndex {
     #[napi(factory)]
@@ -128,23 +201,26 @@ impl NativeSparseGramIndex {
         })
     }
 
-    #[napi]
-    pub fn query_literals(
+    /// Core gram query — returns file IDs without path string materialization.
+    /// Shared by `query_literals` (backward compat) and the `query_and_grep_*`
+    /// all-in-one methods.
+    fn query_file_ids_core(
         &self,
-        literals: Vec<String>,
+        literals: &[String],
         max_candidates: Option<u32>,
         symbol_mask: Option<u32>,
-    ) -> Result<SparseGramQueryResult> {
+    ) -> Result<QueryFileIdsResult> {
+        let not_eligible = |grams_used, dense, sparse| QueryFileIdsResult {
+            eligible: false,
+            file_ids: Vec::new(),
+            grams_used,
+            total_files: self.header.total_files,
+            dense_grams_touched: dense,
+            sparse_grams_touched: sparse,
+        };
+
         if literals.is_empty() {
-            return Ok(SparseGramQueryResult {
-                eligible: false,
-                files: Vec::new(),
-                grams_used: 0,
-                total_files: self.header.total_files,
-                candidate_files: 0,
-                dense_grams_touched: 0,
-                sparse_grams_touched: 0,
-            });
+            return Ok(not_eligible(0, 0, 0));
         }
 
         let mut total_grams_used = 0usize;
@@ -153,32 +229,14 @@ impl NativeSparseGramIndex {
         let mut combined: Option<CandidateSet> = None;
 
         for literal in literals {
-            let normalized = match normalize_literal(&literal) {
+            let normalized = match normalize_literal(literal) {
                 Some(value) => value,
-                None => {
-                    return Ok(SparseGramQueryResult {
-                        eligible: false,
-                        files: Vec::new(),
-                        grams_used: 0,
-                        total_files: self.header.total_files,
-                        candidate_files: 0,
-                        dense_grams_touched: 0,
-                        sparse_grams_touched: 0,
-                    });
-                }
+                None => return Ok(not_eligible(0, 0, 0)),
             };
 
             let mut grams = extract_covering_grams(&normalized, &self.weights);
             if grams.is_empty() {
-                return Ok(SparseGramQueryResult {
-                    eligible: false,
-                    files: Vec::new(),
-                    grams_used: 0,
-                    total_files: self.header.total_files,
-                    candidate_files: 0,
-                    dense_grams_touched: 0,
-                    sparse_grams_touched: 0,
-                });
+                return Ok(not_eligible(0, 0, 0));
             }
 
             grams.sort_by(|a, b| {
@@ -194,12 +252,12 @@ impl NativeSparseGramIndex {
             let mut literal_candidates: Option<CandidateSet> = None;
             for gram in grams {
                 let Some(desc) = self.grams.get(&gram) else {
-                    return Ok(SparseGramQueryResult {
+                    // Gram not in index → zero candidates (eligible, but empty)
+                    return Ok(QueryFileIdsResult {
                         eligible: true,
-                        files: Vec::new(),
+                        file_ids: Vec::new(),
                         grams_used: total_grams_used as u32,
                         total_files: self.header.total_files,
-                        candidate_files: 0,
                         dense_grams_touched,
                         sparse_grams_touched,
                     });
@@ -212,7 +270,6 @@ impl NativeSparseGramIndex {
                 }
 
                 literal_candidates = Some(match literal_candidates {
-                    // Dense acc + Dense gram: AND from mmap bytes directly (zero-copy)
                     Some(CandidateSet::Dense(mut acc))
                         if desc.flags & FLAG_DENSE_POSTINGS != 0 =>
                     {
@@ -220,14 +277,12 @@ impl NativeSparseGramIndex {
                         bitand_dense_from_le_bytes(&mut acc, data);
                         CandidateSet::Dense(acc)
                     }
-                    // Sparse acc + Dense gram: filter from mmap bytes (zero-copy)
                     Some(CandidateSet::Sparse(ids))
                         if desc.flags & FLAG_DENSE_POSTINGS != 0 =>
                     {
                         let data = self.slice(desc.data_offset, desc.data_len as usize)?;
                         CandidateSet::Sparse(filter_sparse_with_dense_bytes(&ids, data))
                     }
-                    // All other cases: load + intersect (unchanged)
                     Some(existing) => {
                         let posting = self.load_posting_set(desc)?;
                         intersect_candidate_sets(existing, posting)
@@ -243,7 +298,8 @@ impl NativeSparseGramIndex {
                 }
             }
 
-            let literal_candidates = literal_candidates.unwrap_or_else(|| CandidateSet::Sparse(Vec::new()));
+            let literal_candidates =
+                literal_candidates.unwrap_or_else(|| CandidateSet::Sparse(Vec::new()));
             combined = Some(match combined {
                 Some(existing) => intersect_candidate_sets(existing, literal_candidates),
                 None => literal_candidates,
@@ -263,24 +319,380 @@ impl NativeSparseGramIndex {
             combined
         };
 
-        let mut file_ids = collect_candidate_ids(filtered.unwrap_or_else(|| CandidateSet::Sparse(Vec::new())));
+        let mut file_ids =
+            collect_candidate_ids(filtered.unwrap_or_else(|| CandidateSet::Sparse(Vec::new())));
         if let Some(limit) = max_candidates.filter(|limit| *limit > 0) {
             file_ids.truncate(limit as usize);
         }
 
-        let files = file_ids
-            .iter()
-            .filter_map(|file_id| self.files.get(*file_id as usize).map(|entry| entry.path.clone()))
-            .collect::<Vec<_>>();
-
-        Ok(SparseGramQueryResult {
+        Ok(QueryFileIdsResult {
             eligible: true,
+            file_ids,
             grams_used: total_grams_used as u32,
             total_files: self.header.total_files,
-            candidate_files: files.len() as u32,
-            files,
             dense_grams_touched,
             sparse_grams_touched,
+        })
+    }
+
+    #[napi]
+    pub fn query_literals(
+        &self,
+        literals: Vec<String>,
+        max_candidates: Option<u32>,
+        symbol_mask: Option<u32>,
+    ) -> Result<SparseGramQueryResult> {
+        let result = self.query_file_ids_core(&literals, max_candidates, symbol_mask)?;
+        if !result.eligible {
+            return Ok(SparseGramQueryResult {
+                eligible: false,
+                files: Vec::new(),
+                grams_used: result.grams_used,
+                total_files: result.total_files,
+                candidate_files: 0,
+                dense_grams_touched: result.dense_grams_touched,
+                sparse_grams_touched: result.sparse_grams_touched,
+            });
+        }
+        let files = result
+            .file_ids
+            .iter()
+            .filter_map(|id| self.files.get(*id as usize).map(|e| e.path.clone()))
+            .collect::<Vec<_>>();
+        Ok(SparseGramQueryResult {
+            eligible: true,
+            grams_used: result.grams_used,
+            total_files: result.total_files,
+            candidate_files: files.len() as u32,
+            files,
+            dense_grams_touched: result.dense_grams_touched,
+            sparse_grams_touched: result.sparse_grams_touched,
+        })
+    }
+
+    /// Shared clause-processing: gram query → extension filter → threshold check.
+    /// Returns eligible file IDs ready for grep, or Err-like stats for bail-out.
+    /// Single-clause fast path avoids HashSet entirely.
+    fn resolve_clauses(
+        &self,
+        clauses: &[Vec<String>],
+        max_candidates: Option<u32>,
+        symbol_mask: Option<u32>,
+        ext_set: &HashSet<&str>,
+        max_files: usize,
+        max_ratio: f64,
+    ) -> Result<ResolvedClauses> {
+        let mut total_files = 0u32;
+        let mut grams_used = 0u32;
+        let mut dense_grams_touched = 0u32;
+        let mut sparse_grams_touched = 0u32;
+
+        let stats = |tf, gu, dg, sg, cf| ResolvedClauses {
+            eligible: false,
+            file_ids: Vec::new(),
+            total_files: tf,
+            candidate_files: cf,
+            grams_used: gu,
+            dense_grams_touched: dg,
+            sparse_grams_touched: sg,
+        };
+
+        // --- Single-clause fast path: no HashSet, no union ---
+        if clauses.len() == 1 {
+            let clause = &clauses[0];
+            if clause.is_empty() {
+                return Ok(stats(self.header.total_files, 0, 0, 0, 0));
+            }
+            let qr = self.query_file_ids_core(clause, max_candidates, symbol_mask)?;
+            if !qr.eligible {
+                return Ok(stats(qr.total_files, qr.grams_used, qr.dense_grams_touched, qr.sparse_grams_touched, 0));
+            }
+            // Filter by code extension in-place on the Vec — no HashSet needed
+            let mut file_ids: Vec<u32> = qr
+                .file_ids
+                .into_iter()
+                .filter(|id| {
+                    self.files
+                        .get(*id as usize)
+                        .map(|e| has_code_extension(&e.path, ext_set))
+                        .unwrap_or(false)
+                })
+                .collect();
+            let tf = qr.total_files;
+            let count = file_ids.len();
+            if count == 0
+                || count > max_files
+                || (tf > 0 && (count as f64 / tf as f64) > max_ratio)
+            {
+                return Ok(ResolvedClauses {
+                    eligible: false,
+                    file_ids: Vec::new(),
+                    total_files: tf,
+                    candidate_files: count as u32,
+                    grams_used: qr.grams_used,
+                    dense_grams_touched: qr.dense_grams_touched,
+                    sparse_grams_touched: qr.sparse_grams_touched,
+                });
+            }
+            file_ids.shrink_to_fit();
+            return Ok(ResolvedClauses {
+                eligible: true,
+                file_ids,
+                total_files: tf,
+                candidate_files: count as u32,
+                grams_used: qr.grams_used,
+                dense_grams_touched: qr.dense_grams_touched,
+                sparse_grams_touched: qr.sparse_grams_touched,
+            });
+        }
+
+        // --- Multi-clause: OR union with HashSet ---
+        let mut combined_ids: HashSet<u32> = HashSet::new();
+
+        for clause in clauses {
+            if clause.is_empty() {
+                return Ok(stats(self.header.total_files, grams_used, dense_grams_touched, sparse_grams_touched, 0));
+            }
+            let qr = self.query_file_ids_core(clause, max_candidates, symbol_mask)?;
+            total_files = total_files.max(qr.total_files);
+            grams_used += qr.grams_used;
+            dense_grams_touched += qr.dense_grams_touched;
+            sparse_grams_touched += qr.sparse_grams_touched;
+
+            if !qr.eligible {
+                return Ok(stats(total_files, grams_used, dense_grams_touched, sparse_grams_touched, 0));
+            }
+
+            let clause_ids: Vec<u32> = qr
+                .file_ids
+                .iter()
+                .copied()
+                .filter(|id| {
+                    self.files
+                        .get(*id as usize)
+                        .map(|e| has_code_extension(&e.path, ext_set))
+                        .unwrap_or(false)
+                })
+                .collect();
+
+            if clause_ids.is_empty()
+                || clause_ids.len() > max_files
+                || (total_files > 0 && (clause_ids.len() as f64 / total_files as f64) > max_ratio)
+            {
+                return Ok(ResolvedClauses {
+                    eligible: false,
+                    file_ids: Vec::new(),
+                    total_files,
+                    candidate_files: clause_ids.len() as u32,
+                    grams_used,
+                    dense_grams_touched,
+                    sparse_grams_touched,
+                });
+            }
+
+            combined_ids.extend(clause_ids);
+        }
+
+        let count = combined_ids.len();
+        if count == 0
+            || count > max_files
+            || (total_files > 0 && (count as f64 / total_files as f64) > max_ratio)
+        {
+            return Ok(ResolvedClauses {
+                eligible: false,
+                file_ids: Vec::new(),
+                total_files,
+                candidate_files: count as u32,
+                grams_used,
+                dense_grams_touched,
+                sparse_grams_touched,
+            });
+        }
+
+        Ok(ResolvedClauses {
+            eligible: true,
+            file_ids: combined_ids.into_iter().collect(),
+            total_files,
+            candidate_files: count as u32,
+            grams_used,
+            dense_grams_touched,
+            sparse_grams_touched,
+        })
+    }
+
+    /// All-in-one gram query + native grep (lean output: file + line).
+    ///
+    /// Single NAPI crossing: gram lookup → extension filter → threshold check →
+    /// rayon-parallel grep, all in Rust. Single-clause queries (the common case)
+    /// skip the HashSet union entirely — Vec<u32> flows straight to grep.
+    #[napi]
+    pub fn query_and_grep_lines(
+        &self,
+        clauses: Vec<Vec<String>>,
+        regex: String,
+        project_root: String,
+        max_candidates: Option<u32>,
+        symbol_mask: Option<u32>,
+        case_insensitive: Option<bool>,
+        code_extensions: Vec<String>,
+        max_candidate_files: Option<u32>,
+        max_candidate_ratio: Option<f64>,
+    ) -> Result<GramGrepLinesResult> {
+        let ext_set: HashSet<&str> = code_extensions.iter().map(|s| s.as_str()).collect();
+        let resolved = self.resolve_clauses(
+            &clauses,
+            max_candidates,
+            symbol_mask,
+            &ext_set,
+            max_candidate_files.unwrap_or(2048) as usize,
+            max_candidate_ratio.unwrap_or(0.30),
+        )?;
+
+        if !resolved.eligible {
+            return Ok(GramGrepLinesResult {
+                eligible: false,
+                total_files: resolved.total_files,
+                candidate_files: resolved.candidate_files,
+                grams_used: resolved.grams_used,
+                dense_grams_touched: resolved.dense_grams_touched,
+                sparse_grams_touched: resolved.sparse_grams_touched,
+                matches: Vec::new(),
+                scanned_files: 0,
+                grep_elapsed_us: 0,
+            });
+        }
+
+        let grep_start = std::time::Instant::now();
+        let re = build_regex(&regex, case_insensitive.unwrap_or(false))?;
+        let root = PathBuf::from(&project_root);
+        let scanned = resolved.file_ids.len() as u32;
+
+        let matches: Vec<NativeGrepMatch> = resolved
+            .file_ids
+            .par_iter()
+            .flat_map(|id| {
+                let entry = match self.files.get(*id as usize) {
+                    Some(e) => e,
+                    None => return Vec::new(),
+                };
+                let path = root.join(&entry.path);
+                let content = match read_file_content(&path) {
+                    Some(c) => c,
+                    None => return Vec::new(),
+                };
+                let text = content.as_str();
+                let mut results = Vec::new();
+                for (line_idx, line) in text.lines().enumerate() {
+                    if re.is_match(line) {
+                        results.push(NativeGrepMatch {
+                            file: entry.path.clone(),
+                            line: (line_idx + 1) as u32,
+                        });
+                    }
+                }
+                results
+            })
+            .collect();
+
+        Ok(GramGrepLinesResult {
+            eligible: true,
+            total_files: resolved.total_files,
+            candidate_files: resolved.candidate_files,
+            grams_used: resolved.grams_used,
+            dense_grams_touched: resolved.dense_grams_touched,
+            sparse_grams_touched: resolved.sparse_grams_touched,
+            matches,
+            scanned_files: scanned,
+            grep_elapsed_us: grep_start.elapsed().as_micros() as u32,
+        })
+    }
+
+    /// All-in-one gram query + native grep (full output).
+    ///
+    /// Same as `query_and_grep_lines` but returns file + line + column +
+    /// matchText + content for bareGrep callers.
+    #[napi]
+    pub fn query_and_grep_full(
+        &self,
+        clauses: Vec<Vec<String>>,
+        regex: String,
+        project_root: String,
+        max_candidates: Option<u32>,
+        symbol_mask: Option<u32>,
+        case_insensitive: Option<bool>,
+        code_extensions: Vec<String>,
+        max_candidate_files: Option<u32>,
+        max_candidate_ratio: Option<f64>,
+    ) -> Result<GramGrepFullResult> {
+        let ext_set: HashSet<&str> = code_extensions.iter().map(|s| s.as_str()).collect();
+        let resolved = self.resolve_clauses(
+            &clauses,
+            max_candidates,
+            symbol_mask,
+            &ext_set,
+            max_candidate_files.unwrap_or(2048) as usize,
+            max_candidate_ratio.unwrap_or(0.30),
+        )?;
+
+        if !resolved.eligible {
+            return Ok(GramGrepFullResult {
+                eligible: false,
+                total_files: resolved.total_files,
+                candidate_files: resolved.candidate_files,
+                grams_used: resolved.grams_used,
+                dense_grams_touched: resolved.dense_grams_touched,
+                sparse_grams_touched: resolved.sparse_grams_touched,
+                matches: Vec::new(),
+                scanned_files: 0,
+                grep_elapsed_us: 0,
+            });
+        }
+
+        let grep_start = std::time::Instant::now();
+        let re = build_regex(&regex, case_insensitive.unwrap_or(false))?;
+        let root = PathBuf::from(&project_root);
+        let scanned = resolved.file_ids.len() as u32;
+
+        let matches: Vec<NativeGrepFullMatch> = resolved
+            .file_ids
+            .par_iter()
+            .flat_map(|id| {
+                let entry = match self.files.get(*id as usize) {
+                    Some(e) => e,
+                    None => return Vec::new(),
+                };
+                let path = root.join(&entry.path);
+                let content = match read_file_content(&path) {
+                    Some(c) => c,
+                    None => return Vec::new(),
+                };
+                let text = content.as_str();
+                let mut results = Vec::new();
+                for (line_idx, line) in text.lines().enumerate() {
+                    if let Some(m) = re.find(line) {
+                        results.push(NativeGrepFullMatch {
+                            file: entry.path.clone(),
+                            line: (line_idx + 1) as u32,
+                            column: (m.start() + 1) as u32,
+                            match_text: m.as_str().to_string(),
+                            content: line.trim_end().to_string(),
+                        });
+                    }
+                }
+                results
+            })
+            .collect();
+
+        Ok(GramGrepFullResult {
+            eligible: true,
+            total_files: resolved.total_files,
+            candidate_files: resolved.candidate_files,
+            grams_used: resolved.grams_used,
+            dense_grams_touched: resolved.dense_grams_touched,
+            sparse_grams_touched: resolved.sparse_grams_touched,
+            matches,
+            scanned_files: scanned,
+            grep_elapsed_us: grep_start.elapsed().as_micros() as u32,
         })
     }
 

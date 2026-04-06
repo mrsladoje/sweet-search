@@ -157,6 +157,57 @@ export function getSparseGramAllFiles(sparseGramIndex) {
   }
 }
 
+/**
+ * All-in-one gram query + native grep (lean output: file + line).
+ * Single NAPI crossing — gram lookup, extension filtering, threshold checks,
+ * and regex verification all happen in Rust. Zero string copies for the
+ * candidate file list.
+ *
+ * @param {Object} sparseGramIndex - Loaded NativeSparseGramIndex instance
+ * @param {string[][]} clauses - OR of AND-clause literal sets
+ * @param {string} regex - Regex pattern
+ * @param {string} projectRoot - Absolute project root
+ * @param {Object} opts
+ * @returns {{ eligible, totalFiles, candidateFiles, gramsUsed, denseGramsTouched, sparseGramsTouched, matches: Array<{file, line}>, scannedFiles, grepElapsedUs }|null}
+ */
+export function queryAndGrepLines(sparseGramIndex, clauses, regex, projectRoot, opts = {}) {
+  if (!sparseGramIndex?.queryAndGrepLines) return null;
+  try {
+    return sparseGramIndex.queryAndGrepLines(
+      clauses, regex, projectRoot,
+      opts.maxGramCandidates ?? 0,
+      opts.symbolMask ?? 0,
+      opts.caseInsensitive ?? false,
+      opts.codeExtensions ?? [],
+      opts.maxCandidateFiles ?? 2048,
+      opts.maxCandidateRatio ?? 0.30,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * All-in-one gram query + native grep (full output: file + line + column + matchText + content).
+ * Same as queryAndGrepLines but returns display-quality fields for bareGrep.
+ */
+export function queryAndGrepFull(sparseGramIndex, clauses, regex, projectRoot, opts = {}) {
+  if (!sparseGramIndex?.queryAndGrepFull) return null;
+  try {
+    return sparseGramIndex.queryAndGrepFull(
+      clauses, regex, projectRoot,
+      opts.maxGramCandidates ?? 0,
+      opts.symbolMask ?? 0,
+      opts.caseInsensitive ?? false,
+      opts.codeExtensions ?? [],
+      opts.maxCandidateFiles ?? 2048,
+      opts.maxCandidateRatio ?? 0.30,
+    );
+  } catch {
+    return null;
+  }
+}
+
 // =============================================================================
 // Chunk-level gram index wrappers
 // =============================================================================
