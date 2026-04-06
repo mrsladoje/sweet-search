@@ -212,19 +212,18 @@ measurement granularity — the win is structural: the sparse×sparse hot path n
 platform-optimal SIMD and algorithmic selection (galloping for skewed, block merge for
 balanced), compounding with the zero-copy and allocation-free work from steps 3-5.
 
-## 8. Aho-Corasick literal-first fast path
+## 8. ~~Aho-Corasick literal-first fast path~~ [SKIPPED]
 
-**Problem:** Many agent queries contain one strong literal (`AbortWithStatusJSON`,
-`gramLookupTime`). Currently we always run full regex verification on candidate
-files. For pure literal queries or regex with a dominant literal, Aho-Corasick
-multi-pattern matching is faster than regex compilation + matching.
+**Original idea:** Use Aho-Corasick for verification instead of regex when the
+query is a pure literal.
 
-**Fix:** When literal extraction produces a single clause with high confidence,
-use Aho-Corasick for verification instead of regex. Fall back to regex only when
-the pattern has real regex semantics beyond the literal anchor.
-
-**Expected impact:** Faster verification for the ~60% of queries that are
-effectively literal searches. Saves regex compilation overhead.
+**Why skipped:** The combined_gram_grep path already handles literals efficiently.
+The trigram index narrows candidates to a handful of files, and Rust's `regex`
+crate internally optimizes pure literals to `memchr` — so the verification step
+is already near-optimal. The remaining win would be sub-millisecond (saving regex
+compilation overhead on an already-narrowed candidate set). For queries that are
+truly just literal lookups, the lexical/BM25 search path is a better product fit
+than grep. Not worth the added complexity.
 
 ## 9. Per-stage timing instrumentation
 
