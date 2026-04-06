@@ -126,6 +126,24 @@ export function nativeGrepLines(pattern, projectRoot, files, caseInsensitive) {
 }
 
 /**
+ * In-process regex line-level matching with full match fields.
+ * Returns {file, line, column, matchText, content} per match — suitable for
+ * bareGrep where callers need display-quality output.
+ * Returns null if the native addon is unavailable (falls back to rg).
+ *
+ * @returns {{ matches: Array<{file: string, line: number, column: number, matchText: string, content: string}>, scannedFiles: number, elapsedUs: number }|null}
+ */
+export function nativeGrepFull(pattern, projectRoot, files, caseInsensitive) {
+  const addon = loadAddon();
+  if (!addon?.nativeGrepFull) return null;
+  try {
+    return addon.nativeGrepFull(pattern, projectRoot, files, caseInsensitive || false);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Get all file paths from the sparse gram index.
  * Used to provide the full file list to native grep for the raw_rg path
  * (avoids needing a directory walk).

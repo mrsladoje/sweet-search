@@ -15,7 +15,7 @@
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 
 // Sub-module imports (no circular dependency — sub-modules do not import from this file)
-import { extractLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates, ensureChunkGramIndex, chunkGramSearch, hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches, nativeGrepLines, getSparseGramAllFiles } from './search-pattern-prefilter.js';
+import { extractLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates, ensureChunkGramIndex, chunkGramSearch, hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches, nativeGrepLines, nativeGrepFull, getSparseGramAllFiles } from './search-pattern-prefilter.js';
 import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, findChunkIntervalForLine, readFileRange } from './search-pattern-chunks.js';
 import { isRipgrepAvailable, _getRgCapabilities, runRipgrepFilesWithMatches, runRipgrepJson, normalizeSearchPath, chunkRipgrepFiles } from './search-pattern-ripgrep.js';
 
@@ -208,26 +208,31 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   const lightweightParse = options.lightweightParse ?? false;
 
   // Native grep: replaces rg spawns to eliminate fork/exec/pipe overhead (~3ms).
-  // nativeGrepLines replaces rg --json entirely for narrowed queries.
-  // nativeGrepFilesWithMatches replaces rg --files-with-matches for two_pass.
-  // Native grep requires lightweightParse (caller accepts {file, line} only —
-  // no column, matchText, content). patternSearch sets this; bareGrep does not.
-  const canUseNativeGrep = lightweightParse && !fixedString && globs.length === 0 && hasNarrowedFiles;
+  // nativeGrepLines: lean {file, line} for lightweightParse callers (patternSearch).
+  // nativeGrepFull: full {file, line, column, matchText, content} for bareGrep callers.
+  // nativeGrepFilesWithMatches: replaces rg --files-with-matches for two_pass.
+  // Decoupled from lightweightParse — both lean and full paths use native grep.
+  const canUseNativeGrep = !fixedString && globs.length === 0 && hasNarrowedFiles;
 
   if (chunkVerified) {
     // Already handled above — skip file-level strategies
   } else if (grepStrategy === 'narrowed_json') {
     // Strategy B: single pass on narrowed file set.
-    // Try native line-level grep (eliminates rg spawn entirely).
+    // Try native grep (eliminates rg spawn entirely).
+    // lightweightParse → lean nativeGrepLines; otherwise → full nativeGrepFull.
+    let nativeGrepSucceeded = false;
     if (canUseNativeGrep) {
-      const nativeResult = nativeGrepLines(regex, searchDir, filteredFiles, caseInsensitive);
+      const nativeResult = lightweightParse
+        ? nativeGrepLines(regex, searchDir, filteredFiles, caseInsensitive)
+        : nativeGrepFull(regex, searchDir, filteredFiles, caseInsensitive);
       if (nativeResult) {
         indexedMatches = nativeResult.matches;
         matchingFiles = [...new Set(indexedMatches.map((m) => m.file))];
+        nativeGrepSucceeded = true;
       }
     }
     // Fall back to rg if native grep unavailable or failed
-    if (indexedMatches.length === 0 && filteredFiles.length > 0) {
+    if (!nativeGrepSucceeded && filteredFiles.length > 0) {
       indexedMatches = await runRipgrepJson(regex, searchDir, {
         files: filteredFiles,
         fixedString,
@@ -238,7 +243,7 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
     }
   } else if (grepStrategy === 'two_pass') {
     // Strategy C: files-with-matches first, then line-level on matches.
-    // Use native grep for both passes when available.
+    // Pass 1: native files-with-matches when available.
     const nativeFilesResult = canUseNativeGrep
       ? nativeGrepFilesWithMatches(regex, searchDir, filteredFiles, caseInsensitive)
       : null;
@@ -249,14 +254,28 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
         fixedString,
         globs,
       });
-    indexedMatches = matchingFiles.length > 0
-      ? await runRipgrepJson(regex, searchDir, {
-        files: matchingFiles,
-        fixedString,
-        globs,
-        lightweightParse,
-      })
-      : [];
+    // Pass 2: line-level matching on the narrowed set.
+    // Use native grep (lean or full) when available, fall back to rg.
+    if (matchingFiles.length > 0) {
+      let nativePass2 = false;
+      if (canUseNativeGrep) {
+        const nativeResult = lightweightParse
+          ? nativeGrepLines(regex, searchDir, matchingFiles, caseInsensitive)
+          : nativeGrepFull(regex, searchDir, matchingFiles, caseInsensitive);
+        if (nativeResult) {
+          indexedMatches = nativeResult.matches;
+          nativePass2 = true;
+        }
+      }
+      if (!nativePass2) {
+        indexedMatches = await runRipgrepJson(regex, searchDir, {
+          files: matchingFiles,
+          fixedString,
+          globs,
+          lightweightParse,
+        });
+      }
+    }
   } else {
     // Strategy A: raw rg on the whole tree (or too-many-files fallback)
     indexedMatches = await runRipgrepJson(regex, searchDir, {

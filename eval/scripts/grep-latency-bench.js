@@ -50,6 +50,7 @@ const reposArg = args.find(a => a.startsWith('--repos='));
 const repoFilter = reposArg ? reposArg.split('=')[1].split(',') : null;
 const querySetArg = args.find(a => a.startsWith('--queries='));
 const querySetName = querySetArg ? querySetArg.split('=')[1] : 'realistic';
+const validate = args.includes('--validate');
 const REPOS = QUERY_SETS[querySetName] || QUERY_SETS.realistic;
 const warmupRuns = 2;
 
@@ -129,28 +130,31 @@ for (const repo of REPOS) {
     const family = q.regex_family || 'unknown';
 
     // --- Raw ripgrep ---
-    let rgMs, rgMatches;
+    let rgMs, rgMatches, rgResultFull;
     try {
       const rgStart = performance.now();
-      const rgResult = await runRipgrep(regex, projectRoot, { maxMatches: 0 });
+      rgResultFull = await runRipgrep(regex, projectRoot, { maxMatches: 0 });
       rgMs = performance.now() - rgStart;
-      rgMatches = rgResult.length;
+      rgMatches = rgResultFull.length;
     } catch {
       rgMs = null;
       rgMatches = 0;
+      rgResultFull = [];
     }
 
     // --- Sweet Search bareGrep (indexed) ---
-    let ssMs, ssMatches, ssStats;
+    let ssMs, ssMatches, ssStats, ssResultFull;
     try {
       const ssResult = await search.bareGrep(regex, {}, { regex });
       ssMs = ssResult.stats?.total_ms;
       ssMatches = ssResult.stats?.totalMatches ?? ssResult.results?.length ?? 0;
       ssStats = ssResult.stats;
+      ssResultFull = ssResult.results || [];
     } catch {
       ssMs = null;
       ssMatches = 0;
       ssStats = {};
+      ssResultFull = [];
     }
 
     if (rgMs !== null) rgTimes.push(rgMs);
@@ -165,6 +169,36 @@ for (const repo of REPOS) {
       const sp = speedup ? `${speedup.toFixed(1)}x` : 'N/A';
       const native = ssStats?.nativeGrepUsed ? 'N' : 'rg';
       console.log(`    ${regex.substring(0, 40).padEnd(40)} rg=${(rgMs||0).toFixed(0).padStart(5)}ms  ss=${(ssMs||0).toFixed(0).padStart(5)}ms  ${sp.padStart(6)}  [${route}] ${native}`);
+    }
+
+    // --- Field-level parity validation ---
+    if (validate && rgResultFull.length > 0 && ssResultFull.length > 0) {
+      // Sort both by file, line for stable comparison
+      const sortFn = (a, b) => a.file.localeCompare(b.file) || a.line - b.line;
+      const rgSorted = [...rgResultFull].sort(sortFn);
+      const ssSorted = [...ssResultFull].sort(sortFn);
+
+      // Build rg lookup: file:line → {column, matchText, content}
+      const rgMap = new Map();
+      for (const m of rgSorted) rgMap.set(`${m.file}:${m.line}`, m);
+
+      let fileMismatch = 0, lineMismatch = 0, colMismatch = 0, textMismatch = 0, contentMismatch = 0;
+      let checked = 0;
+      const cap = Math.min(ssSorted.length, 200); // cap comparison to avoid noise
+      for (let i = 0; i < cap; i++) {
+        const ss = ssSorted[i];
+        const rg = rgMap.get(`${ss.file}:${ss.line}`);
+        if (!rg) { lineMismatch++; continue; }
+        checked++;
+        if (ss.column && rg.column && ss.column !== rg.column) colMismatch++;
+        if (ss.matchText && rg.matchText && ss.matchText !== rg.matchText) textMismatch++;
+        if (ss.content && rg.content && ss.content.trimEnd() !== rg.content.trimEnd()) contentMismatch++;
+      }
+
+      if (lineMismatch || colMismatch || textMismatch || contentMismatch) {
+        const countDiff = Math.abs(rgMatches - ssMatches);
+        console.log(`    VALIDATE ${regex.substring(0, 35).padEnd(35)} count: rg=${rgMatches} ss=${ssMatches}${countDiff ? ` (Δ${countDiff})` : ''}  file:line miss=${lineMismatch}  col=${colMismatch}  matchText=${textMismatch}  content=${contentMismatch}  (checked ${checked})`);
+      }
     }
   }
 

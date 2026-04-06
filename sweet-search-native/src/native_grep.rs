@@ -322,3 +322,83 @@ pub fn native_grep_lines(
     })
 }
 
+// =============================================================================
+// Full line-level matching (replaces rg --json for bareGrep queries)
+// =============================================================================
+
+/// Full match result with column, matched text, and line content.
+/// Matches the fields produced by rg --json parsing in search-pattern-ripgrep.js.
+#[napi(object)]
+pub struct NativeGrepFullMatch {
+    /// Relative file path.
+    pub file: String,
+    /// 1-indexed line number.
+    pub line: u32,
+    /// 1-indexed byte offset of the first match on this line (matches rg submatches[0].start + 1).
+    pub column: u32,
+    /// Text of the first regex match on this line (matches rg submatches[0].match.text).
+    pub match_text: String,
+    /// Full line content, trailing whitespace trimmed (matches rg data.lines.text.trimEnd()).
+    pub content: String,
+}
+
+#[napi(object)]
+pub struct NativeGrepFullResult {
+    /// All matches with full field data.
+    pub matches: Vec<NativeGrepFullMatch>,
+    /// Number of files scanned.
+    pub scanned_files: u32,
+    /// Wall-clock time in microseconds.
+    pub elapsed_us: u32,
+}
+
+/// Line-level matching with full match fields: file, line, column, matchText, content.
+///
+/// Same as `native_grep_lines` but uses `re.find()` to capture match offsets and text.
+/// Designed for `bareGrep` callers that need display-quality output fields.
+/// Returns 1-indexed line numbers and byte-offset columns matching rg conventions.
+#[napi]
+pub fn native_grep_full(
+    pattern: String,
+    project_root: String,
+    files: Vec<String>,
+    case_insensitive: Option<bool>,
+) -> Result<NativeGrepFullResult> {
+    let start = std::time::Instant::now();
+    let re = build_regex(&pattern, case_insensitive.unwrap_or(false))?;
+    let root = PathBuf::from(&project_root);
+    let scanned = files.len() as u32;
+
+    let matches: Vec<NativeGrepFullMatch> = files
+        .par_iter()
+        .flat_map(|file| {
+            let path = root.join(file);
+            let content = match read_file_content(&path) {
+                Some(c) => c,
+                None => return Vec::new(),
+            };
+            let text = content.as_str();
+
+            let mut results = Vec::new();
+            for (line_idx, line) in text.lines().enumerate() {
+                if let Some(m) = re.find(line) {
+                    results.push(NativeGrepFullMatch {
+                        file: file.clone(),
+                        line: (line_idx + 1) as u32,
+                        column: (m.start() + 1) as u32,
+                        match_text: m.as_str().to_string(),
+                        content: line.trim_end().to_string(),
+                    });
+                }
+            }
+            results
+        })
+        .collect();
+
+    Ok(NativeGrepFullResult {
+        matches,
+        scanned_files: scanned,
+        elapsed_us: start.elapsed().as_micros() as u32,
+    })
+}
+
