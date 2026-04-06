@@ -34,7 +34,9 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
 
   const useLiteralFilter = options.useLiteralFilter ?? options.literalFilter ?? true;
   const caseInsensitive = hasCaseInsensitiveRegexFlag(regex);
+  const literalExtractStart = performance.now();
   const literalPlan = useLiteralFilter ? extractLiteralClauses(regex, options) : { clauses: [], source: 'none' };
+  const literalExtractionTime = performance.now() - literalExtractStart;
   const symbolTypeFilter = resolveSearchSymbolFilter(options);
   const lightweightParse = options.lightweightParse ?? false;
 
@@ -69,10 +71,17 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
 
       if (combinedResult?.eligible) {
         const gramLookupTime = performance.now() - gramStart;
+        const materializeStart = performance.now();
         const indexedMatches = combinedResult.matches;
         const matchingFiles = [...new Set(indexedMatches.map((m) => m.file))];
+        const materializeTime = performance.now() - materializeStart;
         const candidateFiles = combinedResult.candidateFiles;
         const totalFiles = combinedResult.totalFiles;
+        // Rust-side per-stage timing (microseconds → milliseconds, fractional)
+        const rustGramMs = (combinedResult.gramElapsedUs || 0) / 1000;
+        const rustRegexBuildMs = (combinedResult.regexBuildElapsedUs || 0) / 1000;
+        const rustGrepMs = (combinedResult.grepElapsedUs || 0) / 1000;
+        const napiOverheadMs = gramLookupTime - rustGramMs - rustRegexBuildMs - rustGrepMs;
         return {
           indexedMatches,
           overlayMatches: [],
@@ -81,7 +90,7 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
           stats: {
             nativeGrepUsed: true,
             candidateGenTime_ms: Math.round(performance.now() - start),
-            grepTime_ms: Math.round(combinedResult.grepElapsedUs / 1000),
+            grepTime_ms: Math.round(rustGrepMs),
             literalFilterTime_ms: 0,
             gramLookupTime_ms: Math.round(gramLookupTime),
             filesConsidered: totalFiles,
@@ -118,6 +127,15 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
             symbolTypeFilter,
             trackerLastIndex: null,
             grepMatches: indexedMatches.length,
+            // Per-stage timing (step 9 instrumentation)
+            stageTiming: {
+              literalExtractionTime_ms: +literalExtractionTime.toFixed(3),
+              gramQueryTime_ms: +rustGramMs.toFixed(3),
+              regexBuildTime_ms: +rustRegexBuildMs.toFixed(3),
+              grepVerifyTime_ms: +rustGrepMs.toFixed(3),
+              napiOverheadTime_ms: +napiOverheadMs.toFixed(3),
+              resultMaterializationTime_ms: +materializeTime.toFixed(3),
+            },
           },
         };
       }
@@ -442,6 +460,17 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
       symbolTypeFilter,
       trackerLastIndex: null,
       grepMatches: totalMatches,
+      // Per-stage timing (step 9 instrumentation)
+      stageTiming: {
+        literalExtractionTime_ms: +literalExtractionTime.toFixed(3),
+        gramQueryTime_ms: +gramLookupTime.toFixed(3),
+        regexBuildTime_ms: 0,  // not separately measurable in fallback path
+        literalPrefilterTime_ms: +literalFilterTime.toFixed(3),
+        plannerTime_ms: 0,  // negligible — pure JS logic
+        grepVerifyTime_ms: +grepTime.toFixed(3),
+        napiOverheadTime_ms: 0,  // not separately measurable in fallback path
+        resultMaterializationTime_ms: 0,
+      },
     },
   };
 
@@ -587,6 +616,7 @@ export async function bareGrep(query, routing, options = {}) {
       nativeGrepUsed: candidateResult.stats.nativeGrepUsed,
       symbolType,
       total_ms: Math.round(performance.now() - start),
+      stageTiming: candidateResult.stats.stageTiming || null,
     },
   };
 }
