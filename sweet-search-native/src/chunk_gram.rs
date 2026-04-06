@@ -732,8 +732,7 @@ impl NativeChunkGramIndex {
                     Some(c) => c,
                     None => return Vec::new(),
                 };
-                let text = content.as_str();
-                let bytes = text.as_bytes();
+                let bytes = content.as_bytes();
 
                 // Build line-start byte offset table: line_offsets[i] is the
                 // byte offset where 0-indexed line i begins. Single pass over
@@ -771,12 +770,7 @@ impl NativeChunkGramIndex {
                         };
 
                         if line_start >= line_end { continue; }
-                        let line_str = match std::str::from_utf8(&bytes[line_start..line_end]) {
-                            Ok(s) => s,
-                            Err(_) => continue,
-                        };
-
-                        if !re.is_match(line_str) { continue; }
+                        if !re.is_match(&bytes[line_start..line_end]) { continue; }
                         let line_num = (line_idx + 1) as u32;
 
                         // Attribute match to containing original chunk(s)

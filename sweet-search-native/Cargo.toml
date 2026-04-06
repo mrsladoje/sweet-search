@@ -11,6 +11,7 @@ memmap2 = "0.9"
 napi = { version = "2", features = ["default"] }
 napi-derive = "2"
 rayon = "1"
+memchr = "2"
 regex = "1"
 regex-syntax = "0.8"
 serde = { version = "1", features = ["derive"] }

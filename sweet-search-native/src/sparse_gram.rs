@@ -8,7 +8,7 @@ use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use crate::native_grep::{build_regex, read_file_content, NativeGrepFullMatch, NativeGrepMatch};
+use crate::native_grep::{build_regex, for_each_line, read_file_content, NativeGrepFullMatch, NativeGrepMatch};
 
 const MAGIC: &[u8; 8] = b"SSGRMIDX";
 const VERSION: u32 = 2;
@@ -633,16 +633,19 @@ impl NativeSparseGramIndex {
                     Some(c) => c,
                     None => return Vec::new(),
                 };
-                let text = content.as_str();
+                let bytes = content.as_bytes();
+                if !re.is_match(bytes) {
+                    return Vec::new();
+                }
                 let mut results = Vec::new();
-                for (line_idx, line) in text.lines().enumerate() {
+                for_each_line(bytes, |line_idx, line| {
                     if re.is_match(line) {
                         results.push(NativeGrepMatch {
                             file: entry.path.clone(),
                             line: (line_idx + 1) as u32,
                         });
                     }
-                }
+                });
                 results
             })
             .collect();
@@ -728,19 +731,28 @@ impl NativeSparseGramIndex {
                     Some(c) => c,
                     None => return Vec::new(),
                 };
-                let text = content.as_str();
+                let bytes = content.as_bytes();
+                if !re.is_match(bytes) {
+                    return Vec::new();
+                }
                 let mut results = Vec::new();
-                for (line_idx, line) in text.lines().enumerate() {
+                for_each_line(bytes, |line_idx, line| {
                     if let Some(m) = re.find(line) {
+                        let match_bytes = &line[m.start()..m.end()];
+                        let match_text = String::from_utf8_lossy(match_bytes).into_owned();
+                        let trimmed = match line.iter().rposition(|&b| b != b' ' && b != b'\t' && b != b'\r') {
+                            Some(pos) => &line[..=pos],
+                            None => line,
+                        };
                         results.push(NativeGrepFullMatch {
                             file: entry.path.clone(),
                             line: (line_idx + 1) as u32,
                             column: (m.start() + 1) as u32,
-                            match_text: m.as_str().to_string(),
-                            content: line.trim_end().to_string(),
+                            match_text,
+                            content: String::from_utf8_lossy(trimmed).into_owned(),
                         });
                     }
-                }
+                });
                 results
             })
             .collect();
