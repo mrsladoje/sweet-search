@@ -2,22 +2,25 @@
 
 Ordered by impact. Each step changes the cost model, so gate tuning comes last.
 
-## Status: After step 7 (2026-04-06)
+## Status: After steps 9-10 (2026-04-06)
 
 353 realistic queries across 5 repos. Current results:
 
 | Repo         | Files | p50 Speedup vs rg |
 |--------------|-------|--------------------|
-| sweet-search | 571   | **~17.1x**         |
-| fastify      | 356   | **~11.2x**         |
-| flask        | 216   | **~8.7x**          |
-| ripgrep      | 215   | **~9.5x**          |
-| gin          | 118   | **1.23x**          |
-| **ALL**      | —     | **~10.0x** (242W / 73L / 38T) |
+| sweet-search | 571   | **~18.0x**         |
+| fastify      | 356   | **~12.0x**         |
+| flask        | 216   | **~8.5x**          |
+| ripgrep      | 215   | **~9.2x**          |
+| gin          | 118   | **~4.4x**          |
+| **ALL**      | —     | **~9.9x** (334W / 19L / 0T) |
 
-Remaining losses: hard regex, method_call, error_string (broad matches where
-gram selectivity is low — native grep eliminates spawn overhead but can't beat
-rg on broad scans), mixed_regex on gin (too small for index to pay off).
+Remaining losses (19): broad `error_string` and `method_call` patterns on
+sweet-search (571 files) where native grep on all files takes 30-40ms vs rg's
+18ms. rg's optimized directory walker still has an edge on full-tree scans.
+All other repos are near-zero losses.
+
+### Previous baseline (2026-04-06, after step 7)
 
 Field-level parity with rg validated: 0 column, 0 matchText, 0 content
 mismatches across 353 queries. Match count differences are pre-existing
@@ -225,32 +228,37 @@ compilation overhead on an already-narrowed candidate set). For queries that are
 truly just literal lookups, the lexical/BM25 search path is a better product fit
 than grep. Not worth the added complexity.
 
-## 9. Per-stage timing instrumentation
+## 9. [DONE] Per-stage timing instrumentation
 
-**Problem:** We can't tell where time is spent within a query. The benchmark shows
-total latency but not the breakdown: literal extraction, gram lookup, posting
-intersection, result materialization, NAPI crossing, verification, sorting.
+Added `performance.now()` checkpoints and Rust `Instant` at each stage boundary.
+Rust: `gram_elapsed_us` and `regex_build_elapsed_us` on `GramGrepLinesResult`
+and `GramGrepFullResult`, timed separately from `grep_elapsed_us`. JS: `stageTiming`
+object on all `generateRegexMatches` stats (combined and fallback paths) with
+7 stages: literalExtraction, gramQuery, regexBuild, literalPrefilter, grepVerify,
+napiOverhead, resultMaterialization. Benchmark reports per-repo per-stage table.
 
-**Fix:** Add `performance.now()` checkpoints (or Rust `Instant`) at each stage
-boundary in `generateRegexMatches` and the Rust `query_literals`. Expose as
-optional stats (e.g., `options.detailedTiming = true`) to avoid overhead in
-production.
+**Actual impact:** Identified literal prefilter (rg -F spawn) as the dominant
+loss source at 12-35ms p50. Gram query and grep verify were already sub-millisecond.
+NAPI overhead negligible at 57-108μs. This directly informed steps 10A/10B below.
 
-**Expected impact:** No performance gain directly, but required to identify which
-optimization yields the most. Without this, we're optimizing blind.
+## 10. [DONE] Eliminate literal prefilter + native grep all (replaces small-repo bypass)
 
-## 10. Small-repo bypass
+Two changes that remove the last rg subprocess spawn from the hot path:
 
-**Problem:** On repos with <150 files (like gin at 118), the index overhead
-(gram lookup + candidate materialization + narrowed rg spawn) exceeds the cost
-of a single raw `rg` scan. The index can never win here.
+**10A: native_grep_files_with_matches_fixed (Rust)**
+Added fixed-string AND-match using `str::contains()` with rayon parallelism.
+No regex compilation. Used as fallback for rare glob-filtered queries.
 
-**Fix:** At query time, if the gram index reports `totalFiles < N`, skip the
-index entirely and go straight to raw rg (or native grep on all files). The
-threshold N should be tuned empirically (~150-200 files based on current data).
+**10B: native_grep_all strategy**
+When the gram index can't narrow (too broad or no literals), skip the literal
+prefilter entirely and run native grep with the full regex on all indexed files.
+One I/O pass instead of the prefilter's two (str::contains on all files, then
+regex on narrowed files). This subsumes the original "small-repo bypass" idea —
+native grep on all files is fast for any repo size, not just small ones.
 
-**Expected impact:** Eliminates the 0.5-0.7x penalty on tiny repos. Turns gin-type
-losses into ties (can't beat rg, but stop being slower).
+**Actual impact:** Prefilter eliminated for all queries without globs. gin jumped
+from 1.12x → 4.39x, fastify from 6.83x → 12.0x. Win/loss improved from
+242W/73L/38T → 334W/19L/0T. Literal prefilter stage no longer appears in timing.
 
 ## 11. End-to-end Rust query pipeline (single NAPI call)
 
