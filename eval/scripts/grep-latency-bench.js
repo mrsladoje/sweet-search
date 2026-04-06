@@ -162,8 +162,9 @@ for (const repo of REPOS) {
 
     const speedup = (rgMs && ssMs && ssMs > 0) ? (rgMs / ssMs) : null;
     const route = ssStats?.grepStrategy || ssStats?.plannerRoute || '?';
+    const st = ssStats?.stageTiming || {};
 
-    perQuery.push({ regex, family, rgMs, ssMs, rgMatches, ssMatches, speedup, ssStats, route });
+    perQuery.push({ regex, family, rgMs, ssMs, rgMatches, ssMatches, speedup, ssStats, route, stageTiming: st });
 
     if (verbose) {
       const sp = speedup ? `${speedup.toFixed(1)}x` : 'N/A';
@@ -229,6 +230,40 @@ for (const repo of REPOS) {
     const ssF = stats(data.ss);
     const sp = ssF.p50 > 0 ? (rgF.p50 / ssF.p50).toFixed(2) + 'x' : 'N/A';
     console.log(`  ${fam.padEnd(16)} ${String(data.rg.length).padStart(4)} ${(rgF.p50.toFixed(1) + 'ms').padStart(9)} ${(ssF.p50.toFixed(1) + 'ms').padStart(9)} ${sp.padStart(9)}`);
+  }
+
+  // Per-stage timing breakdown
+  const stageKeys = [
+    'literalExtractionTime_ms', 'gramQueryTime_ms', 'regexBuildTime_ms',
+    'literalPrefilterTime_ms', 'grepVerifyTime_ms', 'napiOverheadTime_ms',
+    'resultMaterializationTime_ms',
+  ];
+  const stageLabels = {
+    literalExtractionTime_ms: 'Literal extract',
+    gramQueryTime_ms: 'Gram query',
+    regexBuildTime_ms: 'Regex build',
+    literalPrefilterTime_ms: 'Literal prefilter',
+    grepVerifyTime_ms: 'Grep verify',
+    napiOverheadTime_ms: 'NAPI overhead',
+    resultMaterializationTime_ms: 'Result materialize',
+  };
+  const stageBuckets = {};
+  for (const key of stageKeys) stageBuckets[key] = [];
+  for (const pq of perQuery) {
+    if (!pq.stageTiming) continue;
+    for (const key of stageKeys) {
+      const v = pq.stageTiming[key];
+      if (v != null && v > 0) stageBuckets[key].push(v);
+    }
+  }
+  console.log(`\n  Per-stage timing (ms):`);
+  console.log(`  ${'stage'.padEnd(22)} ${'N'.padStart(4)} ${'p50'.padStart(9)} ${'p95'.padStart(9)} ${'avg'.padStart(9)} ${'max'.padStart(9)}`);
+  console.log(`  ${'-'.repeat(56)}`);
+  for (const key of stageKeys) {
+    const vals = stageBuckets[key];
+    if (vals.length === 0) continue;
+    const s = stats(vals);
+    console.log(`  ${stageLabels[key].padEnd(22)} ${String(vals.length).padStart(4)} ${s.p50.toFixed(3).padStart(9)} ${s.p95.toFixed(3).padStart(9)} ${s.avg.toFixed(3).padStart(9)} ${s.max.toFixed(3).padStart(9)}`);
   }
 
   // Planner route distribution

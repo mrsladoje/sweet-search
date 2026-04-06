@@ -173,7 +173,11 @@ pub struct GramGrepLinesResult {
     pub matches: Vec<NativeGrepMatch>,
     /// Number of candidate files scanned by grep.
     pub scanned_files: u32,
-    /// Grep wall-clock time in microseconds.
+    /// Gram query + extension filter + threshold check wall-clock time in microseconds.
+    pub gram_elapsed_us: u32,
+    /// Regex compilation wall-clock time in microseconds.
+    pub regex_build_elapsed_us: u32,
+    /// Grep verification wall-clock time in microseconds.
     pub grep_elapsed_us: u32,
 }
 
@@ -188,6 +192,11 @@ pub struct GramGrepFullResult {
     pub sparse_grams_touched: u32,
     pub matches: Vec<NativeGrepFullMatch>,
     pub scanned_files: u32,
+    /// Gram query + extension filter + threshold check wall-clock time in microseconds.
+    pub gram_elapsed_us: u32,
+    /// Regex compilation wall-clock time in microseconds.
+    pub regex_build_elapsed_us: u32,
+    /// Grep verification wall-clock time in microseconds.
     pub grep_elapsed_us: u32,
 }
 
@@ -576,6 +585,7 @@ impl NativeSparseGramIndex {
         max_candidate_ratio: Option<f64>,
     ) -> Result<GramGrepLinesResult> {
         let ext_set: HashSet<&str> = code_extensions.iter().map(|s| s.as_str()).collect();
+        let gram_start = std::time::Instant::now();
         let resolved = self.resolve_clauses(
             &clauses,
             max_candidates,
@@ -584,6 +594,7 @@ impl NativeSparseGramIndex {
             max_candidate_files.unwrap_or(2048) as usize,
             max_candidate_ratio.unwrap_or(0.30),
         )?;
+        let gram_elapsed_us = gram_start.elapsed().as_micros() as u32;
 
         if !resolved.eligible {
             return Ok(GramGrepLinesResult {
@@ -595,12 +606,17 @@ impl NativeSparseGramIndex {
                 sparse_grams_touched: resolved.sparse_grams_touched,
                 matches: Vec::new(),
                 scanned_files: 0,
+                gram_elapsed_us,
+                regex_build_elapsed_us: 0,
                 grep_elapsed_us: 0,
             });
         }
 
-        let grep_start = std::time::Instant::now();
+        let regex_start = std::time::Instant::now();
         let re = build_regex(&regex, case_insensitive.unwrap_or(false))?;
+        let regex_build_elapsed_us = regex_start.elapsed().as_micros() as u32;
+
+        let grep_start = std::time::Instant::now();
         let root = PathBuf::from(&project_root);
         let scanned = resolved.file_ids.len() as u32;
 
@@ -640,6 +656,8 @@ impl NativeSparseGramIndex {
             sparse_grams_touched: resolved.sparse_grams_touched,
             matches,
             scanned_files: scanned,
+            gram_elapsed_us,
+            regex_build_elapsed_us,
             grep_elapsed_us: grep_start.elapsed().as_micros() as u32,
         })
     }
@@ -662,6 +680,7 @@ impl NativeSparseGramIndex {
         max_candidate_ratio: Option<f64>,
     ) -> Result<GramGrepFullResult> {
         let ext_set: HashSet<&str> = code_extensions.iter().map(|s| s.as_str()).collect();
+        let gram_start = std::time::Instant::now();
         let resolved = self.resolve_clauses(
             &clauses,
             max_candidates,
@@ -670,6 +689,7 @@ impl NativeSparseGramIndex {
             max_candidate_files.unwrap_or(2048) as usize,
             max_candidate_ratio.unwrap_or(0.30),
         )?;
+        let gram_elapsed_us = gram_start.elapsed().as_micros() as u32;
 
         if !resolved.eligible {
             return Ok(GramGrepFullResult {
@@ -681,12 +701,17 @@ impl NativeSparseGramIndex {
                 sparse_grams_touched: resolved.sparse_grams_touched,
                 matches: Vec::new(),
                 scanned_files: 0,
+                gram_elapsed_us,
+                regex_build_elapsed_us: 0,
                 grep_elapsed_us: 0,
             });
         }
 
-        let grep_start = std::time::Instant::now();
+        let regex_start = std::time::Instant::now();
         let re = build_regex(&regex, case_insensitive.unwrap_or(false))?;
+        let regex_build_elapsed_us = regex_start.elapsed().as_micros() as u32;
+
+        let grep_start = std::time::Instant::now();
         let root = PathBuf::from(&project_root);
         let scanned = resolved.file_ids.len() as u32;
 
@@ -729,6 +754,8 @@ impl NativeSparseGramIndex {
             sparse_grams_touched: resolved.sparse_grams_touched,
             matches,
             scanned_files: scanned,
+            gram_elapsed_us,
+            regex_build_elapsed_us,
             grep_elapsed_us: grep_start.elapsed().as_micros() as u32,
         })
     }
