@@ -121,6 +121,58 @@ pub fn native_grep_files_with_matches(
     })
 }
 
+/// In-process fixed-string literal prefilter with AND semantics.
+///
+/// Returns files that contain ALL given literals (AND). Replaces the sequential
+/// `rg -F --files-with-matches` spawns in the literal prefilter path.
+///
+/// Uses `str::contains()` (case-sensitive) or lowercased search
+/// (case-insensitive) — no regex compilation overhead.
+#[napi]
+pub fn native_grep_files_with_matches_fixed(
+    literals: Vec<String>,
+    project_root: String,
+    files: Vec<String>,
+    case_insensitive: Option<bool>,
+) -> Result<NativeGrepResult> {
+    let start = std::time::Instant::now();
+    let ci = case_insensitive.unwrap_or(false);
+    let root = PathBuf::from(&project_root);
+    let scanned = files.len() as u32;
+
+    // Pre-lowercase literals for case-insensitive matching (done once, not per file).
+    let lowered: Vec<String> = if ci {
+        literals.iter().map(|l| l.to_lowercase()).collect()
+    } else {
+        Vec::new()
+    };
+
+    let matching: Vec<String> = files
+        .par_iter()
+        .filter(|file| {
+            let path = root.join(file);
+            let content = match read_file_content(&path) {
+                Some(c) => c,
+                None => return false,
+            };
+            let text = content.as_str();
+            if ci {
+                let lower = text.to_lowercase();
+                lowered.iter().all(|lit| lower.contains(lit.as_str()))
+            } else {
+                literals.iter().all(|lit| text.contains(lit.as_str()))
+            }
+        })
+        .cloned()
+        .collect();
+
+    Ok(NativeGrepResult {
+        matching_files: matching,
+        scanned_files: scanned,
+        elapsed_us: start.elapsed().as_micros() as u32,
+    })
+}
+
 // =============================================================================
 // Line-level matching (replaces rg --json for narrowed queries)
 // =============================================================================

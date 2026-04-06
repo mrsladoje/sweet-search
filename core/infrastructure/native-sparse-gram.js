@@ -109,6 +109,27 @@ export function nativeGrepFilesWithMatches(pattern, projectRoot, files, caseInse
 }
 
 /**
+ * In-process fixed-string literal prefilter with AND semantics.
+ * Returns files containing ALL given literals. Replaces sequential rg -F spawns.
+ * Uses str::contains() — no regex compilation overhead.
+ *
+ * @param {string[]} literals - All must be present in the file (AND)
+ * @param {string} projectRoot
+ * @param {string[]} files - Relative file paths to search
+ * @param {boolean} [caseInsensitive]
+ * @returns {{ matchingFiles: string[], scannedFiles: number, elapsedUs: number }|null}
+ */
+export function nativeGrepFilesWithMatchesFixed(literals, projectRoot, files, caseInsensitive) {
+  const addon = loadAddon();
+  if (!addon?.nativeGrepFilesWithMatchesFixed) return null;
+  try {
+    return addon.nativeGrepFilesWithMatchesFixed(literals, projectRoot, files, caseInsensitive || false);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * In-process regex line-level matching using the native addon's regex + rayon + mmap.
  * Replaces `rg --json` for narrowed queries — eliminates spawn + JSON parse overhead.
  * Returns null if the native addon is unavailable (falls back to rg).

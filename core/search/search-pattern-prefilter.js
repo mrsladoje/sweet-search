@@ -17,6 +17,7 @@ import {
   buildChunkGramIndexArtifact,
   resolveSparseSymbolMask as _resolveSparseSymbolMask,
   nativeGrepFilesWithMatches as _nativeGrepFilesWithMatches,
+  nativeGrepFilesWithMatchesFixed as _nativeGrepFilesWithMatchesFixed,
   nativeGrepLines as _nativeGrepLines,
   nativeGrepFull as _nativeGrepFull,
   nativeGrepChunkRanges as _nativeGrepChunkRanges,
@@ -29,6 +30,7 @@ import {
 // Re-export for search-pattern.js (avoids circular import through native-sparse-gram.js)
 export const resolveSparseSymbolMask = _resolveSparseSymbolMask;
 export const nativeGrepFilesWithMatches = _nativeGrepFilesWithMatches;
+export const nativeGrepFilesWithMatchesFixed = _nativeGrepFilesWithMatchesFixed;
 export const nativeGrepLines = _nativeGrepLines;
 export const nativeGrepFull = _nativeGrepFull;
 export const nativeGrepChunkRanges = _nativeGrepChunkRanges;

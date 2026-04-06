@@ -15,7 +15,7 @@
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 
 // Sub-module imports (no circular dependency — sub-modules do not import from this file)
-import { extractLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates, ensureChunkGramIndex, ensureSparseGramIndex, chunkGramSearch, hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches, nativeGrepLines, nativeGrepFull, getSparseGramAllFiles, queryAndGrepLines, queryAndGrepFull, resolveSparseSymbolMask } from './search-pattern-prefilter.js';
+import { extractLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates, ensureChunkGramIndex, ensureSparseGramIndex, chunkGramSearch, hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches, nativeGrepFilesWithMatchesFixed, nativeGrepLines, nativeGrepFull, getSparseGramAllFiles, queryAndGrepLines, queryAndGrepFull, resolveSparseSymbolMask } from './search-pattern-prefilter.js';
 import { CODE_FILE_EXTENSIONS } from '../infrastructure/constants.js';
 
 // Cached once at module load — passed to Rust for code extension filtering.
@@ -198,28 +198,58 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   // literal prefilter entirely — it costs process spawns and the result will
   // be discarded anyway. Go straight to raw rg.
   const gramSaysBroad = gramSelectivity !== null && gramSelectivity > 0.40 && !chunkGramResult?.eligible;
-  const skipLiteralPrefilter = gramTooBroad || gramSaysBroad;
 
-  // Literal prefilter: run when the gram index didn't already narrow the set
-  // AND the gram stats don't indicate a broad query.
-  // After running, discard the file list if it didn't meaningfully narrow —
-  // passing thousands of explicit file paths via batched spawns is far slower
-  // than a single `rg .` invocation.
+  // --- Native grep on all indexed files: skip the prefilter entirely ---
+  // When native grep is available (no globs, no fixedString), the prefilter is
+  // pure overhead: it reads all files with str::contains, then reads the narrowed
+  // set again with regex — two I/O passes. Native grep on all indexed files does
+  // one I/O pass with regex directly. Faster for any repo size because the I/O
+  // cost dominates both paths and you avoid the double-read.
+  const sparseForAllFiles = (!fixedString && globs.length === 0)
+    ? ensureSparseGramIndex(searcher, options)
+    : null;
+  const allIndexedFiles = sparseForAllFiles ? getSparseGramAllFiles(sparseForAllFiles) : null;
+  const canNativeGrepAll = Array.isArray(allIndexedFiles) && allIndexedFiles.length > 0;
+
+  const skipLiteralPrefilter = gramTooBroad || gramSaysBroad || canNativeGrepAll;
+
+  // Literal prefilter: only runs when native grep on all files is not available
+  // (globs active, fixedString, or no gram index). This is the rg-spawn fallback.
   const literalNarrowMaxFiles = options.literalNarrowMaxFiles ?? 2048;
   const literalNarrowMaxRatio = options.literalNarrowMaxRatio ?? 0.40;
   let prefilterDiscarded = false;
   let prefilterDiscardedCount = 0;
 
-  // Skip literal prefilter in filesOnlyMode — rg --files-with-matches is already
-  // fast enough that a separate rg -F prefilter spawn (18-23ms) is pure overhead.
   const skipInFilesOnly = options.filesOnlyMode ?? false;
   if (literalPlan.clauses.length > 0 && !usingGramCandidates && !skipLiteralPrefilter && !skipInFilesOnly) {
     const literalStart = performance.now();
-    // Pass rg functions to avoid circular import in the prefilter sub-module.
-    filteredFiles = await runLiteralPrefilterClauses(literalPlan.clauses, searchDir, searchFiles, {
-      caseInsensitive,
-      globs,
-    }, { getRgCapabilities: _getRgCapabilities, runRipgrepFilesWithMatches });
+
+    // --- Native in-process literal prefilter (str::contains, no fork/exec) ---
+    // Fallback for glob-filtered queries where we can't skip the prefilter.
+    const sparseForPrefilter = globs.length === 0 ? ensureSparseGramIndex(searcher, options) : null;
+    const prefilterFiles = sparseForPrefilter ? getSparseGramAllFiles(sparseForPrefilter) : null;
+
+    if (prefilterFiles && prefilterFiles.length > 0) {
+      const combined = new Set();
+      for (const clause of literalPlan.clauses) {
+        if (!Array.isArray(clause) || clause.length === 0) { combined.clear(); break; }
+        const result = nativeGrepFilesWithMatchesFixed(clause, searchDir, prefilterFiles, caseInsensitive);
+        if (result) {
+          for (const f of result.matchingFiles) combined.add(f);
+        } else {
+          combined.clear();
+          break;
+        }
+      }
+      filteredFiles = combined.size > 0 ? [...combined] : null;
+    } else {
+      // Fallback: rg spawn (globs active or no gram index)
+      filteredFiles = await runLiteralPrefilterClauses(literalPlan.clauses, searchDir, searchFiles, {
+        caseInsensitive,
+        globs,
+      }, { getRgCapabilities: _getRgCapabilities, runRipgrepFilesWithMatches });
+    }
+
     literalFilterTime = performance.now() - literalStart;
     candidateFilesAfterFilter = Array.isArray(filteredFiles) ? filteredFiles.length : candidateFilesAfterFilter;
 
@@ -383,8 +413,31 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
         });
       }
     }
+  } else if (canNativeGrepAll) {
+    // Strategy D: native grep on all indexed files — single I/O pass, no rg spawn.
+    // Replaces raw rg for queries where the gram index couldn't narrow (too broad,
+    // no literals, prefilter skipped). One read per file with regex verification
+    // via rayon parallelism + mmap.
+    const nativeResult = lightweightParse
+      ? nativeGrepLines(regex, searchDir, allIndexedFiles, caseInsensitive)
+      : nativeGrepFull(regex, searchDir, allIndexedFiles, caseInsensitive);
+    if (nativeResult) {
+      indexedMatches = nativeResult.matches;
+      matchingFiles = [...new Set(indexedMatches.map((m) => m.file))];
+      grepStrategy = 'native_grep_all';
+      plannerRoute = `native_grep_all:${allIndexedFiles.length}_files`;
+    } else {
+      // Native grep failed (regex incompatibility) — fall back to rg
+      indexedMatches = await runRipgrepJson(regex, searchDir, {
+        files: filteredFiles,
+        fixedString,
+        globs,
+        lightweightParse,
+      });
+      matchingFiles = [...new Set(indexedMatches.map((match) => match.file))];
+    }
   } else {
-    // Strategy A: raw rg on the whole tree (or too-many-files fallback)
+    // Strategy A: raw rg on the whole tree (globs, fixedString, or no gram index)
     indexedMatches = await runRipgrepJson(regex, searchDir, {
       files: filteredFiles,
       fixedString,
@@ -416,7 +469,7 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
     matchingFiles,
     chunkVerified,  // When non-null, patternSearch skips mapMatchesToChunks
     stats: {
-      nativeGrepUsed: canUseNativeGrep || !!chunkVerified,
+      nativeGrepUsed: canUseNativeGrep || !!chunkVerified || grepStrategy === 'native_grep_all',
       candidateGenTime_ms: Math.round(performance.now() - start),
       grepTime_ms: Math.round(grepTime),
       literalFilterTime_ms: Math.round(literalFilterTime),
