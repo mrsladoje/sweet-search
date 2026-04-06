@@ -2,6 +2,7 @@ use memmap2::Mmap;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use rayon::prelude::*;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
@@ -240,8 +241,8 @@ impl NativeSparseGramIndex {
             }
 
             grams.sort_by(|a, b| {
-                let a_desc = self.grams.get(a);
-                let b_desc = self.grams.get(b);
+                let a_desc = self.grams.get(*a);
+                let b_desc = self.grams.get(*b);
                 let a_count = a_desc.map(|desc| desc.postings_count).unwrap_or(u32::MAX);
                 let b_count = b_desc.map(|desc| desc.postings_count).unwrap_or(u32::MAX);
                 a_count.cmp(&b_count).then_with(|| a.cmp(b))
@@ -251,7 +252,7 @@ impl NativeSparseGramIndex {
 
             let mut literal_candidates: Option<CandidateSet> = None;
             for gram in grams {
-                let Some(desc) = self.grams.get(&gram) else {
+                let Some(desc) = self.grams.get(gram) else {
                     // Gram not in index → zero candidates (eligible, but empty)
                     return Ok(QueryFileIdsResult {
                         eligible: true,
@@ -1428,102 +1429,125 @@ pub(crate) fn collect_normalized_spans(text: &str) -> Vec<Vec<u8>> {
 ///
 /// Algorithm: iterative stack-based version of the recursive split from
 /// GitHub Blackbird / Cursor's sparse n-gram approach.
-pub(crate) fn extract_covering_grams(span: &[u8], weights: &[f32]) -> Vec<String> {
+/// Thread-local scratch buffers for `extract_covering_grams` — avoids
+/// per-query heap allocations on the hot path.
+struct CoveringScratch {
+    pair_weights: Vec<f32>,
+    stack: Vec<(usize, usize)>,
+}
+
+thread_local! {
+    static COVERING_SCRATCH: RefCell<CoveringScratch> = RefCell::new(CoveringScratch {
+        pair_weights: Vec::new(),
+        stack: Vec::new(),
+    });
+}
+
+pub(crate) fn extract_covering_grams<'a>(span: &'a [u8], weights: &[f32]) -> Vec<&'a str> {
     if span.len() < MIN_SPAN_LEN {
         return Vec::new();
     }
 
-    let pair_weights = span
-        .windows(2)
-        .map(|pair| weights[pair_index(pair[0], pair[1])])
-        .collect::<Vec<_>>();
+    COVERING_SCRATCH.with(|cell| {
+        let mut scratch = cell.borrow_mut();
+        // Destructure to get independent borrows — allows reading pair_weights
+        // while mutating stack without conflicting borrows.
+        let CoveringScratch { pair_weights, stack } = &mut *scratch;
 
-    let mut grams = Vec::new();
-    let mut seen = HashSet::new();
+        // Reuse pair_weights buffer — clear + extend avoids reallocation.
+        pair_weights.clear();
+        pair_weights.extend(
+            span.windows(2)
+                .map(|pair| weights[pair_index(pair[0], pair[1])]),
+        );
 
-    // Stack of (start, end) byte ranges to process.
-    let mut stack: Vec<(usize, usize)> = vec![(0, span.len())];
+        let mut grams: Vec<&str> = Vec::new();
+        let mut seen: HashSet<&str> = HashSet::new();
 
-    while let Some((start, end)) = stack.pop() {
-        let len = end - start;
+        // Reuse stack buffer.
+        stack.clear();
+        stack.push((0, span.len()));
 
-        if len < MIN_SPAN_LEN {
-            continue;
-        }
+        while let Some((start, end)) = stack.pop() {
+            let len = end - start;
 
-        // Base case: trigram — always emit.
-        if len == MIN_SPAN_LEN {
-            let gram = match std::str::from_utf8(&span[start..end]) {
-                Ok(s) => s.to_string(),
-                Err(_) => continue,
-            };
-            if seen.insert(gram.clone()) {
-                grams.push(gram);
+            if len < MIN_SPAN_LEN {
+                continue;
             }
-            continue;
-        }
 
-        // If within max gram length, check if boundaries dominate interior.
-        if len <= MAX_GRAM_LEN {
-            let first = pair_weights[start];
-            let last = pair_weights[end - 2];
-            let interior_max = pair_weights[(start + 1)..(end - 2)]
-                .iter()
-                .copied()
-                .fold(f32::NEG_INFINITY, f32::max);
-
-            if first.min(last) > interior_max {
-                // Whole range is one valid gram — emit without splitting further.
+            // Base case: trigram — always emit.
+            if len == MIN_SPAN_LEN {
                 let gram = match std::str::from_utf8(&span[start..end]) {
-                Ok(s) => s.to_string(),
-                Err(_) => continue,
-            };
-                if seen.insert(gram.clone()) {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
+                if seen.insert(gram) {
                     grams.push(gram);
                 }
                 continue;
             }
-        }
 
-        // Find the interior bigram with maximum weight to split at.
-        let search_start = start + 1;
-        let search_end = end - 1;
-        let mut max_w = f32::NEG_INFINITY;
-        let mut max_pos = search_start;
-        for i in search_start..search_end {
-            if pair_weights[i] > max_w {
-                max_w = pair_weights[i];
-                max_pos = i;
+            // If within max gram length, check if boundaries dominate interior.
+            if len <= MAX_GRAM_LEN {
+                let first = pair_weights[start];
+                let last = pair_weights[end - 2];
+                let interior_max = pair_weights[(start + 1)..(end - 2)]
+                    .iter()
+                    .copied()
+                    .fold(f32::NEG_INFINITY, f32::max);
+
+                if first.min(last) > interior_max {
+                    // Whole range is one valid gram — emit without splitting further.
+                    let gram = match std::str::from_utf8(&span[start..end]) {
+                        Ok(s) => s,
+                        Err(_) => continue,
+                    };
+                    if seen.insert(gram) {
+                        grams.push(gram);
+                    }
+                    continue;
+                }
+            }
+
+            // Find the interior bigram with maximum weight to split at.
+            let search_start = start + 1;
+            let search_end = end - 1;
+            let mut max_w = f32::NEG_INFINITY;
+            let mut max_pos = search_start;
+            for i in search_start..search_end {
+                if pair_weights[i] > max_w {
+                    max_w = pair_weights[i];
+                    max_pos = i;
+                }
+            }
+
+            // Split: left = [start, max_pos+1), right = [max_pos, end).
+            // One byte overlap at max_pos ensures no coverage gap.
+            let left_end = max_pos + 1;
+            let right_start = max_pos;
+
+            // Push right first (LIFO) so left is processed first.
+            if end - right_start >= MIN_SPAN_LEN {
+                stack.push((right_start, end));
+            }
+            if left_end - start >= MIN_SPAN_LEN {
+                stack.push((start, left_end));
             }
         }
 
-        // Split: left = [start, max_pos+1), right = [max_pos, end).
-        // One byte overlap at max_pos ensures no coverage gap.
-        let left_end = max_pos + 1;
-        let right_start = max_pos;
-
-        // Push right first (LIFO) so left is processed first.
-        if end - right_start >= MIN_SPAN_LEN {
-            stack.push((right_start, end));
-        }
-        if left_end - start >= MIN_SPAN_LEN {
-            stack.push((start, left_end));
-        }
-    }
-
-    // Fallback: if no covering grams found, use sliding trigrams.
-    if grams.is_empty() {
-        for window in span.windows(MIN_SPAN_LEN) {
-            if let Ok(gram) = std::str::from_utf8(window) {
-                let gram = gram.to_string();
-                if seen.insert(gram.clone()) {
-                    grams.push(gram);
+        // Fallback: if no covering grams found, use sliding trigrams.
+        if grams.is_empty() {
+            for window in span.windows(MIN_SPAN_LEN) {
+                if let Ok(gram) = std::str::from_utf8(window) {
+                    if seen.insert(gram) {
+                        grams.push(gram);
+                    }
                 }
             }
         }
-    }
 
-    grams
+        grams
+    })
 }
 
 /// Extract ALL sparse grams from a span (index build time).
@@ -1679,10 +1703,10 @@ mod tests {
         for span in cases {
             let all = extract_sparse_grams(span, &weights);
             let covering = extract_covering_grams(span, &weights);
-            let all_set: HashSet<_> = all.iter().collect();
+            let all_set: HashSet<&str> = all.iter().map(|s| s.as_str()).collect();
             for gram in &covering {
                 assert!(
-                    all_set.contains(gram),
+                    all_set.contains(*gram),
                     "Covering gram {:?} from span {:?} not found in all grams {:?}",
                     gram,
                     String::from_utf8_lossy(span),

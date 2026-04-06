@@ -2,18 +2,18 @@
 
 Ordered by impact. Each step changes the cost model, so gate tuning comes last.
 
-## Status: After step 4 (2026-04-06)
+## Status: After step 5 (2026-04-06)
 
 353 realistic queries across 5 repos. Current results:
 
 | Repo         | Files | p50 Speedup vs rg |
 |--------------|-------|--------------------|
-| sweet-search | 570   | **~9.0x**          |
-| fastify      | 356   | **~11.2x**         |
-| flask        | 216   | **~8.5x**          |
-| ripgrep      | 215   | **~10.1x**         |
-| gin          | 118   | **1.17x**          |
-| **ALL**      | —     | **~10x** (236W / 79L / 38T) |
+| sweet-search | 570   | **~11.6x**         |
+| fastify      | 356   | **~8.7x**          |
+| flask        | 216   | **~12.0x**         |
+| ripgrep      | 215   | **~12.4x**         |
+| gin          | 118   | **1.23x**          |
+| **ALL**      | —     | **~6.4x** (249W / 71L / 33T) |
 
 Remaining losses: hard regex, method_call, error_string (broad matches where
 gram selectivity is low — native grep eliminates spawn overhead but can't beat
@@ -27,6 +27,17 @@ Combined gram+grep fast path (`combined_gram_grep`) handles the majority of
 narrowable queries (57/71 on sweet-search, 39/71 on fastify, 45/71 on flask).
 The remaining `narrowed_json` routes are queries too broad for gram-only that
 benefit from the literal prefilter fallback.
+
+### Previous baseline (2026-04-06, after step 4)
+
+| Repo         | Files | p50 Speedup vs rg |
+|--------------|-------|--------------------|
+| sweet-search | 570   | **~9.0x**          |
+| fastify      | 356   | **~11.2x**         |
+| flask        | 216   | **~8.5x**          |
+| ripgrep      | 215   | **~10.1x**         |
+| gin          | 118   | **1.17x**          |
+| **ALL**      | —     | **~10x** (236W / 79L / 38T) |
 
 ### Previous baseline (2026-04-06, after step 3)
 
@@ -122,20 +133,24 @@ Multi-clause OR union still uses HashSet for dedup. Per-match String clones for 
 output boundary remain (unavoidable — NAPI requires owned Strings). p50 holds at ~10x; 57-80%
 of queries take the single-call combined path.
 
-## 5. Reduce query-time allocations in `extract_covering_grams` (Rust)
+## 5. [DONE] Reduce query-time allocations in `extract_covering_grams` (Rust)
 
-**Problem:** `extract_covering_grams` at `sparse_gram.rs:968-1063` allocates per query:
-- `Vec<f32>` for `pair_weights`
-- `Vec<String>` for grams (each gram is a heap `String` via `.to_string()`)
-- `HashSet<String>` for `seen`
-- `Vec<(usize, usize)>` for `stack`
+Added thread-local `CoveringScratch` struct with reusable `Vec<f32>` (pair_weights) and
+`Vec<(usize, usize)>` (stack) buffers. Changed return type from `Vec<String>` to
+`Vec<&str>` — gram strings are now zero-copy `&str` slices into the input `&[u8]` span
+via `std::str::from_utf8`. Internal `HashSet<String>` replaced with `HashSet<&str>`.
+Destructured the scratch struct to get independent field borrows (pair_weights immutable,
+stack mutable) within the same `thread_local::with` closure.
 
-**Fix:** Use a thread-local or pre-allocated scratch buffer for pair_weights and stack.
-Use `&[u8]` slices into the input span instead of owned Strings for gram keys. The
-HashMap lookup can work with `&str` (no need to own the key for lookup).
+Updated all callers in `sparse_gram.rs` (query_file_ids_core) and `chunk_gram.rs`
+(query_literals, query_and_grep) to use `&str` HashMap lookups — `HashMap<String, V>::get()`
+accepts `&str` via `String: Borrow<str>`.
 
-**Expected impact:** Small per-query wins (~2-5us), but removes all heap allocation
-from the hot path when combined with #3 and #4.
+**Actual impact:** Eliminated all per-query heap allocations in `extract_covering_grams`:
+no `String` allocation, no `clone()`, no `to_string()`. Pair weights and stack buffers
+are reused across queries. At current benchmark sizes the per-query savings are
+sub-microsecond, but the hot path is now fully allocation-free when combined with #3 and
+#4. Benchmark holds at ~10x (249W / 71L / 33T).
 
 ## 6. Replace `HashMap<String, GramDescriptor>` with sorted binary search (Rust)
 

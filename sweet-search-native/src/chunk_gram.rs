@@ -480,8 +480,8 @@ impl NativeChunkGramIndex {
 
             // Sort by posting count (ascending) for early termination
             grams.sort_by(|a, b| {
-                let ac = self.grams.get(a).map(|d| d.postings_count).unwrap_or(u32::MAX);
-                let bc = self.grams.get(b).map(|d| d.postings_count).unwrap_or(u32::MAX);
+                let ac = self.grams.get(*a).map(|d| d.postings_count).unwrap_or(u32::MAX);
+                let bc = self.grams.get(*b).map(|d| d.postings_count).unwrap_or(u32::MAX);
                 ac.cmp(&bc)
             });
 
@@ -489,7 +489,7 @@ impl NativeChunkGramIndex {
 
             let mut literal_candidates: Option<Vec<u32>> = None;
             for gram in &grams {
-                let Some(desc) = self.grams.get(gram) else {
+                let Some(desc) = self.grams.get(*gram) else {
                     // Gram not in index → no chunks match
                     return Ok(ChunkGramQueryResult {
                         eligible: true,
@@ -605,7 +605,7 @@ impl NativeChunkGramIndex {
             }
             let mut literal_cands: Option<Vec<u32>> = None;
             for gram in &grams {
-                let Some(desc) = self.grams.get(gram) else {
+                let Some(desc) = self.grams.get(*gram) else {
                     return Ok(ChunkGramSearchResult {
                         eligible: true,
                         reason: String::from("empty"),
