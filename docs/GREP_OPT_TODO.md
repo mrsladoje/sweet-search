@@ -1,0 +1,222 @@
+# Grep Engine Optimization Roadmap
+
+Ordered by impact. Each step changes the cost model, so gate tuning comes last.
+
+## Status: Baseline (2026-04-05)
+
+353 realistic queries across 5 repos. Current results:
+
+| Repo         | Files | p50 Speedup vs rg |
+|--------------|-------|--------------------|
+| sweet-search | 569   | **2.73x**          |
+| fastify      | 356   | **1.74x**          |
+| flask        | 216   | **1.41x**          |
+| ripgrep      | 215   | **1.40x**          |
+| gin          | 118   | 0.98x (break-even) |
+| **ALL**      | —     | **1.30x** (220W / 125L) |
+
+Losses concentrated in: method_call, error_string, hard regex (broad matches
+where rg spawn overhead dominates), and gin (too small for index to pay off).
+
+---
+
+## 1. [DONE] Loosen bailout gates
+
+Raised thresholds so the index is trusted for broader queries:
+- `maxGramCandidateFiles`: 512 → 2048
+- `maxGramCandidateRatio`: 5% → 30%
+- `gramSaysBroad`: >10% → >40%
+- `literalNarrowMaxFiles`: 500 → 2048
+- `literalNarrowMaxRatio`: 15% → 40%
+- `narrowedThreshold`: 100 → 300
+- `directJsonThreshold`: 2048 → 4096
+
+## 2. Enable native grep for bareGrep
+
+**Problem:** `canUseNativeGrep` at `search-pattern.js:215` requires `lightweightParse`
+which `bareGrep` never sets. So the grep-replacement path always spawns `rg` even when
+native in-process grep is available — adding ~8-15ms fork/exec/pipe overhead per query.
+
+**Fix:** Either have `bareGrep` pass `lightweightParse: true`, or decouple native grep
+from the `lightweightParse` flag (native grep can produce full match info if needed).
+The key constraint is that `bareGrep` callers expect `file`, `line`, `column`, and
+`matchText` — so native grep may need to return those fields too (currently only
+returns `{file, line}`).
+
+**Expected impact:** Eliminate ~8-15ms per narrowed query. Should flip most method_call
+and error_string losses to wins.
+
+## 3. Zero-copy posting list reads (Rust)
+
+**Problem:** `load_posting_set` at `sparse_gram.rs:483-496` copies posting data from the
+mmap into a new `Vec<u64>` (dense) or `Vec<u32>` (sparse) on every query.
+
+**Fix:** Reinterpret the mmap slice as `&[u64]` directly (with alignment check) for
+dense postings. For sparse, use `decode_sparse_postings` that returns a borrowed slice
+or a zero-copy view. The SIMD `bitand_dense_in_place` already mutates in-place — it
+just needs the initial load to be zero-copy.
+
+**Expected impact:** Eliminate per-query heap allocations for posting data. Microseconds
+per gram, but adds up with 3-5 grams per query.
+
+## 4. Return integer IDs from Rust, resolve paths in JS
+
+**Problem:** `sparse_gram.rs:253-256` clones every candidate file path into a
+`Vec<String>` that crosses the NAPI boundary. For 50 candidates, that's 50 heap
+allocations + NAPI serialization.
+
+**Fix:** Return `Vec<u32>` file IDs from `query_literals`. Add a separate NAPI method
+to resolve IDs to paths (or cache the file table in JS on index load). Better yet:
+pass integer IDs directly to native grep so the entire candidate-narrowing + verification
+stays in Rust with zero string materialization.
+
+**Expected impact:** Cuts NAPI crossing cost from ~20-30us to ~5us. Bigger win when
+combined with native grep staying fully in-process.
+
+## 5. Reduce query-time allocations in `extract_covering_grams` (Rust)
+
+**Problem:** `extract_covering_grams` at `sparse_gram.rs:968-1063` allocates per query:
+- `Vec<f32>` for `pair_weights`
+- `Vec<String>` for grams (each gram is a heap `String` via `.to_string()`)
+- `HashSet<String>` for `seen`
+- `Vec<(usize, usize)>` for `stack`
+
+**Fix:** Use a thread-local or pre-allocated scratch buffer for pair_weights and stack.
+Use `&[u8]` slices into the input span instead of owned Strings for gram keys. The
+HashMap lookup can work with `&str` (no need to own the key for lookup).
+
+**Expected impact:** Small per-query wins (~2-5us), but removes all heap allocation
+from the hot path when combined with #3 and #4.
+
+## 6. Replace `HashMap<String, GramDescriptor>` with sorted binary search (Rust)
+
+**Problem:** `grams: HashMap<String, GramDescriptor>` at `sparse_gram.rs:97` hashes
+gram keys and probes a HashMap. Keys are heap-allocated Strings copied at index load.
+
+**Fix:** Sort grams at index build time. At query time, binary search on the mmap'd
+sorted gram table — zero allocation, zero copy. Alternatively, use a minimal perfect
+hash if the gram table is static.
+
+**Expected impact:** Faster gram lookup (~0.5us → ~0.1us per gram), eliminates all
+heap allocation at index load time.
+
+## 7. SIMD for sparse×sparse posting intersection (Rust)
+
+**Problem:** `intersect_sorted` at `sparse_gram.rs:1124-1142` is a plain scalar
+merge-intersect. The SIMD code (`bitand_dense_in_place` with AVX2/NEON) only covers
+dense×dense. But sparse n-grams produce mostly sparse postings by design — so the
+hot path for our "superior" algorithm hits the un-SIMDified scalar code.
+
+**Fix:** Use SIMD for the sparse merge too. Options:
+- Galloping search with SIMD comparison (`_mm256_cmpeq_epi32`)
+- Convert sparse to dense when posting density > threshold, then use existing SIMD AND
+- Use VPCONFLICT / VPERMI2D for set intersection on AVX-512 (M3 is NEON only)
+
+**Expected impact:** 2-4x faster posting intersection for sparse×sparse pairs.
+Small absolute time (~1-3us), but matters when combined with zero-copy (#3).
+
+## 8. Aho-Corasick literal-first fast path
+
+**Problem:** Many agent queries contain one strong literal (`AbortWithStatusJSON`,
+`gramLookupTime`). Currently we always run full regex verification on candidate
+files. For pure literal queries or regex with a dominant literal, Aho-Corasick
+multi-pattern matching is faster than regex compilation + matching.
+
+**Fix:** When literal extraction produces a single clause with high confidence,
+use Aho-Corasick for verification instead of regex. Fall back to regex only when
+the pattern has real regex semantics beyond the literal anchor.
+
+**Expected impact:** Faster verification for the ~60% of queries that are
+effectively literal searches. Saves regex compilation overhead.
+
+## 9. Per-stage timing instrumentation
+
+**Problem:** We can't tell where time is spent within a query. The benchmark shows
+total latency but not the breakdown: literal extraction, gram lookup, posting
+intersection, result materialization, NAPI crossing, verification, sorting.
+
+**Fix:** Add `performance.now()` checkpoints (or Rust `Instant`) at each stage
+boundary in `generateRegexMatches` and the Rust `query_literals`. Expose as
+optional stats (e.g., `options.detailedTiming = true`) to avoid overhead in
+production.
+
+**Expected impact:** No performance gain directly, but required to identify which
+optimization yields the most. Without this, we're optimizing blind.
+
+## 10. Small-repo bypass
+
+**Problem:** On repos with <150 files (like gin at 118), the index overhead
+(gram lookup + candidate materialization + narrowed rg spawn) exceeds the cost
+of a single raw `rg` scan. The index can never win here.
+
+**Fix:** At query time, if the gram index reports `totalFiles < N`, skip the
+index entirely and go straight to raw rg (or native grep on all files). The
+threshold N should be tuned empirically (~150-200 files based on current data).
+
+**Expected impact:** Eliminates the 0.5-0.7x penalty on tiny repos. Turns gin-type
+losses into ties (can't beat rg, but stop being slower).
+
+## 11. End-to-end Rust query pipeline (single NAPI call)
+
+**Problem:** Even with native grep enabled (#2) and integer IDs (#4), the query
+still crosses the NAPI boundary multiple times: JS calls Rust for gram lookup,
+gets file IDs back, then calls Rust again for native grep. Each crossing costs
+~5-15us in serialization overhead, and the JS planner logic between them adds
+latency.
+
+CodeDB and fff both avoid this entirely — the index lookup IS the search. One
+call in, matches out.
+
+**Fix:** Add a unified `query_and_verify(regex, options) -> Vec<Match>` NAPI
+function that does everything in Rust in one call:
+1. Extract literals from regex
+2. Extract covering grams from literals
+3. Intersect posting lists → candidate file IDs
+4. Read candidate files (mmap, grouped by ID)
+5. Run regex verification on each file
+6. Return file/line/column/matchText results
+
+The JS side becomes: call Rust once, format results. No planner, no strategy
+selection, no NAPI round-trips.
+
+**Expected impact:** Eliminates all JS-side overhead for narrowed queries. Combined
+with #3, #4, #5, #6, this is the path to sub-millisecond index queries on warm
+caches. This is the architectural shift that makes us competitive with CodeDB/fff
+headline numbers.
+
+## 12. Keep index resident / stateful
+
+**Problem:** The gram index is loaded on first query via `ensureSparseGramIndex` and
+cached on the searcher instance. But the file table, newline tables, and content
+caches are not shared across the index and native grep paths.
+
+**Fix:** Pre-load the index at SweetSearch init time. Share the mmap'd file table
+and newline offset tables between the gram index and native grep. Keep hot file
+content in a bounded LRU cache.
+
+**Expected impact:** Eliminates cold-start cost on first query. Speeds up native
+grep by reusing mmap'd data.
+
+## 13. Tune bailout gate thresholds
+
+**Do this last** — every optimization above changes the cost model.
+
+**Method:** Sweep each threshold across a range and measure win/loss ratio on the
+353-query benchmark. The optimal thresholds depend on:
+- Native grep latency (after #2)
+- Posting intersection cost (after #3, #5, #6)
+- Result materialization cost (after #4)
+
+Parameters to tune:
+- `maxGramCandidateFiles` (currently 2048)
+- `maxGramCandidateRatio` (currently 0.30)
+- `gramSaysBroad` selectivity cutoff (currently 0.40)
+- `literalNarrowMaxFiles` (currently 2048)
+- `literalNarrowMaxRatio` (currently 0.40)
+- `narrowedThreshold` (currently 300)
+- `directJsonThreshold` (currently 4096)
+- Small-repo bypass: skip index entirely when corpus < N files
+
+**Benchmark infrastructure:** `eval/scripts/grep-latency-bench.js` with 353 queries
+across 5 repos (sweet-search, ripgrep, gin, flask, fastify), query files in
+`eval/data/grep-bench/`.
