@@ -2,9 +2,28 @@
 
 Ordered by impact. Each step changes the cost model, so gate tuning comes last.
 
-## Status: After step 2 (2026-04-06)
+## Status: After step 3 (2026-04-06)
 
 353 realistic queries across 5 repos. Current results:
+
+| Repo         | Files | p50 Speedup vs rg |
+|--------------|-------|--------------------|
+| sweet-search | 570   | **~8.9x**          |
+| fastify      | 356   | **~11.3x**         |
+| flask        | 216   | **~8.6x**          |
+| ripgrep      | 215   | **~9.3x**          |
+| gin          | 118   | **1.15x**          |
+| **ALL**      | —     | **~10x** (247W / 75L) |
+
+Remaining losses: hard regex, method_call, error_string (broad matches where
+gram selectivity is low — native grep eliminates spawn overhead but can't beat
+rg on broad scans), mixed_regex on gin (too small for index to pay off).
+
+Field-level parity with rg validated: 0 column, 0 matchText, 0 content
+mismatches across 353 queries. Match count differences are pre-existing
+(.gitignore behavior — gram index includes files rg would skip).
+
+### Previous baseline (2026-04-06, after step 2)
 
 | Repo         | Files | p50 Speedup vs rg |
 |--------------|-------|--------------------|
@@ -14,14 +33,6 @@ Ordered by impact. Each step changes the cost model, so gate tuning comes last.
 | ripgrep      | 215   | **~9.5x**          |
 | gin          | 118   | **1.2x**           |
 | **ALL**      | —     | **~10x** (239-249W / 76-77L) |
-
-Remaining losses: hard regex, method_call, error_string (broad matches where
-gram selectivity is low — native grep eliminates spawn overhead but can't beat
-rg on broad scans), mixed_regex on gin (too small for index to pay off).
-
-Field-level parity with rg validated: 0 column, 0 matchText, 0 content
-mismatches across 353 queries. Match count differences are pre-existing
-(.gitignore behavior — gram index includes files rg would skip).
 
 ### Previous baseline (2026-04-05, before step 2)
 
@@ -59,18 +70,20 @@ for both Strategy B (narrowed_json) and Strategy C (two_pass). The lean
 rg fork/exec/pipe + JSON serialization/parsing overhead for all narrowed bareGrep
 queries. Field parity with rg validated (0 column/matchText/content mismatches).
 
-## 3. Zero-copy posting list reads (Rust)
+## 3. [DONE] Zero-copy posting list reads (Rust)
 
-**Problem:** `load_posting_set` at `sparse_gram.rs:483-496` copies posting data from the
-mmap into a new `Vec<u64>` (dense) or `Vec<u32>` (sparse) on every query.
+Added `bitand_dense_from_le_bytes` and `filter_sparse_with_dense_bytes` functions that
+read dense posting bitmaps directly from the mmap byte slice, avoiding `Vec<u64>`
+allocation for the right-hand side of intersections. Modified the inner gram loop in
+`query_literals` to use these fast paths when the accumulator intersects with a dense
+gram. Sparse postings (varint+delta encoded) still require decoding — zero-copy is
+not possible for those.
 
-**Fix:** Reinterpret the mmap slice as `&[u64]` directly (with alignment check) for
-dense postings. For sparse, use `decode_sparse_postings` that returns a borrowed slice
-or a zero-copy view. The SIMD `bitand_dense_in_place` already mutates in-place — it
-just needs the initial load to be zero-copy.
-
-**Expected impact:** Eliminate per-query heap allocations for posting data. Microseconds
-per gram, but adds up with 3-5 grams per query.
+**Actual impact:** Eliminated per-query heap allocations for dense×dense and sparse×dense
+posting intersections (all grams after the first). At current benchmark repo sizes
+(2-9 u64 words per dense bitmap), the allocation savings are sub-microsecond — absorbed
+by measurement granularity. Speedup holds at ~10x (247W/75L). The win is structural:
+the hot path is now allocation-free, compounding with steps 4-6.
 
 ## 4. Return integer IDs from Rust, resolve paths in JS
 
