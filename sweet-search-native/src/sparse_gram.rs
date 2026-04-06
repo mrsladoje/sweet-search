@@ -211,10 +211,28 @@ impl NativeSparseGramIndex {
                     sparse_grams_touched += 1;
                 }
 
-                let posting = self.load_posting_set(desc)?;
                 literal_candidates = Some(match literal_candidates {
-                    Some(existing) => intersect_candidate_sets(existing, posting),
-                    None => posting,
+                    // Dense acc + Dense gram: AND from mmap bytes directly (zero-copy)
+                    Some(CandidateSet::Dense(mut acc))
+                        if desc.flags & FLAG_DENSE_POSTINGS != 0 =>
+                    {
+                        let data = self.slice(desc.data_offset, desc.data_len as usize)?;
+                        bitand_dense_from_le_bytes(&mut acc, data);
+                        CandidateSet::Dense(acc)
+                    }
+                    // Sparse acc + Dense gram: filter from mmap bytes (zero-copy)
+                    Some(CandidateSet::Sparse(ids))
+                        if desc.flags & FLAG_DENSE_POSTINGS != 0 =>
+                    {
+                        let data = self.slice(desc.data_offset, desc.data_len as usize)?;
+                        CandidateSet::Sparse(filter_sparse_with_dense_bytes(&ids, data))
+                    }
+                    // All other cases: load + intersect (unchanged)
+                    Some(existing) => {
+                        let posting = self.load_posting_set(desc)?;
+                        intersect_candidate_sets(existing, posting)
+                    }
+                    None => self.load_posting_set(desc)?,
                 });
 
                 if literal_candidates
@@ -849,6 +867,23 @@ fn filter_sparse_with_dense(ids: &[u32], dense_words: &[u64]) -> Vec<u32> {
         .collect()
 }
 
+/// Like `filter_sparse_with_dense`, but reads the dense bitmap directly from
+/// little-endian bytes in the mmap rather than a decoded `Vec<u64>`.
+fn filter_sparse_with_dense_bytes(ids: &[u32], dense_bytes: &[u8]) -> Vec<u32> {
+    ids.iter()
+        .copied()
+        .filter(|file_id| {
+            let byte_offset = (*file_id as usize / 64) * 8;
+            let bit = *file_id as usize % 64;
+            dense_bytes
+                .get(byte_offset..byte_offset + 8)
+                .is_some_and(|chunk| {
+                    (u64::from_le_bytes(chunk.try_into().unwrap()) >> bit) & 1 == 1
+                })
+        })
+        .collect()
+}
+
 fn bitand_dense_in_place(left: &mut [u64], right: &[u64]) {
     let min_len = left.len().min(right.len());
     let left = &mut left[..min_len];
@@ -913,6 +948,22 @@ unsafe fn bitand_dense_in_place_neon(left: &mut [u64], right: &[u64]) {
 
     for index in (chunks * 2)..left.len() {
         left[index] &= right[index];
+    }
+}
+
+/// Bitwise AND dense posting bytes (little-endian packed u64s from the mmap)
+/// directly into an accumulator, avoiding a `Vec<u64>` allocation for the
+/// right-hand side.
+fn bitand_dense_from_le_bytes(acc: &mut [u64], bytes: &[u8]) {
+    for (i, chunk) in bytes.chunks_exact(8).enumerate() {
+        if i >= acc.len() {
+            break;
+        }
+        acc[i] &= u64::from_le_bytes(chunk.try_into().unwrap());
+    }
+    let right_words = bytes.len() / 8;
+    for word in acc.get_mut(right_words..).into_iter().flatten() {
+        *word = 0;
     }
 }
 
@@ -1303,5 +1354,72 @@ mod tests {
         assert!(extract_covering_grams(b"ab", &weights).is_empty());
         assert!(extract_covering_grams(b"a", &weights).is_empty());
         assert!(extract_covering_grams(b"", &weights).is_empty());
+    }
+
+    #[test]
+    fn bitand_dense_from_le_bytes_basic() {
+        let mut acc = vec![0xFF_FF_FF_FF_FF_FF_FF_FFu64, 0x00_00_00_00_00_00_00_FFu64];
+        let right_0: u64 = 0x00_00_00_00_00_00_FF_00;
+        let right_1: u64 = 0xFF_FF_FF_FF_FF_FF_FF_FF;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&right_0.to_le_bytes());
+        bytes.extend_from_slice(&right_1.to_le_bytes());
+
+        bitand_dense_from_le_bytes(&mut acc, &bytes);
+
+        assert_eq!(acc[0], 0x00_00_00_00_00_00_FF_00);
+        assert_eq!(acc[1], 0x00_00_00_00_00_00_00_FF);
+    }
+
+    #[test]
+    fn bitand_dense_from_le_bytes_shorter_right() {
+        let mut acc = vec![0xFFu64; 4];
+        let right: u64 = 0xAB;
+        let bytes = right.to_le_bytes().to_vec();
+
+        bitand_dense_from_le_bytes(&mut acc, &bytes);
+
+        assert_eq!(acc[0], 0xAB);
+        assert_eq!(acc[1], 0);
+        assert_eq!(acc[2], 0);
+        assert_eq!(acc[3], 0);
+    }
+
+    #[test]
+    fn filter_sparse_with_dense_bytes_basic() {
+        let word: u64 = 0b101; // bits 0 and 2 set
+        let bytes = word.to_le_bytes().to_vec();
+
+        let ids = vec![0, 1, 2, 3];
+        let filtered = filter_sparse_with_dense_bytes(&ids, &bytes);
+        assert_eq!(filtered, vec![0, 2]);
+    }
+
+    #[test]
+    fn bitand_dense_from_le_bytes_matches_materialized() {
+        let left: Vec<u64> = vec![
+            0xDEAD_BEEF_CAFE_BABE,
+            0x1234_5678_9ABC_DEF0,
+            0xFFFF_0000_FFFF_0000,
+        ];
+        let right: Vec<u64> = vec![
+            0xFFFF_FFFF_0000_0000,
+            0x0000_FFFF_0000_FFFF,
+            0x0F0F_0F0F_0F0F_0F0F,
+        ];
+
+        // Materialized path (existing)
+        let mut via_alloc = left.clone();
+        bitand_dense_in_place(&mut via_alloc, &right);
+
+        // Zero-copy path (new)
+        let mut bytes = Vec::new();
+        for w in &right {
+            bytes.extend_from_slice(&w.to_le_bytes());
+        }
+        let mut via_bytes = left.clone();
+        bitand_dense_from_le_bytes(&mut via_bytes, &bytes);
+
+        assert_eq!(via_alloc, via_bytes, "Zero-copy path must match materialized path");
     }
 }
