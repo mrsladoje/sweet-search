@@ -772,6 +772,223 @@ impl NativeSparseGramIndex {
         })
     }
 
+    /// Unified search: gram narrowing → grep candidates, or fallback → grep all files.
+    /// Single NAPI crossing for the entire query. Eliminates the JS planner and
+    /// the separate getSparseGramAllFiles + nativeGrepLines round-trip.
+    #[napi]
+    pub fn search_lines(
+        &self,
+        clauses: Vec<Vec<String>>,
+        regex: String,
+        project_root: String,
+        max_candidates: Option<u32>,
+        symbol_mask: Option<u32>,
+        case_insensitive: Option<bool>,
+        code_extensions: Vec<String>,
+        max_candidate_files: Option<u32>,
+        max_candidate_ratio: Option<f64>,
+    ) -> Result<GramGrepLinesResult> {
+        let gram_start = std::time::Instant::now();
+
+        // Try gram narrowing when clauses are available.
+        let (file_ids, resolved_stats) = if !clauses.is_empty() {
+            let ext_set: HashSet<&str> = code_extensions.iter().map(|s| s.as_str()).collect();
+            let resolved = self.resolve_clauses(
+                &clauses, max_candidates, symbol_mask, &ext_set,
+                max_candidate_files.unwrap_or(2048) as usize,
+                max_candidate_ratio.unwrap_or(0.30),
+            )?;
+            let stats = ResolvedClauses {
+                eligible: resolved.eligible,
+                file_ids: Vec::new(), // Stats only — file_ids moved below.
+                total_files: resolved.total_files,
+                candidate_files: resolved.candidate_files,
+                grams_used: resolved.grams_used,
+                dense_grams_touched: resolved.dense_grams_touched,
+                sparse_grams_touched: resolved.sparse_grams_touched,
+            };
+            if resolved.eligible {
+                (resolved.file_ids, Some(stats))
+            } else {
+                (Vec::new(), Some(stats))
+            }
+        } else {
+            (Vec::new(), None)
+        };
+
+        let use_all = file_ids.is_empty();
+        let grep_ids: Vec<u32> = if use_all {
+            (0..self.files.len() as u32).collect()
+        } else {
+            file_ids
+        };
+        let gram_elapsed_us = gram_start.elapsed().as_micros() as u32;
+
+        let regex_start = std::time::Instant::now();
+        let re = build_regex(&regex, case_insensitive.unwrap_or(false))?;
+        let regex_build_elapsed_us = regex_start.elapsed().as_micros() as u32;
+
+        let grep_start = std::time::Instant::now();
+        let root = PathBuf::from(&project_root);
+        let scanned = grep_ids.len() as u32;
+
+        let matches: Vec<NativeGrepMatch> = grep_ids
+            .par_iter()
+            .flat_map(|id| {
+                let entry = match self.files.get(*id as usize) {
+                    Some(e) => e,
+                    None => return Vec::new(),
+                };
+                let path = root.join(&entry.path);
+                let content = match read_file_content(&path) {
+                    Some(c) => c,
+                    None => return Vec::new(),
+                };
+                let bytes = content.as_bytes();
+                if !re.is_match(bytes) {
+                    return Vec::new();
+                }
+                let mut results = Vec::new();
+                for_each_line(bytes, |line_idx, line| {
+                    if re.is_match(line) {
+                        results.push(NativeGrepMatch {
+                            file: entry.path.clone(),
+                            line: (line_idx + 1) as u32,
+                        });
+                    }
+                });
+                results
+            })
+            .collect();
+
+        let rs = &resolved_stats;
+        Ok(GramGrepLinesResult {
+            eligible: true, // Always eligible — we always produce results.
+            total_files: self.header.total_files,
+            candidate_files: if use_all { self.header.total_files } else { rs.as_ref().map(|r| r.candidate_files).unwrap_or(0) },
+            grams_used: rs.as_ref().map(|r| r.grams_used).unwrap_or(0),
+            dense_grams_touched: rs.as_ref().map(|r| r.dense_grams_touched).unwrap_or(0),
+            sparse_grams_touched: rs.as_ref().map(|r| r.sparse_grams_touched).unwrap_or(0),
+            matches,
+            scanned_files: scanned,
+            gram_elapsed_us,
+            regex_build_elapsed_us,
+            grep_elapsed_us: grep_start.elapsed().as_micros() as u32,
+        })
+    }
+
+    /// Unified search (full output): same as search_lines but returns
+    /// file + line + column + matchText + content for bareGrep callers.
+    #[napi]
+    pub fn search_full(
+        &self,
+        clauses: Vec<Vec<String>>,
+        regex: String,
+        project_root: String,
+        max_candidates: Option<u32>,
+        symbol_mask: Option<u32>,
+        case_insensitive: Option<bool>,
+        code_extensions: Vec<String>,
+        max_candidate_files: Option<u32>,
+        max_candidate_ratio: Option<f64>,
+    ) -> Result<GramGrepFullResult> {
+        let gram_start = std::time::Instant::now();
+
+        let (file_ids, resolved_stats) = if !clauses.is_empty() {
+            let ext_set: HashSet<&str> = code_extensions.iter().map(|s| s.as_str()).collect();
+            let resolved = self.resolve_clauses(
+                &clauses, max_candidates, symbol_mask, &ext_set,
+                max_candidate_files.unwrap_or(2048) as usize,
+                max_candidate_ratio.unwrap_or(0.30),
+            )?;
+            let stats = ResolvedClauses {
+                eligible: resolved.eligible,
+                file_ids: Vec::new(),
+                total_files: resolved.total_files,
+                candidate_files: resolved.candidate_files,
+                grams_used: resolved.grams_used,
+                dense_grams_touched: resolved.dense_grams_touched,
+                sparse_grams_touched: resolved.sparse_grams_touched,
+            };
+            if resolved.eligible {
+                (resolved.file_ids, Some(stats))
+            } else {
+                (Vec::new(), Some(stats))
+            }
+        } else {
+            (Vec::new(), None)
+        };
+
+        let use_all = file_ids.is_empty();
+        let grep_ids: Vec<u32> = if use_all {
+            (0..self.files.len() as u32).collect()
+        } else {
+            file_ids
+        };
+        let gram_elapsed_us = gram_start.elapsed().as_micros() as u32;
+
+        let regex_start = std::time::Instant::now();
+        let re = build_regex(&regex, case_insensitive.unwrap_or(false))?;
+        let regex_build_elapsed_us = regex_start.elapsed().as_micros() as u32;
+
+        let grep_start = std::time::Instant::now();
+        let root = PathBuf::from(&project_root);
+        let scanned = grep_ids.len() as u32;
+
+        let matches: Vec<NativeGrepFullMatch> = grep_ids
+            .par_iter()
+            .flat_map(|id| {
+                let entry = match self.files.get(*id as usize) {
+                    Some(e) => e,
+                    None => return Vec::new(),
+                };
+                let path = root.join(&entry.path);
+                let content = match read_file_content(&path) {
+                    Some(c) => c,
+                    None => return Vec::new(),
+                };
+                let bytes = content.as_bytes();
+                if !re.is_match(bytes) {
+                    return Vec::new();
+                }
+                let mut results = Vec::new();
+                for_each_line(bytes, |line_idx, line| {
+                    if let Some(m) = re.find(line) {
+                        let match_bytes = &line[m.start()..m.end()];
+                        let match_text = String::from_utf8_lossy(match_bytes).into_owned();
+                        let trimmed = match line.iter().rposition(|&b| b != b' ' && b != b'\t' && b != b'\r') {
+                            Some(pos) => &line[..=pos],
+                            None => line,
+                        };
+                        results.push(NativeGrepFullMatch {
+                            file: entry.path.clone(),
+                            line: (line_idx + 1) as u32,
+                            column: (m.start() + 1) as u32,
+                            match_text,
+                            content: String::from_utf8_lossy(trimmed).into_owned(),
+                        });
+                    }
+                });
+                results
+            })
+            .collect();
+
+        let rs = &resolved_stats;
+        Ok(GramGrepFullResult {
+            eligible: true,
+            total_files: self.header.total_files,
+            candidate_files: if use_all { self.header.total_files } else { rs.as_ref().map(|r| r.candidate_files).unwrap_or(0) },
+            grams_used: rs.as_ref().map(|r| r.grams_used).unwrap_or(0),
+            dense_grams_touched: rs.as_ref().map(|r| r.dense_grams_touched).unwrap_or(0),
+            sparse_grams_touched: rs.as_ref().map(|r| r.sparse_grams_touched).unwrap_or(0),
+            matches,
+            scanned_files: scanned,
+            gram_elapsed_us,
+            regex_build_elapsed_us,
+            grep_elapsed_us: grep_start.elapsed().as_micros() as u32,
+        })
+    }
+
     /// Return all indexed file paths. Used by native grep to get the full
     /// file list without needing a directory walk.
     #[napi]

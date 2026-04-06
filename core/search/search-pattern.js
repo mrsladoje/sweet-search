@@ -15,7 +15,7 @@
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 
 // Sub-module imports (no circular dependency — sub-modules do not import from this file)
-import { extractLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates, ensureChunkGramIndex, ensureSparseGramIndex, chunkGramSearch, hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches, nativeGrepFilesWithMatchesFixed, nativeGrepLines, nativeGrepFull, getSparseGramAllFiles, queryAndGrepLines, queryAndGrepFull, resolveSparseSymbolMask } from './search-pattern-prefilter.js';
+import { extractLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates, ensureChunkGramIndex, ensureSparseGramIndex, chunkGramSearch, hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches, nativeGrepFilesWithMatchesFixed, nativeGrepLines, nativeGrepFull, getSparseGramAllFiles, queryAndGrepLines, queryAndGrepFull, searchLines, searchFull, resolveSparseSymbolMask } from './search-pattern-prefilter.js';
 import { CODE_FILE_EXTENSIONS } from '../infrastructure/constants.js';
 
 // Cached once at module load — passed to Rust for code extension filtering.
@@ -40,19 +40,19 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   const symbolTypeFilter = resolveSearchSymbolFilter(options);
   const lightweightParse = options.lightweightParse ?? false;
 
-  // --- Fast path: all-in-one gram query + native grep (single NAPI call) ---
-  // Eligible when: has literal clauses, not fixed-string, no globs, gram index enabled,
-  // native addon available. Combines gram lookup + code extension filter + threshold
-  // check + grep in Rust. Zero string copies for the candidate file list across NAPI.
+  // --- Unified search: single NAPI call handles gram narrowing + all-files fallback ---
+  // Eligible when: not fixed-string, no globs, gram index loaded.
+  // Rust internally: tries gram narrowing → if eligible, greps candidates; if not, greps all files.
+  // Eliminates the JS planner, separate getSparseGramAllFiles call, and multiple NAPI crossings.
   const useGramIndex = options.useGramIndex ?? options.gramIndex ?? true;
-  const canUseCombinedPath = useGramIndex && literalPlan.clauses.length > 0 && !fixedString && globs.length === 0;
-  if (canUseCombinedPath) {
+  const canUseUnifiedSearch = !fixedString && globs.length === 0;
+  if (canUseUnifiedSearch) {
     const sparseGramIndex = ensureSparseGramIndex(searcher, options);
     if (sparseGramIndex) {
       const symbolMask = resolveSparseSymbolMask(symbolTypeFilter);
       const gramStart = performance.now();
-      const combinedResult = lightweightParse
-        ? queryAndGrepLines(sparseGramIndex, literalPlan.clauses, regex, searchDir, {
+      const unifiedResult = lightweightParse
+        ? searchLines(sparseGramIndex, literalPlan.clauses, regex, searchDir, {
             maxGramCandidates: options.maxGramCandidates ?? 0,
             symbolMask: symbolMask || 0,
             caseInsensitive,
@@ -60,7 +60,7 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
             maxCandidateFiles: options.maxGramCandidateFiles ?? 2048,
             maxCandidateRatio: options.maxGramCandidateRatio ?? 0.30,
           })
-        : queryAndGrepFull(sparseGramIndex, literalPlan.clauses, regex, searchDir, {
+        : searchFull(sparseGramIndex, literalPlan.clauses, regex, searchDir, {
             maxGramCandidates: options.maxGramCandidates ?? 0,
             symbolMask: symbolMask || 0,
             caseInsensitive,
@@ -69,19 +69,20 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
             maxCandidateRatio: options.maxGramCandidateRatio ?? 0.30,
           });
 
-      if (combinedResult?.eligible) {
+      if (unifiedResult) {
         const gramLookupTime = performance.now() - gramStart;
         const materializeStart = performance.now();
-        const indexedMatches = combinedResult.matches;
+        const indexedMatches = unifiedResult.matches;
         const matchingFiles = [...new Set(indexedMatches.map((m) => m.file))];
         const materializeTime = performance.now() - materializeStart;
-        const candidateFiles = combinedResult.candidateFiles;
-        const totalFiles = combinedResult.totalFiles;
-        // Rust-side per-stage timing (microseconds → milliseconds, fractional)
-        const rustGramMs = (combinedResult.gramElapsedUs || 0) / 1000;
-        const rustRegexBuildMs = (combinedResult.regexBuildElapsedUs || 0) / 1000;
-        const rustGrepMs = (combinedResult.grepElapsedUs || 0) / 1000;
+        const candidateFiles = unifiedResult.candidateFiles;
+        const totalFiles = unifiedResult.totalFiles;
+        const gramNarrowed = candidateFiles < totalFiles;
+        const rustGramMs = (unifiedResult.gramElapsedUs || 0) / 1000;
+        const rustRegexBuildMs = (unifiedResult.regexBuildElapsedUs || 0) / 1000;
+        const rustGrepMs = (unifiedResult.grepElapsedUs || 0) / 1000;
         const napiOverheadMs = gramLookupTime - rustGramMs - rustRegexBuildMs - rustGrepMs;
+        const strategy = gramNarrowed ? 'unified_gram_grep' : 'unified_grep_all';
         return {
           indexedMatches,
           overlayMatches: [],
@@ -94,27 +95,27 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
             literalFilterTime_ms: 0,
             gramLookupTime_ms: Math.round(gramLookupTime),
             filesConsidered: totalFiles,
-            filesScanned: combinedResult.scannedFiles,
+            filesScanned: unifiedResult.scannedFiles,
             filesSkipped: 0,
             dirtyOverlayFiles: 0,
             candidateFilesBeforeFilter: candidateFiles,
             candidateFilesAfterFilter: candidateFiles,
             candidateReductionRatio: 0,
-            literalExtractionHit: true,
+            literalExtractionHit: literalPlan.clauses.length > 0,
             literalExtractionSource: literalPlan.source,
-            gramLookupReason: 'ok',
+            gramLookupReason: gramNarrowed ? 'ok' : 'all_files',
             chunkGramUsed: false,
             chunkGramCandidateChunks: 0,
             chunkGramTotalChunks: 0,
             prefilterDiscarded: false,
             prefilterDiscardedCount: 0,
-            denseGramsTouched: combinedResult.denseGramsTouched || 0,
-            sparseGramsTouched: combinedResult.sparseGramsTouched || 0,
-            gramFalsePositiveRatio: candidateFiles > 0
+            denseGramsTouched: unifiedResult.denseGramsTouched || 0,
+            sparseGramsTouched: unifiedResult.sparseGramsTouched || 0,
+            gramFalsePositiveRatio: gramNarrowed && candidateFiles > 0
               ? 1 - (matchingFiles.length / candidateFiles)
               : 0,
-            grepStrategy: 'combined_gram_grep',
-            plannerRoute: `combined_gram_grep:${candidateFiles}_candidates`,
+            grepStrategy: strategy,
+            plannerRoute: `${strategy}:${unifiedResult.scannedFiles}_files`,
             gramSelectivity: totalFiles > 0 ? candidateFiles / totalFiles : null,
             plannerInputs: {
               narrowedFileCount: candidateFiles,
@@ -127,7 +128,6 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
             symbolTypeFilter,
             trackerLastIndex: null,
             grepMatches: indexedMatches.length,
-            // Per-stage timing (step 9 instrumentation)
             stageTiming: {
               literalExtractionTime_ms: +literalExtractionTime.toFixed(3),
               gramQueryTime_ms: +rustGramMs.toFixed(3),
@@ -139,9 +139,7 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
           },
         };
       }
-      // Combined method returned not-eligible — fall through to existing path.
-      // Populate gramLookupResult from the combined stats so the fallback logic
-      // (chunk gram, literal prefilter, strategy selection) works correctly.
+      // Unified search returned null (addon unavailable) — fall through.
     }
   }
 
