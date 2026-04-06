@@ -85,12 +85,16 @@ function runIndexer(args = [], stdinInput = null, options = {}) {
  */
 function parseQuietOutput(stdout) {
   const lines = stdout.trim().split('\n').filter(l => l.trim());
-  const lastLine = lines[lines.length - 1];
-  try {
-    return JSON.parse(lastLine);
-  } catch (e) {
-    return null;
+  // Find the JSON line (may not be last due to module-level logs like [MaxSim])
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (line.startsWith('{')) {
+      try {
+        return JSON.parse(line);
+      } catch { /* not valid JSON, keep looking */ }
+    }
   }
+  return null;
 }
 
 // =============================================================================

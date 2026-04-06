@@ -45,7 +45,7 @@ function cosine(a, b) {
 describe('Direct ORT Session', () => {
   afterAll(async () => await unloadLocalModel());
 
-  it('ORT session is accessible with run(), inputNames, outputNames', async () => {
+  it('ORT session is accessible with run(), inputNames, outputNames', { timeout: 60000 }, async () => {
     const { session } = await getLocalPipeline();
     expect(session).toBeDefined();
     expect(typeof session.run).toBe('function');

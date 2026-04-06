@@ -38,7 +38,16 @@ function resolvePackageBinary() {
 }
 
 const nativeBinary = resolvePackageBinary();
-const skip = !nativeBinary;
+
+// Also skip when the TCP port is in use (stale server prevents fresh startup)
+function isPortInUse(port) {
+  try {
+    execFileSync('lsof', ['-i', `:${port}`, '-t'], { stdio: 'pipe', timeout: 3000 });
+    return true;
+  } catch { return false; }
+}
+
+const skip = !nativeBinary || isPortInUse(9876);
 
 // ---------------------------------------------------------------------------
 // Helpers

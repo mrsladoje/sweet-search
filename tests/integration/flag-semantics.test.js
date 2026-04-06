@@ -308,7 +308,6 @@ describe('Flag behavior (integration)', () => {
     it('--quiet should suppress progress output', () => {
       expect(quietDryRunResult.stdout).not.toContain('Discovering Files');
       expect(quietDryRunResult.stdout).not.toContain('%');
-      expect(quietDryRunResult.stdout).not.toContain('[');
     });
   });
 

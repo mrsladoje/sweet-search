@@ -7,12 +7,17 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock fs/promises
-const mockReadFile = vi.fn(async () => '');
-const mockWriteFile = vi.fn(async () => {});
-const mockAppendFile = vi.fn(async () => {});
-const mockMkdir = vi.fn(async () => {});
-const mockRename = vi.fn(async () => {});
+// Use vi.hoisted so mock fns are available when vi.mock factories run (hoisted above imports)
+const {
+  mockReadFile, mockWriteFile, mockAppendFile, mockMkdir, mockRename, mockExistsSync,
+} = vi.hoisted(() => ({
+  mockReadFile: vi.fn(async () => ''),
+  mockWriteFile: vi.fn(async () => {}),
+  mockAppendFile: vi.fn(async () => {}),
+  mockMkdir: vi.fn(async () => {}),
+  mockRename: vi.fn(async () => {}),
+  mockExistsSync: vi.fn(() => false),
+}));
 
 vi.mock('fs/promises', () => ({
   default: {
@@ -28,9 +33,6 @@ vi.mock('fs/promises', () => ({
   mkdir: (...args) => mockMkdir(...args),
   rename: (...args) => mockRename(...args),
 }));
-
-// Mock fs (sync)
-const mockExistsSync = vi.fn(() => false);
 
 vi.mock('fs', () => ({
   existsSync: (...args) => mockExistsSync(...args),

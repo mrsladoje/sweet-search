@@ -84,6 +84,8 @@
     "mcp": "node mcp/server.js",
     "check-db": "node scripts/check-db.js",
     "test": "vitest run",
+    "test:extra": "SWEET_SEARCH_EXTRA_TESTS=1 vitest run tests/embedding/direct-ort-bypass.test.js tests/embedding/embedding-correctness.test.js",
+    "test:all": "SWEET_SEARCH_EXTRA_TESTS=1 vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:bench": "vitest bench",

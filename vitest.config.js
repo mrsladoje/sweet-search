@@ -9,7 +9,15 @@ export default defineConfig({
     // multiple tree-sitter grammars (cpp=4.4M, kotlin=3.9M, swift=3M).
     execArgv: ['--no-wasm-tier-up', '--no-wasm-dynamic-tiering', '--v8-pool-size=1'],
     include: ['tests/**/*.test.js', 'evaluation/__tests__/**/*.test.js'],
-    exclude: ['node_modules', 'dist', 'tests/embedding/embedding-perf.test.js'],
+    exclude: [
+      'node_modules', 'dist',
+      'tests/embedding/embedding-perf.test.js',
+      // Heavy ORT-loading tests (~23s each). Run with: npm run test:extra
+      ...(process.env.SWEET_SEARCH_EXTRA_TESTS ? [] : [
+        'tests/embedding/direct-ort-bypass.test.js',
+        'tests/embedding/embedding-correctness.test.js',
+      ]),
+    ],
     testTimeout: 30000,
     hookTimeout: 120000,
     coverage: {

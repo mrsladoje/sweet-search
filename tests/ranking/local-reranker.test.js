@@ -231,7 +231,7 @@ describe('LocalReranker', () => {
       const result = await reranker.rerankBatched('test', documents, 2);
 
       result.results.forEach(r => {
-        expect(r.source).toBe('local-gte-modernbert-int8-batched');
+        expect(r.source).toBe('local-gte-modernbert-int8');
       });
     });
   });
@@ -240,13 +240,13 @@ describe('LocalReranker', () => {
     it('should reset state', async () => {
       const reranker = new LocalReranker();
       reranker.tokenizer = 'mock';
-      reranker.model = 'mock';
+      reranker.session = 'mock';
       reranker.ready = true;
 
       await reranker.shutdown();
 
       expect(reranker.tokenizer).toBeNull();
-      expect(reranker.model).toBeNull();
+      expect(reranker.session).toBeNull();
       expect(reranker.ready).toBe(false);
       expect(reranker.initPromise).toBeNull();
     });
