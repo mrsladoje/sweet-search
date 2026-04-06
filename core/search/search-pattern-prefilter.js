@@ -309,8 +309,8 @@ export function querySparseGramCandidates(searcher, literalClauses, options = {}
       };
     }
 
-    const maxCandidateFiles = options.maxGramCandidateFiles ?? 2048;
-    const maxCandidateRatio = options.maxGramCandidateRatio ?? 0.30;
+    const maxCandidateFiles = options.maxGramCandidateFiles ?? 100000;
+    const maxCandidateRatio = options.maxGramCandidateRatio ?? 1.0;
     const symbolMask = _resolveSparseSymbolMask(resolveSearchSymbolFilter(options));
     const combined = new Set();
     let totalFiles = 0;

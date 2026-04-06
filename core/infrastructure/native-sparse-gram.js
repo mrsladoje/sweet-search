@@ -200,8 +200,8 @@ export function queryAndGrepLines(sparseGramIndex, clauses, regex, projectRoot, 
       opts.symbolMask ?? 0,
       opts.caseInsensitive ?? false,
       opts.codeExtensions ?? [],
-      opts.maxCandidateFiles ?? 2048,
-      opts.maxCandidateRatio ?? 0.30,
+      opts.maxCandidateFiles ?? 100000,
+      opts.maxCandidateRatio ?? 1.0,
     );
   } catch {
     return null;
@@ -221,8 +221,8 @@ export function queryAndGrepFull(sparseGramIndex, clauses, regex, projectRoot, o
       opts.symbolMask ?? 0,
       opts.caseInsensitive ?? false,
       opts.codeExtensions ?? [],
-      opts.maxCandidateFiles ?? 2048,
-      opts.maxCandidateRatio ?? 0.30,
+      opts.maxCandidateFiles ?? 100000,
+      opts.maxCandidateRatio ?? 1.0,
     );
   } catch {
     return null;
@@ -242,8 +242,8 @@ export function searchLines(sparseGramIndex, clauses, regex, projectRoot, opts =
       opts.symbolMask ?? 0,
       opts.caseInsensitive ?? false,
       opts.codeExtensions ?? [],
-      opts.maxCandidateFiles ?? 2048,
-      opts.maxCandidateRatio ?? 0.30,
+      opts.maxCandidateFiles ?? 100000,
+      opts.maxCandidateRatio ?? 1.0,
     );
   } catch {
     return null;
@@ -262,8 +262,8 @@ export function searchFull(sparseGramIndex, clauses, regex, projectRoot, opts = 
       opts.symbolMask ?? 0,
       opts.caseInsensitive ?? false,
       opts.codeExtensions ?? [],
-      opts.maxCandidateFiles ?? 2048,
-      opts.maxCandidateRatio ?? 0.30,
+      opts.maxCandidateFiles ?? 100000,
+      opts.maxCandidateRatio ?? 1.0,
     );
   } catch {
     return null;
