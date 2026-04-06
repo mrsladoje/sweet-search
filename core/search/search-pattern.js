@@ -81,10 +81,10 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   const gramTooBroad = fileGramTooBroad && !chunkGramResult?.eligible;
 
   // --- Optimization #4: use gram DF stats to skip literal prefilter when broad ---
-  // If the gram index says the query is broad (selectivity > 0.10), skip the
+  // If the gram index says the query is broad (selectivity > 0.40), skip the
   // literal prefilter entirely — it costs process spawns and the result will
   // be discarded anyway. Go straight to raw rg.
-  const gramSaysBroad = gramSelectivity !== null && gramSelectivity > 0.10 && !chunkGramResult?.eligible;
+  const gramSaysBroad = gramSelectivity !== null && gramSelectivity > 0.40 && !chunkGramResult?.eligible;
   const skipLiteralPrefilter = gramTooBroad || gramSaysBroad;
 
   // Literal prefilter: run when the gram index didn't already narrow the set
@@ -92,8 +92,8 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   // After running, discard the file list if it didn't meaningfully narrow —
   // passing thousands of explicit file paths via batched spawns is far slower
   // than a single `rg .` invocation.
-  const literalNarrowMaxFiles = options.literalNarrowMaxFiles ?? 500;
-  const literalNarrowMaxRatio = options.literalNarrowMaxRatio ?? 0.15;
+  const literalNarrowMaxFiles = options.literalNarrowMaxFiles ?? 2048;
+  const literalNarrowMaxRatio = options.literalNarrowMaxRatio ?? 0.40;
   let prefilterDiscarded = false;
   let prefilterDiscardedCount = 0;
 
@@ -132,16 +132,16 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
   //
   // Decision logic:
   //   - No narrowing happened → Strategy A
-  //   - Narrowed set ≤ 100 files → Strategy B (skip double-verify, Optimization #2)
-  //   - Narrowed set > 100 and ≤ 2048 → Strategy C (two_pass)
-  //   - Narrowed set > 2048 → Strategy A (too many files for explicit args)
+  //   - Narrowed set ≤ 300 files → Strategy B (skip double-verify, Optimization #2)
+  //   - Narrowed set > 300 and ≤ 4096 → Strategy C (two_pass)
+  //   - Narrowed set > 4096 → Strategy A (too many files for explicit args)
   //
   // Optimization #3 override: gram selectivity < 0.01 prefers narrowed even if
-  // file count is moderate; selectivity > 0.10 forces raw_rg.
+  // file count is moderate; selectivity > 0.40 forces raw_rg.
   // ==========================================================================
 
-  const narrowedThreshold = options.narrowedJsonThreshold ?? 100;
-  const directJsonThreshold = options.directJsonFileThreshold ?? 2048;
+  const narrowedThreshold = options.narrowedJsonThreshold ?? 300;
+  const directJsonThreshold = options.directJsonFileThreshold ?? 4096;
 
   let plannerRoute;
   let grepStrategy;
@@ -473,6 +473,10 @@ export async function bareGrep(query, routing, options = {}) {
       denseGramsTouched: candidateResult.stats.denseGramsTouched,
       sparseGramsTouched: candidateResult.stats.sparseGramsTouched,
       gramFalsePositiveRatio: candidateResult.stats.gramFalsePositiveRatio,
+      grepStrategy: candidateResult.stats.grepStrategy,
+      plannerRoute: candidateResult.stats.plannerRoute,
+      gramSelectivity: candidateResult.stats.gramSelectivity,
+      nativeGrepUsed: candidateResult.stats.nativeGrepUsed,
       symbolType,
       total_ms: Math.round(performance.now() - start),
     },
