@@ -591,8 +591,8 @@ impl NativeSparseGramIndex {
             max_candidates,
             symbol_mask,
             &ext_set,
-            max_candidate_files.unwrap_or(2048) as usize,
-            max_candidate_ratio.unwrap_or(0.30),
+            max_candidate_files.unwrap_or(100000) as usize,
+            max_candidate_ratio.unwrap_or(1.0),
         )?;
         let gram_elapsed_us = gram_start.elapsed().as_micros() as u32;
 
@@ -689,8 +689,8 @@ impl NativeSparseGramIndex {
             max_candidates,
             symbol_mask,
             &ext_set,
-            max_candidate_files.unwrap_or(2048) as usize,
-            max_candidate_ratio.unwrap_or(0.30),
+            max_candidate_files.unwrap_or(100000) as usize,
+            max_candidate_ratio.unwrap_or(1.0),
         )?;
         let gram_elapsed_us = gram_start.elapsed().as_micros() as u32;
 
