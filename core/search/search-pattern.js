@@ -57,16 +57,16 @@ async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
             symbolMask: symbolMask || 0,
             caseInsensitive,
             codeExtensions: _codeExtensionsArray,
-            maxCandidateFiles: options.maxGramCandidateFiles ?? 2048,
-            maxCandidateRatio: options.maxGramCandidateRatio ?? 0.30,
+            maxCandidateFiles: options.maxGramCandidateFiles ?? 100000,
+            maxCandidateRatio: options.maxGramCandidateRatio ?? 1.0,
           })
         : searchFull(sparseGramIndex, literalPlan.clauses, regex, searchDir, {
             maxGramCandidates: options.maxGramCandidates ?? 0,
             symbolMask: symbolMask || 0,
             caseInsensitive,
             codeExtensions: _codeExtensionsArray,
-            maxCandidateFiles: options.maxGramCandidateFiles ?? 2048,
-            maxCandidateRatio: options.maxGramCandidateRatio ?? 0.30,
+            maxCandidateFiles: options.maxGramCandidateFiles ?? 100000,
+            maxCandidateRatio: options.maxGramCandidateRatio ?? 1.0,
           });
 
       if (unifiedResult) {
