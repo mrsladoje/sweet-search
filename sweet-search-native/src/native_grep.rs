@@ -17,8 +17,9 @@ use std::path::PathBuf;
 /// Threshold above which we mmap instead of read (avoids allocation for large files).
 const MMAP_THRESHOLD: u64 = 64 * 1024;
 
-/// Read file content as a UTF-8 string slice, using mmap for large files.
-/// Returns None for binary files (null byte in first 8KB) or non-UTF-8 files.
+/// Read file content as a byte slice, using mmap for large files.
+/// Returns None for binary files (null byte in first 8KB).
+/// No UTF-8 validation — we use regex::bytes::Regex which operates on &[u8].
 pub(crate) fn read_file_content(path: &std::path::Path) -> Option<FileContent> {
     let file = std::fs::File::open(path).ok()?;
     let meta = file.metadata().ok()?;
@@ -30,43 +31,59 @@ pub(crate) fn read_file_content(path: &std::path::Path) -> Option<FileContent> {
     if len > MMAP_THRESHOLD {
         let mmap = unsafe { Mmap::map(&file) }.ok()?;
         // Binary detection: null byte in first 8KB
-        if mmap[..mmap.len().min(8192)].contains(&0) {
+        if memchr::memchr(0, &mmap[..mmap.len().min(8192)]).is_some() {
             return None;
         }
-        // Verify UTF-8
-        std::str::from_utf8(&mmap).ok()?;
         Some(FileContent::Mmap(mmap))
     } else {
         let bytes = std::fs::read(path).ok()?;
-        if bytes[..bytes.len().min(8192)].contains(&0) {
+        if memchr::memchr(0, &bytes[..bytes.len().min(8192)]).is_some() {
             return None;
         }
-        let text = String::from_utf8(bytes).ok()?;
-        Some(FileContent::Owned(text))
+        Some(FileContent::Owned(bytes))
     }
 }
 
 pub(crate) enum FileContent {
     Mmap(Mmap),
-    Owned(String),
+    Owned(Vec<u8>),
 }
 
 impl FileContent {
-    pub(crate) fn as_str(&self) -> &str {
+    pub(crate) fn as_bytes(&self) -> &[u8] {
         match self {
-            FileContent::Mmap(m) => unsafe { std::str::from_utf8_unchecked(m) },
-            FileContent::Owned(s) => s,
+            FileContent::Mmap(m) => m,
+            FileContent::Owned(b) => b,
         }
     }
 }
 
-pub(crate) fn build_regex(pattern: &str, case_insensitive: bool) -> Result<regex::Regex> {
-    regex::RegexBuilder::new(pattern)
+/// Build a bytes-mode regex (operates on &[u8], no UTF-8 boundary checks).
+pub(crate) fn build_regex(pattern: &str, case_insensitive: bool) -> Result<regex::bytes::Regex> {
+    regex::bytes::RegexBuilder::new(pattern)
         .case_insensitive(case_insensitive)
         .multi_line(true) // ^ and $ match line boundaries (same as rg default)
         .unicode(true)
         .build()
         .map_err(|e| Error::from_reason(format!("Invalid regex: {e}")))
+}
+
+/// Iterate lines using memchr (SIMD-accelerated newline finding).
+/// Yields (line_number_0indexed, line_bytes) without UTF-8 validation.
+#[inline]
+pub(crate) fn for_each_line<F: FnMut(usize, &[u8])>(bytes: &[u8], mut f: F) {
+    let mut line_idx = 0usize;
+    let mut start = 0usize;
+    while let Some(pos) = memchr::memchr(b'\n', &bytes[start..]) {
+        let end = start + pos;
+        f(line_idx, &bytes[start..end]);
+        line_idx += 1;
+        start = end + 1;
+    }
+    // Last line (no trailing newline)
+    if start < bytes.len() {
+        f(line_idx, &bytes[start..]);
+    }
 }
 
 // =============================================================================
@@ -89,7 +106,7 @@ pub struct NativeGrepResult {
 /// in-process with rayon parallelism — no fork/exec/pipe overhead.
 ///
 /// Binary files (null byte in first 8KB) are skipped, matching rg behavior.
-/// Non-UTF-8 files are skipped. Large files use mmap to avoid allocation.
+/// Large files use mmap to avoid allocation.
 #[napi]
 pub fn native_grep_files_with_matches(
     pattern: String,
@@ -107,7 +124,7 @@ pub fn native_grep_files_with_matches(
         .filter(|file| {
             let path = root.join(file);
             match read_file_content(&path) {
-                Some(content) => re.is_match(content.as_str()),
+                Some(content) => re.is_match(content.as_bytes()),
                 None => false,
             }
         })
@@ -147,6 +164,13 @@ pub fn native_grep_files_with_matches_fixed(
         Vec::new()
     };
 
+    // Pre-build memchr finders for case-sensitive path (SIMD-accelerated).
+    let finders: Vec<memchr::memmem::Finder<'_>> = if !ci {
+        literals.iter().map(|l| memchr::memmem::Finder::new(l.as_bytes())).collect()
+    } else {
+        Vec::new()
+    };
+
     let matching: Vec<String> = files
         .par_iter()
         .filter(|file| {
@@ -155,12 +179,15 @@ pub fn native_grep_files_with_matches_fixed(
                 Some(c) => c,
                 None => return false,
             };
-            let text = content.as_str();
+            let bytes = content.as_bytes();
             if ci {
+                // Case-insensitive: must convert to string for lowercase comparison.
+                let text = std::str::from_utf8(bytes).unwrap_or("");
                 let lower = text.to_lowercase();
                 lowered.iter().all(|lit| lower.contains(lit.as_str()))
             } else {
-                literals.iter().all(|lit| text.contains(lit.as_str()))
+                // Case-sensitive: SIMD-accelerated byte search (memchr::memmem).
+                finders.iter().all(|f| f.find(bytes).is_some())
             }
         })
         .cloned()
@@ -282,13 +309,21 @@ pub fn native_grep_chunk_ranges(
                 Some(c) => c,
                 None => return Vec::new(),
             };
-            let text = content.as_str();
-            let lines: Vec<&str> = text.lines().collect();
-            let total_lines = lines.len();
+            let bytes = content.as_bytes();
+            // Build line offset table using memchr (SIMD newline finding).
+            let mut line_starts: Vec<usize> = vec![0];
+            let mut pos = 0;
+            while let Some(nl) = memchr::memchr(b'\n', &bytes[pos..]) {
+                let abs = pos + nl + 1;
+                if abs < bytes.len() {
+                    line_starts.push(abs);
+                }
+                pos = abs;
+            }
+            let total_lines = line_starts.len();
 
             let mut results = Vec::new();
             for chunk in file_chunk_list {
-                // Convert 1-indexed inclusive range to 0-indexed
                 let start_idx = (chunk.start_line.saturating_sub(1)) as usize;
                 let end_idx = (chunk.end_line as usize).min(total_lines);
                 if start_idx >= total_lines || start_idx >= end_idx {
@@ -296,8 +331,15 @@ pub fn native_grep_chunk_ranges(
                 }
 
                 let mut match_count = 0u32;
-                for line in &lines[start_idx..end_idx] {
-                    if re.is_match(line) {
+                for li in start_idx..end_idx {
+                    let ls = line_starts[li];
+                    let le = if li + 1 < line_starts.len() {
+                        // Trim trailing \n
+                        line_starts[li + 1].saturating_sub(1)
+                    } else {
+                        bytes.len()
+                    };
+                    if ls < le && re.is_match(&bytes[ls..le]) {
                         match_count += 1;
                     }
                 }
@@ -352,17 +394,22 @@ pub fn native_grep_lines(
                 Some(c) => c,
                 None => return Vec::new(),
             };
-            let text = content.as_str();
-
+            let bytes = content.as_bytes();
+            // Whole-file precheck: one SIMD-accelerated regex scan on the
+            // entire buffer. Non-matching files (the majority) bail out here
+            // instead of iterating hundreds of lines with per-line regex calls.
+            if !re.is_match(bytes) {
+                return Vec::new();
+            }
             let mut results = Vec::new();
-            for (line_idx, line) in text.lines().enumerate() {
+            for_each_line(bytes, |line_idx, line| {
                 if re.is_match(line) {
                     results.push(NativeGrepMatch {
                         file: file.clone(),
-                        line: (line_idx + 1) as u32, // 1-indexed like rg
+                        line: (line_idx + 1) as u32,
                     });
                 }
-            }
+            });
             results
         })
         .collect();
@@ -429,20 +476,30 @@ pub fn native_grep_full(
                 Some(c) => c,
                 None => return Vec::new(),
             };
-            let text = content.as_str();
-
+            let bytes = content.as_bytes();
+            if !re.is_match(bytes) {
+                return Vec::new();
+            }
             let mut results = Vec::new();
-            for (line_idx, line) in text.lines().enumerate() {
+            for_each_line(bytes, |line_idx, line| {
                 if let Some(m) = re.find(line) {
+                    let match_bytes = &line[m.start()..m.end()];
+                    let match_text = String::from_utf8_lossy(match_bytes).into_owned();
+                    // Trim trailing whitespace from line content.
+                    let trimmed = match line.iter().rposition(|&b| b != b' ' && b != b'\t' && b != b'\r') {
+                        Some(pos) => &line[..=pos],
+                        None => line,
+                    };
+                    let content_str = String::from_utf8_lossy(trimmed).into_owned();
                     results.push(NativeGrepFullMatch {
                         file: file.clone(),
                         line: (line_idx + 1) as u32,
                         column: (m.start() + 1) as u32,
-                        match_text: m.as_str().to_string(),
-                        content: line.trim_end().to_string(),
+                        match_text,
+                        content: content_str,
                     });
                 }
-            }
+            });
             results
         })
         .collect();
