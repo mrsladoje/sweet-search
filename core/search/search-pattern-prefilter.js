@@ -25,6 +25,8 @@ import {
   getSparseGramAllFiles as _getSparseGramAllFiles,
   queryAndGrepLines as _queryAndGrepLines,
   queryAndGrepFull as _queryAndGrepFull,
+  searchLines as _searchLines,
+  searchFull as _searchFull,
 } from '../infrastructure/native-sparse-gram.js';
 
 // Re-export for search-pattern.js (avoids circular import through native-sparse-gram.js)
@@ -38,6 +40,8 @@ export const chunkGramSearch = _chunkGramSearch;
 export const getSparseGramAllFiles = _getSparseGramAllFiles;
 export const queryAndGrepLines = _queryAndGrepLines;
 export const queryAndGrepFull = _queryAndGrepFull;
+export const searchLines = _searchLines;
+export const searchFull = _searchFull;
 import { existsSync, mkdirSync } from 'fs';
 import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { CODE_FILE_EXTENSIONS } from '../infrastructure/constants.js';

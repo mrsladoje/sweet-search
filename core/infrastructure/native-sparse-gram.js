@@ -229,6 +229,47 @@ export function queryAndGrepFull(sparseGramIndex, clauses, regex, projectRoot, o
   }
 }
 
+/**
+ * Unified search (lean output): gram narrowing → grep candidates, or fallback → grep all files.
+ * Single NAPI crossing for the entire query. Replaces the JS planner + separate NAPI calls.
+ */
+export function searchLines(sparseGramIndex, clauses, regex, projectRoot, opts = {}) {
+  if (!sparseGramIndex?.searchLines) return null;
+  try {
+    return sparseGramIndex.searchLines(
+      clauses, regex, projectRoot,
+      opts.maxGramCandidates ?? 0,
+      opts.symbolMask ?? 0,
+      opts.caseInsensitive ?? false,
+      opts.codeExtensions ?? [],
+      opts.maxCandidateFiles ?? 2048,
+      opts.maxCandidateRatio ?? 0.30,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Unified search (full output): same as searchLines but returns display-quality fields.
+ */
+export function searchFull(sparseGramIndex, clauses, regex, projectRoot, opts = {}) {
+  if (!sparseGramIndex?.searchFull) return null;
+  try {
+    return sparseGramIndex.searchFull(
+      clauses, regex, projectRoot,
+      opts.maxGramCandidates ?? 0,
+      opts.symbolMask ?? 0,
+      opts.caseInsensitive ?? false,
+      opts.codeExtensions ?? [],
+      opts.maxCandidateFiles ?? 2048,
+      opts.maxCandidateRatio ?? 0.30,
+    );
+  } catch {
+    return null;
+  }
+}
+
 // =============================================================================
 // Chunk-level gram index wrappers
 // =============================================================================
