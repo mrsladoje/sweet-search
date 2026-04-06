@@ -15,9 +15,9 @@ use rayon::prelude::*;
 use std::path::PathBuf;
 
 /// Threshold above which we mmap instead of read (avoids allocation for large files).
-/// rg disables mmap on macOS, but our benchmarks show mmap is faster with warm page
-/// cache (avoids read() copy-to-heap for large files). Keep mmap enabled.
-const MMAP_THRESHOLD: u64 = 64 * 1024;
+/// On macOS, mmap is disabled — rg does the same. A/B testing shows equivalent
+/// performance with warm page cache, but read() is safer (no SIGBUS on truncated files).
+const MMAP_THRESHOLD: u64 = if cfg!(target_os = "macos") { u64::MAX } else { 64 * 1024 };
 
 /// Read file content as a byte slice. Uses read() on macOS (mmap has TLB issues),
 /// mmap for large files on other platforms.
