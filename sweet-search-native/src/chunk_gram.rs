@@ -46,6 +46,38 @@ struct GramDescriptor {
     postings_count: u32,
 }
 
+/// Sorted gram table — binary search replaces HashMap for zero-allocation lookups.
+struct SortedGramTable {
+    keys: Vec<String>,
+    vals: Vec<GramDescriptor>,
+}
+
+impl SortedGramTable {
+    fn with_capacity(cap: usize) -> Self {
+        Self {
+            keys: Vec::with_capacity(cap),
+            vals: Vec::with_capacity(cap),
+        }
+    }
+
+    fn push(&mut self, key: String, val: GramDescriptor) {
+        debug_assert!(
+            self.keys.last().map_or(true, |prev| prev.as_str() <= key.as_str()),
+            "SortedGramTable: grams must be pushed in sorted order"
+        );
+        self.keys.push(key);
+        self.vals.push(val);
+    }
+
+    #[inline]
+    fn get(&self, key: &str) -> Option<&GramDescriptor> {
+        self.keys
+            .binary_search_by(|k| k.as_str().cmp(key))
+            .ok()
+            .map(|idx| &self.vals[idx])
+    }
+}
+
 #[derive(Clone, Debug)]
 struct Header {
     version: u32,
@@ -396,7 +428,7 @@ pub struct NativeChunkGramIndex {
     mmap: Mmap,
     header: Header,
     chunks: Vec<ChunkEntry>,
-    grams: HashMap<String, GramDescriptor>,
+    grams: SortedGramTable,
     weights: Vec<f32>,
 }
 
@@ -858,9 +890,9 @@ fn parse_chunk_table(bytes: &[u8], header: &Header) -> Result<Vec<ChunkEntry>> {
     Ok(chunks)
 }
 
-fn parse_gram_table(bytes: &[u8], header: &Header) -> Result<HashMap<String, GramDescriptor>> {
+fn parse_gram_table(bytes: &[u8], header: &Header) -> Result<SortedGramTable> {
     let mut c = header.gram_table_offset as usize;
-    let mut grams = HashMap::with_capacity(header.gram_count as usize);
+    let mut grams = SortedGramTable::with_capacity(header.gram_count as usize);
 
     for _ in 0..header.gram_count {
         let gram_len = read_u16(bytes, &mut c)? as usize;
@@ -870,7 +902,7 @@ fn parse_gram_table(bytes: &[u8], header: &Header) -> Result<HashMap<String, Gra
         let gram_bytes = read_bytes(bytes, &mut c, gram_len)?;
         let gram = String::from_utf8(gram_bytes.to_vec())
             .map_err(|e| Error::from_reason(format!("Invalid UTF-8 in chunk gram key: {e}")))?;
-        grams.insert(
+        grams.push(
             gram,
             GramDescriptor {
                 data_offset,

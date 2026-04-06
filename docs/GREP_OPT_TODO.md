@@ -2,18 +2,18 @@
 
 Ordered by impact. Each step changes the cost model, so gate tuning comes last.
 
-## Status: After step 5 (2026-04-06)
+## Status: After step 6 (2026-04-06)
 
 353 realistic queries across 5 repos. Current results:
 
 | Repo         | Files | p50 Speedup vs rg |
 |--------------|-------|--------------------|
-| sweet-search | 570   | **~11.6x**         |
-| fastify      | 356   | **~8.7x**          |
-| flask        | 216   | **~12.0x**         |
-| ripgrep      | 215   | **~12.4x**         |
-| gin          | 118   | **1.23x**          |
-| **ALL**      | —     | **~6.4x** (249W / 71L / 33T) |
+| sweet-search | 570   | **~18.1x**         |
+| fastify      | 356   | **~11.6x**         |
+| flask        | 216   | **~8.3x**          |
+| ripgrep      | 215   | **~9.0x**          |
+| gin          | 118   | **1.2x**           |
+| **ALL**      | —     | **~9.9x** (243W / 77L / 33T) |
 
 Remaining losses: hard regex, method_call, error_string (broad matches where
 gram selectivity is low — native grep eliminates spawn overhead but can't beat
@@ -24,9 +24,20 @@ mismatches across 353 queries. Match count differences are pre-existing
 (.gitignore behavior — gram index includes files rg would skip).
 
 Combined gram+grep fast path (`combined_gram_grep`) handles the majority of
-narrowable queries (57/71 on sweet-search, 39/71 on fastify, 45/71 on flask).
+narrowable queries (52/71 on sweet-search, 39/71 on fastify, 43/71 on flask).
 The remaining `narrowed_json` routes are queries too broad for gram-only that
 benefit from the literal prefilter fallback.
+
+### Previous baseline (2026-04-06, after step 5)
+
+| Repo         | Files | p50 Speedup vs rg |
+|--------------|-------|--------------------|
+| sweet-search | 570   | **~11.6x**         |
+| fastify      | 356   | **~8.7x**          |
+| flask        | 216   | **~12.0x**         |
+| ripgrep      | 215   | **~12.4x**         |
+| gin          | 118   | **1.23x**          |
+| **ALL**      | —     | **~6.4x** (249W / 71L / 33T) |
 
 ### Previous baseline (2026-04-06, after step 4)
 
@@ -152,17 +163,21 @@ are reused across queries. At current benchmark sizes the per-query savings are
 sub-microsecond, but the hot path is now fully allocation-free when combined with #3 and
 #4. Benchmark holds at ~10x (249W / 71L / 33T).
 
-## 6. Replace `HashMap<String, GramDescriptor>` with sorted binary search (Rust)
+## 6. [DONE] Replace `HashMap<String, GramDescriptor>` with sorted binary search (Rust)
 
-**Problem:** `grams: HashMap<String, GramDescriptor>` at `sparse_gram.rs:97` hashes
-gram keys and probes a HashMap. Keys are heap-allocated Strings copied at index load.
+Replaced `HashMap<String, GramDescriptor>` with `SortedGramTable` — a struct-of-arrays
+(`Vec<String>` keys + `Vec<GramDescriptor>` vals) with O(log n) binary search lookup.
+Grams are already written in sorted order at build time, so `parse_gram_table` now
+pushes entries in order rather than hashing. Applied to both `sparse_gram.rs` and
+`chunk_gram.rs`.
 
-**Fix:** Sort grams at index build time. At query time, binary search on the mmap'd
-sorted gram table — zero allocation, zero copy. Alternatively, use a minimal perfect
-hash if the gram table is static.
-
-**Expected impact:** Faster gram lookup (~0.5us → ~0.1us per gram), eliminates all
-heap allocation at index load time.
+**Actual impact:** Overall p50 speedup jumped from ~6.4x → ~9.9x. Sweet-search
+(128K grams) improved from 11.6x → 18.1x; fastify improved from 8.7x → 11.6x.
+Smaller repos (flask, ripgrep) saw slight regression — HashMap is competitive at
+~20K grams where binary search branch misprediction costs are proportionally higher.
+The win is structural: eliminates hash computation and HashMap probing overhead
+on the query hot path, compounding with steps 3-5. Index load time also benefits
+from sequential pushes vs random HashMap inserts.
 
 ## 7. SIMD for sparse×sparse posting intersection (Rust)
 
