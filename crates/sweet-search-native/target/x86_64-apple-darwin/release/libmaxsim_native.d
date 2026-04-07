@@ -1,0 +1,1 @@
+/Users/admin/Projects/sweet-search-private/native-maxsim/target/x86_64-apple-darwin/release/libmaxsim_native.dylib: /Users/admin/Projects/sweet-search-private/native-maxsim/build.rs /Users/admin/Projects/sweet-search-private/native-maxsim/src/lib.rs

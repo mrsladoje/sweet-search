@@ -1,0 +1,14 @@
+/Users/admin/Projects/sweet-search-private/sweet-search-native/target/release/deps/thiserror-b79b2dcb796e1399.d: /Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs /Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs /Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs /Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs /Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs /Users/admin/Projects/sweet-search-private/sweet-search-native/target/release/build/thiserror-a1f4c63469c326b9/out/private.rs
+
+/Users/admin/Projects/sweet-search-private/sweet-search-native/target/release/deps/libthiserror-b79b2dcb796e1399.rlib: /Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs /Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs /Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs /Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs /Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs /Users/admin/Projects/sweet-search-private/sweet-search-native/target/release/build/thiserror-a1f4c63469c326b9/out/private.rs
+
+/Users/admin/Projects/sweet-search-private/sweet-search-native/target/release/deps/libthiserror-b79b2dcb796e1399.rmeta: /Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs /Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs /Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs /Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs /Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs /Users/admin/Projects/sweet-search-private/sweet-search-native/target/release/build/thiserror-a1f4c63469c326b9/out/private.rs
+
+/Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs:
+/Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs:
+/Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs:
+/Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs:
+/Users/admin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs:
+/Users/admin/Projects/sweet-search-private/sweet-search-native/target/release/build/thiserror-a1f4c63469c326b9/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/admin/Projects/sweet-search-private/sweet-search-native/target/release/build/thiserror-a1f4c63469c326b9/out
