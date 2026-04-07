@@ -681,9 +681,13 @@ export function computeSufficiency(topResult, confidenceInfo) {
     reasons.push('complete_symbol');
   }
 
-  // (b) Does header context exist (imports resolved)?
+  // (b) Does header context exist, OR is the symbol self-contained?
+  // Self-contained: complete symbol with code but no header needed (no imports referenced).
+  // This prevents false negatives for utility functions that don't use imports.
   if (topResult.headerContext) {
     reasons.push('header_resolved');
+  } else if (isComplete && topResult.code && topResult.codeTokens > 0) {
+    reasons.push('self_contained');
   }
 
   // (c) Is the confidence high (specific match)?

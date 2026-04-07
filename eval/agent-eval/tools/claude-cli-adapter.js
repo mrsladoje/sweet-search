@@ -55,7 +55,7 @@ export async function runViaClaude(question, system, projectRoot, opts = {}) {
     case 'pattern+meta':
       systemPrompt = `You are answering a code question about the codebase in the current directory. You have a code search tool. Use it to find code, then use the Read tool to see the actual code.
 
-To search: node ${SEARCH_HELPER} --repo=${path.basename(projectRoot)} --query="YOUR QUERY" --regex="YOUR_REGEX" --k=5 2>/dev/null | grep '^{'
+To search: node ${SEARCH_HELPER} --query="YOUR QUERY" --regex="YOUR_REGEX" --k=5 2>/dev/null | grep '^{'
 
 The results show file paths, line numbers, and scores. Then use Read to see the actual code.
 Be specific: cite file paths, function names, and line numbers. Give a concise, actionable answer.`;
@@ -65,7 +65,7 @@ Be specific: cite file paths, function names, and line numbers. Give a concise, 
     case 'pattern+agent':
       systemPrompt = `You are answering a code question about the codebase in the current directory. You have a code search tool with agent mode that returns FULL CODE BLOCKS directly.
 
-To search: node ${SEARCH_HELPER} --repo=${path.basename(projectRoot)} --query="YOUR QUERY" --regex="YOUR_REGEX" --format=agent --k=5 2>/dev/null | grep '^{'
+To search: node ${SEARCH_HELPER} --query="YOUR QUERY" --regex="YOUR_REGEX" --format=agent --k=5 2>/dev/null | grep '^{'
 
 The results include the actual code — you do NOT need to read files afterward. Answer directly from the search results.
 Be specific: cite file paths, function names, and line numbers. Give a concise, actionable answer.`;
