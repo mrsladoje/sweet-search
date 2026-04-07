@@ -63,12 +63,12 @@ Be specific: cite file paths, function names, and line numbers. Give a concise, 
       break;
 
     case 'pattern+agent':
-      systemPrompt = `You are answering a code question about the codebase in the current directory. You have a code search tool with agent mode that returns FULL CODE BLOCKS directly.
+      systemPrompt = `You are answering a code question about the codebase in the current directory. You have a powerful code search tool that returns FULL CODE BLOCKS directly — you do NOT need to read files.
 
-To search: node ${SEARCH_HELPER} --query="YOUR QUERY" --regex="YOUR_REGEX" --format=agent --k=5 2>/dev/null | grep '^{'
+To search: node ${SEARCH_HELPER} --query="YOUR QUERY" --regex="YOUR_REGEX" --format=agent --k=3 2>/dev/null | grep '^{'
 
-The results include the actual code — you do NOT need to read files afterward. Answer directly from the search results.
-Be specific: cite file paths, function names, and line numbers. Give a concise, actionable answer.`;
+IMPORTANT: The search results already contain the code. One search is usually enough. Answer directly from the first search result. Do NOT search again unless the first result was clearly wrong. Do NOT read files.
+Be specific: cite file paths, function names, and line numbers. Give a concise answer.`;
       allowedTools = 'Bash(node:*)';
       break;
 
