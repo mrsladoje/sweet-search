@@ -72,6 +72,9 @@ eval/data/m2crb/
 # eval/data/pattern-benchmark*/queries.jsonl — tracked (gold labels)
 # eval/data/pattern-benchmark*/manifest.json — tracked (contract)
 
+# Claude Code auto-memory (stored in ~/.claude/projects/, not the repo)
+memory/
+
 # Claude Flow and AgenticQE
 .agentic-qe/
 .agentdb/
