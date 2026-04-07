@@ -243,7 +243,7 @@ sweet-search/
 @sweet-search/native-<platform>/
   package.json
   manifest.json
-  maxsim.<platform>.node
+  sweet-search-native.<platform>.node
   sweet-search
 ```
 

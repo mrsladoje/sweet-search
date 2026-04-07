@@ -69,7 +69,7 @@ export function resolveNativeAddon(options = {}) {
   const info = getPlatformInfo();
   if (!info) return null;
   const { platform, arch, libc } = info;
-  const binaryName = `maxsim.${platform}-${arch}.node`;
+  const binaryName = `sweet-search-native.${platform}-${arch}.node`;
   const exists = options.existsSync ?? existsSync;
   const rootDir = options.rootDir ?? root;
   const resolvePackageDir = options.resolvePackageDir ?? defaultPackageDirResolver;
@@ -82,13 +82,13 @@ export function resolveNativeAddon(options = {}) {
 
   // 2. Local package template: packages/native-*/
   const pkgDir = `native-${platform}-${arch}${libc}`;
-  const localPkg = join(rootDir, 'packages', pkgDir, 'maxsim.node');
+  const localPkg = join(rootDir, 'packages', pkgDir, 'sweet-search-native.node');
   if (exists(localPkg)) return localPkg;
 
   // 3. Installed npm package
   try {
     const npmPkgDir = resolvePackageDir(getPlatformPackageName());
-    const npmAddon = join(npmPkgDir, 'maxsim.node');
+    const npmAddon = join(npmPkgDir, 'sweet-search-native.node');
     if (exists(npmAddon)) return npmAddon;
   } catch {
     // Package not installed

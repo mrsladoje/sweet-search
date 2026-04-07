@@ -131,7 +131,7 @@ check('platform detection', () => {
 const skipDevPaths = (p) => false;  // existsSync override that rejects dev paths
 const packageOnlyAddonPath = nativeResolver.resolveNativeAddon({ existsSync: (p) => {
   // Reject dev build paths (sweet-search-native/ and sweet-search-cli/target/)
-  if (p.includes('/sweet-search-native/maxsim.') || p.includes('/native-maxsim/maxsim.') || p.includes('/target/')) return false;
+  if (p.includes('/sweet-search-native/sweet-search-native.') || p.includes('/native-maxsim/sweet-search-native.') || p.includes('/target/')) return false;
   return existsSync(p);
 }});
 const packageOnlyBinaryPath = nativeResolver.resolveNativeBinary({ existsSync: (p) => {

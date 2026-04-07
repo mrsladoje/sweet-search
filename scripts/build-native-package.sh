@@ -40,13 +40,13 @@ echo "=== Building for ${PLATFORM}-${ARCH}${LIBC} ==="
 echo "Building MaxSim addon..."
 cd "$REPO_ROOT/sweet-search-native"
 npx @napi-rs/cli build --release --platform
-ADDON_NAME="maxsim.${PLATFORM}-${ARCH}.node"
+ADDON_NAME="sweet-search-native.${PLATFORM}-${ARCH}.node"
 if [ ! -f "$ADDON_NAME" ]; then
   echo "Error: Expected $ADDON_NAME not found after build"
   exit 1
 fi
-cp "$ADDON_NAME" "$PKG_DIR/maxsim.node"
-echo "  Copied $ADDON_NAME → $PKG_DIR/maxsim.node"
+cp "$ADDON_NAME" "$PKG_DIR/sweet-search-native.node"
+echo "  Copied $ADDON_NAME → $PKG_DIR/sweet-search-native.node"
 
 # Build CLI binary
 echo "Building CLI binary..."

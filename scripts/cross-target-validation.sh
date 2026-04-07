@@ -101,7 +101,7 @@ ok "Docker available"
 
 check_binary_arch() {
   local dir="$1" expected_arch="$2" label="$3"
-  if [ ! -f "$dir/sweet-search" ] || [ ! -f "$dir/maxsim.node" ]; then
+  if [ ! -f "$dir/sweet-search" ] || [ ! -f "$dir/sweet-search-native.node" ]; then
     fail "$label: missing binaries"
     return 1
   fi
@@ -381,7 +381,7 @@ if [[ "$TARGETS" == *darwin-x64-check* ]]; then
     local_pass=false
   fi
 
-  addon_info=$(file "$REPO_ROOT/packages/native-darwin-x64/maxsim.node")
+  addon_info=$(file "$REPO_ROOT/packages/native-darwin-x64/sweet-search-native.node")
   if echo "$addon_info" | grep -q "x86_64"; then
     ok "darwin-x64 addon architecture"
   else
@@ -413,7 +413,7 @@ if [[ "$TARGETS" == *darwin-x64-check* ]]; then
       "$NODE_X64" -e "
         const{createRequire}=await import('module');
         const r=createRequire(import.meta.url);
-        const m=r('$REPO_ROOT/packages/native-darwin-x64/maxsim.node');
+        const m=r('$REPO_ROOT/packages/native-darwin-x64/sweet-search-native.node');
         const q=new Float32Array([1,0,0.5,0.3]);
         const d=new Float32Array([0.9,0.1,0.4,0.2,0.1,0.8,0.6,0.5]);
         const s=m.maxsimScoreSingle(q,d,1,2,4);

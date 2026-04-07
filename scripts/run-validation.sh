@@ -314,8 +314,8 @@ if [ "$WITH_NATIVE" = "true" ] && [ -d "${NATIVE_PKG_DIR:-/nonexistent}" ]; then
   fi
 
   # Check 9: native addon selected and correct arch
-  if [ -f "$NATIVE_PKG_DIR/maxsim.node" ]; then
-    ADDON_INFO=$(file "$NATIVE_PKG_DIR/maxsim.node")
+  if [ -f "$NATIVE_PKG_DIR/sweet-search-native.node" ]; then
+    ADDON_INFO=$(file "$NATIVE_PKG_DIR/sweet-search-native.node")
     echo "  addon: $ADDON_INFO"
     if echo "$ADDON_INFO" | grep -qi "$ARCH_EXPECTED"; then
       check "native addon arch matches $ARCH_EXPECTED" true
@@ -331,7 +331,7 @@ if [ "$WITH_NATIVE" = "true" ] && [ -d "${NATIVE_PKG_DIR:-/nonexistent}" ]; then
   "$NODE" -e "
     const {createRequire}=await import('module');
     const r=createRequire(import.meta.url);
-    const m=r('$NATIVE_PKG_DIR/maxsim.node');
+    const m=r('$NATIVE_PKG_DIR/sweet-search-native.node');
     const q=new Float32Array([1,0,0.5,0.3]);
     const d=new Float32Array([0.9,0.1,0.4,0.2,0.1,0.8,0.6,0.5]);
     const s=m.maxsimScoreSingle(q,d,1,2,4);
