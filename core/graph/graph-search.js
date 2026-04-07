@@ -280,6 +280,134 @@ export class GraphSearch {
   }
 
   /**
+   * Find an entity by name (non-stale).
+   * Returns { id, name, type, signature, summary, file_path, start_line } or null.
+   */
+  async findEntityByName(name) {
+    await this.init();
+    if (!this._stmtEntityByName) {
+      this._stmtEntityByName = this.db.prepare(`
+        SELECT id, name, type, signature, summary, file_path, start_line
+        FROM entities
+        WHERE name = ? AND stale_since IS NULL
+        LIMIT 1
+      `);
+    }
+    return this._stmtEntityByName.get(name) || null;
+  }
+
+  /**
+   * Find an entity by file location (non-stale).
+   * Returns { id, name, type, signature, summary, file_path, start_line } or null.
+   */
+  async findEntityByLocation(filePath, line) {
+    await this.init();
+    if (!this._stmtEntityByLocation) {
+      this._stmtEntityByLocation = this.db.prepare(`
+        SELECT id, name, type, signature, summary, file_path, start_line
+        FROM entities
+        WHERE file_path LIKE ? AND start_line <= ? AND end_line >= ?
+          AND stale_since IS NULL
+        LIMIT 1
+      `);
+    }
+    return this._stmtEntityByLocation.get(`%${filePath}%`, line, line) || null;
+  }
+
+  /**
+   * Batch-find entities by name and location for a results array.
+   * Two queries total (one per lookup type) instead of n sequential lookups.
+   * @param {Array} results - search results with name/file/startLine fields
+   * @returns {{ byName: Map<string, Object>, byLocation: Map<string, Object> }}
+   */
+  async findEntitiesBatch(results) {
+    await this.init();
+    const byName = new Map();
+    const byLocation = new Map();
+
+    // Collect unique names
+    const names = new Set();
+    const locations = [];
+    for (const r of results) {
+      const name = r.name || r.metadata?.name;
+      const file = r.file || r.metadata?.file;
+      const line = r.startLine || r.metadata?.startLine;
+      if (name) names.add(name);
+      if (file && line) locations.push({ file, line });
+    }
+
+    // Batch name lookup
+    if (names.size > 0) {
+      if (!this._stmtEntityByName) {
+        this._stmtEntityByName = this.db.prepare(`
+          SELECT id, name, type, signature, summary, file_path, start_line
+          FROM entities
+          WHERE name = ? AND stale_since IS NULL
+          LIMIT 1
+        `);
+      }
+      for (const name of names) {
+        const entity = this._stmtEntityByName.get(name);
+        if (entity) byName.set(name, entity);
+      }
+    }
+
+    // Batch location lookup (only for results not found by name)
+    if (locations.length > 0) {
+      if (!this._stmtEntityByLocation) {
+        this._stmtEntityByLocation = this.db.prepare(`
+          SELECT id, name, type, signature, summary, file_path, start_line
+          FROM entities
+          WHERE file_path LIKE ? AND start_line <= ? AND end_line >= ?
+            AND stale_since IS NULL
+          LIMIT 1
+        `);
+      }
+      for (const { file, line } of locations) {
+        const key = `${file}:${line}`;
+        if (byLocation.has(key)) continue;
+        const entity = this._stmtEntityByLocation.get(`%${file}%`, line, line);
+        if (entity) byLocation.set(key, entity);
+      }
+    }
+
+    return { byName, byLocation };
+  }
+
+  /**
+   * Get IDs of all stale entities.
+   * @returns {Set<string>}
+   */
+  async getStaleEntityIds() {
+    await this.init();
+    const result = new Set();
+    try {
+      const rows = this.db.prepare('SELECT id FROM entities WHERE stale_since IS NOT NULL').all();
+      for (const row of rows) result.add(row.id);
+    } catch {
+      // Column may not exist in older indexes
+    }
+    return result;
+  }
+
+  /**
+   * Run lightweight queries to warm the SQLite page cache.
+   * Touches FTS5, relationship, and summary pages.
+   * @returns {{ summaries: number }}
+   */
+  async warmCache() {
+    await this.init();
+    let summaries = 0;
+    try { this.db.prepare('SELECT count(*) FROM entities_fts WHERE name MATCH "warmup"').get(); } catch { /* table may not exist */ }
+    try { this.db.prepare('SELECT count(*) FROM relationships').get(); } catch { /* table may not exist */ }
+    try {
+      const row = this.db.prepare('SELECT count(*) as cnt FROM entities WHERE summary IS NOT NULL').get();
+      summaries = row?.cnt || 0;
+    } catch { /* column may not exist */ }
+    return { summaries };
+  }
+
+  /**
    * Close database connection
    */
   close() {
@@ -288,6 +416,8 @@ export class GraphSearch {
     this._stmtEntityById = null;
     this._stmtOutRels = null;
     this._stmtInRels = null;
+    this._stmtEntityByName = null;
+    this._stmtEntityByLocation = null;
     if (this.db) {
       this.db.close();
       this.db = null;

@@ -152,58 +152,22 @@ export async function enrichWithSummaries(results) {
   }
 
   try {
-    if (!this.graphSearch.db) {
-      await this.graphSearch.init();
-    }
+    const { byName, byLocation } = await this.graphSearch.findEntitiesBatch(results);
 
-    const db = this.graphSearch.db;
-
-    const stmtByName = db.prepare(`
-      SELECT id, name, type, signature, summary, file_path, start_line
-      FROM entities
-      WHERE name = ?
-        AND stale_since IS NULL
-      LIMIT 1
-    `);
-
-    const stmtByLocation = db.prepare(`
-      SELECT id, name, type, signature, summary, file_path, start_line
-      FROM entities
-      WHERE file_path LIKE ? AND start_line <= ? AND end_line >= ?
-        AND stale_since IS NULL
-      LIMIT 1
-    `);
-
-    const enriched = [];
-
-    for (const result of results) {
-      // Try to find matching entity by name or file:line
+    return results.map(result => {
       const name = result.name || result.metadata?.name;
       const file = result.file || result.metadata?.file;
       const line = result.startLine || result.metadata?.startLine;
 
-      let entity = null;
+      const entity = (name && byName.get(name)) ||
+        (file && line && byLocation.get(`${file}:${line}`)) ||
+        null;
 
-      if (name) {
-        entity = stmtByName.get(name) || null;
+      if (entity?.summary) {
+        return { ...result, summary: entity.summary, hasSummary: true };
       }
-
-      if (!entity && file && line) {
-        entity = stmtByLocation.get(`%${file}%`, line, line) || null;
-      }
-
-      if (entity && entity.summary) {
-        enriched.push({
-          ...result,
-          summary: entity.summary,
-          hasSummary: true,
-        });
-      } else {
-        enriched.push(result);
-      }
-    }
-
-    return enriched;
+      return result;
+    });
   } catch (err) {
     this.log(`Summary enrichment failed: ${err.message}`);
     return results;

@@ -45,3 +45,42 @@ export const CODE_FILE_EXTENSIONS = new Set([
  */
 export const RIPGREP_CODE_TYPE_GLOB =
   'code:*.{js,ts,jsx,tsx,py,rs,go,java,c,cpp,h,hpp,cs,rb,php,swift,kt,scala,lua,sh,zig,hs,ml,ex,exs,clj,erl,r,jl,dart,v,nim,cr,d,f90,ada,pas,cob,pl,pm,sql,graphql,proto,yaml,yml,json,toml,xml,html,css,scss,sass,less,svelte,vue,astro,mdx}';
+
+/**
+ * Sparse gram symbol type bitmasks.
+ * These bit positions must match the Rust native addon's expectations.
+ * Used by both the indexer (to tag files) and the search pipeline (to filter).
+ */
+export const SPARSE_SYMBOL_MASKS = {
+  function: 1 << 0,
+  class: 1 << 1,
+  method: 1 << 2,
+  import: 1 << 3,
+  type: 1 << 4,
+  other: 1 << 5,
+};
+
+/**
+ * Resolve a symbol type string to its sparse gram bitmask value.
+ * @param {string} symbolType
+ * @returns {number} bitmask (0 if unrecognized)
+ */
+export function resolveSparseSymbolMask(symbolType) {
+  if (typeof symbolType !== 'string') return 0;
+
+  const normalized = symbolType.trim().toLowerCase();
+  if (!normalized) return 0;
+  if (normalized.includes('function')) return SPARSE_SYMBOL_MASKS.function;
+  if (normalized.includes('method')) return SPARSE_SYMBOL_MASKS.method;
+  if (normalized.includes('class')) return SPARSE_SYMBOL_MASKS.class;
+  if (normalized.includes('import')) return SPARSE_SYMBOL_MASKS.import;
+  if (
+    normalized.includes('type') ||
+    normalized.includes('interface') ||
+    normalized.includes('enum') ||
+    normalized.includes('typedef')
+  ) {
+    return SPARSE_SYMBOL_MASKS.type;
+  }
+  return SPARSE_SYMBOL_MASKS.other;
+}

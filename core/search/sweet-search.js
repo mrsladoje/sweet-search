@@ -24,8 +24,7 @@ import { LateInteractionIndex } from '../ranking/late-interaction-index.js';
 import { getEmbedding, getBinaryEmbedding, truncateForHNSW, int8CosineSimilarity, warmup as warmupEmbedding, isWarm, registerAutoPersistOnExit } from '../embedding/embedding-service.js';
 import { FloatVectorStore, getFloatStorePath } from '../vector-store/float-vector-store.js';
 import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
-import Database from 'better-sqlite3';
-import { applyReadPragmas } from '../infrastructure/db-utils.js';
+import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
 import { loadSparseGramIndex } from '../infrastructure/native-sparse-gram.js';
 import { TranslationFallback, queryNeedsTranslation } from '../../translation/index.js';
 import { expandResults } from '../graph/graph-expansion.js';
@@ -139,23 +138,16 @@ export class SweetSearch {
       ?? CASCADE_CONFIG.shadowMode;
     setRepoMapModule({ pageRank, loadGraph, buildAdjacency });
     this._qualityScorer = null;
-    this._codebaseDb = null;
+    this.codebaseRepo = new CodebaseRepository(this.codebaseDbPath);
     this.sparseGramIndex = null;
     this.grepInitialized = false;
     this.initialized = false;
   }
 
-  /** Lazy read-only connection to codebase.db (for token estimation). */
+  /** @deprecated Use codebaseRepo methods instead. Bridge for legacy callers. */
   get codebaseDb() {
-    if (!this._codebaseDb && this.hasCodebaseIndex) {
-      try {
-        this._codebaseDb = new Database(this.codebaseDbPath, { readonly: true });
-        applyReadPragmas(this._codebaseDb);
-      } catch {
-        // Fall back to language multipliers if DB can't be opened
-      }
-    }
-    return this._codebaseDb;
+    // TODO: Remove once all callers migrate to codebaseRepo
+    return this.codebaseRepo;
   }
 
   /** Initialize all search components */
@@ -500,33 +492,20 @@ export class SweetSearch {
 
   /** O(N) vector scan fallback (when HNSW not available). Filters stale entities. */
   async vectorScan(queryEmbedding, limit = 100) {
-    const initSqlJs = (await import('sql.js')).default;
-    const SQL = await initSqlJs();
-    const dbBuffer = await fs.readFile(this.codebaseDbPath);
-    const db = new SQL.Database(dbBuffer);
-    const stmt = db.prepare('SELECT id, embedding, text, metadata FROM vectors');
+    // Ephemeral scan — opens, reads, closes (no persistent connection)
+    const rows = this.codebaseRepo.scanAllVectors();
     const candidates = [];
 
-    const staleEntityIds = new Set();
-    if (this.hasGraphIndex) {
-      try {
-        const graphDbBuffer = await fs.readFile(DB_PATHS.codeGraph);
-        const graphDb = new SQL.Database(graphDbBuffer);
-        const columns = graphDb.exec("PRAGMA table_info(entities)");
-        const hasStaleColumn = columns.length > 0 &&
-          columns[0].values.some(col => col[1] === 'stale_since');
-        if (hasStaleColumn) {
-          const staleStmt = graphDb.prepare('SELECT id FROM entities WHERE stale_since IS NOT NULL');
-          while (staleStmt.step()) { staleEntityIds.add(staleStmt.getAsObject().id); }
-          staleStmt.free();
-        }
-        graphDb.close();
-      } catch (err) { this.log(`A1: Could not load stale entity list: ${err.message}`); }
-    }
+    const staleEntityIds = this.hasGraphIndex
+      ? await this.graphSearch.getStaleEntityIds().catch(err => {
+          this.log(`A1: Could not load stale entity list: ${err.message}`);
+          return new Set();
+        })
+      : new Set();
 
-    while (stmt.step()) {
-      const row = stmt.getAsObject();
+    for (const row of rows) {
       const embeddingBuffer = row.embedding;
+      if (!embeddingBuffer) continue;
       const embedding = new Float32Array(embeddingBuffer.buffer, embeddingBuffer.byteOffset, embeddingBuffer.length / 4);
       const score = this.cosineSimilarity(queryEmbedding, Array.from(embedding));
       let metadata = {};
@@ -535,8 +514,6 @@ export class SweetSearch {
       }
       candidates.push({ id: row.id, content: row.text || '', score, metadata, entity_id: metadata.entity_id || null });
     }
-    stmt.free();
-    db.close();
 
     const activeResults = candidates.filter(r => {
       if (r.entity_id && staleEntityIds.has(r.entity_id)) return false;
@@ -569,28 +546,13 @@ export class SweetSearch {
    */
   async _loadFloatVectors(ids) {
     if (!this.codebaseDbPath || !existsSync(this.codebaseDbPath)) return null;
-    const uniqueIds = [...new Set(ids)];
-    if (uniqueIds.length === 0) return new Map();
-    const result = new Map();
+    if (!ids.length) return new Map();
     try {
-      const Database = (await import('better-sqlite3')).default;
-      const db = new Database(this.codebaseDbPath, { readonly: true });
-      // Batch query: single SELECT with placeholders
-      const placeholders = uniqueIds.map(() => '?').join(',');
-      const rows = db.prepare(
-        `SELECT id, embedding FROM vectors WHERE id IN (${placeholders})`
-      ).all(...uniqueIds);
-      db.close();
-      for (const row of rows) {
-        const buf = row.embedding;
-        if (buf) {
-          result.set(row.id, new Float32Array(buf.buffer, buf.byteOffset, buf.length / 4));
-        }
-      }
+      return this.codebaseRepo.getEmbeddingsByIds(ids);
     } catch (err) {
       this.log(`_loadFloatVectors failed: ${err.message}`);
+      return new Map();
     }
-    return result;
   }
 
   // approximateLateInteractionScore removed — replaced by real per-token MaxSim via LateOn-Code
@@ -611,8 +573,7 @@ export class SweetSearch {
   /** Close all connections */
   close() {
     this.graphSearch.close();
-    this._codebaseDb?.close();
-    this._codebaseDb = null;
+    this.codebaseRepo.close();
   }
 }
 

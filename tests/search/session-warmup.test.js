@@ -103,6 +103,13 @@ vi.mock('../../core/vocabulary/vocab-warmer.js', () => ({
   warmFromCache: mockWarmFromCache,
 }));
 
+// Mock db-utils warmGraphDbCache (used by warmSQLiteCaches fallback via dynamic import)
+const mockWarmGraphDbCache = vi.fn(() => ({ summaries: 42 }));
+vi.mock('../../core/infrastructure/db-utils.js', async (importOriginal) => {
+  const orig = await importOriginal();
+  return { ...orig, warmGraphDbCache: mockWarmGraphDbCache };
+});
+
 // Mock late-interaction-model (loaded dynamically by session-warmup's late-interaction-model warmup entry)
 const mockGetLateInteractionPipeline = vi.fn(async () => ({ session: {}, tokenizer: {} }));
 vi.mock('../../core/late-interaction-model.js', () => ({
@@ -530,8 +537,8 @@ describe('session-warmup', () => {
       expect(sqliteResult).toBeDefined();
       expect(sqliteResult.ok).toBe(true);
       expect(sqliteResult.details.fallback).toBe(true);
-      // Should have opened SQLite directly
-      expect(_mockDbInstance).toHaveBeenCalledWith('/tmp/test-code-graph.db', { readonly: true, timeout: 5000 });
+      // Should have warmed cache via lightweight db-utils helper
+      expect(mockWarmGraphDbCache).toHaveBeenCalledWith('/tmp/test-code-graph.db');
     });
 
     it('handles server timeout gracefully', async () => {

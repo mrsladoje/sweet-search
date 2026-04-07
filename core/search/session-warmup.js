@@ -17,8 +17,6 @@
 
 import { existsSync } from 'fs';
 import fs from 'fs/promises';
-import Database from 'better-sqlite3';
-import { applyReadPragmas } from '../infrastructure/db-utils.js';
 import { Pool } from 'undici';
 import {
   DB_PATHS,
@@ -204,27 +202,12 @@ async function warmSQLiteCaches() {
     // Fallback: direct SQLite touch
   }
 
-  let db;
   try {
-    db = new Database(DB_PATHS.codeGraph, { readonly: true, timeout: 5000 });
-    applyReadPragmas(db);
-
-    // FTS5 page cache
-    try { db.prepare('SELECT count(*) FROM entities_fts WHERE name MATCH "warmup"').get(); } catch { /* table may not exist */ }
-    try { db.prepare('SELECT count(*) FROM relationships').get(); } catch { /* table may not exist */ }
-
-    // HCGS summary pages
-    let summaries = 0;
-    try {
-      const row = db.prepare('SELECT count(*) as cnt FROM entities WHERE summary IS NOT NULL').get();
-      summaries = row?.cnt || 0;
-    } catch { /* column may not exist */ }
-
+    const { warmGraphDbCache } = await import('../infrastructure/db-utils.js');
+    const { summaries } = warmGraphDbCache(DB_PATHS.codeGraph);
     return ok('fts5+hcgs', started, { summaries, fallback: true });
   } catch (err) {
     return fail('fts5+hcgs', started, err);
-  } finally {
-    if (db) try { db.close(); } catch { /* best effort */ }
   }
 }
 

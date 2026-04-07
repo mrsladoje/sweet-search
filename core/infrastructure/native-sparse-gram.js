@@ -6,40 +6,15 @@
 import { existsSync } from 'fs';
 import { createRequire } from 'module';
 import { resolveNativeAddon } from './native-resolver.js';
+import { SPARSE_SYMBOL_MASKS, resolveSparseSymbolMask } from './constants.js';
+
+// Re-export from constants.js — canonical source of symbol type vocabulary.
+export { SPARSE_SYMBOL_MASKS, resolveSparseSymbolMask };
 
 const require = createRequire(import.meta.url);
 
 let _addon = null;
 let _addonLoaded = false;
-
-export const SPARSE_SYMBOL_MASKS = {
-  function: 1 << 0,
-  class: 1 << 1,
-  method: 1 << 2,
-  import: 1 << 3,
-  type: 1 << 4,
-  other: 1 << 5,
-};
-
-export function resolveSparseSymbolMask(symbolType) {
-  if (typeof symbolType !== 'string') return 0;
-
-  const normalized = symbolType.trim().toLowerCase();
-  if (!normalized) return 0;
-  if (normalized.includes('function')) return SPARSE_SYMBOL_MASKS.function;
-  if (normalized.includes('method')) return SPARSE_SYMBOL_MASKS.method;
-  if (normalized.includes('class')) return SPARSE_SYMBOL_MASKS.class;
-  if (normalized.includes('import')) return SPARSE_SYMBOL_MASKS.import;
-  if (
-    normalized.includes('type') ||
-    normalized.includes('interface') ||
-    normalized.includes('enum') ||
-    normalized.includes('typedef')
-  ) {
-    return SPARSE_SYMBOL_MASKS.type;
-  }
-  return SPARSE_SYMBOL_MASKS.other;
-}
 
 function loadAddon() {
   if (_addonLoaded) return _addon;
