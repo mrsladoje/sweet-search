@@ -24,7 +24,7 @@ export * from './graph.js';
 // Vector store indices (HNSW, Binary HNSW, SEISMIC)
 export * from './vector-store.js';
 
-// Translation, Cerebras
+// Cerebras LLM (used by llm-provider.js for graph/HCGS generation)
 export * from './translation.js';
 
 // Aggregate default export (preserves backward compatibility)
@@ -34,7 +34,7 @@ import { RERANK_CONFIG, LOCAL_RERANKER_CONFIG, shouldUseLocalReranker, isJinaRer
 import { FILE_PATTERNS, AGENTIC_GITIGNORE_ALLOWLIST, ROUTING_CONFIG, PERFORMANCE_TARGETS, loadProjectConfig } from './search.js';
 import { GRAPH_CONFIG, HCGS_CONFIG } from './graph.js';
 import { HNSW_CONFIG, BINARY_HNSW_CONFIG, SEISMIC_CONFIG } from './vector-store.js';
-import { CEREBRAS_CONFIG, TRANSLATION_PROVIDERS, TRANSLATION_LOCAL_MODELS, TRANSLATION_CONFIG, isCerebrasAvailable, getCerebrasModel, isTranslationAvailable, getTranslationProvider, getTranslationLocalModel } from './translation.js';
+import { CEREBRAS_CONFIG, isCerebrasAvailable, getCerebrasModel } from './translation.js';
 
 export default {
   PROJECT_ROOT,
@@ -43,9 +43,6 @@ export default {
   EMBEDDING_PROVIDERS,
   EMBEDDING_CONFIG,
   CEREBRAS_CONFIG,
-  TRANSLATION_PROVIDERS,
-  TRANSLATION_LOCAL_MODELS,
-  TRANSLATION_CONFIG,
   RERANK_CONFIG,
   LOCAL_RERANKER_CONFIG,
   CASCADE_CONFIG,
@@ -70,9 +67,6 @@ export default {
   getJinaRerankerApiKey,
   isCerebrasAvailable,
   getCerebrasModel,
-  isTranslationAvailable,
-  getTranslationProvider,
-  getTranslationLocalModel,
   getOptimalBatchSize,
   detectIndexerProfile,
   loadProjectConfig,

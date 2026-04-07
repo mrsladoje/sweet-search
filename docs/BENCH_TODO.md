@@ -188,7 +188,7 @@ Structural mode is opt-in only via `--structural` flag (MCP `structural: true`).
 
 ---
 
-## DONE: Translation Fallback — Benchmarked & Disabled by Default (2026-03-19)
+## DONE: Translation Fallback — Removed (2026-04-07, benchmarked 2026-03-19)
 
 OPUS-MT translation (21 language pairs, int8 quantized MarianMT) was implemented and
 benchmarked extensively on GenCodeSearchNet (6000 queries) and M2CRB (2814 multilingual queries).
@@ -208,8 +208,8 @@ benchmarked extensively on GenCodeSearchNet (6000 queries) and M2CRB (2814 multi
    - `hasValidFile` check missed `metadata.file`/`metadata.name` fields
 
 4. **Right architecture**: Instruct the LLM (via CLAUDE.md) to query in the codebase's
-   natural language. Translation fallback remains as a safety net for LLM language mismatches,
-   but is now **off by default** (`enableTranslationFallback: false`).
+   natural language. Translation fallback has been fully removed — the embedding model handles
+   multilingual input natively.
 
 ### Benchmark Results (Full Profile, lateon-code)
 
@@ -225,8 +225,3 @@ benchmarked extensively on GenCodeSearchNet (6000 queries) and M2CRB (2814 multi
 | MRR@10 | 56.90% | 56.90% |
 | Total time | 505s | **360s** |
 
-### To re-enable
-
-Set `enableTranslationFallback: true` in SweetSearch options or `SWEET_SEARCH_TRANSLATE=true` env var.
-The fixed gate now correctly uses pre-reranking embedding scores, so translation only fires on
-genuinely low-confidence queries.
