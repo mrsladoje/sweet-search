@@ -15,7 +15,7 @@ import { existsSync, createWriteStream, createReadStream } from 'fs';
 import path from 'path';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { wasmMaxSimF32, wasmMaxSimDequantPerToken, wasmMaxSimDequant4Bit, nativeMaxSimBatch, nativeMaxSimBatchPerToken, nativeMaxSimBatch4Bit, initWasm, isNativeMaxSimAvailable, isNativePerTokenAvailable, isNative4BitAvailable } from '../infrastructure/simd-distance.js';
-import { fastRotate, generateSignVector } from '../infrastructure/quantization.js';
+import { fastRotate, generateSignVector, calibrateWUSH, wushRotate } from '../infrastructure/quantization.js';
 import { poolTokens } from './late-interaction-model.js';
 
 // =============================================================================
@@ -113,6 +113,11 @@ function quantizeToInt8PerToken(flat, numTokens, tokenDim) {
  * Packs 2 values per byte: low nibble = even index, high nibble = odd index.
  * Each token gets its own min/scale, using the full 4-bit (16 levels) range.
  *
+ * NOTE: CRA-2 (quantile-based boundaries) was reverted — a correct implementation
+ * requires storing quantile centroids in the binary format so dequant can use them.
+ * Without matching centroids, the encode/decode mismatch increases error.
+ * CRA-2 should be revisited as a format-level change, not a drop-in encoder swap.
+ *
  * @param {Float32Array} flat - Flattened token data (numTokens * tokenDim)
  * @param {number} numTokens
  * @param {number} tokenDim
@@ -139,7 +144,6 @@ function quantizeToInt4PerToken(flat, numTokens, tokenDim) {
     const pOff = t * packedSize;
     if (tMax === tMin) {
       scaleArray[t] = 0;
-      // All zeros
     } else {
       const sc = (tMax - tMin) / 15; // 16 levels: 0..15
       scaleArray[t] = sc;
@@ -236,6 +240,52 @@ function l2Norm(vec) {
 }
 
 /**
+ * CRA-9: Voronoi-guided token pruning. Estimates token "uniqueness" by computing
+ * mean distance to nearest neighbors. Tokens with small mean NN distance (tiny
+ * Voronoi cells) are redundant — their information is well-represented by
+ * neighbors. Tokens with large mean NN distance are unique and must be kept.
+ *
+ * @param {Array} tokens - Token vectors (first is protected)
+ * @param {number} threshold - Keep ratio (0..1): fraction of tokens to keep
+ * @returns {Array} Pruned token list
+ */
+/**
+ * @param {Array} tokens - Token vectors (first is protected)
+ * @param {number} keepRatio - Fraction of tokens to keep (0..1), e.g. 0.7 = keep 70%
+ */
+function voronoiPruneTokens(tokens, keepRatio) {
+  if (tokens.length <= 2) return tokens;
+
+  const dim = tokens[0].length;
+  const n = tokens.length;
+
+  // Compute nearest-neighbor distance for each non-protected token
+  const importance = new Float32Array(n);
+  importance[0] = Infinity; // protect first token
+
+  for (let i = 1; i < n; i++) {
+    let minDist = Infinity;
+    for (let j = 0; j < n; j++) {
+      if (i === j) continue;
+      let dot = 0;
+      for (let d = 0; d < dim; d++) dot += tokens[i][d] * tokens[j][d];
+      const dist = 1 - dot; // cosine distance for L2-normalized vectors
+      if (dist < minDist) minDist = dist;
+    }
+    importance[i] = minDist; // larger = more unique = keep
+  }
+
+  // Keep top keepRatio fraction by importance + always keep protected token
+  const keepCount = Math.max(1, Math.round(n * keepRatio));
+  const indexed = Array.from({ length: n }, (_, i) => ({ i, imp: importance[i] }));
+  indexed.sort((a, b) => b.imp - a.imp);
+  const keepSet = new Set(indexed.slice(0, keepCount).map(x => x.i));
+  keepSet.add(0);
+
+  return tokens.filter((_, i) => keepSet.has(i));
+}
+
+/**
  * Late Interaction Index Class
  */
 const LI_SEGMENT_SIZE = 10_000;
@@ -258,13 +308,45 @@ export class LateInteractionIndex {
 
     // Phase 3: norm-based token pruning threshold (0 = disabled)
     this.normPruneThreshold = options.normPruneThreshold || 0;
+    // CRA-9: Use Voronoi cell volume instead of norm for pruning decisions.
+    // voronoiKeepRatio is a separate param (0..1, fraction to KEEP), not overloaded
+    // from normPruneThreshold which is an absolute norm threshold.
+    this.voronoiPrune = options.voronoiPrune ?? false;
+    this.voronoiKeepRatio = options.voronoiKeepRatio ?? 0.7; // keep 70% by default
 
     // WHT rotation (Phase 2): seed > 0 enables Walsh-Hadamard rotation
     // before quantization. Equalizes dimension variance for better INT8 fidelity.
     // Default OFF (0) for backward compat — legacy indexes don't persist whtSeed,
     // so defaulting ON would rotate queries against unrotated documents.
     this.whtSeed = options.whtSeed ?? 0;
+    // CRA-4: 'natural' (default, backward-compat) or 'sequency' (opt-in, new indexes only)
+    this.whtOrdering = options.whtOrdering || 'natural';
     this._signVector = null; // lazy-init on first add/query
+
+    // CRA-10: SAQ-style adaptive bit allocation per dimension segment.
+    // When enabled, dimensions with higher post-WHT variance get more bits (up to 6)
+    // and low-variance dimensions get fewer (down to 3). Average stays at 4 bits.
+    // Only useful if post-WHT variance ratio > 1.5 (otherwise uniform is optimal).
+    this.adaptiveBitAlloc = options.adaptiveBitAlloc ?? false;
+
+    // CRA-8 / Phase 5: Matryoshka dimension truncation. When matryoshkaDim is set
+    // and less than tokenDim, token vectors are truncated to the first matryoshkaDim
+    // dimensions before quantization. Requires a model trained with Matryoshka objective.
+    // The effective storage dimension becomes matryoshkaDim instead of tokenDim.
+    this.matryoshkaDim = options.matryoshkaDim || 0; // 0 = disabled
+
+    // CRA-6: Token importance weights. When enabled, MaxSim scoring weights each
+    // doc token's similarity by its pre-normalization L2 norm (a proxy for IDF —
+    // high-norm tokens carry more information). Uses softmax over tokenNorms.
+    this.useTokenWeights = options.useTokenWeights ?? false;
+
+    // CRA-3: WUSH calibrated rotation. When wushCalibrate is true and whtSeed > 0,
+    // collects sample embeddings during add() and calibrates the rotation matrix
+    // after wushSampleSize samples. Replaces bare WHT with WUSH transform.
+    this.wushCalibrate = options.wushCalibrate ?? false;
+    this._wushSamples = []; // collected during add(), cleared after calibration
+    this._wushSampleSize = options.wushSampleSize || 10000;
+    this._wushCalibration = null; // { eigenVecs, invSqrtEigenVals } after calibration
 
     // In-memory storage
     this.documents = new Map(); // id -> { tokens, metadata }
@@ -323,28 +405,40 @@ export class LateInteractionIndex {
       emb.slice(0, this.tokenDim)
     );
 
-    // Phase 3: Norm-based token pruning — drop low-information tokens before pooling.
-    // Uses pre-normalization norms when available (from the model's L2 normalization
-    // step, attached as tokenEmbeddings.preNorms). Pre-norm magnitude measures how much
-    // the model "activated" for each token — low pre-norm = low information content.
-    // Falls back to post-normalization L2 norms for external embeddings that haven't
-    // been normalized (where post-norm varies meaningfully).
-    if (this.normPruneThreshold > 0 && truncated.length > 1) {
-      const preNorms = tokenEmbeddings.preNorms; // Float32Array from model, or undefined
-      const kept = [truncated[0]]; // always keep first token (CLS-equivalent)
-      for (let t = 1; t < truncated.length; t++) {
-        let norm;
-        if (preNorms) {
-          norm = preNorms[t];
-        } else {
-          let normSq = 0;
-          const v = truncated[t];
-          for (let d = 0; d < v.length; d++) normSq += v[d] * v[d];
-          norm = Math.sqrt(normSq);
+    // CRA-6: Capture pre-normalization norms for token importance weighting.
+    // The model's preNorms reflect how much each token was "activated" — after L2
+    // normalization all norms become ~1, making post-norm weighting a no-op.
+    const preNorms = tokenEmbeddings.preNorms
+      ? new Float32Array(tokenEmbeddings.preNorms).slice(0, truncated.length)
+      : null;
+
+    // Phase 3: Token pruning — drop low-information tokens before pooling.
+    if ((this.normPruneThreshold > 0 || this.voronoiPrune) && truncated.length > 1) {
+      if (this.voronoiPrune) {
+        // CRA-9: Voronoi-guided token importance — tokens with small Voronoi cells
+        // (many nearby neighbors) are redundant and safe to prune.
+        truncated = voronoiPruneTokens(truncated, this.voronoiKeepRatio);
+      } else if (this.normPruneThreshold > 0) {
+        // Original norm-based pruning (Phase 3 baseline).
+        // Uses pre-normalization norms when available (from the model's L2 normalization
+        // step, attached as tokenEmbeddings.preNorms). Pre-norm magnitude measures how much
+        // the model "activated" for each token — low pre-norm = low information content.
+        const preNorms = tokenEmbeddings.preNorms;
+        const kept = [truncated[0]]; // always keep first token (CLS-equivalent)
+        for (let t = 1; t < truncated.length; t++) {
+          let norm;
+          if (preNorms) {
+            norm = preNorms[t];
+          } else {
+            let normSq = 0;
+            const v = truncated[t];
+            for (let d = 0; d < v.length; d++) normSq += v[d] * v[d];
+            norm = Math.sqrt(normSq);
+          }
+          if (norm >= this.normPruneThreshold) kept.push(truncated[t]);
         }
-        if (norm >= this.normPruneThreshold) kept.push(truncated[t]);
+        truncated = kept;
       }
-      truncated = kept;
     }
 
     // Phase 3: Token pooling — reduce token count by averaging consecutive groups.
@@ -356,33 +450,69 @@ export class LateInteractionIndex {
       truncated = poolTokens(truncated.map(t => t instanceof Float32Array ? t : new Float32Array(t)), this.poolFactor);
     }
 
+    // CRA-8: Matryoshka dimension truncation — keep only first matryoshkaDim dimensions.
+    // Applied before rotation (Matryoshka training ensures prefix dimensions are most informative).
+    if (this.matryoshkaDim > 0 && this.matryoshkaDim < this.tokenDim) {
+      for (let t = 0; t < truncated.length; t++) {
+        truncated[t] = new Float32Array(truncated[t]).slice(0, this.matryoshkaDim);
+      }
+    }
+
+    // Effective dimension for quantization (respects Matryoshka truncation)
+    const effectiveDim = (this.matryoshkaDim > 0 && this.matryoshkaDim < this.tokenDim)
+      ? this.matryoshkaDim : this.tokenDim;
+
     // WHT rotation (Phase 2): rotate each token before quantization.
     // Equalizes dimension variance so scalar quantization uses full INT8 range.
     // Lazy-init sign vector (deterministic from whtSeed).
     if (this.whtSeed > 0 && !this._signVector) {
-      this._signVector = generateSignVector(this.tokenDim, this.whtSeed);
+      this._signVector = generateSignVector(effectiveDim, this.whtSeed);
+    }
+
+    // CRA-3: Collect samples for WUSH calibration (before rotation)
+    if (this.wushCalibrate && this.whtSeed > 0 && !this._wushCalibration) {
+      for (let t = 0; t < truncated.length && this._wushSamples.length < this._wushSampleSize; t++) {
+        this._wushSamples.push(new Float32Array(truncated[t]));
+      }
+      // Calibrate once we have enough samples
+      if (this._wushSamples.length >= this._wushSampleSize) {
+        this._wushCalibration = calibrateWUSH(this._wushSamples, effectiveDim);
+        this._wushSamples = []; // free memory
+      }
     }
 
     // Apply rotation in-place before flattening (if WHT enabled)
     if (this.whtSeed > 0) {
       for (let t = 0; t < truncated.length; t++) {
-        truncated[t] = fastRotate(new Float32Array(truncated[t]), this._signVector);
+        if (this._wushCalibration) {
+          // CRA-3: WUSH calibrated rotation
+          truncated[t] = wushRotate(
+            new Float32Array(truncated[t]),
+            this._wushCalibration.eigenVecs,
+            this._wushCalibration.invSqrtEigenVals,
+            this._signVector,
+          );
+        } else {
+          truncated[t] = fastRotate(new Float32Array(truncated[t]), this._signVector, this.whtOrdering === 'sequency');
+        }
       }
     }
 
     // Flatten typed arrays into a single contiguous buffer.
-    const totalElements = truncated.length * this.tokenDim;
+    // Use effectiveDim (respects Matryoshka truncation) for stride and quantization.
+    const storageDim = effectiveDim;
+    const totalElements = truncated.length * storageDim;
     const flat = new Float32Array(totalElements);
     for (let i = 0; i < truncated.length; i++) {
-      flat.set(truncated[i], i * this.tokenDim);
+      flat.set(truncated[i], i * storageDim);
     }
 
     // Pre-compute per-token L2 norms (on rotated vectors — WHT preserves norms).
     const tokenNorms = new Float32Array(truncated.length);
     for (let t = 0; t < truncated.length; t++) {
-      const offset = t * this.tokenDim;
+      const offset = t * storageDim;
       let normSq = 0;
-      for (let d = 0; d < this.tokenDim; d++) {
+      for (let d = 0; d < storageDim; d++) {
         normSq += flat[offset + d] * flat[offset + d];
       }
       tokenNorms[t] = Math.sqrt(normSq);
@@ -391,13 +521,13 @@ export class LateInteractionIndex {
     let docEntry;
     if (this.quantBits === 4) {
       // Phase 4: 4-bit nibble-packed quantization (2 values per byte)
-      const { data, minArray, scaleArray } = quantizeToInt4PerToken(flat, truncated.length, this.tokenDim);
-      docEntry = { tokens: data, numTokens: truncated.length, dim: this.tokenDim, minArray, scaleArray, metadata, tokenNorms, quantBits: 4 };
+      const { data, minArray, scaleArray } = quantizeToInt4PerToken(flat, truncated.length, storageDim);
+      docEntry = { tokens: data, numTokens: truncated.length, dim: storageDim, minArray, scaleArray, metadata, tokenNorms, preNorms, quantBits: 4 };
     } else if (this.useInt8) {
-      const { data, minArray, scaleArray } = quantizeToInt8PerToken(flat, truncated.length, this.tokenDim);
-      docEntry = { tokens: data, numTokens: truncated.length, dim: this.tokenDim, minArray, scaleArray, metadata, tokenNorms };
+      const { data, minArray, scaleArray } = quantizeToInt8PerToken(flat, truncated.length, storageDim);
+      docEntry = { tokens: data, numTokens: truncated.length, dim: storageDim, minArray, scaleArray, metadata, tokenNorms, preNorms };
     } else {
-      docEntry = { tokens: flat, numTokens: truncated.length, dim: this.tokenDim, metadata, tokenNorms };
+      docEntry = { tokens: flat, numTokens: truncated.length, dim: storageDim, metadata, tokenNorms, preNorms };
     }
 
     this.documents.set(id, docEntry);
@@ -440,11 +570,8 @@ export class LateInteractionIndex {
   async _writeSegmentFile(segPath, segmentMap) {
     const numDocs = segmentMap.size;
     const entries = []; // { id, idBuf, doc } in insertion order
-    const is4bit = this.quantBits === 4;
-    // Bytes per element per token dimension (hoisted — same for all docs in a segment)
-    const bytesPerDim = is4bit ? 0.5 : (this.useInt8 ? 1 : 4);
-
-    // Collect entries and compute total sizes
+    // Collect entries and compute total sizes.
+    // Use each doc's stored dim (may differ from this.tokenDim due to Matryoshka truncation).
     let totalTokenBytes = 0;
     let totalIdBytes = 0;
 
@@ -452,9 +579,12 @@ export class LateInteractionIndex {
       const idBuf = Buffer.from(id, 'utf-8');
       totalIdBytes += 2 + idBuf.length; // u16 len + utf8 bytes
       const numTokens = doc.numTokens;
-      const tokenPayload = Math.ceil(numTokens * this.tokenDim * bytesPerDim);
-      // token data + norms (always) + per-token min/scale (if this doc has them)
+      const docDim = doc.dim;
+      const docBytesPerDim = (doc.quantBits === 4) ? 0.5 : (this.useInt8 ? 1 : 4);
+      const tokenPayload = Math.ceil(numTokens * docDim * docBytesPerDim);
+      // token data + norms (always) + preNorms (if present) + per-token min/scale (if this doc has them)
       totalTokenBytes += tokenPayload + numTokens * 4; // tokens + norms
+      if (doc.preNorms) totalTokenBytes += numTokens * 4; // preNorms (f32)
       if (doc.minArray) totalTokenBytes += numTokens * 8; // min(f32) + scale(f32) per token
       entries.push({ id, idBuf, doc });
     }
@@ -467,8 +597,12 @@ export class LateInteractionIndex {
     // --- HEADER (64 bytes) ---
     buf.writeUInt32LE(SSLX_SEGMENT_MAGIC, 0);       // [0..3]  magic
     buf.writeUInt16LE(SSLX_VERSION, 4);              // [4..5]  version
+    // Use the effective storage dim in the header so reload parses slabs correctly.
+    // For Matryoshka, this is matryoshkaDim; otherwise tokenDim.
+    const headerDim = (this.matryoshkaDim > 0 && this.matryoshkaDim < this.tokenDim)
+      ? this.matryoshkaDim : this.tokenDim;
     buf.writeUInt8(this.quantBits, 6);                 // [6]     quantBits (4=int4, 8=int8, 32=float32)
-    buf.writeUInt8(this.tokenDim, 7);                 // [7]     tokenDim
+    buf.writeUInt8(headerDim, 7);                      // [7]     tokenDim (effective storage dim)
     buf.writeUInt32LE(numDocs, 8);                    // [8..11] numDocuments
     buf.writeUInt8(this.poolFactor || 1, 12);         // [12]    poolFactor
     // [13..15] reserved
@@ -477,7 +611,8 @@ export class LateInteractionIndex {
       modelBuf.copy(buf, 16, 0, Math.min(modelBuf.length, 32));
     }
     buf.writeUInt32LE(this.whtSeed || 0, 48);        // [48..51] whtSeed
-    // [52..63] reserved (already zero)
+    buf.writeUInt8(this.whtOrdering === 'sequency' ? 1 : 0, 52); // [52] whtOrdering: 0=natural, 1=sequency
+    // [53..63] reserved (already zero)
     // Note: quantScheme is per-doc (stored in doc table reserved byte), not per-segment.
 
     // --- DOCUMENT TABLE (numDocs * 20 bytes) ---
@@ -494,10 +629,14 @@ export class LateInteractionIndex {
       buf.writeFloatLE(doc.min ?? 0, off + 6);         // [6..9]  min (scalar; 0 for per-token)
       buf.writeFloatLE(doc.scale ?? 0, off + 10);      // [10..13] scale (scalar; 0 for per-token)
       buf.writeUInt8(isPerToken ? 1 : 0, off + 14);    // [14]   quantScheme: 0=per-doc, 1=per-token
-      // [15..19] reserved
+      buf.writeUInt8(doc.preNorms ? 1 : 0, off + 15);  // [15]   hasPreNorms: CRA-6 token importance
+      // [16..19] reserved
 
-      const tokenPayload = Math.ceil(doc.numTokens * this.tokenDim * bytesPerDim);
-      tokenSlabCursor += tokenPayload + doc.numTokens * 4 + (isPerToken ? doc.numTokens * 8 : 0);
+      const docBPD = (doc.quantBits === 4) ? 0.5 : (this.useInt8 ? 1 : 4);
+      const tokenPayload = Math.ceil(doc.numTokens * doc.dim * docBPD);
+      tokenSlabCursor += tokenPayload + doc.numTokens * 4 // tokens + norms
+        + (doc.preNorms ? doc.numTokens * 4 : 0)          // preNorms
+        + (isPerToken ? doc.numTokens * 8 : 0);           // min/scale
     }
 
     // --- ID TABLE ---
@@ -517,7 +656,8 @@ export class LateInteractionIndex {
 
     for (const { doc } of entries) {
       // Token data — 4-bit packed or int8/float32
-      const tokenPayload = Math.ceil(doc.numTokens * this.tokenDim * bytesPerDim);
+      const slabBPD = (doc.quantBits === 4) ? 0.5 : (this.useInt8 ? 1 : 4);
+      const tokenPayload = Math.ceil(doc.numTokens * doc.dim * slabBPD);
       const tokenSrc = Buffer.from(doc.tokens.buffer, doc.tokens.byteOffset, tokenPayload);
       tokenSrc.copy(buf, slabOffset);
       slabOffset += tokenPayload;
@@ -534,6 +674,12 @@ export class LateInteractionIndex {
       const normSrc = Buffer.from(norms.buffer, norms.byteOffset, doc.numTokens * 4);
       normSrc.copy(buf, slabOffset);
       slabOffset += doc.numTokens * 4;
+
+      // CRA-6: preNorms (pre-normalization norms for token importance weighting)
+      if (doc.preNorms) {
+        Buffer.from(doc.preNorms.buffer, doc.preNorms.byteOffset, doc.numTokens * 4).copy(buf, slabOffset);
+        slabOffset += doc.numTokens * 4;
+      }
     }
 
     // --- FOOTER (CRC32) ---
@@ -595,7 +741,8 @@ export class LateInteractionIndex {
         numTokens: buf.readUInt16LE(off + 4),
         min: buf.readFloatLE(off + 6),
         scale: buf.readFloatLE(off + 10),
-        isPerToken: buf.readUInt8(off + 14) === 1, // per-doc quantScheme flag
+        isPerToken: buf.readUInt8(off + 14) === 1,
+        hasPreNorms: buf.readUInt8(off + 15) === 1,
       });
     }
 
@@ -618,7 +765,7 @@ export class LateInteractionIndex {
     const docs = [];
 
     for (let i = 0; i < numDocs; i++) {
-      const { tokenDataOffset, numTokens, min, scale, isPerToken } = docEntries[i];
+      const { tokenDataOffset, numTokens, min, scale, isPerToken, hasPreNorms } = docEntries[i];
       const absOffset = slabStart + tokenDataOffset;
       // 4-bit: ceil(tokenDim/2) bytes per token; 8-bit: tokenDim; float32: tokenDim*4
       const tokenPayload = Math.ceil(numTokens * tokenDim * bytesPerDim);
@@ -653,6 +800,16 @@ export class LateInteractionIndex {
       const normAb = new ArrayBuffer(numTokens * 4);
       new Uint8Array(normAb).set(buf.subarray(cursor, cursor + numTokens * 4));
       const tokenNorms = new Float32Array(normAb);
+      cursor += numTokens * 4;
+
+      // CRA-6: Pre-normalization norms for token importance weighting
+      let preNorms = null;
+      if (hasPreNorms) {
+        const preNormAb = new ArrayBuffer(numTokens * 4);
+        new Uint8Array(preNormAb).set(buf.subarray(cursor, cursor + numTokens * 4));
+        preNorms = new Float32Array(preNormAb);
+        cursor += numTokens * 4;
+      }
 
       const doc = {
         id: ids[i],
@@ -661,6 +818,7 @@ export class LateInteractionIndex {
         dim: tokenDim,
         tokenNorms,
       };
+      if (preNorms) doc.preNorms = preNorms;
       if (is4bit) doc.quantBits = 4;
 
       if (isPerToken) {
@@ -921,13 +1079,36 @@ export class LateInteractionIndex {
    * @param {Float32Array} [docTokenNorms] - Pre-computed norms (from add-time)
    * @returns {number} MaxSim score
    */
-  maxSimScoreFlat(queryTokens, docFlat, numDocTokens, dim, docTokenNorms, precomputedQueryFlat) {
+  maxSimScoreFlat(queryTokens, docFlat, numDocTokens, dim, docTokenNorms, precomputedQueryFlat, preNorms) {
     if (!docFlat || numDocTokens === 0) return 0;
 
     // Try WASM kernel first — pass pre-flattened query if available
-    const queryFlat = precomputedQueryFlat || this._flattenQueryTokens(queryTokens, dim);
-    const wasmScore = wasmMaxSimF32(queryFlat, docFlat, queryTokens.length, numDocTokens, dim);
-    if (wasmScore !== null) return wasmScore;
+    // Skip WASM when token weighting is active (WASM doesn't support weights)
+    if (!this.useTokenWeights) {
+      const queryFlat = precomputedQueryFlat || this._flattenQueryTokens(queryTokens, dim);
+      const wasmScore = wasmMaxSimF32(queryFlat, docFlat, queryTokens.length, numDocTokens, dim);
+      if (wasmScore !== null) return wasmScore;
+    }
+
+    // CRA-6: Pre-compute softmax token weights from pre-normalization norms.
+    // preNorms reflect how much the model "activated" for each token before L2
+    // normalization. Post-norm norms are all ~1, making weighting meaningless.
+    let tokenWeights = null;
+    const weightSource = preNorms || null;
+    if (this.useTokenWeights && weightSource && numDocTokens > 1) {
+      tokenWeights = new Float32Array(numDocTokens);
+      let maxNorm = -Infinity;
+      for (let di = 0; di < numDocTokens; di++) {
+        if (weightSource[di] > maxNorm) maxNorm = weightSource[di];
+      }
+      let expSum = 0;
+      for (let di = 0; di < numDocTokens; di++) {
+        tokenWeights[di] = Math.exp(weightSource[di] - maxNorm);
+        expSum += tokenWeights[di];
+      }
+      const scale = numDocTokens / expSum;
+      for (let di = 0; di < numDocTokens; di++) tokenWeights[di] *= scale;
+    }
 
     // JS fallback
     let totalScore = 0;
@@ -964,7 +1145,9 @@ export class LateInteractionIndex {
           dNorm = Math.sqrt(dNormSq);
         }
 
-        const sim = dot / (qNorm * dNorm + 1e-8);
+        let sim = dot / (qNorm * dNorm + 1e-8);
+        // CRA-6: Apply token importance weight
+        if (tokenWeights) sim *= tokenWeights[di];
         if (sim > maxSim) maxSim = sim;
       }
 
@@ -992,6 +1175,79 @@ export class LateInteractionIndex {
   }
 
   /**
+   * CRA-5: Implicit decompression 4-bit MaxSim scorer.
+   * Scores directly from nibble-packed data without materializing float32 arrays.
+   *
+   * For each (query_token, doc_token) pair, uses a 16-entry LUT built from the
+   * doc token's min/scale. The LUT maps bucket index → partial dot product
+   * contribution. This eliminates the dequant allocation entirely.
+   * @private
+   */
+  _maxSimScore4BitImplicit(queryTokens, doc, precomputedQueryFlat) {
+    const { tokens: packed, minArray, scaleArray, tokenNorms, numTokens, dim, preNorms } = doc;
+    if (numTokens === 0) return 0;
+
+    // CRA-6: Pre-compute token importance weights from pre-normalization norms.
+    let tokenWeights = null;
+    const weightSource = preNorms || null;
+    if (this.useTokenWeights && weightSource && numTokens > 1) {
+      tokenWeights = new Float32Array(numTokens);
+      let maxNorm = -Infinity;
+      for (let di = 0; di < numTokens; di++) {
+        if (weightSource[di] > maxNorm) maxNorm = weightSource[di];
+      }
+      let expSum = 0;
+      for (let di = 0; di < numTokens; di++) {
+        tokenWeights[di] = Math.exp(weightSource[di] - maxNorm);
+        expSum += tokenWeights[di];
+      }
+      const scale = numTokens / expSum;
+      for (let di = 0; di < numTokens; di++) tokenWeights[di] *= scale;
+    }
+
+    const packedSize = Math.ceil(dim / 2);
+    const numQ = queryTokens.length;
+    let totalScore = 0;
+
+    for (let qi = 0; qi < numQ; qi++) {
+      const qVec = queryTokens[qi];
+
+      let qNormSq = 0;
+      for (let k = 0; k < dim; k++) qNormSq += qVec[k] * qVec[k];
+      const qNorm = Math.sqrt(qNormSq);
+
+      let maxSim = -Infinity;
+
+      for (let di = 0; di < numTokens; di++) {
+        const tMin = minArray[di];
+        const tScale = scaleArray[di];
+        const dNorm = tokenNorms[di];
+        const pOff = di * packedSize;
+
+        let dot = 0;
+        for (let d = 0; d < dim; d += 2) {
+          const byte = packed[pOff + (d >> 1)];
+          const bucket0 = byte & 0x0F;
+          dot += qVec[d] * (tMin + bucket0 * tScale);
+
+          if (d + 1 < dim) {
+            const bucket1 = (byte >>> 4) & 0x0F;
+            dot += qVec[d + 1] * (tMin + bucket1 * tScale);
+          }
+        }
+
+        let sim = dot / (qNorm * dNorm + 1e-8);
+        if (tokenWeights) sim *= tokenWeights[di];
+        if (sim > maxSim) maxSim = sim;
+      }
+
+      if (maxSim > 0) totalScore += maxSim;
+    }
+
+    return totalScore / numQ;
+  }
+
+  /**
    * Score candidates using MaxSim late interaction
    *
    * @param {number[][]} queryTokenEmbeddings - Query token embeddings
@@ -1008,17 +1264,33 @@ export class LateInteractionIndex {
 
     const { maxCandidates, maxQueryTokens, normThreshold, maxDocTokens } = options;
 
+    // P1-fix: Truncate query tokens to the effective storage dimension.
+    // When matryoshkaDim is active, docs are stored at matryoshkaDim width, so queries
+    // must match to avoid comparing vectors in different-dimensional spaces.
+    const scoringDim = (this.matryoshkaDim > 0 && this.matryoshkaDim < this.tokenDim)
+      ? this.matryoshkaDim : this.tokenDim;
+
     let queryTokens = queryTokenEmbeddings.map(emb =>
-      emb.slice(0, this.tokenDim)
+      emb.slice(0, scoringDim)
     );
 
     // WHT rotation (Phase 2): rotate query tokens once (amortized across all candidates).
     // Required when index was built with whtSeed > 0 — scoring must happen in rotated space.
     if (this.whtSeed > 0) {
       if (!this._signVector) {
-        this._signVector = generateSignVector(this.tokenDim, this.whtSeed);
+        this._signVector = generateSignVector(scoringDim, this.whtSeed);
       }
-      queryTokens = queryTokens.map(q => fastRotate(new Float32Array(q), this._signVector));
+      if (this._wushCalibration) {
+        // CRA-3: WUSH calibrated rotation for queries
+        queryTokens = queryTokens.map(q => wushRotate(
+          new Float32Array(q),
+          this._wushCalibration.eigenVecs,
+          this._wushCalibration.invSqrtEigenVals,
+          this._signVector,
+        ));
+      } else {
+        queryTokens = queryTokens.map(q => fastRotate(new Float32Array(q), this._signVector, this.whtOrdering === 'sequency'));
+      }
     }
 
     // Pruning options (passed through to maxSimScore)
@@ -1045,16 +1317,14 @@ export class LateInteractionIndex {
     const pushFallback = (c, extra) => scored.push({ ...c, lateInteractionScore: c.score || 0, originalScore: c.score, ...extra });
 
     const useFlatPath = !maxDocTokens;
-    const queryFlat = this._flattenQueryTokens(effectiveQueryTokens, this.tokenDim);
+    const queryFlat = this._flattenQueryTokens(effectiveQueryTokens, scoringDim);
 
     // Tier 1: Native batch scoring (rayon parallel + SIMD)
-    // Partition candidates by quantization type, batch-score each group with
-    // the matching native kernel. Candidates without a native path fall through
-    // to WASM/JS scoring below. No early returns — all candidates get real
-    // MaxSim scores regardless of mixed quantization types in the corpus.
-    const nativeScored = new Set(); // candidate ids scored by native kernels
+    // Skip native/WASM tiers when useTokenWeights is active — those kernels
+    // don't support importance weighting, so we must use the JS-tier weighted path.
+    const nativeScored = new Set();
 
-    if (useFlatPath) {
+    if (useFlatPath && !this.useTokenWeights) {
       const groups = { bit4: [], perToken: [], perDoc: [] };
       for (const candidate of toScore) {
         const doc = this.documents.get(candidate.id);
@@ -1075,7 +1345,7 @@ export class LateInteractionIndex {
       const batchScore = (group, buildCand, scoreFn) => {
         if (group.length === 0 || !scoreFn) return;
         const nativeCands = group.map(g => buildCand(g.doc));
-        const scores = scoreFn(queryFlat, effectiveQueryTokens.length, this.tokenDim, nativeCands);
+        const scores = scoreFn(queryFlat, effectiveQueryTokens.length, scoringDim, nativeCands);
         if (scores) {
           for (let i = 0; i < group.length; i++) {
             pushScored(group[i].candidate, scores[i]);
@@ -1097,22 +1367,34 @@ export class LateInteractionIndex {
       if (!doc) { pushFallback(candidate); continue; }
 
       if (useFlatPath) {
-        // Try WASM fused 4-bit kernel (no JS dequant needed)
-        if (doc.quantBits === 4 && doc.minArray && doc.tokenNorms) {
-          const wasmScore = wasmMaxSimDequant4Bit(
-            queryFlat, doc.tokens, doc.minArray, doc.scaleArray, doc.tokenNorms,
-            effectiveQueryTokens.length, doc.numTokens, doc.dim,
-          );
-          if (wasmScore !== null) { pushScored(candidate, wasmScore); continue; }
+        // Try WASM fused kernels only when token weighting is OFF (WASM doesn't support weights)
+        if (!this.useTokenWeights) {
+          // Try WASM fused 4-bit kernel (no JS dequant needed)
+          if (doc.quantBits === 4 && doc.minArray && doc.tokenNorms) {
+            const wasmScore = wasmMaxSimDequant4Bit(
+              queryFlat, doc.tokens, doc.minArray, doc.scaleArray, doc.tokenNorms,
+              effectiveQueryTokens.length, doc.numTokens, doc.dim,
+            );
+            if (wasmScore !== null) { pushScored(candidate, wasmScore); continue; }
+          }
+
+          // Try WASM fused per-token int8 kernel (no JS dequant needed)
+          if (doc.minArray && doc.tokenNorms && doc.quantBits !== 4) {
+            const wasmScore = wasmMaxSimDequantPerToken(
+              queryFlat, doc.tokens, doc.minArray, doc.scaleArray, doc.tokenNorms,
+              effectiveQueryTokens.length, doc.numTokens, doc.dim,
+            );
+            if (wasmScore !== null) { pushScored(candidate, wasmScore); continue; }
+          }
         }
 
-        // Try WASM fused per-token int8 kernel (no JS dequant needed)
-        if (doc.minArray && doc.tokenNorms && doc.quantBits !== 4) {
-          const wasmScore = wasmMaxSimDequantPerToken(
-            queryFlat, doc.tokens, doc.minArray, doc.scaleArray, doc.tokenNorms,
-            effectiveQueryTokens.length, doc.numTokens, doc.dim,
-          );
-          if (wasmScore !== null) { pushScored(candidate, wasmScore); continue; }
+        // CRA-5: JS implicit decompression — score directly from packed nibbles
+        // using a per-query-token LUT (16 entries), avoiding f32 allocation.
+        if (doc.quantBits === 4 && doc.minArray && doc.tokenNorms) {
+          pushScored(candidate, this._maxSimScore4BitImplicit(
+            effectiveQueryTokens, doc, queryFlat,
+          ));
+          continue;
         }
 
         // JS dequant → WASM f32 or JS fallback
@@ -1120,7 +1402,7 @@ export class LateInteractionIndex {
         if (flatData) {
           pushScored(candidate, this.maxSimScoreFlat(
             effectiveQueryTokens, flatData.flat, flatData.numTokens, flatData.dim,
-            doc?.tokenNorms, queryFlat,
+            doc?.tokenNorms, queryFlat, doc?.preNorms,
           ));
         } else {
           pushFallback(candidate);
@@ -1196,16 +1478,28 @@ export class LateInteractionIndex {
         format: 'sslx-v3',
         modelId: this.modelId,
         tokenDim: this.tokenDim,
+        matryoshkaDim: this.matryoshkaDim || 0,
         maxTokens: this.maxTokens,
         useInt8: this.useInt8,
         quantBits: this.quantBits,
         poolFactor: this.poolFactor,
         whtSeed: this.whtSeed || 0,
+        whtOrdering: this.whtOrdering,
         totalDocuments: this.documents.size,
         segments: newSegments,
       };
 
       await fs.writeFile(path.join(segDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+
+      // CRA-3: Persist WUSH calibration alongside segments
+      if (this._wushCalibration) {
+        const cal = {
+          eigenVecs: Array.from(this._wushCalibration.eigenVecs),
+          invSqrtEigenVals: Array.from(this._wushCalibration.invSqrtEigenVals),
+          dim: this.tokenDim,
+        };
+        await fs.writeFile(path.join(segDir, 'wush-calibration.json'), JSON.stringify(cal));
+      }
 
       // Write a stub at the main index path pointing to segments
       await fs.writeFile(this.indexPath, JSON.stringify({
@@ -1228,11 +1522,13 @@ export class LateInteractionIndex {
       version: '2.1',
       modelId: this.modelId,
       tokenDim: this.tokenDim,
+      matryoshkaDim: this.matryoshkaDim || 0,
       maxTokens: this.maxTokens,
       useInt8: this.useInt8,
       quantBits: this.quantBits,
       poolFactor: this.poolFactor,
       whtSeed: this.whtSeed || 0,
+      whtOrdering: this.whtOrdering,
     };
 
     let bytesWritten = 0;
@@ -1257,6 +1553,7 @@ export class LateInteractionIndex {
         };
         if (doc.quantBits === 4) obj.quantBits = 4;
         if (doc.tokenNorms) obj.tokenNorms = Array.from(doc.tokenNorms);
+        if (doc.preNorms) obj.preNorms = Array.from(doc.preNorms);
         // Per-token quant (Phase 1/4) vs per-doc quant (legacy)
         if (doc.minArray) {
           obj.minArray = Array.from(doc.minArray);
@@ -1278,6 +1575,17 @@ export class LateInteractionIndex {
         resolve();
       });
     });
+
+    // CRA-3: Persist WUSH calibration alongside legacy single-file index
+    if (this._wushCalibration) {
+      const cal = {
+        eigenVecs: Array.from(this._wushCalibration.eigenVecs),
+        invSqrtEigenVals: Array.from(this._wushCalibration.invSqrtEigenVals),
+        dim: this.tokenDim,
+      };
+      const wushPath = this.indexPath + '.wush-calibration.json';
+      await fs.writeFile(wushPath, JSON.stringify(cal));
+    }
 
     const sizeMB = (bytesWritten / 1024 / 1024).toFixed(2);
     console.log(`LateInteraction: Saved ${this.documents.size} documents (${sizeMB} MB)`);
@@ -1328,11 +1636,13 @@ export class LateInteractionIndex {
       }
 
       this.tokenDim = state.tokenDim;
+      this.matryoshkaDim = state.matryoshkaDim || 0;
       this.maxTokens = state.maxTokens;
       this.useInt8 = state.useInt8;
       this.quantBits = state.quantBits || (state.useInt8 ? 8 : 32);
       this.poolFactor = state.poolFactor || 1;
       if (state.whtSeed !== undefined) this.whtSeed = state.whtSeed;
+      this.whtOrdering = state.whtOrdering || 'natural';
       if (state.modelId) this.modelId = state.modelId;
 
       // Documents may already be loaded by streaming path
@@ -1354,6 +1664,7 @@ export class LateInteractionIndex {
           };
           if (is4bit) entry.quantBits = 4;
           if (doc.tokenNorms) entry.tokenNorms = new Float32Array(doc.tokenNorms);
+          if (doc.preNorms) entry.preNorms = new Float32Array(doc.preNorms);
 
           // Per-token quant (Phase 1/4) vs per-doc quant (legacy)
           if (doc.minArray) {
@@ -1376,6 +1687,19 @@ export class LateInteractionIndex {
 
       // Rebuild norms only for docs that don't have persisted norms
       this._rebuildTokenNorms();
+
+      // CRA-3: Load WUSH calibration for legacy single-file indexes
+      const wushPath = this.indexPath + '.wush-calibration.json';
+      if (existsSync(wushPath)) {
+        try {
+          const cal = JSON.parse(await fs.readFile(wushPath, 'utf-8'));
+          this._wushCalibration = {
+            eigenVecs: new Float64Array(cal.eigenVecs),
+            invSqrtEigenVals: new Float64Array(cal.invSqrtEigenVals),
+          };
+          this.wushCalibrate = true;
+        } catch { /* calibration missing or corrupt — fall back to bare WHT */ }
+      }
 
       console.log(`LateInteraction: Loaded ${this.documents.size} documents (model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)`);
     } catch (err) {
@@ -1405,11 +1729,13 @@ export class LateInteractionIndex {
     }
 
     this.tokenDim = manifest.tokenDim;
+    this.matryoshkaDim = manifest.matryoshkaDim || 0;
     this.maxTokens = manifest.maxTokens;
     this.useInt8 = manifest.useInt8;
     this.quantBits = manifest.quantBits || (manifest.useInt8 ? 8 : 32);
     this.poolFactor = manifest.poolFactor || 1;
     if (manifest.whtSeed !== undefined) this.whtSeed = manifest.whtSeed;
+    this.whtOrdering = manifest.whtOrdering || 'natural';
     if (manifest.modelId) this.modelId = manifest.modelId;
 
     this.documents.clear();
@@ -1445,6 +1771,8 @@ export class LateInteractionIndex {
 
         // SSLX segments include persisted tokenNorms — skip expensive rebuild
         if (doc.tokenNorms) entry.tokenNorms = doc.tokenNorms;
+        // CRA-6: Restore pre-normalization norms for token importance weighting
+        if (doc.preNorms) entry.preNorms = doc.preNorms;
 
         this.documents.set(doc.id, entry);
       }
@@ -1457,6 +1785,19 @@ export class LateInteractionIndex {
     this._rebuildTokenNorms();
     this._segmentDir = segmentDir;
     this._segments = manifest.segments.map(s => ({ path: path.join(segmentDir, s.path), count: s.count }));
+
+    // CRA-3: Load WUSH calibration if it exists alongside segments
+    const wushPath = path.join(segmentDir, 'wush-calibration.json');
+    if (existsSync(wushPath)) {
+      try {
+        const cal = JSON.parse(await fs.readFile(wushPath, 'utf-8'));
+        this._wushCalibration = {
+          eigenVecs: new Float64Array(cal.eigenVecs),
+          invSqrtEigenVals: new Float64Array(cal.invSqrtEigenVals),
+        };
+        this.wushCalibrate = true;
+      } catch { /* calibration missing or corrupt — fall back to bare WHT */ }
+    }
 
     console.log(`LateInteraction: Loaded ${this.documents.size} documents from ${manifest.segments.length} segments (model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)`);
   }
@@ -1501,6 +1842,7 @@ export class LateInteractionIndex {
       };
       if (is4bit) entry.quantBits = 4;
       if (doc.tokenNorms) entry.tokenNorms = new Float32Array(doc.tokenNorms);
+      if (doc.preNorms) entry.preNorms = new Float32Array(doc.preNorms);
 
       if (doc.minArray) {
         entry.minArray = new Float32Array(doc.minArray);
