@@ -46,6 +46,7 @@ export async function runViaClaude(question, system, projectRoot, opts = {}) {
   // Build the system prompt based on the system variant
   let systemPrompt;
   let allowedTools;
+  let disallowedTools = '';
 
   switch (system) {
     case 'rg+read':
@@ -74,33 +75,16 @@ Be specific: cite file paths, function names, and line numbers. Give a concise a
       break;
 
     case 'sweet-search+agent':
-      systemPrompt = `You are answering a code question about the codebase in the current directory.
-You have TWO search tools. Pick the right one for each question.
+      systemPrompt = `You answer code questions using sweet-search tools. You have exactly two commands:
 
-## Tool 1: Fast grep (for finding specific names, definitions, callers)
-node ${SEARCH_HELPER} --query="PATTERN" --regex="PATTERN" --mode=grep --k=10 2>/dev/null | grep '^{'
-Returns file:line matches. Fast — for when you know WHAT to search for.
+GREP (exact names): node ${SEARCH_HELPER} --query="NAME" --regex="NAME" --mode=grep --k=10 2>/dev/null | grep '^{'
+SEARCH (concepts): node ${SEARCH_HELPER} --query="QUESTION" --regex="REGEX" --format=agent --k=3 2>/dev/null | grep '^{'
 
-## Tool 2: Ranked code search with full code (for understanding, concepts)
-node ${SEARCH_HELPER} --query="YOUR QUESTION" --regex="REGEX" --format=agent --k=3 2>/dev/null | grep '^{'
-Returns ranked code blocks with FULL CODE — no need to Read files afterward.
-
-## Which tool to use:
-- "Where is X defined?" → Tool 1 with --regex="X"
-- "What does function X do?" → Tool 1 with --regex="function X|def X|fn X|func X" then Read the file
-- "What class is X?" → Tool 1 with --regex="class X"
-- "What calls X?" → Tool 1 with --regex="X("
-- "How does X work?" → Tool 2 with --regex="X" --query="how does X work"
-- "How would I change X?" → Tool 2 with --regex="X" --query="how to modify X"
-- "What is the relationship between X and Y?" → Tool 2 with --regex="X|Y"
-
-## Rules:
-- One search is usually enough. Answer from the first result.
-- Use Tool 1 for simple lookups. Use Tool 2 for conceptual questions.
-- You may Read a file ONLY if Tool 1 gives you a location but you need more context.
-- Do NOT search again unless the first result was clearly wrong.
-- Be specific: cite file paths, function names, and line numbers.`;
-      allowedTools = 'Bash(node:*) Read';
+SEARCH returns full code. Do not read files — answer directly from results.
+Use GREP for "where is X" / "what calls X". Use SEARCH for "how does X work" / "explain".
+One call is enough. Do not search again. Be specific: cite file paths, function names, line numbers.`;
+      allowedTools = 'Bash';
+      disallowedTools = 'Read Edit Write Glob Grep';
       break;
 
     default:
@@ -121,6 +105,7 @@ Returns ranked code blocks with FULL CODE — no need to Read files afterward.
       '--model', model,
       '--system-prompt-file', promptFile,
       '--allowed-tools', allowedTools,
+      ...(disallowedTools ? ['--disallowed-tools', disallowedTools] : []),
       '--max-budget-usd', maxBudget.toString(),
       '--dangerously-skip-permissions',
       '--no-session-persistence',
@@ -179,7 +164,7 @@ Returns ranked code blocks with FULL CODE — no need to Read files afterward.
       outputTokens,
       toolCalls,
       searchCalls: searchCalls > 0 ? 1 : (turns > 1 ? 1 : 0),
-      readCalls: system === 'pattern+agent' ? 0 : Math.max(0, turns - 2),
+      readCalls: (system === 'pattern+agent' || system === 'sweet-search+agent') ? 0 : Math.max(0, turns - 2),
       turns,
       elapsedMs: parsed.duration_ms || Math.round(performance.now() - startMs),
       costUsd: parsed.total_cost_usd || 0,
