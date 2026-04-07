@@ -100,7 +100,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: addon-${{ matrix.platform }}
-          path: sweet-search-native/maxsim.*.node
+          path: sweet-search-native/sweet-search-native.*.node
 
   # linux-arm64 addon — built inside a Docker arm64 container with cargo
   # directly, since napi-rs CLI cross-compile requires matching host arch.
@@ -122,16 +122,16 @@ jobs:
             rust:latest \
             sh -c '
               cargo build --release --target-dir /tmp/build 2>&1
-              cp /tmp/build/release/libsweet_search_native.so /src/maxsim.linux-arm64-gnu.node
+              cp /tmp/build/release/libsweet_search_native.so /src/sweet-search-native.linux-arm64-gnu.node
             '
-          ls -la sweet-search-native/maxsim.linux-arm64-gnu.node
-          file sweet-search-native/maxsim.linux-arm64-gnu.node
+          ls -la sweet-search-native/sweet-search-native.linux-arm64-gnu.node
+          file sweet-search-native/sweet-search-native.linux-arm64-gnu.node
 
       - name: Upload addon
         uses: actions/upload-artifact@v4
         with:
           name: addon-linux-arm64-gnu
-          path: sweet-search-native/maxsim.linux-arm64-gnu.node
+          path: sweet-search-native/sweet-search-native.linux-arm64-gnu.node
 
   # ─────────────────────────────────────────────────────
   # Assemble platform packages and run smoke tests
@@ -170,7 +170,7 @@ jobs:
       - name: Rename addon and prepare binaries
         run: |
           cd packages/native-${{ matrix.platform }}
-          mv maxsim.*.node maxsim.node 2>/dev/null || true
+          mv sweet-search-native.*.node sweet-search-native.node 2>/dev/null || true
           chmod +x sweet-search
           ls -la
 
@@ -178,7 +178,7 @@ jobs:
         if: startsWith(matrix.platform, 'darwin')
         run: |
           codesign -s - -f packages/native-${{ matrix.platform }}/sweet-search
-          codesign -s - -f packages/native-${{ matrix.platform }}/maxsim.node
+          codesign -s - -f packages/native-${{ matrix.platform }}/sweet-search-native.node
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
@@ -225,7 +225,7 @@ jobs:
       - name: Rename addon and set permissions
         run: |
           cd packages/native-linux-arm64-gnu
-          mv maxsim.*.node maxsim.node 2>/dev/null || true
+          mv sweet-search-native.*.node sweet-search-native.node 2>/dev/null || true
           chmod +x sweet-search
           ls -la
 
@@ -311,16 +311,16 @@ jobs:
           for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu; do
             dir="packages/native-$platform"
             cp "artifacts/cli-$platform/sweet-search" "$dir/sweet-search"
-            cp artifacts/addon-$platform/maxsim.*.node "$dir/maxsim.node"
+            cp artifacts/addon-$platform/sweet-search-native.*.node "$dir/sweet-search-native.node"
             chmod +x "$dir/sweet-search"
           done
 
           # Re-sign Darwin artifacts after copying them into the package directories.
           # This matches the smoke-test path and avoids invalid Mach-O signatures.
           codesign -s - -f packages/native-darwin-arm64/sweet-search
-          codesign -s - -f packages/native-darwin-arm64/maxsim.node
+          codesign -s - -f packages/native-darwin-arm64/sweet-search-native.node
           codesign -s - -f packages/native-darwin-x64/sweet-search
-          codesign -s - -f packages/native-darwin-x64/maxsim.node
+          codesign -s - -f packages/native-darwin-x64/sweet-search-native.node
 
       # Publish order: platform packages first, then main package
       - name: Publish platform packages
