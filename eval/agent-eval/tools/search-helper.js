@@ -23,10 +23,12 @@ if (!opts.query) {
 }
 
 const port = opts.port || process.env.SEARCH_HELPER_PORT || '9876';
+const mode = opts.mode || (opts.format ? undefined : undefined); // let server decide
 const params = new URLSearchParams({ q: opts.query, k: opts.k || '5' });
 if (opts.regex) params.set('regex', opts.regex);
 if (opts.format) params.set('format', opts.format);
 if (opts.budget) params.set('budget', opts.budget);
+if (opts.mode) params.set('mode', opts.mode);  // 'grep' for fast grep mode
 
 const url = `http://localhost:${port}/search?${params}`;
 
