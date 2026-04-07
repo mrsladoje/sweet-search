@@ -362,7 +362,13 @@ function projectAndNormalize(hiddenTensor, projectionStages) {
 
 /**
  * Hierarchical token pooling — reduces N tokens to ~N/poolFactor tokens.
- * Groups consecutive tokens and averages their vectors.
+ * Uses agglomerative clustering (Ward-like, cosine distance) to merge the
+ * most similar tokens first, preserving semantic information far better than
+ * consecutive-pair averaging.
+ *
+ * CRA-1: Replaces naive consecutive-pair pooling with similarity-based
+ * hierarchical pooling per LIR'26 Workshop findings (arXiv 2603.22434).
+ *
  * First token always preserved (protected_tokens=1, following PyLate convention).
  *
  * @param {Float32Array[]} tokens - L2-normalized token vectors
@@ -373,29 +379,157 @@ export function poolTokens(tokens, poolFactor) {
   if (!tokens || tokens.length === 0 || poolFactor <= 1) return tokens;
 
   const dim = tokens[0].length;
-  const pooled = [];
 
-  // First token always preserved (protected)
-  pooled.push(tokens[0]);
+  // Protect first token
+  const protectedToken = tokens[0];
+  const rest = tokens.length - 1;
+  if (rest === 0) return [protectedToken];
 
-  // Pool remaining tokens in groups of poolFactor
-  for (let i = 1; i < tokens.length; i += poolFactor) {
-    const groupEnd = Math.min(i + poolFactor, tokens.length);
-    const groupSize = groupEnd - i;
-    const avg = new Float32Array(dim);
+  const targetCount = Math.ceil(rest / poolFactor);
 
-    for (let j = i; j < groupEnd; j++) {
-      for (let d = 0; d < dim; d++) {
-        avg[d] += tokens[j][d];
+  // For very small inputs (≤2 non-protected tokens) or targetCount >= rest,
+  // skip clustering overhead.
+  if (targetCount >= rest) {
+    return tokens;
+  }
+
+  // Cap clustering input at 64 non-protected tokens to avoid O(n^3) blowup.
+  // If more tokens exist, pre-reduce with consecutive-pair averaging first.
+  const CLUSTER_CAP = 64;
+  let clusterInput = tokens.slice(1); // non-protected tokens
+  if (clusterInput.length > CLUSTER_CAP) {
+    const prePoolFactor = Math.ceil(clusterInput.length / CLUSTER_CAP);
+    const prePooled = [];
+    for (let i = 0; i < clusterInput.length; i += prePoolFactor) {
+      const groupEnd = Math.min(i + prePoolFactor, clusterInput.length);
+      const groupSize = groupEnd - i;
+      const avg = new Float32Array(dim);
+      for (let j = i; j < groupEnd; j++) {
+        for (let d = 0; d < dim; d++) avg[d] += clusterInput[j][d];
+      }
+      let norm = 0;
+      for (let d = 0; d < dim; d++) { avg[d] /= groupSize; norm += avg[d] * avg[d]; }
+      norm = Math.sqrt(norm) + 1e-12;
+      for (let d = 0; d < dim; d++) avg[d] /= norm;
+      prePooled.push(avg);
+    }
+    clusterInput = prePooled;
+  }
+
+  // Recompute target for the (possibly pre-reduced) input
+  const clusterTarget = Math.max(1, Math.min(targetCount, clusterInput.length - 1));
+  if (clusterTarget >= clusterInput.length) {
+    return [protectedToken, ...clusterInput];
+  }
+  const restN = clusterInput.length;
+
+  // ---- Agglomerative clustering (average-link, cosine distance) ----
+  // Each cluster starts as a single token. We maintain cluster centroids
+  // (sum vectors + size) and a condensed distance matrix.
+
+  // Cluster state: indices 0..restN-1 map to clusterInput[0..restN-1]
+  const clusterSum = new Array(restN);
+  const clusterSize = new Uint16Array(restN);
+  const alive = new Uint8Array(restN); // 1 = active cluster
+
+  for (let i = 0; i < restN; i++) {
+    clusterSum[i] = new Float32Array(clusterInput[i]);
+    clusterSize[i] = 1;
+    alive[i] = 1;
+  }
+
+  // Condensed upper-triangular cosine distance matrix.
+  // For L2-normalized vectors, cosine_distance = 1 - dot(a, b).
+  const nPairs = (restN * (restN - 1)) >> 1;
+  const dist = new Float32Array(nPairs);
+
+  for (let i = 0; i < restN; i++) {
+    const vi = clusterInput[i];
+    for (let j = i + 1; j < restN; j++) {
+      const vj = clusterInput[j];
+      let dot = 0;
+      for (let d = 0; d < dim; d++) dot += vi[d] * vj[d];
+      dist[i * restN - ((i * (i + 1)) >> 1) + j - i - 1] = 1 - dot;
+    }
+  }
+
+  let numClusters = restN;
+
+  // Merge until we reach clusterTarget
+  while (numClusters > clusterTarget) {
+    let minDist = Infinity;
+    let mi = -1, mj = -1;
+
+    for (let i = 0; i < restN; i++) {
+      if (!alive[i]) continue;
+      for (let j = i + 1; j < restN; j++) {
+        if (!alive[j]) continue;
+        const idx = i * restN - ((i * (i + 1)) >> 1) + j - i - 1;
+        if (dist[idx] < minDist) {
+          minDist = dist[idx];
+          mi = i;
+          mj = j;
+        }
       }
     }
 
-    // Average + L2 re-normalize
-    let norm = 0;
+    if (mi < 0) break;
+
+    const sizeI = clusterSize[mi];
+    const sizeJ = clusterSize[mj];
+    const newSize = sizeI + sizeJ;
+
     for (let d = 0; d < dim; d++) {
-      avg[d] /= groupSize;
-      norm += avg[d] * avg[d];
+      clusterSum[mi][d] += clusterSum[mj][d];
     }
+    clusterSize[mi] = newSize;
+    alive[mj] = 0;
+    numClusters--;
+
+    // Update distances from mi to all other alive clusters.
+    const centroid = new Float32Array(dim);
+    let cNorm = 0;
+    for (let d = 0; d < dim; d++) {
+      centroid[d] = clusterSum[mi][d] / newSize;
+      cNorm += centroid[d] * centroid[d];
+    }
+    cNorm = Math.sqrt(cNorm) + 1e-12;
+    for (let d = 0; d < dim; d++) centroid[d] /= cNorm;
+
+    for (let k = 0; k < restN; k++) {
+      if (!alive[k] || k === mi) continue;
+      const sk = clusterSize[k];
+      let dot = 0;
+      for (let d = 0; d < dim; d++) {
+        dot += centroid[d] * (clusterSum[k][d] / sk);
+      }
+      let kNorm = 0;
+      for (let d = 0; d < dim; d++) {
+        const v = clusterSum[k][d] / sk;
+        kNorm += v * v;
+      }
+      kNorm = Math.sqrt(kNorm) + 1e-12;
+
+      const newDist = 1 - dot / kNorm;
+      const lo = Math.min(mi, k);
+      const hi = Math.max(mi, k);
+      const idx = lo * restN - ((lo * (lo + 1)) >> 1) + hi - lo - 1;
+      dist[idx] = newDist;
+    }
+  }
+
+  // ---- Extract pooled tokens ----
+  const pooled = [protectedToken];
+
+  for (let i = 0; i < restN; i++) {
+    if (!alive[i]) continue;
+    const avg = new Float32Array(dim);
+    const s = clusterSize[i];
+    for (let d = 0; d < dim; d++) avg[d] = clusterSum[i][d] / s;
+
+    // L2 re-normalize
+    let norm = 0;
+    for (let d = 0; d < dim; d++) norm += avg[d] * avg[d];
     norm = Math.sqrt(norm) + 1e-12;
     for (let d = 0; d < dim; d++) avg[d] /= norm;
 
