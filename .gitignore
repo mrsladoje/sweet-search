@@ -18,16 +18,16 @@ ss-fast/ss-fast
 
 # Training artifacts (large, regenerable)
 catboost_info/
-training/catboost_info/
-training/.venv/
-training/*.cbm
-training/models/*.cbm
-training/output/*.cbm
-training/output/*.json
-training/*.bak
-training/output/v45_router_d10.js
-training/output/v45_router_d11.js
-training/output/v45_router_d12.js
+core/training/query-router/catboost_info/
+core/training/query-router/.venv/
+core/training/query-router/*.cbm
+core/training/query-router/models/*.cbm
+core/training/query-router/output/*.cbm
+core/training/query-router/output/*.json
+core/training/query-router/*.bak
+core/training/query-router/output/v45_router_d10.js
+core/training/query-router/output/v45_router_d11.js
+core/training/query-router/output/v45_router_d12.js
 
 # Local model cache (download on demand)
 models/gte-reranker-int8/

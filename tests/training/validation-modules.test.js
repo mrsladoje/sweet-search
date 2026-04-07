@@ -7,7 +7,7 @@
  * - heuristic-validator.js - Query validation heuristics
  * - outlier-detector.js - Training data outlier detection
  *
- * Run: npx jest training/__tests__/validation-modules.test.js
+ * Run: npx vitest run tests/training/validation-modules.test.js
  */
 
 // Using vitest globals (enabled in vitest.config.js)
@@ -28,7 +28,7 @@ describe('paraphraser', () => {
 
   beforeEach(async () => {
     // Dynamic import to handle ESM
-    paraphraserModule = await import('../../training/validation/paraphraser.js');
+    paraphraserModule = await import('../../core/training/query-router/validation/paraphraser.js');
   });
 
   describe('deterministicParaphrase', () => {
@@ -139,7 +139,7 @@ describe('tokenizeForTraining', () => {
   let textSegmenter;
 
   beforeEach(async () => {
-    textSegmenter = await import('../../training/features/text-segmenter.js');
+    textSegmenter = await import('../../core/training/query-router/features/text-segmenter.js');
   });
 
   describe('tokenizeForTraining', () => {
@@ -186,7 +186,7 @@ describe('heuristic-validator', () => {
 
   beforeEach(async () => {
     try {
-      validatorModule = await import('../../training/validation/heuristic-validator.js');
+      validatorModule = await import('../../core/training/query-router/validation/heuristic-validator.js');
     } catch (e) {
       // Module may not be importable in test env
       validatorModule = null;
@@ -213,7 +213,7 @@ describe('outlier-detector', () => {
 
   beforeEach(async () => {
     try {
-      outlierModule = await import('../../training/validation/outlier-detector.js');
+      outlierModule = await import('../../core/training/query-router/validation/outlier-detector.js');
     } catch (e) {
       // Module may not be importable in test env
       outlierModule = null;
@@ -237,7 +237,7 @@ describe('outlier-detector', () => {
 
 describe('eval leak prevention', () => {
   test('paraphrases should not leak into eval set', async () => {
-    const paraphraserModule = await import('../../training/validation/paraphraser.js');
+    const paraphraserModule = await import('../../core/training/query-router/validation/paraphraser.js');
 
     // Create a mock eval query
     const evalQuery = 'how does authentication work';
@@ -268,7 +268,7 @@ describe('feature extractor integration', () => {
 
   beforeEach(async () => {
     try {
-      extractorModule = await import('../../training/features/extractor.js');
+      extractorModule = await import('../../core/training/query-router/features/extractor.js');
     } catch (e) {
       extractorModule = null;
     }

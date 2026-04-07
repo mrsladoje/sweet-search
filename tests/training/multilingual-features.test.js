@@ -6,7 +6,7 @@
  * - multilingual-patterns.js - Pattern matching with error handling
  * - text-segmenter.js - CJK/Thai text segmentation
  *
- * Run: npx jest training/__tests__/multilingual-features.test.js
+ * Run: npx vitest run tests/training/multilingual-features.test.js
  */
 
 // Using vitest globals (enabled in vitest.config.js)
@@ -22,7 +22,7 @@ import {
   hasNonAsciiIdentifierInQuery,
   detectPrimaryScript,
   SCRIPT_RANGES,
-} from '../../training/features/unicode-utils.js';
+} from '../../core/training/query-router/features/unicode-utils.js';
 
 // Import multilingual-patterns functions
 import {
@@ -34,7 +34,7 @@ import {
   getSupportedLanguages,
   STRUCTURAL_PATTERNS,
   SEMANTIC_PATTERNS,
-} from '../../training/features/multilingual-patterns.js';
+} from '../../core/training/query-router/features/multilingual-patterns.js';
 
 // Import text-segmenter functions
 import {
@@ -43,7 +43,7 @@ import {
   detectSegmentationLocale,
   tokenizeForTraining,
   HAS_SEGMENTER,
-} from '../../training/features/text-segmenter.js';
+} from '../../core/training/query-router/features/text-segmenter.js';
 
 // ============================================
 // UNICODE-UTILS TESTS
