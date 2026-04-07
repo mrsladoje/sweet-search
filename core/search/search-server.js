@@ -226,6 +226,14 @@ export async function startServer() {
       const useSparseGrams = url.searchParams.get('gramIndex') !== 'false';
       const globs = url.searchParams.getAll('glob');
 
+      // Agent mode: context packaging (ColGrep agent format)
+      const rawFormat = url.searchParams.get('format');
+      const AGENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full']);
+      const agentFormat = AGENT_FORMATS.has(rawFormat) ? rawFormat : undefined;
+      const tokenBudget = url.searchParams.has('budget')
+        ? parseInt(url.searchParams.get('budget'), 10)
+        : undefined;
+
       // Phase 4: Translation fallback
       const translate = url.searchParams.get('translate') || 'auto';
 
@@ -242,7 +250,7 @@ export async function startServer() {
 
       try {
         const start = Date.now();
-        let { results, stats } = await searcher.search(query, {
+        const searchResult = await searcher.search(query, {
           k: topK,
           mode,
           regex,
@@ -258,22 +266,31 @@ export async function startServer() {
           fusion,
           useLateInteraction,
           translate,
+          ...(agentFormat && { format: agentFormat, tokenBudget }),
         });
 
-        // Enrich with summaries if summary mode
-        if (summary) {
-          results = await searcher.enrichWithSummaries(results);
-        }
-
-        const totalTime = Date.now() - start;
-
-        if (format === 'text') {
-          const out = buildTextSearchResponse(results, stats, totalTime, { summary, mid });
-          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-          res.end(out);
-        } else {
+        // Agent mode: return the packaged response directly as JSON
+        if (searchResult.format === 'agent') {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(buildJsonSearchResponse(results, stats, totalTime));
+          res.end(JSON.stringify(searchResult));
+        } else {
+          let { results, stats } = searchResult;
+
+          // Enrich with summaries if summary mode
+          if (summary) {
+            results = await searcher.enrichWithSummaries(results);
+          }
+
+          const totalTime = Date.now() - start;
+
+          if (format === 'text') {
+            const out = buildTextSearchResponse(results, stats, totalTime, { summary, mid });
+            res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end(out);
+          } else {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(buildJsonSearchResponse(results, stats, totalTime));
+          }
         }
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -432,6 +449,8 @@ export async function queryServer(query, options = {}) {
     useLateInteraction = true,
     summary = false,
     mid = false,
+    format,
+    tokenBudget,
   } = options;
 
   return new Promise((resolve, reject) => {
@@ -455,6 +474,8 @@ export async function queryServer(query, options = {}) {
     if (!useLateInteraction) params.set('late-interaction', 'false');
     if (summary) params.set('summary', 'true');
     if (mid) params.set('mid', 'true');
+    if (format && format.startsWith('agent')) params.set('format', format);
+    if (tokenBudget) params.set('budget', tokenBudget.toString());
 
     const url = `http://localhost:${SEARCH_SERVER_PORT}/search?${params.toString()}`;
 

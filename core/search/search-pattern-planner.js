@@ -20,7 +20,21 @@ import {
 } from './search-pattern-prefilter.js';
 import { CODE_FILE_EXTENSIONS } from '../infrastructure/constants.js';
 import { resolveSearchSymbolFilter } from './search-pattern-chunks.js';
-import { _getRgCapabilities, runRipgrepFilesWithMatches, runRipgrepJson } from './search-pattern-ripgrep.js';
+import { _getRgCapabilities, runRipgrepFilesWithMatches, runRipgrepJson, normalizeSearchPath } from './search-pattern-ripgrep.js';
+
+/**
+ * Normalize match file paths from native grep (which returns absolute paths)
+ * to relative paths matching the chunk location map keys.
+ *
+ * The ripgrep JSON parser already calls normalizeSearchPath per match.
+ * Native grep bypasses ripgrep, so we must normalize here.
+ */
+function normalizeNativeMatches(matches, searchDir) {
+  for (const m of matches) {
+    m.file = normalizeSearchPath(searchDir, m.file);
+  }
+  return matches;
+}
 
 // Cached once at module load — passed to Rust for code extension filtering.
 const _codeExtensionsArray = Array.from(CODE_FILE_EXTENSIONS);
@@ -74,7 +88,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
       if (unifiedResult) {
         const gramLookupTime = performance.now() - gramStart;
         const materializeStart = performance.now();
-        const indexedMatches = unifiedResult.matches;
+        const indexedMatches = normalizeNativeMatches(unifiedResult.matches, searchDir);
         const matchingFiles = [...new Set(indexedMatches.map((m) => m.file))];
         const materializeTime = performance.now() - materializeStart;
         const candidateFiles = unifiedResult.candidateFiles;
@@ -285,7 +299,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
         ? nativeGrepLines(regex, searchDir, filteredFiles, caseInsensitive)
         : nativeGrepFull(regex, searchDir, filteredFiles, caseInsensitive);
       if (nativeResult) {
-        indexedMatches = nativeResult.matches;
+        indexedMatches = normalizeNativeMatches(nativeResult.matches, searchDir);
         matchingFiles = [...new Set(indexedMatches.map((m) => m.file))];
         nativeGrepSucceeded = true;
       }
@@ -317,7 +331,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
           ? nativeGrepLines(regex, searchDir, matchingFiles, caseInsensitive)
           : nativeGrepFull(regex, searchDir, matchingFiles, caseInsensitive);
         if (nativeResult) {
-          indexedMatches = nativeResult.matches;
+          indexedMatches = normalizeNativeMatches(nativeResult.matches, searchDir);
           nativePass2 = true;
         }
       }
@@ -335,7 +349,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
       ? nativeGrepLines(regex, searchDir, allIndexedFiles, caseInsensitive)
       : nativeGrepFull(regex, searchDir, allIndexedFiles, caseInsensitive);
     if (nativeResult) {
-      indexedMatches = nativeResult.matches;
+      indexedMatches = normalizeNativeMatches(nativeResult.matches, searchDir);
       matchingFiles = [...new Set(indexedMatches.map((m) => m.file))];
       grepStrategy = 'native_grep_all';
       plannerRoute = `native_grep_all:${allIndexedFiles.length}_files`;

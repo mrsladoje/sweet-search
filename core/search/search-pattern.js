@@ -6,16 +6,18 @@
  *   2. Map file:line matches → indexed chunk IDs via interval map
  *   3. MaxSim rerank using pre-indexed late interaction token embeddings
  *   4. Assemble results with file content
+ *   5. (Agent mode) Post-ranking context packaging via context-expander.js
  *
  * Query planner (generateRegexMatches) is in search-pattern-planner.js.
  *
- * References: docs/COLGREP_PLAN.md
+ * References: docs/COLGREP_PLAN.md, docs/USEFUL_ANSWER_COLGREP_PLAN.md
  */
 
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { generateRegexMatches } from './search-pattern-planner.js';
 import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, readFileRange } from './search-pattern-chunks.js';
 import { isRipgrepAvailable, runRipgrepJson } from './search-pattern-ripgrep.js';
+import { packageForAgent } from './context-expander.js';
 
 // =============================================================================
 // Ripgrep runner (thin wrapper for external callers)
@@ -162,6 +164,8 @@ export async function patternSearch(query, routing, options = {}) {
   const {
     regex,
     k = 10,
+    format = 'benchmark',    // 'benchmark' | 'agent' | 'agent_preview' | 'agent_full'
+    tokenBudget,             // agent mode: total token budget (default depends on sub-mode)
   } = options;
 
   if (!regex) {
@@ -223,39 +227,47 @@ export async function patternSearch(query, routing, options = {}) {
   );
 
   if (totalRawMatches === 0) {
-    return {
-      results: [],
-      stats: {
-        path: 'pattern',
-        regex,
-        grepMatches: 0,
-        indexedChunks: 0,
-        unindexedMatches: 0,
-        candidateGenTime_ms: candidateResult.stats.candidateGenTime_ms,
-        grepTime_ms: candidateResult.stats.grepTime_ms,
-        literalFilterTime_ms: candidateResult.stats.literalFilterTime_ms,
-        gramLookupTime_ms: candidateResult.stats.gramLookupTime_ms,
-        encodeTime_ms: Math.round(encodeTime),
-        filesConsidered: candidateResult.stats.filesConsidered,
-        filesScanned: candidateResult.stats.filesScanned,
-        filesSkipped: candidateResult.stats.filesSkipped,
-        dirtyOverlayFiles: candidateResult.stats.dirtyOverlayFiles,
-        candidateFilesBeforeFilter: candidateResult.stats.candidateFilesBeforeFilter,
-        candidateFilesAfterFilter: candidateResult.stats.candidateFilesAfterFilter,
-        candidateReductionRatio: candidateResult.stats.candidateReductionRatio,
-        literalExtractionHit: candidateResult.stats.literalExtractionHit,
-        literalExtractionSource: candidateResult.stats.literalExtractionSource,
-        gramLookupReason: candidateResult.stats.gramLookupReason,
-        denseGramsTouched: candidateResult.stats.denseGramsTouched,
-        sparseGramsTouched: candidateResult.stats.sparseGramsTouched,
-        gramFalsePositiveRatio: candidateResult.stats.gramFalsePositiveRatio,
-        prefilterDiscarded: candidateResult.stats.prefilterDiscarded,
-        prefilterDiscardedCount: candidateResult.stats.prefilterDiscardedCount,
-        grepStrategy: candidateResult.stats.grepStrategy,
-        parallelTime_ms: Math.round(parallelTime),
-        total_ms: Math.round(performance.now() - start),
-      },
+    const emptyStats = {
+      path: 'pattern',
+      regex,
+      grepMatches: 0,
+      indexedChunks: 0,
+      unindexedMatches: 0,
+      candidateGenTime_ms: candidateResult.stats.candidateGenTime_ms,
+      grepTime_ms: candidateResult.stats.grepTime_ms,
+      literalFilterTime_ms: candidateResult.stats.literalFilterTime_ms,
+      gramLookupTime_ms: candidateResult.stats.gramLookupTime_ms,
+      encodeTime_ms: Math.round(encodeTime),
+      filesConsidered: candidateResult.stats.filesConsidered,
+      filesScanned: candidateResult.stats.filesScanned,
+      filesSkipped: candidateResult.stats.filesSkipped,
+      dirtyOverlayFiles: candidateResult.stats.dirtyOverlayFiles,
+      candidateFilesBeforeFilter: candidateResult.stats.candidateFilesBeforeFilter,
+      candidateFilesAfterFilter: candidateResult.stats.candidateFilesAfterFilter,
+      candidateReductionRatio: candidateResult.stats.candidateReductionRatio,
+      literalExtractionHit: candidateResult.stats.literalExtractionHit,
+      literalExtractionSource: candidateResult.stats.literalExtractionSource,
+      gramLookupReason: candidateResult.stats.gramLookupReason,
+      denseGramsTouched: candidateResult.stats.denseGramsTouched,
+      sparseGramsTouched: candidateResult.stats.sparseGramsTouched,
+      gramFalsePositiveRatio: candidateResult.stats.gramFalsePositiveRatio,
+      prefilterDiscarded: candidateResult.stats.prefilterDiscarded,
+      prefilterDiscardedCount: candidateResult.stats.prefilterDiscardedCount,
+      grepStrategy: candidateResult.stats.grepStrategy,
+      parallelTime_ms: Math.round(parallelTime),
+      total_ms: Math.round(performance.now() - start),
     };
+
+    // Agent mode: return proper agent schema even for zero results
+    if (format === 'agent' || format === 'agent_preview' || format === 'agent_full') {
+      const agentResponse = packageForAgent([], emptyStats, {
+        query, regex, format, tokenBudget, projectRoot: this.projectRoot || PROJECT_ROOT,
+      });
+      agentResponse.stats = emptyStats;
+      return agentResponse;
+    }
+
+    return { results: [], stats: emptyStats };
   }
 
   // Map matches -> indexed chunk IDs (with grep density counts).
@@ -378,47 +390,63 @@ export async function patternSearch(query, routing, options = {}) {
   const allCandidateIds = [...available];
   const allMappedChunkIds = [...chunkIds];
 
-  return {
-    results,
-    stats: {
-      path: 'pattern',
-      regex,
-      grepMatches: totalRawMatches,
-      indexedChunks: available.size,
-      unindexedMatches: unindexedMatches.length,
-      maxSimCandidates: scored.length,
-      locationMapFiles: locationMap.size,
-      candidateGenTime_ms: candidateResult.stats.candidateGenTime_ms,
-      grepTime_ms: candidateResult.stats.grepTime_ms,
-      literalFilterTime_ms: candidateResult.stats.literalFilterTime_ms,
-      gramLookupTime_ms: candidateResult.stats.gramLookupTime_ms,
-      encodeTime_ms: Math.round(encodeTime),
-      mapTime_ms: Math.round(mapTime),
-      parallelTime_ms: Math.round(parallelTime),
-      rerankTime_ms: Math.round(rerankTime),
-      filesConsidered: candidateResult.stats.filesConsidered,
-      filesScanned: candidateResult.stats.filesScanned,
-      filesSkipped: candidateResult.stats.filesSkipped,
-      dirtyOverlayFiles: candidateResult.stats.dirtyOverlayFiles,
-      candidateFilesBeforeFilter: candidateResult.stats.candidateFilesBeforeFilter,
-      candidateFilesAfterFilter: candidateResult.stats.candidateFilesAfterFilter,
-      candidateReductionRatio: candidateResult.stats.candidateReductionRatio,
-      literalExtractionHit: candidateResult.stats.literalExtractionHit,
-      literalExtractionSource: candidateResult.stats.literalExtractionSource,
-      gramLookupReason: candidateResult.stats.gramLookupReason,
-      denseGramsTouched: candidateResult.stats.denseGramsTouched,
-      sparseGramsTouched: candidateResult.stats.sparseGramsTouched,
-      gramFalsePositiveRatio: candidateResult.stats.gramFalsePositiveRatio,
-      prefilterDiscarded: candidateResult.stats.prefilterDiscarded,
-      prefilterDiscardedCount: candidateResult.stats.prefilterDiscardedCount,
-      grepStrategy: candidateResult.stats.grepStrategy,
-      plannerRoute: candidateResult.stats.plannerRoute,
-      trackerLastIndex: candidateResult.stats.trackerLastIndex,
-      total_ms: Math.round(totalTime),
-      allCandidateIds,
-      allMappedChunkIds,
-    },
+  const stats = {
+    path: 'pattern',
+    regex,
+    grepMatches: totalRawMatches,
+    indexedChunks: available.size,
+    unindexedMatches: unindexedMatches.length,
+    maxSimCandidates: scored.length,
+    locationMapFiles: locationMap.size,
+    candidateGenTime_ms: candidateResult.stats.candidateGenTime_ms,
+    grepTime_ms: candidateResult.stats.grepTime_ms,
+    literalFilterTime_ms: candidateResult.stats.literalFilterTime_ms,
+    gramLookupTime_ms: candidateResult.stats.gramLookupTime_ms,
+    encodeTime_ms: Math.round(encodeTime),
+    mapTime_ms: Math.round(mapTime),
+    parallelTime_ms: Math.round(parallelTime),
+    rerankTime_ms: Math.round(rerankTime),
+    filesConsidered: candidateResult.stats.filesConsidered,
+    filesScanned: candidateResult.stats.filesScanned,
+    filesSkipped: candidateResult.stats.filesSkipped,
+    dirtyOverlayFiles: candidateResult.stats.dirtyOverlayFiles,
+    candidateFilesBeforeFilter: candidateResult.stats.candidateFilesBeforeFilter,
+    candidateFilesAfterFilter: candidateResult.stats.candidateFilesAfterFilter,
+    candidateReductionRatio: candidateResult.stats.candidateReductionRatio,
+    literalExtractionHit: candidateResult.stats.literalExtractionHit,
+    literalExtractionSource: candidateResult.stats.literalExtractionSource,
+    gramLookupReason: candidateResult.stats.gramLookupReason,
+    denseGramsTouched: candidateResult.stats.denseGramsTouched,
+    sparseGramsTouched: candidateResult.stats.sparseGramsTouched,
+    gramFalsePositiveRatio: candidateResult.stats.gramFalsePositiveRatio,
+    prefilterDiscarded: candidateResult.stats.prefilterDiscarded,
+    prefilterDiscardedCount: candidateResult.stats.prefilterDiscardedCount,
+    grepStrategy: candidateResult.stats.grepStrategy,
+    plannerRoute: candidateResult.stats.plannerRoute,
+    trackerLastIndex: candidateResult.stats.trackerLastIndex,
+    total_ms: Math.round(totalTime),
+    allCandidateIds,
+    allMappedChunkIds,
   };
+
+  // Agent mode: post-ranking context packaging (Phases 1-5)
+  // Ranking is frozen — agent mode only transforms presentation.
+  if (format === 'agent' || format === 'agent_preview' || format === 'agent_full') {
+    const searchDir = this.projectRoot || PROJECT_ROOT;
+    const agentResponse = packageForAgent(results, stats, {
+      query,
+      regex,
+      format,
+      tokenBudget,
+      codeGraphRepo: this.codeGraphRepo || null,
+      locationMap,
+      projectRoot: searchDir,
+    });
+    agentResponse.stats = stats;
+    return agentResponse;
+  }
+
+  return { results, stats };
 }
 
 // =============================================================================
@@ -430,3 +458,4 @@ export { generateRegexMatches } from './search-pattern-planner.js';
 export { hasCaseInsensitiveRegexFlag, extractRequiredLiteralsHeuristic, extractLiteralClausesHeuristic, extractLiteralClauses, normalizeLiteralClauses, querySparseGramCandidates, ensureSparseGramIndex, nativeGrepFilesWithMatches, nativeGrepLines, getSparseGramAllFiles } from './search-pattern-prefilter.js';
 export { buildChunkLocationMap, findChunkForLine, findChunkIntervalForLine, mapMatchesToChunks, readFileRange, getChunkLocationMap, getCodebaseChunkTypeMap, normalizeSearchSymbolType, resolveSearchSymbolFilter, isRipgrepCodePath, buildBareGrepResults, filterMatchesBySymbolType } from './search-pattern-chunks.js';
 export { isRipgrepAvailable, _resetRgCache, normalizeSearchPath, chunkRipgrepFiles } from './search-pattern-ripgrep.js';
+export { packageForAgent, estimateTokens, computeConfidence, computeSufficiency, allocateBudget, expandToSymbol, expandBySyntax, extractHeaderContext, truncateToTokenCap, findEnclosingEntity, checkStaleness } from './context-expander.js';

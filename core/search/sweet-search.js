@@ -25,6 +25,7 @@ import { getEmbedding, getBinaryEmbedding, truncateForHNSW, int8CosineSimilarity
 import { FloatVectorStore, getFloatStorePath } from '../vector-store/float-vector-store.js';
 import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
+import { CodeGraphRepository } from '../infrastructure/code-graph-repository.js';
 import { loadSparseGramIndex } from '../infrastructure/native-sparse-gram.js';
 import { TranslationFallback, queryNeedsTranslation } from '../../translation/index.js';
 import { expandResults } from '../graph/graph-expansion.js';
@@ -94,6 +95,7 @@ export class SweetSearch {
       process.env[envKey] != null ? CASCADE_CONFIG[configKey] : projectCascade[cascadeKey];
 
     this.graphSearch = new GraphSearch(options.graphDbPath || DB_PATHS.codeGraph);
+    this.codeGraphRepo = new CodeGraphRepository(options.graphDbPath || DB_PATHS.codeGraph);
     this.hnswIndex = new HNSWIndex({ indexPath: options.hnswPath || DB_PATHS.hnswIndex });
     this.binaryHnswIndex = new BinaryHNSWIndex({ indexPath: options.binaryHnswPath || DB_PATHS.binaryHnswIndex });
     this.reranker = new Reranker(options);
@@ -201,8 +203,8 @@ export class SweetSearch {
 
     if (this.hasHnswIndex) {
       try {
-        await this.hnswIndex.load();
-        this.log(`HNSW: Loaded ${this.hnswIndex.getStats().totalVectors} vectors`);
+        await this.hnswIndex.load(undefined, { mmap: true });
+        this.log(`HNSW: Loaded ${this.hnswIndex.getStats().totalVectors} vectors (mmap)`);
       } catch (err) {
         this.log(`HNSW: Failed to load: ${err.message}`);
         this.hasHnswIndex = false;
@@ -369,6 +371,12 @@ export class SweetSearch {
       }
       case 'pattern': {
         const patternResult = await this.patternSearch(query, routing, options);
+        // Agent mode returns a fully packaged response — bypass post-retrieval.
+        if (patternResult.format === 'agent') {
+          Object.assign(stats, patternResult.stats);
+          stats.total_ms = stats.total_ms ?? (Date.now() - start);
+          return patternResult;
+        }
         results = patternResult.results;
         Object.assign(stats, patternResult.stats);
         break;
@@ -574,6 +582,7 @@ export class SweetSearch {
   close() {
     this.graphSearch.close();
     this.codebaseRepo.close();
+    this.codeGraphRepo.close();
   }
 }
 
