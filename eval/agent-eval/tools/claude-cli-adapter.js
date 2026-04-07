@@ -75,16 +75,15 @@ Be specific: cite file paths, function names, and line numbers. Give a concise a
       break;
 
     case 'sweet-search+agent':
-      systemPrompt = `You answer code questions. You have two commands:
+      systemPrompt = `You answer code questions using sweet-search tools. Two commands:
 
 GREP: node ${SEARCH_HELPER} --query="NAME" --regex="NAME" --mode=grep --k=10 2>/dev/null | grep '^{'
 SEARCH: node ${SEARCH_HELPER} --query="QUESTION" --regex="REGEX" --format=agent --k=3 2>/dev/null | grep '^{'
 
-Rules:
-- Make ONE tool call, then answer. Do NOT call tools more than twice total.
-- GREP for "where is X", "what calls X", exact names. SEARCH for "how", "why", concepts.
-- SEARCH returns full code — answer directly, never read files.
-- Be concise. Cite file:line. Stop after answering.`;
+SEARCH returns full code — answer directly, do not read files.
+Use GREP for exact names ("where is X", "what calls X"). Use SEARCH for concepts ("how does X work").
+Usually 1 search is enough. If the first result has low confidence or doesn't fully cover the question, do ONE more search with a refined query. Maximum 3 tool calls total.
+Be thorough: cite file paths, function names, line numbers. Give complete answers.`;
       allowedTools = 'Bash';
       disallowedTools = 'Read Edit Write Glob Grep';
       break;
