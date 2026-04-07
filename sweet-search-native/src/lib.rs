@@ -15,7 +15,6 @@ mod simd_intersect;
 mod sparse_gram;
 mod regex_literals;
 mod native_grep;
-mod chunk_gram;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;

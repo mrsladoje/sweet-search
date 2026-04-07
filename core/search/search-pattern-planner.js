@@ -12,7 +12,7 @@
 
 import {
   extractLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates,
-  ensureChunkGramIndex, ensureSparseGramIndex, chunkGramSearch,
+  ensureSparseGramIndex,
   hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches,
   nativeGrepFilesWithMatchesFixed, nativeGrepLines, nativeGrepFull,
   getSparseGramAllFiles, queryAndGrepLines, queryAndGrepFull,
@@ -89,7 +89,6 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
           indexedMatches,
           overlayMatches: [],
           matchingFiles,
-          chunkVerified: null,
           stats: {
             nativeGrepUsed: true,
             candidateGenTime_ms: Math.round(performance.now() - start),
@@ -106,9 +105,6 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
             literalExtractionHit: literalPlan.clauses.length > 0,
             literalExtractionSource: literalPlan.source,
             gramLookupReason: gramNarrowed ? 'ok' : 'all_files',
-            chunkGramUsed: false,
-            chunkGramCandidateChunks: 0,
-            chunkGramTotalChunks: 0,
             prefilterDiscarded: false,
             prefilterDiscardedCount: 0,
             denseGramsTouched: unifiedResult.denseGramsTouched || 0,
@@ -164,37 +160,17 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
   const gramTotalFiles = gramLookupResult?.totalFiles || 0;
   const gramSelectivity = gramTotalFiles > 0 ? gramCandidateFiles / gramTotalFiles : null;
 
-  // --- Chunk gram: all-in-one native pipeline (query + merge + verify) ---
-  // When file-level gram says "too_broad", try the native chunk search.
-  // The Rust side does everything: posting intersection, range merging,
-  // file read (mmap, grouped), regex verification. Single NAPI crossing.
-  // Cost model is inside Rust: bails if ratio > 20% or files > 2048.
-  let chunkGramResult = null;
   const fileGramTooBroad = gramLookupResult?.eligible === false && gramLookupResult?.reason === 'too_broad';
-  const useChunkGram = options.useChunkGram ?? true;
-  if (fileGramTooBroad && useChunkGram && literalPlan.clauses.length > 0 && !Array.isArray(searchFiles) && !fixedString) {
-    const chunkGramIndex = ensureChunkGramIndex(searcher);
-    if (chunkGramIndex) {
-      const flatLiterals = literalPlan.clauses.flat();
-      const cgStart = performance.now();
-      chunkGramResult = chunkGramSearch(
-        chunkGramIndex, regex, searchDir, flatLiterals, caseInsensitive,
-        options.maxChunkGramCandidateRatio ?? 0.20,
-        options.maxChunkGramCandidateFiles ?? 2048,
-      );
-      gramLookupTime += performance.now() - cgStart;
-    }
-  }
 
   const candidateFilesBeforeFilter = Array.isArray(searchFiles) ? searchFiles.length : 0;
   let candidateFilesAfterFilter = Array.isArray(searchFiles) ? searchFiles.length : 0;
   let literalFilterTime = 0;
   let filteredFiles = searchFiles;
   const usingGramCandidates = Array.isArray(searchFiles);
-  const gramTooBroad = fileGramTooBroad && !chunkGramResult?.eligible;
+  const gramTooBroad = fileGramTooBroad;
 
   // --- Optimization #4: use gram DF stats to skip literal prefilter when broad ---
-  const gramSaysBroad = gramSelectivity !== null && gramSelectivity > 0.40 && !chunkGramResult?.eligible;
+  const gramSaysBroad = gramSelectivity !== null && gramSelectivity > 0.40;
 
   // --- Native grep on all indexed files: skip the prefilter entirely ---
   const sparseForAllFiles = (!fixedString && globs.length === 0)
@@ -281,15 +257,12 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
     }
   } else if (filteredFiles.length <= narrowedThreshold) {
     plannerRoute = `narrowed_json:${filteredFiles.length}_files`;
-    if (chunkGramResult?.eligible) {
-      plannerRoute += ':chunk_gram';
-    } else if (gramSelectivity !== null && gramSelectivity < 0.01) {
+    if (gramSelectivity !== null && gramSelectivity < 0.01) {
       plannerRoute += ':high_selectivity';
     }
     grepStrategy = 'narrowed_json';
   } else if (filteredFiles.length <= directJsonThreshold) {
     plannerRoute = `two_pass:${filteredFiles.length}_files`;
-    if (chunkGramResult?.eligible) plannerRoute += ':chunk_gram';
     grepStrategy = 'two_pass';
   } else {
     plannerRoute = `raw_rg:${filteredFiles.length}_files_exceeds_threshold`;
@@ -303,20 +276,9 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
   let matchingFiles = [];
   let indexedMatches = [];
 
-  let chunkVerified = null;
-  if (chunkGramResult?.eligible && Array.isArray(chunkGramResult.verified) && chunkGramResult.verified.length > 0) {
-    chunkVerified = chunkGramResult.verified;
-    matchingFiles = [...new Set(chunkVerified.map(v => v.file))];
-    indexedMatches = chunkVerified.map(v => ({ file: v.file, line: v.startLine }));
-    grepStrategy = 'chunk_verified';
-    plannerRoute = `chunk_verified:${chunkGramResult.candidateChunks}_candidates:${chunkVerified.length}_verified:${chunkGramResult.filesRead}_files`;
-  }
-
   const canUseNativeGrep = !fixedString && globs.length === 0 && hasNarrowedFiles;
 
-  if (chunkVerified) {
-    // Already handled above
-  } else if (grepStrategy === 'narrowed_json') {
+  if (grepStrategy === 'narrowed_json') {
     let nativeGrepSucceeded = false;
     if (canUseNativeGrep) {
       const nativeResult = lightweightParse
@@ -407,9 +369,8 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
     indexedMatches,
     overlayMatches: [],
     matchingFiles,
-    chunkVerified,
     stats: {
-      nativeGrepUsed: canUseNativeGrep || !!chunkVerified || grepStrategy === 'native_grep_all',
+      nativeGrepUsed: canUseNativeGrep || grepStrategy === 'native_grep_all',
       candidateGenTime_ms: Math.round(performance.now() - start),
       grepTime_ms: Math.round(grepTime),
       literalFilterTime_ms: Math.round(literalFilterTime),
@@ -428,9 +389,6 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
       literalExtractionHit: literalPlan.clauses.length > 0,
       literalExtractionSource: literalPlan.source,
       gramLookupReason: gramLookupResult?.reason || 'not_run',
-      chunkGramUsed: chunkGramResult?.eligible || false,
-      chunkGramCandidateChunks: chunkGramResult?.candidateChunks || 0,
-      chunkGramTotalChunks: chunkGramResult?.totalChunks || 0,
       prefilterDiscarded,
       prefilterDiscardedCount,
       denseGramsTouched: gramLookupResult?.denseGramsTouched || 0,

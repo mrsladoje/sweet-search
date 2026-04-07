@@ -12,16 +12,11 @@
 import {
   extractRegexLiteralClauses,
   loadSparseGramIndex,
-  loadChunkGramIndex,
-  hasNativeChunkGramSupport,
-  buildChunkGramIndexArtifact,
   resolveSparseSymbolMask as _resolveSparseSymbolMask,
   nativeGrepFilesWithMatches as _nativeGrepFilesWithMatches,
   nativeGrepFilesWithMatchesFixed as _nativeGrepFilesWithMatchesFixed,
   nativeGrepLines as _nativeGrepLines,
   nativeGrepFull as _nativeGrepFull,
-  nativeGrepChunkRanges as _nativeGrepChunkRanges,
-  chunkGramSearch as _chunkGramSearch,
   getSparseGramAllFiles as _getSparseGramAllFiles,
   queryAndGrepLines as _queryAndGrepLines,
   queryAndGrepFull as _queryAndGrepFull,
@@ -35,14 +30,11 @@ export const nativeGrepFilesWithMatches = _nativeGrepFilesWithMatches;
 export const nativeGrepFilesWithMatchesFixed = _nativeGrepFilesWithMatchesFixed;
 export const nativeGrepLines = _nativeGrepLines;
 export const nativeGrepFull = _nativeGrepFull;
-export const nativeGrepChunkRanges = _nativeGrepChunkRanges;
-export const chunkGramSearch = _chunkGramSearch;
 export const getSparseGramAllFiles = _getSparseGramAllFiles;
 export const queryAndGrepLines = _queryAndGrepLines;
 export const queryAndGrepFull = _queryAndGrepFull;
 export const searchLines = _searchLines;
 export const searchFull = _searchFull;
-import { existsSync, mkdirSync } from 'fs';
 import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { CODE_FILE_EXTENSIONS } from '../infrastructure/constants.js';
 import { isRipgrepCodePath, resolveSearchSymbolFilter } from './search-pattern-chunks.js';
@@ -416,122 +408,3 @@ export function querySparseGramCandidates(searcher, literalClauses, options = {}
   }
 }
 
-// =============================================================================
-// Chunk-level gram index candidate lookup
-// =============================================================================
-
-// Retry counter for lazy chunk gram build — allows up to 3 retries on transient
-// failures (disk full, permission error) before giving up permanently.
-let _chunkGramBuildAttempts = 0;
-const _CHUNK_GRAM_MAX_RETRIES = 3;
-
-export function ensureChunkGramIndex(searcher, options = {}) {
-  if (!searcher) return null;
-  if (searcher.chunkGramIndex) return searcher.chunkGramIndex;
-
-  const indexPath = options.chunkGramIndexPath || searcher.chunkGramIndexPath || DB_PATHS.chunkGramIndex;
-  let loaded = loadChunkGramIndex(indexPath);
-
-  // Lazy build: if no on-disk index but LI index is loaded, build from LI documents
-  if (!loaded && _chunkGramBuildAttempts < _CHUNK_GRAM_MAX_RETRIES && hasNativeChunkGramSupport() && searcher.lateInteractionIndex?.documents?.size > 0) {
-    _chunkGramBuildAttempts++;
-    try {
-      const chunks = [];
-      for (const [, doc] of searcher.lateInteractionIndex.documents) {
-        const meta = doc.metadata;
-        if (meta?.file && meta.startLine != null && meta.endLine != null) {
-          chunks.push({ filePath: meta.file, startLine: meta.startLine, endLine: meta.endLine });
-        }
-      }
-      if (chunks.length > 0) {
-        const dir = indexPath.substring(0, indexPath.lastIndexOf('/'));
-        if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-        const projectRoot = searcher.projectRoot || PROJECT_ROOT;
-        buildChunkGramIndexArtifact({ projectRoot, chunks, outputPath: indexPath });
-        loaded = loadChunkGramIndex(indexPath);
-        if (loaded) {
-          // Successful build — max out counter to avoid redundant rebuilds
-          _chunkGramBuildAttempts = _CHUNK_GRAM_MAX_RETRIES;
-        }
-      }
-    } catch (err) {
-      // Transient failure — will retry on next call (up to _CHUNK_GRAM_MAX_RETRIES)
-      if (process.env.SWEET_DEBUG) console.debug('[search-pattern-prefilter] lazy chunk gram build failed:', err.message);
-    }
-  }
-
-  if (loaded) {
-    searcher.chunkGramIndex = loaded;
-  }
-  return loaded;
-}
-
-/**
- * Query the chunk-level gram index. Returns candidate chunk RANGES when
- * selective enough — not just files. The caller passes these ranges to
- * nativeGrepChunkRanges for regex verification on only those line ranges,
- * then maps verified chunks straight to MaxSim (skipping mapMatchesToChunks).
- *
- * @returns {{ eligible: boolean, reason: string, chunkRanges: Array|null, totalChunks: number, candidateChunks: number }}
- */
-export function queryChunkGramCandidates(searcher, literalClauses, options = {}) {
-  const useChunkGram = options.useChunkGram ?? true;
-  if (!useChunkGram) {
-    return { eligible: false, reason: 'disabled', chunkRanges: null, totalChunks: 0, candidateChunks: 0 };
-  }
-
-  if (!Array.isArray(literalClauses) || literalClauses.length === 0) {
-    return { eligible: false, reason: 'not_eligible', chunkRanges: null, totalChunks: 0, candidateChunks: 0 };
-  }
-
-  try {
-    const chunkGramIndex = ensureChunkGramIndex(searcher, options);
-    if (!chunkGramIndex) {
-      return { eligible: false, reason: 'not_loaded', chunkRanges: null, totalChunks: 0, candidateChunks: 0 };
-    }
-
-    // Gate: chunk ratio <= 20% (generous — real filtering is by the verifier).
-    // File dedup count <= 2048 (limits file reads for verification).
-    const maxCandidateRatio = options.maxChunkGramCandidateRatio ?? 0.20;
-    const maxCandidateFiles = options.maxChunkGramCandidateFiles ?? 2048;
-    let allChunkHits = [];
-    let totalChunks = 0;
-    let candidateChunks = 0;
-
-    for (const clause of literalClauses) {
-      if (!Array.isArray(clause) || clause.length === 0) {
-        return { eligible: false, reason: 'not_eligible', chunkRanges: null, totalChunks, candidateChunks };
-      }
-
-      const result = chunkGramIndex.queryLiterals(clause);
-      if (!result?.eligible) {
-        return { eligible: false, reason: 'not_eligible', chunkRanges: null, totalChunks: result?.totalChunks || 0, candidateChunks: 0 };
-      }
-
-      totalChunks = Math.max(totalChunks, result.totalChunks || 0);
-      candidateChunks += result.candidateChunks || 0;
-
-      const hits = (result.chunkIds || []).filter(c => isRipgrepCodePath(c.file));
-      allChunkHits = allChunkHits.length === 0 ? hits : allChunkHits.concat(hits);
-    }
-
-    const ratio = totalChunks > 0 ? candidateChunks / totalChunks : 1;
-    const uniqueFiles = new Set(allChunkHits.map(c => c.file));
-
-    if (allChunkHits.length === 0 || uniqueFiles.size > maxCandidateFiles || ratio > maxCandidateRatio) {
-      return { eligible: false, reason: 'too_broad', chunkRanges: null, totalChunks, candidateChunks };
-    }
-
-    // Return chunk ranges for the verifier (nativeGrepChunkRanges)
-    const chunkRanges = allChunkHits.map(c => ({
-      file: c.file,
-      startLine: c.startLine,
-      endLine: c.endLine,
-      chunkId: c.chunkId,
-    }));
-
-    return { eligible: true, reason: 'ok', chunkRanges, totalChunks, candidateChunks };
-  } catch {
-    return { eligible: false, reason: 'error', chunkRanges: null, totalChunks: 0, candidateChunks: 0 };
-  }
-}
