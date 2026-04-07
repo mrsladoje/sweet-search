@@ -223,7 +223,7 @@ function generateRouterModule(tree, depth) {
 // Generated: ${new Date().toISOString()}
 // DO NOT EDIT - This file is auto-generated
 
-import { extractAllFeatures } from '../training/features/extractor.js';
+import { extractAllFeatures } from './features/extractor.js';
 
 function routeByFeatures(f) {
 ${code}

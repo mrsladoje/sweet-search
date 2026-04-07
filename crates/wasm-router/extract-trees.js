@@ -12,7 +12,7 @@
 
 import fs from 'fs';
 
-const jsFile = process.argv[2] || '../training/output/v46_router_d4.js';
+const jsFile = process.argv[2] || '../core/training/query-router/output/v46_router_d4.js';
 const content = fs.readFileSync(jsFile, 'utf8');
 
 // Parse trees

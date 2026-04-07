@@ -27,7 +27,7 @@ export default defineConfig({
       exclude: ['node_modules/**', 'vitest.config.js'],
     },
     benchmark: {
-      include: ['scripts/benchmark*.js', 'training/benchmark*.js', 'eval/scripts/*bench*.js', '__tests__/**/*.bench.js'],
+      include: ['scripts/benchmark*.js', 'core/training/query-router/benchmark*.js', 'eval/scripts/*bench*.js', '__tests__/**/*.bench.js'],
       outputFile: '.sweet-search/benchmark-results.json',
     },
   },

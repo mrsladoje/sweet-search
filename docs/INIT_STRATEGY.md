@@ -148,7 +148,7 @@ Three root causes were found and fixed:
 ### Query router
 
 1. WASM bundle: `crates/wasm-router/pkg/`
-2. CatBoost JS fallback: `training/output/v46_router_d4.js` (runtime import in
+2. CatBoost JS fallback: `core/training/query-router/output/v46_router_d4.js` (runtime import in
    `query-router-catboost.js`; `core/infrastructure/manifest.json` references v45 as `catboostRouter`)
 
 ### CLI binary
@@ -229,9 +229,9 @@ sweet-search/
   mcp/server.js                 # MCP server
   translation/
   crates/wasm-router/pkg/
-  training/output/v45_router_d4.js
-  training/output/v46_router_d4.js
-  training/features/
+  core/training/query-router/output/v45_router_d4.js
+  core/training/query-router/output/v46_router_d4.js
+  core/training/query-router/features/
   core/infrastructure/manifest.json
   scripts/init.js
   scripts/uninstall.js
