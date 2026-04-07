@@ -49,7 +49,6 @@
     "core/vector-store/",
     "core/query/",
     "mcp/",
-    "assets/",
     "scripts/benchmark-harness.js",
     "scripts/init.js",
     "scripts/uninstall.js",

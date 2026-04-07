@@ -67,7 +67,7 @@ Everything in `core`, plus init-managed fetch of:
 
 All artifacts are verified with SHA256 checksums from
 `core/infrastructure/model-registry.js`. The registry lists all 6 models with
-`profile: 'full'`. Note: `assets/manifest.json` currently lists only the first 4 in its
+`profile: 'full'`. Note: `core/infrastructure/manifest.json` currently lists only the first 4 in its
 `profiles.full.models` array; the FlashRank and semantic cache models are fetched via
 the registry's `getModelsForProfile()` but are not yet in the manifest.
 
@@ -149,7 +149,7 @@ Three root causes were found and fixed:
 
 1. WASM bundle: `wasm-router/pkg/`
 2. CatBoost JS fallback: `training/output/v46_router_d4.js` (runtime import in
-   `query-router-catboost.js`; `assets/manifest.json` references v45 as `catboostRouter`)
+   `query-router-catboost.js`; `core/infrastructure/manifest.json` references v45 as `catboostRouter`)
 
 ### CLI binary
 
@@ -232,7 +232,7 @@ sweet-search/
   training/output/v45_router_d4.js
   training/output/v46_router_d4.js
   training/features/
-  assets/manifest.json
+  core/infrastructure/manifest.json
   scripts/init.js
   scripts/uninstall.js
 ```

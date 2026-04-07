@@ -96,7 +96,7 @@ console.log('');
 
 console.log('--- Runtime Assets ---');
 
-const manifest = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'assets', 'manifest.json'), 'utf8'));
+const manifest = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'core', 'infrastructure', 'manifest.json'), 'utf8'));
 
 check('manifest version', () => {
   assert(manifest.version === 2, `Expected version 2, got ${manifest.version}`);
