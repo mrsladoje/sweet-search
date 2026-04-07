@@ -10,53 +10,42 @@ import path from 'node:path';
 // Output schemas (Zod — SDK converts to JSON Schema for clients)
 // ---------------------------------------------------------------------------
 
-const BenchmarkSearchOutputSchema = z.object({
-  results: z.array(z.object({
-    file: z.string(),
-    line: z.number().int().optional(),
-    score: z.number(),
-    snippet: z.string(),
-    signature: z.string().optional(),
-    language: z.string().optional(),
-  })),
+const SearchResultSchema = z.object({
+  file: z.string(),
+  score: z.number(),
+  line: z.number().int().optional(),
+  snippet: z.string().optional(),
+  signature: z.string().optional(),
+  language: z.string().optional(),
+  rank: z.number().int().optional(),
+  startLine: z.number().int().nullable().optional(),
+  endLine: z.number().int().nullable().optional(),
+  symbol: z.string().nullable().optional(),
+  symbolType: z.string().nullable().optional(),
+  presentation: z.enum(['full', 'preview', 'summary']).optional(),
+  code: z.string().nullable().optional(),
+  codeTokens: z.number().int().optional(),
+});
+
+export const SearchOutputSchema = z.object({
+  results: z.array(SearchResultSchema),
   totalFound: z.number().int(),
   mode: z.string(),
   queryTimeMs: z.number(),
-});
-
-const AgentSearchOutputSchema = z.object({
-  format: z.literal('agent'),
-  subMode: z.string(),
-  query: z.string(),
+  format: z.enum(['benchmark', 'agent']).optional(),
+  subMode: z.string().optional(),
+  query: z.string().optional(),
   regex: z.string().optional(),
-  mode: z.string(),
-  totalResults: z.number().int(),
-  tokenBudget: z.number().int(),
-  tokensUsed: z.number().int(),
-  confidence: z.enum(['high', 'medium', 'low']),
-  confidenceReason: z.string(),
-  sufficient: z.boolean(),
-  sufficiencyReasons: z.array(z.string()),
-  packagingMs: z.number(),
-  latencyMs: z.number(),
-  results: z.array(z.object({
-    rank: z.number().int(),
-    file: z.string(),
-    startLine: z.number().int().nullable(),
-    endLine: z.number().int().nullable(),
-    symbol: z.string().nullable(),
-    symbolType: z.string().nullable(),
-    score: z.number(),
-    presentation: z.enum(['full', 'preview', 'summary']),
-    code: z.string().nullable(),
-    codeTokens: z.number().int(),
-  })),
+  totalResults: z.number().int().optional(),
+  tokenBudget: z.number().int().optional(),
+  tokensUsed: z.number().int().optional(),
+  confidence: z.enum(['high', 'medium', 'low']).optional(),
+  confidenceReason: z.string().optional(),
+  sufficient: z.boolean().optional(),
+  sufficiencyReasons: z.array(z.string()).optional(),
+  packagingMs: z.number().optional(),
+  latencyMs: z.number().optional(),
 });
-
-export const SearchOutputSchema = z.union([
-  BenchmarkSearchOutputSchema,
-  AgentSearchOutputSchema,
-]);
 
 export const IndexOutputSchema = z.object({
   success: z.boolean(),
@@ -155,13 +144,27 @@ export async function handleSearch({ query, k, mode, structural, regex, format, 
         ? `${confidence} | ${budget}\n\n${lines.join('\n\n')}${summaries.length ? '\n\nAlso found:\n' + summaries.join('\n') : ''}`
         : `No results found for "${query}"`;
 
-      // Shape structuredContent to conform to AgentSearchOutputSchema
+      // Shape structuredContent to conform to SearchOutputSchema
       const structured = {
+        results: agentResults.map(r => ({
+          file: r.file,
+          score: r.score,
+          rank: r.rank,
+          startLine: r.startLine ?? null,
+          endLine: r.endLine ?? null,
+          symbol: r.symbol ?? null,
+          symbolType: r.symbolType ?? null,
+          presentation: r.presentation,
+          code: r.code ?? null,
+          codeTokens: r.codeTokens,
+        })),
+        totalFound: searchResult.totalResults,
+        mode: searchResult.mode,
+        queryTimeMs: searchResult.latencyMs,
         format: searchResult.format,
         subMode: searchResult.subMode,
         query: searchResult.query,
         regex: searchResult.regex,
-        mode: searchResult.mode,
         totalResults: searchResult.totalResults,
         tokenBudget: searchResult.tokenBudget,
         tokensUsed: searchResult.tokensUsed,
@@ -171,18 +174,6 @@ export async function handleSearch({ query, k, mode, structural, regex, format, 
         sufficiencyReasons: searchResult.sufficiencyReasons || [],
         packagingMs: searchResult.packagingMs,
         latencyMs: searchResult.latencyMs,
-        results: agentResults.map(r => ({
-          rank: r.rank,
-          file: r.file,
-          startLine: r.startLine ?? null,
-          endLine: r.endLine ?? null,
-          symbol: r.symbol ?? null,
-          symbolType: r.symbolType ?? null,
-          score: r.score,
-          presentation: r.presentation,
-          code: r.code ?? null,
-          codeTokens: r.codeTokens,
-        })),
       };
 
       return {
@@ -194,6 +185,7 @@ export async function handleSearch({ query, k, mode, structural, regex, format, 
     // Standard benchmark mode
     const { results, stats } = searchResult;
     const structured = {
+      format: 'benchmark',
       results: (results || []).map(r => ({
         file: r.file || r.file_path || r.metadata?.file || '',
         line: r.startLine || r.start_line || undefined,

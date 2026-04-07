@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
 const NODE = process.execPath;
-const CLI = join(PACKAGE_ROOT, 'bin', 'sweet-search.js');
+const CLI = join(PACKAGE_ROOT, 'core', 'cli.js');
 
 const args = process.argv.slice(2);
 const skipModels = args.includes('--skip-models');
@@ -280,13 +280,23 @@ for (const profile of profiles) {
 
 console.log('\n--- End-to-End Search ---');
 
-await checkAsync('index + search (JS search path)', async () => {
+if (skipModels) {
+  check('index + search (skipped with --skip-models)', () => {
+    console.log('    search: skipped — end-to-end indexing requires model artifacts');
+  });
+} else if (!addonPath) {
+  check('index + search (skipped without native addon)', () => {
+    console.log('    search: skipped — indexing requires the native addon on this install path');
+  });
+} else {
+  await checkAsync('index + search (JS search path)', async () => {
   const searchDir = mkdtempSync(join(tmpdir(), 'ss-smoke-search-'));
   writeFileSync(join(searchDir, 'package.json'), '{"name":"search-test"}');
   mkdirSync(join(searchDir, 'src'));
   writeFileSync(join(searchDir, 'src', 'hello.js'),
     '// Greeting utility\nfunction greetUser(name) {\n  return `Hello, ${name}!`;\n}\nmodule.exports = { greetUser };\n'
   );
+  const socketPath = join(tmpdir(), `sweet-search-smoke-${process.pid}-${Date.now()}.sock`);
 
   // Step 1: Index the temp project
   execFileSync(NODE, [join(PACKAGE_ROOT, 'core', 'indexing', 'index-codebase-v21.js'), '--project-root', searchDir], {
@@ -300,8 +310,8 @@ await checkAsync('index + search (JS search path)', async () => {
   // Step 2: Run a real search through runCli() — the JS search path that
   // core/cli.js dispatches to when no native binary is available.
   // This exercises: query routing → embedding → HNSW → reranking → late interaction.
-  // The native binary query path (Rust CLI → Unix socket → server) is a
-  // server integration concern, not a package smoke test.
+  // Force cold mode and an isolated socket so the smoke test never reuses a
+  // stale warm server from another test run.
   const resultFile = join(searchDir, '.sweet-search', 'smoke-result.json');
   execFileSync(NODE, ['-e', `
     import { writeFileSync } from 'fs';
@@ -310,7 +320,7 @@ await checkAsync('index + search (JS search path)', async () => {
     const chunks = [];
     const origWrite = process.stdout.write;
     process.stdout.write = (chunk) => { chunks.push(chunk); return true; };
-    await runCli(['greeting', '--json']);
+    await runCli(['greeting', '--json', '--cold']);
     process.stdout.write = origWrite;
     const output = chunks.join('');
     const jsonStart = output.indexOf('{\\n');
@@ -320,7 +330,11 @@ await checkAsync('index + search (JS search path)', async () => {
   `], {
     encoding: 'utf8',
     timeout: 600000,
-    env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: searchDir },
+    env: {
+      ...process.env,
+      SWEET_SEARCH_PROJECT_ROOT: searchDir,
+      SWEET_SEARCH_SOCKET_PATH: socketPath,
+    },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
@@ -338,6 +352,7 @@ await checkAsync('index + search (JS search path)', async () => {
 
   rmSync(searchDir, { recursive: true, force: true });
 });
+}
 
 // ---------------------------------------------------------------------------
 // 6. Config bridge

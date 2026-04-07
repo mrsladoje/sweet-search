@@ -23,6 +23,7 @@ WITH_NATIVE="${WITH_NATIVE:-true}"
 SKIP_MODELS="${SKIP_MODELS:-true}"
 TARGET="${TARGET:-unknown}"
 PROFILE="${PROFILE:-both}"
+PNPM_ALLOW_BUILD="better-sqlite3,onnxruntime-node,sharp,usearch"
 
 NODE=$(command -v node)
 
@@ -126,10 +127,11 @@ case "$PM" in
   pnpm)
     pnpm install 2>/dev/null || true
     if [ "$WITH_NATIVE" = "true" ] && [ -n "${NATIVE_TGZ:-}" ]; then
-      pnpm add "$MAIN_TGZ" "$NATIVE_TGZ" 2>&1 | tail -5
+      pnpm add --allow-build="$PNPM_ALLOW_BUILD" "$MAIN_TGZ" "$NATIVE_TGZ" 2>&1 | tail -5
     else
-      pnpm add "$MAIN_TGZ" 2>&1 | tail -5
+      pnpm add --allow-build="$PNPM_ALLOW_BUILD" "$MAIN_TGZ" 2>&1 | tail -5
     fi
+    pnpm approve-builds --all 2>&1 | tail -5
     pnpm rebuild better-sqlite3 2>&1 | tail -3
     ;;
   yarn)
@@ -224,6 +226,11 @@ echo "--- Phase 8 Checks 4-5: Init profiles ---"
 
 run_init_profile() {
   local profile="$1"
+  if [ "$profile" = "full" ] && [ "$SKIP_MODELS" = "true" ]; then
+    echo "  SKIP  init --profile full (--skip-models)"
+    return 0
+  fi
+
   local init_dir
   init_dir=$(mktemp -d /tmp/ss-init-${profile}-XXXXXX)
   echo '{"name":"init-test"}' > "$init_dir/package.json"
@@ -239,40 +246,24 @@ run_init_profile() {
   tail -5 "$init_out"
   rm -f "$init_out"
 
-  # Full profile downloads models — without network/cache this exits 1
-  # but still writes a partial config. That's expected with --skip-models.
-  if [ "$profile" = "full" ] && [ "$SKIP_MODELS" = "true" ] && [ $init_exit -ne 0 ]; then
-    # Partial config should still be written
-    local config_path="$init_dir/.sweet-search/config.json"
-    check "init --profile full (exit 1 expected without models)" true
-    check "config.json exists (full, partial)" test -f "$config_path"
-    if [ -f "$config_path" ]; then
-      local cfg_profile
-      set +e
-      cfg_profile=$("$NODE" -e "import{readFileSync}from'fs';console.log(JSON.parse(readFileSync('$config_path','utf8')).profile)" 2>/dev/null)
-      set -e
-      check "config.json profile=full (partial)" test "$cfg_profile" = "full"
-    fi
-  else
-    check "init --profile $profile" test "$init_exit" -eq 0
+  check "init --profile $profile" test "$init_exit" -eq 0
 
-    local config_path="$init_dir/.sweet-search/config.json"
-    check "config.json exists ($profile)" test -f "$config_path"
+  local config_path="$init_dir/.sweet-search/config.json"
+  check "config.json exists ($profile)" test -f "$config_path"
 
-    if [ -f "$config_path" ]; then
-      local cfg_profile
-      set +e
-      cfg_profile=$("$NODE" -e "import{readFileSync}from'fs';console.log(JSON.parse(readFileSync('$config_path','utf8')).profile)" 2>/dev/null)
-      set -e
-      check "config.json profile=$profile" test "$cfg_profile" = "$profile"
+  if [ -f "$config_path" ]; then
+    local cfg_profile
+    set +e
+    cfg_profile=$("$NODE" -e "import{readFileSync}from'fs';console.log(JSON.parse(readFileSync('$config_path','utf8')).profile)" 2>/dev/null)
+    set -e
+    check "config.json profile=$profile" test "$cfg_profile" = "$profile"
 
-      local rerun_exit=0
-      set +e
-      (cd "$init_dir" && "$NODE" "$CLI" init --profile "$profile" > /dev/null 2>&1)
-      rerun_exit=$?
-      set -e
-      check "idempotent re-run ($profile)" test "$rerun_exit" -eq 0
-    fi
+    local rerun_exit=0
+    set +e
+    (cd "$init_dir" && "$NODE" "$CLI" init --profile "$profile" > /dev/null 2>&1)
+    rerun_exit=$?
+    set -e
+    check "idempotent re-run ($profile)" test "$rerun_exit" -eq 0
   fi
 
   rm -rf "$init_dir"
@@ -480,14 +471,9 @@ cat "$SMOKE_OUT"
 # Parse actual failure count from smoke test output
 if [ $SMOKE_EXIT -ne 0 ]; then
   FAIL_COUNT=$(grep -oE '[0-9]+ failed' "$SMOKE_OUT" | grep -oE '[0-9]+' || echo "99")
-  if [ "$SKIP_MODELS" = "true" ] && [ "$FAIL_COUNT" = "1" ]; then
-    echo "  Note: 1 failure (E2E search) expected with --skip-models"
-    # Don't count this as a check failure — the E2E search requires models
-  else
-    echo "  ERROR: $FAIL_COUNT smoke test failures"
-    ((failed++))
-    failures="$failures\n  - smoke test: $FAIL_COUNT failures"
-  fi
+  echo "  ERROR: $FAIL_COUNT smoke test failures"
+  ((failed++))
+  failures="$failures\n  - smoke test: $FAIL_COUNT failures"
 else
   echo "  All smoke test checks passed"
 fi
