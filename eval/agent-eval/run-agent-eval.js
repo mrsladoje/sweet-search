@@ -296,12 +296,16 @@ async function runSystem(repo, system, opts) {
 
   let tools, executeTool;
 
-  if (system === 'rg+read') {
+  if (opts.backend === 'cli') {
+    // CLI backend: no SweetSearch needed, warm server handles search
+    tools = [];
+    executeTool = null;
+  } else if (system === 'rg+read') {
     const adapter = await import('./tools/grep-read-tools.js');
     tools = adapter.TOOL_DEFINITIONS;
     executeTool = adapter.createToolExecutor(repoRoot);
   } else {
-    // Both pattern systems need a SweetSearch instance
+    // API backend: both pattern systems need a SweetSearch instance
     process.env.SWEET_SEARCH_PROJECT_ROOT = repoRoot;
     const SweetSearch = (await import('../../core/search/index.js')).default;
     const search = new SweetSearch({
