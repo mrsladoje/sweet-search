@@ -1,19 +1,29 @@
 # Agent-Facing Context Packaging for ColGrep Pattern Search
 
 **Status**: Planning
-**Priority**: HIGH (this is the product value — agents save tokens and search steps)
+**Priority**: HIGH (this is the product value — agents save tokens, latency, AND search steps)
 **Prerequisites**: Pattern search MVP (done), multi-repo benchmark (done)
 **References**: COLGREP_PLAN.md, ContextBench (arXiv 2602.05892), Context as a Tool
-(arXiv 2512.22087), RepoCoder (EMNLP 2023), CodeRAG (EMNLP 2025), LightOn ColGrep blog,
+(arXiv 2512.22087), RepoCoder (EMNLP 2023), CodeRAG (arXiv 2509.16112),
+LightOn ColGrep blog (Feb 2026), Reason-ModernColBERT (LightOn, March 2026),
 "What to Retrieve for Effective RAG Code Generation" (arXiv 2503.20589),
-CodeScout (arXiv 2603.17829), Sourcegraph Cody (arXiv 2408.05344),
-Google "Sufficient Context" (ICLR 2025)
-**SOTA Review**: 2026-04-02 — Verified against ContextBench, LightOn ColGrep, Cursor,
-Claude Code, Copilot, Windsurf, and Sourcegraph Cody. No product publicly documents
-explicit token-budget allocation across ranked results or calibrated confidence signals —
-this plan innovates in both areas. Core architecture (symbol-complete expansion, tiered
-presentation, header context) validated by AST-aware chunking research and the "What to
-Retrieve" empirical study.
+CodeScout (arXiv 2603.17829), ToolTrain (arXiv 2508.03012),
+Sourcegraph Cody (arXiv 2408.05344, RecSys 2024),
+"LLM-as-a-Judge for Software Engineering" (arXiv 2510.24367),
+SWE-ContextBench (arXiv 2602.08316), Theory of Code Space (arXiv 2603.00601),
+Evaluating AGENTS.md (arXiv 2602.11988), FastCode (arXiv 2603.01012),
+Beyond Localization (arXiv 2603.29067),
+Improving Code Localization with Repository Memory (ICLR 2026)
+**SOTA Review**: 2026-04-07 — Full re-verification against ContextBench, LightOn ColGrep
++ Reason-ModernColBERT, Cursor, Claude Code, Copilot, Windsurf, Sourcegraph Cody, and
+8 new 2026 papers. No product publicly documents explicit token-budget allocation across
+ranked results or calibrated confidence signals — this plan innovates in both areas.
+Core architecture validated by AST-aware chunking research and the "What to Retrieve"
+empirical study. Counter-evidence from ToCS, AGENTS.md evaluation, and ContextBench
+"Bitter Lesson" finding engaged in new §4.5.
+**Prior reference removed**: "Google Sufficient Context (ICLR 2025)" — extensive search
+across Semantic Scholar, OpenAlex, arXiv, and DBLP found no matching paper. The
+sufficiency heuristic in §5 is retained as original design, not attributed to a paper.
 
 ---
 
@@ -23,14 +33,44 @@ Pattern search currently returns chunk metadata (file, startLine, endLine, score
 The caller must issue separate file reads to see the actual code. For agents, this
 means:
 
-- Extra round trips (Read tool calls per result)
-- Wasted context window on tool call overhead
-- Agent must decide what to read and how much
-- Chunks are often too small (signature-only) or too large (whole file)
+- **Extra latency**: each follow-up Read is a full tool-call round trip (agent
+  generates call → tool executes → response streams back → agent resumes reasoning).
+  For top-3 results that's 3 sequential round trips before the agent can even start
+  thinking about the answer.
+- **Wasted tokens**: each Read tool call costs ~50-100 tokens of overhead (tool name,
+  parameters, response framing) on top of the code content itself.
+- **Agent must decide what to read and how much**: the agent burns reasoning tokens
+  deciding which results to Read, and often reads too much or too little.
+- **Chunks are often too small (signature-only) or too large (whole file)**
 
-LightOn's ColGrep evaluation showed **56% fewer search operations** and **15.7% token
-savings** when agents got better results upfront. Our goal: one pattern search returns
-**self-contained, actionable context** so the agent doesn't need follow-up reads.
+The critical insight: **returning code in the search result eliminates the Read
+round-trip entirely**. The agent gets ranked, self-contained code blocks in a single
+tool response. No follow-up calls. No wasted reasoning on "should I read this file?"
+The speed gain is not just token savings — it's wall-clock latency from removing
+sequential tool calls from the agent's critical path.
+
+LightOn's ColGrep evaluation (Feb 2026) showed **56% fewer search operations** and
+**15.7% token savings** when agents got better results upfront. Their follow-up work,
+Reason-ModernColBERT (March 2026), took #1 on BrowseComp-Plus with 87.59% accuracy
+using only 149M parameters — outperforming retrievers 54× its size. This validates
+the late-interaction (MaxSim) architecture our own ranking pipeline uses.
+
+Our goal: one pattern search returns **self-contained, actionable context** — the
+agent reads the code directly from the search response and proceeds to reason,
+with zero follow-up reads.
+
+**Caution — context overload risk** (ContextBench "Bitter Lesson", arXiv 2602.05892;
+Theory of Code Space, arXiv 2603.00601; Evaluating AGENTS.md, arXiv 2602.11988):
+Three independent 2026 studies found that delivering MORE context upfront can hurt
+agent performance. ContextBench found LLMs favor recall over precision, and
+"substantial gaps exist between explored and utilized context." ToCS found GPT-5.3
+actually performs better with active exploration than receiving the full codebase at
+once (information overload). The AGENTS.md evaluation found that repository context
+files "generally reduce task success rates while increasing inference cost." These
+findings reinforce the plan's per-result token caps (§4.4) and tiered presentation
+(§2.3) as essential guardrails — the goal is NOT to return as much code as possible,
+but to return the **right** code at the **right** granularity. See §4.5 for detailed
+engagement with this counter-evidence.
 
 ---
 
@@ -85,11 +125,15 @@ results combined) and allocate it smartly:
 **Precision-recall tradeoff warning** (from ContextBench, arXiv 2602.05892):
 Agents that aggressively expand context achieve higher recall but significantly
 lower precision — and lower overall F1 — than agents with balanced retrieval
-strategies. GPT-5 retrieves broadly and scores worse than Claude Sonnet 4.5,
-which uses moderate retrieval rounds and moderate context sizes. The token
-budget and per-result caps (§4.4) are the primary defense against over-retrieval.
-The 60%/20%/20% allocation is an initial heuristic — instrument deployments to
-empirically validate these ratios against agent task success rates.
+strategies. On the ContextBench leaderboard, Claude Sonnet 4.5 ranks #1 (53.0%
+Pass@1, 0.344 Line F1) while GPT-5 ranks #2 (47.2%, 0.312 Line F1) — GPT-5
+retrieves broadly and scores worse. The paper's headline finding — "The Bitter
+Lesson" of coding agents: more scaffolding does NOT mean better context
+retrieval — reinforces that the value is in precision of what we return, not
+volume. The token budget and per-result caps (§4.4) are the primary defense
+against over-retrieval. The 60%/20%/20% allocation is an initial heuristic —
+instrument deployments to empirically validate these ratios against agent task
+success rates.
 
 ---
 
@@ -114,7 +158,7 @@ empirically validate these ratios against agent task success rates.
   results: [
     {
       rank: 1,
-      file: "core/sweet-search.js",
+      file: "core/search/sweet-search.js",
       startLine: 86,
       endLine: 140,
       symbol: "SweetSearch",
@@ -136,7 +180,7 @@ empirically validate these ratios against agent task success rates.
     },
     {
       rank: 2,
-      file: "core/query-router.js",
+      file: "core/query/query-router.js",
       startLine: 62,
       endLine: 91,
       symbol: "QueryRouter",
@@ -178,11 +222,16 @@ Is chunk a complete symbol (function/class/method)?
 
 ### 4.2 Symbol Expansion Sources
 
+**DDD constraint**: After the domain boundary refactor, all database access
+(code graph, codebase) goes through `core/infrastructure/codebase-repository.js`.
+Expansion logic MUST call repository methods, not query `.sweet-search/code-graph.db`
+or `.sweet-search/codebase.db` directly.
+
 1. **Chunk metadata** (`metadata.symbol`, `metadata.chunk_type`): Already stored
    in the LI index. Tells us if the chunk is a function, class, method, etc.
 
-2. **Code graph** (`code-graph.db`): Has entity definitions with exact line ranges.
-   Query: given file + line range, find the enclosing entity.
+2. **Code graph** (via `CodebaseRepository`): Has entity definitions with exact
+   line ranges. Query: given file + line range, find the enclosing entity.
 
 3. **Sibling chunks**: The chunk location map has sorted intervals per file.
    Adjacent chunks in the same file are likely parts of the same symbol.
@@ -190,12 +239,18 @@ Is chunk a complete symbol (function/class/method)?
 4. **AST parent links**: The cAST chunker stores hierarchical parent/child
    relationships. A method chunk knows its parent class.
 
-**Industry precedent**: Sourcegraph Cody (arXiv 2408.05344) combines local IDE
-context with remote search, ranking file snippets by relevance and supplementing
-with SCIP/LSIF symbol data for compiler-accurate cross-repo navigation. Our
-expansion sources (chunk metadata, code graph, sibling chunks, AST parents) are
-a superset of what Cody uses, with the addition of the code graph entity lookup
-that enables expansion to full symbol boundaries.
+**Industry precedent**: Sourcegraph Cody (arXiv 2408.05344, RecSys 2024) combines
+local IDE context with remote search, ranking file snippets by relevance and
+supplementing with SCIP/LSIF symbol data for compiler-accurate cross-repo
+navigation. Our expansion sources (chunk metadata, code graph, sibling chunks,
+AST parents) are a superset of what Cody uses, with the addition of the code
+graph entity lookup that enables expansion to full symbol boundaries.
+
+**Newer approach — structural scouting**: FastCode (arXiv 2603.01012, March 2026)
+decouples repository exploration from content consumption. A lightweight structural
+scout navigates the repository, then full content is consumed only for relevant
+regions. This validates our two-phase approach (ranking → expansion) over monolithic
+"retrieve everything" strategies.
 
 ### 4.3 Priority Order for Expansion
 
@@ -222,6 +277,55 @@ successfully retrieve 30-50% more relevant context than they actually use in
 their final outputs. This means over-expanding wastes tokens that the agent
 ignores. The tiered presentation (full/preview/summary) partially addresses
 this by concentrating budget on top-1 where usage is highest.
+
+### 4.5 Counter-Evidence: When More Context Hurts
+
+Three independent 2026 papers converge on a warning that must shape this design:
+
+1. **ContextBench "Bitter Lesson"** (arXiv 2602.05892): "Sophisticated agent
+   scaffolding yields only marginal gains in context retrieval." Better search
+   tools help, but the model's intrinsic ability dominates. This means our
+   expansion logic should be **precise**, not **generous** — the model won't
+   magically use extra context just because we deliver it.
+
+2. **Theory of Code Space** (arXiv 2603.00601, Feb 2026): Found an "Active-
+   Passive Gap" — GPT-5.3-Codex actually performs BETTER when actively exploring
+   a codebase than when receiving the entire codebase at once. Information
+   overload from seeing 27-30 files simultaneously "overwhelms the model's
+   ability to identify dependency relationships." This directly supports our
+   tiered presentation: deliver the top-1 result in full, compress the rest.
+
+3. **Evaluating AGENTS.md** (arXiv 2602.11988, ETH Zurich, Feb 2026):
+   Repository-level context files "generally reduce task success rates compared
+   to providing no repository context while increasing inference cost." Broad
+   context injection hurts more than it helps.
+
+4. **Beyond Localization** (arXiv 2603.29067, March 2026): Studies what
+   happens after localization is strengthened in RAG-based program repair.
+   Found that improved localization does translate to better end-to-end
+   results, but with diminishing returns — the "residual frontier" of
+   post-localization improvement is bounded. This validates focusing on the
+   top-1 result quality rather than exhaustively expanding all results.
+
+5. **Context as a Tool (CAT)** (arXiv 2512.22087, Dec 2025, 7 citations):
+   Formalizes structured context workspaces for SWE agents with stable task
+   semantics, condensed long-term memory, and high-fidelity short-term
+   interactions. SWE-Compressor achieves 57.6% on SWE-Bench-Verified under
+   bounded context budgets. Validates our bounded-budget approach — even the
+   best context management system enforces strict token limits.
+
+**What this means for us**: The latency win from eliminating Read round-trips
+is unambiguous — fewer tool calls is always faster. But the content we return
+must be **surgical**. The per-result caps (§4.4) and tiered presentation (§2.3)
+are not nice-to-haves — they are essential guardrails validated by independent
+research. The default budget (4000 tokens total across all results) should err
+on the side of too little rather than too much. An agent that needs more can
+always issue a follow-up Read — but an agent drowning in irrelevant context
+has no recourse.
+
+**Design rule**: when in doubt, return less code at higher precision. The
+expansion logic should prefer returning a complete function over a complete
+class, and a complete method over a complete file section.
 
 ---
 
@@ -254,13 +358,14 @@ follow-up reads?). After collecting ~500 data points, fit a simple calibration
 model (isotonic regression or logistic) and adjust thresholds. Report
 calibration error (ECE) in Track B2 evaluation.
 
-**Sufficiency signal** (inspired by Google's "Sufficient Context" work, ICLR
-2025): Beyond "is top-1 clearly better than top-2", consider a sufficiency
-heuristic: does the returned context likely contain enough information to
-answer the query? Signals include: (a) the expanded region contains a complete
-symbol (not truncated), (b) header context resolves all referenced imports,
-(c) the score gap suggests the match is specific, not generic. If all three
-hold, the agent can trust the result without follow-up reads.
+**Sufficiency signal**: Beyond "is top-1 clearly better than top-2", consider
+a sufficiency heuristic: does the returned context likely contain enough
+information to answer the query? Signals include: (a) the expanded region
+contains a complete symbol (not truncated), (b) header context resolves all
+referenced imports, (c) the score gap suggests the match is specific, not
+generic. If all three hold, the agent can trust the result without follow-up
+reads. This is our own design — no published product or paper documents an
+equivalent sufficiency signal for code search results as of April 2026.
 
 ---
 
@@ -296,7 +401,7 @@ bring in "similar code" from other files).
 
 ## 7. Token Estimation
 
-Use the existing `codebase.db` token estimation or a fast approximation:
+Use the existing token estimation (via `CodebaseRepository`) or a fast approximation:
 - Code: ~3.5 characters per token (empirical average for code)
 - Comments: ~4.5 characters per token
 - Whitespace-heavy: ~5 characters per token
@@ -308,7 +413,7 @@ for budget management.
 
 ## 8. Integration Points
 
-### 8.1 CLI (`search-cli.js`)
+### 8.1 CLI (`core/search/search-cli.js`)
 
 ```bash
 # Current (benchmark-style output)
@@ -337,7 +442,7 @@ if proven. The tool description should explain what the agent gets back.
 }
 ```
 
-### 8.3 Warm Server (`search-server.js`)
+### 8.3 Warm Server (`core/search/search-server.js`)
 
 ```
 GET /search?q=authentication&regex=class.*Service&format=agent&budget=4000
@@ -364,16 +469,17 @@ const { results } = await searcher.search("authentication", {
 Return the top-k results with code content loaded, no expansion.
 This is just `readFileRange()` applied to each result.
 
-**Files**: `core/search-pattern.js` (add format option to patternSearch)
+**Files**: `core/search/search-pattern.js` (add format option to patternSearch)
 **Effort**: 0.5 day
-**Value**: Agents get code without follow-up reads
+**Value**: Agents get code in the search response — zero Read tool calls needed.
+This is the single biggest latency win: eliminates 1-3 sequential round trips.
 
 ### Phase 2: Symbol-Complete Expansion
 
-Expand signature-only chunks to full symbols using code graph entity lookup.
-Merge contiguous sibling chunks.
+Expand signature-only chunks to full symbols using code graph entity lookup
+(via `CodebaseRepository`). Merge contiguous sibling chunks.
 
-**Files**: `core/search-pattern.js`, new `core/context-expander.js`
+**Files**: `core/search/search-pattern.js`, new `core/search/context-expander.js`
 **Effort**: 1-2 days
 **Value**: Results are self-contained, not fragments
 
@@ -381,8 +487,11 @@ Merge contiguous sibling chunks.
 
 Add token estimation, per-result caps, and presentation tiers
 (full/preview/summary). Total budget allocation across results.
+This phase is critical for avoiding the context overload problem
+identified in §4.5 — budget discipline is what makes agent mode
+an improvement over "just return more stuff."
 
-**Files**: `core/context-expander.js`, `core/search-pattern.js`
+**Files**: `core/search/context-expander.js`, `core/search/search-pattern.js`
 **Effort**: 1 day
 **Value**: Predictable context window usage
 
@@ -391,7 +500,7 @@ Add token estimation, per-result caps, and presentation tiers
 Add minimal import/declaration context for top-1 result.
 Scan code for references, cross-reference with file imports.
 
-**Files**: `core/context-expander.js`
+**Files**: `core/search/context-expander.js`
 **Effort**: 0.5 day
 **Value**: Agent understands the code without reading the full file
 
@@ -400,7 +509,7 @@ Scan code for references, cross-reference with file imports.
 Compute confidence from score gaps, candidate recall, regex selectivity.
 Include in response for agent decision-making.
 
-**Files**: `core/search-pattern.js`
+**Files**: `core/search/search-pattern.js`
 **Effort**: 0.5 day
 **Value**: Agent knows when to trust results vs search again
 
@@ -454,9 +563,22 @@ For each benchmark query, run the same ranked results through both formats and m
 | Token efficiency | Packaging reduces agent context cost instead of inflating it | Compare delivered tokens against metadata mode plus simulated follow-up reads |
 | Staleness accuracy | Dirty overlay metadata is trustworthy | Modify indexed files and verify `stale` is set correctly |
 | Latency overhead | Packaging is cheap enough for default use | `agent_ms - benchmark_ms`, target `<5ms` p50 |
+| Round-trip savings | Agent mode eliminates Read calls entirely | Simulate: metadata-mode agent needs N Reads vs agent-mode needs 0 — measure total wall-clock including tool-call overhead |
+| Context overload risk | Expanded results don't exceed useful size | Flag results where codeTokens > 1500 and presentation is "full" — these risk the overload documented in §4.5 |
 
 This is the missing bridge between "format-only change" and the full Track B2 study.
 It is cheap, deterministic, and gives fast feedback while the packaging logic evolves.
+
+**New external benchmarks to cross-reference** (added 2026-04-07):
+- **ContextBench** (arXiv 2602.05892): provides gold-context annotations and
+  retrieval precision/recall metrics. Our Track B1.5 symbol completeness and
+  expansion accuracy metrics should be comparable to their Line F1.
+- **SWE-ContextBench** (arXiv 2602.08316): evaluates context reuse across
+  related tasks. If we freeze a set of related queries from our benchmark repos,
+  we can measure whether agent mode enables context reuse without re-searching.
+- **Theory of Code Space** (arXiv 2603.00601): their "Active-Passive Gap"
+  metric measures whether agents do better with delivered context vs. self-
+  explored context. We should report this for our agent mode vs. metadata mode.
 
 ### 10.3 Track B2 remains the ship gate
 
@@ -482,6 +604,8 @@ on answer quality while still delivering noisy or wasteful context.
 | Staleness accuracy | 100% on synthetic dirty-file test cases | Modify file after index, assert `stale=true` |
 | Latency overhead | <5ms p50, <10ms p95 | Timer around packaging only |
 | Token efficiency | Agent packaging better than metadata+read baseline on median query | Compare delivered tokens for equivalent usable code |
+| Round-trip savings | Agent mode eliminates 1-3 Read calls per query | Simulate metadata-mode agent Read count vs agent-mode (target: 0 Reads) |
+| Context overload risk | <10% of top-1 results exceed 1500 tokens in `full` mode | Flag oversized expansions that risk §4.5 overload |
 
 ### 11.2 Outcome metrics (Track B2)
 
@@ -516,6 +640,13 @@ Two agent presentation tiers, selectable by the caller:
 
 Both modes share the same ranking. The difference is only how many results
 get full expansion vs compression.
+
+**Caution on `agent_full`**: The 8000 token budget approaches the territory
+where §4.5 counter-evidence warns of context overload. Use `agent_full` only
+when the agent explicitly requests more context (e.g., after an initial
+`agent_preview` search returned a "medium" confidence result). Default to
+`agent_preview` — it delivers the latency win while staying in the safe
+budget zone.
 
 ---
 
@@ -616,12 +747,29 @@ Three systems, each given the same questions:
 Each system runs the same agent model on the same questions with the same
 system prompt. Only the available tools differ.
 
-**Future baseline**: CodeScout (arXiv 2603.17829, March 2026) uses
-reinforcement learning to train code search agents for code localization,
-achieving better search strategies than static tools. If CodeScout or similar
-RL-trained search agents become available as tools, they should be added as a
-fourth baseline to measure whether learned search strategies outperform our
-static ranking + context packaging approach.
+**RL-trained baselines to consider**: Two recent papers train code search
+agents with reinforcement learning, achieving strong results with minimal
+tool scaffolding:
+- **CodeScout** (arXiv 2603.17829, March 2026, CMU/Neubig): RL-trained
+  agents with only a Unix terminal. Competitive with Claude Sonnet on
+  SWE-Bench Verified/Pro/Lite, using 2-18× fewer parameters than baselines.
+  Models and code publicly released.
+- **ToolTrain** (arXiv 2508.03012, Aug 2025): Two-stage training
+  (rejection-sampled SFT + tool-integrated RL) for issue localization.
+  Their 32B model surpasses Claude-3.7 on function-level localization.
+
+If either becomes available as a tool, add as a fourth baseline to measure
+whether learned search strategies outperform static ranking + context
+packaging. The key question: does an RL agent's dynamic exploration beat our
+pre-computed ranking + surgical expansion? SWE-ContextBench (arXiv 2602.08316)
+provides a framework for comparing experience-reuse approaches that could
+inform this comparison.
+
+**Repository memory baseline**: Wang et al. "Improving Code Localization with
+Repository Memory" (ICLR 2026 Poster) augments localization agents with
+commit-history memory. If their approach is reproducible, it would be a
+valuable fifth baseline measuring whether historical context outperforms
+our query-time context packaging.
 
 ### 15.5 Agent Execution
 
@@ -712,9 +860,9 @@ Add one more measurement that is worth the annotation cost:
 
 | Verdict | Criteria |
 |---------|----------|
-| **SHIP** | Quality ≥ baseline AND token savings >20% AND self-containment >80% AND win rate >55% |
+| **SHIP** | Quality ≥ baseline AND token savings >20% AND self-containment >80% AND win rate >55% AND time-to-answer <75% of rg+read |
 | **CONDITIONAL** | Quality ≥ baseline AND token savings 10-20% OR self-containment 60-80% |
-| **NO-SHIP** | Quality < baseline OR self-containment <60% OR win rate <45% |
+| **NO-SHIP** | Quality < baseline OR self-containment <60% OR win rate <45% OR time-to-answer ≥ rg+read (no latency win) |
 
 ### 15.9 Protocol
 
@@ -804,18 +952,25 @@ measure intermediate context retrieval behavior:
 
 ---
 
-## 16. What NOT to Build (unchanged)
+## 16. What NOT to Build
 
 1. **Full-file context**: Never return an entire file. That defeats the purpose.
+   ToCS (arXiv 2603.00601) found that dumping 27-30 files at once overwhelms
+   models. Same principle applies at file level.
 2. **Cross-file expansion**: Don't follow imports to other files. That's a
    different search, not expansion. Research confirms this: the "What to
-   Retrieve" study (arXiv 2503.20589) found that retrieving similar code from
-   other files can **degrade** code generation performance by up to 15% —
-   the noise from irrelevant cross-file content outweighs any benefit.
+   Retrieve" study (arXiv 2503.20589, 11 citations) found that retrieving
+   similar code from other files can **degrade** code generation performance
+   by up to 15% — the noise from irrelevant cross-file content outweighs
+   any benefit.
 3. **Summarization**: Don't use an LLM to summarize the code. Return the code
    itself — the agent IS an LLM and can read it directly.
 4. **Speculative pre-fetching**: Don't guess what the agent might need next.
    Return what was asked for, with confidence signals for whether more is needed.
+5. **Broad context injection**: Don't return AGENTS.md, README, or other
+   repository-level context alongside search results. The AGENTS.md evaluation
+   (arXiv 2602.11988) found this hurts more than it helps. Let the agent
+   request that context separately if needed.
 
 ---
 
@@ -824,9 +979,9 @@ measure intermediate context retrieval behavior:
 | # | Phase | Effort | Impact |
 |---|-------|--------|--------|
 | 1 | Ranking identity tests + intrinsic benchmark harness (Track B1.5) | 1 day | CRITICAL — establishes measurement before iteration |
-| 2 | Basic agent mode (code in results) | 0.5 day | HIGH — eliminates follow-up reads |
+| 2 | Basic agent mode (code in results) | 0.5 day | **HIGHEST** — eliminates Read round-trips = latency + token win |
 | 3 | Symbol-complete expansion | 1-2 days | HIGH — self-contained results |
-| 4 | Token budget management | 1 day | MEDIUM — predictable context usage |
+| 4 | Token budget management | 1 day | HIGH — prevents context overload (§4.5) |
 | 5 | Header context | 0.5 day | MEDIUM — better code understanding |
 | 6 | Confidence signals | 0.5 day | MEDIUM — agent decision support |
 | 7 | Agent-in-the-loop eval (Track B2) | 2-3 days | HIGH — validates the whole approach |
@@ -836,3 +991,8 @@ build Phases 2-3, then run a full Track B1.5 pass, then ship the remaining refin
 then run Track B2 as the ship gate. The main correction to the original plan is that
 Track B2 is too expensive and too late to be the first serious benchmark. The intrinsic
 benchmark should catch packaging regressions before the full agent eval.
+
+**Note on Phase 4 priority upgrade**: Token budget management was previously MEDIUM.
+The §4.5 counter-evidence (ContextBench Bitter Lesson, ToCS, AGENTS.md) elevates it
+to HIGH — without budget discipline, agent mode could actively harm performance by
+over-delivering context. Phase 4 is the guardrail that makes Phases 2-3 safe.
