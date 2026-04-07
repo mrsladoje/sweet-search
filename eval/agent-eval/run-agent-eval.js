@@ -43,6 +43,7 @@ function parseArgs() {
   const opts = {
     action: null, repo: null, system: null, maxQuestions: 0,
     verbose: false, model: 'claude-sonnet-4-6', judgeModel: 'claude-opus-4-6',
+    backend: 'api', // 'api' (requires ANTHROPIC_API_KEY) | 'cli' (uses claude -p)
   };
   for (const arg of args) {
     if (arg === '--generate-questions') opts.action = 'generate-questions';
@@ -53,6 +54,8 @@ function parseArgs() {
     else if (arg.startsWith('--system=')) opts.system = arg.split('=')[1];
     else if (arg.startsWith('--max-questions=')) opts.maxQuestions = parseInt(arg.split('=')[1]);
     else if (arg.startsWith('--model=')) opts.model = arg.split('=')[1];
+    else if (arg === '--backend=cli' || arg === '--cli') opts.backend = 'cli';
+    else if (arg === '--backend=api') opts.backend = 'api';
     else if (arg === '-v' || arg === '--verbose') opts.verbose = true;
     else if (arg === '--help') {
       console.log(`Track B2: Agent-in-the-Loop Evaluation
@@ -68,6 +71,8 @@ Options:
   --system=SYSTEM        System: rg+read, pattern+meta, pattern+agent
   --max-questions=N      Limit (0 = all)
   --model=ID             Agent model (default: claude-sonnet-4-6)
+  --cli                  Use claude CLI backend (no API key needed, uses Claude.ai login)
+  --backend=api|cli      Backend selection (default: api)
   -v                     Verbose
 `);
       process.exit(0);
@@ -78,6 +83,18 @@ Options:
 }
 
 // ─── API Client ───────────────────────────────────────────────────────────────
+
+/** Simple prompt → response via claude -p (no tools, for question gen + judging). */
+async function callViaCli(prompt, model = 'opus') {
+  const { execSync } = await import('child_process');
+  const cliModel = model.replace('claude-opus-4-6', 'opus').replace('claude-sonnet-4-6', 'sonnet');
+  // Pipe prompt through stdin to avoid shell argument length/quoting issues
+  const result = execSync(
+    `claude -p --model ${cliModel} --no-session-persistence --dangerously-skip-permissions --disallowed-tools "Bash Edit Write"`,
+    { input: prompt, timeout: 180_000, encoding: 'utf8', maxBuffer: 5 * 1024 * 1024 }
+  );
+  return { content: [{ text: result.trim() }] };
+}
 
 async function callAnthropic(messages, tools, model, maxTokens = 4096) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -240,10 +257,12 @@ Output as JSONL (one JSON object per line, no markdown fences):
 
 ${fileList ? 'Key files:\n' + fileList : ''}`;
 
-  const response = await callAnthropic(
-    [{ role: 'user', content: prompt }],
-    [], opts.judgeModel, 8192
-  );
+  let response;
+  if (process.env.ANTHROPIC_API_KEY) {
+    response = await callAnthropic([{ role: 'user', content: prompt }], [], opts.judgeModel, 8192);
+  } else {
+    response = await callViaCli(prompt, opts.judgeModel);
+  }
 
   const text = response.content?.[0]?.text || '';
   const lines = text.split('\n').filter(l => l.trim().startsWith('{'));
@@ -308,17 +327,34 @@ async function runSystem(repo, system, opts) {
   }
 
   console.log(`  System: ${system}`);
+  console.log(`  Backend: ${opts.backend}`);
   console.log(`  Questions: ${questions.length}`);
   console.log(`  Model: ${opts.model}`);
+
+  // CLI backend: use claude -p directly (no API key needed)
+  let cliAdapter;
+  if (opts.backend === 'cli') {
+    cliAdapter = await import('./tools/claude-cli-adapter.js');
+  }
 
   const results = [];
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i];
     console.log(`  [${i + 1}/${questions.length}] ${q.id}: ${q.text.slice(0, 60)}...`);
     try {
-      const record = await runAgentConversation(
-        q.text, tools, executeTool, opts.model, opts.verbose
-      );
+      let record;
+      if (opts.backend === 'cli') {
+        // CLI backend: shell out to claude -p
+        const cliModel = opts.model.replace('claude-sonnet-4-6', 'sonnet').replace('claude-opus-4-6', 'opus');
+        record = await cliAdapter.runViaClaude(
+          q.text, system, repoRoot, { model: cliModel, verbose: opts.verbose }
+        );
+      } else {
+        // API backend: use Anthropic Messages API with tool_use
+        record = await runAgentConversation(
+          q.text, tools, executeTool, opts.model, opts.verbose
+        );
+      }
       record.questionId = q.id;
       record.system = system;
       results.push(record);
@@ -391,10 +427,12 @@ Output ONLY a JSON object:
 Overall = (correctness * 2 + completeness + specificity + actionability) / 5`;
 
     try {
-      const response = await callAnthropic(
-        [{ role: 'user', content: prompt }],
-        [], opts.judgeModel, 512
-      );
+      let response;
+      if (process.env.ANTHROPIC_API_KEY) {
+        response = await callAnthropic([{ role: 'user', content: prompt }], [], opts.judgeModel, 512);
+      } else {
+        response = await callViaCli(prompt, opts.judgeModel);
+      }
       const text = response.content?.[0]?.text || '';
       const jsonMatch = text.match(/\{[^}]+\}/);
       if (jsonMatch) {
@@ -510,13 +548,12 @@ async function main() {
     case 'run':
       if (!opts.repo || !opts.system) { console.error('  --repo and --system required'); process.exit(1); }
       if (!SYSTEMS.includes(opts.system)) { console.error(`  Unknown system: ${opts.system}`); process.exit(1); }
-      if (!process.env.ANTHROPIC_API_KEY) { console.error('  ANTHROPIC_API_KEY not set'); process.exit(1); }
+      if (opts.backend === 'api' && !process.env.ANTHROPIC_API_KEY) { console.error('  ANTHROPIC_API_KEY not set (use --cli for Claude Code backend)'); process.exit(1); }
       await runSystem(opts.repo, opts.system, opts);
       break;
 
     case 'judge':
       if (!opts.repo) { console.error('  --repo required'); process.exit(1); }
-      if (!process.env.ANTHROPIC_API_KEY) { console.error('  ANTHROPIC_API_KEY not set'); process.exit(1); }
       await judgeAnswers(opts.repo, opts);
       break;
 
