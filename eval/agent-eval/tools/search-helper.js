@@ -1,18 +1,14 @@
 #!/usr/bin/env node
 /**
  * Lightweight search helper for B2 evaluation.
- * Called by the claude CLI agent via Bash.
- * Reuses a single SweetSearch instance per process.
+ * Thin client over the warm server on localhost:9876.
+ *
+ * Does NOT instantiate SweetSearch — uses the already-running warm server.
+ * This avoids the ~20s cold-start per invocation that caused B2 timeouts.
  *
  * Usage:
- *   node eval/agent-eval/tools/search-helper.js --repo=fastify --query="HTTP server" --regex="function\s+\w+" [--format=agent] [--k=5]
+ *   node eval/agent-eval/tools/search-helper.js --query="HTTP server" --regex="function\s+\w+" [--format=agent] [--k=5] [--port=9876]
  */
-
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '../../..');
 
 const args = process.argv.slice(2);
 const opts = {};
@@ -21,63 +17,55 @@ for (const arg of args) {
   opts[key] = rest.join('=') || 'true';
 }
 
-if (!opts.repo || !opts.query) {
-  console.error('Usage: --repo=NAME --query="..." --regex="..." [--format=agent] [--k=5]');
+if (!opts.query) {
+  console.error('Usage: --query="..." --regex="..." [--format=agent] [--k=5] [--port=9876]');
   process.exit(1);
 }
 
-const repoRoot = opts.repo === 'sweet-search' ? ROOT : path.resolve(ROOT, 'eval/repos', opts.repo);
-const ssDir = path.join(repoRoot, '.sweet-search');
+const port = opts.port || process.env.SEARCH_HELPER_PORT || '9876';
+const params = new URLSearchParams({ q: opts.query, k: opts.k || '5' });
+if (opts.regex) params.set('regex', opts.regex);
+if (opts.format) params.set('format', opts.format);
+if (opts.budget) params.set('budget', opts.budget);
 
-process.env.SWEET_SEARCH_PROJECT_ROOT = repoRoot;
+const url = `http://localhost:${port}/search?${params}`;
 
-const SweetSearch = (await import('../../../core/search/index.js')).default;
-const search = new SweetSearch({
-  projectRoot: repoRoot,
-  graphDbPath: path.join(ssDir, 'code-graph.db'),
-  hnswPath: path.join(ssDir, 'codebase-hnsw.idx'),
-  binaryHnswPath: path.join(ssDir, 'codebase-binary-hnsw.idx'),
-  codebaseDbPath: path.join(ssDir, 'codebase.db'),
-  sparseGramIndexPath: path.join(ssDir, 'codebase-sparse-grams.idx'),
-  lateInteractionOptions: { indexPath: path.join(ssDir, 'codebase-late-interaction.db') },
-});
-await search.init();
+try {
+  const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  const data = await response.json();
 
-const result = await search.search(opts.query, {
-  k: parseInt(opts.k || '5'),
-  mode: 'pattern',
-  regex: opts.regex || '\\w+',
-  format: opts.format || 'benchmark',
-});
-
-// Output compact JSON
-if (result.format === 'agent') {
-  console.log(JSON.stringify({
-    confidence: result.confidence,
-    sufficient: result.sufficient,
-    tokensUsed: result.tokensUsed,
-    results: (result.results || []).map(r => ({
-      rank: r.rank,
-      file: r.file,
-      startLine: r.startLine,
-      endLine: r.endLine,
-      score: r.score,
-      symbol: r.symbol,
-      presentation: r.presentation,
-      code: r.code?.slice(0, 3000) || null,
-      summary: r.summary || null,
-    })),
-  }));
-} else {
-  console.log(JSON.stringify({
-    results: (result.results || []).slice(0, parseInt(opts.k || '5')).map(r => ({
-      file: r.file,
-      startLine: r.startLine,
-      endLine: r.endLine,
-      score: r.score,
-      name: r.name,
-    })),
-  }));
+  // Agent format: compact output for the agent
+  if (data.format === 'agent') {
+    console.log(JSON.stringify({
+      confidence: data.confidence,
+      sufficient: data.sufficient,
+      tokensUsed: data.tokensUsed,
+      results: (data.results || []).map(r => ({
+        rank: r.rank,
+        file: r.file,
+        startLine: r.startLine,
+        endLine: r.endLine,
+        score: r.score,
+        symbol: r.symbol,
+        presentation: r.presentation,
+        code: r.code?.slice(0, 3000) || null,
+        summary: r.summary || null,
+      })),
+    }));
+  } else {
+    // Benchmark format: just file/line/score
+    const results = (data.results || []).slice(0, parseInt(opts.k || '5'));
+    console.log(JSON.stringify({
+      results: results.map(r => ({
+        file: r.file,
+        startLine: r.startLine || r.start_line,
+        endLine: r.endLine || r.end_line,
+        score: r.score || 0,
+        name: r.name || null,
+      })),
+    }));
+  }
+} catch (err) {
+  console.error(JSON.stringify({ error: err.message }));
+  process.exit(1);
 }
-
-search.close();
