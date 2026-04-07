@@ -110,7 +110,7 @@ Flags: `--profile <core|full>`, `--verify-deep`, `--force`, `--verbose`.
 
 ## CLI Dispatch
 
-`bin/sweet-search.js` is the npm `bin` entry point. It is a Node.js wrapper.
+`core/cli.js` is the npm `bin` entry point. It is a Node.js wrapper.
 
 1. `init` and `uninstall` subcommands always run in JS.
 2. All other subcommands attempt to resolve the native Rust binary via
@@ -225,7 +225,7 @@ sweet-search/
     query/
     config.js                   # Compatibility facade
     start-server.js             # Rust CLI entry point
-  bin/sweet-search.js           # npm bin dispatcher
+  cli.js                        # npm bin dispatcher
   mcp/server.js                 # MCP server
   translation/
   wasm-router/pkg/

@@ -12,7 +12,7 @@ describe('Brand presence verification', () => {
 
   it('package.json bin includes sweet-search and sweet-search-mcp', () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-    expect(pkg.bin['sweet-search']).toBe('./bin/sweet-search.js');
+    expect(pkg.bin['sweet-search']).toBe('./core/cli.js');
     expect(pkg.bin['sweet-search-mcp']).toBeDefined();
     expect(pkg.bin.ss).toBeUndefined();
   });

@@ -298,7 +298,7 @@ await checkAsync('index + search (JS search path)', async () => {
   assert(existsSync(join(searchDir, '.sweet-search', 'codebase.db')), 'Index DB not created');
 
   // Step 2: Run a real search through runCli() — the JS search path that
-  // bin/sweet-search.js dispatches to when no native binary is available.
+  // core/cli.js dispatches to when no native binary is available.
   // This exercises: query routing → embedding → HNSW → reranking → late interaction.
   // The native binary query path (Rust CLI → Unix socket → server) is a
   // server integration concern, not a package smoke test.
