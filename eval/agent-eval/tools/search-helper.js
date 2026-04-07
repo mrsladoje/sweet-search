@@ -40,17 +40,21 @@ try {
       confidence: data.confidence,
       sufficient: data.sufficient,
       tokensUsed: data.tokensUsed,
-      results: (data.results || []).map(r => ({
-        rank: r.rank,
-        file: r.file,
-        startLine: r.startLine,
-        endLine: r.endLine,
-        score: r.score,
-        symbol: r.symbol,
-        presentation: r.presentation,
-        code: r.code?.slice(0, 3000) || null,
-        summary: r.summary || null,
-      })),
+      results: (data.results || []).map(r => {
+        // Tight payload: rank 1 gets 1500 chars, rank 2+ gets 500
+        const codeLimit = r.rank === 1 ? 1500 : 500;
+        return {
+          rank: r.rank,
+          file: r.file,
+          startLine: r.startLine,
+          endLine: r.endLine,
+          score: r.score,
+          symbol: r.symbol,
+          presentation: r.presentation,
+          code: r.code?.slice(0, codeLimit) || null,
+          summary: r.summary || null,
+        };
+      }),
     }));
   } else {
     // Benchmark format: just file/line/score
