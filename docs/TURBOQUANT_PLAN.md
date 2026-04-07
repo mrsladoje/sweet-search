@@ -5,7 +5,7 @@
 > on developer laptops with 8-16 GB RAM, while preserving retrieval
 > quality (NDCG@10 regression < 0.5 pp).
 
-**Status**: Research complete, ready for Phase 0 implementation.
+**Status**: Phases 0-4 implemented and validated (3432 tests, 0 regressions). CRA items pending A/B testing.
 **Implementation approach**: All kernels are built from scratch — no
 external quantization/scoring dependencies. Existing open-source
 implementations (see [Reference Implementations](#reference-implementations-algorithm-reference-only--no-dependencies))

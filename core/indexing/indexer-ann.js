@@ -500,6 +500,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
             type: chunk.metadata?.chunk_type,
             startLine: chunk.metadata?.line_start || null,
             endLine: chunk.metadata?.line_end || null,
+            ...(poolFactor > 1 ? { _pooledUpstream: true } : {}),
           });
           totalAdded++;
         }
