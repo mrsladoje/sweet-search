@@ -42,8 +42,8 @@ vi.mock('../../core/indexing/indexer-build.js', () => ({ buildCodeGraph: vi.fn()
 vi.mock('../../core/indexer-ann.js', () => ({ incrementalUpdateHNSW: mockIncrementalUpdateHNSW, buildHNSWIndex: mockBuildHNSWIndex, buildLateInteractionIndex: mockBuildLateInteractionIndex, buildQuantizedArtifactsPhase: mockBuildQuantizedArtifactsPhase }));
 vi.mock('../../core/indexing/indexer-ann.js', () => ({ incrementalUpdateHNSW: mockIncrementalUpdateHNSW, buildHNSWIndex: mockBuildHNSWIndex, buildLateInteractionIndex: mockBuildLateInteractionIndex, buildQuantizedArtifactsPhase: mockBuildQuantizedArtifactsPhase }));
 
-vi.mock('../../core/incremental-tracker.js', () => ({ getChangedFiles: vi.fn(), updateState: vi.fn(), getStats: vi.fn() }));
-vi.mock('../../core/indexing/incremental-tracker.js', () => ({ getChangedFiles: vi.fn(), updateState: vi.fn(), getStats: vi.fn() }));
+vi.mock('../../core/incremental-tracker.js', () => ({ getChangedFiles: vi.fn(), updateState: vi.fn(), getStats: vi.fn(), updatePhaseProgress: vi.fn(), markPhaseComplete: vi.fn(), clearPhaseProgress: vi.fn() }));
+vi.mock('../../core/indexing/incremental-tracker.js', () => ({ getChangedFiles: vi.fn(), updateState: vi.fn(), getStats: vi.fn(), updatePhaseProgress: vi.fn(), markPhaseComplete: vi.fn(), clearPhaseProgress: vi.fn() }));
 
 vi.mock('../../core/summary-manager.js', () => ({ backupSummaries: vi.fn(), restoreSummaries: vi.fn(), markForRegeneration: vi.fn() }));
 vi.mock('../../core/graph/summary-manager.js', () => ({ backupSummaries: vi.fn(), restoreSummaries: vi.fn(), markForRegeneration: vi.fn() }));

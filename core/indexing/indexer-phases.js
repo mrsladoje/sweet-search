@@ -8,7 +8,7 @@ import { existsSync } from 'fs';
 import path from 'path';
 
 import { DB_PATHS, PROJECT_ROOT, EMBEDDING_CONFIG } from '../infrastructure/config/index.js';
-import { getChangedFiles, updateState, getStats as getIncrementalStats } from './incremental-tracker.js';
+import { getChangedFiles, updateState, getStats as getIncrementalStats, updatePhaseProgress, markPhaseComplete, clearPhaseProgress } from './incremental-tracker.js';
 import { backupSummaries, restoreSummaries, markForRegeneration } from '../graph/summary-manager.js';
 import { colors, log, logProgress, logError, discoverFiles, readFilesFromStdin, atomicSwapDatabase } from './indexer-utils.js';
 import { buildCodeGraph, buildVectorIndex, chunkFiles } from './indexer-build.js';
@@ -260,10 +260,11 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     && EMBEDDING_CONFIG.parallelLateInteraction;
   const stagedLateInteractionPath = DB_PATHS.lateInteraction + '.tmp';
 
-  // When running in parallel, chunk files up front so both encoders share
-  // the same chunk list without waiting for each other.
+  // Always chunk files up front so both vector and LI encoders share
+  // the same chunk list. Vectors are written to SQLite and HNSW reads
+  // from the DB directly (Phase B — no in-memory arrays passed around).
   let preChunked = null;
-  if (shouldParallelLI) {
+  if (filesToIndex.length > 0) {
     preChunked = await chunkFiles(filesToIndex);
   }
 
@@ -271,7 +272,7 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     fullRebuild: fullReindex,
     filesToRemove: incrementalInfo?.toRemove || [],
     sqliteFastMode,
-    ...(preChunked && { preChunked }),
+    ...(preChunked ? { preChunked } : {}),
   };
 
   const vectorPromise = buildVectorIndex(filesToIndex, dryRun, vectorOptions);
@@ -324,18 +325,26 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
   const vectorResult = vectorOutcome.result;
   const vectorStats = vectorResult || { chunks: 0, embeddings: 0 };
 
-  // HNSW depends on vector embeddings — must run after Promise.all
+  // Mark vector phase complete for crash-resume
+  if (!dryRun && vectorStats.embeddings > 0) {
+    await markPhaseComplete('vectors');
+  }
+
+  // HNSW depends on vector embeddings — must run after Promise.all.
+  // Reads vectors from SQLite (Phase B) instead of in-memory arrays.
   try {
-    if (!dryRun && vectorResult && vectorResult.allChunks && vectorResult.allEmbeddings) {
+    if (!dryRun && vectorStats.embeddings > 0) {
+      await updatePhaseProgress({ phase: 'hnsw', status: 'in_progress' });
       if (incrementalInfo && !fullReindex) {
         const allFilesToRemoveFromHNSW = [
           ...incrementalInfo.toIndex,
           ...(incrementalInfo.toRemove || [])
         ];
-        await incrementalUpdateHNSW(vectorResult.allChunks, vectorResult.allEmbeddings, allFilesToRemoveFromHNSW, dryRun);
+        await incrementalUpdateHNSW(DB_PATHS.codebase, allFilesToRemoveFromHNSW, dryRun);
       } else {
-        await buildHNSWIndex(vectorResult.allChunks, vectorResult.allEmbeddings, dryRun);
+        await buildHNSWIndex(DB_PATHS.codebase, dryRun);
       }
+      await markPhaseComplete('hnsw');
     }
   } catch (err) {
     await cleanupStagedLateInteractionIndex(stagedLateInteractionPath);
@@ -345,9 +354,10 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
   let lateInteractionResult = liOutcome.result;
 
   // LI: only run sequentially if not already done in parallel
-  if (!liPromise && !dryRun && !noLateInteraction && (vectorResult?.allChunks || filesToRemoveFromLI.length > 0)) {
+  if (!liPromise && !dryRun && !noLateInteraction && (preChunked?.allChunks?.length > 0 || filesToRemoveFromLI.length > 0)) {
     try {
-      lateInteractionResult = await buildLateInteraction(vectorResult?.allChunks || []);
+      await updatePhaseProgress({ phase: 'late-interaction', status: 'in_progress' });
+      lateInteractionResult = await buildLateInteraction(preChunked?.allChunks || []);
       liOutcome.ok = true;
     } catch (err) {
       liOutcome.ok = false;
@@ -355,10 +365,11 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     }
   }
 
-  if (!dryRun && !noLateInteraction && (liPromise || vectorResult?.allChunks || filesToRemoveFromLI.length > 0)) {
+  if (!dryRun && !noLateInteraction && (liPromise || preChunked?.allChunks?.length > 0 || filesToRemoveFromLI.length > 0)) {
     if (liOutcome.ok && lateInteractionResult) {
       await atomicSwapDatabase(stagedLateInteractionPath, DB_PATHS.lateInteraction);
       log('Late interaction index promoted', 'green');
+      await markPhaseComplete('late-interaction');
     } else if (!liOutcome.ok) {
       await cleanupStagedLateInteractionIndex(stagedLateInteractionPath);
       await invalidateLateInteractionIndex();
@@ -368,15 +379,22 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
   }
 
   if (!dryRun && vectorStats.embeddings > 0) {
+    await updatePhaseProgress({ phase: 'artifacts', status: 'in_progress' });
     await buildQuantizedArtifactsPhase(dryRun, {
       changedFiles: filesToIndex.length,
       force: forceArtifacts || fullReindex,
     });
+    await markPhaseComplete('artifacts');
   }
 
   let sparseGramResult = null;
   if (!dryRun && Array.isArray(allFiles) && allFiles.length > 0) {
     sparseGramResult = await buildSparseGramArtifact(allFiles, dryRun);
+  }
+
+  // All phases complete — clear progress file
+  if (!dryRun) {
+    await clearPhaseProgress();
   }
 
   return { vectorStats, hcgsResult, lateInteractionResult, sparseGramResult };

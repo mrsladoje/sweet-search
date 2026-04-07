@@ -89,6 +89,9 @@ function l2Norm(vec) {
 /**
  * Late Interaction Index Class
  */
+const LI_SEGMENT_SIZE = 10_000;
+const LI_SEGMENT_MAGIC = 0x4C495345; // "LISE" = Late Interaction Segment
+
 export class LateInteractionIndex {
   constructor(options = {}) {
     this.tokenDim = options.tokenDim || LATE_INTERACTION_CONFIG.tokenDimension;
@@ -102,6 +105,26 @@ export class LateInteractionIndex {
     // In-memory storage
     this.documents = new Map(); // id -> { tokens, metadata }
     this.initialized = false;
+
+    // Segmented flush state (Phase C)
+    this._currentSegment = new Map();
+    this._segments = []; // { path, count } of flushed segments
+    this._segmentDir = null;
+    this._segmentSize = options.segmentSize || LI_SEGMENT_SIZE;
+  }
+
+  /**
+   * Reset segment state for a new save path. Call before save() when the
+   * output path differs from the load path (staged builds).
+   */
+  resetForSave(newIndexPath) {
+    this.indexPath = newIndexPath;
+    // Discard loaded segment refs — save() will rewrite from this.documents.
+    // Clear _segmentDir so _flushSegment() derives a fresh directory from
+    // the new indexPath instead of writing into the old live directory.
+    this._segmentDir = null;
+    this._segments = [];
+    this._currentSegment = new Map();
   }
 
   /**
@@ -156,27 +179,81 @@ export class LateInteractionIndex {
       tokenNorms[t] = Math.sqrt(normSq);
     }
 
+    let docEntry;
     if (this.useInt8) {
       const { data, min, scale } = quantizeToInt8(flat);
-
-      this.documents.set(id, {
-        tokens: data,
-        numTokens: truncated.length,
-        dim: this.tokenDim,
-        min,
-        scale,
-        metadata,
-        tokenNorms,
-      });
+      docEntry = { tokens: data, numTokens: truncated.length, dim: this.tokenDim, min, scale, metadata, tokenNorms };
     } else {
-      this.documents.set(id, {
-        tokens: flat,
-        numTokens: truncated.length,
-        dim: this.tokenDim,
-        metadata,
-        tokenNorms,
+      docEntry = { tokens: flat, numTokens: truncated.length, dim: this.tokenDim, metadata, tokenNorms };
+    }
+
+    this.documents.set(id, docEntry);
+    this._currentSegment.set(id, docEntry);
+
+    // Flush segment to disk when full — releases memory for completed segments
+    if (this._currentSegment.size >= this._segmentSize) {
+      await this._flushSegment();
+    }
+  }
+
+  /**
+   * Flush the current segment to disk and release its memory.
+   * Documents remain in this.documents for search during indexing.
+   */
+  async _flushSegment() {
+    if (this._currentSegment.size === 0) return;
+
+    if (!this._segmentDir) {
+      this._segmentDir = this.indexPath + '.segments';
+      await fs.mkdir(this._segmentDir, { recursive: true });
+    }
+
+    const segIdx = this._segments.length;
+    const segPath = path.join(this._segmentDir, `segment-${String(segIdx).padStart(4, '0')}.bin`);
+
+    await this._writeSegmentFile(segPath, this._currentSegment);
+    this._segments.push({ path: segPath, count: this._currentSegment.size });
+
+    // Release segment memory — these docs will be reloaded from segments during load()
+    this._currentSegment = new Map();
+  }
+
+  /** Write a segment as a binary file with header + JSON document array. */
+  async _writeSegmentFile(segPath, segmentMap) {
+    const docs = [];
+    for (const [id, doc] of segmentMap) {
+      docs.push({
+        id,
+        tokens: Array.from(doc.tokens),
+        numTokens: doc.numTokens,
+        dim: doc.dim,
+        min: doc.min,
+        scale: doc.scale,
+        metadata: doc.metadata,
       });
     }
+
+    // Header: magic(4) + version(2) + docCount(4) + tokenDim(2) + useInt8(1) + padding(51) = 64 bytes
+    const header = Buffer.alloc(64);
+    header.writeUInt32LE(LI_SEGMENT_MAGIC, 0);
+    header.writeUInt16LE(1, 4); // version
+    header.writeUInt32LE(docs.length, 6);
+    header.writeUInt16LE(this.tokenDim, 10);
+    header.writeUInt8(this.useInt8 ? 1 : 0, 12);
+
+    const body = Buffer.from(JSON.stringify(docs));
+    await fs.writeFile(segPath, Buffer.concat([header, body]));
+  }
+
+  /** Read a segment file and return its documents array. */
+  async _readSegmentFile(segPath) {
+    const buf = await fs.readFile(segPath);
+    const magic = buf.readUInt32LE(0);
+    if (magic !== LI_SEGMENT_MAGIC) {
+      throw new Error(`Invalid segment file: ${segPath}`);
+    }
+    const body = buf.subarray(64);
+    return JSON.parse(body.toString('utf-8'));
   }
 
   /**
@@ -559,6 +636,78 @@ export class LateInteractionIndex {
   async save() {
     await fs.mkdir(path.dirname(this.indexPath), { recursive: true });
 
+    // Use segmented format when the doc count exceeds one segment.
+    // Always rewrite ALL segments from this.documents (the authoritative
+    // state) — never reuse stale segment files from a previous load,
+    // because documents may have been removed since then.
+    const useSegmented = this.documents.size >= this._segmentSize;
+
+    if (useSegmented) {
+      // Derive segment dir from the current save path, NOT from a loaded index
+      const segDir = this.indexPath + '.segments';
+      await fs.mkdir(segDir, { recursive: true });
+
+      // Remove any old segment files in this directory
+      try {
+        const existing = await fs.readdir(segDir);
+        for (const f of existing) {
+          await fs.unlink(path.join(segDir, f));
+        }
+      } catch (_err) { /* dir may not exist yet */ }
+
+      // Write fresh segments from this.documents
+      const newSegments = [];
+      let batch = new Map();
+      let segIdx = 0;
+
+      for (const [id, doc] of this.documents) {
+        batch.set(id, doc);
+        if (batch.size >= this._segmentSize) {
+          const segPath = path.join(segDir, `segment-${String(segIdx).padStart(4, '0')}.bin`);
+          await this._writeSegmentFile(segPath, batch);
+          newSegments.push({ path: path.basename(segPath), count: batch.size });
+          batch = new Map();
+          segIdx++;
+        }
+      }
+      // Flush remainder
+      if (batch.size > 0) {
+        const segPath = path.join(segDir, `segment-${String(segIdx).padStart(4, '0')}.bin`);
+        await this._writeSegmentFile(segPath, batch);
+        newSegments.push({ path: path.basename(segPath), count: batch.size });
+      }
+
+      const manifest = {
+        version: '3.0',
+        format: 'segmented',
+        modelId: this.modelId,
+        tokenDim: this.tokenDim,
+        maxTokens: this.maxTokens,
+        useInt8: this.useInt8,
+        poolFactor: this.poolFactor,
+        totalDocuments: this.documents.size,
+        segments: newSegments,
+      };
+
+      await fs.writeFile(path.join(segDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+
+      // Write a stub at the main index path pointing to segments
+      await fs.writeFile(this.indexPath, JSON.stringify({
+        version: '3.0',
+        format: 'segmented',
+        segmentDir: segDir,
+      }));
+
+      // Update internal state to reflect fresh segments
+      this._segmentDir = segDir;
+      this._segments = newSegments.map(s => ({ path: path.join(segDir, s.path), count: s.count }));
+      this._currentSegment = new Map();
+
+      console.log(`LateInteraction: Saved ${this.documents.size} documents across ${newSegments.length} segments`);
+      return;
+    }
+
+    // Legacy single-file save (for small indexes or when no add() was called)
     const header = {
       version: '2.1',
       modelId: this.modelId,
@@ -617,15 +766,28 @@ export class LateInteractionIndex {
   async load() {
     try {
       const stat = await fs.stat(this.indexPath);
-      const useStreaming = stat.size > 256 * 1024 * 1024; // >256MB → stream
 
+      // Check if this is a segmented index (v3.0)
       let state;
-      if (useStreaming) {
-        state = await this._loadStreaming();
-      } else {
-        // Small files: fast path with readFile
+      if (stat.size < 1024) {
+        // Small file — likely a segment stub
         const data = await fs.readFile(this.indexPath, 'utf-8');
         state = JSON.parse(data);
+        if (state.format === 'segmented') {
+          await this._loadSegmented(state.segmentDir);
+          return;
+        }
+      }
+
+      const useStreaming = stat.size > 256 * 1024 * 1024; // >256MB → stream
+
+      if (!state) {
+        if (useStreaming) {
+          state = await this._loadStreaming();
+        } else {
+          const data = await fs.readFile(this.indexPath, 'utf-8');
+          state = JSON.parse(data);
+        }
       }
 
       // Model consistency check (v2.0+)
@@ -675,6 +837,55 @@ export class LateInteractionIndex {
         console.error(`LateInteraction: Failed to load index: ${err.message}`);
       }
     }
+  }
+
+  /**
+   * Load segmented index (Option 3: flatten all segments into this.documents).
+   * All segment data is loaded into memory at search init — same search semantics
+   * as the legacy single-file format. Memory savings come from indexing time only.
+   */
+  async _loadSegmented(segmentDir) {
+    const manifestPath = path.join(segmentDir, 'manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
+
+    // Model consistency check
+    if (manifest.modelId && this.modelId && manifest.modelId !== this.modelId) {
+      console.warn(`[LateInteraction] Segmented index built with ${manifest.modelId} but config says ${this.modelId}.`);
+      console.warn(`          Skipping late interaction scoring. Re-index to use the new model.`);
+      this.modelMismatch = true;
+      return;
+    }
+
+    this.tokenDim = manifest.tokenDim;
+    this.maxTokens = manifest.maxTokens;
+    this.useInt8 = manifest.useInt8;
+    this.poolFactor = manifest.poolFactor || 1;
+    if (manifest.modelId) this.modelId = manifest.modelId;
+
+    this.documents.clear();
+
+    for (const seg of manifest.segments) {
+      const segPath = path.join(segmentDir, seg.path);
+      const docs = await this._readSegmentFile(segPath);
+
+      for (const doc of docs) {
+        const tokens = this.useInt8 ? new Int8Array(doc.tokens) : new Float32Array(doc.tokens);
+        this.documents.set(doc.id, {
+          tokens,
+          numTokens: doc.numTokens,
+          dim: doc.dim,
+          min: doc.min,
+          scale: doc.scale,
+          metadata: doc.metadata,
+        });
+      }
+    }
+
+    this._rebuildTokenNorms();
+    this._segmentDir = segmentDir;
+    this._segments = manifest.segments.map(s => ({ path: path.join(segmentDir, s.path), count: s.count }));
+
+    console.log(`LateInteraction: Loaded ${this.documents.size} documents from ${manifest.segments.length} segments (model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)`);
   }
 
   /**

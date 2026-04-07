@@ -370,6 +370,127 @@ export async function buildHnswIndex(items, options = {}) {
   };
 }
 
+/**
+ * Build Binary HNSW index by streaming from a SQLite database.
+ * Eliminates the O(n*d) items[] + truncated[] arrays (~400+ MB at 100K vectors).
+ * Pre-computes insertion order in a temp table, then streams in that order.
+ */
+async function buildHnswIndexFromDb(db, options = {}) {
+  const {
+    M = BINARY_HNSW_CONFIG.M,
+    efConstruction = BINARY_HNSW_CONFIG.efConstruction,
+    efSearch = BINARY_HNSW_CONFIG.efSearch,
+    floatDimension = BINARY_HNSW_CONFIG.floatDimension,
+    indexPath = DB_PATHS.binaryHnswIndex,
+    includeInt8 = true,
+    onProgress = null,
+  } = options;
+
+  const dimension = options.dimension || Math.ceil(floatDimension / 8);
+  const totalVectors = db.prepare('SELECT COUNT(*) as c FROM vectors').get().c;
+
+  const index = new BinaryHNSWIndex({
+    dimension,
+    floatDimension,
+    M,
+    efConstruction,
+    efSearch,
+    indexPath,
+  });
+
+  index.resetForBuild();
+
+  // Pre-compute insertion order in a temp table
+  const insertionOrder = BINARY_HNSW_CONFIG.insertionOrder || 'sequential';
+  let stmt;
+
+  if (insertionOrder !== 'sequential') {
+    db.exec('CREATE TEMP TABLE IF NOT EXISTS artifact_order (pos INTEGER PRIMARY KEY, vector_rowid INTEGER)');
+    db.exec('DELETE FROM artifact_order');
+
+    let indices = Array.from({ length: totalVectors }, (_, i) => i + 1); // 1-based rowids
+
+    if (insertionOrder === 'shuffle') {
+      fisherYatesShuffle(indices);
+    } else if (insertionOrder === 'diversity') {
+      const filePaths = db.prepare('SELECT metadata FROM vectors ORDER BY rowid').all().map(r => {
+        try { return JSON.parse(r.metadata)?.file || '_unknown'; } catch (_e) { return '_unknown'; }
+      });
+      const buckets = new Map();
+      for (let i = 0; i < filePaths.length; i++) {
+        const dir = filePaths[i].replace(/\/[^/]+$/, '') || '_unknown';
+        if (!buckets.has(dir)) buckets.set(dir, []);
+        buckets.get(dir).push(i + 1);
+      }
+      const dirs = [...buckets.keys()];
+      fisherYatesShuffle(dirs);
+      indices = [];
+      let rem = totalVectors;
+      while (rem > 0) {
+        for (const dir of dirs) {
+          const b = buckets.get(dir);
+          if (b.length > 0) { indices.push(b.shift()); rem--; }
+        }
+      }
+    }
+
+    const insertOrder = db.prepare('INSERT INTO artifact_order (pos, vector_rowid) VALUES (?, ?)');
+    db.transaction(() => {
+      for (let pos = 0; pos < indices.length; pos++) {
+        insertOrder.run(pos, indices[pos]);
+      }
+    })();
+
+    stmt = db.prepare(`
+      SELECT v.id, v.embedding, v.metadata
+      FROM artifact_order o
+      JOIN vectors v ON v.rowid = o.vector_rowid
+      ORDER BY o.pos
+    `);
+  } else {
+    stmt = db.prepare('SELECT id, embedding, metadata FROM vectors ORDER BY rowid');
+  }
+
+  const startTime = performance.now();
+  let processed = 0;
+
+  for (const row of stmt.iterate()) {
+    const embedding = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.length / 4);
+    const truncated = truncateForHNSW(embedding, floatDimension);
+    const binary = index.encodeDocument(truncated);
+    const int8 = includeInt8 ? quantizeToInt8(truncated) : null;
+    const metadata = row.metadata ? JSON.parse(row.metadata) : {};
+
+    await index.add(row.id, binary, metadata, int8);
+
+    processed++;
+    if (onProgress && (processed % 500 === 0 || processed === totalVectors)) {
+      onProgress(processed, totalVectors);
+    }
+  }
+
+  if (insertionOrder !== 'sequential') {
+    db.exec('DROP TABLE IF EXISTS temp.artifact_order');
+  }
+
+  const buildTime = performance.now() - startTime;
+
+  return {
+    index,
+    stats: {
+      vectorCount: totalVectors,
+      buildTimeMs: Math.round(buildTime),
+      vectorsPerSecond: Math.round(totalVectors / (buildTime / 1000)),
+      dimension,
+      floatDimension,
+      M,
+      efConstruction,
+      useAsymmetric: index.useAsymmetric,
+      insertionOrder,
+    },
+  };
+}
+
 // =============================================================================
 // INT8 VECTORS (DEPRECATED - Use binary-hnsw-index.js .int8.json sidecar)
 // =============================================================================
@@ -455,14 +576,20 @@ export async function saveArtifacts(hnswIndex) {
  *   }
  * }>}
  */
-/** Build and save a FloatVectorStore from items with embeddings. */
-async function buildAndSaveFloatStore(items, floatDimension, floatStorePath) {
-  console.log(`Building float vector store (${items.length} vectors, ${floatDimension}d)...`);
+/** Build and save a FloatVectorStore by streaming from SQLite cursor. */
+async function buildAndSaveFloatStoreFromDb(db, floatDimension, floatStorePath) {
+  const totalVectors = db.prepare('SELECT COUNT(*) as c FROM vectors').get().c;
+  console.log(`Building float vector store (${totalVectors} vectors, ${floatDimension}d)...`);
   const floatStore = new FloatVectorStore();
-  const floatEntries = items.map(item => ({
-    id: item.id,
-    vector: truncateForHNSW(item.embedding, floatDimension),
-  }));
+  const floatEntries = [];
+  const stmt = db.prepare('SELECT id, embedding FROM vectors ORDER BY rowid');
+  for (const row of stmt.iterate()) {
+    const embedding = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.length / 4);
+    floatEntries.push({
+      id: row.id,
+      vector: truncateForHNSW(embedding, floatDimension),
+    });
+  }
   floatStore.build(floatEntries, floatDimension);
   await floatStore.save(floatStorePath);
   console.log(`Float vector store: ${floatStore.memorySizeMB} MB → ${floatStorePath}`);
@@ -483,47 +610,34 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
     throw new Error(`Codebase database not found: ${codebaseDbPath}`);
   }
 
-  console.log(`\nLoading embeddings from ${codebaseDbPath}...`);
+  console.log(`\nStreaming embeddings from ${codebaseDbPath}...`);
 
   const Database = (await import('better-sqlite3')).default;
   const { applyReadPragmas } = await import('../infrastructure/db-utils.js');
-  const db = new Database(codebaseDbPath, { readonly: true });
+  const insertionOrder = BINARY_HNSW_CONFIG.insertionOrder || 'sequential';
+  // Non-sequential orders require temp tables → can't use readonly
+  const db = new Database(codebaseDbPath, insertionOrder === 'sequential' ? { readonly: true } : {});
   applyReadPragmas(db);
 
-  // Load all vectors
-  const rows = db.prepare('SELECT id, embedding, metadata FROM vectors').all();
-  db.close();
+  const totalVectors = db.prepare('SELECT COUNT(*) as c FROM vectors').get().c;
 
-  console.log(`Loaded ${rows.length} vectors`);
+  console.log(`Found ${totalVectors} vectors`);
 
-  if (rows.length === 0) {
+  if (totalVectors === 0) {
+    db.close();
     throw new Error('No vectors found in codebase database');
   }
 
-  // Parse embeddings
-  const items = rows.map(row => {
-    const embedding = Array.from(new Float32Array(
-      row.embedding.buffer,
-      row.embedding.byteOffset,
-      row.embedding.length / 4
-    ));
-
-    return {
-      id: row.id,
-      embedding,
-      metadata: row.metadata ? JSON.parse(row.metadata) : {},
-    };
-  });
-
-  // Build HNSW index (includeInt8: true stores int8 vectors in the index for .int8.json sidecar)
+  // Build HNSW index by streaming from SQLite — no full items[] array needed.
+  // Pre-compute insertion order in a temp table, then stream in that order.
   console.log(`\nBuilding Binary HNSW index with Int8 sidecar...`);
-  const { index: hnswIndex, stats: hnswBuildStats } = await buildHnswIndex(items, {
+  const { index: hnswIndex, stats: hnswBuildStats } = await buildHnswIndexFromDb(db, {
     indexPath: hnswIndexPath,
     floatDimension,
     M,
     efConstruction,
     efSearch,
-    includeInt8: true, // Int8 vectors stored in BinaryHNSWIndex.int8Vectors Map, saved to .int8.json
+    includeInt8: true,
     onProgress: (current, total) => {
       if (onProgress) onProgress('hnsw', current, total);
       const percent = ((current / total) * 100).toFixed(1);
@@ -536,13 +650,15 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
   console.log(`Saving HNSW index + Int8 sidecar to ${hnswIndexPath}...`);
   await hnswIndex.save(hnswIndexPath);
 
-  // Build and save float vector store for Stage 2.5 direct-access rescoring
+  // Build and save float vector store for Stage 2.5 direct-access rescoring (streamed)
   const floatStorePath = getFloatStorePath(hnswIndexPath);
-  await buildAndSaveFloatStore(items, floatDimension, floatStorePath);
+  await buildAndSaveFloatStoreFromDb(db, floatDimension, floatStorePath);
+
+  db.close();
 
   const totalBuildTimeMs = Math.round(performance.now() - overallStartTime);
   const vectorsPerSecond = totalBuildTimeMs > 0
-    ? Math.round(items.length / (totalBuildTimeMs / 1000))
+    ? Math.round(totalVectors / (totalBuildTimeMs / 1000))
     : Infinity;
 
   const hnswStats = hnswIndex.getStats();
@@ -560,7 +676,7 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
       floatStorePath,
     },
     stats: {
-      totalVectors: items.length,
+      totalVectors,
       floatDimension,
       binaryDimension: Math.ceil(floatDimension / 8),
       memoryReduction: {
