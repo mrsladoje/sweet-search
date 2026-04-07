@@ -170,7 +170,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
           queryInt8,
           hnswIndex: this.binaryHnswIndex,
           cosineSimilarity: int8CosineSimilarity,
-          codebaseDb: this.codebaseDb,
+          codebaseDb: this.codebaseRepo,
           readFileLines,
           ...(intentEdgeTypes && !graphExpandOptions.edgeTypes ? { edgeTypes: intentEdgeTypes } : {}),
           ...graphExpandOptions,

@@ -53,15 +53,21 @@ function fallbackTokenEstimate(result) {
 
 /**
  * Batch-load chunk texts from codebase.db vectors table.
- * @param {import('better-sqlite3').Database} codebaseDb
+ * Accepts either a CodebaseRepository or a raw better-sqlite3 Database (legacy).
+ * @param {import('../infrastructure/codebase-repository.js').CodebaseRepository|import('better-sqlite3').Database} codebaseDbOrRepo
  * @param {string[]} ids - Vector IDs to look up
  * @returns {Map<string, string>} id → text
  */
-export function loadChunkTexts(codebaseDb, ids) {
-  if (!codebaseDb || ids.length === 0) return new Map();
+export function loadChunkTexts(codebaseDbOrRepo, ids) {
+  if (!codebaseDbOrRepo || !ids || ids.length === 0) return new Map();
+  // Repository path (preferred)
+  if (typeof codebaseDbOrRepo.getChunkTexts === 'function') {
+    return codebaseDbOrRepo.getChunkTexts(ids);
+  }
+  // Legacy raw-DB path (backward compat)
   try {
     const ph = ids.map(() => '?').join(',');
-    const rows = codebaseDb.prepare(
+    const rows = codebaseDbOrRepo.prepare(
       `SELECT id, text FROM vectors WHERE id IN (${ph})`
     ).all(...ids);
     return new Map(rows.map(r => [r.id, r.text]));

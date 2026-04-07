@@ -280,34 +280,36 @@ export function getChunkLocationMap() {
 }
 
 export function getCodebaseChunkTypeMap(searcher) {
-  if (!searcher?.codebaseDb) return null;
+  if (!searcher?.codebaseRepo) return null;
   if (searcher._codebaseChunkTypeMap) return searcher._codebaseChunkTypeMap;
 
   const map = new Map();
-  const rows = searcher.codebaseDb.prepare('SELECT file_path, metadata FROM vectors').iterate();
+  try {
+    for (const row of searcher.codebaseRepo.iterateVectors()) {
+      try {
+        if (!row.file_path) continue;
+        const metadata = JSON.parse(row.metadata || '{}');
+        if (metadata.startLine == null || metadata.endLine == null) continue;
 
-  for (const row of rows) {
-    try {
-      if (!row.file_path) continue;
-      const metadata = JSON.parse(row.metadata || '{}');
-      if (metadata.startLine == null || metadata.endLine == null) continue;
+        let bucket = map.get(row.file_path);
+        if (!bucket) {
+          bucket = [];
+          map.set(row.file_path, bucket);
+        }
 
-      let bucket = map.get(row.file_path);
-      if (!bucket) {
-        bucket = [];
-        map.set(row.file_path, bucket);
+        bucket.push({
+          startLine: metadata.startLine,
+          endLine: metadata.endLine,
+          id: row.file_path,
+          type: metadata.type || null,
+          name: metadata.name || null,
+        });
+      } catch {
+        // Ignore malformed metadata rows.
       }
-
-      bucket.push({
-        startLine: metadata.startLine,
-        endLine: metadata.endLine,
-        id: row.file_path,
-        type: metadata.type || null,
-        name: metadata.name || null,
-      });
-    } catch {
-      // Ignore malformed metadata rows.
     }
+  } catch {
+    return null; // DB may not exist or be unreadable
   }
 
   for (const bucket of map.values()) {

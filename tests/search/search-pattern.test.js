@@ -673,36 +673,34 @@ describe('bareGrep', () => {
         'function authHandler() {}\nconst authValue = authHandler();\nclass AuthBox {}\n'
       );
 
-      const mockDb = {
-        prepare: vi.fn().mockReturnValue({
-          iterate: () => ([
-            {
-              file_path: 'a.js',
-              metadata: JSON.stringify({
-                type: 'function',
-                name: 'authHandler',
-                startLine: 1,
-                endLine: 2,
-              }),
-            },
-            {
-              file_path: 'a.js',
-              metadata: JSON.stringify({
-                type: 'class',
-                name: 'AuthBox',
-                startLine: 3,
-                endLine: 3,
-              }),
-            },
-          ]),
-        }),
+      const mockRepo = {
+        iterateVectors: function* () {
+          yield {
+            file_path: 'a.js',
+            metadata: JSON.stringify({
+              type: 'function',
+              name: 'authHandler',
+              startLine: 1,
+              endLine: 2,
+            }),
+          };
+          yield {
+            file_path: 'a.js',
+            metadata: JSON.stringify({
+              type: 'class',
+              name: 'AuthBox',
+              startLine: 3,
+              endLine: 3,
+            }),
+          };
+        },
       };
 
       const grepResult = await bareGrep.call(
         {
           projectRoot: tmpDir,
           sparseGramIndex: null,
-          codebaseDb: mockDb,
+          codebaseRepo: mockRepo,
         },
         'Auth',
         null,
