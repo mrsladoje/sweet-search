@@ -249,6 +249,8 @@ export async function runLiteralPrefilterClauses(clauses, searchDir, files = nul
 
 export function ensureSparseGramIndex(searcher, options = {}) {
   if (!searcher) return null;
+  const useGramIndex = options.useGramIndex ?? options.gramIndex ?? true;
+  if (!useGramIndex) return null;
   if (searcher.sparseGramIndex) return searcher.sparseGramIndex;
 
   const indexPath = options.sparseGramIndexPath || searcher.sparseGramIndexPath || DB_PATHS.sparseGramIndex;
