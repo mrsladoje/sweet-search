@@ -103,7 +103,7 @@
     "identifiers": "node core/training/query-router/generators/multilingual-identifiers.js",
     "generate": "node core/training/query-router/generators/generate.js",
     "generate:multilingual": "node core/training/query-router/generators/generate.js --multilingual --samples 5000 --output core/training/query-router/output/multilingual_5k.json",
-    "train": "node core/training/query-router/models/decision-tree.js train",
+    "train": "python core/training/query-router/models/train_catboost.py",
     "anti-leak": "node core/training/query-router/validation/anti-leak-check.js",
     "anti-leak:ci": "node core/training/query-router/validation/anti-leak-check.js --ci",
     "validate": "node core/training/query-router/validation/heuristic-validator.js",
