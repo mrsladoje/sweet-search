@@ -15,8 +15,13 @@
 
 import { execFileSync } from 'child_process';
 import { writeFileSync, unlinkSync, mkdtempSync } from 'fs';
+import { fileURLToPath } from 'url';
 import path from 'path';
 import os from 'os';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = path.resolve(__dirname, '../../..');
+const SEARCH_HELPER = path.join(PROJECT_ROOT, 'eval/agent-eval/tools/search-helper.js');
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 
@@ -48,20 +53,21 @@ export async function runViaClaude(question, system, projectRoot, opts = {}) {
       break;
 
     case 'pattern+meta':
-      systemPrompt = `You are answering a code question about the codebase in the current directory. Use the sweet-search pattern search CLI to find code, then use the Read tool to see the actual code.
+      systemPrompt = `You are answering a code question about the codebase in the current directory. You have a code search tool. Use it to find code, then use the Read tool to see the actual code.
 
-To search: node -e "import('./core/search/index.js').then(m => m.warmSearch('YOUR_QUERY', {regex: 'YOUR_REGEX', k: 5}).then(r => console.log(JSON.stringify(r.results.map(x => ({file: x.file, start: x.startLine, end: x.endLine, score: x.score, name: x.name}))))))"
+To search: node ${SEARCH_HELPER} --repo=${path.basename(projectRoot)} --query="YOUR QUERY" --regex="YOUR_REGEX" --k=5 2>/dev/null | grep '^{'
 
+The results show file paths, line numbers, and scores. Then use Read to see the actual code.
 Be specific: cite file paths, function names, and line numbers. Give a concise, actionable answer.`;
       allowedTools = 'Bash(node:*) Read';
       break;
 
     case 'pattern+agent':
-      systemPrompt = `You are answering a code question about the codebase in the current directory. Use the sweet-search pattern search CLI with agent mode to find code. The results include the FULL CODE — you do NOT need to read files afterward.
+      systemPrompt = `You are answering a code question about the codebase in the current directory. You have a code search tool with agent mode that returns FULL CODE BLOCKS directly.
 
-To search: node -e "import('./core/search/index.js').then(m => m.warmSearch('YOUR_QUERY', {regex: 'YOUR_REGEX', k: 5, format: 'agent'}).then(r => console.log(JSON.stringify({confidence: r.confidence, sufficient: r.sufficient, results: r.results?.map(x => ({file: x.file, start: x.startLine, end: x.endLine, score: x.score, symbol: x.symbol, code: x.code?.slice(0, 2000)}))}))))"
+To search: node ${SEARCH_HELPER} --repo=${path.basename(projectRoot)} --query="YOUR QUERY" --regex="YOUR_REGEX" --format=agent --k=5 2>/dev/null | grep '^{'
 
-The code is already in the results. Do NOT read files — answer directly from the search results.
+The results include the actual code — you do NOT need to read files afterward. Answer directly from the search results.
 Be specific: cite file paths, function names, and line numbers. Give a concise, actionable answer.`;
       allowedTools = 'Bash(node:*)';
       break;
