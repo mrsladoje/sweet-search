@@ -189,6 +189,14 @@ export function expandToSymbol(result, opts) {
 
   // Syntax-aware fallback: expand to enclosing block using brace/indent analysis.
   // This catches cases where the code graph has no entity but the file is readable.
+  // Skipped when 'no-syntax-expansion' ablation is active.
+  if (opts.ablations?.has('no-syntax-expansion')) {
+    return {
+      startLine: origStart, endLine: origEnd,
+      expanded: false, expandedFrom: null,
+      symbol: meta.name || null, symbolType: meta.type || null,
+    };
+  }
   const { fileCache, projectRoot } = opts;
   const syntaxExpanded = expandBySyntax(
     fileCache, filePath, origStart, origEnd, tokenCap, projectRoot
@@ -540,6 +548,30 @@ export function extractHeaderContext(code, fileCache, filePath, projectRoot) {
   }
 }
 
+/**
+ * Hard-cap a multi-line text block to a token budget by dropping trailing lines.
+ * Used after formatting steps that may otherwise overshoot the remaining budget.
+ *
+ * @param {string} text
+ * @param {number} tokenCap
+ * @returns {string}
+ */
+function clampTextToTokenCap(text, tokenCap) {
+  if (!text || tokenCap <= 0) return '';
+  if (estimateTokens(text) <= tokenCap) return text;
+
+  const lines = text.split('\n');
+  while (lines.length > 0) {
+    lines.pop();
+    const candidate = lines.join('\n');
+    if (candidate && estimateTokens(candidate) <= tokenCap) {
+      return candidate;
+    }
+  }
+
+  return '';
+}
+
 // =============================================================================
 // Confidence signals (Phase 5) — Fix #4: regex selectivity, Fix #7: sufficiency
 // =============================================================================
@@ -744,6 +776,9 @@ export function truncateToTokenCap(code, tokenCap) {
   if (!code) return { code: '', truncated: false, originalTokens: 0 };
 
   const originalTokens = estimateTokens(code);
+  if (tokenCap <= 0) {
+    return { code: '', truncated: true, originalTokens };
+  }
   if (originalTokens <= tokenCap) {
     return { code, truncated: false, originalTokens };
   }
@@ -767,13 +802,35 @@ export function truncateToTokenCap(code, tokenCap) {
   const minLines = estimateTokens(lines.slice(0, 3).join('\n')) <= tokenCap * 2 ? 3 : 1;
   cutLine = Math.max(cutLine, minLines);
 
-  const truncated = lines.slice(0, cutLine).join('\n');
-  const remaining = lines.length - cutLine;
-  return {
-    code: `${truncated}\n// ... (${remaining} more lines)`,
-    truncated: true,
-    originalTokens,
+  const buildCandidate = (lineCount) => {
+    if (lineCount <= 0) return '';
+    const truncated = lines.slice(0, lineCount).join('\n');
+    const remaining = lines.length - lineCount;
+    return remaining > 0
+      ? `${truncated}\n// ... (${remaining} more lines)`
+      : truncated;
   };
+
+  for (let lineCount = cutLine; lineCount >= minLines; lineCount--) {
+    const candidate = buildCandidate(lineCount);
+    if (candidate && estimateTokens(candidate) <= tokenCap) {
+      return { code: candidate, truncated: true, originalTokens };
+    }
+  }
+
+  for (let lineCount = Math.min(minLines - 1, lines.length); lineCount >= 1; lineCount--) {
+    const withSuffix = buildCandidate(lineCount);
+    if (withSuffix && estimateTokens(withSuffix) <= tokenCap) {
+      return { code: withSuffix, truncated: true, originalTokens };
+    }
+
+    const bare = lines.slice(0, lineCount).join('\n');
+    if (bare && estimateTokens(bare) <= tokenCap) {
+      return { code: bare, truncated: true, originalTokens };
+    }
+  }
+
+  return { code: '', truncated: true, originalTokens };
 }
 
 /**
@@ -843,6 +900,8 @@ function resolveSubMode(format) {
  * @param {object} [opts.codeGraphRepo] - CodeGraphRepository for entity lookup (DDD)
  * @param {Map} [opts.locationMap] - Chunk location map
  * @param {string} [opts.projectRoot] - Project root path
+ * @param {Set<string>} [opts.ablations] - Feature ablations for A/B testing:
+ *   'no-syntax-expansion', 'no-header', 'no-diversity', 'no-adaptive-budget'
  * @returns {object} Agent mode response
  */
 export function packageForAgent(rankedResults, searchStats, opts) {
@@ -854,6 +913,7 @@ export function packageForAgent(rankedResults, searchStats, opts) {
     locationMap = null,
     projectRoot,
   } = opts;
+  const ablations = opts.ablations || new Set();
 
   const subMode = resolveSubMode(formatOpt);
   const defaultBudget = subMode === 'agent_full' ? AGENT_FULL_TOKEN_BUDGET : DEFAULT_TOKEN_BUDGET;
@@ -863,9 +923,11 @@ export function packageForAgent(rankedResults, searchStats, opts) {
   const fileCache = new Map();
 
   // Diversity: demote results that cluster in same file+region as a higher-ranked result.
+  // Skipped when 'no-diversity' ablation is active.
   // This prevents wasting preview/full budget on near-duplicate chunks from the same symbol.
   const diversityDemotions = new Set();
-  for (let i = 0; i < Math.min(rankedResults.length, 5); i++) {
+  if (ablations.has('no-diversity')) { /* skip diversity check */ }
+  else for (let i = 0; i < Math.min(rankedResults.length, 5); i++) {
     const ri = rankedResults[i];
     const fi = ri.metadata?.file || ri.file;
     const si = ri.metadata?.startLine || ri.startLine;
@@ -885,10 +947,11 @@ export function packageForAgent(rankedResults, searchStats, opts) {
   }
 
   // Allocate budget per result — adaptive based on regex breadth and score gaps
-  const allocations = allocateBudget(tokenBudget, rankedResults.length, subMode, {
-    grepMatches: searchStats?.grepMatches || 0,
-    results: rankedResults,
-  });
+  // When 'no-adaptive-budget' ablation is active, use fixed splits (no context param)
+  const budgetContext = ablations.has('no-adaptive-budget')
+    ? {}
+    : { grepMatches: searchStats?.grepMatches || 0, results: rankedResults };
+  const allocations = allocateBudget(tokenBudget, rankedResults.length, subMode, budgetContext);
 
   // Compute confidence from ranked results (Fix #4: regex selectivity included)
   const confidenceInfo = computeConfidence(rankedResults, searchStats);
@@ -905,10 +968,11 @@ export function packageForAgent(rankedResults, searchStats, opts) {
     const allocation = allocations[i] || { presentation: 'summary', tokenCap: 0 };
     const meta = result.metadata || {};
     const filePath = meta.file || result.file;
+    const remainingBudget = Math.max(0, tokenBudget - tokensUsed);
 
     // Enforce global budget + diversity: demote to summary if budget exhausted
     // or result overlaps with a higher-ranked result in the same file region
-    const budgetExhausted = tokensUsed >= tokenBudget;
+    const budgetExhausted = remainingBudget <= 0;
     const diversityDemoted = diversityDemotions.has(i);
 
     if (allocation.presentation === 'summary' || budgetExhausted || diversityDemoted) {
@@ -938,7 +1002,8 @@ export function packageForAgent(rankedResults, searchStats, opts) {
       locationMap,
       fileCache,
       projectRoot,
-      tokenCap: allocation.tokenCap,
+      tokenCap: Math.min(allocation.tokenCap, remainingBudget),
+      ablations,
     });
 
     // Phase 1: Load code via readFileRange
@@ -987,15 +1052,40 @@ export function packageForAgent(rankedResults, searchStats, opts) {
     }
 
     // Phase 3: Token budget — truncate or compress
+    const resultTokenCap = Math.min(allocation.tokenCap, remainingBudget);
     let codeTokens;
-    if (allocation.presentation === 'full') {
-      const truncResult = truncateToTokenCap(code, allocation.tokenCap);
+    if (resultTokenCap <= 0) {
+      code = '';
+      codeTokens = 0;
+    } else if (allocation.presentation === 'full') {
+      const truncResult = truncateToTokenCap(code, resultTokenCap);
       code = truncResult.code;
       codeTokens = estimateTokens(code);
     } else {
       // Preview mode — compress to signature + snippet
-      code = compressToPreview(code, allocation.tokenCap);
+      code = compressToPreview(code, resultTokenCap);
+      code = clampTextToTokenCap(code, resultTokenCap);
       codeTokens = estimateTokens(code);
+    }
+
+    if (!code || codeTokens <= 0) {
+      agentResults.push({
+        rank: i + 1,
+        file: filePath,
+        startLine: meta.startLine || result.startLine,
+        endLine: meta.endLine || result.endLine,
+        symbol: expansion.symbol,
+        symbolType: expansion.symbolType,
+        score: result.score || result.lateInteractionScore || 0,
+        expanded: false,
+        presentation: 'summary',
+        stale,
+        indexedAt,
+        summary: `${filePath}:${meta.startLine || result.startLine} — ${expansion.symbol || meta.name || 'code block'}${(expansion.symbolType || meta.type) ? ' (' + (expansion.symbolType || meta.type) + ')' : ''}`,
+        code: null,
+        codeTokens: 0,
+      });
+      continue;
     }
 
     tokensUsed += codeTokens;
@@ -1017,15 +1107,23 @@ export function packageForAgent(rankedResults, searchStats, opts) {
       codeTokens,
     };
 
-    // Phase 4: Header context (top-1 only)
-    if (i === 0) {
-      const { headerContext, headerTokens } = extractHeaderContext(
+    // Phase 4: Header context (top-1 only). Skipped by 'no-header' ablation.
+    if (i === 0 && !ablations.has('no-header')) {
+      const remainingHeaderBudget = Math.min(
+        MAX_HEADER_TOKENS,
+        Math.max(0, tokenBudget - tokensUsed)
+      );
+      const { headerContext } = extractHeaderContext(
         code, fileCache, filePath, projectRoot
       );
-      if (headerContext) {
-        agentResult.headerContext = headerContext;
-        agentResult.headerTokens = headerTokens;
-        tokensUsed += headerTokens;
+      if (headerContext && remainingHeaderBudget > 0) {
+        const trimmedHeader = clampTextToTokenCap(headerContext, remainingHeaderBudget);
+        const trimmedHeaderTokens = estimateTokens(trimmedHeader);
+        if (trimmedHeader && trimmedHeaderTokens > 0) {
+          agentResult.headerContext = trimmedHeader;
+          agentResult.headerTokens = trimmedHeaderTokens;
+          tokensUsed += trimmedHeaderTokens;
+        }
       }
     }
 

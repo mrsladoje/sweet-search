@@ -166,6 +166,7 @@ export async function patternSearch(query, routing, options = {}) {
     k = 10,
     format = 'benchmark',    // 'benchmark' | 'agent' | 'agent_preview' | 'agent_full'
     tokenBudget,             // agent mode: total token budget (default depends on sub-mode)
+    ablations,               // agent mode: Set<string> for A/B testing feature ablations
   } = options;
 
   if (!regex) {
@@ -261,7 +262,7 @@ export async function patternSearch(query, routing, options = {}) {
     // Agent mode: return proper agent schema even for zero results
     if (format === 'agent' || format === 'agent_preview' || format === 'agent_full') {
       const agentResponse = packageForAgent([], emptyStats, {
-        query, regex, format, tokenBudget, projectRoot: this.projectRoot || PROJECT_ROOT,
+        query, regex, format, tokenBudget, ablations, projectRoot: this.projectRoot || PROJECT_ROOT,
       });
       agentResponse.stats = emptyStats;
       return agentResponse;
@@ -441,6 +442,7 @@ export async function patternSearch(query, routing, options = {}) {
       codeGraphRepo: this.codeGraphRepo || null,
       locationMap,
       projectRoot: searchDir,
+      ablations,
     });
     agentResponse.stats = stats;
     return agentResponse;

@@ -44,11 +44,12 @@ const REPOS = [
 
 function parseArgs() {
   const args = process.argv.slice(2);
-  const opts = { repos: null, maxQueries: 0, verbose: false, split: 'dev' };
+  const opts = { repos: null, maxQueries: 0, verbose: false, split: 'dev', ablation: null };
   for (const arg of args) {
     if (arg.startsWith('--repos=')) opts.repos = arg.split('=')[1].split(',');
     else if (arg.startsWith('--max-queries=')) opts.maxQueries = parseInt(arg.split('=')[1]);
     else if (arg.startsWith('--split=')) opts.split = arg.split('=')[1];
+    else if (arg.startsWith('--ablation=')) opts.ablation = arg.split('=')[1];
     else if (arg === '--verbose' || arg === '-v') opts.verbose = true;
     else if (arg === '--help') {
       console.log('Usage: node eval/run_agent_intrinsic_benchmark.js [--repos=fastify,gin] [--max-queries=10] [--split=dev|test|all] [-v]');
@@ -112,6 +113,7 @@ function computeIntrinsicMetrics(benchResult, agentResult, query) {
 
   // 5. Confidence and sufficiency
   metrics.confidence = agentResult.confidence;
+  metrics.confidenceReason = agentResult.confidenceReason;
   metrics.sufficient = agentResult.sufficient;
   metrics.sufficiencyReasons = agentResult.sufficiencyReasons;
 
@@ -144,6 +146,7 @@ async function main() {
   );
   console.log(`  Repos: ${activeRepos.map(r => r.name).join(', ')}`);
   console.log(`  Split: ${opts.split}`);
+  if (opts.ablation) console.log(`  Ablation: ${opts.ablation}`);
 
   const allMetrics = [];
 
@@ -179,11 +182,16 @@ async function main() {
           // Native grep paths now normalized (search-pattern-planner.js normalizeNativeMatches)
         });
 
-        // Agent mode
-        const agentResult = await search.search(q.semantic_query, {
+        // Agent mode (with optional ablation)
+        const agentOpts = {
           k: 10, mode: 'pattern', regex: q.regex, rerank: true, expand: false,
-          format: 'agent', gramIndex: false,
-        });
+          format: 'agent',
+          // Native grep paths now normalized (search-pattern-planner.js normalizeNativeMatches)
+        };
+        if (opts.ablation) {
+          agentOpts.ablations = new Set([opts.ablation]);
+        }
+        const agentResult = await search.search(q.semantic_query, agentOpts);
 
         const m = computeIntrinsicMetrics(benchResult, agentResult, q);
         allMetrics.push(m);

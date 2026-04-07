@@ -281,6 +281,21 @@ describe('truncateToTokenCap', () => {
     expect(truncated).toBe(false);
     expect(originalTokens).toBe(0);
   });
+
+  it('should never exceed the requested token cap', () => {
+    const code = [
+      'export function example() {',
+      '  const a = 1;',
+      '  const b = 2;',
+      '  return a + b;',
+      '}',
+    ].join('\n');
+
+    for (const tokenCap of [1, 2, 5, 10]) {
+      const { code: result } = truncateToTokenCap(code, tokenCap);
+      expect(estimateTokens(result)).toBeLessThanOrEqual(tokenCap);
+    }
+  });
 });
 
 // =============================================================================
@@ -735,6 +750,49 @@ describe('packageForAgent', () => {
       projectRoot: '/nonexistent',
     });
     expect(response.tokenBudget).toBe(6000);
+  });
+
+  it('should enforce tokenBudget as a hard ceiling', () => {
+    const results = [
+      {
+        id: 'a',
+        file: 'core/search/context-expander.js',
+        startLine: 1,
+        endLine: 120,
+        score: 0.9,
+        lateInteractionScore: 0.9,
+        metadata: { file: 'core/search/context-expander.js', startLine: 1, endLine: 120, name: 'f1', type: 'function' },
+      },
+      {
+        id: 'b',
+        file: 'core/search/context-expander.js',
+        startLine: 121,
+        endLine: 220,
+        score: 0.7,
+        lateInteractionScore: 0.7,
+        metadata: { file: 'core/search/context-expander.js', startLine: 121, endLine: 220, name: 'f2', type: 'function' },
+      },
+      {
+        id: 'c',
+        file: 'core/search/context-expander.js',
+        startLine: 221,
+        endLine: 320,
+        score: 0.5,
+        lateInteractionScore: 0.5,
+        metadata: { file: 'core/search/context-expander.js', startLine: 221, endLine: 320, name: 'f3', type: 'function' },
+      },
+    ];
+
+    for (const tokenBudget of [1, 50, 100, 200]) {
+      const response = packageForAgent(results, { grepMatches: 3, indexedChunks: 3 }, {
+        query: 'test',
+        regex: 'test',
+        tokenBudget,
+        projectRoot: process.cwd(),
+      });
+
+      expect(response.tokensUsed).toBeLessThanOrEqual(tokenBudget);
+    }
   });
 });
 
