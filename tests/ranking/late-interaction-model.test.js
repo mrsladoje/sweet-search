@@ -216,7 +216,7 @@ describe('LateInteractionIndex v2.0', () => {
 
   it('add + getTokens roundtrip with int8', async () => {
     const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
-    const idx = new LateInteractionIndex({ tokenDim: 4, useInt8: true });
+    const idx = new LateInteractionIndex({ tokenDim: 4, useInt8: true, whtSeed: 0 });
     idx.initialized = true;
 
     const tokens = [[0.5, 0.3, -0.2, 0.8], [0.1, -0.4, 0.6, 0.2]];
@@ -358,5 +358,400 @@ describe('LateInteractionIndex v2.0', () => {
       rmSync(tmpDir, { recursive: true, force: true });
       vi.restoreAllMocks();
     }
+  });
+});
+
+// =============================================================================
+// Phase 3: Token Pooling in Index + Norm Pruning
+// =============================================================================
+
+describe('Phase 3: token pooling in index add()', () => {
+  it('add() applies pooling when poolFactor > 1', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const idx = new LateInteractionIndex({ tokenDim: 4, useInt8: false, poolFactor: 2, whtSeed: 0 });
+    idx.initialized = true;
+
+    // 5 tokens → poolFactor=2 → 1 protected + ceil((5-1)/2) = 3 pooled
+    const tokens = Array.from({ length: 5 }, (_, i) => {
+      const v = new Float32Array(4);
+      v[0] = (i + 1) * 0.1;
+      v[1] = 1 - i * 0.1;
+      v[2] = 0.5;
+      v[3] = 0.3;
+      return Array.from(v);
+    });
+
+    await idx.add('pooled-doc', tokens);
+    const doc = idx.documents.get('pooled-doc');
+    expect(doc.numTokens).toBe(3); // 1 protected + 2 pooled groups
+  });
+
+  it('poolFactor=1 preserves all tokens', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const idx = new LateInteractionIndex({ tokenDim: 4, useInt8: false, poolFactor: 1, whtSeed: 0 });
+    idx.initialized = true;
+
+    const tokens = [[0.5, 0.3, -0.2, 0.8], [0.1, -0.4, 0.6, 0.2], [0.3, 0.1, 0.7, -0.5]];
+    await idx.add('no-pool', tokens);
+    expect(idx.documents.get('no-pool').numTokens).toBe(3);
+  });
+
+  it('normPruneThreshold drops low-norm tokens', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const idx = new LateInteractionIndex({
+      tokenDim: 4, useInt8: false, poolFactor: 1, whtSeed: 0,
+      normPruneThreshold: 0.3,
+    });
+    idx.initialized = true;
+
+    // First token: high norm, Second: very low norm (should be pruned), Third: high norm
+    const tokens = [
+      [0.5, 0.5, 0.5, 0.5],  // norm ~1.0 (kept: first token always kept)
+      [0.01, 0.01, 0.01, 0.01],  // norm ~0.02 (pruned)
+      [0.4, 0.4, 0.4, 0.4],  // norm ~0.8 (kept)
+    ];
+    await idx.add('pruned-doc', tokens);
+    expect(idx.documents.get('pruned-doc').numTokens).toBe(2); // first + third
+  });
+});
+
+// =============================================================================
+// Phase 4: 4-bit Quantization
+// =============================================================================
+
+describe('Phase 4: 4-bit quantization', () => {
+  it('quantBits=4 creates nibble-packed tokens', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const idx = new LateInteractionIndex({ tokenDim: 4, quantBits: 4, useInt8: true, whtSeed: 0 });
+    idx.initialized = true;
+
+    const tokens = [[0.5, 0.3, -0.2, 0.8], [0.1, -0.4, 0.6, 0.2]];
+    await idx.add('4bit-doc', tokens);
+
+    const doc = idx.documents.get('4bit-doc');
+    expect(doc.quantBits).toBe(4);
+    expect(doc.tokens).toBeInstanceOf(Uint8Array);
+    // 4 dims → 2 packed bytes per token, 2 tokens = 4 bytes
+    expect(doc.tokens.length).toBe(4);
+    expect(doc.minArray).toBeInstanceOf(Float32Array);
+    expect(doc.scaleArray).toBeInstanceOf(Float32Array);
+    expect(doc.minArray.length).toBe(2);
+  });
+
+  it('4-bit roundtrip maintains reasonable accuracy', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const idx = new LateInteractionIndex({ tokenDim: 4, quantBits: 4, useInt8: true, whtSeed: 0 });
+    idx.initialized = true;
+
+    const tokens = [[0.5, 0.3, -0.2, 0.8]];
+    await idx.add('rt-doc', tokens);
+
+    const retrieved = idx.getTokens('rt-doc');
+    expect(retrieved).toHaveLength(1);
+    expect(retrieved[0]).toHaveLength(4);
+    // 4-bit has 16 levels — coarser than 8-bit but still in the ballpark
+    expect(retrieved[0][0]).toBeCloseTo(0.5, 0);
+    expect(retrieved[0][3]).toBeCloseTo(0.8, 0);
+  });
+
+  it('4-bit getTokensFlat returns correct float values', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const idx = new LateInteractionIndex({ tokenDim: 4, quantBits: 4, useInt8: true, whtSeed: 0 });
+    idx.initialized = true;
+
+    await idx.add('flat-doc', [[0.5, 0.3, -0.2, 0.8]]);
+
+    const flatData = idx.getTokensFlat('flat-doc');
+    expect(flatData.numTokens).toBe(1);
+    expect(flatData.dim).toBe(4);
+    expect(flatData.flat[0]).toBeCloseTo(0.5, 0);
+  });
+
+  it('quantBits defaults to 8 for useInt8', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const idx = new LateInteractionIndex({ tokenDim: 128, useInt8: true });
+    expect(idx.quantBits).toBe(8);
+  });
+
+  it('quantBits defaults to 32 for float', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const idx = new LateInteractionIndex({ tokenDim: 128, useInt8: false });
+    expect(idx.quantBits).toBe(32);
+  });
+
+  it('getStats includes quantBits', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const idx = new LateInteractionIndex({ tokenDim: 128, quantBits: 4, useInt8: true });
+    idx.initialized = true;
+    expect(idx.getStats().quantBits).toBe(4);
+  });
+});
+
+describe('Phase 4: 4-bit SSLX save/load roundtrip', () => {
+  it('saves and loads 4-bit index via segments', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sweet-search-4bit-'));
+    const indexPath = join(tmpDir, 'late-interaction.db');
+
+    try {
+      const idx = new LateInteractionIndex({
+        tokenDim: 4, quantBits: 4, useInt8: true, whtSeed: 0,
+        indexPath, segmentSize: 2,
+      });
+      idx.initialized = true;
+
+      await idx.add('doc1', [[0.5, 0.3, -0.2, 0.8], [0.1, -0.4, 0.6, 0.2]]);
+      await idx.add('doc2', [[0.9, 0.1, 0.0, -0.3]]);
+      await idx.save();
+
+      // Load into a fresh index
+      const idx2 = new LateInteractionIndex({
+        tokenDim: 4, quantBits: 4, useInt8: true, whtSeed: 0,
+        indexPath,
+      });
+      await idx2.load();
+
+      expect(idx2.documents.size).toBe(2);
+      expect(idx2.quantBits).toBe(4);
+
+      const doc1 = idx2.documents.get('doc1');
+      expect(doc1.numTokens).toBe(2);
+      expect(doc1.quantBits).toBe(4);
+      expect(doc1.tokens).toBeInstanceOf(Uint8Array);
+      expect(doc1.minArray).toBeInstanceOf(Float32Array);
+      expect(doc1.tokenNorms).toBeInstanceOf(Float32Array);
+
+      // Verify dequantized values are reasonable
+      const tokens = idx2.getTokens('doc1');
+      expect(tokens[0][0]).toBeCloseTo(0.5, 0);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// =============================================================================
+// Bug-fix regression tests
+// =============================================================================
+
+describe('CRITICAL-1 fix: legacy JSON 4-bit roundtrip', () => {
+  it('saves and loads 4-bit docs via legacy JSON (small index)', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sweet-search-4bit-json-'));
+    const indexPath = join(tmpDir, 'late-interaction.db');
+
+    try {
+      // segmentSize > doc count → triggers legacy JSON path
+      const idx = new LateInteractionIndex({
+        tokenDim: 4, quantBits: 4, useInt8: true, whtSeed: 0,
+        indexPath, segmentSize: 100,
+      });
+      idx.initialized = true;
+
+      await idx.add('doc1', [[0.5, 0.3, -0.2, 0.8], [0.1, -0.4, 0.6, 0.2]]);
+      await idx.save();
+
+      // Load into a fresh index
+      const idx2 = new LateInteractionIndex({
+        tokenDim: 4, useInt8: true, whtSeed: 0,
+        indexPath,
+      });
+      await idx2.load();
+
+      expect(idx2.documents.size).toBe(1);
+      expect(idx2.quantBits).toBe(4);
+
+      const doc = idx2.documents.get('doc1');
+      expect(doc.quantBits).toBe(4);
+      expect(doc.tokens).toBeInstanceOf(Uint8Array);
+      expect(doc.minArray).toBeInstanceOf(Float32Array);
+
+      // Must survive dequant without NaN/corruption
+      const tokens = idx2.getTokens('doc1');
+      expect(tokens[0][0]).toBeCloseTo(0.5, 0);
+      expect(tokens[0][3]).toBeCloseTo(0.8, 0);
+      expect(Number.isNaN(tokens[0][0])).toBe(false);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('CRITICAL-2 fix: no double pooling', () => {
+  it('skips index pooling when _pooledUpstream is set', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const idx = new LateInteractionIndex({
+      tokenDim: 4, useInt8: false, poolFactor: 2, whtSeed: 0,
+    });
+    idx.initialized = true;
+
+    // 5 tokens, already pooled upstream → should NOT pool again
+    const tokens = Array.from({ length: 5 }, (_, i) => {
+      const v = new Float32Array(4);
+      v[0] = (i + 1) * 0.1;
+      v[1] = 1 - i * 0.1;
+      v[2] = 0.5;
+      v[3] = 0.3;
+      return Array.from(v);
+    });
+
+    // With _pooledUpstream: all 5 tokens preserved
+    await idx.add('upstream-pooled', tokens, { _pooledUpstream: true });
+    expect(idx.documents.get('upstream-pooled').numTokens).toBe(5);
+
+    // Without _pooledUpstream: tokens get pooled (5 → 3)
+    await idx.add('not-pooled', tokens, {});
+    expect(idx.documents.get('not-pooled').numTokens).toBe(3);
+  });
+});
+
+describe('CRITICAL-3 fix: _rebuildTokenNorms handles 4-bit', () => {
+  it('rebuilds norms from 4-bit packed data without corruption', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const idx = new LateInteractionIndex({
+      tokenDim: 4, quantBits: 4, useInt8: true, whtSeed: 0,
+    });
+    idx.initialized = true;
+
+    await idx.add('doc1', [[0.5, 0.3, -0.2, 0.8]]);
+    const origNorms = idx.documents.get('doc1').tokenNorms;
+    expect(origNorms[0]).toBeGreaterThan(0);
+
+    // Simulate loading without norms (legacy path)
+    delete idx.documents.get('doc1').tokenNorms;
+    idx._rebuildTokenNorms();
+
+    const rebuiltNorms = idx.documents.get('doc1').tokenNorms;
+    expect(rebuiltNorms).toBeInstanceOf(Float32Array);
+    expect(rebuiltNorms[0]).toBeGreaterThan(0);
+    // Rebuilt norms should be close to originals (4-bit quant error is ok)
+    expect(rebuiltNorms[0]).toBeCloseTo(origNorms[0], 0);
+  });
+});
+
+describe('HIGH-1: end-to-end 4-bit scoring', () => {
+  it('scores 4-bit docs correctly with maxSimScore', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const idx = new LateInteractionIndex({
+      tokenDim: 4, quantBits: 4, useInt8: true, whtSeed: 0,
+    });
+    idx.initialized = true;
+
+    // Two documents: doc1 matches query, doc2 doesn't
+    await idx.add('doc1', [[0.9, 0.1, 0, 0], [0.1, 0.9, 0, 0]]);
+    await idx.add('doc2', [[0, 0, 0.9, 0.1], [0, 0, 0.1, 0.9]]);
+
+    // Query aligns with doc1
+    const query = [[1, 0, 0, 0], [0, 1, 0, 0]];
+
+    // Score via getTokensFlat (JS fallback path)
+    // IMPORTANT: copy pooled buffer before next getTokensFlat call overwrites it
+    const raw1 = idx.getTokensFlat('doc1');
+    const flat1 = new Float32Array(raw1.flat.subarray(0, raw1.numTokens * raw1.dim));
+    const norms1 = idx.documents.get('doc1').tokenNorms;
+    const raw2 = idx.getTokensFlat('doc2');
+    const flat2 = new Float32Array(raw2.flat.subarray(0, raw2.numTokens * raw2.dim));
+    const norms2 = idx.documents.get('doc2').tokenNorms;
+    const score1 = idx.maxSimScoreFlat(query, flat1, raw1.numTokens, raw1.dim, norms1);
+    const score2 = idx.maxSimScoreFlat(query, flat2, raw2.numTokens, raw2.dim, norms2);
+
+    // doc1 should score much higher than doc2
+    expect(score1).toBeGreaterThan(0.5);
+    expect(score1).toBeGreaterThan(score2 + 0.2);
+  });
+
+  it('scores 4-bit docs via scoreWithLateInteraction', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const idx = new LateInteractionIndex({
+      tokenDim: 4, quantBits: 4, useInt8: true, whtSeed: 0,
+    });
+    idx.initialized = true;
+
+    await idx.add('match', [[0.9, 0.1, 0, 0], [0.1, 0.9, 0, 0]]);
+    await idx.add('miss', [[0, 0, 0.9, 0.1], [0, 0, 0.1, 0.9]]);
+
+    const query = [[1, 0, 0, 0], [0, 1, 0, 0]];
+    const candidates = [
+      { id: 'match', score: 1.0 },
+      { id: 'miss', score: 1.0 },
+    ];
+
+    const scored = await idx.scoreWithLateInteraction(query, candidates);
+    expect(scored).toHaveLength(2);
+
+    const matchResult = scored.find(c => c.id === 'match');
+    const missResult = scored.find(c => c.id === 'miss');
+    expect(matchResult.lateInteractionScore).toBeGreaterThan(0.5);
+    expect(matchResult.lateInteractionScore).toBeGreaterThan(missResult.lateInteractionScore);
+  });
+
+  it('d=48 edge model works with 4-bit (odd packed size)', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const idx = new LateInteractionIndex({
+      tokenDim: 48, quantBits: 4, useInt8: true, whtSeed: 0,
+    });
+    idx.initialized = true;
+
+    // 48 dims → 24 packed bytes per token
+    const token = new Array(48).fill(0).map((_, i) => Math.sin(i * 0.1));
+    await idx.add('edge-doc', [token]);
+
+    const doc = idx.documents.get('edge-doc');
+    expect(doc.tokens.length).toBe(24); // ceil(48/2)
+
+    const retrieved = idx.getTokens('edge-doc');
+    expect(retrieved[0]).toHaveLength(48);
+    // Values should be in a reasonable range
+    expect(Math.abs(retrieved[0][0] - token[0])).toBeLessThan(0.15);
+  });
+});
+
+describe('Codex finding: mixed quant scoring', () => {
+  it('scores all candidates in mixed 4-bit + int8 corpus (no early return)', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+
+    // Create an int8 index, add one doc, then manually inject a 4-bit doc
+    const idx = new LateInteractionIndex({
+      tokenDim: 4, useInt8: true, quantBits: 8, whtSeed: 0,
+    });
+    idx.initialized = true;
+
+    // int8 per-token doc (standard Phase 1 path)
+    await idx.add('int8-doc', [[0.9, 0.1, 0, 0], [0.1, 0.9, 0, 0]]);
+    expect(idx.documents.get('int8-doc').minArray).toBeTruthy();
+    expect(idx.documents.get('int8-doc').quantBits).toBeUndefined();
+
+    // Manually create a 4-bit doc to simulate mixed corpus
+    const { tokens: int8Tokens, numTokens, dim, minArray, scaleArray, tokenNorms } = idx.documents.get('int8-doc');
+    // Build a simple 4-bit doc with known values
+    const idx4 = new LateInteractionIndex({
+      tokenDim: 4, useInt8: true, quantBits: 4, whtSeed: 0,
+    });
+    idx4.initialized = true;
+    await idx4.add('4bit-doc', [[0, 0, 0.9, 0.1], [0, 0, 0.1, 0.9]]);
+    const doc4bit = idx4.documents.get('4bit-doc');
+
+    // Inject 4-bit doc into the int8 index
+    idx.documents.set('4bit-doc', doc4bit);
+
+    // Both candidates must get real MaxSim scores (not fallback ANN scores)
+    const query = [[1, 0, 0, 0], [0, 1, 0, 0]];
+    const candidates = [
+      { id: 'int8-doc', score: 0.5 },
+      { id: '4bit-doc', score: 0.5 },
+    ];
+
+    const scored = await idx.scoreWithLateInteraction(query, candidates);
+    expect(scored).toHaveLength(2);
+
+    const int8Result = scored.find(c => c.id === 'int8-doc');
+    const fourBitResult = scored.find(c => c.id === '4bit-doc');
+
+    // Both must have real lateInteractionScore (not the 0.5 fallback)
+    expect(int8Result.lateInteractionScore).not.toBe(0.5);
+    expect(fourBitResult.lateInteractionScore).not.toBe(0.5);
+
+    // int8-doc aligns with query, 4bit-doc doesn't
+    expect(int8Result.lateInteractionScore).toBeGreaterThan(fourBitResult.lateInteractionScore);
   });
 });

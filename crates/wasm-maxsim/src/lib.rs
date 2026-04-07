@@ -237,3 +237,155 @@ pub unsafe extern "C" fn maxsim_dequant(
 
     total / nq as f32
 }
+
+// =============================================================================
+// MaxSim with per-token int8 dequant + pre-stored norms (Phase 4)
+// Eliminates d_norm_sq recomputation — uses pre-stored norms instead.
+// =============================================================================
+
+#[no_mangle]
+pub unsafe extern "C" fn maxsim_dequant_pertoken(
+    q_ptr: *const f32,
+    d_ptr: *const i8,
+    min_ptr: *const f32,
+    scale_ptr: *const f32,
+    norm_ptr: *const f32,
+    num_q: u32,
+    num_d: u32,
+    dim: u32,
+) -> f32 {
+    let nq = num_q as usize;
+    let nd = num_d as usize;
+    let d = dim as usize;
+    let steps16 = d / 16;
+    let simd_end16 = steps16 * 16;
+    let mut total: f32 = 0.0;
+
+    for qi in 0..nq {
+        let qb = q_ptr.add(qi * d);
+
+        let simd_end_q = (d & !3) / 4;
+        let mut qacc = f32x4_splat(0.0);
+        for k in 0..simd_end_q {
+            let qv = v128_load(qb.add(k * 4) as *const v128);
+            qacc = f32x4_add(qacc, f32x4_mul(qv, qv));
+        }
+        let mut q_norm_sq = hsum(qacc);
+        scalar_tail_norm(qb, d & !3, d, &mut q_norm_sq);
+        let qn = sqrt(q_norm_sq);
+
+        let mut best: f32 = -1.0;
+
+        for di in 0..nd {
+            let db = d_ptr.add(di * d);
+            let tmin = *min_ptr.add(di);
+            let tscale = *scale_ptr.add(di);
+            let d_norm = *norm_ptr.add(di);
+
+            let off128v = f32x4_splat(128.0);
+            let sv = f32x4_splat(tscale);
+            let mv = f32x4_splat(tmin);
+            let mut dot_a = f32x4_splat(0.0);
+
+            for s in 0..steps16 {
+                let byte_off = s * 16;
+                let float_off = s * 16;
+                let raw = v128_load(db.add(byte_off) as *const v128);
+                let lo16 = i16x8_extend_low_i8x16(raw);
+                let hi16 = i16x8_extend_high_i8x16(raw);
+
+                let fv0 = f32x4_convert_i32x4(i32x4_extend_low_i16x8(lo16));
+                let dv0 = f32x4_add(f32x4_mul(f32x4_add(fv0, off128v), sv), mv);
+                dot_a = f32x4_add(dot_a, f32x4_mul(v128_load(qb.add(float_off) as *const v128), dv0));
+
+                let fv1 = f32x4_convert_i32x4(i32x4_extend_high_i16x8(lo16));
+                let dv1 = f32x4_add(f32x4_mul(f32x4_add(fv1, off128v), sv), mv);
+                dot_a = f32x4_add(dot_a, f32x4_mul(v128_load(qb.add(float_off + 4) as *const v128), dv1));
+
+                let fv2 = f32x4_convert_i32x4(i32x4_extend_low_i16x8(hi16));
+                let dv2 = f32x4_add(f32x4_mul(f32x4_add(fv2, off128v), sv), mv);
+                dot_a = f32x4_add(dot_a, f32x4_mul(v128_load(qb.add(float_off + 8) as *const v128), dv2));
+
+                let fv3 = f32x4_convert_i32x4(i32x4_extend_high_i16x8(hi16));
+                let dv3 = f32x4_add(f32x4_mul(f32x4_add(fv3, off128v), sv), mv);
+                dot_a = f32x4_add(dot_a, f32x4_mul(v128_load(qb.add(float_off + 12) as *const v128), dv3));
+            }
+
+            let mut dot = hsum(dot_a);
+            for i in simd_end16..d {
+                let raw_val = *db.add(i) as f32;
+                dot += *qb.add(i) * ((raw_val + 128.0) * tscale + tmin);
+            }
+
+            let sim = dot / (qn * d_norm + 1e-8);
+            if sim > best { best = sim; }
+        }
+
+        if best > 0.0 { total += best; }
+    }
+
+    total / nq as f32
+}
+
+// =============================================================================
+// MaxSim with 4-bit nibble-packed dequant + pre-stored norms (Phase 4)
+// =============================================================================
+
+#[no_mangle]
+pub unsafe extern "C" fn maxsim_dequant_4bit(
+    q_ptr: *const f32,
+    d_ptr: *const u8,
+    min_ptr: *const f32,
+    scale_ptr: *const f32,
+    norm_ptr: *const f32,
+    num_q: u32,
+    num_d: u32,
+    dim: u32,
+) -> f32 {
+    let nq = num_q as usize;
+    let nd = num_d as usize;
+    let d = dim as usize;
+    let packed_dim = (d + 1) / 2;
+    let mut total: f32 = 0.0;
+
+    for qi in 0..nq {
+        let qb = q_ptr.add(qi * d);
+
+        let simd_end_q = (d & !3) / 4;
+        let mut qacc = f32x4_splat(0.0);
+        for k in 0..simd_end_q {
+            let qv = v128_load(qb.add(k * 4) as *const v128);
+            qacc = f32x4_add(qacc, f32x4_mul(qv, qv));
+        }
+        let mut q_norm_sq = hsum(qacc);
+        scalar_tail_norm(qb, d & !3, d, &mut q_norm_sq);
+        let qn = sqrt(q_norm_sq);
+
+        let mut best: f32 = -1.0;
+
+        for di in 0..nd {
+            let db = d_ptr.add(di * packed_dim);
+            let tmin = *min_ptr.add(di);
+            let tscale = *scale_ptr.add(di);
+            let d_norm = *norm_ptr.add(di);
+
+            let mut dot: f32 = 0.0;
+            for dd in (0..d).step_by(2) {
+                let byte = *db.add(dd / 2);
+                let lo = (byte & 0x0F) as f32 * tscale + tmin;
+                dot += *qb.add(dd) * lo;
+                if dd + 1 < d {
+                    let hi = ((byte >> 4) & 0x0F) as f32 * tscale + tmin;
+                    dot += *qb.add(dd + 1) * hi;
+                }
+            }
+
+            let sim = dot / (qn * d_norm + 1e-8);
+            if sim > best { best = sim; }
+        }
+
+        if best > 0.0 { total += best; }
+    }
+
+    total / nq as f32
+}

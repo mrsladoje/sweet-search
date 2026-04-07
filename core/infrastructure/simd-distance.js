@@ -390,6 +390,45 @@ export function wasmMaxSimDequant(queryFlat, docInt8, numQ, numD, dim, min, scal
   return maxsimExports.maxsim_dequant(qPtr, dPtr, numQ, numD, dim, min, scale);
 }
 
+// Shared layout: copy query + doc + per-token params into WASM memory, return pointers.
+// Returns null if data doesn't fit in WASM memory.
+function _wasmPerTokenLayout(queryFlat, docData, minArray, scaleArray, tokenNorms, numQ, numD, dim, dBytes) {
+  const qBytes = numQ * dim * 4;
+  const paramBytes = numD * 4 * 3;
+  if (!maxsimMem || maxsimMem.buffer !== maxsimExports.memory.buffer) {
+    maxsimMem = new Uint8Array(maxsimExports.memory.buffer);
+  }
+  if (qBytes + dBytes + paramBytes + 1024 > maxsimMem.length) return null;
+
+  const qPtr = DATA_OFFSET;
+  const dPtr = qPtr + qBytes;
+  const minPtr = dPtr + dBytes;
+  const scalePtr = minPtr + numD * 4;
+  const normPtr = scalePtr + numD * 4;
+
+  maxsimMem.set(new Uint8Array(queryFlat.buffer, queryFlat.byteOffset, qBytes), qPtr);
+  maxsimMem.set(new Uint8Array(docData.buffer, docData.byteOffset, dBytes), dPtr);
+  maxsimMem.set(new Uint8Array(minArray.buffer, minArray.byteOffset, numD * 4), minPtr);
+  maxsimMem.set(new Uint8Array(scaleArray.buffer, scaleArray.byteOffset, numD * 4), scalePtr);
+  maxsimMem.set(new Uint8Array(tokenNorms.buffer, tokenNorms.byteOffset, numD * 4), normPtr);
+
+  return { qPtr, dPtr, minPtr, scalePtr, normPtr };
+}
+
+export function wasmMaxSimDequantPerToken(queryFlat, docInt8, minArray, scaleArray, tokenNorms, numQ, numD, dim) {
+  if (!maxsimExports?.maxsim_dequant_pertoken) return null;
+  const ptrs = _wasmPerTokenLayout(queryFlat, docInt8, minArray, scaleArray, tokenNorms, numQ, numD, dim, numD * dim);
+  if (!ptrs) return null;
+  return maxsimExports.maxsim_dequant_pertoken(ptrs.qPtr, ptrs.dPtr, ptrs.minPtr, ptrs.scalePtr, ptrs.normPtr, numQ, numD, dim);
+}
+
+export function wasmMaxSimDequant4Bit(queryFlat, docPacked, minArray, scaleArray, tokenNorms, numQ, numD, dim) {
+  if (!maxsimExports?.maxsim_dequant_4bit) return null;
+  const ptrs = _wasmPerTokenLayout(queryFlat, docPacked, minArray, scaleArray, tokenNorms, numQ, numD, dim, numD * Math.ceil(dim / 2));
+  if (!ptrs) return null;
+  return maxsimExports.maxsim_dequant_4bit(ptrs.qPtr, ptrs.dPtr, ptrs.minPtr, ptrs.scalePtr, ptrs.normPtr, numQ, numD, dim);
+}
+
 // =============================================================================
 // NATIVE MAXSIM BATCH (Tier 1 — rayon parallel)
 // =============================================================================
@@ -406,6 +445,40 @@ export function wasmMaxSimDequant(queryFlat, docInt8, numQ, numD, dim, min, scal
 export function nativeMaxSimBatch(queryFlat, numQ, dim, candidates) {
   if (!nativeMaxsim) return null;
   return nativeMaxsim.maxsimScoreBatch(queryFlat, numQ, dim, candidates);
+}
+
+/**
+ * Native batch scoring with per-token min/scale and pre-stored norms (Phase 4).
+ * @param {Float32Array} queryFlat
+ * @param {number} numQ
+ * @param {number} dim
+ * @param {Array<{tokens: Buffer, numTokens: number, dim: number, minArray: Float32Array, scaleArray: Float32Array, tokenNorms: Float32Array}>} candidates
+ * @returns {number[]|null}
+ */
+export function nativeMaxSimBatchPerToken(queryFlat, numQ, dim, candidates) {
+  if (!nativeMaxsim?.maxsimScoreBatchPertoken) return null;
+  return nativeMaxsim.maxsimScoreBatchPertoken(queryFlat, numQ, dim, candidates);
+}
+
+/**
+ * Native batch scoring with 4-bit nibble-packed tokens (Phase 4).
+ * @param {Float32Array} queryFlat
+ * @param {number} numQ
+ * @param {number} dim
+ * @param {Array<{tokens: Buffer, numTokens: number, dim: number, minArray: Float32Array, scaleArray: Float32Array, tokenNorms: Float32Array}>} candidates
+ * @returns {number[]|null}
+ */
+export function nativeMaxSimBatch4Bit(queryFlat, numQ, dim, candidates) {
+  if (!nativeMaxsim?.maxsimScoreBatch4Bit) return null;
+  return nativeMaxsim.maxsimScoreBatch4Bit(queryFlat, numQ, dim, candidates);
+}
+
+export function isNativePerTokenAvailable() {
+  return !!nativeMaxsim?.maxsimScoreBatchPertoken;
+}
+
+export function isNative4BitAvailable() {
+  return !!nativeMaxsim?.maxsimScoreBatch4Bit;
 }
 
 export function isWasmAvailable() {

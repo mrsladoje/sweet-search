@@ -280,14 +280,22 @@ export async function encodeDocuments(texts, options = {}) {
     const inputIds = Array.from(tokenized.input_ids.data).map(Number);
 
     // Apply skiplist filter (documents only, not queries)
+    // Propagate pre-normalization norms for surviving tokens (used by Phase 3 pruning).
     const vectors = [];
+    const keptPreNorms = [];
+    const srcPreNorms = allVectors.preNorms;
     for (let i = 0; i < allVectors.length; i++) {
       if (!effectiveSkiplist.has(inputIds[i])) {
         vectors.push(allVectors[i]);
+        if (srcPreNorms) keptPreNorms.push(srcPreNorms[i]);
       }
     }
+    if (srcPreNorms) vectors.preNorms = new Float32Array(keptPreNorms);
 
-    // Apply token pooling if requested (document-only, never queries)
+    // Apply token pooling if requested (document-only, never queries).
+    // preNorms are NOT carried through pooling — pooled tokens don't have
+    // meaningful individual pre-norms, and the array length wouldn't match.
+    // In the index, pruning runs before pooling so preNorms are consumed first.
     results[t] = poolFactor > 1 ? poolTokens(vectors, poolFactor) : vectors;
   }
 
@@ -327,18 +335,24 @@ function projectAndNormalize(hiddenTensor, projectionStages) {
     currentDim = outDim;
   }
 
-  // L2 normalize per token, return as array of Float32Array vectors
+  // L2 normalize per token, return as array of Float32Array vectors.
+  // Also record pre-normalization norms — these measure how much the model
+  // "activated" for each token. Low pre-norm = low information content.
+  // Stored as a property on the returned array for optional norm-based pruning.
   const vectors = new Array(seqLen);
+  const preNorms = new Float32Array(seqLen);
   for (let s = 0; s < seqLen; s++) {
     const offset = s * currentDim;
     let norm = 0;
     for (let d = 0; d < currentDim; d++) norm += data[offset + d] * data[offset + d];
     norm = Math.sqrt(norm) + 1e-12;
+    preNorms[s] = norm;
     const vec = new Float32Array(currentDim);
     for (let d = 0; d < currentDim; d++) vec[d] = data[offset + d] / norm;
     vectors[s] = vec;
   }
 
+  vectors.preNorms = preNorms;
   return vectors;
 }
 
