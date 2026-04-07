@@ -35,6 +35,7 @@ VERBOSE=false
 QUICK=false
 NO_FALLBACK=false
 ARM64_IMAGE="ss-cross-val:arm64"
+PNPM_ALLOW_BUILD="better-sqlite3,onnxruntime-node,sharp,usearch"
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -87,6 +88,13 @@ ok()  { echo -e "  ${GREEN}PASS${NC}  $*"; ((passed++)); RESULTS+=("PASS|$*"); }
 fail() { echo -e "  ${RED}FAIL${NC}  $*"; ((failed++)); RESULTS+=("FAIL|$*"); }
 skip_check() { echo -e "  ${YELLOW}SKIP${NC}  $*"; ((skipped++)); RESULTS+=("SKIP|$*"); }
 
+ensure_packaged_addon_name() {
+  local dir="$1"
+  if [ ! -f "$dir/sweet-search-native.node" ] && [ -f "$dir/maxsim.node" ]; then
+    cp "$dir/maxsim.node" "$dir/sweet-search-native.node"
+  fi
+}
+
 # ─────────────────────────────────────────────────────────────────────
 # Pre-flight: verify all native binaries have correct architecture
 # ─────────────────────────────────────────────────────────────────────
@@ -98,6 +106,15 @@ if ! docker info > /dev/null 2>&1; then
   exit 1
 fi
 ok "Docker available"
+
+for dir in \
+  "$REPO_ROOT/packages/native-darwin-arm64" \
+  "$REPO_ROOT/packages/native-darwin-x64" \
+  "$REPO_ROOT/packages/native-linux-x64-gnu" \
+  "$REPO_ROOT/packages/native-linux-arm64-gnu"
+do
+  ensure_packaged_addon_name "$dir"
+done
 
 check_binary_arch() {
   local dir="$1" expected_arch="$2" label="$3"
@@ -244,13 +261,16 @@ run_host_test() {
         else
           npm install "$main_tgz" --no-audit --no-fund 2>&1 | tail -5
         fi
+        npm rebuild better-sqlite3 2>&1 | tail -3
         ;;
       pnpm)
         if [ "$with_native" = "true" ] && [ -n "$native_tgz" ]; then
-          pnpm add "$main_tgz" "$native_tgz" 2>&1 | tail -5
+          pnpm add --allow-build="$PNPM_ALLOW_BUILD" "$main_tgz" "$native_tgz" 2>&1 | tail -5
         else
-          pnpm add "$main_tgz" 2>&1 | tail -5
+          pnpm add --allow-build="$PNPM_ALLOW_BUILD" "$main_tgz" 2>&1 | tail -5
         fi
+        pnpm approve-builds --all 2>&1 | tail -5
+        pnpm rebuild better-sqlite3 2>&1 | tail -3
         ;;
       yarn)
         # Yarn v1 (classic) needs file: prefix for local tarballs
@@ -259,6 +279,7 @@ run_host_test() {
         else
           yarn add "file:$main_tgz" 2>&1 | tail -5
         fi
+        npm rebuild better-sqlite3 2>&1 | tail -3
         ;;
       bun)
         if [ "$with_native" = "true" ] && [ -n "$native_tgz" ]; then
@@ -266,6 +287,7 @@ run_host_test() {
         else
           bun add "$main_tgz" 2>&1 | tail -5
         fi
+        npm rebuild better-sqlite3 2>&1 | tail -3
         ;;
     esac
 
@@ -321,13 +343,6 @@ run_host_test() {
     smoke_exit=$?
     set -e
     cat "$SMOKE_OUT"
-
-    if [ $smoke_exit -ne 0 ]; then
-      fail_count=$(grep -oE '[0-9]+ failed' "$SMOKE_OUT" | grep -oE '[0-9]+' || echo "99")
-      if [ "$SKIP_MODELS" = "true" ] && [ "$fail_count" = "1" ]; then
-        smoke_exit=0
-      fi
-    fi
     rm -f "$SMOKE_OUT"
 
     # Upgrade/reinstall check
