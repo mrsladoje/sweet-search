@@ -210,7 +210,7 @@ support layer whose utilities are imported directly for performance and simplici
 
 | File | Reason |
 |------|--------|
-| `start-server.js` | Rust CLI (`sweet-search-cli/src/main.rs`) hardcodes this path |
+| `start-server.js` | Rust CLI (`crates/sweet-search-cli/src/main.rs`) hardcodes this path |
 | `config.js` | Permanent compatibility facade for external consumers |
 | `vectors.db` | Data artifact, not code |
 

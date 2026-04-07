@@ -302,7 +302,7 @@ fn find_server_script() -> Option<String> {
     // Try relative to the binary location
     if let Ok(exe) = env::current_exe() {
         if let Some(dir) = exe.parent() {
-            // Binary might be in sweet-search-cli/target/release/ or repo root
+            // Binary might be in crates/sweet-search-cli/target/release/ or repo root
             for ancestor in dir.ancestors() {
                 let candidate = ancestor.join(script_name);
                 if candidate.exists() {

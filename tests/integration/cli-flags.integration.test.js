@@ -80,6 +80,15 @@ function runIndexer(args = [], stdinInput = null, options = {}) {
   });
 }
 
+async function runInBatches(taskFns, batchSize = 3) {
+  const results = [];
+  for (let i = 0; i < taskFns.length; i += batchSize) {
+    const batch = taskFns.slice(i, i + batchSize);
+    results.push(...await Promise.all(batch.map(fn => fn())));
+  }
+  return results;
+}
+
 /**
  * Parse JSON output from quiet mode (last non-empty line)
  */
@@ -121,22 +130,22 @@ beforeAll(async () => {
     stdinDotSlashDryResult,
     stdinFilterDryResult,
     stdinMixedDryResult,
-  ] = await Promise.all([
-    runIndexer(['--help']),
-    runIndexer(['--quiet', '--dry-run']),
-    runIndexer(['--quiet', '--help']),
-    runIndexer(['--quiet', '--stats']),
-    runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], 'CLAUDE.md\nDEVELOPMENT.md\n'),
-    runIndexer(['--files-from-stdin', '--quiet'], ''),
-    runIndexer(['--files-from-stdin', '--quiet'], '  \n\n  \t\n'),
-    runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], 'CLAUDE.md\nCLAUDE.md\nCLAUDE.md\n'),
-    runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], `${PROJECT_ROOT}/CLAUDE.md\n`),
-    runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], '/tmp/outside-project-file.java\nCLAUDE.md\n'),
-    runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], './CLAUDE.md\n./DEVELOPMENT.md\n'),
-    runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], 'node_modules/some/file.js\n.git/config\n'),
-    runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], `CLAUDE.md\n/etc/passwd\nDEVELOPMENT.md\n`),
+  ] = await runInBatches([
+    () => runIndexer(['--help']),
+    () => runIndexer(['--quiet', '--dry-run']),
+    () => runIndexer(['--quiet', '--help']),
+    () => runIndexer(['--quiet', '--stats']),
+    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], 'CLAUDE.md\nDEVELOPMENT.md\n'),
+    () => runIndexer(['--files-from-stdin', '--quiet'], ''),
+    () => runIndexer(['--files-from-stdin', '--quiet'], '  \n\n  \t\n'),
+    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], 'CLAUDE.md\nCLAUDE.md\nCLAUDE.md\n'),
+    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], `${PROJECT_ROOT}/CLAUDE.md\n`),
+    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], '/tmp/outside-project-file.java\nCLAUDE.md\n'),
+    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], './CLAUDE.md\n./DEVELOPMENT.md\n'),
+    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], 'node_modules/some/file.js\n.git/config\n'),
+    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], `CLAUDE.md\n/etc/passwd\nDEVELOPMENT.md\n`),
   ]);
-}, 60000);
+}, 180000);
 
 // =============================================================================
 // --help Flag Tests (Quick sanity check)
