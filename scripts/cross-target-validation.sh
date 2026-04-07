@@ -275,7 +275,7 @@ run_host_test() {
       exit 1
     fi
 
-    local cli="$ss_pkg/bin/sweet-search.js"
+    local cli="$ss_pkg/core/cli.js"
 
     # Check 2-3: command resolution + --help
     test -e "$work_dir/node_modules/.bin/sweet-search"  # bin symlink

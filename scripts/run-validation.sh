@@ -198,11 +198,11 @@ fi
 echo ""
 echo "--- Phase 8 Checks 2-3: Command resolution ---"
 
-CLI="$SS_PKG/bin/sweet-search.js"
-check "bin/sweet-search.js exists" test -f "$CLI"
+CLI="$SS_PKG/core/cli.js"
+check "core/cli.js exists" test -f "$CLI"
 
 # Test via npm bin symlink (the real user path).
-# npm creates .bin/sweet-search → ../sweet-search/bin/sweet-search.js
+# npm creates .bin/sweet-search → ../sweet-search/core/cli.js
 BIN_LINK="$WORK_DIR/node_modules/.bin/sweet-search"
 check "npm bin symlink exists (.bin/sweet-search)" test -e "$BIN_LINK"
 

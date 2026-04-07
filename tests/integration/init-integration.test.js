@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const CLI = join(import.meta.dirname, '../..', 'bin', 'sweet-search.js');
+const CLI = join(import.meta.dirname, '../..', 'core', 'cli.js');
 const NODE = process.execPath;
 
 function runInit(args, cwd) {

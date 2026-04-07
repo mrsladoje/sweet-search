@@ -34,14 +34,14 @@ Options:
 
 Run 'sweet-search init --help' or 'sweet-search uninstall --help' for subcommand options.`);
 } else {
-  const { resolveNativeBinary } = await import('../core/infrastructure/index.js');
+  const { resolveNativeBinary } = await import('./infrastructure/index.js');
   const nativeBin = resolveNativeBinary();
 
   if (nativeBin) {
     const result = spawnSync(nativeBin, args, { stdio: 'inherit' });
     process.exit(result.status ?? 1);
   } else {
-    const { runCli } = await import('../core/search/index.js');
+    const { runCli } = await import('./search/index.js');
     await runCli(args);
   }
 }

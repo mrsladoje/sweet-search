@@ -34,7 +34,7 @@
     "panonit"
   ],
   "bin": {
-    "sweet-search": "./bin/sweet-search.js",
+    "sweet-search": "./core/cli.js",
     "sweet-search-mcp": "./mcp/server.js"
   },
   "files": [
@@ -48,7 +48,6 @@
     "core/vocabulary/",
     "core/vector-store/",
     "core/query/",
-    "bin/",
     "mcp/",
     "assets/",
     "scripts/benchmark-harness.js",
