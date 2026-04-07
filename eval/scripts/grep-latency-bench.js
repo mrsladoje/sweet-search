@@ -99,7 +99,6 @@ for (const repo of REPOS) {
     binaryHnswPath: path.join(ssDir, 'codebase-binary-hnsw.idx'),
     codebaseDbPath: path.join(ssDir, 'codebase.db'),
     sparseGramIndexPath: path.join(ssDir, 'codebase-sparse-grams.idx'),
-    chunkGramIndexPath: path.join(ssDir, 'codebase-chunk-grams.idx'),
     lateInteractionOptions: { indexPath: path.join(ssDir, 'codebase-late-interaction.db') },
   });
   await search.init();

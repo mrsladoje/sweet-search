@@ -14,7 +14,6 @@ import { colors, log, logProgress, logError, discoverFiles, readFilesFromStdin, 
 import { buildCodeGraph, buildVectorIndex, chunkFiles } from './indexer-build.js';
 import { incrementalUpdateHNSW, buildHNSWIndex, buildLateInteractionIndex, buildQuantizedArtifactsPhase } from './indexer-ann.js';
 import { buildSparseGramArtifact } from './indexer-sparse-gram.js';
-import { buildChunkGramArtifact } from './indexer-chunk-gram.js';
 
 async function unlinkIfExists(filePath) {
   try {
@@ -380,15 +379,7 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     sparseGramResult = await buildSparseGramArtifact(allFiles, dryRun);
   }
 
-  let chunkGramResult = null;
-  if (!dryRun) {
-    // Pass allChunks from the vector/LI pipeline so the chunk gram covers
-    // the same corpus as the late interaction index (avoids reading the 4GB LI file).
-    const liChunks = vectorResult?.allChunks || preChunked?.allChunks || null;
-    chunkGramResult = await buildChunkGramArtifact(dryRun, liChunks);
-  }
-
-  return { vectorStats, hcgsResult, lateInteractionResult, sparseGramResult, chunkGramResult };
+  return { vectorStats, hcgsResult, lateInteractionResult, sparseGramResult };
 }
 
 export async function updateIncrementalStatePhase(options = {}) {

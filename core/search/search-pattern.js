@@ -14,7 +14,7 @@
 
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { generateRegexMatches } from './search-pattern-planner.js';
-import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, findChunkIntervalForLine, readFileRange } from './search-pattern-chunks.js';
+import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, readFileRange } from './search-pattern-chunks.js';
 import { isRipgrepAvailable, runRipgrepJson } from './search-pattern-ripgrep.js';
 
 // =============================================================================
@@ -94,7 +94,7 @@ export async function bareGrep(query, routing, options = {}) {
   }
 
   // Disable chunk gram for bare grep — bare grep uses file:line matches, not chunk IDs.
-  const candidateResult = await generateRegexMatches(this || {}, regex, searchDir, { ...options, useChunkGram: false });
+  const candidateResult = await generateRegexMatches(this || {}, regex, searchDir, options);
   let matches = [...candidateResult.indexedMatches, ...candidateResult.overlayMatches];
   matches = filterMatchesBySymbolType(matches, symbolType, this);
   matches.sort((a, b) =>
@@ -261,21 +261,7 @@ export async function patternSearch(query, routing, options = {}) {
   // Map matches -> indexed chunk IDs (with grep density counts).
   let chunkIds, chunkMatchCounts, unindexedMatches;
 
-  if (candidateResult.chunkVerified) {
-    chunkMatchCounts = new Map();
-    for (const vc of candidateResult.chunkVerified) {
-      const intervals = locationMap.get(vc.file);
-      if (!intervals) continue;
-      const found = findChunkIntervalForLine(intervals, vc.startLine);
-      if (found) {
-        const existingCount = chunkMatchCounts.get(found.interval.id) || 0;
-        chunkMatchCounts.set(found.interval.id, existingCount + vc.matchCount);
-      }
-    }
-    chunkIds = new Set(chunkMatchCounts.keys());
-    unindexedMatches = [...overlayMatches];
-    log(`Chunk-verified: ${chunkIds.size} indexed chunks (from ${candidateResult.chunkVerified.length} verified ranges)`);
-  } else {
+  {
     const mapped = mapMatchesToChunks(grepMatches, locationMap);
     chunkMatchCounts = mapped.chunkMatchCounts;
     chunkIds = mapped.chunkIds;
@@ -427,9 +413,6 @@ export async function patternSearch(query, routing, options = {}) {
       prefilterDiscardedCount: candidateResult.stats.prefilterDiscardedCount,
       grepStrategy: candidateResult.stats.grepStrategy,
       plannerRoute: candidateResult.stats.plannerRoute,
-      chunkGramUsed: candidateResult.stats.chunkGramUsed,
-      chunkGramCandidateChunks: candidateResult.stats.chunkGramCandidateChunks,
-      chunkGramTotalChunks: candidateResult.stats.chunkGramTotalChunks,
       trackerLastIndex: candidateResult.stats.trackerLastIndex,
       total_ms: Math.round(totalTime),
       allCandidateIds,
