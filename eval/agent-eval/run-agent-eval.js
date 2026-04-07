@@ -465,14 +465,19 @@ function generateReport(repo) {
   for (const system of SYSTEMS) {
     const resultsPath = path.join(__dirname, 'results', `${repo}-${system}.jsonl`);
     if (!fs.existsSync(resultsPath)) continue;
-    const results = fs.readFileSync(resultsPath, 'utf8')
-      .trim().split('\n').map(l => JSON.parse(l)).filter(r => !r.error);
+    const allResults = fs.readFileSync(resultsPath, 'utf8')
+      .trim().split('\n').map(l => JSON.parse(l));
+    const results = allResults.filter(r => !r.error);
+    const errors = allResults.filter(r => r.error);
 
+    const nTotal = allResults.length;
     const n = results.length;
-    if (n === 0) continue;
+    if (nTotal === 0) continue;
 
     const m = {
       n,
+      nTotal,
+      completionRate: n / nTotal,
       totalTokens: results.reduce((s, r) => s + r.totalTokens, 0),
       inputTokens: results.reduce((s, r) => s + r.inputTokens, 0),
       searchCalls: results.reduce((s, r) => s + r.searchCalls, 0),
@@ -485,7 +490,7 @@ function generateReport(repo) {
 
     systemMetrics[system] = m;
 
-    console.log(`\n  ${system} (${n} questions):`);
+    console.log(`\n  ${system} (${n}/${nTotal} completed, ${(m.completionRate * 100).toFixed(0)}%):`);
     console.log(`    Total tokens:     ${m.totalTokens} (${Math.round(m.totalTokens / n)}/q)`);
     console.log(`    Input tokens:     ${m.inputTokens} (${Math.round(m.inputTokens / n)}/q)`);
     console.log(`    Search calls:     ${m.searchCalls} (${(m.searchCalls / n).toFixed(1)}/q)`);
@@ -517,13 +522,22 @@ function generateReport(repo) {
     console.log('\n  ' + '─'.repeat(60));
     const tokenSavings = 1 - treatment.totalTokens / baseline.totalTokens;
     const selfContainRate = treatment.selfContained / treatment.n;
-    console.log(`  Token savings: ${(tokenSavings * 100).toFixed(1)}% (target: >20%)`);
-    console.log(`  Self-containment: ${(selfContainRate * 100).toFixed(0)}% (target: >80%)`);
+    const completionRate = treatment.completionRate;
+    console.log(`  Token savings:     ${(tokenSavings * 100).toFixed(1)}% (target: >20%)`);
+    console.log(`  Self-containment:  ${(selfContainRate * 100).toFixed(0)}% (target: >80%)`);
+    console.log(`  Completion rate:   ${(completionRate * 100).toFixed(0)}% (target: >90%)`);
 
-    if (tokenSavings > 0.2 && selfContainRate > 0.8) {
+    // Unconditional utility: effective quality = quality × completion rate
+    const effectiveTokenSavings = tokenSavings * completionRate;
+    console.log(`  Effective savings: ${(effectiveTokenSavings * 100).toFixed(1)}% (completion-adjusted)`);
+
+    const allPass = tokenSavings > 0.2 && selfContainRate > 0.8 && completionRate >= 0.9;
+    const conditional = (tokenSavings > 0.1 || selfContainRate > 0.6) && completionRate >= 0.5;
+
+    if (allPass) {
       console.log('  ✅ SHIP');
-    } else if (tokenSavings > 0.1 || selfContainRate > 0.6) {
-      console.log('  ⚠️  CONDITIONAL');
+    } else if (conditional) {
+      console.log('  ⚠️  CONDITIONAL' + (completionRate < 0.9 ? ' (completion rate too low for SHIP)' : ''));
     } else {
       console.log('  ❌ NO-SHIP');
     }
