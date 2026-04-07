@@ -295,9 +295,13 @@ export class HNSWIndex {
   }
 
   /**
-   * Load index from disk
+   * Load index from disk.
+   * @param {string} indexPath - Path to index files (defaults to this.indexPath)
+   * @param {Object} options - Load options
+   * @param {boolean} options.mmap - Use memory-mapped view() for zero-copy search (read-only, no add/remove)
    */
-  async load(indexPath = this.indexPath) {
+  async load(indexPath = this.indexPath, options = {}) {
+    const { mmap = false } = options;
     const metaPath = indexPath.replace('.idx', '.meta.json');
 
     if (!existsSync(metaPath)) {
@@ -340,11 +344,15 @@ export class HNSWIndex {
           quantization: 'f32',
         });
 
-        // Load from file
-        this.index.load(usearchPath);
+        // Load from file: view() = mmap zero-copy (search only), load() = full copy
+        if (mmap) {
+          this.index.view(usearchPath);
+        } else {
+          this.index.load(usearchPath);
+        }
         this.useFallback = false;
 
-        console.log(`HNSW: Loaded ${this.nextKey} vectors from ${usearchPath} (USearch)`);
+        console.log(`HNSW: ${mmap ? 'Mapped' : 'Loaded'} ${this.nextKey} vectors from ${usearchPath} (USearch${mmap ? ', mmap' : ''})`);
       } catch (err) {
         console.log(`HNSW: Failed to load USearch index, using fallback: ${err.message}`);
         this.useFallback = true;

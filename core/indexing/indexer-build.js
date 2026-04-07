@@ -12,7 +12,7 @@ import { DB_PATHS, EMBEDDING_CONFIG, PROJECT_ROOT } from '../infrastructure/conf
 import { GraphExtractor, createGraphSchema, insertGraph } from '../graph/graph-extractor.js';
 import { resolveRelationshipTargets } from '../graph/relationship-resolver.js';
 import { getEmbeddings, getModelInfo } from '../embedding/embedding-service.js';
-import { configureJournalMode, atomicSwapDatabase, log, logProgress } from './indexer-utils.js';
+import { configureJournalMode, checkpointWal, atomicSwapDatabase, log, logProgress } from './indexer-utils.js';
 
 // =============================================================================
 // CHUNK ENRICHMENT — scope chains + imports from code-graph.db
@@ -121,38 +121,9 @@ export async function buildCodeGraph(files, dryRun = false) {
     return { entities: 0, relationships: 0 };
   }
 
-  const extractor = new GraphExtractor();
-  const allEntities = [];
-  const allRelationships = [];
-
-  let processed = 0;
-  let errors = 0;
-
-  for (const file of files) {
-    try {
-      const filePath = path.join(PROJECT_ROOT, file);
-      const content = await fs.readFile(filePath, 'utf-8');
-      const { entities, relationships } = await extractor.extractFromFile(file, content);
-
-      allEntities.push(...entities);
-      allRelationships.push(...relationships);
-      processed++;
-
-      if (processed % 50 === 0 || processed === files.length) {
-        logProgress(processed, files.length, 'Extracting');
-      }
-    } catch (err) {
-      errors++;
-    }
-  }
-
-  log(`\n✓ Extracted ${allEntities.length} entities, ${allRelationships.length} relationships`, 'green');
-  if (errors > 0) {
-    log(`⚠ ${errors} files had errors`, 'yellow');
-  }
+  const GRAPH_BATCH_SIZE = 100;
 
   log('Building code graph database...', 'yellow');
-
   await fs.mkdir(path.dirname(DB_PATHS.codeGraph), { recursive: true });
 
   const tmpPath = DB_PATHS.codeGraph + '.tmp';
@@ -169,7 +140,49 @@ export async function buildCodeGraph(files, dryRun = false) {
   configureJournalMode(db, tmpPath, false);
 
   const hasFts5 = createGraphSchema(db);
-  insertGraph(db, allEntities, allRelationships, hasFts5);
+
+  const extractor = new GraphExtractor();
+  let entityBatch = [];
+  let relBatch = [];
+
+  let processed = 0;
+  let errors = 0;
+  let totalEntities = 0;
+  let totalRelationships = 0;
+
+  for (let i = 0; i < files.length; i++) {
+    try {
+      const filePath = path.join(PROJECT_ROOT, files[i]);
+      const content = await fs.readFile(filePath, 'utf-8');
+      const { entities, relationships } = await extractor.extractFromFile(files[i], content);
+
+      entityBatch.push(...entities);
+      relBatch.push(...relationships);
+      processed++;
+    } catch (err) {
+      errors++;
+    }
+
+    // Flush batch every GRAPH_BATCH_SIZE files or at the end
+    if ((i + 1) % GRAPH_BATCH_SIZE === 0 || i === files.length - 1) {
+      if (entityBatch.length > 0 || relBatch.length > 0) {
+        insertGraph(db, entityBatch, relBatch, hasFts5);
+        totalEntities += entityBatch.length;
+        totalRelationships += relBatch.length;
+        entityBatch = [];
+        relBatch = [];
+      }
+    }
+
+    if (processed % 50 === 0 || i === files.length - 1) {
+      logProgress(processed, files.length, 'Extracting');
+    }
+  }
+
+  log(`\n✓ Extracted ${totalEntities} entities, ${totalRelationships} relationships`, 'green');
+  if (errors > 0) {
+    log(`⚠ ${errors} files had errors`, 'yellow');
+  }
 
   log('Resolving relationship targets...', 'yellow');
   const resolutionStats = resolveRelationshipTargets(db);
@@ -185,8 +198,8 @@ export async function buildCodeGraph(files, dryRun = false) {
   log(`✓ Code graph saved: ${DB_PATHS.codeGraph} (${dbSize} MB)`, 'green');
 
   return {
-    entities: allEntities.length,
-    relationships: allRelationships.length,
+    entities: totalEntities,
+    relationships: totalRelationships,
     resolved: resolutionStats.resolved,
     unresolvedTotal: resolutionStats.total - resolutionStats.resolved
   };
@@ -307,8 +320,8 @@ export function insertVectors(db, chunks, embeddings, modelInfo) {
 }
 
 export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgressFn, embeddingOptions = {}, logFn, writeFlushRows = 128) {
-  const embeddings = [];
   let writeBuffer = [];
+  let embeddingCount = 0;
 
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO vectors (id, file_path, embedding, text, metadata, session_id, tags, created_at)
@@ -340,7 +353,7 @@ export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, m
 
     const batchResults = await batchResultsPromise;
     const batchEmbeddings = batchResults.map(r => r.embedding);
-    embeddings.push(...batchEmbeddings);
+    embeddingCount += batchEmbeddings.length;
 
     const batchItems = buildInsertItems(batchChunks, batchEmbeddings, modelInfo);
     writeBuffer.push(...batchItems);
@@ -351,7 +364,7 @@ export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, m
   // Flush remaining buffered writes
   flushWriteBuffer();
 
-  return embeddings;
+  return embeddingCount;
 }
 
 /**
@@ -472,7 +485,7 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
   await fs.mkdir(path.dirname(DB_PATHS.codebase), { recursive: true });
   const Database = (await import('better-sqlite3')).default;
 
-  let embeddings;
+  let embeddingCount;
 
   if (fullRebuild) {
     log('Full rebuild: Creating new database...', 'yellow');
@@ -493,11 +506,13 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
 
     createVectorSchema(db);
 
-    embeddings = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, embeddingOptions, log, writeFlushRows);
+    embeddingCount = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, embeddingOptions, log, writeFlushRows);
 
+    // Flush WAL before closing — ensures all inserts are durable in the main DB file
+    checkpointWal(db);
     closeWithOptimize(db, 'vector full rebuild');
 
-    log(`\n✓ Generated ${embeddings.length} embeddings (${effectiveEmbeddingDimension}d)`, 'green');
+    log(`\n✓ Generated ${embeddingCount} embeddings (${effectiveEmbeddingDimension}d)`, 'green');
 
     await atomicSwapDatabase(tmpPath, DB_PATHS.codebase);
 
@@ -547,9 +562,12 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
       createVectorSchema(db);
     }
 
-    embeddings = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, embeddingOptions, log, writeFlushRows);
+    embeddingCount = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, embeddingOptions, log, writeFlushRows);
 
-    log(`\n✓ Generated ${embeddings.length} embeddings (${effectiveEmbeddingDimension}d)`, 'green');
+    // Flush WAL before downstream reads (HNSW build streams from this DB)
+    checkpointWal(db);
+
+    log(`\n✓ Generated ${embeddingCount} embeddings (${effectiveEmbeddingDimension}d)`, 'green');
 
     const newCount = db.prepare('SELECT COUNT(*) as count FROM vectors').get().count;
 
@@ -561,5 +579,5 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
     log(`  Previous: ${previousCount}, Added: ${allChunks.length}, Current: ${newCount}`, 'dim');
   }
 
-  return { chunks: allChunks.length, embeddings: embeddings.length, allChunks, allEmbeddings: embeddings };
+  return { chunks: allChunks.length, embeddings: embeddingCount };
 }

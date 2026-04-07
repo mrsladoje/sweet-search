@@ -3,7 +3,8 @@
  * Extracted from index-codebase-v21.js for file size compliance (<500 lines).
  */
 
-import { existsSync } from 'fs';
+import { existsSync, openSync, fsyncSync, closeSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
+import path from 'path';
 
 import { DB_PATHS, HNSW_CONFIG, BINARY_HNSW_CONFIG } from '../infrastructure/config/index.js';
 import { HNSWIndex } from '../vector-store/hnsw-index.js';
@@ -13,71 +14,146 @@ import { buildFromCodebaseDb as buildQuantizedArtifacts, shouldSkipArtifactRebui
 import { log, logProgress } from './indexer-utils.js';
 
 // =============================================================================
-// INSERTION ORDER TUNING
+// DURABLE WRITE HELPERS (Phase E — fsync ordering for checkpoint safety)
+// =============================================================================
+
+const CHECKPOINT_INTERVAL_SEC = 30;
+const MIN_VECTORS_BETWEEN_SAVES = 1000;
+
+function fsyncFile(filePath) {
+  const fd = openSync(filePath, 'r');
+  try { fsyncSync(fd); } finally { closeSync(fd); }
+}
+
+function fsyncDirectory(dirPath) {
+  try {
+    const fd = openSync(dirPath, 'r');
+    try { fsyncSync(fd); } finally { closeSync(fd); }
+  } catch (_err) {
+    // Directory fsync not supported on all platforms (Windows) — best effort
+  }
+}
+
+function writeCheckpointSidecar(sidecarPath, data) {
+  writeFileSync(sidecarPath, JSON.stringify(data, null, 2));
+}
+
+function readCheckpointSidecar(sidecarPath) {
+  if (!existsSync(sidecarPath)) return null;
+  try {
+    return JSON.parse(readFileSync(sidecarPath, 'utf-8'));
+  } catch (_err) { return null; }
+}
+
+function cleanupCheckpoint(indexPath) {
+  const checkpointPath = `${indexPath}.checkpoint`;
+  const sidecarPath = `${indexPath}.checkpoint.json`;
+  try { unlinkSync(checkpointPath); } catch (_e) { /* noop */ }
+  try { unlinkSync(sidecarPath); } catch (_e) { /* noop */ }
+}
+
+// =============================================================================
+// SQLITE VECTOR STREAMING (Phase B — eliminates O(n*d) in-memory arrays)
 // =============================================================================
 
 /**
- * Compute a diversity-first index permutation: round-robin by directory
- * so the graph backbone spans the full codebase before filling local detail.
- * Returns an array of original indices in diversity-first order.
+ * Stream vectors from SQLite in the specified order.
+ * For 'sequential' order, reads by rowid (no temp table needed).
+ * For 'shuffle' or 'diversity', pre-computes order in a temp table.
  */
-function diversityFirstPermutation(files) {
-  const buckets = new Map(); // dir → [originalIndex]
-  for (let i = 0; i < files.length; i++) {
-    const dir = files[i] ? files[i].replace(/\/[^/]+$/, '') : '_unknown';
+function* streamVectorsFromDb(db, _dim, order = 'sequential') {
+  if (order !== 'sequential') {
+    // Pre-compute insertion order in a temp table
+    db.exec('CREATE TEMP TABLE IF NOT EXISTS hnsw_order (pos INTEGER PRIMARY KEY, vector_rowid INTEGER)');
+    db.exec('DELETE FROM hnsw_order');
+
+    const totalRows = db.prepare('SELECT COUNT(*) as c FROM vectors').get().c;
+    let indices = Array.from({ length: totalRows }, (_, i) => i + 1); // rowid is 1-based
+
+    if (order === 'shuffle') {
+      fisherYatesShuffle(indices);
+    } else if (order === 'diversity') {
+      // Read file paths to compute diversity permutation
+      const filePaths = db.prepare('SELECT file_path FROM vectors ORDER BY rowid').all().map(r => r.file_path);
+      indices = diversityFirstPermutationRowids(filePaths);
+    }
+
+    const insertOrder = db.prepare('INSERT INTO hnsw_order (pos, vector_rowid) VALUES (?, ?)');
+    db.transaction(() => {
+      for (let pos = 0; pos < indices.length; pos++) {
+        insertOrder.run(pos, indices[pos]);
+      }
+    })();
+
+    const stmt = db.prepare(`
+      SELECT v.rowid as rowid, v.id, v.file_path, v.embedding, v.metadata
+      FROM hnsw_order o
+      JOIN vectors v ON v.rowid = o.vector_rowid
+      ORDER BY o.pos
+    `);
+    for (const row of stmt.iterate()) {
+      yield {
+        rowid: row.rowid,
+        id: row.id,
+        file: row.file_path,
+        embedding: new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.length / 4),
+        metadata: row.metadata ? JSON.parse(row.metadata) : {},
+      };
+    }
+
+    db.exec('DROP TABLE IF EXISTS temp.hnsw_order');
+  } else {
+    const stmt = db.prepare('SELECT rowid, id, file_path, embedding, metadata FROM vectors ORDER BY rowid');
+    for (const row of stmt.iterate()) {
+      yield {
+        rowid: row.rowid,
+        id: row.id,
+        file: row.file_path,
+        embedding: new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.length / 4),
+        metadata: row.metadata ? JSON.parse(row.metadata) : {},
+      };
+    }
+  }
+}
+
+/** Diversity-first permutation returning 1-based rowid indices */
+function diversityFirstPermutationRowids(filePaths) {
+  const buckets = new Map();
+  for (let i = 0; i < filePaths.length; i++) {
+    const dir = filePaths[i] ? filePaths[i].replace(/\/[^/]+$/, '') : '_unknown';
     if (!buckets.has(dir)) buckets.set(dir, []);
-    buckets.get(dir).push(i);
+    buckets.get(dir).push(i + 1); // 1-based rowid
   }
   const dirs = [...buckets.keys()];
   fisherYatesShuffle(dirs);
   const order = [];
-  let remaining = files.length;
+  let remaining = filePaths.length;
   while (remaining > 0) {
     for (const dir of dirs) {
       const bucket = buckets.get(dir);
-      if (bucket.length > 0) {
-        order.push(bucket.shift());
-        remaining--;
-      }
+      if (bucket.length > 0) { order.push(bucket.shift()); remaining--; }
     }
   }
   return order;
 }
 
-/** Apply configured insertion order to a paired array of chunks+embeddings.
- *  Uses index permutation — no object copying, no property spread. */
-function applyInsertionOrder(chunks, embeddings) {
-  const order = BINARY_HNSW_CONFIG.insertionOrder || 'sequential';
-  if (order === 'sequential') return { chunks, embeddings };
+// =============================================================================
+// INSERTION ORDER TUNING
+// =============================================================================
 
-  let indices = Array.from({ length: chunks.length }, (_, i) => i);
-
-  if (order === 'shuffle') {
-    fisherYatesShuffle(indices);
-  } else if (order === 'diversity') {
-    indices = diversityFirstPermutation(chunks.map(c => c.file));
-  }
-
-  return {
-    chunks: indices.map(i => chunks[i]),
-    embeddings: indices.map(i => embeddings[i]),
-  };
-}
+// NOTE: applyInsertionOrder and diversityFirstPermutation (in-memory array permutation)
+// removed in Phase B. Insertion order is now handled via SQLite temp tables in
+// streamVectorsFromDb() and diversityFirstPermutationRowids().
 
 // =============================================================================
 // PHASE 3: HNSW INDEX (Incremental)
 // =============================================================================
 
-export async function incrementalUpdateHNSW(newChunks, newEmbeddings, changedFiles, dryRun = false) {
+export async function incrementalUpdateHNSW(dbPath, changedFiles, dryRun = false) {
   log('\n━━━ Phase 3: HNSW Index (Incremental) ━━━', 'bright');
 
   if (dryRun) {
     log('DRY RUN: Skipping HNSW incremental update', 'magenta');
-    return;
-  }
-
-  if (!newChunks || !newEmbeddings || newChunks.length === 0) {
-    log('No new chunks to add', 'yellow');
     return;
   }
 
@@ -122,29 +198,43 @@ export async function incrementalUpdateHNSW(newChunks, newEmbeddings, changedFil
     log(`✓ Removed ${removed} old entries`, 'green');
   }
 
-  log(`Adding ${newChunks.length} new entries...`, 'yellow');
+  // Read new vectors for changed files from SQLite
+  const Database = (await import('better-sqlite3')).default;
+  const db = new Database(dbPath, { readonly: true });
+
+  const changedFileSet = new Set(changedFiles || []);
+  const placeholders = [...changedFileSet].map(() => '?').join(',');
+  const stmt = changedFileSet.size > 0
+    ? db.prepare(`SELECT rowid, id, file_path, embedding, metadata FROM vectors WHERE file_path IN (${placeholders}) ORDER BY rowid`)
+    : db.prepare('SELECT rowid, id, file_path, embedding, metadata FROM vectors ORDER BY rowid');
+
+  const rows = changedFileSet.size > 0 ? stmt.all(...changedFileSet) : [];
+  const totalNew = changedFileSet.size > 0 ? rows.length : 0;
+
+  log(`Adding ${totalNew} new entries...`, 'yellow');
   let added = 0;
 
-  for (let i = 0; i < newChunks.length; i++) {
-    const chunk = newChunks[i];
-    const embedding = newEmbeddings[i];
-
+  for (const row of rows) {
+    const embedding = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.length / 4);
     if (!embedding || embedding.length === 0) continue;
 
     const truncatedEmbedding = truncateForHNSW(embedding);
+    const metadata = row.metadata ? JSON.parse(row.metadata) : {};
 
-    await index.add(chunk.id, truncatedEmbedding, {
-      file: chunk.file,
-      name: chunk.metadata?.symbol,
-      type: chunk.metadata?.chunk_type,
+    await index.add(row.id, truncatedEmbedding, {
+      file: row.file_path,
+      name: metadata?.symbol,
+      type: metadata?.chunk_type,
     });
 
     added++;
 
-    if (added % 500 === 0 || i === newChunks.length - 1) {
-      logProgress(added, newChunks.length, 'Adding to HNSW');
+    if (added % 500 === 0 || added === totalNew) {
+      logProgress(added, totalNew, 'Adding to HNSW');
     }
   }
+
+  db.close();
 
   log('\nSaving merged HNSW index...', 'yellow');
   await index.save();
@@ -158,7 +248,7 @@ export async function incrementalUpdateHNSW(newChunks, newEmbeddings, changedFil
 // PHASE 3: HNSW INDEX (Full Rebuild)
 // =============================================================================
 
-export async function buildHNSWIndex(chunks, embeddings, dryRun = false) {
+export async function buildHNSWIndex(dbPath, dryRun = false) {
   log('\n━━━ Phase 3: HNSW Index ━━━', 'bright');
 
   if (dryRun) {
@@ -166,7 +256,14 @@ export async function buildHNSWIndex(chunks, embeddings, dryRun = false) {
     return;
   }
 
-  if (!chunks || !embeddings || chunks.length === 0) {
+  const Database = (await import('better-sqlite3')).default;
+  const orderMode = BINARY_HNSW_CONFIG.insertionOrder || 'sequential';
+  // Non-sequential orders require temp tables → can't use readonly
+  const db = new Database(dbPath, orderMode === 'sequential' ? { readonly: true } : {});
+
+  const totalVectors = db.prepare('SELECT COUNT(*) as c FROM vectors').get().c;
+  if (totalVectors === 0) {
+    db.close();
     log('No chunks to index', 'yellow');
     return;
   }
@@ -179,42 +276,126 @@ export async function buildHNSWIndex(chunks, embeddings, dryRun = false) {
     M: HNSW_CONFIG.M,
     efConstruction: HNSW_CONFIG.efConstruction,
     efSearch: HNSW_CONFIG.efSearch,
-    maxElements: Math.max(chunks.length * 2, HNSW_CONFIG.maxElements),
+    maxElements: Math.max(totalVectors * 2, HNSW_CONFIG.maxElements),
   });
+
+  // Checkpoint resume is only safe with sequential order — non-sequential
+  // orders shuffle the stream so rowid is not a reliable resume boundary.
+  const canCheckpoint = orderMode === 'sequential';
+
+  const indexPath = DB_PATHS.hnswIndex;
+  const usearchPath = indexPath.replace('.idx', '.usearch');
+  const checkpointPath = `${usearchPath}.checkpoint`;
+  const sidecarPath = `${usearchPath}.checkpoint.json`;
+  const sidecar = canCheckpoint ? readCheckpointSidecar(sidecarPath) : null;
+
+  let resumeFromRowId = 0;
 
   await index.init();
 
-  // Apply insertion order for better graph backbone
-  const ordered = applyInsertionOrder(chunks, embeddings);
-  const orderedChunks = ordered.chunks;
-  const orderedEmbeddings = ordered.embeddings;
-  const orderMode = BINARY_HNSW_CONFIG.insertionOrder || 'sequential';
-  log(`Building HNSW index (${modelInfo.dimension}d → ${hnswDim}d Matryoshka, M=${HNSW_CONFIG.M}, order=${orderMode})...`, 'yellow');
+  if (sidecar && existsSync(checkpointPath)) {
+    try {
+      if (index.index) {
+        // Load raw USearch graph from checkpoint
+        index.index.load(checkpointPath);
+        resumeFromRowId = sidecar.lastRowId || 0;
 
-  let added = 0;
+        // Rebuild JS-side metadata (idMap, reverseMap, metadata, nextKey) for
+        // vectors already in the checkpoint. Without this, add() reuses keys
+        // from 0 and the final .meta.json would be incomplete.
+        const metaStmt = db.prepare(
+          'SELECT id, file_path, metadata FROM vectors WHERE rowid <= ? ORDER BY rowid'
+        );
+        let restoredKey = 0;
+        for (const row of metaStmt.iterate(resumeFromRowId)) {
+          const meta = row.metadata ? JSON.parse(row.metadata) : {};
+          const key = restoredKey++;
+          index.idMap.set(row.id, key);
+          index.reverseMap.set(key, row.id);
+          index.metadata.set(row.id, {
+            file: row.file_path,
+            name: meta?.symbol,
+            type: meta?.chunk_type,
+          });
+        }
+        index.nextKey = restoredKey;
 
-  for (let i = 0; i < orderedChunks.length; i++) {
-    const chunk = orderedChunks[i];
-    const embedding = orderedEmbeddings[i];
-
-    if (!embedding || embedding.length === 0) continue;
-
-    const truncatedEmbedding = truncateForHNSW(embedding);
-
-    await index.add(chunk.id, truncatedEmbedding, {
-      file: chunk.file,
-      name: chunk.metadata?.symbol,
-      type: chunk.metadata?.chunk_type,
-    });
-
-    added++;
-
-    if (added % 500 === 0 || i === orderedChunks.length - 1) {
-      logProgress(added, orderedChunks.length, 'Building HNSW');
+        log(`Resuming from checkpoint: ${sidecar.vectorsAdded} vectors, skipping rowid <= ${resumeFromRowId}`, 'green');
+      }
+    } catch (err) {
+      log(`Checkpoint found but could not load, starting fresh: ${err.message}`, 'yellow');
+      resumeFromRowId = 0;
+      // Reset any partial metadata restoration
+      index.idMap.clear();
+      index.reverseMap.clear();
+      index.metadata.clear();
+      index.nextKey = 0;
     }
   }
 
+  // Discard stale checkpoint from a previous non-sequential build
+  if (!canCheckpoint) {
+    cleanupCheckpoint(usearchPath);
+  }
+
+  log(`Building HNSW index (${modelInfo.dimension}d → ${hnswDim}d Matryoshka, M=${HNSW_CONFIG.M}, order=${orderMode})...`, 'yellow');
+
+  let added = resumeFromRowId > 0 ? (sidecar?.vectorsAdded || 0) : 0;
+  let lastCheckpointTime = Date.now();
+  let vectorsSinceCheckpoint = 0;
+
+  for (const row of streamVectorsFromDb(db, hnswDim, orderMode)) {
+    // Skip already-checkpointed vectors on resume (only valid for sequential order)
+    if (resumeFromRowId > 0 && row.rowid <= resumeFromRowId) continue;
+
+    if (!row.embedding || row.embedding.length === 0) continue;
+
+    const truncatedEmbedding = truncateForHNSW(row.embedding);
+
+    await index.add(row.id, truncatedEmbedding, {
+      file: row.file,
+      name: row.metadata?.symbol,
+      type: row.metadata?.chunk_type,
+    });
+
+    added++;
+    vectorsSinceCheckpoint++;
+
+    // Time-based checkpoint: bounded data loss on crash (~30s max)
+    // Only for sequential order where rowid-based resume is valid.
+    if (canCheckpoint) {
+      const elapsed = (Date.now() - lastCheckpointTime) / 1000;
+      if (elapsed >= CHECKPOINT_INTERVAL_SEC && vectorsSinceCheckpoint >= MIN_VECTORS_BETWEEN_SAVES) {
+        if (!index.useFallback && index.index) {
+          index.index.save(checkpointPath);
+          fsyncFile(checkpointPath);
+          writeCheckpointSidecar(sidecarPath, {
+            vectorsAdded: added,
+            lastRowId: row.rowid,
+            version: row.rowid,
+            timestamp: new Date().toISOString(),
+            elapsedMs: Date.now() - lastCheckpointTime,
+          });
+          fsyncFile(sidecarPath);
+          fsyncDirectory(path.dirname(checkpointPath));
+          log(`  checkpoint: ${added}/${totalVectors} vectors`, 'dim');
+        }
+        lastCheckpointTime = Date.now();
+        vectorsSinceCheckpoint = 0;
+      }
+    }
+
+    if (added % 500 === 0 || added === totalVectors) {
+      logProgress(added, totalVectors, 'Building HNSW');
+    }
+  }
+
+  db.close();
+
   await index.save();
+
+  // Clean up checkpoint files after successful completion
+  cleanupCheckpoint(usearchPath);
 
   const stats = index.getStats();
   log(`\n✓ HNSW index built: ${stats.totalVectors} vectors (${hnswDim}d)`, 'green');
@@ -261,6 +442,13 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
   });
 
   await liIndex.init();
+
+  // Isolate the write target BEFORE any add() calls can flush segments.
+  // Without this, _flushSegment() during add() writes into the live
+  // .segments directory, corrupting the served index on a failed rebuild.
+  if (saveToPath !== loadFromPath) {
+    liIndex.resetForSave(saveToPath);
+  }
 
   let removed = 0;
   if (filesToRemove && filesToRemove.length > 0) {
@@ -323,7 +511,10 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     log('LateInteraction: No new chunks to encode; applying removals only', 'dim');
   }
 
-  liIndex.indexPath = saveToPath;
+  // If paths matched (no staging), resetForSave was not called above; set path now.
+  if (saveToPath === loadFromPath) {
+    liIndex.indexPath = saveToPath;
+  }
   await liIndex.save();
 
   const liStats = liIndex.getStats();

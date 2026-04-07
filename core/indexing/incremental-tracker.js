@@ -21,7 +21,7 @@
  */
 
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, openSync, fsyncSync, closeSync } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { DB_PATHS, EMBEDDING_CONFIG } from '../infrastructure/config/index.js';
@@ -608,6 +608,67 @@ export async function getStateSnapshot() {
     stats: state.stats || {},
     configValidation,
   };
+}
+
+// =============================================================================
+// PHASE PROGRESS TRACKING (Phase H — crash-resume via per-phase markers)
+// =============================================================================
+
+const PROGRESS_PATH = DB_PATHS.merkle.replace('merkle-state.json', 'phase-progress.json');
+
+/**
+ * Update per-phase progress marker. Written durably (fsync) so crash-resume
+ * knows how far each phase progressed.
+ */
+export async function updatePhaseProgress(progress) {
+  const data = {
+    ...progress,
+    configFingerprint: buildConfigFingerprint(),
+    timestamp: new Date().toISOString(),
+  };
+  await fs.writeFile(PROGRESS_PATH, JSON.stringify(data, null, 2));
+  // Best-effort fsync for durability
+  try {
+    const fd = openSync(PROGRESS_PATH, 'r');
+    try { fsyncSync(fd); } finally { closeSync(fd); }
+  } catch (_err) { /* fsync not critical for progress file */ }
+}
+
+/**
+ * Read per-phase progress. Returns null if no progress file or config fingerprint changed.
+ */
+export async function getPhaseProgress() {
+  try {
+    const data = JSON.parse(await fs.readFile(PROGRESS_PATH, 'utf-8'));
+    // Validate config fingerprint — discard stale progress if config changed
+    const currentFp = buildConfigFingerprint();
+    if (data.configFingerprint?.provider !== currentFp.provider ||
+        data.configFingerprint?.model !== currentFp.model ||
+        data.configFingerprint?.dimension !== currentFp.dimension) {
+      return null;
+    }
+    return data;
+  } catch (_err) {
+    return null;
+  }
+}
+
+/**
+ * Mark a phase as complete. Clears the progress file when all phases are done.
+ */
+export async function markPhaseComplete(phase) {
+  await updatePhaseProgress({ phase, status: 'complete' });
+}
+
+/**
+ * Clear phase progress (called after successful full pipeline completion).
+ */
+export async function clearPhaseProgress() {
+  try {
+    await fs.unlink(PROGRESS_PATH);
+  } catch (_err) {
+    // File doesn't exist
+  }
 }
 
 // CLI interface

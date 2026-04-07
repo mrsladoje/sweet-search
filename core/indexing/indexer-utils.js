@@ -18,8 +18,10 @@ const glob = fg.glob || fg;
 // =============================================================================
 
 export function isWalSafe(dbPath) {
-  if (process.platform !== 'linux') return false;
+  // WSL + NTFS mount: WAL is unreliable due to lack of proper file locking
   if (process.env.WSL_DISTRO_NAME && dbPath && /^\/mnt\/[a-zA-Z]\//.test(dbPath)) return false;
+  // WAL works on Linux, macOS (APFS/HFS+), and most modern filesystems.
+  // Only known-bad: WSL/NTFS mounts and network filesystems.
   return true;
 }
 
@@ -34,13 +36,31 @@ export function configureJournalMode(db, dbPath, sqliteFastMode) {
   if (isWalSafe(dbPath)) {
     db.pragma('journal_mode = WAL');
     db.pragma('synchronous = NORMAL');
-    db.pragma('wal_autocheckpoint = 1000');
+    // Indexing-optimized: larger WAL before auto-checkpoint (~16 MB vs default ~4 MB)
+    db.pragma('wal_autocheckpoint = 4000');
+    // 1 GB mmap for reads during build, 64 MB page cache
+    db.pragma('mmap_size = 1073741824');
+    db.pragma('cache_size = -64000');
+    // Cap WAL file growth at 64 MB
+    db.pragma('journal_size_limit = 67108864');
     return 'WAL';
   }
 
   db.pragma('journal_mode = DELETE');
   db.pragma('synchronous = NORMAL');
   return 'DELETE';
+}
+
+/**
+ * Force WAL checkpoint and truncate. Call after all inserts complete
+ * and before long-running read transactions (e.g., HNSW build streaming).
+ */
+export function checkpointWal(db) {
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+  } catch (_err) {
+    // Not in WAL mode or checkpoint not possible — safe to ignore
+  }
 }
 
 // =============================================================================
