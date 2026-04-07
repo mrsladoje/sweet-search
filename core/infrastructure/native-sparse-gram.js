@@ -56,8 +56,9 @@ function loadAddon() {
     ) {
       _addon = mod;
     }
-  } catch {
+  } catch (err) {
     // Native addon is optional; callers decide whether to warn or fall back.
+    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] addon load failed:', err.message);
   }
 
   return _addon;
@@ -103,7 +104,8 @@ export function nativeGrepFilesWithMatches(pattern, projectRoot, files, caseInse
   if (!addon?.nativeGrepFilesWithMatches) return null;
   try {
     return addon.nativeGrepFilesWithMatches(pattern, projectRoot, files, caseInsensitive || false);
-  } catch {
+  } catch (err) {
+    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] nativeGrepFilesWithMatches failed:', err.message);
     return null; // Fall back to rg on regex incompatibility
   }
 }
@@ -124,7 +126,8 @@ export function nativeGrepFilesWithMatchesFixed(literals, projectRoot, files, ca
   if (!addon?.nativeGrepFilesWithMatchesFixed) return null;
   try {
     return addon.nativeGrepFilesWithMatchesFixed(literals, projectRoot, files, caseInsensitive || false);
-  } catch {
+  } catch (err) {
+    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] nativeGrepFilesWithMatchesFixed failed:', err.message);
     return null;
   }
 }
@@ -141,7 +144,8 @@ export function nativeGrepLines(pattern, projectRoot, files, caseInsensitive) {
   if (!addon?.nativeGrepLines) return null;
   try {
     return addon.nativeGrepLines(pattern, projectRoot, files, caseInsensitive || false);
-  } catch {
+  } catch (err) {
+    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] nativeGrepLines failed:', err.message);
     return null;
   }
 }
@@ -159,7 +163,8 @@ export function nativeGrepFull(pattern, projectRoot, files, caseInsensitive) {
   if (!addon?.nativeGrepFull) return null;
   try {
     return addon.nativeGrepFull(pattern, projectRoot, files, caseInsensitive || false);
-  } catch {
+  } catch (err) {
+    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] nativeGrepFull failed:', err.message);
     return null;
   }
 }
@@ -173,7 +178,8 @@ export function getSparseGramAllFiles(sparseGramIndex) {
   if (!sparseGramIndex?.getAllFiles) return null;
   try {
     return sparseGramIndex.getAllFiles();
-  } catch {
+  } catch (err) {
+    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] getSparseGramAllFiles failed:', err.message);
     return null;
   }
 }
@@ -203,7 +209,8 @@ export function queryAndGrepLines(sparseGramIndex, clauses, regex, projectRoot, 
       opts.maxCandidateFiles ?? 100000,
       opts.maxCandidateRatio ?? 1.0,
     );
-  } catch {
+  } catch (err) {
+    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] queryAndGrepLines failed:', err.message);
     return null;
   }
 }
@@ -224,7 +231,8 @@ export function queryAndGrepFull(sparseGramIndex, clauses, regex, projectRoot, o
       opts.maxCandidateFiles ?? 100000,
       opts.maxCandidateRatio ?? 1.0,
     );
-  } catch {
+  } catch (err) {
+    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] queryAndGrepFull failed:', err.message);
     return null;
   }
 }
@@ -245,7 +253,8 @@ export function searchLines(sparseGramIndex, clauses, regex, projectRoot, opts =
       opts.maxCandidateFiles ?? 100000,
       opts.maxCandidateRatio ?? 1.0,
     );
-  } catch {
+  } catch (err) {
+    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] searchLines failed:', err.message);
     return null;
   }
 }
@@ -265,7 +274,8 @@ export function searchFull(sparseGramIndex, clauses, regex, projectRoot, opts = 
       opts.maxCandidateFiles ?? 100000,
       opts.maxCandidateRatio ?? 1.0,
     );
-  } catch {
+  } catch (err) {
+    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] searchFull failed:', err.message);
     return null;
   }
 }
@@ -293,7 +303,8 @@ export function loadChunkGramIndex(indexPath) {
   if (!addon?.NativeChunkGramIndex?.load) return null;
   try {
     return addon.NativeChunkGramIndex.load(indexPath);
-  } catch {
+  } catch (err) {
+    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] loadChunkGramIndex failed:', err.message);
     return null;
   }
 }
@@ -314,7 +325,8 @@ export function nativeGrepChunkRanges(pattern, projectRoot, chunks, caseInsensit
   if (!addon?.nativeGrepChunkRanges) return null;
   try {
     return addon.nativeGrepChunkRanges(pattern, projectRoot, chunks, caseInsensitive || false);
-  } catch {
+  } catch (err) {
+    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] nativeGrepChunkRanges failed:', err.message);
     return null;
   }
 }
@@ -337,7 +349,8 @@ export function chunkGramSearch(chunkGramIndex, pattern, projectRoot, literals, 
   if (!chunkGramIndex?.search) return null;
   try {
     return chunkGramIndex.search(pattern, projectRoot, literals, caseInsensitive || false, maxRatio, maxFiles);
-  } catch {
+  } catch (err) {
+    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] chunkGramSearch failed:', err.message);
     return null;
   }
 }
