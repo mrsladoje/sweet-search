@@ -54,7 +54,6 @@
     "scripts/uninstall.js",
     "scripts/verify-runtime.js",
     "scripts/smoke-test.js",
-    "translation/",
     "training/features/",
     "training/output/v45_router_d4.js",
     "training/output/v46_router_d4.js",

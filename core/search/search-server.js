@@ -37,13 +37,6 @@ function buildTextSearchResponse(results, stats, totalTime, { summary = false, m
 
   let out = `  ${icon} ${W}${routeMode}${R} ${D}|${R} ${W}${totalTime}ms${R} ${G}●${R}\n`;
 
-  if (stats.translation?.triggered && stats.translation?.changed) {
-    const T = '\x1b[38;5;208m';
-    out += `  ${T}🌐 Translated: "${stats.translation.translated}" (${stats.translation.tier})${R}\n`;
-    if (stats.translation.resultsAdded > 0) {
-      out += `  ${T}   +${stats.translation.resultsAdded} results from translation${R}\n`;
-    }
-  }
   out += '\n';
 
   if (!results || results.length === 0) {
@@ -159,7 +152,6 @@ export async function startServer() {
       hnswIndex: Boolean(searcher.hasHnswIndex),
       binaryHnswIndex: Boolean(searcher.hasBinaryHnswIndex),
       lateInteractionIndex: Boolean(searcher.hasLateInteractionIndex && searcher.useLateInteraction),
-      translationFallback: Boolean(searcher.enableTranslationFallback),
       embeddingService: serverReady,
       reranker: serverReady,
     };
@@ -234,9 +226,6 @@ export async function startServer() {
         ? parseInt(url.searchParams.get('budget'), 10)
         : undefined;
 
-      // Phase 4: Translation fallback
-      const translate = url.searchParams.get('translate') || 'auto';
-
       if (!query) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Missing query parameter ?q=' }));
@@ -265,7 +254,6 @@ export async function startServer() {
           rerank,
           fusion,
           useLateInteraction,
-          translate,
           ...(agentFormat && { format: agentFormat, tokenBudget }),
         });
 

@@ -12,7 +12,7 @@
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
-import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, LATE_INTERACTION_CONFIG, EMBEDDING_CONFIG, SEISMIC_CONFIG, CASCADE_CONFIG, TRANSLATION_CONFIG, loadProjectConfig, shouldUseLocalReranker } from '../infrastructure/config/index.js';
+import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, LATE_INTERACTION_CONFIG, EMBEDDING_CONFIG, SEISMIC_CONFIG, CASCADE_CONFIG, loadProjectConfig, shouldUseLocalReranker } from '../infrastructure/config/index.js';
 import { getGlobalLocalReranker } from '../ranking/local-reranker.js';
 import { QueryRouter, routeQuery } from '../query/query-router.js';
 import { GraphSearch } from '../graph/graph-search.js';
@@ -27,7 +27,6 @@ import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
 import { CodeGraphRepository } from '../infrastructure/code-graph-repository.js';
 import { loadSparseGramIndex } from '../infrastructure/native-sparse-gram.js';
-import { TranslationFallback, queryNeedsTranslation } from '../../translation/index.js';
 import { expandResults } from '../graph/graph-expansion.js';
 import { applyMMR, shouldApplyMMR, getLambdaForIntent, MMR_CONFIG } from '../ranking/mmr.js';
 import { QualityScorer, setRepoMapModule } from '../ranking/quality-scorer.js';
@@ -114,10 +113,6 @@ export class SweetSearch {
     this.returnSummaryFirst = options.returnSummaryFirst ?? HCGS_CONFIG.returnSummaryFirst;
     this.summaryTokenBudget = options.summaryTokenBudget ?? HCGS_CONFIG.summaryTokenBudget;
     this.fullCodeTokenBudget = options.fullCodeTokenBudget ?? HCGS_CONFIG.fullCodeTokenBudget;
-    this.enableTranslationFallback =
-      (options.enableTranslationFallback ?? false) &&
-      !TRANSLATION_CONFIG.isDisabled;
-    this.translationFallback = new TranslationFallback(options.translation || {});
     // SEISMIC sparse vector path (lazy-loaded when SEISMIC_CONFIG.enabled)
     this._seismicIndex = null;
     // Direct-access float vector store for Stage 2.5 (replaces SQLite on hot path)
@@ -259,11 +254,6 @@ export class SweetSearch {
       }
     }
 
-    if (this.enableTranslationFallback) {
-      await this.translationFallback.init();
-      this.log('TranslationFallback: Initialized');
-    }
-
     this.initialized = true;
     this.log(`SweetSearch: Initialized in ${Date.now() - start}ms`);
   }
@@ -302,7 +292,7 @@ export class SweetSearch {
     const {
       k = 10, mode: requestedMode = 'auto', regex = '', expand = true, rerank = true,
       fusion: fusionOpt = 'cc', useLateInteraction = this.useLateInteraction,
-      translate = 'auto', graphExpand = 'none', graphExpandOptions = {},
+      graphExpand = 'none', graphExpandOptions = {},
       adaptiveHop2 = true, intent = 'none', qualityWeight = this.qualityWeight,
     } = options;
     const mode = requestedMode === 'grep' ? 'grep' : (regex ? 'pattern' : requestedMode);
@@ -432,17 +422,6 @@ export class SweetSearch {
     return this._applyPostRetrieval(results, query, options, {
       stats, semanticStats, searchMode, effectiveGraphExpand, intentPolicy, start,
     });
-  }
-
-  /** Internal search without translation fallback (to avoid recursion) */
-  async searchWithoutFallback(query, options = {}) {
-    const originalEnable = this.enableTranslationFallback;
-    this.enableTranslationFallback = false;
-    try {
-      return await this.search(query, { ...options, translate: 'false' });
-    } finally {
-      this.enableTranslationFallback = originalEnable;
-    }
   }
 
   /** Structural search path (GraphRAG structural queries — opt-in via explicit flag) */
