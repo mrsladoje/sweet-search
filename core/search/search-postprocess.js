@@ -60,7 +60,6 @@ const LEXICAL_HIT_THRESHOLD_MS = 5;
 export async function applyPostRetrieval(results, query, options, searchContext) {
   const {
     k = 10,
-    translate = 'auto',
     graphExpandOptions = {},
     adaptiveHop2 = true,
     qualityWeight = this.qualityWeight,
@@ -296,64 +295,6 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       }
     } else if (this.hasLateInteractionIndex && (options.useLateInteraction ?? this.useLateInteraction) && this.lateInteractionIndex.modelMismatch) {
       this.log('LateInteraction: Skipped (model mismatch — re-index to fix)');
-    }
-  }
-
-  // =========================================================================
-  // Phase 4: Translation Fallback
-  // =========================================================================
-  if (this.enableTranslationFallback && translate !== 'false') {
-    const shouldFallback = this.translationFallback.shouldTriggerFallback(
-      results, query, { translate }
-    );
-
-    if (shouldFallback) {
-      this.log('TranslationFallback: Triggered');
-      const translationResult = await this.translationFallback.translate(query);
-      stats.translation = {
-        triggered: true,
-        original: query,
-        translated: translationResult.bestTranslation,
-        tier: translationResult.tier,
-        changed: translationResult.changed,
-        latency_ms: translationResult.totalLatency_ms,
-      };
-
-      // Retry search with translated query if translation changed it
-      if (translationResult.changed && translationResult.bestTranslation !== query) {
-        this.log(`TranslationFallback: Retrying with "${translationResult.bestTranslation}"`);
-
-        // Get all translation variants to try
-        const translatedQueries = this.translationFallback.getSearchQueries(translationResult);
-
-        for (const translatedQuery of translatedQueries.slice(0, 2)) { // Max 2 retries
-          const retryResult = await this.searchWithoutFallback(translatedQuery, {
-            k, mode: options.mode, expand: options.expand, rerank: options.rerank,
-            fusion: options.fusion, useLateInteraction: options.useLateInteraction,
-          });
-
-          if (retryResult.results && retryResult.results.length > 0) {
-            // Priority merge: translated results first, filter out invalid original results
-            const translatedKeys = new Set(retryResult.results.map(r => this.getResultKey(r)));
-
-            // Filter original results: keep only valid ones that aren't duplicates
-            const validOriginal = results.filter(r => {
-              if (translatedKeys.has(this.getResultKey(r))) return false;
-              if (!r.file && !r.name) return false;
-              return true;
-            });
-
-            results = [...retryResult.results, ...validOriginal];
-            stats.translation.retryQuery = translatedQuery;
-            stats.translation.resultsAdded = retryResult.results.length;
-            stats.translation.retryLatency_ms = retryResult.stats.total_ms;
-            this.log(`TranslationFallback: Added ${retryResult.results.length} results from "${translatedQuery}"`);
-            break; // Found results, stop retrying
-          }
-        }
-      }
-    } else {
-      stats.translation = { triggered: false };
     }
   }
 

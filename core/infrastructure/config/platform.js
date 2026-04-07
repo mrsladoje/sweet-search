@@ -108,8 +108,6 @@ export const DB_PATHS = {
   // HCGS summaries cache (hierarchical code graph summaries)
   summaries: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'code-summaries.json'),
 
-  // Translation cache
-  translationCache: path.join(PROJECT_ROOT, DATA_DIR_NAME, 'translation-cache.json'),
 };
 
 // =============================================================================

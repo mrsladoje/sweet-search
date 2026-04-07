@@ -316,7 +316,6 @@ export async function checkHealth({ getConfig, PROJECT_ROOT }) {
       { name: 'embedding-service', check: () => true },
       { name: 'reranker', check: () => true },
       { name: 'query-router', check: () => true },
-      { name: 'translation', check: () => true },
     ];
 
     for (const { name, check } of checks) {

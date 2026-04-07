@@ -2,7 +2,7 @@
 /**
  * Benchmark CatBoost Router Exports
  *
- * Tests exported JS routers against the translation-fallback evaluation set.
+ * Tests exported JS routers against the query evaluation set.
  * Reports Strict Accuracy, Utility Accuracy, and model size.
  */
 
@@ -26,7 +26,11 @@ import { extractAllFeatures } from './features/extractor.js';
 
 // Load evaluation query set
 function loadQuerySet() {
-  const querySetPath = join(__dirname, '../evaluation/query-sets/translation-fallback.json');
+  const querySetPath = join(__dirname, '../evaluation/query-sets/mixed.json');
+  if (!existsSync(querySetPath)) {
+    console.error('Query set not found:', querySetPath);
+    process.exit(1);
+  }
   const content = readFileSync(querySetPath, 'utf-8');
   return JSON.parse(content);
 }

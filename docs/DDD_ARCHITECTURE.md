@@ -129,7 +129,7 @@ export * from './infrastructure/config/index.js';
 export { default } from './infrastructure/config/index.js';
 ```
 
-- Code **outside** `core/` (scripts, tests, eval, translation, training, mcp) may import
+- Code **outside** `core/` (scripts, tests, eval, training, mcp) may import
   from `core/config.js` or `core/infrastructure/config/index.js`.
 - Code **inside** `core/` must import from `../infrastructure/config/index.js` directly.
 
@@ -149,7 +149,7 @@ The original monolithic `config.js` is split into 9 domain-scoped files under
 | `indexing.js` | batch sizing, flush intervals |
 | `graph.js` | `GRAPH_CONFIG`, `HCGS_CONFIG`, BM25 tuning |
 | `vector-store.js` | `HNSW_CONFIG`, `BINARY_HNSW_CONFIG`, `SEISMIC_CONFIG` |
-| `translation.js` | `TRANSLATION_CONFIG`, `CEREBRAS_CONFIG` |
+| `translation.js` | `CEREBRAS_CONFIG` (translation config removed; file retained for CEREBRAS LLM config used by graph/HCGS) |
 | `index.js` | Re-export facade (backwards-compatible aggregate + default export) |
 
 `config/index.js` re-exports everything from all sub-files. Adding a new config constant
