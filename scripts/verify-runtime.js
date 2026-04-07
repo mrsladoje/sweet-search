@@ -38,7 +38,7 @@ export async function verifyRuntime(options) {
   const type = deep ? 'deep' : 'fast';
 
   // 1. Load and verify runtime assets from manifest
-  const manifestPath = join(packageRoot, 'assets', 'manifest.json');
+  const manifestPath = join(packageRoot, 'core', 'infrastructure', 'manifest.json');
   if (!existsSync(manifestPath)) {
     checks.push({ name: 'manifest', status: 'fail', message: `Missing ${manifestPath}` });
     return { passed: false, type, timestamp: new Date().toISOString(), checks };

@@ -1,5 +1,5 @@
 /**
- * Packaging test — validates npm tarball contents against assets/manifest.json.
+ * Packaging test — validates npm tarball contents against core/infrastructure/manifest.json.
  *
  * Single source of truth: the manifest defines what must ship.
  * This test reads the manifest and asserts every listed asset appears
@@ -19,7 +19,7 @@ let manifest;
 beforeAll(() => {
   execSync('node scripts/generate-asset-manifest.js --check', { cwd: ROOT, stdio: 'pipe' });
   packOutput = execSync('npm pack --dry-run 2>&1', { cwd: ROOT, encoding: 'utf8' });
-  manifest = JSON.parse(readFileSync(join(ROOT, 'assets', 'manifest.json'), 'utf8'));
+  manifest = JSON.parse(readFileSync(join(ROOT, 'core', 'infrastructure', 'manifest.json'), 'utf8'));
 });
 
 describe('npm pack contents', () => {
@@ -29,8 +29,8 @@ describe('npm pack contents', () => {
     expect(typeof manifest.runtimeAssets).toBe('object');
   });
 
-  it('assets/manifest.json is in the tarball', () => {
-    expect(packOutput).toContain('assets/manifest.json');
+  it('core/infrastructure/manifest.json is in the tarball', () => {
+    expect(packOutput).toContain('core/infrastructure/manifest.json');
   });
 
   it('every runtimeAsset in the manifest is in the tarball', () => {

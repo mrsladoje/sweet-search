@@ -135,9 +135,9 @@ export function resolveProfile(cliProfile, existingConfig) {
 // ---------------------------------------------------------------------------
 
 export function verifyRuntimeAssets(packageRoot) {
-  const manifestPath = join(packageRoot, 'assets', 'manifest.json');
+  const manifestPath = join(packageRoot, 'core', 'infrastructure', 'manifest.json');
   if (!existsSync(manifestPath)) {
-    return { ok: false, missing: ['assets/manifest.json'], present: [] };
+    return { ok: false, missing: ['core/infrastructure/manifest.json'], present: [] };
   }
 
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));

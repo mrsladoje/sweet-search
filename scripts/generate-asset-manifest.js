@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
-const MANIFEST_PATH = join(ROOT, 'assets', 'manifest.json');
+const MANIFEST_PATH = join(ROOT, 'core', 'infrastructure', 'manifest.json');
 
 const manifest = {
   version: 2,
@@ -52,7 +52,7 @@ const serialized = `${JSON.stringify(manifest, null, 2)}\n`;
 if (process.argv.includes('--check')) {
   const current = readFileSync(MANIFEST_PATH, 'utf8');
   if (current !== serialized) {
-    console.error('assets/manifest.json is out of date. Run: node scripts/generate-asset-manifest.js');
+    console.error('core/infrastructure/manifest.json is out of date. Run: node scripts/generate-asset-manifest.js');
     process.exit(1);
   }
   process.exit(0);
