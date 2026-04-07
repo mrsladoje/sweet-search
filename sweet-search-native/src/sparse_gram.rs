@@ -1602,6 +1602,12 @@ fn bitand_dense_in_place(left: &mut [u64], right: &[u64]) {
             }
             return;
         }
+        // SSE2 is guaranteed on all x86_64 CPUs — covers pre-Haswell (pre-2013)
+        // machines that lack AVX2. Processes 2 u64s (128 bits) per iteration.
+        unsafe {
+            bitand_dense_in_place_sse2(left, right);
+        }
+        return;
     }
 
     #[cfg(target_arch = "aarch64")]
@@ -1612,8 +1618,30 @@ fn bitand_dense_in_place(left: &mut [u64], right: &[u64]) {
         return;
     }
 
+    // Scalar fallback for architectures without SIMD specialization (e.g., RISC-V, WASM).
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
     for (lhs, rhs) in left.iter_mut().zip(right.iter()) {
         *lhs &= *rhs;
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "sse2")]
+unsafe fn bitand_dense_in_place_sse2(left: &mut [u64], right: &[u64]) {
+    use std::arch::x86_64::{__m128i, _mm_and_si128, _mm_loadu_si128, _mm_storeu_si128};
+
+    let chunks = left.len() / 2;
+    for index in 0..chunks {
+        let offset = index * 2;
+        let left_ptr = left.as_mut_ptr().add(offset) as *mut __m128i;
+        let right_ptr = right.as_ptr().add(offset) as *const __m128i;
+        let lhs = _mm_loadu_si128(left_ptr);
+        let rhs = _mm_loadu_si128(right_ptr);
+        _mm_storeu_si128(left_ptr, _mm_and_si128(lhs, rhs));
+    }
+
+    for index in (chunks * 2)..left.len() {
+        left[index] &= right[index];
     }
 }
 

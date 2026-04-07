@@ -96,6 +96,12 @@ fn and_product(left: &[Vec<String>], right: &[Vec<String>]) -> Vec<Vec<String>> 
     out
 }
 
+// Visible to tests
+#[cfg(test)]
+pub(crate) fn normalize_clauses_pub(clauses: Vec<Vec<String>>) -> Vec<Vec<String>> {
+    normalize_clauses(clauses)
+}
+
 fn normalize_clauses(clauses: Vec<Vec<String>>) -> Vec<Vec<String>> {
     let mut normalized = Vec::new();
 
@@ -121,4 +127,141 @@ fn normalize_clauses(clauses: Vec<Vec<String>>) -> Vec<Vec<String>> {
     }
 
     normalized
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_hir(pattern: &str) -> Hir {
+        ParserBuilder::new().build().parse(pattern).unwrap()
+    }
+
+    #[test]
+    fn extracts_simple_literal() {
+        let clauses = extract_dnf(&parse_hir("hello")).unwrap();
+        let normalized = normalize_clauses(clauses);
+        assert_eq!(normalized, vec![vec!["hello".to_string()]]);
+    }
+
+    #[test]
+    fn extracts_concatenated_literals() {
+        // "foo.*bar" — foo and bar separated by wildcard
+        let clauses = extract_dnf(&parse_hir("foo.*bar")).unwrap();
+        let normalized = normalize_clauses(clauses);
+        assert_eq!(normalized.len(), 1);
+        assert!(normalized[0].contains(&"foo".to_string()));
+        assert!(normalized[0].contains(&"bar".to_string()));
+    }
+
+    #[test]
+    fn alternation_produces_multiple_clauses() {
+        let clauses = extract_dnf(&parse_hir("foo|bar")).unwrap();
+        let normalized = normalize_clauses(clauses);
+        assert_eq!(normalized.len(), 2);
+    }
+
+    #[test]
+    fn short_literals_filtered_by_normalize() {
+        // "ab" is 2 chars — below the min length of 3
+        let clauses = extract_dnf(&parse_hir("ab")).unwrap();
+        let normalized = normalize_clauses(clauses);
+        assert!(normalized.is_empty());
+    }
+
+    #[test]
+    fn repetition_returns_none() {
+        assert!(extract_dnf(&parse_hir("a+")).is_none());
+    }
+
+    #[test]
+    fn character_class_returns_none() {
+        assert!(extract_dnf(&parse_hir("[abc]")).is_none());
+    }
+
+    #[test]
+    fn look_assertion_returns_none() {
+        assert!(extract_dnf(&parse_hir(r"\b")).is_none());
+    }
+
+    #[test]
+    fn capture_group_extracts_inner() {
+        let clauses = extract_dnf(&parse_hir(r"(function)\s+\w+")).unwrap();
+        let normalized = normalize_clauses(clauses);
+        assert!(normalized.iter().any(|c| c.contains(&"function".to_string())));
+    }
+
+    #[test]
+    fn nested_alternation_in_concat() {
+        // "foo(bar|baz)qux" — should produce two clauses
+        let clauses = extract_dnf(&parse_hir("foo(bar|baz)qux")).unwrap();
+        let normalized = normalize_clauses(clauses);
+        assert_eq!(normalized.len(), 2);
+        // Each clause should have "foo" and "qux"
+        for clause in &normalized {
+            assert!(clause.contains(&"foo".to_string()));
+            assert!(clause.contains(&"qux".to_string()));
+        }
+    }
+
+    #[test]
+    fn and_product_respects_max_clauses() {
+        let left: Vec<Vec<String>> = (0..MAX_DNF_CLAUSES)
+            .map(|i| vec![format!("left_{i}")])
+            .collect();
+        let right = vec![vec!["r0".to_string()], vec!["r1".to_string()]];
+        let result = and_product(&left, &right);
+        assert!(result.len() <= MAX_DNF_CLAUSES);
+    }
+
+    #[test]
+    fn normalize_deduplicates_clauses() {
+        let clauses = vec![
+            vec!["foo".to_string(), "bar".to_string()],
+            vec!["foo".to_string(), "bar".to_string()],
+        ];
+        let result = normalize_clauses(clauses);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn normalize_removes_whitespace_only() {
+        let clauses = vec![vec!["   ".to_string()]];
+        let result = normalize_clauses(clauses);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn normalize_trims_whitespace() {
+        let clauses = vec![vec!["  hello  ".to_string()]];
+        let result = normalize_clauses(clauses);
+        assert_eq!(result, vec![vec!["hello".to_string()]]);
+    }
+
+    #[test]
+    fn complex_real_world_pattern() {
+        // class\s+\w+ — extract "class" as literal
+        let clauses = extract_dnf(&parse_hir(r"class\s+\w+")).unwrap();
+        let normalized = normalize_clauses(clauses);
+        assert!(normalized.iter().any(|c| c.iter().any(|l| l == "class")));
+    }
+
+    #[test]
+    fn max_regex_length_constant() {
+        // Verify the constant is set to a reasonable value
+        assert_eq!(MAX_REGEX_LENGTH, 4096);
+    }
+
+    #[test]
+    fn empty_pattern() {
+        let hir = parse_hir("");
+        assert!(extract_dnf(&hir).is_none());
+    }
+
+    #[test]
+    fn alternation_with_non_extractable_branch_returns_none() {
+        // "foo|." — one branch is non-extractable (any char)
+        let result = extract_dnf(&parse_hir("foo|."));
+        assert!(result.is_none());
+    }
 }

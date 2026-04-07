@@ -611,7 +611,7 @@ impl NativeChunkGramIndex {
         max_ratio: Option<f64>,
         max_files: Option<u32>,
     ) -> Result<ChunkGramSearchResult> {
-        use crate::native_grep::{build_regex, read_file_content};
+        use crate::native_grep::{build_regex, read_file_content, validate_path};
         use rayon::prelude::*;
 
         let start = std::time::Instant::now();
@@ -727,7 +727,10 @@ impl NativeChunkGramIndex {
         let verified: Vec<VerifiedChunk> = file_merged
             .par_iter()
             .flat_map(|(file, merged_windows)| {
-                let path = root.join(file);
+                let path = match validate_path(&root, file) {
+                    Some(p) => p,
+                    None => return Vec::new(),
+                };
                 let content = match read_file_content(&path) {
                     Some(c) => c,
                     None => return Vec::new(),

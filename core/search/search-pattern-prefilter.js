@@ -420,7 +420,10 @@ export function querySparseGramCandidates(searcher, literalClauses, options = {}
 // Chunk-level gram index candidate lookup
 // =============================================================================
 
-let _chunkGramBuildAttempted = false;
+// Retry counter for lazy chunk gram build — allows up to 3 retries on transient
+// failures (disk full, permission error) before giving up permanently.
+let _chunkGramBuildAttempts = 0;
+const _CHUNK_GRAM_MAX_RETRIES = 3;
 
 export function ensureChunkGramIndex(searcher, options = {}) {
   if (!searcher) return null;
@@ -430,8 +433,8 @@ export function ensureChunkGramIndex(searcher, options = {}) {
   let loaded = loadChunkGramIndex(indexPath);
 
   // Lazy build: if no on-disk index but LI index is loaded, build from LI documents
-  if (!loaded && !_chunkGramBuildAttempted && hasNativeChunkGramSupport() && searcher.lateInteractionIndex?.documents?.size > 0) {
-    _chunkGramBuildAttempted = true;
+  if (!loaded && _chunkGramBuildAttempts < _CHUNK_GRAM_MAX_RETRIES && hasNativeChunkGramSupport() && searcher.lateInteractionIndex?.documents?.size > 0) {
+    _chunkGramBuildAttempts++;
     try {
       const chunks = [];
       for (const [, doc] of searcher.lateInteractionIndex.documents) {
@@ -446,9 +449,14 @@ export function ensureChunkGramIndex(searcher, options = {}) {
         const projectRoot = searcher.projectRoot || PROJECT_ROOT;
         buildChunkGramIndexArtifact({ projectRoot, chunks, outputPath: indexPath });
         loaded = loadChunkGramIndex(indexPath);
+        if (loaded) {
+          // Successful build — max out counter to avoid redundant rebuilds
+          _chunkGramBuildAttempts = _CHUNK_GRAM_MAX_RETRIES;
+        }
       }
-    } catch {
-      // Lazy build is best-effort; fall back to no chunk gram
+    } catch (err) {
+      // Transient failure — will retry on next call (up to _CHUNK_GRAM_MAX_RETRIES)
+      if (process.env.SWEET_DEBUG) console.debug('[search-pattern-prefilter] lazy chunk gram build failed:', err.message);
     }
   }
 
