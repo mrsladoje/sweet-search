@@ -50,8 +50,10 @@ export { generateWithRetry } from './llm-provider.js';
 // Quantization (explicit named exports)
 export {
   floatToBinary, floatToInt8, normalizedFloatToInt8,
-  computeCentroid, generateSignVector, walshHadamardTransform,
-  fastRotate, fisherYatesShuffle, truncateForHNSW,
+  computeCentroid, generateSignVector,
+  walshHadamardTransform, walshHadamardTransformSequency,
+  fastRotate, fastPseudoRandomRotate, calibrateWUSH, wushRotate,
+  fisherYatesShuffle, truncateForHNSW,
   asymmetricQueryEncode, asymmetricDocEncode,
 } from './quantization.js';
 

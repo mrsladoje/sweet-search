@@ -135,6 +135,70 @@ describe('poolTokens', () => {
     const norm = Math.sqrt(vec[0] ** 2 + vec[1] ** 2 + vec[2] ** 2);
     expect(norm).toBeCloseTo(1.0, 3);
   });
+
+  it('CRA-1: merges similar tokens first (hierarchical, not consecutive)', async () => {
+    const { poolTokens } = await import('../../core/ranking/late-interaction-model.js');
+    // Place two similar tokens far apart positionally: indices 1 and 4
+    // are near [1,0,0], while indices 2 and 3 are near [0,1,0].
+    // Consecutive pairing would merge (1,2) and (3,4) — mixing directions.
+    // Hierarchical pooling should merge (1,4) and (2,3) — preserving directions.
+    const norm = (v) => {
+      const n = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
+      return new Float32Array(v.map(x => x / n));
+    };
+    const tokens = [
+      norm([1, 0, 0]),   // 0: protected
+      norm([1, 0.1, 0]), // 1: ~x-axis
+      norm([0, 1, 0.1]), // 2: ~y-axis
+      norm([0, 1, 0.2]), // 3: ~y-axis
+      norm([1, 0.2, 0]), // 4: ~x-axis
+    ];
+
+    // poolFactor=2: 4 non-protected → ceil(4/2)=2 clusters → 3 total
+    const pooled = poolTokens(tokens, 2);
+    expect(pooled.length).toBe(3);
+
+    // The two output clusters (besides protected) should each be near one axis.
+    // Find which pooled token is closer to x-axis vs y-axis.
+    const dotX = (v) => v[0]; // dot with [1,0,0]
+    const dotY = (v) => v[1]; // dot with [0,1,0]
+
+    const xCluster = pooled[1][0] > pooled[2][0] ? pooled[1] : pooled[2];
+    const yCluster = pooled[1][1] > pooled[2][1] ? pooled[1] : pooled[2];
+
+    // x-cluster should be strongly x-axis aligned (>0.9)
+    expect(dotX(xCluster)).toBeGreaterThan(0.9);
+    // y-cluster should be strongly y-axis aligned (>0.9)
+    expect(dotY(yCluster)).toBeGreaterThan(0.9);
+  });
+
+  it('CRA-1: handles single non-protected token', async () => {
+    const { poolTokens } = await import('../../core/ranking/late-interaction-model.js');
+    const tokens = [
+      new Float32Array([1, 0, 0]),
+      new Float32Array([0, 1, 0]),
+    ];
+    const pooled = poolTokens(tokens, 2);
+    // 1 protected + ceil(1/2) = 1 + 1 = 2 — no merge possible
+    expect(pooled.length).toBe(2);
+  });
+
+  it('CRA-1: poolFactor=3 with 7 tokens', async () => {
+    const { poolTokens } = await import('../../core/ranking/late-interaction-model.js');
+    const tokens = Array.from({ length: 7 }, (_, i) => {
+      const v = new Float32Array(4);
+      v[i % 4] = 1;
+      return v;
+    });
+    const pooled = poolTokens(tokens, 3);
+    // 1 protected + ceil(6/3) = 1 + 2 = 3
+    expect(pooled.length).toBe(3);
+    // All outputs should be unit-length
+    for (const v of pooled) {
+      const norm = Math.sqrt(Array.from(v).reduce((s, x) => s + x * x, 0));
+      expect(norm).toBeCloseTo(1.0, 3);
+    }
+  });
 });
 
 describe('buildExtendedSkiplist', () => {

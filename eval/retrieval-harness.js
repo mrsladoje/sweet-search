@@ -300,18 +300,25 @@ Commands:
 Options:
   --dataset=NAME      Dataset to evaluate (default: codesearchnet)
   --baseline=FILE     Path to baseline file
+  --li-quant=SCHEME   Late interaction quantization scheme for A/B testing
+                      Values: float32, int8, int4, int4-quantile, wht-int8, wht-int4
   --help, -h          Show this help
 `);
     process.exit(0);
   }
 
   const dataset = getArg('dataset') || 'codesearchnet';
+  const liQuant = getArg('li-quant') || null; // CRA A/B testing: float32|int8|int4|int4-quantile|wht-int8|wht-int4
   const resultsDir = path.join(__dirname, 'results');
   const baselineOverride = getArg('baseline');
 
+  // CRA A/B: if --li-quant is set, suffix the results/baseline files
+  const quantSuffix = liQuant ? `_${liQuant}` : '';
+
   const harness = new RetrievalHarness({
     resultsDir,
-    baselineFile: baselineOverride || path.join(resultsDir, `${dataset}_baseline.json`),
+    baselineFile: baselineOverride || path.join(resultsDir, `${dataset}${quantSuffix}_baseline.json`),
+    liQuant,
   });
 
   if (flags.has('--import')) {

@@ -89,30 +89,6 @@ fn dequantize_per_token(
     }
 }
 
-/// Dequantize 4-bit nibble-packed data with per-token min/scale.
-/// Packing: low nibble = even index, high nibble = odd index.
-#[inline(always)]
-fn dequantize_4bit_per_token(
-    packed: &[u8], min_arr: &[f32], scale_arr: &[f32],
-    num_tokens: usize, dim: usize, out: &mut Vec<f32>,
-) {
-    out.clear();
-    out.reserve(num_tokens * dim);
-    let packed_dim = (dim + 1) / 2;
-    for t in 0..num_tokens {
-        let p_off = t * packed_dim;
-        let tmin = min_arr[t];
-        let tscale = scale_arr[t];
-        for d in (0..dim).step_by(2) {
-            let byte = packed[p_off + d / 2];
-            out.push((byte & 0x0F) as f32 * tscale + tmin);
-            if d + 1 < dim {
-                out.push(((byte >> 4) & 0x0F) as f32 * tscale + tmin);
-            }
-        }
-    }
-}
-
 /// MaxSim with pre-stored document token norms (avoids redundant d_norm_sq).
 /// Saves ~40% inner-loop FLOPs when Q=32: d_norm_sq computed D times instead of Q*D.
 fn maxsim_one_with_norms(
@@ -346,10 +322,75 @@ pub fn maxsim_score_batch_4bit(
     cand_data
         .par_iter()
         .map(|(packed, mins, scales, norms, num_d, d)| {
-            let mut doc_f32 = Vec::with_capacity(*num_d * *d);
-            dequantize_4bit_per_token(packed, mins, scales, *num_d, *d, &mut doc_f32);
-            let score = maxsim_one_with_norms(query, &query_norms, num_q, &doc_f32, norms, *num_d, *d);
+            // CRA-13: Fused dot-product + max-reduce directly from packed nibbles.
+            // No intermediate f32 buffer allocation. The 16-entry LUT per doc token
+            // fits in a single L1 cache line (64 bytes), so the bottleneck is HBM
+            // bandwidth for packed data loading, not compute.
+            let score = maxsim_fused_4bit(query, &query_norms, num_q, packed, mins, scales, norms, *num_d, *d);
             score as f64
         })
         .collect()
+}
+
+/// CRA-13: Fused 4-bit MaxSim kernel — scores directly from packed nibbles
+/// without materializing an intermediate f32 vector. For each doc token, the
+/// dot product is computed inline from nibble unpacking:
+///   dot += q[d] * (min + bucket * scale)
+/// This eliminates the Vec<f32> allocation and halves memory bandwidth.
+#[inline(always)]
+fn maxsim_fused_4bit(
+    query: &[f32],
+    query_norms: &[f32],
+    num_q: usize,
+    packed: &[u8],
+    min_arr: &[f32],
+    scale_arr: &[f32],
+    doc_norms: &[f32],
+    num_d: usize,
+    dim: usize,
+) -> f32 {
+    let packed_dim = (dim + 1) / 2;
+    let mut total: f32 = 0.0;
+
+    for qi in 0..num_q {
+        let q_slice = &query[qi * dim..(qi + 1) * dim];
+        let q_norm = query_norms[qi];
+        let mut best: f32 = -1.0;
+
+        for di in 0..num_d {
+            let p_off = di * packed_dim;
+            let tmin = min_arr[di];
+            let tscale = scale_arr[di];
+
+            // CRA-7: Pre-compute 16-entry centroid LUT on stack (64 bytes = 1 cache line).
+            // On Apple Silicon, this stays in L1 constant cache for the entire inner loop.
+            // Replaces per-nibble multiply-add with a single array lookup.
+            let mut lut = [0.0f32; 16];
+            for b in 0..16u8 {
+                lut[b as usize] = b as f32 * tscale + tmin;
+            }
+
+            let mut dot: f32 = 0.0;
+
+            // Fused unpack + LUT gather + dot product — 2 dims per byte
+            for d in (0..dim).step_by(2) {
+                let byte = packed[p_off + d / 2];
+                dot += q_slice[d] * lut[(byte & 0x0F) as usize];
+                if d + 1 < dim {
+                    dot += q_slice[d + 1] * lut[((byte >> 4) & 0x0F) as usize];
+                }
+            }
+
+            let sim = dot / (q_norm * doc_norms[di] + 1e-8);
+            if sim > best {
+                best = sim;
+            }
+        }
+
+        if best > 0.0 {
+            total += best;
+        }
+    }
+
+    total / num_q as f32
 }
