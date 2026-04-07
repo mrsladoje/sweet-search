@@ -24,8 +24,8 @@ Tier 2 ships in the package. Tier 3 is always available.
 - `core/late-interaction-index.js` — MaxSim scoring, 3-tier dispatch
 - `core/simd-distance.js` — WASM/native loader, tier routing
 - `core/maxsim.wasm` — Rust-compiled WASM SIMD kernel
-- `wasm-maxsim/` — Rust source for WASM kernel
-- `native-maxsim/` — Rust source for native addon (rayon + NEON/AVX2)
+- `crates/wasm-maxsim/` — Rust source for WASM kernel
+- `crates/sweet-search-native/` — Rust source for native addon (rayon + NEON/AVX2)
 
 ---
 
@@ -38,7 +38,7 @@ Tier 2 ships in the package. Tier 3 is always available.
 3. **Flat buffer scoring** — `maxSimScoreFlat()` operates on contiguous Float32Array with offset indexing, avoiding N sub-array allocations per candidate.
 4. **Pooled dequantization buffer** — reuses a single Float32Array across candidates instead of allocating 256KB per candidate.
 5. **WASM SIMD kernel** (`core/maxsim.wasm`) — Rust-compiled f32x4 SIMD with LLVM optimization. Handles arbitrary dimensions (scalar tail for non-multiple-of-4).
-6. **Native Rust + Rayon** (`native-maxsim/`) — parallel candidate scoring across all CPU cores. Zero-copy buffer access via napi-rs.
+6. **Native Rust + Rayon** (`crates/sweet-search-native/`) — parallel candidate scoring across all CPU cores. Zero-copy buffer access via napi-rs.
 7. **`tokenNorms` persistence** — computed at `add()` time, reconstructed on `load()` via `_rebuildTokenNorms()`.
 
 ### Opt-in (quality/speed tradeoff)

@@ -271,7 +271,7 @@ jobs:
         run: npm pack --dry-run 2>&1 | tee pack-output.txt
 
       - name: Run packaging tests
-        run: npm test -- --run tests/packaging.test.js
+        run: npm test -- --run tests/integration/packaging.test.js
 
       - name: Check tarball size
         run: |

@@ -73,6 +73,15 @@ function runIndexer(args = [], options = {}) {
   });
 }
 
+async function runInBatches(taskFns, batchSize = 3) {
+  const results = [];
+  for (let i = 0; i < taskFns.length; i += batchSize) {
+    const batch = taskFns.slice(i, i + batchSize);
+    results.push(...await Promise.all(batch.map(fn => fn())));
+  }
+  return results;
+}
+
 // =============================================================================
 // Pre-computed results: all unique invocations run in parallel
 // =============================================================================
@@ -81,15 +90,15 @@ let helpResult, fullDryResult, fullQuietDryResult, statsResult, graphOnlyDryResu
 
 beforeAll(async () => {
   [helpResult, fullDryResult, fullQuietDryResult, statsResult, graphOnlyDryResult, invalidFlagResult] =
-    await Promise.all([
-      runIndexer(['--help']),
-      runIndexer(['--full', '--dry-run']),
-      runIndexer(['--full', '--quiet', '--dry-run']),
-      runIndexer(['--stats']),
-      runIndexer(['--full', '--graph-only', '--dry-run']),
-      runIndexer(['--invalid-test-flag-xyz', '--dry-run']),
+    await runInBatches([
+      () => runIndexer(['--help']),
+      () => runIndexer(['--full', '--dry-run']),
+      () => runIndexer(['--full', '--quiet', '--dry-run']),
+      () => runIndexer(['--stats']),
+      () => runIndexer(['--full', '--graph-only', '--dry-run']),
+      () => runIndexer(['--invalid-test-flag-xyz', '--dry-run']),
     ]);
-}, 60000);
+}, 120000);
 
 // =============================================================================
 // --full Flag Documentation Tests

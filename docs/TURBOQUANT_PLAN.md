@@ -24,7 +24,7 @@ All new kernels (4-bit dequant, WHT-rotated scoring) ship as:
 2. **WASM SIMD fallback** (universal, `core/maxsim.wasm`) — single-threaded f32x4
 3. **Pure JS fallback** — always available
 
-This follows the existing 3-tier architecture from INIT_PLAN.md and matches how `native-maxsim/` is already built and shipped.
+This follows the existing 3-tier architecture from INIT_PLAN.md and matches how `crates/sweet-search-native/` is already built and shipped.
 
 ---
 
@@ -85,8 +85,8 @@ brackets. Measured overhead: **~3.4x** bloat vs raw payload.
 - On-disk JSON file: **1.343 GiB** (3.4x overhead from JSON encoding)
 
 **Scoring kernels** (3-tier, `core/simd-distance.js`):
-- Tier 1: Native Rust + Rayon (`native-maxsim/src/lib.rs`) — 47x JS
-- Tier 2: WASM SIMD (`wasm-maxsim/src/lib.rs`) — 16x JS
+- Tier 1: Native Rust + Rayon (`crates/sweet-search-native/src/lib.rs`) — 47x JS
+- Tier 2: WASM SIMD (`crates/wasm-maxsim/src/lib.rs`) — 16x JS
 - Tier 3: Pure JS fallback
 
 **Models**:
@@ -306,7 +306,7 @@ bytes/token. Plus 4 bytes min + 4 bytes scale per token = 72 bytes/token
 
 #### MaxSim Kernel Optimizations (applies to all bit-widths)
 
-**Current redundant work in `native-maxsim/src/lib.rs`:**
+**Current redundant work in `crates/sweet-search-native/src/lib.rs`:**
 ```rust
 // d_norm_sq recomputed for every (qi, di) pair — Q*D times
 // when it only needs D times. With Q=32, D=100: 3200 vs 100.
@@ -341,7 +341,7 @@ let int8: Vec<i8> = c.tokens.iter().map(|&b| b as i8).collect();
 **Fix with 4-bit**: 2x smaller copy (64 bytes/token vs 128). Consider
 zero-copy via shared ArrayBuffer for the token slab.
 
-#### Native N-API Kernel (`native-maxsim/src/lib.rs`)
+#### Native N-API Kernel (`crates/sweet-search-native/src/lib.rs`)
 
 New entry point: `maxsim_score_batch_4bit()` with:
 
@@ -361,7 +361,7 @@ Ships as `@sweet-search/native-darwin-arm64`, `@sweet-search/native-darwin-x64`,
 `@sweet-search/native-linux-x64`, `@sweet-search/native-linux-arm64`
 (same platform packages from INIT_PLAN.md).
 
-#### WASM SIMD Kernel (`wasm-maxsim/src/lib.rs`)
+#### WASM SIMD Kernel (`crates/wasm-maxsim/src/lib.rs`)
 
 New entry point: `maxsim_dequant_4bit()` with:
 
@@ -402,12 +402,12 @@ Expected NDCG@10 loss: **< 0.2%**. Safe for production.
 
 **Required changes**:
 - `late-interaction-index.js`: New `quantizeToInt4()` / `dequantizeFromInt4()` functions
-- `native-maxsim/src/lib.rs`: New `maxsim_score_batch_4bit()` with norm params, centroid LUT, zero-alloc scoring
-- `wasm-maxsim/src/lib.rs`: New `maxsim_dequant_4bit()` with SIMD nibble extract + swizzle
+- `crates/sweet-search-native/src/lib.rs`: New `maxsim_score_batch_4bit()` with norm params, centroid LUT, zero-alloc scoring
+- `crates/wasm-maxsim/src/lib.rs`: New `maxsim_dequant_4bit()` with SIMD nibble extract + swizzle
 - `simd-distance.js`: Tier detection for 4-bit kernel availability, new JS fallback
 - `config.js`: `LATE_INTERACTION_CONFIG.quantization` = `'wht-int4'`
 - Binary format: `quantBits` header field = 4
-- `native-maxsim/Cargo.toml`: Keep existing INT8 entry points for backward compat
+- `crates/sweet-search-native/Cargo.toml`: Keep existing INT8 entry points for backward compat
 
 **Go/no-go**: NDCG@10 regression < 0.5pp. MaxSim score Kendall tau
 >= 0.990 vs float32.

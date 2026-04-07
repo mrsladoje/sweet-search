@@ -66,7 +66,7 @@ fi
 # E2E search will fail on Docker targets regardless of model availability.
 if [ "$SKIP_MODELS" = "false" ] && [[ "$TARGETS" == *linux* ]]; then
   echo "WARNING: --with-models with Linux Docker targets will likely fail."
-  echo "  The Linux native addons lack NativeTokenizer (requires rebuild from sweet-search-native/)."
+  echo "  The Linux native addons lack NativeTokenizer (requires rebuild from crates/sweet-search-native/)."
   echo ""
 fi
 

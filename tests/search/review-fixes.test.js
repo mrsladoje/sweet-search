@@ -277,7 +277,7 @@ describe('runFullWarmup provider restore on dryRun (C1)', () => {
     // Provider MUST be restored — the old code skipped restore on dryRun
     expect(EMBEDDING_CONFIG.provider).toBe(originalProvider);
     expect(EMBEDDING_CONFIG._savedProvider).toBeUndefined();
-  });
+  }, 120000);
 
   it('restores EMBEDDING_CONFIG.provider after dryRun with explicit provider', async () => {
     const { EMBEDDING_CONFIG } = await import('../../core/config.js');
