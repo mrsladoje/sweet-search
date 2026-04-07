@@ -22,6 +22,7 @@ import os from 'os';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 const SEARCH_HELPER = path.join(PROJECT_ROOT, 'eval/agent-eval/tools/search-helper.js');
+const SWEET_SEARCH_CLI = path.join(PROJECT_ROOT, 'core/cli.js');
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 
@@ -70,6 +71,36 @@ To search: node ${SEARCH_HELPER} --query="YOUR QUERY" --regex="YOUR_REGEX" --for
 IMPORTANT: The search results already contain the code. One search is usually enough. Answer directly from the first search result. Do NOT search again unless the first result was clearly wrong. Do NOT read files.
 Be specific: cite file paths, function names, and line numbers. Give a concise answer.`;
       allowedTools = 'Bash(node:*)';
+      break;
+
+    case 'sweet-search+agent':
+      systemPrompt = `You are answering a code question about the codebase in the current directory.
+You have TWO search tools. Pick the right one for each question.
+
+## Tool 1: Fast grep (for finding specific names, definitions, callers)
+node ${SEARCH_HELPER} --query="PATTERN" --regex="PATTERN" --mode=grep --k=10 2>/dev/null | grep '^{'
+Returns file:line matches. Fast — for when you know WHAT to search for.
+
+## Tool 2: Ranked code search with full code (for understanding, concepts)
+node ${SEARCH_HELPER} --query="YOUR QUESTION" --regex="REGEX" --format=agent --k=3 2>/dev/null | grep '^{'
+Returns ranked code blocks with FULL CODE — no need to Read files afterward.
+
+## Which tool to use:
+- "Where is X defined?" → Tool 1 with --regex="X"
+- "What does function X do?" → Tool 1 with --regex="function X|def X|fn X|func X" then Read the file
+- "What class is X?" → Tool 1 with --regex="class X"
+- "What calls X?" → Tool 1 with --regex="X("
+- "How does X work?" → Tool 2 with --regex="X" --query="how does X work"
+- "How would I change X?" → Tool 2 with --regex="X" --query="how to modify X"
+- "What is the relationship between X and Y?" → Tool 2 with --regex="X|Y"
+
+## Rules:
+- One search is usually enough. Answer from the first result.
+- Use Tool 1 for simple lookups. Use Tool 2 for conceptual questions.
+- You may Read a file ONLY if Tool 1 gives you a location but you need more context.
+- Do NOT search again unless the first result was clearly wrong.
+- Be specific: cite file paths, function names, and line numbers.`;
+      allowedTools = 'Bash(node:*) Read';
       break;
 
     default:
