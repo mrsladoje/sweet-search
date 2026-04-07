@@ -169,7 +169,7 @@ describe('querySparseGramCandidates', () => {
       },
     };
 
-    expect(querySparseGramCandidates(searcher, [['AuthService']])).toEqual({
+    expect(querySparseGramCandidates(searcher, [['AuthService']], { maxGramCandidateFiles: 500 })).toEqual({
       eligible: false,
       reason: 'too_broad',
       totalFiles: 1000,
