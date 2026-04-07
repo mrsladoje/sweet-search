@@ -3,7 +3,7 @@
  * binaries (MaxSim .node addon and sweet-search CLI binary).
  *
  * Resolution order for each artifact:
- *   1. Local dev build output (native-maxsim/ or sweet-search-cli/target/)
+ *   1. Local dev build output (crates/sweet-search-native/ or crates/sweet-search-cli/target/)
  *   2. Local package template (packages/native-{platform}-{arch}{libc}/)
  *   3. Installed npm package (@sweet-search/native-{platform}-{arch}{libc})
  *   4. null
@@ -74,8 +74,8 @@ export function resolveNativeAddon(options = {}) {
   const rootDir = options.rootDir ?? root;
   const resolvePackageDir = options.resolvePackageDir ?? defaultPackageDirResolver;
 
-  // 1. Local dev: sweet-search-native/ directory (or legacy native-maxsim/)
-  const localDev = join(rootDir, 'sweet-search-native', binaryName);
+  // 1. Local dev: crates/sweet-search-native/ directory (or legacy native-maxsim/)
+  const localDev = join(rootDir, 'crates', 'sweet-search-native', binaryName);
   if (exists(localDev)) return localDev;
   const legacyDev = join(rootDir, 'native-maxsim', binaryName);
   if (exists(legacyDev)) return legacyDev;
@@ -108,8 +108,8 @@ export function resolveNativeBinary(options = {}) {
   const rootDir = options.rootDir ?? root;
   const resolvePackageDir = options.resolvePackageDir ?? defaultPackageDirResolver;
 
-  // 1. Local dev: sweet-search-cli/target/release/
-  const localDev = join(rootDir, 'sweet-search-cli', 'target', 'release', 'sweet-search');
+  // 1. Local dev: crates/sweet-search-cli/target/release/
+  const localDev = join(rootDir, 'crates', 'sweet-search-cli', 'target', 'release', 'sweet-search');
   if (exists(localDev)) return localDev;
 
   // 2. Local package template: packages/native-*/

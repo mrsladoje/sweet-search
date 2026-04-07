@@ -38,7 +38,7 @@ echo "=== Building for ${PLATFORM}-${ARCH}${LIBC} ==="
 
 # Build MaxSim + NativeTokenizer addon
 echo "Building MaxSim addon..."
-cd "$REPO_ROOT/sweet-search-native"
+cd "$REPO_ROOT/crates/sweet-search-native"
 npx @napi-rs/cli build --release --platform
 ADDON_NAME="sweet-search-native.${PLATFORM}-${ARCH}.node"
 if [ ! -f "$ADDON_NAME" ]; then
@@ -50,7 +50,7 @@ echo "  Copied $ADDON_NAME → $PKG_DIR/sweet-search-native.node"
 
 # Build CLI binary
 echo "Building CLI binary..."
-cd "$REPO_ROOT/sweet-search-cli"
+cd "$REPO_ROOT/crates/sweet-search-cli"
 cargo build --release
 CLI_BIN="target/release/sweet-search"
 if [ ! -f "$CLI_BIN" ]; then

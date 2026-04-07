@@ -46,7 +46,7 @@ function loadWasm() {
   try {
     // Use createRequire for ES module compatibility with CommonJS WASM glue
     const require = createRequire(import.meta.url);
-    const wasmPath = join(__dirname, '..', '..', 'wasm-router', 'pkg', 'query_router_wasm.js');
+    const wasmPath = join(__dirname, '..', '..', 'crates', 'wasm-router', 'pkg', 'query_router_wasm.js');
     wasmModule = require(wasmPath);
     return wasmModule;
   } catch (err) {

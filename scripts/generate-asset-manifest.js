@@ -11,8 +11,8 @@ const MANIFEST_PATH = join(ROOT, 'core', 'infrastructure', 'manifest.json');
 const manifest = {
   version: 2,
   runtimeAssets: {
-    wasmRouter: 'wasm-router/pkg/query_router_wasm.js',
-    wasmRouterBinary: 'wasm-router/pkg/query_router_wasm_bg.wasm',
+    wasmRouter: 'crates/wasm-router/pkg/query_router_wasm.js',
+    wasmRouterBinary: 'crates/wasm-router/pkg/query_router_wasm_bg.wasm',
     maxsimWasm: 'core/infrastructure/maxsim.wasm',
     simdDistanceWasm: 'core/infrastructure/simd-distance.wasm',
     catboostRouter: 'training/output/v45_router_d4.js',
