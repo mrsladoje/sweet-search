@@ -6,6 +6,13 @@
 > quality (NDCG@10 regression < 0.5 pp).
 
 **Status**: Research complete, ready for Phase 0 implementation.
+**Implementation approach**: All kernels are built from scratch — no
+external quantization/scoring dependencies. Existing open-source
+implementations (see [Reference Implementations](#reference-implementations-algorithm-reference-only--no-dependencies))
+serve as algorithm references only. This keeps the dependency tree
+minimal, avoids license entanglements, and ensures every kernel is
+tuned for our specific pipeline (asymmetric float32-query × quantized-doc
+MaxSim scoring on L2-normalized code embeddings at d=128).
 **Related**: `INFERENCE_SPEEDUP_PLAN.md` covers ONNX forward-pass speedups (worker threads, warmup, session config) for both the embedding and LI models. That plan speeds up inference; this plan speeds up storage, loading, and MaxSim scoring. Gains are multiplicative.
 
 ### Performance Impact Summary
@@ -21,7 +28,7 @@
 
 All new kernels (4-bit dequant, WHT-rotated scoring) ship as:
 1. **Native N-API addon** per platform (`@sweet-search/native-{platform}-{arch}`) — Rayon parallel + NEON/AVX2 SIMD
-2. **WASM SIMD fallback** (universal, `core/maxsim.wasm`) — single-threaded f32x4
+2. **WASM SIMD fallback** (universal, `core/infrastructure/maxsim.wasm`) — single-threaded f32x4
 3. **Pure JS fallback** — always available
 
 This follows the existing 3-tier architecture from INIT_PLAN.md and matches how `crates/sweet-search-native/` is already built and shipped.
@@ -52,7 +59,7 @@ Full TurboQuant (PolarQuant + QJL) is **not** the right first move:
 | **d=48 disqualified** | The edge model (`lateon-code-edge`, d=48) is outside the high-dimensional concentration regime. Full TurboQuant cannot be a universal solution across both model tiers. |
 | **QJL complexity for marginal gain** | With asymmetric scoring (float32 query x quantized doc), QJL's bias correction is less critical. Adds 16 bytes/token overhead + random projection matrix management. |
 | **3-bit packing is SIMD-hostile** | No native 3-bit extract in NEON or WASM SIMD. turbo3 decoding is ~1.5x slower than INT8; turbo4 (nibble) is at parity. |
-| **No JS/WASM implementation exists** | Multi-week effort with high rejection risk (the fused WASM dequant was already rejected for simpler INT8 widening — see `docs/MAXSIM_OPTIMIZATION.md`). |
+| **We build our own** | Several reference implementations exist in Rust/Python (see [Reference Implementations](#reference-implementations-algorithm-reference-only--no-dependencies)), but we write our own kernels tuned for asymmetric float32-query × quantized-doc MaxSim at d=128. No external quantization dependencies. |
 | **Bigger wins available first** | JSON storage overhead and token count are higher-leverage targets. |
 
 ### What We Take From TurboQuant
@@ -62,20 +69,33 @@ The **rotation insight** is real and proven in production (Weaviate's
 random rotation equalizes dimension variance so that scalar quantization
 captures more information per bit. We already ship the infrastructure
 (`walshHadamardTransform`, `fastRotate`, `generateSignVector` in
-`core/embedding-service.js:392-451`).
+`core/infrastructure/quantization.js:39-91`, re-exported from
+`core/embedding/embedding-service.js:337-346`).
 
 ---
 
 ## Current State
 
-**Index artifact**: `codebase-late-interaction.json` (streamed JSON)
+**Index artifact**: Segmented directory with `manifest.json` +
+per-segment `.bin` files. Each segment has a 64-byte binary header
+(magic `0x4C495345` / "LISE", version u16, docCount u32, tokenDim u16,
+useInt8 u8, 51 bytes padding) followed by a JSON body containing the
+document array with `Array.from(doc.tokens)` serialized int8 values
+(`core/ranking/late-interaction-index.js:221-245`). A stub JSON at the
+main index path points to the segment directory. Legacy single-file
+JSON (v2.1) is still supported for small indexes.
 
 **Quantization**: Global per-document min/scale INT8
-(`core/late-interaction-index.js:21-48`). Single `min` and `scale` across
+(`core/ranking/late-interaction-index.js:21-48`). Single `min` and `scale` across
 ALL tokens of a document — outlier dimensions waste quantization bins for
 every other dimension.
 
-**On-disk format**: JSON arrays via `Array.from(doc.tokens)` (line 582).
+**On-disk format**: Segmented binary-header + JSON-body hybrid. Each segment is written via
+`Array.from(doc.tokens)` (lines 227, 735 in
+`core/ranking/late-interaction-index.js`). A `manifest.json` per segment
+directory tracks document counts and paths. A stub at the main index path
+points to the segment directory. Legacy single-file JSON is still
+supported for small indexes.
 Int8 byte values are serialized as decimal ASCII integers with commas and
 brackets. Measured overhead: **~3.4x** bloat vs raw payload.
 
@@ -84,7 +104,7 @@ brackets. Measured overhead: **~3.4x** bloat vs raw payload.
 - Raw INT8 payload: **383.5 MiB** (3.14M tokens x 128 bytes)
 - On-disk JSON file: **1.343 GiB** (3.4x overhead from JSON encoding)
 
-**Scoring kernels** (3-tier, `core/simd-distance.js`):
+**Scoring kernels** (3-tier, `core/infrastructure/simd-distance.js`):
 - Tier 1: Native Rust + Rayon (`crates/sweet-search-native/src/lib.rs`) — 47x JS
 - Tier 2: WASM SIMD (`crates/wasm-maxsim/src/lib.rs`) — 16x JS
 - Tier 3: Pure JS fallback
@@ -99,14 +119,27 @@ brackets. Measured overhead: **~3.4x** bloat vs raw payload.
 
 ### Phase 0: Binary LI Storage Format
 
-**What**: Replace JSON serialization with a packed binary format.
+**What**: Replace the JSON body inside each segment's binary-header+JSON
+hybrid format with a fully binary payload. The current segment format
+already has a 64-byte binary header (magic "LISE", version, docCount,
+tokenDim, useInt8) but the body is still JSON-serialized `Array.from()`
+int8 values — the same ~3.4x ASCII bloat as the old monolithic format,
+just split across segment files.
 
 **Why**: The single highest-leverage change. Zero quality risk, zero
 kernel changes, ~3.4x disk reduction and faster load times. On an 8 GB
 laptop, going from 1.34 GB to ~400 MB on disk (and in I/O buffer during
 load) is the difference between usable and not.
 
-**Format** (`codebase-late-interaction.bin`):
+**Format**: Each segment keeps the `.bin` extension but upgrades from
+the current "LISE" hybrid format (binary header + JSON body) to the
+"SSLX" fully-binary format. The existing `manifest.json` gains a
+`"format": "sslx-v3"` field. Backward compatibility: `_readSegmentFile()`
+checks the magic — `0x4C495345` ("LISE") uses the legacy hybrid path,
+`0x53534C58` ("SSLX") uses the new fully-binary path. Segment file
+names remain `segment-NNNN.bin`.
+
+Per-segment binary format (`segment-NNNN.bin`, SSLX v3):
 ```
 HEADER (fixed 64 bytes):
   [0..3]    magic: "SSLX" (Sweet Search Late indeX)
@@ -153,14 +186,21 @@ FOOTER:
 | Token norms | 3.14M x 4 = 12.0 MiB |
 | **Total** | **~396 MiB** (vs 1.343 GiB JSON = **3.4x smaller**) |
 
-**Backward compatibility**: `load()` checks magic bytes. If first bytes
-are `{` (JSON), use legacy path. If `SSLX`, use binary path. `save()`
-always writes binary v3. No migration tool needed — re-indexing produces
-the new format; old JSON indexes still load.
+**Backward compatibility**: `_readSegmentFile()` already checks the
+magic u32 at offset 0 (`core/ranking/late-interaction-index.js:251`).
+Add an `else if` branch for `0x53534C58` ("SSLX") that reads the new
+fully-binary layout. `_writeSegmentFile()` always writes SSLX v3.
+Old "LISE" hybrid segments still load. No migration tool needed —
+re-indexing produces the new format. The manifest stub at the main
+index path is unchanged.
 
 **Changes**:
-- `late-interaction-index.js`: New `_saveBinary()` / `_loadBinary()` methods
-- `config.js`: No changes needed
+- `core/ranking/late-interaction-index.js`:
+  - `_writeSegmentFile()`: Replace JSON body with packed binary (doc
+    table + ID table + token slab + norms + CRC32)
+  - `_readSegmentFile()`: Add SSLX branch for binary deserialization
+  - `save()`: Write `"format": "sslx-v3"` into `manifest.json`
+- `core/infrastructure/config/ranking.js`: No changes needed
 
 **Go/no-go**: Load time < 2s for 17K docs. File size within 5% of theoretical minimum.
 
@@ -171,7 +211,8 @@ the new format; old JSON indexes still load.
 **What**: Change INT8 quantization from per-document min/scale to
 per-token min/scale.
 
-**Why**: The current scheme (`quantizeToInt8` at line 21) uses a single
+**Why**: The current scheme (`quantizeToInt8` at
+`core/ranking/late-interaction-index.js:21`) uses a single
 `min` and `scale` across the **entire flattened token buffer** of a
 document. If one token has an outlier dimension at -0.4 and another has
 all values in [-0.1, 0.1], the latter uses only ~25% of the INT8 range.
@@ -182,16 +223,39 @@ token size goes from 128 to 136 bytes (+6.25%). But quantization error
 drops significantly — each token uses the full INT8 range.
 
 **Quality impact**: Strictly positive. Better quantization fidelity at
-the same bit-width. No kernel changes needed since min/scale are already
-per-document metadata passed to dequant.
+the same bit-width.
+
+**Kernel changes required**: The current kernels take **scalar** min/scale
+per candidate, not per-token arrays:
+- Native: `MaxSimCandidate` struct has `min: f64, scale: f64`
+  (`crates/sweet-search-native/src/lib.rs:84-86`)
+- WASM: `maxsim_dequant()` takes `min: f32, scale: f32` as scalar
+  params (`crates/wasm-maxsim/src/lib.rs:137-138`)
+- JS bridge: `doc.min, doc.scale` passed as scalars
+  (`core/ranking/late-interaction-index.js:577`)
+
+Per-token quantization requires passing `Float32Array` of min/scale
+(one pair per token) instead of scalars. The dequant loop must index
+by token position.
 
 **Changes**:
-- `quantizeToInt8()`: Accept mode flag for per-token vs per-document
-- `add()`: Quantize per-token, store per-token min/scale arrays
-- Binary format: Extend token slab with per-token min/scale (or pack
-  into doc table extension)
-- WASM/Rust kernels: Already receive per-element min/scale — just need
-  to index by token instead of using a single value
+- `core/ranking/late-interaction-index.js`:
+  - `quantizeToInt8()`: Per-token mode — compute min/scale per token
+    slice of `tokenDim` values instead of across the entire buffer
+  - `add()`: Store per-token `minArray` and `scaleArray` alongside tokens
+  - Scoring bridge: Pass min/scale arrays to native/WASM kernels
+  - Save/load: Persist per-token min/scale in binary segment format
+    (8 bytes per token in the token slab)
+- `crates/sweet-search-native/src/lib.rs`:
+  - `MaxSimCandidate`: Replace `min: f64, scale: f64` with
+    `min_array: Float32Array, scale_array: Float32Array`
+  - `dequantize()`: Accept token index, read per-token min/scale
+- `crates/wasm-maxsim/src/lib.rs`:
+  - `maxsim_dequant()`: Accept `min_ptr` and `scale_ptr` (pointers to
+    per-token float arrays) instead of scalar `min, scale`
+  - Inner loop: Index min/scale by `token_idx` during dequant
+- `core/infrastructure/simd-distance.js`:
+  - JS fallback: Update dequant to use per-token min/scale arrays
 
 **Go/no-go**: MaxSim score correlation (Kendall tau) >= 0.998 vs float32
 ground truth on eval corpus.
@@ -221,7 +285,7 @@ vectors are in original or rotated space.
 
 At **index time** (in `add()`):
 ```js
-import { fastRotate, generateSignVector } from './embedding-service.js';
+import { fastRotate, generateSignVector } from '../infrastructure/quantization.js';
 
 // Generate deterministic sign vector on first add
 if (!this.signVector) {
@@ -244,7 +308,8 @@ const rotatedQuery = queryTokens.map(q =>
 ```
 
 **d=48 handling**: Pad to 64 (next power-of-2) for WHT, truncate result
-back to 48. `fastRotate()` already handles this (line 439-450).
+back to 48. `fastRotate()` already handles this
+(`core/infrastructure/quantization.js:74-91`).
 
 **Binary format**: Store `whtSeed` in header (already reserved at
 offset 48-51). If `whtSeed > 0`, query-time rotation is required.
@@ -261,7 +326,7 @@ or learned pruning.
 
 **Why**: Token count is a **multiplicative** lever — halving tokens
 halves storage regardless of bit-width. The infrastructure already
-exists: `poolTokens()` in `late-interaction-model.js:320` and
+exists: `poolTokens()` in `core/ranking/late-interaction-model.js:358` and
 `poolFactor` config. ColBERTv2's headline was 6-10x reduction from token
 compression, not from sub-byte coding.
 
@@ -370,7 +435,7 @@ New entry point: `maxsim_dequant_4bit()` with:
 - Pre-stored norms via pointer parameter (no d_norm_sq accumulation)
 - Compiled with `RUSTFLAGS="-C target-feature=+simd128"`
 
-#### JS Fallback (`core/simd-distance.js`)
+#### JS Fallback (`core/infrastructure/simd-distance.js`)
 
 Pure JS `maxsimDequant4bit()` with manual nibble unpacking + LUT array
 indexing. Slower but always available.
@@ -401,13 +466,33 @@ Rank inversion probability:
 Expected NDCG@10 loss: **< 0.2%**. Safe for production.
 
 **Required changes**:
-- `late-interaction-index.js`: New `quantizeToInt4()` / `dequantizeFromInt4()` functions
-- `crates/sweet-search-native/src/lib.rs`: New `maxsim_score_batch_4bit()` with norm params, centroid LUT, zero-alloc scoring
-- `crates/wasm-maxsim/src/lib.rs`: New `maxsim_dequant_4bit()` with SIMD nibble extract + swizzle
-- `simd-distance.js`: Tier detection for 4-bit kernel availability, new JS fallback
-- `config.js`: `LATE_INTERACTION_CONFIG.quantization` = `'wht-int4'`
-- Binary format: `quantBits` header field = 4
-- `crates/sweet-search-native/Cargo.toml`: Keep existing INT8 entry points for backward compat
+- `core/infrastructure/config/ranking.js`: **Prerequisite schema change.**
+  The current config uses `quantization: 'int8'` (line 181) but the
+  constructor in `core/ranking/late-interaction-index.js:99` resolves
+  this to a boolean `useInt8`. The manifest (`save()` at line 686) and
+  segment header (`_writeSegmentFile()` at line 242) also persist
+  `useInt8` as a boolean. This must be replaced with a scheme enum:
+  ```
+  quantization: 'int8' | 'int8-per-token' | 'wht-int8' | 'wht-int4'
+  ```
+  The constructor, manifest, segment header, and load path all need to
+  read/write the scheme string instead of a boolean. This is a
+  cross-cutting change that should land as a separate prep commit before
+  the Phase 4 kernel work.
+- `core/ranking/late-interaction-index.js`:
+  - New `quantizeToInt4()` / `dequantizeFromInt4()` with nibble packing
+  - Constructor: Replace `this.useInt8` with `this.quantScheme`
+  - `add()`: Branch on scheme for quantization path
+  - Save/load: Persist `quantScheme` in manifest and segment header
+    (use header byte at offset 6 for `quantBits`: 8 or 4)
+- `crates/sweet-search-native/src/lib.rs`: New `maxsim_score_batch_4bit()`
+  with norm params, centroid LUT, zero-alloc scoring
+- `crates/wasm-maxsim/src/lib.rs`: New `maxsim_dequant_4bit()` with
+  SIMD nibble extract + swizzle
+- `core/infrastructure/simd-distance.js`: Tier detection for 4-bit
+  kernel availability, new JS fallback
+- `crates/sweet-search-native/Cargo.toml`: Keep existing INT8 entry
+  points for backward compat
 
 **Go/no-go**: NDCG@10 regression < 0.5pp. MaxSim score Kendall tau
 >= 0.990 vs float32.
@@ -434,7 +519,8 @@ turbo3 is only ~36 MiB on a 3.14M-token corpus. Token count reduction
 **Prerequisites**:
 - Empirical validation that LateOn-Code embeddings (L2-normalized) match
   TurboQuant's distributional assumptions at d=128
-- Reference implementation available (expected Q2 2026)
+- Algorithm well-documented (multiple reference implementations exist in
+  Rust and Python — see [Reference Implementations](#reference-implementations-algorithm-reference-only--no-dependencies))
 - 3-bit packing SIMD kernel proven viable on WASM
 
 **Open questions on QJL**: Google explicitly describes QJL as balancing
@@ -576,7 +662,8 @@ embeddings. Must A/B test.
 
 ### CRA-4: Sequency-Ordered Walsh Matrices (Upgrades Phase 2)
 
-**What**: Replace standard Hadamard ordering in `fastRotate()` with
+**What**: Replace standard Hadamard ordering in `fastRotate()`
+(`core/infrastructure/quantization.js:74`) with
 **sequency-ordered Walsh matrices** (GSR).
 
 **Why**: GSR ([arXiv 2505.03810](https://arxiv.org/abs/2505.03810),
@@ -972,7 +1059,8 @@ proves viable, **56x** is possible.
 
 ### Score Correlation Test
 
-New script: `eval/scripts/maxsim-quant-correlation.js`
+**TODO**: Create `eval/scripts/maxsim-quant-correlation.js` (does not
+exist yet — must be written as part of Phase 0 validation).
 
 For each phase, measure:
 1. **Kendall tau** rank correlation of MaxSim scores vs float32 ground truth
@@ -995,8 +1083,10 @@ For each phase, measure:
 
 ### A/B Framework
 
-The eval harness (`eval/retrieval-harness.js`) supports the `--li-quant`
-flag to select quantization scheme. Run identical benchmarks across
+**TODO**: Add `--li-quant` flag to the eval harness
+(`eval/retrieval-harness.js`) to select quantization scheme at runtime.
+This flag does not exist yet — it must be implemented before Phase 1
+A/B testing can begin. Once added, run identical benchmarks across
 configurations and compare metrics side-by-side.
 
 ---
@@ -1063,12 +1153,39 @@ is the single source of truth. Ship what passes; reject what doesn't.
 - [dejan.ai TurboQuant Triton Kernel (blog)](https://dejan.ai/blog/turboquant/)
 - [turboquant_plus sparse-v-dequant (GitHub)](https://github.com/TheTom/turboquant_plus/blob/main/docs/papers/sparse-v-dequant.md)
 
-### Working Implementations (as of March 2026)
+### Reference Implementations (Algorithm Reference Only — No Dependencies)
 
-| Implementation | Language | Status | Notes |
+We build all kernels from scratch. These implementations exist in the
+ecosystem and are useful for **understanding algorithms, validating
+correctness, and comparing performance** — not as dependencies.
+
+| Implementation | Language | What to study | Phase |
 |---|---|---|---|
-| TheTom/turboquant_plus | Python + Metal | 141 tests, turbo3/turbo4 | 8-13x speed regression on WHT |
-| llama.cpp C (veritatisquaesitoressumus) | C | 18/18 tests passing | Lloyd-Max codebooks for d=128 |
-| mudler/llama.cpp feat/turbo-quant | C++ | Builds, evaluating | Experimental branch |
-| MLX experiments | Python | 5x compression, 99.5% quality | Community reports |
-| Google official | — | Not released | Expected Q2 2026 |
+| [animehacker/llama-turboquant](https://github.com/animehacker/llama-turboquant) | C/CUDA | Per-block 32×32 WHT with fused `vec_dot` kernel scoring in rotated space. Proves block-diagonal WHT (CRA-4) works. Lloyd-Max codebook values for Gaussian: `{±0.243, ±0.743, ±1.334, ±2.157}` | 2, 4 |
+| [scos-lab/turboquant](https://github.com/scos-lab/turboquant) | Python | Key finding: MSE > Prod for attention (contradicts paper). Mixed precision closes the gap. Good validation methodology. | 5 |
+| [dhawalc/turboQuantDC](https://github.com/dhawalc/turboQuantDC) | Python (7.3K LOC) | Full TurboQuant with Lloyd-Max codebooks, WHT rotation, QJL. MIT license. Codebook computation reference. | 4, 5 |
+| [cksac/turboquant-model](https://github.com/cksac/turboquant-model) | Python/PyTorch | Confirms Hadamard matches QR quality at O(d) vs O(d²) storage. Residual quantization benchmarks. | 2 |
+| [TheTom/turboquant_plus](https://github.com/TheTom/turboquant_plus) | Python + Metal | 5K+ stars. Sparse V dequant analysis: Metal constant memory LUT fits 16 entries in 1 cache line. QJL dropped by 5 independent groups. | 4, CRA-7 |
+| [jlscheerer/xtr-warp](https://github.com/jlscheerer/xtr-warp) | Python + C++ | WARP engine. Quantile-based 4-bit bucket boundaries. Implicit decompression (zero-alloc scoring). Nibble unpacking patterns. | CRA-2, CRA-5 |
+| [arXiv 2409.14683](https://arxiv.org/abs/2409.14683) (token pooling) | Python (SciPy) | Hierarchical Ward clustering for ColBERT token pooling. Pool factor 2 = 50% reduction at 100.6% perf. Integrated into upstream ColBERT. | 3, CRA-1 |
+| [mixedbread maxsim-cpu](https://www.mixedbread.com/blog/multimodal-late-interaction-billion-scale) | Rust | Production MaxSim scoring on CPU with custom SIMD kernels. Billion-scale late interaction. | 4 |
+| [pylate-rs](https://lightonai.github.io/pylate-rs/) | Rust + WASM | ColBERT scoring crate with dedicated WASM compilation target. Multi-platform SIMD dispatch patterns. | 4 |
+| dejan.ai Triton kernel | Python/Triton | Fused centroid LUT + dot product. Pre-rotate query once, inner loop is LUT gather + accumulate. Bandwidth-first kernel design. | CRA-13 |
+
+**Rust crates on crates.io** (algorithm reference, NOT used as deps):
+- `turbo-quant` — 1K SLoC PolarQuant + QJL at d=128. WHT rotation.
+- `turboquant-rs` — 3.5K SLoC, AVX2/FMA, llama.cpp-compatible 3-bit packing.
+- `BitPolar` — Rust + WASM + Python bindings. `WhtRotation` module.
+
+**npm** (NOT used as dep):
+- `turboquant-wasm` — Zig→WASM with relaxed SIMD. Full polar TQ, not
+  our simpler WHT+scalar approach.
+
+**Key algorithm constants** (from reference impls, validated across 6+
+independent implementations):
+- Lloyd-Max 4-bit (16 centroids) for N(0,1): precompute from quantile
+  function at build time
+- Lloyd-Max 3-bit (8 centroids) for N(0,1):
+  `{-2.157, -1.334, -0.743, -0.243, +0.243, +0.743, +1.334, +2.157}`
+- WHT butterfly: O(d log d), d must be power-of-2 (pad d=48→64)
+- Post-WHT distribution: converges to N(0, σ²) by CLT for Walsh transforms
