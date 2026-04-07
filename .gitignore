@@ -75,6 +75,9 @@ eval/data/m2crb/
 # Claude Code auto-memory (stored in ~/.claude/projects/, not the repo)
 memory/
 
+# Bun lockfile (project uses npm)
+bun.lock
+
 # Claude Flow and AgenticQE
 .agentic-qe/
 .agentdb/
