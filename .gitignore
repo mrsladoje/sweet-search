@@ -36,17 +36,17 @@ models/gte-reranker-int8/
 *.bak
 
 # WASM/Rust build artifacts
-wasm-router/target/
-wasm-router/debug-*.js
-wasm-router/*.bak
-wasm-maxsim/target/
+crates/wasm-router/target/
+crates/wasm-router/debug-*.js
+crates/wasm-router/*.bak
+crates/wasm-maxsim/target/
 native-maxsim/target/
 native-maxsim/*.node
-sweet-search-native/target/
-sweet-search-native/*.node
-sweet-search-native/index.js
-sweet-search-native/index.d.ts
-sweet-search-cli/target/
+crates/sweet-search-native/target/
+crates/sweet-search-native/*.node
+crates/sweet-search-native/index.js
+crates/sweet-search-native/index.d.ts
+crates/sweet-search-cli/target/
 packages/native-*/maxsim.node
 packages/native-*/sweet-search
 
