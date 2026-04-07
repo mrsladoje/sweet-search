@@ -216,7 +216,7 @@ describe('native-resolver', () => {
       if (process.platform === 'darwin' && process.arch === 'arm64') {
         const result = resolveNativeAddon();
         if (result !== null) {
-          // Should resolve to sweet-search-native/ (local dev), not packages/
+          // Should resolve to crates/sweet-search-native/ (local dev), not packages/
           expect(result).toContain('sweet-search-native');
           expect(result).not.toContain('packages');
         }

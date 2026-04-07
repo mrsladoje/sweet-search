@@ -30,7 +30,7 @@ const INDEXER_PATH = join(__dirname, '../..', 'core', 'indexing', 'index-codebas
  */
 function runIndexer(args = [], options = {}) {
   return new Promise((resolve, reject) => {
-    const { timeout = 30000, cwd = PROJECT_ROOT } = options;
+    const { timeout = 60000, cwd = PROJECT_ROOT } = options;
 
     const child = spawn('node', [INDEXER_PATH, ...args], {
       cwd,
@@ -66,6 +66,15 @@ function runIndexer(args = [], options = {}) {
       reject(err);
     });
   });
+}
+
+async function runInBatches(taskFns, batchSize = 3) {
+  const results = [];
+  for (let i = 0; i < taskFns.length; i += batchSize) {
+    const batch = taskFns.slice(i, i + batchSize);
+    results.push(...await Promise.all(batch.map(fn => fn())));
+  }
+  return results;
 }
 
 // =============================================================================
@@ -168,7 +177,8 @@ describe('parseArgs() unit tests', () => {
 // =============================================================================
 
 describe('Flag behavior (integration)', () => {
-  // All process spawns launched in parallel — wall time = slowest single spawn
+  // Real indexer dry-runs are CPU-heavy on larger repos; batch them to avoid
+  // test-host saturation while still keeping setup time reasonable.
   let helpResult, helpPrecedenceResult, dryRunResult, quietDryRunResult,
       skipSummaryResult, skipSummaryQuietResult, statsResult,
       quietStdinResult, unknownFlagResult;
@@ -184,18 +194,18 @@ describe('Flag behavior (integration)', () => {
       statsResult,
       quietStdinResult,
       unknownFlagResult,
-    ] = await Promise.all([
-      runIndexer(['--help']),
-      runIndexer(['--help', '--full', '--graph-only']),
-      runIndexer(['--dry-run']),
-      runIndexer(['--quiet', '--dry-run']),
-      runIndexer(['--skip-summary-regen', '--dry-run']),
-      runIndexer(['--skip-summary-regen', '--quiet', '--dry-run']),
-      runIndexer(['--stats']),
-      runIndexer(['--quiet', '--files-from-stdin'], { stdinInput: '' }),
-      runIndexer(['--unknown-test-flag-xyz', '--dry-run']),
+    ] = await runInBatches([
+      () => runIndexer(['--help']),
+      () => runIndexer(['--help', '--full', '--graph-only']),
+      () => runIndexer(['--dry-run']),
+      () => runIndexer(['--quiet', '--dry-run']),
+      () => runIndexer(['--skip-summary-regen', '--dry-run']),
+      () => runIndexer(['--skip-summary-regen', '--quiet', '--dry-run']),
+      () => runIndexer(['--stats']),
+      () => runIndexer(['--quiet', '--files-from-stdin'], { stdinInput: '' }),
+      () => runIndexer(['--unknown-test-flag-xyz', '--dry-run']),
     ]);
-  });
+  }, 180000);
 
   // -------------------------------------------------------------------------
   // --help output (assertions on helpResult)

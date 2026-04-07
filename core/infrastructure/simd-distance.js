@@ -10,7 +10,7 @@
  *   - hamming_distance, int8_dot, int8_norm_sq (simd-distance.wasm)
  *
  * Build: node scripts/build-wasm.js (WASM)
- *        cd native-maxsim && npx napi build --release --platform (native)
+ *        cd crates/sweet-search-native && npx napi build --release --platform (native)
  *        cd crates/wasm-maxsim && RUSTFLAGS="-C target-feature=+simd128" cargo build --target wasm32-unknown-unknown --release (Rust WASM)
  */
 
