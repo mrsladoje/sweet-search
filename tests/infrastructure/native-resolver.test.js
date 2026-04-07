@@ -108,7 +108,7 @@ describe('native-resolver', () => {
     it('finds the local dev addon on darwin-arm64', async () => {
       const { resolveNativeAddon } = await loadResolver();
       if (process.platform === 'darwin' && process.arch === 'arm64') {
-        const expected = join(ROOT, 'sweet-search-native', 'sweet-search-native.darwin-arm64.node');
+        const expected = join(ROOT, 'crates', 'sweet-search-native', 'sweet-search-native.darwin-arm64.node');
         if (existsSync(expected)) {
           expect(resolveNativeAddon()).toBe(expected);
         }

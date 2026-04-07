@@ -11,7 +11,7 @@
  *
  * Build: node scripts/build-wasm.js (WASM)
  *        cd native-maxsim && npx napi build --release --platform (native)
- *        cd wasm-maxsim && RUSTFLAGS="-C target-feature=+simd128" cargo build --target wasm32-unknown-unknown --release (Rust WASM)
+ *        cd crates/wasm-maxsim && RUSTFLAGS="-C target-feature=+simd128" cargo build --target wasm32-unknown-unknown --release (Rust WASM)
  */
 
 import { fileURLToPath } from 'url';

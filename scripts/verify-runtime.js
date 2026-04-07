@@ -170,7 +170,7 @@ export function getMaxsimTier() {
  * Determine the router type string for reporting.
  */
 export function getRouterType() {
-  const wasmPath = join(PACKAGE_ROOT, 'wasm-router', 'pkg', 'query_router_wasm_bg.wasm');
+  const wasmPath = join(PACKAGE_ROOT, 'crates', 'wasm-router', 'pkg', 'query_router_wasm_bg.wasm');
   if (existsSync(wasmPath)) return 'wasm';
   return 'js-fallback';
 }
