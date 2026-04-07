@@ -58,6 +58,7 @@ PHASE*_FIXES.md
 coverage/
 
 # Benchmark raw outputs (regenerable)
+benchmark-results/
 evaluation/*.json.bak
 failure-analysis.md
 
