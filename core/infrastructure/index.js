@@ -10,6 +10,10 @@ export { default as config } from './config/index.js';
 // Database utilities
 export { applyReadPragmas } from './db-utils.js';
 
+// Repositories (DDD infrastructure layer)
+export { CodebaseRepository } from './codebase-repository.js';
+export { CodeGraphRepository } from './code-graph-repository.js';
+
 // Model management
 export { fetchModel, fetchModelFile, resolveModelFile, computeFileHash, getModelCacheDir, isCacheValid } from './model-fetcher.js';
 export { MODEL_REGISTRY, getModelEntry, getModelsForProfile } from './model-registry.js';

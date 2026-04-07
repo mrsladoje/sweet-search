@@ -122,7 +122,7 @@ const server = new McpServer({
 // ---------------------------------------------------------------------------
 
 server.registerTool('search', {
-  description: 'Search the codebase using hybrid semantic/lexical/structural search',
+  description: 'Search the codebase using hybrid semantic/lexical/structural search. Use format="agent" with a regex for ColGrep pattern search that returns self-contained code blocks — eliminates follow-up file reads.',
   inputSchema: {
     query: z.string().min(1).max(1000).describe('Search query (1-1000 chars)'),
     k: z.number().int().min(1).max(200).default(10).describe('Number of results (1-200)'),
@@ -130,6 +130,12 @@ server.registerTool('search', {
       .describe('Search mode'),
     structural: z.boolean().default(false)
       .describe('Force structural graph search mode (callers, callees, implementations)'),
+    regex: z.string().max(4096).optional()
+      .describe('Regex pattern for ColGrep pattern search (implies mode=pattern)'),
+    format: z.enum(['benchmark', 'agent', 'agent_preview', 'agent_full']).default('benchmark').optional()
+      .describe('Output format. "agent"/"agent_preview" returns bounded code blocks (4K budget). "agent_full" returns expanded code for top-3 (8K budget).'),
+    tokenBudget: z.number().int().min(500).max(16000).default(4000).optional()
+      .describe('Agent mode: total token budget for all results (default: 4000)'),
   },
   outputSchema: SearchOutputSchema,
   annotations: {

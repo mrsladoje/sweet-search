@@ -10,7 +10,7 @@ import path from 'node:path';
 // Output schemas (Zod — SDK converts to JSON Schema for clients)
 // ---------------------------------------------------------------------------
 
-export const SearchOutputSchema = z.object({
+const BenchmarkSearchOutputSchema = z.object({
   results: z.array(z.object({
     file: z.string(),
     line: z.number().int().optional(),
@@ -23,6 +23,40 @@ export const SearchOutputSchema = z.object({
   mode: z.string(),
   queryTimeMs: z.number(),
 });
+
+const AgentSearchOutputSchema = z.object({
+  format: z.literal('agent'),
+  subMode: z.string(),
+  query: z.string(),
+  regex: z.string().optional(),
+  mode: z.string(),
+  totalResults: z.number().int(),
+  tokenBudget: z.number().int(),
+  tokensUsed: z.number().int(),
+  confidence: z.enum(['high', 'medium', 'low']),
+  confidenceReason: z.string(),
+  sufficient: z.boolean(),
+  sufficiencyReasons: z.array(z.string()),
+  packagingMs: z.number(),
+  latencyMs: z.number(),
+  results: z.array(z.object({
+    rank: z.number().int(),
+    file: z.string(),
+    startLine: z.number().int().nullable(),
+    endLine: z.number().int().nullable(),
+    symbol: z.string().nullable(),
+    symbolType: z.string().nullable(),
+    score: z.number(),
+    presentation: z.enum(['full', 'preview', 'summary']),
+    code: z.string().nullable(),
+    codeTokens: z.number().int(),
+  })),
+});
+
+export const SearchOutputSchema = z.union([
+  BenchmarkSearchOutputSchema,
+  AgentSearchOutputSchema,
+]);
 
 export const IndexOutputSchema = z.object({
   success: z.boolean(),
@@ -76,20 +110,89 @@ let _healthDb = null;
 // ---------------------------------------------------------------------------
 
 /**
- * @param {{ query: string, k: number, mode: string, structural?: boolean }} args
+ * @param {{ query: string, k: number, mode: string, structural?: boolean, regex?: string, format?: string, tokenBudget?: number }} args
  * @param {{ getSearcher: () => Promise<object> }} deps
  */
-export async function handleSearch({ query, k, mode, structural }, { getSearcher }) {
+export async function handleSearch({ query, k, mode, structural, regex, format, tokenBudget }, { getSearcher }) {
   try {
+    // Agent format requires a regex (pattern search). If no regex, ignore the format
+    // to avoid silent fallback to non-pattern search without agent packaging.
+    const isAgentFormat = format && format.startsWith('agent');
+    const effectiveFormat = (isAgentFormat && !regex) ? undefined : format;
+
     const searcher = await getSearcher();
     const searchMode = structural ? 'structural' : mode;
-    const { results, stats } = await searcher.search(query, {
+    const searchResult = await searcher.search(query, {
       k,
       mode: searchMode,
       expand: true,
       rerank: true,
+      ...(regex && { regex }),
+      ...(effectiveFormat && { format: effectiveFormat }),
+      ...(tokenBudget && { tokenBudget }),
     });
 
+    // Agent mode: return the fully packaged response directly
+    if (searchResult.format === 'agent') {
+      const agentResults = searchResult.results || [];
+      const lines = agentResults
+        .filter(r => r.presentation !== 'summary')
+        .map((r) => {
+          const header = `${r.rank}. ${r.file}:${r.startLine}-${r.endLine} (score: ${r.score.toFixed(3)}, ${r.presentation})`;
+          const symbolInfo = r.symbol ? `\n   ${r.symbolType || 'symbol'}: ${r.symbol}` : '';
+          const code = r.code ? `\n\`\`\`\n${r.code}\n\`\`\`` : '';
+          return header + symbolInfo + code;
+        });
+
+      const summaries = agentResults
+        .filter(r => r.presentation === 'summary')
+        .map(r => `${r.rank}. ${r.summary}`);
+
+      const confidence = `Confidence: ${searchResult.confidence} (${searchResult.confidenceReason})`;
+      const budget = `Tokens: ${searchResult.tokensUsed}/${searchResult.tokenBudget}`;
+
+      const text = lines.length > 0
+        ? `${confidence} | ${budget}\n\n${lines.join('\n\n')}${summaries.length ? '\n\nAlso found:\n' + summaries.join('\n') : ''}`
+        : `No results found for "${query}"`;
+
+      // Shape structuredContent to conform to AgentSearchOutputSchema
+      const structured = {
+        format: searchResult.format,
+        subMode: searchResult.subMode,
+        query: searchResult.query,
+        regex: searchResult.regex,
+        mode: searchResult.mode,
+        totalResults: searchResult.totalResults,
+        tokenBudget: searchResult.tokenBudget,
+        tokensUsed: searchResult.tokensUsed,
+        confidence: searchResult.confidence,
+        confidenceReason: searchResult.confidenceReason,
+        sufficient: searchResult.sufficient,
+        sufficiencyReasons: searchResult.sufficiencyReasons || [],
+        packagingMs: searchResult.packagingMs,
+        latencyMs: searchResult.latencyMs,
+        results: agentResults.map(r => ({
+          rank: r.rank,
+          file: r.file,
+          startLine: r.startLine ?? null,
+          endLine: r.endLine ?? null,
+          symbol: r.symbol ?? null,
+          symbolType: r.symbolType ?? null,
+          score: r.score,
+          presentation: r.presentation,
+          code: r.code ?? null,
+          codeTokens: r.codeTokens,
+        })),
+      };
+
+      return {
+        content: [{ type: 'text', text }],
+        structuredContent: structured,
+      };
+    }
+
+    // Standard benchmark mode
+    const { results, stats } = searchResult;
     const structured = {
       results: (results || []).map(r => ({
         file: r.file || r.file_path || r.metadata?.file || '',

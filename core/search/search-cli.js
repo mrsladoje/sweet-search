@@ -220,6 +220,9 @@ Options:
   --fusion <type>   Legacy: cc or rrf (ignored for hybrid - always uses robust CC fusion)
   --late-interaction Enable late interaction reranking (if index available)
   --late-interaction-model=ID Use specific model (lateon-code or lateon-code-edge)
+  --agent           Agent mode: return self-contained code blocks (ColGrep context packaging)
+  --agent-full      Agent mode with full expansion for top-3 results (budget: 8000)
+  --budget <n>      Agent mode token budget (default: 4000 preview, 8000 full)
   --summary         HCGS summary-first output (10x token reduction)
   --mid             Middle-res view: signature + docstring (5x token reduction)
   --json            Output as JSON
@@ -325,6 +328,8 @@ Examples:
     let summaryFirst = false;
     let middleRes = false;
     let forceCold = false;
+    let agentFormat = null;     // null | 'agent_preview' | 'agent_full'
+    let agentBudget = null;
 
     for (let i = isGrepCommand ? 1 : 0; i < args.length; i++) {
       const arg = args[i];
@@ -376,6 +381,13 @@ Examples:
         verbose = true;
       } else if (arg === '--cold') {
         forceCold = true;
+      } else if (arg === '--agent') {
+        agentFormat = agentFormat || 'agent_preview';
+      } else if (arg === '--agent-full') {
+        agentFormat = 'agent_full';
+      } else if (arg === '--budget' && args[i + 1]) {
+        agentBudget = parseInt(args[++i], 10);
+        agentFormat = agentFormat || 'agent_preview';
       } else if (!arg.startsWith('--')) {
         query = arg;
       }
@@ -421,6 +433,7 @@ Examples:
           useLateInteraction,
           summary: summaryFirst,
           mid: middleRes,
+          ...(agentFormat && { format: agentFormat, ...(agentBudget && { tokenBudget: agentBudget }) }),
         });
 
         if (response.error) {
@@ -428,27 +441,32 @@ Examples:
           process.exit(1);
         }
 
-        const { results, stats } = response;
-
-        if (json) {
-          console.log(JSON.stringify({ results, stats }, null, 2));
+        // Agent mode: response is already a fully packaged agent response
+        if (response.format === 'agent') {
+          console.log(JSON.stringify(response, null, 2));
         } else {
-          printStyledHeader(query);
-          printStyledStats(stats, true);
+          const { results, stats } = response;
 
-          // Use pure formatting helpers (no full SweetSearch instantiation needed).
-          // Contract note: formatResults currently only depends on `this` for
-          // structural delegation via this.formatStructuralResults(...).
-          // If search-format.js adds more `this.*` usages, revisit this context.
-          const formatContext = { formatStructuralResults };
-          if (stats.path === 'structural') {
-            console.log(formatStructuralResults(results, stats));
-          } else if (summaryFirst) {
-            console.log(formatSummaryFirst(results));
-          } else if (middleRes) {
-            console.log(formatMiddleRes(results));
+          if (json) {
+            console.log(JSON.stringify({ results, stats }, null, 2));
           } else {
-            console.log(formatSearchResults.call(formatContext, results, stats));
+            printStyledHeader(query);
+            printStyledStats(stats, true);
+
+            // Use pure formatting helpers (no full SweetSearch instantiation needed).
+            // Contract note: formatResults currently only depends on `this` for
+            // structural delegation via this.formatStructuralResults(...).
+            // If search-format.js adds more `this.*` usages, revisit this context.
+            const formatContext = { formatStructuralResults };
+            if (stats.path === 'structural') {
+              console.log(formatStructuralResults(results, stats));
+            } else if (summaryFirst) {
+              console.log(formatSummaryFirst(results));
+            } else if (middleRes) {
+              console.log(formatMiddleRes(results));
+            } else {
+              console.log(formatSearchResults.call(formatContext, results, stats));
+            }
           }
         }
       } catch (err) {
@@ -469,7 +487,7 @@ Examples:
     registerAutoPersistOnExit(2);
 
     try {
-      let { results, stats } = await searcher.search(query, {
+      const searchResult = await searcher.search(query, {
         k: topK,
         mode,
         regex,
@@ -484,27 +502,35 @@ Examples:
         rerank,
         fusion,
         useLateInteraction,
+        ...(agentFormat && { format: agentFormat, ...(agentBudget && { tokenBudget: agentBudget }) }),
       });
 
-      // HCGS: Enrich with summaries if summary-first mode
-      if (summaryFirst) {
-        results = await searcher.enrichWithSummaries(results);
-      }
-
-      if (json) {
-        console.log(JSON.stringify({ results, stats }, null, 2));
+      // Agent mode: already fully packaged
+      if (searchResult.format === 'agent') {
+        console.log(JSON.stringify(searchResult, null, 2));
       } else {
-        printStyledHeader(query);
-        printStyledStats(stats, false);
+        let { results, stats } = searchResult;
 
-        if (stats.path === 'structural') {
-          console.log(searcher.formatStructuralResults(results, stats));
-        } else if (summaryFirst) {
-          console.log(searcher.formatSummaryFirst(results));
-        } else if (middleRes) {
-          console.log(searcher.formatMiddleRes(results));
+        // HCGS: Enrich with summaries if summary-first mode
+        if (summaryFirst) {
+          results = await searcher.enrichWithSummaries(results);
+        }
+
+        if (json) {
+          console.log(JSON.stringify({ results, stats }, null, 2));
         } else {
-          console.log(searcher.formatResults(results, stats));
+          printStyledHeader(query);
+          printStyledStats(stats, false);
+
+          if (stats.path === 'structural') {
+            console.log(searcher.formatStructuralResults(results, stats));
+          } else if (summaryFirst) {
+            console.log(searcher.formatSummaryFirst(results));
+          } else if (middleRes) {
+            console.log(searcher.formatMiddleRes(results));
+          } else {
+            console.log(searcher.formatResults(results, stats));
+          }
         }
       }
     } catch (err) {
