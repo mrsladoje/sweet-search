@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "napi": {
-    "binaryName": "maxsim",
+    "binaryName": "sweet-search-native",
     "targets": [
       "aarch64-apple-darwin",
       "x86_64-apple-darwin",

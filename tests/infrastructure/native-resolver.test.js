@@ -108,7 +108,7 @@ describe('native-resolver', () => {
     it('finds the local dev addon on darwin-arm64', async () => {
       const { resolveNativeAddon } = await loadResolver();
       if (process.platform === 'darwin' && process.arch === 'arm64') {
-        const expected = join(ROOT, 'sweet-search-native', 'maxsim.darwin-arm64.node');
+        const expected = join(ROOT, 'sweet-search-native', 'sweet-search-native.darwin-arm64.node');
         if (existsSync(expected)) {
           expect(resolveNativeAddon()).toBe(expected);
         }
@@ -136,7 +136,7 @@ describe('native-resolver', () => {
           tempRoot,
           'packages',
           `native-${info.platform}-${info.arch}${info.libc}`,
-          'maxsim.node',
+          'sweet-search-native.node',
         );
         touch(packageAddon);
         expect(resolveNativeAddon({ rootDir: tempRoot })).toBe(packageAddon);
@@ -147,7 +147,7 @@ describe('native-resolver', () => {
       const { resolveNativeAddon } = await loadResolver();
       withTempRoot((tempRoot) => {
         const npmPkgDir = join(tempRoot, 'fake-node-modules', '@sweet-search', 'native-test');
-        const npmAddon = join(npmPkgDir, 'maxsim.node');
+        const npmAddon = join(npmPkgDir, 'sweet-search-native.node');
         touch(join(npmPkgDir, 'package.json'));
         touch(npmAddon);
         const result = resolveNativeAddon({

@@ -4,5 +4,5 @@
   "description": "Sweet Search native binaries for macOS ARM64",
   "os": ["darwin"],
   "cpu": ["arm64"],
-  "files": ["manifest.json", "maxsim.node", "sweet-search"]
+  "files": ["manifest.json", "sweet-search-native.node", "sweet-search"]
 }
