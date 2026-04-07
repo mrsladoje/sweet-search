@@ -5,8 +5,8 @@
  * STRUCTURAL queries are handled by regex patterns in query-router.js (100% accuracy).
  * Removing them from ML training eliminates STRUCTURAL↔SEMANTIC confusion.
  *
- * Input:  training/output/catboost_training_data.json (3728 samples, 4 classes)
- * Output: training/output/catboost_training_data_3class.json (3004 samples, 3 classes)
+ * Input:  core/training/query-router/output/catboost_training_data.json (3728 samples, 4 classes)
+ * Output: core/training/query-router/output/catboost_training_data_3class.json (3004 samples, 3 classes)
  */
 
 import { readFileSync, writeFileSync } from 'fs';

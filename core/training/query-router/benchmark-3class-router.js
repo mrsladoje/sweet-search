@@ -129,8 +129,8 @@ async function main() {
   const router = await loadRouter('v46_router_d4.js');
   if (!router) {
     console.error('\nv46_router_d4.js not found. Train the model first:');
-    console.error('  python training/models/train_catboost.py --data training/output/catboost_training_data_3class.json --output training/models/query_router_3class.cbm');
-    console.error('  python training/models/export_catboost_to_js.py --model training/models/query_router_3class.cbm --output training/output/v46_router_d4.js');
+    console.error('  python core/training/query-router/models/train_catboost.py --data core/training/query-router/output/catboost_training_data_3class.json --output core/training/query-router/models/query_router_3class.cbm');
+    console.error('  python core/training/query-router/models/export_catboost_to_js.py --model core/training/query-router/models/query_router_3class.cbm --output core/training/query-router/output/v46_router_d4.js');
     process.exit(1);
   }
 

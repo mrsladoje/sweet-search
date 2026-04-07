@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { extractAllFeatures, getAllFeatureNames } from '../training/features/extractor.js';
+import { extractAllFeatures, getAllFeatureNames } from '../core/training/query-router/features/extractor.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 

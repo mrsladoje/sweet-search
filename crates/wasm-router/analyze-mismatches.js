@@ -7,7 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 async function main() {
   const wasmPath = join(__dirname, 'pkg', 'query_router_wasm.js');
   const wasm = await import(wasmPath);
-  const { extractAllFeatures, getAllFeatureNames } = await import('../training/features/extractor.js');
+  const { extractAllFeatures, getAllFeatureNames } = await import('../core/training/query-router/features/extractor.js');
 
   const testCases = [
     // Route mismatches

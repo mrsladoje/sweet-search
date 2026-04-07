@@ -9,10 +9,10 @@
  */
 
 // Import the trained CatBoost router
-import { routeQueryCatBoost, LABELS } from '../../training/output/v46_router_d4.js';
+import { routeQueryCatBoost, LABELS } from '../training/query-router/output/v46_router_d4.js';
 
 // Import the feature extractor (must match training features)
-import { extractAllFeatures } from '../../training/features/extractor.js';
+import { extractAllFeatures } from '../training/query-router/features/extractor.js';
 
 // =============================================================================
 // REJECT OPTION CONFIGURATION

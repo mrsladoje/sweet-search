@@ -75,8 +75,9 @@ step (see [Remaining Work](#remaining-work)).
    dependency, not query-time coupling. Max 2 import sites; machine-checked.
 
 2. **query -> training**: `query-router-catboost.js` loads a trained model artifact from
-   `training/output/`. This is a read-only artifact dependency. Max 2 import sites;
-   machine-checked.
+   `core/training/query-router/output/`. This is a read-only artifact dependency. Max 2
+   import sites; machine-checked. `core/training/` is build-time tooling — no barrel
+   `index.js`, not a runtime domain.
 
 3. **graph -> embedding (CLI dynamic only)**: `graph/hcgs-generator.js` may lazy-load
    `embedding/index.js` via dynamic `import()` annotated `// CLI`. Permitted only from
@@ -194,8 +195,8 @@ Exceptions are explicit in `check-boundaries.js` with bounded counts:
 ```javascript
 const EXCEPTIONS = [
   { from: 'core/indexing/', to: 'ranking/', label: 'indexing → ranking (late-interaction build)', max: 2 },
-  // query-router-catboost imports trained model from training/ — declared dependency
-  { from: 'core/query/', to: 'training/', label: 'query → training (CatBoost model artifact)', max: 2 },
+  // query-router-catboost imports trained model from core/training/query-router/ — declared build-time artifact dependency
+  { from: 'core/query/', to: 'training/query-router/', label: 'query → training (CatBoost model artifact)', max: 2 },
 ];
 ```
 

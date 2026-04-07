@@ -4,7 +4,7 @@
  *
  * Checks:
  *   1. Forbidden dependency direction (domain layering rules)
- *   2. Undeclared external dependencies (e.g. core/ → training/)
+ *   2. Undeclared external dependencies (e.g. core/ → external/)
  *   3. Barrel-only cross-domain imports within core/
  *   4. Barrel-only imports from consumers outside core/
  *
@@ -25,7 +25,7 @@ const FORBIDDEN = [
   { from: 'core/infrastructure/', to: ['embedding/', 'indexing/', 'search/', 'ranking/', 'graph/', 'vocabulary/', 'vector-store/', 'query/'], label: 'infrastructure → domain' },
   { from: 'core/vector-store/', to: ['embedding/', 'indexing/', 'search/', 'ranking/', 'graph/', 'vocabulary/', 'query/'], label: 'vector-store → domain' },
   { from: 'core/embedding/', to: ['search/', 'ranking/', 'indexing/', 'query/', 'graph/', 'vocabulary/', 'vector-store/'], label: 'embedding → higher' },
-  { from: 'core/query/', to: ['search/', 'ranking/', 'indexing/', 'embedding/', 'graph/', 'vocabulary/', 'vector-store/', 'training/'], label: 'query → forbidden' },
+  { from: 'core/query/', to: ['search/', 'ranking/', 'indexing/', 'embedding/', 'graph/', 'vocabulary/', 'vector-store/'], label: 'query → forbidden' },
   { from: 'core/ranking/', to: ['search/', 'indexing/', 'query/', 'graph/', 'vocabulary/', 'vector-store/', 'embedding/'], label: 'ranking → higher' },
   { from: 'core/indexing/', to: ['search/', 'query/'], label: 'indexing → higher' },
   { from: 'core/graph/', to: ['search/', 'indexing/', 'vocabulary/', 'vector-store/', 'embedding/'], label: 'graph → forbidden' },
@@ -34,8 +34,8 @@ const FORBIDDEN = [
 
 const EXCEPTIONS = [
   { from: 'core/indexing/', to: 'ranking/', label: 'indexing → ranking (late-interaction build)', max: 2 },
-  // query-router-catboost imports trained model from training/ — declared dependency
-  { from: 'core/query/', to: 'training/', label: 'query → training (CatBoost model artifact)', max: 2 },
+  // query-router-catboost imports trained model from core/training/query-router/ — declared build-time artifact dependency
+  { from: 'core/query/', to: 'training/query-router/', label: 'query → training (CatBoost model artifact)', max: 2 },
 ];
 
 // ── Section 2: Barrel-only allowlist (external consumers) ────────────────────
@@ -182,7 +182,7 @@ for (const sourceDomain of DOMAINS) {
 for (const domain of DOMAINS) {
   try {
     const result = execSync(
-      `grep -rn --include='*.js' --include='*.mjs' -E "from ['\"].*core/${domain}/[^'\"]+['\"]" tests/ scripts/ eval/ mcp/ training/ bin/ evaluation/ __tests__/ 2>/dev/null || true`,
+      `grep -rn --include='*.js' --include='*.mjs' -E "from ['\"].*core/${domain}/[^'\"]+['\"]" tests/ scripts/ eval/ mcp/ bin/ evaluation/ __tests__/ 2>/dev/null || true`,
       { encoding: 'utf8' }
     ).trim();
 
@@ -209,7 +209,7 @@ for (const domain of DOMAINS) {
 
     // Dynamic imports
     const dynamicResult = execSync(
-      `grep -rn --include='*.js' --include='*.mjs' -E "import\\(.*core/${domain}/[^'\"]+['\"]" tests/ scripts/ eval/ mcp/ training/ bin/ evaluation/ __tests__/ 2>/dev/null || true`,
+      `grep -rn --include='*.js' --include='*.mjs' -E "import\\(.*core/${domain}/[^'\"]+['\"]" tests/ scripts/ eval/ mcp/ bin/ evaluation/ __tests__/ 2>/dev/null || true`,
       { encoding: 'utf8' }
     ).trim();
 
