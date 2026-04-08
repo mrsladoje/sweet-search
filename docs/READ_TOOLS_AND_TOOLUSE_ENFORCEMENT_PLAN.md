@@ -284,6 +284,8 @@ instruction files.
 
 **Canonical source for Claude Code**:
 - `CLAUDE.md` is the Claude Code source of truth.
+- If sweet-search writes `.claude/rules/sweet-search.md`, `CLAUDE.md` should import it via
+  `@.claude/rules/sweet-search.md`.
 - If `AGENTS.md` exists and the user wants a shared instruction body across tools, inject the
   sweet-search block into `AGENTS.md` and add `@AGENTS.md` near the top of `CLAUDE.md`.
 - If only `CLAUDE.md` exists, inject there directly.
@@ -375,6 +377,95 @@ sweet-search "who calls authenticate" --mode structural
 - If the file exists but has no marker, prepend the block before the first `#` heading.
 - If no instruction file exists yet, create `CLAUDE.md` with the block + a minimal project header.
 - Never modify content outside the marker block.
+
+---
+
+### 2A½ — `.claude/rules/sweet-search.md` (Imported Support File)
+
+**Goal**: Keep the sweet-search tool-routing instructions in a dedicated file under `.claude/`
+while relying only on documented Claude Code memory/import behavior.
+
+**Important correction**:
+- Anthropic's official Claude Code docs document automatic loading for `CLAUDE.md` files and
+  support `@path` imports from `CLAUDE.md`.
+- This plan does **not** assume `.claude/rules/*.md` is auto-loaded by Claude Code unless that
+  behavior is independently verified later.
+- Therefore `.claude/rules/sweet-search.md` should be treated as a support file that Claude Code
+  sees via `CLAUDE.md` import, not as an independently guaranteed rules channel.
+
+**Why both an imported rules file and CLAUDE.md?**
+
+- `.claude/rules/sweet-search.md` gives sweet-search a clean, fully owned file with no marker
+  replacement complexity.
+- `CLAUDE.md` remains the documented Claude Code source of truth and imports the rules file
+  using `@.claude/rules/sweet-search.md`.
+- `CLAUDE.md` / `AGENTS.md` injection (Part 2A) still covers non-Claude agents (Cursor,
+  Windsurf, Codex) that do not use Claude's import/memory system.
+- This keeps the guidance modular for Claude Code while preserving cross-agent portability.
+
+**File**: `.claude/rules/sweet-search.md`
+
+**Load path**:
+- `sweet-search init` writes `.claude/rules/sweet-search.md`
+- `sweet-search init` ensures `CLAUDE.md` contains `@.claude/rules/sweet-search.md` near the top
+- Claude Code then loads the file through the documented `CLAUDE.md` import mechanism
+
+**Contents** (written verbatim by init):
+
+```markdown
+# sweet-search — Tool Replacement Rules
+
+This project uses **sweet-search** for all code search and file reading.
+These tools are faster and more capable than the built-in defaults.
+
+## MANDATORY replacements
+
+| Instead of... | Use... | Why |
+|--------------|--------|-----|
+| `Grep` / `rg` for code search | `sweet-search <query>` or `sweet-search grep <pattern>` | Faster indexed search, ColGrep, semantic reranking |
+| `Glob` for code path discovery | `sweet-search files "<glob>"` | Fast indexed path matching |
+| `Read` to understand code | `sweet-search read <file>` | Exact filesystem-backed read, batchable |
+| `Read` to understand specific parts | `sweet-search read-semantic <file> "<question>"` | Returns exact relevant spans only |
+| structural/code graph questions | `sweet-search "<query>" --mode structural` | Graph traversal for callers/callees/implementations/impact |
+
+## When native tools are still OK
+
+- `Read` before `Edit` (required by the harness for edit verification)
+- `Read` for non-code files (configs, docs, images)
+- `Glob` for file existence checks or listing directories
+
+## Examples
+
+```bash
+# Content search (replaces Grep)
+sweet-search "authentication" --agent
+sweet-search grep "class\s+Service" --agent
+
+# Path search (replaces Glob)
+sweet-search files "src/**/*auth*"
+
+# Semantic read (replaces Read for understanding)
+sweet-search read-semantic src/auth/service.ts "token refresh logic"
+
+# Batch read (1 call replaces N sequential Reads)
+sweet-search read src/auth/service.ts src/auth/middleware.ts src/auth/types.ts
+
+# Structural query
+sweet-search "who calls authenticate" --mode structural
+```
+```
+
+**Lifecycle**:
+- `sweet-search init` creates `.claude/rules/sweet-search.md` (mkdir `.claude/rules/` if needed).
+- `sweet-search init` re-runs overwrite the file idempotently (no markers needed — the entire
+  file is sweet-search-owned).
+- `sweet-search uninstall` deletes `.claude/rules/sweet-search.md`. If `.claude/rules/` is
+  empty after deletion, remove the directory too. Never delete other rules files.
+
+**Interaction with `--no-agent-instructions`**:
+- `--no-agent-instructions` skips both the `CLAUDE.md` injection (2A) and the rules file (2A½).
+  It also skips adding the `@.claude/rules/sweet-search.md` import to `CLAUDE.md`.
+  They are part of the same logical feature: agent instruction placement.
 
 ---
 
@@ -585,10 +676,11 @@ All of Part 2 integrates into `scripts/init.js` as new steps after the existing 
 8.  Write config                                    (existing)
 9.  Run verification                                (existing)
 10. Install index-maintainer daemon hook             (existing)
-11. Inject agent instructions into CLAUDE.md/AGENTS.md   (NEW — Part 2A)
-12. Install UserPromptSubmit reminder hook            (NEW — Part 2C, default-on)
-13. Install tool-enforcement settings/hooks          (NEW — Part 2B, only with --enforce-tools)
-14. Print report                                     (existing, updated)
+11. Write .claude/rules/sweet-search.md              (NEW — Part 2A½)
+12. Inject/import agent instructions in CLAUDE.md/AGENTS.md   (NEW — Part 2A)
+13. Install UserPromptSubmit reminder hook            (NEW — Part 2C, default-on)
+14. Install tool-enforcement settings/hooks          (NEW — Part 2B, only with --enforce-tools)
+15. Print report                                     (existing, updated)
 ```
 
 ### New init flags:
@@ -596,7 +688,7 @@ All of Part 2 integrates into `scripts/init.js` as new steps after the existing 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--enforce-tools` | `false` | Install Claude-specific deny/settings enforcement for native Grep plus Read hints |
-| `--no-agent-instructions` | `false` | Skip CLAUDE.md/AGENTS.md injection |
+| `--no-agent-instructions` | `false` | Skip `.claude/rules/sweet-search.md`, its `CLAUDE.md` import, and CLAUDE.md/AGENTS.md injection |
 | `--no-prompt-reminders` | `false` | Skip the `UserPromptSubmit` sweet-search reminder hook |
 
 ### Updated report:
@@ -610,7 +702,8 @@ Sweet Search init complete
   Late interaction:     init-managed cache
   Reranker:             init-managed cache
   Runtime downloads:    disabled
-  Agent instructions:   injected into CLAUDE.md, AGENTS.md
+  Claude rules file:    .claude/rules/sweet-search.md (imported from CLAUDE.md)
+  Agent instructions:   injected/imported into CLAUDE.md, AGENTS.md
   Prompt reminders:     enabled
   Tool enforcement:     enabled (Grep denied, Read hinted)
   Verification:         fast-pass (27/27)
@@ -625,13 +718,13 @@ Sweet Search init complete
 | **P1** | `sweet-search read` CLI + MCP tool, filesystem-grounded | 4-6h | none |
 | **P2** | `sweet-search read-semantic` exact-span CLI + MCP tool | 4-6h | P1 + late-interaction index |
 | **P3** | `sweet-search files` path/glob CLI + MCP tool | 4-6h | path-index design |
-| **P4** | CLAUDE.md/AGENTS.md injection in init | 2-3h | tool names finalized |
+| **P4** | `.claude/rules/sweet-search.md` + `CLAUDE.md` import + CLAUDE.md/AGENTS.md injection in init | 2-3h | tool names finalized |
 | **P5** | `UserPromptSubmit` reminder hook | 1-2h | P4 |
 | **P6** | strict Claude enforcement mode (`permissions` + Read hint hook) | 2-3h | P4 |
 | **P7** | MCP/tool description rewrite | 30-60m | P1-P3 |
 | **P8** | uninstall cleanup for all init-owned mutations | 1-2h | P4-P6 |
 | **P9** | benchmarks + eval harness + tests | 4-6h | P1-P8 |
-| **P10** | DSPy optimization of CLAUDE.md/AGENTS.md and `UserPromptSubmit` prompt guardrails | 6-10h | P9 |
+| **P10** | DSPy optimization of imported rules file, CLAUDE.md/AGENTS.md, and `UserPromptSubmit` guardrails | 6-10h | P9 |
 | **P11** | integrate DSPy-optimized prompt artifacts into init and verify on eval set | 2-4h | P10 |
 
 **Total estimated effort**: 30-46h
@@ -648,6 +741,7 @@ Sweet Search init complete
 | `scripts/hooks/intercept-read.mjs` | PreToolUse hook: hint on native Read |
 | `scripts/hooks/remind-tools.mjs` | `UserPromptSubmit` reminder hook |
 | `scripts/inject-agent-instructions.js` | CLAUDE.md/AGENTS.md injection logic |
+| `scripts/write-claude-rules.js` | `.claude/rules/sweet-search.md` write + `CLAUDE.md` import/cleanup logic |
 | `tests/search/search-read.test.js` | Tests for read tool |
 | `tests/search/search-read-semantic.test.js` | Tests for read-semantic tool |
 | `tests/search/search-files.test.js` | Tests for path/glob tool |
@@ -661,8 +755,8 @@ Sweet Search init complete
 | `core/cli.js` | Add `read`, `read-semantic`, and `files` subcommand dispatch |
 | `mcp/server.js` | Register `read`, `read-semantic`, and `files` MCP tools |
 | `mcp/tool-handlers.js` | Add handler functions for new tools |
-| `scripts/init.js` | Steps 11-13: agent instructions + prompt reminders + optional enforcement |
-| `scripts/uninstall.js` | Remove injected instructions and all sweet-search-managed hook/settings entries |
+| `scripts/init.js` | Steps 11-14: rules file + CLAUDE.md import + agent instructions + prompt reminders + optional enforcement |
+| `scripts/uninstall.js` | Remove `.claude/rules/sweet-search.md`, its `CLAUDE.md` import, injected instructions, and all sweet-search-managed hook/settings entries |
 | `core/search/index.js` | Export new modules from barrel |
 | `docs/INIT_STRATEGY.md` | Update uninstall contract to include init-owned instruction/settings reversal |
 
@@ -677,6 +771,8 @@ and uninstall behavior.
 ### Required updates
 
 1. Update the init flow section to add:
+   - writing `.claude/rules/sweet-search.md`
+   - importing `.claude/rules/sweet-search.md` from `CLAUDE.md`
    - agent instruction injection into `CLAUDE.md` / `AGENTS.md`
    - default-on `UserPromptSubmit` sweet-search reminder hook
    - opt-in Claude-specific enforcement via `.claude/settings.json`
@@ -687,6 +783,8 @@ and uninstall behavior.
    - `--no-prompt-reminders`
 
 3. Update the init success report example to mention:
+   - whether `.claude/rules/sweet-search.md` was written
+   - whether `CLAUDE.md` imports it
    - whether agent instructions were injected
    - whether prompt reminders were installed
    - whether strict enforcement was enabled
@@ -696,6 +794,8 @@ and uninstall behavior.
 
 5. Replace that uninstall contract with the correct one:
    - uninstall removes all sweet-search-managed mutations created by `sweet-search init`
+   - this includes `.claude/rules/sweet-search.md`
+   - this includes the `@.claude/rules/sweet-search.md` import added to `CLAUDE.md`
    - this includes marker-wrapped blocks injected into `CLAUDE.md` / `AGENTS.md`
    - this includes sweet-search-managed entries added to `.claude/settings.json`
    - uninstall must only remove sweet-search-owned content, never unrelated user content
@@ -703,6 +803,8 @@ and uninstall behavior.
 
 6. Add a short note that:
    - `CLAUDE.md` is the Claude Code source of truth
+   - `.claude/rules/sweet-search.md` is loaded through a documented `CLAUDE.md` import, not
+     assumed to be auto-loaded on its own
    - `AGENTS.md` may also be updated for cross-agent compatibility
    - symlinked instruction files must be handled by editing only the source of truth
 
@@ -774,12 +876,21 @@ Markers (`<!-- sweet-search:agent-instructions:begin/end -->`) enable:
 Strict enforcement is Claude Code-specific and opinionated. Some users may prefer soft guidance
 plus prompt reminders only. Enterprise deployments may have their own settings policies.
 
+### Why both `.claude/rules/` and `CLAUDE.md`?
+
+Belt-and-suspenders. `.claude/rules/sweet-search.md` gives sweet-search a clean, fully owned
+instruction file for Claude-specific guidance, while `CLAUDE.md` remains the documented source of
+truth and imports that file. The `CLAUDE.md` / `AGENTS.md` injection covers Cursor, Windsurf,
+Codex, and any agent that reads project markdown files. The duplication cost is negligible
+compared to the cost of the agent falling back to native `Grep` + `Read` in a long conversation.
+
 ### Why DSPy is mandatory
 
-The injected `CLAUDE.md` / `AGENTS.md` block and the `UserPromptSubmit` reminder are the primary
-guardrails for the entire system. Because the success of tool selection depends heavily on the
-quality of those prompts, they should be optimized systematically rather than hand-tuned once and
-left to drift.
+The imported `.claude/rules/sweet-search.md` file, the injected `CLAUDE.md` / `AGENTS.md`
+instructions, and the `UserPromptSubmit` reminder are the primary guardrails for the entire
+system. Because the
+success of tool selection depends heavily on the quality of those prompts, they should be
+optimized systematically rather than hand-tuned once and left to drift.
 
 DSPy should be used after there is an eval set covering:
 - sweet-search tool selection rate
@@ -789,6 +900,8 @@ DSPy should be used after there is an eval set covering:
 - token usage
 
 Use DSPy to optimize:
+- the `.claude/rules/sweet-search.md` content
+- the `CLAUDE.md` import/instruction composition strategy
 - the injected instruction block for `CLAUDE.md`
 - the injected instruction block for `AGENTS.md`
 - the `UserPromptSubmit` reminder payload
