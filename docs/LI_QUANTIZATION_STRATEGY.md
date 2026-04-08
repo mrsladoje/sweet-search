@@ -1,11 +1,11 @@
-# TurboQuant-Inspired Late Interaction Compression Plan
+# LI Quantization Strategy
 
 > **Goal**: Minimize memory footprint, disk size, load time, and MaxSim
 > scoring latency of the late interaction index so Sweet Search runs well
 > on developer laptops with 8-16 GB RAM, while preserving retrieval
 > quality (NDCG@10 regression < 0.5 pp).
 
-**Status**: Phases 0-4 implemented and validated (3432 tests, 0 regressions). CRA items pending A/B testing.
+**Status**: Binary LI storage and INT4 quantization are implemented. Plain INT4 is now the default product path for late-interaction indexes. WHT remains available for A/B work but is not the default. Full TurboQuant remains deferred.
 **Implementation approach**: All kernels are built from scratch — no
 external quantization/scoring dependencies. Existing open-source
 implementations (see [Reference Implementations](#reference-implementations-algorithm-reference-only--no-dependencies))
@@ -15,14 +15,22 @@ tuned for our specific pipeline (asymmetric float32-query × quantized-doc
 MaxSim scoring on L2-normalized code embeddings at d=128).
 **Related**: `INFERENCE_SPEEDUP_PLAN.md` covers ONNX forward-pass speedups (worker threads, warmup, session config) for both the embedding and LI models. That plan speeds up inference; this plan speeds up storage, loading, and MaxSim scoring. Gains are multiplicative.
 
-### Performance Impact Summary
+## Current Decision
 
-| Component | Speed Improvement | Why |
-|-----------|-------------------|-----|
-| **MaxSim scoring** | ~30-40% faster | Pre-stored norms eliminate redundant d_norm_sq (currently computed Q*D times instead of D times), 4-bit centroid LUT replaces dequant FMA chain, no per-thread Vec allocation, 2x smaller napi buffer copies |
-| **Index load** | ~5-10x faster | Binary format replaces JSON parse of 1.34 GiB, direct typed-array read vs `Array.from()` + `new Int8Array()` |
-| **Embedding model inference** | No change | TurboQuant compresses stored vectors, not the model itself. ONNX forward pass is unchanged. |
-| **Weak-machine experience** | Dramatically better | 1.34 GiB → ~210 MiB reduces memory pressure, eliminates swapping on 8 GB laptops |
+- Implemented: fully binary LI segment storage, persisted LI quantization metadata, INT4 doc-token storage, and query-time loading that follows stored index metadata.
+- Default shipping path: plain INT4, no WHT, no pooling, no Phase 5 work.
+- Benchmarked outcome: INT4 matched the prior INT8 baseline closely enough to ship while materially reducing LI index size.
+- Deferred: WHT as a product default, aggressive token pooling, Matryoshka-dependent paths, and full TurboQuant / PolarQuant / QJL work.
+
+### Current Outcome Summary
+
+| Area | Current Result | Notes |
+|------|----------------|-------|
+| **LI storage** | Materially smaller with INT4 | Full benchmark runs showed the LI index shrinking from the previous INT8 baseline without requiring any query-time flags. |
+| **Retrieval quality** | Good enough to ship | Full A/Bs showed plain INT4 staying effectively in line with the shipped INT8 baseline. |
+| **WHT rotation** | Deferred from default | Benchmarks were mixed: small or inconsistent quality gains, with real extra indexing/query work in some runs. |
+| **Pooling** | Rejected as-is | `poolFactor=2` caused unacceptable quality loss on the benchmark suite. |
+| **Phase 5 / TurboQuant** | Deferred | Not needed to justify the current product default after INT4 validated successfully. |
 
 ### Native Binary Strategy
 
@@ -115,7 +123,9 @@ brackets. Measured overhead: **~3.4x** bloat vs raw payload.
 
 ---
 
-## Phased Plan
+## Historical Implementation Plan
+
+The remaining sections preserve the original implementation plan and research notes. They are useful as design history, but they are not the current product decision. The active default is the INT4 path summarized above.
 
 ### Phase 0: Binary LI Storage Format
 
@@ -499,22 +509,17 @@ Expected NDCG@10 loss: **< 0.2%**. Safe for production.
 
 ---
 
-### Phase 5 (Future): Full TurboQuant
+### Phase 5 (Deferred): Full TurboQuant
 
-**When**: Only if Phase 4 quality is insufficient or we need > 2x
-compression beyond 4-bit.
+**When**: Only if plain INT4 stops meeting product goals or we later need materially more compression than the current default delivers.
 
 **What**: PolarQuant (optimal per-coordinate scalar quantization using
 Lloyd-Max codebooks) + optional QJL (1-bit residual correction for
 unbiased inner products).
 
-**Why we might need it**: At 3.25 bits (turbo3), storage drops to ~52
-bytes/token vs 72 for WHT+INT4. For million-doc indexes, this saves
-another ~60 MiB.
+**Why we might need it**: At 3.25 bits (turbo3), storage could drop further than INT4. That may matter for much larger corpora or tighter memory targets.
 
-**Why we might not**: The gap between WHT+INT4 and full TurboQuant
-turbo3 is only ~36 MiB on a 3.14M-token corpus. Token count reduction
-(Phase 3) is a bigger lever.
+**Why it is deferred now**: The current plain INT4 path already achieved the required quality/size tradeoff. The remaining savings from full TurboQuant do not currently justify the extra kernel complexity, persistence surface, and validation cost.
 
 **Prerequisites**:
 - Empirical validation that LateOn-Code embeddings (L2-normalized) match
@@ -530,7 +535,7 @@ deserves empirical evaluation in Phase 5, not upfront dismissal.
 
 ---
 
-## Community Research Addendum (March 2026)
+## Historical Research Addendum (March 2026)
 
 > **Added after deep research sweep across 30+ papers, community
 > implementations, and production deployments (Oct 2025 – Mar 2026).**
@@ -982,26 +987,17 @@ priority for server-side CLI search.
 
 ---
 
-### Updated Projected Impact (With Community Research Additions)
+### Historical Projection Snapshot
 
-**Scenario**: 17K docs, 3.14M tokens, d=128, on an 8 GB laptop.
-Assumes CRA-1 (hierarchical pooling) and CRA-2 (quantile boundaries)
-pass A/B testing.
+This section is preserved as pre-benchmark research context only. It is not the current roadmap and should not be read as an expected product outcome. In practice, the aggressive pooling assumptions did not hold up in A/B testing, and Phase 5 remains deferred.
 
-| Phase | CRA Additions | Index Size | Cumulative |
-|-------|--------------|-----------|------------|
-| Current (JSON INT8) | — | 1.34 GiB | — |
-| Phase 0 (binary) | — | 396 MiB | 3.4x |
-| Phase 1 (per-token quant) | — | 419 MiB | 3.2x |
-| Phase 2 (WHT rotation) | +CRA-3 (WUSH calibration), +CRA-4 (sequency ordering) | 419 MiB | 3.2x (quality++) |
-| Phase 3 | **+CRA-1 (hierarchical pooling at 20% keep)** | **84 MiB** | **16x** |
-| Phase 4 (4-bit) | +CRA-2 (quantile buckets), +CRA-5 (implicit decomp), +CRA-7 (Metal LUT) | **47 MiB** | **28.5x** |
-| Phase 5 | +CRA-8 (Matryoshka d=64) | **~24 MiB** | **~56x** |
-
-With CRA-1's 5x token reduction (vs Phase 3's original 2x), the
-combined pipeline could achieve **28x** compression through Phase 4
-alone — up from 11.4x in the original plan. If CRA-8 (Matryoshka)
-proves viable, **56x** is possible.
+| Item | Current status |
+|------|----------------|
+| Binary storage | Shipped |
+| Plain INT4 | Shipped and default |
+| WHT as default | Deferred |
+| Pooling (`poolFactor=2`) | Rejected as implemented |
+| Full TurboQuant / Phase 5 | Deferred |
 
 ---
 
@@ -1030,94 +1026,51 @@ proves viable, **56x** is possible.
 
 ---
 
-## Projected Impact (All Phases Combined)
+## Current Outcome
 
-**Scenario**: 17K docs, 3.14M tokens, d=128, on an 8 GB laptop
+This is the operative summary for the repository today.
 
-| Phase | Index Size | vs Current | Cumulative |
-|-------|-----------|------------|------------|
-| Current (JSON INT8) | 1.34 GiB | baseline | — |
-| Phase 0 (binary format) | 396 MiB | **3.4x smaller** | 3.4x |
-| Phase 1 (per-token quant) | 419 MiB | ~1x (quality improvement, slight size increase) | 3.2x |
-| Phase 2 (WHT rotation) | 419 MiB | 1x (quality improvement, no size change) | 3.2x |
-| Phase 3 (poolFactor=2) | 210 MiB | 2x | 6.4x |
-| Phase 4 (WHT + 4-bit) | 118 MiB | 1.8x | **11.4x** |
-| Phase 5 (full TurboQuant) | ~95 MiB | 1.2x | **14.1x** |
+| Decision area | Outcome |
+|---------------|---------|
+| LI storage format | Fully binary segment storage shipped |
+| LI quantization default | Plain INT4 shipped as default |
+| Query-time flags | Not required for normal use; stored LI metadata drives load behavior |
+| WHT rotation | Available for benchmarking, not the product default |
+| Token pooling | Not shipped as a default optimization |
+| Full TurboQuant / PolarQuant / QJL | Deferred pending a materially stronger need |
 
-**Extrapolated to 100K docs** (~18.4M tokens at 184 avg/doc):
-
-| Configuration | Size | Fits in 8 GB? |
-|---|---|---|
-| Current JSON INT8 | ~7.9 GiB | No |
-| Phase 0 only | ~2.3 GiB | Barely |
-| Phase 0+3 (pool=2) | ~1.2 GiB | Yes |
-| Phase 0+1+2+3+4 | ~0.7 GiB | Comfortably |
+| Benchmark conclusion | Result |
+|----------------------|--------|
+| INT4 vs prior INT8 baseline | Close enough on retrieval quality to ship |
+| INT4 storage footprint | Materially smaller than the prior INT8 baseline |
+| WHT defaulting decision | Mixed benchmark results, so not defaulted |
+| Pooling decision | Quality regression too large to ship as implemented |
 
 ---
 
-## Validation Strategy
+## Validation Status
 
-### Score Correlation Test
+Completed validation work:
 
-**TODO**: Create `eval/scripts/maxsim-quant-correlation.js` (does not
-exist yet — must be written as part of Phase 0 validation).
+- Full A/B benchmarks were run against the repository's current retrieval harnesses before changing the product default.
+- Those runs were sufficient to ship plain INT4 as the default LI path.
+- WHT was left available for experimentation, but not defaulted, because quality gains were inconsistent across benchmarks.
+- Pooling was not accepted because the observed quality regression was too large.
 
-For each phase, measure:
-1. **Kendall tau** rank correlation of MaxSim scores vs float32 ground truth
-2. **Spearman rho** on the same
-3. **MRR@10 / NDCG@10** on GenCodeSearchNet eval set
-4. **P(rank inversion)** for score gaps in [0.01, 0.02, 0.03, 0.05, 0.08]
+Future validation, if deferred work is revisited:
 
-### Go/No-Go Gates
-
-| Phase | Gate | Threshold |
-|-------|------|-----------|
-| 0 | Load time | < 2s for 17K docs |
-| 0 | File size | Within 5% of theoretical min |
-| 1 | Kendall tau vs float32 | >= 0.998 |
-| 2 | Kendall tau vs float32 | >= 0.995 |
-| 2 | Latency overhead | < 0.5ms per query |
-| 3 | MRR@10 regression | < 2pp |
-| 4 | NDCG@10 regression | < 0.5pp |
-| 4 | Kendall tau vs float32 | >= 0.990 |
-
-### A/B Framework
-
-**TODO**: Add `--li-quant` flag to the eval harness
-(`eval/retrieval-harness.js`) to select quantization scheme at runtime.
-This flag does not exist yet — it must be implemented before Phase 1
-A/B testing can begin. Once added, run identical benchmarks across
-configurations and compare metrics side-by-side.
+- Re-run full benchmark A/Bs before changing the default again.
+- Treat any WHT, pooling, Matryoshka, or full TurboQuant work as benchmark-gated rather than assumption-driven.
+- Keep microbenchmarks as supporting evidence only; ship decisions should continue to follow retrieval-quality benchmarks.
 
 ---
 
-## Implementation Priority
+## Current Priority
 
-```
-Phase 0 (binary storage)     ██████████ Highest ROI, zero quality risk
-Phase 1 (per-token quant)    ████████   Free quality win, small effort
-Phase 3 + CRA-1 (hier.pool)  ████████   5x tokens (up from 2x), proven superior
-Phase 2 + CRA-4 (seq. Walsh) ██████     Free quality win, zero kernel changes
-CRA-2 (quantile buckets)     ██████     Free quality win, zero runtime cost
-Phase 4 + CRA-5 + CRA-13     █████      New kernels, implicit decomp, L1 LUT
-CRA-3 (WUSH calibration)     ████       A/B test after Phase 2 — may or may not help
-CRA-6 (token weights)        ████       Orthogonal quality win, low effort
-CRA-7 (Metal constant mem)   ███        Single annotation, Apple Silicon only
-Phase 5 / CRA-8 (Matryoshka) ██         Only if model-level changes justified
-CRA-9/10/11/12 (future)      █          Research directions, high effort
-```
-
-The Pareto-optimal order is: **binary storage first, token count second,
-rotation third, bit reduction last.** This matches the expert consensus:
-systems people say fix the serialization format; retrieval people say
-reduce token count; vector DB people say rotation + simple scalar
-quantization is proven; hardware people say 4-bit is the sane target.
-
-**Critical addition from community research**: every CRA optimization
-MUST be A/B tested before shipping. Academic gains on LLM KV caches
-or natural language retrieval do **not** guarantee gains on code
-retrieval with L2-normalized embeddings at d=128. The eval harness
-is the single source of truth. Ship what passes; reject what doesn't.
+1. Keep plain INT4 as the default LI quantization path.
+2. Rebuild or migrate existing indexes when adopting the new default in production environments.
+3. Defer WHT defaulting, pooling, and full TurboQuant until a new benchmark-backed product need appears.
+4. Continue to treat retrieval-quality benchmarks as the ship gate for any future LI quantization changes.
 
 ---
 
