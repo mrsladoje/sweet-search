@@ -126,6 +126,50 @@ Suggested instrumentation targets:
 - [`core/ranking/late-interaction-model.js`](/Users/admin/Projects/sweet-search-private/core/ranking/late-interaction-model.js)
 - [`scripts/benchmark-harness.js`](/Users/admin/Projects/sweet-search-private/scripts/benchmark-harness.js)
 
+### Mandatory A/B Gate Protocol
+
+Every phase must pass this gate before merging into the main branch. No exceptions.
+
+#### Baseline requirement
+
+Before starting any phase, commit a baseline benchmark summary artifact to `.claude/benchmarks/results/`. The baseline must be taken on the same hardware, same ORT version, same benchmark flags, and same test corpus that will be used for the A/B comparison. If Phase 0b upgrades ORT, the post-upgrade baseline becomes the new reference for all subsequent phases. Commit summarized results and delta tables, not raw per-run logs unless they are needed to explain an anomaly.
+
+#### Run protocol
+
+1. **Warmup:** 2 full-index runs, discarded.
+2. **Measurement:** Minimum 5 full-index runs for both A (baseline) and B (candidate).
+3. **Environment:** Same machine, same background load, same benchmark flags as the baseline run. Record the exact flags used, including concurrency.
+4. **Reporting:** For each metric in the Metrics table above, report mean, P95, and standard deviation across the 5 runs.
+
+#### Acceptance thresholds
+
+| Metric | Gate | Notes |
+|------|------|------|
+| Total wall-clock index time | B must be faster by >3% mean, or within 1% if the phase is correctness-only | 3% threshold accounts for run-to-run noise |
+| Embedding batches/sec | Must not regress >1% mean | Regression here blocks merge even if wall-clock improves elsewhere |
+| LI batches/sec | Must not regress >1% mean | Same as above |
+| P95 batch latency | Must not regress >5% | Tail latency guard |
+| Peak RSS | Must not regress >10% | Hard cap; if a phase adds workers, budget the increase explicitly |
+| Model load time | Must not regress >20% cold, >5% warm | Cold start tolerance is higher because it is amortized |
+| Correctness — embedding | Cosine similarity >0.999 vs baseline on fixed corpus | Bit-identical is ideal; 0.999 is the floor |
+| Correctness — LI ranking | Kendall tau >0.99 on top-50 results for fixed query set | Ranking stability matters more than vector similarity for LI |
+
+#### Rollback criteria
+
+If any gated metric regresses beyond its threshold and cannot be resolved within the phase scope, revert the phase branch. Do not carry regressions forward into the next phase hoping to fix them later.
+
+#### Artifact checklist
+
+Each phase merge must include:
+
+- [ ] Baseline artifact (committed before work began)
+- [ ] Candidate artifact (5-run summary with mean/P95/stddev)
+- [ ] Delta table showing A vs B for every gated metric
+- [ ] Pass/fail verdict for each gate
+- [ ] Hardware and environment description (machine, OS, ORT version, Node version, flags)
+
+Store all artifacts under `.claude/benchmarks/results/{phase}/`.
+
 ---
 
 ## Phase 0: Baseline Hygiene
