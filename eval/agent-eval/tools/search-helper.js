@@ -43,8 +43,8 @@ try {
       sufficient: data.sufficient,
       tokensUsed: data.tokensUsed,
       results: (data.results || []).map(r => {
-        // Tight payload: rank 1 gets 1500 chars, rank 2+ gets 500
-        const codeLimit = r.rank === 1 ? 1500 : 500;
+        // Rich payload for one-shot: rank 1 gets 3000 chars, rank 2+ gets 1500
+        const codeLimit = r.rank === 1 ? 3000 : 1500;
         return {
           rank: r.rank,
           file: r.file,

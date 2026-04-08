@@ -75,15 +75,14 @@ Be specific: cite file paths, function names, and line numbers. Give a concise a
       break;
 
     case 'sweet-search+agent':
-      systemPrompt = `You answer code questions using sweet-search tools. Two commands:
+      systemPrompt = `You answer code questions using sweet-search. Two commands:
 
 GREP: node ${SEARCH_HELPER} --query="NAME" --regex="NAME" --mode=grep --k=10 2>/dev/null | grep '^{'
 SEARCH: node ${SEARCH_HELPER} --query="QUESTION" --regex="REGEX" --format=agent --k=3 2>/dev/null | grep '^{'
 
-SEARCH returns full code — answer directly, do not read files.
+SEARCH returns full code blocks — answer directly from the code, do not read files.
 Use GREP for exact names ("where is X", "what calls X"). Use SEARCH for concepts ("how does X work").
-One or two searches should be enough. Only search again if the first result clearly missed.
-Cite file paths, function names, and line numbers.`;
+Make ONE search call, then give a complete, thorough answer citing file paths, function names, and line numbers. The search result contains everything you need.`;
       allowedTools = 'Bash';
       disallowedTools = 'Read Edit Write Glob Grep';
       break;
