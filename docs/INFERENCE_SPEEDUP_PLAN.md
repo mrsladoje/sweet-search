@@ -4,7 +4,7 @@
 **Status:** Proposed
 **Scope:** Maximize local ONNX model inference throughput during indexing across all supported platforms (macOS Apple Silicon, Linux x86, WSL). Covers **both** the embedding model (CodeRankEmbed) and the late interaction model (LateOn-Code) — both run through ORT `session.run()` and benefit from the same optimizations. This plan is complementary to:
 - `PARALLEL_SESSIONS_BUG_PLAN.md` — search-serving thread safety
-- `TURBOQUANT_PLAN.md` — late interaction **scoring and storage** compression (post-inference). That plan speeds up MaxSim scoring, index load, and memory footprint. This plan speeds up the ONNX forward pass that produces the embeddings/token vectors in the first place.
+- `LI_QUANTIZATION_STRATEGY.md` — late interaction **scoring and storage** compression (post-inference). That plan speeds up MaxSim scoring, index load, and memory footprint. This plan speeds up the ONNX forward pass that produces the embeddings/token vectors in the first place.
 
 ---
 
@@ -783,7 +783,7 @@ quantize_dynamic(
 )
 ```
 
-**Note:** The LI model produces per-token vectors that feed into MaxSim scoring. INT4 quantization noise on token vectors may compound differently than on pooled embeddings. The LI model's quality gate should use Kendall tau rank correlation on MaxSim scores (per `TURBOQUANT_PLAN.md` validation), not just pairwise cosine similarity.
+**Note:** The LI model produces per-token vectors that feed into MaxSim scoring. INT4 quantization noise on token vectors may compound differently than on pooled embeddings. The LI model's quality gate should use Kendall tau rank correlation on MaxSim scores (per `LI_QUANTIZATION_STRATEGY.md` validation), not just pairwise cosine similarity.
 
 #### 6b. Calibration-based INT4 (GPTQ)
 
@@ -906,7 +906,7 @@ Phases 6-7 carry real risk: INT4 may regress quality or hit MatMulNBits performa
 
 ## Related: TurboQuant Plan (Post-Inference Speedups)
 
-`TURBOQUANT_PLAN.md` covers optimizations that happen **after** the ONNX forward pass — late interaction index storage and MaxSim scoring. The two plans target different stages of the pipeline and their gains are multiplicative:
+`LI_QUANTIZATION_STRATEGY.md` covers optimizations that happen **after** the ONNX forward pass — late interaction index storage and MaxSim scoring. The two plans target different stages of the pipeline and their gains are multiplicative:
 
 | Stage | This Plan (Inference) | TurboQuant (Scoring/Storage) |
 |-------|----------------------|------------------------------|
