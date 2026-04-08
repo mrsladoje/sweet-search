@@ -84,7 +84,7 @@ function parseArgs(argv) {
     help: args.includes('--help') || args.includes('-h'),
     noLateInteraction: args.includes('--no-late-interaction'),
     lateInteractionModel: args.find(a => a.startsWith('--late-interaction-model='))?.split('=')[1] || null,
-    lateInteractionPool: parseInt(args.find(a => a.startsWith('--late-interaction-pool='))?.split('=')[1] || '1', 10),
+    lateInteractionPool: parseInt(args.find(a => a.startsWith('--late-interaction-pool='))?.split('=')[1] || process.env.SWEET_SEARCH_LI_POOL_FACTOR || '1', 10),
     lateInteractionExtendedSkiplist: args.includes('--late-interaction-skiplist=extended'),
     requireNativeAnn: args.includes('--require-native-ann'),
     sqliteFastMode: args.includes('--sqlite-fast') || process.env.SWEET_SEARCH_SQLITE_FAST_MODE === '1',

@@ -28,6 +28,20 @@ const QUERY_TOKEN_COUNTS = [8, 16, 32, 64];
 const CANDIDATE_COUNTS = [10, 20, 50, 100];
 const TOKEN_DIM = 128; // Match LateOn-Code full model
 const DEFAULT_ITERATIONS = 50;
+const QUANT_BITS = parseInt(process.env.SWEET_SEARCH_LI_QUANT_BITS || '8', 10);
+const WHT_SEED = parseInt(process.env.SWEET_SEARCH_LI_WHT_SEED || '0', 10);
+const WHT_ORDERING = process.env.SWEET_SEARCH_LI_WHT_ORDERING || 'natural';
+
+function createBenchIndex(extra = {}) {
+  return new LateInteractionIndex({
+    tokenDim: TOKEN_DIM,
+    useInt8: QUANT_BITS !== 32,
+    quantBits: QUANT_BITS,
+    whtSeed: WHT_SEED,
+    whtOrdering: WHT_ORDERING,
+    ...extra,
+  });
+}
 
 // =============================================================================
 // HELPERS
@@ -98,7 +112,7 @@ async function benchmarkDequantization(iterations) {
   const rng = mulberry32(42);
 
   for (const docTokens of DOC_TOKEN_COUNTS) {
-    const index = new LateInteractionIndex({ tokenDim: TOKEN_DIM, useInt8: true, maxTokens: Math.max(docTokens, 512) });
+    const index = createBenchIndex({ maxTokens: Math.max(docTokens, 512) });
     index.initialized = true;
 
     // Add a document
@@ -132,7 +146,7 @@ async function benchmarkMaxSimScoring(iterations) {
 
   const results = [];
   const rng = mulberry32(123);
-  const index = new LateInteractionIndex({ tokenDim: TOKEN_DIM });
+  const index = createBenchIndex({ useInt8: false, quantBits: 32, whtSeed: WHT_SEED, whtOrdering: WHT_ORDERING });
 
   for (const qLen of QUERY_TOKEN_COUNTS) {
     const queryTokens = generateTokens(qLen, TOKEN_DIM, rng);
@@ -186,7 +200,7 @@ async function benchmarkEndToEnd(iterations) {
 
   for (const numCandidates of CANDIDATE_COUNTS) {
     for (const dLen of [128, 512, 2048]) {
-      const index = new LateInteractionIndex({ tokenDim: TOKEN_DIM, useInt8: true, maxTokens: Math.max(dLen, 512) });
+      const index = createBenchIndex({ maxTokens: Math.max(dLen, 512) });
       index.initialized = true;
 
       // Add candidates
@@ -254,7 +268,7 @@ async function benchmarkCandidatePruning(iterations) {
   const dLen = 512;
   const maxCandidateCaps = [null, 50, 30, 20, 10]; // null = no cap (baseline)
 
-  const index = new LateInteractionIndex({ tokenDim: TOKEN_DIM, useInt8: true, maxTokens: dLen });
+  const index = createBenchIndex({ maxTokens: dLen });
   index.initialized = true;
 
   const candidates = [];
@@ -326,7 +340,7 @@ async function benchmarkBreakdown(iterations) {
   const rng = mulberry32(789);
 
   for (const dLen of [128, 512, 2048]) {
-    const index = new LateInteractionIndex({ tokenDim: TOKEN_DIM, useInt8: true, maxTokens: Math.max(dLen, 512) });
+    const index = createBenchIndex({ maxTokens: Math.max(dLen, 512) });
     index.initialized = true;
 
     const tokens = generateTokens(dLen, TOKEN_DIM, rng);
@@ -391,6 +405,9 @@ async function main() {
   console.log('╚══════════════════════════════════════════════════════╝');
   console.log(`  Token dimension: ${TOKEN_DIM}`);
   console.log(`  Iterations per config: ${iterations}`);
+  console.log(`  Quant bits: ${QUANT_BITS}`);
+  console.log(`  WHT seed: ${WHT_SEED}`);
+  console.log(`  WHT ordering: ${WHT_ORDERING}`);
   console.log(`  Date: ${new Date().toISOString()}`);
 
   const allResults = {};
