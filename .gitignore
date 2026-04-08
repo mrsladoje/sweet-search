@@ -68,6 +68,13 @@ eval/corpus/
 # Eval data: ignore downloaded datasets but track benchmark query files
 eval/data/gencodesearchnet/
 eval/data/m2crb/
+eval/data/advtest/
+eval/data/clarc/
+eval/data/codesearchnet/
+eval/data/coir/
+eval/data/coquir/
+eval/data/cosqa/
+eval/data/crosscodeeval/
 # Keep pattern benchmark queries tracked:
 # eval/data/pattern-benchmark*/queries.jsonl — tracked (gold labels)
 # eval/data/pattern-benchmark*/manifest.json — tracked (contract)
