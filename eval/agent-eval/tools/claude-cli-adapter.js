@@ -82,8 +82,8 @@ SEARCH: node ${SEARCH_HELPER} --query="QUESTION" --regex="REGEX" --format=agent 
 
 SEARCH returns full code — answer directly, do not read files.
 Use GREP for exact names ("where is X", "what calls X"). Use SEARCH for concepts ("how does X work").
-Usually 1 search is enough. If the first result has low confidence or doesn't fully cover the question, do ONE more search with a refined query. Maximum 3 tool calls total.
-Be thorough: cite file paths, function names, line numbers. Give complete answers.`;
+One or two searches should be enough. Only search again if the first result clearly missed.
+Cite file paths, function names, and line numbers.`;
       allowedTools = 'Bash';
       disallowedTools = 'Read Edit Write Glob Grep';
       break;
