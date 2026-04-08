@@ -177,8 +177,9 @@ export const LATE_INTERACTION_CONFIG = {
   get tokenDimension() { return this.activeModel?.tokenDimension || 128; },
   get hfModelId() { return this.activeModel?.hfId || null; },
 
-  // Storage: always int8-quantize the token vectors for the index
-  quantization: 'int8',
+  // Storage default: int4 per-token quantization for LI tokens.
+  // Query-time behavior is restored from persisted index metadata.
+  quantization: 'int4',
   blendWeight: 0.3,     // tune per-model in Phase 5
 
   // 32 skiplist punctuation characters (filtered from doc tokens, NOT query tokens)

@@ -299,8 +299,14 @@ export class LateInteractionIndex {
   constructor(options = {}) {
     this.tokenDim = options.tokenDim || LATE_INTERACTION_CONFIG.tokenDimension;
     this.maxTokens = options.maxTokens || 512;
-    this.useInt8 = options.useInt8 ?? (LATE_INTERACTION_CONFIG.quantization === 'int8');
-    this.quantBits = options.quantBits || (this.useInt8 ? 8 : 32); // 8=int8, 4=int4-nibble, 32=float32
+    const defaultQuantization = LATE_INTERACTION_CONFIG.quantization || 'int8';
+    this.useInt8 = options.useInt8 ?? (defaultQuantization === 'int8' || defaultQuantization === 'int4');
+    this.quantBits = options.quantBits ?? (
+      options.useInt8 === true ? 8
+        : options.useInt8 === false ? 32
+          : defaultQuantization === 'int4' ? 4
+            : (this.useInt8 ? 8 : 32)
+    ); // 8=int8, 4=int4-nibble, 32=float32
     this.indexPath = options.indexPath || DB_PATHS.lateInteraction || path.join(process.cwd(), '.sweet-search', 'late-interaction-tokens.db');
     this.modelId = options.modelId || LATE_INTERACTION_CONFIG.model || null;
     this.poolFactor = options.poolFactor || 1;

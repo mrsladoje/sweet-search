@@ -433,13 +433,25 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     return;
   }
 
+  // Default to the product LI quantization, with env vars available for A/B overrides.
+  const defaultQuantBits = LATE_INTERACTION_CONFIG.quantization === 'int4' ? 4 : 8;
+  const quantBits = parseInt(process.env.SWEET_SEARCH_LI_QUANT_BITS || String(defaultQuantBits), 10);
+  const whtSeed = parseInt(process.env.SWEET_SEARCH_LI_WHT_SEED || '0', 10);
+  const whtOrdering = process.env.SWEET_SEARCH_LI_WHT_ORDERING || 'natural';
+
   const liIndex = new LateInteractionIndex({
     tokenDim: LATE_INTERACTION_CONFIG.tokenDimension,
     maxTokens: 512,
-    useInt8: true,
+    useInt8: quantBits !== 32,
+    quantBits,
+    whtSeed,
+    whtOrdering,
     modelId: LATE_INTERACTION_CONFIG.model,
     indexPath: loadFromPath,
   });
+  if (quantBits !== defaultQuantBits || whtSeed !== 0) {
+    log(`LI config: quantBits=${quantBits}, whtSeed=${whtSeed}, whtOrdering=${whtOrdering}, poolFactor=${poolFactor}`, 'cyan');
+  }
 
   await liIndex.init();
 
