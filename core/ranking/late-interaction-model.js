@@ -143,10 +143,20 @@ async function loadModel() {
   // LateOn-Code model partitions poorly onto CoreML (1343/2327 ops), causing
   // constant CPU↔CoreML data transfer that makes inference ~18x slower.
   // The MLProgram format fails entirely; NeuralNetwork loads but regresses.
+  //
+  // Phase 1a: harmonized session options with embedding path — adds graph
+  // optimization, memory arena, mem pattern, and optimized graph caching.
+  // executionMode defaults to 'sequential' (BERT encoder, no branch parallelism).
+  // Phase 1a/1c: LI session options benchmarked on Apple Silicon (M3 Max).
+  // Findings: graphOptimizationLevel 'all' triggers NchwcTransformer → 14% regression.
+  // 'extended' + memArena + memPattern: marginal overhead for no measurable gain.
+  // Conclusion: keep LI session lean. Only proven-beneficial options added.
+  const { getOptimizedGraphPath } = await import('../infrastructure/onnx-session-utils.js');
   const session = await ort.InferenceSession.create(onnxPath, {
     executionProviders: ['cpu'],
     intraOpNumThreads: bestIntraOpThreads(),
     interOpNumThreads: 1,
+    optimizedModelFilePath: getOptimizedGraphPath(modelConfig.hfId, 'lateon'),
   });
   const coremlActive = false;
 
@@ -188,6 +198,15 @@ async function loadModel() {
     console.log(`[LateInteraction] Loaded ${projectionStages.length} projection stage(s): ${modelConfig.backboneDim}d → ${modelConfig.tokenDimension}d`);
   } else {
     throw new Error(`[LateInteraction] Unexpected ONNX output dim ${outputDim} (expected ${modelConfig.tokenDimension} or ${modelConfig.backboneDim})`);
+  }
+
+  // Phase 1b: Realistic two-pass warmup matching document encoding traffic.
+  // Pass 1: kernel selection with realistic document length.
+  // Pass 2: allocator settling.
+  const warmupDocText = '[D] export class AuthService { constructor(private jwtProvider) {} async login(credentials) { const user = await this.userRepo.findByEmail(credentials.email); if (!user) throw new UnauthorizedException(); return { token: this.jwtProvider.sign({ sub: user.id }) }; } }';
+  for (let pass = 0; pass < 2; pass++) {
+    const warmupTokenized = tokenizer(warmupDocText, { padding: true, truncation: true, max_length: modelConfig.maxDocLength });
+    await runRawInference(session, warmupTokenized, ort);
   }
 
   const elapsed = Date.now() - start;
