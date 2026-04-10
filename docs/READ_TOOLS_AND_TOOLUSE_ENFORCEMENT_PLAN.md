@@ -724,8 +724,8 @@ Sweet Search init complete
 | **P7** | MCP/tool description rewrite | 30-60m | P1-P3 |
 | **P8** | uninstall cleanup for all init-owned mutations | 1-2h | P4-P6 |
 | **P9** | benchmarks + eval harness + tests | 4-6h | P1-P8 |
-| **P10** | DSPy optimization of imported rules file, CLAUDE.md/AGENTS.md, and `UserPromptSubmit` guardrails | 6-10h | P9 |
-| **P11** | integrate DSPy-optimized prompt artifacts into init and verify on eval set | 2-4h | P10 |
+| **P10** | DSPy prompt optimization (steps D1-D6 in [DSPY_PLAN.md](DSPY_PLAN.md)) — scaffold optimizer, run multi-model optimization, export artifacts | 12-18h + ~$200-400 API | P9 |
+| **P11** | Wire DSPy output into init injection + hooks + MCP, regression test vs baseline | 2-3h | P10 |
 
 **Total estimated effort**: 30-46h
 
@@ -888,25 +888,14 @@ compared to the cost of the agent falling back to native `Grep` + `Read` in a lo
 
 The imported `.claude/rules/sweet-search.md` file, the injected `CLAUDE.md` / `AGENTS.md`
 instructions, and the `UserPromptSubmit` reminder are the primary guardrails for the entire
-system. Because the
-success of tool selection depends heavily on the quality of those prompts, they should be
-optimized systematically rather than hand-tuned once and left to drift.
+system. Because the success of tool selection depends heavily on the quality of those prompts,
+they should be optimized systematically rather than hand-tuned once and left to drift.
 
-DSPy should be used after there is an eval set covering:
-- sweet-search tool selection rate
-- native `Grep` / `Read` fallback rate
-- end-to-end task success
-- latency
-- token usage
-
-Use DSPy to optimize:
-- the `.claude/rules/sweet-search.md` content
-- the `CLAUDE.md` import/instruction composition strategy
-- the injected instruction block for `CLAUDE.md`
-- the injected instruction block for `AGENTS.md`
-- the `UserPromptSubmit` reminder payload
-
-Constraints:
-- optimization is offline only
-- no DSPy dependency in the runtime path
-- every optimized prompt variant must be validated on the eval set before adoption
+**Full DSPy plan**: See [DSPY_PLAN.md](DSPY_PLAN.md) for the complete optimization strategy,
+including:
+- Custom LM adapter that wraps Claude CLI agent sessions as DSPy-compatible calls
+- Universal multi-model metric (floor-weighted to ensure one prompt works across Claude,
+  GPT-4o, Gemini, Grok)
+- Two-phase cost-efficient optimization (cheap iteration → full validation)
+- Output artifacts that integrate into init without a Python runtime dependency
+- Detailed implementation steps (D1-D6) that replace the P10/P11 line items below
