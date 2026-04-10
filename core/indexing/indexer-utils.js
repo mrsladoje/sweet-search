@@ -413,7 +413,7 @@ export async function getGitIgnoredPathSet(paths, options = {}) {
 }
 
 export async function applyGitignoreAlignment(files, respectGitignore, options = {}) {
-  if (!respectGitignore || !existsSync(path.join(PROJECT_ROOT, '.gitignore')) || !existsSync(path.join(PROJECT_ROOT, '.git'))) {
+  if (!respectGitignore || !existsSync(path.join(PROJECT_ROOT, '.git'))) {
     return { files, gitignored: 0 };
   }
 
