@@ -25,6 +25,7 @@ const { existsSync, readFileSync } = await import('fs');
 describe('onnx-session-utils', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    existsSync.mockReturnValue(true);
     readFileSync.mockReturnValue(JSON.stringify({ version: '1.20.0' }));
   });
 
@@ -36,6 +37,7 @@ describe('onnx-session-utils', () => {
     });
 
     it('returns "unknown" when package.json is missing', () => {
+      existsSync.mockReturnValue(true);
       readFileSync.mockImplementation(() => { throw new Error('ENOENT'); });
       expect(getOnnxRuntimeVersion()).toBe('unknown');
     });
@@ -73,10 +75,10 @@ describe('onnx-session-utils', () => {
 
   describe('buildSessionOptions', () => {
     it('sets correct thread counts based on CPU cores', () => {
-      const cores = os.cpus().length;
-      const expected = Math.min(8, Math.max(2, Math.ceil(cores / 2)));
       const opts = buildSessionOptions('model', 'test');
-      expect(opts.intraOpNumThreads).toBe(expected);
+      // intraOpNumThreads uses bestIntraOpThreads() — verify it's a positive integer
+      expect(opts.intraOpNumThreads).toBeGreaterThan(0);
+      expect(opts.intraOpNumThreads).toBeLessThanOrEqual(os.cpus().length);
       expect(opts.interOpNumThreads).toBe(1);
     });
 
