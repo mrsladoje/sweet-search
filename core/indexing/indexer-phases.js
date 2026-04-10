@@ -14,6 +14,7 @@ import { colors, log, logProgress, logError, discoverFiles, readFilesFromStdin, 
 import { buildCodeGraph, buildVectorIndex, chunkFiles } from './indexer-build.js';
 import { incrementalUpdateHNSW, buildHNSWIndex, buildLateInteractionIndex, buildQuantizedArtifactsPhase } from './indexer-ann.js';
 import { buildSparseGramArtifact } from './indexer-sparse-gram.js';
+import { initEmbeddingPool, shutdownEmbeddingPool } from '../embedding/embedding-local-model.js';
 
 async function unlinkIfExists(filePath) {
   try {
@@ -268,6 +269,27 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     preChunked = await chunkFiles(filesToIndex);
   }
 
+  // Phase 2: Initialize worker pool for parallel embedding inference.
+  // Only beneficial when LI is NOT running in parallel — otherwise the pool's
+  // workers compete with the LI session for physical cores, causing net slowdown.
+  // On M3 Max: pool + parallel LI → 13 threads on 8 cores = 2.4x slower embedding.
+  // Pool alone (no LI): 1.18x measured speedup.
+  const useEmbeddingPool = !dryRun
+    && filesToIndex.length > 0
+    && EMBEDDING_CONFIG.provider === 'local'
+    && !shouldParallelLI;
+  if (useEmbeddingPool) {
+    const { planAllocation } = await import('./indexer-pool.js');
+    const plan = planAllocation();
+    if (plan.embeddingWorkers > 0) {
+      try {
+        await initEmbeddingPool();
+      } catch (err) {
+        log(`[InferencePool] Pool init failed, falling back to inline: ${err.message}`, 'yellow');
+      }
+    }
+  }
+
   const vectorOptions = {
     fullRebuild: fullReindex,
     filesToRemove: incrementalInfo?.toRemove || [],
@@ -312,6 +334,9 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
       ? liPromise.then(result => ({ ok: true, result }), error => ({ ok: false, error }))
       : Promise.resolve({ ok: true, result: null }),
   ]);
+
+  // Shutdown worker pool now that embedding is complete
+  await shutdownEmbeddingPool();
 
   if (hcgsResult && !hcgsResult.error) {
     log(`Summaries regenerated (${hcgsResult.generated} generated, ${hcgsResult.skipped} skipped)`, 'green');

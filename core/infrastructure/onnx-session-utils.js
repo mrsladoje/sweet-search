@@ -13,8 +13,17 @@ let _cacheDirEnsured = false;
 
 export function getOnnxRuntimeVersion() {
   try {
-    const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '..', 'node_modules', 'onnxruntime-node', 'package.json'), 'utf8'));
-    return pkg.version || 'unknown';
+    // Try project root first, then traverse up from __dirname
+    const candidates = [
+      path.resolve('node_modules/onnxruntime-node/package.json'),
+      path.resolve(__dirname, '../../node_modules/onnxruntime-node/package.json'),
+    ];
+    for (const p of candidates) {
+      if (existsSync(p)) {
+        return JSON.parse(readFileSync(p, 'utf8')).version || 'unknown';
+      }
+    }
+    return 'unknown';
   } catch {
     return 'unknown';
   }
@@ -31,12 +40,15 @@ export function getOptimizedGraphPath(modelId, suffix) {
 }
 
 export function buildSessionOptions(modelId, suffix, coremlAvailable = false) {
-  const cores = Math.max(1, os.cpus().length);
+  // Phase 1a: benchmarked sequential vs parallel — parallel wins on Apple Silicon.
+  // Configurable via env for A/B testing on other platforms.
+  const executionMode = process.env.SWEET_SEARCH_ORT_EXEC_MODE || 'parallel';
+  const interOpThreads = parseInt(process.env.SWEET_SEARCH_ORT_INTER_OP_THREADS || '1', 10);
   const opts = {
     graphOptimizationLevel: 'all',
-    intraOpNumThreads: Math.min(8, Math.max(2, Math.ceil(cores / 2))),
-    interOpNumThreads: 1,
-    executionMode: 'parallel',
+    intraOpNumThreads: bestIntraOpThreads(),
+    interOpNumThreads: interOpThreads,
+    executionMode,
     enableCpuMemArena: true,
     enableMemPattern: true,
     optimizedModelFilePath: getOptimizedGraphPath(modelId, suffix),

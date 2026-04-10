@@ -34,6 +34,9 @@ import {
   getLocalPipeline,
   unloadLocalModel,
   isLocalModelLoaded,
+  initEmbeddingPool,
+  shutdownEmbeddingPool,
+  getEmbeddingPool,
 } from './embedding-local-model.js';
 
 import {
@@ -589,6 +592,9 @@ export { getSemanticCacheStats, clearCache, getFrequentQueries, autoPersistFrequ
 
 // Named exports for internal generator functions (used by vocab-warmer)
 export { generateEmbedding, generateEmbeddings };
+
+// Worker pool lifecycle (Phase 2 — parallel indexing)
+export { initEmbeddingPool, shutdownEmbeddingPool, getEmbeddingPool };
 
 // =============================================================================
 // CLI INTERFACE
