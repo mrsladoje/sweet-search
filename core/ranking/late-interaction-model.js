@@ -639,12 +639,22 @@ export function _resetExtendedSkiplistCache() { _extendedSkiplistCache = null; }
 // =========================================================================
 
 async function runRawInference(session, tokenized, ort) {
-  const idData = tokenized.input_ids.data instanceof BigInt64Array
-    ? tokenized.input_ids.data
-    : new BigInt64Array(Array.from(tokenized.input_ids.data).map(BigInt));
-  const maskData = tokenized.attention_mask.data instanceof BigInt64Array
-    ? tokenized.attention_mask.data
-    : new BigInt64Array(Array.from(tokenized.attention_mask.data).map(BigInt));
+  // Fast path: native tokenizer always produces BigInt64Array via formatResult.
+  // Fallback uses Uint32Array overlay to avoid BigInt() heap allocations.
+  let idData = tokenized.input_ids.data;
+  if (!(idData instanceof BigInt64Array)) {
+    const src = tokenized.input_ids.data;
+    idData = new BigInt64Array(src.length);
+    const u32 = new Uint32Array(idData.buffer);
+    for (let i = 0; i < src.length; i++) u32[i * 2] = Number(src[i]);
+  }
+  let maskData = tokenized.attention_mask.data;
+  if (!(maskData instanceof BigInt64Array)) {
+    const src = tokenized.attention_mask.data;
+    maskData = new BigInt64Array(src.length);
+    const u32 = new Uint32Array(maskData.buffer);
+    for (let i = 0; i < src.length; i++) u32[i * 2] = Number(src[i]);
+  }
 
   const feeds = {
     input_ids: new ort.Tensor('int64', idData, tokenized.input_ids.dims),

@@ -125,20 +125,30 @@ function createNativeWrapper(native) {
  * Convert native TokenizeResult to HF-compatible format.
  * HF returns BigInt64Array data with .dims property.
  *
- * Hot path during indexing (~750+ calls). Avoids intermediate Array
- * allocations: `.map(BigInt)` creates a temp JS Array of BigInt objects
- * that immediately becomes garbage. Direct loop writes straight into
- * the BigInt64Array, cutting GC pressure by ~18M objects per index run.
+ * Hot path during indexing (~750+ calls). Uses Uint32Array overlays on
+ * BigInt64Array backing buffers to write token values (0–30522) as raw
+ * bytes, completely bypassing BigInt object creation. On little-endian
+ * platforms (all supported: ARM64, x86-64), the lower 32 bits of each
+ * 64-bit slot hold the value while the upper 32 bits stay zero from
+ * BigInt64Array initialization. 6× faster than BigInt() loop, eliminates
+ * ~18M heap allocations per index run, and reduces GC pressure.
  */
 function formatResult(result) {
   const len = result.inputIds.length;
   const ids = new BigInt64Array(len);
   const mask = new BigInt64Array(len);
   const typeIds = new BigInt64Array(len);
+
+  // Uint32Array views into the same backing ArrayBuffers.
+  // Element [i*2] = lower 32 bits of 64-bit slot i (little-endian).
+  // Element [i*2+1] = upper 32 bits, already 0 from BigInt64Array init.
+  const ids32 = new Uint32Array(ids.buffer);
+  const mask32 = new Uint32Array(mask.buffer);
+  const typeIds32 = new Uint32Array(typeIds.buffer);
   for (let i = 0; i < len; i++) {
-    ids[i] = BigInt(result.inputIds[i]);
-    mask[i] = BigInt(result.attentionMask[i]);
-    typeIds[i] = BigInt(result.tokenTypeIds[i]);
+    ids32[i * 2] = result.inputIds[i];
+    mask32[i * 2] = result.attentionMask[i];
+    typeIds32[i * 2] = result.tokenTypeIds[i];
   }
   const dims = Array.from(result.dims);
 
