@@ -40,9 +40,15 @@ export function buildFeed(tokenized, inputNames) {
     const field = tokenized[name];
 
     if (field?.data && field?.dims) {
-      const data = field.data instanceof BigInt64Array
-        ? field.data
-        : new BigInt64Array(Array.from(field.data).map(BigInt));
+      // Fast path: native tokenizer produces BigInt64Array via Uint32 overlay.
+      // Fallback also uses Uint32 overlay to avoid BigInt() heap allocations.
+      let data = field.data;
+      if (!(data instanceof BigInt64Array)) {
+        const src = field.data;
+        data = new BigInt64Array(src.length);
+        const u32 = new Uint32Array(data.buffer);
+        for (let i = 0; i < src.length; i++) u32[i * 2] = Number(src[i]);
+      }
       feed[name] = new ort.Tensor('int64', data, field.dims);
       continue;
     }
