@@ -37,7 +37,7 @@ import { ARTIFACT_THRESHOLDS } from './artifact-builder.js';
 // Sub-module imports (used in main + re-exported for backward compatibility)
 import {
   isWalSafe, configureJournalMode,
-  colors, setQuietMode, isQuietMode, log, logProgress, logError,
+  colors, setQuietMode, isQuietMode, setVerboseMode, log, logProgress, logError,
   atomicSwapDatabase,
   readFilesFromStdin, discoverFiles,
 } from './indexer-utils.js';
@@ -88,6 +88,7 @@ function parseArgs(argv) {
     lateInteractionExtendedSkiplist: args.includes('--late-interaction-skiplist=extended'),
     requireNativeAnn: args.includes('--require-native-ann'),
     sqliteFastMode: args.includes('--sqlite-fast') || process.env.SWEET_SEARCH_SQLITE_FAST_MODE === '1',
+    verbose: args.includes('--verbose') || args.includes('-v'),
   };
 }
 
@@ -101,10 +102,15 @@ async function main() {
   const { dryRun, graphOnly, vectorsOnly, fullReindex, showStats, resolveOnly,
           skipSummaryRegen, filesFromStdin, quiet, forceArtifacts, help,
           noLateInteraction, lateInteractionModel, lateInteractionPool, lateInteractionExtendedSkiplist,
-          requireNativeAnn, sqliteFastMode } = parseArgs();
+          requireNativeAnn, sqliteFastMode, verbose } = parseArgs();
 
   if (quiet) {
     setQuietMode(true);
+  }
+
+  if (verbose) {
+    setQuietMode(false);
+    setVerboseMode(true);
   }
 
   // Apply late interaction model overrides before any model code runs
@@ -155,6 +161,8 @@ Options:
   --sqlite-fast    Use unsafe SQLite pragmas for faster builds (benchmarking only).
                    Can also be set via SWEET_SEARCH_SQLITE_FAST_MODE=1.
                    WARNING: Data may be lost on crash - do NOT use in production.
+  --verbose, -v    Force progress output with newlines (visible in pipes/logs).
+                   Shows embedding %, LI %, and phase timings on separate lines.
   --quiet          Suppress progress bars and non-essential output (for daemon use).
                    Errors still go to stderr.
   --dry-run        Preview without indexing
@@ -276,6 +284,34 @@ Output:
       if (quiet && exitReason === 'no_valid_files') {
         console.log(JSON.stringify({ success: true, filesProcessed: 0, reason: exitReason }));
       }
+      return;
+    }
+
+    if (dryRun) {
+      if (skipSummaryRegen) {
+        log('\nDEPRECATION: --skip-summary-regen is no longer needed', 'yellow');
+        log('  Summaries are now ALWAYS automatically preserved across rebuilds', 'dim');
+      }
+
+      if (!quiet) {
+        log('\n--- Dry Run Preview ---', 'bright');
+        log('DRY RUN: Skipping graph, vector, LI, HNSW, and artifact phases', 'magenta');
+      }
+
+      printSummaryPhase({
+        graphStats: { entities: 0, relationships: 0 },
+        vectorStats: { chunks: 0, embeddings: 0 },
+        filesToIndex,
+        allFiles,
+        incrementalInfo,
+        vectorsOnly,
+        graphOnly,
+        fullReindex,
+        filesFromStdin,
+        quiet,
+        startTime,
+      });
+
       return;
     }
 
@@ -413,6 +449,7 @@ export {
   readFilesFromStdin,
   setQuietMode,
   isQuietMode,
+  setVerboseMode,
   createVectorSchema,
   ensureVectorSchema,
   insertVectors,

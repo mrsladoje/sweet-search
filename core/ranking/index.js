@@ -34,6 +34,8 @@ export {
   getLateInteractionTimings,
   getLateInteractionPipeline,
   isLateInteractionModelLoaded,
+  configureLateInteractionRuntime,
+  resetLateInteractionRuntime,
   unloadLateInteractionModel,
   encodeQuery,
   encodeDocuments,

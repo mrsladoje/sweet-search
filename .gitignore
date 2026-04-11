@@ -143,3 +143,4 @@ eval/repos/
 # Cross-target validation temp dirs
 .cross-validation-staging/
 .cross-validation-results/
+.claude/

@@ -27,7 +27,7 @@ export const QUERY_MAX_LENGTH = parseInt(process.env.SWEET_SEARCH_QUERY_MAX_LENG
 // =============================================================================
 
 // Import + re-export from infrastructure (canonical location)
-import { bestIntraOpThreads } from '../infrastructure/onnx-session-utils.js';
+import { bestIntraOpThreads, defaultOrtExecutionMode } from '../infrastructure/onnx-session-utils.js';
 export { bestIntraOpThreads };
 
 export function isIntelCpu() {
@@ -36,6 +36,26 @@ export function isIntelCpu() {
 }
 
 let openVinoProviderAvailable = null;
+let localModelRuntimeConfig = {
+  intraOpThreads: null,
+  interOpThreads: null,
+  executionMode: null,
+};
+
+export function configureLocalModelRuntime(overrides = {}) {
+  localModelRuntimeConfig = {
+    ...localModelRuntimeConfig,
+    ...overrides,
+  };
+}
+
+export function resetLocalModelRuntime() {
+  localModelRuntimeConfig = {
+    intraOpThreads: null,
+    interOpThreads: null,
+    executionMode: null,
+  };
+}
 
 export function isOpenVinoProviderAvailable() {
   if (openVinoProviderAvailable !== null) return openVinoProviderAvailable;
@@ -126,23 +146,34 @@ export function getCalibrationFactor() {
   return 4;
 }
 
-export function buildLocalSessionOptions(quantLabel = 'q8', coremlAvailable = false) {
-  // Phase 1a: executionMode and interOpNumThreads configurable via env for A/B.
-  // Benchmarked sequential vs parallel on M3 Max — parallel is 37% faster due
-  // to ARM memory subsystem efficiently overlapping inter-op work. Literature
-  // suggests sequential for BERT on x86, but Apple Silicon benefits from parallel.
-  // interOpNumThreads harmonized to 1 (was 2, but inter-op overhead > benefit).
-  const executionMode = process.env.SWEET_SEARCH_ORT_EXEC_MODE || 'parallel';
-  const interOpThreads = parseInt(process.env.SWEET_SEARCH_ORT_INTER_OP_THREADS || '1', 10);
+export function buildLocalSessionOptions(quantLabel = 'q8', coremlAvailable = false, runtimeConfig = {}) {
+  const executionMode = runtimeConfig.executionMode
+    ?? localModelRuntimeConfig.executionMode
+    ?? process.env.SWEET_SEARCH_ORT_EXEC_MODE
+    ?? defaultOrtExecutionMode();
+  const interOpThreads = runtimeConfig.interOpThreads
+    ?? localModelRuntimeConfig.interOpThreads
+    ?? parseInt(process.env.SWEET_SEARCH_ORT_INTER_OP_THREADS || '1', 10);
+  const intraOpThreads = runtimeConfig.intraOpThreads
+    ?? localModelRuntimeConfig.intraOpThreads
+    ?? bestIntraOpThreads(runtimeConfig);
 
   const sessionOptions = {
     graphOptimizationLevel: 'all',
-    intraOpNumThreads: bestIntraOpThreads(),
+    intraOpNumThreads: intraOpThreads,
     interOpNumThreads: interOpThreads,
     executionMode,
     enableCpuMemArena: true,
     enableMemPattern: true,
     optimizedModelFilePath: getOptimizedModelPath(quantLabel),
+  };
+
+  // Thread spinning keeps ORT worker threads hot-looping for work instead of
+  // sleeping on OS primitives. Trades idle CPU for lower per-batch latency.
+  sessionOptions.extra = {
+    session: {
+      intra_op: { allow_spinning: '1' },
+    },
   };
 
   if (shouldUseOpenVino()) {
@@ -313,10 +344,10 @@ export function getEmbeddingTimings() {
 let _embeddingPool = null;
 
 /** Initialize the embedding worker pool for parallel inference during indexing. */
-export async function initEmbeddingPool() {
+export async function initEmbeddingPool(options = {}) {
   if (_embeddingPool) return _embeddingPool;
   const { EmbeddingPool } = await import('../indexing/indexer-pool.js');
-  _embeddingPool = new EmbeddingPool();
+  _embeddingPool = new EmbeddingPool(options);
   await _embeddingPool.init();
   return _embeddingPool;
 }
@@ -331,6 +362,21 @@ export async function shutdownEmbeddingPool() {
 
 /** Get the active pool (null if not initialized). */
 export function getEmbeddingPool() { return _embeddingPool; }
+
+async function embedBatchesWithPool(pool, batches, maxLength) {
+  const results = new Array(batches.length);
+  const waveSize = Math.max(1, Math.min(pool.numWorkers || 1, batches.length));
+  for (let i = 0; i < batches.length; i += waveSize) {
+    const wave = batches.slice(i, i + waveSize);
+    const waveResults = await Promise.all(
+      wave.map(batch => pool.embed(batch.map(item => item.text), { maxLength }))
+    );
+    for (let j = 0; j < wave.length; j++) {
+      results[i + j] = waveResults[j];
+    }
+  }
+  return results;
+}
 
 // =============================================================================
 // PIPELINE SINGLETON
@@ -410,17 +456,20 @@ export async function getLocalPipeline() {
 
     const tokenizer = await createTokenizer(tokenizerPath);
 
-    // Phase 1b: Realistic two-pass warmup matching indexing traffic shapes.
-    // Pass 1: kernel selection and graph specialization with realistic lengths.
-    // Pass 2: allocator settling with batch shape matching production use.
-    const warmupTexts = [
-      'export class AuthService { constructor(private jwtProvider) {} }',
-      'function buildHNSWIndex(vectors, config) { const index = new HNSWIndex({ dimension: config.dim }); return index; }',
-      'async function search(query) { const res = await pool.request({ method: "GET", path: "/search" }); return res; }',
-      'interface SearchResult { id: string; score: number; file: string; content: string; metadata: Record<string, unknown>; }',
-    ];
-    for (let pass = 0; pass < 2; pass++) {
-      const warmupTokenized = tokenizer(warmupTexts, { padding: true, truncation: true, max_length: INDEXING_MAX_LENGTH });
+    // Warmup: ORT needs 10+ inference passes to stabilize JIT compilation,
+    // memory pool sizing, and thread pool scheduling. Warmup at production
+    // batch sizes so ORT's memory planner pre-allocates the right arenas.
+    // Short texts (batch 16) + medium texts (batch 8) + long texts (batch 4).
+    const warmupShort = Array.from({ length: 16 }, (_, i) =>
+      `function f${i}() { return ${i}; }`);
+    const warmupMedium = Array.from({ length: 8 }, (_, i) =>
+      `export class Service${i} { constructor(private db) {} async find(id) { const row = await this.db.query("SELECT * FROM t WHERE id = ?", [id]); return row; } async update(id, data) { await this.db.run("UPDATE t SET v = ? WHERE id = ?", [data, id]); } }`);
+    const warmupLong = Array.from({ length: 4 }, (_, i) =>
+      `/**\n * Module ${i}: handles complex business logic including validation,\n * transformation, caching, and event emission across multiple\n * bounded contexts. Each method delegates to specialized services\n * and aggregates results before returning to the caller.\n */\nexport class ComplexModule${i} {\n  constructor(private svc, private cache, private events) {}\n  async process(input) {\n    const validated = this.svc.validate(input);\n    const cached = await this.cache.get(validated.key);\n    if (cached) return cached;\n    const result = await this.svc.transform(validated);\n    await this.cache.set(validated.key, result);\n    this.events.emit('processed', { module: ${i}, key: validated.key });\n    return result;\n  }\n}`);
+    const warmupSets = [warmupShort, warmupMedium, warmupLong];
+    for (let pass = 0; pass < 10; pass++) {
+      const texts = warmupSets[pass % warmupSets.length];
+      const warmupTokenized = tokenizer(texts, { padding: true, truncation: true, max_length: INDEXING_MAX_LENGTH });
       const warmupFeed = buildFeed(warmupTokenized, session.inputNames);
       await session.run(warmupFeed);
     }
@@ -434,7 +483,7 @@ export async function getLocalPipeline() {
 
     localPipeline = { session, tokenizer, quantLabel, backend };
 
-    console.log(`Local model loaded in ${Date.now() - start}ms (threads: ${bestIntraOpThreads()}, backend: ${backend}, quantized: ${quantLabel})`);
+    console.log(`Local model loaded in ${Date.now() - start}ms (threads: ${sessionOptions.intraOpNumThreads}, backend: ${backend}, quantized: ${quantLabel})`);
     isLoadingLocal = false;
     return localPipeline;
   })();
@@ -487,12 +536,11 @@ export async function callLocalModel(texts, options = {}) {
     console.warn(`[L1] Local embedding dim mismatch: expected ${expectedDim}, got ${dim}`);
   }
 
-  const pool = new Float32Array(batchSize * dim);
-  pool.set(data);
-
+  // data is already a fresh Float32Array from extractPooledEmbeddings — subarray
+  // directly instead of allocating + copying into yet another buffer.
   const embeddings = new Array(texts.length);
   for (let i = 0; i < texts.length; i++) {
-    embeddings[i] = pool.subarray(i * dim, (i + 1) * dim);
+    embeddings[i] = data.subarray(i * dim, (i + 1) * dim);
   }
   if (process.env.NODE_ENV !== 'production') Object.freeze(embeddings);
   return embeddings;
@@ -554,9 +602,7 @@ export async function callLocalModelBucketed(texts, options = {}) {
   // across workers. The pool round-robins batches so workers run in parallel.
   const pool = getEmbeddingPool();
   if (pool && !memGuardActive) {
-    const batchResults = await Promise.all(
-      batches.map(batch => pool.embed(batch.map(b => b.text), { maxLength }))
-    );
+    const batchResults = await embedBatchesWithPool(pool, batches, maxLength);
     for (let b = 0; b < batches.length; b++) {
       for (let j = 0; j < batches[b].length; j++) {
         embeddings[batches[b][j].origIdx] = batchResults[b][j];
@@ -569,12 +615,16 @@ export async function callLocalModelBucketed(texts, options = {}) {
   // Uses pool if available (still benefits from dedicated ORT sessions),
   // otherwise falls back to in-process callLocalModel.
   const infer = pool ? (t, o) => pool.embed(t, o) : callLocalModel;
+  const onProgress = options.onProgress;
+  let completed = 0;
   for (const batch of batches) {
     const batchTexts = batch.map(b => b.text);
     const batchEmbeddings = await infer(batchTexts, { maxLength });
     for (let j = 0; j < batch.length; j++) {
       embeddings[batch[j].origIdx] = batchEmbeddings[j];
     }
+    completed += batch.length;
+    if (onProgress) onProgress(completed, texts.length);
   }
 
   return embeddings;

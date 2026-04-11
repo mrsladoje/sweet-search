@@ -3,62 +3,51 @@ import os from 'os';
 import { execFileSync } from 'child_process';
 import { detectIndexerProfile, EMBEDDING_CONFIG } from '../../core/config.js';
 
-const GB = 1_000_000_000;
 const GiB = 1024 ** 3;
 
 describe('detectIndexerProfile', () => {
-  // --- Apple Silicon tiers ---
-
-  it('high-memory Apple Silicon: batch=64, flush=1, parallelLI=true', () => {
+  it('uses the high-throughput tier on large machines', () => {
     const p = detectIndexerProfile({ platform: 'darwin', arch: 'arm64', totalMemBytes: 128 * GiB, isWSL: false, cpuCount: 16 });
-    expect(p).toEqual({ batchSize: 64, flushRows: 1, parallelLI: true });
+    expect(p).toMatchObject({
+      batchSize: 64,
+      flushRows: 1,
+      parallelLI: false,
+      executionMode: 'sequential-phases',
+      logicalCores: 16,
+      computeCores: 16,
+    });
   });
 
-  it('mid-memory Apple Silicon: batch=32, flush=8, parallelLI=true', () => {
+  it('uses the mid tier when memory and cores are moderate', () => {
     const p = detectIndexerProfile({ platform: 'darwin', arch: 'arm64', totalMemBytes: 16 * GiB, isWSL: false, cpuCount: 10 });
-    expect(p).toEqual({ batchSize: 32, flushRows: 8, parallelLI: true });
+    expect(p).toMatchObject({
+      batchSize: 32,
+      flushRows: 8,
+      parallelLI: false,
+      computeCores: 10,
+    });
   });
 
-  it('low-memory Apple Silicon: batch=16, flush=32, parallelLI=false', () => {
-    const p = detectIndexerProfile({ platform: 'darwin', arch: 'arm64', totalMemBytes: 8 * GiB, isWSL: false, cpuCount: 8 });
-    expect(p).toEqual({ batchSize: 16, flushRows: 32, parallelLI: false });
+  it('uses the laptop-safe tier on smaller but capable machines', () => {
+    const p = detectIndexerProfile({ platform: 'linux', arch: 'x64', totalMemBytes: 16 * GiB, isWSL: false, cpuCount: 8 });
+    expect(p).toMatchObject({
+      batchSize: 16,
+      flushRows: 32,
+      parallelLI: false,
+      logicalCores: 8,
+      computeCores: 4,
+    });
   });
 
-  // --- Realistic os.totalmem() values (OS reserves ~0.5-1 GB) ---
-
-  it('real 16GB Mac (~15.6 GiB reported) lands in mid-memory tier', () => {
-    const p = detectIndexerProfile({ platform: 'darwin', arch: 'arm64', totalMemBytes: 15.6 * GiB, isWSL: false, cpuCount: 10 });
-    expect(p).toEqual({ batchSize: 32, flushRows: 8, parallelLI: true });
+  it('keeps a tiny-machine fallback for low RAM or low compute budgets', () => {
+    const p = detectIndexerProfile({ platform: 'linux', arch: 'x64', totalMemBytes: 4 * GiB, isWSL: false, cpuCount: 4 });
+    expect(p).toMatchObject({
+      batchSize: 8,
+      flushRows: 64,
+      parallelLI: false,
+      computeCores: 2,
+    });
   });
-
-  it('real 32GB Mac (~31.3 GiB reported) lands in high-memory tier', () => {
-    const p = detectIndexerProfile({ platform: 'darwin', arch: 'arm64', totalMemBytes: 31.3 * GiB, isWSL: false, cpuCount: 12 });
-    expect(p).toEqual({ batchSize: 64, flushRows: 1, parallelLI: true });
-  });
-
-  // --- x86 / WSL / Windows fallbacks ---
-
-  it('Intel Mac falls back to conservative defaults', () => {
-    const p = detectIndexerProfile({ platform: 'darwin', arch: 'x64', totalMemBytes: 32 * GiB, isWSL: false, cpuCount: 8 });
-    expect(p).toEqual({ batchSize: 1, flushRows: 128, parallelLI: false });
-  });
-
-  it('WSL falls back to conservative defaults', () => {
-    const p = detectIndexerProfile({ platform: 'linux', arch: 'x64', totalMemBytes: 16 * GiB, isWSL: true, cpuCount: 8 });
-    expect(p).toEqual({ batchSize: 1, flushRows: 128, parallelLI: false });
-  });
-
-  it('Windows falls back to conservative defaults', () => {
-    const p = detectIndexerProfile({ platform: 'win32', arch: 'x64', totalMemBytes: 16 * GiB, isWSL: false, cpuCount: 8 });
-    expect(p).toEqual({ batchSize: 1, flushRows: 128, parallelLI: false });
-  });
-
-  it('Linux x64 falls back to conservative defaults', () => {
-    const p = detectIndexerProfile({ platform: 'linux', arch: 'x64', totalMemBytes: 64 * GiB, isWSL: false, cpuCount: 16 });
-    expect(p).toEqual({ batchSize: 1, flushRows: 128, parallelLI: false });
-  });
-
-  // --- WSL detection via os.release() ---
 
   it('detects WSL from os.release() when no overrides given', () => {
     vi.spyOn(os, 'release').mockReturnValue('5.15.153.1-microsoft-standard-WSL2');
@@ -73,7 +62,13 @@ describe('detectIndexerProfile', () => {
       delete process.env.WSL_DISTRO_NAME;
 
       const p = detectIndexerProfile();
-      expect(p).toEqual({ batchSize: 1, flushRows: 128, parallelLI: false });
+      expect(p).toMatchObject({
+        batchSize: 16,
+        flushRows: 32,
+        parallelLI: false,
+        isWSL: true,
+        computeCores: 4,
+      });
     } finally {
       Object.defineProperty(process, 'platform', { value: origPlatform, configurable: true });
       Object.defineProperty(process, 'arch', { value: origArch, configurable: true });
@@ -81,40 +76,21 @@ describe('detectIndexerProfile', () => {
     }
   });
 
-  // --- Boundary: 29 GB threshold ---
-
-  it('28.9 GB lands in mid-memory tier', () => {
-    const p = detectIndexerProfile({ platform: 'darwin', arch: 'arm64', totalMemBytes: 28.9 * GB, isWSL: false, cpuCount: 10 });
-    expect(p).toEqual({ batchSize: 32, flushRows: 8, parallelLI: true });
-  });
-
-  it('29 GB lands in high-memory tier', () => {
-    const p = detectIndexerProfile({ platform: 'darwin', arch: 'arm64', totalMemBytes: 29 * GB, isWSL: false, cpuCount: 10 });
-    expect(p).toEqual({ batchSize: 64, flushRows: 1, parallelLI: true });
-  });
-
-  // --- parallelLI thresholds ---
-
-  it('parallelLI=false when memory is below 14 GB', () => {
-    const p = detectIndexerProfile({ platform: 'darwin', arch: 'arm64', totalMemBytes: 13 * GB, isWSL: false, cpuCount: 16 });
+  it('defaults parallel late interaction off even on powerful machines', () => {
+    const p = detectIndexerProfile({ platform: 'darwin', arch: 'arm64', totalMemBytes: 64 * GiB, isWSL: false, cpuCount: 16 });
     expect(p.parallelLI).toBe(false);
+    expect(p.executionMode).toBe('sequential-phases');
   });
 
-  it('parallelLI=false when CPU count is below 8', () => {
-    const p = detectIndexerProfile({ platform: 'darwin', arch: 'arm64', totalMemBytes: 32 * GiB, isWSL: false, cpuCount: 4 });
-    expect(p.parallelLI).toBe(false);
+  it('treats x64 logical CPUs as SMT siblings when estimating compute cores', () => {
+    const p = detectIndexerProfile({ platform: 'linux', arch: 'x64', totalMemBytes: 64 * GiB, isWSL: false, cpuCount: 16 });
+    expect(p.computeCores).toBe(8);
+    expect(p.batchSize).toBe(64);
   });
 
-  it('parallelLI=true at boundary (14 GB, 8 cores)', () => {
-    const p = detectIndexerProfile({ platform: 'darwin', arch: 'arm64', totalMemBytes: 14 * GB, isWSL: false, cpuCount: 8 });
-    expect(p.parallelLI).toBe(true);
-  });
-
-  it('parallelLI defaults to Apple Silicon profile only', () => {
-    const linux = detectIndexerProfile({ platform: 'linux', arch: 'x64', totalMemBytes: 32 * GiB, isWSL: false, cpuCount: 16 });
-    const mac = detectIndexerProfile({ platform: 'darwin', arch: 'arm64', totalMemBytes: 32 * GiB, isWSL: false, cpuCount: 16 });
-    expect(linux.parallelLI).toBe(false);
-    expect(mac.parallelLI).toBe(true);
+  it('keeps ARM logical CPU counts as usable compute cores', () => {
+    const p = detectIndexerProfile({ platform: 'darwin', arch: 'arm64', totalMemBytes: 16 * GiB, isWSL: false, cpuCount: 10 });
+    expect(p.computeCores).toBe(10);
   });
 });
 
@@ -209,8 +185,6 @@ describe('EMBEDDING_CONFIG getters use detected profile for local provider', () 
   });
 
   it('getters return platform-detected values when no env override is set', () => {
-    // On this machine (darwin arm64, local provider), getters should
-    // return detected profile values, not the old hardcoded defaults.
     delete process.env.SWEET_SEARCH_INDEXER_BATCH_SIZE;
     delete process.env.SWEET_SEARCH_INDEXER_WRITE_FLUSH_ROWS;
     delete process.env.SWEET_SEARCH_PARALLEL_LI;

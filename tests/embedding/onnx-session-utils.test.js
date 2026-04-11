@@ -17,6 +17,7 @@ const {
   getOnnxRuntimeVersion,
   getOptimizedGraphPath,
   buildSessionOptions,
+  defaultOrtExecutionMode,
   warnIfGraphNotMaterialized,
 } = await import('../../core/infrastructure/index.js');
 
@@ -85,7 +86,7 @@ describe('onnx-session-utils', () => {
     it('sets all expected fields', () => {
       const opts = buildSessionOptions('model', 'test');
       expect(opts.graphOptimizationLevel).toBe('all');
-      expect(opts.executionMode).toBe('parallel');
+      expect(opts.executionMode).toBe(defaultOrtExecutionMode());
       expect(opts.enableCpuMemArena).toBe(true);
       expect(opts.enableMemPattern).toBe(true);
       expect(typeof opts.optimizedModelFilePath).toBe('string');

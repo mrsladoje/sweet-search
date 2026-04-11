@@ -23,6 +23,9 @@ import { createTokenizer } from '../infrastructure/native-tokenizer.js';
 
 let lateInteractionPipeline = null;
 let loadPromise = null;
+let lateInteractionRuntimeConfig = {
+  intraOpThreads: null,
+};
 
 // Lightweight timing accumulators for profiling (Phase 6a).
 // Cleared on read via getLateInteractionTimings().
@@ -53,6 +56,19 @@ export async function getLateInteractionPipeline() {
 
 /** Check if the late interaction model is currently loaded */
 export function isLateInteractionModelLoaded() { return lateInteractionPipeline != null; }
+
+export function configureLateInteractionRuntime(overrides = {}) {
+  lateInteractionRuntimeConfig = {
+    ...lateInteractionRuntimeConfig,
+    ...overrides,
+  };
+}
+
+export function resetLateInteractionRuntime() {
+  lateInteractionRuntimeConfig = {
+    intraOpThreads: null,
+  };
+}
 
 /** Release model memory */
 export async function unloadLateInteractionModel() {
@@ -154,9 +170,16 @@ async function loadModel() {
   const { getOptimizedGraphPath } = await import('../infrastructure/onnx-session-utils.js');
   const session = await ort.InferenceSession.create(onnxPath, {
     executionProviders: ['cpu'],
-    intraOpNumThreads: bestIntraOpThreads(),
+    intraOpNumThreads: lateInteractionRuntimeConfig.intraOpThreads ?? bestIntraOpThreads(),
     interOpNumThreads: 1,
     optimizedModelFilePath: getOptimizedGraphPath(modelConfig.hfId, 'lateon'),
+    // Thread spinning keeps ORT worker threads hot between batches — trades idle
+    // CPU for lower per-batch latency during sustained indexing runs.
+    extra: {
+      session: {
+        intra_op: { allow_spinning: '1' },
+      },
+    },
   });
   const coremlActive = false;
 
@@ -200,12 +223,19 @@ async function loadModel() {
     throw new Error(`[LateInteraction] Unexpected ONNX output dim ${outputDim} (expected ${modelConfig.tokenDimension} or ${modelConfig.backboneDim})`);
   }
 
-  // Phase 1b: Realistic two-pass warmup matching document encoding traffic.
-  // Pass 1: kernel selection with realistic document length.
-  // Pass 2: allocator settling.
-  const warmupDocText = '[D] export class AuthService { constructor(private jwtProvider) {} async login(credentials) { const user = await this.userRepo.findByEmail(credentials.email); if (!user) throw new UnauthorizedException(); return { token: this.jwtProvider.sign({ sub: user.id }) }; } }';
-  for (let pass = 0; pass < 2; pass++) {
-    const warmupTokenized = tokenizer(warmupDocText, { padding: true, truncation: true, max_length: modelConfig.maxDocLength });
+  // Warmup: ORT needs 10+ inference passes to stabilize JIT compilation,
+  // memory pool sizing, and thread pool scheduling. Warm up at batch sizes
+  // matching production document encoding traffic (single docs of varying
+  // lengths). Without this, the first ~10 real batches pay JIT + allocation
+  // costs and throughput appears to degrade.
+  const warmupDocs = [
+    '[D] function add(a, b) { return a + b; }',
+    '[D] export class AuthService { constructor(private jwtProvider) {} async login(credentials) { const user = await this.userRepo.findByEmail(credentials.email); if (!user) throw new UnauthorizedException(); return { token: this.jwtProvider.sign({ sub: user.id }) }; } }',
+    '[D] /**\n * SearchEngine handles full-text and vector search across indexed code.\n * Pipeline: tokenize → embed → HNSW ANN → rerank → filter.\n */\nexport class SearchEngine {\n  constructor(private hnsw, private liIndex, private reranker) {}\n  async search(query, options = {}) {\n    const embedding = await this.embed(query);\n    const candidates = await this.hnsw.search(embedding, options.topK || 100);\n    const reranked = await this.reranker.rerank(query, candidates);\n    return reranked.slice(0, options.limit || 10);\n  }\n}',
+  ];
+  for (let pass = 0; pass < 10; pass++) {
+    const doc = warmupDocs[pass % warmupDocs.length];
+    const warmupTokenized = tokenizer(doc, { padding: true, truncation: true, max_length: modelConfig.maxDocLength });
     await runRawInference(session, warmupTokenized, ort);
   }
 
@@ -249,7 +279,7 @@ export async function encodeQuery(text) {
   _timings.inference_us += Math.round((t2 - t1) * 1000);
   _timings.calls++;
 
-  return projectAndNormalize(hidden, projectionStages);
+  return projectAndNormalizeBatch(hidden, projectionStages, tokenized.attention_mask)[0];
 }
 
 /**
@@ -279,43 +309,42 @@ export async function encodeDocuments(texts, options = {}) {
     effectiveSkiplist = buildExtendedSkiplist(tokenizer, skiplistTokenIds);
   }
 
+  const prefixedTexts = texts.map((text) => modelConfig.docPrefix + text);
+  const t0 = performance.now();
+  const tokenized = tokenizer(prefixedTexts, {
+    padding: true,
+    truncation: true,
+    max_length: modelConfig.maxDocLength,
+  });
+  const t1 = performance.now();
+  const hidden = await runRawInference(session, tokenized, ort);
+  const t2 = performance.now();
+
+  _timings.tokenize_us += Math.round((t1 - t0) * 1000);
+  _timings.inference_us += Math.round((t2 - t1) * 1000);
+  _timings.calls++;
+
+  const allVectorsByDoc = projectAndNormalizeBatch(hidden, projectionStages, tokenized.attention_mask);
+  const { data: inputIdsData, dims: inputIdDims } = tokenized.input_ids;
+  const seqLen = inputIdDims[1];
   const results = new Array(texts.length);
 
-  for (let t = 0; t < texts.length; t++) {
-    const prefixed = modelConfig.docPrefix + texts[t];
-
-    const t0 = performance.now();
-    const tokenized = tokenizer(prefixed, {
-      padding: true, truncation: true, max_length: modelConfig.maxDocLength,
-    });
-    const t1 = performance.now();
-    const hidden = await runRawInference(session, tokenized, ort);
-    const t2 = performance.now();
-
-    _timings.tokenize_us += Math.round((t1 - t0) * 1000);
-    _timings.inference_us += Math.round((t2 - t1) * 1000);
-    _timings.calls++;
-    const allVectors = projectAndNormalize(hidden, projectionStages);
-    const inputIds = Array.from(tokenized.input_ids.data).map(Number);
-
-    // Apply skiplist filter (documents only, not queries)
-    // Propagate pre-normalization norms for surviving tokens (used by Phase 3 pruning).
+  for (let docIdx = 0; docIdx < texts.length; docIdx++) {
+    const allVectors = allVectorsByDoc[docIdx];
     const vectors = [];
     const keptPreNorms = [];
     const srcPreNorms = allVectors.preNorms;
-    for (let i = 0; i < allVectors.length; i++) {
-      if (!effectiveSkiplist.has(inputIds[i])) {
-        vectors.push(allVectors[i]);
-        if (srcPreNorms) keptPreNorms.push(srcPreNorms[i]);
+    for (let tokenIdx = 0; tokenIdx < allVectors.length; tokenIdx++) {
+      const rawId = inputIdsData[docIdx * seqLen + tokenIdx];
+      const inputId = typeof rawId === 'bigint' ? Number(rawId) : rawId;
+      if (!effectiveSkiplist.has(inputId)) {
+        vectors.push(allVectors[tokenIdx]);
+        if (srcPreNorms) keptPreNorms.push(srcPreNorms[tokenIdx]);
       }
     }
     if (srcPreNorms) vectors.preNorms = new Float32Array(keptPreNorms);
 
-    // Apply token pooling if requested (document-only, never queries).
-    // preNorms are NOT carried through pooling — pooled tokens don't have
-    // meaningful individual pre-norms, and the array length wouldn't match.
-    // In the index, pruning runs before pooling so preNorms are consumed first.
-    results[t] = poolFactor > 1 ? poolTokens(vectors, poolFactor) : vectors;
+    results[docIdx] = poolFactor > 1 ? poolTokens(vectors, poolFactor) : vectors;
   }
 
   return results;
@@ -331,10 +360,11 @@ export async function encodeDocuments(texts, options = {}) {
  * @param {Array<{weight: Float32Array, inDim: number, outDim: number}>} projectionStages
  * @returns {Float32Array[]} Array of L2-normalized token vectors
  */
-function projectAndNormalize(hiddenTensor, projectionStages) {
+function projectAndNormalizeBatch(hiddenTensor, projectionStages, attentionMask = null) {
   const [batch, seqLen, hiddenDim] = hiddenTensor.dims;
   let data = new Float32Array(hiddenTensor.data);
   let currentDim = hiddenDim;
+  const maskData = attentionMask?.data || null;
 
   // Apply sequential projection stages
   for (const { weight, inDim, outDim } of projectionStages) {
@@ -354,25 +384,33 @@ function projectAndNormalize(hiddenTensor, projectionStages) {
     currentDim = outDim;
   }
 
-  // L2 normalize per token, return as array of Float32Array vectors.
+  // L2 normalize per token, grouped by batch item.
   // Also record pre-normalization norms — these measure how much the model
   // "activated" for each token. Low pre-norm = low information content.
-  // Stored as a property on the returned array for optional norm-based pruning.
-  const vectors = new Array(seqLen);
-  const preNorms = new Float32Array(seqLen);
-  for (let s = 0; s < seqLen; s++) {
-    const offset = s * currentDim;
-    let norm = 0;
-    for (let d = 0; d < currentDim; d++) norm += data[offset + d] * data[offset + d];
-    norm = Math.sqrt(norm) + 1e-12;
-    preNorms[s] = norm;
-    const vec = new Float32Array(currentDim);
-    for (let d = 0; d < currentDim; d++) vec[d] = data[offset + d] / norm;
-    vectors[s] = vec;
-  }
+  // Stored on each per-document array for optional norm-based pruning.
+  const results = new Array(batch);
+  for (let b = 0; b < batch; b++) {
+    const vectors = [];
+    const preNorms = [];
+    for (let s = 0; s < seqLen; s++) {
+      if (maskData) {
+        const maskValue = maskData[b * seqLen + s];
+        if (typeof maskValue === 'bigint' ? maskValue === 0n : maskValue === 0) continue;
+      }
 
-  vectors.preNorms = preNorms;
-  return vectors;
+      const offset = (b * seqLen + s) * currentDim;
+      let norm = 0;
+      for (let d = 0; d < currentDim; d++) norm += data[offset + d] * data[offset + d];
+      norm = Math.sqrt(norm) + 1e-12;
+      preNorms.push(norm);
+      const vec = new Float32Array(currentDim);
+      for (let d = 0; d < currentDim; d++) vec[d] = data[offset + d] / norm;
+      vectors.push(vec);
+    }
+    vectors.preNorms = new Float32Array(preNorms);
+    results[b] = vectors;
+  }
+  return results;
 }
 
 // =========================================================================
