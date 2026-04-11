@@ -80,6 +80,7 @@ export const colors = {
 };
 
 let quietMode = false;
+let verboseMode = false;
 
 export function setQuietMode(enabled) {
   quietMode = enabled;
@@ -90,19 +91,40 @@ export function isQuietMode() {
   return quietMode;
 }
 
+export function setVerboseMode(enabled) {
+  verboseMode = enabled;
+}
+
+export function isVerboseMode() {
+  return verboseMode;
+}
+
 export function log(message, color = 'reset') {
   if (quietMode) return;
   console.log(`${colors[color]}${message}${colors.reset}`);
 }
 
+let lastLoggedPercent = {};
+
 export function logProgress(current, total, label) {
   if (quietMode) return;
-  const percent = ((current / total) * 100).toFixed(1);
+  const percentNum = (current / total) * 100;
+  const percent = percentNum.toFixed(1);
   const bar = '█'.repeat(Math.floor(current / total * 30));
   const empty = '░'.repeat(30 - bar.length);
-  process.stdout.write(`\r${colors.cyan}${label}: [${bar}${empty}] ${percent}% (${current}/${total})${colors.reset}`);
-  if (current === total) {
-    process.stdout.write('\n');
+  // In verbose mode or non-TTY, use newlines so output isn't swallowed by pipes.
+  // Throttle to every ~2% to avoid flooding.
+  if (verboseMode || !process.stdout.isTTY) {
+    const lastPct = lastLoggedPercent[label] || 0;
+    if (percentNum - lastPct >= 2 || current === total || current <= 1) {
+      lastLoggedPercent[label] = percentNum;
+      console.log(`${colors.cyan}${label}: [${bar}${empty}] ${percent}% (${current}/${total})${colors.reset}`);
+    }
+  } else {
+    process.stdout.write(`\r${colors.cyan}${label}: [${bar}${empty}] ${percent}% (${current}/${total})${colors.reset}`);
+    if (current === total) {
+      process.stdout.write('\n');
+    }
   }
 }
 

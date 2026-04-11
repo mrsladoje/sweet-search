@@ -26,7 +26,15 @@ export { createTokenizer } from './native-tokenizer.js';
 
 // ONNX runtime
 export { initOrt, buildFeed, createOrtPipeline } from './ort-pipeline.js';
-export { getOnnxRuntimeVersion, getOptimizedGraphPath, buildSessionOptions, warnIfGraphNotMaterialized, bestIntraOpThreads } from './onnx-session-utils.js';
+export {
+  getOnnxRuntimeVersion,
+  getOptimizedGraphPath,
+  buildSessionOptions,
+  warnIfGraphNotMaterialized,
+  estimateComputeCores,
+  defaultOrtExecutionMode,
+  bestIntraOpThreads,
+} from './onnx-session-utils.js';
 export { withOnnxMutex } from './onnx-mutex.js';
 
 // CoreML

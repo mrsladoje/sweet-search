@@ -34,6 +34,8 @@ import {
   getLocalPipeline,
   unloadLocalModel,
   isLocalModelLoaded,
+  configureLocalModelRuntime,
+  resetLocalModelRuntime,
   initEmbeddingPool,
   shutdownEmbeddingPool,
   getEmbeddingPool,
@@ -134,10 +136,14 @@ async function generateEmbeddings(texts, provider = EMBEDDING_CONFIG.provider, o
     hardCap: options.hardCap,
     resolveHardCap: options.resolveHardCap,
     batchingSafety: options.batchingSafety,
+    onProgress: options.onProgress,
   };
 
   const config = EMBEDDING_PROVIDERS[provider];
-  if (!config || !config.enabled) {
+  // Local model: always use direct bucketed path for global length-sorting.
+  // The API-style batched path (below) splits texts into batchSize=32 chunks
+  // which destroys length-sorting and causes massive padding waste (5.5x slower).
+  if (!config || !config.enabled || provider === 'local') {
     return callLocalModelBucketed(texts, localBucketOptions);
   }
 
@@ -281,6 +287,7 @@ export async function getEmbeddings(texts, options = {}) {
     useCache = true,
     provider = EMBEDDING_CONFIG.provider,
     providerOptions = {},
+    onProgress,
   } = options;
 
   const hasShapeAffectingProviderOptions =
@@ -315,7 +322,7 @@ export async function getEmbeddings(texts, options = {}) {
   }
 
   if (uncachedTexts.length > 0) {
-    const newEmbeddings = await generateEmbeddings(uncachedTexts, provider, providerOptions);
+    const newEmbeddings = await generateEmbeddings(uncachedTexts, provider, { ...providerOptions, onProgress });
     for (let i = 0; i < uncachedIndices.length; i++) {
       const idx = uncachedIndices[i];
       results[idx] = { embedding: newEmbeddings[i], cached: false };
@@ -594,7 +601,13 @@ export { getSemanticCacheStats, clearCache, getFrequentQueries, autoPersistFrequ
 export { generateEmbedding, generateEmbeddings };
 
 // Worker pool lifecycle (Phase 2 — parallel indexing)
-export { initEmbeddingPool, shutdownEmbeddingPool, getEmbeddingPool };
+export {
+  configureLocalModelRuntime,
+  resetLocalModelRuntime,
+  initEmbeddingPool,
+  shutdownEmbeddingPool,
+  getEmbeddingPool,
+};
 
 // =============================================================================
 // CLI INTERFACE

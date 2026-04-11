@@ -14,7 +14,17 @@ import { colors, log, logProgress, logError, discoverFiles, readFilesFromStdin, 
 import { buildCodeGraph, buildVectorIndex, chunkFiles } from './indexer-build.js';
 import { incrementalUpdateHNSW, buildHNSWIndex, buildLateInteractionIndex, buildQuantizedArtifactsPhase } from './indexer-ann.js';
 import { buildSparseGramArtifact } from './indexer-sparse-gram.js';
-import { initEmbeddingPool, shutdownEmbeddingPool } from '../embedding/embedding-local-model.js';
+import {
+  configureLocalModelRuntime,
+  initEmbeddingPool,
+  resetLocalModelRuntime,
+  shutdownEmbeddingPool,
+} from '../embedding/embedding-local-model.js';
+import {
+  configureLateInteractionRuntime,
+  resetLateInteractionRuntime,
+} from '../ranking/late-interaction-model.js';
+import { planAllocation } from './indexer-pool.js';
 
 async function unlinkIfExists(filePath) {
   try {
@@ -253,40 +263,63 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     allFiles,
   } = options;
 
-  // Determine if we can parallelize LI encoding with vector embedding.
-  // Requires sufficient RAM + cores (see detectIndexerProfile).
+  const resourcePlan = planAllocation();
   const shouldParallelLI = !noLateInteraction
     && !dryRun
     && filesToIndex.length > 0
     && EMBEDDING_CONFIG.parallelLateInteraction;
+  const parallelPhaseThreads = Math.max(1, Math.min(8, Math.floor(resourcePlan.computeCores / 2)));
+  const embeddingThreads = shouldParallelLI
+    ? parallelPhaseThreads
+    : resourcePlan.inlineEmbeddingThreads;
+  const lateInteractionThreads = shouldParallelLI
+    ? parallelPhaseThreads
+    : resourcePlan.lateInteractionThreads;
+  const lateInteractionWorkers = shouldParallelLI ? 1 : resourcePlan.lateInteractionWorkers;
+  const lateInteractionWorkerThreads = shouldParallelLI
+    ? parallelPhaseThreads
+    : resourcePlan.threadsPerLateInteractionWorker;
   const stagedLateInteractionPath = DB_PATHS.lateInteraction + '.tmp';
 
   // Always chunk files up front so both vector and LI encoders share
   // the same chunk list. Vectors are written to SQLite and HNSW reads
   // from the DB directly (Phase B — no in-memory arrays passed around).
   let preChunked = null;
-  if (filesToIndex.length > 0) {
+  if (!dryRun && filesToIndex.length > 0) {
     preChunked = await chunkFiles(filesToIndex);
   }
 
-  // Phase 2: Initialize worker pool for parallel embedding inference.
-  // Only beneficial when LI is NOT running in parallel — otherwise the pool's
-  // workers compete with the LI session for physical cores, causing net slowdown.
-  // On M3 Max: pool + parallel LI → 13 threads on 8 cores = 2.4x slower embedding.
-  // Pool alone (no LI): 1.18x measured speedup.
   const useEmbeddingPool = !dryRun
     && filesToIndex.length > 0
     && EMBEDDING_CONFIG.provider === 'local'
+    && resourcePlan.useWorkerPool
     && !shouldParallelLI;
+
+  if (!dryRun && EMBEDDING_CONFIG.provider === 'local' && filesToIndex.length > 0) {
+    configureLocalModelRuntime({ intraOpThreads: embeddingThreads });
+    configureLateInteractionRuntime({ intraOpThreads: lateInteractionThreads });
+    const embeddingLabel = useEmbeddingPool
+      ? `${resourcePlan.embeddingWorkers} workers x ${resourcePlan.threadsPerEmbeddingWorker} threads`
+      : `${embeddingThreads} inline threads`;
+    const liLabel = lateInteractionWorkers > 1
+      ? `${lateInteractionWorkers} workers x ${lateInteractionWorkerThreads} threads`
+      : `${lateInteractionThreads} inline threads`;
+    log(
+      `Inference plan: ${shouldParallelLI ? 'parallel models' : resourcePlan.executionStrategy}, `
+      + `computeCores=${resourcePlan.computeCores}, embedding=${embeddingLabel}, `
+      + `li=${liLabel}, liBatch=${resourcePlan.lateInteractionBatchSize}, liTokens=${resourcePlan.lateInteractionTokenBudget}`,
+      'dim'
+    );
+  }
+
   if (useEmbeddingPool) {
-    const { planAllocation } = await import('./indexer-pool.js');
-    const plan = planAllocation();
-    if (plan.embeddingWorkers > 0) {
-      try {
-        await initEmbeddingPool();
-      } catch (err) {
-        log(`[InferencePool] Pool init failed, falling back to inline: ${err.message}`, 'yellow');
-      }
+    try {
+      await initEmbeddingPool({
+        workers: resourcePlan.embeddingWorkers,
+        threadsPerWorker: resourcePlan.threadsPerEmbeddingWorker,
+      });
+    } catch (err) {
+      log(`[InferencePool] Pool init failed, falling back to inline: ${err.message}`, 'yellow');
     }
   }
 
@@ -297,132 +330,134 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     ...(preChunked ? { preChunked } : {}),
   };
 
-  const vectorPromise = buildVectorIndex(filesToIndex, dryRun, vectorOptions);
-
-  // Compute LI file removal list (used by both parallel and sequential paths)
-  const filesToRemoveFromLI = incrementalInfo && !fullReindex
-    ? [...incrementalInfo.toIndex, ...(incrementalInfo.toRemove || [])]
-    : [];
-
-  const buildLateInteraction = (chunks) => buildLateInteractionIndex(chunks, dryRun, filesToRemoveFromLI, {
-    poolFactor: lateInteractionPool,
-    extendedSkiplist: lateInteractionExtendedSkiplist,
-    loadFromPath: DB_PATHS.lateInteraction,
-    saveToPath: stagedLateInteractionPath,
-  });
-
-  // Start LI encoding in parallel if the platform profile allows it.
-  let liPromise = null;
-  if (shouldParallelLI && (preChunked.allChunks.length > 0 || filesToRemoveFromLI.length > 0)) {
-    liPromise = buildLateInteraction(preChunked.allChunks);
-  }
-
-  const runningTasks = [];
-  if (hcgsPromise) runningTasks.push('HCGS Summaries');
-  runningTasks.push('Vector Embeddings');
-  if (liPromise) runningTasks.push('Late Interaction');
-
-  if (runningTasks.length > 1) {
-    log(`\n--- Running in Parallel: ${runningTasks.join(' + ')} ---`, 'bright');
-    log('  (Independent stages running concurrently for faster indexing)', 'dim');
-  }
-
-  const [hcgsResult, vectorOutcome, liOutcome] = await Promise.all([
-    hcgsPromise || Promise.resolve(null),
-    vectorPromise.then(result => ({ ok: true, result }), error => ({ ok: false, error })),
-    liPromise
-      ? liPromise.then(result => ({ ok: true, result }), error => ({ ok: false, error }))
-      : Promise.resolve({ ok: true, result: null }),
-  ]);
-
-  // Shutdown worker pool now that embedding is complete
-  await shutdownEmbeddingPool();
-
-  if (hcgsResult && !hcgsResult.error) {
-    log(`Summaries regenerated (${hcgsResult.generated} generated, ${hcgsResult.skipped} skipped)`, 'green');
-  }
-
-  if (!vectorOutcome.ok) {
-    await cleanupStagedLateInteractionIndex(stagedLateInteractionPath);
-    throw vectorOutcome.error;
-  }
-
-  const vectorResult = vectorOutcome.result;
-  const vectorStats = vectorResult || { chunks: 0, embeddings: 0 };
-
-  // Mark vector phase complete for crash-resume
-  if (!dryRun && vectorStats.embeddings > 0) {
-    await markPhaseComplete('vectors');
-  }
-
-  // HNSW depends on vector embeddings — must run after Promise.all.
-  // Reads vectors from SQLite (Phase B) instead of in-memory arrays.
   try {
-    if (!dryRun && vectorStats.embeddings > 0) {
-      await updatePhaseProgress({ phase: 'hnsw', status: 'in_progress' });
-      if (incrementalInfo && !fullReindex) {
-        const allFilesToRemoveFromHNSW = [
-          ...incrementalInfo.toIndex,
-          ...(incrementalInfo.toRemove || [])
-        ];
-        await incrementalUpdateHNSW(DB_PATHS.codebase, allFilesToRemoveFromHNSW, dryRun);
-      } else {
-        await buildHNSWIndex(DB_PATHS.codebase, dryRun);
-      }
-      await markPhaseComplete('hnsw');
-    }
-  } catch (err) {
-    await cleanupStagedLateInteractionIndex(stagedLateInteractionPath);
-    throw err;
-  }
+    const vectorPromise = buildVectorIndex(filesToIndex, dryRun, vectorOptions);
 
-  let lateInteractionResult = liOutcome.result;
+    // Compute LI file removal list (used by both parallel and sequential paths)
+    const filesToRemoveFromLI = incrementalInfo && !fullReindex
+      ? [...incrementalInfo.toIndex, ...(incrementalInfo.toRemove || [])]
+      : [];
 
-  // LI: only run sequentially if not already done in parallel
-  if (!liPromise && !dryRun && !noLateInteraction && (preChunked?.allChunks?.length > 0 || filesToRemoveFromLI.length > 0)) {
-    try {
-      await updatePhaseProgress({ phase: 'late-interaction', status: 'in_progress' });
-      lateInteractionResult = await buildLateInteraction(preChunked?.allChunks || []);
-      liOutcome.ok = true;
-    } catch (err) {
-      liOutcome.ok = false;
-      liOutcome.error = err;
-    }
-  }
-
-  if (!dryRun && !noLateInteraction && (liPromise || preChunked?.allChunks?.length > 0 || filesToRemoveFromLI.length > 0)) {
-    if (liOutcome.ok && lateInteractionResult) {
-      await atomicSwapDatabase(stagedLateInteractionPath, DB_PATHS.lateInteraction);
-      log('Late interaction index promoted', 'green');
-      await markPhaseComplete('late-interaction');
-    } else if (!liOutcome.ok) {
-      await cleanupStagedLateInteractionIndex(stagedLateInteractionPath);
-      await invalidateLateInteractionIndex();
-      log(`Late interaction rebuild failed; invalidated existing index: ${liOutcome.error.message}`, 'yellow');
-      lateInteractionResult = { error: liOutcome.error.message, invalidated: true };
-    }
-  }
-
-  if (!dryRun && vectorStats.embeddings > 0) {
-    await updatePhaseProgress({ phase: 'artifacts', status: 'in_progress' });
-    await buildQuantizedArtifactsPhase(dryRun, {
-      changedFiles: filesToIndex.length,
-      force: forceArtifacts || fullReindex,
+    const buildLateInteraction = (chunks) => buildLateInteractionIndex(chunks, dryRun, filesToRemoveFromLI, {
+      poolFactor: lateInteractionPool,
+      extendedSkiplist: lateInteractionExtendedSkiplist,
+      loadFromPath: DB_PATHS.lateInteraction,
+      saveToPath: stagedLateInteractionPath,
+      fullRebuild: fullReindex,
+      workerCount: lateInteractionWorkers,
+      threadsPerWorker: lateInteractionWorkerThreads,
+      batchSize: resourcePlan.lateInteractionBatchSize,
+      tokenBudget: resourcePlan.lateInteractionTokenBudget,
     });
-    await markPhaseComplete('artifacts');
-  }
 
-  let sparseGramResult = null;
-  if (!dryRun && Array.isArray(allFiles) && allFiles.length > 0) {
-    sparseGramResult = await buildSparseGramArtifact(allFiles, dryRun);
-  }
+    let liPromise = null;
+    if (shouldParallelLI && (preChunked.allChunks.length > 0 || filesToRemoveFromLI.length > 0)) {
+      liPromise = buildLateInteraction(preChunked.allChunks);
+    }
 
-  // All phases complete — clear progress file
-  if (!dryRun) {
-    await clearPhaseProgress();
-  }
+    const runningTasks = [];
+    if (hcgsPromise) runningTasks.push('HCGS Summaries');
+    runningTasks.push('Vector Embeddings');
+    if (liPromise) runningTasks.push('Late Interaction');
 
-  return { vectorStats, hcgsResult, lateInteractionResult, sparseGramResult };
+    if (runningTasks.length > 1) {
+      log(`\n--- Running in Parallel: ${runningTasks.join(' + ')} ---`, 'bright');
+      log('  (Independent stages running concurrently for faster indexing)', 'dim');
+    }
+
+    const [hcgsResult, vectorOutcome, liOutcome] = await Promise.all([
+      hcgsPromise || Promise.resolve(null),
+      vectorPromise.then(result => ({ ok: true, result }), error => ({ ok: false, error })),
+      liPromise
+        ? liPromise.then(result => ({ ok: true, result }), error => ({ ok: false, error }))
+        : Promise.resolve({ ok: true, result: null }),
+    ]);
+
+    if (hcgsResult && !hcgsResult.error) {
+      log(`Summaries regenerated (${hcgsResult.generated} generated, ${hcgsResult.skipped} skipped)`, 'green');
+    }
+
+    if (!vectorOutcome.ok) {
+      await cleanupStagedLateInteractionIndex(stagedLateInteractionPath);
+      throw vectorOutcome.error;
+    }
+
+    const vectorResult = vectorOutcome.result;
+    const vectorStats = vectorResult || { chunks: 0, embeddings: 0 };
+
+    if (!dryRun && vectorStats.embeddings > 0) {
+      await markPhaseComplete('vectors');
+    }
+
+    try {
+      if (!dryRun && vectorStats.embeddings > 0) {
+        await updatePhaseProgress({ phase: 'hnsw', status: 'in_progress' });
+        if (incrementalInfo && !fullReindex) {
+          const allFilesToRemoveFromHNSW = [
+            ...incrementalInfo.toIndex,
+            ...(incrementalInfo.toRemove || [])
+          ];
+          await incrementalUpdateHNSW(DB_PATHS.codebase, allFilesToRemoveFromHNSW, dryRun);
+        } else {
+          await buildHNSWIndex(DB_PATHS.codebase, dryRun);
+        }
+        await markPhaseComplete('hnsw');
+      }
+    } catch (err) {
+      await cleanupStagedLateInteractionIndex(stagedLateInteractionPath);
+      throw err;
+    }
+
+    let lateInteractionResult = liOutcome.result;
+
+    if (!liPromise && !dryRun && !noLateInteraction && (preChunked?.allChunks?.length > 0 || filesToRemoveFromLI.length > 0)) {
+      try {
+        await updatePhaseProgress({ phase: 'late-interaction', status: 'in_progress' });
+        lateInteractionResult = await buildLateInteraction(preChunked?.allChunks || []);
+        liOutcome.ok = true;
+      } catch (err) {
+        liOutcome.ok = false;
+        liOutcome.error = err;
+      }
+    }
+
+    if (!dryRun && !noLateInteraction && (liPromise || preChunked?.allChunks?.length > 0 || filesToRemoveFromLI.length > 0)) {
+      if (liOutcome.ok && lateInteractionResult) {
+        await atomicSwapDatabase(stagedLateInteractionPath, DB_PATHS.lateInteraction);
+        log('Late interaction index promoted', 'green');
+        await markPhaseComplete('late-interaction');
+      } else if (!liOutcome.ok) {
+        await cleanupStagedLateInteractionIndex(stagedLateInteractionPath);
+        await invalidateLateInteractionIndex();
+        log(`Late interaction rebuild failed; invalidated existing index: ${liOutcome.error.message}`, 'yellow');
+        lateInteractionResult = { error: liOutcome.error.message, invalidated: true };
+      }
+    }
+
+    if (!dryRun && vectorStats.embeddings > 0) {
+      await updatePhaseProgress({ phase: 'artifacts', status: 'in_progress' });
+      await buildQuantizedArtifactsPhase(dryRun, {
+        changedFiles: filesToIndex.length,
+        force: forceArtifacts || fullReindex,
+      });
+      await markPhaseComplete('artifacts');
+    }
+
+    let sparseGramResult = null;
+    if (!dryRun && Array.isArray(allFiles) && allFiles.length > 0) {
+      sparseGramResult = await buildSparseGramArtifact(allFiles, dryRun);
+    }
+
+    if (!dryRun) {
+      await clearPhaseProgress();
+    }
+
+    return { vectorStats, hcgsResult, lateInteractionResult, sparseGramResult };
+  } finally {
+    await shutdownEmbeddingPool();
+    resetLocalModelRuntime();
+    resetLateInteractionRuntime();
+  }
 }
 
 export async function updateIncrementalStatePhase(options = {}) {

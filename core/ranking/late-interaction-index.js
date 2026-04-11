@@ -311,6 +311,7 @@ export class LateInteractionIndex {
     this.modelId = options.modelId || LATE_INTERACTION_CONFIG.model || null;
     this.poolFactor = options.poolFactor || 1;
     this.streamChunkSize = options.streamChunkSize || (8 * 1024 * 1024);
+    this.loadExisting = options.loadExisting ?? true;
 
     // Phase 3: norm-based token pruning threshold (0 = disabled)
     this.normPruneThreshold = options.normPruneThreshold || 0;
@@ -358,6 +359,7 @@ export class LateInteractionIndex {
     this.documents = new Map(); // id -> { tokens, metadata }
     this.initialized = false;
     this._hasPerTokenQuant = false; // tracked for getStats — set on add/load
+    this._loadedExisting = false;
 
     // Segmented flush state (Phase C)
     this._currentSegment = new Map();
@@ -389,8 +391,9 @@ export class LateInteractionIndex {
     // Ensure WASM MaxSim kernel is ready
     await initWasm();
 
-    if (existsSync(this.indexPath)) {
+    if (this.loadExisting && existsSync(this.indexPath)) {
       await this.load();
+      this._loadedExisting = true;
     }
 
     this.initialized = true;
@@ -1445,6 +1448,54 @@ export class LateInteractionIndex {
     const useSegmented = this.documents.size >= this._segmentSize;
 
     if (useSegmented) {
+      if (!this._loadedExisting) {
+        if (this._currentSegment.size > 0) {
+          await this._flushSegment();
+        }
+
+        const flushedCount = this._segments.reduce((sum, segment) => sum + segment.count, 0);
+        if (flushedCount === this.documents.size && this._segments.length > 0) {
+          const segDir = this.indexPath + '.segments';
+          const manifest = {
+            version: '3.0',
+            format: 'sslx-v3',
+            modelId: this.modelId,
+            tokenDim: this.tokenDim,
+            matryoshkaDim: this.matryoshkaDim || 0,
+            maxTokens: this.maxTokens,
+            useInt8: this.useInt8,
+            quantBits: this.quantBits,
+            poolFactor: this.poolFactor,
+            whtSeed: this.whtSeed || 0,
+            whtOrdering: this.whtOrdering,
+            totalDocuments: this.documents.size,
+            segments: this._segments.map((segment) => ({
+              path: path.basename(segment.path),
+              count: segment.count,
+            })),
+          };
+
+          await fs.writeFile(path.join(segDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+          if (this._wushCalibration) {
+            const cal = {
+              eigenVecs: Array.from(this._wushCalibration.eigenVecs),
+              invSqrtEigenVals: Array.from(this._wushCalibration.invSqrtEigenVals),
+              dim: this.tokenDim,
+            };
+            await fs.writeFile(path.join(segDir, 'wush-calibration.json'), JSON.stringify(cal));
+          }
+          await fs.writeFile(this.indexPath, JSON.stringify({
+            version: '3.0',
+            format: 'segmented',
+            segmentDir: segDir,
+          }));
+          this._segmentDir = segDir;
+          this._currentSegment = new Map();
+          console.log(`LateInteraction: Saved ${this.documents.size} documents across ${this._segments.length} segments`);
+          return;
+        }
+      }
+
       // Derive segment dir from the current save path, NOT from a loaded index
       const segDir = this.indexPath + '.segments';
       await fs.mkdir(segDir, { recursive: true });

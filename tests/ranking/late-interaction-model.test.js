@@ -20,7 +20,9 @@ vi.mock('onnxruntime-node', () => ({
   InferenceSession: {
     create: vi.fn().mockResolvedValue(mockSession),
   },
-  Tensor: vi.fn().mockImplementation((type, data, dims) => ({ type, data, dims })),
+  Tensor: vi.fn().mockImplementation(function Tensor(type, data, dims) {
+    return { type, data, dims };
+  }),
 }));
 
 vi.mock('@huggingface/transformers', () => ({
@@ -35,30 +37,40 @@ describe('late-interaction-model', () => {
 
     // Setup tokenizer mock to return realistic shapes
     mockTokenizer.mockImplementation((text, opts) => {
-      const tokenCount = Math.min(text.split(/\s+/).length + 2, opts?.max_length || 256);
+      const texts = Array.isArray(text) ? text : [text];
+      const tokenCount = Math.min(
+        Math.max(...texts.map((entry) => entry.split(/\s+/).length + 2)),
+        opts?.max_length || 256
+      );
       return {
         input_ids: {
-          data: new BigInt64Array(tokenCount).fill(1n),
-          dims: [1, tokenCount],
+          data: new BigInt64Array(texts.length * tokenCount).fill(1n),
+          dims: [texts.length, tokenCount],
         },
         attention_mask: {
-          data: new BigInt64Array(tokenCount).fill(1n),
-          dims: [1, tokenCount],
+          data: new BigInt64Array(texts.length * tokenCount).fill(1n),
+          dims: [texts.length, tokenCount],
         },
       };
     });
 
     // Setup session.run mock to return per-token vectors
     mockSession.run.mockImplementation(async (feeds) => {
+      const batch = Number(feeds.input_ids.dims[0]);
       const seqLen = Number(feeds.input_ids.dims[1]);
       const dim = 128; // full model
-      const data = new Float32Array(seqLen * dim);
+      const data = new Float32Array(batch * seqLen * dim);
       // Fill with non-zero values so L2 norm doesn't explode
       for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
       return {
-        output: { data, dims: [1, seqLen, dim] },
+        output: { data, dims: [batch, seqLen, dim] },
       };
     });
+  });
+
+  afterEach(async () => {
+    const mod = await import('../../core/ranking/late-interaction-model.js');
+    await mod.unloadLateInteractionModel();
   });
 
   it('encodeQuery exports exist', async () => {
@@ -74,6 +86,20 @@ describe('late-interaction-model', () => {
     const { isLateInteractionModelLoaded } = await import('../../core/ranking/late-interaction-model.js');
     // May be true if loaded in another test; just check it's a boolean
     expect(typeof isLateInteractionModelLoaded()).toBe('boolean');
+  });
+
+  it('encodeDocuments batches multiple docs into one ONNX run', async () => {
+    const { encodeDocuments } = await import('../../core/ranking/late-interaction-model.js');
+    const initialCalls = mockSession.run.mock.calls.length;
+    const docs = await encodeDocuments([
+      'function alpha() { return 1; }',
+      'function beta() { return 2; }',
+    ]);
+
+    expect(docs).toHaveLength(2);
+    expect(mockSession.run.mock.calls.length - initialCalls).toBe(12); // probe + warmup x10 + batched encode
+    const finalCall = mockSession.run.mock.calls.at(-1);
+    expect(finalCall[0].input_ids.dims[0]).toBe(2);
   });
 });
 

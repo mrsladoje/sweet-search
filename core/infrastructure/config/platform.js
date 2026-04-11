@@ -7,6 +7,7 @@ import path from 'path';
 import { existsSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import os from 'os';
+import { estimateComputeCores } from '../onnx-session-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -129,36 +130,42 @@ export function detectIndexerProfile(overrides) {
   const isWSL = overrides?.isWSL ??
     (!!process.env.WSL_DISTRO_NAME || os.release().toLowerCase().includes('microsoft'));
   const totalMemBytes = overrides?.totalMemBytes ?? os.totalmem();
-  const cpuCount = overrides?.cpuCount ?? os.cpus().length;
-  const isAppleSilicon = platform === 'darwin' && arch === 'arm64' && !isWSL;
+  const logicalCores = overrides?.cpuCount ?? os.cpus().length;
+  const computeCores = estimateComputeCores({ logicalCores, arch });
+  const totalMemGB = totalMemBytes / (1024 ** 3);
 
-  // Default: conservative (x86/WSL-optimized)
-  let batchSize = 1;
-  let flushRows = 128;
+  let batchSize = 8;
+  let flushRows = 64;
 
-  if (isAppleSilicon) {
-    // Thresholds use raw bytes to avoid GiB-vs-GB mismatch with Apple's
-    // marketed RAM sizes.  A "32 GB" Mac reports ~34_359_738_368 bytes;
-    // we use 29 GB and 14 GB as safe lower bounds.
-    if (totalMemBytes >= 29_000_000_000) {   // High-memory Apple Silicon (32 GB+)
-      batchSize = 64;
-      flushRows = 1;
-    } else if (totalMemBytes >= 14_000_000_000) { // Mid-memory Apple Silicon (16 GB)
-      batchSize = 32;
-      flushRows = 8;
-    } else {                                       // Low-memory Apple Silicon (8 GB)
-      batchSize = 16;
-      flushRows = 32;
-    }
+  if (totalMemGB >= 24 && computeCores >= 8) {
+    batchSize = 64;
+    flushRows = 1;
+  } else if (totalMemGB >= 12 && computeCores >= 6) {
+    batchSize = 32;
+    flushRows = 8;
+  } else if (totalMemGB >= 8 && computeCores >= 4) {
+    batchSize = 16;
+    flushRows = 32;
   }
 
-  // Parallel late interaction requires enough RAM for two ONNX models
-  // (~500 MB combined) and enough cores to avoid severe contention.
-  // Keep the default aligned with the existing Apple Silicon-only
-  // batch/flush profile; other platforms can opt in via env override.
-  const parallelLI = isAppleSilicon && totalMemBytes >= 14_000_000_000 && cpuCount >= 8;
+  // Default to sequential embedding -> LI phases. This is the safe
+  // cross-machine choice when both models are CPU-bound and share caches.
+  // Callers can still opt into overlap via env override for experimentation.
+  const parallelLI = false;
 
-  return { batchSize, flushRows, parallelLI };
+  return {
+    batchSize,
+    flushRows,
+    parallelLI,
+    executionMode: parallelLI ? 'parallel-models' : 'sequential-phases',
+    logicalCores,
+    computeCores,
+    totalMemBytes,
+    totalMemGB,
+    isWSL,
+    platform,
+    arch,
+  };
 }
 
 // =============================================================================
