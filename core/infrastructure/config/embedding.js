@@ -200,8 +200,8 @@ export const EMBEDDING_CONFIG = {
   },
 
   /** Whether to run late interaction encoding in parallel with vector embeddings.
-   *  Requires sufficient RAM (16+ GB) and CPU cores (8+).
-   *  Override via SWEET_SEARCH_PARALLEL_LI=0 or =1. */
+   *  Defaults to off because both local ONNX models are CPU-bound and compete
+   *  for the same caches. Override via SWEET_SEARCH_PARALLEL_LI=0 or =1. */
   get parallelLateInteraction() {
     const envVal = process.env.SWEET_SEARCH_PARALLEL_LI;
     if (envVal === '0') return false;

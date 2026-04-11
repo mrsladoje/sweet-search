@@ -340,12 +340,19 @@ export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, m
     writeBuffer = [];
   }
 
+  // When batchSize == texts.length (local model), the progress callback fires
+  // from inside callLocalModelBucketed per internal sub-batch.
+  const useInternalProgress = batchSize >= texts.length;
+  const progressOptions = useInternalProgress
+    ? { ...embeddingOptions, onProgress: (done, total) => logProgressFn(done, total, 'Embedding') }
+    : embeddingOptions;
+
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
     const batchChunks = allChunks.slice(i, i + batchSize);
 
     // Overlap: flush accumulated writes while embedding is in-flight
-    const batchResultsPromise = getEmbeddings(batch, embeddingOptions);
+    const batchResultsPromise = getEmbeddings(batch, progressOptions);
 
     if (writeBuffer.length >= writeFlushRows) {
       flushWriteBuffer();
@@ -358,7 +365,9 @@ export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, m
     const batchItems = buildInsertItems(batchChunks, batchEmbeddings, modelInfo);
     writeBuffer.push(...batchItems);
 
-    logProgressFn(Math.min(i + batchSize, texts.length), texts.length, 'Embedding');
+    if (!useInternalProgress) {
+      logProgressFn(Math.min(i + batchSize, texts.length), texts.length, 'Embedding');
+    }
   }
 
   // Flush remaining buffered writes
@@ -455,12 +464,17 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
 
   log('Generating embeddings...', 'yellow');
 
-  const batchSize = EMBEDDING_CONFIG.indexerBatchSize;
+  // For local models, send all texts in one call so callLocalModelBucketed can
+  // globally sort by length and build maximally uniform batches.  Padding waste
+  // from mixed-length batches is the #1 bottleneck (measured: 5.5x slower than
+  // uniform batches).  Remote APIs still use small batches for rate-limiting.
+  const isLocal = modelInfo.provider === 'local';
+  const batchSize = isLocal ? texts.length : EMBEDDING_CONFIG.indexerBatchSize;
   const writeFlushRows = EMBEDDING_CONFIG.indexerWriteFlushRows;
   const embeddingOptions = { useCache: false };
   let effectiveEmbeddingDimension = modelInfo.dimension;
 
-  log(`Indexer: batchSize=${batchSize}, writeFlushRows=${writeFlushRows}`, 'dim');
+  log(`Indexer: batchSize=${isLocal ? 'all(' + texts.length + ')' : batchSize}, writeFlushRows=${writeFlushRows}`, 'dim');
 
   if (modelInfo.isRemote) {
     const configuredOutputDim = parseInt(

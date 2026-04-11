@@ -116,6 +116,45 @@ function* streamVectorsFromDb(db, _dim, order = 'sequential') {
   }
 }
 
+function estimateLateInteractionTokens(text, maxLength = 2048) {
+  const charsPerToken = Number(process.env.SWEET_SEARCH_LI_CHARS_PER_TOKEN || 4);
+  const batchingSafety = Number(process.env.SWEET_SEARCH_LI_BATCHING_SAFETY || 1.15);
+  const est = Math.ceil((text.length / charsPerToken) * batchingSafety);
+  return Math.max(1, Math.min(est, maxLength));
+}
+
+function buildLateInteractionBatches(chunks, options = {}) {
+  const batchSizeCap = Math.max(1, options.batchSize ?? 8);
+  const tokenBudget = Math.max(1, options.tokenBudget ?? 8_192);
+  const maxLength = options.maxLength ?? 2_048;
+  const indexed = chunks.map((chunk) => {
+    const text = chunk.text || chunk.content || '';
+    return {
+      chunk,
+      text,
+      estTokens: estimateLateInteractionTokens(text, maxLength),
+    };
+  });
+  indexed.sort((a, b) => a.estTokens - b.estTokens);
+
+  const batches = [];
+  let i = 0;
+  while (i < indexed.length) {
+    let batchSize = 1;
+    while (i + batchSize < indexed.length) {
+      const candidateLongest = indexed[i + batchSize].estTokens;
+      const candidateCount = batchSize + 1;
+      if (candidateCount > batchSizeCap) break;
+      if (candidateLongest * candidateCount > tokenBudget) break;
+      batchSize = candidateCount;
+    }
+    batches.push({ items: indexed.slice(i, i + batchSize) });
+    i += batchSize;
+  }
+
+  return batches;
+}
+
 /** Diversity-first permutation returning 1-based rowid indices */
 function diversityFirstPermutationRowids(filePaths) {
   const buckets = new Map();
@@ -412,6 +451,11 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     extendedSkiplist = false,
     loadFromPath = DB_PATHS.lateInteraction,
     saveToPath = loadFromPath,
+    fullRebuild = false,
+    workerCount = 1,
+    threadsPerWorker = 0,
+    batchSize = 8,
+    tokenBudget = 8_192,
   } = options;
   log('\n━━━ Phase 4: Late Interaction Index (LateOn-Code) ━━━', 'bright');
 
@@ -447,7 +491,8 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     whtSeed,
     whtOrdering,
     modelId: LATE_INTERACTION_CONFIG.model,
-    indexPath: loadFromPath,
+    indexPath: fullRebuild ? saveToPath : loadFromPath,
+    loadExisting: !fullRebuild,
   });
   if (quantBits !== defaultQuantBits || whtSeed !== 0) {
     log(`LI config: quantBits=${quantBits}, whtSeed=${whtSeed}, whtOrdering=${whtOrdering}, poolFactor=${poolFactor}`, 'cyan');
@@ -477,13 +522,8 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     log(`  Removed ${removed} existing entries`, 'dim');
   }
 
-  // Use real LateOn-Code model for per-token embeddings
-  const { encodeDocuments } = await import('../ranking/late-interaction-model.js');
-
-  const BATCH_SIZE = 16; // encode 16 chunks at a time
   const totalChunks = hasChunks ? chunks.length : 0;
   let totalAdded = 0;
-  const reportInterval = Math.max(1, Math.floor(totalChunks / 20));
 
   const encodeOpts = {};
   if (poolFactor > 1) encodeOpts.poolFactor = poolFactor;
@@ -491,37 +531,69 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
 
   const poolLabel = poolFactor > 1 ? `, pool=${poolFactor}` : '';
   const skipLabel = extendedSkiplist ? ', skiplist=extended' : '';
-  if (hasChunks) {
-    log(`LateInteraction: Encoding ${totalChunks} chunks with ${LATE_INTERACTION_CONFIG.model} (${LATE_INTERACTION_CONFIG.tokenDimension}d${poolLabel}${skipLabel})...`, 'yellow');
+  if (!hasChunks) {
+    log('LateInteraction: No new chunks to encode; applying removals only', 'dim');
+  } else {
+    log(`LateInteraction: Encoding ${totalChunks} chunks with ${LATE_INTERACTION_CONFIG.model} (${LATE_INTERACTION_CONFIG.tokenDimension}d${poolLabel}${skipLabel}, batch<=${batchSize}, tokens<=${tokenBudget})...`, 'yellow');
+    const batches = buildLateInteractionBatches(chunks, {
+      batchSize,
+      tokenBudget,
+      maxLength: LATE_INTERACTION_CONFIG.activeModel?.maxDocLength || 2048,
+    });
 
-    for (let batchStart = 0; batchStart < totalChunks; batchStart += BATCH_SIZE) {
-      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalChunks);
-      const batchChunks = chunks.slice(batchStart, batchEnd);
-      const batchTexts = batchChunks.map(c => c.text || c.content || '');
+    let encoder = null;
+    let liPool = null;
+    if (workerCount > 1 && threadsPerWorker > 0) {
+      try {
+        const { LateInteractionPool } = await import('./indexer-pool.js');
+        liPool = new LateInteractionPool({
+          workers: workerCount,
+          threadsPerWorker,
+        });
+        await liPool.init();
+        encoder = (texts) => liPool.encodeDocuments(texts, encodeOpts);
+        log(`LateInteraction: using ${workerCount} workers x ${threadsPerWorker} threads`, 'dim');
+      } catch (err) {
+        log(`LateInteraction pool init failed, falling back to inline: ${err.message}`, 'yellow');
+      }
+    }
+    if (!encoder) {
+      const { encodeDocuments } = await import('../ranking/late-interaction-model.js');
+      encoder = (texts) => encodeDocuments(texts, encodeOpts);
+    }
 
-      // encodeDocuments handles [D] prefix, tokenization, skiplist filtering, pooling
-      const tokenArrays = await encodeDocuments(batchTexts, encodeOpts);
+    try {
+      const waveSize = liPool ? liPool.numWorkers : 1;
+      for (let i = 0; i < batches.length; i += waveSize) {
+        const wave = batches.slice(i, i + waveSize);
+        const waveResults = await Promise.all(
+          wave.map(({ items }) => encoder(items.map(({ text }) => text)))
+        );
 
-      for (let j = 0; j < batchChunks.length; j++) {
-        const chunk = batchChunks[j];
-        const tokens = tokenArrays[j];
-        if (tokens && tokens.length > 0) {
-          await liIndex.add(chunk.id, tokens, {
-            file: chunk.file,
-            name: chunk.metadata?.symbol,
-            type: chunk.metadata?.chunk_type,
-            startLine: chunk.metadata?.line_start || null,
-            endLine: chunk.metadata?.line_end || null,
-            ...(poolFactor > 1 ? { _pooledUpstream: true } : {}),
-          });
-          totalAdded++;
+        for (let waveIdx = 0; waveIdx < wave.length; waveIdx++) {
+          const batchItems = wave[waveIdx].items;
+          const tokenArrays = waveResults[waveIdx];
+          for (let j = 0; j < batchItems.length; j++) {
+            const chunk = batchItems[j].chunk;
+            const tokens = tokenArrays[j];
+            if (tokens && tokens.length > 0) {
+              await liIndex.add(chunk.id, tokens, {
+                file: chunk.file,
+                name: chunk.metadata?.symbol,
+                type: chunk.metadata?.chunk_type,
+                startLine: chunk.metadata?.line_start || null,
+                endLine: chunk.metadata?.line_end || null,
+                ...(poolFactor > 1 ? { _pooledUpstream: true } : {}),
+              });
+              totalAdded++;
+            }
+          }
+          logProgress(totalAdded, totalChunks, 'LateInteraction');
         }
       }
-
-      log(`  LateInteraction: ${batchEnd}/${totalChunks} chunks (${Math.round(batchEnd / totalChunks * 100)}%)`, 'dim');
+    } finally {
+      if (liPool) await liPool.shutdown();
     }
-  } else {
-    log('LateInteraction: No new chunks to encode; applying removals only', 'dim');
   }
 
   // If paths matched (no staging), resetForSave was not called above; set path now.
