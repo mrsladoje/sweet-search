@@ -13,6 +13,7 @@
  */
 
 import os from 'os';
+import fs from 'fs';
 import { execSync } from 'child_process';
 import { Worker } from 'worker_threads';
 import path from 'path';
@@ -23,6 +24,79 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WORKER_SCRIPT = path.join(__dirname, 'indexer-worker.js');
 
 let _gpuTierFallbackWarned = false;
+let _lastLevelCacheBytesCache = null;
+
+/**
+ * Detect the largest local shared cache in bytes.
+ *
+ * On x86 this is typically the L3 (shared among cores, 8-32 MB). On Apple
+ * Silicon there is no distinct L3; the shared per-cluster L2 is the last
+ * level before the System Level Cache / DRAM (16 MB on M3 Max P-cluster).
+ *
+ * Used to size the LI attention budget so the per-layer activation working
+ * set fits in cache — otherwise tail batches at max sequence length force
+ * every transformer layer to read/write DRAM, which on fused Metal SDPA
+ * makes long-chunk batches ~7× slower than short-chunk batches (observed
+ * on M3 Max with the previous coefficient).
+ *
+ * Returns 0 on unknown, which makes callers fall back to tier-only caps.
+ */
+export function detectLastLevelCacheBytes() {
+  if (_lastLevelCacheBytesCache !== null) return _lastLevelCacheBytesCache;
+  const parseMultiplier = (suffix) => ({
+    '': 1, K: 1024, M: 1024 * 1024, G: 1024 * 1024 * 1024,
+  })[suffix];
+  try {
+    if (process.platform === 'darwin') {
+      // Take the max across:
+      //   hw.perflevel0.l2cachesize — Apple Silicon P-core cluster L2 (16 MB
+      //                               on M3 Max; plain hw.l2cachesize returns
+      //                               the 4 MB E-cluster value on AS, which
+      //                               dramatically undersizes the budget)
+      //   hw.l3cachesize            — Intel Mac shared L3 (8-32 MB)
+      //   hw.l2cachesize            — fallback (per-core on Intel, E-cluster on AS)
+      let best = 0;
+      for (const key of ['hw.perflevel0.l2cachesize', 'hw.l3cachesize', 'hw.l2cachesize']) {
+        try {
+          const out = execSync(`sysctl -n ${key}`, {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+            timeout: 2000,
+          }).trim();
+          const bytes = parseInt(out, 10);
+          if (Number.isFinite(bytes) && bytes > best) best = bytes;
+        } catch { /* try next key */ }
+      }
+      if (best > 0) {
+        _lastLevelCacheBytesCache = best;
+        return best;
+      }
+    } else if (process.platform === 'linux') {
+      // Prefer L3 (index3), fall back to L2 (index2).
+      for (const idx of [3, 2]) {
+        try {
+          const sizeStr = fs.readFileSync(
+            `/sys/devices/system/cpu/cpu0/cache/index${idx}/size`,
+            'utf8',
+          ).trim();
+          const m = sizeStr.match(/^(\d+)\s*([KMG]?)$/);
+          if (m) {
+            const bytes = parseInt(m[1], 10) * parseMultiplier(m[2]);
+            if (Number.isFinite(bytes) && bytes > 0) {
+              _lastLevelCacheBytesCache = bytes;
+              return bytes;
+            }
+          }
+        } catch { /* try next index */ }
+      }
+    }
+    // Windows and unknown platforms: no portable sysfs path — fall through.
+  } catch {
+    // fall through
+  }
+  _lastLevelCacheBytesCache = 0;
+  return 0;
+}
 
 /**
  * Detect the Apple Silicon chip tier. Used to scale GPU-side batch sizes
@@ -276,13 +350,64 @@ export function planAllocation(resources = detectResources()) {
   );
 
   // Attention budget caps per-batch compute work (seq² × batch). On top of
-  // the token budget (which caps memory), this bound evens out per-batch
-  // wall-time so long-chunk tail batches don't crawl. Default:
-  //   floor(batchSize/2) × maxLength²
-  // which gives batch ≈ batchSize/2 at seq=maxLength (fits in L3 on most Macs),
-  // and larger batches as seq shrinks (capped by upper cap). Override via
-  // SWEET_SEARCH_LI_ATTENTION_BUDGET env var; set to 0 to disable.
+  // the token budget (which caps memory), this bound also determines the
+  // long-sequence tail batch size, which is where cache pressure matters.
+  //
+  // Previous tier-based formula `floor(batchSize/2) × maxLength²` landed
+  // M3 Max tail batches at B=16 × N=2048, and measured ~7× slower per batch
+  // than short-chunk batches because activations spilled out of cache on
+  // every transformer layer.
+  //
+  // Formula (weights-aware cache model):
+  //   perLayerWeightBytes = 12 × hiddenDim² × dtypeBytes
+  //     Derivation: one transformer layer has QKV (3d²) + attention output
+  //     (d²) + FFN up (4d²) + FFN down (4d²) = 12 d² params. During each
+  //     layer's forward pass the layer's weights are resident in the same
+  //     last-level cache that holds activations, so they directly reduce
+  //     the budget available for activations.
+  //   usableCache = (lastLevelCache − perLayerWeightBytes) × l2Safety
+  //   perItemAtMaxLen = maxLength × hiddenDim × dtypeBytes
+  //   maxBatchAtMaxLen = max(1, floor(usableCache / perItemAtMaxLen))
+  //
+  // Concrete: M3 Max L2 = 16 MB, ModernBERT-base d=768 fp16 → per-layer
+  // weights ≈ 13.5 MB, usable ≈ 2.5 MB, perItem at N=2048 ≈ 3.15 MB →
+  // B=1 at the long-seq tail. Matches the microbench optimum (B=1 is
+  // strictly fastest at 613 ms/chunk; B=16 is 2.13× slower).
+  //
+  // The formula self-adapts: LateOn-Code-edge (d=256) has per-layer
+  // weights ≈ 1.6 MB, leaving ≈ 14.4 MB usable → B≈14 at N=2048, which
+  // is appropriate for that much smaller model.
+  //
+  // Overrides:
+  //   SWEET_SEARCH_LI_ATTENTION_BUDGET  — explicit FLOPs cap (0 disables)
+  //   SWEET_SEARCH_LI_L2_SAFETY         — multiplicative safety on
+  //                                       usableCache; default 1.0
   const liMaxLength = 2048; // matches LATE_INTERACTION_CONFIG.activeModel.maxDocLength
+  const LI_HIDDEN_DIM = 768; // LateOn-Code backbone (ModernBERT-base) hidden size
+  const LI_DTYPE_BYTES = 2;  // fp16 activations / weights on the Metal path
+  const perLayerWeightBytes = 12 * LI_HIDDEN_DIM * LI_HIDDEN_DIM * LI_DTYPE_BYTES;
+  const perItemBytesAtMaxLen = liMaxLength * LI_HIDDEN_DIM * LI_DTYPE_BYTES;
+  const lastLevelCacheBytes = detectLastLevelCacheBytes();
+  const parsedL2Safety = Number(process.env.SWEET_SEARCH_LI_L2_SAFETY);
+  const l2SafetyFactor = Number.isFinite(parsedL2Safety) && parsedL2Safety > 0
+    ? parsedL2Safety
+    : 1.0;
+  const usableCacheBytes = lastLevelCacheBytes > 0
+    ? Math.max(0, (lastLevelCacheBytes - perLayerWeightBytes) * l2SafetyFactor)
+    : 0;
+  // When cache is detected but weights don't fit (usable ≤ 0), clamp to B=1
+  // rather than null — cache *was* detected, we just can't fit activations
+  // alongside weights, so the right answer is "as small as possible", not
+  // "fall back to the tier heuristic".
+  let cacheBoundLongSeqBatch;
+  if (lastLevelCacheBytes <= 0) {
+    cacheBoundLongSeqBatch = null; // detection failed
+  } else if (usableCacheBytes <= 0) {
+    cacheBoundLongSeqBatch = 1;
+  } else {
+    cacheBoundLongSeqBatch = Math.max(1, Math.floor(usableCacheBytes / perItemBytesAtMaxLen));
+  }
+
   const liAttentionBudgetOverride = parseInt(
     process.env.SWEET_SEARCH_LI_ATTENTION_BUDGET || '',
     10,
@@ -293,8 +418,11 @@ export function planAllocation(resources = detectResources()) {
   } else if (Number.isFinite(liAttentionBudgetOverride) && liAttentionBudgetOverride > 0) {
     lateInteractionAttentionBudget = liAttentionBudgetOverride;
   } else {
-    lateInteractionAttentionBudget =
-      Math.max(1, Math.floor(lateInteractionBatchSize / 2)) * liMaxLength * liMaxLength;
+    const tierLongSeqBatch = Math.max(1, Math.floor(lateInteractionBatchSize / 2));
+    const effectiveLongSeqBatch = cacheBoundLongSeqBatch != null
+      ? Math.min(tierLongSeqBatch, cacheBoundLongSeqBatch)
+      : tierLongSeqBatch;
+    lateInteractionAttentionBudget = effectiveLongSeqBatch * liMaxLength * liMaxLength;
   }
 
   return {
@@ -311,6 +439,8 @@ export function planAllocation(resources = detectResources()) {
     lateInteractionBatchSizeUpperCap,
     lateInteractionTokenBudget,
     lateInteractionAttentionBudget,
+    lastLevelCacheBytes,
+    lateInteractionCacheBoundLongSeqBatch: cacheBoundLongSeqBatch,
     memBudgetMB,
     availableCores,
     computeCores,

@@ -140,16 +140,18 @@ function buildLateInteractionBatches(chunks, options = {}) {
   // Attention budget (seq_len² × batch) bounds per-batch *compute work* on
   // top of the token budget (seq_len × batch, which bounds *memory*). Without
   // this, ascending-sorted tail batches pack e.g. 32 × 2048 tokens of hidden
-  // state per layer, which can overflow GPU/CPU last-level cache and force
-  // every layer to read from DRAM. Attention is O(seq²), so the same
+  // state per layer, which overflows the last-level cache and forces every
+  // transformer layer to spill to DRAM. Attention is O(seq²), so the same
   // token_budget yields ~100× more FLOPs for a seq=2048 batch vs seq=100 —
   // progress crawls on the long-chunk tail even though the device is fully fed.
   //
-  // By also capping seq² × batch, we shrink tail batches until each batch
-  // has roughly-constant compute wall-time. With batchSizeCap=32 and
-  // maxLength=2048, the default budget
-  //   floor(batchSizeCap/2) × maxLength² = 16 × 2048² ≈ 67M
-  // lands batch≈16 at seq=2048 and batch≈128 (upper cap) at seq≤512.
+  // In the live indexing path, `planAllocation()` computes a cache-aware
+  // attention budget from the detected last-level cache (see
+  // indexer-pool.js:detectLastLevelCacheBytes) and passes it in via options.
+  // The fallback default below only fires when this function is called
+  // without an explicit `attentionBudget` (tests, one-off tools). It uses
+  // `floor(batchSizeCap/2) × maxLength²`, which lands batch≈batchSizeCap/2
+  // at seq=maxLength — not cache-aware, but safe as a stand-in.
   // Override via options.attentionBudget or SWEET_SEARCH_LI_ATTENTION_BUDGET
   // env var. Set to 0 to disable.
   const envAttentionBudget = parseInt(

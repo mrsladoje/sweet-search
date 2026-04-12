@@ -304,10 +304,15 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     const liLabel = lateInteractionWorkers > 1
       ? `${lateInteractionWorkers} workers x ${lateInteractionWorkerThreads} threads`
       : `${lateInteractionThreads} inline threads`;
+    const llcMB = resourcePlan.lastLevelCacheBytes > 0
+      ? (resourcePlan.lastLevelCacheBytes / (1024 * 1024)).toFixed(0)
+      : '?';
+    const liLongSeqBatch = resourcePlan.lateInteractionCacheBoundLongSeqBatch ?? '?';
     log(
       `Inference plan: ${shouldParallelLI ? 'parallel models' : resourcePlan.executionStrategy}, `
       + `computeCores=${resourcePlan.computeCores}, embedding=${embeddingLabel}, `
-      + `li=${liLabel}, liBatch=${resourcePlan.lateInteractionBatchSize}, liTokens=${resourcePlan.lateInteractionTokenBudget}`,
+      + `li=${liLabel}, liBatch=${resourcePlan.lateInteractionBatchSize}, liTokens=${resourcePlan.lateInteractionTokenBudget}, `
+      + `llc=${llcMB}MB, liLongSeqBatch=${liLongSeqBatch}`,
       'dim'
     );
   }
