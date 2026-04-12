@@ -26,6 +26,17 @@
  *   node index-codebase-v21.js --dry-run        # Preview only
  */
 
+// ── Optional: bump libuv worker thread pool ──
+//
+// Only useful in opt-in hybrid CPU+GPU mode (SWEET_SEARCH_LI_HYBRID=1 or
+// SWEET_SEARCH_EMBED_HYBRID=1) where multiple concurrent napi async ops
+// fight for the default 4-thread libuv pool. Pure-GPU and pure-CPU paths
+// don't need this. Set SWEET_SEARCH_UV_THREADPOOL_SIZE=64 (or higher) to
+// enable. libuv reads this lazily on first thread pool use.
+if (process.env.SWEET_SEARCH_UV_THREADPOOL_SIZE && !process.env.UV_THREADPOOL_SIZE) {
+  process.env.UV_THREADPOOL_SIZE = process.env.SWEET_SEARCH_UV_THREADPOOL_SIZE;
+}
+
 import { existsSync } from 'fs';
 
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';

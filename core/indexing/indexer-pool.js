@@ -13,6 +13,7 @@
  */
 
 import os from 'os';
+import { execSync } from 'child_process';
 import { Worker } from 'worker_threads';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -20,6 +21,54 @@ import { bestIntraOpThreads, estimateComputeCores } from '../infrastructure/onnx
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WORKER_SCRIPT = path.join(__dirname, 'indexer-worker.js');
+
+let _gpuTierFallbackWarned = false;
+
+/**
+ * Detect the Apple Silicon chip tier. Used to scale GPU-side batch sizes
+ * (LI / embedding) based on the actual GPU core count rather than system RAM,
+ * which is only a rough proxy. Returns one of:
+ *   { gen: 1|2|3|4|null, variant: 'base'|'pro'|'max'|'ultra'|null, gpuCores: <est>, tier: 0..4 }
+ * For non-Apple-Silicon or failure, returns tier=0 so batch falls back to the
+ * RAM-based heuristic.
+ *
+ * tier meaning:
+ *   0 = non-Apple or unknown (use RAM-only heuristic)
+ *   1 = M* base    (~8-10 GPU cores)  → LI batch ~8-12
+ *   2 = M* Pro     (~14-19 GPU cores) → LI batch ~16-20
+ *   3 = M* Max     (~30-40 GPU cores) → LI batch ~28-36
+ *   4 = M* Ultra   (~60-80 GPU cores) → LI batch ~48-64
+ */
+export function detectAppleSiliconTier() {
+  if (process.platform !== 'darwin' || process.arch !== 'arm64') {
+    return { gen: null, variant: null, gpuCores: null, tier: 0 };
+  }
+  try {
+    const brand = execSync('sysctl -n machdep.cpu.brand_string', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2000,
+    }).trim();
+    // Examples: "Apple M1", "Apple M2 Pro", "Apple M3 Max", "Apple M4 Ultra"
+    const match = brand.match(/Apple\s+M(\d+)(?:\s+(Pro|Max|Ultra))?/i);
+    if (!match) return { gen: null, variant: null, gpuCores: null, tier: 0 };
+    const gen = Number(match[1]);
+    const variant = (match[2] || 'base').toLowerCase();
+    // Approximate GPU core counts (typical configs). Memory bandwidth scales
+    // similarly across generations within a variant, so we key the batch size
+    // off the variant tier rather than absolute cores.
+    const gpuCores = {
+      base:  8,
+      pro:  16,
+      max:  36,
+      ultra: 72,
+    }[variant] || 8;
+    const tier = { base: 1, pro: 2, max: 3, ultra: 4 }[variant] || 1;
+    return { gen, variant, gpuCores, tier };
+  } catch {
+    return { gen: null, variant: null, gpuCores: null, tier: 0 };
+  }
+}
 
 // ─── Resource Allocator ─────────────────────────────────────────────────────
 
@@ -44,6 +93,11 @@ export function detectResources(overrides = {}) {
   const liSessionRAM_MB = 250;
   const mainThreadRAM_MB = 500; // SQLite, chunks, graphs
 
+  // Apple Silicon GPU tier (base/Pro/Max/Ultra). Used to scale Metal batch
+  // sizes to the actual GPU core count instead of RAM-as-proxy. On non-Apple
+  // Silicon, tier=0 → falls back to RAM-based sizing.
+  const gpuTier = overrides.gpuTier ?? detectAppleSiliconTier();
+
   return {
     logicalCores,
     computeCores,
@@ -56,6 +110,38 @@ export function detectResources(overrides = {}) {
     embeddingSessionRAM_MB,
     liSessionRAM_MB,
     mainThreadRAM_MB,
+    gpuTier,
+  };
+}
+
+/**
+ * Given a detected Apple Silicon GPU tier, pick a LI batch size and token
+ * budget that saturates the GPU without overshooting memory. Returns
+ * `{ liBatchFromTier: null, liTokenBudgetFromTier: null }` for non-Apple GPUs,
+ * which makes the caller fall back to the RAM-based heuristic.
+ *
+ * Sizing is driven by GPU SIMT occupancy: higher-tier chips have more cores
+ * and can run wider kernels without losing per-item throughput. Token budget
+ * = batch × maxDocLen(2048) so the length-sorted tail packs full batches.
+ */
+export function planLateInteractionFromGpuTier(gpuTier) {
+  if (!gpuTier || gpuTier.tier === 0) {
+    return { liBatchFromTier: null, liTokenBudgetFromTier: null };
+  }
+  // Batch sizes tuned to roughly half the GPU core count — candle's Metal
+  // SDPA kernel dispatches ~2 SIMT groups per batch item at typical seq
+  // lengths, so batch ≈ cores/2 gives one-pass occupancy without queueing.
+  // Budget is batch × 2048 (LateOn-Code maxDocLength).
+  const byTier = {
+    1: { batch:  8, budget:  8 * 2048 }, // base ~8-10 cores
+    2: { batch: 16, budget: 16 * 2048 }, // Pro  ~14-19 cores
+    3: { batch: 32, budget: 32 * 2048 }, // Max  ~30-40 cores
+    4: { batch: 64, budget: 64 * 2048 }, // Ultra ~60-80 cores
+  }[gpuTier.tier];
+  if (!byTier) return { liBatchFromTier: null, liTokenBudgetFromTier: null };
+  return {
+    liBatchFromTier: byTier.batch,
+    liTokenBudgetFromTier: byTier.budget,
   };
 }
 
@@ -73,6 +159,7 @@ export function planAllocation(resources = detectResources()) {
     embeddingSessionRAM_MB,
     liSessionRAM_MB,
     mainThreadRAM_MB,
+    gpuTier = { tier: 0, variant: null, gpuCores: null },
   } = resources;
 
   // Memory budget: total RAM minus 2GB for OS and main thread
@@ -123,27 +210,92 @@ export function planAllocation(resources = detectResources()) {
     : lateInteractionThreads;
   const liBatchOverride = parseInt(process.env.SWEET_SEARCH_LI_BATCH_SIZE || '0', 10);
   const liTokenBudgetOverride = parseInt(process.env.SWEET_SEARCH_LI_TOKEN_BUDGET || '0', 10);
+
+  // Base LI batch + token budget: preferred sizing based on the detected
+  // Apple Silicon GPU tier (actual core count), falling back to RAM-as-proxy
+  // for non-Apple-Silicon or undetected hardware. The goal is to saturate
+  // the GPU's SIMT groups on each dispatch — higher-tier GPUs with more
+  // cores can chew through larger batches per kernel launch.
+  //
+  // Token budget scales together: maxDoc for LateOn-Code is 2048, so the
+  // budget needs to be `batch * 2048` to fit the tail where long chunks
+  // cluster after length-sorted bucketing. Too-small budgets force the
+  // tail into 8-12 item batches and under-utilize the GPU.
+  const {
+    liBatchFromTier,
+    liTokenBudgetFromTier,
+  } = planLateInteractionFromGpuTier(gpuTier);
+
   let lateInteractionBatchSize;
   if (liBatchOverride > 0) {
-    lateInteractionBatchSize = Math.min(liBatchOverride, 16);
-  } else if (totalMemGB <= 8) {
-    lateInteractionBatchSize = 2;
-  } else if (totalMemGB <= 16) {
-    lateInteractionBatchSize = 4;
-  } else if (totalMemGB <= 32) {
-    lateInteractionBatchSize = computeCores >= 8 ? 6 : 4;
+    // Hard cap at 128 to catch typos; no sane config exceeds this.
+    lateInteractionBatchSize = Math.min(liBatchOverride, 128);
+  } else if (liBatchFromTier != null) {
+    lateInteractionBatchSize = liBatchFromTier;
   } else {
-    lateInteractionBatchSize = computeCores >= 12 ? 8 : 6;
+    if (!_gpuTierFallbackWarned) {
+      _gpuTierFallbackWarned = true;
+      const reason = gpuTier && gpuTier.tier === 0
+        ? (process.platform === 'darwin' && process.arch === 'arm64'
+          ? 'Apple Silicon variant not recognized'
+          : 'non-Apple-Silicon platform')
+        : 'GPU tier detection returned no data';
+      console.warn(`[indexer-pool] GPU tier unknown (${reason}); using RAM-based LI batch heuristic (totalMemGB=${totalMemGB.toFixed(1)})`);
+    }
+    if (totalMemGB <= 8) {
+      lateInteractionBatchSize = 2;
+    } else if (totalMemGB <= 16) {
+      lateInteractionBatchSize = 4;
+    } else if (totalMemGB <= 32) {
+      lateInteractionBatchSize = computeCores >= 8 ? 6 : 4;
+    } else {
+      lateInteractionBatchSize = computeCores >= 12 ? 8 : 6;
+    }
   }
+
   const lateInteractionTokenBudget = liTokenBudgetOverride > 0
     ? liTokenBudgetOverride
-    : totalMemGB <= 8
-      ? 4_096
-      : totalMemGB <= 16
-        ? 6_144
-        : totalMemGB <= 32
-          ? 8_192
-          : 12_288;
+    : liTokenBudgetFromTier != null
+      ? liTokenBudgetFromTier
+      : totalMemGB <= 8
+        ? 4_096
+        : totalMemGB <= 16
+          ? 6_144
+          : totalMemGB <= 32
+            ? 8_192
+            : 12_288;
+
+  // Upper cap for dynamic batch growth in buildLateInteractionBatches. Short
+  // code chunks (typical 100-300 tokens) leave the GPU under-utilized at the
+  // baseline batch size (tuned for 2048-token max-length chunks). Letting the
+  // bucketer grow up to this cap when token budget allows keeps SIMT groups
+  // saturated for short-chunk batches. 4x baseline, capped at 128.
+  const lateInteractionBatchSizeUpperCap = Math.min(
+    128,
+    lateInteractionBatchSize * 4,
+  );
+
+  // Attention budget caps per-batch compute work (seq² × batch). On top of
+  // the token budget (which caps memory), this bound evens out per-batch
+  // wall-time so long-chunk tail batches don't crawl. Default:
+  //   floor(batchSize/2) × maxLength²
+  // which gives batch ≈ batchSize/2 at seq=maxLength (fits in L3 on most Macs),
+  // and larger batches as seq shrinks (capped by upper cap). Override via
+  // SWEET_SEARCH_LI_ATTENTION_BUDGET env var; set to 0 to disable.
+  const liMaxLength = 2048; // matches LATE_INTERACTION_CONFIG.activeModel.maxDocLength
+  const liAttentionBudgetOverride = parseInt(
+    process.env.SWEET_SEARCH_LI_ATTENTION_BUDGET || '',
+    10,
+  );
+  let lateInteractionAttentionBudget;
+  if (liAttentionBudgetOverride === 0) {
+    lateInteractionAttentionBudget = null; // disabled
+  } else if (Number.isFinite(liAttentionBudgetOverride) && liAttentionBudgetOverride > 0) {
+    lateInteractionAttentionBudget = liAttentionBudgetOverride;
+  } else {
+    lateInteractionAttentionBudget =
+      Math.max(1, Math.floor(lateInteractionBatchSize / 2)) * liMaxLength * liMaxLength;
+  }
 
   return {
     executionStrategy: 'sequential-phases',
@@ -156,7 +308,9 @@ export function planAllocation(resources = detectResources()) {
     threadsPerLateInteractionWorker,
     lateInteractionThreads,
     lateInteractionBatchSize,
+    lateInteractionBatchSizeUpperCap,
     lateInteractionTokenBudget,
+    lateInteractionAttentionBudget,
     memBudgetMB,
     availableCores,
     computeCores,
