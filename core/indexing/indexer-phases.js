@@ -347,7 +347,9 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
       workerCount: lateInteractionWorkers,
       threadsPerWorker: lateInteractionWorkerThreads,
       batchSize: resourcePlan.lateInteractionBatchSize,
+      batchSizeUpperCap: resourcePlan.lateInteractionBatchSizeUpperCap,
       tokenBudget: resourcePlan.lateInteractionTokenBudget,
+      attentionBudget: resourcePlan.lateInteractionAttentionBudget,
     });
 
     let liPromise = null;

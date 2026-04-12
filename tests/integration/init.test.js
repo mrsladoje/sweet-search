@@ -274,7 +274,7 @@ describe('downloadModelsForProfile', () => {
     expect(result.failures).toEqual([]);
   });
 
-  it('returns 6 model results for full profile (using cache)', async () => {
+  it('returns 8 model results for full profile (using cache)', async () => {
     // Skip when model cache does not exist (CI without pre-cached models)
     const cacheRoot = join(process.env.HOME || '', '.cache', 'sweet-search', 'models');
     if (!existsSync(join(cacheRoot, 'lightonai--LateOn-Code'))) {
@@ -282,7 +282,7 @@ describe('downloadModelsForProfile', () => {
     }
 
     const result = await downloadModelsForProfile('full');
-    expect(result.results.size).toBe(6);
+    expect(result.results.size).toBe(8);
     expect(result.failures).toEqual([]);
     expect(result.totalCached).toBeGreaterThan(0);
   });

@@ -4,6 +4,7 @@
  */
 
 import { DB_PATHS, detectIndexerProfile } from './platform.js';
+import { resolveNativeAddon } from '../native-resolver.js';
 
 const VOYAGEAI_API_KEY = process.env.VOYAGEAI_API_KEY || '';
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY || '';
@@ -200,13 +201,34 @@ export const EMBEDDING_CONFIG = {
   },
 
   /** Whether to run late interaction encoding in parallel with vector embeddings.
-   *  Defaults to off because both local ONNX models are CPU-bound and compete
-   *  for the same caches. Override via SWEET_SEARCH_PARALLEL_LI=0 or =1. */
+   *
+   *  **Default policy**:
+   *  - Metal (native candle inference on Apple Silicon): ON. Inference runs
+   *    on the GPU, so NomicBERT and ModernBERT don't fight for L2 cache.
+   *    CPU-side work (tokenization, sqlite writes, HCGS summaries) and
+   *    Metal command dispatches overlap naturally.
+   *  - ORT / CPU / remote providers: OFF. The old rationale still holds —
+   *    both ONNX sessions run on the CPU and fight for L2 cache + threads,
+   *    so serializing them is faster than racing them.
+   *
+   *  Override via SWEET_SEARCH_PARALLEL_LI=0 or =1.
+   */
   get parallelLateInteraction() {
     const envVal = process.env.SWEET_SEARCH_PARALLEL_LI;
     if (envVal === '0') return false;
     if (envVal === '1') return true;
     if (this.provider !== 'local') return false;
+    // Default ON only on the native Metal path. The old "both ONNX sessions
+    // fight for L2 cache" rationale still holds for CPU/ORT, so non-Metal
+    // stays OFF. Uses resolveNativeAddon() (no side effects) instead of
+    // importing native-inference.js, which would create a circular import.
+    const nativeDisabled = ['0', 'false', 'off'].includes(
+      (process.env.SWEET_SEARCH_NATIVE_INFERENCE ?? '').trim().toLowerCase(),
+    );
+    const isAppleSilicon = process.platform === 'darwin' && process.arch === 'arm64';
+    if (isAppleSilicon && !nativeDisabled && resolveNativeAddon()) {
+      return true;
+    }
     return detectIndexerProfile().parallelLI;
   },
 

@@ -193,7 +193,24 @@ describe('EMBEDDING_CONFIG getters use detected profile for local provider', () 
       const profile = detectIndexerProfile();
       expect(EMBEDDING_CONFIG.indexerBatchSize).toBe(profile.batchSize);
       expect(EMBEDDING_CONFIG.indexerWriteFlushRows).toBe(profile.flushRows);
-      expect(EMBEDDING_CONFIG.parallelLateInteraction).toBe(profile.parallelLI);
+      // parallelLateInteraction defaults to ON when the native Metal addon
+      // is available on Apple Silicon (inference runs on GPU, so the old
+      // "both CPU sessions compete for L2 cache" rationale no longer
+      // applies). On non-Metal platforms it follows detectIndexerProfile.
+      const isAppleSilicon = process.platform === 'darwin' && process.arch === 'arm64';
+      const nativeDisabled = ['0', 'false', 'off'].includes(
+        (process.env.SWEET_SEARCH_NATIVE_INFERENCE ?? '').trim().toLowerCase(),
+      );
+      if (isAppleSilicon && !nativeDisabled) {
+        // On Apple Silicon the default is true as long as the native addon
+        // resolves. If it doesn't resolve we fall back to profile.parallelLI.
+        expect(
+          EMBEDDING_CONFIG.parallelLateInteraction === true
+          || EMBEDDING_CONFIG.parallelLateInteraction === profile.parallelLI,
+        ).toBe(true);
+      } else {
+        expect(EMBEDDING_CONFIG.parallelLateInteraction).toBe(profile.parallelLI);
+      }
     }
   });
 

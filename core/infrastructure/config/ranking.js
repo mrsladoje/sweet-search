@@ -148,6 +148,10 @@ export const LATE_INTERACTION_CONFIG = {
     return !!this.model && this.model !== 'false';
   },
 
+  // Per-model maxDocLength is overridable via SWEET_SEARCH_LI_MAX_DOC_LENGTH.
+  // Lower caps (e.g. 1024) trade some long-context recall for ~4× less
+  // attention compute on the long-chunk tail (attention is O(seq²)).
+  // The A/B benchmark for the cap lives in `eval/run_benchmark.js`.
   models: {
     'lateon-code': {
       hfId: 'lightonai/LateOn-Code',
@@ -156,7 +160,10 @@ export const LATE_INTERACTION_CONFIG = {
       tokenDimension: 128,                   // final output after projection
       projectionPaths: ['1_Dense/model.safetensors'],  // 768→128 single stage
       maxQueryLength: 256,
-      maxDocLength: 2048,
+      get maxDocLength() {
+        const env = parseInt(process.env.SWEET_SEARCH_LI_MAX_DOC_LENGTH || '', 10);
+        return Number.isFinite(env) && env > 0 ? env : 2048;
+      },
       queryPrefix: '[Q] ',
       docPrefix: '[D] ',
     },
@@ -167,7 +174,10 @@ export const LATE_INTERACTION_CONFIG = {
       tokenDimension: 48,                    // final output after 2-stage projection
       projectionPaths: ['1_Dense/model.safetensors', '2_Dense/model.safetensors'],  // 256→512→48
       maxQueryLength: 256,
-      maxDocLength: 2048,
+      get maxDocLength() {
+        const env = parseInt(process.env.SWEET_SEARCH_LI_MAX_DOC_LENGTH || '', 10);
+        return Number.isFinite(env) && env > 0 ? env : 2048;
+      },
       queryPrefix: '[Q] ',
       docPrefix: '[D] ',
     },

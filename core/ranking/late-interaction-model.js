@@ -19,6 +19,7 @@ import { LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { fetchModelFile, getModelCacheDir, resolveModelFile } from '../infrastructure/model-fetcher.js';
 import { getModelEntry } from '../infrastructure/model-registry.js';
 import { createTokenizer } from '../infrastructure/native-tokenizer.js';
+import { isNativeInferenceAvailable, nativeLiEncode, nativeLiEncodeTokenized } from '../infrastructure/native-inference.js';
 // CoreML not used for LI models — see loadModel() comment for benchmarking rationale.
 
 let lateInteractionPipeline = null;
@@ -56,6 +57,28 @@ export async function getLateInteractionPipeline() {
 
 /** Check if the late interaction model is currently loaded */
 export function isLateInteractionModelLoaded() { return lateInteractionPipeline != null; }
+
+// Lightweight tokenizer + skiplist cache for native inference path
+// (avoids loading the full ORT pipeline just for tokenization)
+let _nativeLiTokenizer = null;
+let _nativeLiSkiplist = null;
+
+async function getNativeLiTokenizerAndSkiplist() {
+  if (_nativeLiTokenizer) return { tokenizer: _nativeLiTokenizer, skiplistTokenIds: _nativeLiSkiplist };
+
+  const modelConfig = LATE_INTERACTION_CONFIG.activeModel;
+  const tokenizerPath = join(getModelCacheDir(modelConfig.hfId), 'tokenizer.json');
+  _nativeLiTokenizer = await createTokenizer(tokenizerPath);
+
+  _nativeLiSkiplist = new Set();
+  for (const ch of LATE_INTERACTION_CONFIG.skiplistChars) {
+    const enc = _nativeLiTokenizer(ch, { add_special_tokens: false });
+    const ids = Array.from(enc.input_ids.data);
+    if (ids.length === 1) _nativeLiSkiplist.add(Number(ids[0]));
+  }
+
+  return { tokenizer: _nativeLiTokenizer, skiplistTokenIds: _nativeLiSkiplist };
+}
 
 export function configureLateInteractionRuntime(overrides = {}) {
   lateInteractionRuntimeConfig = {
@@ -163,7 +186,7 @@ async function loadModel() {
   // Phase 1a: harmonized session options with embedding path — adds graph
   // optimization, memory arena, mem pattern, and optimized graph caching.
   // executionMode defaults to 'sequential' (BERT encoder, no branch parallelism).
-  // Phase 1a/1c: LI session options benchmarked on Apple Silicon (M3 Max).
+  // Phase 1a/1c: LI session options benchmarked across hosts.
   // Findings: graphOptimizationLevel 'all' triggers NchwcTransformer → 14% regression.
   // 'extended' + memArena + memPattern: marginal overhead for no measurable gain.
   // Conclusion: keep LI session lean. Only proven-beneficial options added.
@@ -261,6 +284,22 @@ async function loadModel() {
  * @returns {Float32Array[]} Array of L2-normalized token vectors
  */
 export async function encodeQuery(text) {
+  if (!LATE_INTERACTION_CONFIG.enabled) return [];
+
+  // Native inference path: candle FP32 with Metal GPU
+  if (isNativeInferenceAvailable()) {
+    const modelConfig = LATE_INTERACTION_CONFIG.activeModel;
+    if (!modelConfig) return [];
+    const prefixed = modelConfig.queryPrefix + text;
+    const t0 = performance.now();
+    const result = await nativeLiEncode([prefixed], { maxLength: modelConfig.maxQueryLength });
+    const t1 = performance.now();
+    _timings.inference_us += Math.round((t1 - t0) * 1000);
+    _timings.calls++;
+    return result[0]; // Float32Array[] — one per token
+  }
+
+  // ORT fallback path
   const pipeline = await getLateInteractionPipeline();
   if (!pipeline) return [];
 
@@ -297,7 +336,94 @@ export async function encodeQuery(text) {
  * @returns {Float32Array[][]} Array of (array of token vectors) per document
  */
 export async function encodeDocuments(texts, options = {}) {
+  // Default dispatcher: pick the best path that's available. Hybrid CPU+GPU
+  // dispatching is done at the indexer level (indexer-ann.js LI loop) which
+  // calls encodeDocumentsGpu and encodeDocumentsCpu directly in parallel.
+  //
+  // SWEET_SEARCH_LI_USE_CPU=1 forces the ORT INT8 CPU path even when the
+  // native Metal addon is available. Use this when running in parallel with
+  // the embedding phase: embed gets exclusive Metal access, LI gets exclusive
+  // CPU access — eliminating Metal queue contention that otherwise starves
+  // the LI GPU encoder when embed is feeding it a continuous stream of
+  // small batches.
+  const forceCpu = process.env.SWEET_SEARCH_LI_USE_CPU === '1';
+  if (!forceCpu && isNativeInferenceAvailable()) {
+    return encodeDocumentsGpu(texts, options);
+  }
+  return encodeDocumentsCpu(texts, options);
+}
+
+/**
+ * Encode documents using the native Metal GPU path (candle + Metal SDPA).
+ * Throws if the native addon is not available — the caller is expected to
+ * have verified availability before routing batches here.
+ */
+export async function encodeDocumentsGpu(texts, options = {}) {
   const { poolFactor = 1, extendedSkiplist = false } = options;
+
+  const modelConfig = LATE_INTERACTION_CONFIG.activeModel;
+  if (!modelConfig) return texts.map(() => []);
+
+  // Lightweight tokenizer + skiplist (no ORT session needed)
+  const { tokenizer, skiplistTokenIds } = await getNativeLiTokenizerAndSkiplist();
+
+  let effectiveSkiplist = skiplistTokenIds;
+  if (extendedSkiplist) {
+    effectiveSkiplist = buildExtendedSkiplist(tokenizer, skiplistTokenIds);
+  }
+
+  const prefixedTexts = texts.map((text) => modelConfig.docPrefix + text);
+
+  // Tokenize once; reuse the same batch for both skiplist lookup and model
+  // inference. `nativeLiEncodeTokenized` accepts the already-tokenized batch
+  // directly so we don't double-tokenize.
+  const t0 = performance.now();
+  const tokenized = tokenizer(prefixedTexts, {
+    padding: true, truncation: true, max_length: modelConfig.maxDocLength,
+  });
+  const t1 = performance.now();
+
+  // Native inference — returns Float32Array[][] already projected + normalized
+  const allVectorsByDoc = await nativeLiEncodeTokenized(tokenized);
+  const t2 = performance.now();
+
+  _timings.tokenize_us += Math.round((t1 - t0) * 1000);
+  _timings.inference_us += Math.round((t2 - t1) * 1000);
+  _timings.calls++;
+
+  // Apply skiplist filtering
+  const { data: inputIdsData, dims: inputIdDims } = tokenized.input_ids;
+  const seqLen = inputIdDims[1];
+  const results = new Array(texts.length);
+
+  for (let docIdx = 0; docIdx < texts.length; docIdx++) {
+    const allVectors = allVectorsByDoc[docIdx];
+    const vectors = [];
+    for (let tokenIdx = 0; tokenIdx < allVectors.length; tokenIdx++) {
+      const rawId = inputIdsData[docIdx * seqLen + tokenIdx];
+      const inputId = typeof rawId === 'bigint' ? Number(rawId) : rawId;
+      if (!effectiveSkiplist.has(inputId)) {
+        vectors.push(allVectors[tokenIdx]);
+      }
+    }
+    results[docIdx] = poolFactor > 1 ? poolTokens(vectors, poolFactor) : vectors;
+  }
+
+  return results;
+}
+
+/**
+ * Encode documents using the ORT INT8 CPU path (onnxruntime-node, accelerated
+ * by the platform BLAS — Accelerate/AMX on Apple Silicon, MKL on x86, etc).
+ * Returns the SAME shape as the GPU path so the caller can mix results from
+ * both pipelines transparently.
+ *
+ * Used by the opt-in hybrid dispatcher (SWEET_SEARCH_LI_HYBRID=1) and as the
+ * default fallback when the native GPU addon isn't available on the host.
+ */
+export async function encodeDocumentsCpu(texts, options = {}) {
+  const { poolFactor = 1, extendedSkiplist = false } = options;
+
   const pipeline = await getLateInteractionPipeline();
   if (!pipeline) return texts.map(() => []);
 

@@ -125,8 +125,47 @@ function estimateLateInteractionTokens(text, maxLength = 2048) {
 
 function buildLateInteractionBatches(chunks, options = {}) {
   const batchSizeCap = Math.max(1, options.batchSize ?? 8);
+  // Upper cap lets short-chunk batches grow past the baseline `batchSize`
+  // when there's token-budget headroom. The baseline batchSize is tuned for
+  // max-length chunks (2048 tokens); short chunks (typical 100-300 tokens)
+  // leave most of the GPU's SIMT groups idle at that batch count, so we
+  // let the bucketer pack more of them per dispatch. Default 4x baseline
+  // keeps short-chunk batches GPU-saturated without unbounded memory use.
+  const batchSizeUpperCap = Math.max(
+    batchSizeCap,
+    options.batchSizeUpperCap ?? batchSizeCap * 4,
+  );
   const tokenBudget = Math.max(1, options.tokenBudget ?? 8_192);
   const maxLength = options.maxLength ?? 2_048;
+  // Attention budget (seq_len² × batch) bounds per-batch *compute work* on
+  // top of the token budget (seq_len × batch, which bounds *memory*). Without
+  // this, ascending-sorted tail batches pack e.g. 32 × 2048 tokens of hidden
+  // state per layer, which can overflow GPU/CPU last-level cache and force
+  // every layer to read from DRAM. Attention is O(seq²), so the same
+  // token_budget yields ~100× more FLOPs for a seq=2048 batch vs seq=100 —
+  // progress crawls on the long-chunk tail even though the device is fully fed.
+  //
+  // By also capping seq² × batch, we shrink tail batches until each batch
+  // has roughly-constant compute wall-time. With batchSizeCap=32 and
+  // maxLength=2048, the default budget
+  //   floor(batchSizeCap/2) × maxLength² = 16 × 2048² ≈ 67M
+  // lands batch≈16 at seq=2048 and batch≈128 (upper cap) at seq≤512.
+  // Override via options.attentionBudget or SWEET_SEARCH_LI_ATTENTION_BUDGET
+  // env var. Set to 0 to disable.
+  const envAttentionBudget = parseInt(
+    process.env.SWEET_SEARCH_LI_ATTENTION_BUDGET || '',
+    10,
+  );
+  let attentionBudget;
+  if (options.attentionBudget === 0 || envAttentionBudget === 0) {
+    attentionBudget = Infinity;
+  } else if (Number.isFinite(envAttentionBudget) && envAttentionBudget > 0) {
+    attentionBudget = envAttentionBudget;
+  } else if (options.attentionBudget != null && options.attentionBudget > 0) {
+    attentionBudget = options.attentionBudget;
+  } else {
+    attentionBudget = Math.max(1, Math.floor(batchSizeCap / 2)) * maxLength * maxLength;
+  }
   const indexed = chunks.map((chunk) => {
     const text = chunk.text || chunk.content || '';
     return {
@@ -144,8 +183,11 @@ function buildLateInteractionBatches(chunks, options = {}) {
     while (i + batchSize < indexed.length) {
       const candidateLongest = indexed[i + batchSize].estTokens;
       const candidateCount = batchSize + 1;
-      if (candidateCount > batchSizeCap) break;
+      if (candidateCount > batchSizeUpperCap) break;
+      // Memory cap — linear in seq_len (hidden state ~ batch × seq × hidden_size)
       if (candidateLongest * candidateCount > tokenBudget) break;
+      // Compute cap — quadratic in seq_len (attention ~ batch × seq²)
+      if (candidateLongest * candidateLongest * candidateCount > attentionBudget) break;
       batchSize = candidateCount;
     }
     batches.push({ items: indexed.slice(i, i + batchSize) });
@@ -455,13 +497,37 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     workerCount = 1,
     threadsPerWorker = 0,
     batchSize = 8,
+    batchSizeUpperCap = batchSize * 4,
     tokenBudget = 8_192,
+    attentionBudget = null,
+    segmentSize = null, // override SSLX-v3 segment threshold (default 10k)
   } = options;
   log('\n━━━ Phase 4: Late Interaction Index (LateOn-Code) ━━━', 'bright');
 
   if (dryRun) {
     log('DRY RUN: Skipping late interaction index', 'magenta');
     return;
+  }
+
+  // Apply LI skip policy: drop chunks from vendored / generated / huge files
+  // BEFORE the encoder ever sees them. Embedding indexes everything for full
+  // recall; LI is the slow phase and only adds value on chunks a human would
+  // actually want to read. Disable via SWEET_SEARCH_LI_SKIP_DISABLE=1.
+  let skippedSummary = null;
+  if (Array.isArray(chunks) && chunks.length > 0) {
+    const { applyLiSkipPolicy } = await import('./li-skip-policy.js');
+    const { kept, stats } = applyLiSkipPolicy(chunks);
+    if (stats.totalSkipped > 0) {
+      const breakdown = [
+        stats.dir > 0 ? `${stats.dir} vendored/build` : null,
+        stats.pattern > 0 ? `${stats.pattern} minified/lock` : null,
+        stats.generated > 0 ? `${stats.generated} generated` : null,
+        stats.huge > 0 ? `${stats.huge} huge-file` : null,
+      ].filter(Boolean).join(', ');
+      log(`LI skip policy: dropped ${stats.totalSkipped} chunks across ${stats.skippedFiles} files (${breakdown}); kept ${kept.length} chunks across ${stats.keptFiles} files`, 'dim');
+      chunks = kept;
+      skippedSummary = stats;
+    }
   }
 
   const hasChunks = Array.isArray(chunks) && chunks.length > 0;
@@ -493,6 +559,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     modelId: LATE_INTERACTION_CONFIG.model,
     indexPath: fullRebuild ? saveToPath : loadFromPath,
     loadExisting: !fullRebuild,
+    ...(segmentSize ? { segmentSize } : {}),
   });
   if (quantBits !== defaultQuantBits || whtSeed !== 0) {
     log(`LI config: quantBits=${quantBits}, whtSeed=${whtSeed}, whtOrdering=${whtOrdering}, poolFactor=${poolFactor}`, 'cyan');
@@ -534,61 +601,211 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
   if (!hasChunks) {
     log('LateInteraction: No new chunks to encode; applying removals only', 'dim');
   } else {
-    log(`LateInteraction: Encoding ${totalChunks} chunks with ${LATE_INTERACTION_CONFIG.model} (${LATE_INTERACTION_CONFIG.tokenDimension}d${poolLabel}${skipLabel}, batch<=${batchSize}, tokens<=${tokenBudget})...`, 'yellow');
+    const batchLabel = batchSizeUpperCap && batchSizeUpperCap > batchSize
+      ? `batch<=${batchSize}→${batchSizeUpperCap}`
+      : `batch<=${batchSize}`;
+    const attnLabel = (attentionBudget && attentionBudget > 0)
+      ? `, attn<=${(attentionBudget / 1_000_000).toFixed(0)}M`
+      : '';
+    log(`LateInteraction: Encoding ${totalChunks} chunks with ${LATE_INTERACTION_CONFIG.model} (${LATE_INTERACTION_CONFIG.tokenDimension}d${poolLabel}${skipLabel}, ${batchLabel}, tokens<=${tokenBudget}${attnLabel})...`, 'yellow');
     const batches = buildLateInteractionBatches(chunks, {
       batchSize,
+      batchSizeUpperCap: batchSizeUpperCap,
       tokenBudget,
+      attentionBudget,
       maxLength: LATE_INTERACTION_CONFIG.activeModel?.maxDocLength || 2048,
     });
 
-    let encoder = null;
+    // ── Hybrid CPU+GPU dispatch (OPT-IN, experimental) ──
+    //
+    // Default routes all LI through whichever single encoder is available
+    // (native GPU preferred when present, ORT INT8 CPU fallback otherwise).
+    //
+    // Setting SWEET_SEARCH_LI_HYBRID=1 enables a smart bidirectional dispatcher
+    // that runs the GPU and CPU encoders in parallel, with the GPU pulling
+    // longest batches from the back of the length-sorted batch list and the
+    // CPU pulling shortest from the front. They meet in the middle.
+    //
+    // This is OPT-IN because in the default pipeline (parallel embedding +
+    // LI phases) the GPU device queue is shared, and the embedding phase's
+    // continuous Metal command stream effectively starves the LI GPU encoder.
+    // Hybrid is only useful when:
+    //   - You also disable parallel-models (SWEET_SEARCH_PARALLEL_LI=0), AND
+    //   - You bump the libuv pool (SWEET_SEARCH_UV_THREADPOOL_SIZE=64), AND
+    //   - Your hardware separates CPU and GPU memory (avoids unified-memory
+    //     bandwidth contention). On unified-memory systems, parallel CPU+GPU
+    //     inference fights for the same DRAM and the contention overhead
+    //     usually erases the parallelism win.
     let liPool = null;
-    if (workerCount > 1 && threadsPerWorker > 0) {
+    let useHybrid = false;
+    let gpuEncoder = null;
+    let cpuEncoder = null;
+    let singleEncoder = null;
+
+    const hybridEnv = (process.env.SWEET_SEARCH_LI_HYBRID ?? '').trim().toLowerCase();
+    const hybridEnabled = hybridEnv === '1' || hybridEnv === 'true' || hybridEnv === 'on';
+    const hybridDisabled = !hybridEnabled
+      // SWEET_SEARCH_LI_USE_CPU implies single-encoder CPU path — skip the
+      // bidirectional cursor (which would still try to use the GPU encoder).
+      || process.env.SWEET_SEARCH_LI_USE_CPU === '1';
+
+    if (!hybridDisabled) {
       try {
-        const { LateInteractionPool } = await import('./indexer-pool.js');
-        liPool = new LateInteractionPool({
-          workers: workerCount,
-          threadsPerWorker,
-        });
-        await liPool.init();
-        encoder = (texts) => liPool.encodeDocuments(texts, encodeOpts);
-        log(`LateInteraction: using ${workerCount} workers x ${threadsPerWorker} threads`, 'dim');
-      } catch (err) {
-        log(`LateInteraction pool init failed, falling back to inline: ${err.message}`, 'yellow');
+        const { isNativeInferenceAvailable } = await import('../infrastructure/native-inference.js');
+        const liModelMod = await import('../ranking/late-interaction-model.js');
+        // Probe ORT availability — only attempt if the module exposes both
+        // the explicit GPU/CPU encoders and a pipeline loader (the indexer
+        // tests mock encodeDocuments only). getLateInteractionPipeline
+        // returns null if the ORT model files / onnxruntime-node aren't
+        // installed.
+        const hasHybridApi = typeof liModelMod.encodeDocumentsGpu === 'function'
+          && typeof liModelMod.encodeDocumentsCpu === 'function'
+          && typeof liModelMod.getLateInteractionPipeline === 'function';
+        if (hasHybridApi && isNativeInferenceAvailable()) {
+          const ortPipeline = await liModelMod.getLateInteractionPipeline().catch(() => null);
+          if (ortPipeline?.session) {
+            useHybrid = true;
+            gpuEncoder = (texts) => liModelMod.encodeDocumentsGpu(texts, encodeOpts);
+            cpuEncoder = (texts) => liModelMod.encodeDocumentsCpu(texts, encodeOpts);
+            log('LateInteraction: hybrid CPU+GPU dispatch enabled (smart routing: long→GPU, short→CPU)', 'dim');
+          }
+        }
+      } catch {
+        // hybrid probe failed for any reason — fall through to single-encoder path
       }
     }
-    if (!encoder) {
-      const { encodeDocuments } = await import('../ranking/late-interaction-model.js');
-      encoder = (texts) => encodeDocuments(texts, encodeOpts);
+
+    if (!useHybrid) {
+      if (workerCount > 1 && threadsPerWorker > 0) {
+        try {
+          const { LateInteractionPool } = await import('./indexer-pool.js');
+          liPool = new LateInteractionPool({
+            workers: workerCount,
+            threadsPerWorker,
+          });
+          await liPool.init();
+          singleEncoder = (texts) => liPool.encodeDocuments(texts, encodeOpts);
+          log(`LateInteraction: using ${workerCount} workers x ${threadsPerWorker} threads`, 'dim');
+        } catch (err) {
+          log(`LateInteraction pool init failed, falling back to inline: ${err.message}`, 'yellow');
+        }
+      }
+      if (!singleEncoder) {
+        const { encodeDocuments } = await import('../ranking/late-interaction-model.js');
+        singleEncoder = (texts) => encodeDocuments(texts, encodeOpts);
+      }
     }
 
-    try {
-      const waveSize = liPool ? liPool.numWorkers : 1;
-      for (let i = 0; i < batches.length; i += waveSize) {
-        const wave = batches.slice(i, i + waveSize);
-        const waveResults = await Promise.all(
-          wave.map(({ items }) => encoder(items.map(({ text }) => text)))
-        );
+    // Shared finalizer for one batch's results.
+    // Profile: tracks finalize cost (single-threaded JS work inside liIndex.add).
+    // Set SWEET_SEARCH_LI_PROFILE=1 to print rolling stats.
+    const profile = process.env.SWEET_SEARCH_LI_PROFILE === '1';
+    const stats = {
+      finalizeMs: 0, finalizeChunks: 0,
+      encodeMs: 0, encodeBatches: 0,
+      gpuMs: 0, gpuBatches: 0,
+      cpuMs: 0, cpuBatches: 0,
+      wallStart: Date.now(),
+    };
+    const printStats = () => {
+      if (!profile) return;
+      const wall = (Date.now() - stats.wallStart) / 1000;
+      const parRatio = wall > 0 ? (stats.encodeMs / 1000 / wall).toFixed(2) : '-';
+      const gpuRate = stats.gpuBatches ? (stats.gpuMs / stats.gpuBatches).toFixed(0) : '-';
+      const cpuRate = stats.cpuBatches ? (stats.cpuMs / stats.cpuBatches).toFixed(0) : '-';
+      log(`[LI prof] wall=${wall.toFixed(0)}s | gpu=${stats.gpuBatches}b avg ${gpuRate}ms | cpu=${stats.cpuBatches}b avg ${cpuRate}ms | parRatio=${parRatio}x (perfect=2.00)`, 'dim');
+    };
+    const finalizeBatchResults = async (batchItems, tokenArrays) => {
+      const t0 = profile ? Date.now() : 0;
+      for (let j = 0; j < batchItems.length; j++) {
+        const chunk = batchItems[j].chunk;
+        const tokens = tokenArrays[j];
+        if (tokens && tokens.length > 0) {
+          await liIndex.add(chunk.id, tokens, {
+            file: chunk.file,
+            name: chunk.metadata?.symbol,
+            type: chunk.metadata?.chunk_type,
+            startLine: chunk.metadata?.line_start || null,
+            endLine: chunk.metadata?.line_end || null,
+            ...(poolFactor > 1 ? { _pooledUpstream: true } : {}),
+          });
+          totalAdded++;
+        }
+      }
+      if (profile) {
+        stats.finalizeMs += Date.now() - t0;
+        stats.finalizeChunks += batchItems.length;
+        if (Math.floor((totalAdded - batchItems.length) / 800) !== Math.floor(totalAdded / 800)) printStats();
+      }
+      logProgress(totalAdded, totalChunks, 'LateInteraction');
+    };
 
-        for (let waveIdx = 0; waveIdx < wave.length; waveIdx++) {
-          const batchItems = wave[waveIdx].items;
-          const tokenArrays = waveResults[waveIdx];
-          for (let j = 0; j < batchItems.length; j++) {
-            const chunk = batchItems[j].chunk;
-            const tokens = tokenArrays[j];
-            if (tokens && tokens.length > 0) {
-              await liIndex.add(chunk.id, tokens, {
-                file: chunk.file,
-                name: chunk.metadata?.symbol,
-                type: chunk.metadata?.chunk_type,
-                startLine: chunk.metadata?.line_start || null,
-                endLine: chunk.metadata?.line_end || null,
-                ...(poolFactor > 1 ? { _pooledUpstream: true } : {}),
-              });
-              totalAdded++;
+    try {
+      if (profile) stats.wallStart = Date.now(); // reset to first batch
+      if (useHybrid) {
+        // ── Smart bidirectional routing ──
+        //
+        // The bucketer (`buildLateInteractionBatches`) sorts batches ASCENDING
+        // by token length, so `batches[0]` has the shortest chunks and
+        // `batches[N-1]` the longest. The general-shape per-batch profile is:
+        // CPU is competitive or faster on tiny sequences (where GPU kernel-
+        // launch overhead dominates), and the GPU pulls ahead substantially
+        // on long sequences where attention is compute-bound.
+        //
+        // Round-robin dispatching is *anti-optimal*: it sends short batches
+        // to the slow-on-shorts GPU and long batches to the slow-on-longs CPU.
+        // Smart routing has the GPU pull from the END (longest) and the CPU
+        // from the BEGINNING (shortest); they meet in the middle. Dynamic
+        // self-balancing emerges naturally — if either device finishes faster
+        // it starts pulling medium-length batches from the middle.
+        //
+        // JavaScript is single-threaded, so the `if/decrement` and `if/increment`
+        // pairs are atomic between await boundaries — no race on the cursors.
+        let front = 0;
+        let back = batches.length - 1;
+        const runGpu = async () => {
+          while (true) {
+            if (back < front) break;
+            const myIdx = back--;
+            const batch = batches[myIdx];
+            if (profile && stats.gpuBatches < 3) console.log(`[GPU] CLAIM idx=${myIdx} items=${batch.items.length} maxLen=${Math.max(...batch.items.map(b => b.estTokens))}`);
+            const t0 = profile ? Date.now() : 0;
+            const tokenArrays = await gpuEncoder(batch.items.map(({ text }) => text));
+            if (profile && stats.gpuBatches < 3) console.log(`[GPU] DONE  idx=${myIdx} took=${Date.now()-t0}ms`);
+            if (profile) {
+              const dt = Date.now() - t0;
+              stats.encodeMs += dt; stats.encodeBatches++;
+              stats.gpuMs += dt; stats.gpuBatches++;
             }
+            await finalizeBatchResults(batch.items, tokenArrays);
           }
-          logProgress(totalAdded, totalChunks, 'LateInteraction');
+        };
+        const runCpu = async () => {
+          while (true) {
+            if (front > back) break;
+            const myIdx = front++;
+            const batch = batches[myIdx];
+            const t0 = profile ? Date.now() : 0;
+            const tokenArrays = await cpuEncoder(batch.items.map(({ text }) => text));
+            if (profile) {
+              const dt = Date.now() - t0;
+              stats.encodeMs += dt; stats.encodeBatches++;
+              stats.cpuMs += dt; stats.cpuBatches++;
+            }
+            await finalizeBatchResults(batch.items, tokenArrays);
+          }
+        };
+        await Promise.all([runGpu(), runCpu()]);
+      } else {
+        const waveSize = liPool ? liPool.numWorkers : 1;
+        for (let i = 0; i < batches.length; i += waveSize) {
+          const wave = batches.slice(i, i + waveSize);
+          const waveResults = await Promise.all(
+            wave.map(({ items }) => singleEncoder(items.map(({ text }) => text)))
+          );
+          for (let waveIdx = 0; waveIdx < wave.length; waveIdx++) {
+            await finalizeBatchResults(wave[waveIdx].items, waveResults[waveIdx]);
+          }
         }
       }
     } finally {
