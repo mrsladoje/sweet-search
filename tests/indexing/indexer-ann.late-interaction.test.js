@@ -147,7 +147,15 @@ describe('buildLateInteractionIndex', () => {
     ], false, [], {
       saveToPath: defaultLiPath,
       batchSize: 2,
+      // With the dynamic batchSizeUpperCap introduced for short-chunk
+      // bucketing, `batchSize` is a baseline, not a hard cap. Pin both to 2
+      // so the test exercises the strict 2-2 split it was written for.
+      batchSizeUpperCap: 2,
       tokenBudget: 10_000,
+      // The attention-budget constraint (seq² × batch) would otherwise bind
+      // before the hard cap for these tiny inputs; disable it here to keep
+      // the test focused on length-bucketing behavior.
+      attentionBudget: 0,
     });
 
     expect(liModel.encodeDocuments).toHaveBeenCalledTimes(2);

@@ -33,6 +33,8 @@ vi.mock('@huggingface/transformers', () => ({
 
 describe('late-interaction-model', () => {
   beforeEach(() => {
+    // Disable native inference so ORT mocks are exercised
+    process.env.SWEET_SEARCH_NATIVE_INFERENCE = '0';
     vi.clearAllMocks();
 
     // Setup tokenizer mock to return realistic shapes

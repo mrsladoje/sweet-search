@@ -67,6 +67,27 @@ export const MODEL_REGISTRY = {
     ],
   },
 
+  'coderankembed-fp32': {
+    hfId: 'nomic-ai/CodeRankEmbed',
+    profile: 'full',
+    description: 'Local embedding model (FP32 safetensors, 768d) for native inference',
+    files: [
+      { path: 'model.safetensors', sizeBytes: 546938168, sha256: '827529bcd58aef0d9082e66eeff7e7d53a02f62bd005f841a26b3d3e2fb17ebe' },
+      { path: 'config.json', sizeBytes: 1525, sha256: null },
+    ],
+  },
+
+  'lateon-code-fp32': {
+    hfId: 'lightonai/LateOn-Code',
+    profile: 'full',
+    description: 'Late interaction model (FP32 safetensors, backbone 768d) for native inference',
+    files: [
+      { path: 'model.safetensors', sizeBytes: 596076280, sha256: '45c40bb4ba6b45f0c66b2deb3d27dd06efc3af23c78c8093b8cad2af61c683b2' },
+      { path: '1_Dense/model.safetensors', sizeBytes: 393304, sha256: '22ea6a53cad3ed034934b5db7a214a0bcc28ff4cc440babea44029989e4bbcca' },
+      { path: 'config.json', sizeBytes: 1208, sha256: null },
+    ],
+  },
+
   'ms-marco-tinybert': {
     hfId: 'Xenova/ms-marco-TinyBERT-L-2-v2',
     profile: 'full',

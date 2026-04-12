@@ -14,6 +14,7 @@ import { getModelEntry } from '../infrastructure/model-registry.js';
 import { isAppleSilicon, isCoreMLProviderAvailable, shouldUseCoreML, getCoreMLExecutionProviders } from '../infrastructure/coreml-provider.js';
 import { createTokenizer } from '../infrastructure/native-tokenizer.js';
 import { initOrt, buildFeed } from '../infrastructure/ort-pipeline.js';
+import { isNativeInferenceAvailable, nativeEmbed } from '../infrastructure/native-inference.js';
 
 // =============================================================================
 // SEQUENCE LENGTH CONSTANTS (L2: configurable via env)
@@ -496,14 +497,49 @@ export async function getLocalPipeline() {
 // =============================================================================
 
 /**
- * L1: True batch inference for local model via direct ORT session.
+ * L1: True batch inference for local model.
+ * Uses native candle inference (FP32, Metal GPU) when available,
+ * falls back to ORT INT8 session.
  * Returns Float32Array subarray views from a per-batch pool (zero-copy downstream).
  */
 export async function callLocalModel(texts, options = {}) {
+  // Default dispatcher: pick the best path. Hybrid CPU+GPU dispatching is
+  // done at callLocalModelBucketed (which sees the full batch list and can
+  // run both encoders in parallel).
   if (!texts || texts.length === 0) return [];
+  if (isNativeInferenceAvailable()) {
+    return callLocalModelGpu(texts, options);
+  }
+  return callLocalModelCpu(texts, options);
+}
+
+/**
+ * Native Metal GPU embedding (candle + Metal SDPA, F16). Throws if the
+ * native addon isn't loaded — caller is expected to verify availability.
+ */
+export async function callLocalModelGpu(texts, options = {}) {
+  if (!texts || texts.length === 0) return [];
+  const { maxLength = INDEXING_MAX_LENGTH } = options;
+  const t0 = performance.now();
+  const embeddings = await nativeEmbed(texts, { maxLength });
+  const t1 = performance.now();
+  _embeddingTimings.inference_us += Math.round((t1 - t0) * 1000);
+  _embeddingTimings.calls++;
+  _embeddingTimings.totalTexts += texts.length;
+  return embeddings;
+}
+
+/**
+ * ORT INT8 CPU embedding (onnxruntime-node, accelerated by the platform BLAS).
+ * Returns the same shape as the GPU path so callers can mix results
+ * transparently from a hybrid dispatcher, and serves as the default fallback
+ * when the native GPU addon isn't available on the host.
+ */
+export async function callLocalModelCpu(texts, options = {}) {
+  if (!texts || texts.length === 0) return [];
+  const { maxLength = INDEXING_MAX_LENGTH } = options;
 
   const { session, tokenizer } = await getLocalPipeline();
-  const { maxLength = INDEXING_MAX_LENGTH } = options;
 
   const t0 = performance.now();
   const tokenized = tokenizer(texts, {
@@ -579,10 +615,29 @@ export async function callLocalModelBucketed(texts, options = {}) {
   // Pre-compute all batch boundaries
   const batches = [];
   let i = 0;
+  // Attention budget: caps per-batch compute work (seq² × batch) on top of the
+  // token budget (which only caps memory). Attention is O(seq²), so a tail
+  // batch of 64 × 512 tokens does ~50× more compute than a head batch of
+  // 128 × 50 tokens at the same token budget. Shrinking long-chunk batches
+  // flattens per-batch wall-time and also keeps hidden-state size inside L3.
+  // Default: floor(hardCap/2) × maxLength² (batch ≈ hardCap/2 at seq=maxLength).
+  // Override via SWEET_SEARCH_EMBED_ATTENTION_BUDGET; set to 0 to disable.
+  const envEmbedAttnBudget = parseInt(
+    process.env.SWEET_SEARCH_EMBED_ATTENTION_BUDGET || '',
+    10,
+  );
   while (i < indexed.length) {
     const tokenBudget = 16384;
     const baseHardCap = options.hardCap ?? (maxLength <= 256 ? 128 : 64);
     const resolveHardCap = options.resolveHardCap ?? (() => baseHardCap);
+    let attentionBudget;
+    if (envEmbedAttnBudget === 0) {
+      attentionBudget = Infinity;
+    } else if (Number.isFinite(envEmbedAttnBudget) && envEmbedAttnBudget > 0) {
+      attentionBudget = envEmbedAttnBudget;
+    } else {
+      attentionBudget = Math.max(1, Math.floor(baseHardCap / 2)) * maxLength * maxLength;
+    }
 
     let batchSize = 1;
     while (i + batchSize < indexed.length) {
@@ -591,7 +646,10 @@ export async function callLocalModelBucketed(texts, options = {}) {
       const candidateCount = batchSize + 1;
       const candidateHardCap = resolveHardCap(candidateLongest);
       if (candidateCount > candidateHardCap) break;
+      // Memory cap — linear in seq_len
       if (candidateLongest * candidateCount > tokenBudget) break;
+      // Compute cap — quadratic in seq_len
+      if (candidateLongest * candidateLongest * candidateCount > attentionBudget) break;
       batchSize = candidateCount;
     }
     batches.push(indexed.slice(i, i + batchSize));
@@ -611,12 +669,86 @@ export async function callLocalModelBucketed(texts, options = {}) {
     return embeddings;
   }
 
+  // ── Hybrid CPU+GPU dispatch (OPT-IN, experimental) ──
+  //
+  // Default routes through whichever single encoder is available (native GPU
+  // preferred when present, ORT INT8 CPU fallback otherwise).
+  //
+  // Enable explicitly via SWEET_SEARCH_EMBED_HYBRID=1 to run the GPU and CPU
+  // encoders in parallel via a 2-worker shared-counter queue. Both paths
+  // produce the same shape vectors so results are mixed transparently.
+  //
+  // Why opt-in: in the default pipeline (parallel embed + LI phases) the
+  // GPU device queue is shared, and on unified-memory systems both encoders
+  // contend for the same DRAM bandwidth. The contention overhead usually
+  // erases the parallelism win. Hybrid is mainly useful in standalone
+  // embedding benchmarks or on hardware with separate CPU and GPU memory
+  // pools.
+  const onProgress = options.onProgress;
+  let completed = 0;
+
+  const embedHybridEnv = (process.env.SWEET_SEARCH_EMBED_HYBRID ?? '').trim().toLowerCase();
+  const embedHybridEnabled = embedHybridEnv === '1' || embedHybridEnv === 'true' || embedHybridEnv === 'on';
+  let useHybrid = false;
+  if (embedHybridEnabled && !pool && isNativeInferenceAvailable()) {
+    // Probe ORT availability — getLocalPipeline returns the loaded pipeline
+    // or throws/returns null if onnxruntime-node + model files aren't ready.
+    try {
+      const ortPipeline = await getLocalPipeline();
+      if (ortPipeline?.session) {
+        useHybrid = true;
+        console.log('[Embedding] hybrid CPU+GPU dispatch enabled (smart routing)');
+      }
+    } catch {
+      useHybrid = false;
+    }
+  }
+
+  if (useHybrid) {
+    // Smart bidirectional routing — see indexer-ann.js for the full rationale.
+    // The bucketer sorts batches ascending by token length. GPU pulls from
+    // the END (longest, where its compute advantage dominates kernel-launch
+    // overhead) and CPU pulls from the BEGINNING (shortest, where the BLAS-
+    // accelerated ORT INT8 path is competitive with or faster than the GPU's
+    // fixed dispatch cost). They meet in the middle, dynamically self-balancing.
+    let front = 0;
+    let back = batches.length - 1;
+    const runGpu = async () => {
+      while (true) {
+        if (back < front) break;
+        const myIdx = back--;
+        const batch = batches[myIdx];
+        const batchTexts = batch.map((b) => b.text);
+        const batchEmbeddings = await callLocalModelGpu(batchTexts, { maxLength });
+        for (let j = 0; j < batch.length; j++) {
+          embeddings[batch[j].origIdx] = batchEmbeddings[j];
+        }
+        completed += batch.length;
+        if (onProgress) onProgress(completed, texts.length);
+      }
+    };
+    const runCpu = async () => {
+      while (true) {
+        if (front > back) break;
+        const myIdx = front++;
+        const batch = batches[myIdx];
+        const batchTexts = batch.map((b) => b.text);
+        const batchEmbeddings = await callLocalModelCpu(batchTexts, { maxLength });
+        for (let j = 0; j < batch.length; j++) {
+          embeddings[batch[j].origIdx] = batchEmbeddings[j];
+        }
+        completed += batch.length;
+        if (onProgress) onProgress(completed, texts.length);
+      }
+    };
+    await Promise.all([runGpu(), runCpu()]);
+    return embeddings;
+  }
+
   // Sequential path: process each pre-computed batch one at a time.
   // Uses pool if available (still benefits from dedicated ORT sessions),
   // otherwise falls back to in-process callLocalModel.
   const infer = pool ? (t, o) => pool.embed(t, o) : callLocalModel;
-  const onProgress = options.onProgress;
-  let completed = 0;
   for (const batch of batches) {
     const batchTexts = batch.map(b => b.text);
     const batchEmbeddings = await infer(batchTexts, { maxLength });
