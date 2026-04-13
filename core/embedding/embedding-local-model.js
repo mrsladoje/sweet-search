@@ -28,8 +28,19 @@ export const QUERY_MAX_LENGTH = parseInt(process.env.SWEET_SEARCH_QUERY_MAX_LENG
 // =============================================================================
 
 // Import + re-export from infrastructure (canonical location)
-import { bestIntraOpThreads, defaultOrtExecutionMode } from '../infrastructure/onnx-session-utils.js';
+import {
+  bestIntraOpThreads,
+  defaultOrtExecutionMode,
+  detectLastLevelCacheBytes,
+  computeWeightsAwareBatchCap,
+} from '../infrastructure/onnx-session-utils.js';
 export { bestIntraOpThreads };
+
+// CodeRankEmbed (the only local embedding model) is a NomicBERT/ModernBERT-
+// family encoder with hidden dim 768. Used by the cache-aware budget below
+// to estimate per-layer transformer-weight footprint vs. activation working
+// set. Update if the local provider ever switches model.
+const LOCAL_EMBEDDING_HIDDEN_DIM = 768;
 
 export function isIntelCpu() {
   const model = os.cpus()?.[0]?.model || '';
@@ -615,17 +626,41 @@ export async function callLocalModelBucketed(texts, options = {}) {
   // Pre-compute all batch boundaries
   const batches = [];
   let i = 0;
-  // Attention budget: caps per-batch compute work (seq² × batch) on top of the
-  // token budget (which only caps memory). Attention is O(seq²), so a tail
-  // batch of 64 × 512 tokens does ~50× more compute than a head batch of
-  // 128 × 50 tokens at the same token budget. Shrinking long-chunk batches
-  // flattens per-batch wall-time and also keeps hidden-state size inside L3.
-  // Default: floor(hardCap/2) × maxLength² (batch ≈ hardCap/2 at seq=maxLength).
-  // Override via SWEET_SEARCH_EMBED_ATTENTION_BUDGET; set to 0 to disable.
+  // Attention budget caps per-batch compute work (seq² × batch) on top of the
+  // token budget (memory). The long-sequence tail is where it matters: a
+  // batch of 64 × 512 tokens does ~50× more attention compute than a head
+  // batch of 128 × 50 tokens at the same token budget, AND its activation
+  // working set per transformer layer can overflow last-level cache, forcing
+  // every layer to read/write DRAM.
+  //
+  // Cache-aware sizing (mirrors the LI fix in indexer-pool.js): one resident
+  // transformer layer's weights compete with activations for the same cache.
+  // We size B at maxLength such that (weights + B × per_item) fits.
+  // CodeRankEmbed weight dtype depends on path: native uses F32 (correctness
+  // fix), ORT uses INT8. Activations are F32 in both. See
+  // computeWeightsAwareBatchCap() in onnx-session-utils.js for the full
+  // derivation. Override via SWEET_SEARCH_EMBED_ATTENTION_BUDGET (explicit
+  // FLOPs cap, 0 disables) or SWEET_SEARCH_EMBED_L2_SAFETY (multiplicative).
   const envEmbedAttnBudget = parseInt(
     process.env.SWEET_SEARCH_EMBED_ATTENTION_BUDGET || '',
     10,
   );
+  const _embedNativeActive = isNativeInferenceAvailable();
+  const _embedWeightBytesPerParam = _embedNativeActive ? 4 : 1; // F32 native | INT8 ORT
+  const _embedActBytesPerItem = 4; // F32 activations on both paths
+  const _embedLLC = detectLastLevelCacheBytes();
+  const _parsedEmbedSafety = Number(process.env.SWEET_SEARCH_EMBED_L2_SAFETY);
+  const _embedL2Safety = Number.isFinite(_parsedEmbedSafety) && _parsedEmbedSafety > 0
+    ? _parsedEmbedSafety
+    : 1.0;
+  const _embedCacheBoundBatch = computeWeightsAwareBatchCap({
+    cacheBytes: _embedLLC,
+    hiddenDim: LOCAL_EMBEDDING_HIDDEN_DIM,
+    maxLength,
+    weightBytesPerParam: _embedWeightBytesPerParam,
+    actBytesPerItem: _embedActBytesPerItem,
+    safety: _embedL2Safety,
+  });
   while (i < indexed.length) {
     const tokenBudget = 16384;
     const baseHardCap = options.hardCap ?? (maxLength <= 256 ? 128 : 64);
@@ -636,7 +671,11 @@ export async function callLocalModelBucketed(texts, options = {}) {
     } else if (Number.isFinite(envEmbedAttnBudget) && envEmbedAttnBudget > 0) {
       attentionBudget = envEmbedAttnBudget;
     } else {
-      attentionBudget = Math.max(1, Math.floor(baseHardCap / 2)) * maxLength * maxLength;
+      const tierLongSeqBatch = Math.max(1, Math.floor(baseHardCap / 2));
+      const effectiveLongSeqBatch = _embedCacheBoundBatch != null
+        ? Math.min(tierLongSeqBatch, _embedCacheBoundBatch)
+        : tierLongSeqBatch;
+      attentionBudget = effectiveLongSeqBatch * maxLength * maxLength;
     }
 
     let batchSize = 1;
