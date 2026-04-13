@@ -29,19 +29,20 @@ const seqLens = [32, 64, 128, 256, 384, 512];
 for (const seqLen of seqLens) {
   const { inputIds, attentionMask } = makeInputs(seqLen);
   // Warmup
-  for (let i = 0; i < 3; i++) model.embedBatch(inputIds, attentionMask);
+  for (let i = 0; i < 3; i++) await model.embedBatch(inputIds, attentionMask);
   // Measure
   const times = [];
   for (let i = 0; i < 10; i++) {
     const t0 = performance.now();
-    model.embedBatch(inputIds, attentionMask);
+    await model.embedBatch(inputIds, attentionMask);
     times.push(performance.now() - t0);
   }
   times.sort((a, b) => a - b);
   const p50 = times[5];
   const totalTokens = BATCH * seqLen;
   const tokPerSec = (totalTokens * 1000 / p50).toFixed(0);
-  console.log(`  seq_len=${seqLen.toString().padStart(4)}: p50=${p50.toFixed(1).padStart(7)}ms  (${tokPerSec} tokens/sec)`);
+  const msPerItem = (p50 / BATCH).toFixed(2);
+  console.log(`  seq_len=${seqLen.toString().padStart(4)}: p50=${p50.toFixed(1).padStart(7)}ms  (${msPerItem}ms/item, ${tokPerSec} tokens/sec)`);
 }
 
 // Also: what about the actual batch sizes used in production?
@@ -70,11 +71,11 @@ for (const cfg of prodConfigs) {
     attentionMask[b] = mask;
   }
   // Warmup
-  for (let i = 0; i < 3; i++) model.embedBatch(inputIds, attentionMask);
+  for (let i = 0; i < 3; i++) await model.embedBatch(inputIds, attentionMask);
   const times = [];
   for (let i = 0; i < 8; i++) {
     const t0 = performance.now();
-    model.embedBatch(inputIds, attentionMask);
+    await model.embedBatch(inputIds, attentionMask);
     times.push(performance.now() - t0);
   }
   times.sort((a, b) => a - b);

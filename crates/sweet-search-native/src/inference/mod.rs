@@ -51,22 +51,43 @@ pub fn native_inference_available() -> bool {
 
 /// Select the optimal weight dtype for the active device.
 ///
-/// Metal defaults to F32 because F16 precision loss catastrophically degrades
-/// retrieval quality on this CodeRankEmbed model — gencodesearchnet MRR
-/// dropped from 82% to 64% (python queries 93.1% → 63.3%) purely from F16
-/// accumulation over 12 transformer layers. Per-token cosine against the
-/// FP32 reference is ~0.9999, but the residual noise flips enough top-K
-/// rankings to destroy retrieval. Set SWEET_SEARCH_NATIVE_DTYPE=f16 to opt
-/// back into F16 (faster inference, worse quality).
+/// Metal defaults to BF16. Verified against gencodesearchnet 500q same-session:
+///   F32 balanced MRR 93.14% → BF16 balanced MRR 93.07% (Δ -0.07pp)
+///   F32 full MRR 97.97% → BF16 full MRR 97.90% (Δ -0.07pp)
+///   Indexing speedup: 1.32x balanced, 1.36x full
+///
+/// BF16 keeps F32's 8-bit exponent (same dynamic range) while storing
+/// weights/activations in 2 bytes, which halves memory bandwidth on the
+/// linear-layer matmuls that dominate Metal wall time. The MLX steel
+/// GEMM/attention kernels vendored into candle-metal-kernels run their
+/// accumulators in F32 regardless of input dtype, so the output precision is
+/// preserved — the only precision loss is in storage, not compute, and it
+/// comes out below the MRR noise floor.
+///
+/// F16 is still gated off because it destroys retrieval on this model:
+/// gencodesearchnet MRR collapses 82% → 64% (python 93.1% → 63.3%) purely
+/// from residual F16 noise compounding across 12 transformer layers. The
+/// per-token cosine against the FP32 reference is still ~0.9999 at F16, but
+/// small errors accumulate in the residual stream and flip enough top-K
+/// rankings to break retrieval. BF16 avoids this because it has F32's
+/// exponent range — rounding errors stay bounded.
+///
+/// Opt-outs:
+///   SWEET_SEARCH_NATIVE_DTYPE=f32  — slower, reference precision (paranoia mode)
+///   SWEET_SEARCH_NATIVE_DTYPE=f16  — FAST but destroys MRR, do not ship
 pub(crate) fn optimal_dtype(device: &Device) -> DType {
-    let force_f16 = std::env::var("SWEET_SEARCH_NATIVE_DTYPE")
-        .map(|v| v.to_lowercase() == "f16")
-        .unwrap_or(false);
+    let forced_dtype = std::env::var("SWEET_SEARCH_NATIVE_DTYPE")
+        .map(|v| v.to_lowercase())
+        .unwrap_or_default();
     match device {
         #[cfg(feature = "metal")]
-        Device::Metal(_) if force_f16 => DType::F16,
+        Device::Metal(_) => match forced_dtype.as_str() {
+            "f16" => DType::F16,
+            "f32" => DType::F32,
+            _ => DType::BF16,
+        },
         _ => {
-            let _ = force_f16; // suppress unused warning on non-metal builds
+            let _ = forced_dtype;
             DType::F32
         }
     }

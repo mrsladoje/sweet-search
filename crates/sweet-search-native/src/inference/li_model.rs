@@ -76,10 +76,13 @@ impl NativeLateInteractionModel {
                 "[NativeLI] Device init error: {e}"
             )))?;
 
-        // F16 on Metal, F32 on CPU. The vendored modernbert_sdpa.rs now passes
+        // BF16 on Metal, F32 on CPU. The vendored modernbert_sdpa.rs now passes
         // the model dtype through prepare_4d_attention_mask and
         // get_local_attention_mask (fix mirrors upstream candle PR #2872 for
-        // bert.rs; never ported to modernbert.rs upstream).
+        // bert.rs; never ported to modernbert.rs upstream). BF16 preserves full
+        // MRR (97.97% → 97.90% at gencodesearchnet full 500q) while halving
+        // memory bandwidth on matmul — see `optimal_dtype` for the full
+        // measurement breakdown.
         let dtype = optimal_dtype(&device);
         let bb_path = PathBuf::from(&backbone_path);
         let vb = unsafe {
@@ -128,6 +131,7 @@ impl NativeLateInteractionModel {
         };
         let dtype_name = match dtype {
             DType::F16 => "f16",
+            DType::BF16 => "bf16",
             DType::F32 => "f32",
             _ => "other",
         };
