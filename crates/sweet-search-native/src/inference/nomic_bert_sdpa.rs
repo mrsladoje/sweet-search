@@ -283,86 +283,39 @@ impl NomicBertAttention {
 }
 
 // SwiGLU feed-forward network.
-//
-// fc11 and fc12 are two parallel Linear projections of the same input with
-// the same output shape (n_embd → n_inner). We fuse them at load time by
-// concatenating their weights along dim 0 into a single (2*n_inner, n_embd)
-// matrix, then run one matmul that produces (batch, seq, 2*n_inner) and
-// split along the last dim. This gives the Metal MLX steel GEMM kernel a
-// single larger output tile per call (better arithmetic intensity, better
-// cache reuse) and halves the fc1 dispatch count. Profile traced the two
-// separate fc1 matmuls to ~7% of total forward time at seq_len=512; the
-// fused path is mathematically identical to the unfused version.
 #[derive(Clone, Debug)]
 struct NomicBertSwiGLU {
-    // Fused [fc11; fc12] weight of shape (2*n_inner, n_embd). Linear forward
-    // produces (batch, seq, 2*n_inner); we slice into (y, gate) along dim -1.
-    fc1_gated: Linear,
+    fc11: Linear,
+    fc12: Linear,
     fc2: Linear,
-    n_inner: usize,
 }
 
 impl NomicBertSwiGLU {
     fn new(vb: VarBuilder, config: &Config) -> Result<Self> {
-        let n_inner = config.n_inner;
-        let n_embd = config.n_embd;
-
-        // Load fc11 and fc12 weights separately from safetensors and stack
-        // them along dim 0. candle/safetensors stores Linear weights in
-        // [out, in] layout, so Tensor::cat([(n_inner, n_embd), (n_inner, n_embd)], 0)
-        // yields (2*n_inner, n_embd) — exactly the fused Linear weight we want.
-        // Contiguous() ensures the fused weight takes candle's fast matmul
-        // path instead of a strided fallback.
-        let fc11_w = vb.pp("fc11").get((n_inner, n_embd), "weight")?;
-        let fc12_w = vb.pp("fc12").get((n_inner, n_embd), "weight")?;
-        let fc1_gated_w = Tensor::cat(&[&fc11_w, &fc12_w], 0)?.contiguous()?;
-
-        let fc1_gated_b = if config.mlp_fc1_bias {
-            let b11 = vb.pp("fc11").get(n_inner, "bias")?;
-            let b12 = vb.pp("fc12").get(n_inner, "bias")?;
-            Some(Tensor::cat(&[&b11, &b12], 0)?.contiguous()?)
+        let (fc11, fc12) = if config.mlp_fc1_bias {
+            (
+                linear(config.n_embd, config.n_inner, vb.pp("fc11"))?,
+                linear(config.n_embd, config.n_inner, vb.pp("fc12"))?,
+            )
         } else {
-            None
+            (
+                linear_no_bias(config.n_embd, config.n_inner, vb.pp("fc11"))?,
+                linear_no_bias(config.n_embd, config.n_inner, vb.pp("fc12"))?,
+            )
         };
-
-        let fc1_gated = Linear::new(fc1_gated_w, fc1_gated_b);
-
         let fc2 = if config.mlp_fc2_bias {
-            linear(n_inner, n_embd, vb.pp("fc2"))?
+            linear(config.n_inner, config.n_embd, vb.pp("fc2"))?
         } else {
-            linear_no_bias(n_inner, n_embd, vb.pp("fc2"))?
+            linear_no_bias(config.n_inner, config.n_embd, vb.pp("fc2"))?
         };
-
-        Ok(Self {
-            fc1_gated,
-            fc2,
-            n_inner,
-        })
+        Ok(Self { fc11, fc12, fc2 })
     }
 }
 
 impl Module for NomicBertSwiGLU {
     fn forward(&self, xs: &Tensor) -> Result<Tensor> {
-        // One fused matmul instead of two. Output is (..., 2*n_inner) where
-        // the first n_inner columns are fc11(xs) and the last n_inner are
-        // fc12(xs) — matching the original `y = fc11(xs); gate = fc12(xs)`.
-        //
-        // `.narrow()` returns a non-contiguous view (stride stays at
-        // 2*n_inner for dim -2), which forces candle's elementwise Metal
-        // kernels onto the strided slow path for the subsequent `silu()`
-        // and `y * gate`. Forcing `.contiguous()` materializes each half
-        // as a fresh contiguous tensor so the downstream ops take the fast
-        // dense path. The two memcpys are ~96 MB each at batch=32 × seq=512
-        // × BF16 → sub-millisecond at M3 Max bandwidth, well worth the
-        // faster elementwise dispatch.
-        let fused = self.fc1_gated.forward(xs)?;
-        let y = fused
-            .narrow(D::Minus1, 0, self.n_inner)?
-            .contiguous()?;
-        let gate = fused
-            .narrow(D::Minus1, self.n_inner, self.n_inner)?
-            .contiguous()?
-            .silu()?;
+        let y = self.fc11.forward(xs)?;
+        let gate = self.fc12.forward(xs)?.silu()?;
         self.fc2.forward(&(y * gate)?)
     }
 }
