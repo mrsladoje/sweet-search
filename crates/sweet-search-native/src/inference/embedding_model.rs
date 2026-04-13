@@ -89,6 +89,7 @@ impl NativeEmbeddingModel {
         };
         let dtype_name = match dtype {
             DType::F16 => "f16",
+            DType::BF16 => "bf16",
             DType::F32 => "f32",
             _ => "other",
         };
