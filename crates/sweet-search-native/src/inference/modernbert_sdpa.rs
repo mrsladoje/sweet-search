@@ -313,7 +313,17 @@ impl Module for ModernBertDecoder {
     }
 }
 
-// Global attention mask calculated from padded token inputs
+// Global attention mask calculated from padded token inputs.
+//
+// The mask value must stay within F16 range (|x| < 65504) because candle's
+// Metal SDPA kernel downcasts to F16 internally even when activations are F32.
+// Upstream candle-transformers modernbert.rs uses `f32::MIN` (-3.4e38), which
+// saturates to -Inf in F16 and poisons every padded row with NaN after softmax
+// — LI encoding of any batched mixed-length input silently produced NaN
+// vectors, collapsing gencodesearchnet MRR to 25%. -1e4 is large enough to
+// zero padding contributions after softmax and small enough to survive the
+// F16 downcast; this matches what `nomic_bert_sdpa` uses for the embedding
+// model and what upstream HF transformers does for bf16-aware masks.
 fn prepare_4d_attention_mask(
     mask: &Tensor,
     dtype: DType,
@@ -331,10 +341,17 @@ fn prepare_4d_attention_mask(
 
     let inverted_mask = (1.0 - expanded_mask)?;
 
-    (inverted_mask * f32::MIN as f64)?.to_dtype(dtype)
+    (inverted_mask * -1e4_f64)?.to_dtype(dtype)
 }
 
-// Attention mask caused by the sliding window
+// Attention mask caused by the sliding window.
+//
+// Uses -1e4 instead of `f32::NEG_INFINITY` because Metal SDPA downcasts the
+// mask to F16 internally. Real -Inf becomes F16::NEG_INFINITY and then
+// combines with the global mask via `broadcast_add`, which produces -Inf
+// tensors that `softmax` then turns into NaN on padded rows. -1e4 is small
+// enough to zero out attention weights after softmax (exp(-1e4)≈0) and large
+// enough to survive any internal F16 downcast.
 fn get_local_attention_mask(
     seq_len: usize,
     max_distance: usize,
@@ -345,16 +362,13 @@ fn get_local_attention_mask(
         .flat_map(|i| {
             (0..seq_len).map(move |j| {
                 if (j as i32 - i as i32).abs() > max_distance as i32 {
-                    f32::NEG_INFINITY
+                    -1e4_f32
                 } else {
                     0.
                 }
             })
         })
         .collect();
-    // F32 source → cast to model dtype. For F16 the -Inf stays as F16::NEG_INFINITY,
-    // which softmax handles correctly. broadcast_add with the global mask requires
-    // matching dtypes, so the cast must happen before the layer-level combine.
     Tensor::from_slice(&mask, (seq_len, seq_len), device)?.to_dtype(dtype)
 }
 

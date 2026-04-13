@@ -7,7 +7,7 @@
 //!   input_ids → NomicBERT encoder → mean_pool(hidden, mask) → L2_normalize
 //!   Output: 768-dimensional L2-normalized embedding vectors.
 
-use candle_core::{DType, Tensor};
+use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use napi::bindgen_prelude::*;
 use napi::Task;
@@ -16,11 +16,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::nomic_bert_sdpa as nomic_bert;
-use super::{optimal_dtype, select_device};
+use super::{metal_lock, optimal_dtype, select_device};
 
 /// Inner state of the embedding model, shared between the napi struct (main
-/// thread) and `EmbedBatchTask` (libuv worker thread) via `Arc`. All fields
-/// are Send+Sync in candle 0.10.2.
+/// thread) and `EmbedBatchTask` (libuv worker thread) via `Arc`.
+///
+/// Metal compute is serialized via `super::metal_lock()` — a process-wide
+/// mutex that covers all Metal operations across both the embedding and LI
+/// models. See `metal_lock` for why per-model locks aren't enough.
 struct EmbeddingInner {
     model: nomic_bert::NomicBertModel,
     device: candle_core::Device,
@@ -129,6 +132,7 @@ impl NativeEmbeddingModel {
             attention_mask,
         })
     }
+
 }
 
 /// napi `Task` running NomicBERT embedding on a libuv worker thread.
@@ -150,69 +154,78 @@ impl Task for EmbedBatchTask {
         }
         let seq_len = self.input_ids[0].len();
 
-        // Build input_ids tensor [batch, seq_len] as u32
+        // Entire Metal pipeline is serialized under the model mutex — tensor
+        // creation, forward, pool, normalize, AND device→host copy all run
+        // one-at-a-time. Candle Metal can't safely accept concurrent command
+        // submissions against a shared model, and the issue also applies to
+        // Tensor::new / to_vec2 on Metal. At concurrency=12 without this,
+        // gencodesearchnet MRR collapses (93%→52% for embedding, 98%→25% for
+        // LI). Tokenization and JS-side copies still run in parallel because
+        // AsyncTask hops onto libuv worker threads.
         let flat_ids: Vec<u32> = self.input_ids.iter()
             .flatten()
             .map(|&x| x as u32)
             .collect();
-        let ids_tensor = Tensor::new(flat_ids.as_slice(), &inner.device)
-            .and_then(|t| t.reshape((batch_size, seq_len)))
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeEmbedding] input_ids tensor error: {e}"
-            )))?;
-
-        // Build attention_mask as U8 for forward pass (where-cond requires non-float)
         let flat_mask_u8: Vec<u8> = self.attention_mask.iter()
             .flatten()
             .map(|&x| x as u8)
             .collect();
-        let mask_u8 = Tensor::new(flat_mask_u8.as_slice(), &inner.device)
-            .and_then(|t| t.reshape((batch_size, seq_len)))
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeEmbedding] attention_mask tensor error: {e}"
-            )))?;
 
-        // Forward pass: input_ids, no token_type_ids, with attention mask
-        // Returns: [batch, seq_len, hidden_size]
-        let hidden = inner.model.forward(&ids_tensor, None, Some(&mask_u8))
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeEmbedding] Forward pass error: {e}"
-            )))?;
+        // Metal compute must be serialized across all candle models sharing
+        // the GPU; CPU inference is already thread-safe (Accelerate BLAS +
+        // candle CPU backend). Holding the lock on the CPU path would
+        // needlessly serialize CPU embed against Metal LI, defeating the
+        // CPU+GPU parallel pipeline.
+        let _guard = if matches!(inner.device, Device::Metal(_)) {
+            Some(metal_lock().lock()
+                .map_err(|e| Error::from_reason(format!("[NativeEmbedding] metal lock poisoned: {e}")))?)
+        } else {
+            None
+        };
 
-        // Convert mask to match hidden dtype for mean pooling (needs float for multiplication)
-        let mask_float = mask_u8.to_dtype(hidden.dtype())
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeEmbedding] Mask dtype conversion error: {e}"
-            )))?;
+        let result: Vec<Vec<f32>> = {
+            let ids_tensor = Tensor::new(flat_ids.as_slice(), &inner.device)
+                .and_then(|t| t.reshape((batch_size, seq_len)))
+                .map_err(|e| Error::from_reason(format!(
+                    "[NativeEmbedding] input_ids tensor error: {e}"
+                )))?;
+            let mask_u8 = Tensor::new(flat_mask_u8.as_slice(), &inner.device)
+                .and_then(|t| t.reshape((batch_size, seq_len)))
+                .map_err(|e| Error::from_reason(format!(
+                    "[NativeEmbedding] attention_mask tensor error: {e}"
+                )))?;
 
-        // Mean pooling with attention mask → [batch, hidden_size]
-        let pooled = nomic_bert::mean_pooling(&hidden, &mask_float)
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeEmbedding] Mean pooling error: {e}"
-            )))?;
+            let hidden = inner.model.forward(&ids_tensor, None, Some(&mask_u8))
+                .map_err(|e| Error::from_reason(format!(
+                    "[NativeEmbedding] Forward pass error: {e}"
+                )))?;
+            let mask_float = mask_u8.to_dtype(hidden.dtype())
+                .map_err(|e| Error::from_reason(format!(
+                    "[NativeEmbedding] Mask dtype conversion error: {e}"
+                )))?;
+            let pooled = nomic_bert::mean_pooling(&hidden, &mask_float)
+                .map_err(|e| Error::from_reason(format!(
+                    "[NativeEmbedding] Mean pooling error: {e}"
+                )))?;
+            let normalized = nomic_bert::l2_normalize(&pooled)
+                .map_err(|e| Error::from_reason(format!(
+                    "[NativeEmbedding] L2 normalize error: {e}"
+                )))?;
 
-        // L2 normalize → [batch, hidden_size]
-        let normalized = nomic_bert::l2_normalize(&pooled)
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeEmbedding] L2 normalize error: {e}"
-            )))?;
-
-        // candle's `to_vec2::<f32>()` auto-converts from F16 on device read;
-        // an explicit `to_dtype(F32)` here before `to_vec2` just adds an
-        // extra kernel and a sync barrier. Drop the cast; let the read path
-        // do the conversion on the CPU side while the GPU queues the next
-        // batch.
-        match normalized.dtype() {
-            DType::F32 => normalized.to_vec2::<f32>().map_err(|e| {
-                Error::from_reason(format!("[NativeEmbedding] Output conversion error: {e}"))
-            }),
-            _ => normalized
-                .to_dtype(DType::F32)
-                .and_then(|t| t.to_vec2::<f32>())
-                .map_err(|e| {
+            match normalized.dtype() {
+                DType::F32 => normalized.to_vec2::<f32>().map_err(|e| {
                     Error::from_reason(format!("[NativeEmbedding] Output conversion error: {e}"))
-                }),
-        }
+                })?,
+                _ => normalized
+                    .to_dtype(DType::F32)
+                    .and_then(|t| t.to_vec2::<f32>())
+                    .map_err(|e| {
+                        Error::from_reason(format!("[NativeEmbedding] Output conversion error: {e}"))
+                    })?,
+            }
+        };
+
+        Ok(result)
     }
 
     fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {

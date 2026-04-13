@@ -25,9 +25,13 @@ const require = createRequire(import.meta.url);
 
 let _addon = null;
 let _embeddingModel = null;
+let _embeddingModelLoadPromise = null; // race-gate for concurrent first calls
 let _liModel = null;
+let _liModelLoadPromise = null;
 let _embTokenizer = null;
+let _embTokenizerLoadPromise = null;
 let _liTokenizer = null;
+let _liTokenizerLoadPromise = null;
 let _available = null;
 
 // ─── Addon Loading ───
@@ -69,39 +73,60 @@ export function isNativeInferenceAvailable() {
 /**
  * Load the native embedding model (CodeRankEmbed FP32 safetensors).
  * Returns the model instance or null if unavailable.
+ *
+ * Race-gated: concurrent first calls share a single load promise so the
+ * underlying napi `addon.NativeEmbeddingModel.load(...)` runs exactly once.
+ * Without this gate, multiple parallel queries (e.g. eval runner with
+ * --concurrency=N) all see _embeddingModel == null and each load a fresh
+ * model copy, wasting Metal memory and printing N "Loaded" lines.
  */
 export async function getNativeEmbeddingModel() {
   if (_embeddingModel) return _embeddingModel;
+  if (_embeddingModelLoadPromise) return _embeddingModelLoadPromise;
 
-  const addon = loadAddon();
-  if (!addon?.NativeEmbeddingModel) return null;
+  _embeddingModelLoadPromise = (async () => {
+    const addon = loadAddon();
+    if (!addon?.NativeEmbeddingModel) return null;
 
-  await fetchModel('coderankembed-fp32');
+    await fetchModel('coderankembed-fp32');
 
-  const entry = getModelEntry('coderankembed-fp32');
-  const modelDir = getModelCacheDir(entry.hfId);
-  const safetensorsPath = join(modelDir, 'model.safetensors');
-  const configPath = join(modelDir, 'config.json');
+    const entry = getModelEntry('coderankembed-fp32');
+    const modelDir = getModelCacheDir(entry.hfId);
+    const safetensorsPath = join(modelDir, 'model.safetensors');
+    const configPath = join(modelDir, 'config.json');
 
-  if (!existsSync(safetensorsPath) || !existsSync(configPath)) return null;
+    if (!existsSync(safetensorsPath) || !existsSync(configPath)) return null;
 
-  const t0 = Date.now();
-  _embeddingModel = addon.NativeEmbeddingModel.load(safetensorsPath, configPath);
-  console.log(`[NativeInference] Embedding model loaded in ${Date.now() - t0}ms (dim: ${_embeddingModel.dim}, device: ${addon.nativeInferenceDevice()})`);
+    const t0 = Date.now();
+    _embeddingModel = addon.NativeEmbeddingModel.load(safetensorsPath, configPath);
+    console.log(`[NativeInference] Embedding model loaded in ${Date.now() - t0}ms (dim: ${_embeddingModel.dim}, device: ${addon.nativeInferenceDevice()})`);
 
-  return _embeddingModel;
+    return _embeddingModel;
+  })();
+
+  try {
+    return await _embeddingModelLoadPromise;
+  } finally {
+    // Clear the promise on resolve so a future explicit unload can re-load.
+    // Keep it set on success: subsequent calls hit the _embeddingModel cache
+    // first and never reach the promise check.
+  }
 }
 
 /**
- * Get or create the embedding tokenizer.
+ * Get or create the embedding tokenizer. Race-gated like getNativeEmbeddingModel.
  * Uses the INT8 model's tokenizer (same vocab as FP32).
  */
 async function getEmbTokenizer() {
   if (_embTokenizer) return _embTokenizer;
-  const entry = getModelEntry('coderankembed-int8');
-  const tokenizerPath = join(getModelCacheDir(entry.hfId), 'tokenizer.json');
-  _embTokenizer = await createTokenizer(tokenizerPath);
-  return _embTokenizer;
+  if (_embTokenizerLoadPromise) return _embTokenizerLoadPromise;
+  _embTokenizerLoadPromise = (async () => {
+    const entry = getModelEntry('coderankembed-int8');
+    const tokenizerPath = join(getModelCacheDir(entry.hfId), 'tokenizer.json');
+    _embTokenizer = await createTokenizer(tokenizerPath);
+    return _embTokenizer;
+  })();
+  return _embTokenizerLoadPromise;
 }
 
 /**
@@ -157,40 +182,47 @@ export async function nativeEmbed(texts, options = {}) {
 
 /**
  * Load the native LI model (LateOn-Code FP32 safetensors + projection).
- * Returns the model instance or null if unavailable.
+ * Returns the model instance or null if unavailable. Race-gated.
  */
 export async function getNativeLiModel() {
   if (_liModel) return _liModel;
+  if (_liModelLoadPromise) return _liModelLoadPromise;
+  _liModelLoadPromise = (async () => {
+    const addon = loadAddon();
+    if (!addon?.NativeLateInteractionModel) return null;
 
-  const addon = loadAddon();
-  if (!addon?.NativeLateInteractionModel) return null;
+    await fetchModel('lateon-code-fp32');
 
-  await fetchModel('lateon-code-fp32');
+    const entry = getModelEntry('lateon-code-fp32');
+    const modelDir = getModelCacheDir(entry.hfId);
+    const backbonePath = join(modelDir, 'model.safetensors');
+    const projPath = join(modelDir, '1_Dense', 'model.safetensors');
+    const configPath = join(modelDir, 'config.json');
 
-  const entry = getModelEntry('lateon-code-fp32');
-  const modelDir = getModelCacheDir(entry.hfId);
-  const backbonePath = join(modelDir, 'model.safetensors');
-  const projPath = join(modelDir, '1_Dense', 'model.safetensors');
-  const configPath = join(modelDir, 'config.json');
+    if (!existsSync(backbonePath) || !existsSync(projPath) || !existsSync(configPath)) return null;
 
-  if (!existsSync(backbonePath) || !existsSync(projPath) || !existsSync(configPath)) return null;
+    const t0 = Date.now();
+    _liModel = addon.NativeLateInteractionModel.load(backbonePath, projPath, configPath);
+    console.log(`[NativeInference] LI model loaded in ${Date.now() - t0}ms (dim: ${_liModel.dim}, device: ${addon.nativeInferenceDevice()})`);
 
-  const t0 = Date.now();
-  _liModel = addon.NativeLateInteractionModel.load(backbonePath, projPath, configPath);
-  console.log(`[NativeInference] LI model loaded in ${Date.now() - t0}ms (dim: ${_liModel.dim}, device: ${addon.nativeInferenceDevice()})`);
-
-  return _liModel;
+    return _liModel;
+  })();
+  return _liModelLoadPromise;
 }
 
 /**
- * Get or create the LI tokenizer.
+ * Get or create the LI tokenizer. Race-gated.
  */
 async function getLiTokenizer() {
   if (_liTokenizer) return _liTokenizer;
-  const entry = getModelEntry('lateon-code');
-  const tokenizerPath = join(getModelCacheDir(entry.hfId), 'tokenizer.json');
-  _liTokenizer = await createTokenizer(tokenizerPath);
-  return _liTokenizer;
+  if (_liTokenizerLoadPromise) return _liTokenizerLoadPromise;
+  _liTokenizerLoadPromise = (async () => {
+    const entry = getModelEntry('lateon-code');
+    const tokenizerPath = join(getModelCacheDir(entry.hfId), 'tokenizer.json');
+    _liTokenizer = await createTokenizer(tokenizerPath);
+    return _liTokenizer;
+  })();
+  return _liTokenizerLoadPromise;
 }
 
 /**
@@ -250,9 +282,13 @@ export async function nativeLiEncode(texts, options = {}) {
 
 export function unloadNativeModels() {
   _embeddingModel = null;
+  _embeddingModelLoadPromise = null;
   _liModel = null;
+  _liModelLoadPromise = null;
   _embTokenizer = null;
+  _embTokenizerLoadPromise = null;
   _liTokenizer = null;
+  _liTokenizerLoadPromise = null;
   _addon = null;
   _available = null;
 }
