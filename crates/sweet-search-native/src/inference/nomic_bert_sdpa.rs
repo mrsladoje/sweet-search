@@ -163,10 +163,9 @@ impl NomicBertEmbeddings {
                 }
             };
             let tt_emb = tte.forward(&tt_ids)?;
-            embeddings + tt_emb
-        } else {
-            Ok(embeddings)
+            return embeddings + tt_emb;
         }
+        Ok(embeddings)
     }
 }
 

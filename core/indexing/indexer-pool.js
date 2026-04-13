@@ -17,6 +17,7 @@ import { execSync } from 'child_process';
 import { Worker } from 'worker_threads';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { isNativeInferenceAvailable } from '../infrastructure/native-inference.js';
 import {
   bestIntraOpThreads,
   estimateComputeCores,
@@ -173,16 +174,32 @@ export function planAllocation(resources = detectResources()) {
   // Memory budget: total RAM minus 2GB for OS and main thread
   const memBudgetMB = Math.max(512, (totalMemGB - 2) * 1024 - mainThreadRAM_MB);
 
-  // Default: 1 embedding worker (inline session). Multiple ORT sessions in
-  // worker_threads cannot share a global thread pool (separate V8 isolates),
-  // so per-session pools fight for L2 cache and memory bandwidth.
-  // Measured: 2 workers × 7-8 threads = 37% per-thread efficiency vs 80% with
-  // 1 session × 8 threads. ORT issue #17011 confirms this is a known limitation.
-  // Override via SWEET_SEARCH_EMBEDDING_WORKERS=2 to experiment.
+  // Embedding worker count.
+  //
+  // Default: 1 worker (inline session). Multiple ORT sessions in
+  // worker_threads can't share a global thread pool (separate V8 isolates),
+  // so per-session pools fight for L2 cache and memory bandwidth. Legacy
+  // measurement: 2×8 = 37% per-thread efficiency vs 1×8 = 80%. On the
+  // pure-ORT-CPU pipeline (no Metal LI in parallel) a single big session
+  // wins on every core count we've measured — DO NOT change this default.
+  //
+  // The exception: when LI runs on Metal in parallel (CPU+GPU split via
+  // SWEET_SEARCH_EMBED_USE_CPU=1), the CPU cores are 100% free for embed
+  // because the main thread only dispatches Metal commands. On a 12+
+  // compute-core machine that leaves enough CPU headroom that a second
+  // ORT session can run alongside the first without hurting per-session
+  // efficiency below the wall-clock breakeven. Bump to 2 workers only in
+  // that specific configuration; every other path stays at 1.
+  //
+  // SWEET_SEARCH_EMBEDDING_WORKERS=N overrides for manual tuning.
   const override = parseInt(process.env.SWEET_SEARCH_EMBEDDING_WORKERS || '0', 10);
+  const cpuEmbedAlongsideMetalLi =
+    process.env.SWEET_SEARCH_EMBED_USE_CPU === '1' && isNativeInferenceAvailable();
   let embeddingWorkers;
   if (override > 0) {
     embeddingWorkers = Math.min(override, 4);
+  } else if (cpuEmbedAlongsideMetalLi && computeCores >= 12) {
+    embeddingWorkers = 2;
   } else {
     embeddingWorkers = 1;
   }

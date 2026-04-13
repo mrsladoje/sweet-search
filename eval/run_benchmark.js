@@ -189,6 +189,7 @@ async function main() {
         lateInteractionModel: profileOpts.lateInteractionModel,
         sqliteFastMode: profileOpts.sqliteFast,
         requireNativeAnn: profileOpts.requireNativeAnn,
+        verbose: opts.verbose,
       });
     } catch (err) {
       console.error(`  Indexing failed: ${err.message}`);

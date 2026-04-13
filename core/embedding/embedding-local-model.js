@@ -375,9 +375,10 @@ export async function shutdownEmbeddingPool() {
 /** Get the active pool (null if not initialized). */
 export function getEmbeddingPool() { return _embeddingPool; }
 
-async function embedBatchesWithPool(pool, batches, maxLength) {
+async function embedBatchesWithPool(pool, batches, maxLength, onProgress, totalTexts) {
   const results = new Array(batches.length);
   const waveSize = Math.max(1, Math.min(pool.numWorkers || 1, batches.length));
+  let completed = 0;
   for (let i = 0; i < batches.length; i += waveSize) {
     const wave = batches.slice(i, i + waveSize);
     const waveResults = await Promise.all(
@@ -385,7 +386,9 @@ async function embedBatchesWithPool(pool, batches, maxLength) {
     );
     for (let j = 0; j < wave.length; j++) {
       results[i + j] = waveResults[j];
+      completed += wave[j].length;
     }
+    if (onProgress) onProgress(completed, totalTexts);
   }
   return results;
 }
@@ -517,8 +520,16 @@ export async function callLocalModel(texts, options = {}) {
   // Default dispatcher: pick the best path. Hybrid CPU+GPU dispatching is
   // done at callLocalModelBucketed (which sees the full batch list and can
   // run both encoders in parallel).
+  //
+  // SWEET_SEARCH_EMBED_USE_CPU=1 forces the ORT INT8 CPU path even when the
+  // native Metal addon is available. This is the symmetric counterpart to
+  // SWEET_SEARCH_LI_USE_CPU=1 and is the intended way to run the
+  // "ORT embed on CPU ‖ native LI on Metal" pipeline at index time: the
+  // indexer's parallel embed + LI phase then actually runs the two on
+  // different devices with no Metal queue contention.
   if (!texts || texts.length === 0) return [];
-  if (isNativeInferenceAvailable()) {
+  const forceEmbedCpu = process.env.SWEET_SEARCH_EMBED_USE_CPU === '1';
+  if (!forceEmbedCpu && isNativeInferenceAvailable()) {
     return callLocalModelGpu(texts, options);
   }
   return callLocalModelCpu(texts, options);
@@ -699,7 +710,7 @@ export async function callLocalModelBucketed(texts, options = {}) {
   // across workers. The pool round-robins batches so workers run in parallel.
   const pool = getEmbeddingPool();
   if (pool && !memGuardActive) {
-    const batchResults = await embedBatchesWithPool(pool, batches, maxLength);
+    const batchResults = await embedBatchesWithPool(pool, batches, maxLength, options.onProgress, texts.length);
     for (let b = 0; b < batches.length; b++) {
       for (let j = 0; j < batches[b].length; j++) {
         embeddings[batches[b][j].origIdx] = batchResults[b][j];

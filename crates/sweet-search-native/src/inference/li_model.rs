@@ -19,12 +19,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::modernbert_sdpa as modernbert;
-use super::{optimal_dtype, select_device};
+use super::{metal_lock, optimal_dtype, select_device};
 
-/// Inner state of the LI model, shared between the napi struct (main thread)
-/// and `LiEncodeTask` (libuv worker thread) via `Arc`. All fields are
-/// Send+Sync in candle 0.10.2 (Device::Metal via PR #3164, Tensors via
-/// internal Arc, ModernBert via candle's immutable forward pass).
+/// Inner state of the LI model. Metal compute is serialized via
+/// `super::metal_lock()` — a process-wide mutex shared with the embedding
+/// model. See `metal_lock` for why per-model locks aren't enough.
 struct LiInner {
     model: modernbert::ModernBert,
     projection_weight: Tensor,
@@ -203,83 +202,100 @@ impl Task for LiEncodeTask {
         }
         let seq_len = self.input_ids[0].len();
 
-        // Build input_ids tensor [batch, seq_len] as u32
+        // Entire Metal pipeline is serialized under the model mutex. Candle's
+        // Metal backend can't safely accept concurrent submissions against the
+        // same model instance (command buffers interleave and corrupt outputs).
+        // This was catastrophic for LI specifically: at concurrency=12 the
+        // gencodesearchnet MRR collapsed from ~98% to ~25%. Serializing the
+        // entire compute block — tensor creation, forward, projection, norm,
+        // AND extraction — fixes it. Tokenization and JS-side result copies
+        // still run in parallel because AsyncTask hops onto libuv worker
+        // threads; only the Metal section is one-at-a-time.
         let flat_ids: Vec<u32> = self.input_ids.iter()
             .flatten()
             .map(|&x| x as u32)
             .collect();
-        let ids_tensor = Tensor::new(flat_ids.as_slice(), &inner.device)
-            .and_then(|t| t.reshape((batch_size, seq_len)))
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeLI] input_ids tensor error: {e}"
-            )))?;
-
-        // Build attention_mask as U8 for forward pass
         let flat_mask_u8: Vec<u8> = self.attention_mask.iter()
             .flatten()
             .map(|&x| x as u8)
             .collect();
-        let mask_u8 = Tensor::new(flat_mask_u8.as_slice(), &inner.device)
-            .and_then(|t| t.reshape((batch_size, seq_len)))
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeLI] attention_mask tensor error: {e}"
-            )))?;
+        let active_counts: Vec<usize> = self.attention_mask.iter()
+            .map(|row| row.iter().filter(|&&v| v != 0).count())
+            .collect();
 
-        // Forward pass → [batch, seq_len, backbone_dim]
-        let hidden = inner.model.forward(&ids_tensor, &mask_u8)
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeLI] Forward pass error: {e}"
-            )))?;
+        // Metal-only lock: CPU path skips the mutex (CPU backend is
+        // thread-safe via Accelerate BLAS). Holding the lock on CPU would
+        // prevent CPU embed from running in parallel with Metal LI, which is
+        // the whole point of the CPU+GPU split.
+        let _guard = if matches!(inner.device, Device::Metal(_)) {
+            Some(metal_lock().lock()
+                .map_err(|e| Error::from_reason(format!("[NativeLI] metal lock poisoned: {e}")))?)
+        } else {
+            None
+        };
 
-        // Projection: [batch*seq, 768] @ [768, 128] → reshape to [batch, seq, 128]
-        let proj_t = inner.projection_weight.t()
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeLI] Projection transpose error: {e}"
-            )))?;
-        let hidden_2d = hidden.reshape((batch_size * seq_len, inner.backbone_dim))
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeLI] Hidden reshape error: {e}"
-            )))?;
-        let projected = hidden_2d.matmul(&proj_t)
-            .and_then(|t| t.reshape((batch_size, seq_len, inner.token_dim)))
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeLI] Projection matmul error: {e}"
-            )))?;
-
-        // L2 normalize per token
-        let norm = projected.sqr()
-            .and_then(|t| t.sum_keepdim(D::Minus1))
-            .and_then(|t| (t + 1e-12f64))
-            .and_then(|t| t.sqrt())
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeLI] Norm computation error: {e}"
-            )))?;
-        // Cast to F32 before extraction (model may run in F16 on Metal)
-        let normalized = projected.broadcast_div(&norm)
-            .and_then(|t| t.to_dtype(DType::F32))
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeLI] Normalize error: {e}"
-            )))?;
-
-        // Extract per-batch-item token vectors (only active tokens)
-        // Flatten all batch items into a single Vec<f32> with offsets
-        let mut all_vectors: Vec<f64> = Vec::new();
-        let mut token_counts: Vec<u32> = Vec::with_capacity(batch_size);
-
-        for b in 0..batch_size {
-            let active = self.attention_mask[b].iter().filter(|&&v| v != 0).count();
-            token_counts.push(active as u32);
-
-            let batch_vecs = normalized.i(b)
-                .and_then(|t| t.narrow(0, 0, active))
-                .and_then(|t| t.reshape((active * inner.token_dim,)))
-                .and_then(|t| t.to_vec1::<f32>())
+        let (all_vectors, token_counts) = {
+            let ids_tensor = Tensor::new(flat_ids.as_slice(), &inner.device)
+                .and_then(|t| t.reshape((batch_size, seq_len)))
                 .map_err(|e| Error::from_reason(format!(
-                    "[NativeLI] Vector extraction error for batch {b}: {e}"
+                    "[NativeLI] input_ids tensor error: {e}"
+                )))?;
+            let mask_u8 = Tensor::new(flat_mask_u8.as_slice(), &inner.device)
+                .and_then(|t| t.reshape((batch_size, seq_len)))
+                .map_err(|e| Error::from_reason(format!(
+                    "[NativeLI] attention_mask tensor error: {e}"
                 )))?;
 
-            all_vectors.extend(batch_vecs.iter().map(|&v| v as f64));
-        }
+            let hidden = inner.model.forward(&ids_tensor, &mask_u8)
+                .map_err(|e| Error::from_reason(format!(
+                    "[NativeLI] Forward pass error: {e}"
+                )))?;
+
+            let proj_t = inner.projection_weight.t()
+                .map_err(|e| Error::from_reason(format!(
+                    "[NativeLI] Projection transpose error: {e}"
+                )))?;
+            let hidden_2d = hidden.reshape((batch_size * seq_len, inner.backbone_dim))
+                .map_err(|e| Error::from_reason(format!(
+                    "[NativeLI] Hidden reshape error: {e}"
+                )))?;
+            let projected = hidden_2d.matmul(&proj_t)
+                .and_then(|t| t.reshape((batch_size, seq_len, inner.token_dim)))
+                .map_err(|e| Error::from_reason(format!(
+                    "[NativeLI] Projection matmul error: {e}"
+                )))?;
+
+            let norm = projected.sqr()
+                .and_then(|t| t.sum_keepdim(D::Minus1))
+                .and_then(|t| (t + 1e-12f64))
+                .and_then(|t| t.sqrt())
+                .map_err(|e| Error::from_reason(format!(
+                    "[NativeLI] Norm computation error: {e}"
+                )))?;
+            let normalized = projected.broadcast_div(&norm)
+                .and_then(|t| t.to_dtype(DType::F32))
+                .map_err(|e| Error::from_reason(format!(
+                    "[NativeLI] Normalize error: {e}"
+                )))?;
+
+            // Extract per-batch-item active token vectors inside the lock so
+            // the device→host copies don't race with another worker's forward.
+            let mut all_vectors: Vec<f64> = Vec::new();
+            let mut token_counts: Vec<u32> = Vec::with_capacity(batch_size);
+            for (b, &active) in active_counts.iter().enumerate() {
+                token_counts.push(active as u32);
+                if active == 0 { continue; }
+                let batch_vecs = normalized.i(b)
+                    .and_then(|t| t.narrow(0, 0, active))
+                    .and_then(|t| t.reshape((active * inner.token_dim,)))
+                    .and_then(|t| t.to_vec1::<f32>())
+                    .map_err(|e| Error::from_reason(format!(
+                        "[NativeLI] Vector extraction error for batch {b}: {e}"
+                    )))?;
+                all_vectors.extend(batch_vecs.iter().map(|&v| v as f64));
+            }
+            (all_vectors, token_counts)
+        };
 
         Ok(LiEncodingResult {
             vectors: all_vectors,

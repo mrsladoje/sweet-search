@@ -100,6 +100,10 @@ export const LOCAL_RERANKER_CONFIG = {
  * @returns {boolean} True if local reranker should be used
  */
 export function shouldUseLocalReranker() {
+  // Env-var kill switch (used by benchmark A/B runs to isolate LI quality
+  // from CE rerank latency). Set SWEET_SEARCH_DISABLE_LOCAL_RERANKER=1.
+  const env = (process.env.SWEET_SEARCH_DISABLE_LOCAL_RERANKER ?? '').trim().toLowerCase();
+  if (env === '1' || env === 'true' || env === 'on') return false;
   return LOCAL_RERANKER_CONFIG.useLocalReranker;
 }
 

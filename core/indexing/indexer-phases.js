@@ -20,6 +20,7 @@ import {
   resetLocalModelRuntime,
   shutdownEmbeddingPool,
 } from '../embedding/embedding-local-model.js';
+import { isNativeInferenceAvailable } from '../infrastructure/native-inference.js';
 import {
   configureLateInteractionRuntime,
   resetLateInteractionRuntime,
@@ -289,11 +290,35 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     preChunked = await chunkFiles(filesToIndex);
   }
 
+  // The embedding worker pool uses ORT INT8 CPU in each worker. It must only
+  // be active when the query-time encoder ALSO uses ORT INT8 CPU, otherwise
+  // the stored index and the query vectors live in different embedding spaces
+  // (gencodesearchnet 83% → 58% MRR regression). Two cases where that's true:
+  //   1. Native inference isn't available at all (pre-native hosts).
+  //   2. SWEET_SEARCH_EMBED_USE_CPU=1 — the user opted into CPU embed on
+  //      both sides (index + query), so pool ORT embed matches dispatcher
+  //      ORT embed. This is the "ORT embed on CPU ‖ native LI on Metal"
+  //      pipeline that maximises index throughput by running embed and LI
+  //      on different devices.
+  //
+  // The historical `!shouldParallelLI` gate existed for the all-CPU era where
+  // pool workers and parallel LI both wanted CPU and fought. In the CPU-embed
+  // + Metal-LI world, that conflict goes away — pool workers do ORT on CPU
+  // cores, the main thread drives Metal LI dispatches (negligible CPU), no
+  // contention. So when `SWEET_SEARCH_EMBED_USE_CPU=1` we lift the gate and
+  // let the pool run alongside parallel LI.
+  const forceEmbedCpu = process.env.SWEET_SEARCH_EMBED_USE_CPU === '1';
+  const queryTimeEmbedIsCpu = !isNativeInferenceAvailable() || forceEmbedCpu;
+  // When LI is on Metal (native), pool + parallelLI is safe — the LI driver
+  // is just dispatching commands, not competing for CPU cores.
+  const liOnMetal = isNativeInferenceAvailable() && !noLateInteraction;
+  const allowPoolWithParallelLi = forceEmbedCpu && liOnMetal;
   const useEmbeddingPool = !dryRun
     && filesToIndex.length > 0
     && EMBEDDING_CONFIG.provider === 'local'
     && resourcePlan.useWorkerPool
-    && !shouldParallelLI;
+    && (!shouldParallelLI || allowPoolWithParallelLi)
+    && queryTimeEmbedIsCpu;
 
   if (!dryRun && EMBEDDING_CONFIG.provider === 'local' && filesToIndex.length > 0) {
     configureLocalModelRuntime({ intraOpThreads: embeddingThreads });
@@ -334,6 +359,34 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     sqliteFastMode,
     ...(preChunked ? { preChunked } : {}),
   };
+
+  // ── Pre-warm native models BEFORE starting the parallel embed/LI phase ──
+  //
+  // Both native model loaders run an `await fetchModel(...)` SHA256 verification
+  // pass over the cached safetensors. The 596 MB LateOn-Code file streams
+  // through `pipeline(createReadStream, hash)` in ~2s when the process is idle,
+  // but blocks for >2 minutes (and counting) when ORT CPU embed is running
+  // concurrently — microtask scheduling between Node streams and ORT's promise
+  // chain is unfair under load. Pre-warming the models here, before either
+  // pipeline kicks off, runs the verification while the process is idle so the
+  // contention never happens. Skips embed pre-warm when ORT CPU is forced
+  // because native embed isn't loaded in that mode.
+  if (!dryRun && filesToIndex.length > 0 && EMBEDDING_CONFIG.provider === 'local' && isNativeInferenceAvailable()) {
+    try {
+      const ni = await import('../infrastructure/native-inference.js');
+      const warmStart = Date.now();
+      const tasks = [];
+      const usingNativeEmbed = process.env.SWEET_SEARCH_EMBED_USE_CPU !== '1';
+      if (usingNativeEmbed) tasks.push(ni.getNativeEmbeddingModel());
+      if (!noLateInteraction) tasks.push(ni.getNativeLiModel());
+      if (tasks.length > 0) {
+        await Promise.all(tasks);
+        log(`Native models pre-warmed in ${Date.now() - warmStart}ms`, 'dim');
+      }
+    } catch (err) {
+      log(`Native model pre-warm failed: ${err.message} (will retry lazily)`, 'yellow');
+    }
+  }
 
   try {
     const vectorPromise = buildVectorIndex(filesToIndex, dryRun, vectorOptions);

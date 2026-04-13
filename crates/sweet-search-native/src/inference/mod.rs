@@ -16,6 +16,23 @@ pub use li_model::NativeLateInteractionModel;
 
 use candle_core::{DType, Device};
 use napi_derive::napi;
+use std::sync::{Mutex, OnceLock};
+
+/// Process-wide mutex that serializes all Metal compute across models.
+///
+/// Candle's Metal backend can't safely accept concurrent `MTLCommandBuffer`
+/// submissions against the same GPU — even when the submissions target
+/// different `NomicBertModel`/`ModernBert` instances, the underlying
+/// command queue is shared through candle's global Metal device cache and
+/// interleaved submissions silently corrupt outputs. Per-model mutexes are
+/// insufficient because queries hit both the embedding and LI models
+/// concurrently at `--concurrency=12`. A single process-wide mutex around
+/// every Metal compute section keeps latency reasonable (GPU work is
+/// sub-10ms per call) while eliminating the race entirely.
+pub(crate) fn metal_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 /// Check if native GPU-accelerated inference is available.
 /// Returns true on macOS ARM64 when Metal device initializes successfully.
@@ -33,13 +50,25 @@ pub fn native_inference_available() -> bool {
 }
 
 /// Select the optimal weight dtype for the active device.
-/// Metal: F16 (dedicated half-precision ALUs, 2x FP32 throughput).
-/// CPU: F32 (F16 emulation is slower on x86/ARM NEON).
+///
+/// Metal defaults to F32 because F16 precision loss catastrophically degrades
+/// retrieval quality on this CodeRankEmbed model — gencodesearchnet MRR
+/// dropped from 82% to 64% (python queries 93.1% → 63.3%) purely from F16
+/// accumulation over 12 transformer layers. Per-token cosine against the
+/// FP32 reference is ~0.9999, but the residual noise flips enough top-K
+/// rankings to destroy retrieval. Set SWEET_SEARCH_NATIVE_DTYPE=f16 to opt
+/// back into F16 (faster inference, worse quality).
 pub(crate) fn optimal_dtype(device: &Device) -> DType {
+    let force_f16 = std::env::var("SWEET_SEARCH_NATIVE_DTYPE")
+        .map(|v| v.to_lowercase() == "f16")
+        .unwrap_or(false);
     match device {
         #[cfg(feature = "metal")]
-        Device::Metal(_) => DType::F16,
-        _ => DType::F32,
+        Device::Metal(_) if force_f16 => DType::F16,
+        _ => {
+            let _ = force_f16; // suppress unused warning on non-metal builds
+            DType::F32
+        }
     }
 }
 
