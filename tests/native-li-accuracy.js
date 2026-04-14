@@ -110,13 +110,17 @@ async function main() {
     const nativeCount = nativeResult.tokenCounts[0];
     const ortCount = ortVectors.length;
 
+    // The native addon returns vectors as a flat Float32Array (zero-copy
+    // from the Rust Vec<f32>).
+    const nativeVectors = nativeResult.vectors;
+
     // Compare per-token cosine similarity (aligned tokens)
     const compareCount = Math.min(nativeCount, ortCount);
     let tokenCosSum = 0;
     let tokenCosMin = 1.0;
 
     for (let t = 0; t < compareCount; t++) {
-      const nativeVec = nativeResult.vectors.slice(t * 128, (t + 1) * 128);
+      const nativeVec = nativeVectors.slice(t * 128, (t + 1) * 128);
       const ortVec = Array.from(ortVectors[t]);
       const cos = cosineSimilarity(nativeVec, ortVec);
       tokenCosSum += cos;
@@ -129,7 +133,7 @@ async function main() {
     maxCos = Math.max(maxCos, meanCos);
 
     // Check L2 norms
-    const firstNorm = Math.sqrt(nativeResult.vectors.slice(0, 128).reduce((s, v) => s + v * v, 0));
+    const firstNorm = Math.sqrt(nativeVectors.slice(0, 128).reduce((s, v) => s + v * v, 0));
 
     const preview = text.slice(0, 55).replace(/\n/g, '\\n');
     const status = meanCos >= 0.94 ? 'PASS' : meanCos >= 0.90 ? 'WARN' : 'FAIL';

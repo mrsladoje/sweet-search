@@ -128,7 +128,14 @@ async function main() {
   }
 
   const t2 = performance.now();
-  const nativeEmbeddings = await nativeModel.embedBatch(inputIds, attentionMask);
+  // The native addon returns a flat Float32Array (length = batch * dim).
+  // Slice into per-batch typed arrays to match the old shape.
+  const flat = await nativeModel.embedBatch(inputIds, attentionMask);
+  const dim = nativeModel.dim;
+  const nativeEmbeddings = new Array(batchSize);
+  for (let i = 0; i < batchSize; i++) {
+    nativeEmbeddings[i] = flat.slice(i * dim, (i + 1) * dim);
+  }
   const nativeMs = (performance.now() - t2).toFixed(1);
 
   // 6. Compare cosine similarity

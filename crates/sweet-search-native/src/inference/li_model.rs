@@ -169,7 +169,20 @@ impl NativeLateInteractionModel {
     /// * `attention_mask` - 2D array of 0/1 mask values, shape [batch, seq_len]
     ///
     /// # Returns
-    /// A Promise resolving to `LiEncodingResult { vectors, token_counts }`.
+    /// A Promise resolving to `LiEncodingResult { vectors, tokenCounts }`,
+    /// where `vectors` is a flat `Float32Array` of all per-token vectors
+    /// concatenated across batch items, and `tokenCounts` is the active
+    /// token count per batch item. Callers slice via
+    /// `vectors.slice(offset, offset + count * dim)` per item.
+    ///
+    /// We return a `Float32Array` instead of a flat `Vec<f64>` (or a JSON
+    /// string) because napi-rs would otherwise serialise the vec by calling
+    /// `napi_set_element` once per element — for a typical batch of
+    /// 32 × ~256 active tokens × 128 dims that is over 1,000,000 napi
+    /// crossings per batch, which dominated wall clock at ~10s/batch of
+    /// pure napi overhead at indexer-realistic shapes. A `Float32Array` is
+    /// constructed in a single napi call with one memcpy of the underlying
+    /// buffer (~tens of ms even for 30 MB).
     #[napi(ts_return_type = "Promise<LiEncodingResult>")]
     pub fn encode_batch(
         &self,
@@ -200,7 +213,7 @@ impl Task for LiEncodeTask {
         let batch_size = self.input_ids.len();
         if batch_size == 0 {
             return Ok(LiEncodingResult {
-                vectors: vec![],
+                vectors: Float32Array::new(Vec::new()),
                 token_counts: vec![],
             });
         }
@@ -284,7 +297,10 @@ impl Task for LiEncodeTask {
 
             // Extract per-batch-item active token vectors inside the lock so
             // the device→host copies don't race with another worker's forward.
-            let mut all_vectors: Vec<f64> = Vec::new();
+            // Keep them as f32 (no longer widening to f64) — JSON encoding
+            // works fine on f32 and we save 50% on the encode-side string
+            // length.
+            let mut all_vectors: Vec<f32> = Vec::new();
             let mut token_counts: Vec<u32> = Vec::with_capacity(batch_size);
             for (b, &active) in active_counts.iter().enumerate() {
                 token_counts.push(active as u32);
@@ -296,13 +312,17 @@ impl Task for LiEncodeTask {
                     .map_err(|e| Error::from_reason(format!(
                         "[NativeLI] Vector extraction error for batch {b}: {e}"
                     )))?;
-                all_vectors.extend(batch_vecs.iter().map(|&v| v as f64));
+                all_vectors.extend(batch_vecs);
             }
             (all_vectors, token_counts)
         };
 
+        // Move the whole f32 buffer into a Float32Array in a single napi
+        // call. The Vec<f32> is consumed by Float32Array::new and the
+        // underlying memory is handed to V8 as a typed array. No
+        // per-element conversion, no JSON round-trip.
         Ok(LiEncodingResult {
-            vectors: all_vectors,
+            vectors: Float32Array::new(all_vectors),
             token_counts,
         })
     }
@@ -313,13 +333,18 @@ impl Task for LiEncodeTask {
 }
 
 /// Result of late interaction encoding.
-/// All batch items' token vectors are concatenated into a single flat array.
-/// Use `token_counts` and `dim` (128) to slice per-item vectors.
+///
+/// `vectors` is a flat `Float32Array` of all per-token vectors for all
+/// batch items concatenated. Length = sum(token_counts) × dim. Slice via
+/// `vectors.slice(offset, offset + count * dim)` at cumulative offsets to
+/// recover per-batch-item per-token vectors.
+///
+/// We return a typed array instead of a nested `Vec<Vec<f64>>` (or a JSON
+/// string) to avoid per-element `napi_set_element` round-trips — see the
+/// comment on `encode_batch` above.
 #[napi(object)]
 pub struct LiEncodingResult {
-    /// Flat concatenated per-token vectors for all batch items (f64 for JS compat).
-    /// Length = sum(token_counts) × dim. Slice at offsets = cumsum(token_counts) × dim.
-    pub vectors: Vec<f64>,
+    pub vectors: Float32Array,
     /// Number of active (non-padding) tokens per batch item.
     pub token_counts: Vec<u32>,
 }
