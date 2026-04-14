@@ -16,6 +16,13 @@ vectors.db
 # Compiled binaries
 ss-fast/ss-fast
 
+# CoreML artifacts — large (~150 MB per .mlpackage), regenerable via
+# scripts/spike-coreml/convert_to_coreml.py / convert_li_to_coreml.py
+# (single-shape) or trace_cascade.py (full cascade). Nothing under
+# artifacts/ is source — it's all derived from the model weights plus
+# the python conversion scripts that ARE tracked.
+scripts/spike-coreml/artifacts/
+
 # Training artifacts (large, regenerable)
 catboost_info/
 core/training/query-router/catboost_info/

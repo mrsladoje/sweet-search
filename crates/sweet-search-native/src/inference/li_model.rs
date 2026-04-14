@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use super::modernbert_sdpa as modernbert;
 #[cfg(feature = "coreml")]
-use super::coreml_li::CoremlLi;
+use super::coreml_li::{CoremlLi, CoremlLiVariant};
 use super::{metal_lock, optimal_dtype, select_device};
 
 /// Inner state of the LI model. Metal compute is serialized via
@@ -28,10 +28,12 @@ use super::{metal_lock, optimal_dtype, select_device};
 /// model. See `metal_lock` for why per-model locks aren't enough.
 ///
 /// When the `coreml` feature is enabled AND
-/// `SWEET_SEARCH_COREML_LI_MLPACKAGE` points at a valid .mlpackage,
-/// `coreml` holds an extra CPU+NE backend used whenever the batch fits
-/// its fixed shape. The candle backbone is kept loaded unconditionally
-/// as the fallback for oversized batches.
+/// `SWEET_SEARCH_COREML_LI_MLPACKAGE_DIR` points at a directory
+/// containing one or more `li_modernbert_b{B}_s{S}_fp16.mlpackage`
+/// files, `coreml` holds a cascade of lazy-loaded CPU+NE backends
+/// used whenever any variant fits the incoming batch. The candle
+/// backbone is kept loaded unconditionally as the fallback for
+/// batches exceeding the largest variant.
 struct LiInner {
     model: modernbert::ModernBert,
     projection_weight: Tensor,
@@ -42,32 +44,71 @@ struct LiInner {
     token_dim: usize,
 }
 
-/// Try to load the optional CoreML LI backend from the env var.
+/// Scan the optional CoreML LI cascade directory from the env var
+/// and build a variant list. Constructor is cheap — variants compile
+/// lazily on first dispatch. See the matching comment in
+/// `embedding_model.rs::try_load_coreml_embedding` for details.
+///
+/// Expected filename format:
+///   li_modernbert_b{BATCH}_s{SEQ}_fp16.mlpackage
 #[cfg(feature = "coreml")]
 fn try_load_coreml_li() -> Option<CoremlLi> {
-    let path = std::env::var("SWEET_SEARCH_COREML_LI_MLPACKAGE").ok()?;
-    let t0 = std::time::Instant::now();
-    match CoremlLi::load(std::path::Path::new(&path)) {
-        Ok(m) => {
-            let ms = t0.elapsed().as_secs_f64() * 1000.0;
-            eprintln!(
-                "[NativeLI] CoreML backend loaded from {} in {:.0}ms (batch={}, seq={}, dim={})",
-                path,
-                ms,
-                m.max_batch(),
-                m.max_seq(),
-                m.token_dim(),
-            );
-            Some(m)
-        }
+    let dir = std::env::var("SWEET_SEARCH_COREML_LI_MLPACKAGE_DIR").ok()?;
+    let dir_path = std::path::PathBuf::from(&dir);
+
+    let entries = match std::fs::read_dir(&dir_path) {
+        Ok(it) => it,
         Err(e) => {
             eprintln!(
-                "[NativeLI] CoreML backend load FAILED from {}: {} — falling back to candle",
-                path, e
+                "[NativeLI] CoreML cascade dir {} unreadable: {} — falling back to candle",
+                dir, e
             );
-            None
+            return None;
+        }
+    };
+
+    let mut variants: Vec<CoremlLiVariant> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let fname = match path.file_name().and_then(|n| n.to_str()) {
+            Some(s) => s,
+            None => continue,
+        };
+        if let Some((batch, seq)) = parse_li_variant_filename(fname) {
+            variants.push(CoremlLiVariant::new(batch, seq, path));
         }
     }
+
+    if variants.is_empty() {
+        eprintln!(
+            "[NativeLI] CoreML cascade dir {} contained no li_modernbert_b{{B}}_s{{S}}_fp16.mlpackage files — falling back to candle",
+            dir,
+        );
+        return None;
+    }
+
+    let cascade = CoremlLi::from_variants(variants);
+    let shapes: Vec<String> = cascade
+        .variant_shapes()
+        .map(|(b, s)| format!("b{}×s{}", b, s))
+        .collect();
+    eprintln!(
+        "[NativeLI] CoreML cascade loaded: {} variants [{}] (lazy — each compiles on first use)",
+        cascade.len(),
+        shapes.join(", "),
+    );
+    Some(cascade)
+}
+
+/// Parse `li_modernbert_b{BATCH}_s{SEQ}_fp16.mlpackage` into `(batch, seq)`.
+#[cfg(feature = "coreml")]
+fn parse_li_variant_filename(fname: &str) -> Option<(usize, usize)> {
+    let rest = fname.strip_prefix("li_modernbert_b")?;
+    let rest = rest.strip_suffix("_fp16.mlpackage")?;
+    let (batch_str, seq_part) = rest.split_once("_s")?;
+    let batch: usize = batch_str.parse().ok()?;
+    let seq: usize = seq_part.parse().ok()?;
+    Some((batch, seq))
 }
 
 /// Startup parity check between candle and CoreML for LI. Runs one
@@ -91,7 +132,10 @@ fn li_parity_cosine(
     coreml: &CoremlLi,
 ) -> std::result::Result<f32, String> {
     const ACTIVE: usize = 64;
-    let seq_len = coreml.max_seq();
+    let parity = coreml
+        .parity_variant()
+        .ok_or_else(|| "cascade is empty".to_string())?;
+    let seq_len = parity.seq.max(ACTIVE);
 
     let mut ids_row = vec![0i64; seq_len];
     let mut mask_row = vec![0i64; seq_len];
@@ -427,6 +471,22 @@ impl Task for LiEncodeTask {
             });
         }
         let seq_len = self.input_ids[0].len();
+
+        // Shape-distribution logging for choosing CoreML traced shapes.
+        // Gated behind SWEET_SEARCH_LOG_NATIVE_SHAPES. Same rationale as
+        // the matching block in embedding_model.rs — see that comment.
+        if std::env::var_os("SWEET_SEARCH_LOG_NATIVE_SHAPES").is_some() {
+            let max_active = self
+                .attention_mask
+                .iter()
+                .map(|row| row.iter().filter(|&&v| v != 0).count())
+                .max()
+                .unwrap_or(0);
+            eprintln!(
+                "[SHAPE_STATS li] batch={} seq_padded={} max_active={}",
+                batch_size, seq_len, max_active,
+            );
+        }
 
         // CoreML fast path — runs on CPU+NE, bypasses the candle Metal
         // lock entirely. Fits check prevents batches/sequences larger

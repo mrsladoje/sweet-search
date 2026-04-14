@@ -21,11 +21,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
 const ADDON = join(ROOT, 'crates', 'sweet-search-native', 'sweet-search-native.darwin-arm64.node');
 
-const nomicPkg = join(HERE, 'artifacts', 'nomic_bert_b32_s512_fp16.mlpackage');
-const liPkg = join(HERE, 'artifacts', 'li_modernbert_b32_s512_fp16.mlpackage');
+const cascadeDir = join(HERE, 'artifacts', 'cascade');
 
-process.env.SWEET_SEARCH_COREML_EMBED_MLPACKAGE = nomicPkg;
-process.env.SWEET_SEARCH_COREML_LI_MLPACKAGE = liPkg;
+process.env.SWEET_SEARCH_COREML_EMBED_MLPACKAGE_DIR = cascadeDir;
+process.env.SWEET_SEARCH_COREML_LI_MLPACKAGE_DIR = cascadeDir;
 
 const addon = require(ADDON);
 console.log(`addon loaded: ${ADDON}`);
