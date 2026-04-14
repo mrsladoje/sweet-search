@@ -22,12 +22,15 @@
 //! picked — across a long indexing run the overhead amortises to
 //! noise and startup stays fast.
 //!
-//! Gating: loaded only when `SWEET_SEARCH_COREML_EMBED_MLPACKAGE_DIR`
-//! points at a directory containing one or more
-//! `nomic_bert_b{B}_s{S}_fp16.mlpackage` files. The outer
-//! `embedding_model.rs` scans the directory, parses the filenames,
-//! and constructs this struct. Any batch that does not fit the
-//! largest variant falls through to candle.
+//! Gating: loaded only when the JS caller passes an explicit
+//! `coreml_cascade_dir` to `NativeEmbeddingModel::load` that points
+//! at a directory containing one or more
+//! `nomic_bert_b{B}_s{S}_fp16.mlpackage` files. The JS side
+//! (`core/infrastructure/coreml-cascade.js::getCoremlCascadeResolvedDirs`)
+//! decides whether to pass this arg based on hardware capability
+//! and cache state — see docs/INIT_STRATEGY.md for the full
+//! delivery strategy. Any batch that does not fit the largest
+//! variant falls through to candle.
 //!
 //! Compute units are pinned to CPU_AND_NE inside `coreml_shim.m` —
 //! both CoreML GPU paths miscompile NomicBERT's attention/MLP/norm
@@ -37,6 +40,7 @@
 #![cfg(feature = "coreml")]
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 
 use super::coreml_shim::CoremlModel;
@@ -59,6 +63,13 @@ pub struct CoremlEmbeddingVariant {
     pub seq: usize,
     pub path: PathBuf,
     model: OnceLock<Result<CoremlModel, String>>,
+    /// Number of times `pick()` selected this variant. Monotonic, reset
+    /// only when the cascade is dropped. Incremented inside `embed()`
+    /// so the counter reflects actual dispatch, not just shape fit.
+    /// Used by the dispatch report to prove each variant is pulling
+    /// its weight: a variant with zero dispatches across a full index
+    /// run is dead weight and should be cut from the cascade.
+    dispatch_count: AtomicU64,
 }
 
 impl CoremlEmbeddingVariant {
@@ -70,7 +81,13 @@ impl CoremlEmbeddingVariant {
             seq,
             path,
             model: OnceLock::new(),
+            dispatch_count: AtomicU64::new(0),
         }
+    }
+
+    /// Number of calls that have dispatched through this variant so far.
+    pub fn dispatches(&self) -> u64 {
+        self.dispatch_count.load(Ordering::Relaxed)
     }
 
     /// Return the underlying CoremlModel, compiling on first call.
@@ -123,6 +140,10 @@ pub struct CoremlEmbedding {
     /// the `(64, 96)` variant is preferred over the `(64, 192)` one
     /// for a `(48, 80)` call, even though both would work.
     variants: Vec<CoremlEmbeddingVariant>,
+    /// Calls whose shape exceeded the largest variant and fell through
+    /// to candle. A large number here is the signal the cascade needs
+    /// additional upper-range variants.
+    fallthrough_count: AtomicU64,
 }
 
 impl CoremlEmbedding {
@@ -135,7 +156,46 @@ impl CoremlEmbedding {
     /// admitting the cascade for dispatch.
     pub fn from_variants(mut variants: Vec<CoremlEmbeddingVariant>) -> Self {
         variants.sort_by_key(|v| (v.batch, v.seq));
-        Self { variants }
+        Self {
+            variants,
+            fallthrough_count: AtomicU64::new(0),
+        }
+    }
+
+    /// Count a shape that didn't fit the cascade. Called by the
+    /// outer `embedding_model.rs::embed_batch` on the `!fits()`
+    /// path so the stats report covers both dispatched and
+    /// fell-through calls.
+    pub fn record_fallthrough(&self) {
+        self.fallthrough_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Format a multi-line dispatch summary suitable for logging at
+    /// index-end. One line per variant with dispatch count and
+    /// compile status, plus a summary line for fell-through calls.
+    pub fn dispatch_report(&self) -> String {
+        let mut total_dispatched: u64 = 0;
+        let mut lines = Vec::with_capacity(self.variants.len() + 2);
+        for v in &self.variants {
+            let count = v.dispatches();
+            total_dispatched += count;
+            let compiled = if v.model.get().is_some() { "compiled" } else { "never compiled" };
+            lines.push(format!(
+                "  b{}×s{}\t{} dispatches\t[{}]",
+                v.batch, v.seq, count, compiled
+            ));
+        }
+        let fallthrough = self.fallthrough_count.load(Ordering::Relaxed);
+        lines.insert(
+            0,
+            format!(
+                "[CoremlEmbedding] dispatch stats ({} variants, {} dispatched, {} fell through)",
+                self.variants.len(),
+                total_dispatched,
+                fallthrough,
+            ),
+        );
+        lines.join("\n")
     }
 
     /// Number of registered variants. Used for startup logging only.
@@ -220,6 +280,13 @@ impl CoremlEmbedding {
                 self.upper_bound_variant().map(|v| (v.batch, v.seq)),
             )
         })?;
+
+        // Count the dispatch before compiling — a variant that failed
+        // to compile still "dispatched" from the cascade's point of
+        // view, so stats reflect real call patterns. Compile-failure
+        // counts are reflected separately through the "never compiled"
+        // tag in `dispatch_report()`.
+        variant.dispatch_count.fetch_add(1, Ordering::Relaxed);
 
         let model = variant
             .model()

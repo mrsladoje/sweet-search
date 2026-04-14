@@ -2,15 +2,19 @@
  * Production-path CoreML smoke test.
  *
  * Loads the real NativeEmbeddingModel / NativeLateInteractionModel
- * napi exports with SWEET_SEARCH_COREML_EMBED_MLPACKAGE and
- * SWEET_SEARCH_COREML_LI_MLPACKAGE set. This exercises:
- *   1. The env-var-gated CoreML backend load
+ * napi exports with explicit cascade_dir arguments. This exercises:
+ *   1. The cascade_dir constructor argument (no env vars)
  *   2. The startup parity check against candle
  *   3. One embed_batch / encode_batch call through the CoreML fast path
  *   4. Fallback to candle for a batch-size that does not fit (batch=64)
  *
- * Unlike smoke_rust_coreml.js (which called coremlShimSmokeTest), this
- * script hits the exact code path the sweet-search indexer uses.
+ * As of the cascade shipping work, the cascade dir is passed as the
+ * third / fourth argument to the `load` factories — the env var
+ * bypass has been removed. The JS production path resolves this dir
+ * via `getCoremlCascadeResolvedDirs()` in
+ * `core/infrastructure/coreml-cascade.js` and this smoke test
+ * hardcodes the developer-local path in `artifacts/cascade/` for
+ * simplicity.
  */
 import { createRequire } from 'module';
 import { dirname, join } from 'path';
@@ -22,9 +26,6 @@ const ROOT = join(HERE, '..', '..');
 const ADDON = join(ROOT, 'crates', 'sweet-search-native', 'sweet-search-native.darwin-arm64.node');
 
 const cascadeDir = join(HERE, 'artifacts', 'cascade');
-
-process.env.SWEET_SEARCH_COREML_EMBED_MLPACKAGE_DIR = cascadeDir;
-process.env.SWEET_SEARCH_COREML_LI_MLPACKAGE_DIR = cascadeDir;
 
 const addon = require(ADDON);
 console.log(`addon loaded: ${ADDON}`);
@@ -38,14 +39,14 @@ const liBackbone = join(liModelDir, 'model.safetensors');
 const liProjection = join(liModelDir, '1_Dense', 'model.safetensors');
 const liConfig = join(liModelDir, 'config.json');
 
-console.log('\n──── NativeEmbeddingModel.load (with CoreML) ────');
+console.log('\n──── NativeEmbeddingModel.load (with CoreML cascade) ────');
 const t0 = Date.now();
-const embedModel = addon.NativeEmbeddingModel.load(embedSafetensors, embedConfig);
+const embedModel = addon.NativeEmbeddingModel.load(embedSafetensors, embedConfig, cascadeDir);
 console.log(`  load total: ${Date.now() - t0} ms, dim: ${embedModel.dim}`);
 
-console.log('\n──── NativeLateInteractionModel.load (with CoreML) ────');
+console.log('\n──── NativeLateInteractionModel.load (with CoreML cascade) ────');
 const t1 = Date.now();
-const liModel = addon.NativeLateInteractionModel.load(liBackbone, liProjection, liConfig);
+const liModel = addon.NativeLateInteractionModel.load(liBackbone, liProjection, liConfig, cascadeDir);
 console.log(`  load total: ${Date.now() - t1} ms, dim: ${liModel.dim}`);
 
 // Build a 4×16 batch (fits b32×s512 → CoreML fast path).
