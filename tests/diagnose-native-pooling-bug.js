@@ -59,8 +59,9 @@ async function main() {
     const attentionMask = [Array.from(tok.attention_mask.data.slice(0, seqLen)).map(Number)];
 
     // Path A: embed_batch → Rust mean_pool + Rust L2 normalize
-    const pooledByRust = await nativeModel.embedBatch(inputIds, attentionMask);
-    const rustVec = Array.from(pooledByRust[0]);
+    // The native addon returns a flat Float32Array (length = batch * dim).
+    const pooledFlat = await nativeModel.embedBatch(inputIds, attentionMask);
+    const rustVec = Array.from(pooledFlat.slice(0, nativeModel.dim));
 
     // Path B: forward_raw_first → JS mean_pool + JS L2 normalize
     const rawFlat = new Float32Array(await nativeModel.forwardRawFirst(inputIds, attentionMask));

@@ -34,7 +34,10 @@ async function main() {
   const [, seqSolo] = tokSolo.input_ids.dims;
   const idsSolo = [Array.from(tokSolo.input_ids.data.slice(0, seqSolo)).map(Number)];
   const maskSolo = [Array.from(tokSolo.attention_mask.data.slice(0, seqSolo)).map(Number)];
-  const soloVec = Array.from((await nativeModel.embedBatch(idsSolo, maskSolo))[0]);
+  // The native addon returns a flat Float32Array (length = batch * dim).
+  const dim = nativeModel.dim;
+  const soloFlat = await nativeModel.embedBatch(idsSolo, maskSolo);
+  const soloVec = Array.from(soloFlat.slice(0, dim));
 
   // Batched encoding with short + long (short gets padded to long's length)
   const tokBatch = tokenizer([short, long], { padding: true, truncation: true, max_length: 512 });
@@ -46,8 +49,8 @@ async function main() {
     idsBatch.push(Array.from(tokBatch.input_ids.data.slice(base, base + seqBatch)).map(Number));
     maskBatch.push(Array.from(tokBatch.attention_mask.data.slice(base, base + seqBatch)).map(Number));
   }
-  const batchResults = await nativeModel.embedBatch(idsBatch, maskBatch);
-  const batchedShortVec = Array.from(batchResults[0]);
+  const batchFlat = await nativeModel.embedBatch(idsBatch, maskBatch);
+  const batchedShortVec = Array.from(batchFlat.slice(0, dim));
 
   const c = cos(soloVec, batchedShortVec);
   console.log(`short text seqLen solo=${seqSolo}  batched padded to=${seqBatch}`);

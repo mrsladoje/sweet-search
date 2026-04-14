@@ -72,8 +72,9 @@ async function main() {
   const seqLen = tok.input_ids.dims[1];
   const inputIds = [Array.from(tok.input_ids.data.slice(0, seqLen)).map(Number)];
   const attentionMask = [Array.from(tok.attention_mask.data.slice(0, seqLen)).map(Number)];
-  const nativeOut = await nativeModel.embedBatch(inputIds, attentionMask);
-  const nativeVec = Array.from(nativeOut[0]);
+  // The native addon returns a flat Float32Array (length = batch * dim).
+  const flat = await nativeModel.embedBatch(inputIds, attentionMask);
+  const nativeVec = Array.from(flat.slice(0, nativeModel.dim));
 
   console.log('\n=== Cosine comparisons (all using identical input_ids) ===');
   console.log(`  ort_token_embeds_then_jsmean+L2  vs  native_encoder_then_rustmean+L2 :  ${cosine(ortVec, nativeVec).toFixed(6)}`);

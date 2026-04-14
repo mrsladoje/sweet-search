@@ -119,9 +119,19 @@ impl NativeEmbeddingModel {
     /// * `attention_mask` - 2D array of 0/1 mask values, shape [batch, seq_len]
     ///
     /// # Returns
-    /// A Promise resolving to a 2D array of L2-normalized embedding vectors,
-    /// shape [batch, hidden_size].
-    #[napi(ts_return_type = "Promise<number[][]>")]
+    /// A Promise resolving to a flat `Float32Array` of length
+    /// `batch_size * hidden_size`, holding the L2-normalised embedding
+    /// vectors row-major. Callers should slice via
+    /// `result.slice(i * dim, (i + 1) * dim)` to obtain per-batch vectors.
+    ///
+    /// We return a typed array instead of a native `Vec<Vec<f32>>` because
+    /// napi-rs would otherwise serialise that nested vec by calling
+    /// `napi_set_element` once per element — for b32×s512 that is 24,576
+    /// napi crossings per batch. A `Float32Array` is constructed in a
+    /// single napi call with one memcpy of the underlying buffer (~tens of
+    /// μs at this size), which beats both the per-element napi path AND the
+    /// JSON encode + parse path the embedding model previously used.
+    #[napi(ts_return_type = "Promise<Float32Array>")]
     pub fn embed_batch(
         &self,
         input_ids: Vec<Vec<i64>>,
@@ -144,14 +154,14 @@ pub struct EmbedBatchTask {
 }
 
 impl Task for EmbedBatchTask {
-    type Output = Vec<Vec<f32>>;
-    type JsValue = Vec<Vec<f32>>;
+    type Output = Float32Array;
+    type JsValue = Float32Array;
 
     fn compute(&mut self) -> Result<Self::Output> {
         let inner = &*self.inner;
         let batch_size = self.input_ids.len();
         if batch_size == 0 {
-            return Ok(vec![]);
+            return Ok(Float32Array::new(Vec::new()));
         }
         let seq_len = self.input_ids[0].len();
 
@@ -184,7 +194,7 @@ impl Task for EmbedBatchTask {
             None
         };
 
-        let result: Vec<Vec<f32>> = {
+        let result: Vec<f32> = {
             let ids_tensor = Tensor::new(flat_ids.as_slice(), &inner.device)
                 .and_then(|t| t.reshape((batch_size, seq_len)))
                 .map_err(|e| Error::from_reason(format!(
@@ -213,20 +223,33 @@ impl Task for EmbedBatchTask {
                     "[NativeEmbedding] L2 normalize error: {e}"
                 )))?;
 
+            // Use to_vec1 with a flat reshape rather than to_vec2 so we
+            // avoid building the intermediate Vec<Vec<f32>> just to flatten
+            // it again into the Float32Array.
+            let flat_shape = (batch_size * inner.hidden_size,);
             match normalized.dtype() {
-                DType::F32 => normalized.to_vec2::<f32>().map_err(|e| {
-                    Error::from_reason(format!("[NativeEmbedding] Output conversion error: {e}"))
-                })?,
+                DType::F32 => normalized
+                    .reshape(flat_shape)
+                    .and_then(|t| t.to_vec1::<f32>())
+                    .map_err(|e| {
+                        Error::from_reason(format!("[NativeEmbedding] Output conversion error: {e}"))
+                    })?,
                 _ => normalized
                     .to_dtype(DType::F32)
-                    .and_then(|t| t.to_vec2::<f32>())
+                    .and_then(|t| t.reshape(flat_shape))
+                    .and_then(|t| t.to_vec1::<f32>())
                     .map_err(|e| {
                         Error::from_reason(format!("[NativeEmbedding] Output conversion error: {e}"))
                     })?,
             }
         };
 
-        Ok(result)
+        // The l2_normalize fix in nomic_bert_sdpa.rs guarantees no NaN/Inf
+        // in the normalised output even for fully-padded rows. We could
+        // still scrub the buffer here for defence-in-depth, but the cost is
+        // a per-element scan of every output and Float32Array does not
+        // forbid NaN the way JSON does, so we trust the upstream fix.
+        Ok(Float32Array::new(result))
     }
 
     fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
