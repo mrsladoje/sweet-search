@@ -16,6 +16,8 @@ import { dirname, join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { getCoremlCascadeRoot, getCoremlCascadeState } from '../core/infrastructure/coreml-cascade.js';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
 const DATA_DIR_NAME = '.sweet-search';
@@ -106,6 +108,40 @@ function getModelCacheDirs(initConfig) {
   return dirs;
 }
 
+/**
+ * Collect the CoreML cascade cache dir for removal. Unlike model
+ * cache dirs (which are per-hfId under the managed root), the
+ * cascade lives at a single managed location
+ * `{modelCacheRoot}/coreml-cascade/` and contains:
+ *   - embed/   (six .mlpackage dirs + six sibling .mlmodelc caches)
+ *   - li/      (six .mlpackage dirs + six sibling .mlmodelc caches)
+ *
+ * rm -rf'ing the cascade root cleans everything including the
+ * compiled .mlmodelc siblings that `coreml_shim.m` wrote next to
+ * each source `.mlpackage`.
+ *
+ * If the cascade was never built (common: ineligible hardware,
+ * --skip-coreml-cascade, opt-out) the root doesn't exist and we
+ * return an empty array — uninstall doesn't print a "removing 0 B"
+ * line.
+ */
+function getCoremlCascadeRemovals() {
+  const removals = [];
+  try {
+    const root = getCoremlCascadeRoot();
+    if (existsSync(root)) {
+      const state = getCoremlCascadeState();
+      const label = state.complete
+        ? `coreml cascade (${state.embedTotal + state.liTotal} variants complete)`
+        : `coreml cascade (${state.embedPresent + state.liPresent}/${state.embedTotal + state.liTotal} variants partial)`;
+      removals.push({ label, path: root, size: dirSize(root), type: 'coreml-cascade' });
+    }
+  } catch {
+    // Cascade module failed to load — no cascade to remove. Silent.
+  }
+  return removals;
+}
+
 // ---------------------------------------------------------------------------
 // Help text
 // ---------------------------------------------------------------------------
@@ -119,7 +155,9 @@ Usage:
 
 Options:
   --dry-run        Show what would be removed without deleting
-  --keep-models    Preserve the model cache (may be shared/expensive)
+  --keep-models    Preserve the model cache AND the CoreML cascade
+                   (both are large/expensive; use this flag to
+                   preserve both when only removing .sweet-search/)
   --purge          Also run \`npm uninstall sweet-search\` and remove @sweet-search/* packages
   --force          Skip confirmation prompt (for CI/scripted use)
   --help, -h       Show this help
@@ -127,6 +165,9 @@ Options:
 What gets removed:
   - .sweet-search/ config directory and all generated config
   - Init-managed model cache for this project's profile
+  - CoreML variant cascade (if built) — includes ~1.8 GB of .mlpackage
+    artifacts AND the sibling .mlmodelc compiled cache files next to
+    each variant. Skipped by --keep-models.
 
 What is NOT removed:
   - User source code, indexes, or database files outside .sweet-search/
@@ -169,6 +210,16 @@ export async function runUninstall(args) {
     for (const md of modelDirs) {
       removals.push({ label: `model cache: ${md.key}`, path: md.path, size: md.size, type: 'model' });
       totalBytes += md.size;
+    }
+
+    // CoreML cascade. Cleaned alongside models — same --keep-models flag
+    // gates both because the cascade is part of the model delivery
+    // strategy, not a separate opt-in. Users who want to preserve
+    // the cascade specifically can use --keep-models.
+    const cascadeRemovals = getCoremlCascadeRemovals();
+    for (const cr of cascadeRemovals) {
+      removals.push(cr);
+      totalBytes += cr.size;
     }
   }
 

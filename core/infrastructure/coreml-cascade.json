@@ -1,0 +1,46 @@
+{
+  "$comment": "CoreML variant cascade shape set — SINGLE SOURCE OF TRUTH. Consumed by (1) core/infrastructure/coreml-cascade.js for state inspection, cache resolution, and HF fetch, (2) scripts/spike-coreml/trace_cascade.py for local builds, and (3) the Rust filename parser in crates/sweet-search-native/src/inference/{embedding_model,li_model}.rs (parse_embed_variant_filename, parse_li_variant_filename) via the filePattern convention. Changing shapes here requires re-running scripts/build-coreml-cascade.js to regenerate the .mlpackage artifacts AND re-uploading tarballs to `hfRepo` with fresh checksums. The publish-coreml-cascade helper in the build script automates the tarball+upload+checksum backfill loop.",
+  "version": 2,
+  "description": "Cascade of fixed-shape NomicBERT embedding and ModernBERT LI mlpackages covering the stair-step output of the JS bucketer in core/embedding/embedding-local-model.js + core/indexing/indexer-pool.js. Distributed as per-variant .tar.gz archives from `hfRepo` so `sweet-search init` can fetch them alongside the other models without requiring Python/coremltools on the end-user machine.",
+  "hfRepo": "mrsladoje/sweet-search-coreml-cascade",
+  "embed": {
+    "modelKey": "nomic-bert",
+    "filePattern": "nomic_bert_b{batch}_s{seq}_fp16.mlpackage",
+    "tarballPattern": "embed/nomic_bert_b{batch}_s{seq}_fp16.mlpackage.tar.gz",
+    "hiddenDim": 768,
+    "traceSource": {
+      "hfId": "nomic-ai/CodeRankEmbed",
+      "safetensors": "model.safetensors",
+      "config": "config.json"
+    },
+    "variants": [
+      { "batch": 64, "seq": 96,   "rationale": "hardCap × short seq — covers observed (64, 52..107) regime", "tarballSha256": "76eeb863ffe11cc9d21cd0be0bd47d932630a86480c8a4f019d3360990b8ee14", "tarballSizeBytes": 252549277 },
+      { "batch": 64, "seq": 192,  "rationale": "hardCap × short-med",                                        "tarballSha256": "138ae2b406ecc0c2ce87730157791667f007472745079298c9eb605dc4b7ec1c", "tarballSizeBytes": 252608808 },
+      { "batch": 32, "seq": 384,  "rationale": "tokenBudget regime",                                         "tarballSha256": "580c67c9b9d3ac85e2c3a76b2262ad0b0c0489889dddfa3bc8cf1f215e71643a", "tarballSizeBytes": 252627736 },
+      { "batch": 16, "seq": 512,  "rationale": "long, cache-bound start",                                    "tarballSha256": "6e8dfc0b83befc905f2e90df45ae21d232d7983956c8c1526176fb175e774fbe", "tarballSizeBytes": 252608341 },
+      { "batch": 4,  "seq": 1024, "rationale": "long tail",                                                  "tarballSha256": "62afa26642d5531fc227ef730cd372312331631be43281464c9c1fb2c59b3f2f", "tarballSizeBytes": 252626657 },
+      { "batch": 1,  "seq": 2048, "rationale": "extreme tail / oversize docs",                               "tarballSha256": "4e3073e231a03d3c7fca673af81ac1fa9e6d28c4ff8da7856d64183eff090532", "tarballSizeBytes": 252722456 }
+    ]
+  },
+  "li": {
+    "modelKey": "modernbert-li",
+    "filePattern": "li_modernbert_b{batch}_s{seq}_fp16.mlpackage",
+    "tarballPattern": "li/li_modernbert_b{batch}_s{seq}_fp16.mlpackage.tar.gz",
+    "tokenDim": 128,
+    "backboneDim": 768,
+    "traceSource": {
+      "hfId": "lightonai/LateOn-Code",
+      "backbone": "model.safetensors",
+      "projection": "1_Dense/model.safetensors",
+      "config": "config.json"
+    },
+    "variants": [
+      { "batch": 128, "seq": 48,   "rationale": "upperCap × very short — covers observed (128, 18..33)", "tarballSha256": "01dddc23d4a83be98977b0500d9fcf977fb7649bb548bb9977c6d6395f22e1c2", "tarballSizeBytes": 275367487 },
+      { "batch": 128, "seq": 128,  "rationale": "upperCap × short",                                      "tarballSha256": "f81af66aef693c4c1994b560d23f1b0fbf97c38c66e0fadda0774af358b9b1a1", "tarballSizeBytes": 275382654 },
+      { "batch": 64,  "seq": 256,  "rationale": "medium",                                                "tarballSha256": "f5958100ab4a81e724f37338b5ad45c396a5c649402552191632a79d4ef826a9", "tarballSizeBytes": 275405899 },
+      { "batch": 16,  "seq": 512,  "rationale": "long, cache-bound start",                               "tarballSha256": "37906ffe3cc9205306cfb50d0b5821e569fd6ee3ec13e4d71f481f1e53649031", "tarballSizeBytes": 275451379 },
+      { "batch": 4,   "seq": 1024, "rationale": "long tail",                                             "tarballSha256": "e618f8bd981d24e4984c61ee1788c02578aaf601efc16cd926885a2930833d40", "tarballSizeBytes": 275545042 },
+      { "batch": 1,   "seq": 2048, "rationale": "LI max length",                                         "tarballSha256": "d5262bf49f145cadbdbddb82b7934499fc310f5c654c5aae34cfb9c2d90487d2", "tarballSizeBytes": 275743803 }
+    ]
+  }
+}

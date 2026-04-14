@@ -27,11 +27,20 @@ use super::{metal_lock, optimal_dtype, select_device};
 /// mutex that covers all Metal operations across both the embedding and LI
 /// models. See `metal_lock` for why per-model locks aren't enough.
 ///
-/// When the `coreml` feature is enabled AND the
-/// `SWEET_SEARCH_COREML_EMBED_MLPACKAGE` env var points at a valid
-/// .mlpackage, `coreml` holds an extra CPU+NE backend that is used
-/// whenever the batch fits its fixed shape; the candle backbone is kept
-/// loaded unconditionally as the fallback path for oversized batches.
+/// When the `coreml` feature is enabled AND `NativeEmbeddingModel::load`
+/// is invoked with a `coreml_cascade_dir` that contains one or more
+/// `nomic_bert_b{B}_s{S}_fp16.mlpackage` files, `coreml` holds an extra
+/// CPU+NE backend dispatched whenever any cascade variant fits the
+/// batch. The candle backbone is kept loaded unconditionally as the
+/// fallback path for oversized batches (`pick() → None`).
+///
+/// The cascade dir is passed down from the JS layer
+/// (`core/infrastructure/native-inference.js`) which resolves it via
+/// `core/infrastructure/coreml-cascade.js::getCoremlCascadeResolvedDirs`.
+/// There is no env-var bypass — all config flows through the JS
+/// infrastructure layer so init/uninstall see a consistent picture of
+/// what the addon is actually using. See docs/DDD_ARCHITECTURE.md for
+/// the rationale on config routing through the infrastructure domain.
 struct EmbeddingInner {
     model: nomic_bert::NomicBertModel,
     #[cfg(feature = "coreml")]
@@ -40,10 +49,32 @@ struct EmbeddingInner {
     hidden_size: usize,
 }
 
-/// Scan the optional CoreML embedding cascade directory from the env
-/// var and build a variant list. Constructor is cheap — individual
-/// variants compile lazily on first use, so we don't pay the
-/// per-variant ~15-30s mlpackage compile at startup.
+/// When the process shuts down (or the addon drops the last Arc
+/// handle to the model), dump a CoreML dispatch summary if the
+/// caller asked for it via `SWEET_SEARCH_COREML_STATS=1`. The
+/// summary answers two questions the 18% speedup headline number
+/// on its own cannot:
+///   1. Which variants actually fired in production?
+///   2. How many calls fell through to candle because no variant fit?
+///
+/// Quiet by default to avoid polluting normal runs.
+impl Drop for EmbeddingInner {
+    fn drop(&mut self) {
+        #[cfg(feature = "coreml")]
+        if std::env::var_os("SWEET_SEARCH_COREML_STATS").is_some() {
+            if let Some(coreml) = &self.coreml {
+                eprintln!("{}", coreml.dispatch_report());
+            }
+        }
+    }
+}
+
+/// Scan a CoreML cascade directory and build a variant list. Called
+/// only when the JS caller has passed an explicit `coreml_cascade_dir`.
+///
+/// Construction is cheap — individual variants compile lazily on first
+/// use, so we don't pay the per-variant ~15-30s mlpackage compile at
+/// startup.
 ///
 /// Expected filename format:
 ///   nomic_bert_b{BATCH}_s{SEQ}_fp16.mlpackage
@@ -54,9 +85,8 @@ struct EmbeddingInner {
 /// a mis-configured cascade surfaces at startup instead of silently
 /// falling through to candle on every batch.
 #[cfg(feature = "coreml")]
-fn try_load_coreml_embedding() -> Option<CoremlEmbedding> {
-    let dir = std::env::var("SWEET_SEARCH_COREML_EMBED_MLPACKAGE_DIR").ok()?;
-    let dir_path = std::path::PathBuf::from(&dir);
+fn try_load_coreml_embedding_from_dir(dir: &str) -> Option<CoremlEmbedding> {
+    let dir_path = std::path::PathBuf::from(dir);
 
     let entries = match std::fs::read_dir(&dir_path) {
         Ok(it) => it,
@@ -257,8 +287,31 @@ impl NativeEmbeddingModel {
     /// # Arguments
     /// * `safetensors_path` - Path to model.safetensors (FP32 weights)
     /// * `config_path` - Path to config.json (model architecture config)
+    /// * `coreml_cascade_dir` - Optional path to a directory containing
+    ///   `nomic_bert_b{B}_s{S}_fp16.mlpackage` files. When present and
+    ///   the `coreml` Cargo feature is on, a variant cascade is loaded
+    ///   and passes a startup parity check before being admitted for
+    ///   dispatch. The JS caller
+    ///   (`core/infrastructure/native-inference.js`) resolves this
+    ///   path via `getCoremlCascadeResolvedDirs()` in
+    ///   `core/infrastructure/coreml-cascade.js`. Passing `None`
+    ///   disables the CoreML path completely — the model runs candle
+    ///   only. Linux/Windows callers always pass `None`.
     #[napi(factory)]
-    pub fn load(safetensors_path: String, config_path: String) -> Result<Self> {
+    pub fn load(
+        safetensors_path: String,
+        config_path: String,
+        coreml_cascade_dir: Option<String>,
+    ) -> Result<Self> {
+        // Non-coreml builds (Linux, darwin without `coreml` feature)
+        // accept the argument on the JS side for API stability but
+        // ignore it here. Tagged with an explicit drop so the compiler
+        // sees the parameter as "used" and doesn't emit a warning.
+        #[cfg(not(feature = "coreml"))]
+        {
+            let _ = &coreml_cascade_dir;
+        }
+
         let config_str = std::fs::read_to_string(&config_path)
             .map_err(|e| Error::from_reason(format!(
                 "[NativeEmbedding] Failed to read config at {config_path}: {e}"
@@ -307,13 +360,20 @@ impl NativeEmbeddingModel {
             config.n_layer,
         );
 
-        // Load the CoreML backend if the env var is set, then verify its
-        // output matches candle on a synthetic fixture before admitting it
-        // for dispatch. Any failure along the way drops the CoreML backend
-        // — embed_batch falls through to the candle path for every call
-        // in that case, identical to the pre-CoreML behavior.
+        // Load the CoreML backend if the JS caller passed an explicit
+        // cascade dir, then verify its output matches candle on a
+        // synthetic fixture before admitting it for dispatch. Any
+        // failure along the way drops the CoreML backend — embed_batch
+        // falls through to the candle path for every call in that
+        // case, identical to the pre-CoreML behavior.
+        //
+        // Non-macOS builds and darwin builds where the JS caller
+        // decided not to dispatch CoreML (e.g. M1/M2 hardware, or
+        // SWEET_SEARCH_COREML_CASCADE=0) both hit the `None` branch
+        // here — the `coreml_cascade_dir` parameter is the single
+        // decision point.
         #[cfg(feature = "coreml")]
-        let coreml = match try_load_coreml_embedding() {
+        let coreml = match coreml_cascade_dir.as_deref().and_then(try_load_coreml_embedding_from_dir) {
             None => None,
             Some(c) => match embedding_parity_cosine(&model, &device, &c, hidden_size) {
                 Ok(cos) if cos >= COREML_EMBED_PARITY_THRESHOLD => {
@@ -451,6 +511,11 @@ impl Task for EmbedBatchTask {
                         Error::from_reason(format!("[NativeEmbedding] CoreML: {e}"))
                     });
             }
+            // Call did not fit any variant — record it in the dispatch
+            // stats so the report can tell the user whether the cascade
+            // needs more upper-range variants. This is the counterpart
+            // to the per-variant dispatch_count increment inside embed().
+            coreml.record_fallthrough();
         }
 
         // Entire Metal pipeline is serialized under the model mutex — tensor

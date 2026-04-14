@@ -37,9 +37,11 @@
 
 #import <Foundation/Foundation.h>
 #import <CoreML/CoreML.h>
+#import <CommonCrypto/CommonDigest.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>  // for getpid()
 
 //==============================================================================
 //  Public C ABI — declared here, used from Rust via extern "C" in coreml_shim.rs
@@ -157,6 +159,89 @@ static NSArray<NSNumber*>* row_major_strides(const long* dims, size_t n) {
     return arr;
 }
 
+// ----------------------------------------------------------------------------
+//  mlmodelc disk cache — content-hash invalidation + atomic rename
+// ----------------------------------------------------------------------------
+//
+//  Goals (see docs/INIT_STRATEGY.md "CoreML variant cascade" section):
+//
+//  1. Invalidation by CONTENT, not mtime. The previous implementation
+//     compared the cached `.mlmodelc` mtime against the source
+//     `.mlpackage/Manifest.json` mtime, which breaks in several ways:
+//     cp -p preserves mtimes, so a fresh retrace copied via cp -p would
+//     look identical to the previous version; different filesystems
+//     have different mtime precisions (APFS 1ns, FAT 2s) so rename
+//     across filesystems can round; and two writes within 1s can
+//     collide on some FS. Content hash of Manifest.json is the robust
+//     answer — the Python build script stamps the .mlpackage and any
+//     retrace changes the hash.
+//
+//  2. Atomic cache writes. Two concurrent processes that load the
+//     same .mlpackage both compile (~20s each), but the previous
+//     implementation wrote directly to the final sibling path, so one
+//     would overwrite the other mid-copy. Now we stage the compiled
+//     bundle in a per-process temp directory NEXT to the target
+//     (same filesystem, so `moveItemAtURL:` is an atomic rename(2))
+//     and rename on completion. If the rename fails because another
+//     process got there first, we clean up our temp and fall through
+//     to reading the winning cache.
+//
+//  3. Best-effort persistence. Every write path is allowed to fail
+//     silently (read-only dir, disk full, permission denied) — the
+//     loader falls back to the system temp compiled URL for the
+//     current process without erroring. Persistence is a performance
+//     optimisation, never a correctness requirement.
+
+// Compute SHA256 of a file's contents. Returns 32-byte NSData or nil.
+// Source of truth for cache invalidation: SHA256 of the .mlpackage's
+// Manifest.json. Every coremltools-produced mlprogram bundle has a
+// Manifest.json at the root; any retrace/re-convert touches it.
+static NSData* sha256OfFile(NSString* path) {
+    NSData* data = [NSData dataWithContentsOfFile:path options:NSDataReadingUncached error:nil];
+    if (!data) return nil;
+    uint8_t digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
+    return [NSData dataWithBytes:digest length:CC_SHA256_DIGEST_LENGTH];
+}
+
+// Read the 32-byte SHA256 sidecar from inside a compiled .mlmodelc
+// bundle. Returns nil if the sidecar is missing or the wrong size
+// (older caches predating content-hash invalidation, partial writes,
+// or filesystem corruption). Callers treat nil as "cache stale, rebuild".
+static NSData* readCachedSourceSha256(NSString* cachedMlmodelcPath) {
+    NSString* sidecarPath = [cachedMlmodelcPath stringByAppendingPathComponent:@".src-sha256"];
+    NSData* data = [NSData dataWithContentsOfFile:sidecarPath options:NSDataReadingUncached error:nil];
+    if (!data || data.length != CC_SHA256_DIGEST_LENGTH) return nil;
+    return data;
+}
+
+// Write the source SHA256 sidecar inside a (staged) .mlmodelc bundle.
+// Called only during the staged-to-temp phase of a cache write, never
+// against a live cache.
+static BOOL writeCachedSourceSha256(NSString* stagedMlmodelcPath, NSData* sha) {
+    NSString* sidecarPath = [stagedMlmodelcPath stringByAppendingPathComponent:@".src-sha256"];
+    return [sha writeToFile:sidecarPath atomically:NO];
+}
+
+// Resolve the sibling `.mlmodelc` cache path for a `.mlpackage`
+// source. Strips a trailing slash so the appended suffix doesn't turn
+// into a subdirectory.
+static NSString* cachedMlmodelcPathFor(NSString* mlpackagePath) {
+    NSString* base = [mlpackagePath hasSuffix:@"/"]
+        ? [mlpackagePath substringToIndex:mlpackagePath.length - 1]
+        : mlpackagePath;
+    return [base stringByAppendingString:@".mlmodelc"];
+}
+
+// Build a unique per-process stage path next to the final cache
+// target. Same filesystem so the final move is an atomic rename(2).
+static NSString* stagedMlmodelcPathFor(NSString* cachedPath) {
+    NSString* suffix = [NSString stringWithFormat:@".stage-%d-%lld",
+        getpid(),
+        (long long)(CFAbsoluteTimeGetCurrent() * 1e6)];
+    return [cachedPath stringByAppendingString:suffix];
+}
+
 // Build an MLMultiArray of int32 by allocating a fresh buffer and
 // copying `count` int32 values into it. Returns nil on error with the
 // error written to `err`.
@@ -218,60 +303,51 @@ CoremlHandle* sweet_coreml_load(
         NSURL* url = [NSURL fileURLWithPath:pathStr];
 
         // MLModel modelWithContentsOfURL: requires a COMPILED .mlmodelc
-        // directory, not the raw .mlpackage source bundle. For .mlmodelc
-        // paths we load directly. For .mlpackage paths we either hit a
-        // sibling on-disk cache or compile via
-        // [MLModel compileModelAtURL:error:] and persist the result to
-        // the cache for future loads.
+        // directory, not the raw .mlpackage source bundle. For
+        // .mlmodelc paths we load directly. For .mlpackage paths we
+        // consult a sibling on-disk cache or compile via
+        // [MLModel compileModelAtURL:error:] and atomically persist
+        // the result.
         //
-        // Cache layout: `{path}.mlmodelc` sibling directory right next
-        // to the source `.mlpackage`. Invalidation is by mtime — we
-        // compare the cached .mlmodelc's mtime against the .mlpackage's
-        // Manifest.json (always present in mlprogram format). If the
-        // source is newer (re-traced by the user) the cache is
-        // discarded and recompiled. Without this cache, every addon
-        // load paid 5–30 s per variant in
-        // `compileModelAtURL`; the full-index bench burned ~200 s of
-        // startup on compiles with 6-variant embed + 3-variant LI
-        // cascade. With the cache this collapses to a single-digit ms
-        // cost on warm runs (Apple's loader memory-maps the cached
-        // model directly).
+        // See the helper comments above for the full rationale:
+        //   - invalidation by SHA256(Manifest.json), not mtime
+        //   - atomic stage-and-rename to avoid concurrent-process races
+        //   - all persistence is best-effort; cache failure never
+        //     breaks loading
         //
-        // The compiled URL returned by compileModelAtURL lives in a
-        // system-managed temp directory that macOS cleans up at some
-        // unspecified future point. We copy it to our sibling path so
-        // the cache is stable and survives across process restarts.
-        // On copy failure we still load from the system temp URL —
-        // correctness > cache persistence.
+        // Cost in perspective: first compile is ~5–30 s per variant
+        // (cascade totals ~200 s cold). Warm loads via the cache are
+        // single-digit ms (Apple's loader memory-maps the compiled
+        // bundle). That's the delta the cache is buying us.
         NSURL* loadUrl = url;
         NSError* err = nil;
         if ([pathStr hasSuffix:@".mlpackage"] || [pathStr hasSuffix:@".mlpackage/"]) {
             NSString* basePath = [pathStr hasSuffix:@"/"]
                 ? [pathStr substringToIndex:pathStr.length - 1]
                 : pathStr;
-            NSString* cachedPath = [basePath stringByAppendingString:@".mlmodelc"];
+            NSString* cachedPath = cachedMlmodelcPathFor(basePath);
             NSURL* cachedUrl = [NSURL fileURLWithPath:cachedPath];
-
+            NSString* manifestPath = [basePath stringByAppendingPathComponent:@"Manifest.json"];
             NSFileManager* fm = [NSFileManager defaultManager];
+
+            // Cache validity probe — source hash MUST match stored
+            // sidecar. Any of: missing cache dir, missing sidecar,
+            // wrong-length sidecar, mismatching hash, or missing
+            // source Manifest.json → rebuild the cache. The last one
+            // (missing source Manifest.json) shouldn't happen in
+            // practice for coremltools-produced mlprogram bundles,
+            // but the fallback is safe: we invalidate and recompile.
             BOOL useCache = NO;
+            NSData* srcSha = sha256OfFile(manifestPath);
             if ([fm fileExistsAtPath:cachedPath]) {
-                // Compare mtimes. The source-of-truth inside the
-                // .mlpackage is Manifest.json — present in every
-                // coremltools mlprogram bundle and touched on every
-                // re-save. If the Manifest.json is missing for any
-                // reason we fall back to the .mlpackage dir mtime
-                // (which is imperfect but safe — worst case we
-                // invalidate too aggressively and pay the recompile).
-                NSString* manifestPath = [basePath stringByAppendingPathComponent:@"Manifest.json"];
-                NSString* stampPath = [fm fileExistsAtPath:manifestPath] ? manifestPath : basePath;
-                NSDictionary* cachedAttrs = [fm attributesOfItemAtPath:cachedPath error:nil];
-                NSDictionary* srcAttrs    = [fm attributesOfItemAtPath:stampPath error:nil];
-                NSDate* cachedDate = [cachedAttrs fileModificationDate];
-                NSDate* srcDate    = [srcAttrs fileModificationDate];
-                if (cachedDate && srcDate
-                    && [cachedDate compare:srcDate] != NSOrderedAscending) {
-                    useCache = YES;
+                if (srcSha) {
+                    NSData* cachedSha = readCachedSourceSha256(cachedPath);
+                    if (cachedSha && [cachedSha isEqualToData:srcSha]) {
+                        useCache = YES;
+                    }
                 }
+                // No else branch: useCache stays NO, cache gets
+                // overwritten via the stage-and-rename path below.
             }
 
             if (useCache) {
@@ -283,17 +359,63 @@ CoremlHandle* sweet_coreml_load(
                                error_out, error_out_len);
                     return NULL;
                 }
-                // Best-effort persist to the sibling cache location so
-                // the next process start hits the fast path. If either
-                // the removeItem or copyItem fails (read-only dir,
-                // permissions, disk full) we silently fall through to
-                // loading the system-temp compiled URL — the current
-                // process still runs, just without cache persistence.
-                [fm removeItemAtPath:cachedPath error:nil];
-                NSError* copyErr = nil;
-                if ([fm copyItemAtURL:compiledUrl toURL:cachedUrl error:&copyErr]) {
-                    loadUrl = cachedUrl;
-                } else {
+
+                // Persist via stage-and-rename. Failure at any step is
+                // tolerated — we fall through to loading the system-temp
+                // compiledUrl for the current process.
+                //
+                // Concurrent-process race: if two processes both compile
+                // this variant at the same time, both will reach the move
+                // step. Whichever moves first wins; the other hits an
+                // error (NSFileWriteFileExistsError or similar) and
+                // removes its own staged directory. Next process start
+                // hits the fast path either way — correctness is
+                // preserved and the duplicate-compile cost is paid
+                // exactly once per concurrent-race event per variant.
+                NSString* stagedPath = stagedMlmodelcPathFor(cachedPath);
+                NSURL* stagedUrl = [NSURL fileURLWithPath:stagedPath];
+
+                BOOL persisted = NO;
+                NSError* stageErr = nil;
+                if ([fm copyItemAtURL:compiledUrl toURL:stagedUrl error:&stageErr]) {
+                    // Write the content-hash sidecar INSIDE the staged
+                    // bundle so an interrupted write never leaves a
+                    // bundle with a stale sidecar — if we crash
+                    // between copy and sidecar write, the staged dir
+                    // is an orphan and gets cleaned up below.
+                    if (srcSha && writeCachedSourceSha256(stagedPath, srcSha)) {
+                        // Attempt atomic rename into place. If the
+                        // destination already exists (another process
+                        // won, or a stale cache from a previous run
+                        // with a different hash), remove it first
+                        // then move. The remove is racy with a
+                        // concurrent reader but we accept that —
+                        // worst case a reader sees the old cache
+                        // briefly and retries.
+                        if ([fm fileExistsAtPath:cachedPath]) {
+                            [fm removeItemAtPath:cachedPath error:nil];
+                        }
+                        NSError* moveErr = nil;
+                        if ([fm moveItemAtURL:stagedUrl toURL:cachedUrl error:&moveErr]) {
+                            persisted = YES;
+                            loadUrl = cachedUrl;
+                        }
+                    }
+                }
+
+                if (!persisted) {
+                    // Best-effort cleanup of the staged directory if
+                    // it still exists (any of: copy failed, sidecar
+                    // write failed, move failed). Never error out of
+                    // load on cleanup failure.
+                    if ([fm fileExistsAtPath:stagedPath]) {
+                        [fm removeItemAtPath:stagedPath error:nil];
+                    }
+                    // If a concurrent process won the race, their
+                    // cache is now in place — loading the
+                    // system-temp URL for the current process still
+                    // works, and the next process start hits the
+                    // winning cache.
                     loadUrl = compiledUrl;
                 }
             }

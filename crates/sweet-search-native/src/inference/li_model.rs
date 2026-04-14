@@ -28,12 +28,20 @@ use super::{metal_lock, optimal_dtype, select_device};
 /// model. See `metal_lock` for why per-model locks aren't enough.
 ///
 /// When the `coreml` feature is enabled AND
-/// `SWEET_SEARCH_COREML_LI_MLPACKAGE_DIR` points at a directory
-/// containing one or more `li_modernbert_b{B}_s{S}_fp16.mlpackage`
-/// files, `coreml` holds a cascade of lazy-loaded CPU+NE backends
-/// used whenever any variant fits the incoming batch. The candle
-/// backbone is kept loaded unconditionally as the fallback for
-/// batches exceeding the largest variant.
+/// `NativeLateInteractionModel::load` is invoked with an explicit
+/// `coreml_cascade_dir` containing one or more
+/// `li_modernbert_b{B}_s{S}_fp16.mlpackage` files, `coreml` holds a
+/// cascade of lazy-loaded CPU+NE backends used whenever any variant
+/// fits the incoming batch. The candle backbone is kept loaded
+/// unconditionally as the fallback for batches exceeding the largest
+/// variant.
+///
+/// As with the embedding model, the cascade dir is passed down from
+/// the JS infrastructure layer
+/// (`core/infrastructure/native-inference.js` →
+/// `getCoremlCascadeResolvedDirs()`). There is no env-var bypass —
+/// init/uninstall/docs all see the same contract. See
+/// docs/DDD_ARCHITECTURE.md.
 struct LiInner {
     model: modernbert::ModernBert,
     projection_weight: Tensor,
@@ -44,17 +52,30 @@ struct LiInner {
     token_dim: usize,
 }
 
-/// Scan the optional CoreML LI cascade directory from the env var
-/// and build a variant list. Constructor is cheap — variants compile
-/// lazily on first dispatch. See the matching comment in
-/// `embedding_model.rs::try_load_coreml_embedding` for details.
+/// Match `EmbeddingInner::Drop` — dumps LI cascade dispatch stats on
+/// shutdown when `SWEET_SEARCH_COREML_STATS=1`. See the matching
+/// comment in embedding_model.rs for the rationale.
+impl Drop for LiInner {
+    fn drop(&mut self) {
+        #[cfg(feature = "coreml")]
+        if std::env::var_os("SWEET_SEARCH_COREML_STATS").is_some() {
+            if let Some(coreml) = &self.coreml {
+                eprintln!("{}", coreml.dispatch_report());
+            }
+        }
+    }
+}
+
+/// Scan a CoreML LI cascade directory and build a variant list.
+/// Called only when the JS caller passes an explicit dir. Variants
+/// compile lazily on first dispatch. See the matching comment in
+/// `embedding_model.rs::try_load_coreml_embedding_from_dir` for details.
 ///
 /// Expected filename format:
 ///   li_modernbert_b{BATCH}_s{SEQ}_fp16.mlpackage
 #[cfg(feature = "coreml")]
-fn try_load_coreml_li() -> Option<CoremlLi> {
-    let dir = std::env::var("SWEET_SEARCH_COREML_LI_MLPACKAGE_DIR").ok()?;
-    let dir_path = std::path::PathBuf::from(&dir);
+fn try_load_coreml_li_from_dir(dir: &str) -> Option<CoremlLi> {
+    let dir_path = std::path::PathBuf::from(dir);
 
     let entries = match std::fs::read_dir(&dir_path) {
         Ok(it) => it,
@@ -265,12 +286,23 @@ impl NativeLateInteractionModel {
     /// * `backbone_path` - Path to model.safetensors (FP32 backbone weights)
     /// * `projection_path` - Path to 1_Dense/model.safetensors (projection weights)
     /// * `config_path` - Path to config.json (model architecture config)
+    /// * `coreml_cascade_dir` - Optional path to a directory containing
+    ///   `li_modernbert_b{B}_s{S}_fp16.mlpackage` files. Same contract
+    ///   as `NativeEmbeddingModel::load` — see its doc comment for the
+    ///   full rationale. `None` disables the CoreML path entirely.
     #[napi(factory)]
     pub fn load(
         backbone_path: String,
         projection_path: String,
         config_path: String,
+        coreml_cascade_dir: Option<String>,
     ) -> Result<Self> {
+        // See the matching suppression in embedding_model.rs::load.
+        #[cfg(not(feature = "coreml"))]
+        {
+            let _ = &coreml_cascade_dir;
+        }
+
         let config_str = std::fs::read_to_string(&config_path)
             .map_err(|e| Error::from_reason(format!(
                 "[NativeLI] Failed to read config at {config_path}: {e}"
@@ -352,12 +384,15 @@ impl NativeLateInteractionModel {
             config.num_hidden_layers,
         );
 
-        // Load CoreML backend if env var is set, then verify parity
-        // against candle before admitting it. Any failure drops the
-        // CoreML backend; encode_batch falls through to candle in that
-        // case, identical to pre-CoreML behavior.
+        // Load CoreML backend if the JS caller passed an explicit
+        // cascade dir, then verify parity against candle before
+        // admitting it. Any failure drops the CoreML backend; encode_batch
+        // falls through to candle in that case, identical to pre-CoreML
+        // behavior. The dir is resolved in
+        // core/infrastructure/coreml-cascade.js::getCoremlCascadeResolvedDirs
+        // and passed down through native-inference.js.
         #[cfg(feature = "coreml")]
-        let coreml = match try_load_coreml_li() {
+        let coreml = match coreml_cascade_dir.as_deref().and_then(try_load_coreml_li_from_dir) {
             None => None,
             Some(c) => match li_parity_cosine(
                 &model,
@@ -506,6 +541,9 @@ impl Task for LiEncodeTask {
                         Error::from_reason(format!("[NativeLI] CoreML: {e}"))
                     });
             }
+            // Fell through because no variant fit — record it so the
+            // cascade report accurately reflects call patterns.
+            coreml.record_fallthrough();
         }
 
         // Entire Metal pipeline is serialized under the model mutex. Candle's

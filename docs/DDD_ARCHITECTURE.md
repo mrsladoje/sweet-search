@@ -1,7 +1,7 @@
 # Sweet Search Domain Architecture
 
 **Status**: Modular monolith with enforced bounded contexts
-**Last updated**: 2026-04-01
+**Last updated**: 2026-04-14
 
 ---
 
@@ -119,7 +119,7 @@ export { expandVocabulary } from './embedding-service.js';
 | `vocabulary` | `mineAll`, `rankAll`, `warmHybrid`, `runFullWarmup`, `BinaryVocabulary` |
 | `query` | `routeQuery`, `detectIntent`, `getIntentBoost`, `classifyIntent`, CatBoost router |
 | `vector-store` | `HNSWIndex`, `BinaryHNSWIndex`, `FloatVectorStore`, `SeismicIndex`, WASM distance fns |
-| `infrastructure` | config objects, `fetchModel`, ONNX session helpers, `withOnnxMutex`, language registry, `generateWithRetry`, quantization/SIMD |
+| `infrastructure` | config objects, `fetchModel`, ONNX session helpers, `withOnnxMutex`, language registry, `generateWithRetry`, quantization/SIMD, hardware capability detection, CoreML variant cascade management |
 
 ### `core/config.js` policy
 
@@ -155,6 +155,97 @@ The original monolithic `config.js` is split into 9 domain-scoped files under
 
 `config/index.js` re-exports everything from all sub-files. Adding a new config constant
 means editing the appropriate sub-file, not a monolith.
+
+---
+
+## Infrastructure: Hardware Capability + CoreML Cascade
+
+Two 2026-04-14 additions to `core/infrastructure/` implement hardware-aware
+backend selection for the native Rust addon without reaching across domain
+boundaries or using env-var bypasses.
+
+### `hardware-capability.js`
+
+Reads `sysctl -n machdep.cpu.brand_string` on darwin and classifies the current
+machine's chip family, generation, and variant (e.g., `Apple M3 Max` →
+`{ family: 'M3', generation: 3, variant: 'max' }`). Decides which inference
+backend the addon should prefer. Cached after first call — hardware doesn't
+change at runtime.
+
+Public surface (exposed through `core/infrastructure/index.js`):
+
+- `detectHardwareCapability()` — returns `{ platform, arch, brandString,
+  appleSilicon, coremlCascadeEligible, coremlCascadeReason,
+  candleGpuBackend, inferenceBackendPreference }`
+- `parseAppleChipBrandString(raw)` — pure function for unit tests
+- `_resetHardwareCapabilityCache()` — tests only
+
+Never throws. Unknown hardware degrades to `candle-cpu` fallback. The module
+has no internal dependencies besides `node:child_process` and `node:os` — a
+deliberate choice so importing it from `scripts/init.js` can never cause an
+import cycle with the rest of `core/infrastructure/`.
+
+### `coreml-cascade.js`
+
+Single source of truth for the CoreML variant cascade lifecycle. Owns:
+
+- Cascade shape set (read from `core/infrastructure/coreml-cascade.json`)
+- Cache dir resolution (always `MODEL_DELIVERY_CONFIG.modelCacheRoot/coreml-cascade/`)
+- `isValidMlpackage(path)` sanity check
+- `getCoremlCascadeState()` for read-only inspection
+- `getCoremlCascadeResolvedDirs()` for runtime dispatch (returns the
+  (embedDir, liDir) pair native-inference.js hands to the Rust addon)
+- `getCoremlCascadeReport()` for init's report line + `.sweet-search/config.json`
+  diagnostics
+- `getAllCoremlCachePaths()` for uninstall's removal list
+
+The module has a hard invariant: **cascade resolution never fails init**. Every
+code path — ineligible hardware, missing cache, partial cache, unreadable
+directory, `SWEET_SEARCH_COREML_CASCADE=0` opt-out — returns a well-formed
+object that describes the situation. The Rust addon treats a null dir as "CoreML
+path disabled" and falls through to candle unconditionally.
+
+### Routing contract (no env-var bypass)
+
+Cascade configuration flows **exclusively** through the JS infrastructure layer:
+
+```
+scripts/init.js
+    ↓ (reads state for diagnostic, optionally invokes build)
+core/infrastructure/coreml-cascade.js
+    ↓ (resolves (embedDir, liDir))
+core/infrastructure/native-inference.js::resolveCoremlCascadeForAddon()
+    ↓ (passes as the 3rd/4th argument to load())
+crates/sweet-search-native NativeEmbeddingModel::load / NativeLateInteractionModel::load
+    ↓ (scans dir, parses filenames, builds variant cascade)
+crates/sweet-search-native inference/coreml_embedding.rs::CoremlEmbedding
+```
+
+The old spike env vars (`SWEET_SEARCH_COREML_EMBED_MLPACKAGE_DIR`,
+`SWEET_SEARCH_COREML_LI_MLPACKAGE_DIR`, `SWEET_SEARCH_INFERENCE_BACKEND=coreml`)
+have been removed. Only `SWEET_SEARCH_COREML_CASCADE=0` remains as a diagnostic
+opt-out; it is honored by `coreml-cascade.js` and results in a null dir at
+the constructor boundary. Init, uninstall, and runtime all read from the same
+decision-making function.
+
+### Barrel exports
+
+- `core/infrastructure/index.js` exports the full cascade + capability API.
+- `core/embedding/index.js` re-exports `isCoremlCascadeApplicable`,
+  `getCoremlCascadeState`, `getCoremlCascadeReport`,
+  `getCoremlCascadeResolvedDirs` so consumers that only pull the embedding
+  barrel can ask "what inference backend is armed right now?" without
+  reaching into infrastructure directly. This respects the embedding →
+  infrastructure import direction (allowed per the dependency matrix).
+
+### What this does NOT do
+
+This addition does not introduce new ports or adapters. The cascade module is
+a concrete service in the infrastructure layer, matching the rest of
+`core/infrastructure/`. Phase 6 (ports, adapters, dependency inversion) may
+extract it into a port/adapter pair later if formal dependency inversion is
+warranted; until then, direct coupling through barrel imports is the
+deliberate, consistent pattern.
 
 ---
 

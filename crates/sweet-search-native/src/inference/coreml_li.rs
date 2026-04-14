@@ -15,7 +15,8 @@
 //! This module follows the same lazy-loading pattern via
 //! `OnceLock<Result<CoremlModel, String>>` per variant.
 //!
-//! Gating: loaded only when `SWEET_SEARCH_COREML_LI_MLPACKAGE_DIR`
+//! Gating: loaded only when the JS caller passes an explicit
+//! `coreml_cascade_dir` to `NativeLateInteractionModel::load` that
 //! points at a directory containing one or more
 //! `li_modernbert_b{B}_s{S}_fp16.mlpackage` files. Compute units
 //! are pinned to CPU_AND_NE inside `coreml_shim.m` — both CoreML
@@ -26,6 +27,7 @@
 #![cfg(feature = "coreml")]
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 
 use super::coreml_shim::CoremlModel;
@@ -38,6 +40,9 @@ pub struct CoremlLiVariant {
     pub seq: usize,
     pub path: PathBuf,
     model: OnceLock<Result<CoremlModel, String>>,
+    /// Number of calls that dispatched through this variant. See
+    /// matching doc in coreml_embedding.rs::CoremlEmbeddingVariant.
+    dispatch_count: AtomicU64,
 }
 
 impl CoremlLiVariant {
@@ -49,7 +54,12 @@ impl CoremlLiVariant {
             seq,
             path,
             model: OnceLock::new(),
+            dispatch_count: AtomicU64::new(0),
         }
+    }
+
+    pub fn dispatches(&self) -> u64 {
+        self.dispatch_count.load(Ordering::Relaxed)
     }
 
     fn model(&self) -> Result<&CoremlModel, &String> {
@@ -90,16 +100,57 @@ impl CoremlLiVariant {
 /// the comment on that struct for details.
 pub struct CoremlLi {
     variants: Vec<CoremlLiVariant>,
+    /// Calls whose shape exceeded the largest variant and fell through
+    /// to candle. A large number here is the signal the cascade needs
+    /// additional upper-range variants.
+    fallthrough_count: AtomicU64,
 }
 
 impl CoremlLi {
     pub fn from_variants(mut variants: Vec<CoremlLiVariant>) -> Self {
         variants.sort_by_key(|v| (v.batch, v.seq));
-        Self { variants }
+        Self {
+            variants,
+            fallthrough_count: AtomicU64::new(0),
+        }
     }
 
     pub fn len(&self) -> usize {
         self.variants.len()
+    }
+
+    /// Count a shape that didn't fit the cascade. Mirrors
+    /// `CoremlEmbedding::record_fallthrough` — callers should invoke
+    /// this from the `!fits()` branch in li_model.rs.
+    pub fn record_fallthrough(&self) {
+        self.fallthrough_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Format a multi-line dispatch summary suitable for logging at
+    /// index-end.
+    pub fn dispatch_report(&self) -> String {
+        let mut total_dispatched: u64 = 0;
+        let mut lines = Vec::with_capacity(self.variants.len() + 2);
+        for v in &self.variants {
+            let count = v.dispatches();
+            total_dispatched += count;
+            let compiled = if v.model.get().is_some() { "compiled" } else { "never compiled" };
+            lines.push(format!(
+                "  b{}×s{}\t{} dispatches\t[{}]",
+                v.batch, v.seq, count, compiled
+            ));
+        }
+        let fallthrough = self.fallthrough_count.load(Ordering::Relaxed);
+        lines.insert(
+            0,
+            format!(
+                "[CoremlLi] dispatch stats ({} variants, {} dispatched, {} fell through)",
+                self.variants.len(),
+                total_dispatched,
+                fallthrough,
+            ),
+        );
+        lines.join("\n")
     }
 
     /// Variant selected for the startup parity check. See the
@@ -163,6 +214,11 @@ impl CoremlLi {
                 self.upper_bound_variant().map(|v| (v.batch, v.seq)),
             )
         })?;
+
+        // Count the dispatch before compiling — a variant that failed
+        // to compile still "dispatched" from the cascade's point of
+        // view, so stats reflect real call patterns.
+        variant.dispatch_count.fetch_add(1, Ordering::Relaxed);
 
         let model = variant
             .model()

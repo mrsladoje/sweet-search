@@ -5,12 +5,24 @@
  * ORT inference paths. Uses the napi-rs addon with Metal GPU acceleration on
  * Apple Silicon, CPU fallback elsewhere.
  *
+ * On M3+ Apple Silicon, the addon also loads a CoreML variant cascade
+ * alongside the candle backbone. This module is the single point where
+ * the cascade dirs resolved by `coreml-cascade.js` are handed to the
+ * Rust `NativeEmbeddingModel::load` / `NativeLateInteractionModel::load`
+ * constructors. Lower hardware, no cache, or
+ * `SWEET_SEARCH_COREML_CASCADE=0` collapses to the candle-only path
+ * transparently.
+ *
  * Environment:
  *   SWEET_SEARCH_NATIVE_INFERENCE=0|1          — force disable/enable
- *   SWEET_SEARCH_INFERENCE_BACKEND=coreml      — SPIKE-only: route NomicBERT
- *                                                embed_batch through the CoreML
- *                                                Python bridge in scripts/spike-coreml/.
- *                                                Throwaway, NOT a production path.
+ *   SWEET_SEARCH_COREML_CASCADE=0              — force-disable the cascade
+ *                                                even when hardware +
+ *                                                cache are both eligible
+ *                                                (diagnostic / benchmarking)
+ *   SWEET_SEARCH_COREML_STATS=1                — dump per-variant
+ *                                                dispatch report on
+ *                                                addon shutdown (see
+ *                                                coreml_embedding.rs)
  *   CANDLE_METAL_COMPUTE_PER_BUFFER=<N>        — candle default 50 (tuned)
  *   CANDLE_METAL_COMMAND_POOL_SIZE=<N>         — candle default 5 (tuned)
  */
@@ -22,6 +34,8 @@ import { resolveNativeAddon } from './native-resolver.js';
 import { createTokenizer } from './native-tokenizer.js';
 import { getModelCacheDir, fetchModel } from './model-fetcher.js';
 import { getModelEntry } from './model-registry.js';
+import { getCoremlCascadeResolvedDirs } from './coreml-cascade.js';
+import { detectHardwareCapability } from './hardware-capability.js';
 
 const require = createRequire(import.meta.url);
 
@@ -37,6 +51,45 @@ let _embTokenizerLoadPromise = null;
 let _liTokenizer = null;
 let _liTokenizerLoadPromise = null;
 let _available = null;
+let _coremlCascadeLogged = false;
+
+// ─── CoreML cascade resolution ───
+
+/**
+ * Resolve which CoreML cascade dirs the Rust addon should try to load.
+ * Logged exactly once per process so a mis-configured cascade surfaces
+ * at startup instead of silently falling through on every call.
+ *
+ * Always returns an object — never throws. The returned dirs can be
+ * `null`, which the Rust addon treats as "CoreML path disabled" and
+ * falls back to candle unconditionally.
+ */
+function resolveCoremlCascadeForAddon() {
+  const resolved = getCoremlCascadeResolvedDirs();
+  if (!_coremlCascadeLogged) {
+    _coremlCascadeLogged = true;
+    const hw = detectHardwareCapability();
+    // Log a single line so every subsequent `[NativeInference]` message
+    // can be correlated with the cascade decision made here.
+    if (resolved.embedDir || resolved.liDir) {
+      process.stderr.write(
+        `[NativeInference] CoreML cascade: ${resolved.status}` +
+        ` (embed=${resolved.embedDir ? 'yes' : 'no'}, li=${resolved.liDir ? 'yes' : 'no'},` +
+        ` chip=${hw.brandString || 'unknown'})\n`
+      );
+    } else if (hw.coremlCascadeEligible) {
+      process.stderr.write(
+        `[NativeInference] CoreML cascade: ${resolved.status} —` +
+        ` hardware eligible but cache missing. Run \`node scripts/build-coreml-cascade.js\`` +
+        ` to enable the 18% speedup on ${hw.brandString}\n`
+      );
+    }
+    // Ineligible hardware: silent. The user has no action to take and
+    // we already log the candle device via the existing "Loaded"
+    // line below.
+  }
+  return resolved;
+}
 
 // ─── Addon Loading ───
 
@@ -89,21 +142,6 @@ export async function getNativeEmbeddingModel() {
   if (_embeddingModelLoadPromise) return _embeddingModelLoadPromise;
 
   _embeddingModelLoadPromise = (async () => {
-    // ─── SPIKE: CoreML Python bridge override ──────────────────────────────
-    // Only active when SWEET_SEARCH_INFERENCE_BACKEND=coreml. Routes the
-    // embedding pipeline through scripts/spike-coreml/coreml-embedding-bridge.js
-    // so we can measure end-to-end wall-clock against the candle baseline
-    // before committing to a real Rust objc2-core-ml integration. Default
-    // path (env unset) is unchanged.
-    if ((process.env.SWEET_SEARCH_INFERENCE_BACKEND ?? '').toLowerCase() === 'coreml') {
-      const t0 = Date.now();
-      const { CoremlEmbeddingBridge } = await import('../../scripts/spike-coreml/coreml-embedding-bridge.js');
-      _embeddingModel = await CoremlEmbeddingBridge.load();
-      console.log(`[NativeInference] CoreML SPIKE bridge loaded in ${Date.now() - t0}ms (dim: ${_embeddingModel.dim})`);
-      return _embeddingModel;
-    }
-    // ─── End spike override ────────────────────────────────────────────────
-
     const addon = loadAddon();
     if (!addon?.NativeEmbeddingModel) return null;
 
@@ -116,8 +154,19 @@ export async function getNativeEmbeddingModel() {
 
     if (!existsSync(safetensorsPath) || !existsSync(configPath)) return null;
 
+    // Resolve the CoreML cascade dir for NomicBERT embeddings. Returns
+    // null on ineligible hardware, empty cache, or explicit opt-out
+    // (SWEET_SEARCH_COREML_CASCADE=0). The Rust addon's constructor
+    // runs a parity check against the smallest variant before arming
+    // the dispatch path; failure there falls back to candle.
+    const cascade = resolveCoremlCascadeForAddon();
+
     const t0 = Date.now();
-    _embeddingModel = addon.NativeEmbeddingModel.load(safetensorsPath, configPath);
+    _embeddingModel = addon.NativeEmbeddingModel.load(
+      safetensorsPath,
+      configPath,
+      cascade.embedDir || undefined,
+    );
     console.log(`[NativeInference] Embedding model loaded in ${Date.now() - t0}ms (dim: ${_embeddingModel.dim}, device: ${addon.nativeInferenceDevice()})`);
 
     return _embeddingModel;
@@ -225,8 +274,17 @@ export async function getNativeLiModel() {
 
     if (!existsSync(backbonePath) || !existsSync(projPath) || !existsSync(configPath)) return null;
 
+    // Resolve the CoreML cascade dir for ModernBERT LI. Same contract
+    // as the embedding model above — see that comment.
+    const cascade = resolveCoremlCascadeForAddon();
+
     const t0 = Date.now();
-    _liModel = addon.NativeLateInteractionModel.load(backbonePath, projPath, configPath);
+    _liModel = addon.NativeLateInteractionModel.load(
+      backbonePath,
+      projPath,
+      configPath,
+      cascade.liDir || undefined,
+    );
     console.log(`[NativeInference] LI model loaded in ${Date.now() - t0}ms (dim: ${_liModel.dim}, device: ${addon.nativeInferenceDevice()})`);
 
     return _liModel;
@@ -317,4 +375,5 @@ export function unloadNativeModels() {
   _liTokenizerLoadPromise = null;
   _addon = null;
   _available = null;
+  _coremlCascadeLogged = false;
 }
