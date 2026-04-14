@@ -218,28 +218,85 @@ CoremlHandle* sweet_coreml_load(
         NSURL* url = [NSURL fileURLWithPath:pathStr];
 
         // MLModel modelWithContentsOfURL: requires a COMPILED .mlmodelc
-        // directory, not the raw .mlpackage source bundle. If we were
-        // handed a path ending in .mlpackage we have to compile it
-        // first via [MLModel compileModelAtURL:error:]. For .mlmodelc
-        // paths (already compiled) we can load directly.
+        // directory, not the raw .mlpackage source bundle. For .mlmodelc
+        // paths we load directly. For .mlpackage paths we either hit a
+        // sibling on-disk cache or compile via
+        // [MLModel compileModelAtURL:error:] and persist the result to
+        // the cache for future loads.
         //
-        // compileModelAtURL returns a file URL in a system-managed
-        // temp directory. macOS cleans it up automatically at some
-        // unspecified future point, which is fine for our use case
-        // because the compiled bundle is tiny (just metadata + index;
-        // the weights live in the .mlpackage itself). Production code
-        // may want to cache the compiled URL next to the .mlpackage
-        // for faster subsequent loads, but that's a premature
-        // optimisation for now.
+        // Cache layout: `{path}.mlmodelc` sibling directory right next
+        // to the source `.mlpackage`. Invalidation is by mtime — we
+        // compare the cached .mlmodelc's mtime against the .mlpackage's
+        // Manifest.json (always present in mlprogram format). If the
+        // source is newer (re-traced by the user) the cache is
+        // discarded and recompiled. Without this cache, every addon
+        // load paid 5–30 s per variant in
+        // `compileModelAtURL`; the full-index bench burned ~200 s of
+        // startup on compiles with 6-variant embed + 3-variant LI
+        // cascade. With the cache this collapses to a single-digit ms
+        // cost on warm runs (Apple's loader memory-maps the cached
+        // model directly).
+        //
+        // The compiled URL returned by compileModelAtURL lives in a
+        // system-managed temp directory that macOS cleans up at some
+        // unspecified future point. We copy it to our sibling path so
+        // the cache is stable and survives across process restarts.
+        // On copy failure we still load from the system temp URL —
+        // correctness > cache persistence.
         NSURL* loadUrl = url;
         NSError* err = nil;
         if ([pathStr hasSuffix:@".mlpackage"] || [pathStr hasSuffix:@".mlpackage/"]) {
-            NSURL* compiledUrl = [MLModel compileModelAtURL:url error:&err];
-            if (!compiledUrl) {
-                copy_error(err, "MLModel compileModelAtURL failed", error_out, error_out_len);
-                return NULL;
+            NSString* basePath = [pathStr hasSuffix:@"/"]
+                ? [pathStr substringToIndex:pathStr.length - 1]
+                : pathStr;
+            NSString* cachedPath = [basePath stringByAppendingString:@".mlmodelc"];
+            NSURL* cachedUrl = [NSURL fileURLWithPath:cachedPath];
+
+            NSFileManager* fm = [NSFileManager defaultManager];
+            BOOL useCache = NO;
+            if ([fm fileExistsAtPath:cachedPath]) {
+                // Compare mtimes. The source-of-truth inside the
+                // .mlpackage is Manifest.json — present in every
+                // coremltools mlprogram bundle and touched on every
+                // re-save. If the Manifest.json is missing for any
+                // reason we fall back to the .mlpackage dir mtime
+                // (which is imperfect but safe — worst case we
+                // invalidate too aggressively and pay the recompile).
+                NSString* manifestPath = [basePath stringByAppendingPathComponent:@"Manifest.json"];
+                NSString* stampPath = [fm fileExistsAtPath:manifestPath] ? manifestPath : basePath;
+                NSDictionary* cachedAttrs = [fm attributesOfItemAtPath:cachedPath error:nil];
+                NSDictionary* srcAttrs    = [fm attributesOfItemAtPath:stampPath error:nil];
+                NSDate* cachedDate = [cachedAttrs fileModificationDate];
+                NSDate* srcDate    = [srcAttrs fileModificationDate];
+                if (cachedDate && srcDate
+                    && [cachedDate compare:srcDate] != NSOrderedAscending) {
+                    useCache = YES;
+                }
             }
-            loadUrl = compiledUrl;
+
+            if (useCache) {
+                loadUrl = cachedUrl;
+            } else {
+                NSURL* compiledUrl = [MLModel compileModelAtURL:url error:&err];
+                if (!compiledUrl) {
+                    copy_error(err, "MLModel compileModelAtURL failed",
+                               error_out, error_out_len);
+                    return NULL;
+                }
+                // Best-effort persist to the sibling cache location so
+                // the next process start hits the fast path. If either
+                // the removeItem or copyItem fails (read-only dir,
+                // permissions, disk full) we silently fall through to
+                // loading the system-temp compiled URL — the current
+                // process still runs, just without cache persistence.
+                [fm removeItemAtPath:cachedPath error:nil];
+                NSError* copyErr = nil;
+                if ([fm copyItemAtURL:compiledUrl toURL:cachedUrl error:&copyErr]) {
+                    loadUrl = cachedUrl;
+                } else {
+                    loadUrl = compiledUrl;
+                }
+            }
         }
 
         MLModelConfiguration* config = [[MLModelConfiguration alloc] init];

@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use super::nomic_bert_sdpa as nomic_bert;
 #[cfg(feature = "coreml")]
-use super::coreml_embedding::CoremlEmbedding;
+use super::coreml_embedding::{CoremlEmbedding, CoremlEmbeddingVariant};
 use super::{metal_lock, optimal_dtype, select_device};
 
 /// Inner state of the embedding model, shared between the napi struct (main
@@ -40,35 +40,79 @@ struct EmbeddingInner {
     hidden_size: usize,
 }
 
-/// Try to load the optional CoreML embedding backend from the env var.
-/// Logs on both success and failure so a misconfigured path surfaces
-/// immediately instead of silently falling through to the candle
-/// backbone at every batch.
+/// Scan the optional CoreML embedding cascade directory from the env
+/// var and build a variant list. Constructor is cheap — individual
+/// variants compile lazily on first use, so we don't pay the
+/// per-variant ~15-30s mlpackage compile at startup.
+///
+/// Expected filename format:
+///   nomic_bert_b{BATCH}_s{SEQ}_fp16.mlpackage
+///
+/// Anything that doesn't match the regex is silently skipped (lets
+/// the directory carry unrelated artifacts without aborting). Logs a
+/// single line with the total variant count and the full shape set so
+/// a mis-configured cascade surfaces at startup instead of silently
+/// falling through to candle on every batch.
 #[cfg(feature = "coreml")]
 fn try_load_coreml_embedding() -> Option<CoremlEmbedding> {
-    let path = std::env::var("SWEET_SEARCH_COREML_EMBED_MLPACKAGE").ok()?;
-    let t0 = std::time::Instant::now();
-    match CoremlEmbedding::load(std::path::Path::new(&path)) {
-        Ok(m) => {
-            let ms = t0.elapsed().as_secs_f64() * 1000.0;
-            eprintln!(
-                "[NativeEmbedding] CoreML backend loaded from {} in {:.0}ms (batch={}, seq={}, dim={})",
-                path,
-                ms,
-                m.max_batch(),
-                m.max_seq(),
-                m.hidden_size(),
-            );
-            Some(m)
-        }
+    let dir = std::env::var("SWEET_SEARCH_COREML_EMBED_MLPACKAGE_DIR").ok()?;
+    let dir_path = std::path::PathBuf::from(&dir);
+
+    let entries = match std::fs::read_dir(&dir_path) {
+        Ok(it) => it,
         Err(e) => {
             eprintln!(
-                "[NativeEmbedding] CoreML backend load FAILED from {}: {} — falling back to candle",
-                path, e
+                "[NativeEmbedding] CoreML cascade dir {} unreadable: {} — falling back to candle",
+                dir, e
             );
-            None
+            return None;
+        }
+    };
+
+    let mut variants: Vec<CoremlEmbeddingVariant> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let fname = match path.file_name().and_then(|n| n.to_str()) {
+            Some(s) => s,
+            None => continue,
+        };
+        if let Some((batch, seq)) = parse_embed_variant_filename(fname) {
+            variants.push(CoremlEmbeddingVariant::new(batch, seq, path));
         }
     }
+
+    if variants.is_empty() {
+        eprintln!(
+            "[NativeEmbedding] CoreML cascade dir {} contained no nomic_bert_b{{B}}_s{{S}}_fp16.mlpackage files — falling back to candle",
+            dir,
+        );
+        return None;
+    }
+
+    let cascade = CoremlEmbedding::from_variants(variants);
+    let shapes: Vec<String> = cascade
+        .variant_shapes()
+        .map(|(b, s)| format!("b{}×s{}", b, s))
+        .collect();
+    eprintln!(
+        "[NativeEmbedding] CoreML cascade loaded: {} variants [{}] (lazy — each compiles on first use)",
+        cascade.len(),
+        shapes.join(", "),
+    );
+    Some(cascade)
+}
+
+/// Parse `nomic_bert_b{BATCH}_s{SEQ}_fp16.mlpackage` into `(batch, seq)`.
+/// Returns None for any filename that doesn't match — caller skips those
+/// entries instead of failing the whole cascade load.
+#[cfg(feature = "coreml")]
+fn parse_embed_variant_filename(fname: &str) -> Option<(usize, usize)> {
+    let rest = fname.strip_prefix("nomic_bert_b")?;
+    let rest = rest.strip_suffix("_fp16.mlpackage")?;
+    let (batch_str, seq_part) = rest.split_once("_s")?;
+    let batch: usize = batch_str.parse().ok()?;
+    let seq: usize = seq_part.parse().ok()?;
+    Some((batch, seq))
 }
 
 /// Startup parity check between candle and CoreML on a single synthetic
@@ -86,6 +130,14 @@ fn try_load_coreml_embedding() -> Option<CoremlEmbedding> {
 /// shorter 16-token fixture previously used amplified the rounding to
 /// ~0.996 cosine, triggering false-negative parity failures even though
 /// the spike measured 0.9998 on real sentences.
+///
+/// We run the check against the LARGEST cascade variant only. All
+/// smaller variants are traced from the same PyTorch model (see
+/// scripts/spike-coreml/trace_cascade.py:TracedNomicBert), so a
+/// cosine mismatch on the largest variant would equally break every
+/// smaller one; running the check on each variant would waste ~20 s
+/// of startup (one mlpackage compile per variant) with no extra
+/// coverage.
 #[cfg(feature = "coreml")]
 fn embedding_parity_cosine(
     candle_model: &nomic_bert::NomicBertModel,
@@ -94,7 +146,16 @@ fn embedding_parity_cosine(
     hidden_size: usize,
 ) -> std::result::Result<f32, String> {
     const ACTIVE: usize = 64;
-    let seq_len = coreml.max_seq();
+    // Run the parity check at the shape `pick()` will return for a
+    // single-row fixture. With the cascade sorted ascending by
+    // (batch, seq), that's `variants.first()` — the smallest-batch
+    // (largest-seq in our design) variant. `parity_variant()` names
+    // this and returns None only if the cascade is empty, which is
+    // already ruled out at the call site.
+    let parity = coreml
+        .parity_variant()
+        .ok_or_else(|| "cascade is empty".to_string())?;
+    let seq_len = parity.seq.max(ACTIVE);
 
     let mut ids_row = vec![0i64; seq_len];
     let mut mask_row = vec![0i64; seq_len];
@@ -351,6 +412,26 @@ impl Task for EmbedBatchTask {
             return Ok(Float32Array::new(Vec::new()));
         }
         let seq_len = self.input_ids[0].len();
+
+        // Shape-distribution logging for choosing CoreML traced shapes.
+        // Gated behind SWEET_SEARCH_LOG_NATIVE_SHAPES so every future
+        // sweet-search run does not pay the iteration cost. Emits the
+        // padded shape (what the indexer handed us) and the true max
+        // active-token count (what a shape-aware backend would need to
+        // run); the gap between the two is exactly the flops a fixed-
+        // shape CoreML .mlpackage would burn on padding.
+        if std::env::var_os("SWEET_SEARCH_LOG_NATIVE_SHAPES").is_some() {
+            let max_active = self
+                .attention_mask
+                .iter()
+                .map(|row| row.iter().filter(|&&v| v != 0).count())
+                .max()
+                .unwrap_or(0);
+            eprintln!(
+                "[SHAPE_STATS embed] batch={} seq_padded={} max_active={}",
+                batch_size, seq_len, max_active,
+            );
+        }
 
         // CoreML fast path — runs on CPU+NE, bypasses the candle Metal
         // lock entirely. CoremlEmbedding::embed serialises concurrent
