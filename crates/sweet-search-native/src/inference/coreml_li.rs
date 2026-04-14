@@ -1,92 +1,134 @@
-//! CoreML-backed ModernBERT late-interaction wrapper.
+//! CoreML-backed ModernBERT late-interaction wrapper — variant cascade.
 //!
-//! Wraps a fixed-shape (b32×s512) .mlpackage that takes int32 `input_ids`
-//! and `attention_mask` and emits a 3D [batch, 512, 128] tensor of
-//! projected, per-token L2-normalised vectors. The backbone forward,
-//! 768→128 projection and per-token normalize are all traced into the
-//! model by scripts/spike-coreml/convert_li_to_coreml.py, so the Rust
-//! side just runs the model and slices each batch row down to its
-//! active token count before handing the buffer to
-//! `Float32Array::new(..)`.
+//! Holds a cascade of fixed-shape ModernBERT LI `.mlpackage`s, one
+//! per (batch, seq) stair-step the sweet-search LI bucketer produces
+//! (see `core/indexing/indexer-pool.js:planAllocation` for the
+//! cache-aware upper-cap derivation — this module mirrors its
+//! shape set). Output is a 3D `[batch, seq, 128]` tensor of projected,
+//! per-token L2-normalised vectors; the projection head and per-token
+//! normalise are traced into each variant by
+//! `scripts/spike-coreml/trace_cascade.py`.
 //!
-//! Loaded only when `SWEET_SEARCH_COREML_LI_MLPACKAGE` is set.
-//! `li_model.rs` reads that env var at `load()` time and calls
-//! `CoremlLi::load` alongside the candle backbone. The dispatch in
-//! `encode_batch` is: if CoreML is loaded AND the batch fits, use
-//! CoreML; otherwise fall back to candle.
+//! See `coreml_embedding.rs` for the full rationale behind the
+//! cascade design (the short version: the old single-shape approach
+//! never fired because `fits()` was false on every production call).
+//! This module follows the same lazy-loading pattern via
+//! `OnceLock<Result<CoremlModel, String>>` per variant.
 //!
-//! The .mlpackage is pinned to CPU_AND_NE inside the shim — both
-//! CoreML GPU compute units miscompile the ModernBERT sliding-window
-//! attention / GeGLU chain. Spike measurement: GPU cosine 0.40 vs
-//! CPU_AND_NE cosine 0.9999 against the candle BF16 reference
-//! (scripts/spike-coreml/test_coreml_li_parity.py).
+//! Gating: loaded only when `SWEET_SEARCH_COREML_LI_MLPACKAGE_DIR`
+//! points at a directory containing one or more
+//! `li_modernbert_b{B}_s{S}_fp16.mlpackage` files. Compute units
+//! are pinned to CPU_AND_NE inside `coreml_shim.m` — both CoreML
+//! GPU paths miscompile ModernBERT's sliding-window local attention
+//! / GeGLU chain (scripts/spike-coreml/test_coreml_li_parity.py:
+//! GPU cosine 0.40 vs CPU_AND_NE cosine 0.9999).
 
 #![cfg(feature = "coreml")]
 
-use std::path::Path;
+use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use super::coreml_shim::CoremlModel;
 
-/// Fixed batch size traced into the .mlpackage. Matches the LI
-/// indexer's batcher — larger batches fall back to candle.
-const MAX_BATCH: usize = 32;
-
-/// Fixed sequence length traced into the .mlpackage. The indexer's
-/// LI pipeline truncates to 512 by default, so this is the common
-/// case; longer inputs fall back to candle.
-const MAX_SEQ: usize = 512;
-
-/// Per-token embedding dimension emitted by the projection head.
-/// Hardcoded — LateOn-Code projects 768d backbone down to 128d.
+/// Per-token dim emitted by the 768→128 projection head.
 const TOKEN_DIM: usize = 128;
 
-/// Fixed-shape CoreML wrapper for ModernBERT LI inference.
+pub struct CoremlLiVariant {
+    pub batch: usize,
+    pub seq: usize,
+    pub path: PathBuf,
+    model: OnceLock<Result<CoremlModel, String>>,
+}
+
+impl CoremlLiVariant {
+    /// Build a new uncompiled variant. The underlying `.mlpackage` is
+    /// not touched until the first call to `model()`, so this is cheap.
+    pub fn new(batch: usize, seq: usize, path: PathBuf) -> Self {
+        Self {
+            batch,
+            seq,
+            path,
+            model: OnceLock::new(),
+        }
+    }
+
+    fn model(&self) -> Result<&CoremlModel, &String> {
+        self.model
+            .get_or_init(|| {
+                let t0 = std::time::Instant::now();
+                let result = CoremlModel::load(
+                    self.path.as_path(),
+                    "input_ids",
+                    "attention_mask",
+                    "token_vectors",
+                    self.batch,
+                    self.seq,
+                    self.seq,  // output_dim0 = seq length
+                    TOKEN_DIM, // output_dim1 = per-token dim
+                );
+                match &result {
+                    Ok(_) => eprintln!(
+                        "[CoremlLi] variant b{}×s{} compiled in {:.0}ms",
+                        self.batch,
+                        self.seq,
+                        t0.elapsed().as_secs_f64() * 1000.0,
+                    ),
+                    Err(e) => eprintln!(
+                        "[CoremlLi] variant b{}×s{} FAILED to compile: {}",
+                        self.batch, self.seq, e
+                    ),
+                }
+                result
+            })
+            .as_ref()
+    }
+}
+
+/// Fixed-shape cascade wrapper for ModernBERT LI inference.
 ///
-/// Thread safety: delegated to `CoremlModel`, which serialises predict
-/// through an internal `Mutex<()>`. Encode takes `&self`, so it is
-/// safe to share across libuv worker threads via `Arc<LiInner>`.
+/// Thread safety is handled the same way as `CoremlEmbedding` — see
+/// the comment on that struct for details.
 pub struct CoremlLi {
-    model: CoremlModel,
+    variants: Vec<CoremlLiVariant>,
 }
 
 impl CoremlLi {
-    /// Load a .mlpackage for ModernBERT LI.
-    ///
-    /// Expects feature names `input_ids` / `attention_mask` /
-    /// `token_vectors` with shapes [b32, s512] int32 for the inputs
-    /// and [b32, 512, 128] float32 for the output. The shim compiles
-    /// `.mlpackage` → `.mlmodelc` on first load and pins compute
-    /// units to CPU_AND_NE.
-    pub fn load(mlpackage_path: &Path) -> Result<Self, String> {
-        let model = CoremlModel::load(
-            mlpackage_path,
-            "input_ids",
-            "attention_mask",
-            "token_vectors",
-            MAX_BATCH,
-            MAX_SEQ,
-            MAX_SEQ,   // output_dim0 = seq length
-            TOKEN_DIM, // output_dim1 = per-token dim
-        )?;
-        Ok(Self { model })
+    pub fn from_variants(mut variants: Vec<CoremlLiVariant>) -> Self {
+        variants.sort_by_key(|v| (v.batch, v.seq));
+        Self { variants }
     }
 
-    pub fn token_dim(&self) -> usize {
-        TOKEN_DIM
+    pub fn len(&self) -> usize {
+        self.variants.len()
     }
 
-    pub fn max_batch(&self) -> usize {
-        MAX_BATCH
+    /// Variant selected for the startup parity check. See the
+    /// matching comment in `CoremlEmbedding::parity_variant` — returns
+    /// the smallest-batch, largest-seq variant so a single-row
+    /// fixture dispatches to it via `pick()`.
+    pub fn parity_variant(&self) -> Option<&CoremlLiVariant> {
+        self.variants.first()
     }
 
-    pub fn max_seq(&self) -> usize {
-        MAX_SEQ
+    /// Variant with the largest `(batch, seq)` tuple in sort order,
+    /// used only for error messages when a call exceeds the cascade's
+    /// shape bounds.
+    pub fn upper_bound_variant(&self) -> Option<&CoremlLiVariant> {
+        self.variants.last()
     }
 
-    /// True if a batch of the given shape fits the fixed .mlpackage
-    /// shape. Callers use this to decide CoreML vs candle dispatch.
+    pub fn variant_shapes(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.variants.iter().map(|v| (v.batch, v.seq))
+    }
+
+    fn pick(&self, batch_size: usize, seq_len: usize) -> Option<&CoremlLiVariant> {
+        self.variants
+            .iter()
+            .find(|v| v.batch >= batch_size && v.seq >= seq_len)
+    }
+
     pub fn fits(&self, batch_size: usize, seq_len: usize) -> bool {
-        batch_size <= MAX_BATCH && seq_len <= MAX_SEQ
+        self.pick(batch_size, seq_len).is_some()
     }
 
     /// Encode a batch of variable-length inputs into per-token vectors.
@@ -112,17 +154,23 @@ impl CoremlLi {
             ));
         }
         let seq_len = input_ids[0].len();
-        if !self.fits(batch_size, seq_len) {
-            return Err(format!(
-                "shape ({}, {}) exceeds fixed ({}, {})",
-                batch_size, seq_len, MAX_BATCH, MAX_SEQ
-            ));
-        }
 
-        // Build padded int32 buffers and count active tokens per row.
-        // We do both in the same loop because we already touch every
-        // mask entry here — a second pass would just repeat the work.
-        let total = MAX_BATCH * MAX_SEQ;
+        let variant = self.pick(batch_size, seq_len).ok_or_else(|| {
+            format!(
+                "no variant fits ({}, {}); upper bound is {:?}",
+                batch_size,
+                seq_len,
+                self.upper_bound_variant().map(|v| (v.batch, v.seq)),
+            )
+        })?;
+
+        let model = variant
+            .model()
+            .map_err(|e| format!("variant b{}×s{}: {}", variant.batch, variant.seq, e))?;
+
+        let v_batch = variant.batch;
+        let v_seq = variant.seq;
+        let total = v_batch * v_seq;
         let mut ids_padded = vec![0i32; total];
         let mut mask_padded = vec![0i32; total];
         let mut active_counts: Vec<usize> = Vec::with_capacity(batch_size);
@@ -138,7 +186,7 @@ impl CoremlLi {
                     seq_len
                 ));
             }
-            let dst_base = b * MAX_SEQ;
+            let dst_base = b * v_seq;
             let mut active = 0usize;
             for s in 0..seq_len {
                 ids_padded[dst_base + s] = ids_row[s] as i32;
@@ -150,19 +198,14 @@ impl CoremlLi {
             active_counts.push(active);
         }
 
-        // Full [MAX_BATCH, MAX_SEQ, TOKEN_DIM] output buffer. We pay
-        // the full 2 MiB allocation even for small batches because the
-        // shim demands a buffer sized to the traced output shape; the
-        // slicing pass below drops it to active tokens only.
-        let mut raw_output = vec![0.0f32; MAX_BATCH * MAX_SEQ * TOKEN_DIM];
-        self.model
+        let mut raw_output = vec![0.0f32; v_batch * v_seq * TOKEN_DIM];
+        model
             .predict(&ids_padded, &mask_padded, &mut raw_output)
-            .map_err(|e| format!("predict: {e}"))?;
+            .map_err(|e| format!("variant b{}×s{} predict: {}", v_batch, v_seq, e))?;
 
-        // Pack active token slices into a contiguous output buffer
-        // that matches `LiEncodeTask::compute` on the candle path, so
-        // the caller assembles the same `LiEncodingResult` regardless
-        // of which backend ran the encode.
+        // Slice the [v_batch, v_seq, TOKEN_DIM] output to the active
+        // tokens per batch item, packed contiguously. Padding batch
+        // rows (b >= batch_size) are dropped entirely.
         let total_active: usize = active_counts.iter().sum();
         let mut all_vectors: Vec<f32> = Vec::with_capacity(total_active * TOKEN_DIM);
         let mut token_counts: Vec<u32> = Vec::with_capacity(batch_size);
@@ -171,7 +214,7 @@ impl CoremlLi {
             if active == 0 {
                 continue;
             }
-            let row_base = b * MAX_SEQ * TOKEN_DIM;
+            let row_base = b * v_seq * TOKEN_DIM;
             let row_end = row_base + active * TOKEN_DIM;
             all_vectors.extend_from_slice(&raw_output[row_base..row_end]);
         }

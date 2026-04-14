@@ -1,107 +1,199 @@
-//! CoreML-backed NomicBERT embedding wrapper.
+//! CoreML-backed NomicBERT embedding wrapper — variant cascade.
 //!
-//! Wraps a fixed-shape (b32×s512) .mlpackage that takes int32 `input_ids`
-//! and `attention_mask` and emits the final 2D [batch, 768] L2-normalised
-//! embedding tensor. Mean pooling and L2 normalisation are traced into
-//! the model itself by the conversion script
-//! (scripts/spike-coreml/convert_to_coreml.py), so the Rust side just
-//! runs the model and copies the output directly — no pooling or norm
-//! on the Rust side.
+//! Holds a cascade of fixed-shape NomicBERT `.mlpackage`s, one per
+//! (batch, seq) stair-step the sweet-search indexer's cache-aware
+//! bucketer actually produces in practice (see
+//! `core/infrastructure/onnx-session-utils.js:computeWeightsAwareBatchCap`
+//! and the embed bucketer in `core/embedding/embedding-local-model.js`
+//! for the formula — this module mirrors its output shape set).
 //!
-//! Loaded only when `SWEET_SEARCH_COREML_EMBED_MLPACKAGE` is set.
-//! `embedding_model.rs` reads that env var at `load()` time and calls
-//! `CoremlEmbedding::load` alongside the candle backbone; at
-//! `embed_batch` time the dispatch is:
-//!   - If CoreML is loaded AND the batch fits the fixed shape → CoreML
-//!   - Otherwise → candle (existing Metal/CPU path)
+//! The original single-shape implementation traced at b32×s512 but
+//! the indexer NEVER called with `batch ≤ 32`, so `fits()` returned
+//! false on every call and the CoreML path was dead code. With the
+//! cascade, `pick()` returns the smallest variant where
+//! `v.batch ≥ real_batch && v.seq ≥ real_seq`, so any batch that
+//! does not exceed the largest variant has a matching mlpackage.
 //!
-//! The .mlpackage is pinned to CPU_AND_NE inside the shim — the CoreML
-//! GPU compute units miscompile the NomicBERT attention/MLP/norm chain.
-//! Spike measurement: GPU cosine 0.56 vs CPU_AND_NE cosine 0.9998
-//! against the candle BF16 reference
-//! (scripts/spike-coreml/test_coreml_parity.py).
+//! Lazy loading: each variant compiles .mlpackage → .mlmodelc on
+//! first use via `[MLModel compileModelAtURL:error:]`, which takes
+//! ~15–30 s per variant. Eager-loading 6 variants would add ~2 min
+//! to every startup. We use `OnceLock<Result<CoremlModel, String>>`
+//! so each variant pays its compile cost only the first time it is
+//! picked — across a long indexing run the overhead amortises to
+//! noise and startup stays fast.
+//!
+//! Gating: loaded only when `SWEET_SEARCH_COREML_EMBED_MLPACKAGE_DIR`
+//! points at a directory containing one or more
+//! `nomic_bert_b{B}_s{S}_fp16.mlpackage` files. The outer
+//! `embedding_model.rs` scans the directory, parses the filenames,
+//! and constructs this struct. Any batch that does not fit the
+//! largest variant falls through to candle.
+//!
+//! Compute units are pinned to CPU_AND_NE inside `coreml_shim.m` —
+//! both CoreML GPU paths miscompile NomicBERT's attention/MLP/norm
+//! chain (verified in scripts/spike-coreml/test_coreml_parity.py:
+//! GPU cosine 0.56 vs CPU_AND_NE cosine 0.9998).
 
 #![cfg(feature = "coreml")]
 
-use std::path::Path;
+use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use super::coreml_shim::CoremlModel;
 
-/// Fixed batch size traced into the .mlpackage. Matches the indexer's
-/// tokenizer bucket ceiling — larger batches fall back to candle rather
-/// than splitting across multiple CoreML calls, so this constant also
-/// defines the CoreML fast-path eligibility criterion.
-const MAX_BATCH: usize = 32;
-
-/// Fixed sequence length traced into the .mlpackage. Matches the
-/// embedding model's `max_length` default (512). Shorter sequences are
-/// padded with zeroed ids and mask=0, so the mean pool inside the
-/// traced model naturally ignores the padding.
-const MAX_SEQ: usize = 512;
-
-/// NomicBERT hidden size. Hardcoded — this wrapper is only ever used
+/// NomicBERT hidden size. Hardcoded — this cascade is only ever used
 /// with CodeRankEmbed / NomicBERT-style 768-dim models.
 const HIDDEN_SIZE: usize = 768;
 
-/// Fixed-shape CoreML wrapper for NomicBERT embedding inference.
+/// A single traced shape variant. Owns its `.mlpackage` path; the
+/// underlying `CoremlModel` is constructed lazily on first use so
+/// unused variants never pay their ~15–30 s compile cost.
 ///
-/// Thread safety: delegated to `CoremlModel`, which serialises predict
-/// calls through an internal `Mutex<()>`. This struct takes `&self` for
-/// `embed`, so it is fine to share across libuv worker threads via
-/// `Arc<EmbeddingInner>`.
+/// The cell holds `Result<..>` rather than `Option<..>` so that a
+/// variant which failed to compile (missing file, bad mlpackage,
+/// shim error) stays failed — callers see `Err` and can decide to
+/// fall back to candle or to a larger variant. Recomputing on every
+/// call would thrash the expensive compile path.
+pub struct CoremlEmbeddingVariant {
+    pub batch: usize,
+    pub seq: usize,
+    pub path: PathBuf,
+    model: OnceLock<Result<CoremlModel, String>>,
+}
+
+impl CoremlEmbeddingVariant {
+    /// Build a new uncompiled variant. The underlying `.mlpackage` is
+    /// not touched until the first call to `model()`, so this is cheap.
+    pub fn new(batch: usize, seq: usize, path: PathBuf) -> Self {
+        Self {
+            batch,
+            seq,
+            path,
+            model: OnceLock::new(),
+        }
+    }
+
+    /// Return the underlying CoremlModel, compiling on first call.
+    /// The inner Result is borrowed — the error message is owned by
+    /// the OnceLock so repeated failures return the same string.
+    fn model(&self) -> Result<&CoremlModel, &String> {
+        self.model
+            .get_or_init(|| {
+                let t0 = std::time::Instant::now();
+                let result = CoremlModel::load(
+                    self.path.as_path(),
+                    "input_ids",
+                    "attention_mask",
+                    "embeddings",
+                    self.batch,
+                    self.seq,
+                    HIDDEN_SIZE,
+                    0, // 2D output → output_dim1 == 0
+                );
+                match &result {
+                    Ok(_) => eprintln!(
+                        "[CoremlEmbedding] variant b{}×s{} compiled in {:.0}ms",
+                        self.batch,
+                        self.seq,
+                        t0.elapsed().as_secs_f64() * 1000.0,
+                    ),
+                    Err(e) => eprintln!(
+                        "[CoremlEmbedding] variant b{}×s{} FAILED to compile: {}",
+                        self.batch, self.seq, e
+                    ),
+                }
+                result
+            })
+            .as_ref()
+    }
+}
+
+/// Fixed-shape cascade wrapper for NomicBERT embedding inference.
+///
+/// Thread safety: each variant's `CoremlModel` serialises concurrent
+/// predict calls through an internal `Mutex<()>` (see coreml_shim.rs).
+/// Concurrent calls to `embed()` from multiple libuv worker threads
+/// on DIFFERENT variants run in parallel because each variant has
+/// its own `CoremlModel` and therefore its own mutex. Calls on the
+/// SAME variant serialise — acceptable because each call is a full
+/// ANE submission and ANE is a single hardware resource anyway.
 pub struct CoremlEmbedding {
-    model: CoremlModel,
+    /// Variants sorted ascending by (batch, seq). `pick()` walks this
+    /// in order and returns the first one where both bounds fit — so
+    /// the `(64, 96)` variant is preferred over the `(64, 192)` one
+    /// for a `(48, 80)` call, even though both would work.
+    variants: Vec<CoremlEmbeddingVariant>,
 }
 
 impl CoremlEmbedding {
-    /// Load a .mlpackage for NomicBERT embedding.
+    /// Build the cascade from a list of `(batch, seq, path)` tuples.
+    /// Does NOT load any `.mlpackage` — that happens lazily when a
+    /// variant is first picked. The constructor is cheap (microseconds)
+    /// so the outer `embedding_model.rs::load` can call this without
+    /// adding startup latency. `embedding_model.rs` is responsible for
+    /// running a parity check against `parity_variant()` before
+    /// admitting the cascade for dispatch.
+    pub fn from_variants(mut variants: Vec<CoremlEmbeddingVariant>) -> Self {
+        variants.sort_by_key(|v| (v.batch, v.seq));
+        Self { variants }
+    }
+
+    /// Number of registered variants. Used for startup logging only.
+    pub fn len(&self) -> usize {
+        self.variants.len()
+    }
+
+    /// Variant selected for the startup parity check.
     ///
-    /// Expects the mlpackage to have feature names
-    /// `input_ids` / `attention_mask` / `embeddings`, with shapes
-    /// [b32, s512] for the int32 inputs and [b32, 768] for the float32
-    /// output. The shim compiles `.mlpackage` → `.mlmodelc` on first
-    /// load (~15–30s cold start) and pins compute units to CPU_AND_NE.
-    pub fn load(mlpackage_path: &Path) -> Result<Self, String> {
-        let model = CoremlModel::load(
-            mlpackage_path,
-            "input_ids",
-            "attention_mask",
-            "embeddings",
-            MAX_BATCH,
-            MAX_SEQ,
-            HIDDEN_SIZE,
-            0, // output is 2D → signal via output_dim1 == 0
-        )?;
-        Ok(Self { model })
+    /// Returns `variants.first()` — the smallest-batch (therefore
+    /// largest-seq in our cascade design) variant. A single-row
+    /// fixture naturally dispatches to this variant via `pick()` (batch
+    /// 1 matches first in sort order), so the parity check gets to
+    /// test a real compile+predict+output path with the cheapest
+    /// possible fixture (1 row instead of 64). See
+    /// `embedding_model.rs::embedding_parity_cosine` for the full
+    /// rationale — parity correctness transfers across variants
+    /// because they are all traced from the same PyTorch model.
+    pub fn parity_variant(&self) -> Option<&CoremlEmbeddingVariant> {
+        self.variants.first()
     }
 
-    pub fn hidden_size(&self) -> usize {
-        HIDDEN_SIZE
+    /// Variant with the largest `(batch, seq)` tuple in sort order.
+    /// Used only for error messages when a call exceeds the cascade's
+    /// shape bounds — NOT for dispatch selection. Dispatch uses
+    /// `pick()` which walks all variants in sorted order.
+    pub fn upper_bound_variant(&self) -> Option<&CoremlEmbeddingVariant> {
+        self.variants.last()
     }
 
-    pub fn max_batch(&self) -> usize {
-        MAX_BATCH
+    /// Iterate over the (batch, seq) of each variant — for startup
+    /// logging so the user can see what the cascade covers.
+    pub fn variant_shapes(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.variants.iter().map(|v| (v.batch, v.seq))
     }
 
-    pub fn max_seq(&self) -> usize {
-        MAX_SEQ
+    /// Pick the smallest variant whose shape fits `(batch_size, seq_len)`.
+    /// Returns `None` when the call exceeds the largest variant — the
+    /// caller (`embed_batch`) then falls back to candle.
+    fn pick(&self, batch_size: usize, seq_len: usize) -> Option<&CoremlEmbeddingVariant> {
+        self.variants
+            .iter()
+            .find(|v| v.batch >= batch_size && v.seq >= seq_len)
     }
 
-    /// True if a batch of the given shape fits the fixed .mlpackage
-    /// shape. Callers use this to decide whether to dispatch to CoreML
-    /// or fall back to candle.
+    /// True if some variant fits. Equivalent to `pick().is_some()` but
+    /// spelled out for readability at the dispatch site.
     pub fn fits(&self, batch_size: usize, seq_len: usize) -> bool {
-        batch_size <= MAX_BATCH && seq_len <= MAX_SEQ
+        self.pick(batch_size, seq_len).is_some()
     }
 
-    /// Run embedding inference on a pre-tokenized batch.
-    ///
-    /// Pads the inputs up to [MAX_BATCH, MAX_SEQ], runs CoreML, and
-    /// returns the first `batch_size * HIDDEN_SIZE` floats of the
-    /// output — i.e. the rows corresponding to the real batch items.
-    /// The padded rows are discarded via `Vec::truncate` so the caller
-    /// can hand the returned buffer straight into
-    /// `Float32Array::new(..)` without any additional copy.
+    /// Run embedding inference on a pre-tokenized batch using the
+    /// smallest cascade variant that fits. Pads the inputs up to the
+    /// chosen variant's shape, runs CoreML, and returns the first
+    /// `batch_size * HIDDEN_SIZE` floats of the output (the rows for
+    /// the real batch items). Padded rows are discarded via
+    /// `Vec::truncate` so the caller hands the returned buffer
+    /// straight into `Float32Array::new` with no additional copy.
     pub fn embed(
         &self,
         input_ids: &[Vec<i64>],
@@ -119,18 +211,23 @@ impl CoremlEmbedding {
             ));
         }
         let seq_len = input_ids[0].len();
-        if !self.fits(batch_size, seq_len) {
-            return Err(format!(
-                "shape ({}, {}) exceeds fixed ({}, {})",
-                batch_size, seq_len, MAX_BATCH, MAX_SEQ
-            ));
-        }
 
-        // Build padded int32 input/mask buffers for the shim. Rows
-        // beyond `batch_size` and positions beyond `seq_len` in each
-        // row stay zeroed — `ids=0` is the pad token and `mask=0`
-        // tells the traced mean pool to drop the position entirely.
-        let total = MAX_BATCH * MAX_SEQ;
+        let variant = self.pick(batch_size, seq_len).ok_or_else(|| {
+            format!(
+                "no variant fits ({}, {}); upper bound is {:?}",
+                batch_size,
+                seq_len,
+                self.upper_bound_variant().map(|v| (v.batch, v.seq)),
+            )
+        })?;
+
+        let model = variant
+            .model()
+            .map_err(|e| format!("variant b{}×s{}: {}", variant.batch, variant.seq, e))?;
+
+        let v_batch = variant.batch;
+        let v_seq = variant.seq;
+        let total = v_batch * v_seq;
         let mut ids_padded = vec![0i32; total];
         let mut mask_padded = vec![0i32; total];
         for b in 0..batch_size {
@@ -145,17 +242,19 @@ impl CoremlEmbedding {
                     seq_len
                 ));
             }
-            let dst_base = b * MAX_SEQ;
+            let dst_base = b * v_seq;
             for s in 0..seq_len {
                 ids_padded[dst_base + s] = ids_row[s] as i32;
                 mask_padded[dst_base + s] = mask_row[s] as i32;
             }
+            // positions [seq_len..v_seq] stay zeroed — mean pool drops them
         }
+        // rows [batch_size..v_batch] stay fully zeroed — same reason.
 
-        let mut output = vec![0.0f32; MAX_BATCH * HIDDEN_SIZE];
-        self.model
+        let mut output = vec![0.0f32; v_batch * HIDDEN_SIZE];
+        model
             .predict(&ids_padded, &mask_padded, &mut output)
-            .map_err(|e| format!("predict: {e}"))?;
+            .map_err(|e| format!("variant b{}×s{} predict: {}", v_batch, v_seq, e))?;
 
         output.truncate(batch_size * HIDDEN_SIZE);
         Ok(output)
