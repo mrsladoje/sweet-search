@@ -503,6 +503,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     tokenBudget = 8_192,
     attentionBudget = null,
     segmentSize = null, // override SSLX-v3 segment threshold (default 10k)
+    projectRoot,        // honored by LI skip policy for .sweet-search.config.json excludes
   } = options;
   log('\n━━━ Phase 4: Late Interaction Index (LateOn-Code) ━━━', 'bright');
 
@@ -513,17 +514,16 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
 
   // Apply LI skip policy: last-mile guard before the slow encoder runs.
   // The embed indexer has already dropped glob-excluded files at discovery
-  // time (unified FILE_PATTERNS.exclude); this pass adds the LI-specific
-  // checks that globs can't do — content-based @generated markers and a
-  // per-file token budget. Disable via SWEET_SEARCH_LI_SKIP_DISABLE=1.
+  // time using the same loadProjectConfig() excludes; this pass adds the
+  // LI-specific checks globs can't do — content-based @generated markers
+  // and a per-file token budget. Disable via SWEET_SEARCH_LI_SKIP_DISABLE=1.
   let skippedSummary = null;
   if (Array.isArray(chunks) && chunks.length > 0) {
     const { applyLiSkipPolicy } = await import('./li-skip-policy.js');
-    const { kept, stats } = applyLiSkipPolicy(chunks);
+    const { kept, stats } = applyLiSkipPolicy(chunks, { projectRoot });
     if (stats.totalSkipped > 0) {
       const breakdown = [
-        stats.dir > 0 ? `${stats.dir} vendored/build` : null,
-        stats.pattern > 0 ? `${stats.pattern} minified/lock` : null,
+        stats.excluded > 0 ? `${stats.excluded} excluded` : null,
         stats.generated > 0 ? `${stats.generated} generated` : null,
         stats.huge > 0 ? `${stats.huge} huge-file` : null,
       ].filter(Boolean).join(', ');
