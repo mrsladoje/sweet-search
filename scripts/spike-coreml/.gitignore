@@ -1,0 +1,17 @@
+# Spike directory — throwaway artifacts NOT committed to git.
+# Everything listed here is regeneratable from the checked-in scripts.
+
+# Python virtual environment (431 MB) — recreated via:
+#   python3 -m venv .venv && source .venv/bin/activate && pip install torch coremltools safetensors packaging
+.venv/
+
+# Converted .mlpackage artifacts (~1.4 GB total) — regenerated via:
+#   python convert_to_coreml.py --batch <B> --seq <S> --precision fp16
+artifacts/
+
+# Agentic-qe local state
+.agentic-qe/
+
+# Generated SQLite / logs
+*.db
+*.log
