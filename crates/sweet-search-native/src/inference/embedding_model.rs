@@ -16,6 +16,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::nomic_bert_sdpa as nomic_bert;
+#[cfg(feature = "coreml")]
+use super::coreml_embedding::CoremlEmbedding;
 use super::{metal_lock, optimal_dtype, select_device};
 
 /// Inner state of the embedding model, shared between the napi struct (main
@@ -24,11 +26,157 @@ use super::{metal_lock, optimal_dtype, select_device};
 /// Metal compute is serialized via `super::metal_lock()` — a process-wide
 /// mutex that covers all Metal operations across both the embedding and LI
 /// models. See `metal_lock` for why per-model locks aren't enough.
+///
+/// When the `coreml` feature is enabled AND the
+/// `SWEET_SEARCH_COREML_EMBED_MLPACKAGE` env var points at a valid
+/// .mlpackage, `coreml` holds an extra CPU+NE backend that is used
+/// whenever the batch fits its fixed shape; the candle backbone is kept
+/// loaded unconditionally as the fallback path for oversized batches.
 struct EmbeddingInner {
     model: nomic_bert::NomicBertModel,
+    #[cfg(feature = "coreml")]
+    coreml: Option<CoremlEmbedding>,
     device: candle_core::Device,
     hidden_size: usize,
 }
+
+/// Try to load the optional CoreML embedding backend from the env var.
+/// Logs on both success and failure so a misconfigured path surfaces
+/// immediately instead of silently falling through to the candle
+/// backbone at every batch.
+#[cfg(feature = "coreml")]
+fn try_load_coreml_embedding() -> Option<CoremlEmbedding> {
+    let path = std::env::var("SWEET_SEARCH_COREML_EMBED_MLPACKAGE").ok()?;
+    let t0 = std::time::Instant::now();
+    match CoremlEmbedding::load(std::path::Path::new(&path)) {
+        Ok(m) => {
+            let ms = t0.elapsed().as_secs_f64() * 1000.0;
+            eprintln!(
+                "[NativeEmbedding] CoreML backend loaded from {} in {:.0}ms (batch={}, seq={}, dim={})",
+                path,
+                ms,
+                m.max_batch(),
+                m.max_seq(),
+                m.hidden_size(),
+            );
+            Some(m)
+        }
+        Err(e) => {
+            eprintln!(
+                "[NativeEmbedding] CoreML backend load FAILED from {}: {} — falling back to candle",
+                path, e
+            );
+            None
+        }
+    }
+}
+
+/// Startup parity check between candle and CoreML on a single synthetic
+/// batch item. Returns the cosine similarity between the two 768-d output
+/// vectors; because both backends emit L2-normalised outputs, the cosine
+/// is just the dot product.
+///
+/// We use a deterministic vocab-safe fixture: [CLS] + 62 common subword
+/// IDs + [SEP] (64 active positions total). Starting from id=1000 avoids
+/// the 100-byte range (which overlaps the BERT special-token codes
+/// [CLS]=101 / [SEP]=102 / [UNK]=100 and produced out-of-distribution
+/// activations on NomicBERT). 64 active tokens is enough for the mean
+/// pool to average out per-position FP16 rounding noise between the
+/// CoreML weights (stored FP16) and candle's BF16 Metal weights — the
+/// shorter 16-token fixture previously used amplified the rounding to
+/// ~0.996 cosine, triggering false-negative parity failures even though
+/// the spike measured 0.9998 on real sentences.
+#[cfg(feature = "coreml")]
+fn embedding_parity_cosine(
+    candle_model: &nomic_bert::NomicBertModel,
+    device: &Device,
+    coreml: &CoremlEmbedding,
+    hidden_size: usize,
+) -> std::result::Result<f32, String> {
+    const ACTIVE: usize = 64;
+    let seq_len = coreml.max_seq();
+
+    let mut ids_row = vec![0i64; seq_len];
+    let mut mask_row = vec![0i64; seq_len];
+    ids_row[0] = 101; // [CLS]
+    mask_row[0] = 1;
+    for i in 1..(ACTIVE - 1) {
+        ids_row[i] = 1000 + i as i64;
+        mask_row[i] = 1;
+    }
+    ids_row[ACTIVE - 1] = 102; // [SEP]
+    mask_row[ACTIVE - 1] = 1;
+
+    // Candle forward on the same fixture. Mirrors the compute() pipeline
+    // but without the Float32Array packaging — we just need the raw
+    // L2-normalised vector to compare against CoreML.
+    let flat_ids: Vec<u32> = ids_row.iter().map(|&x| x as u32).collect();
+    let flat_mask_u8: Vec<u8> = mask_row.iter().map(|&x| x as u8).collect();
+
+    let _guard = if matches!(device, Device::Metal(_)) {
+        Some(
+            metal_lock()
+                .lock()
+                .map_err(|e| format!("metal lock poisoned: {e}"))?,
+        )
+    } else {
+        None
+    };
+
+    let ids_tensor = Tensor::new(flat_ids.as_slice(), device)
+        .and_then(|t| t.reshape((1, seq_len)))
+        .map_err(|e| format!("ids tensor: {e}"))?;
+    let mask_u8 = Tensor::new(flat_mask_u8.as_slice(), device)
+        .and_then(|t| t.reshape((1, seq_len)))
+        .map_err(|e| format!("mask tensor: {e}"))?;
+
+    let hidden = candle_model
+        .forward(&ids_tensor, None, Some(&mask_u8))
+        .map_err(|e| format!("candle forward: {e}"))?;
+    let mask_float = mask_u8
+        .to_dtype(hidden.dtype())
+        .map_err(|e| format!("mask dtype: {e}"))?;
+    let pooled = nomic_bert::mean_pooling(&hidden, &mask_float)
+        .map_err(|e| format!("mean pool: {e}"))?;
+    let normalized = nomic_bert::l2_normalize(&pooled)
+        .map_err(|e| format!("l2 normalize: {e}"))?;
+
+    let candle_vec: Vec<f32> = normalized
+        .to_dtype(DType::F32)
+        .and_then(|t| t.reshape((hidden_size,)))
+        .and_then(|t| t.to_vec1::<f32>())
+        .map_err(|e| format!("candle output extract: {e}"))?;
+    drop(_guard);
+
+    // CoreML forward on the same fixture. The Rust wrapper already pads
+    // a single-row batch up to the fixed shape and truncates the output
+    // back down to `batch_size * hidden_size`.
+    let coreml_input_ids = vec![ids_row];
+    let coreml_mask = vec![mask_row];
+    let coreml_vec = coreml.embed(&coreml_input_ids, &coreml_mask)?;
+
+    if candle_vec.len() != coreml_vec.len() {
+        return Err(format!(
+            "length mismatch: candle={} coreml={}",
+            candle_vec.len(),
+            coreml_vec.len()
+        ));
+    }
+
+    let dot: f32 = candle_vec
+        .iter()
+        .zip(coreml_vec.iter())
+        .map(|(&a, &b)| a * b)
+        .sum();
+    Ok(dot)
+}
+
+/// Parity threshold below which the CoreML backend is dropped. The spike
+/// measured 0.9998 on gencodesearchnet-style inputs (see
+/// scripts/spike-coreml/test_coreml_parity.py), so 0.998 leaves ~2e-4
+/// room for runtime drift while still catching actual breakage.
+#[cfg(feature = "coreml")]
+const COREML_EMBED_PARITY_THRESHOLD: f32 = 0.998;
 
 /// Native NomicBERT embedding model for CodeRankEmbed inference.
 ///
@@ -98,8 +246,47 @@ impl NativeEmbeddingModel {
             config.n_layer,
         );
 
+        // Load the CoreML backend if the env var is set, then verify its
+        // output matches candle on a synthetic fixture before admitting it
+        // for dispatch. Any failure along the way drops the CoreML backend
+        // — embed_batch falls through to the candle path for every call
+        // in that case, identical to the pre-CoreML behavior.
+        #[cfg(feature = "coreml")]
+        let coreml = match try_load_coreml_embedding() {
+            None => None,
+            Some(c) => match embedding_parity_cosine(&model, &device, &c, hidden_size) {
+                Ok(cos) if cos >= COREML_EMBED_PARITY_THRESHOLD => {
+                    eprintln!(
+                        "[NativeEmbedding] CoreML parity OK (cosine {:.6} ≥ {:.3})",
+                        cos, COREML_EMBED_PARITY_THRESHOLD
+                    );
+                    Some(c)
+                }
+                Ok(cos) => {
+                    eprintln!(
+                        "[NativeEmbedding] CoreML parity FAILED (cosine {:.6} < {:.3}) — dropping CoreML backend",
+                        cos, COREML_EMBED_PARITY_THRESHOLD
+                    );
+                    None
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[NativeEmbedding] CoreML parity check errored: {} — dropping CoreML backend",
+                        e
+                    );
+                    None
+                }
+            },
+        };
+
         Ok(Self {
-            inner: Arc::new(EmbeddingInner { model, device, hidden_size }),
+            inner: Arc::new(EmbeddingInner {
+                model,
+                #[cfg(feature = "coreml")]
+                coreml,
+                device,
+                hidden_size,
+            }),
         })
     }
 
@@ -164,6 +351,26 @@ impl Task for EmbedBatchTask {
             return Ok(Float32Array::new(Vec::new()));
         }
         let seq_len = self.input_ids[0].len();
+
+        // CoreML fast path — runs on CPU+NE, bypasses the candle Metal
+        // lock entirely. CoremlEmbedding::embed serialises concurrent
+        // callers through an internal per-model mutex (MLModel sync
+        // predict is not thread-safe), and CPU+NE does not share a
+        // command queue with candle's Metal backend, so it can run in
+        // parallel with Metal LI. We only dispatch when the batch fits
+        // the fixed traced shape; anything larger falls through to the
+        // candle path below.
+        #[cfg(feature = "coreml")]
+        if let Some(coreml) = &inner.coreml {
+            if coreml.fits(batch_size, seq_len) {
+                return coreml
+                    .embed(&self.input_ids, &self.attention_mask)
+                    .map(Float32Array::new)
+                    .map_err(|e| {
+                        Error::from_reason(format!("[NativeEmbedding] CoreML: {e}"))
+                    });
+            }
+        }
 
         // Entire Metal pipeline is serialized under the model mutex — tensor
         // creation, forward, pool, normalize, AND device→host copy all run

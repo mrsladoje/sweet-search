@@ -1618,6 +1618,7 @@ dependencies = [
  "candle-core",
  "candle-nn",
  "candle-transformers",
+ "cc",
  "memchr",
  "memmap2",
  "napi",

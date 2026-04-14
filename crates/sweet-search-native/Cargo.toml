@@ -26,10 +26,22 @@ tempfile = "3"
 
 [build-dependencies]
 napi-build = "2"
+# cc is used only when the `coreml` feature is on, to compile the small
+# Objective-C shim (src/inference/coreml_shim.m) that wraps Apple's
+# CoreML framework. Rust calls into the shim through a plain C ABI.
+cc = "1"
 
 [features]
 default = []
 metal = ["candle-transformers/metal"]
+# coreml = Apple Neural Engine inference via a thin Objective-C shim that
+# wraps the CoreML framework. Loads .mlpackage files, pins compute_units to
+# CPU_AND_NE (the CoreML GPU path miscompiles our attention/MLP/norm chain
+# and silently produces garbage — verified on both NomicBERT embed and
+# ModernBERT LI in scripts/spike-coreml/test_coreml_*_parity.py). The shim
+# requires the CoreML and Foundation frameworks at link time (handled by
+# build.rs). Metal feature is required because CoreML is macOS-only.
+coreml = ["metal"]
 # accelerate = vDSP/AMX acceleration for candle CPU-side paths (shape bookkeeping,
 # small reductions, token_type_embeddings assembly). Enabled by default on macOS
 # so the Metal path benefits from Accelerate/AMX on the small CPU-side ops that
