@@ -19,18 +19,186 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::modernbert_sdpa as modernbert;
+#[cfg(feature = "coreml")]
+use super::coreml_li::CoremlLi;
 use super::{metal_lock, optimal_dtype, select_device};
 
 /// Inner state of the LI model. Metal compute is serialized via
 /// `super::metal_lock()` — a process-wide mutex shared with the embedding
 /// model. See `metal_lock` for why per-model locks aren't enough.
+///
+/// When the `coreml` feature is enabled AND
+/// `SWEET_SEARCH_COREML_LI_MLPACKAGE` points at a valid .mlpackage,
+/// `coreml` holds an extra CPU+NE backend used whenever the batch fits
+/// its fixed shape. The candle backbone is kept loaded unconditionally
+/// as the fallback for oversized batches.
 struct LiInner {
     model: modernbert::ModernBert,
     projection_weight: Tensor,
+    #[cfg(feature = "coreml")]
+    coreml: Option<CoremlLi>,
     device: Device,
     backbone_dim: usize,
     token_dim: usize,
 }
+
+/// Try to load the optional CoreML LI backend from the env var.
+#[cfg(feature = "coreml")]
+fn try_load_coreml_li() -> Option<CoremlLi> {
+    let path = std::env::var("SWEET_SEARCH_COREML_LI_MLPACKAGE").ok()?;
+    let t0 = std::time::Instant::now();
+    match CoremlLi::load(std::path::Path::new(&path)) {
+        Ok(m) => {
+            let ms = t0.elapsed().as_secs_f64() * 1000.0;
+            eprintln!(
+                "[NativeLI] CoreML backend loaded from {} in {:.0}ms (batch={}, seq={}, dim={})",
+                path,
+                ms,
+                m.max_batch(),
+                m.max_seq(),
+                m.token_dim(),
+            );
+            Some(m)
+        }
+        Err(e) => {
+            eprintln!(
+                "[NativeLI] CoreML backend load FAILED from {}: {} — falling back to candle",
+                path, e
+            );
+            None
+        }
+    }
+}
+
+/// Startup parity check between candle and CoreML for LI. Runs one
+/// synthetic batch through both backends and returns the mean cosine
+/// similarity across active-token pairs. Because both backends emit
+/// per-token L2-normalised vectors, each per-token cosine is the dot
+/// product of the two 128-d outputs.
+///
+/// Uses the same vocab-safe fixture as the embedding parity check —
+/// 64 active positions with [CLS]+common-subword-ids+[SEP] — so the
+/// per-token FP16/BF16 rounding noise has the same budget on both
+/// checks. See `embedding_parity_cosine` for the rationale behind the
+/// fixture shape.
+#[cfg(feature = "coreml")]
+fn li_parity_cosine(
+    candle_model: &modernbert::ModernBert,
+    projection_weight: &Tensor,
+    device: &Device,
+    backbone_dim: usize,
+    token_dim: usize,
+    coreml: &CoremlLi,
+) -> std::result::Result<f32, String> {
+    const ACTIVE: usize = 64;
+    let seq_len = coreml.max_seq();
+
+    let mut ids_row = vec![0i64; seq_len];
+    let mut mask_row = vec![0i64; seq_len];
+    ids_row[0] = 101; // [CLS]
+    mask_row[0] = 1;
+    for i in 1..(ACTIVE - 1) {
+        ids_row[i] = 1000 + i as i64;
+        mask_row[i] = 1;
+    }
+    ids_row[ACTIVE - 1] = 102; // [SEP]
+    mask_row[ACTIVE - 1] = 1;
+
+    // Candle forward + projection + per-token normalize. Mirrors
+    // LiEncodeTask::compute but without the Float32Array packaging and
+    // active-token slicing — we just need the [ACTIVE, token_dim]
+    // slice of normalised per-token vectors to compare against CoreML.
+    let flat_ids: Vec<u32> = ids_row.iter().map(|&x| x as u32).collect();
+    let flat_mask_u8: Vec<u8> = mask_row.iter().map(|&x| x as u8).collect();
+
+    let _guard = if matches!(device, Device::Metal(_)) {
+        Some(
+            metal_lock()
+                .lock()
+                .map_err(|e| format!("metal lock poisoned: {e}"))?,
+        )
+    } else {
+        None
+    };
+
+    let ids_tensor = Tensor::new(flat_ids.as_slice(), device)
+        .and_then(|t| t.reshape((1, seq_len)))
+        .map_err(|e| format!("ids tensor: {e}"))?;
+    let mask_u8 = Tensor::new(flat_mask_u8.as_slice(), device)
+        .and_then(|t| t.reshape((1, seq_len)))
+        .map_err(|e| format!("mask tensor: {e}"))?;
+
+    let hidden = candle_model
+        .forward(&ids_tensor, &mask_u8)
+        .map_err(|e| format!("candle forward: {e}"))?;
+    let proj_t = projection_weight
+        .t()
+        .map_err(|e| format!("projection transpose: {e}"))?;
+    let hidden_2d = hidden
+        .reshape((seq_len, backbone_dim))
+        .map_err(|e| format!("hidden reshape: {e}"))?;
+    let projected = hidden_2d
+        .matmul(&proj_t)
+        .and_then(|t| t.reshape((1, seq_len, token_dim)))
+        .map_err(|e| format!("projection matmul: {e}"))?;
+    let norm = projected
+        .sqr()
+        .and_then(|t| t.sum_keepdim(D::Minus1))
+        .and_then(|t| (t + 1e-12f64))
+        .and_then(|t| t.sqrt())
+        .map_err(|e| format!("norm compute: {e}"))?;
+    let normalized = projected
+        .broadcast_div(&norm)
+        .and_then(|t| t.to_dtype(DType::F32))
+        .map_err(|e| format!("normalize: {e}"))?;
+
+    // Active tokens only — first ACTIVE rows, flat.
+    let candle_active: Vec<f32> = normalized
+        .i(0)
+        .and_then(|t| t.narrow(0, 0, ACTIVE))
+        .and_then(|t| t.reshape((ACTIVE * token_dim,)))
+        .and_then(|t| t.to_vec1::<f32>())
+        .map_err(|e| format!("candle extract: {e}"))?;
+    drop(_guard);
+
+    // CoreML forward — returns (flat active tokens, counts).
+    let coreml_input_ids = vec![ids_row];
+    let coreml_mask = vec![mask_row];
+    let (coreml_active, counts) = coreml.encode(&coreml_input_ids, &coreml_mask)?;
+    if counts.len() != 1 || counts[0] as usize != ACTIVE {
+        return Err(format!(
+            "unexpected CoreML active count: expected 1 batch of {}, got counts={:?}",
+            ACTIVE, counts
+        ));
+    }
+    if candle_active.len() != coreml_active.len() {
+        return Err(format!(
+            "length mismatch: candle={} coreml={}",
+            candle_active.len(),
+            coreml_active.len()
+        ));
+    }
+
+    // Mean per-token cosine across the ACTIVE positions. Each 128-d
+    // slice is already L2-normalised so per-token cosine = dot product.
+    let mut sum = 0.0f32;
+    for t in 0..ACTIVE {
+        let base = t * token_dim;
+        let mut dot = 0.0f32;
+        for k in 0..token_dim {
+            dot += candle_active[base + k] * coreml_active[base + k];
+        }
+        sum += dot;
+    }
+    Ok(sum / ACTIVE as f32)
+}
+
+/// Parity threshold for LI. Spike measured 0.9999 mean per-token cosine
+/// between candle BF16 and CoreML CPU_AND_NE on real sentences, so
+/// 0.998 leaves ~2e-3 room for runtime drift while still catching
+/// actual breakage.
+#[cfg(feature = "coreml")]
+const COREML_LI_PARITY_THRESHOLD: f32 = 0.998;
 
 /// Native ModernBERT late interaction model for LateOn-Code inference.
 ///
@@ -140,10 +308,51 @@ impl NativeLateInteractionModel {
             config.num_hidden_layers,
         );
 
+        // Load CoreML backend if env var is set, then verify parity
+        // against candle before admitting it. Any failure drops the
+        // CoreML backend; encode_batch falls through to candle in that
+        // case, identical to pre-CoreML behavior.
+        #[cfg(feature = "coreml")]
+        let coreml = match try_load_coreml_li() {
+            None => None,
+            Some(c) => match li_parity_cosine(
+                &model,
+                &projection_weight,
+                &device,
+                backbone_dim,
+                token_dim,
+                &c,
+            ) {
+                Ok(cos) if cos >= COREML_LI_PARITY_THRESHOLD => {
+                    eprintln!(
+                        "[NativeLI] CoreML parity OK (mean cosine {:.6} ≥ {:.3})",
+                        cos, COREML_LI_PARITY_THRESHOLD
+                    );
+                    Some(c)
+                }
+                Ok(cos) => {
+                    eprintln!(
+                        "[NativeLI] CoreML parity FAILED (mean cosine {:.6} < {:.3}) — dropping CoreML backend",
+                        cos, COREML_LI_PARITY_THRESHOLD
+                    );
+                    None
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[NativeLI] CoreML parity check errored: {} — dropping CoreML backend",
+                        e
+                    );
+                    None
+                }
+            },
+        };
+
         Ok(Self {
             inner: Arc::new(LiInner {
                 model,
                 projection_weight,
+                #[cfg(feature = "coreml")]
+                coreml,
                 device,
                 backbone_dim,
                 token_dim,
@@ -218,6 +427,26 @@ impl Task for LiEncodeTask {
             });
         }
         let seq_len = self.input_ids[0].len();
+
+        // CoreML fast path — runs on CPU+NE, bypasses the candle Metal
+        // lock entirely. Fits check prevents batches/sequences larger
+        // than the traced fixed shape from dispatching here; those fall
+        // through to the candle path below. CoremlLi::encode serialises
+        // concurrent callers through its internal per-model mutex.
+        #[cfg(feature = "coreml")]
+        if let Some(coreml) = &inner.coreml {
+            if coreml.fits(batch_size, seq_len) {
+                return coreml
+                    .encode(&self.input_ids, &self.attention_mask)
+                    .map(|(vectors, token_counts)| LiEncodingResult {
+                        vectors: Float32Array::new(vectors),
+                        token_counts,
+                    })
+                    .map_err(|e| {
+                        Error::from_reason(format!("[NativeLI] CoreML: {e}"))
+                    });
+            }
+        }
 
         // Entire Metal pipeline is serialized under the model mutex. Candle's
         // Metal backend can't safely accept concurrent submissions against the

@@ -11,6 +11,24 @@ mod li_model;
 mod modernbert_sdpa;
 mod nomic_bert_sdpa;
 
+// CoreML FFI: thin Objective-C shim for loading .mlpackage files and
+// running inference on CPU_AND_NE. Gated behind the `coreml` Cargo
+// feature which is macOS-only (requires metal). The shim itself lives
+// in src/inference/coreml_shim.m; the Rust side is coreml_shim.rs.
+//
+// coreml_embedding / coreml_li are production wrappers over the shim
+// that expose a candle-compatible embed/encode interface so
+// embedding_model.rs and li_model.rs can dispatch to CoreML when the
+// opt-in env vars are set and fall back to candle otherwise.
+#[cfg(feature = "coreml")]
+mod coreml_shim;
+#[cfg(feature = "coreml")]
+mod coreml_smoke;
+#[cfg(feature = "coreml")]
+mod coreml_embedding;
+#[cfg(feature = "coreml")]
+mod coreml_li;
+
 pub use embedding_model::NativeEmbeddingModel;
 pub use li_model::NativeLateInteractionModel;
 
