@@ -511,10 +511,11 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     return;
   }
 
-  // Apply LI skip policy: drop chunks from vendored / generated / huge files
-  // BEFORE the encoder ever sees them. Embedding indexes everything for full
-  // recall; LI is the slow phase and only adds value on chunks a human would
-  // actually want to read. Disable via SWEET_SEARCH_LI_SKIP_DISABLE=1.
+  // Apply LI skip policy: last-mile guard before the slow encoder runs.
+  // The embed indexer has already dropped glob-excluded files at discovery
+  // time (unified FILE_PATTERNS.exclude); this pass adds the LI-specific
+  // checks that globs can't do — content-based @generated markers and a
+  // per-file token budget. Disable via SWEET_SEARCH_LI_SKIP_DISABLE=1.
   let skippedSummary = null;
   if (Array.isArray(chunks) && chunks.length > 0) {
     const { applyLiSkipPolicy } = await import('./li-skip-policy.js');

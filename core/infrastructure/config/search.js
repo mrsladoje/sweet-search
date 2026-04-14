@@ -96,10 +96,13 @@ export const FILE_PATTERNS = {
     // ── Package manager dependencies ──────────────────────────────────────
     '**/node_modules/**',
     '**/bower_components/**',
+    '**/jspm_packages/**',
     '**/.yarn/**',
     '**/.pnp.*',
     '**/vendor/**',
     '**/vendors/**',
+    '**/third_party/**',
+    '**/thirdparty/**',
     '**/.cargo/**',
     '**/Godeps/**',
     '**/Pods/**',
@@ -143,6 +146,7 @@ export const FILE_PATTERNS = {
     // ── Caches & temp ─────────────────────────────────────────────────────
     '**/.vite/**',
     '**/coverage/**',
+    '**/.coverage/**',
     '**/__pycache__/**',
     '**/.mypy_cache/**',
     '**/.pytest_cache/**',
@@ -184,10 +188,18 @@ export const FILE_PATTERNS = {
 
     // ── Minified / bundled / sourcemaps ───────────────────────────────────
     '**/*.min.js',
+    '**/*.min.mjs',
+    '**/*.min.cjs',
     '**/*.min.css',
     '**/*.bundle.js',
+    '**/*.bundle.css',
+    '**/*.umd.js',
+    '**/*.iife.js',
     '**/*.chunk.js',
     '**/*.map',
+
+    // ── Test snapshots ────────────────────────────────────────────────────
+    '**/*.snap',
 
     // ── Binary & compiled artifacts ───────────────────────────────────────
     '**/*.class',
