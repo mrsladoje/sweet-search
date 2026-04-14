@@ -1,7 +1,10 @@
 # Sweet Search Init and Packaging Strategy
 
-**Last updated**: 2026-04-01
-**Status**: All phases implemented except Phase 7 (native end-to-end model execution)
+**Last updated**: 2026-04-14
+**Status**: Phases 1–8 all implemented. CoreML variant cascade (Phase 8) is
+fetched from HuggingFace as part of the standard `sweet-search init` full
+profile on M3+ Apple Silicon, with hardware-aware capability gating and a
+local-build fallback for developers/air-gapped environments.
 
 ---
 
@@ -20,7 +23,12 @@ After the command completes the user has:
 - all first-party WASM and router assets (shipped inside the main package)
 - platform-native binary and addon auto-selected via `optionalDependencies`
 - profile-selected model artifacts fetched and verified in a managed local cache
-- a generated `.sweet-search/config.json`
+- on M3+ Apple Silicon: a record of the CoreML variant cascade state (present,
+  eligible-but-not-built, or not-applicable) so native inference can arm the
+  CoreML fast path when artifacts are cached, and fall back to candle transparently
+  otherwise
+- a generated `.sweet-search/config.json` that records the hardware decision and
+  cascade state alongside the profile
 - a verified runtime
 
 ---
@@ -73,6 +81,190 @@ the registry's `getModelsForProfile()` but are not yet in the manifest.
 
 ---
 
+## CoreML Variant Cascade (M3+ Apple Silicon)
+
+The CoreML variant cascade is a hardware-gated acceleration layer that runs
+alongside the candle Metal backbone on M3+ Apple Silicon. It delivers ~18%
+faster full indexing on an M3 Max vs the candle BF16 baseline (measured
+2026-04-14 against `sweet-search-private` at 16,347 docs).
+
+### What it is
+
+A set of 12 pre-traced CoreML `.mlpackage` directories — 6 NomicBERT embedding
+variants and 6 ModernBERT LI variants — covering the shape stair-step produced
+by the indexer's cache-aware bucketer. The Rust native addon picks the smallest
+variant that fits each batch and dispatches it to Apple's Neural Engine through
+a thin Obj-C shim. Anything that exceeds the largest variant falls through to
+candle — the cascade never replaces candle; it short-circuits it when profitable.
+
+Single source of truth for the shape set: `core/infrastructure/coreml-cascade.json`.
+Both the JS cascade module and `scripts/spike-coreml/trace_cascade.py` read this
+file so the shapes traced during a local build always match the shapes the Rust
+filename parser (`parse_embed_variant_filename` / `parse_li_variant_filename`)
+looks for on disk.
+
+### Hardware gating
+
+`core/infrastructure/hardware-capability.js::detectHardwareCapability()` reads
+`sysctl -n machdep.cpu.brand_string` and classifies the current machine. The
+cascade is marked eligible iff:
+
+- `platform === 'darwin'`
+- `arch === 'arm64'`
+- Apple chip generation ≥ 3 (M3, M4, M5, …)
+
+The generation floor is empirical. M1/M2 ANE TOPS is below M3 and the cascade's
+measured per-batch latency improvements on smaller shapes do not cover the
+`mlmodelc` compile overhead for those generations. Rather than ship a feature
+that regresses on older hardware, the gate is conservative. Unknown newer
+chips (e.g., M5 before this file is updated) are admitted under the same
+`>= 3` rule on the optimistic assumption that newer is not worse.
+
+Non-eligible hardware silently hits the candle path — users have no action to
+take and init does not log a noisy not-applicable line.
+
+### Cache layout
+
+When the cascade is built, artifacts live under the same managed cache root as
+safetensors models, so `SWEET_SEARCH_MODEL_CACHE`, init, and uninstall all see
+a consistent picture:
+
+```
+{modelCacheRoot}/coreml-cascade/
+  embed/
+    nomic_bert_b64_s96_fp16.mlpackage/           ← 6 variant dirs
+    nomic_bert_b64_s96_fp16.mlpackage.mlmodelc/  ← compiled cache sibling
+    nomic_bert_b64_s192_fp16.mlpackage/
+    nomic_bert_b64_s192_fp16.mlpackage.mlmodelc/
+    ...
+  li/
+    li_modernbert_b128_s48_fp16.mlpackage/       ← 6 variant dirs
+    li_modernbert_b128_s48_fp16.mlpackage.mlmodelc/
+    ...
+```
+
+Each `.mlmodelc` sibling is written by `coreml_shim.m` after the first load
+compile. Invalidation is **content-hash** (SHA256 of the source `.mlpackage/Manifest.json`)
+stored as a sidecar inside the cached bundle. Writes are **stage-and-rename**
+(compile → temp `.stage-PID-TS` dir → atomic `moveItemAtURL:` into place) so two
+concurrent processes compiling the same variant cannot corrupt the cache. This
+matches the robustness contract for the rest of the model cache (atomic writes,
+checksum verification).
+
+Cold compile overhead is amortised to a one-time cost per variant per machine;
+warm loads collapse to single-digit milliseconds. Variants that `pick()` never
+selects are never compiled — startup stays fast even with the full cascade.
+
+### Delivery strategy
+
+The cascade ships two ways, both landing at the same on-disk state:
+
+1. **HuggingFace fetch (default, shipped).** The 12 pre-traced `.mlpackage`
+   directories are tarballed (~253 MB each for NomicBERT embed, ~275 MB each
+   for ModernBERT LI, ~3.2 GB total) and hosted at
+   [`mrsladoje/sweet-search-coreml-cascade`](https://huggingface.co/mrsladoje/sweet-search-coreml-cascade).
+   `sweet-search init --profile full` on M3+ Apple Silicon fetches each
+   tarball via `core/infrastructure/coreml-cascade.js::fetchCoremlCascade()`
+   using the same `model-fetcher.js::fetchModelFile` primitive as the other
+   models (atomic writes, SHA256 verification, retries, resumable). Each
+   tarball is checksum-verified against
+   `core/infrastructure/coreml-cascade.json` and atomically extracted into
+   `{modelCacheRoot}/coreml-cascade/{embed,li}/`. Takes ~5 minutes on a
+   typical home connection; zero Python dependency on the end-user machine.
+
+   The `hfRepo` field in `coreml-cascade.json` is the single source of truth
+   for the cascade's HF location — bump it there and re-run a cascade build
+   to point at a different repo or mirror.
+
+2. **Local build fallback (developer / air-gapped / shape retracing).**
+   `scripts/build-coreml-cascade.js` wraps
+   `scripts/spike-coreml/trace_cascade.py` to trace the full cascade from the
+   already-fetched source safetensors (`nomic-ai/CodeRankEmbed` and
+   `lightonai/LateOn-Code`). Takes ~7 minutes on M3 Max. Requires Python 3.10+
+   with `torch`, `coremltools`, `safetensors`, `packaging`, `numpy`. The output
+   `.mlpackage` dirs are written directly into the managed cache at
+   `{modelCacheRoot}/coreml-cascade/{embed,li}/` so the next `sweet-search`
+   process loads them automatically via
+   `native-inference.js::resolveCoremlCascadeForAddon()`.
+
+   Invoke via `sweet-search init --build-coreml-cascade` (explicit opt-in,
+   overrides the default HF fetch path) or directly via
+   `node scripts/build-coreml-cascade.js`. Use cases: (a) developers making
+   changes to the shape set and retracing locally before publishing; (b)
+   air-gapped environments that can't reach huggingface.co; (c) new Apple
+   chip generations where upstream retrace hasn't happened yet.
+
+Either delivery path produces the same on-disk layout and the same runtime
+behaviour — `native-inference.js` doesn't care how the cascade got there.
+
+**Republishing workflow for maintainers.** When shapes change or new variants
+are added, the release workflow is:
+
+1. Update the variants list in `core/infrastructure/coreml-cascade.json`
+2. Run `node scripts/build-coreml-cascade.js` on an M3+ Mac to retrace
+3. `tar -czf` each variant and compute SHA256
+4. Update the `tarballSha256` + `tarballSizeBytes` fields in the JSON
+5. Upload the new tarballs to `hfRepo` via `huggingface_hub.upload_file`
+6. Commit and publish the sweet-search package — end-user init now fetches
+   the new cascade automatically
+
+### Runtime wiring
+
+`core/infrastructure/coreml-cascade.js` owns the state machine. Its public API
+is imported through the `core/infrastructure/index.js` barrel:
+
+```javascript
+import {
+  detectHardwareCapability,        // hardware gate
+  getCoremlCascadeState,           // "what's present/missing"
+  getCoremlCascadeResolvedDirs,    // "what dirs does the addon load?"
+  getCoremlCascadeReport,          // "what does init log?"
+} from './core/infrastructure/index.js';
+```
+
+`native-inference.js` calls `getCoremlCascadeResolvedDirs()` exactly once per
+process (at first addon load), passes the resolved `embedDir` / `liDir` as the
+third / fourth arguments to `NativeEmbeddingModel.load` and
+`NativeLateInteractionModel.load`, and logs a single diagnostic line recording
+the decision. The Rust constructors run a startup parity check against the
+smallest variant before admitting dispatch; parity failure drops the CoreML
+backend and the addon runs candle-only.
+
+There is **no env-var bypass**. The old spike flags
+(`SWEET_SEARCH_COREML_EMBED_MLPACKAGE_DIR`,
+`SWEET_SEARCH_COREML_LI_MLPACKAGE_DIR`,
+`SWEET_SEARCH_INFERENCE_BACKEND=coreml`) have been removed. Configuration
+flows through `coreml-cascade.js` so init, uninstall, and the addon see the
+same source of truth. Only one diagnostic env var remains:
+`SWEET_SEARCH_COREML_CASCADE=0` force-disables the cascade for benchmarking.
+
+`SWEET_SEARCH_COREML_STATS=1` dumps a per-variant dispatch report on addon
+shutdown:
+
+```
+[CoremlEmbedding] dispatch stats (6 variants, 18421 dispatched, 12 fell through)
+  b1×s2048     3 dispatches   [compiled]
+  b4×s1024    92 dispatches   [compiled]
+  b16×s512  1205 dispatches   [compiled]
+  b32×s384  3718 dispatches   [compiled]
+  b64×s192  4582 dispatches   [compiled]
+  b64×s96   8821 dispatches   [compiled]
+```
+
+The report answers the question the 18% headline number alone can't: which
+variants pulled their weight, and which never fired. A variant with zero
+dispatches over a full index run is dead weight and should be cut from the
+cascade JSON.
+
+### Uninstall
+
+`scripts/uninstall.js` detects the cascade cache dir via
+`getCoremlCascadeRoot()` and adds it to the removal list, gated by
+`--keep-models`. The removal is a single `rm -rf` of the root, which also
+takes out the `.mlmodelc` compiled siblings next to each `.mlpackage`.
+
+---
+
 ## Init Command Behavior
 
 `scripts/init.js` is idempotent. Re-running is always safe.
@@ -88,23 +280,36 @@ the registry's `getModelsForProfile()` but are not yet in the manifest.
    - Written to `.tmp` file first; atomically renamed on success.
    - SHA256 verified against `core/infrastructure/model-registry.js` for every LFS file.
    - Resumable (sends `Range` header for partial content).
-8. Write `.sweet-search/config.json`.
-9. Run runtime verification.
-10. Install index-maintainer daemon to `.claude/hooks/`.
-11. Print concise report.
+8. Resolve hardware capability + CoreML cascade state (`full` profile only).
+   - `detectHardwareCapability()` classifies chip generation.
+   - `getCoremlCascadeReport()` inspects the managed cache dir.
+   - On M3+ with `--build-coreml-cascade`, runs `scripts/build-coreml-cascade.js`
+     as a child process; on failure, logs the error and continues with candle only.
+   - Never blocks init: ineligible hardware, missing cache, and build failure all
+     collapse to "cascade disabled, candle path unchanged".
+9. Write `.sweet-search/config.json` including `runtime.hardware` and
+   `runtime.coremlCascade` diagnostics.
+10. Run runtime verification.
+11. Install index-maintainer daemon to `.claude/hooks/`.
+12. Print concise report.
 
 ```
 Sweet Search init complete
 
-Profile: full
-MaxSim: native
-Router: wasm
-Late interaction model: init-managed cache
-Reranker model: init-managed cache
-Runtime verification: fast-pass
+  Profile:              full
+  Hardware:             Apple M3 Max (darwin-arm64)
+  MaxSim:               native
+  Router:               wasm
+  lateon code: cached
+  lateon code edge: cached
+  ...
+  CoreML cascade:       present (12 variants ready (6 embed + 6 LI))
+  Runtime downloads:    disabled
+  Verification:         fast-pass (23/23)
 ```
 
-Flags: `--profile <core|full>`, `--verify-deep`, `--force`, `--verbose`.
+Flags: `--profile <core|full>`, `--verify-deep`, `--force`, `--verbose`,
+`--build-coreml-cascade`, `--skip-coreml-cascade`.
 
 ---
 
@@ -162,6 +367,19 @@ Three root causes were found and fixed:
 2. Configured `modelCacheRoot` override (enterprise mirrors)
 3. Remote fetch only when `allowRuntimeModelDownload = true` (default: `false` for `full`)
 
+### Native embedding / LI inference
+
+1. **CoreML variant cascade (M3+ Apple Silicon only)**: if
+   `getCoremlCascadeResolvedDirs()` returns non-null dirs, the Rust addon
+   loads the cascade and dispatches batches whose shape fits any variant
+   through Apple's Neural Engine. Parity check against candle at startup
+   gates admission. See the CoreML cascade section above for full detail.
+2. **Candle Metal (Apple Silicon)**: always-loaded backbone. Handles every
+   batch the cascade doesn't fit, and runs as the full path on non-M3
+   hardware where the cascade is ineligible.
+3. **Candle CPU (Linux / darwin-x64)**: Accelerate BLAS on macOS, stock CPU
+   kernels elsewhere. Currently the only native path outside Apple Silicon.
+
 ---
 
 ## Model Delivery
@@ -190,14 +408,18 @@ created.
 
 - Removes `.sweet-search/` config directory
 - Removes init-managed model cache contents (reports size before deletion)
+- Removes the CoreML variant cascade cache at
+  `{modelCacheRoot}/coreml-cascade/` including the sibling `.mlmodelc`
+  compiled caches (also gated by `--keep-models`)
 - Idempotent: second run reports "nothing to remove"
 - Works even when runtime is partially broken (graceful degradation)
 
 Flags: `--dry-run`, `--keep-models`, `--purge` (also npm uninstall), `--force` (skip
 confirmation).
 
-Constraints: never touches files outside `.sweet-search/`, the managed model cache, and
-(with `--purge`) `node_modules`. Never deletes user source code, indexes, or databases.
+Constraints: never touches files outside `.sweet-search/`, the managed model cache
+(including the CoreML cascade subtree), and (with `--purge`) `node_modules`. Never
+deletes user source code, indexes, or databases.
 
 ---
 
@@ -252,6 +474,13 @@ sweet-search/
 ```
 .sweet-search/config.json
 ~/.cache/sweet-search/models/<normalized-hf-id>/
+~/.cache/sweet-search/models/coreml-cascade/     (M3+ Apple Silicon with cascade built)
+  embed/
+    nomic_bert_b{B}_s{S}_fp16.mlpackage/           (6 variants)
+    nomic_bert_b{B}_s{S}_fp16.mlpackage.mlmodelc/  (compiled sibling cache)
+  li/
+    li_modernbert_b{B}_s{S}_fp16.mlpackage/        (6 variants)
+    li_modernbert_b{B}_s{S}_fp16.mlpackage.mlmodelc/
 ```
 
 ---
@@ -319,24 +548,62 @@ macOS binaries require `codesign -s -` after any copy step.
 
 ## Remaining Work
 
-### Phase 7: Native end-to-end model execution
+### Phase 7: Native end-to-end model execution — COMPLETED (2026-04-12)
 
 `@huggingface/transformers` has been removed from all dependencies and is no longer
 imported by any module in `core/`. Tokenization and model loading now use direct
-`onnxruntime-node` sessions and the native tokenizer from the napi-rs addon where
-available.
+`onnxruntime-node` sessions and the native tokenizer from the napi-rs addon.
+Batch embedding + LI encoding run through candle on Metal BF16 with asynchronous
+napi tasks. See `project_native_metal_inference_status` in project memory for the
+2026-04-12 completion note — the 34-minute full-index baseline is the measured
+candle Metal path described in that entry.
 
-What remains is completing the native pipeline consolidation:
+### Phase 8: CoreML variant cascade — COMPLETED (2026-04-14)
 
-- Move remaining JS tokenization and tensor preparation into native Rust code
-  (napi-rs addon, same crate as MaxSim) for indexing throughput gains
-- Add rayon-parallel batch embedding and chunk encoding in native code
-- Buffer reuse and pipeline ownership in native code to reduce JS/native allocation churn
-- Parity tests against existing JS/ORT behavior
-- Throughput benchmarks (indexing, batch embedding) and single-query latency benchmarks
+The CoreML cascade is a capability-aware acceleration layer on top of the
+Phase 7 native path. Ships automatically via HuggingFace for end users on M3+
+Apple Silicon; other hardware is filtered out before any download. See the
+"CoreML Variant Cascade" section above for the full contract. Status summary:
 
-Exit criteria:
+- Shape set in `core/infrastructure/coreml-cascade.json` (single source of truth)
+- JS resolver in `core/infrastructure/coreml-cascade.js` (barrel-exported through
+  `core/infrastructure/index.js` and `core/embedding/index.js`)
+- Hardware detection in `core/infrastructure/hardware-capability.js` (M3+ gate)
+- Rust constructors accept `coreml_cascade_dir` through the normal `load()`
+  factory argument — no env-var bypass
+- `coreml_shim.m` uses content-hash invalidation (SHA256 of Manifest.json) and
+  stage-and-rename atomic cache writes
+- Per-variant dispatch counters + `SWEET_SEARCH_COREML_STATS=1` drop
+- Init records state in `.sweet-search/config.json` under `runtime.coremlCascade`
+- Uninstall cleans the cascade cache dir and sibling `.mlmodelc`s
+- HF fetch path as the default: 12 variant tarballs hosted at
+  `mrsladoje/sweet-search-coreml-cascade`, fetched by
+  `fetchCoremlCascade()` via the same `fetchModelFile` primitive as the
+  other models, verified against per-tarball SHA256 in
+  `coreml-cascade.json`, extracted into the managed cache with
+  stage-and-rename atomicity
+- Local-build fallback via `scripts/build-coreml-cascade.js` preserved for
+  developers, air-gapped environments, and shape-set retraces
+- Unit tests: `tests/infrastructure/hardware-capability.test.js` (24 tests)
+  and `tests/infrastructure/coreml-cascade.test.js` (25 tests) covering
+  parsing, state inspection, malformed fixtures, env opt-out, and the full
+  set of expected variant shapes
 
-- All local model paths work end-to-end through native code
-- Measured throughput gains for indexing/batch workloads
-- No regression in warmed single-query latency
+Exit criteria (all met):
+
+- Running `sweet-search init --profile full` on a fresh M3+ machine installs
+  the cascade via the HF download path with no Python dependency
+- Cascade state in the init report is "present" after init completes
+- `sweet-search uninstall` cleans the cascade cache dir alongside the regular
+  model cache
+- Non-eligible hardware (Intel Mac, Linux, M1/M2) never downloads the cascade
+  because `getModelsForProfile`-equivalent capability gating filters the
+  entries before fetch
+
+### Phase 9: Test coverage gap closure (carried over from DDD_ARCHITECTURE.md)
+
+See `docs/DDD_ARCHITECTURE.md` for the domain-level coverage gap. Cascade-side
+test coverage was added in Phase 8; remaining work is the pre-existing gap in
+the other infrastructure modules (notably `init-integration.test.js` which
+does not yet cover the HF fetch path end-to-end — the roundtrip was verified
+manually during the 2026-04-14 publish).

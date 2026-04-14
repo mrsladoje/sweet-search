@@ -37,8 +37,29 @@ export {
 } from './onnx-session-utils.js';
 export { withOnnxMutex } from './onnx-mutex.js';
 
-// CoreML
+// CoreML EP (ORT execution provider — separate from the native cascade)
 export { isAppleSilicon, isCoreMLProviderAvailable, shouldUseCoreML, getCoreMLExecutionProviders, _resetCoreMLCache } from './coreml-provider.js';
+
+// Hardware capability (chip family / generation / accelerator viability)
+export { detectHardwareCapability, parseAppleChipBrandString, _resetHardwareCapabilityCache } from './hardware-capability.js';
+
+// CoreML variant cascade (M3+ Apple Silicon fast path used by the native addon)
+export {
+  getCascadeSpec,
+  getCoremlCascadeRoot,
+  getCoremlEmbedDir,
+  getCoremlLiDir,
+  formatVariantFilename,
+  formatVariantTarballPath,
+  isCoremlCascadeApplicable,
+  isValidMlpackage,
+  getExpectedVariantPaths,
+  getCoremlCascadeState,
+  getCoremlCascadeResolvedDirs,
+  getCoremlCascadeReport,
+  getAllCoremlCachePaths,
+  fetchCoremlCascade,
+} from './coreml-cascade.js';
 
 // Language analysis
 export {

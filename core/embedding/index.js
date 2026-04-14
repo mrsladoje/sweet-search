@@ -25,3 +25,16 @@ export * from './embedding-cache.js';
 // Resolve ESM ambiguity: expandVocabulary exists in both service and cache.
 // The service version (auto-supplies embedFn) is the public API.
 export { expandVocabulary } from './embedding-service.js';
+
+// CoreML cascade diagnostics — re-exported from the infrastructure
+// layer so consumers inside `core/embedding/` and out-of-domain callers
+// that import the embedding barrel can ask "what inference backend is
+// armed right now?" without reaching into infrastructure directly.
+// These are read-only views; the cascade itself is owned by
+// `core/infrastructure/coreml-cascade.js`.
+export {
+  isCoremlCascadeApplicable,
+  getCoremlCascadeState,
+  getCoremlCascadeReport,
+  getCoremlCascadeResolvedDirs,
+} from '../infrastructure/coreml-cascade.js';

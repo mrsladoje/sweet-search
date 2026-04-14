@@ -12,9 +12,15 @@
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { getModelEntry, getModelsForProfile, MODEL_REGISTRY, fetchModel, getModelCacheDir, getPlatformInfo, resolveNativeAddon, resolveNativeBinary } from '../core/infrastructure/index.js';
+import {
+  getModelEntry, getModelsForProfile, MODEL_REGISTRY, fetchModel, getModelCacheDir,
+  getPlatformInfo, resolveNativeAddon, resolveNativeBinary,
+  detectHardwareCapability,
+  getCoremlCascadeState, getCoremlCascadeReport, fetchCoremlCascade,
+} from '../core/infrastructure/index.js';
 import { verifyRuntime, getMaxsimTier, getRouterType } from './verify-runtime.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -28,7 +34,15 @@ const DATA_DIR_NAME = '.sweet-search';
 // ---------------------------------------------------------------------------
 
 export function parseInitArgs(args) {
-  const result = { profile: null, verifyDeep: false, force: false, verbose: false, help: false };
+  const result = {
+    profile: null,
+    verifyDeep: false,
+    force: false,
+    verbose: false,
+    help: false,
+    buildCoremlCascade: false,
+    skipCoremlCascade: false,
+  };
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -44,6 +58,17 @@ export function parseInitArgs(args) {
       result.force = true;
     } else if (arg === '--verbose' || arg === '-v') {
       result.verbose = true;
+    } else if (arg === '--build-coreml-cascade') {
+      // Opt-in: run scripts/build-coreml-cascade.js as part of init.
+      // Requires Python + coremltools locally (~12 min trace time).
+      // Without this flag, init is capability-aware but passive:
+      // it detects the cascade, reports its state, and never blocks.
+      result.buildCoremlCascade = true;
+    } else if (arg === '--skip-coreml-cascade') {
+      // Opt-out: skip cascade inspection entirely. Useful on CI
+      // or disk-constrained environments where even read-only
+      // inspection of the managed cache is unwanted.
+      result.skipCoremlCascade = true;
     }
   }
 
@@ -220,12 +245,20 @@ export async function downloadModelsForProfile(profile, options = {}) {
 // ---------------------------------------------------------------------------
 
 function printReport(report) {
-  const { profile, maxsimTier, routerType, models, verification, runtimeDownloads } = report;
+  const {
+    profile, maxsimTier, routerType, models, verification, runtimeDownloads,
+    capability, cascadeReport,
+  } = report;
 
   console.log('');
   console.log('Sweet Search init complete');
   console.log('');
   console.log(`  Profile:              ${profile}`);
+  if (capability?.brandString) {
+    console.log(`  Hardware:             ${capability.brandString} (${capability.platform}-${capability.arch})`);
+  } else {
+    console.log(`  Hardware:             ${capability?.platform ?? process.platform}-${capability?.arch ?? process.arch}`);
+  }
   console.log(`  MaxSim:               ${maxsimTier}`);
   console.log(`  Router:               ${routerType}`);
 
@@ -234,6 +267,21 @@ function printReport(report) {
       const label = key.replace(/-/g, ' ');
       console.log(`  ${label}: ${info.status}`);
     }
+  }
+
+  // CoreML cascade line. Shown only when it says something actionable —
+  // silent on ineligible hardware where no user action applies.
+  if (cascadeReport) {
+    if (cascadeReport.status === 'present') {
+      console.log(`  CoreML cascade:       present (${cascadeReport.detail})`);
+    } else if (cascadeReport.status === 'partial') {
+      console.log(`  CoreML cascade:       PARTIAL — ${cascadeReport.detail}`);
+    } else if (cascadeReport.status === 'not-built' && cascadeReport.applicable) {
+      console.log(`  CoreML cascade:       eligible but not built — ${cascadeReport.detail}`);
+    } else if (cascadeReport.status === 'disabled') {
+      console.log(`  CoreML cascade:       disabled (${cascadeReport.detail})`);
+    }
+    // 'not-applicable' and 'skipped' are silent — no user action available.
   }
 
   console.log(`  Runtime downloads:    ${runtimeDownloads}`);
@@ -256,20 +304,41 @@ Usage:
   sweet-search init [options]
 
 Options:
-  --profile <profile>   Install profile: core, full (default: full)
-  --verify-deep         Run deep verification (load modules, verify checksums)
-  --force               Re-download all models even if cached
-  --verbose, -v         Enable verbose output
-  --help, -h            Show this help
+  --profile <profile>       Install profile: core, full (default: full)
+  --verify-deep             Run deep verification (load modules, verify checksums)
+  --force                   Re-download all models even if cached
+  --build-coreml-cascade    (M3+ Apple Silicon, local builds only) Trace the
+                            CoreML variant cascade locally via
+                            scripts/build-coreml-cascade.js instead of fetching
+                            from HuggingFace. Requires Python 3 + coremltools
+                            (~12 min trace time). Skipped automatically on
+                            ineligible hardware. Usually not needed — the
+                            default HF fetch path is faster and works without
+                            Python.
+  --skip-coreml-cascade     Skip CoreML cascade fetch entirely. Useful on CI
+                            or disk-constrained environments.
+  --verbose, -v             Enable verbose output
+  --help, -h                Show this help
 
 Profiles:
   core    Lightweight search setup (no models)
-  full    Full search with all models (~523 MB download)
+  full    Full search with all models (~523 MB download + ~1.8 GB CoreML
+          cascade on M3+ Apple Silicon)
+
+CoreML cascade (M3+ Apple Silicon only):
+  A fast-path for NomicBERT embedding + ModernBERT late-interaction
+  inference via Apple's Neural Engine. Gives ~18% faster full indexing
+  on M3 Max vs the candle Metal baseline. Fetched automatically from
+  mrsladoje/sweet-search-coreml-cascade on HuggingFace as part of the
+  full profile. Non-eligible hardware (Intel Mac, Linux, M1/M2) never
+  downloads the cascade. See docs/INIT_STRATEGY.md for the delivery
+  strategy.
 
 Examples:
-  sweet-search init                    # Full profile (default)
-  sweet-search init --profile core     # Core profile (no model downloads)
-  sweet-search init --force            # Re-download all models
+  sweet-search init                         # Full profile (default)
+  sweet-search init --profile core          # Core profile (no model downloads)
+  sweet-search init --force                 # Re-download all models
+  sweet-search init --build-coreml-cascade  # Trace the cascade locally (dev only)
 `);
 }
 
@@ -363,7 +432,91 @@ export async function runInit(args) {
     process.stderr.write(`[init] No models required for profile "${profile}"\n`);
   }
 
-  // 8. Write init config (before verification so it's available for diagnostics)
+  // 8. Resolve hardware capability + CoreML cascade state.
+  //
+  // The cascade is an M3+ Apple Silicon acceleration for native inference.
+  // It's always optional: missing hardware, fetch failure, and explicit
+  // opt-out all collapse to the standard candle path. Never fails init.
+  //
+  // Decision tree (full profile, eligible hardware, cascade not already
+  // present):
+  //
+  //   --skip-coreml-cascade      → skip everything, record 'skipped'
+  //   --build-coreml-cascade     → run trace_cascade.py locally via
+  //                                scripts/build-coreml-cascade.js
+  //                                (requires Python + coremltools)
+  //   default (no flags)         → fetch tarballs from the HF repo in
+  //                                coreml-cascade.json and extract into
+  //                                the managed cache — same delivery
+  //                                mechanism as the other models
+  //
+  // Both paths end up at the same on-disk state and are interchangeable
+  // from the addon's point of view.
+  const capability = detectHardwareCapability();
+  let cascadeReport = { status: 'skipped', detail: 'Cascade inspection skipped' };
+  if (!parsed.skipCoremlCascade && profile !== 'core') {
+    cascadeReport = getCoremlCascadeReport();
+
+    if (cascadeReport.applicable && cascadeReport.status !== 'present') {
+      if (parsed.buildCoremlCascade) {
+        // Explicit local-build path — traces the cascade via the
+        // Python subprocess. Primarily for developers on machines
+        // without internet, or for retracing after a shape-set
+        // change in coreml-cascade.json.
+        process.stderr.write('[init] Building CoreML cascade via scripts/build-coreml-cascade.js...\n');
+        const built = runCoremlCascadeBuild({ verbose: parsed.verbose });
+        if (built.ok) {
+          cascadeReport = getCoremlCascadeReport();
+        } else {
+          process.stderr.write(`[init] CoreML cascade build failed: ${built.error}\n`);
+          process.stderr.write(`[init] Init continues without the cascade — candle path is unaffected.\n`);
+        }
+      } else {
+        // Default path — fetch from HuggingFace, same pattern as
+        // the other models. fetchCoremlCascade handles atomic
+        // download + checksum verification + tarball extraction
+        // and never throws. Failures are reported but don't
+        // abort init.
+        process.stderr.write('[init] Fetching CoreML variant cascade from HuggingFace...\n');
+        try {
+          const fetchResult = await fetchCoremlCascade({ force: parsed.force });
+          if (fetchResult.status === 'fetched' || fetchResult.status === 'cached' || fetchResult.status === 'partial') {
+            const total = fetchResult.fetched + fetchResult.cached;
+            const parts = [];
+            if (fetchResult.fetched > 0) parts.push(`${fetchResult.fetched} downloaded`);
+            if (fetchResult.cached > 0) parts.push(`${fetchResult.cached} already cached`);
+            if (fetchResult.skipped > 0) parts.push(`${fetchResult.skipped} not yet published`);
+            if (fetchResult.failures.length > 0) parts.push(`${fetchResult.failures.length} failed`);
+            process.stderr.write(`[init] CoreML cascade: ${total}/12 variants installed (${parts.join(', ')})\n`);
+            for (const f of fetchResult.failures) {
+              process.stderr.write(`[init]   ${f.variant}: ${f.error}\n`);
+            }
+          } else if (fetchResult.status === 'not-published') {
+            process.stderr.write(`[init] CoreML cascade: not yet published on HuggingFace — tarballs will be fetched once checksums are backfilled in coreml-cascade.json\n`);
+          } else if (fetchResult.status === 'skipped') {
+            if (parsed.verbose) {
+              process.stderr.write(`[init] CoreML cascade fetch skipped: ${fetchResult.reason}\n`);
+            }
+          } else if (fetchResult.status === 'not-configured') {
+            process.stderr.write(`[init] CoreML cascade: ${fetchResult.reason} — skipping\n`);
+          }
+          // Re-inspect the cache now that the fetch is done.
+          cascadeReport = getCoremlCascadeReport();
+        } catch (err) {
+          process.stderr.write(`[init] CoreML cascade fetch errored: ${err.message}\n`);
+          process.stderr.write(`[init] Init continues without the cascade — candle path is unaffected.\n`);
+        }
+      }
+    } else if (parsed.buildCoremlCascade && !cascadeReport.applicable) {
+      process.stderr.write(`[init] --build-coreml-cascade ignored: ${cascadeReport.detail}\n`);
+    }
+
+    if (parsed.verbose) {
+      process.stderr.write(`[init] CoreML cascade: ${cascadeReport.status} — ${cascadeReport.detail}\n`);
+    }
+  }
+
+  // 9. Write init config (before verification so it's available for diagnostics)
   const runtimeDownloads = profile === 'core' ? 'enabled' : 'disabled';
   const allowRuntimeModelDownload = profile === 'core';
 
@@ -372,10 +525,12 @@ export async function runInit(args) {
     modelResults, allowRuntimeModelDownload,
     verification: { type: 'pending', timestamp: new Date().toISOString(), checks: [] },
     failed: false,
+    capability,
+    cascadeReport,
   });
   writeInitConfig(dataDir, preVerifyConfig);
 
-  // 9. Run verification
+  // 10. Run verification
   process.stderr.write(`[init] Running ${parsed.verifyDeep ? 'deep' : 'fast'} verification...\n`);
   const verification = await verifyRuntime({
     profile,
@@ -390,6 +545,8 @@ export async function runInit(args) {
     modelResults, allowRuntimeModelDownload,
     verification,
     failed: false,
+    capability,
+    cascadeReport,
   });
   writeInitConfig(dataDir, finalConfig);
 
@@ -419,7 +576,7 @@ export async function runInit(args) {
     process.stderr.write(`[init] Warning: Could not install index-maintainer: ${e.message}\n`);
   }
 
-  // 11. Print report
+  // 12. Print report
   printReport({
     profile,
     maxsimTier,
@@ -427,14 +584,62 @@ export async function runInit(args) {
     models: modelResults,
     verification,
     runtimeDownloads,
+    capability,
+    cascadeReport,
   });
+}
+
+/**
+ * Run `node scripts/build-coreml-cascade.js` as a child process and
+ * return a pass/fail object. Output is inherited so the user sees
+ * the Python progress lines in real time. Errors are caught and
+ * reported — init never aborts on cascade build failure.
+ */
+function runCoremlCascadeBuild(options = {}) {
+  const scriptPath = join(PACKAGE_ROOT, 'scripts', 'build-coreml-cascade.js');
+  if (!existsSync(scriptPath)) {
+    // The build script is repo-only right now (not shipped via npm)
+    // because it wraps scripts/spike-coreml/trace_cascade.py which in
+    // turn needs Python + coremltools + the PyTorch port code. Until
+    // pre-traced mlpackages are hosted on HuggingFace, the cascade can
+    // only be built from a clone. Surface this clearly instead of a
+    // bare "not found" message.
+    return {
+      ok: false,
+      error: `scripts/build-coreml-cascade.js not found (${scriptPath}).\n` +
+        `  The CoreML cascade build path currently requires a local clone\n` +
+        `  of the sweet-search repository — it is not yet shipped via npm.\n` +
+        `  To build the cascade:\n` +
+        `    git clone https://github.com/panonitorg/sweet-search\n` +
+        `    cd sweet-search\n` +
+        `    node scripts/build-coreml-cascade.js\n` +
+        `  Then point your install at the managed cache (init detects it).`,
+    };
+  }
+  const args = [scriptPath];
+  if (options.verbose) args.push('--verbose');
+
+  try {
+    const result = spawnSync(process.execPath, args, {
+      stdio: 'inherit',
+      cwd: PACKAGE_ROOT,
+    });
+    if (result.status === 0) return { ok: true };
+    return { ok: false, error: `exit code ${result.status ?? 'unknown'}` };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Config builder
 // ---------------------------------------------------------------------------
 
-function buildConfig({ profile, maxsimTier, routerType, nativeStatus, modelResults, allowRuntimeModelDownload, verification, failed }) {
+function buildConfig({
+  profile, maxsimTier, routerType, nativeStatus, modelResults,
+  allowRuntimeModelDownload, verification, failed,
+  capability, cascadeReport,
+}) {
   const pkg = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf-8'));
 
   const models = {};
@@ -443,6 +648,35 @@ function buildConfig({ profile, maxsimTier, routerType, nativeStatus, modelResul
     models[key] = {
       status: info.status,
       cacheDir: entry ? getModelCacheDir(entry.hfId) : null,
+    };
+  }
+
+  // Runtime section — records the hardware decision and cascade
+  // state so `sweet-search uninstall` and future `sweet-search doctor`
+  // can surface the same picture without redetecting.
+  const runtime = {
+    maxsimTier,
+    routerType,
+    allowRuntimeModelDownload: allowRuntimeModelDownload !== undefined ? allowRuntimeModelDownload : profile === 'core',
+  };
+  if (capability) {
+    runtime.hardware = {
+      platform: capability.platform,
+      arch: capability.arch,
+      brandString: capability.brandString,
+      appleSilicon: capability.appleSilicon,
+      candleGpuBackend: capability.candleGpuBackend,
+      inferenceBackendPreference: capability.inferenceBackendPreference,
+    };
+  }
+  if (cascadeReport) {
+    runtime.coremlCascade = {
+      status: cascadeReport.status,
+      detail: cascadeReport.detail,
+      applicable: cascadeReport.applicable ?? false,
+      reason: cascadeReport.reason,
+      embedDir: cascadeReport.embedDir ?? null,
+      liDir: cascadeReport.liDir ?? null,
     };
   }
 
@@ -456,11 +690,7 @@ function buildConfig({ profile, maxsimTier, routerType, nativeStatus, modelResul
       arch: process.arch,
       nativePackage: nativeStatus.platform?.packageName || null,
     },
-    runtime: {
-      maxsimTier,
-      routerType,
-      allowRuntimeModelDownload: allowRuntimeModelDownload !== undefined ? allowRuntimeModelDownload : profile === 'core',
-    },
+    runtime,
     models,
     verification: {
       type: verification.type,
