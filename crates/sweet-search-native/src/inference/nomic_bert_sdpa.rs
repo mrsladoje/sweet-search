@@ -486,7 +486,18 @@ pub fn mean_pooling(hidden_states: &Tensor, attention_mask: &Tensor) -> Result<T
 }
 
 /// L2-normalize embeddings to unit length along the last dimension.
+///
+/// Adds a small epsilon to the sum-of-squares before taking the square root
+/// so that all-zero rows (which can come from fully-padded batch slots after
+/// `mean_pooling`) divide by ~1e-6 instead of 0, producing 0 outputs instead
+/// of NaN. Mirrors the same trick used in `li_model.rs`'s projection
+/// normalisation, and prevents silent NaN propagation into HNSW vectors when
+/// the indexer submits a partial last batch padded with zero-mask rows.
 pub fn l2_normalize(x: &Tensor) -> Result<Tensor> {
-    let norm = x.sqr()?.sum_keepdim(D::Minus1)?.sqrt()?;
+    let norm = x
+        .sqr()?
+        .sum_keepdim(D::Minus1)
+        .and_then(|t| (t + 1e-12f64))
+        .and_then(|t| t.sqrt())?;
     x.broadcast_div(&norm)
 }

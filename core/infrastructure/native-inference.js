@@ -7,6 +7,10 @@
  *
  * Environment:
  *   SWEET_SEARCH_NATIVE_INFERENCE=0|1          — force disable/enable
+ *   SWEET_SEARCH_INFERENCE_BACKEND=coreml      — SPIKE-only: route NomicBERT
+ *                                                embed_batch through the CoreML
+ *                                                Python bridge in scripts/spike-coreml/.
+ *                                                Throwaway, NOT a production path.
  *   CANDLE_METAL_COMPUTE_PER_BUFFER=<N>        — candle default 50 (tuned)
  *   CANDLE_METAL_COMMAND_POOL_SIZE=<N>         — candle default 5 (tuned)
  */
@@ -85,6 +89,21 @@ export async function getNativeEmbeddingModel() {
   if (_embeddingModelLoadPromise) return _embeddingModelLoadPromise;
 
   _embeddingModelLoadPromise = (async () => {
+    // ─── SPIKE: CoreML Python bridge override ──────────────────────────────
+    // Only active when SWEET_SEARCH_INFERENCE_BACKEND=coreml. Routes the
+    // embedding pipeline through scripts/spike-coreml/coreml-embedding-bridge.js
+    // so we can measure end-to-end wall-clock against the candle baseline
+    // before committing to a real Rust objc2-core-ml integration. Default
+    // path (env unset) is unchanged.
+    if ((process.env.SWEET_SEARCH_INFERENCE_BACKEND ?? '').toLowerCase() === 'coreml') {
+      const t0 = Date.now();
+      const { CoremlEmbeddingBridge } = await import('../../scripts/spike-coreml/coreml-embedding-bridge.js');
+      _embeddingModel = await CoremlEmbeddingBridge.load();
+      console.log(`[NativeInference] CoreML SPIKE bridge loaded in ${Date.now() - t0}ms (dim: ${_embeddingModel.dim})`);
+      return _embeddingModel;
+    }
+    // ─── End spike override ────────────────────────────────────────────────
+
     const addon = loadAddon();
     if (!addon?.NativeEmbeddingModel) return null;
 
@@ -168,12 +187,17 @@ export async function nativeEmbed(texts, options = {}) {
   const seqLen = tokenized.input_ids.dims[1];
 
   const { inputIds, attentionMask } = tokenizedToNapi(tokenized, batchSize, seqLen);
-  const result = await model.embedBatch(inputIds, attentionMask);
+  // The native addon returns a flat `Float32Array` of length batch * dim —
+  // see the comment on embed_batch in embedding_model.rs. Slice via
+  // `.slice(i*dim, (i+1)*dim)` for per-batch typed arrays (each .slice call
+  // copies dim floats into a fresh Float32Array, matching the old contract
+  // where each per-batch vector is independent).
+  const flat = await model.embedBatch(inputIds, attentionMask);
+  const dim = model.dim;
 
-  // Convert Vec<Vec<f32>> → Float32Array[] for API compatibility
   const embeddings = new Array(batchSize);
   for (let i = 0; i < batchSize; i++) {
-    embeddings[i] = new Float32Array(result[i]);
+    embeddings[i] = flat.slice(i * dim, (i + 1) * dim);
   }
   return embeddings;
 }
@@ -243,18 +267,20 @@ export async function nativeLiEncodeTokenized(tokenized) {
   const result = await model.encodeBatch(inputIds, attentionMask);
   const dim = model.dim;
 
-  // Convert flat vectors + token_counts → Float32Array[][] per document
+  // The native addon returns `vectors` as a flat `Float32Array` (zero-copy
+  // from the Rust Vec<f32> via napi typed array) — see encode_batch in
+  // li_model.rs. Slice per token via `.slice()`, which copies `dim` floats
+  // into a fresh Float32Array per token, preserving the old contract where
+  // each per-token vector is an independent Float32Array.
+  const flat = result.vectors;
+
   const allVectors = new Array(batchSize);
   let offset = 0;
   for (let b = 0; b < batchSize; b++) {
     const count = result.tokenCounts[b];
     const docVectors = new Array(count);
     for (let t = 0; t < count; t++) {
-      const vec = new Float32Array(dim);
-      for (let d = 0; d < dim; d++) {
-        vec[d] = result.vectors[offset + t * dim + d];
-      }
-      docVectors[t] = vec;
+      docVectors[t] = flat.slice(offset + t * dim, offset + (t + 1) * dim);
     }
     allVectors[b] = docVectors;
     offset += count * dim;

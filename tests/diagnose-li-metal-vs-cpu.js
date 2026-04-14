@@ -62,10 +62,12 @@ async function main() {
   console.log(`Batch B=${B} seqLen=${seqLen}`);
   const batchResult = await metalModel.encodeBatch(inputIds, attentionMask);
   const dim = metalModel.dim;
+  // The native addon returns vectors as a flat Float32Array.
+  const flat = batchResult.vectors;
   let offset = 0;
   for (let b = 0; b < B; b++) {
     const n = batchResult.tokenCounts[b];
-    const firstTok = Array.from(batchResult.vectors.slice(offset, offset + dim));
+    const firstTok = flat.slice(offset, offset + dim);
     console.log(`  text[${b}] nTokens=${n} firstTok[0:6]: [${firstTok.slice(0,6).map(v=>v.toFixed(4)).join(', ')}]`);
     offset += n * dim;
   }

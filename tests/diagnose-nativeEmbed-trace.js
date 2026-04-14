@@ -44,7 +44,11 @@ async function main() {
     idsA.push(Array.from(tokA.input_ids.data.slice(b*seqLen, (b+1)*seqLen)).map(Number));
     maskA.push(Array.from(tokA.attention_mask.data.slice(b*seqLen, (b+1)*seqLen)).map(Number));
   }
-  const aResult = await nativeModel.embedBatch(idsA, maskA);
+  // The native addon returns a flat Float32Array — slice into per-batch vectors.
+  const aFlat = await nativeModel.embedBatch(idsA, maskA);
+  const aDim = nativeModel.dim;
+  const aResult = new Array(B);
+  for (let i = 0; i < B; i++) aResult[i] = aFlat.slice(i * aDim, (i + 1) * aDim);
 
   // Path B: nativeEmbed wrapper (also batches)
   const bResult = await nativeEmbed(texts, { maxLength: 512 });
