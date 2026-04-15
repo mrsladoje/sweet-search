@@ -87,6 +87,13 @@ async function readDiskBackup(dbPath) {
     const raw = await fs.readFile(bakPath, 'utf-8');
     const parsed = JSON.parse(raw);
     if (!parsed || !Array.isArray(parsed.summaries)) return null;
+    // Version gate: reject unknown formats rather than silently deserializing
+    // against the wrong schema. The writer always sets version: 1; a future v2
+    // format must change this check before shipping.
+    if (parsed.version != null && parsed.version !== 1) {
+      console.warn(`[summary-manager] Ignoring disk backup at ${bakPath}: unsupported version ${parsed.version}`);
+      return null;
+    }
     return {
       summaries: deserializeSummaries(parsed.summaries),
       count: parsed.count ?? parsed.summaries.length,

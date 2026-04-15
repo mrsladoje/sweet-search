@@ -36,24 +36,45 @@ const RETRY_BASE_MS = 1000;
 // several concurrent verifications can stall for minutes.
 //
 // Two-layer cache:
-//   1. In-process Map<absPath, {mtimeMs,size,sha256,verifiedAt}>
+//   1. In-process Map<absPath, {mtimeMs,size,dev,ino,sha256,verifiedAt}>
 //      — skips repeat verifications within the same worker.
 //   2. Disk sidecar `{filePath}.verified.json` — lets a DIFFERENT worker
 //      (separate V8 isolate, separate Map) short-circuit on next load
 //      without re-streaming. The sidecar is invalidated on any stat mismatch.
 //
-// Trust model (per docs/INIT_STRATEGY.md): the cache is a MEMOIZATION of a
-// prior successful verification, not a trust anchor. It short-circuits ONLY
-// when (a) the caller supplies an `expectedSha256`, (b) the cached record's
-// sha256 matches that expectation, and (c) the file's current `mtimeMs + size`
-// match the cached stat. Any mismatch forces a fresh streaming hash. The
-// sidecar is also invalidated whenever `fetchModelFile` atomically renames a
-// new download into place (see `invalidateVerifiedSidecar` + `recordVerified`
-// at the rename site), so a legitimate re-download always re-verifies.
-// This preserves INIT_STRATEGY.md's guarantee that "all artifacts are verified
-// with SHA256 checksums from core/infrastructure/model-registry.js" — the
-// cache never skips verification against a NEW expected hash, only against a
-// previously-verified hash for an unchanged file.
+// TRUST MODEL — READ BEFORE CHANGING ANY OF THIS:
+//
+// This is a MEMOIZATION OPTIMIZATION, NOT a cryptographic trust anchor. The
+// cache remembers a prior successful SHA256 stream, and returns it when the
+// file "looks the same" by a stat-fingerprint: (size, mtimeMs, dev, ino).
+// Adding (dev, ino) raises the bar for a local same-user attacker who
+// replaces the file via `unlink + write` — the new file gets a fresh inode
+// and `stat.ino !== sidecar.ino` triggers a re-hash (2026-04-15 hardening).
+// On an in-place overwrite that preserves (size, ino, mtimeMs) — which a
+// determined local attacker can forge — the memoized hash is trusted.
+//
+// This is an acceptable trade-off ONLY because:
+//   (a) the H6 speedup (~2 min → ~1 s under worker-pool contention) is real;
+//   (b) a local same-user attacker who controls the model cache dir has
+//       already cleared a significant bar on a developer workstation;
+//   (c) the trust anchor for model bytes remains the registry SHA256 in
+//       `core/infrastructure/model-registry.js` (code, reviewed via git),
+//       which is what gets written as `record.sha256` when we first hash.
+//
+// Defense-in-depth follow-ups under consideration (not yet implemented):
+//   - HMAC the sidecar with a per-install secret in `.sweet-search/install-secret`
+//   - Re-verify in the Rust loader before mmap (defense-in-depth across the
+//     JS→Rust boundary)
+//
+// Mandatory invariants — any change that weakens these regresses security:
+//   1. The cache NEVER skips verification against a NEW expected hash. A
+//      caller supplying `expectedSha256 = X` gets a fresh stream unless the
+//      cache already holds a positive record for X.
+//   2. The in-process Map is invalidated on every explicit `fetchModelFile`
+//      atomic rename (see `invalidateVerifiedSidecar` before the rename).
+//   3. A positive record is written ONLY after a successful streaming hash.
+//      `recordVerified` is never called without a prior `computeFileHash`
+//      that matched `expectedSha256`.
 
 const _verificationMemCache = new Map();
 
@@ -92,8 +113,38 @@ function invalidateVerifiedSidecar(filePath) {
 }
 
 /**
+ * Check if the cached stat-fingerprint matches the live file.
+ *
+ * The fingerprint is `(size, mtimeMs, dev, ino)`. Adding `(dev, ino)` to the
+ * original `(size, mtime)` pair raises the bar for local same-user file
+ * replacement: an attacker who does `unlink + write` to plant a forged file
+ * while reusing a matching `verified.json` sidecar gets a FRESH inode on
+ * the new file, so `stat.ino !== record.ino` triggers a re-hash. This is
+ * not cryptographic protection, but it turns a common forgery pattern from
+ * a silent bypass into a logged re-verification.
+ *
+ * Records from older sidecars that lack dev/ino (written before this
+ * hardening landed) still validate on (size, mtime) alone — this is
+ * necessary for backwards compatibility with existing caches.
+ */
+function stableStatFingerprint(stat) {
+  return { size: stat.size, mtimeMs: stat.mtimeMs, dev: stat.dev, ino: stat.ino };
+}
+
+function fingerprintMatches(record, stat) {
+  if (record.size !== stat.size) return false;
+  if (record.mtimeMs !== stat.mtimeMs) return false;
+  // dev / ino are optional on legacy sidecars. When the record carries them,
+  // require a match; when it doesn't, accept on (size, mtime) alone so we
+  // don't force a re-hash on every existing cache entry.
+  if (record.dev != null && record.dev !== stat.dev) return false;
+  if (record.ino != null && record.ino !== stat.ino) return false;
+  return true;
+}
+
+/**
  * Check the verification cache for a file. Returns true iff the file's
- * current stat (mtimeMs + size) matches a cached record AND the cached
+ * current stat-fingerprint matches a cached record AND the cached
  * record's sha256 matches `expectedSha256`. Checks the in-process map
  * first, falls back to the on-disk sidecar.
  */
@@ -103,22 +154,12 @@ function isVerified(filePath, expectedSha256) {
   try { stat = statSync(filePath); } catch { return false; }
 
   const memRecord = _verificationMemCache.get(filePath);
-  if (
-    memRecord
-    && memRecord.sha256 === expectedSha256
-    && memRecord.size === stat.size
-    && memRecord.mtimeMs === stat.mtimeMs
-  ) {
+  if (memRecord && memRecord.sha256 === expectedSha256 && fingerprintMatches(memRecord, stat)) {
     return true;
   }
 
   const diskRecord = readVerifiedSidecar(filePath);
-  if (
-    diskRecord
-    && diskRecord.sha256 === expectedSha256
-    && diskRecord.size === stat.size
-    && diskRecord.mtimeMs === stat.mtimeMs
-  ) {
+  if (diskRecord && diskRecord.sha256 === expectedSha256 && fingerprintMatches(diskRecord, stat)) {
     _verificationMemCache.set(filePath, diskRecord);
     return true;
   }
@@ -131,8 +172,7 @@ function recordVerified(filePath, sha256) {
   try { stat = statSync(filePath); } catch { return; }
   const record = {
     sha256,
-    size: stat.size,
-    mtimeMs: stat.mtimeMs,
+    ...stableStatFingerprint(stat),
     verifiedAt: Date.now(),
   };
   _verificationMemCache.set(filePath, record);

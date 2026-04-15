@@ -716,17 +716,35 @@ export class LateInteractionPool {
 // =============================================================================
 
 /**
+ * In-flight init promise. Concurrent callers share this so two parallel
+ * `initEmbeddingPool(...)` calls construct exactly one pool instead of
+ * racing two, the second of which would leak workers via the implicit
+ * overwrite that existed in the pre-fix version. Cleared in the `finally`
+ * so a failed init is retryable.
+ */
+let _initEmbeddingPoolPromise = null;
+
+/**
  * Initialize the embedding worker pool and install it into the embedding
- * layer's slot. Idempotent — returns the already-installed pool when called
- * a second time.
+ * layer's slot. Idempotent AND race-gated — returns the in-flight promise
+ * for concurrent callers before the slot is populated, so only one pool
+ * construction runs in parallel.
  */
 export async function initEmbeddingPool(options = {}) {
   const existing = _getEmbeddingPoolSlot();
   if (existing) return existing;
-  const pool = new EmbeddingPool(options);
-  await pool.init();
-  _setEmbeddingPoolSlot(pool);
-  return pool;
+  if (_initEmbeddingPoolPromise) return _initEmbeddingPoolPromise;
+  _initEmbeddingPoolPromise = (async () => {
+    try {
+      const pool = new EmbeddingPool(options);
+      await pool.init();
+      _setEmbeddingPoolSlot(pool);
+      return pool;
+    } finally {
+      _initEmbeddingPoolPromise = null;
+    }
+  })();
+  return _initEmbeddingPoolPromise;
 }
 
 /** Shut down the embedding worker pool and clear the embedding slot. */
