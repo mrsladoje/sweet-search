@@ -41,6 +41,25 @@ Incremental indexing must cover **every search modus**, not just the grep engine
 - Cross-file relationships must be re-evaluated
 - Graph consistency requires transactional updates
 
+## Initial State / Cold Start
+
+Incremental update assumes a prior index exists to diff against. Several boundary
+cases break that assumption and must be handled explicitly:
+
+- **No prior index**: first run on a project that has never been indexed — must
+  fall through to a full build, not crash looking for a baseline manifest.
+- **Empty codebase**: user runs `sweet-search index` in a directory with zero
+  matching source files (e.g. brand-new repo, or one fully covered by excludes).
+  All index artifacts must still be created in a well-formed *empty* state so
+  subsequent searches return "no results" instead of failing to open the index.
+- **Empty → non-empty transition**: the common flow where a user indexes an
+  empty project, then adds files and re-runs. The change detection layer must
+  treat "baseline = empty, current = N files" as N additions, not as a no-op.
+- **Non-empty → empty transition**: all source files deleted between runs. The
+  index must drop to an empty-but-valid state, not leave stale postings behind.
+- **Corrupt or partial prior index**: previous run crashed mid-build. Detect
+  and fall back to a full rebuild rather than incremental-patching garbage.
+
 ## Existing Logic
 
 There is some old index maintenance logic in the codebase (tracker-based dirty
@@ -64,6 +83,7 @@ for reusable ideas but not assumed to be correct or complete.
 
 ## Next Steps
 
+- [ ] Define and test cold-start / empty-codebase semantics for every index type
 - [ ] Audit existing tracker/dirty-file logic for reusable patterns
 - [ ] Design a unified change detection layer shared by all index types
 - [ ] Prototype mtime-based dirty overlay for the sparse gram index (simplest case)
