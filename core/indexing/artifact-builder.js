@@ -29,7 +29,7 @@
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
-import { DB_PATHS, BINARY_HNSW_CONFIG, EMBEDDING_CONFIG } from '../infrastructure/config/index.js';
+import { DB_PATHS, BINARY_HNSW_CONFIG, EMBEDDING_CONFIG, PROJECT_ROOT } from '../infrastructure/config/index.js';
 
 // =============================================================================
 // THRESHOLD CONFIGURATION
@@ -65,7 +65,7 @@ import { FloatVectorStore, getFloatStorePath } from '../vector-store/float-vecto
  * @returns {Promise<{lastRebuildTimestamp: number, accumulatedChanges: number}>}
  */
 async function loadArtifactState() {
-  const statePath = path.resolve(process.cwd(), ARTIFACT_THRESHOLDS.stateFile);
+  const statePath = path.resolve(PROJECT_ROOT, ARTIFACT_THRESHOLDS.stateFile);
   try {
     if (existsSync(statePath)) {
       const data = JSON.parse(await fs.readFile(statePath, 'utf-8'));
@@ -85,7 +85,7 @@ async function loadArtifactState() {
  * @param {object} state - State to save
  */
 async function saveArtifactState(state) {
-  const statePath = path.resolve(process.cwd(), ARTIFACT_THRESHOLDS.stateFile);
+  const statePath = path.resolve(PROJECT_ROOT, ARTIFACT_THRESHOLDS.stateFile);
   try {
     await fs.mkdir(path.dirname(statePath), { recursive: true });
     await fs.writeFile(statePath, JSON.stringify({
@@ -753,16 +753,11 @@ export async function updateArtifacts(newItems, removedIds = [], options = {}) {
     const { applyReadPragmas } = await import('../infrastructure/db-utils.js');
     const db = new Database(DB_PATHS.codebase, { readonly: true });
     applyReadPragmas(db);
-    const rows = db.prepare('SELECT id, embedding FROM vectors').all();
-    db.close();
-
-    const allItems = rows.map(row => ({
-      id: row.id,
-      embedding: Array.from(new Float32Array(
-        row.embedding.buffer, row.embedding.byteOffset, row.embedding.length / 4
-      )),
-    }));
-    await buildAndSaveFloatStore(allItems, floatDimension, floatStorePath);
+    try {
+      await buildAndSaveFloatStoreFromDb(db, floatDimension, floatStorePath);
+    } finally {
+      db.close();
+    }
   } catch (err) {
     console.warn(`Float vector store rebuild failed (non-fatal): ${err.message}`);
     // Remove stale float store so SweetSearch doesn't load outdated vectors.

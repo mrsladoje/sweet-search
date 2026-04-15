@@ -350,29 +350,30 @@ export function getEmbeddingTimings() {
 }
 
 // =============================================================================
-// WORKER POOL LIFECYCLE (Phase 2 — parallel ORT inference via worker_threads)
+// WORKER POOL SLOT (Phase 2 — parallel ORT inference via worker_threads)
 // =============================================================================
+//
+// The embedding layer exposes a SLOT for an external pool implementation.
+// It does NOT own the pool lifecycle or construction — that responsibility
+// lives in `core/indexing/indexer-pool.js` which respects the DDD matrix
+// (indexing may depend on embedding, not the reverse).
+//
+// At embed time (`callLocalModel`), if a pool is installed in this slot, we
+// dispatch batches through `pool.embed(texts, { maxLength })`. The pool
+// contract is duck-typed: any object exposing `embed(texts, options) =>
+// Promise<Float32Array[]>` (and `numWorkers?: number`) satisfies it.
+//
+// See `core/indexing/indexer-pool.js::initEmbeddingPool` for the owner.
 
 let _embeddingPool = null;
 
-/** Initialize the embedding worker pool for parallel inference during indexing. */
-export async function initEmbeddingPool(options = {}) {
-  if (_embeddingPool) return _embeddingPool;
-  const { EmbeddingPool } = await import('../indexing/indexer-pool.js');
-  _embeddingPool = new EmbeddingPool(options);
-  await _embeddingPool.init();
-  return _embeddingPool;
-}
+/** Install an external embedding worker pool into the slot. */
+export function setEmbeddingPool(pool) { _embeddingPool = pool; }
 
-/** Shutdown the embedding worker pool. */
-export async function shutdownEmbeddingPool() {
-  if (_embeddingPool) {
-    await _embeddingPool.shutdown();
-    _embeddingPool = null;
-  }
-}
+/** Clear the slot. Does NOT shut the pool down — the caller owns lifecycle. */
+export function clearEmbeddingPool() { _embeddingPool = null; }
 
-/** Get the active pool (null if not initialized). */
+/** Get the active pool (null if not installed). */
 export function getEmbeddingPool() { return _embeddingPool; }
 
 async function embedBatchesWithPool(pool, batches, maxLength, onProgress, totalTexts) {

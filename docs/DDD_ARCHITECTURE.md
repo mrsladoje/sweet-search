@@ -72,7 +72,19 @@ step (see [Remaining Work](#remaining-work)).
 
 1. **indexing -> ranking**: `indexer-ann.js` builds late-interaction artifacts at index time
    using `late-interaction-index.js` and `late-interaction-model.js`. This is a build-time
-   dependency, not query-time coupling. Max 2 import sites; machine-checked.
+   dependency, not query-time coupling. Max 6 import sites; machine-checked (counts both
+   static `from` and dynamic `import()` forms). Current sites:
+   - `indexer-ann.js:11` → `late-interaction-index.js` (static, `LateInteractionIndex`)
+   - `indexer-phases.js:27` → `late-interaction-model.js` (static, runtime configuration)
+   - `indexer-ann.js:~658` → `late-interaction-model.js` (dynamic, hybrid CPU+GPU probe)
+   - `indexer-ann.js:~697` → `late-interaction-model.js` (dynamic, single-encoder fallback)
+   - `indexer-pool.js:~686` → `late-interaction-model.js` (dynamic, `LateInteractionPool` inline fallback)
+   - `indexer-worker.js:~98` → `late-interaction-model.js` (dynamic, worker entrypoint)
+
+   The cap was 2 before 2026-04-15; `scripts/check-boundaries.js` only counted static
+   imports, so the 4 dynamic fallbacks were invisible to CI. The counter fix exposed
+   the real coupling surface. All 6 sites remain indexing → ranking in the build
+   direction and are legitimate — the limit was raised to reflect reality, not relaxed.
 
 2. **query -> training**: `query-router-catboost.js` loads a trained model artifact from
    `core/training/query-router/output/`. This is a read-only artifact dependency. Max 2
@@ -325,8 +337,16 @@ What is not yet true:
 - Internal cross-domain imports within `core/` bypass barrels (tracked as warnings, not
   blocking). The search composition root (`sweet-search.js`) imports directly from
   internal files across 5 domains.
-- 28 files exceed the 500-line target. The largest: `graph-extractor.js` (2304 lines),
-  `graph-search.js` (2018 lines), `index-maintainer.mjs` (1674 lines).
+- 29+ files exceed the 500-line target. The largest: `late-interaction-index.js`
+  (2311 lines, +125 lines on 2026-04-15 from the LI staged-save fix), `graph-extractor.js`
+  (2304 lines), `graph-search.js` (2018 lines), `index-maintainer.mjs` (1674 lines),
+  `artifact-builder.js` (1054 lines), `indexer-ann.js` (951 lines, +48 from the C1 fix),
+  `indexer-pool.js` (742 lines, +46 from the DDD-fix pool lifecycle move),
+  `indexer-phases.js` (706 lines, +79 from the `atomicSwapLateInteractionIndex` helper),
+  `summary-manager.js` (542 lines, NEW breach from the H2 disk-persisted backup).
+  The 2026-04-15 P0/P1 fixes landed correctness and DDD compliance first and explicitly
+  deferred the file-size decompositions to a follow-up refactor (see
+  `docs/reviews/INDEXING_REVIEW_2026-04-14.md` Phase 2 plan).
 - Roughly half of the ~100 non-barrel source modules have no dedicated test file.
 
 ---

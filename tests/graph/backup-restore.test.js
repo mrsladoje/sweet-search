@@ -12,6 +12,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import path from 'path';
+import { unlinkSync, existsSync as realExistsSync } from 'node:fs';
 
 // Mock better-sqlite3 for unit tests
 const mockDb = {
@@ -53,10 +54,26 @@ import {
 } from '../../core/graph/index.js';
 import { existsSync } from 'fs';
 
+// Clean up the persistent disk backup sidecar introduced by H2 — the
+// backup path is written by the REAL fs module (the mock only covers
+// existsSync), so without this cleanup the first test pollutes later ones
+// via /tmp/test.db.summaries.bak.json.
+function cleanupDiskBackupSidecar() {
+  const bakPath = '/tmp/test.db.summaries.bak.json';
+  if (realExistsSync(bakPath)) {
+    try { unlinkSync(bakPath); } catch (_err) { /* best effort */ }
+  }
+}
+
 describe('Summary Backup', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDb.prepare.mockReturnValue(mockStmt);
+    cleanupDiskBackupSidecar();
+  });
+
+  afterEach(() => {
+    cleanupDiskBackupSidecar();
   });
 
   it('should backup all summaries with id, signature_hash, and embeddings', async () => {

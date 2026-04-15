@@ -153,7 +153,19 @@ function buildLateInteractionBatches(chunks, options = {}) {
   // `floor(batchSizeCap/2) × maxLength²`, which lands batch≈batchSizeCap/2
   // at seq=maxLength — not cache-aware, but safe as a stand-in.
   // Override via options.attentionBudget or SWEET_SEARCH_LI_ATTENTION_BUDGET
-  // env var. Set to 0 to disable.
+  // env var. Set either to 0 to disable the cap entirely (Infinity).
+  //
+  // Precedence (WARNING — env wins over the planner-computed value):
+  //   1. If either is explicitly 0 → disabled (Infinity)
+  //   2. Otherwise, env var (if >0) wins
+  //   3. Otherwise, options.attentionBudget (the cache-aware value from
+  //      planAllocation() in indexer-pool.js) wins
+  //   4. Otherwise, a conservative tokens²-based fallback
+  //
+  // Note: `planAllocation()` ALSO reads SWEET_SEARCH_LI_ATTENTION_BUDGET when
+  // computing its own value; the second read here exists because some call
+  // sites (tests, one-off tools) bypass planAllocation and need the env var
+  // respected. Keep these two read sites in sync if you add new env logic.
   const envAttentionBudget = parseInt(
     process.env.SWEET_SEARCH_LI_ATTENTION_BUDGET || '',
     10,
@@ -427,62 +439,76 @@ export async function buildHNSWIndex(dbPath, dryRun = false) {
   let lastCheckpointTime = Date.now();
   let vectorsSinceCheckpoint = 0;
 
-  for (const row of streamVectorsFromDb(db, hnswDim, orderMode)) {
-    // Skip already-checkpointed vectors on resume (only valid for sequential order)
-    if (resumeFromRowId > 0 && row.rowid <= resumeFromRowId) continue;
+  // try/finally guarantees the DB handle closes and stale checkpoint files
+  // get cleaned up even when the build loop throws. Without this, a failed
+  // build leaves .checkpoint + .checkpoint.json on disk and the NEXT run
+  // silently resumes from an indeterminate state (M5 fix).
+  let buildCompleted = false;
+  try {
+    for (const row of streamVectorsFromDb(db, hnswDim, orderMode)) {
+      // Skip already-checkpointed vectors on resume (only valid for sequential order)
+      if (resumeFromRowId > 0 && row.rowid <= resumeFromRowId) continue;
 
-    if (!row.embedding || row.embedding.length === 0) continue;
+      if (!row.embedding || row.embedding.length === 0) continue;
 
-    const truncatedEmbedding = truncateForHNSW(row.embedding);
+      const truncatedEmbedding = truncateForHNSW(row.embedding);
 
-    await index.add(row.id, truncatedEmbedding, {
-      file: row.file,
-      name: row.metadata?.symbol,
-      type: row.metadata?.chunk_type,
-    });
+      await index.add(row.id, truncatedEmbedding, {
+        file: row.file,
+        name: row.metadata?.symbol,
+        type: row.metadata?.chunk_type,
+      });
 
-    added++;
-    vectorsSinceCheckpoint++;
+      added++;
+      vectorsSinceCheckpoint++;
 
-    // Time-based checkpoint: bounded data loss on crash (~30s max)
-    // Only for sequential order where rowid-based resume is valid.
-    if (canCheckpoint) {
-      const elapsed = (Date.now() - lastCheckpointTime) / 1000;
-      if (elapsed >= CHECKPOINT_INTERVAL_SEC && vectorsSinceCheckpoint >= MIN_VECTORS_BETWEEN_SAVES) {
-        if (!index.useFallback && index.index) {
-          index.index.save(checkpointPath);
-          fsyncFile(checkpointPath);
-          writeCheckpointSidecar(sidecarPath, {
-            vectorsAdded: added,
-            lastRowId: row.rowid,
-            version: row.rowid,
-            timestamp: new Date().toISOString(),
-            elapsedMs: Date.now() - lastCheckpointTime,
-          });
-          fsyncFile(sidecarPath);
-          fsyncDirectory(path.dirname(checkpointPath));
-          log(`  checkpoint: ${added}/${totalVectors} vectors`, 'dim');
+      // Time-based checkpoint: bounded data loss on crash (~30s max)
+      // Only for sequential order where rowid-based resume is valid.
+      if (canCheckpoint) {
+        const elapsed = (Date.now() - lastCheckpointTime) / 1000;
+        if (elapsed >= CHECKPOINT_INTERVAL_SEC && vectorsSinceCheckpoint >= MIN_VECTORS_BETWEEN_SAVES) {
+          if (!index.useFallback && index.index) {
+            index.index.save(checkpointPath);
+            fsyncFile(checkpointPath);
+            writeCheckpointSidecar(sidecarPath, {
+              vectorsAdded: added,
+              lastRowId: row.rowid,
+              version: row.rowid,
+              timestamp: new Date().toISOString(),
+              elapsedMs: Date.now() - lastCheckpointTime,
+            });
+            fsyncFile(sidecarPath);
+            fsyncDirectory(path.dirname(checkpointPath));
+            log(`  checkpoint: ${added}/${totalVectors} vectors`, 'dim');
+          }
+          lastCheckpointTime = Date.now();
+          vectorsSinceCheckpoint = 0;
         }
-        lastCheckpointTime = Date.now();
-        vectorsSinceCheckpoint = 0;
+      }
+
+      if (added % 500 === 0 || added === totalVectors) {
+        logProgress(added, totalVectors, 'Building HNSW');
       }
     }
 
-    if (added % 500 === 0 || added === totalVectors) {
-      logProgress(added, totalVectors, 'Building HNSW');
+    await index.save();
+    buildCompleted = true;
+
+    // Clean up checkpoint files after successful completion
+    cleanupCheckpoint(usearchPath);
+
+    const stats = index.getStats();
+    log(`\n✓ HNSW index built: ${stats.totalVectors} vectors (${hnswDim}d)`, 'green');
+    log(`  Using fallback: ${stats.useFallback}`, 'dim');
+  } finally {
+    try { db.close(); } catch (_err) { /* already closed */ }
+    if (!buildCompleted) {
+      // Build threw mid-stream. Remove stale checkpoint files so the next
+      // run starts from a known-good "no-resume" state rather than
+      // resuming against a different/new vector DB.
+      cleanupCheckpoint(usearchPath);
     }
   }
-
-  db.close();
-
-  await index.save();
-
-  // Clean up checkpoint files after successful completion
-  cleanupCheckpoint(usearchPath);
-
-  const stats = index.getStats();
-  log(`\n✓ HNSW index built: ${stats.totalVectors} vectors (${hnswDim}d)`, 'green');
-  log(`  Using fallback: ${stats.useFallback}`, 'dim');
 }
 
 // =============================================================================
@@ -495,6 +521,8 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     extendedSkiplist = false,
     loadFromPath = DB_PATHS.lateInteraction,
     saveToPath = loadFromPath,
+    finalIndexPath = loadFromPath, // post-swap stub path; drives basename inside stub
+    stagingSegmentDir = null,       // where staged segments live on disk (distinct from final)
     fullRebuild = false,
     workerCount = 1,
     threadsPerWorker = 0,
@@ -573,16 +601,36 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
   // Isolate the write target BEFORE any add() calls can flush segments.
   // Without this, _flushSegment() during add() writes into the live
   // .segments directory, corrupting the served index on a failed rebuild.
+  //
+  // Staging is a two-part operation: (1) the stub file is written to
+  // stagedPath = finalPath + '.tmp', and (2) segment files go into a
+  // DISTINCT directory (stagingSegmentDir) that does NOT collide with the
+  // live {finalPath}.segments directory. The stub's on-disk `segmentDir`
+  // field records the post-swap basename (derived from finalIndexPath) so
+  // atomic promote only needs to rename the stub + segments directory.
   if (saveToPath !== loadFromPath) {
-    liIndex.resetForSave(saveToPath);
+    liIndex.resetForSave(saveToPath, {
+      stagingSegmentDir: stagingSegmentDir || (saveToPath + '-stage.segments'),
+      finalIndexPath,
+    });
   }
 
   let removed = 0;
   if (filesToRemove && filesToRemove.length > 0) {
     log(`Removing entries for ${filesToRemove.length} changed/deleted files...`, 'yellow');
 
+    // Chunk IDs are formatted `${file}:${lineStart}-${lineEnd}:${chunkIndex}`.
+    // The trailing `:N-N:N` suffix is stripped from the right — NOT with
+    // `split(':')[0]`, which on Windows would split on the drive-letter
+    // colon (`C:\...`) and lose most of the path (L8 fix).
+    const ID_SUFFIX_PATTERN = /:\d+-\d+:\d+$/;
+    const fileFromId = (id) => {
+      const m = ID_SUFFIX_PATTERN.exec(id);
+      return m ? id.slice(0, m.index) : id;
+    };
+
     for (const [id, doc] of liIndex.documents.entries()) {
-      const docFile = doc.metadata?.file || id.split(':')[0];
+      const docFile = doc.metadata?.file || fileFromId(id);
       if (filesToRemove.includes(docFile)) {
         liIndex.documents.delete(id);
         removed++;
