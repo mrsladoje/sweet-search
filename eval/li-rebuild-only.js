@@ -71,6 +71,7 @@ async function main() {
     tokenBudget: resourcePlan.lateInteractionTokenBudget,
     attentionBudget: resourcePlan.lateInteractionAttentionBudget,
     segmentSize: 200_000, // > corpus size → legacy JSON format with metadata
+    projectRoot: PROJECT_ROOT, // LI skip policy loads .sweet-search.config.json from here
   });
 
   const liMs = Date.now() - tLi;

@@ -60,6 +60,87 @@ cases break that assumption and must be handled explicitly:
 - **Corrupt or partial prior index**: previous run crashed mid-build. Detect
   and fall back to a full rebuild rather than incremental-patching garbage.
 
+## Exclusion List — shared `loadProjectConfig()`
+
+Both the embed indexer (`core/indexing/indexer-utils.js` via `fast-glob`) and
+the LI skip policy (`core/indexing/li-skip-policy.js` via `minimatch`) now
+pull their skip list from the same unified source:
+`loadProjectConfig(projectRoot).exclude` in
+`core/infrastructure/config/search.js`. That list merges the ~190 built-in
+patterns (node_modules, lock files, secrets, minified, binaries, snapshots,
+…) with any user extensions from `.sweet-search.config.json`. Unification
+landed in `bde9b26` → `3fa180c` → `acd5804` and is now the authoritative
+source of truth.
+
+Incremental indexing must preserve this invariant across every phase,
+otherwise the two indices drift again under config change and the refactor
+that produced the unified list becomes incomplete for anyone who edits
+their config between runs.
+
+### Requirements
+
+1. **Single source of truth.** Incremental change-detection, file discovery,
+   and LI skip policy must all resolve excludes through the same
+   `loadProjectConfig(projectRoot)` call. No ad-hoc ignore lists in
+   incremental code paths.
+2. **Thread `projectRoot` through every phase.** Already done for the full
+   pipeline (`indexer-phases.js` passes `PROJECT_ROOT`); repeat for the
+   incremental path and for any new daemon/watch entrypoints.
+3. **Config change counts as dirty state.** A mutated `.sweet-search.config.json`
+   must trigger an exclude-diff and targeted reindex — not be silently
+   ignored by mtime-based change detection.
+4. **Exclude diff drives bidirectional reindex.**
+   - `added` globs → delete matching files from all four indices (lexical,
+     embeddings, LI, graph).
+   - `removed` globs → full index of files that now match the include set
+     but were previously excluded. Treat as "new files" in the dirty overlay.
+5. **Cross-index atomicity.** An exclude change that half-lands (e.g. embed
+   re-filtered, LI still has old chunks) must not ship. Either gate the
+   LI/graph updates behind embed's completion or run them in one transaction.
+
+### Open Questions
+
+1. **Config change detection**: hash `.sweet-search.config.json` (+ merged
+   `.gitignore`?) and compare against the previous manifest? Or do we
+   diff the resolved exclude list itself? Hashing is simpler; list diff
+   lets us skip work when the user edits a comment.
+2. **Stale cache eviction.** The LI skip policy caches excludes keyed by
+   projectRoot (`_excludesByRoot` Map). Incremental runs in a long-lived
+   process (watch mode, MCP daemon) must either invalidate the cache on
+   config change or key it by `(projectRoot, configHash)`.
+3. **Ordering under concurrent readers.** Can the exclude-diff run while a
+   search is in flight? The indices may briefly present inconsistent views
+   (embed filtered, LI not yet). Copy-on-write artifact swap protects the
+   full-rebuild case; incremental needs equivalent guarantees.
+4. **`.gitignore` interaction.** `respectGitignore: true` layers gitignore on
+   top of the config excludes. When `.gitignore` changes, does that also
+   count as a config change? Currently yes in spirit (file discovery re-runs),
+   but the manifest does not track gitignore hash.
+
+### Plan Items (Deferred — this doc is planning only)
+
+- [ ] Extend the incremental manifest to include a content hash of
+  `.sweet-search.config.json` and (if `respectGitignore`) of `.gitignore`.
+- [ ] Implement an exclude-list diff: given old vs new resolved excludes,
+  return `{ added: string[], removed: string[] }`.
+- [ ] On `added` globs: walk current index artifacts, delete rows whose
+  file paths match any added glob. All four indices.
+- [ ] On `removed` globs: re-run file discovery with ONLY the removed-glob
+  scope as an include filter, push matching files into the dirty overlay
+  as "new files", let the normal incremental path re-index them.
+- [ ] Thread `projectRoot` through the incremental entry points (dirty
+  overlay, lazy-rebuild path) the same way the full pipeline does.
+- [ ] Invalidate `_excludesByRoot` on detected config change — either via
+  an explicit `resetCache()` hook or by keying the Map on a composite
+  `(projectRoot, configHash)` tuple.
+- [ ] Add an integration test: (a) build index, (b) edit
+  `.sweet-search.config.json` to add `**/fixtures/**`, (c) run incremental
+  update, (d) assert no fixture entries in lexical / embeddings / LI / graph.
+  Then reverse: remove the exclude, run incremental, assert all four
+  indices now contain fixture entries.
+- [ ] Decide explicit semantics for "exclude change during in-flight
+  search" and document the atomicity guarantee (or lack thereof).
+
 ## Existing Logic
 
 There is some old index maintenance logic in the codebase (tracker-based dirty
