@@ -24,6 +24,15 @@ import {
   detectLastLevelCacheBytes,
   computeWeightsAwareBatchCap,
 } from '../infrastructure/onnx-session-utils.js';
+// Consumed through the embedding barrel (auto-reexported via
+// `export * from './embedding-local-model.js'`) so this stays on the
+// allowed indexing → embedding direction AND routes through the public
+// barrel per docs/DDD_ARCHITECTURE.md "Barrel Public API" rule.
+import {
+  setEmbeddingPool as _setEmbeddingPoolSlot,
+  clearEmbeddingPool as _clearEmbeddingPoolSlot,
+  getEmbeddingPool as _getEmbeddingPoolSlot,
+} from '../embedding/index.js';
 
 // Re-export for callers that previously imported from this module.
 export { detectLastLevelCacheBytes };
@@ -693,4 +702,45 @@ export class LateInteractionPool {
     this.workers = [];
     console.log('[InferencePool] LI shutdown complete');
   }
+}
+
+// =============================================================================
+// EMBEDDING POOL LIFECYCLE (moved from core/embedding/embedding-local-model.js
+// to satisfy the DDD dependency matrix: indexing may depend on embedding, not
+// the reverse. See docs/DDD_ARCHITECTURE.md and docs/reviews/ddd-compliance.md.)
+//
+// The embedding layer exposes a duck-typed SLOT (setEmbeddingPool /
+// getEmbeddingPool / clearEmbeddingPool); this module owns construction and
+// lifetime. `callLocalModel` reads the slot at embed time and dispatches
+// batches through the installed pool when present.
+// =============================================================================
+
+/**
+ * Initialize the embedding worker pool and install it into the embedding
+ * layer's slot. Idempotent — returns the already-installed pool when called
+ * a second time.
+ */
+export async function initEmbeddingPool(options = {}) {
+  const existing = _getEmbeddingPoolSlot();
+  if (existing) return existing;
+  const pool = new EmbeddingPool(options);
+  await pool.init();
+  _setEmbeddingPoolSlot(pool);
+  return pool;
+}
+
+/** Shut down the embedding worker pool and clear the embedding slot. */
+export async function shutdownEmbeddingPool() {
+  const pool = _getEmbeddingPoolSlot();
+  if (!pool) return;
+  try {
+    await pool.shutdown();
+  } finally {
+    _clearEmbeddingPoolSlot();
+  }
+}
+
+/** Read-through accessor for code that wants to check for an installed pool. */
+export function getEmbeddingPool() {
+  return _getEmbeddingPoolSlot();
 }

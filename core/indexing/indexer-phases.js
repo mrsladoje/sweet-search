@@ -16,16 +16,18 @@ import { incrementalUpdateHNSW, buildHNSWIndex, buildLateInteractionIndex, build
 import { buildSparseGramArtifact } from './indexer-sparse-gram.js';
 import {
   configureLocalModelRuntime,
-  initEmbeddingPool,
   resetLocalModelRuntime,
-  shutdownEmbeddingPool,
 } from '../embedding/embedding-local-model.js';
 import { isNativeInferenceAvailable } from '../infrastructure/native-inference.js';
 import {
   configureLateInteractionRuntime,
   resetLateInteractionRuntime,
 } from '../ranking/late-interaction-model.js';
-import { planAllocation } from './indexer-pool.js';
+import {
+  planAllocation,
+  initEmbeddingPool,
+  shutdownEmbeddingPool,
+} from './indexer-pool.js';
 
 async function unlinkIfExists(filePath) {
   try {
@@ -35,14 +37,86 @@ async function unlinkIfExists(filePath) {
   }
 }
 
+async function rmDirIfExists(dirPath) {
+  try {
+    await fs.rm(dirPath, { recursive: true, force: true });
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+}
+
+/**
+ * Path where the LateInteractionIndex should stage its segment files during
+ * a stage-and-swap rebuild. MUST NOT collide with the live
+ * {finalPath}.segments directory — using {live}.tmp.segments (the old behavior)
+ * aliases into the live path once the atomic stub rename promotes
+ * {live}.tmp → {live} because {stagedStub}.segments and {live}.segments share
+ * the same basename form via the `.tmp` suffix.
+ */
+function stagedLateInteractionSegmentDir(stagedStubPath) {
+  return stagedStubPath + '-stage.segments';
+}
+
 async function cleanupStagedLateInteractionIndex(stagedPath) {
   await unlinkIfExists(stagedPath);
   await unlinkIfExists(stagedPath + '.bak');
+  // Also remove the staged segments directory — a failed rebuild must leave
+  // no orphan segment files on disk.
+  await rmDirIfExists(stagedLateInteractionSegmentDir(stagedPath));
 }
 
 async function invalidateLateInteractionIndex() {
   await unlinkIfExists(DB_PATHS.lateInteraction);
   await unlinkIfExists(DB_PATHS.lateInteraction + '.bak');
+  await rmDirIfExists(DB_PATHS.lateInteraction + '.segments');
+}
+
+/**
+ * Atomic promote for the Late Interaction index.
+ *
+ * Renames both the stub file and the segments directory together so the
+ * stub's stored segmentDir basename (recorded at save time under
+ * `resetForSave({finalIndexPath})`) resolves correctly on the next load.
+ *
+ * Crash-safety: if the rename of the segments directory succeeds but the
+ * stub rename fails, the old stub still points at the old basename but the
+ * on-disk directory was renamed — load will see a missing segments dir and
+ * self-heal via the `.tmp.segments` migration path in late-interaction-index.js.
+ * This window is narrow (two filesystem renames) and the self-heal is idempotent.
+ */
+async function atomicSwapLateInteractionIndex(stagedStubPath, finalStubPath) {
+  const stagedSegDir = stagedLateInteractionSegmentDir(stagedStubPath);
+  const finalSegDir = finalStubPath + '.segments';
+  const bakSegDir = finalSegDir + '.bak';
+
+  // Best-effort cleanup of any stale .bak sibling from a previous failed swap
+  await rmDirIfExists(bakSegDir);
+
+  // Back up existing live segments before promoting new ones
+  let hadOriginalSeg = false;
+  if (existsSync(finalSegDir)) {
+    await fs.rename(finalSegDir, bakSegDir);
+    hadOriginalSeg = true;
+  }
+
+  try {
+    if (existsSync(stagedSegDir)) {
+      await fs.rename(stagedSegDir, finalSegDir);
+    }
+    await atomicSwapDatabase(stagedStubPath, finalStubPath);
+  } catch (err) {
+    // Rollback: restore previous live segments
+    if (hadOriginalSeg && existsSync(bakSegDir) && !existsSync(finalSegDir)) {
+      try { await fs.rename(bakSegDir, finalSegDir); } catch (_e) { /* best effort */ }
+    }
+    throw err;
+  }
+
+  await rmDirIfExists(bakSegDir);
+
+  // Clean up any orphaned .tmp.segments left over from a pre-fix broken state
+  // (where the stub used to record an absolute path with `.tmp.segments`).
+  await rmDirIfExists(finalStubPath + '.tmp.segments');
 }
 
 // =============================================================================
@@ -401,6 +475,11 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
       extendedSkiplist: lateInteractionExtendedSkiplist,
       loadFromPath: DB_PATHS.lateInteraction,
       saveToPath: stagedLateInteractionPath,
+      // finalIndexPath drives the basename the stub records for its
+      // segmentDir field — must be the POST-swap stub path so load() after
+      // promotion resolves to {finalIndexPath}.segments.
+      finalIndexPath: DB_PATHS.lateInteraction,
+      stagingSegmentDir: stagedLateInteractionSegmentDir(stagedLateInteractionPath),
       fullRebuild: fullReindex,
       workerCount: lateInteractionWorkers,
       threadsPerWorker: lateInteractionWorkerThreads,
@@ -483,7 +562,7 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
 
     if (!dryRun && !noLateInteraction && (liPromise || preChunked?.allChunks?.length > 0 || filesToRemoveFromLI.length > 0)) {
       if (liOutcome.ok && lateInteractionResult) {
-        await atomicSwapDatabase(stagedLateInteractionPath, DB_PATHS.lateInteraction);
+        await atomicSwapLateInteractionIndex(stagedLateInteractionPath, DB_PATHS.lateInteraction);
         log('Late interaction index promoted', 'green');
         await markPhaseComplete('late-interaction');
       } else if (!liOutcome.ok) {
