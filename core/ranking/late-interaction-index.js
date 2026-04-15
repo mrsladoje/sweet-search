@@ -371,13 +371,29 @@ export class LateInteractionIndex {
   /**
    * Reset segment state for a new save path. Call before save() when the
    * output path differs from the load path (staged builds).
+   *
+   * @param {string} newIndexPath - Where save() should write the stub file.
+   * @param {object} [options]
+   * @param {string} [options.stagingSegmentDir] - Distinct directory to write
+   *   segments into during staging. Must NOT collide with the live segments
+   *   directory ({finalIndexPath}.segments). Defaults to {newIndexPath}.segments
+   *   which is unsafe when the staging stub is adjacent to a live stub — callers
+   *   doing stage-and-swap MUST pass an explicit non-colliding path.
+   * @param {string} [options.finalIndexPath] - The post-swap location of the
+   *   stub file. Used to derive the `segmentDir` basename recorded inside the
+   *   stub so that after atomic promotion the stub points at {finalIndexPath}.segments
+   *   (resolved relative to the stub's dirname on load).
    */
-  resetForSave(newIndexPath) {
+  resetForSave(newIndexPath, options = {}) {
     this.indexPath = newIndexPath;
     // Discard loaded segment refs — save() will rewrite from this.documents.
-    // Clear _segmentDir so _flushSegment() derives a fresh directory from
-    // the new indexPath instead of writing into the old live directory.
-    this._segmentDir = null;
+    const { stagingSegmentDir = null, finalIndexPath = null } = options;
+    // Pre-seed _segmentDir with the staging path so _flushSegment() writes
+    // into the staging directory rather than re-deriving it from indexPath
+    // (which would collide with a live {indexPath}.segments when the caller
+    // uses {live}.tmp as the stub staging path).
+    this._segmentDir = stagingSegmentDir;
+    this._finalIndexPath = finalIndexPath;
     this._segments = [];
     this._currentSegment = new Map();
   }
@@ -558,8 +574,10 @@ export class LateInteractionIndex {
 
     if (!this._segmentDir) {
       this._segmentDir = this.indexPath + '.segments';
-      await fs.mkdir(this._segmentDir, { recursive: true });
     }
+    // Always ensure the segment directory exists — resetForSave() may have
+    // pre-seeded _segmentDir with a staging path that hasn't been created yet.
+    await fs.mkdir(this._segmentDir, { recursive: true });
 
     const segIdx = this._segments.length;
     const segPath = path.join(this._segmentDir, `segment-${String(segIdx).padStart(4, '0')}.bin`);
@@ -1455,7 +1473,9 @@ export class LateInteractionIndex {
 
         const flushedCount = this._segments.reduce((sum, segment) => sum + segment.count, 0);
         if (flushedCount === this.documents.size && this._segments.length > 0) {
-          const segDir = this.indexPath + '.segments';
+          // Staging-aware segment directory. _segmentDir was pre-seeded by
+          // resetForSave() when staging; otherwise derive from indexPath.
+          const segDir = this._segmentDir || (this.indexPath + '.segments');
           const manifest = {
             version: '3.0',
             format: 'sslx-v3',
@@ -1484,10 +1504,17 @@ export class LateInteractionIndex {
             };
             await fs.writeFile(path.join(segDir, 'wush-calibration.json'), JSON.stringify(cal));
           }
+          // Stub stores segmentDir as a basename resolved relative to the
+          // stub's dirname on load. When staging, record the basename derived
+          // from _finalIndexPath so that after atomic promotion the stub
+          // points at {finalIndexPath}.segments without a rewrite.
+          const stubSegmentDirBasename = this._finalIndexPath
+            ? path.basename(this._finalIndexPath) + '.segments'
+            : path.basename(segDir);
           await fs.writeFile(this.indexPath, JSON.stringify({
             version: '3.0',
             format: 'segmented',
-            segmentDir: segDir,
+            segmentDir: stubSegmentDirBasename,
           }));
           this._segmentDir = segDir;
           this._currentSegment = new Map();
@@ -1496,8 +1523,8 @@ export class LateInteractionIndex {
         }
       }
 
-      // Derive segment dir from the current save path, NOT from a loaded index
-      const segDir = this.indexPath + '.segments';
+      // Staging-aware segment directory (see resetForSave comment)
+      const segDir = this._segmentDir || (this.indexPath + '.segments');
       await fs.mkdir(segDir, { recursive: true });
 
       // Remove any old segment files in this directory
@@ -1558,11 +1585,20 @@ export class LateInteractionIndex {
         await fs.writeFile(path.join(segDir, 'wush-calibration.json'), JSON.stringify(cal));
       }
 
-      // Write a stub at the main index path pointing to segments
+      // Write a stub at the main index path pointing to segments.
+      // segmentDir is stored as a basename relative to the stub's dirname so
+      // atomic stage-and-swap semantics work: when staging to {live}.tmp with
+      // segments at {live}.tmp-stage.segments, the stub records the POST-swap
+      // basename ({basename(finalIndexPath)}.segments) so no stub rewrite is
+      // needed when the caller atomically promotes both the stub and the
+      // segments directory.
+      const stubSegmentDirBasename = this._finalIndexPath
+        ? path.basename(this._finalIndexPath) + '.segments'
+        : path.basename(segDir);
       await fs.writeFile(this.indexPath, JSON.stringify({
         version: '3.0',
         format: 'segmented',
-        segmentDir: segDir,
+        segmentDir: stubSegmentDirBasename,
       }));
 
       // Update internal state to reflect fresh segments
@@ -1666,7 +1702,96 @@ export class LateInteractionIndex {
         const data = await fs.readFile(this.indexPath, 'utf-8');
         state = JSON.parse(data);
         if (state.format === 'segmented') {
-          await this._loadSegmented(state.segmentDir);
+          // segmentDir may be stored as:
+          //   - basename (new format, stage-and-swap safe): "foo.db.segments"
+          //   - absolute path (legacy or pre-fix-state): "/abs/.../foo.db.segments"
+          //   - absolute path with .tmp suffix (pre-fix broken state):
+          //     "/abs/.../foo.db.tmp.segments" — self-heal by migrating the
+          //     orphaned directory to the canonical name and rewriting the stub.
+          let segDirAbs;
+          if (path.isAbsolute(state.segmentDir)) {
+            segDirAbs = state.segmentDir;
+          } else {
+            segDirAbs = path.join(path.dirname(this.indexPath), state.segmentDir);
+          }
+
+          // Self-heal: the pre-fix staged-save bug wrote an absolute
+          // segmentDir with the `.tmp.segments` suffix into the promoted
+          // stub. Detect that pattern and migrate the directory to the
+          // canonical {indexPath}.segments name so the stub can be rewritten
+          // as a stable basename. Race-safe: two concurrent processes may
+          // both reach this branch; fs.rename atomicity ensures only one
+          // succeeds, and we tolerate the loser's ENOENT / EEXIST.
+          const canonicalSegDir = this.indexPath + '.segments';
+          const maybeMigrate = async (from, to) => {
+            try {
+              await fs.rename(from, to);
+              return true;
+            } catch (err) {
+              // ENOENT: another process already migrated it (source gone).
+              // EEXIST / ENOTEMPTY: destination raced us (target populated).
+              // EPERM: atomic rename may fall through on some platforms;
+              //        treat as a best-effort miss and let downstream decide.
+              if (err && (err.code === 'ENOENT' || err.code === 'EEXIST'
+                || err.code === 'ENOTEMPTY' || err.code === 'EPERM')) {
+                return false;
+              }
+              throw err;
+            }
+          };
+
+          // Atomic stub rewrite via .tmp + rename, so a crash mid-heal cannot
+          // leave a truncated stub file.
+          const writeStubAtomic = async (stubContent) => {
+            const stubTmp = this.indexPath + '.selfheal.tmp';
+            await fs.writeFile(stubTmp, JSON.stringify(stubContent));
+            try {
+              await fs.rename(stubTmp, this.indexPath);
+            } catch (err) {
+              try { await fs.unlink(stubTmp); } catch (_e) { /* best effort */ }
+              throw err;
+            }
+          };
+
+          const looksLikeBrokenTmpState = segDirAbs !== canonicalSegDir
+            && segDirAbs.endsWith('.tmp.segments')
+            && path.dirname(segDirAbs) === path.dirname(canonicalSegDir);
+          if (looksLikeBrokenTmpState) {
+            if (existsSync(segDirAbs) && !existsSync(canonicalSegDir)) {
+              console.warn(`[LateInteraction] Self-heal: migrating orphaned ${path.basename(segDirAbs)} to ${path.basename(canonicalSegDir)}`);
+              await maybeMigrate(segDirAbs, canonicalSegDir);
+            }
+            // Only rewrite the stub if the canonical directory actually
+            // exists after the migration attempt. Otherwise we'd point
+            // a newly-rewritten stub at nothing and load would fail.
+            if (existsSync(canonicalSegDir)) {
+              await writeStubAtomic({
+                version: '3.0',
+                format: 'segmented',
+                segmentDir: path.basename(canonicalSegDir),
+              });
+              segDirAbs = canonicalSegDir;
+            }
+          }
+
+          // Second self-heal path: stub points at a non-existent segments dir
+          // but an orphaned `.tmp.segments` exists nearby — migrate in place.
+          if (!existsSync(segDirAbs)) {
+            const tmpSegDir = this.indexPath + '.tmp.segments';
+            if (existsSync(tmpSegDir) && !existsSync(canonicalSegDir)) {
+              console.warn(`[LateInteraction] Self-heal: migrating orphaned ${path.basename(tmpSegDir)} to ${path.basename(canonicalSegDir)}`);
+              await maybeMigrate(tmpSegDir, canonicalSegDir);
+              if (existsSync(canonicalSegDir)) {
+                await writeStubAtomic({
+                  version: '3.0',
+                  format: 'segmented',
+                  segmentDir: path.basename(canonicalSegDir),
+                });
+                segDirAbs = canonicalSegDir;
+              }
+            }
+          }
+          await this._loadSegmented(segDirAbs);
           return;
         }
       }

@@ -28,7 +28,7 @@
 
 import { existsSync, readFileSync } from 'fs';
 import { minimatch } from 'minimatch';
-import { loadProjectConfig } from '../infrastructure/config/search.js';
+import { loadProjectConfig } from '../infrastructure/config/index.js';
 
 const MM_OPTS = { dot: true, nocase: false };
 

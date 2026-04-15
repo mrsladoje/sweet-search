@@ -36,9 +36,6 @@ import {
   isLocalModelLoaded,
   configureLocalModelRuntime,
   resetLocalModelRuntime,
-  initEmbeddingPool,
-  shutdownEmbeddingPool,
-  getEmbeddingPool,
 } from './embedding-local-model.js';
 
 import {
@@ -600,13 +597,12 @@ export { getSemanticCacheStats, clearCache, getFrequentQueries, autoPersistFrequ
 // Named exports for internal generator functions (used by vocab-warmer)
 export { generateEmbedding, generateEmbeddings };
 
-// Worker pool lifecycle (Phase 2 — parallel indexing)
+// Local model runtime configuration (Phase 2 — parallel indexing)
+// Pool lifecycle (initEmbeddingPool / shutdownEmbeddingPool) lives in
+// core/indexing/indexer-pool.js per the DDD dependency matrix.
 export {
   configureLocalModelRuntime,
   resetLocalModelRuntime,
-  initEmbeddingPool,
-  shutdownEmbeddingPool,
-  getEmbeddingPool,
 };
 
 // =============================================================================

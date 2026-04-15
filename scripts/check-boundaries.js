@@ -33,7 +33,11 @@ const FORBIDDEN = [
 ];
 
 const EXCEPTIONS = [
-  { from: 'core/indexing/', to: 'ranking/', label: 'indexing → ranking (late-interaction build)', max: 2 },
+  // indexing → ranking: LI build path needs LateInteractionIndex (static) +
+  // runtime helpers in late-interaction-model.js (static + dynamic fallback
+  // in hybrid dispatcher, worker entrypoint, pool inline fallback). Count
+  // includes both static `from` and dynamic `import()` forms (2026-04-15 fix).
+  { from: 'core/indexing/', to: 'ranking/', label: 'indexing → ranking (late-interaction build)', max: 6 },
   // query-router-catboost imports trained model from core/training/query-router/ — declared build-time artifact dependency
   { from: 'core/query/', to: 'training/query-router/', label: 'query → training (CatBoost model artifact)', max: 2 },
 ];
@@ -121,14 +125,24 @@ for (const rule of FORBIDDEN) {
 }
 
 // ── Check 2: Documented exception limits ─────────────────────────────────────
+//
+// Count BOTH static (`from '.../target'`) AND dynamic (`import('.../target')`)
+// import forms. Before this fix, dynamic imports bypassed the exception
+// counter, so the `indexing → ranking (late-interaction build)` allowlist
+// reported 2 sites while the real coupling surface was 6 (see
+// docs/reviews/ddd-compliance.md §3).
 
 for (const exc of EXCEPTIONS) {
   try {
-    const count = execSync(
+    const staticCount = execSync(
       `grep -rn "from '.*${exc.to}" ${exc.from} 2>/dev/null | wc -l`,
       { encoding: 'utf8' }
     ).trim();
-    const n = parseInt(count, 10);
+    const dynamicCount = execSync(
+      `grep -rn "import(.*${exc.to}" ${exc.from} 2>/dev/null | wc -l`,
+      { encoding: 'utf8' }
+    ).trim();
+    const n = parseInt(staticCount, 10) + parseInt(dynamicCount, 10);
     if (n > exc.max) {
       console.error(`EXCEPTION EXCEEDED [${exc.label}]: found ${n} imports (max ${exc.max})`);
       violations++;

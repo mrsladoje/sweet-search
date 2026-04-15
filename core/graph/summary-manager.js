@@ -20,8 +20,98 @@
  */
 
 import { existsSync } from 'fs';
+import fs from 'fs/promises';
 import path from 'path';
 import { DB_PATHS } from '../infrastructure/config/index.js';
+
+// =============================================================================
+// CRASH-SAFE DISK PERSISTENCE
+// =============================================================================
+//
+// The in-memory backup model has a fatal gap: if the process is killed
+// between `backupSummaries` and `restoreSummaries` (e.g., mid-`buildCodeGraph`
+// which atomically swaps the code-graph DB), the in-memory copy is lost AND
+// the old DB with summaries has already been unlinked on atomic-swap success.
+// The next run's backup then reads an empty DB and has nothing to restore.
+// The summaries are permanently gone.
+//
+// Fix: persist the backup to `{dbPath}.summaries.bak.json` before the
+// destructive phase runs, and only delete the disk backup after a successful
+// restore. On next `backupSummaries` call, detect any orphaned disk backup
+// and prefer it when the live DB has no summaries (crash recovery).
+//
+// Storage format: JSON with `summary_embedding` blobs base64-encoded since
+// JSON has no native Buffer type.
+
+function diskBackupPath(dbPath) {
+  return dbPath + '.summaries.bak.json';
+}
+
+function serializeSummaries(summaries) {
+  return summaries.map(row => ({
+    ...row,
+    summary_embedding: row.summary_embedding != null
+      ? { __b64: Buffer.from(row.summary_embedding).toString('base64') }
+      : null,
+  }));
+}
+
+function deserializeSummaries(serialized) {
+  return serialized.map(row => ({
+    ...row,
+    summary_embedding: row.summary_embedding && row.summary_embedding.__b64 != null
+      ? Buffer.from(row.summary_embedding.__b64, 'base64')
+      : row.summary_embedding,
+  }));
+}
+
+async function writeDiskBackup(dbPath, backup) {
+  const bakPath = diskBackupPath(dbPath);
+  const tmpPath = bakPath + '.tmp';
+  const payload = {
+    version: 1,
+    dbPath,
+    count: backup.count,
+    timestamp: backup.timestamp ?? Date.now(),
+    summaries: serializeSummaries(backup.summaries),
+  };
+  await fs.mkdir(path.dirname(bakPath), { recursive: true });
+  await fs.writeFile(tmpPath, JSON.stringify(payload));
+  await fs.rename(tmpPath, bakPath);
+}
+
+async function readDiskBackup(dbPath) {
+  const bakPath = diskBackupPath(dbPath);
+  if (!existsSync(bakPath)) return null;
+  try {
+    const raw = await fs.readFile(bakPath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.summaries)) return null;
+    return {
+      summaries: deserializeSummaries(parsed.summaries),
+      count: parsed.count ?? parsed.summaries.length,
+      timestamp: parsed.timestamp,
+      fromDisk: true,
+    };
+  } catch (err) {
+    // ENOENT between existsSync and readFile is a race, not a corruption;
+    // silently return null. Only noise-warn on real parse/IO errors.
+    if (err && err.code === 'ENOENT') return null;
+    console.warn(`[summary-manager] Warning: Corrupt disk backup at ${bakPath}: ${err.message}`);
+    return null;
+  }
+}
+
+async function unlinkDiskBackup(dbPath) {
+  const bakPath = diskBackupPath(dbPath);
+  try {
+    await fs.unlink(bakPath);
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.warn(`[summary-manager] Warning: Failed to remove disk backup: ${err.message}`);
+    }
+  }
+}
 
 /**
  * Backup summaries from existing database.
@@ -33,8 +123,25 @@ import { DB_PATHS } from '../infrastructure/config/index.js';
  * @returns {Promise<{summaries: Array, count: number, error?: string}>}
  */
 export async function backupSummaries(dbPath = DB_PATHS.codeGraph) {
+  // `timestamp` on the returned backup is ALWAYS the time of this call, even
+  // when the result is populated from crash-recovery disk orphan data — the
+  // field reflects "when did we decide to use this backup", not "when was
+  // the original backup written". That preserves the invariant callers rely
+  // on: `backup.timestamp` is freshly current on every call.
+  const callTimestamp = Date.now();
+
+  // Crash recovery: an orphaned disk backup from a previous run takes
+  // precedence when the live DB is missing OR has no summaries of its own.
+  // Without this, a process kill between backup and restore would leave the
+  // live DB empty and the in-memory copy gone — summaries permanently lost.
+  const orphan = await readDiskBackup(dbPath);
+
   if (!existsSync(dbPath)) {
-    return { summaries: [], count: 0 };
+    if (orphan && orphan.count > 0) {
+      console.warn(`[summary-manager] Disk backup recovery: restoring ${orphan.count} summaries from orphaned backup (live DB missing)`);
+      return { ...orphan, timestamp: callTimestamp };
+    }
+    return { summaries: [], count: 0, timestamp: callTimestamp };
   }
 
   try {
@@ -52,16 +159,41 @@ export async function backupSummaries(dbPath = DB_PATHS.codeGraph) {
 
     db.close();
 
-    return {
+    // Crash recovery: if the live DB has zero summaries but the disk backup
+    // has a non-empty set, the previous run crashed mid-rebuild before it
+    // could restore. Use the disk backup as the authoritative source.
+    if (summaries.length === 0 && orphan && orphan.count > 0) {
+      console.warn(`[summary-manager] Disk backup recovery: restoring ${orphan.count} summaries from orphaned backup (live DB empty)`);
+      return { ...orphan, timestamp: callTimestamp };
+    }
+
+    const backup = {
       summaries,
       count: summaries.length,
-      timestamp: Date.now(),
+      timestamp: callTimestamp,
     };
+
+    // Persist to disk BEFORE the caller runs any destructive operation.
+    // The subsequent `restoreSummaries()` call clears this file on success.
+    if (backup.count > 0) {
+      try {
+        await writeDiskBackup(dbPath, backup);
+      } catch (err) {
+        console.warn(`[summary-manager] Warning: Could not persist disk backup: ${err.message}`);
+        // Non-fatal: the in-memory backup still works for the happy path.
+      }
+    } else if (orphan) {
+      // No summaries to back up and no disk orphan we want — clean up.
+      await unlinkDiskBackup(dbPath);
+    }
+
+    return backup;
   } catch (err) {
     console.warn(`[summary-manager] Warning: Could not backup summaries: ${err.message}`);
     return {
       summaries: [],
       count: 0,
+      timestamp: callTimestamp,
       error: err.message,
     };
   }
@@ -187,6 +319,14 @@ export async function restoreSummaries(dbPath = DB_PATHS.codeGraph, backup) {
     transaction();
   } finally {
     db.close();
+  }
+
+  // Remove the on-disk backup — the live DB now holds the authoritative copy.
+  // Only delete when restore produced real work; a zero-restore result means
+  // there's no signal the summaries made it across and we should leave the
+  // backup in place so the NEXT run can try again.
+  if (restored > 0) {
+    await unlinkDiskBackup(dbPath);
   }
 
   return { restored, skipped };
