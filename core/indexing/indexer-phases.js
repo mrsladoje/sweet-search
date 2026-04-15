@@ -57,12 +57,17 @@ function stagedLateInteractionSegmentDir(stagedStubPath) {
   return stagedStubPath + '-stage.segments';
 }
 
-async function cleanupStagedLateInteractionIndex(stagedPath) {
+async function cleanupStagedLateInteractionIndex(stagedPath, finalPath = DB_PATHS.lateInteraction) {
   await unlinkIfExists(stagedPath);
   await unlinkIfExists(stagedPath + '.bak');
   // Also remove the staged segments directory — a failed rebuild must leave
   // no orphan segment files on disk.
   await rmDirIfExists(stagedLateInteractionSegmentDir(stagedPath));
+  // And remove the .segments.bak sidecar that `atomicSwapLateInteractionIndex`
+  // leaves behind on a failed swap (2026-04-15 fix for leak spotted in review).
+  // Guarded by finalPath so callers who use a non-default final location
+  // get their own cleanup.
+  await rmDirIfExists(finalPath + '.segments.bak');
 }
 
 async function invalidateLateInteractionIndex() {
@@ -83,14 +88,30 @@ async function invalidateLateInteractionIndex() {
  * on-disk directory was renamed — load will see a missing segments dir and
  * self-heal via the `.tmp.segments` migration path in late-interaction-index.js.
  * This window is narrow (two filesystem renames) and the self-heal is idempotent.
+ *
+ * Rollback sequence when the stub swap at line 106 throws AFTER the new
+ * segments have already landed in finalSegDir:
+ *   1. Move the new segments out of the way to `.failed-swap`
+ *   2. Restore the original segments from `.bak`
+ *   3. Propagate the original error
+ *
+ * The prior revision had a broken rollback: its catch predicate
+ * `!existsSync(finalSegDir)` was always false after a successful segments
+ * rename, so no restoration ran and the live index was left in a torn state
+ * (OLD stub pointing at NEW segments, ORIGINAL segments stranded in .bak).
+ * That's the same severity class as the C1 bug the whole helper was meant
+ * to replace. See docs/reviews/INDEXING_OPT_2026-04-15/correctness.md §N1.
  */
 async function atomicSwapLateInteractionIndex(stagedStubPath, finalStubPath) {
   const stagedSegDir = stagedLateInteractionSegmentDir(stagedStubPath);
   const finalSegDir = finalStubPath + '.segments';
   const bakSegDir = finalSegDir + '.bak';
+  const failedSegDir = finalSegDir + '.failed-swap';
 
-  // Best-effort cleanup of any stale .bak sibling from a previous failed swap
+  // Best-effort cleanup of any stale .bak / .failed-swap sibling from a
+  // previous failed swap. Both must be gone before we rename into them.
   await rmDirIfExists(bakSegDir);
+  await rmDirIfExists(failedSegDir);
 
   // Back up existing live segments before promoting new ones
   let hadOriginalSeg = false;
@@ -99,25 +120,51 @@ async function atomicSwapLateInteractionIndex(stagedStubPath, finalStubPath) {
     hadOriginalSeg = true;
   }
 
+  let newSegMoved = false;
   try {
     if (existsSync(stagedSegDir)) {
       await fs.rename(stagedSegDir, finalSegDir);
+      newSegMoved = true;
     }
     await atomicSwapDatabase(stagedStubPath, finalStubPath);
   } catch (err) {
-    // Rollback: restore previous live segments
-    if (hadOriginalSeg && existsSync(bakSegDir) && !existsSync(finalSegDir)) {
-      try { await fs.rename(bakSegDir, finalSegDir); } catch (_e) { /* best effort */ }
-    }
+    // Each step runs in its own try so a partial rollback failure still
+    // attempts the remaining steps. Order matters: move new segments aside
+    // FIRST so the bak-rename target is clear, then restore.
+    try {
+      if (newSegMoved && existsSync(finalSegDir)) {
+        await rmDirIfExists(failedSegDir);
+        await fs.rename(finalSegDir, failedSegDir);
+      }
+    } catch (_e) { /* leaves .failed-swap for manual cleanup */ }
+    try {
+      if (hadOriginalSeg && existsSync(bakSegDir) && !existsSync(finalSegDir)) {
+        await fs.rename(bakSegDir, finalSegDir);
+      }
+    } catch (_e) { /* best effort */ }
     throw err;
   }
 
   await rmDirIfExists(bakSegDir);
+  await rmDirIfExists(failedSegDir);
 
   // Clean up any orphaned .tmp.segments left over from a pre-fix broken state
   // (where the stub used to record an absolute path with `.tmp.segments`).
   await rmDirIfExists(finalStubPath + '.tmp.segments');
 }
+
+/**
+ * Internal helpers exposed for direct testing. NOT re-exported via the
+ * `core/indexing/index.js` barrel — callers outside the domain should go
+ * through `buildVectorsAndArtifactsPhase`. Keeps N1 regression tests able
+ * to monkey-patch `atomicSwapDatabase` without needing to set up the full
+ * phase runner.
+ */
+export const _testInternals = {
+  atomicSwapLateInteractionIndex,
+  stagedLateInteractionSegmentDir,
+  cleanupStagedLateInteractionIndex,
+};
 
 // =============================================================================
 // PHASE RUNNER HELPER
@@ -487,6 +534,12 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
       batchSizeUpperCap: resourcePlan.lateInteractionBatchSizeUpperCap,
       tokenBudget: resourcePlan.lateInteractionTokenBudget,
       attentionBudget: resourcePlan.lateInteractionAttentionBudget,
+      // Thread PROJECT_ROOT through so LI skip policy loads the same
+      // .sweet-search.config.json excludes the embed indexer uses. Without
+      // this, a non-cwd invocation (CI cd elsewhere, MCP tool, future daemon)
+      // would silently diverge — embed and LI would apply different skip
+      // lists and the bde9b26 unification refactor would be incomplete.
+      projectRoot: PROJECT_ROOT,
     });
 
     let liPromise = null;

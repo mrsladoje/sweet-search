@@ -9,8 +9,19 @@ export * from './index-codebase-v21.js';
 // Build pipeline (code graph, vector schema, embedding)
 export * from './indexer-build.js';
 
-// Phase runner + phase wrappers
-export * from './indexer-phases.js';
+// Phase runner + phase wrappers (explicit named exports — do NOT switch back
+// to `export *` without preserving the hiding of module-private helpers.
+// `indexer-phases.js` has `_testInternals` and other file-local state that
+// MUST NOT leak through the barrel per the L2/L3 DDD fix in 34089b2.)
+export {
+  runPhase,
+  discoverFilesPhase,
+  determineFilesToIndexPhase,
+  buildCodeGraphWithHCGSPhase,
+  buildVectorsAndArtifactsPhase,
+  updateIncrementalStatePhase,
+  printSummaryPhase,
+} from './indexer-phases.js';
 
 // HNSW, late interaction, quantized artifacts
 export * from './indexer-ann.js';

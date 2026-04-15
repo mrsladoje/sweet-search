@@ -237,16 +237,26 @@ export async function nativeEmbed(texts, options = {}) {
 
   const { inputIds, attentionMask } = tokenizedToNapi(tokenized, batchSize, seqLen);
   // The native addon returns a flat `Float32Array` of length batch * dim —
-  // see the comment on embed_batch in embedding_model.rs. Slice via
-  // `.slice(i*dim, (i+1)*dim)` for per-batch typed arrays (each .slice call
-  // copies dim floats into a fresh Float32Array, matching the old contract
-  // where each per-batch vector is independent).
+  // see the comment on embed_batch in embedding_model.rs. Use `.subarray()`
+  // to return zero-copy views over the shared backing buffer (2026-04-15 perf
+  // fix — previous `.slice()` was a per-row memcpy for no reason).
+  //
+  // Callers MUST treat each view as read-only. Mutation audit (2026-04-15):
+  //   - callLocalModelGpu at core/embedding/embedding-local-model.js:547
+  //     returns the array unchanged to its caller
+  //   - downstream embedding-service paths call truncateForHNSW, which
+  //     allocates a fresh Float32Array per row (quantization.js)
+  //   - SQLite persistence paths take a BLOB copy via better-sqlite3
+  //   - no grep hit for `embeddings[i][j] = ` or `.set(` on the returned rows
+  // Any future consumer that writes through a returned view will silently
+  // corrupt neighbouring rows in the shared buffer. If you need to mutate,
+  // copy first with `new Float32Array(view)` or `view.slice()`.
   const flat = await model.embedBatch(inputIds, attentionMask);
   const dim = model.dim;
 
   const embeddings = new Array(batchSize);
   for (let i = 0; i < batchSize; i++) {
-    embeddings[i] = flat.slice(i * dim, (i + 1) * dim);
+    embeddings[i] = flat.subarray(i * dim, (i + 1) * dim);
   }
   return embeddings;
 }
@@ -327,9 +337,24 @@ export async function nativeLiEncodeTokenized(tokenized) {
 
   // The native addon returns `vectors` as a flat `Float32Array` (zero-copy
   // from the Rust Vec<f32> via napi typed array) — see encode_batch in
-  // li_model.rs. Slice per token via `.slice()`, which copies `dim` floats
-  // into a fresh Float32Array per token, preserving the old contract where
-  // each per-token vector is an independent Float32Array.
+  // li_model.rs. Use `.subarray()` to return zero-copy views over the shared
+  // backing buffer (2026-04-15 perf fix — previous `.slice()` was a per-token
+  // memcpy for no reason).
+  //
+  // LI token views are READ-ONLY. Mutation audit (2026-04-15):
+  //   - nativeLiEncodeTokenized is called from late-interaction-model.js:387
+  //     (encodeDocumentsGpu) which pushes views into a JS array and hands
+  //     them to indexer-ann.js::finalizeBatchResults
+  //   - finalizeBatchResults calls liIndex.add which at
+  //     late-interaction-index.js:429-430 does
+  //     `tokens.slice(...).map(emb => emb.slice(0, tokenDim))` — the inner
+  //     `.slice()` creates a fresh Float32Array per token (copy)
+  //   - poolTokens at late-interaction-model.js:619 does
+  //     `new Float32Array(clusterInput[i])` (copy via constructor)
+  //   - persistence goes through _writeSegmentFile which copies bytes into
+  //     a pre-allocated Buffer
+  // Any future consumer that writes through a returned view will corrupt
+  // the underlying batch buffer and neighbouring tokens. Copy before mutating.
   const flat = result.vectors;
 
   const allVectors = new Array(batchSize);
@@ -338,7 +363,7 @@ export async function nativeLiEncodeTokenized(tokenized) {
     const count = result.tokenCounts[b];
     const docVectors = new Array(count);
     for (let t = 0; t < count; t++) {
-      docVectors[t] = flat.slice(offset + t * dim, offset + (t + 1) * dim);
+      docVectors[t] = flat.subarray(offset + t * dim, offset + (t + 1) * dim);
     }
     allVectors[b] = docVectors;
     offset += count * dim;
