@@ -59,15 +59,144 @@ const CASCADE_SPEC_PATH = join(__dirname, 'coreml-cascade.json');
 let _spec = null;
 
 /**
- * Load and cache the shape set JSON. Throws if the JSON is missing or
- * malformed — that's always a packaging bug, never a runtime concern,
- * so fail loud rather than silently degrading.
+ * Rust-side hardcoded filename prefixes — must stay in lockstep with
+ * `crates/sweet-search-native/src/inference/embedding_model.rs::parse_embed_variant_filename`
+ * (line ~140, `strip_prefix("nomic_bert_b")`) and
+ * `crates/sweet-search-native/src/inference/li_model.rs::parse_li_variant_filename`
+ * (line ~127, `strip_prefix("li_modernbert_b")`).
+ *
+ * A future JSON edit that renames variants (e.g. `nomic_bert_v2`,
+ * `li_modernbert_short`) would silently disarm the cascade on end-user
+ * machines — the Rust parser would scan the cascade dir, find no matching
+ * files, and fall back to candle with only a soft warning. The
+ * `validateCascadeSpec()` check below blocks any such schema drift at
+ * load time so a packaging bug can never escape into a release.
+ */
+export const RUST_EMBED_PREFIX = 'nomic_bert_b';
+export const RUST_LI_PREFIX = 'li_modernbert_b';
+export const RUST_VARIANT_SUFFIX = '_fp16.mlpackage';
+
+/**
+ * Validate a loaded cascade spec against every invariant the JS side,
+ * the Python trace script, and the Rust filename parser all depend on.
+ *
+ * Throws with an actionable error message on any mismatch — callers
+ * should let this propagate so a packaging bug is immediately visible
+ * instead of silently losing the cascade dispatch path.
+ *
+ * Called from `getCascadeSpec()` on first load. Tests exercise this via
+ * `tests/infrastructure/coreml-cascade-parity.test.js`.
+ */
+export function validateCascadeSpec(spec) {
+  if (!spec || typeof spec !== 'object') {
+    throw new Error('[CoremlCascade] invalid spec: not an object');
+  }
+  if (typeof spec.version !== 'number' || spec.version < 1) {
+    throw new Error(`[CoremlCascade] invalid spec: version must be a positive integer, got ${JSON.stringify(spec.version)}`);
+  }
+  if (typeof spec.hfRepo !== 'string' || spec.hfRepo.length === 0) {
+    throw new Error(`[CoremlCascade] invalid spec: hfRepo must be a non-empty string, got ${JSON.stringify(spec.hfRepo)}`);
+  }
+
+  for (const [side, requiredPrefix] of [
+    ['embed', RUST_EMBED_PREFIX],
+    ['li', RUST_LI_PREFIX],
+  ]) {
+    const section = spec[side];
+    if (!section || typeof section !== 'object') {
+      throw new Error(`[CoremlCascade] invalid spec: missing or non-object \`${side}\` section`);
+    }
+    if (typeof section.filePattern !== 'string') {
+      throw new Error(`[CoremlCascade] invalid spec: \`${side}.filePattern\` must be a string`);
+    }
+    // The Rust parser strips this exact prefix. A mismatch silently disarms
+    // the cascade — see the comment on RUST_EMBED_PREFIX above.
+    if (!section.filePattern.startsWith(requiredPrefix)) {
+      throw new Error(
+        `[CoremlCascade] invalid spec: \`${side}.filePattern\` must start with `
+        + `"${requiredPrefix}" (Rust parser contract), got "${section.filePattern}". `
+        + 'If you intentionally renamed the model, also update the hardcoded '
+        + `prefix in crates/sweet-search-native/src/inference/${side === 'embed' ? 'embedding_model' : 'li_model'}.rs.`
+      );
+    }
+    if (!section.filePattern.endsWith(RUST_VARIANT_SUFFIX)) {
+      throw new Error(
+        `[CoremlCascade] invalid spec: \`${side}.filePattern\` must end with `
+        + `"${RUST_VARIANT_SUFFIX}", got "${section.filePattern}"`
+      );
+    }
+    // The formatter uses placeholder substitution at runtime. Missing
+    // placeholders would produce every variant with the same filename.
+    if (!section.filePattern.includes('{batch}') || !section.filePattern.includes('{seq}')) {
+      throw new Error(
+        `[CoremlCascade] invalid spec: \`${side}.filePattern\` must contain both `
+        + `{batch} and {seq} placeholders, got "${section.filePattern}"`
+      );
+    }
+    if (typeof section.tarballPattern !== 'string'
+      || !section.tarballPattern.includes('{batch}')
+      || !section.tarballPattern.includes('{seq}')) {
+      throw new Error(
+        `[CoremlCascade] invalid spec: \`${side}.tarballPattern\` must contain both `
+        + `{batch} and {seq} placeholders, got ${JSON.stringify(section.tarballPattern)}`
+      );
+    }
+    if (!Array.isArray(section.variants) || section.variants.length === 0) {
+      throw new Error(`[CoremlCascade] invalid spec: \`${side}.variants\` must be a non-empty array`);
+    }
+    for (let i = 0; i < section.variants.length; i++) {
+      const v = section.variants[i];
+      if (!v || typeof v !== 'object') {
+        throw new Error(`[CoremlCascade] invalid spec: \`${side}.variants[${i}]\` is not an object`);
+      }
+      if (!Number.isInteger(v.batch) || v.batch <= 0 || v.batch > 4096) {
+        throw new Error(
+          `[CoremlCascade] invalid spec: \`${side}.variants[${i}].batch\` must be a positive integer ≤ 4096, got ${JSON.stringify(v.batch)}`
+        );
+      }
+      if (!Number.isInteger(v.seq) || v.seq <= 0 || v.seq > 32768) {
+        throw new Error(
+          `[CoremlCascade] invalid spec: \`${side}.variants[${i}].seq\` must be a positive integer ≤ 32768, got ${JSON.stringify(v.seq)}`
+        );
+      }
+      // SHA256 + size are optional until the release build machine has
+      // backfilled them, BUT when present they must be well-formed.
+      if (v.tarballSha256 != null) {
+        if (typeof v.tarballSha256 !== 'string' || !/^[0-9a-f]{64}$/i.test(v.tarballSha256)) {
+          throw new Error(
+            `[CoremlCascade] invalid spec: \`${side}.variants[${i}].tarballSha256\` must be a 64-char hex string, got ${JSON.stringify(v.tarballSha256)}`
+          );
+        }
+      }
+      if (v.tarballSizeBytes != null) {
+        if (!Number.isInteger(v.tarballSizeBytes) || v.tarballSizeBytes <= 0) {
+          throw new Error(
+            `[CoremlCascade] invalid spec: \`${side}.variants[${i}].tarballSizeBytes\` must be a positive integer, got ${JSON.stringify(v.tarballSizeBytes)}`
+          );
+        }
+      }
+    }
+  }
+  return spec;
+}
+
+/**
+ * Load and cache the shape set JSON. Throws if the JSON is missing,
+ * malformed, or fails the schema/parity invariants — that's always a
+ * packaging bug, never a runtime concern, so fail loud rather than
+ * silently degrading.
  */
 export function getCascadeSpec() {
   if (_spec) return _spec;
   const raw = readFileSync(CASCADE_SPEC_PATH, 'utf-8');
-  _spec = JSON.parse(raw);
+  const parsed = JSON.parse(raw);
+  _spec = validateCascadeSpec(parsed);
   return _spec;
+}
+
+/** Test-only helper to reset the memoized spec between test cases. */
+export function _resetCascadeSpecCache() {
+  _spec = null;
 }
 
 /**
@@ -399,6 +528,104 @@ export function formatVariantTarballPath(pattern, batch, seq) {
 }
 
 /**
+ * Pre-flight extracted-size audit for a gzipped tarball.
+ *
+ * Reads the tarball entry list via `tar -tzvf` and sums the declared sizes.
+ * If the sum exceeds `maxExtractBytes`, throws before any extraction runs.
+ * This blocks the decompression-bomb DoS pattern — a 200 MiB compressed
+ * tarball that explodes to 2 TiB of extracted content would pass the
+ * download SHA256 check (since the compressed bytes match whatever the
+ * attacker published) and then fill the disk during `tar -xzf`.
+ *
+ * Returns the total declared extracted size in bytes, so the caller can
+ * log it or cross-check against available disk space. Throws on:
+ *   - tar listing failure (malformed archive, missing tar binary)
+ *   - declared size exceeding `maxExtractBytes`
+ *
+ * Note: `tar -tzvf`'s declared size field is attacker-controlled (it's
+ * just the tar header values), so a malicious tarball could declare small
+ * sizes and then emit large amounts. In practice, bsdtar extracts
+ * according to the same header sizes, so the declared total is a reliable
+ * upper bound for an unmodified bsdtar. A paranoid implementation would
+ * use `--max-size` or stream through `head -c N`. Our cap is generous
+ * enough that bsdtar's natural fidelity is sufficient.
+ */
+/**
+ * @param {string} tarballPath
+ * @param {number} maxExtractBytes - reject if declared sum exceeds this
+ * @param {number} [maxEntries=10000] - reject if entry count exceeds this.
+ *   The default is ~50× the largest real cascade variant; the parameter
+ *   exists so unit tests can exercise the cap without creating 10k real files.
+ */
+function auditTarballExtractedSize(tarballPath, maxExtractBytes, maxEntries = 10_000) {
+  const listResult = spawnSync('tar', ['-tzvf', tarballPath], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    // Force C locale so the date column uses English month abbreviations
+    // (or ISO dates). Without this, a non-English CI runner emits localized
+    // month names ("avr" on French, "Apr." on German) and our date regex
+    // fails to match — the sum silently becomes 0 and the audit becomes a
+    // no-op, defeating the entire bomb guard.
+    env: { ...process.env, LC_ALL: 'C', LANG: 'C' },
+    maxBuffer: 64 * 1024 * 1024, // 64 MB of listing output is enough for the cascade
+  });
+  if (listResult.status !== 0) {
+    const stderr = listResult.stderr?.toString() || '';
+    throw new Error(`tar -tzvf failed with status ${listResult.status}: ${stderr.trim()}`);
+  }
+
+  // `tar -tzvf` output format is implementation-specific:
+  //
+  //   BSD tar (macOS):   "drwxr-xr-x  0 admin wheel 4096 Apr 15 11:33 path/"
+  //                       perm nlink owner group SIZE Mon day time path
+  //
+  //   GNU tar (Linux):   "drwxr-xr-x admin/wheel  4096 2026-04-15 11:33 path/"
+  //                       perm owner/group SIZE YYYY-MM-DD HH:MM path
+  //
+  // Splitting by whitespace gives size at different indexes on each
+  // implementation. Instead, match the size field as "a number immediately
+  // followed by either an ISO date or a month abbreviation" — a pattern
+  // that both formats always emit and that unambiguously picks out the
+  // size column regardless of the earlier metadata layout.
+  //
+  // LC_ALL=C on the spawn forces English output so non-English CI runners
+  // don't silently match nothing.
+  const sizeRegex =
+    /\s(\d+)\s+(?:\d{4}-\d{2}-\d{2}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s/;
+  const lines = (listResult.stdout?.toString() || '').split('\n');
+
+  // Entry-count cap. A legitimate .mlpackage has ~50-200 entries (Manifest +
+  // model protobuf + weight blobs). 10k (default) is ~50× the largest real
+  // variant and blocks the "millions of tiny entries hide the real payload +
+  // overflow spawnSync's stdout buffer" attack — an entry count this high
+  // fails before the buffer fills, and the bomb is rejected before tar -xzf
+  // runs. Tests can pass a smaller `maxEntries` to exercise the cap without
+  // creating 10k files on disk.
+  let totalBytes = 0;
+  let entryCount = 0;
+  for (const line of lines) {
+    if (!line) continue;
+    entryCount++;
+    if (entryCount > maxEntries) {
+      throw new Error(
+        `Tarball has too many entries: ${entryCount} > ${maxEntries} `
+        + `(decompression bomb guard). Tarball: ${tarballPath}`
+      );
+    }
+    const m = sizeRegex.exec(line);
+    if (!m) continue;
+    const size = parseInt(m[1], 10);
+    if (Number.isFinite(size) && size > 0) totalBytes += size;
+    if (totalBytes > maxExtractBytes) {
+      throw new Error(
+        `Tarball extracted size exceeds cap: ${totalBytes} bytes > ${maxExtractBytes} bytes `
+        + `(decompression bomb guard). Tarball: ${tarballPath}`
+      );
+    }
+  }
+  return totalBytes;
+}
+
+/**
  * Extract a .mlpackage from a downloaded tarball into an explicit
  * target directory. Uses the system `tar` command because Node has
  * no built-in tar support and we don't want to add a new npm dep
@@ -411,12 +638,34 @@ export function formatVariantTarballPath(pattern, batch, seq) {
  * (concurrent init race), the staging directory is cleaned up and
  * the existing target is kept.
  *
+ * DoS-safety: pre-flights the extracted size via `tar -tzvf` before
+ * running the actual extract. Refuses if the declared total exceeds
+ * `maxExtractBytes` (default: 10× the compressed tarball size, with a
+ * 5 GiB absolute ceiling). .mlpackage contents are pre-compressed
+ * float16 weights with minimal gzip headroom, so 10× is extremely
+ * generous — a legitimate variant should extract to ~1.0-1.5× the
+ * compressed size. See `auditTarballExtractedSize` above.
+ *
  * @param {string} tarballPath    - Downloaded tarball on disk
  * @param {string} extractTarget  - Final path, e.g. `{cascadeRoot}/embed/nomic_bert_b64_s96_fp16.mlpackage`
+ * @param {object} [options]
+ * @param {number} [options.maxExtractBytes] - Hard cap on declared
+ *   extracted size. Defaults to `10 × tarballSize` when unset.
  */
-function extractVariantTarball(tarballPath, extractTarget) {
+function extractVariantTarball(tarballPath, extractTarget, options = {}) {
   const parentDir = dirname(extractTarget);
   mkdirSync(parentDir, { recursive: true });
+
+  // DoS safety: audit declared extracted size before any extract runs.
+  // A legitimate cascade variant is ~250 MB compressed → ~250-400 MB
+  // extracted. The 10× cap (~2.5 GB per variant) is far above that but
+  // still blocks the "200 MB compressed → 2 TB extracted" bomb shape.
+  const defaultMax = Math.min(
+    10 * statSync(tarballPath).size,
+    5 * 1024 * 1024 * 1024, // 5 GiB absolute ceiling
+  );
+  const maxExtractBytes = options.maxExtractBytes ?? defaultMax;
+  auditTarballExtractedSize(tarballPath, maxExtractBytes);
 
   // Stage next to the target (same filesystem → atomic rename).
   // Unique per-process to survive concurrent init runs.
@@ -643,3 +892,12 @@ export async function fetchCoremlCascade(options = {}) {
 
   return { status, fetched, cached, skipped, failures };
 }
+
+/**
+ * Internal helpers exposed for direct testing. NOT part of the public API —
+ * consumers should use `fetchCoremlCascade` for the HF fetch path.
+ */
+export const _testInternals = {
+  auditTarballExtractedSize,
+  extractVariantTarball,
+};

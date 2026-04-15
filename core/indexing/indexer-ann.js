@@ -116,6 +116,51 @@ function* streamVectorsFromDb(db, _dim, order = 'sequential') {
   }
 }
 
+/**
+ * Pure decision function — should the hybrid CPU+GPU LI dispatcher arm?
+ *
+ * Exported for direct unit testing without constructing the full
+ * `buildLateInteractionIndex` pipeline. The runtime call site in the
+ * encoder-selection block reimplements the same conditions inline; if
+ * you change one, change both.
+ *
+ * Hybrid is a no-op when the Metal command queue is contended by a
+ * parallel embed phase (the GPU encoder starves behind embed's continuous
+ * command stream), so we refuse to arm it and fall through to the
+ * single-encoder path. Users who want hybrid must set
+ * `SWEET_SEARCH_PARALLEL_LI=0` OR `SWEET_SEARCH_EMBED_USE_CPU=1` so Metal
+ * is either sequential or exclusively held by LI.
+ *
+ * @param {object} [options]
+ * @param {NodeJS.ProcessEnv} [options.env] - Environment to read flags from (defaults to process.env)
+ * @param {boolean} [options.parallelLateInteraction] - Whether the pipeline runs LI in parallel with embed
+ * @returns {{ armed: boolean, reason: string }}
+ */
+export function decideHybridDispatcher({
+  env = process.env,
+  parallelLateInteraction = false,
+} = {}) {
+  const hybridEnv = (env.SWEET_SEARCH_LI_HYBRID ?? '').trim().toLowerCase();
+  const hybridEnabled = hybridEnv === '1' || hybridEnv === 'true' || hybridEnv === 'on';
+  if (!hybridEnabled) {
+    return { armed: false, reason: 'not-enabled' };
+  }
+  // SWEET_SEARCH_LI_USE_CPU implies single-encoder CPU path — skip the
+  // bidirectional cursor (which would still try to use the GPU encoder).
+  if (env.SWEET_SEARCH_LI_USE_CPU === '1') {
+    return { armed: false, reason: 'cpu-only-forced' };
+  }
+  // Metal is contended when BOTH parallelLateInteraction is on AND embed
+  // is NOT forced onto the CPU ORT path. Either condition unblocks hybrid.
+  const metalContendedByEmbed =
+    parallelLateInteraction === true
+    && env.SWEET_SEARCH_EMBED_USE_CPU !== '1';
+  if (metalContendedByEmbed) {
+    return { armed: false, reason: 'metal-contended-by-embed' };
+  }
+  return { armed: true, reason: 'ok' };
+}
+
 function estimateLateInteractionTokens(text, maxLength = 2048) {
   const charsPerToken = Number(process.env.SWEET_SEARCH_LI_CHARS_PER_TOKEN || 4);
   const batchingSafety = Number(process.env.SWEET_SEARCH_LI_BATCHING_SAFETY || 1.15);
@@ -568,7 +613,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     return;
   }
 
-  const { LATE_INTERACTION_CONFIG } = await import('../infrastructure/config/index.js');
+  const { LATE_INTERACTION_CONFIG, EMBEDDING_CONFIG } = await import('../infrastructure/config/index.js');
   if (!LATE_INTERACTION_CONFIG.enabled) {
     log('LateInteraction: Disabled via config', 'yellow');
     return;
@@ -693,12 +738,24 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     let cpuEncoder = null;
     let singleEncoder = null;
 
-    const hybridEnv = (process.env.SWEET_SEARCH_LI_HYBRID ?? '').trim().toLowerCase();
-    const hybridEnabled = hybridEnv === '1' || hybridEnv === 'true' || hybridEnv === 'on';
-    const hybridDisabled = !hybridEnabled
-      // SWEET_SEARCH_LI_USE_CPU implies single-encoder CPU path — skip the
-      // bidirectional cursor (which would still try to use the GPU encoder).
-      || process.env.SWEET_SEARCH_LI_USE_CPU === '1';
+    // Hybrid dispatcher decision — see `decideHybridDispatcher` above for
+    // the full policy. Logs a diagnostic when hybrid was enabled but
+    // declined because the Metal queue is contended by parallel embed.
+    // This is the common user trap — setting `SWEET_SEARCH_LI_HYBRID=1`
+    // alone on default config silently degrades instead of parallelizing
+    // (see tests/diagnose-hybrid-hang.js).
+    const hybridDecision = decideHybridDispatcher({
+      env: process.env,
+      parallelLateInteraction: EMBEDDING_CONFIG.parallelLateInteraction === true,
+    });
+    if (!hybridDecision.armed && hybridDecision.reason === 'metal-contended-by-embed') {
+      log(
+        'LateInteraction hybrid: ignored — SWEET_SEARCH_LI_HYBRID requires SWEET_SEARCH_PARALLEL_LI=0 '
+        + 'OR SWEET_SEARCH_EMBED_USE_CPU=1 (Metal queue is shared with parallel embed phase)',
+        'yellow'
+      );
+    }
+    const hybridDisabled = !hybridDecision.armed;
 
     if (!hybridDisabled) {
       try {
