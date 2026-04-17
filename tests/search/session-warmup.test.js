@@ -355,9 +355,11 @@ describe('session-warmup', () => {
         .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'ready' }) }); // poll: ready
 
       const result = await warmSession({ baseUrl: 'http://localhost:9876', warmServerPath: false });
-      // late-interaction-model warmup still runs (doesn't depend on index existence)
-      const nonLateInteractionComponents = result.components.filter((c) => c.component !== 'late-interaction-model');
-      expect(nonLateInteractionComponents.length).toBe(0);
+      // late-interaction-model and embedding-model-cpu warmup still runs (doesn't depend on index existence)
+      const indexDependentComponents = result.components.filter(
+        (c) => c.component !== 'late-interaction-model' && c.component !== 'embedding-model-cpu'
+      );
+      expect(indexDependentComponents.length).toBe(0);
       expect(mockWarmFromCache).not.toHaveBeenCalled();
     });
   });
