@@ -72,7 +72,7 @@ step (see [Remaining Work](#remaining-work)).
 
 1. **indexing -> ranking**: `indexer-ann.js` builds late-interaction artifacts at index time
    using `late-interaction-index.js` and `late-interaction-model.js`. This is a build-time
-   dependency, not query-time coupling. Max 6 import sites; machine-checked (counts both
+   dependency, not query-time coupling. Max 7 import sites; machine-checked (counts both
    static `from` and dynamic `import()` forms). Current sites:
    - `indexer-ann.js:11` → `late-interaction-index.js` (static, `LateInteractionIndex`)
    - `indexer-phases.js:27` → `late-interaction-model.js` (static, runtime configuration)
@@ -80,11 +80,12 @@ step (see [Remaining Work](#remaining-work)).
    - `indexer-ann.js:~697` → `late-interaction-model.js` (dynamic, single-encoder fallback)
    - `indexer-pool.js:~686` → `late-interaction-model.js` (dynamic, `LateInteractionPool` inline fallback)
    - `indexer-worker.js:~98` → `late-interaction-model.js` (dynamic, worker entrypoint)
+   - `model-pool.js:~35` → `late-interaction-model.js` (static, GPU↔CPU lifecycle: unload, pipeline, encodeDocumentsCpu for warmup)
 
-   The cap was 2 before 2026-04-15; `scripts/check-boundaries.js` only counted static
-   imports, so the 4 dynamic fallbacks were invisible to CI. The counter fix exposed
-   the real coupling surface. All 6 sites remain indexing → ranking in the build
-   direction and are legitimate — the limit was raised to reflect reality, not relaxed.
+   The cap was 2 before 2026-04-15, bumped to 6 when dynamic imports joined the count,
+   and to 7 on 2026-04-17 when the `model-pool.js` lifecycle manager landed in
+   `core/indexing/`. All 7 sites are indexing → ranking in the build direction and
+   are legitimate — the limit tracks reality, not relaxation.
 
 2. **query -> training**: `query-router-catboost.js` loads a trained model artifact from
    `core/training/query-router/output/`. This is a read-only artifact dependency. Max 2

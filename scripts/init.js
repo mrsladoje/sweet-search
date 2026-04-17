@@ -576,6 +576,22 @@ export async function runInit(args) {
     process.stderr.write(`[init] Warning: Could not install index-maintainer: ${e.message}\n`);
   }
 
+  // 11. Install /sweet-index skill
+  try {
+    const skillDir = join(projectRoot, '.claude', 'skills', 'sweet-index');
+    const skillDest = join(skillDir, 'SKILL.md');
+    const skillSrc = join(PACKAGE_ROOT, 'core', 'skills', 'sweet-index', 'SKILL.md');
+    if (!existsSync(skillDest)) {
+      mkdirSync(skillDir, { recursive: true });
+      copyFileSync(skillSrc, skillDest);
+      process.stderr.write(`[init] Installed /sweet-index skill to ${skillDir}\n`);
+    } else {
+      process.stderr.write(`[init] /sweet-index skill already installed\n`);
+    }
+  } catch (e) {
+    process.stderr.write(`[init] Warning: Could not install /sweet-index skill: ${e.message}\n`);
+  }
+
   // 12. Print report
   printReport({
     profile,

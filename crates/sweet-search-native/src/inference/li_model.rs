@@ -21,7 +21,7 @@ use std::sync::Arc;
 use super::modernbert_sdpa as modernbert;
 #[cfg(feature = "coreml")]
 use super::coreml_li::{CoremlLi, CoremlLiVariant};
-use super::{metal_lock, optimal_dtype, select_device};
+use super::{build_device, metal_lock, optimal_dtype, select_device};
 
 /// Inner state of the LI model. Metal compute is serialized via
 /// `super::metal_lock()` — a process-wide mutex shared with the embedding
@@ -297,7 +297,36 @@ impl NativeLateInteractionModel {
         config_path: String,
         coreml_cascade_dir: Option<String>,
     ) -> Result<Self> {
-        // See the matching suppression in embedding_model.rs::load.
+        let device = select_device()
+            .map_err(|e| Error::from_reason(format!(
+                "[NativeLI] Device init error: {e}"
+            )))?;
+        Self::load_on_device(backbone_path, projection_path, config_path, coreml_cascade_dir, device)
+    }
+
+    /// Load with an explicit device kind ("cpu", "metal", or "auto").
+    #[napi(factory)]
+    pub fn load_with_device(
+        backbone_path: String,
+        projection_path: String,
+        config_path: String,
+        coreml_cascade_dir: Option<String>,
+        device_kind: String,
+    ) -> Result<Self> {
+        let device = build_device(&device_kind)
+            .map_err(|e| Error::from_reason(format!(
+                "[NativeLI] Device init error for '{device_kind}': {e}"
+            )))?;
+        Self::load_on_device(backbone_path, projection_path, config_path, coreml_cascade_dir, device)
+    }
+
+    fn load_on_device(
+        backbone_path: String,
+        projection_path: String,
+        config_path: String,
+        coreml_cascade_dir: Option<String>,
+        device: Device,
+    ) -> Result<Self> {
         #[cfg(not(feature = "coreml"))]
         {
             let _ = &coreml_cascade_dir;
@@ -315,18 +344,6 @@ impl NativeLateInteractionModel {
 
         let backbone_dim = config.hidden_size;
 
-        let device = select_device()
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeLI] Device init error: {e}"
-            )))?;
-
-        // BF16 on Metal, F32 on CPU. The vendored modernbert_sdpa.rs now passes
-        // the model dtype through prepare_4d_attention_mask and
-        // get_local_attention_mask (fix mirrors upstream candle PR #2872 for
-        // bert.rs; never ported to modernbert.rs upstream). BF16 preserves full
-        // MRR (97.97% → 97.90% at gencodesearchnet full 500q) while halving
-        // memory bandwidth on matmul — see `optimal_dtype` for the full
-        // measurement breakdown.
         let dtype = optimal_dtype(&device);
         let bb_path = PathBuf::from(&backbone_path);
         let vb = unsafe {
@@ -336,9 +353,6 @@ impl NativeLateInteractionModel {
                 )))?
         };
 
-        // candle's ModernBert::load() internally uses pp("model.embeddings...") etc.,
-        // but LateOn-Code safetensors has unprefixed names (e.g. "embeddings.tok_embeddings.weight").
-        // Strip the "model." prefix that candle prepends so lookups match the safetensors keys.
         let vb = vb.rename_f(|name| {
             name.strip_prefix("model.")
                 .unwrap_or(name)
@@ -350,7 +364,6 @@ impl NativeLateInteractionModel {
                 "[NativeLI] Backbone load error: {e}"
             )))?;
 
-        // Load projection weights from separate safetensors (same dtype as backbone)
         let proj_path = PathBuf::from(&projection_path);
         let proj_vb = unsafe {
             VarBuilder::from_mmaped_safetensors(&[proj_path], dtype, &device)
@@ -359,7 +372,6 @@ impl NativeLateInteractionModel {
                 )))?
         };
 
-        // Extract projection weight: "linear.weight" [128, 768]
         let projection_weight = proj_vb.get((128, backbone_dim), "linear.weight")
             .map_err(|e| Error::from_reason(format!(
                 "[NativeLI] Projection weight load error: {e}"
@@ -384,13 +396,6 @@ impl NativeLateInteractionModel {
             config.num_hidden_layers,
         );
 
-        // Load CoreML backend if the JS caller passed an explicit
-        // cascade dir, then verify parity against candle before
-        // admitting it. Any failure drops the CoreML backend; encode_batch
-        // falls through to candle in that case, identical to pre-CoreML
-        // behavior. The dir is resolved in
-        // core/infrastructure/coreml-cascade.js::getCoremlCascadeResolvedDirs
-        // and passed down through native-inference.js.
         #[cfg(feature = "coreml")]
         let coreml = match coreml_cascade_dir.as_deref().and_then(try_load_coreml_li_from_dir) {
             None => None,
@@ -481,6 +486,16 @@ impl NativeLateInteractionModel {
             inner: self.inner.clone(),
             input_ids,
             attention_mask,
+        })
+    }
+
+    /// Run a single dummy forward pass to warm Metal pipelines and BLAS
+    /// thread pools. Call once after `load_with_device` before starting
+    /// a batch indexing run.
+    #[napi(ts_return_type = "Promise<void>")]
+    pub fn warmup_forward(&self) -> AsyncTask<LiWarmupTask> {
+        AsyncTask::new(LiWarmupTask {
+            inner: self.inner.clone(),
         })
     }
 }
@@ -674,4 +689,31 @@ pub struct LiEncodingResult {
     pub vectors: Float32Array,
     /// Number of active (non-padding) tokens per batch item.
     pub token_counts: Vec<u32>,
+}
+
+/// Warmup task: runs a single dummy forward pass to arm Metal pipelines
+/// and BLAS thread pools. Reuses the full LiEncodeTask code path so
+/// CoreML variants are also compiled during warmup.
+pub struct LiWarmupTask {
+    inner: Arc<LiInner>,
+}
+
+impl Task for LiWarmupTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let seq_len = 64;
+        let mut task = LiEncodeTask {
+            inner: self.inner.clone(),
+            input_ids: vec![vec![1i64; seq_len]],
+            attention_mask: vec![vec![1i64; seq_len]],
+        };
+        let _ = task.compute()?;
+        Ok(())
+    }
+
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> Result<Self::JsValue> {
+        Ok(())
+    }
 }

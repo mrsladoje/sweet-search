@@ -111,6 +111,19 @@ pub(crate) fn optimal_dtype(device: &Device) -> DType {
     }
 }
 
+/// Build a compute device from an explicit kind string.
+/// Accepts "cpu", "metal", or "auto" (delegates to `select_device`).
+pub(crate) fn build_device(kind: &str) -> candle_core::Result<Device> {
+    match kind {
+        "cpu" => Ok(Device::Cpu),
+        #[cfg(feature = "metal")]
+        "metal" => Device::new_metal(0),
+        #[cfg(not(feature = "metal"))]
+        "metal" => Ok(Device::Cpu),
+        _ => select_device(),
+    }
+}
+
 /// Select the best available compute device.
 /// Tries Metal first (macOS + `metal` feature), falls back to CPU.
 /// Set env SWEET_SEARCH_NATIVE_DEVICE=cpu to force CPU fallback for testing.

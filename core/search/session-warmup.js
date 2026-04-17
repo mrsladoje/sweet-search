@@ -453,6 +453,21 @@ function buildWarmupPlan() {
       fn: warmQueryRouterViaServer,
     },
     {
+      name: 'embedding-model-cpu',
+      phase: 'pre-ready',
+      when: () => !EMBEDDING_CONFIG.isRemote,
+      fn: async () => {
+        const started = Date.now();
+        try {
+          const { getLocalPipeline } = await import('../embedding/embedding-local-model.js');
+          await getLocalPipeline();
+          return ok('embedding-model-cpu', started);
+        } catch (err) {
+          return fail('embedding-model-cpu', started, err);
+        }
+      },
+    },
+    {
       name: 'late-interaction-model',
       phase: 'pre-ready',
       when: () => LATE_INTERACTION_CONFIG.enabled,

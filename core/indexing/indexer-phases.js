@@ -19,6 +19,7 @@ import {
   resetLocalModelRuntime,
 } from '../embedding/embedding-local-model.js';
 import { isNativeInferenceAvailable } from '../infrastructure/native-inference.js';
+import { teardownAllModels, initIndexGpuPool, teardownIndexGpuPool, warmupQueryCpuModels, GPU_ARMING_MIN_FILES } from './model-pool.js';
 import {
   configureLateInteractionRuntime,
   resetLateInteractionRuntime,
@@ -481,32 +482,45 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     ...(preChunked ? { preChunked } : {}),
   };
 
-  // ── Pre-warm native models BEFORE starting the parallel embed/LI phase ──
+  // ── GPU model lifecycle: kill CPU → arm GPU → prewarm ──
   //
-  // Both native model loaders run an `await fetchModel(...)` SHA256 verification
-  // pass over the cached safetensors. The 596 MB LateOn-Code file streams
-  // through `pipeline(createReadStream, hash)` in ~2s when the process is idle,
-  // but blocks for >2 minutes (and counting) when ORT CPU embed is running
-  // concurrently — microtask scheduling between Node streams and ORT's promise
-  // chain is unfair under load. Pre-warming the models here, before either
-  // pipeline kicks off, runs the verification while the process is idle so the
-  // contention never happens. Skips embed pre-warm when ORT CPU is forced
-  // because native embed isn't loaded in that mode.
-  if (!dryRun && filesToIndex.length > 0 && EMBEDDING_CONFIG.provider === 'local' && isNativeInferenceAvailable()) {
+  // CPU and GPU models must never be active simultaneously (memory
+  // contention). For large changesets, kill all resident models first,
+  // then arm the best GPU backend detected by hardware-capability.js and
+  // run a dummy forward pass to compile Metal pipelines / CoreML variants
+  // / BLAS threads.
+  //
+  // Small-changeset skip: incremental runs with fewer than
+  // GPU_ARMING_MIN_FILES files keep the ORT CPU path. The GPU load +
+  // warmup + teardown + CPU rewarm round-trip costs 5–15s on M3 class
+  // hardware and would dwarf the actual work (<1s per file on CPU).
+  // Full reindex always arms the GPU regardless of file count.
+  const shouldArmGpu = !dryRun
+    && filesToIndex.length > 0
+    && EMBEDDING_CONFIG.provider === 'local'
+    && isNativeInferenceAvailable()
+    && (fullReindex || filesToIndex.length >= GPU_ARMING_MIN_FILES);
+
+  if (shouldArmGpu) {
     try {
-      const ni = await import('../infrastructure/native-inference.js');
-      const warmStart = Date.now();
-      const tasks = [];
-      const usingNativeEmbed = process.env.SWEET_SEARCH_EMBED_USE_CPU !== '1';
-      if (usingNativeEmbed) tasks.push(ni.getNativeEmbeddingModel());
-      if (!noLateInteraction) tasks.push(ni.getNativeLiModel());
-      if (tasks.length > 0) {
-        await Promise.all(tasks);
-        log(`Native models pre-warmed in ${Date.now() - warmStart}ms`, 'dim');
-      }
+      await teardownAllModels();
+      log('All resident models unloaded for GPU indexing', 'dim');
     } catch (err) {
-      log(`Native model pre-warm failed: ${err.message} (will retry lazily)`, 'yellow');
+      log(`Model unload warning: ${err.message}`, 'yellow');
     }
+
+    try {
+      const gpuDiag = await initIndexGpuPool({ includeLi: !noLateInteraction });
+      log(
+        `GPU index pool armed (${gpuDiag.backend}): embed=${gpuDiag.embedLoadMs}+${gpuDiag.embedWarmMs}ms`
+        + (noLateInteraction ? '' : `, li=${gpuDiag.liLoadMs}+${gpuDiag.liWarmMs}ms`),
+        'dim',
+      );
+    } catch (err) {
+      log(`GPU pool arming failed: ${err.message} — falling back to ORT CPU`, 'yellow');
+    }
+  } else if (!dryRun && filesToIndex.length > 0 && filesToIndex.length < GPU_ARMING_MIN_FILES) {
+    log(`Small changeset (${filesToIndex.length} < ${GPU_ARMING_MIN_FILES} files) — using ORT CPU`, 'dim');
   }
 
   try {
@@ -649,6 +663,25 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     await shutdownEmbeddingPool();
     resetLocalModelRuntime();
     resetLateInteractionRuntime();
+
+    // ── Post-index: tear down GPU models (if armed), warm CPU for queries ──
+    //
+    // Only runs the swap if we actually armed GPU for this run. Small
+    // changesets that stayed on ORT CPU skip this entirely — the CPU
+    // models are still loaded and warm from session-warmup.
+    if (shouldArmGpu) {
+      try {
+        teardownIndexGpuPool();
+        const cpuDiag = await warmupQueryCpuModels();
+        log(
+          `CPU models warmed for queries: load=${cpuDiag.loadMs}ms, warm=${cpuDiag.warmMs}ms`
+          + ` (embed=${cpuDiag.embedOk ? 'ok' : 'skipped'}, li=${cpuDiag.liOk ? 'ok' : 'skipped'})`,
+          'dim',
+        );
+      } catch (err) {
+        log(`CPU model warmup failed: ${err.message}`, 'yellow');
+      }
+    }
   }
 }
 

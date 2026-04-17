@@ -18,7 +18,7 @@ use std::sync::Arc;
 use super::nomic_bert_sdpa as nomic_bert;
 #[cfg(feature = "coreml")]
 use super::coreml_embedding::{CoremlEmbedding, CoremlEmbeddingVariant};
-use super::{metal_lock, optimal_dtype, select_device};
+use super::{build_device, metal_lock, optimal_dtype, select_device};
 
 /// Inner state of the embedding model, shared between the napi struct (main
 /// thread) and `EmbedBatchTask` (libuv worker thread) via `Arc`.
@@ -303,10 +303,36 @@ impl NativeEmbeddingModel {
         config_path: String,
         coreml_cascade_dir: Option<String>,
     ) -> Result<Self> {
-        // Non-coreml builds (Linux, darwin without `coreml` feature)
-        // accept the argument on the JS side for API stability but
-        // ignore it here. Tagged with an explicit drop so the compiler
-        // sees the parameter as "used" and doesn't emit a warning.
+        let device = select_device()
+            .map_err(|e| Error::from_reason(format!(
+                "[NativeEmbedding] Device init error: {e}"
+            )))?;
+        Self::load_on_device(safetensors_path, config_path, coreml_cascade_dir, device)
+    }
+
+    /// Load with an explicit device kind ("cpu", "metal", or "auto").
+    /// Used by the JS model-pool to arm GPU models for indexing or force
+    /// CPU for query-time inference without relying on env vars.
+    #[napi(factory)]
+    pub fn load_with_device(
+        safetensors_path: String,
+        config_path: String,
+        coreml_cascade_dir: Option<String>,
+        device_kind: String,
+    ) -> Result<Self> {
+        let device = build_device(&device_kind)
+            .map_err(|e| Error::from_reason(format!(
+                "[NativeEmbedding] Device init error for '{device_kind}': {e}"
+            )))?;
+        Self::load_on_device(safetensors_path, config_path, coreml_cascade_dir, device)
+    }
+
+    fn load_on_device(
+        safetensors_path: String,
+        config_path: String,
+        coreml_cascade_dir: Option<String>,
+        device: Device,
+    ) -> Result<Self> {
         #[cfg(not(feature = "coreml"))]
         {
             let _ = &coreml_cascade_dir;
@@ -323,11 +349,6 @@ impl NativeEmbeddingModel {
             )))?;
 
         let hidden_size = config.n_embd;
-
-        let device = select_device()
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeEmbedding] Device init error: {e}"
-            )))?;
 
         let dtype = optimal_dtype(&device);
         let path = PathBuf::from(&safetensors_path);
@@ -360,18 +381,6 @@ impl NativeEmbeddingModel {
             config.n_layer,
         );
 
-        // Load the CoreML backend if the JS caller passed an explicit
-        // cascade dir, then verify its output matches candle on a
-        // synthetic fixture before admitting it for dispatch. Any
-        // failure along the way drops the CoreML backend — embed_batch
-        // falls through to the candle path for every call in that
-        // case, identical to the pre-CoreML behavior.
-        //
-        // Non-macOS builds and darwin builds where the JS caller
-        // decided not to dispatch CoreML (e.g. M1/M2 hardware, or
-        // SWEET_SEARCH_COREML_CASCADE=0) both hit the `None` branch
-        // here — the `coreml_cascade_dir` parameter is the single
-        // decision point.
         #[cfg(feature = "coreml")]
         let coreml = match coreml_cascade_dir.as_deref().and_then(try_load_coreml_embedding_from_dir) {
             None => None,
@@ -449,6 +458,16 @@ impl NativeEmbeddingModel {
             inner: self.inner.clone(),
             input_ids,
             attention_mask,
+        })
+    }
+
+    /// Run a single dummy forward pass to warm Metal pipelines, CoreML
+    /// variant compilation, and CPU BLAS thread pools. Call once after
+    /// `load_with_device` before starting a batch indexing run.
+    #[napi(ts_return_type = "Promise<void>")]
+    pub fn warmup_forward(&self) -> AsyncTask<EmbedWarmupTask> {
+        AsyncTask::new(EmbedWarmupTask {
+            inner: self.inner.clone(),
         })
     }
 
@@ -607,5 +626,32 @@ impl Task for EmbedBatchTask {
 
     fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
         Ok(output)
+    }
+}
+
+/// Warmup task: runs a single dummy forward pass to arm Metal pipelines
+/// and BLAS thread pools. Reuses the full EmbedBatchTask code path so
+/// CoreML variants are also compiled during warmup.
+pub struct EmbedWarmupTask {
+    inner: Arc<EmbeddingInner>,
+}
+
+impl Task for EmbedWarmupTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let seq_len = 64;
+        let mut task = EmbedBatchTask {
+            inner: self.inner.clone(),
+            input_ids: vec![vec![1i64; seq_len]],
+            attention_mask: vec![vec![1i64; seq_len]],
+        };
+        let _ = task.compute()?;
+        Ok(())
+    }
+
+    fn resolve(&mut self, _env: Env, _output: Self::Output) -> Result<Self::JsValue> {
+        Ok(())
     }
 }

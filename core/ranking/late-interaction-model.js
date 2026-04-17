@@ -19,7 +19,7 @@ import { LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { fetchModelFile, getModelCacheDir, resolveModelFile } from '../infrastructure/model-fetcher.js';
 import { getModelEntry } from '../infrastructure/model-registry.js';
 import { createTokenizer } from '../infrastructure/native-tokenizer.js';
-import { isNativeInferenceAvailable, nativeLiEncode, nativeLiEncodeTokenized } from '../infrastructure/native-inference.js';
+import { isNativeInferenceAvailable, isNativeLiModelLoaded, nativeLiEncode, nativeLiEncodeTokenized } from '../infrastructure/native-inference.js';
 // CoreML not used for LI models — see loadModel() comment for benchmarking rationale.
 
 let lateInteractionPipeline = null;
@@ -287,7 +287,7 @@ export async function encodeQuery(text) {
   if (!LATE_INTERACTION_CONFIG.enabled) return [];
 
   // Native inference path: candle FP32 with Metal GPU
-  if (isNativeInferenceAvailable()) {
+  if (isNativeInferenceAvailable() && isNativeLiModelLoaded()) {
     const modelConfig = LATE_INTERACTION_CONFIG.activeModel;
     if (!modelConfig) return [];
     const prefixed = modelConfig.queryPrefix + text;
@@ -347,7 +347,7 @@ export async function encodeDocuments(texts, options = {}) {
   // the LI GPU encoder when embed is feeding it a continuous stream of
   // small batches.
   const forceCpu = process.env.SWEET_SEARCH_LI_USE_CPU === '1';
-  if (!forceCpu && isNativeInferenceAvailable()) {
+  if (!forceCpu && isNativeInferenceAvailable() && isNativeLiModelLoaded()) {
     return encodeDocumentsGpu(texts, options);
   }
   return encodeDocumentsCpu(texts, options);
