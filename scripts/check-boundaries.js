@@ -39,7 +39,11 @@ const EXCEPTIONS = [
   // runtime helpers in late-interaction-model.js (static + dynamic fallback
   // in hybrid dispatcher, worker entrypoint, pool inline fallback). Count
   // includes both static `from` and dynamic `import()` forms (2026-04-15 fix).
-  { from: 'core/indexing/', to: 'ranking/', label: 'indexing → ranking (late-interaction build)', max: 6 },
+  // Raised to 7 on 2026-04-17 for the new `model-pool.js` lifecycle manager
+  // (it imports unloadLateInteractionModel/getLateInteractionPipeline/
+  // encodeDocumentsCpu from late-interaction-model.js to warm ORT CPU on
+  // query arm-down — same build-time direction, legitimate addition).
+  { from: 'core/indexing/', to: 'ranking/', label: 'indexing → ranking (late-interaction build)', max: 7 },
   // query-router-catboost imports trained model from core/training/query-router/ — declared build-time artifact dependency
   { from: 'core/query/', to: 'training/query-router/', label: 'query → training (CatBoost model artifact)', max: 2 },
 ];

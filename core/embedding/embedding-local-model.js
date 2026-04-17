@@ -14,7 +14,7 @@ import { getModelEntry } from '../infrastructure/model-registry.js';
 import { isAppleSilicon, isCoreMLProviderAvailable, shouldUseCoreML, getCoreMLExecutionProviders } from '../infrastructure/coreml-provider.js';
 import { createTokenizer } from '../infrastructure/native-tokenizer.js';
 import { initOrt, buildFeed } from '../infrastructure/ort-pipeline.js';
-import { isNativeInferenceAvailable, nativeEmbed } from '../infrastructure/native-inference.js';
+import { isNativeInferenceAvailable, isNativeEmbeddingModelLoaded, nativeEmbed } from '../infrastructure/native-inference.js';
 
 // =============================================================================
 // SEQUENCE LENGTH CONSTANTS (L2: configurable via env)
@@ -530,7 +530,7 @@ export async function callLocalModel(texts, options = {}) {
   // different devices with no Metal queue contention.
   if (!texts || texts.length === 0) return [];
   const forceEmbedCpu = process.env.SWEET_SEARCH_EMBED_USE_CPU === '1';
-  if (!forceEmbedCpu && isNativeInferenceAvailable()) {
+  if (!forceEmbedCpu && isNativeInferenceAvailable() && isNativeEmbeddingModelLoaded()) {
     return callLocalModelGpu(texts, options);
   }
   return callLocalModelCpu(texts, options);
@@ -741,7 +741,7 @@ export async function callLocalModelBucketed(texts, options = {}) {
   const embedHybridEnv = (process.env.SWEET_SEARCH_EMBED_HYBRID ?? '').trim().toLowerCase();
   const embedHybridEnabled = embedHybridEnv === '1' || embedHybridEnv === 'true' || embedHybridEnv === 'on';
   let useHybrid = false;
-  if (embedHybridEnabled && !pool && isNativeInferenceAvailable()) {
+  if (embedHybridEnabled && !pool && isNativeInferenceAvailable() && isNativeEmbeddingModelLoaded()) {
     // Probe ORT availability — getLocalPipeline returns the loaded pipeline
     // or throws/returns null if onnxruntime-node + model files aren't ready.
     try {

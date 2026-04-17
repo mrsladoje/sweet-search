@@ -9,6 +9,42 @@ a full rebuild when files change. Users editing files after indexing see **stale
 results with no warning** until they re-index. The "dirty overlay" described in
 INDEXED_GREP.md Phase 2 was designed but never implemented.
 
+## Model Backend for Incremental Runs (decided 2026-04-17)
+
+**Incremental indexing always uses ORT CPU models — never GPU.** Rationale:
+
+- The GPU lifecycle (kill CPU → load native → warmup forward → index → kill
+  native → reload CPU → warm CPU) costs 5–15s on M3-class hardware.
+- A typical incremental run touches 1–5 files and takes well under 1 second
+  on ORT CPU. Paying the GPU round-trip would be a 10–30x regression.
+- Queries always use ORT CPU, so the CPU pipelines are already warm from
+  `session-warmup.js`. Incremental runs reuse them directly — zero cold-start
+  cost for small edits.
+- For large incremental changesets (≥20 files, i.e. big refactors or post-pull
+  catchup), the current indexer already arms GPU — see
+  `indexer-phases.js::shouldArmGpu` and the `GPU_ARMING_MIN_FILES` constant
+  in `core/indexing/model-pool.js`. Full reindexes always arm GPU regardless
+  of file count.
+
+Implication for the incremental path being designed here: the dirty-overlay
+code path inherits the CPU dispatch automatically — no model-pool calls
+needed. It uses `callLocalModelCpu` / `encodeDocumentsCpu` directly, which
+route through the same ORT sessions that serve queries. The only
+coordination required is to **not** call `teardownAllModels` / `initIndexGpuPool`
+from the incremental code path.
+
+Follow-up TODO for when the incremental path lands:
+
+- [ ] Verify the dirty-overlay entry point (watcher, file-save hook, or
+  lazy-rebuild trigger) does NOT touch `model-pool.js`.
+- [ ] Confirm `session-warmup.js` runs the ORT CPU embed + LI warmup before
+  any incremental dispatch attempt — the warmup step is already in place
+  as of 2026-04-17, but document the dependency here so it doesn't get
+  removed by someone tracing "what uses this?"
+- [ ] Benchmark a representative incremental run (5 files, LI enabled) with
+  warm ORT CPU models to set the <100ms target claimed in the
+  "Performance budget" section below.
+
 ## Scope
 
 Incremental indexing must cover **every search modus**, not just the grep engine:

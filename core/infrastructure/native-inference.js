@@ -387,6 +387,120 @@ export async function nativeLiEncode(texts, options = {}) {
   return nativeLiEncodeTokenized(tokenized);
 }
 
+// ─── Model state queries ───
+
+export function isNativeEmbeddingModelLoaded() {
+  return _embeddingModel != null;
+}
+
+export function isNativeLiModelLoaded() {
+  return _liModel != null;
+}
+
+// ─── Device-explicit loading ───
+
+/**
+ * Load the native embedding model on a specific device ("cpu" | "metal" | "auto").
+ * Used by model-pool.js to arm GPU models for indexing. Sets the module-scope
+ * singleton so subsequent nativeEmbed() calls use this instance.
+ */
+export async function loadNativeEmbeddingModelWithDevice(deviceKind, cascadeDirOverride) {
+  if (_embeddingModel) return _embeddingModel;
+  if (_embeddingModelLoadPromise) return _embeddingModelLoadPromise;
+
+  _embeddingModelLoadPromise = (async () => {
+    const addon = loadAddon();
+    if (!addon?.NativeEmbeddingModel?.loadWithDevice) return null;
+
+    await fetchModel('coderankembed-fp32');
+
+    const entry = getModelEntry('coderankembed-fp32');
+    const modelDir = getModelCacheDir(entry.hfId);
+    const safetensorsPath = join(modelDir, 'model.safetensors');
+    const configPath = join(modelDir, 'config.json');
+
+    if (!existsSync(safetensorsPath) || !existsSync(configPath)) return null;
+
+    const cascadeDir = cascadeDirOverride !== undefined
+      ? cascadeDirOverride
+      : (deviceKind !== 'cpu' ? (resolveCoremlCascadeForAddon().embedDir || undefined) : undefined);
+
+    const t0 = Date.now();
+    _embeddingModel = addon.NativeEmbeddingModel.loadWithDevice(
+      safetensorsPath,
+      configPath,
+      cascadeDir,
+      deviceKind,
+    );
+    console.log(`[NativeInference] Embedding model loaded in ${Date.now() - t0}ms (dim: ${_embeddingModel.dim}, device: ${deviceKind})`);
+
+    return _embeddingModel;
+  })();
+
+  try {
+    return await _embeddingModelLoadPromise;
+  } finally {
+    // Keep promise set on success; clear only on re-load.
+  }
+}
+
+/**
+ * Load the native LI model on a specific device.
+ */
+export async function loadNativeLiModelWithDevice(deviceKind, cascadeDirOverride) {
+  if (_liModel) return _liModel;
+  if (_liModelLoadPromise) return _liModelLoadPromise;
+
+  _liModelLoadPromise = (async () => {
+    const addon = loadAddon();
+    if (!addon?.NativeLateInteractionModel?.loadWithDevice) return null;
+
+    await fetchModel('lateon-code-fp32');
+
+    const entry = getModelEntry('lateon-code-fp32');
+    const modelDir = getModelCacheDir(entry.hfId);
+    const backbonePath = join(modelDir, 'model.safetensors');
+    const projPath = join(modelDir, '1_Dense', 'model.safetensors');
+    const configPath = join(modelDir, 'config.json');
+
+    if (!existsSync(backbonePath) || !existsSync(projPath) || !existsSync(configPath)) return null;
+
+    const cascadeDir = cascadeDirOverride !== undefined
+      ? cascadeDirOverride
+      : (deviceKind !== 'cpu' ? (resolveCoremlCascadeForAddon().liDir || undefined) : undefined);
+
+    const t0 = Date.now();
+    _liModel = addon.NativeLateInteractionModel.loadWithDevice(
+      backbonePath,
+      projPath,
+      configPath,
+      cascadeDir,
+      deviceKind,
+    );
+    console.log(`[NativeInference] LI model loaded in ${Date.now() - t0}ms (dim: ${_liModel.dim}, device: ${deviceKind})`);
+
+    return _liModel;
+  })();
+
+  return _liModelLoadPromise;
+}
+
+// ─── Warmup primitives ───
+
+export async function warmupNativeEmbeddingModel() {
+  if (!_embeddingModel?.warmupForward) return;
+  const t0 = Date.now();
+  await _embeddingModel.warmupForward();
+  console.log(`[NativeInference] Embedding warmup forward in ${Date.now() - t0}ms`);
+}
+
+export async function warmupNativeLiModel() {
+  if (!_liModel?.warmupForward) return;
+  const t0 = Date.now();
+  await _liModel.warmupForward();
+  console.log(`[NativeInference] LI warmup forward in ${Date.now() - t0}ms`);
+}
+
 // ─── Cleanup ───
 
 export function unloadNativeModels() {

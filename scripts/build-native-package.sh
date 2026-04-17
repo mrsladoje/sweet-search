@@ -39,7 +39,23 @@ echo "=== Building for ${PLATFORM}-${ARCH}${LIBC} ==="
 # Build MaxSim + NativeTokenizer addon
 echo "Building MaxSim addon..."
 cd "$REPO_ROOT/crates/sweet-search-native"
-npx @napi-rs/cli build --release --platform
+
+# Per-platform feature gating:
+#   darwin-arm64: coreml + metal + accelerate (full Apple Silicon GPU + ANE path)
+#   darwin-x64:   accelerate (no Metal/ANE on Intel Macs in this build)
+#   linux-*:      no extras (CPU-only candle for now; CUDA not yet packaged)
+NAPI_FEATURES=""
+if [ "$PLATFORM" = "darwin" ] && [ "$ARCH" = "arm64" ]; then
+  NAPI_FEATURES="--features coreml,accelerate"
+elif [ "$PLATFORM" = "darwin" ] && [ "$ARCH" = "x64" ]; then
+  NAPI_FEATURES="--features accelerate"
+fi
+
+if [ -n "$NAPI_FEATURES" ]; then
+  npx @napi-rs/cli build --release --platform $NAPI_FEATURES
+else
+  npx @napi-rs/cli build --release --platform
+fi
 ADDON_NAME="sweet-search-native.${PLATFORM}-${ARCH}.node"
 if [ ! -f "$ADDON_NAME" ]; then
   echo "Error: Expected $ADDON_NAME not found after build"
