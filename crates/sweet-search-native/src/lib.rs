@@ -16,6 +16,7 @@ mod sparse_gram;
 mod regex_literals;
 mod native_grep;
 mod inference;
+mod dedup;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;

@@ -212,7 +212,7 @@ async function main() {
 
   // Warm up local reranker (CE model) if available — prevents cold-start latency on first queries
   try {
-    const { getGlobalLocalReranker } = await import(path.join(PROJECT_ROOT, 'core', 'local-reranker.js'));
+    const { getGlobalLocalReranker } = await import(path.join(PROJECT_ROOT, 'core', 'ranking', 'local-reranker.js'));
     const reranker = getGlobalLocalReranker();
     if (reranker.isAvailable()) {
       console.log('  Warming up local reranker (gte-reranker-modernbert-base INT8)...');

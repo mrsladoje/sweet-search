@@ -93,6 +93,35 @@ export class CodebaseRepository {
     }
   }
 
+  /**
+   * Find alias sibling rows for a set of cluster IDs (dedup re-expansion).
+   * Given the set of exemplar clusterIds present in ranked results, returns
+   * every row in those clusters EXCEPT the provided excludeIds (typically the
+   * exemplars themselves, already in the result list).
+   *
+   * @param {string[]} clusterIds - Cluster IDs to fetch siblings for.
+   * @param {string[]} [excludeIds] - Chunk IDs to omit from results.
+   * @returns {Array<{id, file_path, text, metadata}>}
+   */
+  findSiblingsByClusterIds(clusterIds, excludeIds = []) {
+    if (!clusterIds || clusterIds.length === 0) return [];
+    const uniqueClusters = [...new Set(clusterIds)];
+    const uniqueExclude = [...new Set(excludeIds)];
+    const db = this._open();
+
+    const clusterPh = uniqueClusters.map(() => '?').join(',');
+    const excludePh = uniqueExclude.map(() => '?').join(',');
+    const excludeClause = uniqueExclude.length > 0 ? ` AND id NOT IN (${excludePh})` : '';
+
+    const sql = `
+      SELECT id, file_path, text, metadata
+      FROM vectors
+      WHERE json_extract(metadata, '$.clusterId') IN (${clusterPh})${excludeClause}
+    `;
+
+    return db.prepare(sql).all(...uniqueClusters, ...uniqueExclude);
+  }
+
   close() {
     if (this._db) {
       this._db.close();

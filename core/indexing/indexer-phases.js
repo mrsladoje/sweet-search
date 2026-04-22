@@ -12,6 +12,8 @@ import { getChangedFiles, updateState, getStats as getIncrementalStats, updatePh
 import { backupSummaries, restoreSummaries, markForRegeneration } from '../graph/summary-manager.js';
 import { colors, log, logProgress, logError, discoverFiles, readFilesFromStdin, atomicSwapDatabase } from './indexer-utils.js';
 import { buildCodeGraph, buildVectorIndex, chunkFiles } from './indexer-build.js';
+import { runDedupPhase, formatDedupSummary } from './dedup/dedup-phase.js';
+import { DEDUP_CONFIG } from '../infrastructure/config/index.js';
 import { incrementalUpdateHNSW, buildHNSWIndex, buildLateInteractionIndex, buildQuantizedArtifactsPhase } from './indexer-ann.js';
 import { buildSparseGramArtifact } from './indexer-sparse-gram.js';
 import {
@@ -410,6 +412,12 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
   let preChunked = null;
   if (!dryRun && filesToIndex.length > 0) {
     preChunked = await chunkFiles(filesToIndex);
+
+    // Near-duplicate dedup: annotates chunks in place with {simhash, clusterId,
+    // exemplarId, isExemplar}. Downstream embedding / LI paths see the
+    // annotations and skip encoding work for aliases.
+    const dedupResult = await runDedupPhase(preChunked.allChunks, DEDUP_CONFIG);
+    log(formatDedupSummary(dedupResult), dedupResult.skipped ? 'dim' : 'cyan');
   }
 
   // The embedding worker pool uses ORT INT8 CPU in each worker. It must only

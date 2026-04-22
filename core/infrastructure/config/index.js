@@ -27,6 +27,10 @@ export * from './vector-store.js';
 // Cerebras LLM (used by llm-provider.js for graph/HCGS generation)
 export * from './translation.js';
 
+// Near-duplicate chunk dedup (SimHash + MinHash-LSH)
+export * from './dedup.js';
+export { describeDedupConfig } from './dedup.js';
+
 // Aggregate default export (preserves backward compatibility)
 import { PROJECT_ROOT, DB_PATHS, detectIndexerProfile, MODEL_DELIVERY_CONFIG, LOGGING, setQuietMode, isQuietMode } from './platform.js';
 import { EMBEDDING_PROVIDERS, EMBEDDING_CONFIG, getActiveProvider, isVoyageAvailable, isMistralAvailable, isJinaAvailable, getVoyageApiKey, getJinaApiKey, getOptimalBatchSize } from './embedding.js';
@@ -35,6 +39,7 @@ import { FILE_PATTERNS, AGENTIC_GITIGNORE_ALLOWLIST, ROUTING_CONFIG, PERFORMANCE
 import { GRAPH_CONFIG, HCGS_CONFIG } from './graph.js';
 import { HNSW_CONFIG, BINARY_HNSW_CONFIG, SEISMIC_CONFIG } from './vector-store.js';
 import { CEREBRAS_CONFIG, isCerebrasAvailable, getCerebrasModel } from './translation.js';
+import { DEDUP_CONFIG } from './dedup.js';
 
 export default {
   PROJECT_ROOT,
@@ -73,4 +78,5 @@ export default {
   setQuietMode,
   isQuietMode,
   shouldUseLocalReranker,
+  DEDUP_CONFIG,
 };

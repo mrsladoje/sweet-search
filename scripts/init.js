@@ -11,7 +11,7 @@
  */
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -20,7 +20,10 @@ import {
   getPlatformInfo, resolveNativeAddon, resolveNativeBinary,
   detectHardwareCapability,
   getCoremlCascadeState, getCoremlCascadeReport, fetchCoremlCascade,
+  isDedupAvailable, getDedupLoadError, computeFingerprints, clusterFingerprints,
+  DEDUP_CONFIG,
 } from '../core/infrastructure/index.js';
+import { describeDedupConfig } from '../core/infrastructure/index.js';
 import { verifyRuntime, getMaxsimTier, getRouterType } from './verify-runtime.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -42,6 +45,8 @@ export function parseInitArgs(args) {
     help: false,
     buildCoremlCascade: false,
     skipCoremlCascade: false,
+    skipDedup: false,
+    skipPrewarmHook: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -69,6 +74,16 @@ export function parseInitArgs(args) {
       // or disk-constrained environments where even read-only
       // inspection of the managed cache is unwanted.
       result.skipCoremlCascade = true;
+    } else if (arg === '--skip-dedup') {
+      // Opt-out: skip dedup readiness inspection + smoke test.
+      // Useful for benchmarks that want deterministic dedup-disabled
+      // runs without touching the native addon.
+      result.skipDedup = true;
+    } else if (arg === '--skip-prewarm-hook') {
+      // Opt-out: skip registering the Claude Code SessionStart prewarm
+      // hook in .claude/settings.json. Useful when a user manages their
+      // own Claude Code hooks and doesn't want init to touch the file.
+      result.skipPrewarmHook = true;
     }
   }
 
@@ -247,7 +262,7 @@ export async function downloadModelsForProfile(profile, options = {}) {
 function printReport(report) {
   const {
     profile, maxsimTier, routerType, models, verification, runtimeDownloads,
-    capability, cascadeReport,
+    capability, cascadeReport, dedupReport, prewarmHookReport,
   } = report;
 
   console.log('');
@@ -284,12 +299,199 @@ function printReport(report) {
     // 'not-applicable' and 'skipped' are silent — no user action available.
   }
 
+  if (dedupReport) {
+    if (dedupReport.status === 'ready') {
+      let line = `  Dedup:                ready (${dedupReport.detail})`;
+      if (dedupReport.smokeTest) {
+        const pass = dedupReport.smokeTest.passed;
+        line += pass ? ', smoke-test pass' : ', smoke-test FAIL';
+      }
+      console.log(line);
+    } else if (dedupReport.status === 'disabled') {
+      console.log(`  Dedup:                disabled (${dedupReport.detail})`);
+    } else if (dedupReport.status === 'unavailable') {
+      console.log(`  Dedup:                unavailable — ${dedupReport.detail}`);
+    }
+    // 'skipped' is silent — explicit user opt-out.
+  }
+
+  if (prewarmHookReport) {
+    if (prewarmHookReport.status === 'registered') {
+      console.log(`  Prewarm hook:         registered (${prewarmHookReport.detail})`);
+    } else if (prewarmHookReport.status === 'error') {
+      console.log(`  Prewarm hook:         ERROR — ${prewarmHookReport.detail}`);
+    }
+    // 'skipped' is silent — explicit user opt-out.
+  }
+
   console.log(`  Runtime downloads:    ${runtimeDownloads}`);
 
   const passedCount = verification.checks.filter(c => c.status === 'pass').length;
   const totalCount = verification.checks.length;
   console.log(`  Verification:         ${verification.type}-pass (${passedCount}/${totalCount})`);
   console.log('');
+}
+
+// ---------------------------------------------------------------------------
+// Dedup readiness inspection
+// ---------------------------------------------------------------------------
+
+/**
+ * Check whether the dedup NAPI surface is loadable, and optionally run a
+ * deterministic smoke test to verify cross-run bit-equality on this host.
+ * Returns `{ status, detail, smokeTest? }` suitable for the init report +
+ * .sweet-search/config.json persistence.
+ *
+ * Statuses:
+ *   ready         — addon loads, functions callable, config enabled
+ *   disabled      — config SWEET_SEARCH_DEDUP_ENABLED=0
+ *   unavailable   — native addon missing or functions not exported
+ *   skipped       — explicit --skip-dedup flag
+ */
+export function inspectDedupReadiness({ deep = false, skipped = false } = {}) {
+  if (skipped) return { status: 'skipped', detail: '--skip-dedup flag' };
+  if (!DEDUP_CONFIG.enabled) return { status: 'disabled', detail: 'SWEET_SEARCH_DEDUP_ENABLED=0' };
+  if (!isDedupAvailable()) {
+    const err = getDedupLoadError();
+    return {
+      status: 'unavailable',
+      detail: err ? err.message : 'native addon missing',
+    };
+  }
+  const base = { status: 'ready', detail: describeDedupConfig(DEDUP_CONFIG) };
+  if (!deep) return base;
+
+  try {
+    const fixtures = [
+      'function foo(x) { return x + 1; } function bar(y) { return y * 2; }',
+      'function foo(x) { return x + 1; } function bar(y) { return y * 2; }',
+      'class Widget { constructor() { this.v = 42; } render() { return this.v; } }',
+    ];
+    const fpsA = computeFingerprints(fixtures);
+    const fpsB = computeFingerprints(fixtures);
+    const deterministic = fpsA.every((fp, i) => (
+      fp.simhashHex === fpsB[i].simhashHex
+      && Buffer.compare(fp.minhash, fpsB[i].minhash) === 0
+    ));
+    const clusters = clusterFingerprints(fpsA);
+    const foundDup = clusters.some((c) => c.siblingIdxs.length > 0);
+    return {
+      ...base,
+      smokeTest: {
+        deterministic,
+        foundDup,
+        passed: deterministic && foundDup,
+      },
+    };
+  } catch (err) {
+    return {
+      status: 'unavailable',
+      detail: `smoke test errored: ${err.message}`,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Claude Code SessionStart prewarm hook
+// ---------------------------------------------------------------------------
+
+// The hook script's filename doubles as the ownership marker — a path-based
+// marker works on every OS and survives JSON re-serialization without shell-
+// syntax concerns. Both init and uninstall grep the command string for this
+// substring to find entries sweet-search owns.
+export const PREWARM_HOOK_FILENAME = 'session-preheat-hook.mjs';
+
+/**
+ * Register (or update) a SessionStart entry in `.claude/settings.json` that
+ * runs the light-tier preheat hook on every Claude Code session.
+ * Non-destructive: preserves all existing hooks, permissions, env, etc.
+ * Idempotent: re-running init replaces the existing sweet-search entry rather
+ * than appending a duplicate.
+ *
+ * Returns `{ status, detail }` suitable for the init report.
+ *   registered  — entry written (new or updated)
+ *   skipped     — --skip-prewarm-hook, or package lives outside projectRoot
+ *   error       — write failed; init continues (never blocks)
+ */
+export function registerPrewarmSessionStartHook({
+  projectRoot,
+  packageRoot,
+  skipped = false,
+} = {}) {
+  if (skipped) return { status: 'skipped', detail: '--skip-prewarm-hook flag' };
+
+  const hookScriptAbs = join(packageRoot, 'core', 'search', PREWARM_HOOK_FILENAME);
+  if (!existsSync(hookScriptAbs)) {
+    return { status: 'error', detail: `hook script missing: ${hookScriptAbs}` };
+  }
+
+  // Refuse to write a machine-specific absolute path into settings.json — that
+  // file is frequently committed, and an absolute path from a hoisted pnpm /
+  // npm-linked / globally-installed sweet-search would leak the init machine's
+  // filesystem layout to every teammate.
+  const hookPath = relative(projectRoot, hookScriptAbs);
+  if (hookPath.startsWith('..') || isAbsolute(hookPath)) {
+    return {
+      status: 'skipped',
+      detail: 'package lives outside projectRoot (hoisted / linked / global install) — re-run with --skip-prewarm-hook to silence this',
+    };
+  }
+
+  const command = `node ${hookPath}`;
+
+  const settingsDir = join(projectRoot, '.claude');
+  const settingsPath = join(settingsDir, 'settings.json');
+
+  let settings = {};
+  if (existsSync(settingsPath)) {
+    try {
+      settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+    } catch (err) {
+      return { status: 'error', detail: `existing settings.json is not valid JSON: ${err.message}` };
+    }
+  }
+
+  settings.hooks = settings.hooks || {};
+  const sessionStart = Array.isArray(settings.hooks.SessionStart) ? settings.hooks.SessionStart : [];
+
+  const entry = {
+    hooks: [
+      {
+        type: 'command',
+        command,
+        timeout: 4000,
+        continueOnError: true,
+      },
+    ],
+  };
+
+  // Find and replace any existing sweet-search-owned entry by filename match.
+  const ownedIdx = sessionStart.findIndex((group) =>
+    Array.isArray(group?.hooks) &&
+    group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_FILENAME))
+  );
+
+  if (ownedIdx >= 0) {
+    sessionStart[ownedIdx] = entry;
+  } else {
+    sessionStart.push(entry);
+  }
+  settings.hooks.SessionStart = sessionStart;
+
+  try {
+    mkdirSync(settingsDir, { recursive: true });
+    const tmpPath = settingsPath + '.tmp';
+    writeFileSync(tmpPath, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
+    renameSync(tmpPath, settingsPath);
+  } catch (err) {
+    return { status: 'error', detail: err.message };
+  }
+
+  return {
+    status: 'registered',
+    detail: ownedIdx >= 0 ? 'updated existing entry' : 'added new entry',
+    hookPath,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -317,6 +519,13 @@ Options:
                             Python.
   --skip-coreml-cascade     Skip CoreML cascade fetch entirely. Useful on CI
                             or disk-constrained environments.
+  --skip-dedup              Skip near-duplicate dedup readiness inspection.
+                            Useful for benchmarks requiring dedup-disabled
+                            runs without touching the native addon.
+  --skip-prewarm-hook       Skip registering the Claude Code SessionStart
+                            prewarm hook in .claude/settings.json. Useful
+                            when the project already manages its own hooks
+                            or does not use Claude Code.
   --verbose, -v             Enable verbose output
   --help, -h                Show this help
 
@@ -516,6 +725,23 @@ export async function runInit(args) {
     }
   }
 
+  // 8.5. Inspect dedup readiness (SimHash + MinHash-LSH NAPI surface).
+  //      Never blocks init — failure collapses to "dedup disabled, every chunk
+  //      is its own exemplar". --verify-deep adds a smoke test asserting
+  //      fingerprint determinism across runs.
+  const dedupReport = inspectDedupReadiness({
+    deep: parsed.verifyDeep,
+    skipped: parsed.skipDedup,
+  });
+  if (parsed.verbose || dedupReport.status === 'unavailable') {
+    process.stderr.write(`[init] Dedup: ${dedupReport.status} — ${dedupReport.detail}\n`);
+    if (dedupReport.smokeTest && !dedupReport.smokeTest.passed) {
+      process.stderr.write(
+        `[init]   smoke test FAILED: deterministic=${dedupReport.smokeTest.deterministic}, foundDup=${dedupReport.smokeTest.foundDup}\n`,
+      );
+    }
+  }
+
   // 9. Write init config (before verification so it's available for diagnostics)
   const runtimeDownloads = profile === 'core' ? 'enabled' : 'disabled';
   const allowRuntimeModelDownload = profile === 'core';
@@ -527,6 +753,7 @@ export async function runInit(args) {
     failed: false,
     capability,
     cascadeReport,
+    dedupReport,
   });
   writeInitConfig(dataDir, preVerifyConfig);
 
@@ -547,6 +774,7 @@ export async function runInit(args) {
     failed: false,
     capability,
     cascadeReport,
+    dedupReport,
   });
   writeInitConfig(dataDir, finalConfig);
 
@@ -592,6 +820,20 @@ export async function runInit(args) {
     process.stderr.write(`[init] Warning: Could not install /sweet-index skill: ${e.message}\n`);
   }
 
+  // 11.5. Register Claude Code SessionStart prewarm hook.
+  //       Light-tier: loads cached vocab artifacts, runs FTS5 MATCH and
+  //       HNSW seed traversal with a <3s budget. No embedding generation.
+  //       Never blocks init — any write failure collapses to a silent
+  //       no-op on next session start.
+  const prewarmHookReport = registerPrewarmSessionStartHook({
+    projectRoot,
+    packageRoot: PACKAGE_ROOT,
+    skipped: parsed.skipPrewarmHook,
+  });
+  if (parsed.verbose || prewarmHookReport.status === 'error') {
+    process.stderr.write(`[init] Prewarm hook: ${prewarmHookReport.status} — ${prewarmHookReport.detail}\n`);
+  }
+
   // 12. Print report
   printReport({
     profile,
@@ -602,6 +844,8 @@ export async function runInit(args) {
     runtimeDownloads,
     capability,
     cascadeReport,
+    dedupReport,
+    prewarmHookReport,
   });
 }
 
@@ -654,7 +898,7 @@ function runCoremlCascadeBuild(options = {}) {
 function buildConfig({
   profile, maxsimTier, routerType, nativeStatus, modelResults,
   allowRuntimeModelDownload, verification, failed,
-  capability, cascadeReport,
+  capability, cascadeReport, dedupReport,
 }) {
   const pkg = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf-8'));
 
@@ -693,6 +937,13 @@ function buildConfig({
       reason: cascadeReport.reason,
       embedDir: cascadeReport.embedDir ?? null,
       liDir: cascadeReport.liDir ?? null,
+    };
+  }
+  if (dedupReport) {
+    runtime.dedup = {
+      status: dedupReport.status,
+      detail: dedupReport.detail,
+      smokeTest: dedupReport.smokeTest ?? null,
     };
   }
 

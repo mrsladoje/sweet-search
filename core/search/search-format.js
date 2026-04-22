@@ -199,13 +199,21 @@ export function formatSummaryFirst(results) {
     // Compact format with summary
     if (r.summary) {
       output += `${i + 1}. [${type}] ${name} @ ${location}\n`;
-      output += `   ${r.summary}\n\n`;
+      output += `   ${r.summary}\n`;
+      if (r.aliases && r.aliases.length > 0) {
+        output += `   + ${r.aliases.length} near-duplicate file${r.aliases.length === 1 ? '' : 's'}\n`;
+      }
+      output += `\n`;
       totalTokens += Math.ceil(r.summary.length / 4); // Rough token estimate
     } else {
       // Fallback to signature if no summary
       const sig = r.signature || r.content?.slice(0, 100) || '';
       output += `${i + 1}. [${type}] ${name} @ ${location}\n`;
-      if (sig) output += `   ${sig.replace(/\n/g, ' ')}\n\n`;
+      if (sig) output += `   ${sig.replace(/\n/g, ' ')}\n`;
+      if (r.aliases && r.aliases.length > 0) {
+        output += `   + ${r.aliases.length} near-duplicate file${r.aliases.length === 1 ? '' : 's'}\n`;
+      }
+      output += `\n`;
       totalTokens += Math.ceil(sig.length / 4);
     }
   }

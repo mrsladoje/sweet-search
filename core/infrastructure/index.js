@@ -24,6 +24,14 @@ export { resolveNativeAddon, resolveNativeBinary, getPlatformInfo } from './nati
 // Tokenization
 export { createTokenizer } from './native-tokenizer.js';
 
+// Dedup hashing (SimHash + MinHash-LSH NAPI wrapper)
+export {
+  isAvailable as isDedupAvailable,
+  getLoadError as getDedupLoadError,
+  computeFingerprints,
+  clusterFingerprints,
+} from './dedup-hashing.js';
+
 // ONNX runtime
 export { initOrt, buildFeed, createOrtPipeline } from './ort-pipeline.js';
 export {

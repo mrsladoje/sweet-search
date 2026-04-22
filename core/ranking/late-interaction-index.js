@@ -361,6 +361,13 @@ export class LateInteractionIndex {
     this._hasPerTokenQuant = false; // tracked for getStats — set on add/load
     this._loadedExisting = false;
 
+    // Dedup: alias pointer sidecar. aliasId -> { exemplarId, clusterId, metadata }.
+    // Aliases skip LI encoding entirely — MaxSim dereferences the exemplar's
+    // per-token matrix from `this.documents` on every getTokens/getTokensFlat.
+    // Persisted as a JSON sidecar next to the SSLX stub so the binary segment
+    // format is untouched.
+    this.aliasPointers = new Map();
+
     // Segmented flush state (Phase C)
     this._currentSegment = new Map();
     this._segments = []; // { path, count } of flushed segments
@@ -865,8 +872,63 @@ export class LateInteractionIndex {
   /**
    * Get token embeddings for a document
    */
+  /**
+   * Record an alias pointer for a chunk that shares an exemplar's per-token
+   * matrix. MaxSim scoring dereferences `exemplarId` on every lookup, so no
+   * embedding work happens for aliases.
+   */
+  addAlias(id, exemplarId, clusterId, metadata = {}) {
+    this.aliasPointers.set(id, { exemplarId, clusterId, metadata });
+  }
+
+  _resolveForRead(id) {
+    const ptr = this.aliasPointers.get(id);
+    if (ptr) return ptr.exemplarId;
+    return id;
+  }
+
+  _aliasSidecarPath(indexPath = this.indexPath) {
+    return indexPath + '.aliases.json';
+  }
+
+  async _saveAliasSidecar(indexPath = this.indexPath) {
+    if (this.aliasPointers.size === 0) {
+      // Remove any stale sidecar from a previous build.
+      try { await fs.unlink(this._aliasSidecarPath(indexPath)); } catch (_e) { /* not present */ }
+      return;
+    }
+    const entries = [];
+    for (const [aliasId, ptr] of this.aliasPointers) {
+      entries.push({ aliasId, exemplarId: ptr.exemplarId, clusterId: ptr.clusterId });
+    }
+    const payload = { version: 1, count: entries.length, aliases: entries };
+    await fs.writeFile(this._aliasSidecarPath(indexPath), JSON.stringify(payload));
+  }
+
+  async _loadAliasSidecar(indexPath = this.indexPath) {
+    const p = this._aliasSidecarPath(indexPath);
+    if (!existsSync(p)) return;
+    try {
+      const raw = await fs.readFile(p, 'utf-8');
+      const payload = JSON.parse(raw);
+      if (!payload || !Array.isArray(payload.aliases)) return;
+      this.aliasPointers.clear();
+      for (const { aliasId, exemplarId, clusterId } of payload.aliases) {
+        // Orphan guard: drop aliases whose exemplar is no longer in documents.
+        // Happens if the file containing the exemplar was removed between
+        // save and load (incremental re-index removed the exemplar file
+        // but did not re-run dedup over the alias files).
+        if (!this.documents.has(exemplarId)) continue;
+        this.aliasPointers.set(aliasId, { exemplarId, clusterId, metadata: {} });
+      }
+    } catch (_e) {
+      // Malformed sidecar — treat as absent; aliases will be skipped at query time.
+    }
+  }
+
   getTokens(id) {
-    const doc = this.documents.get(id);
+    const resolved = this._resolveForRead(id);
+    const doc = this.documents.get(resolved);
     if (!doc) return null;
 
     let tokens;
@@ -901,7 +963,8 @@ export class LateInteractionIndex {
    * @returns {{ flat: Float32Array, numTokens: number, dim: number } | null}
    */
   getTokensFlat(id) {
-    const doc = this.documents.get(id);
+    const resolved = this._resolveForRead(id);
+    const doc = this.documents.get(resolved);
     if (!doc) return null;
 
     let flat;
@@ -1518,6 +1581,7 @@ export class LateInteractionIndex {
           }));
           this._segmentDir = segDir;
           this._currentSegment = new Map();
+          await this._saveAliasSidecar();
           console.log(`LateInteraction: Saved ${this.documents.size} documents across ${this._segments.length} segments`);
           return;
         }
@@ -1606,6 +1670,7 @@ export class LateInteractionIndex {
       this._segments = newSegments.map(s => ({ path: path.join(segDir, s.path), count: s.count }));
       this._currentSegment = new Map();
 
+      await this._saveAliasSidecar();
       console.log(`LateInteraction: Saved ${this.documents.size} documents across ${newSegments.length} segments`);
       return;
     }
@@ -1679,6 +1744,8 @@ export class LateInteractionIndex {
       const wushPath = this.indexPath + '.wush-calibration.json';
       await fs.writeFile(wushPath, JSON.stringify(cal));
     }
+
+    await this._saveAliasSidecar();
 
     const sizeMB = (bytesWritten / 1024 / 1024).toFixed(2);
     console.log(`LateInteraction: Saved ${this.documents.size} documents (${sizeMB} MB)`);
@@ -1792,6 +1859,7 @@ export class LateInteractionIndex {
             }
           }
           await this._loadSegmented(segDirAbs);
+          await this._loadAliasSidecar();
           return;
         }
       }
@@ -1883,7 +1951,9 @@ export class LateInteractionIndex {
         } catch { /* calibration missing or corrupt — fall back to bare WHT */ }
       }
 
-      console.log(`LateInteraction: Loaded ${this.documents.size} documents (model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)`);
+      await this._loadAliasSidecar();
+
+      console.log(`LateInteraction: Loaded ${this.documents.size} documents (model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)${this.aliasPointers.size > 0 ? `, ${this.aliasPointers.size} aliases` : ''}`);
     } catch (err) {
       if (err.code === 'ENOENT') {
         console.log('LateInteraction: No existing index found');
@@ -2197,7 +2267,9 @@ export class LateInteractionIndex {
   hasTokens(chunkIds) {
     const available = new Set();
     for (const id of chunkIds) {
-      if (this.documents.has(id)) available.add(id);
+      if (this.documents.has(id)) { available.add(id); continue; }
+      const ptr = this.aliasPointers.get(id);
+      if (ptr && this.documents.has(ptr.exemplarId)) available.add(id);
     }
     return available;
   }
