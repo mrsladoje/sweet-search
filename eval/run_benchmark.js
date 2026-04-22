@@ -51,7 +51,7 @@ function parseArgs() {
     k: 20,                  // top-k results to retrieve
     verbose: false,
     concurrency: 5,
-    profile: 'balanced',
+    profile: 'full',
     useLateInteraction: null,      // null = use profile default
     buildLateInteraction: null,    // null = use profile default
     lateInteractionModel: null,    // null = use config.js default (lateon-code)
@@ -89,7 +89,7 @@ Options:
   --skip-index         Skip corpus indexing (reuse existing index)
   --verbose, -v        Show per-query details
   --concurrency=N      Parallel query execution [default: 5]
-  --profile=PROFILE    Benchmark profile (fast|balanced|full) [default: balanced]
+  --profile=PROFILE    Benchmark profile (fast|balanced|full) [default: full]
   --use-late-interaction=BOOL   Override late interaction usage for queries [default: profile]
   --build-late-interaction=BOOL Override late interaction index building [default: profile]
   --late-interaction-model=ID   Late interaction model variant (lateon-code, lateon-code-edge) [default: config]
@@ -116,7 +116,7 @@ function resolveProfile(opts) {
     full: { buildLateInteraction: true, useLateInteraction: true, lateInteractionModel: null, sqliteFast: true, indexMode: 'single' },
   };
 
-  const profile = profiles[opts.profile] || profiles.balanced;
+  const profile = profiles[opts.profile] || profiles.full;
 
   return {
     buildLateInteraction: opts.buildLateInteraction ?? profile.buildLateInteraction,
