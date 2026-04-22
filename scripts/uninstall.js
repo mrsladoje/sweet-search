@@ -11,13 +11,19 @@
  *   sweet-search uninstall [--dry-run] [--keep-models] [--purge] [--force]
  */
 
-import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { getCoremlCascadeRoot, getCoremlCascadeState } from '../core/infrastructure/coreml-cascade.js';
 import { PREWARM_HOOK_FILENAME } from './init.js';
+
+// Default paths for the running daemon. Env-overridable so both the prewarm
+// hook, the CLI, and this module agree on where to look. Tests pass custom
+// values to `stopRunningDaemon` for isolation.
+const DEFAULT_PID_FILE = process.env.SWEET_SEARCH_PID_FILE || '/tmp/sweet-search-server.pid';
+const DEFAULT_SOCKET_PATH = process.env.SWEET_SEARCH_SOCKET_PATH || '/tmp/sweet-search.sock';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -141,6 +147,70 @@ function getCoremlCascadeRemovals() {
     // Cascade module failed to load — no cascade to remove. Silent.
   }
   return removals;
+}
+
+/**
+ * Stop any daemon that an earlier SessionStart prewarm hook spawned.
+ *
+ * Strategy:
+ *   1. Best-effort graceful stop via `node core/cli.js --stop`. If a daemon
+ *      is listening on the socket and the CLI can reach it, it shuts down.
+ *   2. Robust fallback: if the PID file exists and its PID is still alive,
+ *      SIGKILL it directly. This covers stuck daemons, mismatched CLI
+ *      versions, and any failure mode where the graceful path silently
+ *      doesn't work.
+ *   3. Unlink the PID file and socket file regardless, so the next hook
+ *      invocation starts from a clean state.
+ *
+ * Returns `{ gracefulAttempted, killed, pidFileRemoved, socketRemoved }`.
+ * Never throws — every branch swallows errors (daemon may simply not exist).
+ */
+export function stopRunningDaemon({
+  projectRoot,
+  pidFile = DEFAULT_PID_FILE,
+  socketPath = DEFAULT_SOCKET_PATH,
+} = {}) {
+  const result = { gracefulAttempted: false, killed: false, pidFileRemoved: false, socketRemoved: false };
+
+  // 1. Graceful stop via CLI. Use an absolute path to core/cli.js so this
+  // works for npm-installed users (their projectRoot has no core/cli.js —
+  // only the package root does).
+  const cliPath = join(PACKAGE_ROOT, 'core', 'cli.js');
+  if (existsSync(cliPath)) {
+    try {
+      execSync(`node ${JSON.stringify(cliPath)} --stop`, {
+        cwd: projectRoot || PACKAGE_ROOT,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 5000,
+        env: { ...process.env, SWEET_SEARCH_SOCKET_PATH: socketPath },
+      });
+      result.gracefulAttempted = true;
+    } catch {
+      // Daemon not running, CLI not reachable, timeout — all fine.
+    }
+  }
+
+  // 2. Fallback: SIGKILL via PID file.
+  if (existsSync(pidFile)) {
+    try {
+      const pid = Number(readFileSync(pidFile, 'utf-8').trim());
+      if (Number.isFinite(pid) && pid > 0) {
+        try {
+          process.kill(pid, 0); // probe — throws if dead
+          process.kill(pid, 'SIGKILL');
+          result.killed = true;
+        } catch { /* already dead */ }
+      }
+    } catch { /* unreadable pid file */ }
+    try { unlinkSync(pidFile); result.pidFileRemoved = true; } catch { /* ignore */ }
+  }
+
+  // 3. Remove stale socket file.
+  if (existsSync(socketPath)) {
+    try { unlinkSync(socketPath); result.socketRemoved = true; } catch { /* ignore */ }
+  }
+
+  return result;
 }
 
 /**
@@ -315,7 +385,7 @@ export async function runUninstall(args) {
     console.log(`    ${r.label} (${formatBytes(r.size)})`);
   }
   if (hasHookEntry) {
-    console.log(`    prewarm SessionStart hook in .claude/settings.json`);
+    console.log(`    daemon-prewarm SessionStart hook in .claude/settings.json`);
   }
   console.log(`  Total: ${formatBytes(totalBytes)}`);
   if (parsed.keepModels) {
@@ -360,18 +430,29 @@ export async function runUninstall(args) {
     }
   }
 
-  // Reverse the Claude Code SessionStart hook entry init added to
+  // Reverse the Claude Code daemon-prewarm SessionStart entry init added to
   // .claude/settings.json. Non-fatal — a failure here doesn't leave the
   // user in a worse state than before uninstall ran.
   const hookResult = removePrewarmSessionStartHook(projectRoot, { dryRun: parsed.dryRun });
   if (hookResult.status === 'removed') {
-    console.log(`  Removed: prewarm SessionStart hook (.claude/settings.json — ${hookResult.detail})`);
+    console.log(`  Removed: daemon-prewarm SessionStart hook (.claude/settings.json — ${hookResult.detail})`);
     removed++;
   } else if (hookResult.status === 'error') {
-    console.log(`  Failed to remove prewarm SessionStart hook: ${hookResult.detail}`);
+    console.log(`  Failed to remove daemon-prewarm SessionStart hook: ${hookResult.detail}`);
     kept++;
   }
   // 'not-found' and 'dry-run' are silent in the main output.
+
+  // Stop any daemon that an earlier SessionStart hook spawned. Otherwise the
+  // old daemon keeps running and holding the socket after uninstall, which
+  // surprises users. Never throws — `stopRunningDaemon` swallows every error.
+  const daemonResult = stopRunningDaemon({ projectRoot });
+  if (daemonResult.killed) {
+    console.log('  Stopped: running prewarm daemon (SIGKILL via PID file)');
+  } else if (daemonResult.gracefulAttempted) {
+    console.log('  Stopped: running prewarm daemon (graceful via CLI)');
+  }
+  // If neither happened, daemon wasn't running — silent.
 
   // Purge npm packages
   if (parsed.purge) {
