@@ -210,17 +210,24 @@ async function main() {
     process.exit(3);
   }
 
-  // Warm up local reranker (CE model) if available — prevents cold-start latency on first queries
+  // Warm up local reranker ONLY when it's actually enabled. The reranker is
+  // OFF by default (proven MRR-neutral + 3× latency on gencodesearchnet);
+  // flip LOCAL_RERANKER_CONFIG.useLocalReranker = true or set
+  // SWEET_SEARCH_ENABLE_LOCAL_RERANKER=1 to opt in.
   try {
-    const { getGlobalLocalReranker } = await import(path.join(PROJECT_ROOT, 'core', 'ranking', 'local-reranker.js'));
-    const reranker = getGlobalLocalReranker();
-    if (reranker.isAvailable()) {
-      console.log('  Warming up local reranker (gte-reranker-modernbert-base INT8)...');
-      const warmStart = Date.now();
-      await reranker.init();
-      // Run a dummy rerank to fully warm ONNX runtime (JIT compilation, memory allocation)
-      await reranker.rerank('warmup query', ['warmup document content for benchmarking'], 1);
-      console.log(`  Local reranker warm in ${Date.now() - warmStart}ms`);
+    const { shouldUseLocalReranker } = await import(path.join(PROJECT_ROOT, 'core', 'infrastructure', 'config', 'ranking.js'));
+    if (shouldUseLocalReranker()) {
+      const { getGlobalLocalReranker } = await import(path.join(PROJECT_ROOT, 'core', 'ranking', 'local-reranker.js'));
+      const reranker = getGlobalLocalReranker();
+      if (reranker.isAvailable()) {
+        console.log('  Warming up local reranker (gte-reranker-modernbert-base INT8)...');
+        const warmStart = Date.now();
+        await reranker.init();
+        await reranker.rerank('warmup query', ['warmup document content for benchmarking'], 1);
+        console.log(`  Local reranker warm in ${Date.now() - warmStart}ms`);
+      }
+    } else {
+      console.log('  Local reranker disabled — skipping warmup');
     }
   } catch (err) {
     console.log(`  Local reranker warmup skipped: ${err.message}`);

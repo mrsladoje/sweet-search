@@ -68,10 +68,19 @@ export const RERANK_CONFIG = {
 // =============================================================================
 
 export const LOCAL_RERANKER_CONFIG = {
-  // Master switch for local reranker
-  // true = Use local ModernBERT INT8 (FREE, ~700ms, works offline)
-  // false = Use remote APIs (Voyage $0.05/1K or Jina $0.02/1K)
-  useLocalReranker: true,
+  // Master switch for local reranker — DISABLED by default.
+  //
+  // Measured on gencodesearchnet (6000q, 2026-04-22): CE rerank produces
+  // different rankings (Kendall τ varies −1.0 to +0.33 vs baseline) but
+  // delivers ZERO MRR/Recall improvement while costing ~3× wall-clock
+  // latency (3021s vs 1046s). The int8 HNSW rescore + optional LI MaxSim
+  // already put ground-truth answers near the top; CE has nothing left
+  // to rescue on this benchmark.
+  //
+  // Infra kept intact — flip to true (or set env SWEET_SEARCH_ENABLE_LOCAL_RERANKER=1)
+  // to A/B a new CE model without re-adding the code. Remote Voyage/Jina
+  // still activate via their API keys if present.
+  useLocalReranker: false,
 
   // Model settings
   model: {
@@ -100,10 +109,12 @@ export const LOCAL_RERANKER_CONFIG = {
  * @returns {boolean} True if local reranker should be used
  */
 export function shouldUseLocalReranker() {
-  // Env-var kill switch (used by benchmark A/B runs to isolate LI quality
-  // from CE rerank latency). Set SWEET_SEARCH_DISABLE_LOCAL_RERANKER=1.
-  const env = (process.env.SWEET_SEARCH_DISABLE_LOCAL_RERANKER ?? '').trim().toLowerCase();
-  if (env === '1' || env === 'true' || env === 'on') return false;
+  // Env-var kill switch takes precedence (set SWEET_SEARCH_DISABLE_LOCAL_RERANKER=1).
+  const disable = (process.env.SWEET_SEARCH_DISABLE_LOCAL_RERANKER ?? '').trim().toLowerCase();
+  if (disable === '1' || disable === 'true' || disable === 'on') return false;
+  // Opt-in via env (local reranker is OFF by default — see LOCAL_RERANKER_CONFIG).
+  const enable = (process.env.SWEET_SEARCH_ENABLE_LOCAL_RERANKER ?? '').trim().toLowerCase();
+  if (enable === '1' || enable === 'true' || enable === 'on') return true;
   return LOCAL_RERANKER_CONFIG.useLocalReranker;
 }
 
@@ -123,7 +134,12 @@ export function getJinaRerankerApiKey() {
 // Default-on. Set SWEET_SEARCH_CASCADE_ENABLED=false to opt out.
 
 export const CASCADE_CONFIG = {
-  enabled: process.env.SWEET_SEARCH_CASCADE_ENABLED !== 'false',
+  // Cascade = MaxSim gate → conditional CE rerank.
+  // DISABLED by default alongside the CE reranker — benchmarks show the
+  // cascade produces no MRR/Recall gain over plain HNSW+Int8 on
+  // gencodesearchnet while costing ~3× latency.
+  // Opt in with SWEET_SEARCH_CASCADE_ENABLED=true.
+  enabled: process.env.SWEET_SEARCH_CASCADE_ENABLED === 'true',
 
   // MaxSim score gap threshold for decisive classification
   gateThreshold: parseFloat(process.env.SWEET_SEARCH_CASCADE_GATE_THRESHOLD) || 0.08,
@@ -134,10 +150,10 @@ export const CASCADE_CONFIG = {
   // Whether to force cross-encoder on ALL candidates (bypass gate, for benchmarking)
   forceFullCrossEncoder: process.env.SWEET_SEARCH_FORCE_FULL_CE === 'true',
 
-  // Shadow mode (default ON): compute gate signals + CE in shadow, log results, keep pure-MaxSim ranking.
-  // CE rescue has no proven lift over MaxSim on GenCodeSearchNet. Shadow mode collects data
-  // to identify the subset where CE helps. Set SWEET_SEARCH_CASCADE_SHADOW=false to activate CE.
-  shadowMode: process.env.SWEET_SEARCH_CASCADE_SHADOW !== 'false',
+  // Shadow mode DISABLED by default — no background CE compute at all.
+  // Opt in with SWEET_SEARCH_CASCADE_SHADOW=true to resume data collection
+  // for identifying the CE-helpful query subset.
+  shadowMode: process.env.SWEET_SEARCH_CASCADE_SHADOW === 'true',
 };
 
 // =============================================================================

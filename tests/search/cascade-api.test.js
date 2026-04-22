@@ -81,13 +81,15 @@ describe('Reranker.rerankDirect', () => {
 });
 
 describe('SweetSearch cascade project config', () => {
-  it('defaults cascade to enabled when no env or project override is present', () => {
+  it('defaults cascade to DISABLED when no env or project override is present', () => {
+    // Cascade (CE rerank) is off by default — measured MRR-neutral with 3×
+    // latency on gencodesearchnet. Opt in via SWEET_SEARCH_CASCADE_ENABLED=true.
     const prevEnabled = process.env.SWEET_SEARCH_CASCADE_ENABLED;
     delete process.env.SWEET_SEARCH_CASCADE_ENABLED;
 
     try {
       const searcher = new SweetSearch({});
-      expect(searcher.cascadeEnabled).toBe(true);
+      expect(searcher.cascadeEnabled).toBe(false);
       searcher.close();
     } finally {
       if (prevEnabled !== undefined) process.env.SWEET_SEARCH_CASCADE_ENABLED = prevEnabled;
