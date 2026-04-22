@@ -79,3 +79,6 @@ export {
   DATA_DIR as vocabDataDir,
   ARTIFACT_PATHS as vocabArtifactPaths,
 } from './vocab-constants.js';
+
+// vocab-prewarm-cli.js
+export { handlePrewarmVocabCli } from './vocab-prewarm-cli.js';

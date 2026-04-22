@@ -17,14 +17,18 @@ if (args[0] === 'init') {
 } else if (args[0] === 'uninstall') {
   const { runUninstall } = await import('../scripts/uninstall.js');
   await runUninstall(args.slice(1));
+} else if (args[0] === 'prewarm-vocab') {
+  const { handlePrewarmVocabCli } = await import('./vocabulary/index.js');
+  await handlePrewarmVocabCli(args.slice(1));
 } else if (args[0] === '--help' || args[0] === '-h' || args.length === 0) {
   console.log(`sweet-search — hybrid code search engine
 
 Usage:
-  sweet-search <query>          Search the indexed codebase
-  sweet-search init [options]   Set up runtime assets and models
-  sweet-search uninstall [opts] Remove local state created by init
-  sweet-search --help           Show this help
+  sweet-search <query>                Search the indexed codebase
+  sweet-search init [options]         Set up runtime assets and models
+  sweet-search uninstall [opts]       Remove local state created by init
+  sweet-search prewarm-vocab [file]   Pre-warm vocabulary cache with terms
+  sweet-search --help                 Show this help
 
 Options:
   --mode <mode>     Search mode: auto, lexical, semantic, hybrid, pattern
