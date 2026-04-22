@@ -405,9 +405,9 @@ export async function semanticSearch3Stage(query, options = {}) {
   // See search-postprocess.js — runs after graph expansion so expanded
   // candidates also benefit from MaxSim scoring.
 
-  // Stage 3: Rerank (if enabled)
+  // Stage 3: Rerank (if enabled AND a reranker is actually available)
   let results = scoredCandidates;
-  if (rerank && scoredCandidates.length > k) {
+  if (rerank && scoredCandidates.length > k && this.reranker.isAnyAvailable?.()) {
     try {
       const stage3Start = performance.now();
       const topCandidates = scoredCandidates.slice(0, this.stage3Candidates);
@@ -582,7 +582,7 @@ export async function semanticSearchStandard(query, options = {}) {
 
   // Rerank if requested and we have candidates
   let results = candidates;
-  if (rerank && candidates.length > k) {
+  if (rerank && candidates.length > k && this.reranker.isAnyAvailable?.()) {
     try {
       const rerankStart = Date.now();
 
