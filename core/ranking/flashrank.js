@@ -626,6 +626,18 @@ export class Reranker {
   }
 
   /**
+   * True iff some direct cross-encoder is available for use. When this is
+   * false, the caller should skip the rerank stage entirely instead of
+   * paying the document-load cost just to have rerankDirect() throw.
+   */
+  isAnyAvailable() {
+    if (this.useLocalReranker && this.localReranker.isAvailable()) return true;
+    if (this.preferJina && this.jinaReranker.isAvailable()) return true;
+    if (this.preferVoyage && this.voyageReranker.isAvailable()) return true;
+    return false;
+  }
+
+  /**
    * Get reranker status
    */
   getStatus() {
