@@ -287,8 +287,15 @@ takes out the `.mlmodelc` compiled siblings next to each `.mlpackage`.
      as a child process; on failure, logs the error and continues with candle only.
    - Never blocks init: ineligible hardware, missing cache, and build failure all
      collapse to "cascade disabled, candle path unchanged".
-9. Write `.sweet-search/config.json` including `runtime.hardware` and
-   `runtime.coremlCascade` diagnostics.
+8.5. Inspect **near-duplicate dedup readiness**. `inspectDedupReadiness()`
+   checks whether the native dedup NAPI surface (`dedup_fingerprint_batch`,
+   `dedup_cluster`) is callable. `--verify-deep` additionally runs a
+   fingerprint-determinism smoke test on 3 in-process fixtures to assert
+   cross-platform bit-equality. Never blocks init: if the addon is missing
+   or disabled, every chunk becomes its own exemplar at index time and the
+   pipeline proceeds without any dedup work.
+9. Write `.sweet-search/config.json` including `runtime.hardware`,
+   `runtime.coremlCascade`, and `runtime.dedup` diagnostics.
 10. Run runtime verification.
 11. Install index-maintainer daemon to `.claude/hooks/`.
 12. Print concise report.
@@ -304,12 +311,43 @@ Sweet Search init complete
   lateon code edge: cached
   ...
   CoreML cascade:       present (12 variants ready (6 embed + 6 LI))
+  Dedup:                ready (MinHash-LSH (k=128, 16 bands, τ=0.7) + SimHash (Hamming ≤ 3) + LI reuse (τ≥0.95))
   Runtime downloads:    disabled
   Verification:         fast-pass (23/23)
 ```
 
 Flags: `--profile <core|full>`, `--verify-deep`, `--force`, `--verbose`,
-`--build-coreml-cascade`, `--skip-coreml-cascade`.
+`--build-coreml-cascade`, `--skip-coreml-cascade`, `--skip-dedup`.
+
+### Near-Duplicate Dedup (SimHash + MinHash-LSH)
+
+Dedup is a **pure-compute feature** — no model artifacts, no runtime downloads.
+The NAPI addon built as part of `@sweet-search/native-<platform>` exposes
+`dedup_fingerprint_batch` and `dedup_cluster`; init only inspects readiness.
+
+Two tiers:
+- **Bi-encoder reuse** at Jaccard ≥ 0.7 (16 × 8 LSH bands + SimHash Hamming ≤ 3
+  secondary filter) — aliases skip the local embedding model; their row in
+  `vectors` gets a COPY of the exemplar's Float32 BLOB.
+- **LI per-token matrix reuse** at Jaccard ≥ 0.95 — only near-exact duplicates
+  borrow the exemplar's per-token matrix via an alias sidecar JSON next to
+  the SSLX binary. Aliases between 0.7 and 0.95 Jaccard still skip bi-encoder
+  but ARE encoded by the LI model.
+
+Config surface (`SWEET_SEARCH_DEDUP_*` env vars via
+`core/infrastructure/config/dedup.js`):
+- `SWEET_SEARCH_DEDUP_ENABLED` (default `1`)
+- `SWEET_SEARCH_DEDUP_LI_REUSE` (default `1`)
+- `SWEET_SEARCH_DEDUP_JACCARD` (default `0.7`)
+- `SWEET_SEARCH_DEDUP_LI_JACCARD` (default `0.95`)
+- `SWEET_SEARCH_DEDUP_NGRAM` (default `5`), `NUM_PERM` (`128`), `BANDS` (`16`),
+  `SIMHASH_H` (`3`), `SEED` (`42`)
+
+Init does NOT download or install anything for dedup. If the native addon is
+unavailable on the current platform, `isDedupAvailable()` returns false and
+`runDedupPhase()` collapses to a no-op — every chunk stays its own exemplar
+and the indexing pipeline runs unchanged. Orphan alias cleanup runs at
+`insertAliasVectors()` time for incremental re-index safety.
 
 ---
 
