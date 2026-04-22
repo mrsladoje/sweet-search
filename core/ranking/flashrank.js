@@ -558,9 +558,19 @@ export class Reranker {
     this.voyageReranker = new VoyageReranker(options);
     this.jinaReranker = new JinaReranker(options);
     this.flashRankReranker = new FlashRankReranker(options);
-    this.localReranker = getGlobalLocalReranker();  // Use preheated global instance
-    this.preferVoyage = options.preferVoyage !== false;
-    this.preferJina = options.preferJina !== false;
+    this.localReranker = getGlobalLocalReranker();
+    // All rerankers OFF by default — having a JINA_API_KEY / VOYAGEAI_API_KEY
+    // in the environment no longer auto-enables remote CE rerank.
+    // Opt in explicitly per-provider:
+    //   SWEET_SEARCH_ENABLE_LOCAL_RERANKER=1  (local gte-reranker-modernbert-base)
+    //   SWEET_SEARCH_ENABLE_JINA_RERANKER=1   (remote Jina)
+    //   SWEET_SEARCH_ENABLE_VOYAGE_RERANKER=1 (remote Voyage)
+    const envFlag = (name) => {
+      const v = (process.env[name] ?? '').trim().toLowerCase();
+      return v === '1' || v === 'true' || v === 'on';
+    };
+    this.preferVoyage = options.preferVoyage ?? envFlag('SWEET_SEARCH_ENABLE_VOYAGE_RERANKER');
+    this.preferJina = options.preferJina ?? envFlag('SWEET_SEARCH_ENABLE_JINA_RERANKER');
     this.useLocalReranker = options.useLocalReranker ?? shouldUseLocalReranker();
   }
 

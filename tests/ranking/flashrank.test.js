@@ -852,10 +852,19 @@ describe('Reranker', () => {
       expect(r.localReranker).toBe(mockLocalReranker);
     });
 
-    it('should default preferVoyage and preferJina to true', () => {
-      const r = new Reranker();
-      expect(r.preferVoyage).toBe(true);
-      expect(r.preferJina).toBe(true);
+    it('should default preferVoyage and preferJina to FALSE (opt-in)', () => {
+      const prevV = process.env.SWEET_SEARCH_ENABLE_VOYAGE_RERANKER;
+      const prevJ = process.env.SWEET_SEARCH_ENABLE_JINA_RERANKER;
+      delete process.env.SWEET_SEARCH_ENABLE_VOYAGE_RERANKER;
+      delete process.env.SWEET_SEARCH_ENABLE_JINA_RERANKER;
+      try {
+        const r = new Reranker();
+        expect(r.preferVoyage).toBe(false);
+        expect(r.preferJina).toBe(false);
+      } finally {
+        if (prevV !== undefined) process.env.SWEET_SEARCH_ENABLE_VOYAGE_RERANKER = prevV;
+        if (prevJ !== undefined) process.env.SWEET_SEARCH_ENABLE_JINA_RERANKER = prevJ;
+      }
     });
 
     it('should allow disabling preferVoyage', () => {
@@ -904,14 +913,15 @@ describe('Reranker', () => {
       expect(result.model).toBe('gte-reranker-modernbert-base-int8');
     });
 
-    it('should fall back to Jina when local is unavailable', async () => {
+    it('should fall back to Jina when local is unavailable and preferJina is opted in', async () => {
       mockLocalReranker.isAvailable.mockReturnValue(false);
 
       fetchSpy.mockResolvedValueOnce(fakeResponse({
         results: [{ index: 0, relevance_score: 0.85 }],
       }));
 
-      const r = new Reranker({ useLocalReranker: true });
+      // Remote rerankers are opt-in now — must pass preferJina: true explicitly.
+      const r = new Reranker({ useLocalReranker: true, preferJina: true });
       r.jinaReranker = new JinaReranker({ apiKey: 'jina-key' });
 
       const result = await r.rerankDirect('test', ['doc'], 1);
@@ -919,14 +929,14 @@ describe('Reranker', () => {
       expect(result.results[0].source).toBe('jina');
     });
 
-    it('should fall back to Voyage when local and Jina are unavailable', async () => {
+    it('should fall back to Voyage when local and Jina are unavailable and preferVoyage is opted in', async () => {
       mockLocalReranker.isAvailable.mockReturnValue(false);
 
       fetchSpy.mockResolvedValueOnce(fakeResponse({
         data: [{ index: 0, relevance_score: 0.8 }],
       }));
 
-      const r = new Reranker();
+      const r = new Reranker({ preferVoyage: true });
       r.jinaReranker = new JinaReranker({ apiKey: '' });  // unavailable
       r.voyageReranker = new VoyageReranker({ apiKey: 'voyage-key' });
 

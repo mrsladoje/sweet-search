@@ -133,9 +133,24 @@ export async function closeConnectionPools() {
 }
 
 function resolveRerankerStage2Provider() {
+  // Every reranker tier is OPT-IN now. An API key alone is not enough
+  // to trigger preheating of the rerank TLS endpoint. The embedding TLS
+  // warmup (warmEmbeddingAPIConnection) is a separate path and keeps
+  // firing whenever an embedding provider's API key is set.
+  //
+  // Opt in per-tier:
+  //   SWEET_SEARCH_ENABLE_LOCAL_RERANKER=1  (local gte-reranker-modernbert-base)
+  //   SWEET_SEARCH_ENABLE_VOYAGE_RERANKER=1 (remote Voyage rerank TLS warmup)
+  //   SWEET_SEARCH_ENABLE_JINA_RERANKER=1   (remote Jina rerank TLS warmup)
+  const envFlag = (name) => {
+    const v = (process.env[name] ?? '').trim().toLowerCase();
+    return v === '1' || v === 'true' || v === 'on';
+  };
   if (shouldUseLocalReranker()) return 'local-modernbert';
-  if (RERANK_CONFIG.voyage.enabled && RERANK_CONFIG.voyage.apiKey) return 'voyage';
-  if (RERANK_CONFIG.jina.enabled && RERANK_CONFIG.jina.apiKey) return 'jina';
+  if (envFlag('SWEET_SEARCH_ENABLE_VOYAGE_RERANKER')
+      && RERANK_CONFIG.voyage.enabled && RERANK_CONFIG.voyage.apiKey) return 'voyage';
+  if (envFlag('SWEET_SEARCH_ENABLE_JINA_RERANKER')
+      && RERANK_CONFIG.jina.enabled && RERANK_CONFIG.jina.apiKey) return 'jina';
   return 'none';
 }
 
