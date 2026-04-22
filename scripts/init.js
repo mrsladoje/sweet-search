@@ -317,7 +317,7 @@ function printReport(report) {
 
   if (prewarmHookReport) {
     if (prewarmHookReport.status === 'registered') {
-      console.log(`  Prewarm hook:         registered (${prewarmHookReport.detail})`);
+      console.log(`  Prewarm hook:         registered — first query is warm if ≥2s after session start`);
     } else if (prewarmHookReport.status === 'error') {
       console.log(`  Prewarm hook:         ERROR — ${prewarmHookReport.detail}`);
     }
@@ -392,18 +392,24 @@ export function inspectDedupReadiness({ deep = false, skipped = false } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Claude Code SessionStart prewarm hook
+// Claude Code SessionStart daemon-prewarm hook
 // ---------------------------------------------------------------------------
 
 // The hook script's filename doubles as the ownership marker — a path-based
 // marker works on every OS and survives JSON re-serialization without shell-
 // syntax concerns. Both init and uninstall grep the command string for this
 // substring to find entries sweet-search owns.
-export const PREWARM_HOOK_FILENAME = 'session-preheat-hook.mjs';
+//
+// The hook spawns a detached search daemon at Claude Code SessionStart so the
+// user's first `sweet-search <query>` hits an already-warm daemon (~80ms
+// instead of ~2.5s cold). The earlier page-cache preheat
+// (`session-preheat-hook.mjs`) was measured to save ~0ms on query latency —
+// the daemon's own init warms the same pages anyway — and was replaced.
+export const PREWARM_HOOK_FILENAME = 'session-daemon-prewarm.mjs';
 
 /**
  * Register (or update) a SessionStart entry in `.claude/settings.json` that
- * runs the light-tier preheat hook on every Claude Code session.
+ * spawns the search daemon in the background on every Claude Code session.
  * Non-destructive: preserves all existing hooks, permissions, env, etc.
  * Idempotent: re-running init replaces the existing sweet-search entry rather
  * than appending a duplicate.
@@ -523,9 +529,11 @@ Options:
                             Useful for benchmarks requiring dedup-disabled
                             runs without touching the native addon.
   --skip-prewarm-hook       Skip registering the Claude Code SessionStart
-                            prewarm hook in .claude/settings.json. Useful
-                            when the project already manages its own hooks
-                            or does not use Claude Code.
+                            daemon-prewarm hook in .claude/settings.json.
+                            The hook spawns the search daemon in the
+                            background so the first query is warm. Skip
+                            this when the project already manages its own
+                            hooks or does not use Claude Code.
   --verbose, -v             Enable verbose output
   --help, -h                Show this help
 
@@ -820,11 +828,13 @@ export async function runInit(args) {
     process.stderr.write(`[init] Warning: Could not install /sweet-index skill: ${e.message}\n`);
   }
 
-  // 11.5. Register Claude Code SessionStart prewarm hook.
-  //       Light-tier: loads cached vocab artifacts, runs FTS5 MATCH and
-  //       HNSW seed traversal with a <3s budget. No embedding generation.
-  //       Never blocks init — any write failure collapses to a silent
-  //       no-op on next session start.
+  // 11.5. Register Claude Code SessionStart daemon-prewarm hook.
+  //       Spawns the search daemon detached in the background so the user's
+  //       first `sweet-search <query>` hits a warm daemon (~80ms) instead of
+  //       paying ~2.5s cold-start. The hook exits immediately; the daemon
+  //       loads models + indexes while the user reads Claude's first reply.
+  //       Never blocks init — any write failure collapses to a silent no-op
+  //       on next session start.
   const prewarmHookReport = registerPrewarmSessionStartHook({
     projectRoot,
     packageRoot: PACKAGE_ROOT,
