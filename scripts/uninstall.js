@@ -11,12 +11,13 @@
  *   sweet-search uninstall [--dry-run] [--keep-models] [--purge] [--force]
  */
 
-import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { getCoremlCascadeRoot, getCoremlCascadeState } from '../core/infrastructure/coreml-cascade.js';
+import { PREWARM_HOOK_FILENAME } from './init.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -142,6 +143,76 @@ function getCoremlCascadeRemovals() {
   return removals;
 }
 
+/**
+ * Remove the sweet-search-owned SessionStart entry from `.claude/settings.json`,
+ * preserving every other hook, permission, and top-level key. Detection is
+ * filename-based (see PREWARM_HOOK_FILENAME) — only entries whose command
+ * references the sweet-search preheat script are removed.
+ *
+ * Returns `{ status, detail }`:
+ *   not-found  — no settings.json, or no matching entry (nothing to do)
+ *   removed    — entry spliced out and settings.json rewritten
+ *   dry-run    — found a matching entry but skipped the write
+ *   error      — non-fatal (settings.json unreadable, etc.); uninstall continues
+ */
+export function removePrewarmSessionStartHook(projectRoot, { dryRun = false } = {}) {
+  const settingsPath = join(projectRoot, '.claude', 'settings.json');
+  if (!existsSync(settingsPath)) {
+    return { status: 'not-found', detail: 'no .claude/settings.json' };
+  }
+
+  let raw;
+  try {
+    raw = readFileSync(settingsPath, 'utf-8');
+  } catch (err) {
+    return { status: 'error', detail: `read failed: ${err.message}` };
+  }
+
+  let settings;
+  try {
+    settings = JSON.parse(raw);
+  } catch (err) {
+    return { status: 'error', detail: `settings.json is not valid JSON: ${err.message}` };
+  }
+
+  const sessionStart = settings?.hooks?.SessionStart;
+  if (!Array.isArray(sessionStart) || sessionStart.length === 0) {
+    return { status: 'not-found', detail: 'no SessionStart entries' };
+  }
+
+  const filtered = sessionStart.filter((group) =>
+    !(Array.isArray(group?.hooks) &&
+      group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_FILENAME)))
+  );
+
+  if (filtered.length === sessionStart.length) {
+    return { status: 'not-found', detail: 'no matching entry' };
+  }
+
+  if (dryRun) {
+    return { status: 'dry-run', detail: `would remove ${sessionStart.length - filtered.length} entry` };
+  }
+
+  if (filtered.length === 0) {
+    delete settings.hooks.SessionStart;
+    if (settings.hooks && Object.keys(settings.hooks).length === 0) {
+      delete settings.hooks;
+    }
+  } else {
+    settings.hooks.SessionStart = filtered;
+  }
+
+  try {
+    const tmpPath = settingsPath + '.tmp';
+    writeFileSync(tmpPath, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
+    renameSync(tmpPath, settingsPath);
+  } catch (err) {
+    return { status: 'error', detail: `write failed: ${err.message}` };
+  }
+
+  return { status: 'removed', detail: `spliced out ${sessionStart.length - filtered.length} entry` };
+}
+
 // ---------------------------------------------------------------------------
 // Help text
 // ---------------------------------------------------------------------------
@@ -223,8 +294,13 @@ export async function runUninstall(args) {
     }
   }
 
+  // Check for the SessionStart hook entry so we can report/clean it even
+  // when .sweet-search/ was already deleted by hand.
+  const hookPreview = removePrewarmSessionStartHook(projectRoot, { dryRun: true });
+  const hasHookEntry = hookPreview.status === 'dry-run';
+
   // Nothing to remove?
-  if (removals.length === 0) {
+  if (removals.length === 0 && !hasHookEntry) {
     console.log('Nothing to remove — Sweet Search is not initialized in this project.');
     return;
   }
@@ -238,6 +314,9 @@ export async function runUninstall(args) {
   for (const r of removals) {
     console.log(`    ${r.label} (${formatBytes(r.size)})`);
   }
+  if (hasHookEntry) {
+    console.log(`    prewarm SessionStart hook in .claude/settings.json`);
+  }
   console.log(`  Total: ${formatBytes(totalBytes)}`);
   if (parsed.keepModels) {
     console.log('  Model cache: kept (--keep-models)');
@@ -245,6 +324,10 @@ export async function runUninstall(args) {
   console.log('');
 
   if (parsed.dryRun) {
+    const dryHook = removePrewarmSessionStartHook(projectRoot, { dryRun: true });
+    if (dryHook.status === 'dry-run') {
+      console.log(`  Would also remove: prewarm SessionStart hook (.claude/settings.json — ${dryHook.detail})`);
+    }
     console.log('Dry run — nothing was removed.');
     return;
   }
@@ -276,6 +359,19 @@ export async function runUninstall(args) {
       kept++;
     }
   }
+
+  // Reverse the Claude Code SessionStart hook entry init added to
+  // .claude/settings.json. Non-fatal — a failure here doesn't leave the
+  // user in a worse state than before uninstall ran.
+  const hookResult = removePrewarmSessionStartHook(projectRoot, { dryRun: parsed.dryRun });
+  if (hookResult.status === 'removed') {
+    console.log(`  Removed: prewarm SessionStart hook (.claude/settings.json — ${hookResult.detail})`);
+    removed++;
+  } else if (hookResult.status === 'error') {
+    console.log(`  Failed to remove prewarm SessionStart hook: ${hookResult.detail}`);
+    kept++;
+  }
+  // 'not-found' and 'dry-run' are silent in the main output.
 
   // Purge npm packages
   if (parsed.purge) {
