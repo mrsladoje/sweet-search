@@ -61,21 +61,32 @@ function cleanupCheckpoint(indexPath) {
  * For 'sequential' order, reads by rowid (no temp table needed).
  * For 'shuffle' or 'diversity', pre-computes order in a temp table.
  */
+// Alias rows (dedup sibling pointers) are filtered out of HNSW construction.
+// Inserting them with the exemplar's duplicate embedding floods top-K with
+// ties and displaces higher-quality matches. Sibling promotion at query
+// time (search/dedup/sibling-expander.js) restores alias IDs in the ranked
+// list at the exemplar's rank position.
+const ALIAS_FILTER_SQL = "json_extract(metadata, '$.exemplarId') IS NULL";
+
 function* streamVectorsFromDb(db, _dim, order = 'sequential') {
   if (order !== 'sequential') {
-    // Pre-compute insertion order in a temp table
     db.exec('CREATE TEMP TABLE IF NOT EXISTS hnsw_order (pos INTEGER PRIMARY KEY, vector_rowid INTEGER)');
     db.exec('DELETE FROM hnsw_order');
 
-    const totalRows = db.prepare('SELECT COUNT(*) as c FROM vectors').get().c;
-    let indices = Array.from({ length: totalRows }, (_, i) => i + 1); // rowid is 1-based
+    const rowidRows = db
+      .prepare(`SELECT rowid FROM vectors WHERE ${ALIAS_FILTER_SQL} ORDER BY rowid`)
+      .all();
+    let indices = rowidRows.map((r) => r.rowid);
 
     if (order === 'shuffle') {
       fisherYatesShuffle(indices);
     } else if (order === 'diversity') {
-      // Read file paths to compute diversity permutation
-      const filePaths = db.prepare('SELECT file_path FROM vectors ORDER BY rowid').all().map(r => r.file_path);
-      indices = diversityFirstPermutationRowids(filePaths);
+      const pathRows = db
+        .prepare(`SELECT rowid, file_path FROM vectors WHERE ${ALIAS_FILTER_SQL} ORDER BY rowid`)
+        .all();
+      const filePaths = pathRows.map((r) => r.file_path);
+      const permutationPositions = diversityFirstPermutationRowids(filePaths);
+      indices = permutationPositions.map((pos) => pathRows[pos - 1]?.rowid).filter(Boolean);
     }
 
     const insertOrder = db.prepare('INSERT INTO hnsw_order (pos, vector_rowid) VALUES (?, ?)');
@@ -103,7 +114,9 @@ function* streamVectorsFromDb(db, _dim, order = 'sequential') {
 
     db.exec('DROP TABLE IF EXISTS temp.hnsw_order');
   } else {
-    const stmt = db.prepare('SELECT rowid, id, file_path, embedding, metadata FROM vectors ORDER BY rowid');
+    const stmt = db.prepare(
+      `SELECT rowid, id, file_path, embedding, metadata FROM vectors WHERE ${ALIAS_FILTER_SQL} ORDER BY rowid`,
+    );
     for (const row of stmt.iterate()) {
       yield {
         rowid: row.rowid,
@@ -345,8 +358,8 @@ export async function incrementalUpdateHNSW(dbPath, changedFiles, dryRun = false
   const changedFileSet = new Set(changedFiles || []);
   const placeholders = [...changedFileSet].map(() => '?').join(',');
   const stmt = changedFileSet.size > 0
-    ? db.prepare(`SELECT rowid, id, file_path, embedding, metadata FROM vectors WHERE file_path IN (${placeholders}) ORDER BY rowid`)
-    : db.prepare('SELECT rowid, id, file_path, embedding, metadata FROM vectors ORDER BY rowid');
+    ? db.prepare(`SELECT rowid, id, file_path, embedding, metadata FROM vectors WHERE ${ALIAS_FILTER_SQL} AND file_path IN (${placeholders}) ORDER BY rowid`)
+    : db.prepare(`SELECT rowid, id, file_path, embedding, metadata FROM vectors WHERE ${ALIAS_FILTER_SQL} ORDER BY rowid`);
 
   const rows = changedFileSet.size > 0 ? stmt.all(...changedFileSet) : [];
   const totalNew = changedFileSet.size > 0 ? rows.length : 0;
@@ -401,7 +414,9 @@ export async function buildHNSWIndex(dbPath, dryRun = false) {
   // Non-sequential orders require temp tables → can't use readonly
   const db = new Database(dbPath, orderMode === 'sequential' ? { readonly: true } : {});
 
-  const totalVectors = db.prepare('SELECT COUNT(*) as c FROM vectors').get().c;
+  const totalVectors = db
+    .prepare(`SELECT COUNT(*) as c FROM vectors WHERE ${ALIAS_FILTER_SQL}`)
+    .get().c;
   if (totalVectors === 0) {
     db.close();
     log('No chunks to index', 'yellow');
@@ -685,6 +700,35 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     log(`  Removed ${removed} existing entries`, 'dim');
   }
 
+  // Dedup partition: aliases whose Jaccard-to-exemplar clears the LI-reuse
+  // threshold (default 0.95) skip LI encoding and use the exemplar's
+  // per-token matrix via the alias sidecar. Aliases that fall short of that
+  // strict threshold — clustered for bi-encoder purposes but not near-exact
+  // enough to share per-token vectors — are encoded normally.
+  const { DEDUP_CONFIG: _LI_DEDUP_CONFIG } = await import('../infrastructure/index.js');
+  const liReuseEnabled = _LI_DEDUP_CONFIG.enabled && _LI_DEDUP_CONFIG.liReuseEnabled;
+  let aliasChunks = [];
+  let liIneligibleAliases = 0;
+  if (liReuseEnabled && Array.isArray(chunks)) {
+    const exemplarChunks = [];
+    for (const chunk of chunks) {
+      if (chunk.metadata?.exemplarId && chunk.metadata?.liReuseEligible) {
+        aliasChunks.push(chunk);
+      } else {
+        exemplarChunks.push(chunk);
+        if (chunk.metadata?.exemplarId && !chunk.metadata?.liReuseEligible) {
+          liIneligibleAliases++;
+        }
+      }
+    }
+    if (aliasChunks.length > 0 || liIneligibleAliases > 0) {
+      const extra = liIneligibleAliases > 0
+        ? `, ${liIneligibleAliases} below LI reuse τ (encoding normally)`
+        : '';
+      log(`LateInteraction dedup: encoding ${exemplarChunks.length} exemplars, aliasing ${aliasChunks.length} LI-eligible siblings${extra}`, 'cyan');
+      chunks = exemplarChunks;
+    }
+  }
   const totalChunks = hasChunks ? chunks.length : 0;
   let totalAdded = 0;
 
@@ -919,6 +963,31 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     } finally {
       if (liPool) await liPool.shutdown();
     }
+  }
+
+  // Dedup: register alias pointers. Aliases reuse their exemplar's per-token
+  // matrix at MaxSim time, so no encoder work was done for them above.
+  if (aliasChunks.length > 0) {
+    let registered = 0;
+    let orphaned = 0;
+    for (const alias of aliasChunks) {
+      const exemplarId = alias.metadata?.exemplarId;
+      const clusterId = alias.metadata?.clusterId;
+      if (!exemplarId || !clusterId) continue;
+      if (!liIndex.documents.has(exemplarId)) {
+        orphaned++;
+        continue;
+      }
+      liIndex.addAlias(alias.id, exemplarId, clusterId, {
+        file: alias.file,
+        name: alias.metadata?.symbol,
+        type: alias.metadata?.chunk_type,
+        startLine: alias.metadata?.line_start || null,
+        endLine: alias.metadata?.line_end || null,
+      });
+      registered++;
+    }
+    log(`LateInteraction dedup: registered ${registered} alias pointer(s)${orphaned > 0 ? `, ${orphaned} orphaned (exemplar absent)` : ''}`, 'dim');
   }
 
   // If paths matched (no staging), resetForSave was not called above; set path now.

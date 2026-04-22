@@ -15,6 +15,7 @@ import { int8CosineSimilarity } from '../embedding/embedding-service.js';
 import { QualityScorer } from '../ranking/quality-scorer.js';
 import { classifyIntent, getIntentPolicy } from '../query/intent-router.js';
 import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
+import { expandAliases } from './dedup/sibling-expander.js';
 
 /**
  * Min-max normalize an array of scores to [0, 1].
@@ -382,6 +383,23 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   }
 
   // Record per-mode telemetry for vocabulary prewarm analytics (Step 0)
+  // =========================================================================
+  // Sibling expansion (dedup re-attach)
+  // =========================================================================
+  // Aliases were skipped during HNSW construction to prevent duplicate-hits
+  // for the same cluster. Re-attach them now so callers can still surface
+  // every file matching a search — grouped under the exemplar as result.aliases.
+  if (Array.isArray(results) && results.length > 0 && this.codebaseRepo) {
+    try {
+      const { stats: dedupStats } = expandAliases(results, this.codebaseRepo, query);
+      if (dedupStats.exemplarsExpanded > 0) {
+        stats.dedupExpansion = dedupStats;
+      }
+    } catch (err) {
+      this.log(`Sibling expansion failed: ${err.message}`);
+    }
+  }
+
   const telemetryMode = searchMode === 'structural' ? 'lexical' : searchMode;
   const latency = stats.total_ms;
   const embeddingSource = stats.embedding?.source || null;

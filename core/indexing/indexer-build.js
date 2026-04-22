@@ -280,6 +280,11 @@ export function buildInsertItems(chunks, embeddings, modelInfo) {
         language: chunk.metadata?.language || null,
         provider: modelInfo.provider,
         dimension: embedding.length,
+        // Dedup metadata (absent when dedup phase didn't run).
+        simhash: chunk.metadata?.simhash ?? null,
+        clusterId: chunk.metadata?.clusterId ?? null,
+        exemplarId: chunk.metadata?.exemplarId ?? null,
+        isExemplar: chunk.metadata?.isExemplar ?? null,
       }),
       sessionId: `codebase-v22-${modelInfo.provider}`,
       tags: JSON.stringify(['codebase', chunk.metadata?.language || 'unknown']),
@@ -287,6 +292,109 @@ export function buildInsertItems(chunks, embeddings, modelInfo) {
     });
   }
   return items;
+}
+
+/**
+ * Insert alias rows that reuse their exemplar's embedding instead of running
+ * the embedding model. The exemplar must already be in the `vectors` table;
+ * call this AFTER pipelinedEmbedAndInsert has written the exemplar rows.
+ * Returns the number of alias rows inserted.
+ */
+export function insertAliasVectors(db, aliases, modelInfo) {
+  if (!aliases || aliases.length === 0) return 0;
+
+  const fetchExemplar = db.prepare(
+    'SELECT embedding, metadata FROM vectors WHERE id = ?'
+  );
+
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO vectors (id, file_path, embedding, text, metadata, session_id, tags, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const insertBatch = db.transaction((items) => {
+    for (const item of items) {
+      stmt.run(
+        item.id,
+        item.filePath,
+        item.embeddingBlob,
+        item.text,
+        item.metadata,
+        item.sessionId,
+        item.tags,
+        item.createdAt,
+      );
+    }
+  });
+
+  // Orphan guard: purge pre-existing alias rows whose exemplarId no longer
+  // resolves to a live vectors row. This happens in incremental re-index
+  // when a file containing an exemplar is deleted but alias files in
+  // untouched paths still reference it.
+  const orphanDelete = db.prepare(`
+    DELETE FROM vectors
+    WHERE json_extract(metadata, '$.exemplarId') IS NOT NULL
+      AND json_extract(metadata, '$.exemplarId') NOT IN (
+        SELECT id FROM vectors WHERE json_extract(metadata, '$.exemplarId') IS NULL
+      )
+  `);
+  const orphansRemoved = orphanDelete.run().changes;
+  if (orphansRemoved > 0) {
+    log(`  ⚠ Purged ${orphansRemoved} orphan alias row(s) (exemplar absent)`, 'yellow');
+  }
+
+  const items = [];
+  const nowIso = new Date().toISOString();
+  let missing = 0;
+  let dimension = null;
+
+  for (const alias of aliases) {
+    const exemplarId = alias.metadata?.exemplarId;
+    if (!exemplarId) continue;
+    const row = fetchExemplar.get(exemplarId);
+    if (!row || !row.embedding) {
+      missing++;
+      continue;
+    }
+    if (dimension === null) {
+      dimension = Math.floor(row.embedding.length / 4);
+    }
+
+    items.push({
+      id: alias.id,
+      filePath: alias.file,
+      embeddingBlob: row.embedding, // copy exemplar's Float32 BLOB verbatim
+      text: (alias.text || alias.content || '').slice(0, 2000),
+      metadata: JSON.stringify({
+        file: alias.file,
+        type: alias.metadata?.chunk_type || 'code',
+        name: alias.metadata?.symbol || null,
+        startLine: alias.metadata?.line_start || null,
+        endLine: alias.metadata?.line_end || null,
+        language: alias.metadata?.language || null,
+        provider: modelInfo.provider,
+        dimension: dimension ?? 0,
+        simhash: alias.metadata?.simhash ?? null,
+        clusterId: alias.metadata?.clusterId ?? null,
+        exemplarId,
+        isExemplar: false,
+      }),
+      sessionId: `codebase-v22-${modelInfo.provider}`,
+      tags: JSON.stringify(['codebase', alias.metadata?.language || 'unknown']),
+      createdAt: nowIso,
+    });
+  }
+
+  const BATCH = 2000;
+  for (let i = 0; i < items.length; i += BATCH) {
+    insertBatch(items.slice(i, i + BATCH));
+  }
+
+  if (missing > 0) {
+    log(`  ⚠ ${missing} alias(es) referenced exemplar not found in DB — skipped`, 'yellow');
+  }
+
+  return items.length;
 }
 
 export function insertVectors(db, chunks, embeddings, modelInfo) {
@@ -462,6 +570,35 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
     ({ allChunks, texts } = await chunkFiles(files));
   }
 
+  // Dedup: if chunks were annotated by runDedupPhase, embed only exemplars;
+  // aliases get their exemplar's embedding copied after the main embed pass.
+  let embedChunks = allChunks;
+  let embedTexts = texts;
+  let aliasChunks = [];
+  const hasDedupAnnotations = allChunks.some(c => c.metadata && c.metadata.exemplarId !== undefined);
+  if (hasDedupAnnotations) {
+    const partExemplars = [];
+    const partExemplarTexts = [];
+    const partAliases = [];
+    for (let i = 0; i < allChunks.length; i++) {
+      if (allChunks[i].metadata?.exemplarId) {
+        partAliases.push(allChunks[i]);
+      } else {
+        partExemplars.push(allChunks[i]);
+        partExemplarTexts.push(texts[i]);
+      }
+    }
+    if (partAliases.length > 0) {
+      log(
+        `Dedup: embedding ${partExemplars.length} exemplars, copying vectors for ${partAliases.length} aliases`,
+        'dim',
+      );
+      embedChunks = partExemplars;
+      embedTexts = partExemplarTexts;
+      aliasChunks = partAliases;
+    }
+  }
+
   log('Generating embeddings...', 'yellow');
 
   // For local models, send all texts in one call so callLocalModelBucketed can
@@ -469,12 +606,12 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
   // from mixed-length batches is the #1 bottleneck (measured: 5.5x slower than
   // uniform batches).  Remote APIs still use small batches for rate-limiting.
   const isLocal = modelInfo.provider === 'local';
-  const batchSize = isLocal ? texts.length : EMBEDDING_CONFIG.indexerBatchSize;
+  const batchSize = isLocal ? embedTexts.length : EMBEDDING_CONFIG.indexerBatchSize;
   const writeFlushRows = EMBEDDING_CONFIG.indexerWriteFlushRows;
   const embeddingOptions = { useCache: false };
   let effectiveEmbeddingDimension = modelInfo.dimension;
 
-  log(`Indexer: batchSize=${isLocal ? 'all(' + texts.length + ')' : batchSize}, writeFlushRows=${writeFlushRows}`, 'dim');
+  log(`Indexer: batchSize=${isLocal ? 'all(' + embedTexts.length + ')' : batchSize}, writeFlushRows=${writeFlushRows}`, 'dim');
 
   if (modelInfo.isRemote) {
     const configuredOutputDim = parseInt(
@@ -520,7 +657,11 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
 
     createVectorSchema(db);
 
-    embeddingCount = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, embeddingOptions, log, writeFlushRows);
+    embeddingCount = await pipelinedEmbedAndInsert(db, embedChunks, embedTexts, batchSize, modelInfo, logProgress, embeddingOptions, log, writeFlushRows);
+    if (aliasChunks.length > 0) {
+      const aliasInserted = insertAliasVectors(db, aliasChunks, modelInfo);
+      log(`  ✓ Inserted ${aliasInserted} alias vector(s) (embeddings copied from exemplars)`, 'dim');
+    }
 
     // Flush WAL before closing — ensures all inserts are durable in the main DB file
     checkpointWal(db);
@@ -576,7 +717,11 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
       createVectorSchema(db);
     }
 
-    embeddingCount = await pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgress, embeddingOptions, log, writeFlushRows);
+    embeddingCount = await pipelinedEmbedAndInsert(db, embedChunks, embedTexts, batchSize, modelInfo, logProgress, embeddingOptions, log, writeFlushRows);
+    if (aliasChunks.length > 0) {
+      const aliasInserted = insertAliasVectors(db, aliasChunks, modelInfo);
+      log(`  ✓ Inserted ${aliasInserted} alias vector(s) (embeddings copied from exemplars)`, 'dim');
+    }
 
     // Flush WAL before downstream reads (HNSW build streams from this DB)
     checkpointWal(db);
