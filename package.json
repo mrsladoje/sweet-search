@@ -74,7 +74,7 @@
     "index:full": "node core/indexing/index-codebase-v21.js --full",
     "hcgs": "node core/graph/hcgs-generator.js generate",
     "hcgs:stats": "node core/graph/hcgs-generator.js stats",
-    "warmup": "node scripts/prewarm-vocab.js",
+    "warmup": "node core/cli.js prewarm-vocab",
     "warmup:full": "node scripts/vocabulary-warmup.js",
     "benchmark": "node scripts/benchmark.js",
     "optimize:onnx": "bash scripts/optimize-onnx-model.sh",
