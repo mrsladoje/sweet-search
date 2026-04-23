@@ -47,6 +47,7 @@ export function parseInitArgs(args) {
     skipCoremlCascade: false,
     skipDedup: false,
     skipPrewarmHook: false,
+    skipCuda: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -84,6 +85,11 @@ export function parseInitArgs(args) {
       // hook in .claude/settings.json. Useful when a user manages their
       // own Claude Code hooks and doesn't want init to touch the file.
       result.skipPrewarmHook = true;
+    } else if (arg === '--skip-cuda') {
+      // Opt-out: force-disable CUDA even when an NVIDIA GPU + -cuda
+      // native package are present. Equivalent to SWEET_SEARCH_CUDA=0
+      // but persisted through init's diagnostic output.
+      result.skipCuda = true;
     }
   }
 
@@ -276,6 +282,26 @@ function printReport(report) {
   }
   console.log(`  MaxSim:               ${maxsimTier}`);
   console.log(`  Router:               ${routerType}`);
+
+  // NVIDIA / CUDA status line. Shown only when it's actionable:
+  //   cudaAvailable=true  → confirm GPU detection (user-visible win)
+  //   nvidiaGpu present but cudaAddonEnabled=false → warn that the
+  //       installed -cuda package is missing (user needs to act)
+  // If no NVIDIA GPU is present, stay silent — most Linux hosts
+  // don't have one and a "no GPU" line is noise.
+  if (capability?.cudaAvailable) {
+    const g = capability.nvidiaGpu;
+    console.log(
+      `  NVIDIA GPU:           ${g.name} (CC ${g.computeCapability}, ${g.memoryMB} MB, driver ${g.driverVersion}) — candle-cuda armed`,
+    );
+  } else if (capability?.nvidiaGpu && !capability.cudaAddonEnabled) {
+    const g = capability.nvidiaGpu;
+    const arch = capability.arch === 'arm64' ? 'arm64' : 'x64';
+    console.log(
+      `  NVIDIA GPU:           ${g.name} detected but CUDA addon missing —\n` +
+        `                        install @sweet-search/native-linux-${arch}-gnu-cuda to enable GPU indexing`,
+    );
+  }
 
   if (profile !== 'core') {
     for (const [key, info] of models) {
@@ -534,6 +560,10 @@ Options:
                             background so the first query is warm. Skip
                             this when the project already manages its own
                             hooks or does not use Claude Code.
+  --skip-cuda               Force-disable the CUDA backend even when an
+                            NVIDIA GPU and the -cuda native package are
+                            detected. Equivalent to SWEET_SEARCH_CUDA=0.
+                            Indexing falls back to candle-cpu.
   --verbose, -v             Enable verbose output
   --help, -h                Show this help
 
@@ -647,6 +677,13 @@ export async function runInit(args) {
     process.stderr.write(`[init] Models: ${cached} cached, ${downloaded} downloaded\n`);
   } else {
     process.stderr.write(`[init] No models required for profile "${profile}"\n`);
+  }
+
+  // --skip-cuda: translate to SWEET_SEARCH_CUDA=0 so the shared
+  // capability detection on hardware-capability.js honors it. Set before
+  // detectHardwareCapability() runs because that call caches its result.
+  if (parsed.skipCuda && !process.env.SWEET_SEARCH_CUDA) {
+    process.env.SWEET_SEARCH_CUDA = '0';
   }
 
   // 8. Resolve hardware capability + CoreML cascade state.
@@ -935,6 +972,10 @@ function buildConfig({
       arch: capability.arch,
       brandString: capability.brandString,
       appleSilicon: capability.appleSilicon,
+      nvidiaGpu: capability.nvidiaGpu ?? null,
+      cudaAddonEnabled: capability.cudaAddonEnabled ?? false,
+      cudaAvailable: capability.cudaAvailable ?? false,
+      cudaReason: capability.cudaReason ?? null,
       candleGpuBackend: capability.candleGpuBackend,
       inferenceBackendPreference: capability.inferenceBackendPreference,
     };

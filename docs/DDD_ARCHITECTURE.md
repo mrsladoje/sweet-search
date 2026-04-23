@@ -187,16 +187,26 @@ change at runtime.
 
 Public surface (exposed through `core/infrastructure/index.js`):
 
-- `detectHardwareCapability()` — returns `{ platform, arch, brandString,
-  appleSilicon, coremlCascadeEligible, coremlCascadeReason,
-  candleGpuBackend, inferenceBackendPreference }`
+- `detectHardwareCapability()` — returns `{ platform, arch, totalMemGB,
+  logicalCores, brandString, appleSilicon, coremlCascadeEligible,
+  coremlCascadeReason, nvidiaGpu, cudaAddonEnabled, cudaAvailable,
+  cudaReason, candleGpuBackend, inferenceBackendPreference }`
 - `parseAppleChipBrandString(raw)` — pure function for unit tests
+- `parseNvidiaSmiOutput(raw)` — pure function for unit tests
 - `_resetHardwareCapabilityCache()` — tests only
 
+`candleGpuBackend` ∈ `{ 'metal', 'cuda', null }` and
+`inferenceBackendPreference` ∈ `{ 'coreml-cascade', 'candle-metal',
+'candle-cuda', 'candle-cpu' }`. The CUDA branch combines a `nvidia-smi`
+probe (installed GPU descriptor) with an addon-side
+`Device::new_cuda(0)` probe via the NAPI export `native_cuda_available()`
+— both must succeed for `cudaAvailable === true`.
+
 Never throws. Unknown hardware degrades to `candle-cpu` fallback. The module
-has no internal dependencies besides `node:child_process` and `node:os` — a
-deliberate choice so importing it from `scripts/init.js` can never cause an
-import cycle with the rest of `core/infrastructure/`.
+depends on `node:child_process`, `node:os`, `node:module`, and
+`./native-resolver.js` for the addon probe; it does NOT import the
+`index.js` barrel, so `scripts/init.js` can consume it without import
+cycles.
 
 ### `coreml-cascade.js`
 

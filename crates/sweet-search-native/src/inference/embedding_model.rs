@@ -18,6 +18,8 @@ use std::sync::Arc;
 use super::nomic_bert_sdpa as nomic_bert;
 #[cfg(feature = "coreml")]
 use super::coreml_embedding::{CoremlEmbedding, CoremlEmbeddingVariant};
+#[cfg(feature = "cuda")]
+use super::cuda_lock;
 use super::{build_device, metal_lock, optimal_dtype, select_device};
 
 /// Inner state of the embedding model, shared between the napi struct (main
@@ -352,6 +354,23 @@ impl NativeEmbeddingModel {
 
         let dtype = optimal_dtype(&device);
         let path = PathBuf::from(&safetensors_path);
+
+        // Candle 0.10's CUDA backend has a known H2D-copy race during
+        // concurrent `VarBuilder::from_mmaped_safetensors` calls on the
+        // default stream. The embedding and LI models are loaded back-to-back
+        // from model-pool.js::initIndexGpuPool and both hit the GPU at once,
+        // so we serialize the load + construction section under a
+        // process-wide cuda_lock. Forward passes are NOT serialized — only
+        // weight upload.
+        #[cfg(feature = "cuda")]
+        let _cuda_load_guard = if matches!(device, Device::Cuda(_)) {
+            Some(cuda_lock().lock().map_err(|e| Error::from_reason(format!(
+                "[NativeEmbedding] cuda lock poisoned: {e}"
+            )))?)
+        } else {
+            None
+        };
+
         let vb = unsafe {
             VarBuilder::from_mmaped_safetensors(&[path], dtype, &device)
                 .map_err(|e| Error::from_reason(format!(
@@ -364,10 +383,15 @@ impl NativeEmbeddingModel {
                 "[NativeEmbedding] Model construction error: {e}"
             )))?;
 
+        #[cfg(feature = "cuda")]
+        drop(_cuda_load_guard);
+
         let device_name = match &device {
             candle_core::Device::Cpu => "cpu",
             #[cfg(feature = "metal")]
             candle_core::Device::Metal(_) => "metal",
+            #[cfg(feature = "cuda")]
+            candle_core::Device::Cuda(_) => "cuda",
             _ => "unknown",
         };
         let dtype_name = match dtype {

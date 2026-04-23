@@ -23,6 +23,15 @@
  *                                                dispatch report on
  *                                                addon shutdown (see
  *                                                coreml_embedding.rs)
+ *   SWEET_SEARCH_CUDA=0                        — force-disable CUDA even
+ *                                                on an eligible host
+ *                                                (diagnostic)
+ *   SWEET_SEARCH_CUDA_COMPUTE_CAP=<cc>         — set by this module
+ *                                                before addon loads so
+ *                                                the Rust dtype policy
+ *                                                picks BF16/F16/F32 by
+ *                                                compute capability.
+ *                                                See mod.rs::optimal_dtype
  *   CANDLE_METAL_COMPUTE_PER_BUFFER=<N>        — candle default 50 (tuned)
  *   CANDLE_METAL_COMMAND_POOL_SIZE=<N>         — candle default 5 (tuned)
  */
@@ -52,6 +61,49 @@ let _liTokenizer = null;
 let _liTokenizerLoadPromise = null;
 let _available = null;
 let _coremlCascadeLogged = false;
+
+// ─── Cascade-dir selection (pure helper, unit-tested) ───
+
+/**
+ * Decide whether the Rust addon should load a CoreML cascade for this
+ * deviceKind. Only `'metal'` triggers cascade resolution; `'cuda'`, `'cpu'`,
+ * and `'auto'` skip cascade (CUDA has no cascade, CPU has no GPU dispatch).
+ *
+ * Pure function — takes a resolver for the cascade dirs and the override.
+ * Returns `undefined` (explicit "no cascade") or a string path.
+ *
+ * @param {'cpu'|'metal'|'cuda'|'auto'} deviceKind
+ * @param {string|undefined} cascadeDirOverride - explicit caller override (wins)
+ * @param {() => string|null|undefined} resolveCascadeDir - called only when needed
+ */
+export function pickCascadeDirForDevice(deviceKind, cascadeDirOverride, resolveCascadeDir) {
+  if (cascadeDirOverride !== undefined) return cascadeDirOverride;
+  if (deviceKind !== 'metal') return undefined;
+  return resolveCascadeDir() || undefined;
+}
+
+// ─── CUDA compute-capability env propagation ───
+
+/**
+ * Ensure `SWEET_SEARCH_CUDA_COMPUTE_CAP` is set for the current process
+ * before the addon loads a CUDA model. The Rust `optimal_dtype` reads
+ * this env var to pick BF16 on Ampere+ and F16/F32 on older GPUs.
+ *
+ * Idempotent: honors an already-set value (useful for forcing a dtype
+ * tier in benchmarks) and silently no-ops when there is no NVIDIA GPU.
+ */
+function propagateCudaComputeCapToAddonEnv() {
+  if (process.env.SWEET_SEARCH_CUDA_COMPUTE_CAP) return;
+  try {
+    const hw = detectHardwareCapability();
+    if (hw.nvidiaGpu?.computeCapability) {
+      process.env.SWEET_SEARCH_CUDA_COMPUTE_CAP = hw.nvidiaGpu.computeCapability;
+    }
+  } catch {
+    // Hardware detection is advisory. If it fails, the Rust side falls
+    // back to F32 which is always correct, if slower.
+  }
+}
 
 // ─── CoreML cascade resolution ───
 
@@ -412,6 +464,10 @@ export async function loadNativeEmbeddingModelWithDevice(deviceKind, cascadeDirO
     const addon = loadAddon();
     if (!addon?.NativeEmbeddingModel?.loadWithDevice) return null;
 
+    // CUDA needs the compute-capability env set BEFORE the Rust load
+    // path picks a dtype. No-op on non-CUDA kinds and already-set envs.
+    if (deviceKind === 'cuda') propagateCudaComputeCapToAddonEnv();
+
     await fetchModel('coderankembed-fp32');
 
     const entry = getModelEntry('coderankembed-fp32');
@@ -421,9 +477,15 @@ export async function loadNativeEmbeddingModelWithDevice(deviceKind, cascadeDirO
 
     if (!existsSync(safetensorsPath) || !existsSync(configPath)) return null;
 
-    const cascadeDir = cascadeDirOverride !== undefined
-      ? cascadeDirOverride
-      : (deviceKind !== 'cpu' ? (resolveCoremlCascadeForAddon().embedDir || undefined) : undefined);
+    // Cascade is a CoreML-specific concept. CUDA has no cascade — the Rust
+    // addon JITs CUDA kernels per forward pass; there is no `.mlpackage`
+    // equivalent to prefetch. Skip cascade resolution entirely on CUDA so
+    // we don't log "cascade missing" warnings on a Linux+NVIDIA host.
+    const cascadeDir = pickCascadeDirForDevice(
+      deviceKind,
+      cascadeDirOverride,
+      () => resolveCoremlCascadeForAddon().embedDir,
+    );
 
     const t0 = Date.now();
     _embeddingModel = addon.NativeEmbeddingModel.loadWithDevice(
@@ -455,6 +517,9 @@ export async function loadNativeLiModelWithDevice(deviceKind, cascadeDirOverride
     const addon = loadAddon();
     if (!addon?.NativeLateInteractionModel?.loadWithDevice) return null;
 
+    // See loadNativeEmbeddingModelWithDevice for why this is CUDA-only.
+    if (deviceKind === 'cuda') propagateCudaComputeCapToAddonEnv();
+
     await fetchModel('lateon-code-fp32');
 
     const entry = getModelEntry('lateon-code-fp32');
@@ -465,9 +530,13 @@ export async function loadNativeLiModelWithDevice(deviceKind, cascadeDirOverride
 
     if (!existsSync(backbonePath) || !existsSync(projPath) || !existsSync(configPath)) return null;
 
-    const cascadeDir = cascadeDirOverride !== undefined
-      ? cascadeDirOverride
-      : (deviceKind !== 'cpu' ? (resolveCoremlCascadeForAddon().liDir || undefined) : undefined);
+    // CUDA has no cascade — see the matching comment in
+    // loadNativeEmbeddingModelWithDevice.
+    const cascadeDir = pickCascadeDirForDevice(
+      deviceKind,
+      cascadeDirOverride,
+      () => resolveCoremlCascadeForAddon().liDir,
+    );
 
     const t0 = Date.now();
     _liModel = addon.NativeLateInteractionModel.loadWithDevice(
