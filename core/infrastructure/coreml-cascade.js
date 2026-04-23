@@ -731,16 +731,21 @@ async function fetchAndExtractCascadeVariant({
   expectedSize,
   extractTarget,
   onProgress,
+  allowDownload,
 }) {
   const tmpRoot = mkdtempSync(join(tmpdir(), 'ss-cascade-'));
   try {
     // fetchModelFile already implements atomic downloads, checksum
     // verification, retries, and resumability. Point it at our
     // tempdir so the tarball is isolated from other cache state.
+    // `allowDownload: true` is passed on init to bypass the
+    // MODEL_DELIVERY_CONFIG gate — same rationale as the regular
+    // model fetcher (see model-fetcher.js::fetchModelFile).
     const downloadedTarball = await fetchModelFile(hfRepo, tarballPath, tmpRoot, {
       sha256: expectedSha256,
       expectedSize,
       onProgress,
+      allowDownload,
     });
 
     extractVariantTarball(downloadedTarball, extractTarget);
@@ -866,6 +871,7 @@ export async function fetchCoremlCascade(options = {}) {
         expectedSha256: variantSpec.tarballSha256,
         expectedSize: variantSpec.tarballSizeBytes,
         extractTarget: v.fullPath,
+        allowDownload: options.allowDownload,
         onProgress: options.onProgress
           ? (d, t) => options.onProgress(`${v.category}/${v.filename}`, d, t)
           : undefined,
