@@ -21,6 +21,8 @@ use std::sync::Arc;
 use super::modernbert_sdpa as modernbert;
 #[cfg(feature = "coreml")]
 use super::coreml_li::{CoremlLi, CoremlLiVariant};
+#[cfg(feature = "cuda")]
+use super::cuda_lock;
 use super::{build_device, metal_lock, optimal_dtype, select_device};
 
 /// Inner state of the LI model. Metal compute is serialized via
@@ -346,6 +348,18 @@ impl NativeLateInteractionModel {
 
         let dtype = optimal_dtype(&device);
         let bb_path = PathBuf::from(&backbone_path);
+
+        // Load-time CUDA serialization — see embedding_model.rs::load_on_device
+        // for the rationale. Forward passes remain lock-free.
+        #[cfg(feature = "cuda")]
+        let _cuda_load_guard = if matches!(device, Device::Cuda(_)) {
+            Some(cuda_lock().lock().map_err(|e| Error::from_reason(format!(
+                "[NativeLI] cuda lock poisoned: {e}"
+            )))?)
+        } else {
+            None
+        };
+
         let vb = unsafe {
             VarBuilder::from_mmaped_safetensors(&[bb_path], dtype, &device)
                 .map_err(|e| Error::from_reason(format!(
@@ -377,12 +391,17 @@ impl NativeLateInteractionModel {
                 "[NativeLI] Projection weight load error: {e}"
             )))?;
 
+        #[cfg(feature = "cuda")]
+        drop(_cuda_load_guard);
+
         let token_dim = 128;
 
         let device_name = match &device {
             Device::Cpu => "cpu",
             #[cfg(feature = "metal")]
             Device::Metal(_) => "metal",
+            #[cfg(feature = "cuda")]
+            Device::Cuda(_) => "cuda",
             _ => "unknown",
         };
         let dtype_name = match dtype {

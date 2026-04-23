@@ -47,7 +47,34 @@ coreml = ["metal"]
 # small reductions, token_type_embeddings assembly). Enabled by default on macOS
 # so the Metal path benefits from Accelerate/AMX on the small CPU-side ops that
 # still fall through to CPU. ~1.02-1.05x free win on macOS.
+#
+# APPLE-ONLY: `accelerate-src` links against the Accelerate framework
+# (`cargo:rustc-link-lib=framework=Accelerate`) which only exists on
+# macOS / iOS. Including this feature in a Linux build fails with
+# "library kind `framework` is only supported on Apple targets". The
+# `build:native:cuda*` npm scripts must NOT include this feature.
 accelerate = ["candle-core/accelerate"]
+# cuda = NVIDIA GPU inference via candle's CUDA backend (cudarc + candle-kernels).
+# Linux-only at build time — requires CUDA 12.x toolkit + nvcc on PATH. At load
+# time the built addon uses dynamic-linking through cudarc (libcuda.so / libcudart.so),
+# so the `-cuda` native package must be installed on a host with a working NVIDIA
+# driver; absence of libcuda.so at load is a hard error, NOT a graceful CPU fallback.
+# This is why the cuda-enabled addon ships as a SEPARATE platform package
+# (`@sweet-search/native-linux-{x64,arm64}-gnu-cuda`) rather than being bundled
+# into the standard linux-*-gnu package. See docs/INIT_STRATEGY.md "CUDA Backend".
+cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+# cudnn = Optional cuDNN acceleration on top of the CUDA backend. Not currently
+# required for correctness — candle's stock CUDA kernels handle the whole
+# NomicBERT / ModernBERT forward path. Kept as an additive feature so a future
+# release can enable it without a Cargo.toml churn.
+cudnn = ["cuda", "candle-core/cudnn", "candle-nn/cudnn"]
+# flash-attn = Fused scaled-dot-product-attention on CUDA via candle-flash-attn.
+# Ampere+ only (SM 8.0+) — Turing and Volta fall through to the naive attention
+# kernel which candle routes automatically. Compile cost adds ~5-10 minutes to a
+# cold CUDA build and ~200 MB of intermediate object files; worth caching across
+# CI jobs. Mirrors the fused SDPA path that Metal uses in nomic_bert_sdpa.rs and
+# modernbert_sdpa.rs.
+flash-attn = ["cuda", "candle-transformers/flash-attn"]
 
 [profile.release]
 opt-level = 3
