@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { computeFingerprints, clusterFingerprints } from '../../core/infrastructure/index.js';
+import {
+  isDedupAvailable,
+  computeFingerprints,
+  clusterFingerprints,
+} from '../../core/infrastructure/index.js';
 
-describe('MinHash-LSH clustering', () => {
+// Skip when the native Rust addon isn't built (see napi-determinism.test.js
+// for the full rationale: hosted `ci.yml` doesn't build the addon; the
+// release workflow does and runs the tests there).
+const describeIfAddon = isDedupAvailable() ? describe : describe.skip;
+
+describeIfAddon('MinHash-LSH clustering', () => {
   it('identical chunks cluster together', () => {
     const chunk = 'fn process(x: &[u8]) -> Vec<u8> { x.iter().map(|b| b ^ 0x55).collect() }';
     const fps = computeFingerprints([chunk, chunk, chunk]);

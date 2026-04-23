@@ -1,12 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { runDedupPhase, partitionByExemplar, formatDedupSummary } from '../../core/indexing/dedup/dedup-phase.js';
 import { selectExemplar } from '../../core/indexing/dedup/exemplar-selector.js';
+import { isDedupAvailable } from '../../core/infrastructure/index.js';
 
 function mkChunk(id, file, text) {
   return { id, file, text };
 }
 
-describe('runDedupPhase', () => {
+// Skip when the native Rust addon isn't built (see napi-determinism.test.js
+// for the full rationale: hosted `ci.yml` doesn't build the addon; the
+// release workflow does and runs the tests there).
+const describeIfAddon = isDedupAvailable() ? describe : describe.skip;
+
+describeIfAddon('runDedupPhase', () => {
   it('annotates chunks with simhash + cluster metadata', async () => {
     const chunks = [
       mkChunk('a:1-5:0', 'a.js', 'function foo(x) { return x + 1; } function bar(y) { return y * 2; }'),
