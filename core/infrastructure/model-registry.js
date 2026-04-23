@@ -58,7 +58,12 @@ export const MODEL_REGISTRY = {
     profile: 'full',
     description: 'Local embedding model (INT8 quantized, 768d)',
     files: [
-      { path: 'onnx/model.onnx', sizeBytes: 138619279, sha256: 'd44183a39a3e27bc2ef80aebeba48e8065556f2911c12211ab9f6ed94f2f26ee' },
+      // SHA256 updated 2026-04-23: re-quantized with `reduce_range=True`
+      // to fix AVX2-only INT8 kernel overflow on pre-VNNI x86 CPUs
+      // (notably AMD Zen 3 EPYC). Size unchanged — reduce_range only
+      // affects weight *values*, not storage format. See HF model card
+      // for full details: https://huggingface.co/mrsladoje/CodeRankEmbed-onnx-int8
+      { path: 'onnx/model.onnx', sizeBytes: 138619279, sha256: '4eae31d09b1843103a1ebd5e2b2e24b5a5cad441a33906b35b12b1e2ed91d1db' },
       { path: 'tokenizer.json', sizeBytes: 711649, sha256: null },
       { path: 'tokenizer_config.json', sizeBytes: 1447, sha256: null },
       { path: 'special_tokens_map.json', sizeBytes: 695, sha256: null },
