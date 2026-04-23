@@ -18,10 +18,18 @@
  *   - Unknown new Apple chips (e.g. an M5 shipped after this file) are
  *     admitted as cascade-eligible via the ">= 3" rule — we prefer
  *     optimistic new-hardware behavior to silently refusing to try.
+ *   - CUDA detection combines two signals: (1) an "addon built with the
+ *     cuda feature?" probe via `native_cuda_available()`, and
+ *     (2) `nvidia-smi` output for GPU name + compute capability + VRAM.
+ *     The addon probe is authoritative for "is CUDA end-to-end usable";
+ *     `nvidia-smi` fills in the diagnostic fields. See the CUDA Backend
+ *     section in docs/INIT_STRATEGY.md for the full contract.
  */
 
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
+import { resolveNativeAddon } from './native-resolver.js';
+import { createRequire } from 'node:module';
 
 let _cached = null;
 
@@ -84,6 +92,108 @@ function sysctlBrandString() {
 const MIN_APPLE_GENERATION_FOR_CASCADE = 3;
 
 /**
+ * Minimum NVIDIA compute capability (as a float) we target for the CUDA
+ * backend.
+ *
+ * Why 7.0:
+ *   - SM 6.x (Pascal, e.g. GTX 1080) has no tensor cores. Candle's
+ *     stock matmul on CUDA cores runs slower than modern CPU BLAS for
+ *     our small (b≤64, s≤1024) shapes. Net regression vs CPU.
+ *   - SM 7.0 (Volta, V100) has first-gen tensor cores + F16 matmul with
+ *     F32 accumulate. Works, but we pin F32 dtype here because F16 has
+ *     precision issues on this generation.
+ *   - SM 7.5 (Turing, T4/RTX 20xx) has second-gen tensor cores. F16
+ *     works cleanly with F32 accumulate via cuBLASLt / cuDNN.
+ *   - SM 8.0+ (Ampere/Ada/Hopper) adds BF16 tensor cores. BF16 is the
+ *     default on this tier, matching the Metal story.
+ *
+ * See the per-CC dtype policy in
+ * crates/sweet-search-native/src/inference/mod.rs::optimal_dtype for
+ * the full mapping. JS layer is responsible for parsing the
+ * `nvidia-smi` compute_cap output and setting
+ * SWEET_SEARCH_CUDA_COMPUTE_CAP before the addon loads models.
+ */
+const MIN_CUDA_COMPUTE_CAPABILITY = 7.0;
+
+/**
+ * Parse `nvidia-smi --query-gpu=name,compute_cap,memory.total,driver_version`
+ * CSV output into a structured descriptor. Returns `null` on anything
+ * unparseable — the surrounding `detectNvidiaGpu()` treats that as
+ * "no GPU" just like a missing `nvidia-smi` binary.
+ *
+ * Expected first data line:
+ *   "NVIDIA GeForce RTX 3090, 8.6, 24576, 535.129.03"
+ */
+export function parseNvidiaSmiOutput(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const firstLine = raw.split(/\r?\n/).find((l) => l.trim().length > 0);
+  if (!firstLine) return null;
+  const cols = firstLine.split(',').map((s) => s.trim());
+  if (cols.length < 4) return null;
+  const [name, computeCapability, memoryMB, driverVersion] = cols;
+  const memInt = parseInt(memoryMB, 10);
+  const ccFloat = parseFloat(computeCapability);
+  if (!name || !Number.isFinite(ccFloat) || !Number.isFinite(memInt)) return null;
+  return {
+    name,
+    computeCapability,            // string "8.6" — kept as string for faithful passthrough
+    computeCapabilityFloat: ccFloat, // float for comparisons
+    memoryMB: memInt,
+    driverVersion,
+  };
+}
+
+/**
+ * Shell out to `nvidia-smi` on Linux and return the first GPU's metadata.
+ * Silent failure (returns `null`) on any of: non-Linux host, missing
+ * binary, non-zero exit, malformed output. Bounded at 2s timeout so a
+ * hung GPU doesn't block init.
+ */
+function detectNvidiaGpu() {
+  if (process.platform !== 'linux') return null;
+  try {
+    const out = execFileSync(
+      'nvidia-smi',
+      [
+        '--query-gpu=name,compute_cap,memory.total,driver_version',
+        '--format=csv,noheader,nounits',
+      ],
+      {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 2000,
+      },
+    );
+    return parseNvidiaSmiOutput(out);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Probe the native Rust addon for CUDA readiness. Returns the boolean
+ * reported by `native_cuda_available()` or `null` when the addon is
+ * missing / doesn't expose that export (older builds).
+ *
+ * The addon may return `Some(false)` when the `cuda` feature IS built in
+ * but the runtime driver is missing — in that case we know the package
+ * is the `-cuda` variant but libcuda.so didn't load, which is worth
+ * surfacing to the user.
+ */
+function probeAddonCudaAvailability() {
+  try {
+    const addonPath = resolveNativeAddon();
+    if (!addonPath) return null;
+    const addonRequire = createRequire(import.meta.url);
+    const addon = addonRequire(addonPath);
+    if (typeof addon?.nativeCudaAvailable !== 'function') return null;
+    return Boolean(addon.nativeCudaAvailable());
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Detect the current hardware capability. Returns a stable, read-only
  * descriptor that callers use to pick inference backends and decide
  * which artifacts to fetch at init time.
@@ -97,8 +207,14 @@ const MIN_APPLE_GENERATION_FOR_CASCADE = 3;
  *   appleSilicon                 — parsed chip descriptor or null
  *   coremlCascadeEligible        — boolean; M3+ darwin-arm64 only
  *   coremlCascadeReason          — human string explaining eligible/not
- *   candleGpuBackend             — "metal" | null (future: "cuda")
- *   inferenceBackendPreference   — "coreml-cascade" | "candle-metal" | "candle-cpu"
+ *   nvidiaGpu                    — { name, computeCapability, computeCapabilityFloat,
+ *                                    memoryMB, driverVersion } | null
+ *   cudaAddonEnabled             — boolean; addon built with cuda feature + libcuda.so loaded
+ *   cudaAvailable                — boolean; cudaAddonEnabled AND nvidiaGpu AND CC ≥ 7.0
+ *   cudaReason                   — human string explaining eligible/not
+ *   candleGpuBackend             — "metal" | "cuda" | null
+ *   inferenceBackendPreference   — "coreml-cascade" | "candle-metal"
+ *                                  | "candle-cuda" | "candle-cpu"
  */
 export function detectHardwareCapability() {
   if (_cached) return _cached;
@@ -130,20 +246,63 @@ export function detectHardwareCapability() {
     coremlCascadeReason = `${brandString}: ${appleSilicon.family} ANE suitable for cascade`;
   }
 
-  // Candle GPU backend availability is independent of CoreML cascade.
+  // NVIDIA GPU detection — Linux only. `nvidia-smi` tells us what's
+  // installed; the addon probe tells us whether the installed native
+  // package actually knows how to dispatch to it.
+  const nvidiaGpu = detectNvidiaGpu();
+  const addonCudaProbe = probeAddonCudaAvailability();
+  const cudaAddonEnabled = addonCudaProbe === true;
+
+  // Diagnostic opt-out: SWEET_SEARCH_CUDA=0 force-disables CUDA even on
+  // an otherwise-eligible host. Parallels SWEET_SEARCH_COREML_CASCADE=0.
+  const cudaForceDisabled = ['0', 'false', 'off'].includes(
+    (process.env.SWEET_SEARCH_CUDA ?? '').toLowerCase(),
+  );
+
+  let cudaAvailable = false;
+  let cudaReason;
+  if (cudaForceDisabled) {
+    cudaReason = 'CUDA force-disabled via SWEET_SEARCH_CUDA=0';
+  } else if (platform !== 'linux') {
+    cudaReason = `CUDA native backend ships for Linux only (current platform: ${platform})`;
+  } else if (!nvidiaGpu) {
+    cudaReason = 'No NVIDIA GPU detected (nvidia-smi missing or no device 0)';
+  } else if (nvidiaGpu.computeCapabilityFloat < MIN_CUDA_COMPUTE_CAPABILITY) {
+    cudaReason = `${nvidiaGpu.name}: compute capability ${nvidiaGpu.computeCapability} below threshold (${MIN_CUDA_COMPUTE_CAPABILITY}+ required)`;
+  } else if (addonCudaProbe === null) {
+    cudaReason = `${nvidiaGpu.name} detected, but the installed native package does not expose a CUDA probe — reinstall with @sweet-search/native-linux-${arch === 'arm64' ? 'arm64' : 'x64'}-gnu-cuda to enable GPU indexing`;
+  } else if (addonCudaProbe === false) {
+    cudaReason = `${nvidiaGpu.name} detected, but the native addon reports Device::new_cuda(0) failed (driver / libcuda.so mismatch?)`;
+  } else {
+    cudaAvailable = true;
+    cudaReason = `${nvidiaGpu.name} (compute ${nvidiaGpu.computeCapability}, ${nvidiaGpu.memoryMB} MB, driver ${nvidiaGpu.driverVersion}) — suitable for candle-cuda`;
+  }
+
+  // Candle GPU backend availability.
   //   darwin-arm64 → metal (bundled with the darwin-arm64 native package)
-  //   darwin-x64   → null  (no useful GPU; falls through to candle CPU)
-  //   linux-*-gnu  → null  (CUDA backend not in the current native addon builds —
-  //                         see INIT_STRATEGY.md cross-target validation)
-  //   anything else → null
+  //   linux-*-gnu + NVIDIA + cuda-enabled addon → cuda
+  //   everything else → null (falls through to candle CPU)
   let candleGpuBackend = null;
   if (platform === 'darwin' && arch === 'arm64') {
     candleGpuBackend = 'metal';
+  } else if (cudaAvailable) {
+    candleGpuBackend = 'cuda';
   }
 
-  const inferenceBackendPreference = coremlCascadeEligible
-    ? 'coreml-cascade'
-    : (candleGpuBackend ? `candle-${candleGpuBackend}` : 'candle-cpu');
+  // Preference order: coreml-cascade > candle-metal > candle-cuda > candle-cpu.
+  // coreml-cascade and candle-cuda never co-exist on the same host
+  // (one is darwin, the other is linux), so the ordering is orthogonal
+  // in practice.
+  let inferenceBackendPreference;
+  if (coremlCascadeEligible) {
+    inferenceBackendPreference = 'coreml-cascade';
+  } else if (candleGpuBackend === 'metal') {
+    inferenceBackendPreference = 'candle-metal';
+  } else if (candleGpuBackend === 'cuda') {
+    inferenceBackendPreference = 'candle-cuda';
+  } else {
+    inferenceBackendPreference = 'candle-cpu';
+  }
 
   _cached = Object.freeze({
     platform,
@@ -154,6 +313,10 @@ export function detectHardwareCapability() {
     appleSilicon,
     coremlCascadeEligible,
     coremlCascadeReason,
+    nvidiaGpu,
+    cudaAddonEnabled,
+    cudaAvailable,
+    cudaReason,
     candleGpuBackend,
     inferenceBackendPreference,
   });

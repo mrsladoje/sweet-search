@@ -250,7 +250,30 @@ impl NomicBertAttention {
         // the attention mask. For padded inputs or masked layers that would
         // silently break correctness. Require the full (masked) kernel by
         // gating on seq_len > 8; naive handles the short-seq case.
-        let use_sdpa = matches!(hidden_states.device(), Device::Metal(_)) && seq_len > 8;
+        //
+        // Backend enablement:
+        //   - Metal: always on when available (candle-nn SDPA via MLX kernels).
+        //   - CUDA:  only when the `flash-attn` Cargo feature is compiled in
+        //            AND the runtime compute capability is Ampere+ (SM 8.0+).
+        //            flash-attn-v2 kernels have no Turing/Volta path — running
+        //            them on pre-Ampere crashes at dispatch. Runtime-gating on
+        //            the env-propagated CC lets a single -cuda binary cover
+        //            SM 7.0–9.0, with pre-Ampere falling through to the naive
+        //            matmul path (slower but correct).
+        let use_sdpa = {
+            let _ = hidden_states;
+            let mut yes = false;
+            #[cfg(feature = "metal")]
+            {
+                yes |= matches!(hidden_states.device(), Device::Metal(_));
+            }
+            #[cfg(feature = "flash-attn")]
+            {
+                yes |= matches!(hidden_states.device(), Device::Cuda(_))
+                    && super::cuda_compute_capability_from_env() >= 8.0;
+            }
+            yes && seq_len > 8
+        };
 
         let attn_output = if use_sdpa {
             // Fused SDPA kernel: softmax(qk^T * scale + mask) @ v in one op.

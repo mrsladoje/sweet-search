@@ -43,6 +43,20 @@ import {
  */
 export const GPU_ARMING_MIN_FILES = 20;
 
+/**
+ * Translate a hardware-capability `inferenceBackendPreference` string into
+ * the deviceKind that the native addon expects ("cpu" | "metal" | "cuda").
+ *
+ * Pure function, exported for unit testing. Keeps the mapping in one place
+ * so adding a future backend (e.g. "candle-rocm") is a single-location
+ * edit that both init-time reporting and runtime dispatch consume.
+ */
+export function selectDeviceKindFromPreference(pref) {
+  if (pref === 'coreml-cascade' || pref === 'candle-metal') return 'metal';
+  if (pref === 'candle-cuda') return 'cuda';
+  return 'cpu';
+}
+
 let _gpuDiag = null;
 let _cpuDiag = null;
 
@@ -76,12 +90,7 @@ export async function initIndexGpuPool({ includeLi = true } = {}) {
   const hw = detectHardwareCapability();
   const pref = hw.inferenceBackendPreference;
 
-  let deviceKind;
-  if (pref === 'coreml-cascade' || pref === 'candle-metal') {
-    deviceKind = 'metal';
-  } else {
-    deviceKind = 'cpu';
-  }
+  const deviceKind = selectDeviceKindFromPreference(pref);
 
   let embedLoadMs = 0;
   let embedWarmMs = 0;

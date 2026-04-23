@@ -32,6 +32,23 @@ describe('parseInitArgs', () => {
     expect(result.force).toBe(false);
     expect(result.verbose).toBe(false);
     expect(result.help).toBe(false);
+    expect(result.skipCuda).toBe(false);
+  });
+
+  it('parses --skip-cuda', () => {
+    expect(parseInitArgs(['--skip-cuda']).skipCuda).toBe(true);
+  });
+
+  it('--skip-cuda is false by default', () => {
+    expect(parseInitArgs(['--profile', 'full']).skipCuda).toBe(false);
+  });
+
+  it('combines --skip-cuda with other flags', () => {
+    const result = parseInitArgs(['--skip-cuda', '--skip-coreml-cascade', '--skip-dedup', '-v']);
+    expect(result.skipCuda).toBe(true);
+    expect(result.skipCoremlCascade).toBe(true);
+    expect(result.skipDedup).toBe(true);
+    expect(result.verbose).toBe(true);
   });
 
   it('parses --profile core', () => {

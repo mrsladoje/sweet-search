@@ -265,6 +265,166 @@ takes out the `.mlmodelc` compiled siblings next to each `.mlpackage`.
 
 ---
 
+## CUDA Backend (Linux + NVIDIA)
+
+The CUDA path is a candle backend toggle — fundamentally simpler than the
+CoreML variant cascade. Candle JITs CUDA kernels via cudarc + candle-kernels,
+so there is no pre-traced `.mlpackage` equivalent to fetch, no variant JSON,
+no HuggingFace tarballs. Installation is an npm optional-dependency decision;
+runtime selection is a `nvidia-smi` probe + an addon-side `Device::new_cuda(0)`
+check.
+
+### Packaging
+
+CUDA support ships as SEPARATE platform packages alongside the standard
+CPU-only Linux variants:
+
+| Package | Target | Built with |
+|---------|--------|-----------|
+| `@sweet-search/native-linux-x64-gnu` | Linux x86-64 glibc | CPU only |
+| `@sweet-search/native-linux-x64-gnu-cuda` | Linux x86-64 glibc + CUDA | `cuda,flash-attn,accelerate` |
+| `@sweet-search/native-linux-arm64-gnu` | Linux arm64 glibc | CPU only |
+| `@sweet-search/native-linux-arm64-gnu-cuda` | Linux arm64 glibc + CUDA (Jetson, Grace) | `cuda,flash-attn,accelerate` |
+
+Why separate rather than a single auto-fallback binary: candle 0.10 uses
+`cudarc` with dynamic-linking by default. A binary built with the `cuda`
+feature fails at load time if `libcuda.so` is missing — it is NOT a
+graceful CPU fallback. Shipping CUDA support in the main Linux package
+would break every Linux install without an NVIDIA driver. Separate
+packages give the user explicit opt-in with a clear failure mode.
+
+`core/infrastructure/native-resolver.js` prefers the `-cuda` variant on
+Linux hosts when resolvable. If `libcuda.so` is absent at runtime, the
+addon load will fail; `hardware-capability.js` surfaces this as
+`cudaAddonEnabled: true, cudaAvailable: false` with a message pointing
+the user at the standard CPU-only package.
+
+### Hardware gating
+
+`core/infrastructure/hardware-capability.js::detectHardwareCapability()`
+combines two signals:
+
+1. **`nvidia-smi` probe** (authoritative for "what GPU is installed"): runs
+   `nvidia-smi --query-gpu=name,compute_cap,memory.total,driver_version --format=csv,noheader,nounits`
+   with a 2-second timeout. Output is parsed by `parseNvidiaSmiOutput()`.
+2. **Addon probe** (authoritative for "is CUDA usable end-to-end"): calls
+   the Rust NAPI export `native_cuda_available()` which returns:
+   - `Some(true)` — built with `cuda` feature AND `Device::new_cuda(0)` succeeds
+   - `Some(false)` — built with `cuda` but device init failed (driver issue)
+   - `null` — addon is the CPU-only variant, no `cuda` feature compiled in
+
+CUDA is marked available iff:
+
+- `platform === 'linux'`
+- `nvidia-smi` returns a valid GPU row
+- Compute capability ≥ 7.0 (`MIN_CUDA_COMPUTE_CAPABILITY`)
+- Addon probe returns `Some(true)`
+- `SWEET_SEARCH_CUDA` is not set to `0` / `false` / `off`
+
+Rationale for SM 7.0 floor: SM 6.x Pascal has no tensor cores; candle's
+matmul on CUDA cores runs slower than modern CPU BLAS at our batch/seq
+shapes. SM 7.0 (Volta) has first-gen tensor cores with F16 matmul
+(F32 accumulate). SM 7.5 (Turing) adds cleaner F16 tensor cores. SM 8.0+
+(Ampere/Ada/Hopper) adds BF16.
+
+### Per-compute-capability dtype policy
+
+Implemented in `crates/sweet-search-native/src/inference/mod.rs::optimal_dtype`.
+The JS layer sets `SWEET_SEARCH_CUDA_COMPUTE_CAP=<cc>` from the `nvidia-smi`
+result before loading models; the Rust side reads it to pick:
+
+| Compute cap | GPU examples | Default dtype | Rationale |
+|---|---|---|---|
+| ≥ 8.0 | A100, H100, L4, RTX 3090/4090 | **BF16** | Ampere+ BF16 tensor cores with F32 accumulators. Matches Metal's BF16 story — keeps F32 exponent range, halves memory bandwidth |
+| 7.5 | T4, RTX 2080 | **F16** | Turing tensor cores F16 × F16 → F32 accumulate via cuBLASLt. BF16 is NOT supported in hardware |
+| 7.0 | V100 | **F32** | First-gen tensor cores have known F16 precision issues; F32 is safer |
+
+`SWEET_SEARCH_NATIVE_DTYPE=bf16|f16|f32` overrides the automatic choice.
+The Metal F16 MRR regression (82%→64%, April 2026) was Metal-specific and
+does not automatically replicate to CUDA (different kernels, different
+accumulators), but the parity gate below is still non-negotiable.
+
+### Parity gate
+
+Before shipping any CUDA build, run:
+
+```bash
+node scripts/parity-cuda.js
+```
+
+on the target GPU. It encodes a fixed corpus on CUDA and CPU, computes
+per-pair cosine similarity, and asserts min ≥ 0.999 / mean ≥ 0.9998 for
+both embedding and per-token LI output. Exit codes:
+
+- `0` — parity passed, ship-ready
+- `1` — parity failed, do not ship
+- `2` — CUDA not available on this host, skipped
+
+### Runtime wiring
+
+`core/infrastructure/native-inference.js` handles the CUDA device-kind
+plumbing:
+
+- `loadNativeEmbeddingModelWithDevice('cuda')` and
+  `loadNativeLiModelWithDevice('cuda')` skip cascade resolution (CUDA has
+  no cascade), propagate `SWEET_SEARCH_CUDA_COMPUTE_CAP` to the addon env,
+  and pass `'cuda'` through to `NativeEmbeddingModel.loadWithDevice` /
+  `NativeLateInteractionModel.loadWithDevice`.
+- `core/indexing/model-pool.js::initIndexGpuPool()` picks `deviceKind='cuda'`
+  when `hw.inferenceBackendPreference === 'candle-cuda'`.
+- No env-var bypass at the Rust boundary — all configuration flows through
+  JS infrastructure, mirroring the CoreML routing contract.
+
+Concurrency: candle's CUDA backend is thread-safe for forward passes (unlike
+Metal). A process-wide `cuda_lock()` guards ONLY weight loading in
+`embedding_model.rs::load_on_device` and `li_model.rs::load_on_device`,
+since candle 0.10 has a known H2D-copy race during concurrent
+`VarBuilder::from_mmaped_safetensors` calls. `forward()` runs lock-free.
+
+### Uninstall
+
+No changes required. CUDA has no managed cache (unlike the CoreML cascade).
+Removing the `-cuda` package via `npm uninstall` cleans up the native
+binary; `scripts/uninstall.js` is a no-op for CUDA.
+
+### Opt-outs
+
+- `--skip-cuda` on `sweet-search init` — translates to
+  `SWEET_SEARCH_CUDA=0` for the current process
+- `SWEET_SEARCH_CUDA=0` env var — force-disables CUDA detection; indexing
+  falls back to candle-cpu
+- `SWEET_SEARCH_NATIVE_DEVICE=cpu` — forces the Rust addon to return CPU
+  from `select_device()` regardless of hardware
+
+### Config persistence
+
+`.sweet-search/config.json` records CUDA state under `runtime.hardware`:
+
+```json
+{
+  "runtime": {
+    "hardware": {
+      "platform": "linux",
+      "arch": "x64",
+      "nvidiaGpu": {
+        "name": "NVIDIA GeForce RTX 3090",
+        "computeCapability": "8.6",
+        "computeCapabilityFloat": 8.6,
+        "memoryMB": 24576,
+        "driverVersion": "535.129.03"
+      },
+      "cudaAddonEnabled": true,
+      "cudaAvailable": true,
+      "cudaReason": "NVIDIA GeForce RTX 3090 (compute 8.6, 24576 MB, driver 535.129.03) — suitable for candle-cuda",
+      "candleGpuBackend": "cuda",
+      "inferenceBackendPreference": "candle-cuda"
+    }
+  }
+}
+```
+
+---
+
 ## Init Command Behavior
 
 `scripts/init.js` is idempotent. Re-running is always safe.
@@ -317,7 +477,8 @@ Sweet Search init complete
 ```
 
 Flags: `--profile <core|full>`, `--verify-deep`, `--force`, `--verbose`,
-`--build-coreml-cascade`, `--skip-coreml-cascade`, `--skip-dedup`.
+`--build-coreml-cascade`, `--skip-coreml-cascade`, `--skip-dedup`,
+`--skip-cuda`.
 
 ### Near-Duplicate Dedup (SimHash + MinHash-LSH)
 
@@ -415,8 +576,13 @@ Three root causes were found and fixed:
 2. **Candle Metal (Apple Silicon)**: always-loaded backbone. Handles every
    batch the cascade doesn't fit, and runs as the full path on non-M3
    hardware where the cascade is ineligible.
-3. **Candle CPU (Linux / darwin-x64)**: Accelerate BLAS on macOS, stock CPU
-   kernels elsewhere. Currently the only native path outside Apple Silicon.
+3. **Candle CUDA (Linux + NVIDIA, SM 7.0+)**: Ampere BF16 / Turing F16 /
+   Volta F32 via candle-cuda with optional fused SDPA on Ampere+
+   (flash-attn). Requires the `-cuda` native package AND libcuda.so
+   present at load time. See the CUDA Backend section above.
+4. **Candle CPU (Linux / darwin-x64 / Linux without NVIDIA)**: Accelerate
+   BLAS on macOS, stock CPU kernels elsewhere. Baseline path for any
+   platform without a GPU acceleration backend.
 
 ---
 

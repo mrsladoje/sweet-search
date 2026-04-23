@@ -143,7 +143,24 @@ impl ModernBertAttention {
         // the attention mask. For ModernBERT that drops the local-window
         // restriction and produces garbage. Use SDPA only when the full
         // (masked) kernel is selected; fall back to naive for short seqs.
-        let use_sdpa = matches!(hidden_states.device(), Device::Metal(_)) && seq_len > 8;
+        //
+        // Backend enablement: Metal always, CUDA gated on compile-time
+        // flash-attn feature AND runtime compute capability ≥ 8.0.
+        // See the matching comment in nomic_bert_sdpa.rs for the rationale.
+        let use_sdpa = {
+            let _ = hidden_states;
+            let mut yes = false;
+            #[cfg(feature = "metal")]
+            {
+                yes |= matches!(hidden_states.device(), Device::Metal(_));
+            }
+            #[cfg(feature = "flash-attn")]
+            {
+                yes |= matches!(hidden_states.device(), Device::Cuda(_))
+                    && super::cuda_compute_capability_from_env() >= 8.0;
+            }
+            yes && seq_len > 8
+        };
 
         let xs = if use_sdpa {
             // Fused SDPA: softmax(q @ k^T * scale + mask) @ v as a single Metal kernel.

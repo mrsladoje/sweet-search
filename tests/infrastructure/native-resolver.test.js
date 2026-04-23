@@ -223,4 +223,129 @@ describe('native-resolver', () => {
       }
     });
   });
+
+  describe('CUDA package preference (Linux)', () => {
+    // Simulate a Linux host by overriding process.platform / process.arch
+    // for each test. The resolver is DI-friendly (accepts rootDir +
+    // resolvePackageDir), so we don't need to actually be on Linux.
+    function withLinuxEnv(arch, fn) {
+      const origPlatform = process.platform;
+      const origArch = process.arch;
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+      Object.defineProperty(process, 'arch', { value: arch, configurable: true });
+      try {
+        return fn();
+      } finally {
+        Object.defineProperty(process, 'platform', { value: origPlatform, configurable: true });
+        Object.defineProperty(process, 'arch', { value: origArch, configurable: true });
+      }
+    }
+
+    it('exposes cudaPackageName on Linux targets from getPlatformInfo', async () => {
+      const { getPlatformInfo } = await loadResolver();
+      withLinuxEnv('x64', () => {
+        const info = getPlatformInfo();
+        expect(info).not.toBeNull();
+        expect(info.packageName).toBe('@sweet-search/native-linux-x64-gnu');
+        expect(info.cudaPackageName).toBe('@sweet-search/native-linux-x64-gnu-cuda');
+      });
+      withLinuxEnv('arm64', () => {
+        const info = getPlatformInfo();
+        expect(info.cudaPackageName).toBe('@sweet-search/native-linux-arm64-gnu-cuda');
+      });
+    });
+
+    it('does NOT expose cudaPackageName on darwin', async () => {
+      const { getPlatformInfo } = await loadResolver();
+      if (process.platform === 'darwin') {
+        const info = getPlatformInfo();
+        expect(info.cudaPackageName).toBeNull();
+      }
+    });
+
+    it('prefers the -cuda addon when BOTH packages resolve on linux', async () => {
+      const { resolveNativeAddon } = await loadResolver();
+      withLinuxEnv('x64', () => {
+        withTempRoot((tempRoot) => {
+          const cudaPkgDir = join(tempRoot, 'fake-node-modules', '@sweet-search', 'native-linux-x64-gnu-cuda');
+          const stdPkgDir = join(tempRoot, 'fake-node-modules', '@sweet-search', 'native-linux-x64-gnu');
+          const cudaAddon = join(cudaPkgDir, 'sweet-search-native.node');
+          const stdAddon = join(stdPkgDir, 'sweet-search-native.node');
+          touch(join(cudaPkgDir, 'package.json'));
+          touch(join(stdPkgDir, 'package.json'));
+          touch(cudaAddon);
+          touch(stdAddon);
+
+          const resolvePackageDir = (name) => {
+            if (name.endsWith('-cuda')) return cudaPkgDir;
+            return stdPkgDir;
+          };
+
+          const result = resolveNativeAddon({ rootDir: tempRoot, resolvePackageDir });
+          expect(result).toBe(cudaAddon);
+        });
+      });
+    });
+
+    it('falls back to standard addon when -cuda package is absent', async () => {
+      const { resolveNativeAddon } = await loadResolver();
+      withLinuxEnv('x64', () => {
+        withTempRoot((tempRoot) => {
+          const stdPkgDir = join(tempRoot, 'fake-node-modules', '@sweet-search', 'native-linux-x64-gnu');
+          const stdAddon = join(stdPkgDir, 'sweet-search-native.node');
+          touch(join(stdPkgDir, 'package.json'));
+          touch(stdAddon);
+
+          // Simulate -cuda package missing: throw from resolvePackageDir for
+          // that specific name, succeed for the standard name.
+          const resolvePackageDir = (name) => {
+            if (name.endsWith('-cuda')) throw new Error('package not installed');
+            return stdPkgDir;
+          };
+
+          const result = resolveNativeAddon({ rootDir: tempRoot, resolvePackageDir });
+          expect(result).toBe(stdAddon);
+        });
+      });
+    });
+
+    it('prefers local packages/ -cuda template over npm package', async () => {
+      const { resolveNativeAddon } = await loadResolver();
+      withLinuxEnv('x64', () => {
+        withTempRoot((tempRoot) => {
+          const localCudaPkg = join(tempRoot, 'packages', 'native-linux-x64-gnu-cuda', 'sweet-search-native.node');
+          const localStdPkg = join(tempRoot, 'packages', 'native-linux-x64-gnu', 'sweet-search-native.node');
+          touch(localCudaPkg);
+          touch(localStdPkg);
+
+          // Resolver should pick local -cuda template even though both exist.
+          const result = resolveNativeAddon({
+            rootDir: tempRoot,
+            resolvePackageDir: () => { throw new Error('unused'); },
+          });
+          expect(result).toBe(localCudaPkg);
+        });
+      });
+    });
+
+    it('applies the same -cuda preference to resolveNativeBinary', async () => {
+      const { resolveNativeBinary } = await loadResolver();
+      withLinuxEnv('x64', () => {
+        withTempRoot((tempRoot) => {
+          const cudaPkgDir = join(tempRoot, 'fake-node-modules', '@sweet-search', 'native-linux-x64-gnu-cuda');
+          const stdPkgDir = join(tempRoot, 'fake-node-modules', '@sweet-search', 'native-linux-x64-gnu');
+          const cudaBin = join(cudaPkgDir, 'sweet-search');
+          const stdBin = join(stdPkgDir, 'sweet-search');
+          touch(join(cudaPkgDir, 'package.json'));
+          touch(join(stdPkgDir, 'package.json'));
+          touch(cudaBin);
+          touch(stdBin);
+
+          const resolvePackageDir = (name) => (name.endsWith('-cuda') ? cudaPkgDir : stdPkgDir);
+          const result = resolveNativeBinary({ rootDir: tempRoot, resolvePackageDir });
+          expect(result).toBe(cudaBin);
+        });
+      });
+    });
+  });
 });
