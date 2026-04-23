@@ -16,7 +16,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import {
-  getModelEntry, getModelsForProfile, MODEL_REGISTRY, fetchModel, getModelCacheDir,
+  getModelEntry, getModelsForProfile, getSkippedOptInModels, MODEL_REGISTRY, fetchModel, getModelCacheDir,
   getPlatformInfo, resolveNativeAddon, resolveNativeBinary,
   detectHardwareCapability,
   getCoremlCascadeState, getCoremlCascadeReport, fetchCoremlCascade,
@@ -653,7 +653,22 @@ export async function runInit(args) {
 
   // 7. Download models for profile
   const modelKeys = getModelsForProfile(profile);
+  const skippedOptIns = getSkippedOptInModels(profile);
   let modelResults = new Map();
+
+  // Tell the user once which optional models are being skipped. This is
+  // NOT an error — these are opt-in features (e.g. cross-encoder
+  // rerankers disabled by default since commit 43a61eb). Without this
+  // line, init silently omitting them looks like a missing-model bug.
+  if (skippedOptIns.length > 0) {
+    for (const skipped of skippedOptIns) {
+      process.stderr.write(
+        `[init] Skipping opt-in model "${skipped.key}" — ` +
+          `set ${skipped.envVars.map((v) => v + '=1').join(' or ')} to install. ` +
+          `(${skipped.reason})\n`,
+      );
+    }
+  }
 
   if (modelKeys.length > 0) {
     process.stderr.write(`[init] Downloading models for profile "${profile}"...\n`);
