@@ -43,7 +43,17 @@ export const MODEL_REGISTRY = {
   'gte-reranker-modernbert-base': {
     hfId: 'Alibaba-NLP/gte-reranker-modernbert-base',
     profile: 'full',
-    description: 'Local reranker (INT8 quantized)',
+    description: 'Local reranker (INT8 quantized) — opt-in',
+    // Disabled by default since commit 43a61eb (2026-04-22): measured
+    // MRR-neutral on gencodesearchnet (82.15% with vs without) at 3x
+    // latency cost. init should NOT fetch this 143 MB model unless
+    // the user explicitly opts in via SWEET_SEARCH_ENABLE_LOCAL_RERANKER=1.
+    // Infrastructure (local-reranker.js, this registry entry) remains
+    // intact so the CE can be swapped back in without re-adding code.
+    optIn: {
+      envVars: ['SWEET_SEARCH_ENABLE_LOCAL_RERANKER'],
+      reason: 'Local cross-encoder reranker — disabled by default (MRR-neutral at 3x latency, see commit 43a61eb)',
+    },
     files: [
       { path: 'onnx/model_quantized.onnx', sizeBytes: 150871837, sha256: 'ecc6a0ae67cee3d898167802383112d9185ca9250e07bd5d1fa65019b050179d' },
       { path: 'tokenizer.json', sizeBytes: 3583499, sha256: null },
@@ -96,7 +106,16 @@ export const MODEL_REGISTRY = {
   'ms-marco-tinybert': {
     hfId: 'Xenova/ms-marco-TinyBERT-L-2-v2',
     profile: 'full',
-    description: 'FlashRank cross-encoder reranker (quantized, ~4.3MB)',
+    description: 'FlashRank cross-encoder reranker (quantized, ~4.3MB) — opt-in',
+    // Disabled by default since commits 43a61eb + d92a5a7 (2026-04-22):
+    // the MaxSim+CE cascade is no longer active in the default config
+    // (CASCADE_CONFIG.enabled=false, shadowMode=false). init should not
+    // fetch this model unless the user explicitly opts into cascade or
+    // shadow mode.
+    optIn: {
+      envVars: ['SWEET_SEARCH_CASCADE_ENABLED', 'SWEET_SEARCH_CASCADE_SHADOW'],
+      reason: 'FlashRank cross-encoder for MaxSim+CE cascade — disabled by default (see commits 43a61eb, d92a5a7)',
+    },
     files: [
       { path: 'onnx/model_quantized.onnx', sizeBytes: 4496298, sha256: '026c2ec3257cd351696e45bbd6040bb83cf818ba89059b4344bd6350138b62ce' },
       { path: 'tokenizer.json', sizeBytes: 711396, sha256: null },
@@ -130,10 +149,66 @@ export function getModelEntry(key) {
 }
 
 /**
- * Get all model keys for a given profile.
+ * Truthy env-flag parser. Matches the conventions used across the codebase:
+ *   "1" / "true" / "on" / "yes" (case-insensitive) → true
+ *   anything else / unset                           → false
+ */
+function isEnvTruthy(name) {
+  const raw = (process.env[name] ?? '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'on' || raw === 'yes';
+}
+
+/**
+ * Check whether an opt-in model should be included given the current
+ * environment. Opt-in entries declare a list of env vars; if ANY is
+ * truthy, the model is pulled in. Entries without `optIn` are always
+ * considered enabled (standard models).
+ */
+export function isModelEnabled(entry) {
+  if (!entry?.optIn) return true;
+  const vars = entry.optIn.envVars ?? [];
+  return vars.some((v) => isEnvTruthy(v));
+}
+
+/**
+ * Get all model keys for a given profile, excluding opt-in models
+ * whose enabling env vars are unset.
+ *
+ * Currently-skipped-by-default models (since 2026-04-22 ranking refactor):
+ *   - gte-reranker-modernbert-base  — needs SWEET_SEARCH_ENABLE_LOCAL_RERANKER=1
+ *   - ms-marco-tinybert             — needs SWEET_SEARCH_CASCADE_ENABLED=1
+ *                                      or SWEET_SEARCH_CASCADE_SHADOW=1
+ *
+ * This matches the runtime behavior: the ranking config defaults to
+ * these rerankers OFF, so init shouldn't fetch their ~155 MB of weights
+ * for no reason. The models stay in the registry (with SHA256 and size)
+ * so flipping the opt-in env var on any host fetches them on the next init.
  */
 export function getModelsForProfile(profile) {
   return Object.entries(MODEL_REGISTRY)
-    .filter(([, entry]) => entry.profile === profile || profile === 'offline-max')
+    .filter(([, entry]) => {
+      const inProfile = entry.profile === profile || profile === 'offline-max';
+      if (!inProfile) return false;
+      return isModelEnabled(entry);
+    })
     .map(([key]) => key);
+}
+
+/**
+ * Get the keys of models currently SKIPPED by `getModelsForProfile(profile)`
+ * because their opt-in env vars aren't set. Used by init to print a
+ * one-line summary so users know optional models exist without being
+ * surprised they weren't installed.
+ */
+export function getSkippedOptInModels(profile) {
+  return Object.entries(MODEL_REGISTRY)
+    .filter(([, entry]) => {
+      const inProfile = entry.profile === profile || profile === 'offline-max';
+      return inProfile && entry.optIn && !isModelEnabled(entry);
+    })
+    .map(([key, entry]) => ({
+      key,
+      envVars: entry.optIn.envVars,
+      reason: entry.optIn.reason,
+    }));
 }

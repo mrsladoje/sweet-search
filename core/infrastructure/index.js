@@ -16,7 +16,7 @@ export { CodeGraphRepository } from './code-graph-repository.js';
 
 // Model management
 export { fetchModel, fetchModelFile, resolveModelFile, computeFileHash, getModelCacheDir, isCacheValid } from './model-fetcher.js';
-export { MODEL_REGISTRY, getModelEntry, getModelsForProfile } from './model-registry.js';
+export { MODEL_REGISTRY, getModelEntry, getModelsForProfile, getSkippedOptInModels, isModelEnabled } from './model-registry.js';
 
 // Native platform resolution
 export { resolveNativeAddon, resolveNativeBinary, getPlatformInfo } from './native-resolver.js';

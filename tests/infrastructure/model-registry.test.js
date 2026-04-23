@@ -38,16 +38,58 @@ describe('model-registry', () => {
     expect(getModelEntry('nonexistent')).toBeNull();
   });
 
-  it('getModelsForProfile returns full-profile models', () => {
-    const full = getModelsForProfile('full');
-    expect(full).toContain('lateon-code');
-    expect(full).toContain('gte-reranker-modernbert-base');
-    expect(full).toContain('coderankembed-int8');
+  it('getModelsForProfile returns core full-profile models by default', () => {
+    // Clear any opt-in env vars so we see the real default
+    const saved = {
+      local: process.env.SWEET_SEARCH_ENABLE_LOCAL_RERANKER,
+      cascade: process.env.SWEET_SEARCH_CASCADE_ENABLED,
+      shadow: process.env.SWEET_SEARCH_CASCADE_SHADOW,
+    };
+    delete process.env.SWEET_SEARCH_ENABLE_LOCAL_RERANKER;
+    delete process.env.SWEET_SEARCH_CASCADE_ENABLED;
+    delete process.env.SWEET_SEARCH_CASCADE_SHADOW;
+    try {
+      const full = getModelsForProfile('full');
+      expect(full).toContain('lateon-code');
+      expect(full).toContain('coderankembed-int8');
+      expect(full).toContain('coderankembed-fp32');
+      expect(full).toContain('lateon-code-fp32');
+      expect(full).toContain('lateon-code-edge');
+      expect(full).toContain('all-minilm-l6-v2');
+      // Opt-in rerankers MUST be excluded by default (disabled since
+      // commit 43a61eb — MRR-neutral at 3× latency cost).
+      expect(full).not.toContain('gte-reranker-modernbert-base');
+      expect(full).not.toContain('ms-marco-tinybert');
+    } finally {
+      if (saved.local !== undefined) process.env.SWEET_SEARCH_ENABLE_LOCAL_RERANKER = saved.local;
+      if (saved.cascade !== undefined) process.env.SWEET_SEARCH_CASCADE_ENABLED = saved.cascade;
+      if (saved.shadow !== undefined) process.env.SWEET_SEARCH_CASCADE_SHADOW = saved.shadow;
+    }
   });
 
-  it('includes flashrank/tinybert and semantic cache models', () => {
+  it('getModelsForProfile includes opt-in rerankers when env flags are set', () => {
+    const savedLocal = process.env.SWEET_SEARCH_ENABLE_LOCAL_RERANKER;
+    const savedCascade = process.env.SWEET_SEARCH_CASCADE_ENABLED;
+    process.env.SWEET_SEARCH_ENABLE_LOCAL_RERANKER = '1';
+    process.env.SWEET_SEARCH_CASCADE_ENABLED = 'true';
+    try {
+      const full = getModelsForProfile('full');
+      expect(full).toContain('gte-reranker-modernbert-base');
+      expect(full).toContain('ms-marco-tinybert');
+    } finally {
+      if (savedLocal === undefined) delete process.env.SWEET_SEARCH_ENABLE_LOCAL_RERANKER;
+      else process.env.SWEET_SEARCH_ENABLE_LOCAL_RERANKER = savedLocal;
+      if (savedCascade === undefined) delete process.env.SWEET_SEARCH_CASCADE_ENABLED;
+      else process.env.SWEET_SEARCH_CASCADE_ENABLED = savedCascade;
+    }
+  });
+
+  it('registry still includes opt-in rerankers even when skipped by default', () => {
+    // The entries stay in the registry so `fetchModel(key)` works when
+    // a user explicitly opts in — only `getModelsForProfile` filters.
     expect(MODEL_REGISTRY['ms-marco-tinybert']).toBeDefined();
     expect(MODEL_REGISTRY['ms-marco-tinybert'].hfId).toBe('Xenova/ms-marco-TinyBERT-L-2-v2');
+    expect(MODEL_REGISTRY['gte-reranker-modernbert-base']).toBeDefined();
     expect(MODEL_REGISTRY['all-minilm-l6-v2']).toBeDefined();
     expect(MODEL_REGISTRY['all-minilm-l6-v2'].hfId).toBe('Xenova/all-MiniLM-L6-v2');
   });
