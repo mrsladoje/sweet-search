@@ -291,16 +291,35 @@ describe('downloadModelsForProfile', () => {
     expect(result.failures).toEqual([]);
   });
 
-  it('returns 8 model results for full profile (using cache)', async () => {
+  it('returns 6 model results for full profile by default (opt-in rerankers excluded, using cache)', async () => {
     // Skip when model cache does not exist (CI without pre-cached models)
     const cacheRoot = join(process.env.HOME || '', '.cache', 'sweet-search', 'models');
     if (!existsSync(join(cacheRoot, 'lightonai--LateOn-Code'))) {
       return; // models not cached — skip
     }
 
-    const result = await downloadModelsForProfile('full');
-    expect(result.results.size).toBe(8);
-    expect(result.failures).toEqual([]);
-    expect(result.totalCached).toBeGreaterThan(0);
+    // Clear opt-in env vars so we see the default-profile set (6 models,
+    // not 8 — gte-reranker and ms-marco-tinybert require explicit opt-in
+    // per the 2026-04-22 ranking refactor).
+    const saved = {
+      local: process.env.SWEET_SEARCH_ENABLE_LOCAL_RERANKER,
+      cascade: process.env.SWEET_SEARCH_CASCADE_ENABLED,
+      shadow: process.env.SWEET_SEARCH_CASCADE_SHADOW,
+    };
+    delete process.env.SWEET_SEARCH_ENABLE_LOCAL_RERANKER;
+    delete process.env.SWEET_SEARCH_CASCADE_ENABLED;
+    delete process.env.SWEET_SEARCH_CASCADE_SHADOW;
+    try {
+      const result = await downloadModelsForProfile('full');
+      expect(result.results.size).toBe(6);
+      expect(result.results.has('gte-reranker-modernbert-base')).toBe(false);
+      expect(result.results.has('ms-marco-tinybert')).toBe(false);
+      expect(result.failures).toEqual([]);
+      expect(result.totalCached).toBeGreaterThan(0);
+    } finally {
+      if (saved.local !== undefined) process.env.SWEET_SEARCH_ENABLE_LOCAL_RERANKER = saved.local;
+      if (saved.cascade !== undefined) process.env.SWEET_SEARCH_CASCADE_ENABLED = saved.cascade;
+      if (saved.shadow !== undefined) process.env.SWEET_SEARCH_CASCADE_SHADOW = saved.shadow;
+    }
   });
 });
