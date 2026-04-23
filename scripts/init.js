@@ -249,7 +249,16 @@ export async function downloadModelsForProfile(profile, options = {}) {
     }
 
     try {
-      const result = await fetchModel(key, { onProgress: options.onProgress });
+      // init is ALWAYS allowed to download — the persisted
+      // `allowRuntimeModelDownload: false` flag is meant to prevent
+      // runtime (query-time) downloads, not to block init re-runs.
+      // Without this explicit bypass, a second `sweet-search init`
+      // after the first can't fetch a bumped SHA256 or a newly added
+      // model, and `--force` leaves the cache empty and unfixable.
+      const result = await fetchModel(key, {
+        onProgress: options.onProgress,
+        allowDownload: true,
+      });
       results.set(key, { status: 'cached', cached: result.cached, downloaded: result.downloaded });
       totalDownloaded += result.downloaded;
       totalCached += result.cached;
@@ -733,7 +742,10 @@ export async function runInit(args) {
         // abort init.
         process.stderr.write('[init] Fetching CoreML variant cascade from HuggingFace...\n');
         try {
-          const fetchResult = await fetchCoremlCascade({ force: parsed.force });
+          const fetchResult = await fetchCoremlCascade({
+            force: parsed.force,
+            allowDownload: true, // init-time bypass — see downloadModelsForProfile comment
+          });
           if (fetchResult.status === 'fetched' || fetchResult.status === 'cached' || fetchResult.status === 'partial') {
             const total = fetchResult.fetched + fetchResult.cached;
             const parts = [];

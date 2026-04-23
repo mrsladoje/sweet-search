@@ -241,10 +241,18 @@ export async function isCacheValid(filePath, expectedSize, expectedSha256) {
  * @param {string} [options.hfEndpoint] - HuggingFace endpoint override
  * @param {function} [options.onProgress] - Progress callback(downloadedBytes, totalBytes)
  * @param {AbortSignal} [options.signal] - Abort signal
+ * @param {boolean} [options.allowDownload] - Explicit override for
+ *   MODEL_DELIVERY_CONFIG.allowRuntimeModelDownload. When true, bypasses
+ *   the config-based download gate. Used by `scripts/init.js` during its
+ *   own download phase — the `allowRuntimeModelDownload: false` flag
+ *   is meant to stop RUNTIME (query-time) downloads, not init-time
+ *   downloads, but the config is persisted before init re-runs can
+ *   download more, so init needs the explicit bypass. Runtime callers
+ *   (embedding-service, model-pool, etc.) omit this and stay gated.
  * @returns {string} Absolute path to the verified local file
  */
 export async function fetchModelFile(hfId, filePath, destDir, options = {}) {
-  const { sha256, expectedSize, onProgress, signal } = options;
+  const { sha256, expectedSize, onProgress, signal, allowDownload } = options;
   const hfEndpoint = options.hfEndpoint || MODEL_DELIVERY_CONFIG.hfEndpoint;
 
   // Preserve directory structure (e.g. onnx/model.onnx stays as onnx/model.onnx)
@@ -257,8 +265,11 @@ export async function fetchModelFile(hfId, filePath, destDir, options = {}) {
     return finalPath;
   }
 
-  // Check if runtime download is allowed
-  if (!MODEL_DELIVERY_CONFIG.allowRuntimeModelDownload) {
+  // Check if runtime download is allowed. Explicit `options.allowDownload`
+  // overrides the persisted config flag — init passes `true` so re-runs
+  // can fetch a bumped SHA256, a newly added model, or a `--force` rebuild.
+  const downloadAllowed = allowDownload === true || MODEL_DELIVERY_CONFIG.allowRuntimeModelDownload;
+  if (!downloadAllowed) {
     throw new Error(
       `[ModelFetcher] Model file not found: ${hfId}/${filePath}\n` +
       `  Expected at: ${finalPath}\n` +
