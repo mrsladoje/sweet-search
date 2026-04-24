@@ -34,7 +34,7 @@ jobs:
             os: macos-14
             platform: darwin-arm64
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-14
             platform: darwin-x64
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
@@ -74,6 +74,13 @@ jobs:
   # ─────────────────────────────────────────────────────
   # Native addon builds — host-native for darwin and linux-x64,
   # Docker arm64 container for linux-arm64 (no native runner available).
+  #
+  # Per-platform Cargo features:
+  #   - Darwin: coreml,accelerate (Metal is on by default in our Cargo.toml;
+  #     coreml + accelerate are opt-in features that the local
+  #     `npm run build:native` script enables)
+  #   - Linux x64 CPU-only: no extra features (CUDA is its own separate
+  #     workflow at publish-native-linux-x64-gnu-cuda.yml)
   build-addon:
     strategy:
       matrix:
@@ -81,12 +88,15 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-14
             platform: darwin-arm64
+            features: '--features coreml,accelerate'
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-14
             platform: darwin-x64
+            features: '--features coreml,accelerate'
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             platform: linux-x64-gnu
+            features: ''
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -97,9 +107,18 @@ jobs:
         with:
           node-version: 20
 
+      # Install JS deps so node_modules/.bin/napi exists. Without this,
+      # `npx napi` would have to download @napi-rs/cli on the fly, which
+      # hits the "could not determine executable to run" naming issue
+      # (the package is `@napi-rs/cli` but the binary it exposes is
+      # `napi`). With node_modules populated, `npx napi` resolves to the
+      # local binary directly.
+      - name: Install JS deps
+        run: npm ci --ignore-scripts
+
       - name: Build addon
         working-directory: crates/sweet-search-native
-        run: npx @napi-rs/cli build --release --platform --target ${{ matrix.target }}
+        run: npx napi build --release --platform --target ${{ matrix.target }} ${{ matrix.features }}
 
       - name: Upload addon
         uses: actions/upload-artifact@v4
@@ -149,7 +168,7 @@ jobs:
         include:
           - os: macos-14
             platform: darwin-arm64
-          - os: macos-13
+          - os: macos-14
             platform: darwin-x64
           - os: ubuntu-latest
             platform: linux-x64-gnu
