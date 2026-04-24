@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "addon": "sweet-search-native.node",
+  "binary": "sweet-search"
+}

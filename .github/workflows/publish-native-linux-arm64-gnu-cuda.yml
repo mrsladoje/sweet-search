@@ -1,0 +1,160 @@
+name: Publish @sweet-search/native-linux-arm64-gnu-cuda
+
+# CUDA-enabled native addon + CLI for Linux arm64 — Jetson Orin, Grace
+# Hopper, arm64 SBSA server GPUs.
+#
+# Build happens on a native `ubuntu-22.04-arm` runner (GA January 2025)
+# inside the multi-arch `nvidia/cuda:12.2.2-devel-ubuntu22.04` image. No
+# QEMU — nvcc cross-compilation of flash-attn kernels under QEMU takes
+# hours and is a known failure mode.
+#
+# GitHub-hosted arm64 runners have no GPU, so CI builds + publishes but
+# does not run the addon. Parity validation is a manual pre-tag step on
+# a real Jetson Orin or Grace host — see docs/INIT_STRATEGY.md
+# "Build + publish pipeline" for the release checklist.
+#
+# CLI build duplication: see the notes in release.yml and
+# publish-native-linux-x64-gnu-cuda.yml — the CLI is rebuilt here to
+# keep this workflow self-contained.
+#
+# Private-repo note: `ubuntu-22.04-arm` is free for public repos and
+# billed as a paid minute rate for private repos. If billing is a
+# concern, fall back to a self-hosted arm64 runner or a QEMU-buildx
+# workflow variant.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      skip_publish:
+        description: 'Skip npm publish (build + verify only)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: publish-native-linux-arm64-gnu-cuda-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  DEBIAN_FRONTEND: noninteractive
+  # Jetson Orin = SM 8.7 baseline; Grace Hopper SM 9.0 and Xavier SM 7.2
+  # fall back to naive attention. Single-SM build keeps memory under the
+  # arm64 runner's ceiling.
+  CUDA_COMPUTE_CAP: '87'
+  CARGO_BUILD_JOBS: '2'
+
+jobs:
+  build-and-publish:
+    name: Build + publish arm64 CUDA native package
+    runs-on: ubuntu-22.04-arm
+    container:
+      image: nvidia/cuda:12.2.2-devel-ubuntu22.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Install system dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq \
+            curl build-essential pkg-config libssl-dev \
+            git ca-certificates xz-utils file
+
+      - uses: actions/checkout@v4
+
+      - name: Install Node 20
+        run: |
+          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+          apt-get install -y -qq nodejs
+          node --version
+          npm --version
+
+      - name: Install Rust stable
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+            sh -s -- -y --default-toolchain stable --profile minimal \
+              --target aarch64-unknown-linux-gnu
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Verify CUDA toolkit (arm64 sbsa)
+        run: |
+          nvcc --version
+          ls /usr/local/cuda/lib64/libcudart.so* | head -n 5
+          uname -m
+          echo "CUDA_HOME: ${CUDA_HOME:-/usr/local/cuda}"
+
+      - name: Build CUDA napi addon (cuda + flash-attn)
+        working-directory: crates/sweet-search-native
+        run: |
+          npx --yes @napi-rs/cli@3 build \
+            --release \
+            --platform \
+            --target aarch64-unknown-linux-gnu \
+            --features cuda,flash-attn
+          ls -la sweet-search-native.*.node
+
+      - name: Build CLI binary
+        working-directory: crates/sweet-search-cli
+        run: |
+          cargo build --release --target aarch64-unknown-linux-gnu
+          ls -la target/aarch64-unknown-linux-gnu/release/sweet-search
+
+      - name: Stage CUDA package
+        run: |
+          cd packages/native-linux-arm64-gnu-cuda
+          cp ../../crates/sweet-search-native/sweet-search-native.linux-arm64-gnu.node \
+             sweet-search-native.node
+          cp ../../crates/sweet-search-cli/target/aarch64-unknown-linux-gnu/release/sweet-search \
+             sweet-search
+          chmod +x sweet-search-native.node sweet-search
+          ls -la
+
+      - name: Diagnostics — linked libraries
+        run: |
+          cd packages/native-linux-arm64-gnu-cuda
+          echo '--- file: addon ---'
+          file sweet-search-native.node
+          echo '--- file: cli ---'
+          file sweet-search
+          echo '--- ldd: addon (libcuda.so.1 is dlopen-ed at runtime; absence here is expected) ---'
+          ldd sweet-search-native.node || true
+          echo '--- ldd: cli ---'
+          ldd sweet-search || true
+
+      - name: Verify package contents
+        working-directory: packages/native-linux-arm64-gnu-cuda
+        run: |
+          npm pack --dry-run
+          echo ''
+          echo '────────────────────────────────────────────────────────────'
+          echo 'Parity gate reminder: CI has no GPU, so `scripts/parity-cuda.js`'
+          echo 'MUST be run on a real Jetson Orin or Grace host before this tag'
+          echo 'is merged. Exit codes: 0 = ship, 1 = do not ship, 2 = skip.'
+          echo '────────────────────────────────────────────────────────────'
+
+      - name: Configure npm auth
+        if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_publish != 'true'
+        run: |
+          echo "//registry.npmjs.org/:_authToken=$NODE_AUTH_TOKEN" > ~/.npmrc
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to npm
+        if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_publish != 'true'
+        working-directory: packages/native-linux-arm64-gnu-cuda
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Upload built artifacts (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-linux-arm64-gnu-cuda
+          path: |
+            packages/native-linux-arm64-gnu-cuda/sweet-search-native.node
+            packages/native-linux-arm64-gnu-cuda/sweet-search
+            packages/native-linux-arm64-gnu-cuda/manifest.json
+            packages/native-linux-arm64-gnu-cuda/package.json
+          retention-days: 30

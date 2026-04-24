@@ -21,6 +21,11 @@ jobs:
   # ─────────────────────────────────────────────────────
   # Build native CLI binary for each platform
   # ─────────────────────────────────────────────────────
+  # Note: the CUDA variants of the Linux packages
+  # (.github/workflows/publish-native-linux-{x64,arm64}-gnu-cuda.yml)
+  # rebuild the CLI independently. Duplication is intentional — the
+  # CUDA workflows are self-contained and do not depend on this job
+  # graph.
   build-cli:
     strategy:
       matrix:

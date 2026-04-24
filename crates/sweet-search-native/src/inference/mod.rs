@@ -188,41 +188,35 @@ pub(crate) fn optimal_dtype(device: &Device) -> DType {
             "f32" => DType::F32,
             _ => DType::BF16,
         },
-        // CUDA dtype policy by compute capability:
-        //   SM ≥ 8.0 (Ampere, Ada, Hopper) → BF16 default. Matches the
-        //     Metal story: BF16 keeps F32's exponent range so retrieval
-        //     accuracy is preserved while memory bandwidth is halved.
-        //   SM 7.5 (Turing)                → F16 default via Turing
-        //     tensor cores (WMMA F16→F32 accumulate). BF16 is NOT
-        //     hardware-supported pre-Ampere; enabling it silently
-        //     falls back to software emulation which is slower than
-        //     F32. Parity-gated: the Metal F16 MRR regression may or
-        //     may not reproduce here because cuDNN uses F32 accumulators
-        //     — validate via scripts/parity-cuda.js before shipping.
-        //   SM 7.0 (Volta)                 → F32 default. First-gen
-        //     tensor cores have known F16 precision issues in mixed-
-        //     precision matmul; F32 is the correct safe choice.
-        //   Unknown / < 7.0                → F32.
+        // CUDA dtype policy:
+        //   ALL compute capabilities → F32 default for v2.3.0.
         //
-        // Env overrides (mirror Metal):
-        //   SWEET_SEARCH_NATIVE_DTYPE=bf16 — force BF16 (may error on Turing/Volta)
-        //   SWEET_SEARCH_NATIVE_DTYPE=f16  — force F16 (parity risk on older GPUs)
-        //   SWEET_SEARCH_NATIVE_DTYPE=f32  — force F32 (reference precision)
+        // Why not BF16/F16 by default on Ampere+ as the Metal path does:
+        //   parity-cuda (2026-04-24, RTX 4090, SM 8.9) showed BF16 drift
+        //   well outside the retrieval-safe band — LI per-token cosines
+        //   min=0.69 mean=0.97 (need ≥0.999/≥0.9998). The drift comes
+        //   from running attention through the naive
+        //   matmul→softmax→matmul path entirely in BF16 (no F32 promotion
+        //   of softmax numerator/denominator). The fused metal-sdpa
+        //   kernel hides this on Apple Silicon by promoting internally;
+        //   we lose that promotion on CUDA because candle-nn::ops::sdpa
+        //   has no CUDA backend, and flash-attn's varlen API isn't yet
+        //   wired for our additive padding masks. Until either the
+        //   flash-attn varlen path lands OR a mixed-precision
+        //   (BF16 weights + F32 attention math) path lands, F32 is the
+        //   only correct default. Forcing BF16 via env var is allowed
+        //   below for users who measure their own retrieval impact.
+        //
+        // Env overrides:
+        //   SWEET_SEARCH_NATIVE_DTYPE=bf16 — force BF16 (drift, see above)
+        //   SWEET_SEARCH_NATIVE_DTYPE=f16  — force F16 (worse than BF16 on Ampere)
+        //   SWEET_SEARCH_NATIVE_DTYPE=f32  — explicit F32 (the default)
         #[cfg(feature = "cuda")]
         Device::Cuda(_) => match forced_dtype.as_str() {
             "bf16" => DType::BF16,
             "f16" => DType::F16,
             "f32" => DType::F32,
-            _ => {
-                let cc = cuda_compute_capability_from_env();
-                if cc >= 8.0 {
-                    DType::BF16
-                } else if cc >= 7.5 {
-                    DType::F16
-                } else {
-                    DType::F32
-                }
-            }
+            _ => DType::F32,
         },
         _ => {
             let _ = forced_dtype;

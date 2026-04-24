@@ -1,0 +1,169 @@
+name: Publish @sweet-search/native-linux-x64-gnu-cuda
+
+# CUDA-enabled native addon + CLI for Linux x86-64.
+#
+# Build happens inside `nvidia/cuda:12.2.2-devel-ubuntu22.04` — the devel
+# image supplies `nvcc`, `libcudart.so`, and headers required by
+# candle-flash-attn. Runtime execution of the built addon REQUIRES an
+# NVIDIA driver (libcuda.so.1) which GitHub Actions runners do not have,
+# so CI builds + publishes but does not run the addon. Parity validation
+# is a manual pre-tag step on a real GPU host — see docs/INIT_STRATEGY.md
+# "Parity gate" + "Build + publish pipeline" for the full release
+# checklist.
+#
+# CLI build duplication: the `sweet-search` binary is also built by
+# .github/workflows/release.yml's build-cli job for the CPU-only Linux
+# x64 package. Rebuilding it here (rather than downloading an artifact)
+# keeps this workflow self-contained and independent of release.yml's
+# job graph. Both invocations use the same `cargo build --release` on
+# the same target, so the output is equivalent.
+#
+# First-run protocol: before pushing a `v*` tag, trigger this workflow
+# manually via the Actions UI (`workflow_dispatch` with
+# `skip_publish=true`). Confirm the build succeeds end-to-end — the
+# flash-attn kernel compilation is the memory-hot step most likely to
+# fail on fresh toolchain updates.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      skip_publish:
+        description: 'Skip npm publish (build + verify only)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: publish-native-linux-x64-gnu-cuda-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  DEBIAN_FRONTEND: noninteractive
+  # flash-attn kernel compilation (candle-flash-attn build.rs → nvcc) is
+  # memory-hungry; unconstrained builds OOM on standard 7 GB ubuntu-latest
+  # runners. Constrain to a single compute capability and cap parallel
+  # nvcc processes to stay under the memory ceiling.
+  #
+  # CUDA_COMPUTE_CAP=80 compiles flash-attn for Ampere only (A100, A10,
+  # RTX 3090/4090, L4). SM 8.6/8.9/9.0 hosts run the SM 8.0 kernels
+  # forward-compatibly. SM 7.0/7.5 hosts skip flash-attn entirely at
+  # runtime and use candle's naive attention path — the addon supports
+  # both. If Hopper-specific kernels are needed later, bump to
+  # '80;90' at the cost of longer builds and higher peak memory.
+  CUDA_COMPUTE_CAP: '80'
+  CARGO_BUILD_JOBS: '2'
+
+jobs:
+  build-and-publish:
+    name: Build + publish CUDA native package
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.2.2-devel-ubuntu22.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Install system dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq \
+            curl build-essential pkg-config libssl-dev \
+            git ca-certificates xz-utils file
+
+      - uses: actions/checkout@v4
+
+      - name: Install Node 20
+        run: |
+          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+          apt-get install -y -qq nodejs
+          node --version
+          npm --version
+
+      - name: Install Rust stable
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+            sh -s -- -y --default-toolchain stable --profile minimal \
+              --target x86_64-unknown-linux-gnu
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Verify CUDA toolkit
+        run: |
+          nvcc --version
+          ls /usr/local/cuda/lib64/libcudart.so* | head -n 5
+          echo "CUDA_HOME: ${CUDA_HOME:-/usr/local/cuda}"
+
+      - name: Build CUDA napi addon (cuda + flash-attn)
+        working-directory: crates/sweet-search-native
+        run: |
+          npx --yes @napi-rs/cli@3 build \
+            --release \
+            --platform \
+            --target x86_64-unknown-linux-gnu \
+            --features cuda,flash-attn
+          ls -la sweet-search-native.*.node
+
+      - name: Build CLI binary
+        working-directory: crates/sweet-search-cli
+        run: |
+          cargo build --release --target x86_64-unknown-linux-gnu
+          ls -la target/x86_64-unknown-linux-gnu/release/sweet-search
+
+      - name: Stage CUDA package
+        run: |
+          cd packages/native-linux-x64-gnu-cuda
+          cp ../../crates/sweet-search-native/sweet-search-native.linux-x64-gnu.node \
+             sweet-search-native.node
+          cp ../../crates/sweet-search-cli/target/x86_64-unknown-linux-gnu/release/sweet-search \
+             sweet-search
+          chmod +x sweet-search-native.node sweet-search
+          ls -la
+
+      - name: Diagnostics — linked libraries
+        run: |
+          cd packages/native-linux-x64-gnu-cuda
+          echo '--- file: addon ---'
+          file sweet-search-native.node
+          echo '--- file: cli ---'
+          file sweet-search
+          echo '--- ldd: addon (libcuda.so.1 is dlopen-ed at runtime; absence here is expected) ---'
+          ldd sweet-search-native.node || true
+          echo '--- ldd: cli ---'
+          ldd sweet-search || true
+
+      - name: Verify package contents
+        working-directory: packages/native-linux-x64-gnu-cuda
+        run: |
+          npm pack --dry-run
+          echo ''
+          echo '────────────────────────────────────────────────────────────'
+          echo 'Parity gate reminder: CI has no GPU, so `scripts/parity-cuda.js`'
+          echo 'MUST be run on a real NVIDIA host before this tag is merged.'
+          echo 'Exit codes: 0 = ship, 1 = do not ship, 2 = CUDA unavailable (skip).'
+          echo '────────────────────────────────────────────────────────────'
+
+      - name: Configure npm auth
+        if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_publish != 'true'
+        run: |
+          echo "//registry.npmjs.org/:_authToken=$NODE_AUTH_TOKEN" > ~/.npmrc
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to npm
+        if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_publish != 'true'
+        working-directory: packages/native-linux-x64-gnu-cuda
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Upload built artifacts (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-linux-x64-gnu-cuda
+          path: |
+            packages/native-linux-x64-gnu-cuda/sweet-search-native.node
+            packages/native-linux-x64-gnu-cuda/sweet-search
+            packages/native-linux-x64-gnu-cuda/manifest.json
+            packages/native-linux-x64-gnu-cuda/package.json
+          retention-days: 30
