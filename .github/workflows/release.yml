@@ -204,8 +204,14 @@ jobs:
           codesign -s - -f packages/native-${{ matrix.platform }}/sweet-search
           codesign -s - -f packages/native-${{ matrix.platform }}/sweet-search-native.node
 
+      # Note: NOT using --ignore-scripts here because the unit/integration
+      # tests below require better-sqlite3 and onnxruntime-node native
+      # bindings, which are downloaded/built by their postinstall hooks.
+      # Without postinstall, every SQLite/ONNX-touching test fails (saw
+      # this on the v2.3.0 run: 37/45 schema tests, 38/39 phase5-artifacts,
+      # 13/13 indexer-vectors all crashed at addon load).
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci
 
       - name: Run unit tests
         run: npm test -- --run
@@ -265,8 +271,11 @@ jobs:
               apt-get install -y -qq python3 make g++ > /dev/null 2>&1
               cp -r /sweet-search-src /app
               cd /app
-              npm ci --ignore-scripts 2>/dev/null
-              npm rebuild better-sqlite3 2>/dev/null
+              # Run postinstall scripts (better-sqlite3, onnxruntime-node,
+              # sharp all need their platform-specific native bindings).
+              # The arm64 container is slow because of QEMU translation;
+              # this can take a few minutes.
+              npm ci 2>/dev/null
               echo "--- core profile ---"
               node scripts/smoke-test.js --profile core
               echo "--- full profile ---"
