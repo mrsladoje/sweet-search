@@ -144,20 +144,18 @@ impl ModernBertAttention {
         // restriction and produces garbage. Use SDPA only when the full
         // (masked) kernel is selected; fall back to naive for short seqs.
         //
-        // Backend enablement: Metal always, CUDA gated on compile-time
-        // flash-attn feature AND runtime compute capability ≥ 8.0.
-        // See the matching comment in nomic_bert_sdpa.rs for the rationale.
+        // Backend enablement: Metal only. candle-nn::ops::sdpa has no CUDA
+        // backend (`no cuda implementation for metal-sdpa` at runtime). The
+        // CUDA path falls through to the naive matmul attention below;
+        // correct, with stock CUDA matmul/softmax kernels rather than a
+        // fused flash-attn kernel. Wiring `flash_attn_varlen` for additive
+        // padding masks is tracked as a follow-up perf win.
         let use_sdpa = {
             let _ = hidden_states;
             let mut yes = false;
             #[cfg(feature = "metal")]
             {
                 yes |= matches!(hidden_states.device(), Device::Metal(_));
-            }
-            #[cfg(feature = "flash-attn")]
-            {
-                yes |= matches!(hidden_states.device(), Device::Cuda(_))
-                    && super::cuda_compute_capability_from_env() >= 8.0;
             }
             yes && seq_len > 8
         };

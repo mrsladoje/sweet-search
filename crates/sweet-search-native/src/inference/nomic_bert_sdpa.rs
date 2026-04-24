@@ -252,25 +252,24 @@ impl NomicBertAttention {
         // gating on seq_len > 8; naive handles the short-seq case.
         //
         // Backend enablement:
-        //   - Metal: always on when available (candle-nn SDPA via MLX kernels).
-        //   - CUDA:  only when the `flash-attn` Cargo feature is compiled in
-        //            AND the runtime compute capability is Ampere+ (SM 8.0+).
-        //            flash-attn-v2 kernels have no Turing/Volta path — running
-        //            them on pre-Ampere crashes at dispatch. Runtime-gating on
-        //            the env-propagated CC lets a single -cuda binary cover
-        //            SM 7.0–9.0, with pre-Ampere falling through to the naive
-        //            matmul path (slower but correct).
+        //   - Metal: candle-nn SDPA via MLX-style fused kernel — supported.
+        //   - CUDA:  candle-nn SDPA op has NO CUDA backend implementation
+        //            (`no cuda implementation for metal-sdpa` at runtime).
+        //            candle-flash-attn covers Ampere+ but only via
+        //            `flash_attn_varlen` for arbitrary additive masks, which
+        //            requires repacking inputs around `cu_seqlens` —
+        //            invasive enough to defer. CUDA falls through to the
+        //            naive matmul path below: materializes the full
+        //            attention matrix (B × H × S × S BF16) and runs via
+        //            stock CUDA matmul + softmax kernels. Correct;
+        //            non-flash-attn perf. Tracked as follow-up: wire
+        //            flash_attn_varlen to recover the fused-kernel speedup.
         let use_sdpa = {
             let _ = hidden_states;
             let mut yes = false;
             #[cfg(feature = "metal")]
             {
                 yes |= matches!(hidden_states.device(), Device::Metal(_));
-            }
-            #[cfg(feature = "flash-attn")]
-            {
-                yes |= matches!(hidden_states.device(), Device::Cuda(_))
-                    && super::cuda_compute_capability_from_env() >= 8.0;
             }
             yes && seq_len > 8
         };

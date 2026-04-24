@@ -42,9 +42,13 @@ After the command completes the user has:
 | `@sweet-search/native-darwin-x64` | Native addon + Rust CLI binary for macOS x64 |
 | `@sweet-search/native-linux-x64-gnu` | Native addon + Rust CLI binary for Linux x64 glibc |
 | `@sweet-search/native-linux-arm64-gnu` | Native addon + Rust CLI binary for Linux arm64 glibc |
+| `@sweet-search/native-linux-x64-gnu-cuda` | As above + `cuda,flash-attn` Cargo features (NVIDIA SM 7.0+ on x86-64) |
+| `@sweet-search/native-linux-arm64-gnu-cuda` | As above + `cuda,flash-attn` for Jetson Orin / Grace Hopper |
 
-Native packages are `optionalDependencies`. npm installs only the one matching the current
-platform's `os`/`cpu`/`libc` fields. Other platforms fall back to WASM/JS.
+Native packages are `optionalDependencies`. npm installs only the one(s) matching the
+current platform's `os`/`cpu`/`libc` fields. Other platforms fall back to WASM/JS. On
+Linux with an NVIDIA driver, `core/infrastructure/native-resolver.js` prefers the `-cuda`
+variant when both CPU and CUDA variants resolve.
 
 Model artifacts are not distributed via npm. They are fetched by `sweet-search init` into a
 managed local cache with checksum verification, atomic writes, retries, and resumable
@@ -282,9 +286,13 @@ CPU-only Linux variants:
 | Package | Target | Built with |
 |---------|--------|-----------|
 | `@sweet-search/native-linux-x64-gnu` | Linux x86-64 glibc | CPU only |
-| `@sweet-search/native-linux-x64-gnu-cuda` | Linux x86-64 glibc + CUDA | `cuda,flash-attn,accelerate` |
+| `@sweet-search/native-linux-x64-gnu-cuda` | Linux x86-64 glibc + CUDA | `cuda,flash-attn` |
 | `@sweet-search/native-linux-arm64-gnu` | Linux arm64 glibc | CPU only |
-| `@sweet-search/native-linux-arm64-gnu-cuda` | Linux arm64 glibc + CUDA (Jetson, Grace) | `cuda,flash-attn,accelerate` |
+| `@sweet-search/native-linux-arm64-gnu-cuda` | Linux arm64 glibc + CUDA (Jetson Orin, Grace Hopper) | `cuda,flash-attn` |
+
+The `accelerate` Cargo feature seen in the macOS `build:native` script is APPLE-ONLY
+(`accelerate-src` links against Apple's Accelerate.framework) and is NOT used on any
+Linux build, CUDA or otherwise.
 
 Why separate rather than a single auto-fallback binary: candle 0.10 uses
 `cudarc` with dynamic-linking by default. A binary built with the `cuda`
@@ -298,6 +306,91 @@ Linux hosts when resolvable. If `libcuda.so` is absent at runtime, the
 addon load will fail; `hardware-capability.js` surfaces this as
 `cudaAddonEnabled: true, cudaAvailable: false` with a message pointing
 the user at the standard CPU-only package.
+
+### Build + publish pipeline
+
+The CUDA-enabled addon and CLI are pre-built and shipped to npm via two
+parallel workflows:
+
+- `.github/workflows/publish-native-linux-x64-gnu-cuda.yml` — runs on
+  GitHub-hosted `ubuntu-latest` (x86-64) inside
+  `nvidia/cuda:12.2.2-devel-ubuntu22.04`. Builds for
+  `x86_64-unknown-linux-gnu` with `CUDA_COMPUTE_CAP=80` (Ampere A100,
+  A10, RTX 3090/4090, L4; SM 8.6/8.9/9.0 forward-compatible).
+- `.github/workflows/publish-native-linux-arm64-gnu-cuda.yml` — runs on
+  GitHub-hosted `ubuntu-22.04-arm` (GA January 2025) inside the same
+  multi-arch CUDA image. Builds for `aarch64-unknown-linux-gnu` with
+  `CUDA_COMPUTE_CAP=87` (Jetson Orin baseline, Grace Hopper SM 9.0
+  forward-compatible). No QEMU — native arm64 toolchain on native
+  arm64 runner.
+
+Both containers supply the CUDA 12.2 toolkit (`nvcc`, `libcudart`,
+headers) required by candle-flash-attn. Outputs per workflow:
+
+- `sweet-search-native.node` — built with `--features cuda,flash-attn`
+  for the target triple
+- `sweet-search` — the standard Rust CLI (no CUDA features required;
+  CUDA lives in the napi addon, not the CLI)
+
+Each workflow stages its outputs into `packages/native-linux-<arch>-gnu-cuda/`
+alongside the package's `manifest.json` and `README.md`. On tag push `v*`
+both workflows publish their assembled directories as
+`@sweet-search/native-linux-x64-gnu-cuda` and
+`@sweet-search/native-linux-arm64-gnu-cuda` respectively with
+`npm publish --provenance --access public` — the same publish path used
+for the plain CPU variants. No HuggingFace channel is involved:
+candle-cuda JITs kernels at runtime, so unlike CoreML there are no
+per-shape pre-traced artifacts to host outside npm.
+
+Both workflows cap nvcc memory pressure with `CARGO_BUILD_JOBS=2` and a
+single-SM `CUDA_COMPUTE_CAP` target. Without these, flash-attn kernel
+compilation OOMs the standard 7 GB GitHub-hosted runner.
+
+End-user install flow is the standard npm one, driven by
+`optionalDependencies` in the main `sweet-search` package:
+
+```bash
+npm install sweet-search   # npm auto-selects -cuda on Linux x64 or arm64 glibc
+npx sweet-search init      # hardware-capability detects GPU, arms candle-cuda
+```
+
+No symlinks, no local rebuild. No postinstall hook: runtime detection in
+`hardware-capability.js` is the single source of truth for "is CUDA
+armed?" — the addon either loads and passes its `Device::new_cuda(0)`
+probe (CUDA armed) or fails to load, and the resolver transparently
+falls back to the matching `@sweet-search/native-linux-<arch>-gnu` CPU
+variant. The init report line and
+`.sweet-search/config.json::runtime.hardware` both record the decision.
+
+**Parity check — manual, not CI-enforced.** GitHub-hosted runners have
+no NVIDIA GPU (x64 or arm64), so both CUDA workflows build and package
+but cannot execute the addon. Before pushing a `v*` tag, the maintainer
+must, **for each CUDA variant they intend to ship**:
+
+1. Trigger the workflow via `workflow_dispatch` with `skip_publish=true`
+   and confirm it builds end-to-end (flash-attn kernel compilation is
+   the step most likely to regress on toolchain updates).
+2. Download the built artifact to a real NVIDIA host of the matching
+   architecture (x86-64 + Ampere/Ada/Hopper for x64; Jetson Orin or
+   Grace for arm64) and run `node scripts/parity-cuda.js`; confirm
+   exit code 0.
+3. Only then push the `v*` tag.
+
+This is a social contract, not a technical gate — there is no CI step
+that blocks publishing if parity is skipped. A self-hosted GPU runner
+(e.g., an L4 spot instance) remains the stronger long-term fix.
+
+`@sweet-search/native-linux-arm64-gnu-cuda` ships via a parallel workflow
+(`.github/workflows/publish-native-linux-arm64-gnu-cuda.yml`) that mirrors
+the x64-cuda pipeline on GitHub's native `ubuntu-22.04-arm` runner
+(GA January 2025). No QEMU is involved — nvcc cross-compilation of
+flash-attn kernels under QEMU is prohibitively slow and was explicitly
+avoided. The arm64 build targets `CUDA_COMPUTE_CAP=87` (Jetson Orin
+baseline, Grace Hopper SM 9.0 forward-compatible); SM 7.x hosts run the
+naive attention path at runtime. Private-repo note:
+`ubuntu-22.04-arm` is paid for private repositories — if billing is a
+concern, swap the runner for a self-hosted arm64 host in the workflow's
+`runs-on:` field.
 
 ### Hardware gating
 
@@ -330,19 +423,31 @@ shapes. SM 7.0 (Volta) has first-gen tensor cores with F16 matmul
 ### Per-compute-capability dtype policy
 
 Implemented in `crates/sweet-search-native/src/inference/mod.rs::optimal_dtype`.
-The JS layer sets `SWEET_SEARCH_CUDA_COMPUTE_CAP=<cc>` from the `nvidia-smi`
-result before loading models; the Rust side reads it to pick:
+
+**v2.3.0 default: F32 across all CUDA compute capabilities.**
 
 | Compute cap | GPU examples | Default dtype | Rationale |
 |---|---|---|---|
-| ≥ 8.0 | A100, H100, L4, RTX 3090/4090 | **BF16** | Ampere+ BF16 tensor cores with F32 accumulators. Matches Metal's BF16 story — keeps F32 exponent range, halves memory bandwidth |
-| 7.5 | T4, RTX 2080 | **F16** | Turing tensor cores F16 × F16 → F32 accumulate via cuBLASLt. BF16 is NOT supported in hardware |
-| 7.0 | V100 | **F32** | First-gen tensor cores have known F16 precision issues; F32 is safer |
+| All SM ≥ 7.0 | V100 → H100 | **F32** | Parity-gated: BF16 fails parity-cuda (LI per-token min ≈ 0.69) because the naive matmul→softmax→matmul path keeps everything in BF16 with no F32 promotion of softmax numerator/denominator. Without flash-attn varlen wiring or a mixed-precision attention path, F32 is the only correct default. |
 
-`SWEET_SEARCH_NATIVE_DTYPE=bf16|f16|f32` overrides the automatic choice.
-The Metal F16 MRR regression (82%→64%, April 2026) was Metal-specific and
-does not automatically replicate to CUDA (different kernels, different
-accumulators), but the parity gate below is still non-negotiable.
+The earlier per-CC tiering (BF16 for SM ≥ 8.0, F16 for 7.5, F32 for 7.0)
+was retired on 2026-04-24 after parity-cuda on RTX 4090 (SM 8.9) showed
+LI per-token cosine min=0.69 / mean=0.97 with BF16 (need ≥0.999/≥0.9998),
+and F32 immediately produced bit-perfect parity (min=mean=1.000000).
+
+`SWEET_SEARCH_NATIVE_DTYPE=bf16|f16|f32` still overrides the automatic
+choice for users who want to measure their own retrieval impact —
+typical BF16 speedup is ~1.5-2× indexing throughput on Ampere+ tensor
+cores, paid for in retrieval quality drift.
+
+Recovering BF16 cleanly is tracked as a v2.4 work item with three
+candidate paths: (a) wire `candle_flash_attn::flash_attn_varlen` with
+`cu_seqlens` packing for the additive padding mask, (b) mixed-precision
+(BF16 weights, F32 attention math via `q.to_dtype(F32)` / `v.to_dtype(F32)`
+inside the attention block), or (c) explicit cuBLASLt F32-accumulator
+configuration. The Metal F16 MRR regression (82%→64%, April 2026) is
+unrelated — different kernels, different accumulators — but the same
+parity gate below is enforced.
 
 ### Parity gate
 
@@ -673,6 +778,23 @@ sweet-search/
   sweet-search
 ```
 
+The CUDA-enabled variants carry one additional user-facing file and ship
+for both Linux architectures:
+
+```
+@sweet-search/native-linux-x64-gnu-cuda/     (x86-64 + NVIDIA, SM 7.0+)
+@sweet-search/native-linux-arm64-gnu-cuda/   (arm64 + NVIDIA — Jetson Orin, Grace Hopper)
+  package.json
+  manifest.json
+  sweet-search-native.node  (built with --features cuda,flash-attn)
+  sweet-search
+  README.md                 (user-facing install + troubleshooting)
+```
+
+Identical schema to the CPU variants — the only on-disk differences are
+the `-cuda` suffix in `package.json::name`, the Cargo feature set baked
+into the `.node` binary, and the presence of `README.md`.
+
 ### Generated local state
 
 ```
@@ -736,15 +858,39 @@ Rust-vs-C launcher (Linux arm64, 30 runs): Rust p50=425us, C p50=338us. Both sub
 
 ## Release Automation
 
-Publish order:
+Three workflows run on each tag push (`v*`):
+
+1. `.github/workflows/release.yml` — builds and publishes the main
+   `sweet-search` package and the four CPU-only native packages
+   (`@sweet-search/native-{darwin-arm64,darwin-x64,linux-x64-gnu,linux-arm64-gnu}`).
+2. `.github/workflows/publish-native-linux-x64-gnu-cuda.yml` — builds and
+   publishes `@sweet-search/native-linux-x64-gnu-cuda` from the
+   `nvidia/cuda:12.2.2-devel-ubuntu22.04` container on `ubuntu-latest`.
+3. `.github/workflows/publish-native-linux-arm64-gnu-cuda.yml` — builds
+   and publishes `@sweet-search/native-linux-arm64-gnu-cuda` from the
+   same multi-arch container, running on the native `ubuntu-22.04-arm`
+   runner (no QEMU).
+
+Publish order inside the main workflow:
 
 1. Build and test universal assets; verify `npm pack --dry-run`.
-2. Publish platform-native packages for all four targets.
+2. Publish platform-native packages for all four CPU targets.
 3. Publish main `sweet-search` package.
 
-CI verification: `npm test`, native/WASM parity, pack dry-run, install smoke tests on
-macOS and Linux, runtime smoke tests (router, MaxSim tier, model loads, MCP startup),
-provenance.
+Both CUDA workflows run in parallel with the main workflow. Each published
+package is picked up by npm's `optionalDependencies` resolution on the
+matching Linux + NVIDIA host (x64 or arm64), independent of the main
+workflow's ordering.
+
+CI verification: `npm test`, native/WASM parity, pack dry-run, install
+smoke tests on macOS and Linux, runtime smoke tests (router, MaxSim tier,
+model loads, MCP startup), provenance.
+
+CUDA parity (`scripts/parity-cuda.js`) is a **manual release checklist
+item**, not a CI-enforced gate. GitHub-hosted runners have no GPU, so
+the CUDA workflow builds and packages but cannot exercise the addon
+end-to-end. See the [Build + publish pipeline](#build--publish-pipeline)
+section above for the maintainer's pre-tag checklist.
 
 macOS binaries require `codesign -s -` after any copy step.
 

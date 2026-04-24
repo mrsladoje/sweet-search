@@ -1,0 +1,20 @@
+{
+  "name": "@sweet-search/native-linux-x64-gnu-cuda",
+  "version": "2.3.0",
+  "description": "Sweet Search native binaries for Linux x64 (glibc) with NVIDIA CUDA backend (candle-cuda + flash-attn, SM 7.0+)",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "libc": ["glibc"],
+  "files": [
+    "manifest.json",
+    "sweet-search-native.node",
+    "sweet-search",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/panonitorg/sweet-search"
+  },
+  "license": "Apache-2.0",
+  "author": "Marko Sladojevic <marko@panonit.com> (https://panonit.com)"
+}
