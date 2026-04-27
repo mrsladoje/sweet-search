@@ -284,8 +284,15 @@ jobs:
 
       - name: Smoke test (core + full) in arm64 container
         run: |
+          # CI=true must be explicitly forwarded into the Docker container.
+          # GitHub Actions sets CI=true in the runner env, but `docker run`
+          # does NOT inherit env vars from the host — only the ones passed
+          # via `-e`. Without this, scripts/smoke-test.js's CI guard for the
+          # JS-search-path test wouldn't fire and the test hits a 60s
+          # spawnSync timeout under QEMU emulation.
           docker run --rm --platform linux/arm64 \
             -v "$PWD:/sweet-search-src:ro" \
+            -e CI=true \
             -e SWEET_SEARCH_PROJECT_ROOT=/app \
             -e SWEET_SEARCH_TEST_DOWNLOADS=1 \
             node:20-slim \
