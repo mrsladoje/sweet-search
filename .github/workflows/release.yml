@@ -226,18 +226,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Unit tests intentionally skipped in the release workflow for v2.3.0.
-      # ~10 stale unit tests block release without exercising the actual
-      # published artifacts: stale int4/int8 expectations from TurboQuant,
-      # DEDUP_CONFIG missing from a vi.mock, "expected 4 models, got 6"
-      # from registry-vs-manifest drift documented in INIT_STRATEGY.md,
-      # `Unknown profile "bogus"` fallback assertions, etc. The
-      # smoke-test.js below validates the published binaries end-to-end
-      # against a fresh init flow — that's the contract that matters for
-      # publish. Re-enable this once the test suite is reconciled
-      # (tracked as v2.3.1 work).
-      # - name: Run unit tests
-      #   run: npm test -- --run
+      - name: Run unit tests
+        run: npm test -- --run
 
       - name: Smoke test (core profile)
         run: node scripts/smoke-test.js --profile core
