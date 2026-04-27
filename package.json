@@ -13,7 +13,7 @@
   "author": "Marko Sladojevic <marko@panonit.com> (https://panonit.com)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/panonitorg/sweet-search"
+    "url": "git+https://github.com/panonitorg/sweet-search.git"
   },
   "bugs": {
     "url": "https://github.com/panonitorg/sweet-search/issues"
@@ -34,8 +34,8 @@
     "panonit"
   ],
   "bin": {
-    "sweet-search": "./core/cli.js",
-    "sweet-search-mcp": "./mcp/server.js"
+    "sweet-search": "core/cli.js",
+    "sweet-search-mcp": "mcp/server.js"
   },
   "files": [
     "core/*.js",
