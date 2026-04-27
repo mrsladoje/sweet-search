@@ -248,7 +248,7 @@ jobs:
           SWEET_SEARCH_TEST_DOWNLOADS: '1'
 
       - name: Native launcher integration (warm path)
-        run: npm test -- --run tests/native-launcher.integration.test.js
+        run: npm test -- --run tests/integration/native-launcher.integration.test.js
 
   # linux-arm64 smoke test — must run inside a Docker container to exercise
   # the arm64 binary, addon, and resolver on the correct architecture.
