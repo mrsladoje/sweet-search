@@ -21,6 +21,11 @@ vi.mock('../../core/config.js', () => ({
   LATE_INTERACTION_CONFIG: { enabled: true, model: 'lateon-code' },
   HNSW_CONFIG: { dimension: 512, M: 16, efConstruction: 200, efSearch: 100, metric: 'cosine', maxElements: 100000 },
   BINARY_HNSW_CONFIG: { dimension: 64, M: 64, efConstruction: 800, efSearch: 400, metric: 'hamming', maxElements: 500000 },
+  // DEDUP_CONFIG was added to core/infrastructure/config/index.js after this
+  // mock was written. indexer-phases.js imports it at module top-level for
+  // runDedupPhase invocation. Disabled here so the dedup branch in
+  // buildVectorsAndArtifactsPhase is a no-op for these unit tests.
+  DEDUP_CONFIG: { enabled: false, ngramSize: 5, numPerm: 128, numBands: 16, jaccardThreshold: 0.9, simhashHammingMax: 3, seed: 42, liReuseEnabled: false, liJaccardThreshold: 0.95 },
   LOGGING: { verbose: false, timing: false, debug: false },
   setQuietMode: () => {}, isQuietMode: () => false,
 }));
@@ -32,6 +37,11 @@ vi.mock('../../core/infrastructure/config/index.js', () => ({
   LATE_INTERACTION_CONFIG: { enabled: true, model: 'lateon-code' },
   HNSW_CONFIG: { dimension: 512, M: 16, efConstruction: 200, efSearch: 100, metric: 'cosine', maxElements: 100000 },
   BINARY_HNSW_CONFIG: { dimension: 64, M: 64, efConstruction: 800, efSearch: 400, metric: 'hamming', maxElements: 500000 },
+  // DEDUP_CONFIG was added to core/infrastructure/config/index.js after this
+  // mock was written. indexer-phases.js imports it at module top-level for
+  // runDedupPhase invocation. Disabled here so the dedup branch in
+  // buildVectorsAndArtifactsPhase is a no-op for these unit tests.
+  DEDUP_CONFIG: { enabled: false, ngramSize: 5, numPerm: 128, numBands: 16, jaccardThreshold: 0.9, simhashHammingMax: 3, seed: 42, liReuseEnabled: false, liJaccardThreshold: 0.95 },
   LOGGING: { verbose: false, timing: false, debug: false },
   setQuietMode: () => {}, isQuietMode: () => false,
 }));

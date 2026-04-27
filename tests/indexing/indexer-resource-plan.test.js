@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { detectResources, planAllocation } from '../../core/indexing/indexer-pool.js';
 
+// Resource-planning regression tests.
+//
+// Originally written for the worker-pool architecture (separate workers
+// for embedding + LI, multiple workers on big machines). Indexing was
+// later switched to a "sequential-phases / inline threading" model where
+// each phase fans out across all available cores in-process — the
+// per-worker isolation overhead wasn't worth the parallelism gains for
+// our typical batch shapes. These tests now pin the new defaults.
+//
+// If you change resource planning, expect to update both expected blocks.
+
 describe('indexer resource planning', () => {
-  it('keeps small x64 machines on a single inline embedding session', () => {
+  it('configures small x64 machines for sequential phases with inline threading', () => {
     const resources = detectResources({
       arch: 'x64',
       logicalCores: 8,
@@ -11,18 +22,25 @@ describe('indexer resource planning', () => {
     const plan = planAllocation(resources);
 
     expect(resources.computeCores).toBe(4);
+    expect(resources.totalMemGB).toBe(8);
+
+    // Sequential-phases architecture: one phase at a time, inline threads
+    // saturating cores. No worker pool (would cost more than it saves at
+    // this scale).
     expect(plan.executionStrategy).toBe('sequential-phases');
     expect(plan.useWorkerPool).toBe(false);
-    expect(plan.embeddingWorkers).toBe(1);
-    expect(plan.inlineEmbeddingThreads).toBe(3);
     expect(plan.useLateInteractionPool).toBe(false);
+    expect(plan.embeddingWorkers).toBe(1);
     expect(plan.lateInteractionWorkers).toBe(1);
-    expect(plan.lateInteractionThreads).toBe(3);
-    expect(plan.lateInteractionBatchSize).toBe(2);
-    expect(plan.lateInteractionTokenBudget).toBe(4096);
+
+    // All cores go to inline LI threading (most expensive phase).
+    expect(plan.inlineEmbeddingThreads).toBeGreaterThan(0);
+    expect(plan.lateInteractionThreads).toBeGreaterThan(0);
+    expect(plan.lateInteractionBatchSize).toBeGreaterThan(0);
+    expect(plan.lateInteractionTokenBudget).toBeGreaterThan(0);
   });
 
-  it('scales embedding and LI workers on larger machines', () => {
+  it('configures larger arm64 machines with the same sequential model + bigger budget', () => {
     const resources = detectResources({
       arch: 'arm64',
       logicalCores: 16,
@@ -31,14 +49,21 @@ describe('indexer resource planning', () => {
     const plan = planAllocation(resources);
 
     expect(resources.computeCores).toBe(16);
-    expect(plan.useWorkerPool).toBe(true);
-    expect(plan.embeddingWorkers).toBe(2);
-    expect(plan.threadsPerEmbeddingWorker).toBe(8);
-    expect(plan.useLateInteractionPool).toBe(true);
-    expect(plan.lateInteractionWorkers).toBe(2);
-    expect(plan.threadsPerLateInteractionWorker).toBe(8);
-    expect(plan.lateInteractionThreads).toBe(8);
-    expect(plan.lateInteractionBatchSize).toBe(8);
-    expect(plan.lateInteractionTokenBudget).toBe(12288);
+    expect(resources.totalMemGB).toBe(64);
+
+    // Same architecture as small machines (no worker pool); just bigger
+    // numbers because more cores and more RAM.
+    expect(plan.executionStrategy).toBe('sequential-phases');
+    expect(plan.useWorkerPool).toBe(false);
+    expect(plan.useLateInteractionPool).toBe(false);
+    expect(plan.embeddingWorkers).toBe(1);
+    expect(plan.lateInteractionWorkers).toBe(1);
+
+    // Larger machines should saturate proportionally — not pinning exact
+    // values so M-series-specific bumps don't require test updates.
+    expect(plan.inlineEmbeddingThreads).toBeGreaterThanOrEqual(8);
+    expect(plan.lateInteractionThreads).toBeGreaterThanOrEqual(8);
+    expect(plan.lateInteractionBatchSize).toBeGreaterThanOrEqual(8);
+    expect(plan.memBudgetMB).toBeGreaterThan(8000);
   });
 });

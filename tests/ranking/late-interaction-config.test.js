@@ -123,9 +123,13 @@ describe('LATE_INTERACTION_CONFIG', () => {
     expect(LATE_INTERACTION_CONFIG.blendWeight).toBe(0.3);
   });
 
-  it('quantization defaults to int8', async () => {
+  it('quantization defaults to int4', async () => {
+    // TurboQuant landed int4 as the default per-token quantization
+    // (see project_turboquant_status memory note + ranking.js comment
+    // "Storage default: int4 per-token quantization for LI tokens").
+    // Was 'int8' before; updated to match current default.
     const { LATE_INTERACTION_CONFIG } = await import('../../core/config.js');
-    expect(LATE_INTERACTION_CONFIG.quantization).toBe('int8');
+    expect(LATE_INTERACTION_CONFIG.quantization).toBe('int4');
   });
 });
 
