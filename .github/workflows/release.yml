@@ -371,10 +371,23 @@ jobs:
 
       - name: Assemble platform packages
         run: |
+          # Show what's actually in each artifact dir for debuggability —
+          # if a future build produces an unexpected file count this surfaces it.
+          for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu; do
+            echo "--- artifacts/addon-$platform ---"
+            ls -la "artifacts/addon-$platform/"
+          done
+
           for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu; do
             dir="packages/native-$platform"
             cp "artifacts/cli-$platform/sweet-search" "$dir/sweet-search"
-            cp artifacts/addon-$platform/sweet-search-native.*.node "$dir/sweet-search-native.node"
+            # Use the explicit platform-suffixed filename. Globbing
+            # sweet-search-native.*.node failed when napi-rs cross-compilation
+            # for darwin-x64 on a macos-14 (arm64) host produced more than one
+            # .node file — `cp` with 3+ args treats the last as a directory
+            # and errored "is not a directory". The explicit filename matches
+            # napi-rs's --platform output exactly.
+            cp "artifacts/addon-$platform/sweet-search-native.$platform.node" "$dir/sweet-search-native.node"
             chmod +x "$dir/sweet-search"
           done
 
