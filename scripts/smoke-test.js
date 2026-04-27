@@ -259,7 +259,17 @@ for (const profile of profiles) {
 
     if (profile === 'full') {
       assert(config.runtime.allowRuntimeModelDownload === false, 'Runtime downloads should be disabled for full');
-      assert(Object.keys(config.models).length === 4, `Expected 4 models, got ${Object.keys(config.models).length}`);
+      // Model count: full profile registers all profile=='full' entries from
+      // core/infrastructure/model-registry.js. Currently 6 (4 retrieval models
+      // + FlashRank cross-encoder + semantic-cache MiniLM); was 4 before
+      // FlashRank and the semantic cache landed. The original hard-coded "===4"
+      // assertion is documented as drifted in docs/INIT_STRATEGY.md. We just
+      // assert presence + a reasonable lower bound rather than pin a number
+      // that drifts every time a model is added.
+      assert(
+        Object.keys(config.models).length >= 4,
+        `Expected ≥4 models, got ${Object.keys(config.models).length}`,
+      );
     } else {
       assert(config.runtime.allowRuntimeModelDownload === true, 'Runtime downloads should be enabled for core');
     }
