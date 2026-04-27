@@ -403,13 +403,13 @@ jobs:
         run: |
           for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu; do
             cd "packages/native-$platform"
-            npm publish --provenance --access public
+            npm publish --access public
             cd ../..
           done
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish main package
-        run: npm publish --provenance --access public
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
