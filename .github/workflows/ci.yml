@@ -1,8 +1,11 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
+  # CI push runs are disabled until the private-repo Actions spending limit is
+  # fixed. GitHub currently fails these before step 1 with:
+  # "recent account payments have failed or your spending limit needs to be
+  # increased", which only spams maintainers and does not exercise the code.
+  workflow_dispatch:
   pull_request:
     branches: [main]
 
