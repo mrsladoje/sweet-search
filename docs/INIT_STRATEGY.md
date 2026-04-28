@@ -420,34 +420,60 @@ shapes. SM 7.0 (Volta) has first-gen tensor cores with F16 matmul
 (F32 accumulate). SM 7.5 (Turing) adds cleaner F16 tensor cores. SM 8.0+
 (Ampere/Ada/Hopper) adds BF16.
 
-### Per-compute-capability dtype policy
+### Per-model CUDA dtype policy
 
 Implemented in `crates/sweet-search-native/src/inference/mod.rs::optimal_dtype`.
 
-**v2.3.0 default: F32 across all CUDA compute capabilities.**
+**Current default: model-specific.**
 
-| Compute cap | GPU examples | Default dtype | Rationale |
-|---|---|---|---|
-| All SM ≥ 7.0 | V100 → H100 | **F32** | Parity-gated: BF16 fails parity-cuda (LI per-token min ≈ 0.69) because the naive matmul→softmax→matmul path keeps everything in BF16 with no F32 promotion of softmax numerator/denominator. Without flash-attn varlen wiring or a mixed-precision attention path, F32 is the only correct default. |
+| Model | CUDA SM | Default dtype | Rationale |
+|---|---:|---|---|
+| NomicBERT embedding | ≥ 8.0 | **BF16** | Verified pooled-output parity is retrieval-safe on RTX 4090 while enabling Tensor Core / memory-bandwidth speedups. |
+| NomicBERT embedding | < 8.0 or unknown | **F32** | No BF16 tensor cores, and older F16 paths are not quality-gated. |
+| ModernBERT late interaction | all | **F32** | BF16 valid-token parity is not retrieval-safe for per-token MaxSim vectors (min ≈ 0.70, mean ≈ 0.974 on RTX 4090), even after flash-attn and mask fixes. |
 
-The earlier per-CC tiering (BF16 for SM ≥ 8.0, F16 for 7.5, F32 for 7.0)
-was retired on 2026-04-24 after parity-cuda on RTX 4090 (SM 8.9) showed
-LI per-token cosine min=0.69 / mean=0.97 with BF16 (need ≥0.999/≥0.9998),
-and F32 immediately produced bit-perfect parity (min=mean=1.000000).
+This is intentionally not a single process-wide CUDA dtype. Embedding outputs
+are mean-pooled and tolerate BF16 storage noise; LI outputs are per-token
+vectors used directly by MaxSim, so the same BF16 drift changes the vector
+geometry enough to fail retrieval quality gates.
 
-`SWEET_SEARCH_NATIVE_DTYPE=bf16|f16|f32` still overrides the automatic
-choice for users who want to measure their own retrieval impact —
-typical BF16 speedup is ~1.5-2× indexing throughput on Ampere+ tensor
-cores, paid for in retrieval quality drift.
+`SWEET_SEARCH_NATIVE_DTYPE=f32` forces global F32 reference precision.
+`SWEET_SEARCH_NATIVE_DTYPE=bf16|f16` is a safe preference: CUDA embeddings use
+the requested fast dtype where available, while LI remains F32. For diagnostic
+experiments only, `SWEET_SEARCH_NATIVE_LI_DTYPE=bf16|f16|f32` and
+`SWEET_SEARCH_NATIVE_EMBED_DTYPE=bf16|f16|f32` force a per-model dtype.
 
-Recovering BF16 cleanly is tracked as a v2.4 work item with three
-candidate paths: (a) wire `candle_flash_attn::flash_attn_varlen` with
-`cu_seqlens` packing for the additive padding mask, (b) mixed-precision
-(BF16 weights, F32 attention math via `q.to_dtype(F32)` / `v.to_dtype(F32)`
-inside the attention block), or (c) explicit cuBLASLt F32-accumulator
-configuration. The Metal F16 MRR regression (82%→64%, April 2026) is
-unrelated — different kernels, different accumulators — but the same
-parity gate below is enforced.
+Recovering BF16 cleanly was the v2.4 work item. **Status:**
+
+- ✅ **Embedding model (NomicBERT, 12 layers)**: flash-attn varlen path
+  wired in `crates/sweet-search-native/src/inference/varlen.rs` and
+  activated in `nomic_bert_sdpa.rs::forward`. Pure-padding mask, no
+  sliding-window — calls `flash_attn_padded(.., window_size=None)`.
+- ✅ **LI model (ModernBERT, 22 layers)**: same flash-attn path,
+  activated in `modernbert_sdpa.rs::forward`. Sliding-window applied via
+  the kernel's `window_size_left/_right` arguments (routed through
+  `candle_flash_attn::flash_attn_varlen_windowed`), NOT via the additive
+  `combined_attention_mask`. `ModernBertAttention` stores
+  `local_window: Option<usize> = config.local_attention / 2` for local
+  layers, `None` for global ones. The layer always passes BOTH masks to
+  attention; attention picks based on which kernel runs (flash-attn uses
+  the global mask + window arg; naive uses the combined mask with window
+  baked into bias).
+
+Common gate for both paths:
+`cfg(feature = "flash-attn") && Device::Cuda(_) && SM ≥ 8.0 && dtype ∈ {F16, BF16} && seq_len > 8`.
+Inputs are packed around `cu_seqlens` (mask sentinel `< -100` = padding);
+the fused kernel runs; output is unpacked back to `(B, H, S, D)`.
+Online-softmax keeps F32 accumulators internally, but the final verified
+numbers showed LI drift matches the pure-BF16 baseline almost exactly. The
+remaining LI error is therefore BF16 storage/linear/residual drift across 22
+ModernBERT layers, not a flash-attn kernel or packing bug. The shipped policy
+captures the practical result: BF16 by default where validated (embeddings),
+F32 where required for quality (LI).
+
+The Metal F16 MRR regression (82%→64%, April 2026) is unrelated to CUDA
+work — different kernels, different accumulators — but the same parity
+gate below is enforced.
 
 ### Parity gate
 

@@ -15,10 +15,10 @@ fn main() {
 
         cc::Build::new()
             .file(shim_path)
-            .flag("-fobjc-arc")             // ARC for Obj-C ref counting inside the shim
-            .flag("-fmodules")              // allows `#import <CoreML/CoreML.h>`
+            .flag("-fobjc-arc") // ARC for Obj-C ref counting inside the shim
+            .flag("-fmodules") // allows `#import <CoreML/CoreML.h>`
             .flag("-Wall")
-            .flag("-Wno-unused-parameter")  // harmless in shim scaffolding
+            .flag("-Wno-unused-parameter") // harmless in shim scaffolding
             .compile("sweet_coreml_shim");
 
         // Link against Apple's CoreML and Foundation frameworks. cc crate

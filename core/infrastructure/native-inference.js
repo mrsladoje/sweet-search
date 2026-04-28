@@ -30,8 +30,18 @@
  *                                                before addon loads so
  *                                                the Rust dtype policy
  *                                                picks BF16/F16/F32 by
- *                                                compute capability.
+ *                                                compute capability and
+ *                                                model family.
  *                                                See mod.rs::optimal_dtype
+ *   SWEET_SEARCH_NATIVE_DTYPE=f32|bf16|f16       Global dtype preference.
+ *                                                On CUDA, BF16 is used for
+ *                                                embeddings on Ampere+ but
+ *                                                LI remains F32 for quality.
+ *   SWEET_SEARCH_NATIVE_EMBED_DTYPE=f32|bf16|f16 Per-model diagnostic
+ *                                                override for embeddings.
+ *   SWEET_SEARCH_NATIVE_LI_DTYPE=f32|bf16|f16    Per-model diagnostic
+ *                                                override; BF16/F16 LI is
+ *                                                known to drift on CUDA.
  *   CANDLE_METAL_COMPUTE_PER_BUFFER=<N>        — candle default 50 (tuned)
  *   CANDLE_METAL_COMMAND_POOL_SIZE=<N>         — candle default 5 (tuned)
  */
@@ -87,7 +97,8 @@ export function pickCascadeDirForDevice(deviceKind, cascadeDirOverride, resolveC
 /**
  * Ensure `SWEET_SEARCH_CUDA_COMPUTE_CAP` is set for the current process
  * before the addon loads a CUDA model. The Rust `optimal_dtype` reads
- * this env var to pick BF16 on Ampere+ and F16/F32 on older GPUs.
+ * this env var to pick BF16 for the embedding model on Ampere+ while
+ * keeping ModernBERT LI on F32 unless explicitly overridden.
  *
  * Idempotent: honors an already-set value (useful for forcing a dtype
  * tier in benchmarks) and silently no-ops when there is no NVIDIA GPU.

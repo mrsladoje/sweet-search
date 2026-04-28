@@ -44,13 +44,19 @@ mod tests {
 
     #[test]
     fn deterministic_on_identical_input() {
-        let hashes = vec![0xdeadbeef_cafebabeu64, 0x1234567890abcdef, 0x0fedcba987654321];
+        let hashes = vec![
+            0xdeadbeef_cafebabeu64,
+            0x1234567890abcdef,
+            0x0fedcba987654321,
+        ];
         assert_eq!(simhash64(&hashes), simhash64(&hashes));
     }
 
     #[test]
     fn near_dup_has_small_hamming() {
-        let base: Vec<u64> = (0..100).map(|i| 0xcafebabe_00000000u64 ^ (i * 31)).collect();
+        let base: Vec<u64> = (0..100)
+            .map(|i| 0xcafebabe_00000000u64 ^ (i * 31))
+            .collect();
         let mut near_dup = base.clone();
         near_dup.push(0x1234);
         let d = hamming64(simhash64(&base), simhash64(&near_dup));

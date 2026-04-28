@@ -97,15 +97,38 @@ struct ModernBertAttention {
     num_attention_heads: usize,
     attention_head_size: usize,
     rotary_emb: Arc<RotaryEmbedding>,
+    /// Sliding-window radius (each query attends to keys within ±this many
+    /// positions). `None` for global-attention layers, `Some(N/2)` for
+    /// local-attention layers where `N = config.local_attention`. Used by
+    /// the flash-attn varlen path; the naive path applies the window via
+    /// the precomputed `combined_attention_mask` instead.
+    /// Marked dead-code when flash-attn isn't compiled in, since the only
+    /// reader of this field lives behind `#[cfg(feature = "flash-attn")]`.
+    #[cfg_attr(not(feature = "flash-attn"), allow(dead_code))]
+    local_window: Option<usize>,
 }
 
 impl ModernBertAttention {
-    fn load(vb: VarBuilder, config: &Config, rotary_emb: Arc<RotaryEmbedding>) -> Result<Self> {
+    fn load(
+        vb: VarBuilder,
+        config: &Config,
+        rotary_emb: Arc<RotaryEmbedding>,
+        uses_local_attention: bool,
+    ) -> Result<Self> {
         let num_attention_heads = config.num_attention_heads;
         let attention_head_size = config.hidden_size / config.num_attention_heads;
 
         let qkv = linear_no_bias(config.hidden_size, config.hidden_size * 3, vb.pp("Wqkv"))?;
         let proj = linear_no_bias(config.hidden_size, config.hidden_size, vb.pp("Wo"))?;
+
+        // ModernBERT's local_attention is the total window size; the
+        // symmetric per-side radius is half of it (an N=128 window means
+        // each query sees 64 left + 64 right keys, including itself).
+        let local_window = if uses_local_attention {
+            Some(config.local_attention / 2)
+        } else {
+            None
+        };
 
         Ok(Self {
             qkv,
@@ -113,10 +136,27 @@ impl ModernBertAttention {
             num_attention_heads,
             attention_head_size,
             rotary_emb,
+            local_window,
         })
     }
 
-    fn forward(&self, hidden_states: &Tensor, attention_mask: &Tensor) -> Result<Tensor> {
+    /// `global_attention_mask` is the pure-padding mask `(B, 1, 1, S)`.
+    /// `combined_attention_mask` adds the sliding-window restriction as
+    /// additive `-1e4` on out-of-window positions. The flash-attn path
+    /// uses ONLY the global mask (window applied via kernel argument);
+    /// the naive path uses the combined mask (window baked into bias).
+    /// On builds without the flash-attn feature, only `combined_attention_mask`
+    /// is read — silence the unused-arg warning at the top of the body.
+    fn forward(
+        &self,
+        hidden_states: &Tensor,
+        global_attention_mask: &Tensor,
+        combined_attention_mask: &Tensor,
+    ) -> Result<Tensor> {
+        // Silence unused-arg warning on non-flash-attn builds without
+        // splattering a #[cfg_attr] on the function signature.
+        #[cfg(not(feature = "flash-attn"))]
+        let _ = global_attention_mask;
         let xs = hidden_states.clone();
         let (b, seq_len, d) = xs.dims3()?;
         let qkv = xs
@@ -139,18 +179,15 @@ impl ModernBertAttention {
         // SDPA on Metal requires contiguous inputs; `v` is still a view on qkv.
         let v = v.contiguous()?;
 
-        // SDPA routes q_seq ≤ 8 to the vector kernel, which does NOT apply
-        // the attention mask. For ModernBERT that drops the local-window
-        // restriction and produces garbage. Use SDPA only when the full
-        // (masked) kernel is selected; fall back to naive for short seqs.
-        //
-        // Backend enablement: Metal only. candle-nn::ops::sdpa has no CUDA
-        // backend (`no cuda implementation for metal-sdpa` at runtime). The
-        // CUDA path falls through to the naive matmul attention below;
-        // correct, with stock CUDA matmul/softmax kernels rather than a
-        // fused flash-attn kernel. Wiring `flash_attn_varlen` for additive
-        // padding masks is tracked as a follow-up perf win.
-        let use_sdpa = {
+        // Backend enablement:
+        //   - Metal SDPA: Apple-Silicon fused kernel; uses combined mask
+        //     so the window restriction is applied via additive bias.
+        //   - CUDA flash-attn: Ampere+ with F16/BF16; uses GLOBAL mask and
+        //     applies the window via the kernel's window_size_left/_right
+        //     arguments (flash_attn_varlen_windowed). For global-attention
+        //     layers, local_window=None and the kernel runs full attention.
+        //   - Naive: portable fallback; uses combined mask (window baked in).
+        let use_metal_sdpa = {
             let _ = hidden_states;
             let mut yes = false;
             #[cfg(feature = "metal")]
@@ -160,25 +197,81 @@ impl ModernBertAttention {
             yes && seq_len > 8
         };
 
-        let xs = if use_sdpa {
-            // Fused SDPA: softmax(q @ k^T * scale + mask) @ v as a single Metal kernel.
-            // Mask must match [batch, qheads, qseq, kseq]; upstream passes
-            // [batch, 1, qseq, kseq], so broadcast to the target shape. We no
-            // longer materialize (`.contiguous()`) — candle-nn SDPA reads
-            // `mask_l.stride()` and handles broadcast views natively. Dropping
-            // the copy saves B × H × S × S F16 writes per layer (≈200 MB per
-            // layer per batch for B=32/S=512/H=12).
-            let mask_expanded = attention_mask
-                .broadcast_as((b, self.num_attention_heads, seq_len, seq_len))?;
+        let use_flash_attn_cuda = {
+            let _ = hidden_states;
+            let mut yes = false;
+            #[cfg(feature = "flash-attn")]
+            {
+                let on_cuda = matches!(hidden_states.device(), Device::Cuda(_));
+                let sm_supports = super::cuda_compute_capability_from_env() >= 8.0;
+                let dtype_supports = matches!(q.dtype(), DType::F16 | DType::BF16);
+                yes |= on_cuda && sm_supports && dtype_supports;
+            }
+            yes && seq_len > 8
+        };
+
+        // For naive / Metal-SDPA paths, the additive mask already carries
+        // the layer's attention pattern: combined for local layers (padding
+        // + sliding-window bias), global for global layers (padding only,
+        // unrestricted attention). The original ModernBertLayer::forward
+        // selected this mask before calling attention; when I moved both
+        // masks into the attention forward signature for the flash-attn
+        // path, I incorrectly hard-coded `combined_attention_mask` here for
+        // ALL layers. That made naive global layers run with the local
+        // window's additive bias — silently restricting them to a 129-key
+        // window instead of full attention. Kept self-consistent within
+        // the BF16 baseline (both CPU and CUDA naive had the same bug,
+        // so parity passed within drift), but as soon as flash-attn
+        // started computing TRUE global attention on CUDA, the CPU side
+        // stayed wrong and parity diverged 7pp on the median per-token
+        // cosine. HF transformers picks the mask per-layer-type via
+        // `attention_mask_mapping[encoder_layer.attention_type]`; this
+        // restores that selection.
+        let additive_attention_mask = if self.local_window.is_some() {
+            combined_attention_mask
+        } else {
+            global_attention_mask
+        };
+
+        let xs = if use_metal_sdpa {
+            // Fused Metal SDPA. Mask broadcast view (no copy) — candle-nn
+            // SDPA reads stride directly, saving B×H×S×S F16 writes per layer.
+            let mask_expanded = additive_attention_mask.broadcast_as((
+                b,
+                self.num_attention_heads,
+                seq_len,
+                seq_len,
+            ))?;
             let scale = 1.0 / (self.attention_head_size as f64).sqrt();
             candle_nn::ops::sdpa(&q, &k, &v, Some(&mask_expanded), false, scale as f32, 1.0)?
+        } else if use_flash_attn_cuda {
+            // CUDA flash-attn. Pass the GLOBAL mask (padding only) plus the
+            // window argument; flash-attn applies the window via its kernel
+            // argument, NOT via additive bias. See varlen.rs for the
+            // pack/unpack contract around cu_seqlens.
+            #[cfg(feature = "flash-attn")]
+            {
+                let scale = 1.0 / (self.attention_head_size as f64).sqrt();
+                super::varlen::flash_attn_padded(
+                    &q,
+                    &k,
+                    &v,
+                    global_attention_mask,
+                    scale as f32,
+                    self.local_window,
+                )?
+            }
+            #[cfg(not(feature = "flash-attn"))]
+            unreachable!("use_flash_attn_cuda requires the flash-attn feature")
         } else {
-            // CPU path + short-seq fallback: naive attention.
-            // Matches upstream modernbert.rs byte-for-byte.
+            // Portable naive attention. Uses additive_attention_mask
+            // (combined for local layers, global for global layers) —
+            // matches upstream HF transformers' attention_mask_mapping
+            // selection.
             let scale = (self.attention_head_size as f64).powf(-0.5);
             let q = (q * scale)?;
             let att = q.matmul(&k.transpose(D::Minus2, D::Minus1)?)?;
-            let att = att.broadcast_add(attention_mask)?;
+            let att = att.broadcast_add(additive_attention_mask)?;
             let att = softmax(&att, D::Minus1)?;
             att.matmul(&v)?
         };
@@ -224,7 +317,11 @@ pub struct ModernBertLayer {
     mlp: ModernBertMLP,
     attn_norm: Option<LayerNorm>,
     mlp_norm: LayerNorm,
-    uses_local_attention: bool,
+    // `uses_local_attention` used to live on the layer to decide which mask
+    // to pass to attention. Now lives on ModernBertAttention (as the
+    // local_window field) since the flash-attn path needs the per-side
+    // window radius, not just a boolean. The layer always passes both
+    // masks; the attention picks based on which kernel runs.
 }
 
 impl ModernBertLayer {
@@ -234,7 +331,10 @@ impl ModernBertLayer {
         rotary_emb: Arc<RotaryEmbedding>,
         uses_local_attention: bool,
     ) -> Result<Self> {
-        let attn = ModernBertAttention::load(vb.pp("attn"), config, rotary_emb)?;
+        // ModernBertAttention needs uses_local_attention to derive its
+        // local_window radius for the flash-attn windowed kernel.
+        let attn =
+            ModernBertAttention::load(vb.pp("attn"), config, rotary_emb, uses_local_attention)?;
         let mlp = ModernBertMLP::load(vb.pp("mlp"), config)?;
         let attn_norm = layer_norm_no_bias(
             config.hidden_size,
@@ -249,7 +349,6 @@ impl ModernBertLayer {
             mlp,
             attn_norm,
             mlp_norm,
-            uses_local_attention,
         })
     }
 
@@ -265,16 +364,15 @@ impl ModernBertLayer {
             xs = xs.apply(norm)?;
         }
 
-        // `combined_attention_mask` is precomputed once in ModernBert::forward as
-        // `global + local`. Local-attention layers use it; global-attention layers
-        // use `global_attention_mask` directly. Used to recompute the broadcast_add
-        // per-layer (~15 wasted kernels per forward across 15 local layers).
-        let attention_mask = if self.uses_local_attention {
-            combined_attention_mask
-        } else {
-            global_attention_mask
-        };
-        let xs = self.attn.forward(&xs, attention_mask)?;
+        // ModernBertAttention now takes BOTH masks and chooses internally:
+        //   - flash-attn path: global mask + window kernel argument
+        //   - naive/Metal path: combined mask (window in additive bias)
+        // The mask selection used to live here, but the flash-attn path
+        // needs the global mask while the naive path needs the combined
+        // one — let the attention layer pick based on which kernel runs.
+        let xs = self
+            .attn
+            .forward(&xs, global_attention_mask, combined_attention_mask)?;
         let xs = (xs + residual)?;
         let mlp_out = xs.apply(&self.mlp_norm)?.apply(&self.mlp)?;
         let xs = (xs + mlp_out)?;
@@ -488,8 +586,7 @@ impl ModernBert {
         // that use local attention re-use this; global-only layers read the
         // bare global mask. The old code did this broadcast_add in every
         // local layer, burning ~15 extra kernel dispatches per forward.
-        let combined_attention_mask =
-            global_attention_mask.broadcast_add(&local_attention_mask)?;
+        let combined_attention_mask = global_attention_mask.broadcast_add(&local_attention_mask)?;
 
         let mut xs = xs.apply(&self.word_embeddings)?.apply(&self.norm)?;
         for layer in self.layers.iter() {

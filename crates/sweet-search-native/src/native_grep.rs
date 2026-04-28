@@ -120,8 +120,8 @@ pub(crate) fn build_regex(pattern: &str, case_insensitive: bool) -> Result<regex
         .case_insensitive(case_insensitive)
         .multi_line(true) // ^ and $ match line boundaries (same as rg default)
         .unicode(true)
-        .size_limit(100 * (1 << 20))    // 100 MiB NFA compile limit (rg default)
-        .dfa_size_limit(1 * (1 << 20))  // 1 MiB full DFA state limit (rg default)
+        .size_limit(100 * (1 << 20)) // 100 MiB NFA compile limit (rg default)
+        .dfa_size_limit(1 * (1 << 20)) // 1 MiB full DFA state limit (rg default)
         .build()
         .map_err(|e| Error::from_reason(format!("Invalid regex: {e}")))
 }
@@ -233,11 +233,9 @@ pub fn native_grep_files_with_matches(
     let matching: Vec<String> = grep_pool().install(|| {
         files
             .par_iter()
-            .filter(|file| {
-                match read_validated_file(&root, file) {
-                    Some(content) => re.is_match(content.as_bytes()),
-                    None => false,
-                }
+            .filter(|file| match read_validated_file(&root, file) {
+                Some(content) => re.is_match(content.as_bytes()),
+                None => false,
             })
             .cloned()
             .collect()
@@ -273,14 +271,25 @@ pub fn native_grep_files_with_matches_fixed(
 
     // Pre-lowercase literals as bytes for case-insensitive matching (done once).
     let lowered: Vec<Vec<u8>> = if ci {
-        literals.iter().map(|l| l.as_bytes().iter().map(|b| b.to_ascii_lowercase()).collect()).collect()
+        literals
+            .iter()
+            .map(|l| {
+                l.as_bytes()
+                    .iter()
+                    .map(|b| b.to_ascii_lowercase())
+                    .collect()
+            })
+            .collect()
     } else {
         Vec::new()
     };
 
     // Pre-build memchr finders for case-sensitive path (SIMD-accelerated).
     let finders: Vec<memchr::memmem::Finder<'_>> = if !ci {
-        literals.iter().map(|l| memchr::memmem::Finder::new(l.as_bytes())).collect()
+        literals
+            .iter()
+            .map(|l| memchr::memmem::Finder::new(l.as_bytes()))
+            .collect()
     } else {
         Vec::new()
     };
@@ -435,7 +444,10 @@ pub fn native_grep_full(
             let match_bytes = &line[m.start()..m.end()];
             let match_text = String::from_utf8_lossy(match_bytes).into_owned();
             // Trim trailing whitespace from line content.
-            let trimmed = match line.iter().rposition(|&b| b != b' ' && b != b'\t' && b != b'\r') {
+            let trimmed = match line
+                .iter()
+                .rposition(|&b| b != b' ' && b != b'\t' && b != b'\r')
+            {
                 Some(pos) => &line[..=pos],
                 None => line,
             };
@@ -468,12 +480,20 @@ mod tests {
 
     fn create_test_dir() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("hello.txt"), "Hello World\nfoo bar\nHello Again\n").unwrap();
+        fs::write(
+            dir.path().join("hello.txt"),
+            "Hello World\nfoo bar\nHello Again\n",
+        )
+        .unwrap();
         fs::write(dir.path().join("empty.txt"), "").unwrap();
         fs::write(dir.path().join("binary.bin"), b"\x00binary content").unwrap();
         fs::write(dir.path().join("case.txt"), "FooBar\nfoobar\nFOOBAR\nbaz\n").unwrap();
         fs::create_dir_all(dir.path().join("sub")).unwrap();
-        fs::write(dir.path().join("sub/nested.txt"), "nested line\nanother line\n").unwrap();
+        fs::write(
+            dir.path().join("sub/nested.txt"),
+            "nested line\nanother line\n",
+        )
+        .unwrap();
         dir
     }
 
@@ -613,16 +633,14 @@ mod tests {
         let re = build_regex("Hello", false).unwrap();
         let files = vec!["hello.txt".to_string()];
 
-        let matches: Vec<(String, u32)> = grep_lines_common(
-            &re, dir.path(), &files,
-            |file, line_idx, line, re| {
+        let matches: Vec<(String, u32)> =
+            grep_lines_common(&re, dir.path(), &files, |file, line_idx, line, re| {
                 if re.is_match(line) {
                     Some((file.to_owned(), (line_idx + 1) as u32))
                 } else {
                     None
                 }
-            },
-        );
+            });
 
         assert_eq!(matches.len(), 2); // "Hello World" and "Hello Again"
         assert!(matches.iter().any(|(_, l)| *l == 1));
@@ -635,12 +653,14 @@ mod tests {
         let re = build_regex("nonexistent_xyz_pattern", false).unwrap();
         let files = vec!["hello.txt".to_string()];
 
-        let matches: Vec<u32> = grep_lines_common(
-            &re, dir.path(), &files,
-            |_, line_idx, line, re| {
-                if re.is_match(line) { Some((line_idx + 1) as u32) } else { None }
-            },
-        );
+        let matches: Vec<u32> =
+            grep_lines_common(&re, dir.path(), &files, |_, line_idx, line, re| {
+                if re.is_match(line) {
+                    Some((line_idx + 1) as u32)
+                } else {
+                    None
+                }
+            });
 
         assert!(matches.is_empty());
     }
@@ -651,10 +671,13 @@ mod tests {
         let re = build_regex("binary", false).unwrap();
         let files = vec!["binary.bin".to_string()];
 
-        let matches: Vec<u32> = grep_lines_common(
-            &re, dir.path(), &files,
-            |_, li, line, re| if re.is_match(line) { Some((li + 1) as u32) } else { None },
-        );
+        let matches: Vec<u32> = grep_lines_common(&re, dir.path(), &files, |_, li, line, re| {
+            if re.is_match(line) {
+                Some((li + 1) as u32)
+            } else {
+                None
+            }
+        });
 
         assert!(matches.is_empty());
     }
@@ -665,12 +688,14 @@ mod tests {
         let re = build_regex("line", false).unwrap();
         let files = vec!["sub/nested.txt".to_string()];
 
-        let matches: Vec<(String, u32)> = grep_lines_common(
-            &re, dir.path(), &files,
-            |file, li, line, re| {
-                if re.is_match(line) { Some((file.to_owned(), (li + 1) as u32)) } else { None }
-            },
-        );
+        let matches: Vec<(String, u32)> =
+            grep_lines_common(&re, dir.path(), &files, |file, li, line, re| {
+                if re.is_match(line) {
+                    Some((file.to_owned(), (li + 1) as u32))
+                } else {
+                    None
+                }
+            });
 
         assert_eq!(matches.len(), 2); // "nested line" and "another line"
     }

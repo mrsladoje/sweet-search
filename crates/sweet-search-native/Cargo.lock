@@ -1789,6 +1789,7 @@ name = "sweet-search-native"
 version = "0.1.0"
 dependencies = [
  "candle-core",
+ "candle-flash-attn",
  "candle-nn",
  "candle-transformers",
  "cc",

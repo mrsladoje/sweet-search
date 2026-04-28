@@ -23,9 +23,7 @@ pub fn extract_regex_literals(regex: String) -> Result<RegexLiteralExtractionRes
         .parse(&regex)
         .map_err(|err| Error::from_reason(format!("Failed to parse regex: {err}")))?;
 
-    let clauses = extract_dnf(&hir)
-        .map(normalize_clauses)
-        .unwrap_or_default();
+    let clauses = extract_dnf(&hir).map(normalize_clauses).unwrap_or_default();
 
     Ok(RegexLiteralExtractionResult { clauses })
 }
@@ -51,7 +49,11 @@ fn extract_dnf(hir: &Hir) -> Option<Vec<Vec<String>>> {
                 clauses = and_product(&clauses, &part_clauses);
             }
 
-            if saw_constraint { Some(clauses) } else { None }
+            if saw_constraint {
+                Some(clauses)
+            } else {
+                None
+            }
         }
         HirKind::Alternation(parts) => {
             let mut out = Vec::new();
@@ -64,7 +66,11 @@ fn extract_dnf(hir: &Hir) -> Option<Vec<Vec<String>>> {
                 }
                 out.extend(part_clauses);
             }
-            if out.is_empty() { None } else { Some(out) }
+            if out.is_empty() {
+                None
+            } else {
+                Some(out)
+            }
         }
     }
 }
@@ -188,7 +194,9 @@ mod tests {
     fn capture_group_extracts_inner() {
         let clauses = extract_dnf(&parse_hir(r"(function)\s+\w+")).unwrap();
         let normalized = normalize_clauses(clauses);
-        assert!(normalized.iter().any(|c| c.contains(&"function".to_string())));
+        assert!(normalized
+            .iter()
+            .any(|c| c.contains(&"function".to_string())));
     }
 
     #[test]

@@ -53,8 +53,7 @@ pub fn minhash_signature(features: &HashSet<u32>, a_coefs: &[u64], b_coefs: &[u6
     for &h in features {
         let h64 = h as u64;
         for i in 0..k {
-            let perm =
-                (a_coefs[i].wrapping_mul(h64).wrapping_add(b_coefs[i])) % MERSENNE_PRIME;
+            let perm = (a_coefs[i].wrapping_mul(h64).wrapping_add(b_coefs[i])) % MERSENNE_PRIME;
             let p32 = (perm & MAX_HASH) as u32;
             if p32 < sig[i] {
                 sig[i] = p32;

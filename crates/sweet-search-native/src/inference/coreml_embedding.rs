@@ -179,7 +179,11 @@ impl CoremlEmbedding {
         for v in &self.variants {
             let count = v.dispatches();
             total_dispatched += count;
-            let compiled = if v.model.get().is_some() { "compiled" } else { "never compiled" };
+            let compiled = if v.model.get().is_some() {
+                "compiled"
+            } else {
+                "never compiled"
+            };
             lines.push(format!(
                 "  b{}×s{}\t{} dispatches\t[{}]",
                 v.batch, v.seq, count, compiled

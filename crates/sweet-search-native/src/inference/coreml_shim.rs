@@ -15,7 +15,7 @@
 
 #![cfg(feature = "coreml")]
 
-use std::ffi::{CString, c_char, c_int, c_long};
+use std::ffi::{c_char, c_int, c_long, CString};
 use std::path::Path;
 use std::ptr::NonNull;
 use std::sync::Mutex;
@@ -116,13 +116,16 @@ impl CoremlModel {
         output_dim0: usize,
         output_dim1: usize,
     ) -> Result<Self, String> {
-        let path = mlpackage_path.to_str().ok_or_else(|| {
-            format!("mlpackage path is not valid UTF-8: {:?}", mlpackage_path)
-        })?;
+        let path = mlpackage_path
+            .to_str()
+            .ok_or_else(|| format!("mlpackage path is not valid UTF-8: {:?}", mlpackage_path))?;
         let c_path = CString::new(path).map_err(|e| format!("path contains NUL: {e}"))?;
-        let c_ids = CString::new(input_name_ids).map_err(|e| format!("input_ids name contains NUL: {e}"))?;
-        let c_mask = CString::new(input_name_mask).map_err(|e| format!("attention_mask name contains NUL: {e}"))?;
-        let c_out = CString::new(output_name).map_err(|e| format!("output name contains NUL: {e}"))?;
+        let c_ids = CString::new(input_name_ids)
+            .map_err(|e| format!("input_ids name contains NUL: {e}"))?;
+        let c_mask = CString::new(input_name_mask)
+            .map_err(|e| format!("attention_mask name contains NUL: {e}"))?;
+        let c_out =
+            CString::new(output_name).map_err(|e| format!("output name contains NUL: {e}"))?;
 
         let mut err_buf = [0u8; ERR_BUF_LEN];
         let handle = unsafe {

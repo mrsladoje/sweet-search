@@ -8,7 +8,9 @@ use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use crate::native_grep::{build_regex, for_each_line, read_file_content, NativeGrepFullMatch, NativeGrepMatch};
+use crate::native_grep::{
+    build_regex, for_each_line, read_file_content, NativeGrepFullMatch, NativeGrepMatch,
+};
 
 const MAGIC: &[u8; 8] = b"SSGRMIDX";
 const VERSION: u32 = 2;
@@ -112,7 +114,9 @@ impl SortedGramTable {
     /// Push a gram — caller must push in sorted order.
     fn push(&mut self, key: String, val: GramDescriptor) {
         debug_assert!(
-            self.keys.last().map_or(true, |prev| prev.as_str() <= key.as_str()),
+            self.keys
+                .last()
+                .map_or(true, |prev| prev.as_str() <= key.as_str()),
             "SortedGramTable: grams must be pushed in sorted order"
         );
         self.keys.push(key);
@@ -206,7 +210,10 @@ fn has_code_extension(path: &str, extensions: &HashSet<&str>) -> bool {
         Some(dot_pos) if dot_pos + 1 < path.len() => {
             let ext = &path[dot_pos + 1..];
             // Fast path: most extensions are already lowercase ASCII
-            if ext.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) {
+            if ext
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+            {
                 extensions.contains(ext)
             } else {
                 let lower = ext.to_ascii_lowercase();
@@ -221,10 +228,12 @@ fn has_code_extension(path: &str, extensions: &HashSet<&str>) -> bool {
 impl NativeSparseGramIndex {
     #[napi(factory)]
     pub fn load(path: String) -> Result<Self> {
-        let file = File::open(&path)
-            .map_err(|err| Error::from_reason(format!("Failed to open sparse gram index {path}: {err}")))?;
-        let mmap = unsafe { Mmap::map(&file) }
-            .map_err(|err| Error::from_reason(format!("Failed to mmap sparse gram index {path}: {err}")))?;
+        let file = File::open(&path).map_err(|err| {
+            Error::from_reason(format!("Failed to open sparse gram index {path}: {err}"))
+        })?;
+        let mmap = unsafe { Mmap::map(&file) }.map_err(|err| {
+            Error::from_reason(format!("Failed to mmap sparse gram index {path}: {err}"))
+        })?;
 
         let header = parse_header(&mmap)?;
         if header.version != VERSION {
@@ -316,16 +325,12 @@ impl NativeSparseGramIndex {
                 }
 
                 literal_candidates = Some(match literal_candidates {
-                    Some(CandidateSet::Dense(mut acc))
-                        if desc.flags & FLAG_DENSE_POSTINGS != 0 =>
-                    {
+                    Some(CandidateSet::Dense(mut acc)) if desc.flags & FLAG_DENSE_POSTINGS != 0 => {
                         let data = self.slice(desc.data_offset, desc.data_len as usize)?;
                         bitand_dense_from_le_bytes(&mut acc, data);
                         CandidateSet::Dense(acc)
                     }
-                    Some(CandidateSet::Sparse(ids))
-                        if desc.flags & FLAG_DENSE_POSTINGS != 0 =>
-                    {
+                    Some(CandidateSet::Sparse(ids)) if desc.flags & FLAG_DENSE_POSTINGS != 0 => {
                         let data = self.slice(desc.data_offset, desc.data_len as usize)?;
                         CandidateSet::Sparse(filter_sparse_with_dense_bytes(&ids, data))
                     }
@@ -451,7 +456,13 @@ impl NativeSparseGramIndex {
             }
             let qr = self.query_file_ids_core(clause, max_candidates, symbol_mask)?;
             if !qr.eligible {
-                return Ok(stats(qr.total_files, qr.grams_used, qr.dense_grams_touched, qr.sparse_grams_touched, 0));
+                return Ok(stats(
+                    qr.total_files,
+                    qr.grams_used,
+                    qr.dense_grams_touched,
+                    qr.sparse_grams_touched,
+                    0,
+                ));
             }
             // Filter by code extension in-place on the Vec — no HashSet needed
             let mut file_ids: Vec<u32> = qr
@@ -466,9 +477,7 @@ impl NativeSparseGramIndex {
                 .collect();
             let tf = qr.total_files;
             let count = file_ids.len();
-            if count == 0
-                || count > max_files
-                || (tf > 0 && (count as f64 / tf as f64) > max_ratio)
+            if count == 0 || count > max_files || (tf > 0 && (count as f64 / tf as f64) > max_ratio)
             {
                 return Ok(ResolvedClauses {
                     eligible: false,
@@ -497,7 +506,13 @@ impl NativeSparseGramIndex {
 
         for clause in clauses {
             if clause.is_empty() {
-                return Ok(stats(self.header.total_files, grams_used, dense_grams_touched, sparse_grams_touched, 0));
+                return Ok(stats(
+                    self.header.total_files,
+                    grams_used,
+                    dense_grams_touched,
+                    sparse_grams_touched,
+                    0,
+                ));
             }
             let qr = self.query_file_ids_core(clause, max_candidates, symbol_mask)?;
             total_files = total_files.max(qr.total_files);
@@ -506,7 +521,13 @@ impl NativeSparseGramIndex {
             sparse_grams_touched += qr.sparse_grams_touched;
 
             if !qr.eligible {
-                return Ok(stats(total_files, grams_used, dense_grams_touched, sparse_grams_touched, 0));
+                return Ok(stats(
+                    total_files,
+                    grams_used,
+                    dense_grams_touched,
+                    sparse_grams_touched,
+                    0,
+                ));
             }
 
             let clause_ids: Vec<u32> = qr
@@ -740,7 +761,10 @@ impl NativeSparseGramIndex {
                     if let Some(m) = re.find(line) {
                         let match_bytes = &line[m.start()..m.end()];
                         let match_text = String::from_utf8_lossy(match_bytes).into_owned();
-                        let trimmed = match line.iter().rposition(|&b| b != b' ' && b != b'\t' && b != b'\r') {
+                        let trimmed = match line
+                            .iter()
+                            .rposition(|&b| b != b' ' && b != b'\t' && b != b'\r')
+                        {
                             Some(pos) => &line[..=pos],
                             None => line,
                         };
@@ -794,7 +818,10 @@ impl NativeSparseGramIndex {
         let (file_ids, resolved_stats) = if !clauses.is_empty() {
             let ext_set: HashSet<&str> = code_extensions.iter().map(|s| s.as_str()).collect();
             let resolved = self.resolve_clauses(
-                &clauses, max_candidates, symbol_mask, &ext_set,
+                &clauses,
+                max_candidates,
+                symbol_mask,
+                &ext_set,
                 max_candidate_files.unwrap_or(2048) as usize,
                 max_candidate_ratio.unwrap_or(0.30),
             )?;
@@ -865,7 +892,11 @@ impl NativeSparseGramIndex {
         Ok(GramGrepLinesResult {
             eligible: true, // Always eligible — we always produce results.
             total_files: self.header.total_files,
-            candidate_files: if use_all { self.header.total_files } else { rs.as_ref().map(|r| r.candidate_files).unwrap_or(0) },
+            candidate_files: if use_all {
+                self.header.total_files
+            } else {
+                rs.as_ref().map(|r| r.candidate_files).unwrap_or(0)
+            },
             grams_used: rs.as_ref().map(|r| r.grams_used).unwrap_or(0),
             dense_grams_touched: rs.as_ref().map(|r| r.dense_grams_touched).unwrap_or(0),
             sparse_grams_touched: rs.as_ref().map(|r| r.sparse_grams_touched).unwrap_or(0),
@@ -897,7 +928,10 @@ impl NativeSparseGramIndex {
         let (file_ids, resolved_stats) = if !clauses.is_empty() {
             let ext_set: HashSet<&str> = code_extensions.iter().map(|s| s.as_str()).collect();
             let resolved = self.resolve_clauses(
-                &clauses, max_candidates, symbol_mask, &ext_set,
+                &clauses,
+                max_candidates,
+                symbol_mask,
+                &ext_set,
                 max_candidate_files.unwrap_or(2048) as usize,
                 max_candidate_ratio.unwrap_or(0.30),
             )?;
@@ -956,7 +990,10 @@ impl NativeSparseGramIndex {
                     if let Some(m) = re.find(line) {
                         let match_bytes = &line[m.start()..m.end()];
                         let match_text = String::from_utf8_lossy(match_bytes).into_owned();
-                        let trimmed = match line.iter().rposition(|&b| b != b' ' && b != b'\t' && b != b'\r') {
+                        let trimmed = match line
+                            .iter()
+                            .rposition(|&b| b != b' ' && b != b'\t' && b != b'\r')
+                        {
                             Some(pos) => &line[..=pos],
                             None => line,
                         };
@@ -977,7 +1014,11 @@ impl NativeSparseGramIndex {
         Ok(GramGrepFullResult {
             eligible: true,
             total_files: self.header.total_files,
-            candidate_files: if use_all { self.header.total_files } else { rs.as_ref().map(|r| r.candidate_files).unwrap_or(0) },
+            candidate_files: if use_all {
+                self.header.total_files
+            } else {
+                rs.as_ref().map(|r| r.candidate_files).unwrap_or(0)
+            },
             grams_used: rs.as_ref().map(|r| r.grams_used).unwrap_or(0),
             dense_grams_touched: rs.as_ref().map(|r| r.dense_grams_touched).unwrap_or(0),
             sparse_grams_touched: rs.as_ref().map(|r| r.sparse_grams_touched).unwrap_or(0),
@@ -1113,7 +1154,10 @@ pub fn build_sparse_gram_index(
         .iter()
         .map(|gram| 20usize + gram.len())
         .sum::<usize>();
-    let data_size = columns.iter().map(|column| column.data.len()).sum::<usize>();
+    let data_size = columns
+        .iter()
+        .map(|column| column.data.len())
+        .sum::<usize>();
     let header_size = encoded_header_size();
 
     let file_table_offset = header_size as u64;
@@ -1149,8 +1193,11 @@ pub fn build_sparse_gram_index(
         weights_offset,
     };
 
-    let writer = File::create(&output_path)
-        .map_err(|err| Error::from_reason(format!("Failed to create sparse gram index {output_path}: {err}")))?;
+    let writer = File::create(&output_path).map_err(|err| {
+        Error::from_reason(format!(
+            "Failed to create sparse gram index {output_path}: {err}"
+        ))
+    })?;
     let mut writer = BufWriter::new(writer);
     write_header(&mut writer, &header)?;
 
@@ -1188,9 +1235,11 @@ pub fn build_sparse_gram_index(
             .map_err(|err| Error::from_reason(format!("Failed to write weight table: {err}")))?;
     }
 
-    writer
-        .flush()
-        .map_err(|err| Error::from_reason(format!("Failed to flush sparse gram index {output_path}: {err}")))?;
+    writer.flush().map_err(|err| {
+        Error::from_reason(format!(
+            "Failed to flush sparse gram index {output_path}: {err}"
+        ))
+    })?;
 
     Ok(SparseGramBuildResult {
         files_indexed: file_entries.len() as u32,
@@ -1209,8 +1258,7 @@ impl NativeSparseGramIndex {
             let mut words = Vec::with_capacity(self.header.dense_words as usize);
             for chunk in data.chunks_exact(8) {
                 words.push(u64::from_le_bytes([
-                    chunk[0], chunk[1], chunk[2], chunk[3],
-                    chunk[4], chunk[5], chunk[6], chunk[7],
+                    chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
                 ]));
             }
             Ok(CandidateSet::Dense(words))
@@ -1262,8 +1310,9 @@ fn parse_file_table(bytes: &[u8], header: &Header) -> Result<Vec<FileEntry>> {
         let path_len = read_u32(bytes, &mut cursor)? as usize;
         let symbol_mask = read_u32(bytes, &mut cursor)?;
         let path_bytes = read_bytes(bytes, &mut cursor, path_len)?;
-        let path = String::from_utf8(path_bytes.to_vec())
-            .map_err(|err| Error::from_reason(format!("Invalid UTF-8 in sparse gram file path: {err}")))?;
+        let path = String::from_utf8(path_bytes.to_vec()).map_err(|err| {
+            Error::from_reason(format!("Invalid UTF-8 in sparse gram file path: {err}"))
+        })?;
         files.push(FileEntry { path, symbol_mask });
     }
 
@@ -1288,8 +1337,9 @@ fn parse_gram_table(bytes: &[u8], header: &Header) -> Result<SortedGramTable> {
         let postings_count = read_u32(bytes, &mut cursor)?;
         let data_len = read_u32(bytes, &mut cursor)?;
         let data_offset_entry = read_u64(bytes, &mut cursor)?;
-        let gram = String::from_utf8(read_bytes(bytes, &mut cursor, gram_len)?.to_vec())
-            .map_err(|err| Error::from_reason(format!("Invalid UTF-8 in sparse gram key: {err}")))?;
+        let gram = String::from_utf8(read_bytes(bytes, &mut cursor, gram_len)?.to_vec()).map_err(
+            |err| Error::from_reason(format!("Invalid UTF-8 in sparse gram key: {err}")),
+        )?;
         grams.push(
             gram,
             GramDescriptor {
@@ -1313,9 +1363,9 @@ fn parse_gram_table(bytes: &[u8], header: &Header) -> Result<SortedGramTable> {
 fn parse_weights(bytes: &[u8], header: &Header) -> Result<Vec<f32>> {
     let start = header.weights_offset as usize;
     let end = start + (WEIGHT_TABLE_LEN * 4);
-    let weight_bytes = bytes.get(start..end).ok_or_else(|| {
-        Error::from_reason("Sparse gram weight table out of bounds")
-    })?;
+    let weight_bytes = bytes
+        .get(start..end)
+        .ok_or_else(|| Error::from_reason("Sparse gram weight table out of bounds"))?;
 
     let mut weights = Vec::with_capacity(WEIGHT_TABLE_LEN);
     for chunk in weight_bytes.chunks_exact(4) {
@@ -1375,7 +1425,9 @@ fn read_bytes<'a>(bytes: &'a [u8], cursor: &mut usize, len: usize) -> Result<&'a
     let start = *cursor;
     let end = start.saturating_add(len);
     let slice = bytes.get(start..end).ok_or_else(|| {
-        Error::from_reason(format!("Sparse gram index truncated at byte range {start}..{end}"))
+        Error::from_reason(format!(
+            "Sparse gram index truncated at byte range {start}..{end}"
+        ))
     })?;
     *cursor = end;
     Ok(slice)
@@ -1482,7 +1534,11 @@ fn decode_sparse_postings(bytes: &[u8]) -> Vec<u32> {
                 return postings; // Malformed varint; bail
             }
         }
-        let current = if postings.is_empty() { value } else { previous + value };
+        let current = if postings.is_empty() {
+            value
+        } else {
+            previous + value
+        };
         postings.push(current);
         previous = current;
     }
@@ -1502,9 +1558,9 @@ fn intersect_candidate_sets(left: CandidateSet, right: CandidateSet) -> Candidat
         (CandidateSet::Sparse(left_ids), CandidateSet::Dense(right_words)) => {
             CandidateSet::Sparse(filter_sparse_with_dense(&left_ids, &right_words))
         }
-        (CandidateSet::Sparse(left_ids), CandidateSet::Sparse(right_ids)) => {
-            CandidateSet::Sparse(crate::simd_intersect::intersect_sorted_u32(&left_ids, &right_ids))
-        }
+        (CandidateSet::Sparse(left_ids), CandidateSet::Sparse(right_ids)) => CandidateSet::Sparse(
+            crate::simd_intersect::intersect_sorted_u32(&left_ids, &right_ids),
+        ),
     }
 }
 
@@ -1524,14 +1580,16 @@ fn filter_candidate_set_by_symbol_mask(
         CandidateSet::Dense(words) => collect_dense_ids(words.as_slice())
             .into_iter()
             .filter(|file_id| {
-                files.get(*file_id as usize)
+                files
+                    .get(*file_id as usize)
                     .is_some_and(|entry| entry.symbol_mask & symbol_mask != 0)
             })
             .collect::<Vec<_>>(),
         CandidateSet::Sparse(ids) => ids
             .into_iter()
             .filter(|file_id| {
-                files.get(*file_id as usize)
+                files
+                    .get(*file_id as usize)
                     .is_some_and(|entry| entry.symbol_mask & symbol_mask != 0)
             })
             .collect::<Vec<_>>(),
@@ -1648,7 +1706,7 @@ unsafe fn bitand_dense_in_place_sse2(left: &mut [u64], right: &[u64]) {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn bitand_dense_in_place_avx2(left: &mut [u64], right: &[u64]) {
-    use std::arch::x86_64::{_mm256_and_si256, _mm256_loadu_si256, _mm256_storeu_si256, __m256i};
+    use std::arch::x86_64::{__m256i, _mm256_and_si256, _mm256_loadu_si256, _mm256_storeu_si256};
 
     let chunks = left.len() / 4;
     for index in 0..chunks {
@@ -1772,7 +1830,10 @@ pub(crate) fn extract_covering_grams<'a>(span: &'a [u8], weights: &[f32]) -> Vec
         let mut scratch = cell.borrow_mut();
         // Destructure to get independent borrows — allows reading pair_weights
         // while mutating stack without conflicting borrows.
-        let CoveringScratch { pair_weights, stack } = &mut *scratch;
+        let CoveringScratch {
+            pair_weights,
+            stack,
+        } = &mut *scratch;
 
         // Reuse pair_weights buffer — clear + extend avoids reallocation.
         pair_weights.clear();
@@ -1904,9 +1965,9 @@ pub(crate) fn extract_sparse_grams(span: &[u8], weights: &[f32]) -> Vec<String> 
 
             if first.min(last) > interior_max {
                 let gram = match std::str::from_utf8(&span[start..end]) {
-                Ok(s) => s.to_string(),
-                Err(_) => continue,
-            };
+                    Ok(s) => s.to_string(),
+                    Err(_) => continue,
+                };
                 if seen.insert(gram.clone()) {
                     grams.push(gram);
                 }
@@ -1949,14 +2010,46 @@ pub(crate) fn build_fallback_weights() -> Vec<f32> {
 
 pub(crate) fn common_code_bigrams() -> Vec<(&'static str, u32)> {
     vec![
-        ("th", 5000), ("he", 4800), ("in", 4700), ("er", 4500), ("re", 4300),
-        ("fo", 4200), ("or", 4200), ("fu", 4100), ("un", 4000), ("ct", 3900),
-        ("cl", 3800), ("ss", 3700), ("co", 3600), ("de", 3500), ("nt", 3400),
-        ("io", 3300), ("on", 3200), ("st", 3100), ("te", 3000), ("ra", 2900),
-        ("ri", 2800), ("al", 2700), ("se", 2600), ("it", 2500), ("at", 2400),
-        ("es", 2300), ("is", 2200), ("le", 2100), ("ar", 2000), ("ha", 1900),
-        ("ng", 1800), ("js", 1700), ("ts", 1600), ("py", 1500), ("rs", 1400),
-        ("::", 1300), ("->", 1200), ("=>", 1100), ("__", 1000), ("./", 900),
+        ("th", 5000),
+        ("he", 4800),
+        ("in", 4700),
+        ("er", 4500),
+        ("re", 4300),
+        ("fo", 4200),
+        ("or", 4200),
+        ("fu", 4100),
+        ("un", 4000),
+        ("ct", 3900),
+        ("cl", 3800),
+        ("ss", 3700),
+        ("co", 3600),
+        ("de", 3500),
+        ("nt", 3400),
+        ("io", 3300),
+        ("on", 3200),
+        ("st", 3100),
+        ("te", 3000),
+        ("ra", 2900),
+        ("ri", 2800),
+        ("al", 2700),
+        ("se", 2600),
+        ("it", 2500),
+        ("at", 2400),
+        ("es", 2300),
+        ("is", 2200),
+        ("le", 2100),
+        ("ar", 2000),
+        ("ha", 1900),
+        ("ng", 1800),
+        ("js", 1700),
+        ("ts", 1600),
+        ("py", 1500),
+        ("rs", 1400),
+        ("::", 1300),
+        ("->", 1200),
+        ("=>", 1100),
+        ("__", 1000),
+        ("./", 900),
     ]
 }
 
@@ -2036,8 +2129,8 @@ mod tests {
     fn covering_grams_nonempty_for_valid_spans() {
         let weights = test_weights();
         let cases: Vec<&[u8]> = vec![
-            b"abc",       // minimum trigram
-            b"abcdef",    // medium span
+            b"abc",                                 // minimum trigram
+            b"abcdef",                              // medium span
             b"authentication_service_factory_impl", // long span
         ];
         for span in cases {
@@ -2156,6 +2249,9 @@ mod tests {
         let mut via_bytes = left.clone();
         bitand_dense_from_le_bytes(&mut via_bytes, &bytes);
 
-        assert_eq!(via_alloc, via_bytes, "Zero-copy path must match materialized path");
+        assert_eq!(
+            via_alloc, via_bytes,
+            "Zero-copy path must match materialized path"
+        );
     }
 }

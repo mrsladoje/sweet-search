@@ -18,12 +18,12 @@ use napi_derive::napi;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use super::modernbert_sdpa as modernbert;
 #[cfg(feature = "coreml")]
 use super::coreml_li::{CoremlLi, CoremlLiVariant};
 #[cfg(feature = "cuda")]
 use super::cuda_lock;
-use super::{build_device, metal_lock, optimal_dtype, select_device};
+use super::modernbert_sdpa as modernbert;
+use super::{build_device, metal_lock, optimal_dtype, select_device, ModelKind};
 
 /// Inner state of the LI model. Metal compute is serialized via
 /// `super::metal_lock()` — a process-wide mutex shared with the embedding
@@ -300,10 +300,14 @@ impl NativeLateInteractionModel {
         coreml_cascade_dir: Option<String>,
     ) -> Result<Self> {
         let device = select_device()
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeLI] Device init error: {e}"
-            )))?;
-        Self::load_on_device(backbone_path, projection_path, config_path, coreml_cascade_dir, device)
+            .map_err(|e| Error::from_reason(format!("[NativeLI] Device init error: {e}")))?;
+        Self::load_on_device(
+            backbone_path,
+            projection_path,
+            config_path,
+            coreml_cascade_dir,
+            device,
+        )
     }
 
     /// Load with an explicit device kind ("cpu", "metal", or "auto").
@@ -315,11 +319,18 @@ impl NativeLateInteractionModel {
         coreml_cascade_dir: Option<String>,
         device_kind: String,
     ) -> Result<Self> {
-        let device = build_device(&device_kind)
-            .map_err(|e| Error::from_reason(format!(
+        let device = build_device(&device_kind).map_err(|e| {
+            Error::from_reason(format!(
                 "[NativeLI] Device init error for '{device_kind}': {e}"
-            )))?;
-        Self::load_on_device(backbone_path, projection_path, config_path, coreml_cascade_dir, device)
+            ))
+        })?;
+        Self::load_on_device(
+            backbone_path,
+            projection_path,
+            config_path,
+            coreml_cascade_dir,
+            device,
+        )
     }
 
     fn load_on_device(
@@ -334,62 +345,59 @@ impl NativeLateInteractionModel {
             let _ = &coreml_cascade_dir;
         }
 
-        let config_str = std::fs::read_to_string(&config_path)
-            .map_err(|e| Error::from_reason(format!(
+        let config_str = std::fs::read_to_string(&config_path).map_err(|e| {
+            Error::from_reason(format!(
                 "[NativeLI] Failed to read config at {config_path}: {e}"
-            )))?;
+            ))
+        })?;
 
         let config: modernbert::Config = serde_json::from_str(&config_str)
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeLI] Config parse error: {e}"
-            )))?;
+            .map_err(|e| Error::from_reason(format!("[NativeLI] Config parse error: {e}")))?;
 
         let backbone_dim = config.hidden_size;
 
-        let dtype = optimal_dtype(&device);
+        let dtype = optimal_dtype(&device, ModelKind::LateInteraction);
         let bb_path = PathBuf::from(&backbone_path);
 
         // Load-time CUDA serialization — see embedding_model.rs::load_on_device
         // for the rationale. Forward passes remain lock-free.
         #[cfg(feature = "cuda")]
-        let _cuda_load_guard = if matches!(device, Device::Cuda(_)) {
-            Some(cuda_lock().lock().map_err(|e| Error::from_reason(format!(
-                "[NativeLI] cuda lock poisoned: {e}"
-            )))?)
-        } else {
-            None
-        };
+        let _cuda_load_guard =
+            if matches!(device, Device::Cuda(_)) {
+                Some(cuda_lock().lock().map_err(|e| {
+                    Error::from_reason(format!("[NativeLI] cuda lock poisoned: {e}"))
+                })?)
+            } else {
+                None
+            };
 
         let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(&[bb_path], dtype, &device)
-                .map_err(|e| Error::from_reason(format!(
+            VarBuilder::from_mmaped_safetensors(&[bb_path], dtype, &device).map_err(|e| {
+                Error::from_reason(format!(
                     "[NativeLI] Failed to load backbone from {backbone_path}: {e}"
-                )))?
+                ))
+            })?
         };
 
-        let vb = vb.rename_f(|name| {
-            name.strip_prefix("model.")
-                .unwrap_or(name)
-                .to_string()
-        });
+        let vb = vb.rename_f(|name| name.strip_prefix("model.").unwrap_or(name).to_string());
 
         let model = modernbert::ModernBert::load(vb, &config)
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeLI] Backbone load error: {e}"
-            )))?;
+            .map_err(|e| Error::from_reason(format!("[NativeLI] Backbone load error: {e}")))?;
 
         let proj_path = PathBuf::from(&projection_path);
         let proj_vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(&[proj_path], dtype, &device)
-                .map_err(|e| Error::from_reason(format!(
+            VarBuilder::from_mmaped_safetensors(&[proj_path], dtype, &device).map_err(|e| {
+                Error::from_reason(format!(
                     "[NativeLI] Failed to load projection from {projection_path}: {e}"
-                )))?
+                ))
+            })?
         };
 
-        let projection_weight = proj_vb.get((128, backbone_dim), "linear.weight")
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeLI] Projection weight load error: {e}"
-            )))?;
+        let projection_weight = proj_vb
+            .get((128, backbone_dim), "linear.weight")
+            .map_err(|e| {
+                Error::from_reason(format!("[NativeLI] Projection weight load error: {e}"))
+            })?;
 
         #[cfg(feature = "cuda")]
         drop(_cuda_load_guard);
@@ -416,7 +424,10 @@ impl NativeLateInteractionModel {
         );
 
         #[cfg(feature = "coreml")]
-        let coreml = match coreml_cascade_dir.as_deref().and_then(try_load_coreml_li_from_dir) {
+        let coreml = match coreml_cascade_dir
+            .as_deref()
+            .and_then(try_load_coreml_li_from_dir)
+        {
             None => None,
             Some(c) => match li_parity_cosine(
                 &model,
@@ -571,9 +582,7 @@ impl Task for LiEncodeTask {
                         vectors: Float32Array::new(vectors),
                         token_counts,
                     })
-                    .map_err(|e| {
-                        Error::from_reason(format!("[NativeLI] CoreML: {e}"))
-                    });
+                    .map_err(|e| Error::from_reason(format!("[NativeLI] CoreML: {e}")));
             }
             // Fell through because no variant fit — record it so the
             // cascade report accurately reflects call patterns.
@@ -589,15 +598,16 @@ impl Task for LiEncodeTask {
         // AND extraction — fixes it. Tokenization and JS-side result copies
         // still run in parallel because AsyncTask hops onto libuv worker
         // threads; only the Metal section is one-at-a-time.
-        let flat_ids: Vec<u32> = self.input_ids.iter()
-            .flatten()
-            .map(|&x| x as u32)
-            .collect();
-        let flat_mask_u8: Vec<u8> = self.attention_mask.iter()
+        let flat_ids: Vec<u32> = self.input_ids.iter().flatten().map(|&x| x as u32).collect();
+        let flat_mask_u8: Vec<u8> = self
+            .attention_mask
+            .iter()
             .flatten()
             .map(|&x| x as u8)
             .collect();
-        let active_counts: Vec<usize> = self.attention_mask.iter()
+        let active_counts: Vec<usize> = self
+            .attention_mask
+            .iter()
             .map(|row| row.iter().filter(|&&v| v != 0).count())
             .collect();
 
@@ -605,56 +615,57 @@ impl Task for LiEncodeTask {
         // thread-safe via Accelerate BLAS). Holding the lock on CPU would
         // prevent CPU embed from running in parallel with Metal LI, which is
         // the whole point of the CPU+GPU split.
-        let _guard = if matches!(inner.device, Device::Metal(_)) {
-            Some(metal_lock().lock()
-                .map_err(|e| Error::from_reason(format!("[NativeLI] metal lock poisoned: {e}")))?)
-        } else {
-            None
-        };
+        let _guard =
+            if matches!(inner.device, Device::Metal(_)) {
+                Some(metal_lock().lock().map_err(|e| {
+                    Error::from_reason(format!("[NativeLI] metal lock poisoned: {e}"))
+                })?)
+            } else {
+                None
+            };
 
         let (all_vectors, token_counts) = {
             let ids_tensor = Tensor::new(flat_ids.as_slice(), &inner.device)
                 .and_then(|t| t.reshape((batch_size, seq_len)))
-                .map_err(|e| Error::from_reason(format!(
-                    "[NativeLI] input_ids tensor error: {e}"
-                )))?;
+                .map_err(|e| {
+                    Error::from_reason(format!("[NativeLI] input_ids tensor error: {e}"))
+                })?;
             let mask_u8 = Tensor::new(flat_mask_u8.as_slice(), &inner.device)
                 .and_then(|t| t.reshape((batch_size, seq_len)))
-                .map_err(|e| Error::from_reason(format!(
-                    "[NativeLI] attention_mask tensor error: {e}"
-                )))?;
+                .map_err(|e| {
+                    Error::from_reason(format!("[NativeLI] attention_mask tensor error: {e}"))
+                })?;
 
-            let hidden = inner.model.forward(&ids_tensor, &mask_u8)
-                .map_err(|e| Error::from_reason(format!(
-                    "[NativeLI] Forward pass error: {e}"
-                )))?;
+            let hidden = inner
+                .model
+                .forward(&ids_tensor, &mask_u8)
+                .map_err(|e| Error::from_reason(format!("[NativeLI] Forward pass error: {e}")))?;
 
-            let proj_t = inner.projection_weight.t()
-                .map_err(|e| Error::from_reason(format!(
-                    "[NativeLI] Projection transpose error: {e}"
-                )))?;
-            let hidden_2d = hidden.reshape((batch_size * seq_len, inner.backbone_dim))
-                .map_err(|e| Error::from_reason(format!(
-                    "[NativeLI] Hidden reshape error: {e}"
-                )))?;
-            let projected = hidden_2d.matmul(&proj_t)
+            let proj_t = inner.projection_weight.t().map_err(|e| {
+                Error::from_reason(format!("[NativeLI] Projection transpose error: {e}"))
+            })?;
+            let hidden_2d = hidden
+                .reshape((batch_size * seq_len, inner.backbone_dim))
+                .map_err(|e| Error::from_reason(format!("[NativeLI] Hidden reshape error: {e}")))?;
+            let projected = hidden_2d
+                .matmul(&proj_t)
                 .and_then(|t| t.reshape((batch_size, seq_len, inner.token_dim)))
-                .map_err(|e| Error::from_reason(format!(
-                    "[NativeLI] Projection matmul error: {e}"
-                )))?;
+                .map_err(|e| {
+                    Error::from_reason(format!("[NativeLI] Projection matmul error: {e}"))
+                })?;
 
-            let norm = projected.sqr()
+            let norm = projected
+                .sqr()
                 .and_then(|t| t.sum_keepdim(D::Minus1))
                 .and_then(|t| (t + 1e-12f64))
                 .and_then(|t| t.sqrt())
-                .map_err(|e| Error::from_reason(format!(
-                    "[NativeLI] Norm computation error: {e}"
-                )))?;
-            let normalized = projected.broadcast_div(&norm)
+                .map_err(|e| {
+                    Error::from_reason(format!("[NativeLI] Norm computation error: {e}"))
+                })?;
+            let normalized = projected
+                .broadcast_div(&norm)
                 .and_then(|t| t.to_dtype(DType::F32))
-                .map_err(|e| Error::from_reason(format!(
-                    "[NativeLI] Normalize error: {e}"
-                )))?;
+                .map_err(|e| Error::from_reason(format!("[NativeLI] Normalize error: {e}")))?;
 
             // Extract per-batch-item active token vectors inside the lock so
             // the device→host copies don't race with another worker's forward.
@@ -665,14 +676,19 @@ impl Task for LiEncodeTask {
             let mut token_counts: Vec<u32> = Vec::with_capacity(batch_size);
             for (b, &active) in active_counts.iter().enumerate() {
                 token_counts.push(active as u32);
-                if active == 0 { continue; }
-                let batch_vecs = normalized.i(b)
+                if active == 0 {
+                    continue;
+                }
+                let batch_vecs = normalized
+                    .i(b)
                     .and_then(|t| t.narrow(0, 0, active))
                     .and_then(|t| t.reshape((active * inner.token_dim,)))
                     .and_then(|t| t.to_vec1::<f32>())
-                    .map_err(|e| Error::from_reason(format!(
-                        "[NativeLI] Vector extraction error for batch {b}: {e}"
-                    )))?;
+                    .map_err(|e| {
+                        Error::from_reason(format!(
+                            "[NativeLI] Vector extraction error for batch {b}: {e}"
+                        ))
+                    })?;
                 all_vectors.extend(batch_vecs);
             }
             (all_vectors, token_counts)

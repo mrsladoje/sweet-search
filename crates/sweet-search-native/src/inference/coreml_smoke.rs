@@ -61,9 +61,7 @@ pub fn coreml_shim_smoke_test(
         output_dim0 as usize,
         output_dim1 as usize,
     )
-    .map_err(|e| {
-        Error::from_reason(format!("[coreml-shim smoke] load failed: {e}"))
-    })?;
+    .map_err(|e| Error::from_reason(format!("[coreml-shim smoke] load failed: {e}")))?;
     let load_ms = t_load.elapsed().as_secs_f64() * 1000.0;
 
     let n = model.batch() * model.seq();

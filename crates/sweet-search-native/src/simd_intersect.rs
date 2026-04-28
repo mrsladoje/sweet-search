@@ -357,10 +357,7 @@ mod tests {
         // Result must be the same regardless of argument order
         let a: Vec<u32> = (0..200).step_by(3).collect();
         let b: Vec<u32> = (0..200).step_by(7).collect();
-        assert_eq!(
-            intersect_sorted_u32(&a, &b),
-            intersect_sorted_u32(&b, &a)
-        );
+        assert_eq!(intersect_sorted_u32(&a, &b), intersect_sorted_u32(&b, &a));
     }
 
     #[test]

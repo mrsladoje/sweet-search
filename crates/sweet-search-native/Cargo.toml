@@ -10,6 +10,13 @@ crate-type = ["cdylib", "rlib"]
 candle-core = "0.10"
 candle-nn = "0.10"
 candle-transformers = "0.10"
+# candle-flash-attn is needed as a DIRECT dependency (not just transitive
+# through candle-transformers/flash-attn) because src/inference/varlen.rs
+# calls candle_flash_attn::flash_attn_varlen_windowed by name. Without
+# this entry the crate is invisible to our code even when the
+# `flash-attn` feature is on. Optional + gated through the feature so
+# non-CUDA builds don't pull it in.
+candle-flash-attn = { version = "0.10", optional = true }
 memmap2 = "0.9"
 napi = { version = "2", features = ["default"] }
 napi-derive = "2"
@@ -74,7 +81,7 @@ cudnn = ["cuda", "candle-core/cudnn", "candle-nn/cudnn"]
 # cold CUDA build and ~200 MB of intermediate object files; worth caching across
 # CI jobs. Mirrors the fused SDPA path that Metal uses in nomic_bert_sdpa.rs and
 # modernbert_sdpa.rs.
-flash-attn = ["cuda", "candle-transformers/flash-attn"]
+flash-attn = ["cuda", "candle-transformers/flash-attn", "dep:candle-flash-attn"]
 
 [profile.release]
 opt-level = 3

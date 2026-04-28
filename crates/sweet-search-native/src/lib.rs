@@ -10,13 +10,13 @@
 // All warned items are reachable from JS in the production cdylib build.
 #![cfg_attr(test, allow(dead_code, unreachable_code))]
 
-mod tokenizer;
+mod dedup;
+mod inference;
+mod native_grep;
+mod regex_literals;
 mod simd_intersect;
 mod sparse_gram;
-mod regex_literals;
-mod native_grep;
-mod inference;
-mod dedup;
+mod tokenizer;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -25,10 +25,10 @@ use rayon::prelude::*;
 /// Compute MaxSim score for one candidate.
 /// query_norms[qi] = pre-computed L2 norm of query token qi.
 fn maxsim_one(
-    query: &[f32],     // Q × dim flat
+    query: &[f32],       // Q × dim flat
     query_norms: &[f32], // Q norms
     num_q: usize,
-    doc: &[f32],       // D × dim flat (dequantized)
+    doc: &[f32], // D × dim flat (dequantized)
     num_d: usize,
     dim: usize,
 ) -> f32 {
@@ -76,8 +76,12 @@ fn dequantize(int8_data: &[i8], min: f32, scale: f32, out: &mut Vec<f32>) {
 /// Dequantize int8 with per-token min/scale arrays.
 #[inline(always)]
 fn dequantize_per_token(
-    int8_data: &[i8], min_arr: &[f32], scale_arr: &[f32],
-    num_tokens: usize, dim: usize, out: &mut Vec<f32>,
+    int8_data: &[i8],
+    min_arr: &[f32],
+    scale_arr: &[f32],
+    num_tokens: usize,
+    dim: usize,
+    out: &mut Vec<f32>,
 ) {
     out.clear();
     out.reserve(num_tokens * dim);
@@ -178,7 +182,13 @@ pub fn maxsim_score_batch(
         .iter()
         .map(|c| {
             let int8: Vec<i8> = c.tokens.iter().map(|&b| b as i8).collect();
-            (int8, c.num_tokens as usize, c.dim as usize, c.min as f32, c.scale as f32)
+            (
+                int8,
+                c.num_tokens as usize,
+                c.dim as usize,
+                c.min as f32,
+                c.scale as f32,
+            )
         })
         .collect();
 
@@ -252,7 +262,9 @@ pub fn maxsim_score_batch_pertoken(
     for qi in 0..num_q {
         let q_slice = &query[qi * dim..(qi + 1) * dim];
         let mut norm_sq: f32 = 0.0;
-        for &v in q_slice { norm_sq += v * v; }
+        for &v in q_slice {
+            norm_sq += v * v;
+        }
         query_norms[qi] = norm_sq.sqrt();
     }
 
@@ -263,7 +275,14 @@ pub fn maxsim_score_batch_pertoken(
             let mins: Vec<f32> = c.min_array.as_ref().to_vec();
             let scales: Vec<f32> = c.scale_array.as_ref().to_vec();
             let norms: Vec<f32> = c.token_norms.as_ref().to_vec();
-            (int8, mins, scales, norms, c.num_tokens as usize, c.dim as usize)
+            (
+                int8,
+                mins,
+                scales,
+                norms,
+                c.num_tokens as usize,
+                c.dim as usize,
+            )
         })
         .collect();
 
@@ -272,7 +291,8 @@ pub fn maxsim_score_batch_pertoken(
         .map(|(int8_data, mins, scales, norms, num_d, d)| {
             let mut doc_f32 = Vec::with_capacity(*num_d * *d);
             dequantize_per_token(int8_data, mins, scales, *num_d, *d, &mut doc_f32);
-            let score = maxsim_one_with_norms(query, &query_norms, num_q, &doc_f32, norms, *num_d, *d);
+            let score =
+                maxsim_one_with_norms(query, &query_norms, num_q, &doc_f32, norms, *num_d, *d);
             score as f64
         })
         .collect()
@@ -306,7 +326,9 @@ pub fn maxsim_score_batch_4bit(
     for qi in 0..num_q {
         let q_slice = &query[qi * dim..(qi + 1) * dim];
         let mut norm_sq: f32 = 0.0;
-        for &v in q_slice { norm_sq += v * v; }
+        for &v in q_slice {
+            norm_sq += v * v;
+        }
         query_norms[qi] = norm_sq.sqrt();
     }
 
@@ -317,7 +339,14 @@ pub fn maxsim_score_batch_4bit(
             let mins: Vec<f32> = c.min_array.as_ref().to_vec();
             let scales: Vec<f32> = c.scale_array.as_ref().to_vec();
             let norms: Vec<f32> = c.token_norms.as_ref().to_vec();
-            (packed, mins, scales, norms, c.num_tokens as usize, c.dim as usize)
+            (
+                packed,
+                mins,
+                scales,
+                norms,
+                c.num_tokens as usize,
+                c.dim as usize,
+            )
         })
         .collect();
 
@@ -328,7 +357,17 @@ pub fn maxsim_score_batch_4bit(
             // No intermediate f32 buffer allocation. The 16-entry LUT per doc token
             // fits in a single L1 cache line (64 bytes), so the bottleneck is HBM
             // bandwidth for packed data loading, not compute.
-            let score = maxsim_fused_4bit(query, &query_norms, num_q, packed, mins, scales, norms, *num_d, *d);
+            let score = maxsim_fused_4bit(
+                query,
+                &query_norms,
+                num_q,
+                packed,
+                mins,
+                scales,
+                norms,
+                *num_d,
+                *d,
+            );
             score as f64
         })
         .collect()

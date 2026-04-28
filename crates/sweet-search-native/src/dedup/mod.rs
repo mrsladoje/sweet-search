@@ -172,8 +172,7 @@ pub fn dedup_cluster(
             .map(|&i| minhash::jaccard_estimate(exemplar_sig, &signatures[i as usize]))
             .collect();
 
-        let mut member_hashes: Vec<u64> =
-            members.iter().map(|&i| simhashes[i as usize]).collect();
+        let mut member_hashes: Vec<u64> = members.iter().map(|&i| simhashes[i as usize]).collect();
         member_hashes.sort_unstable();
         let mut hasher = Sha1::new();
         for h in &member_hashes {
