@@ -1,6 +1,6 @@
 {
   "name": "@sweet-search/native-darwin-arm64",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "Sweet Search native binaries for macOS ARM64",
   "os": ["darwin"],
   "cpu": ["arm64"],
