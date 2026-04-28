@@ -41,6 +41,16 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   DEBIAN_FRONTEND: noninteractive
+  # Private repositories cannot publish npm provenance. Do not add
+  # `--provenance`, and keep npm's config pinned off for future defaults.
+  NPM_CONFIG_PROVENANCE: 'false'
+  # CUDA + flash-attn pulls in large candle/cudarc crates. Full release LTO
+  # has repeatedly left the standard 7 GB runner stuck in final Rust codegen
+  # for 90+ minutes. The native addon is already optimized at opt-level=3;
+  # disabling LTO here trades a modest binary-size/runtime delta for a
+  # deterministic release build.
+  CARGO_PROFILE_RELEASE_LTO: 'false'
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
   # flash-attn kernel compilation (candle-flash-attn build.rs → nvcc) is
   # memory-hungry; unconstrained builds OOM on standard 7 GB ubuntu-latest
   # runners. Constrain to a single compute capability and cap parallel
@@ -59,11 +69,11 @@ jobs:
   build-and-publish:
     name: Build + publish CUDA native package
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     container:
       image: nvidia/cuda:12.2.2-devel-ubuntu22.04
     permissions:
       contents: read
-      id-token: write
     steps:
       - name: Install system dependencies
         run: |
@@ -161,7 +171,7 @@ jobs:
       - name: Publish to npm
         if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_publish != 'true'
         working-directory: packages/native-linux-x64-gnu-cuda
-        run: npm publish --provenance --access public
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
