@@ -151,6 +151,8 @@ jobs:
       - name: Build addon in arm64 container (pinned to bookworm/glibc 2.36)
         run: |
           docker run --rm --platform linux/arm64 \
+            -e CARGO_PROFILE_RELEASE_LTO=false \
+            -e CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
             -v "$PWD/crates/sweet-search-native:/src" \
             -w /src \
             rust:1-bookworm \
