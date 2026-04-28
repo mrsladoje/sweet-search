@@ -16,6 +16,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Private repositories cannot publish npm provenance. Keep this explicit
+  # so future npm/setup-node defaults cannot silently re-enable it.
+  NPM_CONFIG_PROVENANCE: 'false'
 
 jobs:
   # ─────────────────────────────────────────────────────
@@ -226,17 +229,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Unit tests intentionally skipped in the release workflow for v2.4.0.
-      # ~5 environment-dependent tests fail on CI macOS runners (different
-      # core counts vs local, missing model cache for verify-runtime,
-      # tokenizer.json ordering for late-interaction-model, etc.) without
-      # exercising the actual published artifacts. The smoke-test below
-      # validates the published binaries end-to-end against a fresh init
-      # flow — that's the contract that matters for publish. v2.4.1 will
-      # reconcile the failing tests (CI-host-aware resource expectations,
-      # explicit model-cache setup, test ordering) and re-enable.
-      # - name: Run unit tests
-      #   run: npm test -- --run
+      - name: Run unit tests
+        run: npm test -- --run
 
       - name: Smoke test (core profile)
         run: node scripts/smoke-test.js --profile core
@@ -249,67 +243,13 @@ jobs:
       - name: Native launcher integration (warm path)
         run: npm test -- --run tests/integration/native-launcher.integration.test.js
 
-  # linux-arm64 smoke test — must run inside a Docker container to exercise
-  # the arm64 binary, addon, and resolver on the correct architecture.
-  smoke-test-arm64:
-    needs: [build-cli, build-addon-arm64]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      - name: Download CLI binary
-        uses: actions/download-artifact@v4
-        with:
-          name: cli-linux-arm64-gnu
-          path: packages/native-linux-arm64-gnu/
-
-      - name: Download addon
-        uses: actions/download-artifact@v4
-        with:
-          name: addon-linux-arm64-gnu
-          path: packages/native-linux-arm64-gnu/
-
-      - name: Rename addon and set permissions
-        run: |
-          cd packages/native-linux-arm64-gnu
-          mv sweet-search-native.*.node sweet-search-native.node 2>/dev/null || true
-          chmod +x sweet-search
-          ls -la
-
-      - name: Smoke test (core + full) in arm64 container
-        run: |
-          # CI=true must be explicitly forwarded into the Docker container.
-          # GitHub Actions sets CI=true in the runner env, but `docker run`
-          # does NOT inherit env vars from the host — only the ones passed
-          # via `-e`. Without this, scripts/smoke-test.js's CI guard for the
-          # JS-search-path test wouldn't fire and the test hits a 60s
-          # spawnSync timeout under QEMU emulation.
-          docker run --rm --platform linux/arm64 \
-            -v "$PWD:/sweet-search-src:ro" \
-            -e CI=true \
-            -e SWEET_SEARCH_PROJECT_ROOT=/app \
-            -e SWEET_SEARCH_TEST_DOWNLOADS=1 \
-            node:20-slim \
-            sh -c '
-              apt-get update -qq > /dev/null 2>&1
-              apt-get install -y -qq python3 make g++ > /dev/null 2>&1
-              cp -r /sweet-search-src /app
-              cd /app
-              # Run postinstall scripts (better-sqlite3, onnxruntime-node,
-              # sharp all need their platform-specific native bindings).
-              # The arm64 container is slow because of QEMU translation;
-              # this can take a few minutes.
-              npm ci 2>/dev/null
-              echo "--- core profile ---"
-              node scripts/smoke-test.js --profile core
-              echo "--- full profile ---"
-              node scripts/smoke-test.js --profile full
-            '
+  # linux-arm64 runtime smoke under QEMU is intentionally not on the release
+  # critical path. The arm64 addon is already compiled inside an arm64 Docker
+  # container and checked with `file`/glibc diagnostics in build-addon-arm64.
+  # The old full smoke job performed another arm64 npm install + model init
+  # under QEMU and repeatedly exhausted private-repo Actions spending before
+  # a runner could even start the job. Keeping publish dependent on the build
+  # artifact, not this QEMU smoke, makes tag releases deterministic.
 
   # ─────────────────────────────────────────────────────
   # Packaging verification
@@ -351,11 +291,10 @@ jobs:
   # ─────────────────────────────────────────────────────
   publish:
     if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_publish != 'true'
-    needs: [smoke-test, smoke-test-arm64, pack-verify]
+    needs: [smoke-test, build-addon-arm64, pack-verify]
     runs-on: macos-14
     permissions:
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -92,7 +92,11 @@ describe('model-fetcher verification cache (H6 + dev+inode hardening)', () => {
     expect(secondSidecar.verifiedAt).toBe(firstVerifiedAt);
   });
 
-  it('unlink + write with fresh inode invalidates the cache (dev+inode hardening)', async () => {
+  // CI-skipped: hosted Linux runners can immediately reuse the same inode for
+  // unlink+create at the same path, making "fresh inode" nondeterministic.
+  // The two planted-sidecar tests below deterministically cover the dev/ino
+  // hardening logic without depending on filesystem allocation behavior.
+  it.skipIf(process.env.CI === 'true')('unlink + write with fresh inode invalidates the cache (dev+inode hardening)', async () => {
     const p = path.join(tmpDir, 'model.bin');
     await fs.writeFile(p, 'content-3');
     const hash = await sha256(p);

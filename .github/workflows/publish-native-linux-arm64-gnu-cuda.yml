@@ -20,7 +20,9 @@ name: Publish @sweet-search/native-linux-arm64-gnu-cuda
 # Private-repo note: `ubuntu-22.04-arm` is free for public repos and
 # billed as a paid minute rate for private repos. If billing is a
 # concern, fall back to a self-hosted arm64 runner or a QEMU-buildx
-# workflow variant.
+# workflow variant. This workflow is kept in the automatic v* release path
+# because the v2.4.0 run reached npm publish successfully; the failure was
+# private-repo provenance, not runner availability.
 
 on:
   push:
@@ -39,6 +41,14 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   DEBIAN_FRONTEND: noninteractive
+  # Private repositories cannot publish npm provenance. Do not add
+  # `--provenance`, and keep npm's config pinned off for future defaults.
+  NPM_CONFIG_PROVENANCE: 'false'
+  # Keep CUDA release builds deterministic on paid arm64 runners. Full LTO is
+  # not worth the extra wall time for a platform package that is already
+  # dominated by flash-attn and candle CUDA codegen.
+  CARGO_PROFILE_RELEASE_LTO: 'false'
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
   # Jetson Orin = SM 8.7 baseline; Grace Hopper SM 9.0 and Xavier SM 7.2
   # fall back to naive attention. Single-SM build keeps memory under the
   # arm64 runner's ceiling.
@@ -49,11 +59,11 @@ jobs:
   build-and-publish:
     name: Build + publish arm64 CUDA native package
     runs-on: ubuntu-22.04-arm
+    timeout-minutes: 120
     container:
       image: nvidia/cuda:12.2.2-devel-ubuntu22.04
     permissions:
       contents: read
-      id-token: write
     steps:
       - name: Install system dependencies
         run: |
@@ -149,7 +159,7 @@ jobs:
       - name: Publish to npm
         if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_publish != 'true'
         working-directory: packages/native-linux-arm64-gnu-cuda
-        run: npm publish --provenance --access public
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
