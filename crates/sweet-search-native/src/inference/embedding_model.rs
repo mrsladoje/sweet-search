@@ -15,12 +15,12 @@ use napi_derive::napi;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use super::nomic_bert_sdpa as nomic_bert;
 #[cfg(feature = "coreml")]
 use super::coreml_embedding::{CoremlEmbedding, CoremlEmbeddingVariant};
 #[cfg(feature = "cuda")]
 use super::cuda_lock;
-use super::{build_device, metal_lock, optimal_dtype, select_device};
+use super::nomic_bert_sdpa as nomic_bert;
+use super::{build_device, metal_lock, optimal_dtype, select_device, ModelKind};
 
 /// Inner state of the embedding model, shared between the napi struct (main
 /// thread) and `EmbedBatchTask` (libuv worker thread) via `Arc`.
@@ -229,10 +229,9 @@ fn embedding_parity_cosine(
     let mask_float = mask_u8
         .to_dtype(hidden.dtype())
         .map_err(|e| format!("mask dtype: {e}"))?;
-    let pooled = nomic_bert::mean_pooling(&hidden, &mask_float)
-        .map_err(|e| format!("mean pool: {e}"))?;
-    let normalized = nomic_bert::l2_normalize(&pooled)
-        .map_err(|e| format!("l2 normalize: {e}"))?;
+    let pooled =
+        nomic_bert::mean_pooling(&hidden, &mask_float).map_err(|e| format!("mean pool: {e}"))?;
+    let normalized = nomic_bert::l2_normalize(&pooled).map_err(|e| format!("l2 normalize: {e}"))?;
 
     let candle_vec: Vec<f32> = normalized
         .to_dtype(DType::F32)
@@ -306,9 +305,7 @@ impl NativeEmbeddingModel {
         coreml_cascade_dir: Option<String>,
     ) -> Result<Self> {
         let device = select_device()
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeEmbedding] Device init error: {e}"
-            )))?;
+            .map_err(|e| Error::from_reason(format!("[NativeEmbedding] Device init error: {e}")))?;
         Self::load_on_device(safetensors_path, config_path, coreml_cascade_dir, device)
     }
 
@@ -322,10 +319,11 @@ impl NativeEmbeddingModel {
         coreml_cascade_dir: Option<String>,
         device_kind: String,
     ) -> Result<Self> {
-        let device = build_device(&device_kind)
-            .map_err(|e| Error::from_reason(format!(
+        let device = build_device(&device_kind).map_err(|e| {
+            Error::from_reason(format!(
                 "[NativeEmbedding] Device init error for '{device_kind}': {e}"
-            )))?;
+            ))
+        })?;
         Self::load_on_device(safetensors_path, config_path, coreml_cascade_dir, device)
     }
 
@@ -340,19 +338,19 @@ impl NativeEmbeddingModel {
             let _ = &coreml_cascade_dir;
         }
 
-        let config_str = std::fs::read_to_string(&config_path)
-            .map_err(|e| Error::from_reason(format!(
+        let config_str = std::fs::read_to_string(&config_path).map_err(|e| {
+            Error::from_reason(format!(
                 "[NativeEmbedding] Failed to read config at {config_path}: {e}"
-            )))?;
+            ))
+        })?;
 
-        let config: nomic_bert::Config = serde_json::from_str(&config_str)
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeEmbedding] Config parse error: {e}"
-            )))?;
+        let config: nomic_bert::Config = serde_json::from_str(&config_str).map_err(|e| {
+            Error::from_reason(format!("[NativeEmbedding] Config parse error: {e}"))
+        })?;
 
         let hidden_size = config.n_embd;
 
-        let dtype = optimal_dtype(&device);
+        let dtype = optimal_dtype(&device, ModelKind::Embedding);
         let path = PathBuf::from(&safetensors_path);
 
         // Candle 0.10's CUDA backend has a known H2D-copy race during
@@ -364,24 +362,24 @@ impl NativeEmbeddingModel {
         // weight upload.
         #[cfg(feature = "cuda")]
         let _cuda_load_guard = if matches!(device, Device::Cuda(_)) {
-            Some(cuda_lock().lock().map_err(|e| Error::from_reason(format!(
-                "[NativeEmbedding] cuda lock poisoned: {e}"
-            )))?)
+            Some(cuda_lock().lock().map_err(|e| {
+                Error::from_reason(format!("[NativeEmbedding] cuda lock poisoned: {e}"))
+            })?)
         } else {
             None
         };
 
         let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(&[path], dtype, &device)
-                .map_err(|e| Error::from_reason(format!(
+            VarBuilder::from_mmaped_safetensors(&[path], dtype, &device).map_err(|e| {
+                Error::from_reason(format!(
                     "[NativeEmbedding] Failed to load safetensors from {safetensors_path}: {e}"
-                )))?
+                ))
+            })?
         };
 
-        let model = nomic_bert::NomicBertModel::load(vb, &config)
-            .map_err(|e| Error::from_reason(format!(
-                "[NativeEmbedding] Model construction error: {e}"
-            )))?;
+        let model = nomic_bert::NomicBertModel::load(vb, &config).map_err(|e| {
+            Error::from_reason(format!("[NativeEmbedding] Model construction error: {e}"))
+        })?;
 
         #[cfg(feature = "cuda")]
         drop(_cuda_load_guard);
@@ -406,7 +404,10 @@ impl NativeEmbeddingModel {
         );
 
         #[cfg(feature = "coreml")]
-        let coreml = match coreml_cascade_dir.as_deref().and_then(try_load_coreml_embedding_from_dir) {
+        let coreml = match coreml_cascade_dir
+            .as_deref()
+            .and_then(try_load_coreml_embedding_from_dir)
+        {
             None => None,
             Some(c) => match embedding_parity_cosine(&model, &device, &c, hidden_size) {
                 Ok(cos) if cos >= COREML_EMBED_PARITY_THRESHOLD => {
@@ -494,7 +495,6 @@ impl NativeEmbeddingModel {
             inner: self.inner.clone(),
         })
     }
-
 }
 
 /// napi `Task` running NomicBERT embedding on a libuv worker thread.
@@ -550,9 +550,7 @@ impl Task for EmbedBatchTask {
                 return coreml
                     .embed(&self.input_ids, &self.attention_mask)
                     .map(Float32Array::new)
-                    .map_err(|e| {
-                        Error::from_reason(format!("[NativeEmbedding] CoreML: {e}"))
-                    });
+                    .map_err(|e| Error::from_reason(format!("[NativeEmbedding] CoreML: {e}")));
             }
             // Call did not fit any variant — record it in the dispatch
             // stats so the report can tell the user whether the cascade
@@ -569,11 +567,10 @@ impl Task for EmbedBatchTask {
         // gencodesearchnet MRR collapses (93%→52% for embedding, 98%→25% for
         // LI). Tokenization and JS-side copies still run in parallel because
         // AsyncTask hops onto libuv worker threads.
-        let flat_ids: Vec<u32> = self.input_ids.iter()
-            .flatten()
-            .map(|&x| x as u32)
-            .collect();
-        let flat_mask_u8: Vec<u8> = self.attention_mask.iter()
+        let flat_ids: Vec<u32> = self.input_ids.iter().flatten().map(|&x| x as u32).collect();
+        let flat_mask_u8: Vec<u8> = self
+            .attention_mask
+            .iter()
             .flatten()
             .map(|&x| x as u8)
             .collect();
@@ -584,8 +581,9 @@ impl Task for EmbedBatchTask {
         // needlessly serialize CPU embed against Metal LI, defeating the
         // CPU+GPU parallel pipeline.
         let _guard = if matches!(inner.device, Device::Metal(_)) {
-            Some(metal_lock().lock()
-                .map_err(|e| Error::from_reason(format!("[NativeEmbedding] metal lock poisoned: {e}")))?)
+            Some(metal_lock().lock().map_err(|e| {
+                Error::from_reason(format!("[NativeEmbedding] metal lock poisoned: {e}"))
+            })?)
         } else {
             None
         };
@@ -593,31 +591,34 @@ impl Task for EmbedBatchTask {
         let result: Vec<f32> = {
             let ids_tensor = Tensor::new(flat_ids.as_slice(), &inner.device)
                 .and_then(|t| t.reshape((batch_size, seq_len)))
-                .map_err(|e| Error::from_reason(format!(
-                    "[NativeEmbedding] input_ids tensor error: {e}"
-                )))?;
+                .map_err(|e| {
+                    Error::from_reason(format!("[NativeEmbedding] input_ids tensor error: {e}"))
+                })?;
             let mask_u8 = Tensor::new(flat_mask_u8.as_slice(), &inner.device)
                 .and_then(|t| t.reshape((batch_size, seq_len)))
-                .map_err(|e| Error::from_reason(format!(
-                    "[NativeEmbedding] attention_mask tensor error: {e}"
-                )))?;
+                .map_err(|e| {
+                    Error::from_reason(format!(
+                        "[NativeEmbedding] attention_mask tensor error: {e}"
+                    ))
+                })?;
 
-            let hidden = inner.model.forward(&ids_tensor, None, Some(&mask_u8))
-                .map_err(|e| Error::from_reason(format!(
-                    "[NativeEmbedding] Forward pass error: {e}"
-                )))?;
-            let mask_float = mask_u8.to_dtype(hidden.dtype())
-                .map_err(|e| Error::from_reason(format!(
+            let hidden = inner
+                .model
+                .forward(&ids_tensor, None, Some(&mask_u8))
+                .map_err(|e| {
+                    Error::from_reason(format!("[NativeEmbedding] Forward pass error: {e}"))
+                })?;
+            let mask_float = mask_u8.to_dtype(hidden.dtype()).map_err(|e| {
+                Error::from_reason(format!(
                     "[NativeEmbedding] Mask dtype conversion error: {e}"
-                )))?;
-            let pooled = nomic_bert::mean_pooling(&hidden, &mask_float)
-                .map_err(|e| Error::from_reason(format!(
-                    "[NativeEmbedding] Mean pooling error: {e}"
-                )))?;
-            let normalized = nomic_bert::l2_normalize(&pooled)
-                .map_err(|e| Error::from_reason(format!(
-                    "[NativeEmbedding] L2 normalize error: {e}"
-                )))?;
+                ))
+            })?;
+            let pooled = nomic_bert::mean_pooling(&hidden, &mask_float).map_err(|e| {
+                Error::from_reason(format!("[NativeEmbedding] Mean pooling error: {e}"))
+            })?;
+            let normalized = nomic_bert::l2_normalize(&pooled).map_err(|e| {
+                Error::from_reason(format!("[NativeEmbedding] L2 normalize error: {e}"))
+            })?;
 
             // Use to_vec1 with a flat reshape rather than to_vec2 so we
             // avoid building the intermediate Vec<Vec<f32>> just to flatten
@@ -628,14 +629,18 @@ impl Task for EmbedBatchTask {
                     .reshape(flat_shape)
                     .and_then(|t| t.to_vec1::<f32>())
                     .map_err(|e| {
-                        Error::from_reason(format!("[NativeEmbedding] Output conversion error: {e}"))
+                        Error::from_reason(format!(
+                            "[NativeEmbedding] Output conversion error: {e}"
+                        ))
                     })?,
                 _ => normalized
                     .to_dtype(DType::F32)
                     .and_then(|t| t.reshape(flat_shape))
                     .and_then(|t| t.to_vec1::<f32>())
                     .map_err(|e| {
-                        Error::from_reason(format!("[NativeEmbedding] Output conversion error: {e}"))
+                        Error::from_reason(format!(
+                            "[NativeEmbedding] Output conversion error: {e}"
+                        ))
                     })?,
             }
         };

@@ -17,7 +17,9 @@
 //! the SDPA kernel has no CPU implementation.
 
 use candle_core::{DType, Device, Result, Tensor, D};
-use candle_nn::{embedding, layer_norm, linear, linear_no_bias, Embedding, LayerNorm, Linear, Module, VarBuilder};
+use candle_nn::{
+    embedding, layer_norm, linear, linear_no_bias, Embedding, LayerNorm, Linear, Module, VarBuilder,
+};
 use serde::Deserialize;
 
 // Matches nomic-ai/nomic-embed-text-v1.5 config.json field names.
@@ -246,25 +248,28 @@ impl NomicBertAttention {
         let q = rotary_emb.apply(&q)?;
         let k = rotary_emb.apply(&k)?;
 
-        // SDPA routes q_seq ≤ 8 to the vector kernel, which does NOT apply
-        // the attention mask. For padded inputs or masked layers that would
-        // silently break correctness. Require the full (masked) kernel by
-        // gating on seq_len > 8; naive handles the short-seq case.
+        // Backend enablement (in priority order):
         //
-        // Backend enablement:
-        //   - Metal: candle-nn SDPA via MLX-style fused kernel — supported.
-        //   - CUDA:  candle-nn SDPA op has NO CUDA backend implementation
-        //            (`no cuda implementation for metal-sdpa` at runtime).
-        //            candle-flash-attn covers Ampere+ but only via
-        //            `flash_attn_varlen` for arbitrary additive masks, which
-        //            requires repacking inputs around `cu_seqlens` —
-        //            invasive enough to defer. CUDA falls through to the
-        //            naive matmul path below: materializes the full
-        //            attention matrix (B × H × S × S BF16) and runs via
-        //            stock CUDA matmul + softmax kernels. Correct;
-        //            non-flash-attn perf. Tracked as follow-up: wire
-        //            flash_attn_varlen to recover the fused-kernel speedup.
-        let use_sdpa = {
+        //   1. Metal SDPA  — candle-nn::ops::sdpa via MLX-style fused kernel.
+        //                    Best Apple-Silicon path. Always on when present.
+        //
+        //   2. CUDA flash-attn varlen — candle_flash_attn::flash_attn_varlen.
+        //                    Ampere+ (SM 8.0+) only. Requires F16 or BF16
+        //                    input; rejects F32. Uses online-softmax with
+        //                    F32 accumulators internally, so BF16 input
+        //                    runs without the precision drift the naive
+        //                    path produces (see varlen.rs comment).
+        //
+        //   3. Naive matmul → softmax → matmul — portable fallback for CPU,
+        //                    pre-Ampere CUDA, and any case where dtype/SM
+        //                    rules out flash-attn. Materializes the full
+        //                    B×H×S×S attention matrix; correct, non-fused.
+        //
+        // Common gate for kernels 1 and 2: seq_len > 8. The Metal SDPA
+        // vector kernel (selected when q_seq ≤ 8) does NOT apply the mask,
+        // and short-seq batches don't benefit from fused kernels enough to
+        // justify the dispatch overhead anyway.
+        let use_metal_sdpa = {
             let _ = hidden_states;
             let mut yes = false;
             #[cfg(feature = "metal")]
@@ -274,22 +279,39 @@ impl NomicBertAttention {
             yes && seq_len > 8
         };
 
-        let attn_output = if use_sdpa {
-            // Fused SDPA kernel: softmax(qk^T * scale + mask) @ v in one op.
-            //
-            // Mask shape contract (candle-nn SDPA): (bs, qheads, qseq, kseq).
-            // The incoming `attention_mask` has shape (batch, 1, 1, seq_len) with
-            // 0 for valid tokens and -1e4 for padding (see get_extended_attention_mask).
-            // Broadcast to (batch, num_heads, seq_len, seq_len) as a stride view
-            // — no `.contiguous()`: candle-nn SDPA reads `mask_l.stride()` and
-            // accepts broadcast layouts natively, saving a mask memcpy per layer.
-            let mask = attention_mask
-                .broadcast_as((batch_size, self.num_heads, seq_len, seq_len))?;
+        let use_flash_attn_cuda = {
+            let _ = hidden_states;
+            let mut yes = false;
+            #[cfg(feature = "flash-attn")]
+            {
+                let on_cuda = matches!(hidden_states.device(), Device::Cuda(_));
+                let sm_supports = super::cuda_compute_capability_from_env() >= 8.0;
+                let dtype_supports = matches!(q.dtype(), DType::F16 | DType::BF16);
+                yes |= on_cuda && sm_supports && dtype_supports;
+            }
+            yes && seq_len > 8
+        };
+
+        let attn_output = if use_metal_sdpa {
+            // Fused Metal SDPA. Mask shape (B, H, qS, kS); broadcast view, no copy.
+            let mask =
+                attention_mask.broadcast_as((batch_size, self.num_heads, seq_len, seq_len))?;
             let scale = 1.0 / (self.head_dim as f64).sqrt();
             candle_nn::ops::sdpa(&q, &k, &v, Some(&mask), false, scale as f32, 1.0)?
+        } else if use_flash_attn_cuda {
+            // CUDA flash-attn: pack out padding around cu_seqlens, run the
+            // fused kernel, unpack back to (B, H, S, D). See varlen.rs.
+            #[cfg(feature = "flash-attn")]
+            {
+                let scale = 1.0 / (self.head_dim as f64).sqrt();
+                // NomicBERT is full self-attention — no sliding-window restriction.
+                super::varlen::flash_attn_padded(&q, &k, &v, attention_mask, scale as f32, None)?
+            }
+            #[cfg(not(feature = "flash-attn"))]
+            unreachable!("use_flash_attn_cuda requires the flash-attn feature")
         } else {
-            // CPU path + short-seq fallback: naive attention
-            // (matches upstream nomic_bert byte-for-byte).
+            // Portable naive attention (CPU, pre-Ampere CUDA, F32 CUDA, etc.).
+            // Matches upstream nomic_bert byte-for-byte.
             let scale = (self.head_dim as f64).sqrt();
             let attn_scores = (q.matmul(&k.t()?)? / scale)?;
             let attn_scores = attn_scores.broadcast_add(attention_mask)?;

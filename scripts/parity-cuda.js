@@ -48,7 +48,23 @@ import {
   unloadNativeModels,
 } from '../core/infrastructure/native-inference.js';
 
-const EMBED_MIN_THRESHOLD = 0.999;
+// Per-model parity thresholds.
+//
+// LI keeps the strict floor — Strategy C ships ModernBERT at F32 on CUDA
+// (per inference/mod.rs::optimal_dtype) so CUDA-vs-CPU should be bit-perfect
+// or near it. Any drift here means a real kernel/contiguity/mask bug.
+//
+// Embedding accepts BF16 drift — Strategy C also ships NomicBERT at BF16 on
+// Ampere+ for the indexing speedup, and BF16 has known sub-0.999 per-pair
+// min cosine drift (the 12-layer naive matmul→softmax→matmul path drops
+// min ≈ 0.994 / mean ≈ 0.9999 vs the F32 reference, identical to what the
+// Apple Metal BF16 path already produces in production). The 0.99 min and
+// 0.9998 mean thresholds let the gate catch genuine kernel regressions
+// without falsely failing the validated BF16 default. To enforce strict
+// F32-equivalent embedding parity, run with SWEET_SEARCH_NATIVE_DTYPE=f32
+// (or SWEET_SEARCH_NATIVE_EMBED_DTYPE=f32) — both will tighten the actual
+// cosines to ~1.0 since CPU is always F32.
+const EMBED_MIN_THRESHOLD = 0.99;
 const EMBED_MEAN_THRESHOLD = 0.9998;
 const LI_MIN_THRESHOLD = 0.999;
 const LI_MEAN_THRESHOLD = 0.9998;
