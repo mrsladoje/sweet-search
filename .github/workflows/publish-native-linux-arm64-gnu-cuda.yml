@@ -85,10 +85,15 @@ jobs:
           uname -m
           echo "CUDA_HOME: ${CUDA_HOME:-/usr/local/cuda}"
 
+      # Same fix release.yml + the x64-cuda workflow use:
+      # populate node_modules/.bin/napi locally so `npx napi` resolves.
+      - name: Install JS deps
+        run: npm ci --ignore-scripts
+
       - name: Build CUDA napi addon (cuda + flash-attn)
         working-directory: crates/sweet-search-native
         run: |
-          npx --yes @napi-rs/cli@3 build \
+          npx napi build \
             --release \
             --platform \
             --target aarch64-unknown-linux-gnu \

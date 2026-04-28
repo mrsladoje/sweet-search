@@ -94,10 +94,18 @@ jobs:
           ls /usr/local/cuda/lib64/libcudart.so* | head -n 5
           echo "CUDA_HOME: ${CUDA_HOME:-/usr/local/cuda}"
 
+      # Install JS deps so node_modules/.bin/napi exists. Without this,
+      # `npx napi` falls back to fetching @napi-rs/cli on-the-fly and hits
+      # the "could not determine executable to run" naming issue (the
+      # package is `@napi-rs/cli` but the binary it exposes is `napi`).
+      # Same fix release.yml uses.
+      - name: Install JS deps
+        run: npm ci --ignore-scripts
+
       - name: Build CUDA napi addon (cuda + flash-attn)
         working-directory: crates/sweet-search-native
         run: |
-          npx --yes @napi-rs/cli@3 build \
+          npx napi build \
             --release \
             --platform \
             --target x86_64-unknown-linux-gnu \
