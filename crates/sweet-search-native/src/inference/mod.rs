@@ -13,6 +13,11 @@ mod li_model;
 mod modernbert_sdpa;
 mod nomic_bert_sdpa;
 
+// Variable-length packing helpers for candle-flash-attn. Compiled in only
+// when the `flash-attn` Cargo feature is enabled (CUDA Ampere+ builds).
+#[cfg(feature = "flash-attn")]
+mod varlen;
+
 // CoreML FFI: thin Objective-C shim for loading .mlpackage files and
 // running inference on CPU_AND_NE. Gated behind the `coreml` Cargo
 // feature which is macOS-only (requires metal). The shim itself lives
@@ -23,13 +28,13 @@ mod nomic_bert_sdpa;
 // embedding_model.rs and li_model.rs can dispatch to CoreML when the
 // opt-in env vars are set and fall back to candle otherwise.
 #[cfg(feature = "coreml")]
-mod coreml_shim;
-#[cfg(feature = "coreml")]
-mod coreml_smoke;
-#[cfg(feature = "coreml")]
 mod coreml_embedding;
 #[cfg(feature = "coreml")]
 mod coreml_li;
+#[cfg(feature = "coreml")]
+mod coreml_shim;
+#[cfg(feature = "coreml")]
+mod coreml_smoke;
 
 pub use embedding_model::NativeEmbeddingModel;
 pub use li_model::NativeLateInteractionModel;
@@ -37,6 +42,12 @@ pub use li_model::NativeLateInteractionModel;
 use candle_core::{DType, Device};
 use napi_derive::napi;
 use std::sync::{Mutex, OnceLock};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModelKind {
+    Embedding,
+    LateInteraction,
+}
 
 /// Process-wide mutex that serializes all Metal compute across models.
 ///
@@ -151,7 +162,7 @@ pub(crate) fn cuda_compute_capability_from_env() -> f32 {
         .unwrap_or(0.0)
 }
 
-/// Select the optimal weight dtype for the active device.
+/// Select the optimal weight dtype for the active device and model family.
 ///
 /// Metal defaults to BF16. Verified against gencodesearchnet 500q same-session:
 ///   F32 balanced MRR 93.14% → BF16 balanced MRR 93.07% (Δ -0.07pp)
@@ -174,52 +185,65 @@ pub(crate) fn cuda_compute_capability_from_env() -> f32 {
 /// rankings to break retrieval. BF16 avoids this because it has F32's
 /// exponent range — rounding errors stay bounded.
 ///
-/// Opt-outs:
-///   SWEET_SEARCH_NATIVE_DTYPE=f32  — slower, reference precision (paranoia mode)
-///   SWEET_SEARCH_NATIVE_DTYPE=f16  — FAST but destroys MRR, do not ship
-pub(crate) fn optimal_dtype(device: &Device) -> DType {
-    let forced_dtype = std::env::var("SWEET_SEARCH_NATIVE_DTYPE")
+/// CUDA is model-specific:
+///   - NomicBERT embedding defaults to BF16 on Ampere+ (SM >= 8.0). Verified
+///     pooled cosine stays in the retrieval-safe band while indexing gets the
+///     Tensor Core / memory-bandwidth win.
+///   - ModernBERT late interaction stays F32 by default, even when
+///     SWEET_SEARCH_NATIVE_DTYPE=bf16 is set. BF16 LI per-token parity on RTX
+///     4090 is not retrieval-safe (min ~0.70, mean ~0.974 against F32 CPU).
+///     Those vectors feed MaxSim directly, so mean-pooling cannot mask the
+///     drift as it does for embeddings.
+///
+/// Overrides:
+///   SWEET_SEARCH_NATIVE_DTYPE=f32      — force global F32 reference precision
+///   SWEET_SEARCH_NATIVE_DTYPE=bf16     — prefer BF16 where it is validated
+///   SWEET_SEARCH_NATIVE_EMBED_DTYPE=*  — force embedding dtype for diagnostics
+///   SWEET_SEARCH_NATIVE_LI_DTYPE=*     — force LI dtype for diagnostics
+pub(crate) fn optimal_dtype(device: &Device, model_kind: ModelKind) -> DType {
+    let global_dtype = std::env::var("SWEET_SEARCH_NATIVE_DTYPE")
         .map(|v| v.to_lowercase())
         .unwrap_or_default();
+    let model_dtype = match model_kind {
+        ModelKind::Embedding => std::env::var("SWEET_SEARCH_NATIVE_EMBED_DTYPE"),
+        ModelKind::LateInteraction => std::env::var("SWEET_SEARCH_NATIVE_LI_DTYPE"),
+    }
+    .map(|v| v.to_lowercase())
+    .ok();
+
+    let parse_dtype = |value: &str| match value {
+        "bf16" | "bfloat16" => Some(DType::BF16),
+        "f16" | "fp16" | "float16" => Some(DType::F16),
+        "f32" | "fp32" | "float32" => Some(DType::F32),
+        _ => None,
+    };
+
+    if let Some(dtype) = model_dtype.as_deref().and_then(parse_dtype) {
+        return dtype;
+    }
+
+    if matches!(global_dtype.as_str(), "f32" | "fp32" | "float32") {
+        return DType::F32;
+    }
+
     match device {
         #[cfg(feature = "metal")]
-        Device::Metal(_) => match forced_dtype.as_str() {
-            "f16" => DType::F16,
-            "f32" => DType::F32,
+        Device::Metal(_) => match global_dtype.as_str() {
+            "f16" | "fp16" | "float16" => DType::F16,
             _ => DType::BF16,
         },
-        // CUDA dtype policy:
-        //   ALL compute capabilities → F32 default for v2.3.0.
-        //
-        // Why not BF16/F16 by default on Ampere+ as the Metal path does:
-        //   parity-cuda (2026-04-24, RTX 4090, SM 8.9) showed BF16 drift
-        //   well outside the retrieval-safe band — LI per-token cosines
-        //   min=0.69 mean=0.97 (need ≥0.999/≥0.9998). The drift comes
-        //   from running attention through the naive
-        //   matmul→softmax→matmul path entirely in BF16 (no F32 promotion
-        //   of softmax numerator/denominator). The fused metal-sdpa
-        //   kernel hides this on Apple Silicon by promoting internally;
-        //   we lose that promotion on CUDA because candle-nn::ops::sdpa
-        //   has no CUDA backend, and flash-attn's varlen API isn't yet
-        //   wired for our additive padding masks. Until either the
-        //   flash-attn varlen path lands OR a mixed-precision
-        //   (BF16 weights + F32 attention math) path lands, F32 is the
-        //   only correct default. Forcing BF16 via env var is allowed
-        //   below for users who measure their own retrieval impact.
-        //
-        // Env overrides:
-        //   SWEET_SEARCH_NATIVE_DTYPE=bf16 — force BF16 (drift, see above)
-        //   SWEET_SEARCH_NATIVE_DTYPE=f16  — force F16 (worse than BF16 on Ampere)
-        //   SWEET_SEARCH_NATIVE_DTYPE=f32  — explicit F32 (the default)
         #[cfg(feature = "cuda")]
-        Device::Cuda(_) => match forced_dtype.as_str() {
-            "bf16" => DType::BF16,
-            "f16" => DType::F16,
-            "f32" => DType::F32,
-            _ => DType::F32,
+        Device::Cuda(_) => match model_kind {
+            ModelKind::Embedding => match global_dtype.as_str() {
+                "f16" | "fp16" | "float16" => DType::F16,
+                "bf16" | "bfloat16" => DType::BF16,
+                _ if cuda_compute_capability_from_env() >= 8.0 => DType::BF16,
+                _ => DType::F32,
+            },
+            ModelKind::LateInteraction => DType::F32,
         },
         _ => {
-            let _ = forced_dtype;
+            let _ = global_dtype;
             DType::F32
         }
     }
