@@ -49,6 +49,10 @@ env:
   # dominated by flash-attn and candle CUDA codegen.
   CARGO_PROFILE_RELEASE_LTO: 'false'
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
+  CARGO_PROFILE_RELEASE_DEBUG: '0'
+  CARGO_PROFILE_RELEASE_STRIP: 'symbols'
+  # lld via clang — same rationale as the x64-cuda workflow.
+  RUSTFLAGS: '-C linker=clang -C link-arg=-fuse-ld=lld'
   # Jetson Orin = SM 8.7 baseline; Grace Hopper SM 9.0 and Xavier SM 7.2
   # fall back to naive attention. Single-SM build keeps memory under the
   # arm64 runner's ceiling.
@@ -68,9 +72,13 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update -qq
+          # Match the x64 workflow's lld+clang install for consistent fast
+          # link behavior. arm64 paid runners are larger but the same
+          # link-time pressure principle applies.
           apt-get install -y -qq \
             curl build-essential pkg-config libssl-dev \
-            git ca-certificates xz-utils file
+            git ca-certificates xz-utils file \
+            lld clang
 
       - uses: actions/checkout@v4
 

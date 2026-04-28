@@ -51,6 +51,17 @@ env:
   # deterministic release build.
   CARGO_PROFILE_RELEASE_LTO: 'false'
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
+  # Drop debug info from the release profile so the linker has less data
+  # to relocate; combined with lld below this brings link time on the
+  # free-tier ubuntu-latest runner from "hangs forever" to a few minutes.
+  CARGO_PROFILE_RELEASE_DEBUG: '0'
+  CARGO_PROFILE_RELEASE_STRIP: 'symbols'
+  # Use lld via clang as the C/C++ AND Rust linker. GNU ld silently
+  # hangs the sweet-search-native cdylib link on the 7 GB runner because
+  # candle-flash-attn ships ~200 MB of nvcc-generated object files that
+  # blow past lower-memory link strategies. lld is multithreaded and
+  # leaner; install step adds `lld clang` to apt.
+  RUSTFLAGS: '-C linker=clang -C link-arg=-fuse-ld=lld'
   # flash-attn kernel compilation (candle-flash-attn build.rs → nvcc) is
   # memory-hungry; unconstrained builds OOM on standard 7 GB ubuntu-latest
   # runners. Constrain to a single compute capability and cap parallel
@@ -78,9 +89,15 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update -qq
+          # lld is the missing piece: GNU ld silently hangs for 1h44m+ when
+          # linking sweet-search-native (cdylib + candle-flash-attn ~200 MB
+          # of nvcc objects + cudart static libs) on the standard 7 GB
+          # ubuntu-latest runner. lld is faster and uses less peak memory,
+          # which is what kills the link step on free-tier runners.
           apt-get install -y -qq \
             curl build-essential pkg-config libssl-dev \
-            git ca-certificates xz-utils file
+            git ca-certificates xz-utils file \
+            lld clang
 
       - uses: actions/checkout@v4
 
