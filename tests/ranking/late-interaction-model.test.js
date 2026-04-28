@@ -31,6 +31,10 @@ vi.mock('@huggingface/transformers', () => ({
   },
 }));
 
+vi.mock('../../core/infrastructure/native-tokenizer.js', () => ({
+  createTokenizer: vi.fn().mockResolvedValue(mockTokenizer),
+}));
+
 describe('late-interaction-model', () => {
   beforeEach(() => {
     // Disable native inference so ORT mocks are exercised

@@ -33,7 +33,11 @@ describe('verifyRuntime (fast)', () => {
     }
   });
 
-  it('passes for full profile with cached models', async () => {
+  // CI-skipped: GitHub runners do not run `sweet-search init` first and can
+  // have a partial ~/.cache/sweet-search/models directory from earlier jobs,
+  // which makes this full-profile cache assertion nondeterministic. Local runs
+  // still exercise the real cached-model verification path when models exist.
+  it.skipIf(process.env.CI === 'true')('passes for full profile with cached models', async () => {
     // Skip when model cache does not exist (CI without pre-cached models)
     const { existsSync } = await import('node:fs');
     const { join: pathJoin } = await import('node:path');

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { detectResources, planAllocation } from '../../core/indexing/indexer-pool.js';
 
 // Resource-planning regression tests.
@@ -12,7 +12,31 @@ import { detectResources, planAllocation } from '../../core/indexing/indexer-poo
 //
 // If you change resource planning, expect to update both expected blocks.
 
+const ENV_KEYS = [
+  'SWEET_SEARCH_EMBEDDING_WORKERS',
+  'SWEET_SEARCH_EMBED_USE_CPU',
+  'SWEET_SEARCH_LI_WORKERS',
+  'SWEET_SEARCH_LI_BATCH_SIZE',
+  'SWEET_SEARCH_LI_TOKEN_BUDGET',
+  'SWEET_SEARCH_LI_ATTENTION_BUDGET',
+];
+
+let savedEnv;
+
 describe('indexer resource planning', () => {
+  beforeEach(() => {
+    savedEnv = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
+    for (const key of ENV_KEYS) delete process.env[key];
+  });
+
+  afterEach(() => {
+    for (const key of ENV_KEYS) {
+      const value = savedEnv.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
   it('configures small x64 machines for sequential phases with inline threading', () => {
     const resources = detectResources({
       arch: 'x64',

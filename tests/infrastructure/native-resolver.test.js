@@ -211,7 +211,11 @@ describe('native-resolver', () => {
   });
 
   describe('resolution order', () => {
-    it('prefers local dev path over packages/ path for addon', async () => {
+    // CI-skipped: release jobs stage package-template binaries under
+    // packages/native-* without also creating a local dev build in
+    // crates/sweet-search-native, so this local-developer preference test is
+    // intentionally host-state-dependent.
+    it.skipIf(process.env.CI === 'true')('prefers local dev path over packages/ path for addon', async () => {
       const { resolveNativeAddon } = await loadResolver();
       if (process.platform === 'darwin' && process.arch === 'arm64') {
         const result = resolveNativeAddon();
