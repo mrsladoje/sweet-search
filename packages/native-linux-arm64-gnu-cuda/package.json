@@ -1,6 +1,6 @@
 {
   "name": "@sweet-search/native-linux-arm64-gnu-cuda",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "description": "Sweet Search native binaries for Linux arm64 (glibc) with NVIDIA CUDA backend (candle-cuda + flash-attn) — Jetson Orin, Grace Hopper, and arm64 server GPUs",
   "os": ["linux"],
   "cpu": ["arm64"],

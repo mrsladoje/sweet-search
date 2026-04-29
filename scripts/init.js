@@ -277,7 +277,7 @@ export async function downloadModelsForProfile(profile, options = {}) {
 function printReport(report) {
   const {
     profile, maxsimTier, routerType, models, verification, runtimeDownloads,
-    capability, cascadeReport, dedupReport, prewarmHookReport,
+    capability, cascadeReport, dedupReport, prewarmHookReport, skillReport,
   } = report;
 
   console.log('');
@@ -357,6 +357,16 @@ function printReport(report) {
       console.log(`  Prewarm hook:         ERROR — ${prewarmHookReport.detail}`);
     }
     // 'skipped' is silent — explicit user opt-out.
+  }
+
+  if (skillReport) {
+    if (skillReport.status === 'installed') {
+      console.log(`  /sweet-index skill:   installed → ${skillReport.skillPath}`);
+    } else if (skillReport.status === 'already-installed') {
+      console.log(`  /sweet-index skill:   already installed`);
+    } else if (skillReport.status === 'error') {
+      console.log(`  /sweet-index skill:   ERROR — ${skillReport.detail}`);
+    }
   }
 
   console.log(`  Runtime downloads:    ${runtimeDownloads}`);
@@ -533,6 +543,54 @@ export function registerPrewarmSessionStartHook({
     detail: ownedIdx >= 0 ? 'updated existing entry' : 'added new entry',
     hookPath,
   };
+}
+
+// ---------------------------------------------------------------------------
+// /sweet-index skill installation
+// ---------------------------------------------------------------------------
+
+// The skill is shipped inside the npm tarball at core/skills/sweet-index/SKILL.md
+// (see package.json::files). Init copies it into the project's
+// .claude/skills/sweet-index/ — creating the .claude tree if absent — so users
+// who haven't yet adopted Claude Code still get the skill available the moment
+// they do. Per-project install (not global ~/.claude) so different projects
+// can pin different sweet-search versions without skill drift.
+//
+// Returns `{ status, detail, skillPath? }` for the init report:
+//   installed         — copied SKILL.md (new install)
+//   already-installed — destination existed, left untouched (idempotent)
+//   error             — copy failed; init continues (never blocks)
+export function installSweetIndexSkill({ projectRoot, packageRoot } = {}) {
+  const skillDir = join(projectRoot, '.claude', 'skills', 'sweet-index');
+  const skillDest = join(skillDir, 'SKILL.md');
+  const skillSrc = join(packageRoot, 'core', 'skills', 'sweet-index', 'SKILL.md');
+
+  if (!existsSync(skillSrc)) {
+    return {
+      status: 'error',
+      detail: `skill source missing in package: ${skillSrc} (re-install sweet-search)`,
+    };
+  }
+
+  if (existsSync(skillDest)) {
+    return {
+      status: 'already-installed',
+      detail: skillDir,
+      skillPath: skillDest,
+    };
+  }
+
+  try {
+    mkdirSync(skillDir, { recursive: true });
+    copyFileSync(skillSrc, skillDest);
+    return {
+      status: 'installed',
+      detail: skillDir,
+      skillPath: skillDest,
+    };
+  } catch (err) {
+    return { status: 'error', detail: err.message };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -876,20 +934,20 @@ export async function runInit(args) {
     process.stderr.write(`[init] Warning: Could not install index-maintainer: ${e.message}\n`);
   }
 
-  // 11. Install /sweet-index skill
-  try {
-    const skillDir = join(projectRoot, '.claude', 'skills', 'sweet-index');
-    const skillDest = join(skillDir, 'SKILL.md');
-    const skillSrc = join(PACKAGE_ROOT, 'core', 'skills', 'sweet-index', 'SKILL.md');
-    if (!existsSync(skillDest)) {
-      mkdirSync(skillDir, { recursive: true });
-      copyFileSync(skillSrc, skillDest);
-      process.stderr.write(`[init] Installed /sweet-index skill to ${skillDir}\n`);
-    } else {
-      process.stderr.write(`[init] /sweet-index skill already installed\n`);
-    }
-  } catch (e) {
-    process.stderr.write(`[init] Warning: Could not install /sweet-index skill: ${e.message}\n`);
+  // 11. Install /sweet-index skill — always, even if .claude/ doesn't exist.
+  //     Users who haven't adopted Claude Code yet still get the skill in place
+  //     the moment they do; we treat the skill as part of the product, not a
+  //     Claude-Code-conditional add-on.
+  const skillReport = installSweetIndexSkill({
+    projectRoot,
+    packageRoot: PACKAGE_ROOT,
+  });
+  if (skillReport.status === 'installed') {
+    process.stderr.write(`[init] Installed /sweet-index skill to ${skillReport.detail}\n`);
+  } else if (skillReport.status === 'already-installed') {
+    process.stderr.write(`[init] /sweet-index skill already installed\n`);
+  } else if (skillReport.status === 'error') {
+    process.stderr.write(`[init] Warning: Could not install /sweet-index skill: ${skillReport.detail}\n`);
   }
 
   // 11.5. Register Claude Code SessionStart daemon-prewarm hook.
@@ -920,6 +978,7 @@ export async function runInit(args) {
     cascadeReport,
     dedupReport,
     prewarmHookReport,
+    skillReport,
   });
 }
 
