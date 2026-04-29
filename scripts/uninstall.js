@@ -11,7 +11,7 @@
  *   sweet-search uninstall [--dry-run] [--keep-models] [--purge] [--force]
  */
 
-import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -214,6 +214,65 @@ export function stopRunningDaemon({
 }
 
 /**
+ * Remove the sweet-search /sweet-index skill from `.claude/skills/sweet-index/`.
+ * Only removes the directory we created — leaves `.claude/skills/` and `.claude/`
+ * untouched even if they're empty afterwards, because the user may add other
+ * skills/hooks/settings to `.claude/` over time and we don't own that root.
+ *
+ * Returns `{ status, detail, skillPath? }`:
+ *   not-found  — directory absent (nothing to do)
+ *   removed    — rm -rf on the sweet-index/ subtree succeeded
+ *   dry-run    — found the directory but skipped the delete
+ *   error      — rm failed (permissions, etc.); uninstall continues
+ */
+export function removeSweetIndexSkill(projectRoot, { dryRun = false } = {}) {
+  const skillDir = join(projectRoot, '.claude', 'skills', 'sweet-index');
+  if (!existsSync(skillDir)) {
+    return { status: 'not-found', detail: 'no .claude/skills/sweet-index/' };
+  }
+  if (dryRun) {
+    return { status: 'dry-run', detail: skillDir, skillPath: skillDir };
+  }
+  try {
+    rmSync(skillDir, { recursive: true, force: true });
+    return { status: 'removed', detail: skillDir, skillPath: skillDir };
+  } catch (err) {
+    return { status: 'error', detail: err.message };
+  }
+}
+
+/**
+ * Best-effort cleanup of empty parent directories left behind after rm -rf'ing
+ * the per-model cache dirs and the CoreML cascade root.
+ *
+ * Walks up from `start` toward `stopAt` (exclusive) and removes each directory
+ * iff it's empty. rmdirSync naturally fails on non-empty dirs, so this is
+ * inherently safe — we never delete a directory that has files we didn't put
+ * there. Stops at the first non-empty dir or when `stopAt` is reached.
+ *
+ * Used to clean ~/.cache/sweet-search/{models,coreml-cascade}/ → ~/.cache/sweet-search/
+ * after their contents are removed. Without this, uninstall leaves an empty
+ * sweet-search directory dangling under the user's cache root.
+ */
+function pruneEmptyAncestors(start, stopAt) {
+  let dir = start;
+  while (dir && dir !== stopAt && dir !== dirname(dir)) {
+    if (!existsSync(dir)) {
+      dir = dirname(dir);
+      continue;
+    }
+    try {
+      const entries = readdirSync(dir);
+      if (entries.length > 0) return; // non-empty — stop walking
+      rmdirSync(dir);
+    } catch {
+      return; // permission / race / non-empty — stop walking
+    }
+    dir = dirname(dir);
+  }
+}
+
+/**
  * Remove the sweet-search-owned SessionStart entry from `.claude/settings.json`,
  * preserving every other hook, permission, and top-level key. Detection is
  * filename-based (see PREWARM_HOOK_FILENAME) — only entries whose command
@@ -309,9 +368,12 @@ What gets removed:
   - CoreML variant cascade (if built) — includes ~1.8 GB of .mlpackage
     artifacts AND the sibling .mlmodelc compiled cache files next to
     each variant. Skipped by --keep-models.
+  - .claude/skills/sweet-index/ (the per-project /sweet-index skill copy)
+  - daemon-prewarm SessionStart entry inside .claude/settings.json
 
 What is NOT removed:
   - User source code, indexes, or database files outside .sweet-search/
+  - .claude/ itself or any other hooks/skills/settings the user owns
   - The npm package itself (unless --purge)
 `);
 }
@@ -369,8 +431,13 @@ export async function runUninstall(args) {
   const hookPreview = removePrewarmSessionStartHook(projectRoot, { dryRun: true });
   const hasHookEntry = hookPreview.status === 'dry-run';
 
+  // Check for the /sweet-index skill so we can report it even when
+  // .sweet-search/ was already deleted by hand.
+  const skillPreview = removeSweetIndexSkill(projectRoot, { dryRun: true });
+  const hasSkillEntry = skillPreview.status === 'dry-run';
+
   // Nothing to remove?
-  if (removals.length === 0 && !hasHookEntry) {
+  if (removals.length === 0 && !hasHookEntry && !hasSkillEntry) {
     console.log('Nothing to remove — Sweet Search is not initialized in this project.');
     return;
   }
@@ -387,6 +454,9 @@ export async function runUninstall(args) {
   if (hasHookEntry) {
     console.log(`    daemon-prewarm SessionStart hook in .claude/settings.json`);
   }
+  if (hasSkillEntry) {
+    console.log(`    /sweet-index skill (.claude/skills/sweet-index/)`);
+  }
   console.log(`  Total: ${formatBytes(totalBytes)}`);
   if (parsed.keepModels) {
     console.log('  Model cache: kept (--keep-models)');
@@ -397,6 +467,10 @@ export async function runUninstall(args) {
     const dryHook = removePrewarmSessionStartHook(projectRoot, { dryRun: true });
     if (dryHook.status === 'dry-run') {
       console.log(`  Would also remove: prewarm SessionStart hook (.claude/settings.json — ${dryHook.detail})`);
+    }
+    const drySkill = removeSweetIndexSkill(projectRoot, { dryRun: true });
+    if (drySkill.status === 'dry-run') {
+      console.log(`  Would also remove: /sweet-index skill (${drySkill.detail})`);
     }
     console.log('Dry run — nothing was removed.');
     return;
@@ -429,6 +503,29 @@ export async function runUninstall(args) {
       kept++;
     }
   }
+
+  // Prune empty parent directories left behind under the model cache root
+  // (~/.cache/sweet-search/{models,coreml-cascade}/ → ~/.cache/sweet-search/).
+  // rmdirSync naturally fails on non-empty dirs, so this only deletes
+  // directories we've effectively emptied. Stops before $HOME/.cache.
+  if (!parsed.keepModels) {
+    const cacheRoot = resolveModelCacheRoot();          // .../sweet-search/models
+    const sweetSearchCacheRoot = dirname(cacheRoot);    // .../sweet-search
+    const userCacheRoot = dirname(sweetSearchCacheRoot); // .../.cache (do not touch)
+    pruneEmptyAncestors(cacheRoot, userCacheRoot);
+  }
+
+  // Remove the per-project /sweet-index skill init copied into .claude/.
+  // Non-fatal — a failure here just leaves the SKILL.md stub behind.
+  const skillResult = removeSweetIndexSkill(projectRoot, { dryRun: parsed.dryRun });
+  if (skillResult.status === 'removed') {
+    console.log(`  Removed: /sweet-index skill (${skillResult.detail})`);
+    removed++;
+  } else if (skillResult.status === 'error') {
+    console.log(`  Failed to remove /sweet-index skill: ${skillResult.detail}`);
+    kept++;
+  }
+  // 'not-found' and 'dry-run' are silent in the main output.
 
   // Reverse the Claude Code daemon-prewarm SessionStart entry init added to
   // .claude/settings.json. Non-fatal — a failure here doesn't leave the
