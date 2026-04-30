@@ -603,17 +603,16 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
   // Apply LI skip policy: last-mile guard before the slow encoder runs.
   // The embed indexer has already dropped glob-excluded files at discovery
   // time using the same loadProjectConfig() excludes; this pass adds the
-  // LI-specific checks globs can't do — content-based @generated markers
-  // and a per-file token budget. Disable via SWEET_SEARCH_LI_SKIP_DISABLE=1.
+  // LI-specific check globs can't do: content-based @generated markers.
+  // Disable via SWEET_SEARCH_LI_SKIP_DISABLE=1.
   let skippedSummary = null;
   if (Array.isArray(chunks) && chunks.length > 0) {
-    const { applyLiSkipPolicy } = await import('./li-skip-policy.js');
-    const { kept, stats } = applyLiSkipPolicy(chunks, { projectRoot });
+    const { applyIndexingChunkPolicy } = await import('./indexing-file-policy.js');
+    const { kept, stats } = applyIndexingChunkPolicy(chunks, { projectRoot });
     if (stats.totalSkipped > 0) {
       const breakdown = [
         stats.excluded > 0 ? `${stats.excluded} excluded` : null,
         stats.generated > 0 ? `${stats.generated} generated` : null,
-        stats.huge > 0 ? `${stats.huge} huge-file` : null,
       ].filter(Boolean).join(', ');
       log(`LI skip policy: dropped ${stats.totalSkipped} chunks across ${stats.skippedFiles} files (${breakdown}); kept ${kept.length} chunks across ${stats.keptFiles} files`, 'dim');
       chunks = kept;
