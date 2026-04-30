@@ -79,12 +79,15 @@ export {
   getEmbeddingPool,
 } from './indexer-pool.js';
 
-// Late-interaction skip policy (consumed by tests; honors unified exclude globs)
+// Shared indexing file policy (embedding, sparse/BM25 artifacts, and LI)
 export {
-  applyLiSkipPolicy,
+  applyIndexingChunkPolicy,
   isExcludedByConfig,
   chunkLooksGenerated,
-} from './li-skip-policy.js';
+} from './indexing-file-policy.js';
+
+// Late-interaction compatibility export
+export { applyLiSkipPolicy } from './li-skip-policy.js';
 
 // Sparse-gram artifact builder (tier-1 grep acceleration)
 export { buildSparseGramArtifact } from './indexer-sparse-gram.js';
