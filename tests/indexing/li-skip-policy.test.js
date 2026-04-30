@@ -10,7 +10,6 @@ describe('li-skip-policy', () => {
   const cleanupEnv = () => {
     delete process.env.SWEET_SEARCH_LI_SKIP_DISABLE;
     delete process.env.SWEET_SEARCH_LI_SKIP_FILE;
-    delete process.env.SWEET_SEARCH_LI_MAX_FILE_TOKENS;
     _internals.resetCache();
   };
   beforeEach(cleanupEnv);
@@ -111,22 +110,12 @@ describe('li-skip-policy', () => {
       expect(stats.generated).toBe(1);
     });
 
-    it('skips a file when ALL its chunks combined exceed the per-file token cap', () => {
-      // Default cap = 50_000 char-tokens. 120 chunks × 2000 chars / 4 = 60_000 → over cap.
+    it('keeps large files when they are otherwise eligible for indexing', () => {
       const huge = Array.from({ length: 120 }, () => mkChunk('big.json', 'x'.repeat(2000)));
       const small = [mkChunk('src/lib.js', 'const a = 1;')];
       const { kept, stats } = applyLiSkipPolicy([...huge, ...small]);
-      expect(kept.length).toBe(1);
-      expect(kept[0].file).toBe('src/lib.js');
-      expect(stats.huge).toBe(120);
-    });
-
-    it('respects SWEET_SEARCH_LI_MAX_FILE_TOKENS override', () => {
-      process.env.SWEET_SEARCH_LI_MAX_FILE_TOKENS = '1000';
-      const chunks = Array.from({ length: 5 }, () => mkChunk('src/data.json', 'x'.repeat(2000)));
-      const { kept, stats } = applyLiSkipPolicy(chunks);
-      expect(kept.length).toBe(0);
-      expect(stats.huge).toBe(5);
+      expect(kept.length).toBe(121);
+      expect(stats.totalSkipped).toBe(0);
     });
 
     it('respects SWEET_SEARCH_LI_SKIP_DISABLE=1 (returns chunks unchanged)', () => {
