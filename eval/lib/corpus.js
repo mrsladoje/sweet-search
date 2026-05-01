@@ -64,7 +64,7 @@ export function prepareCorpus(corpus, corpusDir, { skipClean = false } = {}) {
     const safeRepo = (doc.repo || 'unknown').replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 50);
     const safeName = (doc.func_name || 'func').replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 80);
     const dirPath = path.join(corpusDir, doc.language || 'unknown', safeRepo);
-    const hash = simpleHash(doc.doc_id).toString(16).slice(0, 6);
+    const hash = (simpleHash(doc.doc_id) >>> 0).toString(16).padStart(8, '0');
     const fileName = `${safeName}_${hash}${ext}`;
     const filePath = path.join(dirPath, fileName);
 
