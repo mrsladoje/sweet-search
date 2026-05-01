@@ -1,11 +1,37 @@
 # Benchmark TODO — Post-MaxSim Reranker Investigation
 
-## Current Best: Fixed LI MaxSim + Lexical Fix Plan (83.2% MRR)
+## Current Best: 84.48% MRR (GenCodeSearchNet, 6000 queries)
 
 3-class CatBoost WASM router (LEXICAL/SEMANTIC/HYBRID) + LateOn-Code MaxSim reranker.
 Structural mode is opt-in only via `--structural` flag. No regex auto-detection in router.
 
-### GenCodeSearchNet Results (2026-03-12, 6000 queries, 6 languages)
+### GenCodeSearchNet Results (2026-05-01, 6000 queries, 6 languages, post LI-skip-fix + corpus hash-collision fix)
+
+| Language | MRR@10 | Recall@5 | Recall@20 |
+|----------|--------|----------|-----------|
+| Python | 97.3% | 99.0% | 99.0% |
+| Go | 94.7% | 98.0% | 98.7% |
+| Java | 84.5% | 93.9% | 96.5% |
+| PHP | 77.7% | 89.6% | 94.2% |
+| JS | 77.4% | 86.8% | 89.6% |
+| Ruby | 75.3% | 85.4% | 89.6% |
+| **Overall** | **84.48%** | **92.12%** | **94.60%** |
+
+### Delta vs Pre-Fix Baseline (2026-04-23, pre LI-fix + pre-R1)
+
+| Language | Apr 23 | May 1 | Δ |
+|----------|--------|-------|---|
+| Python | 93.13% | 97.34% | +4.21 |
+| Go | 94.61% | 94.70% | +0.09 |
+| Java | 82.31% | 84.47% | +2.16 |
+| Ruby | 74.29% | 75.31% | +1.02 |
+| PHP | 78.44% | 77.69% | -0.75 |
+| JS | **68.94%** | **77.40%** | **+8.46** |
+| **Overall** | **81.95%** | **84.48%** | **+2.53** |
+
+The +2.53 pp combines two fixes: (1) LI skip-policy unification (`933bcf8`, Apr 30) which restored late-interaction reranking for large files, and (2) corpus-prep hash collision fix in `eval/lib/corpus.js` which recovered 218 docs (111 JS, 69 Java, 31 Go, 5 PHP, 2 Python) that were silently overwritten by sequential-doc-id hash prefix collisions.
+
+### Earlier Reference: 2026-03-12 Run (80.8% MRR, before LI fix and corpus fix)
 
 | Language | MRR@10 | NDCG@10 | Recall@5 | Recall@20 | Success@1 |
 |----------|--------|---------|----------|-----------|-----------|
