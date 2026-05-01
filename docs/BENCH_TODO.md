@@ -34,12 +34,12 @@ Root cause of improvement: 87 NL queries were misrouted to structural (graph DB 
 
 ## What Could Push Past 79.7%
 
-### 1. ~~Confidence-Gated CE Rescue~~ — IMPLEMENTED, NEUTRAL (March 2026)
+### 1. ~~Confidence-Gated CE Rescue~~ — REMOVED (2026-05, after neutral lift)
 - Implemented multi-signal gate + adaptive-K + window-scoped merge
 - Fixed critical LI token bug (`Float32Array.flat()`) → MaxSim now works → +1.23pp MRR
-- With fixed MaxSim (83.2%), gte-reranker-modernbert-base CE shows **zero lift** on GenCodeSearchNet
-- CE rescue defaulted to shadow mode — collecting data to determine if a code-tuned CE would help
-- See `docs/CE_RESCUE_PLAN.md` for full benchmark results
+- With fixed MaxSim (83.2%), gte-reranker-modernbert-base CE showed **zero lift** on GenCodeSearchNet
+- CE reranker has been fully phased out of the pipeline
+- See `docs/CE_RESCUE_PLAN.md` for the original benchmark results
 
 ### 2. Per-Language / Per-Query-Type Routing
 - Go is 93.6% — nearly saturated
@@ -95,15 +95,9 @@ Remaining ~13.5% misses are embedding quality / dataset noise, not HNSW.
 ## Testing Priority (Ordered)
 
 1. ~~**Recall check**~~: **DONE** — JS is retrieval-limited. 80.6% recall@200, plateau after top-100.
-2. **CE rescue shadow analysis**: Run full GenCodeSearchNet with `SWEET_SEARCH_CASCADE_SHADOW=true`
-   (already the default). Collect per-query shadow logs and analyze:
-   - CE trigger rate (how often gate fires)
-   - How often CE changes top-1 / top-3
-   - Conditional MRR delta on triggered-only queries (does CE help on the subset it fires on?)
-   - Per-language trigger patterns (does CE fire more on weak languages?)
-   - If conditional lift is positive → tighten gate to trigger only on that subset
-   - If conditional lift is zero → stop investing in gte-reranker-modernbert-base, try
-     jina-reranker-v2-base-multilingual (code-optimized, 71.36 CSN MRR) or Voyage rerank-2.5
+2. ~~**CE rescue shadow analysis**~~: **DONE** — CE reranker fully phased out (2026-05).
+   Shadow analysis showed zero lift from gte-reranker-modernbert-base; rather than swap to
+   another CE model, the entire CE rescue path was removed from the pipeline.
 3. ~~**Voyage Code 3 as embedding benchmark**~~: **DONE** — no quality improvement over CodeRankEmbed (83.5% vs 83.5% MRR). Tested at 512d and 1024d HNSW. See `docs/BENCHMARKING.md`.
 4. **Chunk context bleeding**: Still worth checking for the ~20% of retrievable-but-poorly-ranked JS queries.
 5. **2000 char limit for JS**: Still worth checking — could explain some of the 194 misses.
