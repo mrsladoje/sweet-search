@@ -4,6 +4,8 @@
 **Status:** DRAFT -- Needs further research before execution
 **Scope:** Interactive terminal wizards for Sweet Search configuration and indexing
 
+> **HCGS Status (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); the HCGS wizard (Phase 5) and any `sweet-search hcgs` references below are on hold pending re-evaluation. Flip the flag to re-enable.
+
 ---
 
 ## Pre-Implementation Research Required
@@ -405,8 +407,6 @@ if confirmed:
 ---
 
 ## Phase 5: Interactive HCGS Wizard (`scripts/hcgs-wizard.js`)
-
-> **Note (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); this wizard phase is on hold pending re-evaluation. Code retained.
 
 ### File: `scripts/hcgs-wizard.js` (~300 lines)
 

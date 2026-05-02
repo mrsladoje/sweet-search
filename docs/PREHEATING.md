@@ -1,5 +1,7 @@
 # Session Preheating
 
+> **HCGS Status (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); references below describe the original design. Flip the flag to re-enable.
+
 Session preheating eliminates cold-start latency by warming caches, TLS connections, and ML model runtimes before the first user query arrives. It runs automatically at the start of every Claude Code session via a hook that invokes the preheat shell script.
 
 ## Architecture
@@ -34,7 +36,7 @@ The warmup coordinator implements a **registry pattern** where each warmup compo
 
 | Component | What it does |
 |-----------|-------------|
-| `fts5+hcgs` | Touches SQLite FTS5 page cache and HCGS summary pages. Prefers `warmFromCache()` from `vocab-warmer.js` (uses real cached terms); falls back to raw FTS5 query. *Note (2026-05): HCGS is disabled by default; the summary-page touch warms an empty column harmlessly.* |
+| `fts5+hcgs` | Touches SQLite FTS5 page cache and HCGS summary pages. Prefers `warmFromCache()` from `vocab-warmer.js` (uses real cached terms); falls back to raw FTS5 query. |
 | `vocabulary` | Reads the binary vocabulary artifact (`.sswv` format) into the OS page cache to avoid a ~100ms stall on the first semantic query. |
 | `embedding-api-connection` | Sends a minimal embedding request to the active remote provider (Voyage/Mistral/Jina) to establish the TCP+TLS tunnel. Skipped for local providers. |
 | `reranker-api-connection` | Same TLS warmup for the stage-2 reranker API, if the active stage-2 is a remote provider. |
