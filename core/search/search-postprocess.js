@@ -265,7 +265,12 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     if (shouldRunLateInteraction) {
       try {
         const liStart = performance.now();
-        const liCandidateCount = this.stage3Candidates || 20;
+        // Pool size and original/expanded split are overridable per call so
+        // the graph-2hop sweep can compare allocations without forking the
+        // pipeline. Defaults preserve production behaviour.
+        const liCandidateCount =
+          options.liPoolSize ?? this.stage3Candidates ?? 20;
+        const liExpandedFraction = options.liExpandedFraction;  // undefined → builder default
 
         // Build a bounded MIXED rerank pool: top originals + top expanded.
         // Without this, expanded entries always sit behind the originals'
@@ -274,7 +279,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
         // pool for the highest-scoring expanded candidates so they actually
         // compete for top-K positions.
         const { topCandidates, expandedQuotaUsed } = buildMixedRerankPool(
-          results, liCandidateCount,
+          results, liCandidateCount, liExpandedFraction,
         );
 
         const { encodeQuery } = await import('../ranking/late-interaction-model.js');
@@ -550,7 +555,7 @@ export function attachChunkIdsToExpanded(results, codebaseRepo) {
 /**
  * Build a bounded LI rerank pool that mixes top originals and top expanded.
  *
- * Reserves `expandedQuota = floor(slot * EXPANDED_FRACTION)` of the rerank
+ * Reserves `expandedQuota = floor(slot * expandedFraction)` of the rerank
  * slots for the highest-scoring expanded candidates (so adaptive 2-hop's
  * scoring choices actually influence the top-K), with the remainder going
  * to the highest-scoring originals (preserving lexical/HNSW lead).
@@ -560,10 +565,11 @@ export function attachChunkIdsToExpanded(results, codebaseRepo) {
  *
  * @param {Array} results - Combined original + expanded result list
  * @param {number} slot   - Total rerank slots (e.g. stage3Candidates)
+ * @param {number} [expandedFraction=0.4] - Fraction of pool reserved for expanded
  * @returns {{ topCandidates: Array, expandedQuotaUsed: number }}
  */
-export function buildMixedRerankPool(results, slot) {
-  const EXPANDED_FRACTION = 0.4; // up to 40 % of the pool is reserved for expanded
+export function buildMixedRerankPool(results, slot, expandedFraction = 0.4) {
+  const EXPANDED_FRACTION = Math.max(0, Math.min(1, expandedFraction));
 
   const originals = results.filter(r => !r.is_expanded);
   const expanded = results.filter(r => r.is_expanded);
