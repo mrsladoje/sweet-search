@@ -175,10 +175,20 @@ export async function applyPostRetrieval(results, query, options, searchContext)
           ...(intentEdgeTypes && !graphExpandOptions.edgeTypes ? { edgeTypes: intentEdgeTypes } : {}),
           ...graphExpandOptions,
         });
+
+        // Attach LI chunk ids to expanded entities so they can participate
+        // in the post-expansion MaxSim rerank pool. The graph stores entities
+        // (entity_id keyed by code-graph.db) while LI is keyed by chunk id;
+        // without this bridge expanded entries fall through hasTokens() and
+        // are appended to the result tail without ever competing for top-K.
+        const expandedAttached = attachChunkIdsToExpanded(results, this.codebaseRepo);
+
         stats.graphExpansion = {
           mode: effectiveGraphExpand,
           latency_ms: Date.now() - expandStart,
           total: results.length,
+          expanded: results.filter(r => r.is_expanded).length,
+          expandedWithLiChunk: expandedAttached,
         };
       }
     } catch (err) {
@@ -256,7 +266,16 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       try {
         const liStart = performance.now();
         const liCandidateCount = this.stage3Candidates || 20;
-        const topCandidates = results.slice(0, liCandidateCount);
+
+        // Build a bounded MIXED rerank pool: top originals + top expanded.
+        // Without this, expanded entries always sit behind the originals'
+        // tail and the LI rerank only re-orders the original head — graph
+        // expansion has zero effect on top-K. Reserve a slice of the rerank
+        // pool for the highest-scoring expanded candidates so they actually
+        // compete for top-K positions.
+        const { topCandidates, expandedQuotaUsed } = buildMixedRerankPool(
+          results, liCandidateCount,
+        );
 
         const { encodeQuery } = await import('../ranking/late-interaction-model.js');
         const queryTokens = await encodeQuery(query);
@@ -276,20 +295,21 @@ export async function applyPostRetrieval(results, query, options, searchContext)
 
           scored.sort((a, b) => b.score - a.score);
 
-          results = [
-            ...scored,
-            ...results.slice(liCandidateCount),
-          ];
+          // Anything not in the rerank pool keeps original ordering at the tail.
+          const pickedKeys = new Set(topCandidates.map(c => c.id || c.entity_id));
+          const tail = results.filter(r => !pickedKeys.has(r.id || r.entity_id));
+          results = [...scored, ...tail];
         }
 
         stats.lateInteraction = {
           position: 'post-expansion',
-          mode: 'pure-reranker',
+          mode: 'pure-reranker-mixed-pool',
           latency_us: Math.round((performance.now() - liStart) * 1000),
           candidates: topCandidates.length,
+          expandedInPool: expandedQuotaUsed,
           queryTokens: queryTokens?.length || 0,
         };
-        this.log(`LateInteraction (pure reranker): ${stats.lateInteraction.latency_us}us for ${topCandidates.length} candidates (${queryTokens?.length || 0} query tokens)`);
+        this.log(`LateInteraction (mixed-pool): ${stats.lateInteraction.latency_us}us for ${topCandidates.length} candidates (${expandedQuotaUsed} expanded, ${queryTokens?.length || 0} query tokens)`);
       } catch (err) {
         this.log(`LateInteraction rerank failed: ${err.message}`);
         stats.lateInteraction = { position: 'post-expansion', error: err.message };
@@ -449,4 +469,132 @@ export function computeCacheHit(mode, {
         : false;
 
   return { lexSubLatency, lexHit, semHit, cacheHit };
+}
+
+// =============================================================================
+// Mixed rerank pool helpers (post-expansion LI / cascade)
+// =============================================================================
+
+/**
+ * For each `is_expanded` result with a known file_path + line range, find the
+ * codebase chunk that best covers it and stash its id under `_liChunkId`.
+ *
+ * Why: graph expansion produces results keyed by entity_id (from code-graph.db)
+ * but the LI index is keyed by chunk id (from codebase.db). Without bridging
+ * the two ID spaces, expanded results can never participate in MaxSim rerank.
+ *
+ * Best-effort: missing/zero-overlap entries are left as-is and will fall
+ * through to the unscored path.
+ *
+ * @param {Array} results
+ * @param {import('../infrastructure/codebase-repository.js').CodebaseRepository} codebaseRepo
+ * @returns {number} count of expanded results that received a _liChunkId
+ */
+export function attachChunkIdsToExpanded(results, codebaseRepo) {
+  if (!Array.isArray(results) || results.length === 0 || !codebaseRepo) return 0;
+  const fileChunkCache = new Map(); // file_path -> Array<{ id, file_path, text, metadata }>
+  let attached = 0;
+
+  for (const r of results) {
+    if (!r.is_expanded || r._liChunkId) continue;
+    const fp = r.file_path || r.file || r.metadata?.file || r.metadata?.path;
+    const sl = r.start_line ?? r.startLine ?? r.metadata?.start_line ?? r.metadata?.startLine;
+    if (!fp || sl == null) continue;
+    const el = r.end_line ?? r.endLine ?? r.metadata?.end_line ?? r.metadata?.endLine ?? sl;
+
+    let chunks = fileChunkCache.get(fp);
+    if (!chunks) {
+      try { chunks = codebaseRepo.getChunksByFilePath(fp) || []; }
+      catch { chunks = []; }
+      fileChunkCache.set(fp, chunks);
+    }
+    if (chunks.length === 0) continue;
+
+    // Greatest line-range overlap with the entity wins; ties broken by smaller
+    // chunk (tighter match). Chunk metadata is the primary signal; chunk id
+    // pattern `<path>:<start>-<end>:<n>` is a fallback when metadata is sparse.
+    let bestId = null;
+    let bestOverlap = 0;
+    let bestSize = Infinity;
+    for (const c of chunks) {
+      let cs, ce;
+      let meta = c.metadata;
+      if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = null; } }
+      if (meta) {
+        cs = meta.start_line ?? meta.startLine;
+        ce = meta.end_line ?? meta.endLine;
+      }
+      if (cs == null || ce == null) {
+        const m = typeof c.id === 'string' ? c.id.match(/:(\d+)-(\d+)(?::|$)/) : null;
+        if (m) { cs = parseInt(m[1], 10); ce = parseInt(m[2], 10); }
+      }
+      if (cs == null || ce == null) continue;
+      const overlap = Math.max(0, Math.min(el, ce) - Math.max(sl, cs) + 1);
+      if (overlap <= 0) continue;
+      const size = ce - cs + 1;
+      if (overlap > bestOverlap || (overlap === bestOverlap && size < bestSize)) {
+        bestOverlap = overlap;
+        bestSize = size;
+        bestId = c.id;
+      }
+    }
+
+    if (bestId) {
+      r._liChunkId = bestId;
+      attached++;
+    }
+  }
+  return attached;
+}
+
+/**
+ * Build a bounded LI rerank pool that mixes top originals and top expanded.
+ *
+ * Reserves `expandedQuota = floor(slot * EXPANDED_FRACTION)` of the rerank
+ * slots for the highest-scoring expanded candidates (so adaptive 2-hop's
+ * scoring choices actually influence the top-K), with the remainder going
+ * to the highest-scoring originals (preserving lexical/HNSW lead).
+ *
+ * If there are fewer expanded (or fewer originals) than the quota, the
+ * unused slots flow to the other side.
+ *
+ * @param {Array} results - Combined original + expanded result list
+ * @param {number} slot   - Total rerank slots (e.g. stage3Candidates)
+ * @returns {{ topCandidates: Array, expandedQuotaUsed: number }}
+ */
+export function buildMixedRerankPool(results, slot) {
+  const EXPANDED_FRACTION = 0.4; // up to 40 % of the pool is reserved for expanded
+
+  const originals = results.filter(r => !r.is_expanded);
+  const expanded = results.filter(r => r.is_expanded);
+
+  if (expanded.length === 0) {
+    return { topCandidates: originals.slice(0, slot), expandedQuotaUsed: 0 };
+  }
+
+  const expandedScore = (r) =>
+    r.expansion?.adaptiveScore ?? r.score ?? 0;
+  const originalScore = (r) =>
+    r.score ?? r.int8Score ?? r.hybridScore ?? 0;
+
+  const sortedOriginals = [...originals].sort((a, b) => originalScore(b) - originalScore(a));
+  const sortedExpanded  = [...expanded].sort((a, b) => expandedScore(b)  - expandedScore(a));
+
+  const expandedQuota = Math.min(
+    Math.floor(slot * EXPANDED_FRACTION),
+    sortedExpanded.length,
+  );
+  const originalQuota = Math.min(slot - expandedQuota, sortedOriginals.length);
+
+  // If originals can't fill their quota, redirect the surplus to expanded.
+  const originalShort = (slot - expandedQuota) - originalQuota;
+  const finalExpandedQuota = Math.min(expandedQuota + originalShort, sortedExpanded.length);
+
+  const topOriginals = sortedOriginals.slice(0, originalQuota);
+  const topExpanded  = sortedExpanded.slice(0, finalExpandedQuota);
+
+  return {
+    topCandidates: [...topOriginals, ...topExpanded],
+    expandedQuotaUsed: topExpanded.length,
+  };
 }
