@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Bench-local shim that lets spawned agents invoke `sweet-search` without
+# requiring a global install. Forwards all args to core/cli.js.
+#
+# Resolved relative to this script's directory so it works regardless of cwd.
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+REPO_ROOT="$( cd "$DIR/../../.." && pwd )"
+exec node "$REPO_ROOT/core/cli.js" "$@"
