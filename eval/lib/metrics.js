@@ -17,6 +17,12 @@ export function computeMetrics(evaluatedQueries) {
   metrics.recall_at_5 = meanMetric(evaluatedQueries, recallAtK(5));
   metrics.recall_at_10 = meanMetric(evaluatedQueries, recallAtK(10));
   metrics.recall_at_20 = meanMetric(evaluatedQueries, recallAtK(20));
+  metrics.recall_at_50 = meanMetric(evaluatedQueries, recallAtK(50));
+  metrics.recall_at_100 = meanMetric(evaluatedQueries, recallAtK(100));
+  metrics.gold_missing_top10_rate = meanMetric(evaluatedQueries, q =>
+    !q.rankedRelevance.slice(0, 10).includes(1) ? 1 : 0);
+  metrics.gold_missing_top100_rate = meanMetric(evaluatedQueries, q =>
+    !q.rankedRelevance.slice(0, 100).includes(1) ? 1 : 0);
   metrics.success_at_1 = meanMetric(evaluatedQueries, successAtK(1));
   metrics.success_at_5 = meanMetric(evaluatedQueries, successAtK(5));
 
