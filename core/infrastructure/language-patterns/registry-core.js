@@ -82,12 +82,30 @@ export const CORE_LANGUAGES = {
       relationships: {
         extends: /class\s+\w+\s+extends\s+(\w+)/,
         implements: /class\s+\w+(?:\s+extends\s+\w+)?\s+implements\s+([\w,\s]+)/,
+        // TS-specific: interface extends interface(s). Captures the
+        // comma-separated list (with optional generics) — splitting is
+        // handled by expandRelationshipTargets() via MULTI_TARGET_TYPES.
+        // Capture is lazy and bounded by either the opening `{` of the
+        // body or end-of-line, which covers both `extends X {`,
+        // `extends X {}` (empty body) and continuation-line `extends X`.
+        interfaceExtends: /^(?:export\s+)?interface\s+\w+(?:<[^>]*>)?\s+extends\s+([\w,\s<>.]+?)\s*(?:\{|$)/,
+        // TS-specific: explicit type-only imports/re-exports.
+        // The body of `import { type Foo, Bar }` (mixed inline-type
+        // imports) is still picked up by the regular `import` pattern
+        // for module-level dependency tracking; we don't try to split
+        // type/value at member level in regex.
+        typeImport: /^import\s+type\s+(?:\{[^}]+\}|\*\s+as\s+\w+|\w+)\s+from\s+['"]([^'"]+)['"]/,
+        typeReexport: /^export\s+type\s+(?:\{[^}]+\}|\*)\s+from\s+['"]([^'"]+)['"]/,
         import: /import\s+(?:\{([^}]+)\}|(\w+))\s+from\s+['"]([^'"]+)['"]/,
         require: /(?:const|let|var)\s+(?:\{[^}]+\}|\w+)\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)/,
         reexport: /export\s+(?:\{[^}]+\}|\*)\s+from\s+['"]([^'"]+)['"]/,
         dynamicImport: /(?:await\s+)?import\s*\(\s*['"]([^'"]+)['"]\s*\)/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
         decorator: /^@(\w+(?:\.\w+)*)/,
+        // TS-specific: generic constraints `<T extends Bar>`. JSX is
+        // safe because `<Component prop=...>` has no `extends` keyword;
+        // matching is conservative on the literal `extends` token.
+        genericConstraint: /<\s*\w+\s+extends\s+(\w+)/,
       },
       skipCallObjects: ["console", "Math", "JSON", "Object", "Array", "Promise", "process", "Buffer", "Date"],
     },
