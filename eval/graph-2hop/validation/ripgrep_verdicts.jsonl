@@ -1,0 +1,100 @@
+{"id": "ripgrep-001", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-002", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-003", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-004", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-005", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-006", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-007", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-008", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-009", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-010", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-011", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-012", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-013", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-014", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-015", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-016", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-017", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-018", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-019", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-020", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-021", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-022", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-023", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-024", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-025", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-026", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-027", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-028", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-029", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-030", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-031", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-032", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-033", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-034", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-035", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-036", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-037", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-038", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-039", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-040", "verdict": "rewritten", "reason": "leakage: basename 'man' (man.rs) appeared as whole word; rewritten as 'unix manual document'"}
+{"id": "ripgrep-041", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-042", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-043", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-044", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-045", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-046", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-047", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-048", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-049", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-050", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-051", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-052", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-053", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-054", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-055", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-056", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-057", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-058", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-059", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-060", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-061", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-062", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-063", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-064", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-065", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-066", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-067", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-068", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-069", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-070", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-071", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-072", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-073", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-074", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-075", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-076", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-077", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-078", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-079", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-080", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-081", "verdict": "rewritten", "reason": "leakage: basename 'ast' (ast.rs) appeared as whole word; rewritten as 'syntax-tree'"}
+{"id": "ripgrep-082", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-083", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-084", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-085", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-086", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-087", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-088", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-089", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-090", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-091", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-092", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-093", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-094", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-095", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-096", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-097", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-098", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
+{"id": "ripgrep-099", "verdict": "accepted", "reason": "control: gold file present, gold_symbols defined in file"}
+{"id": "ripgrep-100", "verdict": "accepted", "reason": "gold file present, symbols defined, no leakage, hop count plausible"}
