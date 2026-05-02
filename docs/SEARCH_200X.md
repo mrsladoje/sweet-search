@@ -33,7 +33,7 @@ Our implementation is **more advanced than initially documented**. Code analysis
 | Early Exit (Threshold) | **DONE** | 0.90/0.92 confidence thresholds |
 | Query Routing | **DONE** | Auto lexical/semantic/hybrid/structural |
 | GraphRAG Structural Queries | **DONE** | findCallers, findImpact, findImplementations |
-| HCGS Summaries | **DONE** | AI-generated (Cerebras/Claude) |
+| HCGS Summaries | **DISABLED BY DEFAULT** | Code retained; flip `HCGS_CONFIG.enabled` to re-enable |
 | Multi-tier Caching | **DONE** | LRU + Vocabulary + Semantic + Dedup |
 | HTTP/2 Connection Pooling | **DONE** | undici with 10 connections |
 | ColBERT Late Interaction | **DONE** | Auto-enabled from config, cache guard preserved |
@@ -611,7 +611,7 @@ These features are **already in our codebase** - no action needed:
 | Multi-tier Caching | LRU+Vocab+Semantic+Dedup | Production |
 | Query Router | `query-router.js` | Production |
 | Early Exit (0.90/0.92) | `smart-search-v21.js:345` | Production |
-| HCGS Summaries | `hcgs-generator.js` | Production |
+| HCGS Summaries | `hcgs-generator.js` | Disabled by default (2026-05); code retained |
 | GraphRAG Core | `graph-search.js` | Production |
 | HTTP/2 Pooling | undici 10 connections | Production |
 | **Score Spread Analysis** | `smart-search-v21.js:559-592` | **NEW** (Dec 27) |
