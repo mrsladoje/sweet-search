@@ -14,3 +14,7 @@ export * from './search-pattern.js';
 export * from './search-semantic.js';
 export { formatResults, formatGrepResults, formatStructuralResults, enrichWithSummaries, formatSummaryFirst, formatMiddleRes } from './search-format.js';
 export { hybridSearch, hybridSearchV2 } from './search-hybrid.js';
+
+// Read tools — filesystem-grounded exact reads + hybrid semantic span selection
+export { readFile, readFiles, formatReadResults, handleReadCli } from './search-read.js';
+export { readSemantic, formatReadSemanticResult, handleReadSemanticCli } from './search-read-semantic.js';
