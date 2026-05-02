@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# ss-semantic: query-specific spans inside ONE file using read-semantic.
+# Default --max-tokens cap of 800 keeps spans focused.
+#
+# Usage:  ss-semantic <file> "<question>" [--max-tokens N]
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+TMPERR=$(mktemp)
+node "$DIR/_ss-helpers.mjs" semantic "$@" 2>"$TMPERR"
+RC=$?
+[ $RC -ne 0 ] && cat "$TMPERR" >&2
+rm -f "$TMPERR"
+exit $RC

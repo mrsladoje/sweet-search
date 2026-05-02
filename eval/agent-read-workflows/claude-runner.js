@@ -1,0 +1,317 @@
+// Spawn `claude -p` in headless mode, capture the full stream-json event log,
+// and parse out: tool calls (with full input), final assistant text, usage
+// tokens, cost, errors. Returns a structured run record for downstream
+// scoring + audit.
+//
+// CLI version checked: 2.1.126 (no --max-turns flag exists, so we enforce a
+// wall-clock timeout instead and ask the model in-prompt to stay under N
+// tool calls). See repo `claude --help` for the live flag surface.
+
+import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
+
+/**
+ * @param {Object} req
+ * @param {string} req.prompt          User prompt (the task)
+ * @param {string} req.systemAppend    Text appended to default system prompt
+ * @param {string} req.model           e.g. 'haiku'
+ * @param {string} req.cwd             Working directory (the repo)
+ * @param {string[]} [req.allowedTools]
+ * @param {string[]} [req.disallowedTools]
+ * @param {string[]} [req.addDirs]     Extra --add-dir entries (e.g. for sweet-search CLI access)
+ * @param {number} [req.timeoutMs=180000]
+ * @param {string} [req.logPath]       If set, dump raw stream-json to this path
+ * @returns {Promise<Object>}
+ */
+export async function runClaudeAgent(req) {
+  const args = [
+    '-p', req.prompt,
+    '--model', req.model,
+    '--output-format', 'stream-json',
+    '--verbose',                                // required for stream-json
+    '--no-session-persistence',
+    '--dangerously-skip-permissions',           // headless: cannot prompt for permission
+    '--append-system-prompt', req.systemAppend,
+  ];
+  if (req.allowedTools && req.allowedTools.length) {
+    args.push('--allowed-tools', req.allowedTools.join(' '));
+  }
+  if (req.disallowedTools && req.disallowedTools.length) {
+    args.push('--disallowed-tools', req.disallowedTools.join(' '));
+  }
+  if (req.addDirs && req.addDirs.length) {
+    for (const d of req.addDirs) args.push('--add-dir', d);
+  }
+
+  // Prepend the bench's bin/ shim to PATH so spawned agents can call
+  // `sweet-search ...` without a global install. The shim execs node on
+  // core/cli.js. Native-mode policy still forbids any sweet-search use, so
+  // making the binary discoverable here doesn't bias native runs.
+  const env = { ...process.env };
+  if (req.extraPathEntries && req.extraPathEntries.length) {
+    env.PATH = [...req.extraPathEntries, env.PATH].filter(Boolean).join(':');
+  }
+
+  const t0 = Date.now();
+  const proc = spawn('claude', args, {
+    cwd: req.cwd,
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let stdout = '';
+  let stderr = '';
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    try { proc.kill('SIGTERM'); } catch { /* */ }
+    setTimeout(() => { try { proc.kill('SIGKILL'); } catch { /* */ } }, 2000).unref();
+  }, req.timeoutMs ?? 180000);
+
+  proc.stdout.on('data', d => { stdout += d.toString('utf8'); });
+  proc.stderr.on('data', d => { stderr += d.toString('utf8'); });
+
+  const exitInfo = await new Promise((resolve) => {
+    proc.on('exit', (code, signal) => resolve({ code, signal }));
+    proc.on('error', err => resolve({ code: -1, signal: null, spawnError: err.message }));
+  });
+  clearTimeout(timer);
+  const wallMs = Date.now() - t0;
+
+  if (req.logPath) {
+    try { writeFileSync(req.logPath, stdout); } catch { /* */ }
+  }
+
+  const parsed = parseStreamJson(stdout);
+  return {
+    cmd: ['claude', ...redactArgs(args)].join(' '),
+    cwd: req.cwd,
+    exitCode: exitInfo.code,
+    signal: exitInfo.signal,
+    spawnError: exitInfo.spawnError,
+    timedOut,
+    wallMs,
+    stderrPreview: stderr.slice(0, 4000),
+    rawByteLen: stdout.length,
+    ...parsed,
+  };
+}
+
+// Hide multi-line system-prompt content in command logs (keeps artifacts readable).
+function redactArgs(args) {
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if ((a === '--append-system-prompt' || a === '--system-prompt') && args[i + 1]) {
+      out.push(a, `<${args[i + 1].length}-char policy text>`);
+      i++;
+    } else if (a === '-p' && args[i + 1]) {
+      out.push(a, `<${args[i + 1].length}-char prompt>`);
+      i++;
+    } else {
+      out.push(a);
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// stream-json parsing
+// ---------------------------------------------------------------------------
+
+/**
+ * stream-json events Claude Code emits (CLI 2.1.x):
+ *   - { type: 'system', subtype: 'init', tools, permissionMode, model, ... }
+ *   - { type: 'user', message: { content: [{type:'tool_result', ...}] } }
+ *   - { type: 'assistant', message: { content: [{type:'text'|'tool_use', ...}], usage } }
+ *   - { type: 'result', subtype, total_cost_usd, usage, result, num_turns, ... }
+ *
+ * We pull:
+ *   - all tool_use blocks (name, input, id) in chronological order
+ *   - all tool_result blocks (id, content text, is_error) so we can size them
+ *   - the final assistant text concat (last assistant message)
+ *   - the result event (usage, cost, success/error subtype)
+ */
+function parseStreamJson(stdout) {
+  const events = [];
+  for (const line of stdout.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    try { events.push(JSON.parse(t)); }
+    catch { /* malformed line — skip */ }
+  }
+
+  const toolCalls = [];
+  const toolResults = [];
+  let lastAssistantText = '';
+  let resultEvent = null;
+  let initEvent = null;
+  let assistantMessageCount = 0;
+  let totalAssistantTextChars = 0;
+
+  for (const ev of events) {
+    if (ev.type === 'system' && ev.subtype === 'init') {
+      initEvent = ev;
+    } else if (ev.type === 'assistant' && ev.message?.content) {
+      assistantMessageCount++;
+      let textBuf = '';
+      for (const block of ev.message.content) {
+        if (block.type === 'text') {
+          textBuf += block.text || '';
+        } else if (block.type === 'tool_use') {
+          toolCalls.push({
+            id: block.id,
+            name: block.name,
+            input: block.input,
+            tIndex: toolCalls.length,
+          });
+        }
+      }
+      if (textBuf) {
+        totalAssistantTextChars += textBuf.length;
+        lastAssistantText = textBuf;
+      }
+    } else if (ev.type === 'user' && ev.message?.content) {
+      for (const block of ev.message.content) {
+        if (block.type === 'tool_result') {
+          let chars = 0;
+          if (typeof block.content === 'string') chars = block.content.length;
+          else if (Array.isArray(block.content)) {
+            for (const c of block.content) if (typeof c.text === 'string') chars += c.text.length;
+          }
+          toolResults.push({
+            id: block.tool_use_id,
+            isError: !!block.is_error,
+            chars,
+          });
+        }
+      }
+    } else if (ev.type === 'result') {
+      resultEvent = ev;
+    }
+  }
+
+  const usage = resultEvent?.usage || null;
+  const totalCostUsd = resultEvent?.total_cost_usd ?? null;
+  const finalResultText = resultEvent?.result || lastAssistantText;
+  const numTurns = resultEvent?.num_turns ?? null;
+  const isError = !!resultEvent?.is_error || resultEvent?.subtype === 'error';
+
+  return {
+    events,
+    initEvent,
+    toolCalls,
+    toolResults,
+    assistantMessageCount,
+    totalAssistantTextChars,
+    finalAssistantText: lastAssistantText,
+    finalResultText,
+    resultEvent,
+    usage,
+    totalCostUsd,
+    numTurns,
+    isError,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Final-answer JSON extraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the strict-JSON answer block we asked for.
+ * Tries (1) fenced ```json block at end, (2) any fenced json block, (3) the
+ * largest top-level {...} substring that parses. Returns the parsed object or
+ * { _parseError, _raw }.
+ */
+export function extractAnswerJson(text) {
+  if (!text) return { _parseError: 'empty answer text', _raw: '' };
+
+  // 1) trailing fenced ```json block
+  const fencedAll = [...text.matchAll(/```(?:json)?\s*\n([\s\S]*?)\n```/g)];
+  for (let i = fencedAll.length - 1; i >= 0; i--) {
+    const body = fencedAll[i][1];
+    try { return JSON.parse(body); } catch { /* try next */ }
+  }
+
+  // 2) the largest balanced {...} substring
+  const candidates = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '{') continue;
+    let depth = 0;
+    for (let j = i; j < text.length; j++) {
+      if (text[j] === '{') depth++;
+      else if (text[j] === '}') {
+        depth--;
+        if (depth === 0) { candidates.push([i, j]); break; }
+      }
+    }
+  }
+  candidates.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
+  for (const [a, b] of candidates) {
+    try { return JSON.parse(text.slice(a, b + 1)); }
+    catch { /* try next */ }
+  }
+
+  return { _parseError: 'no JSON block parseable', _raw: text };
+}
+
+// ---------------------------------------------------------------------------
+// Helper for callers that only want the answer + a compact run summary
+// ---------------------------------------------------------------------------
+
+export function summariseRun(run) {
+  const answer = extractAnswerJson(run.finalResultText || run.finalAssistantText);
+  const toolUseChars = run.toolResults.reduce((acc, r) => acc + r.chars, 0);
+  return {
+    wallMs: run.wallMs,
+    exitCode: run.exitCode,
+    timedOut: run.timedOut,
+    isError: run.isError,
+    numTurns: run.numTurns,
+    toolCallCount: run.toolCalls.length,
+    toolOutputChars: toolUseChars,
+    approxToolOutputTokens: Math.ceil(toolUseChars / 4),
+    assistantMessageCount: run.assistantMessageCount,
+    answerChars: (run.finalResultText || '').length,
+    approxAnswerTokens: Math.ceil((run.finalResultText || '').length / 4),
+    usage: run.usage,
+    totalCostUsd: run.totalCostUsd,
+    answer,
+    answerParseError: answer?._parseError || null,
+  };
+}
+
+// Convenience for callers that want a printable view of the tool sequence.
+export function formatToolTrace(run, max = 20) {
+  return run.toolCalls.slice(0, max).map((tc, i) => {
+    const inp = tc.input || {};
+    let summary;
+    if (tc.name === 'Bash') summary = `Bash: ${(inp.command || '').slice(0, 120)}`;
+    else if (tc.name === 'Read') summary = `Read: ${inp.file_path || ''}${inp.offset ? ` @${inp.offset}` : ''}${inp.limit ? `+${inp.limit}` : ''}`;
+    else summary = `${tc.name}: ${JSON.stringify(inp).slice(0, 120)}`;
+    return `  ${i + 1}. ${summary}`;
+  }).join('\n');
+}
+
+// Tiny helper for tests/dry-run callers.
+export function buildClaudeArgs(req) {
+  // Mirror the live spawn(...) call but return the arg list for inspection
+  // without running anything. Used by --dry-run.
+  const args = [
+    '-p', req.prompt,
+    '--model', req.model,
+    '--output-format', 'stream-json',
+    '--verbose',
+    '--no-session-persistence',
+    '--dangerously-skip-permissions',
+    '--append-system-prompt', req.systemAppend,
+  ];
+  if (req.allowedTools?.length) args.push('--allowed-tools', req.allowedTools.join(' '));
+  if (req.disallowedTools?.length) args.push('--disallowed-tools', req.disallowedTools.join(' '));
+  for (const d of (req.addDirs || [])) args.push('--add-dir', d);
+  return args;
+}
+
+export const _internal = { parseStreamJson };
