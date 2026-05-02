@@ -1414,10 +1414,16 @@ export class LateInteractionIndex {
     // don't support importance weighting, so we must use the JS-tier weighted path.
     const nativeScored = new Set();
 
+    // Resolve a doc-lookup ID for each candidate. Graph-expanded candidates
+    // carry `_liChunkId` (a chunk id pointing into the LI index) while their
+    // public `id` is the entity id from the code graph. Honouring _liChunkId
+    // lets expanded candidates participate in MaxSim rerank.
+    const docIdOf = (c) => c._liChunkId || c.id;
+
     if (useFlatPath && !this.useTokenWeights) {
       const groups = { bit4: [], perToken: [], perDoc: [] };
       for (const candidate of toScore) {
-        const doc = this.documents.get(candidate.id);
+        const doc = this.documents.get(docIdOf(candidate));
         if (!doc) continue;
         if (doc.quantBits === 4 && doc.minArray && doc.tokenNorms) {
           groups.bit4.push({ candidate, doc });
@@ -1453,7 +1459,7 @@ export class LateInteractionIndex {
     // Try WASM fused kernels first (avoids JS-side dequant), fall back to JS dequant + wasmMaxSimF32.
     for (const candidate of toScore) {
       if (nativeScored.has(candidate.id)) continue;
-      const doc = this.documents.get(candidate.id);
+      const doc = this.documents.get(docIdOf(candidate));
       if (!doc) { pushFallback(candidate); continue; }
 
       if (useFlatPath) {
@@ -1488,7 +1494,7 @@ export class LateInteractionIndex {
         }
 
         // JS dequant → WASM f32 or JS fallback
-        const flatData = this.getTokensFlat(candidate.id);
+        const flatData = this.getTokensFlat(docIdOf(candidate));
         if (flatData) {
           pushScored(candidate, this.maxSimScoreFlat(
             effectiveQueryTokens, flatData.flat, flatData.numTokens, flatData.dim,
@@ -1498,7 +1504,7 @@ export class LateInteractionIndex {
           pushFallback(candidate);
         }
       } else {
-        const docTokens = this.getTokens(candidate.id);
+        const docTokens = this.getTokens(docIdOf(candidate));
         if (docTokens) {
           pushScored(candidate, this.maxSimScore(effectiveQueryTokens, docTokens, pruneOpts));
         } else {

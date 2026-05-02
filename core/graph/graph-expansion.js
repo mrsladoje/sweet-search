@@ -276,16 +276,26 @@ export function expandResults(db, results, options = {}) {
  */
 function collectSeedIds(db, results) {
   const seedIds = new Set();
+  const needsLineMatch = [];
+
+  // Distinguish chunk ids from entity ids by shape: chunk ids look like
+  // `path/to/file.ext:start-end:n` (always contain `:`), entity ids are
+  // hex hashes / opaque tokens that never contain `:`. Treating chunk ids
+  // as entity ids feeds them into the relationships SQL and yields zero
+  // neighbours — which silently disabled graph expansion on HNSW results.
+  const looksLikeEntityId = (s) => typeof s === 'string' && !s.includes(':');
 
   for (const r of results) {
     if (r.entity_id) seedIds.add(r.entity_id);
     else if (r.metadata?.entity_id) seedIds.add(r.metadata.entity_id);
-    else if (r.id) seedIds.add(r.id);
+    else if (r.is_expanded && r.id) seedIds.add(r.id);
+    else if (r.id && looksLikeEntityId(r.id)) seedIds.add(r.id);
+    else needsLineMatch.push(r);
   }
 
-  if (seedIds.size > 0) return seedIds;
+  if (needsLineMatch.length === 0) return seedIds;
 
-  // Fallback: match results to entities by file_path + line range
+  // Line-range fallback for chunk-id keyed results.
   let entityLookup;
   try {
     entityLookup = db.prepare(`
@@ -296,18 +306,48 @@ function collectSeedIds(db, results) {
     return seedIds;
   }
 
-  for (const r of results) {
-    const filePath = r.file_path || r.file || r.metadata?.file || r.metadata?.path;
-    const lineStart = r.start_line || r.startLine || r.metadata?.line_start || r.metadata?.startLine;
-    if (!filePath) continue;
+  // Chunk-id pattern: `path/to/file.ext:<start>-<end>:<n>`. When metadata
+  // doesn't carry file_path / line numbers (older indexes can be sparse),
+  // parse them out of the id itself.
+  const parseChunkId = (id) => {
+    if (typeof id !== 'string' || !id.includes(':')) return null;
+    const m = id.match(/^(.+):(\d+)-(\d+):(\d+)$/);
+    if (!m) return null;
+    return { file: m[1], startLine: parseInt(m[2], 10), endLine: parseInt(m[3], 10) };
+  };
 
-    for (const e of entityLookup) {
-      if (e.file_path === filePath && e.start_line != null && lineStart != null &&
-          e.start_line <= lineStart && e.end_line >= lineStart) {
-        seedIds.add(e.id);
-        break;
+  for (const r of needsLineMatch) {
+    let filePath = r.file_path || r.file || r.metadata?.file || r.metadata?.path;
+    let lineStart = r.start_line || r.startLine
+      || r.metadata?.line_start || r.metadata?.startLine || r.metadata?.start_line;
+    let lineEnd = r.end_line || r.endLine
+      || r.metadata?.line_end || r.metadata?.endLine || r.metadata?.end_line;
+    if (!filePath || lineStart == null || lineEnd == null) {
+      const parsed = parseChunkId(r.id);
+      if (parsed) {
+        filePath = filePath || parsed.file;
+        lineStart = lineStart ?? parsed.startLine;
+        lineEnd = lineEnd ?? parsed.endLine;
       }
     }
+    if (!filePath || lineStart == null) continue;
+    // If we still don't have an end line, treat the chunk as a single line.
+    if (lineEnd == null) lineEnd = lineStart;
+
+    // Find the SMALLEST entity that overlaps the chunk's [start, end] —
+    // smaller entities (functions/methods) are more meaningful seeds than
+    // file-level container entities. Cap to one seed per result to avoid
+    // unbounded seed-set blow-up that can break the relationships SQL.
+    let bestId = null;
+    let bestSize = Infinity;
+    for (const e of entityLookup) {
+      if (e.file_path !== filePath) continue;
+      if (e.start_line == null || e.end_line == null) continue;
+      if (e.start_line > lineEnd || e.end_line < lineStart) continue;
+      const size = (e.end_line - e.start_line) + 1;
+      if (size < bestSize) { bestSize = size; bestId = e.id; }
+    }
+    if (bestId) seedIds.add(bestId);
   }
 
   return seedIds;
