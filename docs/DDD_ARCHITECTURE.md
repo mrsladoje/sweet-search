@@ -3,6 +3,8 @@
 **Status**: Modular monolith with enforced bounded contexts
 **Last updated**: 2026-04-14
 
+> **HCGS Status (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); references below describe the original design. Flip the flag to re-enable.
+
 ---
 
 ## Overview
@@ -95,8 +97,6 @@ step (see [Remaining Work](#remaining-work)).
 3. **graph -> embedding (CLI dynamic only)**: `graph/hcgs-generator.js` may lazy-load
    `embedding/index.js` via dynamic `import()` annotated `// CLI`. Permitted only from
    CLI-invoked code paths. Static imports from graph/ into embedding/ are forbidden.
-
-   > **Note (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); code retained for future re-evaluation.
 
 ---
 

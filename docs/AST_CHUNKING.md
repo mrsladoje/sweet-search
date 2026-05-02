@@ -1,5 +1,7 @@
 # AST Chunking & Graph Extraction
 
+> **Status (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); references below describe the original design. Flip the flag to re-enable.
+
 Sweet Search's regex-based code intelligence engine. Extracts semantic chunks and
 knowledge graphs from 37 languages across 70+ file extensions.
 
@@ -25,8 +27,6 @@ Vector embeddings   FTS5 indexes (porter + trigram)
 HNSW index          Relationship resolution
                     HCGS summaries
 ```
-
-> **Note (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); code retained for future re-evaluation.
 
 Everything downstream of the chunker and graph extractor is language-agnostic.
 Only these two components need language patterns.
