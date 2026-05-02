@@ -12,6 +12,7 @@ import { LateInteractionIndex } from '../ranking/late-interaction-index.js';
 import { truncateForHNSW, getEmbeddings, getModelInfo, fisherYatesShuffle } from '../embedding/embedding-service.js';
 import { buildFromCodebaseDb as buildQuantizedArtifacts, shouldSkipArtifactRebuild, updateArtifactState, ARTIFACT_THRESHOLDS } from './artifact-builder.js';
 import { log, logProgress } from './indexer-utils.js';
+import { JAVA_FAMILY } from './ast-chunker.js';
 
 // =============================================================================
 // DURABLE WRITE HELPERS (Phase E — fsync ordering for checkpoint safety)
@@ -19,6 +20,37 @@ import { log, logProgress } from './indexer-utils.js';
 
 const CHECKPOINT_INTERVAL_SEC = 30;
 const MIN_VECTORS_BETWEEN_SAVES = 1000;
+
+/**
+ * v6.2: language-family-conditioned LI input routing.
+ *
+ * Per-language ablation on GenCodeSearchNet (May 2026, see
+ * docs/JS_CHUNK_BLEEDING_ANALYSIS.md) determined that different
+ * languages benefit from different metadata richness in the late-
+ * interaction MaxSim input. v6.2 picks empirically:
+ *
+ *   chunk.li_text  (simple, per-lang path policy in chunker):
+ *     - python (no path; at 97% ceiling, path duplicated funcname)
+ *     - JAVA_FAMILY: java, php, csharp/c#, kotlin, scala
+ *       (slug-stripped path; framework signal preserved, hashed-slug
+ *       noise removed)
+ *
+ *   chunk.embedding_text (greedy enriched; Scope + Defines + Uses):
+ *     - javascript, typescript, jsx, tsx (closures + imports help)
+ *     - ruby, go, c, cpp, c++, rust
+ *     - any unknown language as the safe fallback
+ *
+ * The Java-family set is sourced from ast-chunker.js so that the
+ * routing here and the path-policy logic inside the chunker can never
+ * drift out of sync.
+ */
+export function pickLiInput(chunk) {
+  const lang = chunk?.metadata?.language;
+  if (lang === 'python' || JAVA_FAMILY.has(lang)) {
+    return chunk.li_text || chunk.embedding_text || chunk.text || chunk.content || '';
+  }
+  return chunk.embedding_text || chunk.li_text || chunk.text || chunk.content || '';
+}
 
 function fsyncFile(filePath) {
   const fd = openSync(filePath, 'r');
@@ -239,7 +271,7 @@ function buildLateInteractionBatches(chunks, options = {}) {
     attentionBudget = Math.max(1, Math.floor(batchSizeCap / 2)) * maxLength * maxLength;
   }
   const indexed = chunks.map((chunk) => {
-    const text = chunk.text || chunk.content || '';
+    const text = pickLiInput(chunk);
     return {
       chunk,
       text,

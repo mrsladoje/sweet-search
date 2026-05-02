@@ -5,6 +5,7 @@
 import { createHash } from 'crypto';
 import path from 'path';
 import { detectProjectBoundary } from '../../infrastructure/project-detector.js';
+import { JAVA_FAMILY, normalizePathSlug } from '../ast-chunker.js';
 
 const MAX_CHUNK_SIZE = 2000;  // chars — matches ast-chunker.js
 const MIN_CHUNK_SIZE = 30;    // chars — matches ast-chunker.js threshold
@@ -59,10 +60,34 @@ function buildDocChunk(content, filePath, language, chunkType, symbol, lineStart
   }
   embeddingParts.push(trimmed);
 
+  // Build LI text via v6.2 — language-conditioned path strategy.
+  // Document chunks are typically markdown/text and fall under the
+  // "other" branch (full raw path). Code-language chunks reuse the
+  // shared JAVA_FAMILY set from ast-chunker.js so the path policy
+  // here cannot drift from the AST chunker.
+  const liParts = [];
+  if (relativePath) {
+    if (language === 'python') {
+      // skip path line for Python
+    } else if (JAVA_FAMILY.has(language)) {
+      liParts.push(`# ${normalizePathSlug(relativePath)}`);
+    } else {
+      liParts.push(`# ${relativePath}`);
+    }
+  }
+  if (symbol && symbol !== 'unknown') {
+    liParts.push(`# ${chunkType}: ${symbol}`);
+  }
+  if (language && language !== 'text') {
+    liParts.push(`# Language: ${language}`);
+  }
+  liParts.push(trimmed);
+
   return {
     text: trimmed,
     content: trimmed,
     embedding_text: embeddingParts.join('\n').slice(0, 2000),
+    li_text: liParts.join('\n').slice(0, 2000),
     metadata: {
       type: 'document',
       file: path.basename(filePath),
