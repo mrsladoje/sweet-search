@@ -20,6 +20,25 @@ const MIN_CONTENT_LENGTH = 30;
 const MAX_PEEK_LINES = 3;
 const DEFAULT_MAX_REGEX_LINE_LENGTH = 4000;
 
+// =============================================================================
+// Embedding-text cap — RESEARCH / ABLATION INFRASTRUCTURE
+// =============================================================================
+//
+// Production default: 2000, byte-identical to shipped v6.2.
+//
+// Set SWEET_SEARCH_EMBED_TEXT_CAP=N to raise/lower the slice ceiling on
+// `embedding_text`, `li_text`, `li_greedy_text`, and the enriched form.
+// The May-2026 chunk-overflow audit found 80.5% of overflowing chunks are
+// header-pushed (raw content ≤2000, headers push the embedding text over),
+// motivating an A/B vs slightly-larger caps. See eval/results/
+// chunk-overflow-audit.md for the audit and eval/run_overflow_ablation.sh
+// for the wiring. Does NOT alter the chunker max size — that lives behind
+// SWEET_SEARCH_CHUNK_HEADER_OVERHEAD in tree-sitter-provider.js.
+function getEmbedTextCap() {
+  const v = parseInt(process.env.SWEET_SEARCH_EMBED_TEXT_CAP || '', 10);
+  return Number.isFinite(v) && v >= 500 ? v : MAX_CHUNK_SIZE;
+}
+
 /**
  * Strip a trailing `_<hex>` slug from a path's final basename, before
  * its extension. Used by the Java family (Java/PHP/C#/Kotlin/Scala)
@@ -209,7 +228,7 @@ function buildEmbeddingText({ variant: variantOverride, content, relativePath, l
   }
 
   parts.push(trimmed);
-  return parts.join('\n').slice(0, 2000);
+  return parts.join('\n').slice(0, getEmbedTextCap());
 }
 
 /**
@@ -268,7 +287,7 @@ function buildLiText({ content, relativePath, language, chunkType, symbol, hiera
   }
   lines.push(trimmed);
 
-  return lines.join('\n').slice(0, 2000);
+  return lines.join('\n').slice(0, getEmbedTextCap());
 }
 
 /**
@@ -968,7 +987,7 @@ export class ASTChunker {
     }
 
     parts.push(chunk.content);
-    const enriched = parts.join('\n').slice(0, 2000);
+    const enriched = parts.join('\n').slice(0, getEmbedTextCap());
 
     // Always update the byte-stable LI passthrough form.
     chunk.li_greedy_text = enriched;

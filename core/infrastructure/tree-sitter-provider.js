@@ -432,12 +432,23 @@ export class TreeSitterProvider {
   /**
    * Parse file content into semantic chunks using the cAST recursive algorithm.
    * Returns array of chunk objects or null if tree-sitter can't handle it.
+   *
+   * Header-aware budget (research-only ablation, May 2026): set
+   * SWEET_SEARCH_CHUNK_HEADER_OVERHEAD=N to subtract N chars from the
+   * cAST max chunk size, leaving room for the embedding-text headers
+   * (path / parent / symbol / language ≈ 50–100 chars) without spilling
+   * past the embedding cap. Default 0 = byte-identical to shipped. The
+   * audit motivating this lever lives in eval/results/chunk-overflow-audit.md.
    */
   async parseFileToChunks(content, languageId, options = {}) {
     const tree = await this.parse(content, languageId);
     if (!tree) return null;
 
-    const maxChunkSize = options.maxChunkSize || 2000;
+    const headerOverhead = (() => {
+      const v = parseInt(process.env.SWEET_SEARCH_CHUNK_HEADER_OVERHEAD || '', 10);
+      return Number.isFinite(v) && v >= 0 ? v : 0;
+    })();
+    const maxChunkSize = (options.maxChunkSize || 2000) - headerOverhead;
     this._chunkCounter = 0;
 
     const children = this._getChildren(tree.rootNode);
