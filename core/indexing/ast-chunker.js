@@ -45,6 +45,125 @@ export const JAVA_FAMILY = new Set([
   'kotlin', 'scala',
 ]);
 
+// =============================================================================
+// Embedding-text variant switch — RESEARCH / ABLATION INFRASTRUCTURE
+// =============================================================================
+//
+// Production behavior is fixed at variant=current and is byte-identical to
+// shipped v6.2. None of the alternative variants below are recommended for
+// production; an isolated R1 ablation in May 2026 found no variant beats
+// shipped on total MRR@10 (see docs/JS_CHUNK_BLEEDING_ANALYSIS.md for the
+// full table). The switch and helpers are kept ONLY so future R1
+// experiments can be re-run without re-implementing the scaffolding.
+//
+// Default: SWEET_SEARCH_EMBED_TEXT_VARIANT unset → 'current' →
+//          embedding_text + LI input both byte-identical to shipped.
+//
+// Available experiment variants (research use only):
+//   current           shipped form (production default)
+//   no_path           drop the # path line
+//   normalized_path   slug-strip the trailing _<hex> in path
+//   no_language       drop # Language: line
+//   parent_only       path + parent only, drop function + language
+//   enriched          identical to current here; also runs enrichment
+//   code_breadcrumb   compact `# Parent.Symbol` or `# Parent::symbol`
+//
+// LI isolation: when a non-current variant is active, `chunk.li_greedy_text`
+// still carries the shipped (variant=current) form, and pickLiInput() for
+// non-Python/Java languages reads it — so an R1 experiment never
+// contaminates the LI input. See enrichEmbeddingText() and pickLiInput().
+const ENRICHMENT_VARIANTS = new Set(['current', 'enriched']);
+
+function getEmbedTextVariant() {
+  const v = (process.env.SWEET_SEARCH_EMBED_TEXT_VARIANT || 'current').toLowerCase();
+  return [
+    'current', 'no_path', 'normalized_path', 'no_language',
+    'parent_only', 'enriched', 'code_breadcrumb',
+  ].includes(v) ? v : 'current';
+}
+
+export function shouldRunEnrichment() {
+  return ENRICHMENT_VARIANTS.has(getEmbedTextVariant());
+}
+
+// `Foo::bar` for langs that conventionally use ::, `Foo.bar` otherwise.
+// Used by the experimental code_breadcrumb variant only.
+function breadcrumbSep(language) {
+  return ['ruby', 'php', 'cpp', 'c++', 'rust'].includes(language) ? '::' : '.';
+}
+
+/**
+ * Build `embedding_text` per the active R1 variant.
+ *
+ * Production callers always pass either no variant (env-driven, defaults
+ * to 'current') or `variant: 'current'` explicitly — both produce text
+ * byte-identical to shipped v6.2.
+ *
+ * `variant: 'current'` is also passed explicitly when populating
+ * `chunk.li_greedy_text` so the LI stage sees the shipped form even
+ * when the bi-encoder is consuming a different experimental variant.
+ */
+function buildEmbeddingText({ variant: variantOverride, content, relativePath, language, chunkType, symbol, hierarchyInfo }) {
+  const variant = variantOverride || getEmbedTextVariant();
+  const trimmed = content.trim();
+  const parts = [];
+
+  const pathLine = relativePath ? `# ${relativePath}` : null;
+  const parentLine = hierarchyInfo?.parentSymbol
+    ? `# Parent: ${hierarchyInfo.parentType} ${hierarchyInfo.parentSymbol}` : null;
+  const symbolLine = (symbol && symbol !== 'unknown')
+    ? `# ${chunkType}: ${symbol}` : null;
+  const langLine = (language && language !== 'text')
+    ? `# Language: ${language}` : null;
+
+  switch (variant) {
+    case 'no_path':
+      if (parentLine) parts.push(parentLine);
+      if (symbolLine) parts.push(symbolLine);
+      if (langLine) parts.push(langLine);
+      break;
+    case 'normalized_path':
+      if (relativePath) parts.push(`# ${normalizePathSlug(relativePath)}`);
+      if (parentLine) parts.push(parentLine);
+      if (symbolLine) parts.push(symbolLine);
+      if (langLine) parts.push(langLine);
+      break;
+    case 'no_language':
+      if (pathLine) parts.push(pathLine);
+      if (parentLine) parts.push(parentLine);
+      if (symbolLine) parts.push(symbolLine);
+      break;
+    case 'parent_only':
+      if (pathLine) parts.push(pathLine);
+      if (parentLine) parts.push(parentLine);
+      break;
+    case 'code_breadcrumb': {
+      if (pathLine) parts.push(pathLine);
+      const sep = breadcrumbSep(language);
+      if (hierarchyInfo?.parentSymbol && symbol && symbol !== 'unknown') {
+        parts.push(`# ${hierarchyInfo.parentSymbol}${sep}${symbol}`);
+      } else if (symbol && symbol !== 'unknown') {
+        parts.push(`# ${symbol}`);
+      } else if (hierarchyInfo?.parentSymbol) {
+        parts.push(`# ${hierarchyInfo.parentSymbol}`);
+      }
+      if (language && language !== 'text') parts.push(`# ${language}`);
+      break;
+    }
+    case 'enriched':
+    case 'current':
+    default:
+      if (pathLine) parts.push(pathLine);
+      if (parentLine) parts.push(parentLine);
+      if (symbolLine) parts.push(symbolLine);
+      if (langLine) parts.push(langLine);
+      break;
+  }
+
+  parts.push(trimmed);
+  return parts.join('\n').slice(0, 2000);
+}
+
 /**
  * Per-language path-line strategy for late-interaction MaxSim input.
  *
@@ -690,19 +809,32 @@ export class ASTChunker {
     const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
     const relativePath = this.projectRoot ? path.relative(this.projectRoot, filePath) : filePath;
 
-    // Build contextualized embedding text (rich context for bi-encoder)
-    const embeddingParts = [];
-    embeddingParts.push(`# ${relativePath}`);
-    if (hierarchyInfo?.parentSymbol) {
-      embeddingParts.push(`# Parent: ${hierarchyInfo.parentType} ${hierarchyInfo.parentSymbol}`);
-    }
-    if (symbol && symbol !== 'unknown') {
-      embeddingParts.push(`# ${chunkType}: ${symbol}`);
-    }
-    if (language && language !== 'text') {
-      embeddingParts.push(`# Language: ${language}`);
-    }
-    embeddingParts.push(content.trim());
+    // Production embedding text. With the default variant (current) this
+    // is byte-identical to shipped v6.2; under a research-only variant
+    // (SWEET_SEARCH_EMBED_TEXT_VARIANT) it produces the experimental form.
+    const embedding_text = buildEmbeddingText({
+      content,
+      relativePath,
+      language,
+      chunkType,
+      symbol,
+      hierarchyInfo,
+    });
+
+    // Research isolation: always build the shipped (current-variant)
+    // form alongside, so the LI stage can read a canonical input even
+    // when an R1 experiment is active on embedding_text. In production
+    // (variant=current) this is the same content as embedding_text and
+    // pickLiInput's preference for li_greedy_text changes nothing.
+    const li_greedy_text = buildEmbeddingText({
+      variant: 'current',
+      content,
+      relativePath,
+      language,
+      chunkType,
+      symbol,
+      hierarchyInfo,
+    });
 
     // Build LI text via the v6.2 builder (language-conditioned path
     // policy). See buildLiText() docstring for rationale.
@@ -742,7 +874,8 @@ export class ASTChunker {
     return {
       text: content.trim(),
       content: content.trim(),
-      embedding_text: embeddingParts.join('\n').slice(0, 2000),
+      embedding_text,
+      li_greedy_text,
       li_text,
       metadata,
       tags: ['codebase', language, this.inferProjectTag(filePath)]
@@ -750,8 +883,17 @@ export class ASTChunker {
   }
 
   /**
-   * Enrich a chunk's embedding_text with scope chain and import information.
+   * Enrich a chunk's embedding_text with scope chain and import info.
    * Called after initial chunking when scope info is available.
+   *
+   * Production path (variant=current): updates BOTH `embedding_text`
+   * and `li_greedy_text` to the same enriched string — byte-identical
+   * to shipped v6.2.
+   *
+   * Research path (variant != current/enriched): only updates
+   * `li_greedy_text`. The variant's `embedding_text` is preserved so
+   * an R1 ablation can compare its embedding form against shipped
+   * without losing the LI side's enriched text.
    */
   static enrichEmbeddingText(chunk, scopeChain, imports) {
     const parts = [];
@@ -777,7 +919,16 @@ export class ASTChunker {
     }
 
     parts.push(chunk.content);
-    chunk.embedding_text = parts.join('\n').slice(0, 2000);
+    const enriched = parts.join('\n').slice(0, 2000);
+
+    // Always update the byte-stable LI passthrough form.
+    chunk.li_greedy_text = enriched;
+
+    // Only update embedding_text when the active variant participates
+    // in post-build enrichment.
+    if (shouldRunEnrichment()) {
+      chunk.embedding_text = enriched;
+    }
     return chunk;
   }
 

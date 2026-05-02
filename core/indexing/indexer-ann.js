@@ -49,7 +49,15 @@ export function pickLiInput(chunk) {
   if (lang === 'python' || JAVA_FAMILY.has(lang)) {
     return chunk.li_text || chunk.embedding_text || chunk.text || chunk.content || '';
   }
-  return chunk.embedding_text || chunk.li_text || chunk.text || chunk.content || '';
+  // For JS family / Ruby / Go / C/C++/Rust / unknown, read from
+  // `li_greedy_text` first. In production (variant=current) this is
+  // identical to embedding_text — same shipped v6.2 behavior. The
+  // preference matters only when a research-only embedding variant
+  // (SWEET_SEARCH_EMBED_TEXT_VARIANT) is active: then li_greedy_text
+  // still carries the shipped form, so an R1 ablation cannot
+  // accidentally mutate the LI input. Older chunks without
+  // li_greedy_text fall through to embedding_text as before.
+  return chunk.li_greedy_text || chunk.embedding_text || chunk.li_text || chunk.text || chunk.content || '';
 }
 
 function fsyncFile(filePath) {
