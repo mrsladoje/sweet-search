@@ -7,7 +7,7 @@ import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 
-import { DB_PATHS, PROJECT_ROOT, EMBEDDING_CONFIG } from '../infrastructure/config/index.js';
+import { DB_PATHS, PROJECT_ROOT, EMBEDDING_CONFIG, HCGS_CONFIG } from '../infrastructure/config/index.js';
 import { getChangedFiles, updateState, getStats as getIncrementalStats, updatePhaseProgress, markPhaseComplete, clearPhaseProgress } from './incremental-tracker.js';
 import { backupSummaries, restoreSummaries, markForRegeneration } from '../graph/summary-manager.js';
 import { colors, log, logProgress, logError, discoverFiles, readFilesFromStdin, atomicSwapDatabase } from './indexer-utils.js';
@@ -300,8 +300,10 @@ export async function buildCodeGraphWithHCGSPhase(options = {}) {
     skipSummaryRegen,
   } = options;
 
+  const hcgsEnabled = HCGS_CONFIG.enabled;
+
   let summaryBackup = { summaries: [], count: 0 };
-  if (!dryRun) {
+  if (!dryRun && hcgsEnabled) {
     summaryBackup = await backupSummaries(DB_PATHS.codeGraph);
     if (summaryBackup.count > 0) {
       log(`Backed up ${summaryBackup.count} existing summaries (with type validation)`, 'green');
@@ -318,14 +320,14 @@ export async function buildCodeGraphWithHCGSPhase(options = {}) {
 
   const graphStats = await buildCodeGraph(allFiles, dryRun);
 
-  if (!dryRun && summaryBackup.count > 0) {
+  if (!dryRun && hcgsEnabled && summaryBackup.count > 0) {
     const restoreResult = await restoreSummaries(DB_PATHS.codeGraph, summaryBackup);
     log(`Restored ${restoreResult.restored} summaries (${restoreResult.skipped.total} skipped - entity removed/type changed)`, 'green');
   }
 
   let hcgsPromise = null;
 
-  const shouldRunHCGS = !dryRun && (
+  const shouldRunHCGS = !dryRun && hcgsEnabled && (
     fullReindex ||
     filesFromStdin ||
     (incrementalInfo && filesToIndex.length > 0)
