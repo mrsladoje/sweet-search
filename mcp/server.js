@@ -18,11 +18,15 @@ import {
   HealthOutputSchema,
   RepoMapOutputSchema,
   VocabPrewarmOutputSchema,
+  ReadOutputSchema,
+  ReadSemanticOutputSchema,
   handleSearch,
   handleIndex,
   checkHealth,
   handleRepoMap,
   handleVocabPrewarm,
+  handleRead,
+  handleReadSemantic,
 } from './tool-handlers.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -223,6 +227,43 @@ server.registerTool('vocab-prewarm', {
     openWorldHint: true,
   },
 }, async (args) => handleVocabPrewarm(args, vocabDeps));
+
+server.registerTool('read', {
+  description: 'Read one or more files for exact code understanding. Replaces the default Read tool for most code-reading workflows. Uses the filesystem as ground truth, supports line ranges and batching, and attaches symbol-aware chunk metadata when the file is indexed.',
+  inputSchema: {
+    files: z.array(z.object({
+      path: z.string().describe('File path relative to project root (or absolute)'),
+      startLine: z.number().int().min(1).optional().describe('Start line (1-based, inclusive)'),
+      endLine: z.number().int().min(1).optional().describe('End line (1-based, inclusive)'),
+    })).min(1).max(20).describe('Files to read (1-20)'),
+    includeMetadata: z.boolean().default(true).optional()
+      .describe('Attach symbol-aware chunk metadata when the file is indexed'),
+  },
+  outputSchema: ReadOutputSchema,
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+}, async (args) => handleRead(args, { PROJECT_ROOT }));
+
+server.registerTool('read-semantic', {
+  description: 'Read only the spans of a file relevant to a query. Selects spans via hybrid retrieval (lexical + symbol + ColBERT-style late-interaction MaxSim) with RRF fusion and LI re-rank, then re-reads exact lines from disk. Returns 1-N small spans instead of the full file. Falls back to a plain read if the file is not indexed.',
+  inputSchema: {
+    file: z.string().describe('File path (project-relative or absolute)'),
+    query: z.string().min(1).max(500).describe('What you want to understand about this file'),
+    topK: z.number().int().min(1).max(20).default(5).optional()
+      .describe('Maximum spans before merging (default: 5)'),
+    threshold: z.number().min(0).max(1).default(0.4).optional()
+      .describe('MaxSim score floor (default: 0.4)'),
+    contextLines: z.number().int().min(0).max(20).default(2).optional()
+      .describe('Pre/post context lines per span (default: 2)'),
+    maxChars: z.number().int().min(200).max(64000).default(8000).optional()
+      .describe('Hard cap on returned text (default: 8000 chars)'),
+    maxTokens: z.number().int().min(50).max(16000).optional()
+      .describe('Convenience cap (~chars/4)'),
+    verbose: z.boolean().default(false).optional()
+      .describe('Include timings + per-signal scores'),
+  },
+  outputSchema: ReadSemanticOutputSchema,
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+}, async (args) => handleReadSemantic(args, { PROJECT_ROOT }));
 
 // ---------------------------------------------------------------------------
 // Resources
