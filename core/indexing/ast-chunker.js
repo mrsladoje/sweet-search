@@ -21,6 +21,90 @@ const MAX_PEEK_LINES = 3;
 const DEFAULT_MAX_REGEX_LINE_LENGTH = 4000;
 
 /**
+ * Strip a trailing `_<hex>` slug from a path's final basename, before
+ * its extension. Used by the Java family (Java/PHP/C#/Kotlin/Scala)
+ * per the v6.2 language-conditioned policy.
+ *
+ *   javascript/Semantic-UI/Table_366c13.js -> javascript/Semantic-UI/Table.js
+ *   src/Button.tsx (no slug) -> src/Button.tsx (unchanged)
+ *
+ * Exported for reuse in chunk-builder.js (document chunks) and tests.
+ */
+export function normalizePathSlug(relativePath) {
+  if (!relativePath) return relativePath;
+  return relativePath.replace(/_[0-9a-f]{6,}(\.[a-zA-Z0-9]+)$/, '$1');
+}
+
+// Languages that share Java's slug-stripped-path li_text policy.
+// (At LI input routing time these will all be sent to chunk.li_text;
+// see LI_TEXT_LANGUAGES in core/indexing/indexer-ann.js, which imports
+// this set so the policy stays consistent in one place.)
+export const JAVA_FAMILY = new Set([
+  'java', 'php',
+  'csharp', 'c#',
+  'kotlin', 'scala',
+]);
+
+/**
+ * Per-language path-line strategy for late-interaction MaxSim input.
+ *
+ *   - Python: no path line (at 97% MRR ceiling; path duplicated funcname).
+ *   - Java family (Java, PHP, C#, Kotlin, Scala): slug-stripped path.
+ *   - Everything else: full path. (For JS family, Ruby, Go, C/C++/Rust
+ *     and unknown languages, the LI input router in indexer-ann.js
+ *     bypasses li_text entirely and reads chunk.embedding_text directly,
+ *     so this branch only matters as a fallback if those routes ever
+ *     fail to find embedding_text.)
+ */
+function pathLineForLi(relativePath, language) {
+  if (!relativePath) return null;
+  if (language === 'python') return null;
+  if (JAVA_FAMILY.has(language)) {
+    return `# ${normalizePathSlug(relativePath)}`;
+  }
+  return `# ${relativePath}`;
+}
+
+/**
+ * Build `li_text` — the text fed to lateon-code MaxSim reranking.
+ *
+ * v6.2 (2026-05): language-conditioned path strategy. All languages
+ * share the same `# Parent / # symbol / # Language` label-shaped
+ * headers and differ only in how (or whether) the path comment is
+ * included. See pathLineForLi() docstring for the per-language map.
+ *
+ * Why language-conditioned vs uniform: per-language ablation showed
+ * uniform policies always regress at least one language (greedy
+ * regresses Python; v4 no-path regresses Ruby below baseline; v5
+ * slug-strip-uniform hurts JS). The v6.2 split — Python skips the
+ * path, Java family slug-strips, JS family / Ruby / Go / fallback get
+ * the full enriched embedding_text — is the empirical pareto front.
+ *
+ * The actual routing of `li_text` vs `embedding_text` lives in
+ * core/indexing/indexer-ann.js (`pickLiInput`).
+ */
+function buildLiText({ content, relativePath, language, chunkType, symbol, hierarchyInfo }) {
+  const trimmed = content.trim();
+  const lines = [];
+
+  const pathLine = pathLineForLi(relativePath, language);
+  if (pathLine) lines.push(pathLine);
+
+  if (hierarchyInfo?.parentSymbol) {
+    lines.push(`# Parent: ${hierarchyInfo.parentType} ${hierarchyInfo.parentSymbol}`);
+  }
+  if (symbol && symbol !== 'unknown') {
+    lines.push(`# ${chunkType}: ${symbol}`);
+  }
+  if (language && language !== 'text') {
+    lines.push(`# Language: ${language}`);
+  }
+  lines.push(trimmed);
+
+  return lines.join('\n').slice(0, 2000);
+}
+
+/**
  * AST-like semantic code chunker supporting 35+ languages.
  * Uses regex boundary patterns from core/language-patterns.js registry.
  * Three parsing strategies: brace-based, indent-based, end-keyword.
@@ -606,7 +690,7 @@ export class ASTChunker {
     const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
     const relativePath = this.projectRoot ? path.relative(this.projectRoot, filePath) : filePath;
 
-    // Build contextualized embedding text
+    // Build contextualized embedding text (rich context for bi-encoder)
     const embeddingParts = [];
     embeddingParts.push(`# ${relativePath}`);
     if (hierarchyInfo?.parentSymbol) {
@@ -619,6 +703,17 @@ export class ASTChunker {
       embeddingParts.push(`# Language: ${language}`);
     }
     embeddingParts.push(content.trim());
+
+    // Build LI text via the v6.2 builder (language-conditioned path
+    // policy). See buildLiText() docstring for rationale.
+    const li_text = buildLiText({
+      content,
+      relativePath,
+      language,
+      chunkType,
+      symbol,
+      hierarchyInfo,
+    });
 
     const metadata = {
       type: 'codebase',
@@ -648,6 +743,7 @@ export class ASTChunker {
       text: content.trim(),
       content: content.trim(),
       embedding_text: embeddingParts.join('\n').slice(0, 2000),
+      li_text,
       metadata,
       tags: ['codebase', language, this.inferProjectTag(filePath)]
     };
