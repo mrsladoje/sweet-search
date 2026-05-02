@@ -7,6 +7,8 @@
 > **Status**: Implemented (`c775434`)
 > **Last updated**: 2026-04-07
 
+> **HCGS Status (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); references below describe the original design. Flip the flag to re-enable.
+
 ---
 
 ## Table of Contents
@@ -73,8 +75,6 @@ Phase 5: Artifacts        → Streams from SQLite cursor, per-row truncation
 ```
 
 ### Phase concurrency model
-
-> **Note (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); the `hcgsPromise` branch short-circuits and no LLM calls fire. Code retained for future re-evaluation.
 
 ```
 Timeline:
