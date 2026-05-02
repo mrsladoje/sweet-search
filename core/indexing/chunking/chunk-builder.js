@@ -10,6 +10,14 @@ import { JAVA_FAMILY, normalizePathSlug } from '../ast-chunker.js';
 const MAX_CHUNK_SIZE = 2000;  // chars — matches ast-chunker.js
 const MIN_CHUNK_SIZE = 30;    // chars — matches ast-chunker.js threshold
 
+// Embedding-text cap mirrors ast-chunker.js:getEmbedTextCap. Default 2000,
+// byte-identical to shipped. Override via SWEET_SEARCH_EMBED_TEXT_CAP for
+// the May-2026 budget-alignment ablation.
+function getEmbedTextCap() {
+  const v = parseInt(process.env.SWEET_SEARCH_EMBED_TEXT_CAP || '', 10);
+  return Number.isFinite(v) && v >= 500 ? v : MAX_CHUNK_SIZE;
+}
+
 /** Default config for markdown chunker */
 const MD_DEFAULTS = {
   maxChunkSize: MAX_CHUNK_SIZE,
@@ -86,8 +94,8 @@ function buildDocChunk(content, filePath, language, chunkType, symbol, lineStart
   return {
     text: trimmed,
     content: trimmed,
-    embedding_text: embeddingParts.join('\n').slice(0, 2000),
-    li_text: liParts.join('\n').slice(0, 2000),
+    embedding_text: embeddingParts.join('\n').slice(0, getEmbedTextCap()),
+    li_text: liParts.join('\n').slice(0, getEmbedTextCap()),
     metadata: {
       type: 'document',
       file: path.basename(filePath),
