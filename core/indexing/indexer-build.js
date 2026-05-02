@@ -537,9 +537,17 @@ export async function chunkFiles(files) {
     }
   }
 
+  // Embedding-text cap: defaults to 2000 (byte-identical to shipped). The
+  // SWEET_SEARCH_EMBED_TEXT_CAP env var (see ast-chunker.js:getEmbedTextCap)
+  // is honored by the chunk builders themselves; this final re-slice mirrors
+  // the same cap so an ablation can raise the ceiling end-to-end.
+  const _embCap = (() => {
+    const v = parseInt(process.env.SWEET_SEARCH_EMBED_TEXT_CAP || '', 10);
+    return Number.isFinite(v) && v >= 500 ? v : 2000;
+  })();
   const texts = allChunks.map(chunk => {
     if (chunk.embedding_text) {
-      return chunk.embedding_text.slice(0, 2000);
+      return chunk.embedding_text.slice(0, _embCap);
     }
     return `${chunk.file} ${chunk.metadata?.symbol || ''}\n${(chunk.text || chunk.content || '').slice(0, 1500)}`;
   });
