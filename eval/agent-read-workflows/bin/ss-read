@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# ss-read: filesystem-grounded read of one file.
+#   ss-read <file>                  # whole file
+#   ss-read <file> <start>          # ONE line (NOT start-to-EOF)
+#   ss-read <file> <start> <end>    # explicit range
+# Open-ended start-to-EOF is intentionally not supported in the bench wrapper
+# to prevent accidental over-reading. To pull a span, give an explicit end.
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+TMPERR=$(mktemp)
+node "$DIR/_ss-helpers.mjs" read "$@" 2>"$TMPERR"
+RC=$?
+[ $RC -ne 0 ] && cat "$TMPERR" >&2
+rm -f "$TMPERR"
+exit $RC

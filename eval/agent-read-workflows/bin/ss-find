@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# ss-find: ColGrep / patternSearch — regex candidates re-ranked by MaxSim
+# against your natural-language query. Use for behavioural / semantic
+# questions where lexical alone won't pinpoint the chunk.
+#
+# Usage:  ss-find "<query>" --regex "<regex>" [-k N]
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+TMPERR=$(mktemp)
+node "$DIR/_ss-helpers.mjs" find "$@" 2>"$TMPERR"
+RC=$?
+[ $RC -ne 0 ] && cat "$TMPERR" >&2
+rm -f "$TMPERR"
+exit $RC
