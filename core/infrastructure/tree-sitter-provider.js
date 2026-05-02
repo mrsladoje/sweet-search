@@ -69,6 +69,28 @@ const BOUNDARY_TYPES = new Set([
   'class_specifier', 'namespace_definition',
 ]);
 
+// AST node types that represent function/class bodies. Used by
+// extractSignature() to find where the declaration's body starts so
+// the signature span is everything before it (decorators + name +
+// parameters + return type, excluding body).
+const BODY_TYPES = new Set([
+  // JS/TS, Java, Go, Rust, Kotlin, Swift, C#, Ruby (sometimes)
+  'block', 'statement_block', 'class_body', 'function_body',
+  // C / C++ — function bodies
+  'compound_statement', 'field_declaration_list',
+  // Python uses `block` (already covered) but `:` precedes it
+  // PHP — function/method body
+  'compound_statement_php',
+  // Swift / Kotlin — sometimes labelled differently
+  'enum_class_body', 'enum_body', 'interface_body',
+  // Rust impl/trait bodies
+  'declaration_list',
+]);
+
+// Maximum signature length (chars) after whitespace normalization.
+// Signatures longer than this get truncated with `…`.
+const MAX_SIGNATURE_LENGTH = 200;
+
 // Map tree-sitter node type -> our chunk type label
 const NODE_TYPE_MAP = {
   'function_declaration': 'function',
@@ -467,6 +489,7 @@ export class TreeSitterProvider {
         const firstBoundary = buffer.find(n => BOUNDARY_TYPES.has(n.type));
         const name = firstBoundary ? this._extractNodeName(firstBoundary) : null;
         const type = firstBoundary ? (NODE_TYPE_MAP[firstBoundary.type] || 'code') : 'code';
+        const signature = firstBoundary ? this._extractSignature(firstBoundary, content) : null;
 
         chunks.push({
           chunkId: this._nextChunkId(),
@@ -478,6 +501,7 @@ export class TreeSitterProvider {
           endLine: buffer[buffer.length - 1].endPosition.row,
           type,
           name: name || (buffer.length === 1 ? null : null),
+          signature,
         });
       }
       buffer = [];
@@ -536,6 +560,7 @@ export class TreeSitterProvider {
               endLine: node.endPosition.row,
               type: NODE_TYPE_MAP[node.type] || 'code',
               name: this._extractNodeName(node),
+              signature: this._extractSignature(node, content),
             });
           }
         }
@@ -544,6 +569,60 @@ export class TreeSitterProvider {
 
     flushBuffer();
     return chunks;
+  }
+
+  /**
+   * Extract a compact, single-line signature for a boundary AST node.
+   *
+   * Strategy: find the first body-like child (block / statement_block /
+   * compound_statement / class_body / declaration_list / …), and return
+   * the source span [node.startIndex, body.startIndex) with whitespace
+   * normalized to single spaces. If no body child is found (e.g.
+   * declarations without a body, abstract methods, interface members),
+   * return the full first line of the node.
+   *
+   * Returns null when the node has no children to inspect.
+   *
+   * Used by the `signature` R1 embedding-text variant. Intentionally
+   * does NOT alter `text`, `li_text`, or `li_greedy_text` — signature
+   * surface is research-only on `embedding_text`.
+   */
+  _extractSignature(node, content) {
+    if (!node || !content) return null;
+    if (!BOUNDARY_TYPES.has(node.type)) return null;
+
+    let bodyStart = null;
+    // Try field-name lookup first (works for most modern grammars).
+    const bodyField = node.childForFieldName?.('body');
+    if (bodyField && BODY_TYPES.has(bodyField.type)) {
+      bodyStart = bodyField.startIndex;
+    } else {
+      // Fall back to scanning children for a body-shaped child.
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (BODY_TYPES.has(child.type)) {
+          bodyStart = child.startIndex;
+          break;
+        }
+      }
+    }
+
+    let raw;
+    if (bodyStart != null && bodyStart > node.startIndex) {
+      raw = content.substring(node.startIndex, bodyStart);
+    } else {
+      // No body found — declaration only (e.g. abstract method, type
+      // alias). Take the whole node text.
+      raw = content.substring(node.startIndex, node.endIndex);
+    }
+
+    // Normalize: collapse runs of whitespace (including newlines) to a
+    // single space, drop leading/trailing whitespace.
+    const normalized = raw.replace(/\s+/g, ' ').trim();
+    if (!normalized) return null;
+
+    if (normalized.length <= MAX_SIGNATURE_LENGTH) return normalized;
+    return normalized.slice(0, MAX_SIGNATURE_LENGTH - 1) + '…';
   }
 
   /** Extract symbol name from an AST node */
@@ -662,4 +741,4 @@ export function resetTreeSitterProvider() {
 }
 
 // Re-export constants for testing
-export { GRAMMAR_MAP, IDENT_TYPES, BOUNDARY_TYPES, NODE_TYPE_MAP, TAGS_QUERIES, CAPTURE_TO_ENTITY_TYPE };
+export { GRAMMAR_MAP, IDENT_TYPES, BOUNDARY_TYPES, BODY_TYPES, MAX_SIGNATURE_LENGTH, NODE_TYPE_MAP, TAGS_QUERIES, CAPTURE_TO_ENTITY_TYPE };

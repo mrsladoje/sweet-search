@@ -931,5 +931,64 @@ describe('TreeSitterProvider integration', async () => {
       const b = await provider.init();
       expect(a).toBe(b);
     });
+
+    it('extracts a multi-line signature from a real JS function (decl up to body)', async () => {
+      // Top-level (non-exported) declaration — `export_statement` is
+      // not in BOUNDARY_TYPES at the chunk-emission level, which is a
+      // pre-existing chunker behavior unrelated to signatures.
+      const src = [
+        'async function getUser(',
+        '  id,',
+        '  options = { cache: true }',
+        ') {',
+        '  return await db.find(id);',
+        '}',
+        '',
+      ].join('\n');
+      const chunks = await provider.parseFileToChunks(src, 'javascript');
+      expect(chunks).not.toBeNull();
+      const fn = chunks.find(c => c.name === 'getUser');
+      expect(fn).toBeDefined();
+      expect(fn.signature).toBeDefined();
+      // Whitespace-collapsed; ends BEFORE the body opening brace.
+      expect(fn.signature).toMatch(/^async function getUser\(/);
+      expect(fn.signature).toContain('options =');
+      expect(fn.signature).not.toMatch(/return await db\.find/);
+    });
+
+    it('extracts a Python def signature including default args, excluding the body', async () => {
+      const src = [
+        'def load_model(',
+        '    path: str,',
+        '    *,',
+        '    device: str = "cpu",',
+        ') -> Model:',
+        '    return Model.from_pretrained(path, map_location=device)',
+        '',
+      ].join('\n');
+      const chunks = await provider.parseFileToChunks(src, 'python');
+      expect(chunks).not.toBeNull();
+      const fn = chunks.find(c => c.name === 'load_model');
+      expect(fn).toBeDefined();
+      expect(fn.signature).toMatch(/^def load_model\(/);
+      expect(fn.signature).not.toMatch(/from_pretrained/);
+    });
+
+    it('signature is null for non-boundary chunks (e.g. anonymous merged buffers)', async () => {
+      // A bare expression-statement file has no boundary nodes the
+      // chunker recognizes — the recursive split will emit at least
+      // one non-boundary chunk with no signature.
+      const src = 'const x = 1; const y = 2; const z = x + y;\n';
+      const chunks = await provider.parseFileToChunks(src, 'javascript');
+      // Non-boundary chunks (or chunks too small to emit) — either
+      // way, no signature should be set on chunks without a boundary.
+      if (chunks && chunks.length > 0) {
+        for (const c of chunks) {
+          if (!c.name) {
+            expect(c.signature == null).toBe(true);
+          }
+        }
+      }
+    });
   });
 });

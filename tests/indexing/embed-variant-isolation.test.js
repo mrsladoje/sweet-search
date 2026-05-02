@@ -25,6 +25,7 @@ const NON_PYJVA_LANGS = ['javascript', 'typescript', 'jsx', 'tsx', 'ruby', 'go',
 const ALL_VARIANTS = [
   'current', 'no_path', 'normalized_path', 'no_language',
   'parent_only', 'enriched', 'code_breadcrumb',
+  'signature', 'signature_rbphp',
 ];
 
 function buildChunk({ language, sym = 'doStuff', file = 'src/x_abcdef12.ext', parent = null, content = 'function doStuff() { return 1; }' }) {
@@ -135,6 +136,74 @@ describe('embedding-text variant — isolation invariants', () => {
       process.env[ENV_KEY] = 'current';
       const b = buildChunk({ language: 'javascript', file: 'src/Foo.js', sym: 'fn' });
       expect(a.embedding_text).toBe(b.embedding_text);
+    });
+
+    it('signature inserts # Signature: line between symbol and language when hierarchyInfo carries one', () => {
+      process.env[ENV_KEY] = 'signature';
+      const ch = buildChunk({
+        language: 'typescript',
+        file: 'src/Foo.ts',
+        sym: 'handleClick',
+        parent: {
+          parentSymbol: 'Foo',
+          parentType: 'class',
+          signature: 'async function handleClick<T extends Event>(e: T): Promise<void>',
+        },
+      });
+      // Order: path → Parent → function → Signature → Language → body
+      expect(ch.embedding_text).toMatch(
+        /^# src\/Foo\.ts\n# Parent: class Foo\n# function: handleClick\n# Signature: async function handleClick<T extends Event>\(e: T\): Promise<void>\n# Language: typescript\n/
+      );
+    });
+
+    it('signature degrades to current byte-for-byte when no signature is present', () => {
+      process.env[ENV_KEY] = 'signature';
+      const a = buildChunk({ language: 'javascript', file: 'src/Foo.js', sym: 'fn' });
+      process.env[ENV_KEY] = 'current';
+      const b = buildChunk({ language: 'javascript', file: 'src/Foo.js', sym: 'fn' });
+      expect(a.embedding_text).toBe(b.embedding_text);
+    });
+
+    it('signature_rbphp emits the signature line only for Ruby and PHP', () => {
+      const sigInfo = (parentSymbol) => ({ parentSymbol, parentType: 'class', signature: 'function fn(x: int): bool' });
+
+      // Ruby/PHP: signature line IS emitted under signature_rbphp
+      process.env[ENV_KEY] = 'signature_rbphp';
+      for (const lang of ['ruby', 'php']) {
+        const ch = buildChunk({ language: lang, file: `src/Foo.${lang === 'ruby' ? 'rb' : 'php'}`, sym: 'fn', parent: sigInfo('Foo') });
+        expect(ch.embedding_text).toContain('# Signature: function fn(x: int): bool');
+      }
+
+      // Non-Ruby/PHP: byte-identical to current
+      for (const lang of ['javascript', 'python', 'java', 'go', 'rust']) {
+        process.env[ENV_KEY] = 'current';
+        const baseline = buildChunk({ language: lang, file: 'src/Foo.x', sym: 'fn', parent: sigInfo('Foo') });
+        process.env[ENV_KEY] = 'signature_rbphp';
+        const variant = buildChunk({ language: lang, file: 'src/Foo.x', sym: 'fn', parent: sigInfo('Foo') });
+        expect(variant.embedding_text).toBe(baseline.embedding_text);
+      }
+    });
+
+    it('signature does NOT touch li_text or li_greedy_text', () => {
+      process.env[ENV_KEY] = 'current';
+      const baseline = buildChunk({
+        language: 'javascript',
+        file: 'src/Foo.js',
+        sym: 'fn',
+        parent: { parentSymbol: 'Foo', parentType: 'class', signature: 'function fn(x: number): boolean' },
+      });
+      process.env[ENV_KEY] = 'signature';
+      const variant = buildChunk({
+        language: 'javascript',
+        file: 'src/Foo.js',
+        sym: 'fn',
+        parent: { parentSymbol: 'Foo', parentType: 'class', signature: 'function fn(x: number): boolean' },
+      });
+      expect(variant.li_greedy_text).toBe(baseline.li_greedy_text);
+      expect(variant.li_text).toBe(baseline.li_text);
+      // …but embedding_text must differ (the experiment IS doing something)
+      expect(variant.embedding_text).not.toBe(baseline.embedding_text);
+      expect(variant.embedding_text).toContain('# Signature: function fn(x: number): boolean');
     });
   });
 
