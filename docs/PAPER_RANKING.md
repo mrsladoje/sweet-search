@@ -226,6 +226,7 @@ From `eval/results/`, cross-checked against `docs/BENCHMARKING.md`:
 ### A17. Contention-aware native model prewarm during indexing (Promise.all parallel rebuild)
 - **Where**: `core/indexing/indexer-phases.js:363-389`, `:428-433`, `core/indexing/indexer-utils.js` (`atomicSwapDatabase`)
 - **What**: Before launching three-way parallel indexing (embedding + LI + HCGS summaries via `Promise.all`), pre-warm the native models via `getNativeEmbeddingModel()` + `getNativeLiModel()`. The motivation: SHA256-hashing a 596MB safetensors file while ORT CPU embedding is running causes **over-2-minute stalls** from Node microtask scheduler contention. Pre-warming avoids it.
+- **Note (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); the parallel rebuild now runs as embedding + LI only. Code retained for future re-evaluation.
 - **Prior art**: Not in published literature. Discovered empirically.
 - **Score**: **4/10**. A specific, measured systems finding. Good appendix/war-story material for a systems paper, weak standalone.
 
