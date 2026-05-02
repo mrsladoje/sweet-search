@@ -67,6 +67,20 @@ export const JAVA_FAMILY = new Set([
 //   parent_only       path + parent only, drop function + language
 //   enriched          identical to current here; also runs enrichment
 //   code_breadcrumb   compact `# Parent.Symbol` or `# Parent::symbol`
+//   signature         current + `# Signature: <multi-line-sig>` line
+//                     between the symbol line and the language line.
+//                     Signature is AST-extracted by tree-sitter (decl
+//                     header up to body, whitespace-collapsed, capped
+//                     at MAX_SIGNATURE_LENGTH). When no signature is
+//                     available (regex fallback path, non-boundary
+//                     chunks, or merged sibling buffers) this variant
+//                     is byte-identical to `current`.
+//   signature_rbphp   like `signature` but only for Ruby and PHP — the
+//                     two languages where the May-2026 R1 ablation
+//                     showed signatures helped (PHP +0.79 MRR@10,
+//                     Ruby +0.58); other languages route to the same
+//                     output as `current`. Motivated by per-language
+//                     pareto front (matching v6.2 LI routing pattern).
 //
 // LI isolation: when a non-current variant is active, `chunk.li_greedy_text`
 // still carries the shipped (variant=current) form, and pickLiInput() for
@@ -79,8 +93,15 @@ function getEmbedTextVariant() {
   return [
     'current', 'no_path', 'normalized_path', 'no_language',
     'parent_only', 'enriched', 'code_breadcrumb',
+    'signature', 'signature_rbphp',
   ].includes(v) ? v : 'current';
 }
+
+// Languages where the May-2026 ablation showed `signature` strictly
+// helped on R1 MRR@10 (PHP +0.79, Ruby +0.58 vs current). The
+// `signature_rbphp` variant only emits the # Signature: line for
+// these — every other language gets exactly the `current` output.
+const SIGNATURE_HELP_LANGUAGES = new Set(['ruby', 'php']);
 
 export function shouldRunEnrichment() {
   return ENRICHMENT_VARIANTS.has(getEmbedTextVariant());
@@ -115,6 +136,8 @@ function buildEmbeddingText({ variant: variantOverride, content, relativePath, l
     ? `# ${chunkType}: ${symbol}` : null;
   const langLine = (language && language !== 'text')
     ? `# Language: ${language}` : null;
+  const signatureLine = hierarchyInfo?.signature
+    ? `# Signature: ${hierarchyInfo.signature}` : null;
 
   switch (variant) {
     case 'no_path':
@@ -150,6 +173,31 @@ function buildEmbeddingText({ variant: variantOverride, content, relativePath, l
       if (language && language !== 'text') parts.push(`# ${language}`);
       break;
     }
+    case 'signature':
+      // Same headers as current, plus a `# Signature:` line emitted
+      // between the symbol line and the language line. When no
+      // signature is available (regex fallback / merged sibling
+      // buffer / non-boundary chunk), this is byte-identical to
+      // current — the variant degrades gracefully.
+      if (pathLine) parts.push(pathLine);
+      if (parentLine) parts.push(parentLine);
+      if (symbolLine) parts.push(symbolLine);
+      if (signatureLine) parts.push(signatureLine);
+      if (langLine) parts.push(langLine);
+      break;
+    case 'signature_rbphp':
+      // Lang-conditioned: emit signature only for Ruby and PHP (the
+      // two languages where unconditional `signature` strictly helped
+      // on the May-2026 R1 ablation). Every other language gets the
+      // exact `current` output. Mirrors the v6.2 LI routing pattern.
+      if (pathLine) parts.push(pathLine);
+      if (parentLine) parts.push(parentLine);
+      if (symbolLine) parts.push(symbolLine);
+      if (signatureLine && SIGNATURE_HELP_LANGUAGES.has(language)) {
+        parts.push(signatureLine);
+      }
+      if (langLine) parts.push(langLine);
+      break;
     case 'enriched':
     case 'current':
     default:
@@ -303,6 +351,7 @@ export class ASTChunker {
           parentChunkId: chunk.parentChunkId,
           parentSymbol: chunk.parentSymbol,
           parentType: chunk.parentType,
+          signature: chunk.signature || null,
         }
       )
     );
