@@ -253,9 +253,34 @@ export const GENERIC_RELATIONSHIP_MAPPING = Object.freeze({
   mixin: 'extends',
   with: 'extends',
   category: 'extends',
+  // TS: interface extends interface(s) is a true `extends` edge in
+  // the graph (separate pattern key because the registry regex needs
+  // to match on the `interface` keyword, not `class`).
+  interfaceExtends: 'extends',
   implements: 'implements',
   protocol: 'implements',
   implFor: 'implements',
+  // TS: type-only imports/re-exports are still module-level
+  // dependencies, so they map to the same `imports` edge.
+  typeImport: 'imports',
+  typeReexport: 'imports',
+  // TS: `<T extends Foo>` is a type reference, not an inheritance
+  // edge — emit it as a `uses` relationship (consistent with how
+  // decorators and method-of references are handled).
+  genericConstraint: 'uses',
+  // FOLLOW-UP (documented, NOT implemented): per-line type references
+  // in function/method/property signatures (e.g. `function foo(x: User):
+  // Result` → `uses` edges to User and Result; `field: Token` → `uses`
+  // edge to Token). Intentionally not added at the regex layer — the
+  // false-positive surface (matching identifiers in comments, strings,
+  // and unrelated positions) is too high. Two prerequisites before
+  // shipping:
+  //   1. AST-level type-reference extractor (walk `type_annotation` /
+  //      `parameter` / `return_type` nodes via tree-sitter, not regex)
+  //   2. Graph-density benchmark showing retrieval benefit without
+  //      precision loss (the new `uses` edges should improve graph
+  //      expansion recall without adding noise that hurts MRR).
+  // See May-2026 design discussion in chat history for details.
   decorator: 'uses',
   embed: 'uses',
   extend: 'uses',
@@ -274,6 +299,9 @@ const escapeRegexLiteral = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&
 // Module-scope constant to avoid per-call Set allocation.
 const MULTI_TARGET_TYPES = new Set([
   'plainImport', 'implements', 'inherit', 'protocol', 'with',
+  // TS: `interface Foo extends Bar, Baz<T>` — comma-separated
+  // parents, generics handled by expandRelationshipTargets.
+  'interfaceExtends',
 ]);
 
 export const TREE_SITTER_ENTITY_PRIORITY = Object.freeze({
@@ -1328,7 +1356,8 @@ export class GraphExtractor {
       return { targets: [source], filtered: false };
     }
 
-    if (isJsTs && (relType === 'require' || relType === 'reexport' || relType === 'dynamicImport')) {
+    if (isJsTs && (relType === 'require' || relType === 'reexport' || relType === 'dynamicImport'
+      || relType === 'typeImport' || relType === 'typeReexport')) {
       const source = match[1]?.trim();
       if (!source) return { targets: [], filtered: false };
       if (source.startsWith('.')) return { targets: [], filtered: true };
