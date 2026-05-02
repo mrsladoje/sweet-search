@@ -10,7 +10,7 @@
 
 export const HCGS_CONFIG = {
   // Summary generation
-  enabled: true,
+  enabled: false,
 
   // Hierarchy levels (bottom-up order)
   levels: ['function', 'method', 'field', 'class', 'interface', 'enum', 'package', 'file'],
@@ -54,7 +54,7 @@ export const HCGS_CONFIG = {
   cacheEnabled: true,
 
   // Token savings: return summary first, full code on "expand"
-  returnSummaryFirst: true,
+  returnSummaryFirst: false,
   summaryTokenBudget: 150,      // tokens per result in summary mode
   fullCodeTokenBudget: 1000,    // tokens per result in expanded mode
 };

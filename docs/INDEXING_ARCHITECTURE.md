@@ -294,7 +294,8 @@ for small incremental updates (threshold-gated with accumulated change tracking)
 ### Parallel Execution
 
 HCGS summary regeneration runs in parallel with vector embedding (Phase 2 + summaries
-overlap via `Promise.all`).
+overlap via `Promise.all`). **Note (2026-05): HCGS is disabled by default
+(`HCGS_CONFIG.enabled = false`); the phase short-circuits and no LLM calls fire.**
 
 ---
 
