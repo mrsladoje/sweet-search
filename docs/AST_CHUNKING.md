@@ -26,6 +26,8 @@ HNSW index          Relationship resolution
                     HCGS summaries
 ```
 
+> **Note (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); code retained for future re-evaluation.
+
 Everything downstream of the chunker and graph extractor is language-agnostic.
 Only these two components need language patterns.
 

@@ -96,6 +96,8 @@ step (see [Remaining Work](#remaining-work)).
    `embedding/index.js` via dynamic `import()` annotated `// CLI`. Permitted only from
    CLI-invoked code paths. Static imports from graph/ into embedding/ are forbidden.
 
+   > **Note (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); code retained for future re-evaluation.
+
 ---
 
 ## Barrel Public API

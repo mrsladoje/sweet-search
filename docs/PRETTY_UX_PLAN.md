@@ -406,6 +406,8 @@ if confirmed:
 
 ## Phase 5: Interactive HCGS Wizard (`scripts/hcgs-wizard.js`)
 
+> **Note (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); this wizard phase is on hold pending re-evaluation. Code retained.
+
 ### File: `scripts/hcgs-wizard.js` (~300 lines)
 
 Interactive Hierarchical Code Graph Summary generation. Wraps `core/hcgs-generator.js`.

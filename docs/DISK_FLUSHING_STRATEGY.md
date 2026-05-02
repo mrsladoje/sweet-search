@@ -74,6 +74,8 @@ Phase 5: Artifacts        → Streams from SQLite cursor, per-row truncation
 
 ### Phase concurrency model
 
+> **Note (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); the `hcgsPromise` branch short-circuits and no LLM calls fire. Code retained for future re-evaluation.
+
 ```
 Timeline:
   ├─ HCGS Summaries ──────────────────────┐  (hcgsPromise)
