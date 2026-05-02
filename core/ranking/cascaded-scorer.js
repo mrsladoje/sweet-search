@@ -121,11 +121,15 @@ function partitionByTokenAvailability(candidates, liIndex) {
   if (!liIndex) {
     return { withTokens: [], withoutTokens: [...candidates] };
   }
-  const available = liIndex.hasTokens(candidates.map(c => c.id || c.entity_id));
+  // Graph-expanded candidates have entity_id-based public ids that don't
+  // match LI-indexed chunk ids; they carry the resolved chunk id under
+  // _liChunkId. Honour it so expanded candidates can participate in MaxSim.
+  const lookupId = (c) => c._liChunkId || c.id || c.entity_id;
+  const available = liIndex.hasTokens(candidates.map(lookupId));
   const withTokens = [];
   const withoutTokens = [];
   for (const c of candidates) {
-    (available.has(c.id || c.entity_id) ? withTokens : withoutTokens).push(c);
+    (available.has(lookupId(c)) ? withTokens : withoutTokens).push(c);
   }
   return { withTokens, withoutTokens };
 }
