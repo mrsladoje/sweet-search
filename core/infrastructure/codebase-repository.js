@@ -79,6 +79,27 @@ export class CodebaseRepository {
   }
 
   /**
+   * Return all chunk metadata rows for a single file_path.
+   * Used by sweet-search read / read-semantic for symbol-aware metadata
+   * and for in-file candidate enumeration. Returns empty array if the file
+   * is not indexed, the DB is missing, or the table doesn't exist yet.
+   *
+   * @param {string} filePath - Project-relative file path as stored in vectors.file_path
+   * @returns {Array<{id, file_path, text, metadata}>}
+   */
+  getChunksByFilePath(filePath) {
+    if (!filePath) return [];
+    try {
+      const db = this._open();
+      return db.prepare(
+        'SELECT id, file_path, text, metadata FROM vectors WHERE file_path = ? ORDER BY id'
+      ).all(filePath);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Full vector scan in an ephemeral connection (no persistent state).
    * Used by the O(N) fallback path — opens, scans, closes immediately.
    * @returns {Array<{id, embedding: Buffer, text: string, metadata: string}>}

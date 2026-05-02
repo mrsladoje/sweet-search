@@ -20,15 +20,25 @@ if (args[0] === 'init') {
 } else if (args[0] === 'prewarm-vocab') {
   const { handlePrewarmVocabCli } = await import('./vocabulary/index.js');
   await handlePrewarmVocabCli(args.slice(1));
+} else if (args[0] === 'read') {
+  // Filesystem-grounded reader; runs in JS (no native equivalent yet).
+  const { handleReadCli } = await import('./search/search-read.js');
+  await handleReadCli(args.slice(1));
+} else if (args[0] === 'read-semantic') {
+  // Hybrid span-selection reader; runs in JS (depends on LI index + ranking).
+  const { handleReadSemanticCli } = await import('./search/search-read-semantic.js');
+  await handleReadSemanticCli(args.slice(1));
 } else if (args[0] === '--help' || args[0] === '-h' || args.length === 0) {
   console.log(`sweet-search — hybrid code search engine
 
 Usage:
-  sweet-search <query>                Search the indexed codebase
-  sweet-search init [options]         Set up runtime assets and models
-  sweet-search uninstall [opts]       Remove local state created by init
-  sweet-search prewarm-vocab [file]   Pre-warm vocabulary cache with terms
-  sweet-search --help                 Show this help
+  sweet-search <query>                  Search the indexed codebase
+  sweet-search read <file...>           Filesystem-grounded read (1-20 files)
+  sweet-search read-semantic <f> <q>    Return only file spans relevant to a query
+  sweet-search init [options]           Set up runtime assets and models
+  sweet-search uninstall [opts]         Remove local state created by init
+  sweet-search prewarm-vocab [file]     Pre-warm vocabulary cache with terms
+  sweet-search --help                   Show this help
 
 Options:
   --mode <mode>     Search mode: auto, lexical, semantic, hybrid, pattern
