@@ -357,8 +357,10 @@ All 19 fixes (Block-Max MaxSim, SimHash chunk dedup, KLL adaptive thresholds, HL
 ### E2. DSPy multi-model prompt optimization (`docs/DSPY_PLAN.md`)
 Architecture and floor-weighted metric formulation exist. **No implementation.** Not a contribution until run.
 
-### E3. `sweet-search read` / `read-semantic` / `files` CLI tools
-Designed in `READ_TOOLS_AND_TOOLUSE_ENFORCEMENT_PLAN.md`. **Not implemented.**
+### E3. `sweet-search files` CLI tool and system-prompt optimization
+Path search and prompt evolution are planned in `SYSTEM_PROMPT_OPT_PLAN.md`. `read` and
+`read-semantic` are implemented, but the remaining path/tool-routing optimization work is not
+paper scope until implemented and evaluated.
 
 ### E4. Dirty overlay for sparse gram index
 Planned in `INDEXED_GREP.md` phase 2. **Not implemented** — `overlayMatches` is always `[]`. The incremental rebuild is a full reindex via `index-maintainer` daemon, not an overlay.

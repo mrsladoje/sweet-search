@@ -2,7 +2,7 @@
 
 **Created**: 2026-04-09
 **Status**: Draft
-**Depends on**: READ_TOOLS_AND_TOOLUSE_ENFORCEMENT_PLAN.md P1-P9
+**Depends on**: SYSTEM_PROMPT_OPT_PLAN.md
 
 ---
 

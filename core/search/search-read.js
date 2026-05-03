@@ -5,7 +5,7 @@
  * metadata for indexed files, but the returned `text` always comes from
  * `node:fs`, never from the (truncated) DB column.
  *
- * Design notes (see docs/READ_TOOLS_AND_TOOLUSE_ENFORCEMENT_PLAN.md):
+ * Design notes:
  *   - Filesystem is ground truth. Never return DB-stored text as content.
  *   - Batch up to 20 files; per-file errors do not fail the batch.
  *   - Warm-process cache keyed by `path|size|mtimeMs` avoids re-reading hot
