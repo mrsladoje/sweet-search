@@ -245,8 +245,27 @@ export const EMBEDDING_CONFIG = {
     enabled: true,
     maxSize: 1000,
     vocabularyPath: DB_PATHS.vocabulary,
-    autoExpand: process.env.SWEET_SEARCH_VOCAB_AUTO_EXPAND !== '0',
+    // Whether `getEmbedding` consults the persistent query-vocabulary
+    // cache before calling the live model. Disable to force fresh
+    // model output on every query — required for reproducible
+    // benchmarks against a populated vocab file. Reads only; writes
+    // are gated separately by `autoExpand` below.
+    useVocabulary: process.env.SWEET_SEARCH_VOCAB_USE !== '0'
+      && process.env.SWEET_SEARCH_VOCAB_USE !== 'false',
+    // Whether queries that fire ≥ `expansionThreshold` times within a
+    // process are auto-promoted into the persistent vocabulary file.
+    autoExpand: process.env.SWEET_SEARCH_VOCAB_AUTO_EXPAND !== '0'
+      && process.env.SWEET_SEARCH_VOCAB_AUTO_EXPAND !== 'false',
     expansionThreshold: 3,
+    // Hard cap on auto-expanded vocabulary size. Once reached, new
+    // auto-promotions are skipped; explicit `addToVocabulary` /
+    // `expandVocabulary` calls still write through. Override with
+    // `SWEET_SEARCH_VOCAB_MAX_TERMS` (range 1..1e6).
+    maxTerms: (() => {
+      const v = parseInt(process.env.SWEET_SEARCH_VOCAB_MAX_TERMS || '', 10);
+      if (Number.isFinite(v) && v > 0 && v <= 1_000_000) return v;
+      return 10_000;
+    })(),
   },
 
   // All available providers for fallback

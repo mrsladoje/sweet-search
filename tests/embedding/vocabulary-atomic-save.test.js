@@ -51,7 +51,9 @@ describe('Vocabulary atomic persistence', () => {
     expect(Object.keys(parsed.terms)).toHaveLength(N);
     expect(parsed.terms['term-0']).toEqual([0, 1, 2]);
     expect(parsed.terms['term-49']).toEqual([49, 50, 51]);
-    expect(parsed.metadata.version).toBe(2);
+    // Schema version was bumped to 3 (added model + dimension fields)
+    // alongside the safety guards in `vocabulary-safety.test.js`.
+    expect(parsed.metadata.schemaVersion).toBe(3);
   });
 
   it('coalesces saves: a burst of 100 calls does not write 100 times', async () => {
