@@ -38,6 +38,10 @@ export function estimateTokens(text) {
 
 const DEFAULT_TOKEN_BUDGET = 4000;
 const AGENT_FULL_TOKEN_BUDGET = 8000;
+// Stretch budget — opt-in only via subMode 'agent_full_xl'. Gated on top-1
+// dominance (>=2× top-2). Default remains compact 4k; this is for the
+// "explicit, single dominant answer fits" case only.
+const AGENT_FULL_XL_TOKEN_BUDGET = 12000;
 const DEFAULT_PER_RESULT_CAPS = [2000, 800, 400]; // rank 1, 2, 3+
 const MAX_HEADER_TOKENS = 200;
 
@@ -106,11 +110,15 @@ export function findEnclosingEntity(codeGraphRepo, filePath, startLine, endLine)
 /**
  * Expand a result to symbol-complete boundaries.
  *
- * Decision tree (from plan §4.1):
- *   1. Is chunk already a complete symbol? → return as-is
- *   2. Look up enclosing entity in code graph → expand to entity boundaries
+ * Decision tree:
+ *   1. Is chunk already a complete symbol? → return chunk
+ *   2. Look up enclosing entity:
+ *      a. fits in cap → expand to entity boundaries (kind: 'full')
+ *      b. too large → build symbol sandwich (kind: 'sandwich')
+ *      c. sandwich infeasible → bare chunk with entity name (kind: 'chunk')
  *   3. Merge contiguous sibling chunks → stop at next symbol boundary
- *   4. Fall back: return chunk as-is
+ *   4. Syntax-aware brace/indent expansion (kind: 'syntax')
+ *   5. Fall back: chunk as-is (kind: 'chunk')
  *
  * @param {object} result - Ranked result with file, startLine, endLine, metadata
  * @param {object} opts
@@ -119,7 +127,16 @@ export function findEnclosingEntity(codeGraphRepo, filePath, startLine, endLine)
  * @param {Map} opts.fileCache - Shared file cache for readFileRange
  * @param {string} opts.projectRoot
  * @param {number} opts.tokenCap - Max tokens for this result
- * @returns {{ startLine: number, endLine: number, expanded: boolean, expandedFrom: string|null, symbol: string|null, symbolType: string|null }}
+ * @returns {{
+ *   startLine: number,
+ *   endLine: number,
+ *   expanded: boolean,
+ *   expandedFrom: string|null,
+ *   symbol: string|null,
+ *   symbolType: string|null,
+ *   kind: 'full'|'sandwich'|'syntax'|'chunk',
+ *   sandwich?: { parts: Array<{kind:'signature'|'gold'|'closing', startLine:number, endLine:number}>, elidedHead:number, elidedTail:number, elisionMarkers:number }
+ * }}
  */
 export function expandToSymbol(result, opts) {
   const { codeGraphRepo, locationMap, tokenCap } = opts;
@@ -139,6 +156,7 @@ export function expandToSymbol(result, opts) {
       expandedFrom: null,
       symbol: meta.name,
       symbolType: meta.type || null,
+      kind: 'chunk',
     };
   }
 
@@ -158,9 +176,29 @@ export function expandToSymbol(result, opts) {
         expandedFrom: origRange,
         symbol: entity.name,
         symbolType: entity.type,
+        kind: 'full',
       };
     }
-    // Entity too large — still use its name but keep original range
+    // Entity too large for full expansion. Try a "symbol sandwich":
+    // signature + elision marker + gold chunk + elision marker + closing brace.
+    // Goal: preserve gold evidence + ground the agent in the enclosing symbol
+    // without dumping the whole function (which causes context rot).
+    if (!opts.ablations?.has('no-sandwich')) {
+      const sandwich = buildSandwichExpansion(entity, origStart, origEnd, tokenCap);
+      if (sandwich) {
+        return {
+          startLine: entity.startLine,
+          endLine: entity.endLine,
+          expanded: true,
+          expandedFrom: origRange,
+          symbol: entity.name,
+          symbolType: entity.type,
+          kind: 'sandwich',
+          sandwich,
+        };
+      }
+    }
+    // Sandwich infeasible (cap too tight). Fall back to bare chunk + entity name.
     return {
       startLine: origStart,
       endLine: origEnd,
@@ -168,6 +206,7 @@ export function expandToSymbol(result, opts) {
       expandedFrom: null,
       symbol: entity.name,
       symbolType: entity.type,
+      kind: 'chunk',
     };
   }
 
@@ -183,6 +222,7 @@ export function expandToSymbol(result, opts) {
         expandedFrom: origRange,
         symbol: meta.name || null,
         symbolType: meta.type || null,
+        kind: 'syntax',
       };
     }
   }
@@ -195,6 +235,7 @@ export function expandToSymbol(result, opts) {
       startLine: origStart, endLine: origEnd,
       expanded: false, expandedFrom: null,
       symbol: meta.name || null, symbolType: meta.type || null,
+      kind: 'chunk',
     };
   }
   const { fileCache, projectRoot } = opts;
@@ -209,6 +250,7 @@ export function expandToSymbol(result, opts) {
       expandedFrom: origRange,
       symbol: meta.name || null,
       symbolType: meta.type || null,
+      kind: 'syntax',
     };
   }
 
@@ -220,7 +262,137 @@ export function expandToSymbol(result, opts) {
     expandedFrom: null,
     symbol: meta.name || null,
     symbolType: meta.type || null,
+    kind: 'chunk',
   };
+}
+
+/**
+ * Build a "symbol sandwich" expansion when the enclosing entity is too large
+ * to fit in the token cap as a whole.
+ *
+ * The sandwich preserves:
+ *   - the gold/matched chunk verbatim (the actual evidence — never dropped)
+ *   - the function/class signature (small, high-leverage anchor)
+ *   - the closing brace line (cheap, helps the agent know the symbol bounds)
+ * separated by explicit `// ... (N lines elided) ...` markers.
+ *
+ * Sizing uses a conservative ~10-tokens-per-line estimate (matches the rest
+ * of the file). If even bare gold doesn't fit, returns null so the caller
+ * falls back to the bare-chunk path. If the signature+gold+closing doesn't
+ * fit, drops closing first, then signature.
+ *
+ * @param {{ name:string, type:string, startLine:number, endLine:number }} entity
+ * @param {number} origStart - gold chunk start line
+ * @param {number} origEnd - gold chunk end line
+ * @param {number} tokenCap - hard cap for the assembled sandwich
+ * @returns {{ parts: Array, elidedHead:number, elidedTail:number, elisionMarkers:number }|null}
+ */
+function buildSandwichExpansion(entity, origStart, origEnd, tokenCap) {
+  const SIG_MAX_LINES = 4;        // signature window
+  const ELISION_TOKENS = 10;      // approx cost of one `// ... (N lines elided) ...` line
+  const TOKENS_PER_LINE = 10;     // pessimistic estimate, matches `entityTokens` heuristic above
+
+  // Signature: from entity.startLine up to min(SIG_MAX_LINES, just before gold)
+  const sigStart = entity.startLine;
+  const sigEndCandidate = Math.min(entity.startLine + SIG_MAX_LINES - 1, origStart - 1);
+  const hasSignatureCandidate = sigEndCandidate >= sigStart && origStart > entity.startLine;
+  const sigEnd = hasSignatureCandidate ? sigEndCandidate : null;
+  const sigLines = sigEnd != null ? (sigEnd - sigStart + 1) : 0;
+
+  // Gold: original chunk
+  const goldLines = origEnd - origStart + 1;
+
+  // Closing: just the last line of the entity, only if it's strictly after gold
+  const closeLineCandidate = entity.endLine > origEnd ? entity.endLine : null;
+  const closingLines = closeLineCandidate != null ? 1 : 0;
+
+  // Elisions (gaps between parts). Only emit a marker if there's actually a gap.
+  const headElidedAll = sigEnd != null && origStart > sigEnd + 1 ? origStart - sigEnd - 1 : 0;
+  const tailElidedAll = closeLineCandidate != null && closeLineCandidate > origEnd + 1
+    ? closeLineCandidate - origEnd - 1
+    : 0;
+
+  // Token estimates
+  const goldTokens = goldLines * TOKENS_PER_LINE;
+  if (goldTokens > tokenCap) {
+    // Even gold alone doesn't fit. Caller will fall back to bare-chunk + truncate.
+    return null;
+  }
+
+  const sigTokens = sigLines * TOKENS_PER_LINE;
+  const closingTokens = closingLines * TOKENS_PER_LINE;
+
+  // Decide which optional parts to include, in priority order:
+  // 1. Always include gold.
+  // 2. Include signature if it fits (signature is the biggest grounding win).
+  // 3. Include closing if it fits (cheap).
+  let includeSignature = sigEnd != null;
+  let includeClosing = closeLineCandidate != null;
+
+  function totalTokens() {
+    let t = goldTokens;
+    let elisions = 0;
+    if (includeSignature) {
+      t += sigTokens;
+      if (headElidedAll > 0) elisions++;
+    }
+    if (includeClosing) {
+      t += closingTokens;
+      if (tailElidedAll > 0) elisions++;
+    }
+    return t + elisions * ELISION_TOKENS;
+  }
+
+  if (totalTokens() > tokenCap && includeClosing) {
+    includeClosing = false;
+  }
+  if (totalTokens() > tokenCap && includeSignature) {
+    includeSignature = false;
+  }
+
+  // If neither signature nor closing fits, sandwich gives no value over bare chunk.
+  if (!includeSignature && !includeClosing) {
+    return null;
+  }
+
+  const parts = [];
+  if (includeSignature) {
+    parts.push({ kind: 'signature', startLine: sigStart, endLine: sigEnd });
+  }
+  parts.push({ kind: 'gold', startLine: origStart, endLine: origEnd });
+  if (includeClosing) {
+    parts.push({ kind: 'closing', startLine: closeLineCandidate, endLine: closeLineCandidate });
+  }
+
+  const elidedHead = includeSignature && headElidedAll > 0 ? headElidedAll : 0;
+  const elidedTail = includeClosing && tailElidedAll > 0 ? tailElidedAll : 0;
+  const elisionMarkers = (elidedHead > 0 ? 1 : 0) + (elidedTail > 0 ? 1 : 0);
+
+  return { parts, elidedHead, elidedTail, elisionMarkers };
+}
+
+/**
+ * Render a sandwich expansion into a single code string with elision markers.
+ * Reads each part from the file cache and joins them with explicit
+ * `// ... (N lines elided) ...` markers between non-contiguous parts.
+ *
+ * Returns '' if no part can be read (caller falls back to chunk path).
+ */
+function assembleSandwichCode(fileCache, filePath, sandwich, projectRoot) {
+  if (!sandwich || !sandwich.parts || sandwich.parts.length === 0) return '';
+  const out = [];
+  let prevEnd = null;
+  for (const part of sandwich.parts) {
+    const text = readFileRange(fileCache, filePath, part.startLine, part.endLine, projectRoot);
+    if (!text) continue;
+    if (prevEnd != null) {
+      const gap = part.startLine - prevEnd - 1;
+      if (gap > 0) out.push(`// ... (${gap} lines elided) ...`);
+    }
+    out.push(text);
+    prevEnd = part.endLine;
+  }
+  return out.join('\n');
 }
 
 /**
@@ -708,28 +880,37 @@ export function computeSufficiency(topResult, confidenceInfo) {
  *
  * Base split: 60/20/20 (preview) or 40/30/30 (full).
  * Adaptations:
- *   - When grepMatches > 200 (broad regex): concentrate on top-1 (70/15/15)
+ *   - High retrieval breadth (broad regex / large candidate pool): sharpen top-1 (70/15/15)
  *   - In agent_full: only expand rank 2/3 to full if score gap < 2× from top-1
  *   - Unused top-1 cap is redistributed to top-2/3 when they are distinct
  *
+ * Breadth signal generalization (for non-grep retrieval modes):
+ *   - colgrep / pattern: uses `grepMatches` (existing behavior)
+ *   - lexical / semantic / hybrid: uses `candidatePoolSize` if provided
+ *   - falls back to 0 (no sharpening) if neither is set
+ *
  * @param {number} totalBudget - Total token budget for all results
  * @param {number} numResults - Number of results
- * @param {string} subMode - 'agent_preview' | 'agent_full'
- * @param {object} [context] - Search context for adaptive decisions
- * @param {number} [context.grepMatches] - Number of grep matches (broad vs selective)
+ * @param {string} subMode - 'agent_preview' | 'agent_full' | 'agent_full_xl'
+ * @param {object} [context]
+ * @param {number} [context.grepMatches] - Number of grep matches (colgrep)
+ * @param {number} [context.candidatePoolSize] - Generic candidate pool (lexical/semantic/hybrid)
  * @param {Array<{score: number, file: string}>} [context.results] - Ranked results for score-gap gating
  * @returns {Array<{ presentation: 'full'|'preview'|'summary', tokenCap: number }>}
  */
 export function allocateBudget(totalBudget, numResults, subMode = 'agent_preview', context = {}) {
   const allocations = [];
-  const isFullMode = subMode === 'agent_full';
-  const grepMatches = context.grepMatches || 0;
+  const isFullMode = subMode === 'agent_full' || subMode === 'agent_full_xl';
+  const isXlMode = subMode === 'agent_full_xl';
+  // Generalized breadth signal: prefer `grepMatches` for backwards compatibility,
+  // fall back to `candidatePoolSize` for non-grep retrieval modes (lexical/semantic/hybrid).
+  const breadthHint = context.grepMatches ?? context.candidatePoolSize ?? 0;
   const results = context.results || [];
 
-  // Adaptive split based on regex breadth
+  // Adaptive split based on retrieval breadth
   let top1Share, top23Share;
-  if (grepMatches > 200) {
-    // Broad regex: sharpen top-1, reduce previews
+  if (breadthHint > 200) {
+    // Broad retrieval: sharpen top-1, reduce previews
     top1Share = 0.70;
     top23Share = 0.15;
   } else if (isFullMode) {
@@ -740,9 +921,22 @@ export function allocateBudget(totalBudget, numResults, subMode = 'agent_preview
     top23Share = 0.20;
   }
 
+  // Stretch budget (agent_full_xl): allow per-result caps up to 8000 for top-1
+  // when the gate fires (top1 >= 2 * top2). This is opt-in via subMode only.
+  const xlPerResultCap = 8000;
+  const baselinePerResultCap = DEFAULT_PER_RESULT_CAPS[0]; // 2000
+  let xlGateActive = false;
+  if (isXlMode && results.length > 0) {
+    const top1Score = results[0]?.score || 0;
+    const top2Score = results[1]?.score || 0;
+    // Gate fires when top-1 dominates: 2× top-2 OR there is no top-2.
+    xlGateActive = top1Score > 0 && (top2Score === 0 || top1Score >= 2 * top2Score);
+  }
+  const top1HardCap = xlGateActive ? xlPerResultCap : baselinePerResultCap;
+
   for (let i = 0; i < numResults; i++) {
     if (i === 0) {
-      const cap = Math.min(Math.floor(totalBudget * top1Share), DEFAULT_PER_RESULT_CAPS[0]);
+      const cap = Math.min(Math.floor(totalBudget * top1Share), top1HardCap);
       allocations.push({ presentation: 'full', tokenCap: cap });
     } else if (i <= 2) {
       // In agent_full: gate full expansion on score gap from top-1.
@@ -875,9 +1069,14 @@ function compressToPreview(code, tokenCap) {
 
 /**
  * Resolve the effective sub-mode from the format string.
- * 'agent' → 'agent_preview' (default), 'agent_preview', 'agent_full'.
+ *   'agent' / 'agent_preview' → 'agent_preview' (compact 4k budget)
+ *   'agent_full'               → 'agent_full' (8k budget)
+ *   'agent_full_xl'            → 'agent_full_xl' (12k budget, opt-in only;
+ *                                falls back to agent_full at allocation time
+ *                                when the dominance gate fails)
  */
 function resolveSubMode(format) {
+  if (format === 'agent_full_xl') return 'agent_full_xl';
   if (format === 'agent_full') return 'agent_full';
   return 'agent_preview'; // 'agent' and 'agent_preview' both map here
 }
@@ -912,6 +1111,7 @@ export function packageForAgent(rankedResults, searchStats, opts) {
   const {
     query,
     regex,
+    mode: modeOpt = null,
     format: formatOpt = 'agent',
     codeGraphRepo = null,
     locationMap = null,
@@ -920,7 +1120,9 @@ export function packageForAgent(rankedResults, searchStats, opts) {
   const ablations = opts.ablations || new Set();
 
   const subMode = resolveSubMode(formatOpt);
-  const defaultBudget = subMode === 'agent_full' ? AGENT_FULL_TOKEN_BUDGET : DEFAULT_TOKEN_BUDGET;
+  const defaultBudget = subMode === 'agent_full_xl' ? AGENT_FULL_XL_TOKEN_BUDGET
+    : subMode === 'agent_full' ? AGENT_FULL_TOKEN_BUDGET
+    : DEFAULT_TOKEN_BUDGET;
   const tokenBudget = opts.tokenBudget ?? defaultBudget;
 
   const start = performance.now();
@@ -954,7 +1156,11 @@ export function packageForAgent(rankedResults, searchStats, opts) {
   // When 'no-adaptive-budget' ablation is active, use fixed splits (no context param)
   const budgetContext = ablations.has('no-adaptive-budget')
     ? {}
-    : { grepMatches: searchStats?.grepMatches || 0, results: rankedResults };
+    : {
+        ...(searchStats?.grepMatches != null ? { grepMatches: searchStats.grepMatches } : {}),
+        ...(searchStats?.candidatePoolSize != null ? { candidatePoolSize: searchStats.candidatePoolSize } : {}),
+        results: rankedResults,
+      };
   const allocations = allocateBudget(tokenBudget, rankedResults.length, subMode, budgetContext);
 
   // Compute confidence from ranked results (Fix #4: regex selectivity included)
@@ -1010,14 +1216,21 @@ export function packageForAgent(rankedResults, searchStats, opts) {
       ablations,
     });
 
-    // Phase 1: Load code via readFileRange
-    let code = readFileRange(
-      fileCache,
-      filePath,
-      expansion.startLine,
-      expansion.endLine,
-      projectRoot
-    );
+    // Phase 1: Load code via readFileRange.
+    // For sandwich expansions, assemble from parts with explicit elision markers
+    // so the gold chunk is preserved even when the enclosing entity is huge.
+    let code;
+    if (expansion.kind === 'sandwich' && expansion.sandwich) {
+      code = assembleSandwichCode(fileCache, filePath, expansion.sandwich, projectRoot);
+    } else {
+      code = readFileRange(
+        fileCache,
+        filePath,
+        expansion.startLine,
+        expansion.endLine,
+        projectRoot
+      );
+    }
 
     if (!code) {
       // Fallback: try with ±20 lines padding (plan §13, step 3)
@@ -1061,6 +1274,21 @@ export function packageForAgent(rankedResults, searchStats, opts) {
     if (resultTokenCap <= 0) {
       code = '';
       codeTokens = 0;
+    } else if (expansion.kind === 'sandwich') {
+      // Sandwich is pre-sized via 10-tokens/line estimate. If actual content
+      // happens to overshoot (very long lines), do NOT call truncateToTokenCap
+      // here — that truncates from the start and would drop the gold tail.
+      // Instead, fall back to gold-only chunk + truncate (agent keeps the
+      // evidence; loses signature, but not the match itself).
+      codeTokens = estimateTokens(code);
+      if (codeTokens > resultTokenCap) {
+        const goldStart = meta.startLine || result.startLine;
+        const goldEnd = meta.endLine || result.endLine;
+        const goldOnly = readFileRange(fileCache, filePath, goldStart, goldEnd, projectRoot) || '';
+        const trunc = truncateToTokenCap(goldOnly, resultTokenCap);
+        code = trunc.code;
+        codeTokens = estimateTokens(code);
+      }
     } else if (allocation.presentation === 'full') {
       const truncResult = truncateToTokenCap(code, resultTokenCap);
       code = truncResult.code;
@@ -1104,6 +1332,17 @@ export function packageForAgent(rankedResults, searchStats, opts) {
       score: result.score || result.lateInteractionScore || 0,
       expanded: expansion.expanded,
       expandedFrom: expansion.expandedFrom,
+      expansionKind: expansion.kind || null,
+      ...(expansion.kind === 'sandwich' && expansion.sandwich
+        ? {
+            sandwich: {
+              partKinds: expansion.sandwich.parts.map(p => p.kind),
+              elidedHead: expansion.sandwich.elidedHead,
+              elidedTail: expansion.sandwich.elidedTail,
+              elisionMarkers: expansion.sandwich.elisionMarkers,
+            },
+          }
+        : {}),
       presentation: allocation.presentation,
       stale,
       indexedAt,
@@ -1148,7 +1387,7 @@ export function packageForAgent(rankedResults, searchStats, opts) {
   return {
     query,
     regex,
-    mode: 'pattern',
+    mode: modeOpt || searchStats?.path || 'pattern',
     totalResults: rankedResults.length,
     latencyMs: searchStats?.total_ms || 0,
     packagingMs,
