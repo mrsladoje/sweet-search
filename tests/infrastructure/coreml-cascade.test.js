@@ -325,6 +325,15 @@ describe('cascade state against a synthetic fixture cache', () => {
   });
 
   it('routes resolved liDir to li-edge when liVariantKey=lateon-code-edge', async () => {
+    // `getCoremlCascadeResolvedDirs` is hardware-gated: on platforms where
+    // `isCoremlCascadeApplicable()` returns false (everything except
+    // M3+ Apple Silicon — i.e. all Linux CI runners and Intel Macs), it
+    // short-circuits with `status: 'hardware-ineligible'` and both dirs
+    // null BEFORE ever inspecting the variant key. The variant-routing
+    // logic this test covers is therefore only observable on eligible
+    // hardware. We split the assertion accordingly so the test exercises
+    // the actual production behaviour on every platform without weakening
+    // either path or mocking the hardware capability.
     const embedDir = join(fixtureRoot, 'coreml-cascade', 'embed');
     const liDir = join(fixtureRoot, 'coreml-cascade', 'li');
     const liEdgeDir = join(fixtureRoot, 'coreml-cascade', 'li-edge');
@@ -338,13 +347,27 @@ describe('cascade state against a synthetic fixture cache', () => {
       makeValidMlpackage(v.fullPath);
     }
 
+    const cascadeApplicable = mod.isCoremlCascadeApplicable();
     const standardResolved = mod.getCoremlCascadeResolvedDirs('lateon-code');
-    expect(standardResolved.liDir).toBe(liDir);
-    expect(standardResolved.embedDir).toBe(embedDir);
-
     const edgeResolved = mod.getCoremlCascadeResolvedDirs('lateon-code-edge');
-    expect(edgeResolved.liDir).toBe(liEdgeDir);
-    expect(edgeResolved.embedDir).toBe(embedDir);
+
+    if (cascadeApplicable) {
+      // Eligible hardware — the variant key picks the LI dir.
+      expect(standardResolved.liDir).toBe(liDir);
+      expect(standardResolved.embedDir).toBe(embedDir);
+      expect(edgeResolved.liDir).toBe(liEdgeDir);
+      expect(edgeResolved.embedDir).toBe(embedDir);
+    } else {
+      // Hardware-ineligible — both calls short-circuit identically before
+      // reaching the variant dispatch. This is the path Ubuntu CI takes;
+      // assert the documented contract so the gate itself stays covered.
+      expect(standardResolved.status).toBe('hardware-ineligible');
+      expect(standardResolved.liDir).toBeNull();
+      expect(standardResolved.embedDir).toBeNull();
+      expect(edgeResolved.status).toBe('hardware-ineligible');
+      expect(edgeResolved.liDir).toBeNull();
+      expect(edgeResolved.embedDir).toBeNull();
+    }
   });
 
   it('treats malformed mlpackage dirs as missing', async () => {
