@@ -1,0 +1,7 @@
+# Bulky raw artifacts — regenerate with trace_gcsn_misses.js / trace_graph2hop_misses.js
+# (each is 70–110 MB and would bloat history).
+gencodesearchnet_misses.jsonl
+gencodesearchnet_records.json
+
+# Run logs — useful locally, noisy in git.
+_*.log
