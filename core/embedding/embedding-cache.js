@@ -61,6 +61,67 @@ export class LRUCache {
 }
 
 // =============================================================================
+// ATOMIC JSON WRITER — serialised tmp-file-and-rename
+// =============================================================================
+//
+// Both Vocabulary.save() and QueryStats.save() are fired as background
+// promises from the embedding hot path (`vocabulary.save().catch(()=>{})`
+// inside getEmbedding). Under concurrent benchmarks (12+ in-flight queries)
+// multiple save() calls overlap on the same file. The previous direct
+// `fs.writeFile` was non-atomic — interleaving writes produced invalid JSON,
+// which then poisoned every subsequent `.load()` call and silently degraded
+// retrieval quality to near-zero.
+//
+// `writeJsonAtomic` writes to a unique temp file then atomically renames it
+// into place. `serialiseAtomicWrite` chains an instance's writes so at most
+// one is in flight at a time — and at most one extra coalesced write is
+// queued behind the in-flight one. Bursts of N saves collapse into 2 writes,
+// each producing a fully-formed file.
+
+async function writeJsonAtomic(targetPath, json) {
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  const tmpPath = `${targetPath}.tmp.${process.pid}.${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`;
+  try {
+    await fs.writeFile(tmpPath, json);
+    await fs.rename(tmpPath, targetPath);
+  } catch (err) {
+    try { await fs.unlink(tmpPath); } catch { /* may not exist */ }
+    throw err;
+  }
+}
+
+/**
+ * Serialise calls to `produce()` for a given owner. At most one write is
+ * in flight; bursts coalesce so callers arriving during an in-flight save
+ * all share a single follow-up save, but no further waste accumulates.
+ *
+ * @param {object} owner - instance with mutable `_atomicInFlight` / `_atomicPending` slots
+ * @param {() => Promise<void>} produce - async writer that captures the
+ *   current state at call time and writes it atomically
+ * @returns {Promise<void>}
+ */
+function serialiseAtomicWrite(owner, produce) {
+  if (owner._atomicPending) return owner._atomicPending;
+
+  const previous = owner._atomicInFlight || Promise.resolve();
+  owner._atomicPending = previous
+    .catch(() => { /* a previous save's failure must not block the next one */ })
+    .then(() => {
+      // Move from "pending" to "in-flight" before doing the actual write,
+      // so additional save() callers arriving during the write start a new
+      // pending entry rather than piggy-backing on this one (otherwise they
+      // would not see their latest state on disk).
+      owner._atomicPending = null;
+      const inFlight = produce();
+      owner._atomicInFlight = inFlight.finally(() => {
+        if (owner._atomicInFlight === inFlight) owner._atomicInFlight = null;
+      });
+      return owner._atomicInFlight;
+    });
+  return owner._atomicPending;
+}
+
+// =============================================================================
 // QUERY STATS (Cross-session usage tracking)
 // =============================================================================
 
@@ -89,10 +150,20 @@ export class QueryStats {
 
   async save() {
     if (!this.dirty) return;
-    const data = { queries: Object.fromEntries(this.stats), lastUpdated: new Date().toISOString() };
-    await fs.mkdir(path.dirname(this.statsPath), { recursive: true });
-    await fs.writeFile(this.statsPath, JSON.stringify(data));
-    this.dirty = false;
+    return serialiseAtomicWrite(this, async () => {
+      // Re-check dirty inside the queued task: if a coalesced earlier write
+      // already persisted everything, there is nothing left to do.
+      if (!this.dirty) return;
+      const data = { queries: Object.fromEntries(this.stats), lastUpdated: new Date().toISOString() };
+      this.dirty = false;
+      try {
+        await writeJsonAtomic(this.statsPath, JSON.stringify(data));
+      } catch (err) {
+        // Re-mark dirty so a future save retries this state
+        this.dirty = true;
+        throw err;
+      }
+    });
   }
 
   increment(query) {
@@ -143,12 +214,16 @@ export class Vocabulary {
   }
 
   async save() {
-    this.metadata.lastUpdated = new Date().toISOString();
-    this.metadata.provider = EMBEDDING_CONFIG.provider;
-    if (!this.metadata.created) this.metadata.created = this.metadata.lastUpdated;
-    const data = { metadata: this.metadata, terms: Object.fromEntries(this.terms) };
-    await fs.mkdir(path.dirname(this.vocabPath), { recursive: true });
-    await fs.writeFile(this.vocabPath, JSON.stringify(data, null, 2));
+    return serialiseAtomicWrite(this, async () => {
+      // Snapshot mutable state INSIDE the queued task so the file written
+      // here matches the latest set/has state at write time, not whatever
+      // it was when this save() was first scheduled.
+      this.metadata.lastUpdated = new Date().toISOString();
+      this.metadata.provider = EMBEDDING_CONFIG.provider;
+      if (!this.metadata.created) this.metadata.created = this.metadata.lastUpdated;
+      const data = { metadata: this.metadata, terms: Object.fromEntries(this.terms) };
+      await writeJsonAtomic(this.vocabPath, JSON.stringify(data, null, 2));
+    });
   }
 
   get(term) { return this.terms.get(this.normalize(term)) || null; }
