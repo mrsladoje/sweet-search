@@ -1,6 +1,6 @@
 {
   "name": "@sweet-search/native-linux-x64-gnu",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Sweet Search native binaries for Linux x64 (glibc)",
   "os": ["linux"],
   "cpu": ["x64"],
