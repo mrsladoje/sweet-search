@@ -658,6 +658,200 @@ Do not design Phase 1 around capabilities that do not exist in normal repo-local
 
 ---
 
+### 2F — Optimized Agent Search Policy (Benchmark-Derived)
+
+**Goal**: Ship a real tool-routing policy, not only replacement rules.
+
+The first agent-in-the-loop benchmarks showed that "use sweet-search instead of Grep/Read" is
+too vague. Agents only started using the tools well after the prompt taught a concrete decision
+tree, stopping criteria, citation discipline, and anti-overfetch rules. This policy should become
+the default content written to `.claude/rules/sweet-search.md`, imported into `CLAUDE.md`, and
+mirrored in prompt reminder hooks.
+
+#### Why this is separate from enforcement
+
+Enforcement answers: "which tools are allowed?"
+
+The optimized search policy answers: "which sweet-search tool should I choose for this task, what
+query shape should I use, how many results should I inspect, when should I read, and when should I
+stop?"
+
+The latter is the higher-leverage behavior. A compliant agent can still perform poorly if it calls
+`read-semantic` on five files, uses vague queries, re-searches endlessly, or cites broad/irrelevant
+files. The benchmark harness should treat the policy text as a versioned artifact.
+
+#### Default tool-routing decision tree
+
+```markdown
+## sweet-search Tool Routing
+
+Use sweet-search for code discovery and code reading. Pick the narrowest tool that can answer the
+question.
+
+1. Exact symbol, constant, error code, log string, config key, or literal:
+   - Use indexed grep.
+   - CLI: `sweet-search grep "<regex>" --agent`
+   - Agent wrapper: `ss-grep "<regex>" -k 5`
+   - Query shape: short, literal-heavy regex. Escape punctuation. Prefer the rarest identifier.
+
+2. Behavioral or semantic question where a literal exists but intent matters:
+   - Use ColGrep / patternSearch: regex candidate pool + semantic re-rank.
+   - CLI/API wrapper: `ss-find "<natural-language question>" --regex "<broad-but-relevant-regex>" -k 5`
+   - Query shape: natural-language intent + a broad regex anchor (function names, error family,
+     option name, lifecycle term). Do not use a regex that matches the whole repo.
+
+3. General conceptual search with no obvious literal:
+   - Use `sweet-search "<short intent query>" --agent` in hybrid/auto mode.
+   - Query shape: one concise sentence naming the concept and likely domain words.
+   - If results are broad, refine once with a more concrete term or switch to structural mode.
+
+4. Callers, callees, implementations, impact, inheritance, or dependency questions:
+   - Use structural search.
+   - CLI: `sweet-search "who calls <symbol>" --mode structural --agent`
+   - Query shape: include the exact symbol plus relationship word (`calls`, `called by`,
+     `implements`, `extends`, `imports`, `impact`).
+
+5. Path/name discovery:
+   - Use path search once implemented.
+   - CLI: `sweet-search files "<glob-or-path-pattern>"`
+   - Query shape: path-like pattern, basename, extension, or directory segment.
+
+6. Exact file/range already known:
+   - Use exact read.
+   - CLI: `sweet-search read <file> --lines <start-end>`
+   - Agent wrapper: `ss-read <file> <start> <end>`
+   - Prefer ranges over whole files.
+
+7. File is known but relevant span is unclear:
+   - Use semantic read once for that file.
+   - CLI: `sweet-search read-semantic <file> "<question>" --max-tokens 800`
+   - Agent wrapper: `ss-semantic <file> "<question>" --max-tokens 800`
+   - Do not call semantic read on multiple files unless the task is explicitly multi-file.
+```
+
+#### Stopping and citation rules
+
+```markdown
+## Stopping Rules
+
+- Inspect only the top 3-5 discovery results.
+- If a discovery result already returns a tight chunk/range that answers the question, cite it and stop.
+- If the first discovery call returns nothing, broaden once. If still empty, report no match.
+- Do not re-search merely to double-check.
+- Do not read broad files after a tight chunk already answers the task.
+- Prefer 1-3 high-confidence citations over long citation lists.
+
+## Citation Rules
+
+- Every distinct source file that supports the answer must appear as its own citation.
+- If the prose names a file, imports from it, relies on a function in it, or cites behavior from it,
+  that file must be cited with a line range.
+- For multi-file flows, cite one range per required file.
+- Do not mention supporting files only in prose or notes.
+```
+
+#### Query-shape research is now a requirement
+
+The current plan should not assume one optimal query style. Each sweet-search tool likely has a
+different optimal query distribution:
+
+| Tool | Query-shape questions to benchmark |
+|------|------------------------------------|
+| `sweet-search` auto/hybrid | short keyword vs long natural-language vs symbol+intent; when CatBoost routes best |
+| indexed grep / `ss-grep` | literal regex specificity, top-k, context lines, rare-token anchoring |
+| ColGrep / `ss-find` | natural-language query length, broad vs narrow regex anchor, regex family, k |
+| structural mode | relationship words, exact symbol requirements, multi-hop wording |
+| `read-semantic` | question length, symbol inclusion, max tokens, threshold, context lines, topK |
+| `read` | range size, batching, chunk metadata usefulness |
+| `files` | glob-like vs natural path terms, basename vs segment matching |
+
+The default system prompt should be generated from benchmark findings, not intuition. Add a
+query-shape benchmark suite before freezing the prompt text for `sweet-search init`.
+
+---
+
+### 2G — GEPA Prompt Evolution Over Agent Traces
+
+**Goal**: Evolve the sweet-search policy text until it consistently improves agent behavior over
+native Claude Code workflows.
+
+DSPy remains useful for structured metrics and evaluation programs, but the primary object we need
+to optimize is textual: the tool-routing policy, examples, tool descriptions, query-shape guidance,
+and stop criteria. GEPA (Reflective Prompt Evolution / Genetic-Pareto style optimization) is a
+better fit for that layer because it can read full execution traces and mutate text artifacts based
+on concrete failures.
+
+#### Candidate artifact
+
+Treat the following as a versioned candidate:
+
+- `.claude/rules/sweet-search.md` contents
+- `CLAUDE.md` / `AGENTS.md` injected summary block
+- `UserPromptSubmit` reminder text
+- MCP tool descriptions
+- agent wrapper help text (`ss-grep`, `ss-find`, `ss-read`, `ss-semantic`)
+- query-shape examples for each tool
+
+#### Evaluator
+
+Use the agent-in-the-loop benchmark (`eval/agent-read-workflows/`) as the primary evaluator:
+
+- real pinned repos
+- native `rg + Read` baseline
+- sweet-search-only policy with audited tool usage
+- deterministic metrics: file recall, symbol recall, fact recall, evidence success, precision,
+  answerability, policy violations
+- cost metrics: tool-output tokens, Claude usage tokens, tool calls
+- optional blind judge for qualitative preference
+
+The retrieval-only benchmark (`eval/read-workflows/`) remains a regression suite for tool mechanics
+and query-shape experiments, but it is not sufficient for final prompt promotion.
+
+#### Objective
+
+Optimize a Pareto frontier rather than a single scalar. A policy is promotable only if it satisfies:
+
+1. zero policy violations on the validation split
+2. equal-or-better answerability than the current shipped policy
+3. no regression on no-match tasks
+4. no regression on multi-file citation tasks
+5. equal-or-better evidence success / file precision
+6. lower or equal tool-output tokens at comparable quality
+7. no large increase in tool-call count
+
+Latency should be tracked but not used as the main objective during local runs, because LI/model
+contention and cold-start effects can dominate measurements.
+
+#### GEPA loop
+
+1. Seed with the hand-written benchmark-derived policy from Part 2F.
+2. Run a small training split of agent tasks.
+3. Feed GEPA the full traces: prompts, tool calls, tool outputs, final answers, audit violations,
+   deterministic scores, and judge comments.
+4. Ask GEPA to mutate the policy text, examples, and stop rules.
+5. Re-run candidates on the training split.
+6. Keep Pareto-efficient candidates.
+7. Validate on held-out repos/tasks.
+8. Promote only if the policy beats the current shipped policy under the criteria above.
+
+#### DSPy role after adding GEPA
+
+DSPy should not be the only prompt optimization mechanism. Its role is:
+
+- define structured task signatures and metrics
+- provide adapters around the Claude CLI / agent benchmark
+- run deterministic evaluation and candidate comparison
+- optionally host `dspy.GEPA` or other optimizers
+- export final artifacts into JS/Markdown files consumed by `sweet-search init`
+
+GEPA's role is:
+
+- reflective mutation of the policy text
+- learning from trace-level failures
+- discovering better query instructions, examples, and stopping rules
+
+---
+
 ## Part 3: Init Integration
 
 All of Part 2 integrates into `scripts/init.js` as new steps after the existing step 10
@@ -724,10 +918,11 @@ Sweet Search init complete
 | **P7** | MCP/tool description rewrite | 30-60m | P1-P3 |
 | **P8** | uninstall cleanup for all init-owned mutations | 1-2h | P4-P6 |
 | **P9** | benchmarks + eval harness + tests | 4-6h | P1-P8 |
-| **P10** | DSPy prompt optimization (steps D1-D6 in [DSPY_PLAN.md](DSPY_PLAN.md)) — scaffold optimizer, run multi-model optimization, export artifacts | 12-18h + ~$200-400 API | P9 |
-| **P11** | Wire DSPy output into init injection + hooks + MCP, regression test vs baseline | 2-3h | P10 |
+| **P10** | query-shape benchmark suite for `sweet-search`, indexed grep, ColGrep, structural, `read`, and `read-semantic` | 8-12h | P9 |
+| **P11** | GEPA/DSPy prompt evolution over agent traces — optimize policy text, examples, stop rules, and tool descriptions | 12-24h + model budget | P9-P10 |
+| **P12** | Wire promoted policy artifacts into init injection + hooks + MCP, regression test vs shipped baseline | 2-3h | P11 |
 
-**Total estimated effort**: 30-46h
+**Total estimated effort**: 38-64h
 
 ---
 
@@ -747,6 +942,8 @@ Sweet Search init complete
 | `tests/search/search-files.test.js` | Tests for path/glob tool |
 | `tests/init/agent-instructions.test.js` | Tests for injection + symlink handling |
 | `tests/init/prompt-reminders.test.js` | Tests for `UserPromptSubmit` integration |
+| `eval/query-shapes/` | Benchmarks for optimal query wording per sweet-search tool |
+| `eval/prompt-evolution/` | GEPA/DSPy prompt-policy optimization harness |
 
 ## Files to Modify
 
@@ -884,18 +1081,25 @@ truth and imports that file. The `CLAUDE.md` / `AGENTS.md` injection covers Curs
 Codex, and any agent that reads project markdown files. The duplication cost is negligible
 compared to the cost of the agent falling back to native `Grep` + `Read` in a long conversation.
 
-### Why DSPy is mandatory
+### Why benchmark-driven prompt evolution is mandatory
 
 The imported `.claude/rules/sweet-search.md` file, the injected `CLAUDE.md` / `AGENTS.md`
 instructions, and the `UserPromptSubmit` reminder are the primary guardrails for the entire
 system. Because the success of tool selection depends heavily on the quality of those prompts,
 they should be optimized systematically rather than hand-tuned once and left to drift.
 
-**Full DSPy plan**: See [DSPY_PLAN.md](DSPY_PLAN.md) for the complete optimization strategy,
-including:
-- Custom LM adapter that wraps Claude CLI agent sessions as DSPy-compatible calls
-- Universal multi-model metric (floor-weighted to ensure one prompt works across Claude,
-  GPT-4o, Gemini, Grok)
-- Two-phase cost-efficient optimization (cheap iteration → full validation)
-- Output artifacts that integrate into init without a Python runtime dependency
-- Detailed implementation steps (D1-D6) that replace the P10/P11 line items below
+The Fastify agent benchmark showed the core lesson: the same tools produce much better behavior
+when the system prompt teaches a decision tree, stop rules, citation discipline, and query-shape
+guidance. Therefore the prompt is a product surface, not documentation.
+
+Use both:
+
+- **DSPy** for structured task definitions, adapters, deterministic metrics, and repeatable
+  candidate evaluation.
+- **GEPA-style reflective prompt evolution** for mutating the actual text artifacts: routing
+  policy, examples, tool descriptions, stop rules, and query-shape guidance from full execution
+  traces.
+
+**Full DSPy plan**: See [DSPY_PLAN.md](DSPY_PLAN.md) for the existing structured optimization
+strategy. It should be updated so it is no longer the only optimization path: DSPy supplies the
+evaluation scaffold, while GEPA evolves the prompt/policy text against the agent benchmark.
