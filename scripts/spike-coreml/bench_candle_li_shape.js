@@ -46,7 +46,8 @@ const projPath = join(modelDir, '1_Dense', 'model.safetensors');
 const configPath = join(modelDir, 'config.json');
 
 const t0 = performance.now();
-const model = addon.NativeLateInteractionModel.load(backbonePath, projPath, configPath);
+// Standard lateon-code: single 768→128 stage.
+const model = addon.NativeLateInteractionModel.load(backbonePath, [projPath], [128], configPath);
 console.log(`[bench-li-shape] loaded LI model in ${(performance.now() - t0).toFixed(0)} ms (dim=${model.dim})`);
 
 // Random token IDs within the vocab range (50370 for LateOn-Code).

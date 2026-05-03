@@ -216,7 +216,14 @@ describe('Normalized late interaction blending', () => {
   // Stats include normalization ranges
   // ---------------------------------------------------------------------------
 
-  it('stats include mode pure-reranker', async () => {
+  it('stats include mode pure-reranker-mixed-pool', async () => {
+    // The mode was renamed in commit db6e6a6 (fix(retrieval): wire
+    // graph expansion into LI rerank pool). The new "mixed-pool"
+    // semantics: the rerank pool can contain both originals and
+    // graph-expanded candidates, with `expandedInPool` tracking how
+    // many slots the expanded fraction consumed. With no graph
+    // expansion (this test), expandedInPool === 0 and the new mode
+    // is operationally equivalent to the old pure-reranker.
     const s = await createSearcherWithLIScores(
       { a: 0.4, b: 0.7, c: 0.9 }
     );
@@ -228,9 +235,10 @@ describe('Normalized late interaction blending', () => {
 
     const { stats } = await runPostRetrieval(s, results);
 
-    expect(stats.lateInteraction.mode).toBe('pure-reranker');
+    expect(stats.lateInteraction.mode).toBe('pure-reranker-mixed-pool');
     expect(stats.lateInteraction.candidates).toBe(3);
     expect(stats.lateInteraction.queryTokens).toBe(2);
+    expect(stats.lateInteraction.expandedInPool).toBe(0);
   });
 
   // ---------------------------------------------------------------------------

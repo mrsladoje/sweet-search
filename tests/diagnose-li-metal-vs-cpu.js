@@ -29,7 +29,8 @@ async function main() {
   console.log('Loading Metal LI model...');
   const metalModel = addon.NativeLateInteractionModel.load(
     path.join(liRoot, 'model.safetensors'),
-    path.join(liRoot, '1_Dense', 'model.safetensors'),
+    [path.join(liRoot, '1_Dense', 'model.safetensors')],
+    [128],
     path.join(liRoot, 'config.json'),
   );
 

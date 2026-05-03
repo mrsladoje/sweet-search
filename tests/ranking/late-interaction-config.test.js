@@ -109,6 +109,58 @@ describe('LATE_INTERACTION_CONFIG', () => {
     LATE_INTERACTION_CONFIG.model = saved;
   });
 
+  it('projectionPaths and projectionDims agree on length per variant', async () => {
+    // The native (Rust) loader takes BOTH projectionPaths and projectionDims
+    // and validates each safetensors stage against the expected (out, in) shape.
+    // A length mismatch would surface as a load-time error — catch it here in
+    // unit tests rather than at runtime on a developer's machine.
+    const { LATE_INTERACTION_CONFIG } = await import('../../core/config.js');
+    for (const [key, cfg] of Object.entries(LATE_INTERACTION_CONFIG.models)) {
+      expect(Array.isArray(cfg.projectionPaths), `${key}.projectionPaths is not an array`).toBe(true);
+      expect(Array.isArray(cfg.projectionDims), `${key}.projectionDims is not an array`).toBe(true);
+      expect(
+        cfg.projectionDims.length,
+        `${key}: projectionDims.length=${cfg.projectionDims.length} != projectionPaths.length=${cfg.projectionPaths.length}`,
+      ).toBe(cfg.projectionPaths.length);
+      // Final stage's out-features MUST match the advertised tokenDimension
+      // — that's what every downstream consumer (HNSW, scoring) reads.
+      expect(
+        cfg.projectionDims[cfg.projectionDims.length - 1],
+        `${key}: final projectionDims entry must equal tokenDimension`,
+      ).toBe(cfg.tokenDimension);
+    }
+  });
+
+  it('lateon-code-edge has 2-stage 256→512→48 projection', async () => {
+    const { LATE_INTERACTION_CONFIG } = await import('../../core/config.js');
+    const edge = LATE_INTERACTION_CONFIG.models['lateon-code-edge'];
+    expect(edge.backboneDim).toBe(256);
+    expect(edge.projectionPaths).toEqual([
+      '1_Dense/model.safetensors',
+      '2_Dense/model.safetensors',
+    ]);
+    expect(edge.projectionDims).toEqual([512, 48]);
+    expect(edge.tokenDimension).toBe(48);
+  });
+
+  it('lateon-code (standard) has 1-stage 768→128 projection', async () => {
+    const { LATE_INTERACTION_CONFIG } = await import('../../core/config.js');
+    const std = LATE_INTERACTION_CONFIG.models['lateon-code'];
+    expect(std.backboneDim).toBe(768);
+    expect(std.projectionPaths).toEqual(['1_Dense/model.safetensors']);
+    expect(std.projectionDims).toEqual([128]);
+    expect(std.tokenDimension).toBe(128);
+  });
+
+  it('every variant declares its native FP32 registry key', async () => {
+    // The native loader resolves `${cfgKey}-fp32` by default; explicit
+    // nativeRegistryKey overrides that. Both shipping variants set it
+    // explicitly so renames in either side don't break native loading.
+    const { LATE_INTERACTION_CONFIG } = await import('../../core/config.js');
+    expect(LATE_INTERACTION_CONFIG.models['lateon-code'].nativeRegistryKey).toBe('lateon-code-fp32');
+    expect(LATE_INTERACTION_CONFIG.models['lateon-code-edge'].nativeRegistryKey).toBe('lateon-code-edge-fp32');
+  });
+
   it('has 32 skiplist chars', async () => {
     const { LATE_INTERACTION_CONFIG } = await import('../../core/config.js');
     expect(LATE_INTERACTION_CONFIG.skiplistChars).toBeInstanceOf(Set);

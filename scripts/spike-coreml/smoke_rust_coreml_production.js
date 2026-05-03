@@ -46,7 +46,9 @@ console.log(`  load total: ${Date.now() - t0} ms, dim: ${embedModel.dim}`);
 
 console.log('\n──── NativeLateInteractionModel.load (with CoreML cascade) ────');
 const t1 = Date.now();
-const liModel = addon.NativeLateInteractionModel.load(liBackbone, liProjection, liConfig, cascadeDir);
+// Standard lateon-code: single 768→128 projection. Edge variant would use
+// [proj1, proj2] + [512, 48] and a different model dir.
+const liModel = addon.NativeLateInteractionModel.load(liBackbone, [liProjection], [128], liConfig, cascadeDir);
 console.log(`  load total: ${Date.now() - t1} ms, dim: ${liModel.dim}`);
 
 // Build a 4×16 batch (fits b32×s512 → CoreML fast path).
