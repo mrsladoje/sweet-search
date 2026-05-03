@@ -35,10 +35,12 @@ function summarizeGraph2hop(records, meta) {
   lines.push('');
   lines.push(`Generated: ${meta.generatedAt}`);
   lines.push(`Total queries: ${records.length}`);
-  lines.push(`Repos: ${meta.options.repos.join(', ')}`);
+  const repos = meta.repoBucketCounts ? Object.keys(meta.repoBucketCounts) : (meta.options?.repos || []);
+  lines.push(`Repos: ${repos.length ? repos.join(', ') : 'unknown'}`);
   lines.push(`Mode A (none): graphExpand=none, expand=false`);
   lines.push(`Mode B (2hop-adaptive): graphExpand=2hop, adaptiveHop2=true, expand=true`);
-  lines.push(`use3Stage=false (test repos have mixed-dim float vectors → cascade off)`);
+  const u3s = meta.options?.use3Stage;
+  if (u3s != null) lines.push(`use3Stage=${u3s}`);
   lines.push('');
 
   const ok = records.filter(r => !r.error_none && !r.error_expand);
