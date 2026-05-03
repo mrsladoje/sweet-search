@@ -750,7 +750,7 @@ question.
 - Do not mention supporting files only in prose or notes.
 ```
 
-#### Query-shape research is now a requirement
+#### Query-shape research is a prerequisite
 
 The current plan should not assume one optimal query style. Each sweet-search tool likely has a
 different optimal query distribution:
@@ -770,7 +770,133 @@ query-shape benchmark suite before freezing the prompt text for `sweet-search in
 
 ---
 
-### 2G — GEPA Prompt Evolution Over Agent Traces
+### 2G — Query-Shape Benchmark Before Prompt Evolution
+
+**Goal**: Learn the optimal query grammar for each sweet-search tool before evolving the general
+agent system prompt.
+
+The agent policy in Part 2F should start as a hand-written baseline, but it must not be treated as
+final until we know which query shapes actually work best. Without this step, GEPA/DSPy may evolve
+the system prompt around wrong assumptions such as "long semantic queries are always better" or
+"ColGrep should always use broad regex anchors."
+
+#### Why this comes before general prompt evolution
+
+System prompts encode rules. If the rules are wrong, optimization will only make the agent more
+consistent at using the wrong strategy. Query-shape benchmarking isolates each tool and answers
+lower-level questions first:
+
+- What query strings maximize recall?
+- What query strings maximize precision?
+- What query strings minimize follow-up reads?
+- Which query styles cause CatBoost to route correctly?
+- Which query styles cause `read-semantic` to return enough evidence without overfetch?
+
+Only after this should the global policy be evolved.
+
+#### Benchmark structure
+
+Create `eval/query-shapes/` as a deterministic, non-agent benchmark over pinned repos and gold
+tasks. It should run tool/query variants directly, without Claude agent variance.
+
+For each task, generate multiple query variants:
+
+```json
+{
+  "taskId": "fastify:server-protocol-selection",
+  "tool": "ss-find",
+  "variants": [
+    {
+      "name": "short-intent",
+      "query": "server protocol selection",
+      "regex": "server|http2|https"
+    },
+    {
+      "name": "long-natural-language",
+      "query": "how does Fastify decide whether to create HTTP HTTPS or HTTP2 server",
+      "regex": "server|http2|https|getServerInstance"
+    },
+    {
+      "name": "symbol-plus-intent",
+      "query": "getServerInstance choose http2 https http",
+      "regex": "getServerInstance|http2|https"
+    }
+  ]
+}
+```
+
+Score each variant using deterministic retrieval metrics:
+
+- expected file recall
+- expected symbol recall
+- gold line overlap
+- returned-line precision
+- chars/tokens returned
+- latency
+- whether output is answerable without follow-up reads
+- whether the query routed to the intended search path
+- number of follow-up reads needed in a simulated workflow
+
+#### Tool-specific experiments
+
+| Tool | Experiments |
+|------|-------------|
+| `sweet-search` auto/hybrid | short keyword vs natural-language vs symbol+intent; CatBoost routing accuracy; auto vs forced mode |
+| indexed grep / `ss-grep` | literal specificity, regex family, rare-token anchors, top-k, context lines |
+| ColGrep / `ss-find` | query length, symbol inclusion, broad vs narrow regex anchor, regex-family choice, k |
+| structural mode | relationship wording (`calls`, `called by`, `impact`, `implements`), exact symbol requirement, hop count |
+| `read-semantic` | symbol in query vs no symbol, behavior phrase length, maxTokens, topK, threshold, contextLines |
+| `read` | exact range size, batch size, metadata usefulness, whole-file vs range tradeoff |
+| `files` | glob-like patterns vs basename terms vs natural path descriptions |
+
+#### DSPy role in query-shape optimization
+
+DSPy is useful here before GEPA. Model each query generator as a small DSPy program:
+
+```python
+class MakeAutoSearchQuery(dspy.Signature):
+    task = dspy.InputField()
+    repo_language = dspy.InputField()
+    query = dspy.OutputField()
+
+class MakeColGrepQuery(dspy.Signature):
+    task = dspy.InputField()
+    semantic_query = dspy.OutputField()
+    regex_anchor = dspy.OutputField()
+
+class MakeReadSemanticQuery(dspy.Signature):
+    task = dspy.InputField()
+    file = dspy.InputField()
+    symbol_hint = dspy.InputField()
+    query = dspy.OutputField()
+```
+
+Use DSPy optimizers such as MIPROv2/BootstrapFewShot to learn instructions and examples for these
+query generators against the deterministic query-shape benchmark. The output is not yet the final
+agent prompt; it is a set of measured query-shape rules and examples.
+
+#### Promotion artifact
+
+The query-shape benchmark should produce a machine-readable report:
+
+```json
+{
+  "tool": "read-semantic",
+  "recommendations": [
+    "include exact symbol when known",
+    "use one behavior phrase, not multi-sentence task text",
+    "default maxTokens=800 for code-understanding tasks",
+    "increase maxTokens only for multi-branch error paths"
+  ],
+  "evidence": { "tasks": 120, "avgRecallGain": 0.12, "avgTokenReduction": 0.31 }
+}
+```
+
+These recommendations become the seed material for Part 2H.
+
+---
+
+### 2H — GEPA Prompt Evolution Over Agent Traces
 
 **Goal**: Evolve the sweet-search policy text until it consistently improves agent behavior over
 native Claude Code workflows.
@@ -824,7 +950,8 @@ contention and cold-start effects can dominate measurements.
 
 #### GEPA loop
 
-1. Seed with the hand-written benchmark-derived policy from Part 2F.
+1. Seed with the hand-written benchmark-derived policy from Part 2F plus query-shape findings from
+   Part 2G.
 2. Run a small training split of agent tasks.
 3. Feed GEPA the full traces: prompts, tool calls, tool outputs, final answers, audit violations,
    deterministic scores, and judge comments.
@@ -918,8 +1045,8 @@ Sweet Search init complete
 | **P7** | MCP/tool description rewrite | 30-60m | P1-P3 |
 | **P8** | uninstall cleanup for all init-owned mutations | 1-2h | P4-P6 |
 | **P9** | benchmarks + eval harness + tests | 4-6h | P1-P8 |
-| **P10** | query-shape benchmark suite for `sweet-search`, indexed grep, ColGrep, structural, `read`, and `read-semantic` | 8-12h | P9 |
-| **P11** | GEPA/DSPy prompt evolution over agent traces — optimize policy text, examples, stop rules, and tool descriptions | 12-24h + model budget | P9-P10 |
+| **P10** | query-shape benchmark suite for `sweet-search`, indexed grep, ColGrep, structural, `read`, and `read-semantic` (Part 2G) | 8-12h | P9 |
+| **P11** | GEPA/DSPy prompt evolution over agent traces — optimize policy text, examples, stop rules, and tool descriptions (Part 2H) | 12-24h + model budget | P9-P10 |
 | **P12** | Wire promoted policy artifacts into init injection + hooks + MCP, regression test vs shipped baseline | 2-3h | P11 |
 
 **Total estimated effort**: 38-64h
