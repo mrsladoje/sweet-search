@@ -71,6 +71,7 @@ export function buildReport({
   metrics,
   perLanguage,
   evaluatedQueries,
+  config = null,
 }) {
   return {
     timestamp: new Date().toISOString(),
@@ -80,6 +81,11 @@ export function buildReport({
     searchMode,
     totalTimeMs,
     errors: errorCount,
+    // Optional run configuration snapshot — saved when the caller passes it
+    // so two result JSONs can be compared without guessing which flags ran.
+    // Recommended fields: profile, k, useLateInteraction, cascadeEnabled,
+    // graphExpand, stage3Candidates, embedTextVariant, codeRevision.
+    ...(config ? { config } : {}),
     aggregate: metrics,
     perLanguage,
     failedQueries: evaluatedQueries
