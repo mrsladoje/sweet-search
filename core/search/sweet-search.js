@@ -41,6 +41,7 @@ import * as semantic from './search-semantic.js';
 import * as hybrid from './search-hybrid.js';
 import * as postprocess from './search-postprocess.js';
 import * as pattern from './search-pattern.js';
+import { packageForAgent } from './context-expander.js';
 
 export { ROUTE_ALPHAS } from './search-fusion.js';
 
@@ -95,8 +96,10 @@ export class SweetSearch {
 
     this.graphSearch = new GraphSearch(options.graphDbPath || DB_PATHS.codeGraph);
     this.codeGraphRepo = new CodeGraphRepository(options.graphDbPath || DB_PATHS.codeGraph);
-    this.hnswIndex = new HNSWIndex({ indexPath: options.hnswPath || DB_PATHS.hnswIndex });
-    this.binaryHnswIndex = new BinaryHNSWIndex({ indexPath: options.binaryHnswPath || DB_PATHS.binaryHnswIndex });
+    this.hnswPath = options.hnswPath || DB_PATHS.hnswIndex;
+    this.binaryHnswPath = options.binaryHnswPath || DB_PATHS.binaryHnswIndex;
+    this.hnswIndex = new HNSWIndex({ indexPath: this.hnswPath });
+    this.binaryHnswIndex = new BinaryHNSWIndex({ indexPath: this.binaryHnswPath });
     this.reranker = new Reranker(options);
     this.lateInteractionIndex = new LateInteractionIndex(options.lateInteractionOptions || {});
     this.router = new QueryRouter();
@@ -153,8 +156,8 @@ export class SweetSearch {
     const start = Date.now();
 
     this.hasGraphIndex = existsSync(DB_PATHS.codeGraph);
-    this.hasHnswIndex = existsSync(DB_PATHS.hnswIndex.replace('.idx', '.meta.json'));
-    this.hasBinaryHnswIndex = existsSync(DB_PATHS.binaryHnswIndex.replace('.idx', '.meta.json'));
+    this.hasHnswIndex = existsSync(this.hnswPath.replace('.idx', '.meta.json'));
+    this.hasBinaryHnswIndex = existsSync(this.binaryHnswPath.replace('.idx', '.meta.json'));
     this.hasCodebaseIndex = existsSync(this.codebaseDbPath);
     this.hasLateInteractionIndex = existsSync(this.lateInteractionIndex.indexPath);
     this.hasSparseGramIndex = existsSync(this.sparseGramIndexPath);
@@ -182,7 +185,7 @@ export class SweetSearch {
       // disable the entire 3-stage pipeline. Stage 2.5 falls back to SQLite.
       if (this.hasBinaryHnswIndex) {
         try {
-          const floatStorePath = getFloatStorePath(DB_PATHS.binaryHnswIndex);
+          const floatStorePath = getFloatStorePath(this.binaryHnswPath);
           const floatLoaded = await this.floatVectorStore.load(floatStorePath);
           if (floatLoaded) {
             const fStats = this.floatVectorStore.getStats();
@@ -419,9 +422,39 @@ export class SweetSearch {
     }
 
     // Step 3: Post-retrieval processing (delegated to extracted module)
-    return this._applyPostRetrieval(results, query, options, {
+    const postRetrievalResult = await this._applyPostRetrieval(results, query, options, {
       stats, semanticStats, searchMode, effectiveGraphExpand, intentPolicy, start,
     });
+
+    // Step 4: Agent packaging (lexical/semantic/hybrid/structural).
+    // The pattern (colgrep) branch already returns its own pre-packaged response
+    // and short-circuits earlier in this method. For non-pattern modes, apply the
+    // shared packager when the caller explicitly asked for an agent format.
+    // Default behavior (no agent format) is unchanged.
+    const agentFormats = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
+    if (agentFormats.has(options.format)) {
+      const finalResults = postRetrievalResult.results || [];
+      const finalStats = postRetrievalResult.stats || {};
+      const agentResponse = packageForAgent(finalResults, {
+        ...finalStats,
+        candidatePoolSize: finalStats.results_count ?? finalResults.length,
+      }, {
+        query,
+        regex: regex || '',
+        mode: finalStats.path || searchMode,
+        format: options.format,
+        tokenBudget: options.tokenBudget,
+        codeGraphRepo: this.codeGraphRepo || null,
+        locationMap: null,
+        projectRoot: this.projectRoot,
+        ablations: options.ablations,
+      });
+      // Preserve the underlying retrieval stats so callers can inspect both layers
+      agentResponse.stats = finalStats;
+      return agentResponse;
+    }
+
+    return postRetrievalResult;
   }
 
   /** Structural search path (GraphRAG structural queries — opt-in via explicit flag) */

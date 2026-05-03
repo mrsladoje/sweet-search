@@ -10,7 +10,10 @@
  *   + Ranking identity between benchmark and agent modes
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   estimateTokens,
   computeConfidence,
@@ -361,7 +364,7 @@ describe('expandToSymbol', () => {
     expect(expansion.endLine).toBe(25);
   });
 
-  it('should keep original range when entity exceeds token cap', () => {
+  it('should produce a symbol sandwich when entity exceeds token cap', () => {
     const result = {
       file: 'src/big.js',
       startLine: 50,
@@ -387,8 +390,141 @@ describe('expandToSymbol', () => {
       tokenCap: 800,
     });
 
-    expect(expansion.expanded).toBe(false);
+    // Symbol sandwich: anchor on the entity range, but render
+    // signature + elision + gold + elision + closing in packageForAgent.
+    expect(expansion.kind).toBe('sandwich');
+    expect(expansion.expanded).toBe(true);
+    expect(expansion.expandedFrom).toBe('50-55');
     expect(expansion.symbol).toBe('HugeClass');
+    expect(expansion.startLine).toBe(1);
+    expect(expansion.endLine).toBe(500);
+    expect(expansion.sandwich).toBeDefined();
+    // Gold part is always present
+    const goldPart = expansion.sandwich.parts.find(p => p.kind === 'gold');
+    expect(goldPart).toBeDefined();
+    expect(goldPart.startLine).toBe(50);
+    expect(goldPart.endLine).toBe(55);
+    // Signature should fit in 800-token cap (gold=60, sig=30, closing=10 => well under)
+    const sigPart = expansion.sandwich.parts.find(p => p.kind === 'signature');
+    expect(sigPart).toBeDefined();
+    expect(sigPart.startLine).toBe(1);
+    // Closing should also fit
+    const closePart = expansion.sandwich.parts.find(p => p.kind === 'closing');
+    expect(closePart).toBeDefined();
+    expect(closePart.startLine).toBe(500);
+    // Both head and tail elisions should be flagged
+    expect(expansion.sandwich.elidedHead).toBeGreaterThan(0);
+    expect(expansion.sandwich.elidedTail).toBeGreaterThan(0);
+    expect(expansion.sandwich.elisionMarkers).toBe(2);
+  });
+
+  it('should fall back to bare chunk when even gold does not fit in cap', () => {
+    // 200-line gold chunk = 2000 tokens; cap of 100 cannot fit even gold.
+    const result = {
+      file: 'src/big.js',
+      startLine: 50,
+      endLine: 249,
+      metadata: { file: 'src/big.js', startLine: 50, endLine: 249 },
+    };
+
+    const mockRepo = {
+      findEnclosingEntity: () => ({
+        name: 'HugeFunc',
+        type: 'function',
+        startLine: 1,
+        endLine: 500,
+        parentClass: null,
+      }),
+    };
+
+    const expansion = expandToSymbol(result, {
+      codeGraphRepo: mockRepo,
+      locationMap: null,
+      fileCache: new Map(),
+      projectRoot: '/tmp',
+      tokenCap: 100,
+    });
+
+    // Cap too tight for sandwich → fall back to bare chunk + entity name.
+    expect(expansion.kind).toBe('chunk');
+    expect(expansion.expanded).toBe(false);
+    expect(expansion.symbol).toBe('HugeFunc');
+    expect(expansion.startLine).toBe(50);
+    expect(expansion.endLine).toBe(249);
+    expect(expansion.sandwich).toBeUndefined();
+  });
+
+  it('should drop closing brace first when sandwich is tight', () => {
+    // Gold: 50 lines (origStart=100..origEnd=149). Entity 1-1000.
+    // Token math (10 tokens/line, 10 per elision marker):
+    //   sig=40 (lines 1-4), gold=500, closing=10 (line 1000), 2 elisions=20
+    //   full sandwich = 570
+    // Cap=560: full overshoots by 10 → drop closing first.
+    //   sig + gold + 1 elision = 40 + 500 + 10 = 550 ≤ 560 → keep signature, drop closing ✓
+    const result = {
+      file: 'src/tight.js',
+      startLine: 100,
+      endLine: 149,
+      metadata: { file: 'src/tight.js', startLine: 100, endLine: 149 },
+    };
+
+    const mockRepo = {
+      findEnclosingEntity: () => ({
+        name: 'TightFunc',
+        type: 'function',
+        startLine: 1,
+        endLine: 1000,
+        parentClass: null,
+      }),
+    };
+
+    const expansion = expandToSymbol(result, {
+      codeGraphRepo: mockRepo,
+      locationMap: null,
+      fileCache: new Map(),
+      projectRoot: '/tmp',
+      tokenCap: 560,
+    });
+
+    expect(expansion.kind).toBe('sandwich');
+    const kinds = expansion.sandwich.parts.map(p => p.kind);
+    expect(kinds).toContain('signature');
+    expect(kinds).toContain('gold');
+    expect(kinds).not.toContain('closing');
+    expect(expansion.sandwich.elidedHead).toBeGreaterThan(0);
+    expect(expansion.sandwich.elidedTail).toBe(0); // no tail elision when no closing
+  });
+
+  it('should respect no-sandwich ablation flag', () => {
+    const result = {
+      file: 'src/big.js',
+      startLine: 50,
+      endLine: 55,
+      metadata: { file: 'src/big.js', startLine: 50, endLine: 55 },
+    };
+
+    const mockRepo = {
+      findEnclosingEntity: () => ({
+        name: 'HugeClass',
+        type: 'class',
+        startLine: 1,
+        endLine: 500,
+        parentClass: null,
+      }),
+    };
+
+    const expansion = expandToSymbol(result, {
+      codeGraphRepo: mockRepo,
+      locationMap: null,
+      fileCache: new Map(),
+      projectRoot: '/tmp',
+      tokenCap: 800,
+      ablations: new Set(['no-sandwich']),
+    });
+
+    // Ablation forces the previous "bare chunk" fallback
+    expect(expansion.kind).toBe('chunk');
+    expect(expansion.expanded).toBe(false);
     expect(expansion.startLine).toBe(50);
     expect(expansion.endLine).toBe(55);
   });
@@ -874,5 +1010,305 @@ describe('ranking identity', () => {
     // Presentation tiers differ between modes (the whole point of sub-modes)
     expect(previewResult.results[1].presentation).toBe('preview');
     expect(fullResult.results[1].presentation).toBe('full');
+  });
+});
+
+// =============================================================================
+// agent_full_xl stretch budget — opt-in, gated on top-1 dominance
+// =============================================================================
+
+describe('agent_full_xl stretch budget', () => {
+  it('does not fire by default (agent or agent_preview format)', () => {
+    const dominant = [{ score: 0.95 }, { score: 0.10 }, { score: 0.08 }];
+
+    // agent_preview default: per-result top-1 cap is 2000, regardless of score gap
+    const allocPreview = allocateBudget(4000, 3, 'agent_preview', { results: dominant });
+    expect(allocPreview[0].tokenCap).toBeLessThanOrEqual(2000);
+
+    // agent_full default: also capped at 2000
+    const allocFull = allocateBudget(8000, 3, 'agent_full', { results: dominant });
+    expect(allocFull[0].tokenCap).toBeLessThanOrEqual(2000);
+  });
+
+  it('fires only when subMode is agent_full_xl AND top1 >= 2 * top2', () => {
+    const dominant = [{ score: 0.95 }, { score: 0.10 }, { score: 0.08 }];
+    const alloc = allocateBudget(12000, 3, 'agent_full_xl', { results: dominant });
+
+    // Gate fires: top1 (0.95) >= 2 * top2 (0.10), per-result cap raised to 8000
+    expect(alloc[0].tokenCap).toBeGreaterThan(2000);
+    expect(alloc[0].tokenCap).toBeLessThanOrEqual(8000);
+  });
+
+  it('falls back to agent_full caps when xl gate fails (top1/top2 < 2)', () => {
+    // top1 = 0.6, top2 = 0.5: ratio 1.2 — gate fails.
+    const close = [{ score: 0.6 }, { score: 0.5 }, { score: 0.4 }];
+    const alloc = allocateBudget(12000, 3, 'agent_full_xl', { results: close });
+
+    // Per-result cap stays at default (2000) when gate fails
+    expect(alloc[0].tokenCap).toBeLessThanOrEqual(2000);
+  });
+
+  it('xl uses the 12k total budget when explicitly opted-in via format', () => {
+    const dominant = [{ score: 0.9, file: 'a.js' }];
+    const response = packageForAgent(dominant, {}, {
+      query: 'test', regex: 'test',
+      format: 'agent_full_xl',
+      projectRoot: '/nonexistent',
+    });
+    expect(response.subMode).toBe('agent_full_xl');
+    expect(response.tokenBudget).toBe(12000);
+  });
+
+  it('reports the caller-provided retrieval mode instead of hardcoding pattern', () => {
+    const response = packageForAgent([{ score: 0.9, file: 'a.js' }], { path: 'hybrid' }, {
+      query: 'test',
+      regex: '',
+      format: 'agent',
+      mode: 'hybrid',
+      projectRoot: '/nonexistent',
+    });
+
+    expect(response.mode).toBe('hybrid');
+  });
+
+  it('agent and agent_preview formats default to 4k budget', () => {
+    const r = [{ score: 0.9, file: 'a.js' }];
+    const responseA = packageForAgent(r, {}, { query: 't', regex: 't', format: 'agent', projectRoot: '/nonexistent' });
+    const responseP = packageForAgent(r, {}, { query: 't', regex: 't', format: 'agent_preview', projectRoot: '/nonexistent' });
+    expect(responseA.tokenBudget).toBe(4000);
+    expect(responseP.tokenBudget).toBe(4000);
+  });
+});
+
+// =============================================================================
+// Generalized breadth signal (works for non-grep retrieval modes)
+// =============================================================================
+
+describe('generalized breadth signal', () => {
+  it('uses candidatePoolSize when grepMatches is absent (lexical/semantic/hybrid)', () => {
+    const broadSemantic = allocateBudget(4000, 3, 'agent_preview', {
+      candidatePoolSize: 500, // broad: should sharpen on top-1
+      results: [{ score: 0.9 }, { score: 0.6 }, { score: 0.5 }],
+    });
+    const narrowSemantic = allocateBudget(4000, 3, 'agent_preview', {
+      candidatePoolSize: 5,
+      results: [{ score: 0.9 }, { score: 0.6 }, { score: 0.5 }],
+    });
+
+    // Broad pool concentrates on top-1
+    expect(broadSemantic[0].tokenCap).toBeGreaterThanOrEqual(narrowSemantic[0].tokenCap);
+    // ...at the cost of rank-2/3
+    expect(broadSemantic[1].tokenCap).toBeLessThanOrEqual(narrowSemantic[1].tokenCap);
+  });
+
+  it('grepMatches still wins when present (colgrep behavior preserved)', () => {
+    // Broad colgrep retrieval (grepMatches=500). Effects: top1Share=0.70, top23Share=0.15.
+    const colgrepBroad = allocateBudget(4000, 3, 'agent_preview', {
+      grepMatches: 500,
+      candidatePoolSize: 5, // should be ignored — grepMatches wins
+      results: [{ score: 0.9 }, { score: 0.6 }, { score: 0.5 }],
+    });
+    // Narrow retrieval (everything small). Effects: top1Share=0.60, top23Share=0.20.
+    const narrow = allocateBudget(4000, 3, 'agent_preview', {
+      grepMatches: 5,
+      candidatePoolSize: 5,
+      results: [{ score: 0.9 }, { score: 0.6 }, { score: 0.5 }],
+    });
+
+    // The broad/narrow distinction shows up at rank-2 (top-1 hard-caps at 2000):
+    //   broad rank-2 cap = floor(4000*0.15) = 600
+    //   narrow rank-2 cap = floor(4000*0.20) = 800
+    expect(colgrepBroad[1].tokenCap).toBeLessThan(narrow[1].tokenCap);
+  });
+});
+
+// =============================================================================
+// Symbol sandwich integration — exercises the full packageForAgent flow
+// against a real on-disk file so readFileRange works end-to-end.
+// =============================================================================
+
+describe('symbol sandwich rendering (integration)', () => {
+  let tmpRoot;
+  const filename = 'huge-fn.js';
+
+  beforeAll(() => {
+    tmpRoot = mkdtempSync(join(tmpdir(), 'sandwich-test-'));
+    // 1000-line file. Lines 1-3 are the signature, line 1000 is the closing brace.
+    // Lines 500-510 are a distinctive "gold" region containing GOLD_MARKER.
+    const lines = [];
+    lines.push('export function processOrders(input, options) {'); // 1
+    lines.push('  const { strict = false } = options || {};');     // 2
+    lines.push('  let total = 0;');                                  // 3
+    for (let i = 4; i <= 499; i++) {
+      lines.push(`  // filler line ${i} — ${'x'.repeat(20)}`);
+    }
+    // Gold region 500-510
+    lines.push('  if (input.kind === "refund") {');                  // 500
+    lines.push('    // GOLD_MARKER: refund branch begins');          // 501
+    lines.push('    const refundAmount = computeRefund(input);');    // 502
+    lines.push('    if (refundAmount > options.maxRefund) {');       // 503
+    lines.push('      throw new RefundLimitExceeded(refundAmount);');// 504
+    lines.push('    }');                                              // 505
+    lines.push('    total -= refundAmount;');                        // 506
+    lines.push('    return { ok: true, total, refunded: true };');   // 507
+    lines.push('  }');                                                // 508
+    lines.push('  // GOLD_MARKER: end of refund branch');            // 509
+    lines.push('');                                                   // 510
+    for (let i = 511; i <= 999; i++) {
+      lines.push(`  // filler line ${i} — ${'y'.repeat(20)}`);
+    }
+    lines.push('}');                                                  // 1000
+    writeFileSync(join(tmpRoot, filename), lines.join('\n'), 'utf8');
+  });
+
+  afterAll(() => {
+    if (tmpRoot) rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  function makeCodeGraphRepo(entityRange = { start: 1, end: 1000 }) {
+    return {
+      findEnclosingEntity: () => ({
+        name: 'processOrders',
+        type: 'function',
+        startLine: entityRange.start,
+        endLine: entityRange.end,
+        parentClass: null,
+      }),
+      // packageForAgent calls these for staleness / index info; safe stubs.
+      getFileIndexInfo: () => null,
+      getDbMtime: () => null,
+    };
+  }
+
+  it('preserves the gold chunk verbatim and includes signature + closing', () => {
+    // Gold chunk: lines 500-510 (the refund branch). Entity: 1-1000.
+    // tokenCap = 1500: comfortable fit for sig (30) + gold (~110) + closing (10) + 2 elisions.
+    const rankedResults = [{
+      file: filename,
+      startLine: 500,
+      endLine: 510,
+      score: 0.95,
+      lateInteractionScore: 0.95,
+      metadata: {
+        file: filename,
+        startLine: 500,
+        endLine: 510,
+        name: null,
+        type: 'code',
+      },
+    }];
+
+    const response = packageForAgent(rankedResults, { grepMatches: 1 }, {
+      query: 'refund branch',
+      regex: 'refund',
+      format: 'agent_full',
+      tokenBudget: 1500,
+      projectRoot: tmpRoot,
+      codeGraphRepo: makeCodeGraphRepo(),
+    });
+
+    expect(response.results).toHaveLength(1);
+    const r = response.results[0];
+
+    // Sandwich was used
+    expect(r.expansionKind).toBe('sandwich');
+    expect(r.sandwich).toBeDefined();
+    expect(r.sandwich.partKinds).toContain('signature');
+    expect(r.sandwich.partKinds).toContain('gold');
+    expect(r.sandwich.partKinds).toContain('closing');
+
+    // Gold content preserved verbatim — every gold line is in the rendered code
+    expect(r.code).toContain('GOLD_MARKER: refund branch begins');
+    expect(r.code).toContain('GOLD_MARKER: end of refund branch');
+    expect(r.code).toContain('throw new RefundLimitExceeded');
+    expect(r.code).toContain('return { ok: true, total, refunded: true };');
+
+    // Signature is included
+    expect(r.code).toContain('export function processOrders');
+
+    // Closing brace
+    expect(r.code).toMatch(/\}\s*$/);
+
+    // Elision markers are present and indicate the right gap sizes
+    expect(r.code).toMatch(/\/\/ \.\.\. \(\d+ lines elided\)/);
+    expect(r.sandwich.elisionMarkers).toBe(2);
+    expect(r.sandwich.elidedHead).toBeGreaterThan(400); // ~496 lines between sig and gold
+    expect(r.sandwich.elidedTail).toBeGreaterThan(400); // ~489 lines between gold and closing
+
+    // Fits within the token cap (allow some tolerance for the 10-tokens/line estimate)
+    expect(r.codeTokens).toBeLessThanOrEqual(1500 * 1.1);
+  });
+
+  it('falls back to bare gold when assembled sandwich would exceed cap', () => {
+    // Gold chunk: 100 lines (~1000 tokens). cap = 800 → goldTokens > tokenCap → no sandwich.
+    const rankedResults = [{
+      file: filename,
+      startLine: 400,
+      endLine: 499,
+      score: 0.9,
+      metadata: {
+        file: filename,
+        startLine: 400,
+        endLine: 499,
+        name: null,
+        type: 'code',
+      },
+    }];
+
+    const response = packageForAgent(rankedResults, {}, {
+      query: 'filler',
+      regex: 'filler',
+      format: 'agent_full',
+      tokenBudget: 800,
+      projectRoot: tmpRoot,
+      codeGraphRepo: makeCodeGraphRepo(),
+    });
+
+    const r = response.results[0];
+    // Sandwich was not used (gold itself doesn't fit in the cap)
+    expect(r.expansionKind).toBe('chunk');
+    expect(r.sandwich).toBeUndefined();
+    // Some content was still returned, fits cap
+    expect(r.code).toBeDefined();
+    expect(r.codeTokens).toBeLessThanOrEqual(800);
+  });
+
+  it('does not regress: small-function full expansion still works', () => {
+    // Small function (entity 1-30, fits in 800-token cap with room).
+    const rankedResults = [{
+      file: filename,
+      startLine: 5,
+      endLine: 8,
+      score: 0.9,
+      metadata: { file: filename, startLine: 5, endLine: 8, name: null, type: 'code' },
+    }];
+
+    const response = packageForAgent(rankedResults, {}, {
+      query: 'whatever',
+      regex: 'filler',
+      format: 'agent_full',
+      tokenBudget: 800,
+      projectRoot: tmpRoot,
+      codeGraphRepo: makeCodeGraphRepo({ start: 1, end: 30 }),
+    });
+
+    const r = response.results[0];
+    // Small entity fits → 'full' expansion (whole entity), not sandwich
+    expect(r.expansionKind).toBe('full');
+    expect(r.sandwich).toBeUndefined();
+    expect(r.expanded).toBe(true);
+  });
+
+  it('no-match (empty results) behavior is unchanged', () => {
+    const response = packageForAgent([], {}, {
+      query: 'nothing matches',
+      regex: 'NOMATCH',
+      format: 'agent_full',
+      tokenBudget: 4000,
+      projectRoot: tmpRoot,
+    });
+    expect(response.format).toBe('agent');
+    expect(response.totalResults).toBe(0);
+    expect(response.results).toEqual([]);
   });
 });
