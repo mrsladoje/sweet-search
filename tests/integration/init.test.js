@@ -292,10 +292,21 @@ describe('downloadModelsForProfile', () => {
   });
 
   it('returns 7 model results for full profile by default (opt-in rerankers excluded, using cache)', async () => {
-    // Skip when model cache does not exist (CI without pre-cached models)
+    // Skip when ANY of the full-profile model caches is missing (CI without
+    // pre-cached models). Pre-Phase-4 this only checked the standard model;
+    // adding lateon-code-edge to the full profile means CI runners that
+    // happen to have the standard cached (from earlier test runs in the same
+    // file) but NOT the edge would no longer skip — they would proceed to
+    // download the missing edge model from HF, easily blowing past the 30s
+    // testTimeout. Cover both LI variants to keep "skip when uncached"
+    // working as the test header documents.
     const cacheRoot = join(process.env.HOME || '', '.cache', 'sweet-search', 'models');
-    if (!existsSync(join(cacheRoot, 'lightonai--LateOn-Code'))) {
-      return; // models not cached — skip
+    const requiredCacheDirs = [
+      'lightonai--LateOn-Code',
+      'lightonai--LateOn-Code-edge',
+    ];
+    if (requiredCacheDirs.some((d) => !existsSync(join(cacheRoot, d)))) {
+      return; // models not all cached — skip
     }
 
     // Clear opt-in env vars so we see the default-profile set (7 models,
