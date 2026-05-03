@@ -28,6 +28,10 @@ if (args[0] === 'init') {
   // Hybrid span-selection reader; runs in JS (depends on LI index + ranking).
   const { handleReadSemanticCli } = await import('./search/search-read-semantic.js');
   await handleReadSemanticCli(args.slice(1));
+} else if (args[0] === '--serve' || args[0] === '--stop') {
+  // Warm search server lifecycle is implemented in JS.
+  const { runCli } = await import('./search/index.js');
+  await runCli(args);
 } else if (args[0] === '--help' || args[0] === '-h' || args.length === 0) {
   console.log(`sweet-search — hybrid code search engine
 

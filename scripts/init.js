@@ -23,6 +23,16 @@ import {
   isDedupAvailable, getDedupLoadError, computeFingerprints, clusterFingerprints,
   DEDUP_CONFIG,
 } from '../core/infrastructure/index.js';
+import {
+  LI_MODEL_EDGE,
+  LI_MODEL_NONE,
+  LI_MODEL_STANDARD,
+  VALID_LI_MODELS,
+  VALID_RERANK_POLICIES,
+  normalizeLiModel,
+  normalizePolicy,
+  recommendInitDefaults,
+} from '../core/ranking/late-interaction-policy.js';
 import { describeDedupConfig } from '../core/infrastructure/index.js';
 import { verifyRuntime, getMaxsimTier, getRouterType } from './verify-runtime.js';
 
@@ -48,6 +58,9 @@ export function parseInitArgs(args) {
     skipDedup: false,
     skipPrewarmHook: false,
     skipCuda: false,
+    liModel: null,           // Phase 4: --li-model standard|edge|none (raw user input; 'standard' aliased to 'lateon-code')
+    searchReranking: null,   // Phase 4: --search-reranking auto|on|off
+    wizard: false,           // Phase 4: --wizard runs interactive prompts
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -58,6 +71,16 @@ export function parseInitArgs(args) {
       result.profile = args[++i] || null;
     } else if (arg.startsWith('--profile=')) {
       result.profile = arg.split('=')[1];
+    } else if (arg === '--li-model') {
+      result.liModel = args[++i] || null;
+    } else if (arg.startsWith('--li-model=')) {
+      result.liModel = arg.split('=')[1];
+    } else if (arg === '--search-reranking') {
+      result.searchReranking = args[++i] || null;
+    } else if (arg.startsWith('--search-reranking=')) {
+      result.searchReranking = arg.split('=')[1];
+    } else if (arg === '--wizard') {
+      result.wizard = true;
     } else if (arg === '--verify-deep') {
       result.verifyDeep = true;
     } else if (arg === '--force') {
@@ -158,6 +181,234 @@ export function writeInitConfig(dataDir, config) {
 }
 
 // ---------------------------------------------------------------------------
+// LI policy resolution (Phase 4)
+//
+// Two persisted choices land in `.sweet-search/config.json::runtime.li`:
+//   - `model`            : 'lateon-code' | 'lateon-code-edge' | 'none'
+//   - `searchReranking`  : 'auto' | 'on' | 'off'
+//
+// Precedence (most-specific wins):
+//   1. CLI flag (--li-model, --search-reranking) — explicit, persisted
+//   2. --wizard interactive prompt (when TTY); non-TTY falls back to (3)/(4)
+//   3. Existing persisted config (re-uses prior choice across re-runs)
+//   4. Hardware-aware recommendation (recommendInitDefaults)
+// ---------------------------------------------------------------------------
+
+const LI_MODEL_ALIASES = {
+  standard: LI_MODEL_STANDARD,
+  full: LI_MODEL_STANDARD,
+  edge: LI_MODEL_EDGE,
+  small: LI_MODEL_EDGE,
+  none: LI_MODEL_NONE,
+  off: LI_MODEL_NONE,
+  disable: LI_MODEL_NONE,
+};
+
+/**
+ * Coerce a user-facing model alias to a canonical id. Returns null when
+ * the input is unrecognized so the caller can produce a clear error.
+ */
+export function coerceLiModelChoice(value) {
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toLowerCase();
+  if (LI_MODEL_ALIASES[v]) return LI_MODEL_ALIASES[v];
+  return normalizeLiModel(v);
+}
+
+/**
+ * Read the LI policy section from a parsed init config (the format written
+ * by `buildConfig`). Defensive — returns an empty object when the section
+ * is missing or malformed.
+ */
+function readPersistedLi(existingConfig) {
+  const li = existingConfig?.runtime?.li;
+  if (!li || typeof li !== 'object') return {};
+  const out = {};
+  if (typeof li.model === 'string' && VALID_LI_MODELS.includes(li.model)) {
+    out.liModel = li.model;
+  }
+  if (typeof li.searchReranking === 'string' && VALID_RERANK_POLICIES.includes(li.searchReranking)) {
+    out.searchReranking = li.searchReranking;
+  }
+  return out;
+}
+
+/**
+ * Resolve the LI model + rerank policy from CLI args, persisted config,
+ * and hardware capability. Pure (modulo `wizardFn` which performs I/O when
+ * --wizard is set). Suitable for unit testing — pass a fake `wizardFn` and
+ * a fixed capability snapshot.
+ *
+ * @param {object} input
+ * @param {object} input.parsed             - parseInitArgs result
+ * @param {object|null} input.existingConfig - prior `.sweet-search/config.json`
+ * @param {object} input.capability         - detectHardwareCapability snapshot
+ * @param {boolean} input.isTTY             - whether stdin is a TTY (for wizard fallback)
+ * @param {Function} [input.wizardFn]       - async ({existingConfig, capability, recommendation, defaults}) => {liModel, searchReranking}
+ *
+ * @returns {Promise<{liModel: string, searchReranking: string, source: string, recommendation: object}>}
+ */
+export async function resolveLiPolicyChoices({
+  parsed,
+  existingConfig,
+  capability,
+  isTTY,
+  wizardFn,
+}) {
+  const recommendation = recommendInitDefaults(capability ?? {});
+  const persisted = readPersistedLi(existingConfig);
+
+  // (1) CLI flags — validate now, fail fast with a clear message so users
+  //     don't need to dig into the resolver. Wizard runs after CLI flags
+  //     are validated so a bad --li-model never reaches the prompt.
+  let cliModel = null;
+  if (parsed.liModel) {
+    cliModel = coerceLiModelChoice(parsed.liModel);
+    if (cliModel == null) {
+      throw new Error(
+        `Invalid --li-model "${parsed.liModel}". Valid choices: ${VALID_LI_MODELS.join(', ')} (aliases: standard, edge, none).`,
+      );
+    }
+  }
+  let cliReranking = null;
+  if (parsed.searchReranking) {
+    const v = String(parsed.searchReranking).trim().toLowerCase();
+    if (!VALID_RERANK_POLICIES.includes(v)) {
+      throw new Error(
+        `Invalid --search-reranking "${parsed.searchReranking}". Valid choices: ${VALID_RERANK_POLICIES.join(', ')}.`,
+      );
+    }
+    cliReranking = v;
+  }
+
+  // (2) --wizard. Only meaningful on a TTY; on a non-TTY, fall through
+  //     silently to (3)/(4) — wizard exists for humans, not CI.
+  let wizardChoice = null;
+  if (parsed.wizard && isTTY && typeof wizardFn === 'function') {
+    wizardChoice = await wizardFn({
+      existingConfig,
+      capability,
+      recommendation,
+      defaults: {
+        liModel: persisted.liModel ?? recommendation.liModel,
+        searchReranking: persisted.searchReranking ?? recommendation.searchReranking,
+      },
+    });
+  } else if (parsed.wizard && !isTTY) {
+    process.stderr.write(
+      '[init] --wizard requested on a non-TTY stdin; falling back to persisted config / hardware recommendation.\n',
+    );
+  }
+
+  // Final selection — first non-null source for each field wins.
+  const liModel =
+    cliModel
+    ?? wizardChoice?.liModel
+    ?? persisted.liModel
+    ?? recommendation.liModel;
+
+  const searchReranking =
+    cliReranking
+    ?? wizardChoice?.searchReranking
+    ?? persisted.searchReranking
+    ?? recommendation.searchReranking;
+
+  // Source label for logging — "where did each field actually come from".
+  const sourceFor = (cli, wiz, per) => {
+    if (cli) return 'cli';
+    if (wiz) return 'wizard';
+    if (per) return 'persisted';
+    return 'recommendation';
+  };
+  const source = {
+    liModel: sourceFor(cliModel, wizardChoice?.liModel, persisted.liModel),
+    searchReranking: sourceFor(cliReranking, wizardChoice?.searchReranking, persisted.searchReranking),
+  };
+
+  return { liModel, searchReranking, source, recommendation };
+}
+
+/**
+ * Interactive prompt — readline/promises. Caller has already verified
+ * `process.stdin.isTTY`. Echoes the recommendation, accepts blank input
+ * as the default, and validates each prompt before persisting.
+ *
+ * Exit ergonomics: blank input always defaults; ^C is allowed to throw,
+ * caller treats it as "no choice made" and re-runs without --wizard.
+ */
+export async function runInitWizard({ existingConfig, capability, recommendation, defaults }) {
+  const { createInterface } = await import('node:readline/promises');
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    process.stdout.write('\n');
+    process.stdout.write('Sweet Search init — interactive setup\n');
+    process.stdout.write('---------------------------------------\n');
+    if (capability?.brandString) {
+      process.stdout.write(`Hardware: ${capability.brandString} (${capability.totalMemGB?.toFixed?.(0) ?? '?'} GB RAM)\n`);
+    }
+    if (recommendation?.reason) {
+      process.stdout.write(`Recommendation: ${recommendation.reason}\n`);
+    }
+    if (existingConfig?.runtime?.li) {
+      process.stdout.write(
+        `Currently persisted: liModel=${existingConfig.runtime.li.model ?? '?'}, `
+        + `searchReranking=${existingConfig.runtime.li.searchReranking ?? '?'}\n`,
+      );
+    }
+    process.stdout.write('\n');
+
+    // ---- LI model prompt ----
+    const modelPrompt =
+      `Late-interaction model? [standard / edge / none] (default: ${defaults.liModel}): `;
+    const liModelRaw = (await rl.question(modelPrompt)).trim() || defaults.liModel;
+    const liModel = coerceLiModelChoice(liModelRaw);
+    if (!liModel) {
+      throw new Error(
+        `Invalid model choice "${liModelRaw}". Valid: ${VALID_LI_MODELS.join(', ')} (aliases: standard, edge, none).`,
+      );
+    }
+
+    // ---- Search reranking prompt ----
+    // Suppress when liModel === 'none' — without an LI index there's
+    // nothing to rerank, so persist 'off' explicitly.
+    let searchReranking;
+    if (liModel === LI_MODEL_NONE) {
+      process.stdout.write('  (skipping search-reranking prompt — liModel=none implies no rerank)\n');
+      searchReranking = 'off';
+    } else {
+      const rerankPrompt =
+        `Search-time LI reranking? [auto / on / off] (default: ${defaults.searchReranking}): `;
+      const raw = (await rl.question(rerankPrompt)).trim() || defaults.searchReranking;
+      const v = raw.toLowerCase();
+      if (!VALID_RERANK_POLICIES.includes(v)) {
+        throw new Error(
+          `Invalid rerank choice "${raw}". Valid: ${VALID_RERANK_POLICIES.join(', ')}.`,
+        );
+      }
+      searchReranking = v;
+    }
+
+    // ---- Echo + confirm ----
+    process.stdout.write('\n');
+    process.stdout.write(`Plan: liModel=${liModel}, searchReranking=${searchReranking}\n`);
+    if (liModel === LI_MODEL_EDGE && searchReranking === 'on') {
+      process.stdout.write(
+        'Note: edge LI rerank benchmarked below no-rerank on gencodesearchnet '
+        + '(80.65% vs 82.91% MRR). "auto" is recommended.\n',
+      );
+    }
+    const confirm = (await rl.question('Proceed? [Y/n]: ')).trim().toLowerCase();
+    if (confirm === 'n' || confirm === 'no') {
+      throw new Error('Wizard cancelled by user.');
+    }
+
+    return { liModel, searchReranking };
+  } finally {
+    rl.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Profile resolution
 // ---------------------------------------------------------------------------
 
@@ -219,8 +470,36 @@ export function checkNativeStatus() {
 // Model download
 // ---------------------------------------------------------------------------
 
+/**
+ * Filter the profile's model keys based on the resolved `liModel` choice.
+ * - 'lateon-code'      → exclude all lateon-code-edge* keys (don't fetch the edge variant)
+ * - 'lateon-code-edge' → exclude all standard lateon-code* keys (don't fetch the standard 768d backbone)
+ * - 'none'             → exclude every lateon-* key (search rerank disabled product-wide)
+ *
+ * Order-preserving + non-mutating: returns a new array.
+ */
+export function filterModelKeysForLiChoice(modelKeys, liModel) {
+  if (liModel === LI_MODEL_NONE) {
+    return modelKeys.filter((k) => !k.startsWith('lateon-code'));
+  }
+  if (liModel === LI_MODEL_STANDARD) {
+    return modelKeys.filter((k) => !k.startsWith('lateon-code-edge'));
+  }
+  if (liModel === LI_MODEL_EDGE) {
+    // Keep only edge-flavoured keys; everything matching `lateon-code` but
+    // not `lateon-code-edge` is a standard variant.
+    return modelKeys.filter(
+      (k) => !k.startsWith('lateon-code') || k.startsWith('lateon-code-edge'),
+    );
+  }
+  return modelKeys;
+}
+
 export async function downloadModelsForProfile(profile, options = {}) {
-  const modelKeys = getModelsForProfile(profile);
+  let modelKeys = getModelsForProfile(profile);
+  if (options.liModel) {
+    modelKeys = filterModelKeysForLiChoice(modelKeys, options.liModel);
+  }
   if (modelKeys.length === 0) {
     return { results: new Map(), totalDownloaded: 0, totalCached: 0, failures: [] };
   }
@@ -278,6 +557,7 @@ function printReport(report) {
   const {
     profile, maxsimTier, routerType, models, verification, runtimeDownloads,
     capability, cascadeReport, dedupReport, prewarmHookReport, skillReport,
+    liChoices,
   } = report;
 
   console.log('');
@@ -291,6 +571,20 @@ function printReport(report) {
   }
   console.log(`  MaxSim:               ${maxsimTier}`);
   console.log(`  Router:               ${routerType}`);
+
+  if (liChoices) {
+    const { liModel, searchReranking, source } = liChoices;
+    const srcStr = source
+      ? ` (model: ${source.liModel}, rerank: ${source.searchReranking})`
+      : '';
+    console.log(`  LI model:             ${liModel}${srcStr}`);
+    console.log(`  LI search rerank:     ${searchReranking}`);
+    if (liModel === LI_MODEL_NONE) {
+      console.log('                        ↳ rerank, read-semantic, ColGrep all disabled');
+    } else if (liModel === LI_MODEL_EDGE && searchReranking === 'on') {
+      console.log('                        ↳ NOTE: edge LI rerank benchmarked below no-rerank — consider "auto"');
+    }
+  }
 
   // NVIDIA / CUDA status line. Shown only when it's actionable:
   //   cudaAvailable=true  → confirm GPU detection (user-visible win)
@@ -606,6 +900,18 @@ Usage:
 
 Options:
   --profile <profile>       Install profile: core, full (default: full)
+  --li-model <choice>       Late-interaction model: standard | edge | none.
+                            Aliases: 'standard' = lateon-code (149M, 128d, accuracy
+                            default), 'edge' = lateon-code-edge (17M, 48d, smaller +
+                            faster), 'none' = disable LI rerank, read-semantic and
+                            ColGrep entirely. Persisted to .sweet-search/config.json.
+  --search-reranking <p>    Search-time LI rerank policy: auto | on | off.
+                            'auto' resolves from the LI index manifest at search time
+                            (standard index → on, edge index → off, missing/mismatched
+                            → off). 'on' / 'off' are explicit overrides. Persisted.
+  --wizard                  Run interactive setup prompts for --li-model and
+                            --search-reranking. Falls back to persisted/recommended
+                            defaults on a non-TTY stdin (CI-safe).
   --verify-deep             Run deep verification (load modules, verify checksums)
   --force                   Re-download all models even if cached
   --build-coreml-cascade    (M3+ Apple Silicon, local builds only) Trace the
@@ -688,6 +994,39 @@ export async function runInit(args) {
   const profile = resolveProfile(parsed.profile, existingConfig);
   process.stderr.write(`[init] Profile: ${profile}\n`);
 
+  // 4.5. Resolve LI policy (Phase 4 — `--li-model`, `--search-reranking`,
+  //      `--wizard`). Done early so the model-fetch loop, cascade fetch,
+  //      and final config write all see the same choices. Uses an early
+  //      hardware capability snapshot for the recommendation; the snapshot
+  //      is recomputed later for the runtime config (cheap + cacheable).
+  const earlyCapability = detectHardwareCapability();
+  let liChoices;
+  try {
+    liChoices = await resolveLiPolicyChoices({
+      parsed,
+      existingConfig,
+      capability: earlyCapability,
+      isTTY: process.stdin.isTTY === true,
+      wizardFn: runInitWizard,
+    });
+  } catch (err) {
+    process.stderr.write(`[init] LI policy resolution failed: ${err.message}\n`);
+    process.exit(1);
+  }
+  process.stderr.write(
+    `[init] LI policy: model=${liChoices.liModel} (${liChoices.source.liModel}), `
+    + `searchReranking=${liChoices.searchReranking} (${liChoices.source.searchReranking})\n`,
+  );
+  if (liChoices.source.liModel === 'recommendation' && liChoices.recommendation?.reason) {
+    process.stderr.write(`[init]   recommendation reason: ${liChoices.recommendation.reason}\n`);
+  }
+  if (liChoices.liModel === LI_MODEL_NONE) {
+    process.stderr.write(
+      '[init]   note: liModel=none disables LI rerank, read-semantic and ColGrep — '
+      + 're-run with --li-model standard|edge to re-enable.\n',
+    );
+  }
+
   // 5. Verify runtime assets (WASM, router, etc.)
   const assetCheck = verifyRuntimeAssets(PACKAGE_ROOT);
   if (!assetCheck.ok) {
@@ -709,8 +1048,18 @@ export async function runInit(args) {
     process.stderr.write(`[init] Router type: ${routerType}\n`);
   }
 
-  // 7. Download models for profile
-  const modelKeys = getModelsForProfile(profile);
+  // 7. Download models for profile (filtered by LI choice).
+  //    `liModel === 'none'` skips every lateon-* key; 'standard' skips edge
+  //    variants; 'edge' skips standard variants. Saves disk + bandwidth on
+  //    constrained installs.
+  const allModelKeys = getModelsForProfile(profile);
+  const modelKeys = filterModelKeysForLiChoice(allModelKeys, liChoices.liModel);
+  const skippedByLiChoice = allModelKeys.filter((k) => !modelKeys.includes(k));
+  if (skippedByLiChoice.length > 0 && parsed.verbose) {
+    process.stderr.write(
+      `[init]   liModel=${liChoices.liModel} → skipping ${skippedByLiChoice.length} model key(s): ${skippedByLiChoice.join(', ')}\n`,
+    );
+  }
   const skippedOptIns = getSkippedOptInModels(profile);
   let modelResults = new Map();
 
@@ -732,6 +1081,7 @@ export async function runInit(args) {
     process.stderr.write(`[init] Downloading models for profile "${profile}"...\n`);
     const downloadResult = await downloadModelsForProfile(profile, {
       force: parsed.force,
+      liModel: liChoices.liModel,
     });
 
     modelResults = downloadResult.results;
@@ -748,6 +1098,7 @@ export async function runInit(args) {
         profile, maxsimTier, routerType, nativeStatus,
         modelResults, verification: { type: 'none', timestamp: new Date().toISOString(), checks: [] },
         failed: true,
+        liChoices,
       });
       writeInitConfig(dataDir, partialConfig);
 
@@ -790,7 +1141,17 @@ export async function runInit(args) {
   // from the addon's point of view.
   const capability = detectHardwareCapability();
   let cascadeReport = { status: 'skipped', detail: 'Cascade inspection skipped' };
-  if (!parsed.skipCoremlCascade && profile !== 'core') {
+  // Phase 4: liModel === 'none' opts out of the cascade entirely (no LI rerank,
+  // no read-semantic, no ColGrep — the only consumer of the LI cascade family).
+  // The embed cascade is still useful for fast NomicBERT inference, but
+  // without an LI consumer the "auto" family resolution would still pick
+  // standard or edge LI tarballs we'll never use. Skipping outright is
+  // cleaner and saves ~600 MB.
+  const skipCascadeForLiNone = liChoices.liModel === LI_MODEL_NONE;
+  if (skipCascadeForLiNone && !parsed.skipCoremlCascade && profile !== 'core' && parsed.verbose) {
+    process.stderr.write('[init]   liModel=none → skipping CoreML cascade fetch\n');
+  }
+  if (!parsed.skipCoremlCascade && !skipCascadeForLiNone && profile !== 'core') {
     cascadeReport = getCoremlCascadeReport();
 
     if (cascadeReport.applicable && cascadeReport.status !== 'present') {
@@ -818,6 +1179,11 @@ export async function runInit(args) {
           const fetchResult = await fetchCoremlCascade({
             force: parsed.force,
             allowDownload: true, // init-time bypass — see downloadModelsForProfile comment
+            // Phase 4: pass the user's persisted choice as the cascade variant
+            // selector. Without this the cascade would default to whatever
+            // SWEET_SEARCH_LATE_INTERACTION_MODEL says, which may diverge
+            // from what the user just chose interactively or via --li-model.
+            liVariantKey: liChoices.liModel,
           });
           if (fetchResult.status === 'fetched' || fetchResult.status === 'cached' || fetchResult.status === 'partial') {
             const total = fetchResult.fetched + fetchResult.cached;
@@ -884,6 +1250,7 @@ export async function runInit(args) {
     capability,
     cascadeReport,
     dedupReport,
+    liChoices,
   });
   writeInitConfig(dataDir, preVerifyConfig);
 
@@ -905,6 +1272,7 @@ export async function runInit(args) {
     capability,
     cascadeReport,
     dedupReport,
+    liChoices,
   });
   writeInitConfig(dataDir, finalConfig);
 
@@ -979,6 +1347,7 @@ export async function runInit(args) {
     dedupReport,
     prewarmHookReport,
     skillReport,
+    liChoices,
   });
 }
 
@@ -1031,7 +1400,7 @@ function runCoremlCascadeBuild(options = {}) {
 function buildConfig({
   profile, maxsimTier, routerType, nativeStatus, modelResults,
   allowRuntimeModelDownload, verification, failed,
-  capability, cascadeReport, dedupReport,
+  capability, cascadeReport, dedupReport, liChoices,
 }) {
   const pkg = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf-8'));
 
@@ -1081,6 +1450,18 @@ function buildConfig({
       status: dedupReport.status,
       detail: dedupReport.detail,
       smokeTest: dedupReport.smokeTest ?? null,
+    };
+  }
+  if (liChoices) {
+    // Phase 4: persisted LI policy. Read at runtime by SweetSearch via
+    // `core/infrastructure/init-config.js::readPersistedLiPolicy`. The
+    // `source` block is diagnostic only — it tells us which input wins
+    // on the next re-run.
+    runtime.li = {
+      model: liChoices.liModel,
+      searchReranking: liChoices.searchReranking,
+      source: liChoices.source ?? null,
+      recommendation: liChoices.recommendation ?? null,
     };
   }
 

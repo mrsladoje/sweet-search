@@ -1,14 +1,24 @@
 //! ModernBERT late interaction model — LateOn-Code inference via candle.
 //!
-//! Loads FP32 safetensors weights (backbone + projection) and runs
-//! forward inference natively.
+//! Loads FP32 safetensors weights (backbone + N-stage projection) and
+//! runs forward inference natively. Two model variants are supported:
 //!
-//! Pipeline:
-//!   input_ids → ModernBERT encoder (22 layers) → projection (768d → 128d)
-//!   → L2_normalize per token → per-token 128d vectors
+//! | Variant            | Backbone | Projection         | Output |
+//! |--------------------|----------|--------------------|--------|
+//! | `lateon-code`      | 768d×22L | 1 stage (768→128)  | 128d   |
+//! | `lateon-code-edge` | 256d×7L  | 2 stage (256→512→48) | 48d  |
 //!
-//! The backbone safetensors comes from lightonai/LateOn-Code (model.safetensors)
-//! and the projection from 1_Dense/model.safetensors.
+//! Pipeline (general):
+//!   input_ids → ModernBERT encoder → projection chain → L2_normalize
+//!   per token → per-token `token_dim` vectors
+//!
+//! Backbone dim, layer count, etc. are read dynamically from the
+//! supplied `config.json` so a single struct serves both variants.
+//! The list of projection paths and their expected output dims is
+//! supplied by the JS caller (see
+//! `core/infrastructure/native-inference.js::resolveNativeLiVariant`)
+//! so Rust validates shapes against a manifest rather than hardcoding
+//! a single (out_dim, in_dim) pair.
 
 use candle_core::{DType, Device, IndexOp, Tensor, D};
 use candle_nn::VarBuilder;
@@ -29,14 +39,21 @@ use super::{build_device, metal_lock, optimal_dtype, select_device, ModelKind};
 /// `super::metal_lock()` — a process-wide mutex shared with the embedding
 /// model. See `metal_lock` for why per-model locks aren't enough.
 ///
+/// `projection_weights` is the projection chain applied after the
+/// backbone — one tensor per stage. The standard `lateon-code` variant
+/// has one stage (768→128); the `lateon-code-edge` variant has two
+/// (256→512→48). Forward applies them in order via fold; `token_dim`
+/// is the out-dim of the final stage.
+///
 /// When the `coreml` feature is enabled AND
 /// `NativeLateInteractionModel::load` is invoked with an explicit
 /// `coreml_cascade_dir` containing one or more
-/// `li_modernbert_b{B}_s{S}_fp16.mlpackage` files, `coreml` holds a
-/// cascade of lazy-loaded CPU+NE backends used whenever any variant
-/// fits the incoming batch. The candle backbone is kept loaded
-/// unconditionally as the fallback for batches exceeding the largest
-/// variant.
+/// `li_modernbert_b{B}_s{S}_fp16.mlpackage` (standard) or
+/// `li_modernbert_edge_b{B}_s{S}_fp16.mlpackage` (edge) files,
+/// `coreml` holds a cascade of lazy-loaded CPU+NE backends used
+/// whenever any variant fits the incoming batch. The candle backbone
+/// is kept loaded unconditionally as the fallback for batches
+/// exceeding the largest variant.
 ///
 /// As with the embedding model, the cascade dir is passed down from
 /// the JS infrastructure layer
@@ -46,7 +63,7 @@ use super::{build_device, metal_lock, optimal_dtype, select_device, ModelKind};
 /// docs/DDD_ARCHITECTURE.md.
 struct LiInner {
     model: modernbert::ModernBert,
-    projection_weight: Tensor,
+    projection_weights: Vec<Tensor>,
     #[cfg(feature = "coreml")]
     coreml: Option<CoremlLi>,
     device: Device,
@@ -73,10 +90,17 @@ impl Drop for LiInner {
 /// compile lazily on first dispatch. See the matching comment in
 /// `embedding_model.rs::try_load_coreml_embedding_from_dir` for details.
 ///
-/// Expected filename format:
-///   li_modernbert_b{BATCH}_s{SEQ}_fp16.mlpackage
+/// Expected filename formats:
+///   `li_modernbert_b{BATCH}_s{SEQ}_fp16.mlpackage`        — standard 128d
+///   `li_modernbert_edge_b{BATCH}_s{SEQ}_fp16.mlpackage`   — edge 48d
+///
+/// `expected_token_dim` is the active model's per-token output dim
+/// (from JS `LATE_INTERACTION_CONFIG`). Variants whose filename
+/// implies a different `token_dim` are ignored — JS always points us
+/// at a per-variant subdir (`coreml-cascade/li/` vs `li-edge/`) so any
+/// mismatch is a packaging bug worth flagging without faulting.
 #[cfg(feature = "coreml")]
-fn try_load_coreml_li_from_dir(dir: &str) -> Option<CoremlLi> {
+fn try_load_coreml_li_from_dir(dir: &str, expected_token_dim: usize) -> Option<CoremlLi> {
     let dir_path = std::path::PathBuf::from(dir);
 
     let entries = match std::fs::read_dir(&dir_path) {
@@ -91,54 +115,95 @@ fn try_load_coreml_li_from_dir(dir: &str) -> Option<CoremlLi> {
     };
 
     let mut variants: Vec<CoremlLiVariant> = Vec::new();
+    let mut skipped_wrong_dim = 0usize;
     for entry in entries.flatten() {
         let path = entry.path();
         let fname = match path.file_name().and_then(|n| n.to_str()) {
             Some(s) => s,
             None => continue,
         };
-        if let Some((batch, seq)) = parse_li_variant_filename(fname) {
-            variants.push(CoremlLiVariant::new(batch, seq, path));
+        if let Some((batch, seq, dim)) = parse_li_variant_filename(fname) {
+            if dim != expected_token_dim {
+                skipped_wrong_dim += 1;
+                continue;
+            }
+            variants.push(CoremlLiVariant::new(batch, seq, dim, path));
         }
     }
 
     if variants.is_empty() {
-        eprintln!(
-            "[NativeLI] CoreML cascade dir {} contained no li_modernbert_b{{B}}_s{{S}}_fp16.mlpackage files — falling back to candle",
-            dir,
-        );
+        if skipped_wrong_dim > 0 {
+            eprintln!(
+                "[NativeLI] CoreML cascade dir {} contained {} variants but all had wrong token_dim (expected {}d) — falling back to candle",
+                dir, skipped_wrong_dim, expected_token_dim,
+            );
+        } else {
+            eprintln!(
+                "[NativeLI] CoreML cascade dir {} contained no recognised li_modernbert*_b{{B}}_s{{S}}_fp16.mlpackage files — falling back to candle",
+                dir,
+            );
+        }
         return None;
     }
 
-    let cascade = CoremlLi::from_variants(variants);
+    let cascade = match CoremlLi::from_variants(variants) {
+        Some(c) => c,
+        None => {
+            eprintln!(
+                "[NativeLI] CoreML cascade dir {} produced inconsistent variants — falling back to candle",
+                dir,
+            );
+            return None;
+        }
+    };
     let shapes: Vec<String> = cascade
         .variant_shapes()
         .map(|(b, s)| format!("b{}×s{}", b, s))
         .collect();
     eprintln!(
-        "[NativeLI] CoreML cascade loaded: {} variants [{}] (lazy — each compiles on first use)",
+        "[NativeLI] CoreML cascade loaded: {} variants @{}d [{}] (lazy — each compiles on first use)",
         cascade.len(),
+        cascade.token_dim(),
         shapes.join(", "),
     );
     Some(cascade)
 }
 
-/// Parse `li_modernbert_b{BATCH}_s{SEQ}_fp16.mlpackage` into `(batch, seq)`.
+/// Parse a CoreML LI variant filename into `(batch, seq, token_dim)`.
+///
+/// Recognises:
+///   `li_modernbert_b{B}_s{S}_fp16.mlpackage`        → token_dim=128
+///   `li_modernbert_edge_b{B}_s{S}_fp16.mlpackage`   → token_dim=48
+///
+/// Returns `None` for unrecognised filenames.
 #[cfg(feature = "coreml")]
-fn parse_li_variant_filename(fname: &str) -> Option<(usize, usize)> {
-    let rest = fname.strip_prefix("li_modernbert_b")?;
-    let rest = rest.strip_suffix("_fp16.mlpackage")?;
-    let (batch_str, seq_part) = rest.split_once("_s")?;
+fn parse_li_variant_filename(fname: &str) -> Option<(usize, usize, usize)> {
+    let rest = fname.strip_suffix("_fp16.mlpackage")?;
+    // Order matters: try the longer "edge" prefix first so we don't
+    // accidentally match it as the standard prefix + "edge_b…" leftover.
+    let (token_dim, body) = if let Some(r) = rest.strip_prefix("li_modernbert_edge_b") {
+        (48usize, r)
+    } else if let Some(r) = rest.strip_prefix("li_modernbert_b") {
+        (128usize, r)
+    } else {
+        return None;
+    };
+    let (batch_str, seq_part) = body.split_once("_s")?;
     let batch: usize = batch_str.parse().ok()?;
     let seq: usize = seq_part.parse().ok()?;
-    Some((batch, seq))
+    Some((batch, seq, token_dim))
 }
 
 /// Startup parity check between candle and CoreML for LI. Runs one
 /// synthetic batch through both backends and returns the mean cosine
 /// similarity across active-token pairs. Because both backends emit
 /// per-token L2-normalised vectors, each per-token cosine is the dot
-/// product of the two 128-d outputs.
+/// product of the two `token_dim`-dim outputs.
+///
+/// Works for any number of projection stages — applies them in a fold
+/// matching `LiEncodeTask::compute`, so this verifies both the
+/// standard 1-stage `lateon-code` and 2-stage `lateon-code-edge`
+/// chains against their respective traced CoreML outputs.
 ///
 /// Uses the same vocab-safe fixture as the embedding parity check —
 /// 64 active positions with [CLS]+common-subword-ids+[SEP] — so the
@@ -148,7 +213,7 @@ fn parse_li_variant_filename(fname: &str) -> Option<(usize, usize)> {
 #[cfg(feature = "coreml")]
 fn li_parity_cosine(
     candle_model: &modernbert::ModernBert,
-    projection_weight: &Tensor,
+    projection_weights: &[Tensor],
     device: &Device,
     backbone_dim: usize,
     token_dim: usize,
@@ -171,7 +236,7 @@ fn li_parity_cosine(
     ids_row[ACTIVE - 1] = 102; // [SEP]
     mask_row[ACTIVE - 1] = 1;
 
-    // Candle forward + projection + per-token normalize. Mirrors
+    // Candle forward + projection chain + per-token normalize. Mirrors
     // LiEncodeTask::compute but without the Float32Array packaging and
     // active-token slicing — we just need the [ACTIVE, token_dim]
     // slice of normalised per-token vectors to compare against CoreML.
@@ -198,16 +263,20 @@ fn li_parity_cosine(
     let hidden = candle_model
         .forward(&ids_tensor, &mask_u8)
         .map_err(|e| format!("candle forward: {e}"))?;
-    let proj_t = projection_weight
-        .t()
-        .map_err(|e| format!("projection transpose: {e}"))?;
-    let hidden_2d = hidden
+    let mut projected = hidden
         .reshape((seq_len, backbone_dim))
         .map_err(|e| format!("hidden reshape: {e}"))?;
-    let projected = hidden_2d
-        .matmul(&proj_t)
-        .and_then(|t| t.reshape((1, seq_len, token_dim)))
-        .map_err(|e| format!("projection matmul: {e}"))?;
+    for (i, w) in projection_weights.iter().enumerate() {
+        let w_t = w
+            .t()
+            .map_err(|e| format!("projection {} transpose: {e}", i))?;
+        projected = projected
+            .matmul(&w_t)
+            .map_err(|e| format!("projection {} matmul: {e}", i))?;
+    }
+    let projected = projected
+        .reshape((1, seq_len, token_dim))
+        .map_err(|e| format!("projection reshape: {e}"))?;
     let norm = projected
         .sqr()
         .and_then(|t| t.sum_keepdim(D::Minus1))
@@ -286,16 +355,30 @@ impl NativeLateInteractionModel {
     ///
     /// # Arguments
     /// * `backbone_path` - Path to model.safetensors (FP32 backbone weights)
-    /// * `projection_path` - Path to 1_Dense/model.safetensors (projection weights)
+    /// * `projection_paths` - Ordered list of projection-stage paths.
+    ///   Standard `lateon-code` passes `[".../1_Dense/model.safetensors"]`;
+    ///   `lateon-code-edge` passes
+    ///   `[".../1_Dense/model.safetensors", ".../2_Dense/model.safetensors"]`.
+    ///   Must be non-empty.
+    /// * `projection_dims` - Expected per-stage output dim (`out_features`),
+    ///   one per `projection_paths` entry. Standard: `[128]`; edge: `[512, 48]`.
+    ///   Length must equal `projection_paths.len()`. Each stage's input dim
+    ///   is taken from the previous stage's output (or `config.hidden_size`
+    ///   for stage 0); shape mismatches against the safetensors content
+    ///   surface immediately at load.
     /// * `config_path` - Path to config.json (model architecture config)
     /// * `coreml_cascade_dir` - Optional path to a directory containing
-    ///   `li_modernbert_b{B}_s{S}_fp16.mlpackage` files. Same contract
-    ///   as `NativeEmbeddingModel::load` — see its doc comment for the
+    ///   `li_modernbert_b{B}_s{S}_fp16.mlpackage` (standard) or
+    ///   `li_modernbert_edge_b{B}_s{S}_fp16.mlpackage` (edge) files.
+    ///   The cascade's `token_dim` must match the final projection dim
+    ///   or the cascade is rejected. Same contract as
+    ///   `NativeEmbeddingModel::load` — see its doc comment for the
     ///   full rationale. `None` disables the CoreML path entirely.
     #[napi(factory)]
     pub fn load(
         backbone_path: String,
-        projection_path: String,
+        projection_paths: Vec<String>,
+        projection_dims: Vec<u32>,
         config_path: String,
         coreml_cascade_dir: Option<String>,
     ) -> Result<Self> {
@@ -303,7 +386,8 @@ impl NativeLateInteractionModel {
             .map_err(|e| Error::from_reason(format!("[NativeLI] Device init error: {e}")))?;
         Self::load_on_device(
             backbone_path,
-            projection_path,
+            projection_paths,
+            projection_dims,
             config_path,
             coreml_cascade_dir,
             device,
@@ -314,7 +398,8 @@ impl NativeLateInteractionModel {
     #[napi(factory)]
     pub fn load_with_device(
         backbone_path: String,
-        projection_path: String,
+        projection_paths: Vec<String>,
+        projection_dims: Vec<u32>,
         config_path: String,
         coreml_cascade_dir: Option<String>,
         device_kind: String,
@@ -326,7 +411,8 @@ impl NativeLateInteractionModel {
         })?;
         Self::load_on_device(
             backbone_path,
-            projection_path,
+            projection_paths,
+            projection_dims,
             config_path,
             coreml_cascade_dir,
             device,
@@ -335,7 +421,8 @@ impl NativeLateInteractionModel {
 
     fn load_on_device(
         backbone_path: String,
-        projection_path: String,
+        projection_paths: Vec<String>,
+        projection_dims: Vec<u32>,
         config_path: String,
         coreml_cascade_dir: Option<String>,
         device: Device,
@@ -343,6 +430,19 @@ impl NativeLateInteractionModel {
         #[cfg(not(feature = "coreml"))]
         {
             let _ = &coreml_cascade_dir;
+        }
+
+        if projection_paths.is_empty() {
+            return Err(Error::from_reason(
+                "[NativeLI] projection_paths must contain at least one stage".to_string(),
+            ));
+        }
+        if projection_paths.len() != projection_dims.len() {
+            return Err(Error::from_reason(format!(
+                "[NativeLI] projection_paths.len()={} != projection_dims.len()={}",
+                projection_paths.len(),
+                projection_dims.len(),
+            )));
         }
 
         let config_str = std::fs::read_to_string(&config_path).map_err(|e| {
@@ -384,25 +484,38 @@ impl NativeLateInteractionModel {
         let model = modernbert::ModernBert::load(vb, &config)
             .map_err(|e| Error::from_reason(format!("[NativeLI] Backbone load error: {e}")))?;
 
-        let proj_path = PathBuf::from(&projection_path);
-        let proj_vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(&[proj_path], dtype, &device).map_err(|e| {
-                Error::from_reason(format!(
-                    "[NativeLI] Failed to load projection from {projection_path}: {e}"
-                ))
-            })?
-        };
-
-        let projection_weight = proj_vb
-            .get((128, backbone_dim), "linear.weight")
-            .map_err(|e| {
-                Error::from_reason(format!("[NativeLI] Projection weight load error: {e}"))
-            })?;
+        // Load each projection stage in order. Each stage's expected
+        // input dim is the previous stage's output dim (or backbone_dim
+        // for the first), and the expected output dim comes from the
+        // JS-supplied projection_dims manifest. Shape mismatches against
+        // the safetensors are caught here.
+        let mut projection_weights: Vec<Tensor> = Vec::with_capacity(projection_paths.len());
+        let mut current_in_dim = backbone_dim;
+        for (i, path_str) in projection_paths.iter().enumerate() {
+            let proj_path = PathBuf::from(path_str);
+            let proj_vb = unsafe {
+                VarBuilder::from_mmaped_safetensors(&[proj_path], dtype, &device).map_err(|e| {
+                    Error::from_reason(format!(
+                        "[NativeLI] Failed to load projection stage {i} from {path_str}: {e}"
+                    ))
+                })?
+            };
+            let out_dim = projection_dims[i] as usize;
+            let weight = proj_vb
+                .get((out_dim, current_in_dim), "linear.weight")
+                .map_err(|e| {
+                    Error::from_reason(format!(
+                        "[NativeLI] Projection stage {i} weight load error \
+                         (expected shape ({out_dim}, {current_in_dim})): {e}"
+                    ))
+                })?;
+            projection_weights.push(weight);
+            current_in_dim = out_dim;
+        }
+        let token_dim = current_in_dim;
 
         #[cfg(feature = "cuda")]
         drop(_cuda_load_guard);
-
-        let token_dim = 128;
 
         let device_name = match &device {
             Device::Cpu => "cpu",
@@ -418,20 +531,26 @@ impl NativeLateInteractionModel {
             DType::F32 => "f32",
             _ => "other",
         };
+        let stage_chain = std::iter::once(backbone_dim)
+            .chain(projection_dims.iter().map(|&d| d as usize))
+            .map(|d| format!("{d}d"))
+            .collect::<Vec<_>>()
+            .join(" → ");
         eprintln!(
-            "[NativeLI] Loaded ModernBERT ({backbone_dim}d → {token_dim}d, {} layers, device: {device_name}, dtype: {dtype_name})",
+            "[NativeLI] Loaded ModernBERT ({stage_chain}, {} layers, {} projection stage(s), device: {device_name}, dtype: {dtype_name})",
             config.num_hidden_layers,
+            projection_weights.len(),
         );
 
         #[cfg(feature = "coreml")]
         let coreml = match coreml_cascade_dir
             .as_deref()
-            .and_then(try_load_coreml_li_from_dir)
+            .and_then(|d| try_load_coreml_li_from_dir(d, token_dim))
         {
             None => None,
             Some(c) => match li_parity_cosine(
                 &model,
-                &projection_weight,
+                &projection_weights,
                 &device,
                 backbone_dim,
                 token_dim,
@@ -464,7 +583,7 @@ impl NativeLateInteractionModel {
         Ok(Self {
             inner: Arc::new(LiInner {
                 model,
-                projection_weight,
+                projection_weights,
                 #[cfg(feature = "coreml")]
                 coreml,
                 device,
@@ -474,7 +593,8 @@ impl NativeLateInteractionModel {
         })
     }
 
-    /// Return the per-token embedding dimension (128 for LateOn-Code).
+    /// Return the per-token embedding dimension after the final
+    /// projection stage (128 for LateOn-Code, 48 for LateOn-Code-edge).
     #[napi(getter)]
     pub fn dim(&self) -> u32 {
         self.inner.token_dim as u32
@@ -641,17 +761,30 @@ impl Task for LiEncodeTask {
                 .forward(&ids_tensor, &mask_u8)
                 .map_err(|e| Error::from_reason(format!("[NativeLI] Forward pass error: {e}")))?;
 
-            let proj_t = inner.projection_weight.t().map_err(|e| {
-                Error::from_reason(format!("[NativeLI] Projection transpose error: {e}"))
-            })?;
-            let hidden_2d = hidden
+            // Apply projection chain. Standard `lateon-code` has one
+            // stage; `lateon-code-edge` has two. We carry the running
+            // 2D tensor across stages and reshape to 3D once after the
+            // chain — saves one reshape per stage and matches the fold
+            // structure used by the parity check above.
+            let mut projected = hidden
                 .reshape((batch_size * seq_len, inner.backbone_dim))
                 .map_err(|e| Error::from_reason(format!("[NativeLI] Hidden reshape error: {e}")))?;
-            let projected = hidden_2d
-                .matmul(&proj_t)
-                .and_then(|t| t.reshape((batch_size, seq_len, inner.token_dim)))
+            for (i, w) in inner.projection_weights.iter().enumerate() {
+                let w_t = w.t().map_err(|e| {
+                    Error::from_reason(format!(
+                        "[NativeLI] Projection stage {i} transpose error: {e}"
+                    ))
+                })?;
+                projected = projected.matmul(&w_t).map_err(|e| {
+                    Error::from_reason(format!(
+                        "[NativeLI] Projection stage {i} matmul error: {e}"
+                    ))
+                })?;
+            }
+            let projected = projected
+                .reshape((batch_size, seq_len, inner.token_dim))
                 .map_err(|e| {
-                    Error::from_reason(format!("[NativeLI] Projection matmul error: {e}"))
+                    Error::from_reason(format!("[NativeLI] Projection reshape error: {e}"))
                 })?;
 
             let norm = projected
@@ -750,5 +883,54 @@ impl Task for LiWarmupTask {
 
     fn resolve(&mut self, _env: Env, _output: Self::Output) -> Result<Self::JsValue> {
         Ok(())
+    }
+}
+
+#[cfg(all(test, feature = "coreml"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_standard_variant_filename() {
+        assert_eq!(
+            parse_li_variant_filename("li_modernbert_b128_s48_fp16.mlpackage"),
+            Some((128, 48, 128))
+        );
+        assert_eq!(
+            parse_li_variant_filename("li_modernbert_b32_s512_fp16.mlpackage"),
+            Some((32, 512, 128))
+        );
+    }
+
+    #[test]
+    fn parse_edge_variant_filename() {
+        assert_eq!(
+            parse_li_variant_filename("li_modernbert_edge_b128_s48_fp16.mlpackage"),
+            Some((128, 48, 48))
+        );
+        assert_eq!(
+            parse_li_variant_filename("li_modernbert_edge_b1_s2048_fp16.mlpackage"),
+            Some((1, 2048, 48))
+        );
+    }
+
+    #[test]
+    fn parse_rejects_unrelated_filenames() {
+        assert_eq!(parse_li_variant_filename("nomic_bert_b64_s96_fp16.mlpackage"), None);
+        assert_eq!(parse_li_variant_filename("li_modernbert_b128_s48.mlpackage"), None);
+        assert_eq!(parse_li_variant_filename("readme.md"), None);
+        // The "edge" prefix is matched as a unit — partial matches are rejected.
+        assert_eq!(parse_li_variant_filename("li_modernbert_edge.mlpackage"), None);
+    }
+
+    #[test]
+    fn parse_prefix_order_matters() {
+        // The longer "edge" prefix MUST be tried first. If we
+        // accidentally matched "li_modernbert_b" first, this would
+        // parse the literal token "edge_b128" as a (failing) integer
+        // and the standard branch would also reject it — so this test
+        // also catches the silent "everything fails" regression.
+        let result = parse_li_variant_filename("li_modernbert_edge_b16_s256_fp16.mlpackage");
+        assert_eq!(result, Some((16, 256, 48)), "edge prefix must be detected before standard prefix");
     }
 }

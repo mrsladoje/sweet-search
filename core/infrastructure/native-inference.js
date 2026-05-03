@@ -55,6 +55,7 @@ import { getModelCacheDir, fetchModel } from './model-fetcher.js';
 import { getModelEntry } from './model-registry.js';
 import { getCoremlCascadeResolvedDirs } from './coreml-cascade.js';
 import { detectHardwareCapability } from './hardware-capability.js';
+import { LATE_INTERACTION_CONFIG } from './config/ranking.js';
 
 const require = createRequire(import.meta.url);
 
@@ -63,12 +64,21 @@ const require = createRequire(import.meta.url);
 let _addon = null;
 let _embeddingModel = null;
 let _embeddingModelLoadPromise = null; // race-gate for concurrent first calls
-let _liModel = null;
-let _liModelLoadPromise = null;
+// Per-variant LI model cache. Keyed by FP32 registry key
+// ('lateon-code-fp32' or 'lateon-code-edge-fp32') so a variant swap
+// inside a single process (e.g. ORT-eval session followed by native
+// indexing) doesn't return a stale model. Each entry is
+// `{ model, promise }` where `promise` race-gates concurrent first
+// calls and `model` becomes non-null on resolution.
+const _liModels = new Map();
 let _embTokenizer = null;
 let _embTokenizerLoadPromise = null;
-let _liTokenizer = null;
-let _liTokenizerLoadPromise = null;
+// Per-variant LI tokenizer cache. Keyed by tokenizer source key
+// (matches the ORT-side registry key — `lateon-code` /
+// `lateon-code-edge`). Standard and edge tokenizer.json files are
+// byte-identical today but per-variant resolution is correct and
+// future-proof.
+const _liTokenizers = new Map();
 let _available = null;
 let _coremlCascadeLogged = false;
 
@@ -123,12 +133,17 @@ function propagateCudaComputeCapToAddonEnv() {
  * Logged exactly once per process so a mis-configured cascade surfaces
  * at startup instead of silently falling through on every call.
  *
+ * Routes the LI cascade dir to `coreml-cascade/li/` (standard) or
+ * `coreml-cascade/li-edge/` (edge) based on the active variant in
+ * `LATE_INTERACTION_CONFIG`. The embed cascade is shared.
+ *
  * Always returns an object — never throws. The returned dirs can be
  * `null`, which the Rust addon treats as "CoreML path disabled" and
  * falls back to candle unconditionally.
  */
 function resolveCoremlCascadeForAddon() {
-  const resolved = getCoremlCascadeResolvedDirs();
+  const liVariantKey = LATE_INTERACTION_CONFIG.model;
+  const resolved = getCoremlCascadeResolvedDirs(liVariantKey);
   if (!_coremlCascadeLogged) {
     _coremlCascadeLogged = true;
     const hw = detectHardwareCapability();
@@ -137,7 +152,7 @@ function resolveCoremlCascadeForAddon() {
     if (resolved.embedDir || resolved.liDir) {
       process.stderr.write(
         `[NativeInference] CoreML cascade: ${resolved.status}` +
-        ` (embed=${resolved.embedDir ? 'yes' : 'no'}, li=${resolved.liDir ? 'yes' : 'no'},` +
+        ` (embed=${resolved.embedDir ? 'yes' : 'no'}, li=${resolved.liDir ? 'yes' : 'no'} [${liVariantKey}],` +
         ` chip=${hw.brandString || 'unknown'})\n`
       );
     } else if (hw.coremlCascadeEligible) {
@@ -327,57 +342,117 @@ export async function nativeEmbed(texts, options = {}) {
 // ─── Late Interaction Model ───
 
 /**
- * Load the native LI model (LateOn-Code FP32 safetensors + projection).
- * Returns the model instance or null if unavailable. Race-gated.
+ * Resolve the active LI variant from `LATE_INTERACTION_CONFIG`. Returns
+ * the manifest the native loaders need (registry keys + projection
+ * paths and dims). Pure helper — no I/O, no caching.
+ *
+ * Falls back to the standard `lateon-code` entry if the active config
+ * is missing fields (defensive — every shipping config has them).
  */
-export async function getNativeLiModel() {
-  if (_liModel) return _liModel;
-  if (_liModelLoadPromise) return _liModelLoadPromise;
-  _liModelLoadPromise = (async () => {
-    const addon = loadAddon();
-    if (!addon?.NativeLateInteractionModel) return null;
-
-    await fetchModel('lateon-code-fp32');
-
-    const entry = getModelEntry('lateon-code-fp32');
-    const modelDir = getModelCacheDir(entry.hfId);
-    const backbonePath = join(modelDir, 'model.safetensors');
-    const projPath = join(modelDir, '1_Dense', 'model.safetensors');
-    const configPath = join(modelDir, 'config.json');
-
-    if (!existsSync(backbonePath) || !existsSync(projPath) || !existsSync(configPath)) return null;
-
-    // Resolve the CoreML cascade dir for ModernBERT LI. Same contract
-    // as the embedding model above — see that comment.
-    const cascade = resolveCoremlCascadeForAddon();
-
-    const t0 = Date.now();
-    _liModel = addon.NativeLateInteractionModel.load(
-      backbonePath,
-      projPath,
-      configPath,
-      cascade.liDir || undefined,
+export function resolveNativeLiVariant() {
+  const cfg = LATE_INTERACTION_CONFIG.activeModel;
+  const cfgKey = LATE_INTERACTION_CONFIG.model;
+  if (!cfg) {
+    throw new Error(
+      `[NativeInference] LATE_INTERACTION_CONFIG.model='${cfgKey}' is not a known variant`,
     );
-    console.log(`[NativeInference] LI model loaded in ${Date.now() - t0}ms (dim: ${_liModel.dim}, device: ${addon.nativeInferenceDevice()})`);
-
-    return _liModel;
-  })();
-  return _liModelLoadPromise;
+  }
+  const fp32RegistryKey = cfg.nativeRegistryKey || `${cfgKey}-fp32`;
+  return {
+    cfgKey,                                   // 'lateon-code' | 'lateon-code-edge'
+    fp32RegistryKey,                          // 'lateon-code-fp32' | 'lateon-code-edge-fp32'
+    tokenizerKey: cfgKey,                     // tokenizer lives next to the ORT model
+    projectionPaths: cfg.projectionPaths,     // ['1_Dense/...'] | ['1_Dense/...', '2_Dense/...']
+    projectionDims: cfg.projectionDims,       // [128] | [512, 48]
+    tokenDimension: cfg.tokenDimension,       // 128 | 48
+  };
 }
 
 /**
- * Get or create the LI tokenizer. Race-gated.
+ * Internal: load the native LI model for a specific variant on the
+ * default device. Race-gated per variant via the `_liModels` Map so
+ * concurrent first callers share one load. Returns null if the addon
+ * isn't available or required files are missing.
+ */
+async function loadNativeLiVariantOnDefaultDevice(variant) {
+  const cached = _liModels.get(variant.fp32RegistryKey);
+  if (cached?.model) return cached.model;
+  if (cached?.promise) return cached.promise;
+
+  const promise = (async () => {
+    const addon = loadAddon();
+    if (!addon?.NativeLateInteractionModel) return null;
+
+    await fetchModel(variant.fp32RegistryKey);
+
+    const entry = getModelEntry(variant.fp32RegistryKey);
+    const modelDir = getModelCacheDir(entry.hfId);
+    const backbonePath = join(modelDir, 'model.safetensors');
+    const configPath = join(modelDir, 'config.json');
+    const projAbsPaths = variant.projectionPaths.map((p) => join(modelDir, p));
+
+    if (!existsSync(backbonePath) || !existsSync(configPath)) return null;
+    if (!projAbsPaths.every(existsSync)) return null;
+
+    // Resolve the CoreML cascade dir for ModernBERT LI. Same contract
+    // as the embedding model above — see that comment. The dir
+    // depends on the active variant (`coreml-cascade/li/` vs
+    // `coreml-cascade/li-edge/`).
+    const cascade = resolveCoremlCascadeForAddon();
+
+    const t0 = Date.now();
+    const model = addon.NativeLateInteractionModel.load(
+      backbonePath,
+      projAbsPaths,
+      variant.projectionDims,
+      configPath,
+      cascade.liDir || undefined,
+    );
+    console.log(
+      `[NativeInference] LI model '${variant.cfgKey}' loaded in ${Date.now() - t0}ms `
+      + `(dim: ${model.dim}, device: ${addon.nativeInferenceDevice()})`,
+    );
+
+    const slot = _liModels.get(variant.fp32RegistryKey);
+    if (slot) slot.model = model;
+    return model;
+  })();
+
+  _liModels.set(variant.fp32RegistryKey, { model: null, promise });
+  return promise;
+}
+
+/**
+ * Load the native LI model for the currently-configured variant.
+ * Returns the model instance or null if unavailable. Race-gated per
+ * variant.
+ */
+export async function getNativeLiModel() {
+  const variant = resolveNativeLiVariant();
+  return loadNativeLiVariantOnDefaultDevice(variant);
+}
+
+/**
+ * Get or create the LI tokenizer for the currently-configured variant.
+ * Race-gated per variant via the `_liTokenizers` Map.
  */
 async function getLiTokenizer() {
-  if (_liTokenizer) return _liTokenizer;
-  if (_liTokenizerLoadPromise) return _liTokenizerLoadPromise;
-  _liTokenizerLoadPromise = (async () => {
-    const entry = getModelEntry('lateon-code');
+  const variant = resolveNativeLiVariant();
+  const cached = _liTokenizers.get(variant.tokenizerKey);
+  if (cached?.tokenizer) return cached.tokenizer;
+  if (cached?.promise) return cached.promise;
+
+  const promise = (async () => {
+    const entry = getModelEntry(variant.tokenizerKey);
     const tokenizerPath = join(getModelCacheDir(entry.hfId), 'tokenizer.json');
-    _liTokenizer = await createTokenizer(tokenizerPath);
-    return _liTokenizer;
+    const tokenizer = await createTokenizer(tokenizerPath);
+    const slot = _liTokenizers.get(variant.tokenizerKey);
+    if (slot) slot.tokenizer = tokenizer;
+    return tokenizer;
   })();
-  return _liTokenizerLoadPromise;
+
+  _liTokenizers.set(variant.tokenizerKey, { tokenizer: null, promise });
+  return promise;
 }
 
 /**
@@ -457,7 +532,11 @@ export function isNativeEmbeddingModelLoaded() {
 }
 
 export function isNativeLiModelLoaded() {
-  return _liModel != null;
+  // True only when the *active* variant is loaded — a stale standard
+  // model lingering after a config swap to edge would otherwise
+  // mask the fact that edge encoding still has to load.
+  const variant = resolveNativeLiVariant();
+  return _liModels.get(variant.fp32RegistryKey)?.model != null;
 }
 
 // ─── Device-explicit loading ───
@@ -518,28 +597,32 @@ export async function loadNativeEmbeddingModelWithDevice(deviceKind, cascadeDirO
 }
 
 /**
- * Load the native LI model on a specific device.
+ * Load the native LI model on a specific device for the
+ * currently-configured variant. Race-gated per variant.
  */
 export async function loadNativeLiModelWithDevice(deviceKind, cascadeDirOverride) {
-  if (_liModel) return _liModel;
-  if (_liModelLoadPromise) return _liModelLoadPromise;
+  const variant = resolveNativeLiVariant();
+  const cached = _liModels.get(variant.fp32RegistryKey);
+  if (cached?.model) return cached.model;
+  if (cached?.promise) return cached.promise;
 
-  _liModelLoadPromise = (async () => {
+  const promise = (async () => {
     const addon = loadAddon();
     if (!addon?.NativeLateInteractionModel?.loadWithDevice) return null;
 
     // See loadNativeEmbeddingModelWithDevice for why this is CUDA-only.
     if (deviceKind === 'cuda') propagateCudaComputeCapToAddonEnv();
 
-    await fetchModel('lateon-code-fp32');
+    await fetchModel(variant.fp32RegistryKey);
 
-    const entry = getModelEntry('lateon-code-fp32');
+    const entry = getModelEntry(variant.fp32RegistryKey);
     const modelDir = getModelCacheDir(entry.hfId);
     const backbonePath = join(modelDir, 'model.safetensors');
-    const projPath = join(modelDir, '1_Dense', 'model.safetensors');
     const configPath = join(modelDir, 'config.json');
+    const projAbsPaths = variant.projectionPaths.map((p) => join(modelDir, p));
 
-    if (!existsSync(backbonePath) || !existsSync(projPath) || !existsSync(configPath)) return null;
+    if (!existsSync(backbonePath) || !existsSync(configPath)) return null;
+    if (!projAbsPaths.every(existsSync)) return null;
 
     // CUDA has no cascade — see the matching comment in
     // loadNativeEmbeddingModelWithDevice.
@@ -550,19 +633,26 @@ export async function loadNativeLiModelWithDevice(deviceKind, cascadeDirOverride
     );
 
     const t0 = Date.now();
-    _liModel = addon.NativeLateInteractionModel.loadWithDevice(
+    const model = addon.NativeLateInteractionModel.loadWithDevice(
       backbonePath,
-      projPath,
+      projAbsPaths,
+      variant.projectionDims,
       configPath,
       cascadeDir,
       deviceKind,
     );
-    console.log(`[NativeInference] LI model loaded in ${Date.now() - t0}ms (dim: ${_liModel.dim}, device: ${deviceKind})`);
+    console.log(
+      `[NativeInference] LI model '${variant.cfgKey}' loaded in ${Date.now() - t0}ms `
+      + `(dim: ${model.dim}, device: ${deviceKind})`,
+    );
 
-    return _liModel;
+    const slot = _liModels.get(variant.fp32RegistryKey);
+    if (slot) slot.model = model;
+    return model;
   })();
 
-  return _liModelLoadPromise;
+  _liModels.set(variant.fp32RegistryKey, { model: null, promise });
+  return promise;
 }
 
 // ─── Warmup primitives ───
@@ -575,10 +665,14 @@ export async function warmupNativeEmbeddingModel() {
 }
 
 export async function warmupNativeLiModel() {
-  if (!_liModel?.warmupForward) return;
+  // Warm up only the *active* variant — warming up an unused stale
+  // variant would be wasted Metal queue time.
+  const variant = resolveNativeLiVariant();
+  const model = _liModels.get(variant.fp32RegistryKey)?.model;
+  if (!model?.warmupForward) return;
   const t0 = Date.now();
-  await _liModel.warmupForward();
-  console.log(`[NativeInference] LI warmup forward in ${Date.now() - t0}ms`);
+  await model.warmupForward();
+  console.log(`[NativeInference] LI warmup forward (${variant.cfgKey}) in ${Date.now() - t0}ms`);
 }
 
 // ─── Cleanup ───
@@ -586,12 +680,10 @@ export async function warmupNativeLiModel() {
 export function unloadNativeModels() {
   _embeddingModel = null;
   _embeddingModelLoadPromise = null;
-  _liModel = null;
-  _liModelLoadPromise = null;
+  _liModels.clear();
   _embTokenizer = null;
   _embTokenizerLoadPromise = null;
-  _liTokenizer = null;
-  _liTokenizerLoadPromise = null;
+  _liTokenizers.clear();
   _addon = null;
   _available = null;
   _coremlCascadeLogged = false;

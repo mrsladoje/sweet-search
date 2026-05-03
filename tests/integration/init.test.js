@@ -291,16 +291,20 @@ describe('downloadModelsForProfile', () => {
     expect(result.failures).toEqual([]);
   });
 
-  it('returns 6 model results for full profile by default (opt-in rerankers excluded, using cache)', async () => {
+  it('returns 7 model results for full profile by default (opt-in rerankers excluded, using cache)', async () => {
     // Skip when model cache does not exist (CI without pre-cached models)
     const cacheRoot = join(process.env.HOME || '', '.cache', 'sweet-search', 'models');
     if (!existsSync(join(cacheRoot, 'lightonai--LateOn-Code'))) {
       return; // models not cached — skip
     }
 
-    // Clear opt-in env vars so we see the default-profile set (6 models,
-    // not 8 — gte-reranker and ms-marco-tinybert require explicit opt-in
-    // per the 2026-04-22 ranking refactor).
+    // Clear opt-in env vars so we see the default-profile set (7 models,
+    // not 9 — gte-reranker and ms-marco-tinybert require explicit opt-in
+    // per the 2026-04-22 ranking refactor). The 7 are:
+    //   lateon-code, lateon-code-fp32, lateon-code-edge, lateon-code-edge-fp32,
+    //   coderankembed-int8, coderankembed-fp32, all-minilm-l6-v2
+    // (lateon-code-edge-fp32 was added 2026-05 to enable native Metal/CUDA
+    // inference on the edge variant — see plan in /Users/admin/.claude/plans/.)
     const saved = {
       local: process.env.SWEET_SEARCH_ENABLE_LOCAL_RERANKER,
       cascade: process.env.SWEET_SEARCH_CASCADE_ENABLED,
@@ -311,7 +315,8 @@ describe('downloadModelsForProfile', () => {
     delete process.env.SWEET_SEARCH_CASCADE_SHADOW;
     try {
       const result = await downloadModelsForProfile('full');
-      expect(result.results.size).toBe(6);
+      expect(result.results.size).toBe(7);
+      expect(result.results.has('lateon-code-edge-fp32')).toBe(true);
       expect(result.results.has('gte-reranker-modernbert-base')).toBe(false);
       expect(result.results.has('ms-marco-tinybert')).toBe(false);
       expect(result.failures).toEqual([]);

@@ -238,12 +238,19 @@ Cascade configuration flows **exclusively** through the JS infrastructure layer:
 scripts/init.js
     ↓ (reads state for diagnostic, optionally invokes build)
 core/infrastructure/coreml-cascade.js
-    ↓ (resolves (embedDir, liDir))
+    ↓ (resolves (embedDir, liDir) — liDir routes to coreml-cascade/li/
+    ↓  or coreml-cascade/li-edge/ based on liVariantKey arg)
 core/infrastructure/native-inference.js::resolveCoremlCascadeForAddon()
-    ↓ (passes as the 3rd/4th argument to load())
+    ↓ (reads LATE_INTERACTION_CONFIG.model, passes that variant key
+    ↓  into getCoremlCascadeResolvedDirs(liVariantKey))
+    ↓ (passes the resolved dirs as the 3rd/4th argument to load())
 crates/sweet-search-native NativeEmbeddingModel::load / NativeLateInteractionModel::load
-    ↓ (scans dir, parses filenames, builds variant cascade)
+    ↓ (scans dir, parses filenames, builds variant cascade — Rust LI
+    ↓  parser recognises both `li_modernbert_b…` and
+    ↓  `li_modernbert_edge_b…` prefixes and rejects mismatched
+    ↓  token_dim variants as a safety net)
 crates/sweet-search-native inference/coreml_embedding.rs::CoremlEmbedding
+crates/sweet-search-native inference/coreml_li.rs::CoremlLi
 ```
 
 The old spike env vars (`SWEET_SEARCH_COREML_EMBED_MLPACKAGE_DIR`,

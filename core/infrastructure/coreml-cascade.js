@@ -63,7 +63,9 @@ let _spec = null;
  * `crates/sweet-search-native/src/inference/embedding_model.rs::parse_embed_variant_filename`
  * (line ~140, `strip_prefix("nomic_bert_b")`) and
  * `crates/sweet-search-native/src/inference/li_model.rs::parse_li_variant_filename`
- * (line ~127, `strip_prefix("li_modernbert_b")`).
+ * (recognises BOTH `li_modernbert_b` for the standard `lateon-code`
+ * variant and `li_modernbert_edge_b` for the `lateon-code-edge`
+ * variant — the parser tries the longer "edge" prefix first).
  *
  * A future JSON edit that renames variants (e.g. `nomic_bert_v2`,
  * `li_modernbert_short`) would silently disarm the cascade on end-user
@@ -74,7 +76,23 @@ let _spec = null;
  */
 export const RUST_EMBED_PREFIX = 'nomic_bert_b';
 export const RUST_LI_PREFIX = 'li_modernbert_b';
+export const RUST_LI_EDGE_PREFIX = 'li_modernbert_edge_b';
 export const RUST_VARIANT_SUFFIX = '_fp16.mlpackage';
+
+/**
+ * Map an LI variant key from `LATE_INTERACTION_CONFIG.model` to its
+ * cascade section name in coreml-cascade.json. Pure helper.
+ *
+ * `lateon-code` (default) → `li`
+ * `lateon-code-edge`      → `liEdge`
+ *
+ * Unknown / null variants fall back to the standard section so callers
+ * who don't pass a variant get the historical behaviour.
+ */
+export function liVariantToSectionKey(liVariantKey) {
+  if (liVariantKey === 'lateon-code-edge') return 'liEdge';
+  return 'li';
+}
 
 /**
  * Validate a loaded cascade spec against every invariant the JS side,
@@ -98,12 +116,21 @@ export function validateCascadeSpec(spec) {
     throw new Error(`[CoremlCascade] invalid spec: hfRepo must be a non-empty string, got ${JSON.stringify(spec.hfRepo)}`);
   }
 
-  for (const [side, requiredPrefix] of [
-    ['embed', RUST_EMBED_PREFIX],
-    ['li', RUST_LI_PREFIX],
+  // `embed` and `li` are required (the standard cascade has shipped
+  // since 2026-04-14). `liEdge` is OPTIONAL — older specs without it
+  // remain valid, runtime code uses `spec.liEdge?.variants ?? []`.
+  // When `liEdge` IS present, every invariant below applies in full.
+  for (const [side, requiredPrefix, optional] of [
+    ['embed', RUST_EMBED_PREFIX, false],
+    ['li', RUST_LI_PREFIX, false],
+    ['liEdge', RUST_LI_EDGE_PREFIX, true],
   ]) {
     const section = spec[side];
-    if (!section || typeof section !== 'object') {
+    if (!section) {
+      if (optional) continue;
+      throw new Error(`[CoremlCascade] invalid spec: missing or non-object \`${side}\` section`);
+    }
+    if (typeof section !== 'object') {
       throw new Error(`[CoremlCascade] invalid spec: missing or non-object \`${side}\` section`);
     }
     if (typeof section.filePattern !== 'string') {
@@ -225,9 +252,24 @@ export function getCoremlEmbedDir() {
   return join(getCoremlCascadeRoot(), 'embed');
 }
 
-/** Subdirectory holding LI variants. */
+/** Subdirectory holding standard `lateon-code` LI variants. */
 export function getCoremlLiDir() {
   return join(getCoremlCascadeRoot(), 'li');
+}
+
+/** Subdirectory holding `lateon-code-edge` LI variants. */
+export function getCoremlLiEdgeDir() {
+  return join(getCoremlCascadeRoot(), 'li-edge');
+}
+
+/**
+ * Resolve the on-disk LI cascade dir for a given LI variant. Used by
+ * native-inference.js to point the Rust addon at the right family.
+ *
+ * @param {string|undefined} liVariantKey - 'lateon-code' (default) or 'lateon-code-edge'
+ */
+export function getCoremlLiDirForVariant(liVariantKey) {
+  return liVariantKey === 'lateon-code-edge' ? getCoremlLiEdgeDir() : getCoremlLiDir();
 }
 
 /**
@@ -283,14 +325,16 @@ export function isValidMlpackage(path) {
 /**
  * Enumerate every expected variant path for the current spec.
  *
- * Returns two lists:
- *   embedPaths: [{ batch, seq, filename, fullPath }, ...]
- *   liPaths:    [{ batch, seq, filename, fullPath }, ...]
+ * Returns three lists:
+ *   embedPaths:   [{ batch, seq, filename, fullPath }, ...]
+ *   liPaths:      [{ batch, seq, filename, fullPath }, ...]   — standard 128d
+ *   liEdgePaths:  [{ batch, seq, filename, fullPath }, ...]   — edge 48d
  */
 export function getExpectedVariantPaths() {
   const spec = getCascadeSpec();
   const embedDir = getCoremlEmbedDir();
   const liDir = getCoremlLiDir();
+  const liEdgeDir = getCoremlLiEdgeDir();
 
   const embedPaths = spec.embed.variants.map(v => {
     const filename = formatVariantFilename(spec.embed.filePattern, v.batch, v.seq);
@@ -300,8 +344,12 @@ export function getExpectedVariantPaths() {
     const filename = formatVariantFilename(spec.li.filePattern, v.batch, v.seq);
     return { batch: v.batch, seq: v.seq, filename, fullPath: join(liDir, filename) };
   });
+  const liEdgePaths = (spec.liEdge?.variants || []).map(v => {
+    const filename = formatVariantFilename(spec.liEdge.filePattern, v.batch, v.seq);
+    return { batch: v.batch, seq: v.seq, filename, fullPath: join(liEdgeDir, filename) };
+  });
 
-  return { embedPaths, liPaths };
+  return { embedPaths, liPaths, liEdgePaths };
 }
 
 /**
@@ -311,16 +359,24 @@ export function getExpectedVariantPaths() {
  * Use `getCoremlCascadeResolvedDirs()` when you only need the
  * (embedDir, liDir) pair for native-inference.js to pass to the addon.
  *
+ * `complete` is true only when the embed cascade is complete AND at
+ * least one of the LI cascades (standard or edge) is complete — so a
+ * single-variant deployment that ships only one LI family still
+ * counts as a healthy cascade for the matching LI variant.
+ *
  * @returns {{
  *   applicable: boolean,
  *   reason: string,
  *   root: string,
  *   embedDir: string,
  *   liDir: string,
+ *   liEdgeDir: string,
  *   embedPresent: number,
  *   embedTotal: number,
  *   liPresent: number,
  *   liTotal: number,
+ *   liEdgePresent: number,
+ *   liEdgeTotal: number,
  *   complete: boolean,
  *   missing: string[],
  * }}
@@ -330,7 +386,8 @@ export function getCoremlCascadeState() {
   const root = getCoremlCascadeRoot();
   const embedDir = getCoremlEmbedDir();
   const liDir = getCoremlLiDir();
-  const { embedPaths, liPaths } = getExpectedVariantPaths();
+  const liEdgeDir = getCoremlLiEdgeDir();
+  const { embedPaths, liPaths, liEdgePaths } = getExpectedVariantPaths();
 
   const missing = [];
   let embedPresent = 0;
@@ -343,10 +400,23 @@ export function getCoremlCascadeState() {
     if (isValidMlpackage(v.fullPath)) liPresent++;
     else missing.push(`li/${v.filename}`);
   }
+  let liEdgePresent = 0;
+  for (const v of liEdgePaths) {
+    if (isValidMlpackage(v.fullPath)) liEdgePresent++;
+    else missing.push(`li-edge/${v.filename}`);
+  }
 
   const embedTotal = embedPaths.length;
   const liTotal = liPaths.length;
-  const complete = embedPresent === embedTotal && liPresent === liTotal;
+  const liEdgeTotal = liEdgePaths.length;
+  // A cascade counts as "complete" when every advertised variant is on
+  // disk. Edge variants only contribute to completeness when the spec
+  // declares them — an `liEdgeTotal === 0` spec is treated as "edge
+  // not advertised" and complete reflects only embed + li.
+  const embedOk = embedPresent === embedTotal;
+  const liOk = liPresent === liTotal;
+  const liEdgeOk = liEdgeTotal === 0 || liEdgePresent === liEdgeTotal;
+  const complete = embedOk && liOk && liEdgeOk;
 
   return {
     applicable: hw.coremlCascadeEligible,
@@ -354,10 +424,13 @@ export function getCoremlCascadeState() {
     root,
     embedDir,
     liDir,
+    liEdgeDir,
     embedPresent,
     embedTotal,
     liPresent,
     liTotal,
+    liEdgePresent,
+    liEdgeTotal,
     complete,
     missing,
   };
@@ -373,9 +446,18 @@ export function getCoremlCascadeState() {
  * (tests, benchmarks, diagnostic runs) should pass
  * `SWEET_SEARCH_COREML_CASCADE=0` — see the env-var check below.
  *
+ * `liVariantKey` selects which LI cascade family to point at:
+ * `lateon-code` (default) → `coreml-cascade/li/`,
+ * `lateon-code-edge`      → `coreml-cascade/li-edge/`.
+ * Passed by `native-inference.js::resolveCoremlCascadeForAddon` after
+ * resolving the active variant from `LATE_INTERACTION_CONFIG`. Init,
+ * uninstall, and tests typically don't need to pass it — the default
+ * standard cascade is reported.
+ *
+ * @param {string} [liVariantKey='lateon-code'] - active LI variant
  * @returns {{ embedDir: string | null, liDir: string | null, status: string }}
  */
-export function getCoremlCascadeResolvedDirs() {
+export function getCoremlCascadeResolvedDirs(liVariantKey = 'lateon-code') {
   const rawFlag = (process.env.SWEET_SEARCH_COREML_CASCADE ?? '').trim().toLowerCase();
   if (rawFlag === '0' || rawFlag === 'false' || rawFlag === 'off') {
     return { embedDir: null, liDir: null, status: 'disabled-by-env' };
@@ -385,7 +467,13 @@ export function getCoremlCascadeResolvedDirs() {
   if (!state.applicable) {
     return { embedDir: null, liDir: null, status: 'hardware-ineligible' };
   }
-  if (state.embedPresent === 0 && state.liPresent === 0) {
+
+  // Pick the LI cascade dir + present-count for the active variant.
+  const useEdge = liVariantKey === 'lateon-code-edge';
+  const liVariantPresent = useEdge ? state.liEdgePresent : state.liPresent;
+  const liVariantDir = useEdge ? state.liEdgeDir : state.liDir;
+
+  if (state.embedPresent === 0 && liVariantPresent === 0) {
     return { embedDir: null, liDir: null, status: 'not-installed' };
   }
 
@@ -395,10 +483,18 @@ export function getCoremlCascadeResolvedDirs() {
   // dispatching through its own variants. Any call that picks a missing
   // variant falls through to candle via `pick() → None`.
   const embedDir = state.embedPresent > 0 ? state.embedDir : null;
-  const liDir = state.liPresent > 0 ? state.liDir : null;
+  const liDir = liVariantPresent > 0 ? liVariantDir : null;
+
+  // Per-variant completeness: status is `present` only when both embed
+  // and the active LI family are fully populated. Other LI families'
+  // state doesn't matter for *this* dispatch.
+  const liVariantComplete = useEdge
+    ? state.liEdgeTotal > 0 && state.liEdgePresent === state.liEdgeTotal
+    : state.liPresent === state.liTotal;
+  const embedComplete = state.embedPresent === state.embedTotal;
 
   let status;
-  if (state.complete) {
+  if (embedComplete && liVariantComplete) {
     status = 'present';
   } else if (embedDir && liDir) {
     status = 'partial';
@@ -414,6 +510,12 @@ export function getCoremlCascadeResolvedDirs() {
 /**
  * Build a compact report used by `sweet-search init` to print a one-line
  * status on completion and to record diagnostics in config.json.
+ *
+ * Counts are reported across all three families (embed, li, li-edge)
+ * so a single status line communicates whether the cascade is fully
+ * populated. Edge variants are folded into the totals only when the
+ * spec advertises them — older specs without `liEdge` remain
+ * backward-compatible.
  */
 export function getCoremlCascadeReport() {
   const state = getCoremlCascadeState();
@@ -435,17 +537,25 @@ export function getCoremlCascadeReport() {
       reason: state.reason,
     };
   }
+  const totalAdvertised = state.embedTotal + state.liTotal + state.liEdgeTotal;
+  const totalPresent = state.embedPresent + state.liPresent + state.liEdgePresent;
+  const liEdgeReportFragment = state.liEdgeTotal > 0
+    ? ` + ${state.liEdgePresent}/${state.liEdgeTotal} LI-edge`
+    : '';
   if (state.complete) {
     return {
       status: 'present',
-      detail: `${state.embedTotal + state.liTotal} variants ready (${state.embedTotal} embed + ${state.liTotal} LI)`,
+      detail: `${totalPresent} variants ready (${state.embedTotal} embed + ${state.liTotal} LI`
+        + (state.liEdgeTotal > 0 ? ` + ${state.liEdgeTotal} LI-edge` : '')
+        + ')',
       applicable: true,
       reason: state.reason,
       embedDir: state.embedDir,
       liDir: state.liDir,
+      liEdgeDir: state.liEdgeTotal > 0 ? state.liEdgeDir : null,
     };
   }
-  if (state.embedPresent === 0 && state.liPresent === 0) {
+  if (totalPresent === 0) {
     return {
       status: 'not-built',
       detail: 'Run `node scripts/build-coreml-cascade.js` to build locally (~12 min, requires Python + coremltools)',
@@ -455,11 +565,14 @@ export function getCoremlCascadeReport() {
   }
   return {
     status: 'partial',
-    detail: `${state.embedPresent}/${state.embedTotal} embed + ${state.liPresent}/${state.liTotal} LI present — rebuild with \`node scripts/build-coreml-cascade.js\``,
+    detail: `${state.embedPresent}/${state.embedTotal} embed + ${state.liPresent}/${state.liTotal} LI`
+      + liEdgeReportFragment
+      + ' present — rebuild with `node scripts/build-coreml-cascade.js`',
     applicable: true,
     reason: state.reason,
     embedDir: state.embedPresent > 0 ? state.embedDir : null,
     liDir: state.liPresent > 0 ? state.liDir : null,
+    liEdgeDir: state.liEdgePresent > 0 ? state.liEdgeDir : null,
     missing: state.missing,
   };
 }
@@ -759,6 +872,38 @@ async function fetchAndExtractCascadeVariant({
 }
 
 /**
+ * Resolve which cascade families to fetch for a given LI variant. The
+ * embed cascade is shared, but only the LI family matching the active
+ * variant (or all families when `families: 'all'`) is fetched. Default
+ * behaviour: fetch embed + the LI family for the active LI variant.
+ *
+ * @param {string|string[]} families - 'auto' (default), 'all', or an
+ *   explicit list of `'embed' | 'li' | 'li-edge'`
+ * @param {string} liVariantKey - Active LI variant key, used when
+ *   `families==='auto'`. 'lateon-code-edge' selects the edge LI cascade,
+ *   any other value selects the standard LI cascade.
+ * @returns {Set<string>} Set of family names to fetch
+ */
+export function resolveFamiliesToFetch(families, liVariantKey) {
+  const all = new Set(['embed', 'li', 'li-edge']);
+  if (families === 'all') return all;
+  if (Array.isArray(families)) {
+    const out = new Set();
+    for (const f of families) {
+      if (all.has(f)) out.add(f);
+    }
+    if (out.size > 0) return out;
+  }
+  // 'auto' (default): always embed, plus the LI family matching the
+  // active variant. Edge variant → edge LI cascade ONLY (no standard LI
+  // download). Anything else → standard LI cascade ONLY (no edge
+  // download).
+  return liVariantKey === 'lateon-code-edge'
+    ? new Set(['embed', 'li-edge'])
+    : new Set(['embed', 'li']);
+}
+
+/**
  * Fetch the CoreML cascade from the HF repo named in
  * `coreml-cascade.json::hfRepo` and install the variants into the
  * managed cache. Skips variants that are already present.
@@ -768,29 +913,72 @@ async function fetchAndExtractCascadeVariant({
  * Local builds via `scripts/build-coreml-cascade.js` remain supported
  * as a developer path and for machines where HF fetch is unavailable.
  *
+ * **Family gating (2026-05 release policy):** by default, only the LI
+ * family matching `LATE_INTERACTION_CONFIG.model` (or the explicit
+ * `liVariantKey` option) is fetched. Edge tarballs are NOT downloaded
+ * on a standard install, and standard tarballs are NOT downloaded on
+ * an edge install. Pass `families: 'all'` (or an explicit list) to
+ * fetch every family — used by the `--build-coreml-cascade` workflow
+ * and by re-publish tooling.
+ *
  * Never throws. Any failure is captured in the returned `failures`
  * array so the caller can log without aborting init.
  *
  * @param {object} [options]
- * @param {boolean} [options.force]       - Re-download even if the target already exists
+ * @param {boolean} [options.force]            - Re-download even if the target already exists
+ * @param {string|string[]} [options.families] - 'auto' (default), 'all', or
+ *   explicit array of `'embed'|'li'|'li-edge'`. See `resolveFamiliesToFetch`.
+ * @param {string} [options.liVariantKey]      - Active LI variant key for
+ *   `families==='auto'` resolution. Defaults to `LATE_INTERACTION_CONFIG.model`.
  * @param {(variant: string, downloaded: number, total: number) => void} [options.onProgress]
  * @returns {Promise<{
  *   status: string,
  *   fetched: number,
  *   cached: number,
  *   skipped: number,
+ *   families: string[],
  *   failures: Array<{ variant: string, error: string }>,
  *   reason?: string,
  * }>}
  */
 export async function fetchCoremlCascade(options = {}) {
   const hw = detectHardwareCapability();
+  const spec = (() => {
+    try { return getCascadeSpec(); } catch { return null; }
+  })();
+
+  // Resolve which families to fetch BEFORE counting "skipped" — only
+  // the selected families count toward the per-call total. Without
+  // this, an edge-only init would always report 6 standard variants
+  // as "skipped" even though the user never asked for them.
+  // Lazy import of LATE_INTERACTION_CONFIG to avoid a circular import
+  // at module load (config/index.js -> infrastructure/index.js ->
+  // coreml-cascade.js).
+  let activeLiVariant = options.liVariantKey;
+  if (activeLiVariant === undefined) {
+    try {
+      const { LATE_INTERACTION_CONFIG } = await import('./config/ranking.js');
+      activeLiVariant = LATE_INTERACTION_CONFIG.model;
+    } catch {
+      activeLiVariant = 'lateon-code';
+    }
+  }
+  const familiesToFetch = resolveFamiliesToFetch(options.families ?? 'auto', activeLiVariant);
+  const familiesArr = Array.from(familiesToFetch);
+
+  const advertisedTotal = spec
+    ? (familiesToFetch.has('embed') ? (spec.embed?.variants?.length ?? 0) : 0)
+      + (familiesToFetch.has('li') ? (spec.li?.variants?.length ?? 0) : 0)
+      + (familiesToFetch.has('li-edge') ? (spec.liEdge?.variants?.length ?? 0) : 0)
+    : 0;
+
   if (!hw.coremlCascadeEligible) {
     return {
       status: 'skipped',
       fetched: 0,
       cached: 0,
-      skipped: 12,
+      skipped: advertisedTotal,
+      families: familiesArr,
       failures: [],
       reason: hw.coremlCascadeReason,
     };
@@ -805,29 +993,47 @@ export async function fetchCoremlCascade(options = {}) {
       status: 'skipped',
       fetched: 0,
       cached: 0,
-      skipped: 12,
+      skipped: advertisedTotal,
+      families: familiesArr,
       failures: [],
       reason: 'Disabled via SWEET_SEARCH_COREML_CASCADE=0',
     };
   }
 
-  const spec = getCascadeSpec();
+  if (!spec) {
+    return {
+      status: 'not-configured',
+      fetched: 0,
+      cached: 0,
+      skipped: 0,
+      families: familiesArr,
+      failures: [],
+      reason: 'coreml-cascade.json failed to load',
+    };
+  }
   if (!spec.hfRepo) {
     return {
       status: 'not-configured',
       fetched: 0,
       cached: 0,
-      skipped: 12,
+      skipped: advertisedTotal,
+      families: familiesArr,
       failures: [],
       reason: 'coreml-cascade.json has no hfRepo field',
     };
   }
 
-  const { embedPaths, liPaths } = getExpectedVariantPaths();
-  const all = [
-    ...embedPaths.map(p => ({ ...p, category: 'embed', categorySpec: spec.embed })),
-    ...liPaths.map(p => ({ ...p, category: 'li', categorySpec: spec.li })),
-  ];
+  const { embedPaths, liPaths, liEdgePaths } = getExpectedVariantPaths();
+  const all = [];
+  if (familiesToFetch.has('embed')) {
+    all.push(...embedPaths.map(p => ({ ...p, category: 'embed', categorySpec: spec.embed })));
+  }
+  if (familiesToFetch.has('li')) {
+    all.push(...liPaths.map(p => ({ ...p, category: 'li', categorySpec: spec.li })));
+  }
+  if (familiesToFetch.has('li-edge')) {
+    all.push(...liEdgePaths.map(p => ({ ...p, category: 'li-edge', categorySpec: spec.liEdge })));
+  }
 
   let fetched = 0;
   let cached = 0;
@@ -896,7 +1102,7 @@ export async function fetchCoremlCascade(options = {}) {
     status = 'fetched';
   }
 
-  return { status, fetched, cached, skipped, failures };
+  return { status, fetched, cached, skipped, families: familiesArr, failures };
 }
 
 /**

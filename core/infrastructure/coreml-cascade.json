@@ -26,6 +26,7 @@
     "modelKey": "modernbert-li",
     "filePattern": "li_modernbert_b{batch}_s{seq}_fp16.mlpackage",
     "tarballPattern": "li/li_modernbert_b{batch}_s{seq}_fp16.mlpackage.tar.gz",
+    "subdir": "li",
     "tokenDim": 128,
     "backboneDim": 768,
     "traceSource": {
@@ -41,6 +42,30 @@
       { "batch": 16,  "seq": 512,  "rationale": "long, cache-bound start",                               "tarballSha256": "37906ffe3cc9205306cfb50d0b5821e569fd6ee3ec13e4d71f481f1e53649031", "tarballSizeBytes": 275451379 },
       { "batch": 4,   "seq": 1024, "rationale": "long tail",                                             "tarballSha256": "e618f8bd981d24e4984c61ee1788c02578aaf601efc16cd926885a2930833d40", "tarballSizeBytes": 275545042 },
       { "batch": 1,   "seq": 2048, "rationale": "LI max length",                                         "tarballSha256": "d5262bf49f145cadbdbddb82b7934499fc310f5c654c5aae34cfb9c2d90487d2", "tarballSizeBytes": 275743803 }
+    ]
+  },
+  "liEdge": {
+    "$comment": "LateOn-Code-edge variant cascade. Mirrors `li` shapes but uses the smaller edge backbone (256d × 7 layers) with a 2-stage projection (256→512→48). Lives in a separate subdir so it never clashes with the standard 128d cascade. Tarball SHA256s and sizes are populated by `node scripts/build-coreml-cascade.js --li-edge-only` followed by the publish step (see INIT_STRATEGY.md republishing workflow).",
+    "modelKey": "modernbert-li-edge",
+    "filePattern": "li_modernbert_edge_b{batch}_s{seq}_fp16.mlpackage",
+    "tarballPattern": "li-edge/li_modernbert_edge_b{batch}_s{seq}_fp16.mlpackage.tar.gz",
+    "subdir": "li-edge",
+    "tokenDim": 48,
+    "backboneDim": 256,
+    "traceSource": {
+      "hfId": "lightonai/LateOn-Code-edge",
+      "backbone": "model.safetensors",
+      "projections": ["1_Dense/model.safetensors", "2_Dense/model.safetensors"],
+      "projectionDims": [512, 48],
+      "config": "config.json"
+    },
+    "variants": [
+      { "batch": 128, "seq": 48,   "rationale": "upperCap × very short — covers observed (128, 18..33)", "tarballSha256": "ca7e110e00576e76ed33be951cf3f32589adf5442646174a2ae656cfd082491c", "tarballSizeBytes": 31334197 },
+      { "batch": 128, "seq": 128,  "rationale": "upperCap × short",                                      "tarballSha256": "16f189107a2733338a841d5bc73b972dcff0266c4c23e1f70d88c3a51d5f01a7", "tarballSizeBytes": 31341775 },
+      { "batch": 64,  "seq": 256,  "rationale": "medium",                                                "tarballSha256": "b41e5a7a75508a937bb8a0fca1c5a96cf5f9242a66eb2d087a6c40e6e55ff47d", "tarballSizeBytes": 31354136 },
+      { "batch": 16,  "seq": 512,  "rationale": "long, cache-bound start",                               "tarballSha256": "4adb69f8dd64df1d369b129a3e418a827b0bee74439dca39d7f94a637571c24d", "tarballSizeBytes": 31377124 },
+      { "batch": 4,   "seq": 1024, "rationale": "long tail",                                             "tarballSha256": "e66fa4ba8e29fd51d5d0d2e17d403d7b45ad7b81f5b636232192a4c0977d1bd7", "tarballSizeBytes": 31424956 },
+      { "batch": 1,   "seq": 2048, "rationale": "LI max length",                                         "tarballSha256": "dce8507d32f14ea0b64daff963c7988b30afb1c19714de36e590f843ccce75be", "tarballSizeBytes": 31526197 }
     ]
   }
 }

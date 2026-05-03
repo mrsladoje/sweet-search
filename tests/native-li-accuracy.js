@@ -66,7 +66,8 @@ async function main() {
 
   console.log('Loading native LI model (FP32 safetensors)...');
   const t0 = Date.now();
-  const nativeModel = addon.NativeLateInteractionModel.load(backbonePath, projPath, configPath);
+  // Standard lateon-code: single 768→128 stage.
+  const nativeModel = addon.NativeLateInteractionModel.load(backbonePath, [projPath], [128], configPath);
   console.log(`  Loaded in ${Date.now() - t0}ms (dim: ${nativeModel.dim})`);
 
   // 2. Load ORT baseline pipeline

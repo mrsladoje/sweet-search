@@ -129,7 +129,17 @@ Remaining ~13.5% misses are embedding quality / dataset noise, not HNSW.
 5. **2000 char limit for JS**: Still worth checking — could explain some of the 194 misses.
 6. **Benchmark quality audit**: Filter GenCodeSearchNet JS noise (copyright queries, non-English, zero-signal). Measure "clean MRR" on the ~850 valid queries.
 7. **Try COIR JS subset**: Cleaner benchmark for JS — may give more actionable signal than GenCodeSearchNet.
-8. **Benchmark lateon-code-edge as reranker**: Currently using standard lateon-code for late interaction MaxSim reranking. Benchmark lateon-code-edge to see if the upgraded model improves MRR, especially on weak languages (JS/PHP/Ruby).
+8. ~~**Benchmark lateon-code-edge as reranker**~~: **DONE 2026-05-03 — DO NOT ADOPT for quality.**
+   Native Metal/CoreML/CUDA parity built (multi-stage projection in Rust addon, separate
+   `coreml-cascade/li-edge/` cascade dir, edge variants published to HF
+   `mrsladoje/sweet-search-coreml-cascade/li-edge/`). Full 6000-query gencodesearchnet:
+   MRR@10 = **80.63%** (vs 84.48% standard baseline, **−3.85 pp**). Losses concentrated
+   exactly on the weak languages this was supposed to help: JS −7.3 pp, PHP −6.3 pp, Java
+   −5.6 pp, Ruby −3.2 pp. The smaller 256d × 7-layer backbone with 48d output is not
+   enough capacity for the harder languages. Edge could still make sense for storage-bound
+   use cases (~37% the LI token storage, ~10% the FP32 backbone), but standard
+   `lateon-code` remains the quality choice. See "lateon-code-edge benchmark" section
+   below for full per-language numbers.
 
 ---
 
@@ -244,4 +254,256 @@ benchmarked extensively on GenCodeSearchNet (6000 queries) and M2CRB (2814 multi
 |--------|-------------|---------------|
 | MRR@10 | 56.90% | 56.90% |
 | Total time | 505s | **360s** |
+
+---
+
+## DONE: lateon-code-edge benchmark — initial run (SUPERSEDED, see Phase 3 post-fix)
+
+> **Numbers in this section were measured on a code path that contained a
+> file-kind-ranking regression (`f6fcfd1`, fixed in `e6f5bd4`).** They are
+> retained for historical context, but the current verdict is in the
+> "Phase 3 — Honest sweep before v2.5.0 (post-fix re-run)" section
+> further below. Post-fix summary: standard `lateon-code` + LI on remains
+> the accuracy default at **85.57% MRR**; edge LI is best deployed as
+> "edge index + search rerank OFF" (= **82.91% MRR**, identical to
+> standard-no-LI, with 60% less disk + 25% faster indexing) for
+> constrained machines that still need read-semantic / ColGrep.
+
+`lateon-code-edge` (256d backbone × 7 layers, 2-stage projection 256→512→48, 48d output)
+gained full native acceleration (Metal candle, CoreML cascade, CUDA candle) so the
+benchmark could run apples-to-apples with the standard `lateon-code` baseline (768d × 22
+layers, 1-stage 768→128, 128d output). Shipping changes (all backward compatible —
+standard variant unaffected):
+
+- Rust addon `NativeLateInteractionModel.load()` generalised to `Vec<String>` projection
+  paths + `Vec<u32>` projection dims (validated against safetensors shape on load); fold
+  applies stages sequentially in `LiEncodeTask::compute`. Backbone dim already came from
+  config.json so 256d worked without further changes.
+- JS `resolveNativeLiVariant()` reads `LATE_INTERACTION_CONFIG.activeModel` and routes to
+  the right registry key (`lateon-code-fp32` vs `lateon-code-edge-fp32`). Per-variant
+  cache `Map` replaces module-scope singletons.
+- CoreML cascade: third top-level `liEdge` section in `coreml-cascade.json`, separate
+  on-disk dir `coreml-cascade/li-edge/`, separate filename prefix `li_modernbert_edge_b…`
+  parsed by Rust addon. Six edge variants traced + published to HF
+  `mrsladoje/sweet-search-coreml-cascade/li-edge/` (~31 MB each, total ~189 MB; vs ~275
+  MB each for standard because edge backbone is way smaller). CoreML parity check passed
+  at cosine 0.999601 ≥ 0.998.
+
+### Results (Full Profile, 6000 queries, gencodesearchnet)
+
+| Language | Standard `lateon-code` (May 1) | Edge `lateon-code-edge` (May 3) | Δ |
+|----------|--------------------------------|----------------------------------|---|
+| Python | 97.3% | 97.2% | -0.1 |
+| Go | 94.7% | 94.2% | -0.5 |
+| Java | 84.5% | 78.9% | **-5.6** |
+| PHP | 77.7% | 71.4% | **-6.3** |
+| JS | 77.4% | 70.1% | **-7.3** |
+| Ruby | 75.3% | 72.1% | **-3.2** |
+| **Overall MRR@10** | **84.48%** | **80.63%** | **-3.85** |
+| Recall@5 | 92.12% | 90.62% | -1.50 |
+| Recall@20 | 94.60% | 94.55% | -0.05 |
+| Total query time | — | 1297s (~216 ms/query) | — |
+| Latency p50 | — | 1073 ms | — |
+| Latency p95 | — | 2955 ms | — |
+
+### Verdict
+
+**Do not adopt edge as default.** Edge regresses MRR@10 by 3.85 pp overall, with losses
+concentrated exactly on the languages this experiment was supposed to help: JS −7.3 pp,
+PHP −6.3 pp, Java −5.6 pp, Ruby −3.2 pp. Python and Go are essentially flat (within
+0.5 pp). The smaller backbone (256d vs 768d, 7 layers vs 22, output 48d vs 128d) doesn't
+have enough capacity for the harder languages — exactly the failure mode the smaller
+parameter count predicts. Recall@20 holds up better (-0.05 pp) so the candidate pool is
+fine; the dim collapse loses ranking precision among already-retrieved candidates.
+
+### When edge could still make sense
+
+- Storage-constrained deployments: edge LI tokens are 48d × 4B = 192 B/token vs 128d ×
+  4B = 512 B/token (~37%). FP32 backbone is 67 MB vs 596 MB (~11%).
+- Mobile / edge devices where the smaller model fits in hot RAM.
+- Both paths remain shipped — toggle via
+  `SWEET_SEARCH_LATE_INTERACTION_MODEL=lateon-code-edge` or
+  `--late-interaction-model=lateon-code-edge`.
+
+### Reproducibility
+
+```bash
+# Edge
+SWEET_SEARCH_LATE_INTERACTION_MODEL=lateon-code-edge \
+  node eval/run_benchmark.js --dataset=gencodesearchnet \
+  --sqlite-fast --concurrency=12 --late-interaction-model=lateon-code-edge
+
+# A/B with cascade off (verifies CoreML cascade is parity-correct, not lossy)
+SWEET_SEARCH_LATE_INTERACTION_MODEL=lateon-code-edge \
+  SWEET_SEARCH_COREML_CASCADE=0 node eval/run_benchmark.js \
+  --dataset=gencodesearchnet --sqlite-fast --concurrency=12 \
+  --late-interaction-model=lateon-code-edge
+```
+
+---
+
+## Phase 3 — Honest sweep before v2.5.0 (2026-05-03, post-fix re-run)
+
+> ## ✅ CLEAN RE-RUN AFTER TWO UPSTREAM FIXES (2026-05-03 evening)
+>
+> The earlier SUSPECT block in this section reported standard `lateon-code`
+> + LI on at 51.60% MRR (vs the historical 85% baseline). That regression was
+> root-caused and fixed in two follow-up commits on `main`:
+>
+> - **`e6f5bd4`** *fix(ranking): make file-kind scoring conservative* —
+>   added confident-intent gating, structural skip, and window-bounded
+>   re-sort to `core/ranking/file-kind-ranking.js`. The previous full-list
+>   re-sort was floating int8-only tail items above the LI-reranked head.
+> - **`f55147b`** *fix(embedding): guard query vocabulary cache usage* —
+>   added schema-version fingerprint check, `SWEET_SEARCH_VOCAB_USE` kill
+>   switch, and `SWEET_SEARCH_VOCAB_MAX_TERMS` cap. Prevents stale cached
+>   embeddings (which had drifted enough to shift MRR by ~1 pp) and
+>   bench-iteration vocab bloat. Eval harness now defaults vocab OFF for
+>   reproducibility.
+>
+> All Phase 3 numbers below are from a clean re-run with both fixes in
+> place, vocab off-by-default, harness defaults (`stage3=15`,
+> `graphExpand=none` — these ARE the optimal-for-gencodesearchnet config),
+> `--concurrency=12`, fresh standard + fresh edge indexes.
+>
+### Hardware + harness
+
+- M3 Max (16 cores, 128 GB RAM)
+- Native CoreML cascade present for both standard and edge LI (parity ≥ 0.999)
+- Edge LI native build verified end-to-end (Metal candle + CoreML cascade route to `coreml-cascade/li-edge/`)
+- Phase 2 release smoke green
+- Harness defaults (post-`f55147b`): `stage3=15`, `graphExpand=none`,
+  `SWEET_SEARCH_VOCAB_USE=0`, `SWEET_SEARCH_VOCAB_AUTO_EXPAND=0`. These
+  ARE the gencodesearchnet-tuned defaults — no overrides used.
+
+### Run matrix (gencodesearchnet, 6000 queries, --sqlite-fast --concurrency=12)
+
+| Run | Index | LI rerank | MRR@10 | NDCG@10 | Recall@5 | Recall@10 | Recall@20 | Errors | p50 | p95 | Index time | Disk |
+|-----|-------|-----------|--------|---------|----------|-----------|-----------|--------|-----|-----|-----------|------|
+| **A** | standard fresh | on (standard) | **85.57%** | 87.60% | 92.42% | 93.73% | 94.58% | 0 | 227 ms | 256 ms | (--skip-index) | 656 MB |
+| **A_v2** (repro) | standard fresh | on (standard) | 85.56% | 87.60% | 92.40% | 93.72% | 94.58% | 0 | 241 ms | 273 ms | 661 s | 656 MB |
+| **B** | edge fresh | on (edge) | **80.65%** | 83.81% | 90.63% | 93.48% | 94.58% | 0 | 157 ms | 173 ms | 516 s | 266 MB |
+| **D** | edge (re-use B) | **off** | **82.90%** | 85.37% | 90.55% | 92.95% | 94.58% | 0 | 105 ms | 121 ms | (skip-index) | 266 MB |
+| **E** | standard (re-use A_v2) | **off** | **82.91%** | 85.38% | 90.57% | 92.97% | 94.58% | 0 | 121 ms | 142 ms | (skip-index) | 656 MB |
+| **C** | balanced (no LI built) | **n/a** | _not run — pre-existing indexer hang on no-LI path; D ≈ E proves index choice is irrelevant when LI is off, so C would land at the same ~82.9% MRR_ | | | | | | | | | |
+
+A and A_v2 reproduce within 0.01 pp — numbers are deterministic with the
+new vocab guards.
+
+### Per-language MRR@10
+
+| Run | Python | JS | Go | Ruby | Java | PHP | Average |
+|-----|--------|-----|-----|------|------|-----|---------|
+| **A** (standard + LI on) | 97.1% | 77.0% | 95.0% | 77.3% | 86.1% | 80.9% | **85.57%** |
+| **B** (edge + LI on)     | 97.3% | 70.1% | 94.2% | 72.0% | 78.9% | 71.4% | **80.65%** |
+| **D** (edge + LI off)    | 93.3% | 74.1% | 94.5% | 74.5% | 83.0% | 78.0% | 82.90% |
+| **E** (std + LI off)     | 93.3% | 74.1% | 94.5% | 74.5% | 83.0% | 78.0% | 82.91% |
+
+D and E are bit-identical per-language → confirms architectural property
+that search ranking is independent of which LI tokens were stored when
+`useLateInteraction=false`.
+
+### Indexing time + disk footprint
+
+| Index | Index time | Total `.sweet-search/` | LI tokens portion |
+|-------|------------|------------------------|-------------------|
+| Standard (`lateon-code`) | 661 s (~11 min) | 656 MB | ~318 MB |
+| Edge (`lateon-code-edge`) | 516 s (~9 min) | 266 MB | ~155 MB |
+
+Edge saves ~2.5 min indexing time and ~390 MB total disk (~163 MB on the
+LI portion alone) vs standard.
+
+### Findings
+
+1. **Standard LI rerank is net positive on this benchmark.** A (85.57%) >
+   E (82.91%) by **+2.66 pp** MRR. Standard LI rerank is doing useful
+   reordering — Recall@5 lifts from 90.57% → 92.42%, Success@1 from
+   77.00% → 80.23%.
+2. **Edge LI rerank is net negative.** D (82.90%) > B (80.65%) by
+   **+2.25 pp** MRR. Even on the same edge-indexed corpus, turning off
+   the edge LI rerank IMPROVES results — edge's 48d tokens are too lossy
+   for this benchmark's quality bar. Notably edge LI helps Python a bit
+   (97.3% vs 93.3% no-LI = +4.0) but loses on JS (-4.0), Java (-4.1),
+   Ruby (-2.5), and PHP (-6.6).
+3. **Standard beats edge with LI on.** A (85.57%) > B (80.65%) by
+   **+4.92 pp** MRR. Per-language: standard wins everywhere except a
+   ~tie on Python and Go.
+4. **Index choice is irrelevant when LI off.** D ≈ E (within 0.01 pp,
+   per-lang exact match). So choosing standard vs edge for the LI INDEX
+   is purely about disk + indexing time + read-semantic/ColGrep quality
+   (the latter not benchmarked here).
+5. **Edge LI rerank should not be exposed as a search-side default.**
+   Even on its own index, no-LI beats edge-LI by 2.25 pp. The smaller
+   token dim cannot carry enough ranking signal to compete with edge's
+   own backbone-only retrieval signal.
+
+### Product recommendation (v2.5.0 init)
+
+| Choice | Default? | Description |
+|--------|----------|-------------|
+| **Standard `lateon-code` LI + search rerank ON** | Yes (capable machines) | Accuracy default at **85.57% MRR**. Larger backbone (596 MB FP32 model), 656 MB on-disk index, ~11 min to index. Read-semantic + ColGrep both supported with full LI quality. |
+| **Edge `lateon-code-edge` LI + search rerank OFF** | Yes (constrained machines) | Best constrained-machine package: search ranking falls to **82.91% MRR** (the no-LI floor, identical to standard-no-LI), but disk is 266 MB (vs 656 MB) and indexing 9 min (vs 11 min). Edge LI tokens are still built, so read-semantic + ColGrep work. **Recommended over edge-with-LI-rerank** because turning edge LI rerank ON costs another 2.25 pp without disk/time benefit. |
+| **Edge `lateon-code-edge` LI + search rerank ON** | No (NOT recommended) | 80.65% MRR — worse than the no-LI floor on the same index. Edge's 48d tokens are too lossy for search rerank on this benchmark. Keep available behind explicit user choice (some queries may benefit; not the default). |
+| **No LI built at all** | No (escape hatch only) | Smallest disk (~111 MB est.), fastest indexing. Breaks read-semantic + ColGrep. Document loudly. The no-LI indexer also currently hangs on `--profile=balanced` (pre-existing bug, see below). |
+
+### Reproducibility
+
+```bash
+# A — standard fresh re-index + LI on (canonical baseline)
+SWEET_SEARCH_LATE_INTERACTION_MODEL=lateon-code \
+  node eval/run_benchmark.js --dataset=gencodesearchnet \
+  --sqlite-fast --concurrency=12 --late-interaction-model=lateon-code
+
+# B — edge fresh re-index + LI on (mv .sweet-search aside first)
+SWEET_SEARCH_LATE_INTERACTION_MODEL=lateon-code-edge \
+  node eval/run_benchmark.js --dataset=gencodesearchnet \
+  --sqlite-fast --concurrency=12 --late-interaction-model=lateon-code-edge
+
+# D — same edge index, LI rerank off
+SWEET_SEARCH_LATE_INTERACTION_MODEL=lateon-code-edge \
+  node eval/run_benchmark.js --dataset=gencodesearchnet \
+  --sqlite-fast --concurrency=12 --late-interaction-model=lateon-code-edge \
+  --skip-index --use-late-interaction=false
+
+# E — same standard index, LI rerank off
+SWEET_SEARCH_LATE_INTERACTION_MODEL=lateon-code \
+  node eval/run_benchmark.js --dataset=gencodesearchnet \
+  --sqlite-fast --concurrency=12 --late-interaction-model=lateon-code \
+  --skip-index --use-late-interaction=false
+```
+
+The harness defaults `SWEET_SEARCH_VOCAB_USE=0` and
+`SWEET_SEARCH_VOCAB_AUTO_EXPAND=0` (per `f55147b`) so vocabulary cache
+state cannot pollute results across iterations.
+
+### Open / blockers / follow-ups for v2.5.0
+
+- **Indexer hang on no-LI path.** `--profile=balanced` (and equivalent
+  `--build-late-interaction=false --use-late-interaction=false`) blocks
+  in the indexer with worker threads stuck on `uv_cond_wait`, no disk
+  progress past the initial 12 MB graph DB. Pre-existing bug, not edge
+  related, but blocks any future "no LI built at all" deployment path.
+  Worth a separate issue.
+- **`prepareCorpus` wipes `.sweet-search.*` siblings.** The harness's
+  corpus prep step deletes adjacent dotfile-prefixed dirs (cost me two
+  rounds of standard re-indexing during this sweep when I had backed up
+  indexes aside). Should leave dotfile siblings alone. Worth a separate
+  issue.
+- **stage3=15+graphExpand=none vs production stage3=30+graphExpand=auto.**
+  All Phase 3 numbers are at the harness defaults, which the upstream
+  diagnostic confirms ARE the gencodesearchnet-optimal config. Production
+  defaults remain `stage3=30 + graphExpand=auto` for real codebases —
+  this is intentional, the harness diverges to measure dense MRR
+  cleanly. No re-run with production defaults needed for the
+  edge-vs-standard decision; the harness defaults are the fair test.
+- **Read-tool ranking quality not benchmarked here.** This sweep measures
+  search ranking only. Edge's read-semantic + ColGrep functional
+  correctness is proven by the Phase 2 release smoke
+  (`tests/release/lateon-code-edge-e2e.test.js`) but not measured for
+  ranking quality on a real corpus. If we want a quality number for
+  read-tools, a separate harness run on read-semantic + ColGrep is
+  needed. The architectural finding (D = E) suggests read-tool quality
+  with edge LI tokens should be similar to standard LI tokens for the
+  same downstream consumers, modulo the 48d vs 128d expressiveness
+  difference, which is itself the same trade-off measured on search.
 

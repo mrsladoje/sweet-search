@@ -36,6 +36,7 @@ import {
   formatVariantFilename,
   RUST_EMBED_PREFIX,
   RUST_LI_PREFIX,
+  RUST_LI_EDGE_PREFIX,
   RUST_VARIANT_SUFFIX,
 } from '../../core/infrastructure/coreml-cascade.js';
 
@@ -52,6 +53,10 @@ describe('CoreML cascade — JS↔Rust filename parity', () => {
     expect(spec.li.filePattern.startsWith(RUST_LI_PREFIX)).toBe(true);
     expect(spec.embed.filePattern.endsWith(RUST_VARIANT_SUFFIX)).toBe(true);
     expect(spec.li.filePattern.endsWith(RUST_VARIANT_SUFFIX)).toBe(true);
+    if (spec.liEdge) {
+      expect(spec.liEdge.filePattern.startsWith(RUST_LI_EDGE_PREFIX)).toBe(true);
+      expect(spec.liEdge.filePattern.endsWith(RUST_VARIANT_SUFFIX)).toBe(true);
+    }
   });
 
   it('Rust source files use the exact same literal prefixes as the JS constants', () => {
@@ -68,15 +73,22 @@ describe('CoreML cascade — JS↔Rust filename parity', () => {
       'utf-8'
     );
 
-    // Each parse_*_variant_filename function has exactly one
-    // `strip_prefix("literal")` call.
+    // embedding_model.rs has exactly one strip_prefix() call.
     const embedMatch = embedRust.match(/strip_prefix\("([^"]+)"\)/);
-    const liMatch = liRust.match(/strip_prefix\("([^"]+)"\)/);
-
     expect(embedMatch).not.toBeNull();
-    expect(liMatch).not.toBeNull();
     expect(embedMatch[1]).toBe(RUST_EMBED_PREFIX);
-    expect(liMatch[1]).toBe(RUST_LI_PREFIX);
+
+    // li_model.rs has TWO strip_prefix() calls — one for the edge prefix
+    // (tried first because it's longer) and one for the standard prefix.
+    // Collect every match and assert the set equals our two JS constants.
+    const liPrefixes = [...liRust.matchAll(/strip_prefix\("([^"]+?_b)"\)/g)].map(m => m[1]);
+    expect(liPrefixes).toContain(RUST_LI_PREFIX);
+    expect(liPrefixes).toContain(RUST_LI_EDGE_PREFIX);
+    // Edge prefix MUST appear before the standard prefix in source order
+    // so the parser's early-return logic matches it first.
+    const edgeIdx = liPrefixes.indexOf(RUST_LI_EDGE_PREFIX);
+    const stdIdx = liPrefixes.indexOf(RUST_LI_PREFIX);
+    expect(edgeIdx).toBeLessThan(stdIdx);
   });
 
   it('formatted variant filenames round-trip through the JS replica of the Rust regex', () => {

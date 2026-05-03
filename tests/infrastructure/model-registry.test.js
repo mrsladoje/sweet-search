@@ -93,4 +93,30 @@ describe('model-registry', () => {
     expect(MODEL_REGISTRY['all-minilm-l6-v2']).toBeDefined();
     expect(MODEL_REGISTRY['all-minilm-l6-v2'].hfId).toBe('Xenova/all-MiniLM-L6-v2');
   });
+
+  it('lateon-code-edge-fp32 entry is well-formed for native edge inference', () => {
+    // The native (Metal/CoreML/CUDA) loader fetches this entry when
+    // SWEET_SEARCH_LATE_INTERACTION_MODEL=lateon-code-edge. It MUST
+    // ship the FP32 safetensors backbone + both projection stages.
+    const entry = MODEL_REGISTRY['lateon-code-edge-fp32'];
+    expect(entry).toBeDefined();
+    expect(entry.hfId).toBe('lightonai/LateOn-Code-edge');
+    expect(entry.profile).toBe('full');
+
+    const paths = entry.files.map(f => f.path);
+    expect(paths).toContain('model.safetensors');         // FP32 backbone
+    expect(paths).toContain('1_Dense/model.safetensors'); // first projection stage
+    expect(paths).toContain('2_Dense/model.safetensors'); // second projection stage
+    expect(paths).toContain('config.json');
+
+    // Every safetensors entry must have a SHA — without it, `fetchModel`
+    // would skip checksum verification and a corrupt download could
+    // ship to a user undetected. The non-LFS config.json is allowed to
+    // omit sha256 (caught by the broader test above).
+    for (const f of entry.files) {
+      if (f.path.endsWith('.safetensors')) {
+        expect(f.sha256, `lateon-code-edge-fp32 ${f.path} missing sha256`).toBeTruthy();
+      }
+    }
+  });
 });
