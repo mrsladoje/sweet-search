@@ -1,0 +1,1275 @@
+{
+  "meta": {
+    "generatedAt": "2026-05-03T11:59:46.036Z",
+    "options": {
+      "queries": "/Users/admin/Projects/sweet-search-private/eval/miss-analysis/file_kind_guard_queries.jsonl",
+      "graphRecords": "/Users/admin/Projects/sweet-search-private/eval/miss-analysis/graph2hop_records.json",
+      "rawOut": "/Users/admin/Projects/sweet-search-private/eval/miss-analysis/file_kind_guard_records.json",
+      "reportOut": "/Users/admin/Projects/sweet-search-private/eval/miss-analysis/file_kind_intent_report.md",
+      "docFactor": 0.7,
+      "testFactor": 0.7,
+      "typeFactor": 0.7,
+      "blanketFactor": 0.7,
+      "k": 50
+    },
+    "graphMetrics": {
+      "n": 295,
+      "baseline": {
+        "r1": 0.4745762711864407,
+        "r10": 0.823728813559322,
+        "mrr": 0.589911218724778
+      },
+      "blanket": {
+        "r1": 0.6542372881355932,
+        "r10": 0.823728813559322,
+        "mrr": 0.7159725585149312,
+        "rescue": 0,
+        "harm": 0
+      },
+      "intentAware": {
+        "r1": 0.6440677966101694,
+        "r10": 0.823728813559322,
+        "mrr": 0.7091121872477804,
+        "rescue": 0,
+        "harm": 0
+      }
+    },
+    "guardMetrics": {
+      "implementation": null,
+      "docs": null,
+      "tests": null,
+      "types": null
+    },
+    "blanketHarmsCount": 0,
+    "intentHarmsCount": 0
+  },
+  "records": [
+    {
+      "id": "impl-fastify-001",
+      "repo": "fastify",
+      "query": "private property keys symbol for tracking whether an instance was decorated",
+      "intent": "implementation",
+      "gold_files": [
+        "lib/symbols.js"
+      ],
+      "gold_symbols": [
+        "kHasBeenDecorated"
+      ],
+      "notes": "Implementation file defines the symbol; docs only mention decorators conceptually.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-fastify-002",
+      "repo": "fastify",
+      "query": "definition of FST_ERR_NOT_FOUND error",
+      "intent": "implementation",
+      "gold_files": [
+        "lib/errors.js"
+      ],
+      "gold_symbols": [
+        "FST_ERR_NOT_FOUND"
+      ],
+      "notes": "Real error definition lives in lib/errors.js, types/errors.d.ts only declares it.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-fastify-003",
+      "repo": "fastify",
+      "query": "where is the lifecycle hook list that drives onRequest preParsing preValidation preHandler",
+      "intent": "implementation",
+      "gold_files": [
+        "lib/hooks.js"
+      ],
+      "gold_symbols": [
+        "lifecycleHooks"
+      ],
+      "notes": "docs/Reference/Hooks.md describes hooks but the array constant is in lib/hooks.js.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-fastify-004",
+      "repo": "fastify",
+      "query": "what runs the chain of preValidation user callbacks before AJV is invoked",
+      "intent": "implementation",
+      "gold_files": [
+        "lib/hooks.js"
+      ],
+      "gold_symbols": [
+        "preValidationHookRunner",
+        "hookRunnerGenerator"
+      ],
+      "notes": "Implementation in lib/hooks.js.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-fastify-005",
+      "repo": "fastify",
+      "query": "where is FST_ERR_VALIDATION constructed and given its 400 status",
+      "intent": "implementation",
+      "gold_files": [
+        "lib/errors.js"
+      ],
+      "gold_symbols": [
+        "FST_ERR_VALIDATION"
+      ],
+      "notes": "createError factory call lives in lib/errors.js.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-fastify-006",
+      "repo": "fastify",
+      "query": "where is the wrapper that resolves a promise returned by an async route handler",
+      "intent": "implementation",
+      "gold_files": [
+        "lib/wrap-thenable.js"
+      ],
+      "gold_symbols": [
+        "wrapThenable"
+      ],
+      "notes": "Implementation function file.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-fastify-007",
+      "repo": "fastify",
+      "query": "central dispatcher that selects the parent prototype error function and unwinds on rethrow",
+      "intent": "implementation",
+      "gold_files": [
+        "lib/error-handler.js"
+      ],
+      "gold_symbols": [
+        "handleError"
+      ],
+      "notes": "docs/Reference/Reply.md and types/errors.d.ts mention error handling but the dispatcher logic is in lib/error-handler.js.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-fastify-008",
+      "repo": "fastify",
+      "query": "where is the singleton 404 router built by the FindMyWay library",
+      "intent": "implementation",
+      "gold_files": [
+        "lib/four-oh-four.js"
+      ],
+      "gold_symbols": [
+        "build404"
+      ],
+      "notes": "Implementation. test/404s.test.js exercises but does not define.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-fastify-009",
+      "repo": "fastify",
+      "query": "where is the last-resort fallback that bypasses user error handling and writes the raw response",
+      "intent": "implementation",
+      "gold_files": [
+        "lib/error-handler.js"
+      ],
+      "gold_symbols": [
+        "fallbackErrorHandler"
+      ],
+      "notes": "Implementation.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-fastify-010",
+      "repo": "fastify",
+      "query": "what generates per-request unique ids when an incoming HTTP request arrives",
+      "intent": "implementation",
+      "gold_files": [
+        "lib/req-id-gen-factory.js"
+      ],
+      "gold_symbols": [
+        "reqIdGenFactory"
+      ],
+      "notes": "Implementation file is the factory; docs describe ids conceptually.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-fastify-011",
+      "repo": "fastify",
+      "query": "how does encapsulation duplicate the lifecycle handler arrays so child plugins do not pollute the parent instance",
+      "intent": "implementation",
+      "gold_files": [
+        "lib/hooks.js"
+      ],
+      "gold_symbols": [
+        "buildHooks"
+      ],
+      "notes": "buildHooks logic in lib/hooks.js performs the per-context duplication.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-fastify-001",
+      "repo": "fastify",
+      "query": "documentation for fastify hooks lifecycle",
+      "intent": "docs",
+      "gold_files": [
+        "docs/Reference/Hooks.md"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking query — Hooks.md is the canonical reference.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-fastify-002",
+      "repo": "fastify",
+      "query": "reference docs for the decorator API",
+      "intent": "docs",
+      "gold_files": [
+        "docs/Reference/Decorators.md"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking — Decorators.md is the explicit answer.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-fastify-003",
+      "repo": "fastify",
+      "query": "plugins guide for fastify users",
+      "intent": "docs",
+      "gold_files": [
+        "docs/Reference/Plugins.md"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking. .md should win over lib/plugin.js.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-fastify-004",
+      "repo": "fastify",
+      "query": "how to write a fastify plugin documentation",
+      "intent": "docs",
+      "gold_files": [
+        "docs/Guides/Plugins-Guide.md",
+        "docs/Reference/Plugins.md"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking; docs/Guides/Plugins-Guide.md is the tutorial.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-fastify-005",
+      "repo": "fastify",
+      "query": "validation and serialization documentation",
+      "intent": "docs",
+      "gold_files": [
+        "docs/Reference/Validation-and-Serialization.md"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking; canonical doc page.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-fastify-006",
+      "repo": "fastify",
+      "query": "reference documentation for the fastify Reply object",
+      "intent": "docs",
+      "gold_files": [
+        "docs/Reference/Reply.md"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-fastify-007",
+      "repo": "fastify",
+      "query": "docs explaining encapsulation in fastify",
+      "intent": "docs",
+      "gold_files": [
+        "docs/Reference/Encapsulation.md"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking — Encapsulation.md is the explicit doc.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-fastify-001",
+      "repo": "fastify",
+      "query": "tests for the 404 not found behavior",
+      "intent": "tests",
+      "gold_files": [
+        "test/404s.test.js"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking — test file should win.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-fastify-002",
+      "repo": "fastify",
+      "query": "hooks test cases for fastify",
+      "intent": "tests",
+      "gold_files": [
+        "test/hooks.test.js"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-fastify-003",
+      "repo": "fastify",
+      "query": "tests covering fastify decorators api",
+      "intent": "tests",
+      "gold_files": [
+        "test/decorator.test.js"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-fastify-004",
+      "repo": "fastify",
+      "query": "validation tests for fastify schema and ajv",
+      "intent": "tests",
+      "gold_files": [
+        "test/validation.test.js",
+        "test/validation-error-handling.test.js"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-fastify-005",
+      "repo": "fastify",
+      "query": "async dispose test cases",
+      "intent": "tests",
+      "gold_files": [
+        "test/async-dispose.test.js"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-fastify-006",
+      "repo": "fastify",
+      "query": "connection timeout test",
+      "intent": "tests",
+      "gold_files": [
+        "test/connection-timeout.test.js"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-001",
+      "repo": "fastify",
+      "query": "typescript type declaration for fastify hooks",
+      "intent": "types",
+      "gold_files": [
+        "types/hooks.d.ts"
+      ],
+      "gold_symbols": [
+        "onRequestHookHandler"
+      ],
+      "notes": "Type-seeking — .d.ts must win over implementation.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-002",
+      "repo": "fastify",
+      "query": "interface declaration for the FastifyInstance",
+      "intent": "types",
+      "gold_files": [
+        "types/instance.d.ts"
+      ],
+      "gold_symbols": [
+        "FastifyInstance"
+      ],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-003",
+      "repo": "fastify",
+      "query": "type declaration for fastify reply",
+      "intent": "types",
+      "gold_files": [
+        "types/reply.d.ts"
+      ],
+      "gold_symbols": [
+        "FastifyReply"
+      ],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-004",
+      "repo": "fastify",
+      "query": "type declarations for fastify request",
+      "intent": "types",
+      "gold_files": [
+        "types/request.d.ts"
+      ],
+      "gold_symbols": [
+        "FastifyRequest"
+      ],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-005",
+      "repo": "fastify",
+      "query": "type definitions for the route options",
+      "intent": "types",
+      "gold_files": [
+        "types/route.d.ts"
+      ],
+      "gold_symbols": [
+        "RouteOptions"
+      ],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-006",
+      "repo": "fastify",
+      "query": "interface for the fastify error definitions",
+      "intent": "types",
+      "gold_files": [
+        "types/errors.d.ts"
+      ],
+      "gold_symbols": [
+        "FastifyError"
+      ],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-007",
+      "repo": "fastify",
+      "query": "type definitions for the fastify schema",
+      "intent": "types",
+      "gold_files": [
+        "types/schema.d.ts"
+      ],
+      "gold_symbols": [
+        "FastifySchema"
+      ],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-008",
+      "repo": "fastify",
+      "query": "type provider interface declaration",
+      "intent": "types",
+      "gold_files": [
+        "types/type-provider.d.ts"
+      ],
+      "gold_symbols": [
+        "FastifyTypeProvider"
+      ],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-009",
+      "repo": "fastify",
+      "query": "register options type declaration",
+      "intent": "types",
+      "gold_files": [
+        "types/register.d.ts"
+      ],
+      "gold_symbols": [
+        "RegisterOptions"
+      ],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-010",
+      "repo": "fastify",
+      "query": "plugin type declaration",
+      "intent": "types",
+      "gold_files": [
+        "types/plugin.d.ts"
+      ],
+      "gold_symbols": [
+        "FastifyPlugin",
+        "FastifyPluginCallback"
+      ],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-011",
+      "repo": "fastify",
+      "query": "server factory type declaration",
+      "intent": "types",
+      "gold_files": [
+        "types/server-factory.d.ts"
+      ],
+      "gold_symbols": [
+        "ServerFactory"
+      ],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-012",
+      "repo": "fastify",
+      "query": "context type declaration",
+      "intent": "types",
+      "gold_files": [
+        "types/context.d.ts"
+      ],
+      "gold_symbols": [],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-013",
+      "repo": "fastify",
+      "query": "content type parser type declaration",
+      "intent": "types",
+      "gold_files": [
+        "types/content-type-parser.d.ts"
+      ],
+      "gold_symbols": [],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-014",
+      "repo": "fastify",
+      "query": "logger type declaration",
+      "intent": "types",
+      "gold_files": [
+        "types/logger.d.ts"
+      ],
+      "gold_symbols": [
+        "FastifyBaseLogger"
+      ],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-015",
+      "repo": "fastify",
+      "query": "utils type declaration",
+      "intent": "types",
+      "gold_files": [
+        "types/utils.d.ts"
+      ],
+      "gold_symbols": [],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-016",
+      "repo": "fastify",
+      "query": "fastify typescript declaration index",
+      "intent": "types",
+      "gold_files": [
+        "fastify.d.ts"
+      ],
+      "gold_symbols": [],
+      "notes": "Type-seeking — root .d.ts entry.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-017",
+      "repo": "fastify",
+      "query": "interface for fastify error code constants",
+      "intent": "types",
+      "gold_files": [
+        "types/errors.d.ts"
+      ],
+      "gold_symbols": [
+        "FastifyError"
+      ],
+      "notes": "Type-seeking — interface definitions live in errors.d.ts.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-018",
+      "repo": "fastify",
+      "query": "declaration of FastifyServerFactoryHandler",
+      "intent": "types",
+      "gold_files": [
+        "types/server-factory.d.ts"
+      ],
+      "gold_symbols": [
+        "FastifyServerFactoryHandler"
+      ],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-019",
+      "repo": "fastify",
+      "query": "type signature for the fastify content type parser",
+      "intent": "types",
+      "gold_files": [
+        "types/content-type-parser.d.ts"
+      ],
+      "gold_symbols": [
+        "FastifyContentTypeParser"
+      ],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-fastify-020",
+      "repo": "fastify",
+      "query": "type definitions for fastify hooks handler",
+      "intent": "types",
+      "gold_files": [
+        "types/hooks.d.ts"
+      ],
+      "gold_symbols": [
+        "onRequestHookHandler",
+        "preHandlerHookHandler"
+      ],
+      "notes": "Type-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-flask-001",
+      "repo": "flask",
+      "query": "where is the Blueprint class that lets users register a group of routes under a url prefix",
+      "intent": "implementation",
+      "gold_files": [
+        "src/flask/blueprints.py"
+      ],
+      "gold_symbols": [
+        "Blueprint"
+      ],
+      "notes": "Blueprint class is here; docs/blueprints.rst is documentation.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-flask-002",
+      "repo": "flask",
+      "query": "implementation of the application context push and pop that manages g and current_app",
+      "intent": "implementation",
+      "gold_files": [
+        "src/flask/ctx.py"
+      ],
+      "gold_symbols": [
+        "AppContext"
+      ],
+      "notes": "docs/appcontext.rst explains the concept; implementation is ctx.py.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-flask-003",
+      "repo": "flask",
+      "query": "the function that loads a flask config from an environment variable pointing to a python file",
+      "intent": "implementation",
+      "gold_files": [
+        "src/flask/config.py"
+      ],
+      "gold_symbols": [
+        "from_envvar",
+        "from_pyfile"
+      ],
+      "notes": "Implementation file.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-flask-004",
+      "repo": "flask",
+      "query": "where does flask register signals like request_started and got_request_exception",
+      "intent": "implementation",
+      "gold_files": [
+        "src/flask/signals.py"
+      ],
+      "gold_symbols": [
+        "request_started",
+        "got_request_exception"
+      ],
+      "notes": "Implementation file.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-flask-005",
+      "repo": "flask",
+      "query": "flask cli command that runs the development server",
+      "intent": "implementation",
+      "gold_files": [
+        "src/flask/cli.py"
+      ],
+      "gold_symbols": [
+        "run_command"
+      ],
+      "notes": "docs/cli.rst documents the CLI; implementation in cli.py.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-flask-006",
+      "repo": "flask",
+      "query": "how does flask resolve template names against the configured loader",
+      "intent": "implementation",
+      "gold_files": [
+        "src/flask/templating.py"
+      ],
+      "gold_symbols": [
+        "DispatchingJinjaLoader"
+      ],
+      "notes": "Implementation lives in templating.py.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-flask-007",
+      "repo": "flask",
+      "query": "where does flask attach the secure session cookie serializer",
+      "intent": "implementation",
+      "gold_files": [
+        "src/flask/sessions.py"
+      ],
+      "gold_symbols": [
+        "SecureCookieSession",
+        "SecureCookieSessionInterface"
+      ],
+      "notes": "Implementation in sessions.py.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-flask-008",
+      "repo": "flask",
+      "query": "the test client class that mimics http requests in unit tests",
+      "intent": "implementation",
+      "gold_files": [
+        "src/flask/testing.py"
+      ],
+      "gold_symbols": [
+        "FlaskClient"
+      ],
+      "notes": "Class definition in implementation file. tests/ uses it but does not define it.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-flask-009",
+      "repo": "flask",
+      "query": "flask helper that resolves a static file path under the application static_folder",
+      "intent": "implementation",
+      "gold_files": [
+        "src/flask/helpers.py"
+      ],
+      "gold_symbols": [
+        "send_from_directory",
+        "send_file"
+      ],
+      "notes": "Implementation in helpers.py.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-flask-010",
+      "repo": "flask",
+      "query": "the flask MethodView class for dispatching by http method",
+      "intent": "implementation",
+      "gold_files": [
+        "src/flask/views.py"
+      ],
+      "gold_symbols": [
+        "MethodView"
+      ],
+      "notes": "Implementation in views.py.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-flask-001",
+      "repo": "flask",
+      "query": "flask documentation about blueprints",
+      "intent": "docs",
+      "gold_files": [
+        "docs/blueprints.rst"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-flask-002",
+      "repo": "flask",
+      "query": "flask CLI usage documentation",
+      "intent": "docs",
+      "gold_files": [
+        "docs/cli.rst"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-flask-003",
+      "repo": "flask",
+      "query": "flask documentation on the application context",
+      "intent": "docs",
+      "gold_files": [
+        "docs/appcontext.rst"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-flask-004",
+      "repo": "flask",
+      "query": "flask deployment guide",
+      "intent": "docs",
+      "gold_files": [
+        "docs/deploying/index.rst"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-flask-005",
+      "repo": "flask",
+      "query": "flask configuration handling reference docs",
+      "intent": "docs",
+      "gold_files": [
+        "docs/config.rst"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-flask-006",
+      "repo": "flask",
+      "query": "flask error handling documentation",
+      "intent": "docs",
+      "gold_files": [
+        "docs/errorhandling.rst"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-flask-007",
+      "repo": "flask",
+      "query": "flask documentation for using async and await",
+      "intent": "docs",
+      "gold_files": [
+        "docs/async-await.rst"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-flask-008",
+      "repo": "flask",
+      "query": "flask tutorial getting started guide",
+      "intent": "docs",
+      "gold_files": [
+        "docs/tutorial/index.rst"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-flask-009",
+      "repo": "flask",
+      "query": "flask api reference documentation",
+      "intent": "docs",
+      "gold_files": [
+        "docs/api.rst"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking — top-level api.rst is the canonical answer.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-flask-010",
+      "repo": "flask",
+      "query": "flask documentation on signals",
+      "intent": "docs",
+      "gold_files": [
+        "docs/signals.rst"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-flask-011",
+      "repo": "flask",
+      "query": "flask testing documentation reference",
+      "intent": "docs",
+      "gold_files": [
+        "docs/testing.rst"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking — docs not implementation in tests/.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-flask-001",
+      "repo": "flask",
+      "query": "unit tests for flask blueprints",
+      "intent": "tests",
+      "gold_files": [
+        "tests/test_blueprints.py"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-flask-002",
+      "repo": "flask",
+      "query": "flask cli test cases",
+      "intent": "tests",
+      "gold_files": [
+        "tests/test_cli.py"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-flask-003",
+      "repo": "flask",
+      "query": "flask test for application context",
+      "intent": "tests",
+      "gold_files": [
+        "tests/test_appctx.py"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-flask-004",
+      "repo": "flask",
+      "query": "flask tests for async route handling",
+      "intent": "tests",
+      "gold_files": [
+        "tests/test_async.py"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-flask-005",
+      "repo": "flask",
+      "query": "tests for flask config loading",
+      "intent": "tests",
+      "gold_files": [
+        "tests/test_config.py"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-flask-006",
+      "repo": "flask",
+      "query": "flask url routing converters test",
+      "intent": "tests",
+      "gold_files": [
+        "tests/test_converters.py"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-flask-007",
+      "repo": "flask",
+      "query": "helpers tests for flask",
+      "intent": "tests",
+      "gold_files": [
+        "tests/test_helpers.py"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-flask-008",
+      "repo": "flask",
+      "query": "flask json tests",
+      "intent": "tests",
+      "gold_files": [
+        "tests/test_json.py",
+        "tests/test_json_tag.py"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-flask-009",
+      "repo": "flask",
+      "query": "basic flask test suite for the app object",
+      "intent": "tests",
+      "gold_files": [
+        "tests/test_basic.py"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-flask-001",
+      "repo": "flask",
+      "query": "flask typing module type declarations",
+      "intent": "types",
+      "gold_files": [
+        "src/flask/typing.py"
+      ],
+      "gold_symbols": [],
+      "notes": "Type-seeking — flask uses typing.py for its type aliases.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "types-flask-002",
+      "repo": "flask",
+      "query": "py.typed marker file for flask types",
+      "intent": "types",
+      "gold_files": [
+        "src/flask/py.typed"
+      ],
+      "gold_symbols": [],
+      "notes": "Type-seeking marker file.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-ripgrep-001",
+      "repo": "ripgrep",
+      "query": "where is the search function that runs the regex over a haystack and emits matches",
+      "intent": "implementation",
+      "gold_files": [
+        "crates/core/search.rs"
+      ],
+      "gold_symbols": [
+        "search_path",
+        "SearchWorker"
+      ],
+      "notes": "Implementation file in core.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-ripgrep-002",
+      "repo": "ripgrep",
+      "query": "function that builds the boolean haystack iterator from cli args",
+      "intent": "implementation",
+      "gold_files": [
+        "crates/core/haystack.rs"
+      ],
+      "gold_symbols": [
+        "HaystackBuilder"
+      ],
+      "notes": "Implementation.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-ripgrep-003",
+      "repo": "ripgrep",
+      "query": "the message printer that formats matches with file names and line numbers",
+      "intent": "implementation",
+      "gold_files": [
+        "crates/core/messages.rs"
+      ],
+      "gold_symbols": [
+        "Messages"
+      ],
+      "notes": "Implementation in core/messages.rs.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-ripgrep-004",
+      "repo": "ripgrep",
+      "query": "where does ripgrep parse and dispatch the long-form CLI flags",
+      "intent": "implementation",
+      "gold_files": [
+        "crates/core/flags/parse.rs",
+        "crates/core/flags/defs.rs"
+      ],
+      "gold_symbols": [
+        "parse",
+        "FLAGS"
+      ],
+      "notes": "flags/parse.rs and flags/defs.rs hold the implementation.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-ripgrep-005",
+      "repo": "ripgrep",
+      "query": "main entrypoint of the rg binary",
+      "intent": "implementation",
+      "gold_files": [
+        "crates/core/main.rs"
+      ],
+      "gold_symbols": [
+        "main"
+      ],
+      "notes": "Implementation.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-ripgrep-006",
+      "repo": "ripgrep",
+      "query": "the logger initialization that wires env logger to rg's --debug flag",
+      "intent": "implementation",
+      "gold_files": [
+        "crates/core/logger.rs"
+      ],
+      "gold_symbols": [
+        "Logger",
+        "init"
+      ],
+      "notes": "Implementation.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-ripgrep-007",
+      "repo": "ripgrep",
+      "query": "the regex matcher abstraction trait used by every searcher",
+      "intent": "implementation",
+      "gold_files": [
+        "crates/matcher/src/lib.rs"
+      ],
+      "gold_symbols": [
+        "Matcher"
+      ],
+      "notes": "Trait definition lives in matcher crate's lib.rs.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-ripgrep-008",
+      "repo": "ripgrep",
+      "query": "how does the ignore crate decide whether a file is ignored by gitignore",
+      "intent": "implementation",
+      "gold_files": [
+        "crates/ignore/src/gitignore.rs"
+      ],
+      "gold_symbols": [
+        "Gitignore",
+        "matched"
+      ],
+      "notes": "Implementation.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-ripgrep-009",
+      "repo": "ripgrep",
+      "query": "where is the printer that produces the JSON-lines machine-readable output",
+      "intent": "implementation",
+      "gold_files": [
+        "crates/printer/src/json.rs"
+      ],
+      "gold_symbols": [
+        "JSON"
+      ],
+      "notes": "Implementation.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "impl-ripgrep-010",
+      "repo": "ripgrep",
+      "query": "the searcher that buffers a haystack and feeds it line-by-line to the matcher",
+      "intent": "implementation",
+      "gold_files": [
+        "crates/searcher/src/searcher/mod.rs"
+      ],
+      "gold_symbols": [
+        "Searcher"
+      ],
+      "notes": "Implementation.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-ripgrep-001",
+      "repo": "ripgrep",
+      "query": "ripgrep documentation about regex syntax",
+      "intent": "docs",
+      "gold_files": [
+        "doc/rg.1",
+        "doc/rg.1.gz",
+        "crates/core/README.md"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking — rg.1 manpage or core README.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "docs-ripgrep-002",
+      "repo": "ripgrep",
+      "query": "ripgrep readme documentation",
+      "intent": "docs",
+      "gold_files": [
+        "README.md"
+      ],
+      "gold_symbols": [],
+      "notes": "Doc-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-ripgrep-001",
+      "repo": "ripgrep",
+      "query": "binary file detection tests",
+      "intent": "tests",
+      "gold_files": [
+        "tests/binary.rs"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-ripgrep-002",
+      "repo": "ripgrep",
+      "query": "regression test cases for ripgrep",
+      "intent": "tests",
+      "gold_files": [
+        "tests/regression.rs"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-ripgrep-003",
+      "repo": "ripgrep",
+      "query": "json output tests for ripgrep",
+      "intent": "tests",
+      "gold_files": [
+        "tests/json.rs"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-ripgrep-004",
+      "repo": "ripgrep",
+      "query": "multiline matching tests",
+      "intent": "tests",
+      "gold_files": [
+        "tests/multiline.rs"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    },
+    {
+      "id": "tests-ripgrep-005",
+      "repo": "ripgrep",
+      "query": "feature tests for ripgrep",
+      "intent": "tests",
+      "gold_files": [
+        "tests/feature.rs"
+      ],
+      "gold_symbols": [],
+      "notes": "Test-seeking.",
+      "error": "embedding.slice is not a function"
+    }
+  ]
+}

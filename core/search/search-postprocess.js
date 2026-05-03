@@ -14,6 +14,7 @@ import { expandResults } from '../graph/graph-expansion.js';
 import { int8CosineSimilarity } from '../embedding/embedding-service.js';
 import { QualityScorer } from '../ranking/quality-scorer.js';
 import { classifyIntent, getIntentPolicy } from '../query/intent-router.js';
+import { applyFileKindRanking, classifyFileKindIntent } from '../ranking/file-kind-ranking.js';
 import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
 import { expandAliases } from './dedup/sibling-expander.js';
 
@@ -396,6 +397,27 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     if (intentPolicy.maxResults) {
       const effectiveK = Math.min(k, intentPolicy.maxResults);
       results = results.slice(0, effectiveK);
+    }
+  }
+
+  // =========================================================================
+  // Intent-aware file-kind ranking
+  // =========================================================================
+  // Soft-demote docs/tests/types files when the query is implementation-seeking;
+  // no-op otherwise. Validated on a 93-query guard set + 295 graph-2hop queries
+  // (see eval/miss-analysis/file_kind_intent_report.md). Disable with
+  // SWEET_SEARCH_FILE_KIND_RANKING=0; tune SWEET_SEARCH_FILE_KIND_FACTOR.
+  if (Array.isArray(results) && results.length > 0) {
+    const fileKindIntent = classifyFileKindIntent(query);
+    const beforeTop = results[0];
+    const afterFK = applyFileKindRanking(results, { intent: fileKindIntent });
+    if (afterFK !== results) {
+      results = afterFK;
+      stats.fileKindRanking = {
+        intent: fileKindIntent,
+        applied: fileKindIntent === 'implementation',
+        top1Changed: !!beforeTop && results[0] && (beforeTop !== results[0]),
+      };
     }
   }
 
