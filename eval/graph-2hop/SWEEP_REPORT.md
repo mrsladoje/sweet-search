@@ -192,6 +192,54 @@ In priority order:
 - `eval/results/chunk-overflow-audit.json` / `.md` — audit outputs
 - `run_pool_sweep.js` — reusable sweep harness (any policy combination)
 
+## Addendum 2026-05-03 — s3 ∈ {20, 25, 30} decision sweep
+
+Re-ran the pool sweep restricted to the candidate pool sizes around the
+default to choose between `s3=25` and `s3=30` for the product default.
+Same 300-query corpus, fresh vocabulary, `SWEET_SEARCH_VOCAB_AUTO_EXPAND=0`,
+`graphExpand=2hop-adaptive` (except controls).
+
+### Overall (n=300)
+
+| policy             | MRR@10 | R@10   | R@20   | R@50   | p50 ms | rescue@10 | harm@10 |
+|--------------------|-------:|-------:|-------:|-------:|-------:|----------:|--------:|
+| baseline_none      | 57.68 %| 79.33 %| 84.00 %| 88.33 %|   20.3 |     —     |    —    |
+| pool20             | 56.97 %| 77.00 %| 80.33 %| 88.67 %|   21.3 |   0.67 %  |  3.00 % |
+| pool25             | 57.53 %| 78.00 %| 82.33 %| 88.67 %|   21.6 |   0.33 %  |  1.67 % |
+| **pool30**         |**57.68%**| **79.33%**| **84.00%**| 88.67%|   22.0 |   0.00 %  |  0.00 % |
+| pool25_no_expand   | 57.57 %| 78.33 %| 82.33 %| 88.33 %|   12.3 |   0.33 %  |  1.33 % |
+
+### Per repo, harm@10
+
+| repo    | pool20 | pool25 | pool30 |
+|---------|-------:|-------:|-------:|
+| fastify | 4.00 % | 2.00 % | 0.00 % |
+| flask   | 3.00 % | 2.00 % | 0.00 % |
+| ripgrep | 2.00 % | 1.00 % | 0.00 % |
+
+### Reading
+
+`pool30` is the smallest pool that **fully absorbs the expanded
+candidates without displacing any original**. At `pool25` every repo
+still shows 1–2 % harm@10. The decision rule the user proposed
+(s3=25 within 0.2 pp R@10 of s3=30) fails: ΔR@10 between them is
+1.33 pp on this corpus.
+
+The `pool25_no_expand` control reveals an interesting separate result:
+turning expansion off entirely matches `pool25` on R@10 at half the
+latency. That's a different question (should the *default* be expansion
+on at all?) and isn't decided by 300 queries — flagged as a follow-up
+for later evaluation against a wider production query distribution.
+
+### Recommendation
+
+**Keep `stage3Candidates=30` as production default.** No code change
+needed; current default is correct.
+
+Result file: `eval/graph-2hop/results/pool_sweep_s3_decision.json`.
+
+---
+
 ## Reproducing
 
 ```bash
