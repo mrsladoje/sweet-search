@@ -5,3 +5,12 @@ gencodesearchnet_records.json
 
 # Run logs — useful locally, noisy in git.
 _*.log
+
+# Per-repo intermediate outputs from run_graph_per_repo.sh (merged into the
+# canonical artifact paths during the run; not worth tracking individually).
+_graph_*.json
+_graph_*.jsonl
+
+# Archived comparison snapshots (kept locally for quick diff but not committed).
+graph2hop_*_pre-reindex.*
+graph2hop_*_cascade-on.*

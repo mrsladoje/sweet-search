@@ -56,6 +56,7 @@ function parseArgs() {
     rawOut: path.join(__dirname, 'graph2hop_records.json'),
     warmup: true,
     verbose: false,
+    use3Stage: false,           // pre-reindex default; flip on once repos rebuilt
   };
   for (const a of args) {
     if (a.startsWith('--repos=')) opts.repos = a.split('=')[1].split(',');
@@ -66,6 +67,7 @@ function parseArgs() {
     else if (a.startsWith('--raw=')) opts.rawOut = path.resolve(a.split('=')[1]);
     else if (a === '--no-warmup') opts.warmup = false;
     else if (a === '--verbose' || a === '-v') opts.verbose = true;
+    else if (a === '--use-3-stage') opts.use3Stage = true;
   }
   return opts;
 }
@@ -107,9 +109,25 @@ function findGoldRank(results, goldPaths, repoRoot) {
 
 async function runOne(search, query, modeOpts, k) {
   const t0 = performance.now();
-  const { results, stats } = await search.search(query, {
-    k, mode: 'auto', rerank: true, ...modeOpts,
-  });
+  // Retry up to 3x on transient cold-start errors (`embedding.slice is not
+  // a function`, `cannot read properties of undefined`, etc.) — these stop
+  // happening once the embedding cache + vocabulary are warm.
+  let lastErr;
+  let resp;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      resp = await search.search(query, { k, mode: 'auto', rerank: true, ...modeOpts });
+      lastErr = null;
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (!/slice is not a function|cannot read|undefined/.test(err.message)) break;
+      // small backoff so the model finishes loading
+      await new Promise(r => setTimeout(r, 50 * (attempt + 1)));
+    }
+  }
+  if (lastErr) throw lastErr;
+  const { results, stats } = resp;
   const latencyMs = performance.now() - t0;
   const enriched = results.map(r => ({
     file: r.file || r.file_path || r.metadata?.file || '',
@@ -122,7 +140,7 @@ async function runOne(search, query, modeOpts, k) {
   return { results: enriched, latencyMs, stats };
 }
 
-async function openSearchForRepo(repoName) {
+async function openSearchForRepo(repoName, { use3Stage = false } = {}) {
   const repoRoot = path.join(PROJECT_ROOT, 'eval', 'repos', repoName);
   const ssDir = path.join(repoRoot, '.sweet-search');
   if (!fs.existsSync(path.join(ssDir, 'code-graph.db'))) {
@@ -138,7 +156,7 @@ async function openSearchForRepo(repoName) {
     codebaseDbPath: path.join(ssDir, 'codebase.db'),
     lateInteractionOptions: { indexPath: path.join(ssDir, 'codebase-late-interaction.db') },
     useLateInteraction: true,
-    use3Stage: false,
+    use3Stage,
     verbose: false,
     timing: false,
   });
@@ -221,13 +239,38 @@ async function main() {
   for (const repo of Object.keys(queriesByRepo)) {
     console.log(`\n— Repo: ${repo} (${queriesByRepo[repo].length} queries)`);
     let h;
-    try { h = await openSearchForRepo(repo); }
+    try { h = await openSearchForRepo(repo, { use3Stage: opts.use3Stage }); }
     catch (err) { console.error(`SKIP ${repo}: ${err.message}`); continue; }
     const { search, repoRoot } = h;
 
     if (opts.warmup) {
-      for (const w of ['warmup query', 'find a function', 'class definition']) {
-        await search.search(w, { k: 5, mode: 'auto', rerank: true, expand: false }).catch(() => {});
+      // Cold-start defense: the embedding service / vocab can leave the first
+      // 5-10 queries returning `embedding.slice is not a function`. Loop
+      // warmup queries until we've seen 3 *consecutive* successful runs (or
+      // hit a hard cap) before letting the real benchmark start.
+      const warmups = [
+        'warmup query', 'find a function', 'class definition',
+        'authentication helper', 'route handler', 'data parser',
+        'serialize body', 'parse json', 'format date', 'create logger',
+      ];
+      let consecutiveOk = 0;
+      let attempts = 0;
+      const targetOk = 3;
+      const maxAttempts = warmups.length * 4;
+      while (consecutiveOk < targetOk && attempts < maxAttempts) {
+        const w = warmups[attempts % warmups.length];
+        const expand = attempts % 2 === 0 ? false : true;
+        try {
+          await search.search(w, { k: 3, mode: 'auto', rerank: true, expand });
+          consecutiveOk++;
+        } catch (err) {
+          consecutiveOk = 0;
+          if (opts.verbose) console.error(`  warmup '${w}' (expand=${expand}): ${err.message}`);
+        }
+        attempts++;
+      }
+      if (consecutiveOk < targetOk) {
+        console.error(`  WARN: warmup ended with ${consecutiveOk}/${targetOk} consecutive ok after ${attempts} attempts`);
       }
     }
 
