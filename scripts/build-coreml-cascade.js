@@ -34,9 +34,10 @@
  * source of truth).
  *
  * Usage:
- *   node scripts/build-coreml-cascade.js                    # build the full cascade
+ *   node scripts/build-coreml-cascade.js                    # build the full cascade (18 variants)
  *   node scripts/build-coreml-cascade.js --embed-only       # only the 6 embedding variants
- *   node scripts/build-coreml-cascade.js --li-only          # only the 6 LI variants
+ *   node scripts/build-coreml-cascade.js --li-only          # only the 6 standard LI variants
+ *   node scripts/build-coreml-cascade.js --li-edge-only     # only the 6 edge LI variants
  *   node scripts/build-coreml-cascade.js --skip-existing    # don't retrace cached variants
  *   node scripts/build-coreml-cascade.js --verbose          # verbose output
  */
@@ -51,6 +52,7 @@ import {
   getCoremlCascadeRoot,
   getCoremlEmbedDir,
   getCoremlLiDir,
+  getCoremlLiEdgeDir,
   getCoremlCascadeState,
 } from '../core/infrastructure/index.js';
 
@@ -69,6 +71,7 @@ function parseArgs(args) {
   const result = {
     embedOnly: false,
     liOnly: false,
+    liEdgeOnly: false,
     skipExisting: false,
     verbose: false,
     force: false,
@@ -77,10 +80,16 @@ function parseArgs(args) {
   for (const arg of args) {
     if (arg === '--embed-only') result.embedOnly = true;
     else if (arg === '--li-only') result.liOnly = true;
+    else if (arg === '--li-edge-only') result.liEdgeOnly = true;
     else if (arg === '--skip-existing') result.skipExisting = true;
     else if (arg === '--verbose' || arg === '-v') result.verbose = true;
     else if (arg === '--force') result.force = true;
     else if (arg === '--help' || arg === '-h') result.help = true;
+  }
+  const onlyCount = [result.embedOnly, result.liOnly, result.liEdgeOnly].filter(Boolean).length;
+  if (onlyCount > 1) {
+    process.stderr.write('[build-cascade] --embed-only / --li-only / --li-edge-only are mutually exclusive\n');
+    process.exit(2);
   }
   return result;
 }
@@ -94,7 +103,8 @@ Usage:
 
 Options:
   --embed-only     Only trace the 6 NomicBERT embedding variants (~6 min)
-  --li-only        Only trace the 6 ModernBERT LI variants (~6 min)
+  --li-only        Only trace the 6 standard ModernBERT LI variants (~6 min)
+  --li-edge-only   Only trace the 6 edge ModernBERT LI variants (~3 min)
   --skip-existing  Don't retrace variants whose .mlpackage already exists
   --force          Build even on ineligible hardware (debugging only)
   --verbose, -v    Pass through verbose output from the Python script
@@ -113,8 +123,9 @@ Setup (first time):
 Output:
   The cascade is written directly into the managed cache dir at
     ~/.cache/sweet-search/models/coreml-cascade/
-      embed/  (six .mlpackage dirs)
-      li/     (six .mlpackage dirs)
+      embed/    (six .mlpackage dirs — NomicBERT 768d)
+      li/       (six .mlpackage dirs — standard LateOn-Code 128d)
+      li-edge/  (six .mlpackage dirs — edge LateOn-Code-edge 48d)
 
   This is the same path Sweet Search's native inference loads from
   via core/infrastructure/coreml-cascade.js::getCoremlCascadeResolvedDirs.
@@ -257,17 +268,26 @@ async function main(args) {
   // already exist.
   const embedDir = getCoremlEmbedDir();
   const liDir = getCoremlLiDir();
+  const liEdgeDir = getCoremlLiEdgeDir();
   mkdirSync(embedDir, { recursive: true });
   mkdirSync(liDir, { recursive: true });
+  mkdirSync(liEdgeDir, { recursive: true });
   process.stderr.write(`[build-cascade] Cascade root: ${getCoremlCascadeRoot()}\n`);
-  process.stderr.write(`[build-cascade] Embed output: ${embedDir}\n`);
-  process.stderr.write(`[build-cascade] LI output:    ${liDir}\n`);
+  process.stderr.write(`[build-cascade] Embed output:   ${embedDir}\n`);
+  process.stderr.write(`[build-cascade] LI output:      ${liDir}\n`);
+  process.stderr.write(`[build-cascade] LI-edge output: ${liEdgeDir}\n`);
 
-  // Build the Python arg list. trace_cascade.py accepts --output-dir
-  // for the directories and a few passthrough flags we forward.
-  const traceArgs = [TRACE_SCRIPT, '--embed-dir', embedDir, '--li-dir', liDir];
+  // Build the Python arg list. trace_cascade.py accepts dir overrides
+  // for each cascade family and a few passthrough flags we forward.
+  const traceArgs = [
+    TRACE_SCRIPT,
+    '--embed-dir', embedDir,
+    '--li-dir', liDir,
+    '--li-edge-dir', liEdgeDir,
+  ];
   if (parsed.embedOnly) traceArgs.push('--embed-only');
   if (parsed.liOnly) traceArgs.push('--li-only');
+  if (parsed.liEdgeOnly) traceArgs.push('--li-edge-only');
   if (parsed.skipExisting) traceArgs.push('--skip-existing');
   if (parsed.verbose) traceArgs.push('--verbose');
 
@@ -288,10 +308,15 @@ async function main(args) {
   // "complete" is a build anomaly — report it loud so the user can
   // investigate.
   const state = getCoremlCascadeState();
-  const total = state.embedTotal + state.liTotal;
-  const present = state.embedPresent + state.liPresent;
+  const total = state.embedTotal + state.liTotal + state.liEdgeTotal;
+  const present = state.embedPresent + state.liPresent + state.liEdgePresent;
   process.stderr.write('\n');
-  process.stderr.write(`[build-cascade] Cascade state: ${present}/${total} variants (${state.embedPresent}/${state.embedTotal} embed + ${state.liPresent}/${state.liTotal} LI)\n`);
+  process.stderr.write(
+    `[build-cascade] Cascade state: ${present}/${total} variants `
+    + `(${state.embedPresent}/${state.embedTotal} embed + `
+    + `${state.liPresent}/${state.liTotal} LI + `
+    + `${state.liEdgePresent}/${state.liEdgeTotal} LI-edge)\n`
+  );
   if (state.complete) {
     const rootSize = estimateDirSize(state.root);
     process.stderr.write(`[build-cascade] ✓ Cascade ready at ${state.root}${rootSize ? ` (${formatBytes(rootSize)})` : ''}\n`);

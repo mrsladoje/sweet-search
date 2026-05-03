@@ -4,10 +4,13 @@
 //! per (batch, seq) stair-step the sweet-search LI bucketer produces
 //! (see `core/indexing/indexer-pool.js:planAllocation` for the
 //! cache-aware upper-cap derivation — this module mirrors its
-//! shape set). Output is a 3D `[batch, seq, 128]` tensor of projected,
-//! per-token L2-normalised vectors; the projection head and per-token
-//! normalise are traced into each variant by
-//! `scripts/spike-coreml/trace_cascade.py`.
+//! shape set). Output is a 3D `[batch, seq, token_dim]` tensor of
+//! projected, per-token L2-normalised vectors; the projection head
+//! and per-token normalise are traced into each variant by
+//! `scripts/spike-coreml/trace_cascade.py`. `token_dim` is set per
+//! cascade — 128 for the standard `lateon-code` cascade, 48 for the
+//! `lateon-code-edge` cascade — and every variant in a single cascade
+//! must share the same `token_dim` (enforced by `from_variants`).
 //!
 //! See `coreml_embedding.rs` for the full rationale behind the
 //! cascade design (the short version: the old single-shape approach
@@ -18,11 +21,15 @@
 //! Gating: loaded only when the JS caller passes an explicit
 //! `coreml_cascade_dir` to `NativeLateInteractionModel::load` that
 //! points at a directory containing one or more
-//! `li_modernbert_b{B}_s{S}_fp16.mlpackage` files. Compute units
-//! are pinned to CPU_AND_NE inside `coreml_shim.m` — both CoreML
-//! GPU paths miscompile ModernBERT's sliding-window local attention
-//! / GeGLU chain (scripts/spike-coreml/test_coreml_li_parity.py:
-//! GPU cosine 0.40 vs CPU_AND_NE cosine 0.9999).
+//! `li_modernbert_b{B}_s{S}_fp16.mlpackage` (standard) or
+//! `li_modernbert_edge_b{B}_s{S}_fp16.mlpackage` (edge) files.
+//! Standard and edge cascades live in separate dirs (`coreml-cascade/li/`
+//! vs `coreml-cascade/li-edge/`) so a single `try_load_coreml_li_from_dir`
+//! call only ever sees one family. Compute units are pinned to
+//! CPU_AND_NE inside `coreml_shim.m` — both CoreML GPU paths miscompile
+//! ModernBERT's sliding-window local attention / GeGLU chain
+//! (scripts/spike-coreml/test_coreml_li_parity.py: GPU cosine 0.40 vs
+//! CPU_AND_NE cosine 0.9999).
 
 #![cfg(feature = "coreml")]
 
@@ -32,12 +39,10 @@ use std::sync::OnceLock;
 
 use super::coreml_shim::CoremlModel;
 
-/// Per-token dim emitted by the 768→128 projection head.
-const TOKEN_DIM: usize = 128;
-
 pub struct CoremlLiVariant {
     pub batch: usize,
     pub seq: usize,
+    pub token_dim: usize,
     pub path: PathBuf,
     model: OnceLock<Result<CoremlModel, String>>,
     /// Number of calls that dispatched through this variant. See
@@ -48,10 +53,16 @@ pub struct CoremlLiVariant {
 impl CoremlLiVariant {
     /// Build a new uncompiled variant. The underlying `.mlpackage` is
     /// not touched until the first call to `model()`, so this is cheap.
-    pub fn new(batch: usize, seq: usize, path: PathBuf) -> Self {
+    ///
+    /// `token_dim` is the per-token output dim (128 for the standard
+    /// LateOn-Code, 48 for LateOn-Code-edge). It MUST match the actual
+    /// output shape baked into the .mlpackage; mismatches surface at
+    /// CoremlModel::load time as predict-buffer size errors.
+    pub fn new(batch: usize, seq: usize, token_dim: usize, path: PathBuf) -> Self {
         Self {
             batch,
             seq,
+            token_dim,
             path,
             model: OnceLock::new(),
             dispatch_count: AtomicU64::new(0),
@@ -73,8 +84,8 @@ impl CoremlLiVariant {
                     "token_vectors",
                     self.batch,
                     self.seq,
-                    self.seq,  // output_dim0 = seq length
-                    TOKEN_DIM, // output_dim1 = per-token dim
+                    self.seq,           // output_dim0 = seq length
+                    self.token_dim,     // output_dim1 = per-token dim
                 );
                 match &result {
                     Ok(_) => eprintln!(
@@ -100,6 +111,11 @@ impl CoremlLiVariant {
 /// the comment on that struct for details.
 pub struct CoremlLi {
     variants: Vec<CoremlLiVariant>,
+    /// Per-token output dim shared by every variant in this cascade
+    /// (128 for LateOn-Code, 48 for LateOn-Code-edge). Set at
+    /// construction from the first variant; `from_variants` refuses
+    /// mixed-dim inputs.
+    token_dim: usize,
     /// Calls whose shape exceeded the largest variant and fell through
     /// to candle. A large number here is the signal the cascade needs
     /// additional upper-range variants.
@@ -107,12 +123,29 @@ pub struct CoremlLi {
 }
 
 impl CoremlLi {
-    pub fn from_variants(mut variants: Vec<CoremlLiVariant>) -> Self {
-        variants.sort_by_key(|v| (v.batch, v.seq));
-        Self {
-            variants,
-            fallthrough_count: AtomicU64::new(0),
+    /// Build a cascade. All variants must share the same `token_dim`
+    /// (mixing standard 128d and edge 48d variants in one cascade is a
+    /// loader bug — they live in separate dirs so this should never
+    /// happen, but we hard-fail rather than silently returning wrong
+    /// outputs). Returns `None` if `variants` is empty or mixed-dim.
+    pub fn from_variants(mut variants: Vec<CoremlLiVariant>) -> Option<Self> {
+        if variants.is_empty() {
+            return None;
         }
+        variants.sort_by_key(|v| (v.batch, v.seq));
+        let token_dim = variants[0].token_dim;
+        if !variants.iter().all(|v| v.token_dim == token_dim) {
+            return None;
+        }
+        Some(Self {
+            variants,
+            token_dim,
+            fallthrough_count: AtomicU64::new(0),
+        })
+    }
+
+    pub fn token_dim(&self) -> usize {
+        self.token_dim
     }
 
     pub fn len(&self) -> usize {
@@ -258,24 +291,25 @@ impl CoremlLi {
             active_counts.push(active);
         }
 
-        let mut raw_output = vec![0.0f32; v_batch * v_seq * TOKEN_DIM];
+        let token_dim = self.token_dim;
+        let mut raw_output = vec![0.0f32; v_batch * v_seq * token_dim];
         model
             .predict(&ids_padded, &mask_padded, &mut raw_output)
             .map_err(|e| format!("variant b{}×s{} predict: {}", v_batch, v_seq, e))?;
 
-        // Slice the [v_batch, v_seq, TOKEN_DIM] output to the active
+        // Slice the [v_batch, v_seq, token_dim] output to the active
         // tokens per batch item, packed contiguously. Padding batch
         // rows (b >= batch_size) are dropped entirely.
         let total_active: usize = active_counts.iter().sum();
-        let mut all_vectors: Vec<f32> = Vec::with_capacity(total_active * TOKEN_DIM);
+        let mut all_vectors: Vec<f32> = Vec::with_capacity(total_active * token_dim);
         let mut token_counts: Vec<u32> = Vec::with_capacity(batch_size);
         for (b, &active) in active_counts.iter().enumerate() {
             token_counts.push(active as u32);
             if active == 0 {
                 continue;
             }
-            let row_base = b * v_seq * TOKEN_DIM;
-            let row_end = row_base + active * TOKEN_DIM;
+            let row_base = b * v_seq * token_dim;
+            let row_end = row_base + active * token_dim;
             all_vectors.extend_from_slice(&raw_output[row_base..row_end]);
         }
 

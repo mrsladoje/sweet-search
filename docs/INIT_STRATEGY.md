@@ -68,20 +68,30 @@ Does not fetch model artifacts. Suitable for CI and lightweight lexical search.
 
 Everything in `core`, plus init-managed fetch of:
 
-| Model | HF ID | Size |
-|-------|-------|------|
-| Late interaction INT8 128d | `lightonai/LateOn-Code` | ~150MB |
-| Late interaction FP32 48d | `lightonai/LateOn-Code-edge` | ~68MB |
-| Local reranker INT8 | `Alibaba-NLP/gte-reranker-modernbert-base` | ~151MB |
-| Local embedding INT8 768d | `mrsladoje/CodeRankEmbed-onnx-int8` | ~139MB |
-| FlashRank cross-encoder | `Xenova/ms-marco-TinyBERT-L-2-v2` | ~4.3MB |
-| Semantic cache embedding | `Xenova/all-MiniLM-L6-v2` | ~23MB |
+| Model | HF ID | Size | Used by |
+|-------|-------|------|---------|
+| Late interaction INT8 128d (standard) | `lightonai/LateOn-Code` | ~150 MB | ORT path |
+| Late interaction FP32 (standard backbone) | `lightonai/LateOn-Code` (`model.safetensors`) | ~596 MB | Native (Metal/CUDA) path |
+| Late interaction FP32 48d (edge) | `lightonai/LateOn-Code-edge` | ~68 MB | ORT path |
+| Late interaction FP32 (edge backbone) | `lightonai/LateOn-Code-edge` (`model.safetensors`) | ~67 MB | Native (Metal/CUDA) path |
+| Local reranker INT8 | `Alibaba-NLP/gte-reranker-modernbert-base` | ~151 MB | Opt-in (cascade) |
+| Local embedding INT8 768d | `mrsladoje/CodeRankEmbed-onnx-int8` | ~139 MB | ORT path |
+| Local embedding FP32 768d | `nomic-ai/CodeRankEmbed` (`model.safetensors`) | ~547 MB | Native (Metal/CUDA) path |
+| FlashRank cross-encoder | `Xenova/ms-marco-TinyBERT-L-2-v2` | ~4.3 MB | Opt-in (cascade) |
+| Semantic cache embedding | `Xenova/all-MiniLM-L6-v2` | ~23 MB | Query cache |
+
+The standard `lateon-code` model is the active LI variant by default;
+`lateon-code-edge` is opt-in via `SWEET_SEARCH_LATE_INTERACTION_MODEL=lateon-code-edge`
+or the `--late-interaction-model=lateon-code-edge` CLI flag and is wired
+through both ORT and native (Metal/CoreML/CUDA) paths.
 
 All artifacts are verified with SHA256 checksums from
-`core/infrastructure/model-registry.js`. The registry lists all 6 models with
-`profile: 'full'`. Note: `core/infrastructure/manifest.json` currently lists only the first 4 in its
-`profiles.full.models` array; the FlashRank and semantic cache models are fetched via
-the registry's `getModelsForProfile()` but are not yet in the manifest.
+`core/infrastructure/model-registry.js`. The registry lists every model
+with `profile: 'full'`. Note: `core/infrastructure/manifest.json` currently
+lists only the four ORT-side models in its `profiles.full.models` array;
+the FP32 native backbones, FlashRank, and semantic cache models are
+fetched via the registry's `getModelsForProfile()` but are not yet in
+the manifest.
 
 ---
 
@@ -94,12 +104,21 @@ faster full indexing on an M3 Max vs the candle BF16 baseline (measured
 
 ### What it is
 
-A set of 12 pre-traced CoreML `.mlpackage` directories — 6 NomicBERT embedding
-variants and 6 ModernBERT LI variants — covering the shape stair-step produced
-by the indexer's cache-aware bucketer. The Rust native addon picks the smallest
-variant that fits each batch and dispatches it to Apple's Neural Engine through
-a thin Obj-C shim. Anything that exceeds the largest variant falls through to
-candle — the cascade never replaces candle; it short-circuits it when profitable.
+A set of 18 pre-traced CoreML `.mlpackage` directories covering the shape
+stair-step produced by the indexer's cache-aware bucketer:
+
+- 6 **NomicBERT embedding** variants (768d, shared by both LI variants)
+- 6 **ModernBERT LI standard** variants (`lateon-code`, 768d backbone → 128d output)
+- 6 **ModernBERT LI edge** variants (`lateon-code-edge`, 256d backbone → 2-stage 256→512→48 projection → 48d output)
+
+The Rust native addon picks the smallest variant that fits each batch and
+dispatches it to Apple's Neural Engine through a thin Obj-C shim. Anything
+that exceeds the largest variant falls through to candle — the cascade
+never replaces candle; it short-circuits it when profitable. Standard and
+edge LI cascades live in separate dirs (`coreml-cascade/li/` vs
+`coreml-cascade/li-edge/`) and use distinct filename prefixes
+(`li_modernbert_b…` vs `li_modernbert_edge_b…`); only the cascade
+matching the active `LATE_INTERACTION_CONFIG.model` is armed at runtime.
 
 Single source of truth for the shape set: `core/infrastructure/coreml-cascade.json`.
 Both the JS cascade module and `scripts/spike-coreml/trace_cascade.py` read this
@@ -135,15 +154,19 @@ a consistent picture:
 
 ```
 {modelCacheRoot}/coreml-cascade/
-  embed/
-    nomic_bert_b64_s96_fp16.mlpackage/           ← 6 variant dirs
+  embed/                                         ← 6 variant dirs (NomicBERT 768d)
+    nomic_bert_b64_s96_fp16.mlpackage/
     nomic_bert_b64_s96_fp16.mlpackage.mlmodelc/  ← compiled cache sibling
     nomic_bert_b64_s192_fp16.mlpackage/
     nomic_bert_b64_s192_fp16.mlpackage.mlmodelc/
     ...
-  li/
-    li_modernbert_b128_s48_fp16.mlpackage/       ← 6 variant dirs
+  li/                                            ← 6 variant dirs (LateOn-Code, 128d)
+    li_modernbert_b128_s48_fp16.mlpackage/
     li_modernbert_b128_s48_fp16.mlpackage.mlmodelc/
+    ...
+  li-edge/                                       ← 6 variant dirs (LateOn-Code-edge, 48d)
+    li_modernbert_edge_b128_s48_fp16.mlpackage/
+    li_modernbert_edge_b128_s48_fp16.mlpackage.mlmodelc/
     ...
 ```
 
@@ -163,18 +186,21 @@ selects are never compiled — startup stays fast even with the full cascade.
 
 The cascade ships two ways, both landing at the same on-disk state:
 
-1. **HuggingFace fetch (default, shipped).** The 12 pre-traced `.mlpackage`
-   directories are tarballed (~253 MB each for NomicBERT embed, ~275 MB each
-   for ModernBERT LI, ~3.2 GB total) and hosted at
-   [`mrsladoje/sweet-search-coreml-cascade`](https://huggingface.co/mrsladoje/sweet-search-coreml-cascade).
+1. **HuggingFace fetch (default, shipped).** The 18 pre-traced
+   `.mlpackage` directories are tarballed (~253 MB each for NomicBERT
+   embed, ~275 MB each for standard ModernBERT LI, ~31 MB each for the
+   smaller edge ModernBERT LI variant, ~3.4 GB total) and hosted at
+   [`mrsladoje/sweet-search-coreml-cascade`](https://huggingface.co/mrsladoje/sweet-search-coreml-cascade)
+   under `embed/`, `li/`, and `li-edge/` subdirs.
    `sweet-search init --profile full` on M3+ Apple Silicon fetches each
    tarball via `core/infrastructure/coreml-cascade.js::fetchCoremlCascade()`
    using the same `model-fetcher.js::fetchModelFile` primitive as the other
    models (atomic writes, SHA256 verification, retries, resumable). Each
    tarball is checksum-verified against
    `core/infrastructure/coreml-cascade.json` and atomically extracted into
-   `{modelCacheRoot}/coreml-cascade/{embed,li}/`. Takes ~5 minutes on a
-   typical home connection; zero Python dependency on the end-user machine.
+   `{modelCacheRoot}/coreml-cascade/{embed,li,li-edge}/`. Takes ~5 minutes
+   on a typical home connection; zero Python dependency on the end-user
+   machine.
 
    The `hfRepo` field in `coreml-cascade.json` is the single source of truth
    for the cascade's HF location — bump it there and re-run a cascade build
@@ -182,21 +208,25 @@ The cascade ships two ways, both landing at the same on-disk state:
 
 2. **Local build fallback (developer / air-gapped / shape retracing).**
    `scripts/build-coreml-cascade.js` wraps
-   `scripts/spike-coreml/trace_cascade.py` to trace the full cascade from the
-   already-fetched source safetensors (`nomic-ai/CodeRankEmbed` and
-   `lightonai/LateOn-Code`). Takes ~7 minutes on M3 Max. Requires Python 3.10+
-   with `torch`, `coremltools`, `safetensors`, `packaging`, `numpy`. The output
-   `.mlpackage` dirs are written directly into the managed cache at
-   `{modelCacheRoot}/coreml-cascade/{embed,li}/` so the next `sweet-search`
-   process loads them automatically via
+   `scripts/spike-coreml/trace_cascade.py` to trace the full cascade from
+   the already-fetched source safetensors (`nomic-ai/CodeRankEmbed`,
+   `lightonai/LateOn-Code`, and `lightonai/LateOn-Code-edge`). Takes ~7
+   minutes on M3 Max for the full 18 variants (~22 seconds for the 6
+   edge variants alone — the edge backbone is much smaller). Requires
+   Python 3.10+ with `torch`, `coremltools`, `safetensors`, `packaging`,
+   `numpy`. The output `.mlpackage` dirs are written directly into the
+   managed cache at `{modelCacheRoot}/coreml-cascade/{embed,li,li-edge}/`
+   so the next `sweet-search` process loads them automatically via
    `native-inference.js::resolveCoremlCascadeForAddon()`.
 
    Invoke via `sweet-search init --build-coreml-cascade` (explicit opt-in,
    overrides the default HF fetch path) or directly via
-   `node scripts/build-coreml-cascade.js`. Use cases: (a) developers making
-   changes to the shape set and retracing locally before publishing; (b)
-   air-gapped environments that can't reach huggingface.co; (c) new Apple
-   chip generations where upstream retrace hasn't happened yet.
+   `node scripts/build-coreml-cascade.js`. Add `--li-edge-only` to retrace
+   just the edge cascade (or `--embed-only` / `--li-only` for the others).
+   Use cases: (a) developers making changes to the shape set and
+   retracing locally before publishing; (b) air-gapped environments that
+   can't reach huggingface.co; (c) new Apple chip generations where
+   upstream retrace hasn't happened yet.
 
 Either delivery path produces the same on-disk layout and the same runtime
 behaviour — `native-inference.js` doesn't care how the cascade got there.
@@ -205,10 +235,15 @@ behaviour — `native-inference.js` doesn't care how the cascade got there.
 are added, the release workflow is:
 
 1. Update the variants list in `core/infrastructure/coreml-cascade.json`
-2. Run `node scripts/build-coreml-cascade.js` on an M3+ Mac to retrace
-3. `tar -czf` each variant and compute SHA256
+   (the `embed`, `li`, and/or `liEdge` sections — only the touched
+   family needs retracing)
+2. Run `node scripts/build-coreml-cascade.js` on an M3+ Mac to retrace.
+   Use `--embed-only`, `--li-only`, or `--li-edge-only` to scope the
+   build to a single family (e.g. when only the edge cascade changed).
+3. `tar -czf` each retraced variant and compute SHA256
 4. Update the `tarballSha256` + `tarballSizeBytes` fields in the JSON
 5. Upload the new tarballs to `hfRepo` via `huggingface_hub.upload_file`
+   under the matching subdir (`embed/`, `li/`, or `li-edge/`)
 6. Commit and publish the sweet-search package — end-user init now fetches
    the new cascade automatically
 
@@ -226,13 +261,19 @@ import {
 } from './core/infrastructure/index.js';
 ```
 
-`native-inference.js` calls `getCoremlCascadeResolvedDirs()` exactly once per
-process (at first addon load), passes the resolved `embedDir` / `liDir` as the
-third / fourth arguments to `NativeEmbeddingModel.load` and
-`NativeLateInteractionModel.load`, and logs a single diagnostic line recording
-the decision. The Rust constructors run a startup parity check against the
-smallest variant before admitting dispatch; parity failure drops the CoreML
-backend and the addon runs candle-only.
+`native-inference.js` calls `getCoremlCascadeResolvedDirs(liVariantKey)`
+exactly once per process (at first addon load) — `liVariantKey` is read
+from `LATE_INTERACTION_CONFIG.model` so the resolver returns the
+matching `liDir` (`coreml-cascade/li/` for `lateon-code`,
+`coreml-cascade/li-edge/` for `lateon-code-edge`). The resolved
+`embedDir` / `liDir` are passed to `NativeEmbeddingModel.load` and
+`NativeLateInteractionModel.load`, and a single diagnostic line records
+the decision. The Rust constructors run a startup parity check against
+the smallest variant before admitting dispatch; parity failure drops
+the CoreML backend and the addon runs candle-only. The Rust LI parser
+recognises both `li_modernbert_b…` and `li_modernbert_edge_b…`
+filenames and refuses any variant whose implied `token_dim` doesn't
+match the active model's final projection dim.
 
 There is **no env-var bypass**. The old spike flags
 (`SWEET_SEARCH_COREML_EMBED_MLPACKAGE_DIR`,

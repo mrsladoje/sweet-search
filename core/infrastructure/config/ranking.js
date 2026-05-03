@@ -179,6 +179,14 @@ export const LATE_INTERACTION_CONFIG = {
       backboneDim: 768,                      // raw ModernBERT hidden size
       tokenDimension: 128,                   // final output after projection
       projectionPaths: ['1_Dense/model.safetensors'],  // 768→128 single stage
+      // Per-stage `out_features`. Length must equal projectionPaths.length.
+      // Consumed by the native Rust LI loader to validate safetensors shapes.
+      projectionDims: [128],
+      // Registry key for the FP32-safetensors variant of this model used by
+      // the native (candle / Metal / CUDA) inference path. The ORT-side INT8
+      // path uses the parent key (`lateon-code`) directly. See
+      // `core/infrastructure/native-inference.js::resolveNativeLiVariant`.
+      nativeRegistryKey: 'lateon-code-fp32',
       maxQueryLength: 256,
       get maxDocLength() {
         const env = parseInt(process.env.SWEET_SEARCH_LI_MAX_DOC_LENGTH || '', 10);
@@ -193,6 +201,8 @@ export const LATE_INTERACTION_CONFIG = {
       backboneDim: 256,                      // raw ModernBERT hidden size
       tokenDimension: 48,                    // final output after 2-stage projection
       projectionPaths: ['1_Dense/model.safetensors', '2_Dense/model.safetensors'],  // 256→512→48
+      projectionDims: [512, 48],
+      nativeRegistryKey: 'lateon-code-edge-fp32',
       maxQueryLength: 256,
       get maxDocLength() {
         const env = parseInt(process.env.SWEET_SEARCH_LI_MAX_DOC_LENGTH || '', 10);

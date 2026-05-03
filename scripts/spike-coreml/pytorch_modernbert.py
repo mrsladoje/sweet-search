@@ -298,30 +298,55 @@ class ModernBertEmbeddings(nn.Module):
 # ──────────────────────────────────────────────────────────────────────
 
 class ModernBertLI(nn.Module):
-    """Full LI forward: ModernBERT backbone → 768→128 projection → L2 normalise per token.
+    """Full LI forward: ModernBERT backbone → N projection stages → L2 normalise per token.
 
     Mirrors li_model.rs's compute() forward pass exactly. The projection
-    weight is loaded separately from the 1_Dense/model.safetensors file
-    with key `linear.weight` (shape [128, 768]). Applied via matmul with
+    weights are loaded separately from per-stage safetensors files (one
+    per stage, each with key `linear.weight`). Applied via matmul with
     the transpose (standard linear layer semantics).
+
+    Two variants are supported via this single class:
+      - lateon-code (standard): one stage 768 → 128 (token_dims=[128])
+      - lateon-code-edge: two stages 256 → 512 → 48 (token_dims=[512, 48])
 
     The L2 normalise uses epsilon-before-sqrt to prevent 0/0 NaN on
     fully-padded token positions — same pattern as li_model.rs and as
     the NomicBERT l2_normalize fix in nomic_bert_sdpa.rs.
     """
 
-    def __init__(self, config: ModernBertConfig, token_dim: int = 128):
+    def __init__(self, config: ModernBertConfig, token_dims):
         super().__init__()
+        if isinstance(token_dims, int):
+            token_dims = [token_dims]
+        if not token_dims:
+            raise ValueError("token_dims must be a non-empty list of stage out-features")
         self.backbone = ModernBert(config)
-        # Projection: [token_dim, hidden_size] → nn.Linear is
-        # Linear(hidden_size, token_dim, bias=False) which stores
-        # weight as (token_dim, hidden_size) — matches safetensors layout.
-        self.projection = nn.Linear(config.hidden_size, token_dim, bias=False)
-        self.token_dim = token_dim
+        # Each projection stage is Linear(in, out, bias=False) — bias-less
+        # to match the linear.weight-only safetensors layout. Input dim of
+        # stage 0 is the backbone hidden_size; subsequent stages take the
+        # previous stage's out-features as their in-features.
+        stages = []
+        in_dim = config.hidden_size
+        for out_dim in token_dims:
+            stages.append(nn.Linear(in_dim, out_dim, bias=False))
+            in_dim = out_dim
+        # `nn.ModuleList` is the canonical way to register a variable
+        # number of submodules so they appear in `state_dict()` as
+        # `projections.0.weight`, `projections.1.weight`, etc. Don't
+        # add a `self.projection` alias for the standard single-stage
+        # case — PyTorch would treat it as a SECOND registered module
+        # and demand a `projection.weight` entry in `load_state_dict`,
+        # which would silently corrupt the chain. Callers should
+        # iterate `self.projections` to be variant-agnostic.
+        self.projections = nn.ModuleList(stages)
+        self.token_dim = token_dims[-1]
+        self.token_dims = list(token_dims)
 
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-        hidden = self.backbone(input_ids, attention_mask)                    # (B, S, 768)
-        projected = self.projection(hidden)                                   # (B, S, 128)
+        hidden = self.backbone(input_ids, attention_mask)                    # (B, S, hidden)
+        projected = hidden
+        for stage in self.projections:
+            projected = stage(projected)                                     # final: (B, S, token_dim)
         # L2 normalise per token with epsilon-before-sqrt (matches li_model.rs).
         squared = projected * projected
         norm = (squared.sum(dim=-1, keepdim=True) + 1e-12).sqrt()
@@ -334,11 +359,35 @@ class ModernBertLI(nn.Module):
 
 def load_modernbert_li(
     backbone_safetensors: str,
-    projection_safetensors: str,
-    config_json: str,
+    projection_safetensors=None,
+    config_json: str = None,
     device: str = "cpu",
+    projection_paths=None,
+    token_dims=None,
 ) -> ModernBertLI:
-    """Load a ModernBertLI from LateOn-Code safetensors.
+    """Load a ModernBertLI from LateOn-Code or LateOn-Code-edge safetensors.
+
+    Two calling conventions:
+
+    Standard `lateon-code` (single 768→128 projection):
+      load_modernbert_li(
+        backbone_safetensors=".../model.safetensors",
+        projection_safetensors=".../1_Dense/model.safetensors",
+        config_json=".../config.json",
+      )
+
+    Edge `lateon-code-edge` (two-stage 256→512→48 projection):
+      load_modernbert_li(
+        backbone_safetensors=".../model.safetensors",
+        projection_paths=[".../1_Dense/model.safetensors", ".../2_Dense/model.safetensors"],
+        token_dims=[512, 48],
+        config_json=".../config.json",
+      )
+
+    `token_dims` defaults to `[128]` for the single-stage case so the
+    standard call stays unchanged; for multi-stage it MUST be supplied
+    (we can't infer per-stage out-features from safetensors without
+    loading them, and load_state_dict needs the module shape upfront).
 
     Remaps keys from the backbone safetensors to the PyTorch module tree:
       embeddings.tok_embeddings.weight  → backbone.embeddings.tok_embeddings.weight
@@ -350,24 +399,50 @@ def load_modernbert_li(
       layers.N.mlp.Wi.weight            → backbone.layers.N.mlp.Wi.weight
       layers.N.mlp.Wo.weight            → backbone.layers.N.mlp.Wo.weight
       layers.N.mlp_norm.weight          → backbone.layers.N.mlp_norm.weight
-    Then the projection weight from the separate 1_Dense safetensors:
-      linear.weight                     → projection.weight
+    Each projection stage's `linear.weight` (from N_Dense/model.safetensors)
+    becomes `projections.{i}.weight` in the module tree.
     """
+    # Normalize the two calling conventions into a single (paths, dims) pair.
+    if projection_paths is not None:
+        if projection_safetensors is not None:
+            raise ValueError(
+                "pass either projection_safetensors (single stage) or "
+                "projection_paths (multi-stage), not both"
+            )
+        if token_dims is None:
+            raise ValueError(
+                "token_dims is required when projection_paths is supplied "
+                "(can't infer per-stage out-features ahead of weight load)"
+            )
+        proj_paths = list(projection_paths)
+        dims = list(token_dims)
+    else:
+        if projection_safetensors is None:
+            raise ValueError("must supply either projection_safetensors or projection_paths")
+        proj_paths = [projection_safetensors]
+        dims = list(token_dims) if token_dims is not None else [128]
+    if len(proj_paths) != len(dims):
+        raise ValueError(
+            f"projection_paths.len()={len(proj_paths)} != token_dims.len()={len(dims)}"
+        )
+
     config = ModernBertConfig.from_json(config_json)
-    model = ModernBertLI(config)
+    model = ModernBertLI(config, token_dims=dims)
 
     backbone_state = load_file(backbone_safetensors)
-    projection_state = load_file(projection_safetensors)
 
     remapped: dict[str, torch.Tensor] = {}
     for k, v in backbone_state.items():
         remapped[f"backbone.{k}"] = v
 
-    if "linear.weight" not in projection_state:
-        raise RuntimeError(
-            f"projection safetensors missing 'linear.weight'; got keys: {list(projection_state.keys())}"
-        )
-    remapped["projection.weight"] = projection_state["linear.weight"]
+    for i, p in enumerate(proj_paths):
+        stage_state = load_file(p)
+        if "linear.weight" not in stage_state:
+            raise RuntimeError(
+                f"projection stage {i} ({p}) missing 'linear.weight'; "
+                f"got keys: {list(stage_state.keys())}"
+            )
+        remapped[f"projections.{i}.weight"] = stage_state["linear.weight"]
 
     missing, unexpected = model.load_state_dict(remapped, strict=True)
     if missing or unexpected:

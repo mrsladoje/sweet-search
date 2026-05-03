@@ -21,6 +21,8 @@ import { HNSWIndex } from '../vector-store/hnsw-index.js';
 import { BinaryHNSWIndex } from '../vector-store/binary-hnsw-index.js';
 import { Reranker } from '../ranking/flashrank.js';
 import { LateInteractionIndex } from '../ranking/late-interaction-index.js';
+import { resolveSearchRerankPolicy } from '../ranking/late-interaction-policy.js';
+import { readPersistedLiPolicy } from '../infrastructure/index.js';
 import { getEmbedding, getBinaryEmbedding, truncateForHNSW, int8CosineSimilarity, warmup as warmupEmbedding, isWarm, registerAutoPersistOnExit } from '../embedding/embedding-service.js';
 import { FloatVectorStore, getFloatStorePath } from '../vector-store/float-vector-store.js';
 import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
@@ -94,8 +96,9 @@ export class SweetSearch {
     const envOrProject = (envKey, cascadeKey, configKey) =>
       process.env[envKey] != null ? CASCADE_CONFIG[configKey] : projectCascade[cascadeKey];
 
-    this.graphSearch = new GraphSearch(options.graphDbPath || DB_PATHS.codeGraph);
-    this.codeGraphRepo = new CodeGraphRepository(options.graphDbPath || DB_PATHS.codeGraph);
+    this.graphDbPath = options.graphDbPath || DB_PATHS.codeGraph;
+    this.graphSearch = new GraphSearch(this.graphDbPath);
+    this.codeGraphRepo = new CodeGraphRepository(this.graphDbPath);
     this.hnswPath = options.hnswPath || DB_PATHS.hnswIndex;
     this.binaryHnswPath = options.binaryHnswPath || DB_PATHS.binaryHnswIndex;
     this.hnswIndex = new HNSWIndex({ indexPath: this.hnswPath });
@@ -111,7 +114,25 @@ export class SweetSearch {
     this.stage1Candidates = options.stage1Candidates ?? BINARY_HNSW_CONFIG.retrieval.stage1Candidates;
     this.stage2Candidates = options.stage2Candidates ?? BINARY_HNSW_CONFIG.retrieval.stage2Candidates;
     this.stage3Candidates = options.stage3Candidates ?? BINARY_HNSW_CONFIG.retrieval.stage3Candidates;
-    this.useLateInteraction = options.useLateInteraction ?? LATE_INTERACTION_CONFIG.enabled;
+    // Late-interaction search-rerank gating — see core/ranking/late-interaction-policy.js
+    // for the full precedence ladder. The constructor records the inputs and
+    // computes a tentative value (so callers reading `useLateInteraction`
+    // before init() get sensible defaults); init() recomputes once the LI
+    // index header has been loaded so the manifest's modelId can drive the
+    // auto policy.
+    this._liPolicyOptionOverride = typeof options.useLateInteraction === 'boolean'
+      ? options.useLateInteraction
+      : undefined;
+    this._liPolicyPersisted = readPersistedLiPolicy(projectRoot);
+    const liInitial = resolveSearchRerankPolicy({
+      optionOverride: this._liPolicyOptionOverride,
+      env: process.env,
+      persisted: this._liPolicyPersisted,
+      indexManifest: null,
+      activeConfigModel: LATE_INTERACTION_CONFIG.model,
+    });
+    this.useLateInteraction = LATE_INTERACTION_CONFIG.enabled ? liInitial.effective : false;
+    this._liPolicyResolved = liInitial;
     this.lateInteractionBlendWeight = options.lateInteractionBlendWeight ?? LATE_INTERACTION_CONFIG.blendWeight ?? 0.3;
     this.returnSummaryFirst = options.returnSummaryFirst ?? HCGS_CONFIG.returnSummaryFirst;
     this.summaryTokenBudget = options.summaryTokenBudget ?? HCGS_CONFIG.summaryTokenBudget;
@@ -155,7 +176,7 @@ export class SweetSearch {
     if (this.initialized) return;
     const start = Date.now();
 
-    this.hasGraphIndex = existsSync(DB_PATHS.codeGraph);
+    this.hasGraphIndex = existsSync(this.graphDbPath);
     this.hasHnswIndex = existsSync(this.hnswPath.replace('.idx', '.meta.json'));
     this.hasBinaryHnswIndex = existsSync(this.binaryHnswPath.replace('.idx', '.meta.json'));
     this.hasCodebaseIndex = existsSync(this.codebaseDbPath);
@@ -215,15 +236,65 @@ export class SweetSearch {
         const stats = this.lateInteractionIndex.getStats();
         this.log(`LateInteraction: Loaded ${stats.documents} documents (${stats.estimatedSizeMB} MB, ${stats.avgTokensPerDoc} avg tokens)`);
 
-        // Preheat LI ONNX inference model (~900ms cold start otherwise).
-        // The index loads token vectors; this loads the query encoder model.
-        const { encodeQuery } = await import('../ranking/late-interaction-model.js');
-        await encodeQuery('warmup');
-        this.log('LateInteraction: ONNX model preheated');
+        // Re-resolve the rerank policy now that the index header has been
+        // loaded — the manifest's modelId is the source of truth for the
+        // auto rule (edge index → off, standard index → on, mismatch → off).
+        // The constructor only had the active LATE_INTERACTION_CONFIG.model
+        // to work with; this call corrects the decision when index and
+        // config disagree (env var changed, model bumped, etc.).
+        const manifest = {
+          modelId: this.lateInteractionIndex.modelId ?? null,
+          tokenDim: this.lateInteractionIndex.tokenDim ?? null,
+          modelMismatch: this.lateInteractionIndex.modelMismatch === true,
+          exists: true,
+        };
+        const resolved = resolveSearchRerankPolicy({
+          optionOverride: this._liPolicyOptionOverride,
+          env: process.env,
+          persisted: this._liPolicyPersisted,
+          indexManifest: manifest,
+          activeConfigModel: LATE_INTERACTION_CONFIG.model,
+        });
+        this._liPolicyResolved = resolved;
+        const previouslyOn = this.useLateInteraction;
+        this.useLateInteraction = LATE_INTERACTION_CONFIG.enabled && resolved.effective;
+        this.log(
+          `LateInteraction: rerank policy → ${this.useLateInteraction ? 'on' : 'off'} `
+          + `(${resolved.reason}${manifest.modelId ? `, index=${manifest.modelId}` : ''})`,
+        );
+        if (resolved.warning) {
+          // One-line warning — keeps the log digestible, full guidance is
+          // in docs/BENCH_TODO.md.
+          console.warn(`[SweetSearch] ${resolved.warning}`);
+        }
+
+        if (this.useLateInteraction) {
+          // Preheat LI ONNX inference model (~900ms cold start otherwise).
+          // Only when we will actually rerank — saves cold-start cost when
+          // policy resolves to off post-manifest-inspection.
+          const { encodeQuery } = await import('../ranking/late-interaction-model.js');
+          await encodeQuery('warmup');
+          this.log('LateInteraction: ONNX model preheated');
+        } else if (previouslyOn) {
+          // We loaded the index because the constructor's tentative
+          // resolution said on, but the manifest just told us otherwise —
+          // log so the user understands the gap between "index present"
+          // and "rerank active".
+          this.log('LateInteraction: index loaded but search rerank disabled by policy (read-semantic + ColGrep still use the index)');
+        }
       } catch (err) {
         this.log(`LateInteraction: Failed to load: ${err.message}`);
         this.hasLateInteractionIndex = false;
+        this.useLateInteraction = false;
       }
+    } else if (this.hasLateInteractionIndex && !this.useLateInteraction) {
+      // Index present but constructor-time policy resolved to off.
+      // Skip the (expensive) load + encoder warmup — read-semantic and
+      // ColGrep both lazy-load their own LI handle when actually invoked.
+      this.log(
+        `LateInteraction: index present, search rerank disabled by policy `
+        + `(${this._liPolicyResolved?.reason ?? 'unknown'})`,
+      );
     }
 
     if (this.hasSparseGramIndex) {

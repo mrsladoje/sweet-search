@@ -30,6 +30,7 @@ import {
   getCoremlCascadeState,
   getCoremlCascadeResolvedDirs,
   getCoremlCascadeReport,
+  resolveFamiliesToFetch,
 } from '../../core/infrastructure/coreml-cascade.js';
 import { _resetHardwareCapabilityCache } from '../../core/infrastructure/hardware-capability.js';
 
@@ -81,6 +82,7 @@ describe('getCascadeSpec', () => {
     expect(spec.hfRepo).toBeTruthy();
     expect(spec).toHaveProperty('embed');
     expect(spec).toHaveProperty('li');
+    expect(spec).toHaveProperty('liEdge');
   });
 
   it('embed section has the expected fields', () => {
@@ -92,7 +94,7 @@ describe('getCascadeSpec', () => {
     expect(spec.embed.variants.length).toBe(6);
   });
 
-  it('li section has the expected fields', () => {
+  it('li section (standard 128d) has the expected fields', () => {
     const spec = getCascadeSpec();
     expect(spec.li.filePattern).toMatch(/li_modernbert_b\{batch\}_s\{seq\}_fp16\.mlpackage/);
     expect(spec.li.tarballPattern).toMatch(/li\/li_modernbert_b\{batch\}_s\{seq\}_fp16\.mlpackage\.tar\.gz/);
@@ -100,6 +102,16 @@ describe('getCascadeSpec', () => {
     expect(spec.li.backboneDim).toBe(768);
     expect(Array.isArray(spec.li.variants)).toBe(true);
     expect(spec.li.variants.length).toBe(6);
+  });
+
+  it('liEdge section (edge 48d) has the expected fields', () => {
+    const spec = getCascadeSpec();
+    expect(spec.liEdge.filePattern).toMatch(/li_modernbert_edge_b\{batch\}_s\{seq\}_fp16\.mlpackage/);
+    expect(spec.liEdge.tarballPattern).toMatch(/li-edge\/li_modernbert_edge_b\{batch\}_s\{seq\}_fp16\.mlpackage\.tar\.gz/);
+    expect(spec.liEdge.tokenDim).toBe(48);
+    expect(spec.liEdge.backboneDim).toBe(256);
+    expect(Array.isArray(spec.liEdge.variants)).toBe(true);
+    expect(spec.liEdge.variants.length).toBe(6);
   });
 
   it('every variant has batch, seq, and rationale', () => {
@@ -112,6 +124,11 @@ describe('getCascadeSpec', () => {
       expect(typeof v.seq).toBe('number');
     }
     for (const v of spec.li.variants) {
+      expect(v).toHaveProperty('batch');
+      expect(v).toHaveProperty('seq');
+      expect(v).toHaveProperty('rationale');
+    }
+    for (const v of spec.liEdge.variants) {
       expect(v).toHaveProperty('batch');
       expect(v).toHaveProperty('seq');
       expect(v).toHaveProperty('rationale');
@@ -258,10 +275,12 @@ describe('cascade state against a synthetic fixture cache', () => {
     expect(state.root).toBe(join(fixtureRoot, 'coreml-cascade'));
     expect(state.embedPresent).toBe(0);
     expect(state.liPresent).toBe(0);
+    expect(state.liEdgePresent).toBe(0);
     expect(state.embedTotal).toBe(6);
     expect(state.liTotal).toBe(6);
+    expect(state.liEdgeTotal).toBe(6);
     expect(state.complete).toBe(false);
-    expect(state.missing.length).toBe(12);
+    expect(state.missing.length).toBe(18);
   });
 
   it('reports partial state when a subset is installed', async () => {
@@ -275,30 +294,57 @@ describe('cascade state against a synthetic fixture cache', () => {
     const state = mod.getCoremlCascadeState();
     expect(state.embedPresent).toBe(2);
     expect(state.liPresent).toBe(0);
+    expect(state.liEdgePresent).toBe(0);
     expect(state.complete).toBe(false);
-    expect(state.missing).toHaveLength(10);
+    expect(state.missing).toHaveLength(16);
     // Confirm the PRESENT variants are no longer in the missing list.
     expect(state.missing.some(m => m.includes('b64_s96'))).toBe(false);
     expect(state.missing.some(m => m.includes('b64_s192'))).toBe(false);
   });
 
-  it('reports complete state when all 12 variants are valid', async () => {
+  it('reports complete state when all 18 variants are valid', async () => {
     const embedDir = join(fixtureRoot, 'coreml-cascade', 'embed');
     const liDir = join(fixtureRoot, 'coreml-cascade', 'li');
+    const liEdgeDir = join(fixtureRoot, 'coreml-cascade', 'li-edge');
     mkdirSync(embedDir, { recursive: true });
     mkdirSync(liDir, { recursive: true });
+    mkdirSync(liEdgeDir, { recursive: true });
 
     const mod = await import('../../core/infrastructure/coreml-cascade.js?t=' + Date.now());
-    const { embedPaths, liPaths } = mod.getExpectedVariantPaths();
-    for (const v of [...embedPaths, ...liPaths]) {
+    const { embedPaths, liPaths, liEdgePaths } = mod.getExpectedVariantPaths();
+    for (const v of [...embedPaths, ...liPaths, ...liEdgePaths]) {
       makeValidMlpackage(v.fullPath);
     }
 
     const state = mod.getCoremlCascadeState();
     expect(state.embedPresent).toBe(6);
     expect(state.liPresent).toBe(6);
+    expect(state.liEdgePresent).toBe(6);
     expect(state.complete).toBe(true);
     expect(state.missing).toEqual([]);
+  });
+
+  it('routes resolved liDir to li-edge when liVariantKey=lateon-code-edge', async () => {
+    const embedDir = join(fixtureRoot, 'coreml-cascade', 'embed');
+    const liDir = join(fixtureRoot, 'coreml-cascade', 'li');
+    const liEdgeDir = join(fixtureRoot, 'coreml-cascade', 'li-edge');
+    mkdirSync(embedDir, { recursive: true });
+    mkdirSync(liDir, { recursive: true });
+    mkdirSync(liEdgeDir, { recursive: true });
+
+    const mod = await import('../../core/infrastructure/coreml-cascade.js?t=' + Date.now());
+    const { embedPaths, liPaths, liEdgePaths } = mod.getExpectedVariantPaths();
+    for (const v of [...embedPaths, ...liPaths, ...liEdgePaths]) {
+      makeValidMlpackage(v.fullPath);
+    }
+
+    const standardResolved = mod.getCoremlCascadeResolvedDirs('lateon-code');
+    expect(standardResolved.liDir).toBe(liDir);
+    expect(standardResolved.embedDir).toBe(embedDir);
+
+    const edgeResolved = mod.getCoremlCascadeResolvedDirs('lateon-code-edge');
+    expect(edgeResolved.liDir).toBe(liEdgeDir);
+    expect(edgeResolved.embedDir).toBe(embedDir);
   });
 
   it('treats malformed mlpackage dirs as missing', async () => {
@@ -383,14 +429,59 @@ describe('getCoremlCascadeReport', () => {
 });
 
 // ---------------------------------------------------------------------------
+// resolveFamiliesToFetch — release-policy gating for fetchCoremlCascade
+// ---------------------------------------------------------------------------
+
+describe('resolveFamiliesToFetch', () => {
+  it('auto with standard variant returns embed + li (no li-edge)', () => {
+    const families = resolveFamiliesToFetch('auto', 'lateon-code');
+    expect(Array.from(families).sort()).toEqual(['embed', 'li']);
+  });
+
+  it('auto with edge variant returns embed + li-edge (no standard li)', () => {
+    const families = resolveFamiliesToFetch('auto', 'lateon-code-edge');
+    expect(Array.from(families).sort()).toEqual(['embed', 'li-edge']);
+  });
+
+  it('auto with unknown variant defaults to embed + standard li', () => {
+    // Defensive: anything other than the known edge key falls through
+    // to the standard cascade — accuracy-first default policy.
+    const families = resolveFamiliesToFetch('auto', undefined);
+    expect(Array.from(families).sort()).toEqual(['embed', 'li']);
+  });
+
+  it('all returns every family', () => {
+    const families = resolveFamiliesToFetch('all', 'lateon-code');
+    expect(Array.from(families).sort()).toEqual(['embed', 'li', 'li-edge']);
+  });
+
+  it('explicit list filters to known families', () => {
+    expect(Array.from(resolveFamiliesToFetch(['li-edge'], 'lateon-code')).sort())
+      .toEqual(['li-edge']);
+    expect(Array.from(resolveFamiliesToFetch(['embed', 'li'], 'lateon-code-edge')).sort())
+      .toEqual(['embed', 'li']);
+  });
+
+  it('explicit list with unknown family entries is ignored', () => {
+    // Unknown entries silently dropped; if everything is unknown the
+    // resolver falls back to auto-default for the variant.
+    expect(Array.from(resolveFamiliesToFetch(['bogus'], 'lateon-code')).sort())
+      .toEqual(['embed', 'li']);
+    expect(Array.from(resolveFamiliesToFetch(['li', 'bogus'], 'lateon-code-edge')).sort())
+      .toEqual(['li']);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // getExpectedVariantPaths
 // ---------------------------------------------------------------------------
 
 describe('getExpectedVariantPaths', () => {
-  it('returns 6 embed + 6 LI paths', () => {
-    const { embedPaths, liPaths } = getExpectedVariantPaths();
+  it('returns 6 embed + 6 LI + 6 LI-edge paths', () => {
+    const { embedPaths, liPaths, liEdgePaths } = getExpectedVariantPaths();
     expect(embedPaths.length).toBe(6);
     expect(liPaths.length).toBe(6);
+    expect(liEdgePaths.length).toBe(6);
   });
 
   it('embed paths live under the cascade root / embed subdir', () => {
@@ -407,7 +498,19 @@ describe('getExpectedVariantPaths', () => {
     const root = getCoremlCascadeRoot();
     for (const v of liPaths) {
       expect(v.fullPath.startsWith(join(root, 'li'))).toBe(true);
+      // Standard LI filenames don't include "edge" — the edge variant has its
+      // own prefix. Reject any standard path matching the longer prefix.
       expect(v.filename).toMatch(/^li_modernbert_b\d+_s\d+_fp16\.mlpackage$/);
+      expect(v.filename.startsWith('li_modernbert_edge_')).toBe(false);
+    }
+  });
+
+  it('liEdge paths live under the cascade root / li-edge subdir', () => {
+    const { liEdgePaths } = getExpectedVariantPaths();
+    const root = getCoremlCascadeRoot();
+    for (const v of liEdgePaths) {
+      expect(v.fullPath.startsWith(join(root, 'li-edge'))).toBe(true);
+      expect(v.filename).toMatch(/^li_modernbert_edge_b\d+_s\d+_fp16\.mlpackage$/);
     }
   });
 });

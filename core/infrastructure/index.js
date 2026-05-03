@@ -57,6 +57,9 @@ export {
   getCoremlCascadeRoot,
   getCoremlEmbedDir,
   getCoremlLiDir,
+  getCoremlLiEdgeDir,
+  getCoremlLiDirForVariant,
+  liVariantToSectionKey,
   formatVariantFilename,
   formatVariantTarballPath,
   isCoremlCascadeApplicable,
@@ -67,7 +70,19 @@ export {
   getCoremlCascadeReport,
   getAllCoremlCachePaths,
   fetchCoremlCascade,
+  resolveFamiliesToFetch,
 } from './coreml-cascade.js';
+
+// Persisted init config (.sweet-search/config.json) — written by scripts/init.js,
+// read by SweetSearch runtime to honour the user's persisted LI policy choices.
+export {
+  INIT_DATA_DIR_NAME,
+  INIT_CONFIG_FILE_NAME,
+  getInitConfigPath,
+  loadInitConfig,
+  writeInitConfig,
+  readPersistedLiPolicy,
+} from './init-config.js';
 
 // Language analysis
 export {

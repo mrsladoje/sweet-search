@@ -220,7 +220,7 @@ export async function startServer() {
 
       // Agent mode: context packaging (ColGrep agent format)
       const rawFormat = url.searchParams.get('format');
-      const AGENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full']);
+      const AGENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
       const agentFormat = AGENT_FORMATS.has(rawFormat) ? rawFormat : undefined;
       const tokenBudget = url.searchParams.has('budget')
         ? parseInt(url.searchParams.get('budget'), 10)
@@ -519,13 +519,15 @@ export async function autoSpawnServer() {
   const { fileURLToPath } = await import('url');
   const path = await import('path');
 
-  // Dynamic import to get the sweet-search.js file path
+  // Spawn the real CLI entrypoint with --serve. sweet-search.js is a library
+  // module and does not process argv, so launching it directly never starts
+  // the daemon.
   const __filename = fileURLToPath(import.meta.url);
-  const sweetSearchPath = path.join(path.dirname(__filename), 'sweet-search.js');
+  const sweetSearchPath = path.join(path.dirname(__filename), '..', 'cli.js');
 
   console.error('[AutoStart] Starting warm server in background...');
 
-  // Spawn detached process — run sweet-search.js with --serve
+  // Spawn detached process — run sweet-search with --serve
   const child = spawn(process.execPath, [sweetSearchPath, '--serve'], {
     detached: true,
     stdio: 'ignore',

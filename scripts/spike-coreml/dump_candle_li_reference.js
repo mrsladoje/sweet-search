@@ -50,7 +50,9 @@ async function main() {
   const configPath = join(modelDir, 'config.json');
   if (!existsSync(backbonePath)) throw new Error(`Missing ${backbonePath}`);
 
-  const nativeModel = addon.NativeLateInteractionModel.load(backbonePath, projPath, configPath);
+  // Standard lateon-code: single 768→128 stage. For the edge variant, pass
+  // [proj1, proj2] + [512, 48] and the edge model's config + tokenizer.
+  const nativeModel = addon.NativeLateInteractionModel.load(backbonePath, [projPath], [128], configPath);
   console.log(`Loaded ModernBERT LI (dim=${nativeModel.dim})`);
 
   // Use the LateOn-Code tokenizer (separate from the embedding tokenizer).

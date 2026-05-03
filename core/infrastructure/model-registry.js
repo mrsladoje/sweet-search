@@ -103,6 +103,18 @@ export const MODEL_REGISTRY = {
     ],
   },
 
+  'lateon-code-edge-fp32': {
+    hfId: 'lightonai/LateOn-Code-edge',
+    profile: 'full',
+    description: 'Late interaction edge model (FP32 safetensors, backbone 256d, 2-stage projection) for native inference',
+    files: [
+      { path: 'model.safetensors', sizeBytes: 67195976, sha256: '7ffc36b8ff71367249cd5220dbdd4bdbe177bc0e305b2e978a8b598bd8296f04' },
+      { path: '1_Dense/model.safetensors', sizeBytes: 524376, sha256: '9efb17fcb2106cd8fcb01d57a9cd9c997a487ad20630ec8e44ce3f9d89efe0a7' },
+      { path: '2_Dense/model.safetensors', sizeBytes: 98392, sha256: 'a7a388138b3c4bb1a81c8c3bcb9de123f1e652b9e9464a72707ca19ee86a26b1' },
+      { path: 'config.json', sizeBytes: 1252, sha256: null },
+    ],
+  },
+
   'ms-marco-tinybert': {
     hfId: 'Xenova/ms-marco-TinyBERT-L-2-v2',
     profile: 'full',

@@ -212,7 +212,8 @@ async function benchLi() {
   const tokenizerPath = join(modelDir, 'tokenizer.json');
 
   const tLoad = performance.now();
-  const model = addon.NativeLateInteractionModel.load(backbone, proj, config);
+  // Standard lateon-code: single 768→128 stage.
+  const model = addon.NativeLateInteractionModel.load(backbone, [proj], [128], config);
   console.log(`  loaded in ${(performance.now() - tLoad).toFixed(0)} ms (dim=${model.dim})`);
 
   const tokenizer = await createTokenizer(tokenizerPath);
