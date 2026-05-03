@@ -328,7 +328,7 @@ Examples:
     let summaryFirst = false;
     let middleRes = false;
     let forceCold = false;
-    let agentFormat = null;     // null | 'agent_preview' | 'agent_full'
+    let agentFormat = null;     // null | 'agent_preview' | 'agent_full' | 'agent_full_xl'
     let agentBudget = null;
 
     for (let i = isGrepCommand ? 1 : 0; i < args.length; i++) {
@@ -385,6 +385,8 @@ Examples:
         agentFormat = agentFormat || 'agent_preview';
       } else if (arg === '--agent-full') {
         agentFormat = 'agent_full';
+      } else if (arg === '--agent-full-xl') {
+        agentFormat = 'agent_full_xl';
       } else if (arg === '--budget' && args[i + 1]) {
         agentBudget = parseInt(args[++i], 10);
         agentFormat = agentFormat || 'agent_preview';

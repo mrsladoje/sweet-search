@@ -163,11 +163,6 @@ let _healthDb = null;
  */
 export async function handleSearch({ query, k, mode, structural, regex, format, tokenBudget }, { getSearcher }) {
   try {
-    // Agent format requires a regex (pattern search). If no regex, ignore the format
-    // to avoid silent fallback to non-pattern search without agent packaging.
-    const isAgentFormat = format && format.startsWith('agent');
-    const effectiveFormat = (isAgentFormat && !regex) ? undefined : format;
-
     const searcher = await getSearcher();
     const searchMode = structural ? 'structural' : mode;
     const searchResult = await searcher.search(query, {
@@ -176,7 +171,7 @@ export async function handleSearch({ query, k, mode, structural, regex, format, 
       expand: true,
       rerank: true,
       ...(regex && { regex }),
-      ...(effectiveFormat && { format: effectiveFormat }),
+      ...(format && { format }),
       ...(tokenBudget && { tokenBudget }),
     });
 

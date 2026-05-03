@@ -260,9 +260,9 @@ export async function patternSearch(query, routing, options = {}) {
     };
 
     // Agent mode: return proper agent schema even for zero results
-    if (format === 'agent' || format === 'agent_preview' || format === 'agent_full') {
+    if (format === 'agent' || format === 'agent_preview' || format === 'agent_full' || format === 'agent_full_xl') {
       const agentResponse = packageForAgent([], emptyStats, {
-        query, regex, format, tokenBudget, ablations, projectRoot: this.projectRoot || PROJECT_ROOT,
+        query, regex, mode: 'pattern', format, tokenBudget, ablations, projectRoot: this.projectRoot || PROJECT_ROOT,
       });
       agentResponse.stats = emptyStats;
       return agentResponse;
@@ -432,11 +432,12 @@ export async function patternSearch(query, routing, options = {}) {
 
   // Agent mode: post-ranking context packaging (Phases 1-5)
   // Ranking is frozen — agent mode only transforms presentation.
-  if (format === 'agent' || format === 'agent_preview' || format === 'agent_full') {
+  if (format === 'agent' || format === 'agent_preview' || format === 'agent_full' || format === 'agent_full_xl') {
     const searchDir = this.projectRoot || PROJECT_ROOT;
     const agentResponse = packageForAgent(results, stats, {
       query,
       regex,
+      mode: 'pattern',
       format,
       tokenBudget,
       codeGraphRepo: this.codeGraphRepo || null,
