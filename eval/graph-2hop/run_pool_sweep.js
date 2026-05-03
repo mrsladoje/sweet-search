@@ -32,15 +32,19 @@ const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 // originals / 40 % expanded — matches the production default.
 const POLICIES = {
   baseline_none:        { mode: 'none',          poolSize: null, expandedFrac: null },
-  production:           { mode: '2hop-adaptive', poolSize: 20,   expandedFrac: 0.4 },
-  pool30_60_40:         { mode: '2hop-adaptive', poolSize: 30,   expandedFrac: 0.4 },
-  pool40_60_40:         { mode: '2hop-adaptive', poolSize: 40,   expandedFrac: 0.4 },
+  pool20:               { mode: '2hop-adaptive', poolSize: 20,   expandedFrac: 0.4 },
+  pool25:               { mode: '2hop-adaptive', poolSize: 25,   expandedFrac: 0.4 },
+  pool30:               { mode: '2hop-adaptive', poolSize: 30,   expandedFrac: 0.4 },
+  pool35:               { mode: '2hop-adaptive', poolSize: 35,   expandedFrac: 0.4 },
+  pool40:               { mode: '2hop-adaptive', poolSize: 40,   expandedFrac: 0.4 },
   pool40_50_50:         { mode: '2hop-adaptive', poolSize: 40,   expandedFrac: 0.5 },
-  pool30_50_50:         { mode: '2hop-adaptive', poolSize: 30,   expandedFrac: 0.5 },
   // Same widest pool, swap algorithm — does adaptive separate from
   // naive / 1-hop once the pool is wide enough?
   '1hop_pool40':        { mode: '1hop',          poolSize: 40,   expandedFrac: 0.4 },
   '2hop_naive_pool40':  { mode: '2hop-naive',    poolSize: 40,   expandedFrac: 0.4 },
+  // Control: pool size 25 with no graph expansion. Should behave like
+  // baseline_none modulo pool-size effects on the originals-only LI window.
+  pool25_no_expand:     { mode: 'none',          poolSize: 25,   expandedFrac: null },
 };
 
 const MODE_OPTS = {

@@ -116,7 +116,11 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
  * @returns {Promise<Object>} Initialized SweetSearch instance
  */
 export async function initSearch(corpusDir, projectRoot, options = {}) {
-  const { useLateInteraction = true, lateInteractionModel = null } = options;
+  const {
+    useLateInteraction = true,
+    lateInteractionModel = null,
+    stage3Candidates = null,    // null → use production default (30)
+  } = options;
 
   process.env.SWEET_SEARCH_PROJECT_ROOT = corpusDir;
   process.env.EMBEDDING_PROVIDER = 'local';
@@ -133,6 +137,7 @@ export async function initSearch(corpusDir, projectRoot, options = {}) {
     binaryHnswPath: path.join(dataDir, 'codebase-binary-hnsw.idx'),
     codebaseDbPath: path.join(dataDir, 'codebase.db'),
     useLateInteraction,
+    ...(stage3Candidates != null ? { stage3Candidates } : {}),
     verbose: false,
     timing: false,
   });

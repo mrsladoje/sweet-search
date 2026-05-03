@@ -71,8 +71,11 @@ async function buildSearch(corpusDir, stage3) {
 async function runOne(search, queryObj, k = 100) {
   const start = performance.now();
   const cleaned = cleanQueryText(queryObj.query) || queryObj.query;
+  // Match the run_benchmark.js default: graphExpand=none. GenCodeSearchNet
+  // is single-function retrieval that does not exercise graph structure;
+  // letting expansion fire just adds noise to a stage3 sweep.
   const { results, stats } = await search.search(cleaned, {
-    k, mode: 'auto', rerank: true, expand: true,
+    k, mode: 'auto', rerank: true, expand: false, graphExpand: 'none',
   });
   const latencyMs = performance.now() - start;
   return {

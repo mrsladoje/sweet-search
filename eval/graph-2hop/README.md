@@ -26,6 +26,27 @@ eval/graph-2hop/
 └── results/                    # JSON outputs from harness runs
 ```
 
+## Benchmark profiles — apples vs oranges
+
+Sweet Search ships two benchmark families that measure complementary
+things. Cite the right number for the right claim.
+
+| profile                          | dataset                          | `graphExpand` | `stage3Candidates` headline | what it measures |
+|----------------------------------|----------------------------------|---------------|------------------------------|------------------|
+| **GenCodeSearchNet (dense)**     | `eval/data/gencodesearchnet/`    | `none`        | `s3=15` for max MRR; `s3=30` for max R@10 | Dense + LI quality on single-function / single-file retrieval. Graph expansion is *off by default* in `eval/run_benchmark.js` because the gold is one chunk and there's no cross-file structure to traverse — letting expansion fire just adds noise to the dense signal. |
+| **graph-2hop (real codebases)**  | `eval/graph-2hop/queries.jsonl`  | `2hop-adaptive` | `s3=30`                     | Multi-file retrieval over fastify / flask / ripgrep. Expansion *is* the dimension under test; we report rescue / harm / latency at top-K. |
+| **production (sweet-search)**    | live user queries                | `2hop-adaptive` (auto-promoted) | `s3=30` (validated default) | What real users hit. Mix of single-file and multi-file lookups; both benchmark families are inputs. |
+
+The two are not contradictory:
+
+- GenCodeSearchNet at `graphExpand=none, s3=15` lands MRR@10 85.61 % / R@10 93.78 % / p50 244 ms.
+- graph-2hop at `graphExpand=2hop-adaptive, s3=30` lands MRR@10 57.68 % / R@10 79.33 % / harm@10 0 % on the real-codebase queries — the same configuration that wins the "real query" measurement.
+
+The dense benchmark drives no production default by itself; the real-repo
+benchmark is what the production stage3 default of 30 is calibrated to.
+GCSN MRR is reported with `graphExpand=none` so the benchmark isn't
+punishing a feature it isn't designed to evaluate.
+
 ## Conditions compared
 
 | label           | options                                                |
