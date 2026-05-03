@@ -403,9 +403,9 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   // =========================================================================
   // Intent-aware file-kind ranking
   // =========================================================================
-  // Soft-demote docs/tests/types files when the query is implementation-seeking;
-  // no-op otherwise. Validated on a 93-query guard set + 295 graph-2hop queries
-  // (see eval/miss-analysis/file_kind_intent_report.md). Disable with
+  // Soft-demote docs/tests/types files when the query is confidently
+  // implementation-seeking AND the top-N window contains both docs/tests/
+  // types and implementation candidates. No-op otherwise. Disable with
   // SWEET_SEARCH_FILE_KIND_RANKING=0; tune SWEET_SEARCH_FILE_KIND_FACTOR.
   if (Array.isArray(results) && results.length > 0) {
     const fileKindIntent = classifyFileKindIntent(query);
@@ -415,8 +415,13 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       results = afterFK;
       stats.fileKindRanking = {
         intent: fileKindIntent,
-        applied: fileKindIntent === 'implementation',
+        applied: true,
         top1Changed: !!beforeTop && results[0] && (beforeTop !== results[0]),
+      };
+    } else {
+      stats.fileKindRanking = {
+        intent: fileKindIntent,
+        applied: false,
       };
     }
   }
