@@ -15,10 +15,16 @@ import path from 'path';
  * @returns {{ results: Array, latencyMs: number, mode: string }}
  */
 export async function runQuery(search, query, options = {}) {
-  const { k = 20, mode = 'auto', expand = true } = options;
+  const { k = 20, mode = 'auto', expand = true, graphExpand } = options;
+
+  const searchOpts = { k, mode, rerank: true, expand };
+  // Pass graphExpand through when callers want to override the auto-promotion
+  // behaviour in sweet-search.js (semantic/hybrid + expand:true → '2hop').
+  // Useful for benchmarks where graph expansion is not the dimension under test.
+  if (graphExpand !== undefined) searchOpts.graphExpand = graphExpand;
 
   const start = performance.now();
-  const { results, stats } = await search.search(query, { k, mode, rerank: true, expand });
+  const { results, stats } = await search.search(query, searchOpts);
   const latencyMs = performance.now() - start;
 
   return {
