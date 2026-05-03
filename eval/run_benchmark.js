@@ -68,6 +68,14 @@ function parseArgs() {
     // Pass --graph-expand=auto to restore auto-promotion ('2hop'), or
     // --graph-expand=1hop / --graph-expand=2hop to force a specific mode.
     graphExpand: 'none',
+    // Stage 3 (CE rerank + legacy LI rerank) candidate window. Production
+    // default in core/infrastructure/config/vector-store.js is 30, calibrated
+    // on the real-codebase graph benchmark. For dense single-function
+    // retrieval (GCSN, AdvTest, CodeSearchNet, CosQA) this harness defaults
+    // to 15 — that is the headline-MRR sweet spot on the 2026-05-03
+    // GCSN dense sweep (MRR@10 85.61 % vs 85.35 % at s3=30, p50 244 vs 252 ms).
+    // Pass --stage3-candidates=N to override.
+    stage3Candidates: 15,
   };
 
   for (const arg of args) {
@@ -86,6 +94,7 @@ function parseArgs() {
     else if (arg === '--sqlite-fast') opts.sqliteFast = true;
     else if (arg === '--sqlite-safe') opts.sqliteSafe = true;
     else if (arg.startsWith('--graph-expand=')) opts.graphExpand = arg.split('=')[1];
+    else if (arg.startsWith('--stage3-candidates=')) opts.stage3Candidates = parseInt(arg.split('=')[1]);
     else if (arg === '--help' || arg === '-h') {
       console.log(`
 Sweet Search Benchmark Runner
@@ -112,6 +121,12 @@ Options:
                        single-function gold answers do not exercise graph
                        structure; pass --graph-expand=auto to match
                        production sweet-search behaviour.)
+  --stage3-candidates=N  CE rerank + LI rerank window [default: 15]
+                       (15 is the headline-MRR sweet spot for dense GCSN-style
+                       single-function retrieval; production sweet-search
+                       default is 30, calibrated on the real-codebase
+                       graph benchmark. Set --stage3-candidates=30 to match
+                       production exactly.)
   --help, -h           Show this help
 `);
       process.exit(0);
@@ -160,6 +175,7 @@ async function main() {
   console.log(`  Profile:     ${opts.profile}`);
   console.log(`  Index mode:  ${profileOpts.indexMode}  |  SQLite fast: ${profileOpts.sqliteFast}`);
   console.log(`  Graph expand: ${opts.graphExpand}  (production default is auto; this harness defaults off)`);
+  console.log(`  Stage3 cand:  ${opts.stage3Candidates}  (production default is 30; this harness defaults to 15 for dense MRR)`);
 
   // 1. Load data
   const dataDir = path.join(__dirname, 'data', opts.dataset);
@@ -220,7 +236,11 @@ async function main() {
   console.log('\n[4/5] Running queries...');
   let search;
   try {
-    search = await initSearch(corpusDir, PROJECT_ROOT, { useLateInteraction: profileOpts.useLateInteraction, lateInteractionModel: profileOpts.lateInteractionModel });
+    search = await initSearch(corpusDir, PROJECT_ROOT, {
+      useLateInteraction: profileOpts.useLateInteraction,
+      lateInteractionModel: profileOpts.lateInteractionModel,
+      stage3Candidates: opts.stage3Candidates,
+    });
   } catch (err) {
     console.error(`  Failed to initialize search: ${err.message}`);
     process.exit(3);
@@ -334,7 +354,8 @@ async function main() {
     buildLateInteraction: profileOpts.buildLateInteraction,
     lateInteractionModel: profileOpts.lateInteractionModel,
     graphExpand: opts.graphExpand,
-    stage3Candidates: BINARY_HNSW_CONFIG.retrieval.stage3Candidates,
+    stage3Candidates: opts.stage3Candidates,
+    stage3CandidatesProductionDefault: BINARY_HNSW_CONFIG.retrieval.stage3Candidates,
     cascadeEnabled: CASCADE_CONFIG.enabled,
     embedTextVariant: process.env.SWEET_SEARCH_EMBED_TEXT_VARIANT || 'current',
     vocabAutoExpand: process.env.SWEET_SEARCH_VOCAB_AUTO_EXPAND !== '0',
