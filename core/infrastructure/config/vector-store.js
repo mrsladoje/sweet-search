@@ -64,7 +64,7 @@ export const BINARY_HNSW_CONFIG = {
     stage1Candidates: 1000,  // Binary HNSW retrieves top 1000
     stage2Candidates: 200,   // Int8 rescores top 200 (legacy fixed, used as maxStage2 fallback)
     stage2_5Candidates: 200, // Float rescore pool size (legacy fixed, used as maxStage2_5 fallback)
-    stage3Candidates: 20,    // Reranker sees top 20
+    stage3Candidates: 30,    // Reranker sees top 30 (validated 2026-05-03 on GenCodeSearchNet n=6000: +1.52pp R@10, +0.34pp MRR vs 20, no per-language regression)
 
     // Phase 1 flag: batched normalized-dot Stage 2 scoring.
     // When false, falls back to per-candidate int8CosineSimilarity.
