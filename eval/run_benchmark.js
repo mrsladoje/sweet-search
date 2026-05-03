@@ -59,6 +59,15 @@ function parseArgs() {
     indexMode: 'single',
     sqliteFast: false,
     sqliteSafe: false,
+    // Graph expansion default OFF for this harness. Most retrieval benchmarks
+    // (CodeSearchNet, CosQA, AdvTest, GenCodeSearchNet) are single-function /
+    // single-file lookups that do not exercise cross-file graph structure;
+    // letting expansion fire on them obscures the dense/LI signal we are
+    // trying to measure. Production sweet-search keeps graphExpand auto-
+    // promotion ON for real searches — only this benchmark wrapper opts out.
+    // Pass --graph-expand=auto to restore auto-promotion ('2hop'), or
+    // --graph-expand=1hop / --graph-expand=2hop to force a specific mode.
+    graphExpand: 'none',
   };
 
   for (const arg of args) {
@@ -76,6 +85,7 @@ function parseArgs() {
     else if (arg.startsWith('--index-mode=')) opts.indexMode = arg.split('=')[1];
     else if (arg === '--sqlite-fast') opts.sqliteFast = true;
     else if (arg === '--sqlite-safe') opts.sqliteSafe = true;
+    else if (arg.startsWith('--graph-expand=')) opts.graphExpand = arg.split('=')[1];
     else if (arg === '--help' || arg === '-h') {
       console.log(`
 Sweet Search Benchmark Runner
@@ -97,6 +107,11 @@ Options:
   --index-mode=MODE    Indexing mode (single|two-phase) [default: single]
   --sqlite-fast        Enable fast SQLite pragmas for benchmarking
   --sqlite-safe        Force durable SQLite mode (disables fast pragmas)
+  --graph-expand=MODE  Graph expansion: none|auto|1hop|2hop [default: none]
+                       (CodeSearchNet-style benchmarks default off because
+                       single-function gold answers do not exercise graph
+                       structure; pass --graph-expand=auto to match
+                       production sweet-search behaviour.)
   --help, -h           Show this help
 `);
       process.exit(0);
@@ -144,6 +159,7 @@ async function main() {
   const profileOpts = resolveProfile(opts);
   console.log(`  Profile:     ${opts.profile}`);
   console.log(`  Index mode:  ${profileOpts.indexMode}  |  SQLite fast: ${profileOpts.sqliteFast}`);
+  console.log(`  Graph expand: ${opts.graphExpand}  (production default is auto; this harness defaults off)`);
 
   // 1. Load data
   const dataDir = path.join(__dirname, 'data', opts.dataset);
@@ -246,9 +262,25 @@ async function main() {
       try {
         const cleanQuery = cleanQueryText(queryObj.query);
 
+        // Map --graph-expand=MODE to (expand, graphExpand) options:
+        //   'none'   → expand:false  (suppresses auto-promotion in sweet-search.js)
+        //   'auto'   → expand:true   (let sweet-search auto-promote → '2hop')
+        //   '1hop'   → expand:true, graphExpand:'1hop'
+        //   '2hop'   → expand:true, graphExpand:'2hop'
+        const { expand, graphExpand } = (() => {
+          switch (opts.graphExpand) {
+            case 'auto': return { expand: true };
+            case '1hop': return { expand: true, graphExpand: '1hop' };
+            case '2hop': return { expand: true, graphExpand: '2hop' };
+            case 'none':
+            default:     return { expand: false, graphExpand: 'none' };
+          }
+        })();
         const { results, latencyMs, mode } = await runQuery(search, cleanQuery || queryObj.query, {
           k: opts.k,
           mode: opts.mode,
+          expand,
+          graphExpand,
         });
 
         const evaluated = evaluateQuery(queryObj, results, docIdToFile);
@@ -293,6 +325,24 @@ async function main() {
 
   // Save results
   const resultsDir = path.join(__dirname, 'results');
+  // Run config snapshot for cross-run comparability — see buildReport docs.
+  const { BINARY_HNSW_CONFIG, CASCADE_CONFIG } = await import(path.join(PROJECT_ROOT, 'core', 'infrastructure', 'config', 'index.js'));
+  const config = {
+    profile: opts.profile,
+    k: opts.k,
+    useLateInteraction: profileOpts.useLateInteraction,
+    buildLateInteraction: profileOpts.buildLateInteraction,
+    lateInteractionModel: profileOpts.lateInteractionModel,
+    graphExpand: opts.graphExpand,
+    stage3Candidates: BINARY_HNSW_CONFIG.retrieval.stage3Candidates,
+    cascadeEnabled: CASCADE_CONFIG.enabled,
+    embedTextVariant: process.env.SWEET_SEARCH_EMBED_TEXT_VARIANT || 'current',
+    vocabAutoExpand: process.env.SWEET_SEARCH_VOCAB_AUTO_EXPAND !== '0',
+    concurrency: opts.concurrency,
+    maxQueries: opts.maxQueries || queries.length,
+    skipIndex: opts.skipIndex,
+  };
+
   const report = buildReport({
     dataset: opts.dataset,
     queryCount: queries.length,
@@ -300,11 +350,11 @@ async function main() {
     searchMode: opts.mode,
     totalTimeMs: totalTime,
     errorCount: errors.length,
-    profile: opts.profile,
     indexTimings: indexResult?.timings || null,
     metrics,
     perLanguage,
     evaluatedQueries,
+    config,
   });
 
   const { timestampedFile, baselineFile } = saveResults(opts.dataset, report, resultsDir);
