@@ -183,12 +183,79 @@ export class QueryStats {
 // VOCABULARY
 // =============================================================================
 
+// Schema version for the persisted vocabulary file. Bump when the on-disk
+// shape changes in a way that should invalidate previously-saved files.
+//   v2: { metadata: { created, lastUpdated, version, provider }, terms: {...} }
+//   v3: { metadata: { ..., model, dimension, schemaVersion: 3 }, terms: {...} }
+//        — adds full embedding fingerprint so a cache produced under one
+//        model is not silently served when a different model is active.
+const VOCAB_SCHEMA_VERSION = 3;
+
+/** Build the embedding-fingerprint we expect a vocabulary file to match. */
+function currentVocabFingerprint() {
+  return {
+    schemaVersion: VOCAB_SCHEMA_VERSION,
+    provider: EMBEDDING_CONFIG.provider,
+    model: EMBEDDING_CONFIG.model,
+    dimension: EMBEDDING_CONFIG.dimension,
+  };
+}
+
+/**
+ * Decide whether a persisted vocabulary file's metadata is compatible
+ * with the active embedding configuration. Returns `{ compatible: bool,
+ * reason?: string }`. Stale `provider` / `model` / `dimension` /
+ * schema-version mismatches are explicitly rejected; a missing file is
+ * treated as a fresh start (compatible by definition).
+ */
+export function isVocabFingerprintCompatible(metadata, fingerprint = currentVocabFingerprint()) {
+  if (!metadata || typeof metadata !== 'object') {
+    return { compatible: false, reason: 'missing-metadata' };
+  }
+  // Pre-v3 files persist `version` (not `schemaVersion`) and never recorded
+  // `model` / `dimension`. Treat those as incompatible — we cannot prove the
+  // cached embeddings came from the active model.
+  const persistedSchema = metadata.schemaVersion ?? metadata.version;
+  if (persistedSchema !== fingerprint.schemaVersion) {
+    return { compatible: false, reason: `schema-version (file=${persistedSchema} expected=${fingerprint.schemaVersion})` };
+  }
+  if (metadata.provider && metadata.provider !== fingerprint.provider) {
+    return { compatible: false, reason: `provider (file=${metadata.provider} expected=${fingerprint.provider})` };
+  }
+  if (metadata.model && metadata.model !== fingerprint.model) {
+    return { compatible: false, reason: `model (file=${metadata.model} expected=${fingerprint.model})` };
+  }
+  if (Number.isFinite(metadata.dimension)
+      && Number.isFinite(fingerprint.dimension)
+      && metadata.dimension !== fingerprint.dimension) {
+    return { compatible: false, reason: `dimension (file=${metadata.dimension} expected=${fingerprint.dimension})` };
+  }
+  return { compatible: true };
+}
+
 export class Vocabulary {
   constructor(vocabPath) {
     this.vocabPath = vocabPath;
     this.terms = new Map();
-    this.metadata = { created: null, lastUpdated: null, version: 2, provider: null };
+    this.metadata = {
+      created: null,
+      lastUpdated: null,
+      schemaVersion: VOCAB_SCHEMA_VERSION,
+      provider: null,
+      model: null,
+      dimension: null,
+    };
     this.loaded = false;
+  }
+
+  /**
+   * Whether `getEmbedding` should consult this vocabulary at all.
+   * Reads from `EMBEDDING_CONFIG.cache.useVocabulary` at call time so
+   * tests / benchmarks that toggle the env var see the change without
+   * having to re-import the module.
+   */
+  static isEnabled() {
+    return EMBEDDING_CONFIG.cache?.useVocabulary !== false;
   }
 
   async load() {
@@ -196,11 +263,12 @@ export class Vocabulary {
     try {
       if (existsSync(this.vocabPath)) {
         const data = JSON.parse(await fs.readFile(this.vocabPath, 'utf-8'));
-        if (data.metadata?.provider && data.metadata.provider !== EMBEDDING_CONFIG.provider) {
-          console.log(`Vocabulary: Provider changed (${data.metadata.provider} → ${EMBEDDING_CONFIG.provider}), clearing cache`);
+        const compat = isVocabFingerprintCompatible(data.metadata);
+        if (!compat.compatible) {
+          console.log(`Vocabulary: Ignoring incompatible cache (${compat.reason})`);
           this.terms.clear();
         } else {
-          this.metadata = data.metadata || this.metadata;
+          this.metadata = { ...this.metadata, ...(data.metadata || {}) };
           for (const [term, embedding] of Object.entries(data.terms || {})) {
             this.terms.set(term, embedding);
           }
@@ -219,18 +287,37 @@ export class Vocabulary {
       // here matches the latest set/has state at write time, not whatever
       // it was when this save() was first scheduled.
       this.metadata.lastUpdated = new Date().toISOString();
+      this.metadata.schemaVersion = VOCAB_SCHEMA_VERSION;
       this.metadata.provider = EMBEDDING_CONFIG.provider;
+      this.metadata.model = EMBEDDING_CONFIG.model;
+      this.metadata.dimension = EMBEDDING_CONFIG.dimension;
       if (!this.metadata.created) this.metadata.created = this.metadata.lastUpdated;
       const data = { metadata: this.metadata, terms: Object.fromEntries(this.terms) };
       await writeJsonAtomic(this.vocabPath, JSON.stringify(data, null, 2));
     });
   }
 
-  get(term) { return this.terms.get(this.normalize(term)) || null; }
+  get(term) {
+    if (!Vocabulary.isEnabled()) return null;
+    return this.terms.get(this.normalize(term)) || null;
+  }
   set(term, embedding) { this.terms.set(this.normalize(term), embedding); }
   has(term) { return this.terms.has(this.normalize(term)); }
   normalize(term) { return term.toLowerCase().trim(); }
   size() { return this.terms.size; }
+
+  /**
+   * Whether the vocabulary is at or above the configured max-terms cap.
+   * Auto-expansion in `getEmbedding` is gated on this so a long-running
+   * benchmark cannot inflate the file unbounded. Explicit
+   * `addToVocabulary` / `expandVocabulary` calls (admin / pre-warm
+   * paths) bypass the cap.
+   */
+  isFull() {
+    const cap = EMBEDDING_CONFIG.cache?.maxTerms;
+    if (!Number.isFinite(cap) || cap <= 0) return false;
+    return this.terms.size >= cap;
+  }
 
   async addDefaultTerms(embedFn) {
     const defaultTerms = [

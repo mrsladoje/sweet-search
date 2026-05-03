@@ -63,6 +63,9 @@ export { TimeWindowRateLimiter };
 // UNIFIED EMBEDDING SERVICE (hub functions)
 // =============================================================================
 
+// Process-scoped flag so the "vocab is full" message logs once, not per-query.
+let _vocabFullLogged = false;
+
 /** Generate embedding using the active provider with circuit breaker */
 async function generateEmbedding(text, provider = EMBEDDING_CONFIG.provider, isQuery = false) {
   const localText = isQuery ? applyLocalQueryPrefix(text) : text;
@@ -206,7 +209,7 @@ export async function getEmbedding(text, options = {}) {
       return { embedding: cached, cached: true, source: 'lru', latency_us: Math.round((performance.now() - start) * 1000) };
     }
 
-    if (isQuery) {
+    if (isQuery && EMBEDDING_CONFIG.cache?.useVocabulary !== false) {
       await vocabulary.load();
       const vocabHit = vocabulary.get(text);
       if (vocabHit) {
@@ -259,9 +262,20 @@ export async function getEmbedding(text, options = {}) {
       queryStats.save().catch(() => {});
       const threshold = EMBEDDING_CONFIG.cache?.expansionThreshold || 3;
       if (usageCount >= threshold && !vocabulary.has(text)) {
-        vocabulary.set(text, embedding);
-        vocabulary.save().catch(() => {});
-        console.log(`Vocabulary: Auto-added "${text}" (used ${usageCount}x)`);
+        if (vocabulary.isFull()) {
+          // Cap reached: skip auto-promotion and log once per batch (the
+          // queryStats counter still increments so we don't lose the
+          // signal — explicit `addToVocabulary` can still write through).
+          if (!_vocabFullLogged) {
+            const cap = EMBEDDING_CONFIG.cache?.maxTerms;
+            console.log(`Vocabulary: Auto-expand cap reached (${cap} terms); skipping further auto-promotion. Override via SWEET_SEARCH_VOCAB_MAX_TERMS.`);
+            _vocabFullLogged = true;
+          }
+        } else {
+          vocabulary.set(text, embedding);
+          vocabulary.save().catch(() => {});
+          console.log(`Vocabulary: Auto-added "${text}" (used ${usageCount}x)`);
+        }
       }
     }
   }
