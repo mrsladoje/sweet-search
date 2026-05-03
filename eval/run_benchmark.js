@@ -76,6 +76,13 @@ function parseArgs() {
     // GCSN dense sweep (MRR@10 85.61 % vs 85.35 % at s3=30, p50 244 vs 252 ms).
     // Pass --stage3-candidates=N to override.
     stage3Candidates: 15,
+    // Query-vocabulary cache. The persistent cache returns slightly
+    // different embeddings than a fresh model call (~1 pp MRR drift on
+    // GCSN), so reproducible benchmarks must default to OFF. Pass
+    // `--use-vocab` to opt back in (matches production behaviour); pass
+    // `--auto-expand-vocab` to also let the run grow the cache.
+    useVocab: false,
+    autoExpandVocab: false,
   };
 
   for (const arg of args) {
@@ -95,6 +102,8 @@ function parseArgs() {
     else if (arg === '--sqlite-safe') opts.sqliteSafe = true;
     else if (arg.startsWith('--graph-expand=')) opts.graphExpand = arg.split('=')[1];
     else if (arg.startsWith('--stage3-candidates=')) opts.stage3Candidates = parseInt(arg.split('=')[1]);
+    else if (arg === '--use-vocab') opts.useVocab = true;
+    else if (arg === '--auto-expand-vocab') { opts.useVocab = true; opts.autoExpandVocab = true; }
     else if (arg === '--help' || arg === '-h') {
       console.log(`
 Sweet Search Benchmark Runner
@@ -127,6 +136,13 @@ Options:
                        default is 30, calibrated on the real-codebase
                        graph benchmark. Set --stage3-candidates=30 to match
                        production exactly.)
+  --use-vocab          Allow benchmarks to consult the persistent
+                       query-vocabulary cache. Default OFF for
+                       reproducibility — a populated cache returns slightly
+                       different embeddings than the live model and shifts
+                       MRR by ~1 pp on GCSN.
+  --auto-expand-vocab  Also let the run grow the persistent vocabulary
+                       (implies --use-vocab). Default OFF.
   --help, -h           Show this help
 `);
       process.exit(0);
@@ -164,6 +180,18 @@ async function main() {
   const opts = parseArgs();
   const startTime = Date.now();
 
+  // Apply benchmark-mode vocab defaults BEFORE any module that reads
+  // `EMBEDDING_CONFIG.cache.{useVocabulary,autoExpand}` is imported. The
+  // env vars are the contract — both this harness and the production
+  // pipeline read them out of `EMBEDDING_CONFIG` at call time. Any
+  // explicit env var the user already set wins.
+  if (process.env.SWEET_SEARCH_VOCAB_USE === undefined) {
+    process.env.SWEET_SEARCH_VOCAB_USE = opts.useVocab ? '1' : '0';
+  }
+  if (process.env.SWEET_SEARCH_VOCAB_AUTO_EXPAND === undefined) {
+    process.env.SWEET_SEARCH_VOCAB_AUTO_EXPAND = opts.autoExpandVocab ? '1' : '0';
+  }
+
   console.log('═'.repeat(70));
   console.log('  Sweet Search Benchmark Runner');
   console.log('═'.repeat(70));
@@ -176,6 +204,7 @@ async function main() {
   console.log(`  Index mode:  ${profileOpts.indexMode}  |  SQLite fast: ${profileOpts.sqliteFast}`);
   console.log(`  Graph expand: ${opts.graphExpand}  (production default is auto; this harness defaults off)`);
   console.log(`  Stage3 cand:  ${opts.stage3Candidates}  (production default is 30; this harness defaults to 15 for dense MRR)`);
+  console.log(`  Vocab cache: useVocabulary=${process.env.SWEET_SEARCH_VOCAB_USE}, autoExpand=${process.env.SWEET_SEARCH_VOCAB_AUTO_EXPAND}  (default OFF for reproducibility; --use-vocab / --auto-expand-vocab to opt in)`);
 
   // 1. Load data
   const dataDir = path.join(__dirname, 'data', opts.dataset);
@@ -346,7 +375,34 @@ async function main() {
   // Save results
   const resultsDir = path.join(__dirname, 'results');
   // Run config snapshot for cross-run comparability — see buildReport docs.
-  const { BINARY_HNSW_CONFIG, CASCADE_CONFIG } = await import(path.join(PROJECT_ROOT, 'core', 'infrastructure', 'config', 'index.js'));
+  const { BINARY_HNSW_CONFIG, CASCADE_CONFIG, EMBEDDING_CONFIG } = await import(path.join(PROJECT_ROOT, 'core', 'infrastructure', 'config', 'index.js'));
+  const { vocabulary } = await import(path.join(PROJECT_ROOT, 'core', 'embedding', 'embedding-cache.js'));
+  // Snapshot vocab state at end-of-run so populated caches are visible
+  // in the result JSON (see eval/miss-analysis/file_kind_gcsn_diagnostic.md
+  // for why this matters: a populated vocab depresses MRR by ~1 pp).
+  let vocabState;
+  try {
+    await vocabulary.load();
+    vocabState = {
+      useVocabulary: EMBEDDING_CONFIG.cache?.useVocabulary !== false,
+      autoExpand: EMBEDDING_CONFIG.cache?.autoExpand !== false,
+      maxTerms: EMBEDDING_CONFIG.cache?.maxTerms ?? null,
+      path: EMBEDDING_CONFIG.cache?.vocabularyPath ?? null,
+      termCount: vocabulary.size?.() ?? null,
+      metadata: vocabulary.metadata
+        ? {
+            schemaVersion: vocabulary.metadata.schemaVersion ?? null,
+            provider: vocabulary.metadata.provider ?? null,
+            model: vocabulary.metadata.model ?? null,
+            dimension: vocabulary.metadata.dimension ?? null,
+            created: vocabulary.metadata.created ?? null,
+            lastUpdated: vocabulary.metadata.lastUpdated ?? null,
+          }
+        : null,
+    };
+  } catch (err) {
+    vocabState = { error: err.message };
+  }
   const config = {
     profile: opts.profile,
     k: opts.k,
@@ -358,7 +414,10 @@ async function main() {
     stage3CandidatesProductionDefault: BINARY_HNSW_CONFIG.retrieval.stage3Candidates,
     cascadeEnabled: CASCADE_CONFIG.enabled,
     embedTextVariant: process.env.SWEET_SEARCH_EMBED_TEXT_VARIANT || 'current',
+    // Legacy field kept for compatibility with older result-comparison
+    // scripts; new tooling should read `vocab` below.
     vocabAutoExpand: process.env.SWEET_SEARCH_VOCAB_AUTO_EXPAND !== '0',
+    vocab: vocabState,
     concurrency: opts.concurrency,
     maxQueries: opts.maxQueries || queries.length,
     skipIndex: opts.skipIndex,
