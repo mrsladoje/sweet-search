@@ -39,23 +39,25 @@ export class CodeGraphRepository {
    * @param {string} filePath - Relative file path (as stored in entities.file_path)
    * @param {number} startLine - 1-indexed start line of the chunk
    * @param {number} endLine - 1-indexed end line of the chunk
-   * @returns {{ name: string, type: string, startLine: number, endLine: number, parentClass: string|null }|null}
+   * @returns {{ id: string, name: string, type: string, startLine: number, endLine: number, parentClass: string|null }|null}
    */
   findEnclosingEntity(filePath, startLine, endLine) {
     const db = this._open();
     if (!db) return null;
     try {
       const row = db.prepare(`
-        SELECT name, type, start_line, end_line, parent_class
+        SELECT id, name, type, start_line, end_line, parent_class
         FROM entities
         WHERE file_path = ?
           AND start_line <= ?
           AND end_line >= ?
+          AND (stale_since IS NULL)
         ORDER BY (end_line - start_line) ASC
         LIMIT 1
       `).get(filePath, startLine, endLine);
       if (!row) return null;
       return {
+        id: row.id,
         name: row.name,
         type: row.type,
         startLine: row.start_line,
@@ -64,6 +66,196 @@ export class CodeGraphRepository {
       };
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Get a single entity by id, with file:line metadata.
+   *
+   * @param {string} entityId
+   * @returns {{ id, name, type, filePath, startLine, endLine, parentClass }|null}
+   */
+  getEntityById(entityId) {
+    const db = this._open();
+    if (!db) return null;
+    try {
+      const row = db.prepare(`
+        SELECT id, name, type, file_path, start_line, end_line, parent_class
+        FROM entities
+        WHERE id = ? AND (stale_since IS NULL)
+      `).get(entityId);
+      if (!row) return null;
+      return {
+        id: row.id, name: row.name, type: row.type,
+        filePath: row.file_path,
+        startLine: row.start_line, endLine: row.end_line,
+        parentClass: row.parent_class || null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * One-hop outgoing relationships from a given source entity.
+   *
+   * Returns up to `limit` (target_name, type, context_line, full_import_path)
+   * tuples joined to the target entity's metadata when target_id is resolved.
+   * Used by the agent context packager to render a "neighbours" tier.
+   *
+   * The relationship `type` field comes from graph-extractor and is one of:
+   *   imports | calls | extends | implements | overrides | throws | uses
+   *
+   * @param {string} sourceId
+   * @param {object} [opts]
+   * @param {string[]} [opts.types] - filter to these types (default: all)
+   * @param {number} [opts.limit=8]
+   * @returns {Array<{ type, targetName, targetId: string|null, contextLine: number|null,
+   *                   fullImportPath: string|null, target: { id, name, type, filePath, startLine, endLine }|null }>}
+   */
+  getOutgoingRelationships(sourceId, opts = {}) {
+    const db = this._open();
+    if (!db || !sourceId) return [];
+    const limit = Math.max(1, Math.min(50, opts.limit ?? 8));
+    const types = (opts.types && opts.types.length) ? opts.types : null;
+    try {
+      const baseSql = `
+        SELECT r.target_id, r.target_name, r.type as rel_type, r.context_line,
+               r.full_import_path,
+               e.id as e_id, e.name as e_name, e.type as e_type,
+               e.file_path as e_file, e.start_line as e_start, e.end_line as e_end
+        FROM relationships r
+        LEFT JOIN entities e ON e.id = r.target_id AND (e.stale_since IS NULL)
+        WHERE r.source_id = ?
+        ${types ? `AND r.type IN (${types.map(() => '?').join(',')})` : ''}
+        ORDER BY (CASE WHEN r.target_id IS NULL THEN 1 ELSE 0 END), r.weight DESC
+        LIMIT ?
+      `;
+      const args = types ? [sourceId, ...types, limit] : [sourceId, limit];
+      const rows = db.prepare(baseSql).all(...args);
+      return rows.map(r => ({
+        type: r.rel_type,
+        targetName: r.target_name,
+        targetId: r.target_id || null,
+        contextLine: r.context_line || null,
+        fullImportPath: r.full_import_path || null,
+        target: r.e_id ? {
+          id: r.e_id, name: r.e_name, type: r.e_type,
+          filePath: r.e_file, startLine: r.e_start, endLine: r.e_end,
+        } : null,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Look up entities by name (case-sensitive), filtered to a set of types.
+   *
+   * Used by the agent context packager to surface TYPE definitions
+   * (struct/enum/interface/class/trait/type) referenced from the top-1's
+   * body — the relationships table only captures explicit edges (calls,
+   * imports), so a method that uses a struct via a field's type
+   * declaration leaves no edge. This name-based lookup recovers them.
+   *
+   * Returns at most one entity per (name, type) pair, preferring
+   * non-stale entries with the smallest body (most likely the canonical
+   * definition rather than a re-export).
+   *
+   * @param {string[]} names - candidate identifier names (Capitalized, etc.)
+   * @param {object} [opts]
+   * @param {string[]} [opts.types] - filter to entity types
+   *   (default: ['struct','class','interface','enum','trait','type'])
+   * @param {number} [opts.limit=8] - cap total returned entities
+   * @param {string} [opts.excludeFile] - skip entities defined in this file
+   *   (caller's own file, since same-file ranks already cover that)
+   * @returns {Array<{ id, name, type, filePath, startLine, endLine }>}
+   */
+  findEntitiesByNames(names, opts = {}) {
+    const db = this._open();
+    if (!db || !Array.isArray(names) || names.length === 0) return [];
+    const uniq = [...new Set(names.filter(n => typeof n === 'string' && n.length >= 2))];
+    if (!uniq.length) return [];
+    const types = (opts.types && opts.types.length)
+      ? opts.types
+      : ['struct', 'class', 'interface', 'enum', 'trait', 'type', 'typeAlias'];
+    const limit = Math.max(1, Math.min(32, opts.limit ?? 8));
+    const excludeFile = typeof opts.excludeFile === 'string' ? opts.excludeFile : null;
+    try {
+      // One row per (name, type), picking the smallest body when name collides
+      // (canonical definition rather than re-export). chunk-style entities are
+      // intentionally excluded to avoid false hits on test scaffolding.
+      const sql = `
+        SELECT id, name, type, file_path, start_line, end_line
+        FROM entities
+        WHERE name IN (${uniq.map(() => '?').join(',')})
+          AND type IN (${types.map(() => '?').join(',')})
+          AND (stale_since IS NULL)
+          ${excludeFile ? 'AND file_path != ?' : ''}
+        ORDER BY (end_line - start_line) ASC
+        LIMIT ?
+      `;
+      const args = excludeFile
+        ? [...uniq, ...types, excludeFile, limit]
+        : [...uniq, ...types, limit];
+      const rows = db.prepare(sql).all(...args);
+      // De-dup by name+type, keeping the first (smallest body).
+      const seen = new Set();
+      const out = [];
+      for (const r of rows) {
+        const k = `${r.name}|${r.type}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push({
+          id: r.id, name: r.name, type: r.type,
+          filePath: r.file_path, startLine: r.start_line, endLine: r.end_line,
+        });
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * One-hop incoming relationships into a given target entity (its callers,
+   * importers, etc.). Joined to the source entity for file:line rendering.
+   *
+   * @param {string} targetId
+   * @param {object} [opts]
+   * @param {string[]} [opts.types]
+   * @param {number} [opts.limit=8]
+   * @returns {Array<{ type, source: { id, name, type, filePath, startLine, endLine }|null, contextLine }>}
+   */
+  getIncomingRelationships(targetId, opts = {}) {
+    const db = this._open();
+    if (!db || !targetId) return [];
+    const limit = Math.max(1, Math.min(50, opts.limit ?? 8));
+    const types = (opts.types && opts.types.length) ? opts.types : null;
+    try {
+      const baseSql = `
+        SELECT r.source_id, r.type as rel_type, r.context_line,
+               e.id as e_id, e.name as e_name, e.type as e_type,
+               e.file_path as e_file, e.start_line as e_start, e.end_line as e_end
+        FROM relationships r
+        LEFT JOIN entities e ON e.id = r.source_id AND (e.stale_since IS NULL)
+        WHERE r.target_id = ?
+        ${types ? `AND r.type IN (${types.map(() => '?').join(',')})` : ''}
+        ORDER BY r.weight DESC
+        LIMIT ?
+      `;
+      const args = types ? [targetId, ...types, limit] : [targetId, limit];
+      const rows = db.prepare(baseSql).all(...args);
+      return rows.map(r => ({
+        type: r.rel_type,
+        contextLine: r.context_line || null,
+        source: r.e_id ? {
+          id: r.e_id, name: r.e_name, type: r.e_type,
+          filePath: r.e_file, startLine: r.e_start, endLine: r.e_end,
+        } : null,
+      })).filter(r => r.source);
+    } catch {
+      return [];
     }
   }
 
