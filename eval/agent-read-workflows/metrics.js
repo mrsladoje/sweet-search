@@ -39,13 +39,23 @@ function expandLineRanges(ranges) {
 
 function answerHaystack(answer) {
   // The text we search for symbols/facts is the answer prose + notes + each
-  // cited file's reason. We do NOT include cited file paths in the haystack
-  // (those are handled separately as fileRecall).
+  // cited file's reason + any conversational prose the agent wrote BEFORE
+  // the JSON block (often where it explains the answer in plain English).
+  // Including the prose closes a known gap: workers under haiku frequently
+  // put substantive facts (symbol names, edge cases) in the prose narrative
+  // and only summarise into the JSON block, which previously caused factR
+  // to drop even though the right facts were present.
+  // We do NOT include cited file paths in the haystack (those are handled
+  // separately as fileRecall).
   const parts = [];
   if (typeof answer?.answer === 'string') parts.push(answer.answer);
   if (typeof answer?.notes === 'string') parts.push(answer.notes);
+  if (typeof answer?._prose === 'string') parts.push(answer._prose);
   for (const f of answer?.files || []) {
     if (f && typeof f.reason === 'string') parts.push(f.reason);
+  }
+  for (const s of answer?.symbols || []) {
+    if (typeof s === 'string') parts.push(s);
   }
   return parts.join('\n').toLowerCase();
 }

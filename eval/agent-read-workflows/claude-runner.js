@@ -195,8 +195,9 @@ function parseStreamJson(stdout) {
             }
           }
           // Parse <<SS_ROUTE_META>>{...} trailer emitted by ss-search.
-          // Captures: routedMode, routeConfidence, tokenBudget, tokensUsed,
-          // subMode, resultCount, tierCounts, sandwichCount.
+          // Captures: query, queryHash, queryLen, routedMode, routeConfidence,
+          // routeMethod, routerLatency_us, tokenBudget, tokensUsed, subMode,
+          // resultCount, tierCounts, sandwichCount, repo-isolation fields.
           let routeMeta = null;
           const m = text.match(/<<SS_ROUTE_META>>(\{[^\n]*\})/);
           if (m) {
@@ -245,8 +246,10 @@ function parseStreamJson(stdout) {
 /**
  * Extract the strict-JSON answer block we asked for.
  * Tries (1) fenced ```json block at end, (2) any fenced json block, (3) the
- * largest top-level {...} substring that parses. Returns the parsed object or
- * { _parseError, _raw }.
+ * largest top-level {...} substring that parses. Returns the parsed object
+ * with `_prose` set to the prose preamble (the text outside the JSON block,
+ * which often contains substantive facts the worker explained in English).
+ * Falls back to { _parseError, _raw } when no JSON block parses.
  */
 export function extractAnswerJson(text) {
   if (!text) return { _parseError: 'empty answer text', _raw: '' };
@@ -254,8 +257,20 @@ export function extractAnswerJson(text) {
   // 1) trailing fenced ```json block
   const fencedAll = [...text.matchAll(/```(?:json)?\s*\n([\s\S]*?)\n```/g)];
   for (let i = fencedAll.length - 1; i >= 0; i--) {
-    const body = fencedAll[i][1];
-    try { return JSON.parse(body); } catch { /* try next */ }
+    const m = fencedAll[i];
+    const body = m[1];
+    try {
+      const parsed = JSON.parse(body);
+      // Capture the prose that precedes the parsed JSON block so metric
+      // scoring can include it in the haystack. The agent often narrates
+      // the answer in prose and then summarises into JSON; without this
+      // we'd silently drop those prose facts on the floor.
+      const prose = (text.slice(0, m.index) || '').trim();
+      if (prose && parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        parsed._prose = prose;
+      }
+      return parsed;
+    } catch { /* try next */ }
   }
 
   // 2) the largest balanced {...} substring
@@ -273,7 +288,14 @@ export function extractAnswerJson(text) {
   }
   candidates.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
   for (const [a, b] of candidates) {
-    try { return JSON.parse(text.slice(a, b + 1)); }
+    try {
+      const parsed = JSON.parse(text.slice(a, b + 1));
+      const prose = (text.slice(0, a) || '').trim();
+      if (prose && parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        parsed._prose = prose;
+      }
+      return parsed;
+    }
     catch { /* try next */ }
   }
 
@@ -289,19 +311,30 @@ export function summariseRun(run) {
   const toolUseChars = run.toolResults.reduce((acc, r) => acc + r.chars, 0);
 
   // Aggregate ss-search route metadata across all ss-search tool calls in this run.
-  // - routeMetas: every parsed payload (in tool-call order)
+  // - routeMetas: every parsed payload (in tool-call order, full per-call detail
+  //               including query/queryHash/routeMethod/routerLatency_us)
   // - routedModeCounts: how many calls routed to each mode
+  // - routeMethodCounts: how many calls came from each decision source
+  //   (file_pattern / wasm_catboost / wasm_rejected / fallback_error / forced / ...)
+  // - routerLatencySamples_us: per-call router decision latency, in microseconds
   // - aggregate: { totalTokenBudget, totalTokensUsed, sandwichCount, callCount }
   const routeMetas = run.toolResults
     .map(r => r.routeMeta)
     .filter(Boolean);
   const routedModeCounts = {};
+  const routeMethodCounts = {};
+  const routerLatencySamples_us = [];
   let routeAggregate = null;
   if (routeMetas.length) {
     let totalBudget = 0, totalUsed = 0, sandwichCount = 0;
     for (const m of routeMetas) {
       const mode = m.routedMode || 'unknown';
       routedModeCounts[mode] = (routedModeCounts[mode] || 0) + 1;
+      const method = m.routeMethod || 'unknown';
+      routeMethodCounts[method] = (routeMethodCounts[method] || 0) + 1;
+      if (typeof m.routerLatency_us === 'number') {
+        routerLatencySamples_us.push(m.routerLatency_us);
+      }
       totalBudget += +m.tokenBudget || 0;
       totalUsed += +m.tokensUsed || 0;
       sandwichCount += +m.sandwichCount || 0;
@@ -312,6 +345,8 @@ export function summariseRun(run) {
       totalTokensUsed: totalUsed,
       sandwichCount,
       routedModeCounts,
+      routeMethodCounts,
+      routerLatencySamples_us,
     };
   }
 
