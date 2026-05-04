@@ -26,6 +26,7 @@ import { runClaudeAgent, summariseRun, formatToolTrace, buildClaudeArgs } from '
 import { auditRun } from './audit.js';
 import { scoreAnswer } from './metrics.js';
 import { judgePair } from './judge.js';
+import { tallyJudgeWins } from './judge-tally.js';
 import {
   loadManifest, getRepoSpec, verifyRepoLayout, REPOS_DIR,
 } from '../read-workflows/setup.js';
@@ -466,6 +467,8 @@ async function runOneRepo(opts) {
       // sweet-search-auto telemetry: aggregate routedMode counts across iters
       // (only present for runs that called ss-search)
       const routedModeCounts = {};
+      const routeMethodCounts = {};
+      const routerLatencySamples_us = [];
       let routeCallCount = 0;
       let routeBudgetSum = 0;
       let routeUsedSum = 0;
@@ -476,16 +479,32 @@ async function runOneRepo(opts) {
         for (const [k, v] of Object.entries(ra.routedModeCounts || {})) {
           routedModeCounts[k] = (routedModeCounts[k] || 0) + v;
         }
+        for (const [k, v] of Object.entries(ra.routeMethodCounts || {})) {
+          routeMethodCounts[k] = (routeMethodCounts[k] || 0) + v;
+        }
+        if (Array.isArray(ra.routerLatencySamples_us)) {
+          for (const x of ra.routerLatencySamples_us) routerLatencySamples_us.push(x);
+        }
         routeCallCount += ra.callCount || 0;
         routeBudgetSum += ra.totalTokenBudget || 0;
         routeUsedSum += ra.totalTokensUsed || 0;
         routeSandwichSum += ra.sandwichCount || 0;
       }
+      let routerLatencyP50 = null, routerLatencyP95 = null, routerLatencyP99 = null;
+      if (routerLatencySamples_us.length) {
+        routerLatencyP50 = percentile(routerLatencySamples_us, 0.50);
+        routerLatencyP95 = percentile(routerLatencySamples_us, 0.95);
+        routerLatencyP99 = percentile(routerLatencySamples_us, 0.99);
+      }
       const routeAggregate = routeCallCount > 0
-        ? { routedModeCounts, callCount: routeCallCount,
+        ? { routedModeCounts, routeMethodCounts, callCount: routeCallCount,
             avgTokenBudget: routeBudgetSum / routeCallCount,
             avgTokensUsed: routeUsedSum / routeCallCount,
-            sandwichCount: routeSandwichSum }
+            sandwichCount: routeSandwichSum,
+            routerLatencyP50_us: routerLatencyP50,
+            routerLatencyP95_us: routerLatencyP95,
+            routerLatencyP99_us: routerLatencyP99,
+            routerLatencySampleCount: routerLatencySamples_us.length }
         : null;
 
       collapsed.push({
@@ -540,6 +559,37 @@ async function runOneRepo(opts) {
   // ── per-mode summary + win attribution ──────────────────────────────────
   const modeSummaries = modes.map(mode => {
     const rows = collapsed.filter(r => r.mode === mode);
+    // Route + sufficiency aggregates (only meaningful for sweet conditions
+    // that emit <<SS_ROUTE_META>>). For native they stay null.
+    const aggRouteCalls = rows.reduce((acc, r) => acc + (r.routeAggregate?.callCount || 0), 0);
+    const aggRoutedModeCounts = {};
+    const aggRouteMethodCounts = {};
+    let aggSufficientCount = 0;
+    let aggBudgetSum = 0, aggUsedSum = 0;
+    for (const r of rows) {
+      const ra = r.routeAggregate;
+      if (!ra) continue;
+      for (const [k, v] of Object.entries(ra.routedModeCounts || {})) {
+        aggRoutedModeCounts[k] = (aggRoutedModeCounts[k] || 0) + v;
+      }
+      for (const [k, v] of Object.entries(ra.routeMethodCounts || {})) {
+        aggRouteMethodCounts[k] = (aggRouteMethodCounts[k] || 0) + v;
+      }
+      aggBudgetSum += (ra.avgTokenBudget || 0) * (ra.callCount || 0);
+      aggUsedSum += (ra.avgTokensUsed || 0) * (ra.callCount || 0);
+    }
+    // Sufficient counts come from each median run's parsed routeMetas
+    // (sufficient is a per-call signal). Fall back to 0 when missing.
+    for (const r of rows) {
+      // routeMetas isn't stored on collapsed; reach back through allRuns medians.
+      const allForRow = allRuns.filter(x => x.mode === mode && x.taskId === r.taskId);
+      for (const ar of allForRow) {
+        for (const m of (ar.run.routeMetas || [])) {
+          if (m.sufficient === true) aggSufficientCount++;
+        }
+      }
+    }
+    const sweetMulticallCount = rows.filter(r => (r.routeAggregate?.callCount || 0) > 1).length;
     return {
       mode, n: rows.length,
       p50WallMs: percentile(rows.map(r => r.avgWallMs), 0.5),
@@ -550,6 +600,14 @@ async function runOneRepo(opts) {
       avgUsageInputTokens: avg(rows.map(r => r.avgUsageInputTokens)),
       avgUsageOutputTokens: avg(rows.map(r => r.avgUsageOutputTokens)),
       avgCostUsd: avg(rows.map(r => r.avgCostUsd)),
+      // Route attribution surfaces (null/empty for native)
+      ssCallCount: aggRouteCalls,
+      ssMulticallTaskCount: sweetMulticallCount,
+      ssSufficientCount: aggSufficientCount,
+      ssRoutedModeCounts: Object.keys(aggRoutedModeCounts).length ? aggRoutedModeCounts : null,
+      ssRouteMethodCounts: Object.keys(aggRouteMethodCounts).length ? aggRouteMethodCounts : null,
+      ssAvgTokenBudget: aggRouteCalls ? aggBudgetSum / aggRouteCalls : null,
+      ssAvgTokensUsed: aggRouteCalls ? aggUsedSum / aggRouteCalls : null,
       avgFileRecall: avg(rows.map(r => r.score.fileRecall)),
       avgFilePrecision: avg(rows.map(r => r.score.filePrecision)),
       avgSymbolRecall: avg(rows.map(r => r.score.symbolRecall)),
@@ -571,15 +629,18 @@ async function runOneRepo(opts) {
   });
 
   const baseline = modeSummaries.find(m => m.mode === 'native-rg-read') || modeSummaries[0];
-  const sweet = modeSummaries.find(m => m.mode === 'sweet-search-tools');
+  // Sweet head-to-head: pick whichever sweet condition was actually under test.
+  // Earlier code hard-coded `sweet-search-tools`, so when the run compared
+  // `sweet-search-auto` vs native the head-to-head printout AND the
+  // judgeAggregate counters silently dropped every sweet win to zero.
+  // Now: any non-baseline sweet condition counts.
+  const sweet = modeSummaries.find(m => m.mode !== baseline?.mode && SWEET_CONDITIONS.has(m.mode))
+    || modeSummaries.find(m => m.mode !== baseline?.mode);
+  const sweetMode = sweet?.mode || null;
 
-  // judge head-to-head
-  let judgeNativeWins = 0, judgeSweetWins = 0, judgeTies = 0;
-  for (const j of judgeResults) {
-    if (j.preferredMode === 'native-rg-read') judgeNativeWins++;
-    else if (j.preferredMode === 'sweet-search-tools') judgeSweetWins++;
-    else if (j.preferredMode === 'tie') judgeTies++;
-  }
+  // judge head-to-head — delegated to pure helper so it's testable in isolation
+  const { judgeNativeWins, judgeSweetWins, judgeTies } =
+    tallyJudgeWins(judgeResults, baseline?.mode || 'native-rg-read');
 
   // deterministic per-task winners (by factRecall, tiebreak fileRecall, tiebreak fewer tokens)
   const detWinners = [];
@@ -621,13 +682,26 @@ async function runOneRepo(opts) {
     process.stdout.write(`  low-precision evidence rate:        ${pct(m.lowPrecisionEvidenceRate)}\n`);
     process.stdout.write(`  success/partial/failure: ${pct(m.successRate)} / ${pct(m.partialRate)} / ${pct(m.failureRate)}\n`);
     process.stdout.write(`  policy violations: ${m.totalViolations} (in ${pct(m.violationRunRate)} of runs)\n`);
-    process.stdout.write(`  answer parse errors: ${pct(m.parseErrorRate)}\n\n`);
+    process.stdout.write(`  answer parse errors: ${pct(m.parseErrorRate)}\n`);
+    if (m.ssCallCount > 0) {
+      const fmtCounts = (obj) => Object.entries(obj || {})
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `${k}=${v}`)
+        .join(' ');
+      process.stdout.write(`  ss-search calls:    ${m.ssCallCount} (${m.ssMulticallTaskCount} multi-call task(s), ${m.ssSufficientCount} sufficient=YES)\n`);
+      process.stdout.write(`  ss routedMode:      ${fmtCounts(m.ssRoutedModeCounts)}\n`);
+      process.stdout.write(`  ss routeMethod:     ${fmtCounts(m.ssRouteMethodCounts)}\n`);
+      if (m.ssAvgTokensUsed != null) {
+        process.stdout.write(`  ss budget/used:     ${(m.ssAvgTokenBudget || 0).toFixed(0)} / ${(m.ssAvgTokensUsed || 0).toFixed(0)} avg\n`);
+      }
+    }
+    process.stdout.write('\n');
   }
 
   if (sweet && baseline && baseline.mode !== sweet.mode) {
     const tokSav = ((baseline.avgApproxTotalTokens - sweet.avgApproxTotalTokens) / Math.max(1, baseline.avgApproxTotalTokens)) * 100;
     const latDelta = sweet.avgWallMs - baseline.avgWallMs;
-    process.stdout.write(`Head-to-head (sweet vs native):\n`);
+    process.stdout.write(`Head-to-head (${sweet.mode} vs ${baseline.mode}):\n`);
     process.stdout.write(`  Sweet token savings:  ${tokSav.toFixed(1)}%\n`);
     process.stdout.write(`  Sweet latency delta:  ${latDelta >= 0 ? '+' : ''}${latDelta.toFixed(0)} ms\n`);
     process.stdout.write(`  Sweet fact recall:    ${pct(sweet.avgFactRecall)} vs native ${pct(baseline.avgFactRecall)}\n`);
@@ -669,7 +743,11 @@ async function runOneRepo(opts) {
     rawRuns: allRuns,
     judgeResults,
     detWinners,
-    judgeAggregate: { judgeNativeWins, judgeSweetWins, judgeTies, n: judgeResults.length },
+    judgeAggregate: {
+      baselineMode: baseline?.mode || null,
+      sweetMode,
+      judgeNativeWins, judgeSweetWins, judgeTies, n: judgeResults.length,
+    },
     caveats: [
       'This benchmark uses Claude Code itself; results include model variance.',
       'Worker model defaults to haiku for cost; behaviour may differ on opus/sonnet.',

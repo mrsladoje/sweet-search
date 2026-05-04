@@ -147,15 +147,37 @@ export function expandToSymbol(result, opts) {
   const chunkLines = (origEnd - origStart) + 1;
 
   // Check if chunk already looks like a complete symbol
-  // (has a name/type and is > 10 lines — not just a signature fragment)
+  // (has a name/type and is > 10 lines — not just a signature fragment).
+  // Even when no expansion is needed we still:
+  //   (1) look up the enclosing entity so callers (graph-neighbour
+  //       reservation) can attach edges to it.
+  //   (2) absorb leading trivia (Rust /// + #[...], JSDoc, Python decorators)
+  //       so the agent sees attribute-driven semantics like #[non_exhaustive]
+  //       that the judge keeps asking for.
   if (meta.name && chunkLines > 10) {
+    const filePath0 = meta.file || result.file;
+    // Try strict enclosing-range first; fall back to a single-line query at
+    // origStart when the chunk overshoots the entity by trailing lines (a
+    // common chunker artefact — observed on gin handleHTTPRequest where
+    // chunk=690-762 but entity=690-760, leaving the strict query empty).
+    let ent0 = findEnclosingEntity(codeGraphRepo, filePath0, origStart, origEnd);
+    if (!ent0) ent0 = findEnclosingEntity(codeGraphRepo, filePath0, origStart, origStart);
+    let triviaStart0 = origStart;
+    if (opts.fileCache && !opts.ablations?.has('no-leading-trivia') && origStart > 1) {
+      const lang0 = inferLanguage(filePath0);
+      const candidate = expandLeadingTrivia(filePath0, origStart, opts.fileCache, opts.projectRoot, lang0);
+      // Only commit when the absorbed trivia fits the cap (10 tok/line est).
+      const newLines = (origEnd - candidate) + 1;
+      if (newLines * 10 <= tokenCap) triviaStart0 = candidate;
+    }
     return {
-      startLine: origStart,
+      startLine: triviaStart0,
       endLine: origEnd,
-      expanded: false,
-      expandedFrom: null,
+      expanded: triviaStart0 < origStart,
+      expandedFrom: triviaStart0 < origStart ? origRange : null,
       symbol: meta.name,
       symbolType: meta.type || null,
+      entityId: ent0?.id || null,
       kind: 'chunk',
     };
   }
@@ -169,13 +191,25 @@ export function expandToSymbol(result, opts) {
 
     // Only expand if it fits within the token cap
     if (entityTokens <= tokenCap) {
+      // Absorb leading trivia (doc comments, decorators, attributes) above
+      // the entity. This recovers context the judge keeps asking for —
+      // ripgrep `#[non_exhaustive]`, JSDoc, Rust /// docs, Python decorators.
+      const lang = inferLanguage(filePath);
+      const triviaStart = (opts.fileCache && !opts.ablations?.has('no-leading-trivia'))
+        ? expandLeadingTrivia(filePath, entity.startLine, opts.fileCache, opts.projectRoot, lang)
+        : entity.startLine;
+      const startWithTrivia = Math.max(1, Math.min(triviaStart, entity.startLine));
+      // Re-check budget with trivia included; fall back to symbol-only if it overflows.
+      const expandedLines = (entity.endLine - startWithTrivia) + 1;
+      const fits = expandedLines * 10 <= tokenCap;
       return {
-        startLine: entity.startLine,
+        startLine: fits ? startWithTrivia : entity.startLine,
         endLine: entity.endLine,
         expanded: true,
         expandedFrom: origRange,
         symbol: entity.name,
         symbolType: entity.type,
+        entityId: entity.id || null,
         kind: 'full',
       };
     }
@@ -193,6 +227,7 @@ export function expandToSymbol(result, opts) {
           expandedFrom: origRange,
           symbol: entity.name,
           symbolType: entity.type,
+          entityId: entity.id || null,
           kind: 'sandwich',
           sandwich,
         };
@@ -206,6 +241,7 @@ export function expandToSymbol(result, opts) {
       expandedFrom: null,
       symbol: entity.name,
       symbolType: entity.type,
+      entityId: entity.id || null,
       kind: 'chunk',
     };
   }
@@ -550,6 +586,70 @@ export function expandBySyntax(fileCache, filePath, startLine, endLine, tokenCap
   return { startLine: expandedStart, endLine: expandedEnd };
 }
 
+/**
+ * Walk upward from `baseStartLine` to absorb leading trivia (doc comments,
+ * attributes, decorators) that document the symbol. This recovers context
+ * the judge keeps asking for: ripgrep `#[non_exhaustive]`, JSDoc above
+ * the function, Python decorators, Rust `///` and `//!` doc lines.
+ *
+ * Caps at 30 lines back so we never blow the budget on accidentally
+ * absorbing a previous symbol's body. Returns the adjusted startLine
+ * (never less than 1, never above baseStartLine).
+ *
+ * @param {string} filePath
+ * @param {number} baseStartLine
+ * @param {Map} fileCache
+ * @param {string} projectRoot
+ * @param {string} lang
+ * @returns {number}
+ */
+export function expandLeadingTrivia(filePath, baseStartLine, fileCache, projectRoot, lang) {
+  if (!filePath || !baseStartLine || baseStartLine <= 1) return baseStartLine;
+  const windowStart = Math.max(1, baseStartLine - 30);
+  const text = readFileRange(fileCache, filePath, windowStart, baseStartLine - 1, projectRoot);
+  if (!text) return baseStartLine;
+  const lines = text.split('\n');
+
+  // Walk lines BACKWARDS, classifying each:
+  //   - trivia line (doc / attr / decorator)  → mark as the new topmost
+  //   - blank line                            → tolerated INSIDE a doc run,
+  //                                              but not absorbed (the blank
+  //                                              above the topmost trivia
+  //                                              row stays attached to the
+  //                                              prior code, not the symbol)
+  //   - anything else (code / punct / close)  → stop
+  let topmostTrivia = baseStartLine;   // 1-based absolute, only moves on trivia
+  for (let idx = lines.length - 1; idx >= 0; idx--) {
+    const raw = lines[idx];
+    const ln = windowStart + idx;
+    if (ln >= baseStartLine) continue;
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      // Tolerate blank gaps inside the doc run but DO NOT include them: the
+      // returned line is always the topmost actual trivia row.
+      continue;
+    }
+    let isTrivia = false;
+    if (lang === 'rust') {
+      // /// and //! doc comments, #[attr] / #![attr], block comments,
+      // // regular comments adjacent to a doc run.
+      isTrivia = /^(\/\/[!/]?|\/\*\*?|\*\/?|\*\s|#\!?\[)/.test(trimmed);
+    } else if (lang === 'go') {
+      isTrivia = /^\/\//.test(trimmed);
+    } else if (lang === 'python') {
+      // Decorators, comments, and raw docstring lines (rare directly above def)
+      isTrivia = /^@\w/.test(trimmed) || /^#/.test(trimmed)
+        || /^['"]{3}/.test(trimmed);
+    } else {
+      // JS/TS/Java/C-style: //, /** ... */, *, decorators (TS @Decorator)
+      isTrivia = /^(\/\/|\/\*\*?|\*\/?|\*\s|@\w)/.test(trimmed);
+    }
+    if (!isTrivia) break;
+    topmostTrivia = ln;
+  }
+  return topmostTrivia;
+}
+
 /** Get Python indent level (number of leading spaces, tabs=4). */
 function getIndentLevel(line) {
   let indent = 0;
@@ -618,47 +718,131 @@ export function checkStaleness(filePath, projectRoot, codeGraphRepo, cache = {})
 /**
  * Extract import lines from file header, language-aware.
  *
- * Handles:
- *   - JS/TS: import/require/export statements
- *   - Go: import (...) blocks and single imports
- *   - Python: import/from statements
- *   - Rust: use declarations
+ * Handles multi-line constructs that the previous line-by-line filter
+ * dropped on the floor (the dominant cause of "missing alias" judge
+ * complaints, e.g. fastify uses
+ *   const { kSchemaParams: paramsSchema, ... } = require('./symbols')
+ * spanning 5+ lines — the body uses `paramsSchema`, but only the multi-line
+ * form maps it back to `kSchemaParams`):
+ *
+ *   - JS/TS: ES `import { a, b } from 'x'` (multi-line)
+ *           `const { a, b } = require('x')` (multi-line, with `kKey: alias`)
+ *           `export { ... } from '...'`
+ *   - Go: `import (...)` blocks (with aliases like `alias "path"`)
+ *   - Python: `import x` / `from x import (a, b, c)` (multi-line with parens)
+ *   - Rust: `use foo::{bar, baz}` (multi-line grouped) + `pub use` + extern crate
+ *
+ * Output is one logical statement per array entry; multi-line statements
+ * are joined with a space so the consumer (header rendering, identifier
+ * scan) sees a single string per import.
  */
 function extractImportLines(headerText, lang) {
   const lines = headerText.split('\n');
 
+  // ── Generic multi-line statement collector ───────────────────────────────
+  // Walk lines, accumulate balanced bracket levels for each "starter" we
+  // recognise, emit when the statement closes. Falls back to single-line
+  // emission for languages where a statement ends at EOL.
+  const out = [];
+
   if (lang === 'go') {
-    // Go: capture `import (...)` block contents and single `import "..."`
-    const result = [];
+    // Go: capture `import (...)` block contents (each line) and single `import "..."`
     let inBlock = false;
     for (const line of lines) {
       if (/^\s*import\s*\(/.test(line)) { inBlock = true; continue; }
       if (inBlock) {
         if (/^\s*\)/.test(line)) { inBlock = false; continue; }
-        if (line.trim()) result.push(line);
-      } else if (/^\s*import\s+"/.test(line)) {
-        result.push(line);
+        if (line.trim()) out.push(line.trimEnd());
+      } else if (/^\s*import\s+(\w+\s+)?"/.test(line)) {
+        out.push(line.trimEnd());
       }
     }
-    return result;
+    return out;
   }
 
   if (lang === 'python') {
-    return lines.filter(line =>
-      /^\s*(import\s+\w|from\s+\w)/.test(line)
-    );
+    // Python: `import x`, `from x import y`, `from x import (a, b, ...)`
+    // multi-line via parens or trailing backslash.
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (/^\s*(import\s+\w|from\s+[.\w]+\s+import)/.test(line)) {
+        let stmt = line.trimEnd();
+        // Continue while line ends with backslash or has unbalanced (
+        const opens = () => (stmt.match(/\(/g) || []).length;
+        const closes = () => (stmt.match(/\)/g) || []).length;
+        const continued = () => /\\\s*$/.test(stmt) || opens() > closes();
+        while (continued() && i + 1 < lines.length) {
+          stmt = stmt.replace(/\\\s*$/, '').trimEnd() + ' ' + lines[++i].trim();
+        }
+        out.push(stmt);
+      }
+      i++;
+    }
+    return out;
   }
 
   if (lang === 'rust') {
-    return lines.filter(line =>
-      /^\s*(use\s+|pub\s+use\s+|extern\s+crate\s+)/.test(line)
-    );
+    // Rust: `use foo::{bar, baz}` (possibly multi-line via { ... });
+    // also `pub use ...;` and `extern crate ...;` (single line).
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (/^\s*(pub\s+)?use\s+/.test(line) || /^\s*extern\s+crate\s+/.test(line)) {
+        let stmt = line.trimEnd();
+        // Continue until we see the terminating `;`
+        while (!/;\s*(\/\/.*)?$/.test(stmt) && i + 1 < lines.length) {
+          stmt += ' ' + lines[++i].trim();
+        }
+        out.push(stmt);
+      }
+      i++;
+    }
+    return out;
   }
 
-  // JS/TS/default
-  return lines.filter(line =>
-    /^\s*(import\s|const\s+\{.*\}\s*=\s*require|from\s+['"]|export\s+\{)/.test(line)
-  );
+  // JS/TS/default — handle multi-line ES imports and CommonJS destructured requires.
+  // Examples we want to capture as ONE logical line:
+  //   import {
+  //     foo,
+  //     bar as baz,
+  //   } from 'mod'
+  //   const {
+  //     kSchemaParams: paramsSchema,
+  //     kSchemaBody: bodySchema,
+  //   } = require('./symbols')
+  //   const x = require('./y')
+  //   export { a, b } from './x'
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const isStartES = /^\s*(import|export)\s/.test(line);
+    // CJS detector: start at any line that begins a const/let/var declaration.
+    // We accumulate continuation lines until brackets balance, THEN filter to
+    // only keep statements that prove themselves to be import-like (contain
+    // `require(...)` or destructured-assignment from a bracketed expression).
+    const isStartCJS = /^\s*(const|let|var)\s+/.test(line)
+      && (/\brequire\s*\(/.test(line) || /\{[^}]*$/.test(line));
+    if (isStartES || isStartCJS) {
+      let stmt = line.trimEnd();
+      const opens = () => (stmt.match(/[{(]/g) || []).length;
+      const closes = () => (stmt.match(/[})]/g) || []).length;
+      // Continue while open brackets exceed closes OR statement ends with comma
+      // (suggests a continuation line for object / list).
+      while ((opens() > closes() || /,\s*(\/\/.*)?$/.test(stmt))
+             && i + 1 < lines.length) {
+        stmt += ' ' + lines[++i].trim();
+        if (opens() === closes() && /;\s*$/.test(stmt)) break;
+      }
+      // Only keep statements that look like imports (drop unrelated
+      // const/let assignments that happened to span lines).
+      if (/\b(import|require\s*\(|from\s+['"]|export\s*\{)/.test(stmt)) {
+        out.push(stmt);
+      }
+    }
+    i++;
+  }
+  return out;
 }
 
 /**
@@ -830,45 +1014,348 @@ export function computeConfidence(results, stats) {
 }
 
 /**
+ * Identifiers that look like external references the body uses but does
+ * NOT define. We treat anything matching `\b[A-Za-z_][A-Za-z0-9_]{2,}\b`
+ * (≥3 chars), excluding language keywords and the symbol's own name.
+ * Returns a Set, lower-cased keys plus the original case for diagnostics.
+ */
+function extractCodeIdentifiers(code, ownSymbolName) {
+  const out = new Set();
+  if (!code) return out;
+  const matches = code.match(/\b[A-Za-z_][A-Za-z0-9_]{2,}\b/g) || [];
+  const ownLower = (ownSymbolName || '').toLowerCase();
+  for (const id of matches) {
+    if (LANG_KEYWORDS.has(id)) continue;
+    if (id.toLowerCase() === ownLower) continue;
+    // Drop pure numerics and trivially-short tokens already filtered.
+    out.add(id);
+  }
+  return out;
+}
+
+/**
+ * Decide whether the body's referenced identifiers are all locally
+ * resolvable from headerContext + neighbours + the body itself
+ * (i.e. the symbol introduces or imports them all). Used by the
+ * stricter `computeSufficiency` rule.
+ *
+ * Identifiers count as resolved when they are:
+ *   - mentioned in `headerContext` (any kind of import/require line)
+ *   - mentioned in `neighborsRendered` (callees/imports we surfaced)
+ *   - declared inside `code` itself (e.g. const x = ..., function x ...,
+ *     parameters in the symbol signature) — detected as identifiers that
+ *     appear in lvalue positions (`const X`, `let X`, `function X`,
+ *     `class X`, function parameters)
+ */
+function unresolvedExternalRefs(code, ownSymbolName, headerContext, neighborsRendered) {
+  const externals = extractCodeIdentifiers(code, ownSymbolName);
+  if (!externals.size) return new Set();
+  const resolvedHaystack = (headerContext || '') + '\n' + (neighborsRendered || '');
+  // Approximate "declared locally in this code block": any identifier that
+  // appears in an lvalue-ish position. We only need a rough check, false
+  // positives here just mean "looks self-contained" (which is fine).
+  const localDecls = new Set();
+  const lvalueRe = /\b(?:const|let|var|function|class|fn|def|struct|enum|trait|impl|type|interface)\s+([A-Za-z_][A-Za-z0-9_]*)/g;
+  let m;
+  while ((m = lvalueRe.exec(code))) localDecls.add(m[1]);
+  // Function-parameter approximation: capture top-of-block `(...)` after the symbol name.
+  const sigRe = new RegExp(`\\b${(ownSymbolName || '').replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\s*\\(([^)]*)\\)`);
+  if (ownSymbolName) {
+    const sig = code.match(sigRe);
+    if (sig) {
+      for (const part of sig[1].split(/[,\s]+/)) {
+        const id = part.replace(/[:=\[\]?<>]/g, '').replace(/\.\.\./, '').trim();
+        if (id) localDecls.add(id);
+      }
+    }
+  }
+  const unresolved = new Set();
+  for (const id of externals) {
+    if (localDecls.has(id)) continue;
+    if (resolvedHaystack.includes(id)) continue;
+    unresolved.add(id);
+  }
+  return unresolved;
+}
+
+/**
  * Compute sufficiency signal — does the returned context likely contain
- * enough information to answer the query? (Fix #7, plan §5)
+ * enough information to answer the query?
  *
- * Signals:
- *   (a) Expanded region contains a complete symbol (not truncated)
- *   (b) Header context resolves all referenced imports
- *   (c) Score gap suggests the match is specific, not generic
+ * Tightened rule (May 2026 — addresses the dominant agent-bench loss
+ * pattern): a complete symbol on its own is NOT sufficient. We also
+ * require either (a) the symbol's external references are resolved
+ * (header imports + 1-hop graph neighbours), or (b) the symbol is
+ * provably self-contained (no unresolved external identifiers).
  *
- * @param {object} topResult - The top-1 agent result
- * @param {{ confidence: string }} confidenceInfo - Confidence computation result
- * @returns {{ sufficient: boolean, reasons: string[] }}
+ * Reasons emitted (independent signals, kept for diagnostics):
+ *   - complete_symbol     : top-1 is a full, non-truncated symbol
+ *   - header_resolved     : top-1 has resolved import/header context
+ *   - neighbors_present   : the package surfaced ≥1 1-hop graph neighbour
+ *   - self_contained_strict: every external identifier in the body is
+ *                            either declared locally, in headerContext,
+ *                            or in the surfaced neighbours list
+ *   - high_confidence     : score gap puts top-1 well ahead of top-2
+ *
+ * sufficient := complete_symbol
+ *               AND (header_resolved OR neighbors_present OR self_contained_strict)
+ *               AND (high_confidence OR header_resolved OR neighbors_present)
+ *
+ * @param {object} topResult
+ * @param {{ confidence: string }} confidenceInfo
+ * @returns {{ sufficient: boolean, reasons: string[], unresolvedExternalCount: number }}
  */
 export function computeSufficiency(topResult, confidenceInfo) {
   const reasons = [];
 
-  // (a) Is the result a complete symbol (not truncated)?
-  const isComplete = topResult.symbol &&
+  const isComplete = !!(topResult.symbol &&
     topResult.presentation === 'full' &&
-    !topResult.code?.includes('// ... (');
-  if (isComplete) {
-    reasons.push('complete_symbol');
+    !topResult.code?.includes('// ... ('));
+  if (isComplete) reasons.push('complete_symbol');
+
+  const hasHeader = !!topResult.headerContext;
+  if (hasHeader) reasons.push('header_resolved');
+
+  const hasNeighbors = !!(topResult.neighbors && topResult.neighbors.count > 0);
+  if (hasNeighbors) reasons.push('neighbors_present');
+
+  // Strict self-containment: only fires if the body has zero unresolved
+  // external identifiers (after considering header + neighbours + locals).
+  let unresolvedCount = 0;
+  if (isComplete && topResult.code) {
+    const unresolved = unresolvedExternalRefs(
+      topResult.code,
+      topResult.symbol,
+      topResult.headerContext || '',
+      topResult.neighbors?.rendered || ''
+    );
+    unresolvedCount = unresolved.size;
+    if (unresolvedCount === 0) reasons.push('self_contained_strict');
   }
 
-  // (b) Does header context exist, OR is the symbol self-contained?
-  // Self-contained: complete symbol with code but no header needed (no imports referenced).
-  // This prevents false negatives for utility functions that don't use imports.
-  if (topResult.headerContext) {
-    reasons.push('header_resolved');
-  } else if (isComplete && topResult.code && topResult.codeTokens > 0) {
-    reasons.push('self_contained');
+  if (confidenceInfo?.confidence === 'high') reasons.push('high_confidence');
+
+  // Tightened rule: complete symbol is necessary but NOT sufficient.
+  // We require at least one resolution reason AND at least one specificity
+  // reason. This stops a bare "complete + high_confidence" from claiming
+  // sufficient when the body still references a dozen helpers we never
+  // surfaced (the validation-pipeline failure mode).
+  const hasResolution = hasHeader || hasNeighbors || reasons.includes('self_contained_strict');
+  const hasSpecificity = confidenceInfo?.confidence === 'high' || hasHeader || hasNeighbors;
+  const sufficient = isComplete && hasResolution && hasSpecificity;
+
+  return { sufficient, reasons, unresolvedExternalCount: unresolvedCount };
+}
+
+// =============================================================================
+// Graph-neighbour reservation (Phase 6) — 1-hop neighbours for top-1
+// =============================================================================
+
+/**
+ * Extract identifier candidates from a code body that look like type names
+ * (struct / interface / class / enum / trait / type). Used by the
+ * graph-neighbour tier to find type definitions that the relationships
+ * table didn't capture as explicit edges (the canonical failure case is
+ * gin:http-dispatch — `methodTree` is an unexported Go struct referenced
+ * via a field-of-field, never as a direct relationship edge).
+ *
+ * Heuristic: any token ≥3 chars containing at least one uppercase AND at
+ * least one lowercase letter (Pascal/camelCase). This captures both
+ * exported types (`Engine`, `Context`, `ErrorKind`) and unexported Go
+ * types (`methodTree`, `nodeType`). It deliberately rejects:
+ *   - all-uppercase SCREAMING_SNAKE_CASE constants
+ *   - all-lowercase variables / function names
+ *   - language keywords
+ *   - the symbol's own name
+ *
+ * False positives (e.g. method names in camelCase) are cheap because the
+ * downstream SQL lookup ALSO filters by entity type, so a camelCase
+ * function name won't match a struct/interface/class entity.
+ *
+ * @param {string} code
+ * @param {string|null} ownName - the symbol's own name, excluded from results
+ * @returns {string[]}
+ */
+function extractTypeCandidates(code, ownName) {
+  if (!code) return [];
+  const matches = code.match(/\b[A-Za-z_][A-Za-z0-9_]{2,}\b/g) || [];
+  const own = (ownName || '').toLowerCase();
+  const seen = new Set();
+  const out = [];
+  for (const id of matches) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (LANG_KEYWORDS.has(id)) continue;
+    if (id.toLowerCase() === own) continue;
+    // Require BOTH upper and lower (Pascal/camelCase). Filters out
+    // SCREAMING_SNAKE constants AND all-lowercase variables. A pure
+    // single-word lowercase token like `trees` is rejected — most
+    // unexported Go types are camelCase like `methodTree` and survive.
+    if (!/[A-Z]/.test(id)) continue;
+    if (!/[a-z]/.test(id)) continue;
+    out.push(id);
+  }
+  // Cap the candidate list — DB lookup is bounded but we still pay query cost.
+  return out.slice(0, 32);
+}
+
+/**
+ * Render a one-hop graph-neighbour tier for the top-1 result. This addresses
+ * the dominant loss pattern in the agent benchmark: ss-search returned a
+ * tight, "complete" symbol, the agent stopped at one tool call, and the
+ * judge then complained the answer didn't surface CALLERS, IMPORTED
+ * SYMBOLS, or HELPER FUNCTIONS that the chunk plainly references.
+ *
+ * The renderer:
+ *   - asks the code graph for outgoing relationships (calls / imports / uses /
+ *     extends / implements / overrides / throws) from top-1's entity,
+ *   - asks for incoming callers / users (top-K by weight),
+ *   - dedupes anything whose target file:line range overlaps a result that
+ *     is already in the ranked pack (no point spending budget on a row the
+ *     agent already sees),
+ *   - groups by edge family and renders compact one-liners that include the
+ *     target's `file:line` so the agent can cite the neighbour directly,
+ *   - hard-caps the rendered text at `tokenCap`. The result is fully
+ *     elidable — when the cap is 0, the function returns null.
+ *
+ * @param {object} opts
+ * @param {object} opts.codeGraphRepo - CodeGraphRepository instance
+ * @param {object} opts.entity        - { id, filePath, startLine, endLine, name, type }
+ * @param {Set<string>} opts.skipKeys - "file|startLine|endLine" of results already in the pack
+ * @param {number} opts.tokenCap      - max tokens for the rendered tier
+ * @param {string} [opts.body]        - top-1 code body, used to discover
+ *   referenced TYPE names (struct/interface/class/...) that the
+ *   relationships table doesn't capture as explicit edges
+ * @returns {{ rendered: string, count: number, tokens: number,
+ *             outgoingCount: number, incomingCount: number,
+ *             typeRefCount: number }|null}
+ */
+export function renderGraphNeighbors(opts) {
+  const { codeGraphRepo, entity, skipKeys, tokenCap = 0, body = '' } = opts;
+  if (!codeGraphRepo || !entity || !entity.id || tokenCap <= 0) return null;
+
+  const OUT_TYPES = ['imports', 'calls', 'uses', 'extends', 'implements', 'overrides', 'throws'];
+  const IN_TYPES = ['calls', 'uses', 'extends', 'implements'];
+  // typeAlias is what Go's graph extractor stores for struct/interface/type
+  // declarations; the others cover JS/TS/Java/Rust/Python conventions.
+  const TYPE_KINDS = ['struct', 'class', 'interface', 'enum', 'trait', 'type', 'typeAlias'];
+
+  let outgoing = [];
+  let incoming = [];
+  let typeRefs = [];
+  try { outgoing = codeGraphRepo.getOutgoingRelationships(entity.id, { types: OUT_TYPES, limit: 16 }) || []; }
+  catch { outgoing = []; }
+  try { incoming = codeGraphRepo.getIncomingRelationships(entity.id, { types: IN_TYPES, limit: 8 }) || []; }
+  catch { incoming = []; }
+
+  // Type-reference discovery: extract identifiers from the body and ask the
+  // graph for entities of struct/interface/class/enum/trait/type/typeAlias
+  // with that name. This recovers the case the relationships table misses —
+  // e.g. a Go method whose receiver field has type `methodTrees []methodTree`
+  // never gets a 'calls/imports/uses' edge to `methodTree`, yet the agent
+  // needs that type's defining file:line to give a correct answer
+  // (gin:http-dispatch was the canonical failure).
+  //
+  // Dedup uses range-based skipKeys (NOT excludeFile) — same-file types
+  // matter when top-1 is a method and the receiver struct lives next to
+  // it (e.g. Engine in gin.go vs handleHTTPRequest in gin.go).
+  if (body && typeof codeGraphRepo.findEntitiesByNames === 'function') {
+    try {
+      const ids = extractTypeCandidates(body, entity.name);
+      if (ids.length) {
+        typeRefs = codeGraphRepo.findEntitiesByNames(ids, {
+          types: TYPE_KINDS,
+          limit: 8,
+        }) || [];
+      }
+    } catch { typeRefs = []; }
   }
 
-  // (c) Is the confidence high (specific match)?
-  if (confidenceInfo.confidence === 'high') {
-    reasons.push('high_confidence');
+  if (outgoing.length === 0 && incoming.length === 0 && typeRefs.length === 0) return null;
+
+  // Group by edge family for stable rendering. Each row is a one-liner.
+  // Format:
+  //   - imports paramsSchema → lib/symbols.js:14 [Symbol]
+  //   - calls validateParam → lib/validation.js:118-144 [function]
+  //   - caller handleRequest → lib/handle-request.js:88-104 [function]
+  //   - imports module './x' (unresolved)
+  const ownKey = `${entity.filePath}|${entity.startLine}|${entity.endLine}`;
+  const seen = new Set([ownKey, ...(skipKeys || [])]);
+
+  const formatLineRange = (a, b) => (a && b && b > a) ? `${a}-${b}` : `${a || '?'}`;
+
+  const lines = [];
+  // OUTGOING — group resolved targets first, then unresolved imports
+  const grouped = new Map();
+  for (const r of outgoing) {
+    const fam = r.type;
+    if (!grouped.has(fam)) grouped.set(fam, []);
+    grouped.get(fam).push(r);
+  }
+  // Render order: imports, calls, uses, extends, implements, overrides, throws
+  for (const fam of OUT_TYPES) {
+    const rows = grouped.get(fam) || [];
+    for (const r of rows) {
+      let rendered;
+      if (r.target && r.target.filePath) {
+        const k = `${r.target.filePath}|${r.target.startLine}|${r.target.endLine}`;
+        if (seen.has(k)) continue;          // already in the pack — skip
+        seen.add(k);
+        const range = formatLineRange(r.target.startLine, r.target.endLine);
+        rendered = `- ${fam} ${r.target.name} → ${r.target.filePath}:${range} [${r.target.type}]`;
+      } else if (r.fullImportPath) {
+        rendered = `- ${fam} ${r.targetName} ← '${r.fullImportPath}' (unresolved)`;
+      } else if (r.targetName && r.contextLine) {
+        rendered = `- ${fam} ${r.targetName} (referenced at line ${r.contextLine})`;
+      } else if (r.targetName) {
+        rendered = `- ${fam} ${r.targetName}`;
+      } else {
+        continue;
+      }
+      lines.push(rendered);
+    }
+  }
+  // INCOMING — flag as "caller" or "user"
+  for (const r of incoming) {
+    const s = r.source;
+    if (!s) continue;
+    const k = `${s.filePath}|${s.startLine}|${s.endLine}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const range = formatLineRange(s.startLine, s.endLine);
+    const kind = r.type === 'calls' ? 'caller' : (r.type === 'uses' ? 'user' : r.type);
+    lines.push(`- ${kind} ${s.name} ← ${s.filePath}:${range} [${s.type}]`);
   }
 
-  const sufficient = reasons.length >= 2;
-  return { sufficient, reasons };
+  // TYPE-REFERENCES — entities discovered by name from the body. Renders as
+  // "type" prefix to disambiguate from the relationship-driven rows above.
+  // Same dedup against skipKeys.
+  for (const t of typeRefs) {
+    const k = `${t.filePath}|${t.startLine}|${t.endLine}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const range = formatLineRange(t.startLine, t.endLine);
+    lines.push(`- type ${t.name} → ${t.filePath}:${range} [${t.type}]`);
+  }
+
+  if (lines.length === 0) return null;
+
+  // Hard-cap to tokenCap. Drop tail lines until it fits.
+  let combined = lines.join('\n');
+  while (estimateTokens(combined) > tokenCap && lines.length > 1) {
+    lines.pop();
+    combined = lines.join('\n');
+  }
+  if (estimateTokens(combined) > tokenCap) return null;
+
+  return {
+    rendered: combined,
+    count: lines.length,
+    tokens: estimateTokens(combined),
+    outgoingCount: outgoing.length,
+    incomingCount: incoming.length,
+    typeRefCount: typeRefs.length,
+  };
 }
 
 // =============================================================================
@@ -1128,19 +1615,56 @@ export function packageForAgent(rankedResults, searchStats, opts) {
   const start = performance.now();
   const fileCache = new Map();
 
+  // Locality clustering: pull up to two non-overlapping companion results
+  // from the SAME file as top-1 (when their score is competitive, ≥ top-1/3)
+  // ahead of unrelated higher-scoring distractors. This addresses the
+  // dominant agent-bench loss pattern where the right helper symbol existed
+  // in the ranked list at rank 4 but got demoted to summary because a
+  // tangential file scored slightly higher. Top-1 is never moved.
+  // Disabled by 'no-locality-cluster' ablation.
+  let workingResults = rankedResults;
+  if (!ablations.has('no-locality-cluster') && rankedResults.length >= 3) {
+    const top = rankedResults[0];
+    const topFile = top?.metadata?.file || top?.file;
+    const topScore = top?.score || top?.lateInteractionScore || 0;
+    if (topFile && topScore > 0) {
+      const sameFile = [];
+      const other = [];
+      for (let i = 1; i < rankedResults.length; i++) {
+        const r = rankedResults[i];
+        const f = r.metadata?.file || r.file;
+        const s = r.score || r.lateInteractionScore || 0;
+        // Don't pull up overlapping same-file ranges (those are diversity dups).
+        const ts = top.metadata?.startLine || top.startLine;
+        const te = top.metadata?.endLine || top.endLine;
+        const rs = r.metadata?.startLine || r.startLine;
+        const re = r.metadata?.endLine || r.endLine;
+        const overlapsTop = (rs != null && re != null && ts != null && te != null)
+          && rs <= te + 10 && re >= ts - 10;
+        if (f === topFile && s >= topScore / 3 && !overlapsTop) sameFile.push(r);
+        else other.push(r);
+      }
+      // Promote up to 2 companion results into ranks 2 and 3, push the
+      // rest behind. We deliberately keep `score` untouched so callers
+      // can still inspect the original ranking signal.
+      workingResults = [top, ...sameFile.slice(0, 2), ...other, ...sameFile.slice(2)]
+        .map((r, idx) => ({ ...r, rank: idx + 1 }));
+    }
+  }
+
   // Diversity: demote results that cluster in same file+region as a higher-ranked result.
   // Skipped when 'no-diversity' ablation is active.
   // This prevents wasting preview/full budget on near-duplicate chunks from the same symbol.
   const diversityDemotions = new Set();
   if (ablations.has('no-diversity')) { /* skip diversity check */ }
-  else for (let i = 0; i < Math.min(rankedResults.length, 5); i++) {
-    const ri = rankedResults[i];
+  else for (let i = 0; i < Math.min(workingResults.length, 5); i++) {
+    const ri = workingResults[i];
     const fi = ri.metadata?.file || ri.file;
     const si = ri.metadata?.startLine || ri.startLine;
     const ei = ri.metadata?.endLine || ri.endLine;
-    for (let j = i + 1; j < Math.min(rankedResults.length, 5); j++) {
+    for (let j = i + 1; j < Math.min(workingResults.length, 5); j++) {
       if (diversityDemotions.has(j)) continue;
-      const rj = rankedResults[j];
+      const rj = workingResults[j];
       const fj = rj.metadata?.file || rj.file;
       if (fi !== fj) continue;
       const sj = rj.metadata?.startLine || rj.startLine;
@@ -1159,12 +1683,12 @@ export function packageForAgent(rankedResults, searchStats, opts) {
     : {
         ...(searchStats?.grepMatches != null ? { grepMatches: searchStats.grepMatches } : {}),
         ...(searchStats?.candidatePoolSize != null ? { candidatePoolSize: searchStats.candidatePoolSize } : {}),
-        results: rankedResults,
+        results: workingResults,
       };
-  const allocations = allocateBudget(tokenBudget, rankedResults.length, subMode, budgetContext);
+  const allocations = allocateBudget(tokenBudget, workingResults.length, subMode, budgetContext);
 
   // Compute confidence from ranked results (Fix #4: regex selectivity included)
-  const confidenceInfo = computeConfidence(rankedResults, searchStats);
+  const confidenceInfo = computeConfidence(workingResults, searchStats);
 
   // Shared staleness cache — db mtime is the same for all results in one search.
   // Avoids repeated statSync calls (Fix D: perf).
@@ -1173,8 +1697,8 @@ export function packageForAgent(rankedResults, searchStats, opts) {
   let tokensUsed = 0;
   const agentResults = [];
 
-  for (let i = 0; i < rankedResults.length; i++) {
-    const result = rankedResults[i];
+  for (let i = 0; i < workingResults.length; i++) {
+    const result = workingResults[i];
     const allocation = allocations[i] || { presentation: 'summary', tokenCap: 0 };
     const meta = result.metadata || {};
     const filePath = meta.file || result.file;
@@ -1370,25 +1894,94 @@ export function packageForAgent(rankedResults, searchStats, opts) {
       }
     }
 
+    // Phase 6: Graph-neighbour reservation (top-1 only). The pack reserves
+    // up to 20% of the budget (capped at 1000 tokens, floored at 600 when
+    // the budget allows) for a dedicated 1-hop neighbours tier. Surfaced
+    // as `agentResult.neighbors`; rendered for the agent by the CLI shim.
+    // Disabled by 'no-graph-neighbors' ablation. Always opt-OUT, never
+    // model-specific — the rendering is plain text.
+    if (i === 0
+        && !ablations.has('no-graph-neighbors')
+        && expansion.entityId
+        && codeGraphRepo) {
+      // Reserve fraction depends on subMode but never above 20% / 1000 toks.
+      // Stretches the floor for full+xl so the top-1 actually gets useful
+      // neighbour evidence even when the chunk consumed most of the budget.
+      const reserveFraction = subMode === 'agent_full_xl' ? 0.20
+        : subMode === 'agent_full' ? 0.18
+        : 0.15;
+      const headroom = Math.max(0, tokenBudget - tokensUsed);
+      const desired = Math.min(1000, Math.floor(tokenBudget * reserveFraction));
+      const tokenCap = Math.min(headroom, desired);
+      if (tokenCap >= 80) {
+        // Build skip set from ALL ranked locations that will be shown
+        // with code (full / preview tiers). Summary-tier rows are not
+        // skipped — they convey no code and the neighbour tier still
+        // adds value (edge type + direction). This avoids the
+        // pathological case (validation-pipeline) where every caller is
+        // already in the pack as a summary row, leaving the agent with
+        // file:line refs but no edge attribution.
+        const skipKeys = new Set();
+        for (let j = 0; j < workingResults.length; j++) {
+          const tier = allocations[j]?.presentation;
+          if (tier !== 'full' && tier !== 'preview') continue;
+          const r = workingResults[j];
+          const f = r.metadata?.file || r.file;
+          const s = r.metadata?.startLine || r.startLine;
+          const e = r.metadata?.endLine || r.endLine;
+          if (f && s != null && e != null) {
+            skipKeys.add(`${f}|${s}|${e}`);
+          }
+        }
+        skipKeys.add(`${filePath}|${expansion.startLine}|${expansion.endLine}`);
+        const neighbours = renderGraphNeighbors({
+          codeGraphRepo,
+          entity: {
+            id: expansion.entityId,
+            filePath,
+            startLine: expansion.startLine,
+            endLine: expansion.endLine,
+            name: expansion.symbol,
+            type: expansion.symbolType,
+          },
+          skipKeys,
+          tokenCap,
+          // Pass the loaded code so the neighbour tier can also surface
+          // referenced TYPE definitions (struct/enum/...) discovered by
+          // name from the body — fills the gap left by relationship-only
+          // edges (e.g. Go method receiver fields with custom types).
+          body: code,
+        });
+        if (neighbours) {
+          agentResult.neighbors = neighbours;
+          tokensUsed += neighbours.tokens;
+        }
+      }
+    }
+
     agentResults.push(agentResult);
   }
 
   const packagingMs = Math.round(performance.now() - start);
 
-  // Fix #7: Sufficiency signal for top-1 result
+  // Sufficiency signal for top-1. Tightened in 2026-05: requires resolution
+  // (header_resolved OR neighbors_present OR self_contained_strict) instead
+  // of the old "complete_symbol + high_confidence" rule.
   let sufficient = false;
   let sufficiencyReasons = [];
+  let unresolvedExternalCount = 0;
   if (agentResults.length > 0 && agentResults[0].code) {
     const sufficiency = computeSufficiency(agentResults[0], confidenceInfo);
     sufficient = sufficiency.sufficient;
     sufficiencyReasons = sufficiency.reasons;
+    unresolvedExternalCount = sufficiency.unresolvedExternalCount || 0;
   }
 
   return {
     query,
     regex,
     mode: modeOpt || searchStats?.path || 'pattern',
-    totalResults: rankedResults.length,
+    totalResults: workingResults.length,
     latencyMs: searchStats?.total_ms || 0,
     packagingMs,
 
@@ -1400,6 +1993,7 @@ export function packageForAgent(rankedResults, searchStats, opts) {
     confidenceReason: confidenceInfo.confidenceReason,
     sufficient,
     sufficiencyReasons,
+    unresolvedExternalCount,
 
     results: agentResults,
   };

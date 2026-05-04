@@ -209,6 +209,101 @@ question.
 - Prefer 1-3 high-confidence citations over long citation lists.
 ```
 
+### CRITICAL: STOP-on-good-results discipline
+
+**Observed failure mode (2026-05-04 agent benchmark):** even when the
+sweet-search response carries `sufficient=YES`, a tight top-1 chunk that
+literally contains the gold symbol body, a resolved imports header, and
+a graph-neighbour tier, agents still keep doing follow-up searches and
+narrow reads. Examples from the haiku run on n=5/repo:
+
+- `gin:radix-route-insertion` — sweet did **10 turns** for an answer
+  that was complete after turn 1; tokens 8398 vs native 3230.
+- `gin:panic-recovery` — sweet did **6 turns** for the same Recovery()
+  walkthrough that native solved in 2.
+- `ripgrep:locate-line-bounds` — sweet did **6 turns / 9548 tok** for a
+  function-bound answer.
+
+Everywhere this happened, sweet-search's first response already
+carried a `full`-tier chunk + a header + neighbours + `sufficient=YES`
++ `confidence ∈ {medium, high}`. The agent ignored those signals.
+
+The decision tree MUST teach this explicitly. Suggested wording for
+the policy text:
+
+```markdown
+## STOP rules — read these before EVERY follow-up call
+
+The sweet-search response trailer carries explicit stop signals.
+**Honour them.** A second call costs more tokens than it saves.
+
+Stop after one search and answer immediately when ALL of:
+- the response says `sufficient=YES`
+- the top-1 result is `presentation=full` with `expansionKind` in
+  `{full, sandwich, chunk}` and the gold symbol/file is named
+- the response includes a `### related (1-hop graph, ...)` block
+  OR a `### imports` block that resolves the body's referenced names
+- you can defend the answer by pointing at the visible code
+
+Do NOT call a second time merely because:
+- you want to "double-check" the line range
+- the first answer was unexpectedly short  → it is short BECAUSE the
+  pack is tight, not because evidence is missing
+- you noticed a helper function named in the chunk that is also in
+  the pack as a `summary` row → its file:line in the rank list
+  is sufficient citation; do not read it
+
+Single counter-rule: the question explicitly asks for multi-file
+flow ("how does X flow from A to B", "trace from entry to exit",
+"all places that ..."). In that case, take ONE follow-up reading
+or sub-search to fill the gap, then stop.
+```
+
+This stopping discipline is the largest remaining gap between
+sweet-search-auto agent runs and frontier-quality output (May-2026).
+The packaging is SOTA-class; the agent needs to *trust* it.
+
+### Budget escalation rules
+
+The CLI exposes three budget tiers:
+
+| Mode | Token budget | When to use |
+|------|--------------|-------------|
+| `ss-search "<q>"` (default) | 4k preview | Lookup tasks: exact symbol, file location, simple function behaviour. Top-1 gets ~60% of budget; ranks 2-3 get preview. |
+| `ss-search "<q>" --full`    | 8k full     | Behaviour explanations spanning 2-3 symbols; "how does X work" with cross-references; cases where the agent expects to cite ≥2 files. Top-1 + competitive ranks 2-3 get `full` presentation. |
+| `ss-search "<q>" --xl`      | 12k stretch | "Trace through the entire pipeline" / multi-file flow. Gated on top-1 dominance (top-1 score ≥ 2× top-2); falls back to `--full` when the gate fails. |
+
+Decision tree for budget choice (add to the policy):
+
+```markdown
+## Choosing the search budget
+
+Default to `ss-search "<q>"` (4k). Switch tiers only when the question
+shape demands it:
+
+- Use `--full` (8k) when the question:
+  - mentions multiple steps / phases / stages explicitly
+  - asks for a "pipeline", "flow", "lifecycle", "dispatch", "sequence"
+  - asks "how does X handle ..." where X involves several cooperating
+    functions
+  - asks "what calls/where is X used" AND you expect ≥2 callers
+
+- Use `--xl` (12k) ONLY when:
+  - the question is explicitly multi-file / cross-cutting
+  - one strong dominant answer is plausible (the gate will fall back
+    to `--full` if not)
+
+NEVER chain searches at increasing budgets. If the default 4k pack
+already says `sufficient=YES`, do not "re-run with --full to be sure"
+— that just wastes budget.
+```
+
+The 4k → 8k jump roughly doubles top-1's room for full presentation
+of the symbol AND ranks 2-3 (which get `full` instead of `preview`
+when their score is competitive). For typical multi-symbol questions,
+`--full` is a better bet than chaining a default search with a
+narrow follow-up.
+
 ### Citation Rules
 
 ```markdown
