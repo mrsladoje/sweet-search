@@ -156,7 +156,13 @@ describe('Vocabulary.load (fingerprint compatibility)', () => {
     await vocab.load();
 
     expect(vocab.size()).toBe(1);
-    expect(vocab.get('compatible query')).toEqual([0.7, 0.8, 0.9]);
+    // load() coerces persisted vectors to Float32Array (see
+    // coerceToFloat32Vector). [0.7, 0.8, 0.9] are NOT exactly representable
+    // in Float32 — comparing against a plain array would fail on the
+    // unavoidable precision drift. Asserting against Float32Array.from(...)
+    // makes both sides go through the same Float32 truncation and matches
+    // bit-exactly.
+    expect(vocab.get('compatible query')).toEqual(Float32Array.from([0.7, 0.8, 0.9]));
   });
 
   it('writes a v3 fingerprint on save() (provider, model, dimension)', async () => {

@@ -108,7 +108,12 @@ describe('Vocabulary atomic persistence', () => {
     await reader.load();
     expect(reader.size()).toBe(2);
     expect(reader.get('GraphSearch')).toBeTruthy();
-    expect(reader.get('Cascade')).toEqual([0.5, -0.5, 0.25]);
+    // load() coerces persisted vectors to Float32Array (see
+    // coerceToFloat32Vector in core/embedding/embedding-cache.js) — assert the
+    // typed shape so vitest 4.x's strict .toEqual stops flagging the
+    // Array-vs-Float32Array type mismatch. The values [0.5, -0.5, 0.25] are
+    // dyadic rationals that round-trip Float32 bit-exactly.
+    expect(reader.get('Cascade')).toEqual(Float32Array.from([0.5, -0.5, 0.25]));
     expect(reader.has('graphsearch')).toBe(true); // case-insensitive normalize
   });
 
