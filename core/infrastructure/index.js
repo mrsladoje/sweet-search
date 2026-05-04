@@ -82,6 +82,8 @@ export {
   loadInitConfig,
   writeInitConfig,
   readPersistedLiPolicy,
+  resolveRuntimeLiModel,
+  applyPersistedLiModel,
 } from './init-config.js';
 
 // Language analysis

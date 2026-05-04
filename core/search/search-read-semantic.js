@@ -32,7 +32,22 @@
 import path from 'node:path';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
+import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 import { readFile as readFileExact } from './search-read.js';
+
+// Applies the user's persisted LI model exactly once per (projectRoot, env)
+// pair so encodeQuery/_getLateInteractionIndex below see the right variant.
+// Without this an edge-only init silently uses the standard 768d model for
+// query encoding while the on-disk LI index was built with the 256d edge
+// model — every score becomes nonsense (the dim mismatch trips the
+// modelMismatch guard but query encoding has already paid the wrong-cost).
+const _appliedLiPerRoot = new Map(); // projectRoot -> appliedModel
+function _ensurePersistedLiModelApplied(projectRoot) {
+  const key = projectRoot || process.cwd();
+  if (_appliedLiPerRoot.has(key)) return;
+  const r = applyPersistedLiModel(key);
+  _appliedLiPerRoot.set(key, r.applied);
+}
 
 // ---------------------------------------------------------------------------
 // Defaults — keep modest so a one-file call stays under ~100ms after warmup.
@@ -448,6 +463,7 @@ export async function readSemantic(req) {
   if (!req.query || !String(req.query).trim()) throw new Error('query is required');
 
   const projectRoot = req.projectRoot || process.cwd();
+  _ensurePersistedLiModelApplied(projectRoot);
   const filePathRel = _projectRelative(req.path, projectRoot);
 
   const topK = req.topK ?? DEFAULTS.topK;
@@ -714,4 +730,5 @@ export function __resetReadSemanticCachesForTests() {
   _liIndex = null;
   _liInitPromise = null;
   _encodeQueryFn = null;
+  _appliedLiPerRoot.clear();
 }
