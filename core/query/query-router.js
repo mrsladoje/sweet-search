@@ -128,9 +128,13 @@ export class QueryRouter {
     }
 
     // === FILE PATH CHECK (~0.1μs) ===
-    // File extensions and paths are always lexical
-    if (/\.(java|js|jsx|ts|tsx|py|go|rs|kt|swift|rb|php|c|cpp|h|proto|json|xml|yml|yaml|md|sql)$/i.test(trimmed) ||
-        /[/\\]/.test(trimmed)) {
+    // File extensions and paths route to lexical via the file_pattern
+    // fast-path. The previous heuristic (`/[/\\]/.test(query)`) fired on
+    // ANY slash, which mis-routed natural-language phrases like
+    // "HTTP/2 server setup" to lexical. The new rule (looksLikePath)
+    // requires either an extension anchor (`.js`, `.json`, ...) OR a slash
+    // with NO whitespace anywhere — true paths never contain whitespace.
+    if (looksLikePath(trimmed)) {
       return {
         mode: 'lexical',
         confidence: 0.95,
@@ -149,10 +153,16 @@ export class QueryRouter {
       const confidence = result.confidence;
       const rejected = result.rejected;
 
+      // Collapse semantic → hybrid: empirically hybrid >= semantic on MRR
+      // across both gencodesearchnet and fastify/gin/ripgrep at ~+1ms p50.
+      const collapsedMode = (mode === 'semantic') ? 'hybrid' : mode;
       return {
-        mode: rejected ? 'hybrid' : mode,
+        mode: rejected ? 'hybrid' : collapsedMode,
+        rawMode: mode,
         confidence,
-        method: rejected ? 'wasm_rejected' : 'wasm_catboost',
+        method: rejected
+          ? 'wasm_rejected'
+          : (mode === 'semantic' ? 'wasm_collapsed_semantic' : 'wasm_catboost'),
         routingLatency_us: Math.round((performance.now() - start) * 1000),
       };
     } catch (err) {
@@ -175,6 +185,46 @@ export class QueryRouter {
       }
     }
   }
+}
+
+// =============================================================================
+// PATH-LIKENESS HEURISTIC
+// =============================================================================
+
+const FILE_EXT_RE = /\.(java|js|jsx|ts|tsx|mjs|cjs|py|go|rs|kt|swift|rb|php|c|cpp|h|hpp|proto|json|xml|yml|yaml|md|sql|toml|ini|conf|cfg|sh|bash|zsh|env|lock|gitignore|gitattributes|dockerfile|makefile|rake|gemspec|cargo)$/i;
+
+/**
+ * Decide whether a query is a "real" file path / glob the user wants
+ * routed verbatim through lexical search, vs a natural-language phrase
+ * that just happens to contain a slash.
+ *
+ * Path-likeness rules (model-agnostic):
+ *   1. extension-anchored (`*.test.js`, `package.json`, `README.md`)
+ *      → looks like a path (regardless of slashes).
+ *   2. contains `/` or `\` AND has NO whitespace anywhere
+ *      → looks like a path. True paths never contain whitespace.
+ *   3. starts with `.`, `./`, `..`, or `~/` (relative-path prefix)
+ *      → looks like a path.
+ *   4. anything else (plain identifiers, NL phrases including ones that
+ *      contain slashes like "HTTP/2 server setup", "TCP/IP stack")
+ *      → NOT a path; let the WASM router decide.
+ *
+ * @param {string} query
+ * @returns {boolean}
+ */
+export function looksLikePath(query) {
+  if (typeof query !== 'string') return false;
+  const trimmed = query.trim();
+  if (!trimmed) return false;
+  if (FILE_EXT_RE.test(trimmed)) return true;
+  // Whitespace immediately disqualifies — even if a slash is present, this
+  // is natural language ("HTTP/2 server setup", "client/server architecture").
+  if (/\s/.test(trimmed)) return false;
+  // No-whitespace + slash/backslash → true path or glob.
+  if (/[/\\]/.test(trimmed)) return true;
+  // Relative-path prefixes without slashes already returned above when an
+  // extension is present (e.g. `.env`); plain identifiers fall through.
+  return false;
 }
 
 // =============================================================================
