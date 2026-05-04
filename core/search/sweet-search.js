@@ -22,7 +22,7 @@ import { BinaryHNSWIndex } from '../vector-store/binary-hnsw-index.js';
 import { Reranker } from '../ranking/flashrank.js';
 import { LateInteractionIndex } from '../ranking/late-interaction-index.js';
 import { resolveSearchRerankPolicy } from '../ranking/late-interaction-policy.js';
-import { readPersistedLiPolicy } from '../infrastructure/index.js';
+import { applyPersistedLiModel, readPersistedLiPolicy } from '../infrastructure/index.js';
 import { getEmbedding, getBinaryEmbedding, truncateForHNSW, int8CosineSimilarity, warmup as warmupEmbedding, isWarm, registerAutoPersistOnExit } from '../embedding/embedding-service.js';
 import { FloatVectorStore, getFloatStorePath } from '../vector-store/float-vector-store.js';
 import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
@@ -91,6 +91,14 @@ export class SweetSearch {
   constructor(options = {}) {
     const projectRoot = options.projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
     this.projectRoot = projectRoot;
+    // Honor the user's persisted `runtime.li.model` choice from
+    // `.sweet-search/config.json` BEFORE we read `LATE_INTERACTION_CONFIG.model`
+    // for activeConfigModel below or any downstream consumer (encodeQuery,
+    // LateInteractionIndex header check, native LI loader, CoreML cascade
+    // dispatcher). Without this an edge-only init silently activates the
+    // standard model path on every search. Env var still wins; see
+    // applyPersistedLiModel for the full precedence ladder.
+    this._liModelApply = applyPersistedLiModel(projectRoot);
     const projectConfig = loadProjectConfig(projectRoot);
     const projectCascade = projectConfig.cascade || {};
     const envOrProject = (envKey, cascadeKey, configKey) =>
@@ -405,7 +413,12 @@ export class SweetSearch {
     let searchMode;
     if (mode === 'auto') {
       searchMode = routing.mode;
-      stats.routing = { mode: routing.mode, confidence: routing.confidence, latency_us: routing.routingLatency_us };
+      stats.routing = {
+        mode: routing.mode,
+        confidence: routing.confidence,
+        latency_us: routing.routingLatency_us,
+        method: routing.method,
+      };
     } else {
       searchMode = mode;
       stats.routing = {

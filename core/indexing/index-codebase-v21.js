@@ -40,6 +40,7 @@ if (process.env.SWEET_SEARCH_UV_THREADPOOL_SIZE && !process.env.UV_THREADPOOL_SI
 import { existsSync } from 'fs';
 
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
+import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 import { resolveRelationshipTargets } from '../graph/relationship-resolver.js';
 import { requireNativeAnn as requireNativeAnnBackend } from '../vector-store/hnsw-index.js';
 import { getStats as getIncrementalStats } from './incremental-tracker.js';
@@ -124,11 +125,18 @@ async function main() {
     setVerboseMode(true);
   }
 
-  // Apply late interaction model overrides before any model code runs
+  // Apply late interaction model overrides before any model code runs.
+  // Precedence: --no-late-interaction > --late-interaction-model=… > env
+  // var (already honoured by LATE_INTERACTION_CONFIG.model at module load) >
+  // .sweet-search/config.json::runtime.li.model > built-in default. Only
+  // touch the persisted-config branch when neither CLI flag was used —
+  // applyPersistedLiModel internally re-checks the env var.
   if (noLateInteraction) {
     LATE_INTERACTION_CONFIG.model = false;
   } else if (lateInteractionModel) {
     LATE_INTERACTION_CONFIG.model = lateInteractionModel;
+  } else {
+    applyPersistedLiModel(process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd());
   }
 
   log(`${colors.bright}╔═══════════════════════════════════════════════════╗${colors.reset}`, 'bright');
