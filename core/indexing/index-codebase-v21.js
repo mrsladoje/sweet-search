@@ -449,7 +449,28 @@ Output:
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Direct-run guard. The previous `import.meta.url === \`file://${process.argv[1]}\``
+// form silently no-op'd under three real-world conditions:
+//   1. `npm install ../sweet-search-private` (file install) symlinks
+//      `node_modules/sweet-search/` to the source — `process.argv[1]` is the
+//      symlink path while `import.meta.url` resolves to the realpath.
+//   2. Paths containing spaces or unicode — the URL form encodes them but
+//      `file://` + raw path doesn't.
+//   3. Windows backslash vs URL forward-slash mismatch.
+// Resolve both sides through `realpathSync(fileURLToPath(...))` so the
+// comparison survives every common install layout. Falls back to never-direct
+// (safe default) if either side errors.
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+const _isDirectRun = (() => {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
+  } catch {
+    return false;
+  }
+})();
+if (_isDirectRun) {
   main().catch(err => {
     console.error(err);
     process.exit(1);

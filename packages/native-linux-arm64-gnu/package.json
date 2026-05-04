@@ -1,9 +1,19 @@
 {
   "name": "@sweet-search/native-linux-arm64-gnu",
-  "version": "2.5.1",
+  "version": "2.5.2",
   "description": "Sweet Search native binaries for Linux ARM64 (glibc)",
-  "os": ["linux"],
-  "cpu": ["arm64"],
-  "libc": ["glibc"],
-  "files": ["manifest.json", "sweet-search-native.node", "sweet-search"]
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "files": [
+    "manifest.json",
+    "sweet-search-native.node",
+    "sweet-search"
+  ]
 }

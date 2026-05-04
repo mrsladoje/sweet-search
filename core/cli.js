@@ -28,6 +28,20 @@ if (args[0] === 'init') {
   // Hybrid span-selection reader; runs in JS (depends on LI index + ranking).
   const { handleReadSemanticCli } = await import('./search/search-read-semantic.js');
   await handleReadSemanticCli(args.slice(1));
+} else if (args[0] === 'index') {
+  // Indexing pipeline. Forwarded to index-codebase-v21.js::main(), which
+  // reads its own flags via process.argv. Setting argv here is required
+  // because the indexer's parseArgs reads process.argv.slice(2) by default.
+  // Without this subcommand, npm-installed users had no way to invoke
+  // indexing — `node ./node_modules/sweet-search/core/indexing/index-codebase-v21.js`
+  // was a silent no-op (direct-run guard mismatched under symlinked installs)
+  // and the bin had no `index` entry at all. Forwards every argument after
+  // `index` so existing flag combos (--full / --graph-only / --vectors-only /
+  // --files-from-stdin / --late-interaction-model=… / etc.) all work.
+  const indexerArgs = args.slice(1);
+  process.argv = [process.argv[0], 'index-codebase-v21.js', ...indexerArgs];
+  const { main: runIndexer } = await import('./indexing/index-codebase-v21.js');
+  await runIndexer();
 } else if (args[0] === '--serve' || args[0] === '--stop') {
   // Warm search server lifecycle is implemented in JS.
   const { runCli } = await import('./search/index.js');
@@ -39,6 +53,7 @@ Usage:
   sweet-search <query>                  Search the indexed codebase
   sweet-search read <file...>           Filesystem-grounded read (1-20 files)
   sweet-search read-semantic <f> <q>    Return only file spans relevant to a query
+  sweet-search index [options]          Build / update the codebase index
   sweet-search init [options]           Set up runtime assets and models
   sweet-search uninstall [opts]         Remove local state created by init
   sweet-search prewarm-vocab [file]     Pre-warm vocabulary cache with terms
@@ -49,6 +64,15 @@ Options:
   --top, -k <n>     Number of results (default: 10)
   --json            Output results as JSON
   --cold            Force cold start (skip warm server)
+
+Indexing flags (sweet-search index ...):
+  --full            Full reindex from scratch
+  --graph-only      Build code graph only
+  --vectors-only    Build vectors + HNSW only (skips code graph)
+  --files-from-stdin  Read newline-delimited paths from stdin
+  --late-interaction-model=ID  Override the LI variant for this run
+  --no-late-interaction        Skip LI index build
+  --quiet | --verbose          Logging verbosity
 
 Run 'sweet-search init --help' or 'sweet-search uninstall --help' for subcommand options.`);
 } else {
