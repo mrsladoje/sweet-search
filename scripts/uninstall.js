@@ -132,15 +132,23 @@ function getModelCacheDirs(initConfig) {
  * return an empty array — uninstall doesn't print a "removing 0 B"
  * line.
  */
-function getCoremlCascadeRemovals() {
+export function getCoremlCascadeRemovals() {
   const removals = [];
   try {
     const root = getCoremlCascadeRoot();
     if (existsSync(root)) {
       const state = getCoremlCascadeState();
+      // Sum across all advertised families — embed + standard LI + LI-edge.
+      // The earlier label only counted embed + standard LI (12 on the
+      // shipping spec) which contradicted init's "18 variants ready"
+      // (6 embed + 6 LI + 6 LI-edge). `liEdgeTotal` is 0 on hosts whose
+      // spec doesn't advertise the edge family, so older specs still
+      // collapse to the prior 12-count behaviour without ceremony.
+      const totalAll = state.embedTotal + state.liTotal + state.liEdgeTotal;
+      const presentAll = state.embedPresent + state.liPresent + state.liEdgePresent;
       const label = state.complete
-        ? `coreml cascade (${state.embedTotal + state.liTotal} variants complete)`
-        : `coreml cascade (${state.embedPresent + state.liPresent}/${state.embedTotal + state.liTotal} variants partial)`;
+        ? `coreml cascade (${totalAll} variants complete)`
+        : `coreml cascade (${presentAll}/${totalAll} variants partial)`;
       removals.push({ label, path: root, size: dirSize(root), type: 'coreml-cascade' });
     }
   } catch {
