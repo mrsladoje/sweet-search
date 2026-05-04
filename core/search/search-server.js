@@ -257,8 +257,13 @@ export async function startServer() {
           ...(agentFormat && { format: agentFormat, tokenBudget }),
         });
 
-        // Agent mode: return the packaged response directly as JSON
+        // Agent mode: return the packaged response directly as JSON.
+        // Inject server-side repo identity so callers can prove which repo
+        // produced these results (defends against multi-repo bench reusing
+        // a stale daemon — see eval/agent-read-workflows/run-bench.js).
         if (searchResult.format === 'agent') {
+          searchResult.serverProjectRoot = searcher.projectRoot || null;
+          searchResult.serverPid = process.pid;
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(searchResult));
         } else {
@@ -286,12 +291,22 @@ export async function startServer() {
       }
     } else if (req.method === 'GET' && reqUrl === '/health') {
       const status = initError ? 'failed' : (serverReady ? 'ready' : 'starting');
+      // Repo identity — harness uses these to verify the daemon serves the
+      // expected repo, not a leftover from a previous benchmark subprocess.
+      // We resolve the path so symlinks/relative differences are normalised.
+      const rawProjectRoot = searcher.projectRoot || null;
+      let resolvedProjectRoot = null;
+      try { if (rawProjectRoot) resolvedProjectRoot = (await import('path')).default.resolve(rawProjectRoot); } catch { /* */ }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status,
         warm: serverReady,
         pid: process.pid,
         uptimeSec: Math.round(process.uptime()),
+        projectRoot: rawProjectRoot,
+        resolvedProjectRoot,
+        codebaseDbPath: searcher.codebaseDbPath || null,
+        initialized: serverReady && !initError,
         init: {
           startedAt: new Date(initStartedAt).toISOString(),
           elapsedMs: initTimeMs ?? (Date.now() - initStartedAt),
@@ -479,6 +494,137 @@ export async function queryServer(query, options = {}) {
       });
     }).on('error', reject);
   });
+}
+
+/**
+ * Fetch /health from the running daemon. Returns the parsed body, or null if
+ * the daemon is unreachable / replies non-200.
+ *
+ * Use this (not isServerRunning alone) when you need repo identity to make a
+ * decision — e.g., the agent-bench harness must know which repo the daemon
+ * is currently serving so it can refuse cross-repo contamination.
+ */
+export async function getServerHealth({ timeoutMs = 1000 } = {}) {
+  try {
+    const http = await import('http');
+    return await new Promise((resolve) => {
+      const req = http.get(`http://localhost:${SEARCH_SERVER_PORT}/health`, (res) => {
+        let payload = '';
+        res.on('data', chunk => { payload += chunk; });
+        res.on('end', () => {
+          if (res.statusCode !== 200) { resolve(null); return; }
+          try { resolve(JSON.parse(payload)); }
+          catch { resolve(null); }
+        });
+      });
+      req.on('error', () => resolve(null));
+      req.setTimeout(timeoutMs, () => { req.destroy(); resolve(null); });
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Send /stop to the running daemon (Unix-socket only — TCP is forbidden).
+ * Returns true if the request reached the daemon (200 reply or connection
+ * closed by the dying server). Caller is expected to poll until the socket
+ * disappears or wait a short cool-down.
+ */
+export async function stopServer({ timeoutMs = 5000 } = {}) {
+  try {
+    const http = await import('http');
+    return await new Promise((resolve) => {
+      const req = http.request({
+        socketPath: SEARCH_SERVER_SOCKET, path: '/stop', method: 'GET',
+      }, (res) => {
+        res.on('data', () => {});
+        res.on('end', () => resolve(true));
+      });
+      // The server may close the socket abruptly as it exits before sending an
+      // end-of-response. Treat that as success too.
+      req.on('error', (err) => {
+        const msg = (err && err.code) || '';
+        if (msg === 'ECONNRESET' || msg === 'EPIPE' || msg === 'ENOENT') resolve(true);
+        else resolve(false);
+      });
+      req.setTimeout(timeoutMs, () => { req.destroy(); resolve(false); });
+      req.end();
+    });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Best-effort wait for the daemon to exit. Returns true once /health stops
+ * answering (within timeoutMs); false otherwise.
+ */
+export async function waitForServerExit({ timeoutMs = 8000, intervalMs = 200 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!(await isServerRunning())) return true;
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  return false;
+}
+
+/**
+ * Ensure the warm daemon serves the requested projectRoot. If a daemon is
+ * already running with a different projectRoot, stop it first, then re-spawn.
+ *
+ * Returns:
+ *   { ok: true,  health, action: 'reused'|'spawned'|'restarted' }
+ *   { ok: false, reason, health? }
+ *
+ * Used by the agent-bench harness to fail closed against cross-repo
+ * contamination (see eval/agent-read-workflows/run-bench.js warmup phase).
+ */
+export async function ensureDaemonForProjectRoot(expectedProjectRoot, {
+  timeoutMs = 60000, intervalMs = 500,
+} = {}) {
+  const path = (await import('path')).default;
+  const expected = path.resolve(expectedProjectRoot);
+  let action = null;
+
+  let health = await getServerHealth();
+  if (health && health.resolvedProjectRoot && health.resolvedProjectRoot === expected) {
+    return { ok: true, health, action: 'reused' };
+  }
+
+  if (health && health.resolvedProjectRoot && health.resolvedProjectRoot !== expected) {
+    // Wrong-repo daemon. Stop it and respawn with the correct env.
+    await stopServer();
+    const exited = await waitForServerExit();
+    if (!exited) {
+      return { ok: false, reason: 'previous-daemon-failed-to-exit', health };
+    }
+    action = 'restarted';
+  } else {
+    action = 'spawned';
+  }
+
+  // Spawn detached daemon. autoSpawnServer inherits env, so the caller must
+  // already have SWEET_SEARCH_PROJECT_ROOT set to expectedProjectRoot.
+  if (process.env.SWEET_SEARCH_PROJECT_ROOT) {
+    const envResolved = path.resolve(process.env.SWEET_SEARCH_PROJECT_ROOT);
+    if (envResolved !== expected) {
+      return {
+        ok: false,
+        reason: `caller env SWEET_SEARCH_PROJECT_ROOT=${envResolved} differs from expected=${expected}`,
+      };
+    }
+  }
+  await autoSpawnServer();
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    health = await getServerHealth();
+    if (health && health.resolvedProjectRoot === expected && (health.warm === true || health.status === 'ready')) {
+      return { ok: true, health, action };
+    }
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  return { ok: false, reason: 'daemon-did-not-become-ready-with-expected-root', health };
 }
 
 export async function isServerRunning() {

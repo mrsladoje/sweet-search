@@ -20,7 +20,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-import { POLICIES, MODE_ORDER, TOOL_RULES } from './policies.js';
+import { POLICIES, MODE_ORDER, TOOL_RULES, SWEET_CONDITIONS } from './policies.js';
 import { loadTasks, summarizeTasks, listRepos } from './tasks.js';
 import { runClaudeAgent, summariseRun, formatToolTrace, buildClaudeArgs } from './claude-runner.js';
 import { auditRun } from './audit.js';
@@ -37,16 +37,19 @@ const REPO_ROOT = path.resolve(__dirname, '../..');
 
 function parseArgs(argv) {
   const opts = {
-    repo: null, all: false,
+    repo: null, all: false, repos: null,
     iters: 1, maxTasks: 5, seed: 42,
     model: 'haiku', judgeModel: 'haiku',
     onlyTask: null, onlyMode: null,
+    conditions: null,            // null → use MODE_ORDER (or filter via --mode for back-compat)
+    warmup: null,                // null → auto: enable when any condition is sweet
     dryRun: false, keepLogs: false,
     skipJudge: false,
     timeoutMs: 240000,
   };
   for (const arg of argv) {
     if (arg.startsWith('--repo=')) opts.repo = arg.split('=')[1];
+    else if (arg.startsWith('--repos=')) opts.repos = arg.split('=')[1].split(',').filter(Boolean);
     else if (arg === '--all') opts.all = true;
     else if (arg.startsWith('--iters=')) opts.iters = +arg.split('=')[1];
     else if (arg.startsWith('--max-tasks=')) opts.maxTasks = +arg.split('=')[1];
@@ -55,7 +58,11 @@ function parseArgs(argv) {
     else if (arg.startsWith('--judge-model=')) opts.judgeModel = arg.split('=')[1];
     else if (arg.startsWith('--task=')) opts.onlyTask = arg.split('=')[1];
     else if (arg.startsWith('--mode=')) opts.onlyMode = arg.split('=')[1];
+    else if (arg.startsWith('--condition=')) opts.conditions = arg.split('=')[1].split(',').filter(Boolean);
+    else if (arg.startsWith('--conditions=')) opts.conditions = arg.split('=')[1].split(',').filter(Boolean);
     else if (arg.startsWith('--timeout=')) opts.timeoutMs = +arg.split('=')[1];
+    else if (arg === '--warmup') opts.warmup = true;
+    else if (arg === '--no-warmup') opts.warmup = false;
     else if (arg === '--dry-run') opts.dryRun = true;
     else if (arg === '--keep-logs') opts.keepLogs = true;
     else if (arg === '--skip-judge') opts.skipJudge = true;
@@ -69,23 +76,35 @@ function printHelp() {
 
 Usage:
   npm run bench:agent-read-workflows -- --repo=<fastify|gin|flask|ripgrep>
+  npm run bench:agent-read-workflows -- --repos=fastify,gin,ripgrep
   npm run bench:agent-read-workflows -- --all
   node eval/agent-read-workflows/run-bench.js --repo=fastify --max-tasks=3
 
 Options:
   --repo=NAME        Pinned repo under eval/repos/<NAME>
-  --all              Loop over all four repos (one subprocess each)
+  --repos=A,B,C      Multi-repo fan-out (one subprocess per repo)
+  --all              Loop over all repos in tasks.js
   --max-tasks=N      Cap tasks per repo                            [default: 5]
   --iters=N          Iterations per (task,mode)                    [default: 1]
   --seed=N           RNG seed for task order + judge order         [default: 42]
   --model=NAME       Worker Claude model alias or id               [default: haiku]
   --judge-model=NAME Judge model                                   [default: haiku]
   --task=ID          Run a single task (matches by id or :suffix)
-  --mode=NAME        Run a single mode
+  --mode=NAME        Run a single mode (back-compat for --condition=NAME)
+  --condition=A,B    Filter conditions to run (CSV)
+                     Choices: native-rg-read, sweet-search-tools, sweet-search-auto
+  --warmup           Force warmup phase ON  (default: auto-on when any sweet condition)
+  --no-warmup        Force warmup phase OFF
   --timeout=MS       Per-run wall-clock cap                        [default: 240000]
   --dry-run          Print planned commands; do not spawn Claude
   --keep-logs        Persist raw stream-json transcripts to artifact dir
   --skip-judge       Skip the blind A/B judge step
+
+Conditions:
+  native-rg-read       Baseline: rg + native Read tool
+  sweet-search-tools   Existing colgrep/indexed-grep regression baseline
+  sweet-search-auto    NEW: main sweet-search auto/CatBoost search with
+                       token-budgeted agent packaging (ss-search wrapper)
 `);
 }
 
@@ -147,6 +166,54 @@ function percentile(xs, p) {
   return s[Math.min(s.length - 1, Math.floor(p * s.length))];
 }
 
+function parseRouteMeta(text) {
+  const m = String(text || '').match(/<<SS_ROUTE_META>>(\{[^\n]*\})/);
+  if (!m) return null;
+  try { return JSON.parse(m[1]); } catch { return null; }
+}
+
+function runWarmupCommand(cmd, { cwd, env, timeout = 90000, requireRouteMeta = false, expectedProjectRoot = null }) {
+  const subT0 = Date.now();
+  const r = spawnSync(cmd[0], cmd.slice(1), {
+    cwd, env, encoding: 'utf8', timeout,
+  });
+  const subMs = Date.now() - subT0;
+  const routeMeta = parseRouteMeta(r.stdout || '');
+  // Repo identity gate. Refuses to call the warmup ok if:
+  //   1. exit code non-zero
+  //   2. requireRouteMeta but no trailer / serverUsed not true
+  //   3. expectedProjectRoot set but routeMeta.repoMatches=false or
+  //      routeMeta.serverProjectRoot doesn't match
+  let ok = r.status === 0;
+  let isolationFailure = null;
+  if (ok && requireRouteMeta) {
+    if (!routeMeta || routeMeta.serverUsed !== true) {
+      ok = false;
+      isolationFailure = 'missing-route-meta-or-server-not-used';
+    }
+  }
+  if (ok && expectedProjectRoot != null) {
+    // Use the file-scope `path` import (this module is ESM; require is undefined).
+    const expected = path.resolve(expectedProjectRoot);
+    const got = routeMeta?.serverProjectRoot ? path.resolve(routeMeta.serverProjectRoot) : null;
+    const repoMatches = routeMeta?.repoMatches === true && got === expected;
+    if (!repoMatches) {
+      ok = false;
+      isolationFailure = `repo-isolation-mismatch: expected=${expected} got=${got ?? '<null>'}`;
+    }
+  }
+  return {
+    cmd: cmd.join(' '),
+    exitCode: r.status,
+    ms: subMs,
+    ok,
+    routeMeta: routeMeta || undefined,
+    isolationFailure,
+    stdoutPreview: (r.stdout || '').slice(0, 400),
+    stderrPreview: (r.stderr || '').slice(0, 400),
+  };
+}
+
 // ── single repo run (dedicated process owns the repo) ───────────────────────
 
 async function runOneRepo(opts) {
@@ -156,8 +223,36 @@ async function runOneRepo(opts) {
 
   let tasks = loadTasks(repo, { maxTasks: opts.maxTasks, onlyId: opts.onlyTask });
   tasks = shuffle(tasks, opts.seed);
-  const modes = opts.onlyMode ? [opts.onlyMode] : MODE_ORDER;
+
+  // Mode/condition resolution.
+  //   --condition=a,b           → strict filter
+  //   --mode=NAME (legacy)      → single-mode filter (back-compat)
+  //   neither                   → use MODE_ORDER (all known)
+  let modes;
+  if (opts.conditions && opts.conditions.length) {
+    const unknown = opts.conditions.filter(c => !MODE_ORDER.includes(c));
+    if (unknown.length) {
+      process.stderr.write(`Unknown condition(s): ${unknown.join(', ')}. Choices: ${MODE_ORDER.join(', ')}\n`);
+      process.exit(2);
+    }
+    modes = opts.conditions;
+  } else if (opts.onlyMode) {
+    if (!MODE_ORDER.includes(opts.onlyMode)) {
+      process.stderr.write(`Unknown mode: ${opts.onlyMode}. Choices: ${MODE_ORDER.join(', ')}\n`);
+      process.exit(2);
+    }
+    modes = [opts.onlyMode];
+  } else {
+    // Default: native baseline + colgrep regression. The new sweet-search-auto
+    // condition is opt-in via --condition until it is benchmark-validated.
+    modes = ['native-rg-read', 'sweet-search-tools'];
+  }
   const taskSummary = summarizeTasks(tasks);
+
+  // Warmup defaults: auto-on when any selected condition is sweet-flavored,
+  // off otherwise. Explicit --warmup / --no-warmup overrides.
+  const anySweet = modes.some(m => SWEET_CONDITIONS.has(m));
+  const warmupEnabled = opts.warmup === null ? anySweet : opts.warmup;
 
   const benchDir = path.join(REPO_ROOT, '.sweet-search', 'benchmarks');
   if (!existsSync(benchDir)) mkdirSync(benchDir, { recursive: true });
@@ -176,8 +271,105 @@ async function runOneRepo(opts) {
   process.stdout.write(`  worker model:  ${opts.model}\n`);
   process.stdout.write(`  judge model:   ${opts.skipJudge ? '(skipped)' : opts.judgeModel}\n`);
   process.stdout.write(`  iters:         ${opts.iters}\n`);
+  process.stdout.write(`  warmup:        ${warmupEnabled ? 'on' : 'off'}\n`);
   process.stdout.write(`  artifact:      ${path.relative(REPO_ROOT, artifactPath)}\n`);
   process.stdout.write('\n');
+
+  // ── Warmup phase (sweet conditions only) ───────────────────────────────
+  // Excluded from per-task wall time; recorded separately in artifact.
+  // Goal: block until the model-backed sweet-search path has completed at
+  // least one successful packaged query for THIS REPO before timed Claude
+  // workers start. The daemon at /tmp/sweet-search.sock is a global singleton;
+  // a multi-repo bench fan-out previously left a stale daemon in place,
+  // causing cross-repo contamination (gin agent saw fastify results). The
+  // warmup now:
+  //   1. Queries /health.
+  //   2. If a daemon is running for a different projectRoot, /stop it and
+  //      wait for it to exit.
+  //   3. Auto-spawns a fresh daemon with SWEET_SEARCH_PROJECT_ROOT set to the
+  //      current repo dir (autoSpawnServer inherits env).
+  //   4. Validates the new daemon's /health.resolvedProjectRoot matches.
+  //   5. Runs ss-search to confirm route-meta serverProjectRoot matches.
+  // ALL FAIL CLOSED.
+  let warmupRecord = {
+    enabled: warmupEnabled,
+    status: warmupEnabled ? 'pending' : 'skipped',
+    durationMs: 0,
+    commands: [],
+    daemonIsolation: null,
+  };
+  if (warmupEnabled && !opts.dryRun) {
+    process.stdout.write('Warmup ... ');
+    const env = {
+      ...process.env,
+      PATH: [BENCH_BIN_DIR, process.env.PATH].filter(Boolean).join(':'),
+      SWEET_SEARCH_PROJECT_ROOT: layout.repoDir,
+    };
+    const expectedRoot = path.resolve(layout.repoDir);
+
+    // Step 1-4: ensure daemon serves THIS repo (in-process call so we can
+    // pass env via process.env temporarily — autoSpawnServer inherits).
+    const prevEnvRoot = process.env.SWEET_SEARCH_PROJECT_ROOT;
+    process.env.SWEET_SEARCH_PROJECT_ROOT = expectedRoot;
+    let isolation;
+    try {
+      const { ensureDaemonForProjectRoot } = await import('../../core/search/search-server.js');
+      isolation = await ensureDaemonForProjectRoot(expectedRoot, { timeoutMs: 60000 });
+    } finally {
+      if (prevEnvRoot === undefined) delete process.env.SWEET_SEARCH_PROJECT_ROOT;
+      else process.env.SWEET_SEARCH_PROJECT_ROOT = prevEnvRoot;
+    }
+    warmupRecord.daemonIsolation = {
+      ok: isolation.ok,
+      action: isolation.action || null,
+      reason: isolation.reason || null,
+      health: isolation.health ? {
+        pid: isolation.health.pid,
+        projectRoot: isolation.health.projectRoot,
+        resolvedProjectRoot: isolation.health.resolvedProjectRoot,
+        status: isolation.health.status,
+        warm: isolation.health.warm,
+      } : null,
+    };
+    if (!isolation.ok) {
+      warmupRecord.status = 'failed';
+      process.stdout.write(`\n[FAIL] daemon repo-isolation: ${isolation.reason || 'unknown'}\n`);
+      throw new Error(`warmup failed; daemon does not serve ${expectedRoot} (reason: ${isolation.reason || 'unknown'})`);
+    }
+
+    // Step 5: ss-search round-trip to confirm route-meta serverProjectRoot.
+    const warmCmds = [];
+    if (modes.includes('sweet-search-auto')) {
+      // Reordered query — prior order "warmup late interaction rerank signal"
+      // triggered a server-side `embedding.slice is not a function` crash.
+      warmCmds.push({ cmd: ['ss-search', 'late interaction rerank warmup signal', '--full', '-k', '3'], requireRouteMeta: true });
+    }
+    if (modes.includes('sweet-search-tools')) {
+      warmCmds.push({ cmd: ['ss-find', 'function declaration', '--regex', 'function|fn|def', '-k', '3'], requireRouteMeta: false });
+    }
+    const t0 = Date.now();
+    let allOk = true;
+    for (const entry of warmCmds) {
+      const result = runWarmupCommand(entry.cmd, {
+        cwd: layout.repoDir,
+        env,
+        requireRouteMeta: entry.requireRouteMeta,
+        // ss-search trailer must report serverProjectRoot=expectedRoot
+        expectedProjectRoot: entry.cmd[0] === 'ss-search' ? expectedRoot : null,
+      });
+      allOk = allOk && result.ok;
+      warmupRecord.commands.push(result);
+    }
+    warmupRecord.durationMs = Date.now() - t0;
+    warmupRecord.status = allOk ? 'ok' : 'partial';
+    process.stdout.write(`${warmupRecord.durationMs}ms (${warmupRecord.status}, daemon=${warmupRecord.daemonIsolation.action})\n\n`);
+    if (!allOk) {
+      const failed = warmupRecord.commands.filter(c => !c.ok).map(c =>
+        `${c.cmd} [exit ${c.exitCode}${c.isolationFailure ? ` ${c.isolationFailure}` : ''}]`
+      ).join('; ');
+      throw new Error(`warmup failed; refusing to start timed benchmark with cold sweet-search path: ${failed}`);
+    }
+  }
 
   // Dry run: print the commands and stop.
   if (opts.dryRun) {
@@ -215,6 +407,7 @@ async function runOneRepo(opts) {
           systemAppend: POLICIES[mode],
           model: opts.model,
           cwd: layout.repoDir,
+          projectRoot: layout.repoDir,
           allowedTools: TOOL_RULES[mode].allowedTools,
           disallowedTools: TOOL_RULES[mode].disallowedTools,
           addDirs: pickAddDirs(),
@@ -241,6 +434,10 @@ async function runOneRepo(opts) {
             approxAnswerTokens: summary.approxAnswerTokens,
             usage: summary.usage,
             totalCostUsd: summary.totalCostUsd,
+            // sweet-search-auto telemetry (null for non-sweet conditions).
+            // Always-on for sweet-search-auto; the trailer is emitted by ss-search.
+            routeAggregate: summary.routeAggregate,
+            routeMetas: summary.routeMetas,
             cmd: run.cmd,
             toolTracePreview: formatToolTrace(run, 12),
             toolCalls: run.toolCalls.map(t => ({
@@ -266,6 +463,31 @@ async function runOneRepo(opts) {
       if (!rows.length) continue;
       // Take the median run (by wallMs) for representative answer + score.
       const median = [...rows].sort((a, b) => a.run.wallMs - b.run.wallMs)[Math.floor(rows.length / 2)];
+      // sweet-search-auto telemetry: aggregate routedMode counts across iters
+      // (only present for runs that called ss-search)
+      const routedModeCounts = {};
+      let routeCallCount = 0;
+      let routeBudgetSum = 0;
+      let routeUsedSum = 0;
+      let routeSandwichSum = 0;
+      for (const r of rows) {
+        const ra = r.run.routeAggregate;
+        if (!ra) continue;
+        for (const [k, v] of Object.entries(ra.routedModeCounts || {})) {
+          routedModeCounts[k] = (routedModeCounts[k] || 0) + v;
+        }
+        routeCallCount += ra.callCount || 0;
+        routeBudgetSum += ra.totalTokenBudget || 0;
+        routeUsedSum += ra.totalTokensUsed || 0;
+        routeSandwichSum += ra.sandwichCount || 0;
+      }
+      const routeAggregate = routeCallCount > 0
+        ? { routedModeCounts, callCount: routeCallCount,
+            avgTokenBudget: routeBudgetSum / routeCallCount,
+            avgTokensUsed: routeUsedSum / routeCallCount,
+            sandwichCount: routeSandwichSum }
+        : null;
+
       collapsed.push({
         mode, taskId, taskType: rows[0].taskType, difficulty: rows[0].difficulty,
         iterCount: rows.length,
@@ -280,6 +502,7 @@ async function runOneRepo(opts) {
         answer: median.answer,
         answerParseError: median.answerParseError,
         toolTracePreview: median.run.toolTracePreview,
+        routeAggregate,
       });
     }
   }
@@ -440,6 +663,7 @@ async function runOneRepo(opts) {
     toolRules: TOOL_RULES,
     taskSummary,
     cmdTemplate: 'claude -p <prompt> --model <model> --output-format stream-json --verbose --no-session-persistence --dangerously-skip-permissions --append-system-prompt <policy> --allowed-tools "..." --disallowed-tools "..." --add-dir <repo-root>',
+    warmup: warmupRecord,
     modeSummaries,
     perTask: collapsed,
     rawRuns: allRuns,
@@ -452,6 +676,7 @@ async function runOneRepo(opts) {
       'Tool restrictions are enforced via --allowed-tools AND post-hoc audit. Violations are flagged, not blocked at the model layer.',
       'Judge scores are advisory; deterministic metrics (file/fact/symbol recall) are primary.',
       'Sweet mode requires the sweet-search CLI on $PATH (npm-linked or via npx) AND a valid index in <repo>/.sweet-search/. Run eval/scripts/fetch-benchmark-repos.js first.',
+      'Per-task wallMs EXCLUDES warmup time. Warmup duration recorded separately under `warmup.durationMs`.',
     ],
   };
 
@@ -463,14 +688,18 @@ async function runOneRepo(opts) {
 
 // ── multi-repo subprocess fanout ────────────────────────────────────────────
 
-function runAllReposViaSubprocess(opts) {
-  const repos = listRepos();
-  const passthrough = process.argv.slice(2).filter(a => a !== '--all' && !a.startsWith('--repo='));
+function runReposViaSubprocess(opts, repos) {
+  const passthrough = process.argv.slice(2).filter(a =>
+    a !== '--all' && !a.startsWith('--repo=') && !a.startsWith('--repos='));
   for (const repo of repos) {
     process.stdout.write(`\n──────────── ${repo} ────────────\n`);
     const r = spawnSync(process.execPath, [path.join(__dirname, 'run-bench.js'), `--repo=${repo}`, ...passthrough], { stdio: 'inherit' });
     if (r.status !== 0) process.stderr.write(`[${repo}] subprocess exit ${r.status}\n`);
   }
+}
+
+function runAllReposViaSubprocess(opts) {
+  return runReposViaSubprocess(opts, listRepos());
 }
 
 // ── entry ───────────────────────────────────────────────────────────────────
@@ -480,7 +709,17 @@ async function main() {
   // Reference loadManifest so a corrupt manifest fails fast.
   loadManifest();
   if (opts.all) { runAllReposViaSubprocess(opts); return; }
-  if (!opts.repo) { process.stderr.write('Specify --repo=<name> or --all.\n'); printHelp(); process.exit(2); }
+  if (opts.repos && opts.repos.length) {
+    const known = listRepos();
+    const unknown = opts.repos.filter(r => !known.includes(r));
+    if (unknown.length) {
+      process.stderr.write(`Unknown repo(s): ${unknown.join(', ')}. Choices: ${known.join(', ')}\n`);
+      process.exit(2);
+    }
+    runReposViaSubprocess(opts, opts.repos);
+    return;
+  }
+  if (!opts.repo) { process.stderr.write('Specify --repo=<name>, --repos=A,B,..., or --all.\n'); printHelp(); process.exit(2); }
   await runOneRepo(opts);
 }
 

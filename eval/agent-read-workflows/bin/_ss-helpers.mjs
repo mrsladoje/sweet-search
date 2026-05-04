@@ -54,6 +54,21 @@ async function getSweetSearch() {
   return s;
 }
 
+async function ensureWarmServerReady({ timeoutMs = 60000, intervalMs = 500 } = {}) {
+  const { isServerRunning, autoSpawnServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
+  if (await isServerRunning()) return true;
+
+  // autoSpawnServer has a short built-in timeout. It may return false while the
+  // detached server is still finishing model/index load, so poll afterwards.
+  await autoSpawnServer();
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await isServerRunning()) return true;
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+  return false;
+}
+
 // --- subcommands ----------------------------------------------------------
 
 async function cmdGrep(args) {
@@ -155,6 +170,137 @@ async function cmdRead(args) {
   process.exit(0);
 }
 
+async function cmdAgentSearch(args) {
+  // Main sweet-search auto/CatBoost search with token-budgeted agent packaging.
+  //
+  // Usage:
+  //   ss-search "<query>"                                  → format=agent (4k budget)
+  //   ss-search "<query>" --full                           → format=agent_full (8k budget)
+  //   ss-search "<query>" --xl                             → format=agent_full_xl (12k, gated)
+  //   ss-search "<query>" -k 5                             → top-K results
+  //   ss-search "<query>" --mode hybrid                    → force a mode (default: auto/CatBoost)
+  //
+  // Output is agent-readable: a meta header with routed mode + budget,
+  // followed by per-result blocks with file/line + fenced code. A trailing
+  // structured marker line `<<SS_ROUTE_META>>{...json...}` lets the bench
+  // post-process parse routing/budget telemetry without affecting the agent.
+  let format = 'agent';
+  if (args.includes('--full')) { format = 'agent_full'; args.splice(args.indexOf('--full'), 1); }
+  if (args.includes('--xl'))   { format = 'agent_full_xl'; args.splice(args.indexOf('--xl'), 1); }
+  const k = +parseShortFlag(args, ['-k', '--top'], 5);
+  const mode = parseFlag(args, '--mode', 'auto');
+  const query = args[0];
+  if (!query) {
+    process.stderr.write('Usage: ss-search "<query>" [--full|--xl] [-k N] [--mode auto|lexical|semantic|hybrid]\n');
+    process.exit(2);
+  }
+
+  const { queryServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
+  const serverUsed = await ensureWarmServerReady();
+  if (!serverUsed) {
+    process.stderr.write('[ss-search] warm server is not ready; refusing cold direct search in benchmark wrapper\n');
+    process.exit(1);
+  }
+
+  const response = await queryServer(query, { topK: k, mode, format });
+  if (response?.error) {
+    process.stderr.write(`[ss-search] server error: ${response.error}\n`);
+    process.exit(1);
+  }
+
+  // REPO ISOLATION: refuse to return results from a daemon serving a different
+  // repo. The bench harness uses /tmp/sweet-search.sock, which is a global socket;
+  // a multi-repo bench fan-out previously reused a stale daemon and silently
+  // returned cross-repo matches. Fail closed instead.
+  const requestedProjectRoot = path.resolve(PROJECT_ROOT);
+  const serverProjectRoot = response?.serverProjectRoot
+    ? path.resolve(response.serverProjectRoot) : null;
+  const repoMatches = serverProjectRoot != null && serverProjectRoot === requestedProjectRoot;
+  if (!repoMatches) {
+    process.stderr.write(
+      `[ss-search] repo isolation violation: requested projectRoot=${requestedProjectRoot} ` +
+      `but server reports serverProjectRoot=${serverProjectRoot ?? '<null>'}. ` +
+      `Refusing to surface cross-repo results.\n`
+    );
+    // Emit a structured trailer anyway so the bench can capture the failure.
+    const failMeta = {
+      routedMode: response?.stats?.routing?.mode || null,
+      serverUsed: true,
+      serverProjectRoot,
+      requestedProjectRoot,
+      repoMatches: false,
+      error: 'repo-isolation-mismatch',
+    };
+    process.stdout.write(`\n<<SS_ROUTE_META>>${JSON.stringify(failMeta)}\n`);
+    process.exit(3);
+  }
+
+  // The packaged response shape comes from packageForAgent (or pattern's own
+  // packager when CatBoost routes to pattern). Both include:
+  //   .results[] with {rank, file, startLine, endLine, symbol, symbolType,
+  //                    presentation, code, codeTokens, expansionKind, ...}
+  //   .tokenBudget, .tokensUsed, .subMode, .confidence, .sufficient
+  //   .stats.routing (when produced by the main pipeline)
+  const routing = response.stats?.routing || {};
+  const routedMode = routing.mode || 'pattern';
+  const routeConfidence = typeof routing.confidence === 'number' ? routing.confidence : null;
+  const tierCounts = (response.results || []).reduce((acc, r) => {
+    acc[r.presentation] = (acc[r.presentation] || 0) + 1;
+    return acc;
+  }, {});
+  const sandwichCount = (response.results || []).filter(r => r.expansionKind === 'sandwich').length;
+
+  // Header (visible to agent)
+  const conf = routeConfidence != null ? ` conf=${routeConfidence.toFixed(2)}` : '';
+  process.stdout.write(`# ss-search: routed=${routedMode}${conf} budget=${response.tokenBudget} used=${response.tokensUsed}` +
+    ` results=${response.results.length} subMode=${response.subMode}\n`);
+  if (response.confidence) {
+    process.stdout.write(`# confidence=${response.confidence}${response.confidenceReason ? ' (' + response.confidenceReason + ')' : ''}` +
+      `${response.sufficient ? ' sufficient=YES' : ' sufficient=no'}\n`);
+  }
+
+  // Per-result blocks
+  for (const r of response.results || []) {
+    const sym = r.symbol ? ` [${r.symbolType || 'code'}: ${r.symbol}]` : '';
+    const kind = r.expansionKind ? ` kind=${r.expansionKind}` : '';
+    const stale = r.stale ? ' STALE' : '';
+    process.stdout.write(`\n## #${r.rank} ${r.file}:${r.startLine}-${r.endLine}${sym} (${r.presentation}${kind}${stale}) score=${(r.score || 0).toFixed(3)}\n`);
+    if (r.headerContext) {
+      process.stdout.write(`### imports\n\`\`\`\n${r.headerContext}\n\`\`\`\n`);
+    }
+    if (r.code) {
+      process.stdout.write(`\`\`\`\n${r.code}\n\`\`\`\n`);
+    } else if (r.summary) {
+      process.stdout.write(`${r.summary}\n`);
+    }
+  }
+
+  if (!response.results || response.results.length === 0) {
+    process.stdout.write('(no matches)\n');
+  }
+
+  // Structured trailer for bench post-processing (audit/summariseRun can parse).
+  const meta = {
+    routedMode,
+    routeConfidence,
+    serverUsed,
+    serverProjectRoot,
+    requestedProjectRoot,
+    repoMatches,
+    serverPid: response.serverPid ?? null,
+    tokenBudget: response.tokenBudget,
+    tokensUsed: response.tokensUsed,
+    subMode: response.subMode,
+    resultCount: response.results?.length || 0,
+    tierCounts,
+    sandwichCount,
+    confidence: response.confidence || null,
+    sufficient: response.sufficient ?? null,
+  };
+  process.stdout.write(`\n<<SS_ROUTE_META>>${JSON.stringify(meta)}\n`);
+  process.exit(0);
+}
+
 async function cmdSemantic(args) {
   const file = args[0];
   const query = args[1];
@@ -187,6 +333,7 @@ async function cmdSemantic(args) {
     else if (subcommand === 'find') await cmdFind(rest);
     else if (subcommand === 'read') await cmdRead(rest);
     else if (subcommand === 'semantic') await cmdSemantic(rest);
+    else if (subcommand === 'agent-search') await cmdAgentSearch(rest);
     else { process.stderr.write(`unknown subcommand: ${subcommand}\n`); process.exit(2); }
   } catch (err) {
     process.stderr.write(`[ss-*] crash: ${err.stack || err.message || err}\n`);
