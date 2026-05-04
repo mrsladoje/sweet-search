@@ -1,8 +1,16 @@
 {
   "name": "@sweet-search/native-darwin-x64",
-  "version": "2.5.1",
+  "version": "2.5.2",
   "description": "Sweet Search native binaries for macOS x64",
-  "os": ["darwin"],
-  "cpu": ["x64"],
-  "files": ["manifest.json", "sweet-search-native.node", "sweet-search"]
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "manifest.json",
+    "sweet-search-native.node",
+    "sweet-search"
+  ]
 }
