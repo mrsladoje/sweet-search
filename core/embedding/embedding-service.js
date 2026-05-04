@@ -45,6 +45,7 @@ import {
   queryDeduplicator,
   queryStats,
   cacheStats,
+  coerceToFloat32Vector,
   getCacheStats as _getCacheStats,
   getSemanticCacheStats,
   clearCache,
@@ -205,17 +206,38 @@ export async function getEmbedding(text, options = {}) {
   if (useCache && EMBEDDING_CONFIG.cache?.enabled) {
     const cached = queryCache.get(cacheKey);
     if (cached) {
-      cacheStats.hits++;
-      return { embedding: cached, cached: true, source: 'lru', latency_us: Math.round((performance.now() - start) * 1000) };
+      // Defensive guard: a cache value MUST be a vector with .length and
+      // .slice. Persisted vocabularies that round-tripped through JSON
+      // produce indexed-object shapes which crash downstream consumers.
+      // Coerce; if unrecoverable, drop the entry and fall through.
+      const cachedVec = coerceToFloat32Vector(cached);
+      if (cachedVec) {
+        if (cachedVec !== cached) queryCache.set(cacheKey, cachedVec);
+        cacheStats.hits++;
+        return { embedding: cachedVec, cached: true, source: 'lru', latency_us: Math.round((performance.now() - start) * 1000) };
+      }
+      queryCache.delete?.(cacheKey);
+      console.warn(`[embedding] LRU cache held non-vector for "${cacheKey.slice(0, 60)}"; regenerating`);
     }
 
     if (isQuery && EMBEDDING_CONFIG.cache?.useVocabulary !== false) {
       await vocabulary.load();
       const vocabHit = vocabulary.get(text);
       if (vocabHit) {
-        cacheStats.vocabularyHits++;
-        queryCache.set(cacheKey, vocabHit);
-        return { embedding: vocabHit, cached: true, source: 'vocabulary', latency_us: Math.round((performance.now() - start) * 1000) };
+        const vocabVec = coerceToFloat32Vector(vocabHit);
+        if (vocabVec) {
+          // Backfill the in-memory vocab map with the typed-array form so
+          // subsequent hits skip re-coercion.
+          if (vocabVec !== vocabHit) vocabulary.set?.(text, vocabVec);
+          cacheStats.vocabularyHits++;
+          queryCache.set(cacheKey, vocabVec);
+          return { embedding: vocabVec, cached: true, source: 'vocabulary', latency_us: Math.round((performance.now() - start) * 1000) };
+        }
+        // Unrecoverable vocab entry — drop it and continue. (load() now
+        // normalises on read, so this branch should be unreachable in
+        // practice; it is the belt-and-braces for older code paths.)
+        vocabulary.delete?.(text);
+        console.warn(`[embedding] vocabulary held non-vector for "${text.slice(0, 60)}"; dropping and regenerating`);
       }
     }
   }

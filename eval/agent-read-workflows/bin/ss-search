@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# ss-search: Sweet Search auto/CatBoost-routed search with token-budgeted
+# agent packaging. Exercises the main sweet-search pipeline (lexical /
+# semantic / hybrid / structural) with format=agent_full by default.
+#
+# Usage:
+#   ss-search "<query>"                    # format=agent (default 4k budget)
+#   ss-search "<query>" --full             # format=agent_full (8k budget)
+#   ss-search "<query>" --xl               # format=agent_full_xl (12k, gated)
+#   ss-search "<query>" -k N               # top-K (default 5)
+#   ss-search "<query>" --mode hybrid      # force a mode (default: auto)
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+TMPERR=$(mktemp)
+node "$DIR/_ss-helpers.mjs" agent-search "$@" 2>"$TMPERR"
+RC=$?
+[ $RC -ne 0 ] && cat "$TMPERR" >&2
+rm -f "$TMPERR"
+exit $RC

@@ -45,6 +45,7 @@ export class LRUCache {
   }
 
   has(key) { return this.cache.has(key); }
+  delete(key) { this.hitCount.delete(key); return this.cache.delete(key); }
   getHitCount(key) { return this.hitCount.get(key) || 0; }
   size() { return this.cache.size; }
   clear() { this.cache.clear(); this.hitCount.clear(); }
@@ -191,6 +192,62 @@ export class QueryStats {
 //        model is not silently served when a different model is active.
 const VOCAB_SCHEMA_VERSION = 3;
 
+/**
+ * Coerce an input value into a Float32Array suitable for downstream embedding
+ * math (truncateForHNSW, late-interaction MaxSim, cosine similarity).
+ *
+ * Why this exists: persisted vocabularies are JSON-serialised. JSON.stringify
+ * on a Float32Array produces an indexed object `{"0": v0, "1": v1, ...}`,
+ * not an array. After `JSON.parse`, the value has `.length === undefined`,
+ * `.slice === undefined`, and crashes any downstream consumer that calls
+ * vector methods. This helper repairs the value at the cache boundary so
+ * the rest of the embedding pipeline can rely on a uniform vector contract.
+ *
+ * Accepted inputs:
+ *   - Float32Array → returned as-is
+ *   - Array<number> → wrapped in Float32Array
+ *   - Float64Array / Int*Array etc. → copied into Float32Array
+ *   - Plain object with stringly-keyed numeric indices ("0","1",...,"N-1")
+ *     → reconstructed as Float32Array of length N
+ *
+ * Returns null when the input cannot be sensibly interpreted as a vector
+ * (callers should drop the cache entry and re-derive).
+ *
+ * @param {*} value
+ * @returns {Float32Array|null}
+ */
+export function coerceToFloat32Vector(value) {
+  if (value == null) return null;
+  if (value instanceof Float32Array) return value;
+  if (Array.isArray(value)) return Float32Array.from(value);
+  // Other typed arrays: copy values into a Float32Array.
+  if (ArrayBuffer.isView(value) && typeof value.length === 'number') {
+    return Float32Array.from(value);
+  }
+  // Plain object form from JSON-deserialised Float32Array.
+  if (typeof value === 'object') {
+    const keys = Object.keys(value);
+    if (keys.length === 0) return null;
+    // All keys must be string-encoded non-negative integers and contiguous
+    // from 0 to length-1. (We do not try to "fill gaps" — that would silently
+    // mask a real bug.)
+    const indices = new Array(keys.length);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      // Reject anything that isn't an integer-shaped key.
+      if (!/^\d+$/.test(k)) return null;
+      const n = +k;
+      if (!Number.isInteger(n) || n < 0 || n >= keys.length) return null;
+      indices[n] = value[k];
+    }
+    for (let i = 0; i < indices.length; i++) {
+      if (typeof indices[i] !== 'number' || !Number.isFinite(indices[i])) return null;
+    }
+    return Float32Array.from(indices);
+  }
+  return null;
+}
+
 /** Build the embedding-fingerprint we expect a vocabulary file to match. */
 function currentVocabFingerprint() {
   return {
@@ -269,10 +326,27 @@ export class Vocabulary {
           this.terms.clear();
         } else {
           this.metadata = { ...this.metadata, ...(data.metadata || {}) };
-          for (const [term, embedding] of Object.entries(data.terms || {})) {
-            this.terms.set(term, embedding);
+          let normalized = 0;
+          let dropped = 0;
+          for (const [term, raw] of Object.entries(data.terms || {})) {
+            // Coerce to Float32Array. Persisted vocabs JSON-serialise typed
+            // arrays as indexed objects (`{"0": v0, ...}`), which otherwise
+            // crash downstream `embedding.slice(...)` calls (see
+            // `truncateForHNSW`). Reject any entry we cannot interpret as a
+            // vector — better to re-embed than to surface a corrupt vector.
+            const vec = coerceToFloat32Vector(raw);
+            if (vec) {
+              this.terms.set(term, vec);
+              normalized++;
+            } else {
+              dropped++;
+            }
           }
-          console.log(`Vocabulary: Loaded ${this.terms.size} pre-computed embeddings`);
+          if (dropped > 0) {
+            console.log(`Vocabulary: Loaded ${normalized} pre-computed embeddings (dropped ${dropped} unrecognised)`);
+          } else {
+            console.log(`Vocabulary: Loaded ${normalized} pre-computed embeddings`);
+          }
         }
       }
     } catch (err) {
@@ -292,7 +366,18 @@ export class Vocabulary {
       this.metadata.model = EMBEDDING_CONFIG.model;
       this.metadata.dimension = EMBEDDING_CONFIG.dimension;
       if (!this.metadata.created) this.metadata.created = this.metadata.lastUpdated;
-      const data = { metadata: this.metadata, terms: Object.fromEntries(this.terms) };
+      // Normalise to plain arrays so JSON.stringify produces a compact,
+      // round-trippable form. Float32Array would otherwise serialise as
+      // an indexed object ({"0": v0, "1": v1, ...}) which load() can read
+      // (via coerceToFloat32Vector) but which is wasteful and was the
+      // shape that originally caused the `embedding.slice` bug.
+      const termsOut = {};
+      for (const [term, vec] of this.terms.entries()) {
+        termsOut[term] = vec instanceof Float32Array || ArrayBuffer.isView(vec)
+          ? Array.from(vec)
+          : vec;
+      }
+      const data = { metadata: this.metadata, terms: termsOut };
       await writeJsonAtomic(this.vocabPath, JSON.stringify(data, null, 2));
     });
   }
@@ -303,6 +388,7 @@ export class Vocabulary {
   }
   set(term, embedding) { this.terms.set(this.normalize(term), embedding); }
   has(term) { return this.terms.has(this.normalize(term)); }
+  delete(term) { return this.terms.delete(this.normalize(term)); }
   normalize(term) { return term.toLowerCase().trim(); }
   size() { return this.terms.size; }
 
