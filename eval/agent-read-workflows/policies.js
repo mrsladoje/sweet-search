@@ -73,6 +73,63 @@ Recommended workflow:
 ${BUDGET_TABLE}
 ${ANSWER_FORMAT}`,
 
+  'sweet-search-auto': `\
+You are solving a code-understanding task in a repository indexed by Sweet
+Search. You MUST use the Sweet Search auto/CatBoost-routed search tool —
+this benchmark evaluates the main search pipeline (lexical / semantic /
+hybrid / structural automatic routing) with token-budgeted agent packaging.
+
+Available tools (call via Bash; they are on PATH):
+  - ss-search "<query>" [--full] [-k N]
+        → main sweet-search auto search. CatBoost decides lexical/semantic/
+          hybrid/structural automatically based on the query shape. Returns
+          a token-budgeted, agent-packaged response with per-result code
+          blocks, confidence, and a structured route-metadata trailer.
+          Use \`--full\` only when one strong result + multiple plausible
+          alternatives are likely (8k budget instead of the default 4k).
+  - ss-read <file> <start> <end>
+        → exact line range. Allowed ONLY as a confirmation read after
+          ss-search has already located the file/range (e.g. you need to
+          quote a specific line). Open-ended start-to-EOF is not supported.
+
+You MUST NOT in this condition:
+  - run native rg, grep, sed, awk, head, tail, cat, jq, python, node, perl, xargs
+  - use the native Read tool
+  - use ss-grep, ss-find, or ss-semantic (these are evaluated under the
+    separate sweet-search-tools/colgrep condition; using them here
+    contaminates the comparison)
+  - read \`.sweet-search/\` index files
+  - edit, create, or move files
+
+Bash is ALLOWLIST-ENFORCED. The ONLY leading commands you may run are:
+  Sweet auto:    ss-search, ss-read, sweet-search
+  Orientation:   pwd, ls, wc, find, echo, printf
+Anything else (rg, grep, cat, sed, awk, head, tail, ss-grep, ss-find,
+ss-semantic, python, node, etc.) is a policy violation.
+
+═══════════════════════════════════════════════════════════════════════════
+DEFAULT WORKFLOW — follow this unless the question demands otherwise:
+═══════════════════════════════════════════════════════════════════════════
+1. Phrase the question as ONE concise natural-language query and call:
+     ss-search "<concise query>"
+2. Inspect ONLY the top 3 results in the output. Each one already carries
+   token-budgeted code with file/line/symbol metadata. The response also
+   tells you whether the answer is "sufficient".
+3. If a result already gives you a tight chunk that answers the question,
+   you are DONE — cite it and stop. No further reads.
+4. If the answer is incomplete, you may take AT MOST ONE follow-up:
+     a. another, narrower ss-search query, OR
+     b. a single ss-read <file> <start> <end> on a result the first call
+        returned, when you need an exact quote for citation.
+   Do not chain more follow-ups.
+5. If the response says "sufficient=YES" you should stop and answer.
+6. The structured \`<<SS_ROUTE_META>>{...}\` line is metadata only — do not
+   try to parse it; just trust the visible output.
+═══════════════════════════════════════════════════════════════════════════
+
+${BUDGET_TABLE}
+${ANSWER_FORMAT}`,
+
   'sweet-search-tools': `\
 You are solving a code-understanding task in a repository indexed by Sweet
 Search. You MUST use Sweet Search tools for discovery and reading.
@@ -137,7 +194,13 @@ ${BUDGET_TABLE}
 ${ANSWER_FORMAT}`,
 };
 
-export const MODE_ORDER = ['native-rg-read', 'sweet-search-tools'];
+// Default ordering — native first as the baseline, then conditions under test.
+// `--condition=name1,name2,...` filters this set in run-bench.js.
+export const MODE_ORDER = ['native-rg-read', 'sweet-search-tools', 'sweet-search-auto'];
+
+// Conditions that exercise sweet-search runtime/indexes/models.
+// Used by the warmup phase to know whether to pre-warm.
+export const SWEET_CONDITIONS = new Set(['sweet-search-tools', 'sweet-search-auto']);
 
 export const TOOL_RULES = {
   // Native is the permissive baseline — any standard shell tool is fine.
@@ -148,14 +211,14 @@ export const TOOL_RULES = {
     disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'],
     // denylist (no allowedBashLeading → audit treats Bash as permissive)
     forbiddenBashSubstrings: [],
-    forbiddenBashLeading: ['sweet-search', 'ss-grep', 'ss-find', 'ss-read', 'ss-semantic'],
+    forbiddenBashLeading: ['sweet-search', 'ss-grep', 'ss-find', 'ss-read', 'ss-semantic', 'ss-search'],
     readToolForbidden: false,
   },
 
-  // Sweet is allowlist-based: the agent may only run a small set of leading
-  // commands. This stops contamination via cat/sed/awk/head/tail/python/node,
-  // which would let the agent read files outside the Sweet Search tools and
-  // bias the comparison. See README "Sweet allowlist" for the rationale.
+  // Sweet-search-tools (a.k.a. colgrep condition): allowlist-based, the
+  // agent may only run the indexed-grep / ColGrep / read / read-semantic
+  // wrappers. This is the ESTABLISHED regression baseline — do not change
+  // without a benchmark gate.
   'sweet-search-tools': {
     allowedTools: ['Bash', 'Read'],   // Read kept allowed at the CLI layer but flagged by audit
     disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'],
@@ -164,6 +227,24 @@ export const TOOL_RULES = {
     allowedBashLeading: [
       // Sweet tooling
       'ss-grep', 'ss-find', 'ss-read', 'ss-semantic', 'sweet-search',
+      // Harmless orientation only
+      'pwd', 'ls', 'wc', 'find', 'echo', 'printf',
+    ],
+    readToolForbidden: true,
+  },
+
+  // Sweet-search-auto: the new condition under test. The agent is restricted
+  // to the main sweet-search auto/CatBoost path (ss-search) plus a single
+  // confirmation ss-read. Specifically excludes ss-grep/ss-find/ss-semantic
+  // so the comparison isolates the main search pipeline + agent packaging.
+  'sweet-search-auto': {
+    allowedTools: ['Bash', 'Read'],
+    disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'],
+    forbiddenBashSubstrings: [],
+    forbiddenBashLeading: [],
+    allowedBashLeading: [
+      // Sweet auto-search + read; intentionally NOT ss-grep/ss-find/ss-semantic.
+      'ss-search', 'ss-read', 'sweet-search',
       // Harmless orientation only
       'pwd', 'ls', 'wc', 'find', 'echo', 'printf',
     ],

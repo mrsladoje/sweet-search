@@ -52,6 +52,12 @@ export async function runClaudeAgent(req) {
   if (req.extraPathEntries && req.extraPathEntries.length) {
     env.PATH = [...req.extraPathEntries, env.PATH].filter(Boolean).join(':');
   }
+  // Propagate the bench's repo identity into the spawned claude env so that
+  // ss-search calls inside the agent loop see the same projectRoot the bench
+  // warmed the daemon for. This belts-and-suspenders the cwd-based default.
+  if (req.projectRoot) {
+    env.SWEET_SEARCH_PROJECT_ROOT = req.projectRoot;
+  }
 
   const t0 = Date.now();
   const proc = spawn('claude', args, {
@@ -176,14 +182,31 @@ function parseStreamJson(stdout) {
       for (const block of ev.message.content) {
         if (block.type === 'tool_result') {
           let chars = 0;
-          if (typeof block.content === 'string') chars = block.content.length;
-          else if (Array.isArray(block.content)) {
-            for (const c of block.content) if (typeof c.text === 'string') chars += c.text.length;
+          let text = '';
+          if (typeof block.content === 'string') {
+            text = block.content;
+            chars = text.length;
+          } else if (Array.isArray(block.content)) {
+            for (const c of block.content) {
+              if (typeof c.text === 'string') {
+                text += c.text;
+                chars += c.text.length;
+              }
+            }
+          }
+          // Parse <<SS_ROUTE_META>>{...} trailer emitted by ss-search.
+          // Captures: routedMode, routeConfidence, tokenBudget, tokensUsed,
+          // subMode, resultCount, tierCounts, sandwichCount.
+          let routeMeta = null;
+          const m = text.match(/<<SS_ROUTE_META>>(\{[^\n]*\})/);
+          if (m) {
+            try { routeMeta = JSON.parse(m[1]); } catch { /* malformed — skip */ }
           }
           toolResults.push({
             id: block.tool_use_id,
             isError: !!block.is_error,
             chars,
+            ...(routeMeta ? { routeMeta } : {}),
           });
         }
       }
@@ -264,6 +287,34 @@ export function extractAnswerJson(text) {
 export function summariseRun(run) {
   const answer = extractAnswerJson(run.finalResultText || run.finalAssistantText);
   const toolUseChars = run.toolResults.reduce((acc, r) => acc + r.chars, 0);
+
+  // Aggregate ss-search route metadata across all ss-search tool calls in this run.
+  // - routeMetas: every parsed payload (in tool-call order)
+  // - routedModeCounts: how many calls routed to each mode
+  // - aggregate: { totalTokenBudget, totalTokensUsed, sandwichCount, callCount }
+  const routeMetas = run.toolResults
+    .map(r => r.routeMeta)
+    .filter(Boolean);
+  const routedModeCounts = {};
+  let routeAggregate = null;
+  if (routeMetas.length) {
+    let totalBudget = 0, totalUsed = 0, sandwichCount = 0;
+    for (const m of routeMetas) {
+      const mode = m.routedMode || 'unknown';
+      routedModeCounts[mode] = (routedModeCounts[mode] || 0) + 1;
+      totalBudget += +m.tokenBudget || 0;
+      totalUsed += +m.tokensUsed || 0;
+      sandwichCount += +m.sandwichCount || 0;
+    }
+    routeAggregate = {
+      callCount: routeMetas.length,
+      totalTokenBudget: totalBudget,
+      totalTokensUsed: totalUsed,
+      sandwichCount,
+      routedModeCounts,
+    };
+  }
+
   return {
     wallMs: run.wallMs,
     exitCode: run.exitCode,
@@ -280,6 +331,8 @@ export function summariseRun(run) {
     totalCostUsd: run.totalCostUsd,
     answer,
     answerParseError: answer?._parseError || null,
+    routeMetas,           // raw per-call payloads
+    routeAggregate,       // null when no ss-search calls were made
   };
 }
 
