@@ -214,6 +214,70 @@ export function stopRunningDaemon({
 }
 
 /**
+ * Remove the index-maintainer daemon hook init copied into
+ * `.claude/hooks/index-maintainer.mjs`. Only removes the file when it
+ * matches the bytes init shipped — never deletes a user-modified file
+ * we don't own. The marker is the source path: init does
+ * `copyFileSync(<pkg>/core/indexing/index-maintainer.mjs, dest)`, so
+ * we compare destination bytes to the package source.
+ *
+ * Returns `{ status, detail }`:
+ *   not-found  — file absent (nothing to do)
+ *   removed    — file removed (matched shipped bytes)
+ *   skipped    — file present but contents differ (user-modified) — left intact
+ *   dry-run    — found the file but skipped the delete
+ *   error      — rm or read failed; uninstall continues
+ */
+export function removeIndexMaintainerHook(projectRoot, { dryRun = false } = {}) {
+  const hookPath = join(projectRoot, '.claude', 'hooks', 'index-maintainer.mjs');
+  if (!existsSync(hookPath)) {
+    return { status: 'not-found', detail: 'no .claude/hooks/index-maintainer.mjs' };
+  }
+
+  // Only remove when the bytes match the version init shipped — refuses to
+  // delete a hook the user has customized. Failing the byte compare is a
+  // soft skip, not an error.
+  const shippedPath = join(PACKAGE_ROOT, 'core', 'indexing', 'index-maintainer.mjs');
+  let bytesMatch = false;
+  try {
+    if (existsSync(shippedPath)) {
+      const a = readFileSync(hookPath);
+      const b = readFileSync(shippedPath);
+      bytesMatch = a.length === b.length && a.equals(b);
+    }
+  } catch {
+    // Read errored on either side — treat as "don't remove, surface the
+    // file path so the user can clean up manually if they want to".
+    return { status: 'skipped', detail: `cannot compare bytes (${hookPath})` };
+  }
+
+  if (!bytesMatch) {
+    return {
+      status: 'skipped',
+      detail: `${hookPath} differs from shipped version — leaving in place (delete manually if intended)`,
+    };
+  }
+
+  if (dryRun) {
+    return { status: 'dry-run', detail: hookPath };
+  }
+
+  try {
+    unlinkSync(hookPath);
+    // Best-effort: prune the parent .claude/hooks/ if it's now empty (we
+    // own the file, not the directory; only delete if WE made it empty).
+    try {
+      const parent = dirname(hookPath);
+      const entries = readdirSync(parent);
+      if (entries.length === 0) rmdirSync(parent);
+    } catch { /* ignore — sibling files exist or rmdir failed */ }
+    return { status: 'removed', detail: hookPath };
+  } catch (err) {
+    return { status: 'error', detail: err.message };
+  }
+}
+
+/**
  * Remove the sweet-search /sweet-index skill from `.claude/skills/sweet-index/`.
  * Only removes the directory we created — leaves `.claude/skills/` and `.claude/`
  * untouched even if they're empty afterwards, because the user may add other
@@ -343,6 +407,39 @@ export function removePrewarmSessionStartHook(projectRoot, { dryRun = false } = 
 }
 
 // ---------------------------------------------------------------------------
+// Optional native package list (derived from package.json)
+// ---------------------------------------------------------------------------
+
+/**
+ * Return the list of `@sweet-search/native-*` packages declared as
+ * `optionalDependencies` in package.json. `--purge` walks this list so
+ * additions (e.g. CUDA variants) are picked up automatically without
+ * having to keep two hand-maintained lists in sync.
+ *
+ * Falls back to a hard-coded list if package.json is unreadable, so a
+ * partial install still gets best-effort purge coverage.
+ */
+export function getOptionalNativePackageNames() {
+  try {
+    const pkgPath = join(PACKAGE_ROOT, 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    const deps = pkg.optionalDependencies || {};
+    const out = Object.keys(deps).filter((n) => n.startsWith('@sweet-search/'));
+    if (out.length > 0) return out;
+  } catch { /* fall through to baseline */ }
+  // Baseline keeps the prior behaviour PLUS the CUDA variants that were
+  // missing from the pre-Phase-7 hand-maintained list.
+  return [
+    '@sweet-search/native-darwin-arm64',
+    '@sweet-search/native-darwin-x64',
+    '@sweet-search/native-linux-arm64-gnu',
+    '@sweet-search/native-linux-arm64-gnu-cuda',
+    '@sweet-search/native-linux-x64-gnu',
+    '@sweet-search/native-linux-x64-gnu-cuda',
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // Help text
 // ---------------------------------------------------------------------------
 
@@ -369,6 +466,8 @@ What gets removed:
     artifacts AND the sibling .mlmodelc compiled cache files next to
     each variant. Skipped by --keep-models.
   - .claude/skills/sweet-index/ (the per-project /sweet-index skill copy)
+  - .claude/hooks/index-maintainer.mjs (init-installed). User-modified
+    copies are detected via a byte-compare and left in place.
   - daemon-prewarm SessionStart entry inside .claude/settings.json
 
 What is NOT removed:
@@ -436,8 +535,15 @@ export async function runUninstall(args) {
   const skillPreview = removeSweetIndexSkill(projectRoot, { dryRun: true });
   const hasSkillEntry = skillPreview.status === 'dry-run';
 
+  // Check for the index-maintainer daemon hook init copies into
+  // `.claude/hooks/index-maintainer.mjs`.  Same dry-run pattern.
+  const indexMaintainerPreview = removeIndexMaintainerHook(projectRoot, { dryRun: true });
+  const hasIndexMaintainerHook = indexMaintainerPreview.status === 'dry-run';
+  const indexMaintainerSkippedReason =
+    indexMaintainerPreview.status === 'skipped' ? indexMaintainerPreview.detail : null;
+
   // Nothing to remove?
-  if (removals.length === 0 && !hasHookEntry && !hasSkillEntry) {
+  if (removals.length === 0 && !hasHookEntry && !hasSkillEntry && !hasIndexMaintainerHook) {
     console.log('Nothing to remove — Sweet Search is not initialized in this project.');
     return;
   }
@@ -457,6 +563,11 @@ export async function runUninstall(args) {
   if (hasSkillEntry) {
     console.log(`    /sweet-index skill (.claude/skills/sweet-index/)`);
   }
+  if (hasIndexMaintainerHook) {
+    console.log(`    index-maintainer hook (.claude/hooks/index-maintainer.mjs)`);
+  } else if (indexMaintainerSkippedReason) {
+    console.log(`    [skipped] ${indexMaintainerSkippedReason}`);
+  }
   console.log(`  Total: ${formatBytes(totalBytes)}`);
   if (parsed.keepModels) {
     console.log('  Model cache: kept (--keep-models)');
@@ -471,6 +582,12 @@ export async function runUninstall(args) {
     const drySkill = removeSweetIndexSkill(projectRoot, { dryRun: true });
     if (drySkill.status === 'dry-run') {
       console.log(`  Would also remove: /sweet-index skill (${drySkill.detail})`);
+    }
+    const dryMaintainer = removeIndexMaintainerHook(projectRoot, { dryRun: true });
+    if (dryMaintainer.status === 'dry-run') {
+      console.log(`  Would also remove: index-maintainer hook (${dryMaintainer.detail})`);
+    } else if (dryMaintainer.status === 'skipped') {
+      console.log(`  Would skip: index-maintainer hook — ${dryMaintainer.detail}`);
     }
     console.log('Dry run — nothing was removed.');
     return;
@@ -540,6 +657,21 @@ export async function runUninstall(args) {
   }
   // 'not-found' and 'dry-run' are silent in the main output.
 
+  // Reverse the index-maintainer daemon hook init copied into
+  // .claude/hooks/index-maintainer.mjs. Bytes-match check inside the
+  // helper guarantees we never delete a user-customised file.
+  const indexMaintainerResult = removeIndexMaintainerHook(projectRoot, { dryRun: parsed.dryRun });
+  if (indexMaintainerResult.status === 'removed') {
+    console.log(`  Removed: index-maintainer hook (${indexMaintainerResult.detail})`);
+    removed++;
+  } else if (indexMaintainerResult.status === 'skipped') {
+    console.log(`  Kept: index-maintainer hook — ${indexMaintainerResult.detail}`);
+    kept++;
+  } else if (indexMaintainerResult.status === 'error') {
+    console.log(`  Failed to remove index-maintainer hook: ${indexMaintainerResult.detail}`);
+    kept++;
+  }
+
   // Stop any daemon that an earlier SessionStart hook spawned. Otherwise the
   // old daemon keeps running and holding the socket after uninstall, which
   // surprises users. Never throws — `stopRunningDaemon` swallows every error.
@@ -556,11 +688,17 @@ export async function runUninstall(args) {
     console.log('');
     console.log('  Purging npm packages...');
     try {
-      execSync('npm uninstall sweet-search @sweet-search/native-darwin-arm64 @sweet-search/native-darwin-x64 @sweet-search/native-linux-x64-gnu @sweet-search/native-linux-arm64-gnu 2>/dev/null || true', {
+      const pkgs = ['sweet-search', ...getOptionalNativePackageNames()];
+      // Use shell-form so non-installed packages don't abort the whole
+      // command (npm exits non-zero per missing pkg). The OR-true keeps
+      // the script alive across npm exit codes from a partially-installed
+      // host (e.g. a Linux box without the darwin-* packages).
+      const cmd = `npm uninstall ${pkgs.join(' ')} 2>/dev/null || true`;
+      execSync(cmd, {
         cwd: projectRoot,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
-      console.log('  npm packages removed.');
+      console.log(`  npm packages removed (${pkgs.length} candidates).`);
     } catch {
       console.log('  npm uninstall failed (packages may not be installed).');
     }
