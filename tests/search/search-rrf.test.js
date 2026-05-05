@@ -50,21 +50,41 @@ describe('shouldRunFallback', () => {
     expect(shouldRunFallback([])).toBe('empty');
   });
 
-  it('returns "low_confidence" when top-1 < floor', () => {
-    expect(shouldRunFallback([{ score: 0.20, file: 'lib/x.js' }])).toBe('low_confidence');
+  it('returns null when top-1 is a NAMED source symbol — even at low score', () => {
+    // Anti-overfit: previous `low_confidence` trigger fired here and
+    // RRF noise beat the legitimate getServerInstance answer. The new
+    // rule: a named source symbol means retrieval is plausibly correct,
+    // RRF stays out of the way.
+    expect(shouldRunFallback([
+      { score: 0.20, metadata: { file: 'lib/server.js', name: 'getServerInstance' } },
+    ])).toBeNull();
   });
 
-  it('returns "no_source_in_top3" when top-3 has no implementation', () => {
+  it('fires when top-3 has no NAMED source — only docs/tests/typings', () => {
     const r = [
-      { score: 0.6, file: 'docs/Hooks.md' },
-      { score: 0.5, file: 'types/x.d.ts' },
-      { score: 0.4, file: 'test/foo.test.js' },
+      { score: 0.6, metadata: { file: 'docs/Hooks.md', name: 'preHandler' } },
+      { score: 0.5, metadata: { file: 'types/x.d.ts', name: 'FastifyInstance' } },
+      { score: 0.4, metadata: { file: 'test/foo.test.js', name: 'TestX' } },
     ];
-    expect(shouldRunFallback(r)).toBe('no_source_in_top3');
+    expect(shouldRunFallback(r)).toBe('no_good_source_in_top3');
   });
 
-  it('returns null when top-1 is a strong source result', () => {
-    expect(shouldRunFallback([{ score: 0.7, file: 'lib/server.js' }])).toBeNull();
+  it('fires when source chunks have NO entity name (cAST orphan tails)', () => {
+    const r = [
+      { score: 0.6, metadata: { file: 'lib/x.js', name: null } },
+      { score: 0.5, metadata: { file: 'lib/y.js', name: '' } },
+      { score: 0.4, metadata: { file: 'lib/z.js' } },
+    ];
+    expect(shouldRunFallback(r)).toBe('no_good_source_in_top3');
+  });
+
+  it('returns null when a strong named source is in top-3 (even at rank 2 or 3)', () => {
+    const r = [
+      { score: 0.6, metadata: { file: 'docs/Hooks.md', name: 'preHandler' } },
+      { score: 0.5, metadata: { file: 'lib/server.js', name: 'createServer' } },
+      { score: 0.4, metadata: { file: 'test/foo.test.js', name: 'TestX' } },
+    ];
+    expect(shouldRunFallback(r)).toBeNull();
   });
 });
 
@@ -148,14 +168,35 @@ function mockSearcher(perKeywordResultsByQuery) {
 }
 
 describe('runRRFFallback', () => {
-  it('does nothing when results are strong (top-1 source, score above floor)', async () => {
-    const existing = [{ score: 0.7, file: 'lib/server.js' }];
+  it('does nothing when top-3 has a good named source candidate', async () => {
+    const existing = [
+      { score: 0.7, metadata: { file: 'lib/server.js', name: 'createServer' } },
+    ];
     const out = await runRRFFallback(existing, 'create http server', {
       searcher: mockSearcher({}),
     });
     expect(out.results).toBe(existing);
     expect(out.stats.reason).toBeNull();
     expect(out.stats.injected).toBe(0);
+  });
+
+  it('does nothing when a named source is at rank 2 (even if top-1 is docs)', async () => {
+    // Anti-overfit guard for the new trigger: if ANY of top-3 is a
+    // named-source chunk, retrieval is plausibly correct — don't
+    // RRF-flood the candidate set just because top-1 happens to be a doc.
+    const existing = [
+      { score: 0.6, metadata: { file: 'docs/Hooks.md', name: 'preHandler' } },
+      { score: 0.5, metadata: { file: 'lib/server.js', name: 'createServer' } },
+    ];
+    const out = await runRRFFallback(existing, 'create http server', {
+      searcher: mockSearcher({
+        create: [{ id: 'noise', metadata: { file: 'noise.js', startLine: 1, endLine: 5 } }],
+        http: [{ id: 'noise', metadata: { file: 'noise.js', startLine: 1, endLine: 5 } }],
+        server: [{ id: 'noise', metadata: { file: 'noise.js', startLine: 1, endLine: 5 } }],
+      }),
+    });
+    expect(out.stats.reason).toBeNull();
+    expect(out.results).toBe(existing);
   });
 
   it('injects RRF candidates when initial results are empty', async () => {
@@ -186,12 +227,12 @@ describe('runRRFFallback', () => {
     expect(idxCS).toBeGreaterThanOrEqual(0);
   });
 
-  it('boosts existing entries instead of double-adding', async () => {
+  it('boosts existing entries instead of double-adding (when fallback fires)', async () => {
+    // Trigger fallback by having top-1 be unnamed (no good source)
     const cs = {
       id: 'cs',
       score: 0.20,
-      file: 'lib/validation.js',
-      metadata: { file: 'lib/validation.js', startLine: 57, endLine: 116, name: 'compileSchemasForValidation' },
+      metadata: { file: 'lib/validation.js', startLine: 57, endLine: 116, name: null },
     };
     const out = await runRRFFallback([cs], 'how does Fastify compile schemas registration', {
       searcher: mockSearcher({
@@ -201,6 +242,7 @@ describe('runRRFFallback', () => {
         registration: [],
       }),
     });
+    expect(out.stats.reason).toBe('no_good_source_in_top3');
     expect(out.stats.boosted).toBe(1);
     expect(out.stats.injected).toBe(0);
     expect(out.results.length).toBe(1);
