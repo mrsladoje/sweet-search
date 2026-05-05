@@ -397,6 +397,96 @@ export class CodeGraphRepository {
   }
 
   /**
+   * Build a one-time, in-memory ref-count index covering every entity name
+   * in the call graph. Lazily populated on first use, cached for the
+   * lifetime of this repository instance.
+   *
+   * The index is a `Map<name, total_call_count>` keyed by BOTH:
+   *   1. the full qualified target_name (e.g. `fastify.decorate` → 34)
+   *   2. its last segment as a suffix key (e.g. suffix `decorate` accumulates
+   *      across ALL qualified forms — `fastify.decorate` + `app.decorate` +
+   *      `child.decorate` etc., totalling 41)
+   *
+   * Why both: the suffix key is what callers usually want — entity name
+   * `decorate` should reflect every qualified call site. The full key is
+   * preserved so a query with the qualified name (rare) still resolves.
+   *
+   * Cost: one `GROUP BY target_name` aggregate query at first call (~10-15
+   * ms on a 20k-row relationships table) + one O(n) pass to fold suffixes.
+   * Per-name lookup is O(1) thereafter, eliminating the previous +10 ms
+   * per search caused by a fresh OR-of-LIKE-patterns query.
+   *
+   * The index is in-memory only — fine for read-only search sessions
+   * because relationships don't change during a session. If the underlying
+   * DB is reopened (re-index), allocate a new repo instance.
+   */
+  prebuildRefCountIndex() {
+    if (this._refCountIndex) return this._refCountIndex;
+    const map = new Map();
+    const db = this._open();
+    if (!db) {
+      this._refCountIndex = map;
+      return map;
+    }
+    try {
+      const rows = db.prepare(`
+        SELECT target_name, COUNT(*) as cnt
+        FROM relationships
+        WHERE type = 'calls' AND target_name IS NOT NULL AND target_name != ''
+        GROUP BY target_name
+      `).all();
+      for (const row of rows) {
+        const tn = row.target_name;
+        const cnt = row.cnt;
+        // Full target_name as key (handles unqualified-call queries).
+        map.set(tn, (map.get(tn) || 0) + cnt);
+        // Last `.`-segment as suffix key (the entity's bare name).
+        const dot = tn.lastIndexOf('.');
+        if (dot > 0 && dot < tn.length - 1) {
+          const suffix = tn.slice(dot + 1);
+          if (suffix !== tn) {
+            map.set(suffix, (map.get(suffix) || 0) + cnt);
+          }
+        }
+      }
+    } catch {
+      // Leave map empty; callers treat missing as 0.
+    }
+    this._refCountIndex = map;
+    return map;
+  }
+
+  /**
+   * Batched incoming-call count by entity NAME.
+   *
+   * For each name in `names`, returns the total number of `relationships`
+   * rows of type='calls' whose target is either the bare name or any
+   * qualified suffix (e.g. `fastify.decorate`, `app.decorate`). Backed by
+   * the lazy in-memory index built by `prebuildRefCountIndex` — first call
+   * pays ~10 ms; subsequent calls are sub-millisecond.
+   *
+   * Counts EXCLUDE 'imports', 'uses', 'extends', 'implements' — only direct
+   * `calls` participate. This keeps the signal behavioural (function-was-
+   * invoked) rather than structural (type-was-mentioned), matching the
+   * Aider PageRank / Cody ref-rank intent.
+   *
+   * Returns a Map<name, count> with one entry per input name (counts of 0
+   * are present, not omitted).
+   *
+   * @param {string[]} names
+   * @returns {Map<string, number>}
+   */
+  countIncomingCallsByNames(names) {
+    const out = new Map();
+    if (!Array.isArray(names) || names.length === 0) return out;
+    const uniq = [...new Set(names.filter(n => typeof n === 'string' && n.length >= 2))];
+    if (uniq.length === 0) return out;
+    const idx = this.prebuildRefCountIndex();
+    for (const name of uniq) out.set(name, idx.get(name) || 0);
+    return out;
+  }
+
+  /**
    * Get the index timestamp for a file (from stale_since or fallback to mtime).
    *
    * Used by the context expander to populate `stale` and `indexedAt` fields

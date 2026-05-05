@@ -456,6 +456,312 @@ function inferEntityKindFromText(text) {
   return '';
 }
 
+// Declarative / doc-string-heavy chunk demotion (added 2026-05-05).
+//
+// Three narrow, independent content-shape triggers — each catches a specific
+// failure shape observed in the May-05 novel-probe analysis:
+//
+//   T1. Declarative-entity demotion. When the chunk's primary entity type is
+//       `namespace`, `interface`, or `typeAlias`, the chunk is by definition
+//       a declaration block — signatures / property decls without behaviour.
+//       Such chunks should not outrank `function`/`impl` chunks for
+//       procedural queries. Catches the .d.ts namespace / interface case.
+//
+//   T2. Raw-string-dominant impl. When > 50 % of an `impl` chunk's non-blank
+//       characters live inside Rust raw-string literals (`r#"..."#`,
+//       `r"..."`), the chunk is mostly documentation. Catches clap-style
+//       flag impls whose `doc_long()` returns a 30-line description (e.g.
+//       `impl Flag for SearchZip`).
+//
+//   T3. Stub-impl. Multiple `fn` definitions in an `impl` chunk with avg
+//       body line count < 4. Catches clap-style impls whose individual
+//       `doc_long()` is small enough to escape T2 but whose methods are
+//       still mostly 1-line literal returns (e.g. `impl Flag for
+//       CaseSensitive`).
+//
+// All three triggers are intent-gated to `implementation` queries, so a
+// phrasing like "what is the FastifyInstance interface" — which legitimately
+// wants a declaration — is unaffected. T2/T3 are also restricted to chunks
+// whose primary entity type is `impl` to avoid touching anything outside
+// the Rust idiom we're targeting.
+//
+// Defaults are conservative. An earlier "execution density" heuristic
+// (penalise any chunk with low control-flow ratio) over-fired on data-
+// declaration chunks like `lib/errors.js` constant tables, which are the
+// genuinely-correct answer for "how does Fastify handle errors". The
+// triggers here are shape-specific instead of density-specific.
+//
+// Disable everything with `ablations: 'no-body-density'` or
+// SWEET_SEARCH_BODY_DENSITY=0; per-trigger overrides via
+// SWEET_SEARCH_DECLARATIVE_FACTOR / SWEET_SEARCH_RAWSTRING_FACTOR /
+// SWEET_SEARCH_STUB_FACTOR.
+const DECLARATIVE_ENTITY_TYPES = new Set(['namespace', 'interface', 'typealias']);
+
+function envFloatRange(name, dflt) {
+  const v = process.env[name];
+  if (v == null || v === '') return dflt;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : dflt;
+}
+
+/**
+ * Detect whether a Rust `impl` chunk is a "stub impl" — multiple short fn
+ * definitions, none with a real body. Catches the clap-style flag-arg
+ * pattern (each arg is an `impl Flag for X` whose `name_long`, `doc_short`,
+ * etc. are 1-line literal returns), independent of whether `doc_long`
+ * happens to carry a big raw-string description.
+ *
+ * Returns the estimated average body line count, or `Infinity` if the chunk
+ * contains no fn definitions. Lower = more stub-like.
+ */
+export function avgFnBodyLines(text) {
+  if (typeof text !== 'string' || text.length === 0) return Infinity;
+  const fnRe = /^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+|const\s+|unsafe\s+)*fn\s+\w+/gm;
+  const matches = [];
+  let m;
+  while ((m = fnRe.exec(text)) !== null) matches.push(m.index);
+  if (matches.length < 2) return Infinity;
+  let totalBodyLines = 0;
+  let counted = 0;
+  for (const startIdx of matches) {
+    // Find the opening `{` after this fn signature.
+    const openIdx = text.indexOf('{', startIdx);
+    if (openIdx === -1) continue;
+    // Walk braces to find the matching close.
+    let depth = 1;
+    let j = openIdx + 1;
+    let inString = false;
+    let stringTerm = null;
+    while (j < text.length && depth > 0) {
+      const ch = text[j];
+      if (inString) {
+        if (ch === '\\') { j += 2; continue; }
+        if (ch === stringTerm) inString = false;
+      } else {
+        if (ch === '"' || ch === "'") { inString = true; stringTerm = ch; }
+        else if (ch === '{') depth++;
+        else if (ch === '}') depth--;
+      }
+      j++;
+    }
+    if (depth !== 0) continue;
+    const body = text.slice(openIdx + 1, j - 1);
+    const bodyLines = body.split('\n').filter(l => l.trim().length > 0).length;
+    totalBodyLines += bodyLines;
+    counted++;
+  }
+  if (counted === 0) return Infinity;
+  return totalBodyLines / counted;
+}
+
+/**
+ * Estimate the fraction of a chunk's characters that live inside Rust
+ * raw-string literals. Returns a number in [0, 1].
+ *
+ * Heuristic: scan the text once tracking entry into `r#"`/`r"` regions and
+ * exit at the matching `"#`/`"`. Counts only the inner payload chars.
+ */
+export function rawStringDensity(text) {
+  if (typeof text !== 'string' || text.length === 0) return 0;
+  let i = 0;
+  let inside = 0;
+  let total = 0;
+  const len = text.length;
+  while (i < len) {
+    if (!/\s/.test(text[i])) total++;
+    // Detect `r#*"` opener.
+    if (text[i] === 'r' && (text[i + 1] === '"' || text[i + 1] === '#')) {
+      let j = i + 1;
+      let hashCount = 0;
+      while (text[j] === '#') { hashCount++; j++; }
+      if (text[j] === '"') {
+        // We're inside a raw string. Find the matching close.
+        const closeNeedle = '"' + '#'.repeat(hashCount);
+        const closeAt = text.indexOf(closeNeedle, j + 1);
+        if (closeAt === -1) {
+          // unterminated — count rest of file as inside
+          for (let k = j + 1; k < len; k++) {
+            if (!/\s/.test(text[k])) { inside++; total++; }
+          }
+          return total === 0 ? 0 : inside / total;
+        }
+        for (let k = j + 1; k < closeAt; k++) {
+          if (!/\s/.test(text[k])) { inside++; total++; }
+        }
+        i = closeAt + closeNeedle.length;
+        continue;
+      }
+    }
+    i++;
+  }
+  return total === 0 ? 0 : inside / total;
+}
+
+function bodyDensityMultiplier(result, opts = {}) {
+  if (process.env.SWEET_SEARCH_BODY_DENSITY === '0'
+      || process.env.SWEET_SEARCH_BODY_DENSITY === 'false') {
+    return 1;
+  }
+  // Procedural-intent gate: a query asking "what is the X interface" should
+  // not penalize declaration chunks.
+  const intent = opts.intent || classifyFileKindIntent(opts.query || '');
+  if (intent !== 'implementation') return 1;
+
+  // Trigger 1: declarative-entity types. Cheap — uses already-known metadata.
+  const recordedType = normalizeType(resolveResultType(result));
+  const inferredType = recordedType && recordedType !== 'code' && recordedType !== 'chunk'
+    ? recordedType
+    : normalizeType(resolveEntityKindInfo(result, opts)?.type);
+  let mult = 1;
+  if (DECLARATIVE_ENTITY_TYPES.has(inferredType)) {
+    const declFactor = envFloatRange('SWEET_SEARCH_DECLARATIVE_FACTOR', 0.85);
+    mult *= declFactor;
+  }
+
+  // Triggers 2 & 3: text-content-derived signals for `impl` chunks.
+  // Both target Rust impl blocks specifically because the failure shape
+  // we observed (clap-style flag-arg impls) is a Rust idiom — it doesn't
+  // exist in JS/TS/Go/Python.
+  //
+  //   2. Raw-string-dominant — > rsThreshold of non-blank chars live inside
+  //      a Rust raw-string literal. Catches impls where `doc_long()` is a
+  //      large `r#"..."#` description (e.g. `impl Flag for SearchZip`).
+  //
+  //   3. Stub-impl — multiple fn defs with avg body line count < stubMaxLines.
+  //      Catches impls where every method is a 1-line literal return
+  //      (e.g. `impl Flag for CaseSensitive` whose 6 methods total ~6 body
+  //      lines), independent of doc string size.
+  //
+  // Both apply 0.85× by default. They MAY stack on a chunk that hits both,
+  // but the combined factor (~0.72) is still milder than the existing
+  // doc/test demotion (0.35) so a true impl chunk that wrongly trips one
+  // of these can still recover via other signals.
+  if (inferredType === 'impl') {
+    const text = resolveResultText(result, opts);
+    if (text && text.length > 200) {
+      const rsDensity = rawStringDensity(text);
+      const rsThreshold = envFloatRange('SWEET_SEARCH_RAWSTRING_THRESHOLD', 0.50);
+      if (rsDensity > rsThreshold) {
+        const rsFactor = envFloatRange('SWEET_SEARCH_RAWSTRING_FACTOR', 0.85);
+        mult *= rsFactor;
+      }
+
+      const avgBody = avgFnBodyLines(text);
+      // Threshold of 4.0 catches:
+      //   - CaseSensitive impl in ripgrep (avg body ≈ 2.6 incl. raw-string lines)
+      //   - SearchZip impl in ripgrep      (avg body ≈ 3.8)
+      //   - Other clap-style flag-arg impls with mostly 1-line literal returns
+      // While leaving alone real impls — Display/Iterator/Builder typically
+      // have avg body ≥ 5 lines because their core methods are non-trivial.
+      const stubMax = envFloatRange('SWEET_SEARCH_STUB_MAX_LINES', 4.0);
+      if (avgBody < stubMax) {
+        const stubFactor = envFloatRange('SWEET_SEARCH_STUB_FACTOR', 0.85);
+        mult *= stubFactor;
+      }
+    }
+  }
+
+  return mult;
+}
+
+// Reference-count boost (added 2026-05-05). Aider-style behavioural-graph
+// signal: chunks whose primary entity is invoked from many call sites get
+// a small log-scaled boost, capped low enough that it can't dominate
+// embedding scores.
+//
+// Why this matters. The bi-encoder ranks `lib/decorate.js`'s `decorate` fn
+// purely on text similarity, where doc-rich `.d.ts` namespace blocks or
+// generic helpers can outrank it. The call graph encodes that `decorate`
+// is invoked 41 times across the codebase while the namespace declaration
+// is referenced almost exclusively from imports (4 hits). That's a strong
+// behavioural signal: this entity is structurally important.
+//
+// Restrictions:
+//   - Only fires on `function` / `method` / `impl` entities. Declarative
+//     types are handled by T1 above and shouldn't compete on call count.
+//   - Only fires under `intent='implementation'`. Asking "what is the
+//     ConfigError type" should not promote a fn just because it's called
+//     a lot.
+//   - Counts `type='calls'` only — not `imports`/`uses`/`extends`. Imports
+//     are noisy (every file imports a few standards) and don't reflect
+//     behavioural invocation.
+//   - Boost is `1 + alpha · log(1 + count)` capped at REF_BOOST_CAP. With
+//     alpha=0.025 and cap=1.10, 30 calls yields ~1.085, 1000 calls hits
+//     the cap. So a heavily-tested helper can't run away with the ranking.
+//   - Skipped on chunks larger than REF_BOOST_LARGE_LINES (default 80) to
+//     avoid worsening Cluster B (oversized parent chunks like a 700-line
+//     factory function whose graph degree is naturally high).
+//
+// Disable with `ablations: 'no-ref-count-boost'` or
+// SWEET_SEARCH_REF_BOOST_ALPHA=0.
+const REF_BOOSTABLE_TYPES = new Set(['function', 'method', 'impl']);
+
+function referenceCountBoost(result, refCounts, opts = {}) {
+  if (!refCounts || refCounts.size === 0) return 1;
+  if (process.env.SWEET_SEARCH_REF_BOOST_ALPHA === '0') return 1;
+
+  const intent = opts.intent || classifyFileKindIntent(opts.query || '');
+  if (intent !== 'implementation') return 1;
+
+  const recordedType = normalizeType(resolveResultType(result));
+  const inferredType = recordedType && recordedType !== 'code' && recordedType !== 'chunk'
+    ? recordedType
+    : normalizeType(resolveEntityKindInfo(result, opts)?.type);
+  if (!REF_BOOSTABLE_TYPES.has(inferredType)) return 1;
+
+  const meta = result?.metadata || {};
+  const start = result?.startLine ?? meta.startLine;
+  const end = result?.endLine ?? meta.endLine;
+  if (Number.isFinite(start) && Number.isFinite(end)) {
+    const lineCount = Math.max(1, end - start + 1);
+    const largeThresh = Number(process.env.SWEET_SEARCH_REF_BOOST_LARGE_LINES || 80);
+    if (lineCount > largeThresh) return 1;
+  }
+
+  const name = resolveResultName(result) || resolveEntityKindInfo(result, opts)?.name;
+  if (!name || name.length < 3) return 1;
+  const count = refCounts.get(name) || 0;
+  if (count <= 0) return 1;
+
+  const alpha = envFloatRange('SWEET_SEARCH_REF_BOOST_ALPHA', 0.025);
+  const cap = (() => {
+    const v = process.env.SWEET_SEARCH_REF_BOOST_CAP;
+    if (v == null || v === '') return 1.10;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 1.0 && n <= 1.5 ? n : 1.10;
+  })();
+  const boost = Math.min(cap, 1 + alpha * Math.log(1 + count));
+  return boost;
+}
+
+// Pre-compute incoming-call counts for ALL candidate names in one DB query.
+// Without this, the multiplier function would do N queries per result set
+// (one per candidate), which adds 100-200 ms in practice.
+function buildRefCountMap(results, opts = {}) {
+  const repo = opts.codeGraphRepo;
+  if (!repo || typeof repo.countIncomingCallsByNames !== 'function') return new Map();
+  const intent = opts.intent || classifyFileKindIntent(opts.query || '');
+  if (intent !== 'implementation') return new Map();
+  if (process.env.SWEET_SEARCH_REF_BOOST_ALPHA === '0') return new Map();
+
+  const names = [];
+  for (const r of results) {
+    const recordedType = normalizeType(resolveResultType(r));
+    const inferredType = recordedType && recordedType !== 'code' && recordedType !== 'chunk'
+      ? recordedType
+      : normalizeType(resolveEntityKindInfo(r, opts)?.type);
+    if (!REF_BOOSTABLE_TYPES.has(inferredType)) continue;
+    const name = resolveResultName(r) || resolveEntityKindInfo(r, opts)?.name;
+    if (name && name.length >= 3) names.push(name);
+  }
+  if (names.length === 0) return new Map();
+  try {
+    return repo.countIncomingCallsByNames(names);
+  } catch {
+    return new Map();
+  }
+}
+
 // Removed (2026-05-05): file-header chunk detection became redundant
 // once cAST sibling-merge was confirmed. With cAST, a chunk starting at
 // line 1 of a source file naturally merges the package decl + imports
@@ -487,6 +793,12 @@ export function applyResultDemotions(results, opts = {}) {
     ? new Set()
     : new Set([...nameHints].map(s => s.toLowerCase()));
 
+  // Pre-compute incoming-call counts in a single batched query so the
+  // per-result loop doesn't make N round trips to SQLite.
+  const refCounts = !hasAblation(ablations, 'no-ref-count-boost')
+    ? buildRefCountMap(results, opts)
+    : new Map();
+
   let changed = false;
   const window = Math.min(opts.window ?? results.length, results.length);
   const adjusted = results.slice(0, window).map((result, index) => {
@@ -511,6 +823,22 @@ export function applyResultDemotions(results, opts = {}) {
     if (nameMult !== 1) {
       mult *= nameMult;
       details.push(`name-precision:${nameMult.toFixed(2)}`);
+    }
+
+    if (!hasAblation(ablations, 'no-body-density')) {
+      const bodyMult = bodyDensityMultiplier(result, opts);
+      if (bodyMult !== 1) {
+        mult *= bodyMult;
+        details.push(`body-density:${bodyMult.toFixed(2)}`);
+      }
+    }
+
+    if (!hasAblation(ablations, 'no-ref-count-boost')) {
+      const refMult = referenceCountBoost(result, refCounts, opts);
+      if (refMult !== 1) {
+        mult *= refMult;
+        details.push(`ref-count:${refMult.toFixed(2)}`);
+      }
     }
 
     const baseScore = typeof result.score === 'number' ? result.score : 0;

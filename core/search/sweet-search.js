@@ -326,6 +326,21 @@ export class SweetSearch {
 
     await warmupEmbedding({ initVocabulary: true, initSemanticCache: true });
 
+    // Pre-build the call-graph ref-count index so the first search query
+    // doesn't pay its 10-50 ms construction cost. This piggybacks on the
+    // existing warmup phase — model load already takes ~700 ms, so this
+    // adds at most a few ms to init and removes the cold-start spike from
+    // the search hot path. Skipped when the graph DB doesn't exist (e.g.
+    // grep-only mode).
+    if (this.hasGraphIndex && this.codeGraphRepo
+        && typeof this.codeGraphRepo.prebuildRefCountIndex === 'function') {
+      try {
+        this.codeGraphRepo.prebuildRefCountIndex();
+      } catch {
+        // Index build is purely an optimisation; failure is non-fatal.
+      }
+    }
+
     if (shouldUseLocalReranker()) {
       try {
         const localReranker = getGlobalLocalReranker();
