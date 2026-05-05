@@ -519,20 +519,32 @@ export class TreeSitterProvider {
         const signature = firstBoundary ? this._extractSignature(firstBoundary, content) : null;
 
         // Tail-orphan merge: when the buffer about to be flushed is
-        // small AND has no boundary symbol of its own AND the previous
-        // emitted chunk shares the same parent context, append the
-        // tail's text into the previous chunk and extend its endLine.
-        // Skipped when the merge would push the previous chunk past
-        // 1.25× maxSize (rare in practice; allows mild overflow).
+        // small AND has no boundary symbol of its own, append it into
+        // the previous chunk PROVIDED:
+        //   (a) the previous chunk's endLine is within 5 lines of this
+        //       buffer's startLine (spatial locality — avoids merging
+        //       a `module.exports` at line 163 with a class method at
+        //       line 30)
+        //   (b) merging keeps total under 1.25× maxSize (avoid overflow
+        //       cliffs)
+        //
+        // We deliberately don't require same parentChunkId because the
+        // canonical orphan-tail case (Lib/schema-controller.js) has the
+        // tail at FILE-level (parent=null) but the previous emitted
+        // chunk is the last METHOD of a class (parent=class_id) emitted
+        // via the recursive call. Spatial proximity is the more
+        // structural test — a 2-line trailing assignment immediately
+        // after a class block belongs with that block.
         const prev = chunks[chunks.length - 1];
         const isOrphanTail = !firstBoundary
           && text.trim().length < SMALL_TAIL_THRESHOLD;
-        const sameParent = prev
-          && prev.parentChunkId === (parentInfo?.chunkId || null);
+        const bufferStart = buffer[0].startPosition.row;
+        const linesGap = prev ? bufferStart - prev.endLine : Infinity;
+        const isSpatiallyClose = linesGap >= 0 && linesGap <= 5;
         const mergedSize = prev ? (prev.text.length + 1 + text.trim().length) : Infinity;
         const fitsHeadroom = mergedSize <= maxSize * TAIL_MERGE_HEADROOM;
 
-        if (isOrphanTail && prev && sameParent && fitsHeadroom) {
+        if (isOrphanTail && prev && isSpatiallyClose && fitsHeadroom) {
           prev.text = prev.text + '\n' + text.trim();
           prev.endLine = buffer[buffer.length - 1].endPosition.row;
         } else {
