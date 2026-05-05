@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   applyResultDemotions,
   extractNameHints,
-  isFileHeaderChunk,
   isTestSupportFile,
 } from '../../core/ranking/file-kind-ranking.js';
+
+// Note: `isFileHeaderChunk` and `isTinyAncillaryChunk` were removed
+// (2026-05-05) once cAST sibling-merge in tree-sitter-provider.js made
+// those rules structurally redundant. Their canaries below are kept as
+// behavioural assertions on the path that remains: anti-overfit on
+// test-support detection + name-precision boosts.
 
 describe('anti-overfit scoring canaries', () => {
   it('does not flag runtime-assertion modules as test-support', () => {
@@ -20,28 +25,6 @@ describe('anti-overfit scoring canaries', () => {
     ].join('\n');
 
     expect(isTestSupportFile('src/runtime/invariants.js', jsRuntimeChecks)).toBe(false);
-  });
-
-  it('does not demote a normal file header followed by real code', () => {
-    const content = [
-      ...Array.from({ length: 50 }, (_, i) => `// API docs line ${i}`),
-      'package binding',
-      'import "net/http"',
-      'func SelectBinding(method string) Binding {',
-      '  if method == http.MethodGet {',
-      '    return Form',
-      '  }',
-      '  return JSON',
-      '}',
-    ].join('\n');
-
-    expect(isFileHeaderChunk({
-      file: 'binding/default.go',
-      startLine: 1,
-      endLine: 58,
-      content,
-      metadata: { file: 'binding/default.go', startLine: 1, endLine: 58 },
-    })).toBe(false);
   });
 
   it('does not boost a function named Mode for an enum Mode query', () => {
@@ -64,7 +47,6 @@ describe('anti-overfit scoring canaries', () => {
 
     const ranked = applyResultDemotions([method, enumDecl], {
       query: 'enum Mode',
-      ablations: new Set(['no-tiny-floor']),
     });
 
     expect(ranked[0].metadata.type).toBe('enum');
@@ -73,13 +55,6 @@ describe('anti-overfit scoring canaries', () => {
   });
 
   it('covers Go, Rust, JS, and Python rule fixtures', () => {
-    expect(isFileHeaderChunk({
-      file: 'pkg/bind.go',
-      startLine: 1,
-      endLine: 8,
-      content: 'package bind\n\nimport (\n  "net/http"\n  "strings"\n)\n',
-    })).toBe(true);
-
     expect(isTestSupportFile(
       'crates/searcher/src/testutil.rs',
       '#![cfg(test)]\npub fn fixture() {}\n',

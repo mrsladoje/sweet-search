@@ -6,7 +6,6 @@ import {
   applyResultDemotions,
   entityKindPreferenceFromQuery,
   isTestChunk,
-  isTinyAncillaryChunk,
   testNameQueryOverlap,
 } from '../../core/ranking/file-kind-ranking.js';
 
@@ -407,46 +406,12 @@ describe('applyFileKindRanking', () => {
 });
 
 describe('applyResultDemotions', () => {
-  it('demotes tiny source footer chunks independent of file kind', () => {
-    const footer = {
-      file: 'lib/schema-controller.js',
-      startLine: 163,
-      endLine: 164,
-      content: 'SchemaController.buildSchemaController = buildSchemaController\nmodule.exports = SchemaController',
-      score: 0.60,
-    };
-    const schemaClass = {
-      file: 'lib/schema-controller.js',
-      startLine: 30,
-      endLine: 100,
-      content: 'class SchemaController {\n  constructor () {}\n}',
-      score: 0.50,
-    };
-
-    expect(isTinyAncillaryChunk(footer)).toBe(true);
-    const out = applyResultDemotions([footer, schemaClass], {
-      query: 'what is kSchemaController and what does it do',
-    });
-
-    expect(out[0].file).toBe(schemaClass.file);
-    expect(out[0].startLine).toBe(schemaClass.startLine);
-    expect(out[1].score).toBeCloseTo(0.18);
-  });
-
-  it('does not demote tiny declarations', () => {
-    const declaration = {
-      file: 'lib/symbols.js',
-      startLine: 10,
-      endLine: 10,
-      content: 'const kSchemaController = Symbol(\'schemaController\')',
-      score: 0.60,
-    };
-    const input = [declaration];
-    expect(isTinyAncillaryChunk(declaration)).toBe(false);
-    expect(applyResultDemotions(input, {
-      query: 'what is kSchemaController',
-    })).toBe(input);
-  });
+  // Note: the standalone tiny-chunk-floor and file-header-demotion rules
+  // were removed once cAST sibling-merge in tree-sitter-provider.js was
+  // confirmed in production — those rules became redundant. The only
+  // small-chunk path that still fires is `tinyAncillaryFactor` inside
+  // applyFileKindRanking, which is a sub-rule of doc/test demotion (not
+  // a general size penalty).
 
   it('demotes Rust inline #[test] fn whose name overlaps query', () => {
     const r = {
