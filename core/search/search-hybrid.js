@@ -12,6 +12,7 @@ import { routeQuery } from '../query/query-router.js';
 import { applyMMR, shouldApplyMMR, getLambdaForIntent } from '../ranking/mmr.js';
 import { applyFileKindRanking, applyResultDemotions, classifyFileKindIntent, detectFileKind } from '../ranking/file-kind-ranking.js';
 import { injectAnchorCandidates } from './search-anchor.js';
+import { runRRFFallback } from './search-rrf.js';
 
 const QUERY_SCAFFOLD_RE = /^(?:where|when|how)\s+(?:does|do|did|is|are|was|were|can|could|should)?\s*/i;
 const IMPLEMENTATION_VERB_RE = /^(?:abort|bind|build|call|compute|create|decode|decide|detect|encode|handle|load|parse|parsed|redirect|register|run|search|skip|transform|validate|write)s?\b/i;
@@ -188,10 +189,60 @@ export async function hybridSearchV2(query, options = {}) {
     }
   }
 
-  this.log(`Hybrid V2 (${method}, alpha=${results[0]?.alpha?.toFixed(2) || '?'}): ${lexicalResults.length} lex + ${semanticResults.length} sem -> ${results.length} final`);
+  // Step 6: Multi-query BM25F + RRF tail fallback.
+  // Last-resort safety net: when hybrid + IAR + rewrite-retry STILL leaves
+  // top-1 below the confidence floor, the candidate list empty, or no
+  // source file in top-3, fire one BM25F query per content keyword
+  // and fuse with reciprocal-rank-fusion. RRF (Cormack 2009) is the
+  // SOTA pattern used by SWE-grep, Polarity Omnigrep, and Cody Deep
+  // Search; corpus-agnostic (no stopword denylist) and naturally
+  // demotes single-keyword noise hits via rank-position weighting.
+  // Disable via ablations 'no-rrf-fallback'.
+  let finalResults = results;
+  let fallbackStats = null;
+  if (options.allowKeywordFallback !== false) {
+    const fb = await runRRFFallback(results, query, {
+      searcher: this,
+      ablations: options.ablations,
+      confidenceFloor: options.confidenceFloor,
+    });
+    fallbackStats = fb.stats;
+    if (fb.results !== results) {
+      // Re-run BOTH file-kind ranking AND content demotions on the merged
+      // set so doc/test/example demotion AND tiny/test-name/entity-kind
+      // rules apply to the RRF-injected chunks. Without the file-kind
+      // re-pass, a test-file chunk that RRF-fused on a couple of keywords
+      // would slip past the primary doc/test demotion.
+      const reRanked = applyFileKindRanking(fb.results, {
+        intent: fileKindIntent,
+        window: options.fileKindWindow ?? 100,
+        docFactor: options.hybridDocFactor ?? 0.35,
+        testFactor: options.hybridTestFactor ?? 0.35,
+        typeFactor: options.hybridTypeFactor ?? 0.70,
+        ancillaryFactor: options.hybridAncillaryFactor ?? 0.15,
+        tinyAncillaryFactor: options.hybridTinyAncillaryFactor ?? 0.05,
+      });
+      const remerged = applyResultDemotions(reRanked, {
+        query,
+        window: options.resultDemotionWindow ?? 100,
+        ablations: options.ablations,
+        projectRoot: this.projectRoot,
+        codeGraphRepo: this.codeGraphRepo,
+      });
+      finalResults = remerged.slice(0, k).map(r => ({
+        ...r,
+        searchPath: r.searchPath || 'hybrid',
+        hybridScore: r.score,
+        fusionMethod: method,
+      }));
+      this.log(`Hybrid RRF fallback (${fb.stats.reason}, ${fb.stats.keywords.length}kw, ${fb.stats.fusedCount} fused): +${fb.stats.injected} new, +${fb.stats.boosted} boosted`);
+    }
+  }
+
+  this.log(`Hybrid V2 (${method}, alpha=${finalResults[0]?.alpha?.toFixed(2) || '?'}): ${lexicalResults.length} lex + ${semanticResults.length} sem -> ${finalResults.length} final`);
 
   return {
-    results,
+    results: finalResults,
     semanticStats,
     fusionStats: {
       method,
@@ -204,6 +255,7 @@ export async function hybridSearchV2(query, options = {}) {
       fileKindRankingApplied: rankedByFileKind !== boosted,
       resultDemotionsApplied: demoted !== rankedByFileKind,
       anchorInjection: anchorStats,
+      keywordFallback: fallbackStats,
     },
   };
 }
