@@ -490,6 +490,22 @@ export class TreeSitterProvider {
     let buffer = [];
     let bufferSize = 0;
 
+    // SMALL_TAIL_THRESHOLD: chunks below this character count are
+    // considered "orphan tails" — they tend to be `module.exports`,
+    // closing braces, trailing const declarations, etc. that cAST's
+    // sibling-merge couldn't fit into the previous buffer when it
+    // overflowed maxSize. Merging them into the preceding emitted
+    // chunk (when it shares the same parent context and won't push
+    // past 1.25× maxSize) gives the agent a coherent unit instead
+    // of a 2-line dangling chunk that wins retrieval on its own.
+    //
+    // Verified canary: lib/schema-controller.js was emitting
+    // [148-161 setupSerializer] followed by [163-164 module.exports]
+    // as two separate chunks — the orphan tail won S2-Q3 retrieval.
+    // After merge, the tail joins setupSerializer.
+    const SMALL_TAIL_THRESHOLD = 100;
+    const TAIL_MERGE_HEADROOM = 1.25;
+
     const flushBuffer = () => {
       if (buffer.length === 0) return;
       const text = buffer
@@ -502,18 +518,37 @@ export class TreeSitterProvider {
         const type = firstBoundary ? (NODE_TYPE_MAP[firstBoundary.type] || 'code') : 'code';
         const signature = firstBoundary ? this._extractSignature(firstBoundary, content) : null;
 
-        chunks.push({
-          chunkId: this._nextChunkId(),
-          parentChunkId: parentInfo?.chunkId || null,
-          parentSymbol: parentInfo?.name || null,
-          parentType: parentInfo?.type || null,
-          text: text.trim(),
-          startLine: buffer[0].startPosition.row,
-          endLine: buffer[buffer.length - 1].endPosition.row,
-          type,
-          name: name || (buffer.length === 1 ? null : null),
-          signature,
-        });
+        // Tail-orphan merge: when the buffer about to be flushed is
+        // small AND has no boundary symbol of its own AND the previous
+        // emitted chunk shares the same parent context, append the
+        // tail's text into the previous chunk and extend its endLine.
+        // Skipped when the merge would push the previous chunk past
+        // 1.25× maxSize (rare in practice; allows mild overflow).
+        const prev = chunks[chunks.length - 1];
+        const isOrphanTail = !firstBoundary
+          && text.trim().length < SMALL_TAIL_THRESHOLD;
+        const sameParent = prev
+          && prev.parentChunkId === (parentInfo?.chunkId || null);
+        const mergedSize = prev ? (prev.text.length + 1 + text.trim().length) : Infinity;
+        const fitsHeadroom = mergedSize <= maxSize * TAIL_MERGE_HEADROOM;
+
+        if (isOrphanTail && prev && sameParent && fitsHeadroom) {
+          prev.text = prev.text + '\n' + text.trim();
+          prev.endLine = buffer[buffer.length - 1].endPosition.row;
+        } else {
+          chunks.push({
+            chunkId: this._nextChunkId(),
+            parentChunkId: parentInfo?.chunkId || null,
+            parentSymbol: parentInfo?.name || null,
+            parentType: parentInfo?.type || null,
+            text: text.trim(),
+            startLine: buffer[0].startPosition.row,
+            endLine: buffer[buffer.length - 1].endPosition.row,
+            type,
+            name: name || (buffer.length === 1 ? null : null),
+            signature,
+          });
+        }
       }
       buffer = [];
       bufferSize = 0;
