@@ -504,4 +504,155 @@ describe('applyResultDemotions', () => {
 
     expect(out).toBe(input);
   });
+
+  // ---------------------------------------------------------------------------
+  // Range-preservation invariant: entity adoption must NEVER shrink a chunk's
+  // visible line range to a smaller per-symbol entity boundary. The cAST
+  // sibling-merged chunk is the right unit for the agent to read; the entity
+  // name + type are added as ANNOTATIONS, not as a redrawn bounding box.
+  //
+  // This locks in the fix for the Gin JSON-bind regression where adoption
+  // was clobbering a 31-line cAST chunk (typeAlias + 3 methods) with the
+  // 1-line typeAlias entity range.
+  // ---------------------------------------------------------------------------
+
+  describe('entity adoption — range preservation', () => {
+    function mockGraphRepo(entitiesByFile) {
+      return {
+        findEntitiesByNames(names, opts = {}) {
+          const wantNames = new Set(names.map(s => s.toLowerCase()));
+          const wantTypes = new Set((opts.types || []).map(s => s.toLowerCase()));
+          const out = [];
+          for (const [filePath, list] of Object.entries(entitiesByFile)) {
+            for (const e of list) {
+              const okName = wantNames.has(String(e.name || '').toLowerCase());
+              const okType = !wantTypes.size || wantTypes.has(String(e.type || '').toLowerCase());
+              if (okName && okType) out.push({ ...e, filePath });
+            }
+          }
+          return out.slice(0, opts.limit ?? 8);
+        },
+        findEntitiesByNamesCaseInsensitive(names, opts = {}) {
+          return this.findEntitiesByNames(names, opts);
+        },
+        findFirstEntityInRange(filePath, startLine, endLine) {
+          const list = entitiesByFile[filePath] || [];
+          const candidate = list
+            .filter(e => e.startLine >= startLine && e.startLine <= endLine)
+            .sort((a, b) => a.startLine - b.startLine
+              || (a.endLine - a.startLine) - (b.endLine - b.startLine))[0];
+          return candidate ? { ...candidate, filePath } : null;
+        },
+        findEnclosingEntity(filePath, startLine, endLine) {
+          const list = entitiesByFile[filePath] || [];
+          const candidate = list
+            .filter(e => e.startLine <= startLine && e.endLine >= endLine)
+            .sort((a, b) => (a.endLine - a.startLine) - (b.endLine - b.startLine))[0];
+          return candidate ? { ...candidate, filePath } : null;
+        },
+      };
+    }
+
+    it('keeps the chunk range when the adopted entity is SMALLER than the chunk', () => {
+      // Canary case: cAST returned a 31-line chunk for binding/bson.go
+      // (typeAlias + 3 methods merged). The bsonBinding typeAlias entity
+      // is just 1 line. Adoption must annotate, not shrink.
+      const repo = mockGraphRepo({
+        'binding/bson.go': [
+          { id: 'eBson', name: 'bsonBinding', type: 'typeAlias', startLine: 14, endLine: 14 },
+        ],
+      });
+      const chunk = {
+        file: 'binding/bson.go',
+        metadata: {
+          file: 'binding/bson.go', startLine: 1, endLine: 31,
+          name: null, type: 'struct',
+        },
+        score: 0.5,
+      };
+      const out = applyResultDemotions([chunk], {
+        query: 'how does Gin bind JSON request bodies',
+        codeGraphRepo: repo,
+      });
+      expect(out[0].metadata.startLine).toBe(1);
+      expect(out[0].metadata.endLine).toBe(31);
+      // Annotation IS adopted — agent header now reads `[typeAlias: bsonBinding]`
+      expect(out[0].metadata.name).toBe('bsonBinding');
+      expect(out[0].metadata.type).toBe('typeAlias');
+    });
+
+    it('adopts the entity range when the entity is LARGER than the chunk (legitimate expansion)', () => {
+      // The opposite case: the chunk is a partial fragment, and the
+      // entity encloses it fully and adds context. Adopt away.
+      const repo = mockGraphRepo({
+        'src/foo.js': [
+          { id: 'eBig', name: 'BigClass', type: 'class', startLine: 10, endLine: 200 },
+        ],
+      });
+      const chunk = {
+        file: 'src/foo.js',
+        metadata: { file: 'src/foo.js', startLine: 50, endLine: 80, name: null, type: 'code' },
+        score: 0.5,
+      };
+      const out = applyResultDemotions([chunk], {
+        query: 'BigClass class definition',
+        codeGraphRepo: repo,
+      });
+      expect(out[0].metadata.startLine).toBe(10);
+      expect(out[0].metadata.endLine).toBe(200);
+      expect(out[0].metadata.name).toBe('BigClass');
+      expect(out[0].metadata.type).toBe('class');
+    });
+
+    it('preserves the original chunk range across multiple adoption candidates', () => {
+      // Same property on the contained-entity (non-preferred-kind) path.
+      const repo = mockGraphRepo({
+        'a.go': [
+          { id: 'eTiny', name: 'helper', type: 'function', startLine: 5, endLine: 7 },
+        ],
+      });
+      const chunk = {
+        file: 'a.go',
+        metadata: { file: 'a.go', startLine: 1, endLine: 50, name: null, type: 'code' },
+        score: 0.4,
+      };
+      const out = applyResultDemotions([chunk], {
+        query: 'where is request handling done',
+        codeGraphRepo: repo,
+      });
+      // No preferred-kind match for "request handling"; contained-entity path
+      // may fire — but range must still be the chunk's, not the 3-line helper's.
+      expect(out[0].metadata.startLine).toBe(1);
+      expect(out[0].metadata.endLine).toBe(50);
+    });
+
+    it('range-preservation invariant holds for arbitrary chunk/entity pairs', () => {
+      // Property test: for a sample of chunk + smaller-entity pairs, the
+      // adopted metadata's line range is never strictly smaller than the
+      // input chunk's line range.
+      for (const [chunkSL, chunkEL, entSL, entEL] of [
+        [1, 31, 14, 14],   // gin bson typeAlias (the canary)
+        [1, 57, 27, 27],   // gin json typeAlias
+        [50, 100, 60, 60], // arbitrary 1-line inside
+        [10, 20, 15, 16],  // 2-line inside
+        [1, 5, 3, 3],      // small-vs-tinier
+      ]) {
+        const repo = mockGraphRepo({
+          'x.go': [{ id: 'e', name: 'X', type: 'typeAlias', startLine: entSL, endLine: entEL }],
+        });
+        const chunk = {
+          file: 'x.go',
+          metadata: { file: 'x.go', startLine: chunkSL, endLine: chunkEL, name: null, type: 'struct' },
+          score: 0.5,
+        };
+        const out = applyResultDemotions([chunk], {
+          query: 'X typeAlias definition',
+          codeGraphRepo: repo,
+        });
+        const inRange = chunkEL - chunkSL + 1;
+        const outRange = (out[0].metadata.endLine || 0) - (out[0].metadata.startLine || 0) + 1;
+        expect(outRange, `chunk ${chunkSL}-${chunkEL}, entity ${entSL}-${entEL}: range must not shrink`).toBeGreaterThanOrEqual(inRange);
+      }
+    });
+  });
 });
