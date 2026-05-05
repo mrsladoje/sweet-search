@@ -11,6 +11,7 @@
 import { routeQuery } from '../query/query-router.js';
 import { applyMMR, shouldApplyMMR, getLambdaForIntent } from '../ranking/mmr.js';
 import { applyFileKindRanking, applyResultDemotions, classifyFileKindIntent, detectFileKind } from '../ranking/file-kind-ranking.js';
+import { injectAnchorCandidates } from './search-anchor.js';
 
 const QUERY_SCAFFOLD_RE = /^(?:where|when|how)\s+(?:does|do|did|is|are|was|were|can|could|should)?\s*/i;
 const IMPLEMENTATION_VERB_RE = /^(?:abort|bind|build|call|compute|create|decode|decide|detect|encode|handle|load|parse|parsed|redirect|register|run|search|skip|transform|validate|write)s?\b/i;
@@ -103,8 +104,21 @@ export async function hybridSearchV2(query, options = {}) {
     routeType
   );
 
+  // Step 2.5: Identifier-Anchored Retrieval (IAR).
+  // Couples dense fusion with an exact-name symbol lookup so abstract
+  // natural-language queries that mention a real entity name can land on
+  // that entity even when the encoder ranked something tangentially-similar
+  // higher. Mirrors the Aider repo-map / Cody+SCIP / Cursor recipe.
+  // Purely additive: only surfaces entities that exist in the index, deduped
+  // against the fused set. Disable via ablations 'no-anchor-injection'.
+  const { results: anchored, stats: anchorStats } = injectAnchorCandidates(fused, query, {
+    codeGraphRepo: this.codeGraphRepo,
+    lateInteractionIndex: this.lateInteractionIndex,
+    ablations: options.ablations,
+  });
+
   // Step 3: Apply post-fusion boosts uniformly (both paths benefit equally)
-  const boosted = this.applyPostFusionBoosts(fused, query, routing.mode, routing.confidence);
+  const boosted = this.applyPostFusionBoosts(anchored, query, routing.mode, routing.confidence);
 
   // Step 3.5: Apply source-vs-doc/test/config preference before the top-k cut.
   // The post-retrieval pass has the same guard, but hybrid used to slice first,
@@ -189,6 +203,7 @@ export async function hybridSearchV2(query, options = {}) {
       fileKindIntent,
       fileKindRankingApplied: rankedByFileKind !== boosted,
       resultDemotionsApplied: demoted !== rankedByFileKind,
+      anchorInjection: anchorStats,
     },
   };
 }
