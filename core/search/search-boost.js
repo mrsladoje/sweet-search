@@ -190,6 +190,7 @@ export function computeDefinitionBoost(result, queryLower, queryTokens) {
   const exactNameMatch = queryTokens.some(token => resultNameLower === token);
 
   if (filenameMatchesQuery && isDefinitionType) return 2.0;
+  if (filenameMatchesQuery) return 1.3;
   if (exactNameMatch && isDefinitionType) return 1.5;
   if (isDefinitionType) return 1.2;
   return 1.0;

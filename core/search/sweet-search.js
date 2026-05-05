@@ -493,6 +493,9 @@ export class SweetSearch {
         stats.fusion = hybridResult.fusionStats?.method || 'cc';
         stats.fusionFallback = hybridResult.fusionStats?.fallbackReason || null;
         stats.lexicalLatencyMs = hybridResult.fusionStats?.lexicalLatencyMs ?? null;
+        if (hybridResult.fusionStats?.queryRewrite) {
+          stats.queryRewrite = hybridResult.fusionStats.queryRewrite;
+        }
         break;
       }
     }
