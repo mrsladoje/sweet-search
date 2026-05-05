@@ -10,6 +10,55 @@
 
 import { routeQuery } from '../query/query-router.js';
 import { applyMMR, shouldApplyMMR, getLambdaForIntent } from '../ranking/mmr.js';
+import { applyFileKindRanking, applyResultDemotions, classifyFileKindIntent, detectFileKind } from '../ranking/file-kind-ranking.js';
+
+const QUERY_SCAFFOLD_RE = /^(?:where|when|how)\s+(?:does|do|did|is|are|was|were|can|could|should)?\s*/i;
+const IMPLEMENTATION_VERB_RE = /^(?:abort|bind|build|call|compute|create|decode|decide|detect|encode|handle|load|parse|parsed|redirect|register|run|search|skip|transform|validate|write)s?\b/i;
+const QUERY_STOPWORDS = new Set([
+  'a', 'an', 'are', 'can', 'could', 'did', 'do', 'does', 'for', 'from',
+  'how', 'in', 'into', 'is', 'of', 'on', 'should', 'the', 'to', 'was',
+  'were', 'when', 'where', 'with',
+]);
+
+export function rewriteImplementationQuery(query) {
+  if (classifyFileKindIntent(query) !== 'implementation') return null;
+  const stripped = String(query || '').trim().replace(QUERY_SCAFFOLD_RE, '').trim();
+  if (!stripped) return null;
+
+  const words = stripped.split(/\s+/).filter(Boolean);
+  if (words.length >= 3 && /^[A-Z][A-Za-z0-9_.-]*$/.test(words[0]) && IMPLEMENTATION_VERB_RE.test(words[1])) {
+    words.shift();
+  }
+
+  const compact = words.filter(word => {
+    const normalized = word.toLowerCase().replace(/^[^\w]+|[^\w/.-]+$/g, '');
+    return normalized && !QUERY_STOPWORDS.has(normalized);
+  }).join(' ');
+
+  return compact && compact !== query ? compact : null;
+}
+
+function resultFileKind(result) {
+  return detectFileKind(
+    result?.file
+    || result?.file_path
+    || result?.path
+    || result?.metadata?.file
+    || result?.metadata?.file_path
+    || result?.metadata?.path
+    || ''
+  );
+}
+
+function implementationRetryReason(query, results) {
+  if (classifyFileKindIntent(query) !== 'implementation') return null;
+  if (!Array.isArray(results) || results.length === 0) return 'empty_results';
+
+  const window = results.slice(0, Math.min(5, results.length));
+  const hasImplementation = window.some(result => resultFileKind(result) === 'implementation');
+  const hasDemotable = window.some(result => resultFileKind(result) !== 'implementation');
+  return !hasImplementation && hasDemotable ? 'no_implementation_in_top_results' : null;
+}
 
 // =============================================================================
 // Hybrid Search V2
@@ -57,15 +106,36 @@ export async function hybridSearchV2(query, options = {}) {
   // Step 3: Apply post-fusion boosts uniformly (both paths benefit equally)
   const boosted = this.applyPostFusionBoosts(fused, query, routing.mode, routing.confidence);
 
+  // Step 3.5: Apply source-vs-doc/test/config preference before the top-k cut.
+  // The post-retrieval pass has the same guard, but hybrid used to slice first,
+  // so docs/tests/tiny YAML could occupy top-1 and hide implementation chunks.
+  const fileKindIntent = classifyFileKindIntent(query);
+  const rankedByFileKind = applyFileKindRanking(boosted, {
+    intent: fileKindIntent,
+    window: options.fileKindWindow ?? 100,
+    docFactor: options.hybridDocFactor ?? 0.35,
+    testFactor: options.hybridTestFactor ?? 0.35,
+    typeFactor: options.hybridTypeFactor ?? 0.70,
+    ancillaryFactor: options.hybridAncillaryFactor ?? 0.15,
+    tinyAncillaryFactor: options.hybridTinyAncillaryFactor ?? 0.05,
+  });
+  const demoted = applyResultDemotions(rankedByFileKind, {
+    query,
+    window: options.resultDemotionWindow ?? 100,
+    ablations: options.ablations,
+    projectRoot: this.projectRoot,
+    codeGraphRepo: this.codeGraphRepo,
+  });
+
   // Step 4: MMR Diversification (replaces flood control)
-  let diversified = boosted;
+  let diversified = demoted;
   let mmrStats = null;
 
   const useMMR = options.useMMR ?? true; // Enable by default
-  if (useMMR && shouldApplyMMR(boosted)) {
+  if (useMMR && shouldApplyMMR(demoted)) {
     const lambda = getLambdaForIntent(routing.mode, routing.confidence);
-    const mmrResult = applyMMR(boosted, {
-      k: Math.min(k * 2, boosted.length), // Get more candidates for diversity
+    const mmrResult = applyMMR(demoted, {
+      k: Math.min(k * 2, demoted.length), // Get more candidates for diversity
       lambda,
     });
     diversified = mmrResult.results;
@@ -83,6 +153,27 @@ export async function hybridSearchV2(query, options = {}) {
     fusionMethod: method,
   }));
 
+  const retryReason = implementationRetryReason(query, results);
+  if (retryReason && options.allowQueryRewrite !== false) {
+    const rewrittenQuery = rewriteImplementationQuery(query);
+    if (rewrittenQuery && rewrittenQuery !== query) {
+      this.log(`Hybrid rewrite retry: "${query}" -> "${rewrittenQuery}"`);
+      const retry = await hybridSearchV2.call(this, rewrittenQuery, {
+        ...options,
+        allowQueryRewrite: false,
+      });
+      retry.fusionStats = {
+        ...(retry.fusionStats || {}),
+        queryRewrite: {
+          from: query,
+          to: rewrittenQuery,
+          reason: retryReason,
+        },
+      };
+      return retry;
+    }
+  }
+
   this.log(`Hybrid V2 (${method}, alpha=${results[0]?.alpha?.toFixed(2) || '?'}): ${lexicalResults.length} lex + ${semanticResults.length} sem -> ${results.length} final`);
 
   return {
@@ -95,6 +186,9 @@ export async function hybridSearchV2(query, options = {}) {
       routerMode: routing.mode,
       routerConfidence: routing.confidence,
       lexicalLatencyMs,
+      fileKindIntent,
+      fileKindRankingApplied: rankedByFileKind !== boosted,
+      resultDemotionsApplied: demoted !== rankedByFileKind,
     },
   };
 }

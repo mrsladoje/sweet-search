@@ -3,6 +3,11 @@ import {
   detectFileKind,
   classifyFileKindIntent,
   applyFileKindRanking,
+  applyResultDemotions,
+  entityKindPreferenceFromQuery,
+  isTestChunk,
+  isTinyAncillaryChunk,
+  testNameQueryOverlap,
 } from '../../core/ranking/file-kind-ranking.js';
 
 // ---------------------------------------------------------------------------
@@ -22,6 +27,11 @@ describe('detectFileKind', () => {
     expect(detectFileKind('project/doc/api.md')).toBe('docs');
   });
 
+  it('detects example files separately from implementation', () => {
+    expect(detectFileKind('examples/hooks.js')).toBe('examples');
+    expect(detectFileKind('project/example/server.js')).toBe('examples');
+  });
+
   it('detects test files by directory and suffix', () => {
     expect(detectFileKind('test/foo.test.js')).toBe('tests');
     expect(detectFileKind('tests/test_blueprints.py')).toBe('tests');
@@ -34,6 +44,12 @@ describe('detectFileKind', () => {
     expect(detectFileKind('types/hooks.d.ts')).toBe('types');
     expect(detectFileKind('lib/foo.d.ts')).toBe('types');
     expect(detectFileKind('types/index.ts')).toBe('types');
+  });
+
+  it('detects ancillary config and metadata files', () => {
+    expect(detectFileKind('.github/labeler.yml')).toBe('ancillary');
+    expect(detectFileKind('package.json')).toBe('ancillary');
+    expect(detectFileKind('config/app.toml')).toBe('ancillary');
   });
 
   it('returns implementation for everything else', () => {
@@ -91,6 +107,17 @@ describe('classifyFileKindIntent', () => {
     expect(classifyFileKindIntent('definition of FST_ERR_NOT_FOUND error')).toBe('implementation');
     expect(classifyFileKindIntent('central dispatcher that selects the parent prototype error function')).toBe('implementation');
     expect(classifyFileKindIntent('main entrypoint of the rg binary')).toBe('implementation');
+    expect(classifyFileKindIntent('how does Fastify decide between HTTP HTTPS and HTTP/2 server creation')).toBe('implementation');
+    expect(classifyFileKindIntent('how is content-type parser registered')).toBe('implementation');
+    expect(classifyFileKindIntent('how does Gin bind JSON request bodies')).toBe('implementation');
+    expect(classifyFileKindIntent('when does Gin redirect on trailing slash')).toBe('implementation');
+    expect(classifyFileKindIntent('how are glob overrides parsed')).toBe('implementation');
+  });
+
+  it('detects ancillary-seeking queries before implementation demotion', () => {
+    expect(classifyFileKindIntent('package.json scripts')).toBe('ancillary');
+    expect(classifyFileKindIntent('github action workflow yaml')).toBe('ancillary');
+    expect(classifyFileKindIntent('labeler config')).toBe('ancillary');
   });
 
   it('returns "unknown" for queries with no implementation-seeking signal', () => {
@@ -240,6 +267,49 @@ describe('applyFileKindRanking', () => {
     expect(out[0].path).toBe('lib/x.js');
   });
 
+  it('strongly demotes tiny ancillary chunks when implementation source is present', () => {
+    const r = [
+      { file: '.github/labeler.yml', score: 1.0, startLine: 15, endLine: 15 },
+      { file: 'lib/server.js', score: 0.20, startLine: 309, endLine: 362 },
+    ];
+    const out = applyFileKindRanking(r, {
+      intent: 'implementation',
+      ancillaryFactor: 0.15,
+      tinyAncillaryFactor: 0.05,
+    });
+
+    expect(out[0].file).toBe('lib/server.js');
+    expect(out[1].file).toBe('.github/labeler.yml');
+    expect(out[1].score).toBeCloseTo(0.05);
+  });
+
+  it('demotes examples for implementation queries unless examples were requested', () => {
+    const r = [
+      { file: 'examples/hooks.js', score: 0.90 },
+      { file: 'lib/hooks.js', score: 0.40 },
+    ];
+    const out = applyFileKindRanking(r, {
+      intent: 'implementation',
+      docFactor: 0.35,
+    });
+
+    expect(out[0].file).toBe('lib/hooks.js');
+    expect(out[1].file).toBe('examples/hooks.js');
+
+    const explicitExample = applyFileKindRanking(r, { query: 'hooks example' });
+    expect(explicitExample).toBe(r);
+  });
+
+  it('does not demote ancillary files for explicit ancillary queries', () => {
+    const input = [
+      { file: '.github/labeler.yml', score: 1.0, startLine: 15, endLine: 15 },
+      { file: 'lib/server.js', score: 0.20, startLine: 309, endLine: 362 },
+    ];
+    const out = applyFileKindRanking(input, { query: 'labeler yaml config' });
+    expect(out).toBe(input);
+    expect(out[0].file).toBe('.github/labeler.yml');
+  });
+
   it('does not mutate the input array or its objects', () => {
     const input = fixtureResults();
     const inputCopy = JSON.parse(JSON.stringify(input));
@@ -333,5 +403,105 @@ describe('applyFileKindRanking', () => {
     delete process.env.SWEET_SEARCH_FILE_KIND_RANKING;
     delete process.env.SWEET_SEARCH_FILE_KIND_FACTOR;
     delete process.env.SWEET_SEARCH_FILE_KIND_WINDOW;
+  });
+});
+
+describe('applyResultDemotions', () => {
+  it('demotes tiny source footer chunks independent of file kind', () => {
+    const footer = {
+      file: 'lib/schema-controller.js',
+      startLine: 163,
+      endLine: 164,
+      content: 'SchemaController.buildSchemaController = buildSchemaController\nmodule.exports = SchemaController',
+      score: 0.60,
+    };
+    const schemaClass = {
+      file: 'lib/schema-controller.js',
+      startLine: 30,
+      endLine: 100,
+      content: 'class SchemaController {\n  constructor () {}\n}',
+      score: 0.50,
+    };
+
+    expect(isTinyAncillaryChunk(footer)).toBe(true);
+    const out = applyResultDemotions([footer, schemaClass], {
+      query: 'what is kSchemaController and what does it do',
+    });
+
+    expect(out[0].file).toBe(schemaClass.file);
+    expect(out[0].startLine).toBe(schemaClass.startLine);
+    expect(out[1].score).toBeCloseTo(0.18);
+  });
+
+  it('does not demote tiny declarations', () => {
+    const declaration = {
+      file: 'lib/symbols.js',
+      startLine: 10,
+      endLine: 10,
+      content: 'const kSchemaController = Symbol(\'schemaController\')',
+      score: 0.60,
+    };
+    const input = [declaration];
+    expect(isTinyAncillaryChunk(declaration)).toBe(false);
+    expect(applyResultDemotions(input, {
+      query: 'what is kSchemaController',
+    })).toBe(input);
+  });
+
+  it('demotes Rust inline #[test] fn whose name overlaps query', () => {
+    const r = {
+      metadata: {
+        file: 'crates/printer/src/standard.rs',
+        startLine: 2952,
+        endLine: 3001,
+        name: 'max_matches_multi_line3',
+      },
+      content: '    #[test]\n    fn max_matches_multi_line3() {\n        ...multi_line(true)...\n    }',
+      score: 0.6,
+    };
+    const queryTokens = new Set(['multi', 'line', 'regex', 'search']);
+
+    expect(isTestChunk(r)).toBe(true);
+    expect(testNameQueryOverlap(r, queryTokens)).toBeGreaterThanOrEqual(0.5);
+    const adjusted = applyResultDemotions([r], {
+      queryTokens,
+      query: 'where is the multi-line regex search implemented',
+    });
+    expect(adjusted[0].score).toBeLessThan(0.4);
+  });
+
+  it('prefers enum declaration over impl block when query mentions enum', () => {
+    const enumDecl = {
+      metadata: { type: 'enum', name: 'Mode', file: 'lowargs.rs', startLine: 100, endLine: 170 },
+      score: 0.50,
+    };
+    const implBlock = {
+      metadata: { type: 'impl', name: 'Mode', file: 'lowargs.rs', startLine: 172, endLine: 267 },
+      score: 0.55,
+    };
+
+    expect(entityKindPreferenceFromQuery('what enum represents output mode')).toBe('enum');
+    const ranked = applyResultDemotions([implBlock, enumDecl], {
+      query: 'what enum represents output mode',
+    });
+    expect(ranked[0].metadata.type).toBe('enum');
+  });
+
+  it('honours result-demotion ablations', () => {
+    const footer = {
+      file: 'lib/schema-controller.js',
+      startLine: 163,
+      endLine: 164,
+      content: 'module.exports = SchemaController',
+      score: 0.60,
+    };
+    const longer = { file: 'lib/schema-controller.js', startLine: 30, endLine: 100, score: 0.50 };
+    const input = [footer, longer];
+    const out = applyResultDemotions(input, {
+      query: 'what is kSchemaController',
+      ablations: new Set(['no-tiny-floor']),
+    });
+
+    expect(out).toBe(input);
   });
 });

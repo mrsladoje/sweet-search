@@ -14,7 +14,7 @@ import { expandResults } from '../graph/graph-expansion.js';
 import { int8CosineSimilarity } from '../embedding/embedding-service.js';
 import { QualityScorer } from '../ranking/quality-scorer.js';
 import { classifyIntent, getIntentPolicy } from '../query/intent-router.js';
-import { applyFileKindRanking, classifyFileKindIntent } from '../ranking/file-kind-ranking.js';
+import { applyFileKindRanking, applyResultDemotions, classifyFileKindIntent } from '../ranking/file-kind-ranking.js';
 import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
 import { expandAliases } from './dedup/sibling-expander.js';
 
@@ -403,14 +403,25 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   // =========================================================================
   // Intent-aware file-kind ranking
   // =========================================================================
-  // Soft-demote docs/tests/types files when the query is confidently
-  // implementation-seeking AND the top-N window contains both docs/tests/
-  // types and implementation candidates. No-op otherwise. Disable with
+  // Soft-demote docs/examples/tests/types/config files when the query is
+  // confidently implementation-seeking AND the top-N window contains both
+  // demotable and implementation candidates. No-op otherwise. Disable with
   // SWEET_SEARCH_FILE_KIND_RANKING=0; tune SWEET_SEARCH_FILE_KIND_FACTOR.
   if (Array.isArray(results) && results.length > 0) {
     const fileKindIntent = classifyFileKindIntent(query);
     const beforeTop = results[0];
-    const afterFK = applyFileKindRanking(results, { intent: fileKindIntent });
+    const semanticLike = searchMode === 'hybrid' || searchMode === 'semantic'
+      || stats.path === 'hybrid' || stats.path === 'semantic';
+    const afterFK = applyFileKindRanking(results, {
+      intent: fileKindIntent,
+      ...(semanticLike ? {
+        docFactor: 0.35,
+        testFactor: 0.35,
+        typeFactor: 0.70,
+        ancillaryFactor: 0.15,
+        tinyAncillaryFactor: 0.05,
+      } : {}),
+    });
     if (afterFK !== results) {
       results = afterFK;
       stats.fileKindRanking = {
@@ -422,6 +433,21 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       stats.fileKindRanking = {
         intent: fileKindIntent,
         applied: false,
+      };
+    }
+
+    const beforeDemotionTop = results[0];
+    const afterDemotions = applyResultDemotions(results, {
+      query,
+      ablations: options.ablations,
+      projectRoot: this.projectRoot,
+      codeGraphRepo: this.codeGraphRepo,
+    });
+    if (afterDemotions !== results) {
+      results = afterDemotions;
+      stats.resultDemotions = {
+        applied: true,
+        top1Changed: !!beforeDemotionTop && results[0] && (beforeDemotionTop !== results[0]),
       };
     }
   }
