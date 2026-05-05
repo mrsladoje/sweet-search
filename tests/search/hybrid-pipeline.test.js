@@ -209,6 +209,168 @@ describe('hybridSearchV2 uses bm25SearchRaw', () => {
       expect(r._expandedFrom).toBeUndefined();
     }
   });
+
+  it('applies file-kind ranking before top-k truncation', async () => {
+    const searcher = await makeSearcher({
+      robustCCFusion: vi.fn(() => ({
+        results: [
+          { id: 'doc', file: 'docs/Reference/Hooks.md', name: 'Hooks docs', score: 1.0 },
+          { id: 'test', file: 'binding/json_test.go', name: 'TestJSONBindingBindBody', score: 0.95 },
+          { id: 'yaml', file: '.github/labeler.yml', name: 'plugin', score: 0.90, startLine: 15, endLine: 15 },
+          { id: 'impl', file: 'lib/server.js', name: 'getServerInstance', score: 0.40, startLine: 309, endLine: 362 },
+        ],
+        method: 'cc_robust',
+        fallbackReason: null,
+      })),
+      applyPostFusionBoosts: vi.fn(r => r),
+    });
+
+    const result = await searcher.hybridSearchV2(
+      'how does Fastify decide between HTTP HTTPS and HTTP/2 server creation',
+      { k: 1, useMMR: false }
+    );
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].file).toBe('lib/server.js');
+    expect(result.fusionStats.fileKindIntent).toBe('implementation');
+    expect(result.fusionStats.fileKindRankingApplied).toBe(true);
+  });
+
+  it('retries empty implementation queries with scaffolding stripped', async () => {
+    const searcher = await makeSearcher({
+      robustCCFusion: vi.fn()
+        .mockReturnValueOnce({ results: [], method: 'rrf', fallbackReason: 'insufficient_results' })
+        .mockReturnValueOnce({
+          results: [
+            { id: 'impl', file: 'lib/validation.js', name: 'validate', score: 0.8, startLine: 146, endLine: 203 },
+          ],
+          method: 'cc_robust',
+          fallbackReason: null,
+        }),
+      applyPostFusionBoosts: vi.fn(r => r),
+    });
+
+    const result = await searcher.hybridSearchV2(
+      'where does Fastify validate request body schema',
+      { k: 1, useMMR: false }
+    );
+
+    expect(searcher.graphSearch.bm25SearchRaw).toHaveBeenNthCalledWith(1, 'where does Fastify validate request body schema', 50);
+    expect(searcher.graphSearch.bm25SearchRaw).toHaveBeenNthCalledWith(2, 'validate request body schema', 50);
+    expect(result.results[0].file).toBe('lib/validation.js');
+    expect(result.fusionStats.queryRewrite).toEqual({
+      from: 'where does Fastify validate request body schema',
+      to: 'validate request body schema',
+      reason: 'empty_results',
+    });
+  });
+
+  it('retries implementation queries whose top window has no source results', async () => {
+    const searcher = await makeSearcher({
+      robustCCFusion: vi.fn()
+        .mockReturnValueOnce({
+          results: [
+            { id: 'doc', file: 'docs/Reference/Validation.md', name: 'Validation', score: 1.0 },
+            { id: 'test', file: 'test/request-validate.test.js', name: null, score: 0.95 },
+          ],
+          method: 'cc_robust',
+          fallbackReason: null,
+        })
+        .mockReturnValueOnce({
+          results: [
+            { id: 'impl', file: 'lib/validation.js', name: 'validate', score: 0.8, startLine: 146, endLine: 203 },
+          ],
+          method: 'cc_robust',
+          fallbackReason: null,
+        }),
+      applyPostFusionBoosts: vi.fn(r => r),
+    });
+
+    const result = await searcher.hybridSearchV2(
+      'where does Fastify validate request body schema',
+      { k: 2, useMMR: false }
+    );
+
+    expect(searcher.graphSearch.bm25SearchRaw).toHaveBeenNthCalledWith(2, 'validate request body schema', 50);
+    expect(result.results[0].file).toBe('lib/validation.js');
+    expect(result.fusionStats.queryRewrite?.reason).toBe('no_implementation_in_top_results');
+  });
+
+  it('demotes tiny source chunks before top-k truncation', async () => {
+    const searcher = await makeSearcher({
+      robustCCFusion: vi.fn(() => ({
+        results: [
+          {
+            id: 'footer',
+            file: 'lib/schema-controller.js',
+            name: null,
+            score: 0.60,
+            startLine: 163,
+            endLine: 164,
+            content: 'SchemaController.buildSchemaController = buildSchemaController\nmodule.exports = SchemaController',
+          },
+          {
+            id: 'class',
+            file: 'lib/schema-controller.js',
+            name: 'SchemaController',
+            type: 'class',
+            score: 0.50,
+            startLine: 30,
+            endLine: 100,
+            content: 'class SchemaController {}',
+          },
+        ],
+        method: 'cc_robust',
+        fallbackReason: null,
+      })),
+      applyPostFusionBoosts: vi.fn(r => r),
+    });
+
+    const result = await searcher.hybridSearchV2(
+      'what is kSchemaController and what does it do',
+      { k: 1, useMMR: false }
+    );
+
+    expect(result.results[0].id).toBe('class');
+    expect(result.fusionStats.resultDemotionsApplied).toBe(true);
+  });
+
+  it('prefers enum declaration over impl block before top-k truncation', async () => {
+    const searcher = await makeSearcher({
+      robustCCFusion: vi.fn(() => ({
+        results: [
+          {
+            id: 'impl',
+            file: 'crates/core/flags/lowargs.rs',
+            name: 'Mode',
+            type: 'impl',
+            score: 0.55,
+            startLine: 172,
+            endLine: 267,
+          },
+          {
+            id: 'enum',
+            file: 'crates/core/flags/lowargs.rs',
+            name: 'Mode',
+            type: 'enum',
+            score: 0.50,
+            startLine: 100,
+            endLine: 170,
+          },
+        ],
+        method: 'cc_robust',
+        fallbackReason: null,
+      })),
+      applyPostFusionBoosts: vi.fn(r => r),
+    });
+
+    const result = await searcher.hybridSearchV2(
+      'what enum represents output mode for ripgrep results',
+      { k: 1, useMMR: false }
+    );
+
+    expect(result.results[0].id).toBe('enum');
+  });
 });
 
 // =============================================================================

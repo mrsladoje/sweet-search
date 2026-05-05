@@ -162,9 +162,15 @@ describe('computeDefinitionBoost', () => {
   });
 
   it('returns 1.0 for non-definition type', () => {
-    const result = { name: 'count', file: 'src/count.js', type: 'variable' };
+    const result = { name: 'count', file: 'src/metrics.js', type: 'variable' };
     const boost = computeDefinitionBoost(result, 'count', ['count']);
     expect(boost).toBe(1.0);
+  });
+
+  it('returns a mild boost when filename matches on non-definition chunks', () => {
+    const result = { name: null, file: 'binding/json.go', type: 'code' };
+    const boost = computeDefinitionBoost(result, 'json', ['json']);
+    expect(boost).toBe(1.3);
   });
 
   it('handles missing name and file gracefully', () => {
@@ -174,7 +180,7 @@ describe('computeDefinitionBoost', () => {
   });
 
   it('returns 1.0 when type is undefined', () => {
-    const result = { name: 'count', file: 'src/count.js' };
+    const result = { name: 'count', file: 'src/metrics.js' };
     const boost = computeDefinitionBoost(result, 'count', ['count']);
     expect(boost).toBe(1.0); // DEFINITION_TYPES.has(undefined) = false
   });
