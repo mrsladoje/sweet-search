@@ -296,44 +296,15 @@ describe('hybridSearchV2 uses bm25SearchRaw', () => {
     expect(result.fusionStats.queryRewrite?.reason).toBe('no_implementation_in_top_results');
   });
 
-  it('demotes tiny source chunks before top-k truncation', async () => {
-    const searcher = await makeSearcher({
-      robustCCFusion: vi.fn(() => ({
-        results: [
-          {
-            id: 'footer',
-            file: 'lib/schema-controller.js',
-            name: null,
-            score: 0.60,
-            startLine: 163,
-            endLine: 164,
-            content: 'SchemaController.buildSchemaController = buildSchemaController\nmodule.exports = SchemaController',
-          },
-          {
-            id: 'class',
-            file: 'lib/schema-controller.js',
-            name: 'SchemaController',
-            type: 'class',
-            score: 0.50,
-            startLine: 30,
-            endLine: 100,
-            content: 'class SchemaController {}',
-          },
-        ],
-        method: 'cc_robust',
-        fallbackReason: null,
-      })),
-      applyPostFusionBoosts: vi.fn(r => r),
-    });
-
-    const result = await searcher.hybridSearchV2(
-      'what is kSchemaController and what does it do',
-      { k: 1, useMMR: false }
-    );
-
-    expect(result.results[0].id).toBe('class');
-    expect(result.fusionStats.resultDemotionsApplied).toBe(true);
-  });
+  // Removed (2026-05-05): the standalone tiny-chunk-demotion rule was
+  // dropped once cAST sibling-merge in tree-sitter-provider.js was
+  // confirmed in production. Adjacent siblings are merged at index time
+  // (recursiveChunk in tree-sitter-provider) so a 2-line module.exports
+  // chunk shouldn't exist as a standalone retrieval unit. The previous
+  // test fixture was artificial — in production the LI index would have
+  // returned a merged sibling group, not the 2-line tail in isolation.
+  // The range-preservation invariant in applyResultDemotions also stops
+  // entity adoption from shrinking already-merged chunks.
 
   it('prefers enum declaration over impl block before top-k truncation', async () => {
     const searcher = await makeSearcher({

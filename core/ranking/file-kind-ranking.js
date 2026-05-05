@@ -230,18 +230,14 @@ function hasAblation(ablations, name) {
   return ablations instanceof Set ? ablations.has(name) : Array.isArray(ablations) && ablations.includes(name);
 }
 
-export function isTinyAncillaryChunk(r, opts = {}) {
-  const lineCount = inferLineCount(r);
-  if (lineCount > 4) return false;
-
-  const text = resolveResultText(r, opts);
-  if (DECLARATION_RE.test(text)) return false;
-  if (/\bmodule\.exports\b|\bexports\.\w+\b/.test(text)) return true;
-
-  const compact = text.replace(/\s+/g, '');
-  if (compact.length > 30) return false;
-  return true;
-}
+// Removed (2026-05-05): the standalone tiny-ancillary-chunk floor became
+// redundant once cAST sibling-merge was confirmed in tree-sitter-provider.js
+// (recursiveChunk merges adjacent siblings up to MAX_CHUNK_SIZE so tiny
+// chunks don't enter the index as standalone retrieval units), and the
+// range-preservation invariant in applyResultDemotions stopped entity
+// adoption from shrinking already-merged chunks. Kept the per-ancillary-file
+// hard tiny factor (`tinyAncillaryFactor` in applyFileKindRanking) since
+// that's a sub-rule of doc/test demotion, not a general size penalty.
 
 export function isTestChunk(r, opts = {}) {
   const fileKind = detectFileKind(resolveFilePath(r));
@@ -375,19 +371,37 @@ function resolveEntityKindInfo(r, opts = {}) {
   return inferred ? { type: inferred } : null;
 }
 
+// Boost magnitudes are env-tunable so we can ablate without re-deploying.
+// Defaults softened (2026-05-05) from (1.25, 0.85, 1.20, 1.05) to
+// (1.10, 0.90, 1.10, 1.03) after a 16-query 3-config ablation showed
+// 15 of 16 top-1 results unchanged at the lower magnitudes — less
+// leverage = less interaction risk with name-precision and other
+// signals, with no observed quality loss. The stronger old values
+// remain reachable via env vars if a future probe shows they help.
+function envFloat(name, dflt) {
+  const v = process.env[name];
+  if (v == null || v === '') return dflt;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : dflt;
+}
+
 function entityKindMultiplier(r, preferred, opts = {}) {
   if (!preferred) return 1;
+  const kindBoost = envFloat('SWEET_SEARCH_KIND_BOOST', 1.10);
+  const kindDemote = envFloat('SWEET_SEARCH_KIND_DEMOTE', 0.90);
   const wantSet = new Set((ENTITY_KIND_KEYWORDS[preferred] || []).map(normalizeType));
   const inferred = resolveEntityKindInfo(r, opts)?.type || '';
   const recorded = normalizeType(resolveResultType(r));
   const type = recorded && recorded !== 'code' && recorded !== 'chunk' ? recorded : normalizeType(inferred);
-  if (wantSet.has(type) || (type === 'typealias' && preferred === 'type')) return 1.25;
-  if ((type === 'impl' || type === 'method' || type === 'function') && preferred !== 'function') return 0.85;
+  if (wantSet.has(type) || (type === 'typealias' && preferred === 'type')) return kindBoost;
+  if ((type === 'impl' || type === 'method' || type === 'function') && preferred !== 'function') return kindDemote;
   return 1;
 }
 
 function namePrecisionMultiplier(r, preferred, nameHintsLower, opts = {}) {
   if (!preferred || nameHintsLower.size === 0) return 1;
+  const exactBoost = envFloat('SWEET_SEARCH_NAME_EXACT_BOOST', 1.10);
+  const substrBoost = envFloat('SWEET_SEARCH_NAME_SUBSTR_BOOST', 1.03);
   const wantSet = new Set((ENTITY_KIND_KEYWORDS[preferred] || []).map(normalizeType));
   const entityInfo = resolveEntityKindInfo(r, opts);
   const recorded = normalizeType(resolveResultType(r));
@@ -398,10 +412,10 @@ function namePrecisionMultiplier(r, preferred, nameHintsLower, opts = {}) {
 
   const name = resolveResultName(r) || entityInfo?.name || '';
   if (!name) return 1;
-  if (nameHintsLower.has(name.toLowerCase())) return 1.20;
+  if (nameHintsLower.has(name.toLowerCase())) return exactBoost;
   const nameTokens = splitIdentifierName(name);
   for (const hint of nameHintsLower) {
-    if (nameTokens.includes(hint)) return 1.05;
+    if (nameTokens.includes(hint)) return substrBoost;
   }
   return 1;
 }
@@ -442,85 +456,21 @@ function inferEntityKindFromText(text) {
   return '';
 }
 
-export function isFileHeaderChunk(r, opts = {}) {
-  const meta = r?.metadata || {};
-  const start = meta.startLine || r?.startLine;
-  if (start == null || start > 3) return false;
-  if (meta.name || r?.name) return false;
-
-  const text = resolveResultText(r, opts);
-  if (!text.trim()) return false;
-  const textWithoutBlockComments = text.replace(/\/\*[\s\S]*?\*\//g, '');
-  const nonCommentText = textWithoutBlockComments
-    .split('\n')
-    .filter(line => !/^\s*(\/\/|\/\*|\*\/?|\*\s|#\s|\/\/!|\/\/\/)/.test(line.trim()))
-    .join('\n');
-  if (EXECUTABLE_DECLARATION_RE.test(nonCommentText)) return false;
-
-  let importish = 0;
-  let code = 0;
-  let importBlock = false;
-  let constBlock = false;
-  let blockComment = false;
-  for (const raw of text.split('\n')) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (blockComment) {
-      if (line.includes('*/')) blockComment = false;
-      continue;
-    }
-    if (line.startsWith('/*')) {
-      if (!line.includes('*/')) blockComment = true;
-      continue;
-    }
-    if (/^(\/\/|\/\*|\*\/?|\*\s|#\s|\/\/!|\/\/\/)/.test(line)) continue;
-    if (/^(const|var)\s*\($/.test(line)) {
-      constBlock = true;
-      importish++;
-      continue;
-    }
-    if (constBlock && line === ')') {
-      constBlock = false;
-      continue;
-    }
-    if (constBlock && /^[A-Za-z_][A-Za-z0-9_]*(?:\s+[A-Za-z_][A-Za-z0-9_.]*)?\s*=/.test(line)) {
-      importish++;
-      continue;
-    }
-    if (/^(const|var)\s+[A-Za-z_][A-Za-z0-9_]*(?:\s+[A-Za-z_][A-Za-z0-9_.]*)?\s*=/.test(line)) {
-      importish++;
-      continue;
-    }
-    if (/^type\s+[A-Za-z_][A-Za-z0-9_]*\s+(?:=|int|string|bool|float|byte|rune)\b/.test(line)) {
-      importish++;
-      continue;
-    }
-    if (/^(package|import|from\s+\S+\s+import|use\s+|extern\s+crate|require\s*\(|'use\s+strict'|"use\s+strict")/.test(line)) {
-      importish++;
-      if (/^(import|use\s+)\s*\($/.test(line)) importBlock = true;
-      continue;
-    }
-    if (importBlock && line === ')') {
-      importBlock = false;
-      continue;
-    }
-    if (importBlock && (/^["'`][^"'`]+["'`]$/.test(line) || /^\w[\w/.-]*$/.test(line))) {
-      importish++;
-      continue;
-    }
-    if (/^[(){}\[\],;]+$/.test(line)) continue;
-    if (/^#!/.test(line)) continue;
-    code++;
-  }
-
-  if (importish + code < 4) return importish > 0 && code === 0;
-  return code === 0 || (code <= 1 && importish / (importish + code) > 0.85);
-}
+// Removed (2026-05-05): file-header chunk detection became redundant
+// once cAST sibling-merge was confirmed. With cAST, a chunk starting at
+// line 1 of a source file naturally merges the package decl + imports
+// with the first executable declaration(s), so a "lines 1-N: imports
+// only" chunk shouldn't normally win retrieval. Cases where it still
+// does are rare enough that the cost of the false-positive demotion
+// (e.g. a `types.go` consisting purely of type aliases) outweighs the
+// benefit. The per-doc `tinyAncillaryFactor` in applyFileKindRanking
+// still catches tiny doc/test/example top-1 results.
 
 /**
  * Apply content-aware result demotions/boosts before top-k truncation.
- * This catches source-local tiny footer chunks, inline test functions and
- * explicit entity-kind queries that path-only demotion cannot see.
+ * Catches inline test functions and explicit entity-kind queries that
+ * path-only demotion cannot see. Tiny-chunk and file-header rules were
+ * removed once cAST sibling-merge made them structurally redundant.
  */
 export function applyResultDemotions(results, opts = {}) {
   if (!Array.isArray(results) || results.length === 0) return results;
@@ -543,22 +493,12 @@ export function applyResultDemotions(results, opts = {}) {
     let mult = 1;
     const details = [];
 
-    if (!hasAblation(ablations, 'no-tiny-floor') && isTinyAncillaryChunk(result, opts)) {
-      mult *= opts.tinyChunkFactor ?? 0.30;
-      details.push('tiny:0.30');
-    }
-
     if (!hasAblation(ablations, 'no-test-name-overlap') && isTestChunk(result, opts)) {
       const overlap = testNameQueryOverlap(result, qTokens);
       if (overlap >= (opts.testNameOverlapThreshold ?? 0.5)) {
         mult *= opts.testNameOverlapFactor ?? 0.40;
         details.push('test-name:0.40');
       }
-    }
-
-    if (!hasAblation(ablations, 'no-file-header-demotion') && isFileHeaderChunk(result, opts)) {
-      mult *= opts.fileHeaderFactor ?? 0.50;
-      details.push('file-header:0.50');
     }
 
     const kindMult = entityKindMultiplier(result, preferredKind, opts);
