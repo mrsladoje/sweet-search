@@ -18,6 +18,7 @@ import { generateRegexMatches } from './search-pattern-planner.js';
 import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, readFileRange } from './search-pattern-chunks.js';
 import { isRipgrepAvailable, runRipgrepJson } from './search-pattern-ripgrep.js';
 import { packageForAgent } from './context-expander.js';
+import { applyResultDemotions } from '../ranking/file-kind-ranking.js';
 
 // =============================================================================
 // Ripgrep runner (thin wrapper for external callers)
@@ -310,30 +311,13 @@ export async function patternSearch(query, routing, options = {}) {
       s.grepDensity = matchCount;
       s.lateInteractionScore = s.lateInteractionScore * (1 + GREP_DENSITY_ALPHA * Math.log(matchCount));
     }
-    const TEST_DEMOTION = options.testDemotion ?? 0.05;
-    if (TEST_DEMOTION > 0) {
-      const queryLower = query.toLowerCase();
-      const queryMentionsTest = /\btest|spec|describe|it\b/.test(queryLower);
-      if (!queryMentionsTest) {
-        for (const s of scored) {
-          const doc = this.lateInteractionIndex.documents.get(s.id);
-          const file = doc?.metadata?.file || '';
-          const name = doc?.metadata?.name || '';
-          if (/test|spec|__test__|\.test\.|\.spec\./.test(file) ||
-              /test|spec/i.test(name)) {
-            s.lateInteractionScore -= TEST_DEMOTION;
-          }
-        }
-      }
-    }
-
     scored.sort((a, b) => b.lateInteractionScore - a.lateInteractionScore);
     log(`MaxSim rerank: ${scored.length} candidates in ${rerankTime.toFixed(1)}ms`);
   }
 
   const fileCache = new Map();
 
-  const results = scored.slice(0, k).map((s, rank) => {
+  let rankedResults = scored.map((s, rank) => {
     const doc = this.lateInteractionIndex.documents.get(s.id);
     const meta = doc?.metadata || {};
     const text = readFileRange(fileCache, meta.file, meta.startLine, meta.endLine, this.projectRoot);
@@ -355,6 +339,18 @@ export async function patternSearch(query, routing, options = {}) {
       metadata: meta,
     };
   });
+  rankedResults = applyResultDemotions(rankedResults, {
+    query,
+    ablations,
+    projectRoot: this.projectRoot,
+    codeGraphRepo: this.codeGraphRepo,
+  }).map((result, rank) => ({
+    ...result,
+    rank: rank + 1,
+    lateInteractionScore: result.score,
+  }));
+
+  const results = rankedResults.slice(0, k);
 
   const remaining = Math.max(0, k - results.length);
   if (remaining > 0 && unindexedMatches.length > 0) {

@@ -70,6 +70,44 @@ export class CodeGraphRepository {
   }
 
   /**
+   * Find the first indexed entity fully contained in a chunk range.
+   * Useful when a chunk starts at file line 1 but includes the declaration
+   * shortly after imports/comments, so strict enclosing lookup cannot match.
+   *
+   * @param {string} filePath
+   * @param {number} startLine
+   * @param {number} endLine
+   * @returns {{ id: string, name: string, type: string, startLine: number, endLine: number, parentClass: string|null }|null}
+   */
+  findFirstEntityInRange(filePath, startLine, endLine) {
+    const db = this._open();
+    if (!db) return null;
+    try {
+      const row = db.prepare(`
+        SELECT id, name, type, start_line, end_line, parent_class
+        FROM entities
+        WHERE file_path = ?
+          AND start_line >= ?
+          AND start_line <= ?
+          AND (stale_since IS NULL)
+        ORDER BY start_line ASC, (end_line - start_line) ASC
+        LIMIT 1
+      `).get(filePath, startLine, endLine);
+      if (!row) return null;
+      return {
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        startLine: row.start_line,
+        endLine: row.end_line,
+        parentClass: row.parent_class || null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Get a single entity by id, with file:line metadata.
    *
    * @param {string} entityId
@@ -212,6 +250,49 @@ export class CodeGraphRepository {
         });
       }
       return out;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Case-insensitive variant for query-derived name hints. Used only for
+   * ranking tiebreakers where user prose may lowercase an entity name.
+   *
+   * @param {string[]} names
+   * @param {object} [opts]
+   * @returns {Array<{ id, name, type, filePath, startLine, endLine }>}
+   */
+  findEntitiesByNamesCaseInsensitive(names, opts = {}) {
+    const db = this._open();
+    if (!db || !Array.isArray(names) || names.length === 0) return [];
+    const uniq = [...new Set(names
+      .filter(n => typeof n === 'string' && n.length >= 2)
+      .map(n => n.toLowerCase()))];
+    if (!uniq.length) return [];
+    const types = (opts.types && opts.types.length)
+      ? opts.types
+      : ['struct', 'class', 'interface', 'enum', 'trait', 'type', 'typeAlias'];
+    const limit = Math.max(1, Math.min(32, opts.limit ?? 8));
+    try {
+      const sql = `
+        SELECT id, name, type, file_path, start_line, end_line
+        FROM entities
+        WHERE lower(name) IN (${uniq.map(() => '?').join(',')})
+          AND type IN (${types.map(() => '?').join(',')})
+          AND (stale_since IS NULL)
+        ORDER BY (end_line - start_line) ASC
+        LIMIT ?
+      `;
+      const rows = db.prepare(sql).all(...uniq, ...types, limit);
+      return rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        filePath: row.file_path,
+        startLine: row.start_line,
+        endLine: row.end_line,
+      }));
     } catch {
       return [];
     }

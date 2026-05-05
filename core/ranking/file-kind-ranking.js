@@ -48,6 +48,15 @@ const TESTS_RE = /(?:^|\/)tests?\/|(?:^|\/)spec\/|\.test\.[a-z0-9]+$|_test\.[a-z
 const TYPES_RE = /\.d\.ts$|(?:^|\/)types\//i;
 const ANCILLARY_RE = /(?:^|\/)\.(?:github|gitlab|circleci|vscode|cursor)\/|(?:^|\/)(?:package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock|Gemfile\.lock)$|\.(?:ya?ml|jsonc?|toml|ini|cfg|conf|lock|xml|csv)$/i;
 const DECLARATION_RE = /\b(function|class|struct|interface|enum|trait|fn\s+\w+|def\s+\w+|const\s+k[A-Z])\b|\btype\s+\w+\s*=/;
+const EXECUTABLE_DECLARATION_RE = /\b(function|class|struct|interface|enum|trait|fn\s+\w+|def\s+\w+|func\s+\w+)\b/;
+const STOPWORDS = new Set([
+  'and', 'are', 'does', 'for', 'from', 'how', 'into', 'is', 'the', 'this',
+  'that', 'what', 'when', 'where', 'which', 'with', 'why',
+]);
+const LANG_KEYWORDS = new Set([
+  'class', 'const', 'def', 'enum', 'fn', 'function', 'impl', 'import',
+  'interface', 'let', 'package', 'pub', 'struct', 'trait', 'type', 'use',
+]);
 
 const ENTITY_KIND_KEYWORDS = {
   enum: ['enum'],
@@ -129,6 +138,7 @@ export function detectFileKind(filePath) {
   if (DOCS_RE.test(filePath))  return 'docs';
   if (EXAMPLES_RE.test(filePath)) return 'examples';
   if (TESTS_RE.test(filePath)) return 'tests';
+  if (isTestSupportFile(filePath)) return 'tests';
   if (TYPES_RE.test(filePath)) return 'types';
   if (ANCILLARY_RE.test(filePath)) return 'ancillary';
   return 'implementation';
@@ -236,6 +246,10 @@ export function isTinyAncillaryChunk(r, opts = {}) {
 export function isTestChunk(r, opts = {}) {
   const fileKind = detectFileKind(resolveFilePath(r));
   if (fileKind === 'tests') return true;
+  if (!hasAblation(opts.ablations, 'no-test-support-detection')
+      && isTestSupportFile(resolveFilePath(r), resolveFullFileText(r, opts) || resolveResultText(r, opts))) {
+    return true;
+  }
 
   const text = resolveResultText(r, opts);
   if (/^\s*#\[(cfg\s*\(\s*test\s*\)|test)\]/m.test(text)) return true;
@@ -245,6 +259,45 @@ export function isTestChunk(r, opts = {}) {
 
   const name = resolveResultName(r);
   return /^(test_|Test[A-Z])|_test$/.test(name);
+}
+
+function resolveFullFileText(r, opts = {}) {
+  if (!opts.projectRoot) return '';
+  const file = resolveFilePath(r);
+  if (!file) return '';
+  try {
+    const root = path.resolve(opts.projectRoot);
+    const abs = path.resolve(root, file);
+    if (abs !== root && !abs.startsWith(root + path.sep)) return '';
+    return readFileSync(abs, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+export function isTestSupportFile(filePath, content = '') {
+  if (!filePath) return false;
+  const pathRules = [
+    /(^|\/)(testutil|test_util|test_utils|test_helper|test_helpers|testing_support|spec_helper)\.[a-z]+$/i,
+    /(^|\/)(test|tests|spec|__tests__|__mocks__)\/[^/]*(util|helper|fixture|mock|stub|setup|harness)/i,
+    /(^|\/)(testdata|fixtures|__fixtures__|test_data)\//i,
+    /(^|\/)conftest\.py$/i,
+    /\.test-d\.[tj]sx?$/i,
+  ];
+  if (pathRules.some(re => re.test(filePath))) return true;
+
+  if (!content) return false;
+  if (/^\s*#!\[cfg\s*\(\s*test\s*\)/m.test(content)) return true;
+
+  const lines = content.split('\n').filter(line => line.trim());
+  if (lines.length < 8) return false;
+  const hasJsTestContext = /(^|\/)(test|tests|spec|__tests__)\//i.test(filePath)
+    || /^\s*(describe|it|test)\s*\(/m.test(content);
+  const assertionRe = hasJsTestContext
+    ? /\b(assert!|assert_eq!|assert_ne!|expect\(|assertEqual|assertEquals|t\.Errorf|t\.Fatalf|t\.Helper\(\)|require\.\w+|assert\.\w+)\b/
+    : /\b(assert!|assert_eq!|assert_ne!|assertEqual|assertEquals|t\.Errorf|t\.Fatalf|t\.Helper\(\))\b/;
+  const assertLines = lines.filter(line => assertionRe.test(line)).length;
+  return assertLines / lines.length > 0.30;
 }
 
 function queryTokenSet(query, queryTokens) {
@@ -280,6 +333,26 @@ export function entityKindPreferenceFromQuery(query) {
   return null;
 }
 
+export function extractNameHints(query) {
+  const tokens = String(query || '').match(/[A-Za-z_][A-Za-z0-9_]+/g) || [];
+  const hints = new Set();
+  for (const token of tokens) {
+    if (token.length < 3) continue;
+    if (LANG_KEYWORDS.has(token)) continue;
+    if (STOPWORDS.has(token.toLowerCase())) continue;
+    if (/[A-Z]/.test(token) || token.length >= 4) hints.add(token);
+  }
+  return hints;
+}
+
+function splitIdentifierName(name) {
+  return String(name || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[_\W]+/)
+    .map(s => s.toLowerCase())
+    .filter(Boolean);
+}
+
 function resolveEntityKindInfo(r, opts = {}) {
   const file = resolveFilePath(r);
   const meta = r?.metadata || {};
@@ -290,6 +363,10 @@ function resolveEntityKindInfo(r, opts = {}) {
       const entity = opts.codeGraphRepo.findEnclosingEntity(file, start, Number.isFinite(end) ? end : start)
         || opts.codeGraphRepo.findEnclosingEntity(file, start, start);
       if (entity?.type) return entity;
+      if (typeof opts.codeGraphRepo.findFirstEntityInRange === 'function' && Number.isFinite(end)) {
+        const first = opts.codeGraphRepo.findFirstEntityInRange(file, start, end);
+        if (first?.type) return first;
+      }
     } catch {
       // Fall through to source-span inference.
     }
@@ -309,6 +386,50 @@ function entityKindMultiplier(r, preferred, opts = {}) {
   return 1;
 }
 
+function namePrecisionMultiplier(r, preferred, nameHintsLower, opts = {}) {
+  if (!preferred || nameHintsLower.size === 0) return 1;
+  const wantSet = new Set((ENTITY_KIND_KEYWORDS[preferred] || []).map(normalizeType));
+  const entityInfo = resolveEntityKindInfo(r, opts);
+  const recorded = normalizeType(resolveResultType(r));
+  const type = recorded && recorded !== 'code' && recorded !== 'chunk'
+    ? recorded
+    : normalizeType(entityInfo?.type);
+  if (!wantSet.has(type) && !(type === 'typealias' && preferred === 'type')) return 1;
+
+  const name = resolveResultName(r) || entityInfo?.name || '';
+  if (!name) return 1;
+  if (nameHintsLower.has(name.toLowerCase())) return 1.20;
+  const nameTokens = splitIdentifierName(name);
+  for (const hint of nameHintsLower) {
+    if (nameTokens.includes(hint)) return 1.05;
+  }
+  return 1;
+}
+
+function exactNamedEntityForResult(r, preferred, nameHints, nameHintsLower, opts = {}) {
+  if (!opts.codeGraphRepo || !preferred || nameHintsLower.size === 0) return null;
+  const file = resolveFilePath(r);
+  if (!file) return null;
+  const types = ENTITY_KIND_KEYWORDS[preferred] || [];
+  try {
+    const entities = (typeof opts.codeGraphRepo.findEntitiesByNamesCaseInsensitive === 'function'
+      ? opts.codeGraphRepo.findEntitiesByNamesCaseInsensitive([...nameHintsLower], {
+          types,
+          limit: 16,
+        })
+      : opts.codeGraphRepo.findEntitiesByNames([...nameHints], {
+          types,
+          limit: 16,
+        })) || [];
+    const sameFile = entities.find(entity =>
+      (entity.filePath || entity.file) === file && nameHintsLower.has(String(entity.name || '').toLowerCase())
+    );
+    return sameFile || null;
+  } catch {
+    return null;
+  }
+}
+
 function inferEntityKindFromText(text) {
   if (!text) return '';
   if (/^\s*(?:pub(?:\([^)]*\))?\s+)?enum\s+\w+/m.test(text)) return 'enum';
@@ -319,6 +440,81 @@ function inferEntityKindFromText(text) {
   if (/^\s*(?:export\s+)?interface\s+\w+/m.test(text)) return 'interface';
   if (/^\s*(?:export\s+)?type\s+\w+\s*=/m.test(text)) return 'typealias';
   return '';
+}
+
+export function isFileHeaderChunk(r, opts = {}) {
+  const meta = r?.metadata || {};
+  const start = meta.startLine || r?.startLine;
+  if (start == null || start > 3) return false;
+  if (meta.name || r?.name) return false;
+
+  const text = resolveResultText(r, opts);
+  if (!text.trim()) return false;
+  const textWithoutBlockComments = text.replace(/\/\*[\s\S]*?\*\//g, '');
+  const nonCommentText = textWithoutBlockComments
+    .split('\n')
+    .filter(line => !/^\s*(\/\/|\/\*|\*\/?|\*\s|#\s|\/\/!|\/\/\/)/.test(line.trim()))
+    .join('\n');
+  if (EXECUTABLE_DECLARATION_RE.test(nonCommentText)) return false;
+
+  let importish = 0;
+  let code = 0;
+  let importBlock = false;
+  let constBlock = false;
+  let blockComment = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (blockComment) {
+      if (line.includes('*/')) blockComment = false;
+      continue;
+    }
+    if (line.startsWith('/*')) {
+      if (!line.includes('*/')) blockComment = true;
+      continue;
+    }
+    if (/^(\/\/|\/\*|\*\/?|\*\s|#\s|\/\/!|\/\/\/)/.test(line)) continue;
+    if (/^(const|var)\s*\($/.test(line)) {
+      constBlock = true;
+      importish++;
+      continue;
+    }
+    if (constBlock && line === ')') {
+      constBlock = false;
+      continue;
+    }
+    if (constBlock && /^[A-Za-z_][A-Za-z0-9_]*(?:\s+[A-Za-z_][A-Za-z0-9_.]*)?\s*=/.test(line)) {
+      importish++;
+      continue;
+    }
+    if (/^(const|var)\s+[A-Za-z_][A-Za-z0-9_]*(?:\s+[A-Za-z_][A-Za-z0-9_.]*)?\s*=/.test(line)) {
+      importish++;
+      continue;
+    }
+    if (/^type\s+[A-Za-z_][A-Za-z0-9_]*\s+(?:=|int|string|bool|float|byte|rune)\b/.test(line)) {
+      importish++;
+      continue;
+    }
+    if (/^(package|import|from\s+\S+\s+import|use\s+|extern\s+crate|require\s*\(|'use\s+strict'|"use\s+strict")/.test(line)) {
+      importish++;
+      if (/^(import|use\s+)\s*\($/.test(line)) importBlock = true;
+      continue;
+    }
+    if (importBlock && line === ')') {
+      importBlock = false;
+      continue;
+    }
+    if (importBlock && (/^["'`][^"'`]+["'`]$/.test(line) || /^\w[\w/.-]*$/.test(line))) {
+      importish++;
+      continue;
+    }
+    if (/^[(){}\[\],;]+$/.test(line)) continue;
+    if (/^#!/.test(line)) continue;
+    code++;
+  }
+
+  if (importish + code < 4) return importish > 0 && code === 0;
+  return code === 0 || (code <= 1 && importish / (importish + code) > 0.85);
 }
 
 /**
@@ -334,6 +530,12 @@ export function applyResultDemotions(results, opts = {}) {
   const preferredKind = hasAblation(ablations, 'no-entity-kind-pref')
     ? null
     : entityKindPreferenceFromQuery(opts.query || '');
+  const nameHints = hasAblation(ablations, 'no-name-precision')
+    ? new Set()
+    : extractNameHints(opts.query || '');
+  const nameHintsLower = hasAblation(ablations, 'no-name-precision')
+    ? new Set()
+    : new Set([...nameHints].map(s => s.toLowerCase()));
 
   let changed = false;
   const window = Math.min(opts.window ?? results.length, results.length);
@@ -354,39 +556,90 @@ export function applyResultDemotions(results, opts = {}) {
       }
     }
 
+    if (!hasAblation(ablations, 'no-file-header-demotion') && isFileHeaderChunk(result, opts)) {
+      mult *= opts.fileHeaderFactor ?? 0.50;
+      details.push('file-header:0.50');
+    }
+
     const kindMult = entityKindMultiplier(result, preferredKind, opts);
     if (kindMult !== 1) {
       mult *= kindMult;
       details.push(`kind-pref:${kindMult.toFixed(2)}`);
     }
 
-    if (mult === 1) return { ...result, _resultDemotionOrigIndex: index };
-    changed = true;
+    const nameMult = namePrecisionMultiplier(result, preferredKind, nameHintsLower, opts);
+    if (nameMult !== 1) {
+      mult *= nameMult;
+      details.push(`name-precision:${nameMult.toFixed(2)}`);
+    }
+
     const baseScore = typeof result.score === 'number' ? result.score : 0;
-    const preferredEntity = preferredKind && !hasAblation(ablations, 'no-entity-kind-pref')
-      ? resolveEntityKindInfo(result, opts)
+    const exactEntity = !hasAblation(ablations, 'no-name-precision')
+      ? exactNamedEntityForResult(result, preferredKind, nameHints, nameHintsLower, opts)
       : null;
+    const preferredEntity = exactEntity || (preferredKind && !hasAblation(ablations, 'no-entity-kind-pref')
+      ? resolveEntityKindInfo(result, opts)
+      : null);
     const preferredType = normalizeType(preferredEntity?.type);
     const shouldAdoptEntity = !!(preferredEntity?.startLine
       && preferredEntity?.endLine
       && (ENTITY_KIND_KEYWORDS[preferredKind] || []).map(normalizeType).includes(preferredType));
-    const nextMetadata = shouldAdoptEntity
+    const containedEntity = !shouldAdoptEntity && opts.codeGraphRepo && typeof opts.codeGraphRepo.findFirstEntityInRange === 'function'
+      ? resolveEntityKindInfo(result, opts)
+      : null;
+    const shouldAdoptContained = !!(containedEntity?.name && containedEntity?.startLine && containedEntity?.endLine);
+    const entityToAdopt = shouldAdoptEntity ? preferredEntity : shouldAdoptContained ? containedEntity : null;
+    if (mult === 1 && !entityToAdopt) return { ...result, _resultDemotionOrigIndex: index };
+    changed = true;
+    // Range-preservation invariant: adopting an entity is a *labeling*
+    // operation (it tells the caller what symbol the chunk is about); it
+    // must not SHRINK a well-formed retrieval chunk to a per-symbol entity
+    // boundary. The cAST/sibling-merged chunk is the right unit for the
+    // agent to read; the entity name + type are added as annotations.
+    //
+    // Concretely: a Go file's bsonBinding has a 1-line typeAlias entity
+    // at line 14, but the LI chunk is lines 1-31 (typeAlias + 3 methods,
+    // all merged by cAST). Adopting the entity's range used to drop 30
+    // lines of content; now we keep the chunk range and just adopt the
+    // name/type as labels. Range adoption only fires when the entity
+    // is at least as large as the chunk (e.g. expanding a partial
+    // chunk to its enclosing symbol — which is the legitimate use case).
+    const chunkStart = result.metadata?.startLine ?? result.startLine ?? null;
+    const chunkEnd = result.metadata?.endLine ?? result.endLine ?? null;
+    const chunkRange = (chunkStart != null && chunkEnd != null)
+      ? Math.max(0, chunkEnd - chunkStart + 1) : 0;
+    const entityRange = entityToAdopt
+      ? Math.max(0, (entityToAdopt.endLine || 0) - (entityToAdopt.startLine || 0) + 1) : 0;
+    const adoptRange = !!entityToAdopt && entityRange >= chunkRange;
+    const adoptedFile = entityToAdopt
+      ? (entityToAdopt.file || entityToAdopt.filePath || resolveFilePath(result))
+      : null;
+    const baseMetadata = result.metadata || {};
+    const nextMetadata = entityToAdopt
       ? {
-          ...(result.metadata || {}),
-          file: preferredEntity.file || resolveFilePath(result),
-          name: preferredEntity.name || result.metadata?.name || result.name || null,
-          type: preferredEntity.type,
-          startLine: preferredEntity.startLine,
-          endLine: preferredEntity.endLine,
+          ...baseMetadata,
+          ...(shouldAdoptEntity
+            ? { name: entityToAdopt.name || baseMetadata.name || result.name || null }
+            : { name: entityToAdopt.name }),
+          type: entityToAdopt.type,
+          ...(adoptRange ? {
+            file: adoptedFile,
+            startLine: entityToAdopt.startLine,
+            endLine: entityToAdopt.endLine,
+          } : {}),
         }
-      : result.metadata;
+      : baseMetadata;
     return {
       ...result,
-      ...(shouldAdoptEntity ? {
-        name: preferredEntity.name || result.name,
-        type: preferredEntity.type,
-        startLine: preferredEntity.startLine,
-        endLine: preferredEntity.endLine,
+      ...(entityToAdopt ? {
+        name: shouldAdoptEntity
+          ? (entityToAdopt.name || result.name)
+          : entityToAdopt.name,
+        type: entityToAdopt.type,
+        ...(adoptRange ? {
+          startLine: entityToAdopt.startLine,
+          endLine: entityToAdopt.endLine,
+        } : {}),
       } : {}),
       ...(nextMetadata ? { metadata: nextMetadata } : {}),
       score: baseScore * mult,
