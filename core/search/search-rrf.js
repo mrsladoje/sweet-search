@@ -84,17 +84,39 @@ export function extractContentKeywords(query) {
   return out;
 }
 
+/**
+ * Decide whether the keyword fallback should run. Tightened (2026-05-05)
+ * after a 20-query probe found the original triggers fired too eagerly.
+ *
+ * The earlier two-clause trigger (`low_confidence` ∨ `no_source_in_top3`)
+ * caused regressions on queries where the encoder DID produce a real
+ * named source symbol just below the score floor (e.g. `getServerInstance`
+ * at score 0.32 lost to a 1-line `[typeAlias: HttpKeys]` injected by RRF).
+ *
+ * New rule: RRF fires only when top-3 has NO "good source candidate" —
+ * defined as an implementation-file chunk with a real named entity. That
+ * captures the genuine "retrieval is lost" case (only docs / tests /
+ * unlabelled chunks) without sacrificing borderline-confidence wins.
+ *
+ *   - empty                   → fire (always)
+ *   - top-1 in docs/tests AND no good source candidate → fire
+ *   - all top-3 are unlabelled chunks (no symbol name) → fire
+ *   - otherwise               → don't fire
+ *
+ * The previous standalone `low_confidence` trigger (top-1 score < floor)
+ * was removed — encoder scores below 0.35 are common on long NL queries
+ * even when the answer IS the encoder's top-1.
+ */
 export function shouldRunFallback(results, opts = {}) {
   if (!Array.isArray(results) || results.length === 0) return 'empty';
-  const floor = opts.confidenceFloor ?? DEFAULT_CONFIDENCE_FLOOR;
-  const top1 = results[0]?.score ?? 0;
-  if (top1 < floor) return 'low_confidence';
   const window = results.slice(0, Math.min(3, results.length));
-  const hasSource = window.some(r => {
+  const hasGoodSource = window.some(r => {
     const file = r.metadata?.file || r.file || r.file_path || '';
-    return detectFileKind(file) === 'implementation';
+    if (detectFileKind(file) !== 'implementation') return false;
+    const name = r.metadata?.name || r.name;
+    return name && String(name).trim().length > 0;
   });
-  if (!hasSource) return 'no_source_in_top3';
+  if (!hasGoodSource) return 'no_good_source_in_top3';
   return null;
 }
 
