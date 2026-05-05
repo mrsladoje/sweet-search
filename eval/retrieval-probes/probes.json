@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "description": "Curated 20-query retrieval-quality probe set. Each probe runs ss-search auto routing against a pinned bench repo and verifies the top-1 result matches `expectedFile` and (when set) `expectedSymbol` / `expectedSymbolType`. Used as a pre-bench regression gate — quick to run, no agent-in-the-loop, no judge model.",
+  "probes": [
+    {
+      "id": "S1-Q1",
+      "repo": "fastify",
+      "query": "how does Fastify decide between HTTP HTTPS and HTTP/2 server creation",
+      "expectedFile": "lib/server.js",
+      "expectedSymbolType": "function",
+      "notes": "createServer / getServerInstance live here; either is acceptable as top-1"
+    },
+    {
+      "id": "S1-Q2",
+      "repo": "fastify",
+      "query": "what hooks does Fastify run before route handlers",
+      "expectedFileAnyOf": ["fastify.js", "lib/hooks.js"],
+      "notes": "runHooks / Hooks both legitimate"
+    },
+    {
+      "id": "S1-Q3",
+      "repo": "fastify",
+      "query": "how is content-type parser registered for incoming requests",
+      "expectedFile": "lib/content-type-parser.js"
+    },
+    {
+      "id": "S1-Q4",
+      "repo": "gin",
+      "query": "how does Gin's middleware chain handle Abort vs Next",
+      "expectedFile": "context.go",
+      "expectedSymbolAnyOf": ["Abort", "Next", "AbortWithStatus"],
+      "notes": "Currently fails — encoder picks Copy. Known gap."
+    },
+    {
+      "id": "S1-Q5",
+      "repo": "gin",
+      "query": "when does Gin redirect on trailing slash and what config controls it",
+      "expectedFileAnyOf": ["gin.go", "tree.go"],
+      "expectedSymbolAnyOf": ["redirectTrailingSlash", "Engine", "RedirectTrailingSlash"]
+    },
+    {
+      "id": "S1-Q6",
+      "repo": "gin",
+      "query": "how does Gin bind JSON request bodies to Go structs",
+      "expectedFileAnyOf": ["binding/json.go", "binding/binding.go", "binding/bson.go", "context.go"],
+      "notes": "Currently fails — encoder picks errors.go ErrorType"
+    },
+    {
+      "id": "S1-Q7",
+      "repo": "ripgrep",
+      "query": "how does ripgrep configure binary detection",
+      "expectedFileAnyOf": ["crates/core/flags/hiargs.rs", "crates/searcher/src/searcher/mod.rs"]
+    },
+    {
+      "id": "S1-Q8",
+      "repo": "ripgrep",
+      "query": "what does the ConfigError type represent in regex crate",
+      "expectedSymbol": "ConfigError",
+      "expectedSymbolTypeAnyOf": ["enum", "struct"]
+    },
+    {
+      "id": "S1-Q9",
+      "repo": "ripgrep",
+      "query": "how does globset compile globs into a single matcher",
+      "expectedFileAnyOf": ["crates/globset/src/glob.rs", "crates/globset/src/lib.rs"]
+    },
+    {
+      "id": "S1-Q10",
+      "repo": "ripgrep",
+      "query": "what is the Searcher's role and how does it dispatch to a Sink",
+      "expectedFileAnyOf": ["crates/searcher/src/searcher/mod.rs", "crates/searcher/src/sink.rs"]
+    },
+
+    {
+      "id": "S2-Q1",
+      "repo": "fastify",
+      "query": "how does Fastify handle errors thrown in async handlers",
+      "expectedFileAnyOf": ["lib/errors.js", "lib/error-handler.js", "lib/handle-request.js"]
+    },
+    {
+      "id": "S2-Q2",
+      "repo": "fastify",
+      "query": "where is the route handler invoked after pre-handler hooks",
+      "expectedFileAnyOf": ["lib/route.js", "lib/handle-request.js"],
+      "expectedSymbolAnyOf": ["routeHandler", "handler", "preHandlerCallbackInner"]
+    },
+    {
+      "id": "S2-Q3",
+      "repo": "fastify",
+      "query": "what is kSchemaController and what does it do",
+      "expectedFile": "lib/schema-controller.js",
+      "expectedSymbolAnyOf": ["buildSchemaController", "SchemaController", "kSchemaController", "setupValidator"],
+      "notes": "Was failing on 2-line module.exports tail chunk — fixed by tree-sitter tail merge"
+    },
+    {
+      "id": "S2-Q4",
+      "repo": "gin",
+      "query": "how is request binding selected based on content type",
+      "expectedFile": "binding/binding.go",
+      "expectedSymbolAnyOf": ["Default", "Binding"]
+    },
+    {
+      "id": "S2-Q5",
+      "repo": "gin",
+      "query": "what does Engine.NoRoute do when no route matches",
+      "expectedFile": "gin.go",
+      "expectedSymbolAnyOf": ["NoRoute", "rebuild404Handlers"]
+    },
+    {
+      "id": "S2-Q6",
+      "repo": "gin",
+      "query": "how is gin's logger middleware initialized",
+      "expectedFileAnyOf": ["logger.go", "ginS/gins.go"]
+    },
+    {
+      "id": "S2-Q7",
+      "repo": "ripgrep",
+      "query": "what enum represents output mode for ripgrep results",
+      "expectedFile": "crates/core/flags/lowargs.rs",
+      "expectedSymbol": "Mode",
+      "expectedSymbolType": "enum"
+    },
+    {
+      "id": "S2-Q8",
+      "repo": "ripgrep",
+      "query": "how does ripgrep stream large file searches with mmap",
+      "expectedFileAnyOf": ["crates/core/flags/hiargs.rs", "crates/core/search.rs", "crates/searcher/src/searcher/mod.rs"]
+    },
+    {
+      "id": "S2-Q9",
+      "repo": "ripgrep",
+      "query": "where is the multi-line regex search implemented",
+      "expectedFileAnyOf": ["crates/searcher/src/searcher/glue.rs", "crates/searcher/src/searcher/mod.rs", "crates/printer/src/util.rs"]
+    },
+    {
+      "id": "S2-Q10",
+      "repo": "ripgrep",
+      "query": "what types make up the printer trait hierarchy",
+      "expectedFileAnyOf": ["crates/printer/src/standard.rs", "crates/printer/src/json.rs", "crates/printer/src/summary.rs", "crates/printer/src/util.rs", "crates/matcher/src/lib.rs", "crates/searcher/src/sink.rs"]
+    }
+  ]
+}

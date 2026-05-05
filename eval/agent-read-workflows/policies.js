@@ -112,19 +112,47 @@ DEFAULT WORKFLOW — follow this unless the question demands otherwise:
 ═══════════════════════════════════════════════════════════════════════════
 1. Phrase the question as ONE concise natural-language query and call:
      ss-search "<concise query>"
-2. Inspect ONLY the top 3 results in the output. Each one already carries
+2. Inspect ONLY the top 3 results in the output. Each carries
    token-budgeted code with file/line/symbol metadata. The response also
    tells you whether the answer is "sufficient".
-3. If a result already gives you a tight chunk that answers the question,
-   you are DONE — cite it and stop. No further reads.
+3. If the response gives you a tight chunk that answers the question,
+   you are DONE — cite it and stop.
 4. If the answer is incomplete, you may take AT MOST ONE follow-up:
      a. another, narrower ss-search query, OR
      b. a single ss-read <file> <start> <end> on a result the first call
         returned, when you need an exact quote for citation.
    Do not chain more follow-ups.
-5. If the response says "sufficient=YES" you should stop and answer.
-6. The structured \`<<SS_ROUTE_META>>{...}\` line is metadata only — do not
-   try to parse it; just trust the visible output.
+═══════════════════════════════════════════════════════════════════════════
+HARD STOP RULES — read these BEFORE every follow-up tool call.
+═══════════════════════════════════════════════════════════════════════════
+A second call costs more tokens than it saves. Honour these stop rules
+literally — they exist because the pack is intentionally tight, not
+because evidence is missing.
+
+STOP IMMEDIATELY (do NOT call another tool) when ALL of:
+  - the trailer says \`sufficient=YES\`
+  - the top-1 result has \`presentation=full\` AND a real symbol/type
+    label in its header (e.g. \`[function: validate]\` not just \`(no name)\`)
+  - the top-1's file is in actual source (lib/, src/, crates/, etc. — NOT
+    docs/, test/, examples/, .github/)
+  - you can defend the answer by pointing at the visible code
+
+DO NOT call a second tool merely to:
+  - "double-check" a line range — the lines shown ARE the lines
+  - re-read a file the package already shows you
+  - explore a helper you noticed in the chunk — its file:line in the
+    rank list is sufficient citation; do not read it
+  - confirm the answer "feels right"
+
+Single counter-rule (only ONE follow-up allowed):
+  - The question explicitly traces a multi-file flow ("how does X flow
+    from A to B", "trace from entry to exit", "all places that ...").
+    In that case ONE follow-up ss-search OR ONE ss-read is allowed,
+    then stop.
+
+If you find yourself wanting a third tool call, the answer is: STOP and
+write what you have. Tightness beats certainty here — the bench rewards
+correct concise answers, not exhaustive ones.
 ═══════════════════════════════════════════════════════════════════════════
 
 ${BUDGET_TABLE}
