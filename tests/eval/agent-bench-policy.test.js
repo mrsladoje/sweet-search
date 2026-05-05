@@ -10,10 +10,14 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import path from 'node:path';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
   POLICIES, MODE_ORDER, TOOL_RULES, SWEET_CONDITIONS,
 } from '../../eval/agent-read-workflows/policies.js';
 import { auditRun } from '../../eval/agent-read-workflows/audit.js';
+import { SweetSearch } from '../../core/search/sweet-search.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Policy/tool-rule wiring
@@ -195,4 +199,85 @@ describe('SS_ROUTE_META trailer extraction', () => {
     const parsed = _internal.parseStreamJson(stream);
     expect(parsed.toolResults[0].routeMeta).toBeUndefined();
   });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Live retrieval canaries — cheap local-index checks, no model/judge calls
+// ────────────────────────────────────────────────────────────────────────────
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '../..');
+const canaryReposReady = ['fastify', 'gin', 'ripgrep'].every(repo =>
+  existsSync(path.join(repoRoot, 'eval/repos', repo, '.sweet-search/codebase.db'))
+);
+
+async function searchRepo(repo, query) {
+  const projectRoot = path.join(repoRoot, 'eval/repos', repo);
+  const data = path.join(projectRoot, '.sweet-search');
+  const searcher = new SweetSearch({
+    projectRoot,
+    graphDbPath: path.join(data, 'code-graph.db'),
+    hnswPath: path.join(data, 'codebase-hnsw.idx'),
+    binaryHnswPath: path.join(data, 'codebase-binary-hnsw.idx'),
+    codebaseDbPath: path.join(data, 'codebase.db'),
+    sparseGramIndexPath: path.join(data, 'codebase-sparse-grams.idx'),
+    lateInteractionOptions: { indexPath: path.join(data, 'codebase-late-interaction.db') },
+    useLateInteraction: true,
+  });
+  try {
+    await searcher.init();
+    const result = await searcher.search(query, {
+      mode: 'auto',
+      k: 5,
+      rerank: false,
+      useLateInteraction: true,
+    });
+    return result.results[0];
+  } finally {
+    searcher.close();
+  }
+}
+
+describe.skipIf(!canaryReposReady)('live retrieval canaries', () => {
+  it('keeps prior failure chunks out of top-1', async () => {
+    const canaries = [
+      {
+        repo: 'fastify',
+        q: 'what is kSchemaController and what does it do',
+        assertTop1: r => expect([r.startLine, r.endLine]).not.toEqual([163, 164]),
+      },
+      {
+        repo: 'ripgrep',
+        q: 'what enum represents output mode for ripgrep results',
+        assertTop1: r => {
+          expect(r.metadata?.type || r.type).toMatch(/enum/i);
+          expect(r.metadata?.name || r.name).toBe('Mode');
+        },
+      },
+      {
+        repo: 'ripgrep',
+        q: 'where is the multi-line regex search implemented',
+        assertTop1: r => expect(r.file || r.metadata?.file).not.toMatch(/testutil|tests?\/|test_util/i),
+      },
+      {
+        repo: 'gin',
+        q: 'how is request binding selected based on content type',
+        assertTop1: r => expect(r.metadata?.name || r.name).toBeTruthy(),
+      },
+      {
+        repo: 'gin',
+        q: 'how does Gin bind JSON request bodies to Go structs',
+        assertTop1: r => {
+          const name = r.metadata?.name || r.name;
+          const start = r.metadata?.startLine ?? r.startLine ?? 1;
+          expect(!name && start <= 3).toBe(false);
+        },
+      },
+    ];
+
+    for (const canary of canaries) {
+      const top1 = await searchRepo(canary.repo, canary.q);
+      canary.assertTop1(top1);
+    }
+  }, 120_000);
 });
