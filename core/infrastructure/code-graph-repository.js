@@ -299,6 +299,62 @@ export class CodeGraphRepository {
   }
 
   /**
+   * Look up entities by name (case-insensitive) across ALL entity kinds —
+   * functions, methods, type aliases, structs, classes, etc. Used by the
+   * Identifier-Anchored Retrieval (IAR) layer in search-anchor.js, which
+   * extracts identifier-shaped tokens from natural-language queries and
+   * needs to find matching entities regardless of their declared kind.
+   *
+   * Distinct from `findEntitiesByNamesCaseInsensitive` (which filters to
+   * type-shaped kinds for the entity-kind ranking preference).
+   *
+   * Returns a small set per name, preferring the smallest body (canonical
+   * definition over re-exports). Excludes obviously-non-symbol kinds
+   * ('chunk', 'message', 'topKey', 'target', 'variable') so we don't
+   * surface generic constants on hits like "config".
+   *
+   * @param {string[]} names
+   * @param {object} [opts]
+   * @param {number} [opts.limit=16]
+   * @param {string[]} [opts.excludeKinds]
+   * @returns {Array<{ id, name, type, filePath, startLine, endLine }>}
+   */
+  findEntitiesByAnyName(names, opts = {}) {
+    const db = this._open();
+    if (!db || !Array.isArray(names) || names.length === 0) return [];
+    const uniq = [...new Set(names
+      .filter(n => typeof n === 'string' && n.length >= 2)
+      .map(n => n.toLowerCase()))];
+    if (!uniq.length) return [];
+    const exclude = Array.isArray(opts.excludeKinds) && opts.excludeKinds.length
+      ? opts.excludeKinds
+      : ['chunk', 'message', 'topKey', 'target', 'variable', 'const'];
+    const limit = Math.max(1, Math.min(64, opts.limit ?? 16));
+    try {
+      const sql = `
+        SELECT id, name, type, file_path, start_line, end_line
+        FROM entities
+        WHERE lower(name) IN (${uniq.map(() => '?').join(',')})
+          AND type NOT IN (${exclude.map(() => '?').join(',')})
+          AND (stale_since IS NULL)
+        ORDER BY (end_line - start_line) ASC
+        LIMIT ?
+      `;
+      const rows = db.prepare(sql).all(...uniq, ...exclude, limit);
+      return rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        filePath: row.file_path,
+        startLine: row.start_line,
+        endLine: row.end_line,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * One-hop incoming relationships into a given target entity (its callers,
    * importers, etc.). Joined to the source entity for file:line rendering.
    *
