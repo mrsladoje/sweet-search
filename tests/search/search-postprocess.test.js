@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { computeCacheHit } from '../../core/search/index.js';
 import { createMockSearcher, createMinimalSearchContext } from '../helpers/prototype-test-helper.js';
 
@@ -64,9 +64,13 @@ describe('computeCacheHit', () => {
 
 describe('Late interaction post-expansion reranking', () => {
   let searcher;
+  const originalAdaptiveLi = process.env.SWEET_SEARCH_ADAPTIVE_LI_RERANK;
+  const originalLiWeight = process.env.SWEET_SEARCH_FULL_VECTOR_LI_RESCORE_WEIGHT;
 
   beforeEach(async () => {
     mockEncodeQuery.mockClear();
+    delete process.env.SWEET_SEARCH_ADAPTIVE_LI_RERANK;
+    delete process.env.SWEET_SEARCH_FULL_VECTOR_LI_RESCORE_WEIGHT;
 
     searcher = await createMockSearcher({
       hasLateInteractionIndex: true,
@@ -90,8 +94,20 @@ describe('Late interaction post-expansion reranking', () => {
     });
   });
 
+  afterEach(() => {
+    if (originalAdaptiveLi === undefined) delete process.env.SWEET_SEARCH_ADAPTIVE_LI_RERANK;
+    else process.env.SWEET_SEARCH_ADAPTIVE_LI_RERANK = originalAdaptiveLi;
+    if (originalLiWeight === undefined) delete process.env.SWEET_SEARCH_FULL_VECTOR_LI_RESCORE_WEIGHT;
+    else process.env.SWEET_SEARCH_FULL_VECTOR_LI_RESCORE_WEIGHT = originalLiWeight;
+  });
+
   async function runPostRetrieval(results, options = {}) {
     const ctx = createMinimalSearchContext();
+    return searcher._applyPostRetrieval(results, 'test query', options, ctx);
+  }
+
+  async function runDirectSearchPostRetrieval(results, options = {}, context = {}) {
+    const ctx = { ...createMinimalSearchContext(), ...context, fromSearch: true };
     return searcher._applyPostRetrieval(results, 'test query', options, ctx);
   }
 
@@ -199,5 +215,71 @@ describe('Late interaction post-expansion reranking', () => {
 
     expect(stats.lateInteraction).toBeDefined();
     expect(mockEncodeQuery).toHaveBeenCalled();
+  });
+
+  it('runs adaptive late interaction by default for direct search when top scores are close', async () => {
+    const results = [
+      { id: 'a', score: 1.0, name: 'a' },
+      { id: 'b', score: 0.98, name: 'b' },
+    ];
+
+    const { stats } = await runDirectSearchPostRetrieval(results);
+
+    expect(stats.lateInteraction).toBeDefined();
+    expect(searcher.lateInteractionIndex.scoreWithLateInteraction).toHaveBeenCalledOnce();
+  });
+
+  it('skips adaptive late interaction for direct search when top score margin is wide', async () => {
+    const results = [
+      { id: 'a', score: 1.0, name: 'a' },
+      { id: 'b', score: 0.5, name: 'b' },
+    ];
+
+    const { stats } = await runDirectSearchPostRetrieval(results);
+
+    expect(stats.lateInteraction).toBeUndefined();
+    expect(searcher.lateInteractionIndex.scoreWithLateInteraction).not.toHaveBeenCalled();
+  });
+
+  it('allows adaptive direct-search late interaction to be disabled by env', async () => {
+    process.env.SWEET_SEARCH_ADAPTIVE_LI_RERANK = '0';
+    const results = [
+      { id: 'a', score: 1.0, name: 'a' },
+      { id: 'b', score: 0.99, name: 'b' },
+    ];
+
+    const { stats } = await runDirectSearchPostRetrieval(results);
+
+    expect(stats.lateInteraction).toBeUndefined();
+    expect(searcher.lateInteractionIndex.scoreWithLateInteraction).not.toHaveBeenCalled();
+  });
+
+  it('uses lighter full-vector blending after late interaction so MaxSim remains dominant', async () => {
+    searcher.lateInteractionIndex.scoreWithLateInteraction = vi.fn(async (queryTokens, candidates) =>
+      candidates.map((candidate, index) => ({
+        ...candidate,
+        lateInteractionScore: index === 0 ? 0.9 : index === 1 ? 0.1 : 0.0,
+      }))
+    );
+    searcher.codebaseRepo = {
+      getEmbeddingsByIds: vi.fn(ids => new Map(ids.map(id => [
+        id,
+        id === 'a' ? [0, 1] : id === 'b' ? [1, 0] : [0.5, 0],
+      ]))),
+    };
+
+    const results = [
+      { id: 'a', score: 1.0, name: 'a' },
+      { id: 'b', score: 0.99, name: 'b' },
+      { id: 'c', score: 0.98, name: 'c' },
+    ];
+
+    const { results: output, stats } = await runDirectSearchPostRetrieval(results, {}, {
+      semanticStats: { queryFloat: [1, 0] },
+    });
+
+    expect(stats.lateInteraction).toBeDefined();
+    expect(stats.fullVectorRescore).toBeDefined();
+    expect(output[0].id).toBe('a');
   });
 });

@@ -47,13 +47,16 @@ import { extractNameHints } from '../ranking/file-kind-ranking.js';
  *
  * Token length floor stays at 3 to drop noise like "is", "to", "by".
  */
-export function extractStrictAnchorNames(query) {
+export function extractStrictAnchorNames(query, opts = {}) {
   const tokens = String(query || '').match(/[A-Za-z_][A-Za-z0-9_]+/g) || [];
   const hints = new Set();
+  const allowPlainTitlecase = opts.allowPlainTitlecase === true;
   for (const token of tokens) {
     if (token.length < 3) continue;
-    // Require strong identifier shape: uppercase letter OR underscore.
-    if (!/[A-Z]/.test(token) && !token.includes('_')) continue;
+    // Require strong identifier shape: internal uppercase, acronym,
+    // underscore, or digit. Plain sentence Titlecase ("Downloads") is too
+    // ambiguous for injection; ranking tiebreakers can still use it later.
+    if (!isStrongIdentifierToken(token) && !(allowPlainTitlecase && isPlainTitlecase(token))) continue;
     hints.add(token);
   }
   return hints;
@@ -114,6 +117,42 @@ function scoreForAnchor(entity, hintsLower) {
   return Math.min(ANCHOR_MAX_SCORE, ANCHOR_BASELINE_SCORE + ANCHOR_PER_HINT_BONUS * matched);
 }
 
+function isPlainTitlecase(token) {
+  return /^[A-Z][a-z0-9]+$/.test(token);
+}
+
+function isStrongIdentifierToken(token) {
+  return token.includes('_') || /[a-z][A-Z]/.test(token) || /[A-Z].*[A-Z]/.test(token) || /\d/.test(token);
+}
+
+function entityMatchesAnchorHint(entity, hints) {
+  const name = String(entity?.name || '');
+  if (!name) return false;
+  const nameLower = name.toLowerCase();
+
+  for (const hint of hints) {
+    if (isStrongIdentifierToken(hint)) {
+      const hintLower = hint.toLowerCase();
+      if (nameLower === hintLower || nameLower.includes(hintLower) || hintLower.includes(nameLower)) {
+        return true;
+      }
+      continue;
+    }
+
+    if (isPlainTitlecase(hint)) {
+      if (name === hint || name.includes(hint) || hint.includes(name)) return true;
+      continue;
+    }
+
+    const hintLower = hint.toLowerCase();
+    if (nameLower === hintLower || nameLower.includes(hintLower) || hintLower.includes(nameLower)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Inject anchor candidates into a fused result list.
  *
@@ -139,7 +178,9 @@ export function injectAnchorCandidates(fused, query, opts = {}) {
     return { results: fused, stats: { hintCount: 0, entitiesFound: 0, newCandidates: 0, existingBoosted: 0 } };
   }
 
-  const hints = [...extractStrictAnchorNames(query || '')];
+  const hints = [...extractStrictAnchorNames(query || '', {
+    allowPlainTitlecase: opts.allowPlainTitlecase !== false,
+  })];
   if (hints.length === 0) {
     return { results: fused, stats: { hintCount: 0, entitiesFound: 0, newCandidates: 0, existingBoosted: 0 } };
   }
@@ -167,6 +208,7 @@ export function injectAnchorCandidates(fused, query, opts = {}) {
   const seenInjected = new Set();
 
   for (const entity of entities) {
+    if (!entityMatchesAnchorHint(entity, hints)) continue;
     const chunk = findChunkForEntity(liIndex, entity);
     if (!chunk) continue;
     const key = chunkKey({ metadata: chunk.metadata });
