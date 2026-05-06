@@ -355,6 +355,51 @@ export class CodeGraphRepository {
   }
 
   /**
+   * Count how many entities exist for each requested name (case-insensitive),
+   * across the same kind-set as `findEntitiesByAnyName`. Used by IAR to gate
+   * anchor injection on per-name uniqueness — common identifiers ("get",
+   * "set", "default") matching dozens of unrelated entities flood the
+   * candidate set; rare ones ("kSchemaController", "FST_ERR_HOOK_TIMEOUT")
+   * are safe.
+   *
+   * Mirrors KPR/SPAR's IDF-gated entity injection: the helpfulness of
+   * anchoring is proportional to entity rarity in the target corpus.
+   *
+   * @param {string[]} names
+   * @param {object} [opts]
+   * @param {string[]} [opts.excludeKinds]
+   * @returns {Map<string, number>} lowercase-name → entity count
+   */
+  countEntitiesByAnyName(names, opts = {}) {
+    const db = this._open();
+    if (!db || !Array.isArray(names) || names.length === 0) return new Map();
+    const uniq = [...new Set(names
+      .filter(n => typeof n === 'string' && n.length >= 2)
+      .map(n => n.toLowerCase()))];
+    if (!uniq.length) return new Map();
+    const exclude = Array.isArray(opts.excludeKinds) && opts.excludeKinds.length
+      ? opts.excludeKinds
+      : ['chunk', 'message', 'topKey', 'target', 'variable', 'const'];
+    try {
+      const sql = `
+        SELECT lower(name) as lname, COUNT(*) as count
+        FROM entities
+        WHERE lower(name) IN (${uniq.map(() => '?').join(',')})
+          AND type NOT IN (${exclude.map(() => '?').join(',')})
+          AND (stale_since IS NULL)
+        GROUP BY lname
+      `;
+      const rows = db.prepare(sql).all(...uniq, ...exclude);
+      const map = new Map();
+      for (const r of rows) map.set(r.lname, r.count);
+      // Names with no row are absent — caller treats absent as 0.
+      return map;
+    } catch {
+      return new Map();
+    }
+  }
+
+  /**
    * One-hop incoming relationships into a given target entity (its callers,
    * importers, etc.). Joined to the source entity for file:line rendering.
    *
