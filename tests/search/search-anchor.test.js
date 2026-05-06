@@ -191,3 +191,129 @@ describe('injectAnchorCandidates', () => {
     }).stats.entitiesFound).toBe(0);
   });
 });
+
+// =============================================================================
+// IAR uniqueness gate (KPR/SPAR pattern). See search-anchor.js for rationale.
+// =============================================================================
+
+function repoWithCounts(entitiesByName, countsByName) {
+  return {
+    findEntitiesByAnyName(names) {
+      const wantSet = new Set(names.map(s => String(s).toLowerCase()));
+      const out = [];
+      for (const [name, list] of Object.entries(entitiesByName)) {
+        if (!wantSet.has(name.toLowerCase())) continue;
+        out.push(...list);
+      }
+      return out;
+    },
+    countEntitiesByAnyName(names) {
+      const m = new Map();
+      for (const n of names) {
+        const lc = String(n).toLowerCase();
+        if (countsByName[lc] != null) m.set(lc, countsByName[lc]);
+      }
+      return m;
+    },
+  };
+}
+
+describe('injectAnchorCandidates — uniqueness gate', () => {
+  it('drops a hint whose entity count exceeds the ceiling', () => {
+    // "Get" matches 65 entities → drop. "kSchemaCtx" matches 1 → keep.
+    const repo = repoWithCounts(
+      { kSchemaCtx: [{ name: 'kSchemaCtx', type: 'symbol', filePath: 'a.js', startLine: 10, endLine: 12 }] },
+      { get: 65, kschemactx: 1 }
+    );
+    const li = mockLi([
+      { id: 'cK', metadata: { file: 'a.js', startLine: 10, endLine: 12 } },
+    ]);
+    const { results, stats } = injectAnchorCandidates([], 'where does Get use kSchemaCtx', {
+      codeGraphRepo: repo,
+      lateInteractionIndex: li,
+      uniquenessCeil: 8,
+    });
+    expect(stats.hintCount).toBe(2);
+    expect(stats.hintsKept).toBe(1);
+    expect(stats.droppedCommon).toEqual([{ hint: 'Get', count: 65 }]);
+    // Only the kSchemaCtx-related entity gets injected
+    expect(stats.entitiesFound).toBe(1);
+    expect(results.find(r => r._anchorInjected)?.metadata.file).toBe('a.js');
+  });
+
+  it('keeps all hints when their counts are within the ceiling', () => {
+    const repo = repoWithCounts(
+      {
+        kRouteContext: [{ name: 'kRouteContext', type: 'symbol', filePath: 'context.js', startLine: 5, endLine: 7 }],
+        FastifyError: [{ name: 'FastifyError', type: 'class', filePath: 'errors.js', startLine: 50, endLine: 80 }],
+      },
+      { kroutecontext: 1, fastifyerror: 3 }
+    );
+    const li = mockLi([
+      { id: 'c1', metadata: { file: 'context.js', startLine: 5, endLine: 7 } },
+      { id: 'c2', metadata: { file: 'errors.js', startLine: 50, endLine: 80 } },
+    ]);
+    const { stats } = injectAnchorCandidates([], 'how does kRouteContext relate to FastifyError', {
+      codeGraphRepo: repo,
+      lateInteractionIndex: li,
+      uniquenessCeil: 8,
+    });
+    expect(stats.hintCount).toBe(2);
+    expect(stats.hintsKept).toBe(2);
+    expect(stats.droppedCommon).toEqual([]);
+    expect(stats.entitiesFound).toBe(2);
+  });
+
+  it('returns fused untouched when ALL hints exceed the ceiling', () => {
+    const repo = repoWithCounts({}, { fastify: 46, reply: 27 });
+    const li = mockLi([]);
+    const fused = [{ id: 'orig', metadata: { file: 'x.js', startLine: 1, endLine: 5 }, score: 0.5 }];
+    const { results, stats } = injectAnchorCandidates(fused, 'how does Fastify decorate Reply', {
+      codeGraphRepo: repo,
+      lateInteractionIndex: li,
+      uniquenessCeil: 8,
+    });
+    expect(stats.hintsKept ?? 0).toBe(0);
+    expect(stats.droppedCommon).toEqual(expect.arrayContaining([
+      { hint: 'Fastify', count: 46 },
+      { hint: 'Reply', count: 27 },
+    ]));
+    expect(results).toBe(fused);
+  });
+
+  it('disables the gate when uniquenessCeil = 0', () => {
+    const repo = repoWithCounts(
+      { Get: [{ name: 'Get', type: 'method', filePath: 'a.go', startLine: 1, endLine: 4 }] },
+      { get: 65 }
+    );
+    const li = mockLi([{ id: 'cG', metadata: { file: 'a.go', startLine: 1, endLine: 4 } }]);
+    const { stats } = injectAnchorCandidates([], 'what does Get do', {
+      codeGraphRepo: repo,
+      lateInteractionIndex: li,
+      uniquenessCeil: 0,
+    });
+    expect(stats.droppedCommon).toEqual([]);
+    expect(stats.entitiesFound).toBe(1);
+  });
+
+  it('preserves legacy behaviour when repo lacks countEntitiesByAnyName', () => {
+    // Backward-compat: callers wired up before the new method must not break.
+    const repoLegacy = {
+      findEntitiesByAnyName(names) {
+        if (names.includes('Mode') || names.some(n => n.toLowerCase() === 'mode')) {
+          return [{ name: 'Mode', type: 'enum', filePath: 'a.rs', startLine: 1, endLine: 4 }];
+        }
+        return [];
+      },
+    };
+    const li = mockLi([{ id: 'cM', metadata: { file: 'a.rs', startLine: 1, endLine: 4 } }]);
+    const { stats } = injectAnchorCandidates([], 'enum Mode', {
+      codeGraphRepo: repoLegacy,
+      lateInteractionIndex: li,
+      uniquenessCeil: 8,
+    });
+    expect(stats.entitiesFound).toBe(1);
+    // No counts → empty droppedCommon, gate is a no-op.
+    expect(stats.droppedCommon ?? []).toEqual([]);
+  });
+});

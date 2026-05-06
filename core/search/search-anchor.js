@@ -69,6 +69,43 @@ const ANCHOR_MAX_SCORE = 0.85;             // ceiling — never beat a strong fu
 const EXISTING_BOOST = 0.05;               // additive boost when the chunk is already fused
 
 /**
+ * Uniqueness ceiling for anchor names: hints whose lowercase form matches
+ * MORE entities than this threshold are dropped before injection. KPR/SPAR
+ * pattern (arXiv 2507.03922, 2110.06918): entity-aware injection helps in
+ * proportion to rarity.
+ *
+ * **Default: 0 (gate DISABLED).** On the current 60-probe dev/held-out split
+ * (40/20, seed=42, stratified by repo) the gate at ceil=8 transfers
+ * asymmetrically — dev gains 2 PASS / loses 0, held-out gains 0 PASS / loses
+ * 1 (S3-Q3 fastify). One probe (S3-Q3) had a brittle pre-fix PASS that
+ * relied on IAR flooding + MMR diversity penalty rather than dense-ranking
+ * signal. The principle is sound but the eval set is too small (60 queries)
+ * to ship a non-zero default per the BEIR-grade methodology in CLAUDE.md
+ * §Benchmark Methodology — held-out regressions are non-negotiable.
+ *
+ * Opt in via `SWEET_SEARCH_IAR_UNIQUENESS_CEIL=N`. Aligned with the existing
+ * ref-count homonym ceiling (file-kind-ranking.js, env
+ * SWEET_SEARCH_REF_BOOST_QUERY_HOMONYM_DISABLE, default 12); experiments
+ * suggest 8 for IAR. Set higher for less aggressive gating, 0 to disable.
+ */
+// Default 0 = gate disabled. Held-out 60-probe eval (2026-05-07) showed no
+// ceil value transfers: corpus stats lock dev/held-out probes together (the
+// same hint Fastify=46 that helps dev S3-Q7+S4-Q2 hurts held-out S3-Q3).
+// Re-evaluate when a >200-query post-cutoff (FreshStack-style) eval lands.
+const DEFAULT_UNIQUENESS_CEIL = 0;
+
+function readUniquenessCeil(opts) {
+  if (opts && Number.isFinite(opts.uniquenessCeil)) {
+    return opts.uniquenessCeil;
+  }
+  const raw = process.env.SWEET_SEARCH_IAR_UNIQUENESS_CEIL;
+  if (raw == null || raw === '') return DEFAULT_UNIQUENESS_CEIL;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_UNIQUENESS_CEIL;
+  return n; // 0 means "no gate"
+}
+
+/**
  * Find the LI chunk that covers a given (filePath, startLine, endLine)
  * region. Linear scan over the LI document Map — typical projects have
  * a few hundred to a few thousand chunks; this runs in microseconds.
@@ -178,11 +215,61 @@ export function injectAnchorCandidates(fused, query, opts = {}) {
     return { results: fused, stats: { hintCount: 0, entitiesFound: 0, newCandidates: 0, existingBoosted: 0 } };
   }
 
-  const hints = [...extractStrictAnchorNames(query || '', {
+  const allHints = [...extractStrictAnchorNames(query || '', {
     allowPlainTitlecase: opts.allowPlainTitlecase !== false,
   })];
-  if (hints.length === 0) {
+  if (allHints.length === 0) {
     return { results: fused, stats: { hintCount: 0, entitiesFound: 0, newCandidates: 0, existingBoosted: 0 } };
+  }
+
+  // Uniqueness gate: drop any hint whose lowercase form matches more
+  // entities than the ceiling. IDF-gated injection pattern (KPR arXiv
+  // 2507.03922, SPAR arXiv 2110.06918, "Match Your Words" arXiv 2112.05662).
+  // Rare identifiers benefit from anchor injection; common identifiers
+  // ("Get", "Fastify", "Set") flood the candidate set with mostly-irrelevant
+  // entities — even the canonical pick is unreliable when 50 entities share
+  // the bare name. Cleaner to skip the hint entirely than to inject a
+  // possibly-wrong "canonical" entity. Mirrors the existing ref-count homonym
+  // gate (file-kind-ranking.js, env SWEET_SEARCH_REF_BOOST_QUERY_HOMONYM_DISABLE,
+  // default 12). IAR uses a tighter default (8) because anchor injection is
+  // more sensitive to homonym noise than ref-count rescaling.
+  //
+  // Override env: SWEET_SEARCH_IAR_UNIQUENESS_CEIL=N. Set to 0 to disable.
+  const ceil = readUniquenessCeil(opts);
+  let hints = allHints;
+  let droppedCommon = [];
+  if (ceil > 0 && typeof repo.countEntitiesByAnyName === 'function') {
+    let countMap = null;
+    try {
+      countMap = repo.countEntitiesByAnyName(allHints);
+    } catch {
+      countMap = null;
+    }
+    if (countMap) {
+      const kept = [];
+      for (const h of allHints) {
+        const c = countMap.get(h.toLowerCase()) || 0;
+        if (c === 0 || c <= ceil) {
+          kept.push(h);
+        } else {
+          droppedCommon.push({ hint: h, count: c });
+        }
+      }
+      hints = kept;
+    }
+  }
+  if (hints.length === 0) {
+    return {
+      results: fused,
+      stats: {
+        hintCount: allHints.length,
+        entitiesFound: 0,
+        newCandidates: 0,
+        existingBoosted: 0,
+        droppedCommon,
+        uniquenessCeil: ceil,
+      },
+    };
   }
   const hintsLower = hints.map(s => s.toLowerCase());
 
@@ -192,10 +279,30 @@ export function injectAnchorCandidates(fused, query, opts = {}) {
       limit: opts.entityLimit ?? DEFAULT_PER_QUERY_ENTITY_LIMIT,
     }) || [];
   } catch {
-    return { results: fused, stats: { hintCount: hints.length, entitiesFound: 0, newCandidates: 0, existingBoosted: 0 } };
+    return {
+      results: fused,
+      stats: {
+        hintCount: allHints.length,
+        entitiesFound: 0,
+        newCandidates: 0,
+        existingBoosted: 0,
+        droppedCommon,
+        uniquenessCeil: ceil,
+      },
+    };
   }
   if (entities.length === 0) {
-    return { results: fused, stats: { hintCount: hints.length, entitiesFound: 0, newCandidates: 0, existingBoosted: 0 } };
+    return {
+      results: fused,
+      stats: {
+        hintCount: allHints.length,
+        entitiesFound: 0,
+        newCandidates: 0,
+        existingBoosted: 0,
+        droppedCommon,
+        uniquenessCeil: ceil,
+      },
+    };
   }
 
   // Index existing fused results by chunk key for dedup and existing-boost.
@@ -256,10 +363,13 @@ export function injectAnchorCandidates(fused, query, opts = {}) {
   return {
     results: out,
     stats: {
-      hintCount: hints.length,
+      hintCount: allHints.length,
+      hintsKept: hints.length,
       entitiesFound: entities.length,
       newCandidates,
       existingBoosted,
+      droppedCommon,
+      uniquenessCeil: ceil,
     },
   };
 }
