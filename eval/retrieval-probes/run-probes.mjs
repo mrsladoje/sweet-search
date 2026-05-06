@@ -74,6 +74,7 @@ function gradeProbe(probe, top1) {
   const file = top1.file || top1.metadata?.file || '';
   const sym = top1.symbol || top1.name || top1.metadata?.name || '';
   const type = top1.symbolType || top1.type || top1.metadata?.type || '';
+  const presentation = top1.presentation || top1.metadata?.presentation || null;
 
   const wantFiles = arrayOrNull(probe.expectedFile)
     || arrayOrNull(probe.expectedFileAnyOf);
@@ -81,6 +82,7 @@ function gradeProbe(probe, top1) {
     || arrayOrNull(probe.expectedSymbolAnyOf);
   const wantTypes = arrayOrNull(probe.expectedSymbolType)
     || arrayOrNull(probe.expectedSymbolTypeAnyOf);
+  const wantPresentation = probe.expectedPresentation || null;
 
   const fileMatch = !wantFiles
     || wantFiles.some(w => file === w || file.endsWith('/' + w) || file.endsWith(w));
@@ -88,8 +90,25 @@ function gradeProbe(probe, top1) {
     || wantSymbols.some(w => String(sym).toLowerCase() === String(w).toLowerCase());
   const typeMatch = !wantTypes
     || wantTypes.some(w => String(type).toLowerCase() === String(w).toLowerCase());
+  // Presentation match is non-blocking when not specified. When specified
+  // (e.g. "full" for a definition-lookup probe), we expect the agent-pack
+  // tier to match — preview / summary tiers strip the body, so getting the
+  // right file but wrong tier means the agent still has to do a follow-up
+  // read. Counted as PARTIAL when file+symbol match but presentation doesn't,
+  // FAIL_PRESENTATION when file matches but presentation is wrong (graded
+  // separately so we can spot agent-pack regressions distinct from retrieval).
+  const presentationMatch = !wantPresentation
+    || (presentation === wantPresentation);
 
-  if (fileMatch && symbolMatch && typeMatch) return { verdict: 'PASS', reason: 'match' };
+  if (fileMatch && symbolMatch && typeMatch && presentationMatch) {
+    return { verdict: 'PASS', reason: 'match' };
+  }
+  if (fileMatch && symbolMatch && typeMatch && wantPresentation && !presentationMatch) {
+    return {
+      verdict: 'PARTIAL',
+      reason: `presentation_mismatch_want_${wantPresentation}_got_${presentation || 'unknown'}`,
+    };
+  }
   if (fileMatch && (!wantSymbols || !symbolMatch || !typeMatch)) {
     return {
       verdict: 'PARTIAL',
@@ -126,6 +145,7 @@ async function runOne(searcher, probe) {
       symbol: top1.symbol || top1.name,
       symbolType: top1.symbolType || top1.type,
       score: top1.score,
+      presentation: top1.presentation || top1.metadata?.presentation || null,
     } : null,
     wallMs,
     error,
