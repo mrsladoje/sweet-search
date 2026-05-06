@@ -18,6 +18,7 @@ import {
   evaluatePatternQuery, getRelevantChunkIds,
   classifyFailure, computeDiagnostics,
 } from '../lib/pattern-evaluator.js';
+import { applySplit, normalizeSplit, warnIfFullSplit } from '../lib/splits.js';
 
 const repos = [
   { name: 'sweet-search', queryFile: 'eval/data/pattern-benchmark/queries.jsonl', projectRoot: '.' },
@@ -28,8 +29,17 @@ const repos = [
 ];
 
 // CLI args
+//
+// --split=dev|heldout|all (default: all)
+//
+//   Reads canonical split membership from eval/splits/multirepo/{dev,heldout}.json
+//   (regenerate with `node eval/scripts/generate-splits.js`).
+//
+//   The legacy `q.split` field embedded in queries.jsonl ("dev" / "test") was
+//   hand-curated and predates the canonical methodology — it is informational
+//   only now. The new flag uses the external split files exclusively.
 const splitArg = process.argv.find(a => a.startsWith('--split='));
-const split = splitArg ? splitArg.split('=')[1] : 'all';
+const split = normalizeSplit(splitArg ? splitArg.split('=')[1] : 'all');
 
 // Warmup
 console.log('Warming models...');
@@ -40,6 +50,7 @@ await encodeQuery('warmup one');
 await encodeQuery('warmup two');
 warmSearch.close?.();
 console.log(`Ready. (split: ${split})\n`);
+warnIfFullSplit(split, 'multirepo');
 
 console.log('═'.repeat(70));
 console.log('  MULTI-REPO COLGREP BENCHMARK (warm, pattern-maxsim)');
@@ -65,8 +76,15 @@ for (const repo of repos) {
   await search.init();
 
   let queries = fs.readFileSync(queryFile, 'utf8').trim().split('\n').map(l => JSON.parse(l));
-  if (split !== 'all') queries = queries.filter(q => q.split === split);
+  const beforeSplit = queries.length;
+  if (split !== 'all') {
+    const filtered = applySplit(queries, split, 'multirepo', q => q.query_id);
+    queries = filtered.items;
+  }
   const valid = queries.filter(q => q.relevant_chunk_ids?.length > 0);
+  if (split !== 'all') {
+    console.log(`  ${repo.name}: ${queries.length}/${beforeSplit} queries after --split=${split}`);
+  }
 
   const results = [];
   let errors = 0;

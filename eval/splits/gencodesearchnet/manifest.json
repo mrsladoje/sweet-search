@@ -1,0 +1,41 @@
+{
+  "bench": "gencodesearchnet",
+  "description": "GenCodeSearchNet — natural-language → code function retrieval (6 languages).",
+  "source": "eval/data/gencodesearchnet/queries.jsonl",
+  "seed": 42,
+  "devRatio": 0.6,
+  "stratifyBy": "language",
+  "total": 6000,
+  "counts": {
+    "go": {
+      "dev": 600,
+      "heldout": 400
+    },
+    "java": {
+      "dev": 600,
+      "heldout": 400
+    },
+    "javascript": {
+      "dev": 600,
+      "heldout": 400
+    },
+    "php": {
+      "dev": 600,
+      "heldout": 400
+    },
+    "python": {
+      "dev": 600,
+      "heldout": 400
+    },
+    "ruby": {
+      "dev": 600,
+      "heldout": 400
+    }
+  },
+  "totals": {
+    "dev": 3600,
+    "heldout": 2400
+  },
+  "generatedAt": "<deterministic — see seed>",
+  "generator": "eval/scripts/generate-splits.js"
+}
