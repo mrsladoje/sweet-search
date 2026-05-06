@@ -136,10 +136,16 @@ export async function hybridSearchV2(query, options = {}) {
   // that entity even when the encoder ranked something tangentially-similar
   // higher. Mirrors the Aider repo-map / Cody+SCIP / Cursor recipe.
   // Purely additive: only surfaces entities that exist in the index, deduped
-  // against the fused set. Disable via ablations 'no-anchor-injection'.
-  const shouldInjectAnchors = options.anchorInjection === true
+  // against the fused set. Disable via ablations 'no-anchor-injection' or
+  // env SWEET_SEARCH_DISABLE_IAR=1 (kill switch — overrides the format-based
+  // default for ablation experiments).
+  const iarKilled = process.env.SWEET_SEARCH_DISABLE_IAR === '1'
+    || hasAblation(options.ablations, 'no-anchor-injection');
+  const shouldInjectAnchors = !iarKilled && (
+    options.anchorInjection === true
     || options.format === 'agent'
-    || process.env.SWEET_SEARCH_ANCHOR_INJECTION === '1';
+    || process.env.SWEET_SEARCH_ANCHOR_INJECTION === '1'
+  );
   const { results: anchored, stats: anchorStats } = shouldInjectAnchors
     ? injectAnchorCandidates(fused, query, {
         codeGraphRepo: this.codeGraphRepo,
