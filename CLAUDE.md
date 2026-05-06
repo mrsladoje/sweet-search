@@ -277,3 +277,30 @@ Task({ prompt: "Security audit", subagent_type: "qe-security-scanner", run_in_ba
 
 - **Memory Backend**: `.agentic-qe/memory.db` (SQLite)
 - **Configuration**: `.agentic-qe/config.yaml`
+
+---
+
+## Benchmark Methodology (BEIR/CoIR-grade, applies to ALL benches)
+
+To avoid overfitting to the benchmarks we develop against, every benchmark used during
+optimisation MUST be split:
+
+- **Dev** (60%): iterate freely, inspect per-query results, run continuously
+- **Held-out** (40%): NEVER inspect per-query during dev; only aggregate metrics, only at milestones
+- Use **stratified random split with a fixed seed** (stratify by whatever the benchmark groups by — language, repo, query type)
+
+**Concrete example — GenCodeSearchNet (6000 queries, 6 languages):** 600 dev + 400 held-out per language, seed=42. Apply the same recipe to multi-repo bench, retrieval-probes, and any future benchmark.
+
+**Discipline:**
+
+| When | Run | Inspect |
+|---|---|---|
+| Per-change / iteration | Dev set | Aggregate + per-query failures (dev only) |
+| Pre-commit | Dev + regression-probe subset | Same |
+| Pre-release / publishing | Held-out + dev | Aggregate ONLY on held-out |
+
+**If a held-out regression appears that didn't show on dev**, the dev set is too narrow OR the change overfits. **Do NOT tune to the held-out failure.** Fix the underlying principle, then re-run.
+
+**Bonus signal:** before each release, hand-craft 20-30 queries on a fresh public repo never used during dev. Those numbers are the most credible.
+
+When publishing benchmark numbers: report held-out scores with sample sizes and seeds. Never publish dev-only or "tuned-against" numbers without disclosure.
