@@ -9,6 +9,7 @@
  */
 
 import { readFileSync } from 'fs';
+import path from 'path';
 import { SEISMIC_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
 import { expandResults } from '../graph/graph-expansion.js';
 import { int8CosineSimilarity } from '../embedding/embedding-service.js';
@@ -34,6 +35,337 @@ export function minMaxNormalize(values) {
 // for telemetry purposes. Derived empirically: FTS5 page-cache hits typically
 // complete in <2ms; 5ms gives headroom for slow I/O without inflating miss rates.
 const LEXICAL_HIT_THRESHOLD_MS = 5;
+const QUERY_TEXT_RANKING_WEIGHT = 0.75;
+const QUERY_TEXT_RANKING_WINDOW = 20;
+const QUERY_TEXT_MIN_AGREEMENT = 0.5;
+const QUERY_TEXT_MAX_CHARS = 12000;
+const FULL_VECTOR_RESCORE_WINDOW = 20;
+const FULL_VECTOR_RESCORE_WEIGHT = 0.80;
+const FULL_VECTOR_LI_RESCORE_WEIGHT = 0.35;
+const FULL_VECTOR_EXACT_TEXT_WEIGHT = 0.20;
+const QUERY_TEXT_FILE_CACHE = new Map();
+const QUERY_TEXT_STOPWORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'can', 'could',
+  'did', 'do', 'does', 'for', 'from', 'how', 'i', 'in', 'into', 'is',
+  'it', 'of', 'on', 'or', 'should', 'the', 'to', 'was', 'were', 'what',
+  'when', 'where', 'with', 'you', 'your',
+]);
+
+function hasAblation(ablations, name) {
+  return ablations instanceof Set
+    ? ablations.has(name)
+    : Array.isArray(ablations) && ablations.includes(name);
+}
+
+function envNumber(name, fallback, min = 0, max = Infinity) {
+  const value = process.env[name];
+  if (value == null || value === '') return fallback;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
+}
+
+function resultFileKey(result) {
+  return result?.file
+    || result?.file_path
+    || result?.path
+    || result?.metadata?.file
+    || result?.metadata?.file_path
+    || result?.metadata?.path
+    || '';
+}
+
+function queryTextRankingOff() {
+  return process.env.SWEET_SEARCH_QUERY_TEXT_RANKING === '0'
+    || process.env.SWEET_SEARCH_QUERY_TEXT_RANKING === 'false';
+}
+
+function adaptiveLegacyLiEnabled() {
+  const raw = process.env.SWEET_SEARCH_ADAPTIVE_LI_RERANK;
+  if (raw == null || raw === '') return true;
+  return raw === '1' || raw === 'true';
+}
+
+function shouldRunAdaptiveLegacyLi(results) {
+  if (!adaptiveLegacyLiEnabled()) return false;
+  if (!Array.isArray(results) || results.length < 2) return false;
+  const threshold = envNumber('SWEET_SEARCH_ADAPTIVE_LI_MARGIN', 0.03, 0, 1);
+  const first = typeof results[0]?.score === 'number' ? results[0].score : 0;
+  const second = typeof results[1]?.score === 'number' ? results[1].score : 0;
+  if (!Number.isFinite(first) || !Number.isFinite(second)) return false;
+  return (first - second) <= threshold;
+}
+
+function normalizeForQueryText(value) {
+  return String(value || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function queryTextTerms(query) {
+  const terms = normalizeForQueryText(query).split(/\s+/).filter(Boolean);
+  const unique = [];
+  const seen = new Set();
+  for (const term of terms) {
+    if (term.length < 2 || QUERY_TEXT_STOPWORDS.has(term) || seen.has(term)) continue;
+    seen.add(term);
+    unique.push(term);
+  }
+  return unique;
+}
+
+function safeCandidatePath(projectRoot, file) {
+  if (!projectRoot || !file || path.isAbsolute(file) || file.includes('\0')) return null;
+  const root = path.resolve(projectRoot);
+  const resolved = path.resolve(root, file);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
+  return resolved;
+}
+
+function readCandidateSpan(projectRoot, result) {
+  const file = resultFileKey(result);
+  const absPath = safeCandidatePath(projectRoot, file);
+  if (!absPath) return '';
+
+  const cacheKey = `${projectRoot}\0${file}`;
+  let content = QUERY_TEXT_FILE_CACHE.get(cacheKey);
+  if (content == null) {
+    try {
+      content = readFileSync(absPath, 'utf8');
+    } catch {
+      content = '';
+    }
+    QUERY_TEXT_FILE_CACHE.set(cacheKey, content);
+  }
+  if (!content) return '';
+
+  const startLine = result?.startLine ?? result?.metadata?.startLine ?? null;
+  const endLine = result?.endLine ?? result?.metadata?.endLine ?? null;
+  if (startLine == null || endLine == null) return content.slice(0, QUERY_TEXT_MAX_CHARS);
+
+  const lines = content.split(/\r?\n/);
+  const start = Math.max(0, Number(startLine) - 9);
+  const end = Math.min(lines.length, Number(endLine));
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return '';
+  return lines.slice(start, end).join('\n').slice(0, QUERY_TEXT_MAX_CHARS);
+}
+
+function queryTextAgreementScore(query, result, projectRoot) {
+  const terms = queryTextTerms(query);
+  if (terms.length === 0) return 0;
+
+  const text = normalizeForQueryText([
+    result?.name,
+    result?.type,
+    result?.signature,
+    result?.docComment,
+    result?.content,
+    result?.text,
+    resultFileKey(result),
+    readCandidateSpan(projectRoot, result),
+  ].filter(Boolean).join('\n'));
+  if (!text) return 0;
+
+  const textTerms = new Set(text.split(/\s+/).filter(Boolean));
+  let matched = 0;
+  for (const term of terms) {
+    if (textTerms.has(term)) matched += 1;
+    else if (term.length >= 4 && text.includes(term)) matched += 0.5;
+  }
+
+  let bigramMatches = 0;
+  const bigramTotal = Math.max(0, terms.length - 1);
+  for (let i = 0; i < terms.length - 1; i++) {
+    if (text.includes(`${terms[i]} ${terms[i + 1]}`)) bigramMatches++;
+  }
+
+  const coverage = matched / terms.length;
+  const exact = text.includes(normalizeForQueryText(query)) ? 1 : 0;
+  const bigrams = bigramTotal > 0 ? bigramMatches / bigramTotal : 0;
+  return Math.min(1, 0.65 * coverage + 0.25 * exact + 0.10 * bigrams);
+}
+
+function hasExactQueryTextMatch(query, result, projectRoot) {
+  const normalizedQuery = normalizeForQueryText(query);
+  if (!normalizedQuery) return false;
+  const text = normalizeForQueryText([
+    result?.docComment,
+    result?.content,
+    result?.text,
+    readCandidateSpan(projectRoot, result),
+  ].filter(Boolean).join('\n'));
+  return !!text && text.includes(normalizedQuery);
+}
+
+function applyQueryTextRanking(results, query, opts = {}) {
+  if (queryTextRankingOff()) return results;
+  if (hasAblation(opts.ablations, 'no-query-text-ranking')) return results;
+  if (!Array.isArray(results) || results.length < 3) return results;
+
+  const projectRoot = opts.projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
+  const window = Math.min(
+    results.length,
+    Math.max(3, opts.window ?? QUERY_TEXT_RANKING_WINDOW)
+  );
+  const weight = opts.weight ?? envNumber(
+    'SWEET_SEARCH_QUERY_TEXT_RANKING_WEIGHT',
+    QUERY_TEXT_RANKING_WEIGHT,
+    0,
+    2
+  );
+  const minAgreement = opts.minAgreement ?? envNumber(
+    'SWEET_SEARCH_QUERY_TEXT_MIN_AGREEMENT',
+    QUERY_TEXT_MIN_AGREEMENT,
+    0,
+    1
+  );
+  if (!(weight > 0)) return results;
+
+  let changed = false;
+  const reranked = results.slice(0, window).map((result, index) => {
+    const agreement = queryTextAgreementScore(query, result, projectRoot);
+    if (agreement < minAgreement) return { ...result, _queryTextOrigIndex: index };
+    changed = true;
+    const baseScore = typeof result.score === 'number' ? result.score : 0;
+    const mult = 1 + weight * agreement;
+    return {
+      ...result,
+      score: baseScore * mult,
+      _queryTextScore: agreement,
+      _queryTextMult: mult,
+      _queryTextOrigScore: baseScore,
+      _queryTextOrigIndex: index,
+    };
+  });
+  if (!changed) return results;
+
+  reranked.sort((a, b) => {
+    const d = (b.score || 0) - (a.score || 0);
+    return d !== 0 ? d : a._queryTextOrigIndex - b._queryTextOrigIndex;
+  });
+  for (const result of reranked) delete result._queryTextOrigIndex;
+  return window === results.length ? reranked : reranked.concat(results.slice(window));
+}
+
+function resultIdentity(result) {
+  return result?.id || result?.metadata?.id || null;
+}
+
+function dotProduct(a, b) {
+  const n = Math.min(a?.length || 0, b?.length || 0);
+  if (n === 0) return null;
+  let score = 0;
+  for (let i = 0; i < n; i++) score += a[i] * b[i];
+  return score;
+}
+
+function normalizeScore(value, min, max) {
+  if (!Number.isFinite(value)) return 0;
+  if (!(max > min)) return 0.5;
+  return Math.max(0, Math.min(1, (value - min) / (max - min)));
+}
+
+function applyFullVectorRescore(results, opts = {}) {
+  if (hasAblation(opts.ablations, 'no-full-vector-rescore')) return results;
+  if (!Array.isArray(results) || results.length < 3) return results;
+  if (!opts.queryFloat || !opts.codebaseRepo?.getEmbeddingsByIds) return results;
+
+  const window = Math.min(
+    results.length,
+    Math.max(3, opts.window ?? FULL_VECTOR_RESCORE_WINDOW)
+  );
+  const ids = results.slice(0, window).map(resultIdentity).filter(Boolean);
+  if (ids.length === 0) return results;
+
+  const embeddings = opts.codebaseRepo.getEmbeddingsByIds(ids);
+  if (!embeddings || embeddings.size === 0) return results;
+
+  const scored = results.slice(0, window).map((result, index) => {
+    const id = resultIdentity(result);
+    const vector = id ? embeddings.get(id) : null;
+    const fullScore = vector ? dotProduct(opts.queryFloat, vector) : null;
+    return {
+      result,
+      index,
+      baseScore: typeof result.score === 'number' ? result.score : 0,
+      fullScore,
+    };
+  });
+
+  const withFullScore = scored.filter(item => Number.isFinite(item.fullScore));
+  if (withFullScore.length < 2) return results;
+
+  const baseValues = scored.map(item => item.baseScore);
+  const fullValues = withFullScore.map(item => item.fullScore);
+  const minBase = Math.min(...baseValues);
+  const maxBase = Math.max(...baseValues);
+  const minFull = Math.min(...fullValues);
+  const maxFull = Math.max(...fullValues);
+  const projectRoot = opts.projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
+  const exactTextMatch = results
+    .slice(0, window)
+    .some(result => hasExactQueryTextMatch(opts.query || '', result, projectRoot));
+  const liRescoreWeight = envNumber(
+    'SWEET_SEARCH_FULL_VECTOR_LI_RESCORE_WEIGHT',
+    envNumber('SWEET_SEARCH_FULL_VECTOR_RESCORE_WEIGHT', FULL_VECTOR_LI_RESCORE_WEIGHT, 0, 1),
+    0,
+    1
+  );
+  const weight = opts.weight ?? (exactTextMatch
+    ? envNumber('SWEET_SEARCH_FULL_VECTOR_EXACT_TEXT_WEIGHT', FULL_VECTOR_EXACT_TEXT_WEIGHT, 0, 1)
+    : opts.lateInteractionApplied
+      ? liRescoreWeight
+      : envNumber('SWEET_SEARCH_FULL_VECTOR_RESCORE_WEIGHT', FULL_VECTOR_RESCORE_WEIGHT, 0, 1));
+
+  const reranked = scored.map(item => {
+    if (!Number.isFinite(item.fullScore)) {
+      return { ...item.result, _fullVectorOrigIndex: item.index };
+    }
+    const baseNorm = normalizeScore(item.baseScore, minBase, maxBase);
+    const fullNorm = normalizeScore(item.fullScore, minFull, maxFull);
+    const blended = (1 - weight) * baseNorm + weight * fullNorm;
+    return {
+      ...item.result,
+      score: blended,
+      _fullVectorScore: item.fullScore,
+      _fullVectorNorm: fullNorm,
+      _fullVectorOrigScore: item.baseScore,
+      _fullVectorOrigIndex: item.index,
+    };
+  });
+
+  reranked.sort((a, b) => {
+    const d = (b.score || 0) - (a.score || 0);
+    return d !== 0 ? d : a._fullVectorOrigIndex - b._fullVectorOrigIndex;
+  });
+  for (const result of reranked) delete result._fullVectorOrigIndex;
+  return window === results.length ? reranked : reranked.concat(results.slice(window));
+}
+
+function promoteFileDiversity(results, opts = {}) {
+  if (!Array.isArray(results) || results.length < 3) return results;
+  if (hasAblation(opts.ablations, 'no-file-diversity')) return results;
+
+  const window = Math.min(results.length, Math.max(10, opts.window ?? results.length));
+  const head = results.slice(0, window);
+  const seen = new Set();
+  const unique = [];
+  const duplicates = [];
+
+  for (const result of head) {
+    const key = resultFileKey(result);
+    if (!key || !seen.has(key)) {
+      if (key) seen.add(key);
+      unique.push(result);
+    } else {
+      duplicates.push(result);
+    }
+  }
+
+  if (duplicates.length === 0) return results;
+  return unique.concat(duplicates, results.slice(window));
+}
 
 // =============================================================================
 // Post-retrieval processing
@@ -257,9 +589,15 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     // =========================================================================
     // Late Interaction Reranking (legacy, flag OFF — post-expansion, Phase 6)
     // =========================================================================
+    const agentFormats = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
+    const allowLegacyLateInteraction = process.env.SWEET_SEARCH_LEGACY_LI_RERANK === '1'
+      || agentFormats.has(options.format)
+      || searchContext?.fromSearch !== true
+      || shouldRunAdaptiveLegacyLi(results);
     const shouldRunLateInteraction = this.hasLateInteractionIndex &&
                              (options.useLateInteraction ?? this.useLateInteraction) &&
                              !this.lateInteractionIndex.modelMismatch &&
+                             allowLegacyLateInteraction &&
                              Array.isArray(results) && results.length > 0 &&
                              !isConfidentLexical;
 
@@ -412,6 +750,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     const beforeTop = results[0];
     const semanticLike = searchMode === 'hybrid' || searchMode === 'semantic'
       || stats.path === 'hybrid' || stats.path === 'semantic';
+    const isAgentFormat = options.format === 'agent';
     const afterFK = applyFileKindRanking(results, {
       intent: fileKindIntent,
       ...(semanticLike ? {
@@ -448,6 +787,59 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       stats.resultDemotions = {
         applied: true,
         top1Changed: !!beforeDemotionTop && results[0] && (beforeDemotionTop !== results[0]),
+      };
+    }
+
+    const beforeQueryTextTop = results[0];
+    const afterQueryTextRanking = semanticLike && !isAgentFormat
+      ? applyQueryTextRanking(results, query, {
+          ablations: options.ablations,
+          projectRoot: this.projectRoot,
+          window: options.queryTextRankingWindow,
+          weight: options.queryTextRankingWeight,
+        })
+      : results;
+    if (afterQueryTextRanking !== results) {
+      results = afterQueryTextRanking;
+      stats.queryTextRanking = {
+        applied: true,
+        top1Changed: !!beforeQueryTextTop && results[0] && (beforeQueryTextTop !== results[0]),
+      };
+    }
+
+    const beforeFullVectorTop = results[0];
+    const afterFullVectorRescore = semanticLike && !isAgentFormat
+      ? applyFullVectorRescore(results, {
+          ablations: options.ablations,
+          query,
+          queryFloat: semanticStats?.queryFloat,
+          codebaseRepo: this.codebaseRepo,
+          projectRoot: this.projectRoot,
+          window: options.fullVectorRescoreWindow,
+          weight: options.fullVectorRescoreWeight,
+          lateInteractionApplied: !!stats.lateInteraction && !stats.lateInteraction.error,
+        })
+      : results;
+    if (afterFullVectorRescore !== results) {
+      results = afterFullVectorRescore;
+      stats.fullVectorRescore = {
+        applied: true,
+        top1Changed: !!beforeFullVectorTop && results[0] && (beforeFullVectorTop !== results[0]),
+      };
+    }
+
+    const beforeDiversityTop = results[0];
+    const diversified = isAgentFormat
+      ? results
+      : promoteFileDiversity(results, {
+          ablations: options.ablations,
+          window: options.fileDiversityWindow ?? results.length,
+        });
+    if (diversified !== results) {
+      results = diversified;
+      stats.fileDiversity = {
+        applied: true,
+        top1Changed: !!beforeDiversityTop && results[0] && (beforeDiversityTop !== results[0]),
       };
     }
   }

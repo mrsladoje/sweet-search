@@ -397,37 +397,39 @@ export class CodeGraphRepository {
   }
 
   /**
-   * Build a one-time, in-memory ref-count index covering every entity name
-   * in the call graph. Lazily populated on first use, cached for the
-   * lifetime of this repository instance.
+   * Build in-memory ref-count indexes for incoming `calls` edges.
    *
-   * The index is a `Map<name, total_call_count>` keyed by BOTH:
-   *   1. the full qualified target_name (e.g. `fastify.decorate` → 34)
-   *   2. its last segment as a suffix key (e.g. suffix `decorate` accumulates
-   *      across ALL qualified forms — `fastify.decorate` + `app.decorate` +
-   *      `child.decorate` etc., totalling 41)
+   * Two maps:
+   *   - `_refCountExact`: `target_name` → count (one GROUP BY row each)
+   *   - `_refSuffixSafe`: bare suffix → Σ counts, only for bare names whose
+   *     relationship fanout (distinct qualified targets sharing that suffix)
+   *     is ≤ SWEET_SEARCH_REF_SUFFIX_AGG_FANOUT_MAX (default 12; tighten via env).
    *
-   * Why both: the suffix key is what callers usually want — entity name
-   * `decorate` should reflect every qualified call site. The full key is
-   * preserved so a query with the qualified name (rare) still resolves.
+   * Previously we always merged every `*.decorate` into bare `decorate`, which
+   * is correct for real repos (few homonyms) but poisons GenCodeSearchNet-style
+   * corpora (dozens of unrelated `get` functions sharing one inflated total).
    *
-   * Cost: one `GROUP BY target_name` aggregate query at first call (~10-15
-   * ms on a 20k-row relationships table) + one O(n) pass to fold suffixes.
-   * Per-name lookup is O(1) thereafter, eliminating the previous +10 ms
-   * per search caused by a fresh OR-of-LIKE-patterns query.
-   *
-   * The index is in-memory only — fine for read-only search sessions
-   * because relationships don't change during a session. If the underlying
-   * DB is reopened (re-index), allocate a new repo instance.
+   * Lookup rule (see countIncomingCallsByNames):
+   *   - Qualified names (contain `.`) → exact map only
+   *   - Bare names → suffix safe aggregate when present, else exact fallback
    */
   prebuildRefCountIndex() {
-    if (this._refCountIndex) return this._refCountIndex;
-    const map = new Map();
+    if (this._refCountExact) return this._refCountExact;
+    const exact = new Map();
+    const bareFanout = new Map();
     const db = this._open();
     if (!db) {
-      this._refCountIndex = map;
-      return map;
+      this._refCountExact = exact;
+      this._refSuffixSafe = new Map();
+      this._refBareRelationshipFanout = bareFanout;
+      this._refCountIndex = exact;
+      return exact;
     }
+    const maxFan = (() => {
+      const raw = process.env.SWEET_SEARCH_REF_SUFFIX_AGG_FANOUT_MAX;
+      const n = parseInt(raw != null && raw !== '' ? raw : '12', 10);
+      return Number.isFinite(n) && n > 0 ? n : 12;
+    })();
     try {
       const rows = db.prepare(`
         SELECT target_name, COUNT(*) as cnt
@@ -435,25 +437,48 @@ export class CodeGraphRepository {
         WHERE type = 'calls' AND target_name IS NOT NULL AND target_name != ''
         GROUP BY target_name
       `).all();
+
       for (const row of rows) {
         const tn = row.target_name;
         const cnt = row.cnt;
-        // Full target_name as key (handles unqualified-call queries).
-        map.set(tn, (map.get(tn) || 0) + cnt);
-        // Last `.`-segment as suffix key (the entity's bare name).
+        exact.set(tn, (exact.get(tn) || 0) + cnt);
         const dot = tn.lastIndexOf('.');
-        if (dot > 0 && dot < tn.length - 1) {
-          const suffix = tn.slice(dot + 1);
-          if (suffix !== tn) {
-            map.set(suffix, (map.get(suffix) || 0) + cnt);
-          }
+        const bareKey = dot > 0 ? tn.slice(dot + 1) : tn;
+        bareFanout.set(bareKey, (bareFanout.get(bareKey) || 0) + 1);
+      }
+
+      const suffix = new Map();
+      for (const row of rows) {
+        const tn = row.target_name;
+        const cnt = row.cnt;
+        const dot = tn.lastIndexOf('.');
+        const bareKey = dot > 0 ? tn.slice(dot + 1) : tn;
+        if ((bareFanout.get(bareKey) || 0) <= maxFan) {
+          suffix.set(bareKey, (suffix.get(bareKey) || 0) + cnt);
         }
       }
+
+      this._refSuffixSafe = suffix;
     } catch {
-      // Leave map empty; callers treat missing as 0.
+      this._refSuffixSafe = new Map();
     }
-    this._refCountIndex = map;
-    return map;
+    this._refCountExact = exact;
+    this._refBareRelationshipFanout = bareFanout;
+    // Legacy field: kept for any code that peeked at the exact map
+    this._refCountIndex = exact;
+    return exact;
+  }
+
+  /**
+   * @param {string} bareName
+   * @returns {number}
+   */
+  relationshipBareFanout(bareName) {
+    if (!bareName || typeof bareName !== 'string') return 1;
+    this.prebuildRefCountIndex();
+    const m = this._refBareRelationshipFanout;
+    if (!m || !(m instanceof Map)) return 1;
+    return m.get(bareName) || 1;
   }
 
   /**
@@ -481,8 +506,20 @@ export class CodeGraphRepository {
     if (!Array.isArray(names) || names.length === 0) return out;
     const uniq = [...new Set(names.filter(n => typeof n === 'string' && n.length >= 2))];
     if (uniq.length === 0) return out;
-    const idx = this.prebuildRefCountIndex();
-    for (const name of uniq) out.set(name, idx.get(name) || 0);
+    this.prebuildRefCountIndex();
+    const exact = this._refCountExact || new Map();
+    const suffix = this._refSuffixSafe || new Map();
+    for (const name of uniq) {
+      const dot = name.lastIndexOf('.');
+      let c;
+      if (dot > 0) {
+        c = exact.get(name) || 0;
+      } else {
+        const agg = suffix.get(name);
+        c = agg !== undefined ? agg : (exact.get(name) || 0);
+      }
+      out.set(name, c);
+    }
     return out;
   }
 

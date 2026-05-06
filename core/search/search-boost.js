@@ -10,6 +10,13 @@
 
 import { SYMBOL_KIND_WEIGHTS, DEFINITION_TYPES } from '../infrastructure/constants.js';
 
+const IDENTIFIER_AGREEMENT_STOPWORDS = new Set([
+  'and', 'are', 'can', 'does', 'for', 'from', 'get', 'has', 'have',
+  'how', 'into', 'new', 'not', 'other', 'return', 'returns', 'set',
+  'should', 'that', 'the', 'this', 'true', 'use', 'used', 'using',
+  'was', 'were', 'what', 'when', 'where', 'which', 'with', 'you',
+]);
+
 // =============================================================================
 // BOOST_POLICY (static property on SweetSearch)
 // =============================================================================
@@ -109,12 +116,14 @@ export function getBoostIntent(routerMode, routerConfidence) {
  * NOTE: References SweetSearch.BOOST_POLICY — we import BOOST_POLICY locally
  * and reference it directly since the static property is wired separately.
  */
-export function applyPostFusionBoosts(fusedResults, query, routerMode, routerConfidence) {
+export function applyPostFusionBoosts(fusedResults, query, routerMode, routerConfidence, options = {}) {
   const boostIntent = this.getBoostIntent(routerMode, routerConfidence);
   const policy = BOOST_POLICY[boostIntent] || BOOST_POLICY.general;
 
   const queryLower = query.toLowerCase().trim();
   const queryTokens = this.extractQueryTokens(query);
+  const agentFormats = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
+  const allowIdentifierAgreement = !agentFormats.has(options.format);
 
   return fusedResults.map(result => {
     let totalBoost = 1.0;
@@ -138,6 +147,16 @@ export function applyPostFusionBoosts(fusedResults, query, routerMode, routerCon
         totalBoost *= scaledBoost;
         boostDetails.push(`syntax:${scaledBoost.toFixed(2)}`);
       }
+    }
+
+    // 2.5 Identifier agreement: prefer symbols/files whose meaningful
+    // identifier words are named by the natural-language query.
+    const idBoost = allowIdentifierAgreement
+      ? this.computeIdentifierAgreementBoost?.(result, query)
+      : 1.0;
+    if (idBoost > 1.0) {
+      totalBoost *= idBoost;
+      boostDetails.push(`id:${idBoost.toFixed(2)}`);
     }
 
     // 3. Symbol Kind Hierarchy (always mild)
@@ -173,6 +192,78 @@ export function applyPostFusionBoosts(fusedResults, query, routerMode, routerCon
       _boostDetails: boostDetails,
     };
   }).sort((a, b) => b.score - a.score);
+}
+
+function envFloat(name, fallback, min = 0, max = 1) {
+  const raw = process.env[name];
+  if (raw == null || raw === '') return fallback;
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
+}
+
+function splitIdentifierTerms(value) {
+  return String(value || '')
+    .replace(/_[0-9a-f]{8}(?=\.[^.]+$|$)/gi, '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map(stemIdentifierTerm)
+    .filter(term => term.length >= 3 && !IDENTIFIER_AGREEMENT_STOPWORDS.has(term));
+}
+
+function stemIdentifierTerm(term) {
+  if (term.endsWith('ies') && term.length > 4) return `${term.slice(0, -3)}y`;
+  for (const suffix of ['ing', 'ers', 'ied', 'ed', 'es', 's']) {
+    if (term.endsWith(suffix) && term.length > suffix.length + 3) {
+      return term.slice(0, -suffix.length);
+    }
+  }
+  return term;
+}
+
+/**
+ * Boost candidates whose symbol/file identifier terms agree with query terms.
+ *
+ * This is intentionally small and corpus-agnostic: it only helps when the
+ * candidate exposes meaningful identifier words, and it never fabricates a
+ * match from comments or benchmark labels.
+ */
+export function computeIdentifierAgreementBoost(result, query) {
+  const weight = envFloat('SWEET_SEARCH_IDENTIFIER_AGREEMENT_BOOST', 0.40, 0, 1);
+  if (weight === 0) return 1.0;
+
+  const queryTerms = new Set(splitIdentifierTerms(query));
+  if (queryTerms.size === 0) return 1.0;
+
+  const fileName = (result.file || result.path || result.metadata?.file || '')
+    .split('/')
+    .pop() || '';
+  const candidateTerms = new Set([
+    ...splitIdentifierTerms(result.name || result.metadata?.name || ''),
+    ...splitIdentifierTerms(fileName),
+  ]);
+  if (candidateTerms.size === 0) return 1.0;
+
+  let hits = 0;
+  for (const queryTerm of queryTerms) {
+    if (candidateTerms.has(queryTerm)) {
+      hits++;
+      continue;
+    }
+    if (queryTerm.length >= 5) {
+      for (const candidateTerm of candidateTerms) {
+        if (candidateTerm.includes(queryTerm) || queryTerm.includes(candidateTerm)) {
+          hits++;
+          break;
+        }
+      }
+    }
+  }
+  if (hits === 0) return 1.0;
+
+  const agreement = hits / Math.min(queryTerms.size, Math.max(2, candidateTerms.size));
+  return 1.0 + weight * Math.min(1, agreement);
 }
 
 /**

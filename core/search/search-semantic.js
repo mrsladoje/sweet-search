@@ -26,11 +26,93 @@ import {
 import { EMBEDDING_CONFIG, BINARY_HNSW_CONFIG } from '../infrastructure/config/index.js';
 
 const CASCADE_DEFERRED_STATS = { skipped: true, reason: 'cascade_deferred', provider: null, documents: 0, tokens: 0 };
+const FULL_VECTOR_STAGE_WEIGHT = 0.80;
+const FULL_VECTOR_STAGE_LIMIT = 200;
 
 function cascadeDefer(candidates, stats, searchPath, k = 50) {
   const results = candidates.slice(0, k).map(r => ({ ...r, searchPath }));
   stats.rerank = CASCADE_DEFERRED_STATS;
   return { results, stats };
+}
+
+function dotProduct(a, b) {
+  const n = Math.min(a?.length || 0, b?.length || 0);
+  if (n === 0) return null;
+  let score = 0;
+  for (let i = 0; i < n; i++) score += a[i] * b[i];
+  return score;
+}
+
+function normalizeScore(value, min, max) {
+  if (!Number.isFinite(value)) return 0;
+  if (!(max > min)) return 0.5;
+  return Math.max(0, Math.min(1, (value - min) / (max - min)));
+}
+
+function envNumber(name, fallback, min = 0, max = Infinity) {
+  const value = process.env[name];
+  if (value == null || value === '') return fallback;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
+}
+
+function applyFullVectorStageRescore(candidates, queryFloat, codebaseRepo, opts = {}) {
+  if (!Array.isArray(candidates) || candidates.length < 3) return { candidates, stats: null };
+  if (!queryFloat || !codebaseRepo?.getEmbeddingsByIds) return { candidates, stats: null };
+
+  const limit = Math.min(candidates.length, opts.limit ?? FULL_VECTOR_STAGE_LIMIT);
+  const head = candidates.slice(0, limit);
+  const ids = head.map(c => c.id).filter(Boolean);
+  if (ids.length === 0) return { candidates, stats: null };
+
+  const embeddings = codebaseRepo.getEmbeddingsByIds(ids);
+  if (!embeddings || embeddings.size < 2) return { candidates, stats: null };
+
+  const scored = head.map((candidate, index) => {
+    const vector = candidate.id ? embeddings.get(candidate.id) : null;
+    const fullScore = vector ? dotProduct(queryFloat, vector) : null;
+    const baseScore = candidate.floatScore ?? candidate.int8Score ?? candidate.score ?? 0;
+    return { candidate, index, baseScore, fullScore };
+  });
+  const withFull = scored.filter(item => Number.isFinite(item.fullScore));
+  if (withFull.length < 2) return { candidates, stats: null };
+
+  const baseValues = scored.map(item => item.baseScore);
+  const fullValues = withFull.map(item => item.fullScore);
+  const minBase = Math.min(...baseValues);
+  const maxBase = Math.max(...baseValues);
+  const minFull = Math.min(...fullValues);
+  const maxFull = Math.max(...fullValues);
+  const weight = opts.weight ?? envNumber('SWEET_SEARCH_FULL_VECTOR_STAGE_WEIGHT', FULL_VECTOR_STAGE_WEIGHT, 0, 1);
+
+  const reranked = scored.map(item => {
+    if (!Number.isFinite(item.fullScore)) {
+      return { ...item.candidate, _fullVectorStageOrigIndex: item.index };
+    }
+    const baseNorm = normalizeScore(item.baseScore, minBase, maxBase);
+    const fullNorm = normalizeScore(item.fullScore, minFull, maxFull);
+    return {
+      ...item.candidate,
+      fullVectorScore: item.fullScore,
+      fullVectorNorm: fullNorm,
+      preFullVectorScore: item.baseScore,
+      semanticBlendScore: (1 - weight) * baseNorm + weight * fullNorm,
+      _fullVectorStageOrigIndex: item.index,
+    };
+  });
+  reranked.sort((a, b) => {
+    const d = (b.semanticBlendScore || 0) - (a.semanticBlendScore || 0);
+    return d !== 0 ? d : a._fullVectorStageOrigIndex - b._fullVectorStageOrigIndex;
+  });
+  for (const candidate of reranked) {
+    delete candidate._fullVectorStageOrigIndex;
+    candidate.score = candidate.semanticBlendScore;
+  }
+
+  return {
+    candidates: limit === candidates.length ? reranked : reranked.concat(candidates.slice(limit)),
+    stats: { candidates: withFull.length, window: limit, weight },
+  };
 }
 
 // =============================================================================
@@ -170,6 +252,7 @@ export async function semanticSearch3Stage(query, options = {}) {
     cached: embedResult.cached || embedResult.source === 'vocabulary' || embedResult.source === 'lru' || false,
     latency_us: stats.embed_us,
   };
+  stats.queryFloat = embedResult.float || null;
 
   // Stage 1: Binary HNSW search
   // Pass floatQuery for asymmetric distance during graph traversal
@@ -365,6 +448,17 @@ export async function semanticSearch3Stage(query, options = {}) {
   }
 
   // CASCADE MODE: Return broad candidate set, let postprocess handle scoring.
+  if (options.format !== 'agent' && !options.ablations?.has?.('no-full-vector-stage-rescore')) {
+    const fullVectorStage = applyFullVectorStageRescore(
+      scoredCandidates,
+      embedResult.float,
+      this.codebaseRepo
+    );
+    scoredCandidates = fullVectorStage.candidates;
+    if (fullVectorStage.stats) stats.stages.fullVector = fullVectorStage.stats;
+  }
+
+  // CASCADE MODE: Return broad candidate set, let postprocess handle scoring.
   if (this.cascadeEnabled) {
     return cascadeDefer(scoredCandidates, stats, 'semantic-3stage', options.cascadeK);
   }
@@ -505,6 +599,7 @@ export async function semanticSearchStandard(query, options = {}) {
     cached: embedResult.cached || embedResult.source === 'vocabulary' || embedResult.source === 'lru' || false,
     latency_us: embedLatency_us,
   };
+  stats.queryFloat = fullEmbedding || null;
 
   // Truncate to HNSW dimension (1024d -> 512d Matryoshka)
   const queryEmbedding = truncateForHNSW(fullEmbedding);

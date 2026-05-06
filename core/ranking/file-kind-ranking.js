@@ -693,7 +693,8 @@ function bodyDensityMultiplier(result, opts = {}) {
 //     factory function whose graph degree is naturally high).
 //
 // Disable with `ablations: 'no-ref-count-boost'` or
-// SWEET_SEARCH_REF_BOOST_ALPHA=0.
+// SWEET_SEARCH_REF_BOOST_ALPHA=0. Suffix aggregation is homonym-gated in
+// CodeGraphRepository (`SWEET_SEARCH_REF_SUFFIX_AGG_FANOUT_MAX`, default 12).
 const REF_BOOSTABLE_TYPES = new Set(['function', 'method', 'impl']);
 
 function referenceCountBoost(result, refCounts, opts = {}) {
@@ -720,6 +721,7 @@ function referenceCountBoost(result, refCounts, opts = {}) {
 
   const name = resolveResultName(result) || resolveEntityKindInfo(result, opts)?.name;
   if (!name || name.length < 3) return 1;
+
   const count = refCounts.get(name) || 0;
   if (count <= 0) return 1;
 
@@ -756,6 +758,20 @@ function buildRefCountMap(results, opts = {}) {
   }
   if (names.length === 0) return new Map();
   try {
+    // Default: skip ref-boost for the whole query when any boostable candidate
+    // bare name has >12 distinct call-graph targets (dense single-fun corpora).
+    // Opt out with SWEET_SEARCH_REF_BOOST_QUERY_HOMONYM_DISABLE=0; tighten for
+    // eval with =2..=8 (lifts GCSN, may trim monorepo boosts — see probes).
+    const rawTh = process.env.SWEET_SEARCH_REF_BOOST_QUERY_HOMONYM_DISABLE;
+    const parsed = parseInt(rawTh != null && rawTh !== '' ? rawTh : '12', 10);
+    const homonymCeil = rawTh === '0'
+      ? Infinity
+      : (Number.isFinite(parsed) && parsed > 0 ? parsed : 12);
+    if (typeof repo.relationshipBareFanout === 'function'
+        && homonymCeil < Infinity
+        && names.some((n) => repo.relationshipBareFanout(n) > homonymCeil)) {
+      return new Map();
+    }
     return repo.countIncomingCallsByNames(names);
   } catch {
     return new Map();
@@ -782,6 +798,8 @@ export function applyResultDemotions(results, opts = {}) {
   if (!Array.isArray(results) || results.length === 0) return results;
 
   const ablations = opts.ablations;
+  if (hasAblation(ablations, 'no-result-demotions')) return results;
+
   const qTokens = queryTokenSet(opts.query || '', opts.queryTokens);
   const preferredKind = hasAblation(ablations, 'no-entity-kind-pref')
     ? null

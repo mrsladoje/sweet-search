@@ -13,6 +13,7 @@ import {
   BOOST_POLICY,
   getBoostIntent,
   applyPostFusionBoosts,
+  computeIdentifierAgreementBoost,
   computeDefinitionBoost,
   computeSyntaxBoost,
   computePositionBoost,
@@ -289,6 +290,7 @@ describe('applyPostFusionBoosts', () => {
     return {
       getBoostIntent,
       extractQueryTokens,
+      computeIdentifierAgreementBoost,
       computeDefinitionBoost,
       computeSyntaxBoost,
       computePositionBoost,
@@ -387,5 +389,53 @@ describe('applyPostFusionBoosts', () => {
     // 0 * any boost = 0
     expect(boosted[0].score).toBe(0);
     expect(boosted[0]._originalScore).toBe(0);
+  });
+
+  it('skips identifier agreement for agent format', () => {
+    const mockCtx = makeMockThis();
+    const results = [
+      { id: 'a', score: 1.0, type: 'function', name: 'setDefaultMethod' },
+    ];
+
+    const boosted = applyPostFusionBoosts.call(
+      mockCtx,
+      results,
+      'sets the default method',
+      'hybrid',
+      0.9,
+      { format: 'agent' }
+    );
+
+    expect(boosted[0]._boostDetails.some(d => d.startsWith('id:'))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeIdentifierAgreementBoost
+// ---------------------------------------------------------------------------
+
+describe('computeIdentifierAgreementBoost', () => {
+  it('boosts when query terms match symbol identifier terms', () => {
+    const boost = computeIdentifierAgreementBoost(
+      { name: 'setDefaultMethod', file: 'src/RouteCollection.php' },
+      'Sets the default method to call on the controller'
+    );
+    expect(boost).toBeGreaterThan(1.0);
+  });
+
+  it('uses file identifier terms when symbol name is unavailable', () => {
+    const boost = computeIdentifierAgreementBoost(
+      { name: '', file: 'src/audio_context_loader_1234abcd.js' },
+      'Load an audio context'
+    );
+    expect(boost).toBeGreaterThan(1.0);
+  });
+
+  it('returns neutral boost when there is no meaningful overlap', () => {
+    const boost = computeIdentifierAgreementBoost(
+      { name: 'parseConfig', file: 'src/config.js' },
+      'send text data to the other end'
+    );
+    expect(boost).toBe(1.0);
   });
 });

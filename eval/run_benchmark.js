@@ -83,6 +83,12 @@ function parseArgs() {
     // `--auto-expand-vocab` to also let the run grow the cache.
     useVocab: false,
     autoExpandVocab: false,
+    // Retrieval ablations (Set of feature flags). Forwarded to hybrid IAR, RRF,
+    // post-ranking boosts, agent packaging, etc. Example:
+    //   --ablations=no-anchor-injection,no-rrf-fallback
+    ablations: [],
+    saveEvaluated: false,
+    language: null,
   };
 
   for (const arg of args) {
@@ -104,6 +110,11 @@ function parseArgs() {
     else if (arg.startsWith('--stage3-candidates=')) opts.stage3Candidates = parseInt(arg.split('=')[1]);
     else if (arg === '--use-vocab') opts.useVocab = true;
     else if (arg === '--auto-expand-vocab') { opts.useVocab = true; opts.autoExpandVocab = true; }
+    else if (arg.startsWith('--ablations=')) {
+      opts.ablations = arg.split('=')[1].split(',').map(s => s.trim()).filter(Boolean);
+    }
+    else if (arg === '--save-evaluated') opts.saveEvaluated = true;
+    else if (arg.startsWith('--language=')) opts.language = arg.split('=')[1];
     else if (arg === '--help' || arg === '-h') {
       console.log(`
 Sweet Search Benchmark Runner
@@ -143,6 +154,11 @@ Options:
                        MRR by ~1 pp on GCSN.
   --auto-expand-vocab  Also let the run grow the persistent vocabulary
                        (implies --use-vocab). Default OFF.
+  --ablations=A,B      Comma-separated feature ablations for A/B runs.
+                       Examples: no-anchor-injection, no-rrf-fallback,
+                       no-ref-count-boost, no-name-precision
+  --save-evaluated     Include compact per-query ranks and top results in JSON.
+  --language=LANG      Restrict evaluation queries to one dataset language.
   --help, -h           Show this help
 `);
       process.exit(0);
@@ -198,6 +214,7 @@ async function main() {
   console.log(`  Dataset:     ${opts.dataset}`);
   console.log(`  Max queries: ${opts.maxQueries || 'all'}`);
   console.log(`  Search mode: ${opts.mode}`);
+  if (opts.language) console.log(`  Language:    ${opts.language}`);
   console.log(`  Skip index:  ${opts.skipIndex}`);
   const profileOpts = resolveProfile(opts);
   console.log(`  Profile:     ${opts.profile}`);
@@ -205,6 +222,10 @@ async function main() {
   console.log(`  Graph expand: ${opts.graphExpand}  (production default is auto; this harness defaults off)`);
   console.log(`  Stage3 cand:  ${opts.stage3Candidates}  (production default is 30; this harness defaults to 15 for dense MRR)`);
   console.log(`  Vocab cache: useVocabulary=${process.env.SWEET_SEARCH_VOCAB_USE}, autoExpand=${process.env.SWEET_SEARCH_VOCAB_AUTO_EXPAND}  (default OFF for reproducibility; --use-vocab / --auto-expand-vocab to opt in)`);
+  if (opts.ablations.length) {
+    console.log(`  Ablations:   ${opts.ablations.join(', ')}`);
+  }
+  if (opts.saveEvaluated) console.log('  Save evals:  true');
 
   // 1. Load data
   const dataDir = path.join(__dirname, 'data', opts.dataset);
@@ -220,6 +241,10 @@ async function main() {
   console.log('\n[1/5] Loading benchmark data...');
   const corpus = loadJsonl(corpusFile);
   let queries = loadJsonl(queriesFile);
+
+  if (opts.language) {
+    queries = queries.filter(q => q.language === opts.language);
+  }
 
   if (opts.maxQueries > 0) {
     queries = queries.slice(0, opts.maxQueries);
@@ -330,6 +355,7 @@ async function main() {
           mode: opts.mode,
           expand,
           graphExpand,
+          ablations: opts.ablations.length ? opts.ablations : undefined,
         });
 
         const evaluated = evaluateQuery(queryObj, results, docIdToFile);
@@ -421,6 +447,7 @@ async function main() {
     concurrency: opts.concurrency,
     maxQueries: opts.maxQueries || queries.length,
     skipIndex: opts.skipIndex,
+    ablations: opts.ablations.length ? opts.ablations : null,
   };
 
   const report = buildReport({
@@ -435,6 +462,7 @@ async function main() {
     perLanguage,
     evaluatedQueries,
     config,
+    includeEvaluatedQueries: opts.saveEvaluated,
   });
 
   const { timestampedFile, baselineFile } = saveResults(opts.dataset, report, resultsDir);

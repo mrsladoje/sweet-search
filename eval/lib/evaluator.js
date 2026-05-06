@@ -15,13 +15,16 @@ import path from 'path';
  * @returns {{ results: Array, latencyMs: number, mode: string }}
  */
 export async function runQuery(search, query, options = {}) {
-  const { k = 20, mode = 'auto', expand = true, graphExpand } = options;
+  const { k = 20, mode = 'auto', expand = true, graphExpand, ablations } = options;
 
   const searchOpts = { k, mode, rerank: true, expand };
   // Pass graphExpand through when callers want to override the auto-promotion
   // behaviour in sweet-search.js (semantic/hybrid + expand:true → '2hop').
   // Useful for benchmarks where graph expansion is not the dimension under test.
   if (graphExpand !== undefined) searchOpts.graphExpand = graphExpand;
+  if (ablations?.length) {
+    searchOpts.ablations = ablations instanceof Set ? ablations : new Set(ablations);
+  }
 
   const start = performance.now();
   const { results, stats } = await search.search(query, searchOpts);
@@ -89,6 +92,12 @@ export function evaluateQuery(queryObj, searchResults, docIdToFile) {
     queryId: queryObj.query_id,
     query: queryObj.query,
     language: queryObj.language,
+    topResults: searchResults.slice(0, 10).map(r => ({
+      file: r.file || '',
+      name: r.name || '',
+      type: r.type || '',
+      score: Math.round((r.score || 0) * 1000000) / 1000000,
+    })),
     rankedRelevance,
     totalRelevant: queryObj.relevant_doc_ids.length,
     latencyMs: 0,
