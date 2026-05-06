@@ -493,7 +493,13 @@ export class SweetSearch {
         break;
       }
       case 'semantic': {
-        const semanticResult = await this.semanticSearch(query, { k, rerank, useLateInteraction });
+        const semanticResult = await this.semanticSearch(query, {
+          k,
+          rerank,
+          useLateInteraction,
+          format: options.format,
+          ablations: options.ablations,
+        });
         results = semanticResult.results;
         semanticStats = semanticResult.stats;
         stats.path = 'semantic';
@@ -501,7 +507,24 @@ export class SweetSearch {
       }
       case 'hybrid':
       default: {
-        const hybridResult = await this.hybridSearchV2(query, { k, useLateInteraction, routing });
+        const hybridResult = await this.hybridSearchV2(query, {
+          k,
+          useLateInteraction,
+          format: options.format,
+          routing,
+          ablations: options.ablations,
+          useMMR: options.useMMR,
+          allowQueryRewrite: options.allowQueryRewrite,
+          allowKeywordFallback: options.allowKeywordFallback,
+          confidenceFloor: options.confidenceFloor,
+          fileKindWindow: options.fileKindWindow,
+          hybridDocFactor: options.hybridDocFactor,
+          hybridTestFactor: options.hybridTestFactor,
+          hybridTypeFactor: options.hybridTypeFactor,
+          hybridAncillaryFactor: options.hybridAncillaryFactor,
+          hybridTinyAncillaryFactor: options.hybridTinyAncillaryFactor,
+          resultDemotionWindow: options.resultDemotionWindow,
+        });
         results = hybridResult.results || hybridResult;
         semanticStats = hybridResult.semanticStats || null;
         stats.path = 'hybrid';
@@ -525,7 +548,7 @@ export class SweetSearch {
 
     // Step 3: Post-retrieval processing (delegated to extracted module)
     const postRetrievalResult = await this._applyPostRetrieval(results, query, options, {
-      stats, semanticStats, searchMode, effectiveGraphExpand, intentPolicy, start,
+      stats, semanticStats, searchMode, effectiveGraphExpand, intentPolicy, start, fromSearch: true,
     });
 
     // Step 4: Agent packaging (lexical/semantic/hybrid/structural).
@@ -606,10 +629,11 @@ export class SweetSearch {
   /** Semantic search dispatcher. Delegates to 3Stage or Standard based on config. */
   async semanticSearch(query, options = {}) {
     const { k = 10, rerank = true, useLateInteraction = this.useLateInteraction } = options;
+    const semanticOptions = { ...options, k, rerank, useLateInteraction };
     if (this.hasBinaryHnswIndex && this.use3Stage) {
-      return this.semanticSearch3Stage(query, { k, rerank, useLateInteraction });
+      return this.semanticSearch3Stage(query, semanticOptions);
     }
-    return this.semanticSearchStandard(query, { k, rerank });
+    return this.semanticSearchStandard(query, semanticOptions);
   }
 
   /** O(N) vector scan fallback (when HNSW not available). Filters stale entities. */
@@ -712,6 +736,7 @@ Object.assign(SweetSearch.prototype, {
   variance: fusion.variance,
   getBoostIntent: boost.getBoostIntent,
   applyPostFusionBoosts: boost.applyPostFusionBoosts,
+  computeIdentifierAgreementBoost: boost.computeIdentifierAgreementBoost,
   computeDefinitionBoost: boost.computeDefinitionBoost,
   computeSyntaxBoost: boost.computeSyntaxBoost,
   computePositionBoost: boost.computePositionBoost,

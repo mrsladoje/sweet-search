@@ -72,6 +72,7 @@ export function buildReport({
   perLanguage,
   evaluatedQueries,
   config = null,
+  includeEvaluatedQueries = false,
 }) {
   return {
     timestamp: new Date().toISOString(),
@@ -88,6 +89,7 @@ export function buildReport({
     ...(config ? { config } : {}),
     aggregate: metrics,
     perLanguage,
+    ...(includeEvaluatedQueries ? { evaluatedQueries } : {}),
     failedQueries: evaluatedQueries
       .filter(q => q.rankedRelevance[0] !== 1)
       .slice(0, 20)
