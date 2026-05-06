@@ -5,24 +5,28 @@
   "seed": 42,
   "devRatio": 0.7,
   "stratifyBy": "repo",
-  "total": 20,
+  "total": 60,
   "counts": {
     "fastify": {
-      "dev": 4,
-      "heldout": 2
+      "dev": 12,
+      "heldout": 6
     },
-    "gin": {
-      "dev": 4,
-      "heldout": 2
-    },
-    "ripgrep": {
+    "flask": {
       "dev": 5,
       "heldout": 3
+    },
+    "gin": {
+      "dev": 12,
+      "heldout": 6
+    },
+    "ripgrep": {
+      "dev": 11,
+      "heldout": 5
     }
   },
   "totals": {
-    "dev": 13,
-    "heldout": 7
+    "dev": 40,
+    "heldout": 20
   },
   "generatedAt": "<deterministic — see seed>",
   "generator": "eval/scripts/generate-splits.js"

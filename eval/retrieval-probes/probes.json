@@ -137,6 +137,349 @@
       "repo": "ripgrep",
       "query": "what types make up the printer trait hierarchy",
       "expectedFileAnyOf": ["crates/printer/src/standard.rs", "crates/printer/src/json.rs", "crates/printer/src/summary.rs", "crates/printer/src/util.rs", "crates/matcher/src/lib.rs", "crates/searcher/src/sink.rs"]
+    },
+
+    {
+      "id": "S3-Q1",
+      "repo": "fastify",
+      "query": "what is the Default JSON parse function used when no custom content-type parser is registered",
+      "expectedFile": "lib/content-type-parser.js",
+      "notes": "Generic 'Default' token; should still anchor to content-type-parser via kDefaultJsonParse / defaultJsonParser context, not other Default-named symbols"
+    },
+    {
+      "id": "S3-Q2",
+      "repo": "fastify",
+      "query": "where is the Reply object's send method implemented",
+      "expectedFile": "lib/reply.js",
+      "expectedSymbolAnyOf": ["Reply", "buildReply", "send"],
+      "notes": "Generic 'send' identifier; many files have send-shaped methods, must rank reply.js top-1"
+    },
+    {
+      "id": "S3-Q3",
+      "repo": "fastify",
+      "query": "how does Fastify decorate the Reply prototype with new methods",
+      "expectedFile": "lib/decorate.js",
+      "expectedSymbolAnyOf": ["decorateReply", "decorate"],
+      "notes": "Generic 'decorate' token; correct file is decorate.js even though Reply also has decoration-related code"
+    },
+    {
+      "id": "S3-Q4",
+      "repo": "gin",
+      "query": "where is the Default function that picks a binding by content type",
+      "expectedFile": "binding/binding.go",
+      "expectedSymbol": "Default",
+      "notes": "Common 'Default' identifier — many other Default*s exist across gin (Default validator, defaultLogFormatter); must pick binding.Default"
+    },
+    {
+      "id": "S3-Q5",
+      "repo": "gin",
+      "query": "how is the New function that constructs an Engine implemented",
+      "expectedFile": "gin.go",
+      "expectedSymbol": "New",
+      "notes": "Bare 'New' is heavily overloaded in Go; should land on Engine constructor in gin.go"
+    },
+    {
+      "id": "S3-Q6",
+      "repo": "gin",
+      "query": "where is the Set method on Context that stores values for the request lifetime",
+      "expectedFile": "context.go",
+      "expectedSymbol": "Set",
+      "expectedSymbolType": "method",
+      "notes": "Bare 'Set' competes with SetCookie, SetSameSite, SetCookieData; want top-level Set"
+    },
+    {
+      "id": "S3-Q7",
+      "repo": "ripgrep",
+      "query": "where is the add method that registers a Glob in a GlobSetBuilder",
+      "expectedFile": "crates/globset/src/lib.rs",
+      "expectedSymbolAnyOf": ["add", "GlobSetBuilder"],
+      "notes": "'add' is heavily overloaded in globset (multiple internal trait impls); need GlobSetBuilder::add at line 586"
+    },
+    {
+      "id": "S3-Q8",
+      "repo": "ripgrep",
+      "query": "where is the new constructor for the WalkBuilder that initialises a directory walker",
+      "expectedFile": "crates/ignore/src/walk.rs",
+      "expectedSymbolAnyOf": ["new", "WalkBuilder"],
+      "notes": "Many fn new in walk.rs (DirEntry::new_*, Walk::new); should anchor to WalkBuilder::new at line 547"
+    },
+    {
+      "id": "S3-Q9",
+      "repo": "flask",
+      "query": "where is the get_send_file_max_age method on the Flask app",
+      "expectedFileAnyOf": ["src/flask/app.py", "src/flask/blueprints.py"],
+      "expectedSymbol": "get_send_file_max_age",
+      "notes": "'get_*' generic prefix; method exists on Flask in app.py:365 and Blueprint in blueprints.py:55"
+    },
+    {
+      "id": "S3-Q10",
+      "repo": "flask",
+      "query": "where is the add_url_rule method that maps a URL pattern to a view function",
+      "expectedFileAnyOf": ["src/flask/sansio/scaffold.py", "src/flask/sansio/app.py", "src/flask/sansio/blueprints.py"],
+      "expectedSymbol": "add_url_rule",
+      "notes": "add_url_rule is defined on Scaffold and overridden on App and Blueprint — any of the three is acceptable"
+    },
+
+    {
+      "id": "S4-Q1",
+      "repo": "fastify",
+      "query": "what does FST_ERR_CTP_INVALID_MEDIA_TYPE indicate",
+      "expectedFile": "lib/errors.js",
+      "expectedSymbolAnyOf": ["FST_ERR_CTP_INVALID_MEDIA_TYPE"],
+      "notes": "Rare unique error code anchor — should land directly in errors.js"
+    },
+    {
+      "id": "S4-Q2",
+      "repo": "fastify",
+      "query": "what is kRouteContext used for in Fastify request handling",
+      "expectedFileAnyOf": ["lib/symbols.js", "lib/context.js", "lib/content-type-parser.js"],
+      "expectedSymbolAnyOf": ["kRouteContext", "Context"],
+      "notes": "kRouteContext defined in symbols.js, primary consumer is context.js; either is acceptable"
+    },
+    {
+      "id": "S4-Q3",
+      "repo": "fastify",
+      "query": "where is FST_ERR_HOOK_TIMEOUT raised and what does it cover",
+      "expectedFile": "lib/errors.js",
+      "expectedSymbolAnyOf": ["FST_ERR_HOOK_TIMEOUT"],
+      "notes": "Distinct hook-timeout error code with single definition site"
+    },
+    {
+      "id": "S4-Q4",
+      "repo": "gin",
+      "query": "what does ShouldBindBodyWith do that ShouldBindWith does not",
+      "expectedFile": "context.go",
+      "expectedSymbol": "ShouldBindBodyWith",
+      "expectedSymbolType": "method",
+      "notes": "Unique identifier; defined at context.go:928"
+    },
+    {
+      "id": "S4-Q5",
+      "repo": "gin",
+      "query": "how does CustomRecoveryWithWriter let me plug in my own panic handler",
+      "expectedFile": "recovery.go",
+      "expectedSymbol": "CustomRecoveryWithWriter",
+      "notes": "Distinctive identifier in recovery.go:53"
+    },
+    {
+      "id": "S4-Q6",
+      "repo": "gin",
+      "query": "what is the JsonpJSON renderer in gin's render package",
+      "expectedFile": "render/json.go",
+      "expectedSymbol": "JsonpJSON",
+      "notes": "Unique render type; Render at render/json.go:117"
+    },
+    {
+      "id": "S4-Q7",
+      "repo": "ripgrep",
+      "query": "what is GitignoreBuilder and how is it used to compose ignore rules",
+      "expectedFile": "crates/ignore/src/gitignore.rs",
+      "expectedSymbol": "GitignoreBuilder",
+      "expectedSymbolType": "struct",
+      "notes": "Distinctive type in ignore/gitignore.rs:309"
+    },
+    {
+      "id": "S4-Q8",
+      "repo": "ripgrep",
+      "query": "what does the OverrideBuilder do in the ignore crate",
+      "expectedFile": "crates/ignore/src/overrides.rs",
+      "expectedSymbol": "OverrideBuilder",
+      "expectedSymbolType": "struct",
+      "notes": "Unique struct at overrides.rs:115"
+    },
+    {
+      "id": "S4-Q9",
+      "repo": "flask",
+      "query": "what does send_from_directory do and how does it protect against path traversal",
+      "expectedFile": "src/flask/helpers.py",
+      "expectedSymbol": "send_from_directory",
+      "notes": "Unique helper; defined in flask/helpers.py and re-exported from app and __init__"
+    },
+    {
+      "id": "S4-Q10",
+      "repo": "flask",
+      "query": "what is the SecureCookieSessionInterface and how does it sign session cookies",
+      "expectedFile": "src/flask/sessions.py",
+      "expectedSymbol": "SecureCookieSessionInterface",
+      "expectedSymbolType": "class",
+      "notes": "Distinctive class name at sessions.py:284"
+    },
+
+    {
+      "id": "S5-Q1",
+      "repo": "fastify",
+      "query": "how does the framework run my code before the response is serialized",
+      "expectedFileAnyOf": ["lib/reply.js", "lib/hooks.js"],
+      "notes": "Pure-NL behavioural query; preSerialization hook lives in reply.js / hooks.js without obvious anchor terms"
+    },
+    {
+      "id": "S5-Q2",
+      "repo": "fastify",
+      "query": "what happens when an async route handler throws an unhandled exception",
+      "expectedFileAnyOf": ["lib/error-handler.js", "lib/handle-request.js", "lib/wrap-thenable.js"],
+      "notes": "No identifier hint; tests semantic match against error-handling and async-wrapping code"
+    },
+    {
+      "id": "S5-Q3",
+      "repo": "fastify",
+      "query": "how does the framework parse and validate the body of an incoming POST",
+      "expectedFileAnyOf": ["lib/content-type-parser.js", "lib/validation.js", "lib/handle-request.js"],
+      "notes": "Behavioural; spans content-type parsing and validation"
+    },
+    {
+      "id": "S5-Q4",
+      "repo": "gin",
+      "query": "how can I stop a chain of middleware so later ones do not execute",
+      "expectedFile": "context.go",
+      "expectedSymbolAnyOf": ["Abort", "AbortWithStatus", "AbortWithError", "Next"],
+      "notes": "NL paraphrase of Abort semantics; no identifier in query"
+    },
+    {
+      "id": "S5-Q5",
+      "repo": "gin",
+      "query": "how does the framework recover when a handler crashes with a runtime panic",
+      "expectedFile": "recovery.go",
+      "expectedSymbolAnyOf": ["Recovery", "CustomRecovery", "defaultHandleRecovery"],
+      "notes": "Pure semantic match for panic-recovery middleware"
+    },
+    {
+      "id": "S5-Q6",
+      "repo": "gin",
+      "query": "how do I serve static files from a folder on disk under a URL prefix",
+      "expectedFile": "routergroup.go",
+      "expectedSymbolAnyOf": ["Static", "StaticFS", "StaticFile", "StaticFileFS"],
+      "notes": "NL query; static-serving lives on RouterGroup"
+    },
+    {
+      "id": "S5-Q7",
+      "repo": "ripgrep",
+      "query": "how does the tool decide whether a file is binary and skip it",
+      "expectedFileAnyOf": ["crates/searcher/src/searcher/mod.rs", "crates/core/flags/hiargs.rs", "crates/searcher/src/searcher/core.rs"],
+      "notes": "Binary detection logic — no identifier in query"
+    },
+    {
+      "id": "S5-Q8",
+      "repo": "ripgrep",
+      "query": "how does the tool walk a directory tree while honouring ignore files",
+      "expectedFileAnyOf": ["crates/ignore/src/walk.rs", "crates/ignore/src/dir.rs", "crates/ignore/src/gitignore.rs"],
+      "notes": "Directory-walk + gitignore semantics, NL only"
+    },
+    {
+      "id": "S5-Q9",
+      "repo": "flask",
+      "query": "what runs before each request to set up things like the database connection",
+      "expectedFile": "src/flask/app.py",
+      "expectedSymbolAnyOf": ["preprocess_request", "full_dispatch_request", "before_request"],
+      "notes": "NL paraphrase of before_request lifecycle; lives on Flask in app.py"
+    },
+    {
+      "id": "S5-Q10",
+      "repo": "flask",
+      "query": "how can I cleanly stop a request and return a particular HTTP status code",
+      "expectedFile": "src/flask/helpers.py",
+      "expectedSymbolAnyOf": ["abort"],
+      "notes": "NL paraphrase of abort(); definition lives in helpers.py:281"
+    },
+
+    {
+      "id": "S6-Q1",
+      "repo": "fastify",
+      "query": "show me the definition of the Reply constructor",
+      "expectedFile": "lib/reply.js",
+      "expectedSymbol": "Reply",
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "User wants the actual Reply function body (line 64), not a preview"
+    },
+    {
+      "id": "S6-Q2",
+      "repo": "fastify",
+      "query": "show me the full source of the ContentTypeParser constructor",
+      "expectedFile": "lib/content-type-parser.js",
+      "expectedSymbol": "ContentTypeParser",
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Definition at content-type-parser.js:33; full body needed"
+    },
+    {
+      "id": "S6-Q3",
+      "repo": "fastify",
+      "query": "show me the buildErrorHandler function definition in full",
+      "expectedFile": "lib/error-handler.js",
+      "expectedSymbol": "buildErrorHandler",
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Definition at error-handler.js:142"
+    },
+    {
+      "id": "S6-Q4",
+      "repo": "gin",
+      "query": "show me the full Engine struct definition",
+      "expectedFile": "gin.go",
+      "expectedSymbol": "Engine",
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Definition at gin.go:92; want every field shown"
+    },
+    {
+      "id": "S6-Q5",
+      "repo": "gin",
+      "query": "show me the complete Context struct definition with all fields",
+      "expectedFile": "context.go",
+      "expectedSymbol": "Context",
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Definition at context.go:61"
+    },
+    {
+      "id": "S6-Q6",
+      "repo": "gin",
+      "query": "show me the source of the New function that constructs an Engine",
+      "expectedFile": "gin.go",
+      "expectedSymbol": "New",
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Definition at gin.go:202; full body wanted (sets defaults, calls allocate context)"
+    },
+    {
+      "id": "S6-Q7",
+      "repo": "ripgrep",
+      "query": "show me the full Searcher struct definition in the searcher crate",
+      "expectedFile": "crates/searcher/src/searcher/mod.rs",
+      "expectedSymbol": "Searcher",
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Definition at searcher/mod.rs:597; want full struct body"
+    },
+    {
+      "id": "S6-Q8",
+      "repo": "ripgrep",
+      "query": "show me the definition of the Glob struct in globset",
+      "expectedFile": "crates/globset/src/glob.rs",
+      "expectedSymbol": "Glob",
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Definition at globset/glob.rs:76"
+    },
+    {
+      "id": "S6-Q9",
+      "repo": "flask",
+      "query": "show me the full Flask class definition",
+      "expectedFile": "src/flask/app.py",
+      "expectedSymbol": "Flask",
+      "expectedSymbolType": "class",
+      "expectedPresentation": "full",
+      "notes": "Definition at app.py:109; user wants entire class body, not a preview"
+    },
+    {
+      "id": "S6-Q10",
+      "repo": "flask",
+      "query": "show me the full source of the Config class",
+      "expectedFile": "src/flask/config.py",
+      "expectedSymbol": "Config",
+      "expectedSymbolType": "class",
+      "expectedPresentation": "full",
+      "notes": "Definition at config.py:50"
     }
   ]
 }
