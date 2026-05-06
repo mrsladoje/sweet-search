@@ -1,0 +1,33 @@
+{
+  "bench": "multirepo",
+  "description": "Multi-repo ColGrep — pattern + semantic queries on 4 real-world codebases.",
+  "source": "eval/data/pattern-benchmark-fastify/queries.jsonl, eval/data/pattern-benchmark-flask/queries.jsonl, eval/data/pattern-benchmark-gin/queries.jsonl, eval/data/pattern-benchmark-ripgrep/queries.jsonl",
+  "seed": 42,
+  "devRatio": 0.6,
+  "stratifyBy": "repo",
+  "total": 479,
+  "counts": {
+    "fastify": {
+      "dev": 72,
+      "heldout": 48
+    },
+    "flask": {
+      "dev": 72,
+      "heldout": 48
+    },
+    "gin": {
+      "dev": 72,
+      "heldout": 48
+    },
+    "ripgrep": {
+      "dev": 71,
+      "heldout": 48
+    }
+  },
+  "totals": {
+    "dev": 287,
+    "heldout": 192
+  },
+  "generatedAt": "<deterministic — see seed>",
+  "generator": "eval/scripts/generate-splits.js"
+}

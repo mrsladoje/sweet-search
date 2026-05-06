@@ -1,0 +1,29 @@
+{
+  "bench": "retrieval-probes",
+  "description": "Curated retrieval-quality probes — top-1 file/symbol grading on pinned repos.",
+  "source": "eval/retrieval-probes/probes.json",
+  "seed": 42,
+  "devRatio": 0.7,
+  "stratifyBy": "repo",
+  "total": 20,
+  "counts": {
+    "fastify": {
+      "dev": 4,
+      "heldout": 2
+    },
+    "gin": {
+      "dev": 4,
+      "heldout": 2
+    },
+    "ripgrep": {
+      "dev": 5,
+      "heldout": 3
+    }
+  },
+  "totals": {
+    "dev": 13,
+    "heldout": 7
+  },
+  "generatedAt": "<deterministic — see seed>",
+  "generator": "eval/scripts/generate-splits.js"
+}

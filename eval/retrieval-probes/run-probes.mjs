@@ -29,13 +29,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SweetSearch } from '../../core/search/sweet-search.js';
+import { applySplit, normalizeSplit, warnIfFullSplit } from '../lib/splits.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const PROBES_PATH = path.join(__dirname, 'probes.json');
 
 function parseArgs(argv) {
-  const out = { repo: null, id: null, json: null, baseline: null, verbose: false };
+  // --split=dev|heldout|all (default: all)
+  //   Filters probes by membership in eval/splits/retrieval-probes/{dev,heldout}.json.
+  //   See CLAUDE.md / AGENTS.md "Benchmark Methodology" — dev for iteration,
+  //   heldout for milestones, all for full regression / publishing.
+  const out = { repo: null, id: null, json: null, baseline: null, verbose: false, split: 'all' };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith('--repo=')) out.repo = a.slice(7);
@@ -51,6 +56,7 @@ function parseArgs(argv) {
       const next = argv[i + 1];
       if (next && !next.startsWith('--')) { out.baseline = next; i++; }
     }
+    else if (a.startsWith('--split=')) out.split = normalizeSplit(a.slice(8));
     else if (a === '-v' || a === '--verbose') out.verbose = true;
   }
   return out;
@@ -164,7 +170,15 @@ function diffAgainstBaseline(current, baseline) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const probes = JSON.parse(fs.readFileSync(PROBES_PATH, 'utf8')).probes;
-  const filtered = probes.filter(p =>
+
+  // Apply --split filter first so it composes cleanly with --repo / --id.
+  const beforeSplit = probes.length;
+  let probesAfterSplit = probes;
+  if (opts.split !== 'all') {
+    probesAfterSplit = applySplit(probes, opts.split, 'retrieval-probes', p => p.id).items;
+  }
+
+  const filtered = probesAfterSplit.filter(p =>
     (!opts.repo || p.repo === opts.repo) &&
     (!opts.id || p.id === opts.id)
   );
@@ -173,6 +187,11 @@ async function main() {
     console.error('No probes match filters.');
     process.exit(2);
   }
+
+  if (opts.split !== 'all') {
+    console.log(`[probes] --split=${opts.split}: ${probesAfterSplit.length}/${beforeSplit} probes after split filter`);
+  }
+  warnIfFullSplit(opts.split, 'retrieval-probes');
 
   // Group by repo so we only spin up one SweetSearch per repo.
   const byRepo = new Map();
