@@ -41,7 +41,10 @@ const QUERY_TEXT_MIN_AGREEMENT = 0.5;
 const QUERY_TEXT_MAX_CHARS = 12000;
 const FULL_VECTOR_RESCORE_WINDOW = 20;
 const FULL_VECTOR_RESCORE_WEIGHT = 0.80;
-const FULL_VECTOR_LI_RESCORE_WEIGHT = 0.35;
+// After LI/MaxSim rerank, blend dense full-vector similarity. Must match
+// LATE_INTERACTION_CONFIG.blendWeight (ranking.js) so agent + bench agree
+// without env overrides — calibrated on GCSN dev/held-out (seed=42 splits).
+const FULL_VECTOR_LI_RESCORE_WEIGHT = 0.3;
 const FULL_VECTOR_EXACT_TEXT_WEIGHT = 0.20;
 const QUERY_TEXT_FILE_CACHE = new Map();
 const QUERY_TEXT_STOPWORDS = new Set([
