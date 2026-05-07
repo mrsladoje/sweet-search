@@ -736,6 +736,77 @@ function extractSymbolDefinitionTarget(query) {
   return null;
 }
 
+/**
+ * Path-token boost (added 2026-05-07 — 60-probe diagnosis NEW pattern).
+ *
+ * When a query mentions a crate / module / package name (e.g. "in globset",
+ * "in render package", "from binding/json"), boost candidates whose file
+ * path contains that token. Same Sourcegraph BM25F principle as the
+ * symbol boost: filename matches are a strong field-level signal that
+ * dense embedding alone underweights.
+ *
+ * SOTA: BM25F filename field weighting (Sourcegraph "Keeping it boring..."
+ * April 2025). Quote: "we should be able to use these indexes to reward
+ * symbol and FILENAME matches... think of contents, symbols, and filenames
+ * as different 'fields' within a file." See docs/SOTA_RESEARCH_2026_FIXES.md.
+ *
+ * Diagnosed cases (60-probe new-set #4): ripgrep S6-Q8 (two `Glob` structs
+ * in different crates — symbol-exact alone CANNOT disambiguate; the query
+ * said "in globset" so paths containing /globset/ should win).
+ *
+ * Trigger pattern: extract bare path-like tokens after a path preposition
+ *   /\b(?:in|from|inside|under|within)\s+(\w[\w/-]*)\b/gi
+ *
+ * Only fires on tokens of length ≥ 4 (avoid trivial "in"/"on") and not
+ * common English stopwords. Boost: 1.20× when path contains the token
+ * (case-insensitive substring match on the path string). Mild magnitude
+ * because path tokens are softer signals than symbol-exact matches.
+ *
+ * Override env: SWEET_SEARCH_PATH_TOKEN_BOOST (default 1.20). Disable
+ * with `ablations: ['no-path-token-boost']`.
+ */
+const PATH_TOKEN_QUERY_RE = /\b(?:in|from|inside|under|within|of)\s+([a-z][\w-]*(?:[\/-][\w-]+)*)\b/gi;
+const PATH_TOKEN_STOPWORDS = new Set([
+  'the', 'this', 'that', 'these', 'those', 'them', 'their', 'they',
+  'when', 'while', 'where', 'with', 'without', 'have', 'been', 'each',
+  'and', 'but', 'for', 'all', 'any', 'some', 'can', 'will', 'would',
+  'fact', 'case', 'order', 'time', 'turn', 'fact',
+]);
+
+function extractPathTokens(query) {
+  if (!query || typeof query !== 'string') return [];
+  const tokens = [];
+  let m;
+  PATH_TOKEN_QUERY_RE.lastIndex = 0;
+  while ((m = PATH_TOKEN_QUERY_RE.exec(query)) !== null) {
+    const tok = m[1];
+    if (!tok || tok.length < 4) continue;
+    if (PATH_TOKEN_STOPWORDS.has(tok.toLowerCase())) continue;
+    tokens.push(tok.toLowerCase());
+  }
+  return tokens;
+}
+
+function pathTokenBoost(result, pathTokens, opts = {}) {
+  if (!pathTokens || pathTokens.length === 0) return 1.0;
+  const raw = process.env.SWEET_SEARCH_PATH_TOKEN_BOOST;
+  let boost = opts.pathTokenBoost ?? 1.20;
+  if (raw != null && raw !== '') {
+    const n = Number.parseFloat(raw);
+    if (Number.isFinite(n) && n >= 1.0 && n <= 2.0) boost = n;
+  }
+  if (boost === 1.0) return 1.0;
+  const path = String(result?.file || result?.metadata?.file || '').toLowerCase();
+  if (!path) return 1.0;
+  // Match token as path component (separator-bounded) — avoid spurious
+  // substring matches like "iter" matching inside "literator".
+  for (const tok of pathTokens) {
+    const re = new RegExp('(^|[/_-])' + tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[/_.-])');
+    if (re.test(path)) return boost;
+  }
+  return 1.0;
+}
+
 function symbolExactMatchBoost(result, target, opts = {}) {
   if (!target) return 1.0;
   const raw = process.env.SWEET_SEARCH_SYMBOL_EXACT_BOOST;
@@ -1016,6 +1087,10 @@ export function applyResultDemotions(results, opts = {}) {
   const symbolExactTarget = !hasAblation(ablations, 'no-symbol-exact-boost')
     ? extractSymbolDefinitionTarget(opts.query || '')
     : null;
+  // Path-token targets (BM25F filename field, same Sourcegraph blog).
+  const pathTokens = !hasAblation(ablations, 'no-path-token-boost')
+    ? extractPathTokens(opts.query || '')
+    : [];
 
   let changed = false;
   const window = Math.min(opts.window ?? results.length, results.length);
@@ -1064,6 +1139,14 @@ export function applyResultDemotions(results, opts = {}) {
       if (symbolMult !== 1) {
         mult *= symbolMult;
         details.push(`symbol-exact:${symbolMult.toFixed(2)}`);
+      }
+    }
+
+    if (pathTokens.length > 0) {
+      const pathMult = pathTokenBoost(result, pathTokens, opts);
+      if (pathMult !== 1) {
+        mult *= pathMult;
+        details.push(`path-token:${pathMult.toFixed(2)}`);
       }
     }
 
