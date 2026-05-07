@@ -44,7 +44,12 @@ import path from 'path';
 
 const DOCS_RE  = /\.md$|\.mdx$|\.rst$|(?:^|\/)docs?\//i;
 const EXAMPLES_RE = /(?:^|\/)examples?\//i;
-const TESTS_RE = /(?:^|\/)tests?\/|(?:^|\/)spec\/|\.test\.[a-z0-9]+$|_test\.[a-z0-9]+$|\.spec\.[a-z0-9]+$|_spec\.[a-z0-9]+$/i;
+// Tests directory patterns. Includes the standard tests?/spec/__tests__/__mocks__
+// plus integration/, e2e/, fixtures?/, cypress/, playwright/ — common test-fixture
+// directory conventions across JS/Python/Rust/Go that shipped without TESTS_RE
+// catching them (e.g. fastify integration/server.js was mis-classified as
+// 'implementation' until this update 2026-05-07).
+const TESTS_RE = /(?:^|\/)(?:tests?|spec|integration|e2e|fixtures?|__tests__|__mocks__|cypress|playwright)\/|\.test\.[a-z0-9]+$|_test\.[a-z0-9]+$|\.spec\.[a-z0-9]+$|_spec\.[a-z0-9]+$|\.e2e\.[a-z0-9]+$|_e2e\.[a-z0-9]+$/i;
 const TYPES_RE = /\.d\.ts$|(?:^|\/)types\//i;
 // Ancillary files: configuration, lockfiles, CI manifests, container build
 // definitions. 2026-05-07 added Dockerfile / Containerfile / .dockerignore
