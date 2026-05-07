@@ -23,6 +23,21 @@ GCSN-style NL queries silently match these structural patterns ("Sort an array o
 
 The `_isAgentFormat` flag is computed once in `applyResultDemotions` and threaded into per-result functions; for new code paths, plumb `format: options.format` through the call site.
 
+## Stopword Lists vs Shape Heuristics
+
+When you reach for a stopword list, distinguish the two categories:
+
+**OK to keep** — query-tokenization stopwords for English IR (`STOPWORDS`, `QUERY_STOPWORDS`, `QUERY_TEXT_STOPWORDS`, `IDENTIFIER_AGREEMENT_STOPWORDS`). These filter common English words from BM25-style scoring; standard practice in Lucene/Elasticsearch. The lists are stable English (~30 entries) and don't grow per-project.
+
+**Avoid** — capture-filtering stopwords for regex-extracted single tokens (the F9 case: filtering "the" / "complete" from `(\w+)` captures). These are fragile because:
+1. Adding a real identifier (gin's `Default` function) blocks legitimate captures
+2. List grows on every edge case
+3. Doesn't generalize multilingually
+
+For capture-filtering, prefer **identifier-shape heuristics**: prefer captures that look like code identifiers (uppercase letter, underscore, hyphen, digit) and fall back to first capture for lowercase identifiers like Rust `lock`. This is implemented in `looksLikeIdentifier` (file-kind-ranking.js). Long-term, swap for a tiny POS classifier (sub-ms inference, multilingual).
+
+If you're tempted to grow `PATH_TOKEN_STOPWORDS` or similar capture-filtering lists, stop and ask: can a shape heuristic or an index-aware check (does this token actually appear as a path component in the indexed corpus?) replace it?
+
 ## Web Search
 
 Use the Tavily MCP server (`mcp__tavily__tavily_search`) for web search instead of the built-in WebSearch tool.

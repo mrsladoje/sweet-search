@@ -1,0 +1,544 @@
+{
+  "schemaVersion": 1,
+  "description": "Fresh held-out probes generated 2026-05-07 by 4 sub-agents (10 per repo) without sight of existing probes. NEVER iterate against this set — milestone-only.",
+  "createdAt": "2026-05-07T17:12:21Z",
+  "probes": [
+    {
+      "id": "F-NEW-1",
+      "repo": "fastify",
+      "query": "when an async route handler rejects, walk me through where the rejection error gets converted into a reply.send(err) and which diagnostics_channel events fire on the way",
+      "expectedFile": "lib/wrap-thenable.js",
+      "expectedSymbol": "wrapThenable",
+      "expectedSymbolAnyOf": [
+        "wrapThenable"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Narrative multi-clause query. Hard for encoders since it never names 'wrap-thenable' or 'thenable'. Tests semantic understanding of async-rejection -> error-channel -> reply.send flow. The answer is in the rejection handler branch (lines 53-81) which calls setErrorStatusCode + channels.error.publish + asyncStart + reply.send(err)."
+    },
+    {
+      "id": "F-NEW-2",
+      "repo": "fastify",
+      "query": "fake Set that pretends every entry is already a member -- where?",
+      "expectedFile": "lib/noop-set.js",
+      "expectedSymbol": "noopSet",
+      "expectedSymbolAnyOf": [
+        "noopSet"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Abbreviated/idiomatic query, no symbol name appears in question. Tests semantic match to a 10-line file whose `has() { return true }` is the load-bearing detail. BM25 should help via 'noop' if user knew, but query deliberately avoids it. Hard semantic probe."
+    },
+    {
+      "id": "F-NEW-3",
+      "repo": "fastify",
+      "query": "what error fires when you try to add a content-type parser after the server has already started?",
+      "expectedFile": "lib/content-type-parser.js",
+      "expectedSymbolAnyOf": [
+        "addContentTypeParser",
+        "removeContentTypeParser",
+        "removeAllContentTypeParsers"
+      ],
+      "expectedSymbol": null,
+      "expectedSymbolType": "function",
+      "expectedPresentation": "preview",
+      "notes": "Error-trace shape query. The user wants the throw site, not the error class. Three sibling functions in the same file all throw FST_ERR_CTP_INSTANCE_ALREADY_STARTED gating on this[kState].started. Tests sibling-disambiguation: any of the three is acceptable since they share the throw."
+    },
+    {
+      "id": "F-NEW-4",
+      "repo": "fastify",
+      "query": "trace the request id through a 404: where does the id come from when find-my-way's onBadUrl callback runs?",
+      "expectedFile": "lib/four-oh-four.js",
+      "expectedSymbol": "createOnBadUrl",
+      "expectedSymbolAnyOf": [
+        "createOnBadUrl",
+        "fourOhFourFallBack"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Multi-symbol behavioural-trace query. Two sibling functions in four-oh-four.js both call getGenReqId(fourOhFourContext.server, req); the user is asking for the onBadUrl path specifically. Tests sibling disambiguation between 404-fallback paths plus indirect reference resolution to req-id-gen-factory."
+    },
+    {
+      "id": "F-NEW-5",
+      "repo": "fastify",
+      "query": "why does fastify use 2,147,483,647 as the upper bound for default request ids?",
+      "expectedFile": "lib/req-id-gen-factory.js",
+      "expectedSymbol": "buildDefaultGenReqId",
+      "expectedSymbolAnyOf": [
+        "buildDefaultGenReqId"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Interrogative 'why' with a magic number as the strongest signal. BM25F should win here on the literal '2147483647' / 'maxInt'; encoder less so. The answer is the comment-block in buildDefaultGenReqId explaining V8 SMI deopt avoidance. Tests numeric-literal grounded retrieval."
+    },
+    {
+      "id": "F-NEW-6",
+      "repo": "fastify",
+      "query": "explain the relationship between buildErrorHandler and the rootErrorHandler prototype chain",
+      "expectedFile": "lib/error-handler.js",
+      "expectedSymbol": "buildErrorHandler",
+      "expectedSymbolAnyOf": [
+        "buildErrorHandler"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Multi-symbol relationship query. Tests retrieval of buildErrorHandler (uses Object.create(parent)) plus the rootErrorHandler module-level constant defined just above it. The 'next handler' fallback works because reply[kReplyNextErrorHandler] = Object.getPrototypeOf(errorHandler) walks back up. Hard: requires understanding both definitions plus the consumer in handleError to fully answer; gold is buildErrorHandler since it constructs the chain."
+    },
+    {
+      "id": "F-NEW-7",
+      "repo": "fastify",
+      "query": "how does fastify avoid the V8 ArgumentsAdaptorTrampoline when ending a response stream?",
+      "expectedFile": "lib/reply.js",
+      "expectedSymbol": "sendTrailer",
+      "expectedSymbolAnyOf": [
+        "sendTrailer",
+        "onSendEnd"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "preview",
+      "notes": "Hard semantic + literal hybrid. Comment 'avoid ArgumentsAdaptorTrampoline from V8' appears 3 times, all calls to res.end(null, null, null). All occurrences are in sendTrailer (lines 826, 840, 874). BM25 wins on 'ArgumentsAdaptorTrampoline'; encoder weak. Tests rare-token retrieval inside a 1000+ line file."
+    },
+    {
+      "id": "F-NEW-8",
+      "repo": "fastify",
+      "query": "decorator chain — how does adding a getter/setter decorator differ from a regular function decorator?",
+      "expectedFile": "lib/decorate.js",
+      "expectedSymbolAnyOf": [
+        "decorate",
+        "decorateConstructor"
+      ],
+      "expectedSymbol": null,
+      "expectedSymbolType": "function",
+      "expectedPresentation": "preview",
+      "notes": "Abbreviated query 'decorator chain'. Two sibling functions both implement the getter/setter branch via Object.defineProperty -- decorate (for instance) and decorateConstructor (for Reply/Request prototypes). Tests sibling disambiguation; either is acceptable. The branching logic on `typeof fn.getter === 'function'` is the key distinguishing detail."
+    },
+    {
+      "id": "F-NEW-9",
+      "repo": "fastify",
+      "query": "where does fastify decide that a HEAD response with a stream body must drain the stream and set content-length to the byte size?",
+      "expectedFile": "lib/head-route.js",
+      "expectedSymbol": "headRouteOnSendHandler",
+      "expectedSymbolAnyOf": [
+        "headRouteOnSendHandler"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Indirect / behavioural query. Mentions 'drain the stream' (which maps to payload.resume()) and 'content-length to byte size' (Buffer.byteLength(payload)). The answer is a single small function in head-route.js. Tests semantic understanding of HEAD-route specifics; symbol name does not appear verbatim."
+    },
+    {
+      "id": "F-NEW-10",
+      "repo": "fastify",
+      "query": "after dns.lookup resolves localhost to multiple IPs, who spawns the secondary servers and forwards 'upgrade' events to the main server?",
+      "expectedFile": "lib/server.js",
+      "expectedSymbol": "multipleBindings",
+      "expectedSymbolAnyOf": [
+        "multipleBindings"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Multi-clause narrative query mentioning two distinct facts: dns.lookup callback + secondaryServer.on('upgrade', mainServer.emit.bind(...)). Both anchor uniquely to multipleBindings (line 151). Hard because server.js is 441 lines with many listen-related siblings (listenPromise, listenCallback) — query must disambiguate via the 'upgrade' detail."
+    },
+    {
+      "id": "G-NEW-1",
+      "repo": "gin",
+      "query": "what error fires when a panic recovery handler tries to mask the Authorization header in the request dump?",
+      "expectedFile": "recovery.go",
+      "expectedSymbol": "secureRequestDump",
+      "expectedSymbolAnyOf": null,
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "SHAPE: error-trace / behavioural query asking about Authorization sanitisation. DIFFICULTY: medium. The obvious top-symbol for recovery.go is Recovery() or CustomRecoveryWithWriter. The actual answer is the unexported helper secureRequestDump that walks lines of httputil.DumpRequest output and rewrites any line starting with 'Authorization:' to 'Authorization: *'. Tests indirect-reference resolution from a 'how is sensitive data redacted' phrasing."
+    },
+    {
+      "id": "G-NEW-2",
+      "repo": "gin",
+      "query": "trace how X-Forwarded-For is parsed in reverse to find the first untrusted hop",
+      "expectedFile": "gin.go",
+      "expectedSymbol": "validateHeader",
+      "expectedSymbolAnyOf": null,
+      "expectedSymbolType": "method",
+      "expectedPresentation": "full",
+      "notes": "SHAPE: behavioural-verb 'trace ... in reverse' multi-clause query. DIFFICULTY: hard. Engine.validateHeader iterates items in reverse (i := len(items)-1; i >= 0; i--) and stops when it finds an untrusted proxy or i==0. Encoder may pull ClientIP() (the caller) which is the wrong chunk; the actual reverse-iteration logic lives in validateHeader. Tests sibling-disambiguation between ClientIP / RemoteIP / validateHeader / isTrustedProxy."
+    },
+    {
+      "id": "G-NEW-3",
+      "repo": "gin",
+      "query": "why does walking the radix tree need to remember skipped wildcard branches?",
+      "expectedFile": "tree.go",
+      "expectedSymbol": "skippedNode",
+      "expectedSymbolAnyOf": [
+        "skippedNode",
+        "getValue"
+      ],
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "SHAPE: 'why' interrogative about an internal data structure. DIFFICULTY: hard. The obvious symbols are addRoute/getValue/node, but the answer is the unexported skippedNode struct — it stores {path, node, paramsCount} so the matcher can backtrack from a static-path miss into a wildcard branch. Tests retrieval of a low-popularity helper struct given a high-level 'why' query."
+    },
+    {
+      "id": "G-NEW-4",
+      "repo": "gin",
+      "query": "how does FileAttachment pick between filename= and filename*=UTF-8'' for non-ASCII names?",
+      "expectedFile": "context.go",
+      "expectedSymbol": "FileAttachment",
+      "expectedSymbolAnyOf": [
+        "FileAttachment",
+        "isASCII"
+      ],
+      "expectedSymbolType": "method",
+      "expectedPresentation": "full",
+      "notes": "SHAPE: 'how does X pick between Y and Z' multi-clause query referencing a Content-Disposition wire format. DIFFICULTY: medium. Tests that the encoder can connect 'Content-Disposition non-ASCII' to FileAttachment (which calls isASCII and switches between escapeQuotes vs url.QueryEscape with UTF-8'' prefix). Could be confused with c.File or DataFromReader which are sibling methods in same chunk."
+    },
+    {
+      "id": "G-NEW-5",
+      "repo": "gin",
+      "query": "constant-time credential comparison",
+      "expectedFile": "auth.go",
+      "expectedSymbol": "searchCredential",
+      "expectedSymbolAnyOf": [
+        "searchCredential",
+        "BasicAuth"
+      ],
+      "expectedSymbolType": "method",
+      "expectedPresentation": "preview",
+      "notes": "SHAPE: abbreviated/keyword query (no verb). DIFFICULTY: easy-medium. Tests whether the encoder ranks authPairs.searchCredential (which calls subtle.ConstantTimeCompare) above BasicAuth/BasicAuthForRealm — those are the more 'obvious' top hits but only the inner method does the actual constant-time comparison. Sibling-disambiguation in the same chunk."
+    },
+    {
+      "id": "G-NEW-6",
+      "repo": "gin",
+      "query": "when SetMode is called with an empty string, what determines whether gin runs in test mode versus debug mode?",
+      "expectedFile": "mode.go",
+      "expectedSymbol": "SetMode",
+      "expectedSymbolAnyOf": null,
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "SHAPE: multi-clause 'when X happens, what does Y do' query. DIFFICULTY: medium. The non-obvious answer is that SetMode(\"\") branches on flag.Lookup(\"test.v\") != nil to detect that the program is running under `go test`, defaulting to TestMode there and DebugMode otherwise. Tests retrieval against Mode() / IsDebugging() / EnvGinMode siblings."
+    },
+    {
+      "id": "G-NEW-7",
+      "repo": "gin",
+      "query": "explain the relationship between collection_format tags and how comma-separated query parameters get split into slice fields",
+      "expectedFile": "binding/form_mapping.go",
+      "expectedSymbol": "trySplit",
+      "expectedSymbolAnyOf": [
+        "trySplit",
+        "setByForm"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "SHAPE: narrative 'explain the relationship between X and Y' multi-symbol query. DIFFICULTY: hard. The answer is the trySplit helper which reads the field's `collection_format` tag and switches between csv/ssv/tsv/pipes separators. Encoder may surface setByForm or setSlice (the callers) — those are wrong; trySplit is the actual locus of the behaviour. Cross-symbol probe."
+    },
+    {
+      "id": "G-NEW-8",
+      "repo": "gin",
+      "query": "walk me through how directory listing is suppressed when serving static files via router.Static",
+      "expectedFile": "fs.go",
+      "expectedSymbol": "neutralizedReaddirFile",
+      "expectedSymbolAnyOf": [
+        "neutralizedReaddirFile",
+        "OnlyFilesFS",
+        "Dir"
+      ],
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "SHAPE: narrative 'walk me through' query. DIFFICULTY: medium. Tests multi-file/multi-symbol flow: Dir() returns OnlyFilesFS{}, whose Open wraps files in neutralizedReaddirFile whose Readdir returns nil,nil — disabling listing. Encoder may pull routergroup.go Static (the entrypoint) but the suppression mechanism lives in fs.go."
+    },
+    {
+      "id": "G-NEW-9",
+      "repo": "gin",
+      "query": "max handler chain length",
+      "expectedFile": "context.go",
+      "expectedSymbol": "abortIndex",
+      "expectedSymbolAnyOf": [
+        "abortIndex"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "preview",
+      "notes": "SHAPE: abbreviated keyword query (3 words, noun phrase). DIFFICULTY: hard. The answer is the abortIndex constant in context.go (= math.MaxInt8 >> 1 = 63), referenced by routergroup.go combineHandlers via assert1(finalSize < int(abortIndex), \"too many handlers\"). The 'expectedSymbolType' is best-effort 'function' since the JSON schema disallows 'const'; symbol name is the constant. Tests cross-file indirect retrieval from a query that doesn't mention 'abort' or 'index'."
+    },
+    {
+      "id": "G-NEW-10",
+      "repo": "gin",
+      "query": "AsciiJSON unicode escape",
+      "expectedFile": "render/json.go",
+      "expectedSymbol": "AsciiJSON",
+      "expectedSymbolAnyOf": [
+        "AsciiJSON"
+      ],
+      "expectedSymbolType": "method",
+      "expectedPresentation": "full",
+      "notes": "SHAPE: abbreviated multi-symbol query. DIFFICULTY: easy-medium. The Render method on AsciiJSON walks each rune and emits \\uXXXX escape sequences for r > unicode.MaxASCII via fmt.Appendf with format '\\u%04x'. Sibling-disambiguation: the chunk also contains JSON, IndentedJSON, SecureJSON, JsonpJSON, PureJSON Render methods, so encoder must disambiguate among 5+ struct.Render methods in the same file."
+    },
+    {
+      "id": "R-NEW-1",
+      "repo": "ripgrep",
+      "query": "walk me through how a single worker thread pulls items off the deque and stops when it goes idle",
+      "expectedFile": "crates/ignore/src/walk.rs",
+      "expectedSymbol": "Worker",
+      "expectedSymbolAnyOf": [
+        "Worker",
+        "run",
+        "run_one"
+      ],
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Narrative 'walk me through' query about the parallel directory walker's worker loop. The Worker struct + its run() method live around line 1590-1640. Tests narrative shape; medium difficulty (encoder may be misled by 'walk' mentioning WalkDir/WalkBuilder)."
+    },
+    {
+      "id": "R-NEW-2",
+      "repo": "ripgrep",
+      "query": "what happens when an unsupported encoding label is passed to the searcher?",
+      "expectedFile": "crates/searcher/src/searcher/mod.rs",
+      "expectedSymbol": "Encoding::new",
+      "expectedSymbolAnyOf": [
+        "new",
+        "Encoding"
+      ],
+      "expectedSymbolType": "method",
+      "expectedPresentation": "full",
+      "notes": "Interrogative + error-trace query. Encoding::new in searcher/mod.rs around line 137 calls encoding_rs::Encoding::for_label_no_replacement and returns ConfigError on None. Medium-hard: encoder picks up 'encoding' but 'unsupported label' requires understanding the failure path."
+    },
+    {
+      "id": "R-NEW-3",
+      "repo": "ripgrep",
+      "query": "where is the byte sequence used to detect a UTF-16 BOM?",
+      "expectedFile": "crates/searcher/src/searcher/mod.rs",
+      "expectedSymbol": "slice_has_bom",
+      "expectedSymbolAnyOf": [
+        "slice_has_bom"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Direct interrogative on a non-public helper. slice_has_bom is at line ~1036 of searcher/mod.rs and uses encoding_rs::Encoding::for_bom. Hard: function name doesn't mention UTF-16, semantic similarity is moderate."
+    },
+    {
+      "id": "R-NEW-4",
+      "repo": "ripgrep",
+      "query": "GlobBuilder vs GlobSetBuilder?",
+      "expectedFile": "crates/globset/src/glob.rs",
+      "expectedSymbol": "GlobBuilder",
+      "expectedSymbolAnyOf": [
+        "GlobBuilder"
+      ],
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Abbreviated multi-symbol relationship query. GlobBuilder (single glob) is in globset/src/glob.rs at line 211; GlobSetBuilder is in globset/src/lib.rs. Tests sibling-disambiguation: encoder will see both. Expected answer is the single-glob builder which is the more fundamental of the two."
+    },
+    {
+      "id": "R-NEW-5",
+      "repo": "ripgrep",
+      "query": "trace the function call that turns parsed CLI flags into a HiArgs ready for dispatch",
+      "expectedFile": "crates/core/flags/hiargs.rs",
+      "expectedSymbol": "from_low_args",
+      "expectedSymbolAnyOf": [
+        "from_low_args"
+      ],
+      "expectedSymbolType": "method",
+      "expectedPresentation": "full",
+      "notes": "Behavioural-verb query. HiArgs::from_low_args is the method (line 113 of hiargs.rs) called by parse() to convert LowArgs into the high-level config. Medium difficulty: 'CLI flags', 'dispatch' are oblique references."
+    },
+    {
+      "id": "R-NEW-6",
+      "repo": "ripgrep",
+      "query": "when ripgrep needs to gunzip a .gz file before searching, which builder produces the reader?",
+      "expectedFile": "crates/cli/src/decompress.rs",
+      "expectedSymbol": "DecompressionReaderBuilder",
+      "expectedSymbolAnyOf": [
+        "DecompressionReaderBuilder",
+        "DecompressionReader"
+      ],
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Multi-clause when-query that names a concrete file format. DecompressionReaderBuilder (line 198 in decompress.rs) is the right answer; DecompressionMatcherBuilder picks the command, DecompressionReader is the consumer. Sibling-disambiguation among the three Decompression* types in the same file."
+    },
+    {
+      "id": "R-NEW-7",
+      "repo": "ripgrep",
+      "query": "explain how literal prefixes are extracted from a regex AST to speed up scanning",
+      "expectedFile": "crates/regex/src/literal.rs",
+      "expectedSymbol": "Extractor",
+      "expectedSymbolAnyOf": [
+        "Extractor",
+        "InnerLiterals"
+      ],
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Behavioural 'explain how' query. The Extractor struct in regex/src/literal.rs (line 131) walks the HIR to extract inner literals; InnerLiterals (line 40) is the public wrapper. Either is valid. Hard for encoder: 'speed up scanning' is purpose, not symbol name."
+    },
+    {
+      "id": "R-NEW-8",
+      "repo": "ripgrep",
+      "query": "how does ripgrep substitute backreferences like $1 inside replacement strings?",
+      "expectedFile": "crates/matcher/src/interpolate.rs",
+      "expectedSymbol": "interpolate",
+      "expectedSymbolAnyOf": [
+        "interpolate"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Interrogative 'how does' on a behaviour. interpolate() at line 14 of matcher/src/interpolate.rs is the function. Easy-medium: 'interpolate' is a strong semantic match; difficulty is realising it's in the matcher crate, not regex/printer."
+    },
+    {
+      "id": "R-NEW-9",
+      "repo": "ripgrep",
+      "query": "what error fires when the user-supplied regex contains a banned byte such as the line terminator?",
+      "expectedFile": "crates/regex/src/ban.rs",
+      "expectedSymbol": "check",
+      "expectedSymbolAnyOf": [
+        "check"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Error-trace query. ban::check (pub(crate), line 8 of regex/src/ban.rs) walks the HIR and returns Error if a banned ASCII byte is matched. Hard: function is generically named 'check', private to the crate, encoder needs to pick up 'banned'/'line terminator' semantics."
+    },
+    {
+      "id": "R-NEW-10",
+      "repo": "ripgrep",
+      "query": "relationship between the Stack struct and the work-stealing deques in the parallel walker",
+      "expectedFile": "crates/ignore/src/walk.rs",
+      "expectedSymbol": "Stack",
+      "expectedSymbolAnyOf": [
+        "Stack",
+        "new_for_each_thread"
+      ],
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Multi-symbol relationship query. Stack at line 1518 wraps a crossbeam_deque::Worker plus stealers; new_for_each_thread (line 1531) builds one per worker. Hard: 'Stack' is a generic name, encoder may match many things, but 'work-stealing deques' should ground it to crossbeam usage in walk.rs."
+    },
+    {
+      "id": "L-NEW-1",
+      "repo": "flask",
+      "query": "walk me through what happens to a WSGI environ from the moment Flask is called until a response is sent back",
+      "expectedFile": "src/flask/app.py",
+      "expectedSymbol": "wsgi_app",
+      "expectedSymbolAnyOf": [
+        "wsgi_app",
+        "Flask.wsgi_app"
+      ],
+      "expectedSymbolType": "method",
+      "expectedPresentation": "full",
+      "notes": "Narrative/walk-me-through phrasing for the request lifecycle entry point. The answer is Flask.wsgi_app at app.py:1566 (creates request_context, pushes it, calls full_dispatch_request, handles exceptions, pops ctx). Hard for encoders because the words 'WSGI environ' point to many places (wrappers.py Request, environ-keyed code) but the canonical orchestration is wsgi_app, not __call__ or full_dispatch_request. Tests sibling-disambiguation between __call__ (thin wrapper) and wsgi_app (real flow)."
+    },
+    {
+      "id": "L-NEW-2",
+      "repo": "flask",
+      "query": "when nested blueprints are registered, how is the dotted name and url_prefix stitched together?",
+      "expectedFile": "src/flask/sansio/blueprints.py",
+      "expectedSymbol": "Blueprint.register",
+      "expectedSymbolAnyOf": [
+        "register",
+        "Blueprint.register"
+      ],
+      "expectedSymbolType": "method",
+      "expectedPresentation": "full",
+      "notes": "Multi-clause when-X-how-Y query. Answer is Blueprint.register in sansio/blueprints.py:273 — the loop over self._blueprints at the bottom (lines 349-377) builds bp_options['name_prefix']=name and concatenates url_prefix. Tests sansio-vs-werkzeug awareness: many readers expect blueprints.py at flask root, but the real logic lives under sansio/. Hard because 'register' as a string matches many other functions (record/record_once/register_blueprint)."
+    },
+    {
+      "id": "L-NEW-3",
+      "repo": "flask",
+      "query": "what error fires when you try to add a route to a blueprint after it's already registered on an app?",
+      "expectedFile": "src/flask/sansio/blueprints.py",
+      "expectedSymbol": "Blueprint._check_setup_finished",
+      "expectedSymbolAnyOf": [
+        "_check_setup_finished",
+        "Blueprint._check_setup_finished"
+      ],
+      "expectedSymbolType": "method",
+      "expectedPresentation": "full",
+      "notes": "Error-trace query. Answer is Blueprint._check_setup_finished at blueprints.py:213 which raises AssertionError when _got_registered_once is True. Hard because the user describes the symptom (calling a setup method post-registration) and must connect it to the AssertionError, plus pick the Blueprint subclass version not the Scaffold base class hook. Sibling-disambiguation: Scaffold._check_setup_finished is a no-op stub; Blueprint overrides it."
+    },
+    {
+      "id": "L-NEW-4",
+      "repo": "flask",
+      "query": "explain the relationship between TaggedJSONSerializer and the secure cookie session",
+      "expectedFile": "src/flask/json/tag.py",
+      "expectedSymbol": "TaggedJSONSerializer",
+      "expectedSymbolAnyOf": [
+        "TaggedJSONSerializer"
+      ],
+      "expectedSymbolType": "class",
+      "expectedPresentation": "full",
+      "notes": "Multi-symbol relationship query. The 'serializer' used by SecureCookieSessionInterface (sessions.py:303 get_signing_serializer) wraps a TaggedJSONSerializer (json/tag.py:219) — that's how dict/tuple/bytes/UUID/datetime survive the cookie round-trip. The probe expects the TaggedJSONSerializer class as the centerpiece (it's the 'how it works'). Tests behaviour-verb 'explain' + cross-file flow understanding."
+    },
+    {
+      "id": "L-NEW-5",
+      "repo": "flask",
+      "query": "find_best_app fallback behavior when there's no top-level app variable",
+      "expectedFile": "src/flask/cli.py",
+      "expectedSymbol": "find_best_app",
+      "expectedSymbolAnyOf": [
+        "find_best_app"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Abbreviated noun-phrase query (no verb). Direct symbol match: find_best_app in cli.py:41. Looks for 'app'/'application' attrs first, then any single Flask instance, then 'create_app'/'make_app' factories. Easy-medium probe — symbol name in query but the user is asking about a sub-behaviour (the factory fallback)."
+    },
+    {
+      "id": "L-NEW-6",
+      "repo": "flask",
+      "query": "trace how MethodView routes a GET vs POST to the right instance method",
+      "expectedFile": "src/flask/views.py",
+      "expectedSymbol": "MethodView.dispatch_request",
+      "expectedSymbolAnyOf": [
+        "dispatch_request",
+        "MethodView.dispatch_request"
+      ],
+      "expectedSymbolType": "method",
+      "expectedPresentation": "full",
+      "notes": "Behaviour-verb 'trace' query. Answer is MethodView.dispatch_request at views.py:182 — getattr(self, request.method.lower()). Sibling-disambiguation hazard: View.dispatch_request (the abstract base, views.py:78) is the most encoder-similar by name. The user wants the subclass that actually does method-to-handler resolution. Also tests awareness that __init_subclass__ at line 165 builds the methods set."
+    },
+    {
+      "id": "L-NEW-7",
+      "repo": "flask",
+      "query": "where does Flask actually decide whether to set the session cookie on the response?",
+      "expectedFile": "src/flask/sessions.py",
+      "expectedSymbol": "SecureCookieSessionInterface.save_session",
+      "expectedSymbolAnyOf": [
+        "save_session",
+        "SecureCookieSessionInterface.save_session"
+      ],
+      "expectedSymbolType": "method",
+      "expectedPresentation": "full",
+      "notes": "Interrogative 'where' with hedge ('actually'). Answer is SecureCookieSessionInterface.save_session at sessions.py:337 — the body checks should_set_cookie, calls signing serializer.dumps, sets cookie. Hard: SessionInterface.save_session at sessions.py:263 is an abstract sibling that returns NotImplementedError; the encoder will rank it equally. The 'actually' hint biases toward the concrete subclass implementation."
+    },
+    {
+      "id": "L-NEW-8",
+      "repo": "flask",
+      "query": "why would Flask raise a routing exception during context push instead of dispatch?",
+      "expectedFile": "src/flask/ctx.py",
+      "expectedSymbol": "AppContext.match_request",
+      "expectedSymbolAnyOf": [
+        "match_request",
+        "AppContext.match_request"
+      ],
+      "expectedSymbolType": "method",
+      "expectedPresentation": "full",
+      "notes": "Interrogative 'why' query — asks about a design decision. Answer is AppContext.match_request at ctx.py:405 (called from push() at line 444) — routing happens at push so URL converters can see the session. The match stores routing_exception on the request rather than raising; raise happens later in dispatch_request via raise_routing_exception. Tests deeper architectural understanding, not symbol-match. Encoder-hard because 'routing exception' is closer to dispatch_request than match_request lexically."
+    },
+    {
+      "id": "L-NEW-9",
+      "repo": "flask",
+      "query": "flask routes command — how does it sort by match order?",
+      "expectedFile": "src/flask/cli.py",
+      "expectedSymbol": "routes_command",
+      "expectedSymbolAnyOf": [
+        "routes_command"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Abbreviated CLI-flavoured query with em-dash. Answer is routes_command in cli.py:1061 (the @click decorator at line 1050 defines --sort with choice 'match' which iterates rules in url_map.iter_rules() order). Tests CLI-subsystem retrieval. Encoder-helpful because 'routes_command' lexical match exists, but hard part is that the sort logic is in the click options and the iter_rules call (sorts.index('match') falls through to natural order)."
+    },
+    {
+      "id": "L-NEW-10",
+      "repo": "flask",
+      "query": "show me how to flash a message and where it gets stored across requests",
+      "expectedFile": "src/flask/helpers.py",
+      "expectedSymbol": "flash",
+      "expectedSymbolAnyOf": [
+        "flash"
+      ],
+      "expectedSymbolType": "function",
+      "expectedPresentation": "full",
+      "notes": "Imperative 'show me' + how-it-works follow-up. Answer is flash() in helpers.py:326 — uses session['_flashes'] list and sends message_flashed signal. The function shows the storage mechanism (session-backed list) and the signal dispatch via current_app._get_current_object. Easy-medium: the symbol name 'flash' is in the query but the user is also asking about the storage layer (session) which adds a multi-symbol angle."
+    }
+  ]
+}
