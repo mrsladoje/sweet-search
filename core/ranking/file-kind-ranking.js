@@ -714,7 +714,10 @@ export function rawStringDensity(text) {
 // to also be in the trailing list (function/definition). Verified
 // 2026-05-07: greedy version captured "function" for
 // "show me the buildErrorHandler function definition in full",
-// missing the contained-entity boost on S6-Q3.
+// missing the contained-entity boost on S6-Q3. But lazy also fails on
+// "show me the full Engine struct" (captures "the"/"full") — which is
+// why extractSymbolDefinitionTarget tries lazy first and falls back to
+// greedy when the lazy capture is a stopword.
 const SYMBOL_DEFN_QUERY_RE = new RegExp(
   '\\b(?:show|give|find|describe|display|fetch|see)' +
   '(?:\\s+\\w+){0,5}?\\s+' +
@@ -725,10 +728,21 @@ const SYMBOL_DEFN_QUERY_RE = new RegExp(
   'definition|signature|prototype|constructor)\\b',
   'i'
 );
+const SYMBOL_DEFN_QUERY_RE_GREEDY = new RegExp(
+  '\\b(?:show|give|find|describe|display|fetch|see)' +
+  '(?:\\s+\\w+){0,5}\\s+' +
+  '(?:the\\s+)?' +
+  '(\\w+)' +
+  '(?:\\s+\\w+)?\\s+' +
+  '(?:struct|enum|class|fn|function|method|trait|type|interface|impl|' +
+  'definition|signature|prototype|constructor)\\b',
+  'i'
+);
 const SYMBOL_WHATIS_QUERY_RE = new RegExp(
   '\\bwhat\\s+(?:is|does|are)\\s+(?:the\\s+)?' +
   '(\\w+)\\s+' +
-  '(?:struct|enum|class|function|method|type|trait|interface)\\b',
+  '(?:struct|enum|class|function|method|type|trait|interface|' +
+  'renderer|handler|component|service|module|controller|provider|builder)\\b',
   'i'
 );
 // "where is the X function/method/struct" pattern — captures probe-style queries
@@ -743,16 +757,35 @@ const SYMBOL_WHERE_QUERY_RE = new RegExp(
   'i'
 );
 
+// Identifier-shape heuristic: code identifiers across all languages
+// commonly use one of: uppercase letters (PascalCase / camelCase),
+// underscores (snake_case), hyphens (kebab-case), or digits. Plain
+// English adjectives / determiners ("the", "complete", "every") fall
+// outside this shape. This is more principled than a curated stopword
+// list — it generalizes to non-English languages, avoids removing
+// real lowercase identifiers like Rust `lock` / Python `commit` (which
+// stay as final-fallback when no identifier-shape candidate exists),
+// and doesn't require maintaining a word list. Long-term, swap for a
+// small POS classifier if false-positive identifier captures appear.
+function looksLikeIdentifier(name) {
+  if (!name || name.length < 3) return false;
+  return /[A-Z_\-0-9]/.test(name);
+}
+
 function extractSymbolDefinitionTarget(query) {
   if (!query || typeof query !== 'string') return null;
-  // Try the SHOW pattern first (more permissive).
-  let m = query.match(SYMBOL_DEFN_QUERY_RE);
-  if (m && m[1] && m[1].length >= 3) return m[1];
-  m = query.match(SYMBOL_WHATIS_QUERY_RE);
-  if (m && m[1] && m[1].length >= 3) return m[1];
-  m = query.match(SYMBOL_WHERE_QUERY_RE);
-  if (m && m[1] && m[1].length >= 3) return m[1];
-  return null;
+  const candidates = [];
+  for (const re of [SYMBOL_DEFN_QUERY_RE, SYMBOL_DEFN_QUERY_RE_GREEDY, SYMBOL_WHATIS_QUERY_RE, SYMBOL_WHERE_QUERY_RE]) {
+    const m = query.match(re);
+    if (m && m[1] && m[1].length >= 3) candidates.push(m[1]);
+  }
+  if (candidates.length === 0) return null;
+  // Prefer identifier-shape captures (uppercase / underscore / digit) over
+  // plain lowercase English captures. Falls back to first capture if no
+  // identifier-shape candidate found (catches lowercase identifiers like
+  // Rust `lock` or Python `commit`).
+  const idShape = candidates.find(looksLikeIdentifier);
+  return idShape || candidates[0];
 }
 
 /**

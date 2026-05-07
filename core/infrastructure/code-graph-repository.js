@@ -109,24 +109,33 @@ export class CodeGraphRepository {
     try {
       const tLower = String(targetName).toLowerCase();
       const tNorm = tLower.replace(/[_-]/g, '');
-      const rows = db.prepare(`
+      // Two-pass query: prefer entities FULLY CONTAINED in chunk range (most
+      // confident match); if none, fall back to entities whose START line is
+      // in the chunk range (catches entities like a multi-chunk struct whose
+      // declaration starts in this chunk but body extends beyond — e.g. gin
+      // Engine struct at gin.go:92-189 split across chunks 92-133 and 134-189).
+      const containedRows = db.prepare(`
         SELECT name, type, start_line, end_line FROM entities
-        WHERE file_path = ?
-          AND start_line >= ?
-          AND end_line <= ?
-          AND (stale_since IS NULL)
+        WHERE file_path = ? AND start_line >= ? AND end_line <= ? AND (stale_since IS NULL)
         ORDER BY (end_line - start_line) DESC
       `).all(filePath, startLine, endLine);
-      for (const row of rows) {
+      for (const row of containedRows) {
         if (!row.name) continue;
         const nLower = String(row.name).toLowerCase();
         if (nLower === tLower || nLower.replace(/[_-]/g, '') === tNorm) {
-          return {
-            name: row.name,
-            type: row.type,
-            startLine: row.start_line,
-            endLine: row.end_line,
-          };
+          return { name: row.name, type: row.type, startLine: row.start_line, endLine: row.end_line };
+        }
+      }
+      const startsInRows = db.prepare(`
+        SELECT name, type, start_line, end_line FROM entities
+        WHERE file_path = ? AND start_line >= ? AND start_line <= ? AND (stale_since IS NULL)
+        ORDER BY (end_line - start_line) DESC
+      `).all(filePath, startLine, endLine);
+      for (const row of startsInRows) {
+        if (!row.name) continue;
+        const nLower = String(row.name).toLowerCase();
+        if (nLower === tLower || nLower.replace(/[_-]/g, '') === tNorm) {
+          return { name: row.name, type: row.type, startLine: row.start_line, endLine: row.end_line };
         }
       }
       return null;
@@ -136,29 +145,7 @@ export class CodeGraphRepository {
   }
 
   hasEntityWithNameInRange(filePath, startLine, endLine, targetName) {
-    if (!targetName) return false;
-    const db = this._open();
-    if (!db) return false;
-    try {
-      const tLower = String(targetName).toLowerCase();
-      const tNorm = tLower.replace(/[_-]/g, '');
-      const rows = db.prepare(`
-        SELECT name FROM entities
-        WHERE file_path = ?
-          AND start_line >= ?
-          AND end_line <= ?
-          AND (stale_since IS NULL)
-      `).all(filePath, startLine, endLine);
-      for (const row of rows) {
-        if (!row.name) continue;
-        const nLower = String(row.name).toLowerCase();
-        if (nLower === tLower) return true;
-        if (nLower.replace(/[_-]/g, '') === tNorm) return true;
-      }
-      return false;
-    } catch {
-      return false;
-    }
+    return this.findEntityWithNameInRange(filePath, startLine, endLine, targetName) !== null;
   }
 
   findFirstEntityInRange(filePath, startLine, endLine) {
