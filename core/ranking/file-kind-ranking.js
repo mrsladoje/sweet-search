@@ -669,6 +669,100 @@ export function rawStringDensity(text) {
  *   - S4-Q2 fastify: 735-line `function fastify` chunk beat 1-line
  *     `kRouteContext` symbol declaration
  */
+/**
+ * Symbol-exact-match boost for definition-style queries.
+ *
+ * Added 2026-05-07 — both diagnoses (FreshStack uv #1, 60-probe new-set #1)
+ * converged on this as the highest-impact fix. When a query has the shape
+ * "show me X struct/enum/class/function/...", chunks where the symbol name
+ * EQUALS X (case-insensitive, after stemming s/es/ing suffixes) should
+ * dominate the lexical-collision sibling chunk that the encoder happens
+ * to score nearby.
+ *
+ * Diagnosed cases (combined): Cache vs CacheArgs (UV-DEF-1), Resolver vs
+ * Resolution (UV-DEF-4), ContentTypeParser vs ContentType (S6-Q2),
+ * Flask vs App (S6-Q9), buildErrorHandler vs setErrorHeaders (S6-Q3),
+ * Set method vs Value method (S3-Q6), get_send_file_max_age vs
+ * send_static_file (S3-Q9). 8+ failures in the new-probe set, 4 in
+ * FreshStack — strong evidence of a real systematic gap.
+ *
+ * SOTA precedent: BM25F field-weighted boosting on the symbol field
+ * (canonical IR move when one field carries decisive signal); ColBERTv2
+ * "expansion-aware reranking" with identifier prior; Sourcegraph Cody's
+ * "hint" tokens that bias toward exact symbol matches in graph-aware
+ * retrieval (Cody arXiv 2408.05344).
+ *
+ * Trigger pattern (conservative — only fires on UNAMBIGUOUS definition
+ * queries):
+ *   /\b(show|give|find|describe|display|fetch).+?(?:the\s+)?(\w+)\s+
+ *    (struct|enum|class|fn|function|method|trait|type|interface|impl|
+ *     definition|signature|prototype|constructor)\b/i
+ *
+ * Plus a "WHAT IS X TYPE" alternate trigger:
+ *   /\bwhat\s+(?:is|does)\s+(?:the\s+)?(\w+)\s+
+ *    (struct|enum|class|function|method|type)\b/i
+ *
+ * Boost: 1.30× when chunk.symbol case-insensitive-equals the captured
+ * identifier. Capped at 1.30 (mild — definition queries account for ≤25%
+ * of probe traffic so a stronger boost risks breaking non-DEF queries).
+ *
+ * Override env: SWEET_SEARCH_SYMBOL_EXACT_BOOST (default 1.30, set to 1.0
+ * to disable). `ablations: ['no-symbol-exact-boost']` also disables.
+ */
+const SYMBOL_DEFN_QUERY_RE = new RegExp(
+  '\\b(?:show|give|find|describe|display|fetch|see)' +
+  '(?:\\s+\\w+){0,5}\\s+' +
+  '(?:the\\s+)?' +
+  '(\\w+)' +
+  '(?:\\s+\\w+)?\\s+' +
+  '(?:struct|enum|class|fn|function|method|trait|type|interface|impl|' +
+  'definition|signature|prototype|constructor)\\b',
+  'i'
+);
+const SYMBOL_WHATIS_QUERY_RE = new RegExp(
+  '\\bwhat\\s+(?:is|does|are)\\s+(?:the\\s+)?' +
+  '(\\w+)\\s+' +
+  '(?:struct|enum|class|function|method|type|trait|interface)\\b',
+  'i'
+);
+
+function extractSymbolDefinitionTarget(query) {
+  if (!query || typeof query !== 'string') return null;
+  // Try the SHOW pattern first (more permissive).
+  let m = query.match(SYMBOL_DEFN_QUERY_RE);
+  if (m && m[1] && m[1].length >= 3) return m[1];
+  m = query.match(SYMBOL_WHATIS_QUERY_RE);
+  if (m && m[1] && m[1].length >= 3) return m[1];
+  return null;
+}
+
+function symbolExactMatchBoost(result, target, opts = {}) {
+  if (!target) return 1.0;
+  const raw = process.env.SWEET_SEARCH_SYMBOL_EXACT_BOOST;
+  let boost = opts.symbolExactBoost ?? 1.30;
+  if (raw != null && raw !== '') {
+    const n = Number.parseFloat(raw);
+    if (Number.isFinite(n) && n >= 1.0 && n <= 2.0) boost = n;
+  }
+  if (boost === 1.0) return 1.0;
+
+  const symbol = result?.name
+    || result?.metadata?.name
+    || result?.entity?.name
+    || result?.symbol
+    || '';
+  if (!symbol) return 1.0;
+  const tLower = target.toLowerCase();
+  const sLower = String(symbol).toLowerCase();
+  // Exact case-insensitive match.
+  if (sLower === tLower) return boost;
+  // Snake_case ↔ camelCase normalisation: "missing_linker_library" matches
+  // "MissingLinkerLibrary"; "decorate_reply" matches "decorateReply".
+  const norm = (s) => s.replace(/[_-]/g, '').toLowerCase();
+  if (norm(sLower) === norm(tLower)) return boost;
+  return 1.0;
+}
+
 function megaChunkSizePenalty(result, opts = {}) {
   const floor = (() => {
     const raw = process.env.SWEET_SEARCH_MEGA_CHUNK_FLOOR;
@@ -915,6 +1009,14 @@ export function applyResultDemotions(results, opts = {}) {
     ? buildRefCountMap(results, opts)
     : new Map();
 
+  // Symbol-exact-match target — extracted ONCE per query (not per-result).
+  // BM25F SOTA pattern (Sourcegraph BM25F blog April 2025, +20% on code
+  // search; Pérez-Iglesias et al. arXiv 0911.5046; Robertson & Zaragoza
+  // 2009). See docs/SOTA_RESEARCH_2026_FIXES.md for full rationale.
+  const symbolExactTarget = !hasAblation(ablations, 'no-symbol-exact-boost')
+    ? extractSymbolDefinitionTarget(opts.query || '')
+    : null;
+
   let changed = false;
   const window = Math.min(opts.window ?? results.length, results.length);
   const adjusted = results.slice(0, window).map((result, index) => {
@@ -954,6 +1056,14 @@ export function applyResultDemotions(results, opts = {}) {
       if (megaMult !== 1) {
         mult *= megaMult;
         details.push(`mega-chunk:${megaMult.toFixed(2)}`);
+      }
+    }
+
+    if (symbolExactTarget) {
+      const symbolMult = symbolExactMatchBoost(result, symbolExactTarget, opts);
+      if (symbolMult !== 1) {
+        mult *= symbolMult;
+        details.push(`symbol-exact:${symbolMult.toFixed(2)}`);
       }
     }
 
