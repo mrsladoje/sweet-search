@@ -11,6 +11,18 @@
 - ALWAYS read a file before editing it
 - NEVER commit secrets, credentials, or .env files
 
+## Ranking Signal Format-Gating (Always Enforced)
+
+Any new ranking signal that detects structured-query patterns (BM25F-style boosts, anomalous-chunk demotions, behavioural-query demotions, mega-entity penalties, file-kind-aware reranking, etc.) MUST be gated on `opts._isAgentFormat` (or `opts.format === 'agent' | 'agent_full' | 'agent_full_xl' | 'agent_preview'`) by default.
+
+**Empirical evidence** (2026-05): the same regression has now struck twice when ungated:
+- **Symbol-exact + path-token boosts** (round 1): cost −0.07pp on GCSN heldout MRR before format-gating restored 86.01% baseline.
+- **Anomalous-chunk demotion** (round 2): cost **−27.57pp on GCSN dev MRR** (86.92% → 59.35%) before format-gating restored full baseline.
+
+GCSN-style NL queries silently match these structural patterns ("Sort an array of integers" → trips path-token; legitimate code-file headers with no symbol → trip anomalous-chunk). Default narrow; widen later only with held-out evidence that the signal helps NL traffic.
+
+The `_isAgentFormat` flag is computed once in `applyResultDemotions` and threaded into per-result functions; for new code paths, plumb `format: options.format` through the call site.
+
 ## Web Search
 
 Use the Tavily MCP server (`mcp__tavily__tavily_search`) for web search instead of the built-in WebSearch tool.
