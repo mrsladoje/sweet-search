@@ -1,0 +1,537 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-07T07:52:20.710Z",
+  "summary": {
+    "counts": {
+      "PASS": 10,
+      "PARTIAL": 5,
+      "FAIL": 15
+    },
+    "totalMs": 2194,
+    "avgMs": 73,
+    "n": 30
+  },
+  "results": [
+    {
+      "id": "UV-NL-1",
+      "repo": "uv",
+      "query": "how does uv resolve dependency conflicts when two packages need different versions of the same library",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/uv-auth/src/middleware.rs",
+        "startLine": 2068,
+        "endLine": 2179,
+        "symbol": "test_credentials_from_keyring_mixed_authentication_different_indexes_same_realm",
+        "symbolType": "function",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 118,
+      "error": null
+    },
+    {
+      "id": "UV-NL-2",
+      "repo": "uv",
+      "query": "where is the lockfile written to disk after a successful resolution",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/uv/src/commands/project/lock.rs",
+        "startLine": 469,
+        "endLine": 1023,
+        "symbol": "do_lock",
+        "symbolType": "function",
+        "score": 0.4722123444080353,
+        "presentation": "full"
+      },
+      "wallMs": 106,
+      "error": null
+    },
+    {
+      "id": "UV-NL-3",
+      "repo": "uv",
+      "query": "how does uv decide whether to download a managed Python build or use one already on the system",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/uv-python/src/installation.rs",
+        "startLine": 40,
+        "endLine": 474,
+        "symbol": "PythonInstallation",
+        "symbolType": "impl",
+        "score": 0.5370352268218994,
+        "presentation": "full"
+      },
+      "wallMs": 63,
+      "error": null
+    },
+    {
+      "id": "UV-NL-4",
+      "repo": "uv",
+      "query": "when uv installs a wheel where does it actually copy the files from cache into the virtualenv",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/uv-install-wheel/src/wheel.rs",
+        "startLine": 587,
+        "endLine": 588,
+        "symbolType": "code",
+        "score": 0.5736942887306213,
+        "presentation": "full"
+      },
+      "wallMs": 56,
+      "error": null
+    },
+    {
+      "id": "UV-NL-5",
+      "repo": "uv",
+      "query": "how does uv know whether the uv.lock file is stale and needs re-resolving",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "crates/uv/src/commands/project/lock.rs",
+        "startLine": 84,
+        "endLine": 283,
+        "symbol": "lock",
+        "symbolType": "function",
+        "score": 0.5700349807739258,
+        "presentation": "full"
+      },
+      "wallMs": 74,
+      "error": null
+    },
+    {
+      "id": "UV-NL-6",
+      "repo": "uv",
+      "query": "how does uv build a source distribution into a wheel before installing it",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "crates/uv-distribution/src/source/mod.rs",
+        "startLine": 2453,
+        "endLine": 2606,
+        "symbol": "build_distribution",
+        "symbolType": "function",
+        "score": 0.6499452590942383,
+        "presentation": "full"
+      },
+      "wallMs": 68,
+      "error": null
+    },
+    {
+      "id": "UV-NL-7",
+      "repo": "uv",
+      "query": "what controls whether uv compiles bytecode for installed packages and how is it triggered",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/uv/src/commands/pip/compile.rs",
+        "startLine": 1,
+        "endLine": 50,
+        "symbolType": "code",
+        "score": 0.4509821832180023,
+        "presentation": "full"
+      },
+      "wallMs": 61,
+      "error": null
+    },
+    {
+      "id": "UV-NL-8",
+      "repo": "uv",
+      "query": "how does uv pick between installing the latest version of a package and a pinned version from preferences",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/uv-resolver/src/preferences.rs",
+        "startLine": 1,
+        "endLine": 39,
+        "symbol": "PreferenceError",
+        "symbolType": "enum",
+        "score": 0.5343150496482849,
+        "presentation": "full"
+      },
+      "wallMs": 50,
+      "error": null
+    },
+    {
+      "id": "UV-DEF-1",
+      "repo": "uv",
+      "query": "show me the Cache struct definition",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/uv-cache/src/cli.rs",
+        "startLine": 1,
+        "endLine": 32,
+        "symbol": "CacheArgs",
+        "symbolType": "struct",
+        "score": 0.4963135897517205,
+        "presentation": "full"
+      },
+      "wallMs": 72,
+      "error": null
+    },
+    {
+      "id": "UV-DEF-2",
+      "repo": "uv",
+      "query": "show me the Planner struct that builds installation plans",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/uv-installer/src/plan.rs",
+        "startLine": 1,
+        "endLine": 33,
+        "symbol": "Planner",
+        "symbolType": "struct",
+        "score": 0.6557917231321336,
+        "presentation": "full"
+      },
+      "wallMs": 73,
+      "error": null
+    },
+    {
+      "id": "UV-DEF-3",
+      "repo": "uv",
+      "query": "show me the full Lock struct definition with all its fields",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/uv-resolver/src/lock/mod.rs",
+        "startLine": 252,
+        "endLine": 299,
+        "symbol": "Lock",
+        "symbolType": "struct",
+        "score": 0.5753412818908692,
+        "presentation": "full"
+      },
+      "wallMs": 117,
+      "error": null
+    },
+    {
+      "id": "UV-DEF-4",
+      "repo": "uv",
+      "query": "show me the Resolver struct definition",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/uv-distribution-types/src/resolution.rs",
+        "startLine": 1,
+        "endLine": 18,
+        "symbol": "Resolution",
+        "symbolType": "struct",
+        "score": 0.5502986490726471,
+        "presentation": "full"
+      },
+      "wallMs": 89,
+      "error": null
+    },
+    {
+      "id": "UV-DEF-5",
+      "repo": "uv",
+      "query": "show me the Workspace struct definition",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/uv-workspace/src/workspace.rs",
+        "startLine": 140,
+        "endLine": 164,
+        "symbol": "Workspace",
+        "symbolType": "struct",
+        "score": 0.6562459450960161,
+        "presentation": "full"
+      },
+      "wallMs": 97,
+      "error": null
+    },
+    {
+      "id": "UV-DEF-6",
+      "repo": "uv",
+      "query": "show me the Interpreter struct definition with all fields",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/uv-python/src/interpreter.rs",
+        "startLine": 42,
+        "endLine": 67,
+        "symbol": "Interpreter",
+        "symbolType": "struct",
+        "score": 0.5926281490921975,
+        "presentation": "full"
+      },
+      "wallMs": 107,
+      "error": null
+    },
+    {
+      "id": "UV-DEF-7",
+      "repo": "uv",
+      "query": "show me the BuildDispatch struct definition",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/uv-dispatch/src/lib.rs",
+        "startLine": 84,
+        "endLine": 112,
+        "symbol": "BuildDispatch",
+        "symbolType": "struct",
+        "score": 0.6631593793630601,
+        "presentation": "full"
+      },
+      "wallMs": 77,
+      "error": null
+    },
+    {
+      "id": "UV-DEF-8",
+      "repo": "uv",
+      "query": "show me the Commands enum that lists every uv subcommand",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/uv-cli/src/lib.rs",
+        "startLine": 414,
+        "endLine": 579,
+        "symbol": "Commands",
+        "symbolType": "enum",
+        "score": 0.4745223248004914,
+        "presentation": "full"
+      },
+      "wallMs": 83,
+      "error": null
+    },
+    {
+      "id": "UV-FLOW-1",
+      "repo": "uv",
+      "query": "trace how uv add inserts a new dependency into pyproject.toml",
+      "verdict": "FAIL",
+      "reason": "no_results",
+      "top1": null,
+      "wallMs": 3,
+      "error": null
+    },
+    {
+      "id": "UV-FLOW-2",
+      "repo": "uv",
+      "query": "what happens end-to-end when I run uv sync on an existing project",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "Dockerfile",
+        "startLine": 24,
+        "endLine": 25,
+        "symbol": "pyproject.toml uv.lock ./",
+        "symbolType": "copy",
+        "score": 0.5273754596710205,
+        "presentation": "full"
+      },
+      "wallMs": 47,
+      "error": null
+    },
+    {
+      "id": "UV-FLOW-3",
+      "repo": "uv",
+      "query": "how does uv tool install create an isolated environment and link entrypoints onto PATH",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/uv-tool/src/tool.rs",
+        "startLine": 392,
+        "endLine": 419,
+        "symbol": "ToolEntrypoint",
+        "symbolType": "impl",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 52,
+      "error": null
+    },
+    {
+      "id": "UV-FLOW-4",
+      "repo": "uv",
+      "query": "trace how uv lock decides which package versions to write into uv.lock",
+      "verdict": "FAIL",
+      "reason": "no_results",
+      "top1": null,
+      "wallMs": 3,
+      "error": null
+    },
+    {
+      "id": "UV-FLOW-5",
+      "repo": "uv",
+      "query": "where is the code that fetches a wheel from a registry index and caches it",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/uv-distribution/src/index/registry_wheel_index.rs",
+        "startLine": 96,
+        "endLine": 292,
+        "symbol": "index",
+        "symbolType": "function",
+        "score": 0.5591306686401367,
+        "presentation": "full"
+      },
+      "wallMs": 75,
+      "error": null
+    },
+    {
+      "id": "UV-FLOW-6",
+      "repo": "uv",
+      "query": "trace how uv venv creates a new virtual environment from scratch",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "crates/uv/src/commands/venv.rs",
+        "startLine": 47,
+        "endLine": 63,
+        "symbol": "VenvError",
+        "symbolType": "enum",
+        "score": 0.5484922528266907,
+        "presentation": "full"
+      },
+      "wallMs": 64,
+      "error": null
+    },
+    {
+      "id": "UV-FLOW-7",
+      "repo": "uv",
+      "query": "how does uv publish authenticate with PyPI using trusted publishing tokens",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/uv/src/settings.rs",
+        "startLine": 4378,
+        "endLine": 4439,
+        "symbol": "PublishSettings",
+        "symbolType": "impl",
+        "score": 0.5736824022538308,
+        "presentation": "full"
+      },
+      "wallMs": 68,
+      "error": null
+    },
+    {
+      "id": "UV-FLOW-8",
+      "repo": "uv",
+      "query": "how does uv clone a git dependency and pin it to a specific commit",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/uv-types/src/builds.rs",
+        "startLine": 69,
+        "endLine": 71,
+        "symbol": "clone",
+        "symbolType": "function",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 82,
+      "error": null
+    },
+    {
+      "id": "UV-ERR-1",
+      "repo": "uv",
+      "query": "what does the NoSolutionError type represent in the resolver and how is it formatted for users",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/uv-resolver/src/error.rs",
+        "startLine": 161,
+        "endLine": 191,
+        "symbol": "NoSolutionError",
+        "symbolType": "struct",
+        "score": 0.7108785051107408,
+        "presentation": "full"
+      },
+      "wallMs": 112,
+      "error": null
+    },
+    {
+      "id": "UV-ERR-2",
+      "repo": "uv",
+      "query": "where is the ResolveError::ConflictingUrls variant constructed",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/uv-resolver/src/fork_urls.rs",
+        "startLine": 1,
+        "endLine": 52,
+        "symbol": "ForkUrls",
+        "symbolType": "struct",
+        "score": 0.47516417503356934,
+        "presentation": "full"
+      },
+      "wallMs": 75,
+      "error": null
+    },
+    {
+      "id": "UV-ERR-3",
+      "repo": "uv",
+      "query": "what does PubGrubReportFormatter do when rendering a resolution failure",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "crates/uv-resolver/src/pubgrub/report.rs",
+        "startLine": 354,
+        "endLine": 354,
+        "symbolType": "code",
+        "score": 0.548722505569458,
+        "presentation": "full"
+      },
+      "wallMs": 93,
+      "error": null
+    },
+    {
+      "id": "UV-ERR-4",
+      "repo": "uv",
+      "query": "what error is raised when a wheel is missing a header file required to build a C extension",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "crates/uv-build-frontend/src/error.rs",
+        "startLine": 540,
+        "endLine": 587,
+        "symbol": "missing_linker_library",
+        "symbolType": "function",
+        "score": 0.5025888085365295,
+        "presentation": "full"
+      },
+      "wallMs": 50,
+      "error": null
+    },
+    {
+      "id": "UV-ERR-5",
+      "repo": "uv",
+      "query": "where is the PublishError type that wraps trusted-publishing and upload failures",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/uv-publish/src/lib.rs",
+        "startLine": 48,
+        "endLine": 101,
+        "symbol": "PublishError",
+        "symbolType": "enum",
+        "score": 0.6774133521318437,
+        "presentation": "full"
+      },
+      "wallMs": 85,
+      "error": null
+    },
+    {
+      "id": "UV-ERR-6",
+      "repo": "uv",
+      "query": "what does the SitePackagesDiagnostic enum represent and what variants does it have",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/uv-installer/src/site_packages.rs",
+        "startLine": 621,
+        "endLine": 667,
+        "symbol": "SitePackagesDiagnostic",
+        "symbolType": "enum",
+        "score": 0.7342992079257966,
+        "presentation": "full"
+      },
+      "wallMs": 74,
+      "error": null
+    }
+  ]
+}
