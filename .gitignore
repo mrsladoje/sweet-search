@@ -156,3 +156,17 @@ eval/repos/
 .cross-validation-results/
 .claude/
 .aider*
+
+# Local SQLite indexes / databases
+*.db
+*.db-shm
+*.db-wal
+
+# Per-run benchmark / probe / ablation outputs
+# (canonical results-*.json, probes-*.json and dated uv-results-YYYY-*.json stay tracked)
+eval/retrieval-probes/after-*.json
+eval/retrieval-probes/baseline-*.json
+eval/retrieval-probes/*-with-fix.json
+eval/freshstack/uv-results.json
+scripts/iar-ablation-*.json
+scripts/multirepo-*.json
