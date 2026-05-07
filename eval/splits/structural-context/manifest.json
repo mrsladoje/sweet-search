@@ -1,0 +1,21 @@
+{
+  "bench": "structural-context",
+  "description": "Model-read caller/callee/impact tasks for the unified ss-trace structural context tool.",
+  "source": "eval/structural-context/tasks.js",
+  "seed": 42,
+  "devRatio": 0.6,
+  "stratifyBy": "repo",
+  "total": 20,
+  "counts": {
+    "fastify": { "dev": 3, "heldout": 2 },
+    "flask": { "dev": 3, "heldout": 2 },
+    "gin": { "dev": 3, "heldout": 2 },
+    "ripgrep": { "dev": 3, "heldout": 2 }
+  },
+  "totals": {
+    "dev": 12,
+    "heldout": 8
+  },
+  "heldoutPolicy": "Do not inspect per-task heldout failures during development; use aggregate metrics only.",
+  "generatedAt": "<deterministic — seed 42>"
+}

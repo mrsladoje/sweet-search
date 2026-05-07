@@ -1,0 +1,24 @@
+{
+  "ids": [
+    "express:create-application-impact",
+    "express:app-init-router",
+    "express:app-handle-impact",
+    "express:app-use-mount",
+    "express:app-set-callees",
+    "express:app-render-view",
+    "express:response-send-callees",
+    "express:response-jsonp-callees",
+    "express:response-sendfile-impact",
+    "express:response-download-callees",
+    "express:response-format-callees",
+    "express:response-cookie-impact",
+    "express:response-redirect-impact",
+    "express:request-query-callees",
+    "express:request-protocol-impact",
+    "express:request-hostname-callees",
+    "express:request-fresh-callees",
+    "express:utils-query-parser",
+    "express:utils-compile-trust",
+    "express:view-lookup-resolve"
+  ]
+}

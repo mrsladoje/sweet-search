@@ -18,3 +18,4 @@ export { hybridSearch, hybridSearchV2 } from './search-hybrid.js';
 // Read tools — filesystem-grounded exact reads + hybrid semantic span selection
 export { readFile, readFiles, formatReadResults, handleReadCli } from './search-read.js';
 export { readSemantic, formatReadSemanticResult, handleReadSemanticCli } from './search-read-semantic.js';
+export { traceSymbol, handleTraceCli, formatStructuralContext } from './search-trace.js';

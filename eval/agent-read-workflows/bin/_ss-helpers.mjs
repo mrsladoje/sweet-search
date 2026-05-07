@@ -372,12 +372,63 @@ async function cmdSemantic(args) {
   process.exit(0);
 }
 
+async function cmdTrace(args) {
+  let json = false;
+  if (args.includes('--json')) {
+    json = true;
+    args.splice(args.indexOf('--json'), 1);
+  }
+  const symbol = args[0];
+  if (!symbol) {
+    process.stderr.write('Usage: ss-trace <symbol> [--in <file>] [--query <hint>] [--depth N] [--budget N]\n');
+    process.exit(2);
+  }
+  const { traceSymbol, formatStructuralContext } = await import(path.join(REPO_ROOT, 'core/search/search-trace.js'));
+
+  const opts = { projectRoot: PROJECT_ROOT };
+  const file = parseFlag(args, '--in', null) || parseFlag(args, '--file', null);
+  const queryHint = parseFlag(args, '--query', '') || parseFlag(args, '--hint', '');
+  const depth = parseFlag(args, '--depth', null);
+  const budget = parseFlag(args, '--budget', null);
+  if (file) opts.filePath = file;
+  if (queryHint) opts.queryHint = queryHint;
+  if (depth != null) opts.maxDepth = +depth;
+  if (budget != null) opts.tokenBudget = +budget;
+
+  const response = traceSymbol(symbol, opts);
+  if (json) process.stdout.write(JSON.stringify(response, null, 2) + '\n');
+  else process.stdout.write(formatStructuralContext(response) + '\n');
+
+  const meta = {
+    symbol,
+    queryHash: shortQueryHash(`${symbol}:${queryHint || ''}`),
+    target: response.target ? {
+      name: response.target.name,
+      type: response.target.type,
+      file: response.target.filePath,
+      startLine: response.target.startLine,
+    } : null,
+    tokenBudget: response.tokenBudget,
+    tokensUsed: response.tokensUsed,
+    budgetTier: response.budgetTier,
+    budgetReason: response.budgetReason,
+    callers: response.sections?.callers?.total || 0,
+    callees: response.sections?.callees?.total || 0,
+    impactPaths: response.sections?.impact?.total || 0,
+    latencyMs: response.stats?.latencyMs ?? null,
+    sufficient: !!response.target,
+  };
+  process.stdout.write(`\n<<SS_TRACE_META>>${JSON.stringify(meta)}\n`);
+  process.exit(response.target ? 0 : 1);
+}
+
 (async () => {
   try {
     if (subcommand === 'grep') await cmdGrep(rest);
     else if (subcommand === 'find') await cmdFind(rest);
     else if (subcommand === 'read') await cmdRead(rest);
     else if (subcommand === 'semantic') await cmdSemantic(rest);
+    else if (subcommand === 'trace') await cmdTrace(rest);
     else if (subcommand === 'agent-search') await cmdAgentSearch(rest);
     else { process.stderr.write(`unknown subcommand: ${subcommand}\n`); process.exit(2); }
   } catch (err) {

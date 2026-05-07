@@ -28,6 +28,10 @@ if (args[0] === 'init') {
   // Hybrid span-selection reader; runs in JS (depends on LI index + ranking).
   const { handleReadSemanticCli } = await import('./search/search-read-semantic.js');
   await handleReadSemanticCli(args.slice(1));
+} else if (args[0] === 'trace') {
+  // Unified structural code context: callers, callees, and impact.
+  const { handleTraceCli } = await import('./search/search-trace.js');
+  await handleTraceCli(args.slice(1));
 } else if (args[0] === 'index') {
   // Indexing pipeline. Forwarded to index-codebase-v21.js::main(), which
   // reads its own flags via process.argv. Setting argv here is required
@@ -51,6 +55,7 @@ if (args[0] === 'init') {
 
 Usage:
   sweet-search <query>                  Search the indexed codebase
+  sweet-search trace <symbol>           Structural context: callers, callees, impact
   sweet-search read <file...>           Filesystem-grounded read (1-20 files)
   sweet-search read-semantic <f> <q>    Return only file spans relevant to a query
   sweet-search index [options]          Build / update the codebase index

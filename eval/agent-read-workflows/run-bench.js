@@ -414,6 +414,7 @@ async function runOneRepo(opts) {
           addDirs: pickAddDirs(),
           extraPathEntries: [BENCH_BIN_DIR],
           timeoutMs: opts.timeoutMs,
+          maxAttempts: 2,
           logPath,
         });
         const summary = summariseRun(run);
@@ -427,6 +428,8 @@ async function runOneRepo(opts) {
             exitCode: summary.exitCode,
             timedOut: summary.timedOut,
             isError: summary.isError,
+            attempts: summary.attempts,
+            retryCount: summary.retryCount,
             numTurns: summary.numTurns,
             toolCallCount: summary.toolCallCount,
             toolOutputChars: summary.toolOutputChars,
@@ -439,6 +442,8 @@ async function runOneRepo(opts) {
             // Always-on for sweet-search-auto; the trailer is emitted by ss-search.
             routeAggregate: summary.routeAggregate,
             routeMetas: summary.routeMetas,
+            traceAggregate: summary.traceAggregate,
+            traceMetas: summary.traceMetas,
             cmd: run.cmd,
             toolTracePreview: formatToolTrace(run, 12),
             toolCalls: run.toolCalls.map(t => ({
@@ -512,6 +517,7 @@ async function runOneRepo(opts) {
         iterCount: rows.length,
         avgWallMs: avg(rows.map(r => r.run.wallMs)),
         avgToolCalls: avg(rows.map(r => r.run.toolCallCount)),
+        retryCount: rows.reduce((acc, r) => acc + (r.run.retryCount || 0), 0),
         avgApproxTotalTokens: avg(rows.map(r => r.run.approxToolOutputTokens + r.run.approxAnswerTokens)),
         avgUsageInputTokens: avg(rows.map(r => r.run.usage?.input_tokens || 0)),
         avgUsageOutputTokens: avg(rows.map(r => r.run.usage?.output_tokens || 0)),
@@ -596,6 +602,7 @@ async function runOneRepo(opts) {
       p95WallMs: percentile(rows.map(r => r.avgWallMs), 0.95),
       avgWallMs: avg(rows.map(r => r.avgWallMs)),
       avgToolCalls: avg(rows.map(r => r.avgToolCalls)),
+      retryCount: rows.reduce((acc, r) => acc + (r.retryCount || 0), 0),
       avgApproxTotalTokens: avg(rows.map(r => r.avgApproxTotalTokens)),
       avgUsageInputTokens: avg(rows.map(r => r.avgUsageInputTokens)),
       avgUsageOutputTokens: avg(rows.map(r => r.avgUsageOutputTokens)),
