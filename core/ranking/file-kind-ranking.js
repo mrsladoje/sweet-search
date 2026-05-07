@@ -709,9 +709,15 @@ export function rawStringDensity(text) {
  * Override env: SWEET_SEARCH_SYMBOL_EXACT_BOOST (default 1.30, set to 1.0
  * to disable). `ablations: ['no-symbol-exact-boost']` also disables.
  */
+// Lazy quantifier on the prefix so the capture greedily prefers an
+// identifier-like noun (buildErrorHandler) over a keyword that happens
+// to also be in the trailing list (function/definition). Verified
+// 2026-05-07: greedy version captured "function" for
+// "show me the buildErrorHandler function definition in full",
+// missing the contained-entity boost on S6-Q3.
 const SYMBOL_DEFN_QUERY_RE = new RegExp(
   '\\b(?:show|give|find|describe|display|fetch|see)' +
-  '(?:\\s+\\w+){0,5}\\s+' +
+  '(?:\\s+\\w+){0,5}?\\s+' +
   '(?:the\\s+)?' +
   '(\\w+)' +
   '(?:\\s+\\w+)?\\s+' +
@@ -822,15 +828,33 @@ function symbolExactMatchBoost(result, target, opts = {}) {
     || result?.entity?.name
     || result?.symbol
     || '';
-  if (!symbol) return 1.0;
   const tLower = target.toLowerCase();
-  const sLower = String(symbol).toLowerCase();
-  // Exact case-insensitive match.
-  if (sLower === tLower) return boost;
-  // Snake_case ↔ camelCase normalisation: "missing_linker_library" matches
-  // "MissingLinkerLibrary"; "decorate_reply" matches "decorateReply".
   const norm = (s) => s.replace(/[_-]/g, '').toLowerCase();
-  if (norm(sLower) === norm(tLower)) return boost;
+  if (symbol) {
+    const sLower = String(symbol).toLowerCase();
+    if (sLower === tLower) return boost;
+    if (norm(sLower) === norm(tLower)) return boost;
+  }
+  // F7 (2026-05-07): chunk's labeled symbol may not match the target, but a
+  // sibling entity contained inside the chunk range may match. Diagnosed from
+  // S6-Q3 (fastify): chunk 103-150 contains both fallbackErrorHandler AND
+  // buildErrorHandler at lines 142-150; chunker labeled it fallbackErrorHandler.
+  // Query "show me the buildErrorHandler function definition" extracts target
+  // "buildErrorHandler" — the contained-entity check finds it and applies the
+  // same 1.30× boost so the chunk wins over adjacent setErrorHeaders chunk.
+  if (opts.codeGraphRepo && typeof opts.codeGraphRepo.hasEntityWithNameInRange === 'function') {
+    const filePath = resolveFilePath(result);
+    const meta = result?.metadata ?? {};
+    const startLine = Number(result?.startLine ?? meta.startLine);
+    const endLine = Number(result?.endLine ?? meta.endLine);
+    if (filePath && Number.isFinite(startLine) && Number.isFinite(endLine)) {
+      try {
+        if (opts.codeGraphRepo.hasEntityWithNameInRange(filePath, startLine, endLine, target)) {
+          return boost;
+        }
+      } catch { /* fall through */ }
+    }
+  }
   return 1.0;
 }
 

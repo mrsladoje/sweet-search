@@ -79,6 +79,44 @@ export class CodeGraphRepository {
    * @param {number} endLine
    * @returns {{ id: string, name: string, type: string, startLine: number, endLine: number, parentClass: string|null }|null}
    */
+  /**
+   * Check whether a chunk range contains an entity whose name matches the target
+   * (case-insensitive, also tries snake_case ↔ camelCase normalization).
+   * Used by symbol-exact-match boost when chunk's labeled symbol doesn't match
+   * but a sibling/contained entity does.
+   *
+   * @param {string} filePath
+   * @param {number} startLine
+   * @param {number} endLine
+   * @param {string} targetName
+   * @returns {boolean}
+   */
+  hasEntityWithNameInRange(filePath, startLine, endLine, targetName) {
+    if (!targetName) return false;
+    const db = this._open();
+    if (!db) return false;
+    try {
+      const tLower = String(targetName).toLowerCase();
+      const tNorm = tLower.replace(/[_-]/g, '');
+      const rows = db.prepare(`
+        SELECT name FROM entities
+        WHERE file_path = ?
+          AND start_line >= ?
+          AND end_line <= ?
+          AND (stale_since IS NULL)
+      `).all(filePath, startLine, endLine);
+      for (const row of rows) {
+        if (!row.name) continue;
+        const nLower = String(row.name).toLowerCase();
+        if (nLower === tLower) return true;
+        if (nLower.replace(/[_-]/g, '') === tNorm) return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
   findFirstEntityInRange(filePath, startLine, endLine) {
     const db = this._open();
     if (!db) return null;
