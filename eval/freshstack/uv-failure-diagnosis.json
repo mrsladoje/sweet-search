@@ -1,0 +1,297 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-07",
+  "source": {
+    "queries": "eval/freshstack/uv-queries.json",
+    "results": "eval/freshstack/uv-results-2026-05-07-explicit2hop.json",
+    "corpus": "eval/repos/uv (commit bb8109a, 1079 files, 16589 chunks)"
+  },
+  "perProbe": [
+    {
+      "id": "UV-NL-1",
+      "verdict": "FAIL",
+      "category": "NL",
+      "mode": "wrong-language-or-domain",
+      "query": "how does uv resolve dependency conflicts when two packages need different versions of the same library",
+      "expected": "crates/uv-resolver/src/{resolver/mod.rs|pubgrub/report.rs|error.rs}",
+      "got": "crates/uv-auth/src/middleware.rs",
+      "score": 0.6,
+      "gold_correct": true,
+      "comment": "Top-1 is an auth-middleware test fixture about credentials in different indexes — completely unrelated to dependency resolution. The token 'different' (and 'realm') in the test name lured the encoder into the wrong domain. 2-hop expansion would not help — the seeds themselves are off-topic. NL-only query lacks any concrete identifier hint."
+    },
+    {
+      "id": "UV-NL-2",
+      "verdict": "FAIL",
+      "category": "NL",
+      "mode": "encoder-confusion",
+      "query": "where is the lockfile written to disk after a successful resolution",
+      "expected": "crates/uv/src/commands/project/lock_target.rs (commit at line 342, fs_err::tokio::write at 344)",
+      "got": "crates/uv/src/commands/project/lock.rs (do_lock dispatcher)",
+      "score": 0.4722,
+      "gold_correct": true,
+      "comment": "Encoder picked the lock-orchestration dispatcher (do_lock) over the actual disk write site (lock_target.rs::commit). Both are in the same directory but lock_target.rs is the only place that calls fs_err::tokio::write on the encoded lock. Wrong-granularity at file-level: right area, wrong sibling file."
+    },
+    {
+      "id": "UV-NL-3",
+      "verdict": "FAIL",
+      "category": "NL",
+      "mode": "encoder-confusion",
+      "query": "how does uv decide whether to download a managed Python build or use one already on the system",
+      "expected": "crates/uv-python/src/{discovery.rs|downloads.rs}",
+      "got": "crates/uv-python/src/installation.rs (PythonInstallation impl)",
+      "score": 0.5370,
+      "gold_correct": true,
+      "comment": "Right crate (uv-python), reasonable sibling — PythonInstallation does combine PythonPreference + PythonDownloads enums to drive find-or-download. But the actual decision logic (PythonPreference enum semantics) lives in discovery.rs. Encoder picked the type that owns the result rather than the file with the decision logic. 2-hop expansion would help if the dense seeds were wider."
+    },
+    {
+      "id": "UV-NL-4",
+      "verdict": "FAIL",
+      "category": "NL",
+      "mode": "wrong-granularity",
+      "query": "when uv installs a wheel where does it actually copy the files from cache into the virtualenv",
+      "expected": "crates/uv-install-wheel/src/{linker.rs|install.rs}",
+      "got": "crates/uv-install-wheel/src/wheel.rs (lines 587-588, no symbol — install_data starts at 589)",
+      "score": 0.5737,
+      "gold_correct": true,
+      "comment": "Right crate (uv-install-wheel), wrong file. wheel.rs::install_data moves files from .data dir, but link_wheel_files (linker.rs:255) is the actual copier into the venv. The 587-588 chunk is also a 1-line span lacking a symbol — a chunker boundary issue stripped the function header. Within-crate disambiguation failure."
+    },
+    {
+      "id": "UV-NL-5",
+      "verdict": "PARTIAL",
+      "category": "NL",
+      "mode": "wrong-granularity",
+      "query": "how does uv know whether the uv.lock file is stale and needs re-resolving",
+      "expected": "crates/uv-resolver/src/lock/mod.rs (Lock::satisfies at line 1614) OR crates/uv/src/commands/project/lock.rs (do_lock at 469)",
+      "got": "crates/uv/src/commands/project/lock.rs (lock at line 85, the public CLI lock fn)",
+      "score": 0.5700,
+      "gold_correct": true,
+      "comment": "File matched (lock.rs), but the chunk picked is the public entrypoint `lock` (line 85) rather than expected `do_lock` (line 469) or `Lock::satisfies` (lock/mod.rs:1614). The staleness check is in `do_lock` — public `lock` only delegates. Symbol-pick within a multi-symbol file is the issue."
+    },
+    {
+      "id": "UV-NL-6",
+      "verdict": "PARTIAL",
+      "category": "NL",
+      "mode": "gold-too-narrow",
+      "query": "how does uv build a source distribution into a wheel before installing it",
+      "expected": "expectedSymbolAnyOf:[SourceBuild, build, SourceDistributionBuilder] in source/mod.rs or build-frontend/lib.rs",
+      "got": "crates/uv-distribution/src/source/mod.rs (build_distribution, line 2453)",
+      "score": 0.6499,
+      "gold_correct": false,
+      "comment": "The retrieved symbol `build_distribution` (source/mod.rs:2453) is an EXCELLENT answer — its docstring literally says 'Build a source distribution, storing the built wheel in the cache'. The probe restricts symbols to {SourceBuild, build, SourceDistributionBuilder} which is too narrow; `build_distribution` is the in-context orchestrator and should be acceptable."
+    },
+    {
+      "id": "UV-NL-7",
+      "verdict": "FAIL",
+      "category": "NL",
+      "mode": "encoder-confusion",
+      "query": "what controls whether uv compiles bytecode for installed packages and how is it triggered",
+      "expected": "crates/uv-installer/src/compile.rs (compile_tree + COMPILEALL_SCRIPT)",
+      "got": "crates/uv/src/commands/pip/compile.rs (lines 1-50, no symbol — file imports)",
+      "score": 0.4510,
+      "gold_correct": true,
+      "comment": "Lexical token 'compile' is shared across two completely different concepts in uv: (a) `pip compile` (resolve requirements.txt → resolved set) and (b) bytecode compileall. The encoder grabbed the imports header of the pip-compile command file. Classic word-sense ambiguity — 'compile' in Python tooling normally means pip-tools-style resolve, not bytecode generation."
+    },
+    {
+      "id": "UV-DEF-1",
+      "verdict": "FAIL",
+      "category": "DEF",
+      "mode": "wrong-granularity",
+      "query": "show me the Cache struct definition",
+      "expected": "crates/uv-cache/src/lib.rs (Cache struct at line 164)",
+      "got": "crates/uv-cache/src/cli.rs (CacheArgs struct, lines 1-32)",
+      "score": 0.4963,
+      "gold_correct": true,
+      "comment": "Right crate (uv-cache), wrong sibling file. The CacheArgs struct in cli.rs is what user-facing CLI flags map to; the actual `Cache` runtime struct is in lib.rs:164. Encoder collapsed `Cache` and `CacheArgs` because both contain the literal token 'Cache'. A file-name token reranker (lib.rs > cli.rs for non-CLI queries) or symbol-name exact match would catch this."
+    },
+    {
+      "id": "UV-DEF-4",
+      "verdict": "FAIL",
+      "category": "DEF",
+      "mode": "encoder-confusion",
+      "query": "show me the Resolver struct definition",
+      "expected": "crates/uv-resolver/src/resolver/mod.rs (Resolver struct at line 100)",
+      "got": "crates/uv-distribution-types/src/resolution.rs (Resolution struct, lines 1-18)",
+      "score": 0.5503,
+      "gold_correct": true,
+      "comment": "`Resolution` is in the same conceptual family as `Resolver` (resolver outputs the Resolution). For a literal 'show me Resolver' definition query the symbol-exact match (Resolver vs Resolution) should outweigh prose similarity. Symbol-name exact-match boost would fix this."
+    },
+    {
+      "id": "UV-FLOW-1",
+      "verdict": "FAIL",
+      "category": "FLOW",
+      "mode": "other",
+      "query": "trace how uv add inserts a new dependency into pyproject.toml",
+      "expected": "crates/uv/src/commands/project/add.rs OR crates/uv-workspace/src/pyproject_mut.rs",
+      "got": null,
+      "score": null,
+      "gold_correct": true,
+      "comment": "no_results returned in 3ms — pipeline early-exited without surfacing any chunk. Likely cause: query has 'how' (a stop-word) plus 'trace' which is rare in source; after stop-word filtering and confidence-floor checks the candidate set was empty. Both `add` and `pyproject_mut.rs` are real, indexed, and well-named — this is a query-side failure, not a corpus gap."
+    },
+    {
+      "id": "UV-FLOW-2",
+      "verdict": "FAIL",
+      "category": "FLOW",
+      "mode": "wrong-language-or-domain",
+      "query": "what happens end-to-end when I run uv sync on an existing project",
+      "expected": "crates/uv/src/commands/project/{sync.rs|lock.rs}",
+      "got": "Dockerfile (lines 24-25, 'COPY pyproject.toml uv.lock ./' / 'RUN uv sync --only-group docker')",
+      "score": 0.5274,
+      "gold_correct": true,
+      "comment": "The Dockerfile literally contains `uv sync` and `uv.lock` tokens — a perfect 2-token lexical match overrode any source-file dense score. Sync.rs (line 60 entry, 633 do_sync) was likely below the floor or RRF didn't promote it. Multi-file-flow-failure: even with 2-hop expansion the source files weren't seeded. A file-extension or file-kind boost (Rust source vs Dockerfile) would prevent the docs/config flank from winning."
+    },
+    {
+      "id": "UV-FLOW-3",
+      "verdict": "FAIL",
+      "category": "FLOW",
+      "mode": "wrong-granularity",
+      "query": "how does uv tool install create an isolated environment and link entrypoints onto PATH",
+      "expected": "crates/uv/src/commands/tool/install.rs OR crates/uv-tool/src/lib.rs",
+      "got": "crates/uv-tool/src/tool.rs (ToolEntrypoint impl, lines 392-419)",
+      "score": 0.6,
+      "gold_correct": true,
+      "comment": "Right concept (ToolEntrypoint exists for the bin shims), but tool.rs is a sibling file in the same crate as the expected lib.rs. The token 'entrypoint' from the query directly matched ToolEntrypoint::new. The actual install flow lives in commands/tool/install.rs:55 and uv-tool/src/lib.rs (tool_executable_dir). Within-crate disambiguation failure — would benefit from rewarding files whose name better matches the verb in the query (install vs entrypoint)."
+    },
+    {
+      "id": "UV-FLOW-4",
+      "verdict": "FAIL",
+      "category": "FLOW",
+      "mode": "other",
+      "query": "trace how uv lock decides which package versions to write into uv.lock",
+      "expected": "crates/uv/src/commands/project/lock.rs OR crates/uv-resolver/src/resolver/mod.rs",
+      "got": null,
+      "score": null,
+      "gold_correct": true,
+      "comment": "Like FLOW-1, no_results in 3ms. Same query-shape issue: starts with 'trace how'. Both `lock.rs` and `resolver/mod.rs` are heavily-indexed canonical files; the failure is in the query parser/floor logic that drops the request entirely. Possibly the same combination — 'trace' + 'how' + 'uv' becomes too thin after stopword and dedup, dropping below the candidate floor."
+    },
+    {
+      "id": "UV-FLOW-5",
+      "verdict": "FAIL",
+      "category": "FLOW",
+      "mode": "wrong-granularity",
+      "query": "where is the code that fetches a wheel from a registry index and caches it",
+      "expected": "crates/uv-distribution/src/distribution_database.rs OR crates/uv-client/src/registry_client.rs",
+      "got": "crates/uv-distribution/src/index/registry_wheel_index.rs (index function, lines 96-292)",
+      "score": 0.5591,
+      "gold_correct": true,
+      "comment": "Right crate (uv-distribution), wrong submodule. registry_wheel_index.rs builds an in-memory index of cached wheels — not the fetcher. distribution_database.rs is the actual cache+download wrapper. The query tokens 'wheel', 'registry', 'index', 'cache' all appear in the wrong-file's name AND content — perfect lexical bait. Encoder + filename matched the noisy file."
+    },
+    {
+      "id": "UV-FLOW-6",
+      "verdict": "PARTIAL",
+      "category": "FLOW",
+      "mode": "wrong-granularity",
+      "query": "trace how uv venv creates a new virtual environment from scratch",
+      "expected": "crates/uv/src/commands/venv.rs (venv at 64) OR crates/uv-virtualenv/src/{lib.rs|virtualenv.rs}",
+      "got": "crates/uv/src/commands/venv.rs (VenvError enum, lines 47-63)",
+      "score": 0.5485,
+      "gold_correct": true,
+      "comment": "File matched but the chunk is the small VenvError enum (47-63), not the actual `venv()` async fn that starts at line 64. Within-file granularity issue: the chunker scored a small declarative enum higher than the long pub fn just below it. Symbol/type filter for 'fn' over 'enum' on flow queries would help. expectedSymbolAnyOf is `[venv, create_venv]`."
+    },
+    {
+      "id": "UV-FLOW-7",
+      "verdict": "FAIL",
+      "category": "FLOW",
+      "mode": "encoder-confusion",
+      "query": "how does uv publish authenticate with PyPI using trusted publishing tokens",
+      "expected": "crates/uv-publish/src/{lib.rs|trusted_publishing.rs} OR crates/uv/src/commands/publish.rs",
+      "got": "crates/uv/src/settings.rs (PublishSettings impl, lines 4378-4439)",
+      "score": 0.5737,
+      "gold_correct": true,
+      "comment": "PublishSettings::resolve only forwards trusted_publishing config from CLI args — it doesn't authenticate. The actual call site is uv-publish/src/lib.rs:409 `check_trusted_publishing`. Encoder picked the settings struct because it contains the literal field `trusted_publishing` plus the words 'publish' and 'resolve'. Settings/config files should be downweighted vs implementation files for behavioural queries."
+    },
+    {
+      "id": "UV-FLOW-8",
+      "verdict": "FAIL",
+      "category": "FLOW",
+      "mode": "encoder-confusion",
+      "query": "how does uv clone a git dependency and pin it to a specific commit",
+      "expected": "crates/uv-git/src/{source.rs|git.rs|resolver.rs}",
+      "got": "crates/uv-types/src/builds.rs (a 3-line `fn clone(&self) -> Self` Clone impl, lines 69-71)",
+      "score": 0.6,
+      "gold_correct": true,
+      "comment": "Catastrophic word-sense collapse: query 'clone a git dependency' matched a `Clone::clone` derive impl on a build settings struct. Three-line stub function with no real semantics outscored uv-git/src/source.rs::fetch (the real Git clone). Stub-impl demotion is in the codebase (commit ac280d4) but apparently didn't reach this chunk. Worth checking if uv-types::builds clone got tagged as stub."
+    },
+    {
+      "id": "UV-ERR-2",
+      "verdict": "FAIL",
+      "category": "ERR",
+      "mode": "gold-incorrect",
+      "query": "where is the ResolveError::ConflictingUrls variant constructed",
+      "expected": "crates/uv-resolver/src/error.rs (ResolveError enum, ConflictingUrls variant defined at line 67)",
+      "got": "crates/uv-resolver/src/fork_urls.rs (ForkUrls struct, lines 1-52, contains construction site at line 39)",
+      "score": 0.4752,
+      "gold_correct": false,
+      "comment": "The query asks 'where is the variant CONSTRUCTED'. fork_urls.rs:39 is one of EXACTLY two construction sites (the other is resolver/urls.rs:162). The probe expected the DEFINITION file (error.rs:67) but the query literally asks for the construction site. Top-1 is correct for the literal wording; gold mixes 'defined' and 'constructed'."
+    },
+    {
+      "id": "UV-ERR-3",
+      "verdict": "PARTIAL",
+      "category": "ERR",
+      "mode": "wrong-granularity",
+      "query": "what does PubGrubReportFormatter do when rendering a resolution failure",
+      "expected": "crates/uv-resolver/src/pubgrub/report.rs (PubGrubReportFormatter struct at line 37, ReportFormatter impl at 54)",
+      "got": "crates/uv-resolver/src/pubgrub/report.rs (line 354 only, single-line `impl PubGrubReportFormatter<'_> {` header, no symbol attached)",
+      "score": 0.5487,
+      "gold_correct": true,
+      "comment": "File matched but the chunk is a single-line impl header (just 'impl PubGrubReportFormatter<\\'_> {' at 354) with no captured symbol. Chunker boundary issue: the impl block's contents were apparently not associated with the impl header. Should never produce a 1-line chunk as top-1."
+    },
+    {
+      "id": "UV-ERR-4",
+      "verdict": "PARTIAL",
+      "category": "ERR",
+      "mode": "encoder-confusion",
+      "query": "what error is raised when a wheel is missing a header file required to build a C extension",
+      "expected": "crates/uv-build-frontend/src/error.rs (MissingHeaderError struct at 337 OR MissingHeaderCause at 131)",
+      "got": "crates/uv-build-frontend/src/error.rs (test fn `missing_linker_library`, lines 540-587)",
+      "score": 0.5026,
+      "gold_correct": true,
+      "comment": "File matched (right error.rs) but symbol is a #[test] function inside the file's test module that exercises MissingHeaderError detection. Tests should be downweighted for type/struct/enum queries. The test fn includes the words 'missing' and 'linker' which match 'missing' + 'header' lexically. Symbol-type filter for non-test code on type-definition queries would catch this."
+    }
+  ],
+  "summary": {
+    "byMode": {
+      "wrong-language-or-domain": 2,
+      "encoder-confusion": 7,
+      "wrong-granularity": 7,
+      "multi-file-flow-failure": 0,
+      "gold-too-narrow": 1,
+      "gold-incorrect": 1,
+      "stop-words-eat-query": 0,
+      "other": 2
+    },
+    "byCategory": {
+      "NL": { "FAIL": 5, "PARTIAL": 2, "PASS": 1, "TOTAL": 8 },
+      "DEF": { "FAIL": 2, "PARTIAL": 0, "PASS": 6, "TOTAL": 8 },
+      "FLOW": { "FAIL": 7, "PARTIAL": 1, "PASS": 0, "TOTAL": 8 },
+      "ERR": { "FAIL": 1, "PARTIAL": 2, "PASS": 3, "TOTAL": 6 }
+    },
+    "goldIncorrectCount": 2,
+    "goldNotes": [
+      "UV-ERR-2 gold expects definition file but the query asks for construction site. Probe wording is misaligned with expected file.",
+      "UV-NL-6 expectedSymbolAnyOf is too narrow — `build_distribution` in source/mod.rs is an excellent answer that the rubric rejects."
+    ],
+    "topThreeFixes": [
+      {
+        "fix": "Symbol-name exact-match boost on definition-style queries (DEF + ERR-type)",
+        "wouldFixCount": 4,
+        "rationale": "Queries of the form 'show me X struct/enum' or 'what does X type represent' should give a hard boost to chunks whose symbol == X (case-insensitive). Would fix UV-DEF-1 (Cache vs CacheArgs), UV-DEF-4 (Resolver vs Resolution), UV-ERR-3 (anonymous chunk), UV-ERR-4 (test fn missing_linker_library vs MissingHeaderError struct). Generic and principled — rewards lexical exactness on a query class where it should dominate."
+      },
+      {
+        "fix": "File-kind / file-name reranker that prefers implementation Rust source over (a) settings.rs, (b) Dockerfile/configs, (c) test files for behavioural and flow queries",
+        "wouldFixCount": 5,
+        "rationale": "Penalize files whose role is wiring/config/CLI/tests when the query is about behaviour, not configuration. Would fix UV-FLOW-2 (Dockerfile won), UV-FLOW-7 (settings.rs::PublishSettings vs uv-publish/src/lib.rs::check_trusted_publishing), UV-DEF-1 (cli.rs vs lib.rs), UV-ERR-4 (test fn vs struct), and likely help UV-FLOW-3 (commands/install.rs over uv-tool/src/tool.rs). Generic: file-kind heuristics already exist in detectFileKind — extend the demotion ratios for non-implementation files when query has behavioural verbs (creates, fetches, authenticates, etc.)."
+      },
+      {
+        "fix": "Empty-result rescue path: when token-filtered query is too thin to produce candidates, fall back to dense-only with the original raw query (no stopword strip), instead of returning no_results",
+        "wouldFixCount": 2,
+        "rationale": "UV-FLOW-1 and UV-FLOW-4 returned no_results in 3ms. Both queries are well-formed natural language with concrete verbs ('add', 'lock', 'pyproject', 'uv.lock'). Returning empty after 3ms is a query-pipeline failure mode, not a corpus gap. Add a final-tier rescue: if the candidate set is empty after RRF + dense filtering, re-run dense-only with full raw query string. This is a structural fix and helps any future too-short-after-stopwords case, not just these two probes."
+      }
+    ],
+    "additionalObservations": [
+      "FLOW category is catastrophic (0/8 PASS): multi-file flow-tracing queries are not currently a strength. Both no_results probes (FLOW-1, FLOW-4) and several wrong-file probes (FLOW-2, FLOW-5, FLOW-7) suggest within-crate disambiguation needs work before adding more 2-hop budget.",
+      "DEF category remains strong (6/8 PASS, 75%) — definition queries are the natural strength. UV-DEF-1 and UV-DEF-4 are both pure symbol-name-collision failures (Cache/CacheArgs, Resolver/Resolution) that the symbol-exact boost in fix #1 directly addresses.",
+      "Stop-words filter is innocent: 'how' is in QUERY_SCAFFOLD_STOPWORDS but 'trace' is not, and the query still has many content tokens (uv, add, dependency, pyproject, toml). The no_results outcome is more likely an RRF-floor or dedup problem than literal stop-word stripping.",
+      "Two probe-design issues (UV-NL-6 too-narrow symbol set, UV-ERR-2 def-vs-construction-site) account for 2 of 20 graded failures. With those reclassified, true retrieval failure count drops from 20 to 18."
+    ]
+  }
+}

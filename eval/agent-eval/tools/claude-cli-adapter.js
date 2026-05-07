@@ -74,6 +74,19 @@ Be specific: cite file paths, function names, and line numbers. Give a concise a
       allowedTools = 'Bash(node:*)';
       break;
 
+    case 'claude-full-tools':
+      // Native Claude Code experience: full tool palette, no restriction
+      // beyond editing/destructive ops. This is the "default Claude Code"
+      // SOTA-via-claude proxy a developer would actually use — strictly
+      // stronger than rg+read because the agent can choose Glob/Grep/Read
+      // freely and even invoke shell scripts. Closest free comparison to
+      // Cursor / Cody / Aider's repo-map approach since the model decides
+      // its own retrieval surface.
+      systemPrompt = `You are answering a code question about the codebase in the current directory. You have access to all native Claude Code tools (Bash, Read, Grep, Glob). Use whatever combination is best — grep, glob, ripgrep, file reads, etc. Be specific: cite file paths, function names, and line numbers. Give a concise, actionable answer.`;
+      allowedTools = 'Bash Read Grep Glob';
+      disallowedTools = 'Edit Write MultiEdit NotebookEdit';
+      break;
+
     case 'sweet-search+agent':
       systemPrompt = `You answer code questions using sweet-search. Two commands:
 
