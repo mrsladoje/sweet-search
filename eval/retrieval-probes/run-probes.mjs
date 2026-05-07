@@ -40,7 +40,14 @@ function parseArgs(argv) {
   //   Filters probes by membership in eval/splits/retrieval-probes/{dev,heldout}.json.
   //   See CLAUDE.md / AGENTS.md "Benchmark Methodology" — dev for iteration,
   //   heldout for milestones, all for full regression / publishing.
-  const out = { repo: null, id: null, json: null, baseline: null, verbose: false, split: 'all' };
+  // --probes-file=<path>
+  //   Use a custom probes JSON (same schema as eval/retrieval-probes/probes.json).
+  //   Disables --split (FreshStack-style held-out validators are SEPARATE files,
+  //   not splits of this set). Used for post-cutoff fresh-repo validators.
+  const out = {
+    repo: null, id: null, json: null, baseline: null, verbose: false,
+    split: 'all', probesFile: null, repoBase: null,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith('--repo=')) out.repo = a.slice(7);
@@ -57,6 +64,8 @@ function parseArgs(argv) {
       if (next && !next.startsWith('--')) { out.baseline = next; i++; }
     }
     else if (a.startsWith('--split=')) out.split = normalizeSplit(a.slice(8));
+    else if (a.startsWith('--probes-file=')) out.probesFile = a.slice(14);
+    else if (a.startsWith('--repo-base=')) out.repoBase = a.slice(12);
     else if (a === '-v' || a === '--verbose') out.verbose = true;
   }
   return out;
@@ -189,12 +198,20 @@ function diffAgainstBaseline(current, baseline) {
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
-  const probes = JSON.parse(fs.readFileSync(PROBES_PATH, 'utf8')).probes;
+  // Default probes set is the standard eval/retrieval-probes/probes.json. With
+  // --probes-file, point at a separate set (e.g. eval/freshstack/uv-queries.json
+  // for the post-cutoff fresh-repo validator). When --probes-file is set, the
+  // --split flag is ignored: FreshStack-style validators don't have an
+  // internal dev/held-out split (they ARE the held-out validator).
+  const probesPath = opts.probesFile
+    ? path.resolve(REPO_ROOT, opts.probesFile)
+    : PROBES_PATH;
+  const probes = JSON.parse(fs.readFileSync(probesPath, 'utf8')).probes;
 
   // Apply --split filter first so it composes cleanly with --repo / --id.
   const beforeSplit = probes.length;
   let probesAfterSplit = probes;
-  if (opts.split !== 'all') {
+  if (opts.split !== 'all' && !opts.probesFile) {
     probesAfterSplit = applySplit(probes, opts.split, 'retrieval-probes', p => p.id).items;
   }
 
@@ -222,7 +239,11 @@ async function main() {
 
   const allResults = [];
   for (const [repo, list] of byRepo.entries()) {
-    const projectRoot = path.join(REPO_ROOT, 'eval/repos', repo);
+    // --repo-base lets FreshStack/external probe sets point at any repo dir;
+    // default keeps the existing eval/repos/<name> convention.
+    const projectRoot = opts.repoBase
+      ? path.resolve(REPO_ROOT, opts.repoBase)
+      : path.join(REPO_ROOT, 'eval/repos', repo);
     if (!fs.existsSync(projectRoot)) {
       console.error(`[${repo}] repo not found at ${projectRoot}; run eval/scripts/fetch-benchmark-repos.js first`);
       for (const p of list) {
