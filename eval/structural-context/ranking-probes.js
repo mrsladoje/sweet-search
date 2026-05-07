@@ -14,9 +14,18 @@
 //                                 top-3 callers.
 //   prod_first                 — for symbols with ≥3 prod callers, top-3
 //                                 callers should all be from production paths.
-//   pagerank_anchored          — for the top-fan-in symbols, the highest-PR
-//                                 caller should appear in top-3 (validates PR
-//                                 contribution).
+//   pagerank_anchored          — concordance-when-applicable (DEC-002): only
+//                                 fires when one prod caller is unambiguously
+//                                 the static-PR leader and is credible (file
+//                                 path resolved, type≠external, not on a test
+//                                 path, PR ≥ 2× runner-up). When that holds,
+//                                 the leader should appear in top-3 callers.
+//                                 The 2× ratio gate keeps the probe from
+//                                 punishing legitimate directional-PPR
+//                                 disagreements on close static-PR calls
+//                                 (the design explicitly de-prioritises
+//                                 static-PR leaf utilities when their lead
+//                                 is marginal — see structural-forward-push).
 //   callees_no_test_pollution  — mirror of tests_demoted for callees: when a
 //                                 symbol has ≥1 prod callee AND ≥1 test-path
 //                                 callee in the raw graph, the trace's top-3
@@ -65,7 +74,7 @@ function hasPageRankColumn(db) {
 function callerSummary(db, targetId, hasPr) {
   const prSelect = hasPr ? 'COALESCE(e.page_rank, 0)' : '0';
   return db.prepare(`
-    SELECT e.id, e.file_path, ${prSelect} AS pr
+    SELECT e.id, e.file_path, e.type, ${prSelect} AS pr
     FROM relationships r
     JOIN entities e ON e.id = r.source_id
     WHERE r.target_id = ?
@@ -125,16 +134,39 @@ export function generateRankingProbes({ dbPath, config = {} }) {
         });
       }
       if (hasPr && prodCallers.length >= 3) {
-        const sortedByPR = [...prodCallers].sort((a, b) => b.pr - a.pr);
-        const topPR = sortedByPR[0];
-        if (topPR && topPR.pr > 0) {
-          probes.push({
-            family: 'pagerank_anchored',
-            symbol: sym.name,
-            file: sym.file_path,
-            expect: { topKContainsCallerId: { id: topPR.id, k: 3 } },
-            meta: { fanIn: sym.fan_in, topPRCallerId: topPR.id, topPR: topPR.pr },
-          });
+        // DEC-002: only fire when the static-PR leader is credible and
+        // unambiguous. A "credible" caller has a resolved file path, is not
+        // an external/unresolved entity, lives outside test paths, and is
+        // not the target itself (self-references are systematically
+        // excluded from the trace's caller section, so asking the trace to
+        // surface a self-edge is structurally impossible). We require ≥3
+        // such credibles to keep the top-3 question meaningful, and a 2×
+        // PR lead over the runner-up so we never assert primacy on calls
+        // where directional PPR is allowed (by design) to override static
+        // PR.
+        const credibleProdCallers = prodCallers.filter(
+          c => c.file_path && c.type !== 'external' && c.id !== sym.id
+        );
+        if (credibleProdCallers.length >= 3) {
+          const sortedByPR = [...credibleProdCallers].sort((a, b) => b.pr - a.pr);
+          const topPR = sortedByPR[0];
+          const secondPR = sortedByPR[1]?.pr ?? 0;
+          if (topPR && topPR.pr > 0 && topPR.pr >= 2 * secondPR) {
+            probes.push({
+              family: 'pagerank_anchored',
+              symbol: sym.name,
+              file: sym.file_path,
+              expect: { topKContainsCallerId: { id: topPR.id, k: 3 } },
+              meta: {
+                fanIn: sym.fan_in,
+                topPRCallerId: topPR.id,
+                topPR: topPR.pr,
+                secondPR,
+                ratio: secondPR > 0 ? topPR.pr / secondPR : Infinity,
+                credibleProdCallers: credibleProdCallers.length,
+              },
+            });
+          }
         }
       }
       const callees = calleeSummary(db, sym.id);
