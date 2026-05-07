@@ -25,6 +25,28 @@ import path from 'node:path';
  * @returns {Promise<Object>}
  */
 export async function runClaudeAgent(req) {
+  const parsedAttempts = Number.parseInt(req.maxAttempts || 1, 10);
+  const maxAttempts = Number.isFinite(parsedAttempts) ? Math.max(1, Math.min(3, parsedAttempts)) : 1;
+  const attempts = [];
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const run = await runClaudeAgentOnce(req);
+    attempts.push({
+      exitCode: run.exitCode,
+      timedOut: run.timedOut,
+      isError: run.isError,
+      wallMs: run.wallMs,
+      rawByteLen: run.rawByteLen,
+      finalPreview: String(run.finalResultText || run.finalAssistantText || '').slice(0, 160),
+      stderrPreview: String(run.stderrPreview || '').slice(0, 160),
+    });
+    if (!isTransientRunFailure(run) || attempt === maxAttempts) {
+      return { ...run, attempts: attempt, retryCount: attempt - 1, attemptSummaries: attempts };
+    }
+    await new Promise(resolve => setTimeout(resolve, 750 * attempt));
+  }
+}
+
+async function runClaudeAgentOnce(req) {
   const args = [
     '-p', req.prompt,
     '--model', req.model,
@@ -102,6 +124,13 @@ export async function runClaudeAgent(req) {
     rawByteLen: stdout.length,
     ...parsed,
   };
+}
+
+function isTransientRunFailure(run) {
+  const text = `${run.finalResultText || ''}\n${run.finalAssistantText || ''}\n${run.stderrPreview || ''}`;
+  if (run.timedOut || run.spawnError) return true;
+  if (!run.resultEvent && !run.finalResultText && !run.finalAssistantText) return true;
+  return /API Error:\s*(Overloaded|Rate limit|Timeout)|temporarily unavailable|ETIMEDOUT|ECONNRESET/i.test(text);
 }
 
 // Hide multi-line system-prompt content in command logs (keeps artifacts readable).
@@ -203,11 +232,17 @@ function parseStreamJson(stdout) {
           if (m) {
             try { routeMeta = JSON.parse(m[1]); } catch { /* malformed — skip */ }
           }
+          let traceMeta = null;
+          const tm = text.match(/<<SS_TRACE_META>>(\{[^\n]*\})/);
+          if (tm) {
+            try { traceMeta = JSON.parse(tm[1]); } catch { /* malformed — skip */ }
+          }
           toolResults.push({
             id: block.tool_use_id,
             isError: !!block.is_error,
             chars,
             ...(routeMeta ? { routeMeta } : {}),
+            ...(traceMeta ? { traceMeta } : {}),
           });
         }
       }
@@ -321,6 +356,9 @@ export function summariseRun(run) {
   const routeMetas = run.toolResults
     .map(r => r.routeMeta)
     .filter(Boolean);
+  const traceMetas = run.toolResults
+    .map(r => r.traceMeta)
+    .filter(Boolean);
   const routedModeCounts = {};
   const routeMethodCounts = {};
   const routerLatencySamples_us = [];
@@ -355,6 +393,8 @@ export function summariseRun(run) {
     exitCode: run.exitCode,
     timedOut: run.timedOut,
     isError: run.isError,
+    attempts: run.attempts || 1,
+    retryCount: run.retryCount || 0,
     numTurns: run.numTurns,
     toolCallCount: run.toolCalls.length,
     toolOutputChars: toolUseChars,
@@ -368,6 +408,15 @@ export function summariseRun(run) {
     answerParseError: answer?._parseError || null,
     routeMetas,           // raw per-call payloads
     routeAggregate,       // null when no ss-search calls were made
+    traceMetas,
+    traceAggregate: traceMetas.length ? {
+      callCount: traceMetas.length,
+      totalTokenBudget: traceMetas.reduce((acc, m) => acc + (+m.tokenBudget || 0), 0),
+      totalTokensUsed: traceMetas.reduce((acc, m) => acc + (+m.tokensUsed || 0), 0),
+      callers: traceMetas.reduce((acc, m) => acc + (+m.callers || 0), 0),
+      callees: traceMetas.reduce((acc, m) => acc + (+m.callees || 0), 0),
+      impactPaths: traceMetas.reduce((acc, m) => acc + (+m.impactPaths || 0), 0),
+    } : null,
   };
 }
 
@@ -402,4 +451,4 @@ export function buildClaudeArgs(req) {
   return args;
 }
 
-export const _internal = { parseStreamJson };
+export const _internal = { parseStreamJson, isTransientRunFailure };

@@ -11,6 +11,8 @@ export { default as communityDetector } from './community-detector.js';
 export * from './leiden-algorithm.js';
 export * from './repo-map.js';
 export { default as repoMap } from './repo-map.js';
+export * from './structural-context.js';
+export { default as StructuralContextBuilder } from './structural-context.js';
 export * from './hcgs-generator.js';
 export * from './summary-manager.js';
 export { default as summaryManager } from './summary-manager.js';

@@ -2,7 +2,7 @@
  * Cheap unit tests for the agent-read-workflows benchmark harness.
  *
  * Covers:
- *   - POLICIES has all three conditions wired
+ *   - POLICIES has all benchmark conditions wired
  *   - TOOL_RULES has correct allowedBashLeading per condition
  *   - audit.auditRun flags policy violations correctly per condition
  *
@@ -24,15 +24,17 @@ import { SweetSearch } from '../../core/search/sweet-search.js';
 // ────────────────────────────────────────────────────────────────────────────
 
 describe('agent-bench policies', () => {
-  it('exposes all three conditions in MODE_ORDER', () => {
+  it('exposes all benchmark conditions in MODE_ORDER', () => {
     expect(MODE_ORDER).toContain('native-rg-read');
     expect(MODE_ORDER).toContain('sweet-search-tools');
     expect(MODE_ORDER).toContain('sweet-search-auto');
+    expect(MODE_ORDER).toContain('sweet-search-structural');
   });
 
   it('marks sweet-flavored conditions in SWEET_CONDITIONS', () => {
     expect(SWEET_CONDITIONS.has('sweet-search-tools')).toBe(true);
     expect(SWEET_CONDITIONS.has('sweet-search-auto')).toBe(true);
+    expect(SWEET_CONDITIONS.has('sweet-search-structural')).toBe(false);
     expect(SWEET_CONDITIONS.has('native-rg-read')).toBe(false);
   });
 
@@ -71,10 +73,24 @@ describe('agent-bench policies', () => {
     expect(rules.readToolForbidden).toBe(true);
   });
 
+  it('sweet-search-structural allows ss-trace but not ss-search', () => {
+    const rules = TOOL_RULES['sweet-search-structural'];
+    expect(rules.allowedTools).toContain('Bash(ss-trace *)');
+    expect(rules.allowedTools).not.toContain('Bash');
+    expect(rules.allowedBashLeading).toContain('ss-trace');
+    expect(rules.allowedBashLeading).toContain('ss-read');
+    expect(rules.allowedBashLeading).not.toContain('ss-search');
+    expect(rules.readToolForbidden).toBe(true);
+    expect(POLICIES['sweet-search-structural']).toMatch(/one bare allowed command/);
+    expect(POLICIES['sweet-search-structural']).toMatch(/2>\/dev\/null/);
+    expect(POLICIES['sweet-search-structural']).toMatch(/answer checklist/);
+  });
+
   it('native-rg-read forbids leading sweet-search and ss-* tokens', () => {
     const rules = TOOL_RULES['native-rg-read'];
     expect(rules.forbiddenBashLeading).toContain('sweet-search');
     expect(rules.forbiddenBashLeading).toContain('ss-search');
+    expect(rules.forbiddenBashLeading).toContain('ss-trace');
     expect(rules.forbiddenBashLeading).toContain('ss-grep');
     expect(rules.readToolForbidden).toBe(false);
   });
@@ -144,6 +160,23 @@ describe('audit per condition', () => {
     const audit = auditRun('native-rg-read', bashRun(['rg "FST_ERR_" lib/']));
     expect(audit.violationCount).toBe(0);
   });
+
+  it('sweet-search-structural: ss-trace call passes', () => {
+    const audit = auditRun('sweet-search-structural', bashRun(['ss-trace handleRequest --depth 2']));
+    expect(audit.violationCount).toBe(0);
+  });
+
+  it('sweet-search-structural: ss-search call is flagged', () => {
+    const audit = auditRun('sweet-search-structural', bashRun(['ss-search "handle request"']));
+    expect(audit.violationCount).toBeGreaterThan(0);
+    expect(audit.violations[0].detail).toBe('ss-search');
+  });
+
+  it('sweet-search-structural: ss-trace piped to head is flagged', () => {
+    const audit = auditRun('sweet-search-structural', bashRun(['ss-trace send 2>/dev/null | head -200']));
+    expect(audit.violationCount).toBeGreaterThan(0);
+    expect(audit.violations.some(v => v.detail === 'head')).toBe(true);
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -183,6 +216,32 @@ describe('SS_ROUTE_META trailer extraction', () => {
     expect(parsed.toolResults[0].routeMeta).toEqual(meta);
   });
 
+  it('parses trace meta from a tool_result block emitted by ss-trace', () => {
+    const meta = {
+      symbol: 'handleRequest',
+      tokenBudget: 8000,
+      tokensUsed: 3200,
+      callers: 2,
+      callees: 5,
+      impactPaths: 3,
+      sufficient: true,
+    };
+    const stream =
+      `${JSON.stringify({
+        type: 'user',
+        message: {
+          content: [{
+            type: 'tool_result',
+            tool_use_id: 'tu_1',
+            content: [{ text: `# trace handleRequest\n<<SS_TRACE_META>>${JSON.stringify(meta)}\n` }],
+            is_error: false,
+          }],
+        },
+      })}\n`;
+    const parsed = _internal.parseStreamJson(stream);
+    expect(parsed.toolResults[0].traceMeta).toEqual(meta);
+  });
+
   it('returns no routeMeta when the trailer is absent', () => {
     const stream =
       `${JSON.stringify({
@@ -198,6 +257,30 @@ describe('SS_ROUTE_META trailer extraction', () => {
       })}\n`;
     const parsed = _internal.parseStreamJson(stream);
     expect(parsed.toolResults[0].routeMeta).toBeUndefined();
+  });
+
+  it('classifies transient Claude failures for benchmark retries', () => {
+    expect(_internal.isTransientRunFailure({
+      timedOut: false,
+      finalResultText: 'API Error: Overloaded',
+      finalAssistantText: '',
+      stderrPreview: '',
+      resultEvent: { subtype: 'error' },
+    })).toBe(true);
+    expect(_internal.isTransientRunFailure({
+      timedOut: true,
+      finalResultText: '',
+      finalAssistantText: '',
+      stderrPreview: '',
+      resultEvent: null,
+    })).toBe(true);
+    expect(_internal.isTransientRunFailure({
+      timedOut: false,
+      finalResultText: '```json\n{\"answer\":\"ok\"}\n```',
+      finalAssistantText: '',
+      stderrPreview: '',
+      resultEvent: { subtype: 'success' },
+    })).toBe(false);
   });
 });
 

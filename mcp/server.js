@@ -18,16 +18,19 @@ import {
   HealthOutputSchema,
   RepoMapOutputSchema,
   VocabPrewarmOutputSchema,
-  ReadOutputSchema,
-  ReadSemanticOutputSchema,
   handleSearch,
   handleIndex,
   checkHealth,
   handleRepoMap,
   handleVocabPrewarm,
+} from './tool-handlers.js';
+import { TraceOutputSchema, handleTrace } from './trace-tool.js';
+import {
+  ReadOutputSchema,
+  ReadSemanticOutputSchema,
   handleRead,
   handleReadSemantic,
-} from './tool-handlers.js';
+} from './read-tool.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -101,6 +104,7 @@ async function getConfig() {
 const coreDir = path.join(__dirname, '..', 'core');
 
 const searchDeps = { getSearcher };
+const traceDeps = { PROJECT_ROOT };
 const indexDeps = { PROJECT_ROOT, coreDir };
 const healthDeps = { getConfig, PROJECT_ROOT };
 const repoMapDeps = { coreDir };
@@ -149,6 +153,29 @@ server.registerTool('search', {
     openWorldHint: false,
   },
 }, async (args) => handleSearch(args, searchDeps));
+
+server.registerTool('trace', {
+  description: 'Return one structural code-context package for a symbol: important callers, callees, and transitive impact paths, adaptively fitted to a token budget.',
+  inputSchema: {
+    symbol: z.string().min(1).max(256)
+      .describe('Symbol/entity name to trace, e.g. processOrder or EmployeeService.processOrder'),
+    file: z.string().max(1000).optional()
+      .describe('Optional indexed file path to disambiguate duplicate symbol names'),
+    query: z.string().max(1000).optional()
+      .describe('Optional natural-language hint used only to rank structural context'),
+    maxDepth: z.number().int().min(1).max(4).default(3).optional()
+      .describe('Maximum transitive impact depth (default: 3, capped at 4)'),
+    tokenBudget: z.number().int().min(1000).max(16000).optional()
+      .describe('Optional token budget. Omit for adaptive 4k/8k/12k selection.'),
+  },
+  outputSchema: TraceOutputSchema,
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+}, async (args) => handleTrace(args, traceDeps));
 
 server.registerTool('index', {
   description: 'Index or re-index the codebase',

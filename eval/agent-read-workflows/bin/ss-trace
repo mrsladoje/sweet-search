@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# ss-trace: unified structural context for one symbol (callers, callees, impact).
+#
+# Usage: ss-trace <symbol> [--in <file>] [--query <hint>] [--depth N] [--budget N]
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+TMPERR=$(mktemp)
+node "$DIR/_ss-helpers.mjs" trace "$@" 2>"$TMPERR"
+RC=$?
+[ $RC -ne 0 ] && cat "$TMPERR" >&2
+rm -f "$TMPERR"
+exit $RC
