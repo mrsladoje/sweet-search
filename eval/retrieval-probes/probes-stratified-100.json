@@ -1,0 +1,1213 @@
+{
+  "schemaVersion": 1,
+  "description": "Stratified held-out probes generated 2026-05-07 by 5 sub-agents (20 per repo: 10 intent=unknown + 10 failure-shape). MILESTONE-ONLY — never iterate against this set.",
+  "createdAt": "2026-05-07T18:12:37.674Z",
+  "probes": [
+    {
+      "id": "F-S2-1",
+      "repo": "fastify",
+      "query": "404 routing fallback",
+      "expectedFile": "lib/four-oh-four.js",
+      "expectedSymbolAnyOf": [
+        "fourOhFour",
+        "fourOhFourFallBack",
+        "basic404"
+      ],
+      "notes": "Stratification A — abbreviated/no-verb. No IMPL_INTENT_RE match; tests retrieval when intent=unknown.",
+      "stratification": "A"
+    },
+    {
+      "id": "F-S2-2",
+      "repo": "fastify",
+      "query": "decorator stack already-started",
+      "expectedFile": "lib/decorate.js",
+      "expectedSymbolAnyOf": [
+        "assertNotStarted",
+        "decorateFastify"
+      ],
+      "notes": "Stratification A — abbreviated. Targets assertNotStarted guard for FST_ERR_DEC_AFTER_START.",
+      "stratification": "A"
+    },
+    {
+      "id": "F-S2-3",
+      "repo": "fastify",
+      "query": "trace from reply.send to onSend hook",
+      "expectedFileAnyOf": [
+        "lib/reply.js",
+        "lib/hooks.js"
+      ],
+      "expectedSymbolAnyOf": [
+        "send",
+        "onSendHook",
+        "onSendHookRunner"
+      ],
+      "notes": "Stratification A — narrative 'trace from X to Y'. No verb, no def keywords.",
+      "stratification": "A"
+    },
+    {
+      "id": "F-S2-4",
+      "repo": "fastify",
+      "query": "anyone know why throwIfAlreadyStarted breaks addHook after listen",
+      "expectedFile": "fastify.js",
+      "expectedSymbolAnyOf": [
+        "throwIfAlreadyStarted",
+        "addHook"
+      ],
+      "notes": "Stratification A — Discord/SO style. Conversational tone, no formal definitions.",
+      "stratification": "A"
+    },
+    {
+      "id": "F-S2-5",
+      "repo": "fastify",
+      "query": "fastify's onSend hook order",
+      "expectedFile": "lib/hooks.js",
+      "expectedSymbolAnyOf": [
+        "onSendHookRunner",
+        "lifecycleHooks"
+      ],
+      "notes": "Stratification A — possessive narrative. No 'how/where/what'; tests semantic match for ordering.",
+      "stratification": "A"
+    },
+    {
+      "id": "F-S2-6",
+      "repo": "fastify",
+      "query": "fastify decoration on routes returning undefined",
+      "expectedFile": "lib/decorate.js",
+      "expectedSymbolAnyOf": [
+        "getInstanceDecorator",
+        "checkExistence",
+        "decorate"
+      ],
+      "notes": "Stratification A — github-issue style bug report. No verb, no impl keyword.",
+      "stratification": "A"
+    },
+    {
+      "id": "F-S2-7",
+      "repo": "fastify",
+      "query": "throwing FST_ERR_HOOK_TIMEOUT during preHandler",
+      "expectedFileAnyOf": [
+        "lib/hooks.js",
+        "lib/errors.js"
+      ],
+      "expectedSymbol": "FST_ERR_HOOK_TIMEOUT",
+      "notes": "Stratification A — error-phrasing. Uses error code, no intent keywords.",
+      "stratification": "A"
+    },
+    {
+      "id": "F-S2-8",
+      "repo": "fastify",
+      "query": "instance already started error from setNotFoundHandler",
+      "expectedFileAnyOf": [
+        "fastify.js",
+        "lib/errors.js"
+      ],
+      "expectedSymbolAnyOf": [
+        "setNotFoundHandler",
+        "throwIfAlreadyStarted",
+        "FST_ERR_INSTANCE_ALREADY_LISTENING"
+      ],
+      "notes": "Stratification A — error-phrasing narrative. No question word.",
+      "stratification": "A"
+    },
+    {
+      "id": "F-S2-9",
+      "repo": "fastify",
+      "query": "matcher chain plugin prefix",
+      "expectedFile": "lib/plugin-override.js",
+      "expectedSymbolAnyOf": [
+        "override",
+        "buildRoutePrefix"
+      ],
+      "notes": "Stratification A — abbreviated noun phrase. Tests semantic match without verbs.",
+      "stratification": "A"
+    },
+    {
+      "id": "F-S2-10",
+      "repo": "fastify",
+      "query": "walk me through what happens when content-type is missing on POST",
+      "expectedFileAnyOf": [
+        "lib/handle-request.js",
+        "lib/content-type-parser.js"
+      ],
+      "expectedSymbolAnyOf": [
+        "handleRequest",
+        "run",
+        "getParser"
+      ],
+      "notes": "Stratification A — narrative 'walk me through'. No def keywords; intent=unknown.",
+      "stratification": "A"
+    },
+    {
+      "id": "F-S3-1",
+      "repo": "fastify",
+      "query": "how does reply.send in lib/reply.js trigger onSendHookRunner in lib/hooks.js",
+      "expectedFileAnyOf": [
+        "lib/reply.js",
+        "lib/hooks.js"
+      ],
+      "expectedSymbolAnyOf": [
+        "send",
+        "onSendHook",
+        "onSendHookRunner"
+      ],
+      "notes": "Stratification B — MULTI-FILE FLOW. Cross-file orchestration: reply.send schedules onSend hooks via runner.",
+      "stratification": "B"
+    },
+    {
+      "id": "F-S3-2",
+      "repo": "fastify",
+      "query": "polymorphic dispatch of context.handler in handle-request",
+      "expectedFileAnyOf": [
+        "lib/handle-request.js",
+        "lib/context.js",
+        "lib/route.js"
+      ],
+      "expectedSymbolAnyOf": [
+        "preHandlerCallbackInner",
+        "Context",
+        "routeHandler",
+        "addNewRoute"
+      ],
+      "notes": "Stratification B — POLYMORPHIC DISPATCH. context.handler is set per-route in route.js but invoked generically in handle-request.js.",
+      "stratification": "B"
+    },
+    {
+      "id": "F-S3-3",
+      "repo": "fastify",
+      "query": "fallback error handler when reply.kReplyNextErrorHandler is false deeply nested in error chain",
+      "expectedFile": "lib/error-handler.js",
+      "expectedSymbolAnyOf": [
+        "handleError",
+        "fallbackErrorHandler",
+        "rootErrorHandler"
+      ],
+      "notes": "Stratification B — DEEPLY-NESTED TYPE. rootErrorHandler -> next error handler chain via Object.getPrototypeOf 3+ levels.",
+      "stratification": "B"
+    },
+    {
+      "id": "F-S3-4",
+      "repo": "fastify",
+      "query": "what stops the same plugin from being registered twice with the same encapsulated instance",
+      "expectedFileAnyOf": [
+        "lib/plugin-utils.js",
+        "lib/plugin-override.js"
+      ],
+      "expectedSymbolAnyOf": [
+        "shouldSkipOverride",
+        "registerPlugin",
+        "override"
+      ],
+      "notes": "Stratification B — NL-WITHOUT-IDENTIFIER. Query never names skip-override symbol; forces semantic recall.",
+      "stratification": "B"
+    },
+    {
+      "id": "F-S3-5",
+      "repo": "fastify",
+      "query": "encapsulated instance prefix interaction across nested register calls",
+      "expectedFileAnyOf": [
+        "lib/plugin-override.js",
+        "lib/four-oh-four.js"
+      ],
+      "expectedSymbolAnyOf": [
+        "override",
+        "buildRoutePrefix",
+        "setNotFoundHandler"
+      ],
+      "notes": "Stratification B — CROSS-PLUGIN. Tests behavior when nested plugins build prefixes that affect 404 scoping.",
+      "stratification": "B"
+    },
+    {
+      "id": "F-S3-6",
+      "repo": "fastify",
+      "query": "Hooks add",
+      "expectedFile": "lib/hooks.js",
+      "expectedSymbol": "Hooks.prototype.add",
+      "notes": "Stratification B — SYMBOL-COLLISION. 'add' appears in ContentTypeParser, decorate exports (add: decorateFastify), Hooks.prototype.add, and many test files. Forces disambiguation.",
+      "stratification": "B"
+    },
+    {
+      "id": "F-S3-7",
+      "repo": "fastify",
+      "query": "what response is returned when no route matches and no custom handler is set",
+      "expectedFile": "lib/four-oh-four.js",
+      "expectedSymbol": "basic404",
+      "notes": "Stratification B — IMPLICIT-DEFAULT. Query is about default behavior; basic404 is the unnamed default.",
+      "stratification": "B"
+    },
+    {
+      "id": "F-S3-8",
+      "repo": "fastify",
+      "query": "selecting parser when incoming content-type header has parameters",
+      "expectedFileAnyOf": [
+        "lib/content-type-parser.js",
+        "lib/content-type.js"
+      ],
+      "expectedSymbolAnyOf": [
+        "getParser",
+        "run"
+      ],
+      "notes": "Stratification B — RUNTIME-DYNAMIC. Parser is resolved at runtime via essence media type matching against registered parsers.",
+      "stratification": "B"
+    },
+    {
+      "id": "F-S3-9",
+      "repo": "fastify",
+      "query": "when does preValidation fire relative to schema validate",
+      "expectedFileAnyOf": [
+        "lib/handle-request.js",
+        "lib/hooks.js"
+      ],
+      "expectedSymbolAnyOf": [
+        "handler",
+        "preValidationCallback",
+        "validationCompleted",
+        "preValidationHookRunner"
+      ],
+      "notes": "Stratification B — HOOK-TIMING. Tests lifecycle ordering: preValidation runner -> validateSchema -> preHandler.",
+      "stratification": "B"
+    },
+    {
+      "id": "F-S3-10",
+      "repo": "fastify",
+      "query": "how does an error thrown inside an async route handler reach the user response",
+      "expectedFileAnyOf": [
+        "lib/wrap-thenable.js",
+        "lib/handle-request.js",
+        "lib/error-handler.js"
+      ],
+      "expectedSymbolAnyOf": [
+        "wrapThenable",
+        "preHandlerCallbackInner",
+        "handleError"
+      ],
+      "notes": "Stratification B — ERROR-PROPAGATION. Path: handler throws -> wrap-thenable rejection -> reply.send(err) -> error-handler.handleError.",
+      "stratification": "B"
+    },
+    {
+      "id": "G-S2-1",
+      "repo": "gin",
+      "query": "middleware chain order",
+      "expectedFileAnyOf": [
+        "context.go",
+        "routergroup.go",
+        "gin.go"
+      ],
+      "notes": "Two-word noun phrase, no verbs, no impl-intent keywords; common Discord shorthand for understanding how Use/handlers/Next interact.",
+      "stratification": "A"
+    },
+    {
+      "id": "G-S2-2",
+      "repo": "gin",
+      "query": "JSON binding tag",
+      "expectedFileAnyOf": [
+        "binding/json.go",
+        "binding/binding.go"
+      ],
+      "notes": "Three-token noun phrase referring to struct-tag conventions for JSON binding; no impl-intent verbs.",
+      "stratification": "A"
+    },
+    {
+      "id": "G-S2-3",
+      "repo": "gin",
+      "query": "walk me through how a request hits a handler",
+      "expectedFileAnyOf": [
+        "gin.go",
+        "context.go"
+      ],
+      "notes": "Conversational narrative; no symbol names, no struct/function keyword. Should match the dispatch path.",
+      "stratification": "A"
+    },
+    {
+      "id": "G-S2-4",
+      "repo": "gin",
+      "query": "gin context Set vs MustGet",
+      "expectedFile": "context.go",
+      "notes": "Discord-style A-vs-B compare. No impl-intent verb. Tests retrieval of two related Context APIs.",
+      "stratification": "A"
+    },
+    {
+      "id": "G-S2-5",
+      "repo": "gin",
+      "query": "panic recovery returning custom error",
+      "expectedFile": "recovery.go",
+      "notes": "StackOverflow-style title; no verbs like 'how does'. Tests recovery middleware + CustomRecovery hookup.",
+      "stratification": "A"
+    },
+    {
+      "id": "G-S2-6",
+      "repo": "gin",
+      "query": "gin BindXxx returns nil for empty body",
+      "expectedFile": "binding/json.go",
+      "notes": "GitHub-issue style title. Tests jsonBinding.Bind which checks req.Body == nil.",
+      "stratification": "A"
+    },
+    {
+      "id": "G-S2-7",
+      "repo": "gin",
+      "query": "gin route conflict at startup",
+      "expectedFile": "tree.go",
+      "notes": "Error-phrasing query, no impl-intent verbs. Tests panic in tree.go on wildcard/handler conflicts.",
+      "stratification": "A"
+    },
+    {
+      "id": "G-S2-8",
+      "repo": "gin",
+      "query": "tree.go panic when adding route",
+      "expectedFile": "tree.go",
+      "notes": "Error/filename style; no IMPL_INTENT_RE keywords. Targets node.addRoute / insertChild panics.",
+      "stratification": "A"
+    },
+    {
+      "id": "G-S2-9",
+      "repo": "gin",
+      "query": "what happens after Abort is called in a middleware",
+      "expectedFile": "context.go",
+      "notes": "'what happens' is conversational, not 'what is'. No struct/method keyword. Tests Abort + Next loop interaction.",
+      "stratification": "A"
+    },
+    {
+      "id": "G-S2-10",
+      "repo": "gin",
+      "query": "trusted proxies client IP",
+      "expectedFile": "gin.go",
+      "notes": "Three-noun phrase. Tests SetTrustedProxies + validateHeader logic.",
+      "stratification": "A"
+    },
+    {
+      "id": "G-S3-1",
+      "repo": "gin",
+      "query": "how a request flows from RouterGroup through Engine into Context handlers",
+      "expectedFileAnyOf": [
+        "routergroup.go",
+        "gin.go",
+        "context.go"
+      ],
+      "notes": "Cross-file orchestration: routergroup.go (Handle/handle) -> gin.go (addRoute/ServeHTTP/handleHTTPRequest) -> context.go (Next). Probe expects gold across THREE files.",
+      "stratification": "B"
+    },
+    {
+      "id": "G-S3-2",
+      "repo": "gin",
+      "query": "all implementations of the Render interface",
+      "expectedFileAnyOf": [
+        "render/render.go",
+        "render/json.go",
+        "render/xml.go",
+        "render/yaml.go",
+        "render/protobuf.go"
+      ],
+      "notes": "Polymorphic dispatch: Render is implemented by JSON, XML, YAML, ProtoBuf, TOML, Data, Redirect, etc. across many files in render/. Stresses retrieval of multi-file interface implementers.",
+      "stratification": "B"
+    },
+    {
+      "id": "G-S3-3",
+      "repo": "gin",
+      "query": "Engine field that holds the left and right template delimiters",
+      "expectedFileAnyOf": [
+        "gin.go",
+        "render/html.go"
+      ],
+      "notes": "Deeply-nested: Engine.delims is a render.Delims struct with Left/Right fields defined in render/html.go. Probe expects retrieval to hit BOTH the Engine field site and the render.Delims definition.",
+      "stratification": "B"
+    },
+    {
+      "id": "G-S3-4",
+      "repo": "gin",
+      "query": "code that prevents writing the same response header twice from competing handlers",
+      "expectedFile": "render/render.go",
+      "notes": "NL query naming no symbol. The answer is writeContentType, which sets Content-Type only when not already set. Tests semantic retrieval.",
+      "stratification": "B"
+    },
+    {
+      "id": "G-S3-5",
+      "repo": "gin",
+      "query": "where binding chooses a renderer based on request content type",
+      "expectedFileAnyOf": [
+        "binding/binding.go",
+        "context.go"
+      ],
+      "notes": "Two-way dep: binding.Default selects the binder by content type; Context.Negotiate selects renderer by Accept. The semantic crossover (binding picks parser, render picks output) commonly confuses retrieval. Gold spans binding.go AND context.go.",
+      "stratification": "B"
+    },
+    {
+      "id": "G-S3-6",
+      "repo": "gin",
+      "query": "Default in gin",
+      "expectedFileAnyOf": [
+        "gin.go",
+        "binding/binding.go"
+      ],
+      "notes": "Symbol collision: 'Default' refers to gin.Default (gin.go), binding.Default (binding/binding.go), defaultLogFormatter (logger.go), Context.DefaultQuery (context.go), defaultHandleRecovery (recovery.go), defaultMemory (binding/form.go), DefaultErrorWriter, etc. Probe stresses ranking under heavy term collision; the most-cited 'Default' is gin.Default.",
+      "stratification": "B"
+    },
+    {
+      "id": "G-S3-7",
+      "repo": "gin",
+      "query": "what gin uses if no logger formatter is configured",
+      "expectedFile": "logger.go",
+      "notes": "Query about default behavior with no explicit identifier. Tests that retrieval surfaces defaultLogFormatter and the LoggerWithConfig fallback that assigns it.",
+      "stratification": "B"
+    },
+    {
+      "id": "G-S3-8",
+      "repo": "gin",
+      "query": "respond in the format the client asked for in the Accept header",
+      "expectedFile": "context.go",
+      "notes": "Runtime-dynamic: format is chosen at runtime via Accept header parsing. Tests retrieval of NegotiateFormat + Negotiate switch.",
+      "stratification": "B"
+    },
+    {
+      "id": "G-S3-9",
+      "repo": "gin",
+      "query": "order in which middleware runs before and after the main handler",
+      "expectedFileAnyOf": [
+        "context.go",
+        "routergroup.go"
+      ],
+      "notes": "Hook-timing: c.Next() runs subsequent handlers and returns; pre-Next code runs before, post-Next runs after. Critical lifecycle behavior. Tests Context.Next + Abort interplay.",
+      "stratification": "B"
+    },
+    {
+      "id": "G-S3-10",
+      "repo": "gin",
+      "query": "panic in a handler triggers the recovery middleware which calls a custom handler",
+      "expectedFileAnyOf": [
+        "recovery.go",
+        "context.go"
+      ],
+      "notes": "Error-propagation chain: panic -> deferred recover() in CustomRecoveryWithWriter -> handle(c, rec). Tests the full propagation: handler panic -> recovery defer -> RecoveryFunc -> AbortWithStatus.",
+      "stratification": "B"
+    },
+    {
+      "id": "R-S2-1",
+      "repo": "ripgrep",
+      "query": "globset matcher build",
+      "expectedFileAnyOf": [
+        "crates/globset/src/glob.rs",
+        "crates/globset/src/lib.rs"
+      ],
+      "notes": "Three-noun fragment; no verb, no question mark; should NOT match IMPL_INTENT_RE. Forces retrieval to handle terse keyword bag.",
+      "stratification": "A"
+    },
+    {
+      "id": "R-S2-2",
+      "repo": "ripgrep",
+      "query": "BOM detection",
+      "expectedFile": "crates/searcher/src/searcher/mod.rs",
+      "notes": "Two-word noun phrase referring to byte-order-mark sniffing logic. No imperative verb. IMPL_INTENT_RE should NOT match.",
+      "stratification": "A"
+    },
+    {
+      "id": "R-S2-3",
+      "repo": "ripgrep",
+      "query": "walk me through how a worker pulls items off the deque",
+      "expectedFile": "crates/ignore/src/walk.rs",
+      "notes": "Narrative tutorial-style request with no symbol named. Tests NL-without-identifier under chatty phrasing. IMPL_INTENT_RE should NOT match (no 'implement', 'add', 'fix', etc.).",
+      "stratification": "A"
+    },
+    {
+      "id": "R-S2-4",
+      "repo": "ripgrep",
+      "query": "ripgrep worker thread sentinel",
+      "expectedFile": "crates/ignore/src/walk.rs",
+      "notes": "Hashtag-feeling Discord/Slack chatter; nouns only, no verbs. The 'sentinel' is the Quit message variant used to terminate worker threads. Tests retrieval against vague community vocabulary.",
+      "stratification": "A"
+    },
+    {
+      "id": "R-S2-5",
+      "repo": "ripgrep",
+      "query": "literal extraction edge case",
+      "expectedFile": "crates/regex/src/literal.rs",
+      "notes": "SO-style title fragment. No verb. Refers to ripgrep's regex literal extractor heuristics. IMPL_INTENT_RE should NOT match.",
+      "stratification": "A"
+    },
+    {
+      "id": "R-S2-6",
+      "repo": "ripgrep",
+      "query": "rg --multiline gives wrong line numbers",
+      "expectedFile": "crates/searcher/src/searcher/glue.rs",
+      "notes": "Bug-report wording typical of GitHub issues. Refers to MultiLine sink/searcher path. No imperative verb in IMPL_INTENT_RE sense (no 'fix' / 'add' / 'implement').",
+      "stratification": "A"
+    },
+    {
+      "id": "R-S2-7",
+      "repo": "ripgrep",
+      "query": "BannedByte error in regex compile",
+      "expectedFileAnyOf": [
+        "crates/regex/src/ban.rs",
+        "crates/regex/src/error.rs"
+      ],
+      "notes": "User pasting an error variant they saw. No verb. Should map to ban.rs and ErrorKind::Banned. Tests retrieval recall when query mirrors error text rather than fn name.",
+      "stratification": "A"
+    },
+    {
+      "id": "R-S2-8",
+      "repo": "ripgrep",
+      "query": "decompression matcher gzip glob",
+      "expectedFile": "crates/cli/src/decompress.rs",
+      "notes": "Four-noun fragment. Refers to associating *.gz with gzip command. IMPL_INTENT_RE should NOT match.",
+      "stratification": "A"
+    },
+    {
+      "id": "R-S2-9",
+      "repo": "ripgrep",
+      "query": "what happens when ripgrep encounters a symlink loop during recursive walk",
+      "expectedFile": "crates/ignore/src/walk.rs",
+      "notes": "Open-ended tutorial-style question. No imperative. Refers to the symlink loop check in parallel walker.",
+      "stratification": "A"
+    },
+    {
+      "id": "R-S2-10",
+      "repo": "ripgrep",
+      "query": "preprocessor crashes on large files",
+      "expectedFile": "crates/core/search.rs",
+      "notes": "GitHub-issue title style; describes a problem narratively. No verb that IMPL_INTENT_RE catches. Maps to the preprocessor pipe path in the search worker.",
+      "stratification": "A"
+    },
+    {
+      "id": "R-S3-1",
+      "repo": "ripgrep",
+      "query": "how does a regex pattern travel from CLI flags into a per-line searcher and out to the standard printer",
+      "expectedFileAnyOf": [
+        "crates/core/search.rs",
+        "crates/regex/src/matcher.rs",
+        "crates/searcher/src/searcher/mod.rs",
+        "crates/printer/src/standard.rs"
+      ],
+      "notes": "Spans 3 crates: core (flags+search worker) -> regex (RegexMatcher) -> searcher (Searcher) -> printer (StandardSink). Tests whether retrieval connects symbols across bounded contexts when query is one cohesive flow.",
+      "stratification": "B"
+    },
+    {
+      "id": "R-S3-2",
+      "repo": "ripgrep",
+      "query": "implementations of the Matcher trait used to drive search",
+      "expectedFileAnyOf": [
+        "crates/regex/src/matcher.rs",
+        "crates/pcre2/src/matcher.rs",
+        "crates/matcher/src/lib.rs"
+      ],
+      "notes": "Matcher is implemented at crates/regex (RegexMatcher), crates/pcre2 (RegexMatcher again - same name!), crates/searcher/src/testutil.rs, and a blanket impl on &M in matcher/src/lib.rs. Tests trait-impl polymorphic dispatch retrieval.",
+      "stratification": "B"
+    },
+    {
+      "id": "R-S3-3",
+      "repo": "ripgrep",
+      "query": "the limit_class limit_repeat limit_total tuning knobs for inner-literal extraction",
+      "expectedFile": "crates/regex/src/literal.rs",
+      "notes": "Targets fields buried inside the Extractor struct in regex/src/literal.rs (deeply nested context: crates/regex -> literal -> Extractor -> 4 limit fields). Tests retrieval into nested non-public types.",
+      "stratification": "B"
+    },
+    {
+      "id": "R-S3-4",
+      "repo": "ripgrep",
+      "query": "the place where ripgrep decides whether to memory-map a file or use OS read calls based on platform",
+      "expectedFile": "crates/searcher/src/searcher/mmap.rs",
+      "notes": "Question fully describes behaviour but never names MmapChoice, MmapChoiceImpl, or the open() method. Targets NL-only retrieval. Note macOS-specific bail-out is a load-bearing detail.",
+      "stratification": "B"
+    },
+    {
+      "id": "R-S3-5",
+      "repo": "ripgrep",
+      "query": "Glob struct in ripgrep",
+      "expectedFileAnyOf": [
+        "crates/globset/src/glob.rs",
+        "crates/ignore/src/gitignore.rs",
+        "crates/ignore/src/overrides.rs"
+      ],
+      "notes": "Three distinct public Glob types live in: globset/glob.rs (the parsed glob pattern), ignore/gitignore.rs (a single gitignore entry), ignore/overrides.rs (an override match wrapper). Tests whether retrieval surfaces all three or collapses on the dominant one.",
+      "stratification": "B"
+    },
+    {
+      "id": "R-S3-6",
+      "repo": "ripgrep",
+      "query": "the new constructor for the JSON printer",
+      "expectedFile": "crates/printer/src/json.rs",
+      "notes": "There are 40+ `pub fn new` constructors across the workspace (Searcher, SearcherBuilder, Standard, Summary, JSON, GlobSet, GlobMatcher, WalkBuilder, ...). Query must disambiguate to the JSON printer's new(). Tests symbol collision resolution.",
+      "stratification": "B"
+    },
+    {
+      "id": "R-S3-7",
+      "repo": "ripgrep",
+      "query": "default thread count when --threads is unset",
+      "expectedFileAnyOf": [
+        "crates/core/flags/hiargs.rs",
+        "crates/ignore/src/walk.rs"
+      ],
+      "notes": "The default is `available_parallelism().get().min(12)` and is duplicated in both crates/core/flags/hiargs.rs (CLI search threads) and crates/ignore/src/walk.rs (parallel walker threads). Implicit default not stated in any single struct field literal -- requires finding the call site.",
+      "stratification": "B"
+    },
+    {
+      "id": "R-S3-8",
+      "repo": "ripgrep",
+      "query": "encoding sniffing logic that picks UTF-8 vs UTF-16 transcoding at runtime",
+      "expectedFile": "crates/searcher/src/searcher/mod.rs",
+      "notes": "Behaviour is determined at runtime by looking at the first bytes (BOM) of the slice via encoding_rs::Encoding::for_bom; combined with the user's --encoding flag. Tests runtime-dynamic dispatch retrieval.",
+      "stratification": "B"
+    },
+    {
+      "id": "R-S3-9",
+      "repo": "ripgrep",
+      "query": "where WalkState transitions are observed by the parallel visitor on the receiver side",
+      "expectedFile": "crates/ignore/src/walk.rs",
+      "notes": "WalkState is set by the visitor's visit() method but consumed by the parent run_one loop; the receive path is in Worker::run / Worker::run_one. Sender side is generate_work / send. Tests sender-vs-receiver hook timing distinction.",
+      "stratification": "B"
+    },
+    {
+      "id": "R-S3-10",
+      "repo": "ripgrep",
+      "query": "how a banned-byte error bubbles from regex parsing up to a search-worker io::Result",
+      "expectedFileAnyOf": [
+        "crates/regex/src/ban.rs",
+        "crates/regex/src/error.rs",
+        "crates/regex/src/matcher.rs"
+      ],
+      "notes": "Error chain: ban::check returns regex::Error{Banned(u8)} -> Config::build_many propagates -> RegexMatcherBuilder::build returns it -> caller in core converts to anyhow/io::Error in SearchWorker::search. Tests whether retrieval surfaces multiple links of the chain across crates.",
+      "stratification": "B"
+    },
+    {
+      "id": "L-S2-1",
+      "repo": "flask",
+      "query": "blueprint registration",
+      "expectedFile": "src/flask/sansio/blueprints.py",
+      "expectedSymbolAnyOf": [
+        "Blueprint.register",
+        "BlueprintSetupState"
+      ],
+      "notes": "Two-word abbreviated noun phrase. No verb. Should NOT trigger IMPL_INTENT_RE. Tests whether the system can locate the central blueprint-registration mechanic from a bare topic.",
+      "stratification": "A"
+    },
+    {
+      "id": "L-S2-2",
+      "repo": "flask",
+      "query": "session cookie tag",
+      "expectedFileAnyOf": [
+        "src/flask/json/tag.py",
+        "src/flask/sessions.py"
+      ],
+      "expectedSymbolAnyOf": [
+        "TaggedJSONSerializer",
+        "JSONTag",
+        "SecureCookieSessionInterface"
+      ],
+      "notes": "Three-noun bag-of-words. Tests whether retrieval connects 'session cookie' to the JSON tag layer used for cookie payload serialization.",
+      "stratification": "A"
+    },
+    {
+      "id": "L-S2-3",
+      "repo": "flask",
+      "query": "walk me through what happens when a request hits Flask",
+      "expectedFile": "src/flask/app.py",
+      "expectedSymbolAnyOf": [
+        "Flask.wsgi_app",
+        "Flask.__call__",
+        "Flask.full_dispatch_request"
+      ],
+      "notes": "Conversational narrative request, no symbol names. Tests entry-point traversal: WSGI callable -> request_context push -> full_dispatch_request.",
+      "stratification": "A"
+    },
+    {
+      "id": "L-S2-4",
+      "repo": "flask",
+      "query": "flask before_request not firing on errorhandler",
+      "expectedFile": "src/flask/app.py",
+      "expectedSymbolAnyOf": [
+        "Flask.preprocess_request",
+        "Flask.full_dispatch_request"
+      ],
+      "notes": "Stack-Overflow style symptom phrasing with lowercase symbol. No verb tense for impl. Tests preprocess_request ordering vs error handlers.",
+      "stratification": "A"
+    },
+    {
+      "id": "L-S2-5",
+      "repo": "flask",
+      "query": "json.dumps default for datetime",
+      "expectedFile": "src/flask/json/provider.py",
+      "expectedSymbolAnyOf": [
+        "_default",
+        "DefaultJSONProvider"
+      ],
+      "notes": "Module-attribute phrasing, no verb. Tests whether retrieval finds the _default function and DefaultJSONProvider.",
+      "stratification": "A"
+    },
+    {
+      "id": "L-S2-6",
+      "repo": "flask",
+      "query": "flask cli routes command sort by match order",
+      "expectedFile": "src/flask/cli.py",
+      "expectedSymbol": "routes_command",
+      "notes": "GitHub issue title style, no clear verb. Tests CLI subcommand discovery and the --sort option choices.",
+      "stratification": "A"
+    },
+    {
+      "id": "L-S2-7",
+      "repo": "flask",
+      "query": "RoutingException raised at context push not dispatch",
+      "expectedFileAnyOf": [
+        "src/flask/ctx.py",
+        "src/flask/app.py"
+      ],
+      "expectedSymbolAnyOf": [
+        "AppContext.match_request",
+        "AppContext.push",
+        "Flask.handle_http_exception",
+        "Flask.raise_routing_exception"
+      ],
+      "notes": "Error-phrasing variant. Tests connection between AppContext.push -> match_request and the routing-exception detour in handle_http_exception.",
+      "stratification": "A"
+    },
+    {
+      "id": "L-S2-8",
+      "repo": "flask",
+      "query": "MethodView dispatch by HTTP verb",
+      "expectedFile": "src/flask/views.py",
+      "expectedSymbolAnyOf": [
+        "MethodView.dispatch_request",
+        "MethodView"
+      ],
+      "notes": "Telegraphic phrasing. No verb. Tests whether retrieval finds the dispatch_request that maps verb -> instance method.",
+      "stratification": "A"
+    },
+    {
+      "id": "L-S2-9",
+      "repo": "flask",
+      "query": "flask app factory entry point with FLASK_APP",
+      "expectedFile": "src/flask/cli.py",
+      "expectedSymbolAnyOf": [
+        "ScriptInfo.load_app",
+        "locate_app",
+        "find_best_app"
+      ],
+      "notes": "Conversational/SO style, no verb. Tests CLI app discovery and ScriptInfo.load_app.",
+      "stratification": "A"
+    },
+    {
+      "id": "L-S2-10",
+      "repo": "flask",
+      "query": "where does flask actually serialize the session cookie value",
+      "expectedFile": "src/flask/sessions.py",
+      "expectedSymbolAnyOf": [
+        "SecureCookieSessionInterface.save_session",
+        "SecureCookieSessionInterface.get_signing_serializer"
+      ],
+      "notes": "Narrative 'where does X actually do Y' phrasing. Tests SecureCookieSessionInterface.save_session as the call site that builds the signed value.",
+      "stratification": "A"
+    },
+    {
+      "id": "L-S3-1",
+      "repo": "flask",
+      "query": "tracing the WSGI request from app callable through context push to view dispatch",
+      "expectedFileAnyOf": [
+        "src/flask/app.py",
+        "src/flask/ctx.py"
+      ],
+      "expectedSymbolAnyOf": [
+        "Flask.wsgi_app",
+        "AppContext.push",
+        "AppContext.match_request",
+        "Flask.full_dispatch_request",
+        "Flask.dispatch_request"
+      ],
+      "notes": "Cross-file orchestration: app.py -> ctx.py -> app.py -> wrappers.py. Tests that retrieval returns the correct cooperating files in one query, not a single noisy file.",
+      "stratification": "B"
+    },
+    {
+      "id": "L-S3-2",
+      "repo": "flask",
+      "query": "default session backend implementation versus the abstract interface",
+      "expectedFile": "src/flask/sessions.py",
+      "expectedSymbolAnyOf": [
+        "SessionInterface",
+        "SessionInterface.open_session",
+        "SessionInterface.save_session",
+        "SecureCookieSessionInterface",
+        "SecureCookieSessionInterface.open_session",
+        "SecureCookieSessionInterface.save_session"
+      ],
+      "notes": "Polymorphic dispatch through SessionInterface. Tests that retrieval returns BOTH the abstract base AND the concrete subclass, not just the one mentioning 'default'.",
+      "stratification": "B"
+    },
+    {
+      "id": "L-S3-3",
+      "repo": "flask",
+      "query": "flask app default config keys",
+      "expectedFile": "src/flask/sansio/app.py",
+      "expectedSymbol": "App.default_config",
+      "notes": "Deeply nested literal: ImmutableDict literal inside class App body. Tests whether retrieval surfaces the default_config dictionary literal, not just the Config class.",
+      "stratification": "B"
+    },
+    {
+      "id": "L-S3-4",
+      "repo": "flask",
+      "query": "how flask figures out what view function to call for a url",
+      "expectedFileAnyOf": [
+        "src/flask/ctx.py",
+        "src/flask/app.py"
+      ],
+      "expectedSymbolAnyOf": [
+        "AppContext.match_request",
+        "Flask.dispatch_request"
+      ],
+      "notes": "NL with zero identifier overlap. The actual symbol is match_request and url_adapter.match. Tests semantic retrieval without lexical anchor.",
+      "stratification": "B"
+    },
+    {
+      "id": "L-S3-5",
+      "repo": "flask",
+      "query": "the parts of flask that work without a wsgi server",
+      "expectedFileAnyOf": [
+        "src/flask/sansio/app.py",
+        "src/flask/sansio/scaffold.py",
+        "src/flask/sansio/blueprints.py"
+      ],
+      "expectedSymbolAnyOf": [
+        "App",
+        "Scaffold",
+        "Blueprint"
+      ],
+      "notes": "Tests Flask's sansio split. The query has no symbols. Should retrieve src/flask/sansio/* (App, Scaffold, Blueprint base classes) NOT src/flask/app.py (which adds WSGI).",
+      "stratification": "B"
+    },
+    {
+      "id": "L-S3-6",
+      "repo": "flask",
+      "query": "where blueprint gets its before_request method from",
+      "expectedFileAnyOf": [
+        "src/flask/sansio/scaffold.py",
+        "src/flask/sansio/blueprints.py"
+      ],
+      "expectedSymbolAnyOf": [
+        "Scaffold.before_request",
+        "Scaffold",
+        "Blueprint"
+      ],
+      "notes": "Blueprint inheritance: before_request is defined on Scaffold, NOT on Blueprint. Tests whether retrieval follows MRO across files. The setupmethod decorator and Blueprint(Scaffold) inheritance must both surface.",
+      "stratification": "B"
+    },
+    {
+      "id": "L-S3-7",
+      "repo": "flask",
+      "query": "what happens if you don't set a secret key",
+      "expectedFileAnyOf": [
+        "src/flask/sessions.py",
+        "src/flask/sansio/app.py"
+      ],
+      "expectedSymbolAnyOf": [
+        "NullSession",
+        "NullSession._fail",
+        "SecureCookieSessionInterface.get_signing_serializer",
+        "App.default_config"
+      ],
+      "notes": "Implicit default behaviour: SECRET_KEY defaults to None in default_config; get_signing_serializer returns None; open_session falls back to make_null_session; NullSession._fail blocks writes. Tests retrieving the implicit default *consequence*, not the explicit default value.",
+      "stratification": "B"
+    },
+    {
+      "id": "L-S3-8",
+      "repo": "flask",
+      "query": "decision between calling a class-based view as a fresh instance per request or sharing one",
+      "expectedFile": "src/flask/views.py",
+      "expectedSymbolAnyOf": [
+        "View.as_view",
+        "View.init_every_request"
+      ],
+      "notes": "Runtime-dynamic choice: View.as_view branches on cls.init_every_request. Tests whether retrieval finds the conditional inside the closure, not just the class attribute docstring.",
+      "stratification": "B"
+    },
+    {
+      "id": "L-S3-9",
+      "repo": "flask",
+      "query": "order of teardown_request relative to after_request and the response being sent",
+      "expectedFileAnyOf": [
+        "src/flask/app.py",
+        "src/flask/ctx.py"
+      ],
+      "expectedSymbolAnyOf": [
+        "Flask.process_response",
+        "Flask.do_teardown_request",
+        "AppContext.pop"
+      ],
+      "notes": "Hook timing: after_request runs in process_response (reverse order); teardown_request runs in AppContext.pop (also reversed); session.save_session is invoked between them inside process_response. Tests cross-file ordering reasoning.",
+      "stratification": "B"
+    },
+    {
+      "id": "L-S3-10",
+      "repo": "flask",
+      "query": "path an HTTPException follows from raise to the user error handler",
+      "expectedFile": "src/flask/app.py",
+      "expectedSymbolAnyOf": [
+        "Flask.handle_user_exception",
+        "Flask.handle_http_exception",
+        "Flask.full_dispatch_request"
+      ],
+      "notes": "Error propagation chain: full_dispatch_request -> handle_user_exception -> handle_http_exception -> _find_error_handler. Multi-step, multi-method, single-file. Tests whether retrieval returns the *chain* not just the most-named method.",
+      "stratification": "B"
+    },
+    {
+      "id": "E-S2-1",
+      "repo": "express",
+      "query": "view template lookup",
+      "expectedFile": "lib/view.js",
+      "expectedSymbol": "lookup",
+      "expectedSymbolAnyOf": [
+        "lookup",
+        "View",
+        "resolve"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification A. Three-token noun phrase, no verb, no IMPL_INTENT trigger words ('view', 'template', 'lookup' all absent from IMPL_INTENT_RE). Verified intent=unknown. Maps to View.prototype.lookup (line 104) which iterates this.root and resolves the file via this.resolve. View.prototype.resolve (line 169) is sibling. Tests abbreviated phrase retrieval where the file is named view.js.",
+      "stratification": "A"
+    },
+    {
+      "id": "E-S2-2",
+      "repo": "express",
+      "query": "walk me through req before any user code touches it inside the app",
+      "expectedFile": "lib/application.js",
+      "expectedSymbol": "handle",
+      "expectedSymbolAnyOf": [
+        "handle"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification A. Narrative second-person 'walk me through' phrasing. Avoids IMPL_INTENT_RE — 'walk', 'happens', 'user', 'code', 'touches', 'inside' all absent. Verified intent=unknown. Maps to app.handle (line 152) which sets X-Powered-By, sets up circular req.res/res.req, alters prototypes via Object.setPrototypeOf, sets up res.locals, then dispatches into this.router.handle. Tests narrative-language retrieval to a verbatim handle entrypoint.",
+      "stratification": "A"
+    },
+    {
+      "id": "E-S2-3",
+      "repo": "express",
+      "query": "res.json or res.jsonp — which one to pick for json apis nowadays",
+      "expectedFile": "lib/response.js",
+      "expectedSymbol": "json",
+      "expectedSymbolAnyOf": [
+        "json",
+        "jsonp"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification A. Discord/Stack-Overflow-style 'X or Y — which one' phrasing. Verified intent=unknown — 'pick', 'apis', 'nowadays', 'json', 'jsonp' all absent from IMPL_INTENT_RE. Note: 'send' was avoided because 'sends?' IS a trigger. Maps to res.json (line 232) and res.jsonp (line 260) — sibling functions in the same file. The answer is the contrast (jsonp adds X-Content-Type-Options/wraps in callback). Tests sibling-comparison retrieval where either is acceptable.",
+      "stratification": "A"
+    },
+    {
+      "id": "E-S2-4",
+      "repo": "express",
+      "query": "express 5 res.status TypeError after upgrade",
+      "expectedFile": "lib/response.js",
+      "expectedSymbol": "status",
+      "expectedSymbolAnyOf": [
+        "status"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification A. GitHub-issue title style: terse, version-prefixed. Verified intent=unknown — 'TypeError', 'after', 'upgrade', 'status' all absent from IMPL_INTENT_RE. Note: 'route' was avoided because 'router?' matches 'route'; 'callback' avoided as it's a trigger. Maps to res.status (line 64) — Express 5 added strict integer validation: throws TypeError if !Number.isInteger(code) (line 67). Code that passed strings in v4 now breaks on upgrade. Tests GH-issue-style probe with a real v4→v5 breaking-change anchor.",
+      "stratification": "A"
+    },
+    {
+      "id": "E-S2-5",
+      "repo": "express",
+      "query": "Cannot find error from template rendering",
+      "expectedFile": "lib/view.js",
+      "expectedSymbol": "View",
+      "expectedSymbolAnyOf": [
+        "View",
+        "lookup"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification A. Error-message-as-query (truncated 'Cannot find ...'). Verified intent=unknown — 'cannot', 'find', 'error', 'from', 'template', 'rendering' all absent. Note: 'module', 'engine', 'when' were all avoided as they're IMPL_INTENT triggers. Maps to View constructor (line 52) — line 81 calls require(mod).__express where mod is derived from this.ext.slice(1); this synchronous require throws 'Cannot find module' if the engine package isn't installed. The lookup-failure path (line 562 in application.js's render) is also valid as it constructs 'Failed to lookup view ...'. Tests error-phrasing retrieval to a sync require call buried in a constructor.",
+      "stratification": "A"
+    },
+    {
+      "id": "E-S2-6",
+      "repo": "express",
+      "query": "trust proxy hop count",
+      "expectedFile": "lib/utils.js",
+      "expectedSymbol": "compileTrust",
+      "expectedSymbolAnyOf": [
+        "compileTrust"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification A. Three-noun-phrase, no verb. None of 'trust', 'proxy', 'hop', 'count' are IMPL_INTENT triggers. Maps to compileTrust (line 194) — specifically the typeof val === 'number' branch (lines 202-205) returning function(a,i){ return i < val }. Tests abbreviated-phrase retrieval to a specific branch in a multi-branch helper.",
+      "stratification": "A"
+    },
+    {
+      "id": "E-S2-7",
+      "repo": "express",
+      "query": "explain to me why an etag header sometimes appears on responses without me asking for it",
+      "expectedFile": "lib/response.js",
+      "expectedSymbol": "send",
+      "expectedSymbolAnyOf": [
+        "send"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification A. Conversational 'explain to me why'. None of 'explain', 'etag', 'header', 'sometimes', 'appears', 'asking' are IMPL_INTENT triggers. Maps to res.send (line 125) — specifically lines 161-189 which check app.get('etag fn') and auto-populate ETag if not set. Tests narrative-question retrieval to an auto-behaviour buried inside res.send.",
+      "stratification": "A"
+    },
+    {
+      "id": "E-S2-8",
+      "repo": "express",
+      "query": "why is my req.ip wrong behind a reverse proxy",
+      "expectedFile": "lib/request.js",
+      "expectedSymbol": "ip",
+      "expectedSymbolAnyOf": [
+        "ip"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification A. SO-style 'why is my X wrong'. Verified intent=unknown — 'why', 'wrong', 'behind', 'reverse', 'proxy' all absent. Note: 'load' was avoided because 'loads?' is a trigger. Maps to defineGetter(req, 'ip', ...) (line 340) which calls proxyaddr(this, trust) using app.get('trust proxy fn'). The 'wrong' answer is that the user hasn't enabled trust proxy so trust returns false. Tests SO-style debugging-question retrieval to a getter.",
+      "stratification": "A"
+    },
+    {
+      "id": "E-S2-9",
+      "repo": "express",
+      "query": "x-powered-by header origin",
+      "expectedFile": "lib/application.js",
+      "expectedSymbol": "handle",
+      "expectedSymbolAnyOf": [
+        "handle",
+        "defaultConfiguration"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification A. Three-token abbreviated. None of 'x-powered-by', 'header', 'origin' are IMPL_INTENT triggers. Two valid anchors: app.handle (line 160-162: the actual setHeader call gated on this.enabled('x-powered-by')) and app.defaultConfiguration (line 94: the this.enable('x-powered-by') default). Tests abbreviated retrieval with two valid sibling answers; either acceptable.",
+      "stratification": "A"
+    },
+    {
+      "id": "E-S2-10",
+      "repo": "express",
+      "query": "i set views to a folder but rendering still fails on a missing file from a different folder why",
+      "expectedFile": "lib/view.js",
+      "expectedSymbol": "lookup",
+      "expectedSymbolAnyOf": [
+        "lookup"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification A. Long narrative, run-on sentence, lower-case 'i', no punctuation — typical user paste from Discord. None of 'set', 'views', 'folder', 'rendering', 'missing', 'file', 'different' are IMPL_INTENT triggers ('set' is not in regex, 'views' is not). Maps to View.prototype.lookup (line 104) — the for-loop over [].concat(this.root) reveals views can be an array; if rendering fails on a path, it walked all the roots in order. Tests narrative debugging-question retrieval.",
+      "stratification": "A"
+    },
+    {
+      "id": "E-S3-1",
+      "repo": "express",
+      "query": "When you call app.get('/foo', handler), how does the call eventually register a route on the underlying Router instance?",
+      "expectedFile": "lib/application.js",
+      "expectedSymbol": "route",
+      "expectedSymbolAnyOf": [
+        "route",
+        "all"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification B / multi-file-flow. The call path crosses TWO files conceptually: lib/application.js -> Router (external 'router' package). The methods.forEach loop (lines 471-482) generates app[method] for every HTTP verb, which calls this.route(path) which calls this.router.route(path). The 'eventually' and 'underlying' force tracking through indirection. Gold is app.route (line 256) since the external Router source is not in this repo. Tests cross-file orchestration retrieval where one end is in another package.",
+      "stratification": "B"
+    },
+    {
+      "id": "E-S3-2",
+      "repo": "express",
+      "query": "How does app.use distinguish between mounting another express app versus a plain middleware function, and what is done differently for the app case?",
+      "expectedFile": "lib/application.js",
+      "expectedSymbol": "use",
+      "expectedSymbolAnyOf": [
+        "use"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification B / polymorphic-dispatch. The duck-typing test is `if (!fn || !fn.handle || !fn.set)` (line 221) — non-app gets simple router.use(path, fn); app gets a wrapping mounted_app function (line 230) that restores .app prototype on req/res after subapp.handle finishes, plus emits a 'mount' event (line 240). Tests polymorphic-branch retrieval inside a single function with very different code paths.",
+      "stratification": "B"
+    },
+    {
+      "id": "E-S3-3",
+      "repo": "express",
+      "query": "Where are the case-sensitive and strict routing options on the lazy app router actually read from app settings?",
+      "expectedFile": "lib/application.js",
+      "expectedSymbol": "init",
+      "expectedSymbolAnyOf": [
+        "init"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification B / deeply-nested-type. The options object is constructed inside a getter inside Object.defineProperty inside app.init — three levels of nesting. Lines 73-77: new Router({ caseSensitive: this.enabled('case sensitive routing'), strict: this.enabled('strict routing') }). Tests retrieval of options threaded from app.settings down through a lazy getter into a constructor argument.",
+      "stratification": "B"
+    },
+    {
+      "id": "E-S3-4",
+      "repo": "express",
+      "query": "If a sub-application is mounted, the parent's request and response prototypes are inherited so that things added on the parent are visible on the child. Where is that prototype inheritance set up?",
+      "expectedFile": "lib/application.js",
+      "expectedSymbol": "defaultConfiguration",
+      "expectedSymbolAnyOf": [
+        "defaultConfiguration"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification B / nl-without-identifier. Query never names 'mount', 'setPrototypeOf', 'defaultConfiguration', or any code identifier — purely behavioural NL. Maps to the on('mount', function onmount(parent) { ... }) handler inside app.defaultConfiguration (lines 109-122) where Object.setPrototypeOf chains request/response/engines/settings to parent. Tests NL-without-identifier retrieval to an inline event-listener body.",
+      "stratification": "B"
+    },
+    {
+      "id": "E-S3-5",
+      "repo": "express",
+      "query": "When an express() app is mounted underneath another express() app via use, the inner app's req.app needs to keep pointing at the inner app inside the inner stack and then be restored when control returns to the outer stack. How is that switch implemented?",
+      "expectedFile": "lib/application.js",
+      "expectedSymbol": "use",
+      "expectedSymbolAnyOf": [
+        "use"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification B / router-nesting. Specifically about nested express() apps (each with their own Router internally). The inner mounted_app closure (lines 230-237) saves orig = req.app before fn.handle, then in the next callback restores Object.setPrototypeOf(req, orig.request) and Object.setPrototypeOf(res, orig.response). Tests retrieval of subtle router-nesting context-restoration logic.",
+      "stratification": "B"
+    },
+    {
+      "id": "E-S3-6",
+      "repo": "express",
+      "query": "What is the structural difference between something added via app.use(fn) and something added via app.get('/path', fn) — at the moment of registration, what data structure does each end up in?",
+      "expectedFile": "lib/application.js",
+      "expectedSymbol": "use",
+      "expectedSymbolAnyOf": [
+        "use",
+        "route",
+        "all"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification B / middleware-vs-route. Tests sibling distinction. app.use (line 190) calls router.use(path, fn) — a layer in the router stack. app.get (and friends, generated in methods.forEach line 471) calls this.route(path) (line 478) which delegates to this.router.route(path) — a Route with method-specific handlers attached via route[method].apply(route, ...). Two different abstractions in the same file.",
+      "stratification": "B"
+    },
+    {
+      "id": "E-S3-7",
+      "repo": "express",
+      "query": "Where does the default views path 'views' relative to cwd get baked in if I never call app.set('views', ...)?",
+      "expectedFile": "lib/application.js",
+      "expectedSymbol": "defaultConfiguration",
+      "expectedSymbolAnyOf": [
+        "defaultConfiguration"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification B / implicit-default. Tests retrieval of an implicit default. Line 135: this.set('views', resolve('views')) inside app.defaultConfiguration — and resolve is path.resolve from node:path (imported line 24), so this resolves relative to process.cwd(). Hard because the user is asking about *absence* of a call. Sibling defaults in the same function: jsonp callback name (line 136), view (line 134, View constructor).",
+      "stratification": "B"
+    },
+    {
+      "id": "E-S3-8",
+      "repo": "express",
+      "query": "How does express compile the value passed to app.set('etag', ...) — in particular, the difference between true, 'weak', 'strong', false, and a custom function?",
+      "expectedFile": "lib/utils.js",
+      "expectedSymbol": "compileETag",
+      "expectedSymbolAnyOf": [
+        "compileETag"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification B / runtime-dynamic. compileETag (line 130) is a runtime dispatch on a string|boolean|function input — very switch-statement-heavy. Function -> identity; true|'weak' -> wetag; 'strong' -> etag; false -> undefined; default -> throw. The branch on app.set('etag', val) (line 365 in application.js) calls this.set('etag fn', compileETag(val)) which is the consumer. Tests runtime-dynamic switch-table retrieval.",
+      "stratification": "B"
+    },
+    {
+      "id": "E-S3-9",
+      "repo": "express",
+      "query": "If I do app.on('mount', cb), at what exact point in the lifecycle is cb invoked relative to the parent app calling use on me?",
+      "expectedFile": "lib/application.js",
+      "expectedSymbol": "use",
+      "expectedSymbolAnyOf": [
+        "use"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification B / hook-timing. The 'mount' event is emitted from app.use (line 240: fn.emit('mount', this)) on the *child* app, AFTER fn.mountpath = path and fn.parent = this are set, AFTER router.use(path, mounted_app) is registered. The listener is registered in defaultConfiguration line 109 on('mount', ...). Tests retrieval of cross-event-source timing: the emit site (use) vs the on site (defaultConfiguration). Gold is use because the question is about WHEN the emit fires.",
+      "stratification": "B"
+    },
+    {
+      "id": "E-S3-10",
+      "repo": "express",
+      "query": "If render fails because the chosen template engine throws synchronously instead of calling its callback, how does the error make it back to the original app.render caller's done function?",
+      "expectedFile": "lib/application.js",
+      "expectedSymbol": "render",
+      "expectedSymbolAnyOf": [
+        "render"
+      ],
+      "expectedSymbolType": "function",
+      "notes": "Stratification B / error-propagation. Two-stage error path: 1) tryRender (line 625) wraps view.render in a try/catch that calls callback(err) on sync throw. 2) app.render (line 522) calls tryRender(view, renderOptions, done) where done was set up at line 524-525 from caller. Plus there's the lookup-failure path (line 562: err = new Error('Failed to lookup view ...')) which calls done(err) directly. Tests error-propagation retrieval where the throw site (engine code) is external and the catch is in tryRender.",
+      "stratification": "B"
+    }
+  ]
+}
