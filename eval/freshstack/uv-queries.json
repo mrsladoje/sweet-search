@@ -1,0 +1,314 @@
+{
+  "schemaVersion": 1,
+  "description": "FreshStack-style held-out probes against astral-sh/uv (post-cutoff repo, last commit 2026-05-06; model cutoff was 2026-01). Hand-crafted from the source on 2026-05-07 without inspecting sweet-search behaviour. NEVER iterate against this set — only check at release milestones.",
+  "repo": "uv",
+  "commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+  "createdAt": "2026-05-07",
+  "probes": [
+    {
+      "id": "UV-NL-1",
+      "repo": "uv",
+      "query": "how does uv resolve dependency conflicts when two packages need different versions of the same library",
+      "expectedFileAnyOf": [
+        "crates/uv-resolver/src/resolver/mod.rs",
+        "crates/uv-resolver/src/pubgrub/report.rs",
+        "crates/uv-resolver/src/error.rs"
+      ],
+      "notes": "Pure NL question. Resolver uses PubGrub; conflict reports are formatted in pubgrub/report.rs; NoSolutionError lives in error.rs. Any of the three is acceptable as gold."
+    },
+    {
+      "id": "UV-NL-2",
+      "repo": "uv",
+      "query": "where is the lockfile written to disk after a successful resolution",
+      "expectedFile": "crates/uv/src/commands/project/lock_target.rs",
+      "expectedSymbolAnyOf": ["commit", "LockTarget"],
+      "notes": "LockTarget::commit at lock_target.rs:342 is the only place that fs_err::tokio::write the encoded lockfile."
+    },
+    {
+      "id": "UV-NL-3",
+      "repo": "uv",
+      "query": "how does uv decide whether to download a managed Python build or use one already on the system",
+      "expectedFileAnyOf": [
+        "crates/uv-python/src/discovery.rs",
+        "crates/uv-python/src/downloads.rs"
+      ],
+      "notes": "PythonPreference + PythonDownloads enums steer this decision; discovery.rs is the primary file but downloads.rs is also acceptable."
+    },
+    {
+      "id": "UV-NL-4",
+      "repo": "uv",
+      "query": "when uv installs a wheel where does it actually copy the files from cache into the virtualenv",
+      "expectedFileAnyOf": [
+        "crates/uv-install-wheel/src/linker.rs",
+        "crates/uv-install-wheel/src/install.rs"
+      ],
+      "expectedSymbolAnyOf": ["link_wheel_files", "install_wheel"],
+      "notes": "linker.rs:255 link_wheel_files copies/links files into the venv; install.rs:29 install_wheel is the orchestrator."
+    },
+    {
+      "id": "UV-NL-5",
+      "repo": "uv",
+      "query": "how does uv know whether the uv.lock file is stale and needs re-resolving",
+      "expectedFileAnyOf": [
+        "crates/uv-resolver/src/lock/mod.rs",
+        "crates/uv/src/commands/project/lock.rs"
+      ],
+      "expectedSymbolAnyOf": ["satisfies", "do_lock"],
+      "notes": "Lock::satisfies (lock/mod.rs:1614) is the workhorse; do_lock in commands/project/lock.rs:469 is the dispatcher."
+    },
+    {
+      "id": "UV-NL-6",
+      "repo": "uv",
+      "query": "how does uv build a source distribution into a wheel before installing it",
+      "expectedFileAnyOf": [
+        "crates/uv-build-frontend/src/lib.rs",
+        "crates/uv-distribution/src/source/mod.rs"
+      ],
+      "expectedSymbolAnyOf": ["SourceBuild", "build", "SourceDistributionBuilder"],
+      "notes": "SourceBuild::build in build-frontend/lib.rs:844 invokes PEP 517 backend; source/mod.rs orchestrates fetch+build+cache."
+    },
+    {
+      "id": "UV-NL-7",
+      "repo": "uv",
+      "query": "what controls whether uv compiles bytecode for installed packages and how is it triggered",
+      "expectedFile": "crates/uv-installer/src/compile.rs",
+      "notes": "compile.rs hosts the compileall worker and the COMPILEALL_SCRIPT shipped at install-time."
+    },
+    {
+      "id": "UV-NL-8",
+      "repo": "uv",
+      "query": "how does uv pick between installing the latest version of a package and a pinned version from preferences",
+      "expectedFileAnyOf": [
+        "crates/uv-resolver/src/candidate_selector.rs",
+        "crates/uv-resolver/src/preferences.rs"
+      ],
+      "notes": "candidate_selector.rs:78 select() picks the candidate; preferences.rs holds the prior pin data."
+    },
+
+    {
+      "id": "UV-DEF-1",
+      "repo": "uv",
+      "query": "show me the Cache struct definition",
+      "expectedFile": "crates/uv-cache/src/lib.rs",
+      "expectedSymbol": "Cache",
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Definition at uv-cache/src/lib.rs:164; user wants the full struct body, not a preview."
+    },
+    {
+      "id": "UV-DEF-2",
+      "repo": "uv",
+      "query": "show me the Planner struct that builds installation plans",
+      "expectedFile": "crates/uv-installer/src/plan.rs",
+      "expectedSymbol": "Planner",
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Definition at uv-installer/src/plan.rs:31."
+    },
+    {
+      "id": "UV-DEF-3",
+      "repo": "uv",
+      "query": "show me the full Lock struct definition with all its fields",
+      "expectedFile": "crates/uv-resolver/src/lock/mod.rs",
+      "expectedSymbol": "Lock",
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Definition at uv-resolver/src/lock/mod.rs:254; user wants every field shown."
+    },
+    {
+      "id": "UV-DEF-4",
+      "repo": "uv",
+      "query": "show me the Resolver struct definition",
+      "expectedFile": "crates/uv-resolver/src/resolver/mod.rs",
+      "expectedSymbol": "Resolver",
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Definition at resolver/mod.rs:100; generic over Provider and InstalledPackages."
+    },
+    {
+      "id": "UV-DEF-5",
+      "repo": "uv",
+      "query": "show me the Workspace struct definition",
+      "expectedFile": "crates/uv-workspace/src/workspace.rs",
+      "expectedSymbol": "Workspace",
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Definition at uv-workspace/src/workspace.rs:143."
+    },
+    {
+      "id": "UV-DEF-6",
+      "repo": "uv",
+      "query": "show me the Interpreter struct definition with all fields",
+      "expectedFile": "crates/uv-python/src/interpreter.rs",
+      "expectedSymbol": "Interpreter",
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Definition at uv-python/src/interpreter.rs:45."
+    },
+    {
+      "id": "UV-DEF-7",
+      "repo": "uv",
+      "query": "show me the BuildDispatch struct definition",
+      "expectedFile": "crates/uv-dispatch/src/lib.rs",
+      "expectedSymbol": "BuildDispatch",
+      "expectedSymbolType": "struct",
+      "expectedPresentation": "full",
+      "notes": "Definition at uv-dispatch/src/lib.rs:86; this is the BuildContext implementation that wires resolver/installer/builder."
+    },
+    {
+      "id": "UV-DEF-8",
+      "repo": "uv",
+      "query": "show me the Commands enum that lists every uv subcommand",
+      "expectedFile": "crates/uv-cli/src/lib.rs",
+      "expectedSymbol": "Commands",
+      "expectedSymbolType": "enum",
+      "expectedPresentation": "full",
+      "notes": "Definition at uv-cli/src/lib.rs:415; user wants every variant in the enum."
+    },
+
+    {
+      "id": "UV-FLOW-1",
+      "repo": "uv",
+      "query": "trace how uv add inserts a new dependency into pyproject.toml",
+      "expectedFileAnyOf": [
+        "crates/uv/src/commands/project/add.rs",
+        "crates/uv-workspace/src/pyproject_mut.rs"
+      ],
+      "expectedSymbolAnyOf": ["add", "PyProjectTomlMut", "add_dependency"],
+      "notes": "commands/project/add.rs:63 is the entrypoint; PyProjectTomlMut::add_dependency in pyproject_mut.rs:337 does the actual TOML edit."
+    },
+    {
+      "id": "UV-FLOW-2",
+      "repo": "uv",
+      "query": "what happens end-to-end when I run uv sync on an existing project",
+      "expectedFileAnyOf": [
+        "crates/uv/src/commands/project/sync.rs",
+        "crates/uv/src/commands/project/lock.rs"
+      ],
+      "expectedSymbolAnyOf": ["sync", "do_sync", "lock"],
+      "notes": "sync.rs:60 sync() entrypoint; sync.rs:633 do_sync orchestrates; lock.rs is invoked when lockfile is stale."
+    },
+    {
+      "id": "UV-FLOW-3",
+      "repo": "uv",
+      "query": "how does uv tool install create an isolated environment and link entrypoints onto PATH",
+      "expectedFileAnyOf": [
+        "crates/uv/src/commands/tool/install.rs",
+        "crates/uv-tool/src/lib.rs"
+      ],
+      "expectedSymbolAnyOf": ["install", "InstalledTools", "tool_executable_dir"],
+      "notes": "tool/install.rs:55 is the command; uv-tool/src/lib.rs hosts InstalledTools + tool_executable_dir for the bin shim location."
+    },
+    {
+      "id": "UV-FLOW-4",
+      "repo": "uv",
+      "query": "trace how uv lock decides which package versions to write into uv.lock",
+      "expectedFileAnyOf": [
+        "crates/uv/src/commands/project/lock.rs",
+        "crates/uv-resolver/src/resolver/mod.rs"
+      ],
+      "expectedSymbolAnyOf": ["lock", "do_lock", "resolve", "Resolver"],
+      "notes": "commands/project/lock.rs:85 is the CLI entry; resolver/mod.rs:277 Resolver::resolve runs the actual PubGrub solve."
+    },
+    {
+      "id": "UV-FLOW-5",
+      "repo": "uv",
+      "query": "where is the code that fetches a wheel from a registry index and caches it",
+      "expectedFileAnyOf": [
+        "crates/uv-distribution/src/distribution_database.rs",
+        "crates/uv-client/src/registry_client.rs"
+      ],
+      "expectedSymbolAnyOf": ["DistributionDatabase", "RegistryClient", "ManagedClient"],
+      "notes": "RegistryClient handles HTTP; DistributionDatabase wraps it with caching + extraction."
+    },
+    {
+      "id": "UV-FLOW-6",
+      "repo": "uv",
+      "query": "trace how uv venv creates a new virtual environment from scratch",
+      "expectedFileAnyOf": [
+        "crates/uv/src/commands/venv.rs",
+        "crates/uv-virtualenv/src/lib.rs",
+        "crates/uv-virtualenv/src/virtualenv.rs"
+      ],
+      "expectedSymbolAnyOf": ["venv", "create_venv"],
+      "notes": "commands/venv.rs:64 venv() is the CLI entry; uv-virtualenv/src/lib.rs:56 create_venv is the public entrypoint that delegates into virtualenv.rs for the file-system work."
+    },
+    {
+      "id": "UV-FLOW-7",
+      "repo": "uv",
+      "query": "how does uv publish authenticate with PyPI using trusted publishing tokens",
+      "expectedFileAnyOf": [
+        "crates/uv-publish/src/lib.rs",
+        "crates/uv-publish/src/trusted_publishing.rs",
+        "crates/uv/src/commands/publish.rs"
+      ],
+      "expectedSymbolAnyOf": ["check_trusted_publishing", "TrustedPublishingService", "publish"],
+      "notes": "uv-publish/src/lib.rs:409 check_trusted_publishing is the entrypoint; trusted_publishing.rs hosts the OIDC services; commands/publish.rs is the CLI wrapper."
+    },
+    {
+      "id": "UV-FLOW-8",
+      "repo": "uv",
+      "query": "how does uv clone a git dependency and pin it to a specific commit",
+      "expectedFileAnyOf": [
+        "crates/uv-git/src/source.rs",
+        "crates/uv-git/src/git.rs",
+        "crates/uv-git/src/resolver.rs"
+      ],
+      "expectedSymbolAnyOf": ["GitSource", "fetch", "GitResolver"],
+      "notes": "GitSource::fetch (source.rs:65) drives the clone; git.rs:570 fetch() does CLI/libgit2 work; GitResolver caches resolved oids."
+    },
+
+    {
+      "id": "UV-ERR-1",
+      "repo": "uv",
+      "query": "what does the NoSolutionError type represent in the resolver and how is it formatted for users",
+      "expectedFile": "crates/uv-resolver/src/error.rs",
+      "expectedSymbol": "NoSolutionError",
+      "expectedSymbolType": "struct",
+      "notes": "Definition at uv-resolver/src/error.rs:162; Display impl at line 445."
+    },
+    {
+      "id": "UV-ERR-2",
+      "repo": "uv",
+      "query": "where is the ResolveError::ConflictingUrls variant constructed",
+      "expectedFile": "crates/uv-resolver/src/error.rs",
+      "expectedSymbol": "ResolveError",
+      "expectedSymbolType": "enum",
+      "notes": "ConflictingUrls is a variant of ResolveError defined at error.rs:67. Real codebase has no ConflictInGroup variant; ConflictingUrls is the closest analog."
+    },
+    {
+      "id": "UV-ERR-3",
+      "repo": "uv",
+      "query": "what does PubGrubReportFormatter do when rendering a resolution failure",
+      "expectedFile": "crates/uv-resolver/src/pubgrub/report.rs",
+      "expectedSymbol": "PubGrubReportFormatter",
+      "notes": "Defined at pubgrub/report.rs:37; implements ReportFormatter from pubgrub crate at line 54."
+    },
+    {
+      "id": "UV-ERR-4",
+      "repo": "uv",
+      "query": "what error is raised when a wheel is missing a header file required to build a C extension",
+      "expectedFile": "crates/uv-build-frontend/src/error.rs",
+      "expectedSymbolAnyOf": ["MissingHeaderError", "MissingHeaderCause"],
+      "notes": "MissingHeaderError defined at build-frontend/src/error.rs:337; the Cause enum at line 131 enumerates which header was missing."
+    },
+    {
+      "id": "UV-ERR-5",
+      "repo": "uv",
+      "query": "where is the PublishError type that wraps trusted-publishing and upload failures",
+      "expectedFile": "crates/uv-publish/src/lib.rs",
+      "expectedSymbol": "PublishError",
+      "expectedSymbolType": "enum",
+      "notes": "Definition at uv-publish/src/lib.rs:49."
+    },
+    {
+      "id": "UV-ERR-6",
+      "repo": "uv",
+      "query": "what does the SitePackagesDiagnostic enum represent and what variants does it have",
+      "expectedFile": "crates/uv-installer/src/site_packages.rs",
+      "expectedSymbol": "SitePackagesDiagnostic",
+      "expectedSymbolType": "enum",
+      "notes": "Definition at uv-installer/src/site_packages.rs:622; reports issues found when scanning an existing site-packages directory (MetadataUnavailable, IncompatiblePlatform, etc.)."
+    }
+  ]
+}
