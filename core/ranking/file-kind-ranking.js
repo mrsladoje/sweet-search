@@ -919,6 +919,51 @@ function megaEntityPenalty(result, opts = {}) {
   return factor;
 }
 
+/**
+ * Doc-comment-only chunk demotion (F6, 2026-05-07).
+ *
+ * Detects chunks whose content is predominantly doc-comments without any
+ * executable type/function declarations. Diagnosed from S3-Q8 ripgrep
+ * (walk.rs:434-469): the chunker split WalkBuilder's 48-line docstring
+ * across two chunks; the docstring-only chunk lexically matched
+ * "WalkBuilder" + "directory iterator" and out-ranked the chunk that
+ * actually contained the `pub struct WalkBuilder` declaration.
+ *
+ * Predicate: doc-comment lines / total non-blank lines > 0.85 AND no
+ * declaration keywords (pub struct/fn/impl/enum/trait/class/def/function).
+ *
+ * Format-gated to agent: GCSN-style queries don't reliably target docs vs
+ * code, and over-demoting comment-heavy chunks could regress. Format-gated
+ * keeps it safe per the CLAUDE.md format-gating principle.
+ */
+const DOC_COMMENT_LINE_RE = /^\s*(?:\/\/[\/!]|\/\*\*?|\*\s|"""|'''|#'\s|#\s|--\s|--\|)/;
+const DECL_KEYWORD_RE = /\b(?:pub\s+)?(?:struct|enum|trait|impl|mod)\b|\bfn\s+\w|\bclass\s+\w|\bdef\s+\w|\bfunction\s+\w|\binterface\s+\w|^\s*(?:export\s+)?(?:async\s+)?function\b/;
+function docCommentOnlyDemotion(result, opts = {}) {
+  if (!opts._isAgentFormat) return 1.0;
+  if (hasAblation(opts.ablations, 'no-doc-comment-demote')) return 1.0;
+  const text = resolveResultText(result, opts);
+  if (!text || text.length < 80) return 1.0;
+  const lines = text.split(/\r?\n/);
+  let docLines = 0;
+  let nonBlankLines = 0;
+  let hasDecl = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    nonBlankLines++;
+    if (DOC_COMMENT_LINE_RE.test(line)) {
+      docLines++;
+    } else if (DECL_KEYWORD_RE.test(trimmed)) {
+      hasDecl = true;
+      break;
+    }
+  }
+  if (hasDecl) return 1.0;
+  if (nonBlankLines < 5) return 1.0;
+  if (docLines / nonBlankLines < 0.85) return 1.0;
+  return opts.docCommentOnlyFactor ?? 0.70;
+}
+
 function megaChunkSizePenalty(result, opts = {}) {
   const floor = (() => {
     const raw = process.env.SWEET_SEARCH_MEGA_CHUNK_FLOOR;
@@ -1241,6 +1286,14 @@ export function applyResultDemotions(results, opts = {}) {
       if (anomMult !== 1) {
         mult *= anomMult;
         details.push(`anomalous-chunk:${anomMult.toFixed(2)}`);
+      }
+    }
+
+    {
+      const docMult = docCommentOnlyDemotion(result, { ...opts, ablations, _isAgentFormat: isAgentFormat });
+      if (docMult !== 1) {
+        mult *= docMult;
+        details.push(`doc-comment-only:${docMult.toFixed(2)}`);
       }
     }
 
