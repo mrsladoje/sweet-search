@@ -1395,7 +1395,17 @@ export function applyResultDemotions(results, opts = {}) {
       ? resolveEntityKindInfo(result, opts)
       : null);
     const preferredType = normalizeType(preferredEntity?.type);
-    const shouldAdoptEntity = !!(preferredEntity?.startLine
+    // F8 (continued): when the chunk contains an entity matching the explicit
+    // symbol target (function name from "show me X function" queries), bypass
+    // the kind-keyword gate. Functions/methods aren't in ENTITY_KIND_KEYWORDS
+    // (which is struct/enum/class/interface/trait/type), so without bypass the
+    // relabel path was gated off for "show me X function" queries — defeating
+    // the purpose of having SYMBOL_DEFN_QUERY_RE recognise "function".
+    const shouldAdoptViaExactTarget = !!(exactSymbolTargetEntity
+      && exactSymbolTargetEntity.name
+      && exactSymbolTargetEntity.startLine
+      && exactSymbolTargetEntity.endLine);
+    const shouldAdoptEntity = shouldAdoptViaExactTarget || !!(preferredEntity?.startLine
       && preferredEntity?.endLine
       && (ENTITY_KIND_KEYWORDS[preferredKind] || []).map(normalizeType).includes(preferredType));
     const containedEntity = !shouldAdoptEntity && opts.codeGraphRepo && typeof opts.codeGraphRepo.findFirstEntityInRange === 'function'
