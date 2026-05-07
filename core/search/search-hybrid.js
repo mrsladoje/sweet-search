@@ -177,6 +177,7 @@ export async function hybridSearchV2(query, options = {}) {
     query,
     window: options.resultDemotionWindow ?? 100,
     ablations: options.ablations,
+    format: options.format,
     projectRoot: this.projectRoot,
     codeGraphRepo: this.codeGraphRepo,
   });
@@ -265,6 +266,7 @@ export async function hybridSearchV2(query, options = {}) {
         query,
         window: options.resultDemotionWindow ?? 100,
         ablations: options.ablations,
+        format: options.format,
         projectRoot: this.projectRoot,
         codeGraphRepo: this.codeGraphRepo,
       });

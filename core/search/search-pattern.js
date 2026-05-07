@@ -342,6 +342,7 @@ export async function patternSearch(query, routing, options = {}) {
   rankedResults = applyResultDemotions(rankedResults, {
     query,
     ablations,
+    format: options?.format,
     projectRoot: this.projectRoot,
     codeGraphRepo: this.codeGraphRepo,
   }).map((result, rank) => ({

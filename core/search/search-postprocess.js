@@ -508,6 +508,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
           cosineSimilarity: int8CosineSimilarity,
           codebaseDb: this.codebaseRepo,
           readFileLines,
+          format: options.format,
           ...(intentEdgeTypes && !graphExpandOptions.edgeTypes ? { edgeTypes: intentEdgeTypes } : {}),
           ...graphExpandOptions,
         });
@@ -782,6 +783,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     const afterDemotions = applyResultDemotions(results, {
       query,
       ablations: options.ablations,
+      format: options.format,
       projectRoot: this.projectRoot,
       codeGraphRepo: this.codeGraphRepo,
     });

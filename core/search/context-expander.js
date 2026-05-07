@@ -146,6 +146,7 @@ export function expandToSymbol(result, opts) {
   const origRange = `${origStart}-${origEnd}`;
   const chunkLines = (origEnd - origStart) + 1;
 
+
   // Check if chunk already looks like a complete symbol
   // (has a name/type and is > 10 lines — not just a signature fragment).
   // Even when no expansion is needed we still:
@@ -246,18 +247,39 @@ export function expandToSymbol(result, opts) {
     };
   }
 
+  // F5 (2026-05-07): when no enclosing entity exists for the chunk, fall back
+  // to the FIRST entity that starts within the chunk range. This catches cases
+  // like fastify lib/reply.js:64-225 where the chunk spans the Reply function
+  // (64-76) plus prototype methods later — no single entity contains the chunk,
+  // but Reply is the topmost identifier and matches the gold ("send" / "Reply"
+  // / "buildReply"). Only applies in fallback path where meta.name is also null.
+  let firstContained = null;
+  if (codeGraphRepo && typeof codeGraphRepo.findFirstEntityInRange === 'function' && !meta.name) {
+    try {
+      firstContained = codeGraphRepo.findFirstEntityInRange(filePath, origStart, origEnd);
+    } catch { firstContained = null; }
+  }
+
   // Try sibling chunk merge (contiguous chunks in the same file)
   const intervals = locationMap?.get(filePath);
   if (intervals && intervals.length > 1) {
     const merged = mergeSiblingChunks(intervals, origStart, origEnd, tokenCap);
     if (merged) {
+      // F5: when the merged range spans a previously-unseen entity, label it.
+      let mergedFirstContained = firstContained;
+      if (!meta.name && !mergedFirstContained && codeGraphRepo
+          && typeof codeGraphRepo.findFirstEntityInRange === 'function') {
+        try {
+          mergedFirstContained = codeGraphRepo.findFirstEntityInRange(filePath, merged.startLine, merged.endLine);
+        } catch { /* keep original firstContained */ }
+      }
       return {
         startLine: merged.startLine,
         endLine: merged.endLine,
         expanded: true,
         expandedFrom: origRange,
-        symbol: meta.name || null,
-        symbolType: meta.type || null,
+        symbol: meta.name || mergedFirstContained?.name || null,
+        symbolType: meta.type || mergedFirstContained?.type || null,
         kind: 'syntax',
       };
     }
@@ -279,13 +301,24 @@ export function expandToSymbol(result, opts) {
     fileCache, filePath, origStart, origEnd, tokenCap, projectRoot
   );
   if (syntaxExpanded) {
+    // F5: when syntax expansion enlarges the range, the new range may contain
+    // entities the raw chunk didn't. Re-lookup the first contained entity in
+    // the expanded range so chunks like fastify lib/reply.js:139-192 (no
+    // entities) → 64-225 (contains Reply at 64-76) get a meaningful symbol.
+    let syntaxFirstContained = firstContained;
+    if (!meta.name && !syntaxFirstContained && codeGraphRepo
+        && typeof codeGraphRepo.findFirstEntityInRange === 'function') {
+      try {
+        syntaxFirstContained = codeGraphRepo.findFirstEntityInRange(filePath, syntaxExpanded.startLine, syntaxExpanded.endLine);
+      } catch { /* keep firstContained */ }
+    }
     return {
       startLine: syntaxExpanded.startLine,
       endLine: syntaxExpanded.endLine,
       expanded: true,
       expandedFrom: origRange,
-      symbol: meta.name || null,
-      symbolType: meta.type || null,
+      symbol: meta.name || syntaxFirstContained?.name || null,
+      symbolType: meta.type || syntaxFirstContained?.type || null,
       kind: 'syntax',
     };
   }
@@ -296,8 +329,8 @@ export function expandToSymbol(result, opts) {
     endLine: origEnd,
     expanded: false,
     expandedFrom: null,
-    symbol: meta.name || null,
-    symbolType: meta.type || null,
+    symbol: meta.name || firstContained?.name || null,
+    symbolType: meta.type || firstContained?.type || null,
     kind: 'chunk',
   };
 }

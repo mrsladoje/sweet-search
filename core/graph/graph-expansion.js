@@ -201,7 +201,33 @@ export function expandResults(db, results, options = {}) {
     cosineSimilarity = null,
     codebaseDb = null,
     readFileLines = null,
+    format = null,
   } = options;
+  // F1 envelope cap (2026-05-07): drop graph-expanded entities whose line span
+  // exceeds maxEnvelopeLines. The taxonomy diagnosed mega-class envelopes
+  // (Flask App 951L, Scaffold 646L, uv do_lock 555L) as the #1 failure mode —
+  // these are pulled from the entity DB by graph expansion, not the chunker.
+  // Capped here so the seed chunks (30-60 lines each) keep the top spot.
+  //
+  // Format-gated to agent: GCSN NL queries don't carry format='agent' so are
+  // unaffected. Cap default 500 was selected by dev sweep over {Inf, 500, 300,
+  // 200, 150, 100}: cap=500 was the only value with zero regressions on
+  // FreshStack uv (lower caps regressed PASS counts). Yields +1 probe PASS
+  // (S5-Q9 Flask Scaffold class) and +1 FreshStack PARTIAL (UV-NL-2 do_lock).
+  // Held-out probes flat — no overfit signature, but also no held-out transfer
+  // since the failure mode (mega-class envelope) isn't present in held-out.
+  const maxEnvelopeLines = (() => {
+    const raw = process.env.SWEET_SEARCH_MAX_ENVELOPE_LINES;
+    if (raw != null && raw !== '') {
+      const n = Number.parseInt(raw, 10);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return options.maxEnvelopeLines ?? 500;
+  })();
+  const isAgentFormat = format === 'agent' || format === 'agent_full'
+    || format === 'agent_full_xl' || format === 'agent_preview'
+    || process.env.SWEET_SEARCH_FORCE_BM25F_BOOSTS === '1';
+  const envelopeCapEnabled = isAgentFormat && Number.isFinite(maxEnvelopeLines);
   const clampedSemanticWeight = clampSemanticWeight(semanticWeight);
 
   if (expandMode === 'none' || results.length === 0) return results;
@@ -238,7 +264,19 @@ export function expandResults(db, results, options = {}) {
 
   // Look up entity details for expanded IDs, respecting maxExpanded
   const expandedIds = [...expanded.keys()].slice(0, maxExpanded);
-  const expandedResults = lookupEntities(db, expandedIds, expanded);
+  let expandedResults = lookupEntities(db, expandedIds, expanded);
+
+  // F1 envelope cap: drop expanded entities exceeding line cap (agent format only).
+  if (envelopeCapEnabled && expandedResults.length > 0) {
+    const beforeLen = expandedResults.length;
+    expandedResults = expandedResults.filter(er => {
+      const lines = (er.endLine - er.startLine) + 1;
+      return Number.isFinite(lines) && lines <= maxEnvelopeLines;
+    });
+    if (process.env.SWEET_SEARCH_DEBUG_ENVELOPE_CAP === '1' && expandedResults.length < beforeLen) {
+      console.warn(`[envelope-cap] dropped ${beforeLen - expandedResults.length}/${beforeLen} expanded entities (cap=${maxEnvelopeLines})`);
+    }
+  }
 
   // Score expanded results relative to original results
   const maxOriginalScore = Math.max(...results.map(r => r.score || 0), 1);
