@@ -50,6 +50,18 @@ export function tokenize(text) {
   return [...new Set(String(text || '').toLowerCase().match(/[a-z_][a-z0-9_]{2,}/g) || [])];
 }
 
+// A/B knobs for ranking ablation. Read once at module load.
+//   SWEET_SEARCH_TRACE_NO_PPR=1 → drop the 0.20 directional PPR contribution.
+//   SWEET_SEARCH_TRACE_NO_PR=1  → drop the 0.10 static PageRank contribution.
+// These let probe runs isolate the marginal contribution of each graph signal
+// without rebuilding the index or maintaining a second worktree. Off by default.
+const NO_PPR = process.env.SWEET_SEARCH_TRACE_NO_PPR === '1';
+const NO_PR = process.env.SWEET_SEARCH_TRACE_NO_PR === '1';
+
+export function getAblationFlags() {
+  return { noPpr: NO_PPR, noPr: NO_PR };
+}
+
 export function hintScore(entity, hintTokens) {
   if (!hintTokens.length) return 0;
   const hay = `${entity.name} ${entity.type} ${entity.signature} ${entity.summary}`.toLowerCase();
@@ -85,11 +97,13 @@ export function scoreEntity(entity, ctx) {
   const proximity = 1 / Math.max(1, entity.depth || 1);
   const ppr = ctx.pprScores?.get?.(entity.id) || 0;
   const pageRank = ctx.pageRank?.get?.(entity.id) || 0;
+  const pprTerm = NO_PPR ? 0 : 0.20 * logNorm(ppr, ctx.maxPpr || 1);
+  const prTerm = NO_PR ? 0 : 0.10 * logNorm(pageRank, ctx.maxPageRank || 1);
   let score =
     0.20 * proximity +
     0.16 * rel +
-    0.20 * logNorm(ppr, ctx.maxPpr || 1) +
-    0.10 * logNorm(pageRank, ctx.maxPageRank || 1) +
+    pprTerm +
+    prTerm +
     0.10 * logNorm(fan.fanIn, ctx.maxFanIn || 1) +
     0.08 * (TYPE_WEIGHT[entity.type] ?? 0.5) +
     0.06 * (isExported(entity) ? 1 : 0) +
