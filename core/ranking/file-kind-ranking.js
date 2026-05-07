@@ -46,7 +46,22 @@ const DOCS_RE  = /\.md$|\.mdx$|\.rst$|(?:^|\/)docs?\//i;
 const EXAMPLES_RE = /(?:^|\/)examples?\//i;
 const TESTS_RE = /(?:^|\/)tests?\/|(?:^|\/)spec\/|\.test\.[a-z0-9]+$|_test\.[a-z0-9]+$|\.spec\.[a-z0-9]+$|_spec\.[a-z0-9]+$/i;
 const TYPES_RE = /\.d\.ts$|(?:^|\/)types\//i;
-const ANCILLARY_RE = /(?:^|\/)\.(?:github|gitlab|circleci|vscode|cursor)\/|(?:^|\/)(?:package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock|Gemfile\.lock)$|\.(?:ya?ml|jsonc?|toml|ini|cfg|conf|lock|xml|csv)$/i;
+// Ancillary files: configuration, lockfiles, CI manifests, container build
+// definitions. 2026-05-07 added Dockerfile / Containerfile / .dockerignore
+// after FreshStack uv UV-FLOW-2 surfaced a Dockerfile as top-1 for "what
+// happens end-to-end when I run uv sync". Containerfile descriptors are not
+// implementation code; demote consistently with .yaml/.toml/Cargo.lock
+// siblings.
+//
+// NOTE: Deliberately NOT including `Makefile` / `GNUmakefile` here even
+// though they are also build-orchestration. Probe S6-Q6 (gin) regressed
+// PASS→PARTIAL when gin's `Makefile` was demoted: classifying it shifted
+// the file-kind window's `demotableCount`, which cascaded through the
+// rerank into a different gin.go top-1 chunk pick. Treating Makefile as
+// implementation is the safer default — it rarely competes with real source
+// for top-1 anyway. Re-evaluate if a future probe shows Makefile actually
+// poisoning a top-1 result.
+const ANCILLARY_RE = /(?:^|\/)\.(?:github|gitlab|circleci|vscode|cursor)\/|(?:^|\/)(?:package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock|Gemfile\.lock|Dockerfile(?:\.[\w.-]+)?|Containerfile|\.dockerignore)$|\.(?:ya?ml|jsonc?|toml|ini|cfg|conf|lock|xml|csv|dockerfile)$/i;
 const DECLARATION_RE = /\b(function|class|struct|interface|enum|trait|fn\s+\w+|def\s+\w+|const\s+k[A-Z])\b|\btype\s+\w+\s*=/;
 const EXECUTABLE_DECLARATION_RE = /\b(function|class|struct|interface|enum|trait|fn\s+\w+|def\s+\w+|func\s+\w+)\b/;
 const STOPWORDS = new Set([
@@ -505,11 +520,22 @@ function envFloatRange(name, dflt) {
 }
 
 /**
- * Detect whether a Rust `impl` chunk is a "stub impl" — multiple short fn
- * definitions, none with a real body. Catches the clap-style flag-arg
- * pattern (each arg is an `impl Flag for X` whose `name_long`, `doc_short`,
- * etc. are 1-line literal returns), independent of whether `doc_long`
- * happens to carry a big raw-string description.
+ * Detect whether a Rust `impl` chunk is a "stub impl" — fn definitions with
+ * no real body. Catches two patterns:
+ *
+ *  (A) MULTI-METHOD stubs (original ac280d4 case): clap-style flag-arg impls
+ *      where every method is a 1-line literal return (e.g. `impl Flag for
+ *      CaseSensitive` whose 6 methods total ~6 body lines), independent of
+ *      whether `doc_long` carries a big raw-string description.
+ *
+ *  (B) SINGLE-METHOD trivial-body stubs (added 2026-05-07 — FreshStack uv
+ *      UV-FLOW-8 diagnosis): derive-equivalent impls like
+ *      `impl Clone for X { fn clone(&self) -> Self { Self {...} } }` with a
+ *      body of < 2 substantive lines. The original rule required ≥2 fns and
+ *      missed these single-method derive-style impls. Worth being conservative
+ *      here — Display::fmt is usually 3+ lines, From::from sometimes IS 1
+ *      line and is genuinely trivial. The 1.5-line cutoff fires only on
+ *      truly stub-grade single-fns (closer to derive macros than real impls).
  *
  * Returns the estimated average body line count, or `Infinity` if the chunk
  * contains no fn definitions. Lower = more stub-like.
@@ -520,7 +546,7 @@ export function avgFnBodyLines(text) {
   const matches = [];
   let m;
   while ((m = fnRe.exec(text)) !== null) matches.push(m.index);
-  if (matches.length < 2) return Infinity;
+  if (matches.length === 0) return Infinity;
   let totalBodyLines = 0;
   let counted = 0;
   for (const startIdx of matches) {
@@ -551,6 +577,13 @@ export function avgFnBodyLines(text) {
     counted++;
   }
   if (counted === 0) return Infinity;
+  // Single-fn impls with ≤1.5 substantive body lines (1 trivial line plus
+  // the closing brace, or a 1-line `Self { ... }` body) are derive-equivalent
+  // stubs (UV-FLOW-8 case: `impl Clone for X { fn clone(&self) -> Self { Self {...} } }`).
+  // Multi-fn impls keep the original average-body rule.
+  if (counted === 1) {
+    return totalBodyLines <= 1.5 ? totalBodyLines : Infinity;
+  }
   return totalBodyLines / counted;
 }
 
@@ -595,6 +628,71 @@ export function rawStringDensity(text) {
     i++;
   }
   return total === 0 ? 0 : inside / total;
+}
+
+/**
+ * Mega-chunk size penalty (added 2026-05-07 — 60-probe diagnosis).
+ *
+ * Long candidate chunks (entire 1500-line classes, 700-line module
+ * functions) systematically outscore precise 30-line chunks even when the
+ * latter contain the actual answer. The dense bi-encoder doesn't penalise
+ * length the way BM25's `b` parameter does, so a mega-chunk that touches
+ * many topics earns a moderate similarity to many queries.
+ *
+ * SOTA precedent: BM25 length normalization (Robertson & Zaragoza 2009),
+ * subsequently incorporated as length penalties in dense rerankers
+ * (ColBERTv2 token-budget caps, MS-MARCO-tuned cross-encoders). Soft
+ * piecewise-linear here rather than `1/(1 + b·L/L_avg)` because (a) we
+ * lack a per-corpus L_avg estimate at query time and (b) BM25-style
+ * normalization is too aggressive for long behavioural-flow chunks where
+ * length carries some signal.
+ *
+ * Tuning floor/slope to be PERMISSIVE — ONLY truly mega chunks lose score:
+ *   - L ≤ 500 lines → factor 1.0 (no penalty — every reasonable function chunk)
+ *   - L = 800       → ~0.91 (typical large class)
+ *   - L = 1000      → ~0.85
+ *   - L ≥ 1500      → 0.80 (floor — entire-file chunks)
+ *
+ * Tightened cutoff from 200 → 500 after S6-Q6 gin regression: a 40-line
+ * `New` function had been the right top-1, but penalising 200+ chunks
+ * shifted the within-file ranking. 500-line cutoff exempts every legit
+ * function/method chunk and only demotes whole-class megachunks.
+ *
+ * Override via env: SWEET_SEARCH_MEGA_CHUNK_CUTOFF (default 500),
+ * SWEET_SEARCH_MEGA_CHUNK_SLOPE (default 0.0003 per-line),
+ * SWEET_SEARCH_MEGA_CHUNK_FLOOR (default 0.80). Disable via
+ * SWEET_SEARCH_MEGA_CHUNK_FLOOR=1 (no-op) or
+ * `ablations: ['no-mega-chunk-penalty']`.
+ *
+ * Diagnosed cases (60-probe new-set):
+ *   - S5-Q10 flask: 1516-line `class Flask` chunk beat 30-line `abort` fn
+ *   - S4-Q2 fastify: 735-line `function fastify` chunk beat 1-line
+ *     `kRouteContext` symbol declaration
+ */
+function megaChunkSizePenalty(result, opts = {}) {
+  const floor = (() => {
+    const raw = process.env.SWEET_SEARCH_MEGA_CHUNK_FLOOR;
+    if (raw == null || raw === '') return opts.megaChunkFloor ?? 0.80;
+    const n = Number.parseFloat(raw);
+    return Number.isFinite(n) && n >= 0 && n <= 1 ? n : (opts.megaChunkFloor ?? 0.80);
+  })();
+  if (floor >= 1.0) return 1.0;  // disabled
+  const cutoff = (() => {
+    const raw = process.env.SWEET_SEARCH_MEGA_CHUNK_CUTOFF;
+    if (raw == null || raw === '') return opts.megaChunkCutoff ?? 500;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : (opts.megaChunkCutoff ?? 500);
+  })();
+  const slope = (() => {
+    const raw = process.env.SWEET_SEARCH_MEGA_CHUNK_SLOPE;
+    if (raw == null || raw === '') return opts.megaChunkSlope ?? 0.0003;
+    const n = Number.parseFloat(raw);
+    return Number.isFinite(n) && n >= 0 && n <= 0.01 ? n : (opts.megaChunkSlope ?? 0.0003);
+  })();
+
+  const lineCount = inferLineCount(result);
+  if (!Number.isFinite(lineCount) || lineCount <= cutoff) return 1.0;
+  return Math.max(floor, 1.0 - slope * (lineCount - cutoff));
 }
 
 function bodyDensityMultiplier(result, opts = {}) {
@@ -848,6 +946,14 @@ export function applyResultDemotions(results, opts = {}) {
       if (bodyMult !== 1) {
         mult *= bodyMult;
         details.push(`body-density:${bodyMult.toFixed(2)}`);
+      }
+    }
+
+    if (!hasAblation(ablations, 'no-mega-chunk-penalty')) {
+      const megaMult = megaChunkSizePenalty(result, opts);
+      if (megaMult !== 1) {
+        mult *= megaMult;
+        details.push(`mega-chunk:${megaMult.toFixed(2)}`);
       }
     }
 

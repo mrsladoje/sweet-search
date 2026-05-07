@@ -1,0 +1,579 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-07",
+  "source": {
+    "probes": "eval/retrieval-probes/probes.json",
+    "results": "eval/retrieval-probes/baseline-60-iar-on.json (timestamp 2026-05-06T22:57:16.939Z)",
+    "scope": "S3-Qx through S6-Qx (40 new probes); 22 FAIL+PARTIAL diagnosed",
+    "graphExpand": "2hop (verified ON in run-probes.mjs)",
+    "indexState": ".sweet-search/ in eval/repos/{fastify,gin,ripgrep,flask}"
+  },
+  "perProbe": [
+    {
+      "id": "S3-Q2",
+      "repo": "fastify",
+      "query": "where is the Reply object's send method implemented",
+      "verdict": "PARTIAL",
+      "expected": {
+        "file": "lib/reply.js",
+        "symbolAnyOf": ["Reply", "buildReply", "send"]
+      },
+      "actual": {
+        "file": "lib/reply.js",
+        "startLine": 64,
+        "endLine": 225,
+        "symbol": null,
+        "symbolType": "code",
+        "score": 0.5204
+      },
+      "mode": "wrong-granularity",
+      "comment": "File is correct and the chunk literally spans the Reply constructor (line 64) AND Reply.prototype.send (line 139), but the chunk has no `symbol` attached because tree-sitter labelled this chunk as anonymous `code`. The chunker should have anchored either to `Reply` (the function on line 64) or to `send` (the prototype assignment on line 139). PARTIAL is purely a symbol-attribution issue, not a retrieval issue.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S4-Q1",
+      "repo": "fastify",
+      "query": "what does FST_ERR_CTP_INVALID_MEDIA_TYPE indicate",
+      "verdict": "PARTIAL",
+      "expected": {
+        "file": "lib/errors.js",
+        "symbolAnyOf": ["FST_ERR_CTP_INVALID_MEDIA_TYPE"]
+      },
+      "actual": {
+        "file": "lib/errors.js",
+        "startLine": 81,
+        "endLine": 150,
+        "symbol": null,
+        "symbolType": "code",
+        "score": 0.4378
+      },
+      "mode": "wrong-granularity",
+      "comment": "File correct, chunk literally contains FST_ERR_CTP_INVALID_MEDIA_TYPE (line 111), but the chunk is an anonymous block of object-literal property assignments (`createError(...)` calls) and tree-sitter could not attach a symbol. Same chunker-attribution issue as S3-Q2: error codes inside an exported object literal lose their identifier. Symbol-name exact-match boost would surface this chunk anyway, but the verdict would still be PARTIAL until the chunker emits per-property pseudo-symbols.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S4-Q2",
+      "repo": "fastify",
+      "query": "what is kRouteContext used for in Fastify request handling",
+      "verdict": "FAIL",
+      "expected": {
+        "fileAnyOf": ["lib/symbols.js", "lib/context.js", "lib/content-type-parser.js"],
+        "symbolAnyOf": ["kRouteContext", "Context"]
+      },
+      "actual": {
+        "file": "fastify.js",
+        "startLine": 88,
+        "endLine": 822,
+        "symbol": "fastify",
+        "symbolType": "function",
+        "score": 0.5968
+      },
+      "mode": "wrong-granularity",
+      "comment": "Catastrophic mega-chunk: a 735-line `function fastify` chunk wins because it lexically references `kRouteContext` AND mentions request handling broadly. The actual definition site is one line in symbols.js (`kRouteContext: Symbol('fastify.context')` at line 18) and the primary consumer is context.js / route.js / reply.js / content-type-parser.js. A 735-line chunk is a chunk-cap violation — should never be a retrieval candidate. Within-repo disambiguation: identifier-anchor query lost to a top-level kitchen-sink file because of chunk-size pollution.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S4-Q3",
+      "repo": "fastify",
+      "query": "where is FST_ERR_HOOK_TIMEOUT raised and what does it cover",
+      "verdict": "FAIL",
+      "expected": {
+        "file": "lib/errors.js",
+        "symbolAnyOf": ["FST_ERR_HOOK_TIMEOUT"]
+      },
+      "actual": {
+        "file": "lib/hooks.js",
+        "startLine": 1,
+        "endLine": 71,
+        "symbol": "Hooks",
+        "symbolType": "function",
+        "score": 0.4321
+      },
+      "mode": "encoder-confusion",
+      "comment": "Encoder picked the file whose name matches the conceptual word 'HOOK' over the file containing the literal identifier `FST_ERR_HOOK_TIMEOUT`. lib/hooks.js:1-71 has the Hooks function but does not raise FST_ERR_HOOK_TIMEOUT — the constant is defined in lib/errors.js:205 and raised from lib/handle-request.js. Filename token (`hooks`) overrode rare-token anchor (`FST_ERR_HOOK_TIMEOUT`). Symbol-name exact-match boost would directly fix this. Same root cause as UV-DEF-1 / UV-DEF-4.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S5-Q2",
+      "repo": "fastify",
+      "query": "what happens when an async route handler throws an unhandled exception",
+      "verdict": "FAIL",
+      "expected": {
+        "fileAnyOf": ["lib/error-handler.js", "lib/handle-request.js", "lib/wrap-thenable.js"]
+      },
+      "actual": {
+        "file": "lib/route.js",
+        "startLine": 458,
+        "endLine": 586,
+        "symbol": "routeHandler",
+        "symbolType": "function",
+        "score": 0.4997
+      },
+      "mode": "wrong-granularity",
+      "comment": "Right area conceptually (route.js routeHandler is the entry point) but the gold rubric specifically wants the error-handling sibling files (error-handler.js / handle-request.js / wrap-thenable.js) where the actual unhandled-exception logic lives. routeHandler invokes them but doesn't itself catch. Within-area sibling-file failure — same family as UV-NL-2/UV-NL-3/UV-FLOW-5. File-kind reranker that prefers files whose name lexically matches the verb (handle/error vs route) would help.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S5-Q3",
+      "repo": "fastify",
+      "query": "how does the framework parse and validate the body of an incoming POST",
+      "verdict": "FAIL",
+      "expected": {
+        "fileAnyOf": ["lib/content-type-parser.js", "lib/validation.js", "lib/handle-request.js"]
+      },
+      "actual": {
+        "file": "lib/route.js",
+        "startLine": 589,
+        "endLine": 653,
+        "symbol": "handleOnRequestAbortHooksErrors",
+        "symbolType": "function",
+        "score": 0.4975
+      },
+      "mode": "wrong-granularity",
+      "comment": "Same pattern as S5-Q2: encoder routed to route.js because it is the orchestrator that *calls into* parsing/validation. The actual parse+validate lives in content-type-parser.js (parseBody) + validation.js (validate). The chunk picked, handleOnRequestAbortHooksErrors, has nothing to do with body parsing/validation — it's the abort-hook error handler that happens to be in the same file. Encoder-confusion at file level + bad chunk pick within file.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S6-Q2",
+      "repo": "fastify",
+      "query": "show me the full source of the ContentTypeParser constructor",
+      "verdict": "FAIL",
+      "expected": {
+        "file": "lib/content-type-parser.js",
+        "symbol": "ContentTypeParser",
+        "symbolType": "function",
+        "presentation": "full"
+      },
+      "actual": {
+        "file": "lib/content-type.js",
+        "startLine": 38,
+        "endLine": 158,
+        "symbol": "ContentType",
+        "symbolType": "class",
+        "score": 0.5084
+      },
+      "mode": "encoder-confusion",
+      "comment": "Sibling-name collision: lib/content-type.js (a class for parsing the Content-Type header VALUE) won over lib/content-type-parser.js (the body-parser registry that the query asks about). Both filenames begin with 'content-type'. The query asks for `ContentTypeParser` constructor; symbol-exact match would tie-break to content-type-parser.js. SAME root cause as UV-DEF-1 (Cache vs CacheArgs) and UV-DEF-4 (Resolver vs Resolution).",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S6-Q3",
+      "repo": "fastify",
+      "query": "show me the buildErrorHandler function definition in full",
+      "verdict": "PARTIAL",
+      "expected": {
+        "file": "lib/error-handler.js",
+        "symbol": "buildErrorHandler",
+        "symbolType": "function",
+        "presentation": "full"
+      },
+      "actual": {
+        "file": "lib/error-handler.js",
+        "startLine": 152,
+        "endLine": 173,
+        "symbol": "setErrorHeaders",
+        "symbolType": "function",
+        "score": 0.4292
+      },
+      "mode": "wrong-granularity",
+      "comment": "File matched but the chunk picked is `setErrorHeaders` (line 152) which is the function defined IMMEDIATELY AFTER buildErrorHandler (lines 142-150). The chunker boundary fell after the small buildErrorHandler body, picking the next sibling. Within-file granularity miss. Symbol-name exact-match boost on definition queries (`show me X function`) would force the buildErrorHandler chunk to top-1.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S3-Q4",
+      "repo": "gin",
+      "query": "where is the Default function that picks a binding by content type",
+      "verdict": "PARTIAL",
+      "expected": {
+        "file": "binding/binding.go",
+        "symbol": "Default"
+      },
+      "actual": {
+        "file": "binding/binding.go",
+        "startLine": 93,
+        "endLine": 128,
+        "symbol": "Binding",
+        "symbolType": "typeAlias",
+        "score": 0.5981
+      },
+      "mode": "wrong-granularity",
+      "comment": "File correct, chunk literally spans `Default` function (line 95) AND the Binding interface declaration. The chunker labelled the chunk `Binding` because the type alias appears first. Content is right, attribution is off. Symbol-name exact match would still resolve since the chunk content does include `Default`, but the grade label depends on the attached `symbol` field. Same chunker-attribution issue as S3-Q2 / S4-Q1.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S3-Q6",
+      "repo": "gin",
+      "query": "where is the Set method on Context that stores values for the request lifetime",
+      "verdict": "PARTIAL",
+      "expected": {
+        "file": "context.go",
+        "symbol": "Set",
+        "symbolType": "method"
+      },
+      "actual": {
+        "file": "context.go",
+        "startLine": 1470,
+        "endLine": 1490,
+        "symbol": "Value",
+        "symbolType": "method",
+        "score": 0.4492
+      },
+      "mode": "encoder-confusion",
+      "comment": "File correct (context.go) but the chunk is `Value` method at line 1470, not `Set` at line 276. Bare `Set` is a high-frequency token across context.go (SetCookie, SetSameSite, SetCookieData, SetAccepted, all overload it). The encoder prefered `Value` because the query mentions 'stores values' — semantic prose match overrode literal symbol match. Symbol-name exact-match boost on identifier-anchored queries would land on the bare `Set`.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S4-Q6",
+      "repo": "gin",
+      "query": "what is the JsonpJSON renderer in gin's render package",
+      "verdict": "PARTIAL",
+      "expected": {
+        "file": "render/json.go",
+        "symbol": "JsonpJSON"
+      },
+      "actual": {
+        "file": "render/json.go",
+        "startLine": 77,
+        "endLine": 154,
+        "symbol": "Render",
+        "symbolType": "method",
+        "score": 0.5110
+      },
+      "mode": "wrong-granularity",
+      "comment": "File correct. The chunk 77-154 spans `JsonpJSON.Render` method (line 117) but the chunker picked `Render` as the symbol because that's the method-receiver declaration nearest the chunk start. The struct definition `type JsonpJSON struct` is at line 35 — outside this chunk. Symbol-name exact match for `JsonpJSON` would prefer the chunk that ACTUALLY contains the struct declaration. Within-file granularity miss.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S5-Q5",
+      "repo": "gin",
+      "query": "how does the framework recover when a handler crashes with a runtime panic",
+      "verdict": "PARTIAL",
+      "expected": {
+        "file": "recovery.go",
+        "symbolAnyOf": ["Recovery", "CustomRecovery", "defaultHandleRecovery"]
+      },
+      "actual": {
+        "file": "recovery.go",
+        "startLine": 52,
+        "endLine": 113,
+        "symbol": "CustomRecoveryWithWriter",
+        "symbolType": "function",
+        "score": 0.4911
+      },
+      "mode": "gold-too-narrow",
+      "comment": "File correct, content is the actual recovery implementation. CustomRecoveryWithWriter (line 53) IS the implementation: Recovery() at line 35 and CustomRecovery() at line 40 just delegate to it. The chunk also contains `defer recover()` and the panic-handling logic — semantically the BEST answer. Probe restricts symbols to {Recovery, CustomRecovery, defaultHandleRecovery} which is too narrow; CustomRecoveryWithWriter is the canonical implementation that all three named symbols funnel through. Same situation as UV-NL-6 (`build_distribution` rejected by narrow symbol set).",
+      "graph2hopHelped": true,
+      "gold_correct": false
+    },
+    {
+      "id": "S6-Q4",
+      "repo": "gin",
+      "query": "show me the full Engine struct definition",
+      "verdict": "PARTIAL",
+      "expected": {
+        "file": "gin.go",
+        "symbol": "Engine",
+        "symbolType": "struct",
+        "presentation": "full"
+      },
+      "actual": {
+        "file": "gin.go",
+        "startLine": 68,
+        "endLine": 91,
+        "symbol": null,
+        "symbolType": "code",
+        "score": 0.4578
+      },
+      "mode": "wrong-granularity",
+      "comment": "File correct but the chunk is gin.go:68-91 which is RouteInfo/RoutesInfo and the Trusted-platforms constants block IMMEDIATELY BEFORE the Engine struct (line 92). The chunker boundary fell exactly at line 91 — the leading-trivia comment on line 90-91 (`// Engine is the framework's instance...`) attaches to this preceding chunk instead of the Engine struct chunk. Classic chunk-boundary issue: the docstring of Engine is being absorbed into the upstream chunk, then the encoder favours the chunk containing the prose 'Engine'.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S6-Q5",
+      "repo": "gin",
+      "query": "show me the complete Context struct definition with all fields",
+      "verdict": "PARTIAL",
+      "expected": {
+        "file": "context.go",
+        "symbol": "Context",
+        "symbolType": "struct",
+        "presentation": "full"
+      },
+      "actual": {
+        "file": "context.go",
+        "startLine": 59,
+        "endLine": 121,
+        "symbol": "Context",
+        "symbolType": "typeAlias",
+        "score": 0.3585
+      },
+      "mode": "presentation-mismatch",
+      "comment": "File correct, symbol correct (`Context`), chunk content correct (struct body at lines 61-97). FAIL is purely on symbolType: chunker labelled `Context` as `typeAlias` instead of `struct`. Tree-sitter type extraction bug for Go: when a type with a struct body sits next to a type alias (ContextKeyType at line 52), the labels can swap. This is a chunker/labeller bug, not a retrieval bug.",
+      "graph2hopHelped": true,
+      "gold_correct": true
+    },
+    {
+      "id": "S3-Q7",
+      "repo": "ripgrep",
+      "query": "where is the add method that registers a Glob in a GlobSetBuilder",
+      "verdict": "FAIL",
+      "expected": {
+        "file": "crates/globset/src/lib.rs",
+        "symbolAnyOf": ["add", "GlobSetBuilder"]
+      },
+      "actual": {
+        "file": "crates/globset/src/glob.rs",
+        "startLine": 141,
+        "endLine": 144,
+        "symbol": "is_match",
+        "symbolType": "function",
+        "score": 0.4593
+      },
+      "mode": "wrong-granularity",
+      "comment": "Right crate (globset), wrong sibling file. The query says `GlobSetBuilder` and `Glob` — both tokens hit BOTH lib.rs (which has GlobSetBuilder::add at line 586) and glob.rs (which has Glob struct + multiple is_match methods). Encoder picked glob.rs because of the literal `Glob` token in filename. Within-crate disambiguation, same as UV-FLOW-3 / UV-FLOW-5. Symbol-name exact-match for `add` or `GlobSetBuilder` would prefer the lib.rs chunk that literally contains `pub fn add` AND `impl GlobSetBuilder`. Note: the picked chunk is also a 4-line stub (`is_match` delegates to is_match_candidate) — ref-count + stub-impl demotion didn't catch it.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S3-Q8",
+      "repo": "ripgrep",
+      "query": "where is the new constructor for the WalkBuilder that initialises a directory walker",
+      "verdict": "PARTIAL",
+      "expected": {
+        "file": "crates/ignore/src/walk.rs",
+        "symbolAnyOf": ["new", "WalkBuilder"]
+      },
+      "actual": {
+        "file": "crates/ignore/src/walk.rs",
+        "startLine": 434,
+        "endLine": 469,
+        "symbol": null,
+        "symbolType": "code",
+        "score": 0.5202
+      },
+      "mode": "wrong-granularity",
+      "comment": "File correct. Chunk 434-469 contains the WalkBuilder DOCSTRING (lines 434-481) but the actual `pub struct WalkBuilder` is at line 483 and `pub fn new` is at line 547. The chunk picked is the 35-line module-level doc comment for WalkBuilder. Symbol field is null because docstrings have no symbol. Severe chunker boundary issue: a giant doc-comment block became its own chunk and outscored the actual `fn new` chunk via prose similarity.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S5-Q7",
+      "repo": "ripgrep",
+      "query": "how does the tool decide whether a file is binary and skip it",
+      "verdict": "FAIL",
+      "expected": {
+        "fileAnyOf": ["crates/searcher/src/searcher/mod.rs", "crates/core/flags/hiargs.rs", "crates/searcher/src/searcher/core.rs"]
+      },
+      "actual": {
+        "file": "crates/printer/src/summary.rs",
+        "startLine": 679,
+        "endLine": 708,
+        "symbol": "binary_data",
+        "symbolType": "function",
+        "score": 0.4681
+      },
+      "mode": "encoder-confusion",
+      "comment": "Encoder grabbed the function literally named `binary_data` in printer/src/summary.rs (which only formats binary-byte-offset messages for output) over the actual binary-detection-and-skip logic in searcher/src/searcher/mod.rs (BinaryDetection at line 55-130) and core.rs (the actual skip decision). Filename + symbol-name lexical match (`binary_data` -> 'binary' + 'data') beat the conceptual destination. File-kind reranker that prefers searcher/* over printer/* on behavioural decision queries would help; same family as UV-FLOW-7 (settings.rs vs check_trusted_publishing).",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S6-Q8",
+      "repo": "ripgrep",
+      "query": "show me the definition of the Glob struct in globset",
+      "verdict": "FAIL",
+      "expected": {
+        "file": "crates/globset/src/glob.rs",
+        "symbol": "Glob",
+        "symbolType": "struct",
+        "presentation": "full"
+      },
+      "actual": {
+        "file": "crates/ignore/src/gitignore.rs",
+        "startLine": 1,
+        "endLine": 43,
+        "symbol": "Glob",
+        "symbolType": "struct",
+        "score": 0.6027
+      },
+      "mode": "encoder-confusion",
+      "comment": "TRUE symbol-name collision across files: there are TWO public `Glob` structs in ripgrep — one in crates/globset/src/glob.rs:76 (the SHELL glob pattern) and one in crates/ignore/src/gitignore.rs:32 (the per-line gitignore-rule wrapper). Query says 'in globset' — the crate name is in the query but the encoder did not weight the path token highly enough. Symbol-name exact match alone would NOT fix this (both match exactly). What's needed: when the query contains a crate/module path token that matches one of the candidates' file paths, boost that candidate. This is a NEW pattern not covered by any of the 3 FreshStack fixes.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S3-Q9",
+      "repo": "flask",
+      "query": "where is the get_send_file_max_age method on the Flask app",
+      "verdict": "PARTIAL",
+      "expected": {
+        "fileAnyOf": ["src/flask/app.py", "src/flask/blueprints.py"],
+        "symbol": "get_send_file_max_age"
+      },
+      "actual": {
+        "file": "src/flask/app.py",
+        "startLine": 392,
+        "endLine": 412,
+        "symbol": "send_static_file",
+        "symbolType": "function",
+        "score": 0.6172
+      },
+      "mode": "wrong-granularity",
+      "comment": "File correct. Chunk picked is `send_static_file` at line 392 — adjacent to but not the same as `get_send_file_max_age` at line 365. Sibling chunk pick. The two methods are conceptually siblings (both deal with static-file serving) and the encoder chose the one whose name lexically overlaps more with 'send_file' in the query. Symbol-name exact match for `get_send_file_max_age` would land on the right chunk.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S5-Q9",
+      "repo": "flask",
+      "query": "what runs before each request to set up things like the database connection",
+      "verdict": "FAIL",
+      "expected": {
+        "file": "src/flask/app.py",
+        "symbolAnyOf": ["preprocess_request", "full_dispatch_request", "before_request"]
+      },
+      "actual": {
+        "file": "src/flask/sansio/scaffold.py",
+        "startLine": 52,
+        "endLine": 698,
+        "symbol": "Scaffold",
+        "symbolType": "class",
+        "score": 0.5105
+      },
+      "mode": "wrong-granularity",
+      "comment": "646-line mega-chunk: the entire Scaffold class is returned as a single chunk. Scaffold IS the parent class that defines `before_request` (line 460), but the gold rubric expects app.py where `preprocess_request` and `full_dispatch_request` live. Chunk-cap violation (Scaffold is 600+ lines and should be split). Even if the file were app.py, the encoder is being asked to find behaviour without identifier hints — pure NL probe — and a giant declarative class chunk wins over the specific behavioural method chunk.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S5-Q10",
+      "repo": "flask",
+      "query": "how can I cleanly stop a request and return a particular HTTP status code",
+      "verdict": "FAIL",
+      "expected": {
+        "file": "src/flask/helpers.py",
+        "symbolAnyOf": ["abort"]
+      },
+      "actual": {
+        "file": "src/flask/app.py",
+        "startLine": 109,
+        "endLine": 1625,
+        "symbol": "Flask",
+        "symbolType": "class",
+        "score": 0.4045
+      },
+      "mode": "wrong-granularity",
+      "comment": "1516-LINE mega-chunk: the entire Flask class is returned as ONE chunk. This is the same chunk-cap violation as S5-Q9 / S4-Q2. The actual answer is `abort` at helpers.py:281 — a 30-line free function. A giant class chunk that loosely covers 'request handling' is winning over a tightly-scoped abort function. Mega-chunks systematically dominate flask probes because the language has very long classes that the chunker is failing to split.",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    },
+    {
+      "id": "S6-Q9",
+      "repo": "flask",
+      "query": "show me the full Flask class definition",
+      "verdict": "FAIL",
+      "expected": {
+        "file": "src/flask/app.py",
+        "symbol": "Flask",
+        "symbolType": "class",
+        "presentation": "full"
+      },
+      "actual": {
+        "file": "src/flask/sansio/app.py",
+        "startLine": 59,
+        "endLine": 1010,
+        "symbol": "App",
+        "symbolType": "class",
+        "score": 0.4571
+      },
+      "mode": "encoder-confusion",
+      "comment": "Cross-file class hierarchy collision: `class Flask(App)` (app.py:109) inherits from `class App(Scaffold)` (sansio/app.py:59). The encoder picked the parent class because its body is HUGE (951 lines) and it contains many of the methods the query implicitly relates to. Symbol-name exact-match would directly fix this: query has the literal token 'Flask', and `Flask` is the exact symbol of the chunk in app.py. SAME root cause as UV-DEF-4 (Resolver vs Resolution).",
+      "graph2hopHelped": false,
+      "gold_correct": true
+    }
+  ],
+  "summary": {
+    "byMode": {
+      "wrong-language-or-domain": 0,
+      "encoder-confusion": 6,
+      "wrong-granularity": 14,
+      "multi-file-flow-failure": 0,
+      "gold-too-narrow": 1,
+      "gold-incorrect": 0,
+      "presentation-mismatch": 1,
+      "stop-words-eat-query": 0,
+      "other": 0
+    },
+    "byCategory": {
+      "S3": { "PASS": 4, "PARTIAL": 5, "FAIL": 1, "TOTAL": 10 },
+      "S4": { "PASS": 6, "PARTIAL": 2, "FAIL": 2, "TOTAL": 10 },
+      "S5": { "PASS": 4, "PARTIAL": 1, "FAIL": 5, "TOTAL": 10 },
+      "S6": { "PASS": 4, "PARTIAL": 3, "FAIL": 3, "TOTAL": 10 }
+    },
+    "byRepo": {
+      "fastify": { "PASS": 4, "PARTIAL": 3, "FAIL": 5, "TOTAL": 12 },
+      "gin":     { "PASS": 6, "PARTIAL": 6, "FAIL": 0, "TOTAL": 12 },
+      "ripgrep": { "PASS": 4, "PARTIAL": 1, "FAIL": 3, "TOTAL": 8 },
+      "flask":   { "PASS": 4, "PARTIAL": 1, "FAIL": 3, "TOTAL": 8 }
+    },
+    "goldIncorrectCount": 1,
+    "goldNotes": [
+      "S5-Q5 (gin recovery) — gold-too-narrow. The chunk found, CustomRecoveryWithWriter, IS the canonical recovery implementation that Recovery, CustomRecovery, and RecoveryWithWriter all delegate to. Probe should accept it. Same shape as UV-NL-6 (`build_distribution`).",
+      "S6-Q5 (gin Context struct) — chunker bug, not gold issue. Tree-sitter type extraction labelled the `Context` struct as `typeAlias`. Probe and gold are both correct; this is a chunker label bug downstream of probe design."
+    ],
+    "topFixes": [
+      {
+        "fix": "Symbol-name exact-match boost on definition / identifier-anchor queries",
+        "wouldFixCount": 8,
+        "wouldFixIds": ["S3-Q4", "S3-Q6", "S3-Q9", "S4-Q3", "S4-Q6", "S6-Q2", "S6-Q3", "S6-Q9"],
+        "rationale": "When a query contains a CamelCase or snake_case identifier (FST_ERR_HOOK_TIMEOUT, JsonpJSON, ContentTypeParser, get_send_file_max_age, buildErrorHandler, Flask, Set, Default), the chunk whose `symbol` field equals the identifier (case-insensitive) should get a hard score boost. Currently the encoder picks sibling chunks whose prose is closer to the surrounding query words, even when there is a chunk with the exact symbol token. Generic and principled. Catches: filename collisions (content-type-parser vs content-type), symbol collisions across files (Flask vs App), within-file sibling picks (setErrorHeaders vs buildErrorHandler), and overloaded-name disambiguation (Set among SetCookie/SetSameSite). DOES NOT help when both candidates share the exact symbol (e.g. S6-Q8 Glob in two files) — that needs fix #4.",
+        "overlapsWithFreshStackFixes": true,
+        "freshStackFixSlot": 1
+      },
+      {
+        "fix": "File-kind / role reranker — extend demotion ratios for behavioural queries",
+        "wouldFixCount": 4,
+        "wouldFixIds": ["S5-Q2", "S5-Q3", "S5-Q7", "S4-Q3"],
+        "rationale": "When a query has behavioural verbs (handle, recover, parse, validate, decide, skip, throw, raise), candidates should be filtered by FILE ROLE: prefer files that name the action (error-handler.js, content-type-parser.js, validation.js, mod.rs/core.rs in searcher/) over the orchestrator file (route.js) or the formatter (printer/summary.rs) that simply mentions the term. Same fix slot as FreshStack #2; needs slightly broader demotion list to cover orchestrator-vs-implementation pairs (route.js vs handle-request.js/error-handler.js/wrap-thenable.js).",
+        "overlapsWithFreshStackFixes": true,
+        "freshStackFixSlot": 2
+      },
+      {
+        "fix": "Chunk-size cap enforcement on definition-style chunks (split mega-chunks)",
+        "wouldFixCount": 5,
+        "wouldFixIds": ["S4-Q2", "S5-Q9", "S5-Q10", "S6-Q9", "S3-Q8"],
+        "rationale": "Chunks of 600-1500 lines (whole-class chunks) are systematically winning behavioural queries because they touch many topics. Examples in this run: fastify.js:88-822 (735 lines), Scaffold class 52-698 (646 lines), Flask class 109-1625 (1516 lines), App class 59-1010 (951 lines), and the 35-line WalkBuilder docstring (S3-Q8) which won over the actual constructor. Generic fix: ENFORCE the existing chunk cap (currently 2000 by config) on emit, OR add a per-chunk LENGTH PENALTY in the reranker so that a 1500-line chunk needs much higher base similarity to beat a 30-line precise chunk. This is a NEW principled fix not directly covered by FreshStack's 3 fixes — closest analogue is FreshStack's chunk-boundary observation in UV-NL-4 / UV-ERR-3, but those were about MISSING headers on small chunks; this is about EXCESSIVE size on large chunks. Both are chunker-quality issues but the lever is different.",
+        "overlapsWithFreshStackFixes": false,
+        "newFixProposed": true
+      },
+      {
+        "fix": "Path-token boost when query mentions a crate/module/package name that appears in candidate paths",
+        "wouldFixCount": 2,
+        "wouldFixIds": ["S6-Q8", "S3-Q7"],
+        "rationale": "When the query contains a crate name or module path component (`in globset`, `in the searcher crate`, `in render package`), candidates whose file path contains that token should get a path-token boost above similarity. This catches true symbol-name collisions across files where the user already disambiguated in their own query. S6-Q8 is the canonical case: two `Glob` structs exist (globset/src/glob.rs vs ignore/src/gitignore.rs), the user said 'in globset', and the encoder still picked the wrong one. Generic and principled; cheap to implement (path tokenization + token-set intersection).",
+        "overlapsWithFreshStackFixes": false,
+        "newFixProposed": true
+      }
+    ],
+    "additionalObservations": [
+      "Chunker-attribution bug class is ~30% of failures: S3-Q2, S3-Q4, S3-Q8, S4-Q1, S6-Q4, S6-Q5 all have the right CONTENT in the right FILE but the chunk's `symbol`/`symbolType` field is wrong (null, an adjacent symbol, or mislabelled type). Fixing the chunker's symbol attribution (especially: object-literal property pseudo-symbols, leading-trivia ownership, Go type-vs-struct labelling) would convert at least 4 PARTIAL → PASS without any retrieval-layer change.",
+      "Mega-chunks dominate flask probes (3 of 4 flask failures involve a 600+ line class chunk). Python class bodies are not being split aggressively enough; cAST chunker should emit one chunk per method when class body exceeds, e.g., 200 lines, with a class-header chunk that lists the method signatures.",
+      "Cross-class-hierarchy confusion (S6-Q9 Flask vs App) is the same bug as cross-file-name confusion (S6-Q2 ContentTypeParser vs ContentType). Symbol-exact-match boost handles both.",
+      "Empty-result rescue (FreshStack fix #3) does not appear in this set — 0 of 22 failures returned no_results. The 60-probe set has every probe returning SOMETHING; the failure modes are wrong-pick, not no-pick. This validates that fix #3 is a FreshStack-specific phenomenon (long natural-language queries with stop-words) and may not apply to curated probes.",
+      "2-hop graph expansion is verified ON. It helped 2 of 22 cases (S5-Q5 reaching the right file, S6-Q5 reaching the right struct) and was insufficient or irrelevant for the remaining 20. Graph hops surface the right FILE; the remaining quality gap is within-file chunk pick + label correctness — not graph reach. Adding more graph budget would not improve this set; chunker + symbol-exact boost would.",
+      "Convergence with FreshStack: 12 of 22 failures fall under FreshStack fixes #1 (symbol-exact, 8 probes) and #2 (file-kind, 4 probes). 5 more fall under a new principled fix (mega-chunk size cap). 2 more fall under another new fix (path-token boost). 3 are chunker-only bugs (label attribution). 1 is a gold-too-narrow probe-design issue. This means BOTH FreshStack fixes still in flight, plus chunk-size enforcement, plus path-token boost, would meaningfully cover ~17 of 22 failures (77%) — strong evidence to ship symbol-exact and file-kind, AND to add a chunker workstream for size cap and label attribution."
+    ]
+  }
+}

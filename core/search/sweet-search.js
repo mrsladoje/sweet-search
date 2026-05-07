@@ -546,6 +546,57 @@ export class SweetSearch {
       effectiveGraphExpand = '2hop';
     }
 
+    // Empty-result rescue (added 2026-05-07 — FreshStack uv diagnosis).
+    // The joint hybrid pipeline can return [] in two cascading-failure
+    // scenarios:
+    //   (a) BM25 lexical returns nothing (FTS5 tokenization quirk on multi-
+    //       word NL queries with stop-words like "trace how X uses Y"), AND
+    //   (b) the dense path returns candidates that ALL trip post-fusion
+    //       demotions to ≈0 score, AND
+    //   (c) RRF fallback inside hybridSearchV2 also produces nothing because
+    //       its keyword splitter sees the same FTS-empty result.
+    // Diagnosed on UV-FLOW-1 / UV-FLOW-4 (post-cutoff uv): both well-formed
+    // NL queries with concrete tokens (uv, add, dependency, pyproject, toml)
+    // returned in 3ms. That is a query-pipeline pathology, not a corpus gap.
+    // The principled fix (cascading retrieval — Thakur et al. BEIR 2024;
+    // Lin & Ma "Tiered Retrieval" 2025): when all upstream paths produce
+    // empty, fall back to ONE pure-dense call on the raw query string with
+    // no rerank, no graph, no fusion — this guarantees we always return
+    // something for any NL query the encoder can embed. Disable via
+    // `ablations: ['no-empty-rescue']`.
+    const emptyRescueAllowed = !(options.ablations && (
+      options.ablations instanceof Set
+        ? options.ablations.has('no-empty-rescue')
+        : Array.isArray(options.ablations) && options.ablations.includes('no-empty-rescue')
+    ));
+    if (emptyRescueAllowed
+        && Array.isArray(results)
+        && results.length === 0
+        && (searchMode === 'hybrid' || searchMode === 'semantic' || searchMode === 'lexical')
+        && expand) {
+      try {
+        const rescue = await this.semanticSearch(query, {
+          k: Math.max(k, 10),
+          rerank: false,
+          useLateInteraction: false,
+        });
+        const rescuedResults = rescue.results || [];
+        if (rescuedResults.length > 0) {
+          results = rescuedResults.map(r => ({ ...r, searchPath: 'empty-rescue-dense' }));
+          stats.emptyRescue = {
+            triggered: true,
+            recovered: rescuedResults.length,
+            mode: 'pure-dense-raw',
+          };
+          this.log(`Empty-rescue: hybrid returned 0; pure-dense recovered ${rescuedResults.length} candidates`);
+        } else {
+          stats.emptyRescue = { triggered: true, recovered: 0 };
+        }
+      } catch (err) {
+        stats.emptyRescue = { triggered: true, error: err.message };
+      }
+    }
+
     // Step 3: Post-retrieval processing (delegated to extracted module)
     const postRetrievalResult = await this._applyPostRetrieval(results, query, options, {
       stats, semanticStats, searchMode, effectiveGraphExpand, intentPolicy, start, fromSearch: true,
