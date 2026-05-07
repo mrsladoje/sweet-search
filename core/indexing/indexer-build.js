@@ -11,6 +11,7 @@ import path from 'path';
 import { DB_PATHS, EMBEDDING_CONFIG, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { GraphExtractor, createGraphSchema, insertGraph } from '../graph/graph-extractor.js';
 import { resolveRelationshipTargets } from '../graph/relationship-resolver.js';
+import { populatePageRankColumn } from '../graph/structural-pagerank.js';
 import { getEmbeddings, getModelInfo } from '../embedding/embedding-service.js';
 import { configureJournalMode, checkpointWal, atomicSwapDatabase, log, logProgress } from './indexer-utils.js';
 
@@ -186,6 +187,14 @@ export async function buildCodeGraph(files, dryRun = false) {
 
   log('Resolving relationship targets...', 'yellow');
   const resolutionStats = resolveRelationshipTargets(db);
+
+  log('Computing entity PageRank for structural ranking...', 'yellow');
+  try {
+    const prStats = populatePageRankColumn(db);
+    log(`✓ PageRank populated: ${prStats.written}/${prStats.entities} entities in ${prStats.ms}ms`, 'green');
+  } catch (err) {
+    log(`⚠ PageRank population failed (non-fatal): ${err.message}`, 'yellow');
+  }
 
   // Update query planner statistics before closing (SQLite 3.46+).
   // Best-effort only; failure should not strand the temp DB handle.

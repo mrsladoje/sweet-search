@@ -7,6 +7,7 @@ import { findAliasCallers } from './structural-alias-resolver.js';
 import { rankStructuralCandidates } from './structural-candidate-ranker.js';
 import { findAssignedMemberDefinitions, findSameFileDefinition } from './structural-source-definitions.js';
 import { shouldTrustQualifiedResolution } from './structural-qualified-resolution.js';
+import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } from './structural-graph-signals.js';
 const ACTIVE = 'stale_since IS NULL';
 
 function clampLimit(value, fallback, max) {
@@ -422,6 +423,21 @@ export class StructuralContextRepository {
       if (out.has(row.id)) out.get(row.id).fanOut = row.n || 0;
     }
     return out;
+  }
+
+  /** Precomputed PageRank values for a batch of entity IDs (0 for missing). */
+  getPageRank(entityIds) {
+    return fetchPageRank(this._open(), entityIds);
+  }
+
+  /** One-hop reverse edges (callers) for Forward Push backward subgraph. */
+  getFrontierBackwardEdges(frontierIds, opts = {}) {
+    return fetchFrontierBackwardEdges(this._open(), frontierIds, opts);
+  }
+
+  /** One-hop forward edges (callees) for Forward Push forward subgraph. */
+  getFrontierForwardEdges(frontierIds, opts = {}) {
+    return fetchFrontierForwardEdges(this._open(), frontierIds, opts);
   }
 
   findSameFileDefinition(name, filePath) { return findSameFileDefinition({ name, filePath, readFileRange: this.readFileRange.bind(this) }); }

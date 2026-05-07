@@ -5,17 +5,43 @@
   "seed": 42,
   "devRatio": 0.6,
   "stratifyBy": "repo",
-  "total": 20,
+  "total": 40,
   "counts": {
-    "fastify": { "dev": 3, "heldout": 2 },
-    "flask": { "dev": 3, "heldout": 2 },
-    "gin": { "dev": 3, "heldout": 2 },
-    "ripgrep": { "dev": 3, "heldout": 2 }
+    "fastify": { "dev": 6, "heldout": 4 },
+    "flask": { "dev": 6, "heldout": 4 },
+    "gin": { "dev": 6, "heldout": 4 },
+    "ripgrep": { "dev": 6, "heldout": 4 }
   },
   "totals": {
-    "dev": 12,
-    "heldout": 8
+    "dev": 24,
+    "heldout": 16
   },
   "heldoutPolicy": "Do not inspect per-task heldout failures during development; use aggregate metrics only.",
+  "expansion": {
+    "round": "2026-05-08-doubling",
+    "previousTotal": 20,
+    "addedTaskIds": [
+      "fastify:decorate-callers",
+      "fastify:add-hook-callees",
+      "fastify:register-impact",
+      "fastify:inject-callers",
+      "fastify:content-type-parser-impact",
+      "gin:use-callers",
+      "gin:group-callees",
+      "gin:default-engine-callees",
+      "gin:bind-impact",
+      "gin:abort-with-status-callers",
+      "flask:dispatch-request-callees",
+      "flask:before-request-callers",
+      "flask:wsgi-app-impact",
+      "flask:url-map-callees",
+      "flask:full-dispatch-impact",
+      "ripgrep:searcher-search-impact",
+      "ripgrep:walker-callees",
+      "ripgrep:regex-builder-impact",
+      "ripgrep:binary-detection-callers",
+      "ripgrep:standard-printer-callees"
+    ]
+  },
   "generatedAt": "<deterministic — seed 42>"
 }
