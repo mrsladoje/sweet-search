@@ -9,15 +9,22 @@
 //
 // Each probe family asks one yes/no question about the top-K of a trace:
 //
-//   tests_demoted     — for symbols with ≥1 test-caller AND ≥3 prod callers,
-//                        no test caller should appear in top-3.
-//   prod_first        — for symbols with ≥3 prod callers, top-3 callers
-//                        should all be from production paths.
-//   pagerank_anchored — for the top-fan-in symbols, the highest-PR caller
-//                        should appear in top-3 (validates PR contribution).
-//   callee_diverse    — for symbols with ≥3 callees, top-3 callees should
-//                        span ≥2 distinct files (validates that directional
-//                        PPR doesn't collapse to one leaf utility).
+//   tests_demoted              — for symbols with ≥1 test-caller AND ≥3 prod
+//                                 callers, no test caller should appear in
+//                                 top-3 callers.
+//   prod_first                 — for symbols with ≥3 prod callers, top-3
+//                                 callers should all be from production paths.
+//   pagerank_anchored          — for the top-fan-in symbols, the highest-PR
+//                                 caller should appear in top-3 (validates PR
+//                                 contribution).
+//   callees_no_test_pollution  — mirror of tests_demoted for callees: when a
+//                                 symbol has ≥1 prod callee AND ≥1 test-path
+//                                 callee in the raw graph, the trace's top-3
+//                                 callees should not include test paths.
+//                                 Replaces the earlier callee_diverse family
+//                                 (DEC-001), which punished correct file
+//                                 locality and correct rejection of wrong
+//                                 dynamic-dispatch resolutions.
 //
 // Each family can be enabled/disabled independently; aggregate pass rate is
 // reported per family so a regression on one family is visible.
@@ -131,14 +138,19 @@ export function generateRankingProbes({ dbPath, config = {} }) {
         }
       }
       const callees = calleeSummary(db, sym.id);
-      const calleeFiles = new Set(callees.map(c => c.file_path).filter(Boolean));
-      if (callees.length >= 3 && calleeFiles.size >= 2) {
+      const prodCallees = callees.filter(c => c.file_path && !isTestPath(c.file_path));
+      const testCallees = callees.filter(c => c.file_path && isTestPath(c.file_path));
+      if (callees.length >= 3 && prodCallees.length >= 1 && testCallees.length >= 1) {
         probes.push({
-          family: 'callee_diverse',
+          family: 'callees_no_test_pollution',
           symbol: sym.name,
           file: sym.file_path,
-          expect: { topKDistinctFiles: { k: 3, min: 2 } },
-          meta: { calleeCount: callees.length, calleeFileCount: calleeFiles.size },
+          expect: { calleeTopKExcludesTestPaths: 3 },
+          meta: {
+            calleeCount: callees.length,
+            prodCallees: prodCallees.length,
+            testCallees: testCallees.length,
+          },
         });
       }
       if (probes.length >= (config.maxProbes ?? 400)) break;
@@ -185,10 +197,12 @@ export function gradeProbe(probe, trace) {
     }
     return { pass: true };
   }
-  if (exp.topKDistinctFiles) {
-    const { k, min } = exp.topKDistinctFiles;
-    const files = new Set(callees.slice(0, k).map(item => item.file).filter(Boolean));
-    if (files.size < min) return { pass: false, reason: `callee_files_${files.size}_below_${min}` };
+  if (exp.calleeTopKExcludesTestPaths) {
+    const k = exp.calleeTopKExcludesTestPaths;
+    const top = callees.slice(0, k);
+    if (!top.length) return { pass: false, reason: 'no_callees_returned' };
+    const offender = top.find(item => isTestPath(item.file));
+    if (offender) return { pass: false, reason: `test_callee_in_top_${k}: ${offender.file}` };
     return { pass: true };
   }
   return { pass: false, reason: 'unknown_expectation' };
