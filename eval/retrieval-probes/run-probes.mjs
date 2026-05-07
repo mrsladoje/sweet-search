@@ -133,7 +133,16 @@ async function runOne(searcher, probe) {
   const start = Date.now();
   let response, top1, gradeResult, error = null;
   try {
-    response = await searcher.search(probe.query, { format: 'agent', k: 5 });
+    // graphExpand defaults to 'none' but production hybrid auto-promotes to
+    // '2hop' (sweet-search.js:544-547) when expand=true (default).
+    // Pass explicitly so the probe runner mirrors production behaviour
+    // unambiguously instead of relying on the auto-promote chain firing.
+    response = await searcher.search(probe.query, {
+      format: 'agent',
+      k: 5,
+      graphExpand: '2hop',
+      adaptiveHop2: true,
+    });
     top1 = response?.results?.[0] || null;
     gradeResult = gradeProbe(probe, top1);
   } catch (err) {
