@@ -2,11 +2,19 @@
   "ids": [
     "fastify:error-handler-impact",
     "fastify:handle-request-callees",
+    "fastify:inject-callers",
+    "fastify:content-type-parser-impact",
     "flask:add-url-rule-impact",
     "flask:http-exception-impact",
+    "flask:url-map-callees",
+    "flask:full-dispatch-impact",
     "gin:add-route-callers",
     "gin:custom-recovery-impact",
+    "gin:bind-impact",
+    "gin:abort-with-status-callers",
     "ripgrep:regex-error-impact",
-    "ripgrep:sink-trait-callers"
+    "ripgrep:sink-trait-callers",
+    "ripgrep:binary-detection-callers",
+    "ripgrep:standard-printer-callees"
   ]
 }

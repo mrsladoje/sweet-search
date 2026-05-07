@@ -3,14 +3,26 @@
     "fastify:reply-send-callees",
     "fastify:route-handler-impact",
     "fastify:validate-callers",
+    "fastify:decorate-callers",
+    "fastify:add-hook-callees",
+    "fastify:register-impact",
     "flask:make-response-callees",
     "flask:route-decorator-callees",
     "flask:session-interface-impact",
+    "flask:dispatch-request-callees",
+    "flask:before-request-callers",
+    "flask:wsgi-app-impact",
     "gin:engine-serve-http",
     "gin:handle-http-request-impact",
     "gin:next-abort-context",
+    "gin:use-callers",
+    "gin:group-callees",
+    "gin:default-engine-callees",
     "ripgrep:config-struct-impact",
     "ripgrep:locate-callees",
-    "ripgrep:search-parallel-impact"
+    "ripgrep:search-parallel-impact",
+    "ripgrep:searcher-search-impact",
+    "ripgrep:walker-callees",
+    "ripgrep:regex-builder-impact"
   ]
 }
