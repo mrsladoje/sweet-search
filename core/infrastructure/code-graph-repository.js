@@ -91,6 +91,50 @@ export class CodeGraphRepository {
    * @param {string} targetName
    * @returns {boolean}
    */
+  /**
+   * Find the matching entity by name within a chunk range, if it exists.
+   * Returns the actual canonical name + type (so callers can relabel chunks
+   * to the contained-entity name when the query target matches).
+   *
+   * @param {string} filePath
+   * @param {number} startLine
+   * @param {number} endLine
+   * @param {string} targetName
+   * @returns {{ name: string, type: string, startLine: number, endLine: number }|null}
+   */
+  findEntityWithNameInRange(filePath, startLine, endLine, targetName) {
+    if (!targetName) return null;
+    const db = this._open();
+    if (!db) return null;
+    try {
+      const tLower = String(targetName).toLowerCase();
+      const tNorm = tLower.replace(/[_-]/g, '');
+      const rows = db.prepare(`
+        SELECT name, type, start_line, end_line FROM entities
+        WHERE file_path = ?
+          AND start_line >= ?
+          AND end_line <= ?
+          AND (stale_since IS NULL)
+        ORDER BY (end_line - start_line) DESC
+      `).all(filePath, startLine, endLine);
+      for (const row of rows) {
+        if (!row.name) continue;
+        const nLower = String(row.name).toLowerCase();
+        if (nLower === tLower || nLower.replace(/[_-]/g, '') === tNorm) {
+          return {
+            name: row.name,
+            type: row.type,
+            startLine: row.start_line,
+            endLine: row.end_line,
+          };
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   hasEntityWithNameInRange(filePath, startLine, endLine, targetName) {
     if (!targetName) return false;
     const db = this._open();
