@@ -53,6 +53,8 @@ function parseArgs() {
     else if (arg.startsWith('--repo=')) opts.repo = arg.split('=')[1];
     else if (arg.startsWith('--system=')) opts.system = arg.split('=')[1];
     else if (arg.startsWith('--max-questions=')) opts.maxQuestions = parseInt(arg.split('=')[1]);
+    else if (arg.startsWith('--judge-model=')) opts.judgeModel = arg.split('=')[1];
+    else if (arg.startsWith('--judgeModel=')) opts.judgeModel = arg.split('=')[1];
     else if (arg.startsWith('--model=')) opts.model = arg.split('=')[1];
     else if (arg === '--backend=cli' || arg === '--cli') opts.backend = 'cli';
     else if (arg === '--backend=api') opts.backend = 'api';
@@ -87,7 +89,7 @@ Options:
 /** Simple prompt → response via claude -p (no tools, for question gen + judging). */
 async function callViaCli(prompt, model = 'opus') {
   const { execSync } = await import('child_process');
-  const cliModel = model.replace('claude-opus-4-6', 'opus').replace('claude-sonnet-4-6', 'sonnet');
+  const cliModel = model.replace('claude-opus-4-6', 'opus').replace('claude-sonnet-4-6', 'sonnet').replace('claude-haiku-4-5-20251001', 'haiku').replace('claude-haiku-4-5', 'haiku');
   // Pipe prompt through stdin to avoid shell argument length/quoting issues
   const result = execSync(
     `claude -p --model ${cliModel} --no-session-persistence --dangerously-skip-permissions --disallowed-tools "Bash Edit Write"`,
@@ -349,7 +351,7 @@ async function runSystem(repo, system, opts) {
       let record;
       if (opts.backend === 'cli') {
         // CLI backend: shell out to claude -p
-        const cliModel = opts.model.replace('claude-sonnet-4-6', 'sonnet').replace('claude-opus-4-6', 'opus');
+        const cliModel = opts.model.replace('claude-sonnet-4-6', 'sonnet').replace('claude-opus-4-6', 'opus').replace('claude-haiku-4-5', 'haiku').replace('claude-haiku-4-5-20251001', 'haiku');
         record = await cliAdapter.runViaClaude(
           q.text, system, repoRoot, { model: cliModel, verbose: opts.verbose }
         );
