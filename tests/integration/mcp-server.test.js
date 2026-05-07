@@ -136,7 +136,7 @@ describe('MCP Server Protocol Compliance', () => {
 
   // B6a #2: Tool listing
   describe('Tool listing', () => {
-    it('returns 7 tools: search, index, health, repo-map, vocab-prewarm, read, read-semantic', () => {
+    it('returns 8 tools: search, trace, index, health, repo-map, vocab-prewarm, read, read-semantic', () => {
       // `read` and `read-semantic` were added in commit e82ab61
       // (feat(search): add filesystem-grounded read tools). The
       // tool list is the externally-observable MCP surface; bumping
@@ -144,12 +144,12 @@ describe('MCP Server Protocol Compliance', () => {
       // the tool-add change.
       expect(toolsResponse).toBeDefined();
       const tools = toolsResponse.result.tools;
-      expect(tools).toHaveLength(7);
+      expect(tools).toHaveLength(8);
 
       const names = tools.map(t => t.name).sort();
       expect(names).toEqual([
         'health', 'index', 'read', 'read-semantic',
-        'repo-map', 'search', 'vocab-prewarm',
+        'repo-map', 'search', 'trace', 'vocab-prewarm',
       ]);
     });
 

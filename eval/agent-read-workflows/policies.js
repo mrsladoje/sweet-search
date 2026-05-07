@@ -48,6 +48,7 @@ CITATION RULE (strict — both modes):
   files must appear as separate \`files[]\` entries.
 - The \`reason\` field should explain why this specific file is part of the
   evidence, not summarise the whole answer.
+- Use ASCII hyphen line ranges like "459-586"; do not use en dashes.
 `;
 
 export const POLICIES = {
@@ -220,11 +221,81 @@ DEFAULT WORKFLOW — follow this unless the question demands otherwise:
 
 ${BUDGET_TABLE}
 ${ANSWER_FORMAT}`,
+
+  'sweet-search-structural': `\
+You are solving a structural code-understanding task in a repository indexed
+by Sweet Search. You MUST use the unified structural trace tool first.
+
+Available tools (call via Bash; they are on PATH):
+  - ss-trace <symbol> [--in <file>] [--query "<hint>"] [--depth N]
+        → one structural context package: important callers, callees, and
+          transitive impact paths, adaptively fitted to a token budget.
+  - ss-read <file> <start> <end>
+        → exact confirmation read. Allowed ONLY after ss-trace identifies
+          a file/range and only when you need an exact citation.
+
+Bash is ALLOWLIST-ENFORCED. The ONLY leading commands you may run are:
+  Structural:  ss-trace, ss-read, sweet-search
+  Orientation: pwd, ls, wc, echo, printf
+
+You MUST NOT use ss-search, ss-grep, ss-find, ss-semantic, native rg/grep,
+cat, sed, awk, head, tail, python, node, jq, or the native Read tool.
+Each Bash call must be exactly one bare allowed command. You MUST NOT use
+shell pipelines, redirects, command chaining, subshells, command
+substitution, or truncation helpers: no \`|\`, \`>\`, \`<\`,
+\`2>/dev/null\`, \`&&\`, \`;\`, \`$()\`, \`head\`, \`tail\`, \`cat\`,
+\`sed\`, or \`grep\`.
+Do not inspect Claude tool-result cache files.
+If ss-trace output is long, answer from the visible structured sections; do
+not use cat/grep/sed/head to re-read the tool output.
+
+DEFAULT WORKFLOW:
+1. Extract the concrete symbol from the question and call ss-trace once with
+   a short --query hint copied from the task intent, e.g.
+   ss-trace SYMBOL --query "callees response conversion helpers".
+2. Use the callers/callees/impact sections directly when they answer the
+   question. Read the "answer checklist" and "answer cues" lines first. If
+   the checklist lists key symbols, preserve those names in \`symbols[]\` when
+   they are part of your answer.
+   If the checklist lists branch terms, include every listed branch term that is
+   relevant to the question in your JSON answer or notes; do not drop an
+   earlier branch just because later helper calls are more prominent.
+   For conversion/helper/path questions, treat those branch terms as required
+   coverage: copy them verbatim into the answer or notes when they describe a
+   branch in the shown target code.
+   If the checklist includes branch code, use those exact lines as the
+   compact map of branch conditions before deciding which helpers matter.
+   If the checklist includes related definitions or helper files that you rely
+   on, cite those file ranges too; do not mention a helper symbol while omitting
+   its file when the question asks for callees/downstream behavior.
+   Preserve exact target terms / critical paths from the cues. Prefer cited
+   file:line ranges already shown by ss-trace.
+3. For impact/handoff questions, if the target or top callee code shows a
+   named handoff callback that is not already resolved in the callees/impact
+   sections, run at most two follow-up ss-trace calls for those concrete
+   symbols.
+   For these questions, cite the critical impact path that leaves the target
+   function for the next lifecycle handler/dispatcher, even if that path is
+   listed under impact rather than direct callees.
+4. If ss-trace reports ambiguity and the chosen target is only a wrapper or
+   delegates to the same symbol, follow exactly one listed alternative with
+   --in before answering.
+5. At most one ss-read confirmation is allowed, and only for a range returned
+   by ss-trace.
+6. Stop after that. Do not run broad searches to double-check the trace.
+7. Preserve exact identifiers and exact domain phrases from the trace in the
+   JSON answer and symbols, especially config fields, enum/status names,
+   concrete return-shape words, and concurrency primitives.
+8. For conversion/helper/path questions, enumerate the branch condition type
+   names exactly as shown in the trace or confirmation read.
+
+${BUDGET_TABLE}
+${ANSWER_FORMAT}`,
 };
 
 // Default ordering — native first as the baseline, then conditions under test.
 // `--condition=name1,name2,...` filters this set in run-bench.js.
-export const MODE_ORDER = ['native-rg-read', 'sweet-search-tools', 'sweet-search-auto'];
+export const MODE_ORDER = ['native-rg-read', 'sweet-search-tools', 'sweet-search-auto', 'sweet-search-structural'];
 
 // Conditions that exercise sweet-search runtime/indexes/models.
 // Used by the warmup phase to know whether to pre-warm.
@@ -239,7 +310,7 @@ export const TOOL_RULES = {
     disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'],
     // denylist (no allowedBashLeading → audit treats Bash as permissive)
     forbiddenBashSubstrings: [],
-    forbiddenBashLeading: ['sweet-search', 'ss-grep', 'ss-find', 'ss-read', 'ss-semantic', 'ss-search'],
+    forbiddenBashLeading: ['sweet-search', 'ss-grep', 'ss-find', 'ss-read', 'ss-semantic', 'ss-search', 'ss-trace'],
     readToolForbidden: false,
   },
 
@@ -275,6 +346,23 @@ export const TOOL_RULES = {
       'ss-search', 'ss-read', 'sweet-search',
       // Harmless orientation only
       'pwd', 'ls', 'wc', 'find', 'echo', 'printf',
+    ],
+    readToolForbidden: true,
+  },
+
+  // Sweet-search-structural: isolates the unified trace tool. This condition
+  // is for caller/callee/impact tasks and must not fall back to search modes.
+  'sweet-search-structural': {
+    allowedTools: [
+      'Bash(ss-trace *)', 'Bash(ss-read *)', 'Bash(sweet-search *)',
+      'Bash(pwd)', 'Bash(ls *)', 'Bash(wc *)', 'Bash(echo *)', 'Bash(printf *)',
+    ],
+    disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'],
+    forbiddenBashSubstrings: [],
+    forbiddenBashLeading: [],
+    allowedBashLeading: [
+      'ss-trace', 'ss-read', 'sweet-search',
+      'pwd', 'ls', 'wc', 'echo', 'printf',
     ],
     readToolForbidden: true,
   },

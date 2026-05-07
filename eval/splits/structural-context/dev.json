@@ -1,0 +1,16 @@
+{
+  "ids": [
+    "fastify:reply-send-callees",
+    "fastify:route-handler-impact",
+    "fastify:validate-callers",
+    "flask:make-response-callees",
+    "flask:route-decorator-callees",
+    "flask:session-interface-impact",
+    "gin:engine-serve-http",
+    "gin:handle-http-request-impact",
+    "gin:next-abort-context",
+    "ripgrep:config-struct-impact",
+    "ripgrep:locate-callees",
+    "ripgrep:search-parallel-impact"
+  ]
+}

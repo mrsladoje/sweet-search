@@ -1,0 +1,12 @@
+{
+  "ids": [
+    "fastify:error-handler-impact",
+    "fastify:handle-request-callees",
+    "flask:add-url-rule-impact",
+    "flask:http-exception-impact",
+    "gin:add-route-callers",
+    "gin:custom-recovery-impact",
+    "ripgrep:regex-error-impact",
+    "ripgrep:sink-trait-callers"
+  ]
+}

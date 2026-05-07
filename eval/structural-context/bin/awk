@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+echo "structural benchmark policy: use ss-trace or ss-read, not awk" >&2
+exit 127

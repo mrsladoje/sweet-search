@@ -101,6 +101,7 @@
     "eval:multirepo:test": "node eval/scripts/multirepo-bench.js --split=test",
     "bench:read-workflows": "node eval/read-workflows/run-bench.js",
     "bench:agent-read-workflows": "node eval/agent-read-workflows/run-bench.js",
+    "bench:structural-context": "node eval/structural-context/run-bench.js",
     "eval:fetch-repos": "node eval/scripts/fetch-benchmark-repos.js",
     "features": "node core/training/query-router/features/extractor.js",
     "features:benchmark": "node core/training/query-router/features/extractor.js --benchmark",
