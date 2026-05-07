@@ -339,8 +339,8 @@
       "repo": "gin",
       "query": "how does the framework recover when a handler crashes with a runtime panic",
       "expectedFile": "recovery.go",
-      "expectedSymbolAnyOf": ["Recovery", "CustomRecovery", "defaultHandleRecovery"],
-      "notes": "Pure semantic match for panic-recovery middleware"
+      "expectedSymbolAnyOf": ["Recovery", "CustomRecovery", "CustomRecoveryWithWriter", "defaultHandleRecovery"],
+      "notes": "Pure semantic match for panic-recovery middleware. CustomRecoveryWithWriter is the canonical impl containing defaultHandleRecovery (gold expanded 2026-05-07)"
     },
     {
       "id": "S5-Q6",

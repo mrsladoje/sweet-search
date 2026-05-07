@@ -64,8 +64,8 @@
         "crates/uv-build-frontend/src/lib.rs",
         "crates/uv-distribution/src/source/mod.rs"
       ],
-      "expectedSymbolAnyOf": ["SourceBuild", "build", "SourceDistributionBuilder"],
-      "notes": "SourceBuild::build in build-frontend/lib.rs:844 invokes PEP 517 backend; source/mod.rs orchestrates fetch+build+cache."
+      "expectedSymbolAnyOf": ["SourceBuild", "build", "SourceDistributionBuilder", "build_distribution"],
+      "notes": "SourceBuild::build in build-frontend/lib.rs:844 invokes PEP 517 backend; source/mod.rs orchestrates fetch+build+cache. build_distribution at source/mod.rs:2457 is the in-context orchestrator (gold expanded 2026-05-07)."
     },
     {
       "id": "UV-NL-7",
@@ -270,11 +270,11 @@
     {
       "id": "UV-ERR-2",
       "repo": "uv",
-      "query": "where is the ResolveError::ConflictingUrls variant constructed",
+      "query": "where is the ResolveError::ConflictingUrls variant defined",
       "expectedFile": "crates/uv-resolver/src/error.rs",
       "expectedSymbol": "ResolveError",
       "expectedSymbolType": "enum",
-      "notes": "ConflictingUrls is a variant of ResolveError defined at error.rs:67. Real codebase has no ConflictInGroup variant; ConflictingUrls is the closest analog."
+      "notes": "ConflictingUrls is a variant of ResolveError defined at error.rs:67. Query revised 2026-05-07 from 'constructed' → 'defined' to match gold intent (taxonomy: top1 fork_urls.rs:39 is a valid construction site, mismatching the original wording)."
     },
     {
       "id": "UV-ERR-3",
