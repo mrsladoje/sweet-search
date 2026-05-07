@@ -1852,7 +1852,8 @@ export function createGraphSchema(db) {
       hierarchy_level INTEGER DEFAULT 0,
       code TEXT,
       name_alias TEXT,
-      stale_since INTEGER DEFAULT NULL
+      stale_since INTEGER DEFAULT NULL,
+      page_rank REAL DEFAULT 0
     )
   `);
 
@@ -1868,6 +1869,11 @@ export function createGraphSchema(db) {
     if (!hasAliasColumn) {
       db.exec('ALTER TABLE entities ADD COLUMN name_alias TEXT');
       console.log('  Migrated: added name_alias column to entities table');
+    }
+    const hasPageRankColumn = columns.some(col => col.name === 'page_rank');
+    if (!hasPageRankColumn) {
+      db.exec('ALTER TABLE entities ADD COLUMN page_rank REAL DEFAULT 0');
+      console.log('  Migrated: added page_rank column to entities table');
     }
   } catch (err) {
     // Ignore errors - column might already exist or table not created yet
@@ -1936,6 +1942,8 @@ export function createGraphSchema(db) {
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_rel_unique ON relationships(source_id, target_id, type, target_name) WHERE source_id IS NOT NULL`);
   // Index on target_id for efficient reverse lookups ("what calls X")
   db.exec(`CREATE INDEX IF NOT EXISTS idx_rel_target_id ON relationships(target_id) WHERE target_id IS NOT NULL`);
+  // Index supports `page_rank DESC` lookups for ss-trace ranking and ranking probes.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_page_rank ON entities(page_rank) WHERE stale_since IS NULL`);
 
   setSchemaVersion(db);
 

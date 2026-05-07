@@ -130,6 +130,10 @@ CLAUDE.md.backup
 .claude-flow/data/
 .claude-flow/logs/
 
+# Ralph Orchestrator local setup/runtime
+ralph.yml
+.ralph/
+
 # Environment variables
 .env
 .env.local
@@ -151,3 +155,4 @@ eval/repos/
 .cross-validation-staging/
 .cross-validation-results/
 .claude/
+.aider*

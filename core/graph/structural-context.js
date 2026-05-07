@@ -10,13 +10,10 @@ import { StructuralContextRepository } from '../infrastructure/structural-contex
 import { buildAnswerCues } from './structural-answer-cues.js';
 import { callsiteHints } from './structural-callsite-hints.js';
 import { extractHeaderContext } from './structural-header-context.js';
+import { scoreEntity, scoreImpactPath, tokenize, safeMax } from './structural-importance.js';
+import { personalizedPageRank } from './structural-forward-push.js';
 const BUDGETS = { preview: 4000, full: 8000, xl: 12000 };
 const DEFAULT_MAX_DEPTH = 3;
-const REL_WEIGHT = { calls: 1.0, uses: 0.72, implements: 0.88, extends: 0.84, overrides: 0.78 };
-const TYPE_WEIGHT = {
-  class: 0.92, struct: 0.9, trait: 0.88, interface: 0.86, enum: 0.84,
-  function: 0.84, method: 0.82, component: 0.78, type: 0.7, typeAlias: 0.68, external: 0.2,
-};
 function estimateTokens(text) {
   return text ? Math.ceil(String(text).length / 3.5) : 0;
 }
@@ -24,35 +21,6 @@ function clamp(n, lo, hi) {
   const x = Number.parseInt(n, 10);
   if (!Number.isFinite(x)) return lo;
   return Math.max(lo, Math.min(hi, x));
-}
-
-function isTestPath(filePath = '') {
-  return /(^|\/)(__tests__|tests?|spec|fixtures|examples?|docs?)(\/|$)|[-_.](test|spec)\.[cm]?[jt]sx?$|_test\.go$/.test(filePath);
-}
-
-function isExported(entity) {
-  const name = entity?.name || '';
-  const sig = entity?.signature || '';
-  if (!name) return false;
-  if (/^\w/.test(name) && name[0] === name[0].toUpperCase()) return true;
-  return /\b(export|public|pub)\b/.test(sig) || /^[A-Z_][A-Z0-9_]+$/.test(name);
-}
-
-function logNorm(value, maxValue) {
-  if (!value || !maxValue) return 0;
-  return Math.log1p(value) / Math.log1p(maxValue);
-}
-
-function tokenize(text) {
-  return [...new Set(String(text || '').toLowerCase().match(/[a-z_][a-z0-9_]{2,}/g) || [])];
-}
-
-function hintScore(entity, hintTokens) {
-  if (!hintTokens.length) return 0;
-  const hay = `${entity.name} ${entity.type} ${entity.signature} ${entity.summary}`.toLowerCase();
-  let hits = 0;
-  for (const tok of hintTokens) if (hay.includes(tok)) hits++;
-  return hits / hintTokens.length;
 }
 
 function entropy(items) {
@@ -64,25 +32,6 @@ function entropy(items) {
     return p > 0 ? acc - p * Math.log(p) : acc;
   }, 0);
   return h / Math.log(items.length);
-}
-
-function scoreEntity(entity, ctx) {
-  const fan = ctx.fan.get(entity.id) || { fanIn: 0, fanOut: 0 };
-  const rel = REL_WEIGHT[entity.relationship] ?? 0.55;
-  const maxIn = ctx.maxFanIn || 1;
-  const maxOut = ctx.maxFanOut || 1;
-  const proximity = 1 / Math.max(1, entity.depth || 1);
-  let score =
-    0.28 * proximity +
-    0.20 * rel +
-    0.18 * logNorm(fan.fanIn, maxIn) +
-    0.12 * logNorm(fan.fanOut, maxOut) +
-    0.10 * (TYPE_WEIGHT[entity.type] ?? 0.5) +
-    0.08 * (isExported(entity) ? 1 : 0) +
-    0.10 * hintScore(entity, ctx.hintTokens || []);
-  if (isTestPath(entity.filePath)) score -= 0.38;
-  if (entity.type === 'external') score -= 0.25;
-  return Math.max(0.01, score);
 }
 
 function selectBudget(explicitBudget, candidates) {
@@ -317,15 +266,6 @@ function addHintImpactPaths(paths, seen, repo, target, hints, limit) {
   }
 }
 
-function scoreImpactPath(path, ctx) {
-  const nodes = path.direction === 'downstream' ? path.path.slice(1) : path.path.slice(0, -1);
-  const scored = nodes.map(node => scoreEntity({ ...node, depth: path.depth }, ctx));
-  if (!scored.length) return 0.01;
-  const bottleneck = Math.min(...scored);
-  const avg = scored.reduce((a, b) => a + b, 0) / scored.length;
-  return Math.max(0.01, (0.55 * bottleneck + 0.45 * avg) / Math.sqrt(path.depth));
-}
-
 function formatPath(path) {
   return path.path.map(p => {
     const loc = p.filePath ? `${p.filePath}:${p.startLine || '?'}` : 'external';
@@ -375,18 +315,36 @@ export class StructuralContextBuilder {
       ...impactRaw.flatMap(p => p.path.map(x => x.id)),
     ];
     const fan = this.repo.getFanCounts(ids);
-    const maxFanIn = Math.max(1, ...[...fan.values()].map(x => x.fanIn));
-    const maxFanOut = Math.max(1, ...[...fan.values()].map(x => x.fanOut));
-    const scoreCtx = {
-      fan,
-      maxFanIn,
-      maxFanOut,
-      hintTokens: tokenize(options.queryHint || cleanSymbol),
+    const pageRank = this.repo.getPageRank(ids);
+    const backwardRun = personalizedPageRank({
+      sourceId: target.id,
+      loadFrontier: (idsBatch) => this.repo.getFrontierBackwardEdges(idsBatch),
+    });
+    const forwardRun = personalizedPageRank({
+      sourceId: target.id,
+      loadFrontier: (idsBatch) => this.repo.getFrontierForwardEdges(idsBatch),
+    });
+    const maxFanIn = safeMax([...fan.values()].map(x => x.fanIn));
+    const maxPageRank = safeMax(pageRank.values());
+    const hintTokens = tokenize(options.queryHint || cleanSymbol);
+    const callerCtx = {
+      fan, pageRank, hintTokens,
+      pprScores: backwardRun.scores,
+      maxFanIn, maxPageRank,
+      maxPpr: safeMax(backwardRun.scores.values()),
     };
-    const callers = callersRaw.map(x => ({ ...x, importance: scoreEntity(x, scoreCtx) }));
-    const callees = calleesRaw.map(x => ({ ...x, importance: scoreEntity(x, scoreCtx) }));
-    const impactPaths = impactRaw.map(p => ({ ...p, importance: scoreImpactPath(p, scoreCtx) }))
-      .sort((a, b) => b.importance - a.importance);
+    const calleeCtx = {
+      fan, pageRank, hintTokens,
+      pprScores: forwardRun.scores,
+      maxFanIn, maxPageRank,
+      maxPpr: safeMax(forwardRun.scores.values()),
+    };
+    const callers = callersRaw.map(x => ({ ...x, importance: scoreEntity(x, callerCtx) }));
+    const callees = calleesRaw.map(x => ({ ...x, importance: scoreEntity(x, calleeCtx) }));
+    const impactPaths = impactRaw.map(p => ({
+      ...p,
+      importance: scoreImpactPath(p, p.direction === 'downstream' ? calleeCtx : callerCtx),
+    })).sort((a, b) => b.importance - a.importance);
 
     callers.sort((a, b) => b.importance - a.importance);
     callees.sort((a, b) => b.importance - a.importance);

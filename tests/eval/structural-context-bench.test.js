@@ -36,7 +36,7 @@ describe('structural-context benchmark split', () => {
     }
 
     for (const counts of byRepo.values()) {
-      expect(counts).toEqual({ dev: 3, heldout: 2 });
+      expect(counts).toEqual({ dev: 6, heldout: 4 });
     }
   });
 

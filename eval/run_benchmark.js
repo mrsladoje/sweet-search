@@ -270,26 +270,38 @@ async function main() {
     queries = filtered.items;
   }
 
+  let corpusFiltered = corpus;
   if (opts.language) {
     queries = queries.filter(q => q.language === opts.language);
+    // CRITICAL: also filter the CORPUS so the index contains only the target
+    // language. Without this, queries against language X are matched against
+    // documents in languages Y,Z too — cross-language confusion that masks
+    // the real per-language MRR. Each language gets its own corpusDir/index
+    // (eval/corpus/<dataset>-<language>/) so per-language runs are
+    // reproducible and don't pollute each other.
+    const beforeCount = corpusFiltered.length;
+    corpusFiltered = corpusFiltered.filter(d => d.language === opts.language);
+    console.log(`  Corpus filtered to language=${opts.language}: ${corpusFiltered.length}/${beforeCount} docs`);
   }
 
   if (opts.maxQueries > 0) {
     queries = queries.slice(0, opts.maxQueries);
   }
 
-  console.log(`  Corpus:  ${corpus.length} documents`);
+  console.log(`  Corpus:  ${corpusFiltered.length} documents`);
   console.log(`  Queries: ${queries.length}${opts.split !== 'all' ? ` (--split=${opts.split}, from ${queriesBeforeSplit})` : ''}`);
 
-  // 2. Prepare corpus as files
-  const corpusDir = path.join(__dirname, 'corpus', opts.dataset);
+  // 2. Prepare corpus as files. When --language is set, use a per-language
+  // corpusDir so the index is built ONLY over that language.
+  const corpusDirSuffix = opts.language ? `-${opts.language}` : '';
+  const corpusDir = path.join(__dirname, 'corpus', opts.dataset + corpusDirSuffix);
   let docIdToFile;
   if (opts.skipIndex && existsSync(path.join(corpusDir, '.sweet-search'))) {
     console.log('\n[2/5] Reusing existing corpus files (--skip-index)');
-    docIdToFile = prepareCorpus(corpus, corpusDir, { skipClean: true });
+    docIdToFile = prepareCorpus(corpusFiltered, corpusDir, { skipClean: true });
   } else {
     console.log('\n[2/5] Preparing corpus files...');
-    docIdToFile = prepareCorpus(corpus, corpusDir);
+    docIdToFile = prepareCorpus(corpusFiltered, corpusDir);
   }
 
   // 3. Index corpus with Sweet Search
