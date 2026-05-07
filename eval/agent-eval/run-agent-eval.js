@@ -30,7 +30,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
 
-const SYSTEMS = ['rg+read', 'pattern+meta', 'pattern+agent', 'sweet-search+agent'];
+const SYSTEMS = ['rg+read', 'claude-full-tools', 'pattern+meta', 'pattern+agent', 'sweet-search+agent'];
 const MAX_TURNS = 10;
 const TOKEN_LIMIT = 50000;
 
