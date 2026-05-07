@@ -731,6 +731,17 @@ const SYMBOL_WHATIS_QUERY_RE = new RegExp(
   '(?:struct|enum|class|function|method|type|trait|interface)\\b',
   'i'
 );
+// "where is the X function/method/struct" pattern — captures probe-style queries
+// like S3-Q4 "where is the Default function..." and S3-Q6 "where is the Set
+// method on Context...". Added 2026-05-07 after F7 trace showed extractSymbolDefinitionTarget
+// returned null for these queries, missing the contained-entity boost.
+const SYMBOL_WHERE_QUERY_RE = new RegExp(
+  '\\bwhere\\s+(?:is|does)\\s+(?:the\\s+)?' +
+  '(\\w+)\\s+' +
+  '(?:struct|enum|class|fn|function|method|trait|type|interface|impl|' +
+  'definition|signature|prototype|constructor)\\b',
+  'i'
+);
 
 function extractSymbolDefinitionTarget(query) {
   if (!query || typeof query !== 'string') return null;
@@ -738,6 +749,8 @@ function extractSymbolDefinitionTarget(query) {
   let m = query.match(SYMBOL_DEFN_QUERY_RE);
   if (m && m[1] && m[1].length >= 3) return m[1];
   m = query.match(SYMBOL_WHATIS_QUERY_RE);
+  if (m && m[1] && m[1].length >= 3) return m[1];
+  m = query.match(SYMBOL_WHERE_QUERY_RE);
   if (m && m[1] && m[1].length >= 3) return m[1];
   return null;
 }
@@ -1355,9 +1368,29 @@ export function applyResultDemotions(results, opts = {}) {
     }
 
     const baseScore = typeof result.score === 'number' ? result.score : 0;
-    const exactEntity = !hasAblation(ablations, 'no-name-precision')
-      ? exactNamedEntityForResult(result, preferredKind, nameHints, nameHintsLower, opts)
+    // F8 (2026-05-07): when the query has an explicit symbol target (extractSymbolDefinitionTarget)
+    // AND the chunk contains an entity matching that name, prefer THAT entity for labeling
+    // over kind-preference / name-precision heuristics. Targets cases like S3-Q4 (chunk
+    // labeled "Binding" but contains the Default function the user asked for) and parallels
+    // F7's contained-entity boost (which only changes ranking, not symbol attribution).
+    // Format-gated through symbolExactTarget which is set only when isAgentFormat.
+    const exactSymbolTargetEntity = symbolExactTarget && opts.codeGraphRepo
+      && typeof opts.codeGraphRepo.findEntityWithNameInRange === 'function'
+      ? (() => {
+          const fp = resolveFilePath(result);
+          const meta = result?.metadata ?? {};
+          const sl = Number(result?.startLine ?? meta.startLine);
+          const el = Number(result?.endLine ?? meta.endLine);
+          if (!fp || !Number.isFinite(sl) || !Number.isFinite(el)) return null;
+          try {
+            return opts.codeGraphRepo.findEntityWithNameInRange(fp, sl, el, symbolExactTarget);
+          } catch { return null; }
+        })()
       : null;
+    const exactEntity = exactSymbolTargetEntity
+      || (!hasAblation(ablations, 'no-name-precision')
+          ? exactNamedEntityForResult(result, preferredKind, nameHints, nameHintsLower, opts)
+          : null);
     const preferredEntity = exactEntity || (preferredKind && !hasAblation(ablations, 'no-entity-kind-pref')
       ? resolveEntityKindInfo(result, opts)
       : null);
