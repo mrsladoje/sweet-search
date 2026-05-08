@@ -154,11 +154,10 @@ For final-validation references:
 
 | Role | Pick (May 2026) | Pick (after May 31, post-promo) |
 |---|---|---|
-| **Reflector / optimizer LM** | **DeepSeek V4-Pro promo** ($0.435/$0.87, 80.6% Verified — strong enough to reflect, dirt cheap) | **MiniMax M2.5** ($0.15/$1.15, 80.2% Verified) |
-| **Primary evaluatee pool (shipping / headline GEPA metric)** | **Claude Opus 4.7** + **GPT‑5.5** + **Gemini 3.1 Pro** — `shipping_score := mean(answerability)` over this set | unchanged (re‑price API only) |
-| **Claude cost-relief slot (optional, pre‑register)** | **Claude Sonnet 4.6** may substitute for Opus in **light** GEPA iterations or early triage only; **Opus 4.7 is mandatory** at medium/heavy GEPA and every promotion gate | unchanged |
-| **Auxiliary evaluatee pool** (portability + architecture diversity, **not** the headline objective) | **DeepSeek V4-Flash** + **MiniMax M2.7** + **Kimi K2.5** + **Qwen 3.6 Plus** | unchanged |
-| **Harness validation (Phase 2 / §9.3)** | Claude Code + **Opus 4.7** (or Sonnet only if reproducing a user-reported regression) + Codex on **GPT‑5.5** + OpenCode on **Gemini 3.1 Pro** + optional cheap replays | unchanged |
+| **Reflector / optimizer LM** | **DeepSeek V4-Pro promo direct API** ($0.435/$0.87, 80.6% Verified — cache-controlled for 5× savings) | **MiniMax M2.5** ($0.15/$1.15, 80.2% Verified) |
+| **Primary evaluatee pool (GEPA optimization target)** | **DSv4-Flash + MiniMax M2.7 + Kimi K2.5 + Qwen 3.6 Plus**, all running through **OpenCode Go subscription** ($10/mo). `robustness_score := min(answerability)` over this pool is the GEPA scalar; paired stats (median, p25, raw min, min_four) reported per §8.9.1 | unchanged |
+| **Frontier validation pool (milestone-gate REPORTING metric, NOT optimized)** | **Claude Opus 4.7** (Claude Max sub) + **GPT-5.5** (Codex Pro sub) + **Gemini 3.1 Pro** (Gemini Pro sub) — `shipping_score := mean(answerability)` measured via in-harness runs at promotion gates only ($0 marginal API) | unchanged |
+| **Harness validation pools (Phase 2 / §9.3)** | Claude Code + Opus 4.7 (Claude Max) + Sonnet 4.6 reference + Codex CLI + GPT-5.5 (Codex Pro) + Gemini CLI + Gemini 3.1 Pro (Gemini Pro) + OpenCode + cheap-pool model (OpenCode Go) — four primary harness×model lines, all subscription-priced | unchanged |
 
 DeepSeek advertises \$0.028/M **cache-hit** input for V4-Flash. **Treat realized cache as an
 empirical KPI**, not a budget axiom: GEPA rewrites policy text every generation (prefix drift),
@@ -171,13 +170,18 @@ one and keep a **cache-off upper bracket** in cost projections.
 
 ### 3.1 Harness inventory and instruction-file conventions (May 2026)
 
-| Harness | Instruction file(s) | System-prompt size | Custom-model support |
-|---|---|---|---|
-| **Claude Code** | `CLAUDE.md` (project) + `.claude/rules/*.md` (lazy-loaded via `@imports`) + `~/.claude/CLAUDE.md` (global) | 5-15K tokens, lazy-loaded, XML-tagged | Native env-var swap (Anthropic-compat endpoints) OR proxy (`claude-code-router`, `free-claude-code`) |
-| **Codex CLI** | `AGENTS.md` (project root + ancestors), `~/.codex/AGENTS.md`, `~/.codex/AGENTS.override.md` | ~3-5K tokens, conversational | First-class via `~/.codex/config.toml` `[model_providers.X]` with `wire_api = "responses"` |
-| **OpenCode** | `AGENTS.md` (preferred); also accepts `CLAUDE.md` if symlinked | ~minimal (~500 tokens), most neutral | First-class, 75+ providers via `@ai-sdk/openai-compatible` |
-| **Cursor CLI** | `.cursor/rules/*.mdc` (frontmatter: `description`, `alwaysApply`, `filePattern`) + legacy `.cursorrules` | ~1.25K tokens, XML-wrapped, isolated in user message for prompt-injection resistance | Limited: custom OpenAI-compat endpoints work for Chat, NOT for Composer (agentic mode) |
-| **Gemini CLI** | `GEMINI.md` (configurable via `context.fileName` array, can include `AGENTS.md` / `CLAUDE.md`) | varies | Native, multiple providers |
+| Harness | Instruction file(s) | System-prompt size | Custom-model support | Subscription option |
+|---|---|---|---|---|
+| **Claude Code** | `CLAUDE.md` (project) + `.claude/rules/*.md` (lazy-loaded via `@imports`) + `~/.claude/CLAUDE.md` (global) | 5-15K tokens, lazy-loaded, XML-tagged | Native env-var swap (Anthropic-compat endpoints) OR proxy (`claude-code-router`, `free-claude-code`) | Claude Pro $20 / Max $100 / Max $200 (Opus + Sonnet) |
+| **Codex CLI** | `AGENTS.md` (project root + ancestors), `~/.codex/AGENTS.md`, `~/.codex/AGENTS.override.md` | ~3-5K tokens, conversational | First-class via `~/.codex/config.toml` `[model_providers.X]` with `wire_api = "responses"` | Codex Pro $20 (incl. with ChatGPT Plus/Pro) |
+| **OpenCode** | `AGENTS.md` (preferred); also accepts `CLAUDE.md` if symlinked | ~minimal (~500 tokens), most neutral | First-class, 75+ providers via `@ai-sdk/openai-compatible` | OpenCode Go $5 first month → $10/mo flat: 12-model open-weight pool (DSv4 Pro/Flash, MiniMax M2.5/M2.7, Kimi K2.5/K2.6, Qwen 3.5/3.6 Plus, GLM 5/5.1, MiMo V2.5/Pro) — $12/5hr, $30/week, $60/month equivalent quota; **the entire GEPA training cheap pool runs here** |
+| **Cursor CLI** | `.cursor/rules/*.mdc` (frontmatter: `description`, `alwaysApply`, `filePattern`) + legacy `.cursorrules` | ~1.25K tokens, XML-wrapped, isolated in user message for prompt-injection resistance | Limited: custom OpenAI-compat endpoints work for Chat, NOT for Composer (agentic mode) | Cursor Pro $20 (subscription default model only) |
+| **Gemini CLI** | `GEMINI.md` (configurable via `context.fileName` array, can include `AGENTS.md` / `CLAUDE.md`) | varies | Native, multiple providers | Gemini Pro plan ~$20 (Gemini 3.1 Pro) |
+
+**OpenCode Go is operationally the most important non-Anthropic harness for this campaign.** It
+gives us all four cheap-pool evaluatees, plus GLM 5.1 and MiMo, behind a single $10/mo API key
+with massive headroom (158K monthly DSv4-Flash requests, 17K MiniMax M2.7, etc.). The entire
+GEPA training pool runs through this single subscription at $0 marginal API cost.
 
 ### 3.2 Calling cheap models from each harness
 
@@ -593,12 +597,13 @@ query-phrasing instructions — those are constants pulled from §7.6 across all
 
 ### 6.3 Spike-test plan
 
-**Phase A — narrow** (start here): T1, T4, T7, T9, T13, T14. Six prompts × **three primary SOTA
-evaluatees** (Opus 4.7 + GPT‑5.5 + Gemini 3.1 Pro) × 60 dev probes ≈ **1,080** evaluations.
-Target cost: **~$400–900** (frontier token rates; highly prompt-length dependent). Dev **headline**
-metric: mean PASS rate ≡ `shipping_score` on that trio. Optional **pre‑registered** shortcut: run
-first pass on `{Sonnet 4.6, GPT‑5.5, Gemini 3.1 Pro}` or a 20‑probe stratified subsample × cheap
-pool to drop loser variants cheaply — then full 60 probes × trio for survivors only.
+**Phase A — narrow** (start here): T1, T4, T7, T9, T13, T14. Six prompts × **four cheap-pool
+evaluatees** (DSv4-Flash + MiniMax M2.7 + Kimi K2.5 + Qwen 3.6 Plus, all via OpenCode Go) × 60
+dev probes ≈ **1,440** evaluations. Target cost: **$0 marginal** (within OpenCode Go's $60/mo
+quota — DSv4-Flash alone has 158K monthly request headroom). Dev metric: PASS rate per
+evaluatee + `robustness_score := min(answerability)` per the §8.5 framing. Frontier-trio
+replay (Opus + GPT-5.5 + Gemini) is reserved for the final-candidate milestone gate (P11), not
+for Phase A.
 
 **Phase B — held-out foils**: T2, T3, T5, T6, T8, T10, T11, T12. Run only after Phase A picks
 2-3 leaders, to test whether GEPA can do better than any individual variant.
@@ -715,8 +720,8 @@ discipline):
 | **G1: Pareto dominance** | Beats the best individual T_i on at least 2 of {PASS rate, file recall, citation precision, token cost} — and ties or wins on all four |
 | **G2: No new failure modes** | Per-failure-mode incident counts are ≤ the *minimum* across source variants for every mode (the synthesized tree must inherit each variant's strength, not create new bugs) |
 | **G3: Statistical** | Paired permutation test (10K iterations, seed=42) p < 0.05 on PASS rate vs the strongest individual T_i, with bootstrap 95% CI on the delta not crossing zero |
-| **G4: Cross-model robustness** | Pareto dominance holds on **`shipping_score`** (mean answerability across Opus 4.7 + GPT‑5.5 + Gemini 3.1 Pro per §8.5). **Additionally**: median answerability across the **auxiliary four‑model pool** must not regress **>3pp** vs the current shipped baseline. **Publishing requirement** (not optional): paired portability stats in every promotion dossier — `aux_median`, `aux_p25`, raw `aux_min`, and **`aux_min_four`** (= min across the four auxiliary models on the same probes). Optionally add **stratified mins** by evaluator archetype (MoE vs dense vs long-ctx). Use **`aux_min_four` only as a soft tripwire** unless pre‑registered as a hard gate: one pathological evaluator can dominate `min()`; pre‑register evaluator **drop-from-min rules** only with documented instruction-compliance failures (§8.9.1). |
-| **G5: Cross-harness sanity** | Inside Claude Code (**Opus 4.7** — Sonnet 4.6 acceptable only for reproducing subscription defaults) and Codex (**GPT-5.5**), the uber-tree does not regress more than 3pp on PASS rate vs each harness's native baseline. Single-pass, no retries. Primary cross-check is still `shipping_score` on the bare-API trio before shims. |
+| **G4: Cross-model robustness** | Pareto dominance holds on **`robustness_score`** (cheap-pool min answerability across DSv4-Flash + MiniMax M2.7 + Kimi K2.5 + Qwen 3.6 Plus per §8.5). **Additionally** at the milestone replay: **`shipping_score`** (frontier mean: Opus 4.7 + GPT‑5.5 + Gemini 3.1 Pro, measured via subscriptions) must not regress **>3pp** vs the current shipped baseline. **Publishing requirement** (not optional): paired portability stats in every promotion dossier — `aux_median`, `aux_p25`, raw `aux_min`, **`aux_min_four`** (= min across the four cheap-pool models on the same probes). Optionally add **stratified mins** by evaluator archetype (MoE vs dense vs long-ctx). Use **`aux_min_four` only as a soft tripwire** unless pre‑registered as a hard gate: one pathological evaluator can dominate `min()`; pre‑register evaluator **drop-from-min rules** only with documented instruction-compliance failures (§8.9.1). |
+| **G5: Cross-harness sanity** | Inside Claude Code (**Opus 4.7** via Claude Max — Sonnet 4.6 acceptable only for reproducing subscription defaults) and Codex (**GPT-5.5** via Codex Pro), the uber-tree does not regress more than 3pp on PASS rate vs each harness's native baseline. Single-pass, no retries. Primary cross-check is `robustness_score` on the cheap pool; `shipping_score` checked at milestone via subscriptions. |
 
 If any gate fails, the synthesis result is logged to `eval/prompt-evolution/rejected/` with the
 failing-gate diagnostics, and Strategy A is re-run with the rejection feedback fed to the GEPA
@@ -1005,73 +1010,143 @@ contention and cold-start effects can dominate measurements.
 7. Validate on held-out repos/tasks.
 8. Promote only if the policy beats the current shipped policy under the criteria above.
 
-### 8.5 SOTA-primary + auxiliary pool strategy (headline metric matches real users)
+### 8.5 Cross-model-robust optimization + subscription-priced milestone validation
 
-The single most important architectural decision for GEPA in May 2026: **optimize what ships**.
-Most agent runs use frontier models; the headline metric must be defined on that pool. Cheap
-models remain as **auxiliary** diversity sensors and **optional** budget relief — not as the
-scalar GEPA maximizes.
+The single most important architectural decision for GEPA in May 2026: **optimize for
+cross-model robustness on a cheap-evaluatee pool, validate on frontier at milestones via
+already-paid subscription harnesses**.
+
+The product goal is to ship a prompt that works *everywhere* — heavy frontier users
+(Claude Max, ChatGPT Pro, Gemini Pro), cost-conscious users (DeepSeek V4-Pro via
+Anthropic-compat, GLM 5.1 plan), and OpenCode-on-Kimi/MiniMax users all need a tree that
+doesn't collapse on their stack. Optimizing on a frontier-only pool risks prompts that win on
+Opus but quietly underperform on the rest of the user base. Frontier validation still
+happens — but as a *milestone gate*, paid for by subscriptions we already own, not as the
+GEPA optimization target.
 
 ```text
-Reflector LM     : DeepSeek V4-Pro promo ($0.435/$0.87) until May 31
-                   → fall back to MiniMax M2.5 ($0.15/$1.15) after
-Primary pool     : Claude Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro (parallel)
-shipping_score   : mean(answerability) across the primary pool
-                   — this is the GEPA optimization target and the reported headline number
-Auxiliary pool   : DSv4-Flash + MiniMax M2.7 + Kimi K2.5 + Qwen 3.6 Plus (+ optional slots for
-                   instructional-diversity recruits — refusal/tool-JSON/verbosity outliers)
-portability      : publish median, p25, raw min, min_four (see §8.9.1); median gates G4; min is diagnostic / soft tripwire unless preregistered hard gate
+Reflector LM     : DeepSeek V4-Pro promo ($0.435/$0.87) direct API until May 31
+                   → fall back to MiniMax M2.5 ($0.15/$1.15) after promo
+                   (direct API for cache-control + fine-grained batching during tight loops)
+
+Primary pool    : DSv4-Flash + MiniMax M2.7 + Kimi K2.5 + Qwen 3.6 Plus
+   (Run via OpenCode Go subscription — $10/mo flat. All four ship in Go's catalog with
+    massive headroom: 158K DSv4-Flash + 17K M2.7 + 9.25K K2.5 + 16.3K Qwen monthly. Our entire
+    campaign needs ~5-10K evaluatee calls. Architecturally + instructionally diverse, see §8.9.2.)
+
+robustness_score : min(answerability) across the primary pool — this is the GEPA optimization target
+                 : (publish paired stats: median, p25, raw min, min_four — see §8.9.1)
+                 : a pre-registered evaluator-exclusion protocol may drop pathological evaluatees
+                   from min only with documented compliance failures (§8.9.1) — never post-hoc
+
+shipping_score   : mean(answerability | Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro)
+                 — REPORTING metric, measured at milestone gates only (§9.3, §11.5)
+                 — never the GEPA scalar; never iterated against during dev
+                 — paid for by Claude Max + Codex Pro + Gemini Pro subscriptions
+
 reflection_minibatch_size : 3   (GEPA paper default)
 Train/val split  : 60/40 stratified, seed=42 (matches existing FreshStack/GCSN discipline)
-Budget tier      : frontier-led (expect higher $ than cheap-pool-only campaigns)
-Held-out check   : per milestone, full trio + Codex GPT-5.5 wire + cross-harness (§9.3)
-Optional triage : pre-register Sonnet 4.6 as Claude-slot substitute OR cheap-pool prefilters
-Stop rule        : promote only if Pareto-better on shipping_score AND no regression on held-out
-                   AND auxiliary median within the G4 portability band vs shipped baseline
+Budget tier      : LEAN — full marginal API spend ≤ $25 on top of existing subscriptions
+                   (see §8.10 lean-campaign envelope; subscription floor ~$250/mo already paid)
+Held-out check   : final-candidate-only frontier-trio replay on the 40-probe held-out set
+Stop rule        : promote only if Pareto-better on robustness_score (min) AND
+                   shipping_score (frontier mean) does not regress >3pp at the milestone replay
 ```
 
-**Why mean on the primary pool (not min across cheap models)**: the product goal is excellence on
-Opus‑class / GPT‑5.5‑class / Gemini‑class deployments. Optimizing `min()` over cheap evaluatees
-over‑weights intersections nobody ships and can veto prompts that cleanly win where it matters.
+**Why min() across the primary cheap pool**: GEPA is being asked to find an instruction set
+that generalizes across user deployments, not one that wins on a chosen frontier subset.
+Optimizing mean over a 3-frontier panel lets the metric improve when one frontier evaluatee
+regresses, as long as the other two over-compensate — that's the opposite of generalization.
+`min()` over an architecturally + instructionally diverse cheap pool forces the optimizer to
+find prompts whose worst-case behavior across the pool is good. The §8.9.1 paired stats
+(`median`, `p25`, `min_four`, optional strata) ensure that single-evaluator pathologies are
+visible and addressable via the pre-registered exclusion protocol — not by switching the
+optimization target.
 
-**Why keep the auxiliary four-pack**: architectural diversity **plus** deliberate **instructional**
-diversity (refusal posture, verbosity, tool-call JSON discipline, deny-first vs permissive scopes)
-still catches brittle routing. Models can share helpful-assistant scaffolding yet diverge sharply
-on **constraint adherence** — pick auxiliary slots partly for that spread, not only parameter/MoE
-shape (§8.9.2). Those signals feed **gates and diagnostics**, not the headline scalar — echoing
-the “portability lab vs shipping score” split.
+**Why frontier as milestone validator, not as headline GEPA target**:
 
-**Why these four auxiliary evaluatees specifically** (baseline line-up; revise if a recruit clears
-instructional-gap criteria in §8.9.2):
+1. **Subscriptions cover frontier validation at $0 marginal.** Claude Max ($200/mo) + Codex Pro
+   ($20/mo) + Gemini Pro ($20/mo) already provide Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro for
+   in-harness validation. No reason to also burn API spend optimizing on those models.
+2. **Cost.** Frontier-led GEPA = $900-2,500 marginal API spend per campaign. Cheap-pool GEPA
+   on OpenCode Go + frontier milestone replay on subs = **$25 marginal API spend total**.
+   The cost difference doesn't buy commensurate information — it buys redundant signal on a
+   subset of the deployment surface.
+3. **Generalization signal.** Cross-model robustness *is* the product-quality property for a
+   tool that ships across Claude Code / Codex / OpenCode / Cursor / Gemini CLI. The headline
+   metric must directly measure it.
+4. **Frontier replay catches the failure mode this framing worries about.** If GEPA finds a
+   prompt that hard-codes some quirk of MiniMax M2.7's routing and accidentally degrades on
+   Opus 4.7, the milestone replay (§9.3 + §11.5) catches it with full §11.4 statistical
+   battery before we ship.
 
-- **DeepSeek V4-Flash**: cheapest, fastest, MIT, dense+sparse — high-volume smoke tests.
+**Why these four primary evaluatees specifically** (baseline line-up; revise if a recruit
+clears instructional-gap criteria in §8.9.2; all four are first-class citizens in OpenCode Go):
+
+- **DeepSeek V4-Flash**: cheapest, fastest, MIT, dense+sparse — high-volume smoke tests with
+  158K monthly request headroom on Go.
 - **MiniMax M2.7**: 10B-active MoE, agent-tuned — different failure surface than dense frontier.
 - **Kimi K2.5**: large MoE, agent-swarm tuning — catches long-context / routing oddities.
-- **Qwen 3.6 Plus**: long context, easy OR access — catches small-habit overfitting when paired
-  with short-prompt runs.
+- **Qwen 3.6 Plus**: hybrid attention + sparse MoE, long context — catches small-habit
+  overfitting and exposes verbosity preferences when paired with short-prompt runs.
 
-### 8.6 Cost projections
+### 8.6 Cost projections — subscription floor + $25 API marginal
 
-All numbers are **order-of-magnitude** for frontier‑led evaluatees; track realized $/probe from the
-first 20 runs and revise. Maintain a parallel **cache-off bracket** row (assume **no**
-provider prompt-cache credit) alongside logged blended tokens — prefixes move when GEPA rewrites
-prose (§8.9.3). The reflector stays on DSv4‑Pro promo / MiniMax M2.5; **evaluatee**
-cost now tracks Opus + GPT‑5.5 + Gemini.
+Two separate accounting layers:
 
-| Phase | Rough cost | What |
+**Subscription floor** (already paid; $0 marginal for this campaign — assumed prerequisite):
+
+| Subscription | $/mo | Provides |
 |---|---|---|
-| Phase A spike (T1, T4, T7, T9, T13, T14 baseline) | **~$400–900** (cache-off **~+$200–600**) | 6 prompts × **3 primary SOTA** × 60 probes (see optional triage in §6.3) |
-| Light GEPA from each leader (~400 metric calls, primary pool) | **~$80–200 each** | Fast iteration; still Opus‑class / GPT‑5.5 / Gemini |
-| Medium GEPA on top 2 leaders (~800 metric calls) | **~$200–500 each** | Production-quality policy search |
-| Heavy GEPA on the winner (~1,600 metric calls) | **~$400–1,000** | Final shipping policy candidate |
-| Auxiliary portability replays (subsampled) | **~$30–80** | e.g. top‑2 leaders × 20 probes × 4 cheap models |
-| Per-milestone cross-harness validation | **~$150–400** | Opus + GPT‑5.5 + Gemini + Codex wire on held-out |
-| **Full campaign budget** | **~$900–2,500** (see cache-off additive above) | End-to-end, multiple iterations, pre-registered triage |
+| Claude Max | $200 | Opus 4.7 + Sonnet 4.6 in Claude Code (validation harness #1) |
+| Codex Pro | $20 | GPT-5.5 / GPT-5-Codex in Codex CLI (validation harness #2) |
+| Gemini Pro | ~$20 | Gemini 3.1 Pro in Gemini CLI / OpenCode (validation harness #3) |
+| **OpenCode Go** | **$10** | DSv4 + MiniMax + Kimi + Qwen + GLM + MiMo for the entire GEPA training pool (validation harness #4); $5 first month |
+| **Total floor** | **~$250/mo** | 4 harnesses × full evaluatee panel |
 
-Compare to GRPO-style RL approaches (~$300-500 per task per attempt with 24K rollouts) or naive
-all‑frontier reflection without a cheap reflector (often **multiple times** the above). The
-DeepSeek V4-Pro promo reflector still anchors affordability; **June 1** DSv4‑Pro price step‑up
-re‑estimates both reflector and any DSv4 auxiliary replays.
+**API marginal spend** ($25 cap, this campaign only):
+
+| Phase | Marginal API $ | Provider | What |
+|---|---|---|---|
+| Phase A spike (6 leaders × 4 cheap × 30 probes ≈ 720 runs) | $0 | OpenCode Go | Within $12/5hr, $30/week, $60/month limits |
+| Reflector calls (light + medium + heavy GEPA, ~340 generations) | **~$3-5** | DSv4-Pro direct API (cache-controlled) | Reflection-only — single call per minibatch, prefix cache friendly |
+| GEPA evaluatee runs (all generations) | $0 | OpenCode Go | Same subscription |
+| Synthesis (GEPA Merge ~10 rounds) | $0 | OpenCode Go + DSv4-Pro reflector | Reflector spend rolled into ~$3-5 above |
+| Uber-tree gates G1-G5 (40 probes × 4 cheap × candidates) | $0 | OpenCode Go | Single subscription |
+| **Milestone 1 — frontier-trio replay** (final candidate × 30 probes × Opus + GPT-5.5 + Gemini) | $0 | Claude Max + Codex Pro + Gemini Pro | Inside subscriptions |
+| Cross-harness sanity (G5: Sonnet 4.6 reference on B3 mode) | $0 | Claude Max | Inside subscription |
+| 4-baseline FreshStack-30 (B1 native rg+Read in Claude Code, B2 generator-only, B3 sweet-search uber, B4 oracle) | $0 | Claude Max + OpenCode Go | All four cycles inside subs |
+| **Cache-off bracket buffer** (per §8.9.3 — assume DSv4 cache hit < 50%) | **~$5-8** | DSv4-Pro direct API | Realistic ceiling; padding for cache misses on reflection |
+| **Buffer for one-off direct-API calls** | **~$10** | Various | Slop for unanticipated needs |
+| **Total marginal API** | **~$18-23** | | **Under $25 cap** |
+
+**Why DSv4-Pro reflector via direct API instead of OpenCode Go**: cache-control. The reflector
+sends near-identical prefix every generation (system prompt + tool schema + previous
+generation's traces); DSv4's $0.028/M cache-hit input vs $0.14/M cache-miss represents 5×
+savings IF we manage the cache key explicitly. OpenCode Go's gateway abstracts that away. For
+~340 reflector calls × ~5K input each, direct API with cache-control is ~$1-3; OpenCode Go
+with no cache control could be 5× that. Worth the small operational cost of a direct API key.
+
+**Why $25 marginal cap is genuinely achievable** (not a stretch):
+
+- DSv4-Flash at $0.14/$0.28 ≈ $0.002/probe × 720 Phase-A runs = $1.44 (reference; covered by
+  OpenCode Go in practice).
+- DSv4-Pro promo at $0.435/$0.87 with cache-on ≈ $0.002/reflection × 340 = $0.68 (reference;
+  cache-off doubles to ~$1.36).
+- Frontier validation costs $0 marginal because Claude Max + Codex Pro + Gemini Pro
+  subscriptions are pre-paid.
+- The campaign's *highest* marginal-cost activity is reflection at ~340 calls × DSv4-Pro,
+  which is ~$1-3 nominal. Everything else is subscription-priced.
+
+Compare to alternatives: API-only frontier-led GEPA would be **$900-2,500 marginal** plus
+subscription floor; cheap-pool API-only would be **$300-600 marginal** plus floor; this plan
+is **$18-23 marginal** plus the same floor. The 25-50× improvement comes from (a) routing
+training to subscription pricing, (b) reserving frontier for one-shot milestone replays, and
+(c) cache-controlled direct API only where caching pays.
+
+**June 1 promo cliff**: when DSv4-Pro promo expires ($0.435 → $1.74), reflector cost ~4×.
+Light campaign moves from ~$3 reflection → ~$12 reflection. Still under $25 cap with margin.
+Switch reflector to MiniMax M2.5 ($0.15/$1.15) post-cliff if budget pressure increases.
 
 ### 8.7 DSPy MIPROv2 as a baseline
 
@@ -1205,6 +1280,56 @@ For §7 Track B and any LLM-judge-heavy gate: tighten rubrics when inter-judge d
 threshold; uphold §11.6 Krippendorff α protocol — **high judge disagreement is a metric validity
 failure**, not a prompt win.
 
+### 8.10 Lean campaign envelope ($25 marginal API + ~$250 subscription floor)
+
+This section codifies the cost discipline that keeps the campaign within a $25 marginal API
+budget while preserving cross-model robustness as the optimization target and frontier
+validation as a milestone gate.
+
+**Subscription floor — assumed prerequisite, $0 marginal for this campaign**:
+
+| Subscription | $/mo | Role in this campaign |
+|---|---|---|
+| Claude Max | $200 | Claude Code + Opus 4.7 / Sonnet 4.6 — validation harness #1, B1 native rg+Read reference, P10.6 / P11 / P11.5 in-harness runs |
+| Codex Pro | $20 | Codex CLI + GPT-5.5 / GPT-5-Codex — validation harness #2 |
+| Gemini Pro | ~$20 | Gemini CLI + Gemini 3.1 Pro — validation harness #3 (also accessible inside OpenCode if preferred) |
+| OpenCode Go | $10 | OpenCode + cheap-pool evaluatees (DSv4-Flash/Pro, MiniMax M2.5/M2.7, Kimi K2.5/K2.6, Qwen 3.5/3.6 Plus, GLM 5/5.1, MiMo) — **the entire GEPA training pool runs here** at zero marginal cost; also harness #4 |
+
+**Marginal API spend allocation — $25 cap**:
+
+| Item | Estimated $ | Why direct API instead of a subscription |
+|---|---|---|
+| DSv4-Pro reflector (light + medium + heavy GEPA, ~340 generations) | $3-5 | Cache-control: $0.028/M cache-hit input vs $0.14/M miss — 5× savings if managed explicitly. OpenCode Go's gateway abstracts cache-control away; direct API recovers it. |
+| Cache-off bracket reserve (per §8.9.3) | $5 | If realized cache hit rate < 50% (likely given GEPA prefix churn), reflection cost roughly doubles. Padding ensures we don't blow the cap on bad cache assumptions. |
+| Track B agent-judge calls (DSv4-Pro judge for PRP) | $3 | Two-judge protocol (DSv4-Pro + Sonnet 4.6) — Sonnet inside Claude Max ($0); DSv4-Pro is direct API for batching control. |
+| Buffer for one-off direct-API needs | $10 | Unanticipated needs (decontamination LLM filter, ad-hoc query-shape replays, etc.) |
+| **Total marginal API cap** | **$25** | |
+
+**Why not just push everything through OpenCode Go**: three reasons.
+1. Cache-control on the reflector matters (5× cost difference at high reflection volume).
+2. OpenCode Go is rate-limited to $12/5hr equivalent; running concurrent reflector calls
+   alongside evaluatee calls might hit the 5-hour ceiling during heavy GEPA bursts. Direct API
+   for reflector decouples it.
+3. A small direct-API budget is genuine insurance: if any subscription goes down or hits a
+   cap mid-campaign, we have $25 of API spend to keep moving.
+
+**June 1 promo cliff**: when DSv4-Pro promo expires ($0.435 → $1.74 / $0.87 → $3.48), reflector
+cost ~4×. Light campaign reflection moves from ~$3 → ~$12. Still under $25 cap with margin.
+Switch reflector to MiniMax M2.5 ($0.15/$1.15) post-cliff if any further pressure emerges.
+
+**Subscription rate-limit awareness**: the $25 cap is meaningless if we exhaust subscription
+quotas. Realistic per-month load:
+
+- **Claude Max**: ~150-300 Opus 4.7 agent runs across P11 + P11.5 + P11.05 + Track B replay.
+  Comfortably within Claude Max's published Opus envelope.
+- **Codex Pro**: ~30-60 GPT-5.5 agent runs at P11. Under monthly cap.
+- **Gemini Pro**: ~30-60 agent runs at P11. Generous on Pro tier.
+- **OpenCode Go**: ~5-10K evaluatee runs across P8 + P10 + P10.5 + P10.6 + P11.5 cheap-side.
+  Well under the 158K DSv4-Flash / 17K MiniMax M2.7 / 9.25K Kimi K2.5 monthly budgets.
+
+If a phase script hits a subscription rate-limit window, it pauses (not aborts) and resumes at
+the next 5h/week/month boundary.
+
 ---
 
 ## Part 9: Two-Phase Training / Validation
@@ -1222,59 +1347,75 @@ a 5-15K-token harness prompt 10x's the per-call cost.
 
 **Therefore: train bare, validate in-harness.**
 
-### 9.2 Phase 1 — bare-API GEPA training
+### 9.2 Phase 1 — bare-API GEPA training (subscription + ~$25 marginal)
 
 ```text
 Setup:
   - Direct API calls to each evaluatee (no harness, no wrapper)
-  - System prompt = your decision-tree variant + sweet-search tool schema only
+  - System prompt = decision-tree variant + sweet-search tool schema only
   - Tools = sweet-search CLI commands (executed via shell/subprocess)
-  - Reflector = DeepSeek V4-Pro promo
-  - Primary evaluatees = Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro
-  - Headline metric = shipping_score = mean(answerability | primary pool)
-  - Auxiliary = 4 cheap models (periodic subsampled replays for median portability — not the scalar max)
+  - Reflector = DeepSeek V4-Pro promo (direct API for cache-control)
+  - Primary evaluatees = OpenCode Go subscription:
+      DSv4-Flash + MiniMax M2.7 + Kimi K2.5 + Qwen 3.6 Plus
+  - Optimization target = robustness_score = min(answerability) over the primary pool
+  - Reporting = paired stats (median, p25, raw min, min_four — §8.9.1)
 
 Why bare:
   - Isolates the variable being tuned
-  - Avoids 5-15K-token harness prompt per call on top of frontier evaluatee cost
+  - Avoids 5-15K-token harness prompt per call on top of evaluatee cost
   - Deterministic (no harness-version drift)
   - Cross-harness portable (no harness-specific surface artifacts)
 
-Cost: ~$800-2,000+ per full campaign (frontier evaluatee-led; see §8.6)
+Marginal cost: ~$3-5 reflector spend (DSv4-Pro direct API, cache-controlled) + $0
+  evaluatee spend (OpenCode Go subscription). Well under §8.10 lean-campaign envelope.
 ```
 
-### 9.3 Phase 2 — cross-harness validation
+### 9.3 Phase 2 — cross-harness validation (subscriptions; $0 marginal)
 
 ```text
 Trigger: at every promotion gate (winner of GEPA Phase 1)
 
 Setup:
   - Run the tuned canonical AGENTS.md inside each harness
-  - Apply per-model surface shim (Section 4A)
+  - Apply per-harness surface shim (Section 4A)
   - Use a FRESH held-out task set (never seen during training)
 
-Harnesses & evaluatees:
-  - Claude Code + **Opus 4.7** (native, primary user profile) — priced higher than Sonnet-only
-  - Claude Code + DeepSeek V4-Pro (Anthropic-compat) — optional regression repro, not headline
-  - Codex CLI + GPT-5.5 (native)                  — headline OpenAI-shaped surface
-  - OpenCode + Gemini 3.1 Pro                      — headline Google-shaped surface
-  - OpenCode + Kimi K2.5 / GLM 5.1                 — optional secondary, not headline
-  - Cursor Composer: **SKIP** for primary headline parity (still no reliable custom-agent endpoint).
-    Run **§8.9.5 `P11‑cursor‑smoke`** separately on finalist(s).
+Harness × evaluatee assignments — all subscription-priced ($0 marginal API):
+
+  - Claude Code + **Opus 4.7** (Claude Max $200/mo) — primary Anthropic user profile, headline
+  - Claude Code + Sonnet 4.6 (Claude Max) — secondary Anthropic profile (subscription default)
+  - Claude Code + DeepSeek V4-Pro (Anthropic-compat env vars) — optional cheap regression repro
+  - Codex CLI + GPT-5.5 / GPT-5-Codex (Codex Pro $20/mo) — headline OpenAI surface
+  - Gemini CLI + Gemini 3.1 Pro (Gemini Pro plan) — headline Google surface
+  - OpenCode + Kimi K2.5 / GLM 5.1 / DSv4-Pro (OpenCode Go $10/mo) — fifth-harness
+    diversity + cheap-pool harness coverage
+  - Cursor Composer: SKIP for primary parity (no reliable custom-agent endpoint).
+    Run §8.9.5 `P11‑cursor‑smoke` separately on finalist(s) using Cursor's default
+    subscription model.
 
 Promotion criteria:
-  - **shipping_score** (mean across Opus + GPT‑5.5 + Gemini on bare API or equivalent harness runs)
-    must beat current shipped policy with the §6.6 / §11 statistical battery
-  - Cross-harness: no regression >5pp file/fact recall on any of the three headline harness×model lines
+  - **robustness_score** (cheap-pool min, §8.5) beats current shipped policy with the
+    §6.6 / §11 statistical battery
+  - **shipping_score** (frontier mean: Opus + GPT-5.5 + Gemini, measured via Claude Code +
+    Codex + Gemini CLI subscription harnesses) does NOT regress >3pp at this milestone replay
+  - No cross-harness regression >5pp file/fact recall on any of the four primary lines
   - Auxiliary median (§8.5) stays within the G4 band
   - Tool-call count stays within 1.2× of baseline
 
-Cost: ~$150-400 per promotion gate, run 2-4× per campaign
+Cost: $0 marginal API per promotion gate (all evaluatees inside existing subscriptions).
+Operational cost is harness orchestration time; budget 4-6h per gate, run 2-4× per campaign.
 ```
 
 This is also the dataset that produces the **per-harness shim** content. If `Claude Code +
-Opus 4.7` regresses but bare-API GPT‑5.5 is fine, that's a Claude-specific compliance / XML-shim
-issue → tweak `CLAUDE.md` shim, not the canonical `AGENTS.md`.
+Opus 4.7` regresses but `OpenCode + DSv4-Flash` is fine, that's a Claude-specific compliance /
+XML-shim issue → tweak `CLAUDE.md` shim, not the canonical `AGENTS.md`. Conversely, if
+OpenCode-on-Kimi regresses but Claude Code is fine, the `AGENTS.md` canonical body has a
+Claude-leaning bias that needs broadening.
+
+**Subscription rate-limit awareness**: a full milestone gate run is ~30-40 probes × 5 harness
+lines = 150-200 agent runs. Claude Max handles this in one session. Codex Pro / Gemini Pro
+have lower per-day caps; spread across two sessions if needed. OpenCode Go's monthly limits
+are generous enough that all gates fit within one $10 cycle.
 
 ---
 
@@ -1442,14 +1583,14 @@ defend the numbers externally.
 
 Before each campaign:
 
-1. Commit `eval/prompt-evolution/preregistration.md` with: **`shipping_score`** (§8.5 mean
-   answerability on Opus 4.7 + GPT‑5.5 + Gemini 3.1 Pro) as **primary metric**, **paired portability
-   stats** (`aux_median`, `aux_p25`, raw `aux_min`, `aux_min_four`, optional strata — §8.9.1), any
-   **pre‑registered auxiliary `min` veto / evaluator exclusion protocol**, **`blended_usd_per_eval`
-   logging + cache‑off bracket** (§8.9.3), optional **`PromptBridge-lite` budget** trigger (§8.9.6),
-   **`P11‑cursor‑smoke`** inclusion, hypothesis,
-   secondary metrics, statistical tests planned, multiple-comparison correction, sample size,
-   stop rules.
+1. Commit `eval/prompt-evolution/preregistration.md` with: **`robustness_score`** (§8.5 cheap-pool
+   min answerability) as **primary GEPA optimization target**, **`shipping_score`** (§8.5
+   frontier-trio mean, measured via subscriptions at milestone) as **reporting / gate metric**,
+   **paired portability stats** (`aux_median`, `aux_p25`, raw `aux_min`, `aux_min_four`, optional
+   strata — §8.9.1), any **pre‑registered auxiliary `min` veto / evaluator exclusion protocol**,
+   **`blended_usd_per_eval` logging + cache‑off bracket** (§8.9.3), optional **`PromptBridge-lite`
+   budget** trigger (§8.9.6), **`P11‑cursor‑smoke`** inclusion, hypothesis, secondary metrics,
+   statistical tests planned, multiple-comparison correction, sample size, stop rules.
 2. Tag the commit before the first evaluatee call (`git tag prereg/{run-id}`).
 3. Any deviation from the pre-registered plan is an *exploratory* result, must be labeled as
    such, and may not appear in the headline table without disclosure.
@@ -1488,8 +1629,8 @@ literature, this is the canonical decomposition.
 ### 12.2 Cadence — when to compare, when to skip
 
 - **NOT every GEPA generation** — overhead is too high (4× the cost per probe). GEPA campaigns
-  run B3 optimizing **`shipping_score`** (mean over the primary SOTA trio from §8.5). Auxiliary
-  pool replay is subsampled. The native baseline is not the GEPA optimization target.
+  run B3 optimizing **`robustness_score`** (cheap-pool min from §8.5). The native baseline (B1)
+  is not the GEPA optimization target — it's a milestone-gate sanity check.
 - **At every promotion gate** (winner of GEPA Phase 1, before claiming an improvement) — run
   all four on the held-out 40-probe set with full statistical battery (§11.4).
 - **At every external claim** (blog post, README "X% faster than rg" headline, paper) — run all
@@ -1914,23 +2055,46 @@ unless pre-registered.
 
 These run post-hoc against the existing artifact JSONL. No changes to `claude-runner.js`.
 
-### 13.7 Kill criteria & per-phase budget caps
+### 13.7 Kill criteria & per-phase budget caps (lean campaign — $25 marginal API)
 
-| Phase | Halt-if criterion | Hard budget cap |
+All caps below are **marginal API spend on top of the assumed subscription floor** (Claude Max +
+Codex Pro + Gemini Pro + OpenCode Go ≈ $250/mo, paid regardless). Subscription rate limits are
+tracked separately under §13.7b. Most evaluatee work is subscription-priced; only the DSv4-Pro
+reflector (and unanticipated direct-API needs) consume marginal API dollars.
+
+| Phase | Halt-if criterion | Marginal API cap |
 |---|---|---|
 | P6.0 (golds) | <40 distinct golds within 14h; missing tool-affinity preregs | $0 |
-| P6.2 (Track A) | best-shape `recall@1` < 0.5 across all 4 tools (variant grid is misframed) | $50 |
-| P6.3 (Track B) | judge IAA α < 0.5 even after one rubric rewrite (humans-only on that metric) | $200 |
-| P8 (Phase A spike) | median PASS rate < 0.5 across 6 leaders (variant slate is wrong) | $1,200 |
-| P9 (MIPROv2 baseline) | 2× budget overrun without convergence | $80 |
-| P10 (GEPA campaign) | spend > **$2,200** with no Pareto-better candidate on `shipping_score` in 3 successive generations | **$2,600** |
-| P10.5 (synthesis) | 3 successive synthesized variants fail at G1-G5 (architecture problem) | $200 |
-| P11.5 (4-baseline gate) | B3 fails to beat B1 with p < 0.05 on FreshStack-30 (sweet-search isn't an improvement on that distribution; do not ship the campaign output) | $300 |
-| **Aggregate campaign cap** | **abort all phases** | **$5,000** (frontier‑led evaluatees; tighten if pre‑registered triage hits) |
+| P6.2 (Track A query-shape sweep) | best-shape `recall@1` < 0.5 across all 4 tools (variant grid is misframed) | $2 (DSv4-Pro reflection if used) |
+| P6.3 (Track B agent-in-loop) | judge IAA α < 0.5 even after one rubric rewrite (humans-only on that metric) | $3 (Sonnet 4.6 inside Claude Max → $0; DSv4-Pro judge calls) |
+| P8 (Phase A spike) | median PASS rate < 0.5 across 6 leaders (variant slate is wrong) | $0 (OpenCode Go) |
+| P9 (MIPROv2 baseline) | 2× generation budget overrun without convergence | $1 (reflector only) |
+| P10 (GEPA campaign light → medium → heavy) | spend > **$10** marginal with no Pareto-better candidate on `robustness_score` in 3 successive generations | **$10** (reflector only; evaluatees on OpenCode Go) |
+| P10.5 (synthesis) | 3 successive synthesized variants fail at G1-G5 (architecture problem) | $2 |
+| P11 (cross-harness validation) | regression >5pp on any of 4 primary harness lines | $0 (subscriptions) |
+| P11.05 (Cursor Composer smoke) | composer pass rate <50% on finalist | $0 (Cursor subscription if held) |
+| P11.5 (4-baseline gate FreshStack-30) | B3 fails to beat B1 with p < 0.05 (sweet-search isn't an improvement; do not ship) | $0 (B1 + B2 + B3 + B4 inside subscriptions) |
+| Cache-off bracket reserve | DSv4 cache hit < 50% sustained → adjust reflector batching or fall back to MiniMax M2.5 | $5 reserved |
+| Buffer / unanticipated direct-API | one-off needs not covered by subs | $5 |
+| **Aggregate campaign marginal API cap** | **abort all phases** | **$25** |
 
-Each phase script must check its own cap before spawning the next batch and exit non-zero with
-a clear message when hit. Caps are tracked in
-`eval/prompt-evolution/results/{run-id}/budget.jsonl` (append-only).
+Each phase script checks its own cap before spawning the next batch and exits non-zero with a
+clear message when hit. Caps are tracked in
+`eval/prompt-evolution/results/{run-id}/budget.jsonl` (append-only). The `cache-and-cost.mjs`
+telemetry helper from §13.5 emits realized `blended_usd_per_eval` per call.
+
+### 13.7b Subscription rate-limit caps (orthogonal to API budget)
+
+| Subscription | Cap | What runs there | Notes |
+|---|---|---|---|
+| Claude Max ($200/mo) | Anthropic-enforced 5-hour Opus limits + monthly cap | P11 Claude Code + Opus 4.7; P11 Sonnet 4.6 reference; P11.5 B1 native rg+Read; B3/B4 in Claude Code | Spread milestone gates across sessions; Opus 4.7 ~50-100 agent runs/session is comfortable |
+| Codex Pro ($20/mo) | ChatGPT-credits-based monthly | P11 Codex CLI + GPT-5.5 | One milestone gate per month is fine; multiple runs may need careful batching post-April-2-2026 token-rate change |
+| Gemini Pro ($20/mo) | RPM + per-day quotas | P11 Gemini CLI + Gemini 3.1 Pro | Generous on Pro tier; spread runs over 24h if hitting RPM ceiling |
+| OpenCode Go ($10/mo) | $12/5hr, $30/week, $60/month equivalent | All P8/P9/P10 GEPA training; P10.5 synthesis evaluatees; P11 OpenCode-on-Kimi/GLM line; P11.5 B2/B3 cheap-pool sides | Headroom comfortable: campaign needs ~5-10K calls; Go gives ~9-160K/month per model |
+
+If any subscription rate-limit halts a phase, the runner pauses (does not exit) and resumes
+when the next 5h/week/month window opens. This keeps the API marginal cost cap meaningful
+without forcing campaign abort on quota timeouts.
 
 ### 13.8 Krippendorff α validation procedure
 
@@ -2059,20 +2223,21 @@ results land.
 | **P5** | Uninstall cleanup for all init-owned instruction/settings mutations across all five files | 2-3h | P1-P3 |
 | **P6.0** | **Query-shape probe-set construction (§7.3)**: hand-author 12 golds × 4 dev repos (fastify, gin, ripgrep, flask) + 30 held-out fresh on uv post-cutoff; pre-register tool affinities and predicted winners per shape category | 10-14h | P0 |
 | **P6.1** | **Authored shape variants (§7.2)**: 6 shape variants per gold across the agent-instructable grid (length × symbol × intent-verb × framing × domain-density × regex-anchor) | 6-8h | P6.0 |
-| **P6.2** | **Track A deterministic sweep (§7.4)**: 4 in-scope tools × 78 golds × 6 shapes ≈ 1,872 runs, deterministic recall metrics | 4-6h + ~$10-20 | P6.1 |
-| **P6.3** | **Track B agent-in-loop sweep (§7.5)**: 18-24 gold subsample × 6 shapes × 4 tools, Sonnet 4.6 bulk + optional pre-registered Opus 4.7 replay on winners; judges DSv4-Pro + Sonnet 4.6 per PRP protocol and IAA validation | 6-12h + ~$120-280 | P6.2 |
-| **P6.4** | **Promotion artifact (§7.6)**: ship `eval/query-shapes/recommendations.json` with per-tool best/avoid shapes and verbatim `instruction_text` strings | 2-3h | P6.3 |
-| **P7** | Spike: write T1-T14 prompt bodies under `eval/prompt-evolution/seeds/`, **importing query-phrasing rules verbatim from `recommendations.json`** | 4-6h | P1, **P6.4** |
-| **P8** | Run Phase A (T1, T4, T7, T9, T13, T14) on **primary SOTA trio** × 60-probe dev set; optional pre-registered Sonnet/cheap-pool triage | 6-10h + **~$400-900** | P0, P7 |
-| **P8.5** | **Variant ablation analysis (§6.4)**: pairwise W matrix, failure-mode tally (8 modes × 14 variants), per-stratum strength fingerprints, Plackett-Luce ranking with bootstrap CIs, prose summary per variant | 4-6h + minimal $ | P8 |
-| **P9** | DSPy MIPROv2 baseline run on top 2 leaders from P8.5 | 3-5h + ~$30 | P8.5 |
-| **P10** | GEPA campaign (light → medium → heavy) on top leaders, **`shipping_score` / mean(primary SOTA trio)** + auxiliary median gate | 12-24h + **~$900-2,500** | P9 |
-| **P10.5** | **Variant synthesis (§6.5)**: GEPA system-aware Merge of Pareto-frontier variants → uber-tree v1 with explicit failure-mode targeting from §6.4 ablation map | 4-8h + ~$50-100 | P10 |
-| **P10.6** | **Uber-tree validation gates G1-G5 (§6.6)** on held-out 40-probe set; reject and re-run synthesis if any gate fails | 3-5h + ~$30-60 | P10.5 |
-| **P11** | Cross-harness validation gate (Claude Code Opus + Codex GPT‑5.5 + OpenCode Gemini; optional cheap replay) | 4-6h + **~$150-400** | P10.6 |
-| **P11.05** | **Cursor Composer smoke (§8.9.5)**: finalist uber-tree × **8–15** stratified probes, default subscription Composer, pinned IDE build logged | ~1–2h + minimal $ (mostly manual launch overhead) | P11 |
-| **P11.5** | **4-baseline gate (§12)**: B1 rg+Read native + B2 generator-only + B3 sweet-search uber-tree + B4 oracle retrieval, on FreshStack-30, with full statistical battery (§11.4) and cost/latency Pareto plot | 4-6h + ~$100-200 | P11.05 |
-| **P12** | Wire promoted policy artifacts into init injection + hooks + MCP, regression test vs shipped baseline | 2-3h | P11.5 |
+| **P6.2** | **Track A deterministic sweep (§7.4)**: 4 in-scope tools × 78 golds × 6 shapes ≈ 1,872 runs, deterministic recall metrics | 4-6h + **$0 marginal** (OpenCode Go) | P6.1 |
+| **P6.3** | **Track B agent-in-loop sweep (§7.5)**: 18-24 gold subsample × 6 shapes × 4 tools, Sonnet 4.6 bulk via Claude Max + optional pre-registered Opus 4.7 replay on winners; judges DSv4-Pro + Sonnet 4.6 per PRP protocol and IAA validation | 6-12h + **~$3 marginal** (DSv4-Pro judge calls only) | P6.2 |
+| **P6.4** | **Promotion artifact (§7.6)**: ship `eval/query-shapes/recommendations.json` with per-tool best/avoid shapes and verbatim `instruction_text` strings | 2-3h + $0 | P6.3 |
+| **P7** | Spike: write T1-T14 prompt bodies under `eval/prompt-evolution/seeds/`, **importing query-phrasing rules verbatim from `recommendations.json`** | 4-6h + $0 | P1, **P6.4** |
+| **P8** | Run Phase A (T1, T4, T7, T9, T13, T14) on **cheap pool min** (DSv4-Flash + MiniMax M2.7 + Kimi K2.5 + Qwen 3.6 Plus via OpenCode Go) × 60-probe dev set | 6-10h + **$0 marginal** (OpenCode Go) | P0, P7 |
+| **P8.5** | **Variant ablation analysis (§6.4)**: pairwise W matrix, failure-mode tally (8 modes × 14 variants), per-stratum strength fingerprints, Plackett-Luce ranking with bootstrap CIs, prose summary per variant | 4-6h + $0 | P8 |
+| **P9** | DSPy MIPROv2 baseline run on top 2 leaders from P8.5 (cheap pool via OpenCode Go) | 3-5h + **~$1 marginal** (reflector only) | P8.5 |
+| **P10** | GEPA campaign (light → medium → heavy) on top leaders, **`robustness_score` = min(answerability) over cheap pool** + paired portability stats published per §8.9.1 | 12-24h + **~$5-10 marginal** (DSv4-Pro reflector direct API; evaluatees via OpenCode Go) | P9 |
+| **P10.5** | **Variant synthesis (§6.5)**: GEPA system-aware Merge of Pareto-frontier variants → uber-tree v1 with explicit failure-mode targeting from §6.4 ablation map | 4-8h + **~$2 marginal** | P10 |
+| **P10.6** | **Uber-tree validation gates G1-G5 (§6.6)** on held-out 40-probe set; reject and re-run synthesis if any gate fails | 3-5h + **$0 marginal** (OpenCode Go) | P10.5 |
+| **P11** | Cross-harness validation gate: Claude Code + Opus 4.7 (Claude Max) + Codex CLI + GPT-5.5 (Codex Pro) + Gemini CLI + Gemini 3.1 Pro (Gemini Pro) + OpenCode + cheap-pool model (Go) — milestone replay of `shipping_score` and per-harness no-regression gate | 4-6h + **$0 marginal** (all subscriptions) | P10.6 |
+| **P11.05** | **Cursor Composer smoke (§8.9.5)**: finalist uber-tree × **8–15** stratified probes, default subscription Composer, pinned IDE build logged | 1-2h + $0 (Cursor sub if held; otherwise skip) | P11 |
+| **P11.5** | **4-baseline gate (§12)**: B1 rg+Read native (Claude Max) + B2 generator-only + B3 sweet-search uber-tree + B4 oracle retrieval, on FreshStack-30, with full statistical battery (§11.4) and cost/latency Pareto plot | 4-6h + **$0 marginal** (subscriptions) | P11.05 |
+| **P12** | Wire promoted policy artifacts into init injection + hooks + MCP, regression test vs shipped baseline | 2-3h + $0 | P11.5 |
+| **Total marginal API spend** | **~$11-16** + cache-off bracket reserve $5 + buffer $5 | **≤ $25 cap** | |
 
 **P0 must precede the GEPA campaign.** Without rigor scaffolding, every subsequent number is
 dev-only. Ship P0 alongside or before P1-P5 to unlock both the distribution rails and credible
@@ -2133,7 +2298,7 @@ only defensible if it passed P11.5 on a fresh-repo holdout. Internal numbers can
 | `eval/prompt-evolution/run-phase-a.mjs` | Spike harness: 6 leaders × **primary SOTA trio** × 60 probes (optional triage path) |
 | `eval/prompt-evolution/ablation-report.json` | Output of §6.4: 14×14 win matrix, 14×8 failure-mode tally, per-stratum fingerprints, PL worth params with CIs |
 | `eval/prompt-evolution/ablation-report.md` | Human-readable summary; per-variant prose ("T_i wins on X, fails on Y") |
-| `eval/prompt-evolution/run-gepa.py` | DSPy + GEPA runner: optimizes **`shipping_score`** (primary SOTA trio) + logs auxiliary pool |
+| `eval/prompt-evolution/run-gepa.py` | DSPy + GEPA runner: optimizes **`robustness_score`** (cheap-pool min via OpenCode Go) + logs paired portability stats per §8.9.1 |
 | `eval/prompt-evolution/run-synthesis.py` | GEPA system-aware Merge with §6.4 ablation map fed in as guidance |
 | `eval/prompt-evolution/synthesis-runs/T_uber_v1.md`, `T_uber_v2.md`, … | Versioned synthesized uber-tree candidates with source-variant manifest |
 | `eval/prompt-evolution/rejected/` | Failed-gate diagnostics for synthesized candidates that didn't pass G1-G5 |
@@ -2251,22 +2416,31 @@ A single file works *only* for OpenCode + Codex (which both read `AGENTS.md` dir
 coverage we need per-tool variants. The symlink convention reduces duplication where the body is
 identical.
 
-### Why Cheap Reflector + **SOTA‑Primary** Evaluatees for GEPA?
+### Why Cross-Model Robustness as Primary + Subscription-Priced Frontier Validation?
 
-Three reasons:
+Four reasons:
 
-1. **Objective matches users**: Most sweet-search agent runs target **Opus‑class / GPT‑5.5 / Gemini**
-   surfaces. The headline metric (`shipping_score`) should ask those models directly — not proxies
-   tuned for `$0.14/M` endpoints that users rarely pick for serious agent work.
-2. **Cost control without wrong objective**: Frontier-only reflection with an expensive frontier
-   reflector can still hit **\$5k+** campaigns. Keeping the **reflector** on DSv4‑Pro promo /
-   MiniMax M2.5 preserves sample efficiency dollars where reflection-heavy token volume lives,
-   while letting evaluatee dollars go to models that define product quality.
-3. **Portable without pessimistic intersections**: Auxiliary cheap diversity still exposes brittle
-   instructions via **`median(answerability)`**, **`aux_p25`**, **`aux_min_four`**, and optional
-   stratified summaries (§8.9.1). That stack flags collapse on smaller or oddly aligned endpoints
-   without letting a lone pathological evaluator **veto** a frontier win unless explicitly
-   pre-registered.
+1. **Generalization is the product property.** Sweet-search ships across Claude Code / Codex /
+   OpenCode / Cursor / Gemini CLI; users span Anthropic Max subscribers, ChatGPT Pro users,
+   cost-conscious DeepSeek V4-Pro users, and OpenCode-Go-on-Kimi users. A prompt tuned only on a
+   frontier subset can win on Opus while quietly degrading on Kimi / MiniMax. `min()` over an
+   architecturally + instructionally diverse cheap pool forces GEPA to find prompts whose
+   worst-case cross-model behavior is good — that's exactly the property users feel.
+2. **Subscriptions cover frontier validation at $0 marginal.** Claude Max ($200/mo) + Codex Pro
+   ($20/mo) + Gemini Pro ($20/mo) already provide Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro for
+   in-harness milestone validation. There's no reason to also burn API dollars optimizing on
+   those models — the validation gate catches if our cheap-pool min wins overfit to a frontier
+   regression.
+3. **Cost discipline.** Cheap-pool training via OpenCode Go ($10/mo subscription, fits the entire
+   campaign) + cache-controlled DSv4-Pro reflector (direct API for cache-hit pricing) =
+   **$25 marginal API spend** for a complete campaign, vs ~$900-2,500 for a frontier-led plan.
+   25-90× cost reduction with no information loss given §8.9.1 paired portability stats and
+   §9.3 frontier replay gates.
+4. **Frontier-replay catches the failure mode the framing worries about.** If GEPA finds a
+   prompt that hard-codes some quirk of MiniMax M2.7's routing and accidentally degrades on
+   Opus 4.7, the milestone replay (§9.3 + §11.5) catches it with full §11.4 statistical battery
+   *before* we ship. The §6.6 G4 gate is explicit: `shipping_score` (frontier mean) must not
+   regress >3pp at the milestone replay, even though it's not the GEPA optimization target.
 
 ### Why Bare-API for GEPA Training, In-Harness for Validation?
 
