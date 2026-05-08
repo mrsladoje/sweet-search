@@ -103,6 +103,7 @@
     "bench:agent-read-workflows": "node eval/agent-read-workflows/run-bench.js",
     "bench:structural-context": "node eval/structural-context/run-bench.js",
     "eval:fetch-repos": "node eval/scripts/fetch-benchmark-repos.js",
+    "eval:prompt": "node scripts/eval-prompt-evolution.mjs",
     "features": "node core/training/query-router/features/extractor.js",
     "features:benchmark": "node core/training/query-router/features/extractor.js --benchmark",
     "features:names": "node core/training/query-router/features/extractor.js --names",
