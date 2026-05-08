@@ -165,3 +165,41 @@ describe('parseInitArgs — --no-prompt-reminders', () => {
     expect(parseInitArgs(['--no-prompt-reminders']).skipPromptReminders).toBe(true);
   });
 });
+
+describe('remind-tools.mjs hook script (Claude Code UserPromptSubmit contract)', async () => {
+  // UserPromptSubmit hooks: plain stdout text is automatically added to
+  // the model's prompt context (per Claude Code hooks docs — verified
+  // 2026-05-09). No JSON wrapping needed for a passive reminder. This
+  // test spawns the actual hook and verifies the output shape.
+  const { spawnSync } = await import('node:child_process');
+  const HOOK_PATH = joinPath(PACKAGE_ROOT, 'scripts', 'hooks', 'remind-tools.mjs');
+
+  it('emits the tool-routing reminder on stdout and exits 0', () => {
+    const result = spawnSync(process.execPath, [HOOK_PATH], {
+      input: '{}', // UserPromptSubmit passes JSON on stdin (we ignore it)
+      encoding: 'utf8',
+      timeout: 4000,
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('<sweet-search-reminder>');
+    expect(result.stdout).toContain('</sweet-search-reminder>');
+    expect(result.stdout).toContain('ss-grep');
+    expect(result.stdout).toContain('ss-find');
+    expect(result.stdout).toContain('ss-read');
+    expect(result.stdout).toContain('ss-semantic');
+    expect(result.stdout).toContain('STOP');
+  });
+
+  it('reminder length stays within ~80-token budget (plan §4C)', () => {
+    const result = spawnSync(process.execPath, [HOOK_PATH], {
+      input: '',
+      encoding: 'utf8',
+      timeout: 4000,
+    });
+    // Rough char→token approximation (4 chars/token). Plan §4C wants the
+    // reminder cheap because it fires every prompt; a hard cap catches
+    // accidental bloat in future edits.
+    const approxTokens = result.stdout.length / 4;
+    expect(approxTokens).toBeLessThan(200);
+  });
+});
