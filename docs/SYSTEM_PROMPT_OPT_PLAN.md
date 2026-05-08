@@ -1,7 +1,7 @@
 # System Prompt Optimization Plan
 
 **Created**: 2026-05-03
-**Last reinforced**: 2026-05-09
+**Last reinforced**: 2026-05-09 (§8.9 evaluator-risk mitigations)
 **Status**: Draft, ready for spike-testing
 **Depends on**: implemented `read` / `read-semantic` tools, agent read-workflow benchmarks, retrieval-overhaul (cAST + IAR + RRF + STOP rules) shipped 2026-05-05, IAR uniqueness gate shipped 2026-05-07
 
@@ -160,9 +160,10 @@ For final-validation references:
 | **Auxiliary evaluatee pool** (portability + architecture diversity, **not** the headline objective) | **DeepSeek V4-Flash** + **MiniMax M2.7** + **Kimi K2.5** + **Qwen 3.6 Plus** | unchanged |
 | **Harness validation (Phase 2 / §9.3)** | Claude Code + **Opus 4.7** (or Sonnet only if reproducing a user-reported regression) + Codex on **GPT‑5.5** + OpenCode on **Gemini 3.1 Pro** + optional cheap replays | unchanged |
 
-DeepSeek's $0.028/M cache-hit input is the lever that makes GEPA practical. Every reflection
-iteration reuses the same trace skeleton; cache hit rates of 75-90% are realistic, making input
-cost effectively zero for high-volume optimization runs.
+DeepSeek advertises \$0.028/M **cache-hit** input for V4-Flash. **Treat realized cache as an
+empirical KPI**, not a budget axiom: GEPA rewrites policy text every generation (prefix drift),
+and providers differ on what counts as a cache hit (see §8.9.3). Log blended \$/eval from week
+one and keep a **cache-off upper bracket** in cost projections.
 
 ---
 
@@ -235,8 +236,11 @@ Has `--format json` for benchmarking. **Best harness for cross-model GEPA valida
 wrapper, swap models with `--model provider/name`.
 
 **Cursor CLI** — Custom OpenAI-compatible endpoints work for Chat but NOT for Composer (the
-agentic mode). API key transits Cursor's backend (privacy concern). Use only for IDE chat tests;
-skip for end-to-end agentic comparison.
+agentic mode). API key transits Cursor's backend (privacy concern). **Primary** cross-harness
+validation still uses Claude Code / Codex / OpenCode (§9.3). **Additionally**, run a **thin
+Composer smoke** on **final promotion candidates only** (small held-out subsample, default
+Cursor model / subscription — no custom endpoint required) so marketing and real users on
+Cursor agent are not a complete blind spot; log harness+build version. See §8.9.5.
 
 ### 3.3 Instruction-file convergence: AGENTS.md as canonical
 
@@ -251,6 +255,9 @@ docs) is:
    prefer importing over duplicating.
 4. **Discovery**: Codex enforces a 32 KiB cap (`project_doc_max_bytes`) on the merged
    `AGENTS.md` chain — split into nested `AGENTS.md` files in subdirectories if exceeded.
+   **Promotion gate**: the campaign/runner asserts merged instruction size stays under cap
+   (`scripts/eval-prompt-evolution.mjs` or CI) so optimized trees never silently fail on Codex
+   ingestion (§8.9.7).
 
 **Sweet-search init must write all four files.** Section 10 below specifies the exact flow.
 
@@ -665,7 +672,9 @@ with the top 3-4 variants from §6.4 (those at the Plackett-Luce frontier) plus 
 diff-summaries from the failure-mode matrix. GEPA's reflector reads the tally
 ("T9 fixes `query-shape-bad` but T13 fixes `budget-mismatch`") and proposes merge candidates
 that import the curing language from each. Reported gains in the GEPA paper: +8pp over base
-GEPA on multi-stage tasks. This is the cheapest synthesis path because it reuses the same
+GEPA on multi-stage tasks — treat this as a **prior**, not a guarantee on `agent-read-workflows`;
+budget a **light replay** Merge vs non-Merge on our probe split before leaning on Merge for heavy
+campaign spend (§8.9.8). This is the cheapest synthesis path because it reuses the same
 DSv4-Pro reflector loop already running for §8.
 
 **Strategy B: Mixture-of-Prompt-Experts (MoPE) gating.** Treat each surviving variant as an
@@ -706,7 +715,7 @@ discipline):
 | **G1: Pareto dominance** | Beats the best individual T_i on at least 2 of {PASS rate, file recall, citation precision, token cost} — and ties or wins on all four |
 | **G2: No new failure modes** | Per-failure-mode incident counts are ≤ the *minimum* across source variants for every mode (the synthesized tree must inherit each variant's strength, not create new bugs) |
 | **G3: Statistical** | Paired permutation test (10K iterations, seed=42) p < 0.05 on PASS rate vs the strongest individual T_i, with bootstrap 95% CI on the delta not crossing zero |
-| **G4: Cross-model robustness** | Pareto dominance holds on **`shipping_score`** (mean answerability across Opus 4.7 + GPT‑5.5 + Gemini 3.1 Pro per §8.5). **Additionally**: median answerability across the **auxiliary four‑model pool** must not regress **>3pp** vs the current shipped baseline (portability sentinel — catches prompts that win on frontier but collapse on smaller or differently aligned models). |
+| **G4: Cross-model robustness** | Pareto dominance holds on **`shipping_score`** (mean answerability across Opus 4.7 + GPT‑5.5 + Gemini 3.1 Pro per §8.5). **Additionally**: median answerability across the **auxiliary four‑model pool** must not regress **>3pp** vs the current shipped baseline. **Publishing requirement** (not optional): paired portability stats in every promotion dossier — `aux_median`, `aux_p25`, raw `aux_min`, and **`aux_min_four`** (= min across the four auxiliary models on the same probes). Optionally add **stratified mins** by evaluator archetype (MoE vs dense vs long-ctx). Use **`aux_min_four` only as a soft tripwire** unless pre‑registered as a hard gate: one pathological evaluator can dominate `min()`; pre‑register evaluator **drop-from-min rules** only with documented instruction-compliance failures (§8.9.1). |
 | **G5: Cross-harness sanity** | Inside Claude Code (**Opus 4.7** — Sonnet 4.6 acceptable only for reproducing subscription defaults) and Codex (**GPT-5.5**), the uber-tree does not regress more than 3pp on PASS rate vs each harness's native baseline. Single-pass, no retries. Primary cross-check is still `shipping_score` on the bare-API trio before shims. |
 
 If any gate fails, the synthesis result is logged to `eval/prompt-evolution/rejected/` with the
@@ -1009,8 +1018,9 @@ Reflector LM     : DeepSeek V4-Pro promo ($0.435/$0.87) until May 31
 Primary pool     : Claude Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro (parallel)
 shipping_score   : mean(answerability) across the primary pool
                    — this is the GEPA optimization target and the reported headline number
-Auxiliary pool   : DSv4-Flash + MiniMax M2.7 + Kimi K2.5 + Qwen 3.6 Plus
-portability      : median(answerability | auxiliary pool), min(...) logged as diagnostic only
+Auxiliary pool   : DSv4-Flash + MiniMax M2.7 + Kimi K2.5 + Qwen 3.6 Plus (+ optional slots for
+                   instructional-diversity recruits — refusal/tool-JSON/verbosity outliers)
+portability      : publish median, p25, raw min, min_four (see §8.9.1); median gates G4; min is diagnostic / soft tripwire unless preregistered hard gate
 reflection_minibatch_size : 3   (GEPA paper default)
 Train/val split  : 60/40 stratified, seed=42 (matches existing FreshStack/GCSN discipline)
 Budget tier      : frontier-led (expect higher $ than cheap-pool-only campaigns)
@@ -1024,11 +1034,15 @@ Stop rule        : promote only if Pareto-better on shipping_score AND no regres
 Opus‑class / GPT‑5.5‑class / Gemini‑class deployments. Optimizing `min()` over cheap evaluatees
 over‑weights intersections nobody ships and can veto prompts that cleanly win where it matters.
 
-**Why keep the auxiliary four-pack**: architectural and alignment diversity still catches brittle
-routing (verbosity penalties, refusal quirks, XML sensitivity). Those signals feed **gates and
-diagnostics**, not the headline scalar — echoing the “portability lab vs shipping score” split.
+**Why keep the auxiliary four-pack**: architectural diversity **plus** deliberate **instructional**
+diversity (refusal posture, verbosity, tool-call JSON discipline, deny-first vs permissive scopes)
+still catches brittle routing. Models can share helpful-assistant scaffolding yet diverge sharply
+on **constraint adherence** — pick auxiliary slots partly for that spread, not only parameter/MoE
+shape (§8.9.2). Those signals feed **gates and diagnostics**, not the headline scalar — echoing
+the “portability lab vs shipping score” split.
 
-**Why these four auxiliary evaluatees specifically**:
+**Why these four auxiliary evaluatees specifically** (baseline line-up; revise if a recruit clears
+instructional-gap criteria in §8.9.2):
 
 - **DeepSeek V4-Flash**: cheapest, fastest, MIT, dense+sparse — high-volume smoke tests.
 - **MiniMax M2.7**: 10B-active MoE, agent-tuned — different failure surface than dense frontier.
@@ -1039,18 +1053,20 @@ diagnostics**, not the headline scalar — echoing the “portability lab vs shi
 ### 8.6 Cost projections
 
 All numbers are **order-of-magnitude** for frontier‑led evaluatees; track realized $/probe from the
-first 20 runs and revise. The reflector stays on DSv4‑Pro promo / MiniMax M2.5; **evaluatee**
+first 20 runs and revise. Maintain a parallel **cache-off bracket** row (assume **no**
+provider prompt-cache credit) alongside logged blended tokens — prefixes move when GEPA rewrites
+prose (§8.9.3). The reflector stays on DSv4‑Pro promo / MiniMax M2.5; **evaluatee**
 cost now tracks Opus + GPT‑5.5 + Gemini.
 
 | Phase | Rough cost | What |
 |---|---|---|
-| Phase A spike (T1, T4, T7, T9, T13, T14 baseline) | **~$400–900** | 6 prompts × **3 primary SOTA** × 60 probes (see optional triage in §6.3) |
+| Phase A spike (T1, T4, T7, T9, T13, T14 baseline) | **~$400–900** (cache-off **~+$200–600**) | 6 prompts × **3 primary SOTA** × 60 probes (see optional triage in §6.3) |
 | Light GEPA from each leader (~400 metric calls, primary pool) | **~$80–200 each** | Fast iteration; still Opus‑class / GPT‑5.5 / Gemini |
 | Medium GEPA on top 2 leaders (~800 metric calls) | **~$200–500 each** | Production-quality policy search |
 | Heavy GEPA on the winner (~1,600 metric calls) | **~$400–1,000** | Final shipping policy candidate |
 | Auxiliary portability replays (subsampled) | **~$30–80** | e.g. top‑2 leaders × 20 probes × 4 cheap models |
 | Per-milestone cross-harness validation | **~$150–400** | Opus + GPT‑5.5 + Gemini + Codex wire on held-out |
-| **Full campaign budget** | **~$900–2,500** | End-to-end, multiple iterations, pre-registered triage |
+| **Full campaign budget** | **~$900–2,500** (see cache-off additive above) | End-to-end, multiple iterations, pre-registered triage |
 
 Compare to GRPO-style RL approaches (~$300-500 per task per attempt with 24K rollouts) or naive
 all‑frontier reflection without a cheap reflector (often **multiple times** the above). The
@@ -1086,6 +1102,108 @@ GEPA's role is:
 - reflective mutation of the policy text
 - learning from trace-level failures
 - discovering better query instructions, examples, and stopping rules
+
+### 8.9 Evaluation risks & mitigations (optimizer traps)
+
+These mitigations complement **`shipping_score`**: they prevent silent failure modes — pessimistic
+`min()` domination, wrong diversity, hallucinated budgets, shim-only transfer gaps, and harness
+holes.
+
+#### 8.9.1 Paired portability objectives (don’t let one bad evaluator own `min`)
+
+`min(answerability)` over an auxiliary panel is logically correct **intersection portability** but
+often **misaligned with “best product deployment”**: a single systematically weak model, or one
+that **violates tool JSON / parses instructions oddly**, can dominate `min()` with failures that no
+human-sized frontier deployment would hit.
+
+**Required in every promotion dossier**:
+
+- **`shipping_score`** (§8.5 primary trio)
+- **`aux_median`**, **`aux_p25`**, raw **`aux_min`**, **`aux_min_four`** on the **same probes**
+  (same definitions as deterministic answerability).
+
+**Recommended paired views**:
+
+- **`aux_min_stratum`**: stratified mins by evaluator archetype (e.g., dense‑sparse vs 10B‑MoE vs
+  long‑ctx) — surfaces *which lineage* collapses instead of blaming “the pool”.
+- **`aux_p25`** (or **`aux_min_trimmed`** / Winsor estimators **pre‑registered** per run): robustifies reporting
+  when one tail misbehaves.
+
+**Hard veto on `aux_min_four` only if pre‑registered** with an explicit exclusion protocol (e.g.
+drop evaluator *E* from portable-min iff two independent signals: ≥K instruction-format/tool-parse
+failures logged as **`proposal-class: external-evaluator-compliance`** AND no repro on frontier
+replay for the same probes). Never post-hoc remove the worst auxiliary model to salvage a headline.
+
+#### 8.9.2 Instructional diversity ≠ parameter/MoE shape
+
+Auxiliary recruits should deliberately differ on **constraint adherence** dimensions:
+
+- tool-call validity (JSON/function schema discipline)
+- verbosity vs truncation under tight output caps
+- refusal / abstain rate on ambiguous probes
+- “single-shot must follow numbering” vs best-effort paraphrase compliance
+
+Maintain a living **instructional-gap checklist** when rotating models into the auxiliary pool;
+“different parameter count” is insufficient justification.
+
+#### 8.9.3 Cache economics are empirical — log blended \$/tok
+
+From week one of each campaign fork:
+
+1. Emit **`blended_usd_per_eval`** per evaluatee × provider from billed usage APIs (evaluatee +
+   reflector).
+2. Track **cache-hit rate** separately when the provider exposes it; otherwise infer crudely from
+   input-token tiers if documented.
+3. Always carry a **cache-off bracket** alongside nominal projections (§8.6): assume full list
+   price on all input tokens. If real cache is low (GEPA churn, shim edits, attribution headers),
+   actual spend converges toward the bracket, not optimistic cache math.
+
+#### 8.9.4 Reflector–evaluatee capability gap (“proposal-class mirage”)
+
+A strong reflector can propose edits that cheap or misaligned evaluatees **cannot enact** — e.g.
+multi-hop plans requiring long context, nuanced STOP behavior, or tool grammars those models mishandle.
+
+**Mitigation**:
+
+- Extend trace JSONL tagging (alongside §13.6 failure modes) with **`proposal_class`** buckets:
+  `multi_hop_exploration`, `long_context_summarization`, `strict_json_tool`, etc.
+- If the reflector’s patch predicts behavior that **never appears** in cheap traces but frontier
+  traces satisfy it, classify as benign; conversely spikes in **`proposal-class: unreachable`**
+  on auxiliary-only runs indicate **capacity mismatch**, not retrieval quality problems — route
+  feedback accordingly and consider swapping auxiliary recruits per §8.9.2.
+
+#### 8.9.5 Cursor Composer — thin smoke on final candidates
+
+Composer still lacks custom endpoints (§3.2). Nonetheless many users perceive sweet-search inside
+**Cursor agent** flows — skipping Composer entirely creates a reputational/regression blind spot.
+
+After **uber-tree finalist(s)** clear §9.3: run **`P11‑cursor‑smoke`** — small stratified subset
+(~8–15 probes), default subscription model, Composer only, pinned Cursor build in `manifest.json`,
+no API key gymnastics. Outcome logged as **`composer_smoke_pass_rate`** separately from headline
+scores; regressions trigger **manual `.mdc` shim** review — not necessarily a block on promoting
+bare-API + Claude/Codex/OpenCode parity.
+
+#### 8.9.6 PromptBridge‑style escalation (optional)
+
+If shim-tuning + validators still show **large, noisy frontier↔canonical transfer gaps**, reserve a
+budget line (**PromptBridge-lite**): a **small anchored calibration suite** (~5–15 tasks)
+mapping canonical wording → Claude / GPT / Gemini surfaces with measured deltas, analogous in
+spirit to cross-model prompt transfer work (arxiv 2512.01420). **Do not** start here — only if
+gates G4/G5 fail for “looks good bare-API but shims thrash.”
+
+#### 8.9.7 Codex `AGENTS.md` chain size invariant
+
+Promotion checks assert merged canon + imports stay **below** Codex `project_doc_max_bytes` (32 KiB
+default). Automate this in runner/CI so **we never silently ship an optimized tree that Codex truncates**.
+
+#### 8.9.8 GEPA Merge gains are task‑specific + judge noise hygiene
+
+Treat paper-scale Merge lifts as hypotheses until replicated on pinned `agent-read-workflows`
+splits.
+
+For §7 Track B and any LLM-judge-heavy gate: tighten rubrics when inter-judge dispersion exceeds
+threshold; uphold §11.6 Krippendorff α protocol — **high judge disagreement is a metric validity
+failure**, not a prompt win.
 
 ---
 
@@ -1141,7 +1259,8 @@ Harnesses & evaluatees:
   - Codex CLI + GPT-5.5 (native)                  — headline OpenAI-shaped surface
   - OpenCode + Gemini 3.1 Pro                      — headline Google-shaped surface
   - OpenCode + Kimi K2.5 / GLM 5.1                 — optional secondary, not headline
-  - Cursor: SKIP for agentic mode (Composer doesn't support custom endpoints)
+  - Cursor Composer: **SKIP** for primary headline parity (still no reliable custom-agent endpoint).
+    Run **§8.9.5 `P11‑cursor‑smoke`** separately on finalist(s).
 
 Promotion criteria:
   - **shipping_score** (mean across Opus + GPT‑5.5 + Gemini on bare API or equivalent harness runs)
@@ -1309,7 +1428,9 @@ Every published number must be reproducible from:
   definitions with seeds
 - `eval/prompt-evolution/seeds/T01..T14.md` — variant prompts (immutable per published run)
 - `eval/prompt-evolution/run-config.toml` — evaluatee model versions, harness versions, GEPA
-  hyperparameters, judge prompts, seed list
+  hyperparameters, judge prompts, **`proposal_class` tagging policy**, seed list
+- `eval/prompt-evolution/telemetry/budget.jsonl` — blended \$/eval, cache stats, cache-off bracket deltas
+- `eval/prompt-evolution/results/{run-id}-portability.json` — `shipping_score`, `aux_*` stats (§8.9.1)
 - `eval/prompt-evolution/results/{run-id}.jsonl` — raw per-probe records
 - A one-shot `npm run eval:prompt -- --run <run-id>` script that reproduces a published number
   from manifest + config alone, without manual steps.
@@ -1322,7 +1443,11 @@ defend the numbers externally.
 Before each campaign:
 
 1. Commit `eval/prompt-evolution/preregistration.md` with: **`shipping_score`** (§8.5 mean
-   answerability on Opus 4.7 + GPT‑5.5 + Gemini 3.1 Pro) as **primary metric**, hypothesis,
+   answerability on Opus 4.7 + GPT‑5.5 + Gemini 3.1 Pro) as **primary metric**, **paired portability
+   stats** (`aux_median`, `aux_p25`, raw `aux_min`, `aux_min_four`, optional strata — §8.9.1), any
+   **pre‑registered auxiliary `min` veto / evaluator exclusion protocol**, **`blended_usd_per_eval`
+   logging + cache‑off bracket** (§8.9.3), optional **`PromptBridge-lite` budget** trigger (§8.9.6),
+   **`P11‑cursor‑smoke`** inclusion, hypothesis,
    secondary metrics, statistical tests planned, multiple-comparison correction, sample size,
    stop rules.
 2. Tag the commit before the first evaluatee call (`git tag prereg/{run-id}`).
@@ -1771,7 +1896,10 @@ node eval/prompt-evolution/baselines/aggregate-pareto.mjs \
 ### 13.6 Failure-mode detection rules (concrete, against existing JSONL trace)
 
 `eval/prompt-evolution/failure-modes/detect.mjs` consumes `rawRuns[].toolCalls[]` from the
-existing `claude-runner.js` JSONL output:
+existing `claude-runner.js` JSONL output. **Separate** lightweight tagging emits **`proposal_class`**
+(or **`reflect_evaluator_mismatch`**) per §8.9.4 when a reflector-suggested behavioral pattern exceeds
+verified tool depth on that evaluatee trace — use it to route GEPA feedback, not as a PASS failure
+unless pre-registered.
 
 | Mode | Detection rule (against trace JSONL) |
 |---|---|
@@ -1942,7 +2070,8 @@ results land.
 | **P10.5** | **Variant synthesis (§6.5)**: GEPA system-aware Merge of Pareto-frontier variants → uber-tree v1 with explicit failure-mode targeting from §6.4 ablation map | 4-8h + ~$50-100 | P10 |
 | **P10.6** | **Uber-tree validation gates G1-G5 (§6.6)** on held-out 40-probe set; reject and re-run synthesis if any gate fails | 3-5h + ~$30-60 | P10.5 |
 | **P11** | Cross-harness validation gate (Claude Code Opus + Codex GPT‑5.5 + OpenCode Gemini; optional cheap replay) | 4-6h + **~$150-400** | P10.6 |
-| **P11.5** | **4-baseline gate (§12)**: B1 rg+Read native + B2 generator-only + B3 sweet-search uber-tree + B4 oracle retrieval, on FreshStack-30, with full statistical battery (§11.4) and cost/latency Pareto plot | 4-6h + ~$100-200 | P11 |
+| **P11.05** | **Cursor Composer smoke (§8.9.5)**: finalist uber-tree × **8–15** stratified probes, default subscription Composer, pinned IDE build logged | ~1–2h + minimal $ (mostly manual launch overhead) | P11 |
+| **P11.5** | **4-baseline gate (§12)**: B1 rg+Read native + B2 generator-only + B3 sweet-search uber-tree + B4 oracle retrieval, on FreshStack-30, with full statistical battery (§11.4) and cost/latency Pareto plot | 4-6h + ~$100-200 | P11.05 |
 | **P12** | Wire promoted policy artifacts into init injection + hooks + MCP, regression test vs shipped baseline | 2-3h | P11.5 |
 
 **P0 must precede the GEPA campaign.** Without rigor scaffolding, every subsequent number is
@@ -2019,6 +2148,11 @@ only defensible if it passed P11.5 on a fresh-repo holdout. Internal numbers can
 | `eval/prompt-evolution/baselines/b4-oracle-retrieval.mjs` | Programmatically pre-injects gold snippets before agent runs |
 | `eval/prompt-evolution/baselines/run-four-baselines.mjs` | Runs B1-B4 on a given split + emits Pareto plot data |
 | `eval/prompt-evolution/run-cross-harness.mjs` | In-harness eval: invoke Claude Code / Codex / OpenCode programmatically with the tuned policy |
+| `eval/prompt-evolution/run-cursor-composer-smoke.mjs` | **§8.9.5 / P11.05**: tiny Composer-only smoke runner producing `composer_smoke_pass_rate` + pinned Cursor build IDs |
+| `eval/prompt-evolution/telemetry/cache-and-cost.mjs` | Append **`blended_usd_per_eval`**, optional cache-hit fields, cache-off bracket deltas to `budget.jsonl` (§8.9.3) |
+| `eval/prompt-evolution/telemetry/portability-dossier.mjs` | Emits mandated paired stats: `shipping_score`, `aux_median`, `aux_p25`, `aux_min`, `aux_min_four`, strata (§8.9.1) |
+| `eval/prompt-evolution/checks/codex-agents-size.mjs` | Assert merged `AGENTS.md` canonical chain `< project_doc_max_bytes` before promotion (§8.9.7) |
+| `eval/prompt-evolution/failure-modes/proposal-class.mjs` | Heuristic **`proposal_class`** tagging for reflector↔evaluatee mismatch (§8.9.4) |
 | `eval/prompt-evolution/judge-prompts/prp-pairwise-v1.md` | Pre-registered PRP-style LLM-as-judge prompt with rubric per failure mode |
 | `eval/prompt-evolution/judge-prompts/human-validation-set.json` | 30-probe human-labeled gold for IAA validation (Krippendorff's α, Cohen's κ) |
 | `eval/query-shapes/` | Benchmarks for optimal query wording per sweet-search tool (P6) |
@@ -2129,9 +2263,10 @@ Three reasons:
    MiniMax M2.5 preserves sample efficiency dollars where reflection-heavy token volume lives,
    while letting evaluatee dollars go to models that define product quality.
 3. **Portable without pessimistic intersections**: Auxiliary cheap diversity still exposes brittle
-   instructions (verbosity, MoE quirks, refusal patterns) via **`median(answerability)`** sentinels
-   in §8.5 / **G4** — without letting a single eccentric cheap model veto a prompt that cleanly
-   wins on the frontier trio.
+   instructions via **`median(answerability)`**, **`aux_p25`**, **`aux_min_four`**, and optional
+   stratified summaries (§8.9.1). That stack flags collapse on smaller or oddly aligned endpoints
+   without letting a lone pathological evaluator **veto** a frontier win unless explicitly
+   pre-registered.
 
 ### Why Bare-API for GEPA Training, In-Harness for Validation?
 
@@ -2157,12 +2292,16 @@ not need to actually run agentic code-search itself — that's the evaluatee's j
 the price 4x's; switch to MiniMax M2.5 (80.2% Verified, $0.15/$1.15) or evaluate other options
 at that point.
 
-### Why Skip Cursor Composer in Validation?
+### Why Skip Cursor Composer **for primary** validation?
 
 Cursor's Composer (the agentic mode) does not support custom OpenAI-compatible endpoints. Custom
-keys work for Chat only. Cursor also routes through its backend, so validation runs leak the API
-key. Use Claude Code / Codex / OpenCode for cross-harness validation; Cursor Chat is a separate,
-optional sanity check.
+keys work for Chat only. Cursor also routes through its backend — avoid routing secrets through it
+when alternatives exist.
+
+**Therefore:** headline **`shipping_score`** and §9.3 gates remain Claude Code / Codex / OpenCode.
+**Nevertheless**, many users judge the product inside **Composer**; **§8.9.5** adds **`P11‑cursor‑smoke`**
+(~8–15 probes, default subscription) on uber-tree finalists so regressions aren’t purely
+reputational.
 
 ### Why Ablation (§6.4) Before Synthesis (§6.5)?
 
