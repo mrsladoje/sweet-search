@@ -63,12 +63,17 @@ export function parseInitArgs(args) {
     liModel: null,           // Phase 4: --li-model standard|edge|none (raw user input; 'standard' aliased to 'lateon-code')
     searchReranking: null,   // Phase 4: --search-reranking auto|on|off
     wizard: false,           // Phase 4: --wizard runs interactive prompts
-    // P1 (system-prompt opt) — agent-instruction injection across harnesses.
-    // Default ON for every harness; per-harness `--no-<name>` flags below
-    // toggle individual ones off. `--no-agent-instructions` is the umbrella.
+    // P1 (system-prompt opt) — agent-instruction injection.
+    // Default: only CLAUDE.md (sweet-search is Claude-first).
+    //   --codex / --gemini / --cursor opt INTO additional harness files.
+    //   --no-claude opts OUT of CLAUDE.md *and* every .claude/* write
+    //     (hooks, skills, rules, settings-json mutations).
+    //   --no-agent-instructions is the umbrella: skip the four harness
+    //     instruction files but keep .claude/* hooks unless --no-claude.
     skipAgentInstructions: false,
     symlinkInstructionFiles: true,
-    skipHarnesses: new Set(),
+    optInHarnesses: new Set(),
+    noClaude: false,
     enforceTools: false, // P3: --enforce-tools (parsed here so init.js stays single-source)
   };
 
@@ -134,19 +139,23 @@ export function parseInitArgs(args) {
     } else if (arg === '--symlink-instruction-files') {
       // P1: explicit ON — useful for clarity in scripts even though it's the default.
       result.symlinkInstructionFiles = true;
-    } else if (arg === '--no-claude-code') {
-      // P1: skip CLAUDE.md + .claude/rules/sweet-search.md. Promotes
-      // AGENTS.md to canonical so other harnesses still get the policy body.
-      result.skipHarnesses.add('claude-code');
-    } else if (arg === '--no-codex') {
-      // P1: skip AGENTS.md (the Codex CLI / OpenCode entry point).
-      result.skipHarnesses.add('codex');
-    } else if (arg === '--no-gemini') {
-      // P1: skip GEMINI.md.
-      result.skipHarnesses.add('gemini');
-    } else if (arg === '--no-cursor') {
-      // P1: skip .cursor/rules/sweet-search.mdc.
-      result.skipHarnesses.add('cursor');
+    } else if (arg === '--no-claude') {
+      // P1: opt out of CLAUDE.md *and* every other .claude/* write that
+      // init normally performs (rules file, /sweet-index skill,
+      // index-maintainer hook, prewarm SessionStart entry). Universal
+      // gate — the user has signalled they don't use Claude Code.
+      // If `--codex` / `--gemini` / `--cursor` is also set, AGENTS.md
+      // (or whichever opt-in is canonical) carries the policy instead.
+      result.noClaude = true;
+    } else if (arg === '--codex') {
+      // P1: opt INTO writing AGENTS.md (Codex CLI / OpenCode entry point).
+      result.optInHarnesses.add('codex');
+    } else if (arg === '--gemini') {
+      // P1: opt INTO writing GEMINI.md.
+      result.optInHarnesses.add('gemini');
+    } else if (arg === '--cursor') {
+      // P1: opt INTO writing .cursor/rules/sweet-search.mdc.
+      result.optInHarnesses.add('cursor');
     } else if (arg === '--enforce-tools') {
       // P3: parsed here so init.js stays the single source of truth for
       // CLI flags. Actual installation lands when P3 ships.
@@ -158,12 +167,24 @@ export function parseInitArgs(args) {
 }
 
 /**
- * Resolve the active harness list given the parsed `--no-<name>` flags.
- * Default-on; subtract anything the user opted out of.
+ * Resolve the active harness list. Default is `claude-code` only;
+ * `--codex` / `--gemini` / `--cursor` add to that set; `--no-claude`
+ * removes claude-code (and gates every .claude/* write — see init flow).
+ *
+ * @param {object} args
+ * @param {Set<string>|string[]} [args.optInHarnesses] subset of
+ *   {codex, gemini, cursor} to add on top of the default
+ * @param {boolean} [args.noClaude] when true, drops claude-code entirely
+ * @returns {string[]} ordered list matching ALL_HARNESSES order
  */
-export function resolveActiveHarnesses(skipHarnesses) {
-  const skip = skipHarnesses instanceof Set ? skipHarnesses : new Set(skipHarnesses ?? []);
-  return ALL_HARNESSES.filter(h => !skip.has(h));
+export function resolveActiveHarnesses({ optInHarnesses, noClaude = false } = {}) {
+  const optIn = optInHarnesses instanceof Set
+    ? optInHarnesses
+    : new Set(optInHarnesses ?? []);
+  const active = new Set();
+  if (!noClaude) active.add('claude-code');
+  for (const h of optIn) active.add(h);
+  return ALL_HARNESSES.filter(h => active.has(h));
 }
 
 // ---------------------------------------------------------------------------
@@ -993,19 +1014,28 @@ Options:
                             NVIDIA GPU and the -cuda native package are
                             detected. Equivalent to SWEET_SEARCH_CUDA=0.
                             Indexing falls back to candle-cpu.
-  --no-agent-instructions   Skip writing CLAUDE.md / AGENTS.md / GEMINI.md /
-                            .cursor/rules/sweet-search.mdc /
-                            .claude/rules/sweet-search.md. Use when you manage
-                            your own agent instructions and don't want init
-                            to touch them. Idempotent rewrites use a marker
-                            block; re-running init never duplicates content.
-  --no-claude-code          Skip CLAUDE.md + .claude/rules/sweet-search.md.
-                            When set, AGENTS.md is promoted to canonical so
-                            Codex / Gemini / Cursor still receive the full
-                            policy body.
-  --no-codex                Skip AGENTS.md (Codex CLI / OpenCode entry point).
-  --no-gemini               Skip GEMINI.md.
-  --no-cursor               Skip .cursor/rules/sweet-search.mdc.
+  --no-agent-instructions   Skip the agent-instruction injection layer
+                            entirely (no CLAUDE.md, no AGENTS.md, no
+                            GEMINI.md, no Cursor rule, no
+                            .claude/rules/sweet-search.md). Use when you
+                            manage your own agent instructions. Idempotent
+                            rewrites use a marker block; re-running init
+                            never duplicates content.
+  --no-claude               Don't ship anything to .claude/. Skips
+                            CLAUDE.md + .claude/rules/sweet-search.md +
+                            .claude/hooks/index-maintainer.mjs +
+                            .claude/skills/sweet-index/ +
+                            .claude/settings.json prewarm SessionStart entry.
+                            Combine with --codex / --gemini / --cursor to
+                            ship the policy through a non-Claude harness.
+  --codex                   Also ship AGENTS.md (Codex CLI / OpenCode entry
+                            point). Without --no-claude, AGENTS.md is a
+                            thin @CLAUDE.md import shim; with --no-claude
+                            it carries the full canonical policy body.
+  --gemini                  Also ship GEMINI.md (symlink → canonical, or
+                            an @import file when --no-symlink-instruction-files).
+  --cursor                  Also ship .cursor/rules/sweet-search.mdc with
+                            sweet-search frontmatter.
   --no-symlink-instruction-files
                             Write GEMINI.md as a regular file with an @import
                             line rather than a symlink to the canonical file.
@@ -1364,92 +1394,110 @@ export async function runInit(args) {
     process.exit(1);
   }
 
-  // 10. Install index-maintainer daemon hook
-  try {
-    const hookDir = join(projectRoot, '.claude', 'hooks');
-    const hookDest = join(hookDir, 'index-maintainer.mjs');
-    const hookSrc = join(PACKAGE_ROOT, 'core', 'indexing', 'index-maintainer.mjs');
-    if (!existsSync(hookDest)) {
-      mkdirSync(hookDir, { recursive: true });
-      copyFileSync(hookSrc, hookDest);
-      process.stderr.write(`[init] Installed index-maintainer daemon to ${hookDir}\n`);
-    } else {
-      process.stderr.write(`[init] Index-maintainer daemon already installed\n`);
+  // 10. Install index-maintainer daemon hook (Claude-only — gated on
+  //     --no-claude per the universal "don't touch .claude/" contract).
+  let skillReport = null;
+  let prewarmHookReport = null;
+  if (parsed.noClaude) {
+    if (parsed.verbose) {
+      process.stderr.write(`[init] Skipping all .claude/ writes (--no-claude): index-maintainer hook, /sweet-index skill, prewarm SessionStart entry\n`);
     }
-  } catch (e) {
-    process.stderr.write(`[init] Warning: Could not install index-maintainer: ${e.message}\n`);
-  }
+  } else {
+    try {
+      const hookDir = join(projectRoot, '.claude', 'hooks');
+      const hookDest = join(hookDir, 'index-maintainer.mjs');
+      const hookSrc = join(PACKAGE_ROOT, 'core', 'indexing', 'index-maintainer.mjs');
+      if (!existsSync(hookDest)) {
+        mkdirSync(hookDir, { recursive: true });
+        copyFileSync(hookSrc, hookDest);
+        process.stderr.write(`[init] Installed index-maintainer daemon to ${hookDir}\n`);
+      } else {
+        process.stderr.write(`[init] Index-maintainer daemon already installed\n`);
+      }
+    } catch (e) {
+      process.stderr.write(`[init] Warning: Could not install index-maintainer: ${e.message}\n`);
+    }
 
-  // 11. Install /sweet-index skill — always, even if .claude/ doesn't exist.
-  //     Users who haven't adopted Claude Code yet still get the skill in place
-  //     the moment they do; we treat the skill as part of the product, not a
-  //     Claude-Code-conditional add-on.
-  const skillReport = installSweetIndexSkill({
-    projectRoot,
-    packageRoot: PACKAGE_ROOT,
-  });
-  if (skillReport.status === 'installed') {
-    process.stderr.write(`[init] Installed /sweet-index skill to ${skillReport.detail}\n`);
-  } else if (skillReport.status === 'already-installed') {
-    process.stderr.write(`[init] /sweet-index skill already installed\n`);
-  } else if (skillReport.status === 'error') {
-    process.stderr.write(`[init] Warning: Could not install /sweet-index skill: ${skillReport.detail}\n`);
-  }
+    // 11. Install /sweet-index skill — Claude-only artifact, gated on --no-claude.
+    skillReport = installSweetIndexSkill({
+      projectRoot,
+      packageRoot: PACKAGE_ROOT,
+    });
+    if (skillReport.status === 'installed') {
+      process.stderr.write(`[init] Installed /sweet-index skill to ${skillReport.detail}\n`);
+    } else if (skillReport.status === 'already-installed') {
+      process.stderr.write(`[init] /sweet-index skill already installed\n`);
+    } else if (skillReport.status === 'error') {
+      process.stderr.write(`[init] Warning: Could not install /sweet-index skill: ${skillReport.detail}\n`);
+    }
 
-  // 11.5. Register Claude Code SessionStart daemon-prewarm hook.
-  //       Spawns the search daemon detached in the background so the user's
-  //       first `sweet-search <query>` hits a warm daemon (~80ms) instead of
-  //       paying ~2.5s cold-start. The hook exits immediately; the daemon
-  //       loads models + indexes while the user reads Claude's first reply.
-  //       Never blocks init — any write failure collapses to a silent no-op
-  //       on next session start.
-  const prewarmHookReport = registerPrewarmSessionStartHook({
-    projectRoot,
-    packageRoot: PACKAGE_ROOT,
-    skipped: parsed.skipPrewarmHook,
-  });
-  if (parsed.verbose || prewarmHookReport.status === 'error') {
-    process.stderr.write(`[init] Prewarm hook: ${prewarmHookReport.status} — ${prewarmHookReport.detail}\n`);
+    // 11.5. Register Claude Code SessionStart daemon-prewarm hook.
+    //       Spawns the search daemon detached in the background so the user's
+    //       first `sweet-search <query>` hits a warm daemon (~80ms) instead of
+    //       paying ~2.5s cold-start. The hook exits immediately; the daemon
+    //       loads models + indexes while the user reads Claude's first reply.
+    //       Never blocks init — any write failure collapses to a silent no-op
+    //       on next session start.
+    prewarmHookReport = registerPrewarmSessionStartHook({
+      projectRoot,
+      packageRoot: PACKAGE_ROOT,
+      skipped: parsed.skipPrewarmHook,
+    });
+    if (parsed.verbose || prewarmHookReport.status === 'error') {
+      process.stderr.write(`[init] Prewarm hook: ${prewarmHookReport.status} — ${prewarmHookReport.detail}\n`);
+    }
   }
 
   // 12-15. Inject the sweet-search policy across coding-agent harnesses.
-  //        Canonical source: CLAUDE.md by default (sweet-search is Claude-
-  //        first); AGENTS.md when `--no-claude-code` is set. Other harnesses
-  //        get @import / symlink shims. Plan §4A + §4B + §10 (the canonical
-  //        flip from AGENTS.md → CLAUDE.md is a user-driven product call —
-  //        plan doc update tracked as a follow-up).
+  //        Default: only CLAUDE.md (sweet-search is Claude-first; the
+  //        existing project CLAUDE.md is where users look). Opt INTO
+  //        additional harnesses with --codex (AGENTS.md) / --gemini /
+  //        --cursor. --no-claude opts OUT of CLAUDE.md AND every other
+  //        .claude/* write (universal gate enforced above).
+  //        Plan §4A + §4B + §10 (the canonical flip from AGENTS.md →
+  //        CLAUDE.md is a user-driven product call — plan doc updated
+  //        in §3.3 / §10).
   //        Idempotent marker block so re-init never duplicates content.
-  //        `--no-agent-instructions` skips the whole step; per-harness
-  //        `--no-claude-code` / `--no-codex` / `--no-gemini` / `--no-cursor`
-  //        opt out of individual files.
+  //        `--no-agent-instructions` is the umbrella that skips the
+  //        instruction-file injection layer entirely.
   let agentInstructionsReport = null;
   let claudeRulesReport = null;
   if (!parsed.skipAgentInstructions) {
-    const activeHarnesses = resolveActiveHarnesses(parsed.skipHarnesses);
-    try {
-      agentInstructionsReport = injectAgentInstructions({
-        projectRoot,
-        harnesses: activeHarnesses,
-        useSymlinks: parsed.symlinkInstructionFiles,
-      });
-      const summary = Object.entries(agentInstructionsReport.harnesses)
-        .map(([k, v]) => `${k}=${v}`).join(' ');
-      const canonical = agentInstructionsReport.canonical
-        ? ` (canonical=${agentInstructionsReport.canonical})` : '';
-      process.stderr.write(`[init] Agent instructions: ${summary || '(none)'}${canonical}\n`);
-    } catch (err) {
-      process.stderr.write(`[init] Warning: Agent-instruction injection failed: ${err.message}\n`);
-    }
-    // Claude rules file is only useful when claude-code is enabled — the
-    // sole load path is the @.claude/rules/sweet-search.md import line that
-    // injectAgentInstructions writes into CLAUDE.md.
-    if (activeHarnesses.includes('claude-code')) {
+    const activeHarnesses = resolveActiveHarnesses({
+      optInHarnesses: parsed.optInHarnesses,
+      noClaude: parsed.noClaude,
+    });
+    if (activeHarnesses.length === 0) {
+      process.stderr.write(
+        `[init] Agent instructions: nothing to write — pass --codex / --gemini / --cursor `
+        + `to opt into additional harness files (claude-code is disabled by --no-claude).\n`,
+      );
+    } else {
       try {
-        const status = writeClaudeRules({ projectRoot });
-        claudeRulesReport = { status };
-        process.stderr.write(`[init] Claude rules: ${status}\n`);
+        agentInstructionsReport = injectAgentInstructions({
+          projectRoot,
+          harnesses: activeHarnesses,
+          useSymlinks: parsed.symlinkInstructionFiles,
+        });
+        const summary = Object.entries(agentInstructionsReport.harnesses)
+          .map(([k, v]) => `${k}=${v}`).join(' ');
+        const canonical = agentInstructionsReport.canonical
+          ? ` (canonical=${agentInstructionsReport.canonical})` : '';
+        process.stderr.write(`[init] Agent instructions: ${summary || '(none)'}${canonical}\n`);
       } catch (err) {
-        process.stderr.write(`[init] Warning: Could not write Claude rules: ${err.message}\n`);
+        process.stderr.write(`[init] Warning: Agent-instruction injection failed: ${err.message}\n`);
+      }
+      // Claude rules file is only useful when claude-code is enabled — the
+      // sole load path is the @.claude/rules/sweet-search.md import line that
+      // injectAgentInstructions writes into CLAUDE.md.
+      if (activeHarnesses.includes('claude-code')) {
+        try {
+          const status = writeClaudeRules({ projectRoot });
+          claudeRulesReport = { status };
+          process.stderr.write(`[init] Claude rules: ${status}\n`);
+        } catch (err) {
+          process.stderr.write(`[init] Warning: Could not write Claude rules: ${err.message}\n`);
+        }
       }
     }
   } else if (parsed.verbose) {
