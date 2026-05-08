@@ -1494,9 +1494,19 @@ export function applyResultDemotions(results, opts = {}) {
     ? new Set((ENTITY_KIND_KEYWORDS[preferredKind] || []).map(normalizeType))
     : null;
 
-  const adjusted = results.slice(0, window).map((result, index) => {
+  // For-loop with a pre-allocated array. The hot path here was a `.map()`
+  // callback that always allocated a `details` array per result and a fresh
+  // result spread `{ ...result, _resultDemotionOrigIndex: index }` even when
+  // no rule fired. With ~100 results × 2 demotion sites that's hundreds of
+  // empty arrays + light spreads per query for nothing. Lazy `details`
+  // allocation skips the array when the result has zero rule hits;
+  // unchanged-result spreads keep going through the same shape (the caller
+  // expects new references — cascade scoring writes back r.score).
+  const adjusted = new Array(window);
+  for (let index = 0; index < window; index++) {
+    const result = results[index];
     let mult = 1;
-    const details = [];
+    let details = null;
 
     if (!skipTestName) {
       if (__profOn) __ruleT0 = performance.now();
@@ -1504,7 +1514,7 @@ export function applyResultDemotions(results, opts = {}) {
         const overlap = testNameQueryOverlap(result, qTokens);
         if (overlap >= testNameOverlapThreshold) {
           mult *= testNameOverlapFactor;
-          details.push('test-name:0.40');
+          (details ||= []).push('test-name:0.40');
         }
       }
       if (__profOn) __ruleTime[0] += performance.now() - __ruleT0;
@@ -1515,7 +1525,7 @@ export function applyResultDemotions(results, opts = {}) {
     if (__profOn) __ruleTime[1] += performance.now() - __ruleT0;
     if (kindMult !== 1) {
       mult *= kindMult;
-      details.push(`kind-pref:${kindMult.toFixed(2)}`);
+      (details ||= []).push(`kind-pref:${kindMult.toFixed(2)}`);
     }
 
     if (__profOn) __ruleT0 = performance.now();
@@ -1523,7 +1533,7 @@ export function applyResultDemotions(results, opts = {}) {
     if (__profOn) __ruleTime[2] += performance.now() - __ruleT0;
     if (nameMult !== 1) {
       mult *= nameMult;
-      details.push(`name-precision:${nameMult.toFixed(2)}`);
+      (details ||= []).push(`name-precision:${nameMult.toFixed(2)}`);
     }
 
     if (!skipBodyDensity) {
@@ -1532,7 +1542,7 @@ export function applyResultDemotions(results, opts = {}) {
       if (__profOn) __ruleTime[3] += performance.now() - __ruleT0;
       if (bodyMult !== 1) {
         mult *= bodyMult;
-        details.push(`body-density:${bodyMult.toFixed(2)}`);
+        (details ||= []).push(`body-density:${bodyMult.toFixed(2)}`);
       }
     }
 
@@ -1542,7 +1552,7 @@ export function applyResultDemotions(results, opts = {}) {
       if (__profOn) __ruleTime[4] += performance.now() - __ruleT0;
       if (megaMult !== 1) {
         mult *= megaMult;
-        details.push(`mega-chunk:${megaMult.toFixed(2)}`);
+        (details ||= []).push(`mega-chunk:${megaMult.toFixed(2)}`);
       }
     }
 
@@ -1552,7 +1562,7 @@ export function applyResultDemotions(results, opts = {}) {
       if (__profOn) __ruleTime[5] += performance.now() - __ruleT0;
       if (anomMult !== 1) {
         mult *= anomMult;
-        details.push(`anomalous-chunk:${anomMult.toFixed(2)}`);
+        (details ||= []).push(`anomalous-chunk:${anomMult.toFixed(2)}`);
       }
     }
 
@@ -1562,7 +1572,7 @@ export function applyResultDemotions(results, opts = {}) {
       if (__profOn) __ruleTime[6] += performance.now() - __ruleT0;
       if (docMult !== 1) {
         mult *= docMult;
-        details.push(`doc-comment-only:${docMult.toFixed(2)}`);
+        (details ||= []).push(`doc-comment-only:${docMult.toFixed(2)}`);
       }
     }
 
@@ -1572,7 +1582,7 @@ export function applyResultDemotions(results, opts = {}) {
       if (__profOn) __ruleTime[7] += performance.now() - __ruleT0;
       if (entMult !== 1) {
         mult *= entMult;
-        details.push(`mega-entity:${entMult.toFixed(2)}`);
+        (details ||= []).push(`mega-entity:${entMult.toFixed(2)}`);
       }
     }
 
@@ -1583,7 +1593,7 @@ export function applyResultDemotions(results, opts = {}) {
       if (__profOn) __ruleTime[8] += performance.now() - __ruleT0;
       if (symbolMult !== 1) {
         mult *= symbolMult;
-        details.push(`symbol-exact:${symbolMult.toFixed(2)}`);
+        (details ||= []).push(`symbol-exact:${symbolMult.toFixed(2)}`);
       }
     }
 
@@ -1593,7 +1603,7 @@ export function applyResultDemotions(results, opts = {}) {
       if (__profOn) __ruleTime[9] += performance.now() - __ruleT0;
       if (pathMult !== 1) {
         mult *= pathMult;
-        details.push(`path-token:${pathMult.toFixed(2)}`);
+        (details ||= []).push(`path-token:${pathMult.toFixed(2)}`);
       }
     }
 
@@ -1603,7 +1613,7 @@ export function applyResultDemotions(results, opts = {}) {
       if (__profOn) __ruleTime[10] += performance.now() - __ruleT0;
       if (refMult !== 1) {
         mult *= refMult;
-        details.push(`ref-count:${refMult.toFixed(2)}`);
+        (details ||= []).push(`ref-count:${refMult.toFixed(2)}`);
       }
     }
 
@@ -1661,7 +1671,14 @@ export function applyResultDemotions(results, opts = {}) {
     const shouldAdoptContained = !!(containedEntity?.name && containedEntity?.startLine && containedEntity?.endLine);
     const entityToAdopt = shouldAdoptEntity ? preferredEntity : shouldAdoptContained ? containedEntity : null;
     if (__profOn) __ruleTime[11] += performance.now() - __ruleT0;
-    if (mult === 1 && !entityToAdopt) return { ...result, _resultDemotionOrigIndex: index };
+    if (mult === 1 && !entityToAdopt) {
+      // Unchanged: shallow copy preserves the caller-expected new-reference
+      // shape (downstream cascade scoring writes back r.score) without the
+      // redundant _resultDemotionOrigIndex field — V8 Array.sort is stable
+      // since ES2019, so the in-place index-order tie-break is implicit.
+      adjusted[index] = { ...result };
+      continue;
+    }
     changed = true;
     // Range-preservation invariant: adopting an entity is a *labeling*
     // operation (it tells the caller what symbol the chunk is about); it
@@ -1701,7 +1718,7 @@ export function applyResultDemotions(results, opts = {}) {
           } : {}),
         }
       : baseMetadata;
-    return {
+    adjusted[index] = {
       ...result,
       ...(entityToAdopt ? {
         name: shouldAdoptEntity
@@ -1717,10 +1734,9 @@ export function applyResultDemotions(results, opts = {}) {
       score: baseScore * mult,
       _resultDemotionOrigScore: baseScore,
       _resultDemotionMult: mult,
-      _resultDemotionDetails: details,
-      _resultDemotionOrigIndex: index,
+      _resultDemotionDetails: details ?? [],
     };
-  });
+  }
 
   // Dump per-rule timings to globalThis.__stageTimings (set by the profiler).
   // No-op in production. Labels mirror the rule names so the profiler's flat
@@ -1739,11 +1755,10 @@ export function applyResultDemotions(results, opts = {}) {
 
   if (!changed) return results;
 
-  adjusted.sort((a, b) => {
-    const d = (b.score || 0) - (a.score || 0);
-    return d !== 0 ? d : a._resultDemotionOrigIndex - b._resultDemotionOrigIndex;
-  });
-  for (const r of adjusted) delete r._resultDemotionOrigIndex;
+  // V8 Array.sort is stable (ES2019) — same-score results retain their
+  // original-window order without needing the explicit _origIndex tiebreak
+  // the prior implementation carried.
+  adjusted.sort((a, b) => (b.score || 0) - (a.score || 0));
   return window === results.length ? adjusted : adjusted.concat(results.slice(window));
 }
 
