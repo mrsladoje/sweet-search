@@ -35,7 +35,7 @@ export const CURSOR_FILE = '.cursor/rules/sweet-search.mdc';
  * Public harness identifiers used by the per-harness `--no-<name>` flags
  * in `scripts/init.js`. Order matches `--help` output.
  */
-export const ALL_HARNESSES = ['claude-code', 'codex', 'gemini', 'cursor'];
+export const ALL_HARNESSES = ['claude-code', 'agents', 'gemini', 'cursor'];
 
 const MARKER_RE = new RegExp(
   `${escapeRegex(MARKER_BEGIN)}[\\s\\S]*?${escapeRegex(MARKER_END)}\\n?`,
@@ -346,10 +346,10 @@ export function injectAgentInstructions({
       extraImports: ['.claude/rules/sweet-search.md'],
     });
     report.canonical = 'claude-code';
-  } else if (enabled.has('codex') || enabled.has('gemini') || enabled.has('cursor')) {
+  } else if (enabled.has('agents') || enabled.has('gemini') || enabled.has('cursor')) {
     canonicalFile = AGENTS_FILE;
     canonicalBlock = buildCanonicalBlock();
-    report.canonical = 'codex'; // AGENTS.md primarily targets Codex CLI
+    report.canonical = 'agents'; // AGENTS.md is the multi-harness convention (Codex, OpenCode, …)
   } else {
     return report; // no canonical, nothing to write
   }
@@ -364,15 +364,15 @@ export function injectAgentInstructions({
 
   // 2. AGENTS.md — canonical when Claude Code is disabled, otherwise a
   //    @CLAUDE.md import shim for Codex / OpenCode.
-  if (enabled.has('codex')) {
+  if (enabled.has('agents')) {
     const agentsPath = join(projectRoot, AGENTS_FILE);
     if (canonicalFile === AGENTS_FILE) {
-      report.harnesses.codex = injectMarkerBlock({
+      report.harnesses.agents = injectMarkerBlock({
         filePath: agentsPath,
         block: canonicalBlock,
       });
     } else {
-      report.harnesses.codex = injectMarkerBlock({
+      report.harnesses.agents = injectMarkerBlock({
         filePath: agentsPath,
         block: buildImportBlock({ importTargets: [canonicalFile] }),
       });
@@ -435,7 +435,7 @@ export function removeAgentInstructions({ projectRoot, dryRun = false } = {}) {
 
   if (dryRun) {
     report.harnesses['claude-code'] = previewMarkerStrip(claudePath);
-    report.harnesses.codex = previewMarkerStrip(agentsPath);
+    report.harnesses.agents = previewMarkerStrip(agentsPath);
     report.harnesses.gemini = previewSymlinkRemoval(geminiPath, [CLAUDE_FILE, AGENTS_FILE])
       || previewMarkerStrip(geminiPath);
     report.harnesses.cursor = previewWholeFileRemoval(cursorPath);
@@ -443,7 +443,7 @@ export function removeAgentInstructions({ projectRoot, dryRun = false } = {}) {
   }
 
   report.harnesses['claude-code'] = stripMarkerBlock({ filePath: claudePath });
-  report.harnesses.codex = stripMarkerBlock({ filePath: agentsPath });
+  report.harnesses.agents = stripMarkerBlock({ filePath: agentsPath });
   // GEMINI.md: try symlink removal first (accept either canonical target),
   // then fall back to marker strip if it was a copy.
   const geminiSymlink = removeSymlinkIfOurs({

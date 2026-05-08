@@ -50,7 +50,7 @@ describe('injectAgentInstructions — fresh install (claude-code canonical)', ()
     const r = injectAgentInstructions({ projectRoot: tmpRoot });
     expect(r.canonical).toBe('claude-code');
     expect(r.harnesses['claude-code']).toBe('created');
-    expect(r.harnesses.codex).toBe('created');
+    expect(r.harnesses.agents).toBe('created');
     expect(r.harnesses.gemini).toBe('created');
     expect(r.harnesses.cursor).toBe('created');
 
@@ -82,9 +82,9 @@ describe('injectAgentInstructions — fresh install (claude-code canonical)', ()
   it('falls back to AGENTS.md canonical when --no-claude-code', () => {
     const r = injectAgentInstructions({
       projectRoot: tmpRoot,
-      harnesses: ['codex', 'gemini', 'cursor'],
+      harnesses: ['agents', 'gemini', 'cursor'],
     });
-    expect(r.canonical).toBe('codex');
+    expect(r.canonical).toBe('agents');
     expect(r.harnesses['claude-code']).toBeUndefined();
     expect(exists(CLAUDE_FILE)).toBe(false);
 
@@ -97,14 +97,14 @@ describe('injectAgentInstructions — fresh install (claude-code canonical)', ()
     expect(readlinkSync(join(tmpRoot, GEMINI_FILE))).toBe(AGENTS_FILE);
   });
 
-  it('respects per-harness opt-out (--no-codex)', () => {
+  it('respects opt-in subset (no --agents → no AGENTS.md)', () => {
     const r = injectAgentInstructions({
       projectRoot: tmpRoot,
       harnesses: ['claude-code', 'gemini', 'cursor'],
     });
     expect(r.canonical).toBe('claude-code');
     expect(r.harnesses['claude-code']).toBe('created');
-    expect(r.harnesses.codex).toBeUndefined();
+    expect(r.harnesses.agents).toBeUndefined();
     expect(exists(AGENTS_FILE)).toBe(false);
     expect(exists(GEMINI_FILE)).toBe(true);
     expect(exists(CURSOR_FILE)).toBe(true);
@@ -212,7 +212,7 @@ describe('removeAgentInstructions', () => {
 
     const r = removeAgentInstructions({ projectRoot: tmpRoot });
     expect(r.harnesses['claude-code']).toBe('removed'); // user note kept
-    expect(r.harnesses.codex).toBe('file-deleted');     // wholly managed (just an import)
+    expect(r.harnesses.agents).toBe('file-deleted');     // wholly managed (just an import)
     expect(r.harnesses.gemini).toBe('removed');          // symlink removed
     expect(r.harnesses.cursor).toBe('file-deleted');     // wholly managed (frontmatter is ours)
 
@@ -229,7 +229,7 @@ describe('removeAgentInstructions', () => {
     const before = read(CLAUDE_FILE);
     const r = removeAgentInstructions({ projectRoot: tmpRoot, dryRun: true });
     expect(r.harnesses['claude-code']).toBe('dry-run');
-    expect(r.harnesses.codex).toBe('dry-run');
+    expect(r.harnesses.agents).toBe('dry-run');
     expect(r.harnesses.gemini).toBe('dry-run');
     expect(r.harnesses.cursor).toBe('dry-run');
     expect(read(CLAUDE_FILE)).toBe(before);
@@ -254,7 +254,7 @@ describe('removeAgentInstructions', () => {
   it('removes GEMINI.md symlink that points at AGENTS.md (claude-disabled install)', () => {
     injectAgentInstructions({
       projectRoot: tmpRoot,
-      harnesses: ['codex', 'gemini'],
+      harnesses: ['agents', 'gemini'],
     });
     expect(readlinkSync(join(tmpRoot, GEMINI_FILE))).toBe(AGENTS_FILE);
     const r = removeAgentInstructions({ projectRoot: tmpRoot });
@@ -317,10 +317,10 @@ describe('parseInitArgs — opt-in defaults + universal --no-claude', () => {
     expect(resolveActiveHarnesses(args)).toEqual(['claude-code']);
   });
 
-  it('--codex adds AGENTS.md on top of claude-code', () => {
-    const args = parseInitArgs(['--codex']);
-    expect([...args.optInHarnesses]).toEqual(['codex']);
-    expect(resolveActiveHarnesses(args)).toEqual(['claude-code', 'codex']);
+  it('--agents adds AGENTS.md on top of claude-code', () => {
+    const args = parseInitArgs(['--agents']);
+    expect([...args.optInHarnesses]).toEqual(['agents']);
+    expect(resolveActiveHarnesses(args)).toEqual(['claude-code', 'agents']);
   });
 
   it('--gemini --cursor stacks both on top of claude-code', () => {
@@ -335,11 +335,11 @@ describe('parseInitArgs — opt-in defaults + universal --no-claude', () => {
     expect(resolveActiveHarnesses(args)).toEqual([]);
   });
 
-  it('--no-claude --codex makes AGENTS.md the canonical fallback', () => {
-    const args = parseInitArgs(['--no-claude', '--codex']);
+  it('--no-claude --agents makes AGENTS.md the canonical fallback', () => {
+    const args = parseInitArgs(['--no-claude', '--agents']);
     expect(args.noClaude).toBe(true);
-    expect([...args.optInHarnesses]).toEqual(['codex']);
-    expect(resolveActiveHarnesses(args)).toEqual(['codex']);
+    expect([...args.optInHarnesses]).toEqual(['agents']);
+    expect(resolveActiveHarnesses(args)).toEqual(['agents']);
   });
 
   it('--no-agent-instructions sets the umbrella flag', () => {
@@ -355,7 +355,7 @@ describe('parseInitArgs — opt-in defaults + universal --no-claude', () => {
 
 describe('ALL_HARNESSES export', () => {
   it('contains the four documented harnesses with claude-code first', () => {
-    expect(ALL_HARNESSES).toEqual(['claude-code', 'codex', 'gemini', 'cursor']);
+    expect(ALL_HARNESSES).toEqual(['claude-code', 'agents', 'gemini', 'cursor']);
   });
 });
 

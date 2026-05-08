@@ -1593,8 +1593,8 @@ Init flags:
 | `--no-agent-instructions` | `false` | Skip the agent-instruction injection layer entirely (no harness files; `.claude/*` hooks still install unless `--no-claude`) |
 | `--no-prompt-reminders` | `false` | Skip the `UserPromptSubmit` sweet-search reminder hook |
 | `--no-symlink-instruction-files` | `false` | Disable the GEMINI.md symlink and write a plain @import file instead |
-| `--no-claude` | `false` | Universal opt-out for ANY `.claude/*` write: skips `CLAUDE.md`, `.claude/rules/sweet-search.md`, `.claude/hooks/index-maintainer.mjs`, `.claude/skills/sweet-index/`, and the `.claude/settings.json` prewarm SessionStart entry. Use when the user doesn't run Claude Code. Combine with `--codex`/`--gemini`/`--cursor` to ship the policy through a non-Claude harness (in which case AGENTS.md is promoted to canonical). |
-| `--codex` / `--gemini` / `--cursor` | `false` each | Opt INTO writing the matching harness file (`AGENTS.md`, `GEMINI.md`, `.cursor/rules/sweet-search.mdc`). Default ships only `CLAUDE.md` because most projects use one tool. |
+| `--no-claude` | `false` | Universal opt-out for ANY `.claude/*` write: skips `CLAUDE.md`, `.claude/rules/sweet-search.md`, `.claude/hooks/index-maintainer.mjs`, `.claude/skills/sweet-index/`, and the `.claude/settings.json` prewarm SessionStart entry. Use when the user doesn't run Claude Code. Combine with `--agents`/`--gemini`/`--cursor` to ship the policy through a non-Claude harness (in which case AGENTS.md is promoted to canonical). |
+| `--agents` / `--gemini` / `--cursor` | `false` each | Opt INTO writing the matching harness file (`AGENTS.md`, `GEMINI.md`, `.cursor/rules/sweet-search.mdc`). Default ships only `CLAUDE.md` because most projects use one tool. |
 
 **Note on uninstall**: `sweet-search uninstall` is universal — it detects and removes every sweet-search-managed artifact regardless of which init flags were used to install (since uninstall doesn't have access to the original flag set). Marker blocks preserve user prose; sentinel-tagged files are only removed when the sentinel is intact.
 
