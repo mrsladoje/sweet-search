@@ -468,12 +468,18 @@ export class SweetSearch {
     // appear in BOTH sites' input sets, so cross-call reuse stacks on top of
     // the intra-call memoization in file-kind-ranking.js. Freshly allocated
     // per search() call — never reused across queries.
-    //   _entityKindCache : SQLite enclosing/contained entity lookup
-    //   _entityNameCache : SQLite findEntityWithNameInRange (symbol-target)
-    //   _resultTextCache : readFileSync source-span (biggest win)
+    //   _entityKindCache     : SQLite enclosing/contained entity lookup
+    //   _entityNameCache     : SQLite findEntityWithNameInRange (symbol-target)
+    //   _resultTextCache     : readFileSync source-span
+    //   _fullFileTextCache   : readFileSync FULL file (test-support detection)
+    //   _isTestSupportCache  : isTestSupportFile() per-file verdict
+    //   _isTestChunkCache    : isTestChunk() per-chunk verdict
     const _entityKindCache = new Map();
     const _entityNameCache = new Map();
     const _resultTextCache = new Map();
+    const _fullFileTextCache = new Map();
+    const _isTestSupportCache = new Map();
+    const _isTestChunkCache = new Map();
 
     switch (searchMode) {
       case 'grep': {
@@ -552,6 +558,9 @@ export class SweetSearch {
           _entityKindCache,
           _entityNameCache,
           _resultTextCache,
+          _fullFileTextCache,
+          _isTestSupportCache,
+          _isTestChunkCache,
         });
         results = hybridResult.results || hybridResult;
         semanticStats = hybridResult.semanticStats || null;
@@ -628,7 +637,8 @@ export class SweetSearch {
     // Step 3: Post-retrieval processing (delegated to extracted module)
     const postRetrievalResult = await this._applyPostRetrieval(results, query, options, {
       stats, semanticStats, searchMode, effectiveGraphExpand, intentPolicy, start, fromSearch: true,
-      _entityKindCache, _entityNameCache, _resultTextCache,
+      _entityKindCache, _entityNameCache, _resultTextCache, _fullFileTextCache,
+      _isTestSupportCache, _isTestChunkCache,
     });
 
     // Step 4: Agent packaging (lexical/semantic/hybrid/structural).
