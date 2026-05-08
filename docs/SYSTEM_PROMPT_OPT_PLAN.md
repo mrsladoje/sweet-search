@@ -64,6 +64,123 @@ Recent benchmark findings:
 
 ---
 
+## Architectural Decision Note: DDD Placement (2026-05-08)
+
+All optimization, evaluation, decontamination, judging, and statistical work
+described in this plan constitutes a **new bounded context**:
+**`core/prompt-optimization/`**, sibling to the nine existing contexts in `core/`
+(search, ranking, indexing, query, embedding, vocabulary, graph, vector-store,
+infrastructure) per `docs/DDD_ARCHITECTURE.md`. The work is **not** loose tooling
+under `eval/` or `scripts/`; it is a coherent domain with its own public API,
+dependency direction, and integration seam, and it gets the same DDD enforcement
+as every other context: barrel `index.js`, dependency-matrix entry, ESLint
+`no-restricted-imports` rules, `scripts/check-boundaries.js` checks, and a
+barrel-contract test under `tests/integration/barrel-contracts.test.js`.
+
+### Why a new bounded context (and not a sub-folder under `eval/`)
+
+The closest precedents — `core/training/query-router/` (build-time CatBoost
+trainer that emits a model artifact), `eval/retrieval-probes/`, and
+`eval/agent-read-workflows/` — are individually too small for what this plan
+owns. Prompt optimization is a sustained, multi-phase domain with non-trivial
+internal coupling:
+
+- GEPA / DSPy optimization runners (Part 8) and synthesis (system-aware Merge)
+- Variant slate (T01–T14) seeds + ablation (Part 6) and Plackett-Luce ranking
+- Query-shape sweep + tool-affinity recommendations (Part 7)
+- Decontamination pipeline: n-gram + embedding-similarity + LLM-judge filters
+- Four-baseline orchestrator (B1 rg+Read, B2 generator-only, B3 sweet-search,
+  B4 oracle-retrieval) and Pareto aggregator
+- LLM-as-judge: PRP-style two-judge protocol + Krippendorff-α IAA validation
+- Failure-mode taxonomy + per-trace classifier + `proposal_class` tagging (§8.9.4)
+- Statistical infrastructure: paired permutation, paired bootstrap CI,
+  Plackett-Luce, evaluator-exclusion protocol
+- Telemetry + portability dossier emitter (`shipping_score`, `aux_*` stats per §8.9.1)
+- Cross-harness in-process runners (Claude Code / Codex / Gemini / OpenCode)
+  and Cursor Composer smoke runner (§8.9.5)
+- Manifests, splits, seeds, run configs, judge prompts, baselines
+
+Treating this as scattered files under `eval/` would defeat the modular-monolith
+discipline the rest of `core/` already enforces, and would leave no clean place
+to assert the dependency direction this context needs (it must **not** reach
+into runtime domain internals — only barrels, and only where declared as
+allow-listed exceptions).
+
+### Public API (`core/prompt-optimization/index.js`)
+
+| Capability | Key exports |
+|---|---|
+| Optimization | `runGepaCampaign`, `runDspyCampaign`, `runSynthesis` |
+| Evaluation | `runVariantSlate`, `runQueryShapeSweep`, `runFourBaselines`, `runCrossHarness` |
+| Statistics | `pairedPermutationTest`, `pairedBootstrapCI`, `plackettLuceFit`, `applyEvaluatorExclusion` |
+| Decontamination | `nGramDecontaminate`, `embeddingDecontaminate`, `llmDecontaminate` |
+| Judges | `runPrpPairwise`, `validateJudgeIAA` |
+| Failure modes | `detectFailureModes`, `tagProposalClass` |
+| Telemetry | `emitPortabilityDossier`, `appendBudgetTelemetry` |
+| Manifests / splits | `loadManifest`, `buildSplits`, `loadRunConfig` |
+
+### Dependency matrix entry (proposed addition to `DDD_ARCHITECTURE.md`)
+
+| From | May import | Must NOT import |
+|------|-----------|-----------------|
+| `prompt-optimization/` | `infrastructure` (config, native helpers, hardware capability), `search` barrel only — embedded-MCP cross-harness mode (declared exception, max 2 sites), `ranking` barrel only — B4 oracle-retrieval baseline (declared exception, max 2 sites) | `indexing`, `query`, `graph`, `vocabulary`, `vector-store`, `embedding`, and any internal (non-barrel) file of any other domain |
+
+The two declared exceptions go into `scripts/check-boundaries.js` `EXCEPTIONS`
+with bounded `max:` counts, matching the existing `indexing → ranking` and
+`query → training` precedent. No domain may import **from**
+`prompt-optimization/`; the runtime engine has zero dependency on this context.
+
+### Integration seam
+
+`scripts/init.js` is the **only** consumer of `prompt-optimization/` output.
+It loads the optimized canonical-policy artifact (e.g.,
+`core/prompt-optimization/output/canonical-policy.md`) and writes it into
+`AGENTS.md` / `CLAUDE.md` / `GEMINI.md` / `.cursor/rules/sweet-search.mdc` /
+`.claude/rules/sweet-search.md` per Part 3 / Part 4 of this plan. This is the
+analog of how `scripts/init.js` already consumes
+`core/training/query-router/output/` — a build-time artifact handoff into a
+runtime-installed user file, with no runtime import of the optimization code.
+
+### Data artifacts
+
+Seeds, splits, gold tasks, run configs, judge prompts, baseline TOMLs,
+manifests, results JSONL, synthesis runs, and rejected candidates all live
+**under the bounded context**, not under `eval/`:
+`core/prompt-optimization/data/{seeds,splits,baselines,judge-prompts,
+synthesis-runs,results,rejected,contaminated,query-shapes,manifests,run-configs,
+output,...}`. This colocates code with the data it owns and matches the
+`core/training/query-router/` precedent (which keeps its training data,
+features, and trained-model output inside the trainer's own directory tree).
+
+The existing benchmark harnesses — `eval/retrieval-probes/`,
+`eval/agent-read-workflows/`, `eval/freshstack/` — **stay where they are**.
+They are independent benchmarks; `prompt-optimization/` invokes them via
+their CLI runners (`run-bench.js`, `run-probes.mjs`) as subprocesses or via
+their barrel exports where they have one. Their internals are not imported
+into this context.
+
+### Follow-up consequences for the rest of this document
+
+The 70+ path references in §11.1 / §11.2 / Phase 0 of this plan that currently
+read `eval/prompt-evolution/...` and `eval/query-shapes/...` must be rewritten
+to `core/prompt-optimization/data/...` (artifacts) or
+`core/prompt-optimization/...` (code) before the plan moves out of draft.
+A single follow-up commit performs this rewrite and adds the new bounded
+context to `docs/DDD_ARCHITECTURE.md` Overview, Dependency Matrix, Barrel
+Public API table, and Honest Assessment in the same PR — the architecture
+doc and this plan must agree at all times. Phase 0's `mkdir -p` command in
+§13 and the cost lines in §10 are unaffected (cost is path-independent); the
+file-tree in §11.2, every Phase 0–P12 task that names a path, and every
+schema example in §11.4 are affected.
+
+A new task **P0.0 — DDD layout** is added to the work breakdown: create
+`core/prompt-optimization/` with barrel, register the bounded context in
+`DDD_ARCHITECTURE.md` and `check-boundaries.js`, add a barrel-contract test,
+and rewrite this document's path references. P0.0 blocks every subsequent
+phase that writes code or data; estimated effort 4-6h, no API spend.
+
+---
+
 ## Part 1: Cross-Model Generalization (May 2026 Findings)
 
 ### 1.1 Empirical evidence
