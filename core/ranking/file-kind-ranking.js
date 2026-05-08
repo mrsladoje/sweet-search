@@ -153,15 +153,24 @@ const ANCILLARY_INTENT_RE = /\b(config|configuration|manifest|workflow|ci|github
  * Detect the file kind from a result path.
  * @returns {'docs'|'examples'|'tests'|'types'|'ancillary'|'implementation'}
  */
-export function detectFileKind(filePath) {
+export function detectFileKind(filePath, opts) {
   if (!filePath || typeof filePath !== 'string') return 'implementation';
-  if (DOCS_RE.test(filePath))  return 'docs';
-  if (EXAMPLES_RE.test(filePath)) return 'examples';
-  if (TESTS_RE.test(filePath)) return 'tests';
-  if (isTestSupportFile(filePath)) return 'tests';
-  if (TYPES_RE.test(filePath)) return 'types';
-  if (ANCILLARY_RE.test(filePath)) return 'ancillary';
-  return 'implementation';
+  // Per-call cache. Each filePath produces a deterministic kind; calling
+  // 5 regex tests + an isTestSupportFile path-rule scan per result × per
+  // demotion site burns cycles redundantly when only ~10-20 unique files
+  // live in a result set. Cache keyed by file path; verdict reused.
+  const cache = opts && opts._fileKindCache;
+  if (cache && cache.has(filePath)) return cache.get(filePath);
+  let kind;
+  if (DOCS_RE.test(filePath))  kind = 'docs';
+  else if (EXAMPLES_RE.test(filePath)) kind = 'examples';
+  else if (TESTS_RE.test(filePath)) kind = 'tests';
+  else if (isTestSupportFile(filePath)) kind = 'tests';
+  else if (TYPES_RE.test(filePath)) kind = 'types';
+  else if (ANCILLARY_RE.test(filePath)) kind = 'ancillary';
+  else kind = 'implementation';
+  if (cache) cache.set(filePath, kind);
+  return kind;
 }
 
 /**
@@ -304,7 +313,7 @@ export function isTestChunk(r, opts = {}) {
 }
 
 function isTestChunkUncached(r, opts, filePath) {
-  const fileKind = detectFileKind(filePath);
+  const fileKind = detectFileKind(filePath, opts);
   if (fileKind === 'tests') return true;
   if (!hasAblation(opts.ablations, 'no-test-support-detection')) {
     // Per-file verdict cache. isTestSupportFile is deterministic in
@@ -1391,6 +1400,7 @@ export function applyResultDemotions(results, opts = {}) {
     _fullFileTextCache: opts._fullFileTextCache instanceof Map ? opts._fullFileTextCache : new Map(),
     _isTestSupportCache: opts._isTestSupportCache instanceof Map ? opts._isTestSupportCache : new Map(),
     _isTestChunkCache: opts._isTestChunkCache instanceof Map ? opts._isTestChunkCache : new Map(),
+    _fileKindCache: opts._fileKindCache instanceof Map ? opts._fileKindCache : new Map(),
   };
 
   const ablations = opts.ablations;
@@ -1809,12 +1819,20 @@ export function applyFileKindRanking(results, opts = {}) {
     : envWindow('SWEET_SEARCH_FILE_KIND_WINDOW', DEFAULT_WINDOW);
   const windowSize = Math.min(window, results.length);
 
+  // Per-call file-kind cache: detectFileKind is invoked for every result
+  // here AND inside isTestChunk → the same file path can be classified
+  // many times in one applyFileKindRanking + applyResultDemotions pass.
+  // Caller may pass opts._fileKindCache to share with the demotion sites.
+  const fileKindOpts = opts._fileKindCache instanceof Map
+    ? opts
+    : { ...opts, _fileKindCache: new Map() };
+
   // Walk the window once: classify kinds and check for competition.
   const kinds = new Array(windowSize);
   let demotableCount = 0;
   let implCount = 0;
   for (let i = 0; i < windowSize; i++) {
-    const k = detectFileKind(resolveFilePath(results[i]));
+    const k = detectFileKind(resolveFilePath(results[i]), fileKindOpts);
     kinds[i] = k;
     if (k === 'docs' || k === 'examples' || k === 'tests' || k === 'types' || k === 'ancillary') demotableCount++;
     else if (k === 'implementation') implCount++;
