@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "split": "dev",
+  "parent": "eval/retrieval-probes/probes-stratified-100.json",
+  "seed": 42,
+  "devRatio": 0.6,
+  "stratifyBy": "lang|stratification",
+  "counts": {
+    "go|A": {
+      "dev": 6,
+      "heldout": 4
+    },
+    "go|B": {
+      "dev": 6,
+      "heldout": 4
+    },
+    "js|A": {
+      "dev": 12,
+      "heldout": 8
+    },
+    "js|B": {
+      "dev": 12,
+      "heldout": 8
+    },
+    "py|A": {
+      "dev": 6,
+      "heldout": 4
+    },
+    "py|B": {
+      "dev": 6,
+      "heldout": 4
+    },
+    "rust|A": {
+      "dev": 6,
+      "heldout": 4
+    },
+    "rust|B": {
+      "dev": 6,
+      "heldout": 4
+    }
+  },
+  "ids": [
+    "E-S2-3",
+    "E-S2-4",
+    "E-S2-5",
+    "E-S2-7",
+    "E-S3-10",
+    "E-S3-2",
+    "E-S3-3",
+    "E-S3-4",
+    "E-S3-6",
+    "E-S3-7",
+    "F-S2-1",
+    "F-S2-10",
+    "F-S2-3",
+    "F-S2-4",
+    "F-S2-6",
+    "F-S2-7",
+    "F-S2-8",
+    "F-S2-9",
+    "F-S3-1",
+    "F-S3-10",
+    "F-S3-2",
+    "F-S3-5",
+    "F-S3-7",
+    "F-S3-8",
+    "G-S2-1",
+    "G-S2-10",
+    "G-S2-4",
+    "G-S2-6",
+    "G-S2-7",
+    "G-S2-9",
+    "G-S3-1",
+    "G-S3-10",
+    "G-S3-3",
+    "G-S3-6",
+    "G-S3-7",
+    "G-S3-8",
+    "L-S2-1",
+    "L-S2-2",
+    "L-S2-4",
+    "L-S2-5",
+    "L-S2-6",
+    "L-S2-9",
+    "L-S3-1",
+    "L-S3-10",
+    "L-S3-2",
+    "L-S3-5",
+    "L-S3-6",
+    "L-S3-8",
+    "R-S2-10",
+    "R-S2-3",
+    "R-S2-4",
+    "R-S2-5",
+    "R-S2-7",
+    "R-S2-8",
+    "R-S3-1",
+    "R-S3-10",
+    "R-S3-4",
+    "R-S3-5",
+    "R-S3-8",
+    "R-S3-9"
+  ]
+}
