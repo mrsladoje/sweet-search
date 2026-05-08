@@ -217,6 +217,53 @@ describe('MCP Server Protocol Compliance', () => {
       expect(props.success).toBeDefined();
       expect(props.mode).toBeDefined();
     });
+
+    // P4: tool descriptions follow the optimized "when to use" framing.
+    // These are smoke checks — rewrites that drop the replacement / cross-
+    // reference framing will fail here and force a deliberate re-think.
+    describe('P4: optimized descriptions', () => {
+      it('every tool has a non-trivial description (≥ 60 chars)', () => {
+        for (const tool of toolsResponse.result.tools) {
+          expect(tool.description, `${tool.name} description`).toBeDefined();
+          expect(tool.description.length, `${tool.name} description length`).toBeGreaterThan(60);
+        }
+      });
+
+      it('descriptions stay under 800 chars (MCP-friendly, agent-budget friendly)', () => {
+        for (const tool of toolsResponse.result.tools) {
+          expect(tool.description.length, `${tool.name} description bloat`).toBeLessThan(800);
+        }
+      });
+
+      it('search description tells the agent to use it INSTEAD OF native Grep', () => {
+        const search = toolsResponse.result.tools.find(t => t.name === 'search');
+        expect(search.description).toMatch(/INSTEAD OF/i);
+        expect(search.description).toMatch(/grep/i);
+      });
+
+      it('read description tells the agent to use it INSTEAD OF native Read', () => {
+        const read = toolsResponse.result.tools.find(t => t.name === 'read');
+        expect(read.description).toMatch(/INSTEAD OF/i);
+        expect(read.description.toLowerCase()).toContain('native read');
+      });
+
+      it('trace description disambiguates from search', () => {
+        const trace = toolsResponse.result.tools.find(t => t.name === 'trace');
+        expect(trace.description).toMatch(/who calls|callers|callees|impact/i);
+        expect(trace.description).toMatch(/`search`/);
+      });
+
+      it('repo-map description routes general lookups to search', () => {
+        const repoMap = toolsResponse.result.tools.find(t => t.name === 'repo-map');
+        expect(repoMap.description).toMatch(/`search`/);
+      });
+
+      it('read-semantic description routes multi-file flow to search', () => {
+        const rs = toolsResponse.result.tools.find(t => t.name === 'read-semantic');
+        expect(rs.description).toMatch(/multi-file/i);
+        expect(rs.description).toMatch(/`search`/);
+      });
+    });
   });
 
   // B6a #3: Resource listing
