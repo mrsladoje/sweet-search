@@ -307,30 +307,39 @@ describe('writeClaudeRules / removeClaudeRules', () => {
   });
 });
 
-describe('parseInitArgs — per-harness flags', () => {
-  it('default: no harnesses skipped', () => {
+describe('parseInitArgs — opt-in defaults + universal --no-claude', () => {
+  it('default: only claude-code is active', () => {
     const args = parseInitArgs([]);
     expect(args.skipAgentInstructions).toBe(false);
     expect(args.symlinkInstructionFiles).toBe(true);
-    expect([...args.skipHarnesses]).toEqual([]);
-    expect(resolveActiveHarnesses(args.skipHarnesses)).toEqual(ALL_HARNESSES);
+    expect(args.noClaude).toBe(false);
+    expect([...args.optInHarnesses]).toEqual([]);
+    expect(resolveActiveHarnesses(args)).toEqual(['claude-code']);
   });
 
-  it('--no-claude-code excludes only claude-code', () => {
-    const args = parseInitArgs(['--no-claude-code']);
-    expect([...args.skipHarnesses]).toEqual(['claude-code']);
-    expect(resolveActiveHarnesses(args.skipHarnesses)).toEqual(['codex', 'gemini', 'cursor']);
+  it('--codex adds AGENTS.md on top of claude-code', () => {
+    const args = parseInitArgs(['--codex']);
+    expect([...args.optInHarnesses]).toEqual(['codex']);
+    expect(resolveActiveHarnesses(args)).toEqual(['claude-code', 'codex']);
   });
 
-  it('combining --no-codex --no-gemini works', () => {
-    const args = parseInitArgs(['--no-codex', '--no-gemini']);
-    expect([...args.skipHarnesses].sort()).toEqual(['codex', 'gemini']);
-    expect(resolveActiveHarnesses(args.skipHarnesses)).toEqual(['claude-code', 'cursor']);
+  it('--gemini --cursor stacks both on top of claude-code', () => {
+    const args = parseInitArgs(['--gemini', '--cursor']);
+    expect([...args.optInHarnesses].sort()).toEqual(['cursor', 'gemini']);
+    expect(resolveActiveHarnesses(args)).toEqual(['claude-code', 'gemini', 'cursor']);
   });
 
-  it('--no-cursor opts out of cursor', () => {
-    const args = parseInitArgs(['--no-cursor']);
-    expect([...args.skipHarnesses]).toEqual(['cursor']);
+  it('--no-claude alone leaves the active set empty', () => {
+    const args = parseInitArgs(['--no-claude']);
+    expect(args.noClaude).toBe(true);
+    expect(resolveActiveHarnesses(args)).toEqual([]);
+  });
+
+  it('--no-claude --codex makes AGENTS.md the canonical fallback', () => {
+    const args = parseInitArgs(['--no-claude', '--codex']);
+    expect(args.noClaude).toBe(true);
+    expect([...args.optInHarnesses]).toEqual(['codex']);
+    expect(resolveActiveHarnesses(args)).toEqual(['codex']);
   });
 
   it('--no-agent-instructions sets the umbrella flag', () => {
