@@ -134,7 +134,7 @@ with bounded `max:` counts, matching the existing `indexing → ranking` and
 
 `scripts/init.js` is the **only** consumer of `prompt-optimization/` output.
 It loads the optimized canonical-policy artifact (e.g.,
-`core/prompt-optimization/output/canonical-policy.md`) and writes it into
+`core/prompt-optimization/data/output/canonical-policy.md`) and writes it into
 `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` / `.cursor/rules/sweet-search.mdc` /
 `.claude/rules/sweet-search.md` per Part 3 / Part 4 of this plan. This is the
 analog of how `scripts/init.js` already consumes
@@ -161,23 +161,26 @@ into this context.
 
 ### Follow-up consequences for the rest of this document
 
-The 70+ path references in §11.1 / §11.2 / Phase 0 of this plan that currently
-read `eval/prompt-evolution/...` and `eval/query-shapes/...` must be rewritten
-to `core/prompt-optimization/data/...` (artifacts) or
-`core/prompt-optimization/...` (code) before the plan moves out of draft.
-A single follow-up commit performs this rewrite and adds the new bounded
+P0.0 (2026-05-09) registered the new bounded context and rewrote all path
+references in this document from `eval/prompt-evolution/...` and
+`eval/query-shapes/...` to `core/prompt-optimization/data/...` (artifacts)
+and `core/prompt-optimization/...` (code). The same commit added the
 context to `docs/DDD_ARCHITECTURE.md` Overview, Dependency Matrix, Barrel
-Public API table, and Honest Assessment in the same PR — the architecture
-doc and this plan must agree at all times. Phase 0's `mkdir -p` command in
-§13 and the cost lines in §10 are unaffected (cost is path-independent); the
-file-tree in §11.2, every Phase 0–P12 task that names a path, and every
-schema example in §11.4 are affected.
+Public API table, and Honest Assessment, and registered boundary rules in
+`scripts/check-boundaries.js` and `eslint.config.mjs`. The architecture
+doc and this plan now agree.
 
-A new task **P0.0 — DDD layout** is added to the work breakdown: create
-`core/prompt-optimization/` with barrel, register the bounded context in
-`DDD_ARCHITECTURE.md` and `check-boundaries.js`, add a barrel-contract test,
-and rewrite this document's path references. P0.0 blocks every subsequent
-phase that writes code or data; estimated effort 4-6h, no API spend.
+The runbook `mkdir -p` command in §13.11 was split into a code tree
+(`core/prompt-optimization/{decontamination,stats,telemetry,...}`) and a
+data tree (`core/prompt-optimization/data/{seeds,splits,baselines,...}`).
+Cost lines in §10 are unchanged (cost is path-independent).
+
+**P0.0 — DDD layout (DONE 2026-05-09)** delivered: barrel of stub exports
+at `core/prompt-optimization/index.js`, `prompt-optimization` row added to
+the dependency matrix with declared exceptions 4 (search barrel only,
+max 2) and 5 (ranking barrel only, max 2), barrel-contract test under
+`tests/integration/barrel-contracts.test.js`, and the path rewrite. Real
+implementations land in P0/P6/P8/P10/P11.
 
 ---
 
@@ -672,8 +675,9 @@ narrow follow-up.
 
 ## Part 6: Decision-Tree Variant Slate (T1-T14) — Seed Material for GEPA
 
-> **Depends on Part 7.** The query-shape recommendations from §7.6 (`eval/query-shapes/
-> recommendations.json`) provide the verbatim `instruction_text` for query phrasing rules
+> **Depends on Part 7.** The query-shape recommendations from §7.6
+> (`core/prompt-optimization/data/query-shapes/recommendations.json`) provide the verbatim
+> `instruction_text` for query phrasing rules
 > inside each variant. **Do not write T1-T14 prompt bodies before Part 7 ships its
 > recommendations artifact** — that's the user-flagged failure mode where GEPA polishes an
 > input grounded in guesses instead of measurements.
@@ -775,7 +779,7 @@ level. Per the IR simulation literature (Sakai et al., 2019), paired permutation
 primary PASS-rate metric are the right default — neither paired t-test nor Wilcoxon are uniformly
 better on bounded discrete metrics like PASS rate at n ≈ 60.
 
-**Output artifact**: `eval/prompt-evolution/ablation-report.json` containing
+**Output artifact**: `core/prompt-optimization/data/ablation-report.json` containing
 
 - pairwise win/loss/tie matrix (14×14)
 - per-failure-mode tallies (14×8)
@@ -822,7 +826,7 @@ complexity; distillation produces a cleaner ship artifact.
 consistently shows over-specified prompts trigger over-literalism — especially in GPT-5 — and
 degrade performance. Synthesis must remove redundancy, not stack rules.
 
-**Output artifact**: `eval/prompt-evolution/synthesis-runs/T_uber_v{N}.md` — versioned uber-tree
+**Output artifact**: `core/prompt-optimization/data/synthesis-runs/T_uber_v{N}.md` — versioned uber-tree
 candidates, each with a manifest listing source variants and the failure modes they target.
 
 ### 6.6 Validation gates for the synthesized uber-tree
@@ -840,7 +844,7 @@ discipline):
 | **G4: Cross-model robustness** | Pareto dominance holds on **`robustness_score`** (cheap-pool min answerability across DSv4-Flash + MiniMax M2.7 + Kimi K2.5 + Qwen 3.6 Plus per §8.5). **Additionally** at the milestone replay: **`shipping_score`** (frontier mean: Opus 4.7 + GPT‑5.5 + Gemini 3.1 Pro, measured via subscriptions) must not regress **>3pp** vs the current shipped baseline. **Publishing requirement** (not optional): paired portability stats in every promotion dossier — `aux_median`, `aux_p25`, raw `aux_min`, **`aux_min_four`** (= min across the four cheap-pool models on the same probes). Optionally add **stratified mins** by evaluator archetype (MoE vs dense vs long-ctx). Use **`aux_min_four` only as a soft tripwire** unless pre‑registered as a hard gate: one pathological evaluator can dominate `min()`; pre‑register evaluator **drop-from-min rules** only with documented instruction-compliance failures (§8.9.1). |
 | **G5: Cross-harness sanity** | Inside Claude Code (**Opus 4.7** via Claude Max — Sonnet 4.6 acceptable only for reproducing subscription defaults) and Codex (**GPT-5.5** via Codex Pro), the uber-tree does not regress more than 3pp on PASS rate vs each harness's native baseline. Single-pass, no retries. Primary cross-check is `robustness_score` on the cheap pool; `shipping_score` checked at milestone via subscriptions. |
 
-If any gate fails, the synthesis result is logged to `eval/prompt-evolution/rejected/` with the
+If any gate fails, the synthesis result is logged to `core/prompt-optimization/data/rejected/` with the
 failing-gate diagnostics, and Strategy A is re-run with the rejection feedback fed to the GEPA
 reflector. Do not re-tune the synthesized tree against the 40-probe set; that constitutes
 test-set leakage. Rejection forces a return to Phase A or a re-pull from §6.4 ablation map.
@@ -994,7 +998,7 @@ at DSv4-Pro promo rates).
 ### 7.6 Promotion artifact: per-tool query-shape recommendations
 
 The combined Track A + Track B output is a single machine-readable artifact:
-`eval/query-shapes/recommendations.json`. Schema:
+`core/prompt-optimization/data/query-shapes/recommendations.json`. Schema:
 
 ```json
 {
@@ -1040,9 +1044,9 @@ guessing what to put in the prompt — it's measured.
 ### 7.7 Pre-registration for Part 7
 
 Before any sweep run:
-1. Commit the gold task list and shape variants (`eval/query-shapes/golds.json`,
-   `eval/query-shapes/variants.json`).
-2. Commit `eval/query-shapes/preregistration.md` with: tool affinities, predicted winners per
+1. Commit the gold task list and shape variants (`core/prompt-optimization/data/query-shapes/golds.json`,
+   `core/prompt-optimization/data/query-shapes/variants.json`).
+2. Commit `core/prompt-optimization/data/query-shapes/preregistration.md` with: tool affinities, predicted winners per
    shape category, statistical test plan, IAA threshold, sample size justification.
 3. Tag the commit (`git tag prereg/qshape-{run-id}`).
 4. Any deviation from the pre-registered plan after the run starts is exploratory and labeled
@@ -1595,7 +1599,7 @@ SWE-Rebench, FreshStack, BIRCO, RAGBench, RepoBench, SWE-Lancer, LiveCodeBench.
 ### 11.1 Dataset construction & decontamination
 
 - **Pinned snapshots**: each repo in the test set is pinned to a specific commit SHA;
-  `eval/prompt-evolution/manifest.json` records SHA, source URL, license, and creation date.
+  `core/prompt-optimization/data/manifest.json` records SHA, source URL, license, and creation date.
   Any result that cannot point at a pinned manifest is dev-only and labeled as such.
 - **Layered contamination detection** (per the BEIR/SWE-Rebench/LiveCodeBench playbook —
   combining cheap and exhaustive methods catches both surface and paraphrase contamination):
@@ -1606,7 +1610,7 @@ SWE-Rebench, FreshStack, BIRCO, RAGBench, RepoBench, SWE-Lancer, LiveCodeBench.
   3. LLM-decontaminator pass: ask DSv4-Flash to flag suspicious overlap between probe gold
      answers and commonly memorized snippets.
 - **Removed-items list**: any probe flagged by ≥ 1 of the three layers is moved to
-  `eval/prompt-evolution/contaminated/` and excluded from headline numbers; report
+  `core/prompt-optimization/data/contaminated/` and excluded from headline numbers; report
   pre/post-decontamination scores side-by-side per the MBPP/HumanEval study's recommendation.
 
 ### 11.2 Splits: stratified + time-aware + fresh-holdout
@@ -1660,7 +1664,7 @@ large n. Avoid both unless you've validated them via simulation against your var
 - **Pinned router seed** (CatBoost / hybridSearchV2 use seed=42 on retrieval-side determinism).
 - **Per-query bootstrapped CIs** in every results table. Any number without a CI is dev-only
   and clearly marked as such.
-- **Documented seed list** in `eval/prompt-evolution/run-config.toml` per published run. Reruns
+- **Documented seed list** in `core/prompt-optimization/data/run-config.toml` per published run. Reruns
   use the same seeds; ablations rerun with fresh seeds and report variance.
 
 ### 11.6 LLM-as-judge protocol & inter-annotator agreement
@@ -1681,15 +1685,15 @@ large n. Avoid both unless you've validated them via simulation against your var
 
 Every published number must be reproducible from:
 
-- `eval/prompt-evolution/manifest.json` — pinned repo SHAs, license, contamination flags
-- `eval/prompt-evolution/splits/{dev_60.json, heldout_40.json, freshstack_30.json}` — split
+- `core/prompt-optimization/data/manifest.json` — pinned repo SHAs, license, contamination flags
+- `core/prompt-optimization/data/splits/{dev_60.json, heldout_40.json, freshstack_30.json}` — split
   definitions with seeds
-- `eval/prompt-evolution/seeds/T01..T14.md` — variant prompts (immutable per published run)
-- `eval/prompt-evolution/run-config.toml` — evaluatee model versions, harness versions, GEPA
+- `core/prompt-optimization/data/seeds/T01..T14.md` — variant prompts (immutable per published run)
+- `core/prompt-optimization/data/run-config.toml` — evaluatee model versions, harness versions, GEPA
   hyperparameters, judge prompts, **`proposal_class` tagging policy**, seed list
-- `eval/prompt-evolution/telemetry/budget.jsonl` — blended \$/eval, cache stats, cache-off bracket deltas
-- `eval/prompt-evolution/results/{run-id}-portability.json` — `shipping_score`, `aux_*` stats (§8.9.1)
-- `eval/prompt-evolution/results/{run-id}.jsonl` — raw per-probe records
+- `core/prompt-optimization/data/results/{run-id}/budget.jsonl` — blended \$/eval, cache stats, cache-off bracket deltas (see §13.7 for the append-only contract)
+- `core/prompt-optimization/data/results/{run-id}-portability.json` — `shipping_score`, `aux_*` stats (§8.9.1)
+- `core/prompt-optimization/data/results/{run-id}.jsonl` — raw per-probe records
 - A one-shot `npm run eval:prompt -- --run <run-id>` script that reproduces a published number
   from manifest + config alone, without manual steps.
 
@@ -1700,7 +1704,7 @@ defend the numbers externally.
 
 Before each campaign:
 
-1. Commit `eval/prompt-evolution/preregistration.md` with: **`robustness_score`** (§8.5 cheap-pool
+1. Commit `core/prompt-optimization/data/preregistration.md` with: **`robustness_score`** (§8.5 cheap-pool
    min answerability) as **primary GEPA optimization target**, **`shipping_score`** (§8.5
    frontier-trio mean, measured via subscriptions at milestone) as **reporting / gate metric**,
    **paired portability stats** (`aux_median`, `aux_p25`, raw `aux_min`, `aux_min_four`, optional
@@ -1791,7 +1795,7 @@ and only escalate on behavior/structure are valid hypotheses, not lazy ones.
 **B1 — rg+Read native**: runs the agent inside Claude Code (**Opus 4.7** as the canonical
 headline reference — Sonnet 4.6 acceptable when matching a logged user default) with **only** native `Read` and `Grep` tools enabled, sweet-search MCP server
 disabled, and a system prompt that explicitly authorizes those tools. The exact configuration
-is committed to `eval/prompt-evolution/baselines/b1-rg-read.toml`. Per the SWE-bench
+is committed to `core/prompt-optimization/data/baselines/b1-rg-read.toml`. Per the SWE-bench
 publication discipline, the exact `rg` invocations and harness state must be logged per run
 because rg behavior depends on `.gitignore`, `--smart-case` / `-i`, and CWD.
 
@@ -1874,7 +1878,7 @@ Downgrade reasons surfaced via `score.downgradeReasons`; per-task evidence succe
 | `eval/retrieval-probes/probes-stratified-100.json` | 100 | Milestone-only; never iterate against |
 | `eval/retrieval-probes/probes-fresh-40.json` | 40 | Fresh held-out for retrieval changes |
 | `eval/freshstack/uv-queries.json` | 30 | FreshStack post-cutoff held-out (uv@bb8109a) |
-| **NEW**: `eval/query-shapes/golds.json` | ~78 (12 × 4 dev repos + 30 uv held-out) | Part 7 query-shape discovery |
+| **NEW**: `core/prompt-optimization/data/query-shapes/golds.json` | ~78 (12 × 4 dev repos + 30 uv held-out) | Part 7 query-shape discovery |
 | **NEW**: `eval/agent-read-workflows/tasks-prompt-eval.js` | ~20 hand-curated | Variant-slate Phase A (P8) and uber-tree validation (P10.6) |
 
 The prompt-evolution campaign (Parts 6-12) operates against the new files. The existing files
@@ -1883,7 +1887,7 @@ the held-out discipline in `feedback_heldout_discipline_strict.md`.
 
 ### 13.3 Schema definitions (committed templates)
 
-#### `eval/prompt-evolution/manifest.json` schema
+#### `core/prompt-optimization/data/manifest.json` schema
 
 ```json
 {
@@ -1921,13 +1925,13 @@ the held-out discipline in `feedback_heldout_discipline_strict.md`.
 }
 ```
 
-#### `eval/prompt-evolution/run-config.toml` schema
+#### `core/prompt-optimization/data/run-config.toml` schema
 
 ```toml
 campaign_id = "prompt-evolution-2026-05"
 run_id = "phase-a-spike-001"
-manifest = "eval/prompt-evolution/manifest.json"
-preregistration = "eval/prompt-evolution/preregistration.md"
+manifest = "core/prompt-optimization/data/manifest.json"
+preregistration = "core/prompt-optimization/data/preregistration.md"
 
 [evaluatees]
 pool = ["deepseek-v4-flash", "minimax-m2.7", "kimi-k2.5", "qwen3.6-plus"]
@@ -1954,7 +1958,7 @@ bootstrap_iters = 10000
 multiple_comparison = "holm"
 
 [judge]
-prompt_path = "eval/prompt-evolution/judge-prompts/prp-pairwise-v1.md"
+prompt_path = "core/prompt-optimization/data/judge-prompts/prp-pairwise-v1.md"
 models = ["deepseek-v4-pro", "claude-sonnet-4-6"]
 iaa_threshold_alpha = 0.6
 
@@ -1963,7 +1967,7 @@ hard_cap_usd = 1500
 phase_caps = { p6_2 = 50, p6_3 = 200, p8 = 100, p10 = 800, p11_5 = 300 }
 ```
 
-#### `eval/prompt-evolution/preregistration.md` template
+#### `core/prompt-optimization/data/preregistration.md` template
 
 ```markdown
 # Pre-registration: <run-id>
@@ -2002,7 +2006,7 @@ phase_caps = { p6_2 = 50, p6_3 = 200, p8 = 100, p10 = 800, p11_5 = 300 }
 <list — e.g., "If T9 wins on dev but loses on held-out, treat as overfit, do NOT publish T9">
 ```
 
-#### `eval/query-shapes/golds.json` schema
+#### `core/prompt-optimization/data/query-shapes/golds.json` schema
 
 ```json
 {
@@ -2028,7 +2032,7 @@ phase_caps = { p6_2 = 50, p6_3 = 200, p8 = 100, p10 = 800, p11_5 = 300 }
 }
 ```
 
-#### `eval/query-shapes/variants.json` schema
+#### `core/prompt-optimization/data/query-shapes/variants.json` schema
 
 ```json
 {
@@ -2053,11 +2057,11 @@ phase_caps = { p6_2 = 50, p6_3 = 200, p8 = 100, p10 = 800, p11_5 = 300 }
 }
 ```
 
-#### `eval/query-shapes/recommendations.json` schema (Part 7's output)
+#### `core/prompt-optimization/data/query-shapes/recommendations.json` schema (Part 7's output)
 
 See §7.6 — fully specified there with verbatim `instruction_text` per recommendation.
 
-#### `eval/prompt-evolution/ablation-report.json` schema
+#### `core/prompt-optimization/data/ablation-report.json` schema
 
 ```json
 {
@@ -2116,22 +2120,22 @@ node eval/agent-read-workflows/run-bench.js \
   --repo=fastify --tasks=eval/agent-read-workflows/tasks-prompt-eval.js \
   --mode=native-rg-read \
   --model=claude-sonnet-4-6 --keep-logs \
-  --output=eval/prompt-evolution/results/b1-fastify-{ts}.json
+  --output=core/prompt-optimization/data/results/b1-fastify-{ts}.json
 
 # B3 sweet-search uber-tree (the candidate)
 node eval/agent-read-workflows/run-bench.js \
   --repo=fastify --tasks=eval/agent-read-workflows/tasks-prompt-eval.js \
   --mode=sweet-search-tools \
-  --policy=eval/prompt-evolution/synthesis-runs/T_uber_v1.md \
+  --policy=core/prompt-optimization/data/synthesis-runs/T_uber_v1.md \
   --model=claude-sonnet-4-6 --keep-logs \
-  --output=eval/prompt-evolution/results/b3-fastify-{ts}.json
+  --output=core/prompt-optimization/data/results/b3-fastify-{ts}.json
 
 # B2 generator-only (NEW: add `generator-only` to policies.js, denies all tools)
 node eval/agent-read-workflows/run-bench.js \
   --repo=fastify --tasks=eval/agent-read-workflows/tasks-prompt-eval.js \
   --mode=generator-only \
   --model=claude-sonnet-4-6 --keep-logs \
-  --output=eval/prompt-evolution/results/b2-fastify-{ts}.json
+  --output=core/prompt-optimization/data/results/b2-fastify-{ts}.json
 
 # B4 oracle retrieval (NEW: pre-injects gold snippets via system-prompt extension)
 node eval/agent-read-workflows/run-bench.js \
@@ -2139,21 +2143,21 @@ node eval/agent-read-workflows/run-bench.js \
   --mode=oracle-retrieval \
   --gold-snippets=eval/agent-read-workflows/gold-snippets/fastify.json \
   --model=claude-sonnet-4-6 --keep-logs \
-  --output=eval/prompt-evolution/results/b4-fastify-{ts}.json
+  --output=core/prompt-optimization/data/results/b4-fastify-{ts}.json
 
 # Aggregate and Pareto-plot (NEW)
-node eval/prompt-evolution/baselines/aggregate-pareto.mjs \
-  --b1=eval/prompt-evolution/results/b1-fastify-{ts}.json \
-  --b2=eval/prompt-evolution/results/b2-fastify-{ts}.json \
-  --b3=eval/prompt-evolution/results/b3-fastify-{ts}.json \
-  --b4=eval/prompt-evolution/results/b4-fastify-{ts}.json \
+node core/prompt-optimization/baselines/aggregate-pareto.mjs \
+  --b1=core/prompt-optimization/data/results/b1-fastify-{ts}.json \
+  --b2=core/prompt-optimization/data/results/b2-fastify-{ts}.json \
+  --b3=core/prompt-optimization/data/results/b3-fastify-{ts}.json \
+  --b4=core/prompt-optimization/data/results/b4-fastify-{ts}.json \
   --stats=paired-permutation,bootstrap-ci \
-  --output=eval/prompt-evolution/results/four-baseline-fastify-{ts}.json
+  --output=core/prompt-optimization/data/results/four-baseline-fastify-{ts}.json
 ```
 
 ### 13.6 Failure-mode detection rules (concrete, against existing JSONL trace)
 
-`eval/prompt-evolution/failure-modes/detect.mjs` consumes `rawRuns[].toolCalls[]` from the
+`core/prompt-optimization/failure-modes/detect.mjs` consumes `rawRuns[].toolCalls[]` from the
 existing `claude-runner.js` JSONL output. **Separate** lightweight tagging emits **`proposal_class`**
 (or **`reflect_evaluator_mismatch`**) per §8.9.4 when a reflector-suggested behavioral pattern exceeds
 verified tool depth on that evaluatee trace — use it to route GEPA feedback, not as a PASS failure
@@ -2197,7 +2201,7 @@ reflector (and unanticipated direct-API needs) consume marginal API dollars.
 
 Each phase script checks its own cap before spawning the next batch and exits non-zero with a
 clear message when hit. Caps are tracked in
-`eval/prompt-evolution/results/{run-id}/budget.jsonl` (append-only). The `cache-and-cost.mjs`
+`core/prompt-optimization/data/results/{run-id}/budget.jsonl` (append-only). The `cache-and-cost.mjs`
 telemetry helper from §13.5 emits realized `blended_usd_per_eval` per call.
 
 ### 13.7b Subscription rate-limit caps (orthogonal to API budget)
@@ -2278,9 +2282,11 @@ doc; everything else is anchored.
 git status
 git log --oneline -5
 
-# 1. Create the prompt-evolution + query-shapes directory structure
-mkdir -p eval/prompt-evolution/{seeds,splits,decontamination,baselines,judge-prompts,results,synthesis-runs,rejected,contaminated,stats,failure-modes,gold-snippets}
-mkdir -p eval/query-shapes/{golds,variants,results}
+# 1. Create the prompt-optimization directory structure (data + code trees).
+#    The bounded context root + barrel were created by P0.0; these mkdirs
+#    add the per-phase data and code subdirs as they're populated.
+mkdir -p core/prompt-optimization/data/{seeds,splits,baselines,judge-prompts,synthesis-runs,results,rejected,contaminated,gold-snippets,query-shapes,output}
+mkdir -p core/prompt-optimization/{decontamination,stats,telemetry,failure-modes,checks,baselines,splits}
 
 # 2. Copy the templates (manifest, run-config, preregistration) into place
 #    — schemas live verbatim in §13.3 above.
@@ -2288,8 +2294,8 @@ mkdir -p eval/query-shapes/{golds,variants,results}
 
 # 3. Begin P0 + P6.0 in parallel:
 #    P0 (one engineer): implement decontamination filters + statistical battery
-#      - eval/prompt-evolution/decontamination/{n-gram,embedding,llm}-filter.mjs
-#      - eval/prompt-evolution/stats/{paired-permutation,bootstrap-ci,plackett-luce}.mjs
+#      - core/prompt-optimization/decontamination/{n-gram,embedding,llm}-filter.mjs
+#      - core/prompt-optimization/stats/{paired-permutation,bootstrap-ci,plackett-luce}.mjs
 #      - scripts/eval-prompt-evolution.mjs (one-shot runner)
 #    P6.0 (other engineer): hand-author golds across all repos
 #      - 12 golds per repo × {fastify, gin, ripgrep, flask} = 48
@@ -2302,12 +2308,12 @@ mkdir -p eval/query-shapes/{golds,variants,results}
 #    Implement P6.1 (variant generation, 6 shapes per gold)
 
 # 5. Smoke test on one repo before running the full sweep:
-node eval/query-shapes/run-shape-sweep.mjs \
+node core/prompt-optimization/run-shape-sweep.mjs \
   --repo=fastify \
-  --golds=eval/query-shapes/golds.json \
-  --variants=eval/query-shapes/variants.json \
+  --golds=core/prompt-optimization/data/query-shapes/golds.json \
+  --variants=core/prompt-optimization/data/query-shapes/variants.json \
   --tools=ss-find,ss-grep,ss-semantic,auto \
-  --output=eval/query-shapes/results/fastify-smoke.json
+  --output=core/prompt-optimization/data/query-shapes/results/fastify-smoke.json
 
 # 6. Validate the harness output schema, fix bugs, then run full P6.2 sweep on all 4 dev repos.
 
@@ -2342,8 +2348,8 @@ results land.
 | **P6.1** | **Authored shape variants (§7.2)**: 6 shape variants per gold across the agent-instructable grid (length × symbol × intent-verb × framing × domain-density × regex-anchor) | 6-8h | P6.0 |
 | **P6.2** | **Track A deterministic sweep (§7.4)**: 4 in-scope tools × 78 golds × 6 shapes ≈ 1,872 runs, deterministic recall metrics | 4-6h + **$0 marginal** (OpenCode Go) | P6.1 |
 | **P6.3** | **Track B agent-in-loop sweep (§7.5)**: 18-24 gold subsample × 6 shapes × 4 tools, Sonnet 4.6 bulk via Claude Max + optional pre-registered Opus 4.7 replay on winners; judges DSv4-Pro + Sonnet 4.6 per PRP protocol and IAA validation | 6-12h + **~$3 marginal** (DSv4-Pro judge calls only) | P6.2 |
-| **P6.4** | **Promotion artifact (§7.6)**: ship `eval/query-shapes/recommendations.json` with per-tool best/avoid shapes and verbatim `instruction_text` strings | 2-3h + $0 | P6.3 |
-| **P7** | Spike: write T1-T14 prompt bodies under `eval/prompt-evolution/seeds/`, **importing query-phrasing rules verbatim from `recommendations.json`** | 4-6h + $0 | P1, **P6.4** |
+| **P6.4** | **Promotion artifact (§7.6)**: ship `core/prompt-optimization/data/query-shapes/recommendations.json` with per-tool best/avoid shapes and verbatim `instruction_text` strings | 2-3h + $0 | P6.3 |
+| **P7** | Spike: write T1-T14 prompt bodies under `core/prompt-optimization/data/seeds/`, **importing query-phrasing rules verbatim from `recommendations.json`** | 4-6h + $0 | P1, **P6.4** |
 | **P8** | Run Phase A (T1, T4, T7, T9, T13, T14) on **cheap pool min** (DSv4-Flash + MiniMax M2.7 + Kimi K2.5 + Qwen 3.6 Plus via OpenCode Go) × 60-probe dev set | 6-10h + **$0 marginal** (OpenCode Go) | P0, P7 |
 | **P8.5** | **Variant ablation analysis (§6.4)**: pairwise W matrix, failure-mode tally (8 modes × 14 variants), per-stratum strength fingerprints, Plackett-Luce ranking with bootstrap CIs, prose summary per variant | 4-6h + $0 | P8 |
 | **P9** | DSPy MIPROv2 baseline run on top 2 leaders from P8.5 (cheap pool via OpenCode Go) | 3-5h + **~$1 marginal** (reflector only) | P8.5 |
@@ -2392,54 +2398,54 @@ only defensible if it passed P11.5 on a fresh-repo holdout. Internal numbers can
 
 | File | Purpose |
 |------|---------|
-| `eval/prompt-evolution/manifest.json` | Pinned repo SHAs, source URLs, licenses, creation dates, contamination flags |
-| `eval/prompt-evolution/splits/dev_60.json` | Stratified dev split (60 probes, seed=42) |
-| `eval/prompt-evolution/splits/heldout_40.json` | Stratified held-out split (40 probes, seed=42) |
-| `eval/prompt-evolution/splits/freshstack_30.json` | Post-cutoff fresh-repo holdout (~30 probes on `astral-sh/uv`, `denoland/deno`, etc.) |
-| `eval/prompt-evolution/splits/build-splits.mjs` | Deterministic split builder with stratification logic |
-| `eval/prompt-evolution/decontamination/n-gram-filter.mjs` | 50-char n-gram detector against public dumps |
-| `eval/prompt-evolution/decontamination/embedding-filter.mjs` | CodeRankEmbed similarity at threshold 0.92 |
-| `eval/prompt-evolution/decontamination/llm-filter.mjs` | DSv4-Flash decontamination pass |
-| `eval/prompt-evolution/contaminated/` | Removed-items list with per-probe rationale |
-| `eval/prompt-evolution/preregistration.md` | Pre-registered analysis plan template (committed before each run) |
-| `eval/prompt-evolution/stats/paired-permutation.mjs` | 10K-iter paired permutation test with seed=42 |
-| `eval/prompt-evolution/stats/bootstrap-ci.mjs` | 10K-iter paired bootstrap 95% CI |
-| `eval/prompt-evolution/stats/plackett-luce.mjs` | PL ranking model + bootstrap CIs for variant ranks |
+| `core/prompt-optimization/data/manifest.json` | Pinned repo SHAs, source URLs, licenses, creation dates, contamination flags |
+| `core/prompt-optimization/data/splits/dev_60.json` | Stratified dev split (60 probes, seed=42) |
+| `core/prompt-optimization/data/splits/heldout_40.json` | Stratified held-out split (40 probes, seed=42) |
+| `core/prompt-optimization/data/splits/freshstack_30.json` | Post-cutoff fresh-repo holdout (~30 probes on `astral-sh/uv`, `denoland/deno`, etc.) |
+| `core/prompt-optimization/splits/build-splits.mjs` | Deterministic split builder with stratification logic |
+| `core/prompt-optimization/decontamination/n-gram-filter.mjs` | 50-char n-gram detector against public dumps |
+| `core/prompt-optimization/decontamination/embedding-filter.mjs` | CodeRankEmbed similarity at threshold 0.92 |
+| `core/prompt-optimization/decontamination/llm-filter.mjs` | DSv4-Flash decontamination pass |
+| `core/prompt-optimization/data/contaminated/` | Removed-items list with per-probe rationale |
+| `core/prompt-optimization/data/preregistration.md` | Pre-registered analysis plan template (committed before each run) |
+| `core/prompt-optimization/stats/paired-permutation.mjs` | 10K-iter paired permutation test with seed=42 |
+| `core/prompt-optimization/stats/bootstrap-ci.mjs` | 10K-iter paired bootstrap 95% CI |
+| `core/prompt-optimization/stats/plackett-luce.mjs` | PL ranking model + bootstrap CIs for variant ranks |
 | `scripts/eval-prompt-evolution.mjs` | One-shot reproducible runner (`npm run eval:prompt -- --run <run-id>`) |
 
 ### Variant slate, ablation, synthesis (P7-P10.6)
 
 | File | Purpose |
 |------|---------|
-| `eval/prompt-evolution/seeds/T01_question_shape_router.md` … `T14_tool_description_only.md` | The 14 seed variants from §6.2 |
-| `eval/prompt-evolution/run-phase-a.mjs` | Spike harness: 6 leaders × **primary SOTA trio** × 60 probes (optional triage path) |
-| `eval/prompt-evolution/ablation-report.json` | Output of §6.4: 14×14 win matrix, 14×8 failure-mode tally, per-stratum fingerprints, PL worth params with CIs |
-| `eval/prompt-evolution/ablation-report.md` | Human-readable summary; per-variant prose ("T_i wins on X, fails on Y") |
-| `eval/prompt-evolution/run-gepa.py` | DSPy + GEPA runner: optimizes **`robustness_score`** (cheap-pool min via OpenCode Go) + logs paired portability stats per §8.9.1 |
-| `eval/prompt-evolution/run-synthesis.py` | GEPA system-aware Merge with §6.4 ablation map fed in as guidance |
-| `eval/prompt-evolution/synthesis-runs/T_uber_v1.md`, `T_uber_v2.md`, … | Versioned synthesized uber-tree candidates with source-variant manifest |
-| `eval/prompt-evolution/rejected/` | Failed-gate diagnostics for synthesized candidates that didn't pass G1-G5 |
+| `core/prompt-optimization/data/seeds/T01_question_shape_router.md` … `T14_tool_description_only.md` | The 14 seed variants from §6.2 |
+| `core/prompt-optimization/run-phase-a.mjs` | Spike harness: 6 leaders × **primary SOTA trio** × 60 probes (optional triage path) |
+| `core/prompt-optimization/data/ablation-report.json` | Output of §6.4: 14×14 win matrix, 14×8 failure-mode tally, per-stratum fingerprints, PL worth params with CIs |
+| `core/prompt-optimization/data/ablation-report.md` | Human-readable summary; per-variant prose ("T_i wins on X, fails on Y") |
+| `core/prompt-optimization/run-gepa.py` | DSPy + GEPA runner: optimizes **`robustness_score`** (cheap-pool min via OpenCode Go) + logs paired portability stats per §8.9.1 |
+| `core/prompt-optimization/run-synthesis.py` | GEPA system-aware Merge with §6.4 ablation map fed in as guidance |
+| `core/prompt-optimization/data/synthesis-runs/T_uber_v1.md`, `T_uber_v2.md`, … | Versioned synthesized uber-tree candidates with source-variant manifest |
+| `core/prompt-optimization/data/rejected/` | Failed-gate diagnostics for synthesized candidates that didn't pass G1-G5 |
 
 ### Native baseline + cross-harness validation (P11-P11.5)
 
 | File | Purpose |
 |------|---------|
-| `eval/prompt-evolution/baselines/b1-rg-read.toml` | Claude Code config: `Read` + `Grep` only, sweet-search MCP disabled |
-| `eval/prompt-evolution/baselines/b2-generator-only.toml` | Claude Code config: all tool calls denied; model answers from prior |
-| `eval/prompt-evolution/baselines/b3-sweet-search.toml` | Claude Code config: full sweet-search MCP + tuned uber-tree |
-| `eval/prompt-evolution/baselines/b4-oracle-retrieval.mjs` | Programmatically pre-injects gold snippets before agent runs |
-| `eval/prompt-evolution/baselines/run-four-baselines.mjs` | Runs B1-B4 on a given split + emits Pareto plot data |
-| `eval/prompt-evolution/run-cross-harness.mjs` | In-harness eval: invoke Claude Code / Codex / OpenCode programmatically with the tuned policy |
-| `eval/prompt-evolution/run-cursor-composer-smoke.mjs` | **§8.9.5 / P11.05**: tiny Composer-only smoke runner producing `composer_smoke_pass_rate` + pinned Cursor build IDs |
-| `eval/prompt-evolution/telemetry/cache-and-cost.mjs` | Append **`blended_usd_per_eval`**, optional cache-hit fields, cache-off bracket deltas to `budget.jsonl` (§8.9.3) |
-| `eval/prompt-evolution/telemetry/portability-dossier.mjs` | Emits mandated paired stats: `shipping_score`, `aux_median`, `aux_p25`, `aux_min`, `aux_min_four`, strata (§8.9.1) |
-| `eval/prompt-evolution/checks/codex-agents-size.mjs` | Assert merged `AGENTS.md` canonical chain `< project_doc_max_bytes` before promotion (§8.9.7) |
-| `eval/prompt-evolution/failure-modes/proposal-class.mjs` | Heuristic **`proposal_class`** tagging for reflector↔evaluatee mismatch (§8.9.4) |
-| `eval/prompt-evolution/judge-prompts/prp-pairwise-v1.md` | Pre-registered PRP-style LLM-as-judge prompt with rubric per failure mode |
-| `eval/prompt-evolution/judge-prompts/human-validation-set.json` | 30-probe human-labeled gold for IAA validation (Krippendorff's α, Cohen's κ) |
-| `eval/query-shapes/` | Benchmarks for optimal query wording per sweet-search tool (P6) |
-| `eval/prompt-evolution/results/{run-id}.jsonl` | Raw per-probe records, one file per published run |
-| `eval/prompt-evolution/run-config.toml` | Evaluatee model versions, harness versions, GEPA hyperparameters, judge prompts, seed list |
+| `core/prompt-optimization/data/baselines/b1-rg-read.toml` | Claude Code config: `Read` + `Grep` only, sweet-search MCP disabled |
+| `core/prompt-optimization/data/baselines/b2-generator-only.toml` | Claude Code config: all tool calls denied; model answers from prior |
+| `core/prompt-optimization/data/baselines/b3-sweet-search.toml` | Claude Code config: full sweet-search MCP + tuned uber-tree |
+| `core/prompt-optimization/baselines/b4-oracle-retrieval.mjs` | Programmatically pre-injects gold snippets before agent runs |
+| `core/prompt-optimization/baselines/run-four-baselines.mjs` | Runs B1-B4 on a given split + emits Pareto plot data |
+| `core/prompt-optimization/run-cross-harness.mjs` | In-harness eval: invoke Claude Code / Codex / OpenCode programmatically with the tuned policy |
+| `core/prompt-optimization/run-cursor-composer-smoke.mjs` | **§8.9.5 / P11.05**: tiny Composer-only smoke runner producing `composer_smoke_pass_rate` + pinned Cursor build IDs |
+| `core/prompt-optimization/telemetry/cache-and-cost.mjs` | Append **`blended_usd_per_eval`**, optional cache-hit fields, cache-off bracket deltas to `budget.jsonl` (§8.9.3) |
+| `core/prompt-optimization/telemetry/portability-dossier.mjs` | Emits mandated paired stats: `shipping_score`, `aux_median`, `aux_p25`, `aux_min`, `aux_min_four`, strata (§8.9.1) |
+| `core/prompt-optimization/checks/codex-agents-size.mjs` | Assert merged `AGENTS.md` canonical chain `< project_doc_max_bytes` before promotion (§8.9.7) |
+| `core/prompt-optimization/failure-modes/proposal-class.mjs` | Heuristic **`proposal_class`** tagging for reflector↔evaluatee mismatch (§8.9.4) |
+| `core/prompt-optimization/data/judge-prompts/prp-pairwise-v1.md` | Pre-registered PRP-style LLM-as-judge prompt with rubric per failure mode |
+| `core/prompt-optimization/data/judge-prompts/human-validation-set.json` | 30-probe human-labeled gold for IAA validation (Krippendorff's α, Cohen's κ) |
+| `core/prompt-optimization/data/query-shapes/` | Benchmarks for optimal query wording per sweet-search tool (P6) |
+| `core/prompt-optimization/data/results/{run-id}.jsonl` | Raw per-probe records, one file per published run |
+| `core/prompt-optimization/data/run-config.toml` | Evaluatee model versions, harness versions, GEPA hyperparameters, judge prompts, seed list |
 
 ## Files To Modify
 
