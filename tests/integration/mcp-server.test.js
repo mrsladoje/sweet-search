@@ -263,6 +263,26 @@ describe('MCP Server Protocol Compliance', () => {
         expect(rs.description).toMatch(/multi-file/i);
         expect(rs.description).toMatch(/`search`/);
       });
+
+      // Drift guard: every `format="<name>"` mention in any description must
+      // match the actual schema enum, otherwise agents that follow the
+      // description hit Zod validation errors at runtime.
+      it('every format="..." mentioned in a description is valid in that tool\'s schema', () => {
+        const FORMAT_RE = /format="([^"]+)"/g;
+        const violations = [];
+        for (const tool of toolsResponse.result.tools) {
+          if (!tool.description || !tool.inputSchema?.properties?.format) continue;
+          const allowed = new Set(tool.inputSchema.properties.format.enum ?? []);
+          if (allowed.size === 0) continue; // no enum, can't drift
+          for (const match of tool.description.matchAll(FORMAT_RE)) {
+            const value = match[1];
+            if (!allowed.has(value)) {
+              violations.push(`${tool.name}: description references format="${value}" but schema enum is [${[...allowed].join(', ')}]`);
+            }
+          }
+        }
+        expect(violations, violations.join('\n')).toEqual([]);
+      });
     });
   });
 

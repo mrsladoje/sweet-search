@@ -130,7 +130,7 @@ const server = new McpServer({
 // ---------------------------------------------------------------------------
 
 server.registerTool('search', {
-  description: 'Hybrid code search (semantic + lexical + structural). USE INSTEAD OF native Grep for any code-discovery task — returns ranked, scored hits with auto-expanded, self-contained code blocks so no follow-up Read is needed. Pass `regex` for ColGrep pattern search (regex anchor + semantic re-rank), `structural=true` for callers/callees/impact, or omit for hybrid auto-routing. `format="agent"` returns 4k of bounded code; switch to `format="agent_full"` (8k) for multi-symbol behavior questions or `format="agent_full_xl"` (12k) for explicit multi-file flow.',
+  description: 'Hybrid code search (semantic + lexical + structural). USE INSTEAD OF native Grep for code-discovery tasks. Pass `format="agent"` to get ranked hits with auto-expanded, self-contained code blocks so no follow-up Read is needed (4k token budget; default `format="benchmark"` is for retrieval-quality measurement, not agent consumption). Pass `regex` for ColGrep pattern search (regex anchor + semantic re-rank), `structural=true` for callers/callees/impact, or omit for hybrid auto-routing. Use `format="agent_full"` (8k) for multi-symbol behavior questions; raise `tokenBudget` up to 16000 for explicit multi-file flow.',
   inputSchema: {
     query: z.string().min(1).max(1000).describe('Search query (1-1000 chars)'),
     k: z.number().int().min(1).max(200).default(10).describe('Number of results (1-200)'),
