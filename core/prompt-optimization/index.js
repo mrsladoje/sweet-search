@@ -21,4 +21,19 @@
 // Forbidden imports: indexing, query, graph, vocabulary, vector-store,
 // embedding, and any non-barrel internal file of any other domain.
 
+// ── P0: real implementations ─────────────────────────────────────────────────
+
+export { pairedPermutationTest } from './stats/paired-permutation.mjs';
+export { pairedBootstrapCI } from './stats/bootstrap-ci.mjs';
+export { plackettLuceFit, plackettLuceFitWithBootstrap } from './stats/plackett-luce.mjs';
+
+export { nGramDecontaminate } from './decontamination/n-gram-filter.mjs';
+export { embeddingDecontaminate } from './decontamination/embedding-filter.mjs';
+export { llmDecontaminate } from './decontamination/llm-filter.mjs';
+
+export { loadManifest, loadRunConfig } from './manifests.mjs';
+export { buildSplits, stratifiedSplit } from './splits/build-splits.mjs';
+
+// ── Pending stubs (post-P0 phases) ───────────────────────────────────────────
+
 export * from './pending.js';

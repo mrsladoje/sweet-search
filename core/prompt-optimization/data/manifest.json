@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "campaignId": "prompt-evolution-2026-05",
+  "createdAt": "2026-05-09T00:00:00Z",
+  "_comment": "Top-level manifest for the prompt-optimization campaign. Pinned repo SHAs live in eval/read-workflows/repo-manifest.json (single source of truth). The post-cutoff freshstack pin is duplicated here because uv is not in the read-workflows bench.",
+  "repoManifest": "eval/read-workflows/repo-manifest.json",
+  "freshstack": {
+    "uv": {
+      "url": "https://github.com/astral-sh/uv.git",
+      "sha": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "language": "rust",
+      "createdAt": "2026-05-07",
+      "_comment": "Repo created post-cutoff for evaluatee training set; primary use is FreshStack-30 holdout per plan §11.2."
+    }
+  },
+  "evaluatees": [
+    {
+      "name": "deepseek-v4-flash",
+      "trainingCutoff": "2026-01-15",
+      "endpoint": "https://api.deepseek.com",
+      "wireApi": "anthropic-compatible",
+      "role": "cheap-pool"
+    },
+    {
+      "name": "minimax-m2.7",
+      "trainingCutoff": "2026-02-01",
+      "endpoint": "https://api.minimax.chat",
+      "wireApi": "openai-compatible",
+      "role": "cheap-pool"
+    },
+    {
+      "name": "kimi-k2.5",
+      "trainingCutoff": "2026-01-01",
+      "endpoint": "https://api.moonshot.cn",
+      "wireApi": "openai-compatible",
+      "role": "cheap-pool"
+    },
+    {
+      "name": "qwen3.6-plus",
+      "trainingCutoff": "2026-02-15",
+      "endpoint": "https://dashscope.aliyuncs.com",
+      "wireApi": "openai-compatible",
+      "role": "cheap-pool"
+    },
+    {
+      "name": "deepseek-v4-pro",
+      "trainingCutoff": "2026-01-15",
+      "endpoint": "https://api.deepseek.com",
+      "wireApi": "anthropic-compatible",
+      "role": "reflector-judge"
+    },
+    {
+      "name": "claude-sonnet-4-6",
+      "trainingCutoff": "2026-02-01",
+      "endpoint": "https://api.anthropic.com",
+      "wireApi": "anthropic",
+      "role": "primary-sota"
+    },
+    {
+      "name": "claude-opus-4-7",
+      "trainingCutoff": "2026-02-01",
+      "endpoint": "https://api.anthropic.com",
+      "wireApi": "anthropic",
+      "role": "primary-sota"
+    },
+    {
+      "name": "gpt-5-5",
+      "trainingCutoff": "2026-02-01",
+      "endpoint": "https://api.openai.com",
+      "wireApi": "openai",
+      "role": "primary-sota"
+    },
+    {
+      "name": "gemini-3-1-pro",
+      "trainingCutoff": "2026-03-01",
+      "endpoint": "https://generativelanguage.googleapis.com",
+      "wireApi": "gemini",
+      "role": "primary-sota"
+    }
+  ],
+  "splits": {
+    "dev_60": "core/prompt-optimization/data/splits/dev_60.json",
+    "heldout_40": "core/prompt-optimization/data/splits/heldout_40.json",
+    "freshstack_30": "core/prompt-optimization/data/splits/freshstack_30.json"
+  },
+  "harnessVersion": {
+    "claudeCodeCli": "2.1.x",
+    "sweetSearchCommit": "c0c5677c8e231c43a92fe7db1577e7a338e25126"
+  },
+  "decontamination": {
+    "appliedLayers": [],
+    "_comment": "Populated by scripts/eval-prompt-evolution.mjs decontaminate step. Empty until P6.0 lands probe content + caller wires real corpus and judge.",
+    "removedItemsList": "core/prompt-optimization/data/contaminated/"
+  }
+}

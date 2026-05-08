@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "core/prompt-optimization/splits/build-splits.mjs",
+  "seed": 42,
+  "devRatio": 0.6,
+  "stratifyBy": "lang|stratification",
+  "sources": {
+    "dev_60": "eval/retrieval-probes/probes-stratified-100.json",
+    "heldout_40": "eval/retrieval-probes/probes-stratified-100.json",
+    "freshstack_30": "eval/freshstack/uv-queries.json"
+  },
+  "totals": {
+    "dev_60": 60,
+    "heldout_40": 40,
+    "freshstack_30": 30
+  },
+  "countsPerStratum": {
+    "go|A": {
+      "dev": 6,
+      "heldout": 4
+    },
+    "go|B": {
+      "dev": 6,
+      "heldout": 4
+    },
+    "js|A": {
+      "dev": 12,
+      "heldout": 8
+    },
+    "js|B": {
+      "dev": 12,
+      "heldout": 8
+    },
+    "py|A": {
+      "dev": 6,
+      "heldout": 4
+    },
+    "py|B": {
+      "dev": 6,
+      "heldout": 4
+    },
+    "rust|A": {
+      "dev": 6,
+      "heldout": 4
+    },
+    "rust|B": {
+      "dev": 6,
+      "heldout": 4
+    }
+  }
+}

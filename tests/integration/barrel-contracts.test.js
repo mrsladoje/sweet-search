@@ -250,11 +250,11 @@ describe('Domain Barrel Contracts', () => {
   });
 
   describe('core/prompt-optimization', () => {
-    // Build-time bounded context (P0.0 DDD layout). Real implementations
-    // land across P0/P6/P8/P10/P11 per docs/SYSTEM_PROMPT_OPT_PLAN.md.
-    // For now the barrel re-exports stubs that throw — the contract test
-    // verifies the public-API surface is declared so future replacements
-    // can't silently shrink it.
+    // Build-time bounded context. P0.0 (2026-05-09) declared the surface;
+    // P0 (this commit) wired stats / decontamination / splits / manifests.
+    // Remaining stubs (P6.2-P11.5) still throw with a phase pointer so any
+    // accidental runtime use fails loudly. The contract test asserts both:
+    // declared surface stays stable, and pending stubs surface their phase.
     it('exports public API surface', async () => {
       const m = await import('../../core/prompt-optimization/index.js');
 
@@ -298,10 +298,54 @@ describe('Domain Barrel Contracts', () => {
       expect(m.loadRunConfig).toBeTypeOf('function');
     });
 
-    it('stubs throw with a phase pointer when invoked', async () => {
+    it('pending stubs throw with a phase pointer when invoked', async () => {
       const m = await import('../../core/prompt-optimization/index.js');
-      expect(() => m.runGepaCampaign()).toThrow(/not yet implemented/);
-      expect(() => m.loadManifest()).toThrow(/SYSTEM_PROMPT_OPT_PLAN/);
+      expect(() => m.runGepaCampaign()).toThrow(/lands in P10/);
+      expect(() => m.runSynthesis()).toThrow(/SYSTEM_PROMPT_OPT_PLAN/);
+      expect(() => m.applyEvaluatorExclusion()).toThrow(/§8\.9\.1/);
+    });
+
+    it('P0 implementations are wired (not stubs)', async () => {
+      const m = await import('../../core/prompt-optimization/index.js');
+      // Stats: paired permutation produces a sane p-value.
+      const perm = m.pairedPermutationTest({ a: [1, 1, 0, 1, 0], b: [0, 1, 0, 0, 0], iterations: 200, seed: 42 });
+      expect(perm.observedDiff).toBeCloseTo(0.4, 6);
+      expect(perm.pValue).toBeGreaterThan(0);
+      expect(perm.pValue).toBeLessThanOrEqual(1);
+      // Stats: bootstrap CI brackets the observed diff.
+      const ci = m.pairedBootstrapCI({ a: [1, 1, 0, 1, 0], b: [0, 1, 0, 0, 0], iterations: 200, seed: 42 });
+      expect(ci.observedDiff).toBeCloseTo(0.4, 6);
+      expect(ci.ciLow).toBeLessThanOrEqual(ci.observedDiff);
+      expect(ci.ciHigh).toBeGreaterThanOrEqual(ci.observedDiff);
+      // Stats: PL ranks consistent winner first.
+      const pl = m.plackettLuceFit({
+        items: ['T1', 'T2', 'T3'],
+        rankings: [['T1', 'T2'], ['T1', 'T3'], ['T2', 'T3'], ['T1', 'T2', 'T3']],
+      });
+      expect(pl.rank.T1).toBe(1);
+      // Decontamination: n-gram catches an exact 50-char hit.
+      const needle = 'a'.repeat(60);
+      const result = m.nGramDecontaminate({
+        probes: [{ id: 'p1', needle }],
+        corpus: ['x'.repeat(20) + needle.slice(0, 50) + 'y'.repeat(20)],
+      });
+      expect(result.flagged).toHaveLength(1);
+      expect(result.clean).toHaveLength(0);
+      // Manifests: load returns parsed JSON with merged repos.
+      const manifest = m.loadManifest();
+      expect(manifest.schemaVersion).toBe(1);
+      expect(manifest._repos.fastify).toBeDefined();
+      // Run-config: TOML parses into nested sections + arrays.
+      const cfg = m.loadRunConfig();
+      expect(cfg.campaign_id).toBe('prompt-evolution-2026-05');
+      expect(cfg.evaluatees.pool).toEqual(['deepseek-v4-flash', 'minimax-m2.7', 'kimi-k2.5', 'qwen3.6-plus']);
+      expect(cfg.gepa.generations_max).toBe(30);
+    });
+
+    it('buildSplits --check matches on-disk artifacts', async () => {
+      const m = await import('../../core/prompt-optimization/splits/build-splits.mjs');
+      const result = m.buildSplits({ check: true });
+      expect(result.ok).toBe(true);
     });
   });
 });

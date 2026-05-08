@@ -1,0 +1,45 @@
+# Top-level run configuration for the prompt-optimization campaign.
+# Schema in plan §13.3. One file per published run-id (this file is the
+# template / default; concrete runs copy + override under
+# core/prompt-optimization/data/results/{run-id}/run-config.toml and tag the
+# commit prereg/{run-id} per §11.8).
+
+campaign_id = "prompt-evolution-2026-05"
+run_id = "template-default"
+manifest = "core/prompt-optimization/data/manifest.json"
+preregistration = "core/prompt-optimization/data/preregistration.template.md"
+
+[evaluatees]
+# Cheap-pool min for `robustness_score` optimization (§8.5).
+pool = ["deepseek-v4-flash", "minimax-m2.7", "kimi-k2.5", "qwen3.6-plus"]
+metric = "min_answerability"
+
+[reflector]
+model = "deepseek-v4-pro"
+endpoint = "https://api.deepseek.com"
+budget_usd = 10  # per-phase cap; see §13.7 phase table
+
+[gepa]
+reflection_minibatch_size = 3
+minibatch_size = 5
+generations_max = 30
+
+[seeds]
+torch = [42, 43, 44]
+router = 42
+bootstrap = 42
+
+[stats]
+permutation_iters = 10000
+bootstrap_iters = 10000
+multiple_comparison = "holm"
+
+[judge]
+prompt_path = "core/prompt-optimization/data/judge-prompts/prp-pairwise-v1.md"
+models = ["deepseek-v4-pro", "claude-sonnet-4-6"]
+iaa_threshold_alpha = 0.6
+
+[budget]
+# Marginal API cap on top of the subscription floor — plan §13.7.
+hard_cap_usd = 25
+phase_caps = { p6_2 = 0, p6_3 = 3, p8 = 0, p10 = 10, p10_5 = 2, p11 = 0, p11_05 = 0, p11_5 = 0, cache_off_reserve = 5, buffer = 5 }
