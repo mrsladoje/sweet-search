@@ -37,6 +37,8 @@ import { describeDedupConfig } from '../core/infrastructure/index.js';
 import { verifyRuntime, getMaxsimTier, getRouterType } from './verify-runtime.js';
 import { ALL_HARNESSES, injectAgentInstructions } from './inject-agent-instructions.js';
 import { writeClaudeRules } from './write-claude-rules.js';
+import { installPromptReminderHook } from './install-prompt-reminders.js';
+import { installToolEnforcement } from './install-tool-enforcement.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -74,7 +76,8 @@ export function parseInitArgs(args) {
     symlinkInstructionFiles: true,
     optInHarnesses: new Set(),
     noClaude: false,
-    enforceTools: false, // P3: --enforce-tools (parsed here so init.js stays single-source)
+    skipPromptReminders: false, // P2: --no-prompt-reminders (default OFF)
+    enforceTools: false,        // P3: --enforce-tools (default OFF — opt-in strict mode)
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -157,9 +160,14 @@ export function parseInitArgs(args) {
     } else if (arg === '--cursor') {
       // P1: opt INTO writing .cursor/rules/sweet-search.mdc.
       result.optInHarnesses.add('cursor');
+    } else if (arg === '--no-prompt-reminders') {
+      // P2: skip the UserPromptSubmit reminder hook. Default-on because
+      // the reminder is the cheapest available shift-left for tool
+      // selection (~80 tokens per prompt vs avoided re-search loops).
+      result.skipPromptReminders = true;
     } else if (arg === '--enforce-tools') {
-      // P3: parsed here so init.js stays the single source of truth for
-      // CLI flags. Actual installation lands when P3 ships.
+      // P3: opt-in strict mode — denies native Grep + installs a Read
+      // hint hook. Opinionated and Claude-specific (per §4D).
       result.enforceTools = true;
     }
   }
@@ -627,6 +635,7 @@ function printReport(report) {
     profile, maxsimTier, routerType, models, verification, runtimeDownloads,
     capability, cascadeReport, dedupReport, prewarmHookReport, skillReport,
     liChoices, agentInstructionsReport, claudeRulesReport,
+    promptReminderReport, toolEnforcementReport,
   } = report;
 
   console.log('');
@@ -739,6 +748,12 @@ function printReport(report) {
   }
   if (claudeRulesReport) {
     console.log(`  Claude rules file:    ${claudeRulesReport.status}`);
+  }
+  if (promptReminderReport && promptReminderReport.status !== 'skipped') {
+    console.log(`  Prompt reminder hook: ${promptReminderReport.status}`);
+  }
+  if (toolEnforcementReport && toolEnforcementReport.status !== 'skipped') {
+    console.log(`  Tool enforcement:     ${toolEnforcementReport.status} (Grep deny + Read hint)`);
   }
 
   console.log(`  Runtime downloads:    ${runtimeDownloads}`);
@@ -1044,10 +1059,17 @@ Options:
                             line rather than a symlink to the canonical file.
                             Useful on filesystems / hosts where symlinks
                             aren't supported. Default is to symlink.
-  --enforce-tools           (P3, opt-in) Install Claude Code deny rules for
-                            native Grep + Read hint hooks. Strict mode for
-                            users who want sweet-search to be the only path.
-                            Currently parsed but not yet wired (lands in P3).
+  --no-prompt-reminders     Skip the UserPromptSubmit reminder hook (default
+                            on). The reminder injects a small (~80 token)
+                            sweet-search tool-routing summary into every
+                            prompt to prevent drift back to native Grep/Read.
+                            Always implied when --no-claude is set.
+  --enforce-tools           (Opt-in strict mode) Deny native Grep entirely
+                            (forces ss-grep) and install a hint hook for
+                            native Read suggesting ss-read / ss-semantic.
+                            Read is hinted, not blocked, because edit
+                            workflows legitimately need Read. Always
+                            implied off when --no-claude is set.
   --verbose, -v             Enable verbose output
   --help, -h                Show this help
 
@@ -1507,11 +1529,38 @@ export async function runInit(args) {
     process.stderr.write(`[init] Agent instructions: skipped (--no-agent-instructions)\n`);
   }
 
-  // 16-17. UserPromptSubmit reminder hook + tool-enforcement (P2/P3 — flag
-  //        plumbing lives here so the help text and uninstall mirror are
-  //        consistent; actual installers land in those phases).
-  if (parsed.enforceTools && parsed.verbose) {
-    process.stderr.write(`[init] --enforce-tools: parsed (installer lands in P3)\n`);
+  // 16. UserPromptSubmit reminder hook (P2 — plan §4C / §10 step 16).
+  //     Universal `--no-claude` gate already enforced at step 10. Default-on;
+  //     `--no-prompt-reminders` opts out. The hook lives at
+  //     `.claude/hooks/sweet-search-remind-tools.mjs` with a
+  //     `hooks.UserPromptSubmit` entry in `.claude/settings.json` keyed by
+  //     filename so re-init updates rather than duplicates.
+  let promptReminderReport = null;
+  if (!parsed.noClaude) {
+    promptReminderReport = installPromptReminderHook({
+      projectRoot,
+      packageRoot: PACKAGE_ROOT,
+      skipped: parsed.skipPromptReminders,
+    });
+    if (parsed.verbose || promptReminderReport.status === 'error') {
+      process.stderr.write(`[init] Prompt reminder hook: ${promptReminderReport.status} — ${promptReminderReport.detail}\n`);
+    }
+  }
+
+  // 17. Tool enforcement (P3 — plan §4D / §10 step 17). Opt-in via
+  //     `--enforce-tools`; universal `--no-claude` gate above. Adds
+  //     `permissions.deny: ["Grep"]` and a PreToolUse hint hook for `Read`
+  //     in `.claude/settings.json`. Strict + opinionated; off by default.
+  let toolEnforcementReport = null;
+  if (!parsed.noClaude) {
+    toolEnforcementReport = installToolEnforcement({
+      projectRoot,
+      packageRoot: PACKAGE_ROOT,
+      skipped: !parsed.enforceTools,
+    });
+    if (parsed.verbose || toolEnforcementReport.status === 'error') {
+      process.stderr.write(`[init] Tool enforcement: ${toolEnforcementReport.status} — ${toolEnforcementReport.detail}\n`);
+    }
   }
 
   // 18. Print report
@@ -1530,6 +1579,8 @@ export async function runInit(args) {
     liChoices,
     agentInstructionsReport,
     claudeRulesReport,
+    promptReminderReport,
+    toolEnforcementReport,
   });
 }
 
