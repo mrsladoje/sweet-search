@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
 import path from 'path';
+import { getNativeDemotionKernel } from './demotion-kernel-native.js';
 
 /**
  * Intent-aware file-kind ranking (conservative variant).
@@ -348,8 +349,33 @@ function isTestChunkUncached(r, opts, filePath) {
   // ~30-100µs, which compounds across the per-call window (~100 results)
   // and is the dominant remaining cost in rule:testName after the verdict
   // caches eliminated repeats.
+  //
+  // Native fast-path: when SWEET_SEARCH_DEMOTIONS_NATIVE=1 and the
+  // sweet-search-native addon is loaded, applyResultDemotions runs a
+  // batch matcher over all chunk texts in one napi call (~10x faster
+  // than V8 per-test for the common case) and prefills
+  // opts._testChunkBodyMatchCache. This branch then reads the cached
+  // verdict — the V8 regex below is the universal fallback.
   const text = resolveResultText(r, opts);
-  if (TEST_CHUNK_BODY_RE.test(text)) return true;
+  const bodyMatchCache = opts._testChunkBodyMatchCache;
+  if (bodyMatchCache) {
+    const meta = r?.metadata || {};
+    const start = r?.startLine ?? r?.start_line ?? meta.startLine ?? meta.start_line;
+    const end = r?.endLine ?? r?.end_line ?? meta.endLine ?? meta.end_line ?? start;
+    if (filePath && Number.isFinite(start)) {
+      const k = `${filePath}|${start}|${Number.isFinite(end) ? end : start}`;
+      if (bodyMatchCache.has(k)) {
+        if (bodyMatchCache.get(k)) return true;
+        // false → fall through to the name regex below
+      } else if (TEST_CHUNK_BODY_RE.test(text)) {
+        return true;
+      }
+    } else if (TEST_CHUNK_BODY_RE.test(text)) {
+      return true;
+    }
+  } else if (TEST_CHUNK_BODY_RE.test(text)) {
+    return true;
+  }
 
   const name = resolveResultName(r);
   return TEST_CHUNK_NAME_RE.test(name);
@@ -1401,6 +1427,7 @@ export function applyResultDemotions(results, opts = {}) {
     _isTestSupportCache: opts._isTestSupportCache instanceof Map ? opts._isTestSupportCache : new Map(),
     _isTestChunkCache: opts._isTestChunkCache instanceof Map ? opts._isTestChunkCache : new Map(),
     _fileKindCache: opts._fileKindCache instanceof Map ? opts._fileKindCache : new Map(),
+    _testChunkBodyMatchCache: opts._testChunkBodyMatchCache instanceof Map ? opts._testChunkBodyMatchCache : new Map(),
   };
 
   const ablations = opts.ablations;
@@ -1454,6 +1481,66 @@ export function applyResultDemotions(results, opts = {}) {
 
   let changed = false;
   const window = Math.min(opts.window ?? results.length, results.length);
+
+  // Native fast-path prefill (opt-in). When the sweet-search-native addon
+  // exposes testChunkBodyMatchBatch and the env gate is on, prefill the
+  // chunk-body match cache for the active window in one napi call. This
+  // cuts the dominant cost in rule:testName — the per-chunk V8 regex
+  // pass — by amortising napi crossing over up to `window` chunks. If the
+  // addon is absent or the env gate is off, getNativeDemotionKernel()
+  // returns null and the per-result loop falls through to the V8 regex.
+  // STRICTLY behavior-preserving: the Rust `regex` crate compiles the
+  // same alternation as TEST_CHUNK_BODY_RE; scripts/parity-demotions.js
+  // asserts byte-identical verdicts on a fixed corpus.
+  if (!hasAblation(ablations, 'no-test-name-overlap')) {
+    const kernel = getNativeDemotionKernel();
+    if (kernel) {
+      const bodyMatchCache = opts._testChunkBodyMatchCache;
+      const texts = new Array(window);
+      const keys = new Array(window);
+      let needed = 0;
+      for (let i = 0; i < window; i++) {
+        const r = results[i];
+        const filePath = resolveFilePath(r);
+        const meta = r?.metadata || {};
+        const start = r?.startLine ?? r?.start_line ?? meta.startLine ?? meta.start_line;
+        const end = r?.endLine ?? r?.end_line ?? meta.endLine ?? meta.end_line ?? start;
+        if (!filePath || !Number.isFinite(start)) {
+          keys[i] = null;
+          continue;
+        }
+        const k = `${filePath}|${start}|${Number.isFinite(end) ? end : start}`;
+        if (bodyMatchCache.has(k)) {
+          keys[i] = null;
+          continue;
+        }
+        keys[i] = k;
+        texts[i] = resolveResultText(r, opts) || '';
+        needed++;
+      }
+      if (needed > 0) {
+        // Pack contiguously to avoid passing empty placeholder slots.
+        const packedTexts = new Array(needed);
+        const packedKeys = new Array(needed);
+        let p = 0;
+        for (let i = 0; i < window; i++) {
+          if (keys[i] !== null) {
+            packedTexts[p] = texts[i];
+            packedKeys[p] = keys[i];
+            p++;
+          }
+        }
+        try {
+          const verdicts = kernel.testChunkBodyMatchBatch(packedTexts);
+          for (let j = 0; j < needed; j++) {
+            bodyMatchCache.set(packedKeys[j], !!verdicts[j]);
+          }
+        } catch {
+          // Native call failed — fall through to V8 regex per chunk.
+        }
+      }
+    }
+  }
 
   // Per-rule timers — accumulator pattern, no object allocation per call.
   // No-op in production; only fires when profile-search-stages.mjs sets

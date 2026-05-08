@@ -11,6 +11,7 @@
 #![cfg_attr(test, allow(dead_code, unreachable_code))]
 
 mod dedup;
+mod demotions;
 mod inference;
 mod native_grep;
 mod regex_literals;
