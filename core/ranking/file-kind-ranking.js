@@ -231,7 +231,29 @@ function readResultSpan(r, opts = {}) {
 }
 
 function resolveResultText(r, opts = {}) {
-  return r?.content || r?.text || r?.code || r?.snippet || readResultSpan(r, opts);
+  const inline = r?.content || r?.text || r?.code || r?.snippet;
+  if (inline) return inline;
+  // Per-call cache: this function is hit by 5+ demotion sub-rules per result
+  // (bodyDensity, isTestChunk fallback, anomalousChunk, docCommentOnly,
+  //  inferEntityKindFromText). Without memoization, each cache miss triggers
+  // a full readFileSync + split('\n') on the chunk's source file — 5 file
+  // reads per result × 100 results = ~500 disk reads per applyResultDemotions
+  // call, which dominates the 6ms p50 cost.
+  const cache = opts._resultTextCache;
+  if (cache) {
+    const file = resolveFilePath(r);
+    const meta = r?.metadata || {};
+    const start = r?.startLine ?? r?.start_line ?? meta.startLine ?? meta.start_line;
+    const end = r?.endLine ?? r?.end_line ?? meta.endLine ?? meta.end_line ?? start;
+    if (file && Number.isFinite(start)) {
+      const key = `${file}|${start}|${Number.isFinite(end) ? end : start}`;
+      if (cache.has(key)) return cache.get(key);
+      const text = readResultSpan(r, opts);
+      cache.set(key, text);
+      return text;
+    }
+  }
+  return readResultSpan(r, opts);
 }
 
 function resolveResultName(r) {
@@ -374,21 +396,38 @@ function resolveEntityKindInfo(r, opts = {}) {
   const meta = r?.metadata || {};
   const start = r?.startLine ?? r?.start_line ?? meta.startLine ?? meta.start_line;
   const end = r?.endLine ?? r?.end_line ?? meta.endLine ?? meta.end_line ?? start;
+  // Intra-call memoization: this function is invoked 4-7x per result by
+  // different multipliers (buildRefCountMap, entityKindMultiplier,
+  // namePrecisionMultiplier, bodyDensityMultiplier, megaEntityPenalty,
+  // referenceCountBoost, the main loop). With ~100 results that's
+  // 400-1400 SQLite round-trips. Cache by (file, start, end).
+  const cache = opts._entityKindCache;
+  let cacheKey = null;
+  if (cache && file && Number.isFinite(start)) {
+    cacheKey = `${file}|${start}|${Number.isFinite(end) ? end : start}`;
+    if (cache.has(cacheKey)) return cache.get(cacheKey);
+  }
+  let result = null;
   if (opts.codeGraphRepo && file && Number.isFinite(start)) {
     try {
       const entity = opts.codeGraphRepo.findEnclosingEntity(file, start, Number.isFinite(end) ? end : start)
         || opts.codeGraphRepo.findEnclosingEntity(file, start, start);
-      if (entity?.type) return entity;
-      if (typeof opts.codeGraphRepo.findFirstEntityInRange === 'function' && Number.isFinite(end)) {
+      if (entity?.type) {
+        result = entity;
+      } else if (typeof opts.codeGraphRepo.findFirstEntityInRange === 'function' && Number.isFinite(end)) {
         const first = opts.codeGraphRepo.findFirstEntityInRange(file, start, end);
-        if (first?.type) return first;
+        if (first?.type) result = first;
       }
     } catch {
       // Fall through to source-span inference.
     }
   }
-  const inferred = inferEntityKindFromText(resolveResultText(r, opts));
-  return inferred ? { type: inferred } : null;
+  if (!result) {
+    const inferred = inferEntityKindFromText(resolveResultText(r, opts));
+    result = inferred ? { type: inferred } : null;
+  }
+  if (cacheKey) cache.set(cacheKey, result);
+  return result;
 }
 
 // Boost magnitudes are env-tunable so we can ablate without re-deploying.
@@ -1265,6 +1304,22 @@ function buildRefCountMap(results, opts = {}) {
 export function applyResultDemotions(results, opts = {}) {
   if (!Array.isArray(results) || results.length === 0) return results;
 
+  // Attach intra-call (and optionally cross-call) memoization for the three
+  // hot lookups inside the demotion sub-rules:
+  //   - _entityKindCache    : enclosing/contained entity from SQLite
+  //   - _entityNameCache    : findEntityWithNameInRange (symbol-target adopt)
+  //   - _resultTextCache    : readFileSync source span — biggest win, since
+  //                           5+ rules call resolveResultText per result and
+  //                           each cache-miss fires a full readFileSync.
+  // Caller may pass pre-allocated Maps via opts to share across both
+  // applyResultDemotions calls in the same search() invocation.
+  opts = {
+    ...opts,
+    _entityKindCache: opts._entityKindCache instanceof Map ? opts._entityKindCache : new Map(),
+    _entityNameCache: opts._entityNameCache instanceof Map ? opts._entityNameCache : new Map(),
+    _resultTextCache: opts._resultTextCache instanceof Map ? opts._resultTextCache : new Map(),
+  };
+
   const ablations = opts.ablations;
   if (hasAblation(ablations, 'no-result-demotions')) return results;
 
@@ -1316,14 +1371,37 @@ export function applyResultDemotions(results, opts = {}) {
 
   let changed = false;
   const window = Math.min(opts.window ?? results.length, results.length);
+  // Hoist loop-invariant work out of the per-result map():
+  //   - ruleOpts: a single spread reused across the 3 ruleOpts callsites
+  //     (anomalous, docComment, megaEntity). Original allocated 3 fresh
+  //     spreads per result (~15-20 keys each) × 100 results = 300 extra
+  //     objects per call.
+  //   - skip* flags: hasAblation() called once per result per rule otherwise.
+  //   - preferredKindKeywordSet: the kind→keywords list never changes during
+  //     the loop, but the original recomputed
+  //     `(ENTITY_KIND_KEYWORDS[preferredKind] || []).map(normalizeType)` per
+  //     result inside the entity-adoption gate.
+  const ruleOpts = { ...opts, ablations, _isAgentFormat: isAgentFormat };
+  const skipTestName = hasAblation(ablations, 'no-test-name-overlap');
+  const skipBodyDensity = hasAblation(ablations, 'no-body-density');
+  const skipMegaChunk = hasAblation(ablations, 'no-mega-chunk-penalty');
+  const skipRefCount = hasAblation(ablations, 'no-ref-count-boost');
+  const skipNamePrecision = hasAblation(ablations, 'no-name-precision');
+  const skipEntityKindPref = hasAblation(ablations, 'no-entity-kind-pref');
+  const testNameOverlapThreshold = opts.testNameOverlapThreshold ?? 0.5;
+  const testNameOverlapFactor = opts.testNameOverlapFactor ?? 0.40;
+  const preferredKindKeywordSet = preferredKind
+    ? new Set((ENTITY_KIND_KEYWORDS[preferredKind] || []).map(normalizeType))
+    : null;
+
   const adjusted = results.slice(0, window).map((result, index) => {
     let mult = 1;
     const details = [];
 
-    if (!hasAblation(ablations, 'no-test-name-overlap') && isTestChunk(result, opts)) {
+    if (!skipTestName && isTestChunk(result, opts)) {
       const overlap = testNameQueryOverlap(result, qTokens);
-      if (overlap >= (opts.testNameOverlapThreshold ?? 0.5)) {
-        mult *= opts.testNameOverlapFactor ?? 0.40;
+      if (overlap >= testNameOverlapThreshold) {
+        mult *= testNameOverlapFactor;
         details.push('test-name:0.40');
       }
     }
@@ -1340,7 +1418,7 @@ export function applyResultDemotions(results, opts = {}) {
       details.push(`name-precision:${nameMult.toFixed(2)}`);
     }
 
-    if (!hasAblation(ablations, 'no-body-density')) {
+    if (!skipBodyDensity) {
       const bodyMult = bodyDensityMultiplier(result, opts);
       if (bodyMult !== 1) {
         mult *= bodyMult;
@@ -1348,7 +1426,7 @@ export function applyResultDemotions(results, opts = {}) {
       }
     }
 
-    if (!hasAblation(ablations, 'no-mega-chunk-penalty')) {
+    if (!skipMegaChunk) {
       const megaMult = megaChunkSizePenalty(result, opts);
       if (megaMult !== 1) {
         mult *= megaMult;
@@ -1357,7 +1435,7 @@ export function applyResultDemotions(results, opts = {}) {
     }
 
     {
-      const anomMult = anomalousChunkDemotion(result, { ...opts, ablations, _isAgentFormat: isAgentFormat });
+      const anomMult = anomalousChunkDemotion(result, ruleOpts);
       if (anomMult !== 1) {
         mult *= anomMult;
         details.push(`anomalous-chunk:${anomMult.toFixed(2)}`);
@@ -1365,7 +1443,7 @@ export function applyResultDemotions(results, opts = {}) {
     }
 
     {
-      const docMult = docCommentOnlyDemotion(result, { ...opts, ablations, _isAgentFormat: isAgentFormat });
+      const docMult = docCommentOnlyDemotion(result, ruleOpts);
       if (docMult !== 1) {
         mult *= docMult;
         details.push(`doc-comment-only:${docMult.toFixed(2)}`);
@@ -1373,7 +1451,7 @@ export function applyResultDemotions(results, opts = {}) {
     }
 
     {
-      const entMult = megaEntityPenalty(result, { ...opts, ablations, _isAgentFormat: isAgentFormat });
+      const entMult = megaEntityPenalty(result, ruleOpts);
       if (entMult !== 1) {
         mult *= entMult;
         details.push(`mega-entity:${entMult.toFixed(2)}`);
@@ -1397,7 +1475,7 @@ export function applyResultDemotions(results, opts = {}) {
       }
     }
 
-    if (!hasAblation(ablations, 'no-ref-count-boost')) {
+    if (!skipRefCount) {
       const refMult = referenceCountBoost(result, refCounts, opts);
       if (refMult !== 1) {
         mult *= refMult;
@@ -1420,16 +1498,22 @@ export function applyResultDemotions(results, opts = {}) {
           const sl = Number(result?.startLine ?? meta.startLine);
           const el = Number(result?.endLine ?? meta.endLine);
           if (!fp || !Number.isFinite(sl) || !Number.isFinite(el)) return null;
+          const cache = opts._entityNameCache;
+          const cacheKey = cache ? `${fp}|${sl}|${el}|${symbolExactTarget}` : null;
+          if (cacheKey && cache.has(cacheKey)) return cache.get(cacheKey);
+          let resolved = null;
           try {
-            return opts.codeGraphRepo.findEntityWithNameInRange(fp, sl, el, symbolExactTarget);
-          } catch { return null; }
+            resolved = opts.codeGraphRepo.findEntityWithNameInRange(fp, sl, el, symbolExactTarget);
+          } catch { resolved = null; }
+          if (cacheKey) cache.set(cacheKey, resolved);
+          return resolved;
         })()
       : null;
     const exactEntity = exactSymbolTargetEntity
-      || (!hasAblation(ablations, 'no-name-precision')
+      || (!skipNamePrecision
           ? exactNamedEntityForResult(result, preferredKind, nameHints, nameHintsLower, opts)
           : null);
-    const preferredEntity = exactEntity || (preferredKind && !hasAblation(ablations, 'no-entity-kind-pref')
+    const preferredEntity = exactEntity || (preferredKind && !skipEntityKindPref
       ? resolveEntityKindInfo(result, opts)
       : null);
     const preferredType = normalizeType(preferredEntity?.type);
@@ -1445,7 +1529,7 @@ export function applyResultDemotions(results, opts = {}) {
       && exactSymbolTargetEntity.endLine);
     const shouldAdoptEntity = shouldAdoptViaExactTarget || !!(preferredEntity?.startLine
       && preferredEntity?.endLine
-      && (ENTITY_KIND_KEYWORDS[preferredKind] || []).map(normalizeType).includes(preferredType));
+      && preferredKindKeywordSet && preferredKindKeywordSet.has(preferredType));
     const containedEntity = !shouldAdoptEntity && opts.codeGraphRepo && typeof opts.codeGraphRepo.findFirstEntityInRange === 'function'
       ? resolveEntityKindInfo(result, opts)
       : null;

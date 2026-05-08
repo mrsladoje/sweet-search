@@ -60,6 +60,19 @@ function hasAblation(ablations, name) {
     : Array.isArray(ablations) && ablations.includes(name);
 }
 
+// Per-stage profiling hooks. No-op unless `globalThis.__stageTimings` is set
+// by the profiler (scripts/profile-search-stages.mjs). Used to attribute the
+// "unaccounted" portion of post-retrieval wall time to specific sub-stages.
+function __ptStart() {
+  return globalThis.__stageTimings ? performance.now() : null;
+}
+function __ptEnd(stage, t0) {
+  if (t0 == null || !globalThis.__stageTimings) return;
+  const ms = performance.now() - t0;
+  const buf = globalThis.__stageTimings;
+  (buf[stage] = buf[stage] || []).push(ms);
+}
+
 function envNumber(name, fallback, min = 0, max = Infinity) {
   const value = process.env[name];
   if (value == null || value === '') return fallback;
@@ -409,6 +422,9 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     effectiveGraphExpand,
     intentPolicy,
     start,
+    _entityKindCache,
+    _entityNameCache,
+    _resultTextCache,
   } = searchContext;
 
   // Merge semantic stats (embedding/rerank) into main stats for CostTracker.
@@ -500,6 +516,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
           }
         };
 
+        const __t_expand = __ptStart();
         results = expandResults(graphDb, results, {
           expandMode: effectiveGraphExpand,
           adaptiveHop2,
@@ -512,13 +529,16 @@ export async function applyPostRetrieval(results, query, options, searchContext)
           ...(intentEdgeTypes && !graphExpandOptions.edgeTypes ? { edgeTypes: intentEdgeTypes } : {}),
           ...graphExpandOptions,
         });
+        __ptEnd('post:expandResults', __t_expand);
 
         // Attach LI chunk ids to expanded entities so they can participate
         // in the post-expansion MaxSim rerank pool. The graph stores entities
         // (entity_id keyed by code-graph.db) while LI is keyed by chunk id;
         // without this bridge expanded entries fall through hasTokens() and
         // are appended to the result tail without ever competing for top-K.
+        const __t_attachIds = __ptStart();
         const expandedAttached = attachChunkIdsToExpanded(results, this.codebaseRepo);
+        __ptEnd('post:attachChunkIdsToExpanded', __t_attachIds);
 
         stats.graphExpansion = {
           mode: effectiveGraphExpand,
@@ -563,6 +583,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       : null;
 
     try {
+      const __t_cascade = __ptStart();
       const { cascadedScore } = await import('../ranking/cascaded-scorer.js');
       const cascadeResult = await cascadedScore(query, results, {
         lateInteractionIndex: liIndex,
@@ -574,6 +595,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
         lexicalConfident: false,
         loadDocumentContent: this.loadDocumentContent.bind(this),
       });
+      __ptEnd('post:cascadedScore', __t_cascade);
       results = cascadeResult.results;
       stats.cascade = cascadeResult.stats;
 
@@ -672,12 +694,14 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   // =========================================================================
   if (qualityWeight > 0 && Array.isArray(results) && results.length > 0) {
     const qStart = Date.now();
+    const __t_quality = __ptStart();
     if (!this._qualityScorer) {
       this._qualityScorer = new QualityScorer({
         dbPath: this.graphSearch?.dbPath || DB_PATHS.codeGraph,
       });
     }
     results = this._qualityScorer.scoreResults(results);
+    __ptEnd('post:qualityScoring', __t_quality);
 
     // Blend: final = (1 - w) * original + w * quality
     const w = Math.max(0, Math.min(1, qualityWeight));
@@ -709,6 +733,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   // =========================================================================
   // Apply intent policy — chunkTypeBoosts, maxResults, rerankerWeight
   // =========================================================================
+  const __t_intentPolicy = __ptStart();
   if (intentPolicy && Array.isArray(results) && results.length > 0) {
     // (a) chunkTypeBoosts: Multiply result scores by per-chunk-type boost factors
     if (intentPolicy.chunkTypeBoosts && Object.keys(intentPolicy.chunkTypeBoosts).length > 0) {
@@ -741,6 +766,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       results = results.slice(0, effectiveK);
     }
   }
+  __ptEnd('post:intentPolicy', __t_intentPolicy);
 
   // =========================================================================
   // Intent-aware file-kind ranking
@@ -755,6 +781,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     const semanticLike = searchMode === 'hybrid' || searchMode === 'semantic'
       || stats.path === 'hybrid' || stats.path === 'semantic';
     const isAgentFormat = options.format === 'agent';
+    const __t_fileKind = __ptStart();
     const afterFK = applyFileKindRanking(results, {
       intent: fileKindIntent,
       ...(semanticLike ? {
@@ -765,6 +792,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
         tinyAncillaryFactor: 0.05,
       } : {}),
     });
+    __ptEnd('post:applyFileKindRanking', __t_fileKind);
     if (afterFK !== results) {
       results = afterFK;
       stats.fileKindRanking = {
@@ -780,13 +808,18 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     }
 
     const beforeDemotionTop = results[0];
+    const __t_demotions = __ptStart();
     const afterDemotions = applyResultDemotions(results, {
       query,
       ablations: options.ablations,
       format: options.format,
       projectRoot: this.projectRoot,
       codeGraphRepo: this.codeGraphRepo,
+      _entityKindCache,
+      _entityNameCache,
+      _resultTextCache,
     });
+    __ptEnd('post:applyResultDemotions', __t_demotions);
     if (afterDemotions !== results) {
       results = afterDemotions;
       stats.resultDemotions = {
@@ -796,6 +829,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     }
 
     const beforeQueryTextTop = results[0];
+    const __t_queryText = __ptStart();
     const afterQueryTextRanking = semanticLike && !isAgentFormat
       ? applyQueryTextRanking(results, query, {
           ablations: options.ablations,
@@ -804,6 +838,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
           weight: options.queryTextRankingWeight,
         })
       : results;
+    __ptEnd('post:applyQueryTextRanking', __t_queryText);
     if (afterQueryTextRanking !== results) {
       results = afterQueryTextRanking;
       stats.queryTextRanking = {
@@ -813,6 +848,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     }
 
     const beforeFullVectorTop = results[0];
+    const __t_fullVec = __ptStart();
     const afterFullVectorRescore = semanticLike && !isAgentFormat
       ? applyFullVectorRescore(results, {
           ablations: options.ablations,
@@ -825,6 +861,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
           lateInteractionApplied: !!stats.lateInteraction && !stats.lateInteraction.error,
         })
       : results;
+    __ptEnd('post:applyFullVectorRescore', __t_fullVec);
     if (afterFullVectorRescore !== results) {
       results = afterFullVectorRescore;
       stats.fullVectorRescore = {
@@ -834,12 +871,14 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     }
 
     const beforeDiversityTop = results[0];
+    const __t_diversity = __ptStart();
     const diversified = isAgentFormat
       ? results
       : promoteFileDiversity(results, {
           ablations: options.ablations,
           window: options.fileDiversityWindow ?? results.length,
         });
+    __ptEnd('post:promoteFileDiversity', __t_diversity);
     if (diversified !== results) {
       results = diversified;
       stats.fileDiversity = {
@@ -866,7 +905,9 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   // every file matching a search — grouped under the exemplar as result.aliases.
   if (Array.isArray(results) && results.length > 0 && this.codebaseRepo) {
     try {
+      const __t_aliases = __ptStart();
       const { stats: dedupStats } = expandAliases(results, this.codebaseRepo, query);
+      __ptEnd('post:expandAliases', __t_aliases);
       if (dedupStats.exemplarsExpanded > 0) {
         stats.dedupExpansion = dedupStats;
       }

@@ -67,6 +67,18 @@ const STRUCTURAL_PATTERNS = {
  * @param {string} query
  * @returns {{ structuralType: string|null, targetEntity: string|null }}
  */
+// Per-stage profiling hooks. No-op unless `globalThis.__stageTimings` is set
+// by scripts/profile-search-stages.mjs.
+function __ptStart() {
+  return globalThis.__stageTimings ? performance.now() : null;
+}
+function __ptEnd(stage, t0) {
+  if (t0 == null || !globalThis.__stageTimings) return;
+  const ms = performance.now() - t0;
+  const buf = globalThis.__stageTimings;
+  (buf[stage] = buf[stage] || []).push(ms);
+}
+
 function parseStructuralQuery(query) {
   for (const [type, pattern] of Object.entries(STRUCTURAL_PATTERNS)) {
     const match = query.match(pattern);
@@ -450,6 +462,19 @@ export class SweetSearch {
     let results;
     let semanticStats = null;
 
+    // Search-scoped caches for the per-result helpers in
+    // applyResultDemotions. Shared across the two demotion sites (one inside
+    // hybridSearchV2, one inside _applyPostRetrieval). Most top-K chunks
+    // appear in BOTH sites' input sets, so cross-call reuse stacks on top of
+    // the intra-call memoization in file-kind-ranking.js. Freshly allocated
+    // per search() call — never reused across queries.
+    //   _entityKindCache : SQLite enclosing/contained entity lookup
+    //   _entityNameCache : SQLite findEntityWithNameInRange (symbol-target)
+    //   _resultTextCache : readFileSync source-span (biggest win)
+    const _entityKindCache = new Map();
+    const _entityNameCache = new Map();
+    const _resultTextCache = new Map();
+
     switch (searchMode) {
       case 'grep': {
         const grepResult = await this.bareGrep(query, routing, {
@@ -524,6 +549,9 @@ export class SweetSearch {
           hybridAncillaryFactor: options.hybridAncillaryFactor,
           hybridTinyAncillaryFactor: options.hybridTinyAncillaryFactor,
           resultDemotionWindow: options.resultDemotionWindow,
+          _entityKindCache,
+          _entityNameCache,
+          _resultTextCache,
         });
         results = hybridResult.results || hybridResult;
         semanticStats = hybridResult.semanticStats || null;
@@ -600,6 +628,7 @@ export class SweetSearch {
     // Step 3: Post-retrieval processing (delegated to extracted module)
     const postRetrievalResult = await this._applyPostRetrieval(results, query, options, {
       stats, semanticStats, searchMode, effectiveGraphExpand, intentPolicy, start, fromSearch: true,
+      _entityKindCache, _entityNameCache, _resultTextCache,
     });
 
     // Step 4: Agent packaging (lexical/semantic/hybrid/structural).
@@ -611,6 +640,7 @@ export class SweetSearch {
     if (agentFormats.has(options.format)) {
       const finalResults = postRetrievalResult.results || [];
       const finalStats = postRetrievalResult.stats || {};
+      const __t_pkg = __ptStart();
       const agentResponse = packageForAgent(finalResults, {
         ...finalStats,
         candidatePoolSize: finalStats.results_count ?? finalResults.length,
@@ -625,6 +655,7 @@ export class SweetSearch {
         projectRoot: this.projectRoot,
         ablations: options.ablations,
       });
+      __ptEnd('packageForAgent', __t_pkg);
       // Preserve the underlying retrieval stats so callers can inspect both layers
       agentResponse.stats = finalStats;
       return agentResponse;
