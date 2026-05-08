@@ -201,6 +201,9 @@ export async function hybridSearchV2(query, options = {}) {
     _entityKindCache: options._entityKindCache,
     _entityNameCache: options._entityNameCache,
     _resultTextCache: options._resultTextCache,
+    _fullFileTextCache: options._fullFileTextCache,
+    _isTestSupportCache: options._isTestSupportCache,
+    _isTestChunkCache: options._isTestChunkCache,
   });
   __ptEnd('hybrid:applyResultDemotions', __t_dem);
 
@@ -298,6 +301,9 @@ export async function hybridSearchV2(query, options = {}) {
         _entityKindCache: options._entityKindCache,
         _entityNameCache: options._entityNameCache,
         _resultTextCache: options._resultTextCache,
+        _fullFileTextCache: options._fullFileTextCache,
+        _isTestSupportCache: options._isTestSupportCache,
+        _isTestChunkCache: options._isTestChunkCache,
       });
       finalResults = remerged.slice(0, k).map(r => ({
         ...r,

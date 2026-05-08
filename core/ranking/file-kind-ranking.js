@@ -282,11 +282,50 @@ function hasAblation(ablations, name) {
 // that's a sub-rule of doc/test demotion, not a general size penalty.
 
 export function isTestChunk(r, opts = {}) {
-  const fileKind = detectFileKind(resolveFilePath(r));
+  const filePath = resolveFilePath(r);
+  // Per-chunk verdict cache. isTestChunk fires once per result inside the
+  // demotion loop, but its inputs (filePath, chunk text, chunk name) are
+  // immutable for a given (file, start, end). Cache the boolean to skip the
+  // 4 chunk-text regexes + name regex on cache hits.
+  const verdictCache = opts._isTestChunkCache;
+  let chunkKey = null;
+  if (verdictCache) {
+    const meta = r?.metadata || {};
+    const start = r?.startLine ?? r?.start_line ?? meta.startLine ?? meta.start_line;
+    const end = r?.endLine ?? r?.end_line ?? meta.endLine ?? meta.end_line ?? start;
+    if (filePath && Number.isFinite(start)) {
+      chunkKey = `${filePath}|${start}|${Number.isFinite(end) ? end : start}`;
+      if (verdictCache.has(chunkKey)) return verdictCache.get(chunkKey);
+    }
+  }
+  const verdict = isTestChunkUncached(r, opts, filePath);
+  if (chunkKey) verdictCache.set(chunkKey, verdict);
+  return verdict;
+}
+
+function isTestChunkUncached(r, opts, filePath) {
+  const fileKind = detectFileKind(filePath);
   if (fileKind === 'tests') return true;
-  if (!hasAblation(opts.ablations, 'no-test-support-detection')
-      && isTestSupportFile(resolveFilePath(r), resolveFullFileText(r, opts) || resolveResultText(r, opts))) {
-    return true;
+  if (!hasAblation(opts.ablations, 'no-test-support-detection')) {
+    // Per-file verdict cache. isTestSupportFile is deterministic in
+    // (filePath, file content) and the file content is immutable for the
+    // duration of one search() call. Without this cache, the text-scan
+    // path (split/filter/per-line-regex over hundreds of lines) ran on
+    // every result, dominated by ~100 results × 100µs = 10ms per
+    // applyResultDemotions call. Cached, the verdict is computed at most
+    // once per unique file path.
+    const verdictCache = opts._isTestSupportCache;
+    let supportVerdict;
+    if (verdictCache && verdictCache.has(filePath)) {
+      supportVerdict = verdictCache.get(filePath);
+    } else {
+      supportVerdict = isTestSupportFile(
+        filePath,
+        () => resolveFullFileText(r, opts) || resolveResultText(r, opts),
+      );
+      if (verdictCache) verdictCache.set(filePath, supportVerdict);
+    }
+    if (supportVerdict) return true;
   }
 
   const text = resolveResultText(r, opts);
@@ -303,12 +342,25 @@ function resolveFullFileText(r, opts = {}) {
   if (!opts.projectRoot) return '';
   const file = resolveFilePath(r);
   if (!file) return '';
+  // Per-call cache: this fires once per result × per isTestChunk site
+  // (hybrid + postprocess). Without memoization a query touching N
+  // distinct files reads each one fully ~2× per result that hits the
+  // file. Keyed by file path — the file content is immutable for the
+  // duration of one search() call.
+  const cache = opts._fullFileTextCache;
+  if (cache && cache.has(file)) return cache.get(file);
   try {
     const root = path.resolve(opts.projectRoot);
     const abs = path.resolve(root, file);
-    if (abs !== root && !abs.startsWith(root + path.sep)) return '';
-    return readFileSync(abs, 'utf8');
+    if (abs !== root && !abs.startsWith(root + path.sep)) {
+      if (cache) cache.set(file, '');
+      return '';
+    }
+    const text = readFileSync(abs, 'utf8');
+    if (cache) cache.set(file, text);
+    return text;
   } catch {
+    if (cache) cache.set(file, '');
     return '';
   }
 }
@@ -324,13 +376,17 @@ export function isTestSupportFile(filePath, content = '') {
   ];
   if (pathRules.some(re => re.test(filePath))) return true;
 
-  if (!content) return false;
-  if (/^\s*#!\[cfg\s*\(\s*test\s*\)/m.test(content)) return true;
+  // Lazy content getter: caller passes a thunk to avoid reading the file
+  // when path rules already determine the answer. Plain string still
+  // accepted for back-compat with non-applyResultDemotions callers.
+  const text = typeof content === 'function' ? content() : content;
+  if (!text) return false;
+  if (/^\s*#!\[cfg\s*\(\s*test\s*\)/m.test(text)) return true;
 
-  const lines = content.split('\n').filter(line => line.trim());
+  const lines = text.split('\n').filter(line => line.trim());
   if (lines.length < 8) return false;
   const hasJsTestContext = /(^|\/)(test|tests|spec|__tests__)\//i.test(filePath)
-    || /^\s*(describe|it|test)\s*\(/m.test(content);
+    || /^\s*(describe|it|test)\s*\(/m.test(text);
   const assertionRe = hasJsTestContext
     ? /\b(assert!|assert_eq!|assert_ne!|expect\(|assertEqual|assertEquals|t\.Errorf|t\.Fatalf|t\.Helper\(\)|require\.\w+|assert\.\w+)\b/
     : /\b(assert!|assert_eq!|assert_ne!|assertEqual|assertEquals|t\.Errorf|t\.Fatalf|t\.Helper\(\))\b/;
@@ -1318,6 +1374,9 @@ export function applyResultDemotions(results, opts = {}) {
     _entityKindCache: opts._entityKindCache instanceof Map ? opts._entityKindCache : new Map(),
     _entityNameCache: opts._entityNameCache instanceof Map ? opts._entityNameCache : new Map(),
     _resultTextCache: opts._resultTextCache instanceof Map ? opts._resultTextCache : new Map(),
+    _fullFileTextCache: opts._fullFileTextCache instanceof Map ? opts._fullFileTextCache : new Map(),
+    _isTestSupportCache: opts._isTestSupportCache instanceof Map ? opts._isTestSupportCache : new Map(),
+    _isTestChunkCache: opts._isTestChunkCache instanceof Map ? opts._isTestChunkCache : new Map(),
   };
 
   const ablations = opts.ablations;
@@ -1371,6 +1430,15 @@ export function applyResultDemotions(results, opts = {}) {
 
   let changed = false;
   const window = Math.min(opts.window ?? results.length, results.length);
+
+  // Per-rule timers — accumulator pattern, no object allocation per call.
+  // No-op in production; only fires when profile-search-stages.mjs sets
+  // globalThis.__stageTimings. Adds ~1ms overhead per call when profiling
+  // (12 rules × 100 results × 2 performance.now() calls), acceptable for
+  // the diagnostic.
+  const __profOn = !!globalThis.__stageTimings;
+  const __ruleTime = __profOn ? new Float64Array(12) : null;
+  let __ruleT0 = 0;
   // Hoist loop-invariant work out of the per-result map():
   //   - ruleOpts: a single spread reused across the 3 ruleOpts callsites
   //     (anomalous, docComment, megaEntity). Original allocated 3 fresh
@@ -1398,28 +1466,38 @@ export function applyResultDemotions(results, opts = {}) {
     let mult = 1;
     const details = [];
 
-    if (!skipTestName && isTestChunk(result, opts)) {
-      const overlap = testNameQueryOverlap(result, qTokens);
-      if (overlap >= testNameOverlapThreshold) {
-        mult *= testNameOverlapFactor;
-        details.push('test-name:0.40');
+    if (!skipTestName) {
+      if (__profOn) __ruleT0 = performance.now();
+      if (isTestChunk(result, opts)) {
+        const overlap = testNameQueryOverlap(result, qTokens);
+        if (overlap >= testNameOverlapThreshold) {
+          mult *= testNameOverlapFactor;
+          details.push('test-name:0.40');
+        }
       }
+      if (__profOn) __ruleTime[0] += performance.now() - __ruleT0;
     }
 
+    if (__profOn) __ruleT0 = performance.now();
     const kindMult = entityKindMultiplier(result, preferredKind, opts);
+    if (__profOn) __ruleTime[1] += performance.now() - __ruleT0;
     if (kindMult !== 1) {
       mult *= kindMult;
       details.push(`kind-pref:${kindMult.toFixed(2)}`);
     }
 
+    if (__profOn) __ruleT0 = performance.now();
     const nameMult = namePrecisionMultiplier(result, preferredKind, nameHintsLower, opts);
+    if (__profOn) __ruleTime[2] += performance.now() - __ruleT0;
     if (nameMult !== 1) {
       mult *= nameMult;
       details.push(`name-precision:${nameMult.toFixed(2)}`);
     }
 
     if (!skipBodyDensity) {
+      if (__profOn) __ruleT0 = performance.now();
       const bodyMult = bodyDensityMultiplier(result, opts);
+      if (__profOn) __ruleTime[3] += performance.now() - __ruleT0;
       if (bodyMult !== 1) {
         mult *= bodyMult;
         details.push(`body-density:${bodyMult.toFixed(2)}`);
@@ -1427,7 +1505,9 @@ export function applyResultDemotions(results, opts = {}) {
     }
 
     if (!skipMegaChunk) {
+      if (__profOn) __ruleT0 = performance.now();
       const megaMult = megaChunkSizePenalty(result, opts);
+      if (__profOn) __ruleTime[4] += performance.now() - __ruleT0;
       if (megaMult !== 1) {
         mult *= megaMult;
         details.push(`mega-chunk:${megaMult.toFixed(2)}`);
@@ -1435,7 +1515,9 @@ export function applyResultDemotions(results, opts = {}) {
     }
 
     {
+      if (__profOn) __ruleT0 = performance.now();
       const anomMult = anomalousChunkDemotion(result, ruleOpts);
+      if (__profOn) __ruleTime[5] += performance.now() - __ruleT0;
       if (anomMult !== 1) {
         mult *= anomMult;
         details.push(`anomalous-chunk:${anomMult.toFixed(2)}`);
@@ -1443,7 +1525,9 @@ export function applyResultDemotions(results, opts = {}) {
     }
 
     {
+      if (__profOn) __ruleT0 = performance.now();
       const docMult = docCommentOnlyDemotion(result, ruleOpts);
+      if (__profOn) __ruleTime[6] += performance.now() - __ruleT0;
       if (docMult !== 1) {
         mult *= docMult;
         details.push(`doc-comment-only:${docMult.toFixed(2)}`);
@@ -1451,7 +1535,9 @@ export function applyResultDemotions(results, opts = {}) {
     }
 
     {
+      if (__profOn) __ruleT0 = performance.now();
       const entMult = megaEntityPenalty(result, ruleOpts);
+      if (__profOn) __ruleTime[7] += performance.now() - __ruleT0;
       if (entMult !== 1) {
         mult *= entMult;
         details.push(`mega-entity:${entMult.toFixed(2)}`);
@@ -1460,7 +1546,9 @@ export function applyResultDemotions(results, opts = {}) {
 
 
     if (symbolExactTarget) {
+      if (__profOn) __ruleT0 = performance.now();
       const symbolMult = symbolExactMatchBoost(result, symbolExactTarget, opts);
+      if (__profOn) __ruleTime[8] += performance.now() - __ruleT0;
       if (symbolMult !== 1) {
         mult *= symbolMult;
         details.push(`symbol-exact:${symbolMult.toFixed(2)}`);
@@ -1468,7 +1556,9 @@ export function applyResultDemotions(results, opts = {}) {
     }
 
     if (pathTokens.length > 0) {
+      if (__profOn) __ruleT0 = performance.now();
       const pathMult = pathTokenBoost(result, pathTokens, opts);
+      if (__profOn) __ruleTime[9] += performance.now() - __ruleT0;
       if (pathMult !== 1) {
         mult *= pathMult;
         details.push(`path-token:${pathMult.toFixed(2)}`);
@@ -1476,7 +1566,9 @@ export function applyResultDemotions(results, opts = {}) {
     }
 
     if (!skipRefCount) {
+      if (__profOn) __ruleT0 = performance.now();
       const refMult = referenceCountBoost(result, refCounts, opts);
+      if (__profOn) __ruleTime[10] += performance.now() - __ruleT0;
       if (refMult !== 1) {
         mult *= refMult;
         details.push(`ref-count:${refMult.toFixed(2)}`);
@@ -1484,6 +1576,7 @@ export function applyResultDemotions(results, opts = {}) {
     }
 
     const baseScore = typeof result.score === 'number' ? result.score : 0;
+    if (__profOn) __ruleT0 = performance.now();
     // F8 (2026-05-07): when the query has an explicit symbol target (extractSymbolDefinitionTarget)
     // AND the chunk contains an entity matching that name, prefer THAT entity for labeling
     // over kind-preference / name-precision heuristics. Targets cases like S3-Q4 (chunk
@@ -1535,6 +1628,7 @@ export function applyResultDemotions(results, opts = {}) {
       : null;
     const shouldAdoptContained = !!(containedEntity?.name && containedEntity?.startLine && containedEntity?.endLine);
     const entityToAdopt = shouldAdoptEntity ? preferredEntity : shouldAdoptContained ? containedEntity : null;
+    if (__profOn) __ruleTime[11] += performance.now() - __ruleT0;
     if (mult === 1 && !entityToAdopt) return { ...result, _resultDemotionOrigIndex: index };
     changed = true;
     // Range-preservation invariant: adopting an entity is a *labeling*
@@ -1595,6 +1689,21 @@ export function applyResultDemotions(results, opts = {}) {
       _resultDemotionOrigIndex: index,
     };
   });
+
+  // Dump per-rule timings to globalThis.__stageTimings (set by the profiler).
+  // No-op in production. Labels mirror the rule names so the profiler's flat
+  // table reads cleanly.
+  if (__profOn && __ruleTime) {
+    const labels = [
+      'rule:testName', 'rule:entityKind', 'rule:namePrec', 'rule:body',
+      'rule:megaChunk', 'rule:anomalous', 'rule:docComment', 'rule:megaEntity',
+      'rule:symbolExact', 'rule:pathToken', 'rule:refCount', 'rule:adoptEntity',
+    ];
+    const buf = globalThis.__stageTimings;
+    for (let i = 0; i < labels.length; i++) {
+      (buf[labels[i]] = buf[labels[i]] || []).push(__ruleTime[i]);
+    }
+  }
 
   if (!changed) return results;
 
