@@ -328,15 +328,26 @@ function isTestChunkUncached(r, opts, filePath) {
     if (supportVerdict) return true;
   }
 
+  // Combined alternation over the four prior single-pattern tests:
+  //   #[cfg(test)] / #[test]  (Rust attribute)
+  //   func Test<X>             (Go testing)
+  //   def test_<X>             (Python unittest/pytest)
+  //   it/test/describe(...)    (JS/TS suite frameworks)
+  // V8 compiles a single alternation regex into one DFA pass over the text;
+  // running four `.test()` calls forced four separate scans even when the
+  // first three short-circuited successfully. Per result the saving is
+  // ~30-100µs, which compounds across the per-call window (~100 results)
+  // and is the dominant remaining cost in rule:testName after the verdict
+  // caches eliminated repeats.
   const text = resolveResultText(r, opts);
-  if (/^\s*#\[(cfg\s*\(\s*test\s*\)|test)\]/m.test(text)) return true;
-  if (/^\s*func\s+Test[A-Z]/m.test(text)) return true;
-  if (/^\s*def\s+test_/m.test(text)) return true;
-  if (/^\s*(it|test|describe)\s*\(\s*['"]/m.test(text)) return true;
+  if (TEST_CHUNK_BODY_RE.test(text)) return true;
 
   const name = resolveResultName(r);
-  return /^(test_|Test[A-Z])|_test$/.test(name);
+  return TEST_CHUNK_NAME_RE.test(name);
 }
+
+const TEST_CHUNK_BODY_RE = /^\s*(?:#\[(?:cfg\s*\(\s*test\s*\)|test)\]|func\s+Test[A-Z]|def\s+test_|(?:it|test|describe)\s*\(\s*['"])/m;
+const TEST_CHUNK_NAME_RE = /^(?:test_|Test[A-Z])|_test$/;
 
 function resolveFullFileText(r, opts = {}) {
   if (!opts.projectRoot) return '';
