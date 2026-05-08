@@ -65,7 +65,7 @@ export function parseInitArgs(args) {
     wizard: false,           // Phase 4: --wizard runs interactive prompts
     // P1 (system-prompt opt) — agent-instruction injection.
     // Default: only CLAUDE.md (sweet-search is Claude-first).
-    //   --codex / --gemini / --cursor opt INTO additional harness files.
+    //   --agents / --gemini / --cursor opt INTO additional harness files.
     //   --no-claude opts OUT of CLAUDE.md *and* every .claude/* write
     //     (hooks, skills, rules, settings-json mutations).
     //   --no-agent-instructions is the umbrella: skip the four harness
@@ -144,12 +144,13 @@ export function parseInitArgs(args) {
       // init normally performs (rules file, /sweet-index skill,
       // index-maintainer hook, prewarm SessionStart entry). Universal
       // gate — the user has signalled they don't use Claude Code.
-      // If `--codex` / `--gemini` / `--cursor` is also set, AGENTS.md
+      // If `--agents` / `--gemini` / `--cursor` is also set, AGENTS.md
       // (or whichever opt-in is canonical) carries the policy instead.
       result.noClaude = true;
-    } else if (arg === '--codex') {
-      // P1: opt INTO writing AGENTS.md (Codex CLI / OpenCode entry point).
-      result.optInHarnesses.add('codex');
+    } else if (arg === '--agents') {
+      // P1: opt INTO writing AGENTS.md, the multi-harness convention
+      // (Codex CLI, OpenCode, and any other tool that adopts AGENTS.md).
+      result.optInHarnesses.add('agents');
     } else if (arg === '--gemini') {
       // P1: opt INTO writing GEMINI.md.
       result.optInHarnesses.add('gemini');
@@ -168,12 +169,12 @@ export function parseInitArgs(args) {
 
 /**
  * Resolve the active harness list. Default is `claude-code` only;
- * `--codex` / `--gemini` / `--cursor` add to that set; `--no-claude`
+ * `--agents` / `--gemini` / `--cursor` add to that set; `--no-claude`
  * removes claude-code (and gates every .claude/* write — see init flow).
  *
  * @param {object} args
  * @param {Set<string>|string[]} [args.optInHarnesses] subset of
- *   {codex, gemini, cursor} to add on top of the default
+ *   {agents, gemini, cursor} to add on top of the default
  * @param {boolean} [args.noClaude] when true, drops claude-code entirely
  * @returns {string[]} ordered list matching ALL_HARNESSES order
  */
@@ -1026,12 +1027,14 @@ Options:
                             .claude/hooks/index-maintainer.mjs +
                             .claude/skills/sweet-index/ +
                             .claude/settings.json prewarm SessionStart entry.
-                            Combine with --codex / --gemini / --cursor to
+                            Combine with --agents / --gemini / --cursor to
                             ship the policy through a non-Claude harness.
-  --codex                   Also ship AGENTS.md (Codex CLI / OpenCode entry
-                            point). Without --no-claude, AGENTS.md is a
-                            thin @CLAUDE.md import shim; with --no-claude
-                            it carries the full canonical policy body.
+  --agents                  Also ship AGENTS.md, the multi-harness
+                            convention read by Codex CLI, OpenCode, and any
+                            other tool that adopts AGENTS.md. Without
+                            --no-claude, AGENTS.md is a thin @CLAUDE.md
+                            import shim; with --no-claude it carries the
+                            full canonical policy body.
   --gemini                  Also ship GEMINI.md (symlink → canonical, or
                             an @import file when --no-symlink-instruction-files).
   --cursor                  Also ship .cursor/rules/sweet-search.mdc with
@@ -1451,7 +1454,7 @@ export async function runInit(args) {
   // 12-15. Inject the sweet-search policy across coding-agent harnesses.
   //        Default: only CLAUDE.md (sweet-search is Claude-first; the
   //        existing project CLAUDE.md is where users look). Opt INTO
-  //        additional harnesses with --codex (AGENTS.md) / --gemini /
+  //        additional harnesses with --agents (AGENTS.md) / --gemini /
   //        --cursor. --no-claude opts OUT of CLAUDE.md AND every other
   //        .claude/* write (universal gate enforced above).
   //        Plan §4A + §4B + §10 (the canonical flip from AGENTS.md →
@@ -1469,7 +1472,7 @@ export async function runInit(args) {
     });
     if (activeHarnesses.length === 0) {
       process.stderr.write(
-        `[init] Agent instructions: nothing to write — pass --codex / --gemini / --cursor `
+        `[init] Agent instructions: nothing to write — pass --agents / --gemini / --cursor `
         + `to opt into additional harness files (claude-code is disabled by --no-claude).\n`,
       );
     } else {
