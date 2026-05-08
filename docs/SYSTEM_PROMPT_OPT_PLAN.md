@@ -385,6 +385,14 @@ docs) is:
 
 **Sweet-search init must write all four files.** Section 10 below specifies the exact flow.
 
+> **Implementation note (P1, 2026-05-09)**: the shipped init.js + inject-agent-instructions.js
+> diverge from the AGENTS.md-canonical framing above and make **CLAUDE.md the canonical source by
+> default** (with AGENTS.md, GEMINI.md, and the Cursor rule pointing at it via @import or symlink).
+> Rationale: sweet-search is a Claude-first product, the existing project CLAUDE.md is where users
+> already look, and Codex / Gemini both follow `@imports` so the cross-harness chain still works.
+> The `--no-claude-code` flag promotes AGENTS.md back to canonical for Codex-only / Gemini-only
+> installs. This subsection should be rewritten to match in a follow-up doc pass.
+
 ---
 
 ## Part 4: Agent Instruction Placement
@@ -1582,10 +1590,10 @@ Init flags:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--enforce-tools` | `false` | Install Claude-specific deny/settings enforcement for native Grep plus Read hints |
-| `--no-agent-instructions` | `false` | Skip ALL instruction files (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursor/rules/sweet-search.mdc`, `.claude/rules/sweet-search.md`) |
+| `--no-agent-instructions` | `false` | Skip ALL instruction files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.cursor/rules/sweet-search.mdc`, `.claude/rules/sweet-search.md`) |
 | `--no-prompt-reminders` | `false` | Skip the `UserPromptSubmit` sweet-search reminder hook |
-| `--symlink-instruction-files` | `true` | Use symlinks for `CLAUDE.md`/`GEMINI.md` → `AGENTS.md` when no per-tool tweaks needed (saves disk + keeps in sync) |
-| `--harnesses` | `"all"` | Comma-separated subset: `claude,codex,opencode,gemini,cursor`. Default writes all five files. |
+| `--no-symlink-instruction-files` | `false` | Disable the GEMINI.md symlink and write a plain @import file instead |
+| `--no-claude-code` / `--no-codex` / `--no-gemini` / `--no-cursor` | `false` each | Per-harness opt-out. `--no-claude-code` promotes AGENTS.md to canonical (P1 ships these instead of the comma-separated `--harnesses=<csv>` originally drafted). |
 
 ---
 

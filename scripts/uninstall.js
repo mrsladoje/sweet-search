@@ -18,6 +18,8 @@ import { fileURLToPath } from 'node:url';
 
 import { getCoremlCascadeRoot, getCoremlCascadeState } from '../core/infrastructure/coreml-cascade.js';
 import { PREWARM_HOOK_FILENAME } from './init.js';
+import { removeAgentInstructions } from './inject-agent-instructions.js';
+import { removeClaudeRules } from './write-claude-rules.js';
 
 // Default paths for the running daemon. Env-overridable so both the prewarm
 // hook, the CLI, and this module agree on where to look. Tests pass custom
@@ -550,8 +552,21 @@ export async function runUninstall(args) {
   const indexMaintainerSkippedReason =
     indexMaintainerPreview.status === 'skipped' ? indexMaintainerPreview.detail : null;
 
+  // P1: agent-instruction files (AGENTS.md / CLAUDE.md / GEMINI.md /
+  // .cursor/rules/sweet-search.mdc) and the .claude/rules/sweet-search.md
+  // sentinel file. The marker block contract guarantees we only strip
+  // sweet-search-managed content; user prose outside the marker is preserved.
+  const agentInstructionsPreview = removeAgentInstructions({ projectRoot, dryRun: true });
+  const agentInstructionsTouched = Object.values(agentInstructionsPreview.harnesses ?? {})
+    .some(s => s === 'dry-run');
+  const claudeRulesPreview = removeClaudeRules({ projectRoot, dryRun: true });
+  const hasClaudeRules = claudeRulesPreview === 'dry-run';
+
   // Nothing to remove?
-  if (removals.length === 0 && !hasHookEntry && !hasSkillEntry && !hasIndexMaintainerHook) {
+  if (
+    removals.length === 0 && !hasHookEntry && !hasSkillEntry && !hasIndexMaintainerHook
+    && !agentInstructionsTouched && !hasClaudeRules
+  ) {
     console.log('Nothing to remove — Sweet Search is not initialized in this project.');
     return;
   }
@@ -575,6 +590,14 @@ export async function runUninstall(args) {
     console.log(`    index-maintainer hook (.claude/hooks/index-maintainer.mjs)`);
   } else if (indexMaintainerSkippedReason) {
     console.log(`    [skipped] ${indexMaintainerSkippedReason}`);
+  }
+  if (agentInstructionsTouched) {
+    const targets = Object.entries(agentInstructionsPreview.harnesses)
+      .filter(([, v]) => v === 'dry-run').map(([k]) => k).join(', ');
+    console.log(`    agent-instruction marker blocks (${targets})`);
+  }
+  if (hasClaudeRules) {
+    console.log(`    .claude/rules/sweet-search.md`);
   }
   console.log(`  Total: ${formatBytes(totalBytes)}`);
   if (parsed.keepModels) {
@@ -679,6 +702,33 @@ export async function runUninstall(args) {
     console.log(`  Failed to remove index-maintainer hook: ${indexMaintainerResult.detail}`);
     kept++;
   }
+
+  // P1: strip agent-instruction marker blocks across all five harness files.
+  // The marker contract guarantees we never delete user prose outside of it.
+  const agentInstructionsResult = removeAgentInstructions({ projectRoot, dryRun: parsed.dryRun });
+  for (const [harness, status] of Object.entries(agentInstructionsResult.harnesses)) {
+    if (status === 'removed') {
+      console.log(`  Removed: ${harness} agent-instruction block`);
+      removed++;
+    } else if (status === 'file-deleted') {
+      console.log(`  Removed: ${harness} agent-instruction file (wholly sweet-search-managed)`);
+      removed++;
+    }
+    // 'not-found' / 'not-our-symlink' / 'dry-run' are silent.
+  }
+
+  // Remove the .claude/rules/sweet-search.md sentinel file. CLAUDE.md import
+  // line was already stripped by removeAgentInstructions above (it lived
+  // inside the agent-instructions marker).
+  const claudeRulesResult = removeClaudeRules({ projectRoot, dryRun: parsed.dryRun });
+  if (claudeRulesResult === 'removed') {
+    console.log(`  Removed: .claude/rules/sweet-search.md`);
+    removed++;
+  } else if (claudeRulesResult === 'preserved-user-file') {
+    console.log(`  Kept: .claude/rules/sweet-search.md — no sweet-search sentinel (user-edited)`);
+    kept++;
+  }
+  // 'not-found' / 'dry-run' are silent.
 
   // Stop any daemon that an earlier SessionStart hook spawned. Otherwise the
   // old daemon keeps running and holding the socket after uninstall, which
