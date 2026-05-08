@@ -1,7 +1,7 @@
 # System Prompt Optimization Plan
 
 **Created**: 2026-05-03
-**Last reinforced**: 2026-05-08
+**Last reinforced**: 2026-05-09
 **Status**: Draft, ready for spike-testing
 **Depends on**: implemented `read` / `read-semantic` tools, agent read-workflow benchmarks, retrieval-overhaul (cAST + IAR + RRF + STOP rules) shipped 2026-05-05, IAR uniqueness gate shipped 2026-05-07
 
@@ -29,7 +29,8 @@ sweet-search is installed, that default is no longer optimal:
 
 The read tools are now implemented. This plan covers system prompt optimization, multi-harness
 distribution, tool-use guidance, enforcement, query-shape benchmarking, cross-model GEPA/DSPy
-prompt evolution, and the cheap-SOTA model strategy that makes evolution affordable.
+prompt evolution, and a **SOTA-led** evaluatee strategy (primary metric on Opus-class / GPT-5.5 /
+Gemini‑class models) plus a cheap auxiliary pool for volume and portability sentinels.
 
 ---
 
@@ -103,8 +104,10 @@ structural levers that interact differently with each model family.
    for GPT-5, frontmatter `alwaysApply` for Cursor).
 3. **Prefer worked examples over rule lists** in the canonical tree. Per Arize SPL evidence, this
    is the single biggest cross-model robustness lever.
-4. **Run GEPA against a multi-evaluatee pool** (Section 8.5) so the optimizer cannot overfit to
-   any one model's idiosyncrasies.
+4. **Run GEPA with a SOTA-primary metric** (Section 8.5): optimize the **shipping score** (mean
+   answerability across Opus 4.7, GPT-5.5, and Gemini 3.1 Pro). Use the **cheap four-model
+   auxiliary pool** only for secondary portability signals and budget relief during early triage —
+   not as the headline objective, because most users run frontier models.
 
 ---
 
@@ -114,8 +117,12 @@ structural levers that interact differently with each model family.
 
 GEPA training requires hundreds to thousands of evaluation calls per generation. The cost of the
 campaign is dominated by the per-token rate of the **evaluatee** (the model running the agent
-task), not the **reflector** (which runs once per minibatch). Picking the right cheap-near-SOTA
-evaluatees is the difference between a $200 campaign and a $20,000 one.
+task), not the **reflector** (which runs once per minibatch). **Sweet-search ships to users on
+frontier endpoints** (Claude Opus / GPT‑5.5-class / Gemini 3‑class): the headline metric must
+reflect that reality. A cheap auxiliary pool stays in the protocol for exploratory screens and
+portability telemetry, but it does not replace primary optimization on those frontier models — the
+difference is deliberate spend on the right objective, not accidental overfitting to `$0.14/M`
+models nobody uses in production agent loops.
 
 ### 2.2 The cheap-frontier table
 
@@ -148,8 +155,10 @@ For final-validation references:
 | Role | Pick (May 2026) | Pick (after May 31, post-promo) |
 |---|---|---|
 | **Reflector / optimizer LM** | **DeepSeek V4-Pro promo** ($0.435/$0.87, 80.6% Verified — strong enough to reflect, dirt cheap) | **MiniMax M2.5** ($0.15/$1.15, 80.2% Verified) |
-| **Cheap evaluatee pool** (multi-model robustness) | **DeepSeek V4-Flash** + **MiniMax M2.7** + **Kimi K2.5** + **Qwen 3.6 Plus** (free on OR) | unchanged |
-| **Final-validation evaluatees** (milestone gates only) | Claude Sonnet 4.6 + GPT-5.5 + Codex + Gemini 3.1 Pro | unchanged |
+| **Primary evaluatee pool (shipping / headline GEPA metric)** | **Claude Opus 4.7** + **GPT‑5.5** + **Gemini 3.1 Pro** — `shipping_score := mean(answerability)` over this set | unchanged (re‑price API only) |
+| **Claude cost-relief slot (optional, pre‑register)** | **Claude Sonnet 4.6** may substitute for Opus in **light** GEPA iterations or early triage only; **Opus 4.7 is mandatory** at medium/heavy GEPA and every promotion gate | unchanged |
+| **Auxiliary evaluatee pool** (portability + architecture diversity, **not** the headline objective) | **DeepSeek V4-Flash** + **MiniMax M2.7** + **Kimi K2.5** + **Qwen 3.6 Plus** | unchanged |
+| **Harness validation (Phase 2 / §9.3)** | Claude Code + **Opus 4.7** (or Sonnet only if reproducing a user-reported regression) + Codex on **GPT‑5.5** + OpenCode on **Gemini 3.1 Pro** + optional cheap replays | unchanged |
 
 DeepSeek's $0.028/M cache-hit input is the lever that makes GEPA practical. Every reflection
 iteration reuses the same trace skeleton; cache hit rates of 75-90% are realistic, making input
@@ -577,9 +586,12 @@ query-phrasing instructions — those are constants pulled from §7.6 across all
 
 ### 6.3 Spike-test plan
 
-**Phase A — narrow** (start here): T1, T4, T7, T9, T13, T14. Six prompts × four cheap evaluatees
-× 60 dev probes ≈ 1,440 evaluations. Target cost: ~$50 with DeepSeek V4-Pro promo. Dev metric:
-PASS rate on the existing `eval/retrieval-probes/` 60-probe split.
+**Phase A — narrow** (start here): T1, T4, T7, T9, T13, T14. Six prompts × **three primary SOTA
+evaluatees** (Opus 4.7 + GPT‑5.5 + Gemini 3.1 Pro) × 60 dev probes ≈ **1,080** evaluations.
+Target cost: **~$400–900** (frontier token rates; highly prompt-length dependent). Dev **headline**
+metric: mean PASS rate ≡ `shipping_score` on that trio. Optional **pre‑registered** shortcut: run
+first pass on `{Sonnet 4.6, GPT‑5.5, Gemini 3.1 Pro}` or a 20‑probe stratified subsample × cheap
+pool to drop loser variants cheaply — then full 60 probes × trio for survivors only.
 
 **Phase B — held-out foils**: T2, T3, T5, T6, T8, T10, T11, T12. Run only after Phase A picks
 2-3 leaders, to test whether GEPA can do better than any individual variant.
@@ -694,8 +706,8 @@ discipline):
 | **G1: Pareto dominance** | Beats the best individual T_i on at least 2 of {PASS rate, file recall, citation precision, token cost} — and ties or wins on all four |
 | **G2: No new failure modes** | Per-failure-mode incident counts are ≤ the *minimum* across source variants for every mode (the synthesized tree must inherit each variant's strength, not create new bugs) |
 | **G3: Statistical** | Paired permutation test (10K iterations, seed=42) p < 0.05 on PASS rate vs the strongest individual T_i, with bootstrap 95% CI on the delta not crossing zero |
-| **G4: Cross-model robustness** | Pareto dominance also holds on `min(answerability)` across the 4-model evaluatee pool from §8.5, not just the dominant evaluatee |
-| **G5: Cross-harness sanity** | Inside Claude Code (Sonnet 4.6) and Codex (GPT-5.5), the uber-tree does not regress more than 3pp on PASS rate vs the harness's native baseline. Single-pass, no retries. |
+| **G4: Cross-model robustness** | Pareto dominance holds on **`shipping_score`** (mean answerability across Opus 4.7 + GPT‑5.5 + Gemini 3.1 Pro per §8.5). **Additionally**: median answerability across the **auxiliary four‑model pool** must not regress **>3pp** vs the current shipped baseline (portability sentinel — catches prompts that win on frontier but collapse on smaller or differently aligned models). |
+| **G5: Cross-harness sanity** | Inside Claude Code (**Opus 4.7** — Sonnet 4.6 acceptable only for reproducing subscription defaults) and Codex (**GPT-5.5**), the uber-tree does not regress more than 3pp on PASS rate vs each harness's native baseline. Single-pass, no retries. Primary cross-check is still `shipping_score` on the bare-API trio before shims. |
 
 If any gate fails, the synthesis result is logged to `eval/prompt-evolution/rejected/` with the
 failing-gate diagnostics, and Strategy A is re-run with the rejection feedback fed to the GEPA
@@ -834,9 +846,8 @@ shape that yields weaker top-1 but is trivially recoverable with one follow-up.
 1. Subsample Track A to 18-24 golds (3-4 per repo, stratified by query type) — enough for IAA
    discipline without burning a thousand-dollar bill.
 2. For each (gold × shape variant × tool):
-   - Spawn Claude Code (Sonnet 4.6 by default; cheap-evaluatee pool optional) with a system
-     prompt that **forces the shape** ("you MUST phrase your sweet-search query as a short
-     keyword form with no NL verbs") and only allows the one tool under test.
+   - Spawn Claude Code with a system prompt that **forces the shape** ("you MUST phrase your sweet-search query as a short keyword form with no NL verbs") and only allows the one tool under test.
+   - **Default model for breadth**: Sonnet 4.6 (~cost as written below). Pre-register an **Opus 4.7 replay** on a subsample of the top shapes before freezing §7.6 (`recommendations.json`) so agent end-to-end results are not calibrated only on a cheaper Claude slot while §8.5 optimizes Opus‑class deployments.
    - Run end-to-end. Capture the trace, the answer, and the deterministic recall metrics.
 3. Run **PRP-style two-judge LLM-as-judge** (DSv4-Pro + Sonnet 4.6) per the §11.6 protocol on
    each (gold, shape) pair: did the agent solve it? Failure mode if not?
@@ -924,7 +935,8 @@ from cold-started search; Part 7 provides that seed.
 ## Part 8: GEPA Prompt Evolution Over Agent Traces
 
 **Goal**: Evolve the sweet-search policy text until it consistently improves agent behavior over
-native Claude Code workflows AND across cheap-frontier evaluatees.
+native Claude Code workflows on **frontier deployments** (shipping score on Opus‑class + GPT‑5.5 +
+Gemini‑class), while auxiliary cheap models provide portability sentinels — not the headline metric.
 
 DSPy remains useful for structured metrics and evaluation programs, but the primary object we need
 to optimize is textual: the tool-routing policy, examples, tool descriptions, query-shape guidance,
@@ -984,53 +996,66 @@ contention and cold-start effects can dominate measurements.
 7. Validate on held-out repos/tasks.
 8. Promote only if the policy beats the current shipped policy under the criteria above.
 
-### 8.5 Cheap-optimizer + multi-evaluatee pool strategy (the key to cross-model fitness)
+### 8.5 SOTA-primary + auxiliary pool strategy (headline metric matches real users)
 
-The single most important architectural decision for GEPA in May 2026:
+The single most important architectural decision for GEPA in May 2026: **optimize what ships**.
+Most agent runs use frontier models; the headline metric must be defined on that pool. Cheap
+models remain as **auxiliary** diversity sensors and **optional** budget relief — not as the
+scalar GEPA maximizes.
 
 ```text
 Reflector LM     : DeepSeek V4-Pro promo ($0.435/$0.87) until May 31
                    → fall back to MiniMax M2.5 ($0.15/$1.15) after
-Evaluatee pool   : DSv4-Flash + MiniMax M2.7 + Kimi K2.5 + Qwen 3.6 Plus (parallel)
-Metric           : min(answerability) across pool
-                   — directly enforces cross-model fitness
-                   — prevents GEPA from overfitting to any single model's quirks
+Primary pool     : Claude Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro (parallel)
+shipping_score   : mean(answerability) across the primary pool
+                   — this is the GEPA optimization target and the reported headline number
+Auxiliary pool   : DSv4-Flash + MiniMax M2.7 + Kimi K2.5 + Qwen 3.6 Plus
+portability      : median(answerability | auxiliary pool), min(...) logged as diagnostic only
 reflection_minibatch_size : 3   (GEPA paper default)
 Train/val split  : 60/40 stratified, seed=42 (matches existing FreshStack/GCSN discipline)
-Budget tier      : start "light" ($2-5/run, 400 metric calls, ~3 min)
-Held-out check   : per milestone, run on Sonnet 4.6 + GPT-5.5 + Codex
-                   (expensive, ~$50-150 once per milestone)
-Stop rule        : promote only if Pareto-better on min(pool) AND no regression on held-out
+Budget tier      : frontier-led (expect higher $ than cheap-pool-only campaigns)
+Held-out check   : per milestone, full trio + Codex GPT-5.5 wire + cross-harness (§9.3)
+Optional triage : pre-register Sonnet 4.6 as Claude-slot substitute OR cheap-pool prefilters
+Stop rule        : promote only if Pareto-better on shipping_score AND no regression on held-out
+                   AND auxiliary median within the G4 portability band vs shipped baseline
 ```
 
-**Why min() across the pool**: if GEPA optimizes for the *mean*, it can win by exploiting one
-model's preferred surface (e.g., XML wrap that DSv4 likes). `min()` forces it to find the
-*intersection* of what works across all four — which is what generalization actually means.
+**Why mean on the primary pool (not min across cheap models)**: the product goal is excellence on
+Opus‑class / GPT‑5.5‑class / Gemini‑class deployments. Optimizing `min()` over cheap evaluatees
+over‑weights intersections nobody ships and can veto prompts that cleanly win where it matters.
 
-**Why these four evaluatees specifically**:
+**Why keep the auxiliary four-pack**: architectural and alignment diversity still catches brittle
+routing (verbosity penalties, refusal quirks, XML sensitivity). Those signals feed **gates and
+diagnostics**, not the headline scalar — echoing the “portability lab vs shipping score” split.
 
-- **DeepSeek V4-Flash**: cheapest, fastest, MIT, frontier-class. The "default" model.
-- **MiniMax M2.7**: completely different architecture (10B active MoE), trained on agent
-  workflows specifically. Catches over-fitting to dense-model habits.
-- **Kimi K2.5**: 1T MoE, strong agent-swarm tuning, modified MIT. Catches over-fitting to short
-  responses.
-- **Qwen 3.6 Plus**: 1M context, free on OpenRouter (rate-limited). Catches over-fitting to
-  small-context habits.
+**Why these four auxiliary evaluatees specifically**:
+
+- **DeepSeek V4-Flash**: cheapest, fastest, MIT, dense+sparse — high-volume smoke tests.
+- **MiniMax M2.7**: 10B-active MoE, agent-tuned — different failure surface than dense frontier.
+- **Kimi K2.5**: large MoE, agent-swarm tuning — catches long-context / routing oddities.
+- **Qwen 3.6 Plus**: long context, easy OR access — catches small-habit overfitting when paired
+  with short-prompt runs.
 
 ### 8.6 Cost projections
 
+All numbers are **order-of-magnitude** for frontier‑led evaluatees; track realized $/probe from the
+first 20 runs and revise. The reflector stays on DSv4‑Pro promo / MiniMax M2.5; **evaluatee**
+cost now tracks Opus + GPT‑5.5 + Gemini.
+
 | Phase | Rough cost | What |
 |---|---|---|
-| Phase A spike (T1, T4, T7, T9, T13, T14 baseline) | ~$50 | 6 prompts × 4 evaluatees × 60 probes |
-| Light GEPA from each leader (~400 metric calls) | ~$5 each, ~$15 total | Fast iteration |
-| Medium GEPA on top 2 leaders (~800 metric calls) | ~$15 each, ~$30 total | Production-quality policy |
-| Heavy GEPA on the winner (~1,600 metric calls) | ~$40 | Final shipping policy |
-| Per-milestone cross-harness validation | ~$100-300 | Sonnet 4.6 + GPT-5.5 + Codex on held-out |
-| **Full campaign budget** | **~$300-600** | End-to-end, multiple iterations |
+| Phase A spike (T1, T4, T7, T9, T13, T14 baseline) | **~$400–900** | 6 prompts × **3 primary SOTA** × 60 probes (see optional triage in §6.3) |
+| Light GEPA from each leader (~400 metric calls, primary pool) | **~$80–200 each** | Fast iteration; still Opus‑class / GPT‑5.5 / Gemini |
+| Medium GEPA on top 2 leaders (~800 metric calls) | **~$200–500 each** | Production-quality policy search |
+| Heavy GEPA on the winner (~1,600 metric calls) | **~$400–1,000** | Final shipping policy candidate |
+| Auxiliary portability replays (subsampled) | **~$30–80** | e.g. top‑2 leaders × 20 probes × 4 cheap models |
+| Per-milestone cross-harness validation | **~$150–400** | Opus + GPT‑5.5 + Gemini + Codex wire on held-out |
+| **Full campaign budget** | **~$900–2,500** | End-to-end, multiple iterations, pre-registered triage |
 
 Compare to GRPO-style RL approaches (~$300-500 per task per attempt with 24K rollouts) or naive
-GPT-5 reflection (~$2,000-5,000 for the same campaign). The DeepSeek V4-Pro promo is what makes
-this affordable in May 2026; budget will need to be re-estimated June 1.
+all‑frontier reflection without a cheap reflector (often **multiple times** the above). The
+DeepSeek V4-Pro promo reflector still anchors affordability; **June 1** DSv4‑Pro price step‑up
+re‑estimates both reflector and any DSv4 auxiliary replays.
 
 ### 8.7 DSPy MIPROv2 as a baseline
 
@@ -1087,16 +1112,17 @@ Setup:
   - System prompt = your decision-tree variant + sweet-search tool schema only
   - Tools = sweet-search CLI commands (executed via shell/subprocess)
   - Reflector = DeepSeek V4-Pro promo
-  - Evaluatees = pool of 4 cheap models
-  - Metric = min(answerability) across pool
+  - Primary evaluatees = Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro
+  - Headline metric = shipping_score = mean(answerability | primary pool)
+  - Auxiliary = 4 cheap models (periodic subsampled replays for median portability — not the scalar max)
 
 Why bare:
   - Isolates the variable being tuned
-  - Cheap (no 5-15K-token harness prompt per call)
+  - Avoids 5-15K-token harness prompt per call on top of frontier evaluatee cost
   - Deterministic (no harness-version drift)
   - Cross-harness portable (no harness-specific surface artifacts)
 
-Cost: ~$200-500 per full campaign
+Cost: ~$800-2,000+ per full campaign (frontier evaluatee-led; see §8.6)
 ```
 
 ### 9.3 Phase 2 — cross-harness validation
@@ -1110,23 +1136,25 @@ Setup:
   - Use a FRESH held-out task set (never seen during training)
 
 Harnesses & evaluatees:
-  - Claude Code + Sonnet 4.6 (native)             — ~$30
-  - Claude Code + DeepSeek V4-Pro (Anthropic-compat) — ~$5
-  - Codex CLI + GPT-5.5 (native)                  — ~$40
-  - OpenCode + Kimi K2.5                           — ~$10
-  - OpenCode + GLM 5.1 (or Z.ai Coding Plan Lite) — ~$15
+  - Claude Code + **Opus 4.7** (native, primary user profile) — priced higher than Sonnet-only
+  - Claude Code + DeepSeek V4-Pro (Anthropic-compat) — optional regression repro, not headline
+  - Codex CLI + GPT-5.5 (native)                  — headline OpenAI-shaped surface
+  - OpenCode + Gemini 3.1 Pro                      — headline Google-shaped surface
+  - OpenCode + Kimi K2.5 / GLM 5.1                 — optional secondary, not headline
   - Cursor: SKIP for agentic mode (Composer doesn't support custom endpoints)
 
 Promotion criteria:
-  - All 5 harness×model combos must hit equal-or-better answerability
-  - No combo drops more than 5pp on file/fact recall
+  - **shipping_score** (mean across Opus + GPT‑5.5 + Gemini on bare API or equivalent harness runs)
+    must beat current shipped policy with the §6.6 / §11 statistical battery
+  - Cross-harness: no regression >5pp file/fact recall on any of the three headline harness×model lines
+  - Auxiliary median (§8.5) stays within the G4 band
   - Tool-call count stays within 1.2× of baseline
 
-Cost: ~$100-300 per promotion gate, run 2-4× per campaign
+Cost: ~$150-400 per promotion gate, run 2-4× per campaign
 ```
 
 This is also the dataset that produces the **per-harness shim** content. If `Claude Code +
-Sonnet 4.6` regresses but the bare-API DSv4-Flash is fine, that's a Claude-specific compliance
+Opus 4.7` regresses but bare-API GPT‑5.5 is fine, that's a Claude-specific compliance / XML-shim
 issue → tweak `CLAUDE.md` shim, not the canonical `AGENTS.md`.
 
 ---
@@ -1293,7 +1321,8 @@ defend the numbers externally.
 
 Before each campaign:
 
-1. Commit `eval/prompt-evolution/preregistration.md` with: primary metric, hypothesis,
+1. Commit `eval/prompt-evolution/preregistration.md` with: **`shipping_score`** (§8.5 mean
+   answerability on Opus 4.7 + GPT‑5.5 + Gemini 3.1 Pro) as **primary metric**, hypothesis,
    secondary metrics, statistical tests planned, multiple-comparison correction, sample size,
    stop rules.
 2. Tag the commit before the first evaluatee call (`git tag prereg/{run-id}`).
@@ -1301,8 +1330,8 @@ Before each campaign:
    such, and may not appear in the headline table without disclosure.
 
 This is the IR conference / DeepMind Evals standard and prevents post-hoc cherry-picking. Without
-it, a campaign that runs 14 variants × 4 evaluatees × 6 metrics produces 336 numbers — picking
-the best post-hoc is statistically meaningless.
+it, a campaign that runs **14 variants × primary SOTA panel × auxiliary panel × ~6 metrics**
+produces **hundreds of cells**; picking the best post-hoc is statistically meaningless.
 
 ---
 
@@ -1334,8 +1363,8 @@ literature, this is the canonical decomposition.
 ### 12.2 Cadence — when to compare, when to skip
 
 - **NOT every GEPA generation** — overhead is too high (4× the cost per probe). GEPA campaigns
-  run B3 only with the multi-evaluatee `min()` metric. The native baseline is not the GEPA
-  optimization target.
+  run B3 optimizing **`shipping_score`** (mean over the primary SOTA trio from §8.5). Auxiliary
+  pool replay is subsampled. The native baseline is not the GEPA optimization target.
 - **At every promotion gate** (winner of GEPA Phase 1, before claiming an improvement) — run
   all four on the held-out 40-probe set with full statistical battery (§11.4).
 - **At every external claim** (blog post, README "X% faster than rg" headline, paper) — run all
@@ -1376,8 +1405,8 @@ and only escalate on behavior/structure are valid hypotheses, not lazy ones.
 
 ### 12.5 Specific baseline implementations (for reproducibility)
 
-**B1 — rg+Read native**: runs the agent inside Claude Code (Sonnet 4.6, the canonical
-reference) with **only** native `Read` and `Grep` tools enabled, sweet-search MCP server
+**B1 — rg+Read native**: runs the agent inside Claude Code (**Opus 4.7** as the canonical
+headline reference — Sonnet 4.6 acceptable when matching a logged user default) with **only** native `Read` and `Grep` tools enabled, sweet-search MCP server
 disabled, and a system prompt that explicitly authorizes those tools. The exact configuration
 is committed to `eval/prompt-evolution/baselines/b1-rg-read.toml`. Per the SWE-bench
 publication discipline, the exact `rg` invocations and harness state must be logged per run
@@ -1764,12 +1793,12 @@ These run post-hoc against the existing artifact JSONL. No changes to `claude-ru
 | P6.0 (golds) | <40 distinct golds within 14h; missing tool-affinity preregs | $0 |
 | P6.2 (Track A) | best-shape `recall@1` < 0.5 across all 4 tools (variant grid is misframed) | $50 |
 | P6.3 (Track B) | judge IAA α < 0.5 even after one rubric rewrite (humans-only on that metric) | $200 |
-| P8 (Phase A spike) | median PASS rate < 0.5 across 6 leaders (variant slate is wrong) | $100 |
+| P8 (Phase A spike) | median PASS rate < 0.5 across 6 leaders (variant slate is wrong) | $1,200 |
 | P9 (MIPROv2 baseline) | 2× budget overrun without convergence | $80 |
-| P10 (GEPA campaign) | spend > $1,000 with no Pareto-better candidate in 3 successive generations | $800 |
+| P10 (GEPA campaign) | spend > **$2,200** with no Pareto-better candidate on `shipping_score` in 3 successive generations | **$2,600** |
 | P10.5 (synthesis) | 3 successive synthesized variants fail at G1-G5 (architecture problem) | $200 |
 | P11.5 (4-baseline gate) | B3 fails to beat B1 with p < 0.05 on FreshStack-30 (sweet-search isn't an improvement on that distribution; do not ship the campaign output) | $300 |
-| **Aggregate campaign cap** | **abort all phases** | **$1,500** |
+| **Aggregate campaign cap** | **abort all phases** | **$5,000** (frontier‑led evaluatees; tighten if pre‑registered triage hits) |
 
 Each phase script must check its own cap before spawning the next batch and exit non-zero with
 a clear message when hit. Caps are tracked in
@@ -1881,7 +1910,8 @@ node eval/query-shapes/run-shape-sweep.mjs \
 # 9. Begin P7 (T1-T14 prompt bodies) — copy verbatim instruction_text from
 #    recommendations.json into each variant's query-phrasing rules.
 
-# 10. Phase A spike (P8) — 6 leaders × 4 evaluatees × 60-probe dev. Budget cap $100.
+# 10. Phase A spike (P8) — 6 leaders × 3 primary SOTA evaluatees × 60-probe dev.
+#     Optional pre-registered triage first. Budget cap $1,200 (see §13.7).
 ```
 
 This is bootable. The next change to this section is adding actual numbers as P6.0 and P6.2
@@ -1902,16 +1932,16 @@ results land.
 | **P6.0** | **Query-shape probe-set construction (§7.3)**: hand-author 12 golds × 4 dev repos (fastify, gin, ripgrep, flask) + 30 held-out fresh on uv post-cutoff; pre-register tool affinities and predicted winners per shape category | 10-14h | P0 |
 | **P6.1** | **Authored shape variants (§7.2)**: 6 shape variants per gold across the agent-instructable grid (length × symbol × intent-verb × framing × domain-density × regex-anchor) | 6-8h | P6.0 |
 | **P6.2** | **Track A deterministic sweep (§7.4)**: 4 in-scope tools × 78 golds × 6 shapes ≈ 1,872 runs, deterministic recall metrics | 4-6h + ~$10-20 | P6.1 |
-| **P6.3** | **Track B agent-in-loop sweep (§7.5)**: 18-24 gold subsample × 6 shapes × 4 tools, Sonnet 4.6 + DSv4-Pro judge with PRP protocol and IAA validation | 6-10h + ~$80-150 | P6.2 |
+| **P6.3** | **Track B agent-in-loop sweep (§7.5)**: 18-24 gold subsample × 6 shapes × 4 tools, Sonnet 4.6 bulk + optional pre-registered Opus 4.7 replay on winners; judges DSv4-Pro + Sonnet 4.6 per PRP protocol and IAA validation | 6-12h + ~$120-280 | P6.2 |
 | **P6.4** | **Promotion artifact (§7.6)**: ship `eval/query-shapes/recommendations.json` with per-tool best/avoid shapes and verbatim `instruction_text` strings | 2-3h | P6.3 |
 | **P7** | Spike: write T1-T14 prompt bodies under `eval/prompt-evolution/seeds/`, **importing query-phrasing rules verbatim from `recommendations.json`** | 4-6h | P1, **P6.4** |
-| **P8** | Run Phase A (T1, T4, T7, T9, T13, T14) on 4-evaluatee pool against 60-probe dev set | 4-6h + ~$50 | P0, P7 |
+| **P8** | Run Phase A (T1, T4, T7, T9, T13, T14) on **primary SOTA trio** × 60-probe dev set; optional pre-registered Sonnet/cheap-pool triage | 6-10h + **~$400-900** | P0, P7 |
 | **P8.5** | **Variant ablation analysis (§6.4)**: pairwise W matrix, failure-mode tally (8 modes × 14 variants), per-stratum strength fingerprints, Plackett-Luce ranking with bootstrap CIs, prose summary per variant | 4-6h + minimal $ | P8 |
 | **P9** | DSPy MIPROv2 baseline run on top 2 leaders from P8.5 | 3-5h + ~$30 | P8.5 |
-| **P10** | GEPA campaign (light → medium → heavy) on top leaders, multi-evaluatee min() metric | 8-16h + ~$300-600 | P9 |
+| **P10** | GEPA campaign (light → medium → heavy) on top leaders, **`shipping_score` / mean(primary SOTA trio)** + auxiliary median gate | 12-24h + **~$900-2,500** | P9 |
 | **P10.5** | **Variant synthesis (§6.5)**: GEPA system-aware Merge of Pareto-frontier variants → uber-tree v1 with explicit failure-mode targeting from §6.4 ablation map | 4-8h + ~$50-100 | P10 |
 | **P10.6** | **Uber-tree validation gates G1-G5 (§6.6)** on held-out 40-probe set; reject and re-run synthesis if any gate fails | 3-5h + ~$30-60 | P10.5 |
-| **P11** | Cross-harness validation gate (Claude Code + Codex + OpenCode, with native and cheap models) | 3-5h + ~$100-300 | P10.6 |
+| **P11** | Cross-harness validation gate (Claude Code Opus + Codex GPT‑5.5 + OpenCode Gemini; optional cheap replay) | 4-6h + **~$150-400** | P10.6 |
 | **P11.5** | **4-baseline gate (§12)**: B1 rg+Read native + B2 generator-only + B3 sweet-search uber-tree + B4 oracle retrieval, on FreshStack-30, with full statistical battery (§11.4) and cost/latency Pareto plot | 4-6h + ~$100-200 | P11 |
 | **P12** | Wire promoted policy artifacts into init injection + hooks + MCP, regression test vs shipped baseline | 2-3h | P11.5 |
 
@@ -1971,10 +2001,10 @@ only defensible if it passed P11.5 on a fresh-repo holdout. Internal numbers can
 | File | Purpose |
 |------|---------|
 | `eval/prompt-evolution/seeds/T01_question_shape_router.md` … `T14_tool_description_only.md` | The 14 seed variants from §6.2 |
-| `eval/prompt-evolution/run-phase-a.mjs` | Spike harness: 6 leaders × 4 evaluatees × 60 probes |
+| `eval/prompt-evolution/run-phase-a.mjs` | Spike harness: 6 leaders × **primary SOTA trio** × 60 probes (optional triage path) |
 | `eval/prompt-evolution/ablation-report.json` | Output of §6.4: 14×14 win matrix, 14×8 failure-mode tally, per-stratum fingerprints, PL worth params with CIs |
 | `eval/prompt-evolution/ablation-report.md` | Human-readable summary; per-variant prose ("T_i wins on X, fails on Y") |
-| `eval/prompt-evolution/run-gepa.py` | DSPy + GEPA campaign runner with multi-evaluatee `min()` pool |
+| `eval/prompt-evolution/run-gepa.py` | DSPy + GEPA runner: optimizes **`shipping_score`** (primary SOTA trio) + logs auxiliary pool |
 | `eval/prompt-evolution/run-synthesis.py` | GEPA system-aware Merge with §6.4 ablation map fed in as guidance |
 | `eval/prompt-evolution/synthesis-runs/T_uber_v1.md`, `T_uber_v2.md`, … | Versioned synthesized uber-tree candidates with source-variant manifest |
 | `eval/prompt-evolution/rejected/` | Failed-gate diagnostics for synthesized candidates that didn't pass G1-G5 |
@@ -2087,19 +2117,21 @@ A single file works *only* for OpenCode + Codex (which both read `AGENTS.md` dir
 coverage we need per-tool variants. The symlink convention reduces duplication where the body is
 identical.
 
-### Why Cheap-Optimizer + Multi-Evaluatee Pool for GEPA?
+### Why Cheap Reflector + **SOTA‑Primary** Evaluatees for GEPA?
 
 Three reasons:
 
-1. **Cost**: Naive GPT-5 reflection on Sonnet 4.6 evaluatee = ~$2,000-5,000 per campaign. DSv4-Pro
-   promo + 4-cheap-evaluatee pool = ~$300-600 per campaign. Same Pareto frontier coverage.
-2. **Generalization**: `min()` across the evaluatee pool prevents over-fitting to any single
-   model's surface preferences. This is a stronger generalization signal than running on a single
-   stronger model.
-3. **Architectural diversity**: DeepSeek V4 (dense + sparse), MiniMax M2.7 (10B-active MoE), Kimi
-   K2.5 (32B-active 1T MoE), Qwen 3.6 (hybrid attention + sparse MoE) cover four different
-   inference architectures. If a prompt works for all four, it almost certainly works for Claude
-   Sonnet 4.6, GPT-5.5, and Gemini 3.1 Pro at validation time.
+1. **Objective matches users**: Most sweet-search agent runs target **Opus‑class / GPT‑5.5 / Gemini**
+   surfaces. The headline metric (`shipping_score`) should ask those models directly — not proxies
+   tuned for `$0.14/M` endpoints that users rarely pick for serious agent work.
+2. **Cost control without wrong objective**: Frontier-only reflection with an expensive frontier
+   reflector can still hit **\$5k+** campaigns. Keeping the **reflector** on DSv4‑Pro promo /
+   MiniMax M2.5 preserves sample efficiency dollars where reflection-heavy token volume lives,
+   while letting evaluatee dollars go to models that define product quality.
+3. **Portable without pessimistic intersections**: Auxiliary cheap diversity still exposes brittle
+   instructions (verbosity, MoE quirks, refusal patterns) via **`median(answerability)`** sentinels
+   in §8.5 / **G4** — without letting a single eccentric cheap model veto a prompt that cleanly
+   wins on the frontier trio.
 
 ### Why Bare-API for GEPA Training, In-Harness for Validation?
 
@@ -2177,8 +2209,8 @@ canonical ceiling check.
 
 ### Why Pre-Registration?
 
-A campaign that runs 14 variants × 4 evaluatees × 6 metrics produces 336 numbers. Picking the
-best post-hoc is not statistical evidence — it's data-snooping. Pre-registration commits the
+A campaign that runs 14 variants across **multiple evaluatee panels and metrics** produces large
+tables of numbers quickly. Picking the best post-hoc is not statistical evidence — it's data-snooping. Pre-registration commits the
 primary metric, hypothesis, statistical tests, and stop rules before the run, then tags the
 commit. Any deviation is labeled exploratory. This is the IR-conference / DeepMind Evals
 standard. It also forces clarity: if you can't write down a primary metric in advance, you
