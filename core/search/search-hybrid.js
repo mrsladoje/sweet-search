@@ -28,6 +28,19 @@ function hasAblation(ablations, name) {
     : Array.isArray(ablations) && ablations.includes(name);
 }
 
+// Per-stage profiling hooks. No-op unless `globalThis.__stageTimings` is set
+// by scripts/profile-search-stages.mjs. See search-postprocess.js for the
+// matching helpers — same convention for consistency.
+function __ptStart() {
+  return globalThis.__stageTimings ? performance.now() : null;
+}
+function __ptEnd(stage, t0) {
+  if (t0 == null || !globalThis.__stageTimings) return;
+  const ms = performance.now() - t0;
+  const buf = globalThis.__stageTimings;
+  (buf[stage] = buf[stage] || []).push(ms);
+}
+
 function envFloat(name, fallback, min = 0, max = 1) {
   const raw = process.env[name];
   if (raw == null || raw === '') return fallback;
@@ -146,6 +159,7 @@ export async function hybridSearchV2(query, options = {}) {
     || options.format === 'agent'
     || process.env.SWEET_SEARCH_ANCHOR_INJECTION === '1'
   );
+  const __t_iar = __ptStart();
   const { results: anchored, stats: anchorStats } = shouldInjectAnchors
     ? injectAnchorCandidates(fused, query, {
         codeGraphRepo: this.codeGraphRepo,
@@ -154,6 +168,7 @@ export async function hybridSearchV2(query, options = {}) {
         allowPlainTitlecase: options.format === 'agent',
       })
     : { results: fused, stats: { skipped: true, reason: 'disabled_for_non_agent_search' } };
+  __ptEnd('hybrid:injectAnchorCandidates', __t_iar);
 
   // Step 3: Apply post-fusion boosts uniformly (both paths benefit equally)
   const boosted = this.applyPostFusionBoosts(anchored, query, routing.mode, routing.confidence, {
@@ -164,6 +179,7 @@ export async function hybridSearchV2(query, options = {}) {
   // The post-retrieval pass has the same guard, but hybrid used to slice first,
   // so docs/tests/tiny YAML could occupy top-1 and hide implementation chunks.
   const fileKindIntent = classifyFileKindIntent(query);
+  const __t_fk = __ptStart();
   const rankedByFileKind = applyFileKindRanking(boosted, {
     intent: fileKindIntent,
     window: options.fileKindWindow ?? 100,
@@ -173,6 +189,8 @@ export async function hybridSearchV2(query, options = {}) {
     ancillaryFactor: options.hybridAncillaryFactor ?? 0.15,
     tinyAncillaryFactor: options.hybridTinyAncillaryFactor ?? 0.05,
   });
+  __ptEnd('hybrid:applyFileKindRanking', __t_fk);
+  const __t_dem = __ptStart();
   const demoted = applyResultDemotions(rankedByFileKind, {
     query,
     window: options.resultDemotionWindow ?? 100,
@@ -180,7 +198,11 @@ export async function hybridSearchV2(query, options = {}) {
     format: options.format,
     projectRoot: this.projectRoot,
     codeGraphRepo: this.codeGraphRepo,
+    _entityKindCache: options._entityKindCache,
+    _entityNameCache: options._entityNameCache,
+    _resultTextCache: options._resultTextCache,
   });
+  __ptEnd('hybrid:applyResultDemotions', __t_dem);
 
   // Step 4: MMR Diversification (replaces flood control)
   let diversified = demoted;
@@ -189,10 +211,12 @@ export async function hybridSearchV2(query, options = {}) {
   const useMMR = (options.useMMR ?? true) && !hasAblation(options.ablations, 'no-mmr');
   if (useMMR && shouldApplyMMR(demoted)) {
     const lambda = getLambdaForIntent(routing.mode, routing.confidence);
+    const __t_mmr = __ptStart();
     const mmrResult = applyMMR(demoted, {
       k: Math.min(k * 2, demoted.length), // Get more candidates for diversity
       lambda,
     });
+    __ptEnd('hybrid:applyMMR', __t_mmr);
     diversified = mmrResult.results;
     mmrStats = mmrResult.stats;
 
@@ -241,11 +265,13 @@ export async function hybridSearchV2(query, options = {}) {
   let finalResults = results;
   let fallbackStats = null;
   if (options.allowKeywordFallback !== false) {
+    const __t_rrf = __ptStart();
     const fb = await runRRFFallback(results, query, {
       searcher: this,
       ablations: options.ablations,
       confidenceFloor: options.confidenceFloor,
     });
+    __ptEnd('hybrid:runRRFFallback', __t_rrf);
     fallbackStats = fb.stats;
     if (fb.results !== results) {
       // Re-run BOTH file-kind ranking AND content demotions on the merged
@@ -269,6 +295,9 @@ export async function hybridSearchV2(query, options = {}) {
         format: options.format,
         projectRoot: this.projectRoot,
         codeGraphRepo: this.codeGraphRepo,
+        _entityKindCache: options._entityKindCache,
+        _entityNameCache: options._entityNameCache,
+        _resultTextCache: options._resultTextCache,
       });
       finalResults = remerged.slice(0, k).map(r => ({
         ...r,
