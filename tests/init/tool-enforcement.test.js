@@ -144,3 +144,42 @@ describe('parseInitArgs — --enforce-tools', () => {
     expect(parseInitArgs(['--enforce-tools']).enforceTools).toBe(true);
   });
 });
+
+describe('intercept-read.mjs hook script (Claude Code PreToolUse contract)', async () => {
+  // The hook surfaces a hint to the model via JSON stdout — stderr alone
+  // doesn't reach the model. This test spawns the actual script with a
+  // mock PreToolUse JSON payload on stdin and verifies the output contract.
+  // Anchored to claude-code-guide audit (2026-05-09): plan §4D.
+  const { spawnSync } = await import('node:child_process');
+  const HOOK_PATH = joinPath(PACKAGE_ROOT, 'scripts', 'hooks', 'intercept-read.mjs');
+
+  it('emits valid JSON with hookSpecificOutput.additionalContext on stdout', () => {
+    const stdinPayload = JSON.stringify({
+      tool_name: 'Read',
+      tool_input: { file_path: '/some/file.js' },
+    });
+    const result = spawnSync(process.execPath, [HOOK_PATH], {
+      input: stdinPayload,
+      encoding: 'utf8',
+      timeout: 4000,
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBeTruthy();
+    let parsed;
+    expect(() => { parsed = JSON.parse(result.stdout); }).not.toThrow();
+    expect(parsed.hookSpecificOutput).toBeDefined();
+    expect(parsed.hookSpecificOutput.hookEventName).toBe('PreToolUse');
+    expect(parsed.hookSpecificOutput.permissionDecision).toBe('allow');
+    expect(parsed.hookSpecificOutput.additionalContext).toMatch(/ss-read/);
+    expect(parsed.hookSpecificOutput.additionalContext).toMatch(/ss-semantic/);
+  });
+
+  it('exits 0 (never blocks) — Read always proceeds even when hint fires', () => {
+    const result = spawnSync(process.execPath, [HOOK_PATH], {
+      input: '{}',
+      encoding: 'utf8',
+      timeout: 4000,
+    });
+    expect(result.status).toBe(0);
+  });
+});
