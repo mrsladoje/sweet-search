@@ -248,4 +248,60 @@ describe('Domain Barrel Contracts', () => {
       expect(m.warmupFull).toBeTypeOf('function');
     });
   });
+
+  describe('core/prompt-optimization', () => {
+    // Build-time bounded context (P0.0 DDD layout). Real implementations
+    // land across P0/P6/P8/P10/P11 per docs/SYSTEM_PROMPT_OPT_PLAN.md.
+    // For now the barrel re-exports stubs that throw — the contract test
+    // verifies the public-API surface is declared so future replacements
+    // can't silently shrink it.
+    it('exports public API surface', async () => {
+      const m = await import('../../core/prompt-optimization/index.js');
+
+      // Optimization (P9, P10, P10.5)
+      expect(m.runGepaCampaign).toBeTypeOf('function');
+      expect(m.runDspyCampaign).toBeTypeOf('function');
+      expect(m.runSynthesis).toBeTypeOf('function');
+
+      // Evaluation (P6.2, P6.3, P8, P11, P11.5)
+      expect(m.runVariantSlate).toBeTypeOf('function');
+      expect(m.runQueryShapeSweep).toBeTypeOf('function');
+      expect(m.runFourBaselines).toBeTypeOf('function');
+      expect(m.runCrossHarness).toBeTypeOf('function');
+
+      // Statistics (P0)
+      expect(m.pairedPermutationTest).toBeTypeOf('function');
+      expect(m.pairedBootstrapCI).toBeTypeOf('function');
+      expect(m.plackettLuceFit).toBeTypeOf('function');
+      expect(m.applyEvaluatorExclusion).toBeTypeOf('function');
+
+      // Decontamination (P0)
+      expect(m.nGramDecontaminate).toBeTypeOf('function');
+      expect(m.embeddingDecontaminate).toBeTypeOf('function');
+      expect(m.llmDecontaminate).toBeTypeOf('function');
+
+      // Judges (P6.3, P11.5)
+      expect(m.runPrpPairwise).toBeTypeOf('function');
+      expect(m.validateJudgeIAA).toBeTypeOf('function');
+
+      // Failure modes (P8.5, §13.6)
+      expect(m.detectFailureModes).toBeTypeOf('function');
+      expect(m.tagProposalClass).toBeTypeOf('function');
+
+      // Telemetry (§8.9.1, §8.9.3)
+      expect(m.emitPortabilityDossier).toBeTypeOf('function');
+      expect(m.appendBudgetTelemetry).toBeTypeOf('function');
+
+      // Manifests / splits (P0)
+      expect(m.loadManifest).toBeTypeOf('function');
+      expect(m.buildSplits).toBeTypeOf('function');
+      expect(m.loadRunConfig).toBeTypeOf('function');
+    });
+
+    it('stubs throw with a phase pointer when invoked', async () => {
+      const m = await import('../../core/prompt-optimization/index.js');
+      expect(() => m.runGepaCampaign()).toThrow(/not yet implemented/);
+      expect(() => m.loadManifest()).toThrow(/SYSTEM_PROMPT_OPT_PLAN/);
+    });
+  });
 });
