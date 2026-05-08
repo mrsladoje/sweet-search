@@ -19,19 +19,34 @@ import { join, relative } from 'path';
 const DOMAINS = [
   'embedding', 'graph', 'indexing', 'infrastructure',
   'query', 'ranking', 'search', 'vector-store', 'vocabulary',
+  'prompt-optimization',
 ];
 
 // ── Section 1: Forbidden dependency direction ────────────────────────────────
+//
+// `prompt-optimization/` is appended to every runtime-domain forbidden list
+// because no runtime domain may import from this build-time context (the
+// runtime engine has zero dependency on prompt-optimization — only
+// scripts/init.js consumes its output artifact). See
+// docs/DDD_ARCHITECTURE.md "Dependency Matrix" and the prompt-optimization
+// rule below for its outgoing forbidden list (allowed: infrastructure;
+// search barrel only via exception 4; ranking barrel only via exception 5).
 
 const FORBIDDEN = [
-  { from: 'core/infrastructure/', to: ['embedding/', 'indexing/', 'search/', 'ranking/', 'graph/', 'vocabulary/', 'vector-store/', 'query/'], label: 'infrastructure → domain' },
-  { from: 'core/vector-store/', to: ['embedding/', 'indexing/', 'search/', 'ranking/', 'graph/', 'vocabulary/', 'query/'], label: 'vector-store → domain' },
-  { from: 'core/embedding/', to: ['search/', 'ranking/', 'indexing/', 'query/', 'graph/', 'vocabulary/', 'vector-store/'], label: 'embedding → higher' },
-  { from: 'core/query/', to: ['search/', 'ranking/', 'indexing/', 'embedding/', 'graph/', 'vocabulary/', 'vector-store/'], label: 'query → forbidden' },
-  { from: 'core/ranking/', to: ['search/', 'indexing/', 'query/', 'graph/', 'vocabulary/', 'vector-store/', 'embedding/'], label: 'ranking → higher' },
-  { from: 'core/indexing/', to: ['search/', 'query/'], label: 'indexing → higher' },
-  { from: 'core/graph/', to: ['search/', 'indexing/', 'vocabulary/', 'vector-store/', 'embedding/'], label: 'graph → forbidden' },
-  { from: 'core/vocabulary/', to: ['search/', 'ranking/', 'indexing/', 'query/', 'vector-store/'], label: 'vocabulary → forbidden' },
+  { from: 'core/infrastructure/', to: ['embedding/', 'indexing/', 'search/', 'ranking/', 'graph/', 'vocabulary/', 'vector-store/', 'query/', 'prompt-optimization/'], label: 'infrastructure → domain' },
+  { from: 'core/vector-store/', to: ['embedding/', 'indexing/', 'search/', 'ranking/', 'graph/', 'vocabulary/', 'query/', 'prompt-optimization/'], label: 'vector-store → domain' },
+  { from: 'core/embedding/', to: ['search/', 'ranking/', 'indexing/', 'query/', 'graph/', 'vocabulary/', 'vector-store/', 'prompt-optimization/'], label: 'embedding → higher' },
+  { from: 'core/query/', to: ['search/', 'ranking/', 'indexing/', 'embedding/', 'graph/', 'vocabulary/', 'vector-store/', 'prompt-optimization/'], label: 'query → forbidden' },
+  { from: 'core/ranking/', to: ['search/', 'indexing/', 'query/', 'graph/', 'vocabulary/', 'vector-store/', 'embedding/', 'prompt-optimization/'], label: 'ranking → higher' },
+  { from: 'core/indexing/', to: ['search/', 'query/', 'prompt-optimization/'], label: 'indexing → higher' },
+  { from: 'core/graph/', to: ['search/', 'indexing/', 'vocabulary/', 'vector-store/', 'embedding/', 'prompt-optimization/'], label: 'graph → forbidden' },
+  { from: 'core/vocabulary/', to: ['search/', 'ranking/', 'indexing/', 'query/', 'vector-store/', 'prompt-optimization/'], label: 'vocabulary → forbidden' },
+  { from: 'core/search/', to: ['prompt-optimization/'], label: 'search → prompt-optimization (forbidden — no runtime → build-time)' },
+  // prompt-optimization is a build-time context. It MAY import infrastructure
+  // (any depth, like other domains) and the search/ranking barrels via
+  // declared exceptions 4/5 (max 2 sites each, barrel-only). Imports of any
+  // other domain — or non-barrel internals of search/ranking — are forbidden.
+  { from: 'core/prompt-optimization/', to: ['indexing/', 'query/', 'graph/', 'vocabulary/', 'vector-store/', 'embedding/'], label: 'prompt-optimization → forbidden runtime domain' },
 ];
 
 const EXCEPTIONS = [
@@ -46,6 +61,14 @@ const EXCEPTIONS = [
   { from: 'core/indexing/', to: 'ranking/', label: 'indexing → ranking (late-interaction build)', max: 7 },
   // query-router-catboost imports trained model from core/training/query-router/ — declared build-time artifact dependency
   { from: 'core/query/', to: 'training/query-router/', label: 'query → training (CatBoost model artifact)', max: 2 },
+  // prompt-optimization → search (barrel only): embedded-MCP cross-harness
+  // mode invokes the search barrel directly to drive in-process agent runs.
+  // See docs/SYSTEM_PROMPT_OPT_PLAN.md Part 9 (cross-harness validation).
+  { from: 'core/prompt-optimization/', to: 'search/', label: 'prompt-optimization → search (embedded-MCP cross-harness, barrel only)', max: 2 },
+  // prompt-optimization → ranking (barrel only): B4 oracle-retrieval baseline
+  // pre-injects gold snippets using ranking barrel helpers.
+  // See docs/SYSTEM_PROMPT_OPT_PLAN.md Part 12 (four-baseline gate).
+  { from: 'core/prompt-optimization/', to: 'ranking/', label: 'prompt-optimization → ranking (B4 oracle baseline, barrel only)', max: 2 },
 ];
 
 // ── Section 2: Barrel-only allowlist (external consumers) ────────────────────

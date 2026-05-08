@@ -1,7 +1,7 @@
 # Sweet Search Domain Architecture
 
 **Status**: Modular monolith with enforced bounded contexts
-**Last updated**: 2026-04-14
+**Last updated**: 2026-05-09
 
 > **HCGS Status (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); references below describe the original design. Flip the flag to re-enable.
 
@@ -9,15 +9,21 @@
 
 ## Overview
 
-Sweet Search organises its core into 9 bounded contexts under `core/`. Each context owns a
-public API barrel (`index.js`), all files that implement that capability, and enforced
-dependency direction. Cross-domain imports are checked by `scripts/check-boundaries.js`,
-ESLint rules, and CI.
+Sweet Search organises its core into 9 runtime bounded contexts under `core/` plus a
+build-time `prompt-optimization/` context (10 total). Each context owns a public API
+barrel (`index.js`), all files that implement that capability, and enforced dependency
+direction. Cross-domain imports are checked by `scripts/check-boundaries.js`, ESLint
+rules, and CI.
 
 This is a well-enforced **modular monolith**. Domain boundaries are physical (separate
 directories, barrel public APIs) and mechanically enforced (CI-blocking checks). Formal port
 and adapter abstractions do not yet exist inside domains — that is the next architectural
 step (see [Remaining Work](#remaining-work)).
+
+`prompt-optimization/` is the only build-time context with a barrel; it has zero runtime
+consumers (only `scripts/init.js` reads its output artifact). The other build-time tooling
+under `core/training/` is a directory tree without a barrel — see "Files at `core/` Root"
+and the dependency matrix below.
 
 ---
 
@@ -69,6 +75,10 @@ step (see [Remaining Work](#remaining-work)).
 | `graph/` | query, ranking, infrastructure | search, indexing, vocabulary, vector-store, embedding (3) |
 | `vector-store/` | infrastructure | search, ranking, indexing, query, embedding, graph, vocabulary |
 | `infrastructure/` | external packages only | all domain directories |
+| `prompt-optimization/` (build-time) | infrastructure; `search/` barrel only (4); `ranking/` barrel only (5) | indexing, query, graph, vocabulary, vector-store, embedding, and any non-barrel internal file of any other domain |
+
+No runtime domain may import from `prompt-optimization/`. The runtime engine has zero
+dependency on this context; only `scripts/init.js` consumes its output artifact.
 
 **Declared exceptions:**
 
@@ -97,6 +107,16 @@ step (see [Remaining Work](#remaining-work)).
 3. **graph -> embedding (CLI dynamic only)**: `graph/hcgs-generator.js` may lazy-load
    `embedding/index.js` via dynamic `import()` annotated `// CLI`. Permitted only from
    CLI-invoked code paths. Static imports from graph/ into embedding/ are forbidden.
+
+4. **prompt-optimization -> search (barrel only)**: the embedded-MCP cross-harness
+   evaluation mode invokes the search barrel directly to drive in-process agent runs
+   without spawning a Claude Code/Codex subprocess. Max 2 import sites; barrel-only;
+   machine-checked. See `docs/SYSTEM_PROMPT_OPT_PLAN.md` Part 9 (cross-harness validation).
+
+5. **prompt-optimization -> ranking (barrel only)**: the B4 oracle-retrieval baseline
+   pre-injects gold snippets into agent context using the ranking barrel's
+   `cascadedScore`/`applyMMR` helpers to produce a deterministic top-k. Max 2 import
+   sites; barrel-only; machine-checked. See `docs/SYSTEM_PROMPT_OPT_PLAN.md` Part 12.
 
 ---
 
@@ -135,6 +155,7 @@ export { expandVocabulary } from './embedding-service.js';
 | `query` | `routeQuery`, `detectIntent`, `getIntentBoost`, `classifyIntent`, CatBoost router |
 | `vector-store` | `HNSWIndex`, `BinaryHNSWIndex`, `FloatVectorStore`, `SeismicIndex`, WASM distance fns |
 | `infrastructure` | config objects, `fetchModel`, ONNX session helpers, `withOnnxMutex`, language registry, `generateWithRetry`, quantization/SIMD, hardware capability detection, CoreML variant cascade management |
+| `prompt-optimization` (build-time) | `runGepaCampaign`, `runDspyCampaign`, `runSynthesis`, `runVariantSlate`, `runQueryShapeSweep`, `runFourBaselines`, `runCrossHarness`, `pairedPermutationTest`, `pairedBootstrapCI`, `plackettLuceFit`, `applyEvaluatorExclusion`, `nGramDecontaminate`, `embeddingDecontaminate`, `llmDecontaminate`, `runPrpPairwise`, `validateJudgeIAA`, `detectFailureModes`, `tagProposalClass`, `emitPortabilityDossier`, `appendBudgetTelemetry`, `loadManifest`, `buildSplits`, `loadRunConfig` |
 
 ### `core/config.js` policy
 
@@ -344,11 +365,15 @@ support layer whose utilities are imported directly for performance and simplici
 
 What is true:
 
-- Physical layout matches the 9-domain target.
+- Physical layout matches the 9-runtime-domain target plus the build-time
+  `prompt-optimization/` context (10 total).
 - Dependency direction is enforced mechanically and violations block CI.
 - Each domain has a barrel public API that is the normal integration surface.
 - Config is split into domain-scoped sub-files with a backward-compatible facade.
 - Declared exceptions are bounded and machine-checked.
+- `prompt-optimization/` is registered as a build-time context with a barrel of
+  stub exports (P0.0 — 2026-05-09). Real implementations land in P0/P6/P8/P10/P11
+  per `docs/SYSTEM_PROMPT_OPT_PLAN.md`.
 
 What is not yet true:
 
