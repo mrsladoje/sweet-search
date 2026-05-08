@@ -20,6 +20,8 @@ import { getCoremlCascadeRoot, getCoremlCascadeState } from '../core/infrastruct
 import { PREWARM_HOOK_FILENAME } from './init.js';
 import { removeAgentInstructions } from './inject-agent-instructions.js';
 import { removeClaudeRules } from './write-claude-rules.js';
+import { removePromptReminderHook } from './install-prompt-reminders.js';
+import { removeToolEnforcement } from './install-tool-enforcement.js';
 
 // Default paths for the running daemon. Env-overridable so both the prewarm
 // hook, the CLI, and this module agree on where to look. Tests pass custom
@@ -562,10 +564,20 @@ export async function runUninstall(args) {
   const claudeRulesPreview = removeClaudeRules({ projectRoot, dryRun: true });
   const hasClaudeRules = claudeRulesPreview === 'dry-run';
 
+  // P2: UserPromptSubmit reminder hook (.claude/hooks/sweet-search-remind-tools.mjs
+  // + the matching settings.json entry).
+  const promptReminderPreview = removePromptReminderHook({ projectRoot, dryRun: true });
+  const hasPromptReminder = promptReminderPreview.status === 'dry-run';
+
+  // P3: Tool enforcement (Grep deny + PreToolUse hint hook for Read).
+  const toolEnforcementPreview = removeToolEnforcement({ projectRoot, dryRun: true });
+  const hasToolEnforcement = toolEnforcementPreview.status === 'dry-run';
+
   // Nothing to remove?
   if (
     removals.length === 0 && !hasHookEntry && !hasSkillEntry && !hasIndexMaintainerHook
     && !agentInstructionsTouched && !hasClaudeRules
+    && !hasPromptReminder && !hasToolEnforcement
   ) {
     console.log('Nothing to remove — Sweet Search is not initialized in this project.');
     return;
@@ -598,6 +610,12 @@ export async function runUninstall(args) {
   }
   if (hasClaudeRules) {
     console.log(`    .claude/rules/sweet-search.md`);
+  }
+  if (hasPromptReminder) {
+    console.log(`    UserPromptSubmit reminder hook (${promptReminderPreview.detail})`);
+  }
+  if (hasToolEnforcement) {
+    console.log(`    tool-enforcement strict mode (${toolEnforcementPreview.detail})`);
   }
   console.log(`  Total: ${formatBytes(totalBytes)}`);
   if (parsed.keepModels) {
@@ -729,6 +747,26 @@ export async function runUninstall(args) {
     kept++;
   }
   // 'not-found' / 'dry-run' are silent.
+
+  // P2: strip the UserPromptSubmit reminder hook + settings entry.
+  const promptReminderResult = removePromptReminderHook({ projectRoot, dryRun: parsed.dryRun });
+  if (promptReminderResult.status === 'removed') {
+    console.log(`  Removed: UserPromptSubmit reminder hook (${promptReminderResult.detail})`);
+    removed++;
+  } else if (promptReminderResult.status === 'error') {
+    console.log(`  Failed to remove UserPromptSubmit reminder hook: ${promptReminderResult.detail}`);
+    kept++;
+  }
+
+  // P3: strip the tool-enforcement Grep deny + PreToolUse hook + hook file.
+  const toolEnforcementResult = removeToolEnforcement({ projectRoot, dryRun: parsed.dryRun });
+  if (toolEnforcementResult.status === 'removed') {
+    console.log(`  Removed: tool-enforcement (${toolEnforcementResult.detail})`);
+    removed++;
+  } else if (toolEnforcementResult.status === 'error') {
+    console.log(`  Failed to remove tool-enforcement: ${toolEnforcementResult.detail}`);
+    kept++;
+  }
 
   // Stop any daemon that an earlier SessionStart hook spawned. Otherwise the
   // old daemon keeps running and holding the socket after uninstall, which
