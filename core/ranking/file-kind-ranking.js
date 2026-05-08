@@ -1053,36 +1053,39 @@ function anomalousChunkDemotion(result, opts = {}) {
  * Off by default (Infinity); calibrated via SWEET_SEARCH_MAX_ENVELOPE_LINES
  * env var or opts.maxEnvelopeLines.
  */
+// Loop-invariant resolution of the env-controlled envelope cap. Computed
+// once per applyResultDemotions call (see ruleOpts setup) and stashed on
+// opts._megaEnvelopeMax to avoid the env+parseInt+default lookup per
+// result. Resolver returns -1 to mean "skip the rule entirely" (when the
+// env var is set to a non-positive/non-finite value).
+function resolveMaxEnvelopeLines(opts) {
+  if (typeof opts._megaEnvelopeMax === 'number') return opts._megaEnvelopeMax;
+  const raw = process.env.SWEET_SEARCH_MAX_ENVELOPE_LINES;
+  if (raw != null && raw !== '') {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+    return -1;
+  }
+  // Default 500: calibrated 2026-05-07 on 60-probe + FreshStack uv + GCSN dev/held-out.
+  // Cap=500 yields +1 PASS on probes (S5-Q9 Flask Scaffold) and +1 FAIL→PARTIAL on
+  // FreshStack uv (UV-NL-2 do_lock) with zero regression on GCSN. Smaller caps
+  // regressed FreshStack; larger caps yielded no further gain.
+  return opts.maxEnvelopeLines ?? 500;
+}
+
 function megaEntityPenalty(result, opts = {}) {
   if (!opts._isAgentFormat) return 1.0;
   if (hasAblation(opts.ablations, 'no-mega-entity-penalty')) return 1.0;
-  const maxEnvelopeLines = (() => {
-    const raw = process.env.SWEET_SEARCH_MAX_ENVELOPE_LINES;
-    if (raw != null && raw !== '') {
-      const n = Number.parseInt(raw, 10);
-      if (Number.isFinite(n) && n > 0) return n;
-    }
-    // Default 500: calibrated 2026-05-07 on 60-probe + FreshStack uv + GCSN dev/held-out.
-    // Cap=500 yields +1 PASS on probes (S5-Q9 Flask Scaffold) and +1 FAIL→PARTIAL on
-    // FreshStack uv (UV-NL-2 do_lock) with zero regression on GCSN. Smaller caps
-    // regressed FreshStack; larger caps yielded no further gain.
-    return opts.maxEnvelopeLines ?? 500;
-  })();
-  if (!Number.isFinite(maxEnvelopeLines)) return 1.0;
+  const maxEnvelopeLines = resolveMaxEnvelopeLines(opts);
+  if (maxEnvelopeLines <= 0 || !Number.isFinite(maxEnvelopeLines)) return 1.0;
   if (!opts.codeGraphRepo || typeof opts.codeGraphRepo.findEnclosingEntity !== 'function') {
     return 1.0;
   }
-  const filePath = resolveFilePath(result);
-  if (!filePath) return 1.0;
-  const meta = result?.metadata ?? {};
-  const startLine = Number(result?.startLine ?? meta.startLine);
-  const endLine = Number(result?.endLine ?? meta.endLine);
-  if (!Number.isFinite(startLine) || !Number.isFinite(endLine)) return 1.0;
-  let entity;
-  try {
-    entity = opts.codeGraphRepo.findEnclosingEntity(filePath, startLine, endLine);
-  } catch { return 1.0; }
-  if (!entity) return 1.0;
+  // Route through resolveEntityKindInfo so we hit the search-scoped
+  // _entityKindCache instead of going to SQLite again. The cached entity
+  // carries startLine/endLine which is all this rule needs.
+  const entity = resolveEntityKindInfo(result, opts);
+  if (!entity || !Number.isFinite(entity.startLine) || !Number.isFinite(entity.endLine)) return 1.0;
   const entityLines = (entity.endLine - entity.startLine) + 1;
   if (entityLines <= maxEnvelopeLines) return 1.0;
   const factor = opts.megaEntityFactor ?? 0.85;
@@ -1449,7 +1452,15 @@ export function applyResultDemotions(results, opts = {}) {
   //     the loop, but the original recomputed
   //     `(ENTITY_KIND_KEYWORDS[preferredKind] || []).map(normalizeType)` per
   //     result inside the entity-adoption gate.
-  const ruleOpts = { ...opts, ablations, _isAgentFormat: isAgentFormat };
+  // Pre-resolve the envelope-cap once for ruleOpts. resolveMaxEnvelopeLines
+  // does an env-var lookup + parseInt + default fallback; without this it
+  // ran per result inside megaEntityPenalty.
+  const ruleOpts = {
+    ...opts,
+    ablations,
+    _isAgentFormat: isAgentFormat,
+    _megaEnvelopeMax: resolveMaxEnvelopeLines(opts),
+  };
   const skipTestName = hasAblation(ablations, 'no-test-name-overlap');
   const skipBodyDensity = hasAblation(ablations, 'no-body-density');
   const skipMegaChunk = hasAblation(ablations, 'no-mega-chunk-penalty');
