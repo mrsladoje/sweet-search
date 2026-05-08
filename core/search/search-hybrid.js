@@ -188,6 +188,7 @@ export async function hybridSearchV2(query, options = {}) {
     typeFactor: options.hybridTypeFactor ?? 0.70,
     ancillaryFactor: options.hybridAncillaryFactor ?? 0.15,
     tinyAncillaryFactor: options.hybridTinyAncillaryFactor ?? 0.05,
+    _fileKindCache: options._fileKindCache,
   });
   __ptEnd('hybrid:applyFileKindRanking', __t_fk);
   const __t_dem = __ptStart();
@@ -204,6 +205,7 @@ export async function hybridSearchV2(query, options = {}) {
     _fullFileTextCache: options._fullFileTextCache,
     _isTestSupportCache: options._isTestSupportCache,
     _isTestChunkCache: options._isTestChunkCache,
+    _fileKindCache: options._fileKindCache,
   });
   __ptEnd('hybrid:applyResultDemotions', __t_dem);
 
@@ -304,6 +306,7 @@ export async function hybridSearchV2(query, options = {}) {
         _fullFileTextCache: options._fullFileTextCache,
         _isTestSupportCache: options._isTestSupportCache,
         _isTestChunkCache: options._isTestChunkCache,
+        _fileKindCache: options._fileKindCache,
       });
       finalResults = remerged.slice(0, k).map(r => ({
         ...r,

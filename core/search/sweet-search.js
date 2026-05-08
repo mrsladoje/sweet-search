@@ -474,12 +474,14 @@ export class SweetSearch {
     //   _fullFileTextCache   : readFileSync FULL file (test-support detection)
     //   _isTestSupportCache  : isTestSupportFile() per-file verdict
     //   _isTestChunkCache    : isTestChunk() per-chunk verdict
+    //   _fileKindCache       : detectFileKind() per-file verdict
     const _entityKindCache = new Map();
     const _entityNameCache = new Map();
     const _resultTextCache = new Map();
     const _fullFileTextCache = new Map();
     const _isTestSupportCache = new Map();
     const _isTestChunkCache = new Map();
+    const _fileKindCache = new Map();
 
     switch (searchMode) {
       case 'grep': {
@@ -561,6 +563,7 @@ export class SweetSearch {
           _fullFileTextCache,
           _isTestSupportCache,
           _isTestChunkCache,
+          _fileKindCache,
         });
         results = hybridResult.results || hybridResult;
         semanticStats = hybridResult.semanticStats || null;
@@ -638,7 +641,7 @@ export class SweetSearch {
     const postRetrievalResult = await this._applyPostRetrieval(results, query, options, {
       stats, semanticStats, searchMode, effectiveGraphExpand, intentPolicy, start, fromSearch: true,
       _entityKindCache, _entityNameCache, _resultTextCache, _fullFileTextCache,
-      _isTestSupportCache, _isTestChunkCache,
+      _isTestSupportCache, _isTestChunkCache, _fileKindCache,
     });
 
     // Step 4: Agent packaging (lexical/semantic/hybrid/structural).
