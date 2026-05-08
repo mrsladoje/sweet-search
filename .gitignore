@@ -167,6 +167,10 @@ eval/repos/
 eval/retrieval-probes/after-*.json
 eval/retrieval-probes/baseline-*.json
 eval/retrieval-probes/*-with-fix.json
+# GEPA spike artifacts — out-of-band workstream, not part of the
+# structural-trace change set. Keep these local until that workstream lands.
+eval/retrieval-probes/probes-gepa-*.json
+eval/retrieval-probes/gepa-*-results.json
 eval/freshstack/uv-results.json
 scripts/iar-ablation-*.json
 scripts/multirepo-*.json
