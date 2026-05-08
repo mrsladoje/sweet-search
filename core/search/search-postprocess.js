@@ -425,6 +425,9 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     _entityKindCache,
     _entityNameCache,
     _resultTextCache,
+    _fullFileTextCache,
+    _isTestSupportCache,
+    _isTestChunkCache,
   } = searchContext;
 
   // Merge semantic stats (embedding/rerank) into main stats for CostTracker.
@@ -818,6 +821,9 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       _entityKindCache,
       _entityNameCache,
       _resultTextCache,
+      _fullFileTextCache,
+      _isTestSupportCache,
+      _isTestChunkCache,
     });
     __ptEnd('post:applyResultDemotions', __t_demotions);
     if (afterDemotions !== results) {
