@@ -157,6 +157,43 @@ const TASKS = {
       expectedNoMatch: true,
       expectedLineRanges: {},
     },
+
+    // ── 2 additional structural (P6.0-extend, §7.3 stratification) ────────
+    // These bring the fastify dev set to 12 (4 literal-lookup / 3 behavioral /
+    // 3 structural / 2 multi-file-flow) for the query-shape sweep. Both target
+    // structural definition sites — a list/table and a prototype-properties
+    // block — that are distinct from the 10 originals (different files,
+    // different question intents).
+    {
+      id: 'fastify:supported-hooks-list',
+      // Structural: the canonical enumeration of valid hook names lives as
+      // two top-level array literals in lib/hooks.js. This is the "table"
+      // any contributor needs to find when adding/auditing a new hook type.
+      taskType: 'large_file',
+      difficulty: 'easy',
+      maxTurns: 6,
+      question: 'Where in Fastify is the canonical list of supported lifecycle hook names (preParsing, preHandler, onResponse, onRequestAbort, etc.) defined? Identify the file and the array(s) that hold them.',
+      expectedFiles: ['lib/hooks.js'],
+      expectedSymbols: ['lifecycleHooks', 'applicationHooks'],
+      expectedFacts: ['lib/hooks.js', 'lifecycleHooks', 'applicationHooks'],
+      expectedLineRanges: { 'lib/hooks.js': [[3, 23]] },
+    },
+    {
+      id: 'fastify:request-prototype-getters',
+      // Structural: the Object.defineProperties block on Request.prototype
+      // declares every standard request getter (url, originalUrl, hostname,
+      // ip, protocol, headers, signal, …). The block is buried in the
+      // middle of lib/request.js, so this is a structural-navigation task,
+      // not a behaviour question.
+      taskType: 'large_file',
+      difficulty: 'medium',
+      maxTurns: 6,
+      question: 'In Fastify, where are the getters for Request.prototype properties such as url, originalUrl, hostname, ip and protocol declared? Give the file and the line range of the Object.defineProperties block.',
+      expectedFiles: ['lib/request.js'],
+      expectedSymbols: [],
+      expectedFacts: ['lib/request.js', 'Object.defineProperties', 'Request.prototype'],
+      expectedLineRanges: { 'lib/request.js': [[155, 384]] },
+    },
   ],
   gin: [
     {
@@ -218,6 +255,105 @@ const TASKS = {
       expectedSymbols: ['handleHTTPRequest'],
       expectedFacts: ['gin.go', 'handleHTTPRequest', 'methodTrees'],
       expectedLineRanges: { 'gin.go': [[690, 760]] },
+    },
+
+    // ── 2 literal-lookup additions ──────────────────────────────────────────
+    {
+      id: 'gin:default-binding-dispatch',
+      taskType: 'config_lookup',
+      difficulty: 'easy',
+      maxTurns: 6,
+      question: 'In Gin, which function in the binding package maps an HTTP method and Content-Type header to the right Binding implementation (JSON, XML, Form, ProtoBuf, MsgPack, YAML, TOML, …)? Name the file and the function.',
+      expectedFiles: ['binding/binding.go'],
+      expectedSymbols: ['Default'],
+      expectedFacts: ['binding/binding.go', 'Default', 'Content-Type'],
+      expectedLineRanges: { 'binding/binding.go': [[93, 120]] },
+    },
+    {
+      id: 'gin:error-type-flags',
+      taskType: 'config_lookup',
+      difficulty: 'easy',
+      maxTurns: 6,
+      question: 'Where does Gin define the ErrorType bitmask constants (ErrorTypeBind, ErrorTypeRender, ErrorTypePrivate, ErrorTypePublic, ErrorTypeAny)? Identify the file and the underlying integer type.',
+      expectedFiles: ['errors.go'],
+      expectedSymbols: ['ErrorType'],
+      expectedFacts: ['errors.go', 'ErrorType', 'ErrorTypeBind', 'uint64'],
+      expectedLineRanges: { 'errors.go': [[15, 29]] },
+    },
+
+    // ── 3 structural additions ──────────────────────────────────────────────
+    {
+      id: 'gin:router-group-struct',
+      // RouterGroup is the struct embedded in Engine that holds the prefix +
+      // middleware chain; it sits alongside the IRouter / IRoutes interfaces
+      // it satisfies. The structural span is the type declarations.
+      taskType: 'large_file',
+      difficulty: 'medium',
+      maxTurns: 8,
+      question: 'In Gin, where is the RouterGroup struct declared (the type that carries a path prefix and a HandlersChain), and which interfaces (IRouter, IRoutes) does it satisfy? Cite the file and the line range covering the type declarations.',
+      expectedFiles: ['routergroup.go'],
+      expectedSymbols: ['RouterGroup', 'IRouter', 'IRoutes'],
+      expectedFacts: ['routergroup.go', 'RouterGroup', 'IRouter', 'IRoutes'],
+      expectedLineRanges: { 'routergroup.go': [[26, 60]] },
+    },
+    {
+      id: 'gin:handler-func-types',
+      taskType: 'large_file',
+      difficulty: 'easy',
+      maxTurns: 6,
+      question: 'In Gin, where are the HandlerFunc and HandlersChain types defined, and what is each one (function signature vs slice type)? Name the file and the line range.',
+      expectedFiles: ['gin.go'],
+      expectedSymbols: ['HandlerFunc', 'HandlersChain'],
+      expectedFacts: ['gin.go', 'HandlerFunc', 'HandlersChain', 'Context'],
+      expectedLineRanges: { 'gin.go': [[50, 65]] },
+    },
+    {
+      id: 'gin:response-writer-interface',
+      taskType: 'large_file',
+      difficulty: 'medium',
+      maxTurns: 8,
+      question: 'In Gin, where is the ResponseWriter interface declared, and which standard net/http interfaces does it embed? Identify the file and list the embedded interfaces.',
+      expectedFiles: ['response_writer.go'],
+      expectedSymbols: ['ResponseWriter'],
+      expectedFacts: ['response_writer.go', 'ResponseWriter', 'Hijacker', 'Flusher'],
+      expectedLineRanges: { 'response_writer.go': [[22, 47]] },
+    },
+
+    // ── 2 multi-file-flow additions ─────────────────────────────────────────
+    {
+      id: 'gin:should-bind-pipeline',
+      // Multi-file: c.ShouldBind in context.go calls binding.Default in
+      // binding/binding.go to pick the binding engine, then calls Bind on it.
+      // Cite both files; either alone is a partial answer.
+      taskType: 'multi_file_flow',
+      difficulty: 'hard',
+      maxTurns: 10,
+      question: 'Trace what happens when a Gin handler calls c.ShouldBind(&obj). Identify (a) the method on Context that dispatches based on Method + Content-Type, and (b) the function in the binding package that returns the matching Binding implementation. Cite both files.',
+      expectedFiles: ['context.go', 'binding/binding.go'],
+      expectedSymbols: ['ShouldBind', 'Default'],
+      expectedFacts: ['context.go', 'binding/binding.go', 'ShouldBind', 'Default'],
+      expectedLineRanges: {
+        'context.go': [[838, 841]],
+        'binding/binding.go': [[93, 120]],
+      },
+    },
+    {
+      id: 'gin:render-pipeline',
+      // Multi-file: c.Render in context.go writes status + delegates to a
+      // render.Render implementation declared by the interface in
+      // render/render.go. Methods like c.JSON / c.HTML / c.XML all funnel
+      // through here.
+      taskType: 'multi_file_flow',
+      difficulty: 'hard',
+      maxTurns: 10,
+      question: 'When you call c.JSON(200, obj) in Gin, the response goes through a generic Render method on Context that delegates to a Render interface. Identify (a) the Context.Render method and its file, and (b) the file where the Render interface is declared and its two methods.',
+      expectedFiles: ['context.go', 'render/render.go'],
+      expectedSymbols: ['Render'],
+      expectedFacts: ['context.go', 'render/render.go', 'Render', 'WriteContentType'],
+      expectedLineRanges: {
+        'context.go': [[1151, 1166]],
+        'render/render.go': [[9, 15]],
+      },
     },
   ],
   flask: [
@@ -281,6 +417,101 @@ const TASKS = {
       expectedFacts: ['sessions.py', 'SecureCookieSessionInterface', 'itsdangerous'],
       expectedLineRanges: { 'src/flask/sessions.py': [[284, 385]] },
     },
+
+    // ── 2 literal-lookup additions ──────────────────────────────────────────
+    {
+      id: 'flask:jsonify-location',
+      taskType: 'config_lookup',
+      difficulty: 'easy',
+      maxTurns: 6,
+      question: 'In Flask, where is the jsonify() helper function defined? Name the file and the method it ultimately delegates to on the current app.',
+      expectedFiles: ['src/flask/json/__init__.py'],
+      expectedSymbols: ['jsonify'],
+      expectedFacts: ['json/__init__.py', 'jsonify', 'current_app.json.response'],
+      expectedLineRanges: { 'src/flask/json/__init__.py': [[138, 170]] },
+    },
+    {
+      id: 'flask:blueprint-class',
+      seedQueryId: 'fl012',
+      taskType: 'config_lookup',
+      difficulty: 'easy',
+      maxTurns: 8,
+      // The public flask.Blueprint in src/flask/blueprints.py is a thin
+      // subclass; the substantive class lives in src/flask/sansio/blueprints.py
+      // (extends Scaffold). The expected file is the substantive one.
+      question: 'Where is the substantive Flask Blueprint class defined (the one that extends Scaffold and implements register)? Name the file.',
+      expectedFiles: ['src/flask/sansio/blueprints.py'],
+      expectedSymbols: ['Blueprint'],
+      expectedFacts: ['sansio/blueprints.py', 'Blueprint', 'Scaffold'],
+      expectedLineRanges: { 'src/flask/sansio/blueprints.py': [[119, 212]] },
+    },
+
+    // ── 3 structural additions ──────────────────────────────────────────────
+    {
+      id: 'flask:request-response-classes',
+      taskType: 'large_file',
+      difficulty: 'medium',
+      maxTurns: 8,
+      question: 'In Flask, where are the Request and Response classes defined that wrap the Werkzeug Request/Response? Name the file and both classes.',
+      expectedFiles: ['src/flask/wrappers.py'],
+      expectedSymbols: ['Request', 'Response'],
+      expectedFacts: ['wrappers.py', 'Request', 'Response'],
+      expectedLineRanges: { 'src/flask/wrappers.py': [[18, 257]] },
+    },
+    {
+      id: 'flask:config-class',
+      seedQueryId: 'fl015',
+      taskType: 'large_file',
+      difficulty: 'medium',
+      maxTurns: 8,
+      question: 'Where is the Flask Config class defined that loads configuration from Python files, environment variables, and JSON/TOML files? Name the file, the base type it extends, and one of its from_* loader methods.',
+      expectedFiles: ['src/flask/config.py'],
+      expectedSymbols: ['Config'],
+      expectedFacts: ['config.py', 'Config', 'dict', 'from_'],
+      expectedLineRanges: { 'src/flask/config.py': [[50, 367]] },
+    },
+    {
+      id: 'flask:app-context-class',
+      taskType: 'large_file',
+      difficulty: 'medium',
+      maxTurns: 8,
+      question: 'Where is the AppContext class defined in Flask, and which methods on it activate or release the context (managing the contextvar token)?',
+      expectedFiles: ['src/flask/ctx.py'],
+      expectedSymbols: ['AppContext'],
+      expectedFacts: ['ctx.py', 'AppContext', 'push', 'pop'],
+      expectedLineRanges: { 'src/flask/ctx.py': [[260, 504]] },
+    },
+
+    // ── 2 multi-file-flow additions ─────────────────────────────────────────
+    {
+      id: 'flask:wsgi-dispatch-flow',
+      seedQueryId: 'fl009',
+      taskType: 'multi_file_flow',
+      difficulty: 'hard',
+      maxTurns: 12,
+      question: 'Trace what happens when a WSGI server invokes a Flask application for an incoming request. Identify (a) the method in app.py that builds the request context and runs full dispatch, and (b) the method on AppContext in ctx.py that activates the context (sets the contextvar and matches the URL). Cite both files.',
+      expectedFiles: ['src/flask/app.py', 'src/flask/ctx.py'],
+      expectedSymbols: ['wsgi_app', 'push'],
+      expectedFacts: ['wsgi_app', 'app.py', 'ctx.py', 'push'],
+      expectedLineRanges: {
+        'src/flask/app.py': [[1566, 1617]],
+        'src/flask/ctx.py': [[416, 444]],
+      },
+    },
+    {
+      id: 'flask:blueprint-registration-flow',
+      taskType: 'multi_file_flow',
+      difficulty: 'hard',
+      maxTurns: 12,
+      question: 'When you call app.register_blueprint(bp) in Flask, the registration crosses two files. Identify (a) App.register_blueprint in sansio/app.py that delegates to the blueprint, and (b) Blueprint.register in sansio/blueprints.py that creates a BlueprintSetupState and runs the deferred functions. Cite both files.',
+      expectedFiles: ['src/flask/sansio/app.py', 'src/flask/sansio/blueprints.py'],
+      expectedSymbols: ['register_blueprint', 'register'],
+      expectedFacts: ['register_blueprint', 'BlueprintSetupState', 'sansio/app.py', 'sansio/blueprints.py'],
+      expectedLineRanges: {
+        'src/flask/sansio/app.py': [[567, 592]],
+        'src/flask/sansio/blueprints.py': [[273, 377]],
+      },
+    },
   ],
   ripgrep: [
     {
@@ -342,6 +573,125 @@ const TASKS = {
       expectedSymbols: ['ErrorKind'],
       expectedFacts: ['error.rs', 'ErrorKind', 'NotAllowed'],
       expectedLineRanges: { 'crates/regex/src/error.rs': [[42, 65]] },
+    },
+
+    // ── 2 literal-lookup additions ────────────────────────────────────────
+    {
+      id: 'ripgrep:glob-struct-fields',
+      taskType: 'config_lookup',
+      difficulty: 'easy',
+      maxTurns: 6,
+      question: 'In the globset crate, where is the public Glob struct defined that represents a parsed shell glob pattern, and what fields does it carry?',
+      expectedFiles: ['crates/globset/src/glob.rs'],
+      expectedSymbols: ['Glob'],
+      expectedFacts: ['glob.rs', 'Glob', 'tokens'],
+      expectedLineRanges: { 'crates/globset/src/glob.rs': [[70, 81]] },
+    },
+    {
+      id: 'ripgrep:override-set-type',
+      taskType: 'config_lookup',
+      difficulty: 'medium',
+      maxTurns: 8,
+      question: 'In the ignore crate, which type wraps a set of user-supplied --glob overrides, and which builder type is used to assemble it before calling build()? Cite the file.',
+      expectedFiles: ['crates/ignore/src/overrides.rs'],
+      expectedSymbols: ['Override', 'OverrideBuilder'],
+      expectedFacts: ['overrides.rs', 'Override', 'OverrideBuilder'],
+      expectedLineRanges: { 'crates/ignore/src/overrides.rs': [[45, 145]] },
+    },
+
+    // ── 3 structural (large-file navigation) ──────────────────────────────
+    {
+      id: 'ripgrep:searcher-internal-config',
+      // searcher/src/searcher/mod.rs is 1088 lines and contains *several*
+      // top-level structs (BinaryDetection, Encoding, Config, ConfigError,
+      // SearcherBuilder, Searcher). The Config struct sits buried in the
+      // middle and has ~14 fields that gate searcher behaviour
+      // (line_term, invert_match, before/after_context, mmap, multi_line, …).
+      // Locating the *right* Config (not the search.rs one) is the test.
+      taskType: 'large_file',
+      difficulty: 'medium',
+      maxTurns: 8,
+      question: 'In the grep-searcher crate (crates/searcher/src/searcher/mod.rs), where is the private Config struct that holds settings like line_term, before_context, after_context, mmap, multi_line and max_matches? Give the line range.',
+      expectedFiles: ['crates/searcher/src/searcher/mod.rs'],
+      expectedSymbols: ['Config'],
+      expectedFacts: ['searcher/mod.rs', 'Config', 'line_term', 'multi_line'],
+      expectedLineRanges: { 'crates/searcher/src/searcher/mod.rs': [[149, 205]] },
+    },
+    {
+      id: 'ripgrep:standard-printer-builder-config',
+      // crates/printer/src/standard.rs is 3987 lines. The user-facing
+      // builder/config sit in the first ~200 lines, but Standard, StandardSink
+      // and StandardImpl trail across thousands of lines. Asking for the
+      // builder + private Config that holds heading/colors/path/separator_*
+      // tests file-shape navigation, not deep behaviour.
+      taskType: 'large_file',
+      difficulty: 'medium',
+      maxTurns: 8,
+      question: 'In ripgrep\'s printer crate, where is the StandardBuilder that configures the grep-like output printer, and where is the private Config struct it wraps (with fields like heading, colors, path, separator_*, max_columns)? Cite the file and the line ranges.',
+      expectedFiles: ['crates/printer/src/standard.rs'],
+      expectedSymbols: ['StandardBuilder', 'Config'],
+      expectedFacts: ['standard.rs', 'StandardBuilder', 'heading', 'colors'],
+      expectedLineRanges: { 'crates/printer/src/standard.rs': [[35, 107]] },
+    },
+    {
+      id: 'ripgrep:matcher-trait-and-regex-impl',
+      // Multi-file: the Matcher trait is declared in
+      // crates/matcher/src/lib.rs (line ~546), but its principal in-tree
+      // implementation — the one used by ripgrep when --pcre2 is off — is
+      // `impl Matcher for RegexMatcher` at crates/regex/src/matcher.rs:409.
+      // A correct answer must cite both files.
+      taskType: 'multi_file_flow',
+      difficulty: 'hard',
+      maxTurns: 10,
+      question: 'In ripgrep, the Matcher trait is the abstraction every search backend implements. Identify (a) the file where the Matcher trait itself is declared, and (b) the file where its primary implementation `impl Matcher for RegexMatcher` lives (the one used by ripgrep\'s default regex backend). Cite both files.',
+      expectedFiles: ['crates/matcher/src/lib.rs', 'crates/regex/src/matcher.rs'],
+      expectedSymbols: ['Matcher', 'RegexMatcher'],
+      expectedFacts: ['matcher/src/lib.rs', 'regex/src/matcher.rs', 'Matcher', 'RegexMatcher'],
+      expectedLineRanges: {
+        'crates/matcher/src/lib.rs': [[546, 600]],
+        'crates/regex/src/matcher.rs': [[409, 440]],
+      },
+    },
+
+    // ── 2 multi-file-flow additions ───────────────────────────────────────
+    {
+      id: 'ripgrep:walk-parallel-thread-spawn',
+      // The parallel-walk story spans three concrete types in ignore/walk.rs:
+      // WalkBuilder (configures), WalkParallel (orchestrates std::thread::scope
+      // spawn), and Worker (the per-thread loop). All three live in walk.rs
+      // but they're far apart in a 2494-line file (lines 483, 1314, 1590) so
+      // citing the chain forces multi-span navigation. We treat this as
+      // multi-file-flow per §7.3 because a correct answer must trace from
+      // the public builder API into the private Worker run loop.
+      taskType: 'multi_file_flow',
+      difficulty: 'hard',
+      maxTurns: 10,
+      question: 'Trace ripgrep\'s parallel directory walk: which builder type configures it, which type orchestrates the std::thread::scope spawning, and which private struct represents the per-thread worker loop? Cite the file and the line numbers for all three.',
+      expectedFiles: ['crates/ignore/src/walk.rs'],
+      expectedSymbols: ['WalkBuilder', 'WalkParallel', 'Worker'],
+      expectedFacts: ['walk.rs', 'WalkBuilder', 'WalkParallel', 'Worker'],
+      expectedLineRanges: {
+        'crates/ignore/src/walk.rs': [[483, 507], [1314, 1440], [1590, 1635]],
+      },
+    },
+    {
+      id: 'ripgrep:run-mode-dispatch-to-worker',
+      // Cross-file flow: crates/core/main.rs run() dispatches on Mode and
+      // args.threads() to either search() or search_parallel(); both functions
+      // construct a SearchWorker via args.search_worker(...) and call its
+      // .search(haystack) method. The SearchWorker type and its search()
+      // method live in crates/core/search.rs. Either citation alone is partial.
+      taskType: 'multi_file_flow',
+      difficulty: 'hard',
+      maxTurns: 10,
+      question: 'After CLI parsing in ripgrep, the run() function dispatches on the mode and the requested thread count. Identify (a) the function in crates/core/main.rs that picks between search() and search_parallel() based on threads, and (b) the SearchWorker.search() method in crates/core/search.rs that each haystack is fed through. Cite both files.',
+      expectedFiles: ['crates/core/main.rs', 'crates/core/search.rs'],
+      expectedSymbols: ['run', 'SearchWorker', 'search'],
+      expectedFacts: ['main.rs', 'search.rs', 'SearchWorker', 'search_parallel'],
+      expectedLineRanges: {
+        'crates/core/main.rs': [[77, 101]],
+        'crates/core/search.rs': [[230, 267]],
+      },
     },
   ],
 };

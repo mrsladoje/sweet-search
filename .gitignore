@@ -72,6 +72,7 @@ failure-analysis.md
 # Eval benchmark results and corpus (regenerable)
 eval/results/
 eval/corpus/
+core/prompt-optimization/data/results/
 # Eval data: ignore downloaded datasets but track benchmark query files
 eval/data/gencodesearchnet/
 eval/data/m2crb/

@@ -22,10 +22,9 @@ export const runGepaCampaign = NOT_IMPLEMENTED('runGepaCampaign', 'P10');
 export const runDspyCampaign = NOT_IMPLEMENTED('runDspyCampaign', 'P9');
 export const runSynthesis = NOT_IMPLEMENTED('runSynthesis', 'P10.5');
 
-// ── Evaluation (P6.2, P6.3, P8, P11, P11.5) ──────────────────────────────────
+// ── Evaluation (P8, P11, P11.5) ──────────────────────────────────────────────
 
 export const runVariantSlate = NOT_IMPLEMENTED('runVariantSlate', 'P8');
-export const runQueryShapeSweep = NOT_IMPLEMENTED('runQueryShapeSweep', 'P6.2/P6.3');
 export const runFourBaselines = NOT_IMPLEMENTED('runFourBaselines', 'P11.5');
 export const runCrossHarness = NOT_IMPLEMENTED('runCrossHarness', 'P11');
 

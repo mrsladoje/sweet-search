@@ -1,0 +1,2587 @@
+{
+  "schemaVersion": 1,
+  "runId": "qshape-v1",
+  "generatedAt": "2026-05-09T08:40:24.501Z",
+  "pinnedFromCommit": {
+    "fastify": "39f0f24233cf6da2fef48551f51be2f589f7d5d0",
+    "gin": "d3ffc9985281dcf4d3bef604cce4e662b1a327a6",
+    "flask": "7ef2946fb5151b745df30201b8c27790cac53875",
+    "ripgrep": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+    "uv": "bb8109a3c4e57b76acaa319981911e68f4098aa6"
+  },
+  "sourceFiles": [
+    "eval/agent-read-workflows/tasks.js",
+    "eval/freshstack/uv-queries.json"
+  ],
+  "summary": {
+    "total": 78,
+    "byTier": {
+      "dev": 48,
+      "heldout": 30
+    },
+    "byRepo": {
+      "fastify": 12,
+      "gin": 12,
+      "flask": 12,
+      "ripgrep": 12,
+      "uv": 30
+    },
+    "byStratum": {
+      "literal-lookup": 19,
+      "behavioral": 23,
+      "multi-file-flow": 17,
+      "structural": 19
+    },
+    "byPredictedTool": {
+      "ss-find": 39,
+      "ss-search": 21,
+      "structural": 15,
+      "ss-semantic": 3
+    }
+  },
+  "knownGaps": {
+    "_comment": "Per §7.3 the dev tier needs 12 golds × 4 repos = 48 stratified 3:3:3:3 across literal-lookup / behavioral / structural / multi-file-flow. All four dev repos and the uv held-out tier are now at target (48 dev + 30 held-out = 78 total). The §13.7 P6.0 stop rule (<40 distinct golds → halt) is satisfied.",
+    "missingPerRepo": {
+      "fastify": 0,
+      "gin": 0,
+      "flask": 0,
+      "ripgrep": 0
+    },
+    "missingTotal": 0
+  },
+  "records": [
+    {
+      "id": "fastify:internal-symbols",
+      "repo": "fastify",
+      "repo_commit": "39f0f24233cf6da2fef48551f51be2f589f7d5d0",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "Where does Fastify define the Symbol() keys it uses for internal private state on instances? Name the file.",
+      "expectedFiles": [
+        "lib/symbols.js"
+      ],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "lib/symbols.js",
+        "Symbol"
+      ],
+      "expectedLineRanges": {
+        "lib/symbols.js": [
+          [
+            3,
+            69
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": "fy005",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+without-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "fastify:error-codes",
+      "repo": "fastify",
+      "repo_commit": "39f0f24233cf6da2fef48551f51be2f589f7d5d0",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "Where in Fastify are all the FST_ERR_* error code classes defined? Identify the file and the helper function used to construct each error class.",
+      "expectedFiles": [
+        "lib/errors.js"
+      ],
+      "expectedSymbols": [
+        "createError"
+      ],
+      "expectedFacts": [
+        "lib/errors.js",
+        "FST_ERR_",
+        "createError"
+      ],
+      "expectedLineRanges": {
+        "lib/errors.js": [
+          [
+            5,
+            100
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": "fy006",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+medium-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "fastify:validation-pipeline",
+      "repo": "fastify",
+      "repo_commit": "39f0f24233cf6da2fef48551f51be2f589f7d5d0",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "Which function in Fastify validates request params, body, querystring and headers using the compiled JSON Schema validators? In what order are they validated?",
+      "expectedFiles": [
+        "lib/validation.js"
+      ],
+      "expectedSymbols": [
+        "validate"
+      ],
+      "expectedFacts": [
+        "lib/validation.js",
+        "params",
+        "body",
+        "querystring",
+        "headers"
+      ],
+      "expectedLineRanges": {
+        "lib/validation.js": [
+          [
+            146,
+            203
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": "fy012",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "fastify:server-protocol-selection",
+      "repo": "fastify",
+      "repo_commit": "39f0f24233cf6da2fef48551f51be2f589f7d5d0",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "In the Fastify codebase, how does Fastify decide whether to create a plain HTTP, HTTPS, or HTTP/2 server when an instance is constructed? Identify the function that makes this decision and summarise its logic.",
+      "expectedFiles": [
+        "lib/server.js"
+      ],
+      "expectedSymbols": [
+        "getServerInstance"
+      ],
+      "expectedFacts": [
+        "getServerInstance",
+        "http2",
+        "https"
+      ],
+      "expectedLineRanges": {
+        "lib/server.js": [
+          [
+            309,
+            348
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": "fy001",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "fastify:reply-send-payload-detection",
+      "repo": "fastify",
+      "repo_commit": "39f0f24233cf6da2fef48551f51be2f589f7d5d0",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "When you call reply.send(payload) in Fastify, how does it decide between treating the payload as a stream, a Buffer, a string, or JSON? Cite the function and line range.",
+      "expectedFiles": [
+        "lib/reply.js"
+      ],
+      "expectedSymbols": [
+        "send"
+      ],
+      "expectedFacts": [
+        "lib/reply.js",
+        "send"
+      ],
+      "expectedLineRanges": {
+        "lib/reply.js": [
+          [
+            139,
+            225
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": "fy009",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "fastify:error-handler-chain",
+      "repo": "fastify",
+      "repo_commit": "39f0f24233cf6da2fef48551f51be2f589f7d5d0",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "hard",
+      "query": "Fastify allows nested setErrorHandler() calls to override error handling per encapsulation level. Which file/function builds the prototype chain that makes this work?",
+      "expectedFiles": [
+        "lib/error-handler.js"
+      ],
+      "expectedSymbols": [
+        "buildErrorHandler",
+        "handleError"
+      ],
+      "expectedFacts": [
+        "error-handler",
+        "prototype"
+      ],
+      "expectedLineRanges": {
+        "lib/error-handler.js": [
+          [
+            30,
+            80
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": "fy015",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "fastify:request-lifecycle-order",
+      "repo": "fastify",
+      "repo_commit": "39f0f24233cf6da2fef48551f51be2f589f7d5d0",
+      "tier": "dev",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "List the order of request lifecycle hooks Fastify runs, from when a request first enters until the route handler is invoked. Cite the file and the function that drives the sequence.",
+      "expectedFiles": [
+        "lib/handle-request.js"
+      ],
+      "expectedSymbols": [
+        "handleRequest"
+      ],
+      "expectedFacts": [
+        "preParsing",
+        "preValidation",
+        "preHandler",
+        "handleRequest"
+      ],
+      "expectedLineRanges": {
+        "lib/handle-request.js": [
+          [
+            19,
+            126
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": "fy010",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "short+with-symbol+relationship-verb",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "fastify:route-handler-bridge",
+      "repo": "fastify",
+      "repo_commit": "39f0f24233cf6da2fef48551f51be2f589f7d5d0",
+      "tier": "dev",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "Trace what happens immediately after find-my-way matches an incoming request to a route in Fastify. Identify (a) the function in lib/route.js that find-my-way dispatches to, and (b) the function in lib/handle-request.js that runs the request lifecycle. Cite both files.",
+      "expectedFiles": [
+        "lib/route.js",
+        "lib/handle-request.js"
+      ],
+      "expectedSymbols": [
+        "routeHandler",
+        "handleRequest"
+      ],
+      "expectedFacts": [
+        "routeHandler",
+        "handleRequest",
+        "lib/route.js",
+        "lib/handle-request.js"
+      ],
+      "expectedLineRanges": {
+        "lib/route.js": [
+          [
+            459,
+            586
+          ]
+        ],
+        "lib/handle-request.js": [
+          [
+            19,
+            126
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "short+with-symbol+relationship-verb",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "fastify:public-api-surface",
+      "repo": "fastify",
+      "repo_commit": "39f0f24233cf6da2fef48551f51be2f589f7d5d0",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "In the file fastify.js, where is the public API object literal that exposes the route shorthand methods (get/post/put/delete) and lifecycle methods like register/listen/inject? Give the line range.",
+      "expectedFiles": [
+        "fastify.js"
+      ],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "fastify.js",
+        "get",
+        "post",
+        "register",
+        "listen"
+      ],
+      "expectedLineRanges": {
+        "fastify.js": [
+          [
+            119,
+            282
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": "fy007",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-semantic",
+      "predicted_winning_shape": "medium+without-symbol+interrogative",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "fastify:nonexistent-quantum-router",
+      "repo": "fastify",
+      "repo_commit": "39f0f24233cf6da2fef48551f51be2f589f7d5d0",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "Does Fastify expose a method called registerQuantumRouterChannel? If so, where is it defined; if not, say so explicitly.",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "no",
+        "/not exist|does not exist|doesn't exist|zero matches|no matches|no occurrences|not present|not defined|not found/"
+      ],
+      "expectedLineRanges": {},
+      "expectedNoMatch": true,
+      "maxTurns": 4,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "fastify:supported-hooks-list",
+      "repo": "fastify",
+      "repo_commit": "39f0f24233cf6da2fef48551f51be2f589f7d5d0",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "difficulty": "easy",
+      "query": "Where in Fastify is the canonical list of supported lifecycle hook names (preParsing, preHandler, onResponse, onRequestAbort, etc.) defined? Identify the file and the array(s) that hold them.",
+      "expectedFiles": [
+        "lib/hooks.js"
+      ],
+      "expectedSymbols": [
+        "lifecycleHooks",
+        "applicationHooks"
+      ],
+      "expectedFacts": [
+        "lib/hooks.js",
+        "lifecycleHooks",
+        "applicationHooks"
+      ],
+      "expectedLineRanges": {
+        "lib/hooks.js": [
+          [
+            3,
+            23
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "fastify:request-prototype-getters",
+      "repo": "fastify",
+      "repo_commit": "39f0f24233cf6da2fef48551f51be2f589f7d5d0",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "In Fastify, where are the getters for Request.prototype properties such as url, originalUrl, hostname, ip and protocol declared? Give the file and the line range of the Object.defineProperties block.",
+      "expectedFiles": [
+        "lib/request.js"
+      ],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "lib/request.js",
+        "Object.defineProperties",
+        "Request.prototype"
+      ],
+      "expectedLineRanges": {
+        "lib/request.js": [
+          [
+            155,
+            384
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "gin:radix-route-insertion",
+      "repo": "gin",
+      "repo_commit": "d3ffc9985281dcf4d3bef604cce4e662b1a327a6",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "hard",
+      "query": "How does Gin's router add a new route into its internal data structure? Identify the data structure, the function that inserts a route, and the file.",
+      "expectedFiles": [
+        "tree.go"
+      ],
+      "expectedSymbols": [
+        "addRoute"
+      ],
+      "expectedFacts": [
+        "tree.go",
+        "addRoute",
+        "radix"
+      ],
+      "expectedLineRanges": {
+        "tree.go": [
+          [
+            133,
+            249
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 12,
+      "seedQueryId": "gin001",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "gin:next-abort",
+      "repo": "gin",
+      "repo_commit": "d3ffc9985281dcf4d3bef604cce4e662b1a327a6",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "In Gin, how do middleware call Next() to advance the chain, and what does Abort() do? Cite the file and the two methods.",
+      "expectedFiles": [
+        "context.go"
+      ],
+      "expectedSymbols": [
+        "Next",
+        "Abort"
+      ],
+      "expectedFacts": [
+        "context.go",
+        "Next",
+        "Abort"
+      ],
+      "expectedLineRanges": {
+        "context.go": [
+          [
+            185,
+            217
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": "gin002",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+medium-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "gin:engine-struct",
+      "repo": "gin",
+      "repo_commit": "d3ffc9985281dcf4d3bef604cce4e662b1a327a6",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "What is the central struct in Gin that holds the router, middleware, and global configuration? Where is it declared?",
+      "expectedFiles": [
+        "gin.go"
+      ],
+      "expectedSymbols": [
+        "Engine"
+      ],
+      "expectedFacts": [
+        "gin.go",
+        "Engine",
+        "RouterGroup"
+      ],
+      "expectedLineRanges": {
+        "gin.go": [
+          [
+            90,
+            189
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": "gin003",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "gin:panic-recovery",
+      "repo": "gin",
+      "repo_commit": "d3ffc9985281dcf4d3bef604cce4e662b1a327a6",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "Which Gin middleware catches panics in HTTP handlers and writes a 500 response, and how does it do it (defer/recover, broken-pipe handling)? Cite the file and function.",
+      "expectedFiles": [
+        "recovery.go"
+      ],
+      "expectedSymbols": [
+        "CustomRecoveryWithWriter"
+      ],
+      "expectedFacts": [
+        "recovery.go",
+        "recover",
+        "broken pipe"
+      ],
+      "expectedLineRanges": {
+        "recovery.go": [
+          [
+            53,
+            92
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": "gin006",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "gin:http-dispatch",
+      "repo": "gin",
+      "repo_commit": "d3ffc9985281dcf4d3bef604cce4e662b1a327a6",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "hard",
+      "query": "Which Gin function takes an incoming HTTP request and dispatches it to the right handler via the per-method tree, and how does it handle 405 Method Not Allowed?",
+      "expectedFiles": [
+        "gin.go"
+      ],
+      "expectedSymbols": [
+        "handleHTTPRequest"
+      ],
+      "expectedFacts": [
+        "gin.go",
+        "handleHTTPRequest",
+        "methodTrees"
+      ],
+      "expectedLineRanges": {
+        "gin.go": [
+          [
+            690,
+            760
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 12,
+      "seedQueryId": "gin007",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "gin:default-binding-dispatch",
+      "repo": "gin",
+      "repo_commit": "d3ffc9985281dcf4d3bef604cce4e662b1a327a6",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "In Gin, which function in the binding package maps an HTTP method and Content-Type header to the right Binding implementation (JSON, XML, Form, ProtoBuf, MsgPack, YAML, TOML, …)? Name the file and the function.",
+      "expectedFiles": [
+        "binding/binding.go"
+      ],
+      "expectedSymbols": [
+        "Default"
+      ],
+      "expectedFacts": [
+        "binding/binding.go",
+        "Default",
+        "Content-Type"
+      ],
+      "expectedLineRanges": {
+        "binding/binding.go": [
+          [
+            93,
+            120
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "gin:error-type-flags",
+      "repo": "gin",
+      "repo_commit": "d3ffc9985281dcf4d3bef604cce4e662b1a327a6",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "Where does Gin define the ErrorType bitmask constants (ErrorTypeBind, ErrorTypeRender, ErrorTypePrivate, ErrorTypePublic, ErrorTypeAny)? Identify the file and the underlying integer type.",
+      "expectedFiles": [
+        "errors.go"
+      ],
+      "expectedSymbols": [
+        "ErrorType"
+      ],
+      "expectedFacts": [
+        "errors.go",
+        "ErrorType",
+        "ErrorTypeBind",
+        "uint64"
+      ],
+      "expectedLineRanges": {
+        "errors.go": [
+          [
+            15,
+            29
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "gin:router-group-struct",
+      "repo": "gin",
+      "repo_commit": "d3ffc9985281dcf4d3bef604cce4e662b1a327a6",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "In Gin, where is the RouterGroup struct declared (the type that carries a path prefix and a HandlersChain), and which interfaces (IRouter, IRoutes) does it satisfy? Cite the file and the line range covering the type declarations.",
+      "expectedFiles": [
+        "routergroup.go"
+      ],
+      "expectedSymbols": [
+        "RouterGroup",
+        "IRouter",
+        "IRoutes"
+      ],
+      "expectedFacts": [
+        "routergroup.go",
+        "RouterGroup",
+        "IRouter",
+        "IRoutes"
+      ],
+      "expectedLineRanges": {
+        "routergroup.go": [
+          [
+            26,
+            60
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "gin:handler-func-types",
+      "repo": "gin",
+      "repo_commit": "d3ffc9985281dcf4d3bef604cce4e662b1a327a6",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "difficulty": "easy",
+      "query": "In Gin, where are the HandlerFunc and HandlersChain types defined, and what is each one (function signature vs slice type)? Name the file and the line range.",
+      "expectedFiles": [
+        "gin.go"
+      ],
+      "expectedSymbols": [
+        "HandlerFunc",
+        "HandlersChain"
+      ],
+      "expectedFacts": [
+        "gin.go",
+        "HandlerFunc",
+        "HandlersChain",
+        "Context"
+      ],
+      "expectedLineRanges": {
+        "gin.go": [
+          [
+            50,
+            65
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "gin:response-writer-interface",
+      "repo": "gin",
+      "repo_commit": "d3ffc9985281dcf4d3bef604cce4e662b1a327a6",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "In Gin, where is the ResponseWriter interface declared, and which standard net/http interfaces does it embed? Identify the file and list the embedded interfaces.",
+      "expectedFiles": [
+        "response_writer.go"
+      ],
+      "expectedSymbols": [
+        "ResponseWriter"
+      ],
+      "expectedFacts": [
+        "response_writer.go",
+        "ResponseWriter",
+        "Hijacker",
+        "Flusher"
+      ],
+      "expectedLineRanges": {
+        "response_writer.go": [
+          [
+            22,
+            47
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "gin:should-bind-pipeline",
+      "repo": "gin",
+      "repo_commit": "d3ffc9985281dcf4d3bef604cce4e662b1a327a6",
+      "tier": "dev",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "Trace what happens when a Gin handler calls c.ShouldBind(&obj). Identify (a) the method on Context that dispatches based on Method + Content-Type, and (b) the function in the binding package that returns the matching Binding implementation. Cite both files.",
+      "expectedFiles": [
+        "context.go",
+        "binding/binding.go"
+      ],
+      "expectedSymbols": [
+        "ShouldBind",
+        "Default"
+      ],
+      "expectedFacts": [
+        "context.go",
+        "binding/binding.go",
+        "ShouldBind",
+        "Default"
+      ],
+      "expectedLineRanges": {
+        "context.go": [
+          [
+            838,
+            841
+          ]
+        ],
+        "binding/binding.go": [
+          [
+            93,
+            120
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "gin:render-pipeline",
+      "repo": "gin",
+      "repo_commit": "d3ffc9985281dcf4d3bef604cce4e662b1a327a6",
+      "tier": "dev",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "When you call c.JSON(200, obj) in Gin, the response goes through a generic Render method on Context that delegates to a Render interface. Identify (a) the Context.Render method and its file, and (b) the file where the Render interface is declared and its two methods.",
+      "expectedFiles": [
+        "context.go",
+        "render/render.go"
+      ],
+      "expectedSymbols": [
+        "Render"
+      ],
+      "expectedFacts": [
+        "context.go",
+        "render/render.go",
+        "Render",
+        "WriteContentType"
+      ],
+      "expectedLineRanges": {
+        "context.go": [
+          [
+            1151,
+            1166
+          ]
+        ],
+        "render/render.go": [
+          [
+            9,
+            15
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "flask:route-decorator",
+      "repo": "flask",
+      "repo_commit": "7ef2946fb5151b745df30201b8c27790cac53875",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "In Flask, the @app.route(\"/path\") decorator registers view functions to URLs. Which method on the Scaffold class implements the decorator, and where does it live?",
+      "expectedFiles": [
+        "src/flask/sansio/scaffold.py"
+      ],
+      "expectedSymbols": [
+        "route"
+      ],
+      "expectedFacts": [
+        "scaffold.py",
+        "route"
+      ],
+      "expectedLineRanges": {
+        "src/flask/sansio/scaffold.py": [
+          [
+            336,
+            365
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": "fl001",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "flask:app-class",
+      "repo": "flask",
+      "repo_commit": "7ef2946fb5151b745df30201b8c27790cac53875",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "Where is the main Flask application class defined? Name the file and the class.",
+      "expectedFiles": [
+        "src/flask/app.py"
+      ],
+      "expectedSymbols": [
+        "Flask"
+      ],
+      "expectedFacts": [
+        "app.py",
+        "Flask"
+      ],
+      "expectedLineRanges": {
+        "src/flask/app.py": [
+          [
+            109,
+            238
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": "fl002",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "flask:make-response",
+      "repo": "flask",
+      "repo_commit": "7ef2946fb5151b745df30201b8c27790cac53875",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "hard",
+      "query": "When a Flask view returns a string, dict, tuple, or iterator, which function converts the return value into a proper Response object? Cite the file and explain the dispatch.",
+      "expectedFiles": [
+        "src/flask/app.py"
+      ],
+      "expectedSymbols": [
+        "make_response"
+      ],
+      "expectedFacts": [
+        "app.py",
+        "make_response"
+      ],
+      "expectedLineRanges": {
+        "src/flask/app.py": [
+          [
+            1224,
+            1364
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 12,
+      "seedQueryId": "fl006",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "flask:http-error-dispatch",
+      "repo": "flask",
+      "repo_commit": "7ef2946fb5151b745df30201b8c27790cac53875",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "When an HTTPException is raised inside a Flask view, which method dispatches it to the registered error handler? Name the method and file.",
+      "expectedFiles": [
+        "src/flask/app.py"
+      ],
+      "expectedSymbols": [
+        "handle_http_exception",
+        "handle_user_exception"
+      ],
+      "expectedFacts": [
+        "app.py",
+        "handle_http_exception"
+      ],
+      "expectedLineRanges": {
+        "src/flask/app.py": [
+          [
+            830,
+            895
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": "fl008",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "flask:secure-cookie-session",
+      "repo": "flask",
+      "repo_commit": "7ef2946fb5151b745df30201b8c27790cac53875",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "hard",
+      "query": "How does Flask sign and serialise the session cookie? Identify the class that implements open_session/save_session and the library it relies on.",
+      "expectedFiles": [
+        "src/flask/sessions.py"
+      ],
+      "expectedSymbols": [
+        "SecureCookieSessionInterface"
+      ],
+      "expectedFacts": [
+        "sessions.py",
+        "SecureCookieSessionInterface",
+        "itsdangerous"
+      ],
+      "expectedLineRanges": {
+        "src/flask/sessions.py": [
+          [
+            284,
+            385
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 12,
+      "seedQueryId": "fl007",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "flask:jsonify-location",
+      "repo": "flask",
+      "repo_commit": "7ef2946fb5151b745df30201b8c27790cac53875",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "In Flask, where is the jsonify() helper function defined? Name the file and the method it ultimately delegates to on the current app.",
+      "expectedFiles": [
+        "src/flask/json/__init__.py"
+      ],
+      "expectedSymbols": [
+        "jsonify"
+      ],
+      "expectedFacts": [
+        "json/__init__.py",
+        "jsonify",
+        "current_app.json.response"
+      ],
+      "expectedLineRanges": {
+        "src/flask/json/__init__.py": [
+          [
+            138,
+            170
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "flask:blueprint-class",
+      "repo": "flask",
+      "repo_commit": "7ef2946fb5151b745df30201b8c27790cac53875",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "Where is the substantive Flask Blueprint class defined (the one that extends Scaffold and implements register)? Name the file.",
+      "expectedFiles": [
+        "src/flask/sansio/blueprints.py"
+      ],
+      "expectedSymbols": [
+        "Blueprint"
+      ],
+      "expectedFacts": [
+        "sansio/blueprints.py",
+        "Blueprint",
+        "Scaffold"
+      ],
+      "expectedLineRanges": {
+        "src/flask/sansio/blueprints.py": [
+          [
+            119,
+            212
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": "fl012",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "flask:request-response-classes",
+      "repo": "flask",
+      "repo_commit": "7ef2946fb5151b745df30201b8c27790cac53875",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "In Flask, where are the Request and Response classes defined that wrap the Werkzeug Request/Response? Name the file and both classes.",
+      "expectedFiles": [
+        "src/flask/wrappers.py"
+      ],
+      "expectedSymbols": [
+        "Request",
+        "Response"
+      ],
+      "expectedFacts": [
+        "wrappers.py",
+        "Request",
+        "Response"
+      ],
+      "expectedLineRanges": {
+        "src/flask/wrappers.py": [
+          [
+            18,
+            257
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "flask:config-class",
+      "repo": "flask",
+      "repo_commit": "7ef2946fb5151b745df30201b8c27790cac53875",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "Where is the Flask Config class defined that loads configuration from Python files, environment variables, and JSON/TOML files? Name the file, the base type it extends, and one of its from_* loader methods.",
+      "expectedFiles": [
+        "src/flask/config.py"
+      ],
+      "expectedSymbols": [
+        "Config"
+      ],
+      "expectedFacts": [
+        "config.py",
+        "Config",
+        "dict",
+        "from_"
+      ],
+      "expectedLineRanges": {
+        "src/flask/config.py": [
+          [
+            50,
+            367
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": "fl015",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "flask:app-context-class",
+      "repo": "flask",
+      "repo_commit": "7ef2946fb5151b745df30201b8c27790cac53875",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "Where is the AppContext class defined in Flask, and which methods on it activate or release the context (managing the contextvar token)?",
+      "expectedFiles": [
+        "src/flask/ctx.py"
+      ],
+      "expectedSymbols": [
+        "AppContext"
+      ],
+      "expectedFacts": [
+        "ctx.py",
+        "AppContext",
+        "push",
+        "pop"
+      ],
+      "expectedLineRanges": {
+        "src/flask/ctx.py": [
+          [
+            260,
+            504
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "flask:wsgi-dispatch-flow",
+      "repo": "flask",
+      "repo_commit": "7ef2946fb5151b745df30201b8c27790cac53875",
+      "tier": "dev",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "Trace what happens when a WSGI server invokes a Flask application for an incoming request. Identify (a) the method in app.py that builds the request context and runs full dispatch, and (b) the method on AppContext in ctx.py that activates the context (sets the contextvar and matches the URL). Cite both files.",
+      "expectedFiles": [
+        "src/flask/app.py",
+        "src/flask/ctx.py"
+      ],
+      "expectedSymbols": [
+        "wsgi_app",
+        "push"
+      ],
+      "expectedFacts": [
+        "wsgi_app",
+        "app.py",
+        "ctx.py",
+        "push"
+      ],
+      "expectedLineRanges": {
+        "src/flask/app.py": [
+          [
+            1566,
+            1617
+          ]
+        ],
+        "src/flask/ctx.py": [
+          [
+            416,
+            444
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 12,
+      "seedQueryId": "fl009",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "flask:blueprint-registration-flow",
+      "repo": "flask",
+      "repo_commit": "7ef2946fb5151b745df30201b8c27790cac53875",
+      "tier": "dev",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "When you call app.register_blueprint(bp) in Flask, the registration crosses two files. Identify (a) App.register_blueprint in sansio/app.py that delegates to the blueprint, and (b) Blueprint.register in sansio/blueprints.py that creates a BlueprintSetupState and runs the deferred functions. Cite both files.",
+      "expectedFiles": [
+        "src/flask/sansio/app.py",
+        "src/flask/sansio/blueprints.py"
+      ],
+      "expectedSymbols": [
+        "register_blueprint",
+        "register"
+      ],
+      "expectedFacts": [
+        "register_blueprint",
+        "BlueprintSetupState",
+        "sansio/app.py",
+        "sansio/blueprints.py"
+      ],
+      "expectedLineRanges": {
+        "src/flask/sansio/app.py": [
+          [
+            567,
+            592
+          ]
+        ],
+        "src/flask/sansio/blueprints.py": [
+          [
+            273,
+            377
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 12,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ripgrep:search-config-struct",
+      "repo": "ripgrep",
+      "repo_commit": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "In ripgrep, where is the per-search-worker Config struct defined that controls preprocessor and binary-detection behaviour? File and line range.",
+      "expectedFiles": [
+        "crates/core/search.rs"
+      ],
+      "expectedSymbols": [
+        "Config"
+      ],
+      "expectedFacts": [
+        "search.rs",
+        "Config"
+      ],
+      "expectedLineRanges": {
+        "crates/core/search.rs": [
+          [
+            19,
+            25
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": "rg001",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ripgrep:parallel-search",
+      "repo": "ripgrep",
+      "repo_commit": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "hard",
+      "query": "Which top-level function in ripgrep orchestrates multi-threaded directory search and uses an AtomicBool to track whether any match was found?",
+      "expectedFiles": [
+        "crates/core/main.rs"
+      ],
+      "expectedSymbols": [
+        "search_parallel"
+      ],
+      "expectedFacts": [
+        "main.rs",
+        "search_parallel",
+        "AtomicBool"
+      ],
+      "expectedLineRanges": {
+        "crates/core/main.rs": [
+          [
+            160,
+            229
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 12,
+      "seedQueryId": "rg002",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ripgrep:sink-trait",
+      "repo": "ripgrep",
+      "repo_commit": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "hard",
+      "query": "ripgrep uses a push-model \"Sink\" trait to receive search results. Where is the Sink trait defined and what are its main callbacks?",
+      "expectedFiles": [
+        "crates/searcher/src/sink.rs"
+      ],
+      "expectedSymbols": [
+        "Sink"
+      ],
+      "expectedFacts": [
+        "sink.rs",
+        "Sink",
+        "matched"
+      ],
+      "expectedLineRanges": {
+        "crates/searcher/src/sink.rs": [
+          [
+            102,
+            223
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 12,
+      "seedQueryId": "rg003",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ripgrep:locate-line-bounds",
+      "repo": "ripgrep",
+      "repo_commit": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "Which function in ripgrep's searcher locates the start/end byte offsets of the line(s) containing a match range? Cite the file and the function name.",
+      "expectedFiles": [
+        "crates/searcher/src/lines.rs"
+      ],
+      "expectedSymbols": [
+        "locate"
+      ],
+      "expectedFacts": [
+        "lines.rs",
+        "locate"
+      ],
+      "expectedLineRanges": {
+        "crates/searcher/src/lines.rs": [
+          [
+            134,
+            147
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": "rg005",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ripgrep:regex-error-kinds",
+      "repo": "ripgrep",
+      "repo_commit": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "In the ripgrep regex crate, which enum lists the different kinds of regex compile errors, and what are its main variants?",
+      "expectedFiles": [
+        "crates/regex/src/error.rs"
+      ],
+      "expectedSymbols": [
+        "ErrorKind"
+      ],
+      "expectedFacts": [
+        "error.rs",
+        "ErrorKind",
+        "NotAllowed"
+      ],
+      "expectedLineRanges": {
+        "crates/regex/src/error.rs": [
+          [
+            42,
+            65
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": "rg008",
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ripgrep:glob-struct-fields",
+      "repo": "ripgrep",
+      "repo_commit": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "In the globset crate, where is the public Glob struct defined that represents a parsed shell glob pattern, and what fields does it carry?",
+      "expectedFiles": [
+        "crates/globset/src/glob.rs"
+      ],
+      "expectedSymbols": [
+        "Glob"
+      ],
+      "expectedFacts": [
+        "glob.rs",
+        "Glob",
+        "tokens"
+      ],
+      "expectedLineRanges": {
+        "crates/globset/src/glob.rs": [
+          [
+            70,
+            81
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ripgrep:override-set-type",
+      "repo": "ripgrep",
+      "repo_commit": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "In the ignore crate, which type wraps a set of user-supplied --glob overrides, and which builder type is used to assemble it before calling build()? Cite the file.",
+      "expectedFiles": [
+        "crates/ignore/src/overrides.rs"
+      ],
+      "expectedSymbols": [
+        "Override",
+        "OverrideBuilder"
+      ],
+      "expectedFacts": [
+        "overrides.rs",
+        "Override",
+        "OverrideBuilder"
+      ],
+      "expectedLineRanges": {
+        "crates/ignore/src/overrides.rs": [
+          [
+            45,
+            145
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ripgrep:searcher-internal-config",
+      "repo": "ripgrep",
+      "repo_commit": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "In the grep-searcher crate (crates/searcher/src/searcher/mod.rs), where is the private Config struct that holds settings like line_term, before_context, after_context, mmap, multi_line and max_matches? Give the line range.",
+      "expectedFiles": [
+        "crates/searcher/src/searcher/mod.rs"
+      ],
+      "expectedSymbols": [
+        "Config"
+      ],
+      "expectedFacts": [
+        "searcher/mod.rs",
+        "Config",
+        "line_term",
+        "multi_line"
+      ],
+      "expectedLineRanges": {
+        "crates/searcher/src/searcher/mod.rs": [
+          [
+            149,
+            205
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-semantic",
+      "predicted_winning_shape": "medium+without-symbol+interrogative",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ripgrep:standard-printer-builder-config",
+      "repo": "ripgrep",
+      "repo_commit": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "In ripgrep's printer crate, where is the StandardBuilder that configures the grep-like output printer, and where is the private Config struct it wraps (with fields like heading, colors, path, separator_*, max_columns)? Cite the file and the line ranges.",
+      "expectedFiles": [
+        "crates/printer/src/standard.rs"
+      ],
+      "expectedSymbols": [
+        "StandardBuilder",
+        "Config"
+      ],
+      "expectedFacts": [
+        "standard.rs",
+        "StandardBuilder",
+        "heading",
+        "colors"
+      ],
+      "expectedLineRanges": {
+        "crates/printer/src/standard.rs": [
+          [
+            35,
+            107
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-semantic",
+      "predicted_winning_shape": "medium+without-symbol+interrogative",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ripgrep:matcher-trait-and-regex-impl",
+      "repo": "ripgrep",
+      "repo_commit": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+      "tier": "dev",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "In ripgrep, the Matcher trait is the abstraction every search backend implements. Identify (a) the file where the Matcher trait itself is declared, and (b) the file where its primary implementation `impl Matcher for RegexMatcher` lives (the one used by ripgrep's default regex backend). Cite both files.",
+      "expectedFiles": [
+        "crates/matcher/src/lib.rs",
+        "crates/regex/src/matcher.rs"
+      ],
+      "expectedSymbols": [
+        "Matcher",
+        "RegexMatcher"
+      ],
+      "expectedFacts": [
+        "matcher/src/lib.rs",
+        "regex/src/matcher.rs",
+        "Matcher",
+        "RegexMatcher"
+      ],
+      "expectedLineRanges": {
+        "crates/matcher/src/lib.rs": [
+          [
+            546,
+            600
+          ]
+        ],
+        "crates/regex/src/matcher.rs": [
+          [
+            409,
+            440
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ripgrep:walk-parallel-thread-spawn",
+      "repo": "ripgrep",
+      "repo_commit": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+      "tier": "dev",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "Trace ripgrep's parallel directory walk: which builder type configures it, which type orchestrates the std::thread::scope spawning, and which private struct represents the per-thread worker loop? Cite the file and the line numbers for all three.",
+      "expectedFiles": [
+        "crates/ignore/src/walk.rs"
+      ],
+      "expectedSymbols": [
+        "WalkBuilder",
+        "WalkParallel",
+        "Worker"
+      ],
+      "expectedFacts": [
+        "walk.rs",
+        "WalkBuilder",
+        "WalkParallel",
+        "Worker"
+      ],
+      "expectedLineRanges": {
+        "crates/ignore/src/walk.rs": [
+          [
+            483,
+            507
+          ],
+          [
+            1314,
+            1440
+          ],
+          [
+            1590,
+            1635
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ripgrep:run-mode-dispatch-to-worker",
+      "repo": "ripgrep",
+      "repo_commit": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+      "tier": "dev",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "After CLI parsing in ripgrep, the run() function dispatches on the mode and the requested thread count. Identify (a) the function in crates/core/main.rs that picks between search() and search_parallel() based on threads, and (b) the SearchWorker.search() method in crates/core/search.rs that each haystack is fed through. Cite both files.",
+      "expectedFiles": [
+        "crates/core/main.rs",
+        "crates/core/search.rs"
+      ],
+      "expectedSymbols": [
+        "run",
+        "SearchWorker",
+        "search"
+      ],
+      "expectedFacts": [
+        "main.rs",
+        "search.rs",
+        "SearchWorker",
+        "search_parallel"
+      ],
+      "expectedLineRanges": {
+        "crates/core/main.rs": [
+          [
+            77,
+            101
+          ]
+        ],
+        "crates/core/search.rs": [
+          [
+            230,
+            267
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "UV-NL-1",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "how does uv resolve dependency conflicts when two packages need different versions of the same library",
+      "expectedFiles": [
+        "crates/uv-resolver/src/resolver/mod.rs",
+        "crates/uv-resolver/src/pubgrub/report.rs",
+        "crates/uv-resolver/src/error.rs"
+      ],
+      "expectedSymbols": [],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "long-NL+without-symbol+intent-verb-present",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "Pure NL question. Resolver uses PubGrub; conflict reports are formatted in pubgrub/report.rs; NoSolutionError lives in error.rs. Any of the three is acceptable as gold."
+    },
+    {
+      "id": "UV-NL-2",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "where is the lockfile written to disk after a successful resolution",
+      "expectedFiles": [
+        "crates/uv/src/commands/project/lock_target.rs"
+      ],
+      "expectedSymbols": [
+        "commit",
+        "LockTarget"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+without-symbol+intent-verb-present",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "LockTarget::commit at lock_target.rs:342 is the only place that fs_err::tokio::write the encoded lockfile."
+    },
+    {
+      "id": "UV-NL-3",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "how does uv decide whether to download a managed Python build or use one already on the system",
+      "expectedFiles": [
+        "crates/uv-python/src/discovery.rs",
+        "crates/uv-python/src/downloads.rs"
+      ],
+      "expectedSymbols": [],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "long-NL+without-symbol+intent-verb-present",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "PythonPreference + PythonDownloads enums steer this decision; discovery.rs is the primary file but downloads.rs is also acceptable."
+    },
+    {
+      "id": "UV-NL-4",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "when uv installs a wheel where does it actually copy the files from cache into the virtualenv",
+      "expectedFiles": [
+        "crates/uv-install-wheel/src/linker.rs",
+        "crates/uv-install-wheel/src/install.rs"
+      ],
+      "expectedSymbols": [
+        "link_wheel_files",
+        "install_wheel"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+without-symbol+intent-verb-present",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "linker.rs:255 link_wheel_files copies/links files into the venv; install.rs:29 install_wheel is the orchestrator."
+    },
+    {
+      "id": "UV-NL-5",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "how does uv know whether the uv.lock file is stale and needs re-resolving",
+      "expectedFiles": [
+        "crates/uv-resolver/src/lock/mod.rs",
+        "crates/uv/src/commands/project/lock.rs"
+      ],
+      "expectedSymbols": [
+        "satisfies",
+        "do_lock"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "Lock::satisfies (lock/mod.rs:1614) is the workhorse; do_lock in commands/project/lock.rs:469 is the dispatcher."
+    },
+    {
+      "id": "UV-NL-6",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "how does uv build a source distribution into a wheel before installing it",
+      "expectedFiles": [
+        "crates/uv-build-frontend/src/lib.rs",
+        "crates/uv-distribution/src/source/mod.rs"
+      ],
+      "expectedSymbols": [
+        "SourceBuild",
+        "build",
+        "SourceDistributionBuilder",
+        "build_distribution"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+without-symbol+intent-verb-present",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "SourceBuild::build in build-frontend/lib.rs:844 invokes PEP 517 backend; source/mod.rs orchestrates fetch+build+cache. build_distribution at source/mod.rs:2457 is the in-context orchestrator (gold expanded 2026-05-07)."
+    },
+    {
+      "id": "UV-NL-7",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "what controls whether uv compiles bytecode for installed packages and how is it triggered",
+      "expectedFiles": [
+        "crates/uv-installer/src/compile.rs"
+      ],
+      "expectedSymbols": [],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+without-symbol+narrow-regex",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "compile.rs hosts the compileall worker and the COMPILEALL_SCRIPT shipped at install-time."
+    },
+    {
+      "id": "UV-NL-8",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "how does uv pick between installing the latest version of a package and a pinned version from preferences",
+      "expectedFiles": [
+        "crates/uv-resolver/src/candidate_selector.rs",
+        "crates/uv-resolver/src/preferences.rs"
+      ],
+      "expectedSymbols": [],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+without-symbol+intent-verb-present",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "candidate_selector.rs:78 select() picks the candidate; preferences.rs holds the prior pin data."
+    },
+    {
+      "id": "UV-DEF-1",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "show me the Cache struct definition",
+      "expectedFiles": [
+        "crates/uv-cache/src/lib.rs"
+      ],
+      "expectedSymbols": [
+        "Cache"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "Definition at uv-cache/src/lib.rs:164; user wants the full struct body, not a preview."
+    },
+    {
+      "id": "UV-DEF-2",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "show me the Planner struct that builds installation plans",
+      "expectedFiles": [
+        "crates/uv-installer/src/plan.rs"
+      ],
+      "expectedSymbols": [
+        "Planner"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "Definition at uv-installer/src/plan.rs:31."
+    },
+    {
+      "id": "UV-DEF-3",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "show me the full Lock struct definition with all its fields",
+      "expectedFiles": [
+        "crates/uv-resolver/src/lock/mod.rs"
+      ],
+      "expectedSymbols": [
+        "Lock"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "Definition at uv-resolver/src/lock/mod.rs:254; user wants every field shown."
+    },
+    {
+      "id": "UV-DEF-4",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "show me the Resolver struct definition",
+      "expectedFiles": [
+        "crates/uv-resolver/src/resolver/mod.rs"
+      ],
+      "expectedSymbols": [
+        "Resolver"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "Definition at resolver/mod.rs:100; generic over Provider and InstalledPackages."
+    },
+    {
+      "id": "UV-DEF-5",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "show me the Workspace struct definition",
+      "expectedFiles": [
+        "crates/uv-workspace/src/workspace.rs"
+      ],
+      "expectedSymbols": [
+        "Workspace"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "Definition at uv-workspace/src/workspace.rs:143."
+    },
+    {
+      "id": "UV-DEF-6",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "show me the Interpreter struct definition with all fields",
+      "expectedFiles": [
+        "crates/uv-python/src/interpreter.rs"
+      ],
+      "expectedSymbols": [
+        "Interpreter"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "Definition at uv-python/src/interpreter.rs:45."
+    },
+    {
+      "id": "UV-DEF-7",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "show me the BuildDispatch struct definition",
+      "expectedFiles": [
+        "crates/uv-dispatch/src/lib.rs"
+      ],
+      "expectedSymbols": [
+        "BuildDispatch"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "Definition at uv-dispatch/src/lib.rs:86; this is the BuildContext implementation that wires resolver/installer/builder."
+    },
+    {
+      "id": "UV-DEF-8",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "show me the Commands enum that lists every uv subcommand",
+      "expectedFiles": [
+        "crates/uv-cli/src/lib.rs"
+      ],
+      "expectedSymbols": [
+        "Commands"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "Definition at uv-cli/src/lib.rs:415; user wants every variant in the enum."
+    },
+    {
+      "id": "UV-FLOW-1",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "trace how uv add inserts a new dependency into pyproject.toml",
+      "expectedFiles": [
+        "crates/uv/src/commands/project/add.rs",
+        "crates/uv-workspace/src/pyproject_mut.rs"
+      ],
+      "expectedSymbols": [
+        "add",
+        "PyProjectTomlMut",
+        "add_dependency"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "commands/project/add.rs:63 is the entrypoint; PyProjectTomlMut::add_dependency in pyproject_mut.rs:337 does the actual TOML edit."
+    },
+    {
+      "id": "UV-FLOW-2",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "what happens end-to-end when I run uv sync on an existing project",
+      "expectedFiles": [
+        "crates/uv/src/commands/project/sync.rs",
+        "crates/uv/src/commands/project/lock.rs"
+      ],
+      "expectedSymbols": [
+        "sync",
+        "do_sync",
+        "lock"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "sync.rs:60 sync() entrypoint; sync.rs:633 do_sync orchestrates; lock.rs is invoked when lockfile is stale."
+    },
+    {
+      "id": "UV-FLOW-3",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "how does uv tool install create an isolated environment and link entrypoints onto PATH",
+      "expectedFiles": [
+        "crates/uv/src/commands/tool/install.rs",
+        "crates/uv-tool/src/lib.rs"
+      ],
+      "expectedSymbols": [
+        "install",
+        "InstalledTools",
+        "tool_executable_dir"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "tool/install.rs:55 is the command; uv-tool/src/lib.rs hosts InstalledTools + tool_executable_dir for the bin shim location."
+    },
+    {
+      "id": "UV-FLOW-4",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "trace how uv lock decides which package versions to write into uv.lock",
+      "expectedFiles": [
+        "crates/uv/src/commands/project/lock.rs",
+        "crates/uv-resolver/src/resolver/mod.rs"
+      ],
+      "expectedSymbols": [
+        "lock",
+        "do_lock",
+        "resolve",
+        "Resolver"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "commands/project/lock.rs:85 is the CLI entry; resolver/mod.rs:277 Resolver::resolve runs the actual PubGrub solve."
+    },
+    {
+      "id": "UV-FLOW-5",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "where is the code that fetches a wheel from a registry index and caches it",
+      "expectedFiles": [
+        "crates/uv-distribution/src/distribution_database.rs",
+        "crates/uv-client/src/registry_client.rs"
+      ],
+      "expectedSymbols": [
+        "DistributionDatabase",
+        "RegistryClient",
+        "ManagedClient"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+without-symbol+intent-verb-present",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "RegistryClient handles HTTP; DistributionDatabase wraps it with caching + extraction."
+    },
+    {
+      "id": "UV-FLOW-6",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "trace how uv venv creates a new virtual environment from scratch",
+      "expectedFiles": [
+        "crates/uv/src/commands/venv.rs",
+        "crates/uv-virtualenv/src/lib.rs",
+        "crates/uv-virtualenv/src/virtualenv.rs"
+      ],
+      "expectedSymbols": [
+        "venv",
+        "create_venv"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "commands/venv.rs:64 venv() is the CLI entry; uv-virtualenv/src/lib.rs:56 create_venv is the public entrypoint that delegates into virtualenv.rs for the file-system work."
+    },
+    {
+      "id": "UV-FLOW-7",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "how does uv publish authenticate with PyPI using trusted publishing tokens",
+      "expectedFiles": [
+        "crates/uv-publish/src/lib.rs",
+        "crates/uv-publish/src/trusted_publishing.rs",
+        "crates/uv/src/commands/publish.rs"
+      ],
+      "expectedSymbols": [
+        "check_trusted_publishing",
+        "TrustedPublishingService",
+        "publish"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "uv-publish/src/lib.rs:409 check_trusted_publishing is the entrypoint; trusted_publishing.rs hosts the OIDC services; commands/publish.rs is the CLI wrapper."
+    },
+    {
+      "id": "UV-FLOW-8",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "how does uv clone a git dependency and pin it to a specific commit",
+      "expectedFiles": [
+        "crates/uv-git/src/source.rs",
+        "crates/uv-git/src/git.rs",
+        "crates/uv-git/src/resolver.rs"
+      ],
+      "expectedSymbols": [
+        "GitSource",
+        "fetch",
+        "GitResolver"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "GitSource::fetch (source.rs:65) drives the clone; git.rs:570 fetch() does CLI/libgit2 work; GitResolver caches resolved oids."
+    },
+    {
+      "id": "UV-ERR-1",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "what does the NoSolutionError type represent in the resolver and how is it formatted for users",
+      "expectedFiles": [
+        "crates/uv-resolver/src/error.rs"
+      ],
+      "expectedSymbols": [
+        "NoSolutionError"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "Definition at uv-resolver/src/error.rs:162; Display impl at line 445."
+    },
+    {
+      "id": "UV-ERR-2",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "where is the ResolveError::ConflictingUrls variant defined",
+      "expectedFiles": [
+        "crates/uv-resolver/src/error.rs"
+      ],
+      "expectedSymbols": [
+        "ResolveError"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "ConflictingUrls is a variant of ResolveError defined at error.rs:67. Query revised 2026-05-07 from 'constructed' → 'defined' to match gold intent (taxonomy: top1 fork_urls.rs:39 is a valid construction site, mismatching the original wording)."
+    },
+    {
+      "id": "UV-ERR-3",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "what does PubGrubReportFormatter do when rendering a resolution failure",
+      "expectedFiles": [
+        "crates/uv-resolver/src/pubgrub/report.rs"
+      ],
+      "expectedSymbols": [
+        "PubGrubReportFormatter"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "Defined at pubgrub/report.rs:37; implements ReportFormatter from pubgrub crate at line 54."
+    },
+    {
+      "id": "UV-ERR-4",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "what error is raised when a wheel is missing a header file required to build a C extension",
+      "expectedFiles": [
+        "crates/uv-build-frontend/src/error.rs"
+      ],
+      "expectedSymbols": [
+        "MissingHeaderError",
+        "MissingHeaderCause"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "MissingHeaderError defined at build-frontend/src/error.rs:337; the Cause enum at line 131 enumerates which header was missing."
+    },
+    {
+      "id": "UV-ERR-5",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "where is the PublishError type that wraps trusted-publishing and upload failures",
+      "expectedFiles": [
+        "crates/uv-publish/src/lib.rs"
+      ],
+      "expectedSymbols": [
+        "PublishError"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "Definition at uv-publish/src/lib.rs:49."
+    },
+    {
+      "id": "UV-ERR-6",
+      "repo": "uv",
+      "repo_commit": "bb8109a3c4e57b76acaa319981911e68f4098aa6",
+      "tier": "heldout",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "what does the SitePackagesDiagnostic enum represent and what variants does it have",
+      "expectedFiles": [
+        "crates/uv-installer/src/site_packages.rs"
+      ],
+      "expectedSymbols": [
+        "SitePackagesDiagnostic"
+      ],
+      "expectedFacts": [],
+      "expectedLineRanges": {},
+      "expectedNoMatch": false,
+      "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/freshstack/uv-queries.json",
+      "source_notes": "Definition at uv-installer/src/site_packages.rs:622; reports issues found when scanning an existing site-packages directory (MetadataUnavailable, IncompatiblePlatform, etc.)."
+    }
+  ]
+}
