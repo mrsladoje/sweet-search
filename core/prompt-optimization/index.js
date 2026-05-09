@@ -62,6 +62,15 @@ export {
 export { loadManifest, loadRunConfig } from './manifests.mjs';
 export { buildSplits, stratifiedSplit } from './splits/build-splits.mjs';
 
-// ── Pending stubs (post-P0 phases) ───────────────────────────────────────────
+// ── P6 (query-shape discovery — Part 7) ──────────────────────────────────────
+
+export {
+  runTrackA,
+  runTrackB,
+  runShapePromotion,
+  runQueryShapeSweep,
+} from './sweep/index.js';
+
+// ── Pending stubs (post-P6 phases) ───────────────────────────────────────────
 
 export * from './pending.js';
