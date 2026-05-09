@@ -628,6 +628,19 @@ The packaging is SOTA-class; the agent needs to *trust* it.
 
 ### Budget escalation rules
 
+> **Implementation note (commit b006140, 2026-05-09)**: this section's
+> prescriptive "use --full when … / use --xl when …" guidance has been
+> **superseded by engine-side auto-tier-selection** (`selectAgentBudget` in
+> `core/search/context-expander.js`). When the agent passes `format='agent'`
+> (the default for `ss-search`), the engine picks `preview` (4k) / `full` (8k)
+> / `xl` (12k) from post-ranking signals (numResults, top-1 dominance,
+> top-1 chunk size). Preview fires on ~99% of queries; the agent does NOT
+> need to memorise escalation rules. The `--full` / `--xl` flags remain as
+> power-user overrides for niche cases. The shipped agent policy
+> (`scripts/inject-agent-instructions.js`) reflects this — the
+> "Choosing the search budget" sub-section was removed in commit 84ef053.
+> Keep the table + policy text below for historical context only.
+
 The CLI exposes three budget tiers:
 
 | Mode | Token budget | When to use |
