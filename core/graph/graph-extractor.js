@@ -317,6 +317,12 @@ export const TREE_SITTER_ENTITY_PRIORITY = Object.freeze({
   struct: 30,
   record: 30,
   module: 25,
+  // `variable` is intentionally lowest: when an `export const X = memo(...)`
+  // matches BOTH the @component (rank 40) and @variable rules, component wins.
+  // When `export const handler = async () => {}` matches BOTH @arrow (rank 20)
+  // and @variable, arrowFunction wins. Plain `export const FOO = "bar"` only
+  // matches @variable so it lands at rank 5 (kept).
+  variable: 5,
   trait: 25,
   impl: 20,
   decorator: 15,
@@ -1311,9 +1317,10 @@ export class GraphExtractor {
     for (const sym of symbols) {
       if (!sym?.name || !sym?.type) continue;
       const normalizedType = this._normalizeTreeSitterSymbolType(sym.type, sym.name);
-      if ((language === 'javascript' || language === 'typescript') && normalizedType === 'variable') {
-        continue;
-      }
+      // Note: previously dropped 'variable' for js/ts to avoid noise from
+      // every internal `let x = 1`. The current TS/TSX/JS tag query scopes
+      // @variable.definition to `(export_statement (lexical_declaration ...))`
+      // so only EXPORTED top-level consts reach this point — keep them.
       const startLine = Number.isInteger(sym.startLine) ? sym.startLine : 0;
       const endLine = Number.isInteger(sym.endLine) ? sym.endLine : startLine;
       const rank = TREE_SITTER_ENTITY_PRIORITY[normalizedType] || 0;
@@ -1347,7 +1354,7 @@ export class GraphExtractor {
   }
 
   _resolveRelationshipTargets(relType, match, language) {
-    const isJsTs = language === 'javascript' || language === 'typescript';
+    const isJsTs = language === 'javascript' || language === 'typescript' || language === 'tsx';
 
     if (isJsTs && relType === 'import') {
       const source = match[3]?.trim();

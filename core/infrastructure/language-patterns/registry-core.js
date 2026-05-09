@@ -338,4 +338,10 @@ export const CORE_LANGUAGES = {
   },
 };
 
+// .tsx files share TypeScript chunker/graph regex; only the
+// tree-sitter WASM grammar differs (see GRAMMAR_MAP in tree-sitter-provider.js).
+// Aliasing the same object means chunker patterns, graph patterns, and
+// skipCallObjects stay byte-identical to typescript without duplication.
+CORE_LANGUAGES.tsx = CORE_LANGUAGES.typescript;
+
 export default CORE_LANGUAGES;

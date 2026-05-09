@@ -43,9 +43,9 @@ function mockNode(type, startIdx, endIdx, startRow, endRow, opts = {}) {
 // =============================================================================
 
 describe('GRAMMAR_MAP', () => {
-  it('maps top 12 languages', () => {
+  it('maps top 13 languages', () => {
     const expected = [
-      'javascript', 'typescript', 'python', 'go', 'rust',
+      'javascript', 'typescript', 'tsx', 'python', 'go', 'rust',
       'java', 'c', 'cpp', 'ruby', 'php', 'kotlin', 'swift',
     ];
     for (const lang of expected) {
@@ -54,8 +54,13 @@ describe('GRAMMAR_MAP', () => {
     }
   });
 
-  it('has exactly 12 entries', () => {
-    expect(Object.keys(GRAMMAR_MAP)).toHaveLength(12);
+  it('has exactly 13 entries', () => {
+    expect(Object.keys(GRAMMAR_MAP)).toHaveLength(13);
+  });
+
+  it('routes tsx to tree-sitter-tsx (not tree-sitter-typescript) so JSX bodies parse', () => {
+    expect(GRAMMAR_MAP.tsx).toBe('tree-sitter-tsx');
+    expect(GRAMMAR_MAP.typescript).toBe('tree-sitter-typescript');
   });
 });
 
@@ -145,10 +150,12 @@ describe('TreeSitterProvider', () => {
     expect(p.grammarsDir).toBe('/tmp/grammars');
   });
 
-  it('getSupportedLanguages returns 12 languages', () => {
+  it('getSupportedLanguages returns 13 languages (incl. tsx)', () => {
     const langs = provider.getSupportedLanguages();
-    expect(langs).toHaveLength(12);
+    expect(langs).toHaveLength(13);
     expect(langs).toContain('javascript');
+    expect(langs).toContain('typescript');
+    expect(langs).toContain('tsx');
     expect(langs).toContain('python');
     expect(langs).toContain('go');
     expect(langs).toContain('rust');
@@ -157,6 +164,7 @@ describe('TreeSitterProvider', () => {
   it('hasLanguage returns true for supported', () => {
     expect(provider.hasLanguage('javascript')).toBe(true);
     expect(provider.hasLanguage('typescript')).toBe(true);
+    expect(provider.hasLanguage('tsx')).toBe(true);
     expect(provider.hasLanguage('python')).toBe(true);
     expect(provider.hasLanguage('go')).toBe(true);
   });
@@ -989,6 +997,197 @@ describe('TreeSitterProvider integration', async () => {
           }
         }
       }
+    });
+
+    // =========================================================================
+    // TS/TSX/JSX export const extraction (May 2026 — see HANDOFF/handoff doc)
+    // =========================================================================
+    //
+    // Pre-fix bug: vercel/ai-chatbot indexed clean but 5 of 12 P6 gold symbols
+    // were missing because (a) the typescript tag query had no rule for
+    // `export const X = expr` shapes other than arrow functions, and
+    // (b) .tsx routed to tree-sitter-typescript which produced ERROR nodes on
+    // JSX bodies, masking sibling captures like `export function VisibilitySelector`.
+    //
+    // The cases below lock both fixes in.
+
+    describe('TS/TSX/JSX export const + top-level const extraction', () => {
+      const cases = [
+        // Plain TS — exported const, value-shape variations
+        ['typescript', 'export const FOO = "bar";', 'FOO', 'variable'],
+        ['typescript', 'export const Component = memo(Inner);', 'Component', 'component'],
+        ['typescript', 'export const handler = async (req) => { return req; };', 'handler', 'arrowFunction'],
+        ['typescript', 'export const config: Cfg = { x: 1 };', 'config', 'variable'],
+        ['typescript', 'export const items: Item[] = [];', 'items', 'variable'],
+        // TSX — JSX bodies must not break sibling captures
+        ['tsx', 'export const Btn = memo((props: Props) => <button {...props}/>);', 'Btn', 'component'],
+        ['tsx', 'export function Header({ id }: Props) { return <h1>{id}</h1>; }', 'Header', 'function'],
+        ['tsx', 'export const config: Cfg = { x: 1 };', 'config', 'variable'],
+        // JSX — tree-sitter-javascript supports JSX natively, no separate grammar
+        ['javascript', 'export const Btn = memo((props) => <button {...props}/>);', 'Btn', 'component'],
+        ['javascript', 'export function Header({ id }) { return <h1>{id}</h1>; }', 'Header', 'function'],
+        ['javascript', 'export const FOO = "bar";', 'FOO', 'variable'],
+        // CommonJS top-level (non-exported) consts — fastify pattern.
+        // Anchored to (program ...) so we match file-top-level const X = require(...)
+        // / [...] / {} / "literal" but NOT internal consts inside function bodies.
+        ['javascript', 'const createError = require("@fastify/error");', 'createError', 'component'],
+        ['javascript', 'const lifecycleHooks = ["onRequest", "preHandler"];', 'lifecycleHooks', 'variable'],
+        ['javascript', 'const applicationHooks = ["onReady", "onClose"];', 'applicationHooks', 'variable'],
+        ['typescript', 'const SECRETS_PATH = "/etc/secrets";', 'SECRETS_PATH', 'variable'],
+        // `new Klass()` produces (new_expression), not (call_expression) — so
+        // it's tagged as a plain `variable`, not `component`. We keep this case
+        // to lock that semantics.
+        ['typescript', 'const cache = new Map<string, Entry>();', 'cache', 'variable'],
+        ['typescript', 'const buildLogger: () => Logger = createLogger;', 'buildLogger', 'variable'],
+      ];
+      for (const [lang, src, name, expectedType] of cases) {
+        it(`extracts ${name} (${expectedType}) from ${lang}: ${src.slice(0, 50)}...`, async () => {
+          const symbols = await provider.extractSymbols(src, lang);
+          expect(symbols).not.toBeNull();
+          // Multiple captures can fire for the same node (e.g. @component AND
+          // @variable on `export const X = memo(...)`). Whichever has the
+          // highest priority wins downstream in graph-extractor; here we just
+          // assert the expected type is among the emitted symbols.
+          const candidates = symbols.filter(s => s.name === name);
+          expect(candidates.length).toBeGreaterThan(0);
+          expect(candidates.some(s => s.type === expectedType)).toBe(true);
+        });
+      }
+
+      it('TSX: function declaration with JSX body still captures (regression: was missed by tree-sitter-typescript)', async () => {
+        // Repro of the VisibilitySelector miss in vercel/ai-chatbot — a
+        // function declaration whose body contains JSX. Under tree-sitter-typescript
+        // this used to produce ERROR nodes that broke sibling captures.
+        const src = `
+import { Button } from './ui';
+type Props = { chatId: string };
+export function VisibilitySelector({ chatId }: Props) {
+  return <Button>{chatId}</Button>;
+}
+`;
+        const symbols = await provider.extractSymbols(src, 'tsx');
+        expect(symbols.find(s => s.name === 'VisibilitySelector' && s.type === 'function')).toBeDefined();
+      });
+
+      it('TS: export const with object literal extracts as variable (regression: was completely missed)', async () => {
+        // Repro of DEFAULT_CHAT_MODEL / entitlementsByUserType miss. Pre-fix,
+        // the tag query had no rule for non-arrow const-exports.
+        const src = `
+type UserType = 'guest' | 'user';
+type Entitlements = { quota: number };
+export const DEFAULT_CHAT_MODEL = "moonshotai/kimi-k2.5";
+export const entitlementsByUserType: Record<UserType, Entitlements> = {
+  guest: { quota: 5 },
+  user: { quota: 100 },
+};
+`;
+        const symbols = await provider.extractSymbols(src, 'typescript');
+        expect(symbols.find(s => s.name === 'DEFAULT_CHAT_MODEL' && s.type === 'variable')).toBeDefined();
+        expect(symbols.find(s => s.name === 'entitlementsByUserType' && s.type === 'variable')).toBeDefined();
+      });
+
+      it('TS: internal `const x = LITERAL` is NOT extracted as variable (scope guard)', async () => {
+        // Important scope guard — the @variable.definition rule fires only
+        // when its parent is (export_statement ...) OR (program ...). If we
+        // ever loosened it (e.g., to `(variable_declarator ...)` directly),
+        // internal const literals would flood the entity table from every
+        // function body.
+        // Note: internal arrow-function consts (e.g. `const helper = () => ...`)
+        // ARE still captured by the pre-existing @arrow.definition rule — that
+        // behavior is unchanged by this fix.
+        const src = `
+export function compute() {
+  const internal = 42;
+  const config = { ttl: 100 };
+  return internal + config.ttl;
+}
+`;
+        const symbols = await provider.extractSymbols(src, 'typescript');
+        // Neither internal literal const should leak into the symbol table.
+        expect(symbols.find(s => s.name === 'internal')).toBeUndefined();
+        expect(symbols.find(s => s.name === 'config')).toBeUndefined();
+        // And the surrounding function still extracts.
+        expect(symbols.find(s => s.name === 'compute' && s.type === 'function')).toBeDefined();
+      });
+
+      it('JS: top-level CommonJS `const X = require(...)` IS extracted (regression: fastify miss)', async () => {
+        // Repro of the createError / lifecycleHooks / applicationHooks misses
+        // in fastify. These are non-exported file-top-level consts in a
+        // CommonJS module; they should surface as entities for structural-mode
+        // queries (`callers of createError`) to resolve.
+        const src = `
+'use strict'
+const createError = require('@fastify/error')
+
+const applicationHooks = [
+  'onReady',
+  'onClose',
+]
+const lifecycleHooks = [
+  'onRequest',
+  'preHandler',
+]
+
+function helper() {
+  // internal const should NOT leak even though we just lifted top-level
+  const cacheKey = 'tag'
+  return cacheKey
+}
+
+module.exports = { createError, applicationHooks, lifecycleHooks, helper }
+`;
+        const symbols = await provider.extractSymbols(src, 'javascript');
+        expect(symbols.find(s => s.name === 'createError' && s.type === 'component')).toBeDefined();
+        expect(symbols.find(s => s.name === 'applicationHooks' && s.type === 'variable')).toBeDefined();
+        expect(symbols.find(s => s.name === 'lifecycleHooks' && s.type === 'variable')).toBeDefined();
+        expect(symbols.find(s => s.name === 'helper' && s.type === 'function')).toBeDefined();
+        // Internal consts MUST stay invisible.
+        expect(symbols.find(s => s.name === 'cacheKey')).toBeUndefined();
+      });
+
+      it('.mjs and .cjs files share the javascript grammar — same rules fire', async () => {
+        // Sanity: extract via the tree-sitter provider directly with languageId
+        // 'javascript' (which is what EXTENSION_MAP returns for all of .js,
+        // .jsx, .mjs, .cjs). tree-sitter-javascript produces the same
+        // (program ...)-rooted AST regardless of extension; ES-module syntax
+        // and CommonJS syntax both parse fine.
+        const mjsLike = `
+import { a } from 'pkg'
+export const M_VAR = 'hello'
+export const M_FACTORY = makeFactory()
+`;
+        const cjsLike = `
+'use strict'
+const C_REQ = require('pkg')
+const C_LIST = ['x', 'y']
+module.exports = { C_REQ, C_LIST }
+`;
+        const mjsSyms = await provider.extractSymbols(mjsLike, 'javascript');
+        expect(mjsSyms.find(s => s.name === 'M_VAR' && s.type === 'variable')).toBeDefined();
+        expect(mjsSyms.find(s => s.name === 'M_FACTORY' && s.type === 'component')).toBeDefined();
+        const cjsSyms = await provider.extractSymbols(cjsLike, 'javascript');
+        expect(cjsSyms.find(s => s.name === 'C_REQ' && s.type === 'component')).toBeDefined();
+        expect(cjsSyms.find(s => s.name === 'C_LIST' && s.type === 'variable')).toBeDefined();
+      });
+
+      it('JS: const inside namespace/class body is NOT extracted (scope guard)', async () => {
+        // Top-level rule is anchored to (program ...) — anything nested is
+        // intentionally invisible to the entity table.
+        const src = `
+class Container {
+  static run() {
+    const internal = 42;
+    return internal;
+  }
+}
+const FILE_LEVEL = 1;
+`;
+        const symbols = await provider.extractSymbols(src, 'javascript');
+        expect(symbols.find(s => s.name === 'internal')).toBeUndefined();
+        // FILE_LEVEL IS captured (top-level const).
+        expect(symbols.find(s => s.name === 'FILE_LEVEL' && s.type === 'variable')).toBeDefined();
+        expect(symbols.find(s => s.name === 'Container' && s.type === 'class')).toBeDefined();
+      });
     });
   });
 });
