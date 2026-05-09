@@ -85,7 +85,7 @@ export function parseJudgeModelSpec(spec) {
 }
 
 function isKnownLineage(s) {
-  return ['anthropic', 'openai', 'google', 'deepseek', 'deepseek-api', 'opencode'].includes(s);
+  return ['anthropic', 'openai', 'google', 'google-api', 'deepseek', 'deepseek-api', 'opencode'].includes(s);
 }
 
 // ─── normalized adapter contract ─────────────────────────────────────────
@@ -119,6 +119,7 @@ export async function runJudge(req) {
       case 'anthropic':    r = await runAnthropic(req); break;
       case 'openai':       r = await runCodex(req, timeoutMs); break;
       case 'google':       r = await runGemini(req, timeoutMs); break;
+      case 'google-api':   r = await runGeminiDirect(req, timeoutMs); break;
       case 'deepseek':     r = await runDeepseekViaClaude(req, timeoutMs); break;
       case 'deepseek-api': r = await runDeepseekDirect(req, timeoutMs); break;
       case 'opencode':     r = await runOpencode(req, timeoutMs); break;
@@ -407,7 +408,11 @@ export function buildDeepseekPayload({ model, systemPrompt, userPrompt }) {
     model: model || 'deepseek-v4-pro',
     messages,
     temperature: 0,        // judging is deterministic
-    max_tokens: 1024,
+    // DeepSeek V4 Flash defaults to reasoning mode and can consume 1024
+    // tokens entirely on the reasoning trace, leaving 0 for the JSON answer.
+    // 4096 leaves comfortable headroom for both reasoning + the small JSON
+    // verdict we ask for. Output cost is negligible at $0.28/1M.
+    max_tokens: 4096,
     stream: false,
   };
 }
@@ -417,6 +422,85 @@ export function parseDeepseekResponse(json) {
   if (!json || !Array.isArray(json.choices) || json.choices.length === 0) return '';
   const c = json.choices[0];
   if (typeof c.message?.content === 'string') return c.message.content;
+  return '';
+}
+
+// ─── google direct (raw HTTPS, bypass gemini CLI) ─────────────────────────
+//
+// For pure-judging (no tool use, no workspace context) the gemini CLI's
+// startup overhead, internal retries and rate-limit thrash are all wasted
+// effort. Direct API gives us:
+//   - 5-10× lower per-call latency (15-30s vs 90-160s through CLI)
+//   - no subprocess overhead (higher safe concurrency)
+//   - cleaner error semantics (HTTP status codes vs log parsing)
+// We still keep the CLI path (`google` lineage) for AGENT-style flows that
+// need workspace/tools — judges should use `google-api`.
+
+async function runGeminiDirect({ model, systemPrompt, userPrompt }, timeoutMs) {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    throw new Error('runGeminiDirect: GEMINI_API_KEY not set in environment');
+  }
+  const fetchFn = _internal.fetch || globalThis.fetch;
+  if (typeof fetchFn !== 'function') {
+    throw new Error('runGeminiDirect: global fetch unavailable (Node 18+ required)');
+  }
+  const body = buildGeminiPayload({ systemPrompt, userPrompt });
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetchFn(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      return {
+        text: '', isError: true, raw: { status: res.status, body: errText.slice(0, 1000), viaHarness: 'raw-api' },
+      };
+    }
+    const json = await res.json();
+    return {
+      text: parseGeminiDirectResponse(json),
+      isError: false,
+      raw: { usage: json.usageMetadata, model: json.modelVersion, viaHarness: 'raw-api' },
+    };
+  } catch (e) {
+    return {
+      text: '', isError: true, error: e.message || String(e),
+      raw: { viaHarness: 'raw-api', aborted: ctrl.signal.aborted },
+    };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/**
+ * Pure builder for the Gemini generateContent payload. Exported for
+ * unit tests so the wire format is pinned. temperature=0 + maxOutputTokens=1024
+ * matches buildDeepseekPayload for cross-lineage consistency.
+ */
+export function buildGeminiPayload({ systemPrompt, userPrompt }) {
+  const payload = {
+    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    generationConfig: { temperature: 0, maxOutputTokens: 1024 },
+  };
+  if (systemPrompt) {
+    payload.systemInstruction = { parts: [{ text: systemPrompt }] };
+  }
+  return payload;
+}
+
+/** Pull the assistant text out of a Gemini generateContent response. */
+export function parseGeminiDirectResponse(json) {
+  if (!json || !Array.isArray(json.candidates) || json.candidates.length === 0) return '';
+  const cand = json.candidates[0];
+  if (Array.isArray(cand.content?.parts)) {
+    return cand.content.parts.map((p) => p.text || '').join('');
+  }
   return '';
 }
 
@@ -431,20 +515,22 @@ export async function runGeminiAgent(req) {
   const prompt = req.systemAppend
     ? `[SYSTEM]\n${req.systemAppend}\n\n[USER]\n${req.prompt}`
     : req.prompt;
+  // gemini CLI flag set differs from claude CLI:
+  //   - --sandbox is a boolean flag (no value)
+  //   - --disallowed-tools does NOT exist; rely on --approval-mode + audit
+  //   - --add-dir does NOT exist; use --include-directories <path,path>
+  //   - --approval-mode yolo auto-approves tool calls (required headless)
   const args = [
     '-p', prompt,
     '--output-format', 'json',
     '--model', req.model || 'gemini-3-flash-preview',
-    '--sandbox', 'false',
+    '--approval-mode', 'yolo',
   ];
   if (req.allowedTools && req.allowedTools.length) {
     args.push('--allowed-tools', req.allowedTools.join(','));
   }
-  if (req.disallowedTools && req.disallowedTools.length) {
-    args.push('--disallowed-tools', req.disallowedTools.join(','));
-  }
   if (req.addDirs && req.addDirs.length) {
-    for (const d of req.addDirs) args.push('--add-dir', d);
+    args.push('--include-directories', req.addDirs.join(','));
   }
   const env = { ...process.env };
   if (req.extraPathEntries && req.extraPathEntries.length) {
@@ -454,7 +540,7 @@ export async function runGeminiAgent(req) {
     env.SWEET_SEARCH_PROJECT_ROOT = req.projectRoot;
   }
   const timeoutMs = req.timeoutMs ?? 240000;
-  const r = await spawnCapture('gemini', args, { timeoutMs, env });
+  const r = await spawnCapture('gemini', args, { timeoutMs, env, cwd: req.cwd });
   const parsed = parseStreamJsonOutput(r.stdout);
   return {
     cmd: ['gemini', ...redactGeminiArgs(args)].join(' '),
@@ -591,12 +677,14 @@ export const _internal = {
   fetch: globalThis.fetch,
 };
 
-async function spawnCapture(cmd, args, { timeoutMs, env = process.env } = {}) {
+async function spawnCapture(cmd, args, { timeoutMs, env = process.env, cwd } = {}) {
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-    const proc = _internal.spawn(cmd, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const spawnOpts = { env, stdio: ['ignore', 'pipe', 'pipe'] };
+    if (cwd) spawnOpts.cwd = cwd;
+    const proc = _internal.spawn(cmd, args, spawnOpts);
     const timer = setTimeout(() => {
       timedOut = true;
       try { proc.kill('SIGTERM'); } catch { /* */ }
