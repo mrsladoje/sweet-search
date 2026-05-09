@@ -108,8 +108,10 @@ describe('tags.scm Symbol Extraction', () => {
       expect(CAPTURE_TO_ENTITY_TYPE['decorator.definition']).toBe('decorator');
     });
 
-    it('has 15 entries total', () => {
-      expect(Object.keys(CAPTURE_TO_ENTITY_TYPE).length).toBe(15);
+    it('has 17 entries total', () => {
+      // Bumped to 17 May-2026: added component.definition + variable.definition
+      // for JS/TS/TSX `export const X = ...` shapes.
+      expect(Object.keys(CAPTURE_TO_ENTITY_TYPE).length).toBe(17);
     });
   });
 

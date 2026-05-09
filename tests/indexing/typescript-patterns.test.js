@@ -22,8 +22,8 @@ describe('TypeScript extension mapping', () => {
     expect(EXTENSION_MAP['.ts']).toBe('typescript');
   });
 
-  it('.tsx maps to typescript', () => {
-    expect(EXTENSION_MAP['.tsx']).toBe('typescript');
+  it('.tsx maps to tsx (separate WASM grammar; same regex patterns as typescript)', () => {
+    expect(EXTENSION_MAP['.tsx']).toBe('tsx');
   });
 
   it('.js still maps to javascript', () => {
@@ -52,9 +52,13 @@ describe('TypeScript extension mapping', () => {
     expect(lang.id).toBe('typescript');
   });
 
-  it('getLanguageByPath returns typescript for a .tsx file', () => {
+  it('getLanguageByPath returns tsx for a .tsx file (chunker/graph patterns inherited from typescript)', () => {
     const lang = getLanguageByPath('/project/src/App.tsx');
-    expect(lang.id).toBe('typescript');
+    expect(lang.id).toBe('tsx');
+    // tsx is aliased to typescript at the registry level — same chunker/graph
+    // regexes — only the WASM grammar differs (handled in tree-sitter-provider).
+    expect(lang.chunker).toBe(LANGUAGES.typescript.chunker);
+    expect(lang.graph).toBe(LANGUAGES.typescript.graph);
   });
 
   it('getLanguageByPath returns javascript for a .js file', () => {
