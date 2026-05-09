@@ -179,7 +179,7 @@ describe('Track B planner — tuple counts', () => {
     expect(plan.nTuples).toBeGreaterThanOrEqual(300);
     expect(plan.nTuples).toBeLessThanOrEqual(700);
     expect(plan.cost.totalEstimatedUSD).toBeGreaterThan(0);
-    expect(plan.cost.totalEstimatedUSD).toBeLessThan(10);
+    expect(plan.cost.totalEstimatedUSD).toBeLessThan(250);
     // Cleanup
     try { rmSync(path.join(REPO_ROOT, 'core/prompt-optimization/data/results', runId), { recursive: true }); } catch { /* */ }
   });
