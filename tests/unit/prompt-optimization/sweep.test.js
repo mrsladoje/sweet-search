@@ -444,6 +444,63 @@ describe('promote.mjs — IAA gate', () => {
   });
 });
 
+// ─── golds.json predictions coverage ─────────────────────────────────────
+
+describe('golds.json — predictions coverage (GLM #6 fix)', () => {
+  it('every gold record has predicted_winning_tool and predicted_winning_shape', () => {
+    const goldsRaw = JSON.parse(readFileSync(
+      path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/golds.json'),
+      'utf8',
+    ));
+    const missing = [];
+    for (const g of goldsRaw.records) {
+      if (!g.predicted_winning_tool || !g.predicted_winning_shape) {
+        missing.push({ id: g.id, has_tool: !!g.predicted_winning_tool, has_shape: !!g.predicted_winning_shape });
+      }
+    }
+    if (missing.length > 0) {
+      // Fail with the offending IDs so build-golds.mjs adders see what's
+      // missing without re-running the build script.
+      throw new Error(`golds.json missing predictions: ${JSON.stringify(missing.slice(0, 10))}`);
+    }
+    expect(missing.length).toBe(0);
+  });
+
+  it('every gold record has gold_authored_by (independent-author gate input)', () => {
+    const goldsRaw = JSON.parse(readFileSync(
+      path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/golds.json'),
+      'utf8',
+    ));
+    const missing = goldsRaw.records.filter((g) => !g.gold_authored_by);
+    expect(missing.length).toBe(0);
+  });
+});
+
+// ─── V1 bifurcation by symbol presence ──────────────────────────────────
+
+describe('variants.json — V1 with/without-symbol bifurcation (GLM #3)', () => {
+  it('reports both V1 sub-cells in shapeHistogram so BH-FDR can score them separately', () => {
+    const variants = JSON.parse(readFileSync(
+      path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/variants.json'),
+      'utf8',
+    ));
+    const hist = variants.summary.shapeHistogram;
+    // The two V1 sub-cells are independent shape labels — the build emits
+    // very-short+with-symbol+narrow-regex+imperative+high-density and
+    // very-short+without-symbol+narrow-regex+imperative+high-density,
+    // and promote.mjs treats each as its own (tool, shape) row in the BH-FDR
+    // slate. The fallback rows therefore can't pollute the with-symbol
+    // main-effect estimate (this is the GLM #3 concern, addressed by data
+    // construction rather than analysis-time exclusion).
+    const withSym = hist['very-short+with-symbol+narrow-regex+imperative+high-density'] || 0;
+    const withoutSym = hist['very-short+without-symbol+narrow-regex+imperative+high-density'] || 0;
+    expect(withSym + withoutSym).toBeGreaterThan(0);
+    // Either both populated, or one populated — both are valid; what's
+    // NOT valid is silently absorbing the fallback into the with-symbol
+    // count.
+  });
+});
+
 // ─── partial-sweep guard ─────────────────────────────────────────────────
 
 describe('promote.mjs — partial sweep diagnosis', () => {

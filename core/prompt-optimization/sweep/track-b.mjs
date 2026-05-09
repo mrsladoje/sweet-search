@@ -466,8 +466,7 @@ function fmtAnswerForJudge(answer) {
 }
 
 async function callPrpJudge({ task, candidateRecord, baselineRecord, judgeModel, swapPosition, runId, context }) {
-  const { runClaudeAgent } = context;
-  const { extractAnswerJson } = context;
+  const { extractAnswerJson, runJudge, parseJudgeModelSpec } = context;
   // PRP position swap: if swapPosition = 'A=baseline', baseline is A; else
   // candidate is A. The caller runs both positions and aggregates.
   const A = swapPosition === 'A=baseline' ? baselineRecord : candidateRecord;
@@ -483,17 +482,18 @@ async function callPrpJudge({ task, candidateRecord, baselineRecord, judgeModel,
     `\n# Answer B (${B?.shape || 'n/a'})\n${fmtAnswerForJudge(B?.answer)}`,
     `\nReturn the strict JSON judgement.`,
   ].filter(Boolean).join('\n');
-  const run = await runClaudeAgent({
-    prompt,
-    systemAppend: JUDGE_SYSTEM_PRP,
-    model: judgeModel,
-    cwd: REPO_ROOT,
-    allowedTools: [],
-    disallowedTools: ['Bash', 'Read', 'Edit', 'Write'],
-    addDirs: [],
+  // (H2.) Cross-lineage dispatch via runJudge — anthropic / openai
+  // (codex) / google (gemini) / deepseek / opencode all share the
+  // normalized { text, isError, latencyMs } adapter shape.
+  const spec = parseJudgeModelSpec(judgeModel);
+  const run = await runJudge({
+    lineage: spec.lineage,
+    model: spec.model,
+    systemPrompt: JUDGE_SYSTEM_PRP,
+    userPrompt: prompt,
     timeoutMs: 90000,
   });
-  const judgement = extractAnswerJson(run.finalResultText || run.finalAssistantText);
+  const judgement = extractAnswerJson(run.text);
   // De-randomise A/B back to candidate-vs-baseline.
   const labelMap = swapPosition === 'A=baseline'
     ? { A: 'baseline', B: 'candidate', tie: 'tie' }
@@ -501,13 +501,15 @@ async function callPrpJudge({ task, candidateRecord, baselineRecord, judgeModel,
   const preferred = labelMap[judgement?.preferred] ?? null;
   return {
     judgeModel,
+    judgeLineage: spec.lineage,
     swapPosition,
     judgement,
     preferred,
     runMeta: {
-      wallMs: run.wallMs,
+      wallMs: run.latencyMs,
       isError: run.isError,
-      totalCostUsd: run.totalCostUsd,
+      error: run.error,
+      raw: run.raw,
     },
   };
 }
@@ -574,6 +576,7 @@ async function runRealSweep({ tuples, opts, runId, outDir }) {
   // so dry-run paths don't pay the import cost or trip env requirements.
   const policiesMod = await import(path.join(REPO_ROOT, 'eval/agent-read-workflows/policies.js'));
   const runnerMod = await import(path.join(REPO_ROOT, 'eval/agent-read-workflows/claude-runner.js'));
+  const judgeRunnerMod = await import(path.join(REPO_ROOT, 'eval/agent-read-workflows/judge-runner.js'));
   const auditMod = await import(path.join(REPO_ROOT, 'eval/agent-read-workflows/audit.js'));
   const metricsMod = await import(path.join(REPO_ROOT, 'eval/agent-read-workflows/metrics.js'));
   const context = {
@@ -582,6 +585,8 @@ async function runRealSweep({ tuples, opts, runId, outDir }) {
     runClaudeAgent: runnerMod.runClaudeAgent,
     summariseRun: runnerMod.summariseRun,
     extractAnswerJson: runnerMod.extractAnswerJson,
+    runJudge: judgeRunnerMod.runJudge,
+    parseJudgeModelSpec: judgeRunnerMod.parseJudgeModelSpec,
     auditRun: auditMod.auditRun,
     scoreAnswer: metricsMod.scoreAnswer,
   };
@@ -840,8 +845,8 @@ async function main() {
     judgeModels: opts.judgeModels,
     nIaaProbes,
     judgePanelConfig: 'core/prompt-optimization/data/judge-prompts/disjoint-panel.toml',
-    judgePanelLimitation:
-      'claude-runner.js currently routes only to Anthropic models; non-Anthropic lineages from disjoint-panel.toml (gpt-5-5, gemini-3-1-pro, qwen3.6-max) require a per-provider runner. The Anthropic-only multi-judge panel (sonnet, opus) is a partial realisation of §11.6.',
+    judgePanelHarness:
+      'judge-runner.js routes Anthropic via claude CLI, OpenAI via codex exec, Google via gemini -p, DeepSeek via claude-CLI-with-redirected-base-URL (parity-preserving), and other lineages (Llama/Qwen/Mistral/Cohere) via opencode run. Tokens accept explicit lineage:model form (e.g. anthropic:claude-sonnet-4-6, openai:gpt-5.5, google:gemini-3-1-pro, deepseek:deepseek-v4-pro) or use the prefix heuristic (gpt-* → openai, gemini-* → google, deepseek-* → deepseek-via-claude). A raw-API escape hatch is `deepseek-api:` for budget-controlled runs; default deepseek lineage routes through the CLI harness for §11.6 panel parity.',
     shapeForcingPromptStrategy: 'see shapeForcingBlock() in track-b.mjs + shape-constrained policy',
     p63StopRule: 'Halt if judge IAA α < 0.5 even after one rubric rewrite (humans-only on the affected metric).',
     tuples: tuples.slice(0, 5).concat([{ '...': `(${tuples.length - 5} more truncated for plan readability)` }]),
