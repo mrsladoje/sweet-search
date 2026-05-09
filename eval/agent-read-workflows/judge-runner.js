@@ -69,7 +69,7 @@ export function parseJudgeModelSpec(spec) {
   if (lc.startsWith('gpt-') || lc.startsWith('o1-') || lc.startsWith('o3-') || lc.startsWith('o4-') || lc.startsWith('codex')) {
     return { lineage: 'openai', model: spec };
   }
-  if (lc.startsWith('gemini-')) {
+  if (lc.startsWith('gemini-') || lc === 'flash' || lc === 'pro') {
     return { lineage: 'google', model: spec };
   }
   if (lc.startsWith('deepseek-') || lc.startsWith('ds-')) {
@@ -418,6 +418,113 @@ export function parseDeepseekResponse(json) {
   const c = json.choices[0];
   if (typeof c.message?.content === 'string') return c.message.content;
   return '';
+}
+
+// ─── google / gemini CLI (agent mode) ─────────────────────────────────────
+//
+// gemini -p "<prompt>" --output-format json --model <model>
+// For agent use (tool-accessible mode), we pass the system prompt and all
+// sweet-search tool registrations. The gemini CLI supports -sandbox false
+// and tool registrations similar to the claude CLI's --allowed-tools.
+
+export async function runGeminiAgent(req) {
+  const prompt = req.systemAppend
+    ? `[SYSTEM]\n${req.systemAppend}\n\n[USER]\n${req.prompt}`
+    : req.prompt;
+  const args = [
+    '-p', prompt,
+    '--output-format', 'json',
+    '--model', req.model || 'gemini-3-flash-preview',
+    '--sandbox', 'false',
+  ];
+  if (req.allowedTools && req.allowedTools.length) {
+    args.push('--allowed-tools', req.allowedTools.join(','));
+  }
+  if (req.disallowedTools && req.disallowedTools.length) {
+    args.push('--disallowed-tools', req.disallowedTools.join(','));
+  }
+  if (req.addDirs && req.addDirs.length) {
+    for (const d of req.addDirs) args.push('--add-dir', d);
+  }
+  const env = { ...process.env };
+  if (req.extraPathEntries && req.extraPathEntries.length) {
+    env.PATH = [...req.extraPathEntries, env.PATH].filter(Boolean).join(':');
+  }
+  if (req.projectRoot) {
+    env.SWEET_SEARCH_PROJECT_ROOT = req.projectRoot;
+  }
+  const timeoutMs = req.timeoutMs ?? 240000;
+  const r = await spawnCapture('gemini', args, { timeoutMs, env });
+  const parsed = parseStreamJsonOutput(r.stdout);
+  return {
+    cmd: ['gemini', ...redactGeminiArgs(args)].join(' '),
+    cwd: req.cwd,
+    exitCode: r.exitCode,
+    spawnError: r.spawnError,
+    timedOut: r.timedOut,
+    wallMs: r.wallMs || 0,
+    stderrPreview: (r.stderr || '').slice(0, 4000),
+    rawByteLen: (r.stdout || '').length,
+    ...parsed,
+  };
+}
+
+function redactGeminiArgs(args) {
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if ((a === '-p' || a === '--prompt') && args[i + 1]) {
+      out.push(a, `<${args[i + 1].length}-char prompt>`);
+      i++;
+    } else {
+      out.push(a);
+    }
+  }
+  return out;
+}
+
+function parseStreamJsonOutput(stdout) {
+  if (!stdout) return { finalResultText: '', finalAssistantText: '', toolCalls: [], toolResults: [], isError: true };
+  let lastAssistantText = '';
+  let finalResultText = '';
+  const toolCalls = [];
+  const toolResults = [];
+  let isError = false;
+
+  // Try single JSON envelope first
+  try {
+    const obj = JSON.parse(stdout);
+    if (typeof obj.result === 'string') finalResultText = obj.result;
+    if (typeof obj.text === 'string') finalAssistantText = obj.text;
+    if (typeof obj.response === 'string') finalResultText = obj.response;
+    if (obj.isError) isError = true;
+    return { finalResultText, finalAssistantText, toolCalls, toolResults, isError, resultEvent: obj };
+  } catch { /* fall through to JSONL */ }
+
+  // Try JSONL streaming form
+  for (const line of stdout.split('\n')) {
+    const t = line.trim();
+    if (!t || t[0] !== '{') continue;
+    try {
+      const ev = JSON.parse(t);
+      if (ev.type === 'assistant' && Array.isArray(ev.message?.content)) {
+        for (const block of ev.message.content) {
+          if (block.type === 'text') lastAssistantText += block.text || '';
+          else if (block.type === 'tool_use') toolCalls.push(block);
+        }
+      } else if (ev.type === 'user' && Array.isArray(ev.message?.content)) {
+        for (const block of ev.message.content) {
+          if (block.type === 'tool_result') toolResults.push(block);
+        }
+      } else if (ev.type === 'result') {
+        if (typeof ev.result === 'string') finalResultText = ev.result;
+        if (ev.isError) isError = true;
+      } else if (typeof ev.text === 'string' && ev.text) lastAssistantText = ev.text;
+      else if (typeof ev.response === 'string' && ev.response) finalResultText = ev.response;
+    } catch { /* skip */ }
+  }
+  if (!finalResultText && lastAssistantText) finalResultText = lastAssistantText;
+  return { finalResultText, finalAssistantText: lastAssistantText, toolCalls, toolResults, isError };
 }
 
 // ─── opencode (generic provider/model fallback) ─────────────────────────

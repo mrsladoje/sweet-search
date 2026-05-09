@@ -50,11 +50,12 @@
       "role": "reflector-judge"
     },
     {
-      "name": "claude-sonnet-4-6",
-      "trainingCutoff": "2026-02-01",
-      "endpoint": "https://api.anthropic.com",
-      "wireApi": "anthropic",
-      "role": "primary-sota"
+      "name": "gemini-3-flash-preview",
+      "trainingCutoff": "2026-04-01",
+      "endpoint": "https://generativelanguage.googleapis.com",
+      "wireApi": "gemini",
+      "role": "primary-sota",
+      "_comment": "Replaced claude-sonnet-4-6 to avoid Max plan burn. Intel 46, $1.13/1M tokens, 163t/s."
     },
     {
       "name": "claude-opus-4-7",

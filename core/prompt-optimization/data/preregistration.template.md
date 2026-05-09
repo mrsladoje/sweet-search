@@ -94,7 +94,7 @@ Active 3-of-5 jury (reflector lineage forbidden):
 
 | Slot | Lineage | Model | Subscription |
 |---|---|---|---|
-| 1 | Anthropic | <sonnet-4-6 / opus-4-7> | Claude Max |
+| 1 | Google | gemini-3-flash-preview | Pay-per-use ($0.15/$0.60 per 1M) |
 | 2 | OpenAI | gpt-5-5 | Codex Pro |
 | 3 | Google | gemini-3-1-pro | Gemini Pro |
 
