@@ -788,11 +788,14 @@ function buildRecommendations({
     incomplete_promotion: incompletePromotion,
     behavior_notes: [
       opts.allowIncompletePromotion
-        ? 'allow-incomplete-promotion=ON: skipped/not_run gates count as pass; promoted=true MAY include incomplete evidence — see incomplete_promotion flag.'
-        : 'strict promotion: skipped/not_run gates BLOCK promoted=true.',
+        ? 'allow-incomplete-promotion=ON: skipped/not_run/pending-author/no-validation-set gates count as pass; promoted=true MAY include incomplete evidence — see incomplete_promotion flag.'
+        : 'strict promotion: skipped/not_run/pending-author/no-validation-set gates BLOCK promoted=true.',
       `BH-FDR m=${bh.m} reflects ONLY shape cells with ≥5 paired observations (out of ${nCellsConsidered} considered; ${nCellsBelowPairFloor} below pair floor).`,
       'Two-sided paired permutation test, one-sided beats-baseline interpretation applied at pickPerToolBest (observedDiff > 0).',
       'Thresholdout reads held-out from Track A uv rows in this driver — the structural Sealed-1 accessor route is documented in promote.mjs header.',
+      'V1 cells bifurcate by symbol presence: build-variants.mjs falls back to without-symbol+narrow-regex when a gold has no expectedSymbols. Both V1 sub-cells (with-symbol, without-symbol) appear as separate (tool, shape) rows in the BH-FDR slate, so the with-symbol main-effect estimate is NOT polluted by the fallback rows. Cells below the ≥5 paired-observation floor are excluded from BH-FDR (see bh_fdr_n_cells_below_pair_floor).',
+      'uv held-out tier (30 records) carries empty expectedLineRanges and expectedFacts: file_recall@1 is the only cleanly comparable metric on uv. Track A cells on uv therefore have lineOverlap=null and reduced fact_recall coverage; this is acceptable for Thresholdout (which only queries devCellMean vs heldoutCellMean of file_recall@1) but limits any additional held-out diagnostic.',
+      'Cross-lineage panel: track-b.mjs routes Anthropic via claude-runner, OpenAI via codex CLI, Google via gemini CLI, DeepSeek via claude-CLI-with-redirected-base-URL (parity-preserving), and other lineages via opencode run. See eval/agent-read-workflows/judge-runner.js.',
     ],
     summary: {
       n_gold_records: goldsRaw.records.length,
