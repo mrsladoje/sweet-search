@@ -6,35 +6,59 @@
  *
  *   1. **BH-FDR at q=0.10** across the full Layer A shape × tool claim space
  *      — per-shape-cell paired-permutation p-value must survive Benjamini-
- *      Hochberg correction. (`stats/bh-fdr.mjs:benjaminiHochberg`)
+ *      Hochberg correction. (`stats/bh-fdr.mjs:benjaminiHochberg`).
+ *      Note: the test is two-sided. We only PROMOTE shapes whose mean-shape
+ *      recall@1 exceeds the V4 baseline (one-sided interpretation enforced
+ *      in `pickPerToolBest`); BH-FDR handles the multi-comparison correction.
  *   2. **Thresholdout confirmation** on Q-shape held-out (uv 30-probe set).
  *      For each candidate "best shape" per tool, query the Thresholdout
  *      oracle (1 query per tool × ≤3 in-scope tools = ≤3 of the campaign
  *      26-query envelope). Promote only if oracle returns AGREE or DIFFER
- *      in the candidate's favour. (`stats/thresholdout.mjs:openThresholdout`)
+ *      in the candidate's favour. (`stats/thresholdout.mjs:openThresholdout`).
+ *      Limitation: in this driver we feed Thresholdout the held-out cell
+ *      mean computed from Track A's uv-tier rows in the same run; that is
+ *      "sealed by convention", not by structural access control. The plan
+ *      requires this be routed through the Sealed-1 manifest accessor in
+ *      production. We surface this caveat in `summary.thresholdout_method`.
  *   3. **Token-overlap leakage gate** on the candidate `instruction_text`
  *      — the string MUST NOT contain ≥3-grams from Dev probe symbols / paths
  *      / answers. (`decontamination/leakage-gate.mjs:checkLeakage`)
  *   4. **Independent-author check** — the `instruction_text` must be
  *      authored or reviewed by an engineer who is NOT the primary author of
- *      the gold tasks for that tool's sweep. (Recorded in
- *      `recommendations.json:independent_author_check`.)
+ *      the gold tasks for that tool's sweep. The per-tool slice is defined
+ *      as: golds whose `predicted_winning_tool` matches `tool` (the slice
+ *      the optimisation is targeting); falling back to the full gold set
+ *      when no per-tool prediction exists. Recorded in
+ *      `recommendations.json:independent_author_check.gold_authors_slice`.
  *   5. **Per-repo cross-shape stability check** (added 2026-05-09 with the
  *      vercel/ai-chatbot 5th dev repo). For each candidate "best shape,"
- *      compute per-repo `recall@1` across the 5 dev repos and reject
- *      promotion if (a) the worst-repo recall@1 is < 0.6 of the best-repo
- *      recall@1, OR (b) ai-chatbot's recall@1 is more than 2σ below the
- *      cross-repo mean. Failures recorded under
- *      `not_promoted_due_to_repo_instability`.
+ *      compute per-repo `recall@1` across the dev repos derived dynamically
+ *      from `golds.json:summary.byRepo` (tier=dev). Reject promotion if
+ *      (a) the worst-repo recall@1 is < 0.6 of the best-repo recall@1, OR
+ *      (b) ai-chatbot's recall@1 is more than 2σ below the cross-repo mean.
+ *      Failures recorded under `not_promoted_due_to_repo_instability`.
+ *      A partial sweep that did not cover all expected dev repos fails the
+ *      gate with reason `partial_sweep_missing_repos` (lists the missing
+ *      repos so the operator can re-run rather than silently promoting on a
+ *      narrowed evidence base).
+ *
+ * Strict-by-default: a gate marked `skipped` (e.g. Thresholdout under
+ * `--skip-thresholdout`) or `not_run` (Track B absent) BLOCKS promotion.
+ * Pass `--allow-incomplete-promotion` for diagnostic runs; in that mode
+ * `recommendations.incomplete_promotion = true` and per-tool blocks carry
+ * the missing-evidence reasons so a downstream consumer cannot mistake the
+ * artifact for a shippable promotion.
  *
  * Plan reference: §7.6 promotion artifact, §0.5 dual-layer overfit framework.
  *
  * Output schema: `data/query-shapes/recommendations.json` per the §7.6
- * machine-readable contract.
+ * machine-readable contract. Per_tool blocks now include Track-B-derived
+ * fields (`agent_e2e_success`, `n_e2e`, `judge_iaa_alpha`, `prp_win_rate`)
+ * when track-b.jsonl is present; explicit nulls + reason codes when absent.
  *
  * Usage:
  *   node core/prompt-optimization/sweep/promote.mjs --run qshape-v1
- *   node core/prompt-optimization/sweep/promote.mjs --run qshape-v1 --skip-thresholdout  # offline
+ *   node core/prompt-optimization/sweep/promote.mjs --run qshape-v1 --allow-incomplete-promotion --skip-thresholdout
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -61,12 +85,14 @@ function parseArgs(argv) {
   const o = {
     runId: null,
     skipThresholdout: false,
+    allowIncompletePromotion: false,
     independentAuthor: 'sweet-search-core-secondary',
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--run') o.runId = argv[++i];
     else if (a === '--skip-thresholdout') o.skipThresholdout = true;
+    else if (a === '--allow-incomplete-promotion') o.allowIncompletePromotion = true;
     else if (a === '--author') o.independentAuthor = argv[++i];
   }
   if (!o.runId) {
@@ -93,15 +119,26 @@ function loadTrackARecords(runId) {
 function loadTrackBRecords(runId) {
   const p = path.join(RESULTS_BASE, runId, 'track-b.jsonl');
   if (!existsSync(p)) return null; // Track B is optional in early phases
-  return readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  // track-b.jsonl interleaves agent records and judge records
+  // (`_kind: 'judge'`); the loader returns both partitioned.
+  const all = readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const agents = all.filter((r) => r._kind !== 'judge');
+  const judges = all.filter((r) => r._kind === 'judge');
+  // (G1.) Read the companion summary if present — it carries the IAA
+  // result (Krippendorff α + per-judge breakdown). Without the summary,
+  // the IAA gate falls through to `not_run`.
+  const summaryPath = path.join(RESULTS_BASE, runId, 'track-b-summary.json');
+  let summary = null;
+  if (existsSync(summaryPath)) {
+    try { summary = JSON.parse(readFileSync(summaryPath, 'utf8')); }
+    catch { /* malformed — ignore */ }
+  }
+  return { agents, judges, summary };
 }
 
 // ─── group by shape × tool, compute paired tests vs baseline (V4) ─────────
 
 function buildShapeCellTests(records) {
-  // Group records by (tool, shape). Pair each non-baseline shape against
-  // the V4 baseline within the same gold; compute paired permutation on
-  // file_recall_at_1.
   const byTool = new Map();
   for (const r of records) {
     if (!r.metrics) continue;
@@ -111,14 +148,14 @@ function buildShapeCellTests(records) {
   }
   const tests = [];
   const cellMeans = new Map();
+  let nCellsConsidered = 0;
+  let nCellsBelowPairFloor = 0;
   for (const [tool, recs] of byTool) {
-    // Index by goldId → variantId → record (for pairing)
     const byGold = new Map();
     for (const r of recs) {
       if (!byGold.has(r.goldId)) byGold.set(r.goldId, new Map());
       byGold.get(r.goldId).set(r.variantId, r);
     }
-    // Aggregate per shape
     const shapeRecords = new Map();
     for (const r of recs) {
       if (!shapeRecords.has(r.shape)) shapeRecords.set(r.shape, []);
@@ -128,20 +165,28 @@ function buildShapeCellTests(records) {
       const mean = list.reduce((s, r) => s + (r.metrics.file_recall_at_1 || 0), 0) / list.length;
       cellMeans.set(`${tool}|${shape}`, { tool, shape, n: list.length, mean });
     }
-    // Pair each shape against V4 within the same gold
     for (const [shape, list] of shapeRecords) {
-      if (list.every((r) => r.isBaseline)) continue; // V4 vs V4 = identity
+      if (list.every((r) => r.isBaseline)) continue;
+      nCellsConsidered += 1;
       const paired = { a: [], b: [] };
+      let baselineMean = null;
+      let nBaseline = 0;
+      let baselineSum = 0;
       for (const r of list) {
         const sib = byGold.get(r.goldId);
         if (!sib) continue;
-        // V4 = baseline
         const baseline = [...sib.values()].find((x) => x.isBaseline);
         if (!baseline || baseline.metrics?.file_recall_at_1 == null) continue;
         paired.a.push(r.metrics.file_recall_at_1 || 0);
         paired.b.push(baseline.metrics.file_recall_at_1 || 0);
+        baselineSum += baseline.metrics.file_recall_at_1 || 0;
+        nBaseline += 1;
       }
-      if (paired.a.length < 5) continue;            // skip cells with too few pairs
+      baselineMean = nBaseline > 0 ? baselineSum / nBaseline : null;
+      if (paired.a.length < 5) {
+        nCellsBelowPairFloor += 1;
+        continue;
+      }
       const t = pairedPermutationTest({ a: paired.a, b: paired.b });
       tests.push({
         id: `${tool}::${shape}`,
@@ -152,18 +197,23 @@ function buildShapeCellTests(records) {
           n: paired.a.length,
           observedDiff: t.observedDiff,
           meanShape: cellMeans.get(`${tool}|${shape}`).mean,
+          baselineMean,
         },
       });
     }
   }
-  return { tests, cellMeans };
+  return { tests, cellMeans, nCellsConsidered, nCellsBelowPairFloor };
 }
 
-// ─── per-tool best shape (after BH-FDR) ───────────────────────────────────
+// ─── per-tool best shape (after BH-FDR, one-sided "beats baseline") ───────
 
 function pickPerToolBest(bhResult, cellMeans) {
-  const surv = survivors(bhResult);
-  // Group survivors by tool, pick the one with the highest mean shape recall.
+  // BH-FDR survives → significant difference; promote ONLY when the shape's
+  // mean exceeds the V4 baseline (one-sided beats-baseline interpretation
+  // applied here, after the two-sided test). pairedPermutationTest does a
+  // two-sided abs-diff test; we drop survivors whose observed diff is
+  // negative (shape worse than baseline).
+  const surv = survivors(bhResult).filter((s) => (s.meta?.observedDiff ?? 0) > 0);
   const byTool = new Map();
   for (const s of surv) {
     const tool = s.meta.tool;
@@ -175,7 +225,6 @@ function pickPerToolBest(bhResult, cellMeans) {
     list.sort((a, b) => b.meta.meanShape - a.meta.meanShape);
     winners[tool] = list[0];
   }
-  // For tools with no survivors, fall back to mean-only diagnosis (not promoted).
   return { winners, allSurvivors: surv };
 }
 
@@ -183,11 +232,12 @@ function pickPerToolBest(bhResult, cellMeans) {
 
 function draftInstructionText(tool, shape) {
   // Per §7.6 the `instruction_text` goes verbatim into the T1-T14 variant
-  // bodies in Part 6. The text is short, agent-instructable, and free of
-  // dev-probe-specific identifiers.
+  // bodies in Part 6. Templates keyed on shape coordinates. They MUST pass
+  // the leakage gate (gate #3) — generic English, no symbol names.
   //
-  // The strings below are templates keyed on shape coordinates. They MUST
-  // pass the leakage gate (gate #3) — generic English, no symbol names.
+  // All six dimensions in `parseShape` (length, symbol, regex, framing,
+  // density, intentVerb) are folded into the output so the variant grid
+  // commentary matches the produced text. (B8.)
   const dims = parseShape(shape);
   const parts = [];
   if (tool === 'ss-find') parts.push('When using ss-find:');
@@ -210,6 +260,13 @@ function draftInstructionText(tool, shape) {
   if (dims.framing === 'imperative') parts.push('phrased as a command');
   else if (dims.framing === 'interrogative') parts.push('phrased as a question');
   else if (dims.framing === 'declarative') parts.push('phrased as a noun phrase');
+  else if (dims.framing === 'relationship-verb') parts.push('phrased around a code-relationship verb (callers/callees/implements)');
+
+  if (dims.density === 'high-density') parts.push('use domain-dense vocabulary');
+  else if (dims.density === 'low-density') parts.push('use generic, low-domain-density wording');
+
+  if (dims.intentVerb === 'intent-verb-present') parts.push('include an intent verb (find/show/list)');
+  else if (dims.intentVerb === 'intent-verb-absent') parts.push('drop intent verbs; lead with the noun');
 
   return parts.join(', ').replace(/, ([a-z])/g, ', $1') + '.';
 }
@@ -265,26 +322,20 @@ function runThresholdoutGate({ tool, shape, devCellMean, heldoutCellMean, runId,
 }
 
 // ─── gate 5: per-repo cross-shape stability ──────────────────────────────
-//
-// Plan §7.6 gate-5 (added 2026-05-09 with vercel/ai-chatbot). Adding a
-// TS/React repo to a previously backend-only dev set creates a confound
-// risk: a shape can win on aggregate by overperforming on the 4 backend
-// repos and underperforming on ai-chatbot (or vice versa).
-//
-// For each candidate "best shape" we compute per-repo `recall@1` over the
-// dev tier (uv is held-out and excluded) and reject promotion if either:
-//   (a) worst-repo recall@1 < 0.6 × best-repo recall@1, OR
-//   (b) ai-chatbot's recall@1 is more than 2σ below the cross-repo mean.
-//
-// Shapes that fail this gate are recorded under
-// `not_promoted_due_to_repo_instability` with their per-repo breakdown so a
-// future campaign can decide whether to (i) split into language-specific
-// recommendations, (ii) re-author the variant to be language-agnostic, or
-// (iii) accept that shape-specific guidance is the correct end state.
 
 const REPO_STABILITY_FLOOR = 0.6;     // worst/best ≥ 0.60
 const REPO_STABILITY_SIGMA = 2;       // ai-chatbot within 2σ of mean
-const DEV_REPOS = ['fastify', 'gin', 'flask', 'ripgrep', 'ai-chatbot'];
+
+function deriveDevRepos(goldsRaw) {
+  // Plan §7.3 — the dev tier is whatever golds.json declares as tier=dev,
+  // grouped by repo. Hard-coding the list (the previous DEV_REPOS const)
+  // silently skipped a 6th dev repo if one were added later. (B11.)
+  const repos = new Set();
+  for (const g of goldsRaw.records) {
+    if (g.tier === 'dev' && g.repo) repos.add(g.repo);
+  }
+  return [...repos];
+}
 
 function computePerRepoBreakdown({ trackARecords, tool, shape }) {
   // dev-tier only — uv is held-out. Group by repo, compute mean file_recall@1.
@@ -306,11 +357,26 @@ function computePerRepoBreakdown({ trackARecords, tool, shape }) {
   return breakdown;
 }
 
-function runRepoStabilityGate({ perRepoBreakdown }) {
+function runRepoStabilityGate({ perRepoBreakdown, expectedDevRepos }) {
   const repos = Object.keys(perRepoBreakdown);
+  // (B12.) Partial-sweep handling: if Track A didn't cover every dev repo,
+  // call out which are missing rather than silently failing on a 1-repo
+  // worst/best ratio that's ill-defined.
+  const missing = expectedDevRepos.filter((r) => !repos.includes(r));
+  if (missing.length > 0) {
+    return {
+      pass: false,
+      reasonCode: 'partial_sweep_missing_repos',
+      diagnosis: `partial sweep — missing dev repos: ${missing.join(', ')} (expected ${expectedDevRepos.length}, got ${repos.length})`,
+      missingRepos: missing,
+      expectedDevRepos,
+      perRepoBreakdown,
+    };
+  }
   if (repos.length < 2) {
     return {
       pass: false,
+      reasonCode: 'insufficient_repos',
       diagnosis: `insufficient repos with metrics (${repos.length} < 2)`,
       perRepoBreakdown,
     };
@@ -348,6 +414,7 @@ function runRepoStabilityGate({ perRepoBreakdown }) {
 
   return {
     pass,
+    reasonCode: pass ? 'pass' : (ratioPass ? 'ai_chatbot_outlier' : 'worst_best_ratio'),
     diagnosis,
     worstBestRatio: ratio,
     floor: REPO_STABILITY_FLOOR,
@@ -363,19 +430,21 @@ function runRepoStabilityGate({ perRepoBreakdown }) {
 
 function runAuthorCheck({ tool, instructionAuthor, goldsRaw }) {
   // §11.2 / §7.6 gate #4: the `instruction_text` author MUST be a different
-  // engineer from the primary gold-task author for the tool's sweep.
-  const goldAuthors = new Set(
-    goldsRaw.records
-      .filter((g) => /* same tool's golds */ true)
-      .map((g) => g.gold_authored_by)
-  );
-  // Conservative: if the instruction author appears in the gold-author set,
-  // the gate trips. Caller passes `--author` from CLI.
+  // engineer from the primary gold-task author for THIS tool's evaluation
+  // slice. The slice is defined as: golds whose `predicted_winning_tool`
+  // matches `tool` (the optimisation target). When no gold targets this
+  // tool, fall back to the full gold set (conservative — wider author set =
+  // stricter gate).
+  const slice = goldsRaw.records.filter((g) => g.predicted_winning_tool === tool);
+  const sliceUsed = slice.length > 0 ? slice : goldsRaw.records;
+  const goldAuthors = new Set(sliceUsed.map((g) => g.gold_authored_by).filter(Boolean));
   const tripped = goldAuthors.has(instructionAuthor);
   return {
     pass: !tripped,
     instructionAuthor,
     goldAuthors: [...goldAuthors],
+    gold_authors_slice: slice.length > 0 ? `predicted_winning_tool == ${tool}` : 'all golds (fallback — no per-tool prediction)',
+    n_golds_in_slice: sliceUsed.length,
   };
 }
 
@@ -385,7 +454,8 @@ function buildRecommendations({
   goldsRaw, trackARecords, trackBRecords, runId, opts,
 }) {
   // Per-shape × tool means (Track A) → BH-FDR test slate
-  const { tests, cellMeans } = buildShapeCellTests(trackARecords);
+  const cellTestResult = buildShapeCellTests(trackARecords);
+  const { tests, cellMeans, nCellsConsidered, nCellsBelowPairFloor } = cellTestResult;
   if (tests.length === 0) {
     process.stderr.write(
       `promote: no scorable Track A records (all dry-run or no metrics). ` +
@@ -394,11 +464,8 @@ function buildRecommendations({
     process.exit(7);
   }
   const bh = benjaminiHochberg({ tests, q: Q, claimSpace: 'qshape-A-shape-by-tool' });
-  const { winners, allSurvivors } = pickPerToolBest(bh, cellMeans);
+  const { winners } = pickPerToolBest(bh, cellMeans);
 
-  // Per-tool: dev mean for winning shape, held-out mean for winning shape
-  // (to feed Thresholdout). For tools with no Track A held-out records
-  // (e.g. tools that don't apply to uv golds), we skip Thresholdout.
   const heldoutByCell = new Map();
   for (const r of trackARecords) {
     if (r._repo !== 'uv') continue;
@@ -413,9 +480,35 @@ function buildRecommendations({
     return arr.reduce((s, x) => s + x, 0) / arr.length;
   };
 
-  // Compose per-tool block
+  const expectedDevRepos = deriveDevRepos(goldsRaw);
   const perTool = {};
   const devProbes = goldsRaw.records.filter((g) => g.tier === 'dev');
+
+  // Track B aggregation (per (tool, shape) → win rate vs baseline)
+  const trackBByCell = new Map();
+  if (trackBRecords && trackBRecords.judges) {
+    for (const j of trackBRecords.judges) {
+      const k = `${j.tool}|${j.shape}`;
+      if (!trackBByCell.has(k)) trackBByCell.set(k, { wins: 0, ties: 0, losses: 0, n: 0 });
+      const c = trackBByCell.get(k);
+      c.n += 1;
+      if (j.aggregate === 'candidate') c.wins += 1;
+      else if (j.aggregate === 'tie') c.ties += 1;
+      else c.losses += 1;
+    }
+  }
+  // Per-tool agent E2E success rate from track-b agent rows
+  const agentE2EByCell = new Map();
+  if (trackBRecords && trackBRecords.agents) {
+    for (const a of trackBRecords.agents) {
+      if (a.runStatus !== 'ok') continue;
+      const k = `${a.tool}|${a.shape}`;
+      if (!agentE2EByCell.has(k)) agentE2EByCell.set(k, { full: 0, n: 0 });
+      const c = agentE2EByCell.get(k);
+      c.n += 1;
+      if (a.answerability === 'full') c.full += 1;
+    }
+  }
 
   for (const tool of TOOLS_IN_SCOPE) {
     const winner = winners[tool];
@@ -423,8 +516,15 @@ function buildRecommendations({
       perTool[tool] = {
         tool,
         promoted: false,
-        not_promoted_reason: 'no shape cell survived BH-FDR at q=0.10',
-        gate_results: { fdr: 'fail', thresholdout: 'n/a', leakage: 'n/a', author: 'n/a' },
+        not_promoted_reason: 'no shape cell beat the baseline at q=0.10 BH-FDR (one-sided)',
+        gate_results: { fdr: 'fail', thresholdout: 'n/a', leakage: 'n/a', author: 'n/a', repo_stability: 'n/a' },
+        // (G3.) Always emit a structured track_b block — even when FDR
+        // failed before Track B mattered — so downstream consumers can
+        // distinguish 'fdr-failed-pre-track-b' from 'track-b-not-run' from
+        // 'track-b-ran-but-cell-empty' without nullable-block guards.
+        track_b: trackBRecords
+          ? { agent_e2e_success: null, n_e2e: 0, prp_win_rate: null, judge_iaa_alpha: null, status: 'fdr_failed_no_cell' }
+          : { agent_e2e_success: null, n_e2e: 0, prp_win_rate: null, judge_iaa_alpha: null, status: 'not_run' },
       };
       continue;
     }
@@ -440,12 +540,15 @@ function buildRecommendations({
       goldsRaw,
     });
 
-    // Gate 5: per-repo cross-shape stability (added 2026-05-09).
     const perRepoBreakdown = computePerRepoBreakdown({ trackARecords, tool, shape });
-    const repoStabilityRes = runRepoStabilityGate({ perRepoBreakdown });
+    const repoStabilityRes = runRepoStabilityGate({ perRepoBreakdown, expectedDevRepos });
 
-    let thresholdoutRes = { decision: 'SKIPPED', reason: 'flag --skip-thresholdout' };
-    if (!opts.skipThresholdout && heldoutCellMean != null) {
+    let thresholdoutRes;
+    if (opts.skipThresholdout) {
+      thresholdoutRes = { decision: 'SKIPPED', reason: 'flag --skip-thresholdout' };
+    } else if (heldoutCellMean == null) {
+      thresholdoutRes = { decision: 'N/A', reason: 'no held-out records for this tool×shape cell' };
+    } else {
       try {
         thresholdoutRes = runThresholdoutGate({
           tool,
@@ -458,9 +561,64 @@ function buildRecommendations({
       } catch (e) {
         thresholdoutRes = { decision: 'ERROR', error: e.message };
       }
-    } else if (heldoutCellMean == null) {
-      thresholdoutRes = { decision: 'N/A', reason: 'no held-out records for this tool×shape cell' };
     }
+
+    // Track B aggregation for this cell
+    const trackBCell = trackBByCell.get(`${tool}|${shape}`);
+    const agentCell = agentE2EByCell.get(`${tool}|${shape}`);
+    const trackBBlock = trackBRecords
+      ? {
+          agent_e2e_success: agentCell && agentCell.n > 0 ? agentCell.full / agentCell.n : null,
+          n_e2e: agentCell?.n ?? 0,
+          prp_win_rate: trackBCell && trackBCell.n > 0 ? trackBCell.wins / trackBCell.n : null,
+          prp_tie_rate: trackBCell && trackBCell.n > 0 ? trackBCell.ties / trackBCell.n : null,
+          n_prp_pairs: trackBCell?.n ?? 0,
+          judge_iaa_alpha: null,           // populated when human-validation set non-empty
+          status: 'ran',
+        }
+      : { agent_e2e_success: null, n_e2e: 0, prp_win_rate: null, judge_iaa_alpha: null, status: 'not_run' };
+
+    // (G1.) IAA gate evaluation. Reads track-b-summary.json (loaded into
+    // trackBRecords.summary by loadTrackBRecords). Strict-mode requires
+    // panel-majority α ≥ alphaMajority AND every per-judge α ≥
+    // alphaIndividual. Pending-author / no-validation-set / skipped IAA
+    // surface their own gate values that strict mode treats as BLOCKING.
+    const iaaSummary = trackBRecords?.summary?.iaa ?? null;
+    let iaaGate;
+    let iaaBlock;
+    if (!trackBRecords) {
+      iaaGate = 'not_run';
+      iaaBlock = { status: 'not_run', alpha: null };
+    } else if (!iaaSummary) {
+      iaaGate = 'not_run';
+      iaaBlock = { status: 'no-track-b-summary', alpha: null };
+    } else if (iaaSummary.status === 'pending-author') {
+      iaaGate = 'pending-author';
+      iaaBlock = { ...iaaSummary, alpha: null };
+    } else if (iaaSummary.status === 'no-validation-set') {
+      iaaGate = 'no-validation-set';
+      iaaBlock = { ...iaaSummary, alpha: null };
+    } else if (iaaSummary.status === 'skipped') {
+      iaaGate = 'skipped';
+      iaaBlock = { ...iaaSummary, alpha: null };
+    } else if (iaaSummary.status === 'ok') {
+      const majPasses = !!iaaSummary.majority?.passes;
+      const allJudgesPass = (iaaSummary.perJudge || []).every((j) => j.passes);
+      iaaGate = (majPasses && allJudgesPass) ? 'pass' : 'fail';
+      iaaBlock = {
+        status: 'ok',
+        alpha: iaaSummary.majority?.alpha ?? null,
+        majorityPasses: majPasses,
+        allJudgesPass,
+        perJudge: iaaSummary.perJudge,
+      };
+    } else {
+      iaaGate = 'fail';
+      iaaBlock = { status: iaaSummary.status, alpha: null };
+    }
+    // Wire judge_iaa_alpha for downstream consumers (was previously null).
+    trackBBlock.judge_iaa_alpha = iaaBlock.alpha;
+    trackBBlock.iaa_status = iaaBlock.status;
 
     const gates = {
       fdr: 'pass',                                      // by construction (only winners reach here)
@@ -470,10 +628,23 @@ function buildRecommendations({
       leakage: leakageRes.passes ? 'pass' : 'fail',
       author: authorRes.pass ? 'pass' : 'fail',
       repo_stability: repoStabilityRes.pass ? 'pass' : 'fail',
+      track_b: trackBRecords ? (trackBBlock.n_e2e >= 3 ? 'pass' : 'insufficient_evidence') : 'not_run',
+      iaa: iaaGate,
     };
-    const promoted = gates.fdr === 'pass' && (gates.thresholdout === 'pass' || gates.thresholdout === 'skipped')
-      && gates.leakage === 'pass' && gates.author === 'pass'
-      && gates.repo_stability === 'pass';
+
+    // Strict promotion: every gate must `pass`. `skipped` / `not_run` /
+    // `insufficient_evidence` / `pending-author` / `no-validation-set`
+    // ONLY count as promoting when --allow-incomplete-promotion is passed;
+    // in that mode the artifact is marked incomplete_promotion=true (see
+    // top-level field) so a downstream consumer cannot mistake a diagnostic
+    // run for a shippable promotion. (B5/G1.)
+    const strictPass = (g) => g === 'pass';
+    const incompleteValues = new Set([
+      'skipped', 'not_run', 'insufficient_evidence', 'pending-author', 'no-validation-set',
+    ]);
+    const lenientPass = (g) => g === 'pass' || incompleteValues.has(g);
+    const passFn = opts.allowIncompletePromotion ? lenientPass : strictPass;
+    const promoted = Object.values(gates).every(passFn);
 
     perTool[tool] = {
       tool,
@@ -489,6 +660,8 @@ function buildRecommendations({
         survives: true,
         adjustedP: winner.adjustedP,
         rank: winner.rank,
+        observed_diff: winner.meta.observedDiff,
+        baseline_mean: winner.meta.baselineMean,
         claim_space: bh.claimSpace,
         m: bh.m,
         nSurvived: bh.nSurvived,
@@ -503,23 +676,31 @@ function buildRecommendations({
       per_repo_breakdown: perRepoBreakdown,
       repo_stability_gate: repoStabilityRes.diagnosis,
       repo_stability_details: {
+        reason_code: repoStabilityRes.reasonCode,
         worst_best_ratio: repoStabilityRes.worstBestRatio,
         floor: repoStabilityRes.floor,
         ai_chatbot_recall: repoStabilityRes.aiChatbotRecall,
         ai_chatbot_z_score: repoStabilityRes.aiChatbotZScore,
         cross_repo_mean: repoStabilityRes.crossRepoMean,
         cross_repo_std: repoStabilityRes.crossRepoStd,
+        missing_repos: repoStabilityRes.missingRepos ?? [],
+        expected_dev_repos: expectedDevRepos,
       },
+      track_b: trackBBlock,
+      iaa: iaaBlock,
       instruction_text: instructionText,
       gate_results: gates,
       not_promoted_reason: promoted ? null : Object.entries(gates)
-        .filter(([, v]) => v !== 'pass' && v !== 'skipped')
+        .filter(([, v]) => !passFn(v))
         .map(([k, v]) => `${k}=${v}`)
         .join(','),
     };
   }
 
-  // Avoid shapes (worst per tool, BH-FDR-survivor diagnostic)
+  // Avoid shapes (worst per tool, BH-FDR-survivor diagnostic).
+  // (B9.) Replace the prose "Do NOT phrase…" string with a structured
+  // reason code; instruction_text is OMITTED so a downstream consumer
+  // cannot accidentally paste the avoid string into a real prompt.
   const avoidShapes = [];
   for (const tool of TOOLS_IN_SCOPE) {
     const cells = [...cellMeans.values()].filter((c) => c.tool === tool);
@@ -530,16 +711,15 @@ function buildRecommendations({
         shape: cells[0].shape,
         deterministic_recall_at_1: cells[0].mean,
         n: cells[0].n,
-        instruction_text: 'Do NOT phrase a query in this shape: ' + cells[0].shape,
+        reason_code: 'worst_observed_cell_mean',
+        instruction_text: null,
       });
     }
   }
 
   // Pre-registration diff (per-gold predicted vs actual)
-  const goldById = new Map(goldsRaw.records.map((g) => [g.id, g]));
   const actualBest = {};
   {
-    // For each gold × tool, find its best shape from Track A
     const byGoldTool = new Map();
     for (const r of trackARecords) {
       if (!r.metrics || r.metrics.file_recall_at_1 == null) continue;
@@ -552,26 +732,17 @@ function buildRecommendations({
       actualBest[k] = list[0];
     }
   }
-  // Predicted shape strings (golds.json) are partial labels naming a subset
-  // of dimensions (e.g. 'short+with-symbol+narrow-regex'); actual variant
-  // labels are full (e.g. 'short+with-symbol+narrow-regex+interrogative+
-  // high-density'). Report exact_token_match (every predicted token present
-  // in actual) plus per-dimension overlap so the diff is actionable even
-  // when the prediction names a token (e.g. 'short') that no variant in the
-  // V1-V6 grid carries (V1 uses 'very-short').
-  //
-  // KNOWN CAVEAT (qshape-v1): the variant grid uses {very-short, short,
-  // medium, long-NL} for the length tier; the prereg author used 'short' as
-  // a coarse stand-in for "small" length. For honest reporting we surface
-  // both the exact-match flag and the partial-overlap count — the latter is
-  // the more meaningful signal at this run.
-  const dimsOf = (label) => new Set((label || '').split('+').filter(Boolean));
-  const overlap = (a, b) => {
-    const setB = dimsOf(b);
-    let n = 0;
-    for (const t of dimsOf(a)) if (setB.has(t)) n += 1;
-    return n;
+  // (D18.) Predicted shape strings use a coarse vocabulary that is mapped
+  // through `aliasShapeToken` so {short, with-symbol, narrow-regex} always
+  // matches at least one variant token regardless of fine-tier (very-short
+  // → short alias, etc.). Both exact_token_match and alias-aware overlap
+  // are reported.
+  const aliasMap = {
+    short: ['short', 'very-short'],
+    'long': ['long-NL'],
   };
+  const aliasShapeToken = (t) => aliasMap[t] || [t];
+  const dimsOf = (label) => new Set((label || '').split('+').filter(Boolean));
   const preregDiff = goldsRaw.records.map((g) => {
     const predTool = g.predicted_winning_tool;
     const predShape = g.predicted_winning_shape;
@@ -579,6 +750,9 @@ function buildRecommendations({
     const predTokens = dimsOf(predShape);
     const actTokens = dimsOf(actual?.shape);
     const tokensMatched = [...predTokens].filter((t) => actTokens.has(t));
+    const tokensMatchedAlias = [...predTokens].filter((t) =>
+      aliasShapeToken(t).some((a) => actTokens.has(a))
+    );
     return {
       goldId: g.id,
       predicted_winning_tool: predTool,
@@ -587,24 +761,53 @@ function buildRecommendations({
       actual_recall_at_1: actual?.metrics?.file_recall_at_1 ?? null,
       n_predicted_dims: predTokens.size,
       n_dims_matched: tokensMatched.length,
+      n_dims_matched_alias: tokensMatchedAlias.length,
       tokens_matched: tokensMatched,
+      tokens_matched_alias: tokensMatchedAlias,
       exact_token_match: predTokens.size > 0 && tokensMatched.length === predTokens.size,
+      alias_match: predTokens.size > 0 && tokensMatchedAlias.length === predTokens.size,
     };
   });
 
+  const incompletePromotion = Object.values(perTool).some((b) =>
+    b.gate_results && Object.values(b.gate_results).some(
+      (v) => v === 'skipped' || v === 'not_run' || v === 'insufficient_evidence'
+        || v === 'pending-author' || v === 'no-validation-set'
+    )
+  );
+
+  // (E21.) BH-FDR claim-space sizing notes — the m we report is the count
+  // of cells with ≥5 paired observations (test threshold). Cells below the
+  // pair-count floor are excluded; we surface the count so a reader can
+  // judge the corrected denominator.
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     runId,
     generatedAt: new Date().toISOString(),
-    plan_reference: 'docs/SYSTEM_PROMPT_OPT_PLAN.md §7.6 + §0.5 four-gate framework',
+    plan_reference: 'docs/SYSTEM_PROMPT_OPT_PLAN.md §7.6 + §0.5 five-gate framework',
+    incomplete_promotion: incompletePromotion,
+    behavior_notes: [
+      opts.allowIncompletePromotion
+        ? 'allow-incomplete-promotion=ON: skipped/not_run gates count as pass; promoted=true MAY include incomplete evidence — see incomplete_promotion flag.'
+        : 'strict promotion: skipped/not_run gates BLOCK promoted=true.',
+      `BH-FDR m=${bh.m} reflects ONLY shape cells with ≥5 paired observations (out of ${nCellsConsidered} considered; ${nCellsBelowPairFloor} below pair floor).`,
+      'Two-sided paired permutation test, one-sided beats-baseline interpretation applied at pickPerToolBest (observedDiff > 0).',
+      'Thresholdout reads held-out from Track A uv rows in this driver — the structural Sealed-1 accessor route is documented in promote.mjs header.',
+    ],
     summary: {
       n_gold_records: goldsRaw.records.length,
       n_track_a_records: trackARecords.length,
-      n_track_b_records: trackBRecords ? trackBRecords.length : 0,
+      n_track_b_records: trackBRecords ? (trackBRecords.agents?.length ?? 0) + (trackBRecords.judges?.length ?? 0) : 0,
+      n_track_b_agent_runs: trackBRecords?.agents?.length ?? 0,
+      n_track_b_judge_pairs: trackBRecords?.judges?.length ?? 0,
       bh_fdr_q: Q,
       bh_fdr_n_tested: bh.m,
       bh_fdr_n_survived: bh.nSurvived,
+      bh_fdr_n_cells_considered: nCellsConsidered,
+      bh_fdr_n_cells_below_pair_floor: nCellsBelowPairFloor,
       tools_in_scope: TOOLS_IN_SCOPE,
+      expected_dev_repos: expectedDevRepos,
+      thresholdout_method: 'in-driver mean over Track A uv rows; structural Sealed-1 accessor pending integration',
     },
     per_tool: perTool,
     avoid_shapes: avoidShapes,
@@ -617,21 +820,19 @@ function buildRecommendations({
         adjustedP: bh.results.find((r) => r.id === t.id)?.adjustedP,
         n: t.meta.n,
         meanShape: t.meta.meanShape,
+        observedDiff: t.meta.observedDiff,
       })),
-    // Plan §7.6 gate-5 (added 2026-05-09 with vercel/ai-chatbot). Shapes that
-    // survived BH-FDR + Thresholdout but failed per-repo stability go here so
-    // a future campaign can decide whether to (i) split into language-specific
-    // recommendations, (ii) re-author the variant to be language-agnostic, or
-    // (iii) accept that shape-specific guidance is the correct end state.
     not_promoted_due_to_repo_instability: Object.values(perTool)
       .filter((b) => b.gate_results?.repo_stability === 'fail')
       .map((b) => ({
         tool: b.tool,
         shape: b.best_shape,
         diagnosis: b.repo_stability_gate,
+        reason_code: b.repo_stability_details?.reason_code,
         per_repo_breakdown: b.per_repo_breakdown,
         worst_best_ratio: b.repo_stability_details?.worst_best_ratio,
         ai_chatbot_z_score: b.repo_stability_details?.ai_chatbot_z_score,
+        missing_repos: b.repo_stability_details?.missing_repos ?? [],
       })),
     preregistration_diff: preregDiff,
   };
@@ -652,6 +853,21 @@ function main() {
   const outPath = path.join(QSHAPE_DIR, 'recommendations.json');
   writeFileSync(outPath, JSON.stringify(recommendations, null, 2) + '\n');
   process.stdout.write(`promote: recommendations → ${outPath}\n`);
+  // (G3.) Reflect the actual gate set (5 baseline + IAA + Track B
+  // composability where applicable). The composition: fdr, thresholdout,
+  // leakage, author, repo_stability — plus track_b and iaa when Track B
+  // ran. Strict mode requires every gate that's not 'pass' to BLOCK
+  // promotion; lenient mode treats skipped/not_run/insufficient_evidence/
+  // pending-author as effectively-pass with the artifact flagged
+  // incomplete_promotion=true.
+  const baseGates = ['fdr', 'thresholdout', 'leakage', 'author', 'repo_stability'];
+  const trackGates = trackBRecords ? ['track_b', 'iaa'] : [];
+  const gateList = [...baseGates, ...trackGates].join('+');
+  process.stdout.write(
+    `promote: mode=${opts.allowIncompletePromotion ? 'allow-incomplete' : 'strict'}; ` +
+    `gates=${baseGates.length + trackGates.length} (${gateList}); ` +
+    `incomplete_promotion=${recommendations.incomplete_promotion}\n`
+  );
   for (const tool of TOOLS_IN_SCOPE) {
     const block = recommendations.per_tool[tool];
     process.stdout.write(

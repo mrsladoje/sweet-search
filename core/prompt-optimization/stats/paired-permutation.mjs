@@ -12,6 +12,15 @@
  * Always pre-pend +1 (the observed labelling) into the count so the p-value is
  * never zero — a standard small-sample correction (North et al. 2002).
  *
+ * NOTE — directionality: this test is TWO-SIDED. The returned `pValue`
+ * indicates significant difference in either direction, and `observedDiff`
+ * carries the sign (positive when a beats b on the observed labelling).
+ * Promotion code (e.g. promote.mjs) MUST apply a one-sided
+ * "beats baseline" filter on `observedDiff > 0` after BH-FDR if it intends
+ * to reward shapes that strictly outperform the baseline; the BH-FDR
+ * correction itself handles multi-comparison error control independent of
+ * direction.
+ *
  * @param {object} args
  * @param {number[]} args.a   — sample A observations (numeric, e.g. 0/1)
  * @param {number[]} args.b   — sample B observations (paired with a, same length)

@@ -38,14 +38,19 @@
  * Output: core/prompt-optimization/data/results/<run>/track-a.jsonl
  *         core/prompt-optimization/data/results/<run>/track-a-summary.json
  *
- * Stop rule (§13.7 P6.2): halt if best-shape `recall@1` < 0.5 across all 4
- * tools. The summary aggregator flags this; the driver returns a non-zero
- * exit code so a CI gate can pick it up.
+ * Stop rule (§13.7 P6.2): halt if best-shape `recall@1` < 0.5 across all
+ * 4 in-scope tools (ss-search, ss-find, ss-semantic, structural). The
+ * summary also reports `reposCovered` (the dev repos seen in this run) so
+ * a partial sweep — e.g. only 1-2 of {fastify, gin, flask, ripgrep,
+ * ai-chatbot} — is visible at the stop-rule diagnostic, not silently
+ * absorbed into a cross-tool average. The driver returns a non-zero exit
+ * code on stop-rule trip so a CI gate can pick it up.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -178,7 +183,13 @@ function runRepoWorker({ workerPath, repo, tuples, runId, dryRun }) {
     isBaseline: !!t.variant.isBaseline,
   }));
 
-  const args = [workerPath, '--run', runId, '--repo', repo];
+  // (C15.) Robust IPC: spawn the worker with a per-run tempfile path it
+  // writes JSONL records and the summary line to, instead of mining stdout
+  // for `{`-prefixed lines. Native / Rust modules emit informational stdout
+  // during init that can start with `{`; the legacy parser silently absorbed
+  // that as malformed records.
+  const outFile = path.join(tmpdir(), `track-a-${runId}-${repo}-${process.pid}.jsonl`);
+  const args = [workerPath, '--run', runId, '--repo', repo, '--out-file', outFile];
   if (dryRun) args.push('--dry-run');
 
   const r = spawnSync('node', args, {
@@ -191,30 +202,25 @@ function runRepoWorker({ workerPath, repo, tuples, runId, dryRun }) {
     process.stderr.write(
       `track-a worker for ${repo} exited ${r.status}\nSTDERR:\n${r.stderr || '(empty)'}\n`
     );
+    try { if (existsSync(outFile)) rmSync(outFile); } catch { /* */ }
     return null;
   }
-  // Worker emits one JSON line per tuple to stdout, plus a final line
-  // starting with `# summary:` carrying its own aggregation. SweetSearch
-  // and underlying Rust/native modules also write informational lines to
-  // stdout during init (e.g., "[MaxSim] Tier 1: Native Rust"); skip any
-  // line that's not pure JSON or our `# summary:` sentinel.
-  const lines = r.stdout.split('\n').filter(Boolean);
+  // Read the structured tempfile rather than mining stdout.
   const records = [];
   let summary = null;
-  for (const line of lines) {
-    if (line.startsWith('# summary:')) {
-      try {
-        summary = JSON.parse(line.slice('# summary:'.length).trim());
-      } catch { /* ignore malformed summary */ }
-      continue;
+  if (existsSync(outFile)) {
+    const text = readFileSync(outFile, 'utf8');
+    for (const line of text.split('\n')) {
+      if (!line) continue;
+      if (line.startsWith('# summary:')) {
+        try { summary = JSON.parse(line.slice('# summary:'.length).trim()); }
+        catch { /* malformed summary — skip */ }
+        continue;
+      }
+      try { records.push(JSON.parse(line)); }
+      catch { /* */ }
     }
-    if (!line.startsWith('{')) continue;          // skip non-JSON noise
-    try {
-      records.push(JSON.parse(line));
-    } catch {
-      // Mid-line junk that happens to start with '{' is rare but not
-      // fatal — skip and continue.
-    }
+    try { rmSync(outFile); } catch { /* */ }
   }
   return { records, summary };
 }
@@ -299,14 +305,25 @@ function summarise(allRecords) {
   );
   const stopP62 = Object.values(perToolBestRecall1).every((v) => v < 0.5);
 
+  // (C16.) Surface repo coverage in the stop-rule diagnostic. With 5 dev
+  // repos a partial sweep can satisfy the 0.5 threshold on a 1-2-repo slice
+  // while structurally underperforming elsewhere. We list the repos
+  // actually covered so the operator can re-run before promotion.
+  const reposCovered = new Set();
+  for (const r of allRecords) {
+    if (r._repo) reposCovered.add(r._repo);
+  }
+
   return {
     nRecords: allRecords.length,
     nCells: cellArr.length,
     cells: cellArr,
     perToolBestRecall1,
+    reposCovered: [...reposCovered],
     stopRuleP62Triggered: stopP62,
     stopRuleP62Note:
-      'Per §13.7 P6.2: halt if best-shape recall@1 < 0.5 across ALL 4 tools (variant grid is misframed).',
+      `Per §13.7 P6.2: halt if best-shape recall@1 < 0.5 across ALL ${TOOLS_IN_SCOPE.length} tools (variant grid is misframed). ` +
+      `Repos covered in this run: [${[...reposCovered].join(',') || '(none)'}].`,
   };
 }
 
