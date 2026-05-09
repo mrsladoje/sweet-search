@@ -18,13 +18,13 @@ running anything in Parts 6–12.**
 Two coupled optimization layers, both with overfit risk, and the coupling is what makes the
 problem worse than each layer alone:
 
-- **Layer A — Query-shape discovery (Part 7).** Sweeps a 6-dim shape grid × 3 tools × ~78 golds
+- **Layer A — Query-shape discovery (Part 7).** Sweeps a 6-dim shape grid × 3 tools × ~90 golds
   to produce machine-readable `instruction_text` strings (e.g., "use a 4-8 token NL query with
   symbol + narrow regex"). These strings are baked **verbatim** into Layer B's prompt bodies.
 - **Layer B — System-prompt evolution (Parts 6/8).** 14 hand-authored variants → ablation →
   GEPA reflective evolution → system-aware Merge synthesis → uber-tree.
 
-If Layer A overfits its 78 dev golds, **every T_i in Layer B inherits that overfit as a
+If Layer A overfits its 90 dev golds, **every T_i in Layer B inherits that overfit as a
 constant**, and Layer B's variant ranking cannot detect it because the bias is shared across all
 14 variants. So overfit defense must operate at A and B simultaneously, on the **same heldout
 infrastructure**, with the **same query budget**.
@@ -45,7 +45,7 @@ infrastructure**, with the **same query budget**.
 
 | Tier | Purpose | Inspection rules | File |
 |------|---------|------------------|------|
-| **Dev** (60 retrieval probes + 78 query-shape golds) | Free inspection; iterate freely | Per-query failures OK; aggregate metrics anytime | `splits/dev_60.json`, `data/query-shapes/golds.json` |
+| **Dev** (60 retrieval probes + 90 query-shape golds across 5 repos: fastify, gin, ripgrep, flask, vercel/ai-chatbot) | Free inspection; iterate freely | Per-query failures OK; aggregate metrics anytime | `splits/dev_60.json`, `data/query-shapes/golds.json` |
 | **Sealed-1** (40 probes, Thresholdout-wrapped) | Adaptive-safe gate for Layer A's `instruction_text` promotion AND Layer B's G1–G5 / §9.3 promotion gates | NEVER inspect raw scores; query only via Thresholdout oracle returning `PASS / FAIL / agree-with-dev`; **pre-registered budget ≈ 30 queries** for the whole campaign | `splits/heldout_40.json` (renamed semantically; tool-path stable) |
 | **Vault** (FreshStack-30 + new 30-50 probes on a *different* post-cutoff repo: `denoland/deno` 2.x, `oven-sh/bun` 2026, or `ziglang/zig` 0.14) | Headline number, opened **EXACTLY ONCE** at campaign end | Pre-commit hook refuses Vault reads until `release/<run-id>` git tag | `splits/freshstack_30.json` + `splits/vault_50.json` (NEW) |
 
@@ -1042,11 +1042,24 @@ with one phrasing per gold — not fit for shape discovery. We build a fresh set
 
 | Set | Repos | Goldsize | Shape variants per gold | Total query-tool pairs |
 |---|---|---|---|---|
-| **Q-shape dev** | fastify, gin, ripgrep, flask | 12 per repo × 4 = 48 | 6 | ~864 (across 3 tools) |
+| **Q-shape dev** | fastify, gin, ripgrep, flask, vercel/ai-chatbot | 12 per repo × 5 = 60 | 6 | ~1,080 (across 3 tools) |
 | **Q-shape held-out** | uv (post-2026-01 commits, FreshStack discipline) | 30 | 6 | ~540 |
 
-Total ≈ 1,400 query-tool pairs. Manageable on a $20-40 deterministic-track budget at
+Total ≈ 1,620 query-tool pairs. Manageable on a $20-40 deterministic-track budget at
 DSv4-Flash rates; agent-in-loop track is a smaller subsample (§7.5).
+
+**`vercel/ai-chatbot` rationale (added 2026-05-09)**: closes the TypeScript / React /
+component-search shape gap that the four prior repos (all backend / CLI) leave open.
+§11.2 stratification claims TS coverage, but fastify is server-side JS — there is no
+JSX, no `useFoo` hook patterns, no shadcn-style component composition in the prior dev
+set. Sweet-search users will increasingly run it on Next.js / shadcn / Vite TS apps,
+where query shapes diverge measurably (component names dominate over function names;
+no symbols in the Go/Rust sense; file-kind ranking on `.tsx` differs). The repo
+doubles as informal coverage for AI-canonical code style: shadcn idioms dominate
+LLM codegen output, so testing on this repo also stresses the agent against the
+patterns AI-generated codebases tend to inherit. Pin the SHA in `manifest.json`;
+gold tasks must be authored by an engineer who has not previously written
+sweet-search prompt copy on TS/React (per §11.2 probe-author independence).
 
 **Construction discipline (BEIR-grade)**:
 - Hand-authored gold tasks (file + symbol + facts + line range) per the existing
@@ -1076,15 +1089,22 @@ Output (one JSON file per tool):
 ```json
 {
   "tool": "ss-find",
-  "n_golds": 78,
+  "n_golds": 90,
   "n_variants": 6,
-  "n_runs": 1404,
+  "n_runs": 1620,
   "metrics_per_shape": {
     "short+with-symbol+narrow-regex": {
       "file_recall@1": {"mean": 0.82, "std": 0.11, "ci95": [0.79, 0.85]},
       "symbol_recall@1": {"mean": 0.74, ...},
       "follow_up_reads": {"mean": 0.21, ...},
-      "tokens_returned": {"mean": 1840, ...}
+      "tokens_returned": {"mean": 1840, ...},
+      "per_repo": {
+        "fastify":           {"file_recall@1": 0.85, "n": 12},
+        "gin":               {"file_recall@1": 0.83, "n": 12},
+        "ripgrep":           {"file_recall@1": 0.79, "n": 12},
+        "flask":             {"file_recall@1": 0.84, "n": 12},
+        "vercel-ai-chatbot": {"file_recall@1": 0.78, "n": 12}
+      }
     },
     "long-NL+without-symbol+broad-regex": { ... },
     ...
@@ -1129,9 +1149,9 @@ at DSv4-Pro promo rates).
 
 **Critical overfit constraint (added 2026-05-09 per §0.5 dual-layer framework)**: this artifact
 is **the load-bearing input** to all 14 T_i variant bodies in Part 6. If `instruction_text`
-strings overfit the 78 Q-shape-dev golds, every variant in Layer B inherits the overfit *as a
+strings overfit the 90 Q-shape-dev golds, every variant in Layer B inherits the overfit *as a
 constant* and Layer B's variant ranking cannot detect it. Therefore, no shape-cell may be
-promoted into `recommendations.json` unless it survives **all four** of:
+promoted into `recommendations.json` unless it survives **all five** of:
 
 1. **BH-FDR at q=0.10 across the full ~72-cell shape × tool claim space** (§11.4.3) — the
    per-shape-cell paired permutation p-value must survive the Benjamini-Hochberg correction.
@@ -1144,6 +1164,16 @@ promoted into `recommendations.json` unless it survives **all four** of:
 4. **Independent-author check** — the `instruction_text` must be authored or reviewed by an
    engineer who is not the primary author of the gold tasks for that tool's sweep (TREC pooled-
    relevance discipline; §11.2 probe-author independence).
+5. **Per-repo cross-shape stability check (added 2026-05-09 with vercel/ai-chatbot)** — adding
+   a TS/React repo to a previously backend-only dev set creates a confound risk: a shape can win
+   on aggregate by overperforming on the 4 backend repos and underperforming on ai-chatbot (or
+   vice versa). For each candidate "best shape," compute per-repo `recall@1` and reject promotion
+   if (a) the worst-repo `recall@1` is < 0.6 of the best-repo `recall@1`, or (b) ai-chatbot's
+   `recall@1` is more than 2σ below the cross-repo mean. Shapes that fail this gate are recorded
+   under `not_promoted_due_to_repo_instability` with their per-repo breakdown so a future
+   campaign can decide whether to (i) split into language-specific recommendations, (ii) re-author
+   the variant to be language-agnostic, or (iii) accept that shape-specific guidance is the
+   correct end state.
 
 A shape that is statistically significant in isolation but does not survive BH-FDR is reported
 in the artifact under `not_promoted_due_to_fdr` for transparency, but its `instruction_text` is
@@ -1162,7 +1192,7 @@ The combined Track A + Track B output is a single machine-readable artifact:
       "shape": "short+with-symbol+narrow-regex",
       "deterministic_recall@1": 0.82,
       "agent_e2e_success": 0.89,
-      "n_dev": 78,
+      "n_dev": 90,
       "n_e2e": 22,
       "judge_iaa_alpha": 0.71,
       "fdr_q010_survives": true,
@@ -1170,6 +1200,14 @@ The combined Track A + Track B output is a single machine-readable artifact:
       "thresholdout_budget_consumed": 1,
       "leakage_gate": "PASS",
       "independent_author_check": "ok",
+      "per_repo_breakdown": {
+        "fastify":            {"recall@1": 0.85, "n": 12},
+        "gin":                {"recall@1": 0.83, "n": 12},
+        "ripgrep":            {"recall@1": 0.79, "n": 12},
+        "flask":              {"recall@1": 0.84, "n": 12},
+        "vercel-ai-chatbot":  {"recall@1": 0.78, "n": 12}
+      },
+      "repo_stability_gate": "PASS (worst/best = 0.78/0.85 = 0.92, ≥ 0.60 floor; ai-chatbot within 1σ of mean)",
       "instruction_text": "Use a 4-8 token natural-language query that includes the symbol if known, plus a single-literal regex anchor."
     }
   ],
@@ -1786,8 +1824,9 @@ Per §0.5.3, the campaign uses a **three-tier split**, not the historical two-ti
 The promotion of FreshStack-30 to Vault is the load-bearing change that makes the
 adaptive-overfitting math actually close.
 
-- **Tier 1 — Dev (60 retrieval probes + 78 query-shape golds, free inspection)**.
-  Stratified by language (JS, TS, Go, Rust, Python, Ruby) — Ruby gold tasks must be hand-crafted
+- **Tier 1 — Dev (60 retrieval probes + 90 query-shape golds, free inspection)**.
+  Stratified by language (JS, TS, Go, Rust, Python, Ruby) — TS coverage is provided by
+  `vercel/ai-chatbot` (added 2026-05-09; see §7.3); Ruby gold tasks must still be hand-crafted
   on a Ruby repo (e.g., `rails/rails` or `puma/puma`) because §13.2's current inventory contains
   zero Ruby probes despite the stratification claim — query type
   (literal/behavioral/structural/multi-file), and repo size (small ≤ 50 files, mid 50-500,
@@ -2307,7 +2346,7 @@ Downgrade reasons surfaced via `score.downgradeReasons`; per-task evidence succe
 | `eval/retrieval-probes/probes-stratified-100.json` | 100 | Milestone-only; never iterate against |
 | `eval/retrieval-probes/probes-fresh-40.json` | 40 | Fresh held-out for retrieval changes |
 | `eval/freshstack/uv-queries.json` | 30 | FreshStack post-cutoff held-out (uv@bb8109a) |
-| **NEW**: `core/prompt-optimization/data/query-shapes/golds.json` | ~78 (12 × 4 dev repos + 30 uv held-out) | Part 7 query-shape discovery |
+| **NEW**: `core/prompt-optimization/data/query-shapes/golds.json` | ~90 (12 × 5 dev repos + 30 uv held-out) | Part 7 query-shape discovery |
 | **NEW**: `eval/agent-read-workflows/tasks-prompt-eval.js` | ~20 hand-curated | Variant-slate Phase A (P8) and uber-tree validation (P10.6) |
 
 The prompt-evolution campaign (Parts 6-12) operates against the new files. The existing files
@@ -2332,6 +2371,17 @@ the held-out discipline in `feedback_heldout_discipline_strict.md`.
       "creation_date": "2017-05-01",
       "contamination_status": "checked",
       "removed_probes": []
+    },
+    {
+      "name": "vercel-ai-chatbot",
+      "url": "https://github.com/vercel/ai-chatbot",
+      "pinned_sha": "def456...",
+      "license": "Apache-2.0",
+      "creation_date": "2023-06-01",
+      "contamination_status": "checked",
+      "removed_probes": [],
+      "language_primary": "typescript",
+      "shape_role": "ts-react-component-coverage; informal AI-canonical-style coverage"
     }
   ],
   "evaluatees": [
@@ -2665,7 +2715,7 @@ reflector (and unanticipated direct-API needs) consume marginal API dollars.
 
 | Phase | Halt-if criterion | Marginal API cap |
 |---|---|---|
-| P6.0 (golds) | <40 distinct golds within 14h; missing tool-affinity preregs | $0 |
+| P6.0 (golds) | <50 distinct golds within 17h (scaled from 40/14h after vercel/ai-chatbot added a 5th repo); missing tool-affinity preregs; <6 of the 12 ai-chatbot golds are component-/hook-shaped (per §7.3 stratification rule) | $0 |
 | P6.2 (Track A query-shape sweep) | best-shape `recall@1` < 0.5 across all 4 tools (variant grid is misframed) | $2 (DSv4-Pro reflection if used) |
 | P6.3 (Track B agent-in-loop) | judge IAA α < 0.5 even after one rubric rewrite (humans-only on that metric) | $3 (Sonnet 4.6 inside Claude Max → $0; DSv4-Pro judge calls) |
 | P8 (Phase A spike) | median PASS rate < 0.5 across 6 leaders (variant slate is wrong) | $0 (OpenCode Go) |
@@ -2797,7 +2847,7 @@ mkdir -p core/prompt-optimization/{decontamination,stats,telemetry,failure-modes
 #      - scripts/check-vault-lock.mjs   (pre-commit hook; NEW)
 #      - scripts/eval-prompt-evolution.mjs (one-shot runner)
 #    P6.0 (other engineer): hand-author golds across all repos
-#      - 12 golds per repo × {fastify, gin, ripgrep, flask} = 48
+#      - 12 golds per repo × {fastify, gin, ripgrep, flask, vercel/ai-chatbot} = 60
 #      - 30 fresh on uv post-2026-04 commits (Vault Tier-3a)
 #      - 30-50 fresh on bun/deno/zig post-cutoff (Vault Tier-3b, vault_50.json) — DIFFERENT author
 #      - Add Ruby gold authoring on rails/puma to close §13.2 stratification gap
@@ -2818,7 +2868,7 @@ node core/prompt-optimization/run-shape-sweep.mjs \
   --tools=ss-find,ss-grep,ss-semantic,auto \
   --output=core/prompt-optimization/data/query-shapes/results/fastify-smoke.json
 
-# 6. Validate the harness output schema, fix bugs, then run full P6.2 sweep on all 4 dev repos.
+# 6. Validate the harness output schema, fix bugs, then run full P6.2 sweep on all 5 dev repos.
 
 # 7. Track B (P6.3) consumes the Track A subsample — runs claude -p with shape-constraint policy.
 #    Implement the new mode in eval/agent-read-workflows/policies.js first.
@@ -2847,11 +2897,11 @@ results land.
 | **P3** | Strict Claude enforcement mode (`permissions` + Read hint hook) | 2-3h | P1 |
 | **P4** | MCP/tool description rewrite | 30-60m | current MCP tools |
 | **P5** | Uninstall cleanup for all init-owned instruction/settings mutations across all five files | 2-3h | P1-P3 |
-| **P6.0** | **Query-shape probe-set construction (§7.3)**: hand-author 12 golds × 4 dev repos (fastify, gin, ripgrep, flask) + 30 held-out fresh on uv post-cutoff; pre-register tool affinities and predicted winners per shape category | 10-14h | P0 |
-| **P6.1** | **Authored shape variants (§7.2)**: 6 shape variants per gold across the agent-instructable grid (length × symbol × intent-verb × framing × domain-density × regex-anchor) | 6-8h | P6.0 |
-| **P6.2** | **Track A deterministic sweep (§7.4)**: 4 in-scope tools × 78 golds × 6 shapes ≈ 1,872 runs, deterministic recall metrics | 4-6h + **$0 marginal** (OpenCode Go) | P6.1 |
-| **P6.3** | **Track B agent-in-loop sweep (§7.5)**: 18-24 gold subsample × 6 shapes × 4 tools, Sonnet 4.6 bulk via Claude Max + optional pre-registered Opus 4.7 replay on winners; judges DSv4-Pro + Sonnet 4.6 per PRP protocol and IAA validation | 6-12h + **~$3 marginal** (DSv4-Pro judge calls only) | P6.2 |
-| **P6.4** | **Promotion artifact (§7.6)**: ship `core/prompt-optimization/data/query-shapes/recommendations.json` with per-tool best/avoid shapes and verbatim `instruction_text` strings | 2-3h + $0 | P6.3 |
+| **P6.0** | **Query-shape probe-set construction (§7.3)**: hand-author 12 golds × 5 dev repos (fastify, gin, ripgrep, flask, **vercel/ai-chatbot**) + 30 held-out fresh on uv post-cutoff; pre-register tool affinities and predicted winners per shape category. The ai-chatbot repo closes the TS / React / component-search shape gap (rationale in §7.3); its 12 golds must include at least 6 component- or hook-shaped tasks (`useFoo`, `<Component>`, route-handler-by-path) so the per-repo stratification stresses the new shape rather than redundantly testing function-name lookup. | 12-17h | P0 |
+| **P6.1** | **Authored shape variants (§7.2)**: 6 shape variants per gold across the agent-instructable grid (length × symbol × intent-verb × framing × domain-density × regex-anchor). For ai-chatbot golds, the "with-symbol" variants must use TSX-canonical forms (`<ChatPanel>`, `useChat()`) rather than function-only forms, so the symbol-presence axis is genuinely tested on the new shape. | 7-9h | P6.0 |
+| **P6.2** | **Track A deterministic sweep (§7.4)**: 4 in-scope tools × 90 golds × 6 shapes ≈ 2,160 runs, deterministic recall metrics. Stratify per-tool result aggregation by repo so any ai-chatbot-specific shape regression is visible (e.g., `ss-find` underperforming on `.tsx` when `looksLikeIdentifier` rejects PascalCase capture in JSX context). | 5-7h + **$0 marginal** (OpenCode Go) | P6.1 |
+| **P6.3** | **Track B agent-in-loop sweep (§7.5)**: 20-25 gold subsample × 6 shapes × 4 tools (4-5 golds per repo across 5 repos), Sonnet 4.6 bulk via Claude Max + optional pre-registered Opus 4.7 replay on winners; judges DSv4-Pro + Sonnet 4.6 per PRP protocol and IAA validation. The ai-chatbot subsample MUST include ≥1 component-search and ≥1 hook-search task so end-to-end agent reasoning on TSX is measured, not assumed. | 7-13h + **~$3-4 marginal** (DSv4-Pro judge calls only) | P6.2 |
+| **P6.4** | **Promotion artifact (§7.6)**: ship `core/prompt-optimization/data/query-shapes/recommendations.json` with per-tool best/avoid shapes and verbatim `instruction_text` strings. The artifact MUST include `per_repo_breakdown` for every promoted shape (5 repos × `recall@1` + n) and a `repo_stability_gate` field; shapes failing the new §7.6 gate-5 (worst-repo `recall@1` ≥ 0.6× best-repo, AND ai-chatbot within 2σ of cross-repo mean) are written to `not_promoted_due_to_repo_instability` with diagnosis (TS-only win, backend-only win, or genuinely repo-confounded). | 3-4h + $0 | P6.3 |
 | **P7** | Spike: write T1-T14 prompt bodies under `core/prompt-optimization/data/seeds/`, **importing query-phrasing rules verbatim from `recommendations.json`** | 4-6h + $0 | P1, **P6.4** |
 | **P8** | Run Phase A (T1, T4, T7, T9, T13, T14) on **cheap pool min** (DSv4-Flash + MiniMax M2.7 + Kimi K2.5 + Qwen 3.6 Plus via OpenCode Go) × 60-probe dev set | 6-10h + **$0 marginal** (OpenCode Go) | P0, P7 |
 | **P8.5** | **Variant ablation analysis (§6.4)**: pairwise W matrix, failure-mode tally (8 modes × 14 variants), per-stratum strength fingerprints, Plackett-Luce ranking with bootstrap CIs, prose summary per variant | 4-6h + $0 | P8 |
