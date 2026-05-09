@@ -223,7 +223,11 @@ function runRepoWorker({ workerPath, repo, tuples, runId, dryRun }) {
 
 function summarise(allRecords) {
   // Group by (tool, shape) and compute mean of recall metrics.
+  // Also group by (tool, shape, repo) for the per-repo breakdown the §7.4
+  // schema requires (added 2026-05-09 with vercel/ai-chatbot — see §7.6 gate-5
+  // per-repo cross-shape stability check in promote.mjs).
   const cells = new Map();
+  const repoCells = new Map();
   for (const r of allRecords) {
     const key = `${r.tool}|${r.shape}`;
     if (!cells.has(key)) {
@@ -244,6 +248,27 @@ function summarise(allRecords) {
     c.sum.tok += r.metrics?.tokens_returned ?? 0;
     c.sum.fol += r.metrics?.follow_up_reads ?? 0;
     c.sum.lat += r.metrics?.latency_ms ?? 0;
+
+    const repo = r._repo;
+    if (repo) {
+      const rkey = `${r.tool}|${r.shape}|${repo}`;
+      if (!repoCells.has(rkey)) {
+        repoCells.set(rkey, { tool: r.tool, shape: r.shape, repo, n: 0, fr1: 0 });
+      }
+      const rc = repoCells.get(rkey);
+      rc.n += 1;
+      rc.fr1 += r.metrics?.file_recall_at_1 ?? 0;
+    }
+  }
+  // Per-(tool,shape) → { repo: { recall@1, n } }
+  const perRepoByCell = new Map();
+  for (const rc of repoCells.values()) {
+    const k = `${rc.tool}|${rc.shape}`;
+    if (!perRepoByCell.has(k)) perRepoByCell.set(k, {});
+    perRepoByCell.get(k)[rc.repo] = {
+      file_recall_at_1: rc.n > 0 ? rc.fr1 / rc.n : 0,
+      n: rc.n,
+    };
   }
   const cellArr = [...cells.values()].map((c) => ({
     tool: c.tool,
@@ -257,6 +282,7 @@ function summarise(allRecords) {
     tokens_returned_mean: c.sum.tok / c.n,
     follow_up_reads_mean: c.sum.fol / c.n,
     latency_ms_mean: c.sum.lat / c.n,
+    per_repo: perRepoByCell.get(`${c.tool}|${c.shape}`) || {},
   }));
 
   // Per-tool best/worst shape

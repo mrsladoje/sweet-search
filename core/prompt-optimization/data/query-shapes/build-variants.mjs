@@ -59,6 +59,36 @@ function pickPrimaryFile(gold) {
 }
 
 /**
+ * TSX-canonical surface form for a symbol.
+ *
+ * Plan §7.6 / P6.1 (added 2026-05-09 with vercel/ai-chatbot): for ai-chatbot
+ * golds the "with-symbol" variants must use TSX-canonical forms
+ * (`<ChatHeader>`, `useArtifact()`) rather than function-only forms, so the
+ * symbol-presence axis is genuinely tested on the new shape. A function-only
+ * `ChatHeader` would not match how an agent or developer searches a TSX/React
+ * codebase — they search for the JSX-rendered tag or the hook-call form.
+ *
+ * Heuristic:
+ *   - Symbol begins with "use" + lowercase → React hook → `useFoo()` form.
+ *   - Symbol begins with uppercase letter on a `.tsx` file → component → `<Foo>` form.
+ *   - Otherwise: bare identifier (existing behaviour for non-ai-chatbot golds).
+ *
+ * Repo-gated: only ai-chatbot exercises this transform; other repos retain
+ * the bare-identifier surface form so the V1/V2 variants compare like-for-
+ * like with the prior 4-repo dev set.
+ */
+function tsxCanonicalSymbol(gold, sym) {
+  if (!sym) return sym;
+  if (gold.repo !== 'ai-chatbot') return sym;
+  // React hook: useFoo, useFooBar — must start with "use" + uppercase next char
+  if (/^use[A-Z]/.test(sym)) return `${sym}()`;
+  // Component: PascalCase, file is .tsx (or first expected file is .tsx)
+  const file = pickPrimaryFile(gold) ?? '';
+  if (/\.tsx$/.test(file) && /^[A-Z]/.test(sym)) return `<${sym}>`;
+  return sym;
+}
+
+/**
  * Tokenise the query into a word array (whitespace + punctuation split,
  * lowercase, filter 1-letter tokens).
  */
@@ -142,7 +172,7 @@ function variantV1(gold) {
   if (sym) {
     return {
       shape: 'very-short+with-symbol+narrow-regex+imperative+high-density',
-      query: sym,
+      query: tsxCanonicalSymbol(gold, sym),
       regex: narrowRegex(gold),
     };
   }
@@ -160,7 +190,8 @@ function variantV2(gold) {
   // short + with-symbol + intent-verb + interrogative + high domain + narrow regex
   const file = pickPrimaryFile(gold) ?? '';
   const fallback = file ? path.basename(file, path.extname(file)) : gold.repo;
-  const sym = pickPrimarySymbol(gold) ?? fallback;
+  const symRaw = pickPrimarySymbol(gold) ?? fallback;
+  const sym = tsxCanonicalSymbol(gold, symRaw);
   // Choose the verb based on stratum
   let q;
   switch (gold.qshape_stratum) {
@@ -216,6 +247,8 @@ function variantV5(gold) {
   }
   // Drop repo-specific names ("Fastify", "Gin", "Flask", "ripgrep", "uv")
   q = q.replace(/\b(Fastify|Gin|Flask|ripgrep|uv)\b/gi, 'the framework');
+  q = q.replace(/\bai-chatbot\b/gi, 'the framework');
+  q = q.replace(/\bvercel\/the framework\b/gi, 'the framework');
   // Cap length
   const ws = words(q);
   if (ws.length > 15) q = ws.slice(0, 14).join(' ');
@@ -236,6 +269,8 @@ function variantV6(gold) {
     body = body.replace(new RegExp(`\\b${sym}\\b`, 'gi'), 'the relevant component');
   }
   body = body.replace(/\b(Fastify|Gin|Flask|ripgrep|uv)\b/gi, 'this codebase');
+  body = body.replace(/\bai-chatbot\b/gi, 'this codebase');
+  body = body.replace(/\bvercel\/this codebase\b/gi, 'this codebase');
   const prefix = 'I am trying to understand exactly how this works at a deep level. Specifically: ';
   let q = prefix + body;
   const ws = words(q);

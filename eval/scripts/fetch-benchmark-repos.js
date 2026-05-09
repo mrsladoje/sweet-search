@@ -20,6 +20,7 @@ const REPOS = [
   { name: 'flask', url: 'https://github.com/pallets/flask.git', sha: '7ef2946fb5151b745df30201b8c27790cac53875', language: 'python' },
   { name: 'fastify', url: 'https://github.com/fastify/fastify.git', sha: '39f0f24233cf6da2fef48551f51be2f589f7d5d0', language: 'javascript' },
   { name: 'express', url: 'https://github.com/expressjs/express.git', sha: 'f873ac23124ffcff8c040b4bd257b32c29828d53', language: 'javascript' },
+  { name: 'ai-chatbot', url: 'https://github.com/vercel/ai-chatbot.git', sha: '107a43a8039bb4f19d0ced4ff3445e2523d14305', language: 'typescript' },
 ];
 
 const skipIndex = process.argv.includes('--skip-index');

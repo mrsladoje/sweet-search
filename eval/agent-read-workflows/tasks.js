@@ -694,6 +694,165 @@ const TASKS = {
       },
     },
   ],
+
+  // ─── vercel/ai-chatbot (12): TS/React/component-search shape coverage.
+  // Added 2026-05-09 per SYSTEM_PROMPT_OPT_PLAN.md §7.3. Stratified 3:3:3:3
+  // across literal-lookup / behavioral / structural / multi-file-flow.
+  // ≥6 component- or hook-shaped tasks (3 hooks + 3 components + 1 hybrid
+  // multi-file flow that crosses both = 7) per the §7.3 requirement that
+  // ai-chatbot stress the new shape rather than redundantly testing
+  // function-name lookup.
+  'ai-chatbot': [
+    // ── 3 literal-lookup ──────────────────────────────────────────────────
+    {
+      id: 'ai-chatbot:default-chat-model',
+      taskType: 'config_lookup',
+      difficulty: 'easy',
+      maxTurns: 6,
+      question: 'Where in the vercel/ai-chatbot codebase is DEFAULT_CHAT_MODEL defined, and what model id does it currently point at? Name the file.',
+      expectedFiles: ['lib/ai/models.ts'],
+      expectedSymbols: ['DEFAULT_CHAT_MODEL'],
+      expectedFacts: ['lib/ai/models.ts', 'DEFAULT_CHAT_MODEL', 'kimi-k2.5'],
+      expectedLineRanges: { 'lib/ai/models.ts': [[1, 1]] },
+    },
+    {
+      id: 'ai-chatbot:entitlements-config',
+      taskType: 'config_lookup',
+      difficulty: 'easy',
+      maxTurns: 6,
+      question: 'Where is the per-user-type message rate cap (entitlementsByUserType) defined in the chatbot, and what is the current maxMessagesPerHour for guest and regular users? Name the file.',
+      expectedFiles: ['lib/ai/entitlements.ts'],
+      expectedSymbols: ['entitlementsByUserType'],
+      expectedFacts: ['lib/ai/entitlements.ts', 'entitlementsByUserType', 'maxMessagesPerHour'],
+      expectedLineRanges: { 'lib/ai/entitlements.ts': [[7, 14]] },
+    },
+    {
+      id: 'ai-chatbot:visibility-type-export',
+      taskType: 'exact_symbol_lookup',
+      difficulty: 'easy',
+      maxTurns: 6,
+      question: 'Where is the VisibilityType type defined in the ai-chatbot codebase, and what string-literal values does it accept? Name the file.',
+      expectedFiles: ['components/chat/visibility-selector.tsx'],
+      expectedSymbols: ['VisibilityType'],
+      expectedFacts: ['visibility-selector.tsx', 'VisibilityType', 'private', 'public'],
+      expectedLineRanges: { 'components/chat/visibility-selector.tsx': [[20, 20]] },
+    },
+
+    // ── 3 behavioral (HOOK-SHAPED ×3) ─────────────────────────────────────
+    {
+      id: 'ai-chatbot:use-artifact-hook',
+      taskType: 'function_behavior',
+      difficulty: 'medium',
+      maxTurns: 8,
+      question: 'How does the useArtifact() hook expose the current artifact and a setter that updates it? Identify the file, the hook, and how it caches state via SWR.',
+      expectedFiles: ['hooks/use-artifact.ts'],
+      expectedSymbols: ['useArtifact'],
+      expectedFacts: ['hooks/use-artifact.ts', 'useArtifact', 'useSWR', 'setArtifact'],
+      expectedLineRanges: { 'hooks/use-artifact.ts': [[39, 89]] },
+    },
+    {
+      id: 'ai-chatbot:use-chat-visibility-hook',
+      taskType: 'function_behavior',
+      difficulty: 'medium',
+      maxTurns: 8,
+      question: 'How does the useChatVisibility hook decide whether to read visibility from the cached chat history or from the local SWR fallback? Cite the file and the function.',
+      expectedFiles: ['hooks/use-chat-visibility.ts'],
+      expectedSymbols: ['useChatVisibility'],
+      expectedFacts: ['use-chat-visibility.ts', 'useChatVisibility', 'history', 'localVisibility'],
+      expectedLineRanges: { 'hooks/use-chat-visibility.ts': [[13, 55]] },
+    },
+    {
+      id: 'ai-chatbot:use-auto-resume-hook',
+      taskType: 'function_behavior',
+      difficulty: 'medium',
+      maxTurns: 8,
+      question: 'How does the useAutoResume hook decide when to call resumeStream() and when to append a streamed message via setMessages? Cite the file and the hook.',
+      expectedFiles: ['hooks/use-auto-resume.ts'],
+      expectedSymbols: ['useAutoResume'],
+      expectedFacts: ['use-auto-resume.ts', 'useAutoResume', 'resumeStream', 'data-appendMessage'],
+      expectedLineRanges: { 'hooks/use-auto-resume.ts': [[15, 50]] },
+    },
+
+    // ── 3 structural (COMPONENT-SHAPED ×3) ────────────────────────────────
+    {
+      id: 'ai-chatbot:chat-header-component',
+      taskType: 'large_file',
+      difficulty: 'easy',
+      maxTurns: 6,
+      question: 'Where is the <ChatHeader> component defined in the chatbot, and what does it render in the collapsed-sidebar / mobile state? Name the file and the exported memoised component.',
+      expectedFiles: ['components/chat/chat-header.tsx'],
+      expectedSymbols: ['ChatHeader'],
+      expectedFacts: ['chat-header.tsx', 'ChatHeader', 'memo', 'PureChatHeader'],
+      expectedLineRanges: { 'components/chat/chat-header.tsx': [[11, 76]] },
+    },
+    {
+      id: 'ai-chatbot:visibility-selector-component',
+      taskType: 'large_file',
+      difficulty: 'medium',
+      maxTurns: 6,
+      question: 'Where is the <VisibilitySelector> component defined, and which dropdown options does it render? Name the file and the component.',
+      expectedFiles: ['components/chat/visibility-selector.tsx'],
+      expectedSymbols: ['VisibilitySelector'],
+      expectedFacts: ['visibility-selector.tsx', 'VisibilitySelector', 'DropdownMenu', 'private', 'public'],
+      expectedLineRanges: { 'components/chat/visibility-selector.tsx': [[42, 111]] },
+    },
+    {
+      id: 'ai-chatbot:multimodal-input-component',
+      taskType: 'large_file',
+      difficulty: 'medium',
+      maxTurns: 8,
+      question: 'Where is the <MultimodalInput> component defined in the chatbot, and which inner functional component does the exported memo wrap? Name the file and both names.',
+      expectedFiles: ['components/chat/multimodal-input.tsx'],
+      expectedSymbols: ['MultimodalInput'],
+      expectedFacts: ['multimodal-input.tsx', 'MultimodalInput', 'memo', 'PureMultimodalInput'],
+      expectedLineRanges: { 'components/chat/multimodal-input.tsx': [[71, 586]] },
+    },
+
+    // ── 3 multi-file-flow ─────────────────────────────────────────────────
+    {
+      id: 'ai-chatbot:visibility-update-flow',
+      taskType: 'multi_file_flow',
+      difficulty: 'hard',
+      maxTurns: 12,
+      // Hybrid HOOK + COMPONENT + server-action multi-file flow.
+      question: 'When the user picks a different option in the <VisibilitySelector> menu, the change crosses three files. Identify (a) the setVisibilityType callback returned by the useChatVisibility hook in hooks/use-chat-visibility.ts, and (b) the updateChatVisibility server action it calls in app/(chat)/actions.ts. Cite both files.',
+      expectedFiles: ['hooks/use-chat-visibility.ts', 'app/(chat)/actions.ts'],
+      expectedSymbols: ['useChatVisibility', 'updateChatVisibility'],
+      expectedFacts: ['use-chat-visibility.ts', 'actions.ts', 'setVisibilityType', 'updateChatVisibility'],
+      expectedLineRanges: {
+        'hooks/use-chat-visibility.ts': [[44, 55]],
+        'app/(chat)/actions.ts': [[64, 88]],
+      },
+    },
+    {
+      id: 'ai-chatbot:chat-post-flow',
+      taskType: 'multi_file_flow',
+      difficulty: 'hard',
+      maxTurns: 12,
+      question: 'In the chatbot, an HTTP POST to /api/chat builds a streamed response. Identify (a) the POST handler in app/(chat)/api/chat/route.ts, and (b) the language-model accessor it calls via getLanguageModel in lib/ai/providers.ts. Cite both files.',
+      expectedFiles: ['app/(chat)/api/chat/route.ts', 'lib/ai/providers.ts'],
+      expectedSymbols: ['POST', 'getLanguageModel'],
+      expectedFacts: ['api/chat/route.ts', 'providers.ts', 'POST', 'getLanguageModel', 'streamText'],
+      expectedLineRanges: {
+        'app/(chat)/api/chat/route.ts': [[60, 343]],
+        'lib/ai/providers.ts': [[18, 25]],
+      },
+    },
+    {
+      id: 'ai-chatbot:document-create-flow',
+      taskType: 'multi_file_flow',
+      difficulty: 'hard',
+      maxTurns: 12,
+      question: 'When the assistant calls the createDocument tool, the request crosses two files. Identify (a) the createDocument tool definition in lib/ai/tools/create-document.ts, and (b) the documentHandlersByArtifactKind table in lib/artifacts/server.ts that dispatches by artifact kind. Cite both files.',
+      expectedFiles: ['lib/ai/tools/create-document.ts', 'lib/artifacts/server.ts'],
+      expectedSymbols: ['createDocument', 'documentHandlersByArtifactKind'],
+      expectedFacts: ['create-document.ts', 'artifacts/server.ts', 'createDocument', 'documentHandlersByArtifactKind'],
+      expectedLineRanges: {
+        'lib/ai/tools/create-document.ts': [[17, 89]],
+        'lib/artifacts/server.ts': [[93, 99]],
+      },
+    },
+  ],
 };
 
 export function loadTasks(repo, opts = {}) {
