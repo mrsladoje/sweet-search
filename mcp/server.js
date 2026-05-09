@@ -130,7 +130,7 @@ const server = new McpServer({
 // ---------------------------------------------------------------------------
 
 server.registerTool('search', {
-  description: 'Hybrid code search (semantic + lexical + structural). USE INSTEAD OF native Grep for code-discovery tasks. Pass `format="agent"` to get ranked hits with auto-expanded, self-contained code blocks so no follow-up Read is needed — sweet-search picks the budget tier (4k / 8k / 12k) automatically from score-distribution signals (top-1 dominance, entropy, candidate-pool breadth), so you don\'t need to memorise tier flags. Default `format="benchmark"` is for retrieval-quality measurement, not agent consumption. Pass `regex` for ColGrep pattern search (regex anchor + semantic re-rank), `structural=true` for callers/callees/impact, or omit for hybrid auto-routing. Power-user override: pass `format="agent_preview"` (force 4k) or `"agent_full"` (force 8k) only when you specifically want to lock the tier; otherwise keep `format="agent"`.',
+  description: 'Hybrid code search (semantic + lexical + structural). USE INSTEAD OF native Grep for code-discovery tasks. Pass `format="agent"` to get ranked hits with auto-expanded, self-contained code blocks — no follow-up Read needed. Pass `regex` for ColGrep pattern search (regex anchor + semantic re-rank), `structural=true` for callers/callees/impact, or omit for hybrid auto-routing. Default `format="benchmark"` is for retrieval-quality measurement, not agent consumption.',
   inputSchema: {
     query: z.string().min(1).max(1000).describe('Search query (1-1000 chars)'),
     k: z.number().int().min(1).max(200).default(10).describe('Number of results (1-200)'),
@@ -141,9 +141,9 @@ server.registerTool('search', {
     regex: z.string().max(4096).optional()
       .describe('Regex pattern for ColGrep pattern search (implies mode=pattern)'),
     format: z.enum(['benchmark', 'agent', 'agent_preview', 'agent_full']).default('benchmark').optional()
-      .describe('Output format. "agent" returns bounded code blocks with auto-picked tier (4k / 8k / 12k based on dominance, entropy, pool breadth). "agent_preview" / "agent_full" force a specific tier (rarely needed).'),
+      .describe('Output format. Use "agent" for agent consumption (ranked, self-contained code blocks). "benchmark" is for retrieval-quality measurement.'),
     tokenBudget: z.number().int().min(500).max(16000).optional()
-      .describe('Agent mode: explicit total token budget. Omit for adaptive 4k / 8k / 12k auto-selection.'),
+      .describe('Agent mode: optional token budget override. Omit to let the tool pick.'),
   },
   outputSchema: SearchOutputSchema,
   annotations: {
