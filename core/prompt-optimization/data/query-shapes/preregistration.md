@@ -109,6 +109,24 @@ input**: at the end of the sweep we measure where intuition was wrong (`actual_w
 predicted_winner`), we do **not** confirm-bias toward the intuition. The
 `recommendations.json:preregistration_diff` field reports the per-gold delta.
 
+#### Predicted-shape vocabulary (alias-aware)
+
+The `predicted_winning_shape` strings use a coarse vocabulary scoped to the four
+agent-instructable dimensions the prereg author can reason about ahead of the sweep:
+
+| Coarse token | Variant tokens it aliases to |
+|---|---|
+| `short` | `short`, `very-short` |
+| `medium` | `medium` |
+| `long` | `long-NL` |
+| `with-symbol` / `without-symbol` | identical |
+| `narrow-regex` / `medium-regex` / `broad-regex` | identical |
+
+The variant grid carries the finer tier (`very-short` / `short` / `medium` / `long-NL`).
+`promote.mjs:preregistration_diff` reports BOTH the strict `exact_token_match` flag (every
+predicted token literally in the actual variant label) AND the alias-aware `alias_match`
+flag using the table above; the alias-aware count is the primary signal.
+
 ### Stratification (3:3:3:3 within each repo's 12 dev golds)
 
 | Query type | Per-repo count |

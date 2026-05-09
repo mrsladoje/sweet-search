@@ -18,7 +18,7 @@
  *
  * The 6 canonical variants per gold:
  *
- *   V1: very-short + with-symbol           + absent  + imperative   + high + narrow-regex
+ *   V1: very-short + with-symbol*          + absent  + imperative   + high + narrow-regex   (* falls back to without-symbol when no expectedSymbols, anchoring on file basename)
  *   V2: short      + with-symbol           + present + interrogative+ high + narrow-regex
  *   V3: short      + without-symbol        + absent  + declarative  + high + medium-regex
  *   V4: medium     + with-symbol           + present + interrogative+ high + medium-regex   (the existing tasks.js phrasing baseline)
@@ -363,7 +363,12 @@ function main() {
       regexAnchor: ['narrow (1 literal)', 'medium (2-3 alt)', 'broad (5+ alt)'],
     },
     canonicalVariants: [
-      'V1: very-short+with-symbol+narrow-regex+imperative+high-density',
+      // (D17.) V1 is `with-symbol` IF a primary symbol exists; otherwise
+      // the builder falls back to the file basename and emits the variant
+      // with the `without-symbol` token. This matches the histogram
+      // produced by build-variants.mjs (some V1 rows show
+      // `very-short+without-symbol+...`).
+      'V1: very-short+(with|without)-symbol+narrow-regex+imperative+high-density (without-symbol when no expectedSymbols)',
       'V2: short+with-symbol+narrow-regex+interrogative+high-density',
       'V3: short+without-symbol+medium-regex+declarative+high-density',
       'V4: medium+with-symbol+medium-regex+interrogative+high-density (baseline = original tasks.js phrasing)',

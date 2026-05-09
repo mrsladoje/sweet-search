@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "_comment": "Human-labelled probe subset for the §11.6.4 IAA gate. The plan target is ≥30 probes with majority Krippendorff α ≥ 0.7 against the disjoint-family judge panel. This file is a STUB — Track B (track-b.mjs) refuses to publish judge-derived metrics until human labels are filled in here. Schema below is the contract; entries are the ground truth that the IAA gate compares each judge's votes against.",
+  "labellingProtocol": "Two senior engineers independently label each probe as 'A', 'B', or 'tie' on the PRP pairwise rubric (core/prompt-optimization/data/judge-prompts/prp-pairwise-v1.md). A third engineer breaks ties. Labels are recorded blind to which mode produced which answer.",
+  "thresholdAlphaIndividual": 0.6,
+  "thresholdAlphaMajority": 0.7,
+  "probes": [],
+  "_status": "pending-author"
+}
