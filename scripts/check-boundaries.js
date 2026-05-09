@@ -380,6 +380,65 @@ for (const filePath of allSourceFiles) {
   }
 }
 
+// ── Section 5: Sealed-1 Thresholdout-only access (§0.5, §11.4.2) ─────────────
+//
+// `core/prompt-optimization/data/splits/heldout_40.json` is the Sealed-1 set
+// per the §0.5 dual-layer overfit-control framework. It MUST be read only via
+// `core/prompt-optimization/stats/thresholdout.mjs` (the Reusable-Holdout
+// oracle, Dwork et al. 2015). Any other source file that reads the path
+// directly bypasses the budget log and the noise injection — that's exactly
+// the failure mode §0.5.4 protects against.
+//
+// This check scans every file under core/ and scripts/ for the literal
+// path string and flags violators. The lock-checker itself
+// (scripts/check-vault-lock.mjs) is permitted to mention it, as is the
+// bounded-context manifest, the barrel pending stub, and the manifest.json
+// data file.
+
+const SEALED1_PATH = 'core/prompt-optimization/data/splits/heldout_40.json';
+const SEALED1_PERMITTED = new Set([
+  'core/prompt-optimization/stats/thresholdout.mjs',
+  'core/prompt-optimization/manifests.mjs',
+  'core/prompt-optimization/data/manifest.json',
+  'core/prompt-optimization/index.js',
+  'core/prompt-optimization/pending.js',
+  'scripts/check-boundaries.js', // self-reference (this file)
+  'scripts/check-vault-lock.mjs',
+]);
+
+let sealed1Violations = 0;
+
+function scanForSealed1Access() {
+  const roots = ['core', 'scripts', 'eval', 'mcp'];
+  const candidates = [];
+  for (const r of roots) {
+    try {
+      walkSourceFiles(r, candidates);
+    } catch {
+      // root may not exist in all checkouts
+    }
+  }
+  for (const filePath of candidates) {
+    if (SEALED1_PERMITTED.has(filePath)) continue;
+    let contents;
+    try {
+      contents = readFileSync(filePath, 'utf8');
+    } catch {
+      continue;
+    }
+    if (!contents.includes(SEALED1_PATH)) continue;
+    sealed1Violations += 1;
+    console.error(
+      `\n[SEALED-1 BYPASS] ${filePath} reads ${SEALED1_PATH} directly.\n` +
+        `  Sealed-1 access must go through core/prompt-optimization/stats/thresholdout.mjs ` +
+        `(Reusable-Holdout oracle, §0.5/§11.4.2). Direct reads burn the heldout budget without ` +
+        `the noise-injection guarantee. Update the caller to invoke openThresholdout() instead.`
+    );
+  }
+}
+
+scanForSealed1Access();
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 
 if (internalBarrelViolations > 0) {
@@ -396,7 +455,7 @@ if (externalBarrelWarnings > 0) {
   }
 }
 
-const totalViolations = violations + barrelViolations;
+const totalViolations = violations + barrelViolations + sealed1Violations;
 // Internal barrel bypasses + (non-strict) external bypasses are warnings
 const totalWarnings = internalBarrelViolations
   + (strictExternal ? 0 : externalBarrelWarnings);

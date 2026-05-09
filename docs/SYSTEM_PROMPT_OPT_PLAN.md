@@ -1,9 +1,88 @@
 # System Prompt Optimization Plan
 
 **Created**: 2026-05-03
-**Last reinforced**: 2026-05-09 (§8.9 evaluator-risk mitigations)
+**Last reinforced**: 2026-05-09 (§0.5 dual-layer overfit-control framework added per BEIR/CoIR researcher critique; §8.9 evaluator-risk mitigations stand)
 **Status**: Draft, ready for spike-testing
 **Depends on**: implemented `read` / `read-semantic` tools, agent read-workflow benchmarks, retrieval-overhaul (cAST + IAR + RRF + STOP rules) shipped 2026-05-05, IAR uniqueness gate shipped 2026-05-07
+
+---
+
+## §0.5 Overfitting Controls — dual-layer BEIR/CoIR-grade framework (ABSOLUTE; added 2026-05-09)
+
+This section is the load-bearing overfit-defense for the entire campaign. It is referenced from
+§6.4, §6.6, §7.4–7.6, §8.5, §11.2, §11.4, §11.6, §11.8, §11.9, §11.10, §11.11. **Read this before
+running anything in Parts 6–12.**
+
+### 0.5.1 Why dual-layer
+
+Two coupled optimization layers, both with overfit risk, and the coupling is what makes the
+problem worse than each layer alone:
+
+- **Layer A — Query-shape discovery (Part 7).** Sweeps a 6-dim shape grid × 3 tools × ~78 golds
+  to produce machine-readable `instruction_text` strings (e.g., "use a 4-8 token NL query with
+  symbol + narrow regex"). These strings are baked **verbatim** into Layer B's prompt bodies.
+- **Layer B — System-prompt evolution (Parts 6/8).** 14 hand-authored variants → ablation →
+  GEPA reflective evolution → system-aware Merge synthesis → uber-tree.
+
+If Layer A overfits its 78 dev golds, **every T_i in Layer B inherits that overfit as a
+constant**, and Layer B's variant ranking cannot detect it because the bias is shared across all
+14 variants. So overfit defense must operate at A and B simultaneously, on the **same heldout
+infrastructure**, with the **same query budget**.
+
+### 0.5.2 The seven controls (ranked by leverage)
+
+| # | Control | Layer | Section |
+|---|---------|-------|---------|
+| 1 | Thresholdout / Reusable-Holdout wrapper around Sealed-1 (Dwork et al. 2015) | A + B | §11.2, §11.4 |
+| 2 | Three-tier split: Dev → Sealed-1 (Thresholdout) → Vault (open ONCE at end) | A + B | §11.2 |
+| 3 | Disjoint-family judge panel (3-of-5 jury) + 1 adversarial judge | A + B | §11.6 |
+| 4 | Benjamini-Hochberg FDR (q=0.10) on every multi-cell claim space | A + B | §6.4, §7.6, §11.4 |
+| 5 | Token-overlap leakage gate: optimized prompt vs dev probes | A + B | §11.9 |
+| 6 | Threshold-sensitivity audit on the compound PASS metric | A + B | §11.10 |
+| 7 | Held-out *model* panel (not just held-out probes) | B | §8.5, §11.11 |
+
+### 0.5.3 Three-tier split (replaces the prior dev/heldout/freshstack pseudo-three-tier)
+
+| Tier | Purpose | Inspection rules | File |
+|------|---------|------------------|------|
+| **Dev** (60 retrieval probes + 78 query-shape golds) | Free inspection; iterate freely | Per-query failures OK; aggregate metrics anytime | `splits/dev_60.json`, `data/query-shapes/golds.json` |
+| **Sealed-1** (40 probes, Thresholdout-wrapped) | Adaptive-safe gate for Layer A's `instruction_text` promotion AND Layer B's G1–G5 / §9.3 promotion gates | NEVER inspect raw scores; query only via Thresholdout oracle returning `PASS / FAIL / agree-with-dev`; **pre-registered budget ≈ 30 queries** for the whole campaign | `splits/heldout_40.json` (renamed semantically; tool-path stable) |
+| **Vault** (FreshStack-30 + new 30-50 probes on a *different* post-cutoff repo: `denoland/deno` 2.x, `oven-sh/bun` 2026, or `ziglang/zig` 0.14) | Headline number, opened **EXACTLY ONCE** at campaign end | Pre-commit hook refuses Vault reads until `release/<run-id>` git tag | `splits/freshstack_30.json` + `splits/vault_50.json` (NEW) |
+
+Discipline rule: **the FreshStack-30 set is promoted to Vault** and is no longer reused at every
+promotion gate. A fresh 40-probe Sealed-1 must exist for routine adaptive querying. P11.5 (§13.2)
+is updated to read from Vault on the campaign-end promotion only.
+
+### 0.5.4 Thresholdout query budget (pre-registered, hard cap)
+
+With n=40 and Laplace noise σ=0.03, theory gives ~25-35 valid adaptive queries before validity
+degrades meaningfully. Pre-register the allocation and refuse to exceed:
+
+| Allocation | Budget | Source |
+|------------|--------|--------|
+| Layer A: per-tool `instruction_text` Thresholdout check (3 tools × 1 check) | 3 | §7.6 promotion |
+| Layer B Phase A: spike-test leader confirmation | 3 | §6.3 |
+| Layer B Phase C: GEPA generation milestone (every 25 generations) | 6 | §8.4 |
+| Layer B uber-tree gates G1–G5 | 5 | §6.6 |
+| §9.3 cross-harness promotion (1 per harness × 4 harnesses; 5th = Cursor smoke) | 4 | §9.3 |
+| Reserve for re-runs after rejected synthesis | 5 | §6.6 |
+| **Total** | **26** | within ~30-query budget |
+
+Once the budget is consumed, no further Sealed-1 reads are permitted in the campaign. Subsequent
+gates run on Dev only or escalate directly to Vault (which terminates the campaign).
+
+### 0.5.5 Sources (researcher-grade)
+
+- Dwork, Feldman, Hardt, Pitassi, Reingold, Roth, *Science* 349:6248, 2015 (DOI 10.1126/science.aaa9375). "The Reusable Holdout."
+- Blum & Hardt, ICML 2015. "The Ladder: A Reliable Leaderboard for Machine Learning Competitions."
+- Recht, Roelofs, Schmidt, Shankar, ICML 2019. "Do ImageNet Classifiers Generalize to ImageNet?"
+- Thakur et al., NeurIPS 2025 (arXiv:2504.13128). FreshStack — explicit re-roll-when-overfit doctrine.
+- Verga et al. 2024 (arXiv:2404.18796). "Replacing Judges with Juries." Panel-of-judges beats single GPT-4 7× cheaper.
+- Wataoka, Takahashi, Ri, NeurIPS Safe Generative AI WS 2024 (arXiv:2410.21819). Self-preference bias in LLM-as-judge.
+- Yang et al. 2026 (arXiv:2604.22891). Self-preference bias is **uncorrelated** with judge capability — fixing the bias requires lineage diversity, not stronger judges.
+- Urbano, Lima, Hanjalic 2025 (arXiv:2501.03930). Wilcoxon + BH-FDR is the highest-power IR multi-system test.
+- Pradeep et al., SIGIR 2025. "The Great Nugget Recall." ±10% threshold perturbation moves rankings by 5pp.
+- Agrawal et al., ICLR 2026 Oral (arXiv:2507.19457). GEPA — explicitly observes "iteratively proposing better solutions to every problem"; that *is* the overfit signature.
 
 ---
 
@@ -796,9 +875,20 @@ what the synthesis step (§6.5) is designed to recover.
 model to the pairwise outcomes to produce worth parameters with bootstrap 95% CIs (paired
 resampling, 10K iterations, seed=42). Report per-variant ranks AND per-stratum ranks. Variants
 whose CIs overlap are statistically indistinguishable globally; differences emerge at stratum
-level. Per the IR simulation literature (Sakai et al., 2019), paired permutation tests on the
-primary PASS-rate metric are the right default — neither paired t-test nor Wilcoxon are uniformly
-better on bounded discrete metrics like PASS rate at n ≈ 60.
+level. Per the IR simulation literature (Sakai et al., 2019; Urbano-Lima-Hanjalic 2025
+arXiv:2501.03930), paired permutation tests on the primary PASS-rate metric are the right
+default; **apply Benjamini-Hochberg FDR at q=0.10 across the full 14×14 = 91 pairwise claim
+space** per §11.4.3. A pair that does not survive BH-FDR is declared a *statistical tie*; PL
+worth parameters are reported but no promotion-eligible "winner" is named for tied pairs.
+
+**MDE honesty** (per §11.4 item 5): at n=60 with σ ≈ 4.5pp, the smallest detectable PASS delta is
+~6pp. Most pairwise comparisons in the 14×14 will be ties; that is the correct outcome at this
+sample size and is *not* a failure of the experiment.
+
+**Threshold-sensitivity check** (per §11.10): the PL ranking is recomputed across the 27-cell
+fractional-factorial sweep of PASS thresholds; only variants that are **rank-stable** (median
+rank ≤ 3, 90% range ≤ 5 ranks) feed §6.5 synthesis. A variant that is rank-1 only at the
+registered thresholds is logged `proposal_class: threshold-game` and excluded from synthesis.
 
 **Output artifact**: `core/prompt-optimization/data/ablation-report.json` containing
 
@@ -852,10 +942,11 @@ candidates, each with a manifest listing source variants and the failure modes t
 
 ### 6.6 Validation gates for the synthesized uber-tree
 
-A synthesized uber-tree is only promotable if it satisfies all of the following on the held-out
-40-probe split (Phase A used the 60-probe dev set; the 40-probe split is reserved strictly for
-these gates and must never be inspected per-query during tuning, per CLAUDE.md held-out
-discipline):
+A synthesized uber-tree is only promotable if it satisfies all of the following on the
+**Sealed-1** split (40 probes, queried via the **§11.4.2 Thresholdout oracle** — see §0.5.4 for
+the campaign-wide budget allocation: G1–G5 collectively consume **5 of the ~30** Thresholdout
+queries). Phase A used the 60-probe Dev set; Sealed-1 is reserved strictly for these gates and
+must never be inspected raw — only via the oracle:
 
 | Gate | Criterion |
 |---|---|
@@ -865,10 +956,28 @@ discipline):
 | **G4: Cross-model robustness** | Pareto dominance holds on **`robustness_score`** (cheap-pool min answerability across DSv4-Flash + MiniMax M2.7 + Kimi K2.5 + Qwen 3.6 Plus per §8.5). **Additionally** at the milestone replay: **`shipping_score`** (frontier mean: Opus 4.7 + GPT‑5.5 + Gemini 3.1 Pro, measured via subscriptions) must not regress **>3pp** vs the current shipped baseline. **Publishing requirement** (not optional): paired portability stats in every promotion dossier — `aux_median`, `aux_p25`, raw `aux_min`, **`aux_min_four`** (= min across the four cheap-pool models on the same probes). Optionally add **stratified mins** by evaluator archetype (MoE vs dense vs long-ctx). Use **`aux_min_four` only as a soft tripwire** unless pre‑registered as a hard gate: one pathological evaluator can dominate `min()`; pre‑register evaluator **drop-from-min rules** only with documented instruction-compliance failures (§8.9.1). |
 | **G5: Cross-harness sanity** | Inside Claude Code (**Opus 4.7** via Claude Max — Sonnet 4.6 acceptable only for reproducing subscription defaults) and Codex (**GPT-5.5** via Codex Pro), the uber-tree does not regress more than 3pp on PASS rate vs each harness's native baseline. Single-pass, no retries. Primary cross-check is `robustness_score` on the cheap pool; `shipping_score` checked at milestone via subscriptions. |
 
+**Additional gates added 2026-05-09 (§0.5 dual-layer overfit framework):**
+
+| Gate | Criterion |
+|---|---|
+| **G6: Token-overlap leakage (§11.9)** | The synthesized AGENTS.md contains **zero** non-whitelist ≥3-grams from Dev probe symbols/paths/answers/queries. Hard reject on any leakage. |
+| **G7: Threshold-stability (§11.10.2)** | Median rank ≤ 3 AND 90% quantile range ≤ 5 ranks across the 27-cell fractional-factorial PASS-threshold sweep. |
+| **G8: MDL / length parity (§11.10.4)** | `T_uber.length ≤ median(T1..T14 seed length) × 1.5`. If exceeded, also pass the truncation re-evaluation test (≤ 2pp Sealed-1 drop after truncation to median seed length). |
+| **G9: Held-out judge panel (§11.6)** | Wins on the disjoint-family 3-of-5 jury *and* the adversarial judge does not flag `looks-good-to-LLMs`. |
+
+**Campaign-end-only gate** (do not run before Vault is opened, §0.5.3):
+
+| Gate | Criterion |
+|---|---|
+| **G10: Held-out model panel (§11.11)** | `transfer_gap = homp_panel_min_pass − homp_min_pass ≤ 5pp` on Vault probes. |
+
 If any gate fails, the synthesis result is logged to `core/prompt-optimization/data/rejected/` with the
 failing-gate diagnostics, and Strategy A is re-run with the rejection feedback fed to the GEPA
-reflector. Do not re-tune the synthesized tree against the 40-probe set; that constitutes
-test-set leakage. Rejection forces a return to Phase A or a re-pull from §6.4 ablation map.
+reflector. **Do NOT re-tune the synthesized tree against Sealed-1; that constitutes Thresholdout
+budget exhaustion (§0.5.4) AND test-set leakage simultaneously.** Rejection forces a return to
+Phase A or a re-pull from §6.4 ablation map. If the campaign exhausts its Thresholdout budget
+before producing a passing uber-tree, the campaign is paused and the Sealed-1 set is rotated
+(new probe authoring) before any further gate work.
 
 ---
 
@@ -1018,6 +1127,28 @@ at DSv4-Pro promo rates).
 
 ### 7.6 Promotion artifact: per-tool query-shape recommendations
 
+**Critical overfit constraint (added 2026-05-09 per §0.5 dual-layer framework)**: this artifact
+is **the load-bearing input** to all 14 T_i variant bodies in Part 6. If `instruction_text`
+strings overfit the 78 Q-shape-dev golds, every variant in Layer B inherits the overfit *as a
+constant* and Layer B's variant ranking cannot detect it. Therefore, no shape-cell may be
+promoted into `recommendations.json` unless it survives **all four** of:
+
+1. **BH-FDR at q=0.10 across the full ~72-cell shape × tool claim space** (§11.4.3) — the
+   per-shape-cell paired permutation p-value must survive the Benjamini-Hochberg correction.
+2. **Thresholdout confirmation on Q-shape held-out (§11.4.2)** — for each candidate "best
+   shape" per tool, query the Thresholdout oracle (1 query per tool × 3 tools = 3 of the
+   ~30-query campaign budget). Promote only if oracle returns `AGREE` or `DIFFER` in the
+   candidate's favor.
+3. **Token-overlap leakage gate (§11.9)** — the `instruction_text` string itself must not
+   contain ≥3-grams from Dev probe symbols/paths/answers; if it does, force re-authoring.
+4. **Independent-author check** — the `instruction_text` must be authored or reviewed by an
+   engineer who is not the primary author of the gold tasks for that tool's sweep (TREC pooled-
+   relevance discipline; §11.2 probe-author independence).
+
+A shape that is statistically significant in isolation but does not survive BH-FDR is reported
+in the artifact under `not_promoted_due_to_fdr` for transparency, but its `instruction_text` is
+**not** baked into Layer B variants.
+
 The combined Track A + Track B output is a single machine-readable artifact:
 `core/prompt-optimization/data/query-shapes/recommendations.json`. Schema:
 
@@ -1034,6 +1165,11 @@ The combined Track A + Track B output is a single machine-readable artifact:
       "n_dev": 78,
       "n_e2e": 22,
       "judge_iaa_alpha": 0.71,
+      "fdr_q010_survives": true,
+      "thresholdout_result": "AGREE",
+      "thresholdout_budget_consumed": 1,
+      "leakage_gate": "PASS",
+      "independent_author_check": "ok",
       "instruction_text": "Use a 4-8 token natural-language query that includes the symbol if known, plus a single-literal regex anchor."
     }
   ],
@@ -1185,6 +1321,13 @@ shipping_score   : mean(answerability | Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro)
                  — REPORTING metric, measured at milestone gates only (§9.3, §11.5)
                  — never the GEPA scalar; never iterated against during dev
                  — paid for by Claude Max + Codex Pro + Gemini Pro subscriptions
+
+homp_min_pass    : min(PASS rate) across the §11.11 held-out model panel
+                 : {Llama 4-Instruct 70B, Phi-5 / Cohere Command R+ 2026}
+                 — NEVER called during optimization (not cheap pool, not reflector, not judge)
+                 — measured EXACTLY ONCE on Vault probes at campaign end
+                 — `transfer_gap = homp_panel_min_pass − homp_min_pass` ≤ 5pp is the
+                   publication gate; > 5pp invalidates the "robustness" claim per §11.11.2
 
 reflection_minibatch_size : 3   (GEPA paper default)
 Train/val split  : 60/40 stratified, seed=42 (matches existing FreshStack/GCSN discipline)
@@ -1637,20 +1780,38 @@ SWE-Rebench, FreshStack, BIRCO, RAGBench, RepoBench, SWE-Lancer, LiveCodeBench.
   `core/prompt-optimization/data/contaminated/` and excluded from headline numbers; report
   pre/post-decontamination scores side-by-side per the MBPP/HumanEval study's recommendation.
 
-### 11.2 Splits: stratified + time-aware + fresh-holdout
+### 11.2 Splits: three-tier (Dev → Sealed-1 → Vault), stratified + time-aware
 
-- **Primary 60/40 dev/heldout split** of the 100-probe set, stratified by language
-  (JS, TS, Go, Rust, Python, Ruby), query type (literal/behavioral/structural/multi-file), and
-  repo size (small ≤ 50 files, mid 50-500, large 500+). Seed=42, deterministic, with the
-  splitting script committed.
-- **FreshStack-style post-cutoff fresh-repo holdout** (~30 probes): hand-craft probes on fresh
-  public repos created *after* the most-recent evaluatee's training cutoff (e.g.,
-  `astral-sh/uv` post-2026-01 commits, `denoland/deno` 2.x post-2026-03). These are the most
-  credible numbers because no model could have seen the code. Per project-CLAUDE.md discipline,
-  these are *only* used for milestone validation, never for tuning.
-- **Time-aware annotation**: every probe carries a `created_at` timestamp; every evaluatee
-  carries a `training_cutoff` field; the harness flags any probe×evaluatee pair where potential
-  contamination exists and excludes flagged pairs from headline metrics.
+Per §0.5.3, the campaign uses a **three-tier split**, not the historical two-tier dev/heldout.
+The promotion of FreshStack-30 to Vault is the load-bearing change that makes the
+adaptive-overfitting math actually close.
+
+- **Tier 1 — Dev (60 retrieval probes + 78 query-shape golds, free inspection)**.
+  Stratified by language (JS, TS, Go, Rust, Python, Ruby) — Ruby gold tasks must be hand-crafted
+  on a Ruby repo (e.g., `rails/rails` or `puma/puma`) because §13.2's current inventory contains
+  zero Ruby probes despite the stratification claim — query type
+  (literal/behavioral/structural/multi-file), and repo size (small ≤ 50 files, mid 50-500,
+  large 500+). Seed=42, deterministic, splitting script committed.
+- **Tier 2 — Sealed-1 (40 probes, Thresholdout-wrapped)**. Adaptive-safe heldout. NEVER
+  inspect raw scores; query only via the Thresholdout oracle (§11.4.2) returning
+  `PASS / FAIL / agree-with-dev` with τ=0.05 and Laplace noise σ=0.03. Pre-registered budget:
+  **26 queries total for the campaign** (§0.5.4). Same stratification axes as Dev.
+- **Tier 3 — Vault (FreshStack-30 on `astral-sh/uv` + new 30-50-probe `vault_50.json` on
+  a *different* post-cutoff repo: `denoland/deno` 2.x, `oven-sh/bun` 2026, or `ziglang/zig` 0.14)**.
+  Opened **exactly once** at campaign end for the headline number; protected by a pre-commit
+  hook that refuses Vault reads before the `release/<run-id>` git tag. The existing FreshStack-30
+  is no longer reused at every promotion gate; its role is redefined to "Vault Tier-3a." A new
+  Sealed-1 must be authored to replace its prior duty.
+
+**Time-aware annotation**: every probe carries a `created_at` timestamp; every evaluatee
+carries a `training_cutoff` field; the harness flags any probe×evaluatee pair where potential
+contamination exists and excludes flagged pairs from headline metrics.
+
+**Probe-author independence**: gold tasks for Sealed-1 and Vault MUST be authored by an engineer
+who is not actively iterating on the system prompt or query-shape `instruction_text`. This is
+the single biggest construct-validity defense and matches TREC pooled-relevance discipline
+(Voorhees, Sakai). Currently §7.3 mandates this only for query-shape variants; here it extends
+to all gold tasks in Sealed-1 and Vault.
 
 ### 11.3 Sample sizes & statistical power
 
@@ -1673,14 +1834,77 @@ uber-tree-vs-individual-T_i):
 2. **Paired bootstrap 95% CI** (10K iterations, seed=42) on the absolute and relative metric
    delta. Report both.
 3. **Per-stratum effect size** (Cliff's δ or simple PASS-rate diff). Report stratum-by-stratum.
-4. **Multiple-comparison correction** (Bonferroni or Holm) when reporting > 3 pairwise tests
-   in one table.
+4. **Multiple-comparison correction (BH-FDR at q=0.10)** for *every* multi-cell claim space —
+   not only "when >3 pairwise tests in one table." See §11.4.3.
+5. **Minimum-detectable-effect (MDE) honesty**: at n=40 paired probes with σ ≈ 4.5pp, the
+   smallest detectable PASS delta at α=0.05, β=0.2 is ~6-7pp. **Refuse to claim wins below MDE.**
+   Most §6.4 / §11.4 pairwise comparisons must be reported as ties.
 
-Rationale: the IR simulation literature (Sakai et al., 2019) shows paired permutation +
-bootstrap is the safest combination for IR-style metrics on n ≈ 40-100 — neither test relies on
-Gaussian assumptions, and they cover both significance and effect-size reporting. Paired t-test
-behaves OK at n ≥ 50 but loses control on bounded discrete metrics; Wilcoxon misbehaves at very
-large n. Avoid both unless you've validated them via simulation against your variance.
+Rationale: the IR simulation literature (Sakai et al., 2019; Urbano-Lima-Hanjalic 2025
+arXiv:2501.03930) shows paired permutation + bootstrap is the safest combination for IR-style
+metrics on n ≈ 40-100 — neither test relies on Gaussian assumptions, and they cover both
+significance and effect-size reporting. Urbano et al. 2025 establish that **Wilcoxon + BH-FDR**
+is empirically the highest-power IR multi-system comparison; Bonferroni at our scale (hundreds
+of implicit pairwise tests) has near-zero power.
+
+#### 11.4.1 What counts as "the claim space" (must be enumerated before each campaign)
+
+| Layer | Claim space | Implicit comparisons |
+|---|---|---|
+| Layer A (Part 7) shape grid | per-(tool × shape-cell) effect on dev | 6 dims × 4 levels (avg) × 3 tools ≈ 72 |
+| Layer B (Part 6) variant ablation | 14 × 14 pairwise win matrix | 91 |
+| Layer B failure-mode tally | 14 variants × 8 failure modes | 112 |
+| §6.6 G1 dominance | 4 metrics × 1 winner | 4 |
+| §9.3 cross-harness regression | 4 metrics × 5 harnesses | 20 |
+| Total implicit comparisons in a campaign | ≈ 300 | — |
+
+Bonferroni at α=0.05/300 = 0.000167 makes every claim impossible to make at our n. **BH-FDR at
+q=0.10** is the right tool: it accepts that some claims are false-positives but bounds the
+expected fraction. Apply BH-FDR per claim space (so the shape-grid corrections don't compound
+with the variant-ablation corrections).
+
+#### 11.4.2 Thresholdout oracle (Dwork et al. 2015) — the only legal way to read Sealed-1
+
+Implementation:
+
+```
+function thresholdout_query(candidate, sealed1, dev, τ=0.05, σ=0.03, budget):
+  if budget.remaining == 0: raise BudgetExhausted
+  budget.remaining -= 1
+  dev_score   = score(candidate, dev)
+  s1_score    = score(candidate, sealed1) + Laplace(0, σ)
+  if abs(s1_score - dev_score) > τ + Laplace(0, σ):
+    return ("DIFFER", s1_score, dev_score)   # actual values returned
+  else:
+    return ("AGREE", None, dev_score)        # withhold s1_score on purpose
+```
+
+The oracle:
+- Returns specific Sealed-1 numbers **only when they meaningfully differ from dev** — preventing
+  the optimizer from chasing Sealed-1 noise.
+- Tracks budget consumption in `core/prompt-optimization/data/results/{run-id}/thresholdout-log.jsonl`.
+- Is the **only** function permitted to read raw Sealed-1 PASS rates; ESLint
+  `no-restricted-imports` enforces this — direct access to `splits/heldout_40.json` from any
+  file outside `core/prompt-optimization/stats/thresholdout.mjs` is a build error.
+
+This is the load-bearing change. Without it, 14 variants × G1–G5 × multiple synthesis rounds
+queries Sealed-1 hundreds of times and the heldout's effective error grows as O(√(k/n)) ≈ 50%
+at k=100, n=40 — i.e., the heldout is statistically theatrical without the oracle.
+
+#### 11.4.3 BH-FDR application protocol
+
+At the end of each claim-space evaluation:
+
+1. Collect all paired-permutation p-values for the claim space (e.g., 91 pairs in the 14×14).
+2. Sort ascending: `p_(1) ≤ p_(2) ≤ ... ≤ p_(m)`.
+3. Find the largest `k` such that `p_(k) ≤ k/m × 0.10`.
+4. Reject all hypotheses up to and including rank `k`; declare the rest **statistical ties**.
+5. Plackett-Luce variant ranking and Layer A's `instruction_text` promotion both use only the
+   surviving rejections. **A shape-cell or variant pair that does not survive BH-FDR is not
+   eligible to be baked into the next stage.**
+
+Output artifact: `core/prompt-optimization/data/results/{run-id}/bh-fdr-summary.json` per
+claim-space, listing surviving claims and rejected ones with sorted p-values.
 
 ### 11.5 Variance & seed protocol
 
@@ -1691,19 +1915,71 @@ large n. Avoid both unless you've validated them via simulation against your var
 - **Documented seed list** in `core/prompt-optimization/data/run-config.toml` per published run. Reruns
   use the same seeds; ablations rerun with fresh seeds and report variance.
 
-### 11.6 LLM-as-judge protocol & inter-annotator agreement
+### 11.6 LLM-as-judge protocol & inter-annotator agreement (disjoint-family jury, adversarial included)
 
-- **PRP-style prompts** (Pairwise Ranking Prompting, per Qin et al.): randomized order, blind
-  variant IDs, explicit rubric per failure mode. Position bias controlled by 50/50 swap.
-- **Two judge models** (DSv4-Pro reflector + a different family — Sonnet 4.6 or GPT-5.5) per
-  comparison. If they disagree, flag for human adjudication. This catches single-judge bias
-  (verbosity, format preference) which RAGBench and Anthropic engineering both document.
-- **Validate against human-labeled subset** of ≥ 30 probes once at campaign start, once at
-  campaign end. Report Krippendorff's α and Cohen's κ vs human gold. If α < 0.6 the LLM judge
-  is unreliable for the metric in question — fall back to human-only on that metric or
-  redesign the rubric.
-- **Pre-registered judge prompt** committed to the repo *before* the run; never tweaked
-  mid-campaign without invalidating that run.
+The 2024-2026 LLM-as-judge literature (Verga 2024 arXiv:2404.18796; Wataoka 2024
+arXiv:2410.21819; Yang 2026 arXiv:2604.22891) is unambiguous: **single-judge protocols and
+same-family two-judge protocols inflate scores via self-preference bias, and the bias is
+*uncorrelated* with judge capability** — fixing it requires lineage diversity, not stronger
+judges. The previous "DSv4-Pro reflector + Sonnet 4.6 secondary" protocol is *invalid* because
+DSv4-Pro is also the GEPA reflector that writes the candidate prompts (judge ≡ author lineage).
+
+#### 11.6.1 Disjoint-family 3-of-5 jury (mandatory)
+
+Pick **exactly one judge from each of these five lineages** (3 selected, 2 reserve for IAA
+failover):
+
+| Lineage | Example judge (May 2026) | Notes |
+|---|---|---|
+| Anthropic | Sonnet 4.6 or Opus 4.7 (subscription, $0 marginal) | Forbidden if reflector ≡ Anthropic |
+| OpenAI | GPT-5.5 (Codex Pro) | Forbidden if reflector ≡ OpenAI |
+| Google | Gemini 3.1 Pro (Gemini Pro plan) | Forbidden if reflector ≡ Google |
+| Meta / Mistral | Llama 4-Instruct or Mistral Large 3 | Adds independent Western dense |
+| DeepSeek / Qwen | Qwen 3.6 Max or DSv4-Pro | **Forbidden when DSv4-Pro is reflector** (current default) |
+
+**Hard rule**: the GEPA reflector's family is *forbidden* from the panel for that campaign. With
+DSv4-Pro as default reflector (§8.5), the active 3-of-5 is {Anthropic, OpenAI, Google} for
+primary + {Meta/Mistral} for tiebreak.
+
+#### 11.6.2 Adversarial judge (required, not optional)
+
+In addition to the 3-judge panel, run **one adversarial judge** with a system prompt instructed
+to find flaws aggressively (asymmetric prior — must explicitly enumerate failure modes; default
+to FAIL on ambiguity). The adversarial judge is the regularizer that prevents the panel from
+collectively converging on "looks-good-to-LLMs." Adversarial-judge prompt is pre-registered in
+`core/prompt-optimization/data/judge-prompts/adversarial-v1.md`.
+
+A candidate that scores high on the 3-judge panel but loses on the adversarial judge is logged
+as `proposal_class: looks-good-to-LLMs` (extending §8.9.4) and forfeits promotion until a
+human-spot-check confirms.
+
+#### 11.6.3 PRP / position / length controls
+
+- **PRP-style prompts** (Qin et al.): randomized order, blind variant IDs, explicit rubric per
+  failure mode. Position bias controlled by 50/50 swap.
+- **Length-controlled scoring** per AlpacaEval-LC: report length-controlled win rate alongside
+  raw win rate. A candidate that wins on raw but loses on length-controlled is failing the
+  prompt-bloat regularizer (§11.10b).
+
+#### 11.6.4 IAA validation against ≥100-probe human-labeled set
+
+- Validate against a **≥100-probe** human-labeled subset (raised from the prior ≥30; n=30 is too
+  few for stable α at 5 judges) **once at campaign start**, **once at midpoint**, **once at
+  campaign end**. Report Krippendorff's α and Cohen's κ vs human gold per judge AND for the
+  3-of-5 majority.
+- **α threshold ≥ 0.6** for individual judges; **majority-vote α ≥ 0.7** required for use as a
+  metric. If majority α < 0.7 at midpoint, fall back to human-only on that metric, or invalidate
+  the campaign.
+- Track **conditional α** (Yang et al. 2026 method): α between judge X and human gold, conditional
+  on judge X agreeing with the reflector's family. If conditional α drops sharply, self-preference
+  bias is in play even with disjoint-family panels.
+
+#### 11.6.5 Pre-registration
+
+Every judge prompt + the adversarial-judge prompt is committed to the repo **before** the run;
+never tweaked mid-campaign without invalidating that run and starting a new pre-reg tag. The
+human-labeled set composition (probe IDs) is committed before any LLM judging happens, to
+prevent post-hoc human-set selection bias.
 
 ### 11.7 Reproducibility artifacts
 
@@ -1743,6 +2019,135 @@ Before each campaign:
 This is the IR conference / DeepMind Evals standard and prevents post-hoc cherry-picking. Without
 it, a campaign that runs **14 variants × primary SOTA panel × auxiliary panel × ~6 metrics**
 produces **hundreds of cells**; picking the best post-hoc is statistically meaningless.
+
+The pre-registration commit MUST also pin: (a) the §11.4.1 claim-space enumeration with the
+BH-FDR allocation, (b) the §11.4.2 Thresholdout query budget per §0.5.4, (c) the §11.6 active
+3-of-5 judge panel + adversarial judge prompt, (d) the §11.9 token-overlap leakage gate
+parameters, (e) the §11.10 threshold-sensitivity sweep design, (f) the §11.11 held-out model
+panel members. Any of these chosen post-hoc invalidates the run.
+
+### 11.9 Token-overlap leakage gate (Layer A + Layer B)
+
+**Hole this closes** (devils-advocate audit, severity 5): GEPA's reflector reads dev-set traces
+including symbol names, file paths, and gold-answer-adjacent tokens; nothing prevents it from
+baking those tokens into the optimized AGENTS.md as "examples." That is gold-leakage straight
+into the shipped artifact. §11.1 decontaminates *probes vs pretraining* — the opposite direction.
+
+#### 11.9.1 Algorithm
+
+For every candidate prompt artifact (Layer A `instruction_text`, Layer B T_i, T_uber, or shipped
+AGENTS.md):
+
+1. Tokenize the candidate to lowercase ≥3-grams.
+2. Build the **leakage corpus** = union of:
+   - All Dev-tier probe symbol names (e.g., `validateBody`, `fastify.register`).
+   - All Dev-tier gold answer file paths (e.g., `lib/handler/payload.js`).
+   - All Dev-tier gold answer prose tokens (n-grams from the gold answer text).
+   - All Dev-tier query strings (the user-facing question itself).
+3. Compute n-gram intersection size; reject if ≥ 1 non-whitelist n-gram matches.
+4. The whitelist contains only generic English/programming n-grams (e.g., `for each`,
+   `the function`, `error handling`); maintained in
+   `core/prompt-optimization/decontamination/leakage-whitelist.txt`.
+
+#### 11.9.2 Gates
+
+| Gate point | Action on leakage detection |
+|---|---|
+| Layer A `instruction_text` promotion (§7.6) | Reject the shape-cell; force re-authoring without the leaked token |
+| Layer B T_i seed authoring | Reject the seed; require human re-authoring |
+| GEPA generation candidate selection | Reject the candidate; do not record it on the Pareto frontier |
+| `T_uber_v{N}` synthesis output | Reject; force GEPA Merge to redo with the leaked tokens excluded from the reflector's input prompt |
+| Final shipped AGENTS.md | **Hard block** on `npm run init` if the leakage check fails |
+
+The same gate runs **against Sealed-1 tokens before §9.3 promotion** and **against Vault tokens
+before campaign-end publication**. Any Sealed-1 / Vault leakage invalidates the campaign and
+forces a fresh seed.
+
+#### 11.9.3 Output artifact
+
+`core/prompt-optimization/decontamination/leakage-report.{run-id}.json` — per-candidate
+leakage check log (matched n-grams, source probe IDs, decision).
+
+### 11.10 Threshold-sensitivity audit (Goodhart defense for the compound PASS metric)
+
+**Hole this closes** (devils-advocate audit, severity 4): PASS = (fileRecall=1 ∧ factRecall≥0.8 ∧
+symbolRecall≥0.8 ∧ lineOverlap≥0.3 ∧ filePrecision≥0.5) is a 5-knob compound binary metric, and
+GEPA optimizes against exactly that function. Pradeep et al. SIGIR 2025 showed ±10% threshold
+perturbation moves RAG rankings by 5pp — i.e., the threshold cocktail is itself a tunable.
+
+#### 11.10.1 Factorial sensitivity sweep
+
+Pre-register a **fractional-factorial Plackett-Burman design** of the 5 thresholds at three
+levels each (-20%, registered, +20%):
+
+- 3⁵ = 243 full-factorial cells; we use a 27-run fractional-factorial subset.
+- For each cell, recompute PASS rate per (variant × evaluatee) and re-rank the 14 variants.
+- **Headline output**: rank distribution per variant across the 27 cells, reported as median
+  rank ± 90% quantile range.
+
+#### 11.10.2 Promotion criterion
+
+A variant is promotable only if it is **rank-stable**: median rank ≤ 3 AND 90% quantile range
+spans ≤ 5 ranks. A variant that is rank-1 only at the registered thresholds and rank ≥ 6
+elsewhere is logged as `proposal_class: threshold-game` and forfeits promotion.
+
+#### 11.10.3 Graded metrics alongside binary PASS
+
+Pre-register **NDCG@10**, **MRR**, and **MAP** alongside PASS — these are what BEIR/CoIR/TREC
+actually use. Report all four metrics per claim space; if PASS-rate ranking and NDCG@10 ranking
+disagree by more than 2 ranks for the top variant, escalate to human review before promotion.
+
+#### 11.10.4 Prompt-length penalty (MDL regularizer)
+
+Per the Dwork et al. 2015 §4 description-length generalization bound, generalization gap scales
+as O(√(L log V / n)) where L is prompt length in tokens. PromptWizard (Agarwal et al. 2025
+arXiv:2405.18369) showed trimmed prompts (~500 tokens) generalize ≥5pp better than bloated
+prompts (~2,000 tokens) at equal dev score on BBH.
+
+Add a length penalty to GEPA's selection metric: `score - λ · log(prompt_tokens)` with λ tuned
+so that a +500-token bloat costs 1pp of dev score. At each promotion gate, also re-evaluate the
+top-3 prompts after **truncation to the median seed length** (the median of T1–T14 as authored).
+A truncated version that drops > 2pp on Sealed-1 was overfit; reject the bloated original.
+
+### 11.11 Held-out *model* panel (not just held-out probes)
+
+**Hole this closes** (devils-advocate audit, severity 4): `robustness_score = min()` over
+{DSv4-Flash, MiniMax M2.7, Kimi K2.5, Qwen 3.6 Plus} is *not* "generalization across user
+deployments" — it is generalization across these four specific (mostly Asian, mostly MoE)
+models. The plan in §8.9.1 even allows *dropping* evaluators from `min()` via a pre-reg
+exclusion protocol — an escape hatch the optimizer can be tuned against.
+
+#### 11.11.1 The held-out model panel (HOMP)
+
+Pick **2 models** that are **never used** during optimization (not in cheap pool, not as
+reflector, not as judge):
+
+| Slot | Model (May 2026) | Rationale |
+|---|---|---|
+| Western dense | Llama 4-Instruct 70B (or Mistral Large 3 if Llama 4 unavailable) | Different training-data lineage from the cheap pool |
+| Frontier-adjacent | Phi-5 Multimodal or Cohere Command R+ 2026 | Captures small-frontier deployments outside our subscription envelope |
+
+Models are pinned by SHA / version string in `core/prompt-optimization/data/manifest.json`
+under `held_out_models`. **No call to these models is permitted before the campaign-end gate.**
+
+#### 11.11.2 Gate
+
+At campaign end, run the final uber-tree on Vault probes × HOMP. Compute:
+
+- `homp_min_pass` = min(PASS rate) across the 2 HOMP models on Vault.
+- `homp_panel_min_pass` = the same `min()` from §8.5 but on Vault probes.
+- **Transfer gap** = `homp_panel_min_pass` − `homp_min_pass`.
+
+Promotion criterion (publication gate, not internal): **transfer gap ≤ 5pp**. If gap > 5pp, the
+prompt is panel-overfit, not robust; rerun GEPA with a wider cheap pool, or label results
+"in-panel only" and *do not publish* the robustness claim.
+
+#### 11.11.3 Why this is BEIR-grade
+
+BEIR's foundational claim is zero-shot transfer: "trained on MS-MARCO, tested on 17 unrelated
+tasks." The analog for prompt optimization is: "tuned for a model panel, transfers to held-out
+models." Without HOMP, "robustness_score" is fundamentally a **capacity-bounded in-panel
+average**, not a generalization claim — and a peer reviewer at SIGIR / NeurIPS will say so.
 
 ---
 
@@ -2003,31 +2408,82 @@ phase_caps = { p6_2 = 50, p6_3 = 200, p8 = 100, p10 = 800, p11_5 = 300 }
 **Tag**: prereg/<run-id>
 
 ## Primary metric
-<one sentence — e.g., "PASS rate on the 40-probe held-out split, where PASS = answerability='full' per metrics.js">
+<one sentence — `robustness_score = min(answerability)` over the cheap pool, on Dev tier; Sealed-1 queried only via Thresholdout (§0.5.4 budget)>
+
+## Reporting metric (NOT optimization target)
+<one sentence — `shipping_score = mean(answerability)` over Opus 4.7 + GPT-5.5 + Gemini 3.1 Pro at milestone gates, plus `homp_min_pass` at campaign-end Vault gate (§11.11)>
 
 ## Hypothesis
-<one sentence — e.g., "T9 (worked-examples-only) achieves higher PASS than T1 (question-shape router)">
+<one sentence — e.g., "T9 (worked-examples-only) achieves higher robustness_score than T1 (question-shape router)">
 
 ## Secondary metrics
 - file recall, symbol recall, fact recall, line overlap, file precision
-- token cost (mean), tool-call count (median)
+- **graded NDCG@10, MRR, MAP** (per §11.10.3 — required alongside binary PASS)
+- token cost (mean), tool-call count (median), prompt-length tokens
 - per-stratum PASS deltas (language × query-type × repo-size)
+- paired portability stats (`aux_median`, `aux_p25`, `aux_min`, `aux_min_four`) per §8.9.1
+
+## Claim-space enumeration (§11.4.1)
+<table — list every multi-cell claim space that will receive BH-FDR correction:
+- Layer A: shape-grid × tool ≈ 72 cells
+- Layer B: 14×14 pairwise = 91 cells
+- Layer B failure-mode tally: 14×8 = 112 cells
+- Cross-harness: 4 metrics × 5 harnesses = 20 cells
+Each gets BH-FDR at q=0.10 independently>
+
+## Thresholdout query budget (§0.5.4)
+<table — pre-allocated budget for Sealed-1 oracle reads, total ≤ 30:
+- Layer A `instruction_text` promotion: 3 (one per tool)
+- Layer B Phase A spike-test confirmation: 3
+- Layer B GEPA generation milestones (every 25 generations): 6
+- Layer B G1-G5 gates: 5
+- §9.3 cross-harness: 4
+- Reserve for re-runs after rejection: 5
+- Total: 26 (under ~30 budget)>
 
 ## Statistical tests
 - Paired permutation test, 10K iterations, seed=42, on PASS rate
 - Paired bootstrap 95% CI, 10K iterations, seed=42, on absolute and relative deltas
 - Per-stratum Cliff's δ
-- Multiple-comparison correction: Holm
+- **BH-FDR at q=0.10** across each enumerated claim space (§11.4.3) — replaces Bonferroni/Holm
+- **Minimum-detectable effect** declared: <e.g., "6pp PASS at n=40, β=0.2"; refuse to claim wins below MDE>
 
 ## Sample size justification
-<paragraph — power analysis with assumed variance>
+<paragraph — power analysis with assumed variance σ ≈ 4.5pp; explicit MDE per Sealed-1 / Vault tier>
+
+## Judge panel (§11.6)
+<list — disjoint-family 3-of-5 jury (reflector's family forbidden):
+- Anthropic: Sonnet 4.6 (Claude Max)
+- OpenAI: GPT-5.5 (Codex Pro)
+- Google: Gemini 3.1 Pro (Gemini Pro)
+- Reserve: Llama 4-Instruct, Qwen 3.6 Max
+- Adversarial judge prompt: data/judge-prompts/adversarial-v1.md
+- Reflector forbidden lineage: DeepSeek (DSv4-Pro is reflector)
+- IAA target: Krippendorff α ≥ 0.6 individual, ≥ 0.7 majority on ≥100 human-labeled probes>
+
+## Threshold-sensitivity sweep (§11.10)
+<table — 27-cell fractional-factorial of the 5 PASS thresholds at -20%/registered/+20%; rank-stability target: median rank ≤ 3, 90% range ≤ 5 ranks>
+
+## Held-out model panel (§11.11)
+<list — pinned by SHA in manifest.json under `held_out_models`:
+- Slot 1: Llama 4-Instruct 70B
+- Slot 2: Phi-5 / Cohere Command R+ 2026
+- Transfer-gap target: ≤ 5pp on Vault probes; > 5pp invalidates "robustness" claim>
+
+## Token-overlap leakage gate (§11.9)
+<list — gates run at: instruction_text promotion / T_i seed authoring / GEPA candidate / T_uber synthesis / final AGENTS.md ship; whitelist file: data/leakage-whitelist.txt; hard-block on non-whitelist match>
 
 ## Stop rules
 - Halt if <kill criterion>
 - Halt at hard budget cap of $<X>
+- Halt if Thresholdout budget exhausted before passing G1-G5
+- Halt if judge IAA α drops below 0.6 at midpoint check
 
 ## Pre-committed analysis decisions
-<list — e.g., "If T9 wins on dev but loses on held-out, treat as overfit, do NOT publish T9">
+<list — e.g.,
+- "If T9 wins on Dev but Thresholdout returns DIFFER on Sealed-1 unfavorably, do NOT publish T9"
+- "If transfer_gap > 5pp on HOMP, do NOT use the word 'robust' in any external claim"
+- "If threshold-sensitivity median rank > 3, treat win as a Goodhart artifact">
 ```
 
 #### `core/prompt-optimization/data/query-shapes/golds.json` schema
@@ -2309,27 +2765,50 @@ git log --oneline -5
 # 1. Create the prompt-optimization directory structure (data + code trees).
 #    The bounded context root + barrel were created by P0.0; these mkdirs
 #    add the per-phase data and code subdirs as they're populated.
-mkdir -p core/prompt-optimization/data/{seeds,splits,baselines,judge-prompts,synthesis-runs,results,rejected,contaminated,gold-snippets,query-shapes,output}
+mkdir -p core/prompt-optimization/data/{seeds,splits,baselines,judge-prompts,synthesis-runs,results,rejected,contaminated,gold-snippets,query-shapes,output,homp}
 mkdir -p core/prompt-optimization/{decontamination,stats,telemetry,failure-modes,checks,baselines,splits}
+# Note: stats/thresholdout.mjs is the ONLY legal accessor of splits/heldout_40.json (Sealed-1).
+# Add ESLint no-restricted-imports rule + scripts/check-boundaries.js entry to enforce.
+# Note: scripts/check-vault-lock.mjs blocks ALL reads of splits/freshstack_30.json and
+# splits/vault_50.json until the campaign-end tag `release/<run-id>` exists.
 
 # 2. Copy the templates (manifest, run-config, preregistration) into place
 #    — schemas live verbatim in §13.3 above.
 #    Author preregistration first; commit before any LLM call.
 
 # 3. Begin P0 + P6.0 in parallel:
-#    P0 (one engineer): implement decontamination filters + statistical battery
+#    P0 (one engineer): implement overfit-control infrastructure + decontamination + stats
+#      Decontamination + leakage:
 #      - core/prompt-optimization/decontamination/{n-gram,embedding,llm}-filter.mjs
+#      - core/prompt-optimization/decontamination/leakage-gate.mjs   (§11.9, NEW)
+#      - core/prompt-optimization/decontamination/leakage-whitelist.txt (NEW)
+#      Statistics + overfit oracles:
 #      - core/prompt-optimization/stats/{paired-permutation,bootstrap-ci,plackett-luce}.mjs
+#      - core/prompt-optimization/stats/bh-fdr.mjs                   (§11.4.3, NEW)
+#      - core/prompt-optimization/stats/thresholdout.mjs             (§11.4.2, NEW; ESLint-restrict imports)
+#      - core/prompt-optimization/stats/threshold-sensitivity.mjs    (§11.10, NEW)
+#      - core/prompt-optimization/stats/mdl-length-penalty.mjs       (§11.10.4, NEW)
+#      Splits + judge panel + held-out model panel + Vault lock:
+#      - core/prompt-optimization/data/splits/{dev_60,heldout_40,freshstack_30,vault_50}.json
+#        (vault_50.json = NEW, hand-crafted on bun/deno/zig post-cutoff; independent author)
+#      - core/prompt-optimization/data/judge-prompts/{prp-pairwise-v1,adversarial-v1}.md  (§11.6)
+#      - core/prompt-optimization/data/judge-prompts/disjoint-panel.toml                  (§11.6.1)
+#      - core/prompt-optimization/run-homp.mjs                                            (§11.11, NEW)
+#      - scripts/check-vault-lock.mjs   (pre-commit hook; NEW)
 #      - scripts/eval-prompt-evolution.mjs (one-shot runner)
 #    P6.0 (other engineer): hand-author golds across all repos
 #      - 12 golds per repo × {fastify, gin, ripgrep, flask} = 48
-#      - 30 fresh on uv post-2026-04 commits
+#      - 30 fresh on uv post-2026-04 commits (Vault Tier-3a)
+#      - 30-50 fresh on bun/deno/zig post-cutoff (Vault Tier-3b, vault_50.json) — DIFFERENT author
+#      - Add Ruby gold authoring on rails/puma to close §13.2 stratification gap
 #      - Use eval/agent-read-workflows/tasks.js as schema reference
 #      - Pre-register tool affinity per gold BEFORE running any tool
 
 # 4. After P0 + P6.0:
 #    Tag prereg/qshape-v1 (the campaign's first tagged pre-registration)
 #    Implement P6.1 (variant generation, 6 shapes per gold)
+#    Initialize Thresholdout budget log: core/prompt-optimization/data/results/{run-id}/thresholdout-log.jsonl
+#    Verify Vault lock: scripts/check-vault-lock.mjs --dry-run should refuse vault_50.json reads
 
 # 5. Smoke test on one repo before running the full sweep:
 node core/prompt-optimization/run-shape-sweep.mjs \
@@ -2362,7 +2841,7 @@ results land.
 
 | Phase | What | Effort | Depends on |
 |-------|------|--------|------------|
-| **P0** | BEIR/CoIR-grade benchmark scaffolding: pinned `manifest.json`, layered contamination filters (n-gram + embedding + LLM), stratified 60/40 split (lang × query-type × repo-size), FreshStack-30 fresh-repo holdout (post-cutoff repos), pre-registration template, statistical-test harness (paired permutation + bootstrap), seed-pinning, reproducibility runner script | 8-12h | existing 100-probe set + retrieval-overhaul ranking |
+| **P0** | BEIR/CoIR-grade benchmark scaffolding: pinned `manifest.json`, layered contamination filters (n-gram + embedding + LLM), **three-tier split (Dev / Sealed-1 / Vault per §0.5.3)**, **Thresholdout oracle wrapper around Sealed-1 (§11.4.2) + budget tracker (§0.5.4)**, **BH-FDR battery at q=0.10 (§11.4.3) per claim space**, **token-overlap leakage gate (§11.9)**, **threshold-sensitivity sweep (§11.10)**, **MDL length-penalty regularizer (§11.10.4)**, **disjoint-family judge panel + adversarial judge wiring (§11.6)**, **held-out model panel manifest entry (§11.11)**, FreshStack-30 promoted to Vault Tier-3a, **fresh `vault_50.json` hand-crafted on `bun`/`deno`/`zig` post-cutoff**, pre-registration template (extended for §11.4.1 claim-space enumeration + §0.5.4 budget allocation + §11.11 HOMP), paired permutation + bootstrap stats harness, seed-pinning, reproducibility runner script | **18-26h** (was 8-12h; the §0.5 framework is the load-bearing addition) | existing 100-probe set + retrieval-overhaul ranking |
 | **P1** | Multi-file injection in init: `AGENTS.md` (canonical) + `CLAUDE.md` import + `GEMINI.md` symlink + `.cursor/rules/sweet-search.mdc` + `.claude/rules/sweet-search.md` | 4-6h | read tools + tool names finalized |
 | **P2** | `UserPromptSubmit` reminder hook | 1-2h | P1 |
 | **P3** | Strict Claude enforcement mode (`permissions` + Read hint hook) | 2-3h | P1 |
@@ -2400,8 +2879,14 @@ specialist strengths; skipping P10.5/P10.6 means the synthesized tree may regres
 modes the individual variants handled correctly.
 
 **P11.5 is the rg+Read defensibility gate.** Any external claim ("X% better than native") is
-only defensible if it passed P11.5 on a fresh-repo holdout. Internal numbers can rely on the
-60-dev / 40-heldout split without P11.5.
+only defensible if it passed P11.5 on **Vault** (Tier 3, opened exactly once at campaign end per
+§0.5.3) — not on Sealed-1. Internal numbers may rely on Dev + Thresholdout-mediated Sealed-1
+without P11.5, but headline external claims require Vault.
+
+**P11.6 (NEW): held-out model panel gate (§11.11).** Run the final uber-tree on Vault probes ×
+HOMP {Llama 4-Instruct 70B, Phi-5 / Cohere Command R+ 2026}. Compute `transfer_gap` and reject
+publication if > 5pp. ~2-3h, $0 marginal (HOMP via OpenRouter free tier or one-shot API spend
+within the §8.6 buffer). Depends on P11.5.
 
 ---
 
@@ -2422,20 +2907,33 @@ only defensible if it passed P11.5 on a fresh-repo holdout. Internal numbers can
 
 | File | Purpose |
 |------|---------|
-| `core/prompt-optimization/data/manifest.json` | Pinned repo SHAs, source URLs, licenses, creation dates, contamination flags |
-| `core/prompt-optimization/data/splits/dev_60.json` | Stratified dev split (60 probes, seed=42) |
-| `core/prompt-optimization/data/splits/heldout_40.json` | Stratified held-out split (40 probes, seed=42) |
-| `core/prompt-optimization/data/splits/freshstack_30.json` | Post-cutoff fresh-repo holdout (~30 probes on `astral-sh/uv`, `denoland/deno`, etc.) |
+| `core/prompt-optimization/data/manifest.json` | Pinned repo SHAs, source URLs, licenses, creation dates, contamination flags, **`held_out_models` list (§11.11)** |
+| `core/prompt-optimization/data/splits/dev_60.json` | Stratified Dev split (60 probes, seed=42) |
+| `core/prompt-optimization/data/splits/heldout_40.json` | **Sealed-1** (per §0.5.3): 40 probes, queried only via Thresholdout oracle |
+| `core/prompt-optimization/data/splits/freshstack_30.json` | Vault Tier-3a: post-cutoff fresh-repo (`astral-sh/uv`); opened once at campaign end |
+| `core/prompt-optimization/data/splits/vault_50.json` | **NEW**: Vault Tier-3b, 30-50 probes hand-crafted on a *different* post-cutoff repo (`bun`/`deno`/`zig`); independent author per §11.2 |
 | `core/prompt-optimization/splits/build-splits.mjs` | Deterministic split builder with stratification logic |
 | `core/prompt-optimization/decontamination/n-gram-filter.mjs` | 50-char n-gram detector against public dumps |
 | `core/prompt-optimization/decontamination/embedding-filter.mjs` | CodeRankEmbed similarity at threshold 0.92 |
 | `core/prompt-optimization/decontamination/llm-filter.mjs` | DSv4-Flash decontamination pass |
+| `core/prompt-optimization/decontamination/leakage-gate.mjs` | **NEW (§11.9)**: token-overlap leakage gate; rejects optimized prompts containing dev-probe ≥3-grams; whitelist-aware |
+| `core/prompt-optimization/decontamination/leakage-whitelist.txt` | **NEW**: generic English/programming n-grams permitted in prompt bodies |
 | `core/prompt-optimization/data/contaminated/` | Removed-items list with per-probe rationale |
-| `core/prompt-optimization/data/preregistration.md` | Pre-registered analysis plan template (committed before each run) |
+| `core/prompt-optimization/data/preregistration.md` | Pre-registered analysis plan template (extended for §11.4.1 claim-space enumeration + §0.5.4 budget + §11.11 HOMP) |
 | `core/prompt-optimization/stats/paired-permutation.mjs` | 10K-iter paired permutation test with seed=42 |
 | `core/prompt-optimization/stats/bootstrap-ci.mjs` | 10K-iter paired bootstrap 95% CI |
 | `core/prompt-optimization/stats/plackett-luce.mjs` | PL ranking model + bootstrap CIs for variant ranks |
+| `core/prompt-optimization/stats/bh-fdr.mjs` | **NEW (§11.4.3)**: BH-FDR at q=0.10 across enumerated claim spaces |
+| `core/prompt-optimization/stats/thresholdout.mjs` | **NEW (§11.4.2)**: Reusable-Holdout oracle (Dwork 2015) wrapping Sealed-1; only legal accessor of `splits/heldout_40.json` |
+| `core/prompt-optimization/stats/threshold-sensitivity.mjs` | **NEW (§11.10)**: 27-cell fractional-factorial PASS-threshold sweep + rank-stability scoring |
+| `core/prompt-optimization/stats/mdl-length-penalty.mjs` | **NEW (§11.10.4)**: prompt-length penalty + truncation re-eval for GEPA selection |
+| `core/prompt-optimization/data/results/{run-id}/thresholdout-log.jsonl` | **NEW**: append-only Thresholdout query log with budget consumption |
+| `core/prompt-optimization/data/results/{run-id}/bh-fdr-summary.json` | **NEW**: per-claim-space BH-FDR survival list |
+| `core/prompt-optimization/data/judge-prompts/adversarial-v1.md` | **NEW (§11.6.2)**: adversarial-judge prompt (asymmetric prior; default to FAIL on ambiguity) |
+| `core/prompt-optimization/data/judge-prompts/disjoint-panel.toml` | **NEW**: 3-of-5 jury slot configuration with reflector-family forbidden rule |
+| `core/prompt-optimization/run-homp.mjs` | **NEW (§11.11)**: held-out model panel runner; campaign-end-only; emits `transfer_gap` |
 | `scripts/eval-prompt-evolution.mjs` | One-shot reproducible runner (`npm run eval:prompt -- --run <run-id>`) |
+| `scripts/check-vault-lock.mjs` | **NEW**: pre-commit hook refusing Vault reads before `release/<run-id>` git tag |
 
 ### Variant slate, ablation, synthesis (P7-P10.6)
 

@@ -78,10 +78,53 @@
       "role": "primary-sota"
     }
   ],
+  "heldOutModels": {
+    "_comment": "Plan §11.11 — Held-Out Model Panel (HOMP). These models are NEVER used during optimisation (not in cheap pool, not as reflector, not as judge). They are scored EXACTLY ONCE on Vault probes at campaign end via core/prompt-optimization/run-homp.mjs to compute the transfer-gap publication gate (≤ 5pp).",
+    "transferGapBudgetPct": 5,
+    "panel": [
+      {
+        "slot": 1,
+        "name": "llama-4-instruct-70b",
+        "lineage": "meta",
+        "trainingCutoff": "2026-01-01",
+        "endpoint": "https://openrouter.ai/api/v1",
+        "wireApi": "openai-compatible",
+        "role": "held-out-model",
+        "addedAt": "2026-05-09",
+        "rationale": "Western dense; different training-data lineage from the cheap-pool MoE/hybrid models."
+      },
+      {
+        "slot": 2,
+        "name": "command-r-plus-2026",
+        "lineage": "cohere",
+        "trainingCutoff": "2026-02-01",
+        "endpoint": "https://openrouter.ai/api/v1",
+        "wireApi": "openai-compatible",
+        "role": "held-out-model",
+        "addedAt": "2026-05-09",
+        "rationale": "Frontier-adjacent; represents deployments outside our subscription envelope. Substitute Phi-5 if Command R+ unavailable at campaign end.",
+        "fallback": "phi-5-multimodal"
+      }
+    ]
+  },
   "splits": {
     "dev_60": "core/prompt-optimization/data/splits/dev_60.json",
-    "heldout_40": "core/prompt-optimization/data/splits/heldout_40.json",
-    "freshstack_30": "core/prompt-optimization/data/splits/freshstack_30.json"
+    "heldout_40": {
+      "path": "core/prompt-optimization/data/splits/heldout_40.json",
+      "tier": "Sealed-1",
+      "_comment": "Per §0.5.3, queried ONLY via core/prompt-optimization/stats/thresholdout.mjs (Reusable-Holdout oracle, Dwork et al. 2015). Direct reads are an ESLint error and a check-boundaries.js failure."
+    },
+    "freshstack_30": {
+      "path": "core/prompt-optimization/data/splits/freshstack_30.json",
+      "tier": "Vault-3a",
+      "_comment": "Per §0.5.3 promoted to Vault Tier-3a. Locked behind release/<run-id> git tag; opened EXACTLY ONCE at campaign end. Enforced by scripts/check-vault-lock.mjs (pre-commit + scan)."
+    },
+    "vault_50": {
+      "path": "core/prompt-optimization/data/splits/vault_50.json",
+      "tier": "Vault-3b",
+      "_comment": "NEW Vault Tier-3b — 30-50 hand-crafted probes on a different post-cutoff repo (bun/deno/zig). Independent author per §11.2. Same lock as Tier-3a.",
+      "status": "pending-author"
+    }
   },
   "harnessVersion": {
     "claudeCodeCli": "2.1.x",
@@ -91,5 +134,26 @@
     "appliedLayers": [],
     "_comment": "Populated by scripts/eval-prompt-evolution.mjs decontaminate step. Empty until P6.0 lands probe content + caller wires real corpus and judge.",
     "removedItemsList": "core/prompt-optimization/data/contaminated/"
+  },
+  "leakageGate": {
+    "_comment": "§11.9 — token-overlap leakage gate. Hard rejects any optimised prompt that contains non-whitelist ≥3-grams from Dev probe symbols/paths/answers/queries.",
+    "implementation": "core/prompt-optimization/decontamination/leakage-gate.mjs",
+    "whitelist": "core/prompt-optimization/decontamination/leakage-whitelist.txt",
+    "ngramLength": 3
+  },
+  "thresholdout": {
+    "_comment": "§11.4.2 — Reusable-Holdout oracle (Dwork et al. 2015). Pre-registered query budget per §0.5.4.",
+    "implementation": "core/prompt-optimization/stats/thresholdout.mjs",
+    "tau": 0.05,
+    "sigma": 0.03,
+    "totalBudget": 26,
+    "logPath": "core/prompt-optimization/data/results/{run-id}/thresholdout-log.jsonl"
+  },
+  "judgePanel": {
+    "_comment": "§11.6 — disjoint-family 3-of-5 jury + adversarial judge. Reflector lineage forbidden from active panel.",
+    "config": "core/prompt-optimization/data/judge-prompts/disjoint-panel.toml",
+    "humanValidation": "core/prompt-optimization/data/judge-prompts/human-validation-set.json",
+    "alphaIndividual": 0.6,
+    "alphaMajority": 0.7
   }
 }
