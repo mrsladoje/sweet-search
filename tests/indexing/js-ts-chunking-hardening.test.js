@@ -565,7 +565,20 @@ const MyWidget = (props) => props.children;
     const tsResult = await treeSitterExtractor.extractFromFile('/test/parity-entities.js', code);
     const rxResult = await regexExtractor.extractFromFile('/test/parity-entities.js', code);
 
-    expect(entitySignatureSet(tsResult)).toEqual(entitySignatureSet(rxResult));
+    // Tree-sitter is intentionally MORE thorough than regex for top-level
+    // `const X = expr` shapes (May 2026, see TSX/CommonJS handoff). Filter
+    // that intentional asymmetry out of the parity comparison and assert the
+    // tree-sitter-only entity (`routes`) explicitly.
+    const stripVariable = (sig) => {
+      const out = { ...sig };
+      for (const k of Object.keys(out)) {
+        if (k.startsWith('variable:')) delete out[k];
+      }
+      return out;
+    };
+    expect(stripVariable(entitySignatureSet(tsResult))).toEqual(stripVariable(entitySignatureSet(rxResult)));
+    expect(tsResult.entities.some(e => e.type === 'variable' && e.name === 'routes')).toBe(true);
+    expect(rxResult.entities.some(e => e.type === 'variable' && e.name === 'routes')).toBe(false);
   });
 
   it('tree-sitter and regex paths agree on broad JS relationship semantics', async () => {
@@ -624,8 +637,22 @@ const createUser = async (payload: UserConfig) => payload;
     const tsResult = await treeSitterExtractor.extractFromFile('/test/parity.ts', code);
     const rxResult = await regexExtractor.extractFromFile('/test/parity.ts', code);
 
-    expect(entitySignatureSet(tsResult)).toEqual(entitySignatureSet(rxResult));
+    // Tree-sitter is intentionally MORE thorough than regex for `export const X = expr`
+    // shapes (May 2026). The @variable.definition rule captures namespace-scoped exports
+    // like `export const version = 'v1'` that the regex path doesn't see. Filter that
+    // intentional asymmetry out of the parity comparison; assert it explicitly below.
+    const stripVariable = (sig) => {
+      const out = { ...sig };
+      for (const k of Object.keys(out)) {
+        if (k.startsWith('variable:')) delete out[k];
+      }
+      return out;
+    };
+    expect(stripVariable(entitySignatureSet(tsResult))).toEqual(stripVariable(entitySignatureSet(rxResult)));
     expect(relationshipSignatureSet(tsResult)).toEqual(relationshipSignatureSet(rxResult));
+    // Tree-sitter-only: namespace-scoped const export
+    expect(tsResult.entities.some(e => e.type === 'variable' && e.name === 'version')).toBe(true);
+    expect(rxResult.entities.some(e => e.type === 'variable' && e.name === 'version')).toBe(false);
   });
 
   it('tree-sitter and regex paths agree on destructured require imports', async () => {

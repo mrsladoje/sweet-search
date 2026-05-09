@@ -12,9 +12,20 @@
  */
 
 // Grammar mapping: language ID -> grammar WASM file stem
+//
+// `tsx` uses tree-sitter-tsx (not tree-sitter-typescript) so that JSX inside
+// .tsx bodies parses without producing ERROR nodes. Empirically (May 2026),
+// routing .tsx to tree-sitter-typescript caused `export function Component(...)
+// { return <Foo/> }` to silently miss the function-name capture, even though
+// the tag query rule matched the AST shape — the JSX body created sibling
+// ERROR nodes that broke capture resolution.
+//
+// tree-sitter-javascript already supports JSX natively, so .jsx files don't
+// need a separate grammar.
 const GRAMMAR_MAP = {
   javascript: 'tree-sitter-javascript',
   typescript: 'tree-sitter-typescript',
+  tsx: 'tree-sitter-tsx',
   python: 'tree-sitter-python',
   go: 'tree-sitter-go',
   rust: 'tree-sitter-rust',
@@ -137,6 +148,16 @@ const NODE_TYPE_MAP = {
 
 // Standard tags.scm query patterns for symbol extraction
 // These are s-expression patterns matching tree-sitter node types
+//
+// Naming conventions for new captures (May 2026):
+//   @component.definition — `export const X = call(...)` (HOC-wrapped values
+//     like memo/forwardRef/createSlice). Higher priority than @variable, so
+//     when both fire on the same declarator, component wins via dedup-by-name+line
+//     in graph-extractor._normalizeTreeSitterEntities.
+//   @variable.definition — any other `export const X = expr` (literals, objects,
+//     typed configs). Scoped to export_statement on purpose: we don't want to
+//     extract every internal `const x = 1` inside a function body. Tree-sitter
+//     emits @arrowFunction in priority over @variable when value is an arrow.
 const TAGS_QUERIES = {
   javascript: `
     (function_declaration name: (identifier) @function.definition)
@@ -149,6 +170,30 @@ const TAGS_QUERIES = {
     (export_statement (function_declaration name: (identifier) @function.definition))
     (export_statement
       declaration: (class_declaration name: (identifier) @class.definition))
+    (export_statement
+      declaration: (lexical_declaration
+        (variable_declarator
+          name: (identifier) @component.definition
+          value: (call_expression))))
+    (export_statement
+      declaration: (lexical_declaration
+        (variable_declarator
+          name: (identifier) @variable.definition)))
+    ; Top-level (non-exported) file-scope const declarations. CommonJS files
+    ; like fastify/lib/errors.js (\`const createError = require(...)\`) and
+    ; module-private lookup tables (\`const lifecycleHooks = [...]\`) need to
+    ; surface as entities for structural-mode queries to resolve. Anchored
+    ; to (program ...) so internal consts inside function/class/namespace
+    ; bodies are NOT captured.
+    (program
+      (lexical_declaration
+        (variable_declarator
+          name: (identifier) @component.definition
+          value: (call_expression))))
+    (program
+      (lexical_declaration
+        (variable_declarator
+          name: (identifier) @variable.definition)))
     (pair
       key: (property_identifier) @method.definition
       value: (function_expression))
@@ -172,6 +217,76 @@ const TAGS_QUERIES = {
       declaration: (class_declaration name: (type_identifier) @class.definition))
     (export_statement
       declaration: (abstract_class_declaration name: (type_identifier) @class.definition))
+    (export_statement
+      declaration: (lexical_declaration
+        (variable_declarator
+          name: (identifier) @component.definition
+          value: (call_expression))))
+    (export_statement
+      declaration: (lexical_declaration
+        (variable_declarator
+          name: (identifier) @variable.definition)))
+    ; Top-level (non-exported) file-scope const declarations — see javascript
+    ; query for rationale. Anchored to (program ...) so internal consts inside
+    ; functions/classes/namespaces are NOT captured.
+    (program
+      (lexical_declaration
+        (variable_declarator
+          name: (identifier) @component.definition
+          value: (call_expression))))
+    (program
+      (lexical_declaration
+        (variable_declarator
+          name: (identifier) @variable.definition)))
+    (pair
+      key: (property_identifier) @method.definition
+      value: (function_expression))
+    (pair
+      key: (property_identifier) @arrow.definition
+      value: (arrow_function))
+    (module name: (identifier) @namespace.definition)
+    (internal_module name: (identifier) @namespace.definition)
+  `,
+  // tsx grammar is a superset of typescript that also parses JSX. Tag query
+  // matches typescript verbatim — JSX expressions inside function bodies don't
+  // need their own captures (the surrounding function/component declaration is
+  // what we care about). We MUST keep these in sync if typescript adds new rules.
+  tsx: `
+    (function_declaration name: (identifier) @function.definition)
+    (generator_function_declaration name: (identifier) @function.definition)
+    (class_declaration name: (type_identifier) @class.definition)
+    (abstract_class_declaration name: (type_identifier) @class.definition)
+    (method_definition name: (property_identifier) @method.definition)
+    (interface_declaration name: (type_identifier) @interface.definition)
+    (type_alias_declaration name: (type_identifier) @type.definition)
+    (enum_declaration name: (identifier) @enum.definition)
+    (variable_declarator
+      name: (identifier) @arrow.definition
+      value: (arrow_function))
+    (export_statement
+      declaration: (class_declaration name: (type_identifier) @class.definition))
+    (export_statement
+      declaration: (abstract_class_declaration name: (type_identifier) @class.definition))
+    (export_statement
+      declaration: (lexical_declaration
+        (variable_declarator
+          name: (identifier) @component.definition
+          value: (call_expression))))
+    (export_statement
+      declaration: (lexical_declaration
+        (variable_declarator
+          name: (identifier) @variable.definition)))
+    ; Top-level (non-exported) file-scope const declarations — see javascript
+    ; query for rationale.
+    (program
+      (lexical_declaration
+        (variable_declarator
+          name: (identifier) @component.definition
+          value: (call_expression))))
+    (program
+      (lexical_declaration
+        (variable_declarator
+          name: (identifier) @variable.definition)))
     (pair
       key: (property_identifier) @method.definition
       value: (function_expression))
@@ -272,6 +387,12 @@ const CAPTURE_TO_ENTITY_TYPE = {
   'record.definition': 'record',
   'module.definition': 'module',
   'object.definition': 'class',
+  // JS/TS exported const declarations (May 2026):
+  // @component fires only when value is a call_expression (memo/forwardRef/createSlice etc.);
+  // @variable fires for any export const, including string/object/typed literals.
+  // Both can match the same node; component wins via priority dedup downstream.
+  'component.definition': 'component',
+  'variable.definition': 'variable',
 };
 
 export class TreeSitterProvider {

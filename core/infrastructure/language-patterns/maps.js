@@ -3,7 +3,10 @@ export const EXTENSION_MAP = {
   '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
 
   // TypeScript
-  '.ts': 'typescript', '.tsx': 'typescript',
+  // .tsx is routed to its own grammar so JSX bodies are parsed correctly;
+  // the LANGUAGES.tsx entry is an alias of LANGUAGES.typescript (registry-core.js)
+  // so chunker/graph regex patterns are byte-identical to .ts.
+  '.ts': 'typescript', '.tsx': 'tsx',
 
   // Java
   '.java': 'java',
