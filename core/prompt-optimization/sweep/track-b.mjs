@@ -128,6 +128,14 @@ function parseArgs(argv) {
     // ceiling) and DeepSeek (dynamic concurrency, retries on 429). Lower it
     // (e.g. --concurrency 3) when the panel adds smaller-tier providers.
     concurrency: 6,
+    // Optional separate concurrency for the judge phase (no LI/embedding
+    // contention since judges only hit remote APIs). When null, falls back
+    // to opts.concurrency. Empirically: gemini-3.1-flash-lite on Tier 1
+    // sustains ~30 concurrent on short PRP prompts; deepseek-v4-pro tolerates
+    // ~15 before 429s, but runClaudeAgent's transient-error retry absorbs
+    // the rest. With a 2-judge panel, --judge-concurrency 30 puts ~15 in
+    // flight per lineage on average — safe for both.
+    judgeConcurrency: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -147,6 +155,7 @@ function parseArgs(argv) {
     else if (a === '--skip-judge') o.skipJudge = true;
     else if (a === '--skip-iaa') o.skipIaa = true;
     else if (a === '--concurrency') o.concurrency = Math.max(1, parseInt(argv[++i], 10));
+    else if (a === '--judge-concurrency') o.judgeConcurrency = Math.max(1, parseInt(argv[++i], 10));
     else if (a === '--resume-from-jsonl') o.resumeFromJsonl = argv[++i];
   }
   if (!o.runId) {
@@ -545,7 +554,12 @@ async function callPrpJudge({ task, candidateRecord, baselineRecord, judgeModel,
     model: spec.model,
     systemPrompt: JUDGE_SYSTEM_PRP,
     userPrompt: prompt,
-    timeoutMs: 90000,
+    // Real PRP prompts take 90-160s on gemini-3.1-flash-lite / deepseek-v4-pro
+    // at concurrency=1; under concurrency 12+ the gemini CLI's internal
+    // retries can stretch a call past 4 min. Empty text from a timeout
+    // becomes a null `preferred`, so we set the timeout generously (8 min)
+    // to keep judges meaningful.
+    timeoutMs: 480000,
   });
   const judgement = extractAnswerJson(run.text);
   // De-randomise A/B back to candidate-vs-baseline.
@@ -625,22 +639,20 @@ async function validateIaa({ humanSetPath, judgeMatrix, alphaIndividual, alphaMa
 
 // ─── bounded concurrency pool ────────────────────────────────────────────
 
-function makePoolRunner() {
-  return async function runWithLimit(limit, items, worker) {
-    const results = new Array(items.length);
-    let next = 0;
-    async function pump() {
-      while (true) {
-        const idx = next++;
-        if (idx >= items.length) return;
-        results[idx] = await worker(items[idx], idx);
-      }
+async function runWithLimit(limit, items, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function pump() {
+    while (true) {
+      const idx = next++;
+      if (idx >= items.length) return;
+      results[idx] = await worker(items[idx], idx);
     }
-    const workers = [];
-    for (let i = 0; i < Math.min(limit, items.length); i++) workers.push(pump());
-    await Promise.all(workers);
-    return results;
-  };
+  }
+  const workers = [];
+  for (let i = 0; i < Math.min(limit, items.length); i++) workers.push(pump());
+  await Promise.all(workers);
+  return results;
 }
 
 // ─── execution orchestration ──────────────────────────────────────────────
@@ -832,7 +844,9 @@ async function judgePhase({ records, opts, runId, outDir, jsonlPath, context }) 
   const judgeRecords = [];
   if (opts.skipJudge) return { judgeRecords };
 
-  const concurrency = Math.max(1, opts.concurrency || 1);
+  // Judges hit only remote APIs (no LI/embedding contention), so we allow a
+  // higher concurrency than the agent phase via --judge-concurrency.
+  const concurrency = Math.max(1, opts.judgeConcurrency ?? opts.concurrency ?? 1);
 
   const byGoldTool = new Map();
   for (const r of records) {
@@ -884,7 +898,9 @@ async function judgePhase({ records, opts, runId, outDir, jsonlPath, context }) 
     judgeDone += 1;
     const dt = ((Date.now() - tStart) / 1000).toFixed(1);
     const overall = ((Date.now() - t0Judge) / 1000).toFixed(1);
-    const verdict = r?.preferred ?? (r?.isError ? 'ERROR' : '?');
+    // r.isError lives under runMeta; promote it for the log line so timeouts
+    // show as ERROR rather than ? (which we used to use for both).
+    const verdict = r?.preferred ?? (r?.runMeta?.isError ? 'TIMEOUT/ERROR' : '?');
     process.stdout.write(`[${fmtTs()}] track-b: judge done  ${judgeDone}/${totalJudges} ${tag} → ${verdict} (${dt}s; cumul ${overall}s)\n`);
     return { ...t, result: r };
   });
