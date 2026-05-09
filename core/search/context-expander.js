@@ -1589,16 +1589,276 @@ function compressToPreview(code, tokenCap) {
 
 /**
  * Resolve the effective sub-mode from the format string.
- *   'agent' / 'agent_preview' → 'agent_preview' (compact 4k budget)
- *   'agent_full'               → 'agent_full' (8k budget)
- *   'agent_full_xl'            → 'agent_full_xl' (12k budget, opt-in only;
- *                                falls back to agent_full at allocation time
- *                                when the dominance gate fails)
+ *
+ * EXPLICIT TIERS (caller picks):
+ *   'agent_preview' → 'agent_preview' (compact 4k budget)
+ *   'agent_full'    → 'agent_full'    (8k budget)
+ *   'agent_full_xl' → 'agent_full_xl' (12k budget, opt-in only;
+ *                                      falls back to per-result baseline cap
+ *                                      at allocation time when the top-1
+ *                                      dominance gate fails)
+ *
+ * AUTO-PICK (default for the bare 'agent' format):
+ *   'agent'         → tier chosen by selectAgentBudget(); see that fn.
+ *
+ * Used as a fallback when caller bypasses the auto-pick path (e.g. unit tests
+ * that call resolveSubMode directly). Production code goes through
+ * selectAgentBudget(format, signals) which understands auto-pick.
  */
 function resolveSubMode(format) {
   if (format === 'agent_full_xl') return 'agent_full_xl';
   if (format === 'agent_full') return 'agent_full';
   return 'agent_preview'; // 'agent' and 'agent_preview' both map here
+}
+
+// =============================================================================
+// Auto-tier selection — selectAgentBudget
+// =============================================================================
+//
+// Picks the agent-mode budget tier (preview 4k / full 8k / xl 12k) from
+// post-ranking signals when callers pass the bare format='agent'.
+//
+// DESIGN PRINCIPLE: 4k is enough for ~99% of queries.
+//
+// Lost-in-the-middle and RAG-vs-long-context studies (Liu et al., Xu et al.)
+// consistently show that smaller, focused context outperforms bigger context
+// for retrieval tasks. The preview tier already renders top-1 fully (up to
+// 2000 tokens) and gives ranks 2-3 a signature + 5-line snippet — that's
+// enough for the agent to either answer or to escalate via an explicit
+// `format='agent_full'` re-query. Auto should NOT silently pay an 8k or 12k
+// token bill on every borderline query.
+//
+// When does extra budget STRICTLY beat preview?
+//
+//   XL: top-1 itself needs >2k tokens. The dominance gate at allocation
+//       (allocateBudget L1448-1454) raises top-1's per-result cap from 2k
+//       → 8k IFF top-1 >= 2 * top-2. Without the gate, XL caps top-1 at
+//       2k anyway — identical to preview for the top-1 case. So XL only
+//       pays off when BOTH conditions hold: chunk really is big, AND
+//       dominance gate will fire.
+//
+//   FULL: rank 2/3 need full body (each up to 2000 tokens) instead of a
+//         signature + 5 lines. That's only useful when several results
+//         are TIGHTLY tied — i.e. when there's no single answer, just a
+//         set the agent must compare. A query with moderate dominance
+//         (top-1 = 0.9, top-2 = 0.6) doesn't qualify; the agent can read
+//         top-1 fully and re-query if needed.
+//
+// Decision tree (only fires when format='agent'; explicit tiers are pass-thru):
+//
+//   numResults == 0                                       → preview ('auto_empty')
+//   top1Tokens >= 2400 AND (numResults == 1 OR D >= 2.5)  → xl      ('auto_xl_*')
+//   numResults >= 10 AND D < 1.05 AND top1Tokens >= 600   → full    ('auto_full_tight_cluster')
+//   default                                               → preview ('auto_preview_default')
+//
+// Thresholds are deliberately tight — designed so XL+FULL combined fire on
+// roughly 1-5% of queries. On a fastify spot-check (NL queries with k=10),
+// all 6 representative queries land on preview under this rule. Single
+// dominant answers stay on preview unless the chunk is genuinely huge
+// (200+ lines × 9 tokens/line ≥ 2400). Multi-result clusters need 10+ items
+// within 5% of the top score before auto goes to full.
+//
+// Crucially: dominance answers "is top-1 the answer?", NOT "is top-1 big?".
+// We require both signals (and a high-bar threshold on each) before paying
+// the XL token cost. Likewise, "many results" alone is not a reason to
+// upgrade — the cluster has to be tight (D < 1.05) AND deep (≥ 10 items).
+//
+// Signals (computeBudgetSignals, all post-ranking — pure):
+//   - numResults  : ranked-results length
+//   - dominance   : top1.score / top2.score (sentinel 99 for single result)
+//   - top1Tokens  : estimated tokens of top-1 chunk (lineCount * 9, the
+//                   same per-line conversion the rest of the packager uses).
+//                   Equals 0 when start/end lines are unavailable — those
+//                   results stay on preview.
+//
+// `breadth` (grepMatches / candidatePoolSize) and `entropy` are still
+// computed and surfaced in `budgetSignals` for diagnostics, but neither
+// drives the decision: a broad pool is not a reason to give top-1 more
+// space, and small-N entropy is dominated by the 1/log(n) denominator and
+// stops being a reliable distribution-width signal.
+
+const BUDGET_TIERS = {
+  preview: { subMode: 'agent_preview', budget: 4000 },
+  full:    { subMode: 'agent_full',    budget: 8000 },
+  xl:      { subMode: 'agent_full_xl', budget: 12000 },
+};
+
+/**
+ * Compute auto-pick signals from ranked results + searchStats.
+ * Pure: does not look at file content or call into expensive code paths.
+ *
+ * @param {Array} rankedResults - Results after ranking pipeline (PRE-packaging)
+ * @param {object} searchStats - Stats from the retrieval pipeline
+ * @returns {{
+ *   numResults: number, breadth: number, dominance: number,
+ *   entropy: number, top1Tokens: number, top1LineCount: number
+ * }}
+ */
+export function computeBudgetSignals(rankedResults, searchStats = {}) {
+  const numResults = Array.isArray(rankedResults) ? rankedResults.length : 0;
+  if (numResults === 0) {
+    return { numResults: 0, breadth: 0, dominance: 0, entropy: 0, top1Tokens: 0, top1LineCount: 0 };
+  }
+
+  // Use whichever score field the ranker emitted. Pattern (colgrep) emits
+  // `lateInteractionScore`; hybrid/semantic/lexical emit `score`. Keep both
+  // paths working without renaming.
+  const scores = rankedResults
+    .map(r => Number(r?.score ?? r?.lateInteractionScore ?? 0))
+    .filter(s => Number.isFinite(s) && s > 0);
+
+  // Top-1 size proxy — derived from the chunk's start/end lines. Uses the
+  // same 9 tokens/line conversion the rest of the packager applies (see
+  // expandToSymbol / renderCode in structural-context.js). Returns 0 when
+  // either bound is missing, in which case the auto-pick falls back to the
+  // preview branch instead of guessing.
+  const top1 = rankedResults[0] || {};
+  const top1Start = top1.metadata?.startLine ?? top1.startLine ?? null;
+  const top1End = top1.metadata?.endLine ?? top1.endLine ?? null;
+  const top1LineCount = (top1Start != null && top1End != null && top1End >= top1Start)
+    ? (top1End - top1Start + 1)
+    : 0;
+  const top1Tokens = top1LineCount * 9;
+
+  if (scores.length === 0) {
+    return { numResults, breadth: 0, dominance: 0, entropy: 0, top1Tokens, top1LineCount };
+  }
+
+  const topScore = scores[0];
+  const secondScore = scores[1] ?? 0;
+  // Sentinel "very high" dominance when there's only one positive-score result
+  // — keeps single-answer queries on the preview path.
+  const dominance = secondScore > 0 ? topScore / secondScore : 99;
+
+  // Normalised Shannon entropy — KEPT FOR DIAGNOSTIC OUTPUT only. Not used
+  // by selectAgentBudget after the small-N flaw was identified (2-result
+  // entropy is forced into [0.7, 1.0] by the 1/log(n) denominator).
+  let entropy = 0;
+  if (scores.length > 1) {
+    const sum = scores.reduce((a, b) => a + b, 0);
+    if (sum > 0) {
+      let H = 0;
+      for (const s of scores) {
+        const p = s / sum;
+        if (p > 0) H -= p * Math.log(p);
+      }
+      entropy = H / Math.log(scores.length);
+    }
+  }
+
+  // Breadth — KEPT FOR DIAGNOSTIC OUTPUT only. Not used by tier selection
+  // (broad candidate pools aren't a reason to give top-1 more tokens; only
+  // top-1 actually being big is). `allocateBudget` still uses breadth for
+  // its within-tier top-1-share sharpening (its job, not ours).
+  const breadth = Number(
+    searchStats?.grepMatches
+    ?? searchStats?.candidatePoolSize
+    ?? 0
+  ) || 0;
+
+  return { numResults, breadth, dominance, entropy, top1Tokens, top1LineCount };
+}
+
+/**
+ * Pick the agent-mode tier for a request.
+ *
+ * Explicit tier formats (agent_preview / agent_full / agent_full_xl) are
+ * pass-through. The bare 'agent' format triggers the auto-pick decision
+ * tree using the signals above.
+ *
+ * Format-gating note: all return values keep `format='agent_*'` semantics,
+ * so the `_isAgentFormat` ranking flag (file-kind-ranking.js:1443) remains
+ * TRUE regardless of which tier we land on. Ranking is unchanged.
+ *
+ * @param {string} format - 'agent' | 'agent_preview' | 'agent_full' | 'agent_full_xl'
+ * @param {object} signals - From computeBudgetSignals()
+ * @param {object} [opts]
+ * @param {number} [opts.explicitBudget] - Caller-supplied tokenBudget; if set,
+ *   bypass auto-pick and infer the tier from the value (matches trace's
+ *   selectBudget contract).
+ * @returns {{ tier: 'preview'|'full'|'xl', subMode: string, tokenBudget: number, reason: string }}
+ */
+export function selectAgentBudget(format, signals, opts = {}) {
+  // Explicit numeric budget always wins. Pass the value through unchanged
+  // (callers that pass tiny budgets — e.g. `tokenBudget: 1` for hard-ceiling
+  // tests — expect the packager to honour them as a strict cap). We only
+  // clamp the value used for tier inference, so the subMode label stays sane.
+  if (opts.explicitBudget != null && Number.isFinite(opts.explicitBudget)) {
+    const n = Math.floor(opts.explicitBudget);
+    const tierBound = Math.max(1000, Math.min(16000, n));
+    const tier = tierBound >= 11000 ? 'xl' : tierBound >= 7000 ? 'full' : 'preview';
+    return { tier, subMode: BUDGET_TIERS[tier].subMode, tokenBudget: n, reason: 'explicit_budget' };
+  }
+
+  // Explicit tier flags — caller is asking for a specific budget.
+  if (format === 'agent_preview') {
+    return { tier: 'preview', ...BUDGET_TIERS.preview, tokenBudget: BUDGET_TIERS.preview.budget, reason: 'explicit_preview' };
+  }
+  if (format === 'agent_full') {
+    return { tier: 'full', ...BUDGET_TIERS.full, tokenBudget: BUDGET_TIERS.full.budget, reason: 'explicit_full' };
+  }
+  if (format === 'agent_full_xl') {
+    return { tier: 'xl', ...BUDGET_TIERS.xl, tokenBudget: BUDGET_TIERS.xl.budget, reason: 'explicit_xl' };
+  }
+
+  // Auto-pick: format === 'agent' (or anything unrecognised — defensive).
+  // Design target: preview fires on ~99% of queries; XL+FULL combined ~1-5%.
+  const { numResults, dominance, top1Tokens } = signals || {};
+  const N = Number(numResults) || 0;
+  const D = Number.isFinite(dominance) ? dominance : 0;
+  const T1 = Number(top1Tokens) || 0;
+
+  const pick = (tier, reason) => ({
+    tier,
+    subMode: BUDGET_TIERS[tier].subMode,
+    tokenBudget: BUDGET_TIERS[tier].budget,
+    reason,
+  });
+
+  // Tight thresholds. Both upgrade paths require strong, hard-to-fake signals.
+  //   XL_TOP1_TOKENS = ~267 lines × 9 t/line. Below this, top-1's render fits
+  //                    inside the 2000-token per-result preview cap and XL
+  //                    adds no usable budget.
+  //   XL_DOMINANCE   = 2.5×. We need the dominance gate to FIRE at
+  //                    allocation time (allocateBudget L1448-1454 needs
+  //                    top1 ≥ 2 × top2); we add headroom (2.5 vs 2.0) so
+  //                    we don't pick XL on borderline cases that the gate
+  //                    might miss.
+  //   FULL_MIN_N     = 10 results. Fewer than this and the agent can
+  //                    re-read rank 2 (which is shown as a preview anyway).
+  //   FULL_MAX_DOM   = 1.05. Strictly tied cluster — top-1 is at most 5%
+  //                    ahead of top-2. Anything wider and the agent
+  //                    can treat top-1 as the answer.
+  //   FULL_MIN_TOP1  = 600 t (~67 lines). If top-1 is tiny, ranks 2-3
+  //                    being expanded buys nothing — preview's signature
+  //                    already shows everything.
+  const XL_TOP1_TOKENS = 2400;
+  const XL_DOMINANCE = 2.5;
+  const FULL_MIN_N = 10;
+  const FULL_MAX_DOM = 1.05;
+  const FULL_MIN_TOP1 = 600;
+
+  if (N === 0) return pick('preview', 'auto_empty');
+
+  // XL path: huge top-1 that dominates. Single-result counts as "dominates"
+  // (no top-2 to compete). Both branches gate on T1 >= XL_TOP1_TOKENS so we
+  // never pick XL when extra space would go unused.
+  if (T1 >= XL_TOP1_TOKENS) {
+    if (N === 1) return pick('xl', 'auto_xl_single_huge');
+    if (D >= XL_DOMINANCE) return pick('xl', 'auto_xl_dominant_huge_top1');
+  }
+
+  // FULL path: tightly-clustered multi-result set with non-trivial chunks.
+  // All three conditions must hold — comparison-shaped queries with many
+  // tied alternatives are the narrow profile where rank 2/3 full bodies
+  // pay off. Single dominant answers and small clusters stay on preview.
+  if (N >= FULL_MIN_N && D < FULL_MAX_DOM && T1 >= FULL_MIN_TOP1) {
+    return pick('full', 'auto_full_tight_cluster');
+  }
+
+  // PREVIEW: default for ~99% of queries. The agent can always escalate
+  // to full or xl with an explicit format flag if the answer needs more.
+  return pick('preview', 'auto_preview_default');
 }
 
 /**
@@ -1639,11 +1899,32 @@ export function packageForAgent(rankedResults, searchStats, opts) {
   } = opts;
   const ablations = opts.ablations || new Set();
 
-  const subMode = resolveSubMode(formatOpt);
-  const defaultBudget = subMode === 'agent_full_xl' ? AGENT_FULL_XL_TOKEN_BUDGET
-    : subMode === 'agent_full' ? AGENT_FULL_TOKEN_BUDGET
-    : DEFAULT_TOKEN_BUDGET;
-  const tokenBudget = opts.tokenBudget ?? defaultBudget;
+  // Auto-tier selection: pick preview / full / xl based on score-distribution
+  // signals when format='agent'. Explicit format=='agent_preview|full|full_xl'
+  // and explicit numeric tokenBudget remain as overrides. Mirrors trace's
+  // adaptive selectBudget (core/graph/structural-context.js:37). See
+  // selectAgentBudget() above for the decision tree.
+  //
+  // Disabled by 'no-auto-budget' ablation — falls back to the legacy
+  // resolveSubMode mapping (which treats 'agent' as 'agent_preview').
+  let subMode, tokenBudget, budgetReason, budgetSignals;
+  if (ablations.has('no-auto-budget')) {
+    subMode = resolveSubMode(formatOpt);
+    const defaultBudget = subMode === 'agent_full_xl' ? AGENT_FULL_XL_TOKEN_BUDGET
+      : subMode === 'agent_full' ? AGENT_FULL_TOKEN_BUDGET
+      : DEFAULT_TOKEN_BUDGET;
+    tokenBudget = opts.tokenBudget ?? defaultBudget;
+    budgetReason = 'ablation_no_auto_budget';
+    budgetSignals = null;
+  } else {
+    budgetSignals = computeBudgetSignals(rankedResults, searchStats);
+    const pick = selectAgentBudget(formatOpt, budgetSignals, {
+      explicitBudget: opts.tokenBudget,
+    });
+    subMode = pick.subMode;
+    tokenBudget = pick.tokenBudget;
+    budgetReason = pick.reason;
+  }
 
   const start = performance.now();
   const fileCache = new Map();
@@ -2021,6 +2302,8 @@ export function packageForAgent(rankedResults, searchStats, opts) {
     format: 'agent',
     subMode,
     tokenBudget,
+    budgetReason,
+    budgetSignals,
     tokensUsed,
     confidence: confidenceInfo.confidence,
     confidenceReason: confidenceInfo.confidenceReason,
