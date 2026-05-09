@@ -1,12 +1,12 @@
 {
   "schemaVersion": 2,
-  "runId": "partial-test-1778343162329",
-  "generatedAt": "2026-05-09T16:12:46.459Z",
+  "runId": "qshape-v1",
+  "generatedAt": "2026-05-09T22:49:24.764Z",
   "plan_reference": "docs/SYSTEM_PROMPT_OPT_PLAN.md §7.6 + §0.5 five-gate framework",
-  "incomplete_promotion": true,
+  "incomplete_promotion": false,
   "behavior_notes": [
-    "strict promotion: skipped/not_run/pending-author/no-validation-set gates BLOCK promoted=true.",
-    "BH-FDR m=1 reflects ONLY shape cells with ≥5 paired observations (out of 1 considered; 0 below pair floor).",
+    "allow-incomplete-promotion=ON: skipped/not_run/pending-author/no-validation-set gates count as pass; promoted=true MAY include incomplete evidence — see incomplete_promotion flag.",
+    "BH-FDR m=23 reflects ONLY shape cells with ≥5 paired observations (out of 23 considered; 0 below pair floor).",
     "Two-sided paired permutation test, one-sided beats-baseline interpretation applied at pickPerToolBest (observedDiff > 0).",
     "Thresholdout reads held-out from Track A uv rows in this driver — the structural Sealed-1 accessor route is documented in promote.mjs header.",
     "V1 cells bifurcate by symbol presence: build-variants.mjs falls back to without-symbol+narrow-regex when a gold has no expectedSymbols. Both V1 sub-cells (with-symbol, without-symbol) appear as separate (tool, shape) rows in the BH-FDR slate, so the with-symbol main-effect estimate is NOT polluted by the fallback rows. Cells below the ≥5 paired-observation floor are excluded from BH-FDR (see bh_fdr_n_cells_below_pair_floor).",
@@ -15,14 +15,14 @@
   ],
   "summary": {
     "n_gold_records": 90,
-    "n_track_a_records": 10,
-    "n_track_b_records": 0,
-    "n_track_b_agent_runs": 0,
-    "n_track_b_judge_pairs": 0,
+    "n_track_a_records": 2160,
+    "n_track_b_records": 1093,
+    "n_track_b_agent_runs": 600,
+    "n_track_b_judge_pairs": 493,
     "bh_fdr_q": 0.1,
-    "bh_fdr_n_tested": 1,
-    "bh_fdr_n_survived": 1,
-    "bh_fdr_n_cells_considered": 1,
+    "bh_fdr_n_tested": 23,
+    "bh_fdr_n_survived": 4,
+    "bh_fdr_n_cells_considered": 23,
     "bh_fdr_n_cells_below_pair_floor": 0,
     "tools_in_scope": [
       "ss-search",
@@ -56,91 +56,27 @@
         "n_e2e": 0,
         "prp_win_rate": null,
         "judge_iaa_alpha": null,
-        "status": "not_run"
+        "status": "fdr_failed_no_cell"
       }
     },
     "ss-find": {
       "tool": "ss-find",
       "promoted": false,
-      "best_shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
-      "deterministic_recall_at_1": 1,
-      "heldout_recall_at_1": null,
-      "n_dev": 5,
-      "n_heldout": 0,
-      "bh_fdr": {
-        "survives": true,
-        "adjustedP": 0.06579342065793421,
-        "rank": 1,
-        "observed_diff": 1,
-        "baseline_mean": 0,
-        "claim_space": "qshape-A-shape-by-tool",
-        "m": 1,
-        "nSurvived": 1
-      },
-      "thresholdout_result": {
-        "decision": "SKIPPED",
-        "reason": "flag --skip-thresholdout"
-      },
-      "leakage_gate": {
-        "passes": true,
-        "n_matches": 0,
-        "first_matches": []
-      },
-      "independent_author_check": {
-        "pass": true,
-        "instructionAuthor": "sweet-search-core-secondary",
-        "goldAuthors": [
-          "sweet-search-core"
-        ],
-        "gold_authors_slice": "predicted_winning_tool == ss-find",
-        "n_golds_in_slice": 45
-      },
-      "per_repo_breakdown": {
-        "fastify": {
-          "recall_at_1": 1,
-          "n": 5
-        }
-      },
-      "repo_stability_gate": "partial sweep — missing dev repos: gin, flask, ripgrep, ai-chatbot (expected 5, got 1)",
-      "repo_stability_details": {
-        "reason_code": "partial_sweep_missing_repos",
-        "missing_repos": [
-          "gin",
-          "flask",
-          "ripgrep",
-          "ai-chatbot"
-        ],
-        "expected_dev_repos": [
-          "fastify",
-          "gin",
-          "flask",
-          "ripgrep",
-          "ai-chatbot"
-        ]
+      "not_promoted_reason": "no shape cell beat the baseline at q=0.10 BH-FDR (one-sided)",
+      "gate_results": {
+        "fdr": "fail",
+        "thresholdout": "n/a",
+        "leakage": "n/a",
+        "author": "n/a",
+        "repo_stability": "n/a"
       },
       "track_b": {
         "agent_e2e_success": null,
         "n_e2e": 0,
         "prp_win_rate": null,
         "judge_iaa_alpha": null,
-        "status": "not_run",
-        "iaa_status": "not_run"
-      },
-      "iaa": {
-        "status": "not_run",
-        "alpha": null
-      },
-      "instruction_text": "When using ss-find:, use a 1-3 token query, include the symbol if known, plus a single-literal regex anchor, phrased as a command, use domain-dense vocabulary.",
-      "gate_results": {
-        "fdr": "pass",
-        "thresholdout": "skipped",
-        "leakage": "pass",
-        "author": "pass",
-        "repo_stability": "fail",
-        "track_b": "not_run",
-        "iaa": "not_run"
-      },
-      "not_promoted_reason": "thresholdout=skipped,repo_stability=fail,track_b=not_run,iaa=not_run"
+        "status": "fdr_failed_no_cell"
+      }
     },
     "ss-semantic": {
       "tool": "ss-semantic",
@@ -158,7 +94,7 @@
         "n_e2e": 0,
         "prp_win_rate": null,
         "judge_iaa_alpha": null,
-        "status": "not_run"
+        "status": "fdr_failed_no_cell"
       }
     },
     "structural": {
@@ -177,53 +113,234 @@
         "n_e2e": 0,
         "prp_win_rate": null,
         "judge_iaa_alpha": null,
-        "status": "not_run"
+        "status": "fdr_failed_no_cell"
       }
     }
   },
   "avoid_shapes": [
     {
+      "tool": "ss-search",
+      "shape": "short+without-symbol+medium-regex+declarative+high-density",
+      "deterministic_recall_at_1": 0.15730337078651685,
+      "n": 89,
+      "reason_code": "worst_observed_cell_mean",
+      "instruction_text": null
+    },
+    {
       "tool": "ss-find",
-      "shape": "medium+with-symbol+medium-regex+interrogative+high-density",
-      "deterministic_recall_at_1": 0,
-      "n": 5,
+      "shape": "very-short+without-symbol+narrow-regex+imperative+high-density",
+      "deterministic_recall_at_1": 0.14285714285714285,
+      "n": 7,
+      "reason_code": "worst_observed_cell_mean",
+      "instruction_text": null
+    },
+    {
+      "tool": "ss-semantic",
+      "shape": "very-short+without-symbol+narrow-regex+imperative+high-density",
+      "deterministic_recall_at_1": 1,
+      "n": 7,
+      "reason_code": "worst_observed_cell_mean",
+      "instruction_text": null
+    },
+    {
+      "tool": "structural",
+      "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "deterministic_recall_at_1": 0.7560975609756098,
+      "n": 82,
       "reason_code": "worst_observed_cell_mean",
       "instruction_text": null
     }
   ],
-  "not_promoted_due_to_fdr": [],
-  "not_promoted_due_to_repo_instability": [
+  "not_promoted_due_to_fdr": [
+    {
+      "tool": "ss-search",
+      "shape": "very-short+without-symbol+narrow-regex+imperative+high-density",
+      "p": 1,
+      "adjustedP": 1,
+      "n": 7,
+      "meanShape": 0.5714285714285714,
+      "observedDiff": 0.14285714285714285
+    },
+    {
+      "tool": "ss-search",
+      "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+      "p": 0.5010498950104989,
+      "adjustedP": 1,
+      "n": 89,
+      "meanShape": 0.6292134831460674,
+      "observedDiff": -0.056179775280898875
+    },
+    {
+      "tool": "ss-search",
+      "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "p": 1,
+      "adjustedP": 1,
+      "n": 82,
+      "meanShape": 0.6951219512195121,
+      "observedDiff": -0.012195121951219513
+    },
+    {
+      "tool": "ss-find",
+      "shape": "very-short+without-symbol+narrow-regex+imperative+high-density",
+      "p": 1,
+      "adjustedP": 1,
+      "n": 7,
+      "meanShape": 0.14285714285714285,
+      "observedDiff": 0
+    },
+    {
+      "tool": "ss-find",
+      "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+      "p": 1,
+      "adjustedP": 1,
+      "n": 89,
+      "meanShape": 0.5056179775280899,
+      "observedDiff": 0
+    },
+    {
+      "tool": "ss-find",
+      "shape": "short+without-symbol+medium-regex+declarative+high-density",
+      "p": 0.7937206279372063,
+      "adjustedP": 1,
+      "n": 89,
+      "meanShape": 0.48314606741573035,
+      "observedDiff": -0.02247191011235955
+    },
+    {
+      "tool": "ss-find",
+      "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
+      "p": 0.13258674132586742,
+      "adjustedP": 0.6098990100989902,
+      "n": 89,
+      "meanShape": 0.4157303370786517,
+      "observedDiff": -0.0898876404494382
+    },
     {
       "tool": "ss-find",
       "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
-      "diagnosis": "partial sweep — missing dev repos: gin, flask, ripgrep, ai-chatbot (expected 5, got 1)",
-      "reason_code": "partial_sweep_missing_repos",
-      "per_repo_breakdown": {
-        "fastify": {
-          "recall_at_1": 1,
-          "n": 5
-        }
-      },
-      "missing_repos": [
-        "gin",
-        "flask",
-        "ripgrep",
-        "ai-chatbot"
-      ]
+      "p": 0.6299370062993701,
+      "adjustedP": 1,
+      "n": 82,
+      "meanShape": 0.573170731707317,
+      "observedDiff": 0.036585365853658534
+    },
+    {
+      "tool": "ss-semantic",
+      "shape": "very-short+without-symbol+narrow-regex+imperative+high-density",
+      "p": 1,
+      "adjustedP": 1,
+      "n": 7,
+      "meanShape": 1,
+      "observedDiff": 0
+    },
+    {
+      "tool": "ss-semantic",
+      "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+      "p": 1,
+      "adjustedP": 1,
+      "n": 89,
+      "meanShape": 1,
+      "observedDiff": 0
+    },
+    {
+      "tool": "ss-semantic",
+      "shape": "short+without-symbol+medium-regex+declarative+high-density",
+      "p": 1,
+      "adjustedP": 1,
+      "n": 89,
+      "meanShape": 1,
+      "observedDiff": 0
+    },
+    {
+      "tool": "ss-semantic",
+      "shape": "medium+without-symbol+broad-regex+interrogative+low-density",
+      "p": 1,
+      "adjustedP": 1,
+      "n": 89,
+      "meanShape": 1,
+      "observedDiff": 0
+    },
+    {
+      "tool": "ss-semantic",
+      "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
+      "p": 1,
+      "adjustedP": 1,
+      "n": 89,
+      "meanShape": 1,
+      "observedDiff": 0
+    },
+    {
+      "tool": "ss-semantic",
+      "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "p": 1,
+      "adjustedP": 1,
+      "n": 82,
+      "meanShape": 1,
+      "observedDiff": 0
+    },
+    {
+      "tool": "structural",
+      "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "p": 1,
+      "adjustedP": 1,
+      "n": 82,
+      "meanShape": 0.7560975609756098,
+      "observedDiff": 0
+    },
+    {
+      "tool": "structural",
+      "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+      "p": 1,
+      "adjustedP": 1,
+      "n": 82,
+      "meanShape": 0.7560975609756098,
+      "observedDiff": 0
+    },
+    {
+      "tool": "structural",
+      "shape": "short+without-symbol+medium-regex+declarative+high-density",
+      "p": 1,
+      "adjustedP": 1,
+      "n": 82,
+      "meanShape": 0.7560975609756098,
+      "observedDiff": 0
+    },
+    {
+      "tool": "structural",
+      "shape": "medium+without-symbol+broad-regex+interrogative+low-density",
+      "p": 1,
+      "adjustedP": 1,
+      "n": 82,
+      "meanShape": 0.7560975609756098,
+      "observedDiff": 0
+    },
+    {
+      "tool": "structural",
+      "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
+      "p": 1,
+      "adjustedP": 1,
+      "n": 82,
+      "meanShape": 0.7560975609756098,
+      "observedDiff": 0
     }
   ],
+  "not_promoted_due_to_repo_instability": [],
   "preregistration_diff": [
     {
       "goldId": "fastify:internal-symbols",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+without-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "medium+without-symbol+broad-regex+interrogative+low-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "without-symbol"
+      ],
+      "tokens_matched_alias": [
+        "without-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -231,13 +348,18 @@
       "goldId": "fastify:error-codes",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+medium-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 2,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -245,27 +367,38 @@
       "goldId": "fastify:validation-pipeline",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "fastify:server-protocol-selection",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -273,13 +406,17 @@
       "goldId": "fastify:reply-send-payload-detection",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -287,13 +424,17 @@
       "goldId": "fastify:error-handler-chain",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -301,13 +442,18 @@
       "goldId": "fastify:request-lifecycle-order",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "short+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 2,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -315,13 +461,18 @@
       "goldId": "fastify:route-handler-bridge",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "short+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 2,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -329,13 +480,17 @@
       "goldId": "fastify:public-api-surface",
       "predicted_winning_tool": "ss-semantic",
       "predicted_winning_shape": "medium+without-symbol+interrogative",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+without-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "without-symbol"
+      ],
+      "tokens_matched_alias": [
+        "without-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -357,13 +512,17 @@
       "goldId": "fastify:supported-hooks-list",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "short+without-symbol+medium-regex+declarative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "short"
+      ],
+      "tokens_matched_alias": [
+        "short"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -371,8 +530,8 @@
       "goldId": "fastify:request-prototype-getters",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "medium+without-symbol+broad-regex+interrogative+low-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
       "n_dims_matched": 0,
       "n_dims_matched_alias": 0,
@@ -385,13 +544,17 @@
       "goldId": "gin:radix-route-insertion",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "short+with-symbol+narrow-regex+interrogative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -399,13 +562,19 @@
       "goldId": "gin:next-abort",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+medium-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "short+with-symbol+narrow-regex+interrogative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 2,
+      "tokens_matched": [
+        "short",
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -413,27 +582,38 @@
       "goldId": "gin:engine-struct",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "gin:panic-recovery",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "short+with-symbol+narrow-regex+interrogative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -441,13 +621,17 @@
       "goldId": "gin:http-dispatch",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -455,55 +639,80 @@
       "goldId": "gin:default-binding-dispatch",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "gin:error-type-flags",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "gin:router-group-struct",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "gin:handler-func-types",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "medium+with-symbol+medium-regex+interrogative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -511,27 +720,38 @@
       "goldId": "gin:response-writer-interface",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "gin:should-bind-pipeline",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -539,13 +759,17 @@
       "goldId": "gin:render-pipeline",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -553,13 +777,17 @@
       "goldId": "flask:route-decorator",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -567,27 +795,40 @@
       "goldId": "flask:app-class",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "flask:make-response",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "medium+with-symbol+medium-regex+interrogative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 2,
+      "tokens_matched": [
+        "medium",
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "medium",
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -595,13 +836,17 @@
       "goldId": "flask:http-error-dispatch",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -609,13 +854,17 @@
       "goldId": "flask:secure-cookie-session",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -623,83 +872,122 @@
       "goldId": "flask:jsonify-location",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "flask:blueprint-class",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "flask:request-response-classes",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "flask:config-class",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "flask:app-context-class",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "flask:wsgi-dispatch-flow",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -707,13 +995,17 @@
       "goldId": "flask:blueprint-registration-flow",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -721,13 +1013,17 @@
       "goldId": "ripgrep:search-config-struct",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "short+without-symbol+medium-regex+declarative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "short"
+      ],
+      "tokens_matched_alias": [
+        "short"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -735,13 +1031,17 @@
       "goldId": "ripgrep:parallel-search",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -749,27 +1049,38 @@
       "goldId": "ripgrep:sink-trait",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "ripgrep:locate-line-bounds",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -777,50 +1088,72 @@
       "goldId": "ripgrep:regex-error-kinds",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "short+with-symbol+narrow-regex+interrogative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
-      "exact_token_match": false,
-      "alias_match": false
+      "n_dims_matched": 3,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "exact_token_match": true,
+      "alias_match": true
     },
     {
       "goldId": "ripgrep:glob-struct-fields",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "ripgrep:override-set-type",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "ripgrep:searcher-internal-config",
       "predicted_winning_tool": "ss-semantic",
       "predicted_winning_shape": "medium+without-symbol+interrogative",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
       "n_dims_matched": 0,
       "n_dims_matched_alias": 0,
@@ -833,8 +1166,8 @@
       "goldId": "ripgrep:standard-printer-builder-config",
       "predicted_winning_tool": "ss-semantic",
       "predicted_winning_shape": "medium+without-symbol+interrogative",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
       "n_dims_matched": 0,
       "n_dims_matched_alias": 0,
@@ -847,13 +1180,17 @@
       "goldId": "ripgrep:matcher-trait-and-regex-impl",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -861,13 +1198,17 @@
       "goldId": "ripgrep:walk-parallel-thread-spawn",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -875,13 +1216,17 @@
       "goldId": "ripgrep:run-mode-dispatch-to-worker",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -889,55 +1234,80 @@
       "goldId": "ai-chatbot:default-chat-model",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "ai-chatbot:entitlements-config",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "ai-chatbot:visibility-type-export",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "ai-chatbot:use-artifact-hook",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -945,13 +1315,17 @@
       "goldId": "ai-chatbot:use-chat-visibility-hook",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -959,13 +1333,17 @@
       "goldId": "ai-chatbot:use-auto-resume-hook",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -973,55 +1351,80 @@
       "goldId": "ai-chatbot:chat-header-component",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "ai-chatbot:visibility-selector-component",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "ai-chatbot:multimodal-input-component",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "ai-chatbot:visibility-update-flow",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -1029,13 +1432,17 @@
       "goldId": "ai-chatbot:chat-post-flow",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -1043,13 +1450,17 @@
       "goldId": "ai-chatbot:document-create-flow",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -1057,8 +1468,8 @@
       "goldId": "UV-NL-1",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "long-NL+without-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "short+with-symbol+narrow-regex+interrogative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
       "n_dims_matched": 0,
       "n_dims_matched_alias": 0,
@@ -1071,13 +1482,17 @@
       "goldId": "UV-NL-2",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+without-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "medium+with-symbol+medium-regex+interrogative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "medium"
+      ],
+      "tokens_matched_alias": [
+        "medium"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -1085,13 +1500,17 @@
       "goldId": "UV-NL-3",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "long-NL+without-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+without-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "without-symbol"
+      ],
+      "tokens_matched_alias": [
+        "without-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -1099,8 +1518,8 @@
       "goldId": "UV-NL-4",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+without-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
       "n_dims_matched": 0,
       "n_dims_matched_alias": 0,
@@ -1113,13 +1532,19 @@
       "goldId": "UV-NL-5",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "medium+with-symbol+medium-regex+interrogative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 2,
+      "tokens_matched": [
+        "medium",
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "medium",
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -1127,8 +1552,8 @@
       "goldId": "UV-NL-6",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+without-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
       "n_dims_matched": 0,
       "n_dims_matched_alias": 0,
@@ -1141,27 +1566,38 @@
       "goldId": "UV-NL-7",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+without-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+without-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "without-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "without-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "UV-NL-8",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+without-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+without-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "without-symbol"
+      ],
+      "tokens_matched_alias": [
+        "without-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -1169,125 +1605,185 @@
       "goldId": "UV-DEF-1",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "UV-DEF-2",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "UV-DEF-3",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "UV-DEF-4",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "UV-DEF-5",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "UV-DEF-6",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "UV-DEF-7",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "UV-DEF-8",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "UV-FLOW-1",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -1295,13 +1791,17 @@
       "goldId": "UV-FLOW-2",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -1309,13 +1809,17 @@
       "goldId": "UV-FLOW-3",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -1323,13 +1827,17 @@
       "goldId": "UV-FLOW-4",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -1337,8 +1845,8 @@
       "goldId": "UV-FLOW-5",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+without-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
       "n_dims_matched": 0,
       "n_dims_matched_alias": 0,
@@ -1351,13 +1859,17 @@
       "goldId": "UV-FLOW-6",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -1365,13 +1877,17 @@
       "goldId": "UV-FLOW-7",
       "predicted_winning_tool": "ss-search",
       "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -1379,13 +1895,17 @@
       "goldId": "UV-FLOW-8",
       "predicted_winning_tool": "structural",
       "predicted_winning_shape": "medium+with-symbol+relationship-verb",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 1,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 1,
+      "n_dims_matched_alias": 1,
+      "tokens_matched": [
+        "with-symbol"
+      ],
+      "tokens_matched_alias": [
+        "with-symbol"
+      ],
       "exact_token_match": false,
       "alias_match": false
     },
@@ -1393,85 +1913,127 @@
       "goldId": "UV-ERR-1",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "UV-ERR-2",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "UV-ERR-3",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "UV-ERR-4",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "UV-ERR-5",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     },
     {
       "goldId": "UV-ERR-6",
       "predicted_winning_tool": "ss-find",
       "predicted_winning_shape": "short+with-symbol+narrow-regex",
-      "actual_best_shape_for_predicted_tool": null,
-      "actual_recall_at_1": null,
+      "actual_best_shape_for_predicted_tool": "very-short+with-symbol+narrow-regex+imperative+high-density",
+      "actual_recall_at_1": 0,
       "n_predicted_dims": 3,
-      "n_dims_matched": 0,
-      "n_dims_matched_alias": 0,
-      "tokens_matched": [],
-      "tokens_matched_alias": [],
+      "n_dims_matched": 2,
+      "n_dims_matched_alias": 3,
+      "tokens_matched": [
+        "with-symbol",
+        "narrow-regex"
+      ],
+      "tokens_matched_alias": [
+        "short",
+        "with-symbol",
+        "narrow-regex"
+      ],
       "exact_token_match": false,
-      "alias_match": false
+      "alias_match": true
     }
   ]
 }
