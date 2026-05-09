@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "runId": "qshape-v1",
-  "generatedAt": "2026-05-09T08:39:55.328Z",
+  "generatedAt": "2026-05-09T10:04:07.224Z",
   "authoredBy": "variant-generator-v1",
   "builderSource": "core/prompt-optimization/data/query-shapes/build-variants.mjs",
   "shapeGrid": {
@@ -43,16 +43,16 @@
     "V6: long-NL+without-symbol+broad-regex+interrogative+low-density"
   ],
   "summary": {
-    "nGolds": 78,
-    "nVariants": 468,
+    "nGolds": 90,
+    "nVariants": 540,
     "shapeHistogram": {
       "very-short+without-symbol+narrow-regex+imperative+high-density": 8,
-      "short+with-symbol+narrow-regex+interrogative+high-density": 78,
-      "short+without-symbol+medium-regex+declarative+high-density": 78,
-      "medium+with-symbol+medium-regex+interrogative+high-density": 78,
-      "medium+without-symbol+broad-regex+interrogative+low-density": 78,
-      "long-NL+without-symbol+broad-regex+interrogative+low-density": 78,
-      "very-short+with-symbol+narrow-regex+imperative+high-density": 70
+      "short+with-symbol+narrow-regex+interrogative+high-density": 90,
+      "short+without-symbol+medium-regex+declarative+high-density": 90,
+      "medium+with-symbol+medium-regex+interrogative+high-density": 90,
+      "medium+without-symbol+broad-regex+interrogative+low-density": 90,
+      "long-NL+without-symbol+broad-regex+interrogative+low-density": 90,
+      "very-short+with-symbol+narrow-regex+imperative+high-density": 82
     }
   },
   "perGold": [
@@ -3221,6 +3221,798 @@
         {
           "id": "A_broad",
           "regex": "\\b(After|CLI|parsing|in|ripgrep|run)\\b"
+        }
+      ]
+    },
+    {
+      "goldId": "ai-chatbot:default-chat-model",
+      "repo": "ai-chatbot",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "variants": [
+        {
+          "variantId": "V1",
+          "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+          "query": "DEFAULT_CHAT_MODEL",
+          "regex": "\\bDEFAULT_CHAT_MODEL\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V2",
+          "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+          "query": "where is DEFAULT_CHAT_MODEL defined",
+          "regex": "\\bDEFAULT_CHAT_MODEL\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V3",
+          "shape": "short+without-symbol+medium-regex+declarative+high-density",
+          "query": "Where in the",
+          "regex": "\\b(DEFAULT_CHAT_MODEL|models)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V4",
+          "shape": "medium+with-symbol+medium-regex+interrogative+high-density",
+          "query": "Where in the vercel/ai-chatbot codebase is DEFAULT_CHAT_MODEL defined, and what model id does it currently point at? Name the file.",
+          "regex": "\\b(DEFAULT_CHAT_MODEL|models)\\b",
+          "isBaseline": true
+        },
+        {
+          "variantId": "V5",
+          "shape": "medium+without-symbol+broad-regex+interrogative+low-density",
+          "query": "Where in the the framework codebase is this defined and what model id does",
+          "regex": "\\b(in|codebase|is|DEFAULT_CHAT_MODEL|defined|and)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V6",
+          "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
+          "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where in the this codebase codebase is the relevant component defined, and what model id does it currently point at? Name the file.",
+          "regex": "\\b(in|codebase|is|DEFAULT_CHAT_MODEL|defined|and)\\b",
+          "isBaseline": false
+        }
+      ],
+      "ssFindAnchorSweep": [
+        {
+          "id": "A_narrow",
+          "regex": "\\bDEFAULT_CHAT_MODEL\\b"
+        },
+        {
+          "id": "A_medium",
+          "regex": "\\b(DEFAULT_CHAT_MODEL|models)\\b"
+        },
+        {
+          "id": "A_broad",
+          "regex": "\\b(in|codebase|is|DEFAULT_CHAT_MODEL|defined|and)\\b"
+        }
+      ]
+    },
+    {
+      "goldId": "ai-chatbot:entitlements-config",
+      "repo": "ai-chatbot",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "variants": [
+        {
+          "variantId": "V1",
+          "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+          "query": "entitlementsByUserType",
+          "regex": "\\bentitlementsByUserType\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V2",
+          "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+          "query": "where is entitlementsByUserType defined",
+          "regex": "\\bentitlementsByUserType\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V3",
+          "shape": "short+without-symbol+medium-regex+declarative+high-density",
+          "query": "Where is the",
+          "regex": "\\b(entitlementsByUserType|entitlements)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V4",
+          "shape": "medium+with-symbol+medium-regex+interrogative+high-density",
+          "query": "Where is the per-user-type message rate cap (entitlementsByUserType) defined in the chatbot, and what is the current maxMessagesPerHour for guest and regular users? Name the file.",
+          "regex": "\\b(entitlementsByUserType|entitlements)\\b",
+          "isBaseline": true
+        },
+        {
+          "variantId": "V5",
+          "shape": "medium+without-symbol+broad-regex+interrogative+low-density",
+          "query": "Where is the per-user-type message rate cap this defined in the chatbot and what",
+          "regex": "\\b(is|per-user-type|message|rate|cap|entitlementsByUserType)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V6",
+          "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
+          "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where is the per-user-type message rate cap (the relevant component) defined in the chatbot, and what is the current maxMessagesPerHour for guest and regular users? Name the file.",
+          "regex": "\\b(is|per-user-type|message|rate|cap|entitlementsByUserType)\\b",
+          "isBaseline": false
+        }
+      ],
+      "ssFindAnchorSweep": [
+        {
+          "id": "A_narrow",
+          "regex": "\\bentitlementsByUserType\\b"
+        },
+        {
+          "id": "A_medium",
+          "regex": "\\b(entitlementsByUserType|entitlements)\\b"
+        },
+        {
+          "id": "A_broad",
+          "regex": "\\b(is|per-user-type|message|rate|cap|entitlementsByUserType)\\b"
+        }
+      ]
+    },
+    {
+      "goldId": "ai-chatbot:visibility-type-export",
+      "repo": "ai-chatbot",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "variants": [
+        {
+          "variantId": "V1",
+          "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+          "query": "<VisibilityType>",
+          "regex": "\\bVisibilityType\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V2",
+          "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+          "query": "where is <VisibilityType> defined",
+          "regex": "\\bVisibilityType\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V3",
+          "shape": "short+without-symbol+medium-regex+declarative+high-density",
+          "query": "Where is the",
+          "regex": "\\b(VisibilityType|visibility-selector)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V4",
+          "shape": "medium+with-symbol+medium-regex+interrogative+high-density",
+          "query": "Where is the VisibilityType type defined in the ai-chatbot codebase, and what string-literal values does it accept? Name the file.",
+          "regex": "\\b(VisibilityType|visibility-selector)\\b",
+          "isBaseline": true
+        },
+        {
+          "variantId": "V5",
+          "shape": "medium+without-symbol+broad-regex+interrogative+low-density",
+          "query": "Where is the this type defined in the the framework codebase and what string-literal",
+          "regex": "\\b(is|VisibilityType|type|defined|in|ai-chatbot)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V6",
+          "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
+          "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where is the the relevant component type defined in the this codebase codebase, and what string-literal values does it accept? Name the file.",
+          "regex": "\\b(is|VisibilityType|type|defined|in|ai-chatbot)\\b",
+          "isBaseline": false
+        }
+      ],
+      "ssFindAnchorSweep": [
+        {
+          "id": "A_narrow",
+          "regex": "\\bVisibilityType\\b"
+        },
+        {
+          "id": "A_medium",
+          "regex": "\\b(VisibilityType|visibility-selector)\\b"
+        },
+        {
+          "id": "A_broad",
+          "regex": "\\b(is|VisibilityType|type|defined|in|ai-chatbot)\\b"
+        }
+      ]
+    },
+    {
+      "goldId": "ai-chatbot:use-artifact-hook",
+      "repo": "ai-chatbot",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "variants": [
+        {
+          "variantId": "V1",
+          "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+          "query": "useArtifact()",
+          "regex": "\\buseArtifact\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V2",
+          "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+          "query": "how does useArtifact() work",
+          "regex": "\\buseArtifact\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V3",
+          "shape": "short+without-symbol+medium-regex+declarative+high-density",
+          "query": "useArtifact hook expose",
+          "regex": "\\b(useArtifact|use-artifact)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V4",
+          "shape": "medium+with-symbol+medium-regex+interrogative+high-density",
+          "query": "How does the useArtifact() hook expose the current artifact and a setter that updates it? Identify the file, the hook, and how it caches state via SWR.",
+          "regex": "\\b(useArtifact|use-artifact)\\b",
+          "isBaseline": true
+        },
+        {
+          "variantId": "V5",
+          "shape": "medium+without-symbol+broad-regex+interrogative+low-density",
+          "query": "How does the this hook expose the current artifact and setter that updates it",
+          "regex": "\\b(useArtifact|hook|expose|current|artifact|and)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V6",
+          "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
+          "query": "I am trying to understand exactly how this works at a deep level. Specifically: How does the the relevant component() hook expose the current artifact and a setter that updates it? Identify the file, the hook, and how it caches state via SWR.",
+          "regex": "\\b(useArtifact|hook|expose|current|artifact|and)\\b",
+          "isBaseline": false
+        }
+      ],
+      "ssFindAnchorSweep": [
+        {
+          "id": "A_narrow",
+          "regex": "\\buseArtifact\\b"
+        },
+        {
+          "id": "A_medium",
+          "regex": "\\b(useArtifact|use-artifact)\\b"
+        },
+        {
+          "id": "A_broad",
+          "regex": "\\b(useArtifact|hook|expose|current|artifact|and)\\b"
+        }
+      ]
+    },
+    {
+      "goldId": "ai-chatbot:use-chat-visibility-hook",
+      "repo": "ai-chatbot",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "variants": [
+        {
+          "variantId": "V1",
+          "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+          "query": "useChatVisibility()",
+          "regex": "\\buseChatVisibility\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V2",
+          "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+          "query": "how does useChatVisibility() work",
+          "regex": "\\buseChatVisibility\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V3",
+          "shape": "short+without-symbol+medium-regex+declarative+high-density",
+          "query": "useChatVisibility hook decide",
+          "regex": "\\b(useChatVisibility|use-chat-visibility)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V4",
+          "shape": "medium+with-symbol+medium-regex+interrogative+high-density",
+          "query": "How does the useChatVisibility hook decide whether to read visibility from the cached chat history or from the local SWR fallback? Cite the file and the function.",
+          "regex": "\\b(useChatVisibility|use-chat-visibility)\\b",
+          "isBaseline": true
+        },
+        {
+          "variantId": "V5",
+          "shape": "medium+without-symbol+broad-regex+interrogative+low-density",
+          "query": "How does the this hook decide whether to read visibility from the cached chat",
+          "regex": "\\b(useChatVisibility|hook|decide|whether|to|read)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V6",
+          "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
+          "query": "I am trying to understand exactly how this works at a deep level. Specifically: How does the the relevant component hook decide whether to read visibility from the cached chat history or from the local SWR fallback? Cite the file and the function.",
+          "regex": "\\b(useChatVisibility|hook|decide|whether|to|read)\\b",
+          "isBaseline": false
+        }
+      ],
+      "ssFindAnchorSweep": [
+        {
+          "id": "A_narrow",
+          "regex": "\\buseChatVisibility\\b"
+        },
+        {
+          "id": "A_medium",
+          "regex": "\\b(useChatVisibility|use-chat-visibility)\\b"
+        },
+        {
+          "id": "A_broad",
+          "regex": "\\b(useChatVisibility|hook|decide|whether|to|read)\\b"
+        }
+      ]
+    },
+    {
+      "goldId": "ai-chatbot:use-auto-resume-hook",
+      "repo": "ai-chatbot",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "variants": [
+        {
+          "variantId": "V1",
+          "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+          "query": "useAutoResume()",
+          "regex": "\\buseAutoResume\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V2",
+          "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+          "query": "how does useAutoResume() work",
+          "regex": "\\buseAutoResume\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V3",
+          "shape": "short+without-symbol+medium-regex+declarative+high-density",
+          "query": "useAutoResume hook decide",
+          "regex": "\\b(useAutoResume|use-auto-resume)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V4",
+          "shape": "medium+with-symbol+medium-regex+interrogative+high-density",
+          "query": "How does the useAutoResume hook decide when to call resumeStream() and when to append a streamed message via setMessages? Cite the file and the hook.",
+          "regex": "\\b(useAutoResume|use-auto-resume)\\b",
+          "isBaseline": true
+        },
+        {
+          "variantId": "V5",
+          "shape": "medium+without-symbol+broad-regex+interrogative+low-density",
+          "query": "How does the this hook decide when to call resumeStream and when to append",
+          "regex": "\\b(useAutoResume|hook|decide|to|call|resumeStream)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V6",
+          "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
+          "query": "I am trying to understand exactly how this works at a deep level. Specifically: How does the the relevant component hook decide when to call resumeStream() and when to append a streamed message via setMessages? Cite the file and the hook.",
+          "regex": "\\b(useAutoResume|hook|decide|to|call|resumeStream)\\b",
+          "isBaseline": false
+        }
+      ],
+      "ssFindAnchorSweep": [
+        {
+          "id": "A_narrow",
+          "regex": "\\buseAutoResume\\b"
+        },
+        {
+          "id": "A_medium",
+          "regex": "\\b(useAutoResume|use-auto-resume)\\b"
+        },
+        {
+          "id": "A_broad",
+          "regex": "\\b(useAutoResume|hook|decide|to|call|resumeStream)\\b"
+        }
+      ]
+    },
+    {
+      "goldId": "ai-chatbot:chat-header-component",
+      "repo": "ai-chatbot",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "variants": [
+        {
+          "variantId": "V1",
+          "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+          "query": "<ChatHeader>",
+          "regex": "\\bChatHeader\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V2",
+          "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+          "query": "where is <ChatHeader> defined",
+          "regex": "\\bChatHeader\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V3",
+          "shape": "short+without-symbol+medium-regex+declarative+high-density",
+          "query": "Where is the",
+          "regex": "\\b(ChatHeader|chat-header)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V4",
+          "shape": "medium+with-symbol+medium-regex+interrogative+high-density",
+          "query": "Where is the <ChatHeader> component defined in the chatbot, and what does it render in the collapsed-sidebar / mobile state? Name the file and the exported memoised component.",
+          "regex": "\\b(ChatHeader|chat-header)\\b",
+          "isBaseline": true
+        },
+        {
+          "variantId": "V5",
+          "shape": "medium+without-symbol+broad-regex+interrogative+low-density",
+          "query": "Where is the this component defined in the chatbot and what does it render",
+          "regex": "\\b(is|ChatHeader|component|defined|in|chatbot)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V6",
+          "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
+          "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where is the <the relevant component> component defined in the chatbot, and what does it render in the collapsed-sidebar / mobile state? Name the file and the exported memoised component.",
+          "regex": "\\b(is|ChatHeader|component|defined|in|chatbot)\\b",
+          "isBaseline": false
+        }
+      ],
+      "ssFindAnchorSweep": [
+        {
+          "id": "A_narrow",
+          "regex": "\\bChatHeader\\b"
+        },
+        {
+          "id": "A_medium",
+          "regex": "\\b(ChatHeader|chat-header)\\b"
+        },
+        {
+          "id": "A_broad",
+          "regex": "\\b(is|ChatHeader|component|defined|in|chatbot)\\b"
+        }
+      ]
+    },
+    {
+      "goldId": "ai-chatbot:visibility-selector-component",
+      "repo": "ai-chatbot",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "variants": [
+        {
+          "variantId": "V1",
+          "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+          "query": "<VisibilitySelector>",
+          "regex": "\\bVisibilitySelector\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V2",
+          "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+          "query": "where is <VisibilitySelector> defined",
+          "regex": "\\bVisibilitySelector\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V3",
+          "shape": "short+without-symbol+medium-regex+declarative+high-density",
+          "query": "Where is the",
+          "regex": "\\b(VisibilitySelector|visibility-selector)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V4",
+          "shape": "medium+with-symbol+medium-regex+interrogative+high-density",
+          "query": "Where is the <VisibilitySelector> component defined, and which dropdown options does it render? Name the file and the component.",
+          "regex": "\\b(VisibilitySelector|visibility-selector)\\b",
+          "isBaseline": true
+        },
+        {
+          "variantId": "V5",
+          "shape": "medium+without-symbol+broad-regex+interrogative+low-density",
+          "query": "Where is the this component defined and which dropdown options does it render Name",
+          "regex": "\\b(is|VisibilitySelector|component|defined|and|dropdown)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V6",
+          "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
+          "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where is the <the relevant component> component defined, and which dropdown options does it render? Name the file and the component.",
+          "regex": "\\b(is|VisibilitySelector|component|defined|and|dropdown)\\b",
+          "isBaseline": false
+        }
+      ],
+      "ssFindAnchorSweep": [
+        {
+          "id": "A_narrow",
+          "regex": "\\bVisibilitySelector\\b"
+        },
+        {
+          "id": "A_medium",
+          "regex": "\\b(VisibilitySelector|visibility-selector)\\b"
+        },
+        {
+          "id": "A_broad",
+          "regex": "\\b(is|VisibilitySelector|component|defined|and|dropdown)\\b"
+        }
+      ]
+    },
+    {
+      "goldId": "ai-chatbot:multimodal-input-component",
+      "repo": "ai-chatbot",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "variants": [
+        {
+          "variantId": "V1",
+          "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+          "query": "<MultimodalInput>",
+          "regex": "\\bMultimodalInput\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V2",
+          "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+          "query": "where is <MultimodalInput> defined",
+          "regex": "\\bMultimodalInput\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V3",
+          "shape": "short+without-symbol+medium-regex+declarative+high-density",
+          "query": "Where is the",
+          "regex": "\\b(MultimodalInput|multimodal-input)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V4",
+          "shape": "medium+with-symbol+medium-regex+interrogative+high-density",
+          "query": "Where is the <MultimodalInput> component defined in the chatbot, and which inner functional component does the exported memo wrap? Name the file and both names.",
+          "regex": "\\b(MultimodalInput|multimodal-input)\\b",
+          "isBaseline": true
+        },
+        {
+          "variantId": "V5",
+          "shape": "medium+without-symbol+broad-regex+interrogative+low-density",
+          "query": "Where is the this component defined in the chatbot and which inner functional component",
+          "regex": "\\b(is|MultimodalInput|component|defined|in|chatbot)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V6",
+          "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
+          "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where is the <the relevant component> component defined in the chatbot, and which inner functional component does the exported memo wrap? Name the file and both names.",
+          "regex": "\\b(is|MultimodalInput|component|defined|in|chatbot)\\b",
+          "isBaseline": false
+        }
+      ],
+      "ssFindAnchorSweep": [
+        {
+          "id": "A_narrow",
+          "regex": "\\bMultimodalInput\\b"
+        },
+        {
+          "id": "A_medium",
+          "regex": "\\b(MultimodalInput|multimodal-input)\\b"
+        },
+        {
+          "id": "A_broad",
+          "regex": "\\b(is|MultimodalInput|component|defined|in|chatbot)\\b"
+        }
+      ]
+    },
+    {
+      "goldId": "ai-chatbot:visibility-update-flow",
+      "repo": "ai-chatbot",
+      "tier": "dev",
+      "qshape_stratum": "multi-file-flow",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "variants": [
+        {
+          "variantId": "V1",
+          "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+          "query": "useChatVisibility()",
+          "regex": "\\buseChatVisibility\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V2",
+          "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+          "query": "trace useChatVisibility() across files",
+          "regex": "\\buseChatVisibility\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V3",
+          "shape": "short+without-symbol+medium-regex+declarative+high-density",
+          "query": "picks different option",
+          "regex": "\\b(useChatVisibility|updateChatVisibility)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V4",
+          "shape": "medium+with-symbol+medium-regex+interrogative+high-density",
+          "query": "When the user picks a different option in the <VisibilitySelector> menu, the change crosses three files. Identify (a) the setVisibilityType callback returned by the useChatVisibility hook in hooks/use-chat-visibility.ts, and (b) the updateChatVisibility server action it calls in app/(chat)/actions.ts. Cite both files.",
+          "regex": "\\b(useChatVisibility|updateChatVisibility)\\b",
+          "isBaseline": true
+        },
+        {
+          "variantId": "V5",
+          "shape": "medium+without-symbol+broad-regex+interrogative+low-density",
+          "query": "When the user picks different option in the VisibilitySelector menu the change crosses three",
+          "regex": "\\b(picks|different|option|in|VisibilitySelector|menu)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V6",
+          "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
+          "query": "I am trying to understand exactly how this works at a deep level. Specifically: When the user picks a different option in the <VisibilitySelector> menu, the change crosses three files. Identify (a) the setVisibilityType callback returned by the the relevant component hook in hooks/use-chat-visibility.ts, and (b) the updateChatVisibility server action it calls in app/(chat)/actions.ts. Cite both files.",
+          "regex": "\\b(picks|different|option|in|VisibilitySelector|menu)\\b",
+          "isBaseline": false
+        }
+      ],
+      "ssFindAnchorSweep": [
+        {
+          "id": "A_narrow",
+          "regex": "\\buseChatVisibility\\b"
+        },
+        {
+          "id": "A_medium",
+          "regex": "\\b(useChatVisibility|updateChatVisibility)\\b"
+        },
+        {
+          "id": "A_broad",
+          "regex": "\\b(picks|different|option|in|VisibilitySelector|menu)\\b"
+        }
+      ]
+    },
+    {
+      "goldId": "ai-chatbot:chat-post-flow",
+      "repo": "ai-chatbot",
+      "tier": "dev",
+      "qshape_stratum": "multi-file-flow",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "variants": [
+        {
+          "variantId": "V1",
+          "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+          "query": "POST",
+          "regex": "\\bPOST\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V2",
+          "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+          "query": "trace POST across files",
+          "regex": "\\bPOST\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V3",
+          "shape": "short+without-symbol+medium-regex+declarative+high-density",
+          "query": "chatbot an HTTP",
+          "regex": "\\b(POST|getLanguageModel)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V4",
+          "shape": "medium+with-symbol+medium-regex+interrogative+high-density",
+          "query": "In the chatbot, an HTTP POST to /api/chat builds a streamed response. Identify (a) the POST handler in app/(chat)/api/chat/route.ts, and (b) the language-model accessor it calls via getLanguageModel in lib/ai/providers.ts. Cite both files.",
+          "regex": "\\b(POST|getLanguageModel)\\b",
+          "isBaseline": true
+        },
+        {
+          "variantId": "V5",
+          "shape": "medium+without-symbol+broad-regex+interrogative+low-density",
+          "query": "In the chatbot an HTTP this to /api/chat builds streamed response Identify the this",
+          "regex": "\\b(chatbot|an|HTTP|POST|to|builds)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V6",
+          "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
+          "query": "I am trying to understand exactly how this works at a deep level. Specifically: In the chatbot, an HTTP the relevant component to /api/chat builds a streamed response. Identify (a) the the relevant component handler in app/(chat)/api/chat/route.ts, and (b) the language-model accessor it calls via getLanguageModel in lib/ai/providers.ts. Cite both files.",
+          "regex": "\\b(chatbot|an|HTTP|POST|to|builds)\\b",
+          "isBaseline": false
+        }
+      ],
+      "ssFindAnchorSweep": [
+        {
+          "id": "A_narrow",
+          "regex": "\\bPOST\\b"
+        },
+        {
+          "id": "A_medium",
+          "regex": "\\b(POST|getLanguageModel)\\b"
+        },
+        {
+          "id": "A_broad",
+          "regex": "\\b(chatbot|an|HTTP|POST|to|builds)\\b"
+        }
+      ]
+    },
+    {
+      "goldId": "ai-chatbot:document-create-flow",
+      "repo": "ai-chatbot",
+      "tier": "dev",
+      "qshape_stratum": "multi-file-flow",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "variants": [
+        {
+          "variantId": "V1",
+          "shape": "very-short+with-symbol+narrow-regex+imperative+high-density",
+          "query": "createDocument",
+          "regex": "\\bcreateDocument\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V2",
+          "shape": "short+with-symbol+narrow-regex+interrogative+high-density",
+          "query": "trace createDocument across files",
+          "regex": "\\bcreateDocument\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V3",
+          "shape": "short+without-symbol+medium-regex+declarative+high-density",
+          "query": "calls the createDocument",
+          "regex": "\\b(createDocument|documentHandlersByArtifactKind)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V4",
+          "shape": "medium+with-symbol+medium-regex+interrogative+high-density",
+          "query": "When the assistant calls the createDocument tool, the request crosses two files. Identify (a) the createDocument tool definition in lib/ai/tools/create-document.ts, and (b) the documentHandlersByArtifactKind table in lib/artifacts/server.ts that dispatches by artifact kind. Cite both files.",
+          "regex": "\\b(createDocument|documentHandlersByArtifactKind)\\b",
+          "isBaseline": true
+        },
+        {
+          "variantId": "V5",
+          "shape": "medium+without-symbol+broad-regex+interrogative+low-density",
+          "query": "When the assistant calls the this tool the request crosses two files Identify the",
+          "regex": "\\b(calls|createDocument|tool|request|crosses|two)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V6",
+          "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
+          "query": "I am trying to understand exactly how this works at a deep level. Specifically: When the assistant calls the the relevant component tool, the request crosses two files. Identify (a) the the relevant component tool definition in lib/ai/tools/create-document.ts, and (b) the documentHandlersByArtifactKind table in lib/artifacts/server.ts that dispatches by artifact kind. Cite both files.",
+          "regex": "\\b(calls|createDocument|tool|request|crosses|two)\\b",
+          "isBaseline": false
+        }
+      ],
+      "ssFindAnchorSweep": [
+        {
+          "id": "A_narrow",
+          "regex": "\\bcreateDocument\\b"
+        },
+        {
+          "id": "A_medium",
+          "regex": "\\b(createDocument|documentHandlersByArtifactKind)\\b"
+        },
+        {
+          "id": "A_broad",
+          "regex": "\\b(calls|createDocument|tool|request|crosses|two)\\b"
         }
       ]
     },
