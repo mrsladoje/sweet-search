@@ -125,27 +125,6 @@ flow ("how does X flow from A to B", "trace from entry to exit",
 "all places that ..."). In that case, take ONE follow-up reading
 or sub-search to fill the gap, then stop.
 
-## Choosing the search budget
-
-Default to \`ss-search "<q>"\` (4k). Switch tiers only when the question
-shape demands it:
-
-- Use \`--full\` (8k) when the question:
-  - mentions multiple steps / phases / stages explicitly
-  - asks for a "pipeline", "flow", "lifecycle", "dispatch", "sequence"
-  - asks "how does X handle ..." where X involves several cooperating
-    functions
-  - asks "what calls/where is X used" AND you expect ≥2 callers
-
-- Use \`--xl\` (12k) ONLY when:
-  - the question is explicitly multi-file / cross-cutting
-  - one strong dominant answer is plausible (the gate will fall back
-    to \`--full\` if not)
-
-NEVER chain searches at increasing budgets. If the default 4k pack
-already says \`sufficient=YES\`, do not "re-run with --full to be sure"
-— that just wastes budget.
-
 ## Citation Rules
 
 - Every distinct source file that supports the answer must appear as its own citation.
