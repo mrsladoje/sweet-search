@@ -291,10 +291,52 @@ DEFAULT WORKFLOW:
 
 ${BUDGET_TABLE}
 ${ANSWER_FORMAT}`,
+
+  // ─── shape-constrained: Track B (P6.3 / §7.5) single-tool, shape-forced ───
+  //
+  // Used by core/prompt-optimization/sweep/track-b.mjs — the agent is locked
+  // to ONE retrieval tool and forced to issue its query in a specific shape.
+  // The exact shape, the suggested phrasing, and the regex anchor are
+  // injected by track-b.mjs at call time via the `${SHAPE_BLOCK}` placeholder.
+  //
+  // The text below is the policy frame: it pins down the citation rule, the
+  // forbid-improvisation rule, and the answer-format JSON — leaving only the
+  // tool name and shape body to be supplied per tuple.
+  'shape-constrained': `\
+You are an autonomous developer agent solving a code-question task in a
+repository indexed by Sweet Search. THIS RUN IS A QUERY-SHAPE EXPERIMENT —
+your tool choice and your query phrasing are PRESCRIBED. Improvising defeats
+the experiment.
+
+\${SHAPE_BLOCK}
+
+You MUST NOT use any other retrieval tool, native shell, or alternative
+phrasing. Specifically forbidden:
+  - any \`ss-*\` tool other than the one named above
+  - native rg / grep / sed / awk / cat / head / tail / find / python / node / jq
+  - the native Read tool (use the prescribed tool's read affordances only)
+  - editing, creating, or moving files
+  - reading \`.sweet-search/\` index files
+
+WORKFLOW:
+1. Phrase your discovery call EXACTLY as the shape above prescribes (1 call).
+2. Inspect ONLY the top 3 results from that one call.
+3. If a result already gives you enough to answer, STOP — cite it.
+4. ONE follow-up read is permitted (and only one) IF and only IF the question
+   demands a multi-file flow OR the top result identifies the file but not
+   the span. Otherwise stop.
+5. Do NOT issue alternative queries to "double-check". The experiment grades
+   the prescribed shape, not your ability to recover from a weak shape.
+
+${BUDGET_TABLE}
+${ANSWER_FORMAT}`,
 };
 
 // Default ordering — native first as the baseline, then conditions under test.
 // `--condition=name1,name2,...` filters this set in run-bench.js.
+// `shape-constrained` is intentionally OUT of the default ordering — it is
+// only invoked by core/prompt-optimization/sweep/track-b.mjs with a per-tuple
+// shape block, not by the standard agent bench.
 export const MODE_ORDER = ['native-rg-read', 'sweet-search-tools', 'sweet-search-auto', 'sweet-search-structural'];
 
 // Conditions that exercise sweet-search runtime/indexes/models.
@@ -366,4 +408,41 @@ export const TOOL_RULES = {
     ],
     readToolForbidden: true,
   },
+
+  // shape-constrained: Track B (P6.3 / §7.5). Default tool-rule template;
+  // track-b.mjs picks the per-tuple `allowedBashLeading` from the single
+  // tool under test (e.g. ['ss-search', 'ss-read'] OR ['ss-find', 'ss-read'])
+  // before calling claude-runner. The default below is intentionally
+  // restrictive: orientation-only — track-b.mjs MUST override
+  // `allowedBashLeading` per tuple.
+  'shape-constrained': {
+    allowedTools: ['Bash'],
+    disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read'],
+    forbiddenBashSubstrings: [],
+    forbiddenBashLeading: [],
+    allowedBashLeading: ['pwd', 'ls', 'wc', 'echo', 'printf'],
+    readToolForbidden: true,
+  },
 };
+
+// Per-tool bash allow-list builder for `shape-constrained` mode. track-b.mjs
+// calls this with the tool under test to obtain the runtime TOOL_RULES entry.
+export function buildShapeConstrainedRules(tool) {
+  const orientation = ['pwd', 'ls', 'wc', 'echo', 'printf'];
+  let toolBins;
+  switch (tool) {
+    case 'ss-search':   toolBins = ['ss-search', 'ss-read', 'sweet-search']; break;
+    case 'ss-find':     toolBins = ['ss-find',   'ss-read', 'sweet-search']; break;
+    case 'ss-semantic': toolBins = ['ss-semantic', 'ss-read', 'sweet-search']; break;
+    case 'structural':  toolBins = ['ss-trace',  'ss-read', 'sweet-search']; break;
+    default: throw new Error(`buildShapeConstrainedRules: unknown tool ${tool}`);
+  }
+  return {
+    allowedTools: ['Bash'],
+    disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read'],
+    forbiddenBashSubstrings: [],
+    forbiddenBashLeading: [],
+    allowedBashLeading: [...toolBins, ...orientation],
+    readToolForbidden: true,
+  };
+}

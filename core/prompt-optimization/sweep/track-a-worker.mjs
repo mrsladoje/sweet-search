@@ -15,7 +15,7 @@
  * promotion.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, appendFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -25,11 +25,12 @@ const REPO_ROOT = path.resolve(__dirname, '../../..');
 const opts = parseArgs(process.argv.slice(2));
 
 function parseArgs(argv) {
-  const o = { runId: null, repo: null, dryRun: false };
+  const o = { runId: null, repo: null, dryRun: false, outFile: null };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--run') o.runId = argv[++i];
     else if (argv[i] === '--repo') o.repo = argv[++i];
     else if (argv[i] === '--dry-run') o.dryRun = true;
+    else if (argv[i] === '--out-file') o.outFile = argv[++i];
   }
   return o;
 }
@@ -132,7 +133,16 @@ async function callSsFind(tuple) {
   const t0 = Date.now();
   const ss = await getSweetSearch();
   if (!ss.hasLateInteractionIndex) {
-    return { results: [], latency_ms: Date.now() - t0, raw: { fallback: 'no-LI' } };
+    // (C14.) ss-find depends on the late-interaction index. When the index
+    // is absent (e.g. a fresh repo not yet indexed with --colgrep / late-
+    // interaction warmup) returning empty results LOOKS like a recall=0
+    // datapoint to BH-FDR. Emit an explicit `skipped` sentinel via the raw
+    // field; scoreTuple converts that to `metrics: null` so the cell never
+    // enters the test slate.
+    return {
+      results: [], latency_ms: Date.now() - t0,
+      raw: { skipped: 'no-late-interaction-index' },
+    };
   }
   // patternSearch(query, routing, options) — 3-arg signature; routing=null is OK.
   const r = await ss.patternSearch(tuple.query, null, {
@@ -198,6 +208,20 @@ async function callStructural(tuple) {
   // Without a symbol, parseStructuralQuery() returns null and the search
   // path falls back to hybridSearchV2 — defeating the whole point of
   // measuring "structural mode". Skip those tuples with a sentinel record.
+  //
+  // (C13.) IMPORTANT METHODOLOGY CAVEAT — query-override:
+  //   Structural mode requires a relationship verb ("callers of X",
+  //   "implementations of Y") to dispatch correctly. The variant grid V1-V6
+  //   does NOT carry a relationship-verb framing, so the harness REWRITES
+  //   each variant's query to a stratum-derived relationship-verb form.
+  //   This means the structural tool sees the same query for every variant
+  //   of a given (gold, stratum), washing out the authored shape dimensions
+  //   for that tool.
+  //
+  //   Treat structural-tool rows as a routing benchmark, NOT a shape-by-tool
+  //   experiment. promote.mjs surfaces this in track-a-summary.json under
+  //   `structural_query_override_warning`. The shape claim space is still
+  //   evaluated correctly for ss-search / ss-find / ss-semantic.
   const t0 = Date.now();
   const sym = tuple.expectedSymbols?.[0];
   if (!sym) {
@@ -235,6 +259,10 @@ async function callStructural(tuple) {
       routedMode: r.stats?.routing?.mode,
       usedRelationshipVerb,
       structuralQuery: q,
+      query_overridden: q !== tuple.query,
+      query_override_warning: q !== tuple.query
+        ? 'structural tool query rewritten to relationship-verb form; shape dimensions are not directly tested for this tool'
+        : null,
     },
   };
 }
@@ -271,6 +299,30 @@ async function scoreTuple(tuple) {
   } catch (e) {
     error = e.message || String(e);
     toolOut = { results: [], latency_ms: 0, raw: {} };
+  }
+  // (C14.) Tools may emit a `skipped` sentinel via raw.skipped when the
+  // run is not a meaningful recall observation (e.g. ss-find without LI
+  // index, ss-semantic without a gold file, structural without a gold
+  // symbol, structural query-override on a stratum that doesn't match a
+  // relationship verb). Emit the row with metrics=null so promote.mjs's
+  // BH-FDR pair-floor (≥5 pairs) excludes the cell rather than treating
+  // an empty result list as a real recall=0 datapoint.
+  if (toolOut.raw && typeof toolOut.raw.skipped === 'string') {
+    return {
+      goldId: tuple.goldId,
+      variantId: tuple.variantId,
+      tool: tuple.tool,
+      shape: tuple.shape,
+      isBaseline: tuple.isBaseline,
+      stratum: tuple.qshape_stratum,
+      query: tuple.query,
+      regex: tuple.regex,
+      expected: { files: tuple.expectedFiles, symbols: tuple.expectedSymbols },
+      metrics: null,
+      skipped: toolOut.raw.skipped,
+      raw: toolOut.raw,
+      latency_ms: toolOut.latency_ms,
+    };
   }
   const fr1 = recallAtK(toolOut.results, tuple.expectedFiles, 1);
   const fr3 = recallAtK(toolOut.results, tuple.expectedFiles, 3);
@@ -363,16 +415,28 @@ async function main() {
     process.stderr.write('track-a-worker: stdin payload must be { tuples: [...] }\n');
     process.exit(2);
   }
+
+  // (C15.) Robust IPC. When `--out-file` is provided, write JSONL records
+  // and the summary line to that file rather than relying on stdout
+  // partitioning ("only lines that start with `{` are records"). Native /
+  // Rust modules emit informational lines to stdout during init that can
+  // happen to start with `{`, so the legacy parser was brittle.
+  const outFile = opts.outFile;
+  if (outFile) writeFileSync(outFile, '');
   const records = [];
   for (const t of tuples) {
     const rec = await scoreTuple(t);
     rec._repo = opts.repo;
     rec._runId = opts.runId;
     records.push(rec);
-    process.stdout.write(JSON.stringify(rec) + '\n');
+    const line = JSON.stringify(rec) + '\n';
+    if (outFile) appendFileSync(outFile, line);
+    else process.stdout.write(line);
   }
   const summary = summariseRepo(records);
-  process.stdout.write(`# summary: ${JSON.stringify(summary)}\n`);
+  const summaryLine = `# summary: ${JSON.stringify(summary)}\n`;
+  if (outFile) appendFileSync(outFile, summaryLine);
+  else process.stdout.write(summaryLine);
 }
 
 main().catch((err) => {

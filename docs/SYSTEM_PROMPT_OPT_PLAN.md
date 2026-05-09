@@ -2860,20 +2860,29 @@ mkdir -p core/prompt-optimization/{decontamination,stats,telemetry,failure-modes
 #    Initialize Thresholdout budget log: core/prompt-optimization/data/results/{run-id}/thresholdout-log.jsonl
 #    Verify Vault lock: scripts/check-vault-lock.mjs --dry-run should refuse vault_50.json reads
 
-# 5. Smoke test on one repo before running the full sweep:
-node core/prompt-optimization/run-shape-sweep.mjs \
-  --repo=fastify \
-  --golds=core/prompt-optimization/data/query-shapes/golds.json \
-  --variants=core/prompt-optimization/data/query-shapes/variants.json \
-  --tools=ss-find,ss-grep,ss-semantic,auto \
-  --output=core/prompt-optimization/data/query-shapes/results/fastify-smoke.json
+# 5. Smoke test on one repo before running the full sweep (Track A driver
+#    spawns a per-repo worker; tools-in-scope are ss-search/ss-find/
+#    ss-semantic/structural — ss-grep is excluded from the shape claim space
+#    per §7.1, see track-a.mjs header):
+node core/prompt-optimization/sweep/track-a.mjs --run qshape-v1 --repo fastify
+# Output: core/prompt-optimization/data/results/qshape-v1/track-a.jsonl + track-a-summary.json
 
-# 6. Validate the harness output schema, fix bugs, then run full P6.2 sweep on all 5 dev repos.
+# 6. Validate the harness output schema, fix bugs, then run full P6.2 sweep on all 5 dev repos:
+node core/prompt-optimization/sweep/track-a.mjs --run qshape-v1
 
-# 7. Track B (P6.3) consumes the Track A subsample — runs claude -p with shape-constraint policy.
-#    Implement the new mode in eval/agent-read-workflows/policies.js first.
+# 7. Track B (P6.3) consumes the Track A subsample — runs claude -p with the
+#    shape-constrained policy. The policy lives in
+#    eval/agent-read-workflows/policies.js (`shape-constrained` mode +
+#    buildShapeConstrainedRules); track-b.mjs orchestrates the per-tuple
+#    shape-forcing system prompt, runs PRP two-judge swap, and validates
+#    against the human-validation set for IAA (Krippendorff α ≥ 0.6).
+node core/prompt-optimization/sweep/track-b.mjs --run qshape-v1                # dry-run plan
+node core/prompt-optimization/sweep/track-b.mjs --run qshape-v1 --confirm-cost 5
 
 # 8. Promote to recommendations.json (P6.4); commit with prereg/qshape-v1-results tag.
+#    Strict by default — every gate must `pass`. Use --allow-incomplete-promotion
+#    only for diagnostic runs where Track B / Thresholdout are deliberately skipped.
+node core/prompt-optimization/sweep/promote.mjs --run qshape-v1
 
 # 9. Begin P7 (T1-T14 prompt bodies) — copy verbatim instruction_text from
 #    recommendations.json into each variant's query-phrasing rules.

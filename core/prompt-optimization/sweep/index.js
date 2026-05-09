@@ -54,30 +54,66 @@ export function runTrackA({ runId, repo = null, tool = null, dryRun = false }) {
 
 /**
  * Plan / execute Track B (agent-in-loop sweep). Default is dry-run; pass
- * `confirmCostUsd` to execute (still gated to a follow-up commit at the
- * actual agent-orchestration layer).
+ * `confirmCostUsd` to execute. Track B drives the `shape-constrained` policy
+ * in eval/agent-read-workflows/policies.js with a per-tuple shape-forcing
+ * system prompt and runs PRP two-judge pairwise scoring against the V4
+ * baseline.
+ *
+ * Sequencing rule: Track B is OFF by default; the caller MUST opt in with
+ * `confirmCostUsd`. Track A only is the safe default for promotion-only
+ * runs (`runShapePromotion` then handles the deterministic-only path).
+ *
+ * @param {object} args
+ * @param {string} args.runId
+ * @param {number|null} [args.confirmCostUsd] — ≥ estimate or run aborts
+ * @param {number} [args.subsampleSize=25]
+ * @param {number} [args.seed=42]
+ * @param {boolean} [args.includeUv=false]   — include held-out uv golds
+ * @param {number|null} [args.maxTuples]     — hard cap on tuple count
+ * @param {string} [args.agentModel='sonnet']
+ * @param {string} [args.judgeModel='sonnet']
  */
-export function runTrackB({ runId, confirmCostUsd = null, subsampleSize = 24, seed = 42 }) {
+export function runTrackB({
+  runId, confirmCostUsd = null, subsampleSize = 25, seed = 42,
+  includeUv = false, maxTuples = null,
+  agentModel = 'sonnet', judgeModel = 'sonnet',
+}) {
   if (!runId) throw new Error('runTrackB: runId required');
   const argv = ['core/prompt-optimization/sweep/track-b.mjs', '--run', runId,
-    '--subsample', String(subsampleSize), '--seed', String(seed)];
+    '--subsample', String(subsampleSize), '--seed', String(seed),
+    '--agent-model', agentModel, '--judge-model', judgeModel];
+  if (includeUv) argv.push('--include-uv');
+  if (maxTuples != null) argv.push('--max-tuples', String(maxTuples));
   if (confirmCostUsd != null) argv.push('--confirm-cost', String(confirmCostUsd));
   const r = spawnSync('node', argv, { cwd: REPO_ROOT, stdio: 'inherit' });
   return {
     exitCode: r.status,
     planPath: path.join(REPO_ROOT, 'core/prompt-optimization/data/results', runId, 'track-b-plan.json'),
+    summaryPath: path.join(REPO_ROOT, 'core/prompt-optimization/data/results', runId, 'track-b-summary.json'),
+    jsonlPath: path.join(REPO_ROOT, 'core/prompt-optimization/data/results', runId, 'track-b.jsonl'),
   };
 }
 
 /**
- * Run the §7.6 four-gate promotion: BH-FDR + Thresholdout + leakage-gate +
- * independent-author check; emit recommendations.json.
+ * Run the §7.6 five-gate promotion: BH-FDR + Thresholdout + leakage-gate +
+ * independent-author check + per-repo cross-shape stability; emit
+ * recommendations.json.
+ *
+ * Strict by default: any gate marked `skipped` (Thresholdout) or `not_run`
+ * (Track B) blocks `promoted: true`. Pass `allowIncompletePromotion: true`
+ * for diagnostic runs (recommendations.json then carries an explicit
+ * `incompletePromotion: true` flag and per-tool `not_promoted_reason`).
  */
-export function runShapePromotion({ runId, skipThresholdout = false, independentAuthor = 'sweet-search-core-secondary' }) {
+export function runShapePromotion({
+  runId, skipThresholdout = false,
+  allowIncompletePromotion = false,
+  independentAuthor = 'sweet-search-core-secondary',
+}) {
   if (!runId) throw new Error('runShapePromotion: runId required');
   const argv = ['core/prompt-optimization/sweep/promote.mjs', '--run', runId,
     '--author', independentAuthor];
   if (skipThresholdout) argv.push('--skip-thresholdout');
+  if (allowIncompletePromotion) argv.push('--allow-incomplete-promotion');
   const r = spawnSync('node', argv, { cwd: REPO_ROOT, stdio: 'inherit' });
   const outPath = path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/recommendations.json');
   const recommendations = existsSync(outPath)
@@ -89,13 +125,29 @@ export function runShapePromotion({ runId, skipThresholdout = false, independent
 /**
  * Convenience: orchestrate the full P6.2 → P6.4 pipeline. Mirrors the §13.5
  * runbook (Track A → Track B (gated) → promote).
+ *
+ * Track B remains opt-in: it runs only when `confirmTrackBCostUsd` is set
+ * (>= the dry-run estimate). Default is "Track A only", and promote runs
+ * with `--allow-incomplete-promotion` so the pipeline can produce a
+ * deterministic-only diagnostic without silently shipping promotion.
+ *
+ * @param {object} args
+ * @param {string} args.runId
+ * @param {boolean} [args.dryRun=false]
+ * @param {number|null} [args.confirmTrackBCostUsd=null]   set to enable Track B
+ * @param {boolean} [args.allowIncompletePromotion=false]  loosens promote gate when Thresholdout/Track B skipped
  */
-export function runQueryShapeSweep({ runId, dryRun = false, confirmTrackBCostUsd = null }) {
+export function runQueryShapeSweep({
+  runId, dryRun = false, confirmTrackBCostUsd = null, allowIncompletePromotion = false,
+}) {
   const a = runTrackA({ runId, dryRun });
   if (a.exitCode !== 0) return { ok: false, stage: 'track-a', exitCode: a.exitCode };
   if (dryRun) return { ok: true, stage: 'dry-run', trackA: a };
-  const b = runTrackB({ runId, confirmCostUsd: confirmTrackBCostUsd });
-  if (b.exitCode !== 0) return { ok: false, stage: 'track-b', exitCode: b.exitCode };
-  const p = runShapePromotion({ runId });
+  let b = null;
+  if (confirmTrackBCostUsd != null) {
+    b = runTrackB({ runId, confirmCostUsd: confirmTrackBCostUsd });
+    if (b.exitCode !== 0) return { ok: false, stage: 'track-b', exitCode: b.exitCode };
+  }
+  const p = runShapePromotion({ runId, allowIncompletePromotion });
   return { ok: p.exitCode === 0, stage: 'promote', trackA: a, trackB: b, promote: p };
 }
