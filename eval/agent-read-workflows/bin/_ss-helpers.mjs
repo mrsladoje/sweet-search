@@ -182,9 +182,9 @@ async function cmdAgentSearch(args) {
   // Main sweet-search auto/CatBoost search with token-budgeted agent packaging.
   //
   // Usage:
-  //   ss-search "<query>"                                  → format=agent (4k budget)
-  //   ss-search "<query>" --full                           → format=agent_full (8k budget)
-  //   ss-search "<query>" --xl                             → format=agent_full_xl (12k, gated)
+  //   ss-search "<query>"                                  → format=agent (auto-pick 4k/8k/12k)
+  //   ss-search "<query>" --full                           → force 8k (rarely needed; default auto-picks)
+  //   ss-search "<query>" --xl                             → force 12k (rarely needed; default auto-picks)
   //   ss-search "<query>" -k 5                             → top-K results
   //   ss-search "<query>" --mode hybrid                    → force a mode (default: auto/CatBoost)
   //

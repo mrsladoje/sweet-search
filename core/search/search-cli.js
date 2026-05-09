@@ -220,9 +220,14 @@ Options:
   --fusion <type>   Legacy: cc or rrf (ignored for hybrid - always uses robust CC fusion)
   --late-interaction Enable late interaction reranking (if index available)
   --late-interaction-model=ID Use specific model (lateon-code or lateon-code-edge)
-  --agent           Agent mode: return self-contained code blocks (ColGrep context packaging)
-  --agent-full      Agent mode with full expansion for top-3 results (budget: 8000)
-  --budget <n>      Agent mode token budget (default: 4000 preview, 8000 full)
+  --agent           Agent mode: self-contained code blocks. Auto-picks 4k/8k/12k
+                    tier from score-distribution signals (top-1 dominance,
+                    entropy, candidate-pool breadth) — no need to choose a tier.
+  --agent-preview   Force the 4k preview tier (rarely needed; --agent auto-picks)
+  --agent-full      Force the 8k full tier (rarely needed; --agent auto-picks)
+  --agent-full-xl   Force the 12k XL tier; gated on top-1 dominance ≥ 2× top-2
+  --budget <n>      Explicit total token budget (overrides auto-tier; --agent
+                    keeps it as the format)
   --summary         HCGS summary-first output (10x token reduction)
   --mid             Middle-res view: signature + docstring (5x token reduction)
   --json            Output as JSON
@@ -382,14 +387,22 @@ Examples:
       } else if (arg === '--cold') {
         forceCold = true;
       } else if (arg === '--agent') {
-        agentFormat = agentFormat || 'agent_preview';
+        // 'agent' triggers auto-tier selection (preview/full/xl picked from
+        // top-1 dominance, entropy, and candidate-pool breadth). Power users
+        // can still force a specific tier with --agent-preview / --agent-full
+        // / --agent-full-xl.
+        agentFormat = agentFormat || 'agent';
+      } else if (arg === '--agent-preview') {
+        agentFormat = 'agent_preview';
       } else if (arg === '--agent-full') {
         agentFormat = 'agent_full';
       } else if (arg === '--agent-full-xl') {
         agentFormat = 'agent_full_xl';
       } else if (arg === '--budget' && args[i + 1]) {
         agentBudget = parseInt(args[++i], 10);
-        agentFormat = agentFormat || 'agent_preview';
+        // Pair an explicit numeric budget with auto-tier so the response's
+        // budgetReason reflects 'explicit_budget' rather than a tier override.
+        agentFormat = agentFormat || 'agent';
       } else if (!arg.startsWith('--')) {
         query = arg;
       }

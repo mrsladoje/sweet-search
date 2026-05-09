@@ -25,6 +25,8 @@ import {
   truncateToTokenCap,
   checkStaleness,
   packageForAgent,
+  computeBudgetSignals,
+  selectAgentBudget,
 } from '../../core/search/context-expander.js';
 
 // =============================================================================
@@ -670,8 +672,11 @@ describe('diversity penalty', () => {
       { id: 'c', file: 'src/bar.js', startLine: 1, endLine: 20, score: 0.5, lateInteractionScore: 0.5, metadata: { file: 'src/bar.js', startLine: 1, endLine: 20, name: 'func2', type: 'function' } },
     ];
 
+    // Anchor to explicit preview tier — this test covers diversity demotion,
+    // not auto-tier selection. Auto-tier behaviour is tested separately
+    // under `selectAgentBudget` / 'auto-tier' suites below.
     const response = packageForAgent(results, { grepMatches: 5 }, {
-      query: 'test', regex: 'test', projectRoot: '/nonexistent',
+      query: 'test', regex: 'test', format: 'agent_preview', projectRoot: '/nonexistent',
     });
 
     // Result 1 (a) should be full, result 2 (b) should be demoted to summary
@@ -688,7 +693,7 @@ describe('diversity penalty', () => {
     ];
 
     const response = packageForAgent(results, { grepMatches: 5 }, {
-      query: 'test', regex: 'test', projectRoot: '/nonexistent',
+      query: 'test', regex: 'test', format: 'agent_preview', projectRoot: '/nonexistent',
     });
 
     expect(response.results[0].presentation).toBe('full');
@@ -818,9 +823,12 @@ describe('packageForAgent', () => {
   });
 
   it('should assign summary presentation to results beyond rank 3', () => {
+    // Anchor to explicit preview tier — this test covers the
+    // rank-3 summary boundary, not auto-tier selection.
     const response = packageForAgent(makeResults(5), {}, {
       query: 'test',
       regex: 'test',
+      format: 'agent_preview',
       projectRoot: '/nonexistent',
     });
 
@@ -1010,6 +1018,335 @@ describe('ranking identity', () => {
     // Presentation tiers differ between modes (the whole point of sub-modes)
     expect(previewResult.results[1].presentation).toBe('preview');
     expect(fullResult.results[1].presentation).toBe('full');
+  });
+});
+
+// =============================================================================
+// Auto-tier selection (selectAgentBudget) — format='agent' default
+// =============================================================================
+//
+// Mirrors core/graph/structural-context.js:selectBudget() (the trace tool's
+// adaptive budget). The agent passes a single format='agent' and the system
+// picks 4k / 8k / 12k from score-distribution signals. Explicit tier formats
+// (agent_preview / agent_full / agent_full_xl) and explicit numeric
+// tokenBudget remain as overrides.
+//
+// IMPORTANT for agents reading this: the contract is that the FORMAT-GATED
+// ranking pipeline (file-kind-ranking.js:1443-1448) treats ALL agent
+// variants — agent / agent_preview / agent_full / agent_full_xl — as
+// "agent format". Auto-pick changes the BUDGET tier, not the ranking. So
+// MRR on retrieval benches must not change when format='agent' switches
+// from preview to full or xl.
+
+describe('selectAgentBudget (auto-tier)', () => {
+  describe('explicit format pass-through', () => {
+    it('agent_preview → preview/4k with explicit_preview reason', () => {
+      const pick = selectAgentBudget('agent_preview', { numResults: 5, dominance: 1.2, entropy: 0.9, breadth: 100 });
+      expect(pick.tier).toBe('preview');
+      expect(pick.tokenBudget).toBe(4000);
+      expect(pick.subMode).toBe('agent_preview');
+      expect(pick.reason).toBe('explicit_preview');
+    });
+
+    it('agent_full → full/8k with explicit_full reason', () => {
+      const pick = selectAgentBudget('agent_full', { numResults: 1, dominance: 99, entropy: 0, breadth: 0 });
+      expect(pick.tier).toBe('full');
+      expect(pick.tokenBudget).toBe(8000);
+      expect(pick.subMode).toBe('agent_full');
+      expect(pick.reason).toBe('explicit_full');
+    });
+
+    it('agent_full_xl → xl/12k with explicit_xl reason', () => {
+      const pick = selectAgentBudget('agent_full_xl', { numResults: 1, dominance: 99, entropy: 0, breadth: 0 });
+      expect(pick.tier).toBe('xl');
+      expect(pick.tokenBudget).toBe(12000);
+      expect(pick.subMode).toBe('agent_full_xl');
+      expect(pick.reason).toBe('explicit_xl');
+    });
+
+    it('explicit numeric budget overrides auto-pick (passes value through unchanged)', () => {
+      const pick = selectAgentBudget('agent', { numResults: 5, dominance: 1.2, entropy: 0.9, breadth: 100 }, { explicitBudget: 1 });
+      expect(pick.tokenBudget).toBe(1); // honoured verbatim — strict ceiling tests rely on this
+      expect(pick.reason).toBe('explicit_budget');
+    });
+
+    it('explicit numeric budget infers tier label from clamped value', () => {
+      expect(selectAgentBudget('agent', {}, { explicitBudget: 5000 }).tier).toBe('preview');
+      expect(selectAgentBudget('agent', {}, { explicitBudget: 8500 }).tier).toBe('full');
+      expect(selectAgentBudget('agent', {}, { explicitBudget: 13000 }).tier).toBe('xl');
+    });
+  });
+
+  describe('auto-pick decision tree (format=agent)', () => {
+    // Design target: preview fires on ~99% of queries; xl+full combined ~1-5%.
+    // These tests pin the threshold semantics. If you intentionally widen the
+    // upgrade triggers, update both the tests and the design comment in
+    // context-expander.js together.
+
+    it('zero results → preview/auto_empty', () => {
+      const pick = selectAgentBudget('agent', { numResults: 0, dominance: 0, top1Tokens: 0 });
+      expect(pick.tier).toBe('preview');
+      expect(pick.reason).toBe('auto_empty');
+    });
+
+    it('single small result → preview', () => {
+      const pick = selectAgentBudget('agent', { numResults: 1, dominance: 99, top1Tokens: 500 });
+      expect(pick.tier).toBe('preview');
+      expect(pick.reason).toBe('auto_preview_default');
+    });
+
+    it('single huge result (>=2400t) → xl (gate fires; top-1 gets up to 8k)', () => {
+      const pick = selectAgentBudget('agent', { numResults: 1, dominance: 99, top1Tokens: 3000 });
+      expect(pick.tier).toBe('xl');
+      expect(pick.reason).toBe('auto_xl_single_huge');
+    });
+
+    it('dominant top-1 + small chunk → preview (extra budget would be unused)', () => {
+      // The user-flagged regression: small results, top1 >= 2*top2, top-1
+      // fits in 2k. Earlier rules wrongly upgraded via entropy or just-≥2
+      // dominance.
+      const pick = selectAgentBudget('agent', { numResults: 2, dominance: 2.25, top1Tokens: 800 });
+      expect(pick.tier).toBe('preview');
+    });
+
+    it('moderately dominant top-1 + huge chunk → still preview (need D >= 2.5)', () => {
+      // Tightened from D>=2.0 to D>=2.5: borderline dominance (2.0-2.4) lands
+      // on preview to avoid spending XL on cases the dominance gate may not
+      // reliably fire on.
+      const pick = selectAgentBudget('agent', { numResults: 5, dominance: 2.2, top1Tokens: 3000 });
+      expect(pick.tier).toBe('preview');
+    });
+
+    it('strongly dominant top-1 + huge chunk → xl', () => {
+      const pick = selectAgentBudget('agent', { numResults: 5, dominance: 3.0, top1Tokens: 2500 });
+      expect(pick.tier).toBe('xl');
+      expect(pick.reason).toBe('auto_xl_dominant_huge_top1');
+    });
+
+    it('many tightly-clustered results → full (rare case)', () => {
+      // 12 results, top-1 only 4% ahead of top-2, non-trivial chunk → full.
+      const pick = selectAgentBudget('agent', { numResults: 12, dominance: 1.04, top1Tokens: 800 });
+      expect(pick.tier).toBe('full');
+      expect(pick.reason).toBe('auto_full_tight_cluster');
+    });
+
+    it('moderately competitive multi-result (D between 1.05 and 2.0) → preview', () => {
+      // The "many results, only 2 important" case the user flagged: dominance
+      // moderate (not tied). Preview is enough — top-1 is fully shown, rank-2
+      // gets a signature, agent can re-read or escalate.
+      const pick = selectAgentBudget('agent', { numResults: 10, dominance: 1.3, top1Tokens: 500 });
+      expect(pick.tier).toBe('preview');
+    });
+
+    it('tightly clustered but few results → preview (need 10+ results for full)', () => {
+      const pick = selectAgentBudget('agent', { numResults: 5, dominance: 1.0, top1Tokens: 800 });
+      expect(pick.tier).toBe('preview');
+    });
+
+    it('tightly clustered with tiny top-1 → preview (full buys nothing on tiny chunks)', () => {
+      const pick = selectAgentBudget('agent', { numResults: 12, dominance: 1.02, top1Tokens: 200 });
+      expect(pick.tier).toBe('preview');
+    });
+
+    it('top1Tokens=0 (chunk size unknown) → preview, never xl', () => {
+      // When startLine/endLine missing, top1Tokens=0 keeps the path on preview.
+      const pick = selectAgentBudget('agent', { numResults: 5, dominance: 3.0, top1Tokens: 0 });
+      expect(pick.tier).toBe('preview');
+    });
+
+    it('breadth and entropy are diagnostic-only, not used by the decision', () => {
+      const pickA = selectAgentBudget('agent', {
+        numResults: 5, dominance: 3.0, top1Tokens: 800, breadth: 5000, entropy: 0.99,
+      });
+      expect(pickA.tier).toBe('preview'); // top1Tokens too small for xl
+
+      const pickB = selectAgentBudget('agent', {
+        numResults: 5, dominance: 1.2, top1Tokens: 4000, breadth: 0, entropy: 0.1,
+      });
+      expect(pickB.tier).toBe('preview'); // dominance below XL threshold; cluster not tight enough for full
+    });
+  });
+
+  describe('computeBudgetSignals', () => {
+    it('returns zeros for empty input', () => {
+      expect(computeBudgetSignals([], {})).toEqual({
+        numResults: 0, breadth: 0, dominance: 0, entropy: 0, top1Tokens: 0, top1LineCount: 0,
+      });
+    });
+
+    it('handles single positive-score result with sentinel dominance', () => {
+      const s = computeBudgetSignals([{ score: 0.9 }], {});
+      expect(s.numResults).toBe(1);
+      expect(s.dominance).toBeGreaterThan(10); // sentinel
+    });
+
+    it('computes dominance as top1/top2', () => {
+      const s = computeBudgetSignals([{ score: 0.9 }, { score: 0.45 }, { score: 0.3 }], {});
+      expect(s.dominance).toBeCloseTo(2.0, 1);
+    });
+
+    it('reads breadth from grepMatches first, then candidatePoolSize (diagnostic only)', () => {
+      const a = computeBudgetSignals([{ score: 0.9 }], { grepMatches: 100 });
+      expect(a.breadth).toBe(100);
+      const b = computeBudgetSignals([{ score: 0.9 }], { candidatePoolSize: 50 });
+      expect(b.breadth).toBe(50);
+      const c = computeBudgetSignals([{ score: 0.9 }], { grepMatches: 100, candidatePoolSize: 50 });
+      expect(c.breadth).toBe(100); // grepMatches wins (matches allocateBudget contract)
+    });
+
+    it('falls back to lateInteractionScore when score is missing (colgrep)', () => {
+      const s = computeBudgetSignals([{ lateInteractionScore: 0.8 }, { lateInteractionScore: 0.4 }], {});
+      expect(s.numResults).toBe(2);
+      expect(s.dominance).toBeCloseTo(2.0, 1);
+    });
+
+    it('computes top1Tokens from start/end lines × 9 tokens/line', () => {
+      const s = computeBudgetSignals([{ score: 0.9, startLine: 10, endLine: 109 }], {});
+      expect(s.top1LineCount).toBe(100);
+      expect(s.top1Tokens).toBe(900); // 100 × 9
+    });
+
+    it('reads top-1 line range from metadata when present', () => {
+      const s = computeBudgetSignals([{
+        score: 0.9,
+        metadata: { startLine: 1, endLine: 200 },
+      }], {});
+      expect(s.top1LineCount).toBe(200);
+      expect(s.top1Tokens).toBe(1800);
+    });
+
+    it('returns top1Tokens=0 when start/end lines missing (auto-pick falls back to preview)', () => {
+      const s = computeBudgetSignals([{ score: 0.9 }], {});
+      expect(s.top1Tokens).toBe(0);
+      expect(s.top1LineCount).toBe(0);
+    });
+
+    it('produces normalised entropy in [0, 1] (diagnostic only)', () => {
+      const uniform = computeBudgetSignals([{ score: 0.5 }, { score: 0.5 }, { score: 0.5 }], {});
+      expect(uniform.entropy).toBeGreaterThan(0.95); // near-1 for uniform
+      const peaked = computeBudgetSignals([{ score: 0.99 }, { score: 0.005 }, { score: 0.005 }], {});
+      expect(peaked.entropy).toBeLessThan(0.5); // near-0 for peaked
+    });
+  });
+
+  describe('packageForAgent integration with auto-tier', () => {
+    // makeResults defaults to small chunks (lineCount=21 → ~189 tokens),
+    // well below the BIG_TOP1 threshold (2000 tokens). Override `lineCount`
+    // to test the big-top-1 branch.
+    const makeResults = (count, { scores, lineCount = 21 } = {}) => Array.from({ length: count }, (_, i) => ({
+      id: `chunk${i}`,
+      file: `src/file${i}.js`,
+      startLine: 10,
+      endLine: 10 + lineCount - 1,
+      score: scores ? scores[i] : 0.9 - i * 0.15,
+      lateInteractionScore: scores ? scores[i] : 0.9 - i * 0.15,
+      metadata: { file: `src/file${i}.js`, name: `func${i}`, type: 'function', startLine: 10, endLine: 10 + lineCount - 1 },
+    }));
+
+    it('format=agent + 1 small result → preview', () => {
+      const r = packageForAgent(makeResults(1), {}, {
+        query: 'test', regex: 'test', format: 'agent', projectRoot: '/nonexistent',
+      });
+      expect(r.subMode).toBe('agent_preview');
+      expect(r.tokenBudget).toBe(4000);
+      expect(r.budgetReason).toBe('auto_preview_default');
+    });
+
+    it('format=agent + 1 huge result (300 lines) → xl', () => {
+      const r = packageForAgent(makeResults(1, { lineCount: 300 }), {}, {
+        query: 'test', regex: 'test', format: 'agent', projectRoot: '/nonexistent',
+      });
+      expect(r.subMode).toBe('agent_full_xl');
+      expect(r.tokenBudget).toBe(12000);
+      expect(r.budgetReason).toBe('auto_xl_single_huge');
+    });
+
+    it('format=agent + 5 moderately competitive small results → preview (was full, now preview)', () => {
+      // Under the tight rule: dominance 1.2 isn't < 1.05 AND numResults < 10,
+      // so full does NOT auto-fire. 4k is enough — agent can escalate manually.
+      const r = packageForAgent(makeResults(5), {}, {
+        query: 'test', regex: 'test', format: 'agent', projectRoot: '/nonexistent',
+      });
+      expect(r.subMode).toBe('agent_preview');
+      expect(r.tokenBudget).toBe(4000);
+      expect(r.budgetReason).toBe('auto_preview_default');
+    });
+
+    it('format=agent + dominant top-1 + small chunk → preview (NOT xl)', () => {
+      // The original user-flagged regression case: small results, top1 >= 2*top2,
+      // top-1 fits in 2k. Preview is correct.
+      const r = packageForAgent(
+        makeResults(5, { scores: [0.9, 0.4, 0.3, 0.2, 0.1] }),
+        { grepMatches: 500 },
+        { query: 'test', regex: 'test', format: 'agent', projectRoot: '/nonexistent' }
+      );
+      expect(r.subMode).toBe('agent_preview');
+      expect(r.tokenBudget).toBe(4000);
+      expect(r.budgetReason).toBe('auto_preview_default');
+    });
+
+    it('format=agent + dominant top-1 + big chunk → xl', () => {
+      const r = packageForAgent(
+        makeResults(5, { scores: [0.9, 0.3, 0.2, 0.1, 0.05], lineCount: 300 }),
+        {},
+        { query: 'test', regex: 'test', format: 'agent', projectRoot: '/nonexistent' }
+      );
+      expect(r.subMode).toBe('agent_full_xl');
+      expect(r.budgetReason).toBe('auto_xl_dominant_huge_top1');
+    });
+
+    it('format=agent + 12 tightly-clustered results → full (rare case)', () => {
+      // 12 results all within ~3% of top score → tight cluster → full.
+      const tightScores = Array.from({ length: 12 }, (_, i) => 0.85 - i * 0.005);
+      const r = packageForAgent(
+        makeResults(12, { scores: tightScores, lineCount: 80 }),
+        {},
+        { query: 'test', regex: 'test', format: 'agent', projectRoot: '/nonexistent' }
+      );
+      expect(r.subMode).toBe('agent_full');
+      expect(r.budgetReason).toBe('auto_full_tight_cluster');
+    });
+
+    it('format=agent_preview keeps explicit tier label regardless of signals', () => {
+      const r = packageForAgent(makeResults(5, { lineCount: 400 }), { grepMatches: 1000 }, {
+        query: 'test', regex: 'test', format: 'agent_preview', projectRoot: '/nonexistent',
+      });
+      expect(r.subMode).toBe('agent_preview');
+      expect(r.budgetReason).toBe('explicit_preview');
+    });
+
+    it('"no-auto-budget" ablation falls back to legacy resolveSubMode', () => {
+      const r = packageForAgent(makeResults(5), {}, {
+        query: 'test', regex: 'test', format: 'agent', projectRoot: '/nonexistent',
+        ablations: new Set(['no-auto-budget']),
+      });
+      expect(r.subMode).toBe('agent_preview'); // legacy: 'agent' → preview
+      expect(r.budgetReason).toBe('ablation_no_auto_budget');
+    });
+
+    it('exposes budgetSignals in the response for diagnostics', () => {
+      const r = packageForAgent(makeResults(3), { grepMatches: 42 }, {
+        query: 'test', regex: 'test', format: 'agent', projectRoot: '/nonexistent',
+      });
+      expect(r.budgetSignals).toMatchObject({
+        numResults: 3,
+        breadth: 42,
+        dominance: expect.any(Number),
+        top1Tokens: expect.any(Number),
+      });
+    });
+
+    it('ranking identity is preserved across auto-pick and explicit tiers', () => {
+      const ranked = makeResults(3);
+      const auto = packageForAgent(ranked, {}, { query: 't', regex: 't', format: 'agent', projectRoot: '/nonexistent' });
+      const preview = packageForAgent(ranked, {}, { query: 't', regex: 't', format: 'agent_preview', projectRoot: '/nonexistent' });
+      const full = packageForAgent(ranked, {}, { query: 't', regex: 't', format: 'agent_full', projectRoot: '/nonexistent' });
+
+      // Same files in same order, same scores — auto-pick changes the BUDGET, not the RANKING.
+      const tuple = (resp) => resp.results.map(r => `${r.file}:${r.startLine}:${r.score}`);
+      expect(tuple(auto)).toEqual(tuple(preview));
+      expect(tuple(auto)).toEqual(tuple(full));
+    });
   });
 });
 
