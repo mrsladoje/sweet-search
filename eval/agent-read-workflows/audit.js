@@ -10,9 +10,13 @@
 
 import { TOOL_RULES } from './policies.js';
 
-export function auditRun(mode, run) {
-  const rules = TOOL_RULES[mode];
-  if (!rules) throw new Error(`unknown mode for audit: ${mode}`);
+// `modeOrRules` accepts either a registered mode-name (string lookup in
+// TOOL_RULES) or a rules object directly. Object form lets parallel callers
+// (track-b.mjs sweep) avoid mutating the global TOOL_RULES map per tuple,
+// which is racy under concurrency.
+export function auditRun(modeOrRules, run) {
+  const rules = typeof modeOrRules === 'string' ? TOOL_RULES[modeOrRules] : modeOrRules;
+  if (!rules) throw new Error(`unknown mode for audit: ${modeOrRules}`);
 
   const violations = [];
   for (const tc of run.toolCalls) {

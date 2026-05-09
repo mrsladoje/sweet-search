@@ -71,11 +71,12 @@ const JUDGE_PROMPTS_DIR = path.join(REPO_ROOT, 'core/prompt-optimization/data/ju
 const TOOLS_IN_SCOPE = ['ss-search', 'ss-find', 'ss-semantic', 'structural'];
 
 // Track B costs (rough estimates per §7.5 / §10.6):
-//   - Sonnet 4.6 via Claude Max: $0 marginal (subscription)
-//   - DSv4-Pro judge call: ~$0.0015 per (gold, shape, tool, position-swap)
-//     pair in PRP protocol → ~$0.003 per pair after swap.
-const COST_PER_JUDGE_CALL_USD = 0.0015;
-const COST_PER_AGENT_RUN_USD = 0;          // Sonnet via Claude Max subscription
+//   - Agent runs via Gemini 3 Flash: ~$0.01 per run (pay-per-use;
+//     ~10-15K tokens per multi-turn agent interaction at $0.15/$0.60 per 1M)
+//   - Agent runs via Claude Max subscription: $0 marginal (but burns plan quota)
+//   - PRP judge (DeepSeek V4 Pro OR Gemini 3 Flash): ~$0.001 per call
+const COST_PER_JUDGE_CALL_USD = 0.001;
+const COST_PER_AGENT_RUN_USD = 0.01;     // Gemini 3 Flash estimate
 
 // ─── argv ─────────────────────────────────────────────────────────────────
 
@@ -92,20 +93,41 @@ function parseArgs(argv) {
     dryRun: true,
     includeUv: false,
     maxTuples: null,                       // hard cap on tuple count for safety
-    agentModel: 'sonnet',
-    // (G2.) Single judge by default; pass --judge-models a,b,c for the
-    // disjoint-family panel (§11.6). claude-runner.js currently only
-    // routes to Anthropic models, so non-Anthropic lineages from the panel
-    // (gpt-5-5, gemini-3-1-pro, qwen3.6-max) require a per-provider runner
-    // wired in eval/agent-read-workflows/ before they participate; until
-    // then, an Anthropic-only multi-judge panel (sonnet, opus) is the
-    // operational realisation of the plan structure.
-    judgeModel: 'sonnet',
+    // Default agent model: Gemini 3 Flash Preview (cheap, fast, good quality).
+    // Use 'sonnet' for Claude Max subscription runs (zero marginal cost but
+    // burns plan quota). Use 'gemini-3-flash-preview' for pay-per-use.
+    // The model ID 'gemini-3-flash-preview' is the Google API name; both
+    // the gemini CLI and the direct API accept this form.
+    agentModel: 'gemini-3-flash-preview',
+    // (G2.) Disjoint-family panel (§11.6): pass --judge-models a,b,c.
+    // Default is Gemini 3 Flash Preview (replaces Sonnet for cost efficiency).
+    // judge-runner.js routes via prefix heuristic: gemini-* → google lineage,
+    // deepseek-* → deepseek lineage, claude-* / sonnet → anthropic, etc.
+    judgeModel: 'gemini-3-flash-preview',
     judgeModels: null,                     // null → fall back to [judgeModel]
     timeoutMs: 240000,
     skipAgent: false,                      // judge-only mode (re-judge an existing track-b.jsonl)
-    skipJudge: false,                      // agent-only mode (no judge calls)
-    skipIaa: false,                        // skip the IAA probe pass (still runs PRP swap)
+    skipJudge: false,                       // agent-only mode (no judge calls)
+    skipIaa: false,                         // skip the IAA probe pass (still runs PRP swap)
+    // Resume from an existing JSONL: read agent records from this file,
+    // skip the agent phase entirely, and re-judge with the current panel.
+    // Discards any prior judge records in the source file (re-judging
+    // with a new panel is the whole point). The output JSONL gets the
+    // preserved agent records + fresh judge records.
+    resumeFromJsonl: null,
+    // Resume from an existing JSONL: read agent records from this file,
+    // skip the agent phase entirely, and re-judge with the current panel.
+    // Discards any prior judge records in the source file (re-judging
+    // with a new panel is the whole point). The output JSONL gets the
+    // preserved agent records + fresh judge records.
+    resumeFromJsonl: null,
+    // Bounded concurrency for agent + judge calls. Each in-flight call spawns
+    // a CLI subprocess (claude / codex / gemini) with its own remote-API
+    // request, so the cap protects both local CPU and provider rate limits.
+    // 6 is empirically safe for Anthropic Max (Tier-2-mapped, ~1000 RPM
+    // ceiling) and DeepSeek (dynamic concurrency, retries on 429). Lower it
+    // (e.g. --concurrency 3) when the panel adds smaller-tier providers.
+    concurrency: 6,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -124,6 +146,8 @@ function parseArgs(argv) {
     else if (a === '--skip-agent') o.skipAgent = true;
     else if (a === '--skip-judge') o.skipJudge = true;
     else if (a === '--skip-iaa') o.skipIaa = true;
+    else if (a === '--concurrency') o.concurrency = Math.max(1, parseInt(argv[++i], 10));
+    else if (a === '--resume-from-jsonl') o.resumeFromJsonl = argv[++i];
   }
   if (!o.runId) {
     process.stderr.write('track-b: --run <runId> required (matches preregistration tag)\n');
@@ -131,6 +155,20 @@ function parseArgs(argv) {
   }
   if (!o.judgeModels) o.judgeModels = [o.judgeModel];
   return o;
+}
+
+function countDoneRecords(jsonlPath) {
+  if (!existsSync(jsonlPath)) return 0;
+  const lines = readFileSync(jsonlPath, 'utf8').split('\n').filter(Boolean);
+  let count = 0;
+  for (const line of lines) {
+    try {
+      const rec = JSON.parse(line);
+      if (rec._kind === 'judge') continue;
+      if (rec.runStatus === 'ok' || rec.runStatus === 'timeout') count++;
+    } catch { /* skip */ }
+  }
+  return count;
 }
 
 // ─── stratified subsample ─────────────────────────────────────────────────
@@ -260,29 +298,43 @@ function buildPlan({ goldsRaw, variantsRaw, subsample }) {
   return tuples;
 }
 
-function estimateCost(tuples, { maxTuples = null, nJudges = 1, nIaaProbes = 0 } = {}) {
+function estimateCost(tuples, { maxTuples = null, nJudges = 1, nIaaProbes = 0, resumeFromJsonl = null, nAlreadyDone = 0 } = {}) {
   // (G3.) Honour --max-tuples in the budget gate so the cost cap reflects
   // what we'll actually spend, not a worst-case full-slate estimate.
-  // Judge calls scale with both tuple count (PRP swap × N judges) and
-  // IAA-probe count (N judges × probes).
+  // When resuming, only count tuples not yet completed for agent cost.
   const effectiveTuples = maxTuples != null ? Math.min(maxTuples, tuples.length) : tuples.length;
-  const nAgentRuns = effectiveTuples;
-  // Per (gold × shape) pair: 2 swaps × N judges. Plus IAA: N judges × probes.
+  const nRemainingTuples = Math.max(0, effectiveTuples - nAlreadyDone);
+  const nAgentRuns = resumeFromJsonl ? nRemainingTuples : effectiveTuples;
+  // Judge calls scale with all effective tuples (existing + new) × swaps × judges,
+  // plus IAA probes.
   const nJudgeCalls = effectiveTuples * 2 * nJudges + nIaaProbes * nJudges;
+  const nResumedAgentRecords = nAlreadyDone;
   return {
     nAgentRuns,
+    nResumedAgentRecords,
+    nRemainingTuples,
     nJudgeCalls,
     nJudges,
     nIaaProbes,
     agentCostUSD: nAgentRuns * COST_PER_AGENT_RUN_USD,
     judgeCostUSD: nJudgeCalls * COST_PER_JUDGE_CALL_USD,
     totalEstimatedUSD: nAgentRuns * COST_PER_AGENT_RUN_USD + nJudgeCalls * COST_PER_JUDGE_CALL_USD,
-    // Surface the unreduced full-slate cost too so an operator who omits
-    // --max-tuples sees the worst-case figure unambiguously.
     fullSlateUSD: tuples.length * COST_PER_AGENT_RUN_USD
       + tuples.length * 2 * nJudges * COST_PER_JUDGE_CALL_USD
       + nIaaProbes * nJudges * COST_PER_JUDGE_CALL_USD,
   };
+}
+
+function parseAgentLineage(model) {
+  if (model.includes(':')) {
+    const [lineage] = model.split(':');
+    return lineage;
+  }
+  const lc = model.toLowerCase();
+  if (lc.startsWith('gemini-')) return 'google';
+  if (lc.startsWith('gpt-') || lc.startsWith('o1-') || lc.startsWith('o3-') || lc.startsWith('o4-')) return 'openai';
+  if (lc.startsWith('deepseek-') || lc.startsWith('ds-')) return 'deepseek';
+  return 'anthropic';
 }
 
 // ─── shape-forcing system prompt ──────────────────────────────────────────
@@ -337,21 +389,9 @@ async function executeTuple(tuple, runId, opts, context) {
   const shapeBlock = shapeForcingBlock(tuple.tool, tuple);
   const systemAppend = instantiateSystemPrompt(POLICIES['shape-constrained'], shapeBlock);
   const toolRules = buildShapeConstrainedRules(tuple.tool);
-  // (G3.) Inject per-tool rules into TOOL_RULES at runtime so audit.js —
-  // which looks up rules by mode name — finds the right allowedBashLeading
-  // list. The mode tag carries the tool name so two concurrent tuples for
-  // different tools can't clobber each other; same-tool concurrency is
-  // SAFE because the rule object content is identical, not because the map
-  // is locked. We delete the key after the audit completes (finally block
-  // below) so a long-lived process doesn't accrete leftover keys.
-  //
-  // SINGLE-THREADED ASSUMPTION: track-b.mjs runs tuples sequentially in
-  // the current driver. If you parallelise this, route audit through a
-  // direct rules object instead of the global TOOL_RULES map (audit.js
-  // would need a small refactor to accept rules directly).
-  const auditModeTag = `shape-constrained::${tuple.tool}`;
-  const TOOL_RULES_REF = (await import(path.join(REPO_ROOT, 'eval/agent-read-workflows/policies.js'))).TOOL_RULES;
-  TOOL_RULES_REF[auditModeTag] = toolRules;
+  // (G3.) audit.js now accepts a rules object directly (added 2026-05-09 to
+  // unblock concurrency in this driver), so we no longer mutate the global
+  // TOOL_RULES map per tuple. Multiple tuples can run in parallel safely.
 
   const userPrompt = [
     `# Task\n${tuple.question}`,
@@ -361,30 +401,44 @@ async function executeTuple(tuple, runId, opts, context) {
   ].filter(Boolean).join('\n');
 
   const t0 = Date.now();
-  const run = await runClaudeAgent({
-    prompt: userPrompt,
-    systemAppend,
-    model: opts.agentModel,
-    cwd: repoDir,
-    allowedTools: toolRules.allowedTools,
-    disallowedTools: toolRules.disallowedTools,
-    addDirs: [path.join(REPO_ROOT, 'eval/agent-read-workflows/bin')],
-    extraPathEntries: [path.join(REPO_ROOT, 'eval/agent-read-workflows/bin')],
-    projectRoot: repoDir,
-    timeoutMs: opts.timeoutMs,
-    maxAttempts: 2,
-  });
+  let run;
+  const agentLineage = parseAgentLineage(opts.agentModel);
+  if (agentLineage === 'google') {
+    run = await context.runGeminiAgent({
+      prompt: userPrompt,
+      systemAppend,
+      model: opts.agentModel.startsWith('google:') ? opts.agentModel.slice(7) : opts.agentModel,
+      cwd: repoDir,
+      allowedTools: toolRules.allowedTools,
+      disallowedTools: toolRules.disallowedTools,
+      addDirs: [path.join(REPO_ROOT, 'eval/agent-read-workflows/bin')],
+      extraPathEntries: [path.join(REPO_ROOT, 'eval/agent-read-workflows/bin')],
+      projectRoot: repoDir,
+      timeoutMs: opts.timeoutMs,
+      maxAttempts: 2,
+    });
+  } else {
+    run = await context.runClaudeAgent({
+      prompt: userPrompt,
+      systemAppend,
+      model: opts.agentModel,
+      cwd: repoDir,
+      allowedTools: toolRules.allowedTools,
+      disallowedTools: toolRules.disallowedTools,
+      addDirs: [path.join(REPO_ROOT, 'eval/agent-read-workflows/bin')],
+      extraPathEntries: [path.join(REPO_ROOT, 'eval/agent-read-workflows/bin')],
+      projectRoot: repoDir,
+      timeoutMs: opts.timeoutMs,
+      maxAttempts: 2,
+    });
+  }
   const summary = summariseRun(run);
   const latencyMs = Date.now() - t0;
 
-  // Audit transcript for policy violations (forbidden bash commands, etc.)
-  let audit;
-  try {
-    audit = auditRun(auditModeTag, run);
-  } finally {
-    // Clean up the runtime mutation regardless of audit outcome.
-    delete TOOL_RULES_REF[auditModeTag];
-  }
+  // Audit transcript for policy violations (forbidden bash commands, etc.).
+  // Pass rules object directly so concurrent tuples don't race on a shared
+  // TOOL_RULES map.
+  const audit = auditRun(toolRules, run);
   const metrics = scoreAnswer(
     {
       expectedFiles: tuple.expectedFiles,
@@ -569,6 +623,26 @@ async function validateIaa({ humanSetPath, judgeMatrix, alphaIndividual, alphaMa
   };
 }
 
+// ─── bounded concurrency pool ────────────────────────────────────────────
+
+function makePoolRunner() {
+  return async function runWithLimit(limit, items, worker) {
+    const results = new Array(items.length);
+    let next = 0;
+    async function pump() {
+      while (true) {
+        const idx = next++;
+        if (idx >= items.length) return;
+        results[idx] = await worker(items[idx], idx);
+      }
+    }
+    const workers = [];
+    for (let i = 0; i < Math.min(limit, items.length); i++) workers.push(pump());
+    await Promise.all(workers);
+    return results;
+  };
+}
+
 // ─── execution orchestration ──────────────────────────────────────────────
 
 async function runRealSweep({ tuples, opts, runId, outDir }) {
@@ -583,6 +657,7 @@ async function runRealSweep({ tuples, opts, runId, outDir }) {
     POLICIES: policiesMod.POLICIES,
     buildShapeConstrainedRules: policiesMod.buildShapeConstrainedRules,
     runClaudeAgent: runnerMod.runClaudeAgent,
+    runGeminiAgent: judgeRunnerMod.runGeminiAgent,
     summariseRun: runnerMod.summariseRun,
     extractAnswerJson: runnerMod.extractAnswerJson,
     runJudge: judgeRunnerMod.runJudge,
@@ -592,17 +667,113 @@ async function runRealSweep({ tuples, opts, runId, outDir }) {
   };
 
   const jsonlPath = path.join(outDir, 'track-b.jsonl');
+
+  // ── resume-from-jsonl: load existing agent records, run only missing tuples,
+  // then judge everything. Prior judge records are discarded — re-judging
+  // with the current panel is the whole point of resuming.
+  if (opts.resumeFromJsonl) {
+    const resumePath = opts.resumeFromJsonl;
+    if (!existsSync(resumePath)) {
+      process.stderr.write(`track-b: --resume-from-jsonl file not found: ${resumePath}\n`);
+      process.exit(6);
+    }
+    const rawLines = readFileSync(resumePath, 'utf8').split('\n').filter(Boolean);
+    const existingRecs = [];
+    let discardedJudges = 0;
+    for (const line of rawLines) {
+      try {
+        const rec = JSON.parse(line);
+        if (rec._kind === 'judge') { discardedJudges++; continue; }
+        existingRecs.push(rec);
+      } catch { /* skip malformed lines */ }
+    }
+    process.stdout.write(
+      `track-b: resume from ${resumePath}: loaded ${existingRecs.length} agent records, ` +
+      `discarded ${discardedJudges} prior judge records\n`
+    );
+    // Build set of (goldId|tool|variantId) keys already completed so we can
+    // skip them in the agent phase.
+    const doneKeys = new Set();
+    for (const r of existingRecs) {
+      if (r.runStatus === 'ok' || r.runStatus === 'timeout') {
+        doneKeys.add(`${r.goldId}|${r.tool}|${r.variantId}`);
+      }
+    }
+    // Filter tuples to only those not yet completed.
+    const missingTuples = tuples.filter((t) => !doneKeys.has(`${t.goldId}|${t.tool}|${t.variantId}`));
+    process.stdout.write(
+      `track-b: resume: ${tuples.length} total tuples, ${doneKeys.size} already done, ` +
+      `${missingTuples.length} remaining to run\n`
+    );
+    // Write the preserved agent records to the output JSONL (truncating any
+    // prior file for this runId).
+    writeFileSync(jsonlPath, existingRecs.map((r) => JSON.stringify(r)).join('\n') + '\n');
+
+    // Run only the missing tuples through the agent phase.
+    const records = [...existingRecs];
+    if (missingTuples.length > 0) {
+      const concurrency = Math.max(1, opts.concurrency || 1);
+      process.stdout.write(`track-b: resume agent phase, ${missingTuples.length} missing tuples, concurrency=${concurrency}\n`);
+      let agentDone = 0;
+      let agentStarted = 0;
+      const total = missingTuples.length;
+      const t0Agent = Date.now();
+      const fmtTs = () => new Date().toISOString().slice(11, 19);
+      const completedRecords = await runWithLimit(concurrency, missingTuples, async (tuple) => {
+        const myIdx = ++agentStarted;
+        const tag = `${tuple.repo}/${tuple.goldId}/${tuple.tool}/${tuple.variantId}`;
+        process.stdout.write(`[${fmtTs()}] track-b: resume-agent start ${myIdx}/${total} ${tag}\n`);
+        const tStart = Date.now();
+        const rec = await executeTuple(tuple, runId, opts, context);
+        appendFileSync(jsonlPath, JSON.stringify(rec) + '\n');
+        agentDone += 1;
+        const dt = ((Date.now() - tStart) / 1000).toFixed(1);
+        const overall = ((Date.now() - t0Agent) / 1000).toFixed(1);
+        process.stdout.write(`[${fmtTs()}] track-b: resume-agent done  ${agentDone}/${total} ${tag} (${rec.runStatus}, ${dt}s; cumul ${overall}s)\n`);
+        return rec;
+      });
+      records.push(...completedRecords);
+    } else {
+      process.stdout.write('track-b: resume: all tuples already completed, skipping agent phase\n');
+    }
+    // Judge all records (existing + newly completed) with the current panel.
+    const judgeResult = await judgePhase({ records, opts, runId, outDir, jsonlPath, context });
+    const humanSetPath = path.join(JUDGE_PROMPTS_DIR, 'human-validation-set.json');
+    const iaa = opts.skipIaa
+      ? { status: 'skipped', reason: 'flag --skip-iaa' }
+      : await runIaaProbes({
+          humanSetPath,
+          judgeModels: opts.judgeModels,
+          runId,
+          context,
+          alphaIndividual: 0.6,
+          alphaMajority: 0.7,
+        });
+    return { records, judgeRecords: judgeResult.judgeRecords, iaa };
+  }
+
   // Truncate any prior partial run for this runId — a Track B re-run is
   // always a full replacement, never an append (otherwise stale cost
   // accounting silently doubles).
   writeFileSync(jsonlPath, '');
 
   const records = [];
-  let nProcessed = 0;
   const cap = opts.maxTuples ?? tuples.length;
-  for (const tuple of tuples) {
-    if (nProcessed >= cap) break;
+  const tuplesToRun = tuples.slice(0, cap);
+  const concurrency = Math.max(1, opts.concurrency || 1);
+  process.stdout.write(`track-b: agent phase, ${tuplesToRun.length} tuples, concurrency=${concurrency}\n`);
+
+  let agentDone = 0;
+  let agentStarted = 0;
+  const total = tuplesToRun.length;
+  const t0Agent = Date.now();
+  const fmtTs = () => new Date().toISOString().slice(11, 19);
+  const completedRecords = await runWithLimit(concurrency, tuplesToRun, async (tuple) => {
+    const myIdx = ++agentStarted;
+    const tag = `${tuple.repo}/${tuple.goldId}/${tuple.tool}/${tuple.variantId}`;
+    process.stdout.write(`[${fmtTs()}] track-b: agent start ${myIdx}/${total} ${tag}\n`);
     let rec;
+    const tStart = Date.now();
     if (opts.skipAgent) {
       rec = {
         goldId: tuple.goldId, tool: tuple.tool, shape: tuple.shape, repo: tuple.repo,
@@ -613,81 +784,27 @@ async function runRealSweep({ tuples, opts, runId, outDir }) {
       rec = await executeTuple(tuple, runId, opts, context);
     }
     appendFileSync(jsonlPath, JSON.stringify(rec) + '\n');
-    records.push(rec);
-    nProcessed += 1;
-    if (nProcessed % 5 === 0) {
-      process.stdout.write(`track-b: progress ${nProcessed}/${Math.min(cap, tuples.length)} agent runs\n`);
-    }
-  }
+    agentDone += 1;
+    const dt = ((Date.now() - tStart) / 1000).toFixed(1);
+    const overall = ((Date.now() - t0Agent) / 1000).toFixed(1);
+    process.stdout.write(`[${fmtTs()}] track-b: agent done  ${agentDone}/${total} ${tag} (${rec.runStatus}, ${dt}s; cumul ${overall}s)\n`);
+    return rec;
+  });
+  records.push(...completedRecords);
 
   // Pair candidates with their V4 baseline (same gold + tool) for PRP judging.
   // (G2.) Each pair is judged by EVERY model in opts.judgeModels and the
   // panel majority becomes the per-pair aggregate. Per-judge votes are
   // retained on the record so cross-judge disagreement is auditable.
-  const judgeRecords = [];
-  if (!opts.skipJudge) {
-    const goldsRaw = JSON.parse(readFileSync(path.join(QSHAPE_DIR, 'golds.json'), 'utf8'));
-    const byGoldTool = new Map();
-    for (const r of records) {
-      if (r.runStatus !== 'ok') continue;
-      const k = `${r.goldId}|${r.tool}`;
-      if (!byGoldTool.has(k)) byGoldTool.set(k, { baseline: null, candidates: [] });
-      const slot = byGoldTool.get(k);
-      if (r.isBaseline) slot.baseline = r;
-      else slot.candidates.push(r);
-    }
-    let nJudged = 0;
-    for (const [, slot] of byGoldTool) {
-      if (!slot.baseline) continue;
-      for (const cand of slot.candidates) {
-        const gold = goldsRaw.records.find((g) => g.id === cand.goldId);
-        if (!gold) continue;
-        const task = {
-          question: gold.query,
-          expectedFiles: gold.expectedFiles,
-          expectedSymbols: gold.expectedSymbols,
-          expectedFacts: gold.expectedFacts,
-          expectedNoMatch: !!gold.expectedNoMatch,
-        };
-        const perJudge = [];
-        for (const jm of opts.judgeModels) {
-          const swapA = await callPrpJudge({
-            task, candidateRecord: cand, baselineRecord: slot.baseline,
-            judgeModel: jm, swapPosition: 'A=baseline', runId, context,
-          });
-          const swapB = await callPrpJudge({
-            task, candidateRecord: cand, baselineRecord: slot.baseline,
-            judgeModel: jm, swapPosition: 'A=candidate', runId, context,
-          });
-          let perJudgeAggregate;
-          if (swapA.preferred === 'candidate' && swapB.preferred === 'candidate') perJudgeAggregate = 'candidate';
-          else if (swapA.preferred === 'baseline' && swapB.preferred === 'baseline') perJudgeAggregate = 'baseline';
-          else perJudgeAggregate = 'tie';
-          perJudge.push({ judgeModel: jm, aggregate: perJudgeAggregate, swaps: [swapA, swapB] });
-          nJudged += 2;
-        }
-        // Panel majority across judges (≥1 judge tolerates fall-through).
-        const counts = new Map();
-        for (const pj of perJudge) counts.set(pj.aggregate, (counts.get(pj.aggregate) || 0) + 1);
-        let panelAggregate = 'tie', best = 0;
-        for (const [k, v] of counts) {
-          if (v > best) { panelAggregate = k; best = v; }
-        }
-        const judgeRec = {
-          goldId: cand.goldId, tool: cand.tool, shape: cand.shape,
-          variantId: cand.variantId, baselineVariantId: slot.baseline.variantId,
-          aggregate: panelAggregate,
-          perJudge,
-          n_judges: opts.judgeModels.length,
-        };
-        judgeRecords.push(judgeRec);
-        appendFileSync(jsonlPath, JSON.stringify({ ...judgeRec, _kind: 'judge' }) + '\n');
-        if (nJudged % 10 === 0) {
-          process.stdout.write(`track-b: progress ${nJudged} judge calls (${opts.judgeModels.length} judges × pairs)\n`);
-        }
-      }
-    }
-  }
+  //
+  // Parallelism strategy: every (cand × judgeModel × swapPosition) call is
+  // independent on the network side, so we flatten the nested loops into a
+  // single task list, run them with `runWithLimit(concurrency)`, and only
+  // merge per-judge / panel aggregates after all swaps land. This unlocks
+  // ~Nx wall-clock speedup (judges dominate Track B latency) while keeping
+  // upstream-API concurrency bounded.
+  const judgeResult = await judgePhase({ records, opts, runId, outDir, jsonlPath, context });
+  const judgeRecords = judgeResult.judgeRecords;
 
   // (G2.) IAA validation: run each judge against the human-labelled probe
   // set and compute Krippendorff α. When the validation set is empty we
@@ -706,6 +823,118 @@ async function runRealSweep({ tuples, opts, runId, outDir }) {
       });
 
   return { records, judgeRecords, iaa };
+}
+
+// ─── judge phase (extracted for reuse by --resume-from-jsonl) ────────────
+
+async function judgePhase({ records, opts, runId, outDir, jsonlPath, context }) {
+  const goldsRaw = JSON.parse(readFileSync(path.join(QSHAPE_DIR, 'golds.json'), 'utf8'));
+  const judgeRecords = [];
+  if (opts.skipJudge) return { judgeRecords };
+
+  const concurrency = Math.max(1, opts.concurrency || 1);
+
+  const byGoldTool = new Map();
+  for (const r of records) {
+    if (r.runStatus !== 'ok') continue;
+    const k = `${r.goldId}|${r.tool}`;
+    if (!byGoldTool.has(k)) byGoldTool.set(k, { baseline: null, candidates: [] });
+    const slot = byGoldTool.get(k);
+    if (r.isBaseline) slot.baseline = r;
+    else slot.candidates.push(r);
+  }
+
+  // Build flat task list: one entry per (cand, judgeModel, swapPosition).
+  const swapTasks = [];
+  for (const [, slot] of byGoldTool) {
+    if (!slot.baseline) continue;
+    for (const cand of slot.candidates) {
+      const gold = goldsRaw.records.find((g) => g.id === cand.goldId);
+      if (!gold) continue;
+      const task = {
+        question: gold.query,
+        expectedFiles: gold.expectedFiles,
+        expectedSymbols: gold.expectedSymbols,
+        expectedFacts: gold.expectedFacts,
+        expectedNoMatch: !!gold.expectedNoMatch,
+      };
+      for (const jm of opts.judgeModels) {
+        for (const swap of ['A=baseline', 'A=candidate']) {
+          swapTasks.push({ slot, cand, gold, task, judgeModel: jm, swapPosition: swap });
+        }
+      }
+    }
+  }
+
+  const fmtTs = () => new Date().toISOString().slice(11, 19);
+  process.stdout.write(`track-b: judge phase, ${swapTasks.length} swap calls (${opts.judgeModels.length} judges × pairs × 2 swaps), concurrency=${concurrency}\n`);
+  let judgeDone = 0;
+  let judgeStarted = 0;
+  const totalJudges = swapTasks.length;
+  const t0Judge = Date.now();
+  const swapResults = await runWithLimit(concurrency, swapTasks, async (t) => {
+    const myIdx = ++judgeStarted;
+    const tag = `${t.cand.goldId}/${t.cand.tool}/${t.cand.variantId} judge=${t.judgeModel} ${t.swapPosition}`;
+    process.stdout.write(`[${fmtTs()}] track-b: judge start ${myIdx}/${totalJudges} ${tag}\n`);
+    const tStart = Date.now();
+    const r = await callPrpJudge({
+      task: t.task, candidateRecord: t.cand, baselineRecord: t.slot.baseline,
+      judgeModel: t.judgeModel, swapPosition: t.swapPosition, runId, context,
+    });
+    judgeDone += 1;
+    const dt = ((Date.now() - tStart) / 1000).toFixed(1);
+    const overall = ((Date.now() - t0Judge) / 1000).toFixed(1);
+    const verdict = r?.preferred ?? (r?.isError ? 'ERROR' : '?');
+    process.stdout.write(`[${fmtTs()}] track-b: judge done  ${judgeDone}/${totalJudges} ${tag} → ${verdict} (${dt}s; cumul ${overall}s)\n`);
+    return { ...t, result: r };
+  });
+
+  // Group by (gold|tool|variant|judgeModel) — within each group we have
+  // both swapA and swapB; aggregate them into a per-judge verdict.
+  const byCandJudge = new Map();
+  for (const sr of swapResults) {
+    const k = `${sr.cand.goldId}|${sr.cand.tool}|${sr.cand.variantId}|${sr.judgeModel}`;
+    if (!byCandJudge.has(k)) byCandJudge.set(k, { cand: sr.cand, slot: sr.slot, judgeModel: sr.judgeModel, swapA: null, swapB: null });
+    const e = byCandJudge.get(k);
+    if (sr.swapPosition === 'A=baseline') e.swapA = sr.result;
+    else e.swapB = sr.result;
+  }
+
+  // Group those per-judge verdicts back by (gold|tool|variant) → panel.
+  const byCand = new Map();
+  for (const e of byCandJudge.values()) {
+    const k = `${e.cand.goldId}|${e.cand.tool}|${e.cand.variantId}`;
+    if (!byCand.has(k)) byCand.set(k, { cand: e.cand, slot: e.slot, perJudge: [] });
+    let perJudgeAggregate;
+    if (e.swapA?.preferred === 'candidate' && e.swapB?.preferred === 'candidate') perJudgeAggregate = 'candidate';
+    else if (e.swapA?.preferred === 'baseline' && e.swapB?.preferred === 'baseline') perJudgeAggregate = 'baseline';
+    else perJudgeAggregate = 'tie';
+    byCand.get(k).perJudge.push({
+      judgeModel: e.judgeModel,
+      aggregate: perJudgeAggregate,
+      swaps: [e.swapA, e.swapB],
+    });
+  }
+
+  for (const e of byCand.values()) {
+    const counts = new Map();
+    for (const pj of e.perJudge) counts.set(pj.aggregate, (counts.get(pj.aggregate) || 0) + 1);
+    let panelAggregate = 'tie', best = 0;
+    for (const [k, v] of counts) {
+      if (v > best) { panelAggregate = k; best = v; }
+    }
+    const judgeRec = {
+      goldId: e.cand.goldId, tool: e.cand.tool, shape: e.cand.shape,
+      variantId: e.cand.variantId, baselineVariantId: e.slot.baseline.variantId,
+      aggregate: panelAggregate,
+      perJudge: e.perJudge,
+      n_judges: opts.judgeModels.length,
+    };
+    judgeRecords.push(judgeRec);
+    appendFileSync(jsonlPath, JSON.stringify({ ...judgeRec, _kind: 'judge' }) + '\n');
+  }
+
+  return { judgeRecords };
 }
 
 // ─── IAA probes runner (judges × human-labelled probes) ──────────────────
@@ -817,6 +1046,8 @@ async function main() {
     maxTuples: opts.maxTuples,
     nJudges: opts.judgeModels.length,
     nIaaProbes,
+    resumeFromJsonl: opts.resumeFromJsonl,
+    nAlreadyDone: opts.resumeFromJsonl ? countDoneRecords(opts.resumeFromJsonl) : 0,
   });
 
   const outDir = path.join(RESULTS_BASE, opts.runId);
@@ -848,20 +1079,26 @@ async function main() {
     judgePanelHarness:
       'judge-runner.js routes Anthropic via claude CLI, OpenAI via codex exec, Google via gemini -p, DeepSeek via claude-CLI-with-redirected-base-URL (parity-preserving), and other lineages (Llama/Qwen/Mistral/Cohere) via opencode run. Tokens accept explicit lineage:model form (e.g. anthropic:claude-sonnet-4-6, openai:gpt-5.5, google:gemini-3-1-pro, deepseek:deepseek-v4-pro) or use the prefix heuristic (gpt-* → openai, gemini-* → google, deepseek-* → deepseek-via-claude). A raw-API escape hatch is `deepseek-api:` for budget-controlled runs; default deepseek lineage routes through the CLI harness for §11.6 panel parity.',
     shapeForcingPromptStrategy: 'see shapeForcingBlock() in track-b.mjs + shape-constrained policy',
+    resumeFromJsonl: opts.resumeFromJsonl || null,
+    agentModel: opts.agentModel,
     p63StopRule: 'Halt if judge IAA α < 0.5 even after one rubric rewrite (humans-only on the affected metric).',
     tuples: tuples.slice(0, 5).concat([{ '...': `(${tuples.length - 5} more truncated for plan readability)` }]),
   };
 
   writeFileSync(planPath, JSON.stringify(plan, null, 2) + '\n');
   process.stdout.write(`track-b: plan → ${planPath}\n`);
+  const resumeNote = opts.resumeFromJsonl
+    ? ` [RESUME from ${opts.resumeFromJsonl}; ${cost.nResumedAgentRecords} done, ${cost.nRemainingTuples} remaining agent runs]`
+    : '';
   process.stdout.write(
     `track-b: ${tuples.length} tuples` +
     (opts.maxTuples != null ? ` (capped to ${opts.maxTuples} via --max-tuples)` : '') +
     `; judges=${opts.judgeModels.length} [${opts.judgeModels.join(',')}]; ` +
+    `agent=${opts.agentModel}; ` +
     `iaa_probes=${nIaaProbes}; ` +
     `estimated $${cost.totalEstimatedUSD.toFixed(2)} ` +
-    `(${cost.nAgentRuns} agent runs @ subscription, ${cost.nJudgeCalls} judge calls @ ` +
-    `$${COST_PER_JUDGE_CALL_USD.toFixed(4)}; full-slate $${cost.fullSlateUSD.toFixed(2)})\n`
+    `(${cost.nAgentRuns} agent runs @ $${COST_PER_AGENT_RUN_USD.toFixed(2)}/ea${opts.resumeFromJsonl ? `, ${cost.nResumedAgentRecords} reused from resume` : ''}, ${cost.nJudgeCalls} judge calls @ ` +
+    `$${COST_PER_JUDGE_CALL_USD.toFixed(4)}/ea; full-slate $${cost.fullSlateUSD.toFixed(2)})${resumeNote}\n`
   );
 
   if (opts.dryRun) {

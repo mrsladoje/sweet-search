@@ -47,6 +47,12 @@ describe('parseJudgeModelSpec', () => {
 
   it('prefix heuristic: gemini- → google', () => {
     expect(parseJudgeModelSpec('gemini-3-1-pro').lineage).toBe('google');
+    expect(parseJudgeModelSpec('gemini-3-flash').lineage).toBe('google');
+  });
+
+  it('prefix heuristic: flash/prose aliases → google', () => {
+    expect(parseJudgeModelSpec('flash').lineage).toBe('google');
+    expect(parseJudgeModelSpec('pro').lineage).toBe('google');
   });
 
   it('prefix heuristic: deepseek- → deepseek (CLI-harness via claude)', () => {

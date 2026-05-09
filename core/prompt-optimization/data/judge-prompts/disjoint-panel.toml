@@ -36,11 +36,12 @@ forbidden_lineage = "deepseek-qwen"
 # 3-of-5 active jury (vote majority decides on PRP pairwise outcomes)
 [[active_judge]]
 slot           = 1
-lineage        = "anthropic"
-model          = "claude-sonnet-4-6"
-provider       = "anthropic-direct"
-subscription   = "claude-max"   # $0 marginal
+lineage        = "google"
+model          = "gemini-3-flash-preview"
+provider       = "google-direct"
+cost_per_1m    = { input = 0.15, output = 0.60 }
 prompt_path    = "core/prompt-optimization/data/judge-prompts/prp-pairwise-v1.md"
+note           = "Replaced claude-sonnet-4-6 to avoid Claude Max plan burn. Intel 46, 163t/s, $0.15/$0.60 per 1M tokens."
 
 [[active_judge]]
 slot           = 2

@@ -76,7 +76,7 @@ export function runTrackA({ runId, repo = null, tool = null, dryRun = false }) {
 export function runTrackB({
   runId, confirmCostUsd = null, subsampleSize = 25, seed = 42,
   includeUv = false, maxTuples = null,
-  agentModel = 'sonnet', judgeModel = 'sonnet',
+  agentModel = 'gemini-3-flash-preview', judgeModel = 'gemini-3-flash-preview',
 }) {
   if (!runId) throw new Error('runTrackB: runId required');
   const argv = ['core/prompt-optimization/sweep/track-b.mjs', '--run', runId,

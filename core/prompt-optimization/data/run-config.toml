@@ -36,7 +36,7 @@ multiple_comparison = "holm"
 
 [judge]
 prompt_path = "core/prompt-optimization/data/judge-prompts/prp-pairwise-v1.md"
-models = ["deepseek-v4-pro", "claude-sonnet-4-6"]
+models = ["deepseek-v4-pro", "gemini-3-flash-preview"]
 iaa_threshold_alpha = 0.6
 
 [budget]
