@@ -275,10 +275,31 @@ describe('Domain Barrel Contracts', () => {
       expect(m.plackettLuceFit).toBeTypeOf('function');
       expect(m.applyEvaluatorExclusion).toBeTypeOf('function');
 
+      // §0.5 dual-layer overfit-control infrastructure (P0, added 2026-05-09)
+      expect(m.openThresholdout).toBeTypeOf('function');
+      expect(m.initBudgetLog).toBeTypeOf('function');
+      expect(m.readBudgetUsage).toBeTypeOf('function');
+      expect(m.BudgetExhaustedError).toBeTypeOf('function');
+      expect(m.benjaminiHochberg).toBeTypeOf('function');
+      expect(m.survivors).toBeTypeOf('function');
+      expect(m.runThresholdSensitivity).toBeTypeOf('function');
+      expect(m.lengthPenalisedScore).toBeTypeOf('function');
+      expect(m.truncateToTokens).toBeTypeOf('function');
+      expect(m.truncationCheck).toBeTypeOf('function');
+
       // Decontamination (P0)
       expect(m.nGramDecontaminate).toBeTypeOf('function');
       expect(m.embeddingDecontaminate).toBeTypeOf('function');
       expect(m.llmDecontaminate).toBeTypeOf('function');
+      expect(m.buildLeakageCorpus).toBeTypeOf('function');
+      expect(m.checkLeakage).toBeTypeOf('function');
+      expect(m.loadWhitelist).toBeTypeOf('function');
+
+      // Held-out model panel campaign-end gate (§11.11, P0)
+      expect(m.assertReleaseTag).toBeTypeOf('function');
+      expect(m.loadHompFromManifest).toBeTypeOf('function');
+      expect(m.computeTransferGap).toBeTypeOf('function');
+      expect(m.writeHompReport).toBeTypeOf('function');
 
       // Judges (P6.3, P11.5)
       expect(m.runPrpPairwise).toBeTypeOf('function');
@@ -335,6 +356,16 @@ describe('Domain Barrel Contracts', () => {
       const manifest = m.loadManifest();
       expect(manifest.schemaVersion).toBe(1);
       expect(manifest._repos.fastify).toBeDefined();
+
+      // §0.5 framework — manifest carries HOMP, leakage-gate, thresholdout,
+      // and judge-panel sections (added 2026-05-09).
+      expect(manifest.heldOutModels).toBeDefined();
+      expect(Array.isArray(manifest.heldOutModels.panel)).toBe(true);
+      expect(manifest.heldOutModels.panel.length).toBeGreaterThanOrEqual(2);
+      expect(manifest.thresholdout).toBeDefined();
+      expect(manifest.thresholdout.totalBudget).toBe(26);
+      expect(manifest.leakageGate).toBeDefined();
+      expect(manifest.judgePanel).toBeDefined();
       // Run-config: TOML parses into nested sections + arrays.
       const cfg = m.loadRunConfig();
       expect(cfg.campaign_id).toBe('prompt-evolution-2026-05');

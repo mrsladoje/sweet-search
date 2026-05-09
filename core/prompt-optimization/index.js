@@ -27,9 +27,37 @@ export { pairedPermutationTest } from './stats/paired-permutation.mjs';
 export { pairedBootstrapCI } from './stats/bootstrap-ci.mjs';
 export { plackettLuceFit, plackettLuceFitWithBootstrap } from './stats/plackett-luce.mjs';
 
+// §0.5 dual-layer overfit-control infrastructure (added 2026-05-09)
+export {
+  openThresholdout,
+  readBudgetUsage,
+  initBudgetLog,
+  BudgetExhaustedError,
+} from './stats/thresholdout.mjs';
+export { benjaminiHochberg, survivors } from './stats/bh-fdr.mjs';
+export { runThresholdSensitivity } from './stats/threshold-sensitivity.mjs';
+export {
+  lengthPenalisedScore,
+  truncateToTokens,
+  truncationCheck,
+} from './stats/mdl-length-penalty.mjs';
+
 export { nGramDecontaminate } from './decontamination/n-gram-filter.mjs';
 export { embeddingDecontaminate } from './decontamination/embedding-filter.mjs';
 export { llmDecontaminate } from './decontamination/llm-filter.mjs';
+export {
+  buildLeakageCorpus,
+  checkLeakage,
+  loadWhitelist,
+} from './decontamination/leakage-gate.mjs';
+
+// Held-out model panel campaign-end gate (§11.11)
+export {
+  assertReleaseTag,
+  loadHompFromManifest,
+  computeTransferGap,
+  writeHompReport,
+} from './run-homp.mjs';
 
 export { loadManifest, loadRunConfig } from './manifests.mjs';
 export { buildSplits, stratifiedSplit } from './splits/build-splits.mjs';
