@@ -1,8 +1,8 @@
 /**
  * P6.4 — Promotion gate: emit `recommendations.json` from Track A + Track B
- * results, gated on the FOUR mandatory checks per §7.6.
+ * results, gated on the FIVE mandatory checks per §7.6.
  *
- * The four gates:
+ * The five gates:
  *
  *   1. **BH-FDR at q=0.10** across the full Layer A shape × tool claim space
  *      — per-shape-cell paired-permutation p-value must survive Benjamini-
@@ -19,6 +19,13 @@
  *      authored or reviewed by an engineer who is NOT the primary author of
  *      the gold tasks for that tool's sweep. (Recorded in
  *      `recommendations.json:independent_author_check`.)
+ *   5. **Per-repo cross-shape stability check** (added 2026-05-09 with the
+ *      vercel/ai-chatbot 5th dev repo). For each candidate "best shape,"
+ *      compute per-repo `recall@1` across the 5 dev repos and reject
+ *      promotion if (a) the worst-repo recall@1 is < 0.6 of the best-repo
+ *      recall@1, OR (b) ai-chatbot's recall@1 is more than 2σ below the
+ *      cross-repo mean. Failures recorded under
+ *      `not_promoted_due_to_repo_instability`.
  *
  * Plan reference: §7.6 promotion artifact, §0.5 dual-layer overfit framework.
  *
@@ -257,6 +264,101 @@ function runThresholdoutGate({ tool, shape, devCellMean, heldoutCellMean, runId,
   return decision;
 }
 
+// ─── gate 5: per-repo cross-shape stability ──────────────────────────────
+//
+// Plan §7.6 gate-5 (added 2026-05-09 with vercel/ai-chatbot). Adding a
+// TS/React repo to a previously backend-only dev set creates a confound
+// risk: a shape can win on aggregate by overperforming on the 4 backend
+// repos and underperforming on ai-chatbot (or vice versa).
+//
+// For each candidate "best shape" we compute per-repo `recall@1` over the
+// dev tier (uv is held-out and excluded) and reject promotion if either:
+//   (a) worst-repo recall@1 < 0.6 × best-repo recall@1, OR
+//   (b) ai-chatbot's recall@1 is more than 2σ below the cross-repo mean.
+//
+// Shapes that fail this gate are recorded under
+// `not_promoted_due_to_repo_instability` with their per-repo breakdown so a
+// future campaign can decide whether to (i) split into language-specific
+// recommendations, (ii) re-author the variant to be language-agnostic, or
+// (iii) accept that shape-specific guidance is the correct end state.
+
+const REPO_STABILITY_FLOOR = 0.6;     // worst/best ≥ 0.60
+const REPO_STABILITY_SIGMA = 2;       // ai-chatbot within 2σ of mean
+const DEV_REPOS = ['fastify', 'gin', 'flask', 'ripgrep', 'ai-chatbot'];
+
+function computePerRepoBreakdown({ trackARecords, tool, shape }) {
+  // dev-tier only — uv is held-out. Group by repo, compute mean file_recall@1.
+  const byRepo = new Map();
+  for (const r of trackARecords) {
+    if (r.tool !== tool || r.shape !== shape) continue;
+    const repo = r._repo;
+    if (!repo || repo === 'uv') continue;                // exclude held-out
+    if (!r.metrics || r.metrics.file_recall_at_1 == null) continue;
+    if (!byRepo.has(repo)) byRepo.set(repo, { sum: 0, n: 0 });
+    const b = byRepo.get(repo);
+    b.sum += r.metrics.file_recall_at_1;
+    b.n += 1;
+  }
+  const breakdown = {};
+  for (const [repo, b] of byRepo) {
+    breakdown[repo] = { recall_at_1: b.n > 0 ? b.sum / b.n : 0, n: b.n };
+  }
+  return breakdown;
+}
+
+function runRepoStabilityGate({ perRepoBreakdown }) {
+  const repos = Object.keys(perRepoBreakdown);
+  if (repos.length < 2) {
+    return {
+      pass: false,
+      diagnosis: `insufficient repos with metrics (${repos.length} < 2)`,
+      perRepoBreakdown,
+    };
+  }
+  const recalls = repos.map((r) => perRepoBreakdown[r].recall_at_1);
+  const best = Math.max(...recalls);
+  const worst = Math.min(...recalls);
+  const mean = recalls.reduce((s, x) => s + x, 0) / recalls.length;
+  const variance = recalls.reduce((s, x) => s + (x - mean) ** 2, 0) / recalls.length;
+  const std = Math.sqrt(variance);
+
+  const ratio = best > 0 ? worst / best : 0;
+  const aiChatbotRecall = perRepoBreakdown['ai-chatbot']?.recall_at_1;
+  const aiChatbotZ = (aiChatbotRecall != null && std > 0)
+    ? (aiChatbotRecall - mean) / std
+    : null;
+
+  const ratioPass = ratio >= REPO_STABILITY_FLOOR;
+  const aiChatbotPass = aiChatbotRecall == null
+    || aiChatbotZ == null
+    || aiChatbotZ >= -REPO_STABILITY_SIGMA;
+  const pass = ratioPass && aiChatbotPass;
+
+  let diagnosis;
+  if (pass) {
+    diagnosis = `PASS (worst/best = ${worst.toFixed(2)}/${best.toFixed(2)} = ${ratio.toFixed(2)}, ≥ ${REPO_STABILITY_FLOOR} floor`
+      + (aiChatbotZ != null ? `; ai-chatbot z=${aiChatbotZ.toFixed(2)}σ within ${REPO_STABILITY_SIGMA}σ of mean)` : ')');
+  } else if (!ratioPass && !aiChatbotPass) {
+    diagnosis = `FAIL: worst/best ratio ${ratio.toFixed(2)} < ${REPO_STABILITY_FLOOR} AND ai-chatbot z=${aiChatbotZ.toFixed(2)}σ < -${REPO_STABILITY_SIGMA}σ`;
+  } else if (!ratioPass) {
+    diagnosis = `FAIL: worst/best ratio ${ratio.toFixed(2)} < ${REPO_STABILITY_FLOOR} (worst-repo recall@1 = ${worst.toFixed(2)}, best = ${best.toFixed(2)})`;
+  } else {
+    diagnosis = `FAIL: ai-chatbot recall@1 = ${aiChatbotRecall?.toFixed(2)} is z=${aiChatbotZ.toFixed(2)}σ below cross-repo mean (${mean.toFixed(2)} ± ${std.toFixed(2)})`;
+  }
+
+  return {
+    pass,
+    diagnosis,
+    worstBestRatio: ratio,
+    floor: REPO_STABILITY_FLOOR,
+    aiChatbotRecall,
+    aiChatbotZScore: aiChatbotZ,
+    crossRepoMean: mean,
+    crossRepoStd: std,
+    perRepoBreakdown,
+  };
+}
+
 // ─── gate 4: independent-author check ─────────────────────────────────────
 
 function runAuthorCheck({ tool, instructionAuthor, goldsRaw }) {
@@ -338,6 +440,10 @@ function buildRecommendations({
       goldsRaw,
     });
 
+    // Gate 5: per-repo cross-shape stability (added 2026-05-09).
+    const perRepoBreakdown = computePerRepoBreakdown({ trackARecords, tool, shape });
+    const repoStabilityRes = runRepoStabilityGate({ perRepoBreakdown });
+
     let thresholdoutRes = { decision: 'SKIPPED', reason: 'flag --skip-thresholdout' };
     if (!opts.skipThresholdout && heldoutCellMean != null) {
       try {
@@ -363,9 +469,11 @@ function buildRecommendations({
         : (opts.skipThresholdout ? 'skipped' : 'fail-or-n/a'),
       leakage: leakageRes.passes ? 'pass' : 'fail',
       author: authorRes.pass ? 'pass' : 'fail',
+      repo_stability: repoStabilityRes.pass ? 'pass' : 'fail',
     };
     const promoted = gates.fdr === 'pass' && (gates.thresholdout === 'pass' || gates.thresholdout === 'skipped')
-      && gates.leakage === 'pass' && gates.author === 'pass';
+      && gates.leakage === 'pass' && gates.author === 'pass'
+      && gates.repo_stability === 'pass';
 
     perTool[tool] = {
       tool,
@@ -392,6 +500,16 @@ function buildRecommendations({
         first_matches: leakageRes.matches.slice(0, 5),
       },
       independent_author_check: authorRes,
+      per_repo_breakdown: perRepoBreakdown,
+      repo_stability_gate: repoStabilityRes.diagnosis,
+      repo_stability_details: {
+        worst_best_ratio: repoStabilityRes.worstBestRatio,
+        floor: repoStabilityRes.floor,
+        ai_chatbot_recall: repoStabilityRes.aiChatbotRecall,
+        ai_chatbot_z_score: repoStabilityRes.aiChatbotZScore,
+        cross_repo_mean: repoStabilityRes.crossRepoMean,
+        cross_repo_std: repoStabilityRes.crossRepoStd,
+      },
       instruction_text: instructionText,
       gate_results: gates,
       not_promoted_reason: promoted ? null : Object.entries(gates)
@@ -499,6 +617,21 @@ function buildRecommendations({
         adjustedP: bh.results.find((r) => r.id === t.id)?.adjustedP,
         n: t.meta.n,
         meanShape: t.meta.meanShape,
+      })),
+    // Plan §7.6 gate-5 (added 2026-05-09 with vercel/ai-chatbot). Shapes that
+    // survived BH-FDR + Thresholdout but failed per-repo stability go here so
+    // a future campaign can decide whether to (i) split into language-specific
+    // recommendations, (ii) re-author the variant to be language-agnostic, or
+    // (iii) accept that shape-specific guidance is the correct end state.
+    not_promoted_due_to_repo_instability: Object.values(perTool)
+      .filter((b) => b.gate_results?.repo_stability === 'fail')
+      .map((b) => ({
+        tool: b.tool,
+        shape: b.best_shape,
+        diagnosis: b.repo_stability_gate,
+        per_repo_breakdown: b.per_repo_breakdown,
+        worst_best_ratio: b.repo_stability_details?.worst_best_ratio,
+        ai_chatbot_z_score: b.repo_stability_details?.ai_chatbot_z_score,
       })),
     preregistration_diff: preregDiff,
   };

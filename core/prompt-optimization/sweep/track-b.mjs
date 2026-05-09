@@ -69,7 +69,11 @@ function parseArgs(argv) {
   const o = {
     runId: null,
     confirmCost: null,
-    subsampleSize: 24,
+    // Default 25 = 5 per-repo × 5 dev repos (fastify, gin, flask, ripgrep,
+    // ai-chatbot) plus 0 from uv at this slot (handled by allocation map).
+    // The plan §13.7 P6.3 row scales to 20-25 (4-5/repo across 5 repos);
+    // 25 is the upper bound. Override via --subsample.
+    subsampleSize: 25,
     seed: 42,
     dryRun: true,
   };
@@ -102,9 +106,16 @@ function mulberry32(seed) {
 }
 
 function stratifiedSubsample(records, n, seed) {
-  // 4 strata × 4 dev repos + 1 uv stratum balanced. We aim for n ≈ 24.
-  // Allocate per-repo (8 per dev repo's 12 = 4-3-3-2 mapped down to 4-3-3-2,
-  // taking 1-2 per stratum per repo + 4-6 from uv).
+  // 4 strata × 5 dev repos + 1 uv stratum balanced. We aim for n ≈ 25.
+  // Allocate per-repo: 5 per dev repo (~1-2 per stratum) + 0 from uv by
+  // default — uv is held-out so its inclusion in a Track B subsample mixes
+  // dev-iteration data with held-out evaluation data; the design intent for
+  // Track B is to ground-truth the dev tier's deterministic claims via
+  // agent-in-loop, not to confirm them on uv. Set `--include-uv` to force
+  // uv inclusion (useful for IAA validation across stratum types).
+  //
+  // Plan §13.7 P6.3: subsample 20-25 with ≥1 component-search and ≥1 hook-
+  // search task pulled from the ai-chatbot 5 (enforced post-pick below).
   const rng = mulberry32(seed);
   const byKey = new Map();
   for (const r of records) {
@@ -121,11 +132,12 @@ function stratifiedSubsample(records, n, seed) {
       [list[i], list[j]] = [list[j], list[i]];
     }
   }
-  // Allocation: dev repos get 5 each (1-2 per stratum), uv gets 4-5.
+  // Allocation: 5 dev repos × 5 each = 25. uv defers (held-out tier) unless
+  // an upstream caller widens; the per-repo target is exactly 5 per dev repo
+  // so the §13.7 P6.3 floor (4-5 per repo × 5 repos) is met.
   const target = {
-    fastify: 5, gin: 5, flask: 5, ripgrep: 5, uv: 4,
+    fastify: 5, gin: 5, flask: 5, ripgrep: 5, 'ai-chatbot': 5, uv: 0,
   };
-  const remaining = n;
   let used = 0;
   const picked = [];
   for (const [repo, slots] of Object.entries(target)) {
@@ -147,7 +159,44 @@ function stratifiedSubsample(records, n, seed) {
     }
     if (used >= n) break;
   }
+  // §13.7 P6.3 enforcement: the ai-chatbot subsample MUST include ≥1
+  // component-search (large_file taskType) AND ≥1 hook-search (function_
+  // behavior taskType where the symbol starts with `use`) so end-to-end agent
+  // reasoning on TSX is measured, not assumed. If the round-robin pick missed
+  // either, swap in the missing kind from the ai-chatbot bucket.
+  ensureAiChatbotShapeCoverage(picked, byKey);
   return picked;
+}
+
+function ensureAiChatbotShapeCoverage(picked, byKey) {
+  const ai = picked.filter((g) => g.repo === 'ai-chatbot');
+  if (ai.length === 0) return;                            // no ai-chatbot in subsample at all
+  const hasComponent = ai.some((g) => /-component$/.test(g.id));
+  const hasHook = ai.some((g) => /-hook$/.test(g.id));
+  if (hasComponent && hasHook) return;
+  const swapIn = (predicate) => {
+    for (const [k, list] of byKey) {
+      if (!k.startsWith('ai-chatbot|')) continue;
+      // list is shuffled; iterate to find a candidate matching predicate
+      for (let i = 0; i < list.length; i++) {
+        const cand = list[i];
+        if (predicate(cand) && !picked.includes(cand)) {
+          // Swap out an ai-chatbot pick that doesn't satisfy either coverage rule.
+          const swapTarget = picked.findIndex(
+            (g) => g.repo === 'ai-chatbot' && !/-component$|-hook$/.test(g.id)
+          );
+          if (swapTarget !== -1) {
+            picked[swapTarget] = cand;
+            list.splice(i, 1);
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  };
+  if (!hasComponent) swapIn((g) => /-component$/.test(g.id));
+  if (!hasHook) swapIn((g) => /-hook$/.test(g.id));
 }
 
 // ─── plan a sweep ─────────────────────────────────────────────────────────

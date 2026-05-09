@@ -2,8 +2,11 @@
  * Build core/prompt-optimization/data/query-shapes/golds.json from the two
  * single-sources-of-truth:
  *
- *   1. eval/agent-read-workflows/tasks.js — 25 hand-authored dev golds across
- *      fastify (10) + gin (5) + flask (5) + ripgrep (5).
+ *   1. eval/agent-read-workflows/tasks.js — 60 hand-authored dev golds across
+ *      fastify (12) + gin (12) + flask (12) + ripgrep (12) + ai-chatbot (12).
+ *      The ai-chatbot repo (added 2026-05-09 per SYSTEM_PROMPT_OPT_PLAN.md
+ *      §7.3) closes the TS / React / component-search shape gap that the
+ *      four prior backend/CLI repos leave open.
  *   2. eval/freshstack/uv-queries.json — 30 hand-authored held-out probes on
  *      the post-cutoff astral-sh/uv repo.
  *
@@ -114,6 +117,25 @@ const PREDICTIONS = {
   'ripgrep:walk-parallel-thread-spawn':      { tool: 'structural',  shape: 'medium+with-symbol+relationship-verb' },
   'ripgrep:run-mode-dispatch-to-worker':     { tool: 'structural',  shape: 'medium+with-symbol+relationship-verb' },
 
+  // ── vercel/ai-chatbot ───────────────────────────────────────────────────
+  // Added 2026-05-09 per §7.3. ≥6 of these 12 golds are component- or hook-
+  // shaped (3 hooks + 3 components + 1 hybrid multi-file flow = 7) so the
+  // per-repo stratification stresses the new shape rather than redundantly
+  // testing function-name lookup. With-symbol variants for these golds use
+  // TSX-canonical forms (<ChatHeader>, useArtifact()) — see build-variants.mjs.
+  'ai-chatbot:default-chat-model':            { tool: 'ss-find',     shape: 'short+with-symbol+narrow-regex' },
+  'ai-chatbot:entitlements-config':           { tool: 'ss-find',     shape: 'short+with-symbol+narrow-regex' },
+  'ai-chatbot:visibility-type-export':        { tool: 'ss-find',     shape: 'short+with-symbol+narrow-regex' },
+  'ai-chatbot:use-artifact-hook':             { tool: 'ss-search',   shape: 'medium+with-symbol+intent-verb-present' },
+  'ai-chatbot:use-chat-visibility-hook':      { tool: 'ss-search',   shape: 'medium+with-symbol+intent-verb-present' },
+  'ai-chatbot:use-auto-resume-hook':          { tool: 'ss-search',   shape: 'medium+with-symbol+intent-verb-present' },
+  'ai-chatbot:chat-header-component':         { tool: 'ss-find',     shape: 'short+with-symbol+narrow-regex' },
+  'ai-chatbot:visibility-selector-component': { tool: 'ss-find',     shape: 'short+with-symbol+narrow-regex' },
+  'ai-chatbot:multimodal-input-component':    { tool: 'ss-find',     shape: 'short+with-symbol+narrow-regex' },
+  'ai-chatbot:visibility-update-flow':        { tool: 'structural',  shape: 'medium+with-symbol+relationship-verb' },
+  'ai-chatbot:chat-post-flow':                { tool: 'structural',  shape: 'medium+with-symbol+relationship-verb' },
+  'ai-chatbot:document-create-flow':          { tool: 'structural',  shape: 'medium+with-symbol+relationship-verb' },
+
   // ── uv (held-out) ───────────────────────────────────────────────────────
   // Convention: UV-NL-* are NL behaviour questions (predict ss-search / ss-find
   // depending on symbol presence); UV-DEF-* are struct definitions (predict
@@ -162,11 +184,12 @@ const UV_ID_TO_STRATUM = {
 };
 
 const REPO_COMMITS = {
-  fastify: '39f0f24233cf6da2fef48551f51be2f589f7d5d0',
-  gin:     'd3ffc9985281dcf4d3bef604cce4e662b1a327a6',
-  flask:   '7ef2946fb5151b745df30201b8c27790cac53875',
-  ripgrep: '4519153e5e461527f4bca45b042fff45c4ec6fb9',
-  uv:      'bb8109a3c4e57b76acaa319981911e68f4098aa6',
+  fastify:      '39f0f24233cf6da2fef48551f51be2f589f7d5d0',
+  gin:          'd3ffc9985281dcf4d3bef604cce4e662b1a327a6',
+  flask:        '7ef2946fb5151b745df30201b8c27790cac53875',
+  ripgrep:      '4519153e5e461527f4bca45b042fff45c4ec6fb9',
+  'ai-chatbot': '107a43a8039bb4f19d0ced4ff3445e2523d14305',
+  uv:           'bb8109a3c4e57b76acaa319981911e68f4098aa6',
 };
 
 function uvStratumOf(id) {
@@ -194,7 +217,7 @@ async function loadDevTasks() {
   const out = [];
   for (const repo of repos) {
     if (!REPO_COMMITS[repo]) continue;            // skip repos not pinned
-    if (!['fastify', 'gin', 'flask', 'ripgrep'].includes(repo)) continue;
+    if (!['fastify', 'gin', 'flask', 'ripgrep', 'ai-chatbot'].includes(repo)) continue;
     const tasks = tasksMod.loadTasks(repo);
     for (const t of tasks) {
       const stratum = TASKTYPE_TO_STRATUM[t.taskType];
@@ -297,16 +320,22 @@ async function main() {
     summary: summarise(records),
     knownGaps: {
       _comment:
-        'Per §7.3 the dev tier needs 12 golds × 4 repos = 48 stratified ' +
+        'Per §7.3 the dev tier needs 12 golds × 5 repos = 60 stratified ' +
         '3:3:3:3 across literal-lookup / behavioral / structural / ' +
-        'multi-file-flow. All four dev repos and the uv held-out tier are ' +
-        'now at target (48 dev + 30 held-out = 78 total). The §13.7 P6.0 ' +
-        'stop rule (<40 distinct golds → halt) is satisfied.',
+        'multi-file-flow. All five dev repos (fastify, gin, flask, ripgrep, ' +
+        'ai-chatbot) and the uv held-out tier are now at target (60 dev + ' +
+        '30 held-out = 90 total). The §13.7 P6.0 stop rule (<50 distinct ' +
+        'golds within 17h → halt; scaled from <40/14h after ai-chatbot ' +
+        'added a 5th repo) is satisfied. Of the 12 ai-chatbot golds, ≥6 ' +
+        'are component- or hook-shaped (per §7.3) so the new repo stresses ' +
+        'TS/React shape coverage rather than redundantly testing function-' +
+        'name lookup.',
       missingPerRepo: {
         fastify: 0,
         gin: 0,
         flask: 0,
         ripgrep: 0,
+        'ai-chatbot': 0,
       },
       missingTotal: 0,
     },

@@ -79,8 +79,15 @@ are written into `variants.json:shape` per variant.
 
 | Set | Repos | Goldsize | Variants per gold | Total |
 |---|---|---|---|---|
-| **Q-shape dev** | fastify, gin, ripgrep, flask | 12 × 4 = 48 | 6 | ~864 query-tool pairs |
+| **Q-shape dev** | fastify, gin, ripgrep, flask, vercel/ai-chatbot | 12 × 5 = 60 | 6 | ~1,080 query-tool pairs |
 | **Q-shape held-out** | uv (post-cutoff, FreshStack discipline) | 30 | 6 | ~540 query-tool pairs |
+
+`vercel/ai-chatbot` was added 2026-05-09 to close the TS / React / component-search shape
+gap that the four prior backend / CLI repos leave open. Of its 12 golds, ≥6 must be
+component- or hook-shaped (`useFoo`, `<Component>`, route-handler-by-path) so the new
+repo stresses TS/React shape coverage rather than redundantly testing function-name
+lookup. Per §7.6 gate-5 we additionally require per-repo cross-shape stability — see
+"Promotion gates" below.
 
 Pinned commits (single source of truth: `eval/read-workflows/repo-manifest.json` for dev,
 `core/prompt-optimization/data/manifest.json:freshstack` for uv):
@@ -91,6 +98,7 @@ Pinned commits (single source of truth: `eval/read-workflows/repo-manifest.json`
 | gin | `d3ffc9985281dcf4d3bef604cce4e662b1a327a6` |
 | flask | `7ef2946fb5151b745df30201b8c27790cac53875` |
 | ripgrep | `4519153e5e461527f4bca45b042fff45c4ec6fb9` |
+| ai-chatbot (vercel/ai-chatbot) | `107a43a8039bb4f19d0ced4ff3445e2523d14305` |
 | uv | `bb8109a3c4e57b76acaa319981911e68f4098aa6` |
 
 ### Tool-affinity prediction — pre-registered before sweep
@@ -111,7 +119,11 @@ predicted_winner`), we do **not** confirm-bias toward the intuition. The
 | multi-file-flow (lifecycle, cross-file dispatch) | 3 |
 
 `taskType` field in the existing `eval/agent-read-workflows/tasks.js` schema maps to the
-strata directly.
+strata directly. For ai-chatbot (added 2026-05-09) the 12 golds also satisfy a shape-
+balance constraint: ≥6 must be component- or hook-shaped — concretely, the current set
+ships 3 hook-shaped (`useArtifact`, `useChatVisibility`, `useAutoResume`), 3 component-
+shaped (`<ChatHeader>`, `<VisibilitySelector>`, `<MultimodalInput>`), and 1 hybrid
+multi-file flow that crosses both surfaces.
 
 ### Independent-author check
 
@@ -158,23 +170,23 @@ requires a NEW pre-registration tag.
 - Per-shape-cell BH-FDR at q=0.10 across the Layer A claim space (48 cells; capped 72).
 - Plackett-Luce ranking with bootstrap CIs across the 6 shape variants per tool, with
   pairs failing BH-FDR reported as ties.
-- **Minimum-detectable effect (MDE)** declared: at n=78 dev golds × 6 variants = 468
+- **Minimum-detectable effect (MDE)** declared: at n=90 dev golds × 6 variants = 540
   Track A trials per tool × shape, σ ≈ 4.5pp, α=0.05, β=0.2 → MDE ≈ 5pp. We refuse to
   claim shape wins below MDE.
 
 ## Sample size justification
 
-Track A: 78 golds × 6 variants × 4 tools = 1,872 deterministic trials. At per-tool-shape
-n ≥ 12 dev golds per stratum, σ ≈ 4.5pp from May 2026 60-probe runs gives MDE ≈ 5pp at
+Track A: 90 golds × 6 variants × 4 tools = 2,160 deterministic trials. At per-tool-shape
+n ≥ 15 dev golds per stratum, σ ≈ 4.5pp from May 2026 60-probe runs gives MDE ≈ 5pp at
 α=0.05 / β=0.2.
 
-Track B subsample: 18–24 golds (3–4 per dev repo + 4–6 from uv), 6 shapes, 4 tools ≈
-432–576 agent runs. At per-cell n ≥ 18, σ ≈ 6pp (judge variance), MDE ≈ 7pp. Sufficient to
-distinguish best shape from worst by margins observed in prior NL-vs-keyword pilots
-(typical Δ ≥ 12pp).
+Track B subsample: 20–25 golds (4–5 per dev repo across 5 repos; uv excluded by default
+as held-out), 6 shapes, 4 tools ≈ 480–600 agent runs. At per-cell n ≥ 20, σ ≈ 6pp (judge
+variance), MDE ≈ 7pp. The ai-chatbot subsample MUST include ≥1 component-search and ≥1
+hook-search task per §13.7 P6.3.
 
 The 30-probe uv held-out is below the §11.3 power requirement for primary publication
-claims, so it serves Thresholdout confirmation only. Headline numbers are from the 48-gold
+claims, so it serves Thresholdout confirmation only. Headline numbers are from the 60-gold
 dev set.
 
 ## Judge panel (§11.6) — mandatory
@@ -235,11 +247,33 @@ Gate runs at:
    gold corpus.
 3. Final shipped Layer B seeds (T1–T14) — confirmed at P7.
 
+## Promotion gates (§7.6)
+
+A candidate "best shape" per tool must survive **all five** gates before its
+`instruction_text` is baked into Layer B. Gates 1–4 were defined at qshape-v1 scaffolding;
+gate 5 was added 2026-05-09 with vercel/ai-chatbot.
+
+1. **BH-FDR at q=0.10** across the Layer A shape × tool claim space.
+2. **Thresholdout** confirmation on Q-shape held-out (uv 30-probe set).
+3. **Token-overlap leakage gate** on the candidate `instruction_text`.
+4. **Independent-author check** — instruction author ≠ gold-task author.
+5. **Per-repo cross-shape stability** — for the candidate, compute per-repo
+   `recall@1` across the 5 dev repos (uv excluded; held-out). Reject promotion if
+   either (a) worst-repo `recall@1` < 0.6 × best-repo `recall@1`, OR (b) ai-chatbot's
+   `recall@1` is more than 2σ below the cross-repo mean. Failures recorded under
+   `recommendations.json:not_promoted_due_to_repo_instability` with diagnosis
+   (TS-only win / backend-only win / genuinely repo-confounded).
+
+The artifact MUST include `per_repo_breakdown` (5 repos × `recall@1` + n) and a
+`repo_stability_gate` field for every promoted shape, per §7.4 schema.
+
 ## Stop rules
 
 Per docs/SYSTEM_PROMPT_OPT_PLAN.md §13.7 P6.\* stop table:
 
-- **P6.0**: halt if < 40 distinct golds within 14h or missing tool-affinity preregs.
+- **P6.0**: halt if < 50 distinct golds within 17h (scaled from <40/14h after
+  ai-chatbot added a 5th repo) or missing tool-affinity preregs, or if < 6 of the 12
+  ai-chatbot golds are component- or hook-shaped (per §7.3 stratification rule).
 - **P6.2**: halt if best-shape `recall@1` < 0.5 across all 4 tools (variant grid is
   misframed; reauthor variants).
 - **P6.3**: halt if judge IAA α < 0.5 even after one rubric rewrite (humans-only on the
@@ -278,8 +312,9 @@ Per docs/SYSTEM_PROMPT_OPT_PLAN.md §13.7 P6.\* stop table:
 
 - `core/prompt-optimization/data/manifest.json` — pinned repo SHAs, Thresholdout config,
   judge panel config, leakage-gate config.
-- `core/prompt-optimization/data/query-shapes/golds.json` — 78 hand-authored golds
-  (pinned via repo commit hashes; line ranges fingerprinted at sweep run).
+- `core/prompt-optimization/data/query-shapes/golds.json` — 90 hand-authored golds
+  (60 dev + 30 held-out; pinned via repo commit hashes; line ranges fingerprinted at
+  sweep run).
 - `core/prompt-optimization/data/query-shapes/variants.json` — 6 shape variants per gold
   with shape-coordinate labels and authoredBy provenance.
 - `core/prompt-optimization/data/results/qshape-v1/track-a.jsonl` — raw per-(gold,

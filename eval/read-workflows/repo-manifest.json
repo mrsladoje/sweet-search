@@ -30,6 +30,13 @@
       "sha": "f873ac23124ffcff8c040b4bd257b32c29828d53",
       "language": "javascript",
       "fingerprintFiles": ["index.js", "lib/application.js", "lib/request.js", "lib/response.js", "package.json"]
+    },
+    "ai-chatbot": {
+      "url": "https://github.com/vercel/ai-chatbot.git",
+      "sha": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
+      "language": "typescript",
+      "fingerprintFiles": ["app/(chat)/api/chat/route.ts", "components/chat/chat-header.tsx", "hooks/use-artifact.ts", "lib/db/schema.ts", "package.json"],
+      "shapeRole": "ts-react-component-coverage; informal AI-canonical-style coverage (added 2026-05-09 per SYSTEM_PROMPT_OPT_PLAN.md §7.3)"
     }
   }
 }

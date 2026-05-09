@@ -1,12 +1,13 @@
 {
   "schemaVersion": 1,
   "runId": "qshape-v1",
-  "generatedAt": "2026-05-09T08:40:24.501Z",
+  "generatedAt": "2026-05-09T10:04:02.588Z",
   "pinnedFromCommit": {
     "fastify": "39f0f24233cf6da2fef48551f51be2f589f7d5d0",
     "gin": "d3ffc9985281dcf4d3bef604cce4e662b1a327a6",
     "flask": "7ef2946fb5151b745df30201b8c27790cac53875",
     "ripgrep": "4519153e5e461527f4bca45b042fff45c4ec6fb9",
+    "ai-chatbot": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
     "uv": "bb8109a3c4e57b76acaa319981911e68f4098aa6"
   },
   "sourceFiles": [
@@ -14,9 +15,9 @@
     "eval/freshstack/uv-queries.json"
   ],
   "summary": {
-    "total": 78,
+    "total": 90,
     "byTier": {
-      "dev": 48,
+      "dev": 60,
       "heldout": 30
     },
     "byRepo": {
@@ -24,28 +25,30 @@
       "gin": 12,
       "flask": 12,
       "ripgrep": 12,
+      "ai-chatbot": 12,
       "uv": 30
     },
     "byStratum": {
-      "literal-lookup": 19,
-      "behavioral": 23,
-      "multi-file-flow": 17,
-      "structural": 19
+      "literal-lookup": 22,
+      "behavioral": 26,
+      "multi-file-flow": 20,
+      "structural": 22
     },
     "byPredictedTool": {
-      "ss-find": 39,
-      "ss-search": 21,
-      "structural": 15,
+      "ss-find": 45,
+      "ss-search": 24,
+      "structural": 18,
       "ss-semantic": 3
     }
   },
   "knownGaps": {
-    "_comment": "Per §7.3 the dev tier needs 12 golds × 4 repos = 48 stratified 3:3:3:3 across literal-lookup / behavioral / structural / multi-file-flow. All four dev repos and the uv held-out tier are now at target (48 dev + 30 held-out = 78 total). The §13.7 P6.0 stop rule (<40 distinct golds → halt) is satisfied.",
+    "_comment": "Per §7.3 the dev tier needs 12 golds × 5 repos = 60 stratified 3:3:3:3 across literal-lookup / behavioral / structural / multi-file-flow. All five dev repos (fastify, gin, flask, ripgrep, ai-chatbot) and the uv held-out tier are now at target (60 dev + 30 held-out = 90 total). The §13.7 P6.0 stop rule (<50 distinct golds within 17h → halt; scaled from <40/14h after ai-chatbot added a 5th repo) is satisfied. Of the 12 ai-chatbot golds, ≥6 are component- or hook-shaped (per §7.3) so the new repo stresses TS/React shape coverage rather than redundantly testing function-name lookup.",
     "missingPerRepo": {
       "fastify": 0,
       "gin": 0,
       "flask": 0,
-      "ripgrep": 0
+      "ripgrep": 0,
+      "ai-chatbot": 0
     },
     "missingTotal": 0
   },
@@ -1794,6 +1797,462 @@
       },
       "expectedNoMatch": false,
       "maxTurns": 10,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ai-chatbot:default-chat-model",
+      "repo": "ai-chatbot",
+      "repo_commit": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "Where in the vercel/ai-chatbot codebase is DEFAULT_CHAT_MODEL defined, and what model id does it currently point at? Name the file.",
+      "expectedFiles": [
+        "lib/ai/models.ts"
+      ],
+      "expectedSymbols": [
+        "DEFAULT_CHAT_MODEL"
+      ],
+      "expectedFacts": [
+        "lib/ai/models.ts",
+        "DEFAULT_CHAT_MODEL",
+        "kimi-k2.5"
+      ],
+      "expectedLineRanges": {
+        "lib/ai/models.ts": [
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ai-chatbot:entitlements-config",
+      "repo": "ai-chatbot",
+      "repo_commit": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "Where is the per-user-type message rate cap (entitlementsByUserType) defined in the chatbot, and what is the current maxMessagesPerHour for guest and regular users? Name the file.",
+      "expectedFiles": [
+        "lib/ai/entitlements.ts"
+      ],
+      "expectedSymbols": [
+        "entitlementsByUserType"
+      ],
+      "expectedFacts": [
+        "lib/ai/entitlements.ts",
+        "entitlementsByUserType",
+        "maxMessagesPerHour"
+      ],
+      "expectedLineRanges": {
+        "lib/ai/entitlements.ts": [
+          [
+            7,
+            14
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ai-chatbot:visibility-type-export",
+      "repo": "ai-chatbot",
+      "repo_commit": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
+      "tier": "dev",
+      "qshape_stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "Where is the VisibilityType type defined in the ai-chatbot codebase, and what string-literal values does it accept? Name the file.",
+      "expectedFiles": [
+        "components/chat/visibility-selector.tsx"
+      ],
+      "expectedSymbols": [
+        "VisibilityType"
+      ],
+      "expectedFacts": [
+        "visibility-selector.tsx",
+        "VisibilityType",
+        "private",
+        "public"
+      ],
+      "expectedLineRanges": {
+        "components/chat/visibility-selector.tsx": [
+          [
+            20,
+            20
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ai-chatbot:use-artifact-hook",
+      "repo": "ai-chatbot",
+      "repo_commit": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "How does the useArtifact() hook expose the current artifact and a setter that updates it? Identify the file, the hook, and how it caches state via SWR.",
+      "expectedFiles": [
+        "hooks/use-artifact.ts"
+      ],
+      "expectedSymbols": [
+        "useArtifact"
+      ],
+      "expectedFacts": [
+        "hooks/use-artifact.ts",
+        "useArtifact",
+        "useSWR",
+        "setArtifact"
+      ],
+      "expectedLineRanges": {
+        "hooks/use-artifact.ts": [
+          [
+            39,
+            89
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ai-chatbot:use-chat-visibility-hook",
+      "repo": "ai-chatbot",
+      "repo_commit": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "How does the useChatVisibility hook decide whether to read visibility from the cached chat history or from the local SWR fallback? Cite the file and the function.",
+      "expectedFiles": [
+        "hooks/use-chat-visibility.ts"
+      ],
+      "expectedSymbols": [
+        "useChatVisibility"
+      ],
+      "expectedFacts": [
+        "use-chat-visibility.ts",
+        "useChatVisibility",
+        "history",
+        "localVisibility"
+      ],
+      "expectedLineRanges": {
+        "hooks/use-chat-visibility.ts": [
+          [
+            13,
+            55
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ai-chatbot:use-auto-resume-hook",
+      "repo": "ai-chatbot",
+      "repo_commit": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
+      "tier": "dev",
+      "qshape_stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "How does the useAutoResume hook decide when to call resumeStream() and when to append a streamed message via setMessages? Cite the file and the hook.",
+      "expectedFiles": [
+        "hooks/use-auto-resume.ts"
+      ],
+      "expectedSymbols": [
+        "useAutoResume"
+      ],
+      "expectedFacts": [
+        "use-auto-resume.ts",
+        "useAutoResume",
+        "resumeStream",
+        "data-appendMessage"
+      ],
+      "expectedLineRanges": {
+        "hooks/use-auto-resume.ts": [
+          [
+            15,
+            50
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-search",
+      "predicted_winning_shape": "medium+with-symbol+intent-verb-present",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ai-chatbot:chat-header-component",
+      "repo": "ai-chatbot",
+      "repo_commit": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "difficulty": "easy",
+      "query": "Where is the <ChatHeader> component defined in the chatbot, and what does it render in the collapsed-sidebar / mobile state? Name the file and the exported memoised component.",
+      "expectedFiles": [
+        "components/chat/chat-header.tsx"
+      ],
+      "expectedSymbols": [
+        "ChatHeader"
+      ],
+      "expectedFacts": [
+        "chat-header.tsx",
+        "ChatHeader",
+        "memo",
+        "PureChatHeader"
+      ],
+      "expectedLineRanges": {
+        "components/chat/chat-header.tsx": [
+          [
+            11,
+            76
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ai-chatbot:visibility-selector-component",
+      "repo": "ai-chatbot",
+      "repo_commit": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "Where is the <VisibilitySelector> component defined, and which dropdown options does it render? Name the file and the component.",
+      "expectedFiles": [
+        "components/chat/visibility-selector.tsx"
+      ],
+      "expectedSymbols": [
+        "VisibilitySelector"
+      ],
+      "expectedFacts": [
+        "visibility-selector.tsx",
+        "VisibilitySelector",
+        "DropdownMenu",
+        "private",
+        "public"
+      ],
+      "expectedLineRanges": {
+        "components/chat/visibility-selector.tsx": [
+          [
+            42,
+            111
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 6,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ai-chatbot:multimodal-input-component",
+      "repo": "ai-chatbot",
+      "repo_commit": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
+      "tier": "dev",
+      "qshape_stratum": "structural",
+      "difficulty": "medium",
+      "query": "Where is the <MultimodalInput> component defined in the chatbot, and which inner functional component does the exported memo wrap? Name the file and both names.",
+      "expectedFiles": [
+        "components/chat/multimodal-input.tsx"
+      ],
+      "expectedSymbols": [
+        "MultimodalInput"
+      ],
+      "expectedFacts": [
+        "multimodal-input.tsx",
+        "MultimodalInput",
+        "memo",
+        "PureMultimodalInput"
+      ],
+      "expectedLineRanges": {
+        "components/chat/multimodal-input.tsx": [
+          [
+            71,
+            586
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 8,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "ss-find",
+      "predicted_winning_shape": "short+with-symbol+narrow-regex",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ai-chatbot:visibility-update-flow",
+      "repo": "ai-chatbot",
+      "repo_commit": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
+      "tier": "dev",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "When the user picks a different option in the <VisibilitySelector> menu, the change crosses three files. Identify (a) the setVisibilityType callback returned by the useChatVisibility hook in hooks/use-chat-visibility.ts, and (b) the updateChatVisibility server action it calls in app/(chat)/actions.ts. Cite both files.",
+      "expectedFiles": [
+        "hooks/use-chat-visibility.ts",
+        "app/(chat)/actions.ts"
+      ],
+      "expectedSymbols": [
+        "useChatVisibility",
+        "updateChatVisibility"
+      ],
+      "expectedFacts": [
+        "use-chat-visibility.ts",
+        "actions.ts",
+        "setVisibilityType",
+        "updateChatVisibility"
+      ],
+      "expectedLineRanges": {
+        "hooks/use-chat-visibility.ts": [
+          [
+            44,
+            55
+          ]
+        ],
+        "app/(chat)/actions.ts": [
+          [
+            64,
+            88
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 12,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ai-chatbot:chat-post-flow",
+      "repo": "ai-chatbot",
+      "repo_commit": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
+      "tier": "dev",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "In the chatbot, an HTTP POST to /api/chat builds a streamed response. Identify (a) the POST handler in app/(chat)/api/chat/route.ts, and (b) the language-model accessor it calls via getLanguageModel in lib/ai/providers.ts. Cite both files.",
+      "expectedFiles": [
+        "app/(chat)/api/chat/route.ts",
+        "lib/ai/providers.ts"
+      ],
+      "expectedSymbols": [
+        "POST",
+        "getLanguageModel"
+      ],
+      "expectedFacts": [
+        "api/chat/route.ts",
+        "providers.ts",
+        "POST",
+        "getLanguageModel",
+        "streamText"
+      ],
+      "expectedLineRanges": {
+        "app/(chat)/api/chat/route.ts": [
+          [
+            60,
+            343
+          ]
+        ],
+        "lib/ai/providers.ts": [
+          [
+            18,
+            25
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 12,
+      "seedQueryId": null,
+      "gold_authored_by": "sweet-search-core",
+      "predicted_winning_tool": "structural",
+      "predicted_winning_shape": "medium+with-symbol+relationship-verb",
+      "source_file": "eval/agent-read-workflows/tasks.js"
+    },
+    {
+      "id": "ai-chatbot:document-create-flow",
+      "repo": "ai-chatbot",
+      "repo_commit": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
+      "tier": "dev",
+      "qshape_stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "When the assistant calls the createDocument tool, the request crosses two files. Identify (a) the createDocument tool definition in lib/ai/tools/create-document.ts, and (b) the documentHandlersByArtifactKind table in lib/artifacts/server.ts that dispatches by artifact kind. Cite both files.",
+      "expectedFiles": [
+        "lib/ai/tools/create-document.ts",
+        "lib/artifacts/server.ts"
+      ],
+      "expectedSymbols": [
+        "createDocument",
+        "documentHandlersByArtifactKind"
+      ],
+      "expectedFacts": [
+        "create-document.ts",
+        "artifacts/server.ts",
+        "createDocument",
+        "documentHandlersByArtifactKind"
+      ],
+      "expectedLineRanges": {
+        "lib/ai/tools/create-document.ts": [
+          [
+            17,
+            89
+          ]
+        ],
+        "lib/artifacts/server.ts": [
+          [
+            93,
+            99
+          ]
+        ]
+      },
+      "expectedNoMatch": false,
+      "maxTurns": 12,
       "seedQueryId": null,
       "gold_authored_by": "sweet-search-core",
       "predicted_winning_tool": "structural",
