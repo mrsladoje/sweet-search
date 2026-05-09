@@ -1,0 +1,96 @@
+# Leakage-gate whitelist — generic English / programming n-grams that are
+# permitted to appear in optimised prompts even if they also appear in
+# Dev-tier probe text. One n-gram per line, lowercase, comments start with #.
+#
+# Plan reference: §11.9 (token-overlap leakage gate).
+#
+# Discipline: KEEP THIS LIST SHORT. Adding repo-specific identifiers to the
+# whitelist defeats the gate. If a generic prompt phrase trips the gate
+# repeatedly, prefer (a) rephrasing the prompt or (b) auditing the probe
+# corpus for surprisingly-generic gold tokens — not (c) growing this list.
+#
+# Format: each entry is a 3-gram of lowercase tokens separated by single
+# spaces (matches the ngrams() output of leakage-gate.mjs).
+
+# ── Generic English ──────────────────────────────────────────────────────────
+the function returns
+this function returns
+the function takes
+the function should
+should return the
+return the value
+return the result
+the value of
+the result of
+in this case
+in the case
+this is the
+that is the
+of the file
+of the code
+of the function
+to the next
+from the previous
+the next call
+the previous call
+
+# ── Generic agentic / search vocabulary ──────────────────────────────────────
+use the tool
+use this tool
+the search results
+search the codebase
+read the file
+list the files
+the relevant file
+the relevant files
+the relevant code
+the right tool
+choose the tool
+the question type
+the query type
+the file path
+the file name
+the function name
+the symbol name
+the line range
+the line number
+exact line range
+file recall and
+recall and precision
+top three results
+
+# ── Generic programming concepts ─────────────────────────────────────────────
+the http request
+the http response
+the api endpoint
+the test cases
+unit test for
+integration test for
+the build system
+the package manager
+the type signature
+the return type
+the input parameter
+the output value
+error handling for
+exception handling for
+the error message
+the log message
+the config file
+the entry point
+
+# ── Sweet-search domain (product-level vocabulary, not probe-specific) ──────
+sweet search auto
+sweet search hybrid
+sweet search read
+sweet search semantic
+indexed grep search
+colgrep with regex
+structural search mode
+the agent budget
+the budget tier
+preview tokens count
+
+# Add entries below this line ONLY if you have empirically observed a
+# generic phrase trip the gate AND the phrase has no plausible probe-specific
+# meaning. Append, don't reorder; preserve the audit trail.

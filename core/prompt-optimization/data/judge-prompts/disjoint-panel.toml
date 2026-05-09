@@ -1,0 +1,82 @@
+# Disjoint-family judge panel — campaign configuration.
+#
+# Plan reference: §11.6.1 (mandatory disjoint-family 3-of-5 jury, §0.5 control #3).
+#
+# Hard rule: the GEPA reflector's family is FORBIDDEN from the active panel.
+# Default reflector is DSv4-Pro (DeepSeek lineage, see §8.5), so DeepSeek/Qwen
+# is the forbidden lineage in the default panel below.
+#
+# To run the campaign with a different reflector, edit `forbidden_lineage` and
+# re-tag the pre-registration. Any campaign result whose `forbidden_lineage`
+# does not match the actual reflector at run time is INVALID.
+
+schema_version = 1
+campaign_id    = "prompt-evolution-2026-05"
+created_at     = "2026-05-09"
+
+# Reflector lineage (forbidden from the active panel)
+forbidden_lineage = "deepseek-qwen"
+
+# 3-of-5 active jury (vote majority decides on PRP pairwise outcomes)
+[[active_judge]]
+slot           = 1
+lineage        = "anthropic"
+model          = "claude-sonnet-4-6"
+provider       = "anthropic-direct"
+subscription   = "claude-max"   # $0 marginal
+prompt_path    = "core/prompt-optimization/data/judge-prompts/prp-pairwise-v1.md"
+
+[[active_judge]]
+slot           = 2
+lineage        = "openai"
+model          = "gpt-5-5"
+provider       = "openai-direct"
+subscription   = "codex-pro"    # $0 marginal
+prompt_path    = "core/prompt-optimization/data/judge-prompts/prp-pairwise-v1.md"
+
+[[active_judge]]
+slot           = 3
+lineage        = "google"
+model          = "gemini-3-1-pro"
+provider       = "google-direct"
+subscription   = "gemini-pro"   # $0 marginal
+prompt_path    = "core/prompt-optimization/data/judge-prompts/prp-pairwise-v1.md"
+
+# Reserve slots — promoted to active if any of the three above fails IAA at
+# midpoint (§11.6.4 conditional-α check).
+[[reserve_judge]]
+slot           = 4
+lineage        = "meta-mistral"
+model          = "llama-4-instruct-70b"
+provider       = "openrouter"
+
+[[reserve_judge]]
+slot           = 5
+lineage        = "deepseek-qwen"
+model          = "qwen3.6-max"
+provider       = "openrouter"
+note           = "Active ONLY if forbidden_lineage changes (i.e. reflector swapped to non-DeepSeek)."
+
+# Adversarial judge — runs in parallel with the panel; never voting member.
+[adversarial_judge]
+lineage        = "anthropic"
+model          = "claude-opus-4-7"
+provider       = "anthropic-direct"
+subscription   = "claude-max"
+prompt_path    = "core/prompt-optimization/data/judge-prompts/adversarial-v1.md"
+note           = "Asymmetric-prior judge. Used to detect 'looks-good-to-LLMs' candidates that win on the panel but fail under adversarial framing (§8.9.4 proposal_class)."
+
+# Inter-annotator-agreement (IAA) protocol — see §11.6.4
+[iaa]
+human_labeled_path  = "core/prompt-optimization/data/judge-prompts/human-validation-set.json"
+target_n_probes     = 100
+checkpoints         = ["campaign-start", "midpoint", "campaign-end"]
+alpha_individual    = 0.6   # Krippendorff α threshold per judge
+alpha_majority      = 0.7   # Required for use as a metric
+conditional_alpha   = true  # Yang et al. 2026 — track α conditional on agreement-with-reflector
+
+# Position-bias controls — see §11.6.3
+[position_bias]
+enable_swap          = true
+swap_ratio           = 0.5
+length_controlled    = true   # AlpacaEval-LC report alongside raw win rate
