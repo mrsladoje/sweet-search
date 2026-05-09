@@ -17,6 +17,22 @@ created_at     = "2026-05-09"
 # Reflector lineage (forbidden from the active panel)
 forbidden_lineage = "deepseek-qwen"
 
+# Cross-lineage harness (added 2026-05-09): every active_judge below routes
+# through eval/agent-read-workflows/judge-runner.js. Each lineage maps to a
+# real CLI runtime so all judges see the same level of harness framing
+# (system prompt, output normalization, audit hooks):
+#   anthropic  → claude CLI
+#   openai     → codex CLI (yolo: --dangerously-bypass-approvals-and-sandbox)
+#   google     → gemini -p --output-format json
+#   deepseek   → claude CLI with ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
+#                + ANTHROPIC_AUTH_TOKEN=$DEEPSEEK_API_KEY  (parity-preserving;
+#                see DeepSeek "Integrate with Claude Code" guide)
+#   opencode   → opencode run --model <provider>/<model>
+# A raw-API escape hatch is available as `deepseek-api:` for budget control;
+# it is intentionally NOT the default because it skips the agent-frame
+# system prompt the CLI runtimes inject and would be asymmetric vs the rest
+# of the panel.
+
 # 3-of-5 active jury (vote majority decides on PRP pairwise outcomes)
 [[active_judge]]
 slot           = 1
