@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "AST-tester probes for C++ — exercises grammar (templates, namespaces, SFINAE, header-only), chunker, and ranker on idiomatic modern C++ patterns from google/highway.",
+  "language": "cpp",
+  "repo": "cpp",
+  "repoUrl": "https://github.com/google/highway.git",
+  "repoSha": "3c7223031107fa94e2abe60e672017f698fe2ad3",
+  "license": "Apache-2.0 / BSD-3-Clause (dual)",
+  "probes": [
+    {
+      "id": "CPP-001",
+      "repo": "cpp",
+      "query": "how does highway dispatch the right SIMD target at runtime based on CPU features",
+      "expectedFile": "hwy/targets.cc",
+      "expectedSymbol": "SupportedTargets",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe. SupportedTargets() is the public entry point that calls the static DetectTargets(), consults the mock override, and gates results against DisableTargets. The query captures the user mental model ('dispatch', 'CPU features', 'runtime') that should surface this file over the static-dispatch-only highway.h. Tests whether the chunker surfaces function bodies inside #if HWY_ARCH_X86 / #elif HWY_ARCH_ARM multi-branch preprocessor blocks."
+    },
+    {
+      "id": "CPP-002",
+      "repo": "cpp",
+      "query": "how does highway select the best available SIMD target on first call and update the dispatch table",
+      "expectedFile": "hwy/highway.h",
+      "expectedSymbol": "FunctionCache",
+      "expectedSymbolType": "struct",
+      "notes": "NL behavior probe. FunctionCache<RetType, Args...>::ChooseAndCall is the first-entry in every HWY_EXPORT table; it calls ChosenTarget::Update(SupportedTargets()) and then re-dispatches. This is the mechanism that makes the first HWY_DYNAMIC_DISPATCH invocation pay the detection cost while subsequent calls are a direct indexed function-pointer call. Tests chunking of a template struct with multiple member function templates inside the global hwy namespace."
+    },
+    {
+      "id": "CPP-003",
+      "repo": "cpp",
+      "query": "how does highway track which SIMD target was chosen and return the index into the dispatch table",
+      "expectedFile": "hwy/targets.h",
+      "expectedSymbol": "ChosenTarget",
+      "expectedSymbolType": "struct",
+      "notes": "NL behavior probe. ChosenTarget is a monostate that stores an atomic int64_t bitmask and exposes GetIndex() (counts trailing zero bits to find the table slot), Update(), DeInit(), and IsInitialized(). Tests parser handling of a struct with conditional compilation: the mask_ field is std::atomic<int64_t> under libcxx but a plain int64_t under HWY_NO_LIBCXX, creating a bifurcated member declaration inside the struct body."
+    },
+    {
+      "id": "CPP-004",
+      "repo": "cpp",
+      "query": "Vec type alias that produces the vector type for a given tag descriptor D",
+      "expectedFile": "hwy/ops/generic_ops-inl.h",
+      "expectedSymbol": "Vec",
+      "expectedSymbolType": "using",
+      "notes": "Symbol-anchored probe. Vec<D> is defined as `using Vec = decltype(Zero(D()));` inside namespace hwy::HWY_NAMESPACE — a type alias that deduces the concrete vector type by calling Zero. It is the canonical way to name a vector type without spelling out the platform-specific Vec128<float,4> or svfloat32_t. Tests whether the chunker/ranker can surface a two-line using-alias inside a nested namespace whose name is a macro (HWY_NAMESPACE expands to N_AVX2, N_NEON, etc.)."
+    },
+    {
+      "id": "CPP-005",
+      "repo": "cpp",
+      "query": "Simd tag struct with Lane type parameter N lanes and kPow2 scaling used to select vector overloads",
+      "expectedFile": "hwy/ops/shared-inl.h",
+      "expectedSymbol": "Simd",
+      "expectedSymbolType": "template_class",
+      "notes": "Symbol-anchored probe. Simd<Lane, N, kPow2> is the foundational tag type: users create D via ScalableTag<T>/CappedTag<T,N>/FixedTag<T,N> aliases; all SIMD operation overloads are selected by taking D as a zero-sized parameter. The template has private static_assert constraints and a fixed-point fractional-N encoding in the upper 12 bits. Tests parser handling of a heavily annotated template struct with nested private/public sections, static constexpr members, and multiple template member functions all in a -inl.h header-only target-multiplexed file."
+    },
+    {
+      "id": "CPP-006",
+      "repo": "cpp",
+      "query": "AlignedDeleter RAII class that calls destructor and frees aligned memory on unique_ptr destruction",
+      "expectedFile": "hwy/aligned_allocator.h",
+      "expectedSymbol": "AlignedDeleter",
+      "expectedSymbolType": "class",
+      "notes": "Symbol-anchored probe. AlignedDeleter is a custom deleter for std::unique_ptr that calls per-element destructors via a TypedArrayDeleter<T> template helper before delegating to FreeAlignedBytes. Tests RAII pattern recognition: a class with a templated operator(), a private nested function-pointer typedef (ArrayDeleter), and a non-trivial static private member function — all header-only. Contrasts with AlignedFreer (POD-only, simpler) to test precision."
+    },
+    {
+      "id": "CPP-007",
+      "repo": "cpp",
+      "query": "Vec128 SSE vector class template with partial specializations for float double and float16",
+      "expectedFile": "hwy/ops/x86_128-inl.h",
+      "expectedSymbol": "Vec128",
+      "expectedSymbolType": "template_class",
+      "notes": "Grammar edge-case probe — templated class. Vec128<T, N> is the x86 SSE/AVX 128-bit vector wrapper. Its definition (class Vec128 { Raw raw; }) appears inside three nested namespaces: hwy::HWY_NAMESPACE::detail::Raw128<T> (template with explicit specializations for float, double, float16_t) then hwy::HWY_NAMESPACE::Vec128<T, N>. Parsers must correctly match the template angle brackets for Vec128<T, N = 16/sizeof(T)> with a defaulted non-type template parameter, and distinguish the class from the Raw128 partial specializations that precede it in the same file."
+    },
+    {
+      "id": "CPP-008",
+      "repo": "cpp",
+      "query": "DetectTargets x86 implementation reading CPUID flags and returning supported highway target bitmask",
+      "expectedFile": "hwy/targets.cc",
+      "expectedSymbol": "DetectTargets",
+      "expectedSymbolType": "function",
+      "notes": "Grammar edge-case probe — function inside nested anonymous-like namespace. DetectTargets() is defined four times in targets.cc: once inside `namespace x86`, once inside `namespace arm`, once inside `namespace ppc`, etc., and once at file scope. The x86 variant (line 302) reads CPU feature bits via FlagsFromCPUID() and maps them to HWY_AVX2/HWY_AVX3/etc. bitmasks. Tests whether the ranker surfaces the x86-specific implementation (the most commonly queried variant) rather than the outer file-scope dispatcher. Also verifies nested-namespace function chunking: the function lives inside hwy::x86:: which is only open within a #if HWY_ARCH_X86 block."
+    }
+  ]
+}

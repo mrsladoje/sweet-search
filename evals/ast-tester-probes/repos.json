@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "description": "Per-language AST-tester probe repos. SHAs are LOCKED for reproducibility — never bump without re-validating gold files. Add new languages via repo entry + matching evals/ast-tester-probes/gold/<key>.json.",
+  "createdAt": "2026-05-10",
+  "repos": [
+    {
+      "language": "typescript",
+      "key": "typescript",
+      "url": "https://github.com/vercel/ai-chatbot.git",
+      "sha": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
+      "license": "Apache-2.0",
+      "localPath": "evals/ast-tester-probes/_repos/typescript",
+      "goldFile": "evals/ast-tester-probes/gold/typescript.json",
+      "rationale": "TSX const-extraction regression anchor (project_tsx_jsx_const_extraction.md). Heavy .tsx + server actions + parenthesised route segments."
+    },
+    {
+      "language": "rust",
+      "key": "rust",
+      "url": "https://github.com/astral-sh/ruff.git",
+      "sha": "ac6361d83e4d51ab123043b00d5285a842077b81",
+      "license": "MIT",
+      "localPath": "evals/ast-tester-probes/_repos/rust",
+      "goldFile": "evals/ast-tester-probes/gold/rust.json",
+      "rationale": "Macro-heavy linter codebase. Exercises macro_rules!, lifetimes, derive macros, trait dispatch."
+    },
+    {
+      "language": "kotlin",
+      "key": "kotlin",
+      "url": "https://github.com/Kotlin/kotlinx.coroutines.git",
+      "sha": "8564f65764d3d05893cec026c6e94250e2b23874",
+      "license": "Apache-2.0",
+      "localPath": "evals/ast-tester-probes/_repos/kotlin",
+      "goldFile": "evals/ast-tester-probes/gold/kotlin.json",
+      "rationale": "Idiomatic suspend/structured-concurrency, trailing lambdas, sealed interfaces with variance, inline+reified."
+    },
+    {
+      "language": "csharp",
+      "key": "csharp",
+      "url": "https://github.com/microsoft/garnet.git",
+      "sha": "185a2c49bc57fa5eb23c1a2c919b3327441ace47",
+      "license": "MIT",
+      "localPath": "evals/ast-tester-probes/_repos/csharp",
+      "goldFile": "evals/ast-tester-probes/gold/csharp.json",
+      "rationale": "Modern C# 9-12 server. Heavy partial classes (RespServerSession across 30+ files), init-only props, ValueTask async, IAsyncEnumerable."
+    },
+    {
+      "language": "cpp",
+      "key": "cpp",
+      "url": "https://github.com/google/highway.git",
+      "sha": "3c7223031107fa94e2abe60e672017f698fe2ad3",
+      "license": "Apache-2.0 / BSD-3-Clause (dual)",
+      "localPath": "evals/ast-tester-probes/_repos/cpp",
+      "goldFile": "evals/ast-tester-probes/gold/cpp.json",
+      "rationale": "SIMD-portable library. Templates with non-type params, nested per-target namespaces (hwy::N_AVX3::), header-only inline patterns."
+    }
+  ]
+}

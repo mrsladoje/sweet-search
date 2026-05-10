@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "AST-tester probes for C# — exercises grammar (properties, records, partial classes, async), chunker, and ranker on idiomatic modern C# patterns.",
+  "language": "csharp",
+  "repo": "csharp",
+  "repoUrl": "https://github.com/microsoft/garnet.git",
+  "repoSha": "185a2c49bc57fa5eb23c1a2c919b3327441ace47",
+  "license": "MIT",
+  "probes": [
+    {
+      "id": "CS-001",
+      "repo": "csharp",
+      "query": "how does garnet handle the SET command for string keys",
+      "expectedFile": "libs/server/Resp/BasicCommands.cs",
+      "expectedSymbol": "NetworkSET",
+      "expectedSymbolType": "method",
+      "notes": "NL behavior query targeting the core SET handler. RespServerSession is split across many partial-class files; the SET logic lives in BasicCommands.cs. Exercises the ranker's ability to resolve a Redis command name to the correct partial-class shard rather than the routing switch in RespServerSession.cs."
+    },
+    {
+      "id": "CS-002",
+      "repo": "csharp",
+      "query": "where does garnet dispatch RESP commands to their handler methods",
+      "expectedFile": "libs/server/Resp/RespServerSession.cs",
+      "expectedSymbol": "RespServerSession",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior query targeting the top-level command dispatch switch expression (`_ = cmd switch { RespCommand.SET => NetworkSET(...), ... }`). Tests that the ranker surfaces the main RespServerSession file — the largest partial-class shard containing the switch expression — rather than one of its sibling shards."
+    },
+    {
+      "id": "CS-003",
+      "repo": "csharp",
+      "query": "how does garnet persist AOF log entries and wait for commit",
+      "expectedFile": "libs/server/StoreWrapper.cs",
+      "expectedSymbol": "WaitForCommitAsync",
+      "expectedSymbolType": "method",
+      "notes": "NL behavior query about AOF durability. Targets the async ValueTask<bool> WaitForCommitAsync method in StoreWrapper. Exercises the ranker on async/await + ValueTask idioms and confirms the chunker emits the method name as a searchable symbol."
+    },
+    {
+      "id": "CS-004",
+      "repo": "csharp",
+      "query": "RespCommandDocs Command property init-only",
+      "expectedFile": "libs/server/Resp/RespCommandDocs.cs",
+      "expectedSymbol": "Command",
+      "expectedSymbolType": "property",
+      "notes": "Symbol-anchored query targeting an init-only property (`public RespCommand Command { get; init; }`). Grammar edge case: the C# 9 `init` accessor is a contextual keyword; parsers that treat it as an identifier or miss it entirely will fail to chunk this property correctly."
+    },
+    {
+      "id": "CS-005",
+      "repo": "csharp",
+      "query": "LoaderBlockCache positional record in LuaRunner",
+      "expectedFile": "libs/server/Lua/LuaRunner.Loader.cs",
+      "expectedSymbol": "LoaderBlockCache",
+      "expectedSymbolType": "record",
+      "notes": "Symbol-anchored query targeting a positional record declaration (`private sealed record LoaderBlockCache(HashSet<string> AllowedFunctions, ReadOnlyMemory<byte> LoaderBlockBytes)`). Grammar edge case: positional record syntax differs from class constructors; parsers must recognise the primary-constructor parameter list as the record definition."
+    },
+    {
+      "id": "CS-006",
+      "repo": "csharp",
+      "query": "TsavoriteLogScanIterator GetAsyncEnumerable method",
+      "expectedFile": "libs/storage/Tsavorite/cs/src/core/TsavoriteLog/TsavoriteLogIterator.cs",
+      "expectedSymbol": "GetAsyncEnumerable",
+      "expectedSymbolType": "method",
+      "notes": "Symbol-anchored query targeting `async IAsyncEnumerable<...> GetAsyncEnumerable(...)`. Exercises parser handling of the C# 8 async-iterator pattern (`async IAsyncEnumerable` + `[EnumeratorCancellation]`), which looks superficially like a generic method return type rather than an iterator."
+    },
+    {
+      "id": "CS-007",
+      "repo": "csharp",
+      "query": "partial class RespServerSession async background processor",
+      "expectedFile": "libs/server/Resp/AsyncProcessor.cs",
+      "expectedSymbol": "AsyncGetProcessorAsync",
+      "expectedSymbolType": "method",
+      "notes": "Grammar edge-case probe targeting a partial class split across 30+ files. The async background processor method lives in AsyncProcessor.cs, a separate partial shard of `internal sealed unsafe partial class RespServerSession`. Parsers that only index the first declaration file will miss symbols defined in sibling shards. The query deliberately combines 'partial class' language with the async behavior to distinguish from the main routing shard."
+    },
+    {
+      "id": "CS-008",
+      "repo": "csharp",
+      "query": "generic async pool with IDisposable constraint in Tsavorite",
+      "expectedFile": "libs/storage/Tsavorite/cs/src/core/Device/AsyncPool.cs",
+      "expectedSymbol": "AsyncPool",
+      "expectedSymbolType": "class",
+      "notes": "Grammar edge-case probe targeting a generic class with a combined constraint (`where T : IDisposable`). Tests that the chunker correctly attaches the type-parameter constraint to the class symbol rather than emitting it as a detached token. Also exercises the IDisposable pattern common in high-performance C# — class both implements and constrains IDisposable."
+    }
+  ]
+}

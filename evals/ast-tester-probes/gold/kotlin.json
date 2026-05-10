@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "AST-tester probes for Kotlin — exercises grammar (suspend, trailing lambdas, sealed interfaces, extension funcs, inline+crossinline), chunker, and ranker on idiomatic Kotlin coroutines patterns.",
+  "language": "kotlin",
+  "repo": "kotlin",
+  "repoUrl": "https://github.com/Kotlin/kotlinx.coroutines.git",
+  "repoSha": "8564f65764d3d05893cec026c6e94250e2b23874",
+  "license": "Apache-2.0",
+  "probes": [
+    {
+      "id": "KT-001",
+      "repo": "kotlin",
+      "query": "how does a coroutine job get cancelled and propagate cancellation to its children",
+      "expectedFile": "kotlinx-coroutines-core/common/src/JobSupport.kt",
+      "expectedSymbol": "JobSupport",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe. JobSupport is the open class that implements the full job state machine (cancelImpl, makeCancelling, childCancelled). It is 1582 lines with deeply nested private inner classes (InvokeOnCancelling, ChildHandleNode, etc.) — a stress test for parsers that mishandle open classes with many nested/anonymous objects and private inline helper lambdas inside member functions."
+    },
+    {
+      "id": "KT-002",
+      "repo": "kotlin",
+      "query": "how does withContext switch coroutine dispatcher while preserving structured concurrency",
+      "expectedFile": "kotlinx-coroutines-core/common/src/Builders.common.kt",
+      "expectedSymbol": "withContext",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe. withContext is a suspend fun declared as `public suspend fun <T> withContext(context: CoroutineContext, block: suspend CoroutineScope.() -> T)`. The trailing lambda is typed as `suspend CoroutineScope.() -> T` — a higher-kinded function type receiver — which parsers that only handle simple block arguments often mis-chunk, splitting the KDoc from the declaration."
+    },
+    {
+      "id": "KT-003",
+      "repo": "kotlin",
+      "query": "how does runBlocking block the current thread until all coroutines inside complete",
+      "expectedFile": "kotlinx-coroutines-core/jvm/src/Builders.kt",
+      "expectedSymbol": "runBlocking",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe. runBlocking is the JVM-specific entry point (`public fun <T> runBlocking(context, block: suspend CoroutineScope.() -> T): T`). It is the canonical trailing-lambda coroutine builder for tests and main functions, living in a platform-specific source set (jvm/src), which exercises the indexer's handling of multi-platform Kotlin source trees."
+    },
+    {
+      "id": "KT-004",
+      "repo": "kotlin",
+      "query": "launch coroutine builder extension function on CoroutineScope",
+      "expectedFile": "kotlinx-coroutines-core/common/src/Builders.common.kt",
+      "expectedSymbol": "launch",
+      "expectedSymbolType": "extension_function",
+      "notes": "Symbol-anchored probe. `launch` is declared as `public fun CoroutineScope.launch(...)` — an extension function with a trailing lambda parameter `block: suspend CoroutineScope.() -> Unit`. The ergonomic call site is `scope.launch { ... }` or `launch { ... }` inside a CoroutineScope. This is the single most common trailing-lambda pattern in Kotlin and a canonical parser stress test: `launch { body }` looks like a function call statement with a block, which tree-sitter grammars that lack a `trailing_lambda` node can misparse as a property access."
+    },
+    {
+      "id": "KT-005",
+      "repo": "kotlin",
+      "query": "cancelAndJoin suspend extension function that cancels a Job and waits for it to finish",
+      "expectedFile": "kotlinx-coroutines-core/common/src/Job.kt",
+      "expectedSymbol": "cancelAndJoin",
+      "expectedSymbolTypeAnyOf": ["extension_function", "function"],
+      "notes": "Symbol-anchored probe. `cancelAndJoin` is declared as `public suspend fun Job.cancelAndJoin()` — a top-level suspend extension function. This pattern (top-level suspend extension on an interface) is commonly chunked incorrectly: parsers that anchor on class/object bodies may emit it as a free-floating chunk without its receiver type, losing the `Job.` qualifier from the indexed symbol."
+    },
+    {
+      "id": "KT-006",
+      "repo": "kotlin",
+      "query": "suspendCancellableCoroutine inline function for integrating callback APIs with coroutines",
+      "expectedFile": "kotlinx-coroutines-core/common/src/CancellableContinuation.kt",
+      "expectedSymbol": "suspendCancellableCoroutine",
+      "expectedSymbolType": "function",
+      "notes": "Symbol-anchored probe. `suspendCancellableCoroutine` is declared as `public suspend inline fun <T> suspendCancellableCoroutine(crossinline block: (CancellableContinuation<T>) -> Unit): T`. The combination of `suspend`, `inline`, and `crossinline` on a type-parameterized function is a grammar edge case: tree-sitter Kotlin grammars must correctly parse the modifier order, and chunkers must not split the `contract { }` block that immediately follows from the enclosing function body."
+    },
+    {
+      "id": "KT-007",
+      "repo": "kotlin",
+      "query": "produce coroutine builder with trailing lambda that sends values into a channel",
+      "expectedFile": "kotlinx-coroutines-core/common/src/channels/Produce.kt",
+      "expectedSymbol": "produce",
+      "expectedSymbolType": "extension_function",
+      "notes": "Grammar edge-case probe — TRAILING LAMBDA. `produce` is declared as `public fun <E> CoroutineScope.produce(...)` with a trailing `block: suspend ProducerScope<E>.() -> Unit`. Its idiomatic call site is `produce { send(value) }`. The ProducerScope receiver on the lambda is a second-order extension type that causes naive Kotlin parsers to misparse the block as a lambda literal rather than a function body, dropping the chunk boundary between the `produce` declaration and its `ProducerScope` implementation class above it in the same file."
+    },
+    {
+      "id": "KT-008",
+      "repo": "kotlin",
+      "query": "sealed interface SelectClause hierarchy used in select expression DSL",
+      "expectedFile": "kotlinx-coroutines-core/common/src/selects/Select.kt",
+      "expectedSymbol": "SelectClause",
+      "expectedSymbolTypeAnyOf": ["sealed", "interface", "class"],
+      "notes": "Grammar edge-case probe — SEALED HIERARCHY. Select.kt defines a sealed interface hierarchy: `SelectClause` (root), `SelectClause0`, `SelectClause1<out Q>`, `SelectClause2<in P, out Q>`, `SelectBuilder<in R>`, and `SelectInstance<in R>` — all sealed interfaces with variance annotations. This is the most complex sealed hierarchy in the repo and exercises parsers on: (a) sealed interfaces (not sealed classes), (b) use-site variance in type parameters (`in`, `out`), and (c) multiple sealed declarations in one file, which can cause chunker boundary errors if the parser uses class-body nesting depth to decide chunk splits."
+    }
+  ]
+}
