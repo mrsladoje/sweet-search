@@ -27,7 +27,7 @@ const STRUCTURAL_EVAL_SETS = new Set([
 
 // Load evaluation queries (excluding structural-only sets)
 function loadEvalQueries() {
-  const querySetsDir = join(__dirname, '../evaluation/query-sets');
+  const querySetsDir = join(__dirname, './query-sets');
   const files = readdirSync(querySetsDir).filter(f => f.endsWith('.json'));
   const queries = [];
 

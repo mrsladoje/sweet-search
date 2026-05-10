@@ -77,7 +77,7 @@ function loadTemplate(filename) {
  */
 function loadEvalQueries() {
   const evalQueries = new Set();
-  const evalDir = path.join(__dirname, '../../evaluation/query-sets');
+  const evalDir = path.join(__dirname, '../query-sets');
 
   if (!fs.existsSync(evalDir)) {
     return evalQueries;

@@ -16,7 +16,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const EVAL_DIR = path.join(__dirname, '../../evaluation/query-sets');
+const EVAL_DIR = path.join(__dirname, '../query-sets');
 
 /**
  * P0 Fix: Load eval queries to prevent leaks from paraphrased content
