@@ -565,19 +565,16 @@ const MyWidget = (props) => props.children;
     const tsResult = await treeSitterExtractor.extractFromFile('/test/parity-entities.js', code);
     const rxResult = await regexExtractor.extractFromFile('/test/parity-entities.js', code);
 
-    // Tree-sitter is intentionally MORE thorough than regex for top-level
-    // `const X = expr` shapes (May 2026, see TSX/CommonJS handoff). Filter
-    // that intentional asymmetry out of the parity comparison and assert the
-    // tree-sitter-only entity (`routes`) explicitly.
-    const stripVariable = (sig) => {
-      const out = { ...sig };
-      for (const k of Object.keys(out)) {
-        if (k.startsWith('variable:')) delete out[k];
-      }
-      return out;
-    };
-    expect(stripVariable(entitySignatureSet(tsResult))).toEqual(stripVariable(entitySignatureSet(rxResult)));
-    expect(tsResult.entities.some(e => e.type === 'variable' && e.name === 'routes')).toBe(true);
+    // Tree-sitter and regex paths AGREE on top-level non-exported consts:
+    // neither captures them as `variable` entities. The May 2026 (`01e8b37`)
+    // change that made tree-sitter capture them broadly was reverted on
+    // 2026-05-10 because it polluted NL retrieval rankings — single-line
+    // consts like `const VERSION = '5.8.4'` outranked real function/class
+    // definitions on behavior queries (5 fastify probes regressed). Exported
+    // top-level consts (`export const X = ...`) ARE still captured by both
+    // paths via the `(export_statement ...)` branch.
+    expect(entitySignatureSet(tsResult)).toEqual(entitySignatureSet(rxResult));
+    expect(tsResult.entities.some(e => e.type === 'variable' && e.name === 'routes')).toBe(false);
     expect(rxResult.entities.some(e => e.type === 'variable' && e.name === 'routes')).toBe(false);
   });
 

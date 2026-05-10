@@ -1027,18 +1027,18 @@ describe('TreeSitterProvider integration', async () => {
         ['javascript', 'export const Btn = memo((props) => <button {...props}/>);', 'Btn', 'component'],
         ['javascript', 'export function Header({ id }) { return <h1>{id}</h1>; }', 'Header', 'function'],
         ['javascript', 'export const FOO = "bar";', 'FOO', 'variable'],
-        // CommonJS top-level (non-exported) consts — fastify pattern.
-        // Anchored to (program ...) so we match file-top-level const X = require(...)
-        // / [...] / {} / "literal" but NOT internal consts inside function bodies.
-        ['javascript', 'const createError = require("@fastify/error");', 'createError', 'component'],
-        ['javascript', 'const lifecycleHooks = ["onRequest", "preHandler"];', 'lifecycleHooks', 'variable'],
-        ['javascript', 'const applicationHooks = ["onReady", "onClose"];', 'applicationHooks', 'variable'],
-        ['typescript', 'const SECRETS_PATH = "/etc/secrets";', 'SECRETS_PATH', 'variable'],
-        // `new Klass()` produces (new_expression), not (call_expression) — so
-        // it's tagged as a plain `variable`, not `component`. We keep this case
-        // to lock that semantics.
-        ['typescript', 'const cache = new Map<string, Entry>();', 'cache', 'variable'],
-        ['typescript', 'const buildLogger: () => Logger = createLogger;', 'buildLogger', 'variable'],
+        // POLICY (2026-05-11, reverting 01e8b37): non-exported top-level consts
+        // are NOT captured — the (program ...) rules were removed because they
+        // polluted NL retrieval rankings (single-line `const VERSION = '...'`
+        // outranked real function/class definitions on behavior queries,
+        // regressing 5 fastify probes from the post-perf-60 May 8 baseline).
+        // CJS structural-mode queries for non-exported consts are no longer
+        // resolvable as entities — accepted trade-off in favor of retrieval
+        // quality. Exported consts (`export const X = ...`) continue to be
+        // captured by both paths via the `(export_statement ...)` branch.
+        // The historical non-exported test cases (createError, lifecycleHooks,
+        // applicationHooks, SECRETS_PATH, cache, buildLogger) are intentionally
+        // removed from this matrix and reasserted as NEGATIVE cases below.
       ];
       for (const [lang, src, name, expectedType] of cases) {
         it(`extracts ${name} (${expectedType}) from ${lang}: ${src.slice(0, 50)}...`, async () => {
@@ -1110,11 +1110,17 @@ export function compute() {
         expect(symbols.find(s => s.name === 'compute' && s.type === 'function')).toBeDefined();
       });
 
-      it('JS: top-level CommonJS `const X = require(...)` IS extracted (regression: fastify miss)', async () => {
-        // Repro of the createError / lifecycleHooks / applicationHooks misses
-        // in fastify. These are non-exported file-top-level consts in a
-        // CommonJS module; they should surface as entities for structural-mode
-        // queries (`callers of createError`) to resolve.
+      it('JS: top-level CommonJS `const X = require(...)` is NOT extracted (policy revert 2026-05-11)', async () => {
+        // POLICY: non-exported top-level consts (createError, lifecycleHooks,
+        // applicationHooks) are intentionally NOT captured. The (program ...)
+        // tag-rules that captured them in 01e8b37 (May 9) polluted NL retrieval
+        // — single-line consts outranked real function/class definitions on
+        // behavior queries, regressing 5 fastify probes. Restored prior policy
+        // 2026-05-11. CJS structural-mode resolution for non-exported consts
+        // is the deliberately-accepted cost; if a future change re-introduces
+        // resolution, it MUST measure NL retrieval probes do not regress
+        // (eval/retrieval-probes/post-perf-60.json baseline = 46/60 PASS).
+        // Top-level FUNCTIONS and class-bodied entities are still captured.
         const src = `
 'use strict'
 const createError = require('@fastify/error')
@@ -1129,7 +1135,6 @@ const lifecycleHooks = [
 ]
 
 function helper() {
-  // internal const should NOT leak even though we just lifted top-level
   const cacheKey = 'tag'
   return cacheKey
 }
@@ -1137,20 +1142,26 @@ function helper() {
 module.exports = { createError, applicationHooks, lifecycleHooks, helper }
 `;
         const symbols = await provider.extractSymbols(src, 'javascript');
-        expect(symbols.find(s => s.name === 'createError' && s.type === 'component')).toBeDefined();
-        expect(symbols.find(s => s.name === 'applicationHooks' && s.type === 'variable')).toBeDefined();
-        expect(symbols.find(s => s.name === 'lifecycleHooks' && s.type === 'variable')).toBeDefined();
+        // Non-exported top-level consts: NOT captured (the regression fix).
+        expect(symbols.find(s => s.name === 'createError')).toBeUndefined();
+        expect(symbols.find(s => s.name === 'applicationHooks')).toBeUndefined();
+        expect(symbols.find(s => s.name === 'lifecycleHooks')).toBeUndefined();
+        // Top-level function: still captured (function_declaration is in BOUNDARY_TYPES).
         expect(symbols.find(s => s.name === 'helper' && s.type === 'function')).toBeDefined();
-        // Internal consts MUST stay invisible.
+        // Internal consts also stay invisible (unchanged).
         expect(symbols.find(s => s.name === 'cacheKey')).toBeUndefined();
       });
 
-      it('.mjs and .cjs files share the javascript grammar — same rules fire', async () => {
+      it('.mjs and .cjs files share the javascript grammar — exported consts captured, non-exported are NOT', async () => {
         // Sanity: extract via the tree-sitter provider directly with languageId
         // 'javascript' (which is what EXTENSION_MAP returns for all of .js,
         // .jsx, .mjs, .cjs). tree-sitter-javascript produces the same
-        // (program ...)-rooted AST regardless of extension; ES-module syntax
-        // and CommonJS syntax both parse fine.
+        // (program ...)-rooted AST regardless of extension.
+        // POLICY (2026-05-11): only EXPORTED top-level consts produce entities.
+        // The .mjs side (export const X) is captured; the .cjs side
+        // (top-level non-exported const X) is intentionally NOT — see
+        // "top-level CommonJS `const X = require(...)` is NOT extracted" test
+        // above for rationale.
         const mjsLike = `
 import { a } from 'pkg'
 export const M_VAR = 'hello'
@@ -1163,16 +1174,21 @@ const C_LIST = ['x', 'y']
 module.exports = { C_REQ, C_LIST }
 `;
         const mjsSyms = await provider.extractSymbols(mjsLike, 'javascript');
+        // Exported (.mjs / ESM): captured.
         expect(mjsSyms.find(s => s.name === 'M_VAR' && s.type === 'variable')).toBeDefined();
         expect(mjsSyms.find(s => s.name === 'M_FACTORY' && s.type === 'component')).toBeDefined();
         const cjsSyms = await provider.extractSymbols(cjsLike, 'javascript');
-        expect(cjsSyms.find(s => s.name === 'C_REQ' && s.type === 'component')).toBeDefined();
-        expect(cjsSyms.find(s => s.name === 'C_LIST' && s.type === 'variable')).toBeDefined();
+        // Non-exported (.cjs / CommonJS top-level): NOT captured.
+        expect(cjsSyms.find(s => s.name === 'C_REQ')).toBeUndefined();
+        expect(cjsSyms.find(s => s.name === 'C_LIST')).toBeUndefined();
       });
 
       it('JS: const inside namespace/class body is NOT extracted (scope guard)', async () => {
-        // Top-level rule is anchored to (program ...) — anything nested is
-        // intentionally invisible to the entity table.
+        // POLICY (2026-05-11): the only @variable/@component captures fire on
+        // (export_statement ...) — neither nested consts NOR non-exported
+        // top-level consts produce entities. FILE_LEVEL (non-exported) used to
+        // be captured under the (program ...) rule but that rule was removed
+        // (see retrieval-regression comments in the queries + above tests).
         const src = `
 class Container {
   static run() {
@@ -1184,8 +1200,9 @@ const FILE_LEVEL = 1;
 `;
         const symbols = await provider.extractSymbols(src, 'javascript');
         expect(symbols.find(s => s.name === 'internal')).toBeUndefined();
-        // FILE_LEVEL IS captured (top-level const).
-        expect(symbols.find(s => s.name === 'FILE_LEVEL' && s.type === 'variable')).toBeDefined();
+        // FILE_LEVEL is NO LONGER captured — non-exported, top-level const literal.
+        expect(symbols.find(s => s.name === 'FILE_LEVEL')).toBeUndefined();
+        // Containing class still captured (class_declaration is in BOUNDARY_TYPES).
         expect(symbols.find(s => s.name === 'Container' && s.type === 'class')).toBeDefined();
       });
     });

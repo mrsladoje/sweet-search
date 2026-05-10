@@ -60,6 +60,8 @@ const BOUNDARY_TYPES = new Set([
   'interface_declaration', 'type_alias_declaration', 'enum_declaration',
   // Structs/Traits (Rust/Go)
   'struct_item', 'impl_item', 'trait_item', 'type_declaration',
+  // Rust macros (macro_rules!)
+  'macro_definition',
   // Modules
   'module', 'namespace_declaration',
   // Python
@@ -120,6 +122,7 @@ const NODE_TYPE_MAP = {
   'impl_item': 'impl',
   'trait_item': 'trait',
   'type_declaration': 'struct',
+  'macro_definition': 'macro',
   'module': 'module',
   'namespace_declaration': 'namespace',
   'decorated_definition': 'decorator',
@@ -179,21 +182,18 @@ const TAGS_QUERIES = {
       declaration: (lexical_declaration
         (variable_declarator
           name: (identifier) @variable.definition)))
-    ; Top-level (non-exported) file-scope const declarations. CommonJS files
-    ; like fastify/lib/errors.js (\`const createError = require(...)\`) and
-    ; module-private lookup tables (\`const lifecycleHooks = [...]\`) need to
-    ; surface as entities for structural-mode queries to resolve. Anchored
-    ; to (program ...) so internal consts inside function/class/namespace
-    ; bodies are NOT captured.
-    (program
-      (lexical_declaration
-        (variable_declarator
-          name: (identifier) @component.definition
-          value: (call_expression))))
-    (program
-      (lexical_declaration
-        (variable_declarator
-          name: (identifier) @variable.definition)))
+    ; Top-level (non-exported) file-scope const declarations.
+    ; HISTORY (2026-05-10): a prior version captured ALL top-level lexical
+    ; declarations as @variable.definition / @component.definition. That
+    ; over-extracted trivial consts (\`const VERSION = '5.8.4'\`,
+    ; \`const X = require('...')\`) which then dominated NL retrieval rankings
+    ; over real function/method definitions (regressed 5 fastify probes vs
+    ; post-perf-60 baseline). Restored to scoping @variable.definition to
+    ; export_statement only, matching the original intent in
+    ; graph-extractor.js:_normalizeTreeSitterEntities (line 1320 comment).
+    ; If structural-mode resolution of CJS top-level consts is needed,
+    ; add narrowly-scoped captures (e.g. value: [(array) (object) (new_expression)])
+    ; rather than re-introducing unrestricted (program ...) captures.
     (pair
       key: (property_identifier) @method.definition
       value: (function_expression))
@@ -226,18 +226,8 @@ const TAGS_QUERIES = {
       declaration: (lexical_declaration
         (variable_declarator
           name: (identifier) @variable.definition)))
-    ; Top-level (non-exported) file-scope const declarations — see javascript
-    ; query for rationale. Anchored to (program ...) so internal consts inside
-    ; functions/classes/namespaces are NOT captured.
-    (program
-      (lexical_declaration
-        (variable_declarator
-          name: (identifier) @component.definition
-          value: (call_expression))))
-    (program
-      (lexical_declaration
-        (variable_declarator
-          name: (identifier) @variable.definition)))
+    ; Top-level non-exported consts intentionally NOT captured — see javascript
+    ; query above for rationale (regressed fastify probes via const VERSION etc.).
     (pair
       key: (property_identifier) @method.definition
       value: (function_expression))
@@ -312,6 +302,7 @@ const TAGS_QUERIES = {
     (impl_item type: (type_identifier) @impl.definition)
     (trait_item name: (type_identifier) @trait.definition)
     (enum_item name: (type_identifier) @enum.definition)
+    (macro_definition name: (identifier) @macro.definition)
   `,
   java: `
     (class_declaration name: (identifier) @class.definition)
@@ -393,6 +384,7 @@ const CAPTURE_TO_ENTITY_TYPE = {
   // Both can match the same node; component wins via priority dedup downstream.
   'component.definition': 'component',
   'variable.definition': 'variable',
+  'macro.definition': 'macro',
 };
 
 export class TreeSitterProvider {

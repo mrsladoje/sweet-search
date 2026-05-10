@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "AST-tester probes for Rust — exercises grammar (macros, lifetimes, async traits), chunker, and ranker on idiomatic Rust patterns in astral-sh/ruff.",
+  "language": "rust",
+  "repo": "rust",
+  "repoUrl": "https://github.com/astral-sh/ruff.git",
+  "repoSha": "ac6361d83e4d51ab123043b00d5285a842077b81",
+  "license": "MIT",
+  "probes": [
+    {
+      "id": "RS-001",
+      "repo": "rust",
+      "query": "how does ruff classify Python imports into first-party, third-party, and standard-library sections",
+      "expectedFile": "crates/ruff_linter/src/rules/isort/categorize.rs",
+      "expectedSymbol": "ImportType",
+      "expectedSymbolType": "enum",
+      "notes": "NL behavior query targeting the isort categorization subsystem. ImportType is the central enum that names all import sections (Future, StandardLibrary, ThirdParty, FirstParty, LocalFolder). The file also carries the categorize() and categorize_imports() functions that implement the classification logic. Exercises chunker on a file with multiple enum/struct definitions and complex lifetime annotations on free functions."
+    },
+    {
+      "id": "RS-002",
+      "repo": "rust",
+      "query": "how does ruff apply iterative auto-fixes and track the count of applied fixes per rule code",
+      "expectedFile": "crates/ruff_linter/src/linter.rs",
+      "expectedSymbol": "lint_fix",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior query targeting the fix-application loop. lint_fix<'a> is the entry point that iteratively applies fixes until convergence; FixTable tracks per-rule counts. Exercises chunker on a 700-line file that mixes structs, impls, and top-level pub fns, plus the FixerResult<'a> struct that bundles the lifetime-parameterized source-kind borrow."
+    },
+    {
+      "id": "RS-003",
+      "repo": "rust",
+      "query": "how does ruff walk the Python AST and accumulate lint diagnostics during a single file check",
+      "expectedFile": "crates/ruff_linter/src/checkers/ast/mod.rs",
+      "expectedSymbol": "Checker",
+      "expectedSymbolType": "struct",
+      "notes": "NL behavior query targeting the central AST visitor. Checker<'a> is the AST-visitor state machine that accumulates diagnostics; impl<'a> Visitor<'a> for Checker<'a> at line 945 exercises the impl-for-generic pattern. This is the single largest file in the linter crate and stresses chunker boundary detection when a struct definition spans many fields with lifetime params."
+    },
+    {
+      "id": "RS-004",
+      "repo": "rust",
+      "query": "Violation trait that all ruff lint rules implement to produce a message and fix availability",
+      "expectedFile": "crates/ruff_linter/src/violation.rs",
+      "expectedSymbol": "Violation",
+      "expectedSymbolType": "trait",
+      "notes": "Symbol-anchored query. Violation: ViolationMetadata + Sized is the core trait that every lint rule struct implements; AlwaysFixableViolation provides a blanket impl. Exercises chunker on a short file (115 lines) containing two interrelated trait definitions and a blanket impl<V: AlwaysFixableViolation> Violation for V block — a classic pattern parsers may misparse as a struct impl."
+    },
+    {
+      "id": "RS-005",
+      "repo": "rust",
+      "query": "SemanticSyntaxContext trait defining in_async_context and future_annotations methods for the Python parser",
+      "expectedFile": "crates/ruff_python_parser/src/semantic_errors.rs",
+      "expectedSymbol": "SemanticSyntaxContext",
+      "expectedSymbolType": "trait",
+      "notes": "Symbol-anchored query. SemanticSyntaxContext at line 2255 is a large trait (20+ methods) that the parser calls to ask about the surrounding Python AST context. It lives at the bottom of a 2400-line file full of structs, impls, and nested visitor types. Exercises the chunker's ability to correctly delimit a trailing trait definition after long bodies of preceding code."
+    },
+    {
+      "id": "RS-006",
+      "repo": "rust",
+      "query": "SortedMergeIter struct that merges two sorted iterators by source range position",
+      "expectedFile": "crates/ruff_linter/src/directives.rs",
+      "expectedSymbol": "SortedMergeIter",
+      "expectedSymbolType": "struct",
+      "notes": "Symbol-anchored query. SortedMergeIter<L, R, Item> (line 75) and impl<L, R, Item> Iterator for SortedMergeIter ... where Item: Ranged (line 84) are a compact generic struct + trait-impl pair. Exercises the chunker and parser's handling of multi-type-parameter where-clause bounds — a pattern that Rust parsers often misassociate with adjacent items."
+    },
+    {
+      "id": "RS-007",
+      "repo": "rust",
+      "query": "warn_user_once_by_id macro that suppresses duplicate warnings using a static identifier",
+      "expectedFile": "crates/ruff_linter/src/logging.rs",
+      "expectedSymbol": "warn_user_once_by_id",
+      "expectedSymbolType": "macro",
+      "notes": "Grammar edge-case probe (REQUIRED macro probe). The file defines five consecutive macro_rules! macros (warn_user_once_by_id, warn_user_once_by_message, warn_user_once, warn_user, notify_user) whose bodies contain nested $crate::logging:: paths, use-statements, and format_args invocations. Chunkers that split on brace depth without understanding macro hygiene will misparse the block boundaries and either merge macros or drop the inner use statements."
+    },
+    {
+      "id": "RS-008",
+      "repo": "rust",
+      "query": "detect_package_root function that walks ancestor directories to find a Python package root path",
+      "expectedFile": "crates/ruff_linter/src/packaging.rs",
+      "expectedSymbol": "detect_package_root",
+      "expectedSymbolType": "function",
+      "notes": "Grammar edge-case probe (REQUIRED lifetime-param probe). detect_package_root<'a>(path: &'a Path, namespace_packages: &[PathBuf]) -> Option<&'a Path> is a short standalone function (line 36) where the same lifetime 'a threads from input reference to return reference, a pattern that tree-sitter grammars and naive regex-based extractors frequently parse incorrectly when the return type is wrapped in Option<&'a T>."
+    }
+  ]
+}

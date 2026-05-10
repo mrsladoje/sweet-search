@@ -326,6 +326,9 @@ export const TREE_SITTER_ENTITY_PRIORITY = Object.freeze({
   trait: 25,
   impl: 20,
   decorator: 15,
+  // Rust macro_rules! definitions — same rank as function/struct/impl since
+  // they're top-level definitions with similar discoverability needs.
+  macro: 30,
 });
 
 // Module-scope constants for extractJavaScript() — avoid per-call/per-line allocation.

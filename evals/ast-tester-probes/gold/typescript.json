@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "description": "AST-tester probes for TypeScript/TSX — exercises grammar (const exports, generics), chunker, and ranker for idiomatic patterns. Includes regression anchor for tsx const extraction bug.",
+  "language": "typescript",
+  "repo": "typescript",
+  "repoUrl": "https://github.com/vercel/ai-chatbot.git",
+  "repoSha": "107a43a8039bb4f19d0ced4ff3445e2523d14305",
+  "license": "Apache-2.0",
+  "probes": [
+    {
+      "id": "TS-001",
+      "repo": "typescript",
+      "query": "how does the chat handle streaming delta updates and dispatch them to the artifact panel",
+      "expectedFile": "components/chat/data-stream-handler.tsx",
+      "expectedSymbol": "DataStreamHandler",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe. Tests whether the chunker/ranker surfaces the useEffect dispatch loop in DataStreamHandler — a 'use client' component with no JSX return (returns null), which can confuse parsers that expect a visible render tree from a .tsx file."
+    },
+    {
+      "id": "TS-002",
+      "repo": "typescript",
+      "query": "where does the chat auto-scroll when new messages arrive and how does it detect whether the user has scrolled away",
+      "expectedFile": "hooks/use-scroll-to-bottom.tsx",
+      "expectedSymbol": "useScrollToBottom",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe. Targets a custom hook defined in a .tsx file (unusual — most hooks live in .ts). The file uses MutationObserver + ResizeObserver, not JSX; tests that the indexer does not skip or mis-classify .tsx files that export zero JSX."
+    },
+    {
+      "id": "TS-003",
+      "repo": "typescript",
+      "query": "how does the server decide which AI model to call and what tools to enable based on the incoming request",
+      "expectedFile": "app/(chat)/api/chat/route.ts",
+      "notes": "NL behavior probe. Tests routing to a Next.js Route Handler inside a parenthesised segment directory `(chat)`, which path-tokenizers may parse unexpectedly. No expectedSymbol — the relevant logic is spread across the POST handler body."
+    },
+    {
+      "id": "TS-004",
+      "repo": "typescript",
+      "query": "codeArtifact definition including its onStreamPart handler and toolbar actions",
+      "expectedFile": "artifacts/code/client.tsx",
+      "expectedSymbol": "codeArtifact",
+      "expectedSymbolType": "variable",
+      "notes": "Symbol-anchored probe. Regression anchor for the tsx const-extraction bug: `export const codeArtifact = new Artifact<\"code\", Metadata>(...)` is a generic-typed new-expression assigned to an export const in a .tsx file — precisely the pattern that was silently dropped by the broken tsx grammar."
+    },
+    {
+      "id": "TS-005",
+      "repo": "typescript",
+      "query": "textArtifact streaming configuration and how text deltas accumulate into artifact content",
+      "expectedFile": "artifacts/text/client.tsx",
+      "expectedSymbol": "textArtifact",
+      "expectedSymbolType": "variable",
+      "notes": "Symbol-anchored probe. Second regression anchor: another `export const X = new Artifact<\"text\", Metadata>(...)` pattern in a .tsx file. Verifies the const-extraction fix generalises across all artifact client files, not just code/client.tsx."
+    },
+    {
+      "id": "TS-006",
+      "repo": "typescript",
+      "query": "slashCommands array listing every available slash command with its action and description",
+      "expectedFile": "components/chat/slash-commands.tsx",
+      "expectedSymbol": "slashCommands",
+      "expectedSymbolType": "variable",
+      "notes": "Symbol-anchored probe. Tests extraction of `export const slashCommands: SlashCommand[] = [...]` — an explicitly typed array literal in a .tsx file that also exports a React component (SlashCommandMenu) in the same file. Exercises the chunker's ability to index both the const and the component from a single file."
+    },
+    {
+      "id": "TS-007",
+      "repo": "typescript",
+      "query": "per-user message rate limits and entitlements by account type",
+      "expectedFile": "lib/ai/entitlements.ts",
+      "expectedSymbol": "entitlementsByUserType",
+      "expectedSymbolType": "variable",
+      "notes": "Grammar edge-case probe. `export const entitlementsByUserType: Record<UserType, Entitlements> = { ... }` uses a two-argument generic type annotation on the const declaration. Tests that the chunker does not truncate the type parameter list when extracting the symbol name — a known failure mode for naive regex-based extractors."
+    },
+    {
+      "id": "TS-008",
+      "repo": "typescript",
+      "query": "how the system prompt is composed from geolocation hints and whether tools are enabled for the model",
+      "expectedFile": "lib/ai/prompts.ts",
+      "expectedSymbol": "systemPrompt",
+      "expectedSymbolType": "variable",
+      "notes": "Grammar edge-case probe. `export const systemPrompt = ({ requestHints, supportsTools }: { ... }) => { ... }` is a destructured-parameter arrow function assigned to an export const. Tests that parsers correctly resolve the symbol name despite the inline object-type annotation in the parameter list — a pattern that confuses extractors expecting `(param: Type)` vs `({ key }: ObjectType)`."
+    }
+  ]
+}

@@ -152,6 +152,10 @@ ralph.yml
 CLAUDE.local.md
 eval/repos/
 
+# Per-language probe-pack cloned repos (2.8GB, clone-on-demand via repos.json SHAs).
+# Gold files, splits, results, diagnostics under evals/ast-tester-probes/ ARE tracked.
+evals/ast-tester-probes/_repos/
+
 # Cross-target validation temp dirs
 .cross-validation-staging/
 .cross-validation-results/
