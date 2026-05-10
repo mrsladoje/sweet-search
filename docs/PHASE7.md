@@ -2,7 +2,7 @@
 
 **Created**: 2026-05-10
 **Status**: Draft, ready for pre-registration tag and implementation
-**Reviewed**: 2026-05-10 by Gemini 3.1 Pro (Deep Think mode, dynamic-max thinking budget), TWO PASSES — adversarial second pass surfaced FATAL Round-11 probe-rotation discontinuity, Maximin race-to-the-middle pathology, PRP-judges-blind-to-efficiency, Tool-Mask ghost-context-leak, OP-2 trajectory-crossover schizophrenia, gold-probe self-fulfilling prophecy, three code-search-specific pathologies (wrong-extension/flooding/rabbit-hole), Frankenstein-prompt language regression, and 5 new creative additions (AST-ification, stateful summarization, distractor probes, length penalty, lazy-user robustness). All integrated. Critiques preserved at `docs/PHASE7-gemini-critique-2026-05-10.md` (first pass) and `docs/PHASE7-gemini-critique-2-2026-05-10.md` (second pass).
+**Reviewed**: 2026-05-10 by Gemini 3.1 Pro (Deep Think mode, dynamic-max thinking budget), THREE PASSES. Pass 1 surfaced 13 findings (latent-interp invalid, Maximin, TARE-on-Pareto, etc.) — all integrated. Pass 2 was deliberately adversarial and surfaced 12 more (FATAL Round-11 re-baseline, Maximin race-to-middle, EAS, ghost-context-leak, AST-ification, language-transfer HOMP, pathology probes, lazy-user, etc.) — all integrated. Pass 3 explicitly asked for honest diminishing-returns assessment; Gemini's verdict was **SHIP IT** ("production-ready engineering with publication-grade methodology") with three minor config tweaks (Pruner pseudocode-protection, dilute trick probes <30%, JSONL rejection telemetry) and an explicit retraction of the GPT-5.4 push. All three minor fixes integrated; full critique trail at `docs/PHASE7-gemini-critique-2026-05-10.md` (pass 1), `docs/PHASE7-gemini-critique-2-2026-05-10.md` (pass 2), `docs/PHASE7-gemini-critique-3-2026-05-10.md` (pass 3 — final).
 **Depends on**: P6 `qshape-v1` artifact (`recommendations.json`, Track A/B JSONLs at commit `7d9eb1d`)
 **Successor to**: docs/SYSTEM_PROMPT_OPT_PLAN.md §6, §8, §9, §11
 
@@ -153,7 +153,7 @@ The mutation operator pool was substantially redesigned after Gemini 3.1 Pro Dee
 | OP-2 | **Contrastive Trajectory Crossover** (Kimi K2.6) | Find a probe where prompt A wins (≥0.8) and prompt B fails (≤0.4). Pass A's full tool-call trajectory + both prompts to Kimi + **the most recent manual-reflection hint as a hard negative constraint** (anti-schizophrenia fix per Gemini 2nd-pass §B3). Merge B's structural strengths with A's specific routing instructions that produced the successful trajectory, *while obeying the latest human-injected constraint*. Without this, OP-2 routinely resurrects deprecated behaviors that the human just penalized. | Empirically-grounded crossover. Compositional jumps grounded in actual agent behaviour, not abstract text similarity. **Replaces** the rejected latent-interp. |
 | OP-3 | **Persona / Constraint Pivot + AST-ification** (Sonnet 4.6) | Two-mode operator: (a) standard structural-format pivot (bullets → numbered lists, paragraphs → strict pseudocode layout) AND (b) **AST-ification of routing constraints** (per Gemini 2nd-pass §D1 — linguistic angle): convert prose routing rules into ` ```python` `if/then` blocks. LLMs process structured pseudocode at higher fidelity than dense English — fewer scope-ambiguity failures on conditional rules. Mode (a) is default; mode (b) fires on rounds where the candidate prompt has ≥3 conditional routing rules in prose. | **Replaces** ja-pivot. 2026-era LLMs exhibit translation invariance. Format-pivot + pseudocode-routing guarantees both surface variance AND clearer rule semantics. |
 | OP-4 | **Tool-Signature Masking** (Kimi K2.6) | Temporarily alias `[[ss-search]] → [[TOOL_ALPHA]]`, `[[ss-find]] → [[TOOL_BETA]]`, `[[ss-semantic]] → [[TOOL_GAMMA]]`, `[[structural]] → [[TOOL_DELTA]]` in the candidate. Ask Kimi to optimize the prompt so an agent could correctly use these tools *based only on prompt descriptions, not lexical priors*. After mutation, map names back. **Domain-stripping** (per Gemini 2nd-pass §A3 — anti-ghost-context-leak): the OP-4 reflector system prompt MUST also strip the words "code", "repository", "search", "semantic", "regex" and instead frame the task as "optimizing a generic database retrieval tool (TOOL_ALPHA), a regex-anchor lookup tool (TOOL_BETA), a vector-similarity tool (TOOL_GAMMA), and a graph-traversal tool (TOOL_DELTA)". Without this, the reflector hallucinates the domain back into surrounding context, defeating the masking. | **Cognitive forcing**: breaks the agent's reliance on pre-trained "search/find/semantic" lexical priors. Forces unambiguous self-contained tool descriptions. |
-| OP-5 | **The Pruner** (Kimi K2.6) | "Remove ~20% of words from this prompt without changing any operational rule, `[[token]]`, or behavioural expectation. Make it terse." | **Bloat control.** GEPA's biggest failure mode is monotonic prompt inflation — reflectors add rules, never delete them. By round 20, prompts can balloon to 2,500+ tokens, diluting attention. Pruner provides downward pressure. Combined with the explicit length penalty in §3.7. |
+| OP-5 | **The Pruner** (Kimi K2.6) | "Remove ~20% of words from this prompt without changing any operational rule, `[[token]]`, or behavioural expectation. Make it terse. **DO NOT alter the syntax, indentation, or logic of any pseudocode, `if/then` blocks, or fenced code blocks — restrict pruning to natural-language prose only.** This protects OP-3 AST-ified routing rules from accidental syntax destruction (per Gemini 3rd-pass §C1)." | **Bloat control.** GEPA's biggest failure mode is monotonic prompt inflation — reflectors add rules, never delete them. By round 20, prompts can balloon to 2,500+ tokens, diluting attention. Pruner provides downward pressure. Combined with the explicit length penalty in §3.7. The pseudocode-protection clause is critical because OP-3 AST-ification produces `if/then` routing blocks that "make it terse" would otherwise mangle (deleting `elif`, flattening indentation, dropping closing brackets). |
 
 **Per-round slot composition (3 mutations per round)**:
 
@@ -515,6 +515,7 @@ Stratified by:
 - **Repo**: 5 from each of fastify, gin, flask, ripgrep, ai-chatbot (the 5 P6 dev repos)
 - **Difficulty**: 8 easy, 12 medium, 5 hard (matches a real-user query distribution)
 - **Stratum**: 8 literal-lookup, 8 multi-file-flow, 5 behavioral, 4 no-match (negative cases)
+- **Trick-probe ratio**: 7 out of 25 = 28% (under the 30% Gemini-3rd-pass §C2 cap to keep the dev set representative of production traffic, not an adversarial gauntlet). Composition: 4 pathology probes from §5.5 (1 wrong-extension + 1 flooding + 2 rabbit-hole) + 3 distractor probes from §5.6. The remaining 3 pathology probes (2 wrong-extension + 1 flooding + 0 rabbit-hole) are deferred to the rotation pool — see §5.3.
 
 Each probe is a JSON record:
 ```json
@@ -538,11 +539,16 @@ File: `core/prompt-optimization/data/p7-dev-probes.json`
 
 Same structure, frozen. **Authored at the same time as dev to prevent post-hoc bias** but not inspected until winner selection. File: `core/prompt-optimization/data/frozen/p7-heldout-probes.json` — committed under a `frozen/` directory at pre-registration time.
 
-### §5.3 Probe-rotation pool (n=10, post-Gemini-review)
+### §5.3 Probe-rotation pool (n=13, post-Gemini-review + 3rd-pass dilution)
 
-To support the mid-run probe rotation at round 11 (§3.1), an additional **10 probes** are authored at the same time as the dev set and committed under `core/prompt-optimization/data/p7-rotation-pool.json`. These probes are NOT used during rounds 1–10. At the start of round 11, the 5 lowest-variance dev probes (those everyone has mastered — i.e. `score_variance_across_pareto < 0.1`) are retired and the 5 highest-difficulty probes from the rotation pool replace them, drawn deterministically by author-assigned difficulty rating (highest first).
+To support the mid-run probe rotation at round 11 (§3.1), **13 probes** are authored at the same time as the dev set and committed under `core/prompt-optimization/data/p7-rotation-pool.json`:
 
-Rationale: prevents over-fitting to the original 25 dev probes when the GEPA loop has evaluated 60+ candidates against them. The rotation membership is pre-registered (committed under `prereg/p7-v1`), so the swap is deterministic and not post-hoc.
+- **10 standard rotation probes** (original Gemini 1st-pass design) — held aside to guard against dev-set overfitting after 60+ candidate evaluations.
+- **3 deferred trick probes** — 2 wrong-extension + 1 flooding pathology probes moved out of the dev set per Gemini 3rd-pass §C2, so the agent masters the basics first before facing them. These 3 are tagged `tier: deferred-pathology` in the JSON record.
+
+These probes are NOT used during rounds 1–10. At the start of round 11, the 5 lowest-variance dev probes (those everyone has mastered — i.e. `score_variance_across_pareto < 0.1`) are retired and replaced as follows: 2 of the 3 deferred-pathology probes guaranteed-promoted in (the agent must demonstrate it has learned the basics by round 11; this is the test), then 3 highest-difficulty standard rotation probes drawn deterministically by author-assigned difficulty rating.
+
+Rationale: prevents over-fitting to the original 25 dev probes when the GEPA loop has evaluated 60+ candidates against them, and concentrates the trick-probe evaluation in the second half of the run when the agent has mastered the literal-lookup baseline. The rotation membership is pre-registered (committed under `prereg/p7-v1`), so the swap is deterministic and not post-hoc.
 
 ### §5.4 Sources for probe content
 
@@ -550,17 +556,17 @@ Rationale: prevents over-fitting to the original 25 dev probes when the GEPA loo
 - **30-40 hand-authored fresh probes** covering scenarios P6 missed (FreshStack-style post-cutoff repos, error-recovery scenarios, multi-callback behavioural queries that P6's `ripgrep:sink-trait` revealed as hard).
 - **All 50 probes** (25 dev + 15 held-out + 10 rotation) labeled by author + date + difficulty + stratum in YAML front-matter.
 
-### §5.5 Pathology probes — code-search domain failure modes (per Gemini 2nd-pass §C)
+### §5.5 Pathology probes — code-search domain failure modes (per Gemini 2nd-pass §C, 3rd-pass §C2 dilution)
 
-Three specific code-search failure modes are encoded as dedicated probes in the dev set so GEPA can discover defenses naturally:
+Seven probes encoding three specific code-search failure modes. Per Gemini 3rd-pass §C2 (avoid >30% adversarial-trick density in dev set), they are split across dev and rotation pool:
 
-| Pathology probe | What it tests | Encoding in dev set |
+| Pathology probe | What it tests | Encoding |
 |---|---|---|
-| **Wrong-extension death loop** | Query implies `.js`, answer is in `.tsx`. Tests whether prompt instructs agent to *relax file filter before relaxing search term*. | 3 probes, e.g., "where is the React `useAuth` hook defined?" with answer in `app/lib/use-auth.tsx` while query suggests JS. |
-| **Context-window flooding (minified trap)** | Repository contains `dist/bundle.min.js` or `package-lock.json` near the answer. Tests whether prompt instructs agent to *negative-space-route* (skip `dist/`, `build/`, `node_modules/`, large minified files). | 2 probes, e.g., probe answer in `core/auth.ts` but `dist/bundle.min.js` would trip a naive regex search. |
-| **Transitive rabbit hole** | Answer is 1-2 hops from the entry point but agent can be tempted into 5+ hops. Tests whether prompt encodes a *depth-limit heuristic*. | 2 probes, e.g., "where is the `Database` class instantiated?" with answer in `app.ts` directly, but `db.ts → config.ts → env.ts` import chain available. |
+| **Wrong-extension death loop** | Query implies `.js`, answer is in `.tsx`. Tests whether prompt instructs agent to *relax file filter before relaxing search term*. | **3 probes total**: 1 in dev set, 2 deferred to rotation pool (§5.3). |
+| **Context-window flooding (minified trap)** | Repository contains `dist/bundle.min.js` or `package-lock.json` near the answer. Tests whether prompt instructs agent to *negative-space-route* (skip `dist/`, `build/`, `node_modules/`, large minified files). | **2 probes total**: 1 in dev set, 1 deferred to rotation pool. |
+| **Transitive rabbit hole** | Answer is 1-2 hops from the entry point but agent can be tempted into 5+ hops. Tests whether prompt encodes a *depth-limit heuristic*. | **2 probes total**: both in dev set (these are the most-representative-of-production failure mode and warrant continuous evaluation). |
 
-These 7 probes are in the 25 dev set. If GEPA's winner doesn't handle them, the prompt is overfit to non-pathological queries.
+Result: **4 pathology probes in dev** (within the 28% trick-probe budget when combined with the 3 distractor probes in §5.6) + **3 deferred** in rotation pool (faced from round 11 onward). If GEPA's winner doesn't handle them, the prompt is overfit to non-pathological queries.
 
 ### §5.6 Poisoned/distractor probes (per Gemini 2nd-pass §D3)
 
@@ -655,11 +661,39 @@ The work breakdown:
 P6 burned hours when a run died at hour 3 with no resume path. P7 must NOT repeat that. The contract:
 
 1. **Append-only JSONL** — `core/prompt-optimization/data/results/p7-v1/gepa-trajectory.jsonl` is written to after EVERY:
-   - Mutation generation (one row per mutation: `_kind: 'mutation', round: N, source_op: 'reflective|latent|ja-pivot', new_prompt_hash: ..., parent_hash: ...`)
-   - Screen result (one row per (mutation × probe × target): `_kind: 'screen', mutation_hash: ..., probe_id: ..., target: 'sonnet|gpt-5.5', score: ..., wall_ms: ...`)
-   - Confirm result (same shape, `_kind: 'confirm'`)
+   - Mutation generation (one row per mutation: `_kind: 'mutation', round: N, source_op: 'reflective|trajectory-crossover|persona-pivot|tool-mask|pruner', new_prompt_hash: ..., parent_hash: ...`)
+   - Screen result (one row per (mutation × probe × target): `_kind: 'screen', mutation_hash: ..., probe_id: ..., target: 'sonnet|gpt-5.5', score: ..., wall_ms: ..., tool_calls: ...`)
+   - Confirm result — must include the **full EAS modifier breakdown** (per Gemini 3rd-pass §E so rejection reasons aren't a black box on Wednesday morning):
+     ```json
+     {
+       "_kind": "confirm",
+       "round": 7,
+       "mutation_hash": "abc123",
+       "raw_sonnet": 0.78,
+       "raw_gpt5_5": 0.71,
+       "maximin_base": 0.71,
+       "avg_tool_calls": 4.2,
+       "eas_multiplier": 0.976,
+       "token_count": 1820,
+       "length_penalty": 0.091,
+       "final_score": 0.602
+     }
+     ```
+   - **Pareto-rejection telemetry** (mandatory new event — without this the loop's decisions look like black-box hallucinations):
+     ```json
+     {
+       "_kind": "pareto-rejection",
+       "round": 7,
+       "mutation_hash": "abc123",
+       "reason": "0.15-cap-violation" | "dominated" | "language-transfer-gate" | "scs-gate" | "lazy-user-gate",
+       "target_degraded": "sonnet" | "gpt5_5" | null,
+       "drop": 0.22,
+       "incumbent_being_compared": "T7-r3"
+     }
+     ```
    - TARE adversarial probe (`_kind: 'tare-adversarial'`)
    - Pareto update (`_kind: 'pareto-update', round: N, front: [hashes]`)
+   - **Round-11 re-baseline event** (per §3.1): `_kind: 'pareto-rebaseline', round: 11, before_front: [...], after_rebaseline_scores: {...}, evictions: [...]`
    - Manual reflection (`_kind: 'manual-reflection', round: N, decision: ..., motivation: ...` — content lives in `p7-decisions.md`)
 2. **`fsync` on every append** — the harness `appendFileSync` does this on macOS by default; if Node's fs.appendFileSync doesn't fsync on your platform, wrap with `fs.fsync(fd)` after every write.
 3. **Variant + mutation prompt content stored separately** — `core/prompt-optimization/data/results/p7-v1/prompt-bank.jsonl` (one row per unique prompt-hash → full text). Trajectory references prompts by hash to keep the trajectory file small.
@@ -1047,6 +1081,28 @@ After integrating the first-pass critique, we asked Gemini 3.1 Pro Deep Think fo
 - **GPT-5.5 (not 5.4)**: User reaffirmed the §11.2 override; Gemini 2nd-pass re-evaluation softened its position to "the team's reasoning is defensible". Keeping 5.5.
 - **Everything else**: All 12 second-pass findings integrated as documented above.
 
+### §11.4 What the Gemini third-pass review changed (2026-05-10) — SHIP-IT VERDICT
+
+After integrating both prior passes, we asked Gemini for a third-pass review with explicit framing: *be honest about diminishing returns; if the plan is researcher-defensible, say so and don't manufacture critique*. Full critique at `docs/PHASE7-gemini-critique-3-2026-05-10.md`.
+
+**Verdict (verbatim)**: *"Production-ready engineering with publication-grade methodology... You have reached [diminishing returns]. The structural methodology of this plan is now better than 95% of the prompt-optimization pipelines currently running in the industry, and it easily clears the bar for a top-tier conference submission (ICLR/NeurIPS) in the applied tracks. I have no new major mechanisms to suggest. Do not add any more operators, gates, or objectives... **SHIP IT.**"*
+
+**Explicit retractions** (Gemini, 3rd pass):
+- Retracts the GPT-5.4 cost recommendation: *"I fully retract my push for GPT-5.4. The team's logic in §11.2 regarding the April 23 pretrain shift is sound."*
+- Retracts the second-pass dev-set adversarial-probe density: *"I officially retract the density of my own adversarial probe recommendations for the dev set... A dev set must remain a representative distribution of production traffic; 48% trick-queries violates that."*
+
+**Three minor config tweaks integrated** (the only remaining material gaps):
+
+| Gemini 3rd-pass finding | Severity | Section affected | Change |
+|---|---|---|---|
+| **OP-5 Pruner can mangle OP-3 AST-ified pseudocode** ("make it terse" deletes `elif`, flattens indentation, drops brackets) | LOW | §3.2 (OP-5 row) | Pruner system prompt now explicitly says: *"Do NOT alter syntax/indentation/logic of any pseudocode or fenced code blocks — restrict pruning to natural-language prose only."* |
+| **Dev set is 40% adversarial trick probes** (7 pathology + 3 distractor / 25 = 40%, exceeds the 30% representativeness cap; agent over-evolves toward paranoia at the cost of literal-lookup baseline) | MEDIUM | §5.1, §5.3, §5.5 | Moved 3 pathology probes to rotation pool. Dev set now has 4 pathology + 3 distractor = 7 trick / 25 = 28%. Rotation pool grew 10 → 13, with 3 deferred-pathology probes guaranteed-promoted at round 11. |
+| **JSONL rejection telemetry missing** (Pareto rejections will look like black-box hallucinations on Wednesday morning when EAS/length/0.15-cap interact) | MEDIUM | §7.4 | Added explicit `_kind: 'pareto-rejection'` event with `reason`, `target_degraded`, `drop`, `incumbent_being_compared`. `_kind: 'confirm'` now logs full EAS modifier breakdown (raw scores, multiplier, length penalty, final). New `_kind: 'pareto-rebaseline'` event for round-11. |
+
+**Cost impact**: $0 (pure config + telemetry).
+
+**Decision**: ship. Do not add any more operators, gates, or objectives. The plan now goes to `prereg/p7-v1` tagging.
+
 ---
 
 ## §12 Open questions — RESOLVED at pre-registration (2026-05-10)
@@ -1228,7 +1284,8 @@ P6 antecedents in this repo:
 External review (integrated 2026-05-10):
 - `docs/PHASE7-gemini-critique-2026-05-10.md` — Gemini 3.1 Pro Deep Think (`gemini-3.1-pro-preview` with `thinkingBudget: -1`) review of an earlier draft of this plan. Identified the latent-interpolation fatal flaw, the joint-mean variance trap, the TARE inefficiency, and contributed the 5 creative additions (Contrastive Trajectory Crossover, Dynamic Hard-Negative Probe Weighting, Evolutionary Bloat Control, Tool-Signature Masking, Hypothesis-Driven Backtracking). All 13 of its recommendations are integrated in the current plan; see §11.1 for the change-map.
 - `docs/PHASE7-gemini-critique-2-2026-05-10.md` — Gemini 3.1 Pro Deep Think second-pass adversarial review (deliberately harsh, asked to attack the integrated plan). Surfaced the FATAL Round-11 probe-rotation discontinuity, the Maximin race-to-the-middle pathology, PRP-judges-blind-to-efficiency, Tool-Mask ghost-context-leak, OP-2 trajectory-crossover schizophrenia, gold-probe self-fulfilling prophecy, three code-search-specific pathologies, Frankenstein-prompt language regression, and 5 new creative additions (AST-ification of routing rules, stateful summarization forcing, distractor probes, length penalty, lazy-user query robustness). All 12 second-pass findings integrated; see §11.3 for the change-map.
+- `docs/PHASE7-gemini-critique-3-2026-05-10.md` — Gemini 3.1 Pro Deep Think third-pass review with explicit "diminishing-returns honest" framing. Verdict: **SHIP IT** ("production-ready engineering with publication-grade methodology... better than 95% of the prompt-optimization pipelines currently running in the industry"). Three minor config tweaks integrated (Pruner pseudocode-protection, dilute trick probes <30%, JSONL rejection telemetry); explicit retractions of the GPT-5.4 push and the second-pass dev-set adversarial-probe density. See §11.4.
 
 ---
 
-*Status: ready for review. Resolve §12 open questions, then tag `prereg/p7-v1`.*
+*Status: SHIP-IT verdict from external review. Resolve §12 open questions (already resolved as of 2026-05-10), then tag `prereg/p7-v1` and kick off the run.*
