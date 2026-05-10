@@ -2,7 +2,7 @@
 
 **Created**: 2026-05-10
 **Status**: Draft, ready for pre-registration tag and implementation
-**Reviewed**: 2026-05-10 by (a) Gemini 3.1 Pro Deep Think — THREE PASSES (pass 1 = 13 findings; pass 2 = 12 adversarial findings incl. FATAL Round-11 re-baseline + Maximin race-to-middle + EAS + ghost-context-leak + AST-ification + language-transfer HOMP + pathology probes; pass 3 = SHIP-IT verdict + 3 minor tweaks). All Gemini findings integrated. (b) **GPT-5.5 xhigh** external review — the production target reviewing the plan from inside, surfacing 13 GPT-specific blindspots, methodology attacks, and operational footguns Gemini structurally missed (TPM-vs-RPM concurrency math, 0.15 cap utopia-point bug, asymmetric EAS that rewards GPT under-exploration, Java HOMP omitting GPT-5.5, stale joint-mean/latent-interp/ja-pivot residue, SCS reward-for-stable-wrongness, token-validator multiplicity gaps, OP-2 target-tagging, etc.) — all integrated; see §11.5 for the change-map. Full critique trail at `docs/PHASE7-gemini-critique-2026-05-10.md` (Gemini pass 1), `docs/PHASE7-gemini-critique-2-2026-05-10.md` (pass 2), `docs/PHASE7-gemini-critique-3-2026-05-10.md` (pass 3), `docs/PHASE7-gpt5-5-critique-2026-05-10.md` (GPT-5.5 xhigh).
+**Reviewed**: 2026-05-10 by (a) Gemini 3.1 Pro Deep Think — THREE PASSES (pass 1 = 13 findings; pass 2 = 12 adversarial findings incl. FATAL Round-11 re-baseline + Maximin race-to-middle + EAS + ghost-context-leak + AST-ification + language-transfer HOMP + pathology probes; pass 3 = SHIP-IT verdict + 3 minor tweaks). All Gemini findings integrated. (b) **GPT-5.5 xhigh** external review — the production target reviewing the plan from inside, surfacing 13 GPT-specific blindspots, methodology attacks, and operational footguns Gemini structurally missed (TPM-vs-RPM concurrency math, 0.15 cap utopia-point bug, asymmetric EAS that rewards GPT under-exploration, Java HOMP omitting GPT-5.5, stale joint-mean/latent-interp/ja-pivot residue, SCS reward-for-stable-wrongness, token-validator multiplicity gaps, OP-2 target-tagging, etc.) — all integrated; see §11.5 for the change-map. (c) **User catch** — reasoning-mode transfer gap: optimization runs against thinking-OFF, but power users run thinking-ON; closed by §3.5.2 reasoning-mode operational HOMP gate (Sonnet+thinking + GPT-5.5+reasoning on 15 held-out probes; +$6). Full critique trail at `docs/PHASE7-gemini-critique-2026-05-10.md` (Gemini pass 1), `docs/PHASE7-gemini-critique-2-2026-05-10.md` (pass 2), `docs/PHASE7-gemini-critique-3-2026-05-10.md` (pass 3), `docs/PHASE7-gpt5-5-critique-2026-05-10.md` (GPT-5.5 xhigh).
 **Depends on**: P6 `qshape-v1` artifact (`recommendations.json`, Track A/B JSONLs at commit `7d9eb1d`)
 **Successor to**: docs/SYSTEM_PROMPT_OPT_PLAN.md §6, §8, §9, §11
 
@@ -321,6 +321,38 @@ The 5 dev repos (fastify, gin, flask, ripgrep, ai-chatbot) cover JS/TS, Go, Pyth
 
 If the prompt fails the language-transfer gate, that's diagnostic information — the GEPA loop overfit AST structures of the dev repos. Decision then forks to §3.7.3 gate-failure handling: ship-with-caveat or re-run-with-language-transfer-as-objective.
 
+#### §3.5.2 Reasoning-mode HOMP gate (operational HOMP)
+
+**The problem**: §1 + §2.3 fix reasoning OFF for both targets during optimization (production-parity for default users, and a budget reality — reasoning premiums would 3-5× the run cost). But power users — disproportionately the ones who care about prompt quality — flip thinking ON. As model defaults shift forward (Sonnet 4.7+ may make thinking the default; OpenAI is migrating reasoning into more tiers), this gap widens.
+
+Reasoning-mode behavior diverges from non-reasoning in ways the loop cannot observe:
+
+1. **Tool-call cadence shifts** — reasoning models pre-plan, often using fewer but more deliberate calls. EAS per-stratum windows (`multi-file-flow: [3, 6]`) calibrated on non-reasoning may misfire.
+2. **Routing rules may be ignored** — reasoning models sometimes derive routing from first principles, skipping the prompt's prescriptions. AST-ified `if/then` blocks help less when the model is doing its own decomposition.
+3. **Stateful-summarization (anti-RIF) becomes redundant or harmful** — reasoning models manage their own working memory; our rule may conflict.
+4. **Pruner-driven length cuts may hurt more** — reasoning-on benefits from richer context to ground its planning; an over-aggressively-pruned prompt may starve the planner.
+
+There's a counter-case: prompt optimization on non-reasoning models *generally* transfers to reasoning (DSPy / Auto-CoT literature). But "generally" is not a number for sweet-search.
+
+**Mitigation — operational HOMP (treat reasoning as a deployment mode, like a HOMP family)**:
+
+- **Class A (operational)**: Sonnet 4.6 with **extended-thinking ON** (Anthropic API `thinking: { type: 'enabled', budget_tokens: 8000 }`)
+- **Class B (operational)**: GPT-5.5 reasoning variant (the non-`-instant` tier; OpenAI direct API)
+- Run the unified winning prompt against each on the **15 held-out probes** (NOT dev — held-out is intentionally untouched).
+- **Pass criterion**: each operational HOMP class must score **≥ 0.7 × final_score** on the held-out probes — identical to the model-family HOMP gate (§3.5).
+
+**Why 0.7× and not 0.85×**: reasoning-mode is a different operational regime, not a different model. We expect *some* drift (reasoning may waste tool calls relative to EAS calibration); 0.7× catches catastrophic failure without rejecting normal mode-drift.
+
+**Cost**: 15 probes × 2 modes = 30 runs. Reasoning premium adds roughly 2-3× per call (~$0.20 vs ~$0.06 baseline). **Total: ~$6 — fits inside the $99 buffer below the $420 hard cap.**
+
+**Scheduling**: runs at the same point as the model-family HOMP (§3.5) — after winner selection, before final ship gate. Implementation: `core/prompt-optimization/sweep/p7-reasoning-homp.mjs`.
+
+**If the gate fails**: fork to §3.7.3:
+- **Option 1 (cheap)**: ship as "non-reasoning-default-optimised" with a caveat documenting which target's reasoning mode regressed and by how much. Power users get the caveat in the README.
+- **Option 2 (expensive but principled)**: extend the run with reasoning-on as a 5th-objective (treat reasoning-passing as a Pareto dimension). Adds ~$80 marginal. Still under hard cap.
+
+**Honest residual risk**: this gate validates transfer, it doesn't *optimise* for reasoning. If reasoning users diverge sharply enough that the gate fails, we have to fork. The alternative — pulling reasoning into the optimization loop — would 3-5× the run cost and hit the hard cap. Operational HOMP is the right cost/insurance trade.
+
 ### §3.6 Post-convergence robustness reporting (SCS)
 
 After unified-winner selection:
@@ -448,7 +480,8 @@ We ship **one** prompt, not per-target prompts. Gemini 3.1 Pro Deep Think identi
     - **Floor**: per-target dev score ≥ 0.5 (no collapsed targets)
     - **HOMP gate**: passes both HOMP classes at ≥ 0.7× `final_score` (see §3.5)
     - **Language-transfer gate**: passes the language-absent-from-dev HOMP probe set (§3.5.1) at ≥ 0.6 — anti-Frankenstein-prompt guard per Gemini second-pass §E
-    - **Robustness gate**: passes SCS ≥ 0.8 on both targets (§3.6)
+    - **Reasoning-mode operational HOMP**: passes both reasoning-on classes (Sonnet thinking-ON + GPT-5.5 reasoning) at ≥ 0.7× `final_score` on held-out probes (§3.5.2). Fails → ship-with-caveat for power users, OR fork to reasoning-as-5th-objective extension run.
+    - **Robustness gate**: passes correctness-weighted SCS ≥ 0.8 on both targets (§3.6)
     - **Length cap**: ship variant ≤ 2000 tokens
 11. **Ship file**: `core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md` — one file, the unified prompt, headed with a YAML front-matter block citing the run ID, both raw per-target scores, joint Maximin score, EAS factor, avg tool calls, length, length-penalty, final score, SCS, HOMP scores per class incl. language-transfer.
 
@@ -719,7 +752,8 @@ The work breakdown:
 | **Forensic-metadata JSONL extension** (per GPT-5.5 review §D4) | inline in `gepa.mjs` + `judge-runner.js` | 0.5 day |
 | **Multi-source lazy-user degrader** (deterministic + Sonnet + GPT-5.5) (per GPT-5.5 review §C4) | inline in `lazy-user-degrader.mjs` | 0.5 day |
 | **OpenAI tier ≥ 2 pre-flight check** (per GPT-5.5 review §D1) | inline in `p7-preflight.mjs` | 0.25 day |
-| **Total** | | **~14 days** |
+| **Reasoning-mode operational HOMP runner** (Sonnet thinking-ON + GPT-5.5 reasoning over held-out probes; §3.5.2 — user catch) | `core/prompt-optimization/sweep/p7-reasoning-homp.mjs` (new) | 0.5 day |
+| **Total** | | **~14.5 days** |
 
 ### §7.4 Persistence + resume — MANDATORY
 
@@ -923,10 +957,11 @@ Rule: **NO CLI harness for any stateless call** — judges, reflector, synthesiz
 | Robustness pivots (6 paraphrases × 30 × 2) | — | — | **360** |
 | Round-11 Pareto-front re-baseline (6 incumbents × 5 new probes × 2 targets) — Gemini 2nd-pass §B1 | — | — | **60** |
 | GPT-5.5 added to Java language-transfer HOMP (10 probes × 1 extra target) — GPT-5.5 review §B2 | — | — | **10** |
+| Reasoning-mode operational HOMP (Sonnet thinking-ON + GPT-5.5 reasoning × 15 held-out probes) — §3.5.2 user catch | — | — | **30** |
 | Lazy-user degraded queries (25 × 2 targets) — Gemini 2nd-pass §D5 | — | — | **50** |
 | Adversarial counter-probes on winner (10 × 2) — Gemini 2nd-pass §B4 | — | — | **20** |
 | Language-transfer HOMP probes (10 × Sonnet only as the production check) — Gemini 2nd-pass §E | — | — | **10** |
-| **Total joint runs** | | | **~3650** |
+| **Total joint runs** | | | **~3680** |
 
 Cost split:
 
@@ -957,7 +992,7 @@ Other roles:
 
 **Other roles total: ~$9** (incl. $1.40 AI-assisted reflection + new lazy-user query degrader at ~$0.30 + adversarial counter-probe authoring via Sonnet at ~$0.25).
 
-**Headline total: ~$321** (incl. $2 backwards-compat replay + $1.40 Gemini Deep Think reviews + ~$10 of Gemini 2nd-pass-driven additions + ~$1 of GPT-5.5 review-driven additions: GPT-5.5 added to Java HOMP +$0.50, GPT-5.5 in lazy-user degrader +$0.30 amortized, GPT-5.5 in OP-3 rotation +$0.20 amortized), with 30% safety buffer = **$420 hard cap**. **One-time $50 OpenAI Tier-2 upgrade is operationally mandatory** (per GPT-5.5 review §D1) but not part of the run cost — it's a prerequisite for reasonable wall-time.
+**Headline total: ~$327** (incl. $2 backwards-compat replay + $1.40 Gemini Deep Think reviews + ~$10 of Gemini 2nd-pass-driven additions + ~$1 of GPT-5.5 review-driven additions + **$6 reasoning-mode operational HOMP** per §3.5.2 — Sonnet thinking-ON + GPT-5.5 reasoning over 15 held-out probes, validating transfer to power-user reasoning mode), with safety buffer = **$420 hard cap**. **One-time $50 OpenAI Tier-2 upgrade is operationally mandatory** (per GPT-5.5 review §D1) but not part of the run cost — it's a prerequisite for reasonable wall-time.
 
 This is **$99 more than a GPT-5.4 run would cost**. The user accepted this premium for pretrain future-proofing; rationale documented in §11.2.
 
@@ -1057,6 +1092,9 @@ core/prompt-optimization/
     │                                          per GPT-5.5 review §D1)
     ├── p7-persist.mjs                          (extends with appendFsynced wrapper using
     │                                          fs.fsyncSync; §7.4 per GPT-5.5 review §D2)
+    ├── p7-reasoning-homp.mjs                  (operational HOMP runner: Sonnet
+    │                                          thinking-ON + GPT-5.5 reasoning on
+    │                                          held-out probes; §3.5.2 — user catch)
     └── (existing P6 files unchanged)
 
 core/prompt-optimization/stats/
@@ -1130,6 +1168,7 @@ tests/unit/prompt-optimization/
 | **n=6 Pareto noise overweighted as discriminative variance** (GPT-5.5 review §C5) | Small-front variance can be judge-noise rather than probe difficulty. | Mitigated by 2-round stability gate (variance only counts after probe evaluated ≥2 rounds) + judge-noise floor of 0.05 in §3.1 weighting. |
 | **Forensic-metadata gap in JSONL telemetry** (GPT-5.5 review §D4) | Without model_id/api_path/temperature/commit/probe_hash/token_counts/judge_panel logged, post-hoc explanation of GPT-vs-Sonnet deltas is impossible. | Mitigated by extending confirm-event schema (§7.4) to log all forensic metadata. |
 | **Fenced-python pseudocode over-literally interpreted** (GPT-5.5 review §B4) | GPT-5.5 may treat ```python``` blocks as executable examples rather than routing-policy pseudocode. | Mitigated by labelling pseudocode blocks `# routing policy pseudocode — NOT executable code` and preferring decision tables for high-level routing. |
+| **Reasoning-mode transfer gap — power users run thinking ON; we optimise OFF** (user catch, post-GPT-review) | Optimization runs against `extended-thinking=OFF` Sonnet and `GPT-5.5-instant` (non-reasoning) for cost and production-default parity. Power users — disproportionately the prompt-quality-sensitive cohort — flip thinking ON. EAS per-stratum windows, AST-ified routing, stateful-summarization rules, and Pruner-driven length cuts all may misfire under reasoning. | Mitigated by §3.5.2 reasoning-mode operational HOMP gate: 30 runs (~$6) on Sonnet+thinking-ON and GPT-5.5-reasoning over the 15 held-out probes. Pass criterion ≥0.7× `final_score` per class. Fail → ship-with-caveat OR §3.7.3 fork to reasoning-as-5th-objective extension run (~$80). Validates transfer, doesn't optimise for it — accepted cost/insurance trade. |
 
 ---
 
@@ -1270,6 +1309,8 @@ After Gemini's three-pass ship-it verdict, we commissioned an external review by
 
 **Cost impact of GPT-5.5 review integrations**: +$1 (Java HOMP for GPT-5.5 +$0.50, GPT-5.5 lazy-user generator +$0.30 amortized, GPT-5.5 OP-3 rotation +$0.20 amortized). New total: **~$321, hard cap $420**.
 
+**Additional user-caught gap (post-GPT-review)**: §3.5.2 reasoning-mode operational HOMP gate adds $6 (15 held-out probes × 2 reasoning modes × ~$0.20 reasoning premium). New running total: **~$327, hard cap unchanged at $420**.
+
 **Operational readiness change**: tier-2 OpenAI billing is now operationally mandatory. This is a $50 one-time pre-flight cost, not added to the run budget — it's a prerequisite for the run wall-time being reasonable.
 
 **Decision**: ship after these pre-registration fixes (now integrated). The plan now goes to `prereg/p7-v1` tagging.
@@ -1300,7 +1341,7 @@ All locked. Ready for `prereg/p7-v1` tag.
 5. **Day 4**: dry-run on 3 probes × 1 round to validate end-to-end (cost: ~$1). Fix bugs.
 6. **Day 5**: tag `prereg/p7-v1`. Push. Run pre-flight script. If it fails, fix and re-tag.
 7. **Days 6–8**: run full GEPA (joint Sonnet 4.6 + GPT-5.5-instant). Manual reflection between rounds. Trajectory written to disk continuously — resumable.
-8. **Day 9**: HOMP (MiMo + Qwen) + SCS computation + GPT-5.4 backwards-compat replay (~$2-5) + winning prompt selection.
+8. **Day 9**: HOMP (MiMo + Qwen) + language-transfer HOMP (Java × MiMo + Sonnet + GPT-5.5) + **reasoning-mode operational HOMP** (Sonnet thinking-ON + GPT-5.5 reasoning over 15 held-out probes; §3.5.2) + correctness-weighted SCS + GPT-5.4 backwards-compat replay (~$2-5) + winning prompt selection.
 9. **Day 10**: write up `core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md` + `recommendations.json` + the run report.
 10. **Day 11**: tag `release/p7-v1`. Push. Update CLAUDE.md / sweet-search MCP to ship the new prompt.
 
