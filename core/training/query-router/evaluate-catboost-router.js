@@ -35,7 +35,7 @@ import { extractAllFeatures } from './features/extractor.js';
 
 // Load ALL evaluation query sets
 function loadAllQuerySets() {
-  const querySetsDir = join(__dirname, '../evaluation/query-sets');
+  const querySetsDir = join(__dirname, './query-sets');
   const files = readdirSync(querySetsDir).filter(f => f.endsWith('.json'));
 
   let allQueries = [];
@@ -109,7 +109,7 @@ function getExpectedRoute(query) {
 }
 
 // Check if prediction matches expected (utility grading)
-// MATCHES: evaluation/lib/metrics.js::calculateUtilityRouteAccuracy
+// MATCHES: prior evaluation/lib/metrics.js::calculateUtilityRouteAccuracy (removed 2026-05-11)
 function isUtilityMatch(predicted, expected, queryText) {
   // Strict match always counts
   if (predicted === expected) {
