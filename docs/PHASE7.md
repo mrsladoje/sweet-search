@@ -222,25 +222,58 @@ A prompt that's high-accuracy but brittle under paraphrasing won't enter the Par
 
 **This remains the load-bearing methodology innovation over P6.**
 
-### §3.4 Manual reflection protocol
+### §3.4 Manual reflection protocol — AI-assisted
 
-After every GEPA round:
+After every GEPA round, the reflection step is **AI-assisted by Gemini 3.1 Pro Deep Think** (`gemini-3.1-pro-preview` with `thinkingBudget: -1`). This standardises the reflection process, brings a different model family's perspective to per-round failure analysis, and reduces human-fatigue bias over a 20-round run.
 
-1. Look at the top 3 failures of the round's survivor (or top failures preventing Pareto entry).
-2. **Decision options**:
-   - **No edit** — round stands as-is.
-   - **Hand-craft a mutation** — author a 4th mutation manually, evaluate on next round's screen.
-   - **Inject a hint** — add a high-level structural insight to the reflector's prompt (e.g., "in this domain, agents struggle with X — emphasize this in mutations").
-3. **Log every decision** in `core/prompt-optimization/data/p7-decisions.md` with format:
-   ```
-   ## Round N — Target T
-   - **Failures observed**: <list of 3 failures + dev probe IDs>
-   - **Decision**: no-edit | hand-craft | inject-hint
-   - **Rationale**: <1-2 sentences>
+**Protocol per round**:
+
+1. **Auto-build reflection input package** (`p7-reflect.mjs`):
+   - The round's survivor variant (full prompt text + score breakdown per probe per target)
+   - Top 3 failure clusters (dev probes where joint score ≤ 0.4, grouped by stratum/repo/tool)
+   - The round's mutation lineage (what operator produced this candidate, from which parent)
+   - Trajectory excerpts for each failure (tool calls, agent answers)
+   - Current Pareto front summary (variant IDs + scores)
+   - Convergence trajectory: joint-best per round so far
+
+2. **Gemini Deep Think reflection call**:
+   - System prompt: *"You are a senior IR researcher reviewing a single round of a GEPA prompt-evolution loop for an agentic code-search system. Identify the top 3 failure clusters, propose a structural insight (not a literal prompt edit), assess plateau/breakthrough signals in the trajectory, and recommend whether the human should hand-craft a 4th mutation or inject a hint into the next round's reflector."*
+   - Input: the package from step 1
+   - Output budget: ~1500 tokens
+   - Cost: ~$0.07/round
+3. **User reviews Gemini's report** — typically 2-3 minutes per round. Three decision options:
+   - **No edit** — round stands as-is, Gemini's analysis logged.
+   - **Hand-craft a mutation** — author a 4th mutation manually (informed by Gemini's recommendation), evaluate on next round's screen.
+   - **Inject a hint** — modify the next round's reflector prompt with a high-level structural insight (e.g., "in this domain, agents struggle with X — emphasise this in mutations").
+4. **Log every decision** in `core/prompt-optimization/data/p7-decisions.md` with format:
+   ```markdown
+   ## Round N
+   ### Gemini Deep Think summary (auto)
+   <Gemini's reflection output, verbatim>
+
+   ### Failures observed (top 3)
+   - <list of 3 failures + dev probe IDs>
+
+   ### User decision
+   - **Action**: no-edit | hand-craft | inject-hint
+   - **Rationale**: <1-2 sentences explaining accept/modify/reject of Gemini's recommendation>
    - **Edit content (if any)**: <verbatim>
    ```
 
-**Rule**: hand-edits MUST be motivated by dev-set failures only, never held-out. This is the standard for human-in-the-loop GEPA to remain defensible.
+**Rules**:
+
+- Hand-edits MUST be motivated by dev-set failures only, never held-out probes. This is the standard for human-in-the-loop GEPA to remain defensible.
+- User can ACCEPT, MODIFY, or REJECT Gemini's recommendation — but every decision (incl. no-edit) is logged so the publication writeup can show provenance.
+- Gemini's output is treated as advisory, not authoritative. The user retains final call.
+
+**Why Gemini Deep Think specifically**:
+
+- Different family from Kimi K2.6 (the in-loop reflector) — independent perspective, no correlated blind spots.
+- Excellent reasoning quality with dynamic thinking (we validated this on the §11.1 review of the plan itself — caught a fatal flaw and proposed 5 creative additions).
+- Direct API, ~5-10s per call. No CLI harness overhead.
+- Cost ~$0.07/call × 20 rounds = ~$1.40 total. Trivial.
+
+**Total cost added by AI-assisted reflection**: ~$1.40 over the run. Already included in §8 cost envelope under "Reflector + Synth" line (which now spans Kimi K2.6 in-loop reflections + Gemini round-end reviews).
 
 ### §3.5 HOMP — held-out model panel
 
@@ -510,6 +543,7 @@ The work breakdown:
 | **Persistence + resume scaffolding** (see §7.4) | `core/prompt-optimization/sweep/p7-persist.mjs` (new) | 0.5 day |
 | **Pre-flight checklist runner** (see §7.5) | `core/prompt-optimization/sweep/p7-preflight.mjs` (new) | 0.5 day |
 | **Verbose logger** (see §7.6) | inline in gepa.mjs | included above |
+| AI-assisted reflection runner (Gemini Deep Think round-end calls) | `core/prompt-optimization/sweep/p7-reflect.mjs` (new) | 0.25 day |
 | Decision log scaffold | `core/prompt-optimization/data/p7-decisions.md` template | 1 hr |
 | Unit tests for new code (incl. token-validator whitespace cases, Maximin scoring, Pareto-gated TARE) | `tests/unit/prompt-optimization/p7-*.test.js` | 1.5 day |
 | **Total** | | **~7 days** |
@@ -648,6 +682,7 @@ Other roles:
 | Bucket | Calc | Cost |
 |---|---|---|
 | Reflector (Kimi K2.6 reasoning, OP-1 + OP-2 trajectory-crossover when applicable) | ~30 calls × $0.013 | $0.39 |
+| AI-assisted manual-reflection (Gemini 3.1 Pro Deep Think, between every round) | 20 calls × $0.07 | $1.40 |
 | OP-3 Persona Pivot (Sonnet 4.6, single rewrite) | ~7 calls × $0.045 | $0.32 |
 | OP-4 Tool-Signature Masking (Kimi K2.6) | ~7 calls × $0.013 | $0.09 |
 | OP-5 Pruner (Kimi K2.6, smaller call ~3K in + 1K out) | ~6 calls × $0.008 | $0.05 |
@@ -659,11 +694,13 @@ Other roles:
 | SCS robustness embeddings (Gemini Embedding 2 for SS metric only — NOT for any mutation operator anymore) | ~250 calls × ~1K tokens × $0.20/1M | $0.05 |
 | IAA (judge-only cost; human time NOT included) | ~180 calls × $0.0007 | $0.13 |
 
-**Other roles total: ~$6**.
+**Other roles total: ~$8** (incl. $1.40 AI-assisted reflection).
 
-**Headline total: ~$306** (incl. $2 backwards-compat replay), with 30% safety buffer = **$400 hard cap**.
+**Headline total: ~$308** (incl. $2 backwards-compat replay + $1.40 Gemini Deep Think reviews), with 30% safety buffer = **$400 hard cap**.
 
 This is **$99 more than a GPT-5.4 run would cost**. The user accepted this premium for pretrain future-proofing; rationale documented in §11.2.
+
+**Mid-run early-stop**: actual cost may be substantially lower if the patience rule fires before round 20. A run that converges at round 12 saves ~$80 (8 rounds × ~$10/round). User reviews convergence between rounds and can call early stop at any point — see §3.1 patience + plateau-breakthrough rules.
 
 ### §8.1 Compression options (if budget tighter)
 
@@ -736,6 +773,8 @@ core/prompt-optimization/
     ├── author-probes.mjs                     (utility for probe authoring)
     ├── p7-persist.mjs                        (resume scaffold — §7.4)
     ├── p7-preflight.mjs                      (pre-run checklist — §7.5)
+    ├── p7-reflect.mjs                        (AI-assisted reflection runner —
+    │                                          calls Gemini Deep Think between rounds; §3.4)
     └── (existing P6 files unchanged)
 
 core/prompt-optimization/stats/
@@ -851,16 +890,18 @@ Gemini 3.1 Pro Deep Think recommended GPT-5.4 over GPT-5.5-instant on cost groun
 
 ---
 
-## §12 Open questions to resolve at pre-registration time
+## §12 Open questions — RESOLVED at pre-registration (2026-05-10)
 
-1. **Codex target: confirm GPT-5.5-instant** (user strategic override of Gemini's GPT-5.4 recommendation; rationale in §11.2). +$99 cost vs GPT-5.4, buys pretrain future-proofing as 5.6+ will likely be 5.5-derived. Backwards-compat post-hoc replay on GPT-5.4 ($2-5) verifies transfer-down. **Recommendation: lock GPT-5.5-instant** at pre-reg time, with backwards-compat replay scheduled for §13 day 9.
-2. **Run length: 15 rounds (~$162) or 20 rounds (~$207)?** User picks based on budget. Recommendation: 20 (the convergence proof is worth $45).
-3. **Probe sources beyond P6 — which post-cutoff repos?** Options: deno 2.x, bun 2026, zig 0.14. Pick at authoring time.
-4. **Manual reflection — every round, or only when GEPA plateaus?** "Every round" maximises engineering value; "on plateau" is more scientifically clean. The decision log makes either defensible.
-5. **HOMP class B (Qwen 3.6 Plus) — direct API via Alibaba DashScope, or via opencode CLI harness?** DashScope direct is faster and cheaper; opencode CLI matches how some real users would deploy. **Recommended: DashScope direct if API key available, opencode CLI as fallback.** Either way, this is the only call path in P7 that uses a harness.
-6. **OP-4 Tool-Signature Masking alias scheme: stable per-run or randomized per call?** Stable is reproducible; randomized prevents the optimizer from memorizing the alias-mapping. **Recommended: randomized per call** (mappings logged to trajectory for audit).
+All 6 questions are now locked. Decisions:
 
-These are pre-registration-tag-time decisions, not implementation-time decisions.
+1. **Codex target: GPT-5.5-instant** ✅ — user strategic override of Gemini's GPT-5.4 recommendation; rationale in §11.2. +$99 cost vs GPT-5.4 buys pretrain future-proofing as 5.6+ will likely be 5.5-derived. Backwards-compat post-hoc replay on GPT-5.4 (~$2-5) verifies transfer-down. Scheduled for §13 day 9.
+2. **Run length: 20-round budget, stop-when-plateau-fires** ✅ — lock 20 as the budget cap; rely on the patience rule (5 rounds without improvement) + plateau-breakthrough extension (§3.1) to stop early when convergence is reached. This may end at round 12-15 if the trajectory is clean; only goes to 20 if there are late-round step-changes. The user reviews convergence between rounds and can stop early at any point.
+3. **Probe corpus: deno 2.x** ✅ — for fresh hand-authored post-cutoff probes (covering the 30-40 non-P6-derived probes per §5.4). Most representative of typical Codex/Claude Code agentic-search use.
+4. **Manual reflection cadence: every round, AI-assisted** ✅ — between every round, Gemini 3.1 Pro Deep Think (`gemini-3.1-pro-preview` with `thinkingBudget: -1`) generates a reflection report on the round's results. User reviews Gemini's report, decides what to act on, logs the decision to `p7-decisions.md`. Cost: ~$0.07/round × 20 = ~$1.40 total. See §3.4 for protocol.
+5. **HOMP class B (Qwen 3.6 Plus): opencode CLI** ✅ — user prefers harness-realism over direct-API speed. Real Qwen users on opencode see the prompt through the same CLI overhead, including system-context injection. Using opencode CLI for HOMP makes the "does it transfer to opencode users?" claim more honest. The only call path in P7 that uses a CLI harness; documented as such in §10 risk register. **Reminder**: Qwen 3.6 Plus is HOMP-only, NOT a target — we ship a unified prompt optimised for Sonnet+GPT-5.5; Qwen validates cross-family transfer.
+6. **OP-4 Tool-Signature Masking aliases: randomized per call** ✅ — each call gets a fresh permutation of `[[TOOL_ALPHA/BETA/GAMMA/DELTA]]` aliases mapped to `[[ss-search/ss-find/ss-semantic/structural]]`. Mapping logged to the trajectory JSONL for audit. Prevents the optimizer from memorising the alias scheme and gaming it.
+
+All locked. Ready for `prereg/p7-v1` tag.
 
 ---
 
