@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "bench": "ast-tester-probes",
+  "createdAt": "2026-05-10",
+  "seed": 42,
+  "stratifyBy": "language",
+  "method": "stratified-random-shuffle",
+  "totalProbes": 40,
+  "devCount": 25,
+  "heldoutCount": 15,
+  "perLanguage": {
+    "typescript": {
+      "dev": [
+        "TS-003",
+        "TS-004",
+        "TS-005",
+        "TS-007",
+        "TS-008"
+      ],
+      "heldout": [
+        "TS-001",
+        "TS-002",
+        "TS-006"
+      ]
+    },
+    "rust": {
+      "dev": [
+        "RS-001",
+        "RS-003",
+        "RS-004",
+        "RS-005",
+        "RS-008"
+      ],
+      "heldout": [
+        "RS-002",
+        "RS-006",
+        "RS-007"
+      ]
+    },
+    "kotlin": {
+      "dev": [
+        "KT-002",
+        "KT-003",
+        "KT-004",
+        "KT-005",
+        "KT-006"
+      ],
+      "heldout": [
+        "KT-001",
+        "KT-007",
+        "KT-008"
+      ]
+    },
+    "csharp": {
+      "dev": [
+        "CS-001",
+        "CS-002",
+        "CS-003",
+        "CS-005",
+        "CS-008"
+      ],
+      "heldout": [
+        "CS-004",
+        "CS-006",
+        "CS-007"
+      ]
+    },
+    "cpp": {
+      "dev": [
+        "CPP-002",
+        "CPP-003",
+        "CPP-004",
+        "CPP-006",
+        "CPP-008"
+      ],
+      "heldout": [
+        "CPP-001",
+        "CPP-005",
+        "CPP-007"
+      ]
+    }
+  },
+  "discipline": "Iterate freely on dev. NEVER inspect per-query heldout failures during dev \u2014 only aggregate at milestones (per CLAUDE.md BEIR-grade methodology)."
+}

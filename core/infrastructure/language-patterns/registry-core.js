@@ -221,6 +221,7 @@ export const CORE_LANGUAGES = {
       enum: /^(?:pub\s+)?enum\s+(\w+)/,
       trait: /^(?:pub\s+)?trait\s+(\w+)/,
       impl: /^impl(?:<[^>]+>)?\s+(?:\w+\s+for\s+)?(\w+)/,
+      macro: /^macro_rules!\s+(\w+)/,
     },
     graph: {
       entities: {
@@ -232,6 +233,7 @@ export const CORE_LANGUAGES = {
         type: /^(?:pub\s+)?type\s+(\w+)/,
         const: /^(?:pub\s+)?const\s+(\w+)\s*:/,
         static: /^(?:pub\s+)?static\s+(\w+)\s*:/,
+        macro: /^macro_rules!\s+(\w+)/,
       },
       relationships: {
         use: /^use\s+([\w:]+)(?:::\{([^}]+)\})?/,
@@ -310,22 +312,22 @@ export const CORE_LANGUAGES = {
       block: ["/*", "*/"],
     },
     chunker: {
-      class: /(?:public|private|internal|protected)?\s*(?:static|sealed|abstract)?\s*(?:partial\s+)?class\s+(\w+)/,
-      interface: /(?:public|internal)?\s*interface\s+(\w+)/,
-      method: /(?:public|private|protected|internal)\s+(?:static\s+)?(?:async\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*\(/,
-      property: /(?:public|private|protected|internal)\s+(?:[\w<>\[\]?]+)\s+(\w+)\s*\{/,
-      enum: /(?:public|internal)?\s*enum\s+(\w+)/,
-      struct: /(?:public|internal)?\s*(?:readonly\s+)?struct\s+(\w+)/,
+      class: /^\s*(?:public|private|internal|protected)?\s*(?:static|sealed|abstract)?\s*(?:partial\s+)?class\s+(\w+)/,
+      interface: /^\s*(?:public|internal)?\s*interface\s+(\w+)/,
+      method: /^\s*(?:public|private|protected|internal)\s+(?:static\s+)?(?:async\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*\(/,
+      property: /^\s*(?:public|private|protected|internal)\s+(?:[\w<>\[\]?]+)\s+(\w+)\s*\{/,
+      enum: /^\s*(?:public|internal)?\s*enum\s+(\w+)/,
+      struct: /^\s*(?:public|internal)?\s*(?:readonly\s+)?struct\s+(\w+)/,
     },
     graph: {
       entities: {
-        class: /(?:public|private|internal|protected)?\s*(?:static|sealed|abstract)?\s*(?:partial\s+)?class\s+(\w+)(?:\s*:\s*([\w,\s<>]+))?/,
-        interface: /(?:public|internal)?\s*interface\s+(\w+)(?:\s*:\s*([\w,\s<>]+))?/,
-        enum: /(?:public|internal)?\s*enum\s+(\w+)/,
-        struct: /(?:public|internal)?\s*(?:readonly\s+)?struct\s+(\w+)/,
-        method: /(?:public|private|protected|internal)\s+(?:static\s+)?(?:async\s+)?(?:override\s+)?(?:virtual\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*\(([^)]*)\)/,
-        property: /(?:public|private|protected|internal)\s+(?:static\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*\{/,
-        field: /(?:public|private|protected|internal)\s+(?:static\s+)?(?:readonly\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*[;=]/,
+        class: /^\s*(?:public|private|internal|protected)?\s*(?:static|sealed|abstract)?\s*(?:partial\s+)?class\s+(\w+)(?:\s*:\s*([\w,\s<>]+))?/,
+        interface: /^\s*(?:public|internal)?\s*interface\s+(\w+)(?:\s*:\s*([\w,\s<>]+))?/,
+        enum: /^\s*(?:public|internal)?\s*enum\s+(\w+)/,
+        struct: /^\s*(?:public|internal)?\s*(?:readonly\s+)?struct\s+(\w+)/,
+        method: /^\s*(?:public|private|protected|internal)\s+(?:static\s+)?(?:async\s+)?(?:override\s+)?(?:virtual\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*\(([^)]*)\)/,
+        property: /^\s*(?:public|private|protected|internal)\s+(?:static\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*\{/,
+        field: /^\s*(?:public|private|protected|internal)\s+(?:static\s+)?(?:readonly\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*[;=]/,
       },
       relationships: {
         using: /^using\s+([\w.]+)\s*;/,
