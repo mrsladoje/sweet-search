@@ -9,8 +9,6 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const rootDir = join(__dirname, '../..');
-
 function loadTrainingQueries() {
   const queries = new Set();
   const hardNegsPath = join(__dirname, '../output/hard_negatives.json');
@@ -23,7 +21,7 @@ function loadTrainingQueries() {
 
 function loadExistingBenchmarkQueries() {
   const queries = new Set();
-  const querySetsDir = join(rootDir, 'evaluation/query-sets');
+  const querySetsDir = join(__dirname, '../query-sets');
   const files = readdirSync(querySetsDir).filter(f => f.endsWith('.json') && !f.includes('novel') && f !== 'schema.json');
   for (const file of files) {
     const data = JSON.parse(readFileSync(join(querySetsDir, file), 'utf-8'));
@@ -33,7 +31,7 @@ function loadExistingBenchmarkQueries() {
 }
 
 function loadNovelQueries() {
-  const querySetsDir = join(rootDir, 'evaluation/query-sets');
+  const querySetsDir = join(__dirname, '../query-sets');
   const novelFiles = readdirSync(querySetsDir).filter(f => f.includes('novel') && f.endsWith('.json'));
   const queries = [];
   for (const file of novelFiles) {

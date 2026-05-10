@@ -94,8 +94,6 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:bench": "vitest bench",
-    "eval": "node evaluation/run-evaluation.js",
-    "eval:by-lang": "node evaluation/run-evaluation.js --by-language",
     "eval:bench": "node eval/run_all.js",
     "eval:bench:check": "node eval/run_all.js --regression-check",
     "eval:bench:baseline": "node eval/run_all.js --save-baseline",
