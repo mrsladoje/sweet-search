@@ -11,7 +11,7 @@
 ```
 ITERATION:        29         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      d01617d    # most recent shipped commit before this plan
+LAST_COMMIT:      a27da5c    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -228,7 +228,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 #### C6. PHP
 **Type:** new-language
 **Idioms:** traits, generators, enums (8.1+), readonly properties, constructor property promotion (8.0+), match expression.
-**Status:** [x] DONE @ pending — Repo: slimphp/Slim @ 025043ec (MIT, 72 .php files). 8 probes PHP-001..PHP-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting `final class CallableResolver implements AdvancedCallableResolverInterface` + multi-line typed-nullable constructor). All 8 gold verified. Index: 90s (1:30, well under 5min), 654 embeddings. Baseline: 4 PASS / 2 PARTIAL / 2 FAIL — strong baseline. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 10 existing lang packs zero PASS→FAIL flips.
+**Status:** [x] DONE @ a27da5c — Repo: slimphp/Slim @ 025043ec (MIT, 72 .php files). 8 probes PHP-001..PHP-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting `final class CallableResolver implements AdvancedCallableResolverInterface` + multi-line typed-nullable constructor). All 8 gold verified. Index: 90s (1:30, well under 5min), 654 embeddings. Baseline: 4 PASS / 2 PARTIAL / 2 FAIL — strong baseline. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 10 existing lang packs zero PASS→FAIL flips.
 
 #### C7. C (distinct from C++)
 **Type:** new-language
