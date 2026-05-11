@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:52:53.553Z",
+  "summary": {
+    "counts": {
+      "PASS": 1,
+      "PARTIAL": 0,
+      "FAIL": 2
+    },
+    "totalMs": 146,
+    "avgMs": 49,
+    "n": 3
+  },
+  "results": [
+    {
+      "id": "DN-JS-001",
+      "repo": "javascript",
+      "query": "axios request interceptor chain that runs before sending",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "index.d.ts",
+        "startLine": 569,
+        "endLine": 572,
+        "symbol": "AxiosInterceptorOptions",
+        "symbolType": "interface",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 70,
+      "error": null
+    },
+    {
+      "id": "DN-JS-002",
+      "repo": "javascript",
+      "query": "axios cancel token implementation for aborting in-flight requests",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/cancel/CancelToken.js",
+        "startLine": 5,
+        "endLine": 133,
+        "symbol": "CancelToken",
+        "symbolType": "class",
+        "score": 0.5383080244064331,
+        "presentation": "full"
+      },
+      "wallMs": 37,
+      "error": null
+    },
+    {
+      "id": "DN-JS-003",
+      "repo": "javascript",
+      "query": "axios transform request data based on content type",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "lib/core/Axios.js",
+        "startLine": 22,
+        "endLine": 238,
+        "symbol": "Axios",
+        "symbolType": "class",
+        "score": 0.746389829359514,
+        "presentation": "full"
+      },
+      "wallMs": 39,
+      "error": null
+    }
+  ]
+}

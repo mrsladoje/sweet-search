@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:53:15.396Z",
+  "summary": {
+    "counts": {
+      "PASS": 0,
+      "PARTIAL": 0,
+      "FAIL": 1
+    },
+    "totalMs": 41,
+    "avgMs": 41,
+    "n": 1
+  },
+  "results": [
+    {
+      "id": "DN-EL-001",
+      "repo": "elixir",
+      "query": "jason encoder fast path for binary and number types",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "lib/encoder.ex",
+        "startLine": 209,
+        "endLine": 211,
+        "symbol": "encode",
+        "symbolType": "function",
+        "score": 0.4383460283279419,
+        "presentation": "full"
+      },
+      "wallMs": 41,
+      "error": null
+    }
+  ]
+}

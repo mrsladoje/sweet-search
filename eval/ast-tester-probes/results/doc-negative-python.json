@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:53:04.483Z",
+  "summary": {
+    "counts": {
+      "PASS": 1,
+      "PARTIAL": 0,
+      "FAIL": 2
+    },
+    "totalMs": 120,
+    "avgMs": 40,
+    "n": 3
+  },
+  "results": [
+    {
+      "id": "DN-PY-001",
+      "repo": "python",
+      "query": "click option decorator that adds a flag to a command",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "src/click/decorators.py",
+        "startLine": 421,
+        "endLine": 524,
+        "symbol": "version_option",
+        "symbolType": "function",
+        "score": 0.5737801194190979,
+        "presentation": "full"
+      },
+      "wallMs": 54,
+      "error": null
+    },
+    {
+      "id": "DN-PY-002",
+      "repo": "python",
+      "query": "click command argument parsing for positional and variadic arguments",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "src/click/decorators.py",
+        "startLine": 324,
+        "endLine": 349,
+        "symbol": "argument",
+        "symbolType": "function",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 36,
+      "error": null
+    },
+    {
+      "id": "DN-PY-003",
+      "repo": "python",
+      "query": "click context manager propagating parent invocation state",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "src/click/_termui_impl.py",
+        "startLine": 386,
+        "endLine": 414,
+        "symbol": "_pager_contextmanager",
+        "symbolType": "function",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 30,
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:53:06.848Z",
+  "summary": {
+    "counts": {
+      "PASS": 0,
+      "PARTIAL": 0,
+      "FAIL": 2
+    },
+    "totalMs": 101,
+    "avgMs": 51,
+    "n": 2
+  },
+  "results": [
+    {
+      "id": "DN-JV-001",
+      "repo": "java",
+      "query": "gson type adapter delegate dispatch for polymorphic serialization",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "gson/src/main/java/com/google/gson/internal/bind/TreeTypeAdapter.java",
+        "startLine": 36,
+        "endLine": 209,
+        "symbol": "TreeTypeAdapter",
+        "symbolType": "class",
+        "score": 0.6408781253695489,
+        "presentation": "full"
+      },
+      "wallMs": 71,
+      "error": null
+    },
+    {
+      "id": "DN-JV-002",
+      "repo": "java",
+      "query": "gson Json reader streaming parse from input source",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "gson/src/main/java/com/google/gson/JsonStreamParser.java",
+        "startLine": 28,
+        "endLine": 125,
+        "symbol": "JsonStreamParser",
+        "symbolType": "class",
+        "score": 0.5535433292388916,
+        "presentation": "full"
+      },
+      "wallMs": 30,
+      "error": null
+    }
+  ]
+}
