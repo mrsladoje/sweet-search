@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:47:16.047Z",
+  "summary": {
+    "counts": {
+      "PASS": 2,
+      "PARTIAL": 0,
+      "FAIL": 2
+    },
+    "totalMs": 139,
+    "avgMs": 35,
+    "n": 4
+  },
+  "results": [
+    {
+      "id": "DP-CPP-001",
+      "repo": "cpp",
+      "query": "what license is google highway SIMD library under",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hwy/contrib/math/math-inl.h",
+        "startLine": 1,
+        "endLine": 73,
+        "symbol": "CallAcos",
+        "symbolType": "function",
+        "score": 0.3910423517227173,
+        "presentation": "full"
+      },
+      "wallMs": 50,
+      "error": null
+    },
+    {
+      "id": "DP-CPP-002",
+      "repo": "cpp",
+      "query": "google highway portable SIMD library overview features",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hwy/contrib/thread_pool/thread_pool.h",
+        "startLine": 753,
+        "endLine": 776,
+        "symbol": "Caller",
+        "symbolType": "struct",
+        "score": 0.28278782963752747,
+        "presentation": "full"
+      },
+      "wallMs": 36,
+      "error": null
+    },
+    {
+      "id": "DP-CPP-003",
+      "repo": "cpp",
+      "query": "CMakeLists root build configuration with target architecture flags",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "CMakeLists.txt",
+        "startLine": 666,
+        "endLine": 730,
+        "symbol": "chunk_13",
+        "symbolType": "paragraph",
+        "score": 0.3668384253978729,
+        "presentation": "full"
+      },
+      "wallMs": 29,
+      "error": null
+    },
+    {
+      "id": "DP-CPP-004",
+      "repo": "cpp",
+      "query": "github actions build test workflow for highway",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": ".github/workflows/build_test.yml",
+        "startLine": 19,
+        "endLine": 19,
+        "symbol": "group",
+        "symbolType": "topKey",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 24,
+      "error": null
+    }
+  ]
+}

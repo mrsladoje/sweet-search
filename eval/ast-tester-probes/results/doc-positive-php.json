@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:47:29.039Z",
+  "summary": {
+    "counts": {
+      "PASS": 1,
+      "PARTIAL": 0,
+      "FAIL": 3
+    },
+    "totalMs": 142,
+    "avgMs": 36,
+    "n": 4
+  },
+  "results": [
+    {
+      "id": "DP-PHP-001",
+      "repo": "php",
+      "query": "what license is slim php micro framework under",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "Slim/Interfaces/Psr17FactoryProviderInterface.php",
+        "startLine": 21,
+        "endLine": 24,
+        "symbol": "setFactories",
+        "symbolType": "method",
+        "score": 0.4444619910798879,
+        "presentation": "full"
+      },
+      "wallMs": 62,
+      "error": null
+    },
+    {
+      "id": "DP-PHP-002",
+      "repo": "php",
+      "query": "slim php micro framework overview and getting started",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "tests/Middleware/BodyParsingMiddlewareTest.php",
+        "startLine": 148,
+        "endLine": 161,
+        "symbol": "testParsing",
+        "symbolType": "method",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 29,
+      "error": null
+    },
+    {
+      "id": "DP-PHP-003",
+      "repo": "php",
+      "query": "composer.json with slim psr-7 dependencies",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "Slim/Factory/Psr17/SlimPsr17Factory.php",
+        "startLine": 13,
+        "endLine": 19,
+        "symbol": "SlimPsr17Factory",
+        "symbolType": "class",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 28,
+      "error": null
+    },
+    {
+      "id": "DP-PHP-004",
+      "repo": "php",
+      "query": "github actions tests workflow for slim php",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": ".github/workflows/tests.yml",
+        "startLine": 56,
+        "endLine": 56,
+        "symbol": "uses",
+        "symbolType": "topKey",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    }
+  ]
+}
