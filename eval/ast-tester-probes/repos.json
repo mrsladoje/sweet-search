@@ -112,6 +112,16 @@
       "localPath": "eval/ast-tester-probes/_repos/php",
       "goldFile": "eval/ast-tester-probes/gold/php.json",
       "rationale": "Slim PHP micro-framework — 72 .php files; final class modifiers, interface implementation, PSR-7/PSR-15 patterns, typed nullable constructor parameters."
+    },
+    {
+      "language": "c",
+      "key": "c",
+      "url": "https://github.com/redis/hiredis.git",
+      "sha": "1d18adbf41dc10d456bee34a3fb966a2009c591c",
+      "license": "BSD-3-Clause",
+      "localPath": "eval/ast-tester-probes/_repos/c",
+      "goldFile": "eval/ast-tester-probes/gold/c.json",
+      "rationale": "hiredis C client library — 9 .c + 25 .h files; function-pointer typedefs (redisCallbackFn), typedef-struct patterns, printf-style command interface."
     }
   ]
 }

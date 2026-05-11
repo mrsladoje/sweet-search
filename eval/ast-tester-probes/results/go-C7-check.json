@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T07:34:09.404Z",
+  "summary": {
+    "counts": {
+      "PASS": 1,
+      "PARTIAL": 3,
+      "FAIL": 4
+    },
+    "totalMs": 285,
+    "avgMs": 36,
+    "n": 8
+  },
+  "results": [
+    {
+      "id": "GO-001",
+      "repo": "go",
+      "query": "how does chi dispatch incoming HTTP requests to matching route handlers",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "mux.go",
+        "startLine": 119,
+        "endLine": 171,
+        "symbol": "HandleFunc",
+        "symbolType": "method",
+        "score": 0.518359899520874,
+        "presentation": "full"
+      },
+      "wallMs": 75,
+      "error": null
+    },
+    {
+      "id": "GO-002",
+      "repo": "go",
+      "query": "how does chi build a routing trie for fast prefix matching",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "tree.go",
+        "startLine": 231,
+        "endLine": 319,
+        "symbol": "addChild",
+        "symbolType": "method",
+        "score": 0.46719449758529663,
+        "presentation": "full"
+      },
+      "wallMs": 45,
+      "error": null
+    },
+    {
+      "id": "GO-003",
+      "repo": "go",
+      "query": "how does chi compose middleware functions around request handlers",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "chain.go",
+        "startLine": 30,
+        "endLine": 32,
+        "symbol": "ServeHTTP",
+        "symbolType": "method",
+        "score": 0.5906423032283783,
+        "presentation": "full"
+      },
+      "wallMs": 27,
+      "error": null
+    },
+    {
+      "id": "GO-004",
+      "repo": "go",
+      "query": "chi Mux struct that implements the Router interface",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "README.md",
+        "startLine": 161,
+        "endLine": 181,
+        "symbol": "Router interface",
+        "symbolType": "section",
+        "score": 0.5740594863891602,
+        "presentation": "full"
+      },
+      "wallMs": 27,
+      "error": null
+    },
+    {
+      "id": "GO-005",
+      "repo": "go",
+      "query": "chi Router interface defining the routing methods",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "README.md",
+        "startLine": 161,
+        "endLine": 254,
+        "symbol": "Router interface",
+        "symbolType": "section",
+        "score": 0.6463130116462708,
+        "presentation": "full"
+      },
+      "wallMs": 28,
+      "error": null
+    },
+    {
+      "id": "GO-006",
+      "repo": "go",
+      "query": "chi NewRouter constructor that creates a Mux",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "chi.go",
+        "startLine": 1,
+        "endLine": 64,
+        "symbol": "NewRouter",
+        "symbolType": "function",
+        "score": 0.5261573875598936,
+        "presentation": "full"
+      },
+      "wallMs": 29,
+      "error": null
+    },
+    {
+      "id": "GO-007",
+      "repo": "go",
+      "query": "chi radix tree node with prefix children and endpoint map",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "tree.go",
+        "startLine": 319,
+        "endLine": 374,
+        "symbol": "replaceChild",
+        "symbolType": "method",
+        "score": 0.5371102690696716,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    },
+    {
+      "id": "GO-008",
+      "repo": "go",
+      "query": "chi Router interface embedding http.Handler and Routes",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "_examples/todos-resource/todos.go",
+        "startLine": 1,
+        "endLine": 54,
+        "symbol": "todosResource",
+        "symbolType": "typeAlias",
+        "score": 0.4812070429325104,
+        "presentation": "full"
+      },
+      "wallMs": 28,
+      "error": null
+    }
+  ]
+}
