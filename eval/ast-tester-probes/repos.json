@@ -182,6 +182,16 @@
       "localPath": "eval/ast-tester-probes/_repos/elixir",
       "goldFile": "eval/ast-tester-probes/gold/elixir.json",
       "rationale": "michalmuskala/jason — canonical Elixir JSON library (10 .ex + 14 .exs files). Idioms: dotted `defmodule X.Y.Z`, protocols (`defprotocol`/`defimpl`), `@behaviour` callbacks, compile-time macros (`defmacro __deriving__`), bang-suffix names (`decode!`). Elixir has NO tree-sitter grammar in GRAMMAR_MAP — chunking uses regex chunker in registry-tooling.js:102-130 (endKeyword='end'). KNOWN GAP: `defprotocol` and `defimpl` are NOT in the chunker rules — exercises an honest grammar edge case."
+    },
+    {
+      "language": "swift",
+      "key": "swift",
+      "url": "https://github.com/Alamofire/Alamofire.git",
+      "sha": "7595cbcf59809f9977c5f6378500de2ad73b7ddb",
+      "license": "MIT",
+      "localPath": "eval/ast-tester-probes/_repos/swift",
+      "goldFile": "eval/ast-tester-probes/gold/swift.json",
+      "rationale": "Alamofire — canonical Swift networking library (54 .swift non-test files in Source/). Idiomatic Swift 5/6 patterns: @unchecked Sendable conformance for thread-checked classes (Request, Session, NetworkReachabilityManager, RetryPolicy), generic structs with where clauses on conformance (`struct DataTask<Value>: Sendable where Value: Sendable`), generic final classes with multi-protocol + where-clause (`final class AuthenticationInterceptor<AuthenticatorType>: RequestInterceptor, Sendable where AuthenticatorType: Authenticator`), open classes, ResponseSerializer protocol with primary associated type. Requires .sweet-search/grammars/tree-sitter-swift.wasm override (v0.7.2 from alex-pinkus/tree-sitter-swift release 0.7.2-pypi) — the 0.4.0 wasm bundled in tree-sitter-wasms@0.1.13 reliably crashed V8 turboshaft wasm tier-up on Node 25.8.1 (Zone OOM in WasmLoweringPhase background compile job; resolved by upgrading to 0.7.2)."
     }
   ]
 }
