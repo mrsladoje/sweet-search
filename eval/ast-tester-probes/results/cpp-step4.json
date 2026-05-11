@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T15:34:42.033Z",
+  "summary": {
+    "counts": {
+      "PASS": 1,
+      "PARTIAL": 3,
+      "FAIL": 4
+    },
+    "totalMs": 316,
+    "avgMs": 40,
+    "n": 8
+  },
+  "results": [
+    {
+      "id": "CPP-001",
+      "repo": "cpp",
+      "query": "how does highway dispatch the right SIMD target at runtime based on CPU features",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hwy/ops/shared-inl.h",
+        "startLine": 214,
+        "endLine": 336,
+        "symbol": "Simd",
+        "symbolType": "struct",
+        "score": 0.42201625704765316,
+        "presentation": "full"
+      },
+      "wallMs": 45,
+      "error": null
+    },
+    {
+      "id": "CPP-002",
+      "repo": "cpp",
+      "query": "how does highway select the best available SIMD target on first call and update the dispatch table",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hwy/ops/shared-inl.h",
+        "startLine": 214,
+        "endLine": 336,
+        "symbol": "Simd",
+        "symbolType": "struct",
+        "score": 0.38627846390008924,
+        "presentation": "full"
+      },
+      "wallMs": 32,
+      "error": null
+    },
+    {
+      "id": "CPP-003",
+      "repo": "cpp",
+      "query": "how does highway track which SIMD target was chosen and return the index into the dispatch table",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "hwy/targets.h",
+        "startLine": 36,
+        "endLine": 381,
+        "symbol": "hwy",
+        "symbolType": "namespace",
+        "score": 0.4367704510688782,
+        "presentation": "full"
+      },
+      "wallMs": 32,
+      "error": null
+    },
+    {
+      "id": "CPP-004",
+      "repo": "cpp",
+      "query": "Vec type alias that produces the vector type for a given tag descriptor D",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "g3doc/quick_reference.md",
+        "startLine": 276,
+        "endLine": 312,
+        "symbol": "Using unspecified vector types",
+        "symbolType": "section",
+        "score": 0.4914514422416687,
+        "presentation": "full"
+      },
+      "wallMs": 65,
+      "error": null
+    },
+    {
+      "id": "CPP-005",
+      "repo": "cpp",
+      "query": "Simd tag struct with Lane type parameter N lanes and kPow2 scaling used to select vector overloads",
+      "verdict": "PARTIAL",
+      "reason": "type_mismatch",
+      "top1": {
+        "file": "hwy/ops/shared-inl.h",
+        "startLine": 214,
+        "endLine": 336,
+        "symbol": "Simd",
+        "symbolType": "struct",
+        "score": 0.5369457507133485,
+        "presentation": "full"
+      },
+      "wallMs": 45,
+      "error": null
+    },
+    {
+      "id": "CPP-006",
+      "repo": "cpp",
+      "query": "AlignedDeleter RAII class that calls destructor and frees aligned memory on unique_ptr destruction",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "hwy/aligned_allocator.h",
+        "startLine": 69,
+        "endLine": 117,
+        "symbol": "AlignedDeleter",
+        "symbolType": "class",
+        "score": 0.7867380987107755,
+        "presentation": "full"
+      },
+      "wallMs": 27,
+      "error": null
+    },
+    {
+      "id": "CPP-007",
+      "repo": "cpp",
+      "query": "Vec128 SSE vector class template with partial specializations for float double and float16",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hwy/ops/arm_neon-inl.h",
+        "startLine": 804,
+        "endLine": 857,
+        "symbol": "Vec128",
+        "symbolType": "class",
+        "score": 0.5906973864272238,
+        "presentation": "full"
+      },
+      "wallMs": 44,
+      "error": null
+    },
+    {
+      "id": "CPP-008",
+      "repo": "cpp",
+      "query": "DetectTargets x86 implementation reading CPUID flags and returning supported highway target bitmask",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "hwy/targets.cc",
+        "startLine": 117,
+        "endLine": 445,
+        "symbol": "x86",
+        "symbolType": "namespace",
+        "score": 0.43249041140079497,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    }
+  ]
+}
