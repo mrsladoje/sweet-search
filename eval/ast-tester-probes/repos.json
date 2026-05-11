@@ -132,6 +132,16 @@
       "localPath": "eval/ast-tester-probes/_repos/typescript-lib",
       "goldFile": "eval/ast-tester-probes/gold/typescript-lib.json",
       "rationale": "Zod schema validation library (TypeScript library, NOT Next.js app — complements existing vercel/ai-chatbot TS entry); types-heavy with conditional types, TS 4.7+ variance modifiers (`out O = unknown`), function overload signatures."
+    },
+    {
+      "language": "dart",
+      "key": "dart",
+      "url": "https://github.com/dart-lang/http.git",
+      "sha": "c140dc012da1df74b0fb99230b8736438b8eba6a",
+      "license": "BSD-3-Clause",
+      "localPath": "eval/ast-tester-probes/_repos/dart",
+      "goldFile": "eval/ast-tester-probes/gold/dart.json",
+      "rationale": "dart-lang/http canonical HTTP client — 239 .dart files (29 in pkgs/http non-test); abstract mixin class, abstract interface class, final class, factory constructors, named-default parameters, extension methods. Dart has NO tree-sitter grammar in GRAMMAR_MAP — chunking uses the regex chunker in registry-object-oriented.js (regex-fallback path, not AST)."
     }
   ]
 }

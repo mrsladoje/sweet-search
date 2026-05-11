@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "8 retrieval probes for dart-lang/http — the BSD-3-licensed canonical Dart HTTP client library. NOTE: Dart has NO tree-sitter grammar in GRAMMAR_MAP (core/infrastructure/tree-sitter-provider.js:25) — chunking falls back to the regex chunker registered in core/infrastructure/language-patterns/registry-object-oriented.js. Probes still exercise the indexer + retrieval stack; grammar-edge-case probes target idioms the regex chunker may miss (e.g. `extension X on Y` has no rule).",
+  "language": "dart",
+  "repo": "dart",
+  "repoUrl": "https://github.com/dart-lang/http",
+  "repoSha": "c140dc012da1df74b0fb99230b8736438b8eba6a",
+  "license": "BSD-3-Clause",
+  "probes": [
+    {
+      "id": "DR-001",
+      "repo": "dart",
+      "query": "how does the dart http retry client recover from transient failures with exponential backoff",
+      "expectedFile": "pkgs/http/lib/retry.dart",
+      "expectedSymbol": "RetryClient",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe: RetryClient (line 17, `final class RetryClient extends BaseClient`) re-sends a request on configurable retry conditions with delay-based backoff; `send` (line 113) is the retry loop entry"
+    },
+    {
+      "id": "DR-002",
+      "repo": "dart",
+      "query": "build a multipart form upload with file fields and string fields in dart",
+      "expectedFile": "pkgs/http/lib/src/multipart_request.dart",
+      "expectedSymbol": "MultipartRequest",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe: MultipartRequest (line 33, `class MultipartRequest extends BaseRequest`) is the `multipart/form-data` request builder — pairs `fields` (strings) with `files` (MultipartFile list)"
+    },
+    {
+      "id": "DR-003",
+      "repo": "dart",
+      "query": "abort an in-flight http request in dart using a Future trigger",
+      "expectedFile": "pkgs/http/lib/src/abortable.dart",
+      "expectedSymbol": "Abortable",
+      "expectedSymbolType": "mixin",
+      "notes": "NL behavior probe: `abstract mixin class Abortable implements BaseRequest` (line 13) provides `abortTrigger` Future — completing the future cancels the request via RequestAbortedException"
+    },
+    {
+      "id": "DR-004",
+      "repo": "dart",
+      "query": "ClientException thrown when an http request fails with uri context",
+      "expectedFile": "pkgs/http/lib/src/exception.dart",
+      "expectedSymbol": "ClientException",
+      "expectedSymbolType": "class",
+      "notes": "Symbol-anchored probe: ClientException (line 6, `class ClientException implements Exception`) — the base exception type for http failures, carries message + optional Uri"
+    },
+    {
+      "id": "DR-005",
+      "repo": "dart",
+      "query": "MultipartFile fromBytes factory constructor for uploading byte data",
+      "expectedFile": "pkgs/http/lib/src/multipart_file.dart",
+      "expectedSymbol": "MultipartFile",
+      "expectedSymbolType": "class",
+      "notes": "Symbol-anchored probe: MultipartFile (line 17) hosts the `factory MultipartFile.fromBytes(...)` (line 60) constructor — wraps a List<int> as a named-field multipart payload"
+    },
+    {
+      "id": "DR-006",
+      "repo": "dart",
+      "query": "Response class with statusCode body headers from an http call",
+      "expectedFile": "pkgs/http/lib/src/response.dart",
+      "expectedSymbol": "Response",
+      "expectedSymbolType": "class",
+      "notes": "Symbol-anchored probe: Response (line 16, `class Response extends BaseResponse`) — the synchronous fully-buffered response with `body` String, `bodyBytes` Uint8List, and inherited statusCode/headers"
+    },
+    {
+      "id": "DR-007",
+      "repo": "dart",
+      "query": "abstract mixin class BaseClient with default get post put head delete HTTP method implementations",
+      "expectedFile": "pkgs/http/lib/src/base_client.dart",
+      "expectedSymbol": "BaseClient",
+      "expectedSymbolType": "class",
+      "notes": "Grammar-edge-case probe: `abstract mixin class BaseClient implements Client` (line 20) — Dart's triple-keyword class modifier (abstract + mixin + class, all distinct) combined with `implements`. Tests whether the regex chunker — `/(?:abstract\\s+)?class\\s+(\\w+)/` — still anchors on `class BaseClient` despite the intervening `mixin` keyword. Expected: regex skips the `abstract mixin` prefix and captures `BaseClient` correctly from the `class` keyword onward."
+    },
+    {
+      "id": "DR-008",
+      "repo": "dart",
+      "query": "extension HeadersWithSplitValues on BaseResponse for multi-value cookie headers",
+      "expectedFile": "pkgs/http/lib/src/base_response.dart",
+      "expectedSymbol": "HeadersWithSplitValues",
+      "expectedSymbolType": "extension",
+      "notes": "Grammar-edge-case probe: `extension HeadersWithSplitValues on BaseResponse` (line 150) is a Dart 2.7+ extension method declaration. KNOWN GAP — the dart regex chunker in registry-object-oriented.js (lines 199-204) has chunker rules for class/mixin/function/enum but NO rule for `extension`. Extension methods will fold into the surrounding file chunk rather than emit a named boundary. This probe is an honest grammar-edge-case marker; a PASS here would indicate the embedding model found the right file via header bigrams or surrounding context, not via a chunk-level entity match."
+    }
+  ]
+}
