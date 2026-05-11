@@ -72,14 +72,21 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       block: ["=begin", "=end"],
     },
     chunker: {
-      class: /^class\s+(\w+)(?:\s*<\s*(\w+))?/,
-      module: /^module\s+(\w+)/,
+      // Allow leading whitespace so indented `class Foo` declarations
+      // nested inside a module (the dominant Ruby idiom) actually match.
+      // The previous `^class` anchor missed every class inside a module
+      // wrapper (e.g. `class IndifferentHash < Hash` inside `module Sinatra`).
+      // Superclass can be any expression (`Rack::Request`, `Struct.new(:app)`)
+      // — `_matchBoundary` only consumes the first capture, so allowing any
+      // tail after the class name keeps the inheritance form parsable.
+      class: /^\s*class\s+(\w+)/,
+      module: /^\s*module\s+(\w+)/,
       method: /^\s*def\s+(\w+[?!=]?)/,
     },
     graph: {
       entities: {
-        class: /^class\s+(\w+)(?:\s*<\s*(\w+))?/,
-        module: /^module\s+(\w+)/,
+        class: /^\s*class\s+(\w+)/,
+        module: /^\s*module\s+(\w+)/,
         method: /^\s*def\s+(\w+[?!=]?)\s*(?:\(([^)]*)\))?/,
       },
       relationships: {
@@ -87,7 +94,7 @@ export const OBJECT_ORIENTED_LANGUAGES = {
         include: /^\s*include\s+(\w+)/,
         extend: /^\s*extend\s+(\w+)/,
         prepend: /^\s*prepend\s+(\w+)/,
-        inherit: /^class\s+\w+\s*<\s*(\w+)/,
+        inherit: /^\s*class\s+\w+\s*<\s*([\w:]+)/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*[(!]/,
       },
       skipCallObjects: ["puts", "print", "p", "raise", "require", "attr_accessor", "attr_reader", "attr_writer"],
