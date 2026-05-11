@@ -11,7 +11,7 @@
 ```
 ITERATION:        10         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      4da7c22    # most recent shipped commit before this plan
+LAST_COMMIT:      1c107b6    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -144,7 +144,7 @@ Priority by yield (descending). Each item: web-search if uncertain, apply princi
 **Pre-flight web search:** "code chunking multi-symbol per chunk strategy", "tree-sitter chunk boundary adjacent top-level items".
 **Per-item gates:** rust probes — expect RS-006 + RS-008 PARTIAL/PASS (currently FAIL). Re-index ~77 min.
 **Abort/revert:** revert ast-chunker.js + tree-sitter-provider.js touches.
-**Status:** [x] DONE @ pending — sibling-symbol `# Additional:` header line landed (tree-sitter-provider.js collects boundariesInBuffer beyond firstBoundary; ast-chunker.js threads via hierarchyInfo.additionalSymbols into buildEmbeddingText/buildLiText/enrichEmbeddingText, plus metadata.additional_symbols). Rust re-index completed (5074s, 37451 chunks, 36417 embeddings). VERIFIED: packaging.rs:1-47 chunk embedding_text now contains `# Additional: detect_package_root` after `# function: is_package`. Rust probes 4/0/4 — same PASS count as baseline; per-item expectation (RS-006+RS-008→PASS/PARTIAL) NOT MET. §1 LOCKED BASELINES all GREEN: retrieval-probes 46/4/10 zero flips, GCSN dev MRR@10 86.92% exact, all 5 lang packs zero PASS→FAIL flips, unit tests 1432/1432. Encoder-bound just like B1 — chunker correctly enriches header but bi-encoder still ranks competing chunks (resolver.rs::package_roots over packaging.rs::detect_package_root). Keeping the structurally-correct fix per §1-only revert policy. Iter 10.
+**Status:** [x] DONE @ 1c107b6 — sibling-symbol `# Additional:` header line landed (tree-sitter-provider.js collects boundariesInBuffer beyond firstBoundary; ast-chunker.js threads via hierarchyInfo.additionalSymbols into buildEmbeddingText/buildLiText/enrichEmbeddingText, plus metadata.additional_symbols). Rust re-index completed (5074s, 37451 chunks, 36417 embeddings). VERIFIED: packaging.rs:1-47 chunk embedding_text now contains `# Additional: detect_package_root` after `# function: is_package`. Rust probes 4/0/4 — same PASS count as baseline; per-item expectation (RS-006+RS-008→PASS/PARTIAL) NOT MET. §1 LOCKED BASELINES all GREEN: retrieval-probes 46/4/10 zero flips, GCSN dev MRR@10 86.92% exact, all 5 lang packs zero PASS→FAIL flips, unit tests 1432/1432. Encoder-bound just like B1 — chunker correctly enriches header but bi-encoder still ranks competing chunks (resolver.rs::package_roots over packaging.rs::detect_package_root). Keeping the structurally-correct fix per §1-only revert policy. Iter 10.
 
 #### B3. Rust lifetime `<'a>` chunker boundary (RS-002, RS-003)
 **Type:** chunker-fix
