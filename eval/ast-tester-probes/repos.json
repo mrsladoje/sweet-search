@@ -82,6 +82,16 @@
       "localPath": "eval/ast-tester-probes/_repos/javascript",
       "goldFile": "eval/ast-tester-probes/gold/javascript.json",
       "rationale": "Axios HTTP client library — 175 .js files; class-based architecture (Axios, AxiosHeaders, AxiosError, CancelToken, InterceptorManager), Axios.prototype[method] metaprogramming for HTTP verb dispatch, class extension."
+    },
+    {
+      "language": "ruby",
+      "key": "ruby",
+      "url": "https://github.com/sinatra/sinatra.git",
+      "sha": "5236d3459b8b9015e5ce21ddd0c6beb0db4081d4",
+      "license": "MIT",
+      "localPath": "eval/ast-tester-probes/_repos/ruby",
+      "goldFile": "eval/ast-tester-probes/gold/ruby.json",
+      "rationale": "Sinatra web DSL — 97 .rb files; module mixins (Helpers), `class << self` singleton blocks, Rack subclassing, `class X < Struct.new(...)` runtime superclass pattern."
     }
   ]
 }

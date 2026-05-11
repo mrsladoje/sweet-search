@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "8 retrieval probes for sinatra/sinatra — an MIT-licensed Ruby web DSL with module helpers, class << self singleton methods, Rack-class inheritance, and Struct.new subclassing.",
+  "language": "ruby",
+  "repo": "ruby",
+  "repoUrl": "https://github.com/sinatra/sinatra",
+  "repoSha": "5236d3459b8b9015e5ce21ddd0c6beb0db4081d4",
+  "license": "MIT",
+  "probes": [
+    {
+      "id": "RB-001",
+      "repo": "ruby",
+      "query": "how does sinatra match incoming requests to route handlers and dispatch the response",
+      "expectedFile": "lib/sinatra/base.rb",
+      "expectedSymbol": "Base",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe: Sinatra::Base (line 971) is the core class that owns the route table and dispatch logic"
+    },
+    {
+      "id": "RB-002",
+      "repo": "ruby",
+      "query": "how does sinatra extend Rack Request with HTTP content negotiation methods like accept",
+      "expectedFile": "lib/sinatra/base.rb",
+      "expectedSymbol": "Request",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe: Sinatra::Request (line 31) extends Rack::Request and adds accept / preferred_type / accept? — the Content-Type negotiation surface"
+    },
+    {
+      "id": "RB-003",
+      "repo": "ruby",
+      "query": "how does sinatra cache compiled view templates between requests",
+      "expectedFile": "lib/sinatra/base.rb",
+      "expectedSymbol": "TemplateCache",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe: Sinatra::TemplateCache (line 949) memoizes compiled templates keyed by path+engine"
+    },
+    {
+      "id": "RB-004",
+      "repo": "ruby",
+      "query": "Sinatra Application class extending Base for the top-level DSL",
+      "expectedFile": "lib/sinatra/base.rb",
+      "expectedSymbol": "Application",
+      "expectedSymbolType": "class",
+      "notes": "Symbol-anchored probe: Sinatra::Application < Base (line 2085) backs the top-level get/post/etc. DSL"
+    },
+    {
+      "id": "RB-005",
+      "repo": "ruby",
+      "query": "Sinatra IndifferentHash class for string and symbol key access",
+      "expectedFile": "lib/sinatra/indifferent_hash.rb",
+      "expectedSymbol": "IndifferentHash",
+      "expectedSymbolType": "class",
+      "notes": "Symbol-anchored probe: IndifferentHash provides symbol-or-string key normalization — its own file"
+    },
+    {
+      "id": "RB-006",
+      "repo": "ruby",
+      "query": "Sinatra Helpers module mixed into Base",
+      "expectedFile": "lib/sinatra/base.rb",
+      "expectedSymbol": "Helpers",
+      "expectedSymbolType": "module",
+      "notes": "Symbol-anchored probe: Sinatra::Helpers (line 286) is the module of view/response helpers included into request handlers"
+    },
+    {
+      "id": "RB-007",
+      "repo": "ruby",
+      "query": "Sinatra Base class << self block for class-level DSL definitions",
+      "expectedFile": "lib/sinatra/base.rb",
+      "expectedSymbol": "Base",
+      "expectedSymbolType": "class",
+      "notes": "Grammar-edge-case probe: Sinatra::Base has multiple `class << self ... end` blocks (lines 1290, 1965) that open the singleton class to define class-level DSL methods (get/post/etc.). Exercises tree-sitter-ruby's handling of singleton_class — the chunker must attribute these to Base, not emit them as orphaned chunks"
+    },
+    {
+      "id": "RB-008",
+      "repo": "ruby",
+      "query": "ExtendedRack class inheriting from a Struct.new runtime-generated class",
+      "expectedFile": "lib/sinatra/base.rb",
+      "expectedSymbol": "ExtendedRack",
+      "expectedSymbolType": "class",
+      "notes": "Grammar-edge-case probe: `class ExtendedRack < Struct.new(:app)` (line 225) is a Ruby idiom where the superclass expression is a method call returning a runtime-generated Struct class. Exercises tree-sitter-ruby's handling of class declarations whose superclass slot is a call_expression, not a constant reference"
+    }
+  ]
+}
