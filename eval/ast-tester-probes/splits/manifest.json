@@ -2,12 +2,13 @@
   "schemaVersion": 1,
   "bench": "ast-tester-probes",
   "createdAt": "2026-05-10",
+  "updatedAt": "2026-05-11",
   "seed": 42,
   "stratifyBy": "language",
   "method": "stratified-random-shuffle",
-  "totalProbes": 40,
-  "devCount": 25,
-  "heldoutCount": 15,
+  "totalProbes": 48,
+  "devCount": 30,
+  "heldoutCount": 18,
   "perLanguage": {
     "typescript": {
       "dev": [
@@ -77,6 +78,20 @@
         "CPP-001",
         "CPP-005",
         "CPP-007"
+      ]
+    },
+    "java": {
+      "dev": [
+        "JV-001",
+        "JV-002",
+        "JV-004",
+        "JV-005",
+        "JV-008"
+      ],
+      "heldout": [
+        "JV-003",
+        "JV-006",
+        "JV-007"
       ]
     }
   },

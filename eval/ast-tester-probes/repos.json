@@ -52,6 +52,16 @@
       "localPath": "eval/ast-tester-probes/_repos/cpp",
       "goldFile": "eval/ast-tester-probes/gold/cpp.json",
       "rationale": "SIMD-portable library. Templates with non-type params, nested per-target namespaces (hwy::N_AVX3::), header-only inline patterns."
+    },
+    {
+      "language": "java",
+      "key": "java",
+      "url": "https://github.com/google/gson.git",
+      "sha": "abfef5e8455483b878a8dea14dd42fa55832a56c",
+      "license": "Apache-2.0",
+      "localPath": "eval/ast-tester-probes/_repos/java",
+      "goldFile": "eval/ast-tester-probes/gold/java.json",
+      "rationale": "Google Gson JSON serialization library — 262 .java files, rich type adapter pattern with anonymous classes, wildcard generics, lambdas, and enum-with-bodies; exercises the full Java type system."
     }
   ]
 }
