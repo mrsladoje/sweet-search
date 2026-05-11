@@ -632,6 +632,106 @@ int parse_token(const char* input, Token* out) {
     });
   });
 
+  // Identifier-mention boost — noun-anchored complement to the verb-anchored
+  // symbolExactMatchBoost. Catches probe-style queries like "Vec128 SSE
+  // vector class template" where the gold symbol appears without a leading
+  // verb. Strict identifier-shape filter (length ≥ 4 AND has digit /
+  // underscore / internal-uppercase) keeps English nouns ("Vector", "Type",
+  // "Class") and short acronyms ("SSE", "x86") out of the trigger set.
+  describe('identifier-mention boost (BM25F noun-anchored)', () => {
+    it('boosts chunk where symbol matches a strict-identifier mention in the query', () => {
+      const target = {
+        file: 'hwy/aligned_allocator.h',
+        startLine: 73,
+        endLine: 106,
+        symbol: 'AlignedDeleter',
+        symbolType: 'class',
+        score: 0.45,
+      };
+      const competitor = {
+        file: 'hwy/aligned_allocator.h',
+        startLine: 130,
+        endLine: 160,
+        symbol: 'TypedArrayDeleter',
+        symbolType: 'class',
+        score: 0.50,
+      };
+      const out = applyResultDemotions([competitor, target], {
+        query: 'AlignedDeleter RAII class that calls destructor and frees aligned memory',
+        format: 'agent_full',
+      });
+      // AlignedDeleter was lower-scoring but the noun-anchored mention boost
+      // (×1.15 on 0.45 → 0.5175) pushes it above the 0.50 competitor.
+      expect(out[0].symbol).toBe('AlignedDeleter');
+    });
+
+    it('does not fire on common English nouns like Vector / Type / Class', () => {
+      const target = {
+        file: 'src/vector.h',
+        startLine: 1,
+        endLine: 100,
+        symbol: 'Vector',  // literal name 'Vector' in some hypothetical lib
+        symbolType: 'class',
+        score: 0.45,
+      };
+      const competitor = {
+        file: 'src/other.h',
+        startLine: 1,
+        endLine: 100,
+        symbol: 'OtherThing',
+        symbolType: 'class',
+        score: 0.50,
+      };
+      const out = applyResultDemotions([competitor, target], {
+        query: 'Vector class template for storing elements',
+        format: 'agent_full',
+      });
+      // 'Vector' has no digit/underscore/internal-uppercase → not a mention.
+      // No boost applied; competitor (higher base score) stays on top.
+      expect(out[0].symbol).toBe('OtherThing');
+    });
+
+    it('skips mention if verb-anchored target already matches it', () => {
+      // When both extractSymbolDefinitionTarget and extractIdentifierMentions
+      // would fire on the same identifier, only the higher-precision verb-
+      // anchored boost applies (×1.30, not ×1.30 × ×1.15 = ×1.495).
+      const chunk = {
+        file: 'src/cache.rs',
+        startLine: 100,
+        endLine: 150,
+        symbol: 'FunctionCache',
+        symbolType: 'struct',
+        score: 0.50,
+      };
+      const out = applyResultDemotions([chunk], {
+        query: 'show me the FunctionCache struct definition',
+        format: 'agent_full',
+      });
+      // The verb-anchored boost fires (×1.30). The identifier-mention boost
+      // sees `FunctionCache` matches the same target and skips. Final score
+      // should be ~0.65, not ~0.75 (which would be 1.30 × 1.15).
+      expect(out[0].score).toBeGreaterThan(0.6);
+      expect(out[0].score).toBeLessThan(0.7);
+    });
+
+    it('does NOT fire under non-agent format (GCSN invariance)', () => {
+      const chunk = {
+        file: 'src/test.rs',
+        startLine: 1,
+        endLine: 50,
+        symbol: 'BufferIter',
+        symbolType: 'struct',
+        score: 0.50,
+      };
+      const out = applyResultDemotions([chunk], {
+        query: 'BufferIter struct for parsing',
+        // No format flag → not agent → boost gated off.
+      });
+      // No boost applied; score preserved.
+      expect(out[0].score).toBeCloseTo(0.50, 2);
+    });
+  });
+
   it('honours result-demotion ablations', () => {
     const footer = {
       file: 'lib/schema-controller.js',

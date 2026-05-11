@@ -909,6 +909,109 @@ function extractSymbolDefinitionTarget(query) {
 }
 
 /**
+ * Strict identifier-shape filter for query-token-to-symbol-name matching.
+ *
+ * Distinguishes "code identifier" from "English word that happens to start
+ * uppercase". A token is strict-identifier-shaped if it is ≥4 chars AND
+ * has one of:
+ *   - digit (Vec128, AVX2, std::int32_t)
+ *   - underscore (HWY_DLLEXPORT, snake_case_thing, _Alignas)
+ *   - internal uppercase beyond the first character (FunctionCache,
+ *     AlignedDeleter, DetectTargets — true camelCase / PascalCase)
+ *
+ * This excludes single-cap English nouns: "Type", "Class", "Vector", "Map",
+ * "Set", "Function", "Method", "Method", "Component" — none have a digit,
+ * underscore, or internal uppercase, so they fail the structural check.
+ * Excludes 3-char tokens like "SSE", "x86", "AVX" — these are domain
+ * acronyms that risk false-matching unrelated short symbols. The 1.15× boost
+ * trades off vs the 1.30× of the verb-anchored extractor: lower precision,
+ * higher recall on noun-anchored probe queries.
+ */
+function looksLikeStrictIdentifier(token) {
+  if (!token || token.length < 4) return false;
+  if (/\d/.test(token)) return true;
+  if (/_/.test(token)) return true;
+  // Internal uppercase: after the first character, find another upper.
+  // `^.[a-z0-9]*[A-Z]` is too permissive (matches XYz). Require any
+  // upper at position ≥1 (so "Aa" doesn't trigger but "AaA" does).
+  for (let i = 1; i < token.length; i++) {
+    if (token[i] >= 'A' && token[i] <= 'Z') return true;
+  }
+  return false;
+}
+
+/**
+ * Extract strict-identifier-shaped tokens from a query. Used by
+ * identifierMentionBoost as a complement to extractSymbolDefinitionTarget:
+ * the verb-anchored extractor catches "show me X struct" patterns; this
+ * noun-anchored extractor catches "X with Y characteristic" probe-style
+ * phrasings ("Vec128 SSE vector class template", "AlignedDeleter RAII class",
+ * "FunctionCache template struct").
+ *
+ * Returns a Set of tokens. Returns null if no strict-identifier tokens found.
+ */
+function extractIdentifierMentions(query) {
+  if (!query || typeof query !== 'string') return null;
+  const mentions = new Set();
+  const tokens = query.match(/\b[A-Za-z_][A-Za-z0-9_]*\b/g) || [];
+  for (const tok of tokens) {
+    if (looksLikeStrictIdentifier(tok)) mentions.add(tok);
+  }
+  return mentions.size > 0 ? mentions : null;
+}
+
+/**
+ * Mild symbol-name boost triggered by strict-identifier mentions in the
+ * query (complement to symbolExactMatchBoost which uses the verb-anchored
+ * `extractSymbolDefinitionTarget`). Same BM25F field-weighted principle:
+ * when the query explicitly names an identifier, prefer chunks whose
+ * symbol matches that name.
+ *
+ * Calibrated lower (×1.15 default vs ×1.30 for the verb path) because the
+ * noun-anchored trigger has lower precision: a query mentioning "Vec128"
+ * may or may not be asking about that specific symbol. Verb-anchored
+ * queries like "show me X struct" are unambiguous; noun-anchored mentions
+ * are weaker signals.
+ *
+ * Skips the verb-anchored target to avoid double-counting: if
+ * extractSymbolDefinitionTarget already returned "FunctionCache" and the
+ * symbol matches that, symbolExactMatchBoost handles it; this boost
+ * only fires on DIFFERENT mentions, or on mentions where the verb path
+ * did not fire (target was null).
+ *
+ * Format-gated via the caller (only fires when isAgentFormat=true).
+ */
+function identifierMentionBoost(result, mentions, opts = {}) {
+  if (!mentions || mentions.size === 0) return 1.0;
+  const raw = process.env.SWEET_SEARCH_IDENTIFIER_MENTION_BOOST;
+  let boost = opts.identifierMentionBoostFactor ?? 1.15;
+  if (raw != null && raw !== '') {
+    const n = Number.parseFloat(raw);
+    if (Number.isFinite(n) && n >= 1.0 && n <= 2.0) boost = n;
+  }
+  if (boost === 1.0) return 1.0;
+
+  const symbol = result?.name
+    || result?.metadata?.name
+    || result?.entity?.name
+    || result?.symbol
+    || '';
+  if (!symbol) return 1.0;
+  const symLower = String(symbol).toLowerCase();
+  const skipTarget = opts._symbolExactTarget ? String(opts._symbolExactTarget).toLowerCase() : '';
+  const norm = (s) => s.replace(/[_-]/g, '').toLowerCase();
+  const symNorm = norm(symLower);
+  for (const mention of mentions) {
+    const mLower = mention.toLowerCase();
+    if (skipTarget && mLower === skipTarget) continue;
+    if (symLower === mLower || symNorm === norm(mLower)) {
+      return boost;
+    }
+  }
+  return 1.0;
+}
+
+/**
  * Path-token boost (added 2026-05-07 — 60-probe diagnosis NEW pattern).
  *
  * When a query mentions a crate / module / package name (e.g. "in globset",
@@ -1528,6 +1631,14 @@ export function applyResultDemotions(results, opts = {}) {
   const pathTokens = isAgentFormat && !hasAblation(ablations, 'no-path-token-boost')
     ? extractPathTokens(opts.query || '')
     : [];
+  // Identifier-mention boost (complements verb-anchored symbolExactTarget):
+  // fires on noun-anchored probe phrasings where the gold symbol appears in
+  // the query without a "show me/find/where is" prefix. Format-gated; opts
+  // passes through `_symbolExactTarget` so this boost skips mentions already
+  // boosted by the higher-precision verb path.
+  const identifierMentions = isAgentFormat && !hasAblation(ablations, 'no-identifier-mention-boost')
+    ? extractIdentifierMentions(opts.query || '')
+    : null;
 
   let changed = false;
   const window = Math.min(opts.window ?? results.length, results.length);
@@ -1671,6 +1782,19 @@ export function applyResultDemotions(results, opts = {}) {
       if (symbolMult !== 1) {
         mult *= symbolMult;
         (details ||= []).push(`symbol-exact:${symbolMult.toFixed(2)}`);
+      }
+    }
+
+    if (identifierMentions) {
+      if (__profOn) __ruleT0 = performance.now();
+      const mentionMult = identifierMentionBoost(result, identifierMentions, {
+        ...opts,
+        _symbolExactTarget: symbolExactTarget,
+      });
+      if (__profOn) __ruleTime[8] += performance.now() - __ruleT0;
+      if (mentionMult !== 1) {
+        mult *= mentionMult;
+        (details ||= []).push(`identifier-mention:${mentionMult.toFixed(2)}`);
       }
     }
 
