@@ -142,6 +142,16 @@
       "localPath": "eval/ast-tester-probes/_repos/dart",
       "goldFile": "eval/ast-tester-probes/gold/dart.json",
       "rationale": "dart-lang/http canonical HTTP client — 239 .dart files (29 in pkgs/http non-test); abstract mixin class, abstract interface class, final class, factory constructors, named-default parameters, extension methods. Dart has NO tree-sitter grammar in GRAMMAR_MAP — chunking uses the regex chunker in registry-object-oriented.js (regex-fallback path, not AST)."
+    },
+    {
+      "language": "scala",
+      "key": "scala",
+      "url": "https://github.com/com-lihaoyi/requests-scala.git",
+      "sha": "e3619c19ef551067d2979ced99b434d45bb60986",
+      "license": "MIT",
+      "localPath": "eval/ast-tester-probes/_repos/scala",
+      "goldFile": "eval/ast-tester-probes/gold/scala.json",
+      "rationale": "com-lihaoyi/requests-scala — tiny idiomatic Scala 2 HTTP client (7 .scala non-test files). Dense coverage of canonical Scala patterns: case classes, sealed traits + companion-object ADTs, implicit classes (Scala 2 conversion idiom), trait+companion pattern, package object. Scala has NO tree-sitter grammar in GRAMMAR_MAP — chunking uses the regex chunker in registry-object-oriented.js:161-189."
     }
   ]
 }

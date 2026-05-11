@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "8 retrieval probes for com-lihaoyi/requests-scala — a tiny MIT-licensed idiomatic Scala 2 HTTP client. Dense exercise of Scala patterns: case classes, sealed traits + companion-object ADTs, implicit classes (Scala 2 conversion idiom), trait+companion-object pattern, package object. Scala has NO tree-sitter grammar in GRAMMAR_MAP — chunking uses the regex chunker in registry-object-oriented.js:161-189.",
+  "language": "scala",
+  "repo": "scala",
+  "repoUrl": "https://github.com/com-lihaoyi/requests-scala",
+  "repoSha": "e3619c19ef551067d2979ced99b434d45bb60986",
+  "license": "MIT",
+  "probes": [
+    {
+      "id": "SC-001",
+      "repo": "scala",
+      "query": "how does requests-scala build a multipart form-data POST with file fields",
+      "expectedFile": "requests/src/requests/Model.scala",
+      "expectedSymbol": "MultiPart",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe: `case class MultiPart(items: MultiItem*) extends RequestBlob.MultipartFormRequestBlob(items)` (line 161) is the multipart form-data builder — wraps a varargs sequence of MultiItem (name/data/filename triples) and inherits the multipart encoding from RequestBlob"
+    },
+    {
+      "id": "SC-002",
+      "repo": "scala",
+      "query": "Requester case class for issuing one HTTP verb GET POST PUT against a session",
+      "expectedFile": "requests/src/requests/Requester.scala",
+      "expectedSymbol": "Requester",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe: `case class Requester(verb: String, sess: BaseSession)` (line 153) — per-verb caller bound to a session; has `apply` overloads that build/send Request and handle redirects, auth, retries"
+    },
+    {
+      "id": "SC-003",
+      "repo": "scala",
+      "query": "BaseSession trait persistent cookies maxRedirects defaults across requests",
+      "expectedFile": "requests/src/requests/Requester.scala",
+      "expectedSymbol": "BaseSession",
+      "expectedSymbolType": "trait",
+      "notes": "NL behavior probe: `trait BaseSession extends AutoCloseable` (line 19) — abstract session state for cookies/headers/auth/proxy/maxRedirects that the package object and Session case class both implement"
+    },
+    {
+      "id": "SC-004",
+      "repo": "scala",
+      "query": "Response case class with statusCode bytes headers data url",
+      "expectedFile": "requests/src/requests/Model.scala",
+      "expectedSymbol": "Response",
+      "expectedSymbolType": "class",
+      "notes": "Symbol-anchored probe: `case class Response(url, statusCode, statusMessage, data, headers, cookies, ...)` (line 196) — the fully-buffered HTTP response value with `bytes` accessor for raw payload"
+    },
+    {
+      "id": "SC-005",
+      "repo": "scala",
+      "query": "RequestFailedException thrown on non-2xx response status",
+      "expectedFile": "requests/src/requests/Exceptions.scala",
+      "expectedSymbol": "RequestFailedException",
+      "expectedSymbolType": "class",
+      "notes": "Symbol-anchored probe: `class RequestFailedException(val response: Response) extends RequestsException(...)` (line 26) — wraps a failing Response for callers using `check=true` mode"
+    },
+    {
+      "id": "SC-006",
+      "repo": "scala",
+      "query": "Session case class with cookies persistCookies and per-request defaults",
+      "expectedFile": "requests/src/requests/Session.scala",
+      "expectedSymbol": "Session",
+      "expectedSymbolType": "class",
+      "notes": "Symbol-anchored probe: `case class Session(headers, cookieValues, persistCookies, ...)` (line 31) — concrete BaseSession with mutable cookie jar; user-facing entry for stateful HTTP work"
+    },
+    {
+      "id": "SC-007",
+      "repo": "scala",
+      "query": "sealed trait Cert with P12 and P12CertContent variants for TLS client certificates",
+      "expectedFile": "requests/src/requests/Model.scala",
+      "expectedSymbol": "Cert",
+      "expectedSymbolType": "trait",
+      "notes": "Grammar-edge-case probe: `sealed trait Cert` (line 285) paired with `object Cert { case class P12(...); case class P12CertContent(...); implicit def implicitP12(...) }` — Scala ADT idiom (sealed trait + companion object enumerating variants + implicit conversions). The regex chunker's `trait\\s+(\\w+)/` anchors on `trait` and captures `Cert` from `sealed trait Cert`; the companion `object Cert` becomes a separate chunk. Tests whether regex chunker handles the sealed-trait + companion pattern cleanly."
+    },
+    {
+      "id": "SC-008",
+      "repo": "scala",
+      "query": "implicit class FileRequestBlob converts java.io.File to a streaming request body",
+      "expectedFile": "requests/src/requests/Model.scala",
+      "expectedSymbol": "FileRequestBlob",
+      "expectedSymbolType": "class",
+      "notes": "Grammar-edge-case probe: `implicit class FileRequestBlob(x: java.io.File) extends RequestBlob` (line 87) — Scala 2's implicit-class conversion idiom, where `implicit class X(arg)` defines BOTH a class AND an automatic conversion `arg → new X(arg)`. Regex chunker's `class /(?:case\\s+)?class\\s+(\\w+)/` matches `class FileRequestBlob` from inside the `implicit class` prefix (the `implicit` modifier is not captured but doesn't block anchoring on `class`). Tests whether the chunker preserves these nested-inside-object implicit conversions as named entities."
+    }
+  ]
+}

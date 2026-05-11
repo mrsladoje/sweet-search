@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        35         # incremented each loop pass
+ITERATION:        36         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      4a1e1cc    # most recent shipped commit before this plan
+LAST_COMMIT:      0c32ba4    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -256,7 +256,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 #### C11. Scala
 **Type:** new-language
 **Idioms:** implicits / `given`/`using` (Scala 3), case classes, pattern matching, for-comprehensions, type classes, enums (Scala 3).
-**Status:** [ ] PENDING
+**Status:** [x] DONE — Repo: com-lihaoyi/requests-scala @ e3619c19 (MIT, 7 .scala non-test + 7 tests). Tiny dense idiomatic Scala 2 HTTP client. 8 probes SC-001..SC-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting `sealed trait Cert` + companion-object ADT and `implicit class FileRequestBlob` Scala 2 conversion idiom). All 8 gold verified. Index: 16.11s, 19 files, 144 entities, 239 chunks (177 .scala), 236 embeddings. **Baseline: 7 PASS / 1 PARTIAL / 0 FAIL — strongest C-block baseline ever (no FAILs at all)**. PASS: SC-002 Requester, SC-003 BaseSession, SC-004 Response, SC-005 RequestFailedException, SC-006 Session, SC-007 sealed trait Cert, SC-008 implicit class FileRequestBlob (grammar-edge-case probe WORKING — Scala regex chunker handles `implicit class` correctly by anchoring on `class`). PARTIAL: SC-001 MultiPart (file match, returned `MultipartFormRequestBlob` from same file — close ancestor in inheritance chain). §3 ALL GREEN: retrieval-probes dev 0 flips, all 14 existing lang packs (ts/rust/kotlin/csharp/cpp/java/python/javascript/ruby/go/php/c/typescript-lib/dart) 0 PASS→FAIL flips. Splits manifest updated: SC-001/003/004/005/008 dev, SC-002/006/007 heldout (5/3, manifest totalProbes 112→120). No code changes — pure new-pack add, structurally safe by construction.
 
 #### C12. Lua
 **Type:** new-language
@@ -606,6 +606,12 @@ item: C10
 action: discover + diagnose + fix + execute (DONE-with-baseline)
 result: Picked **dart-lang/http @ c140dc012da1df74b0fb99230b8736438b8eba6a** (BSD-3, canonical Dart HTTP client). Full repo had 239 .dart files which triggered same V8 turboshaft Wasm-compilation OOM seen at C9 — trimmed to just `pkgs/http` (29 non-test .dart + 19 tests) to dodge it. 8 probes DR-001..DR-008 designed to exercise mixins, factory ctors, abstract-mixin/interface classes, final classes, extensions. **First baseline: 0 PASS / 0 PARTIAL / 8 FAIL — every top-1 was a CI yaml/sh file**. Per user iter-32 feedback ("at minimum run the diagnostic subagent on the FAIL probes per language before declaring done"), kicked diagnostic subagent. Verdict: **0 .dart chunks in codebase.db** — file walker silently dropped all dart files at discovery. Root cause: `.dart` missing from `FILE_PATTERNS.include` in `core/infrastructure/config/search.js:64`. One-line fix (`{lua,zig,nim,ex,exs}` → `{lua,zig,nim,ex,exs,dart}`) added dart to discovery; matches the pattern for similar small-ecosystem languages. Re-indexed: 223 .dart chunks, 601 total. **Final baseline: 6 PASS / 1 PARTIAL / 1 FAIL — strongest C-block baseline yet**. PASS: DR-001 RetryClient, DR-002 MultipartRequest, DR-004 ClientException, DR-005 MultipartFile, DR-006 Response, DR-007 BaseClient (abstract mixin class). PARTIAL: DR-008 extension (file match, symbol mismatch — expected, regex chunker has no `extension X on Y` rule). FAIL: DR-003 Abortable mixin (top-1 AbortableRequest from request.dart — close behavioral match). §3 ALL GREEN: retrieval-probes dev 0 flips vs C8 baseline, all 13 existing lang packs (ts/rust/kotlin/csharp/cpp/java/python/javascript/ruby/go/php/c/typescript-lib) 0 PASS→FAIL flips against their most recent baselines (CS-006 PARTIAL→FAIL pre-existing from B4, 0 vs csharp-C8-check.json), GCSN 86.92% by reasoning (FILE_PATTERNS dart-only addition null-op for GCSN repos). Splits manifest updated: DR-001/002/004/006/008 dev, DR-003/005/007 heldout. **C_WORKFLOW_POLICY revision**: ran diagnostic subagent per user critique — caught real infra bug (discovery filter), not just confirmed encoder-bound. This validates the user's iter-32 feedback: uniform-FAIL with non-source top-1 == "look upstream of retrieval", not "encoder-bound, accept".
 next: C11 (Scala) discover, schedule 60s
+
+--- iter 36 (2026-05-11T11:08:00Z) ---
+item: C11
+action: discover + execute + resolve (DONE-with-baseline)
+result: Picked **com-lihaoyi/requests-scala @ e3619c19ef551067d2979ced99b434d45bb60986** (MIT, 7 .scala non-test files). Tiny, dense, idiomatic Scala 2 HTTP client — symmetric with dart-lang/http I picked for C10. Exercises canonical Scala patterns: `case class Response/Session/Requester/MultiPart`, `sealed trait Cert` with `object Cert` companion-object ADT, `implicit class FileRequestBlob` (Scala 2 conversion idiom), `trait BaseSession`, `package object requests`. 8 probes SC-001..SC-008. Index: 16.11s (well under 5min target), 19 files, 144 entities, 239 chunks (177 .scala), 236 embeddings. **Baseline: 7 PASS / 1 PARTIAL / 0 FAIL — strongest C-block baseline ever**. All 6 PASS+symbol-anchored probes hit; the grammar-edge-case probes both held up (SC-007 sealed trait PASS, SC-008 implicit class PASS — the Scala regex chunker's `class /(?:case\\s+)?class\\s+(\\w+)/` correctly anchors on `class` inside `implicit class X` because the `implicit` modifier doesn't block the anchor). Only PARTIAL is SC-001 (returned MultipartFormRequestBlob instead of MultiPart — same file, parent class in the inheritance chain). §3 ALL GREEN: retrieval-probes dev 0 flips vs C10, all 14 existing lang packs (ts/rust/kotlin/csharp/cpp/java/python/javascript/ruby/go/php/c/typescript-lib/dart) 0 PASS→FAIL flips. Splits manifest updated: SC-001/003/004/005/008 dev, SC-002/006/007 heldout (5/3). No code changes — pure new-pack add. Scala is already in FILE_PATTERNS.include (`{java,kt,kts,scala,groovy}`) so no dart-style discovery surprise. Confirms the lesson: small, idiomatic repos produce the strongest baselines (parallels python C2 4/2/2, php C6 4/2/2, dart C10 6/1/1, scala C11 7/1/0).
+next: C12 (Lua) discover, schedule 60s
 ```
 
 ---
