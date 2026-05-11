@@ -1026,17 +1026,70 @@ function symbolExactMatchBoost(result, target, opts = {}) {
 
 /**
  * Demote anomalous chunks: anonymous (symbol==null) AND symbolType==='code',
- * AND either file-header (startLine===1, e.g. file-imports leak) OR tiny
- * (span<5 lines, e.g. bare impl-header text). These chunks bypass the entity
- * DB (sparse/grep fallback or chunker leak) and shouldn't surface as top-1.
+ * AND ANY of:
+ *   (a) file-header — startLine===1 (e.g. file-imports leak)
+ *   (b) tiny span    — endLine-startLine<5 (e.g. bare impl-header text)
+ *   (c) preprocessor-dense — mid-file anonymous chunk where >50% of non-blank
+ *       lines are preprocessor directives (#include/#define/#ifdef/etc.) and
+ *       no real declaration appears. Covers C/C++ "include cluster" + "macro
+ *       wall" chunks that the (a)/(b) predicates miss because they sit in the
+ *       middle of a header and span 10-100 lines (CPP-002 / CPP-003 / CPP-008
+ *       root cause: anonymous code chunks dominated by HWY_ATTAINABLE_*,
+ *       HWY_HAVE_RUNTIME_DISPATCH_*, #include "hwy/base.h" etc., winning
+ *       NL queries on token density).
  *
- * Predicate verified 2026-05-07 against live probe + FreshStack PARTIALs:
- * legitimate symbol-mislabel cases (S3-Q2, S4-Q1, S6-Q4, S3-Q8) all have
- * span >20 lines and startLine deep in file — they pass through unaffected.
+ * These chunks bypass the entity DB (sparse/grep fallback or chunker leak)
+ * and shouldn't surface as top-1.
+ *
+ * Predicate (a)+(b) verified 2026-05-07 against live probe + FreshStack
+ * PARTIALs: legitimate symbol-mislabel cases (S3-Q2, S4-Q1, S6-Q4, S3-Q8)
+ * all have span >20 lines and startLine deep in file — they pass through
+ * unaffected by (a)+(b). Predicate (c) is narrower: requires zero real
+ * declarations AND ≥50% preprocessor lines, so a real code chunk with a
+ * couple of #includes at the top is NOT affected.
  *
  * Demote (×0.10) rather than filter so a single-anomalous-result fallback
  * still surfaces the chunk if nothing else matches.
  */
+const PREPROC_LINE_RE = /^\s*#\s*(?:include|define|undef|ifdef|ifndef|if|else|elif|endif|pragma|error|warning|line)\b/;
+
+function isPreprocDenseAnonymousChunk(result, opts) {
+  const text = resolveResultText(result, opts);
+  if (!text || text.length < 50) return false;
+  const lines = text.split(/\r?\n/);
+  let nonBlank = 0;
+  let preproc = 0;
+  let hasDecl = false;
+  // A `#define` (or `#pragma`/etc.) that ends in `\` is a multi-line
+  // continuation. Lines participating in the continuation are functionally
+  // part of the preprocessor directive and should count as preproc, not as
+  // "real code". Without this, a long multi-line macro definition like
+  // `#define HWY_BASELINE_TARGETS (FLAG_A | FLAG_B | \\` ... `FLAG_Z)`
+  // dilutes the density below 50% even though the entire span is one macro.
+  let inContinuation = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      inContinuation = false;
+      continue;
+    }
+    nonBlank++;
+    const isPreproc = PREPROC_LINE_RE.test(line) || inContinuation;
+    if (isPreproc) {
+      preproc++;
+    } else if (DECL_KEYWORD_RE.test(trimmed)) {
+      hasDecl = true;
+      break;
+    }
+    // Track continuation for the next line: a preproc line (or an existing
+    // continuation line) that ends in `\` continues the directive.
+    inContinuation = isPreproc && line.replace(/\s+$/, '').endsWith('\\');
+  }
+  if (hasDecl) return false;
+  if (nonBlank < 5) return false;
+  return (preproc / nonBlank) >= 0.5;
+}
+
 function anomalousChunkDemotion(result, opts = {}) {
   if (process.env.SWEET_SEARCH_NO_ANOMALOUS_CHUNK_DEMOTION === '1') return 1.0;
   if (hasAblation(opts.ablations, 'no-anomalous-chunk-demotion')) return 1.0;
@@ -1046,17 +1099,41 @@ function anomalousChunkDemotion(result, opts = {}) {
   // expect file-header content as the answer.
   if (!opts._isAgentFormat) return 1.0;
   const meta = result?.metadata ?? {};
-  const sym = result?.symbol ?? meta.symbol ?? meta.name ?? null;
-  if (sym !== null && sym !== '' && sym !== undefined) return 1.0;
   const symbolType = result?.symbolType ?? result?.type ?? meta.type ?? null;
-  if (symbolType !== 'code') return 1.0;
   const startLine = Number(result?.startLine ?? meta.startLine ?? meta.line_start);
   const endLine = Number(result?.endLine ?? meta.endLine ?? meta.line_end);
   if (!Number.isFinite(startLine) || !Number.isFinite(endLine)) return 1.0;
-  const isFileHeader = startLine === 1;
-  const isTinySpan = (endLine - startLine) < 5;
-  if (!isFileHeader && !isTinySpan) return 1.0;
-  return opts.anomalousChunkFactor ?? 0.10;
+  const span = endLine - startLine;
+
+  // PATH 1 — Anonymous code chunks (symbol==null, type='code'):
+  //   demote on file-header (startLine===1) OR tiny-span (<5 lines) OR
+  //   preprocessor-density >=50% with no declarations.
+  const sym = result?.symbol ?? meta.symbol ?? meta.name ?? null;
+  const isAnonymousCode = (sym === null || sym === '' || sym === undefined) && symbolType === 'code';
+  if (isAnonymousCode) {
+    const isFileHeader = startLine === 1;
+    const isTinySpan = span < 5;
+    const isPreprocDense = (!isFileHeader && !isTinySpan)
+      ? isPreprocDenseAnonymousChunk(result, opts)
+      : false;
+    if (isFileHeader || isTinySpan || isPreprocDense) {
+      return opts.anomalousChunkFactor ?? 0.10;
+    }
+    return 1.0;
+  }
+
+  // PATH 2 — Macro-wall chunks (symbolType='macro', span>=5, preprocessor-dense):
+  //   adopted from the entity DB during search, these chunks have a non-null
+  //   `symbol` like HWY_BASELINE_TARGETS even though their underlying chunk
+  //   metadata is anonymous-code. Functionally identical to PATH 1: a wall of
+  //   #defines that happens to include one extractable macro entity. Single
+  //   small macros (span<5) are NOT demoted — they may be the correct answer
+  //   for a query targeting that macro.
+  if (symbolType === 'macro' && span >= 5 && isPreprocDenseAnonymousChunk(result, opts)) {
+    return opts.anomalousChunkFactor ?? 0.10;
+  }
+
+  return 1.0;
 }
 
 /**
