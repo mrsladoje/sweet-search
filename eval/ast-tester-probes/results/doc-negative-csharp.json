@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:52:56.493Z",
+  "summary": {
+    "counts": {
+      "PASS": 0,
+      "PARTIAL": 0,
+      "FAIL": 3
+    },
+    "totalMs": 149,
+    "avgMs": 50,
+    "n": 3
+  },
+  "results": [
+    {
+      "id": "DN-CS-001",
+      "repo": "csharp",
+      "query": "garnet respserversession command parsing for redis protocol",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "playground/CommandInfoUpdater/RespCommandDocsParser.cs",
+        "startLine": 116,
+        "endLine": 229,
+        "symbol": "RespCommandArgumentParser",
+        "symbolType": "class",
+        "score": 0.4380037486553192,
+        "presentation": "full"
+      },
+      "wallMs": 63,
+      "error": null
+    },
+    {
+      "id": "DN-CS-002",
+      "repo": "csharp",
+      "query": "garnet object store get key API for retrieving values",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "libs/server/API/GarnetApi.cs",
+        "startLine": 80,
+        "endLine": 138,
+        "symbol": "GET",
+        "symbolType": "method",
+        "score": 0.5652142763137817,
+        "presentation": "full"
+      },
+      "wallMs": 44,
+      "error": null
+    },
+    {
+      "id": "DN-CS-003",
+      "repo": "csharp",
+      "query": "garnet cluster mode initialization with replica configuration",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "docker-compose.yml",
+        "startLine": 2,
+        "endLine": 12,
+        "symbol": "garnet",
+        "symbolType": "topKey",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 42,
+      "error": null
+    }
+  ]
+}

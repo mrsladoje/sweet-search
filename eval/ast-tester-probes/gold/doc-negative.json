@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "description": "D2 negative doc/settings probes: code-logic queries where doc/config files MUST NOT outrank impl. Targets high-doc-density repos (rust 413 md, javascript 158 md, csharp 88 md, lua 66 html, kotlin 60 md, python 39 md) plus standard repos. Each probe asks about CODE behavior; the gold is a code file. PASS means demotion correctly kept docs/yml/html below code; FAIL likely means a doc outranked code (demotion failure). Per PLAN §5 D2: measurement-only; no chunker/demotion changes.",
+  "language": "doc-negative",
+  "repo": "multi",
+  "createdAt": "2026-05-11",
+  "probes": [
+    {"id": "DN-RS-001", "repo": "rust", "query": "how does ruff format a python source file with line length configuration", "expectedFileAnyOf": ["crates/ruff_python_formatter/src/lib.rs", "crates/ruff_python_formatter/src/format/mod.rs"], "notes": "Negative doc probe: 'format' + 'configuration' present in many docs but code is in ruff_python_formatter crate"},
+    {"id": "DN-RS-002", "repo": "rust", "query": "how is the diagnostic rule registry initialized at startup in ruff", "expectedFileAnyOf": ["crates/ruff_linter/src/registry.rs", "crates/ruff_linter/src/lib.rs"], "notes": "Negative doc probe: rule registry — implementation in ruff_linter, not docs/contributing.md"},
+    {"id": "DN-RS-003", "repo": "rust", "query": "ruff settings parsing for pyproject.toml configuration sections", "expectedFileAnyOf": ["crates/ruff_workspace/src/configuration.rs", "crates/ruff_workspace/src/options.rs"], "notes": "Negative doc probe: docs literally describe pyproject sections; impl is in ruff_workspace crate"},
+    {"id": "DN-RS-004", "repo": "rust", "query": "how does ruff cache results between runs for incremental performance", "expectedFileAnyOf": ["crates/ruff/src/cache.rs", "crates/ruff_cache/src/lib.rs"], "notes": "Negative doc probe: many README/CHANGELOG mentions of cache; impl is in cache modules"},
+
+    {"id": "DN-JS-001", "repo": "javascript", "query": "axios request interceptor chain that runs before sending", "expectedFile": "lib/core/InterceptorManager.js", "notes": "Negative doc probe: README documents interceptors heavily; impl is InterceptorManager class"},
+    {"id": "DN-JS-002", "repo": "javascript", "query": "axios cancel token implementation for aborting in-flight requests", "expectedFile": "lib/cancel/CancelToken.js", "notes": "Negative doc probe: docs explain cancellation; impl is CancelToken class"},
+    {"id": "DN-JS-003", "repo": "javascript", "query": "axios transform request data based on content type", "expectedFileAnyOf": ["lib/defaults/index.js", "lib/core/dispatchRequest.js", "lib/helpers/formDataToJSON.js"], "notes": "Negative doc probe: data transformers in docs; impl in core/dispatchRequest"},
+
+    {"id": "DN-CS-001", "repo": "csharp", "query": "garnet respserversession command parsing for redis protocol", "expectedFileAnyOf": ["libs/server/Resp/RespServerSession.cs", "libs/server/Resp/CmdStrings.cs"], "notes": "Negative doc probe: docs describe protocol; impl is RespServerSession"},
+    {"id": "DN-CS-002", "repo": "csharp", "query": "garnet object store get key API for retrieving values", "expectedFileAnyOf": ["libs/server/StoreWrapper.cs", "libs/server/Storage/Functions/MainStore/MainStoreFunctions.cs"], "notes": "Negative doc probe: docs walkthrough; impl in libs/server"},
+    {"id": "DN-CS-003", "repo": "csharp", "query": "garnet cluster mode initialization with replica configuration", "expectedFileAnyOf": ["libs/cluster/Server/Replication/ReplicationManager.cs", "libs/cluster/Server/ClusterProvider.cs"], "notes": "Negative doc probe: cluster docs vs ReplicationManager impl"},
+
+    {"id": "DN-LU-001", "repo": "lua", "query": "penlight tablex deepcopy implementation recursive cloning", "expectedFile": "lua/pl/tablex.lua", "notes": "Negative doc probe (CONFIRMED FAILING — same query as LU-003): docs/libraries/pl.tablex.html outranks the .lua source. This probe captures the known doc-vs-code competition issue in Penlight."},
+    {"id": "DN-LU-002", "repo": "lua", "query": "penlight class system base method lookup", "expectedFile": "lua/pl/class.lua", "notes": "Negative doc probe: classes documented in HTML; impl is class.lua"},
+    {"id": "DN-LU-003", "repo": "lua", "query": "penlight stringx split function implementation", "expectedFile": "lua/pl/stringx.lua", "notes": "Negative doc probe: stringx documented; impl is stringx.lua"},
+
+    {"id": "DN-KT-001", "repo": "kotlin", "query": "kotlinx coroutines launch builder implementation creating new coroutine", "expectedFileAnyOf": ["kotlinx-coroutines-core/common/src/Builders.common.kt", "kotlinx-coroutines-core/jvm/src/Builders.kt"], "notes": "Negative doc probe: launch heavily documented; impl in Builders"},
+    {"id": "DN-KT-002", "repo": "kotlin", "query": "kotlinx coroutines flow operator collect and emit logic", "expectedFileAnyOf": ["kotlinx-coroutines-core/common/src/flow/Flow.kt", "kotlinx-coroutines-core/common/src/flow/internal/AbstractSharedFlow.kt"], "notes": "Negative doc probe: Flow docs extensive; impl in flow/ subdirectory"},
+    {"id": "DN-KT-003", "repo": "kotlin", "query": "kotlinx coroutines select expression for racing multiple channel operations", "expectedFile": "kotlinx-coroutines-core/common/src/selects/Select.kt", "notes": "Negative doc probe: select operator documented; impl is selects/Select.kt"},
+
+    {"id": "DN-PY-001", "repo": "python", "query": "click option decorator that adds a flag to a command", "expectedFileAnyOf": ["src/click/decorators.py", "src/click/core.py"], "notes": "Negative doc probe: option decorator heavily documented; impl is decorators.py"},
+    {"id": "DN-PY-002", "repo": "python", "query": "click command argument parsing for positional and variadic arguments", "expectedFile": "src/click/core.py", "notes": "Negative doc probe: docs walkthrough; impl is core.py"},
+    {"id": "DN-PY-003", "repo": "python", "query": "click context manager propagating parent invocation state", "expectedFile": "src/click/core.py", "notes": "Negative doc probe: context docs; impl is core.py Context class"},
+
+    {"id": "DN-JV-001", "repo": "java", "query": "gson type adapter delegate dispatch for polymorphic serialization", "expectedFileAnyOf": ["gson/src/main/java/com/google/gson/TypeAdapter.java", "gson/src/main/java/com/google/gson/internal/bind/TypeAdapters.java"], "notes": "Negative doc probe: TypeAdapter heavily documented; impl is .java"},
+    {"id": "DN-JV-002", "repo": "java", "query": "gson Json reader streaming parse from input source", "expectedFile": "gson/src/main/java/com/google/gson/stream/JsonReader.java", "notes": "Negative doc probe: streaming docs; impl is JsonReader.java"},
+
+    {"id": "DN-TS-001", "repo": "typescript", "query": "ai chatbot user message persistence to database session", "expectedFileAnyOf": ["lib/db/queries.ts", "app/(chat)/api/chat/route.ts"], "notes": "Negative doc probe: chatbot pattern with DB; impl in lib/db"},
+    {"id": "DN-TS-002", "repo": "typescript", "query": "react server action handler for sending a chat message", "expectedFileAnyOf": ["app/(chat)/actions.ts", "app/(chat)/api/chat/route.ts"], "notes": "Negative doc probe: server actions documented in next docs; impl in app/"},
+
+    {"id": "DN-TSL-001", "repo": "typescript-lib", "query": "zod schema parse method with success and error result type", "expectedFileAnyOf": ["packages/zod/src/v4/core/schemas.ts", "packages/zod/src/v3/types.ts", "packages/zod/src/v4/classic/schemas.ts"], "notes": "Negative doc probe: parse documented; impl in core schemas"},
+    {"id": "DN-TSL-002", "repo": "typescript-lib", "query": "zod refinement and transform method for custom validation logic", "expectedFileAnyOf": ["packages/zod/src/v4/core/checks.ts", "packages/zod/src/v3/types.ts"], "notes": "Negative doc probe: refinement docs; impl in checks"},
+
+    {"id": "DN-RB-001", "repo": "ruby", "query": "sinatra route dispatcher matching path and http method", "expectedFile": "lib/sinatra/base.rb", "notes": "Negative doc probe: routes documented; impl in base.rb"},
+    {"id": "DN-RB-002", "repo": "ruby", "query": "sinatra helpers module included into request context", "expectedFile": "lib/sinatra/base.rb", "notes": "Negative doc probe: helpers documented; impl in base.rb"},
+
+    {"id": "DN-EL-001", "repo": "elixir", "query": "jason encoder fast path for binary and number types", "expectedFile": "lib/encode.ex", "notes": "Negative doc probe: encoder docs; impl is encode.ex"},
+
+    {"id": "DN-PHP-001", "repo": "php", "query": "slim app handle method dispatching request through middleware", "expectedFile": "Slim/App.php", "notes": "Negative doc probe: app.handle documented; impl is App.php"},
+
+    {"id": "DN-CPP-001", "repo": "cpp", "query": "highway vector reduce min operation across simd lanes", "expectedFileAnyOf": ["hwy/ops/x86_avx2-inl.h", "hwy/ops/generic_ops-inl.h", "hwy/ops/arm_neon-inl.h"], "notes": "Negative doc probe: SIMD ops documented; impl in hwy/ops/"}
+  ]
+}
