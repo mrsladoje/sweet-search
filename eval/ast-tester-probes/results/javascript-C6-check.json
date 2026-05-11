@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T07:22:46.955Z",
+  "summary": {
+    "counts": {
+      "PASS": 4,
+      "PARTIAL": 1,
+      "FAIL": 3
+    },
+    "totalMs": 250,
+    "avgMs": 31,
+    "n": 8
+  },
+  "results": [
+    {
+      "id": "JS-001",
+      "repo": "javascript",
+      "query": "how does axios apply request and response interceptors in the dispatch chain",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/core/InterceptorManager.js",
+        "startLine": 5,
+        "endLine": 70,
+        "symbol": "InterceptorManager",
+        "symbolType": "class",
+        "score": 0.5126076188229745,
+        "presentation": "full"
+      },
+      "wallMs": 68,
+      "error": null
+    },
+    {
+      "id": "JS-002",
+      "repo": "javascript",
+      "query": "how does axios serialize URL search parameters with custom encoding",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "lib/helpers/AxiosURLSearchParams.js",
+        "startLine": 1,
+        "endLine": 61,
+        "symbol": "encode",
+        "symbolType": "function",
+        "score": 0.5544378223872115,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    },
+    {
+      "id": "JS-003",
+      "repo": "javascript",
+      "query": "how does axios cancel an in-flight request using a cancel token",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/cancel/CancelToken.js",
+        "startLine": 5,
+        "endLine": 133,
+        "symbol": "CancelToken",
+        "symbolType": "class",
+        "score": 0.5969462062485319,
+        "presentation": "full"
+      },
+      "wallMs": 28,
+      "error": null
+    },
+    {
+      "id": "JS-004",
+      "repo": "javascript",
+      "query": "Axios class request method that runs the configured request",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "lib/core/Axios.js",
+        "startLine": 22,
+        "endLine": 238,
+        "symbol": "Axios",
+        "symbolType": "class",
+        "score": 0.6852117908000948,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "JS-005",
+      "repo": "javascript",
+      "query": "AxiosHeaders class fluent header manipulation",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/core/AxiosHeaders.js",
+        "startLine": 80,
+        "endLine": 324,
+        "symbol": "AxiosHeaders",
+        "symbolType": "class",
+        "score": 0.6893693137168886,
+        "presentation": "full"
+      },
+      "wallMs": 22,
+      "error": null
+    },
+    {
+      "id": "JS-006",
+      "repo": "javascript",
+      "query": "buildFullPath function combining baseURL and request URL",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "lib/core/Axios.js",
+        "startLine": 22,
+        "endLine": 238,
+        "symbol": "Axios",
+        "symbolType": "class",
+        "score": 0.44263187050819397,
+        "presentation": "full"
+      },
+      "wallMs": 21,
+      "error": null
+    },
+    {
+      "id": "JS-007",
+      "repo": "javascript",
+      "query": "Axios prototype dynamic method assignment for HTTP verbs get post put delete",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "lib/platform/common/utils.js",
+        "startLine": 26,
+        "endLine": 42,
+        "symbol": "hasStandardBrowserWebWorkerEnv",
+        "symbolType": "arrowFunction",
+        "score": 0.593527851458886,
+        "presentation": "full"
+      },
+      "wallMs": 33,
+      "error": null
+    },
+    {
+      "id": "JS-008",
+      "repo": "javascript",
+      "query": "AxiosError class extending Error with constructor accepting message code config",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/core/AxiosError.js",
+        "startLine": 75,
+        "endLine": 158,
+        "symbol": "AxiosError",
+        "symbolType": "class",
+        "score": 0.8784600000000004,
+        "presentation": "full"
+      },
+      "wallMs": 29,
+      "error": null
+    }
+  ]
+}

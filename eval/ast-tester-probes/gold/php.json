@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "8 retrieval probes for slimphp/Slim — an MIT-licensed PHP micro-framework with abstract/final class modifiers, interface implementation, and PSR-7/PSR-15 HTTP middleware chains.",
+  "language": "php",
+  "repo": "php",
+  "repoUrl": "https://github.com/slimphp/Slim",
+  "repoSha": "025043ec303c652408ae85900c98653798d91778",
+  "license": "MIT",
+  "probes": [
+    {
+      "id": "PHP-001",
+      "repo": "php",
+      "query": "how does slim dispatch HTTP requests through the middleware pipeline",
+      "expectedFile": "Slim/MiddlewareDispatcher.php",
+      "expectedSymbol": "MiddlewareDispatcher",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe: MiddlewareDispatcher class implements MiddlewareDispatcherInterface — composes the PSR-15 middleware chain"
+    },
+    {
+      "id": "PHP-002",
+      "repo": "php",
+      "query": "how does slim collect and register routes via the fluent route builder",
+      "expectedFile": "Slim/Routing/RouteCollector.php",
+      "expectedSymbol": "RouteCollector",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe: RouteCollector class implements RouteCollectorInterface — owns the route table"
+    },
+    {
+      "id": "PHP-003",
+      "repo": "php",
+      "query": "how does slim resolve callable handlers from class names callables or container entries",
+      "expectedFile": "Slim/CallableResolver.php",
+      "expectedSymbol": "CallableResolver",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe: CallableResolver translates string/array/Closure callables into invocable handlers"
+    },
+    {
+      "id": "PHP-004",
+      "repo": "php",
+      "query": "Slim App class implementing RequestHandlerInterface",
+      "expectedFile": "Slim/App.php",
+      "expectedSymbol": "App",
+      "expectedSymbolType": "class",
+      "notes": "Symbol-anchored probe: App extends RouteCollectorProxy implements RequestHandlerInterface — the top-level application class"
+    },
+    {
+      "id": "PHP-005",
+      "repo": "php",
+      "query": "Slim Route class implementing RouteInterface",
+      "expectedFile": "Slim/Routing/Route.php",
+      "expectedSymbol": "Route",
+      "expectedSymbolType": "class",
+      "notes": "Symbol-anchored probe: Route implements RouteInterface, RequestHandlerInterface (line 40) — concrete route with handler + middleware"
+    },
+    {
+      "id": "PHP-006",
+      "repo": "php",
+      "query": "Slim FastRouteDispatcher class wrapping nikic FastRoute",
+      "expectedFile": "Slim/Routing/FastRouteDispatcher.php",
+      "expectedSymbol": "FastRouteDispatcher",
+      "expectedSymbolType": "class",
+      "notes": "Symbol-anchored probe: FastRouteDispatcher wraps the nikic/fast-route library"
+    },
+    {
+      "id": "PHP-007",
+      "repo": "php",
+      "query": "Slim CallableResolver final class with interface inheritance",
+      "expectedFile": "Slim/CallableResolver.php",
+      "expectedSymbol": "CallableResolver",
+      "expectedSymbolType": "class",
+      "notes": "Grammar-edge-case probe: `final class CallableResolver implements AdvancedCallableResolverInterface` (line 32) — exercises PHP's `final` class modifier combined with interface implementation"
+    },
+    {
+      "id": "PHP-008",
+      "repo": "php",
+      "query": "Slim App constructor accepting ResponseFactoryInterface and container dependencies",
+      "expectedFile": "Slim/App.php",
+      "expectedSymbol": "__construct",
+      "expectedSymbolType": "method",
+      "notes": "Grammar-edge-case probe: App::__construct (line 55) takes multiple typed nullable parameters (`?ContainerInterface $container = null`, `?CallableResolverInterface $callableResolver = null`, etc.). Exercises tree-sitter-php's parsing of typed nullable parameters with defaults across a multi-line constructor signature"
+    }
+  ]
+}
