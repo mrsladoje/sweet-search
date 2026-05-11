@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "8 retrieval probes for lunarmodules/Penlight — a Python-inspired utility library for Lua (MIT). Exercises canonical Lua patterns: module-prefixed functions (`function M.foo`), Penlight's class system (metatables + `:` method syntax), command-line argument parsing DSL, table/string utility modules. Lua has NO tree-sitter grammar in GRAMMAR_MAP — chunking uses the regex chunker in registry-tooling.js:52-72 (endKeyword='end' brace-equivalent).",
+  "language": "lua",
+  "repo": "lua",
+  "repoUrl": "https://github.com/lunarmodules/Penlight",
+  "repoSha": "c317508c90cb384da22e79f6bd405eb4e406fc79",
+  "license": "MIT",
+  "probes": [
+    {
+      "id": "LU-001",
+      "repo": "lua",
+      "query": "how does Penlight implement class inheritance with constructors and base method dispatch",
+      "expectedFile": "lua/pl/class.lua",
+      "expectedSymbol": "_class",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe: `local function _class(base,c_arg,c)` (line 128) is Penlight's internal class factory — installs `_init` constructor, `is_a`/`class_of`/`cast` introspection, `super` for base method calls. The public `class` module (line 215-216, `class = setmetatable({}, ...)`) wraps `_class` as a callable. The chunker emits `_class` as the function chunk; `class` itself is an assigned-table (not function), so doesn't get its own entity."
+    },
+    {
+      "id": "LU-002",
+      "repo": "lua",
+      "query": "parse command line arguments with types defaults and help text using Penlight",
+      "expectedFileAnyOf": ["lua/pl/lapp.lua"],
+      "expectedSymbolAnyOf": ["lapp.process_options_string", "lapp.add_type", "lapp.callback", "lapp.quit"],
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe: Penlight's `lapp` module (`lua/pl/lapp.lua`) is a DSL for declarative CLI argument parsing — comments in the usage string define types and defaults. Multiple plausible entry points: `process_options_string` (the parse driver, line 182), `add_type` (register new type, line 137), `callback` (parse hook), `quit`/`error` (failure paths). Regex chunker preserves the dotted form `lapp.X` via the entity-extraction layer's `[\\w.]+` capture."
+    },
+    {
+      "id": "LU-003",
+      "repo": "lua",
+      "query": "deepcopy a Lua table recursively preserving structure in penlight",
+      "expectedFile": "lua/pl/tablex.lua",
+      "expectedSymbol": "tablex.deepcopy",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe: `function tablex.deepcopy(t)` (line 118) — recursive table clone preserving nested-table structure. Symbol captured by entity extraction's `[\\w.]+` regex preserving the dotted module-prefix form."
+    },
+    {
+      "id": "LU-004",
+      "repo": "lua",
+      "query": "List class with append insert clone extend Lua methods",
+      "expectedFile": "lua/pl/List.lua",
+      "expectedSymbolAnyOf": ["List", "List._create", "List._init"],
+      "expectedSymbolType": "function",
+      "notes": "Symbol-anchored probe: `function List._create(src)` (line 53), `function List:_init(src)` (line 57), `function List:append(i)` (line 91), etc. — Penlight's Python-style list with `:` (method) and `.` (static) dispatch. The regex chunker captures `List._create` (dot-form retained) but `List:append` truncates to `List` (colon not in `[\\w.]+`)."
+    },
+    {
+      "id": "LU-005",
+      "repo": "lua",
+      "query": "Date class with toUTC toLocal weekday_name methods Penlight",
+      "expectedFile": "lua/pl/Date.lua",
+      "expectedSymbolAnyOf": ["Date", "Date.tzone"],
+      "expectedSymbolType": "function",
+      "notes": "Symbol-anchored probe: `function Date:toUTC()` (line 121), `function Date:toLocal()` (line 131), `function Date:weekday_name(full)` (line 222), `function Date.tzone(ts)` (line 104) — Penlight's date/time class. `:` methods captured as `Date`, `.` static `tzone` captured as `Date.tzone`."
+    },
+    {
+      "id": "LU-006",
+      "repo": "lua",
+      "query": "tablex.update merges fields from one table into another",
+      "expectedFile": "lua/pl/tablex.lua",
+      "expectedSymbol": "tablex.update",
+      "expectedSymbolType": "function",
+      "notes": "Symbol-anchored probe: `function tablex.update(t1,t2)` (line 61) — copies all key-value pairs from t2 into t1 (in-place mutation). Dotted form captured by entity extraction's `[\\w.]+` regex."
+    },
+    {
+      "id": "LU-007",
+      "repo": "lua",
+      "query": "function List append method definition with colon syntax for implicit self",
+      "expectedFile": "lua/pl/List.lua",
+      "expectedSymbol": "List",
+      "expectedSymbolType": "function",
+      "notes": "Grammar-edge-case probe: `function List:append(i)` (line 91) — Lua's `:` method-call syntax sugar where `obj:method(args)` is equivalent to `obj.method(obj, args)`. The entity-extraction regex `[\\w.]+` does NOT include `:`, so all `:` methods in the file collapse under the bare `List` symbol. This is a known chunker limitation — the test asks whether retrieval can still locate the file by surrounding context."
+    },
+    {
+      "id": "LU-008",
+      "repo": "lua",
+      "query": "stringx isalpha returns true for all alphabetic characters Lua",
+      "expectedFile": "lua/pl/stringx.lua",
+      "expectedSymbol": "stringx.isalpha",
+      "expectedSymbolType": "function",
+      "notes": "Grammar-edge-case probe: `function stringx.isalpha(s)` (line 55) — module-prefixed function using `.` syntax (no implicit self). Lua's idiom of `function M.foo()` is the most common form for module-level functions. Entity extraction's `[\\w.]+` regex DOES include `.`, so this captures as `stringx.isalpha` (dotted form preserved, distinguishing it from `:` colon-method limitation in LU-007)."
+    }
+  ]
+}
