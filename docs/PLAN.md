@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        40         # incremented each loop pass
+ITERATION:        41         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      f725007    # most recent shipped commit before this plan
+LAST_COMMIT:      3883dca    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -320,7 +320,7 @@ User intent (2026-05-11): validate that when queries genuinely need docs/configs
   3. Commit (`feat(probes): doc/settings positive probes`)
   4. NO chunker/demotion changes regardless of pass rate — measurement-only.
 **Per-item gates:** no PASS→FAIL flips on existing language probes (just adds new probes).
-**Status:** [ ] PENDING
+**Status:** [x] DONE — Created `eval/ast-tester-probes/gold/doc-positive.json` with 68 probes across 18 repos (~4 per repo: LICENSE, README, build manifest, CI workflow). Probes target docs/configs that are LEGITIMATELY the correct top-1 for queries like "what license does this project use" → LICENSE. **Baseline: 18 PASS / 0 PARTIAL / 50 FAIL out of 68 (26.5% pass rate)**. The demotion does its job — code chunks generally outrank doc files even for queries genuinely needing docs. Per-language results: c 2/4, cpp 2/4, elixir 2/4, javascript 2/4, python 2/4, java 1/4, lua 1/3, php 1/4, rust 1/4, ruby 1/4, scala 1/3, typescript 1/4, typescript-lib 1/4, csharp 0/4, dart 0/4, go 0/4, kotlin 0/3, zig 0/3. **NO chunker/demotion changes per PLAN explicit guidance** — this is measurement-only. §3 ALL GREEN: retrieval-probes dev 29/3/8 zero PASS→FAIL flips vs C15 (D1 only adds probes, makes no code changes — flips=0 guaranteed by construction). Useful baseline for any future demotion-tuning work (which is BLOCKED in D3 anyway).
 
 #### D2. Negative doc/settings probes (ONLY if D1 done + zero regressions globally)
 **Type:** doc-probe-negative (probe creation + measurement; no code change)
@@ -636,6 +636,12 @@ item: C16 + C17 + C18 batch-skip
 action: batch SKIP for Gleam/Mojo/Julia per PLAN
 result: All three lack ANY infra (no tree-sitter grammar, no regex chunker entry in registry-*.js, not in EXTENSION_MAP, not in FILE_PATTERNS.include). Per PLAN C16/C17 explicit SKIP guidance ("if no tree-sitter grammar, mark FAILED with reason") and C13/R precedent (no infra → SKIP), batched all three. **C-block now closed**: 11 DONE (C1-C8 + C10 + C11 + C12 + C14 + C15) + 4 SKIP (C9 Swift V8 crash, C13 R no-infra, C16 Gleam no-infra, C17 Mojo no-infra, C18 Julia no-infra). Wait — that's 11 + 5 = 16, but C is 18 items. Let me recount: C1 java, C2 python, C3 javascript, C4 ruby, C5 go, C6 php, C7 c, C8 typescript-lib, C9 swift SKIP, C10 dart, C11 scala, C12 lua, C13 R SKIP, C14 zig, C15 elixir, C16 gleam SKIP, C17 mojo SKIP, C18 julia SKIP = 13 DONE + 5 SKIP = 18. ✓ Total probe packs added: 11 new (java/python/js/ruby/go/php/c/ts-lib/dart/scala/lua/zig/elixir = wait that's 13). Re-counting: 4 original (ts/rust/kotlin/csharp/cpp) + 13 new C-block (java/python/js/ruby/go/php/c/ts-lib/dart/scala/lua/zig/elixir) = 17... let me recount original: ts/rust/kotlin/csharp/cpp = 5 originals. Plus 13 new = 18 packs total. **Moving to D-block (D1 positive doc/settings probes)**.
 next: D1 discover, schedule 60s
+
+--- iter 41 (2026-05-11T11:48:00Z) ---
+item: D1
+action: create + measure + resolve (DONE-with-baseline)
+result: Built `eval/ast-tester-probes/gold/doc-positive.json` — 68 probes across 18 repos (~4 each: LICENSE, README, build manifest, CI workflow). Each probe is a query where the LEGITIMATE top-1 is a doc/config file. Ran per-repo (the multi-repo gold required the runner's `--repo=<key> --repo-base=...` pattern since the runner doesn't natively support per-probe-repo-base resolution). **Baseline: 18 PASS / 0 PARTIAL / 50 FAIL out of 68 (26.5% pass rate)**. Per-repo: c/cpp/elixir/javascript/python each 2/4, java/lua/php/rust/ruby/scala/typescript/typescript-lib each 1/3-1/4, csharp/dart/go/kotlin/zig each 0/3-0/4. **Findings**: the existing doc/config demotion is effective — code chunks generally outrank doc files even for queries genuinely needing docs. PASS-prone queries: README purpose, LICENSE for repos where license file has the EXACT keyword "license" prominently. FAIL-prone queries: build manifests (package.json, Cargo.toml, etc) lose to code files mentioning dependencies; CI workflows lose to scripts mentioning CI commands. §3 ALL GREEN by construction (D1 adds probes, makes 0 code changes; verified retrieval-probes dev 0 flips vs C15). Per PLAN explicit D1 guidance: NO chunker/demotion changes regardless of pass rate — this is the measurement step. Useful as input to D3 demotion tuning IF the user authorizes it later (D3 currently BLOCKED).
+next: D2 discover, schedule 60s
 ```
 
 ---

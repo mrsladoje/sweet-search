@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:47:04.653Z",
+  "summary": {
+    "counts": {
+      "PASS": 1,
+      "PARTIAL": 0,
+      "FAIL": 3
+    },
+    "totalMs": 203,
+    "avgMs": 51,
+    "n": 4
+  },
+  "results": [
+    {
+      "id": "DP-RS-001",
+      "repo": "rust",
+      "query": "what license is the ruff linter project distributed under",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/ruff_server/src/lib.rs",
+        "startLine": 1,
+        "endLine": 41,
+        "symbol": "version",
+        "symbolType": "function",
+        "score": 0.47995051741600037,
+        "presentation": "full"
+      },
+      "wallMs": 64,
+      "error": null
+    },
+    {
+      "id": "DP-RS-002",
+      "repo": "rust",
+      "query": "what is ruff and what does it do explained in the readme",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "Dockerfile",
+        "startLine": 38,
+        "endLine": 39,
+        "symbol": "[\"/ruff\"]",
+        "symbolType": "entrypoint",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 46,
+      "error": null
+    },
+    {
+      "id": "DP-RS-003",
+      "repo": "rust",
+      "query": "Cargo.toml workspace manifest with crate dependencies and members",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "Cargo.toml",
+        "startLine": 1,
+        "endLine": 16,
+        "symbol": "workspace",
+        "symbolType": "section",
+        "score": 0.6285125017166138,
+        "presentation": "full"
+      },
+      "wallMs": 53,
+      "error": null
+    },
+    {
+      "id": "DP-RS-004",
+      "repo": "rust",
+      "query": "github workflow to build binaries on release",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "dist-workspace.toml",
+        "startLine": 51,
+        "endLine": 67,
+        "symbol": "github-release",
+        "symbolType": "keyVal",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 40,
+      "error": null
+    }
+  ]
+}

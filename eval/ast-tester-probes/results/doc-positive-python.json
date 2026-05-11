@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:47:20.563Z",
+  "summary": {
+    "counts": {
+      "PASS": 2,
+      "PARTIAL": 0,
+      "FAIL": 2
+    },
+    "totalMs": 130,
+    "avgMs": 33,
+    "n": 4
+  },
+  "results": [
+    {
+      "id": "DP-PY-001",
+      "repo": "python",
+      "query": "what license is pallets click cli library under",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "LICENSE.txt",
+        "startLine": 1,
+        "endLine": 29,
+        "symbol": "chunk_1",
+        "symbolType": "paragraph",
+        "score": 0.47009900212287903,
+        "presentation": "full"
+      },
+      "wallMs": 50,
+      "error": null
+    },
+    {
+      "id": "DP-PY-002",
+      "repo": "python",
+      "query": "what is click python command line interface library",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "pyproject.toml",
+        "startLine": 4,
+        "endLine": 8,
+        "symbol": "description",
+        "symbolType": "keyVal",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 35,
+      "error": null
+    },
+    {
+      "id": "DP-PY-003",
+      "repo": "python",
+      "query": "pyproject.toml with click package configuration and dependencies",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": ".github/workflows/tests.yaml",
+        "startLine": 60,
+        "endLine": 60,
+        "symbol": "key",
+        "symbolType": "topKey",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 25,
+      "error": null
+    },
+    {
+      "id": "DP-PY-004",
+      "repo": "python",
+      "query": "github actions lock dependency workflow",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": ".github/workflows/pre-commit.yaml",
+        "startLine": 8,
+        "endLine": 8,
+        "symbol": "group",
+        "symbolType": "topKey",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 20,
+      "error": null
+    }
+  ]
+}
