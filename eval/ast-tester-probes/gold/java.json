@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "8 retrieval probes for google/gson — a small Apache-2.0 Java JSON serialization library with anonymous inner classes, wildcard generics, lambda expressions, and enum-with-abstract-method-bodies",
+  "language": "java",
+  "repo": "java",
+  "repoUrl": "https://github.com/google/gson",
+  "repoSha": "abfef5e8455483b878a8dea14dd42fa55832a56c",
+  "license": "Apache-2.0",
+  "probes": [
+    {
+      "id": "JV-001",
+      "repo": "java",
+      "query": "how does Gson handle null values during serialization",
+      "expectedFile": "gson/src/main/java/com/google/gson/GsonBuilder.java",
+      "expectedSymbol": "serializeNulls",
+      "expectedSymbolType": "method",
+      "notes": "NL behavior probe: serializeNulls() at line 271 enables null serialization; GsonBuilder fluent API"
+    },
+    {
+      "id": "JV-002",
+      "repo": "java",
+      "query": "how does Gson resolve the constructor for generic collection types",
+      "expectedFile": "gson/src/main/java/com/google/gson/internal/ConstructorConstructor.java",
+      "expectedSymbol": "get",
+      "expectedSymbolType": "method",
+      "notes": "NL behavior probe: get(TypeToken<T>) at line 92 returns lambda-based ObjectConstructor; core of Gson's collection instantiation logic using Java 8 lambdas"
+    },
+    {
+      "id": "JV-003",
+      "repo": "java",
+      "query": "how does the JSON streaming reader extract string tokens",
+      "expectedFile": "gson/src/main/java/com/google/gson/stream/JsonReader.java",
+      "expectedSymbol": "nextString",
+      "expectedSymbolType": "method",
+      "notes": "NL behavior probe: nextString() at line 951 reads and returns the next string value from the JSON stream"
+    },
+    {
+      "id": "JV-004",
+      "repo": "java",
+      "query": "TypeToken getType method",
+      "expectedFile": "gson/src/main/java/com/google/gson/reflect/TypeToken.java",
+      "expectedSymbol": "getType",
+      "expectedSymbolType": "method",
+      "notes": "Symbol-anchored probe: getType() at line 166 returns the runtime Type captured by the anonymous TypeToken subclass"
+    },
+    {
+      "id": "JV-005",
+      "repo": "java",
+      "query": "GsonBuilder registerTypeAdapter method",
+      "expectedFile": "gson/src/main/java/com/google/gson/GsonBuilder.java",
+      "expectedSymbol": "registerTypeAdapter",
+      "expectedSymbolType": "method",
+      "notes": "Symbol-anchored probe: registerTypeAdapter(Type, Object) at line 739 is the primary extension point for custom serializers/deserializers"
+    },
+    {
+      "id": "JV-006",
+      "repo": "java",
+      "query": "FieldNamingPolicy UPPER_CAMEL_CASE enum constant",
+      "expectedFile": "gson/src/main/java/com/google/gson/FieldNamingPolicy.java",
+      "expectedSymbol": "UPPER_CAMEL_CASE",
+      "expectedSymbolType": "enum_constant",
+      "notes": "Symbol-anchored probe: UPPER_CAMEL_CASE at line 52 is an enum constant with its own translateName body — exercises enum-with-per-constant-class-body parsing"
+    },
+    {
+      "id": "JV-007",
+      "repo": "java",
+      "query": "anonymous TypeAdapter implementation for BitSet serialization",
+      "expectedFile": "gson/src/main/java/com/google/gson/internal/bind/TypeAdapters.java",
+      "expectedSymbol": "BIT_SET",
+      "expectedSymbolType": "field",
+      "notes": "Grammar-edge-case probe: BIT_SET at line 89 is a static field initialized with an anonymous class expression `new TypeAdapter<BitSet>() { ... }` — exercises the Java grammar rule for anonymous class instantiation with parameterized supertype, which must parse the class body as an anonymous class body rather than a regular object creation expression"
+    },
+    {
+      "id": "JV-008",
+      "repo": "java",
+      "query": "LinkedTreeMap constructor with custom comparator and null values support",
+      "expectedFile": "gson/src/main/java/com/google/gson/internal/LinkedTreeMap.java",
+      "expectedSymbol": "LinkedTreeMap",
+      "expectedSymbolType": "class",
+      "notes": "Grammar-edge-case probe: LinkedTreeMap at line 44 uses the lower-bounded wildcard `Comparator<? super K>` in its constructor signature (line 92) and as a field type (line 54) — exercises the Java grammar production for wildcard type arguments with `super` bound"
+    }
+  ]
+}
