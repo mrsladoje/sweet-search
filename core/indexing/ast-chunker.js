@@ -12,7 +12,7 @@ import { createHash } from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
 import { detectProjectBoundary } from '../infrastructure/project-detector.js';
-import { getLanguageByPath } from '../infrastructure/language-patterns.js';
+import { getLanguageByPath, resolveLanguage } from '../infrastructure/language-patterns.js';
 import { DocumentChunker } from './document-chunker.js';
 
 const MAX_CHUNK_SIZE = 2000;
@@ -335,7 +335,11 @@ export class ASTChunker {
       return this._docChunker.parseFile(filePath, content);
     }
 
-    const langInfo = getLanguageByPath(filePath);
+    // resolveLanguage handles per-file disambiguation of ambiguous extensions
+    // (today: `.h` → c-vs-cpp) using a content scan for C++-only tokens.
+    // Header-only C++ libraries (highway, Eigen, …) are routed to cpp so the
+    // chunker uses tree-sitter-cpp instead of tree-sitter-c.
+    const langInfo = resolveLanguage(filePath, content);
     if (!langInfo || !langInfo.chunker) {
       return this.parseGenericFile(filePath, content);
     }

@@ -15,6 +15,7 @@ import {
   FILENAME_MAP,
   getLanguageByExtension,
   getLanguageByPath,
+  resolveLanguage,
   getChunkerPatterns,
   getGraphPatterns,
   getLanguageMeta,
@@ -326,6 +327,106 @@ describe('chunker pattern matching', () => {
     it('captures name on final-marked derived class', () => {
       expect('class MyClass final {'.match(p.class)?.[1]).toBe('MyClass');
     });
+  });
+});
+
+// Per-file content-aware language resolution. The default `.h → c` map is
+// wrong for header-only C++ libraries; resolveLanguage scans the leading
+// content for unambiguous C++ tokens and re-routes to cpp when found.
+describe('resolveLanguage — .h disambiguation', () => {
+  it('routes .h with `template<` to cpp', () => {
+    const src = '#pragma once\ntemplate <typename T> struct Vec { T x; };\n';
+    expect(resolveLanguage('foo.h', src).id).toBe('cpp');
+  });
+
+  it('routes .h with `namespace` to cpp', () => {
+    const src = '#pragma once\nnamespace hwy {\nvoid Foo();\n}\n';
+    expect(resolveLanguage('foo.h', src).id).toBe('cpp');
+  });
+
+  it('routes .h with `class Foo {` to cpp', () => {
+    const src = '#pragma once\nclass AlignedDeleter {\npublic:\n  void operator()(void* p) const;\n};\n';
+    expect(resolveLanguage('foo.h', src).id).toBe('cpp');
+  });
+
+  it('routes .h with `class Foo : public Base {` to cpp', () => {
+    const src = '#pragma once\nclass Derived : public Base {\n};\n';
+    expect(resolveLanguage('foo.h', src).id).toBe('cpp');
+  });
+
+  it('routes .h with `decltype(` to cpp', () => {
+    const src = '#pragma once\nusing Vec = decltype(Zero(D()));\n';
+    expect(resolveLanguage('foo.h', src).id).toBe('cpp');
+  });
+
+  it('routes .h with scope-resolution `Foo::Bar` to cpp', () => {
+    const src = '#pragma once\nvoid Foo() { std::vector<int> v; }\n';
+    expect(resolveLanguage('foo.h', src).id).toBe('cpp');
+  });
+
+  it('keeps .h with only `extern "C"` guards as c', () => {
+    // Classic "C header with C++ guard" pattern — must NOT be promoted to cpp.
+    const src = `#ifndef FOO_H
+#define FOO_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void foo(int x);
+typedef struct { int a; } Bar;
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* FOO_H */
+`;
+    expect(resolveLanguage('foo.h', src).id).toBe('c');
+  });
+
+  it('keeps .h with only macros as c (highway detect_targets.h-like)', () => {
+    const src = `#ifndef HWY_BAR_H
+#define HWY_BAR_H 1
+#define HWY_HAVE_RUNTIME_DISPATCH 1
+#endif
+`;
+    expect(resolveLanguage('foo.h', src).id).toBe('c');
+  });
+
+  it('keeps .h with C field literally named `class` as c', () => {
+    // `class` is NOT a reserved keyword in C — `int class;` is legal C.
+    // The regex requires `class IDENT[:{]`, so this stays c.
+    const src = `#ifndef FOO_H
+#define FOO_H
+struct Foo {
+    int class;
+    int value;
+};
+#endif
+`;
+    expect(resolveLanguage('foo.h', src).id).toBe('c');
+  });
+
+  it('does not touch unambiguous `.cpp` files', () => {
+    expect(resolveLanguage('foo.cpp', 'int main() { return 0; }').id).toBe('cpp');
+  });
+
+  it('does not touch `.c` files even if content has C++ tokens', () => {
+    // `.c` is unambiguous — no content override. (A C file accidentally
+    // containing `class Foo {` would be invalid C anyway.)
+    const src = '// comment about templates and namespaces\nint main(void) { return 0; }\n';
+    expect(resolveLanguage('foo.c', src).id).toBe('c');
+  });
+
+  it('falls back to default routing when content is null/undefined', () => {
+    expect(resolveLanguage('foo.h', null).id).toBe('c');
+    expect(resolveLanguage('foo.h', undefined).id).toBe('c');
+    expect(resolveLanguage('foo.h', '').id).toBe('c');
+  });
+
+  it('returns null for unsupported extensions', () => {
+    expect(resolveLanguage('foo.xyz', 'content')).toBeNull();
   });
 });
 
