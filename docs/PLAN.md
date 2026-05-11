@@ -11,7 +11,7 @@
 ```
 ITERATION:        24         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      5a3637c    # most recent shipped commit before this plan
+LAST_COMMIT:      8bdf986    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -202,7 +202,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 **Type:** new-language
 **Idioms to target:** annotations, generic wildcards `? extends T`, lambda expressions, switch expressions, records, sealed classes, text blocks (Java 13+).
 **Pre-flight web search:** "small idiomatic Java library MIT 2024", "tree-sitter-java capture queries best practices".
-**Status:** [x] DONE @ pending — Repo: google/gson @ abfef5e8 (Apache-2.0, 262 .java files, 48.7k LOC). Sonnet subagent picked + verified 8 probes JV-001..JV-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting anonymous inner class `new TypeAdapter<BitSet>() {...}` and wildcard `Comparator<? super K>`). All 8 gold probes verified file_exists + symbol_greps. Index: 400s (6.7min — slightly over §2.8 5-min target but kept; repo is structurally good). Baseline: 0 PASS / 3 PARTIAL / 5 FAIL. §3 validation: retrieval-probes 46/60 zero PASS→FAIL flips; GCSN dev MRR@10 86.92% exact; ts/rust/kotlin/csharp/cpp all zero flips. Splits manifest updated: JV-001/002/004/005/008 dev, JV-003/006/007 heldout (5/3). Iter 24. C_WORKFLOW_POLICY adopted: skip optional diagnostic-subagent step given ENCODER_BOUND_PATTERN — chunker fixes for new langs unlikely to move metric.
+**Status:** [x] DONE @ 8bdf986 — Repo: google/gson @ abfef5e8 (Apache-2.0, 262 .java files, 48.7k LOC). Sonnet subagent picked + verified 8 probes JV-001..JV-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting anonymous inner class `new TypeAdapter<BitSet>() {...}` and wildcard `Comparator<? super K>`). All 8 gold probes verified file_exists + symbol_greps. Index: 400s (6.7min — slightly over §2.8 5-min target but kept; repo is structurally good). Baseline: 0 PASS / 3 PARTIAL / 5 FAIL. §3 validation: retrieval-probes 46/60 zero PASS→FAIL flips; GCSN dev MRR@10 86.92% exact; ts/rust/kotlin/csharp/cpp all zero flips. Splits manifest updated: JV-001/002/004/005/008 dev, JV-003/006/007 heldout (5/3). Iter 24. C_WORKFLOW_POLICY adopted: skip optional diagnostic-subagent step given ENCODER_BOUND_PATTERN — chunker fixes for new langs unlikely to move metric.
 
 #### C2. Python
 **Type:** new-language
