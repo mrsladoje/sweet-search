@@ -11,7 +11,7 @@
 ```
 ITERATION:        2          # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      930cee5    # most recent shipped commit before this plan
+LAST_COMMIT:      ffa73d7    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 ```
@@ -113,7 +113,7 @@ done
 **Fix approach:** Run each language's probes filtered to held-out IDs from `eval/ast-tester-probes/splits/heldout.json`. Record summary numbers in iteration log. NO per-query failure inspection.
 **Per-item gates:** none beyond §3.
 **Abort/revert:** N/A (no code change).
-**Status:** [x] DONE @ pending-sha — held-out aggregate 3 PASS / 4 PARTIAL / 8 FAIL of 15 (cpp 0/0/3, csharp 0/2/1, kotlin 1/1/1, rust 1/0/2, typescript 1/1/1). Milestone baseline for Phase 1 end state; per-query inspection deferred per held-out discipline.
+**Status:** [x] DONE @ ffa73d7 — held-out aggregate 3 PASS / 4 PARTIAL / 8 FAIL of 15 (cpp 0/0/3, csharp 0/2/1, kotlin 1/1/1, rust 1/0/2, typescript 1/1/1). Milestone baseline for Phase 1 end state; per-query inspection deferred per held-out discipline.
 
 ---
 
