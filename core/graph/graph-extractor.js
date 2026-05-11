@@ -329,6 +329,16 @@ export const TREE_SITTER_ENTITY_PRIORITY = Object.freeze({
   // Rust macro_rules! definitions — same rank as function/struct/impl since
   // they're top-level definitions with similar discoverability needs.
   macro: 30,
+  // Java enum constants (FieldNamingPolicy.UPPER_CAMEL_CASE) — fine-grained
+  // anchor inside the enclosing enum class, but worth surfacing for
+  // symbol-anchored probes. Rank between decorator and arrow: low enough
+  // to not steal the enum's primary anchor when both match, high enough
+  // to win over plain variables in disambiguation.
+  enum_constant: 10,
+  // Java field declarations (static finals like TypeAdapters.BIT_SET that
+  // initialize anonymous inner-class subclasses). Same priority story as
+  // enum_constant — useful for anchoring, not primary.
+  field: 10,
 });
 
 // Module-scope constants for extractJavaScript() — avoid per-call/per-line allocation.
@@ -528,12 +538,64 @@ export class GraphExtractor {
     let currentClass = null;
     let braceDepth = 0;
     let classStartDepth = 0;
+    // Track whether we are inside a `/* ... */` or `/** ... */` block
+    // comment. Without this, every entity-emission regex below also
+    // matches Javadoc `<pre>` examples ("public class MyClass { ... }"),
+    // creating phantom classes/methods/calls in the graph. Verified on
+    // gson SerializedName.java / Since.java / Until.java where phantom
+    // `MyClass`/`User`/`Gson`/`fromJson` entities were polluting
+    // search-time symbol attribution via findFirstEntityInRange.
+    // The state is a per-line boolean: true if the line BEGINS inside
+    // a block comment (and we therefore skip all regex extractions and
+    // brace counting on that line). State transitions on the first
+    // `/*` open and the first `*/` close encountered, scanned left-to-
+    // right. Inline `/* ... */` on a single line is treated as the
+    // line containing both open and close — the line ends OUT of the
+    // comment, so extraction runs as normal (a rare but harmless edge:
+    // identifiers on the same line as a closing `*/` could still be
+    // picked up; this matches existing whole-file regex behaviour).
+    let inBlockComment = false;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const lineNum = i + 1;
 
-      // Track brace depth
+      const enteredAtStart = inBlockComment;
+      // Update inBlockComment state from this line's `/*` opens and
+      // `*/` closes. We scan character-by-character but cheaply: a
+      // single pass with two indexOf-style searches per iteration.
+      {
+        let scan = 0;
+        while (scan < line.length) {
+          if (inBlockComment) {
+            const close = line.indexOf('*/', scan);
+            if (close < 0) { scan = line.length; break; }
+            inBlockComment = false;
+            scan = close + 2;
+          } else {
+            const open = line.indexOf('/*', scan);
+            if (open < 0) { scan = line.length; break; }
+            // Inline line-comment `//` before `/*` on the same line:
+            // // /* not really a block */ — treat the `//` as wins.
+            const lineCom = line.indexOf('//', scan);
+            if (lineCom >= 0 && lineCom < open) { scan = line.length; break; }
+            inBlockComment = true;
+            scan = open + 2;
+          }
+        }
+      }
+
+      // Skip lines that are entirely inside a block comment (including
+      // the case where the line opens AND stays inside — entered false,
+      // ends true: line has no executable code AFTER the `/*`).
+      const lineWasFullyInComment = enteredAtStart && inBlockComment;
+      if (lineWasFullyInComment) {
+        // Don't count braces, don't run extraction regexes.
+        continue;
+      }
+
+      // Track brace depth (raw-line approximation, matches pre-fix
+      // behaviour for non-comment lines).
       braceDepth += (line.match(/{/g) || []).length;
       braceDepth -= (line.match(/}/g) || []).length;
 
@@ -541,6 +603,15 @@ export class GraphExtractor {
       if (currentClass && braceDepth < classStartDepth) {
         currentClass = null;
       }
+
+      // If we OPENED a block comment on this line, code BEFORE the
+      // `/*` is still real — run extraction on the line as usual; the
+      // Javadoc body that follows starts on the next iteration with
+      // inBlockComment=true. Same for lines that close a block comment
+      // (we already cleared the state above by the time we get here).
+      // Defensive: if the line is mostly Javadoc but has trailing code
+      // after `*/`, the regex will still capture; that mirrors the
+      // existing 99% case (real `public class Foo {` lines).
 
       // Class declarations
       const classMatch = line.match(/(?:public|private|protected)?\s*(?:static)?\s*(?:final|abstract)?\s*class\s+(\w+)(?:\s+extends\s+(\w+))?(?:\s+implements\s+([\w,\s]+))?/);

@@ -108,13 +108,16 @@ describe('tags.scm Symbol Extraction', () => {
       expect(CAPTURE_TO_ENTITY_TYPE['decorator.definition']).toBe('decorator');
     });
 
-    it('has 18 entries total', () => {
+    it('has 20 entries total', () => {
       // Bumped to 17 May-2026: added component.definition + variable.definition
       // for JS/TS/TSX `export const X = ...` shapes.
       // Bumped to 18 2026-05-11: added macro.definition for Rust macro_rules!
       // (previously emitted as `code:null` chunks since BOUNDARY_TYPES and
       // TAGS_QUERIES for rust both lacked macro_definition coverage).
-      expect(Object.keys(CAPTURE_TO_ENTITY_TYPE).length).toBe(18);
+      // Bumped to 20 2026-05-11: added enum_constant.definition + field.definition
+      // for Java enum constants (FieldNamingPolicy.UPPER_CAMEL_CASE) and
+      // static fields with anonymous-class initializers (TypeAdapters.BIT_SET).
+      expect(Object.keys(CAPTURE_TO_ENTITY_TYPE).length).toBe(20);
     });
   });
 
