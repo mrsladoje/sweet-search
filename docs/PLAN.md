@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        36         # incremented each loop pass
+ITERATION:        37         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      ad48f12    # most recent shipped commit before this plan
+LAST_COMMIT:      fbb22b8    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -262,7 +262,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 **Type:** new-language
 **Idioms:** tables as namespaces, metatables, closures, multiple returns, `:` method syntax, `local function`.
 **Note:** small ecosystem — easy to find a small repo.
-**Status:** [ ] PENDING
+**Status:** [x] DONE — Repo: lunarmodules/Penlight @ c317508c (MIT, 54 .lua non-test + 61 tests/specs, total 115 .lua). Canonical Lua patterns: module-prefixed functions (`function M.foo`), Penlight's class system, CLI parsing DSL, table/string utility modules. 8 probes LU-001..LU-008. Index: 221.37s (3:41, well under 5min), 197 files (incl docs/tests), 1604 entities, 1960 chunks (1010 .lua), 1900 embeddings. **First baseline 2/4/2 — discovered gold-file bug: I had assumed regex chunker truncates `function M.foo` at `.` but entity-extraction's `[\\w.]+` regex preserves the dotted form**. Fixed gold to use dotted symbols (`tablex.deepcopy` instead of `tablex`, `stringx.isalpha` instead of `stringx`) + introduced `expectedSymbolAnyOf` for LU-002 (lapp has multiple plausible entry points). **Final baseline: 5 PASS / 1 PARTIAL / 2 FAIL**. PASS: LU-001 _class (Penlight class factory), LU-005 Date, LU-006 tablex.update, LU-007 List `:` colon-syntax probe, LU-008 stringx.isalpha. PARTIAL: LU-004 List (returns assignedFunc `fun` from same file). FAIL: LU-002 lapp (top-1 xml.lua is_text — encoder ranks unrelated function higher for "command line arguments"), LU-003 tablex.deepcopy (top-1 `docs/libraries/pl.tablex.html` — Penlight's HTML doc page with the literal keyword outranks the actual .lua source). LU-003 is the doc-vs-code competition issue — would need a format-gated ranking signal to fix, out of scope per CLAUDE.md "Ranking Signal Format-Gating" rule. §3 ALL GREEN: retrieval-probes dev 0 flips, all 15 existing lang packs 0 PASS→FAIL flips. Splits manifest updated: LU-001/003/004/006/008 dev, LU-002/005/007 heldout (5/3, manifest totalProbes 120→128).
 
 #### C13. R
 **Type:** new-language
@@ -612,6 +612,12 @@ item: C11
 action: discover + execute + resolve (DONE-with-baseline)
 result: Picked **com-lihaoyi/requests-scala @ e3619c19ef551067d2979ced99b434d45bb60986** (MIT, 7 .scala non-test files). Tiny, dense, idiomatic Scala 2 HTTP client — symmetric with dart-lang/http I picked for C10. Exercises canonical Scala patterns: `case class Response/Session/Requester/MultiPart`, `sealed trait Cert` with `object Cert` companion-object ADT, `implicit class FileRequestBlob` (Scala 2 conversion idiom), `trait BaseSession`, `package object requests`. 8 probes SC-001..SC-008. Index: 16.11s (well under 5min target), 19 files, 144 entities, 239 chunks (177 .scala), 236 embeddings. **Baseline: 7 PASS / 1 PARTIAL / 0 FAIL — strongest C-block baseline ever**. All 6 PASS+symbol-anchored probes hit; the grammar-edge-case probes both held up (SC-007 sealed trait PASS, SC-008 implicit class PASS — the Scala regex chunker's `class /(?:case\\s+)?class\\s+(\\w+)/` correctly anchors on `class` inside `implicit class X` because the `implicit` modifier doesn't block the anchor). Only PARTIAL is SC-001 (returned MultipartFormRequestBlob instead of MultiPart — same file, parent class in the inheritance chain). §3 ALL GREEN: retrieval-probes dev 0 flips vs C10, all 14 existing lang packs (ts/rust/kotlin/csharp/cpp/java/python/javascript/ruby/go/php/c/typescript-lib/dart) 0 PASS→FAIL flips. Splits manifest updated: SC-001/003/004/005/008 dev, SC-002/006/007 heldout (5/3). No code changes — pure new-pack add. Scala is already in FILE_PATTERNS.include (`{java,kt,kts,scala,groovy}`) so no dart-style discovery surprise. Confirms the lesson: small, idiomatic repos produce the strongest baselines (parallels python C2 4/2/2, php C6 4/2/2, dart C10 6/1/1, scala C11 7/1/0).
 next: C12 (Lua) discover, schedule 60s
+
+--- iter 37 (2026-05-11T11:20:00Z) ---
+item: C12
+action: discover + execute + diagnose + repair-gold + resolve (DONE-with-baseline)
+result: Picked **lunarmodules/Penlight @ c317508c90cb384da22e79f6bd405eb4e406fc79** (MIT, 54 .lua non-test + 61 tests/specs). Idiomatic Python-inspired utility library. 8 probes LU-001..LU-008 targeting module-prefixed functions, Penlight class system, CLI DSL, table/string utilities. Index: 221s = 3:41 (under 5min), 1900 embeddings. **First baseline 2 PASS / 4 PARTIAL / 2 FAIL exposed a probe-gold bug**: I had assumed regex chunker truncates `function M.foo` at `.` but the entity-extraction layer's `[\\w.]+` regex preserves the dotted form. Updated gold with correct dotted symbols (`tablex.deepcopy`, `stringx.isalpha`, etc.) and `expectedSymbolAnyOf` for the lapp module's multiple plausible entry points. **Final baseline: 5 PASS / 1 PARTIAL / 2 FAIL**. PASS: LU-001 _class, LU-005 Date, LU-006 tablex.update, LU-007 `:` colon-method (chunker correctly collapses `function List:method` to bare `List` and retrieval finds the file), LU-008 stringx.isalpha (`.` dot-form preserved). PARTIAL: LU-004 List (same-file different-symbol). FAIL: LU-002 lapp (xml.lua is_text outranks — encoder-bound), LU-003 tablex.deepcopy (`docs/libraries/pl.tablex.html` outranks — doc-vs-code competition; would need format-gated ranking signal to fix, out of scope per CLAUDE.md). §3 ALL GREEN: retrieval-probes 0 flips, all 15 lang packs 0 PASS→FAIL flips. Splits manifest updated: 5 dev / 3 heldout (totalProbes 120→128). **Lesson worth keeping**: when authoring probes for languages without tree-sitter grammar, verify what the chunker ACTUALLY captures (run a small one-off probe first) — don't assume the chunker's textual regex matches the entity-extraction regex. The two layers use slightly different patterns (chunker `(\\w+)` vs entities `[\\w.]+`).
+next: C13 (R) discover, schedule 60s
 ```
 
 ---
