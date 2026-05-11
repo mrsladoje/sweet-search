@@ -57,22 +57,28 @@ function mockLi(docs) {
 }
 
 describe('injectAnchorCandidates', () => {
-  it('injects a missing entity chunk when query names it', () => {
+  it('injects a missing entity chunk when query names a class-like entity', () => {
+    // Class-anchored injection: the gate fires for class/module/interface/
+    // trait/struct/record/enum/namespace entity types. Non-class entities
+    // (function/method/component) only receive the conservative additive
+    // existing-boost — full new-injection at the anchor baseline would
+    // over-promote a literal `function Reply` chunk on prototype-style
+    // queries like "decorate the Reply prototype" (S3-Q3 regression).
     const repo = mockRepo({
-      Default: [
-        { name: 'Default', type: 'function', filePath: 'gin.go', startLine: 235, endLine: 241 },
+      IndifferentHash: [
+        { name: 'IndifferentHash', type: 'class', filePath: 'lib/indifferent_hash.rb', startLine: 41, endLine: 207 },
       ],
     });
     const li = mockLi([
-      { id: 'cA', metadata: { file: 'gin.go', startLine: 230, endLine: 260, name: null, type: 'code' }, content: 'func Default(...) ...' },
+      { id: 'cA', metadata: { file: 'lib/indifferent_hash.rb', startLine: 41, endLine: 75, name: 'IndifferentHash', type: 'class' }, content: 'class IndifferentHash ...' },
       // a distractor chunk in same file
-      { id: 'cB', metadata: { file: 'gin.go', startLine: 60, endLine: 95, name: null, type: 'code' }, content: 'RouteInfo etc' },
+      { id: 'cB', metadata: { file: 'lib/indifferent_hash.rb', startLine: 160, endLine: 206, name: null, type: 'code' }, content: 'unrelated' },
     ]);
     const fused = [
       // Distractor wins on dense — IAR must inject the right chunk
-      { id: 'cB', metadata: { file: 'gin.go', startLine: 60, endLine: 95 }, score: 0.55 },
+      { id: 'cB', metadata: { file: 'lib/indifferent_hash.rb', startLine: 160, endLine: 206 }, score: 0.55 },
     ];
-    const { results, stats } = injectAnchorCandidates(fused, 'what is the Default function', {
+    const { results, stats } = injectAnchorCandidates(fused, 'Sinatra IndifferentHash class for string keys', {
       codeGraphRepo: repo,
       lateInteractionIndex: li,
     });
@@ -80,12 +86,32 @@ describe('injectAnchorCandidates', () => {
     expect(stats.newCandidates).toBe(1);
     const injected = results.find(r => r._anchorInjected);
     expect(injected).toBeTruthy();
-    expect(injected.metadata.file).toBe('gin.go');
-    expect(injected.metadata.startLine).toBe(230);
-    expect(injected.metadata.endLine).toBe(260);
+    expect(injected.metadata.file).toBe('lib/indifferent_hash.rb');
+    expect(injected.metadata.startLine).toBe(41);
+    expect(injected.metadata.endLine).toBe(75);
     // Score competes but doesn't blow past a reasonable cap
     expect(injected.score).toBeGreaterThanOrEqual(0.5);
     expect(injected.score).toBeLessThanOrEqual(0.85);
+  });
+
+  it('does NOT new-inject a function/method entity (class-anchor gate)', () => {
+    // S3-Q3 regression guard: query "Fastify decorate the Reply prototype"
+    // — Reply is a function entity. Injecting it at the anchor baseline
+    // would stack with post-fusion definition boost to ~1.0 and bulldoze
+    // the more specific `decorateReply` function the user actually wants.
+    // The class-anchor gate restricts new injection to class-like types.
+    const repo = mockRepo({
+      Reply: [{ name: 'Reply', type: 'function', filePath: 'lib/reply.js', startLine: 1, endLine: 77 }],
+    });
+    const li = mockLi([{ id: 'cR', metadata: { file: 'lib/reply.js', startLine: 1, endLine: 77, name: 'Reply', type: 'function' } }]);
+    const fused = [{ id: 'cOther', metadata: { file: 'lib/other.js', startLine: 1, endLine: 5 }, score: 0.4 }];
+    const { results, stats } = injectAnchorCandidates(fused, 'how does Fastify decorate the Reply prototype', {
+      codeGraphRepo: repo,
+      lateInteractionIndex: li,
+    });
+    expect(stats.newCandidates).toBe(0);
+    // Reply isn't in fused so existing-boost doesn't fire either
+    expect(stats.existingBoosted).toBe(0);
   });
 
   it('boosts an existing fused result instead of double-adding it', () => {
@@ -160,20 +186,25 @@ describe('injectAnchorCandidates', () => {
   });
 
   it('prefers the smallest enclosing chunk when several overlap', () => {
+    // Class-anchored to align with the post-2026-05-11 new-injection gate
+    // (class-like entity types only). The original test used a method
+    // entity; semantic identical except the entity is a class — exercises
+    // the same "smallest containing chunk" preference inside
+    // findChunkForEntity.
     const repo = mockRepo({
-      calculateAbsolutePath: [{
-        name: 'calculateAbsolutePath', type: 'method',
+      Router: [{
+        name: 'Router', type: 'class',
         filePath: 'routergroup.go', startLine: 250, endLine: 260,
       }],
     });
     const li = mockLi([
       // two overlapping chunks; the tighter one should win
       { id: 'cBig', metadata: { file: 'routergroup.go', startLine: 1, endLine: 400, name: null, type: 'file' } },
-      { id: 'cTight', metadata: { file: 'routergroup.go', startLine: 240, endLine: 280, name: null, type: 'method' } },
+      { id: 'cTight', metadata: { file: 'routergroup.go', startLine: 240, endLine: 280, name: null, type: 'class' } },
     ]);
     const { results } = injectAnchorCandidates(
       [],
-      'where does it calculateAbsolutePath',
+      'where is the Router class defined',
       { codeGraphRepo: repo, lateInteractionIndex: li }
     );
     const injected = results.find(r => r._anchorInjected);
@@ -221,8 +252,9 @@ function repoWithCounts(entitiesByName, countsByName) {
 describe('injectAnchorCandidates — uniqueness gate', () => {
   it('drops a hint whose entity count exceeds the ceiling', () => {
     // "Get" matches 65 entities → drop. "kSchemaCtx" matches 1 → keep.
+    // Entity typed 'class' so the new-injection class-anchor gate fires.
     const repo = repoWithCounts(
-      { kSchemaCtx: [{ name: 'kSchemaCtx', type: 'symbol', filePath: 'a.js', startLine: 10, endLine: 12 }] },
+      { kSchemaCtx: [{ name: 'kSchemaCtx', type: 'class', filePath: 'a.js', startLine: 10, endLine: 12 }] },
       { get: 65, kschemactx: 1 }
     );
     const li = mockLi([

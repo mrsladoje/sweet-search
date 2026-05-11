@@ -78,7 +78,18 @@ const BOUNDARY_TYPES = new Set([
   // Javadoc <pre> example). Anchoring on the annotation declaration
   // gives the @interface a proper name/type at index time.
   'annotation_type_declaration',
-  // Ruby
+  // Ruby — tree-sitter-ruby uses bare node names `class`, `method`,
+  // `singleton_method`, `singleton_class` (no `_declaration`/`_definition`
+  // suffix). Without these in the boundary set the cAST chunker:
+  //   1. never anchors a chunk on a Ruby class declaration (so `class Base`,
+  //      `class IndifferentHash`, etc. produce only anonymous `code` chunks);
+  //   2. merges 8+ adjacent methods into one chunk and labels it after
+  //      whichever singleton_method happened to be present in the merge;
+  //   3. drops `class << self` (the Sinatra DSL idiom) entirely.
+  // tree-sitter-ruby grammar reference: github.com/tree-sitter/tree-sitter-ruby
+  // (node types `class`, `method`, `singleton_class`). Aider's published
+  // tags.scm for Ruby uses the same node names.
+  'class', 'method', 'singleton_class',
   'singleton_method',
   // PHP
   'trait_declaration',
@@ -150,7 +161,12 @@ const NODE_TYPE_MAP = {
   // that annotation types are interfaces). Note: a Java annotation is
   // formally an *interface* per JLS §9.6, just a specialised form.
   'annotation_type_declaration': 'interface',
-  // Ruby
+  // Ruby — `class` is the bare tree-sitter-ruby node name for class
+  // declarations (Java/JS use `class_declaration`, Python `class_definition`,
+  // C++ `class_specifier`). `singleton_class` is `class << self` (or
+  // `class << SomeConst`) which opens the receiver's singleton scope.
+  'class': 'class',
+  'singleton_class': 'class',
   'method': 'method',
   'singleton_method': 'method',
   // PHP
@@ -342,9 +358,11 @@ const TAGS_QUERIES = {
   `,
   ruby: `
     (class name: (constant) @class.definition)
+    (singleton_class value: (constant) @class.definition)
     (module name: (constant) @module.definition)
     (method name: (identifier) @method.definition)
     (singleton_method name: (identifier) @method.definition)
+    (alias name: (identifier) @method.definition)
   `,
   php: `
     (class_declaration name: (name) @class.definition)
@@ -787,6 +805,39 @@ export class TreeSitterProvider {
         //   3. every boundary has a leading outer-doc comment (`///` or
         //      `/**`). Mixed documented/undocumented buffers fall through
         //      to cAST merge to avoid inflating chunk counts unnecessarily.
+        // RUBY_CLASS_SIBLING_SPLIT: split when buffer has 2+ Ruby class/
+        // module siblings, each with an extractable name. cAST sibling-
+        // merge otherwise collapses adjacent tiny classes — e.g. sinatra
+        // base.rb's `class ExtendedRack` + `class CommonLogger` + `class
+        // Error` + ... — into one chunk labeled after the first boundary,
+        // and later entity adoption (file-kind-ranking.applyResultDemotions)
+        // walks UP via findEnclosingEntity over the merged range and
+        // silently relabels the chunk to the outer module/namespace,
+        // losing the IAR anchor. Splitting per-class restores 1:1 chunk-
+        // to-entity alignment.
+        //
+        // Ruby-only gate via the tree-sitter-ruby-specific node type names
+        // (`class`/`module`/`singleton_class`). Other grammars use
+        // `class_declaration` (Java/JS/TS/Kotlin/C#), `class_definition`
+        // (Python/Dart), `class_specifier` (C++), `struct_item` (Rust),
+        // etc. — none of those node names exist in tree-sitter-ruby, and
+        // `class`/`module`/`singleton_class` don't exist in any other
+        // grammar. So this split is byte-identical-null-op for every non-
+        // Ruby language pack and the 60-probe retrieval bench, while
+        // fixing the chunker-bound regressions on Ruby AST probes RB-001
+        // through RB-008.
+        const RUBY_CLASS_LIKE_TYPES = new Set([
+          'class',
+          'module',
+          'singleton_class',
+        ]);
+        const isClassLikeSiblingSet = boundariesInBuffer.length >= 2
+          && boundariesInBuffer.every(b => {
+            if (!RUBY_CLASS_LIKE_TYPES.has(b.type)) return false;
+            const resolved = this._resolveBoundary(b);
+            return !!this._extractNodeName(resolved.nameNode);
+          });
+
         if (
           parentInfo == null
           && boundariesInBuffer.length >= 2
@@ -794,6 +845,7 @@ export class TreeSitterProvider {
             const idx = buffer.indexOf(b);
             return idx > 0 && this._isLeadingDocComment(buffer[idx - 1], content);
           })
+          || isClassLikeSiblingSet
         ) {
           let sectionStart = 0;
           for (let i = 0; i < boundariesInBuffer.length; i++) {
@@ -958,11 +1010,22 @@ export class TreeSitterProvider {
               }
             }
 
-            // Transparent nodes (e.g., statement_block, block) that have no
-            // name and aren't boundary types should pass through the caller's
-            // parent context instead of creating an anonymous level.
+            // Transparent nodes (no name resolved) pass through the caller's
+            // parent context instead of creating an anonymous "unknown" level.
+            // Covers two cases:
+            //   1. Non-boundary containers (statement_block, body_statement,
+            //      block) — pre-existing behaviour.
+            //   2. Ruby `class << self` (singleton_class with value=self,
+            //      which has no extractable name). Without this carve-out
+            //      the chunk's sub-chunks get `parentSymbol='unknown'`,
+            //      losing the enclosing class context (e.g. Sinatra::Base);
+            //      with it they inherit `parentSymbol='Base'`. Narrowed to
+            //      singleton_class so other languages' nameless boundaries
+            //      (JS arrow_function, anonymous classes) keep their
+            //      pre-existing 'unknown' attribution unchanged.
             let subParent;
-            if (!name && !BOUNDARY_TYPES.has(node.type) && parentInfo) {
+            const isNamelessRubySingleton = node.type === 'singleton_class';
+            if (!name && (!BOUNDARY_TYPES.has(node.type) || isNamelessRubySingleton) && parentInfo) {
               subParent = parentInfo;
             } else {
               const parentId = this._nextChunkId();
@@ -1106,11 +1169,24 @@ export class TreeSitterProvider {
       }
     }
 
-    // Fallback: look for identifier-type children (uses IDENT_TYPES set)
+    // Fallback: look for identifier-type children (uses IDENT_TYPES set).
+    // Visibility-keyword stoplist: tree-sitter-ruby parses bare `private`,
+    // `protected`, `public` (with no args) as standalone `identifier`
+    // statements inside a class/module body — they're method calls on
+    // `self` that toggle subsequent definitions' visibility, not entity
+    // names. When the chunker recurses into an oversized body_statement
+    // and falls back to scanning IDENT_TYPES children, the first such
+    // identifier between method defs would otherwise become the parent
+    // breadcrumb "name=private" and poison every nested chunk's
+    // parentSymbol. Java/Kotlin/C++/C#/Swift parse the same words as
+    // keywords, not identifiers, so this filter is null-op for those
+    // grammars — a Ruby-targeted fix that's safe across the corpus.
     for (let i = 0; i < node.childCount; i++) {
       const child = node.child(i);
       if (IDENT_TYPES.has(child.type)) {
-        return child.text;
+        const text = child.text;
+        if (text === 'private' || text === 'protected' || text === 'public') continue;
+        return text;
       }
     }
 
