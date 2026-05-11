@@ -716,6 +716,40 @@ export class TreeSitterProvider {
             const name = this._extractNodeName(node);
             const type = NODE_TYPE_MAP[node.type] || 'code';
 
+            // Header chunk for oversized BOUNDARY nodes (large classes,
+            // structs, traits, etc.): emit a small "header" chunk before
+            // recursing into the body. Without this, queries that match
+            // the boundary's name itself (rather than any inner member)
+            // have NO chunk anchored on the boundary — only sub-chunks
+            // with parent_symbol context. Empirically (kotlin JobSupport,
+            // 1582-line `open class JobSupport`), this left class-targeted
+            // queries to lose to inner method chunks. The header chunk
+            // captures the declaration + leading doc-comment / opening
+            // body (up to ~600 chars) so the boundary name is searchable.
+            //
+            // Gating: only when the node is a BOUNDARY_TYPES AND has a name.
+            // Header text is bounded to maxSize so we never exceed embed cap.
+            if (BOUNDARY_TYPES.has(node.type) && name) {
+              const HEADER_MAX_CHARS = Math.min(600, maxSize);
+              const headerEndIdx = Math.min(node.endIndex, node.startIndex + HEADER_MAX_CHARS);
+              const headerText = content.substring(node.startIndex, headerEndIdx);
+              if (headerText.trim().length > 30) {
+                const lineCount = headerText.split('\n').length;
+                chunks.push({
+                  chunkId: this._nextChunkId(),
+                  parentChunkId: parentInfo?.chunkId || null,
+                  parentSymbol: parentInfo?.name || null,
+                  parentType: parentInfo?.type || null,
+                  text: headerText.trim(),
+                  startLine: node.startPosition.row,
+                  endLine: node.startPosition.row + Math.max(0, lineCount - 1),
+                  type,
+                  name,
+                  signature: this._extractSignature(node, content),
+                });
+              }
+            }
+
             // Transparent nodes (e.g., statement_block, block) that have no
             // name and aren't boundary types should pass through the caller's
             // parent context instead of creating an anonymous level.
