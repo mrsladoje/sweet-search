@@ -162,6 +162,16 @@
       "localPath": "eval/ast-tester-probes/_repos/lua",
       "goldFile": "eval/ast-tester-probes/gold/lua.json",
       "rationale": "lunarmodules/Penlight — Python-inspired utility library for Lua (54 .lua non-test). Canonical Lua patterns: module-prefixed functions (`function M.foo`), Penlight's class system (metatables + `:` method dispatch), CLI parsing DSL, table/string utility modules. Lua has NO tree-sitter grammar in GRAMMAR_MAP — chunking uses the regex chunker in registry-tooling.js:52-72 (endKeyword='end')."
+    },
+    {
+      "language": "zig",
+      "key": "zig",
+      "url": "https://github.com/karlseguin/http.zig.git",
+      "sha": "569bba10f22afd4ea1815416b546a8065905f820",
+      "license": "MIT",
+      "localPath": "eval/ast-tester-probes/_repos/zig",
+      "goldFile": "eval/ast-tester-probes/gold/zig.json",
+      "rationale": "karlseguin/http.zig — Zig HTTP server library (31 .zig files). Canonical Zig patterns: `pub const X = struct`, error-union return types `!T`, comptime generic-type-returning functions (Zig's metaprogramming idiom), errdefer cleanup, function-typed parameters. Zig has NO tree-sitter grammar in GRAMMAR_MAP — chunking uses the regex chunker in registry-tooling.js:76-104 with rules for `fn X`, `const X = struct`, `const X = enum`."
     }
   ]
 }

@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "8 retrieval probes for karlseguin/http.zig — an MIT-licensed Zig HTTP server library (31 .zig files). Exercises canonical Zig patterns: `pub const X = struct`, `pub fn name(...) !T` error-union return types, `comptime` generic-type-returning functions (Zig's metaprogramming idiom), errdefer cleanup, function-typed parameters. Zig has NO tree-sitter grammar in GRAMMAR_MAP — chunking uses the regex chunker in registry-tooling.js:76-104 with rules for `fn X`, `const X = struct`, `const X = enum`.",
+  "language": "zig",
+  "repo": "zig",
+  "repoUrl": "https://github.com/karlseguin/http.zig",
+  "repoSha": "569bba10f22afd4ea1815416b546a8065905f820",
+  "license": "MIT",
+  "probes": [
+    {
+      "id": "ZG-001",
+      "repo": "zig",
+      "query": "how does http.zig parse an incoming HTTP request from a socket buffer with headers body cookies",
+      "expectedFile": "src/request.zig",
+      "expectedSymbol": "Request",
+      "expectedSymbolType": "struct",
+      "notes": "NL behavior probe: `pub const Request = struct` (line 22) holds the parsed HTTP request state — body bytes, headers map, params, query parser, cookie accessor. Entry point for handler functions."
+    },
+    {
+      "id": "ZG-002",
+      "repo": "zig",
+      "query": "how does http.zig dispatch middleware actions through the request response pipeline",
+      "expectedFile": "src/httpz.zig",
+      "expectedSymbolAnyOf": ["Dispatcher", "DispatchableAction", "Action", "Middleware"],
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe: `pub fn Dispatcher(comptime Handler: type, comptime ActionArg: type) type` (line 162) and adjacent `Action`/`DispatchableAction`/`Middleware` (lines 155-179) build the request handler signature at compile time. These are comptime type-returning functions — Zig's metaprogramming idiom."
+    },
+    {
+      "id": "ZG-003",
+      "repo": "zig",
+      "query": "buffer pool to reuse byte allocations across requests in http.zig",
+      "expectedFile": "src/buffer.zig",
+      "expectedSymbolAnyOf": ["Pool", "Buffer"],
+      "expectedSymbolType": "struct",
+      "notes": "NL behavior probe: `pub const Pool = struct` (line 25) is the reusable Buffer pool — `init` allocates count×buffer_size, `acquire`/`release` rent/return slots. Avoids per-request allocator overhead."
+    },
+    {
+      "id": "ZG-004",
+      "repo": "zig",
+      "query": "Request struct with body header param query cookies methods Zig",
+      "expectedFile": "src/request.zig",
+      "expectedSymbol": "Request",
+      "expectedSymbolType": "struct",
+      "notes": "Symbol-anchored probe: `pub const Request = struct` (line 22) — see ZG-001 for context. The struct's methods: `body`, `header`, `param`, `query`, `cookies`, `json` (lines 126-160)."
+    },
+    {
+      "id": "ZG-005",
+      "repo": "zig",
+      "query": "Response struct with json header setStatus setCookie methods Zig",
+      "expectedFile": "src/response.zig",
+      "expectedSymbol": "Response",
+      "expectedSymbolType": "struct",
+      "notes": "Symbol-anchored probe: `pub const Response = struct` (line 20) — buffered response builder; `setStatus` (line 96), `header`/`headerOpts` (lines 91/110), `setCookie` (line 100), `json` (line 85)."
+    },
+    {
+      "id": "ZG-006",
+      "repo": "zig",
+      "query": "Buffer struct with len data fields and slice access",
+      "expectedFile": "src/buffer.zig",
+      "expectedSymbol": "Buffer",
+      "expectedSymbolType": "struct",
+      "notes": "Symbol-anchored probe: `pub const Buffer = struct` (line 9) — the reusable byte buffer slot held by Pool."
+    },
+    {
+      "id": "ZG-007",
+      "repo": "zig",
+      "query": "comptime function returning a generic Dispatcher type for action handler signatures",
+      "expectedFile": "src/httpz.zig",
+      "expectedSymbol": "Dispatcher",
+      "expectedSymbolType": "function",
+      "notes": "Grammar-edge-case probe: `pub fn Dispatcher(comptime Handler: type, comptime ActionArg: type) type` (line 162) — Zig's idiom of using `fn ... type` as a compile-time type factory. The regex chunker's `function /^(?:pub\\s+)?fn\\s+(\\w+)/` captures `Dispatcher` cleanly; the `comptime` parameter qualifiers + `type` return aren't part of the name regex but don't block the anchor."
+    },
+    {
+      "id": "ZG-008",
+      "repo": "zig",
+      "query": "Pool init returns error union with errdefer cleanup on allocation failure",
+      "expectedFile": "src/buffer.zig",
+      "expectedSymbol": "Pool",
+      "expectedSymbolType": "struct",
+      "notes": "Grammar-edge-case probe: `pub fn init(io: Io, allocator: Allocator, count: usize, buffer_size: usize) !Pool` (line 35) inside `pub const Pool = struct` (line 25). Demonstrates Zig's `!T` error-union return type and `errdefer { allocator.free(buffers); }` cleanup pattern (lines 37, 40). The chunker captures `Pool` as the enclosing struct; init/errdefer are inner content not separate entities."
+    }
+  ]
+}
