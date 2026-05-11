@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        2          # incremented each loop pass
-CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      ffa73d7    # most recent shipped commit before this plan
+ITERATION:        3          # incremented each loop pass
+CURRENT_ITEM:     B1         # set to item id when IN_PROGRESS
+LAST_COMMIT:      1b7df36    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 ```
@@ -133,7 +133,7 @@ Priority by yield (descending). Each item: web-search if uncertain, apply princi
 **Pre-flight web search:** "tree-sitter-cpp class_specifier name field", "tree-sitter cpp alias_declaration", "tree-sitter cpp template_declaration captures".
 **Per-item gates:** cpp probes — expect ≥ 4/8 PASS (was 0/8). Re-index ~22 min.
 **Abort/revert:** revert tree-sitter-provider.js.
-**Status:** [ ] PENDING
+**Status:** [-] IN_PROGRESS
 
 #### B2. Rust multi-item chunk anchoring (RS-006, RS-008)
 **Type:** chunker-fix
@@ -411,6 +411,12 @@ item: A1
 action: execute + resolve
 result: built per-lang held-out probe files at /tmp/ast-heldout/{cpp,csharp,kotlin,rust,typescript}.json (3 probes each, IDs from eval/ast-tester-probes/splits/heldout.json), ran each via run-probes.mjs with --probes-file/--repo-base. Phase 1 end-state held-out AGGREGATE: 3 PASS / 4 PARTIAL / 8 FAIL of 15. Per-language: cpp 0/0/3, csharp 0/2/1, kotlin 1/1/1, rust 1/0/2, typescript 1/1/1. Per-query failures NOT inspected per CLAUDE.md held-out discipline. Result artifacts: eval/ast-tester-probes/results/*-heldout-2026-05-11-A1.json. No code change.
 next: B1 (cpp struct/class/template/using name extraction), schedule 60s
+
+--- iter 3 (2026-05-11T02:18:00Z) ---
+item: B1
+action: discover
+result: A1 closed; B1 first PENDING in §5. Marked [-] IN_PROGRESS, updated §0 meta (ITERATION=3, CURRENT_ITEM=B1).
+next: B1 execute (preflight web search → patch tree-sitter-provider.js cpp TAGS_QUERIES → re-index cpp _repo → validate per §3), schedule 60s
 ```
 
 ---
