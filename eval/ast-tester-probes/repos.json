@@ -62,6 +62,16 @@
       "localPath": "eval/ast-tester-probes/_repos/java",
       "goldFile": "eval/ast-tester-probes/gold/java.json",
       "rationale": "Google Gson JSON serialization library — 262 .java files, rich type adapter pattern with anonymous classes, wildcard generics, lambdas, and enum-with-bodies; exercises the full Java type system."
+    },
+    {
+      "language": "python",
+      "key": "python",
+      "url": "https://github.com/pallets/click.git",
+      "sha": "fc6c7c47edd6110b6bd5a1a5297b2035214b0cd1",
+      "license": "BSD-3-Clause",
+      "localPath": "eval/ast-tester-probes/_repos/python",
+      "goldFile": "eval/ast-tester-probes/gold/python.json",
+      "rationale": "Pallets/click CLI library — 63 .py files; @t.overload decorator chains, generic-parameterized abstract classes (ParamType[T]), heavy use of typing.Callable + TypeVar."
     }
   ]
 }

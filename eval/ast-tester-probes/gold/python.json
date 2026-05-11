@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "8 retrieval probes for pallets/click — a BSD-licensed Python CLI library with @t.overload decorator chains, generic-parameterized abstract classes (ParamType[T]), and decorator-heavy command/group abstractions.",
+  "language": "python",
+  "repo": "python",
+  "repoUrl": "https://github.com/pallets/click",
+  "repoSha": "fc6c7c47edd6110b6bd5a1a5297b2035214b0cd1",
+  "license": "BSD-3-Clause",
+  "probes": [
+    {
+      "id": "PY-001",
+      "repo": "python",
+      "query": "how does click handle command grouping and dispatch to subcommands",
+      "expectedFile": "src/click/core.py",
+      "expectedSymbol": "Group",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe: Group class (line 1531) extends Command and adds subcommand routing — core of click's nested-command UX"
+    },
+    {
+      "id": "PY-002",
+      "repo": "python",
+      "query": "how does click expose context state between parent and child commands",
+      "expectedFile": "src/click/core.py",
+      "expectedSymbol": "Context",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe: Context class (line 185) carries the parent chain (`self.parent`), shared object (`.obj`), and meta dict (`.meta`) — the canonical answer to context-between-commands"
+    },
+    {
+      "id": "PY-003",
+      "repo": "python",
+      "query": "how does click validate that an option value is one of a fixed set of choices",
+      "expectedFile": "src/click/types.py",
+      "expectedSymbol": "Choice",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe: Choice class (line 253) implements ParamType for enum-like options — exercises the conversion + error path on bad input"
+    },
+    {
+      "id": "PY-004",
+      "repo": "python",
+      "query": "click command decorator that turns a function into a Command object",
+      "expectedFile": "src/click/decorators.py",
+      "expectedSymbol": "command",
+      "expectedSymbolType": "function",
+      "notes": "Symbol-anchored probe: command function in decorators.py is the @click.command entry point. Has 5 @t.overload signatures + 1 implementation (line 168)"
+    },
+    {
+      "id": "PY-005",
+      "repo": "python",
+      "query": "Context find_root method",
+      "expectedFile": "src/click/core.py",
+      "expectedSymbol": "find_root",
+      "expectedSymbolType": "method",
+      "notes": "Symbol-anchored probe: find_root method (line 676) walks self.parent chain to top-level context — small, signature-anchored target"
+    },
+    {
+      "id": "PY-006",
+      "repo": "python",
+      "query": "ParamType convert method that turns raw string input into a typed value",
+      "expectedFile": "src/click/types.py",
+      "expectedSymbol": "convert",
+      "expectedSymbolType": "method",
+      "notes": "Symbol-anchored probe: ParamType.convert (line 110) is the abstract conversion method overridden by every concrete param type"
+    },
+    {
+      "id": "PY-007",
+      "repo": "python",
+      "query": "@t.overload decorator chain for the click command function signature",
+      "expectedFile": "src/click/decorators.py",
+      "expectedSymbol": "command",
+      "expectedSymbolType": "function",
+      "notes": "Grammar-edge-case probe: click.command has 5 @t.overload-decorated stub signatures (lines 138/144/153/163/168) followed by the real implementation. Exercises tree-sitter-python's handling of decorated overload stubs that are typing-only — the chunker must not collapse them and must surface the implementation, not just the first overload"
+    },
+    {
+      "id": "PY-008",
+      "repo": "python",
+      "query": "ParamType generic abstract base class with TypeVar bound and ABC inheritance",
+      "expectedFile": "src/click/types.py",
+      "expectedSymbol": "ParamType",
+      "expectedSymbolType": "class",
+      "notes": "Grammar-edge-case probe: ParamType (line 37) is `class ParamType(t.Generic[ParamTypeValue], abc.ABC):` — exercises tree-sitter-python's parsing of multiple-inheritance with a Generic subscript and an ABC marker class, plus PEP 484 TypeVar bound (ParamTypeValue)"
+    }
+  ]
+}
