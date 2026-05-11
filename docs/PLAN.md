@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        15         # incremented each loop pass
-CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      a8895e6    # most recent shipped commit before this plan
+ITERATION:        16         # incremented each loop pass
+CURRENT_ITEM:     B4         # set to item id when IN_PROGRESS
+LAST_COMMIT:      1863e17    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -165,7 +165,7 @@ Priority by yield (descending). Each item: web-search if uncertain, apply princi
 **Pre-flight web search:** "C# partial class chunking code search", "code indexer partial class shard methods".
 **Per-item gates:** csharp probes — CS-007 expect symbol PASS (currently PARTIAL with symbol=RespServerSession instead of method name). Re-index ~38 min.
 **Abort/revert:** revert registry-core.js + ast-chunker.js.
-**Status:** [ ] PENDING
+**Status:** [-] IN_PROGRESS
 
 #### B5. Kotlin annotation-decorated open class extraction (KT-001)
 **Type:** chunker-fix
@@ -491,6 +491,12 @@ item: B3
 action: validate + resolve (DONE-with-note)
 result: rust re-index COMPLETE (5102s = 85 min). §3 validation: Step 1 unit tests 1432/1432 ✓; Step 3 rust probes 4/0/4 SAME PASS COUNT as baseline (RS-001/004/005/007 PASS; RS-002/003/006/008 FAIL — UNCHANGED); Step 4-5 retrieval-probes 46/4/10 ZERO PASS→FAIL flips; Step 6 GCSN dev MRR@10 86.92% EXACT MATCH; Step 7 ts/kotlin/csharp/cpp probes zero degradations. Verified mod.rs:255-305 impl chunk now reports name=`Checker` type=`impl`. Per-item expectation (RS-002+RS-003→PARTIAL+) NOT MET — same encoder-bound pattern as B1/B2. Bi-encoder ranks ApplicableFix (RS-002), commands::check (RS-003), ArgumentsSourceOrder (RS-006) over the gold despite chunker now correctly naming the impl block. Marked B3 DONE-with-note per GATE_INTERPRETATION. Added ENCODER_BOUND_PATTERN note to §0 — B4/B5 may follow same pattern; user should weigh whether further chunker fixes are worth 30-85 min re-index cost when encoder-bound failures dominate.
 next: B4 discover, schedule 60s
+
+--- iter 16 (2026-05-11T06:27:00Z) ---
+item: B4
+action: discover
+result: B3 closed DONE @ a8895e6 + 1863e17. B4 (C# partial-class shard method emission for CS-007) now first PENDING. Marked [-] IN_PROGRESS, updated §0 meta (ITERATION=16, CURRENT_ITEM=B4, LAST_COMMIT=1863e17). Note: B4 affects regex chunker (registry-core.js), not tree-sitter — different code path than B1/B2/B3. Symptom is symbol_mismatch (PARTIAL) not file_mismatch (FAIL), so fix has a path: emit method symbols even when nested in a partial-class shard. Re-index ~38 min.
+next: B4 execute (read partial-class shard file, inspect current csharp chunker output, design minimal fix), schedule 60s
 ```
 
 ---
