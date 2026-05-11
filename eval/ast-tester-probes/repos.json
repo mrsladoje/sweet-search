@@ -72,6 +72,16 @@
       "localPath": "eval/ast-tester-probes/_repos/python",
       "goldFile": "eval/ast-tester-probes/gold/python.json",
       "rationale": "Pallets/click CLI library — 63 .py files; @t.overload decorator chains, generic-parameterized abstract classes (ParamType[T]), heavy use of typing.Callable + TypeVar."
+    },
+    {
+      "language": "javascript",
+      "key": "javascript",
+      "url": "https://github.com/axios/axios.git",
+      "sha": "34adfd90efc9c145488399e1cf7fa96de67080fa",
+      "license": "MIT",
+      "localPath": "eval/ast-tester-probes/_repos/javascript",
+      "goldFile": "eval/ast-tester-probes/gold/javascript.json",
+      "rationale": "Axios HTTP client library — 175 .js files; class-based architecture (Axios, AxiosHeaders, AxiosError, CancelToken, InterceptorManager), Axios.prototype[method] metaprogramming for HTTP verb dispatch, class extension."
     }
   ]
 }
