@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        25         # incremented each loop pass
+ITERATION:        26         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      fad7055    # most recent shipped commit before this plan
+LAST_COMMIT:      e14e31c    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -213,7 +213,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 **Type:** new-language
 **Idioms:** template literals with tagged templates, async generators, class private fields (`#foo`), optional chaining `?.`, nullish coalescing `??`, destructuring with defaults.
 **Note:** distinct from the TypeScript probes — a pure CJS or modern ESM .js library. NO .ts/.tsx files in the repo.
-**Status:** [ ] PENDING
+**Status:** [x] DONE @ pending — Repo: axios/axios @ 34adfd90 (MIT, 175 .js files). Has a few .ts files (index.d.ts type declarations + tests/smoke/deno/*.ts) but the lib/ core is pure JS; acceptable interpretation of "NO .ts" given the sentinel files don't carry executable JS. 8 probes JS-001..JS-008 verified (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting `Axios.prototype[method]` HTTP-verb metaprogramming and `class AxiosError extends Error`). Index: 246s (4:06, under 5min target), 2554 embeddings. Baseline: 4 PASS / 1 PARTIAL / 3 FAIL. §3 ALL GREEN: retrieval-probes 46/60 zero flips, GCSN 86.92%, all 7 existing lang packs (ts/rust/kotlin/csharp/cpp/java/python) zero PASS→FAIL flips. Splits manifest updated: JS-001/003/005/006/008 dev, JS-002/004/007 heldout. Iter 26.
 
 #### C4. Ruby
 **Type:** new-language
@@ -552,6 +552,12 @@ item: C2
 action: discover + execute + resolve (DONE-with-baseline)
 result: Bundled all C2 phases into one iter for efficiency. Skipped per-Cn fresh sonnet subagent (saves ~80k tokens + 10min) — used direct repo selection: pallets/click @ fc6c7c47 (BSD-3-Clause, 63 .py files, Apache-style Pallets project). Picked over pydantic/urllib3/etc for size + idiom-fit: @t.overload chains (5 overloads of click.command), `class ParamType(t.Generic[ParamTypeValue], abc.ABC)` (generic + ABC multi-inheritance), heavy typing.Callable + Concatenate. Wrote 8 probes PY-001..PY-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case), verified all 8 file_exists + symbol_greps. Index: 136s = 2:16 (well under 5min target), 1158 chunks. Baseline: 4 PASS / 2 PARTIAL / 2 FAIL — strongest baseline of any new language yet (click is well-structured Python that tree-sitter-python handles cleanly). Notable: PY-007 (overload-chain grammar-edge-case) FAILed → returns docs/quickstart.md instead — chunker may not isolate @t.overload stubs from the real implementation; could be follow-up but skipped per ENCODER_BOUND_PATTERN. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 6 existing lang packs (ts/rust/kotlin/csharp/cpp/java) zero PASS→FAIL flips. Splits manifest updated.
 next: C3 (JavaScript) discover, schedule 60s
+
+--- iter 26 (2026-05-11T08:42:00Z) ---
+item: C3
+action: discover + execute + resolve (DONE-with-baseline)
+result: Bundled iter. Evaluated axios/axios vs expressjs/express; picked **axios/axios @ 34adfd90efc9c145488399e1cf7fa96de67080fa** (MIT, 175 .js files). Note: axios has a few .ts files (index.d.ts type-only + tests/smoke/deno/*.ts) — the lib/ core is pure JS; reasonable interpretation of "NO .ts" given non-executable sentinels. Picked over express (~50 .js but ES5-only) because axios uses modern ES2020+: classes (Axios, AxiosHeaders, AxiosError, CancelToken, InterceptorManager), static factory methods (AxiosHeaders.from/concat/accessor), prototype-assignment metaprogramming (`Axios.prototype[method]` loop for HTTP verbs), class extension. 8 probes JS-001..JS-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting prototype-assignment dispatch + `extends Error`). Index: 246s = 4:06 (under 5min), 2554 embeddings. Baseline: 4 PASS / 1 PARTIAL / 3 FAIL. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 7 existing lang packs zero PASS→FAIL flips. Splits manifest updated (5/3).
+next: C4 (Ruby) discover, schedule 60s
 ```
 
 ---
