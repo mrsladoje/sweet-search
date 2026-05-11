@@ -6,9 +6,9 @@
   "seed": 42,
   "stratifyBy": "language",
   "method": "stratified-random-shuffle",
-  "totalProbes": 128,
-  "devCount": 80,
-  "heldoutCount": 48,
+  "totalProbes": 136,
+  "devCount": 85,
+  "heldoutCount": 51,
   "perLanguage": {
     "typescript": {
       "dev": [
@@ -232,6 +232,20 @@
         "LU-002",
         "LU-005",
         "LU-007"
+      ]
+    },
+    "zig": {
+      "dev": [
+        "ZG-001",
+        "ZG-003",
+        "ZG-004",
+        "ZG-005",
+        "ZG-008"
+      ],
+      "heldout": [
+        "ZG-002",
+        "ZG-006",
+        "ZG-007"
       ]
     }
   },
