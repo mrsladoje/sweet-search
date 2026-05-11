@@ -9,8 +9,8 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        0          # incremented each loop pass
-CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
+ITERATION:        1          # incremented each loop pass
+CURRENT_ITEM:     A1         # set to item id when IN_PROGRESS
 LAST_COMMIT:      9a7b5e0    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
@@ -113,7 +113,7 @@ done
 **Fix approach:** Run each language's probes filtered to held-out IDs from `eval/ast-tester-probes/splits/heldout.json`. Record summary numbers in iteration log. NO per-query failure inspection.
 **Per-item gates:** none beyond §3.
 **Abort/revert:** N/A (no code change).
-**Status:** [ ] PENDING
+**Status:** [-] IN_PROGRESS
 
 ---
 
@@ -399,6 +399,12 @@ item: none (plan creation)
 action: PLAN.md authored
 result: 27 items total (1 finalize + 5 Phase 2 + 18 languages + 3 doc-probe, of which D3 is BLOCKED). 26 executable; D3 documented for completeness only.
 next: A1, schedule 60s
+
+--- iter 1 (2026-05-11T01:36:00Z) ---
+item: A1
+action: discover
+result: scanned §5, A1 first PENDING; marked [-] IN_PROGRESS, updated §0 meta (ITERATION=1, CURRENT_ITEM=A1).
+next: A1 execute, schedule 60s
 ```
 
 ---
