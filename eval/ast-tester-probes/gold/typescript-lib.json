@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "8 retrieval probes for colinhacks/zod — an MIT-licensed types-heavy TypeScript schema validation library with conditional types, mapped types, function overloads, and zero JSX (distinct from the existing vercel/ai-chatbot TS pack which is JSX-heavy).",
+  "language": "typescript",
+  "repo": "typescript-lib",
+  "repoUrl": "https://github.com/colinhacks/zod",
+  "repoSha": "b6071fc0ad2be94850ed57e07e418a6f902a9771",
+  "license": "MIT",
+  "probes": [
+    {
+      "id": "TSL-001",
+      "repo": "typescript-lib",
+      "query": "how does zod validate a value against a schema and return success or issues",
+      "expectedFile": "packages/zod/src/v4/core/parse.ts",
+      "expectedSymbol": "safeParse",
+      "expectedSymbolType": "variable",
+      "notes": "NL behavior probe: safeParse (line 73) is the never-throw validation entry — returns { success, data, error } discriminated union"
+    },
+    {
+      "id": "TSL-002",
+      "repo": "typescript-lib",
+      "query": "how does zod format validation errors into a structured tree with paths",
+      "expectedFile": "packages/zod/src/v4/core/errors.ts",
+      "expectedSymbol": "treeifyError",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe: treeifyError (line 345) groups issues by their path into a nested tree"
+    },
+    {
+      "id": "TSL-003",
+      "repo": "typescript-lib",
+      "query": "how does zod convert a schema definition into a JSON Schema document",
+      "expectedFile": "packages/zod/src/v4/core/to-json-schema.ts",
+      "expectedSymbol": "toJSONSchema",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe: toJSONSchema is the JSON Schema export path; key for OpenAPI integrations"
+    },
+    {
+      "id": "TSL-004",
+      "repo": "typescript-lib",
+      "query": "zod $ZodType core interface",
+      "expectedFile": "packages/zod/src/v4/core/schemas.ts",
+      "expectedSymbol": "$ZodType",
+      "expectedSymbolType": "interface",
+      "notes": "Symbol-anchored probe: $ZodType (schemas.ts:179) is the structural interface every schema implements"
+    },
+    {
+      "id": "TSL-005",
+      "repo": "typescript-lib",
+      "query": "zod safeParse function with discriminated union return type",
+      "expectedFile": "packages/zod/src/v4/core/parse.ts",
+      "expectedSymbol": "_safeParse",
+      "expectedSymbolType": "variable",
+      "notes": "Symbol-anchored probe: _safeParse (parse.ts:59) is the curried factory underlying the public safeParse"
+    },
+    {
+      "id": "TSL-006",
+      "repo": "typescript-lib",
+      "query": "zod $ZodTypeInternals interface with input output type parameters",
+      "expectedFile": "packages/zod/src/v4/core/schemas.ts",
+      "expectedSymbol": "$ZodTypeInternals",
+      "expectedSymbolType": "interface",
+      "notes": "Symbol-anchored probe: $ZodTypeInternals (schemas.ts:168) is `interface $ZodTypeInternals<out O = unknown, out I = unknown>` — the inner type-state holding input/output generics"
+    },
+    {
+      "id": "TSL-007",
+      "repo": "typescript-lib",
+      "query": "zod flattenError function with overloaded signatures and optional mapper",
+      "expectedFile": "packages/zod/src/v4/core/errors.ts",
+      "expectedSymbol": "flattenError",
+      "expectedSymbolType": "function",
+      "notes": "Grammar-edge-case probe: flattenError has 3 declarations on lines 263/264/265: two `export function ... : <returntype>;` overload stubs and the concrete implementation. Exercises tree-sitter-typescript's parsing of function overload signatures followed by the implementation — chunker should attribute all to the same `flattenError` symbol"
+    },
+    {
+      "id": "TSL-008",
+      "repo": "typescript-lib",
+      "query": "zod $ZodType interface with variance annotation on type parameters",
+      "expectedFile": "packages/zod/src/v4/core/schemas.ts",
+      "expectedSymbol": "$ZodType",
+      "expectedSymbolType": "interface",
+      "notes": "Grammar-edge-case probe: $ZodType / $ZodTypeInternals (schemas.ts:168, 179) use TypeScript variance modifiers `out O = unknown, out I = unknown` on type parameters — a TS 4.7+ feature. Exercises tree-sitter-typescript's handling of `out` / `in` annotations on generic parameter declarations"
+    }
+  ]
+}
