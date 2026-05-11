@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        22         # incremented each loop pass
-CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      979455a    # most recent shipped commit before this plan
+ITERATION:        23         # incremented each loop pass
+CURRENT_ITEM:     C1         # set to item id when IN_PROGRESS
+LAST_COMMIT:      82d0807    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -201,7 +201,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 **Type:** new-language
 **Idioms to target:** annotations, generic wildcards `? extends T`, lambda expressions, switch expressions, records, sealed classes, text blocks (Java 13+).
 **Pre-flight web search:** "small idiomatic Java library MIT 2024", "tree-sitter-java capture queries best practices".
-**Status:** [ ] PENDING
+**Status:** [-] IN_PROGRESS
 
 #### C2. Python
 **Type:** new-language
@@ -533,6 +533,12 @@ item: B5
 action: validate + resolve (DONE-with-note)
 result: kotlin re-index COMPLETE (828s = 14min, 5245 chunks). §3 validation: Step 1 unit tests 1432/1432 ✓; Step 3 kotlin probes 4/2/2 SAME aggregate as baseline; Step 4-5 retrieval-probes 46/4/10 ZERO PASS→FAIL flips; Step 6 GCSN dev MRR@10 86.92% EXACT MATCH; Step 7 ts/rust/csharp/cpp probes zero PASS→FAIL flips. Verified `class JobSupport` chunk at 23-34 is now in the kotlin codebase.db. PER-ITEM EXPECTATION NOT MET: KT-001 still PARTIAL — chunk symbol shifted from `parentCancelled` to `InvokeOnCancelling` (different inner class), but bi-encoder still doesn't pick the JobSupport header chunk for the cancellation-behavior query. Same encoder-bound pattern as B1-B4. Marked B5 DONE-with-note per GATE_INTERPRETATION. B-BLOCK FULLY CLOSED: 1 FAILED-REVERTED + 4 DONE-with-note. Updated ENCODER_BOUND_PATTERN in §0 with strong signal that remaining FAILs are encoder-bound, not chunker-bound.
 next: C1 (Java new-language) discover, schedule 60s
+
+--- iter 23 (2026-05-11T07:58:00Z) ---
+item: C1
+action: discover
+result: B5 closed DONE @ 979455a + 82d0807. C1 (Java new-language) now first PENDING. Marked [-] IN_PROGRESS, updated §0 meta (ITERATION=23, CURRENT_ITEM=C1, LAST_COMMIT=82d0807). C-block workflow per §C: web-search small idiomatic Java repo → sonnet subagent picks repo + generates 8 probes (3 NL behavior, 3 symbol-anchored, 2 grammar-edge-case) → add to repos.json → clone shallow → index (must complete in <5min per §2.8) → commit baseline → sonnet diagnostic subagent → apply principled fixes if any → re-index + full §3 validation including ALL existing language packs. Java tree-sitter grammar already in GRAMMAR_MAP. Idioms to target: annotations, generic wildcards, lambdas, switch expressions, records (Java 14+), sealed classes (17+), text blocks (13+).
+next: C1 execute (web search + sonnet subagent for repo+probes), schedule 60s
 ```
 
 ---
