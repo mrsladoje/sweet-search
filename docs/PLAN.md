@@ -11,7 +11,7 @@
 ```
 ITERATION:        30         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      c2849d2    # most recent shipped commit before this plan
+LAST_COMMIT:      c45ada5    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -234,7 +234,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 **Type:** new-language
 **Idioms:** macros (`#define`), function pointers, struct typedefs, `static inline`, designated initializers, `_Generic`.
 **Note:** pick a pure-C codebase (no C++). Not a kernel module — too large.
-**Status:** [x] DONE @ pending — Repo: redis/hiredis @ 1d18adbf (BSD-3, 9 .c + 25 .h files). 8 probes C-001..C-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting function-pointer typedef `typedef void (redisCallbackFn)(...)` + self-referential typedef struct). Index: 78s (1:18), 631 embeddings. Baseline: 2 PASS / 4 PARTIAL / 2 FAIL. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 11 existing lang packs zero PASS→FAIL flips.
+**Status:** [x] DONE @ c45ada5 — Repo: redis/hiredis @ 1d18adbf (BSD-3, 9 .c + 25 .h files). 8 probes C-001..C-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting function-pointer typedef `typedef void (redisCallbackFn)(...)` + self-referential typedef struct). Index: 78s (1:18), 631 embeddings. Baseline: 2 PASS / 4 PARTIAL / 2 FAIL. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 11 existing lang packs zero PASS→FAIL flips.
 
 #### C8. TypeScript — second repo (library/framework, NOT a Next.js app)
 **Type:** new-language
