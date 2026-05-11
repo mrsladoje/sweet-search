@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        41         # incremented each loop pass
+ITERATION:        42         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      0572675    # most recent shipped commit before this plan
+LAST_COMMIT:      2b5fe4f    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -327,7 +327,7 @@ User intent (2026-05-11): validate that when queries genuinely need docs/configs
 **Goal:** Across existing repos, add NL queries about CODE LOGIC where doc/config files MUST NOT outrank impl. Measure if existing demotion holds.
 **Workflow:** same as D1 but inverted. No demotion tuning.
 **Per-item gates:** same as D1.
-**Status:** [ ] PENDING
+**Status:** [x] DONE — Created `eval/ast-tester-probes/gold/doc-negative.json` with 30 probes across 13 high-doc-density repos (rust 413 md, javascript 158 md, csharp 88 md, lua 66 html, kotlin 60 md, python 39 md most prominent). Each probe asks about CODE behavior; gold is a code file. **Overall: 9 PASS / 21 FAIL of 30**. But the actual D2 measurement is "did a doc/config file win the top-1?" — that's **5/30 = 16.7%** (the other 16 FAILs returned different code files = intra-repo competition, not demotion failure). The 5 actual demotion failures: rust DN-RS-002/003 (Cargo.toml outranks rust source — manifest mentions crate-level keywords), csharp DN-CS-003 (docker-compose.yml outranks cluster code), kotlin DN-KT-002/003 (`.github/ISSUE_TEMPLATE/01-bug-report.yml` outranks Flow/Select source — issue templates literally describe feature keywords). **Existing demotion is MOSTLY effective** (only 16.7% of code-logic queries lose to docs/configs), but not perfect. Concrete failure modes for D3 tuning consideration (BLOCKED): manifest files (Cargo.toml) and CI issue templates seem to slip through demotion. Per PLAN D2 explicit guidance: NO demotion tuning regardless of result. §3 ALL GREEN by construction (D2 adds probes, makes 0 code changes).
 
 #### D3. Demotion tuning (BLOCKED — do not execute autonomously)
 **Type:** ranker-change
@@ -642,6 +642,22 @@ item: D1
 action: create + measure + resolve (DONE-with-baseline)
 result: Built `eval/ast-tester-probes/gold/doc-positive.json` — 68 probes across 18 repos (~4 each: LICENSE, README, build manifest, CI workflow). Each probe is a query where the LEGITIMATE top-1 is a doc/config file. Ran per-repo (the multi-repo gold required the runner's `--repo=<key> --repo-base=...` pattern since the runner doesn't natively support per-probe-repo-base resolution). **Baseline: 18 PASS / 0 PARTIAL / 50 FAIL out of 68 (26.5% pass rate)**. Per-repo: c/cpp/elixir/javascript/python each 2/4, java/lua/php/rust/ruby/scala/typescript/typescript-lib each 1/3-1/4, csharp/dart/go/kotlin/zig each 0/3-0/4. **Findings**: the existing doc/config demotion is effective — code chunks generally outrank doc files even for queries genuinely needing docs. PASS-prone queries: README purpose, LICENSE for repos where license file has the EXACT keyword "license" prominently. FAIL-prone queries: build manifests (package.json, Cargo.toml, etc) lose to code files mentioning dependencies; CI workflows lose to scripts mentioning CI commands. §3 ALL GREEN by construction (D1 adds probes, makes 0 code changes; verified retrieval-probes dev 0 flips vs C15). Per PLAN explicit D1 guidance: NO chunker/demotion changes regardless of pass rate — this is the measurement step. Useful as input to D3 demotion tuning IF the user authorizes it later (D3 currently BLOCKED).
 next: D2 discover, schedule 60s
+
+--- iter 42 (2026-05-11T11:54:00Z) ---
+item: D2
+action: create + measure + resolve (DONE-with-baseline)
+result: Built `eval/ast-tester-probes/gold/doc-negative.json` with 30 probes across 13 high-doc-density repos. Each probe asks about CODE behavior with code-file gold; PASS means demotion correctly kept docs/yml/html below code. **Surface result: 9 PASS / 21 FAIL of 30**. But the meaningful D2 metric is "did a non-code file win top-1?" — that's **5/30 = 16.7%** (the other 16 FAILs returned different code files = intra-repo code-vs-code competition, not a doc/code demotion failure). The 5 demotion-failure cases: rust DN-RS-002/003 (Cargo.toml manifest outranks rust source for queries with "registry"/"configuration" keywords), csharp DN-CS-003 (docker-compose.yml outranks cluster code), kotlin DN-KT-002/003 (`.github/ISSUE_TEMPLATE/01-bug-report.yml` literally has Flow/Select feature keywords in template fields, outranking source). **Conclusion: existing demotion holds for 83.3% of doc-competition cases**. Notable failure modes for any future D3 tuning: (a) Cargo.toml / build manifests with crate-level keywords slip through, (b) `.github/ISSUE_TEMPLATE/*.yml` with feature-name templates slip through. Per PLAN D2 explicit guidance: NO demotion tuning regardless of result — this is the measurement step. §3 ALL GREEN by construction.
+
+--- ALL ITEMS RESOLVED ---
+Final status (2026-05-11):
+- A1: DONE (held-out aggregate read from prior session)
+- B1-B5: 5/5 DONE (B1 restored after over-strict revert)
+- C1-C18: 13 DONE + 5 SKIP (C9 Swift V8 crash; C13/C16/C17/C18 no infra)
+- D1: DONE — doc-positive 18/68 = 26.5% PASS
+- D2: DONE — doc-negative 5/30 = 16.7% genuine demotion failures (83.3% demotion-hold rate)
+- D3: BLOCKED (requires explicit user approval — NOT executing autonomously)
+
+Total: 13 new probe packs added (10 new languages + 1 ts-lib + doc-positive + doc-negative). 1 infra fix shipped (`.dart` added to FILE_PATTERNS.include). 5 chunker grammar fixes (B1 cpp typeAlias/template, B2 rust sibling-buffer, B3 rust impl generic, B4 csharp partial-class, B5 kotlin large-class header). Loop terminating per §6 ("If iteration finds NO not-DONE-not-FAILED items remaining: write a final summary, push, and STOP").
 ```
 
 ---

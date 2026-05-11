@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:53:21.935Z",
+  "summary": {
+    "counts": {
+      "PASS": 0,
+      "PARTIAL": 0,
+      "FAIL": 1
+    },
+    "totalMs": 62,
+    "avgMs": 62,
+    "n": 1
+  },
+  "results": [
+    {
+      "id": "DN-CPP-001",
+      "repo": "cpp",
+      "query": "highway vector reduce min operation across simd lanes",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hwy/ops/rvv-inl.h",
+        "startLine": 4911,
+        "endLine": 4959,
+        "symbol": "ReduceMin",
+        "symbolType": "function",
+        "score": 0.4568880498409271,
+        "presentation": "full"
+      },
+      "wallMs": 62,
+      "error": null
+    }
+  ]
+}

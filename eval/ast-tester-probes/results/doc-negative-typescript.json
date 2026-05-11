@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:53:08.804Z",
+  "summary": {
+    "counts": {
+      "PASS": 1,
+      "PARTIAL": 0,
+      "FAIL": 1
+    },
+    "totalMs": 68,
+    "avgMs": 34,
+    "n": 2
+  },
+  "results": [
+    {
+      "id": "DN-TS-001",
+      "repo": "typescript",
+      "query": "ai chatbot user message persistence to database session",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/db/queries.ts",
+        "startLine": 563,
+        "endLine": 632,
+        "symbol": "getMessageCountByUserId",
+        "symbolType": "function",
+        "score": 0.4194313585758209,
+        "presentation": "full"
+      },
+      "wallMs": 44,
+      "error": null
+    },
+    {
+      "id": "DN-TS-002",
+      "repo": "typescript",
+      "query": "react server action handler for sending a chat message",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "components/chat/message-actions.tsx",
+        "startLine": 14,
+        "endLine": 193,
+        "symbol": "PureMessageActions",
+        "symbolType": "function",
+        "score": 0.5228453278541565,
+        "presentation": "full"
+      },
+      "wallMs": 24,
+      "error": null
+    }
+  ]
+}
