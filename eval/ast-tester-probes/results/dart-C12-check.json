@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:20:43.636Z",
+  "summary": {
+    "counts": {
+      "PASS": 6,
+      "PARTIAL": 1,
+      "FAIL": 1
+    },
+    "totalMs": 230,
+    "avgMs": 29,
+    "n": 8
+  },
+  "results": [
+    {
+      "id": "DR-001",
+      "repo": "dart",
+      "query": "how does the dart http retry client recover from transient failures with exponential backoff",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "pkgs/http/lib/retry.dart",
+        "startLine": 12,
+        "endLine": 180,
+        "symbol": "RetryClient",
+        "symbolType": "class",
+        "score": 0.5452663898468018,
+        "presentation": "full"
+      },
+      "wallMs": 67,
+      "error": null
+    },
+    {
+      "id": "DR-002",
+      "repo": "dart",
+      "query": "build a multipart form upload with file fields and string fields in dart",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "pkgs/http/lib/src/multipart_request.dart",
+        "startLine": 17,
+        "endLine": 163,
+        "symbol": "MultipartRequest",
+        "symbolType": "class",
+        "score": 0.5164279937744141,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    },
+    {
+      "id": "DR-003",
+      "repo": "dart",
+      "query": "abort an in-flight http request in dart using a Future trigger",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "pkgs/http/lib/src/request.dart",
+        "startLine": 212,
+        "endLine": 221,
+        "symbol": "AbortableRequest",
+        "symbolType": "class",
+        "score": 0.6244792342185974,
+        "presentation": "full"
+      },
+      "wallMs": 24,
+      "error": null
+    },
+    {
+      "id": "DR-004",
+      "repo": "dart",
+      "query": "ClientException thrown when an http request fails with uri context",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "pkgs/http/lib/src/exception.dart",
+        "startLine": 1,
+        "endLine": 22,
+        "symbol": "ClientException",
+        "symbolType": "class",
+        "score": 0.5855727791786194,
+        "presentation": "full"
+      },
+      "wallMs": 21,
+      "error": null
+    },
+    {
+      "id": "DR-005",
+      "repo": "dart",
+      "query": "MultipartFile fromBytes factory constructor for uploading byte data",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "pkgs/http/lib/src/multipart_file.dart",
+        "startLine": 14,
+        "endLine": 107,
+        "symbol": "MultipartFile",
+        "symbolType": "class",
+        "score": 0.49442562460899353,
+        "presentation": "full"
+      },
+      "wallMs": 18,
+      "error": null
+    },
+    {
+      "id": "DR-006",
+      "repo": "dart",
+      "query": "Response class with statusCode body headers from an http call",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "pkgs/http/lib/src/response.dart",
+        "startLine": 15,
+        "endLine": 67,
+        "symbol": "Response",
+        "symbolType": "class",
+        "score": 0.5352533087134362,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    },
+    {
+      "id": "DR-007",
+      "repo": "dart",
+      "query": "abstract mixin class BaseClient with default get post put head delete HTTP method implementations",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "pkgs/http/lib/src/base_client.dart",
+        "startLine": 16,
+        "endLine": 108,
+        "symbol": "BaseClient",
+        "symbolType": "class",
+        "score": 0.5631168475747109,
+        "presentation": "full"
+      },
+      "wallMs": 27,
+      "error": null
+    },
+    {
+      "id": "DR-008",
+      "repo": "dart",
+      "query": "extension HeadersWithSplitValues on BaseResponse for multi-value cookie headers",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "pkgs/http/lib/src/base_response.dart",
+        "startLine": 118,
+        "endLine": 171,
+        "symbol": "BaseResponseWithUrl",
+        "symbolType": "class",
+        "score": 0.49060705304145813,
+        "presentation": "full"
+      },
+      "wallMs": 21,
+      "error": null
+    }
+  ]
+}

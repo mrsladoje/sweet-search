@@ -6,9 +6,9 @@
   "seed": 42,
   "stratifyBy": "language",
   "method": "stratified-random-shuffle",
-  "totalProbes": 120,
-  "devCount": 75,
-  "heldoutCount": 45,
+  "totalProbes": 128,
+  "devCount": 80,
+  "heldoutCount": 48,
   "perLanguage": {
     "typescript": {
       "dev": [
@@ -218,6 +218,20 @@
         "SC-002",
         "SC-006",
         "SC-007"
+      ]
+    },
+    "lua": {
+      "dev": [
+        "LU-001",
+        "LU-003",
+        "LU-004",
+        "LU-006",
+        "LU-008"
+      ],
+      "heldout": [
+        "LU-002",
+        "LU-005",
+        "LU-007"
       ]
     }
   },
