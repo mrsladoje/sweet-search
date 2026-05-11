@@ -11,7 +11,7 @@
 ```
 ITERATION:        25         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      8c104e0    # most recent shipped commit before this plan
+LAST_COMMIT:      fad7055    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -207,7 +207,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 #### C2. Python
 **Type:** new-language
 **Idioms:** decorators (function/class), type hints `T | U` (3.10+), walrus operator `:=`, match statements (3.10+), async generators, dataclasses.
-**Status:** [x] DONE @ pending — Repo: pallets/click @ fc6c7c47 (BSD-3-Clause, 63 .py files). 8 probes PY-001..PY-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting @t.overload chains and `class ParamType(t.Generic[T], abc.ABC)` multi-inheritance). All 8 gold verified file_exists + symbol_greps. Index: 136s (well under 5min target), 1158 chunks, 1136 embeddings. Baseline: 4 PASS / 2 PARTIAL / 2 FAIL — strongest baseline yet (click is well-structured Python that the chunker handles cleanly). §3 validation ALL GREEN: retrieval-probes 46/60 zero PASS→FAIL flips, GCSN dev MRR@10 86.92% exact, ts/rust/kotlin/csharp/cpp/java zero PASS→FAIL flips. Splits manifest updated: PY-001/002/004/006/008 dev, PY-003/005/007 heldout (5/3). Iter 25. Note: skipped per-Cn fresh sonnet subagent (used my own repo-selection knowledge + direct gold authoring) — saves ~80k tokens per item; valid per C_WORKFLOW_POLICY for well-known small libraries.
+**Status:** [x] DONE @ fad7055 — Repo: pallets/click @ fc6c7c47 (BSD-3-Clause, 63 .py files). 8 probes PY-001..PY-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting @t.overload chains and `class ParamType(t.Generic[T], abc.ABC)` multi-inheritance). All 8 gold verified file_exists + symbol_greps. Index: 136s (well under 5min target), 1158 chunks, 1136 embeddings. Baseline: 4 PASS / 2 PARTIAL / 2 FAIL — strongest baseline yet (click is well-structured Python that the chunker handles cleanly). §3 validation ALL GREEN: retrieval-probes 46/60 zero PASS→FAIL flips, GCSN dev MRR@10 86.92% exact, ts/rust/kotlin/csharp/cpp/java zero PASS→FAIL flips. Splits manifest updated: PY-001/002/004/006/008 dev, PY-003/005/007 heldout (5/3). Iter 25. Note: skipped per-Cn fresh sonnet subagent (used my own repo-selection knowledge + direct gold authoring) — saves ~80k tokens per item; valid per C_WORKFLOW_POLICY for well-known small libraries.
 
 #### C3. JavaScript
 **Type:** new-language
