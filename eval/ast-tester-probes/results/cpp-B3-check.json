@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T04:22:53.247Z",
+  "summary": {
+    "counts": {
+      "PASS": 0,
+      "PARTIAL": 2,
+      "FAIL": 6
+    },
+    "totalMs": 332,
+    "avgMs": 42,
+    "n": 8
+  },
+  "results": [
+    {
+      "id": "CPP-001",
+      "repo": "cpp",
+      "query": "how does highway dispatch the right SIMD target at runtime based on CPU features",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hwy/detect_targets.h",
+        "startLine": 816,
+        "endLine": 984,
+        "symbol": "HWY_HAVE_RUNTIME_DISPATCH_LOONGARCH",
+        "symbolType": "macro",
+        "score": 0.5236966609954834,
+        "presentation": "full"
+      },
+      "wallMs": 54,
+      "error": null
+    },
+    {
+      "id": "CPP-002",
+      "repo": "cpp",
+      "query": "how does highway select the best available SIMD target on first call and update the dispatch table",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "hwy/highway.h",
+        "startLine": 390,
+        "endLine": 442,
+        "symbol": "ChooseAndCall",
+        "symbolType": "function",
+        "score": 0.45667657256126404,
+        "presentation": "full"
+      },
+      "wallMs": 27,
+      "error": null
+    },
+    {
+      "id": "CPP-003",
+      "repo": "cpp",
+      "query": "how does highway track which SIMD target was chosen and return the index into the dispatch table",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hwy/highway.h",
+        "startLine": 617,
+        "endLine": 647,
+        "symbolType": "code",
+        "score": 0.5123642683029175,
+        "presentation": "full"
+      },
+      "wallMs": 30,
+      "error": null
+    },
+    {
+      "id": "CPP-004",
+      "repo": "cpp",
+      "query": "Vec type alias that produces the vector type for a given tag descriptor D",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hwy/nanobenchmark.cc",
+        "startLine": 107,
+        "endLine": 107,
+        "symbol": "InputVec",
+        "symbolType": "typeAlias",
+        "score": 0.7581788156250003,
+        "presentation": "full"
+      },
+      "wallMs": 71,
+      "error": null
+    },
+    {
+      "id": "CPP-005",
+      "repo": "cpp",
+      "query": "Simd tag struct with Lane type parameter N lanes and kPow2 scaling used to select vector overloads",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hwy/contrib/sort/bench_parallel.cc",
+        "startLine": 174,
+        "endLine": 174,
+        "symbol": "LaneType",
+        "symbolType": "typeAlias",
+        "score": 0.5847152359126142,
+        "presentation": "full"
+      },
+      "wallMs": 56,
+      "error": null
+    },
+    {
+      "id": "CPP-006",
+      "repo": "cpp",
+      "query": "AlignedDeleter RAII class that calls destructor and frees aligned memory on unique_ptr destruction",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "hwy/aligned_allocator.h",
+        "startLine": 73,
+        "endLine": 159,
+        "symbol": "TypedArrayDeleter",
+        "symbolType": "code",
+        "score": 0.5090227723121643,
+        "presentation": "full"
+      },
+      "wallMs": 29,
+      "error": null
+    },
+    {
+      "id": "CPP-007",
+      "repo": "cpp",
+      "query": "Vec128 SSE vector class template with partial specializations for float double and float16",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hwy/ops/ppc_vsx-inl.h",
+        "startLine": 120,
+        "endLine": 140,
+        "symbolType": "code",
+        "score": 0.5269707471132279,
+        "presentation": "full"
+      },
+      "wallMs": 42,
+      "error": null
+    },
+    {
+      "id": "CPP-008",
+      "repo": "cpp",
+      "query": "DetectTargets x86 implementation reading CPUID flags and returning supported highway target bitmask",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hwy/detect_targets.h",
+        "startLine": 903,
+        "endLine": 984,
+        "symbol": "HWY_ATTAINABLE_LOONGARCH",
+        "symbolType": "macro",
+        "score": 0.4723539352416992,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    }
+  ]
+}

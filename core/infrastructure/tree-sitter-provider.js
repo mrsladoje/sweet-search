@@ -818,6 +818,23 @@ export class TreeSitterProvider {
     const nameNode = node.childForFieldName('name');
     if (nameNode) return nameNode.text;
 
+    // Rust `impl<'a> Type<'a> { ... }` — the type field is a
+    // `generic_type` wrapper, not a leaf `type_identifier`, so the
+    // IDENT_TYPES fallback below picks up the lifetime keyword instead
+    // (or finds nothing). Drill into the wrapper to recover the type
+    // name. Plain `impl Foo` (no generics) hits the IDENT_TYPES branch
+    // unchanged; `impl Foo for Bar` also unchanged since `Foo` is the
+    // first IDENT_TYPES child today.
+    if (node.type === 'impl_item') {
+      const typeNode = node.childForFieldName('type');
+      if (typeNode && typeNode.type === 'generic_type') {
+        const inner = typeNode.namedChild(0);
+        if (inner && IDENT_TYPES.has(inner.type)) {
+          return inner.text;
+        }
+      }
+    }
+
     // Fallback: look for identifier-type children (uses IDENT_TYPES set)
     for (let i = 0; i < node.childCount; i++) {
       const child = node.child(i);

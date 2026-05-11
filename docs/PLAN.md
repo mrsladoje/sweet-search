@@ -9,12 +9,13 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        11         # incremented each loop pass
-CURRENT_ITEM:     B3         # set to item id when IN_PROGRESS
-LAST_COMMIT:      f368f9b    # most recent shipped commit before this plan
+ITERATION:        15         # incremented each loop pass
+CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
+LAST_COMMIT:      4c7a5db    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
+ENCODER_BOUND_PATTERN: B1+B2+B3 all show same lesson — Phase 2 chunker fixes correctly improve chunk metadata/embedding-text but bi-encoder still ranks competing chunks. Suggests remaining rust/cpp probe FAILs are encoder-bound. B4/B5 may follow same pattern.
 ```
 
 ## 1. Locked baselines (NEVER regress below these)
@@ -154,7 +155,7 @@ Priority by yield (descending). Each item: web-search if uncertain, apply princi
 **Pre-flight web search:** "tree-sitter-rust struct_item with lifetime parameter AST shape", "tree-sitter rust function_item generic_parameters".
 **Per-item gates:** rust probes — RS-002, RS-003 expect file_correct (PARTIAL+) at minimum. Re-index ~77 min.
 **Abort/revert:** revert tree-sitter-provider.js.
-**Status:** [-] IN_PROGRESS
+**Status:** [x] DONE @ pending — chunker fix for `impl_item` generic_type wrapper landed. PLAN hypothesis was off-target (struct_item.name field DOES return type_identifier correctly even with `<'a>`; function_item too). Real chunker bug was impl_item: `impl<'a> Checker<'a> { ... }`'s type-field is wrapped in `generic_type`, so `_extractNodeName` IDENT_TYPES-fallback found nothing → chunk emitted as `impl:null`. Fix: drill into generic_type via `namedChild(0)` when impl_item.type is `generic_type`. Plain `impl Foo` and `impl Foo for Bar` unchanged. Rust re-index completed (5102s, 37451 chunks). VERIFIED end-to-end: checkers/ast/mod.rs:255-305 chunk now has name=`Checker` type=`impl` (was name=null type=impl). Rust probes 4/0/4 — same PASS count as baseline. §1 LOCKED BASELINES all GREEN: retrieval-probes 46/4/10 zero flips, GCSN MRR@10 86.92% exact, ts/kotlin/csharp/cpp probes zero degradations. Per-item expectation (RS-002+RS-003→PARTIAL+) NOT MET — same encoder-bound pattern as B1/B2 (chunker improvements correctly identify entities but bi-encoder still picks competing chunks; RS-002 returns ty_python_semantic::ApplicableFix, RS-003 returns commands::check, RS-006 returns ArgumentsSourceOrder). Iter 15.
 
 #### B4. C# partial-class shard method emission (CS-007)
 **Type:** chunker-fix
@@ -466,6 +467,30 @@ item: B3
 action: discover
 result: B2 closed DONE @ 1c107b6 + f368f9b. B3 (rust lifetime `<'a>` chunker boundary for RS-002/RS-003) now first PENDING. Marked [-] IN_PROGRESS, updated §0 meta (ITERATION=11, CURRENT_ITEM=B3, LAST_COMMIT=f368f9b). Note: B3 symptom is more severe than B2 (Recall@20=0 — chunks may genuinely be missing from candidate set, not just mis-ranked). Per-item gate is softer (file_correct PARTIAL+, not full PASS), making this more tractable. Cost: same 85-min rust re-index. Consecutive-fail counter at 0 (B2 was DONE).
 next: B3 execute (verify tree-sitter-rust AST shape for `struct Foo<'a>` and `fn foo<'a>`, check if chunker actually drops these), schedule 60s
+
+--- iter 12 (2026-05-11T04:52:00Z) ---
+item: B3
+action: execute
+result: Pre-flight investigation overturned PLAN hypothesis: struct_item.childForFieldName('name') DOES return type_identifier `Checker` correctly with `<'a>` (verified via direct tree-sitter parse); same for function_item.childForFieldName('name')=`lint_fix`. Real bug is in impl_item: `impl<'a> Checker<'a>` has type-field wrapped in `generic_type` node, which is not in IDENT_TYPES → existing IDENT_TYPES-fallback in `_extractNodeName` misses it → chunk emitted as type=impl name=null. Fix (minimal+narrow): when impl_item.childForFieldName('type') is `generic_type`, drill into `namedChild(0)` for the type_identifier. Doesn't touch plain `impl Foo` (existing fallback already works) or `impl Foo for Bar`. Unit tests 1432/1432 GREEN. Sanity check: mod.rs:255-305 chunk now reports name=`Checker` type=`impl` and embed header `# impl: Checker`. Kicked rust re-index in background (PID 70546).
+next: B3 validate (rust re-index ~85 min), schedule 1800s
+
+--- iter 13 (2026-05-11T05:23:00Z) ---
+item: B3
+action: wait (re-index)
+result: rust re-index at 31 min elapsed, Embedding 65%/LI 69%. Matches B2 pace.
+next: continue waiting, schedule 1800s
+
+--- iter 14 (2026-05-11T05:54:00Z) ---
+item: B3
+action: wait (re-index)
+result: rust re-index at 62 min elapsed, Embedding 83%/LI 97%. ~25 more min including HNSW/vocab.
+next: continue waiting, schedule 1500s
+
+--- iter 15 (2026-05-11T06:20:00Z) ---
+item: B3
+action: validate + resolve (DONE-with-note)
+result: rust re-index COMPLETE (5102s = 85 min). §3 validation: Step 1 unit tests 1432/1432 ✓; Step 3 rust probes 4/0/4 SAME PASS COUNT as baseline (RS-001/004/005/007 PASS; RS-002/003/006/008 FAIL — UNCHANGED); Step 4-5 retrieval-probes 46/4/10 ZERO PASS→FAIL flips; Step 6 GCSN dev MRR@10 86.92% EXACT MATCH; Step 7 ts/kotlin/csharp/cpp probes zero degradations. Verified mod.rs:255-305 impl chunk now reports name=`Checker` type=`impl`. Per-item expectation (RS-002+RS-003→PARTIAL+) NOT MET — same encoder-bound pattern as B1/B2. Bi-encoder ranks ApplicableFix (RS-002), commands::check (RS-003), ArgumentsSourceOrder (RS-006) over the gold despite chunker now correctly naming the impl block. Marked B3 DONE-with-note per GATE_INTERPRETATION. Added ENCODER_BOUND_PATTERN note to §0 — B4/B5 may follow same pattern; user should weigh whether further chunker fixes are worth 30-85 min re-index cost when encoder-bound failures dominate.
+next: B4 discover, schedule 60s
 ```
 
 ---
