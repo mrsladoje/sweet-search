@@ -570,6 +570,12 @@ describe('multi-line signatures', () => {
   });
 
   it('matches C# method with generic constraints on one line', async () => {
+    // 2026-05-11 (B4 fix): the csharp method pattern now recognises
+    // generic methods `public T Foo<T>(...)` — previously the `<T>`
+    // between name and `(` blocked the match. Old behavior produced a
+    // single class chunk; new behavior produces class chunk + method
+    // chunk for FindFirst (the desired outcome — methods are first-class
+    // retrieval targets).
     const chunks = await chunker.parseFile('/test/Constraints.cs', [
       'public class Constraints {',
       '  public T FindFirst<T>(IEnumerable<T> items) where T : class {',
@@ -577,8 +583,10 @@ describe('multi-line signatures', () => {
       '  }',
       '}',
     ].join('\n'));
-    expect(chunks.length).toBe(1);
+    expect(chunks.length).toBe(2);
     expect(chunks[0].metadata.symbol).toBe('Constraints');
+    expect(chunks[1].metadata.symbol).toBe('FindFirst');
+    expect(chunks[1].metadata.chunk_type).toBe('method');
   });
 });
 

@@ -314,7 +314,18 @@ export const CORE_LANGUAGES = {
     chunker: {
       class: /^\s*(?:public|private|internal|protected)?\s*(?:static|sealed|abstract)?\s*(?:partial\s+)?class\s+(\w+)/,
       interface: /^\s*(?:public|internal)?\s*interface\s+(\w+)/,
-      method: /^\s*(?:public|private|protected|internal)\s+(?:static\s+)?(?:async\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*\(/,
+      // Two alternation branches:
+      //   (a) visibility-prefixed: loose return type — covers `public Task<int> Foo(...)`
+      //       and `internal override void Bar(...)`.
+      //   (b) visibility-less: STRICT return type (C# primitives + Task/ValueTask/
+      //       IEnumerable/IAsyncEnumerable + capitalized identifiers) — covers
+      //       default-private `void Foo<T>(...)` / `async Task Bar<T>(...)` patterns
+      //       shipped widely in real codebases (e.g. Garnet's AsyncProcessor.cs
+      //       partial-class shard). Strict return-type list prevents false positives
+      //       like `return Foo()` and `if (cond)` (those starting tokens not in list).
+      // Also adds `(?:<...>)?` between method name and `(` so generic-method declarations
+      // `void Foo<T>(...)` get matched (previously rejected the `<T>` between name and `(`).
+      method: /^\s*(?:(?:public|private|protected|internal)\s+(?:static\s+)?(?:async\s+)?(?:override\s+)?(?:virtual\s+)?(?:[\w<>\[\]?]+)|(?:(?:static|async|override|virtual|sealed|new)\s+)*(?:void|bool|byte|sbyte|short|ushort|int|uint|long|ulong|float|double|decimal|char|string|object|Task(?:<[^>]+>)?|ValueTask(?:<[^>]+>)?|IEnumerable(?:<[^>]+>)?|IAsyncEnumerable(?:<[^>]+>)?|[A-Z][\w<>?\[\],]*))\s+(\w+)(?:<[\w\s,?<>]+>)?\s*\(/,
       property: /^\s*(?:public|private|protected|internal)\s+(?:[\w<>\[\]?]+)\s+(\w+)\s*\{/,
       enum: /^\s*(?:public|internal)?\s*enum\s+(\w+)/,
       struct: /^\s*(?:public|internal)?\s*(?:readonly\s+)?struct\s+(\w+)/,
