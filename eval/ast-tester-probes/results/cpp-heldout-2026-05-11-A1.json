@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T00:14:16.117Z",
+  "summary": {
+    "counts": {
+      "PASS": 0,
+      "PARTIAL": 0,
+      "FAIL": 3
+    },
+    "totalMs": 162,
+    "avgMs": 54,
+    "n": 3
+  },
+  "results": [
+    {
+      "id": "CPP-001",
+      "repo": "cpp",
+      "query": "how does highway dispatch the right SIMD target at runtime based on CPU features",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hwy/detect_targets.h",
+        "startLine": 816,
+        "endLine": 984,
+        "symbol": "HWY_HAVE_RUNTIME_DISPATCH_LOONGARCH",
+        "symbolType": "macro",
+        "score": 0.5236966609954834,
+        "presentation": "full"
+      },
+      "wallMs": 54,
+      "error": null
+    },
+    {
+      "id": "CPP-005",
+      "repo": "cpp",
+      "query": "Simd tag struct with Lane type parameter N lanes and kPow2 scaling used to select vector overloads",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hwy/base.h",
+        "startLine": 496,
+        "endLine": 498,
+        "symbol": "alignas",
+        "symbolType": "struct",
+        "score": 0.5663971168697445,
+        "presentation": "full"
+      },
+      "wallMs": 61,
+      "error": null
+    },
+    {
+      "id": "CPP-007",
+      "repo": "cpp",
+      "query": "Vec128 SSE vector class template with partial specializations for float double and float16",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hwy/ops/ppc_vsx-inl.h",
+        "startLine": 120,
+        "endLine": 140,
+        "symbolType": "code",
+        "score": 0.5269707471132279,
+        "presentation": "full"
+      },
+      "wallMs": 47,
+      "error": null
+    }
+  ]
+}

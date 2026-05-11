@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T00:14:28.855Z",
+  "summary": {
+    "counts": {
+      "PASS": 1,
+      "PARTIAL": 1,
+      "FAIL": 1
+    },
+    "totalMs": 140,
+    "avgMs": 47,
+    "n": 3
+  },
+  "results": [
+    {
+      "id": "TS-001",
+      "repo": "typescript",
+      "query": "how does the chat handle streaming delta updates and dispatch them to the artifact panel",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "components/chat/data-stream-handler.tsx",
+        "startLine": 11,
+        "endLine": 91,
+        "symbol": "DataStreamHandler",
+        "symbolType": "function",
+        "score": 0.5318654179573059,
+        "presentation": "full"
+      },
+      "wallMs": 69,
+      "error": null
+    },
+    {
+      "id": "TS-002",
+      "repo": "typescript",
+      "query": "where does the chat auto-scroll when new messages arrive and how does it detect whether the user has scrolled away",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "components/chat/messages.tsx",
+        "startLine": 27,
+        "endLine": 127,
+        "symbol": "PureMessages",
+        "symbolType": "function",
+        "score": 0.4811817705631256,
+        "presentation": "full"
+      },
+      "wallMs": 44,
+      "error": null
+    },
+    {
+      "id": "TS-006",
+      "repo": "typescript",
+      "query": "slashCommands array listing every available slash command with its action and description",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "components/chat/slash-commands.tsx",
+        "startLine": 1,
+        "endLine": 73,
+        "symbol": "SlashCommand",
+        "symbolType": "typeAlias",
+        "score": 0.5503174066543579,
+        "presentation": "full"
+      },
+      "wallMs": 27,
+      "error": null
+    }
+  ]
+}
