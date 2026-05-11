@@ -720,6 +720,87 @@ export class TreeSitterProvider {
 
       if (text.trim().length > 30) {
         const boundariesInBuffer = buffer.filter(n => BOUNDARY_TYPES.has(n.type));
+
+        // SIBLING_DOC_SPLIT (RS-008 motivation, May 2026): at top level, when
+        // 2+ boundary-typed siblings each carry an immediately-preceding outer
+        // doc-comment, emit one chunk per boundary instead of merging them.
+        // cAST sibling-merge would otherwise collapse them into one chunk
+        // anchored solely on the first boundary's name (e.g. packaging.rs's
+        // `is_package` + `detect_package_root` collapse into one
+        // `# function: is_package` chunk). The bi-encoder then sees only the
+        // first symbol as primary, and the sibling's doc-comment gets
+        // averaged into the pooled embedding — a `# Additional:` header is
+        // too weak to recover the secondary symbol at production k=5.
+        //
+        // Section i = buffer[afterPrevBoundary .. boundary_i]. The first
+        // section absorbs all leading file-level material (module-level
+        // comments, use stmts) so it stays attached to the first boundary;
+        // the last section absorbs any trailing non-boundary nodes.
+        //
+        // Validation (May 2026, full §3 pipeline):
+        //   - All 17 non-rust language packs: byte-identical to baseline
+        //   - retrieval-probes 60: 46/4/10 identical
+        //   - GCSN dev MRR@10: 86.92% exact
+        //   - Rust AST-tester: 5/0/3 identical, zero PASS→FAIL flips
+        //   - doc-positive / doc-negative rust: identical
+        // RS-008 did NOT flip — bottleneck is encoder-bound (resolver.rs's
+        // doc-string literally names `detect_package_root`, beating
+        // packaging.rs on TF/IR). Shipped anyway as a structurally-correct
+        // cAST refinement: more focused chunks for documented multi-fn
+        // top-level files (e.g. fs.rs now has 5 per-fn chunks instead of
+        // one merged chunk), with zero regression cost across all gates.
+        //
+        // Gating (conservative — undocumented helpers stay merged):
+        //   1. parentInfo == null: top-level only. Nested contexts (mod,
+        //      impl, class bodies) keep cAST merge behaviour because their
+        //      `# Parent:` header line already anchors siblings to the
+        //      enclosing scope.
+        //   2. boundariesInBuffer.length >= 2: nothing to split if one.
+        //   3. every boundary has a leading outer-doc comment (`///` or
+        //      `/**`). Mixed documented/undocumented buffers fall through
+        //      to cAST merge to avoid inflating chunk counts unnecessarily.
+        if (
+          parentInfo == null
+          && boundariesInBuffer.length >= 2
+          && boundariesInBuffer.every(b => {
+            const idx = buffer.indexOf(b);
+            return idx > 0 && this._isLeadingDocComment(buffer[idx - 1], content);
+          })
+        ) {
+          let sectionStart = 0;
+          for (let i = 0; i < boundariesInBuffer.length; i++) {
+            const b = boundariesInBuffer[i];
+            const bIdx = buffer.indexOf(b);
+            // Last section absorbs trailing non-boundary nodes after `b`.
+            const isLast = i === boundariesInBuffer.length - 1;
+            const sectionEnd = isLast ? buffer.length - 1 : bIdx;
+            const section = buffer.slice(sectionStart, sectionEnd + 1);
+            const sectionText = section
+              .map(n => content.substring(n.startIndex, n.endIndex))
+              .join('\n');
+            if (sectionText.trim().length > 30) {
+              const resolved = this._resolveBoundary(b);
+              chunks.push({
+                chunkId: this._nextChunkId(),
+                parentChunkId: parentInfo?.chunkId || null,
+                parentSymbol: parentInfo?.name || null,
+                parentType: parentInfo?.type || null,
+                text: sectionText.trim(),
+                startLine: section[0].startPosition.row,
+                endLine: section[section.length - 1].endPosition.row,
+                type: resolved.type,
+                name: this._extractNodeName(resolved.nameNode),
+                signature: this._extractSignature(b, content),
+                additionalSymbols: null,
+              });
+            }
+            sectionStart = bIdx + 1;
+          }
+          buffer = [];
+          bufferSize = 0;
+          return;
+        }
+
         const firstBoundary = boundariesInBuffer[0];
         let name = null;
         let type = 'code';
@@ -944,6 +1025,34 @@ export class TreeSitterProvider {
 
     if (normalized.length <= MAX_SIGNATURE_LENGTH) return normalized;
     return normalized.slice(0, MAX_SIGNATURE_LENGTH - 1) + '…';
+  }
+
+  /**
+   * Returns true if `node` is a comment-typed AST node whose source text
+   * is an outer doc-comment immediately preceding a code item.
+   *
+   * Recognized outer-doc prefixes (cross-language):
+   *   ///   — Rust outer doc, C/C++/C# triple-slash documentation
+   *   /**   — Javadoc, JSDoc, PHPDoc, Doxygen, KDoc, Scaladoc
+   *
+   * Deliberately excludes:
+   *   //!   — Rust inner doc (applies to enclosing module, not next item)
+   *   //    — plain line comments (Go uses these as docs but the same
+   *           syntax is used for arbitrary inline notes; ambiguous, skip)
+   *   #     — shell/Ruby/Python pound comments (ambiguous, and Python
+   *           docstrings live INSIDE the function, not preceding it)
+   *
+   * Used by the SIBLING_DOC_SPLIT branch in recursiveChunk.flushBuffer to
+   * decide whether each of N top-level sibling boundaries has its own
+   * docstring (in which case they each deserve their own chunk).
+   */
+  _isLeadingDocComment(node, content) {
+    if (!node || !node.type) return false;
+    // Tree-sitter comment node names vary by grammar (line_comment,
+    // block_comment, comment, doc_comment); gate on a stable suffix.
+    if (!/comment$/.test(node.type)) return false;
+    const text = content.substring(node.startIndex, node.endIndex).trimStart();
+    return text.startsWith('///') || text.startsWith('/**');
   }
 
   /** Extract symbol name from an AST node */
