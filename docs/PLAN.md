@@ -11,7 +11,7 @@
 ```
 ITERATION:        41         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      3883dca    # most recent shipped commit before this plan
+LAST_COMMIT:      0572675    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -320,7 +320,7 @@ User intent (2026-05-11): validate that when queries genuinely need docs/configs
   3. Commit (`feat(probes): doc/settings positive probes`)
   4. NO chunker/demotion changes regardless of pass rate — measurement-only.
 **Per-item gates:** no PASS→FAIL flips on existing language probes (just adds new probes).
-**Status:** [x] DONE — Created `eval/ast-tester-probes/gold/doc-positive.json` with 68 probes across 18 repos (~4 per repo: LICENSE, README, build manifest, CI workflow). Probes target docs/configs that are LEGITIMATELY the correct top-1 for queries like "what license does this project use" → LICENSE. **Baseline: 18 PASS / 0 PARTIAL / 50 FAIL out of 68 (26.5% pass rate)**. The demotion does its job — code chunks generally outrank doc files even for queries genuinely needing docs. Per-language results: c 2/4, cpp 2/4, elixir 2/4, javascript 2/4, python 2/4, java 1/4, lua 1/3, php 1/4, rust 1/4, ruby 1/4, scala 1/3, typescript 1/4, typescript-lib 1/4, csharp 0/4, dart 0/4, go 0/4, kotlin 0/3, zig 0/3. **NO chunker/demotion changes per PLAN explicit guidance** — this is measurement-only. §3 ALL GREEN: retrieval-probes dev 29/3/8 zero PASS→FAIL flips vs C15 (D1 only adds probes, makes no code changes — flips=0 guaranteed by construction). Useful baseline for any future demotion-tuning work (which is BLOCKED in D3 anyway).
+**Status:** [x] DONE @ 0572675 — Created `eval/ast-tester-probes/gold/doc-positive.json` with 68 probes across 18 repos (~4 per repo: LICENSE, README, build manifest, CI workflow). Probes target docs/configs that are LEGITIMATELY the correct top-1 for queries like "what license does this project use" → LICENSE. **Baseline: 18 PASS / 0 PARTIAL / 50 FAIL out of 68 (26.5% pass rate)**. The demotion does its job — code chunks generally outrank doc files even for queries genuinely needing docs. Per-language results: c 2/4, cpp 2/4, elixir 2/4, javascript 2/4, python 2/4, java 1/4, lua 1/3, php 1/4, rust 1/4, ruby 1/4, scala 1/3, typescript 1/4, typescript-lib 1/4, csharp 0/4, dart 0/4, go 0/4, kotlin 0/3, zig 0/3. **NO chunker/demotion changes per PLAN explicit guidance** — this is measurement-only. §3 ALL GREEN: retrieval-probes dev 29/3/8 zero PASS→FAIL flips vs C15 (D1 only adds probes, makes no code changes — flips=0 guaranteed by construction). Useful baseline for any future demotion-tuning work (which is BLOCKED in D3 anyway).
 
 #### D2. Negative doc/settings probes (ONLY if D1 done + zero regressions globally)
 **Type:** doc-probe-negative (probe creation + measurement; no code change)
