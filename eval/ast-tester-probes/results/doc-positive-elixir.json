@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:47:43.647Z",
+  "summary": {
+    "counts": {
+      "PASS": 2,
+      "PARTIAL": 0,
+      "FAIL": 2
+    },
+    "totalMs": 117,
+    "avgMs": 29,
+    "n": 4
+  },
+  "results": [
+    {
+      "id": "DP-EL-001",
+      "repo": "elixir",
+      "query": "what license is jason json library under",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "lib/encode.ex",
+        "startLine": 332,
+        "endLine": 334,
+        "symbol": "escape_json",
+        "symbolType": "private",
+        "score": 0.4241575002670288,
+        "presentation": "full"
+      },
+      "wallMs": 44,
+      "error": null
+    },
+    {
+      "id": "DP-EL-002",
+      "repo": "elixir",
+      "query": "jason elixir json library overview features",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "lib/encode.ex",
+        "startLine": 295,
+        "endLine": 320,
+        "symbol": "escape",
+        "symbolType": "private",
+        "score": 0.40587928891181946,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "DP-EL-003",
+      "repo": "elixir",
+      "query": "mix.exs project configuration and dependencies for jason",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "bench/mix.exs",
+        "startLine": 1,
+        "endLine": 36,
+        "symbol": "JasonBench.MixProject",
+        "symbolType": "module",
+        "score": 0.6180272102355957,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "DP-EL-004",
+      "repo": "elixir",
+      "query": "github actions ci workflow for jason elixir",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": ".github/workflows/ci.yml",
+        "startLine": 93,
+        "endLine": 93,
+        "symbol": "uses",
+        "symbolType": "topKey",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 27,
+      "error": null
+    }
+  ]
+}

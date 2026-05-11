@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:47:18.476Z",
+  "summary": {
+    "counts": {
+      "PASS": 1,
+      "PARTIAL": 0,
+      "FAIL": 3
+    },
+    "totalMs": 165,
+    "avgMs": 41,
+    "n": 4
+  },
+  "results": [
+    {
+      "id": "DP-JV-001",
+      "repo": "java",
+      "query": "what license is google gson under",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "gson/src/main/java/com/google/gson/package-info.java",
+        "startLine": 1,
+        "endLine": 29,
+        "symbol": "Gson",
+        "symbolType": "method",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 77,
+      "error": null
+    },
+    {
+      "id": "DP-JV-002",
+      "repo": "java",
+      "query": "gson json serialization library overview features",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "gson/src/main/java/com/google/gson/GsonBuilder.java",
+        "startLine": 159,
+        "endLine": 186,
+        "symbol": "GsonBuilder",
+        "symbolType": "method",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 33,
+      "error": null
+    },
+    {
+      "id": "DP-JV-003",
+      "repo": "java",
+      "query": "maven pom.xml with gson dependencies and parent project",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "pom.xml",
+        "startLine": 17,
+        "endLine": 307,
+        "symbol": "project",
+        "symbolType": "element",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 27,
+      "error": null
+    },
+    {
+      "id": "DP-JV-004",
+      "repo": "java",
+      "query": "github actions build workflow for gson",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": ".github/dependabot.yml",
+        "startLine": 24,
+        "endLine": 28,
+        "symbol": "github-actions",
+        "symbolType": "topKey",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 28,
+      "error": null
+    }
+  ]
+}

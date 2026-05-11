@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:47:41.719Z",
+  "summary": {
+    "counts": {
+      "PASS": 0,
+      "PARTIAL": 0,
+      "FAIL": 3
+    },
+    "totalMs": 104,
+    "avgMs": 35,
+    "n": 3
+  },
+  "results": [
+    {
+      "id": "DP-ZG-001",
+      "repo": "zig",
+      "query": "what license is http.zig server library under",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "src/httpz.zig",
+        "startLine": 45,
+        "endLine": 55,
+        "symbol": "Method",
+        "symbolType": "enum",
+        "score": 0.4958247244358063,
+        "presentation": "full"
+      },
+      "wallMs": 48,
+      "error": null
+    },
+    {
+      "id": "DP-ZG-002",
+      "repo": "zig",
+      "query": "http zig http 1.1 server library overview",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "src/router.zig",
+        "startLine": 880,
+        "endLine": 881,
+        "symbol": "testRoute1",
+        "symbolType": "function",
+        "score": 0.4026545286178589,
+        "presentation": "full"
+      },
+      "wallMs": 28,
+      "error": null
+    },
+    {
+      "id": "DP-ZG-003",
+      "repo": "zig",
+      "query": "build.zig build configuration for http.zig library",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "src/config.zig",
+        "startLine": 10,
+        "endLine": 114,
+        "symbol": "Config",
+        "symbolType": "struct",
+        "score": 0.5403845906257629,
+        "presentation": "full"
+      },
+      "wallMs": 28,
+      "error": null
+    }
+  ]
+}

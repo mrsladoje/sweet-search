@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "description": "D1 positive doc/settings probes: 4 probes per existing repo where the gold IS legitimately a doc/config file (LICENSE, README, build manifest, CI workflow). Validates retrieval still surfaces docs when queries genuinely need them, despite the existing doc/config demotion. Per PLAN §5 D1: measurement-only; no chunker/demotion changes regardless of pass rate.",
+  "language": "doc-positive",
+  "repo": "multi",
+  "createdAt": "2026-05-11",
+  "probes": [
+    {"id": "DP-TS-001", "repo": "typescript", "query": "what license does this project use", "expectedFile": "LICENSE", "notes": "Positive doc probe: LICENSE at repo root for vercel/ai-chatbot"},
+    {"id": "DP-TS-002", "repo": "typescript", "query": "what is the purpose and overview of this project", "expectedFile": "README.md", "notes": "Positive doc probe: README.md project description"},
+    {"id": "DP-TS-003", "repo": "typescript", "query": "package.json dependencies and node engine version for this project", "expectedFile": "package.json", "notes": "Positive doc probe: package.json with deps/engines"},
+    {"id": "DP-TS-004", "repo": "typescript", "query": "github actions workflow for linting on pull requests", "expectedFileAnyOf": [".github/workflows/lint.yml", ".github/workflows/playwright.yml"], "notes": "Positive doc probe: CI config"},
+
+    {"id": "DP-RS-001", "repo": "rust", "query": "what license is the ruff linter project distributed under", "expectedFile": "LICENSE", "notes": "Positive doc probe: LICENSE for astral-sh/ruff (MIT)"},
+    {"id": "DP-RS-002", "repo": "rust", "query": "what is ruff and what does it do explained in the readme", "expectedFile": "README.md", "notes": "Positive doc probe: README.md project purpose"},
+    {"id": "DP-RS-003", "repo": "rust", "query": "Cargo.toml workspace manifest with crate dependencies and members", "expectedFile": "Cargo.toml", "notes": "Positive doc probe: Cargo.toml root manifest"},
+    {"id": "DP-RS-004", "repo": "rust", "query": "github workflow to build binaries on release", "expectedFileAnyOf": [".github/workflows/build-binaries.yml", ".github/workflows/build-docker.yml"], "notes": "Positive doc probe: CI config"},
+
+    {"id": "DP-KT-001", "repo": "kotlin", "query": "what license is kotlinx coroutines under", "expectedFile": "LICENSE.txt", "notes": "Positive doc probe: LICENSE.txt for kotlinx.coroutines"},
+    {"id": "DP-KT-002", "repo": "kotlin", "query": "what is kotlinx coroutines structured concurrency library overview", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-KT-003", "repo": "kotlin", "query": "build.gradle.kts root project gradle configuration kotlin", "expectedFile": "build.gradle.kts", "notes": "Positive doc probe: gradle root build"},
+
+    {"id": "DP-CS-001", "repo": "csharp", "query": "what license is microsoft garnet server distributed under", "expectedFile": "LICENSE", "notes": "Positive doc probe: LICENSE for microsoft/garnet (MIT)"},
+    {"id": "DP-CS-002", "repo": "csharp", "query": "what is garnet redis-compatible server project overview", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-CS-003", "repo": "csharp", "query": "GarnetServer csproj project file with dependencies", "expectedFile": "main/GarnetServer/GarnetServer.csproj", "notes": "Positive doc probe: csproj manifest"},
+    {"id": "DP-CS-004", "repo": "csharp", "query": "github actions CI workflow for csharp builds", "expectedFileAnyOf": [".github/workflows/ci.yml", ".github/workflows/ci-bdnbenchmark.yml"], "notes": "Positive doc probe: CI config"},
+
+    {"id": "DP-CPP-001", "repo": "cpp", "query": "what license is google highway SIMD library under", "expectedFile": "LICENSE", "notes": "Positive doc probe: LICENSE for google/highway"},
+    {"id": "DP-CPP-002", "repo": "cpp", "query": "google highway portable SIMD library overview features", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-CPP-003", "repo": "cpp", "query": "CMakeLists root build configuration with target architecture flags", "expectedFile": "CMakeLists.txt", "notes": "Positive doc probe: CMake root build"},
+    {"id": "DP-CPP-004", "repo": "cpp", "query": "github actions build test workflow for highway", "expectedFileAnyOf": [".github/workflows/build_test.yml", ".github/workflows/docs_pages_workflow.yml"], "notes": "Positive doc probe: CI config"},
+
+    {"id": "DP-JV-001", "repo": "java", "query": "what license is google gson under", "expectedFile": "LICENSE", "notes": "Positive doc probe: LICENSE for gson (Apache-2.0)"},
+    {"id": "DP-JV-002", "repo": "java", "query": "gson json serialization library overview features", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-JV-003", "repo": "java", "query": "maven pom.xml with gson dependencies and parent project", "expectedFileAnyOf": ["pom.xml", "gson/pom.xml"], "notes": "Positive doc probe: maven manifest"},
+    {"id": "DP-JV-004", "repo": "java", "query": "github actions build workflow for gson", "expectedFileAnyOf": [".github/workflows/build.yml", ".github/workflows/check-android-compatibility.yml"], "notes": "Positive doc probe: CI config"},
+
+    {"id": "DP-PY-001", "repo": "python", "query": "what license is pallets click cli library under", "expectedFile": "LICENSE.txt", "notes": "Positive doc probe: LICENSE.txt for click (BSD-3)"},
+    {"id": "DP-PY-002", "repo": "python", "query": "what is click python command line interface library", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-PY-003", "repo": "python", "query": "pyproject.toml with click package configuration and dependencies", "expectedFile": "pyproject.toml", "notes": "Positive doc probe: pyproject manifest"},
+    {"id": "DP-PY-004", "repo": "python", "query": "github actions lock dependency workflow", "expectedFileAnyOf": [".github/workflows/lock.yaml", ".github/workflows/pre-commit.yaml"], "notes": "Positive doc probe: CI config"},
+
+    {"id": "DP-JS-001", "repo": "javascript", "query": "what license is axios http client under", "expectedFile": "LICENSE", "notes": "Positive doc probe: LICENSE for axios (MIT)"},
+    {"id": "DP-JS-002", "repo": "javascript", "query": "axios promise based HTTP client overview", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-JS-003", "repo": "javascript", "query": "axios package.json with main entry and dependencies", "expectedFile": "package.json", "notes": "Positive doc probe: package.json"},
+    {"id": "DP-JS-004", "repo": "javascript", "query": "github action lockfile lint workflow", "expectedFile": ".github/workflows/lockfile-lint.yml", "notes": "Positive doc probe: CI config"},
+
+    {"id": "DP-RB-001", "repo": "ruby", "query": "what license is sinatra ruby web dsl under", "expectedFile": "LICENSE", "notes": "Positive doc probe: LICENSE for sinatra (MIT)"},
+    {"id": "DP-RB-002", "repo": "ruby", "query": "sinatra ruby web microframework dsl overview", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-RB-003", "repo": "ruby", "query": "sinatra gemspec metadata version dependencies", "expectedFile": "sinatra.gemspec", "notes": "Positive doc probe: gemspec manifest"},
+    {"id": "DP-RB-004", "repo": "ruby", "query": "github actions release workflow for sinatra gem publishing", "expectedFile": ".github/workflows/release.yml", "notes": "Positive doc probe: CI config"},
+
+    {"id": "DP-GO-001", "repo": "go", "query": "what license is go-chi router under", "expectedFile": "LICENSE", "notes": "Positive doc probe: LICENSE for go-chi/chi (MIT)"},
+    {"id": "DP-GO-002", "repo": "go", "query": "go-chi lightweight http router overview", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-GO-003", "repo": "go", "query": "go.mod module declaration with go version", "expectedFile": "go.mod", "notes": "Positive doc probe: go.mod manifest"},
+    {"id": "DP-GO-004", "repo": "go", "query": "github actions ci workflow for go-chi tests", "expectedFile": ".github/workflows/ci.yml", "notes": "Positive doc probe: CI config"},
+
+    {"id": "DP-PHP-001", "repo": "php", "query": "what license is slim php micro framework under", "expectedFileAnyOf": ["LICENSE.md", "License.md"], "notes": "Positive doc probe: LICENSE for Slim (MIT)"},
+    {"id": "DP-PHP-002", "repo": "php", "query": "slim php micro framework overview and getting started", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-PHP-003", "repo": "php", "query": "composer.json with slim psr-7 dependencies", "expectedFile": "composer.json", "notes": "Positive doc probe: composer manifest"},
+    {"id": "DP-PHP-004", "repo": "php", "query": "github actions tests workflow for slim php", "expectedFile": ".github/workflows/tests.yml", "notes": "Positive doc probe: CI config"},
+
+    {"id": "DP-C-001", "repo": "c", "query": "what license is hiredis redis client under", "expectedFile": "COPYING", "notes": "Positive doc probe: COPYING for hiredis (BSD-3) — note hiredis uses COPYING not LICENSE"},
+    {"id": "DP-C-002", "repo": "c", "query": "hiredis minimalistic c client for redis overview", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-C-003", "repo": "c", "query": "hiredis CMakeLists root cmake configuration", "expectedFile": "CMakeLists.txt", "notes": "Positive doc probe: CMake build root"},
+    {"id": "DP-C-004", "repo": "c", "query": "github actions build workflow for hiredis", "expectedFileAnyOf": [".github/workflows/build.yml", ".github/workflows/release-drafter.yml"], "notes": "Positive doc probe: CI config"},
+
+    {"id": "DP-TSL-001", "repo": "typescript-lib", "query": "what license is zod schema validation library under", "expectedFile": "LICENSE", "notes": "Positive doc probe: LICENSE for zod (MIT)"},
+    {"id": "DP-TSL-002", "repo": "typescript-lib", "query": "zod typescript schema validation library overview", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-TSL-003", "repo": "typescript-lib", "query": "zod package.json root workspace configuration", "expectedFile": "package.json", "notes": "Positive doc probe: package.json"},
+    {"id": "DP-TSL-004", "repo": "typescript-lib", "query": "github actions claude code review workflow", "expectedFileAnyOf": [".github/workflows/claude-code-review.yml", ".github/workflows/claude.yml"], "notes": "Positive doc probe: CI config"},
+
+    {"id": "DP-DR-001", "repo": "dart", "query": "what license is dart-lang http client under", "expectedFile": "LICENSE", "notes": "Positive doc probe: LICENSE for dart-lang/http (BSD-3)"},
+    {"id": "DP-DR-002", "repo": "dart", "query": "dart-lang http composable cross-platform client overview", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-DR-003", "repo": "dart", "query": "dart http package pubspec.yaml dependencies and sdk version", "expectedFile": "pkgs/http/pubspec.yaml", "notes": "Positive doc probe: pubspec manifest"},
+    {"id": "DP-DR-004", "repo": "dart", "query": "github actions cronet workflow for dart http", "expectedFileAnyOf": [".github/workflows/cronet.yml", ".github/workflows/cupertino.yml"], "notes": "Positive doc probe: CI config"},
+
+    {"id": "DP-SC-001", "repo": "scala", "query": "what license is requests-scala http client under", "expectedFile": "LICENSE", "notes": "Positive doc probe: LICENSE for requests-scala (MIT)"},
+    {"id": "DP-SC-002", "repo": "scala", "query": "requests-scala synchronous http client overview", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-SC-003", "repo": "scala", "query": "github actions ci workflow for requests-scala", "expectedFile": ".github/workflows/actions.yml", "notes": "Positive doc probe: CI config"},
+
+    {"id": "DP-LU-001", "repo": "lua", "query": "what license is penlight lua utility library under", "expectedFileAnyOf": ["LICENSE.md", "License.md"], "notes": "Positive doc probe: LICENSE for Penlight (MIT)"},
+    {"id": "DP-LU-002", "repo": "lua", "query": "penlight python inspired lua library overview", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-LU-003", "repo": "lua", "query": "github actions luacheck workflow for penlight", "expectedFileAnyOf": [".github/workflows/luacheck.yml", ".github/workflows/unix_build.yml"], "notes": "Positive doc probe: CI config"},
+
+    {"id": "DP-ZG-001", "repo": "zig", "query": "what license is http.zig server library under", "expectedFile": "LICENSE", "notes": "Positive doc probe: LICENSE for http.zig (MIT)"},
+    {"id": "DP-ZG-002", "repo": "zig", "query": "http zig http 1.1 server library overview", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-ZG-003", "repo": "zig", "query": "build.zig build configuration for http.zig library", "expectedFile": "build.zig", "notes": "Positive doc probe: build.zig manifest"},
+
+    {"id": "DP-EL-001", "repo": "elixir", "query": "what license is jason json library under", "expectedFile": "LICENSE", "notes": "Positive doc probe: LICENSE for jason (Apache-2.0)"},
+    {"id": "DP-EL-002", "repo": "elixir", "query": "jason elixir json library overview features", "expectedFile": "README.md", "notes": "Positive doc probe: README.md purpose"},
+    {"id": "DP-EL-003", "repo": "elixir", "query": "mix.exs project configuration and dependencies for jason", "expectedFile": "mix.exs", "notes": "Positive doc probe: mix.exs manifest"},
+    {"id": "DP-EL-004", "repo": "elixir", "query": "github actions ci workflow for jason elixir", "expectedFile": ".github/workflows/ci.yml", "notes": "Positive doc probe: CI config"}
+  ]
+}

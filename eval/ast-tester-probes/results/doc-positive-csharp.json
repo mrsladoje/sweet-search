@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:47:11.319Z",
+  "summary": {
+    "counts": {
+      "PASS": 0,
+      "PARTIAL": 0,
+      "FAIL": 4
+    },
+    "totalMs": 190,
+    "avgMs": 48,
+    "n": 4
+  },
+  "results": [
+    {
+      "id": "DP-CS-001",
+      "repo": "csharp",
+      "query": "what license is microsoft garnet server distributed under",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "main/GarnetServer/GarnetServer.csproj",
+        "startLine": 6,
+        "endLine": 43,
+        "symbol": "PackageId",
+        "symbolType": "element",
+        "score": 0.4477638602256775,
+        "presentation": "full"
+      },
+      "wallMs": 55,
+      "error": null
+    },
+    {
+      "id": "DP-CS-002",
+      "repo": "csharp",
+      "query": "what is garnet redis-compatible server project overview",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "main/GarnetServer/GarnetServer.csproj",
+        "startLine": 5,
+        "endLine": 43,
+        "symbol": "ServerGarbageCollection",
+        "symbolType": "element",
+        "score": 0.47574660181999207,
+        "presentation": "full"
+      },
+      "wallMs": 51,
+      "error": null
+    },
+    {
+      "id": "DP-CS-003",
+      "repo": "csharp",
+      "query": "GarnetServer csproj project file with dependencies",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "libs/server/Garnet.server.csproj",
+        "startLine": 14,
+        "endLine": 29,
+        "symbol": "ProjectReference",
+        "symbolType": "element",
+        "score": 0.5836954116821289,
+        "presentation": "full"
+      },
+      "wallMs": 47,
+      "error": null
+    },
+    {
+      "id": "DP-CS-004",
+      "repo": "csharp",
+      "query": "github actions CI workflow for csharp builds",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": ".github/workflows/docker-linux.yml",
+        "startLine": 36,
+        "endLine": 36,
+        "symbol": "if",
+        "symbolType": "topKey",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 37,
+      "error": null
+    }
+  ]
+}
