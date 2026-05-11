@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        26         # incremented each loop pass
+ITERATION:        27         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      9fac4d7    # most recent shipped commit before this plan
+LAST_COMMIT:      cd8526d    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -218,7 +218,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 #### C4. Ruby
 **Type:** new-language
 **Idioms:** blocks (`{ |x| ... }` and `do |x| ... end`), `attr_accessor`, metaclasses, refinements, pattern matching (3.0+).
-**Status:** [ ] PENDING
+**Status:** [x] DONE @ pending — Repo: sinatra/sinatra @ 5236d345 (MIT, 147 .rb files). 8 probes RB-001..RB-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting `class << self` singleton blocks and `class X < Struct.new(:app)` runtime-generated superclass). All 8 gold verified. Index: 110s (1:50, well under 5min), 976 embeddings. Baseline: 0 PASS / 2 PARTIAL / 6 FAIL — sinatra's large monolithic base.rb (~2200 lines, dozens of nested modules/classes) makes retrieval competing for class-level queries. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 8 existing lang packs zero PASS→FAIL flips. Splits manifest updated (5/3).
 
 #### C5. Go
 **Type:** new-language
@@ -558,6 +558,12 @@ item: C3
 action: discover + execute + resolve (DONE-with-baseline)
 result: Bundled iter. Evaluated axios/axios vs expressjs/express; picked **axios/axios @ 34adfd90efc9c145488399e1cf7fa96de67080fa** (MIT, 175 .js files). Note: axios has a few .ts files (index.d.ts type-only + tests/smoke/deno/*.ts) — the lib/ core is pure JS; reasonable interpretation of "NO .ts" given non-executable sentinels. Picked over express (~50 .js but ES5-only) because axios uses modern ES2020+: classes (Axios, AxiosHeaders, AxiosError, CancelToken, InterceptorManager), static factory methods (AxiosHeaders.from/concat/accessor), prototype-assignment metaprogramming (`Axios.prototype[method]` loop for HTTP verbs), class extension. 8 probes JS-001..JS-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting prototype-assignment dispatch + `extends Error`). Index: 246s = 4:06 (under 5min), 2554 embeddings. Baseline: 4 PASS / 1 PARTIAL / 3 FAIL. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 7 existing lang packs zero PASS→FAIL flips. Splits manifest updated (5/3).
 next: C4 (Ruby) discover, schedule 60s
+
+--- iter 27 (2026-05-11T08:56:00Z) ---
+item: C4
+action: discover + execute + resolve (DONE-with-baseline)
+result: Bundled. Picked **sinatra/sinatra @ 5236d3459b8b9015e5ce21ddd0c6beb0db4081d4** (MIT, 147 .rb files). Idioms: module Helpers, `class << self` singleton blocks for class-level DSL, Rack subclassing (Request < Rack::Request), `class ExtendedRack < Struct.new(:app)` runtime-generated superclass. 8 probes RB-001..RB-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case). Index: 110s = 1:50 (well under 5min), 976 embeddings. Baseline: 0 PASS / 2 PARTIAL / 6 FAIL — sinatra's monolithic base.rb (~2200 lines, dozens of nested modules/classes) creates strong retrieval competition for class-level queries; only file-level NL probes survive as PARTIAL. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 8 existing lang packs zero PASS→FAIL flips. Splits manifest updated.
+next: C5 (Go) discover, schedule 60s
 ```
 
 ---
