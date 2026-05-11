@@ -371,22 +371,30 @@ const TAGS_QUERIES = {
 };
 
 // Names that tree-sitter-c / tree-sitter-cpp sometimes emit as the `name:`
-// field of a struct_specifier / class_specifier when the source contains a
-// C++ or vendor attribute between the keyword and the actual type name.
-// Examples:
-//   `struct alignas(16) uint128_t { ... }`   parsed by tree-sitter-c    → name=alignas
-//   `class HWY_DLLEXPORT MyClass { ... }`    parsed by tree-sitter-cpp  → name=HWY_DLLEXPORT (NOT captured here, see ALL_CAPS shape rule)
-//   `struct __attribute__((packed)) Foo {}`  parsed by tree-sitter-c    → name=Foo (handled correctly by parser)
-// These tokens are C/C++ keywords or compiler-extension specifiers and
-// cannot legally be the name of a user type. When they appear as a
-// captured `type_identifier`, it is a parse misidentification and we
-// suppress the symbol rather than indexing a phantom entity.
+// field of a struct_specifier / class_specifier / function_declarator when
+// the parser misidentifies a C/C++ keyword as a user identifier. Common
+// cause: a header-only C++ library has its .h file routed to C (because
+// .h → c in EXTENSION_MAP), and tree-sitter-c then encounters C++ keywords
+// (`alignas`, `namespace`, `decltype`, `enum class`) it does not recognize.
 //
-// Closed list — drawn from C11/C17/C2x keywords and the two compiler
-// extensions in widespread use (GCC __attribute__, MSVC __declspec).
-// Does NOT include user-defined dllexport macros like HWY_DLLEXPORT /
-// EIGEN_API; those need a shape heuristic, not a keyword list.
+// Examples:
+//   `struct alignas(16) uint128_t { ... }`        tree-sitter-c → name=alignas
+//   `enum class Color { RED };`                   tree-sitter-c → name=class (under struct_specifier)
+//   `using Vec = decltype(Zero(D()));`            tree-sitter-c → name=decltype (under function)
+//   `namespace hwy::x86 { ... }`                  tree-sitter-c → name=namespace (under function)
+//   `if (cond) { body }`                          tree-sitter-c → name=if (under function, on misparse)
+//
+// All entries are C/C++ reserved keywords. They CANNOT legally be the name
+// of a user-defined type, function, or variable in any version of C/C++.
+// Filtering them removes only phantom captures — never a legitimate entity.
+//
+// Closed list. Scoped to languageId ∈ {c, cpp} via C_FAMILY_LANGUAGES so a
+// Go/Python/JS file with a class literally named `final` is not affected.
+// Evidence gathered from highway @ 3c72230 cpp probe corpus:
+//   decltype: 667 captures, alignas: 1, namespace: phantom on CPP-008,
+//   class (under enum): 10, if: 11. Audit query in commit message.
 const C_FAMILY_ATTRIBUTE_PHANTOM_NAMES = new Set([
+  // Attribute / specifier keywords
   'alignas',         // C++11 keyword
   '_Alignas',        // C11 keyword
   '__attribute__',   // GCC extension
@@ -395,6 +403,25 @@ const C_FAMILY_ATTRIBUTE_PHANTOM_NAMES = new Set([
   '__forceinline',   // MSVC extension
   'final',           // C++11 contextual keyword
   'override',        // C++11 contextual keyword
+  // Type-deduction operators
+  'decltype',        // C++11
+  'typeof',          // C2x / GCC extension
+  '__typeof',        // GCC extension
+  '__typeof__',      // GCC extension
+  // Structural keywords
+  'class',           // C++ — miscaptured from `enum class` in .h→c misparse
+  'struct',          // C/C++
+  'union',           // C/C++
+  'enum',            // C/C++
+  'namespace',       // C++
+  'typedef',         // C/C++
+  'template',        // C++
+  // Control-flow keywords (miscaptured as functions on parse errors)
+  'if',              // C/C++
+  'for',             // C/C++
+  'while',           // C/C++
+  'switch',          // C/C++
+  'do',              // C/C++
 ]);
 
 // Languages where C_FAMILY_ATTRIBUTE_PHANTOM_NAMES should be filtered.
