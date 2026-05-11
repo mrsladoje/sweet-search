@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "8 retrieval probes for michalmuskala/jason — Apache-2.0 canonical Elixir JSON library (10 .ex + 14 .exs files). Exercises canonical Elixir patterns: dotted `defmodule X.Y.Z`, protocols (`defprotocol`/`defimpl`), `@behaviour` callbacks, macros for compile-time code generation (`defmacro __deriving__`), bang-suffix function names (`decode!`). Elixir has NO tree-sitter grammar in GRAMMAR_MAP — chunking uses the regex chunker in registry-tooling.js:102-130 (endKeyword='end').",
+  "language": "elixir",
+  "repo": "elixir",
+  "repoUrl": "https://github.com/michalmuskala/jason",
+  "repoSha": "4ede42858eb19f80ec9e863aab52df466eab8608",
+  "license": "Apache-2.0",
+  "probes": [
+    {
+      "id": "EL-001",
+      "repo": "elixir",
+      "query": "decode a JSON string into Elixir terms with Jason",
+      "expectedFile": "lib/jason.ex",
+      "expectedSymbolAnyOf": ["Jason", "decode", "decode!"],
+      "expectedSymbolTypeAnyOf": ["module", "function"],
+      "notes": "NL behavior probe: `def decode(input, opts \\\\ [])` (line 68) and `def decode!` (line 89) — the public API for JSON parsing. The defmodule and inner def chunks both produce candidate symbols (`Jason` module-level or `decode`/`decode!` function-level)."
+    },
+    {
+      "id": "EL-002",
+      "repo": "elixir",
+      "query": "encode Elixir map to JSON iodata for streaming output",
+      "expectedFileAnyOf": ["lib/jason.ex", "lib/encode.ex"],
+      "expectedSymbolAnyOf": ["Jason", "Jason.Encode", "encode_to_iodata", "encode_to_iodata!", "encode"],
+      "expectedSymbolTypeAnyOf": ["module", "function"],
+      "notes": "NL behavior probe: `def encode_to_iodata(input, opts \\\\ [])` (lib/jason.ex line 189) is the public API; the actual iodata-generation work lives in `defmodule Jason.Encode` (lib/encode.ex line 14). Either file is a legitimate top-1 — accept both."
+    },
+    {
+      "id": "EL-003",
+      "repo": "elixir",
+      "query": "pretty-print formatted JSON output with indentation",
+      "expectedFile": "lib/formatter.ex",
+      "expectedSymbolAnyOf": ["Jason.Formatter", "pretty_print", "pretty_print_to_iodata"],
+      "expectedSymbolTypeAnyOf": ["module", "function"],
+      "notes": "NL behavior probe: `defmodule Jason.Formatter` (line 1) hosts `def pretty_print(input, opts \\\\ [])` (line 51) and `def pretty_print_to_iodata` (line 67). Either the module chunk or an inner def chunk is a valid top-1."
+    },
+    {
+      "id": "EL-004",
+      "repo": "elixir",
+      "query": "Jason DecodeError struct raised on malformed JSON input",
+      "expectedFile": "lib/decoder.ex",
+      "expectedSymbol": "Jason.DecodeError",
+      "expectedSymbolType": "module",
+      "notes": "Symbol-anchored probe: `defmodule Jason.DecodeError` (line 1) — exception struct defined alongside the decoder module. Captured by the chunker's `module /defmodule\\s+([\\w.]+)/` rule with the dotted form preserved."
+    },
+    {
+      "id": "EL-005",
+      "repo": "elixir",
+      "query": "Jason Encoder protocol for custom encoding implementations dispatch",
+      "expectedFile": "lib/encoder.ex",
+      "expectedSymbolAnyOf": ["Jason.Encoder", "Jason.Encode", "encode", "__deriving__"],
+      "expectedSymbolType": "function",
+      "notes": "Symbol-anchored probe: `defprotocol Jason.Encoder do` (line 1) — see EL-007 for the chunker grammar gap. Inner `def encode(value, opts)` (line 74, protocol callback signature) IS captured by the chunker, so retrieval should hit encoder.ex via that anchor."
+    },
+    {
+      "id": "EL-006",
+      "repo": "elixir",
+      "query": "Jason OrderedObject struct with Access behaviour for key-preserving maps",
+      "expectedFile": "lib/ordered_object.ex",
+      "expectedSymbol": "Jason.OrderedObject",
+      "expectedSymbolType": "module",
+      "notes": "Symbol-anchored probe: `defmodule Jason.OrderedObject` (line 1) with `@behaviour Access` (line 12) — preserves JSON key insertion order using Access protocol callbacks."
+    },
+    {
+      "id": "EL-007",
+      "repo": "elixir",
+      "query": "defprotocol declaration for Encoder type-dispatched JSON encoding in Elixir",
+      "expectedFile": "lib/encoder.ex",
+      "expectedSymbolAnyOf": ["Jason.Encoder", "encode", "__deriving__"],
+      "expectedSymbolType": "function",
+      "notes": "Grammar-edge-case probe: `defprotocol Jason.Encoder do` (line 1) — KNOWN GAP. The Elixir regex chunker (registry-tooling.js:110-115) has rules for `defmodule`, `def`, `defp`, `defmacro` but NOT `defprotocol` or `defimpl`. The defprotocol block doesn't get its own chunk boundary; retrieval must hit the file via inner `def encode(value, opts)` callback or surrounding context. This is an honest chunker grammar gap."
+    },
+    {
+      "id": "EL-008",
+      "repo": "elixir",
+      "query": "defmacro __deriving__ for compile-time protocol consolidation in Jason Encoder",
+      "expectedFile": "lib/encoder.ex",
+      "expectedSymbol": "__deriving__",
+      "expectedSymbolType": "macro",
+      "notes": "Grammar-edge-case probe: `defmacro __deriving__(module, struct, opts) do` (line 78) — Elixir's underscore-prefixed special-form macro used by `@derive Jason.Encoder` to generate optimized per-struct encoders at compile time. The chunker's `macro /defmacro\\s+(\\w+)/` regex matches `__deriving__` since `\\w+` includes underscores, and the chunk type is `macro` (not `function` — Elixir distinguishes the two)."
+    }
+  ]
+}

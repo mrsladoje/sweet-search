@@ -6,9 +6,9 @@
   "seed": 42,
   "stratifyBy": "language",
   "method": "stratified-random-shuffle",
-  "totalProbes": 136,
-  "devCount": 85,
-  "heldoutCount": 51,
+  "totalProbes": 144,
+  "devCount": 90,
+  "heldoutCount": 54,
   "perLanguage": {
     "typescript": {
       "dev": [
@@ -246,6 +246,20 @@
         "ZG-002",
         "ZG-006",
         "ZG-007"
+      ]
+    },
+    "elixir": {
+      "dev": [
+        "EL-001",
+        "EL-003",
+        "EL-004",
+        "EL-006",
+        "EL-008"
+      ],
+      "heldout": [
+        "EL-002",
+        "EL-005",
+        "EL-007"
       ]
     }
   },
