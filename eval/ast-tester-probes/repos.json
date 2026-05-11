@@ -172,6 +172,16 @@
       "localPath": "eval/ast-tester-probes/_repos/zig",
       "goldFile": "eval/ast-tester-probes/gold/zig.json",
       "rationale": "karlseguin/http.zig — Zig HTTP server library (31 .zig files). Canonical Zig patterns: `pub const X = struct`, error-union return types `!T`, comptime generic-type-returning functions (Zig's metaprogramming idiom), errdefer cleanup, function-typed parameters. Zig has NO tree-sitter grammar in GRAMMAR_MAP — chunking uses the regex chunker in registry-tooling.js:76-104 with rules for `fn X`, `const X = struct`, `const X = enum`."
+    },
+    {
+      "language": "elixir",
+      "key": "elixir",
+      "url": "https://github.com/michalmuskala/jason.git",
+      "sha": "4ede42858eb19f80ec9e863aab52df466eab8608",
+      "license": "Apache-2.0",
+      "localPath": "eval/ast-tester-probes/_repos/elixir",
+      "goldFile": "eval/ast-tester-probes/gold/elixir.json",
+      "rationale": "michalmuskala/jason — canonical Elixir JSON library (10 .ex + 14 .exs files). Idioms: dotted `defmodule X.Y.Z`, protocols (`defprotocol`/`defimpl`), `@behaviour` callbacks, compile-time macros (`defmacro __deriving__`), bang-suffix names (`decode!`). Elixir has NO tree-sitter grammar in GRAMMAR_MAP — chunking uses regex chunker in registry-tooling.js:102-130 (endKeyword='end'). KNOWN GAP: `defprotocol` and `defimpl` are NOT in the chunker rules — exercises an honest grammar edge case."
     }
   ]
 }
