@@ -122,6 +122,16 @@
       "localPath": "eval/ast-tester-probes/_repos/c",
       "goldFile": "eval/ast-tester-probes/gold/c.json",
       "rationale": "hiredis C client library — 9 .c + 25 .h files; function-pointer typedefs (redisCallbackFn), typedef-struct patterns, printf-style command interface."
+    },
+    {
+      "language": "typescript",
+      "key": "typescript-lib",
+      "url": "https://github.com/colinhacks/zod.git",
+      "sha": "b6071fc0ad2be94850ed57e07e418a6f902a9771",
+      "license": "MIT",
+      "localPath": "eval/ast-tester-probes/_repos/typescript-lib",
+      "goldFile": "eval/ast-tester-probes/gold/typescript-lib.json",
+      "rationale": "Zod schema validation library (TypeScript library, NOT Next.js app — complements existing vercel/ai-chatbot TS entry); types-heavy with conditional types, TS 4.7+ variance modifiers (`out O = unknown`), function overload signatures."
     }
   ]
 }

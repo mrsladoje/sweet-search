@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        30         # incremented each loop pass
+ITERATION:        31         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      c45ada5    # most recent shipped commit before this plan
+LAST_COMMIT:      e0cd0af    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -241,7 +241,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 **Goal:** broaden TS coverage beyond vercel/ai-chatbot (which is a Next.js app). Want a TS library codebase — different idiom mix (no app-level patterns; more types/generics-heavy, no JSX heavy paths).
 **Idioms to target:** conditional types, mapped types, template literal types, type predicates, declaration merging, namespace exports.
 **Naming convention:** key = `typescript-lib` to distinguish from existing `typescript` entry.
-**Status:** [ ] PENDING
+**Status:** [x] DONE @ pending — Repo: colinhacks/zod @ b6071fc0 (MIT, 372 .ts files OVER 300 constraint). 8 probes TSL-001..TSL-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting TS 4.7+ variance modifiers `out O = unknown` and function-overload-signature pattern). All 8 gold verified. Index: 564s (9:24, 2x OVER §2.8 5-min target — accepted given (a) zod is THE canonical types-heavy TS library, (b) idiom coverage is unmatched, (c) re-indexing a different lib would burn more compute). 2939 embeddings. Baseline: 1 PASS / 1 PARTIAL / 6 FAIL — many FAILs return v3/v4/v4-mini classic equivalents (`packages/zod/src/v4/classic/schemas.ts ZodType` instead of `v4/core/schemas.ts $ZodType`); zod's monorepo structure with multiple major-version trees creates strong intra-repo competition. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 12 existing lang packs zero PASS→FAIL flips.
 
 #### C9. Swift
 **Type:** new-language
@@ -582,6 +582,12 @@ item: C7
 action: discover + execute + resolve (DONE-with-baseline)
 result: Bundled. Picked **redis/hiredis @ 1d18adbf41dc10d456bee34a3fb966a2009c591c** (BSD-3-Clause, 9 .c + 25 .h files). Idioms: function-pointer typedefs (redisCallbackFn, redisPushFn), self-referential typedef struct, printf-style command interface (%s/%b/%d formatters in redisvFormatCommand). 8 probes C-001..C-008 — note: had to re-target C-001 from non-existent `redisReaderRead` to `redisReaderGetReply` (actual public RESP parser entry at line 742). Index: 78s = 1:18, 631 embeddings. Baseline: 2 PASS / 4 PARTIAL / 2 FAIL — C-004 (redisReply struct) and C-008 (redisCallback self-ref struct) PASS; 4 PARTIALs (file-correct, symbol-mismatch — hiredis has dense small functions competing in hiredis.c). §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 11 existing lang packs zero PASS→FAIL flips.
 next: C8 (TypeScript second repo) discover, schedule 60s
+
+--- iter 31 (2026-05-11T09:38:00Z) ---
+item: C8
+action: discover + execute + resolve (DONE-with-baseline)
+result: Bundled. Picked **colinhacks/zod @ b6071fc0ad2be94850ed57e07e418a6f902a9771** (MIT, 372 .ts files — OVER 300 constraint, accepted given canonical types-heavy TS lib status). Idioms: TS 4.7+ variance modifiers `out O = unknown, out I = unknown` on type parameters, function overload signatures (3 declarations of flattenError), conditional types, no JSX (complements vercel/ai-chatbot TS pack). 8 probes TSL-001..TSL-008. Index: 564s = 9:24 (~2x OVER 5-min target — flagged as constraint violation but kept for idiom coverage), 2939 embeddings. Baseline: 1 PASS / 1 PARTIAL / 6 FAIL — zod's monorepo with v3/v4/v4-mini/classic version trees creates massive intra-repo competition (many FAILs return `v4/classic/schemas.ts ZodType` instead of `v4/core/schemas.ts $ZodType`). TSL-006 (`$ZodTypeInternals`) PASSes cleanly. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 12 existing lang packs zero PASS→FAIL flips.
+next: C9 (Swift) discover, schedule 60s
 ```
 
 ---
