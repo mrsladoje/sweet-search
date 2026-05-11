@@ -452,6 +452,186 @@ describe('applyResultDemotions', () => {
     expect(ranked[0].metadata.type).toBe('enum');
   });
 
+  // anomalousChunkDemotion predicate (c) — preprocessor-dense mid-file
+  // anonymous code chunks. Added 2026-05-11 to address CPP-002 regression
+  // where targets.h:16-34 (anonymous `code` chunk dominated by #include +
+  // #ifndef/#define lines) won top-1 for an NL query about "SIMD target
+  // dispatch" because the existing (a)+(b) predicates (file-header /
+  // tiny-span) don't cover mid-file (startLine=16) wider-span (18-line)
+  // preprocessor walls. The new predicate (c) requires zero declarations
+  // AND ≥50% preprocessor lines so it doesn't catch real code chunks that
+  // happen to start with a couple of #includes.
+  describe('anomalousChunkDemotion — preprocessor-dense predicate', () => {
+    it('demotes anonymous mid-file chunk dominated by #include + #ifndef', () => {
+      // CPP-002 actual chunk content from highway/hwy/targets.h:16-34.
+      const chunk = {
+        file: 'hwy/targets.h',
+        startLine: 16,
+        endLine: 34,
+        symbolType: 'code',
+        symbol: null,
+        content: `#ifndef HIGHWAY_HWY_TARGETS_H_
+#define HIGHWAY_HWY_TARGETS_H_
+
+// Allows opting out of C++ standard library usage, which is not available in
+// some Compiler Explorer environments.
+#ifndef HWY_NO_LIBCXX
+#include <vector>
+#endif
+
+// For SIMD module implementations and their callers. Defines which targets to
+// generate and call.
+
+#include "hwy/base.h"
+
+#include "hwy/detect_targets.h"
+
+#include "hwy/highway_export.h"
+
+#if !defined(HWY_NO_LIBCXX)
+#include <atomic>
+#endif`,
+        score: 0.55,
+      };
+      // A second, legitimate competitor chunk so the demoted one drops below it.
+      const legit = {
+        file: 'hwy/highway.h',
+        startLine: 390,
+        endLine: 431,
+        symbolType: 'struct',
+        symbol: 'FunctionCache',
+        content: 'template <typename RetType, typename... Args> struct FunctionCache { /* body */ };',
+        score: 0.50,
+      };
+      const out = applyResultDemotions([chunk, legit], {
+        query: 'how does highway select the best available SIMD target',
+        format: 'agent_full',
+      });
+      // The preprocessor-dense chunk should be demoted to under the legit chunk.
+      expect(out[0].symbol).toBe('FunctionCache');
+    });
+
+    it('does NOT demote real code chunk that happens to start with #include', () => {
+      // Legitimate function chunk preceded by 1-2 #include lines. Preprocessor
+      // density is well below 50% AND the function declaration is detected.
+      const chunk = {
+        file: 'src/parser.c',
+        startLine: 50,
+        endLine: 75,
+        symbolType: 'code',
+        symbol: null,
+        content: `#include <stdio.h>
+#include <string.h>
+
+int parse_token(const char* input, Token* out) {
+  if (input == NULL) return -1;
+  size_t len = strlen(input);
+  for (size_t i = 0; i < len; i++) {
+    // ...parsing logic...
+  }
+  return 0;
+}`,
+        score: 0.60,
+      };
+      const out = applyResultDemotions([chunk], {
+        query: 'parse a token',
+        format: 'agent_full',
+      });
+      // Score should be roughly preserved (no anomalous-chunk × 0.10 hit).
+      expect(out[0].score).toBeGreaterThan(0.5);
+    });
+
+    it('demotes macro-wall chunk where entity adoption set symbol but content is still all #defines', () => {
+      // Pattern: during context expansion, a macro entity (#define
+      // HWY_BASELINE_TARGETS) gets adopted onto the chunk, setting
+      // result.symbol='HWY_BASELINE_TARGETS', result.symbolType='macro'.
+      // The chunk text itself remains a 47-line wall of #define + #if + #endif
+      // surrounding the named #define. PATH 2 of the predicate catches this:
+      // macro chunks with span>=5 AND preprocessor-density >=50%.
+      const macroWall = {
+        file: 'hwy/detect_targets.h',
+        startLine: 706,
+        endLine: 752,
+        symbol: 'HWY_BASELINE_TARGETS',  // adopted from entity DB
+        symbolType: 'macro',
+        content: `#define HWY_BASELINE_TARGETS HWY_AVX2
+#endif
+#endif  // HWY_BASELINE_TARGETS
+
+// Allow the user to override this without any guarantee of success.
+#ifndef HWY_BASELINE_TARGETS
+#define HWY_BASELINE_TARGETS                                               \\
+  (HWY_BASELINE_SCALAR | HWY_BASELINE_WASM | HWY_BASELINE_PPC8 |           \\
+   HWY_BASELINE_PPC9 | HWY_BASELINE_PPC10 | HWY_BASELINE_Z14 |             \\
+   HWY_BASELINE_NEON | HWY_BASELINE_SSE2 | HWY_BASELINE_SSSE3 |            \\
+   HWY_BASELINE_SSE4 | HWY_BASELINE_AVX2 | HWY_BASELINE_AVX3 |             \\
+   HWY_BASELINE_RVV | HWY_BASELINE_LOONGARCH)
+#endif  // HWY_BASELINE_TARGETS
+
+#define HWY_ENABLED_BASELINE HWY_ENABLED(HWY_BASELINE_TARGETS)
+#if HWY_ENABLED_BASELINE == 0
+#pragma message "All baseline targets are disabled or considered broken."
+#endif
+
+#define HWY_STATIC_TARGET (HWY_ENABLED_BASELINE & -HWY_ENABLED_BASELINE)
+#define HWY_TARGET HWY_STATIC_TARGET
+
+#if 1 < (defined(HWY_COMPILE_ONLY_SCALAR))
+#error "Can only define one of HWY_COMPILE_ONLY_{SCALAR|EMU128|STATIC} - bug?"
+#endif`,
+        score: 0.55,
+      };
+      const legit = {
+        file: 'hwy/highway.h',
+        startLine: 390,
+        endLine: 431,
+        symbolType: 'struct',
+        symbol: 'FunctionCache',
+        content: 'template <typename RetType, typename... Args> struct FunctionCache { /* body */ };',
+        score: 0.50,
+      };
+      const out = applyResultDemotions([macroWall, legit], {
+        query: 'how does highway select the best available SIMD target',
+        format: 'agent_full',
+      });
+      expect(out[0].symbol).toBe('FunctionCache');
+    });
+
+    it('does NOT demote a small focused #define chunk (span<5, real macro definition)', () => {
+      // A single-purpose #define is a legitimate, often-correct answer. The
+      // PATH 2 predicate requires span>=5 so we don't demote it.
+      const tinyMacro = {
+        file: 'src/limits.h',
+        startLine: 42,
+        endLine: 44,
+        symbol: 'MAX_BUFFER_SIZE',
+        symbolType: 'macro',
+        content: '// Maximum buffer size for token storage\n#define MAX_BUFFER_SIZE 4096',
+        score: 0.60,
+      };
+      const out = applyResultDemotions([tinyMacro], {
+        query: 'what is the maximum buffer size',
+        format: 'agent_full',
+      });
+      expect(out[0].score).toBeGreaterThan(0.5);
+    });
+
+    it('does NOT demote when format is NOT agent (GCSN invariance)', () => {
+      const chunk = {
+        file: 'hwy/targets.h',
+        startLine: 16,
+        endLine: 34,
+        symbolType: 'code',
+        symbol: null,
+        content: '#ifndef X\n#define X\n#include <a.h>\n#include <b.h>\n#include <c.h>\n#endif\n',
+        score: 0.55,
+      };
+      // No format flag → NL-style query path; demotion must not fire.
+      const out = applyResultDemotions([chunk], { query: 'SIMD dispatch' });
+      expect(out[0].score).toBeCloseTo(0.55, 2);
+    });
+  });
+
   it('honours result-demotion ablations', () => {
     const footer = {
       file: 'lib/schema-controller.js',
