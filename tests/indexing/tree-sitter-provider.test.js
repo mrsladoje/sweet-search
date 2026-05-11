@@ -1243,6 +1243,34 @@ const FILE_LEVEL = 1;
         expect(symbols.find(s => s.name === 'uint128_t' && s.type === 'struct')).toBeDefined();
         expect(symbols.find(s => s.name === 'alignas')).toBeUndefined();
       });
+
+      // Step 1b — extended phantom list. Audit on highway cpp index revealed
+      // decltype (667), class-under-enum (10), and if-under-function (11) as
+      // additional phantom captures from tree-sitter-c parsing C++ headers
+      // routed to C.
+      it('drops decltype-named function (C++ type-deduction operator)', async () => {
+        const src = 'using Vec = decltype(Zero(D()));\n';
+        const symbols = await provider.extractSymbols(src, 'c');
+        expect(symbols.find(s => s.name === 'decltype')).toBeUndefined();
+      });
+
+      it('drops namespace-named function (C++ namespace under .h→c misparse)', async () => {
+        const src = 'namespace hwy { namespace x86 { void Foo(); } }\n';
+        const symbols = await provider.extractSymbols(src, 'c');
+        expect(symbols.find(s => s.name === 'namespace')).toBeUndefined();
+      });
+
+      it('drops class-under-enum phantom (enum class Color in .h→c)', async () => {
+        const src = 'enum class Color { RED, GREEN, BLUE };\n';
+        const symbols = await provider.extractSymbols(src, 'c');
+        expect(symbols.find(s => s.name === 'class')).toBeUndefined();
+      });
+
+      it('preserves a Python class literally named `enum` (filter is language-gated)', async () => {
+        const src = 'class enum:\n    def foo(self):\n        return 1\n';
+        const symbols = await provider.extractSymbols(src, 'python');
+        expect(symbols.find(s => s.name === 'enum' && s.type === 'class')).toBeDefined();
+      });
     });
   });
 });

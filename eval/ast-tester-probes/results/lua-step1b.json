@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T13:10:27.725Z",
+  "summary": {
+    "counts": {
+      "PASS": 5,
+      "PARTIAL": 1,
+      "FAIL": 2
+    },
+    "totalMs": 953,
+    "avgMs": 119,
+    "n": 8
+  },
+  "results": [
+    {
+      "id": "LU-001",
+      "repo": "lua",
+      "query": "how does Penlight implement class inheritance with constructors and base method dispatch",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lua/pl/class.lua",
+        "startLine": 128,
+        "endLine": 232,
+        "symbol": "_class",
+        "symbolType": "function",
+        "score": 0.48600000000000015,
+        "presentation": "full"
+      },
+      "wallMs": 155,
+      "error": null
+    },
+    {
+      "id": "LU-002",
+      "repo": "lua",
+      "query": "parse command line arguments with types defaults and help text using Penlight",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "lua/pl/xml.lua",
+        "startLine": 69,
+        "endLine": 135,
+        "symbol": "is_text",
+        "symbolType": "function",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 118,
+      "error": null
+    },
+    {
+      "id": "LU-003",
+      "repo": "lua",
+      "query": "deepcopy a Lua table recursively preserving structure in penlight",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "docs/libraries/pl.tablex.html",
+        "startLine": 901,
+        "endLine": 973,
+        "symbol": "unknown",
+        "symbolType": "code",
+        "score": 0.47257256507873535,
+        "presentation": "full"
+      },
+      "wallMs": 242,
+      "error": null
+    },
+    {
+      "id": "LU-004",
+      "repo": "lua",
+      "query": "List class with append insert clone extend Lua methods",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "lua/pl/List.lua",
+        "startLine": 512,
+        "endLine": 562,
+        "symbol": "fun",
+        "symbolType": "assignedFunc",
+        "score": 0.4452928900718689,
+        "presentation": "full"
+      },
+      "wallMs": 146,
+      "error": null
+    },
+    {
+      "id": "LU-005",
+      "repo": "lua",
+      "query": "Date class with toUTC toLocal weekday_name methods Penlight",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lua/pl/Date.lua",
+        "startLine": 222,
+        "endLine": 224,
+        "symbol": "Date",
+        "symbolType": "function",
+        "score": 0.39662406742572787,
+        "presentation": "full"
+      },
+      "wallMs": 170,
+      "error": null
+    },
+    {
+      "id": "LU-006",
+      "repo": "lua",
+      "query": "tablex.update merges fields from one table into another",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lua/pl/tablex.lua",
+        "startLine": 61,
+        "endLine": 68,
+        "symbol": "tablex.update",
+        "symbolType": "function",
+        "score": 0.5745154619216919,
+        "presentation": "full"
+      },
+      "wallMs": 44,
+      "error": null
+    },
+    {
+      "id": "LU-007",
+      "repo": "lua",
+      "query": "function List append method definition with colon syntax for implicit self",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lua/pl/List.lua",
+        "startLine": 221,
+        "endLine": 567,
+        "symbol": "List",
+        "symbolType": "function",
+        "score": 0.36257272958755493,
+        "presentation": "full"
+      },
+      "wallMs": 38,
+      "error": null
+    },
+    {
+      "id": "LU-008",
+      "repo": "lua",
+      "query": "stringx isalpha returns true for all alphabetic characters Lua",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lua/pl/stringx.lua",
+        "startLine": 55,
+        "endLine": 58,
+        "symbol": "stringx.isalpha",
+        "symbolType": "function",
+        "score": 0.6491019129753113,
+        "presentation": "full"
+      },
+      "wallMs": 40,
+      "error": null
+    }
+  ]
+}
