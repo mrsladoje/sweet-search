@@ -11,7 +11,7 @@
 ```
 ITERATION:        26         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      e14e31c    # most recent shipped commit before this plan
+LAST_COMMIT:      9fac4d7    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -213,7 +213,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 **Type:** new-language
 **Idioms:** template literals with tagged templates, async generators, class private fields (`#foo`), optional chaining `?.`, nullish coalescing `??`, destructuring with defaults.
 **Note:** distinct from the TypeScript probes — a pure CJS or modern ESM .js library. NO .ts/.tsx files in the repo.
-**Status:** [x] DONE @ pending — Repo: axios/axios @ 34adfd90 (MIT, 175 .js files). Has a few .ts files (index.d.ts type declarations + tests/smoke/deno/*.ts) but the lib/ core is pure JS; acceptable interpretation of "NO .ts" given the sentinel files don't carry executable JS. 8 probes JS-001..JS-008 verified (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting `Axios.prototype[method]` HTTP-verb metaprogramming and `class AxiosError extends Error`). Index: 246s (4:06, under 5min target), 2554 embeddings. Baseline: 4 PASS / 1 PARTIAL / 3 FAIL. §3 ALL GREEN: retrieval-probes 46/60 zero flips, GCSN 86.92%, all 7 existing lang packs (ts/rust/kotlin/csharp/cpp/java/python) zero PASS→FAIL flips. Splits manifest updated: JS-001/003/005/006/008 dev, JS-002/004/007 heldout. Iter 26.
+**Status:** [x] DONE @ 9fac4d7 — Repo: axios/axios @ 34adfd90 (MIT, 175 .js files). Has a few .ts files (index.d.ts type declarations + tests/smoke/deno/*.ts) but the lib/ core is pure JS; acceptable interpretation of "NO .ts" given the sentinel files don't carry executable JS. 8 probes JS-001..JS-008 verified (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting `Axios.prototype[method]` HTTP-verb metaprogramming and `class AxiosError extends Error`). Index: 246s (4:06, under 5min target), 2554 embeddings. Baseline: 4 PASS / 1 PARTIAL / 3 FAIL. §3 ALL GREEN: retrieval-probes 46/60 zero flips, GCSN 86.92%, all 7 existing lang packs (ts/rust/kotlin/csharp/cpp/java/python) zero PASS→FAIL flips. Splits manifest updated: JS-001/003/005/006/008 dev, JS-002/004/007 heldout. Iter 26.
 
 #### C4. Ruby
 **Type:** new-language
