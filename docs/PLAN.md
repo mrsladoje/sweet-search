@@ -11,7 +11,7 @@
 ```
 ITERATION:        28         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      a9e682f    # most recent shipped commit before this plan
+LAST_COMMIT:      bd95acf    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -223,7 +223,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 #### C5. Go
 **Type:** new-language
 **Idioms:** interfaces, generics (1.18+), channel ops, multi-return, struct embedding, named return values.
-**Status:** [x] DONE @ pending — Repo: go-chi/chi @ a54874f0 (MIT, 53 .go files non-test). 8 probes GO-001..GO-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting radix-trie node struct + Router interface embedding `http.Handler` + `Routes`). All 8 gold verified. Index: 49s (very fast), 367 embeddings. Baseline: 1 PASS / 3 PARTIAL / 4 FAIL — chi's many receiver methods on Mux create competition for class-level queries; only GO-006 (NewRouter constructor) cleanly PASSes. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 9 existing lang packs zero PASS→FAIL flips. Splits manifest updated.
+**Status:** [x] DONE @ bd95acf — Repo: go-chi/chi @ a54874f0 (MIT, 53 .go files non-test). 8 probes GO-001..GO-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting radix-trie node struct + Router interface embedding `http.Handler` + `Routes`). All 8 gold verified. Index: 49s (very fast), 367 embeddings. Baseline: 1 PASS / 3 PARTIAL / 4 FAIL — chi's many receiver methods on Mux create competition for class-level queries; only GO-006 (NewRouter constructor) cleanly PASSes. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 9 existing lang packs zero PASS→FAIL flips. Splits manifest updated.
 
 #### C6. PHP
 **Type:** new-language
