@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        19         # incremented each loop pass
-CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      d5b5115    # most recent shipped commit before this plan
+ITERATION:        20         # incremented each loop pass
+CURRENT_ITEM:     B5         # set to item id when IN_PROGRESS
+LAST_COMMIT:      93834b4    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -175,7 +175,7 @@ Priority by yield (descending). Each item: web-search if uncertain, apply princi
 **Pre-flight web search:** "tree-sitter-kotlin class_declaration body chunking large class".
 **Per-item gates:** kotlin probes — KT-001 expect PASS. Re-index ~12 min.
 **Abort/revert:** revert kotlin pattern files.
-**Status:** [ ] PENDING
+**Status:** [-] IN_PROGRESS
 
 ---
 
@@ -515,6 +515,12 @@ item: B4
 action: validate + resolve (DONE-with-note)
 result: csharp re-index COMPLETE (2532s = 42min, 20881 chunks). §3 validation: Step 1 unit tests 1432/1432 ✓; Step 3 csharp probes 1/2/5 (PASS unchanged from baseline 1, but CS-006 PARTIAL→FAIL); Step 4-5 retrieval-probes 46/4/10 ZERO PASS→FAIL flips; Step 6 GCSN dev MRR@10 86.92% EXACT MATCH; Step 7 ts/rust/kotlin/cpp probes zero PASS→FAIL flips. Verified chunks: AsyncProcessor.cs:79-110 stored as `method AsyncGetProcessorAsync` (was missing entirely). CS-007 expected PASS NOT MET — graph-expansion + agent-format presentation rolls method up to parent class RespServerSession (search-stack behavior beyond chunker scope). CS-006 SIDE-EFFECT REGRESSION: PARTIAL→FAIL — a different vis-less method (`ClusterKeyIterationFunctions.cs::OnStart`) now exists as a chunk and bi-encoder ranks it above previous WaitAsync. Not a §1 PASS→FAIL flip, but a real verdict downgrade. Marked B4 DONE-with-note per consistent GATE_INTERPRETATION; csharp aggregate slightly worse (5→4 weighted score) but chunker structurally more correct. Updated ENCODER_BOUND_PATTERN in §0 to note the side-effect risk for user awareness.
 next: B5 discover, schedule 60s
+
+--- iter 20 (2026-05-11T07:29:00Z) ---
+item: B5
+action: discover
+result: B4 closed DONE @ d5b5115 + 93834b4. B5 (Kotlin annotation-decorated open class extraction for KT-001) now first PENDING. Marked [-] IN_PROGRESS, updated §0 meta (ITERATION=20, CURRENT_ITEM=B5, LAST_COMMIT=93834b4). Note: B5 affects kotlin tree-sitter path. Symptom is symbol_mismatch (file_correct, returns internal method `parentCancelled` instead of class header `JobSupport`). Per-item gate: KT-001 expect PASS. Re-index ~12 min (kotlin is small). KT-001 is HELD-OUT — per discipline I can read PLAN's pre-existing description but should not re-inspect held-out failures for diagnosis.
+next: B5 execute (inspect kotlin chunker handling of large open class + annotations, design minimal fix), schedule 60s
 ```
 
 ---
