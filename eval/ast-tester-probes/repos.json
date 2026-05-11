@@ -92,6 +92,16 @@
       "localPath": "eval/ast-tester-probes/_repos/ruby",
       "goldFile": "eval/ast-tester-probes/gold/ruby.json",
       "rationale": "Sinatra web DSL — 97 .rb files; module mixins (Helpers), `class << self` singleton blocks, Rack subclassing, `class X < Struct.new(...)` runtime superclass pattern."
+    },
+    {
+      "language": "go",
+      "key": "go",
+      "url": "https://github.com/go-chi/chi.git",
+      "sha": "a54874f0e2f12647a19e82ee70dfa8185014100c",
+      "license": "MIT",
+      "localPath": "eval/ast-tester-probes/_repos/go",
+      "goldFile": "eval/ast-tester-probes/gold/go.json",
+      "rationale": "go-chi HTTP router — 53 .go files; radix-trie routing, many receiver methods on Mux, interface embedding (Router embeds http.Handler + Routes), map-typed struct fields."
     }
   ]
 }

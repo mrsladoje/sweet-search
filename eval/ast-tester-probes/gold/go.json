@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "8 retrieval probes for go-chi/chi — an MIT-licensed Go HTTP router with radix-trie route storage, interface embedding (Router embeds Routes + http.Handler), and many receiver methods on the Mux type.",
+  "language": "go",
+  "repo": "go",
+  "repoUrl": "https://github.com/go-chi/chi",
+  "repoSha": "a54874f0e2f12647a19e82ee70dfa8185014100c",
+  "license": "MIT",
+  "probes": [
+    {
+      "id": "GO-001",
+      "repo": "go",
+      "query": "how does chi dispatch incoming HTTP requests to matching route handlers",
+      "expectedFile": "mux.go",
+      "expectedSymbol": "ServeHTTP",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe: Mux.ServeHTTP (line 63) is the entry point that finds the matching route and invokes the handler"
+    },
+    {
+      "id": "GO-002",
+      "repo": "go",
+      "query": "how does chi build a routing trie for fast prefix matching",
+      "expectedFile": "tree.go",
+      "expectedSymbol": "InsertRoute",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe: node.InsertRoute (line 139) inserts a pattern + handler into the radix tree"
+    },
+    {
+      "id": "GO-003",
+      "repo": "go",
+      "query": "how does chi compose middleware functions around request handlers",
+      "expectedFile": "mux.go",
+      "expectedSymbol": "Use",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe: Mux.Use (line 100) appends middleware onto the router stack; core middleware composition"
+    },
+    {
+      "id": "GO-004",
+      "repo": "go",
+      "query": "chi Mux struct that implements the Router interface",
+      "expectedFile": "mux.go",
+      "expectedSymbol": "Mux",
+      "expectedSymbolType": "struct",
+      "notes": "Symbol-anchored probe: Mux struct (line 21) is the concrete router implementation"
+    },
+    {
+      "id": "GO-005",
+      "repo": "go",
+      "query": "chi Router interface defining the routing methods",
+      "expectedFile": "chi.go",
+      "expectedSymbol": "Router",
+      "expectedSymbolType": "interface",
+      "notes": "Symbol-anchored probe: Router interface (chi.go:66) is the public API surface"
+    },
+    {
+      "id": "GO-006",
+      "repo": "go",
+      "query": "chi NewRouter constructor that creates a Mux",
+      "expectedFile": "chi.go",
+      "expectedSymbol": "NewRouter",
+      "expectedSymbolType": "function",
+      "notes": "Symbol-anchored probe: NewRouter (chi.go:60) returns a *Mux; small signature-anchored target"
+    },
+    {
+      "id": "GO-007",
+      "repo": "go",
+      "query": "chi radix tree node with prefix children and endpoint map",
+      "expectedFile": "tree.go",
+      "expectedSymbol": "node",
+      "expectedSymbolType": "struct",
+      "notes": "Grammar-edge-case probe: node struct (line 88) has pointer-recursive fields (children) plus method-keyed endpoint map (endpoints map[methodTyp]*endpoint). Exercises tree-sitter-go's handling of map-typed struct fields with composite key/value types"
+    },
+    {
+      "id": "GO-008",
+      "repo": "go",
+      "query": "chi Router interface embedding http.Handler and Routes",
+      "expectedFile": "chi.go",
+      "expectedSymbol": "Router",
+      "expectedSymbolType": "interface",
+      "notes": "Grammar-edge-case probe: `type Router interface { http.Handler; Routes; ... }` (chi.go:66-70) — interface embedding via bare type names (not methods). Exercises tree-sitter-go's parsing of qualified embedded interfaces (`http.Handler`) alongside method declarations in the same interface body"
+    }
+  ]
+}
