@@ -1206,5 +1206,43 @@ const FILE_LEVEL = 1;
         expect(symbols.find(s => s.name === 'Container' && s.type === 'class')).toBeDefined();
       });
     });
+
+    // CPP-005 regression — phantom C/C++ attribute names suppressed.
+    //
+    // tree-sitter-c does not recognize the C++ keyword `alignas` and parses
+    // `struct alignas(16) uint128_t { ... }` with `name=alignas`. That phantom
+    // entity used to dominate retrieval for SIMD-flavored NL queries (top-1
+    // on cpp probe CPP-005). The filter in extractSymbols / parseFileToChunks
+    // drops C/C++ phantoms from a closed list of keywords/attribute markers
+    // (alignas, __attribute__, __declspec, final, override, etc.). The list
+    // is scoped to language ∈ {c, cpp} so a Go/Python file named `final`
+    // is not affected.
+    describe('C/C++ attribute phantom suppression', () => {
+      it('drops alignas-named struct (tree-sitter-c misparse)', async () => {
+        const src = 'struct alignas(16) uint128_t { unsigned long lo; unsigned long hi; };\n';
+        const symbols = await provider.extractSymbols(src, 'c');
+        expect(symbols.find(s => s.name === 'alignas')).toBeUndefined();
+      });
+
+      it('keeps correctly-parsed names through __attribute__', async () => {
+        const src = 'struct __attribute__((packed)) Foo { int x; };\n';
+        const symbols = await provider.extractSymbols(src, 'c');
+        expect(symbols.find(s => s.name === 'Foo' && s.type === 'struct')).toBeDefined();
+      });
+
+      it('does not filter `final` in non-C languages', async () => {
+        // Python class literally named `final` — not in the C-family path.
+        const src = 'class final:\n    pass\n';
+        const symbols = await provider.extractSymbols(src, 'python');
+        expect(symbols.find(s => s.name === 'final' && s.type === 'class')).toBeDefined();
+      });
+
+      it('preserves uint128_t when routed to cpp (tree-sitter-cpp parses correctly)', async () => {
+        const src = 'struct alignas(16) uint128_t { unsigned long lo; unsigned long hi; };\n';
+        const symbols = await provider.extractSymbols(src, 'cpp');
+        expect(symbols.find(s => s.name === 'uint128_t' && s.type === 'struct')).toBeDefined();
+        expect(symbols.find(s => s.name === 'alignas')).toBeUndefined();
+      });
+    });
   });
 });

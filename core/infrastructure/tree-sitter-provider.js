@@ -370,6 +370,38 @@ const TAGS_QUERIES = {
   `,
 };
 
+// Names that tree-sitter-c / tree-sitter-cpp sometimes emit as the `name:`
+// field of a struct_specifier / class_specifier when the source contains a
+// C++ or vendor attribute between the keyword and the actual type name.
+// Examples:
+//   `struct alignas(16) uint128_t { ... }`   parsed by tree-sitter-c    → name=alignas
+//   `class HWY_DLLEXPORT MyClass { ... }`    parsed by tree-sitter-cpp  → name=HWY_DLLEXPORT (NOT captured here, see ALL_CAPS shape rule)
+//   `struct __attribute__((packed)) Foo {}`  parsed by tree-sitter-c    → name=Foo (handled correctly by parser)
+// These tokens are C/C++ keywords or compiler-extension specifiers and
+// cannot legally be the name of a user type. When they appear as a
+// captured `type_identifier`, it is a parse misidentification and we
+// suppress the symbol rather than indexing a phantom entity.
+//
+// Closed list — drawn from C11/C17/C2x keywords and the two compiler
+// extensions in widespread use (GCC __attribute__, MSVC __declspec).
+// Does NOT include user-defined dllexport macros like HWY_DLLEXPORT /
+// EIGEN_API; those need a shape heuristic, not a keyword list.
+const C_FAMILY_ATTRIBUTE_PHANTOM_NAMES = new Set([
+  'alignas',         // C++11 keyword
+  '_Alignas',        // C11 keyword
+  '__attribute__',   // GCC extension
+  '__declspec',      // MSVC extension
+  '__inline__',      // GCC extension
+  '__forceinline',   // MSVC extension
+  'final',           // C++11 contextual keyword
+  'override',        // C++11 contextual keyword
+]);
+
+// Languages where C_FAMILY_ATTRIBUTE_PHANTOM_NAMES should be filtered.
+// Scoped narrowly to C/C++ so a Go/Python/JS file containing a type
+// literally named `final` is not affected.
+const C_FAMILY_LANGUAGES = new Set(['c', 'cpp']);
+
 // Map capture names from tags.scm queries to entity types
 const CAPTURE_TO_ENTITY_TYPE = {
   'function.definition': 'function',
@@ -534,6 +566,16 @@ export class TreeSitterProvider {
             || this._extractNodeName(node)
             || `<anonymous:${entityType}>`);
 
+        // Filter C/C++ phantom captures where the parser bound the `name:`
+        // field to a C/C++ keyword (`alignas`, `__attribute__`, etc.) instead
+        // of the actual type name. See C_FAMILY_ATTRIBUTE_PHANTOM_NAMES above.
+        if (
+          C_FAMILY_LANGUAGES.has(languageId) &&
+          C_FAMILY_ATTRIBUTE_PHANTOM_NAMES.has(symbolName)
+        ) {
+          continue;
+        }
+
         symbols.push({
           name: symbolName,
           type: entityType,
@@ -578,6 +620,20 @@ export class TreeSitterProvider {
     const chunks = this.recursiveChunk(children, content, maxChunkSize, null);
 
     tree.delete(); // free WASM memory
+
+    // Filter phantom C/C++ attribute names — null out chunk.name when the
+    // parser bound it to a C/C++ keyword. The chunk itself stays (the code
+    // is real); only the symbol label is corrected. Downstream anomalous-
+    // chunk demotion will treat any small-span resulting anonymous chunk
+    // appropriately.
+    if (C_FAMILY_LANGUAGES.has(languageId) && chunks) {
+      for (const chunk of chunks) {
+        if (chunk?.name && C_FAMILY_ATTRIBUTE_PHANTOM_NAMES.has(chunk.name)) {
+          chunk.name = null;
+        }
+      }
+    }
+
     return chunks.length > 0 ? chunks : null;
   }
 

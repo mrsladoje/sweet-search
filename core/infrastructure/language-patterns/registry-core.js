@@ -254,13 +254,21 @@ export const CORE_LANGUAGES = {
     },
     chunker: {
       function: /^(?:[\w*\s]+)\s+(\w+)\s*\([^)]*\)\s*\{/,
-      struct: /^(?:typedef\s+)?struct\s+(\w+)/,
+      // Skip attribute-like prefixes between `struct` and the type name:
+      //   - function-like attrs: __attribute__((...)), __declspec(...), _Alignas(N), __forceinline(...), __inline__(...)
+      //     Paren matcher allows up to 3 nesting levels — __attribute__ standardly takes
+      //     a doubly-parenthesized arg, optionally containing call-form attrs like aligned(8).
+      //   - C++11 attribute syntax: [[ ... ]]
+      //   - ALL_CAPS user macros (≥3 chars): PACKED_API, HWY_DLLEXPORT, EIGEN_API, etc.
+      // Without this, `struct __attribute__((packed)) Foo` captured `__attribute__` as the name.
+      // Backtracking handles ALL_CAPS-named forward decls (`struct WHEEL;`).
+      struct: /^(?:typedef\s+)?struct(?:\s+(?:__attribute__|__declspec|_Alignas|__forceinline|__inline__)\s*\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)|\s+\[\[[^\]]*\]\]|\s+[A-Z][A-Z0-9_]{2,})*\s+(\w+)/,
       enum: /^(?:typedef\s+)?enum\s+(\w+)/,
     },
     graph: {
       entities: {
         function: /^(?:static\s+)?(?:inline\s+)?(?:[\w*]+\s+)+(\w+)\s*\([^)]*\)\s*\{/,
-        struct: /^(?:typedef\s+)?struct\s+(\w+)/,
+        struct: /^(?:typedef\s+)?struct(?:\s+(?:__attribute__|__declspec|_Alignas|__forceinline|__inline__)\s*\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)|\s+\[\[[^\]]*\]\]|\s+[A-Z][A-Z0-9_]{2,})*\s+(\w+)/,
         enum: /^(?:typedef\s+)?enum\s+(\w+)/,
         typedef: /^typedef\s+.+\s+(\w+)\s*;/,
         macro: /^#define\s+(\w+)/,
@@ -281,14 +289,26 @@ export const CORE_LANGUAGES = {
       block: ["/*", "*/"],
     },
     chunker: {
-      class: /^(?:class|struct)\s+(\w+)(?:\s*:\s*(?:public|protected|private)\s+(\w+))?/,
+      // Skip attribute-like prefixes between `class`/`struct` and the type name.
+      // Closed list of standard attributes:
+      //   - function-like: alignas(N), __attribute__((...)), __declspec(...),
+      //     __forceinline(...). Paren matcher allows up to 3 nesting levels —
+      //     __attribute__ standardly takes a doubly-parenthesized arg, optionally
+      //     containing call-form attrs like aligned(8).
+      //   - C++11 attribute syntax: [[ ... ]]
+      //   - ALL_CAPS user macros (≥3 chars): HWY_DLLEXPORT, EIGEN_API, FMT_API, etc.
+      //     Common in dllexport/visibility shims across header-only C++ libraries.
+      // Without this, `struct alignas(16) uint128_t` captured `alignas` as the
+      // struct name (CPP-005 failure root cause). Backtracking preserves capture of
+      // ALL_CAPS forward decls like `class WHEEL;`.
+      class: /^(?:class|struct)(?:\s+(?:alignas|__attribute__|__declspec|__forceinline)\s*\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)|\s+\[\[[^\]]*\]\]|\s+[A-Z][A-Z0-9_]{2,})*\s+(\w+)(?:\s*:\s*(?:public|protected|private)\s+(\w+))?/,
       function: /^(?:[\w:*&<>\s]+)\s+(\w+)\s*\([^)]*\)\s*(?:const)?\s*(?:override)?\s*\{/,
       namespace: /^namespace\s+(\w+)/,
       template: /^template\s*(<[^>]+>)/,
     },
     graph: {
       entities: {
-        class: /^(?:class|struct)\s+(\w+)/,
+        class: /^(?:class|struct)(?:\s+(?:alignas|__attribute__|__declspec|__forceinline)\s*\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)|\s+\[\[[^\]]*\]\]|\s+[A-Z][A-Z0-9_]{2,})*\s+(\w+)/,
         namespace: /^namespace\s+(\w+)/,
         function: /^(?:[\w:*&<>\s]+)\s+(\w+)\s*\([^)]*\)\s*(?:const)?\s*(?:override)?\s*\{/,
         typedef: /^(?:typedef|using)\s+.+\s+(\w+)/,
