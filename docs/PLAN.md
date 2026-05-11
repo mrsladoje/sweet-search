@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        5          # incremented each loop pass
-CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      d58d17c    # most recent shipped commit before this plan
+ITERATION:        6          # incremented each loop pass
+CURRENT_ITEM:     B2         # set to item id when IN_PROGRESS
+LAST_COMMIT:      c14ca12    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 ```
@@ -134,6 +134,8 @@ Priority by yield (descending). Each item: web-search if uncertain, apply princi
 **Per-item gates:** cpp probes — expect ≥ 4/8 PASS (was 0/8). Re-index ~22 min.
 **Abort/revert:** revert tree-sitter-provider.js.
 **Status:** [!] FAILED-REVERTED — fix landed structurally (alias_declaration + template_declaration in BOUNDARY_TYPES, _resolveBoundary drill for template wrappers, alias_declaration→typeAlias in NODE_TYPE_MAP) and re-index succeeded (1048s, 5832 chunks). cpp probes still 0/2/6 — per-item gate "≥4/8 PASS" not met. §1 gates all GREEN (retrieval-probes 46/60 unchanged, GCSN 86.92% exact, ts/rust/kotlin/csharp zero flips). Root cause appears bi-encoder-bound: chunker now correctly names templated structs / using-aliases (CPP-004 returns typeAlias `InputVec` instead of `struct TypeInfo`, CPP-005 returns typeAlias `LaneType` instead of `struct alignas`), but the encoder ranks competing typeAliases over the gold (`Vec`/`Simd`). Reverted tree-sitter-provider.js. cpp _repo .sweet-search/ left in post-B1 chunker state; next cpp re-baseline must re-index. Iter 5.
+
+#### B2. Rust multi-item chunk anchoring (RS-006, RS-008)
 **Type:** chunker-fix
 **Symptom:** RS-006 (`SortedMergeIter`) and RS-008 (`detect_package_root`) have gold at rank 1 in late-interaction but bi-encoder candidate set misses them — chunk is mis-named after first sibling (`Flags` hides `SortedMergeIter`; `is_package` hides `detect_package_root`).
 **Hypothesis:** Chunker emits one chunk per BOUNDARY_TYPES anchor, but when adjacent top-level items collapse into one chunk, only the first item's name is stored. Need either: (a) split per-item, or (b) emit secondary symbols as aliases.
@@ -141,7 +143,7 @@ Priority by yield (descending). Each item: web-search if uncertain, apply princi
 **Pre-flight web search:** "code chunking multi-symbol per chunk strategy", "tree-sitter chunk boundary adjacent top-level items".
 **Per-item gates:** rust probes — expect RS-006 + RS-008 PARTIAL/PASS (currently FAIL). Re-index ~77 min.
 **Abort/revert:** revert ast-chunker.js + tree-sitter-provider.js touches.
-**Status:** [ ] PENDING
+**Status:** [-] IN_PROGRESS
 
 #### B3. Rust lifetime `<'a>` chunker boundary (RS-002, RS-003)
 **Type:** chunker-fix
@@ -427,6 +429,12 @@ item: B1
 action: validate + resolve (revert)
 result: ran §3 steps 3-7. cpp probes 0/2/6 — same PASS count as baseline but CPP-004/CPP-005 returned different typeAlias entities (InputVec, LaneType) instead of original struct/code chunks; CPP-007 still `code -`; cpp-targeted improvement DID NOT MATERIALIZE in retrieval rank. §1 locked baselines all GREEN: retrieval-probes 46/4/10 exact zero flips; GCSN dev MRR@10 86.92% exact match; ts/rust/kotlin/csharp probes zero flips vs -final. Per-item gate ("≥4/8 cpp PASS, was 0/8") NOT MET. Per §6 "any gate red → revert", reverted core/infrastructure/tree-sitter-provider.js via git checkout HEAD. Diagnosis: chunker fix is structurally sound and names are now correct, but bi-encoder ranks competing typeAliases over the gold. This is encoder-bound, not chunker-bound — outside B1 scope. cpp _repo .sweet-search/ remains in patched-chunker state (no functional impact since reverted code is identical search-time; next cpp re-baseline must re-index ~17 min).
 next: B2 discover, schedule 60s
+
+--- iter 6 (2026-05-11T03:00:00Z) ---
+item: B2
+action: discover
+result: B1 closed FAILED-REVERTED; B2 (rust multi-item chunk anchoring for RS-006/RS-008) now first not-DONE/not-FAILED in §5. Marked [-] IN_PROGRESS, updated §0 meta (ITERATION=6, CURRENT_ITEM=B2, LAST_COMMIT=c14ca12). Also restored B2 heading (clobbered by iter-5 edit). Consecutive-FAIL counter at 1.
+next: B2 execute (investigate ast-chunker.js multi-symbol chunks, prefer name_alias population over per-item split), schedule 60s
 ```
 
 ---
