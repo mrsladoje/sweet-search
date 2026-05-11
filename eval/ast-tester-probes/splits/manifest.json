@@ -6,9 +6,9 @@
   "seed": 42,
   "stratifyBy": "language",
   "method": "stratified-random-shuffle",
-  "totalProbes": 88,
-  "devCount": 55,
-  "heldoutCount": 33,
+  "totalProbes": 96,
+  "devCount": 60,
+  "heldoutCount": 36,
   "perLanguage": {
     "typescript": {
       "dev": [
@@ -162,6 +162,20 @@
         "PHP-003",
         "PHP-005",
         "PHP-007"
+      ]
+    },
+    "c": {
+      "dev": [
+        "C-001",
+        "C-002",
+        "C-004",
+        "C-005",
+        "C-008"
+      ],
+      "heldout": [
+        "C-003",
+        "C-006",
+        "C-007"
       ]
     }
   },

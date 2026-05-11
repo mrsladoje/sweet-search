@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        29         # incremented each loop pass
+ITERATION:        30         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      a27da5c    # most recent shipped commit before this plan
+LAST_COMMIT:      c2849d2    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -234,7 +234,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 **Type:** new-language
 **Idioms:** macros (`#define`), function pointers, struct typedefs, `static inline`, designated initializers, `_Generic`.
 **Note:** pick a pure-C codebase (no C++). Not a kernel module — too large.
-**Status:** [ ] PENDING
+**Status:** [x] DONE @ pending — Repo: redis/hiredis @ 1d18adbf (BSD-3, 9 .c + 25 .h files). 8 probes C-001..C-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting function-pointer typedef `typedef void (redisCallbackFn)(...)` + self-referential typedef struct). Index: 78s (1:18), 631 embeddings. Baseline: 2 PASS / 4 PARTIAL / 2 FAIL. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 11 existing lang packs zero PASS→FAIL flips.
 
 #### C8. TypeScript — second repo (library/framework, NOT a Next.js app)
 **Type:** new-language
@@ -576,6 +576,12 @@ item: C6
 action: discover + execute + resolve (DONE-with-baseline)
 result: Bundled. Picked **slimphp/Slim @ 025043ec303c652408ae85900c98653798d91778** (MIT, 72 .php files). Idioms: final-class modifier, interface implementation (App extends RouteCollectorProxy implements RequestHandlerInterface), multi-line typed-nullable constructor (App::__construct takes 5 nullable PSR-7 interface dependencies). 8 probes PHP-001..PHP-008. Index: 90s = 1:30 (well under 5min), 654 embeddings. Baseline: 4 PASS / 2 PARTIAL / 2 FAIL — strong baseline; PHP-003 (CallableResolver), PHP-004 (App), PHP-005 (Route), PHP-006 (FastRouteDispatcher) all PASS cleanly. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 10 existing lang packs zero PASS→FAIL flips.
 next: C7 (C) discover, schedule 60s
+
+--- iter 30 (2026-05-11T09:27:00Z) ---
+item: C7
+action: discover + execute + resolve (DONE-with-baseline)
+result: Bundled. Picked **redis/hiredis @ 1d18adbf41dc10d456bee34a3fb966a2009c591c** (BSD-3-Clause, 9 .c + 25 .h files). Idioms: function-pointer typedefs (redisCallbackFn, redisPushFn), self-referential typedef struct, printf-style command interface (%s/%b/%d formatters in redisvFormatCommand). 8 probes C-001..C-008 — note: had to re-target C-001 from non-existent `redisReaderRead` to `redisReaderGetReply` (actual public RESP parser entry at line 742). Index: 78s = 1:18, 631 embeddings. Baseline: 2 PASS / 4 PARTIAL / 2 FAIL — C-004 (redisReply struct) and C-008 (redisCallback self-ref struct) PASS; 4 PARTIALs (file-correct, symbol-mismatch — hiredis has dense small functions competing in hiredis.c). §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 11 existing lang packs zero PASS→FAIL flips.
+next: C8 (TypeScript second repo) discover, schedule 60s
 ```
 
 ---

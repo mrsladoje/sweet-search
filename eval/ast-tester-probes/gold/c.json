@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "8 retrieval probes for redis/hiredis — a BSD-3-licensed minimal C client library for Redis with function-pointer typedefs, typedef-struct patterns, and a printf-style command interface.",
+  "language": "c",
+  "repo": "c",
+  "repoUrl": "https://github.com/redis/hiredis",
+  "repoSha": "1d18adbf41dc10d456bee34a3fb966a2009c591c",
+  "license": "BSD-3-Clause",
+  "probes": [
+    {
+      "id": "C-001",
+      "repo": "c",
+      "query": "how does hiredis parse RESP protocol replies from a network buffer incrementally",
+      "expectedFile": "read.c",
+      "expectedSymbol": "redisReaderGetReply",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe: redisReaderGetReply (line 742) drains buffered bytes into a parsed reply object — the streaming RESP parser entry"
+    },
+    {
+      "id": "C-002",
+      "repo": "c",
+      "query": "how does hiredis open a TCP connection to a redis server with options",
+      "expectedFile": "hiredis.c",
+      "expectedSymbol": "redisConnectWithOptions",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe: redisConnectWithOptions (line 815) is the option-driven connection factory; redisConnect/redisConnectUnix wrap it"
+    },
+    {
+      "id": "C-003",
+      "repo": "c",
+      "query": "how does hiredis send commands using printf-style format strings",
+      "expectedFile": "hiredis.c",
+      "expectedSymbol": "redisvFormatCommand",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe: redisvFormatCommand handles the %s/%b/%d/etc. format specifiers — core command-building logic"
+    },
+    {
+      "id": "C-004",
+      "repo": "c",
+      "query": "hiredis redisReply struct with type integer string and array fields",
+      "expectedFile": "hiredis.h",
+      "expectedSymbol": "redisReply",
+      "expectedSymbolType": "struct",
+      "notes": "Symbol-anchored probe: typedef struct redisReply (line 120) holds parsed RESP reply data — type/integer/dval/str/elements"
+    },
+    {
+      "id": "C-005",
+      "repo": "c",
+      "query": "hiredis redisConnect function blocking IP and port",
+      "expectedFile": "hiredis.c",
+      "expectedSymbol": "redisConnect",
+      "expectedSymbolType": "function",
+      "notes": "Symbol-anchored probe: redisConnect (line 885) is the simplest connection entry — blocking, IP+port"
+    },
+    {
+      "id": "C-006",
+      "repo": "c",
+      "query": "hiredis redisAsyncContext struct for non-blocking event-loop integration",
+      "expectedFile": "async.h",
+      "expectedSymbol": "redisAsyncContext",
+      "expectedSymbolType": "struct",
+      "notes": "Symbol-anchored probe: typedef struct redisAsyncContext (line 65) holds the async state used by adapter libraries"
+    },
+    {
+      "id": "C-007",
+      "repo": "c",
+      "query": "hiredis redisCallbackFn function pointer typedef for async replies",
+      "expectedFile": "async.h",
+      "expectedSymbol": "redisCallbackFn",
+      "expectedSymbolType": "typeAlias",
+      "notes": "Grammar-edge-case probe: `typedef void (redisCallbackFn)(struct redisAsyncContext*, void*, void*);` (line 44) — C function-pointer typedef with parenthesised name and a function-type return-and-params. Exercises tree-sitter-c's parsing of typedef-with-function-type syntax (distinct from a plain function declaration)"
+    },
+    {
+      "id": "C-008",
+      "repo": "c",
+      "query": "hiredis redisCallback struct with embedded next-pointer linked-list head",
+      "expectedFile": "async.h",
+      "expectedSymbol": "redisCallback",
+      "expectedSymbolType": "struct",
+      "notes": "Grammar-edge-case probe: `typedef struct redisCallback { struct redisCallback *next; ... }` (line 45) — self-referential struct typedef where the typedef name is used inside its own body. Exercises tree-sitter-c's handling of forward self-reference via the inner `struct redisCallback *` member"
+    }
+  ]
+}
