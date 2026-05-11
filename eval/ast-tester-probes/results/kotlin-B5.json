@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T05:51:43.880Z",
+  "summary": {
+    "counts": {
+      "PASS": 4,
+      "PARTIAL": 2,
+      "FAIL": 2
+    },
+    "totalMs": 227,
+    "avgMs": 28,
+    "n": 8
+  },
+  "results": [
+    {
+      "id": "KT-001",
+      "repo": "kotlin",
+      "query": "how does a coroutine job get cancelled and propagate cancellation to its children",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "kotlinx-coroutines-core/common/src/JobSupport.kt",
+        "startLine": 1562,
+        "endLine": 1582,
+        "symbol": "InvokeOnCancelling",
+        "symbolType": "class",
+        "score": 0.6206429600715637,
+        "presentation": "full"
+      },
+      "wallMs": 45,
+      "error": null
+    },
+    {
+      "id": "KT-002",
+      "repo": "kotlin",
+      "query": "how does withContext switch coroutine dispatcher while preserving structured concurrency",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "kotlinx-coroutines-core/common/src/Builders.common.kt",
+        "startLine": 442,
+        "endLine": 515,
+        "symbol": "withContext",
+        "symbolType": "function",
+        "score": 0.5486373170066087,
+        "presentation": "full"
+      },
+      "wallMs": 30,
+      "error": null
+    },
+    {
+      "id": "KT-003",
+      "repo": "kotlin",
+      "query": "how does runBlocking block the current thread until all coroutines inside complete",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "integration-testing/src/javaConsumersTest/java/RunBlockingJavaTest.java",
+        "startLine": 1,
+        "endLine": 21,
+        "symbol": "RunBlockingJavaTest",
+        "symbolType": "class",
+        "score": 0.5660805702209473,
+        "presentation": "full"
+      },
+      "wallMs": 25,
+      "error": null
+    },
+    {
+      "id": "KT-004",
+      "repo": "kotlin",
+      "query": "launch coroutine builder extension function on CoroutineScope",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "kotlinx-coroutines-core/common/src/Builders.common.kt",
+        "startLine": 19,
+        "endLine": 199,
+        "symbolType": "code",
+        "score": 0.5285055041313171,
+        "presentation": "full"
+      },
+      "wallMs": 25,
+      "error": null
+    },
+    {
+      "id": "KT-005",
+      "repo": "kotlin",
+      "query": "cancelAndJoin suspend extension function that cancels a Job and waits for it to finish",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "kotlinx-coroutines-core/common/src/Job.kt",
+        "startLine": 495,
+        "endLine": 537,
+        "symbol": "cancelAndJoin",
+        "symbolType": "function",
+        "score": 0.6094290018081665,
+        "presentation": "full"
+      },
+      "wallMs": 24,
+      "error": null
+    },
+    {
+      "id": "KT-006",
+      "repo": "kotlin",
+      "query": "suspendCancellableCoroutine inline function for integrating callback APIs with coroutines",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "kotlinx-coroutines-core/common/src/CancellableContinuation.kt",
+        "startLine": 398,
+        "endLine": 463,
+        "symbol": "suspendCancellableCoroutine",
+        "symbolType": "function",
+        "score": 0.6025386452674866,
+        "presentation": "full"
+      },
+      "wallMs": 27,
+      "error": null
+    },
+    {
+      "id": "KT-007",
+      "repo": "kotlin",
+      "query": "produce coroutine builder with trailing lambda that sends values into a channel",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "kotlinx-coroutines-core/common/src/flow/Builders.kt",
+        "startLine": 195,
+        "endLine": 240,
+        "symbol": "channelFlow",
+        "symbolType": "function",
+        "score": 0.46614158153533936,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "KT-008",
+      "repo": "kotlin",
+      "query": "sealed interface SelectClause hierarchy used in select expression DSL",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "kotlinx-coroutines-core/common/src/selects/Select.kt",
+        "startLine": 114,
+        "endLine": 147,
+        "symbol": "SelectClause",
+        "symbolType": "class",
+        "score": 0.6000918388366699,
+        "presentation": "full"
+      },
+      "wallMs": 28,
+      "error": null
+    }
+  ]
+}
