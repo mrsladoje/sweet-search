@@ -6,9 +6,9 @@
   "seed": 42,
   "stratifyBy": "language",
   "method": "stratified-random-shuffle",
-  "totalProbes": 104,
-  "devCount": 65,
-  "heldoutCount": 39,
+  "totalProbes": 112,
+  "devCount": 70,
+  "heldoutCount": 42,
   "perLanguage": {
     "typescript": {
       "dev": [
@@ -190,6 +190,20 @@
         "TSL-003",
         "TSL-005",
         "TSL-007"
+      ]
+    },
+    "dart": {
+      "dev": [
+        "DR-001",
+        "DR-002",
+        "DR-004",
+        "DR-006",
+        "DR-008"
+      ],
+      "heldout": [
+        "DR-003",
+        "DR-005",
+        "DR-007"
       ]
     }
   },

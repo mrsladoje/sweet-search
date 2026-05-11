@@ -61,7 +61,7 @@ export const FILE_PATTERNS = {
     '**/*.{rb,erb}',                       // Ruby
     '**/*.php',                             // PHP
     '**/*.{swift,m,mm}',                   // Apple
-    '**/*.{lua,zig,nim,ex,exs}',           // Other
+    '**/*.{lua,zig,nim,ex,exs,dart}',      // Other
     '**/*.{sh,bash,zsh,fish,ps1}',         // Shell
     '**/*.sql',                             // SQL
     '**/*.proto',                           // Protobuf
