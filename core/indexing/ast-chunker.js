@@ -407,12 +407,30 @@ export class ASTChunker {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      // Capture the comment state BEFORE _stripNonCode mutates it so we
+      // can tell whether this line entered the iteration inside a block
+      // comment (e.g. mid-Javadoc). Boundary detection must be skipped
+      // for such lines — otherwise `_matchBoundary` happily matches
+      // `public class MyClass {` inside a Java `/** ... <pre> ... */`
+      // example and emits a phantom class chunk. Verified on gson
+      // SerializedName.java where the regex fallback path emits a
+      // 25-82 chunk attributed to "class MyClass" sourced from the
+      // Javadoc body. See the matching extractJava() block-comment
+      // skip in core/graph/graph-extractor.js for the symmetric fix.
+      const inBlockCommentAtStart = stripState.inBlockComment;
       const stripped = this._stripNonCode(line, stripState, comment, hasTemplateInterpolation);
 
       braceDepth += (stripped.match(/{/g) || []).length;
       braceDepth -= (stripped.match(/}/g) || []).length;
 
-      const { name: matched, type: matchType, joinedLines } = this._matchBoundary(line, patterns, language, lines, i, multiLine);
+      // When the line is entirely inside a block comment (entered as
+      // such AND still inside on exit), there's nothing executable to
+      // match — skip boundary detection entirely. The stripped output
+      // is already empty/whitespace so brace-depth tracking is a no-op.
+      const lineFullyInComment = inBlockCommentAtStart && stripState.inBlockComment;
+      const { name: matched, type: matchType, joinedLines } = lineFullyInComment
+        ? { name: null, type: null, joinedLines: 0 }
+        : this._matchBoundary(stripped, patterns, language, lines, i, multiLine);
 
       if ((matched && currentChunk) || (braceDepth === 0 && currentChunk)) {
         const chunkContent = lines.slice(chunkStart, i + 1).join('\n');
@@ -824,13 +842,20 @@ export class ASTChunker {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const lineSize = line.length + 1; // +1 for newline
+      const inBlockCommentAtStart = stripState.inBlockComment;
       const stripped = this._stripNonCode(line, stripState, comment, hasTemplateInterpolation);
 
       braceDepth += (stripped.match(/{/g) || []).length;
       braceDepth -= (stripped.match(/}/g) || []).length;
 
-      // Check if this line is a sub-boundary (a new construct starting at depth >= 1)
-      const { name: matched, type: matchType } = this._matchBoundary(line, patterns, language, lines, i, false);
+      // Check if this line is a sub-boundary (a new construct starting at depth >= 1).
+      // Use the comment-stripped line so Javadoc `<pre>public class Foo {...}</pre>`
+      // examples don't get matched as real sub-boundaries (parallels
+      // parseBraceBasedFile fix above).
+      const lineFullyInComment = inBlockCommentAtStart && stripState.inBlockComment;
+      const { name: matched, type: matchType } = lineFullyInComment
+        ? { name: null, type: null }
+        : this._matchBoundary(stripped, patterns, language, lines, i, false);
       const isSubBoundary = matched && i > segStart;
 
       // Split condition: at a sub-boundary, or accumulated segment exceeds max
