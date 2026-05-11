@@ -6,9 +6,9 @@
   "seed": 42,
   "stratifyBy": "language",
   "method": "stratified-random-shuffle",
-  "totalProbes": 80,
-  "devCount": 50,
-  "heldoutCount": 30,
+  "totalProbes": 88,
+  "devCount": 55,
+  "heldoutCount": 33,
   "perLanguage": {
     "typescript": {
       "dev": [
@@ -148,6 +148,20 @@
         "GO-002",
         "GO-005",
         "GO-007"
+      ]
+    },
+    "php": {
+      "dev": [
+        "PHP-001",
+        "PHP-002",
+        "PHP-004",
+        "PHP-006",
+        "PHP-008"
+      ],
+      "heldout": [
+        "PHP-003",
+        "PHP-005",
+        "PHP-007"
       ]
     }
   },

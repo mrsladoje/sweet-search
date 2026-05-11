@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        28         # incremented each loop pass
+ITERATION:        29         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      bd95acf    # most recent shipped commit before this plan
+LAST_COMMIT:      d01617d    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -228,7 +228,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 #### C6. PHP
 **Type:** new-language
 **Idioms:** traits, generators, enums (8.1+), readonly properties, constructor property promotion (8.0+), match expression.
-**Status:** [ ] PENDING
+**Status:** [x] DONE @ pending — Repo: slimphp/Slim @ 025043ec (MIT, 72 .php files). 8 probes PHP-001..PHP-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting `final class CallableResolver implements AdvancedCallableResolverInterface` + multi-line typed-nullable constructor). All 8 gold verified. Index: 90s (1:30, well under 5min), 654 embeddings. Baseline: 4 PASS / 2 PARTIAL / 2 FAIL — strong baseline. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 10 existing lang packs zero PASS→FAIL flips.
 
 #### C7. C (distinct from C++)
 **Type:** new-language
@@ -570,6 +570,12 @@ item: C5
 action: discover + execute + resolve (DONE-with-baseline)
 result: Bundled. Picked **go-chi/chi @ a54874f0e2f12647a19e82ee70dfa8185014100c** (MIT, 53 .go files non-test). Idioms: radix-trie routing, many receiver methods on Mux type, interface embedding (Router interface embeds http.Handler + Routes), map-typed struct fields. 8 probes GO-001..GO-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case). Index: 49s (fastest yet), 367 embeddings. Baseline: 1 PASS / 3 PARTIAL / 4 FAIL — GO-006 (NewRouter constructor) cleanly PASSes; many Mux receiver methods compete for class-level queries. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 9 existing lang packs zero PASS→FAIL flips. Splits manifest updated.
 next: C6 (PHP) discover, schedule 60s
+
+--- iter 29 (2026-05-11T09:16:00Z) ---
+item: C6
+action: discover + execute + resolve (DONE-with-baseline)
+result: Bundled. Picked **slimphp/Slim @ 025043ec303c652408ae85900c98653798d91778** (MIT, 72 .php files). Idioms: final-class modifier, interface implementation (App extends RouteCollectorProxy implements RequestHandlerInterface), multi-line typed-nullable constructor (App::__construct takes 5 nullable PSR-7 interface dependencies). 8 probes PHP-001..PHP-008. Index: 90s = 1:30 (well under 5min), 654 embeddings. Baseline: 4 PASS / 2 PARTIAL / 2 FAIL — strong baseline; PHP-003 (CallableResolver), PHP-004 (App), PHP-005 (Route), PHP-006 (FastRouteDispatcher) all PASS cleanly. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 10 existing lang packs zero PASS→FAIL flips.
+next: C7 (C) discover, schedule 60s
 ```
 
 ---

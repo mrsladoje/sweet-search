@@ -102,6 +102,16 @@
       "localPath": "eval/ast-tester-probes/_repos/go",
       "goldFile": "eval/ast-tester-probes/gold/go.json",
       "rationale": "go-chi HTTP router — 53 .go files; radix-trie routing, many receiver methods on Mux, interface embedding (Router embeds http.Handler + Routes), map-typed struct fields."
+    },
+    {
+      "language": "php",
+      "key": "php",
+      "url": "https://github.com/slimphp/Slim.git",
+      "sha": "025043ec303c652408ae85900c98653798d91778",
+      "license": "MIT",
+      "localPath": "eval/ast-tester-probes/_repos/php",
+      "goldFile": "eval/ast-tester-probes/gold/php.json",
+      "rationale": "Slim PHP micro-framework — 72 .php files; final class modifiers, interface implementation, PSR-7/PSR-15 patterns, typed nullable constructor parameters."
     }
   ]
 }
