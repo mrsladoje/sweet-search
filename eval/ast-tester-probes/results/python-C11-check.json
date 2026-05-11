@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T09:05:57.307Z",
+  "summary": {
+    "counts": {
+      "PASS": 4,
+      "PARTIAL": 2,
+      "FAIL": 2
+    },
+    "totalMs": 196,
+    "avgMs": 25,
+    "n": 8
+  },
+  "results": [
+    {
+      "id": "PY-001",
+      "repo": "python",
+      "query": "how does click handle command grouping and dispatch to subcommands",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "src/click/core.py",
+        "startLine": 1531,
+        "endLine": 1978,
+        "symbol": "Group",
+        "symbolType": "class",
+        "score": 0.4962506890296936,
+        "presentation": "full"
+      },
+      "wallMs": 38,
+      "error": null
+    },
+    {
+      "id": "PY-002",
+      "repo": "python",
+      "query": "how does click expose context state between parent and child commands",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "src/click/core.py",
+        "startLine": 800,
+        "endLine": 854,
+        "symbol": "invoke",
+        "symbolType": "function",
+        "score": 0.5144375830888749,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "PY-003",
+      "repo": "python",
+      "query": "how does click validate that an option value is one of a fixed set of choices",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "src/click/types.py",
+        "startLine": 253,
+        "endLine": 419,
+        "symbol": "Choice",
+        "symbolType": "class",
+        "score": 0.49384161829948425,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "PY-004",
+      "repo": "python",
+      "query": "click command decorator that turns a function into a Command object",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "src/click/decorators.py",
+        "startLine": 168,
+        "endLine": 255,
+        "symbol": "command",
+        "symbolType": "function",
+        "score": 0.6057825088500977,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "PY-005",
+      "repo": "python",
+      "query": "Context find_root method",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "src/click/shell_completion.py",
+        "startLine": 573,
+        "endLine": 631,
+        "symbol": "_resolve_context",
+        "symbolType": "function",
+        "score": 0.39055463671684265,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "PY-006",
+      "repo": "python",
+      "query": "ParamType convert method that turns raw string input into a typed value",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "src/click/types.py",
+        "startLine": 37,
+        "endLine": 170,
+        "symbol": "ParamType",
+        "symbolType": "class",
+        "score": 0.54195237159729,
+        "presentation": "full"
+      },
+      "wallMs": 20,
+      "error": null
+    },
+    {
+      "id": "PY-007",
+      "repo": "python",
+      "query": "@t.overload decorator chain for the click command function signature",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "docs/quickstart.md",
+        "startLine": 40,
+        "endLine": 73,
+        "symbol": "Basic Concepts - Creating a Command",
+        "symbolType": "section",
+        "score": 0.4681504964828491,
+        "presentation": "full"
+      },
+      "wallMs": 20,
+      "error": null
+    },
+    {
+      "id": "PY-008",
+      "repo": "python",
+      "query": "ParamType generic abstract base class with TypeVar bound and ABC inheritance",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "src/click/types.py",
+        "startLine": 37,
+        "endLine": 170,
+        "symbol": "ParamType",
+        "symbolType": "class",
+        "score": 0.6863505911827088,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    }
+  ]
+}
