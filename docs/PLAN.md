@@ -11,7 +11,7 @@
 ```
 ITERATION:        31         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      e0cd0af    # most recent shipped commit before this plan
+LAST_COMMIT:      b345a74    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -241,7 +241,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 **Goal:** broaden TS coverage beyond vercel/ai-chatbot (which is a Next.js app). Want a TS library codebase — different idiom mix (no app-level patterns; more types/generics-heavy, no JSX heavy paths).
 **Idioms to target:** conditional types, mapped types, template literal types, type predicates, declaration merging, namespace exports.
 **Naming convention:** key = `typescript-lib` to distinguish from existing `typescript` entry.
-**Status:** [x] DONE @ pending — Repo: colinhacks/zod @ b6071fc0 (MIT, 372 .ts files OVER 300 constraint). 8 probes TSL-001..TSL-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting TS 4.7+ variance modifiers `out O = unknown` and function-overload-signature pattern). All 8 gold verified. Index: 564s (9:24, 2x OVER §2.8 5-min target — accepted given (a) zod is THE canonical types-heavy TS library, (b) idiom coverage is unmatched, (c) re-indexing a different lib would burn more compute). 2939 embeddings. Baseline: 1 PASS / 1 PARTIAL / 6 FAIL — many FAILs return v3/v4/v4-mini classic equivalents (`packages/zod/src/v4/classic/schemas.ts ZodType` instead of `v4/core/schemas.ts $ZodType`); zod's monorepo structure with multiple major-version trees creates strong intra-repo competition. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 12 existing lang packs zero PASS→FAIL flips.
+**Status:** [x] DONE @ b345a74 — Repo: colinhacks/zod @ b6071fc0 (MIT, 372 .ts files OVER 300 constraint). 8 probes TSL-001..TSL-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting TS 4.7+ variance modifiers `out O = unknown` and function-overload-signature pattern). All 8 gold verified. Index: 564s (9:24, 2x OVER §2.8 5-min target — accepted given (a) zod is THE canonical types-heavy TS library, (b) idiom coverage is unmatched, (c) re-indexing a different lib would burn more compute). 2939 embeddings. Baseline: 1 PASS / 1 PARTIAL / 6 FAIL — many FAILs return v3/v4/v4-mini classic equivalents (`packages/zod/src/v4/classic/schemas.ts ZodType` instead of `v4/core/schemas.ts $ZodType`); zod's monorepo structure with multiple major-version trees creates strong intra-repo competition. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 12 existing lang packs zero PASS→FAIL flips.
 
 #### C9. Swift
 **Type:** new-language
