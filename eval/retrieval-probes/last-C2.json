@@ -1,0 +1,1093 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T06:36:24.274Z",
+  "summary": {
+    "counts": {
+      "PASS": 46,
+      "PARTIAL": 4,
+      "FAIL": 10
+    },
+    "totalMs": 1599,
+    "avgMs": 27,
+    "n": 60
+  },
+  "results": [
+    {
+      "id": "S1-Q1",
+      "repo": "fastify",
+      "query": "how does Fastify decide between HTTP HTTPS and HTTP/2 server creation",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/server.js",
+        "startLine": 309,
+        "endLine": 362,
+        "symbol": "getServerInstance",
+        "symbolType": "function",
+        "score": 0.43746334314346313,
+        "presentation": "full"
+      },
+      "wallMs": 60,
+      "error": null
+    },
+    {
+      "id": "S1-Q2",
+      "repo": "fastify",
+      "query": "what hooks does Fastify run before route handlers",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "fastify.js",
+        "startLine": 204,
+        "endLine": 209,
+        "symbol": "route",
+        "symbolType": "method",
+        "score": 0.612446153846154,
+        "presentation": "full"
+      },
+      "wallMs": 34,
+      "error": null
+    },
+    {
+      "id": "S1-Q3",
+      "repo": "fastify",
+      "query": "how is content-type parser registered for incoming requests",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/content-type-parser.js",
+        "startLine": 344,
+        "endLine": 364,
+        "symbol": "addContentTypeParser",
+        "symbolType": "function",
+        "score": 0.5880600000000002,
+        "presentation": "full"
+      },
+      "wallMs": 44,
+      "error": null
+    },
+    {
+      "id": "S2-Q1",
+      "repo": "fastify",
+      "query": "how does Fastify handle errors thrown in async handlers",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/errors.js",
+        "startLine": 467,
+        "endLine": 499,
+        "symbolType": "code",
+        "score": 0.5771246552467346,
+        "presentation": "full"
+      },
+      "wallMs": 31,
+      "error": null
+    },
+    {
+      "id": "S2-Q2",
+      "repo": "fastify",
+      "query": "where is the route handler invoked after pre-handler hooks",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/route.js",
+        "startLine": 458,
+        "endLine": 586,
+        "symbol": "routeHandler",
+        "symbolType": "function",
+        "score": 0.4811588227748871,
+        "presentation": "full"
+      },
+      "wallMs": 22,
+      "error": null
+    },
+    {
+      "id": "S2-Q3",
+      "repo": "fastify",
+      "query": "what is kSchemaController and what does it do",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "fastify.js",
+        "startLine": 720,
+        "endLine": 731,
+        "symbol": "setSchemaController",
+        "symbolType": "function",
+        "score": 0.5454019253115278,
+        "presentation": "full"
+      },
+      "wallMs": 22,
+      "error": null
+    },
+    {
+      "id": "S3-Q1",
+      "repo": "fastify",
+      "query": "what is the Default JSON parse function used when no custom content-type parser is registered",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/content-type-parser.js",
+        "startLine": 33,
+        "endLine": 161,
+        "symbol": "ContentTypeParser",
+        "symbolType": "code",
+        "score": 0.48584550619125366,
+        "presentation": "full"
+      },
+      "wallMs": 37,
+      "error": null
+    },
+    {
+      "id": "S3-Q2",
+      "repo": "fastify",
+      "query": "where is the Reply object's send method implemented",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/reply.js",
+        "startLine": 64,
+        "endLine": 225,
+        "symbol": "Reply",
+        "symbolType": "code",
+        "score": 0.5114664435386658,
+        "presentation": "full"
+      },
+      "wallMs": 22,
+      "error": null
+    },
+    {
+      "id": "S3-Q3",
+      "repo": "fastify",
+      "query": "how does Fastify decorate the Reply prototype with new methods",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/decorate.js",
+        "startLine": 122,
+        "endLine": 127,
+        "symbol": "decorateReply",
+        "symbolType": "function",
+        "score": 0.6496875000000001,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    },
+    {
+      "id": "S4-Q1",
+      "repo": "fastify",
+      "query": "what does FST_ERR_CTP_INVALID_MEDIA_TYPE indicate",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "lib/errors.js",
+        "startLine": 81,
+        "endLine": 150,
+        "symbolType": "code",
+        "score": 0.43876200914382935,
+        "presentation": "full"
+      },
+      "wallMs": 19,
+      "error": null
+    },
+    {
+      "id": "S4-Q2",
+      "repo": "fastify",
+      "query": "what is kRouteContext used for in Fastify request handling",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "lib/route.js",
+        "startLine": 458,
+        "endLine": 586,
+        "symbol": "routeHandler",
+        "symbolType": "function",
+        "score": 0.4642442464828491,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    },
+    {
+      "id": "S4-Q3",
+      "repo": "fastify",
+      "query": "where is FST_ERR_HOOK_TIMEOUT raised and what does it cover",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "lib/hooks.js",
+        "startLine": 1,
+        "endLine": 71,
+        "symbol": "Hooks",
+        "symbolType": "function",
+        "score": 0.43473920226097107,
+        "presentation": "full"
+      },
+      "wallMs": 24,
+      "error": null
+    },
+    {
+      "id": "S5-Q1",
+      "repo": "fastify",
+      "query": "how does the framework run my code before the response is serialized",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/reply.js",
+        "startLine": 353,
+        "endLine": 391,
+        "symbolType": "code",
+        "score": 0.41336187720298767,
+        "presentation": "full"
+      },
+      "wallMs": 19,
+      "error": null
+    },
+    {
+      "id": "S5-Q2",
+      "repo": "fastify",
+      "query": "what happens when an async route handler throws an unhandled exception",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "lib/route.js",
+        "startLine": 458,
+        "endLine": 586,
+        "symbol": "routeHandler",
+        "symbolType": "function",
+        "score": 0.5017694234848022,
+        "presentation": "full"
+      },
+      "wallMs": 21,
+      "error": null
+    },
+    {
+      "id": "S5-Q3",
+      "repo": "fastify",
+      "query": "how does the framework parse and validate the body of an incoming POST",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "lib/route.js",
+        "startLine": 589,
+        "endLine": 653,
+        "symbol": "handleOnRequestAbortHooksErrors",
+        "symbolType": "function",
+        "score": 0.4974660873413086,
+        "presentation": "full"
+      },
+      "wallMs": 22,
+      "error": null
+    },
+    {
+      "id": "S6-Q1",
+      "repo": "fastify",
+      "query": "show me the definition of the Reply constructor",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/reply.js",
+        "startLine": 1,
+        "endLine": 77,
+        "symbol": "Reply",
+        "symbolType": "function",
+        "score": 0.6159229189157486,
+        "presentation": "full"
+      },
+      "wallMs": 24,
+      "error": null
+    },
+    {
+      "id": "S6-Q2",
+      "repo": "fastify",
+      "query": "show me the full source of the ContentTypeParser constructor",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/content-type-parser.js",
+        "startLine": 1,
+        "endLine": 42,
+        "symbol": "ContentTypeParser",
+        "symbolType": "function",
+        "score": 0.5731955677270889,
+        "presentation": "full"
+      },
+      "wallMs": 22,
+      "error": null
+    },
+    {
+      "id": "S6-Q3",
+      "repo": "fastify",
+      "query": "show me the buildErrorHandler function definition in full",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/error-handler.js",
+        "startLine": 103,
+        "endLine": 150,
+        "symbol": "buildErrorHandler",
+        "symbolType": "function",
+        "score": 0.5268841773271561,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    },
+    {
+      "id": "S1-Q4",
+      "repo": "gin",
+      "query": "how does Gin's middleware chain handle Abort vs Next",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "context.go",
+        "startLine": 211,
+        "endLine": 217,
+        "symbol": "AbortWithStatus",
+        "symbolType": "method",
+        "score": 0.5161671907973663,
+        "presentation": "full"
+      },
+      "wallMs": 35,
+      "error": null
+    },
+    {
+      "id": "S1-Q5",
+      "repo": "gin",
+      "query": "when does Gin redirect on trailing slash and what config controls it",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "gin.go",
+        "startLine": 781,
+        "endLine": 795,
+        "symbol": "redirectTrailingSlash",
+        "symbolType": "function",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "S1-Q6",
+      "repo": "gin",
+      "query": "how does Gin bind JSON request bodies to Go structs",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "context.go",
+        "startLine": 1168,
+        "endLine": 1215,
+        "symbol": "HTML",
+        "symbolType": "method",
+        "score": 0.46690458059310913,
+        "presentation": "full"
+      },
+      "wallMs": 25,
+      "error": null
+    },
+    {
+      "id": "S2-Q4",
+      "repo": "gin",
+      "query": "how is request binding selected based on content type",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "binding/binding.go",
+        "startLine": 93,
+        "endLine": 128,
+        "symbol": "Binding",
+        "symbolType": "typeAlias",
+        "score": 0.5297747124433518,
+        "presentation": "full"
+      },
+      "wallMs": 37,
+      "error": null
+    },
+    {
+      "id": "S2-Q5",
+      "repo": "gin",
+      "query": "what does Engine.NoRoute do when no route matches",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "gin.go",
+        "startLine": 298,
+        "endLine": 356,
+        "symbol": "LoadHTMLFS",
+        "symbolType": "method",
+        "score": 0.41614576472769865,
+        "presentation": "full"
+      },
+      "wallMs": 20,
+      "error": null
+    },
+    {
+      "id": "S2-Q6",
+      "repo": "gin",
+      "query": "how is gin's logger middleware initialized",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "logger.go",
+        "startLine": 206,
+        "endLine": 244,
+        "symbol": "ErrorLogger",
+        "symbolType": "function",
+        "score": 0.5304651856422424,
+        "presentation": "full"
+      },
+      "wallMs": 17,
+      "error": null
+    },
+    {
+      "id": "S3-Q4",
+      "repo": "gin",
+      "query": "where is the Default function that picks a binding by content type",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "binding/binding.go",
+        "startLine": 93,
+        "endLine": 128,
+        "symbol": "Default",
+        "symbolType": "function",
+        "score": 0.7158056797898834,
+        "presentation": "full"
+      },
+      "wallMs": 43,
+      "error": null
+    },
+    {
+      "id": "S3-Q5",
+      "repo": "gin",
+      "query": "how is the New function that constructs an Engine implemented",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "gin.go",
+        "startLine": 193,
+        "endLine": 233,
+        "symbol": "New",
+        "symbolType": "function",
+        "score": 0.5989922821521759,
+        "presentation": "full"
+      },
+      "wallMs": 22,
+      "error": null
+    },
+    {
+      "id": "S3-Q6",
+      "repo": "gin",
+      "query": "where is the Set method on Context that stores values for the request lifetime",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "context.go",
+        "startLine": 247,
+        "endLine": 325,
+        "symbol": "Set",
+        "symbolType": "method",
+        "score": 0.5815271106362343,
+        "presentation": "full"
+      },
+      "wallMs": 33,
+      "error": null
+    },
+    {
+      "id": "S4-Q4",
+      "repo": "gin",
+      "query": "what does ShouldBindBodyWith do that ShouldBindWith does not",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "context.go",
+        "startLine": 923,
+        "endLine": 974,
+        "symbol": "ShouldBindBodyWith",
+        "symbolType": "method",
+        "score": 0.6064526490764883,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    },
+    {
+      "id": "S4-Q5",
+      "repo": "gin",
+      "query": "how does CustomRecoveryWithWriter let me plug in my own panic handler",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "recovery.go",
+        "startLine": 52,
+        "endLine": 113,
+        "symbol": "CustomRecoveryWithWriter",
+        "symbolType": "function",
+        "score": 0.5050294995307922,
+        "presentation": "full"
+      },
+      "wallMs": 21,
+      "error": null
+    },
+    {
+      "id": "S4-Q6",
+      "repo": "gin",
+      "query": "what is the JsonpJSON renderer in gin's render package",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "render/json.go",
+        "startLine": 1,
+        "endLine": 77,
+        "symbol": "JsonpJSON",
+        "symbolType": "typeAlias",
+        "score": 0.600352595448494,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    },
+    {
+      "id": "S5-Q4",
+      "repo": "gin",
+      "query": "how can I stop a chain of middleware so later ones do not execute",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "context.go",
+        "startLine": 211,
+        "endLine": 217,
+        "symbol": "AbortWithStatus",
+        "symbolType": "method",
+        "score": 0.49720273020056355,
+        "presentation": "full"
+      },
+      "wallMs": 24,
+      "error": null
+    },
+    {
+      "id": "S5-Q5",
+      "repo": "gin",
+      "query": "how does the framework recover when a handler crashes with a runtime panic",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "recovery.go",
+        "startLine": 52,
+        "endLine": 113,
+        "symbol": "CustomRecoveryWithWriter",
+        "symbolType": "function",
+        "score": 0.49113890528678894,
+        "presentation": "full"
+      },
+      "wallMs": 21,
+      "error": null
+    },
+    {
+      "id": "S5-Q6",
+      "repo": "gin",
+      "query": "how do I serve static files from a folder on disk under a URL prefix",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "routergroup.go",
+        "startLine": 164,
+        "endLine": 202,
+        "symbol": "StaticFile",
+        "symbolType": "method",
+        "score": 0.4333401918411255,
+        "presentation": "full"
+      },
+      "wallMs": 25,
+      "error": null
+    },
+    {
+      "id": "S6-Q4",
+      "repo": "gin",
+      "query": "show me the full Engine struct definition",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "gin.go",
+        "startLine": 68,
+        "endLine": 91,
+        "symbol": "RouteInfo",
+        "symbolType": "code",
+        "score": 0.45782583951950073,
+        "presentation": "full"
+      },
+      "wallMs": 19,
+      "error": null
+    },
+    {
+      "id": "S6-Q5",
+      "repo": "gin",
+      "query": "show me the complete Context struct definition with all fields",
+      "verdict": "PARTIAL",
+      "reason": "type_mismatch",
+      "top1": {
+        "file": "context.go",
+        "startLine": 59,
+        "endLine": 121,
+        "symbol": "Context",
+        "symbolType": "typeAlias",
+        "score": 0.35851663947105405,
+        "presentation": "full"
+      },
+      "wallMs": 28,
+      "error": null
+    },
+    {
+      "id": "S6-Q6",
+      "repo": "gin",
+      "query": "show me the source of the New function that constructs an Engine",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "gin.go",
+        "startLine": 189,
+        "endLine": 252,
+        "symbol": "New",
+        "symbolType": "function",
+        "score": 0.6393693417310715,
+        "presentation": "full"
+      },
+      "wallMs": 27,
+      "error": null
+    },
+    {
+      "id": "S1-Q7",
+      "repo": "ripgrep",
+      "query": "how does ripgrep configure binary detection",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/core/flags/hiargs.rs",
+        "startLine": 1142,
+        "endLine": 1185,
+        "symbol": "BinaryDetection",
+        "symbolType": "struct",
+        "score": 0.5867353081703186,
+        "presentation": "full"
+      },
+      "wallMs": 19,
+      "error": null
+    },
+    {
+      "id": "S1-Q8",
+      "repo": "ripgrep",
+      "query": "what does the ConfigError type represent in regex crate",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/searcher/src/searcher/mod.rs",
+        "startLine": 208,
+        "endLine": 262,
+        "symbol": "ConfigError",
+        "symbolType": "enum",
+        "score": 0.723085110962391,
+        "presentation": "full"
+      },
+      "wallMs": 31,
+      "error": null
+    },
+    {
+      "id": "S1-Q9",
+      "repo": "ripgrep",
+      "query": "how does globset compile globs into a single matcher",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/globset/src/glob.rs",
+        "startLine": 312,
+        "endLine": 328,
+        "symbol": "regex",
+        "symbolType": "function",
+        "score": 0.5701786875724792,
+        "presentation": "full"
+      },
+      "wallMs": 22,
+      "error": null
+    },
+    {
+      "id": "S1-Q10",
+      "repo": "ripgrep",
+      "query": "what is the Searcher's role and how does it dispatch to a Sink",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/searcher/src/searcher/mod.rs",
+        "startLine": 589,
+        "endLine": 625,
+        "symbol": "Searcher",
+        "symbolType": "struct",
+        "score": 0.5549821853637695,
+        "presentation": "full"
+      },
+      "wallMs": 22,
+      "error": null
+    },
+    {
+      "id": "S2-Q7",
+      "repo": "ripgrep",
+      "query": "what enum represents output mode for ripgrep results",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/core/flags/lowargs.rs",
+        "startLine": 231,
+        "endLine": 267,
+        "symbol": "Mode",
+        "symbolType": "enum",
+        "score": 0.7013840544223786,
+        "presentation": "full"
+      },
+      "wallMs": 22,
+      "error": null
+    },
+    {
+      "id": "S2-Q8",
+      "repo": "ripgrep",
+      "query": "how does ripgrep stream large file searches with mmap",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/core/flags/hiargs.rs",
+        "startLine": 113,
+        "endLine": 322,
+        "symbol": "from_low_args",
+        "symbolType": "function",
+        "score": 0.4950219392776489,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    },
+    {
+      "id": "S2-Q9",
+      "repo": "ripgrep",
+      "query": "where is the multi-line regex search implemented",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/printer/src/util.rs",
+        "startLine": 473,
+        "endLine": 530,
+        "symbol": "find_iter_at_in_context",
+        "symbolType": "function",
+        "score": 0.44768205285072327,
+        "presentation": "full"
+      },
+      "wallMs": 29,
+      "error": null
+    },
+    {
+      "id": "S2-Q10",
+      "repo": "ripgrep",
+      "query": "what types make up the printer trait hierarchy",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/printer/src/util.rs",
+        "startLine": 263,
+        "endLine": 293,
+        "symbol": "PrinterPath",
+        "symbolType": "struct",
+        "score": 0.4755806624889374,
+        "presentation": "full"
+      },
+      "wallMs": 20,
+      "error": null
+    },
+    {
+      "id": "S3-Q7",
+      "repo": "ripgrep",
+      "query": "where is the add method that registers a Glob in a GlobSetBuilder",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/globset/src/glob.rs",
+        "startLine": 141,
+        "endLine": 144,
+        "symbol": "is_match",
+        "symbolType": "function",
+        "score": 0.4592959109048615,
+        "presentation": "full"
+      },
+      "wallMs": 32,
+      "error": null
+    },
+    {
+      "id": "S3-Q8",
+      "repo": "ripgrep",
+      "query": "where is the new constructor for the WalkBuilder that initialises a directory walker",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/ignore/src/walk.rs",
+        "startLine": 540,
+        "endLine": 564,
+        "symbol": "new",
+        "symbolType": "function",
+        "score": 0.7384576737880707,
+        "presentation": "full"
+      },
+      "wallMs": 27,
+      "error": null
+    },
+    {
+      "id": "S4-Q7",
+      "repo": "ripgrep",
+      "query": "what is GitignoreBuilder and how is it used to compose ignore rules",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/ignore/src/gitignore.rs",
+        "startLine": 223,
+        "endLine": 315,
+        "symbol": "GitignoreBuilder",
+        "symbolType": "struct",
+        "score": 0.5656296014785767,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "S4-Q8",
+      "repo": "ripgrep",
+      "query": "what does the OverrideBuilder do in the ignore crate",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/ignore/src/overrides.rs",
+        "startLine": 97,
+        "endLine": 117,
+        "symbol": "OverrideBuilder",
+        "symbolType": "struct",
+        "score": 0.6747474670410156,
+        "presentation": "full"
+      },
+      "wallMs": 24,
+      "error": null
+    },
+    {
+      "id": "S5-Q7",
+      "repo": "ripgrep",
+      "query": "how does the tool decide whether a file is binary and skip it",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/printer/src/summary.rs",
+        "startLine": 679,
+        "endLine": 708,
+        "symbol": "binary_data",
+        "symbolType": "function",
+        "score": 0.46808046102523804,
+        "presentation": "full"
+      },
+      "wallMs": 30,
+      "error": null
+    },
+    {
+      "id": "S5-Q8",
+      "repo": "ripgrep",
+      "query": "how does the tool walk a directory tree while honouring ignore files",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/ignore/src/walk.rs",
+        "startLine": 564,
+        "endLine": 618,
+        "symbol": "build",
+        "symbolType": "function",
+        "score": 0.5176937580108643,
+        "presentation": "full"
+      },
+      "wallMs": 25,
+      "error": null
+    },
+    {
+      "id": "S6-Q7",
+      "repo": "ripgrep",
+      "query": "show me the full Searcher struct definition in the searcher crate",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "crates/searcher/src/searcher/mod.rs",
+        "startLine": 589,
+        "endLine": 625,
+        "symbol": "Searcher",
+        "symbolType": "struct",
+        "score": 0.6729834979772569,
+        "presentation": "full"
+      },
+      "wallMs": 34,
+      "error": null
+    },
+    {
+      "id": "S6-Q8",
+      "repo": "ripgrep",
+      "query": "show me the definition of the Glob struct in globset",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "crates/ignore/src/types.rs",
+        "startLine": 85,
+        "endLine": 149,
+        "symbol": "Glob",
+        "symbolType": "struct",
+        "score": 0.7762055943310263,
+        "presentation": "full"
+      },
+      "wallMs": 38,
+      "error": null
+    },
+    {
+      "id": "S3-Q9",
+      "repo": "flask",
+      "query": "where is the get_send_file_max_age method on the Flask app",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "src/flask/blueprints.py",
+        "startLine": 55,
+        "endLine": 102,
+        "symbol": "get_send_file_max_age",
+        "symbolType": "function",
+        "score": 0.7479735016822815,
+        "presentation": "full"
+      },
+      "wallMs": 43,
+      "error": null
+    },
+    {
+      "id": "S3-Q10",
+      "repo": "flask",
+      "query": "where is the add_url_rule method that maps a URL pattern to a view function",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "src/flask/sansio/scaffold.py",
+        "startLine": 367,
+        "endLine": 433,
+        "symbol": "add_url_rule",
+        "symbolType": "function",
+        "score": 0.6924307346343994,
+        "presentation": "full"
+      },
+      "wallMs": 28,
+      "error": null
+    },
+    {
+      "id": "S4-Q9",
+      "repo": "flask",
+      "query": "what does send_from_directory do and how does it protect against path traversal",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "src/flask/helpers.py",
+        "startLine": 543,
+        "endLine": 584,
+        "symbol": "send_from_directory",
+        "symbolType": "function",
+        "score": 0.5095929503440857,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "S4-Q10",
+      "repo": "flask",
+      "query": "what is the SecureCookieSessionInterface and how does it sign session cookies",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "src/flask/sessions.py",
+        "startLine": 284,
+        "endLine": 385,
+        "symbol": "SecureCookieSessionInterface",
+        "symbolType": "class",
+        "score": 0.637066125869751,
+        "presentation": "full"
+      },
+      "wallMs": 20,
+      "error": null
+    },
+    {
+      "id": "S5-Q9",
+      "repo": "flask",
+      "query": "what runs before each request to set up things like the database connection",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "src/flask/app.py",
+        "startLine": 1366,
+        "endLine": 1392,
+        "symbol": "preprocess_request",
+        "symbolType": "function",
+        "score": 0.4848215579986572,
+        "presentation": "full"
+      },
+      "wallMs": 18,
+      "error": null
+    },
+    {
+      "id": "S5-Q10",
+      "repo": "flask",
+      "query": "how can I cleanly stop a request and return a particular HTTP status code",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "src/flask/app.py",
+        "startLine": 1224,
+        "endLine": 1364,
+        "symbol": "make_response",
+        "symbolType": "function",
+        "score": 0.39638078212738037,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "S6-Q9",
+      "repo": "flask",
+      "query": "show me the full Flask class definition",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "src/flask/cli.py",
+        "startLine": 1110,
+        "endLine": 1127,
+        "symbol": "main",
+        "symbolType": "function",
+        "score": 0.3533270509117402,
+        "presentation": "full"
+      },
+      "wallMs": 21,
+      "error": null
+    },
+    {
+      "id": "S6-Q10",
+      "repo": "flask",
+      "query": "show me the full source of the Config class",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "src/flask/config.py",
+        "startLine": 50,
+        "endLine": 367,
+        "symbol": "Config",
+        "symbolType": "class",
+        "score": 0.904874602217554,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    }
+  ]
+}

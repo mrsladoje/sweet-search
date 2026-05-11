@@ -6,9 +6,9 @@
   "seed": 42,
   "stratifyBy": "language",
   "method": "stratified-random-shuffle",
-  "totalProbes": 48,
-  "devCount": 30,
-  "heldoutCount": 18,
+  "totalProbes": 56,
+  "devCount": 35,
+  "heldoutCount": 21,
   "perLanguage": {
     "typescript": {
       "dev": [
@@ -92,6 +92,20 @@
         "JV-003",
         "JV-006",
         "JV-007"
+      ]
+    },
+    "python": {
+      "dev": [
+        "PY-001",
+        "PY-002",
+        "PY-004",
+        "PY-006",
+        "PY-008"
+      ],
+      "heldout": [
+        "PY-003",
+        "PY-005",
+        "PY-007"
       ]
     }
   },
