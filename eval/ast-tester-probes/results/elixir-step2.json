@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T14:58:53.072Z",
+  "summary": {
+    "counts": {
+      "PASS": 7,
+      "PARTIAL": 0,
+      "FAIL": 1
+    },
+    "totalMs": 163,
+    "avgMs": 20,
+    "n": 8
+  },
+  "results": [
+    {
+      "id": "EL-001",
+      "repo": "elixir",
+      "query": "decode a JSON string into Elixir terms with Jason",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/jason.ex",
+        "startLine": 1,
+        "endLine": 243,
+        "symbol": "Jason",
+        "symbolType": "module",
+        "score": 0.49488869309425354,
+        "presentation": "full"
+      },
+      "wallMs": 36,
+      "error": null
+    },
+    {
+      "id": "EL-002",
+      "repo": "elixir",
+      "query": "encode Elixir map to JSON iodata for streaming output",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/encode.ex",
+        "startLine": 14,
+        "endLine": 439,
+        "symbol": "Jason.Encode",
+        "symbolType": "module",
+        "score": 0.5471667647361755,
+        "presentation": "full"
+      },
+      "wallMs": 17,
+      "error": null
+    },
+    {
+      "id": "EL-003",
+      "repo": "elixir",
+      "query": "pretty-print formatted JSON output with indentation",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/formatter.ex",
+        "startLine": 1,
+        "endLine": 256,
+        "symbol": "Jason.Formatter",
+        "symbolType": "module",
+        "score": 0.5323692560195923,
+        "presentation": "full"
+      },
+      "wallMs": 21,
+      "error": null
+    },
+    {
+      "id": "EL-004",
+      "repo": "elixir",
+      "query": "Jason DecodeError struct raised on malformed JSON input",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/decoder.ex",
+        "startLine": 1,
+        "endLine": 23,
+        "symbol": "Jason.DecodeError",
+        "symbolType": "module",
+        "score": 0.49179086089134216,
+        "presentation": "full"
+      },
+      "wallMs": 17,
+      "error": null
+    },
+    {
+      "id": "EL-005",
+      "repo": "elixir",
+      "query": "Jason Encoder protocol for custom encoding implementations dispatch",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/encoder.ex",
+        "startLine": 133,
+        "endLine": 138,
+        "symbol": "encode",
+        "symbolType": "function",
+        "score": 0.5577228665351868,
+        "presentation": "full"
+      },
+      "wallMs": 15,
+      "error": null
+    },
+    {
+      "id": "EL-006",
+      "repo": "elixir",
+      "query": "Jason OrderedObject struct with Access behaviour for key-preserving maps",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/ordered_object.ex",
+        "startLine": 1,
+        "endLine": 107,
+        "symbol": "Jason.OrderedObject",
+        "symbolType": "module",
+        "score": 0.523028552532196,
+        "presentation": "full"
+      },
+      "wallMs": 15,
+      "error": null
+    },
+    {
+      "id": "EL-007",
+      "repo": "elixir",
+      "query": "defprotocol declaration for Encoder type-dispatched JSON encoding in Elixir",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "lib/encode.ex",
+        "startLine": 122,
+        "endLine": 136,
+        "symbol": "encode_atom",
+        "symbolType": "private",
+        "score": 0.5577078062413042,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    },
+    {
+      "id": "EL-008",
+      "repo": "elixir",
+      "query": "defmacro __deriving__ for compile-time protocol consolidation in Jason Encoder",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/encoder.ex",
+        "startLine": 78,
+        "endLine": 93,
+        "symbol": "__deriving__",
+        "symbolType": "macro",
+        "score": 0.5241549611091614,
+        "presentation": "full"
+      },
+      "wallMs": 16,
+      "error": null
+    }
+  ]
+}

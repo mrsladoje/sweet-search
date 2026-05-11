@@ -14,7 +14,7 @@ import { createHash } from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
 import { GRAPH_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
-import { getLanguageByPath } from '../infrastructure/language-patterns.js';
+import { getLanguageByPath, resolveLanguage } from '../infrastructure/language-patterns.js';
 import { getTreeSitterProvider } from '../infrastructure/tree-sitter-provider.js';
 
 // Schema version - increment when schema changes require full reindex
@@ -405,7 +405,10 @@ export class GraphExtractor {
   async extractFromFile(filePath, content) {
     this.currentFile = filePath;
     const lines = content.split('\n');
-    const langInfo = getLanguageByPath(filePath);
+    // resolveLanguage handles per-file disambiguation of ambiguous extensions
+    // (today: `.h` → c-vs-cpp) so header-only C++ libraries get parsed by
+    // tree-sitter-cpp rather than tree-sitter-c.
+    const langInfo = resolveLanguage(filePath, content);
 
     if (!langInfo) {
       return { entities: [], relationships: [] };
