@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "description": "8 retrieval probes for axios/axios — an MIT-licensed pure-JS HTTP client library with class-based architecture, prototype-assignment HTTP-verb metaprogramming, static factory methods, and class extension (AxiosError extends Error).",
+  "language": "javascript",
+  "repo": "javascript",
+  "repoUrl": "https://github.com/axios/axios",
+  "repoSha": "34adfd90efc9c145488399e1cf7fa96de67080fa",
+  "license": "MIT",
+  "probes": [
+    {
+      "id": "JS-001",
+      "repo": "javascript",
+      "query": "how does axios apply request and response interceptors in the dispatch chain",
+      "expectedFile": "lib/core/InterceptorManager.js",
+      "expectedSymbol": "InterceptorManager",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe: InterceptorManager class (line 5) holds the interceptor chain — core of how axios composes middleware around the request"
+    },
+    {
+      "id": "JS-002",
+      "repo": "javascript",
+      "query": "how does axios serialize URL search parameters with custom encoding",
+      "expectedFile": "lib/helpers/buildURL.js",
+      "expectedSymbol": "buildURL",
+      "expectedSymbolType": "function",
+      "notes": "NL behavior probe: buildURL (line 31) takes a URL + params and constructs the final querystring — the answer to how axios encodes params"
+    },
+    {
+      "id": "JS-003",
+      "repo": "javascript",
+      "query": "how does axios cancel an in-flight request using a cancel token",
+      "expectedFile": "lib/cancel/CancelToken.js",
+      "expectedSymbol": "CancelToken",
+      "expectedSymbolType": "class",
+      "notes": "NL behavior probe: CancelToken class (line 12) is the cancellation API — Promise-based wakeup signal that the dispatcher checks"
+    },
+    {
+      "id": "JS-004",
+      "repo": "javascript",
+      "query": "Axios class request method that runs the configured request",
+      "expectedFile": "lib/core/Axios.js",
+      "expectedSymbol": "request",
+      "expectedSymbolType": "method",
+      "notes": "Symbol-anchored probe: Axios.request (line 39) is the public async-method entry point that wraps _request"
+    },
+    {
+      "id": "JS-005",
+      "repo": "javascript",
+      "query": "AxiosHeaders class fluent header manipulation",
+      "expectedFile": "lib/core/AxiosHeaders.js",
+      "expectedSymbol": "AxiosHeaders",
+      "expectedSymbolType": "class",
+      "notes": "Symbol-anchored probe: AxiosHeaders class (line 80) provides set/get/has/delete on a normalized header bag with static factory methods (from/concat/accessor)"
+    },
+    {
+      "id": "JS-006",
+      "repo": "javascript",
+      "query": "buildFullPath function combining baseURL and request URL",
+      "expectedFile": "lib/core/buildFullPath.js",
+      "expectedSymbol": "buildFullPath",
+      "expectedSymbolType": "function",
+      "notes": "Symbol-anchored probe: buildFullPath joins baseURL + relative URL — small, signature-anchored target"
+    },
+    {
+      "id": "JS-007",
+      "repo": "javascript",
+      "query": "Axios prototype dynamic method assignment for HTTP verbs get post put delete",
+      "expectedFile": "lib/core/Axios.js",
+      "expectedSymbol": "Axios",
+      "expectedSymbolType": "class",
+      "notes": "Grammar-edge-case probe: lines 240-275 assign Axios.prototype[method] inside utils.forEach callbacks for both safe (get/delete/head/options) and unsafe (post/put/patch) HTTP verbs. Exercises tree-sitter-javascript chunker's handling of prototype-assignment metaprogramming — the chunker should still attribute these to the Axios class, not split them as standalone functions"
+    },
+    {
+      "id": "JS-008",
+      "repo": "javascript",
+      "query": "AxiosError class extending Error with constructor accepting message code config",
+      "expectedFile": "lib/core/AxiosError.js",
+      "expectedSymbol": "AxiosError",
+      "expectedSymbolType": "class",
+      "notes": "Grammar-edge-case probe: AxiosError (line 75) is `class AxiosError extends Error` with an Object.setPrototypeOf in the constructor + custom `captureStackTrace` handling. Exercises tree-sitter's handling of class extension via the `extends` keyword and downstream constructor-with-super patterns"
+    }
+  ]
+}

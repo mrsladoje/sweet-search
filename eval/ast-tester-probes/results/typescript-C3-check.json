@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T06:51:45.716Z",
+  "summary": {
+    "counts": {
+      "PASS": 4,
+      "PARTIAL": 3,
+      "FAIL": 1
+    },
+    "totalMs": 174,
+    "avgMs": 22,
+    "n": 8
+  },
+  "results": [
+    {
+      "id": "TS-001",
+      "repo": "typescript",
+      "query": "how does the chat handle streaming delta updates and dispatch them to the artifact panel",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "components/chat/data-stream-handler.tsx",
+        "startLine": 11,
+        "endLine": 91,
+        "symbol": "DataStreamHandler",
+        "symbolType": "function",
+        "score": 0.5318654179573059,
+        "presentation": "full"
+      },
+      "wallMs": 36,
+      "error": null
+    },
+    {
+      "id": "TS-002",
+      "repo": "typescript",
+      "query": "where does the chat auto-scroll when new messages arrive and how does it detect whether the user has scrolled away",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "components/chat/messages.tsx",
+        "startLine": 27,
+        "endLine": 127,
+        "symbol": "PureMessages",
+        "symbolType": "function",
+        "score": 0.4811817705631256,
+        "presentation": "full"
+      },
+      "wallMs": 22,
+      "error": null
+    },
+    {
+      "id": "TS-003",
+      "repo": "typescript",
+      "query": "how does the server decide which AI model to call and what tools to enable based on the incoming request",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "app/(chat)/api/chat/route.ts",
+        "startLine": 60,
+        "endLine": 343,
+        "symbol": "POST",
+        "symbolType": "function",
+        "score": 0.448655903339386,
+        "presentation": "full"
+      },
+      "wallMs": 21,
+      "error": null
+    },
+    {
+      "id": "TS-004",
+      "repo": "typescript",
+      "query": "codeArtifact definition including its onStreamPart handler and toolbar actions",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "artifacts/code/client.tsx",
+        "startLine": 69,
+        "endLine": 286,
+        "symbol": "codeArtifact",
+        "symbolType": "variable",
+        "score": 0.4962555468082428,
+        "presentation": "full"
+      },
+      "wallMs": 18,
+      "error": null
+    },
+    {
+      "id": "TS-005",
+      "repo": "typescript",
+      "query": "textArtifact streaming configuration and how text deltas accumulate into artifact content",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "artifacts/text/client.tsx",
+        "startLine": 21,
+        "endLine": 186,
+        "symbol": "textArtifact",
+        "symbolType": "variable",
+        "score": 0.5258028507232666,
+        "presentation": "full"
+      },
+      "wallMs": 18,
+      "error": null
+    },
+    {
+      "id": "TS-006",
+      "repo": "typescript",
+      "query": "slashCommands array listing every available slash command with its action and description",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "components/chat/slash-commands.tsx",
+        "startLine": 1,
+        "endLine": 73,
+        "symbol": "SlashCommand",
+        "symbolType": "typeAlias",
+        "score": 0.5503174066543579,
+        "presentation": "full"
+      },
+      "wallMs": 17,
+      "error": null
+    },
+    {
+      "id": "TS-007",
+      "repo": "typescript",
+      "query": "per-user message rate limits and entitlements by account type",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "lib/ai/entitlements.ts",
+        "startLine": 1,
+        "endLine": 14,
+        "symbol": "Entitlements",
+        "symbolType": "typeAlias",
+        "score": 0.6347518992424013,
+        "presentation": "full"
+      },
+      "wallMs": 22,
+      "error": null
+    },
+    {
+      "id": "TS-008",
+      "repo": "typescript",
+      "query": "how the system prompt is composed from geolocation hints and whether tools are enabled for the model",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "lib/ai/prompts.ts",
+        "startLine": 47,
+        "endLine": 104,
+        "symbol": "regularPrompt",
+        "symbolType": "variable",
+        "score": 0.5126200318336487,
+        "presentation": "full"
+      },
+      "wallMs": 20,
+      "error": null
+    }
+  ]
+}
