@@ -80,6 +80,12 @@ const BOUNDARY_TYPES = new Set([
   'struct_specifier', 'enum_specifier', 'type_definition',
   // C++
   'class_specifier', 'namespace_definition',
+  // C++ `using X = ...` type aliases + `template<...> class|struct|fn|using` wrappers.
+  // Without these the chunker emitted templated decls as anonymous `code` chunks
+  // since the cAST sibling-merge path treated them as non-boundary. _resolveBoundary
+  // (below) drills into template_declaration to surface the inner class/struct/fn/alias
+  // name so the chunk metadata names + type the correct thing.
+  'alias_declaration', 'template_declaration',
 ]);
 
 // AST node types that represent function/class bodies. Used by
@@ -147,6 +153,9 @@ const NODE_TYPE_MAP = {
   // C++
   'class_specifier': 'class',
   'namespace_definition': 'namespace',
+  'alias_declaration': 'typeAlias',
+  // template_declaration intentionally absent — resolved to the inner
+  // type (class/struct/function/typeAlias) by _resolveBoundary at lookup time.
 };
 
 // Standard tags.scm query patterns for symbol extraction
@@ -357,6 +366,7 @@ const TAGS_QUERIES = {
     (struct_specifier name: (type_identifier) @struct.definition)
     (enum_specifier name: (type_identifier) @enum.definition)
     (namespace_definition name: (namespace_identifier) @namespace.definition)
+    (alias_declaration name: (type_identifier) @type.definition)
   `,
 };
 
@@ -628,8 +638,13 @@ export class TreeSitterProvider {
       if (text.trim().length > 30) {
         const boundariesInBuffer = buffer.filter(n => BOUNDARY_TYPES.has(n.type));
         const firstBoundary = boundariesInBuffer[0];
-        const name = firstBoundary ? this._extractNodeName(firstBoundary) : null;
-        const type = firstBoundary ? (NODE_TYPE_MAP[firstBoundary.type] || 'code') : 'code';
+        let name = null;
+        let type = 'code';
+        if (firstBoundary) {
+          const resolved = this._resolveBoundary(firstBoundary);
+          name = this._extractNodeName(resolved.nameNode);
+          type = resolved.type;
+        }
         const signature = firstBoundary ? this._extractSignature(firstBoundary, content) : null;
         // When the cAST sibling-merge collapses multiple top-level
         // boundaries into one chunk (e.g. small rust file with two
@@ -713,8 +728,9 @@ export class TreeSitterProvider {
         } else {
           // Node is oversized even alone — recurse into children
           if (node.childCount > 0) {
-            const name = this._extractNodeName(node);
-            const type = NODE_TYPE_MAP[node.type] || 'code';
+            const resolved = this._resolveBoundary(node);
+            const name = this._extractNodeName(resolved.nameNode);
+            const type = resolved.type;
 
             // Header chunk for oversized BOUNDARY nodes (large classes,
             // structs, traits, etc.): emit a small "header" chunk before
@@ -771,6 +787,7 @@ export class TreeSitterProvider {
           } else {
             // Leaf node too big — emit as-is (never split mid-expression)
             const nodeText = content.substring(node.startIndex, node.endIndex);
+            const resolved = this._resolveBoundary(node);
             chunks.push({
               chunkId: this._nextChunkId(),
               parentChunkId: parentInfo?.chunkId || null,
@@ -779,8 +796,8 @@ export class TreeSitterProvider {
               text: nodeText.trim(),
               startLine: node.startPosition.row,
               endLine: node.endPosition.row,
-              type: NODE_TYPE_MAP[node.type] || 'code',
-              name: this._extractNodeName(node),
+              type: resolved.type,
+              name: this._extractNodeName(resolved.nameNode),
               signature: this._extractSignature(node, content),
             });
           }
@@ -878,6 +895,26 @@ export class TreeSitterProvider {
     }
 
     return null;
+  }
+
+  /**
+   * Resolve the effective chunk type + name node for a boundary node.
+   * Handles C++ template_declaration wrappers by drilling into the first
+   * child with a known NODE_TYPE_MAP entry (class_specifier, struct_specifier,
+   * function_definition, alias_declaration, etc.). Without this, templated
+   * structs/classes/aliases were emitted as type=code with name=null because
+   * template_declaration itself has no name field.
+   */
+  _resolveBoundary(node) {
+    if (node.type === 'template_declaration') {
+      for (let i = 0; i < node.childCount; i++) {
+        const c = node.child(i);
+        if (NODE_TYPE_MAP[c.type]) {
+          return { type: NODE_TYPE_MAP[c.type], nameNode: c };
+        }
+      }
+    }
+    return { type: NODE_TYPE_MAP[node.type] || 'code', nameNode: node };
   }
 
   /** Create a tree-sitter query (mockable seam for tests) */
