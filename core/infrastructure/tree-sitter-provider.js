@@ -68,6 +68,16 @@ const BOUNDARY_TYPES = new Set([
   'decorated_definition',
   // Java
   'record_declaration', 'constructor_declaration',
+  // Java annotation types (`@interface Foo { ... }`). Without this, files
+  // that contain only an annotation declaration (gson SerializedName.java,
+  // Since.java, Until.java) produce no chunk anchor — the chunker emits
+  // a generic 'code' chunk and downstream search-time enrichment via
+  // findFirstEntityInRange then attaches whatever entity happens to start
+  // in the chunk's line range (which, when extractJava also ran with no
+  // block-comment skip, was a phantom `class MyClass` from inside the
+  // Javadoc <pre> example). Anchoring on the annotation declaration
+  // gives the @interface a proper name/type at index time.
+  'annotation_type_declaration',
   // Ruby
   'singleton_method',
   // PHP
@@ -135,6 +145,11 @@ const NODE_TYPE_MAP = {
   // Java
   'record_declaration': 'record',
   'constructor_declaration': 'method',
+  // @interface Foo { ... } — chunk labelled as 'interface' to match the
+  // existing extractJava regex behaviour (and the gold-probe convention
+  // that annotation types are interfaces). Note: a Java annotation is
+  // formally an *interface* per JLS §9.6, just a specialised form.
+  'annotation_type_declaration': 'interface',
   // Ruby
   'method': 'method',
   'singleton_method': 'method',
@@ -316,10 +331,14 @@ const TAGS_QUERIES = {
   java: `
     (class_declaration name: (identifier) @class.definition)
     (interface_declaration name: (identifier) @interface.definition)
+    (annotation_type_declaration name: (identifier) @interface.definition)
     (enum_declaration name: (identifier) @enum.definition)
     (record_declaration name: (identifier) @record.definition)
     (method_declaration name: (identifier) @method.definition)
     (constructor_declaration name: (identifier) @method.definition)
+    (annotation_type_element_declaration name: (identifier) @method.definition)
+    (enum_constant name: (identifier) @enum_constant.definition)
+    (field_declaration declarator: (variable_declarator name: (identifier) @field.definition))
   `,
   ruby: `
     (class name: (constant) @class.definition)
@@ -454,6 +473,15 @@ const CAPTURE_TO_ENTITY_TYPE = {
   'component.definition': 'component',
   'variable.definition': 'variable',
   'macro.definition': 'macro',
+  // Java enum constants (FieldNamingPolicy.UPPER_CAMEL_CASE) and field
+  // declarations (TypeAdapters.BIT_SET — a static final field whose
+  // initializer is an anonymous `new TypeAdapter<BitSet>() { ... }`).
+  // Both are first-class declarations per JLS but tree-sitter-java
+  // exposes them under distinct node types (enum_constant,
+  // field_declaration > variable_declarator) that our query previously
+  // ignored, so neither got a proper symbol anchor in the graph.
+  'enum_constant.definition': 'enum_constant',
+  'field.definition': 'field',
 };
 
 export class TreeSitterProvider {
@@ -1126,10 +1154,32 @@ export class TreeSitterProvider {
       if (fs.existsSync(localPath)) return localPath;
     }
 
-    // Strategy 2: .sweet-search/grammars/
+    // Strategy 2: .sweet-search/grammars/ relative to process.cwd().
+    // Used when sweet-search is run from inside a target repo and that repo
+    // ships project-specific grammar overrides under its own .sweet-search/.
     const dataDir = process.env.SWEET_SEARCH_DATA_DIR || '.sweet-search';
     const dataPath = pathMod.join(process.cwd(), dataDir, 'grammars', `${grammarName}.wasm`);
     if (fs.existsSync(dataPath)) return dataPath;
+
+    // Strategy 2b: .sweet-search/grammars/ relative to the sweet-search PACKAGE
+    // root (the directory containing this provider file's parent's parent).
+    // This is the home for grammar overrides that need to survive `npm install`
+    // wiping the tree-sitter-wasms bundle (Strategy 3) and also be visible when
+    // the indexer is run from an arbitrary target repo (so process.cwd() is not
+    // the sweet-search root). Required for the Swift grammar override —
+    // tree-sitter-wasms@0.1.13 ships swift v0.4.0 which crashes Node 25.x V8
+    // turboshaft Wasm tier-up (Zone OOM in WasmLoweringPhase); the working
+    // v0.7.2 wasm from alex-pinkus/tree-sitter-swift `0.7.2-pypi` lives here.
+    // Resolve via import.meta.url so it works whether sweet-search is the cwd
+    // or a node_modules dependency.
+    try {
+      const providerDir = pathMod.dirname(new URL(import.meta.url).pathname);
+      const pkgRoot = pathMod.resolve(providerDir, '..', '..');
+      const pkgOverridePath = pathMod.join(pkgRoot, '.sweet-search', 'grammars', `${grammarName}.wasm`);
+      if (fs.existsSync(pkgOverridePath)) return pkgOverridePath;
+    } catch {
+      // import.meta.url unavailable (e.g. some bundlers); fall through.
+    }
 
     // Strategy 3: tree-sitter-wasms bundle (all grammars in one package)
     try {
