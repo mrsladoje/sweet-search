@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-11T00:14:19.040Z",
+  "summary": {
+    "counts": {
+      "PASS": 0,
+      "PARTIAL": 2,
+      "FAIL": 1
+    },
+    "totalMs": 189,
+    "avgMs": 63,
+    "n": 3
+  },
+  "results": [
+    {
+      "id": "CS-004",
+      "repo": "csharp",
+      "query": "RespCommandDocs Command property init-only",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "libs/server/Resp/RespCommandsInfo.cs",
+        "startLine": 20,
+        "endLine": 479,
+        "symbol": "RespCommandsInfo",
+        "symbolType": "class",
+        "score": 0.6227802634239197,
+        "presentation": "full"
+      },
+      "wallMs": 95,
+      "error": null
+    },
+    {
+      "id": "CS-006",
+      "repo": "csharp",
+      "query": "TsavoriteLogScanIterator GetAsyncEnumerable method",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "libs/storage/Tsavorite/cs/src/core/TsavoriteLog/TsavoriteLogIterator.cs",
+        "startLine": 144,
+        "endLine": 164,
+        "symbol": "WaitAsync",
+        "symbolType": "method",
+        "score": 0.5982115268707275,
+        "presentation": "full"
+      },
+      "wallMs": 38,
+      "error": null
+    },
+    {
+      "id": "CS-007",
+      "repo": "csharp",
+      "query": "partial class RespServerSession async background processor",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "libs/server/Resp/AsyncProcessor.cs",
+        "startLine": 12,
+        "endLine": 144,
+        "symbol": "RespServerSession",
+        "symbolType": "class",
+        "score": 0.765625810623169,
+        "presentation": "full"
+      },
+      "wallMs": 56,
+      "error": null
+    }
+  ]
+}

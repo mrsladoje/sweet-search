@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        1          # incremented each loop pass
-CURRENT_ITEM:     A1         # set to item id when IN_PROGRESS
-LAST_COMMIT:      9a7b5e0    # most recent shipped commit before this plan
+ITERATION:        2          # incremented each loop pass
+CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
+LAST_COMMIT:      930cee5    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 ```
@@ -113,7 +113,7 @@ done
 **Fix approach:** Run each language's probes filtered to held-out IDs from `eval/ast-tester-probes/splits/heldout.json`. Record summary numbers in iteration log. NO per-query failure inspection.
 **Per-item gates:** none beyond §3.
 **Abort/revert:** N/A (no code change).
-**Status:** [-] IN_PROGRESS
+**Status:** [x] DONE @ pending-sha — held-out aggregate 3 PASS / 4 PARTIAL / 8 FAIL of 15 (cpp 0/0/3, csharp 0/2/1, kotlin 1/1/1, rust 1/0/2, typescript 1/1/1). Milestone baseline for Phase 1 end state; per-query inspection deferred per held-out discipline.
 
 ---
 
@@ -405,6 +405,12 @@ item: A1
 action: discover
 result: scanned §5, A1 first PENDING; marked [-] IN_PROGRESS, updated §0 meta (ITERATION=1, CURRENT_ITEM=A1).
 next: A1 execute, schedule 60s
+
+--- iter 2 (2026-05-11T02:15:00Z) ---
+item: A1
+action: execute + resolve
+result: built per-lang held-out probe files at /tmp/ast-heldout/{cpp,csharp,kotlin,rust,typescript}.json (3 probes each, IDs from eval/ast-tester-probes/splits/heldout.json), ran each via run-probes.mjs with --probes-file/--repo-base. Phase 1 end-state held-out AGGREGATE: 3 PASS / 4 PARTIAL / 8 FAIL of 15. Per-language: cpp 0/0/3, csharp 0/2/1, kotlin 1/1/1, rust 1/0/2, typescript 1/1/1. Per-query failures NOT inspected per CLAUDE.md held-out discipline. Result artifacts: eval/ast-tester-probes/results/*-heldout-2026-05-11-A1.json. No code change.
+next: B1 (cpp struct/class/template/using name extraction), schedule 60s
 ```
 
 ---
