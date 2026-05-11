@@ -254,6 +254,79 @@ describe('chunker pattern matching', () => {
     expect('impl User {'.match(p.impl)?.[1]).toBe('User');
     expect('impl Validator for User {'.match(p.impl)?.[1]).toBe('User');
   });
+
+  // C and C++ both allow attribute-like tokens between the `struct`/`class`
+  // keyword and the type name. The earlier regexes greedily captured the
+  // first \w+, which yielded phantom symbols like `alignas` or `__attribute__`
+  // (CPP-005 root cause: `struct alignas(16) uint128_t` indexed with
+  // symbol=alignas). The patterns must skip the closed set of standard
+  // attribute keywords, the C++11 [[attr]] syntax, and ALL_CAPS user macros
+  // (e.g. HWY_DLLEXPORT, EIGEN_API) before capturing the name.
+  describe('C struct chunker skips attribute prefixes', () => {
+    const p = getChunkerPatterns('c');
+    it('captures name on a plain struct', () => {
+      expect('struct Foo {'.match(p.struct)?.[1]).toBe('Foo');
+    });
+    it('captures name on a typedef struct', () => {
+      expect('typedef struct Foo {'.match(p.struct)?.[1]).toBe('Foo');
+    });
+    it('captures name on a forward decl', () => {
+      expect('struct Foo;'.match(p.struct)?.[1]).toBe('Foo');
+    });
+    it('captures name through __attribute__', () => {
+      expect('struct __attribute__((packed)) Foo {'.match(p.struct)?.[1]).toBe('Foo');
+    });
+    it('captures name through chained __attribute__', () => {
+      expect('struct __attribute__((aligned)) __attribute__((packed)) Foo {'.match(p.struct)?.[1]).toBe('Foo');
+    });
+    it('captures name through __declspec', () => {
+      expect('struct __declspec(dllexport) Foo {'.match(p.struct)?.[1]).toBe('Foo');
+    });
+    it('captures name through user-defined ALL_CAPS macro', () => {
+      expect('struct PACKED_API Foo {'.match(p.struct)?.[1]).toBe('Foo');
+    });
+    it('captures ALL_CAPS name on forward decl (backtracks past macro skip)', () => {
+      expect('struct WHEEL;'.match(p.struct)?.[1]).toBe('WHEEL');
+    });
+    it('does not regress pointer usage (captures first identifier)', () => {
+      // Pre-existing behavior: `struct Foo *ptr;` captures `Foo` (intent: type ref).
+      expect('struct Foo *ptr;'.match(p.struct)?.[1]).toBe('Foo');
+    });
+  });
+
+  describe('C++ class chunker skips attribute prefixes', () => {
+    const p = getChunkerPatterns('cpp');
+    it('captures name on a plain class', () => {
+      expect('class MyClass {'.match(p.class)?.[1]).toBe('MyClass');
+    });
+    it('captures name on a plain struct', () => {
+      expect('struct Foo {'.match(p.class)?.[1]).toBe('Foo');
+    });
+    it('captures name on inheritance', () => {
+      expect('class MyClass : public Base {'.match(p.class)?.[1]).toBe('MyClass');
+    });
+    it('captures name through alignas (CPP-005 regression)', () => {
+      expect('struct alignas(16) uint128_t {'.match(p.class)?.[1]).toBe('uint128_t');
+    });
+    it('captures name through __attribute__', () => {
+      expect('struct __attribute__((packed)) Foo {'.match(p.class)?.[1]).toBe('Foo');
+    });
+    it('captures name through __declspec', () => {
+      expect('class __declspec(dllexport) MyClass {'.match(p.class)?.[1]).toBe('MyClass');
+    });
+    it('captures name through user-defined dllexport macro', () => {
+      expect('class HWY_DLLEXPORT MyClass {'.match(p.class)?.[1]).toBe('MyClass');
+    });
+    it('captures name through chained user macros', () => {
+      expect('class HWY_DLLEXPORT EIGEN_API MyClass {'.match(p.class)?.[1]).toBe('MyClass');
+    });
+    it('captures ALL_CAPS forward decl name (backtracks past macro skip)', () => {
+      expect('class WHEEL;'.match(p.class)?.[1]).toBe('WHEEL');
+    });
+    it('captures name on final-marked derived class', () => {
+      expect('class MyClass final {'.match(p.class)?.[1]).toBe('MyClass');
+    });
+  });
 });
 
 describe('graph entity pattern matching', () => {
