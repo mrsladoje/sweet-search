@@ -157,6 +157,14 @@ function buildEmbeddingText({ variant: variantOverride, content, relativePath, l
     ? `# Language: ${language}` : null;
   const signatureLine = hierarchyInfo?.signature
     ? `# Signature: ${hierarchyInfo.signature}` : null;
+  // Multi-symbol header: when the cAST sibling-merge collapses several
+  // top-level boundaries into one chunk (small Rust files with adjacent
+  // free-standing fns, e.g. packaging.rs:is_package + detect_package_root),
+  // the bi-encoder otherwise only sees the FIRST boundary's name. Adding
+  // an `# Additional:` line surfaces sibling symbol names to the encoder
+  // without changing chunk count or chunk text.
+  const additionalLine = (hierarchyInfo?.additionalSymbols && hierarchyInfo.additionalSymbols.length > 0)
+    ? `# Additional: ${hierarchyInfo.additionalSymbols.join(', ')}` : null;
 
   switch (variant) {
     case 'no_path':
@@ -223,6 +231,7 @@ function buildEmbeddingText({ variant: variantOverride, content, relativePath, l
       if (pathLine) parts.push(pathLine);
       if (parentLine) parts.push(parentLine);
       if (symbolLine) parts.push(symbolLine);
+      if (additionalLine) parts.push(additionalLine);
       if (langLine) parts.push(langLine);
       break;
   }
@@ -281,6 +290,11 @@ function buildLiText({ content, relativePath, language, chunkType, symbol, hiera
   }
   if (symbol && symbol !== 'unknown') {
     lines.push(`# ${chunkType}: ${symbol}`);
+  }
+  // Mirror embedding_text: surface sibling symbol names so the LI MaxSim
+  // stage's input includes the same context as the bi-encoder embedding.
+  if (hierarchyInfo?.additionalSymbols && hierarchyInfo.additionalSymbols.length > 0) {
+    lines.push(`# Additional: ${hierarchyInfo.additionalSymbols.join(', ')}`);
   }
   if (language && language !== 'text') {
     lines.push(`# Language: ${language}`);
@@ -371,6 +385,7 @@ export class ASTChunker {
           parentSymbol: chunk.parentSymbol,
           parentType: chunk.parentType,
           signature: chunk.signature || null,
+          additionalSymbols: chunk.additionalSymbols || null,
         }
       )
     );
@@ -938,6 +953,11 @@ export class ASTChunker {
       metadata.parent_symbol = hierarchyInfo.parentSymbol;
       metadata.parent_type = hierarchyInfo.parentType;
     }
+    // Carry sibling-symbol context into metadata so enrichEmbeddingText()
+    // can rebuild the multi-symbol header during post-chunk enrichment.
+    if (hierarchyInfo?.additionalSymbols && hierarchyInfo.additionalSymbols.length > 0) {
+      metadata.additional_symbols = hierarchyInfo.additionalSymbols;
+    }
 
     return {
       text: content.trim(),
@@ -976,6 +996,10 @@ export class ASTChunker {
 
     if (chunk.metadata.symbol && chunk.metadata.symbol !== 'unknown') {
       parts.push(`# Defines: ${chunk.metadata.chunk_type} ${chunk.metadata.symbol}`);
+    }
+
+    if (chunk.metadata.additional_symbols && chunk.metadata.additional_symbols.length > 0) {
+      parts.push(`# Additional: ${chunk.metadata.additional_symbols.join(', ')}`);
     }
 
     if (imports && imports.length > 0) {

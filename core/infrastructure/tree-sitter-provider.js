@@ -626,10 +626,25 @@ export class TreeSitterProvider {
         .join('\n');
 
       if (text.trim().length > 30) {
-        const firstBoundary = buffer.find(n => BOUNDARY_TYPES.has(n.type));
+        const boundariesInBuffer = buffer.filter(n => BOUNDARY_TYPES.has(n.type));
+        const firstBoundary = boundariesInBuffer[0];
         const name = firstBoundary ? this._extractNodeName(firstBoundary) : null;
         const type = firstBoundary ? (NODE_TYPE_MAP[firstBoundary.type] || 'code') : 'code';
         const signature = firstBoundary ? this._extractSignature(firstBoundary, content) : null;
+        // When the cAST sibling-merge collapses multiple top-level
+        // boundaries into one chunk (e.g. small rust file with two
+        // adjacent free-standing fns), only the first boundary's name
+        // would otherwise reach embedding/LI headers — the bi-encoder
+        // never sees the sibling symbol names. Collect them here and
+        // pass through so buildEmbeddingText() / buildLiText() can
+        // surface them via an `# Additional:` header line.
+        let additionalSymbols = null;
+        if (boundariesInBuffer.length > 1) {
+          const sibNames = boundariesInBuffer.slice(1)
+            .map(n => this._extractNodeName(n))
+            .filter(n => n && n !== name);
+          if (sibNames.length > 0) additionalSymbols = sibNames;
+        }
 
         // Tail-orphan merge: when the buffer about to be flushed is
         // small AND has no boundary symbol of its own, append it into
@@ -672,6 +687,7 @@ export class TreeSitterProvider {
             type,
             name: name || (buffer.length === 1 ? null : null),
             signature,
+            additionalSymbols,
           });
         }
       }
