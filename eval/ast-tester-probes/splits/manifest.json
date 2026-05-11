@@ -6,9 +6,9 @@
   "seed": 42,
   "stratifyBy": "language",
   "method": "stratified-random-shuffle",
-  "totalProbes": 72,
-  "devCount": 45,
-  "heldoutCount": 27,
+  "totalProbes": 80,
+  "devCount": 50,
+  "heldoutCount": 30,
   "perLanguage": {
     "typescript": {
       "dev": [
@@ -134,6 +134,20 @@
         "RB-003",
         "RB-005",
         "RB-007"
+      ]
+    },
+    "go": {
+      "dev": [
+        "GO-001",
+        "GO-003",
+        "GO-004",
+        "GO-006",
+        "GO-008"
+      ],
+      "heldout": [
+        "GO-002",
+        "GO-005",
+        "GO-007"
       ]
     }
   },
