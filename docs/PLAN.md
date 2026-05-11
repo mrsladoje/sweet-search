@@ -11,7 +11,7 @@
 ```
 ITERATION:        27         # incremented each loop pass
 CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
-LAST_COMMIT:      cd8526d    # most recent shipped commit before this plan
+LAST_COMMIT:      03ed9f0    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 GATE_INTERPRETATION: §1 baselines are HARD regression gates ("revert on red"). Per-item gates are SUCCESS criteria ("expect X"); when not met → DONE-with-note, not REVERT. This re-interpretation kicked in after B1 (which was over-strictly REVERTED — could've been DONE-with-note since §1 was green). Going forward: revert ONLY when §1 regresses.
@@ -218,7 +218,7 @@ Each `Cn` item below is one language. Items execute in this order (most-producti
 #### C4. Ruby
 **Type:** new-language
 **Idioms:** blocks (`{ |x| ... }` and `do |x| ... end`), `attr_accessor`, metaclasses, refinements, pattern matching (3.0+).
-**Status:** [x] DONE @ pending — Repo: sinatra/sinatra @ 5236d345 (MIT, 147 .rb files). 8 probes RB-001..RB-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting `class << self` singleton blocks and `class X < Struct.new(:app)` runtime-generated superclass). All 8 gold verified. Index: 110s (1:50, well under 5min), 976 embeddings. Baseline: 0 PASS / 2 PARTIAL / 6 FAIL — sinatra's large monolithic base.rb (~2200 lines, dozens of nested modules/classes) makes retrieval competing for class-level queries. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 8 existing lang packs zero PASS→FAIL flips. Splits manifest updated (5/3).
+**Status:** [x] DONE @ 03ed9f0 — Repo: sinatra/sinatra @ 5236d345 (MIT, 147 .rb files). 8 probes RB-001..RB-008 (3 NL behavior + 3 symbol-anchored + 2 grammar-edge-case targeting `class << self` singleton blocks and `class X < Struct.new(:app)` runtime-generated superclass). All 8 gold verified. Index: 110s (1:50, well under 5min), 976 embeddings. Baseline: 0 PASS / 2 PARTIAL / 6 FAIL — sinatra's large monolithic base.rb (~2200 lines, dozens of nested modules/classes) makes retrieval competing for class-level queries. §3 ALL GREEN: retrieval-probes 46/60, GCSN 86.92%, all 8 existing lang packs zero PASS→FAIL flips. Splits manifest updated (5/3).
 
 #### C5. Go
 **Type:** new-language
