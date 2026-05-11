@@ -9,9 +9,9 @@
 ## 0. Meta state (loop reads + updates this)
 
 ```
-ITERATION:        3          # incremented each loop pass
-CURRENT_ITEM:     B1         # set to item id when IN_PROGRESS
-LAST_COMMIT:      1b7df36    # most recent shipped commit before this plan
+ITERATION:        5          # incremented each loop pass
+CURRENT_ITEM:     none       # set to item id when IN_PROGRESS
+LAST_COMMIT:      d58d17c    # most recent shipped commit before this plan
 GLOBAL_HALT:      false      # true => stop all work; manual intervention required
 HALT_REASON:      none
 ```
@@ -133,9 +133,7 @@ Priority by yield (descending). Each item: web-search if uncertain, apply princi
 **Pre-flight web search:** "tree-sitter-cpp class_specifier name field", "tree-sitter cpp alias_declaration", "tree-sitter cpp template_declaration captures".
 **Per-item gates:** cpp probes — expect ≥ 4/8 PASS (was 0/8). Re-index ~22 min.
 **Abort/revert:** revert tree-sitter-provider.js.
-**Status:** [-] IN_PROGRESS
-
-#### B2. Rust multi-item chunk anchoring (RS-006, RS-008)
+**Status:** [!] FAILED-REVERTED — fix landed structurally (alias_declaration + template_declaration in BOUNDARY_TYPES, _resolveBoundary drill for template wrappers, alias_declaration→typeAlias in NODE_TYPE_MAP) and re-index succeeded (1048s, 5832 chunks). cpp probes still 0/2/6 — per-item gate "≥4/8 PASS" not met. §1 gates all GREEN (retrieval-probes 46/60 unchanged, GCSN 86.92% exact, ts/rust/kotlin/csharp zero flips). Root cause appears bi-encoder-bound: chunker now correctly names templated structs / using-aliases (CPP-004 returns typeAlias `InputVec` instead of `struct TypeInfo`, CPP-005 returns typeAlias `LaneType` instead of `struct alignas`), but the encoder ranks competing typeAliases over the gold (`Vec`/`Simd`). Reverted tree-sitter-provider.js. cpp _repo .sweet-search/ left in post-B1 chunker state; next cpp re-baseline must re-index. Iter 5.
 **Type:** chunker-fix
 **Symptom:** RS-006 (`SortedMergeIter`) and RS-008 (`detect_package_root`) have gold at rank 1 in late-interaction but bi-encoder candidate set misses them — chunk is mis-named after first sibling (`Flags` hides `SortedMergeIter`; `is_package` hides `detect_package_root`).
 **Hypothesis:** Chunker emits one chunk per BOUNDARY_TYPES anchor, but when adjacent top-level items collapse into one chunk, only the first item's name is stored. Need either: (a) split per-item, or (b) emit secondary symbols as aliases.
@@ -417,6 +415,18 @@ item: B1
 action: discover
 result: A1 closed; B1 first PENDING in §5. Marked [-] IN_PROGRESS, updated §0 meta (ITERATION=3, CURRENT_ITEM=B1).
 next: B1 execute (preflight web search → patch tree-sitter-provider.js cpp TAGS_QUERIES → re-index cpp _repo → validate per §3), schedule 60s
+
+--- iter 4 (2026-05-11T02:25:00Z) ---
+item: B1
+action: execute
+result: PLAN.md hypothesis re class_specifier/struct_specifier captures was partially stale — those captures already exist in cpp TAGS_QUERIES. Actual root cause was different: BOUNDARY_TYPES for cpp didn't include alias_declaration (`using X = ...`) or template_declaration (`template<...> class|struct|fn|using`), so templated decls emitted as anonymous `code` chunks via the cAST sibling-merge path. Fix: added both node types to BOUNDARY_TYPES, added alias_declaration→typeAlias in NODE_TYPE_MAP, added _resolveBoundary helper that drills into template_declaration's first NODE_TYPE_MAP-known child to surface the inner type+name, threaded helper through flushBuffer + oversized-recurse + leaf-too-big call sites, and added (alias_declaration name: (type_identifier) @type.definition) to cpp TAGS_QUERIES. Unit tests passed 1432/1432. Kicked cpp re-index in background (PID 62071), 1048s, 5832 chunks, 6293 entities — completed.
+next: B1 validate per §3, schedule 1500s for re-index window
+
+--- iter 5 (2026-05-11T02:52:00Z) ---
+item: B1
+action: validate + resolve (revert)
+result: ran §3 steps 3-7. cpp probes 0/2/6 — same PASS count as baseline but CPP-004/CPP-005 returned different typeAlias entities (InputVec, LaneType) instead of original struct/code chunks; CPP-007 still `code -`; cpp-targeted improvement DID NOT MATERIALIZE in retrieval rank. §1 locked baselines all GREEN: retrieval-probes 46/4/10 exact zero flips; GCSN dev MRR@10 86.92% exact match; ts/rust/kotlin/csharp probes zero flips vs -final. Per-item gate ("≥4/8 cpp PASS, was 0/8") NOT MET. Per §6 "any gate red → revert", reverted core/infrastructure/tree-sitter-provider.js via git checkout HEAD. Diagnosis: chunker fix is structurally sound and names are now correct, but bi-encoder ranks competing typeAliases over the gold. This is encoder-bound, not chunker-bound — outside B1 scope. cpp _repo .sweet-search/ remains in patched-chunker state (no functional impact since reverted code is identical search-time; next cpp re-baseline must re-index ~17 min).
+next: B2 discover, schedule 60s
 ```
 
 ---
