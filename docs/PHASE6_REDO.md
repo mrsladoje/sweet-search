@@ -129,10 +129,21 @@ V7 is added because the existing AST-tester probes (rust.json, kotlin.json, etc.
 
 ### §5.1 Per-gold variant authoring — content rules
 
-For each of the 144 AST-tester golds + 68 doc-positive golds = 212 golds, author 7 shape variants. Hard authoring rules (enforced by post-generation validator, §5.3):
+Variants are authored per gold per eligible cell. The cell-eligibility rule depends on gold class:
 
-- The symbol-anchored variants (V1, V2, V4, V7) MUST contain the gold's `expectedSymbol` verbatim.
-- The without-symbol variants (V3, V5, V6) MUST NOT contain the gold's `expectedSymbol` (case-insensitive substring match) AND MUST NOT contain any tokens from the gold's path that would lexically match the symbol.
+| Gold class | n golds | Eligible cells | Variants per gold |
+|---|---|---|---|
+| AST-tester (code-symbol gold) | 144 | V1, V2, V3, V4, V5, V6, V7 (all 7) | 7 |
+| Doc-positive (manifest/README/license/workflow gold) | 68 | V3, V5, V6 only (without-symbol cells) | 3 |
+
+**Doc-positive scope rule**: doc-positive golds are tested on V3/V5/V6 only. Rationale: these golds' queries by construction do not anchor on a code symbol (LICENSE has no symbol; README target is a section, not an identifier). The symbol-anchored cells (V1/V2/V4/V7) are semantically ill-defined here — there is no `expectedSymbol` token that lexically discriminates a license file from any other prose. V3/V5/V6 are exactly the without-symbol cells that this gold class is built to test. Skipping V1/V2/V4/V7 keeps the cell semantics clean and avoids 4 × 68 = 272 ill-defined variants that the validator would auto-reject anyway.
+
+**Total**: 144 × 7 + 68 × 3 = **1,008 + 204 = 1,212 variants** (down from the earlier 1,484 figure; that number is now obsolete, do not cite it).
+
+Hard authoring rules (enforced by post-generation validator, §5.3):
+
+- The symbol-anchored variants (V1, V2, V4, V7) MUST contain the gold's `expectedSymbol` verbatim. These cells apply to AST-tester golds only (see scope rule above).
+- The without-symbol variants (V3, V5, V6) MUST NOT contain the gold's `expectedSymbol` (case-insensitive substring match) AND MUST NOT contain any tokens from the gold's path that lexically leak the symbol per the §5.5.6 rule.
 - V1 must be ≤ 3 tokens (whitespace-split).
 - V2/V7 must be 4-8 tokens.
 - V3/V4/V5 must be 9-15 tokens.
@@ -141,17 +152,17 @@ For each of the 144 AST-tester golds + 68 doc-positive golds = 212 golds, author
 
 ### §5.2 Authoring infrastructure — DeepSeek V4 Flash via direct API, no harness
 
-For this `ss-search` redo, **1,484 shape variants** (212 golds × 7 cells) are produced by a deterministic preprocessing script + DeepSeek V4 Flash via direct HTTP API. **No harness** (no Claude Code headless, no opencode). The model never has filesystem access; the script does all filesystem work and hands the model curated context. The future per-tool redoes (`ss-find`, `ss-semantic`, `structural`, §12.1) layer ~440 additional gold-extraction calls on top of this same infrastructure but are out of scope for this redo's numbers.
+For this `ss-search` redo, **1,212 shape variants** (144 AST-tester × 7 cells + 68 doc-positive × 3 cells, per §5.1 scope rule) are produced by a deterministic preprocessing script + DeepSeek V4 Flash via direct HTTP API. **No harness for variant authoring** (no Claude Code headless, no opencode). The model never has filesystem access; the script does all filesystem work and hands the model curated context. The future per-tool redoes (`ss-find`, `ss-semantic`, `structural`, §12.1) layer ~440 additional gold-extraction calls on top of this same infrastructure but are out of scope for this redo's numbers. Track B (§6.3) does use a harness (Claude Code end-to-end), but that's a separate downstream step with a separate purpose — see §6.3 for scope.
 
-**Why no harness**: per user memory `feedback_direct_api_for_stateless_calls`, harness calls are 50-100× slower than direct API for stateless work. Probe authoring is stateless once inputs are curated. Total wall time:
+**Why no harness for variant authoring**: per user memory `feedback_direct_api_for_stateless_calls`, harness calls are 50-100× slower than direct API for stateless work. Probe authoring is stateless once inputs are curated. Total wall time:
 
-| Approach | 1,484 calls wall time | Cost |
+| Approach | 1,212 calls wall time | Cost |
 |---|---|---|
-| All Claude Code headless + DeepSeek redirect (harness everywhere) | 2-5 hours | ~$0.30 |
-| Direct API stateless + harness only for agentic gold extraction | 30-50 minutes | ~$0.30 |
-| **Direct API everywhere + preprocessing script (chosen)** | **~15-25 minutes** | **~$0.30** |
+| All Claude Code headless + DeepSeek redirect (harness everywhere) | 1.5-4 hours | ~$0.25 |
+| Direct API stateless + harness only for agentic gold extraction | 25-40 minutes | ~$0.25 |
+| **Direct API everywhere + preprocessing script (chosen)** | **~12-20 minutes** | **~$0.25** |
 
-(For the all-tools total of ~4,700 calls including future redoes, multiply by ~3.)
+(For the all-tools total of ~3,800-4,200 calls including future redoes, multiply by ~3.)
 
 **Why DeepSeek V4 Flash**: 79% SWE-bench Verified (matches Gemini 3 Flash at 78%; far above Gemini 3.1 Flash Lite at 22%). $0.14/M input + $0.28/M output. 1M context. GA, not preview-throttled. Single model for entire pipeline keeps the system prompt and validator surface uniform.
 
@@ -161,30 +172,38 @@ For this `ss-search` redo, **1,484 shape variants** (212 golds × 7 cells) are p
 
 ```
 1. preprocess.mjs (deterministic, no LLM)
+   import { ASTChunker } from '../../core/indexing/ast-chunker.js'  // JS-native, not napi
+   const chunker = new ASTChunker()
    for each gold in 18 language packs × ~12 probes:
-     source_snippet = readSourceAtSHA(gold.expectedFile, gold.expectedSymbol)
-     containing_chunk = ast_chunker.parseFile(gold.expectedFile)
-                          .find(c => c.contains(gold.expectedSymbol))
+     // gold.goldClass ∈ {'ast-tester', 'doc-positive'}
+     source_snippet  = readSourceAtSHA(gold.repoSha, gold.expectedFile, gold.expectedSymbol)
+     containing_chunk = (await chunker.parseFile(absPath, content))
+                          .find(c => c.startLine <= symbolLine && c.endLine >= symbolLine)
      graph_neighbors = code_graph_db.callers_callees(gold.expectedSymbol)
-     write inputs/<gold.id>.json     # everything packed, model never reads files
+     eligibleShapes  = (gold.goldClass === 'ast-tester')
+                          ? ['V1','V2','V3','V4','V5','V6','V7']
+                          : ['V3','V5','V6']                       // §5.1 doc-positive scope
+     write inputs/<lang>-<gold.id>.json    # everything packed, model never reads files
 
 2. author-variants.mjs (LLM — direct DeepSeek API, 20-30 concurrent)
    for each input in inputs/*.json:
-     for each shape in [V1, V2, V3, V4, V5, V6, V7]:
+     for each shape in input.eligibleShapes:
        prompt = build_prompt(input, shape)
-       variant = await deepseek_direct(prompt, response_format={type:'json_object'})
+       variant = await deepseek_direct(prompt, response_format={type:'json_object'},
+                                       seed=42, temperature=0.3)
        parsed = JSON.parse(variant)         # response_format=json_object guarantees valid JSON
        schemaValidator(parsed)               # client-side strict schema check (§5.3)
        validator(parsed, shape, input)       # symbol-leak / length / etc. (§5.3)
        on validator failure → re-prompt with stricter instruction (max 2 retries)
-       write variants/<gold.id>-<shape>.json
+       outputSha256 = sha256(parsed.query)   # for drift detection on re-runs
+       write variants/<lang>-<gold.id>-<shape>.json
 
 3. (Future) extract-golds.mjs for ss-find/ss-semantic/structural redoes,
    same pattern: deterministic enumeration (ripgrep / code-graph.db / chunker)
    + LLM for the small portion that needs paraphrasing.
 ```
 
-**Concurrency**: 20-30 parallel async workers against `api.deepseek.com/v1/chat/completions`. DeepSeek's dynamic rate limit (no published RPM tier; 429 on overload) means start at 20, back off exponentially on 429 (no fail-fast). At 20-concurrency average, the 1,484 variant calls complete in **~15-25 minutes wall time** — this is the headline number used throughout §13 / §15.
+**Concurrency**: 20-30 parallel async workers against `api.deepseek.com/v1/chat/completions`. DeepSeek's dynamic rate limit (no published RPM tier; 429 on overload) means start at 20, back off exponentially on 429 (no fail-fast). At 20-concurrency average, the 1,212 variant calls complete in **~12-20 minutes wall time** — this is the headline number used throughout §13 / §15.
 
 **Output format**: every call uses `response_format: { "type": "json_object" }` (DeepSeek-supported; guarantees parseable JSON but not a specific schema). Schema conformance is enforced **client-side** by the validator's first check (§5.3). Full server-side JSON-schema enforcement is not yet available on DeepSeek's API as of 2026-05; client-side schema validation is the correct primitive.
 
@@ -196,7 +215,7 @@ Every variant emitted by §5.2 passes through a deterministic validator before b
 2. **Length-tier check**: whitespace-split token count of `query` must fall in the cell's range (§5.1).
 3. **Symbol-presence check** (V1 / V2 / V4 / V7 only): `query` MUST contain `gold.expectedSymbol` verbatim.
 4. **Symbol-leak check** (V3 / V5 / V6 only): `query` MUST NOT contain `gold.expectedSymbol` (case-insensitive substring match).
-5. **Path-token-leak check** (V3 / V5 / V6 only): tokenise `gold.expectedFile` on `/_.-` and lowercase. For each path token ≥ 4 chars that is not in a stopword list AND that shares ≥ 3-char substring with any sub-token of `gold.expectedSymbol`, reject if `query` contains it. (Concrete example: for `expectedSymbol = "detect_package_root"` in `crates/ruff_linter/src/packaging.rs`, the path token `packaging` shares "pack" with "package" — a query like "find the package detection walker in packaging" would leak via the path token and is rejected.)
+5. **Path-token-leak check** (V3 / V5 / V6 only): tokenise `gold.expectedFile` on `/_.-` and lowercase. Tokenise `gold.expectedSymbol` on `_` and lowercase ("symbol sub-tokens"). For each path token, reject `query` only if ALL of (a) path token ≥ 4 chars, (b) path token is not in the §5.5.6 stopword list, (c) path token shares a ≥ 5-char common substring with at least one symbol sub-token, (d) path token is a prefix OR suffix of that symbol sub-token (or vice versa) — i.e., they share a stem, not just a coincidental fragment. (Concrete example A — REJECT: `expectedSymbol = "detect_package_root"`, path `crates/ruff_linter/src/packaging.rs`. Symbol sub-tokens: `["detect","package","root"]`. Path token `packaging` shares 7-char substring `packag` with `package` AND `package` is a prefix of `packaging` → leakage path → reject if `query` contains "packaging". Concrete example B — ALLOW: same gold, query "find the helper that walks ancestor directories looking for python module markers". No path-token-leak — `directories`, `markers`, `helper`, `walks` neither prefix nor suffix any of `detect/package/root`.)
 6. **Empty / boilerplate check**: `query` must be ≥ 1 token of non-whitespace content; reject obvious template-leak strings like "the function that does X" or "{symbol} that {description}".
 
 The validator is the load-bearing quality gate. Without it, V3/V5/V6 silently leak symbol tokens and the without-symbol shape claims become invalid. The validator must run BEFORE any variant is committed to disk.
@@ -249,8 +268,10 @@ core/prompt-optimization/
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "goldId": "RS-001",
+  "goldClass": "ast-tester",
+  "eligibleShapes": ["V1","V2","V3","V4","V5","V6","V7"],
   "language": "rust",
   "family": "Systems-modular-terse",
   "repoSha": "ac6361d83e4d51ab123043b00d5285a842077b81",
@@ -277,29 +298,38 @@ core/prompt-optimization/
 }
 ```
 
+For doc-positive golds, `goldClass: "doc-positive"`, `eligibleShapes: ["V3","V5","V6"]`, `expectedSymbol` may be null or a non-code token (e.g., `"workspace"` for a Cargo.toml section heading; it remains populated for diagnostic purposes but the validator does not enforce symbol-presence on V3/V5/V6 anyway).
+
+The chunker is the **JS-native** `ASTChunker` at `core/indexing/ast-chunker.js` (not the Rust+napi crate). Import as `import { ASTChunker } from '../../core/indexing/ast-chunker.js'`, instantiate with `new ASTChunker()`, call `await chunker.parseFile(absPath, content)`. Verified end-to-end via `scripts/ast-chunker-cli.js`, which is itself a 30-line wrapper around this class.
+
 `graphNeighbors` is queried from `eval/ast-tester-probes/_repos/<lang>/.sweet-search/code-graph.db` using the existing `getCallers` / `getCallees` accessors. Empty arrays are valid (no neighbours found).
 
-`pathTokens` is `expectedFile` split on `/_.-` and lowercased — the validator uses this directly in the path-token-leak check (§5.3 check 5).
+`pathTokens` is `expectedFile` split on `/_.-` and lowercased — the validator uses this directly in the path-token-leak check (§5.3 check 5 + §5.5.6 rule).
 
 #### §5.5.3 `variants/<lang>-<probe-id>-<shape>.json` schema (output of author-variants.mjs)
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "goldId": "RS-001",
   "shape": "V2",
   "shapeLabel": "short+with-symbol+narrow-regex+interrogative+high-density",
   "query": "where is ImportType enum defined",
   "rationale": "anchored on expectedSymbol; framed as interrogative locator",
   "tokenCount": 5,
-  "authoringModel": "deepseek-v4-flash",
+  "authoringModel": "deepseek-chat",
+  "authoringSeed": 42,
+  "authoringTemperature": 0.3,
   "authoringAttempt": 1,
   "validatorVerdict": "pass",
+  "outputSha256": "a3c1e8...",
   "authoredAt": "2026-05-12T..."
 }
 ```
 
 `rationale` is required by the prompt template (§5.5.5) — used for diagnostics and for the manual spot-check (§13 step 5). Not consumed by Track A scoring.
+
+`outputSha256` is `sha256(query)`. Re-runs of the same `(input, shape)` should reproduce the same hash if DeepSeek honours `seed` correctly; a hash mismatch on re-run indicates either an API-side change in seed behaviour or a content drift, and should be logged. This is the cheapest reproducibility check.
 
 #### §5.5.4 DeepSeek API call shape
 
@@ -312,18 +342,24 @@ const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
     'Content-Type': 'application/json',
   },
   body: JSON.stringify({
-    model: 'deepseek-v4-flash',           // exact model name per DeepSeek API docs
+    model: 'deepseek-chat',                // non-reasoning V4-Flash model.
+                                           // "V4-Flash" is product branding;
+                                           // the API model string is 'deepseek-chat'.
+                                           // 'deepseek-reasoner' is the reasoning variant — DO NOT USE.
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user',   content: userPrompt(input, shape) }
     ],
     response_format: { type: 'json_object' },
     temperature: 0.3,                      // low — favour reproducibility
+    seed: 42,                              // OpenAI-compatible; honoured on a best-effort basis
     max_tokens: 512,                       // variant + rationale fits comfortably
     // NO reasoning fields — non-reasoning mode (avoid max_tokens<4096 footgun)
   }),
 });
 ```
+
+**Mandatory preflight before §15 unlock**: run `curl -s -H "Authorization: Bearer $DEEPSEEK_API_KEY" https://api.deepseek.com/v1/models | jq '.data[].id'`. The returned list MUST include `deepseek-chat`. If DeepSeek has renamed the model (e.g., to `deepseek-v4-chat` or similar), update the `model` field accordingly before any sweep runs. Failing to preflight risks every call returning 400 silently after retries are exhausted, wasting 12-20 min of wall time before the failure surfaces.
 
 `DEEPSEEK_API_KEY` is the env var. Concurrency 20-30 via a `p-limit` semaphore. 429 → exponential backoff (1s → 2s → 4s → 8s → 16s cap). 5xx → 1 retry. Other errors → log and skip.
 
@@ -383,7 +419,7 @@ const PATH_STOPWORDS = new Set([
 ]);
 ```
 
-Path tokens shorter than 4 chars OR present in this stopword list are skipped during the leakage check. The 3-char-substring overlap rule applies only to surviving tokens.
+Path tokens shorter than 4 chars OR present in this stopword list are skipped during the leakage check. The §5.3 check 5 rule (≥ 5-char shared substring AND prefix/suffix-of-symbol-sub-token) applies only to surviving tokens. This is deliberately less aggressive than the prior 3-char rule, which over-rejected legitimate NL queries on symbol-rich paths (e.g., a query mentioning "packaging" for a `detect_package_root` gold). The looser rule still catches direct stem leakage (`package`/`packaging`) while admitting genuine descriptive vocabulary.
 
 #### §5.5.7 Family-detection mapping (consumed by PHASE7.md §4.2)
 
@@ -430,13 +466,13 @@ Test statistic: paired permutation on `file_recall@1` (binary outcome per gold).
 
 For each (language, gold, shape variant) tuple:
 
-1. Instantiate `SweetSearch` with the language's `.sweet-search` index (same pattern as `eval/retrieval-probes/run-probes.mjs`).
-2. Call `searcher.search(query, { format: 'agent', k: 5, graphExpand: '2hop', adaptiveHop2: true })` — matches production hybrid retrieval.
+1. Instantiate `SweetSearch` with the language's `.sweet-search` index (same pattern as `eval/retrieval-probes/run-probes.mjs`). Confirmed in this conversation via direct read of that runner at `eval/retrieval-probes/run-probes.mjs:140-145`.
+2. Call `searcher.search(query, { format: 'agent', k: 5, graphExpand: '2hop', adaptiveHop2: true })` — matches production hybrid retrieval. The `adaptiveHop2` option IS supported on current main (verified against `run-probes.mjs:144`). The pre-sweep smoke test (§13 step 5 spot-check) will catch any silent regression if the SweetSearch surface evolves between now and execution.
 3. Record top-5 results: file, symbol, type, score, presentation tier.
-4. Grade: PASS (file + symbol match), PARTIAL (file match, wrong symbol), FAIL (file mismatch).
+4. Grade: PASS (file + symbol match), PARTIAL (file match, wrong symbol), FAIL (file mismatch). For doc-positive golds tested on V3/V5/V6 only (§5.1), symbol-match is not required (the gold often has a non-code expectedSymbol); grading falls back to file-match-only.
 5. Also record: `file_recall@1`, `file_recall@5`, score margin (top-1 − top-2), `lineOverlap` where line ranges are gold.
 
-Total runs: 144 AST-tester × 7 shapes + 68 doc-positive × 7 shapes = 1,484 deterministic queries. Wall time ~2-5 minutes per language (re-using already-loaded `SweetSearch` instances). Free.
+Total runs: 144 AST-tester × 7 shapes + 68 doc-positive × 3 shapes = **1,212 deterministic queries**. Wall time ~2-5 minutes per language (re-using already-loaded `SweetSearch` instances). Free.
 
 ### §6.2 Aggregation
 
@@ -466,12 +502,28 @@ Pre-register language weights BEFORE running. Three tiers, applied as multiplica
 | **Tier-2** | 2 | typescript-lib, csharp, cpp, go, kotlin, ruby, php, c, dart | Stack Overflow top-15; mainstream enterprise / mobile |
 | **Tier-3** | 1 | scala, lua, elixir, zig | Long-tail or niche; ship without breaking but don't dominate decisions |
 
-Two aggregations are reported side-by-side:
+Two aggregations are reported side-by-side. Pinned formulae (no implementer discretion):
 
-1. **Macro-average** (uniform, no weights): per-family or per-language, unweighted mean. BEIR-grade standard.
-2. **Weighted aggregate**: tier-weighted sum / sum of weights. Closer to expected deployment distribution.
+```
+# per-language mean: uniform over that language's eligible probes for the shape
+per_lang_mean[lang][shape] = mean({ file_recall@1[lang, gold, shape]
+                                    for gold in golds_with_shape_eligible })
 
-The decision rule in §8 uses **macro-average for family-internal scoring** and **weighted aggregate for the global default selection**.
+# Macro-average (uniform, BEIR-grade):
+macro_aggregate[shape] = mean({ per_lang_mean[lang][shape] for lang in 18 })
+
+# Weighted aggregate:
+weighted_aggregate[shape] = sum(weight[lang] × per_lang_mean[lang][shape])
+                              / sum(weight[lang])
+# where weight[lang] ∈ {1, 2, 3} per the tier table above.
+
+# Per-family aggregate (used in §8 decision rules):
+family_aggregate[family][shape] = mean({ per_lang_mean[lang][shape]
+                                          for lang in family.languages })
+                                    # uniform within family
+```
+
+The decision rule in §8 uses **macro-average for family-internal scoring** (per the family_aggregate formula — uniform within-family) and **weighted aggregate for the global default selection** (per the weighted_aggregate formula). Unequal probe counts within a language are absorbed at the per-language-mean step; unequal language counts within a family are absorbed at the family-aggregate step.
 
 Caveat: the weights are pre-registered before the sweep, NOT after. If the data falsifies a popularity-based weighting (e.g., Lua's optimal shape is *also* the global optimum), the weighted vs macro split is still reported transparently and the consumer can re-weight downstream.
 
@@ -533,13 +585,13 @@ This is illustrative, not predicted. The actual output is whatever the data says
 
 Every promoted shape (default OR family override) must pass ALL five gates:
 
-| Gate | Criterion |
-|---|---|
-| **G1: BH-FDR** | At q=0.10 across the 7-shape × 5-family = 35-cell space, the paired permutation p-value vs baseline-V4 must survive Benjamini-Hochberg correction |
-| **G2: Thresholdout (per §11.4.2)** | For each candidate, query the Thresholdout oracle on held-out (n=54). Promote only if oracle returns AGREE or DIFFER-in-candidate's-favour. Each candidate consumes 1 of the campaign's ~30 Thresholdout queries |
-| **G3: Token-overlap leakage** | The `instruction_text` for the shape must contain zero non-whitelist ≥ 3-grams from Dev probe symbols/paths/answers. Hard-reject on any leakage |
-| **G4: Independent-author check** | The shape's `instruction_text` must be reviewed by an engineer who is not the primary author of golds for ≥ 50% of the languages in scope |
-| **G5: Per-language stability within family** | For a family override, the worst-language `file_recall@1` within the family must be ≥ 0.6 × the best-language's; otherwise log as `not_promoted_due_to_intrafamily_instability` |
+| Gate | Criterion | Implementation pin |
+|---|---|---|
+| **G1: BH-FDR** | At q=0.10 across the 7-shape × 5-family = 35-cell space, the paired permutation p-value vs the §5.5.8 baseline must survive Benjamini-Hochberg correction | `aggregate-track-a.mjs` computes; 10K permutations seed=42 (§5.5.8) |
+| **G2: Thresholdout (per SYSTEM_PROMPT_OPT_PLAN §11.4.2)** | For each candidate, query the Thresholdout oracle on held-out (n=54). Promote only if oracle returns AGREE or DIFFER-in-candidate's-favour. Each candidate consumes 1 of the campaign's ~30 Thresholdout queries | Oracle/driver at `core/prompt-optimization/.../promote.mjs` (referenced in `recommendations.json` behavior_notes: "structural Sealed-1 accessor route is documented in promote.mjs header"). Budget tracker at `core/prompt-optimization/data/thresholdout-budget.json` — append `{candidate, decision, ts}` per query, hard-cap at 30 total per §0.5.4. |
+| **G3: Token-overlap leakage (per SYSTEM_PROMPT_OPT_PLAN §11.9)** | The `instruction_text` for the shape must contain zero non-whitelist ≥ 3-grams from Dev probe symbols/paths/answers. Hard-reject on any leakage | Whitelist at `core/prompt-optimization/data/query-shapes/leakage-whitelist.json` — committed alongside `preregistration-v2.md`. Initial content: language names ("rust", "java", ...), framework names ("react", "spring", ...), the literal cell names ("V1"..."V7"). Update only via a documented PR with rationale. The leakage check is run by `aggregate-track-a.mjs` before emitting recommendations-v2.json. |
+| **G4: Independent-author check** | Each shape's `instruction_text` is reviewed by a model/entity disjoint from both gold authoring (human `sweet-search-core`) AND variant authoring (DeepSeek). Reviewer signs off in the artifact. | Solo-dev operationalisation per user memory `feedback_codex_reviewer`: **Codex** (parallel-collaborator workflow) is the independent reviewer. Process: emit a draft `recommendations-v2.json` with `independent_author_review: pending`; user pastes the candidate `instruction_text` strings into a fresh Codex session along with a copy of the dev-set golds; Codex evaluates whether the text leaks gold-specific knowledge or is generic enough to ship; user records `independent_author_review: { reviewer: "codex-<session-hash>", verdict: "approved"\|"rejected", note: "..." }` back into the artifact before §15 considers G4 satisfied. |
+| **G5: Per-language stability within family** | For a family override, the worst-language `file_recall@1` within the family must be ≥ 0.6 × the best-language's; otherwise log as `not_promoted_due_to_intrafamily_instability` | Computed by `aggregate-track-a.mjs` from `per_lang_mean[lang][shape]`. |
 
 A shape that's statistically significant in isolation but does not survive BH-FDR is reported under `not_promoted_due_to_fdr` for transparency; its `instruction_text` is NOT baked into Phase 7 T_i variants.
 
@@ -657,8 +709,10 @@ The three future redoes are sequenced AFTER this `ss-search` redo because (a) `s
 5. Spot-check the pipeline: author ~20 variants for 1 language, human-review
    V5/V6 paraphrase quality. Reject pipeline if quality rate < 70%; iterate
    on prompt template before scaling.
-6. Author the 1,484 shape variants (§5.1-§5.4) — direct DeepSeek V4 Flash API,
-   20-30 concurrent, ~15-25 min wall, ~$0.30 cost.
+6. Author the 1,212 shape variants (§5.1-§5.4) — direct DeepSeek V4 Flash
+   (model id `deepseek-chat`) API, 20-30 concurrent, seed=42, ~12-20 min
+   wall, ~$0.25 cost. PREFLIGHT: `curl /v1/models` confirms `deepseek-chat`
+   exists in the account's accessible model list (§5.5.4).
 7. Run Track A deterministic sweep (§6.1) — ~5 min wall
 8. Aggregate, apply §8 decision rules and §9 promotion gates
 9. Write recommendations-v2.json
@@ -667,7 +721,7 @@ The three future redoes are sequenced AFTER this `ss-search` redo because (a) `s
 12. Bump SYSTEM_PROMPT_OPT_PLAN.md reference stub date
 ```
 
-Steps 4-7 are the load-bearing block. Steps 1-3 happen first because the chunker change invalidates shape sensitivity. Step 4 (infra) and step 5 (spot-check) are one-time costs paid before scaling. Step 10 is optional and gated on step 9's outcome (skip if recommendations are decisive). End-to-end wall time after step 3: **~20-30 min for steps 6-9** at concurrency 20-30 (variant authoring 15-25 min + Track A sweep ~5 min). Step 4 infra build is one-time engineering work, not measured in sweep wall time.
+Steps 4-7 are the load-bearing block. Steps 1-3 happen first because the chunker change invalidates shape sensitivity. Step 4 (infra) and step 5 (spot-check) are one-time costs paid before scaling. Step 10 is optional and gated on step 9's outcome (skip if recommendations are decisive). End-to-end wall time after step 3: **~17-25 min for steps 6-9** at concurrency 20-30 (variant authoring 12-20 min + Track A sweep ~5 min). Step 4 infra build is one-time engineering work, not measured in sweep wall time.
 
 ---
 
@@ -677,7 +731,7 @@ Steps 4-7 are the load-bearing block. Steps 1-3 happen first because the chunker
 2. **Within-family heterogeneity.** §4.3 — if the OO-monolithic family splits (e.g., Scala prefers V1 but Java prefers V4), the family override gate G5 will block promotion and we ship per-language descriptive-only. That is the correct outcome but it weakens the value of family conditioning. Plan accordingly.
 3. **n=3 held-out per language.** Thresholdout oracle has thin signal at the per-language level. All G2 decisions are at family-pooled n=6-12. Acceptable but tight.
 4. **The chunker fix changes things we don't expect.** The RS-008 sibling-merge policy change may shift retrieval characteristics in subtle ways across languages (any small multi-fn file). After step 3 re-index, validate that the new baselines on the 18-language probes do not show large unexpected shifts in PASS/FAIL pattern. If they do, the families themselves may need to be re-clustered.
-5. **Probe authoring bandwidth.** 1,484 variants is real human work even with templating. If we cannot fund the variant authoring, run a reduced 5-shape grid (V1/V2/V4/V5/V7, dropping V3 and V6) to halve the work.
+5. **Probe authoring bandwidth.** 1,212 variants is fully automated via §5.2 (DeepSeek direct API, 12-20 min wall, ~$0.25). If the API authoring quality fails the §13 step-5 spot-check (V5/V6 quality < 70%), fallback is to manually author the failing without-symbol cells — that's at most 144 × 3 + 68 × 3 = 636 variants needing human review, several hours of work. If even that is infeasible, run a reduced 4-shape grid (V1/V2/V4/V7 — all symbol-anchored, all AST-tester only) which makes the doc-positive subset moot and drops total work to 144 × 4 = 576 variants. This is the soft "scope-cut" lever if needed.
 
 ---
 
@@ -688,16 +742,19 @@ These must be committed BEFORE any sweep run. Checklist:
 - [ ] PHASE6_REDO.md committed (this file)
 - [ ] `core/prompt-optimization/data/query-shapes/preregistration-v2.md` written with: split seed (42), family groupings (§4), weights (§7), decision rules (§8), promotion gates (§9), expected default shape, expected family overrides
 - [ ] Variant-builder grid updated to V7 alongside V1-V6: `core/prompt-optimization/data/query-shapes/build-variants.mjs`
-- [ ] **`preprocess.mjs`** script written (§5.2 + §5.5): produces `inputs/<lang>-<probe-id>.json` per the §5.5.2 schema — source snippet at pinned SHA + containing chunk via `ast_chunker` + graph neighbours from `code-graph.db` + path-token decomposition.
-- [ ] **`deepseek-client.mjs`** + **`author-variants.mjs`** scripts written (§5.2 + §5.5.4 + §5.5.5): direct DeepSeek V4 Flash HTTP API client using exact model name `deepseek-v4-flash`, non-reasoning mode, `response_format: { type: 'json_object' }`, `temperature: 0.3`, `max_tokens: 512`, 20-30 concurrent async workers via `p-limit`, exponential backoff on 429 (1→2→4→8→16s cap). Prompt template per §5.5.5. Variant output per §5.5.3 schema.
-- [ ] **`validator.mjs`** module written (§5.3 + §5.5.6): all six checks (JSON schema, length, symbol-presence, symbol-leak, path-token-leak with the §5.5.6 stopword list and 3-char-substring rule, empty/boilerplate). Runs synchronously after every model emit, drives re-prompt loop (max 2 retries with the §5.5.5 re-prompt prefix).
+- [ ] **`preprocess.mjs`** script written (§5.2 + §5.5): produces `inputs/<lang>-<probe-id>.json` per the §5.5.2 schema — source snippet at pinned SHA + containing chunk via `new ASTChunker()` from `core/indexing/ast-chunker.js` (JS-native, not napi) + graph neighbours from `code-graph.db` + path-token decomposition. Sets `goldClass` and `eligibleShapes` per §5.1 scope rule (AST-tester: all 7 cells; doc-positive: V3/V5/V6 only).
+- [ ] **`deepseek-client.mjs`** + **`author-variants.mjs`** scripts written (§5.2 + §5.5.4 + §5.5.5): direct DeepSeek HTTP API client using model id `deepseek-chat` (V4-Flash non-reasoning), `response_format: { type: 'json_object' }`, `temperature: 0.3`, `seed: 42`, `max_tokens: 512`, 20-30 concurrent async workers via `p-limit`, exponential backoff on 429 (1→2→4→8→16s cap). Records `outputSha256` per §5.5.3. Prompt template per §5.5.5. Variant output per §5.5.3 schema. Only iterates over `input.eligibleShapes`, not all 7 cells.
+- [ ] **DeepSeek model preflight (§5.5.4)**: `curl -H "Authorization: Bearer $DEEPSEEK_API_KEY" https://api.deepseek.com/v1/models | jq '.data[].id'` returns a list including `deepseek-chat`. If renamed, update the `model` field in `deepseek-client.mjs` before any sweep.
+- [ ] **`validator.mjs`** module written (§5.3 + §5.5.6): all six checks (JSON schema, length, symbol-presence, symbol-leak, path-token-leak with the §5.5.6 stopword list and the §5.3 check 5 rule — ≥5-char shared substring AND prefix/suffix-of-symbol-sub-token, NOT the prior 3-char rule, empty/boilerplate). Runs synchronously after every model emit, drives re-prompt loop (max 2 retries with the §5.5.5 re-prompt prefix).
 - [ ] DeepSeek API key configured in env (`DEEPSEEK_API_KEY`); endpoint `api.deepseek.com/v1/chat/completions` reachable; non-zero balance confirmed.
 - [ ] **Family-detection mapping (§5.5.7)** committed as a shared module at `core/prompt-optimization/data/query-shapes/family-map.mjs` so both PHASE6_REDO scripts and PHASE7.md T_i variants import the same source of truth.
-- [ ] **`aggregate-track-a.mjs`** script written (§5.5.8): paired permutation tests on `file_recall@1`, baseline = existing AST-tester probe phrasing, 10K permutations seed=42, BH-FDR over 7-shape × 5-family = 35-cell space, emits `recommendations-v2.json` per §10 schema.
-- [ ] Track A runner extended to read AST-tester gold + doc-positive gold, write per-(language, gold, shape) rows to `tracks/track-a-<runId>.jsonl` per §5.5.1 layout.
-- [ ] Spot-check: run §5.2 pipeline on 1 language (10-20 variants) and human-review for paraphrase quality before committing to full 1,484-variant sweep. Reject if V5/V6 quality rate < 70%.
+- [ ] **G3 leakage whitelist file** committed at `core/prompt-optimization/data/query-shapes/leakage-whitelist.json` (§9 G2 row) — minimal seed: language names, framework names, V1-V7 literal cell names. Subsequent additions only via documented PR.
+- [ ] **G4 Codex reviewer process documented** (§9 G4 row): user has an active Codex session ready to receive `instruction_text` candidates for independent review; user understands the verdict-recording back into `recommendations-v2.json` step.
+- [ ] **`aggregate-track-a.mjs`** script written (§5.5.8): paired permutation tests on `file_recall@1`, baseline = existing AST-tester probe phrasing, 10K permutations seed=42, BH-FDR over 7-shape × 5-family = 35-cell space, emits `recommendations-v2.json` per §10 schema. Per-language mean / family aggregate / weighted aggregate formulae per §7.
+- [ ] Track A runner extended to read AST-tester gold + doc-positive gold, write per-(language, gold, shape) rows to `tracks/track-a-<runId>.jsonl` per §5.5.1 layout. Honours `eligibleShapes` (no V1/V2/V4/V7 runs for doc-positive golds).
+- [ ] Spot-check: run §5.2 pipeline on 1 language (10-15 variants spanning V3/V5/V6 across both gold classes) and human-review for paraphrase quality before committing to full 1,212-variant sweep. Reject if V5/V6 quality rate < 70%.
 
-After all 10 boxes are ticked, sweep is unblocked. Estimated wall time after unlock: ~15-25 min for variant authoring + ~5 min for Track A sweep = **~20-30 min end-to-end for this `ss-search` redo**. (Per-tool wall time for the future ss-find / ss-semantic / structural redoes will be similar once their probe sets are authored — the same infra in §5.2-§5.5 is reused.)
+After all 12 boxes are ticked, sweep is unblocked. Estimated wall time after unlock: ~12-20 min for variant authoring + ~5 min for Track A sweep = **~17-25 min end-to-end for this `ss-search` redo**. (Per-tool wall time for the future ss-find / ss-semantic / structural redoes will be similar once their probe sets are authored — the same infra in §5.2-§5.5 is reused.)
 
 ---
 
