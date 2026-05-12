@@ -533,10 +533,12 @@ Decision at gate-failure time, not pre-committed.
 
 P6's `track-b-summary.json:perToolWinRates` is the **load-bearing input** to T1-T14 authoring for the
 **non-`ss-search` tools only** (`ss-find` / `ss-semantic` / `structural`). For `ss-search`, see the
-update box above. Even though no shape was promoted via BH-FDR (n=25 was below the noise floor for
-that gate), the directional Track B win-rate signal IS actionable for variant authoring. The signal is:
+update box above and §4.2 — the family-conditioned recommendations are now in
+`recommendations-v2.json`. Even though no shape was promoted via BH-FDR (n=25 was below the noise floor
+for that gate), the directional Track B win-rate signal from qshape-v1 IS actionable for variant
+authoring of the other three tools. The signal is:
 
-**Top Track B win rates from P6 (qshape-v1)**:
+**Top Track B win rates from P6 (qshape-v1, non-`ss-search` only)**:
 
 | Tool | Top shape | Win rate | Signal |
 |---|---|---|---|
@@ -545,27 +547,44 @@ that gate), the directional Track B win-rate signal IS actionable for variant au
 | `ss-semantic` | `short+without-symbol+medium-regex+declarative+high-density` | 21% (0L of 24) | **Strong (no losses)**: semantic also OK with no-symbol + declarative |
 | `ss-semantic` | `short+with-symbol+narrow-regex+interrogative+high-density` | 21% | **Confirms** ss-semantic's preference for symbols |
 
-**Anti-signal (avoid_shapes from P6)**:
+**Anti-signal (avoid_shapes from qshape-v1, non-`ss-search` only)**:
 
 | Tool | Worst shape | Recall@1 |
 |---|---|---|
-| `ss-search` | `short+without-symbol+medium-regex+declarative+high-density` | 0.157 (worst observed) |
 | `ss-find` | `very-short+without-symbol+narrow-regex+imperative+high-density` | 0.143 |
 | `structural` | `very-short+with-symbol+narrow-regex+imperative+high-density` | 0.756 (worst FOR structural; still good in absolute terms) |
+
+**`ss-search` shape findings from PHASE6_REDO (qshape-v2, 2026-05-13, n=1,424 sweep rows over 18 languages)** — supersedes the deprecated qshape-v1 row above:
+
+| Shape | Global file_recall@1 | Global symbol_recall@1 | Δ vs baseline (symbol) |
+|---|---|---|---|
+| V_baseline (gold's original phrasing) | 0.575 | 0.420 | — |
+| V1 (very-short + symbol + imperative) | 0.736 | 0.528 | +10.8pp |
+| V2 (short + symbol + interrogative) | **0.792** ← best file_recall | 0.465 | +4.5pp |
+| V3 (short + no-symbol + declarative) | 0.415 | 0.241 | -17.9pp |
+| V4 (medium + symbol + interrogative) | 0.750 | 0.500 | +8.0pp |
+| V5 (medium + no-symbol + low-density) | 0.241 | 0.127 | -29.3pp |
+| V6 (long-NL + no-symbol) | 0.269 | 0.160 | -26.0pp |
+| **V7 (medium + symbol + declarative)** | 0.757 | **0.535** ← best symbol_recall | **+11.5pp** |
+
+**Primary metric chosen for `ss-search`: symbol_recall@1.** Rationale: each `ss-search` call should hit the exact symbol chunk; a file-match-only result (PARTIAL) costs a follow-up `ss-semantic` call. V7 wins symbol_recall globally; V4 wins on C-family; V2 saves the file_recall on JS-mobile where V7 ties on symbol_recall but loses 12pp on file_recall. The full per-family breakdown lives in `recommendations-v2.json:cell_table`.
 
 ### §4.2 Inferred per-tool guidance (baked into variants)
 
 From the P6 directional signal, the variants encode these tool-specific recommendations:
 
-- **`[[ss-search]]`** (NL hybrid retrieval): **family-conditioned, per PHASE6_REDO §10**. The variant body emits a deterministic file-extension → family lookup followed by the corresponding `instruction_text`. Pseudo-template:
+- **`[[ss-search]]`** (NL hybrid retrieval): **family-conditioned, per PHASE6_REDO §10 + the 2026-05-13 qshape-v2 outcome**. The variant body emits a deterministic file-extension → family lookup (the same `family-map.mjs` used at sweep time) followed by the corresponding `instruction_text`:
   ```
   classify target file → one of {OO-monolithic, Systems-modular-terse, C-family, JS-mobile, Scripting-dynamic, unknown}
-  if known family AND recommendations-v2.json has family_override(F):
-      use family_override(F).instruction_text
-  else:
-      use default.instruction_text
+  if family == C-family:        use V4 instruction_text
+  if family == JS-mobile:       use V2 instruction_text
+  otherwise (incl. unknown):    use V7 instruction_text  ← default
   ```
-  The verbatim `instruction_text` strings come from `recommendations-v2.json`. The fallback (when PHASE6_REDO promotion produced `default: null`) is the prior P6 directional hint: "include the symbol if known, ≤6 tokens, prefer interrogative form. Avoid generic noun-phrase queries without symbols." This fallback is logged so the variant can be retired once PHASE6_REDO completes.
+  The verbatim `instruction_text` strings, baked from `recommendations-v2.json`:
+    - **Default (V7 — OO-monolithic, Systems-modular-terse, Scripting-dynamic, unknown)**: *"Phrase a medium-length declarative noun-phrase query (9-15 tokens, whitespace-split) that contains the target symbol verbatim and at least one domain-specific keyword. Skip leading verbs like 'how'/'what'; use the form `<symbol> <symbolType> that <domain noun-phrase>`."*
+    - **C-family override (V4)**: *"For C / C++ / Zig files, phrase a medium-length interrogative query (9-15 tokens) that contains the target symbol verbatim. Use 'how does X …' / 'where does X …' framing; mention at least one neighboring symbol from the same file when known."*
+    - **JS-mobile override (V2)**: *"For JS / TS / Dart files, phrase a short interrogative query (4-8 tokens) that contains the target symbol verbatim. Use 'how does X …' / 'where is X defined' framing."*
+  The single load-bearing input is `default.instruction_text` plus the two entries under `family_overrides` in `recommendations-v2.json`. The `family_overrides` set is **deliberately small** (only the two families whose data justified deviating from the default); other families inherit the V7 default. If a future re-run of `aggregate-track-a.mjs` produces a different recommendation, the verbatim strings above must be regenerated from the new artifact (`docs/PHASE6_REDO.md §15` checklist item).
 - **`[[ss-find]]`** (regex+find): require a narrow regex anchor. Avoid no-symbol short queries — they flood the candidate pool. *Pending its own Phase 6 redo against an `ss-find`-specific probe set.*
 - **`[[ss-semantic]]`** (LI/MaxSim semantic): keep queries SHORT (≤4 tokens) with the symbol. Imperative or declarative both work; symbols dominate. Behavioral queries (multi-callback "what does X do") are this tool's weakness — route them away. *Pending its own Phase 6 redo.*
 - **`[[structural]]`** (tree-sitter relationships): use interrogative form (`who calls X?`, `what does X depend on?`); short queries with the symbol; narrow regex anchors. Avoid imperative form for structural queries — it doesn't match the tool's relationship-verb model. *Pending its own Phase 6 redo.*
