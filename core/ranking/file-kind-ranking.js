@@ -43,7 +43,15 @@ import path from 'path';
  */
 
 const DOCS_RE  = /\.md$|\.mdx$|\.rst$|(?:^|\/)docs?\//i;
-const EXAMPLES_RE = /(?:^|\/)examples?\//i;
+// Optional leading underscore covers Go's `_examples/` build-excluded
+// convention (go-chi, gin, gorilla, etc. — `go build` ignores any path
+// component starting with `_`). The non-underscore form catches the
+// generic `examples/`/`example/` directory shape across all languages.
+// Verified across the AST-tester repo set: only `_examples/` directories
+// follow the examples-pollution pattern; other leading-underscore dirs
+// (Sphinx `_static`, Rust `_typeshed`, test fixture `_unrelated`, etc.)
+// fall under existing docs / test demotion or are legitimate sources.
+const EXAMPLES_RE = /(?:^|\/)_?examples?\//i;
 // Tests directory patterns. Includes the standard tests?/spec/__tests__/__mocks__
 // plus integration/, e2e/, fixtures?/, cypress/, playwright/ — common test-fixture
 // directory conventions across JS/Python/Rust/Go that shipped without TESTS_RE

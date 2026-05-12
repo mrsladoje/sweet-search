@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-12T02:48:23.151Z",
+  "summary": {
+    "counts": {
+      "PASS": 4,
+      "PARTIAL": 2,
+      "FAIL": 2
+    },
+    "totalMs": 214,
+    "avgMs": 27,
+    "n": 8
+  },
+  "results": [
+    {
+      "id": "ZG-001",
+      "repo": "zig",
+      "query": "how does http.zig parse an incoming HTTP request from a socket buffer with headers body cookies",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "src/request.zig",
+        "startLine": 547,
+        "endLine": 556,
+        "symbol": "n",
+        "symbolType": "const",
+        "score": 0.5149495005607605,
+        "presentation": "full"
+      },
+      "wallMs": 42,
+      "error": null
+    },
+    {
+      "id": "ZG-002",
+      "repo": "zig",
+      "query": "how does http.zig dispatch middleware actions through the request response pipeline",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "src/httpz.zig",
+        "startLine": 2392,
+        "endLine": 2458,
+        "symbol": "TestHandlerDefaultDispatch",
+        "symbolType": "struct",
+        "score": 0.574813187122345,
+        "presentation": "full"
+      },
+      "wallMs": 24,
+      "error": null
+    },
+    {
+      "id": "ZG-003",
+      "repo": "zig",
+      "query": "buffer pool to reuse byte allocations across requests in http.zig",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "src/worker.zig",
+        "startLine": 1809,
+        "endLine": 1824,
+        "symbol": "initializeBufferPool",
+        "symbolType": "function",
+        "score": 0.5365668535232544,
+        "presentation": "full"
+      },
+      "wallMs": 20,
+      "error": null
+    },
+    {
+      "id": "ZG-004",
+      "repo": "zig",
+      "query": "Request struct with body header param query cookies methods Zig",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "src/config.zig",
+        "startLine": 72,
+        "endLine": 83,
+        "symbol": "Request",
+        "symbolType": "struct",
+        "score": 0.5424422836303712,
+        "presentation": "full"
+      },
+      "wallMs": 27,
+      "error": null
+    },
+    {
+      "id": "ZG-005",
+      "repo": "zig",
+      "query": "Response struct with json header setStatus setCookie methods Zig",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "src/response.zig",
+        "startLine": 20,
+        "endLine": 338,
+        "symbol": "Response",
+        "symbolType": "struct",
+        "score": 0.6858623999357225,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "ZG-006",
+      "repo": "zig",
+      "query": "Buffer struct with len data fields and slice access",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "src/buffer.zig",
+        "startLine": 9,
+        "endLine": 19,
+        "symbol": "Buffer",
+        "symbolType": "struct",
+        "score": 0.585648146569729,
+        "presentation": "full"
+      },
+      "wallMs": 21,
+      "error": null
+    },
+    {
+      "id": "ZG-007",
+      "repo": "zig",
+      "query": "comptime function returning a generic Dispatcher type for action handler signatures",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "src/httpz.zig",
+        "startLine": 162,
+        "endLine": 167,
+        "symbol": "Dispatcher",
+        "symbolType": "function",
+        "score": 0.48669090270996096,
+        "presentation": "full"
+      },
+      "wallMs": 33,
+      "error": null
+    },
+    {
+      "id": "ZG-008",
+      "repo": "zig",
+      "query": "Pool init returns error union with errdefer cleanup on allocation failure",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "src/buffer.zig",
+        "startLine": 21,
+        "endLine": 164,
+        "symbol": "Pool",
+        "symbolType": "struct",
+        "score": 0.46659743785858154,
+        "presentation": "full"
+      },
+      "wallMs": 24,
+      "error": null
+    }
+  ]
+}
