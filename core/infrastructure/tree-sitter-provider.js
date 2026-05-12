@@ -36,6 +36,16 @@ const GRAMMAR_MAP = {
   php: 'tree-sitter-php',
   kotlin: 'tree-sitter-kotlin',
   swift: 'tree-sitter-swift',
+  // tree-sitter-c-sharp ships in node_modules/tree-sitter-wasms/out/ but was
+  // previously unwired — C# fell through to the regex chunker in
+  // parseBraceBasedFile. That path missed every modern-C# idiom whose
+  // declaration line doesn't fit the rigid regex shape: `unsafe` modifier
+  // ordering, positional `record`, tuple-typed generic returns (e.g.
+  // `IAsyncEnumerable<(byte[] e, int len, …)>`), expression-bodied methods,
+  // file-scoped namespaces, indexers, operators, local functions, nested
+  // classes. Wiring tree-sitter-c-sharp puts C# on the same code path as
+  // the other 13 languages (cAST sibling-merge over a proper AST).
+  csharp: 'tree-sitter-c_sharp',
 };
 
 // Identifier node types — used to detect leaf-ident captures in extractSymbols()
@@ -108,6 +118,72 @@ const BOUNDARY_TYPES = new Set([
   // name so the chunk metadata names + type the correct thing.
   'alias_declaration', 'template_declaration',
 ]);
+
+// Per-language EXTRA boundary types. These are unioned with BOUNDARY_TYPES
+// only when chunking a file in the matching language — so other languages'
+// chunking behaviour stays byte-identical to before the addition. Used to
+// keep grammar-specific node names out of the global set when those names
+// could overlap with another grammar's nodes that have different chunking
+// semantics. The threading happens in parseFileToChunks() which computes
+// `effectiveBoundaryTypes = BOUNDARY_TYPES ∪ LANG_EXTRA_BOUNDARY_TYPES[lang]`
+// once per parse and passes it through recursiveChunk + _extractSignature.
+//
+// C# additions (tree-sitter-c-sharp emits these for first-class declarations,
+// verified empirically with scripts/_csharp_grammar_probe.mjs against Garnet):
+//   - struct_declaration, record_struct_declaration: C# struct / record struct
+//   - property_declaration: anchors per-property chunks so `RespCommandDocs.Command`
+//     style queries (CS-004) have a property-scoped chunk to land on; cAST
+//     sibling-merge still bundles small auto-properties into 2000-char buffers
+//     named after the first property + additional_symbols listing the rest.
+//   - delegate_declaration: `public delegate T Foo(...);` becomes a chunk anchor.
+//   - destructor_declaration, indexer_declaration, operator_declaration,
+//     conversion_operator_declaration: first-class declarations per C# spec.
+//   - file_scoped_namespace_declaration: C# 10+ `namespace Foo;` shape.
+//   - local_function_statement: nested function declarations inside methods.
+//   - event_declaration, event_field_declaration: events behave as
+//     property/field-shaped entities at search time.
+// All these node names are C#-specific in our 14-language matrix EXCEPT
+// `struct_declaration` (also Swift) and `property_declaration` (also Swift),
+// which is exactly why they live here instead of in the global set.
+const LANG_EXTRA_BOUNDARY_TYPES = {
+  csharp: new Set([
+    'struct_declaration', 'record_struct_declaration',
+    'delegate_declaration', 'destructor_declaration',
+    'property_declaration',
+    'indexer_declaration', 'operator_declaration',
+    'conversion_operator_declaration',
+    'file_scoped_namespace_declaration',
+    'local_function_statement',
+    'event_declaration', 'event_field_declaration',
+  ]),
+};
+
+// Per-language EXCLUSIONS from BOUNDARY_TYPES. Removes node-type names that
+// the global set legitimately includes for one grammar but that collide
+// with anonymous-keyword leaves in another grammar — producing phantom
+// chunks during the cAST oversized-recursion path.
+//
+// Concrete trigger: tree-sitter-ruby uses bare `class` / `method` /
+// `singleton_class` / `singleton_method` as the *node type names* of
+// declarations (no `_declaration`/`_definition` suffix — see Ruby comment
+// in BOUNDARY_TYPES). Those four strings are correctly in BOUNDARY_TYPES.
+//
+// But tree-sitter-c-sharp (and tree-sitter-java, tree-sitter-kotlin, etc.)
+// emits an *anonymous keyword leaf* with type-string `"class"` as a child
+// of `class_declaration`. When the chunker recurses into an oversized
+// C# class and flushes the pre-body buffer (modifiers + class keyword +
+// identifier + base_list), that `class` keyword leaf is misidentified as
+// a boundary, producing a phantom `[class/null]` chunk with content
+// `internal\nsealed\nclass\nRespServerSession\n: ServerSessionBase`.
+//
+// Java/Kotlin have the same latent bug (verified empirically on gson's
+// TypeAdapters.java — emits a tiny `[class/null]` size=31 chunk at the
+// class declaration line). The fix is intentionally scoped to csharp
+// only so this PR doesn't change Java/Kotlin chunk output at all
+// (their existing phantom chunks are tiny and don't affect retrieval).
+const LANG_BOUNDARY_TYPE_EXCLUDES = {
+  csharp: new Set(['class']),
+};
 
 // AST node types that represent function/class bodies. Used by
 // extractSignature() to find where the declaration's body starts so
@@ -187,6 +263,26 @@ const NODE_TYPE_MAP = {
   'alias_declaration': 'typeAlias',
   // template_declaration intentionally absent — resolved to the inner
   // type (class/struct/function/typeAlias) by _resolveBoundary at lookup time.
+  // C# — fires only on nodes that the chunker treats as boundaries; for
+  // non-C# languages those nodes are NOT in the effective boundary set
+  // (see LANG_EXTRA_BOUNDARY_TYPES), so _resolveBoundary is not invoked
+  // on them during normal sibling-merge. The leaf-too-big pathological
+  // branch is the only place these could be consulted for another
+  // grammar (e.g. an oversized Swift `property_declaration` with no
+  // children) — the resulting type label is a strict improvement over
+  // the previous 'code' fallback in that case.
+  'struct_declaration': 'struct',
+  'record_struct_declaration': 'record',
+  'delegate_declaration': 'function',
+  'destructor_declaration': 'method',
+  'property_declaration': 'property',
+  'indexer_declaration': 'method',
+  'operator_declaration': 'method',
+  'conversion_operator_declaration': 'method',
+  'file_scoped_namespace_declaration': 'namespace',
+  'local_function_statement': 'function',
+  'event_declaration': 'property',
+  'event_field_declaration': 'field',
 };
 
 // Standard tags.scm query patterns for symbol extraction
@@ -405,6 +501,39 @@ const TAGS_QUERIES = {
     (namespace_definition name: (namespace_identifier) @namespace.definition)
     (alias_declaration name: (type_identifier) @type.definition)
   `,
+  // C# — tree-sitter-c-sharp uses bare `identifier` (not type_identifier)
+  // for all names, and exposes `name:` fields on every first-class
+  // declaration. Probed against Garnet's 30+ partial-class shards in
+  // scripts/_csharp_grammar_probe.mjs: every boundary type below emits
+  // a parseable name field. Indexer/operator declarations have no
+  // user-facing name (the `this[…]` / `operator+` is the identity),
+  // so they're captured at node level via @method.definition.
+  // Namespaces use `qualified_name` for dotted forms (`Garnet.server`)
+  // and `identifier` for single-segment forms; we capture both shapes.
+  csharp: `
+    (class_declaration name: (identifier) @class.definition)
+    (interface_declaration name: (identifier) @interface.definition)
+    (struct_declaration name: (identifier) @struct.definition)
+    (record_declaration name: (identifier) @record.definition)
+    (record_struct_declaration name: (identifier) @record.definition)
+    (enum_declaration name: (identifier) @enum.definition)
+    (delegate_declaration name: (identifier) @function.definition)
+    (namespace_declaration name: (identifier) @namespace.definition)
+    (namespace_declaration name: (qualified_name) @namespace.definition)
+    (file_scoped_namespace_declaration name: (identifier) @namespace.definition)
+    (file_scoped_namespace_declaration name: (qualified_name) @namespace.definition)
+    (method_declaration name: (identifier) @method.definition)
+    (constructor_declaration name: (identifier) @method.definition)
+    (destructor_declaration name: (identifier) @method.definition)
+    (property_declaration name: (identifier) @property.definition)
+    (indexer_declaration) @method.definition
+    (operator_declaration) @method.definition
+    (conversion_operator_declaration) @method.definition
+    (event_declaration name: (identifier) @property.definition)
+    (event_field_declaration (variable_declaration (variable_declarator name: (identifier) @field.definition)))
+    (field_declaration (variable_declaration (variable_declarator name: (identifier) @field.definition)))
+    (local_function_statement name: (identifier) @function.definition)
+  `,
 };
 
 // Names that tree-sitter-c / tree-sitter-cpp sometimes emit as the `name:`
@@ -491,6 +620,14 @@ const CAPTURE_TO_ENTITY_TYPE = {
   'component.definition': 'component',
   'variable.definition': 'variable',
   'macro.definition': 'macro',
+  // C# property declarations — `public RespCommand Command { get; init; }`.
+  // Used by the csharp TAGS_QUERIES entry to give init-only properties /
+  // computed properties / event-as-property declarations their own graph
+  // entity. Currently no other tree-sitter grammar in this codebase emits
+  // a @property.definition capture, so 'property' is a C#-private entity
+  // type at the moment (Swift's property_declaration node is not captured
+  // by tags.scm and won't reach this map).
+  'property.definition': 'property',
   // Java enum constants (FieldNamingPolicy.UPPER_CAMEL_CASE) and field
   // declarations (TypeAdapters.BIT_SET — a static final field whose
   // initializer is an anonymous `new TypeAdapter<BitSet>() { ... }`).
@@ -717,8 +854,24 @@ export class TreeSitterProvider {
     const maxChunkSize = (options.maxChunkSize || 2000) - headerOverhead;
     this._chunkCounter = 0;
 
+    // Per-parse effective boundary set: BOUNDARY_TYPES ∪ language extras
+    // \ language excludes. For every language without an extras or excludes
+    // entry (= all 13 pre-2026-05-12 languages), this is byte-identical to
+    // BOUNDARY_TYPES (same Set reference), so non-C# parsing semantics are
+    // unchanged.
+    const langExtra = LANG_EXTRA_BOUNDARY_TYPES[languageId];
+    const langExcludes = LANG_BOUNDARY_TYPE_EXCLUDES[languageId];
+    let boundaryTypes;
+    if (!langExtra && !langExcludes) {
+      boundaryTypes = BOUNDARY_TYPES;
+    } else {
+      boundaryTypes = new Set(BOUNDARY_TYPES);
+      if (langExtra) for (const t of langExtra) boundaryTypes.add(t);
+      if (langExcludes) for (const t of langExcludes) boundaryTypes.delete(t);
+    }
+
     const children = this._getChildren(tree.rootNode);
-    const chunks = this.recursiveChunk(children, content, maxChunkSize, null);
+    const chunks = this.recursiveChunk(children, content, maxChunkSize, null, boundaryTypes);
 
     tree.delete(); // free WASM memory
 
@@ -763,9 +916,13 @@ export class TreeSitterProvider {
    * @param {string} content - Full file content
    * @param {number} maxSize - Maximum chunk size in characters
    * @param {object|null} parentInfo - Parent chunk info for hierarchical linking
+   * @param {Set<string>} [boundaryTypes] - Effective boundary set (per-parse,
+   *   BOUNDARY_TYPES ∪ LANG_EXTRA_BOUNDARY_TYPES[lang]). When omitted, falls
+   *   back to BOUNDARY_TYPES — preserves the pre-2026-05-12 call signature
+   *   for any internal caller that constructs this provider directly.
    * @returns {Array} List of chunk objects
    */
-  recursiveChunk(nodes, content, maxSize, parentInfo) {
+  recursiveChunk(nodes, content, maxSize, parentInfo, boundaryTypes = BOUNDARY_TYPES) {
     const chunks = [];
     let buffer = [];
     let bufferSize = 0;
@@ -793,7 +950,7 @@ export class TreeSitterProvider {
         .join('\n');
 
       if (text.trim().length > 30) {
-        const boundariesInBuffer = buffer.filter(n => BOUNDARY_TYPES.has(n.type));
+        const boundariesInBuffer = buffer.filter(n => boundaryTypes.has(n.type));
 
         // SIBLING_DOC_SPLIT (RS-008 motivation, May 2026): at top level, when
         // 2+ boundary-typed siblings each carry an immediately-preceding outer
@@ -898,7 +1055,7 @@ export class TreeSitterProvider {
                 endLine: section[section.length - 1].endPosition.row,
                 type: resolved.type,
                 name: this._extractNodeName(resolved.nameNode),
-                signature: this._extractSignature(b, content),
+                signature: this._extractSignature(b, content, boundaryTypes),
                 additionalSymbols: null,
               });
             }
@@ -917,7 +1074,7 @@ export class TreeSitterProvider {
           name = this._extractNodeName(resolved.nameNode);
           type = resolved.type;
         }
-        const signature = firstBoundary ? this._extractSignature(firstBoundary, content) : null;
+        const signature = firstBoundary ? this._extractSignature(firstBoundary, content, boundaryTypes) : null;
         // When the cAST sibling-merge collapses multiple top-level
         // boundaries into one chunk (e.g. small rust file with two
         // adjacent free-standing fns), only the first boundary's name
@@ -1023,7 +1180,7 @@ export class TreeSitterProvider {
             // Header text is bounded to maxSize so we never exceed embed cap.
             const isRubyMethodHeader = parentInfo == null
               && (node.type === 'method' || node.type === 'singleton_method');
-            if (BOUNDARY_TYPES.has(node.type) && name && !isRubyMethodHeader) {
+            if (boundaryTypes.has(node.type) && name && !isRubyMethodHeader) {
               const HEADER_MAX_CHARS = Math.min(600, maxSize);
               const headerEndIdx = Math.min(node.endIndex, node.startIndex + HEADER_MAX_CHARS);
               const headerText = content.substring(node.startIndex, headerEndIdx);
@@ -1039,7 +1196,7 @@ export class TreeSitterProvider {
                   endLine: node.startPosition.row + Math.max(0, lineCount - 1),
                   type,
                   name,
-                  signature: this._extractSignature(node, content),
+                  signature: this._extractSignature(node, content, boundaryTypes),
                 });
               }
             }
@@ -1059,7 +1216,7 @@ export class TreeSitterProvider {
             //      pre-existing 'unknown' attribution unchanged.
             let subParent;
             const isNamelessRubySingleton = node.type === 'singleton_class';
-            if (!name && (!BOUNDARY_TYPES.has(node.type) || isNamelessRubySingleton) && parentInfo) {
+            if (!name && (!boundaryTypes.has(node.type) || isNamelessRubySingleton) && parentInfo) {
               subParent = parentInfo;
             } else {
               const parentId = this._nextChunkId();
@@ -1070,7 +1227,8 @@ export class TreeSitterProvider {
               this._getChildren(node),
               content,
               maxSize,
-              subParent
+              subParent,
+              boundaryTypes
             );
             chunks.push(...subChunks);
           } else {
@@ -1087,7 +1245,7 @@ export class TreeSitterProvider {
               endLine: node.endPosition.row,
               type: resolved.type,
               name: this._extractNodeName(resolved.nameNode),
-              signature: this._extractSignature(node, content),
+              signature: this._extractSignature(node, content, boundaryTypes),
             });
           }
         }
@@ -1114,9 +1272,9 @@ export class TreeSitterProvider {
    * does NOT alter `text`, `li_text`, or `li_greedy_text` — signature
    * surface is research-only on `embedding_text`.
    */
-  _extractSignature(node, content) {
+  _extractSignature(node, content, boundaryTypes = BOUNDARY_TYPES) {
     if (!node || !content) return null;
-    if (!BOUNDARY_TYPES.has(node.type)) return null;
+    if (!boundaryTypes.has(node.type)) return null;
 
     let bodyStart = null;
     // Try field-name lookup first (works for most modern grammars).

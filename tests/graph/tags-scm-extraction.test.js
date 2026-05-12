@@ -108,7 +108,7 @@ describe('tags.scm Symbol Extraction', () => {
       expect(CAPTURE_TO_ENTITY_TYPE['decorator.definition']).toBe('decorator');
     });
 
-    it('has 20 entries total', () => {
+    it('has 21 entries total', () => {
       // Bumped to 17 May-2026: added component.definition + variable.definition
       // for JS/TS/TSX `export const X = ...` shapes.
       // Bumped to 18 2026-05-11: added macro.definition for Rust macro_rules!
@@ -117,7 +117,10 @@ describe('tags.scm Symbol Extraction', () => {
       // Bumped to 20 2026-05-11: added enum_constant.definition + field.definition
       // for Java enum constants (FieldNamingPolicy.UPPER_CAMEL_CASE) and
       // static fields with anonymous-class initializers (TypeAdapters.BIT_SET).
-      expect(Object.keys(CAPTURE_TO_ENTITY_TYPE).length).toBe(20);
+      // Bumped to 21 2026-05-12: added property.definition for csharp init-only
+      // properties (CS-004 anchor); other graph entity types are reused by
+      // the csharp tags.scm (struct/record/method/namespace/field/function).
+      expect(Object.keys(CAPTURE_TO_ENTITY_TYPE).length).toBe(21);
     });
   });
 

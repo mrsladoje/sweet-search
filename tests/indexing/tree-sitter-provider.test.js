@@ -43,10 +43,10 @@ function mockNode(type, startIdx, endIdx, startRow, endRow, opts = {}) {
 // =============================================================================
 
 describe('GRAMMAR_MAP', () => {
-  it('maps top 13 languages', () => {
+  it('maps top 14 languages', () => {
     const expected = [
       'javascript', 'typescript', 'tsx', 'python', 'go', 'rust',
-      'java', 'c', 'cpp', 'ruby', 'php', 'kotlin', 'swift',
+      'java', 'c', 'cpp', 'ruby', 'php', 'kotlin', 'swift', 'csharp',
     ];
     for (const lang of expected) {
       expect(GRAMMAR_MAP[lang]).toBeDefined();
@@ -54,8 +54,8 @@ describe('GRAMMAR_MAP', () => {
     }
   });
 
-  it('has exactly 13 entries', () => {
-    expect(Object.keys(GRAMMAR_MAP)).toHaveLength(13);
+  it('has exactly 14 entries', () => {
+    expect(Object.keys(GRAMMAR_MAP)).toHaveLength(14);
   });
 
   it('routes tsx to tree-sitter-tsx (not tree-sitter-typescript) so JSX bodies parse', () => {
@@ -150,15 +150,16 @@ describe('TreeSitterProvider', () => {
     expect(p.grammarsDir).toBe('/tmp/grammars');
   });
 
-  it('getSupportedLanguages returns 13 languages (incl. tsx)', () => {
+  it('getSupportedLanguages returns 14 languages (incl. tsx, csharp)', () => {
     const langs = provider.getSupportedLanguages();
-    expect(langs).toHaveLength(13);
+    expect(langs).toHaveLength(14);
     expect(langs).toContain('javascript');
     expect(langs).toContain('typescript');
     expect(langs).toContain('tsx');
     expect(langs).toContain('python');
     expect(langs).toContain('go');
     expect(langs).toContain('rust');
+    expect(langs).toContain('csharp');
   });
 
   it('hasLanguage returns true for supported', () => {
