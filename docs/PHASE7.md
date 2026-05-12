@@ -3,7 +3,10 @@
 **Created**: 2026-05-10
 **Status**: Draft, ready for pre-registration tag and implementation
 **Reviewed**: 2026-05-10 by (a) Gemini 3.1 Pro Deep Think — THREE PASSES (pass 1 = 13 findings; pass 2 = 12 adversarial findings incl. FATAL Round-11 re-baseline + Maximin race-to-middle + EAS + ghost-context-leak + AST-ification + language-transfer HOMP + pathology probes; pass 3 = SHIP-IT verdict + 3 minor tweaks). All Gemini findings integrated. (b) **GPT-5.5 xhigh** external review — the production target reviewing the plan from inside, surfacing 13 GPT-specific blindspots, methodology attacks, and operational footguns Gemini structurally missed (TPM-vs-RPM concurrency math, 0.15 cap utopia-point bug, asymmetric EAS that rewards GPT under-exploration, Java HOMP omitting GPT-5.5, stale joint-mean/latent-interp/ja-pivot residue, SCS reward-for-stable-wrongness, token-validator multiplicity gaps, OP-2 target-tagging, etc.) — all integrated; see §11.5 for the change-map. (c) **User catch** — reasoning-mode transfer gap: optimization runs against thinking-OFF, but power users run thinking-ON; closed by §3.5.2 reasoning-mode operational HOMP gate (Sonnet+thinking + GPT-5.5+reasoning on 15 held-out probes; +$6). Full critique trail at `docs/PHASE7-gemini-critique-2026-05-10.md` (Gemini pass 1), `docs/PHASE7-gemini-critique-2-2026-05-10.md` (pass 2), `docs/PHASE7-gemini-critique-3-2026-05-10.md` (pass 3), `docs/PHASE7-gpt5-5-critique-2026-05-10.md` (GPT-5.5 xhigh).
-**Depends on**: P6 `qshape-v1` artifact (`recommendations.json`, Track A/B JSONLs at commit `7d9eb1d`)
+**Depends on**:
+- **`ss-search` grounding (primary)** — `core/prompt-optimization/data/query-shapes/recommendations-v2.json` produced by PHASE6_REDO (see `docs/PHASE6_REDO.md`). Family-conditioned default + per-family overrides. Deprecates the prior P6 `qshape-v1` artifact for `ss-search`.
+- **Other-tools grounding (interim)** — P6 `qshape-v1` artifact (`recommendations.json`, Track A/B JSONLs at commit `7d9eb1d`) retained ONLY for the directional signal on `ss-find`, `ss-semantic`, `structural`. To be superseded when each tool's own Phase-6 redo lands (probe sets pending).
+
 **Successor to**: docs/SYSTEM_PROMPT_OPT_PLAN.md §6, §8, §9, §11
 
 ---
@@ -511,7 +514,27 @@ Decision at gate-failure time, not pre-committed.
 
 ### §4.1 P6 grounding — reasoning HARD over Phase 6 data
 
-P6's `track-b-summary.json:perToolWinRates` is the **load-bearing input** to T1-T14 authoring. Even though no shape was promoted via BH-FDR (n=25 was below the noise floor for that gate), the directional Track B win-rate signal IS actionable for variant authoring. The signal is:
+> **Update 2026-05-11 — supersession by PHASE6_REDO**: the original P6 `recommendations.json`
+> (runId `partial-test-1778496156116`) is **deprecated** for `ss-search` shape grounding. The
+> replacement is `core/prompt-optimization/data/query-shapes/recommendations-v2.json` produced
+> by the PHASE6_REDO run (see `docs/PHASE6_REDO.md`). The new artifact ships a **family-conditioned
+> default + per-family overrides** instead of a single flat shape recommendation. T_i variant
+> bodies for the `[[ss-search]]` clauses must consume `recommendations-v2.json` schema, NOT the
+> deprecated `recommendations.json`. The other three tools (`ss-find`, `ss-semantic`, `structural`)
+> retain the prior P6 directional signal in this section until their respective Phase-6 redoes land.
+>
+> The new schema expects two fields per consumer:
+> - `default.instruction_text` — global default, applied when family detection is unavailable or
+>   the file's language doesn't map to a known family.
+> - `family_overrides[<family>].instruction_text` — per-family override applied when the agent
+>   has classified the target file into one of the 5 PHASE6_REDO families (OO-monolithic,
+>   Systems-modular-terse, C-family, JS-mobile, Scripting-dynamic). Family detection is a
+>   deterministic file-extension → family lookup; the agent does not reason about it.
+
+P6's `track-b-summary.json:perToolWinRates` is the **load-bearing input** to T1-T14 authoring for the
+**non-`ss-search` tools only** (`ss-find` / `ss-semantic` / `structural`). For `ss-search`, see the
+update box above. Even though no shape was promoted via BH-FDR (n=25 was below the noise floor for
+that gate), the directional Track B win-rate signal IS actionable for variant authoring. The signal is:
 
 **Top Track B win rates from P6 (qshape-v1)**:
 
@@ -534,12 +557,20 @@ P6's `track-b-summary.json:perToolWinRates` is the **load-bearing input** to T1-
 
 From the P6 directional signal, the variants encode these tool-specific recommendations:
 
-- **`[[ss-search]]`** (NL hybrid retrieval): include the symbol if known, ≤6 tokens, prefer interrogative form. Avoid generic noun-phrase queries without symbols.
-- **`[[ss-find]]`** (regex+find): require a narrow regex anchor. Avoid no-symbol short queries — they flood the candidate pool.
-- **`[[ss-semantic]]`** (LI/MaxSim semantic): keep queries SHORT (≤4 tokens) with the symbol. Imperative or declarative both work; symbols dominate. Behavioral queries (multi-callback "what does X do") are this tool's weakness — route them away.
-- **`[[structural]]`** (tree-sitter relationships): use interrogative form (`who calls X?`, `what does X depend on?`); short queries with the symbol; narrow regex anchors. Avoid imperative form for structural queries — it doesn't match the tool's relationship-verb model.
+- **`[[ss-search]]`** (NL hybrid retrieval): **family-conditioned, per PHASE6_REDO §10**. The variant body emits a deterministic file-extension → family lookup followed by the corresponding `instruction_text`. Pseudo-template:
+  ```
+  classify target file → one of {OO-monolithic, Systems-modular-terse, C-family, JS-mobile, Scripting-dynamic, unknown}
+  if known family AND recommendations-v2.json has family_override(F):
+      use family_override(F).instruction_text
+  else:
+      use default.instruction_text
+  ```
+  The verbatim `instruction_text` strings come from `recommendations-v2.json`. The fallback (when PHASE6_REDO promotion produced `default: null`) is the prior P6 directional hint: "include the symbol if known, ≤6 tokens, prefer interrogative form. Avoid generic noun-phrase queries without symbols." This fallback is logged so the variant can be retired once PHASE6_REDO completes.
+- **`[[ss-find]]`** (regex+find): require a narrow regex anchor. Avoid no-symbol short queries — they flood the candidate pool. *Pending its own Phase 6 redo against an `ss-find`-specific probe set.*
+- **`[[ss-semantic]]`** (LI/MaxSim semantic): keep queries SHORT (≤4 tokens) with the symbol. Imperative or declarative both work; symbols dominate. Behavioral queries (multi-callback "what does X do") are this tool's weakness — route them away. *Pending its own Phase 6 redo.*
+- **`[[structural]]`** (tree-sitter relationships): use interrogative form (`who calls X?`, `what does X depend on?`); short queries with the symbol; narrow regex anchors. Avoid imperative form for structural queries — it doesn't match the tool's relationship-verb model. *Pending its own Phase 6 redo.*
 
-These bullets go *verbatim* into the relevant T_i variant bodies. P6 didn't promote them statistically; they're authored as *informed hypotheses* that GEPA will refine.
+These bullets go *verbatim* into the relevant T_i variant bodies. For `[[ss-search]]`, the bullet is regenerated from `recommendations-v2.json` whenever that artifact updates. For the other three tools, the bullets remain at the P6 directional-signal level until their respective redoes land — they are authored as *informed hypotheses* that GEPA will refine.
 
 ### §4.3 Variant slate
 
@@ -567,7 +598,9 @@ The 14 hand-authored seed variants are organised along three orthogonal axes:
 | T14 | Behavioral-query optimized | Medium | Multi-file flow + behavioral | + §4.2 + ripgrep-sink-trait-style multi-callback handling (the gold class P6 timed out on) | ~800 tokens |
 | T15 | **Hypothesis-Driven Backtracking** (per Gemini critique) | Medium | All + structured `<failure_analysis>` blocks | encodes "if a tool returns empty result, write `<failure_analysis>` explaining why the code wasn't there before invoking next tool"; leverages 2026-era LLM test-time-compute even with extended-thinking OFF | ~900 tokens |
 
-**T12 (the no-grounding control) matters**: if T12 wins despite skipping §4.1 guidance, that's evidence that P6's directional signal didn't generalise. If T12 underperforms, the P6 grounding was load-bearing. Either way, useful.
+**Family-conditioned `ss-search` clauses (post-PHASE6_REDO supersession)**: every T_i whose body contains a `[[ss-search]]` clause and whose `p6_grounding` is `full` or `partial` must consume `recommendations-v2.json` (default + per-family overrides), NOT the deprecated flat `recommendations.json`. The other three tools' clauses (`[[ss-find]]`, `[[ss-semantic]]`, `[[structural]]`) continue to consume the old artifact until their respective Phase-6 redoes ship. T12 (the no-grounding control) remains literally control — no shape clauses for any tool.
+
+**T12 (the no-grounding control) matters**: if T12 wins despite skipping §4.1 guidance, that's evidence that P6's directional signal didn't generalise. If T12 underperforms, the P6 grounding was load-bearing. Either way, useful. The family-conditioned ss-search supersession does NOT change T12's role — T12 stays grounding-free regardless of which P6 artifact is the live one.
 
 **T15 (Hypothesis-Driven Backtracking, added per Gemini critique)** addresses a specific failure mode P6 surfaced: agentic code search often spirals when an early tool call returns empty — the agent blindly tries another query without updating its mental model. T15 forces an explicit `<failure_analysis>` block after any empty result before the next tool invocation, which empirically engages test-time compute even when the agent is in non-reasoning mode (Sonnet thinking-OFF, GPT-5.4-instant). If T15 dominates other variants on the `expectedNoMatch` and behavioural strata, that's a publishable observation in itself.
 
