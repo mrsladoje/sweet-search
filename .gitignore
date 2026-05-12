@@ -72,6 +72,14 @@ failure-analysis.md
 # Eval benchmark results and corpus (regenerable)
 eval/results/
 eval/corpus/
+
+# Probe results (regenerable via run-probes.mjs). Probe definitions
+# (eval/ast-tester-probes/gold/, eval/retrieval-probes/probes*.json)
+# and the locked retrieval baseline (eval/retrieval-probes/post-perf-60.json)
+# stay tracked outside this ignore.
+eval/ast-tester-probes/results/
+eval/retrieval-probes/last-*.json
+eval/retrieval-probes/results-*.json
 core/prompt-optimization/data/results/
 # Eval data: ignore downloaded datasets but track benchmark query files
 eval/data/gencodesearchnet/
