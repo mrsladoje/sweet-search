@@ -151,7 +151,12 @@ function buildEmbeddingText({ variant: variantOverride, content, relativePath, l
   const pathLine = relativePath ? `# ${relativePath}` : null;
   const parentLine = hierarchyInfo?.parentSymbol
     ? `# Parent: ${hierarchyInfo.parentType} ${hierarchyInfo.parentSymbol}` : null;
-  const symbolLine = (symbol && symbol !== 'unknown')
+  // Ruby method chunks keep metadata anchors, but omit method-name header
+  // text so top-level Ruby snippets stay aligned with the pre-method-boundary
+  // embedding surface.
+  const isRubyMethodChunk = language === 'ruby'
+    && (chunkType === 'method' || chunkType === 'singleton_method');
+  const symbolLine = (symbol && symbol !== 'unknown' && !isRubyMethodChunk)
     ? `# ${chunkType}: ${symbol}` : null;
   const langLine = (language && language !== 'text')
     ? `# Language: ${language}` : null;
@@ -288,7 +293,10 @@ function buildLiText({ content, relativePath, language, chunkType, symbol, hiera
   if (hierarchyInfo?.parentSymbol) {
     lines.push(`# Parent: ${hierarchyInfo.parentType} ${hierarchyInfo.parentSymbol}`);
   }
-  if (symbol && symbol !== 'unknown') {
+  // Mirror the Ruby method header carve-out used by embedding_text.
+  const isRubyMethodChunk = language === 'ruby'
+    && (chunkType === 'method' || chunkType === 'singleton_method');
+  if (symbol && symbol !== 'unknown' && !isRubyMethodChunk) {
     lines.push(`# ${chunkType}: ${symbol}`);
   }
   // Mirror embedding_text: surface sibling symbol names so the LI MaxSim
@@ -379,9 +387,15 @@ export class ASTChunker {
     const tsChunks = await provider.parseFileToChunks(content, langInfo.id);
     if (!tsChunks || tsChunks.length === 0) return null;
 
-    return tsChunks.map(chunk =>
-      this.buildChunk(
-        chunk.text, filePath, langInfo.id, chunk.type, chunk.name,
+    return tsChunks.map(chunk => {
+      const isTopLevelRubyMethod = langInfo.id === 'ruby'
+        && (chunk.type === 'method' || chunk.type === 'singleton_method')
+        && !chunk.parentSymbol;
+
+      return this.buildChunk(
+        chunk.text, filePath, langInfo.id,
+        isTopLevelRubyMethod ? 'code' : chunk.type,
+        isTopLevelRubyMethod ? null : chunk.name,
         chunk.startLine, chunk.endLine,
         {
           chunkId: chunk.chunkId,
@@ -391,8 +405,8 @@ export class ASTChunker {
           signature: chunk.signature || null,
           additionalSymbols: chunk.additionalSymbols || null,
         }
-      )
-    );
+      );
+    });
   }
 
   parseBraceBasedFile(filePath, content, language, patterns, comment, multiLine) {
@@ -1016,14 +1030,24 @@ export class ASTChunker {
     const parts = [];
     parts.push(`# ${chunk.metadata.path}`);
 
-    if (scopeChain && scopeChain.length > 0) {
+    const isRubyMethodChunk = chunk.metadata.language === 'ruby'
+      && (chunk.metadata.chunk_type === 'method'
+        || chunk.metadata.chunk_type === 'singleton_method');
+    const hasOnlySelfScope = scopeChain
+      && scopeChain.length === 1
+      && scopeChain[0] === chunk.metadata.symbol
+      && !chunk.metadata.parent_symbol;
+
+    if (scopeChain && scopeChain.length > 0 && !(isRubyMethodChunk && hasOnlySelfScope)) {
       parts.push(`# Scope: ${scopeChain.join(' > ')}`);
     } else if (chunk.metadata.parent_symbol) {
       // Preserve cAST parent context when no scope chain from code graph
       parts.push(`# Parent: ${chunk.metadata.parent_type} ${chunk.metadata.parent_symbol}`);
     }
-
-    if (chunk.metadata.symbol && chunk.metadata.symbol !== 'unknown') {
+    // Keep Ruby method metadata, but avoid injecting the method name into
+    // the production embedding/LI text. Top-level Ruby method chunks also
+    // skip self-only scope above.
+    if (chunk.metadata.symbol && chunk.metadata.symbol !== 'unknown' && !isRubyMethodChunk) {
       parts.push(`# Defines: ${chunk.metadata.chunk_type} ${chunk.metadata.symbol}`);
     }
 
