@@ -609,7 +609,7 @@ export class TreeSitterProvider {
       const seen = new Set(); // deduplicate by startIndex
       for (const capture of captures) {
         const { name: captureName, node } = capture;
-        const entityType = CAPTURE_TO_ENTITY_TYPE[captureName];
+        let entityType = CAPTURE_TO_ENTITY_TYPE[captureName];
         if (!entityType) continue;
 
         // When queries capture an identifier (e.g. `name: (identifier) @x`),
@@ -617,6 +617,34 @@ export class TreeSitterProvider {
         // node.parent for the extent (start/end lines, signature).
         const isLeafIdent = IDENT_TYPES.has(node.type);
         const extentNode = isLeafIdent && node.parent ? node.parent : node;
+
+        // Go's grammar collapses every `type X …` declaration into
+        // `type_declaration → type_spec` with a single @type.definition
+        // capture, which the table above maps to the catch-all 'typeAlias'.
+        // The downstream `type` field of a type_spec encodes whether X is a
+        // struct, an interface, or a true type alias / slice / func type.
+        // Drill in and emit the more specific entity type so symbol-type
+        // filtering, file-kind boosts and probe gold checks (GO-005 / GO-007
+        // / GO-008 expect 'interface'/'struct', not 'typeAlias') work as
+        // intended. Pure precision refinement: same node extent, same
+        // symbol name, only the label changes. Other languages have no
+        // `type_spec` node, so this branch is structurally Go-only.
+        if (
+          languageId === 'go' &&
+          entityType === 'typeAlias' &&
+          extentNode.type === 'type_spec'
+        ) {
+          const typeField = extentNode.childForFieldName?.('type');
+          if (typeField) {
+            if (typeField.type === 'struct_type') entityType = 'struct';
+            else if (typeField.type === 'interface_type') entityType = 'interface';
+            // All other type-spec rhs shapes (slice/array/map/channel/
+            // function/pointer/qualified/identifier/generic/parenthesized)
+            // remain 'typeAlias', which is the correct semantic label for
+            // `type Middlewares []func(...)`, `type Handler = http.Handler`,
+            // etc.
+          }
+        }
 
         // Deduplicate: multiple captures can match the same declaration
         const key = `${extentNode.startIndex}:${entityType}`;

@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-12T02:40:24.294Z",
+  "summary": {
+    "counts": {
+      "PASS": 0,
+      "PARTIAL": 3,
+      "FAIL": 5
+    },
+    "totalMs": 226,
+    "avgMs": 28,
+    "n": 8
+  },
+  "results": [
+    {
+      "id": "JV-001",
+      "repo": "java",
+      "query": "how does Gson handle null values during serialization",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "gson/src/main/java/com/google/gson/TypeAdapter.java",
+        "startLine": 121,
+        "endLine": 322,
+        "symbol": "TypeAdapter",
+        "symbolType": "class",
+        "score": 0.5573740601539612,
+        "presentation": "full"
+      },
+      "wallMs": 68,
+      "error": null
+    },
+    {
+      "id": "JV-002",
+      "repo": "java",
+      "query": "how does Gson resolve the constructor for generic collection types",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "gson/src/main/java/com/google/gson/internal/bind/CollectionTypeAdapterFactory.java",
+        "startLine": 37,
+        "endLine": 39,
+        "symbol": "CollectionTypeAdapterFactory",
+        "symbolType": "method",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 24,
+      "error": null
+    },
+    {
+      "id": "JV-003",
+      "repo": "java",
+      "query": "how does the JSON streaming reader extract string tokens",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "gson/src/main/java/com/google/gson/stream/JsonToken.java",
+        "startLine": 19,
+        "endLine": 76,
+        "symbol": "JsonToken",
+        "symbolType": "enum",
+        "score": 0.5317670702934265,
+        "presentation": "full"
+      },
+      "wallMs": 24,
+      "error": null
+    },
+    {
+      "id": "JV-004",
+      "repo": "java",
+      "query": "TypeToken getType method",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "gson/src/main/java/com/google/gson/reflect/TypeToken.java",
+        "startLine": 54,
+        "endLine": 452,
+        "symbol": "TypeToken",
+        "symbolType": "class",
+        "score": 0.7121055573225021,
+        "presentation": "full"
+      },
+      "wallMs": 20,
+      "error": null
+    },
+    {
+      "id": "JV-005",
+      "repo": "java",
+      "query": "GsonBuilder registerTypeAdapter method",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "gson/src/main/java/com/google/gson/internal/bind/JsonAdapterAnnotationTypeAdapterFactory.java",
+        "startLine": 105,
+        "endLine": 162,
+        "symbol": "getTypeAdapter",
+        "symbolType": "method",
+        "score": 0.5242782235145569,
+        "presentation": "full"
+      },
+      "wallMs": 22,
+      "error": null
+    },
+    {
+      "id": "JV-006",
+      "repo": "java",
+      "query": "FieldNamingPolicy UPPER_CAMEL_CASE enum constant",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "gson/src/main/java/com/google/gson/FieldNamingPolicy.java",
+        "startLine": 22,
+        "endLine": 213,
+        "symbol": "FieldNamingPolicy",
+        "symbolType": "enum",
+        "score": 0.7591552860438825,
+        "presentation": "full"
+      },
+      "wallMs": 25,
+      "error": null
+    },
+    {
+      "id": "JV-007",
+      "repo": "java",
+      "query": "anonymous TypeAdapter implementation for BitSet serialization",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "gson/src/main/java/com/google/gson/TypeAdapter.java",
+        "startLine": 121,
+        "endLine": 322,
+        "symbol": "TypeAdapter",
+        "symbolType": "class",
+        "score": 0.44170361012220377,
+        "presentation": "full"
+      },
+      "wallMs": 24,
+      "error": null
+    },
+    {
+      "id": "JV-008",
+      "repo": "java",
+      "query": "LinkedTreeMap constructor with custom comparator and null values support",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "gson/src/main/java/com/google/gson/internal/LinkedTreeMap.java",
+        "startLine": 48,
+        "endLine": 51,
+        "symbol": "compare",
+        "symbolType": "method",
+        "score": 0.5619424297218332,
+        "presentation": "full"
+      },
+      "wallMs": 19,
+      "error": null
+    }
+  ]
+}
