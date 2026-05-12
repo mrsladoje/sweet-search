@@ -81,6 +81,15 @@ eval/ast-tester-probes/results/
 eval/retrieval-probes/last-*.json
 eval/retrieval-probes/results-*.json
 core/prompt-optimization/data/results/
+
+# PHASE6_REDO sweep artifacts (regenerable via preprocess.mjs +
+# author-variants.mjs + track-a-runner.mjs). Keep the load-bearing
+# recommendations-v2.json, preregistration, family-map, leakage-whitelist,
+# and overrides — drop the intermediates per `ebf3710 chore(repo): drop
+# tracked probe-result artifacts`.
+core/prompt-optimization/data/query-shapes/inputs/
+core/prompt-optimization/data/query-shapes/variants/
+core/prompt-optimization/data/query-shapes/tracks/
 # Eval data: ignore downloaded datasets but track benchmark query files
 eval/data/gencodesearchnet/
 eval/data/m2crb/

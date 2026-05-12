@@ -1,0 +1,13 @@
+{
+  "_meta": {
+    "createdAt": "2026-05-13",
+    "owner": "sweet-search-core (user)",
+    "rationale": "Per the 2026-05-13 post-sweep analysis (PHASE6_REDO.md §8 amendment). The primary metric is symbol_recall@1 because for an agent each ss-search call should hit the exact symbol — file-only match (PARTIAL) costs a follow-up call. V7 wins symbol_recall globally; V4 wins on C-family; V2 saves file_recall on JS-mobile where V7 ties on symbol_recall but loses -12pp on file_recall.",
+    "data_source": "core/prompt-optimization/data/query-shapes/recommendations-v2.json (cell_table)",
+    "supersedes_auto_picks": "Yes — when auto §8.2 would pick a different shape, this manual map wins, with both recorded for transparency."
+  },
+  "overrides": {
+    "C-family": "V4",
+    "JS-mobile": "V2"
+  }
+}

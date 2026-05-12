@@ -1,7 +1,9 @@
 /**
- * Build core/prompt-optimization/data/query-shapes/variants.json — K=6 shape
+ * Build core/prompt-optimization/data/query-shapes/variants.json — K=7 shape
  * variants per gold across the orthogonal main-effects grid declared in
- * docs/SYSTEM_PROMPT_OPT_PLAN.md §7.2 / preregistration.md.
+ * docs/SYSTEM_PROMPT_OPT_PLAN.md §7.2 / preregistration.md. V7 was added
+ * 2026-05-12 per docs/PHASE6_REDO.md §5 (descriptive-with-symbol cell);
+ * V1-V6 remain unchanged.
  *
  * Shape grid dimensions (agent-instructable):
  *   1. Length tier:        very-short (≤3 tok), short (4-8), medium (9-15), long-NL (16+)
@@ -11,12 +13,12 @@
  *   5. Domain-term density: high, low
  *   6. Regex anchor breadth (ss-find only): narrow (1 literal), medium (2-3), broad (5+)
  *
- * The full Cartesian product is 4×2×2×3×2×3 = 288 cells. We sample K=6 per
+ * The full Cartesian product is 4×2×2×3×2×3 = 288 cells. We sample K=7 per
  * gold along the orthogonal grid below, chosen to give every dimension
  * non-trivial main-effect coverage while keeping the within-gold per-tool
  * sweep tractable.
  *
- * The 6 canonical variants per gold:
+ * The 7 canonical variants per gold (V7 added 2026-05-12 per docs/PHASE6_REDO.md §5):
  *
  *   V1: very-short + with-symbol*          + absent  + imperative   + high + narrow-regex   (* falls back to without-symbol when no expectedSymbols, anchoring on file basename)
  *   V2: short      + with-symbol           + present + interrogative+ high + narrow-regex
@@ -24,6 +26,7 @@
  *   V4: medium     + with-symbol           + present + interrogative+ high + medium-regex   (the existing tasks.js phrasing baseline)
  *   V5: medium     + without-symbol        + present + interrogative+ low  + broad-regex
  *   V6: long-NL    + without-symbol        + present + interrogative+ low  + broad-regex
+ *   V7: medium     + with-symbol           + absent  + declarative  + high + narrow-regex   (PHASE6_REDO §5: covers descriptive-with-symbol form — the existing rust.json probe phrasing shape)
  *
  * Variants are authored programmatically from each gold's components
  * (query / expectedSymbols / expectedFiles / qshape_stratum). The original
@@ -284,7 +287,35 @@ function variantV6(gold) {
   };
 }
 
-const VARIANT_BUILDERS = [variantV1, variantV2, variantV3, variantV4, variantV5, variantV6];
+function variantV7(gold) {
+  // medium + with-symbol + absent intent + declarative noun-phrase + high domain + narrow regex
+  // V7 (added 2026-05-12 per docs/PHASE6_REDO.md §5) covers the
+  // descriptive-with-symbol form — the existing AST-tester probes
+  // (rust.json, kotlin.json, etc.) are authored as "X struct that does Y";
+  // V4 (interrogative) does not cover this case. V7 lets us measure whether
+  // the existing probe phrasing is in a good cell.
+  const file = pickPrimaryFile(gold) ?? '';
+  const fallback = file ? path.basename(file, path.extname(file)) : gold.repo;
+  const symRaw = pickPrimarySymbol(gold) ?? fallback;
+  const sym = tsxCanonicalSymbol(gold, symRaw);
+  const symbolType = gold.expectedSymbolType ?? gold.expectedSymbolTypeAnyOf?.[0] ?? 'symbol';
+  // Build a declarative noun-phrase: "<symbol> <type> that <topic-phrase>".
+  // Skip an intent verb (declarative, not interrogative/imperative).
+  const noun = topicNoun(gold);
+  let q = `${sym} ${symbolType} that ${noun}`;
+  // Cap to the medium tier (9-15 tokens whitespace-split).
+  const ws = words(q);
+  if (ws.length > 15) q = ws.slice(0, 14).join(' ');
+  // Pad to ≥ 9 if the topic noun is unusually terse.
+  if (words(q).length < 9) q = `${q} in the ${gold.repo} codebase implementation`;
+  return {
+    shape: 'medium+with-symbol+narrow-regex+declarative+high-density',
+    query: q,
+    regex: narrowRegex(gold),
+  };
+}
+
+const VARIANT_BUILDERS = [variantV1, variantV2, variantV3, variantV4, variantV5, variantV6, variantV7];
 
 // ─── ss-find specific anchor sweep (regex-breadth side analysis) ──────────
 
@@ -374,13 +405,15 @@ function main() {
       'V4: medium+with-symbol+medium-regex+interrogative+high-density (baseline = original tasks.js phrasing)',
       'V5: medium+without-symbol+broad-regex+interrogative+low-density',
       'V6: long-NL+without-symbol+broad-regex+interrogative+low-density',
+      'V7: medium+with-symbol+narrow-regex+declarative+high-density (PHASE6_REDO §5 — descriptive-with-symbol)',
     ],
     summary: summarise(perGold),
     perGold,
   };
 
   writeFileSync(VARIANTS_PATH, JSON.stringify(out, null, 2) + '\n');
-  process.stdout.write(`variants.json written: ${out.summary.nGolds} golds × 6 = ${out.summary.nVariants} variants\n`);
+  const K = VARIANT_BUILDERS.length;
+  process.stdout.write(`variants.json written: ${out.summary.nGolds} golds × ${K} = ${out.summary.nVariants} variants\n`);
   process.stdout.write(JSON.stringify(out.summary.shapeHistogram, null, 2) + '\n');
 }
 
