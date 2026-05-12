@@ -339,6 +339,12 @@ export const TREE_SITTER_ENTITY_PRIORITY = Object.freeze({
   // initialize anonymous inner-class subclasses). Same priority story as
   // enum_constant — useful for anchoring, not primary.
   field: 10,
+  // C# property declarations (`public RespCommand Command { get; init; }`) —
+  // first-class members per the C# spec, but lower in retrieval priority
+  // than methods/classes when both could anchor a result. Same rank as
+  // arrowFunction/interface/enum (20): high enough to win over enum_constant
+  // when both match, low enough to never overshadow the owning class.
+  property: 20,
 });
 
 // Module-scope constants for extractJavaScript() — avoid per-call/per-line allocation.
