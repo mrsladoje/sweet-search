@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-12T17:05:21.333Z",
+  "summary": {
+    "counts": {
+      "PASS": 1,
+      "PARTIAL": 4,
+      "FAIL": 3
+    },
+    "totalMs": 338,
+    "avgMs": 42,
+    "n": 8
+  },
+  "results": [
+    {
+      "id": "CS-001",
+      "repo": "csharp",
+      "query": "how does garnet handle the SET command for string keys",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "libs/client/GarnetClientAPI/GarnetClientBasicRespCommands.cs",
+        "startLine": 191,
+        "endLine": 600,
+        "symbol": "StringSetAsync",
+        "symbolType": "method",
+        "score": 0.5491309762001038,
+        "presentation": "full"
+      },
+      "wallMs": 61,
+      "error": null
+    },
+    {
+      "id": "CS-002",
+      "repo": "csharp",
+      "query": "where does garnet dispatch RESP commands to their handler methods",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "libs/server/Resp/RespCommandsInfo.cs",
+        "startLine": 20,
+        "endLine": 479,
+        "symbol": "RespCommandsInfo",
+        "symbolType": "class",
+        "score": 0.49749135971069336,
+        "presentation": "full"
+      },
+      "wallMs": 32,
+      "error": null
+    },
+    {
+      "id": "CS-003",
+      "repo": "csharp",
+      "query": "how does garnet persist AOF log entries and wait for commit",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "libs/server/Servers/GarnetServerOptions.cs",
+        "startLine": 91,
+        "endLine": 493,
+        "symbol": "EnableLua",
+        "symbolType": "field",
+        "score": 0.4725342094898224,
+        "presentation": "full"
+      },
+      "wallMs": 39,
+      "error": null
+    },
+    {
+      "id": "CS-004",
+      "repo": "csharp",
+      "query": "RespCommandDocs Command property init-only",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "libs/server/Resp/RespCommandDocs.cs",
+        "startLine": 19,
+        "endLine": 289,
+        "symbol": "RespCommandDocs",
+        "symbolType": "class",
+        "score": 0.647832441329956,
+        "presentation": "full"
+      },
+      "wallMs": 38,
+      "error": null
+    },
+    {
+      "id": "CS-005",
+      "repo": "csharp",
+      "query": "LoaderBlockCache positional record in LuaRunner",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "libs/server/Lua/LuaRunner.Loader.cs",
+        "startLine": 15,
+        "endLine": 518,
+        "symbol": "LuaRunner",
+        "symbolType": "class",
+        "score": 0.7549269365625857,
+        "presentation": "full"
+      },
+      "wallMs": 35,
+      "error": null
+    },
+    {
+      "id": "CS-006",
+      "repo": "csharp",
+      "query": "TsavoriteLogScanIterator GetAsyncEnumerable method",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "libs/storage/Tsavorite/cs/src/core/TsavoriteLog/TsavoriteLogIterator.cs",
+        "startLine": 20,
+        "endLine": 967,
+        "symbol": "TsavoriteLogScanIterator",
+        "symbolType": "class",
+        "score": 0.5269610280468463,
+        "presentation": "full"
+      },
+      "wallMs": 31,
+      "error": null
+    },
+    {
+      "id": "CS-007",
+      "repo": "csharp",
+      "query": "partial class RespServerSession async background processor",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "libs/server/Resp/AsyncProcessor.cs",
+        "startLine": 12,
+        "endLine": 144,
+        "symbol": "RespServerSession",
+        "symbolType": "class",
+        "score": 0.8955646543800831,
+        "presentation": "full"
+      },
+      "wallMs": 70,
+      "error": null
+    },
+    {
+      "id": "CS-008",
+      "repo": "csharp",
+      "query": "generic async pool with IDisposable constraint in Tsavorite",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "libs/storage/Tsavorite/cs/src/core/Device/AsyncPool.cs",
+        "startLine": 11,
+        "endLine": 142,
+        "symbol": "AsyncPool",
+        "symbolType": "class",
+        "score": 0.6807840585708618,
+        "presentation": "full"
+      },
+      "wallMs": 32,
+      "error": null
+    }
+  ]
+}

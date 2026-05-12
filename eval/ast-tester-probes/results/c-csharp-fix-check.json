@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-12T17:05:52.435Z",
+  "summary": {
+    "counts": {
+      "PASS": 3,
+      "PARTIAL": 4,
+      "FAIL": 1
+    },
+    "totalMs": 195,
+    "avgMs": 24,
+    "n": 8
+  },
+  "results": [
+    {
+      "id": "C-001",
+      "repo": "c",
+      "query": "how does hiredis parse RESP protocol replies from a network buffer incrementally",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "hiredis.c",
+        "startLine": 1051,
+        "endLine": 1115,
+        "symbol": "redisGetReplyFromReader",
+        "symbolType": "function",
+        "score": 0.4506804645061493,
+        "presentation": "full"
+      },
+      "wallMs": 39,
+      "error": null
+    },
+    {
+      "id": "C-002",
+      "repo": "c",
+      "query": "how does hiredis open a TCP connection to a redis server with options",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "hiredis.c",
+        "startLine": 858,
+        "endLine": 880,
+        "symbolType": "code",
+        "score": 0.5855566263198853,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "C-003",
+      "repo": "c",
+      "query": "how does hiredis send commands using printf-style format strings",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "hiredis.c",
+        "startLine": 560,
+        "endLine": 592,
+        "symbol": "redisFormatCommand",
+        "symbolType": "function",
+        "score": 0.5250146389007568,
+        "presentation": "full"
+      },
+      "wallMs": 19,
+      "error": null
+    },
+    {
+      "id": "C-004",
+      "repo": "c",
+      "query": "hiredis redisReply struct with type integer string and array fields",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "hiredis.h",
+        "startLine": 116,
+        "endLine": 162,
+        "symbol": "redisReply",
+        "symbolType": "struct",
+        "score": 0.7154900192022324,
+        "presentation": "full"
+      },
+      "wallMs": 25,
+      "error": null
+    },
+    {
+      "id": "C-005",
+      "repo": "c",
+      "query": "hiredis redisConnect function blocking IP and port",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "hiredis.c",
+        "startLine": 882,
+        "endLine": 927,
+        "symbol": "timeval",
+        "symbolType": "struct",
+        "score": 0.5181261897087097,
+        "presentation": "full"
+      },
+      "wallMs": 20,
+      "error": null
+    },
+    {
+      "id": "C-006",
+      "repo": "c",
+      "query": "hiredis redisAsyncContext struct for non-blocking event-loop integration",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "async.h",
+        "startLine": 64,
+        "endLine": 123,
+        "symbol": "redisAsyncContext",
+        "symbolType": "struct",
+        "score": 0.861343915641308,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    },
+    {
+      "id": "C-007",
+      "repo": "c",
+      "query": "hiredis redisCallbackFn function pointer typedef for async replies",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "async.h",
+        "startLine": 37,
+        "endLine": 64,
+        "symbol": "redisAsyncContext",
+        "symbolType": "struct",
+        "score": 0.5482423901557922,
+        "presentation": "full"
+      },
+      "wallMs": 18,
+      "error": null
+    },
+    {
+      "id": "C-008",
+      "repo": "c",
+      "query": "hiredis redisCallback struct with embedded next-pointer linked-list head",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "async.h",
+        "startLine": 37,
+        "endLine": 64,
+        "symbol": "redisCallback",
+        "symbolType": "struct",
+        "score": 0.6422942628860474,
+        "presentation": "full"
+      },
+      "wallMs": 25,
+      "error": null
+    }
+  ]
+}

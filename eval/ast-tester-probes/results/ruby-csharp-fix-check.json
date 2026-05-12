@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-12T17:05:46.333Z",
+  "summary": {
+    "counts": {
+      "PASS": 5,
+      "PARTIAL": 1,
+      "FAIL": 2
+    },
+    "totalMs": 226,
+    "avgMs": 28,
+    "n": 8
+  },
+  "results": [
+    {
+      "id": "RB-001",
+      "repo": "ruby",
+      "query": "how does sinatra match incoming requests to route handlers and dispatch the response",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "sinatra-contrib/lib/sinatra/respond_with.rb",
+        "startLine": 6,
+        "endLine": 274,
+        "symbol": "Sinatra",
+        "symbolType": "module",
+        "score": 0.5036991238594055,
+        "presentation": "full"
+      },
+      "wallMs": 46,
+      "error": null
+    },
+    {
+      "id": "RB-002",
+      "repo": "ruby",
+      "query": "how does sinatra extend Rack Request with HTTP content negotiation methods like accept",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/sinatra/base.rb",
+        "startLine": 31,
+        "endLine": 165,
+        "symbol": "Request",
+        "symbolType": "class",
+        "score": 0.5709042549133301,
+        "presentation": "full"
+      },
+      "wallMs": 33,
+      "error": null
+    },
+    {
+      "id": "RB-003",
+      "repo": "ruby",
+      "query": "how does sinatra cache compiled view templates between requests",
+      "verdict": "PARTIAL",
+      "reason": "symbol_mismatch",
+      "top1": {
+        "file": "lib/sinatra/base.rb",
+        "startLine": 742,
+        "endLine": 939,
+        "symbol": "Templates",
+        "symbolType": "module",
+        "score": 0.46612322330474854,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "RB-004",
+      "repo": "ruby",
+      "query": "Sinatra Application class extending Base for the top-level DSL",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/sinatra/base.rb",
+        "startLine": 2078,
+        "endLine": 2096,
+        "symbol": "Application",
+        "symbolType": "class",
+        "score": 0.6299474345743657,
+        "presentation": "full"
+      },
+      "wallMs": 29,
+      "error": null
+    },
+    {
+      "id": "RB-005",
+      "repo": "ruby",
+      "query": "Sinatra IndifferentHash class for string and symbol key access",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/sinatra/indifferent_hash.rb",
+        "startLine": 41,
+        "endLine": 207,
+        "symbol": "IndifferentHash",
+        "symbolType": "class",
+        "score": 0.7619912487864495,
+        "presentation": "full"
+      },
+      "wallMs": 24,
+      "error": null
+    },
+    {
+      "id": "RB-006",
+      "repo": "ruby",
+      "query": "Sinatra Helpers module mixed into Base",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/sinatra/base.rb",
+        "startLine": 286,
+        "endLine": 722,
+        "symbol": "Helpers",
+        "symbolType": "module",
+        "score": 0.5683792233467102,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    },
+    {
+      "id": "RB-007",
+      "repo": "ruby",
+      "query": "Sinatra Base class << self block for class-level DSL definitions",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "rack-protection/lib/rack/protection/base.rb",
+        "startLine": 11,
+        "endLine": 145,
+        "symbol": "Base",
+        "symbolType": "class",
+        "score": 0.4626277747750283,
+        "presentation": "full"
+      },
+      "wallMs": 25,
+      "error": null
+    },
+    {
+      "id": "RB-008",
+      "repo": "ruby",
+      "query": "ExtendedRack class inheriting from a Struct.new runtime-generated class",
+      "verdict": "PASS",
+      "reason": "match",
+      "top1": {
+        "file": "lib/sinatra/base.rb",
+        "startLine": 225,
+        "endLine": 256,
+        "symbol": "ExtendedRack",
+        "symbolType": "class",
+        "score": 0.5490835204720497,
+        "presentation": "full"
+      },
+      "wallMs": 23,
+      "error": null
+    }
+  ]
+}
