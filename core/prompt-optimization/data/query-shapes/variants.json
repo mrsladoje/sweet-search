@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "runId": "qshape-v1",
-  "generatedAt": "2026-05-09T10:04:07.224Z",
+  "generatedAt": "2026-05-12T21:39:22.909Z",
   "authoredBy": "variant-generator-v1",
   "builderSource": "core/prompt-optimization/data/query-shapes/build-variants.mjs",
   "shapeGrid": {
@@ -35,16 +35,17 @@
     ]
   },
   "canonicalVariants": [
-    "V1: very-short+with-symbol+narrow-regex+imperative+high-density",
+    "V1: very-short+(with|without)-symbol+narrow-regex+imperative+high-density (without-symbol when no expectedSymbols)",
     "V2: short+with-symbol+narrow-regex+interrogative+high-density",
     "V3: short+without-symbol+medium-regex+declarative+high-density",
     "V4: medium+with-symbol+medium-regex+interrogative+high-density (baseline = original tasks.js phrasing)",
     "V5: medium+without-symbol+broad-regex+interrogative+low-density",
-    "V6: long-NL+without-symbol+broad-regex+interrogative+low-density"
+    "V6: long-NL+without-symbol+broad-regex+interrogative+low-density",
+    "V7: medium+with-symbol+narrow-regex+declarative+high-density (PHASE6_REDO §5 — descriptive-with-symbol)"
   ],
   "summary": {
     "nGolds": 90,
-    "nVariants": 540,
+    "nVariants": 630,
     "shapeHistogram": {
       "very-short+without-symbol+narrow-regex+imperative+high-density": 8,
       "short+with-symbol+narrow-regex+interrogative+high-density": 90,
@@ -52,6 +53,7 @@
       "medium+with-symbol+medium-regex+interrogative+high-density": 90,
       "medium+without-symbol+broad-regex+interrogative+low-density": 90,
       "long-NL+without-symbol+broad-regex+interrogative+low-density": 90,
+      "medium+with-symbol+narrow-regex+declarative+high-density": 90,
       "very-short+with-symbol+narrow-regex+imperative+high-density": 82
     }
   },
@@ -104,6 +106,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where does this codebase define the Symbol() keys it uses for internal private state on instances? Name the file.",
           "regex": "\\b(Fastify|define|Symbol|keys|it|uses)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "symbols symbol that Where does Fastify in the fastify codebase implementation",
+          "regex": "\\bsymbols\\.js\\b",
           "isBaseline": false
         }
       ],
@@ -171,6 +180,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where in this codebase are all the FST_ERR_* error code classes defined? Identify the file and the helper function used to construct each error class.",
           "regex": "\\b(in|Fastify|are|all|error|code)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "createError symbol that Where in Fastify in the fastify codebase implementation",
+          "regex": "\\bcreateError\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -236,6 +252,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Which function in this codebase validates request params, body, querystring and headers using the compiled JSON Schema validators? In what order are they validated?",
           "regex": "\\b(function|in|Fastify|validates|request|params)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "validate symbol that Which function in in the fastify codebase implementation",
+          "regex": "\\bvalidate\\b",
           "isBaseline": false
         }
       ],
@@ -303,6 +326,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In the this codebase codebase, how does this codebase decide whether to create a plain HTTP, HTTPS, or HTTP/2 server when an instance is constructed? Identify the function that makes this decision and summarise its logic.",
           "regex": "\\b(Fastify|codebase|Fastify|decide|whether|to)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "getServerInstance symbol that Fastify codebase how in the fastify codebase implementation",
+          "regex": "\\bgetServerInstance\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -368,6 +398,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: When you call reply.the relevant component(payload) in this codebase, how does it decide between treating the payload as a stream, a Buffer, a string, or JSON? Cite the function and line range.",
           "regex": "\\b(reply|send|payload|in|Fastify|it)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "send symbol that reply send payload in the fastify codebase implementation",
+          "regex": "\\bsend\\b",
           "isBaseline": false
         }
       ],
@@ -435,6 +472,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: this codebase allows nested setErrorHandler() calls to override error handling per encapsulation level. Which file/function builds the prototype chain that makes this work?",
           "regex": "\\b(Fastify|allows|nested|setErrorHandler|calls|to)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "buildErrorHandler symbol that Fastify allows nested in the fastify codebase implementation",
+          "regex": "\\bbuildErrorHandler\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -500,6 +544,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: List the order of request lifecycle hooks this codebase runs, from when a request first enters until the route handler is invoked. Cite the file and the function that drives the sequence.",
           "regex": "\\b(List|order|of|request|lifecycle|hooks)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "handleRequest symbol that List the order in the fastify codebase implementation",
+          "regex": "\\bhandleRequest\\b",
           "isBaseline": false
         }
       ],
@@ -567,6 +618,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Trace what happens immediately after find-my-way matches an incoming request to a route in this codebase. Identify (a) the function in lib/route.js that find-my-way dispatches to, and (b) the function in lib/handle-request.js that runs the request lifecycle. Cite both files.",
           "regex": "\\b(Trace|happens|immediately|after|find-my-way|matches)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "routeHandler symbol that Trace what happens in the fastify codebase implementation",
+          "regex": "\\brouteHandler\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -632,6 +690,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In the file this codebase.js, where is the public API object literal that exposes the route shorthand methods (get/post/put/delete) and lifecycle methods like register/listen/inject? Give the line range.",
           "regex": "\\b(fastify|js|is|public|API|object)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "fastify symbol that file fastify js in the fastify codebase implementation",
+          "regex": "\\bfastify\\.js\\b",
           "isBaseline": false
         }
       ],
@@ -699,6 +764,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Does this codebase expose a method called registerQuantumRouterChannel? If so, where is it defined; if not, say so explicitly.",
           "regex": "\\b(Fastify|expose|method|called|registerQuantumRouterChannel|If)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "fastify symbol that Does Fastify expose in the fastify codebase implementation",
+          "regex": "\\b\\w+\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -764,6 +836,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where in this codebase is the canonical list of supported lifecycle hook names (preParsing, preHandler, onResponse, onRequestAbort, etc.) defined? Identify the file and the array(s) that hold them.",
           "regex": "\\b(in|Fastify|is|canonical|list|of)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "lifecycleHooks symbol that Where in Fastify in the fastify codebase implementation",
+          "regex": "\\blifecycleHooks\\b",
           "isBaseline": false
         }
       ],
@@ -831,6 +910,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In this codebase, where are the getters for Request.prototype properties such as url, originalUrl, hostname, ip and protocol declared? Give the file and the line range of the Object.defineProperties block.",
           "regex": "\\b(are|getters|for|Request|prototype|properties)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "request symbol that where are the in the fastify codebase implementation",
+          "regex": "\\brequest\\.js\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -896,6 +982,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: How does this codebase's router add a new route into its internal data structure? Identify the data structure, the function that inserts a route, and the file.",
           "regex": "\\b(Gin|router|add|new|route|into)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "addRoute symbol that How does Gin in the gin codebase implementation",
+          "regex": "\\baddRoute\\b",
           "isBaseline": false
         }
       ],
@@ -963,6 +1056,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In this codebase, how do middleware call the relevant component() to advance the chain, and what does Abort() do? Cite the file and the two methods.",
           "regex": "\\b(do|middleware|call|Next|to|advance)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Next symbol that how do middleware in the gin codebase implementation",
+          "regex": "\\bNext\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -1028,6 +1128,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: What is the central struct in this codebase that holds the router, middleware, and global configuration? Where is it declared?",
           "regex": "\\b(is|central|struct|in|Gin|holds)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Engine symbol that What is the in the gin codebase implementation",
+          "regex": "\\bEngine\\b",
           "isBaseline": false
         }
       ],
@@ -1095,6 +1202,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Which this codebase middleware catches panics in HTTP handlers and writes a 500 response, and how does it do it (defer/recover, broken-pipe handling)? Cite the file and function.",
           "regex": "\\b(Gin|middleware|catches|panics|in|HTTP)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "CustomRecoveryWithWriter symbol that Which Gin middleware in the gin codebase implementation",
+          "regex": "\\bCustomRecoveryWithWriter\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -1160,6 +1274,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Which this codebase function takes an incoming HTTP request and dispatches it to the right handler via the per-method tree, and how does it handle 405 Method Not Allowed?",
           "regex": "\\b(Gin|function|takes|an|incoming|HTTP)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "handleHTTPRequest symbol that Which Gin function in the gin codebase implementation",
+          "regex": "\\bhandleHTTPRequest\\b",
           "isBaseline": false
         }
       ],
@@ -1227,6 +1348,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In this codebase, which function in the binding package maps an HTTP method and Content-Type header to the right Binding implementation (JSON, XML, Form, ProtoBuf, MsgPack, YAML, TOML, …)? Name the file and the function.",
           "regex": "\\b(function|in|binding|package|maps|an)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Default symbol that which function in in the gin codebase implementation",
+          "regex": "\\bDefault\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -1292,6 +1420,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where does this codebase define the the relevant component bitmask constants (ErrorTypeBind, ErrorTypeRender, ErrorTypePrivate, ErrorTypePublic, ErrorTypeAny)? Identify the file and the underlying integer type.",
           "regex": "\\b(Gin|define|ErrorType|bitmask|constants|ErrorTypeBind)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "ErrorType symbol that Where does Gin in the gin codebase implementation",
+          "regex": "\\bErrorType\\b",
           "isBaseline": false
         }
       ],
@@ -1359,6 +1494,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In this codebase, where is the the relevant component struct declared (the type that carries a path prefix and a HandlersChain), and which interfaces (IRouter, IRoutes) does it satisfy? Cite the file and the line range covering the type declarations.",
           "regex": "\\b(is|RouterGroup|struct|declared|type|carries)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "RouterGroup symbol that where is the in the gin codebase implementation",
+          "regex": "\\bRouterGroup\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -1424,6 +1566,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In this codebase, where are the the relevant component and HandlersChain types defined, and what is each one (function signature vs slice type)? Name the file and the line range.",
           "regex": "\\b(are|HandlerFunc|and|HandlersChain|types|defined)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "HandlerFunc symbol that where are the in the gin codebase implementation",
+          "regex": "\\bHandlerFunc\\b",
           "isBaseline": false
         }
       ],
@@ -1491,6 +1640,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In this codebase, where is the the relevant component interface declared, and which standard net/http interfaces does it embed? Identify the file and list the embedded interfaces.",
           "regex": "\\b(is|ResponseWriter|interface|declared|and|standard)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "ResponseWriter symbol that where is the in the gin codebase implementation",
+          "regex": "\\bResponseWriter\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -1556,6 +1712,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Trace what happens when a this codebase handler calls c.the relevant component(&obj). Identify (a) the method on Context that dispatches based on Method + Content-Type, and (b) the function in the binding package that returns the matching Binding implementation. Cite both files.",
           "regex": "\\b(Trace|happens|Gin|handler|calls|ShouldBind)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "ShouldBind symbol that Trace what happens in the gin codebase implementation",
+          "regex": "\\bShouldBind\\b",
           "isBaseline": false
         }
       ],
@@ -1623,6 +1786,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: When you call c.JSON(200, obj) in this codebase, the response goes through a generic the relevant component method on Context that delegates to a the relevant component interface. Identify (a) the Context.the relevant component method and its file, and (b) the file where the the relevant component interface is declared and its two methods.",
           "regex": "\\b(JSON|obj|in|Gin|response|goes)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Render symbol that JSON 200 obj in the gin codebase implementation",
+          "regex": "\\bRender\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -1688,6 +1858,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In this codebase, the @app.the relevant component(\"/path\") decorator registers view functions to URLs. Which method on the Scaffold class implements the decorator, and where does it live?",
           "regex": "\\b(route|decorator|registers|view|functions|to)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "route symbol that the @app route in the flask codebase implementation",
+          "regex": "\\broute\\b",
           "isBaseline": false
         }
       ],
@@ -1755,6 +1932,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where is the main the relevant component application class defined? Name the file and the class.",
           "regex": "\\b(is|main|Flask|application|class|defined)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Flask symbol that Where is the in the flask codebase implementation",
+          "regex": "\\bFlask\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -1820,6 +2004,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: When a this codebase view returns a string, dict, tuple, or iterator, which function converts the return value into a proper Response object? Cite the file and explain the dispatch.",
           "regex": "\\b(view|returns|string|dict|tuple|or)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "make_response symbol that view returns string in the flask codebase implementation",
+          "regex": "\\bmake_response\\b",
           "isBaseline": false
         }
       ],
@@ -1887,6 +2078,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: When an HTTPException is raised inside a this codebase view, which method dispatches it to the registered error handler? Name the method and file.",
           "regex": "\\b(is|raised|inside|Flask|view|method)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "handle_http_exception symbol that is raised inside in the flask codebase implementation",
+          "regex": "\\bhandle_http_exception\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -1952,6 +2150,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: How does this codebase sign and serialise the session cookie? Identify the class that implements open_session/save_session and the library it relies on.",
           "regex": "\\b(sign|and|serialise|session|cookie|Identify)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "SecureCookieSessionInterface symbol that sign and serialise in the flask codebase implementation",
+          "regex": "\\bSecureCookieSessionInterface\\b",
           "isBaseline": false
         }
       ],
@@ -2019,6 +2224,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In this codebase, where is the the relevant component() helper function defined? Name the file and the method it ultimately delegates to on the current app.",
           "regex": "\\b(is|jsonify|helper|function|defined|and)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "jsonify symbol that where is the in the flask codebase implementation",
+          "regex": "\\bjsonify\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -2084,6 +2296,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where is the substantive this codebase the relevant component class defined (the one that extends Scaffold and implements register)? Name the file.",
           "regex": "\\b(is|substantive|Flask|Blueprint|class|defined)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Blueprint symbol that Where is the in the flask codebase implementation",
+          "regex": "\\bBlueprint\\b",
           "isBaseline": false
         }
       ],
@@ -2151,6 +2370,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In this codebase, where are the the relevant component and Response classes defined that wrap the Werkzeug the relevant component/Response? Name the file and both classes.",
           "regex": "\\b(are|Request|and|Response|classes|defined)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Request symbol that where are the in the flask codebase implementation",
+          "regex": "\\bRequest\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -2216,6 +2442,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where is the this codebase the relevant component class defined that loads configuration from Python files, environment variables, and JSON/TOML files? Name the file, the base type it extends, and one of its from_* loader methods.",
           "regex": "\\b(is|Flask|Config|class|defined|loads)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Config symbol that Where is the in the flask codebase implementation",
+          "regex": "\\bConfig\\b",
           "isBaseline": false
         }
       ],
@@ -2283,6 +2516,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where is the the relevant component class defined in this codebase, and which methods on it activate or release the context (managing the contextvar token)?",
           "regex": "\\b(is|AppContext|class|defined|in|Flask)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "AppContext symbol that Where is the in the flask codebase implementation",
+          "regex": "\\bAppContext\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -2348,6 +2588,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Trace what happens when a WSGI server invokes a this codebase application for an incoming request. Identify (a) the method in app.py that builds the request context and runs full dispatch, and (b) the method on AppContext in ctx.py that activates the context (sets the contextvar and matches the URL). Cite both files.",
           "regex": "\\b(Trace|happens|WSGI|server|invokes|Flask)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "wsgi_app symbol that Trace what happens in the flask codebase implementation",
+          "regex": "\\bwsgi_app\\b",
           "isBaseline": false
         }
       ],
@@ -2415,6 +2662,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: When you call app.the relevant component(bp) in this codebase, the registration crosses two files. Identify (a) App.the relevant component in sansio/app.py that delegates to the blueprint, and (b) Blueprint.register in sansio/blueprints.py that creates a BlueprintSetupState and runs the deferred functions. Cite both files.",
           "regex": "\\b(app|register_blueprint|bp|in|Flask|registration)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "register_blueprint symbol that app register_blueprint bp in the flask codebase implementation",
+          "regex": "\\bregister_blueprint\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -2480,6 +2734,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In this codebase, where is the per-search-worker the relevant component struct defined that controls preprocessor and binary-detection behaviour? File and line range.",
           "regex": "\\b(is|per-search-worker|Config|struct|defined|controls)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Config symbol that where is the in the ripgrep codebase implementation",
+          "regex": "\\bConfig\\b",
           "isBaseline": false
         }
       ],
@@ -2547,6 +2808,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Which top-level function in this codebase orchestrates multi-threaded directory search and uses an AtomicBool to track whether any match was found?",
           "regex": "\\b(top-level|function|in|ripgrep|orchestrates|multi-threaded)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "search_parallel symbol that Which top-level function in the ripgrep codebase implementation",
+          "regex": "\\bsearch_parallel\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -2612,6 +2880,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: this codebase uses a push-model \"the relevant component\" trait to receive search results. Where is the the relevant component trait defined and what are its main callbacks?",
           "regex": "\\b(ripgrep|uses|push-model|Sink|trait|to)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Sink symbol that ripgrep uses push-model in the ripgrep codebase implementation",
+          "regex": "\\bSink\\b",
           "isBaseline": false
         }
       ],
@@ -2679,6 +2954,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Which function in this codebase's searcher locates the start/end byte offsets of the line(s) containing a match range? Cite the file and the function name.",
           "regex": "\\b(function|in|ripgrep|searcher|locates|byte)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "locate symbol that Which function in in the ripgrep codebase implementation",
+          "regex": "\\blocate\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -2744,6 +3026,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In the this codebase regex crate, which enum lists the different kinds of regex compile errors, and what are its main variants?",
           "regex": "\\b(ripgrep|regex|crate|enum|lists|different)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "ErrorKind symbol that ripgrep regex crate in the ripgrep codebase implementation",
+          "regex": "\\bErrorKind\\b",
           "isBaseline": false
         }
       ],
@@ -2811,6 +3100,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In the globset crate, where is the public the relevant component struct defined that represents a parsed shell the relevant component pattern, and what fields does it carry?",
           "regex": "\\b(globset|crate|is|public|Glob|struct)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Glob symbol that globset crate where in the ripgrep codebase implementation",
+          "regex": "\\bGlob\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -2876,6 +3172,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In the ignore crate, which type wraps a set of user-supplied --glob overrides, and which builder type is used to assemble it before calling build()? Cite the file.",
           "regex": "\\b(ignore|crate|type|wraps|set|of)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Override symbol that ignore crate which in the ripgrep codebase implementation",
+          "regex": "\\bOverride\\b",
           "isBaseline": false
         }
       ],
@@ -2943,6 +3246,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In the grep-searcher crate (crates/searcher/src/searcher/mod.rs), where is the private the relevant component struct that holds settings like line_term, before_context, after_context, mmap, multi_line and max_matches? Give the line range.",
           "regex": "\\b(grep-searcher|crate|rs|is|private|Config)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Config symbol that grep-searcher crate crates/searcher/src/searcher/mod in the ripgrep codebase implementation",
+          "regex": "\\bConfig\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -3008,6 +3318,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In this codebase's printer crate, where is the the relevant component that configures the grep-like output printer, and where is the private Config struct it wraps (with fields like heading, colors, path, separator_*, max_columns)? Cite the file and the line ranges.",
           "regex": "\\b(printer|crate|is|StandardBuilder|configures|grep-like)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "StandardBuilder symbol that printer crate where in the ripgrep codebase implementation",
+          "regex": "\\bStandardBuilder\\b",
           "isBaseline": false
         }
       ],
@@ -3075,6 +3392,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In this codebase, the the relevant component trait is the abstraction every search backend implements. Identify (a) the file where the the relevant component trait itself is declared, and (b) the file where its primary implementation `impl the relevant component for RegexMatcher` lives (the one used by this codebase's default regex backend). Cite both files.",
           "regex": "\\b(Matcher|trait|is|abstraction|every|search)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Matcher symbol that the Matcher trait in the ripgrep codebase implementation",
+          "regex": "\\bMatcher\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -3140,6 +3464,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Trace this codebase's parallel directory walk: which builder type configures it, which type orchestrates the std::thread::scope spawning, and which private struct represents the per-thread worker loop? Cite the file and the line numbers for all three.",
           "regex": "\\b(Trace|ripgrep|parallel|directory|walk|builder)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "WalkBuilder symbol that Trace ripgrep parallel in the ripgrep codebase implementation",
+          "regex": "\\bWalkBuilder\\b",
           "isBaseline": false
         }
       ],
@@ -3207,6 +3538,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: After CLI parsing in this codebase, the the relevant component() function dispatches on the mode and the requested thread count. Identify (a) the function in crates/core/main.rs that picks between search() and search_parallel() based on threads, and (b) the SearchWorker.search() method in crates/core/search.rs that each haystack is fed through. Cite both files.",
           "regex": "\\b(After|CLI|parsing|in|ripgrep|run)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "run symbol that After CLI parsing in the ripgrep codebase implementation",
+          "regex": "\\brun\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -3272,6 +3610,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where in the this codebase codebase is the relevant component defined, and what model id does it currently point at? Name the file.",
           "regex": "\\b(in|codebase|is|DEFAULT_CHAT_MODEL|defined|and)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "DEFAULT_CHAT_MODEL symbol that Where in the in the ai-chatbot codebase implementation",
+          "regex": "\\bDEFAULT_CHAT_MODEL\\b",
           "isBaseline": false
         }
       ],
@@ -3339,6 +3684,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where is the per-user-type message rate cap (the relevant component) defined in the chatbot, and what is the current maxMessagesPerHour for guest and regular users? Name the file.",
           "regex": "\\b(is|per-user-type|message|rate|cap|entitlementsByUserType)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "entitlementsByUserType symbol that Where is the in the ai-chatbot codebase implementation",
+          "regex": "\\bentitlementsByUserType\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -3404,6 +3756,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where is the the relevant component type defined in the this codebase codebase, and what string-literal values does it accept? Name the file.",
           "regex": "\\b(is|VisibilityType|type|defined|in|ai-chatbot)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "<VisibilityType> symbol that Where is the in the ai-chatbot codebase implementation",
+          "regex": "\\bVisibilityType\\b",
           "isBaseline": false
         }
       ],
@@ -3471,6 +3830,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: How does the the relevant component() hook expose the current artifact and a setter that updates it? Identify the file, the hook, and how it caches state via SWR.",
           "regex": "\\b(useArtifact|hook|expose|current|artifact|and)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "useArtifact() symbol that useArtifact hook expose in the ai-chatbot codebase implementation",
+          "regex": "\\buseArtifact\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -3536,6 +3902,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: How does the the relevant component hook decide whether to read visibility from the cached chat history or from the local SWR fallback? Cite the file and the function.",
           "regex": "\\b(useChatVisibility|hook|decide|whether|to|read)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "useChatVisibility() symbol that useChatVisibility hook decide in the ai-chatbot codebase implementation",
+          "regex": "\\buseChatVisibility\\b",
           "isBaseline": false
         }
       ],
@@ -3603,6 +3976,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: How does the the relevant component hook decide when to call resumeStream() and when to append a streamed message via setMessages? Cite the file and the hook.",
           "regex": "\\b(useAutoResume|hook|decide|to|call|resumeStream)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "useAutoResume() symbol that useAutoResume hook decide in the ai-chatbot codebase implementation",
+          "regex": "\\buseAutoResume\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -3668,6 +4048,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where is the <the relevant component> component defined in the chatbot, and what does it render in the collapsed-sidebar / mobile state? Name the file and the exported memoised component.",
           "regex": "\\b(is|ChatHeader|component|defined|in|chatbot)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "<ChatHeader> symbol that Where is the in the ai-chatbot codebase implementation",
+          "regex": "\\bChatHeader\\b",
           "isBaseline": false
         }
       ],
@@ -3735,6 +4122,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where is the <the relevant component> component defined, and which dropdown options does it render? Name the file and the component.",
           "regex": "\\b(is|VisibilitySelector|component|defined|and|dropdown)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "<VisibilitySelector> symbol that Where is the in the ai-chatbot codebase implementation",
+          "regex": "\\bVisibilitySelector\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -3800,6 +4194,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: Where is the <the relevant component> component defined in the chatbot, and which inner functional component does the exported memo wrap? Name the file and both names.",
           "regex": "\\b(is|MultimodalInput|component|defined|in|chatbot)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "<MultimodalInput> symbol that Where is the in the ai-chatbot codebase implementation",
+          "regex": "\\bMultimodalInput\\b",
           "isBaseline": false
         }
       ],
@@ -3867,6 +4268,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: When the user picks a different option in the <VisibilitySelector> menu, the change crosses three files. Identify (a) the setVisibilityType callback returned by the the relevant component hook in hooks/use-chat-visibility.ts, and (b) the updateChatVisibility server action it calls in app/(chat)/actions.ts. Cite both files.",
           "regex": "\\b(picks|different|option|in|VisibilitySelector|menu)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "useChatVisibility() symbol that picks different option in the ai-chatbot codebase implementation",
+          "regex": "\\buseChatVisibility\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -3932,6 +4340,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: In the chatbot, an HTTP the relevant component to /api/chat builds a streamed response. Identify (a) the the relevant component handler in app/(chat)/api/chat/route.ts, and (b) the language-model accessor it calls via getLanguageModel in lib/ai/providers.ts. Cite both files.",
           "regex": "\\b(chatbot|an|HTTP|POST|to|builds)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "POST symbol that chatbot an HTTP in the ai-chatbot codebase implementation",
+          "regex": "\\bPOST\\b",
           "isBaseline": false
         }
       ],
@@ -3999,6 +4414,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: When the assistant calls the the relevant component tool, the request crosses two files. Identify (a) the the relevant component tool definition in lib/ai/tools/create-document.ts, and (b) the documentHandlersByArtifactKind table in lib/artifacts/server.ts that dispatches by artifact kind. Cite both files.",
           "regex": "\\b(calls|createDocument|tool|request|crosses|two)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "createDocument symbol that calls the createDocument in the ai-chatbot codebase implementation",
+          "regex": "\\bcreateDocument\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -4064,6 +4486,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: how does this codebase resolve dependency conflicts when two packages need different versions of the same library",
           "regex": "\\b(resolve|dependency|conflicts|two|packages|need)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "mod symbol that resolve dependency conflicts in the uv codebase implementation",
+          "regex": "\\bmod\\.rs\\b",
           "isBaseline": false
         }
       ],
@@ -4131,6 +4560,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: where is the lockfile written to disk after a successful resolution",
           "regex": "\\b(is|lockfile|written|to|disk|after)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "commit symbol that where is the in the uv codebase implementation",
+          "regex": "\\bcommit\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -4196,6 +4632,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: how does this codebase decide whether to download a managed Python build or use one already on the system",
           "regex": "\\b(decide|whether|to|download|managed|Python)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "discovery symbol that decide whether to in the uv codebase implementation",
+          "regex": "\\bdiscovery\\.rs\\b",
           "isBaseline": false
         }
       ],
@@ -4263,6 +4706,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: when this codebase installs a wheel where does it actually copy the files from cache into the virtualenv",
           "regex": "\\b(wheel|it|actually|copy|files|from)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "link_wheel_files symbol that wheel where does in the uv codebase implementation",
+          "regex": "\\blink_wheel_files\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -4328,6 +4778,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: how does this codebase know whether the this codebase.lock file is stale and needs re-resolving",
           "regex": "\\b(know|whether|uv|lock|is|stale)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "satisfies symbol that know whether the in the uv codebase implementation",
+          "regex": "\\bsatisfies\\b",
           "isBaseline": false
         }
       ],
@@ -4395,6 +4852,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: how does this codebase build a source distribution into a wheel before installing it",
           "regex": "\\b(build|source|distribution|into|wheel|before)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "SourceBuild symbol that build source distribution in the uv codebase implementation",
+          "regex": "\\bSourceBuild\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -4460,6 +4924,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: what controls whether this codebase compiles bytecode for installed packages and how is it triggered",
           "regex": "\\b(controls|whether|uv|compiles|bytecode|for)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "compile symbol that what controls whether in the uv codebase implementation",
+          "regex": "\\bcompile\\.rs\\b",
           "isBaseline": false
         }
       ],
@@ -4527,6 +4998,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: how does this codebase pick between installing the latest version of a package and a pinned version from preferences",
           "regex": "\\b(pick|between|installing|latest|version|of)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "candidate_selector symbol that pick between installing in the uv codebase implementation",
+          "regex": "\\bcandidate_selector\\.rs\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -4592,6 +5070,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: show me the the relevant component struct definition",
           "regex": "\\b(show|me|Cache|struct|definition)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Cache symbol that show me the in the uv codebase implementation",
+          "regex": "\\bCache\\b",
           "isBaseline": false
         }
       ],
@@ -4659,6 +5144,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: show me the the relevant component struct that builds installation plans",
           "regex": "\\b(show|me|Planner|struct|builds|installation)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Planner symbol that show me the in the uv codebase implementation",
+          "regex": "\\bPlanner\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -4724,6 +5216,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: show me the full the relevant component struct definition with all its fields",
           "regex": "\\b(show|me|full|Lock|struct|definition)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Lock symbol that show me the in the uv codebase implementation",
+          "regex": "\\bLock\\b",
           "isBaseline": false
         }
       ],
@@ -4791,6 +5290,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: show me the the relevant component struct definition",
           "regex": "\\b(show|me|Resolver|struct|definition)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Resolver symbol that show me the in the uv codebase implementation",
+          "regex": "\\bResolver\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -4856,6 +5362,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: show me the the relevant component struct definition",
           "regex": "\\b(show|me|Workspace|struct|definition)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Workspace symbol that show me the in the uv codebase implementation",
+          "regex": "\\bWorkspace\\b",
           "isBaseline": false
         }
       ],
@@ -4923,6 +5436,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: show me the the relevant component struct definition with all fields",
           "regex": "\\b(show|me|Interpreter|struct|definition|with)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Interpreter symbol that show me the in the uv codebase implementation",
+          "regex": "\\bInterpreter\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -4988,6 +5508,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: show me the the relevant component struct definition",
           "regex": "\\b(show|me|BuildDispatch|struct|definition)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "BuildDispatch symbol that show me the in the uv codebase implementation",
+          "regex": "\\bBuildDispatch\\b",
           "isBaseline": false
         }
       ],
@@ -5055,6 +5582,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: show me the the relevant component enum that lists every this codebase subcommand",
           "regex": "\\b(show|me|Commands|enum|lists|every)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "Commands symbol that show me the in the uv codebase implementation",
+          "regex": "\\bCommands\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -5120,6 +5654,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: trace how this codebase the relevant component inserts a new dependency into pyproject.toml",
           "regex": "\\b(trace|uv|add|inserts|new|dependency)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "add symbol that trace how uv in the uv codebase implementation",
+          "regex": "\\badd\\b",
           "isBaseline": false
         }
       ],
@@ -5187,6 +5728,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: what happens end-to-end when I run this codebase the relevant component on an existing project",
           "regex": "\\b(happens|end-to-end|run|uv|sync|on)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "sync symbol that what happens end-to-end in the uv codebase implementation",
+          "regex": "\\bsync\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -5252,6 +5800,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: how does this codebase tool the relevant component create an isolated environment and link entrypoints onto PATH",
           "regex": "\\b(tool|install|create|an|isolated|environment)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "install symbol that tool install create in the uv codebase implementation",
+          "regex": "\\binstall\\b",
           "isBaseline": false
         }
       ],
@@ -5319,6 +5874,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: trace how this codebase the relevant component decides which package versions to write into this codebase.the relevant component",
           "regex": "\\b(trace|uv|lock|decides|package|versions)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "lock symbol that trace how uv in the uv codebase implementation",
+          "regex": "\\block\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -5384,6 +5946,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: where is the code that fetches a wheel from a registry index and caches it",
           "regex": "\\b(is|code|fetches|wheel|from|registry)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "DistributionDatabase symbol that where is the in the uv codebase implementation",
+          "regex": "\\bDistributionDatabase\\b",
           "isBaseline": false
         }
       ],
@@ -5451,6 +6020,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: trace how this codebase the relevant component creates a new virtual environment from scratch",
           "regex": "\\b(trace|uv|venv|creates|new|virtual)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "venv symbol that trace how uv in the uv codebase implementation",
+          "regex": "\\bvenv\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -5516,6 +6092,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: how does this codebase publish authenticate with PyPI using trusted publishing tokens",
           "regex": "\\b(publish|authenticate|with|PyPI|using|trusted)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "check_trusted_publishing symbol that publish authenticate with in the uv codebase implementation",
+          "regex": "\\bcheck_trusted_publishing\\b",
           "isBaseline": false
         }
       ],
@@ -5583,6 +6166,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: how does this codebase clone a git dependency and pin it to a specific commit",
           "regex": "\\b(clone|git|dependency|and|pin|it)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "GitSource symbol that clone git dependency in the uv codebase implementation",
+          "regex": "\\bGitSource\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -5648,6 +6238,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: what does the the relevant component type represent in the resolver and how is it formatted for users",
           "regex": "\\b(NoSolutionError|type|represent|in|resolver|and)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "NoSolutionError symbol that what does the in the uv codebase implementation",
+          "regex": "\\bNoSolutionError\\b",
           "isBaseline": false
         }
       ],
@@ -5715,6 +6312,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: where is the the relevant component::ConflictingUrls variant defined",
           "regex": "\\b(is|ResolveError|ConflictingUrls|variant|defined)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "ResolveError symbol that where is the in the uv codebase implementation",
+          "regex": "\\bResolveError\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -5780,6 +6384,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: what does the relevant component do when rendering a resolution failure",
           "regex": "\\b(PubGrubReportFormatter|do|rendering|resolution|failure)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "PubGrubReportFormatter symbol that what does PubGrubReportFormatter in the uv codebase implementation",
+          "regex": "\\bPubGrubReportFormatter\\b",
           "isBaseline": false
         }
       ],
@@ -5847,6 +6458,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: what error is raised when a wheel is missing a header file required to build a C extension",
           "regex": "\\b(error|is|raised|wheel|is|missing)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "MissingHeaderError symbol that what error is in the uv codebase implementation",
+          "regex": "\\bMissingHeaderError\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -5913,6 +6531,13 @@
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: where is the the relevant component type that wraps trusted-publishing and upload failures",
           "regex": "\\b(is|PublishError|type|wraps|trusted-publishing|and)\\b",
           "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "PublishError symbol that where is the in the uv codebase implementation",
+          "regex": "\\bPublishError\\b",
+          "isBaseline": false
         }
       ],
       "ssFindAnchorSweep": [
@@ -5978,6 +6603,13 @@
           "shape": "long-NL+without-symbol+broad-regex+interrogative+low-density",
           "query": "I am trying to understand exactly how this works at a deep level. Specifically: what does the the relevant component enum represent and what variants does it have",
           "regex": "\\b(SitePackagesDiagnostic|enum|represent|and|variants|it)\\b",
+          "isBaseline": false
+        },
+        {
+          "variantId": "V7",
+          "shape": "medium+with-symbol+narrow-regex+declarative+high-density",
+          "query": "SitePackagesDiagnostic symbol that what does the in the uv codebase implementation",
+          "regex": "\\bSitePackagesDiagnostic\\b",
           "isBaseline": false
         }
       ],

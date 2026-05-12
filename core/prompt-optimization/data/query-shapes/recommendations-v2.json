@@ -1,0 +1,6651 @@
+{
+  "schemaVersion": 3,
+  "supersedes": "recommendations.json (runId partial-test-1778456156116)",
+  "runId": "phase6-redo-v1",
+  "generatedAt": "2026-05-12T23:16:31.099Z",
+  "plan_reference": "docs/PHASE6_REDO.md",
+  "tool": "ss-search",
+  "bhFdrQ": 0.1,
+  "families": {
+    "OO-monolithic": {
+      "languages": [
+        "java",
+        "csharp",
+        "kotlin",
+        "scala"
+      ],
+      "weight_pool": 8
+    },
+    "Systems-modular-terse": {
+      "languages": [
+        "rust",
+        "go"
+      ],
+      "weight_pool": 5
+    },
+    "C-family": {
+      "languages": [
+        "c",
+        "cpp",
+        "zig"
+      ],
+      "weight_pool": 5
+    },
+    "JS-mobile": {
+      "languages": [
+        "javascript",
+        "typescript",
+        "typescript-lib",
+        "dart"
+      ],
+      "weight_pool": 11
+    },
+    "Scripting-dynamic": {
+      "languages": [
+        "python",
+        "ruby",
+        "php",
+        "lua",
+        "elixir"
+      ],
+      "weight_pool": 9
+    }
+  },
+  "primary_metric": "symbolRecallAt1",
+  "promotion_mode": "global",
+  "cell_table": {
+    "OO-monolithic": {
+      "V1": {
+        "nPairs": 32,
+        "baselineMean": 0.40625,
+        "candidateMean": 0.40625,
+        "familyAggregateBaseline_file": 0.5056818181818182,
+        "familyAggregateBaseline_symbol": 0.33712121212121215,
+        "familyAggregateCandidate_file": 0.6875,
+        "familyAggregateCandidate_symbol": 0.40625,
+        "familyAggregateBaseline": 0.33712121212121215,
+        "familyAggregateCandidate": 0.40625,
+        "observedDiff": 0,
+        "pValue": 1,
+        "pairsBelowFloor": false,
+        "languagesCovered": 4,
+        "meta": [
+          {
+            "goldId": "CS-001",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-002",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-003",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-004",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-005",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-006",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-007",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-008",
+            "language": "csharp"
+          },
+          {
+            "goldId": "JV-001",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-002",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-003",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-004",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-005",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-006",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-007",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-008",
+            "language": "java"
+          },
+          {
+            "goldId": "KT-001",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-002",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-003",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-004",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-005",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-006",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-007",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-008",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "SC-001",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-002",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-003",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-004",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-005",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-006",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-007",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-008",
+            "language": "scala"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      },
+      "V2": {
+        "nPairs": 32,
+        "baselineMean": 0.40625,
+        "candidateMean": 0.34375,
+        "familyAggregateBaseline_file": 0.5056818181818182,
+        "familyAggregateBaseline_symbol": 0.33712121212121215,
+        "familyAggregateCandidate_file": 0.75,
+        "familyAggregateCandidate_symbol": 0.34375,
+        "familyAggregateBaseline": 0.33712121212121215,
+        "familyAggregateCandidate": 0.34375,
+        "observedDiff": -0.0625,
+        "pValue": 0.6852314768523148,
+        "pairsBelowFloor": false,
+        "languagesCovered": 4,
+        "meta": [
+          {
+            "goldId": "CS-001",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-002",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-003",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-004",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-005",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-006",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-007",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-008",
+            "language": "csharp"
+          },
+          {
+            "goldId": "JV-001",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-002",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-003",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-004",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-005",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-006",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-007",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-008",
+            "language": "java"
+          },
+          {
+            "goldId": "KT-001",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-002",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-003",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-004",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-005",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-006",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-007",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-008",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "SC-001",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-002",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-003",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-004",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-005",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-006",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-007",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-008",
+            "language": "scala"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      },
+      "V3": {
+        "nPairs": 46,
+        "baselineMean": 0.32608695652173914,
+        "candidateMean": 0.17391304347826086,
+        "familyAggregateBaseline_file": 0.5056818181818182,
+        "familyAggregateBaseline_symbol": 0.33712121212121215,
+        "familyAggregateCandidate_file": 0.35037878787878785,
+        "familyAggregateCandidate_symbol": 0.17613636363636365,
+        "familyAggregateBaseline": 0.33712121212121215,
+        "familyAggregateCandidate": 0.17613636363636365,
+        "observedDiff": -0.15217391304347827,
+        "pValue": 0.11918808119188082,
+        "pairsBelowFloor": false,
+        "languagesCovered": 4,
+        "meta": [
+          {
+            "goldId": "CS-001",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-002",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-003",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-004",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-005",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-006",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-007",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-008",
+            "language": "csharp"
+          },
+          {
+            "goldId": "DP-CS-001",
+            "language": "csharp"
+          },
+          {
+            "goldId": "DP-CS-002",
+            "language": "csharp"
+          },
+          {
+            "goldId": "DP-CS-003",
+            "language": "csharp"
+          },
+          {
+            "goldId": "DP-CS-004",
+            "language": "csharp"
+          },
+          {
+            "goldId": "DP-JV-001",
+            "language": "java"
+          },
+          {
+            "goldId": "DP-JV-002",
+            "language": "java"
+          },
+          {
+            "goldId": "DP-JV-003",
+            "language": "java"
+          },
+          {
+            "goldId": "DP-JV-004",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-001",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-002",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-003",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-004",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-005",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-006",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-007",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-008",
+            "language": "java"
+          },
+          {
+            "goldId": "DP-KT-001",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "DP-KT-002",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "DP-KT-003",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-001",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-002",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-003",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-004",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-005",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-006",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-007",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-008",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "DP-SC-001",
+            "language": "scala"
+          },
+          {
+            "goldId": "DP-SC-002",
+            "language": "scala"
+          },
+          {
+            "goldId": "DP-SC-003",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-001",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-002",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-003",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-004",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-005",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-006",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-007",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-008",
+            "language": "scala"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 0.29797020297970206
+      },
+      "V4": {
+        "nPairs": 32,
+        "baselineMean": 0.40625,
+        "candidateMean": 0.375,
+        "familyAggregateBaseline_file": 0.5056818181818182,
+        "familyAggregateBaseline_symbol": 0.33712121212121215,
+        "familyAggregateCandidate_file": 0.6875,
+        "familyAggregateCandidate_symbol": 0.375,
+        "familyAggregateBaseline": 0.33712121212121215,
+        "familyAggregateCandidate": 0.375,
+        "observedDiff": -0.03125,
+        "pValue": 1,
+        "pairsBelowFloor": false,
+        "languagesCovered": 4,
+        "meta": [
+          {
+            "goldId": "CS-001",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-002",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-003",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-004",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-005",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-006",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-007",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-008",
+            "language": "csharp"
+          },
+          {
+            "goldId": "JV-001",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-002",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-003",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-004",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-005",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-006",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-007",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-008",
+            "language": "java"
+          },
+          {
+            "goldId": "KT-001",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-002",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-003",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-004",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-005",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-006",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-007",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-008",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "SC-001",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-002",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-003",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-004",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-005",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-006",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-007",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-008",
+            "language": "scala"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      },
+      "V5": {
+        "nPairs": 46,
+        "baselineMean": 0.32608695652173914,
+        "candidateMean": 0.10869565217391304,
+        "familyAggregateBaseline_file": 0.5056818181818182,
+        "familyAggregateBaseline_symbol": 0.33712121212121215,
+        "familyAggregateCandidate_file": 0.26136363636363635,
+        "familyAggregateCandidate_symbol": 0.10984848484848485,
+        "familyAggregateBaseline": 0.33712121212121215,
+        "familyAggregateCandidate": 0.10984848484848485,
+        "observedDiff": -0.21739130434782608,
+        "pValue": 0.0053994600539946005,
+        "pairsBelowFloor": false,
+        "languagesCovered": 4,
+        "meta": [
+          {
+            "goldId": "CS-001",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-002",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-003",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-004",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-005",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-006",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-007",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-008",
+            "language": "csharp"
+          },
+          {
+            "goldId": "DP-CS-001",
+            "language": "csharp"
+          },
+          {
+            "goldId": "DP-CS-002",
+            "language": "csharp"
+          },
+          {
+            "goldId": "DP-CS-003",
+            "language": "csharp"
+          },
+          {
+            "goldId": "DP-CS-004",
+            "language": "csharp"
+          },
+          {
+            "goldId": "DP-JV-001",
+            "language": "java"
+          },
+          {
+            "goldId": "DP-JV-002",
+            "language": "java"
+          },
+          {
+            "goldId": "DP-JV-003",
+            "language": "java"
+          },
+          {
+            "goldId": "DP-JV-004",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-001",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-002",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-003",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-004",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-005",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-006",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-007",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-008",
+            "language": "java"
+          },
+          {
+            "goldId": "DP-KT-001",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "DP-KT-002",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "DP-KT-003",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-001",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-002",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-003",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-004",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-005",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-006",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-007",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-008",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "DP-SC-001",
+            "language": "scala"
+          },
+          {
+            "goldId": "DP-SC-002",
+            "language": "scala"
+          },
+          {
+            "goldId": "DP-SC-003",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-001",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-002",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-003",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-004",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-005",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-006",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-007",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-008",
+            "language": "scala"
+          }
+        ],
+        "fdrSurvives": true,
+        "adjustedP": 0.0314968503149685
+      },
+      "V6": {
+        "nPairs": 46,
+        "baselineMean": 0.32608695652173914,
+        "candidateMean": 0.13043478260869565,
+        "familyAggregateBaseline_file": 0.5056818181818182,
+        "familyAggregateBaseline_symbol": 0.33712121212121215,
+        "familyAggregateCandidate_file": 0.21780303030303028,
+        "familyAggregateCandidate_symbol": 0.13068181818181818,
+        "familyAggregateBaseline": 0.33712121212121215,
+        "familyAggregateCandidate": 0.13068181818181818,
+        "observedDiff": -0.1956521739130435,
+        "pValue": 0.021397860213978603,
+        "pairsBelowFloor": false,
+        "languagesCovered": 4,
+        "meta": [
+          {
+            "goldId": "CS-001",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-002",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-003",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-004",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-005",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-006",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-007",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-008",
+            "language": "csharp"
+          },
+          {
+            "goldId": "DP-CS-001",
+            "language": "csharp"
+          },
+          {
+            "goldId": "DP-CS-002",
+            "language": "csharp"
+          },
+          {
+            "goldId": "DP-CS-003",
+            "language": "csharp"
+          },
+          {
+            "goldId": "DP-CS-004",
+            "language": "csharp"
+          },
+          {
+            "goldId": "DP-JV-001",
+            "language": "java"
+          },
+          {
+            "goldId": "DP-JV-002",
+            "language": "java"
+          },
+          {
+            "goldId": "DP-JV-003",
+            "language": "java"
+          },
+          {
+            "goldId": "DP-JV-004",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-001",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-002",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-003",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-004",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-005",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-006",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-007",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-008",
+            "language": "java"
+          },
+          {
+            "goldId": "DP-KT-001",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "DP-KT-002",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "DP-KT-003",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-001",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-002",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-003",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-004",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-005",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-006",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-007",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-008",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "DP-SC-001",
+            "language": "scala"
+          },
+          {
+            "goldId": "DP-SC-002",
+            "language": "scala"
+          },
+          {
+            "goldId": "DP-SC-003",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-001",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-002",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-003",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-004",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-005",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-006",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-007",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-008",
+            "language": "scala"
+          }
+        ],
+        "fdrSurvives": true,
+        "adjustedP": 0.08321390083213902
+      },
+      "V7": {
+        "nPairs": 32,
+        "baselineMean": 0.40625,
+        "candidateMean": 0.4375,
+        "familyAggregateBaseline_file": 0.5056818181818182,
+        "familyAggregateBaseline_symbol": 0.33712121212121215,
+        "familyAggregateCandidate_file": 0.71875,
+        "familyAggregateCandidate_symbol": 0.4375,
+        "familyAggregateBaseline": 0.33712121212121215,
+        "familyAggregateCandidate": 0.4375,
+        "observedDiff": 0.03125,
+        "pValue": 1,
+        "pairsBelowFloor": false,
+        "languagesCovered": 4,
+        "meta": [
+          {
+            "goldId": "CS-001",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-002",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-003",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-004",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-005",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-006",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-007",
+            "language": "csharp"
+          },
+          {
+            "goldId": "CS-008",
+            "language": "csharp"
+          },
+          {
+            "goldId": "JV-001",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-002",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-003",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-004",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-005",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-006",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-007",
+            "language": "java"
+          },
+          {
+            "goldId": "JV-008",
+            "language": "java"
+          },
+          {
+            "goldId": "KT-001",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-002",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-003",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-004",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-005",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-006",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-007",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "KT-008",
+            "language": "kotlin"
+          },
+          {
+            "goldId": "SC-001",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-002",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-003",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-004",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-005",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-006",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-007",
+            "language": "scala"
+          },
+          {
+            "goldId": "SC-008",
+            "language": "scala"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      }
+    },
+    "Systems-modular-terse": {
+      "V1": {
+        "nPairs": 16,
+        "baselineMean": 0.5,
+        "candidateMean": 0.625,
+        "familyAggregateBaseline_file": 0.5416666666666667,
+        "familyAggregateBaseline_symbol": 0.375,
+        "familyAggregateCandidate_file": 0.8125,
+        "familyAggregateCandidate_symbol": 0.625,
+        "familyAggregateBaseline": 0.375,
+        "familyAggregateCandidate": 0.625,
+        "observedDiff": 0.125,
+        "pValue": 0.683031696830317,
+        "pairsBelowFloor": false,
+        "languagesCovered": 2,
+        "meta": [
+          {
+            "goldId": "GO-001",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-002",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-003",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-004",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-005",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-006",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-007",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-008",
+            "language": "go"
+          },
+          {
+            "goldId": "RS-001",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-002",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-003",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-004",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-005",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-006",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-007",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-008",
+            "language": "rust"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      },
+      "V2": {
+        "nPairs": 16,
+        "baselineMean": 0.5,
+        "candidateMean": 0.5625,
+        "familyAggregateBaseline_file": 0.5416666666666667,
+        "familyAggregateBaseline_symbol": 0.375,
+        "familyAggregateCandidate_file": 0.75,
+        "familyAggregateCandidate_symbol": 0.5625,
+        "familyAggregateBaseline": 0.375,
+        "familyAggregateCandidate": 0.5625,
+        "observedDiff": 0.0625,
+        "pValue": 1,
+        "pairsBelowFloor": false,
+        "languagesCovered": 2,
+        "meta": [
+          {
+            "goldId": "GO-001",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-002",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-003",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-004",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-005",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-006",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-007",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-008",
+            "language": "go"
+          },
+          {
+            "goldId": "RS-001",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-002",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-003",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-004",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-005",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-006",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-007",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-008",
+            "language": "rust"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      },
+      "V3": {
+        "nPairs": 24,
+        "baselineMean": 0.375,
+        "candidateMean": 0.2916666666666667,
+        "familyAggregateBaseline_file": 0.5416666666666667,
+        "familyAggregateBaseline_symbol": 0.375,
+        "familyAggregateCandidate_file": 0.5,
+        "familyAggregateCandidate_symbol": 0.29166666666666663,
+        "familyAggregateBaseline": 0.375,
+        "familyAggregateCandidate": 0.29166666666666663,
+        "observedDiff": -0.08333333333333333,
+        "pValue": 0.6895310468953104,
+        "pairsBelowFloor": false,
+        "languagesCovered": 2,
+        "meta": [
+          {
+            "goldId": "DP-GO-001",
+            "language": "go"
+          },
+          {
+            "goldId": "DP-GO-002",
+            "language": "go"
+          },
+          {
+            "goldId": "DP-GO-003",
+            "language": "go"
+          },
+          {
+            "goldId": "DP-GO-004",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-001",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-002",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-003",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-004",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-005",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-006",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-007",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-008",
+            "language": "go"
+          },
+          {
+            "goldId": "DP-RS-001",
+            "language": "rust"
+          },
+          {
+            "goldId": "DP-RS-002",
+            "language": "rust"
+          },
+          {
+            "goldId": "DP-RS-003",
+            "language": "rust"
+          },
+          {
+            "goldId": "DP-RS-004",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-001",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-002",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-003",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-004",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-005",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-006",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-007",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-008",
+            "language": "rust"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      },
+      "V4": {
+        "nPairs": 16,
+        "baselineMean": 0.5,
+        "candidateMean": 0.6875,
+        "familyAggregateBaseline_file": 0.5416666666666667,
+        "familyAggregateBaseline_symbol": 0.375,
+        "familyAggregateCandidate_file": 0.875,
+        "familyAggregateCandidate_symbol": 0.6875,
+        "familyAggregateBaseline": 0.375,
+        "familyAggregateCandidate": 0.6875,
+        "observedDiff": 0.1875,
+        "pValue": 0.44595540445955406,
+        "pairsBelowFloor": false,
+        "languagesCovered": 2,
+        "meta": [
+          {
+            "goldId": "GO-001",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-002",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-003",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-004",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-005",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-006",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-007",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-008",
+            "language": "go"
+          },
+          {
+            "goldId": "RS-001",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-002",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-003",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-004",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-005",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-006",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-007",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-008",
+            "language": "rust"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 0.9432586153149392
+      },
+      "V5": {
+        "nPairs": 24,
+        "baselineMean": 0.375,
+        "candidateMean": 0.041666666666666664,
+        "familyAggregateBaseline_file": 0.5416666666666667,
+        "familyAggregateBaseline_symbol": 0.375,
+        "familyAggregateCandidate_file": 0.125,
+        "familyAggregateCandidate_symbol": 0.041666666666666664,
+        "familyAggregateBaseline": 0.375,
+        "familyAggregateCandidate": 0.041666666666666664,
+        "observedDiff": -0.3333333333333333,
+        "pValue": 0.021397860213978603,
+        "pairsBelowFloor": false,
+        "languagesCovered": 2,
+        "meta": [
+          {
+            "goldId": "DP-GO-001",
+            "language": "go"
+          },
+          {
+            "goldId": "DP-GO-002",
+            "language": "go"
+          },
+          {
+            "goldId": "DP-GO-003",
+            "language": "go"
+          },
+          {
+            "goldId": "DP-GO-004",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-001",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-002",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-003",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-004",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-005",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-006",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-007",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-008",
+            "language": "go"
+          },
+          {
+            "goldId": "DP-RS-001",
+            "language": "rust"
+          },
+          {
+            "goldId": "DP-RS-002",
+            "language": "rust"
+          },
+          {
+            "goldId": "DP-RS-003",
+            "language": "rust"
+          },
+          {
+            "goldId": "DP-RS-004",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-001",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-002",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-003",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-004",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-005",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-006",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-007",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-008",
+            "language": "rust"
+          }
+        ],
+        "fdrSurvives": true,
+        "adjustedP": 0.08321390083213902
+      },
+      "V6": {
+        "nPairs": 24,
+        "baselineMean": 0.375,
+        "candidateMean": 0.125,
+        "familyAggregateBaseline_file": 0.5416666666666667,
+        "familyAggregateBaseline_symbol": 0.375,
+        "familyAggregateCandidate_file": 0.29166666666666663,
+        "familyAggregateCandidate_symbol": 0.125,
+        "familyAggregateBaseline": 0.375,
+        "familyAggregateCandidate": 0.125,
+        "observedDiff": -0.25,
+        "pValue": 0.1131886811318868,
+        "pairsBelowFloor": false,
+        "languagesCovered": 2,
+        "meta": [
+          {
+            "goldId": "DP-GO-001",
+            "language": "go"
+          },
+          {
+            "goldId": "DP-GO-002",
+            "language": "go"
+          },
+          {
+            "goldId": "DP-GO-003",
+            "language": "go"
+          },
+          {
+            "goldId": "DP-GO-004",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-001",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-002",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-003",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-004",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-005",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-006",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-007",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-008",
+            "language": "go"
+          },
+          {
+            "goldId": "DP-RS-001",
+            "language": "rust"
+          },
+          {
+            "goldId": "DP-RS-002",
+            "language": "rust"
+          },
+          {
+            "goldId": "DP-RS-003",
+            "language": "rust"
+          },
+          {
+            "goldId": "DP-RS-004",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-001",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-002",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-003",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-004",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-005",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-006",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-007",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-008",
+            "language": "rust"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 0.29797020297970206
+      },
+      "V7": {
+        "nPairs": 16,
+        "baselineMean": 0.5,
+        "candidateMean": 0.6875,
+        "familyAggregateBaseline_file": 0.5416666666666667,
+        "familyAggregateBaseline_symbol": 0.375,
+        "familyAggregateCandidate_file": 0.875,
+        "familyAggregateCandidate_symbol": 0.6875,
+        "familyAggregateBaseline": 0.375,
+        "familyAggregateCandidate": 0.6875,
+        "observedDiff": 0.1875,
+        "pValue": 0.45815418458154183,
+        "pairsBelowFloor": false,
+        "languagesCovered": 2,
+        "meta": [
+          {
+            "goldId": "GO-001",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-002",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-003",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-004",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-005",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-006",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-007",
+            "language": "go"
+          },
+          {
+            "goldId": "GO-008",
+            "language": "go"
+          },
+          {
+            "goldId": "RS-001",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-002",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-003",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-004",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-005",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-006",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-007",
+            "language": "rust"
+          },
+          {
+            "goldId": "RS-008",
+            "language": "rust"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 0.9432586153149392
+      }
+    },
+    "C-family": {
+      "V1": {
+        "nPairs": 24,
+        "baselineMean": 0.375,
+        "candidateMean": 0.3333333333333333,
+        "familyAggregateBaseline_file": 0.5984848484848485,
+        "familyAggregateBaseline_symbol": 0.37121212121212127,
+        "familyAggregateCandidate_file": 0.625,
+        "familyAggregateCandidate_symbol": 0.3333333333333333,
+        "familyAggregateBaseline": 0.37121212121212127,
+        "familyAggregateCandidate": 0.3333333333333333,
+        "observedDiff": -0.041666666666666664,
+        "pValue": 1,
+        "pairsBelowFloor": false,
+        "languagesCovered": 3,
+        "meta": [
+          {
+            "goldId": "C-001",
+            "language": "c"
+          },
+          {
+            "goldId": "C-002",
+            "language": "c"
+          },
+          {
+            "goldId": "C-003",
+            "language": "c"
+          },
+          {
+            "goldId": "C-004",
+            "language": "c"
+          },
+          {
+            "goldId": "C-005",
+            "language": "c"
+          },
+          {
+            "goldId": "C-006",
+            "language": "c"
+          },
+          {
+            "goldId": "C-007",
+            "language": "c"
+          },
+          {
+            "goldId": "C-008",
+            "language": "c"
+          },
+          {
+            "goldId": "CPP-001",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-002",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-003",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-004",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-005",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-006",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-007",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-008",
+            "language": "cpp"
+          },
+          {
+            "goldId": "ZG-001",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-002",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-003",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-004",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-005",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-006",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-007",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-008",
+            "language": "zig"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      },
+      "V2": {
+        "nPairs": 24,
+        "baselineMean": 0.375,
+        "candidateMean": 0.2916666666666667,
+        "familyAggregateBaseline_file": 0.5984848484848485,
+        "familyAggregateBaseline_symbol": 0.37121212121212127,
+        "familyAggregateCandidate_file": 0.75,
+        "familyAggregateCandidate_symbol": 0.2916666666666667,
+        "familyAggregateBaseline": 0.37121212121212127,
+        "familyAggregateCandidate": 0.2916666666666667,
+        "observedDiff": -0.08333333333333333,
+        "pValue": 0.6746325367463254,
+        "pairsBelowFloor": false,
+        "languagesCovered": 3,
+        "meta": [
+          {
+            "goldId": "C-001",
+            "language": "c"
+          },
+          {
+            "goldId": "C-002",
+            "language": "c"
+          },
+          {
+            "goldId": "C-003",
+            "language": "c"
+          },
+          {
+            "goldId": "C-004",
+            "language": "c"
+          },
+          {
+            "goldId": "C-005",
+            "language": "c"
+          },
+          {
+            "goldId": "C-006",
+            "language": "c"
+          },
+          {
+            "goldId": "C-007",
+            "language": "c"
+          },
+          {
+            "goldId": "C-008",
+            "language": "c"
+          },
+          {
+            "goldId": "CPP-001",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-002",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-003",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-004",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-005",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-006",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-007",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-008",
+            "language": "cpp"
+          },
+          {
+            "goldId": "ZG-001",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-002",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-003",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-004",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-005",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-006",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-007",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-008",
+            "language": "zig"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      },
+      "V3": {
+        "nPairs": 35,
+        "baselineMean": 0.37142857142857144,
+        "candidateMean": 0.14285714285714285,
+        "familyAggregateBaseline_file": 0.5984848484848485,
+        "familyAggregateBaseline_symbol": 0.37121212121212127,
+        "familyAggregateCandidate_file": 0.34595959595959597,
+        "familyAggregateCandidate_symbol": 0.14393939393939395,
+        "familyAggregateBaseline": 0.37121212121212127,
+        "familyAggregateCandidate": 0.14393939393939395,
+        "observedDiff": -0.22857142857142856,
+        "pValue": 0.037196280371962806,
+        "pairsBelowFloor": false,
+        "languagesCovered": 3,
+        "meta": [
+          {
+            "goldId": "C-001",
+            "language": "c"
+          },
+          {
+            "goldId": "C-002",
+            "language": "c"
+          },
+          {
+            "goldId": "C-003",
+            "language": "c"
+          },
+          {
+            "goldId": "C-004",
+            "language": "c"
+          },
+          {
+            "goldId": "C-005",
+            "language": "c"
+          },
+          {
+            "goldId": "C-006",
+            "language": "c"
+          },
+          {
+            "goldId": "C-007",
+            "language": "c"
+          },
+          {
+            "goldId": "C-008",
+            "language": "c"
+          },
+          {
+            "goldId": "DP-C-001",
+            "language": "c"
+          },
+          {
+            "goldId": "DP-C-002",
+            "language": "c"
+          },
+          {
+            "goldId": "DP-C-003",
+            "language": "c"
+          },
+          {
+            "goldId": "DP-C-004",
+            "language": "c"
+          },
+          {
+            "goldId": "CPP-001",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-002",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-003",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-004",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-005",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-006",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-007",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-008",
+            "language": "cpp"
+          },
+          {
+            "goldId": "DP-CPP-001",
+            "language": "cpp"
+          },
+          {
+            "goldId": "DP-CPP-002",
+            "language": "cpp"
+          },
+          {
+            "goldId": "DP-CPP-003",
+            "language": "cpp"
+          },
+          {
+            "goldId": "DP-CPP-004",
+            "language": "cpp"
+          },
+          {
+            "goldId": "DP-ZG-001",
+            "language": "zig"
+          },
+          {
+            "goldId": "DP-ZG-002",
+            "language": "zig"
+          },
+          {
+            "goldId": "DP-ZG-003",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-001",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-002",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-003",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-004",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-005",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-006",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-007",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-008",
+            "language": "zig"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 0.11835180118351803
+      },
+      "V4": {
+        "nPairs": 24,
+        "baselineMean": 0.375,
+        "candidateMean": 0.375,
+        "familyAggregateBaseline_file": 0.5984848484848485,
+        "familyAggregateBaseline_symbol": 0.37121212121212127,
+        "familyAggregateCandidate_file": 0.7083333333333334,
+        "familyAggregateCandidate_symbol": 0.375,
+        "familyAggregateBaseline": 0.37121212121212127,
+        "familyAggregateCandidate": 0.375,
+        "observedDiff": 0,
+        "pValue": 1,
+        "pairsBelowFloor": false,
+        "languagesCovered": 3,
+        "meta": [
+          {
+            "goldId": "C-001",
+            "language": "c"
+          },
+          {
+            "goldId": "C-002",
+            "language": "c"
+          },
+          {
+            "goldId": "C-003",
+            "language": "c"
+          },
+          {
+            "goldId": "C-004",
+            "language": "c"
+          },
+          {
+            "goldId": "C-005",
+            "language": "c"
+          },
+          {
+            "goldId": "C-006",
+            "language": "c"
+          },
+          {
+            "goldId": "C-007",
+            "language": "c"
+          },
+          {
+            "goldId": "C-008",
+            "language": "c"
+          },
+          {
+            "goldId": "CPP-001",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-002",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-003",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-004",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-005",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-006",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-007",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-008",
+            "language": "cpp"
+          },
+          {
+            "goldId": "ZG-001",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-002",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-003",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-004",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-005",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-006",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-007",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-008",
+            "language": "zig"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      },
+      "V5": {
+        "nPairs": 35,
+        "baselineMean": 0.37142857142857144,
+        "candidateMean": 0.05714285714285714,
+        "familyAggregateBaseline_file": 0.5984848484848485,
+        "familyAggregateBaseline_symbol": 0.37121212121212127,
+        "familyAggregateCandidate_file": 0.14393939393939395,
+        "familyAggregateCandidate_symbol": 0.05808080808080809,
+        "familyAggregateBaseline": 0.37121212121212127,
+        "familyAggregateCandidate": 0.05808080808080809,
+        "observedDiff": -0.3142857142857143,
+        "pValue": 0.0031996800319968005,
+        "pairsBelowFloor": false,
+        "languagesCovered": 3,
+        "meta": [
+          {
+            "goldId": "C-001",
+            "language": "c"
+          },
+          {
+            "goldId": "C-002",
+            "language": "c"
+          },
+          {
+            "goldId": "C-003",
+            "language": "c"
+          },
+          {
+            "goldId": "C-004",
+            "language": "c"
+          },
+          {
+            "goldId": "C-005",
+            "language": "c"
+          },
+          {
+            "goldId": "C-006",
+            "language": "c"
+          },
+          {
+            "goldId": "C-007",
+            "language": "c"
+          },
+          {
+            "goldId": "C-008",
+            "language": "c"
+          },
+          {
+            "goldId": "DP-C-001",
+            "language": "c"
+          },
+          {
+            "goldId": "DP-C-002",
+            "language": "c"
+          },
+          {
+            "goldId": "DP-C-003",
+            "language": "c"
+          },
+          {
+            "goldId": "DP-C-004",
+            "language": "c"
+          },
+          {
+            "goldId": "CPP-001",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-002",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-003",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-004",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-005",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-006",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-007",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-008",
+            "language": "cpp"
+          },
+          {
+            "goldId": "DP-CPP-001",
+            "language": "cpp"
+          },
+          {
+            "goldId": "DP-CPP-002",
+            "language": "cpp"
+          },
+          {
+            "goldId": "DP-CPP-003",
+            "language": "cpp"
+          },
+          {
+            "goldId": "DP-CPP-004",
+            "language": "cpp"
+          },
+          {
+            "goldId": "DP-ZG-001",
+            "language": "zig"
+          },
+          {
+            "goldId": "DP-ZG-002",
+            "language": "zig"
+          },
+          {
+            "goldId": "DP-ZG-003",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-001",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-002",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-003",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-004",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-005",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-006",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-007",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-008",
+            "language": "zig"
+          }
+        ],
+        "fdrSurvives": true,
+        "adjustedP": 0.022397760223977603
+      },
+      "V6": {
+        "nPairs": 35,
+        "baselineMean": 0.37142857142857144,
+        "candidateMean": 0.17142857142857143,
+        "familyAggregateBaseline_file": 0.5984848484848485,
+        "familyAggregateBaseline_symbol": 0.37121212121212127,
+        "familyAggregateCandidate_file": 0.28535353535353536,
+        "familyAggregateCandidate_symbol": 0.1717171717171717,
+        "familyAggregateBaseline": 0.37121212121212127,
+        "familyAggregateCandidate": 0.1717171717171717,
+        "observedDiff": -0.2,
+        "pValue": 0.061493850614938506,
+        "pairsBelowFloor": false,
+        "languagesCovered": 3,
+        "meta": [
+          {
+            "goldId": "C-001",
+            "language": "c"
+          },
+          {
+            "goldId": "C-002",
+            "language": "c"
+          },
+          {
+            "goldId": "C-003",
+            "language": "c"
+          },
+          {
+            "goldId": "C-004",
+            "language": "c"
+          },
+          {
+            "goldId": "C-005",
+            "language": "c"
+          },
+          {
+            "goldId": "C-006",
+            "language": "c"
+          },
+          {
+            "goldId": "C-007",
+            "language": "c"
+          },
+          {
+            "goldId": "C-008",
+            "language": "c"
+          },
+          {
+            "goldId": "DP-C-001",
+            "language": "c"
+          },
+          {
+            "goldId": "DP-C-002",
+            "language": "c"
+          },
+          {
+            "goldId": "DP-C-003",
+            "language": "c"
+          },
+          {
+            "goldId": "DP-C-004",
+            "language": "c"
+          },
+          {
+            "goldId": "CPP-001",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-002",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-003",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-004",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-005",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-006",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-007",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-008",
+            "language": "cpp"
+          },
+          {
+            "goldId": "DP-CPP-001",
+            "language": "cpp"
+          },
+          {
+            "goldId": "DP-CPP-002",
+            "language": "cpp"
+          },
+          {
+            "goldId": "DP-CPP-003",
+            "language": "cpp"
+          },
+          {
+            "goldId": "DP-CPP-004",
+            "language": "cpp"
+          },
+          {
+            "goldId": "DP-ZG-001",
+            "language": "zig"
+          },
+          {
+            "goldId": "DP-ZG-002",
+            "language": "zig"
+          },
+          {
+            "goldId": "DP-ZG-003",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-001",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-002",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-003",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-004",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-005",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-006",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-007",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-008",
+            "language": "zig"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 0.17935706429357065
+      },
+      "V7": {
+        "nPairs": 24,
+        "baselineMean": 0.375,
+        "candidateMean": 0.3333333333333333,
+        "familyAggregateBaseline_file": 0.5984848484848485,
+        "familyAggregateBaseline_symbol": 0.37121212121212127,
+        "familyAggregateCandidate_file": 0.6666666666666666,
+        "familyAggregateCandidate_symbol": 0.3333333333333333,
+        "familyAggregateBaseline": 0.37121212121212127,
+        "familyAggregateCandidate": 0.3333333333333333,
+        "observedDiff": -0.041666666666666664,
+        "pValue": 1,
+        "pairsBelowFloor": false,
+        "languagesCovered": 3,
+        "meta": [
+          {
+            "goldId": "C-001",
+            "language": "c"
+          },
+          {
+            "goldId": "C-002",
+            "language": "c"
+          },
+          {
+            "goldId": "C-003",
+            "language": "c"
+          },
+          {
+            "goldId": "C-004",
+            "language": "c"
+          },
+          {
+            "goldId": "C-005",
+            "language": "c"
+          },
+          {
+            "goldId": "C-006",
+            "language": "c"
+          },
+          {
+            "goldId": "C-007",
+            "language": "c"
+          },
+          {
+            "goldId": "C-008",
+            "language": "c"
+          },
+          {
+            "goldId": "CPP-001",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-002",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-003",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-004",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-005",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-006",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-007",
+            "language": "cpp"
+          },
+          {
+            "goldId": "CPP-008",
+            "language": "cpp"
+          },
+          {
+            "goldId": "ZG-001",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-002",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-003",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-004",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-005",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-006",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-007",
+            "language": "zig"
+          },
+          {
+            "goldId": "ZG-008",
+            "language": "zig"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      }
+    },
+    "JS-mobile": {
+      "V1": {
+        "nPairs": 32,
+        "baselineMean": 0.53125,
+        "candidateMean": 0.625,
+        "familyAggregateBaseline_file": 0.5833333333333334,
+        "familyAggregateBaseline_symbol": 0.4375,
+        "familyAggregateCandidate_file": 0.71875,
+        "familyAggregateCandidate_symbol": 0.625,
+        "familyAggregateBaseline": 0.4375,
+        "familyAggregateCandidate": 0.625,
+        "observedDiff": 0.09375,
+        "pValue": 0.3658634136586341,
+        "pairsBelowFloor": false,
+        "languagesCovered": 4,
+        "meta": [
+          {
+            "goldId": "DR-001",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-002",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-003",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-004",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-005",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-006",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-007",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-008",
+            "language": "dart"
+          },
+          {
+            "goldId": "JS-001",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-002",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-003",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-004",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-005",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-006",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-007",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-008",
+            "language": "javascript"
+          },
+          {
+            "goldId": "TS-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-005",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-006",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-007",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-008",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-005",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-006",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-007",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-008",
+            "language": "typescript"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 0.853681298536813
+      },
+      "V2": {
+        "nPairs": 32,
+        "baselineMean": 0.53125,
+        "candidateMean": 0.53125,
+        "familyAggregateBaseline_file": 0.5833333333333334,
+        "familyAggregateBaseline_symbol": 0.4375,
+        "familyAggregateCandidate_file": 0.8125,
+        "familyAggregateCandidate_symbol": 0.53125,
+        "familyAggregateBaseline": 0.4375,
+        "familyAggregateCandidate": 0.53125,
+        "observedDiff": 0,
+        "pValue": 1,
+        "pairsBelowFloor": false,
+        "languagesCovered": 4,
+        "meta": [
+          {
+            "goldId": "DR-001",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-002",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-003",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-004",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-005",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-006",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-007",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-008",
+            "language": "dart"
+          },
+          {
+            "goldId": "JS-001",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-002",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-003",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-004",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-005",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-006",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-007",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-008",
+            "language": "javascript"
+          },
+          {
+            "goldId": "TS-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-005",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-006",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-007",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-008",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-005",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-006",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-007",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-008",
+            "language": "typescript"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      },
+      "V3": {
+        "nPairs": 48,
+        "baselineMean": 0.4375,
+        "candidateMean": 0.22916666666666666,
+        "familyAggregateBaseline_file": 0.5833333333333334,
+        "familyAggregateBaseline_symbol": 0.4375,
+        "familyAggregateCandidate_file": 0.3541666666666667,
+        "familyAggregateCandidate_symbol": 0.22916666666666666,
+        "familyAggregateBaseline": 0.4375,
+        "familyAggregateCandidate": 0.22916666666666666,
+        "observedDiff": -0.20833333333333334,
+        "pValue": 0.030596940305969402,
+        "pairsBelowFloor": false,
+        "languagesCovered": 4,
+        "meta": [
+          {
+            "goldId": "DP-DR-001",
+            "language": "dart"
+          },
+          {
+            "goldId": "DP-DR-002",
+            "language": "dart"
+          },
+          {
+            "goldId": "DP-DR-003",
+            "language": "dart"
+          },
+          {
+            "goldId": "DP-DR-004",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-001",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-002",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-003",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-004",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-005",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-006",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-007",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-008",
+            "language": "dart"
+          },
+          {
+            "goldId": "DP-JS-001",
+            "language": "javascript"
+          },
+          {
+            "goldId": "DP-JS-002",
+            "language": "javascript"
+          },
+          {
+            "goldId": "DP-JS-003",
+            "language": "javascript"
+          },
+          {
+            "goldId": "DP-JS-004",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-001",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-002",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-003",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-004",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-005",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-006",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-007",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-008",
+            "language": "javascript"
+          },
+          {
+            "goldId": "DP-TS-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TS-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TS-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TS-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-005",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-006",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-007",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-008",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TSL-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TSL-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TSL-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TSL-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-005",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-006",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-007",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-008",
+            "language": "typescript"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 0.1070892910708929
+      },
+      "V4": {
+        "nPairs": 32,
+        "baselineMean": 0.53125,
+        "candidateMean": 0.4375,
+        "familyAggregateBaseline_file": 0.5833333333333334,
+        "familyAggregateBaseline_symbol": 0.4375,
+        "familyAggregateCandidate_file": 0.6875,
+        "familyAggregateCandidate_symbol": 0.4375,
+        "familyAggregateBaseline": 0.4375,
+        "familyAggregateCandidate": 0.4375,
+        "observedDiff": -0.09375,
+        "pValue": 0.4921507849215078,
+        "pairsBelowFloor": false,
+        "languagesCovered": 4,
+        "meta": [
+          {
+            "goldId": "DR-001",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-002",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-003",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-004",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-005",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-006",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-007",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-008",
+            "language": "dart"
+          },
+          {
+            "goldId": "JS-001",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-002",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-003",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-004",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-005",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-006",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-007",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-008",
+            "language": "javascript"
+          },
+          {
+            "goldId": "TS-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-005",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-006",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-007",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-008",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-005",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-006",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-007",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-008",
+            "language": "typescript"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 0.9569598595695985
+      },
+      "V5": {
+        "nPairs": 48,
+        "baselineMean": 0.4375,
+        "candidateMean": 0.125,
+        "familyAggregateBaseline_file": 0.5833333333333334,
+        "familyAggregateBaseline_symbol": 0.4375,
+        "familyAggregateCandidate_file": 0.1875,
+        "familyAggregateCandidate_symbol": 0.125,
+        "familyAggregateBaseline": 0.4375,
+        "familyAggregateCandidate": 0.125,
+        "observedDiff": -0.3125,
+        "pValue": 0.00039996000399960006,
+        "pairsBelowFloor": false,
+        "languagesCovered": 4,
+        "meta": [
+          {
+            "goldId": "DP-DR-001",
+            "language": "dart"
+          },
+          {
+            "goldId": "DP-DR-002",
+            "language": "dart"
+          },
+          {
+            "goldId": "DP-DR-003",
+            "language": "dart"
+          },
+          {
+            "goldId": "DP-DR-004",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-001",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-002",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-003",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-004",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-005",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-006",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-007",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-008",
+            "language": "dart"
+          },
+          {
+            "goldId": "DP-JS-001",
+            "language": "javascript"
+          },
+          {
+            "goldId": "DP-JS-002",
+            "language": "javascript"
+          },
+          {
+            "goldId": "DP-JS-003",
+            "language": "javascript"
+          },
+          {
+            "goldId": "DP-JS-004",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-001",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-002",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-003",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-004",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-005",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-006",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-007",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-008",
+            "language": "javascript"
+          },
+          {
+            "goldId": "DP-TS-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TS-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TS-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TS-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-005",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-006",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-007",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-008",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TSL-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TSL-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TSL-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TSL-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-005",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-006",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-007",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-008",
+            "language": "typescript"
+          }
+        ],
+        "fdrSurvives": true,
+        "adjustedP": 0.004666200046662
+      },
+      "V6": {
+        "nPairs": 48,
+        "baselineMean": 0.4375,
+        "candidateMean": 0.16666666666666666,
+        "familyAggregateBaseline_file": 0.5833333333333334,
+        "familyAggregateBaseline_symbol": 0.4375,
+        "familyAggregateCandidate_file": 0.25,
+        "familyAggregateCandidate_symbol": 0.16666666666666666,
+        "familyAggregateBaseline": 0.4375,
+        "familyAggregateCandidate": 0.16666666666666666,
+        "observedDiff": -0.2708333333333333,
+        "pValue": 0.001999800019998,
+        "pairsBelowFloor": false,
+        "languagesCovered": 4,
+        "meta": [
+          {
+            "goldId": "DP-DR-001",
+            "language": "dart"
+          },
+          {
+            "goldId": "DP-DR-002",
+            "language": "dart"
+          },
+          {
+            "goldId": "DP-DR-003",
+            "language": "dart"
+          },
+          {
+            "goldId": "DP-DR-004",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-001",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-002",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-003",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-004",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-005",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-006",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-007",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-008",
+            "language": "dart"
+          },
+          {
+            "goldId": "DP-JS-001",
+            "language": "javascript"
+          },
+          {
+            "goldId": "DP-JS-002",
+            "language": "javascript"
+          },
+          {
+            "goldId": "DP-JS-003",
+            "language": "javascript"
+          },
+          {
+            "goldId": "DP-JS-004",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-001",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-002",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-003",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-004",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-005",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-006",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-007",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-008",
+            "language": "javascript"
+          },
+          {
+            "goldId": "DP-TS-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TS-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TS-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TS-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-005",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-006",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-007",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-008",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TSL-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TSL-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TSL-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "DP-TSL-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-005",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-006",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-007",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-008",
+            "language": "typescript"
+          }
+        ],
+        "fdrSurvives": true,
+        "adjustedP": 0.0174982501749825
+      },
+      "V7": {
+        "nPairs": 32,
+        "baselineMean": 0.53125,
+        "candidateMean": 0.53125,
+        "familyAggregateBaseline_file": 0.5833333333333334,
+        "familyAggregateBaseline_symbol": 0.4375,
+        "familyAggregateCandidate_file": 0.6875,
+        "familyAggregateCandidate_symbol": 0.53125,
+        "familyAggregateBaseline": 0.4375,
+        "familyAggregateCandidate": 0.53125,
+        "observedDiff": 0,
+        "pValue": 1,
+        "pairsBelowFloor": false,
+        "languagesCovered": 4,
+        "meta": [
+          {
+            "goldId": "DR-001",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-002",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-003",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-004",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-005",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-006",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-007",
+            "language": "dart"
+          },
+          {
+            "goldId": "DR-008",
+            "language": "dart"
+          },
+          {
+            "goldId": "JS-001",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-002",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-003",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-004",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-005",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-006",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-007",
+            "language": "javascript"
+          },
+          {
+            "goldId": "JS-008",
+            "language": "javascript"
+          },
+          {
+            "goldId": "TS-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-005",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-006",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-007",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TS-008",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-001",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-002",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-003",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-004",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-005",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-006",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-007",
+            "language": "typescript"
+          },
+          {
+            "goldId": "TSL-008",
+            "language": "typescript"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      }
+    },
+    "Scripting-dynamic": {
+      "V1": {
+        "nPairs": 40,
+        "baselineMean": 0.625,
+        "candidateMean": 0.625,
+        "familyAggregateBaseline_file": 0.6272727272727272,
+        "familyAggregateBaseline_symbol": 0.5272727272727272,
+        "familyAggregateCandidate_file": 0.825,
+        "familyAggregateCandidate_symbol": 0.625,
+        "familyAggregateBaseline": 0.5272727272727272,
+        "familyAggregateCandidate": 0.625,
+        "observedDiff": 0,
+        "pValue": 1,
+        "pairsBelowFloor": false,
+        "languagesCovered": 5,
+        "meta": [
+          {
+            "goldId": "EL-001",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-002",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-003",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-004",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-005",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-006",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-007",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-008",
+            "language": "elixir"
+          },
+          {
+            "goldId": "LU-001",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-002",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-003",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-004",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-005",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-006",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-007",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-008",
+            "language": "lua"
+          },
+          {
+            "goldId": "PHP-001",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-002",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-003",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-004",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-005",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-006",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-007",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-008",
+            "language": "php"
+          },
+          {
+            "goldId": "PY-001",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-002",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-003",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-004",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-005",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-006",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-007",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-008",
+            "language": "python"
+          },
+          {
+            "goldId": "RB-001",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-002",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-003",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-004",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-005",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-006",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-007",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-008",
+            "language": "ruby"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      },
+      "V2": {
+        "nPairs": 40,
+        "baselineMean": 0.625,
+        "candidateMean": 0.575,
+        "familyAggregateBaseline_file": 0.6272727272727272,
+        "familyAggregateBaseline_symbol": 0.5272727272727272,
+        "familyAggregateCandidate_file": 0.85,
+        "familyAggregateCandidate_symbol": 0.575,
+        "familyAggregateBaseline": 0.5272727272727272,
+        "familyAggregateCandidate": 0.575,
+        "observedDiff": -0.05,
+        "pValue": 0.7771222877712228,
+        "pairsBelowFloor": false,
+        "languagesCovered": 5,
+        "meta": [
+          {
+            "goldId": "EL-001",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-002",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-003",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-004",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-005",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-006",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-007",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-008",
+            "language": "elixir"
+          },
+          {
+            "goldId": "LU-001",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-002",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-003",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-004",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-005",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-006",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-007",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-008",
+            "language": "lua"
+          },
+          {
+            "goldId": "PHP-001",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-002",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-003",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-004",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-005",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-006",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-007",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-008",
+            "language": "php"
+          },
+          {
+            "goldId": "PY-001",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-002",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-003",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-004",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-005",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-006",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-007",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-008",
+            "language": "python"
+          },
+          {
+            "goldId": "RB-001",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-002",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-003",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-004",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-005",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-006",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-007",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-008",
+            "language": "ruby"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      },
+      "V3": {
+        "nPairs": 59,
+        "baselineMean": 0.5254237288135594,
+        "candidateMean": 0.3389830508474576,
+        "familyAggregateBaseline_file": 0.6272727272727272,
+        "familyAggregateBaseline_symbol": 0.5272727272727272,
+        "familyAggregateCandidate_file": 0.5257575757575758,
+        "familyAggregateCandidate_symbol": 0.3393939393939394,
+        "familyAggregateBaseline": 0.5272727272727272,
+        "familyAggregateCandidate": 0.3393939393939394,
+        "observedDiff": -0.1864406779661017,
+        "pValue": 0.0170982901709829,
+        "pairsBelowFloor": false,
+        "languagesCovered": 5,
+        "meta": [
+          {
+            "goldId": "DP-EL-001",
+            "language": "elixir"
+          },
+          {
+            "goldId": "DP-EL-002",
+            "language": "elixir"
+          },
+          {
+            "goldId": "DP-EL-003",
+            "language": "elixir"
+          },
+          {
+            "goldId": "DP-EL-004",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-001",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-002",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-003",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-004",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-005",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-006",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-007",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-008",
+            "language": "elixir"
+          },
+          {
+            "goldId": "DP-LU-001",
+            "language": "lua"
+          },
+          {
+            "goldId": "DP-LU-002",
+            "language": "lua"
+          },
+          {
+            "goldId": "DP-LU-003",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-001",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-002",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-003",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-004",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-005",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-006",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-007",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-008",
+            "language": "lua"
+          },
+          {
+            "goldId": "DP-PHP-001",
+            "language": "php"
+          },
+          {
+            "goldId": "DP-PHP-002",
+            "language": "php"
+          },
+          {
+            "goldId": "DP-PHP-003",
+            "language": "php"
+          },
+          {
+            "goldId": "DP-PHP-004",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-001",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-002",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-003",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-004",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-005",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-006",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-007",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-008",
+            "language": "php"
+          },
+          {
+            "goldId": "DP-PY-001",
+            "language": "python"
+          },
+          {
+            "goldId": "DP-PY-002",
+            "language": "python"
+          },
+          {
+            "goldId": "DP-PY-003",
+            "language": "python"
+          },
+          {
+            "goldId": "DP-PY-004",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-001",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-002",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-003",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-004",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-005",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-006",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-007",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-008",
+            "language": "python"
+          },
+          {
+            "goldId": "DP-RB-001",
+            "language": "ruby"
+          },
+          {
+            "goldId": "DP-RB-002",
+            "language": "ruby"
+          },
+          {
+            "goldId": "DP-RB-003",
+            "language": "ruby"
+          },
+          {
+            "goldId": "DP-RB-004",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-001",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-002",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-003",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-004",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-005",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-006",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-007",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-008",
+            "language": "ruby"
+          }
+        ],
+        "fdrSurvives": true,
+        "adjustedP": 0.08321390083213902
+      },
+      "V4": {
+        "nPairs": 40,
+        "baselineMean": 0.625,
+        "candidateMean": 0.65,
+        "familyAggregateBaseline_file": 0.6272727272727272,
+        "familyAggregateBaseline_symbol": 0.5272727272727272,
+        "familyAggregateCandidate_file": 0.825,
+        "familyAggregateCandidate_symbol": 0.65,
+        "familyAggregateBaseline": 0.5272727272727272,
+        "familyAggregateCandidate": 0.65,
+        "observedDiff": 0.025,
+        "pValue": 1,
+        "pairsBelowFloor": false,
+        "languagesCovered": 5,
+        "meta": [
+          {
+            "goldId": "EL-001",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-002",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-003",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-004",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-005",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-006",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-007",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-008",
+            "language": "elixir"
+          },
+          {
+            "goldId": "LU-001",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-002",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-003",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-004",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-005",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-006",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-007",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-008",
+            "language": "lua"
+          },
+          {
+            "goldId": "PHP-001",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-002",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-003",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-004",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-005",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-006",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-007",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-008",
+            "language": "php"
+          },
+          {
+            "goldId": "PY-001",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-002",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-003",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-004",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-005",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-006",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-007",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-008",
+            "language": "python"
+          },
+          {
+            "goldId": "RB-001",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-002",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-003",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-004",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-005",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-006",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-007",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-008",
+            "language": "ruby"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      },
+      "V5": {
+        "nPairs": 59,
+        "baselineMean": 0.5254237288135594,
+        "candidateMean": 0.22033898305084745,
+        "familyAggregateBaseline_file": 0.6272727272727272,
+        "familyAggregateBaseline_symbol": 0.5272727272727272,
+        "familyAggregateCandidate_file": 0.3757575757575758,
+        "familyAggregateCandidate_symbol": 0.22424242424242422,
+        "familyAggregateBaseline": 0.5272727272727272,
+        "familyAggregateCandidate": 0.22424242424242422,
+        "observedDiff": -0.3050847457627119,
+        "pValue": 0.00009999000099990002,
+        "pairsBelowFloor": false,
+        "languagesCovered": 5,
+        "meta": [
+          {
+            "goldId": "DP-EL-001",
+            "language": "elixir"
+          },
+          {
+            "goldId": "DP-EL-002",
+            "language": "elixir"
+          },
+          {
+            "goldId": "DP-EL-003",
+            "language": "elixir"
+          },
+          {
+            "goldId": "DP-EL-004",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-001",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-002",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-003",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-004",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-005",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-006",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-007",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-008",
+            "language": "elixir"
+          },
+          {
+            "goldId": "DP-LU-001",
+            "language": "lua"
+          },
+          {
+            "goldId": "DP-LU-002",
+            "language": "lua"
+          },
+          {
+            "goldId": "DP-LU-003",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-001",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-002",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-003",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-004",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-005",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-006",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-007",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-008",
+            "language": "lua"
+          },
+          {
+            "goldId": "DP-PHP-001",
+            "language": "php"
+          },
+          {
+            "goldId": "DP-PHP-002",
+            "language": "php"
+          },
+          {
+            "goldId": "DP-PHP-003",
+            "language": "php"
+          },
+          {
+            "goldId": "DP-PHP-004",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-001",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-002",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-003",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-004",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-005",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-006",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-007",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-008",
+            "language": "php"
+          },
+          {
+            "goldId": "DP-PY-001",
+            "language": "python"
+          },
+          {
+            "goldId": "DP-PY-002",
+            "language": "python"
+          },
+          {
+            "goldId": "DP-PY-003",
+            "language": "python"
+          },
+          {
+            "goldId": "DP-PY-004",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-001",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-002",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-003",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-004",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-005",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-006",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-007",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-008",
+            "language": "python"
+          },
+          {
+            "goldId": "DP-RB-001",
+            "language": "ruby"
+          },
+          {
+            "goldId": "DP-RB-002",
+            "language": "ruby"
+          },
+          {
+            "goldId": "DP-RB-003",
+            "language": "ruby"
+          },
+          {
+            "goldId": "DP-RB-004",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-001",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-002",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-003",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-004",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-005",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-006",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-007",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-008",
+            "language": "ruby"
+          }
+        ],
+        "fdrSurvives": true,
+        "adjustedP": 0.0017498250174982502
+      },
+      "V6": {
+        "nPairs": 59,
+        "baselineMean": 0.5254237288135594,
+        "candidateMean": 0.1864406779661017,
+        "familyAggregateBaseline_file": 0.6272727272727272,
+        "familyAggregateBaseline_symbol": 0.5272727272727272,
+        "familyAggregateCandidate_file": 0.30909090909090914,
+        "familyAggregateCandidate_symbol": 0.1909090909090909,
+        "familyAggregateBaseline": 0.5272727272727272,
+        "familyAggregateCandidate": 0.1909090909090909,
+        "observedDiff": -0.3389830508474576,
+        "pValue": 0.00009999000099990002,
+        "pairsBelowFloor": false,
+        "languagesCovered": 5,
+        "meta": [
+          {
+            "goldId": "DP-EL-001",
+            "language": "elixir"
+          },
+          {
+            "goldId": "DP-EL-002",
+            "language": "elixir"
+          },
+          {
+            "goldId": "DP-EL-003",
+            "language": "elixir"
+          },
+          {
+            "goldId": "DP-EL-004",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-001",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-002",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-003",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-004",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-005",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-006",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-007",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-008",
+            "language": "elixir"
+          },
+          {
+            "goldId": "DP-LU-001",
+            "language": "lua"
+          },
+          {
+            "goldId": "DP-LU-002",
+            "language": "lua"
+          },
+          {
+            "goldId": "DP-LU-003",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-001",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-002",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-003",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-004",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-005",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-006",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-007",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-008",
+            "language": "lua"
+          },
+          {
+            "goldId": "DP-PHP-001",
+            "language": "php"
+          },
+          {
+            "goldId": "DP-PHP-002",
+            "language": "php"
+          },
+          {
+            "goldId": "DP-PHP-003",
+            "language": "php"
+          },
+          {
+            "goldId": "DP-PHP-004",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-001",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-002",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-003",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-004",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-005",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-006",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-007",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-008",
+            "language": "php"
+          },
+          {
+            "goldId": "DP-PY-001",
+            "language": "python"
+          },
+          {
+            "goldId": "DP-PY-002",
+            "language": "python"
+          },
+          {
+            "goldId": "DP-PY-003",
+            "language": "python"
+          },
+          {
+            "goldId": "DP-PY-004",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-001",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-002",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-003",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-004",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-005",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-006",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-007",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-008",
+            "language": "python"
+          },
+          {
+            "goldId": "DP-RB-001",
+            "language": "ruby"
+          },
+          {
+            "goldId": "DP-RB-002",
+            "language": "ruby"
+          },
+          {
+            "goldId": "DP-RB-003",
+            "language": "ruby"
+          },
+          {
+            "goldId": "DP-RB-004",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-001",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-002",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-003",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-004",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-005",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-006",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-007",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-008",
+            "language": "ruby"
+          }
+        ],
+        "fdrSurvives": true,
+        "adjustedP": 0.0017498250174982502
+      },
+      "V7": {
+        "nPairs": 40,
+        "baselineMean": 0.625,
+        "candidateMean": 0.675,
+        "familyAggregateBaseline_file": 0.6272727272727272,
+        "familyAggregateBaseline_symbol": 0.5272727272727272,
+        "familyAggregateCandidate_file": 0.85,
+        "familyAggregateCandidate_symbol": 0.675,
+        "familyAggregateBaseline": 0.5272727272727272,
+        "familyAggregateCandidate": 0.675,
+        "observedDiff": 0.05,
+        "pValue": 0.7536246375362464,
+        "pairsBelowFloor": false,
+        "languagesCovered": 5,
+        "meta": [
+          {
+            "goldId": "EL-001",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-002",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-003",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-004",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-005",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-006",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-007",
+            "language": "elixir"
+          },
+          {
+            "goldId": "EL-008",
+            "language": "elixir"
+          },
+          {
+            "goldId": "LU-001",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-002",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-003",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-004",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-005",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-006",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-007",
+            "language": "lua"
+          },
+          {
+            "goldId": "LU-008",
+            "language": "lua"
+          },
+          {
+            "goldId": "PHP-001",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-002",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-003",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-004",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-005",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-006",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-007",
+            "language": "php"
+          },
+          {
+            "goldId": "PHP-008",
+            "language": "php"
+          },
+          {
+            "goldId": "PY-001",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-002",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-003",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-004",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-005",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-006",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-007",
+            "language": "python"
+          },
+          {
+            "goldId": "PY-008",
+            "language": "python"
+          },
+          {
+            "goldId": "RB-001",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-002",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-003",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-004",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-005",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-006",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-007",
+            "language": "ruby"
+          },
+          {
+            "goldId": "RB-008",
+            "language": "ruby"
+          }
+        ],
+        "fdrSurvives": false,
+        "adjustedP": 1
+      }
+    }
+  },
+  "global_aggregates": {
+    "V_baseline": {
+      "file_recall": {
+        "macro": 0.5782085561497328,
+        "weighted": 0.5652597402597402
+      },
+      "symbol_recall": {
+        "macro": 0.4273618538324421,
+        "weighted": 0.40865800865800866
+      }
+    },
+    "V1": {
+      "file_recall": {
+        "macro": 0.7352941176470589,
+        "weighted": 0.7178571428571429
+      },
+      "symbol_recall": {
+        "macro": 0.5257352941176471,
+        "weighted": 0.5089285714285714
+      }
+    },
+    "V2": {
+      "file_recall": {
+        "macro": 0.7941176470588235,
+        "weighted": 0.7857142857142857
+      },
+      "symbol_recall": {
+        "macro": 0.47058823529411764,
+        "weighted": 0.45
+      }
+    },
+    "V3": {
+      "file_recall": {
+        "macro": 0.4182263814616755,
+        "weighted": 0.4035714285714285
+      },
+      "symbol_recall": {
+        "macro": 0.24019607843137258,
+        "weighted": 0.2264069264069264
+      }
+    },
+    "V4": {
+      "file_recall": {
+        "macro": 0.7536764705882353,
+        "weighted": 0.7303571428571428
+      },
+      "symbol_recall": {
+        "macro": 0.5073529411764706,
+        "weighted": 0.4607142857142857
+      }
+    },
+    "V5": {
+      "file_recall": {
+        "macro": 0.25133689839572193,
+        "weighted": 0.23896103896103896
+      },
+      "symbol_recall": {
+        "macro": 0.1339126559714795,
+        "weighted": 0.1224025974025974
+      }
+    },
+    "V6": {
+      "file_recall": {
+        "macro": 0.26849376114081996,
+        "weighted": 0.26374458874458867
+      },
+      "symbol_recall": {
+        "macro": 0.1588680926916221,
+        "weighted": 0.1462121212121212
+      }
+    },
+    "V7": {
+      "file_recall": {
+        "macro": 0.7610294117647058,
+        "weighted": 0.7303571428571428
+      },
+      "symbol_recall": {
+        "macro": 0.5404411764705882,
+        "weighted": 0.5125
+      }
+    }
+  },
+  "global_permutation_tests": {
+    "V1": {
+      "nPairs": 144,
+      "observedDiff": 0.027777777777777776,
+      "pValue": 0.6047395260473952,
+      "fdrSurvives": false,
+      "adjustedP": 0.7055294470552944
+    },
+    "V2": {
+      "nPairs": 144,
+      "observedDiff": -0.034722222222222224,
+      "pValue": 0.53004699530047,
+      "fdrSurvives": false,
+      "adjustedP": 0.7055294470552944
+    },
+    "V3": {
+      "nPairs": 144,
+      "observedDiff": -0.3125,
+      "pValue": 0.00009999000099990002,
+      "fdrSurvives": true,
+      "adjustedP": 0.00023331000233310002
+    },
+    "V4": {
+      "nPairs": 144,
+      "observedDiff": 0,
+      "pValue": 1,
+      "fdrSurvives": false,
+      "adjustedP": 1
+    },
+    "V5": {
+      "nPairs": 144,
+      "observedDiff": -0.3680555555555556,
+      "pValue": 0.00009999000099990002,
+      "fdrSurvives": true,
+      "adjustedP": 0.00023331000233310002
+    },
+    "V6": {
+      "nPairs": 144,
+      "observedDiff": -0.375,
+      "pValue": 0.00009999000099990002,
+      "fdrSurvives": true,
+      "adjustedP": 0.00023331000233310002
+    },
+    "V7": {
+      "nPairs": 144,
+      "observedDiff": 0.034722222222222224,
+      "pValue": 0.5044495550444955,
+      "fdrSurvives": false,
+      "adjustedP": 0.7055294470552944
+    }
+  },
+  "default": {
+    "shape": "V7",
+    "primary_metric": "symbolRecallAt1",
+    "macro_recall_at_1": 0.5404411764705882,
+    "weighted_recall_at_1": 0.5125,
+    "instruction_text": "Use a medium declarative phrase (9-15 tokens) that includes the symbol verbatim and domain-specific terms.",
+    "gates": {
+      "weighted_winner": "pass",
+      "within_threshold_all_families": "pass",
+      "family_worst_case_floor": "pass",
+      "fdr": "pending-no-survivors",
+      "thresholdout": "pending",
+      "author": "pending",
+      "primary_metric": "symbolRecallAt1",
+      "promotion_mode": "global",
+      "leakage": "pass"
+    },
+    "per_family_recall": {
+      "OO-monolithic": 0.4375,
+      "Systems-modular-terse": 0.6875,
+      "C-family": 0.3333333333333333,
+      "JS-mobile": 0.53125,
+      "Scripting-dynamic": 0.675
+    },
+    "global_permutation": {
+      "nPairs": 144,
+      "observedDiff": 0.034722222222222224,
+      "pValue": 0.5044495550444955,
+      "fdrSurvives": false,
+      "adjustedP": 0.7055294470552944
+    },
+    "promotion_note": null
+  },
+  "family_overrides": {
+    "JS-mobile": {
+      "family": "JS-mobile",
+      "shape": "V2",
+      "delta_vs_default": 0,
+      "instruction_text": "For files in the JS-mobile family: When the target symbol is known, phrase a short interrogative query (4-8 tokens) that includes the symbol verbatim.",
+      "gates": {
+        "manual_override": "pass",
+        "rationale": "user-supplied — see family_overrides_rationale",
+        "fdr": "pending-no-survivors",
+        "thresholdout": "pending",
+        "author": "pending",
+        "leakage": "pass",
+        "intrafamilyStability": "pass"
+      },
+      "family_aggregates": {
+        "file_recall": 0.8125,
+        "symbol_recall": 0.53125
+      },
+      "source": "manual"
+    },
+    "C-family": {
+      "family": "C-family",
+      "shape": "V4",
+      "delta_vs_default": 0.041666666666666685,
+      "instruction_text": "For files in the C-family family: Use a medium interrogative query (9-15 tokens) that includes the symbol verbatim.",
+      "gates": {
+        "manual_override": "pass",
+        "rationale": "user-supplied — see family_overrides_rationale",
+        "fdr": "pending-no-survivors",
+        "thresholdout": "pending",
+        "author": "pending",
+        "leakage": "fail",
+        "intrafamilyStability": "fail"
+      },
+      "family_aggregates": {
+        "file_recall": 0.7083333333333334,
+        "symbol_recall": 0.375
+      },
+      "source": "manual"
+    }
+  },
+  "family_overrides_rationale": {
+    "source": "core/prompt-optimization/data/query-shapes/overrides-v1.json",
+    "explanation": "Manual user-supplied overrides honor the file_recall × symbol_recall tradeoff per family — see PHASE6_REDO.md §8 and the post-sweep analysis 2026-05-13."
+  },
+  "per_language_descriptive": {
+    "java": {
+      "best_shape": "V7",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.3333333333333333,
+          "symbol_recall": 0.08333333333333333,
+          "n": 12
+        },
+        "V1": {
+          "file_recall": 0.625,
+          "symbol_recall": 0.125,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 0.75,
+          "symbol_recall": 0,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.3333333333333333,
+          "symbol_recall": 0.08333333333333333,
+          "n": 12
+        },
+        "V4": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.125,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0.4166666666666667,
+          "symbol_recall": 0.16666666666666666,
+          "n": 12
+        },
+        "V6": {
+          "file_recall": 0.3333333333333333,
+          "symbol_recall": 0.16666666666666666,
+          "n": 12
+        },
+        "V7": {
+          "file_recall": 0.5,
+          "symbol_recall": 0.25,
+          "n": 8
+        }
+      }
+    },
+    "csharp": {
+      "best_shape": "V3",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.4166666666666667,
+          "symbol_recall": 0.08333333333333333,
+          "n": 12
+        },
+        "V1": {
+          "file_recall": 0.5,
+          "symbol_recall": 0.125,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 0.625,
+          "symbol_recall": 0.125,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.25,
+          "symbol_recall": 0.16666666666666666,
+          "n": 12
+        },
+        "V4": {
+          "file_recall": 0.5,
+          "symbol_recall": 0,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0.08333333333333333,
+          "symbol_recall": 0,
+          "n": 12
+        },
+        "V6": {
+          "file_recall": 0.08333333333333333,
+          "symbol_recall": 0.08333333333333333,
+          "n": 12
+        },
+        "V7": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.125,
+          "n": 8
+        }
+      }
+    },
+    "kotlin": {
+      "best_shape": "V7",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.45454545454545453,
+          "symbol_recall": 0.45454545454545453,
+          "n": 11
+        },
+        "V1": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.625,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.625,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.18181818181818182,
+          "symbol_recall": 0.09090909090909091,
+          "n": 11
+        },
+        "V4": {
+          "file_recall": 0.625,
+          "symbol_recall": 0.5,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0.09090909090909091,
+          "symbol_recall": 0.09090909090909091,
+          "n": 11
+        },
+        "V6": {
+          "file_recall": 0,
+          "symbol_recall": 0,
+          "n": 11
+        },
+        "V7": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.75,
+          "n": 8
+        }
+      }
+    },
+    "scala": {
+      "best_shape": "V4",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.8181818181818182,
+          "symbol_recall": 0.7272727272727273,
+          "n": 11
+        },
+        "V1": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.75,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.625,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.6363636363636364,
+          "symbol_recall": 0.36363636363636365,
+          "n": 11
+        },
+        "V4": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.875,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0.45454545454545453,
+          "symbol_recall": 0.18181818181818182,
+          "n": 11
+        },
+        "V6": {
+          "file_recall": 0.45454545454545453,
+          "symbol_recall": 0.2727272727272727,
+          "n": 11
+        },
+        "V7": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.625,
+          "n": 8
+        }
+      }
+    },
+    "rust": {
+      "best_shape": "V1",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.5,
+          "symbol_recall": 0.5,
+          "n": 12
+        },
+        "V1": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.75,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.5,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.5833333333333334,
+          "symbol_recall": 0.3333333333333333,
+          "n": 12
+        },
+        "V4": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.625,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0,
+          "symbol_recall": 0,
+          "n": 12
+        },
+        "V6": {
+          "file_recall": 0.25,
+          "symbol_recall": 0.16666666666666666,
+          "n": 12
+        },
+        "V7": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.625,
+          "n": 8
+        }
+      }
+    },
+    "go": {
+      "best_shape": "V4",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.5833333333333334,
+          "symbol_recall": 0.25,
+          "n": 12
+        },
+        "V1": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.5,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 0.625,
+          "symbol_recall": 0.625,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.4166666666666667,
+          "symbol_recall": 0.25,
+          "n": 12
+        },
+        "V4": {
+          "file_recall": 1,
+          "symbol_recall": 0.75,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0.25,
+          "symbol_recall": 0.08333333333333333,
+          "n": 12
+        },
+        "V6": {
+          "file_recall": 0.3333333333333333,
+          "symbol_recall": 0.08333333333333333,
+          "n": 12
+        },
+        "V7": {
+          "file_recall": 1,
+          "symbol_recall": 0.75,
+          "n": 8
+        }
+      }
+    },
+    "c": {
+      "best_shape": "V4",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.4166666666666667,
+          "n": 12
+        },
+        "V1": {
+          "file_recall": 0.625,
+          "symbol_recall": 0.375,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.375,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.25,
+          "symbol_recall": 0.16666666666666666,
+          "n": 12
+        },
+        "V4": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.5,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0,
+          "symbol_recall": 0,
+          "n": 12
+        },
+        "V6": {
+          "file_recall": 0.16666666666666666,
+          "symbol_recall": 0.16666666666666666,
+          "n": 12
+        },
+        "V7": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.5,
+          "n": 8
+        }
+      }
+    },
+    "cpp": {
+      "best_shape": "V_baseline",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.5,
+          "symbol_recall": 0.3333333333333333,
+          "n": 12
+        },
+        "V1": {
+          "file_recall": 0.5,
+          "symbol_recall": 0.125,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 0.5,
+          "symbol_recall": 0.125,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.3333333333333333,
+          "symbol_recall": 0.08333333333333333,
+          "n": 12
+        },
+        "V4": {
+          "file_recall": 0.5,
+          "symbol_recall": 0.125,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0.25,
+          "symbol_recall": 0.08333333333333333,
+          "n": 12
+        },
+        "V6": {
+          "file_recall": 0.4166666666666667,
+          "symbol_recall": 0.16666666666666666,
+          "n": 12
+        },
+        "V7": {
+          "file_recall": 0.5,
+          "symbol_recall": 0.125,
+          "n": 8
+        }
+      }
+    },
+    "zig": {
+      "best_shape": "V1",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.5454545454545454,
+          "symbol_recall": 0.36363636363636365,
+          "n": 11
+        },
+        "V1": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.5,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.375,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.45454545454545453,
+          "symbol_recall": 0.18181818181818182,
+          "n": 11
+        },
+        "V4": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.5,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0.18181818181818182,
+          "symbol_recall": 0.09090909090909091,
+          "n": 11
+        },
+        "V6": {
+          "file_recall": 0.2727272727272727,
+          "symbol_recall": 0.18181818181818182,
+          "n": 11
+        },
+        "V7": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.375,
+          "n": 8
+        }
+      }
+    },
+    "javascript": {
+      "best_shape": "V2",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.6666666666666666,
+          "symbol_recall": 0.5833333333333334,
+          "n": 12
+        },
+        "V1": {
+          "file_recall": 0.625,
+          "symbol_recall": 0.625,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.75,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.25,
+          "symbol_recall": 0.16666666666666666,
+          "n": 12
+        },
+        "V4": {
+          "file_recall": 0.5,
+          "symbol_recall": 0.375,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0.08333333333333333,
+          "symbol_recall": 0.08333333333333333,
+          "n": 12
+        },
+        "V6": {
+          "file_recall": 0.16666666666666666,
+          "symbol_recall": 0.08333333333333333,
+          "n": 12
+        },
+        "V7": {
+          "file_recall": 0.5,
+          "symbol_recall": 0.5,
+          "n": 8
+        }
+      }
+    },
+    "typescript": {
+      "best_shape": "V1",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.5416666666666666,
+          "symbol_recall": 0.3333333333333333,
+          "n": 24
+        },
+        "V1": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.5625,
+          "n": 16
+        },
+        "V2": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.375,
+          "n": 16
+        },
+        "V3": {
+          "file_recall": 0.375,
+          "symbol_recall": 0.25,
+          "n": 24
+        },
+        "V4": {
+          "file_recall": 0.6875,
+          "symbol_recall": 0.375,
+          "n": 16
+        },
+        "V5": {
+          "file_recall": 0.08333333333333333,
+          "symbol_recall": 0.041666666666666664,
+          "n": 24
+        },
+        "V6": {
+          "file_recall": 0.2916666666666667,
+          "symbol_recall": 0.20833333333333334,
+          "n": 24
+        },
+        "V7": {
+          "file_recall": 0.6875,
+          "symbol_recall": 0.4375,
+          "n": 16
+        }
+      }
+    },
+    "dart": {
+      "best_shape": "V1",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.5833333333333334,
+          "symbol_recall": 0.5,
+          "n": 12
+        },
+        "V1": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.75,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.625,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.4166666666666667,
+          "symbol_recall": 0.25,
+          "n": 12
+        },
+        "V4": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.625,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0.5,
+          "symbol_recall": 0.3333333333333333,
+          "n": 12
+        },
+        "V6": {
+          "file_recall": 0.25,
+          "symbol_recall": 0.16666666666666666,
+          "n": 12
+        },
+        "V7": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.75,
+          "n": 8
+        }
+      }
+    },
+    "python": {
+      "best_shape": "V_baseline",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.6666666666666666,
+          "symbol_recall": 0.5,
+          "n": 12
+        },
+        "V1": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.5,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.375,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.5833333333333334,
+          "symbol_recall": 0.25,
+          "n": 12
+        },
+        "V4": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.375,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0.5833333333333334,
+          "symbol_recall": 0.16666666666666666,
+          "n": 12
+        },
+        "V6": {
+          "file_recall": 0.5,
+          "symbol_recall": 0.16666666666666666,
+          "n": 12
+        },
+        "V7": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.375,
+          "n": 8
+        }
+      }
+    },
+    "ruby": {
+      "best_shape": "V_baseline",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.5833333333333334,
+          "symbol_recall": 0.5,
+          "n": 12
+        },
+        "V1": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.5,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.5,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.3333333333333333,
+          "symbol_recall": 0.16666666666666666,
+          "n": 12
+        },
+        "V4": {
+          "file_recall": 0.25,
+          "symbol_recall": 0.25,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0.25,
+          "symbol_recall": 0.16666666666666666,
+          "n": 12
+        },
+        "V6": {
+          "file_recall": 0.08333333333333333,
+          "symbol_recall": 0,
+          "n": 12
+        },
+        "V7": {
+          "file_recall": 0.625,
+          "symbol_recall": 0.5,
+          "n": 8
+        }
+      }
+    },
+    "php": {
+      "best_shape": "V4",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.6666666666666666,
+          "symbol_recall": 0.5,
+          "n": 12
+        },
+        "V1": {
+          "file_recall": 0.75,
+          "symbol_recall": 0.75,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.75,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.5833333333333334,
+          "symbol_recall": 0.5,
+          "n": 12
+        },
+        "V4": {
+          "file_recall": 1,
+          "symbol_recall": 1,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0.3333333333333333,
+          "symbol_recall": 0.3333333333333333,
+          "n": 12
+        },
+        "V6": {
+          "file_recall": 0.25,
+          "symbol_recall": 0.16666666666666666,
+          "n": 12
+        },
+        "V7": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.875,
+          "n": 8
+        }
+      }
+    },
+    "lua": {
+      "best_shape": "V1",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.6363636363636364,
+          "symbol_recall": 0.6363636363636364,
+          "n": 11
+        },
+        "V1": {
+          "file_recall": 1,
+          "symbol_recall": 0.75,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 1,
+          "symbol_recall": 0.5,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.5454545454545454,
+          "symbol_recall": 0.36363636363636365,
+          "n": 11
+        },
+        "V4": {
+          "file_recall": 1,
+          "symbol_recall": 0.625,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0.5454545454545454,
+          "symbol_recall": 0.45454545454545453,
+          "n": 11
+        },
+        "V6": {
+          "file_recall": 0.5454545454545454,
+          "symbol_recall": 0.45454545454545453,
+          "n": 11
+        },
+        "V7": {
+          "file_recall": 1,
+          "symbol_recall": 0.75,
+          "n": 8
+        }
+      }
+    },
+    "elixir": {
+      "best_shape": "V4",
+      "shape_recalls": {
+        "V_baseline": {
+          "file_recall": 0.5833333333333334,
+          "symbol_recall": 0.5,
+          "n": 12
+        },
+        "V1": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.625,
+          "n": 8
+        },
+        "V2": {
+          "file_recall": 0.875,
+          "symbol_recall": 0.75,
+          "n": 8
+        },
+        "V3": {
+          "file_recall": 0.5833333333333334,
+          "symbol_recall": 0.4166666666666667,
+          "n": 12
+        },
+        "V4": {
+          "file_recall": 1,
+          "symbol_recall": 1,
+          "n": 8
+        },
+        "V5": {
+          "file_recall": 0.16666666666666666,
+          "symbol_recall": 0,
+          "n": 12
+        },
+        "V6": {
+          "file_recall": 0.16666666666666666,
+          "symbol_recall": 0.16666666666666666,
+          "n": 12
+        },
+        "V7": {
+          "file_recall": 1,
+          "symbol_recall": 0.875,
+          "n": 8
+        }
+      }
+    }
+  },
+  "not_promoted_due_to_fdr": [
+    {
+      "family": "OO-monolithic",
+      "shape": "V7",
+      "pValue": 1,
+      "observedDiff": 0.03125
+    },
+    {
+      "family": "Systems-modular-terse",
+      "shape": "V1",
+      "pValue": 0.683031696830317,
+      "observedDiff": 0.125
+    },
+    {
+      "family": "Systems-modular-terse",
+      "shape": "V2",
+      "pValue": 1,
+      "observedDiff": 0.0625
+    },
+    {
+      "family": "Systems-modular-terse",
+      "shape": "V4",
+      "pValue": 0.44595540445955406,
+      "observedDiff": 0.1875
+    },
+    {
+      "family": "Systems-modular-terse",
+      "shape": "V7",
+      "pValue": 0.45815418458154183,
+      "observedDiff": 0.1875
+    },
+    {
+      "family": "JS-mobile",
+      "shape": "V1",
+      "pValue": 0.3658634136586341,
+      "observedDiff": 0.09375
+    },
+    {
+      "family": "Scripting-dynamic",
+      "shape": "V4",
+      "pValue": 1,
+      "observedDiff": 0.025
+    },
+    {
+      "family": "Scripting-dynamic",
+      "shape": "V7",
+      "pValue": 0.7536246375362464,
+      "observedDiff": 0.05
+    }
+  ],
+  "not_promoted_due_to_intrafamily_instability": [
+    {
+      "family": "C-family",
+      "shape": "V4",
+      "delta_vs_default": 0.041666666666666685,
+      "instruction_text": "For files in the C-family family: Use a medium interrogative query (9-15 tokens) that includes the symbol verbatim.",
+      "gates": {
+        "manual_override": "pass",
+        "rationale": "user-supplied — see family_overrides_rationale",
+        "fdr": "pending-no-survivors",
+        "thresholdout": "pending",
+        "author": "pending",
+        "leakage": "fail",
+        "intrafamilyStability": "fail"
+      },
+      "family_aggregates": {
+        "file_recall": 0.7083333333333334,
+        "symbol_recall": 0.375
+      },
+      "source": "manual"
+    }
+  ],
+  "doc_negative_regression_check": "pending-no-sweep-yet",
+  "preregistration_diff": {
+    "predicted_default": "V2",
+    "actual_default": "V7",
+    "predicted_overrides": {
+      "OO-monolithic": "V4",
+      "Scripting-dynamic": "V7"
+    },
+    "actual_overrides": {
+      "JS-mobile": "V2",
+      "C-family": "V4"
+    },
+    "lessons": "auto-generated; review and replace with a paragraph after the sweep"
+  },
+  "behavior_notes": [
+    "Track A only. Track B (§6.3) is optional and post-Track-A.",
+    "G2 thresholdout + G4 codex review are MANUAL gates; this artifact marks them `pending`.",
+    "doc_negative_regression_check is a stub until a doc-negative sweep wires in."
+  ]
+}
