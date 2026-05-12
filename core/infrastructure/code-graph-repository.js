@@ -177,6 +177,49 @@ export class CodeGraphRepository {
   }
 
   /**
+   * Return ALL entities whose start_line falls in [startLine, endLine]
+   * (i.e. every entity declared inside the chunk's range). Used by the
+   * F9 additional_symbols re-anchoring rule (file-kind-ranking.js): when a
+   * chunk merged ≥2 top-level boundaries, the chunker's stored `symbol` is
+   * just the first boundary's name. Re-querying the entities table picks up
+   * every declared symbol in the chunk and lets ranking pick the best name
+   * match against the user's query.
+   *
+   * Capped at 64 to bound the per-result scan cost. Ordered by start_line.
+   *
+   * @param {string} filePath
+   * @param {number} startLine
+   * @param {number} endLine
+   * @returns {Array<{ id, name, type, startLine, endLine, parentClass }>}
+   */
+  findEntitiesInRange(filePath, startLine, endLine) {
+    const db = this._open();
+    if (!db) return [];
+    try {
+      const rows = db.prepare(`
+        SELECT id, name, type, start_line, end_line, parent_class
+        FROM entities
+        WHERE file_path = ?
+          AND start_line >= ?
+          AND start_line <= ?
+          AND (stale_since IS NULL)
+        ORDER BY start_line ASC
+        LIMIT 64
+      `).all(filePath, startLine, endLine);
+      return rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        startLine: row.start_line,
+        endLine: row.end_line,
+        parentClass: row.parent_class || null,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Get a single entity by id, with file:line metadata.
    *
    * @param {string} entityId
