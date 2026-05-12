@@ -948,6 +948,211 @@ function looksLikeStrictIdentifier(token) {
   return false;
 }
 
+// =============================================================================
+// F9 (2026-05-12): additional_symbols re-anchoring for cAST sibling-merged
+// chunks. JS/TS-gated. Pure ranking-time metadata fix — no chunk regeneration,
+// no reindex required.
+//
+// Motivation: cAST sibling-merge collapses ≥2 top-level boundaries into one
+// chunk and attributes the chunk to the FIRST boundary's name. Probe failures
+// like TS-006 (chunk named `SlashCommand` but expected `slashCommands`) and
+// TS-008 (chunk named `regularPrompt` but expected `systemPrompt`) are
+// structurally PARTIAL — file is correct, symbol is the wrong sibling.
+//
+// The chunker already records secondary boundary names in
+// `metadata.additional_symbols` (tree-sitter-provider.js:928-934). F9
+// promotes the best-matching sibling to the chunk's primary label when the
+// query references it more strongly than the original primary.
+//
+// SOTA references:
+//   - Sourcegraph BM25F (2025): "treat symbols as a multi-valued field"
+//   - Supermemory code-chunk: explicit scope-tree carries secondary entities
+//     per chunk, not just the head boundary
+//   - cAST (arXiv 2506.15655): acknowledges the sibling-merge attribution
+//     gap as a known limitation
+//
+// Pilot scope: JS/TS/TSX/JSX only. The mechanism generalizes to every
+// language but per-language gating limits the validation surface for the
+// initial rollout. Promote to additional languages once probes confirm gain
+// on JS/TS with zero regressions on JS/TS + GCSN.
+// =============================================================================
+
+const JSTS_LANGS = new Set(['javascript', 'typescript', 'tsx', 'jsx']);
+const JSTS_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts']);
+
+function isJsTsResult(result) {
+  const meta = result?.metadata ?? {};
+  if (meta.language && JSTS_LANGS.has(meta.language)) return true;
+  // Expansion entities from graph-expansion.js carry no metadata.language;
+  // fall back to file-extension sniff so F9 can still process them.
+  const fp = result?.file_path || result?.file || meta.file || meta.path || result?.filePath || '';
+  if (!fp) return false;
+  const dot = fp.lastIndexOf('.');
+  if (dot < 0) return false;
+  return JSTS_EXTENSIONS.has(fp.slice(dot).toLowerCase());
+}
+
+/**
+ * Split a camelCase/PascalCase/snake_case/kebab-case identifier into
+ * lowercased sub-tokens. Filters out very short fragments.
+ *
+ *   slashCommands           → ['slash', 'commands']
+ *   SlashCommand            → ['slash', 'command']
+ *   entitlementsByUserType  → ['entitlements', 'by', 'user', 'type']
+ *   $ZodTypeInternals       → ['zod', 'type', 'internals']  ($ stripped)
+ *   HTTPSConnection         → ['https', 'connection']
+ */
+function splitCamelCaseTokens(name) {
+  if (!name) return [];
+  return String(name)
+    .replace(/\$/g, '')                          // strip $ (zod-style prefix)
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')      // camelCase boundary
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')   // PascalCase run boundary
+    .replace(/[_\-]/g, ' ')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(t => t.length >= 2);
+}
+
+/**
+ * Match a name's camelCase token against a query word. Handles plural/
+ * singular and prefix variants with a length threshold to avoid noise.
+ *
+ *   tokenMatches('error', 'errors') → true (prefix, both ≥4)
+ *   tokenMatches('type', 'type')    → true (exact)
+ *   tokenMatches('by', 'by')        → true (exact, short OK)
+ *   tokenMatches('to', 'tokenize')  → false (prefix but shorter is <3)
+ */
+function tokenMatches(token, queryWord) {
+  if (!token || !queryWord) return false;
+  if (token === queryWord) return true;
+  // For very short tokens, require exact only
+  if (token.length < 3 || queryWord.length < 3) return false;
+  const shorter = token.length <= queryWord.length ? token : queryWord;
+  const longer = token.length > queryWord.length ? token : queryWord;
+  if (shorter.length < 4) return false; // 'try'/'tried'/'trie' would otherwise alias
+  return longer.startsWith(shorter);
+}
+
+/**
+ * Score how strongly a candidate name matches the query, in tiers.
+ *
+ *   tier 2 (literal): full lowercased name appears as a literal query word.
+ *                     Strong signal: query mentions the identifier directly.
+ *   tier 1 (tokens):  ALL camelCase tokens of the name are covered by some
+ *                     query word (with prefix/plural matching). Medium signal:
+ *                     query describes the identifier compositionally.
+ *   tier 0:           not enough tokens covered — abstain.
+ *
+ * Returns {tier, tokens} so callers can compare tiers explicitly. Within a
+ * tier, comparing on raw token count is noisy (sibling names often outscore
+ * the primary by 1 token in ways that don't reflect query intent — e.g.,
+ * "codeArtifact definition including its onStreamPart handler" mentions
+ * BOTH names literally, but the user means codeArtifact). The relabel
+ * rule should require sibling.tier > primary.tier strictly.
+ */
+function scoreNameMatchTiered(name, queryWordsArr, queryWordsSet) {
+  if (!name) return { tier: 0, tokens: 0 };
+  const tokens = splitCamelCaseTokens(name);
+  if (tokens.length === 0) return { tier: 0, tokens: 0 };
+  const nLowerRaw = String(name).toLowerCase();
+  const nLowerStripped = nLowerRaw.replace(/\$/g, '');
+  // Tier 2: literal full-name match. Check $-preserving form first so a
+  // query mentioning "$ZodType" exact-matches v4/core/$ZodType but only
+  // token-matches v4/classic/ZodType (F10).
+  if (queryWordsSet.has(nLowerRaw) || queryWordsSet.has(nLowerStripped)) {
+    return { tier: 2, tokens: tokens.length };
+  }
+  // Tier 1: all camelCase tokens covered
+  for (const t of tokens) {
+    let found = false;
+    for (let i = 0; i < queryWordsArr.length; i++) {
+      if (tokenMatches(t, queryWordsArr[i])) { found = true; break; }
+    }
+    if (!found) return { tier: 0, tokens: 0 };
+  }
+  return { tier: 1, tokens: tokens.length };
+}
+
+/**
+ * Find a sibling entity in the chunk's range that beats the primary on
+ * query match. Returns the matching code-graph entity (for F8-style label
+ * adoption) or null.
+ *
+ * Queries the code graph for ALL entities declared in the chunk's range
+ * (every top-level boundary cAST merged in). Scores each entity name
+ * against the query and picks the best match — but only relabels if it
+ * STRICTLY beats the primary's match. Ties keep primary (avoid noise).
+ *
+ * Returns null unless: language ∈ JS/TS/TSX/JSX, codeGraphRepo is available
+ * with findEntitiesInRange, ≥1 sibling entity exists, the best sibling
+ * beats primary, AND the primary did NOT already match the query strongly
+ * (a strong primary match means the encoder + indexer agreed — don't
+ * second-guess them at relabel time).
+ */
+function findAdditionalSymbolRelabel(result, queryWordsArr, queryWordsSet, opts) {
+  if (!isJsTsResult(result)) return null;
+  const meta = result?.metadata ?? {};
+
+  if (!opts.codeGraphRepo || typeof opts.codeGraphRepo.findEntitiesInRange !== 'function') {
+    return null;
+  }
+
+  const fp = resolveFilePath(result);
+  const sl = Number(result?.startLine ?? meta.startLine ?? meta.line_start);
+  const el = Number(result?.endLine ?? meta.endLine ?? meta.line_end);
+  if (!fp || !Number.isFinite(sl) || !Number.isFinite(el)) return null;
+
+  // Cache per (file, range) — entities don't change within a query call.
+  const cache = opts._entityNameCache;
+  const entitiesCacheKey = cache ? `${fp}|${sl}|${el}|f9-entities` : null;
+  let entities;
+  if (entitiesCacheKey && cache.has(entitiesCacheKey)) {
+    entities = cache.get(entitiesCacheKey);
+  } else {
+    try { entities = opts.codeGraphRepo.findEntitiesInRange(fp, sl, el); }
+    catch { entities = []; }
+    if (entitiesCacheKey) cache.set(entitiesCacheKey, entities);
+  }
+  if (!Array.isArray(entities) || entities.length < 2) return null;
+
+  const primaryName = meta.symbol || meta.name || result?.name || result?.symbol || null;
+  // Critical gate: F9 only operates on chunks that ALREADY have a primary
+  // name attributed by the indexer (cAST sibling-merge case). When primary
+  // is null/missing, the chunk is an anonymous code-block whose label will
+  // be resolved by context-expander via findFirstEntityInRange at result
+  // presentation time — F9 must not preempt that path (regresses TS-004:
+  // every artifact client.tsx chunk with name=null was being relabeled to
+  // the inner `onStreamPart` arrow function the query mentions).
+  if (!primaryName) return null;
+  const primaryNameLower = String(primaryName).toLowerCase();
+  const primaryMatch = scoreNameMatchTiered(primaryName, queryWordsArr, queryWordsSet);
+
+  let bestEntity = null;
+  let bestMatch = { tier: 0, tokens: 0 };
+  for (const ent of entities) {
+    if (!ent?.name) continue;
+    if (primaryNameLower && String(ent.name).toLowerCase() === primaryNameLower) continue;
+    // Require strict-identifier shape on the candidate. Avoids relabeling
+    // to a common English-word entity captured by tree-sitter — extremely
+    // rare in well-typed JS/TS but cheap to guard.
+    if (!looksLikeStrictIdentifier(ent.name)) continue;
+    const m = scoreNameMatchTiered(ent.name, queryWordsArr, queryWordsSet);
+    if (m.tier > bestMatch.tier || (m.tier === bestMatch.tier && m.tokens > bestMatch.tokens)) {
+      bestMatch = m;
+      bestEntity = ent;
+    }
+  }
+
+  // Only relabel when sibling tier STRICTLY beats primary tier. Same-tier
+  // ties keep primary — when both are literal-name matches in the query
+  // (TS-004: codeArtifact + onStreamPart both literal), the chunker's
+  // primary attribution wins because the encoder already ranked the chunk
+  // on that signal.
+  if (!bestEntity || bestMatch.tier === 0 || bestMatch.tier <= primaryMatch.tier) return null;
+  return bestEntity;
+}
+
 /**
  * Extract strict-identifier-shaped tokens from a query. Used by
  * identifierMentionBoost as a complement to extractSymbolDefinitionTarget:
@@ -1648,6 +1853,24 @@ export function applyResultDemotions(results, opts = {}) {
     ? extractIdentifierMentions(opts.query || '')
     : null;
 
+  // F9 (2026-05-12): pre-compute query word tokens once for additional_symbols
+  // re-anchoring (see findAdditionalSymbolRelabel docstring). Format-gated;
+  // skipped entirely when isAgentFormat=false so GCSN benchmark traffic is
+  // untouched (same gate as the other BM25F-family signals above).
+  //
+  // F10 (2026-05-12): the extraction regex preserves a leading `$` so
+  // identifiers like $ZodType / $ZodTypeInternals (zod v4/core public-API
+  // convention — the structural interfaces are $-prefixed while the runtime
+  // classes are not) round-trip through tokenization. `\b[A-Za-z0-9_]+\b`
+  // would silently strip the `$` (since `$` is non-word) and make
+  // `$ZodType` indistinguishable from plain `ZodType`, costing TSL-004/8
+  // (chunk relabel picked classic/ZodType over core/$ZodType because the
+  // tier-A literal match was ambiguous).
+  const f9QueryWordsArr = (isAgentFormat && !hasAblation(ablations, 'no-addsym-relabel'))
+    ? ((opts.query || '').match(/\$?[A-Za-z_][A-Za-z0-9_]*/g) || []).map(w => w.toLowerCase())
+    : null;
+  const f9QueryWordsSet = f9QueryWordsArr ? new Set(f9QueryWordsArr) : null;
+
   let changed = false;
   const window = Math.min(opts.window ?? results.length, results.length);
 
@@ -1853,7 +2076,15 @@ export function applyResultDemotions(results, opts = {}) {
           return resolved;
         })()
       : null;
+    // F9 (2026-05-12): when F8 (verb-anchored explicit target) did not fire,
+    // try additional_symbols re-anchoring. JS/TS/TSX/JSX-gated inside the
+    // helper. Pure label adoption — no score change. See helper docstring.
+    const additionalSymbolRelabelEntity = !exactSymbolTargetEntity
+      && f9QueryWordsArr
+      ? findAdditionalSymbolRelabel(result, f9QueryWordsArr, f9QueryWordsSet, opts)
+      : null;
     const exactEntity = exactSymbolTargetEntity
+      || additionalSymbolRelabelEntity
       || (!skipNamePrecision
           ? exactNamedEntityForResult(result, preferredKind, nameHints, nameHintsLower, opts)
           : null);
@@ -1871,7 +2102,14 @@ export function applyResultDemotions(results, opts = {}) {
       && exactSymbolTargetEntity.name
       && exactSymbolTargetEntity.startLine
       && exactSymbolTargetEntity.endLine);
-    const shouldAdoptEntity = shouldAdoptViaExactTarget || !!(preferredEntity?.startLine
+    // F9: noun-anchored addSym path also bypasses the kind-keyword gate.
+    // Variables/typeAliases captured as additional_symbols (TS-006/8 scope)
+    // would otherwise fail the gate (variable/typeAlias not in keyword set).
+    const shouldAdoptViaAddSym = !!(additionalSymbolRelabelEntity
+      && additionalSymbolRelabelEntity.name
+      && additionalSymbolRelabelEntity.startLine
+      && additionalSymbolRelabelEntity.endLine);
+    const shouldAdoptEntity = shouldAdoptViaExactTarget || shouldAdoptViaAddSym || !!(preferredEntity?.startLine
       && preferredEntity?.endLine
       && preferredKindKeywordSet && preferredKindKeywordSet.has(preferredType));
     const containedEntity = !shouldAdoptEntity && opts.codeGraphRepo && typeof opts.codeGraphRepo.findFirstEntityInRange === 'function'
