@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-05-12T02:44:35.287Z",
+  "summary": {
+    "counts": {
+      "PASS": 0,
+      "PARTIAL": 0,
+      "FAIL": 4
+    },
+    "totalMs": 118,
+    "avgMs": 30,
+    "n": 4
+  },
+  "results": [
+    {
+      "id": "DP-GO-001",
+      "repo": "go",
+      "query": "what license is go-chi router under",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "chi.go",
+        "startLine": 59,
+        "endLine": 62,
+        "symbol": "NewRouter",
+        "symbolType": "function",
+        "score": 0.4234137535095215,
+        "presentation": "full"
+      },
+      "wallMs": 46,
+      "error": null
+    },
+    {
+      "id": "DP-GO-002",
+      "repo": "go",
+      "query": "go-chi lightweight http router overview",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": "_examples/hello-world/main.go",
+        "startLine": 1,
+        "endLine": 22,
+        "symbol": "main",
+        "symbolType": "function",
+        "score": 0.5280838012695312,
+        "presentation": "full"
+      },
+      "wallMs": 26,
+      "error": null
+    },
+    {
+      "id": "DP-GO-003",
+      "repo": "go",
+      "query": "go.mod module declaration with go version",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": ".github/workflows/ci.yml",
+        "startLine": 32,
+        "endLine": 32,
+        "symbol": "go-version",
+        "symbolType": "topKey",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 22,
+      "error": null
+    },
+    {
+      "id": "DP-GO-004",
+      "repo": "go",
+      "query": "github actions ci workflow for go-chi tests",
+      "verdict": "FAIL",
+      "reason": "file_mismatch",
+      "top1": {
+        "file": ".github/FUNDING.yml",
+        "startLine": 3,
+        "endLine": 3,
+        "symbol": "github",
+        "symbolType": "topKey",
+        "score": 0.6000000000000001,
+        "presentation": "full"
+      },
+      "wallMs": 24,
+      "error": null
+    }
+  ]
+}
