@@ -1016,8 +1016,14 @@ export class TreeSitterProvider {
             // body (up to ~600 chars) so the boundary name is searchable.
             //
             // Gating: only when the node is a BOUNDARY_TYPES AND has a name.
+            // Top-level Ruby method nodes are excluded because those
+            // unscoped `def` snippets are normalized to anonymous code chunks
+            // by ASTChunker. Parent-scoped Ruby methods still get header
+            // chunks when oversized.
             // Header text is bounded to maxSize so we never exceed embed cap.
-            if (BOUNDARY_TYPES.has(node.type) && name) {
+            const isRubyMethodHeader = parentInfo == null
+              && (node.type === 'method' || node.type === 'singleton_method');
+            if (BOUNDARY_TYPES.has(node.type) && name && !isRubyMethodHeader) {
               const HEADER_MAX_CHARS = Math.min(600, maxSize);
               const headerEndIdx = Math.min(node.endIndex, node.startIndex + HEADER_MAX_CHARS);
               const headerText = content.substring(node.startIndex, headerEndIdx);
