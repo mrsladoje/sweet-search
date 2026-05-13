@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "tool": "ss-find",
-  "runId": "phase6-redo-ss-find-v1",
-  "generatedAt": "2026-05-13T10:25:05.775Z",
+  "runId": "phase6-redo-ss-find-v2",
+  "generatedAt": "2026-05-13T14:10:19.580Z",
   "plan_reference": "docs/PHASE6_REDO.md §12.1 + 2026-05-13 ss-find amendment",
   "primary_metric": "symbolRecallAt1",
   "grid": {
@@ -75,41 +75,41 @@
   },
   "strategies": {
     "simple_global": {
-      "rCell": "R5",
+      "rCell": "R2",
       "qCell": "Q3",
-      "rLabel": "small-alternation+symbol+neighbours",
+      "rLabel": "word-bounded+literal",
       "qLabel": "short+with-symbol+imperative",
-      "file_recall_at_1": 0.7692307692307693,
-      "symbol_recall_at_1": 0.6013986013986014,
+      "file_recall_at_1": 0.7902097902097902,
+      "symbol_recall_at_1": 0.5944055944055944,
       "primary_metric": "symbolRecallAt1",
-      "instruction_text": "[simple-global] For ss-find: build the regex as small alternation: `\\b(<symbol>|<sibling1>|<sibling2>)\\b` — symbol + 2 graph/chunk siblings AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
+      "instruction_text": "[simple-global] For ss-find: build the regex as word-bounded literal: `\\b<symbol>\\b` — the canonical narrow anchor AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
       "source": "best global symbol_recall@1 across 144 ast-tester golds"
     },
     "family_conditioned": {
       "default": {
-        "rCell": "R5",
+        "rCell": "R2",
         "qCell": "Q3",
-        "rLabel": "small-alternation+symbol+neighbours",
+        "rLabel": "word-bounded+literal",
         "qLabel": "short+with-symbol+imperative",
-        "file_recall_at_1": 0.7692307692307693,
-        "symbol_recall_at_1": 0.6013986013986014,
+        "file_recall_at_1": 0.7902097902097902,
+        "symbol_recall_at_1": 0.5944055944055944,
         "primary_metric": "symbolRecallAt1",
-        "instruction_text": "[simple-global] For ss-find: build the regex as small alternation: `\\b(<symbol>|<sibling1>|<sibling2>)\\b` — symbol + 2 graph/chunk siblings AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
+        "instruction_text": "[simple-global] For ss-find: build the regex as word-bounded literal: `\\b<symbol>\\b` — the canonical narrow anchor AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
         "source": "family-conditioned default (= simple-global)"
       },
       "overrides": {
         "JS-mobile": {
           "rCell": "R3",
-          "qCell": "Q4",
+          "qCell": "Q3",
           "rLabel": "definition-anchored+family-keyword",
-          "qLabel": "short+with-symbol+interrogative",
-          "file_recall_at_1": 0.8387096774193549,
-          "symbol_recall_at_1": 0.7096774193548387,
+          "qLabel": "short+with-symbol+imperative",
+          "file_recall_at_1": 0.8709677419354839,
+          "symbol_recall_at_1": 0.6774193548387096,
           "primary_metric": "symbolRecallAt1",
-          "instruction_text": "[JS-mobile-override] For ss-find: build the regex as definition-anchored: `\\b<family-keyword>\\s+<symbol>\\b` — language-keyword + symbol; catches the def site AND phrase the semantic query as short interrogative + symbol verbatim (4-8 tokens) — e.g., \"how does <Symbol> work\".",
-          "source": "family-best (Δ vs global = +16.1pp symbol_recall)",
-          "delta_vs_default_symbol_recall": 0.16129032258064524,
-          "global_on_family_symbol_recall": 0.5483870967741935
+          "instruction_text": "[JS-mobile-override] For ss-find: build the regex as definition-anchored: `\\b<family-keyword>\\s+<symbol>\\b` — language-keyword + symbol; catches the def site AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
+          "source": "family-best (Δ vs global = +9.7pp symbol_recall)",
+          "delta_vs_default_symbol_recall": 0.09677419354838701,
+          "global_on_family_symbol_recall": 0.5806451612903226
         }
       }
     },
@@ -118,27 +118,21 @@
       "qCell": "Q3",
       "rLabel": "definition-anchored+family-keyword",
       "qLabel": "short+with-symbol+imperative",
-      "file_recall_at_1": 0.6692708333333334,
-      "symbol_recall_at_1": 0.5651041666666666,
+      "file_recall_at_1": 0.6796875,
+      "symbol_recall_at_1": 0.5703125,
       "primary_metric": "symbolRecallAt1",
       "instruction_text": "[popular-weighted (agentic-tier)] For ss-find: build the regex as definition-anchored: `\\b<family-keyword>\\s+<symbol>\\b` — language-keyword + symbol; catches the def site AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
-      "source": "2nd-best weighted-agentic-tier cell (top pick matched simple_global; recorded under naturalWinner). Selected for GEPA diversity vs Strategy 1.",
-      "diversity_enforced": true,
-      "natural_winner": {
-        "cell": "R5|Q3",
-        "symbol_recall_at_1": 0.5736607142857143,
-        "file_recall_at_1": 0.7552083333333334,
-        "note": "Natural agentic-tier weighted winner; matched simple_global so the 2nd-best cell was promoted instead to preserve GEPA candidate diversity."
-      },
+      "source": "best weighted symbol_recall under agentic-tier weights (TS/Python/Rust=5, mainstream=3, longtail=1)",
+      "diversity_enforced": false,
       "alt_so_tier": {
-        "rCell": "R2",
+        "rCell": "R5",
         "qCell": "Q3",
-        "rLabel": "word-bounded+literal",
+        "rLabel": "small-alternation+symbol+neighbours",
         "qLabel": "short+with-symbol+imperative",
-        "file_recall_at_1": 0.7697368421052632,
-        "symbol_recall_at_1": 0.5625,
+        "file_recall_at_1": 0.7467105263157895,
+        "symbol_recall_at_1": 0.5578007518796992,
         "primary_metric": "symbolRecallAt1",
-        "instruction_text": "[popular-weighted (so-tier)] For ss-find: build the regex as word-bounded literal: `\\b<symbol>\\b` — the canonical narrow anchor AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
+        "instruction_text": "[popular-weighted (so-tier)] For ss-find: build the regex as small alternation: `\\b(<symbol>|<sibling1>|<sibling2>)\\b` — symbol + 2 graph/chunk siblings AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
         "source": "best weighted symbol_recall under §7 Stack-Overflow tier weights — for reference"
       }
     }
@@ -216,8 +210,8 @@
     },
     "R3|Q1": {
       "n": 143,
-      "file": 84,
-      "sym": 66
+      "file": 86,
+      "sym": 67
     },
     "R3|Q2": {
       "n": 143,
@@ -226,27 +220,27 @@
     },
     "R3|Q3": {
       "n": 143,
-      "file": 91,
+      "file": 92,
       "sym": 78
     },
     "R3|Q4": {
       "n": 143,
       "file": 88,
-      "sym": 74
+      "sym": 73
     },
     "R3|Q5": {
       "n": 143,
-      "file": 91,
-      "sym": 68
+      "file": 94,
+      "sym": 69
     },
     "R3|Q6": {
       "n": 143,
       "file": 90,
-      "sym": 65
+      "sym": 66
     },
     "R3|Q7": {
       "n": 143,
-      "file": 94,
+      "file": 95,
       "sym": 70
     },
     "R4|Q1": {
@@ -286,37 +280,37 @@
     },
     "R5|Q1": {
       "n": 143,
-      "file": 82,
-      "sym": 55
+      "file": 83,
+      "sym": 57
     },
     "R5|Q2": {
       "n": 143,
-      "file": 72,
-      "sym": 43
+      "file": 76,
+      "sym": 47
     },
     "R5|Q3": {
       "n": 143,
-      "file": 110,
-      "sym": 86
+      "file": 109,
+      "sym": 84
     },
     "R5|Q4": {
       "n": 143,
-      "file": 101,
-      "sym": 66
+      "file": 100,
+      "sym": 68
     },
     "R5|Q5": {
       "n": 143,
-      "file": 81,
-      "sym": 48
+      "file": 80,
+      "sym": 50
     },
     "R5|Q6": {
       "n": 143,
-      "file": 80,
-      "sym": 48
+      "file": 77,
+      "sym": 47
     },
     "R5|Q7": {
       "n": 143,
-      "file": 84,
+      "file": 85,
       "sym": 56
     },
     "R6|Q1": {
@@ -535,22 +529,22 @@
       "R5|Q1": {
         "n": 32,
         "file": 20,
-        "sym": 12
+        "sym": 13
       },
       "R5|Q2": {
         "n": 32,
-        "file": 18,
-        "sym": 10
+        "file": 21,
+        "sym": 11
       },
       "R5|Q3": {
         "n": 32,
-        "file": 25,
-        "sym": 18
+        "file": 26,
+        "sym": 17
       },
       "R5|Q4": {
         "n": 32,
-        "file": 25,
-        "sym": 15
+        "file": 26,
+        "sym": 16
       },
       "R5|Q5": {
         "n": 32,
@@ -559,8 +553,8 @@
       },
       "R5|Q6": {
         "n": 32,
-        "file": 15,
-        "sym": 9
+        "file": 14,
+        "sym": 8
       },
       "R5|Q7": {
         "n": 32,
@@ -791,8 +785,8 @@
       },
       "R5|Q3": {
         "n": 16,
-        "file": 13,
-        "sym": 12
+        "file": 12,
+        "sym": 11
       },
       "R5|Q4": {
         "n": 16,
@@ -801,12 +795,12 @@
       },
       "R5|Q5": {
         "n": 16,
-        "file": 8,
+        "file": 7,
         "sym": 4
       },
       "R5|Q6": {
         "n": 16,
-        "file": 9,
+        "file": 8,
         "sym": 6
       },
       "R5|Q7": {
@@ -1038,12 +1032,12 @@
       },
       "R5|Q3": {
         "n": 24,
-        "file": 18,
+        "file": 17,
         "sym": 12
       },
       "R5|Q4": {
         "n": 24,
-        "file": 19,
+        "file": 17,
         "sym": 11
       },
       "R5|Q5": {
@@ -1053,7 +1047,7 @@
       },
       "R5|Q6": {
         "n": 24,
-        "file": 13,
+        "file": 12,
         "sym": 6
       },
       "R5|Q7": {
@@ -1205,8 +1199,8 @@
       },
       "R3|Q1": {
         "n": 31,
-        "file": 23,
-        "sym": 19
+        "file": 25,
+        "sym": 20
       },
       "R3|Q2": {
         "n": 31,
@@ -1215,27 +1209,27 @@
       },
       "R3|Q3": {
         "n": 31,
-        "file": 26,
+        "file": 27,
         "sym": 21
       },
       "R3|Q4": {
         "n": 31,
         "file": 26,
-        "sym": 22
+        "sym": 21
       },
       "R3|Q5": {
         "n": 31,
-        "file": 25,
-        "sym": 17
+        "file": 28,
+        "sym": 18
       },
       "R3|Q6": {
         "n": 31,
         "file": 26,
-        "sym": 15
+        "sym": 16
       },
       "R3|Q7": {
         "n": 31,
-        "file": 27,
+        "file": 28,
         "sym": 17
       },
       "R4|Q1": {
@@ -1276,12 +1270,12 @@
       "R5|Q1": {
         "n": 31,
         "file": 20,
-        "sym": 13
+        "sym": 14
       },
       "R5|Q2": {
         "n": 31,
-        "file": 17,
-        "sym": 9
+        "file": 18,
+        "sym": 11
       },
       "R5|Q3": {
         "n": 31,
@@ -1296,7 +1290,7 @@
       "R5|Q5": {
         "n": 31,
         "file": 17,
-        "sym": 8
+        "sym": 10
       },
       "R5|Q6": {
         "n": 31,
@@ -1305,7 +1299,7 @@
       },
       "R5|Q7": {
         "n": 31,
-        "file": 18,
+        "file": 19,
         "sym": 10
       },
       "R6|Q1": {
@@ -1522,13 +1516,13 @@
       },
       "R5|Q1": {
         "n": 40,
-        "file": 23,
+        "file": 24,
         "sym": 18
       },
       "R5|Q2": {
         "n": 40,
         "file": 20,
-        "sym": 14
+        "sym": 15
       },
       "R5|Q3": {
         "n": 40,
@@ -1538,7 +1532,7 @@
       "R5|Q4": {
         "n": 40,
         "file": 27,
-        "sym": 19
+        "sym": 20
       },
       "R5|Q5": {
         "n": 40,
