@@ -1,0 +1,937 @@
+{
+  "schemaVersion": 1,
+  "tool": "structural",
+  "runId": "phase6-redo-structural-v1",
+  "generatedAt": "2026-05-13T23:32:28.706Z",
+  "plan_reference": "docs/PHASE6_REDO.md §12.1 + 2026-05-14 structural redo handoff",
+  "primary_metric": "recall_at_5",
+  "families": {
+    "OO-monolithic": {
+      "languages": [
+        "java",
+        "csharp",
+        "kotlin",
+        "scala"
+      ]
+    },
+    "Systems-modular-terse": {
+      "languages": [
+        "rust",
+        "go"
+      ]
+    },
+    "C-family": {
+      "languages": [
+        "c",
+        "cpp",
+        "zig"
+      ]
+    },
+    "JS-mobile": {
+      "languages": [
+        "javascript",
+        "typescript",
+        "typescript-lib",
+        "dart"
+      ]
+    },
+    "Scripting-dynamic": {
+      "languages": [
+        "python",
+        "ruby",
+        "php",
+        "lua",
+        "elixir"
+      ]
+    }
+  },
+  "phrasings": [
+    "P1",
+    "P2",
+    "P3",
+    "P4",
+    "P5"
+  ],
+  "relationships": [
+    "callers",
+    "callees",
+    "impact"
+  ],
+  "coverage": {
+    "n_probes_dev_only": 105,
+    "n_rows": 630,
+    "total_rows_in_track": 1020,
+    "by_split": {
+      "dev": 630
+    },
+    "by_family_and_relationship": {
+      "OO-monolithic": {
+        "callers": 11,
+        "callees": 11,
+        "impact": 11
+      },
+      "Systems-modular-terse": {
+        "callers": 7,
+        "callees": 2,
+        "impact": 7
+      },
+      "C-family": {
+        "callers": 2,
+        "callees": 1,
+        "impact": 2
+      },
+      "JS-mobile": {
+        "callers": 9,
+        "callees": 4,
+        "impact": 9
+      },
+      "Scripting-dynamic": {
+        "callers": 13,
+        "callees": 3,
+        "impact": 13
+      }
+    },
+    "thin_data_notes": {
+      "c_family": "Only 5 dev probes total across C/CPP/Zig with non-empty graph data; recommendations for C-family are descriptive, not statistically powered.",
+      "impact_2hop_diagnostic": "Computed via re-running findCallers-style LIKE resolution on layer-1 callers; sweep finds +2.60pp gap (under 15pp escalation threshold)."
+    }
+  },
+  "ranking_stability_check": {
+    "_note": "Argmax of recall_at_5 / precision_at_5 / f1_at_5 per relationship. Because phrasings tie within a relationship type (zero variance), all rubrics pick the same phrasing trivially.",
+    "callers": {
+      "argmax_recall_at_5": "P3",
+      "argmax_precision_at_5": "P3",
+      "argmax_f1_at_5": "P3",
+      "stable": true
+    },
+    "callees": {
+      "argmax_recall_at_5": "P3",
+      "argmax_precision_at_5": "P3",
+      "argmax_f1_at_5": "P3",
+      "stable": true
+    },
+    "impact": {
+      "argmax_recall_at_5": "P3",
+      "argmax_precision_at_5": "P3",
+      "argmax_f1_at_5": "P3",
+      "stable": true
+    }
+  },
+  "strategies": {
+    "callers": {
+      "simple_global": {
+        "phrasing": "P3",
+        "phrasingLabel": "declarative",
+        "example": "callers of <symbol>",
+        "recall_at_5": 0.2978354978354978,
+        "precision_at_5": 0.21904761904761902,
+        "f1_at_5": 0.21697123293761952,
+        "primary_metric": "recall_at_5",
+        "instruction_text": "[simple-global] For ss-* structural mode (callers): phrase the NL query as declarative — e.g., \"callers of <symbol>\". IMPORTANT: structural mode's parser extracts (type, symbol) and discards the rest, so any phrasing that fires the parser is rank-equivalent on Recall@5. Pick this canonical form for predictability.",
+        "source": "best global recall_at_5 across all callers probes (ties broken by canonical phrasing order P3>P2>P1>P4>P5)",
+        "secondary_metrics": {
+          "_note": "Primary = recall_at_5 (mean over probes for this relationship × phrasing). precision_at_5 / f1_at_5 are the alternate rubrics computed across the same cells.",
+          "recall_at_5": 0.2978354978354978,
+          "precision_at_5": 0.21904761904761902,
+          "f1_at_5": 0.21697123293761952
+        }
+      },
+      "family_conditioned": {
+        "default": {
+          "phrasing": "P3",
+          "phrasingLabel": "declarative",
+          "example": "callers of <symbol>",
+          "recall_at_5": 0.2978354978354978,
+          "precision_at_5": 0.21904761904761902,
+          "f1_at_5": 0.21697123293761952,
+          "primary_metric": "recall_at_5",
+          "instruction_text": "[simple-global] For ss-* structural mode (callers): phrase the NL query as declarative — e.g., \"callers of <symbol>\". IMPORTANT: structural mode's parser extracts (type, symbol) and discards the rest, so any phrasing that fires the parser is rank-equivalent on Recall@5. Pick this canonical form for predictability.",
+          "source": "best global recall_at_5 across all callers probes (ties broken by canonical phrasing order P3>P2>P1>P4>P5)",
+          "secondary_metrics": {
+            "_note": "Primary = recall_at_5 (mean over probes for this relationship × phrasing). precision_at_5 / f1_at_5 are the alternate rubrics computed across the same cells.",
+            "recall_at_5": 0.2978354978354978,
+            "precision_at_5": 0.21904761904761902,
+            "f1_at_5": 0.21697123293761952
+          }
+        },
+        "overrides": {}
+      },
+      "popular_weighted_agentic": {
+        "phrasing": "P3",
+        "phrasingLabel": "declarative",
+        "example": "callers of <symbol>",
+        "recall_at_5": 0.2978354978354978,
+        "precision_at_5": 0.21904761904761902,
+        "f1_at_5": 0.21697123293761952,
+        "primary_metric": "recall_at_5",
+        "instruction_text": "[popular-weighted (agentic-tier)] For ss-* structural mode (callers): phrase the NL query as declarative — e.g., \"callers of <symbol>\". IMPORTANT: structural mode's parser extracts (type, symbol) and discards the rest, so any phrasing that fires the parser is rank-equivalent on Recall@5. Pick this canonical form for predictability.",
+        "source": "best weighted recall_at_5 under agentic-tier weights (TS/Python/Rust=5, mainstream=3, longtail=1)",
+        "secondary_metrics": {
+          "_note": "Primary = recall_at_5 (mean over probes for this relationship × phrasing). precision_at_5 / f1_at_5 are the alternate rubrics computed across the same cells.",
+          "recall_at_5": 0.2978354978354978,
+          "precision_at_5": 0.21904761904761902,
+          "f1_at_5": 0.21697123293761952
+        },
+        "weighted_recall_at_5_under_weights": 0.28177830940988835,
+        "diversity_enforced": false,
+        "alt_so_tier": {
+          "phrasing": "P3",
+          "phrasingLabel": "declarative",
+          "example": "callers of <symbol>",
+          "recall_at_5": 0.2978354978354978,
+          "precision_at_5": 0.21904761904761902,
+          "f1_at_5": 0.21697123293761952,
+          "primary_metric": "recall_at_5",
+          "instruction_text": "[popular-weighted (so-tier)] For ss-* structural mode (callers): phrase the NL query as declarative — e.g., \"callers of <symbol>\". IMPORTANT: structural mode's parser extracts (type, symbol) and discards the rest, so any phrasing that fires the parser is rank-equivalent on Recall@5. Pick this canonical form for predictability.",
+          "source": "best weighted recall_at_5 under §7 Stack-Overflow-2024 tier weights — for reference",
+          "secondary_metrics": {
+            "_note": "Primary = recall_at_5 (mean over probes for this relationship × phrasing). precision_at_5 / f1_at_5 are the alternate rubrics computed across the same cells.",
+            "recall_at_5": 0.2978354978354978,
+            "precision_at_5": 0.21904761904761902,
+            "f1_at_5": 0.21697123293761952
+          },
+          "weighted_recall_at_5_under_weights": 0.2673232323232323
+        }
+      }
+    },
+    "callees": {
+      "simple_global": {
+        "phrasing": "P3",
+        "phrasingLabel": "declarative",
+        "example": "callees of <symbol>",
+        "recall_at_5": 0.5793650793650793,
+        "precision_at_5": 0.19047619047619052,
+        "f1_at_5": 0.2800453514739229,
+        "primary_metric": "recall_at_5",
+        "instruction_text": "[simple-global] For ss-* structural mode (callees): phrase the NL query as declarative — e.g., \"callees of <symbol>\". IMPORTANT: structural mode's parser extracts (type, symbol) and discards the rest, so any phrasing that fires the parser is rank-equivalent on Recall@5. Pick this canonical form for predictability.",
+        "source": "best global recall_at_5 across all callees probes (ties broken by canonical phrasing order P3>P2>P1>P4>P5)",
+        "secondary_metrics": {
+          "_note": "Primary = recall_at_5 (mean over probes for this relationship × phrasing). precision_at_5 / f1_at_5 are the alternate rubrics computed across the same cells.",
+          "recall_at_5": 0.5793650793650793,
+          "precision_at_5": 0.19047619047619052,
+          "f1_at_5": 0.2800453514739229
+        }
+      },
+      "family_conditioned": {
+        "default": {
+          "phrasing": "P3",
+          "phrasingLabel": "declarative",
+          "example": "callees of <symbol>",
+          "recall_at_5": 0.5793650793650793,
+          "precision_at_5": 0.19047619047619052,
+          "f1_at_5": 0.2800453514739229,
+          "primary_metric": "recall_at_5",
+          "instruction_text": "[simple-global] For ss-* structural mode (callees): phrase the NL query as declarative — e.g., \"callees of <symbol>\". IMPORTANT: structural mode's parser extracts (type, symbol) and discards the rest, so any phrasing that fires the parser is rank-equivalent on Recall@5. Pick this canonical form for predictability.",
+          "source": "best global recall_at_5 across all callees probes (ties broken by canonical phrasing order P3>P2>P1>P4>P5)",
+          "secondary_metrics": {
+            "_note": "Primary = recall_at_5 (mean over probes for this relationship × phrasing). precision_at_5 / f1_at_5 are the alternate rubrics computed across the same cells.",
+            "recall_at_5": 0.5793650793650793,
+            "precision_at_5": 0.19047619047619052,
+            "f1_at_5": 0.2800453514739229
+          }
+        },
+        "overrides": {}
+      },
+      "popular_weighted_agentic": {
+        "phrasing": "P3",
+        "phrasingLabel": "declarative",
+        "example": "callees of <symbol>",
+        "recall_at_5": 0.5793650793650793,
+        "precision_at_5": 0.19047619047619052,
+        "f1_at_5": 0.2800453514739229,
+        "primary_metric": "recall_at_5",
+        "instruction_text": "[popular-weighted (agentic-tier)] For ss-* structural mode (callees): phrase the NL query as declarative — e.g., \"callees of <symbol>\". IMPORTANT: structural mode's parser extracts (type, symbol) and discards the rest, so any phrasing that fires the parser is rank-equivalent on Recall@5. Pick this canonical form for predictability.",
+        "source": "best weighted recall_at_5 under agentic-tier weights (TS/Python/Rust=5, mainstream=3, longtail=1)",
+        "secondary_metrics": {
+          "_note": "Primary = recall_at_5 (mean over probes for this relationship × phrasing). precision_at_5 / f1_at_5 are the alternate rubrics computed across the same cells.",
+          "recall_at_5": 0.5793650793650793,
+          "precision_at_5": 0.19047619047619052,
+          "f1_at_5": 0.2800453514739229
+        },
+        "weighted_recall_at_5_under_weights": 0.4797619047619048,
+        "diversity_enforced": false,
+        "alt_so_tier": {
+          "phrasing": "P3",
+          "phrasingLabel": "declarative",
+          "example": "callees of <symbol>",
+          "recall_at_5": 0.5793650793650793,
+          "precision_at_5": 0.19047619047619052,
+          "f1_at_5": 0.2800453514739229,
+          "primary_metric": "recall_at_5",
+          "instruction_text": "[popular-weighted (so-tier)] For ss-* structural mode (callees): phrase the NL query as declarative — e.g., \"callees of <symbol>\". IMPORTANT: structural mode's parser extracts (type, symbol) and discards the rest, so any phrasing that fires the parser is rank-equivalent on Recall@5. Pick this canonical form for predictability.",
+          "source": "best weighted recall_at_5 under §7 Stack-Overflow-2024 tier weights — for reference",
+          "secondary_metrics": {
+            "_note": "Primary = recall_at_5 (mean over probes for this relationship × phrasing). precision_at_5 / f1_at_5 are the alternate rubrics computed across the same cells.",
+            "recall_at_5": 0.5793650793650793,
+            "precision_at_5": 0.19047619047619052,
+            "f1_at_5": 0.2800453514739229
+          },
+          "weighted_recall_at_5_under_weights": 0.5180555555555556
+        }
+      }
+    },
+    "impact": {
+      "simple_global": {
+        "phrasing": "P3",
+        "phrasingLabel": "declarative",
+        "example": "impact of refactoring <symbol>",
+        "recall_at_5": 0.24177489177489178,
+        "precision_at_5": 0.12380952380952384,
+        "f1_at_5": 0.14581443688586546,
+        "primary_metric": "recall_at_5",
+        "instruction_text": "[simple-global] For ss-* structural mode (impact): phrase the NL query as declarative — e.g., \"impact of refactoring <symbol>\". IMPORTANT: structural mode's parser extracts (type, symbol) and discards the rest, so any phrasing that fires the parser is rank-equivalent on Recall@5. Pick this canonical form for predictability.",
+        "source": "best global recall_at_5 across all impact probes (ties broken by canonical phrasing order P3>P2>P1>P4>P5)",
+        "secondary_metrics": {
+          "_note": "Primary = recall_at_5 (mean over probes for this relationship × phrasing). precision_at_5 / f1_at_5 are the alternate rubrics computed across the same cells.",
+          "recall_at_5": 0.24177489177489178,
+          "precision_at_5": 0.12380952380952384,
+          "f1_at_5": 0.14581443688586546,
+          "recall_at_5_2hop_diagnostic": 0.514972649515991,
+          "n_with_2hop_data": 18,
+          "_impact_2hop_note": "Diagnostic: 2-hop closure ground truth. Stop-rule threshold: ≥15pp gap vs 1-hop would imply tool does transitive expansion and 1-hop GT is wrong."
+        }
+      },
+      "family_conditioned": {
+        "default": {
+          "phrasing": "P3",
+          "phrasingLabel": "declarative",
+          "example": "impact of refactoring <symbol>",
+          "recall_at_5": 0.24177489177489178,
+          "precision_at_5": 0.12380952380952384,
+          "f1_at_5": 0.14581443688586546,
+          "primary_metric": "recall_at_5",
+          "instruction_text": "[simple-global] For ss-* structural mode (impact): phrase the NL query as declarative — e.g., \"impact of refactoring <symbol>\". IMPORTANT: structural mode's parser extracts (type, symbol) and discards the rest, so any phrasing that fires the parser is rank-equivalent on Recall@5. Pick this canonical form for predictability.",
+          "source": "best global recall_at_5 across all impact probes (ties broken by canonical phrasing order P3>P2>P1>P4>P5)",
+          "secondary_metrics": {
+            "_note": "Primary = recall_at_5 (mean over probes for this relationship × phrasing). precision_at_5 / f1_at_5 are the alternate rubrics computed across the same cells.",
+            "recall_at_5": 0.24177489177489178,
+            "precision_at_5": 0.12380952380952384,
+            "f1_at_5": 0.14581443688586546,
+            "recall_at_5_2hop_diagnostic": 0.514972649515991,
+            "n_with_2hop_data": 18,
+            "_impact_2hop_note": "Diagnostic: 2-hop closure ground truth. Stop-rule threshold: ≥15pp gap vs 1-hop would imply tool does transitive expansion and 1-hop GT is wrong."
+          }
+        },
+        "overrides": {}
+      },
+      "popular_weighted_agentic": {
+        "phrasing": "P3",
+        "phrasingLabel": "declarative",
+        "example": "impact of refactoring <symbol>",
+        "recall_at_5": 0.24177489177489178,
+        "precision_at_5": 0.12380952380952384,
+        "f1_at_5": 0.14581443688586546,
+        "primary_metric": "recall_at_5",
+        "instruction_text": "[popular-weighted (agentic-tier)] For ss-* structural mode (impact): phrase the NL query as declarative — e.g., \"impact of refactoring <symbol>\". IMPORTANT: structural mode's parser extracts (type, symbol) and discards the rest, so any phrasing that fires the parser is rank-equivalent on Recall@5. Pick this canonical form for predictability.",
+        "source": "best weighted recall_at_5 under agentic-tier weights (TS/Python/Rust=5, mainstream=3, longtail=1)",
+        "secondary_metrics": {
+          "_note": "Primary = recall_at_5 (mean over probes for this relationship × phrasing). precision_at_5 / f1_at_5 are the alternate rubrics computed across the same cells.",
+          "recall_at_5": 0.24177489177489178,
+          "precision_at_5": 0.12380952380952384,
+          "f1_at_5": 0.14581443688586546,
+          "recall_at_5_2hop_diagnostic": 0.514972649515991,
+          "n_with_2hop_data": 18,
+          "_impact_2hop_note": "Diagnostic: 2-hop closure ground truth. Stop-rule threshold: ≥15pp gap vs 1-hop would imply tool does transitive expansion and 1-hop GT is wrong."
+        },
+        "weighted_recall_at_5_under_weights": 0.2664114832535885,
+        "diversity_enforced": false,
+        "alt_so_tier": {
+          "phrasing": "P3",
+          "phrasingLabel": "declarative",
+          "example": "impact of refactoring <symbol>",
+          "recall_at_5": 0.24177489177489178,
+          "precision_at_5": 0.12380952380952384,
+          "f1_at_5": 0.14581443688586546,
+          "primary_metric": "recall_at_5",
+          "instruction_text": "[popular-weighted (so-tier)] For ss-* structural mode (impact): phrase the NL query as declarative — e.g., \"impact of refactoring <symbol>\". IMPORTANT: structural mode's parser extracts (type, symbol) and discards the rest, so any phrasing that fires the parser is rank-equivalent on Recall@5. Pick this canonical form for predictability.",
+          "source": "best weighted recall_at_5 under §7 Stack-Overflow-2024 tier weights — for reference",
+          "secondary_metrics": {
+            "_note": "Primary = recall_at_5 (mean over probes for this relationship × phrasing). precision_at_5 / f1_at_5 are the alternate rubrics computed across the same cells.",
+            "recall_at_5": 0.24177489177489178,
+            "precision_at_5": 0.12380952380952384,
+            "f1_at_5": 0.14581443688586546,
+            "recall_at_5_2hop_diagnostic": 0.514972649515991,
+            "n_with_2hop_data": 18,
+            "_impact_2hop_note": "Diagnostic: 2-hop closure ground truth. Stop-rule threshold: ≥15pp gap vs 1-hop would imply tool does transitive expansion and 1-hop GT is wrong."
+          },
+          "weighted_recall_at_5_under_weights": 0.2583030303030303
+        }
+      }
+    }
+  },
+  "cell_table_global": {
+    "callees|P1": {
+      "n": 21,
+      "mean_recall_at_5": 0.5793650793650793,
+      "mean_precision_at_5": 0.19047619047619052,
+      "mean_f1_at_5": 0.2800453514739229
+    },
+    "callees|P2": {
+      "n": 21,
+      "mean_recall_at_5": 0.5793650793650793,
+      "mean_precision_at_5": 0.19047619047619052,
+      "mean_f1_at_5": 0.2800453514739229
+    },
+    "callees|P3": {
+      "n": 21,
+      "mean_recall_at_5": 0.5793650793650793,
+      "mean_precision_at_5": 0.19047619047619052,
+      "mean_f1_at_5": 0.2800453514739229
+    },
+    "callees|P4": {
+      "n": 21,
+      "mean_recall_at_5": 0.5793650793650793,
+      "mean_precision_at_5": 0.19047619047619052,
+      "mean_f1_at_5": 0.2800453514739229
+    },
+    "callees|P5": {
+      "n": 21,
+      "mean_recall_at_5": 0.5793650793650793,
+      "mean_precision_at_5": 0.19047619047619052,
+      "mean_f1_at_5": 0.2800453514739229
+    },
+    "callers|P1": {
+      "n": 42,
+      "mean_recall_at_5": 0.2978354978354978,
+      "mean_precision_at_5": 0.21904761904761902,
+      "mean_f1_at_5": 0.21697123293761952
+    },
+    "callers|P2": {
+      "n": 42,
+      "mean_recall_at_5": 0.2978354978354978,
+      "mean_precision_at_5": 0.21904761904761902,
+      "mean_f1_at_5": 0.21697123293761952
+    },
+    "callers|P3": {
+      "n": 42,
+      "mean_recall_at_5": 0.2978354978354978,
+      "mean_precision_at_5": 0.21904761904761902,
+      "mean_f1_at_5": 0.21697123293761952
+    },
+    "callers|P4": {
+      "n": 42,
+      "mean_recall_at_5": 0.2978354978354978,
+      "mean_precision_at_5": 0.21904761904761902,
+      "mean_f1_at_5": 0.21697123293761952
+    },
+    "callers|P5": {
+      "n": 42,
+      "mean_recall_at_5": 0.2978354978354978,
+      "mean_precision_at_5": 0.21904761904761902,
+      "mean_f1_at_5": 0.21697123293761952
+    },
+    "impact|P1": {
+      "n": 42,
+      "mean_recall_at_5": 0.24177489177489178,
+      "mean_precision_at_5": 0.12380952380952384,
+      "mean_f1_at_5": 0.14581443688586546,
+      "mean_recall_at_5_2hop": 0.514972649515991,
+      "n_2hop": 18
+    },
+    "impact|P2": {
+      "n": 42,
+      "mean_recall_at_5": 0.24177489177489178,
+      "mean_precision_at_5": 0.12380952380952384,
+      "mean_f1_at_5": 0.14581443688586546,
+      "mean_recall_at_5_2hop": 0.514972649515991,
+      "n_2hop": 18
+    },
+    "impact|P3": {
+      "n": 42,
+      "mean_recall_at_5": 0.24177489177489178,
+      "mean_precision_at_5": 0.12380952380952384,
+      "mean_f1_at_5": 0.14581443688586546,
+      "mean_recall_at_5_2hop": 0.514972649515991,
+      "n_2hop": 18
+    },
+    "impact|P4": {
+      "n": 42,
+      "mean_recall_at_5": 0.24177489177489178,
+      "mean_precision_at_5": 0.12380952380952384,
+      "mean_f1_at_5": 0.14581443688586546,
+      "mean_recall_at_5_2hop": 0.514972649515991,
+      "n_2hop": 18
+    },
+    "impact|P5": {
+      "n": 42,
+      "mean_recall_at_5": 0.24177489177489178,
+      "mean_precision_at_5": 0.12380952380952384,
+      "mean_f1_at_5": 0.14581443688586546,
+      "mean_recall_at_5_2hop": 0.514972649515991,
+      "n_2hop": 18
+    }
+  },
+  "cell_table_by_family": {
+    "C-family": {
+      "callees|P1": {
+        "n": 1,
+        "mean_recall_at_5": 2.5,
+        "mean_precision_at_5": 1,
+        "mean_f1_at_5": 1.4285714285714286
+      },
+      "callees|P2": {
+        "n": 1,
+        "mean_recall_at_5": 2.5,
+        "mean_precision_at_5": 1,
+        "mean_f1_at_5": 1.4285714285714286
+      },
+      "callees|P3": {
+        "n": 1,
+        "mean_recall_at_5": 2.5,
+        "mean_precision_at_5": 1,
+        "mean_f1_at_5": 1.4285714285714286
+      },
+      "callees|P4": {
+        "n": 1,
+        "mean_recall_at_5": 2.5,
+        "mean_precision_at_5": 1,
+        "mean_f1_at_5": 1.4285714285714286
+      },
+      "callees|P5": {
+        "n": 1,
+        "mean_recall_at_5": 2.5,
+        "mean_precision_at_5": 1,
+        "mean_f1_at_5": 1.4285714285714286
+      },
+      "callers|P1": {
+        "n": 2,
+        "mean_recall_at_5": 0,
+        "mean_precision_at_5": 0,
+        "mean_f1_at_5": 0
+      },
+      "callers|P2": {
+        "n": 2,
+        "mean_recall_at_5": 0,
+        "mean_precision_at_5": 0,
+        "mean_f1_at_5": 0
+      },
+      "callers|P3": {
+        "n": 2,
+        "mean_recall_at_5": 0,
+        "mean_precision_at_5": 0,
+        "mean_f1_at_5": 0
+      },
+      "callers|P4": {
+        "n": 2,
+        "mean_recall_at_5": 0,
+        "mean_precision_at_5": 0,
+        "mean_f1_at_5": 0
+      },
+      "callers|P5": {
+        "n": 2,
+        "mean_recall_at_5": 0,
+        "mean_precision_at_5": 0,
+        "mean_f1_at_5": 0
+      },
+      "impact|P1": {
+        "n": 2,
+        "mean_recall_at_5": 0.5,
+        "mean_precision_at_5": 0.1,
+        "mean_f1_at_5": 0.16666666666666669
+      },
+      "impact|P2": {
+        "n": 2,
+        "mean_recall_at_5": 0.5,
+        "mean_precision_at_5": 0.1,
+        "mean_f1_at_5": 0.16666666666666669
+      },
+      "impact|P3": {
+        "n": 2,
+        "mean_recall_at_5": 0.5,
+        "mean_precision_at_5": 0.1,
+        "mean_f1_at_5": 0.16666666666666669
+      },
+      "impact|P4": {
+        "n": 2,
+        "mean_recall_at_5": 0.5,
+        "mean_precision_at_5": 0.1,
+        "mean_f1_at_5": 0.16666666666666669
+      },
+      "impact|P5": {
+        "n": 2,
+        "mean_recall_at_5": 0.5,
+        "mean_precision_at_5": 0.1,
+        "mean_f1_at_5": 0.16666666666666669
+      }
+    },
+    "OO-monolithic": {
+      "callers|P1": {
+        "n": 11,
+        "mean_recall_at_5": 0.20798898071625346,
+        "mean_precision_at_5": 0.21818181818181817,
+        "mean_f1_at_5": 0.17752100840336135
+      },
+      "callers|P2": {
+        "n": 11,
+        "mean_recall_at_5": 0.20798898071625346,
+        "mean_precision_at_5": 0.21818181818181817,
+        "mean_f1_at_5": 0.17752100840336135
+      },
+      "callers|P3": {
+        "n": 11,
+        "mean_recall_at_5": 0.20798898071625346,
+        "mean_precision_at_5": 0.21818181818181817,
+        "mean_f1_at_5": 0.17752100840336135
+      },
+      "callers|P4": {
+        "n": 11,
+        "mean_recall_at_5": 0.20798898071625346,
+        "mean_precision_at_5": 0.21818181818181817,
+        "mean_f1_at_5": 0.17752100840336135
+      },
+      "callers|P5": {
+        "n": 11,
+        "mean_recall_at_5": 0.20798898071625346,
+        "mean_precision_at_5": 0.21818181818181817,
+        "mean_f1_at_5": 0.17752100840336135
+      },
+      "callees|P1": {
+        "n": 11,
+        "mean_recall_at_5": 0.5151515151515151,
+        "mean_precision_at_5": 0.12727272727272726,
+        "mean_f1_at_5": 0.196969696969697
+      },
+      "callees|P2": {
+        "n": 11,
+        "mean_recall_at_5": 0.5151515151515151,
+        "mean_precision_at_5": 0.12727272727272726,
+        "mean_f1_at_5": 0.196969696969697
+      },
+      "callees|P3": {
+        "n": 11,
+        "mean_recall_at_5": 0.5151515151515151,
+        "mean_precision_at_5": 0.12727272727272726,
+        "mean_f1_at_5": 0.196969696969697
+      },
+      "callees|P4": {
+        "n": 11,
+        "mean_recall_at_5": 0.5151515151515151,
+        "mean_precision_at_5": 0.12727272727272726,
+        "mean_f1_at_5": 0.196969696969697
+      },
+      "callees|P5": {
+        "n": 11,
+        "mean_recall_at_5": 0.5151515151515151,
+        "mean_precision_at_5": 0.12727272727272726,
+        "mean_f1_at_5": 0.196969696969697
+      },
+      "impact|P1": {
+        "n": 11,
+        "mean_recall_at_5": 0.1322314049586777,
+        "mean_precision_at_5": 0.12727272727272726,
+        "mean_f1_at_5": 0.10876623376623379
+      },
+      "impact|P2": {
+        "n": 11,
+        "mean_recall_at_5": 0.1322314049586777,
+        "mean_precision_at_5": 0.12727272727272726,
+        "mean_f1_at_5": 0.10876623376623379
+      },
+      "impact|P3": {
+        "n": 11,
+        "mean_recall_at_5": 0.1322314049586777,
+        "mean_precision_at_5": 0.12727272727272726,
+        "mean_f1_at_5": 0.10876623376623379
+      },
+      "impact|P4": {
+        "n": 11,
+        "mean_recall_at_5": 0.1322314049586777,
+        "mean_precision_at_5": 0.12727272727272726,
+        "mean_f1_at_5": 0.10876623376623379
+      },
+      "impact|P5": {
+        "n": 11,
+        "mean_recall_at_5": 0.1322314049586777,
+        "mean_precision_at_5": 0.12727272727272726,
+        "mean_f1_at_5": 0.10876623376623379
+      }
+    },
+    "JS-mobile": {
+      "callers|P1": {
+        "n": 9,
+        "mean_recall_at_5": 0.34444444444444444,
+        "mean_precision_at_5": 0.13333333333333333,
+        "mean_f1_at_5": 0.17883597883597885
+      },
+      "callers|P2": {
+        "n": 9,
+        "mean_recall_at_5": 0.34444444444444444,
+        "mean_precision_at_5": 0.13333333333333333,
+        "mean_f1_at_5": 0.17883597883597885
+      },
+      "callers|P3": {
+        "n": 9,
+        "mean_recall_at_5": 0.34444444444444444,
+        "mean_precision_at_5": 0.13333333333333333,
+        "mean_f1_at_5": 0.17883597883597885
+      },
+      "callers|P4": {
+        "n": 9,
+        "mean_recall_at_5": 0.34444444444444444,
+        "mean_precision_at_5": 0.13333333333333333,
+        "mean_f1_at_5": 0.17883597883597885
+      },
+      "callers|P5": {
+        "n": 9,
+        "mean_recall_at_5": 0.34444444444444444,
+        "mean_precision_at_5": 0.13333333333333333,
+        "mean_f1_at_5": 0.17883597883597885
+      },
+      "callees|P1": {
+        "n": 4,
+        "mean_recall_at_5": 0.75,
+        "mean_precision_at_5": 0.30000000000000004,
+        "mean_f1_at_5": 0.4285714285714286
+      },
+      "callees|P2": {
+        "n": 4,
+        "mean_recall_at_5": 0.75,
+        "mean_precision_at_5": 0.30000000000000004,
+        "mean_f1_at_5": 0.4285714285714286
+      },
+      "callees|P3": {
+        "n": 4,
+        "mean_recall_at_5": 0.75,
+        "mean_precision_at_5": 0.30000000000000004,
+        "mean_f1_at_5": 0.4285714285714286
+      },
+      "callees|P4": {
+        "n": 4,
+        "mean_recall_at_5": 0.75,
+        "mean_precision_at_5": 0.30000000000000004,
+        "mean_f1_at_5": 0.4285714285714286
+      },
+      "callees|P5": {
+        "n": 4,
+        "mean_recall_at_5": 0.75,
+        "mean_precision_at_5": 0.30000000000000004,
+        "mean_f1_at_5": 0.4285714285714286
+      },
+      "impact|P1": {
+        "n": 9,
+        "mean_recall_at_5": 0.4,
+        "mean_precision_at_5": 0.15555555555555556,
+        "mean_f1_at_5": 0.21058201058201062
+      },
+      "impact|P2": {
+        "n": 9,
+        "mean_recall_at_5": 0.4,
+        "mean_precision_at_5": 0.15555555555555556,
+        "mean_f1_at_5": 0.21058201058201062
+      },
+      "impact|P3": {
+        "n": 9,
+        "mean_recall_at_5": 0.4,
+        "mean_precision_at_5": 0.15555555555555556,
+        "mean_f1_at_5": 0.21058201058201062
+      },
+      "impact|P4": {
+        "n": 9,
+        "mean_recall_at_5": 0.4,
+        "mean_precision_at_5": 0.15555555555555556,
+        "mean_f1_at_5": 0.21058201058201062
+      },
+      "impact|P5": {
+        "n": 9,
+        "mean_recall_at_5": 0.4,
+        "mean_precision_at_5": 0.15555555555555556,
+        "mean_f1_at_5": 0.21058201058201062
+      }
+    },
+    "Systems-modular-terse": {
+      "callers|P1": {
+        "n": 7,
+        "mean_recall_at_5": 0.5238095238095238,
+        "mean_precision_at_5": 0.4571428571428572,
+        "mean_f1_at_5": 0.43323996265172743
+      },
+      "callers|P2": {
+        "n": 7,
+        "mean_recall_at_5": 0.5238095238095238,
+        "mean_precision_at_5": 0.4571428571428572,
+        "mean_f1_at_5": 0.43323996265172743
+      },
+      "callers|P3": {
+        "n": 7,
+        "mean_recall_at_5": 0.5238095238095238,
+        "mean_precision_at_5": 0.4571428571428572,
+        "mean_f1_at_5": 0.43323996265172743
+      },
+      "callers|P4": {
+        "n": 7,
+        "mean_recall_at_5": 0.5238095238095238,
+        "mean_precision_at_5": 0.4571428571428572,
+        "mean_f1_at_5": 0.43323996265172743
+      },
+      "callers|P5": {
+        "n": 7,
+        "mean_recall_at_5": 0.5238095238095238,
+        "mean_precision_at_5": 0.4571428571428572,
+        "mean_f1_at_5": 0.43323996265172743
+      },
+      "callees|P1": {
+        "n": 2,
+        "mean_recall_at_5": 0,
+        "mean_precision_at_5": 0,
+        "mean_f1_at_5": 0
+      },
+      "callees|P2": {
+        "n": 2,
+        "mean_recall_at_5": 0,
+        "mean_precision_at_5": 0,
+        "mean_f1_at_5": 0
+      },
+      "callees|P3": {
+        "n": 2,
+        "mean_recall_at_5": 0,
+        "mean_precision_at_5": 0,
+        "mean_f1_at_5": 0
+      },
+      "callees|P4": {
+        "n": 2,
+        "mean_recall_at_5": 0,
+        "mean_precision_at_5": 0,
+        "mean_f1_at_5": 0
+      },
+      "callees|P5": {
+        "n": 2,
+        "mean_recall_at_5": 0,
+        "mean_precision_at_5": 0,
+        "mean_f1_at_5": 0
+      },
+      "impact|P1": {
+        "n": 7,
+        "mean_recall_at_5": 0.3,
+        "mean_precision_at_5": 0.17142857142857146,
+        "mean_f1_at_5": 0.19682539682539682
+      },
+      "impact|P2": {
+        "n": 7,
+        "mean_recall_at_5": 0.3,
+        "mean_precision_at_5": 0.17142857142857146,
+        "mean_f1_at_5": 0.19682539682539682
+      },
+      "impact|P3": {
+        "n": 7,
+        "mean_recall_at_5": 0.3,
+        "mean_precision_at_5": 0.17142857142857146,
+        "mean_f1_at_5": 0.19682539682539682
+      },
+      "impact|P4": {
+        "n": 7,
+        "mean_recall_at_5": 0.3,
+        "mean_precision_at_5": 0.17142857142857146,
+        "mean_f1_at_5": 0.19682539682539682
+      },
+      "impact|P5": {
+        "n": 7,
+        "mean_recall_at_5": 0.3,
+        "mean_precision_at_5": 0.17142857142857146,
+        "mean_f1_at_5": 0.19682539682539682
+      }
+    },
+    "Scripting-dynamic": {
+      "callers|P1": {
+        "n": 13,
+        "mean_recall_at_5": 0.26573426573426573,
+        "mean_precision_at_5": 0.18461538461538465,
+        "mean_f1_at_5": 0.19368131868131871
+      },
+      "callers|P2": {
+        "n": 13,
+        "mean_recall_at_5": 0.26573426573426573,
+        "mean_precision_at_5": 0.18461538461538465,
+        "mean_f1_at_5": 0.19368131868131871
+      },
+      "callers|P3": {
+        "n": 13,
+        "mean_recall_at_5": 0.26573426573426573,
+        "mean_precision_at_5": 0.18461538461538465,
+        "mean_f1_at_5": 0.19368131868131871
+      },
+      "callers|P4": {
+        "n": 13,
+        "mean_recall_at_5": 0.26573426573426573,
+        "mean_precision_at_5": 0.18461538461538465,
+        "mean_f1_at_5": 0.19368131868131871
+      },
+      "callers|P5": {
+        "n": 13,
+        "mean_recall_at_5": 0.26573426573426573,
+        "mean_precision_at_5": 0.18461538461538465,
+        "mean_f1_at_5": 0.19368131868131871
+      },
+      "impact|P1": {
+        "n": 13,
+        "mean_recall_at_5": 0.15384615384615385,
+        "mean_precision_at_5": 0.07692307692307693,
+        "mean_f1_at_5": 0.10164835164835165
+      },
+      "impact|P2": {
+        "n": 13,
+        "mean_recall_at_5": 0.15384615384615385,
+        "mean_precision_at_5": 0.07692307692307693,
+        "mean_f1_at_5": 0.10164835164835165
+      },
+      "impact|P3": {
+        "n": 13,
+        "mean_recall_at_5": 0.15384615384615385,
+        "mean_precision_at_5": 0.07692307692307693,
+        "mean_f1_at_5": 0.10164835164835165
+      },
+      "impact|P4": {
+        "n": 13,
+        "mean_recall_at_5": 0.15384615384615385,
+        "mean_precision_at_5": 0.07692307692307693,
+        "mean_f1_at_5": 0.10164835164835165
+      },
+      "impact|P5": {
+        "n": 13,
+        "mean_recall_at_5": 0.15384615384615385,
+        "mean_precision_at_5": 0.07692307692307693,
+        "mean_f1_at_5": 0.10164835164835165
+      },
+      "callees|P1": {
+        "n": 3,
+        "mean_recall_at_5": 0.3333333333333333,
+        "mean_precision_at_5": 0.13333333333333333,
+        "mean_f1_at_5": 0.1904761904761905
+      },
+      "callees|P2": {
+        "n": 3,
+        "mean_recall_at_5": 0.3333333333333333,
+        "mean_precision_at_5": 0.13333333333333333,
+        "mean_f1_at_5": 0.1904761904761905
+      },
+      "callees|P3": {
+        "n": 3,
+        "mean_recall_at_5": 0.3333333333333333,
+        "mean_precision_at_5": 0.13333333333333333,
+        "mean_f1_at_5": 0.1904761904761905
+      },
+      "callees|P4": {
+        "n": 3,
+        "mean_recall_at_5": 0.3333333333333333,
+        "mean_precision_at_5": 0.13333333333333333,
+        "mean_f1_at_5": 0.1904761904761905
+      },
+      "callees|P5": {
+        "n": 3,
+        "mean_recall_at_5": 0.3333333333333333,
+        "mean_precision_at_5": 0.13333333333333333,
+        "mean_f1_at_5": 0.1904761904761905
+      }
+    }
+  },
+  "behavior_notes": [
+    "Empirical observation (all 170 probes, full sweep): every phrasing inside a relationship type produces IDENTICAL Recall@5 (zero variance across P1-P5). This is because structuralSearch.parseStructuralQuery extracts (structuralType, targetEntity) and discards the original query string — once the parser fires, phrasing is rank-equivalent.",
+    "Implication for PHASE7 / GEPA: the recommendation per relationship type is \"use any of these 5 phrasings; we ship P3 as the canonical pick for predictability\". The artifact's strategies WILL all coincide (simple_global == popular_weighted == family.default == P3 by tie-break).",
+    "Hidden quality signal: the 28% / 44% / 32% PASS rates (callers / callees / impact) are NOT phrasing-driven. They are driven by tool-internal name resolution (findCallers' \"name = ? OR name LIKE ?\" picks substring matches arbitrarily for short symbol names — verified Stage 0 with cpp Vec → AlignedVector). This is a real follow-up workstream (independent of this redo).",
+    "Impact ground-truth choice: 1-hop direct-callers-as-proxy. 2-hop closure recorded as diagnostic. Sweep result: 2-hop minus 1-hop = +2.60pp (avg), well under the 15pp escalation threshold — tool is NOT doing transitive expansion at depths affecting Recall@5.",
+    "Implementations relationship: excluded from scope per the handoff (17 probes / 12% graph coverage). C-family probe coverage thin: 5 dev probes total, 0 heldout — documented limitation."
+  ],
+  "manual_gates_pending": [
+    "G2-thresholdout — pending Stage 6 held-out aggregate report",
+    "G4-codex-reviewer — pending user routing of instruction_text to Codex session"
+  ]
+}

@@ -531,23 +531,18 @@ Decision at gate-failure time, not pre-committed.
 >   Systems-modular-terse, C-family, JS-mobile, Scripting-dynamic). Family detection is a
 >   deterministic file-extension → family lookup; the agent does not reason about it.
 
-P6's `track-b-summary.json:perToolWinRates` is the **load-bearing input** to T1-T14 authoring for the
-**`structural` tool only** (the last remaining one without its own redo). `ss-search`, `ss-find`, and
-`ss-semantic` all have their own PHASE6_REDO artifacts now (see §4.2 below for the verbatim recommendations).
-Even though no shape was promoted via BH-FDR (n=25 was below the noise floor for that gate), the directional
-Track B win-rate signal from qshape-v1 IS actionable for variant authoring of `structural`. The signal is:
+All four ss-* tools now have PHASE6_REDO artifacts — `ss-search`, `ss-find`, `ss-semantic`,
+and `structural`. See §4.2 below for the verbatim recommendations. P6's
+`track-b-summary.json:perToolWinRates` is no longer the load-bearing input for any tool's
+variant authoring; the per-tool redo artifacts supersede it.
 
-**Top Track B win rates from P6 (qshape-v1, `structural` only — the other tools have superseding redoes)**:
-
-| Tool | Top shape | Win rate | Signal |
-|---|---|---|---|
-| `structural` | `short+with-symbol+narrow-regex+interrogative+high-density` | 28% (7w/1L of 25) | **Strong**: structural prefers symbol + narrow regex + question form |
-
-**Anti-signal (avoid_shapes from qshape-v1, `structural` only)**:
-
-| Tool | Worst shape | Recall@1 |
-|---|---|---|
-| `structural` | `very-short+with-symbol+narrow-regex+imperative+high-density` | 0.756 (worst FOR structural; still good in absolute terms) |
+**Historical qshape-v1 directional signal (superseded, kept for cross-reference)** — the
+original P6 sweep flagged `structural` as preferring `short+with-symbol+narrow-regex+interrogative+high-density`
+at 28% win rate. The 2026-05-14 structural redo confirmed the parser-firing condition but
+discovered a stronger finding: phrasing is rank-equivalent once the parser fires (zero
+variance across all 5 phrasings within a relationship type, 170/170 probes). The qshape-v1
+"interrogative" preference was an artifact of which phrasings happened to fire the parser,
+not a ranking signal.
 
 **`ss-search` shape findings from PHASE6_REDO (qshape-v2, 2026-05-13, n=1,424 sweep rows over 18 languages)** — supersedes the deprecated qshape-v1 row above:
 
@@ -616,9 +611,35 @@ From the P6 directional signal, the variants encode these tool-specific recommen
   **Strategy 3 — `popular_weighted`:** V2 (diversity-enforced — natural agentic-tier winner matched Strategy 1). *"Phrase a short interrogative query (4-8 tokens) that contains the target symbol verbatim."* Distinct from Strategy 1 so GEPA gets a real second candidate.
 
   Confirms the prior qshape-v1 directional hint that ss-semantic loves "very-short + symbol + narrow" — but adds the family-conditioned C-family→V2 finding and the popular-weighted V2 fallback for GEPA diversity.
-- **`[[structural]]`** (tree-sitter relationships): use interrogative form (`who calls X?`, `what does X depend on?`); short queries with the symbol; narrow regex anchors. Avoid imperative form for structural queries — it doesn't match the tool's relationship-verb model. *Pending its own Phase 6 redo.*
+- **`[[structural]]`** (tree-sitter relationships): **PHASE6_REDO structural redo SHIPPED 2026-05-14** — `recommendations-v2-structural.json` ships THREE strategies per relationship type (callers / callees / impact), primary metric Recall@5 over the gold's `graphNeighbors` set. The redo covered 170 probes (68 callers + 34 callees + 68 impact) derived from existing AST-tester inputs that had non-empty graphNeighbors data, across 14 languages.
 
-These bullets go *verbatim* into the relevant T_i variant bodies. For `[[ss-search]]`, the bullet is regenerated from `recommendations-v2.json` whenever that artifact updates. For the other three tools, the bullets remain at the P6 directional-signal level until their respective redoes land — they are authored as *informed hypotheses* that GEPA will refine.
+  **Empirical headline** (load-bearing for GEPA): every phrasing inside a relationship type produces IDENTICAL Recall@5 (zero variance across P1-P5, 170/170 probes). This is because `structuralSearch.parseStructuralQuery` extracts `(structuralType, targetEntity)` from the NL query and discards the rest — once the parser fires, phrasing is rank-equivalent. The artifact's three strategies (simple_global / family_conditioned / popular_weighted) all collapse to the same canonical phrasing (P3 declarative) by tie-break. The recommendation for PHASE7 is "pick the canonical P3 for predictability; the parser absorbs all variance".
+
+  **Runtime contract** (agent picks phrasing per relationship type detected in the NL query):
+  ```
+  detect structural intent from the user's NL → {callers, callees, impact, none}
+  if intent == none:        do not use structural mode (fall back to hybrid/semantic)
+  if intent == callers:     phrase as "callers of <symbol>"            (P3 declarative)
+  if intent == callees:     phrase as "callees of <symbol>"            (P3 declarative)
+  if intent == impact:      phrase as "impact of refactoring <symbol>" (P3 declarative)
+  ```
+
+  **Strategy 1 — `simple_global` (per relationship type):**
+    - callers: *"For ss-* structural mode (callers): phrase the NL query as declarative — e.g., 'callers of \<symbol\>'."*
+    - callees: *"For ss-* structural mode (callees): phrase the NL query as declarative — e.g., 'callees of \<symbol\>'."*
+    - impact:  *"For ss-* structural mode (impact): phrase the NL query as declarative — e.g., 'impact of refactoring \<symbol\>'."*
+
+  **Strategy 2 — `family_conditioned` (per relationship type):** identical to Strategy 1 — no family overrides triggered. The override gate (family-best ≥ 8pp Recall@5 above default) cannot fire because all phrasings tie within a relationship type. This is a real finding, not a missing measurement. Documented as `family_conditioned.overrides: {}` in the artifact.
+
+  **Strategy 3 — `popular_weighted` (agentic-tier, per relationship type):** also identical to Strategy 1 — tie-break to P3 because per-language scores match across phrasings. The artifact emits `alt_so_tier` for reference (also P3).
+
+  **Quality data** (Recall@5 on dev split, n=105 probes / 525 rows): callers 0.298, callees 0.579, impact 0.242. The lower Recall@5 vs ss-search/ss-find reflects a tool-internal limitation: `findCallers`' SQL `WHERE (name = ? OR name LIKE '%X%') LIMIT 1` does not prefer exact matches over LIKE substring matches, so short symbol names (e.g., cpp `Vec`) resolve to arbitrary substring siblings. This is independent of phrasing and is a documented follow-up workstream (independent of this redo's prompt-shape charter).
+
+  **Impact ground-truth model**: 1-hop direct-callers-as-proxy. 2-hop closure recorded as diagnostic; sweep finds 2-hop minus 1-hop = +2.60pp (well under the 15pp escalation threshold) — tool is NOT doing transitive expansion that would invalidate 1-hop GT.
+
+  **Excluded from scope**: `implementations` relationship (only 17 inputs / 12% graph coverage; not on user-prioritized list). C-family probe coverage is genuinely thin (5 dev probes / 0 heldout) — documented as a known limitation in the artifact, not papered over by relaxing the gold-data filter.
+
+These bullets go *verbatim* into the relevant T_i variant bodies. For `[[ss-search]]`, `[[ss-find]]`, `[[ss-semantic]]`, and `[[structural]]`, the bullet is regenerated from the corresponding `recommendations-v2-*.json` whenever that artifact updates.
 
 ### §4.3 Variant slate
 
