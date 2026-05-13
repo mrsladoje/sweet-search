@@ -217,11 +217,31 @@ async function buildAstTesterInput({
     sourceSnippet.extractor = 'fallback-head';
   }
   if (!containingChunk && chunks.length) {
-    const first = chunks[0];
+    // Mode A fix (2026-05-13): scan chunks for one whose text contains the
+    // expected symbol before falling back to chunks[0]. The bare chunks[0]
+    // fallback was returning file-header chunks for symbols whose code-graph
+    // lookup returned no candidate (hiredis.c: copyright block, lines 1-44;
+    // tablex.lua: imports, lines 1-20; etc.). R5's sibling-from-chunk
+    // extractor then picked proper-noun tokens (`Copyright`, `Salvatore`,
+    // `Microsoft`) as alternation members, generating regexes that matched
+    // every file header in the corpus. Per CLAUDE.md "shape heuristics over
+    // stopword lists" — fixing the source chunk is structurally correct;
+    // strengthening the shape filter alone would still let length-≥-5
+    // proper-noun tokens through (e.g., `Microsoft`).
+    let bySymbol = null;
+    if (expectedSymbol) {
+      // Robust word boundary that works for non-word-char-prefixed symbols
+      // (`$ZodType`, `tablex.deepcopy`). Standard `\b` doesn't sit between
+      // two non-word chars, so we use explicit non-word lookarounds.
+      const escaped = expectedSymbol.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&');
+      const re = new RegExp(`(?:^|[^A-Za-z0-9_])${escaped}(?=[^A-Za-z0-9_]|$)`);
+      bySymbol = chunks.find((c) => re.test(c.text || c.content || ''));
+    }
+    const pick = bySymbol ?? chunks[0];
     containingChunk = {
-      startLine: first.metadata?.line_start ?? null,
-      endLine: first.metadata?.line_end ?? null,
-      text: first.text || first.content || '',
+      startLine: pick.metadata?.line_start ?? null,
+      endLine: pick.metadata?.line_end ?? null,
+      text: pick.text || pick.content || '',
     };
   }
 
