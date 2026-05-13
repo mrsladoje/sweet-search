@@ -111,9 +111,40 @@ export function pickDomainTokens(text, k, { exclude = new Set() } = {}) {
 }
 
 /**
+ * Identifier-shape heuristic: is this token "code-like enough" to include
+ * in an alternation regex without polluting the candidate set?
+ *
+ * Per CLAUDE.md "Stopword Lists vs Shape Heuristics" — we prefer shape
+ * rules over per-token stopword lists. A token qualifies if:
+ *   - length ≥ 5 (long enough to be discriminative), OR
+ *   - contains `_` (snake_case identifier), OR
+ *   - contains a `[a-z][A-Z]` transition (camelCase identifier).
+ *
+ * Rejects short generic verbs/nouns like `get`, `set`, `add`, `run`,
+ * `Use`, `URL`, `The`, `Map`, `Add` that pollute R5's alternation when a
+ * real graph-neighbour happens to bear one of those names. These tokens
+ * are not "false symbols" — they may genuinely be symbols in the corpus —
+ * but their lexical breadth makes them poor regex alternation members
+ * because `\b(getType|get)\b` matches every occurrence of `get` anywhere.
+ *
+ * Per the PHASE6_REDO ss-find Stage 3 audit (2026-05-13), this filter
+ * cleans up Mode B failures (JV-004 `get`, GO-003 `Use|main|service`,
+ * ZG-001/4 `The|URL`, LU-004 `Remove`, PY-004 `command`).
+ */
+export function isQualityAlternationToken(tok) {
+  if (!tok) return false;
+  const s = String(tok);
+  if (s.length >= 5) return true;
+  if (s.includes('_')) return true;
+  if (/[a-z][A-Z]/.test(s)) return true;
+  return false;
+}
+
+/**
  * Pick 2 graph-neighbour symbol names for R5's small-alternation cell.
- * Prefers callers + callees; ignores entries with no name or with names
- * lexically identical to the gold symbol.
+ * Prefers callers + callees; ignores entries with no name, with names
+ * lexically identical to the gold symbol, or that fail the shape heuristic
+ * (so short generic verbs like `get` don't pollute the alternation).
  */
 export function pickNeighborSymbols(graphNeighbors, k, expectedSymbol) {
   const out = [];
@@ -128,7 +159,7 @@ export function pickNeighborSymbols(graphNeighbors, k, expectedSymbol) {
     if (!name) continue;
     const lower = String(name).toLowerCase();
     if (seen.has(lower)) continue;
-    if (lower.length < 3) continue;
+    if (!isQualityAlternationToken(name)) continue;
     seen.add(lower);
     out.push(name);
     if (out.length >= k) break;
