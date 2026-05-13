@@ -18,7 +18,7 @@ import { generateRegexMatches } from './search-pattern-planner.js';
 import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, readFileRange } from './search-pattern-chunks.js';
 import { isRipgrepAvailable, runRipgrepJson } from './search-pattern-ripgrep.js';
 import { packageForAgent } from './context-expander.js';
-import { applyResultDemotions } from '../ranking/file-kind-ranking.js';
+import { applyFileKindRanking, applyResultDemotions } from '../ranking/file-kind-ranking.js';
 
 // =============================================================================
 // Ripgrep runner (thin wrapper for external callers)
@@ -339,6 +339,43 @@ export async function patternSearch(query, routing, options = {}) {
       metadata: meta,
     };
   });
+  // Mode E (2026-05-13): for agent-format ss-find queries, apply file-kind
+  // demotion before result demotions. The regex+symbol shape of ss-find is
+  // implementation-intent by construction (agents using patternSearch are
+  // hunting for code, not docs), so we force intent='implementation' rather
+  // than inferring it from the NL query — `classifyFileKindIntent` requires
+  // explicit "show me the function/class" verbs that ss-find prompts don't
+  // always include.
+  //
+  // CRITICAL — format-gated to agent variants only. Same gate as the BM25F
+  // boosts in applyResultDemotions (round-1/2 lessons: -27.57pp GCSN if
+  // ungated structural signals fire on benchmark NL traffic). Probes use
+  // format='agent', so behaviour matches expectations; GCSN bench uses
+  // mode='auto' with no format, so this skip preserves the 86.92% baseline.
+  //
+  // Targets stage3-taxonomy.md Mode E failures:
+  //   - JS-005: index.d.ts: interface AxiosHeaders outranks lib/core/AxiosHeaders.js
+  //   - TSL-004/008: packages/docs/content/packages/core.mdx outranks schemas.ts
+  // The .d.ts (types kind) and .mdx (docs kind) factors mirror hybrid's
+  // tuned defaults (typeFactor 0.70, docFactor 0.35).
+  const ssFindIsAgentFormat = options?.format === 'agent'
+    || options?.format === 'agent_full'
+    || options?.format === 'agent_full_xl'
+    || options?.format === 'agent_preview';
+  const skipPatternFileKind = Array.isArray(ablations)
+    ? ablations.includes('no-pattern-file-kind-ranking')
+    : (ablations instanceof Set ? ablations.has('no-pattern-file-kind-ranking') : false);
+  if (ssFindIsAgentFormat && !skipPatternFileKind) {
+    rankedResults = applyFileKindRanking(rankedResults, {
+      intent: 'implementation',
+      window: options.fileKindWindow ?? 100,
+      docFactor: options.patternDocFactor ?? 0.35,
+      testFactor: options.patternTestFactor ?? 0.35,
+      typeFactor: options.patternTypeFactor ?? 0.70,
+      ancillaryFactor: options.patternAncillaryFactor ?? 0.15,
+      tinyAncillaryFactor: options.patternTinyAncillaryFactor ?? 0.05,
+    });
+  }
   rankedResults = applyResultDemotions(rankedResults, {
     query,
     ablations,
