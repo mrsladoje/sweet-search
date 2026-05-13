@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "description": "Behavioural rewrites of ast-tester probes — Stage 0.5 parallel benchmark",
+  "createdAt": "2026-05-13T19:17:15.863Z",
+  "rewriteModel": "deepseek-v4-flash",
+  "rewriteSeed": 42,
+  "rewriteTemperature": 0.3,
+  "language": "rust",
+  "rewrites": [
+    {
+      "id": "RS-002-B",
+      "rewrittenFrom": "RS-002",
+      "rewrittenQuery": "find the iterative repair loop",
+      "infeasible": false,
+      "rationale": "Captures the iterative application of fixes until convergence, without naming the function.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "f609fa7ee945831b4e68772fe69e10e39fa15670e75d6c8339f8cf6ae3631447",
+      "expectedFile": "crates/ruff_linter/src/linter.rs",
+      "expectedSymbol": "lint_fix",
+      "family": "Systems-modular-terse",
+      "containingChunk": {
+        "startLine": 544,
+        "endLine": 564
+      },
+      "authoredAt": "2026-05-13T19:16:04.182Z"
+    },
+    {
+      "id": "RS-001-B",
+      "rewrittenFrom": "RS-001",
+      "rewrittenQuery": "Locate the enum that classifies module sources into sections",
+      "infeasible": false,
+      "rationale": "This query captures the behaviour of categorizing imports into named sections (Future, StandardLibrary, etc.) as defined by the ImportType enum, without using the symbol name or any banned substrings.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "c1dd5789e9d53ecc86d9f941408dee452a7433a24eed7b1a4983c3a4ffbb2587",
+      "expectedFile": "crates/ruff_linter/src/rules/isort/categorize.rs",
+      "expectedSymbol": "ImportType",
+      "family": "Systems-modular-terse",
+      "containingChunk": {
+        "startLine": 1,
+        "endLine": 72
+      },
+      "authoredAt": "2026-05-13T19:16:13.195Z"
+    },
+    {
+      "id": "RS-007-B",
+      "rewrittenFrom": "RS-007",
+      "rewrittenQuery": "show macro that logs once per identifier",
+      "infeasible": false,
+      "rationale": "Captures the behavior of emitting a warning only once, keyed by a unique identifier.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "ed5004c5aea1c84bcdf8e6fea7a0ed5e24cbbea0bc2edc8721958c6aa102d069",
+      "expectedFile": "crates/ruff_linter/src/logging.rs",
+      "expectedSymbol": "warn_user_once_by_id",
+      "family": "Systems-modular-terse",
+      "containingChunk": {
+        "startLine": 1,
+        "endLine": 58
+      },
+      "authoredAt": "2026-05-13T19:16:17.596Z"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "description": "Behavioural rewrites of ast-tester probes — Stage 0.5 parallel benchmark",
+  "createdAt": "2026-05-13T19:17:15.864Z",
+  "rewriteModel": "deepseek-v4-flash",
+  "rewriteSeed": 42,
+  "rewriteTemperature": 0.3,
+  "language": "elixir",
+  "rewrites": [
+    {
+      "id": "EL-005-B",
+      "rewrittenFrom": "EL-005",
+      "rewrittenQuery": "find protocol that serializes structs to JSON",
+      "infeasible": false,
+      "rationale": "Captures the behaviour of defining a serialization protocol for Elixir structs to JSON output, without naming the symbol.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "f456491894e14b4cb5bf9844837d9d841b4eee3545ab136b8837032d1676bae3",
+      "expectedFile": "lib/encoder.ex",
+      "expectedSymbol": "Jason.Encoder",
+      "family": "Scripting-dynamic",
+      "containingChunk": {
+        "startLine": 78,
+        "endLine": 93
+      },
+      "authoredAt": "2026-05-13T19:16:42.892Z"
+    }
+  ]
+}

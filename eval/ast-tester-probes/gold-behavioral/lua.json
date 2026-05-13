@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "description": "Behavioural rewrites of ast-tester probes — Stage 0.5 parallel benchmark",
+  "createdAt": "2026-05-13T19:17:15.864Z",
+  "rewriteModel": "deepseek-v4-flash",
+  "rewriteSeed": 42,
+  "rewriteTemperature": 0.3,
+  "language": "lua",
+  "rewrites": [
+    {
+      "id": "LU-005-B",
+      "rewrittenFrom": "LU-005",
+      "rewrittenQuery": "how to get weekday name",
+      "infeasible": false,
+      "rationale": "This query asks for the function that returns the weekday name (full or abbreviated).",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "1c0ef7e8c936e0bad5cf6b695d68458de32d3eabf479ff91b1f5874805f5f9ed",
+      "expectedFile": "lua/pl/Date.lua",
+      "expectedSymbol": "Date",
+      "family": "Scripting-dynamic",
+      "containingChunk": {
+        "startLine": 222,
+        "endLine": 224
+      },
+      "authoredAt": "2026-05-13T19:16:46.473Z"
+    },
+    {
+      "id": "LU-008-B",
+      "rewrittenFrom": "LU-008",
+      "rewrittenQuery": "find how to test if text has only letters",
+      "infeasible": false,
+      "rationale": "Captures the behaviour of checking that all characters are alphabetic without using the symbol name or its sub-tokens.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 2,
+      "outputSha256": "7978aec1cc29666c4d82a5d8db457bce2d9cfe4fb8d214a66e97a06ef22c0c9c",
+      "expectedFile": "lua/pl/stringx.lua",
+      "expectedSymbol": "stringx.isalpha",
+      "family": "Scripting-dynamic",
+      "containingChunk": {
+        "startLine": 55,
+        "endLine": 58
+      },
+      "authoredAt": "2026-05-13T19:16:50.977Z"
+    }
+  ]
+}
