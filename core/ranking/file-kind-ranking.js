@@ -1096,7 +1096,17 @@ function scoreNameMatchTiered(name, queryWordsArr, queryWordsSet) {
  * second-guess them at relabel time).
  */
 function findAdditionalSymbolRelabel(result, queryWordsArr, queryWordsSet, opts) {
-  if (!isJsTsResult(result)) return null;
+  // 2026-05-13: widened from JS/TS-only to all languages. The cAST sibling-
+  // merge phenomenon F9 addresses is universal — Java/C#/Lua/Python classes
+  // and namespaces also produce one-chunk-per-N-siblings outputs that label
+  // with the first entity. The `findEntitiesInRange` + tiered match logic
+  // generalises; the JS/TS gate was a pilot scope, not a semantic requirement.
+  // Stage 7 audit (stage7-deep-diagnosis.md) confirmed ~8 Java/C#/C-family
+  // PARTIALs sitting on this exact mechanism. Validate against post-perf-60
+  // + GCSN + 18-language probes — revert/narrow if any regression.
+  // Original `isJsTsResult(result)` gate removed; behaviour now language-
+  // agnostic with the strict-identifier and tier-strict-beat gates still
+  // enforced below.
   const meta = result?.metadata ?? {};
 
   if (!opts.codeGraphRepo || typeof opts.codeGraphRepo.findEntitiesInRange !== 'function') {
