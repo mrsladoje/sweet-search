@@ -1233,24 +1233,30 @@ function identifierMentionBoost(result, mentions, opts = {}) {
         return boost;
       }
     }
-    return 1.0;
+    // No Path 1 match — fall through to Path 2 (code-graph fallback). The
+    // chunk's labeled symbol didn't match any mention, but a contained
+    // sibling entity might (cAST sibling-merge case: chunk labeled with
+    // the FIRST entity in the merged group while query references a
+    // later sibling, e.g. Java chunk 121-168 labeled `verifyNoTypeVariable`
+    // but containing the gold's `getType` at 166-168).
   }
 
-  // Path 2 — code-graph fallback (2026-05-13). Some LI indexes were built
-  // without populated `metadata.name` (e.g. the typescript ast-tester repo
-  // has every doc carrying `name: null`); without this fallback the boost
-  // short-circuits at Path 1 even when the chunk genuinely owns an entity
-  // matching a query mention. We look up each mention via
-  // `findEntityWithNameInRange` — same code-graph signal that F8's
-  // exactSymbolTargetEntity uses — and apply the same boost factor when a
-  // match exists. Cached per (file, startLine, endLine, mention) to avoid
-  // repeated SQLite queries.
+  // Path 2 — code-graph fallback (2026-05-13). Two scenarios:
+  //   1. Null-name LI metadata — some indexes were built without populated
+  //      `metadata.name` (e.g. the typescript ast-tester repo has every doc
+  //      carrying `name: null`). Path 1 short-circuits via `if (symbol)`
+  //      and we land here directly.
+  //   2. Sibling-merge mislabel — chunk has a populated label that doesn't
+  //      match any mention, but the chunk's range contains a sibling entity
+  //      that does. The fall-through above lets us still apply the boost.
+  // Either way we look up each mention via `findEntityWithNameInRange` —
+  // same code-graph signal that F8's exactSymbolTargetEntity uses — and
+  // apply the same boost factor when a match exists. Cached per
+  // (file, startLine, endLine, mention).
   //
   // Format-gated by the caller (identifierMentions is built only when
   // isAgentFormat is true), so this path is dormant on GCSN benchmark
-  // traffic. Structural improvement: fires only on null-name results, where
-  // Path 1 had no signal to act on anyway, so this strictly extends rather
-  // than overrides Path 1's coverage.
+  // traffic.
   if (!opts.codeGraphRepo || typeof opts.codeGraphRepo.findEntityWithNameInRange !== 'function') {
     return 1.0;
   }
