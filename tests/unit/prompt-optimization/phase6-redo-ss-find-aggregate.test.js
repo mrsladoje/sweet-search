@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildGlobalCellTable, buildFamilyCellTable, buildLanguageCellTable,
   pickGlobalBest, pickWeightedBest, pickFamilyBests,
+  annotateRowsRelaxedDef,
 } from '../../../core/prompt-optimization/scripts/ss-find/aggregate-track-a-ss-find.mjs';
 
 function row({ gold, language, family, rCell, qCell, file, symbol, error = null }) {
@@ -103,5 +104,64 @@ describe('pickWeightedBest', () => {
     const w = { rust: 10, typescript: 1 };
     const best = pickWeightedBest(lt, w, 'sym');
     expect(best.cell).toBe('R3|Q3');
+  });
+});
+
+describe('annotateRowsRelaxedDef + secondary metric tracking (2026-05-13 cross-tool audit)', () => {
+  it('skips rows with fileRecallAt1=0 (relaxed_def = 0) and rows without an input (relaxed_def = null)', () => {
+    const rows = [
+      row({ gold: 'X1', language: 'rust', family: 'Systems-modular-terse', rCell: 'R2', qCell: 'Q3', file: 0, symbol: 0 }),
+      row({ gold: 'X2', language: 'rust', family: 'Systems-modular-terse', rCell: 'R2', qCell: 'Q3', file: 1, symbol: 1 }),
+    ];
+    // No top1 wired in for X2 — rowRelaxedDef returns 0 because top1.file is null.
+    const inputs = new Map([
+      ['X1', { goldId: 'X1', language: 'rust', expectedSymbol: 'foo' }],
+      // X2 deliberately missing — should land in skippedNoInput counter.
+    ]);
+    const stats = annotateRowsRelaxedDef({ rows, inputs, reposMap: new Map() });
+    expect(stats.skippedNoInput).toBe(1);
+    expect(rows[0].relaxedDefAt1).toBe(0); // file_recall=0 → short-circuit to 0
+    expect(rows[1].relaxedDefAt1).toBe(null); // no input → null
+  });
+
+  it('cell tables track relaxed_def_at_1 and file_recall_at_5 alongside strict', () => {
+    // Build a fixture with explicit relaxedDefAt1 set so we can verify the
+    // tables aggregate it correctly without needing the locked repos.
+    const rows = fixture();
+    for (const r of rows) {
+      r.relaxedDefAt1 = r.symbolRecallAt1; // straight passthrough for the test
+    }
+    const global = buildGlobalCellTable(rows);
+    const fam = buildFamilyCellTable(rows);
+    const lang = buildLanguageCellTable(rows);
+
+    // Global R3|Q3: 2 rust passes (sym=1) + 2 ts fails (sym=0) = 2/4 strict.
+    // relaxed_def mirrors strict here → 2/4. file_recall_at_5 mirrors fileRecallAt1 → 2/4.
+    expect(global['R3|Q3'].relaxed_def_n).toBe(4);
+    expect(global['R3|Q3'].relaxed_def).toBe(2);
+    expect(global['R3|Q3'].file_recall_at_5).toBe(2);
+
+    // By family JS-mobile R5|Q3: 2 ts passes → 2/2 strict + relaxed; file@5 = 2/2.
+    expect(fam['JS-mobile']['R5|Q3'].relaxed_def_n).toBe(2);
+    expect(fam['JS-mobile']['R5|Q3'].relaxed_def).toBe(2);
+
+    // langTable carries the same fields per-language.
+    expect(lang['R3|Q3|rust'].relaxed_def_n).toBe(2);
+    expect(lang['R3|Q3|rust'].relaxed_def).toBe(2);
+  });
+
+  it('null relaxedDefAt1 rows are excluded from relaxed_def_n but still count toward strict n', () => {
+    const rows = fixture();
+    // Make 2 rows null → 6 contributing strict, 4 contributing relaxed_def.
+    rows[0].relaxedDefAt1 = null;
+    rows[2].relaxedDefAt1 = null;
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i].relaxedDefAt1 !== null) rows[i].relaxedDefAt1 = rows[i].symbolRecallAt1;
+    }
+    rows[0].relaxedDefAt1 = null; rows[2].relaxedDefAt1 = null; // reassert after the loop
+    const global = buildGlobalCellTable(rows);
+    // R3|Q3 had n=4 strict rows; two of those rows have null relaxedDefAt1 → relaxed_def_n=2.
+    expect(global['R3|Q3'].n).toBe(4);
+    expect(global['R3|Q3'].relaxed_def_n).toBe(2);
   });
 });

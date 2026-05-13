@@ -1,0 +1,1106 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-13T21:20:55.051Z",
+  "methodology": "DEV-only; PARTIAL→word-boundary symbol in chunk text; FAIL→fileRecallAt5 hits",
+  "note_top1_ordering": "Stage 1 verified: both tools score-order top-1; ss-semantic Fix 1A landmine does not apply here.",
+  "winners": {
+    "ssSearch": {
+      "default": "V7",
+      "byFamily": {
+        "JS-mobile": "V2",
+        "C-family": "V4"
+      }
+    },
+    "ssFind": {
+      "default": {
+        "rCell": "R2",
+        "qCell": "Q3"
+      },
+      "byFamily": {
+        "JS-mobile": {
+          "rCell": "R3",
+          "qCell": "Q4"
+        }
+      }
+    }
+  },
+  "ssSearch": {
+    "label": "ss-search",
+    "jsonl": "core/prompt-optimization/data/query-shapes/tracks/track-a-phase6-redo-v1.jsonl",
+    "devGolds": 90,
+    "verdicts": {
+      "PASS": 51,
+      "PARTIAL": 18,
+      "FAIL": 21,
+      "passPct": 56.7,
+      "partialPct": 20,
+      "failPct": 23.3
+    },
+    "partialAudit": {
+      "total": 18,
+      "containsSymbolVerbatim": 16,
+      "missingSymbolVerbatim": 2,
+      "hiddenPassPctOfPartial": 88.9,
+      "hiddenPassPctOfAllDev": 17.8
+    },
+    "failAudit": {
+      "total": 21,
+      "recallAt5Hits": 16,
+      "recallAt5Misses": 5,
+      "noTop1": 0,
+      "hiddenRecallAt5PctOfFail": 76.2,
+      "hiddenRecallAt5PctOfAllDev": 17.8
+    },
+    "relaxed_metrics": {
+      "relaxedPass": 67,
+      "relaxedPassPctOfAllDev": 74.4,
+      "recallAt5_added": 16
+    },
+    "skipped": []
+  },
+  "ssFind": {
+    "label": "ss-find",
+    "jsonl": "core/prompt-optimization/data/query-shapes/ss-find/tracks/track-a-phase6-redo-ss-find-v8.jsonl",
+    "devGolds": 89,
+    "verdicts": {
+      "PASS": 63,
+      "PARTIAL": 13,
+      "FAIL": 13,
+      "passPct": 70.8,
+      "partialPct": 14.6,
+      "failPct": 14.6
+    },
+    "partialAudit": {
+      "total": 13,
+      "containsSymbolVerbatim": 13,
+      "missingSymbolVerbatim": 0,
+      "hiddenPassPctOfPartial": 100,
+      "hiddenPassPctOfAllDev": 14.6
+    },
+    "failAudit": {
+      "total": 13,
+      "recallAt5Hits": 11,
+      "recallAt5Misses": 1,
+      "noTop1": 1,
+      "hiddenRecallAt5PctOfFail": 84.6,
+      "hiddenRecallAt5PctOfAllDev": 12.4
+    },
+    "relaxed_metrics": {
+      "relaxedPass": 76,
+      "relaxedPassPctOfAllDev": 85.4,
+      "recallAt5_added": 11
+    },
+    "skipped": [
+      {
+        "goldId": "TS-003",
+        "reason": "no_matching_shape_row"
+      }
+    ]
+  },
+  "raw": {
+    "ssSearch": {
+      "label": "ss-search",
+      "jsonl": "core/prompt-optimization/data/query-shapes/tracks/track-a-phase6-redo-v1.jsonl",
+      "devGoldCount": 90,
+      "pass": 51,
+      "partial": 18,
+      "fail": 21,
+      "partialAudits": [
+        {
+          "goldId": "TS-007",
+          "language": "typescript",
+          "family": "JS-mobile",
+          "shape": "V2",
+          "expectedSymbol": "entitlementsByUserType",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "lib/ai/entitlements.ts",
+            "symbol": "Entitlements",
+            "startLine": 1,
+            "endLine": 14,
+            "score": 0.6694440335035323
+          },
+          "chunkLines": 14,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "TS-008",
+          "language": "typescript",
+          "family": "JS-mobile",
+          "shape": "V2",
+          "expectedSymbol": "systemPrompt",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "lib/ai/prompts.ts",
+            "symbol": "regularPrompt",
+            "startLine": 47,
+            "endLine": 104,
+            "score": 0.5929485976696014
+          },
+          "chunkLines": 58,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "RS-004",
+          "language": "rust",
+          "family": "Systems-modular-terse",
+          "shape": "V7",
+          "expectedSymbol": "Violation",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "crates/ruff_linter/src/violation.rs",
+            "symbol": "ViolationMetadata",
+            "startLine": 49,
+            "endLine": 99,
+            "score": 0.7456695960462094
+          },
+          "chunkLines": 51,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "CS-002",
+          "language": "csharp",
+          "family": "OO-monolithic",
+          "shape": "V7",
+          "expectedSymbol": "RespServerSession",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "libs/server/Resp/RespServerSession.cs",
+            "symbol": "LatencyMetrics",
+            "startLine": 42,
+            "endLine": 57,
+            "score": 0.48299917578697205
+          },
+          "chunkLines": 16,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "CS-005",
+          "language": "csharp",
+          "family": "OO-monolithic",
+          "shape": "V7",
+          "expectedSymbol": "LoaderBlockCache",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "libs/server/Lua/LuaRunner.Loader.cs",
+            "symbol": "PrepareLoaderBlockBytes",
+            "startLine": 375,
+            "endLine": 517,
+            "score": 0.5241548418998718
+          },
+          "chunkLines": 143,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "CPP-003",
+          "language": "cpp",
+          "family": "C-family",
+          "shape": "V4",
+          "expectedSymbol": "ChosenTarget",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "hwy/targets.h",
+            "symbol": "hwy",
+            "startLine": 36,
+            "endLine": 381,
+            "score": 0.4298192054033279
+          },
+          "chunkLines": 346,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "CPP-006",
+          "language": "cpp",
+          "family": "C-family",
+          "shape": "V4",
+          "expectedSymbol": "AlignedDeleter",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "hwy/aligned_allocator.h",
+            "symbol": "hwy",
+            "startLine": 35,
+            "endLine": 468,
+            "score": 0.47893967628479
+          },
+          "chunkLines": 434,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "CPP-008",
+          "language": "cpp",
+          "family": "C-family",
+          "shape": "V4",
+          "expectedSymbol": "DetectTargets",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "hwy/targets.cc",
+            "symbol": "x86",
+            "startLine": 117,
+            "endLine": 445,
+            "score": 0.38395741432905195
+          },
+          "chunkLines": 329,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "PY-004",
+          "language": "python",
+          "family": "Scripting-dynamic",
+          "shape": "V7",
+          "expectedSymbol": "command",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "src/click/decorators.py",
+            "symbol": "<anonymous:decorator>",
+            "startLine": 258,
+            "endLine": 321,
+            "score": 0.526479184627533
+          },
+          "chunkLines": 64,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "PY-006",
+          "language": "python",
+          "family": "Scripting-dynamic",
+          "shape": "V7",
+          "expectedSymbol": "convert",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "src/click/types.py",
+            "symbol": "CompositeParamType",
+            "startLine": 173,
+            "endLine": 219,
+            "score": 0.5048693418502808
+          },
+          "chunkLines": 47,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "GO-003",
+          "language": "go",
+          "family": "Systems-modular-terse",
+          "shape": "V7",
+          "expectedSymbol": "Use",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "mux.go",
+            "symbol": "ServeHTTP",
+            "startLine": 60,
+            "endLine": 119,
+            "score": 0.5997824728488923
+          },
+          "chunkLines": 60,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "GO-006",
+          "language": "go",
+          "family": "Systems-modular-terse",
+          "shape": "V7",
+          "expectedSymbol": "NewRouter",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "chi.go",
+            "symbol": "Router",
+            "startLine": 64,
+            "endLine": 117,
+            "score": 0.6496525144577028
+          },
+          "chunkLines": 54,
+          "containsSymbol_substring": false,
+          "containsSymbol_wordBoundary": false,
+          "readFailed": false
+        },
+        {
+          "goldId": "C-002",
+          "language": "c",
+          "family": "C-family",
+          "shape": "V4",
+          "expectedSymbol": "redisConnectWithOptions",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "hiredis.c",
+            "symbol": "redisContext",
+            "startLine": 815,
+            "endLine": 832,
+            "score": 0.5956229627132416
+          },
+          "chunkLines": 18,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "C-005",
+          "language": "c",
+          "family": "C-family",
+          "shape": "V4",
+          "expectedSymbol": "redisConnect",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "hiredis.c",
+            "symbol": "timeval",
+            "startLine": 882,
+            "endLine": 927,
+            "score": 0.5541085600852966
+          },
+          "chunkLines": 46,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "TSL-001",
+          "language": "typescript-lib",
+          "family": "JS-mobile",
+          "shape": "V2",
+          "expectedSymbol": "safeParse",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "packages/zod/src/v4/core/parse.ts",
+            "symbol": "$SafeParse",
+            "startLine": 51,
+            "endLine": 101,
+            "score": 0.5431668758392334
+          },
+          "chunkLines": 51,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "DR-008",
+          "language": "dart",
+          "family": "JS-mobile",
+          "shape": "V2",
+          "expectedSymbol": "HeadersWithSplitValues",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "pkgs/http/lib/src/base_response.dart",
+            "symbol": "BaseResponse",
+            "startLine": 11,
+            "endLine": 87,
+            "score": 0.58710997402668
+          },
+          "chunkLines": 77,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "LU-001",
+          "language": "lua",
+          "family": "Scripting-dynamic",
+          "shape": "V7",
+          "expectedSymbol": "_class",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "lua/pl/class.lua",
+            "symbol": "__index",
+            "startLine": 220,
+            "endLine": 237,
+            "score": 0.5114393442869186
+          },
+          "chunkLines": 18,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "LU-003",
+          "language": "lua",
+          "family": "Scripting-dynamic",
+          "shape": "V7",
+          "expectedSymbol": "tablex.deepcopy",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "lua/pl/tablex.lua",
+            "symbol": "tablex.difference",
+            "startLine": 674,
+            "endLine": 999,
+            "score": 0.5367083549499512
+          },
+          "chunkLines": 326,
+          "containsSymbol_substring": false,
+          "containsSymbol_wordBoundary": false,
+          "readFailed": false
+        }
+      ],
+      "failAudits": [
+        {
+          "goldId": "RS-003",
+          "language": "rust",
+          "family": "Systems-modular-terse",
+          "shape": "V7",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "crates/ruff_linter/src/linter.rs",
+          "expectedFile": "crates/ruff_linter/src/checkers/ast/mod.rs",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "RS-008",
+          "language": "rust",
+          "family": "Systems-modular-terse",
+          "shape": "V7",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "crates/ruff_workspace/src/resolver.rs",
+          "expectedFile": "crates/ruff_linter/src/packaging.rs",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "KT-004",
+          "language": "kotlin",
+          "family": "OO-monolithic",
+          "shape": "V7",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "kotlinx-coroutines-core/common/src/CoroutineScope.kt",
+          "expectedFile": "kotlinx-coroutines-core/common/src/Builders.common.kt",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "CS-003",
+          "language": "csharp",
+          "family": "OO-monolithic",
+          "shape": "V7",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "libs/server/Databases/IDatabaseManager.cs",
+          "expectedFile": "libs/server/StoreWrapper.cs",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "CS-008",
+          "language": "csharp",
+          "family": "OO-monolithic",
+          "shape": "V7",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "libs/client/ClientSession/AsyncPool.cs",
+          "expectedFile": "libs/storage/Tsavorite/cs/src/core/Device/AsyncPool.cs",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "CPP-002",
+          "language": "cpp",
+          "family": "C-family",
+          "shape": "V4",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "hwy/targets.h",
+          "expectedFile": "hwy/highway.h",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "CPP-004",
+          "language": "cpp",
+          "family": "C-family",
+          "shape": "V4",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 0,
+          "top1File": "hwy/contrib/random/random-inl.h",
+          "expectedFile": "hwy/ops/generic_ops-inl.h",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "JV-001",
+          "language": "java",
+          "family": "OO-monolithic",
+          "shape": "V7",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "gson/src/main/java/com/google/gson/LongSerializationPolicy.java",
+          "expectedFile": "gson/src/main/java/com/google/gson/GsonBuilder.java",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "JV-004",
+          "language": "java",
+          "family": "OO-monolithic",
+          "shape": "V7",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 0,
+          "top1File": "gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java",
+          "expectedFile": "gson/src/main/java/com/google/gson/reflect/TypeToken.java",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "JV-005",
+          "language": "java",
+          "family": "OO-monolithic",
+          "shape": "V7",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "gson/src/main/java/com/google/gson/InstanceCreator.java",
+          "expectedFile": "gson/src/main/java/com/google/gson/GsonBuilder.java",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "PY-002",
+          "language": "python",
+          "family": "Scripting-dynamic",
+          "shape": "V7",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "docs/complex.md",
+          "expectedFile": "src/click/core.py",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "RB-001",
+          "language": "ruby",
+          "family": "Scripting-dynamic",
+          "shape": "V7",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "rack-protection/lib/rack/protection/base.rb",
+          "expectedFile": "lib/sinatra/base.rb",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "RB-006",
+          "language": "ruby",
+          "family": "Scripting-dynamic",
+          "shape": "V7",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 0,
+          "top1File": "sinatra-contrib/lib/sinatra/haml_helpers.rb",
+          "expectedFile": "lib/sinatra/base.rb",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "PHP-008",
+          "language": "php",
+          "family": "Scripting-dynamic",
+          "shape": "V7",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "Slim/Factory/AppFactory.php",
+          "expectedFile": "Slim/App.php",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "TSL-004",
+          "language": "typescript-lib",
+          "family": "JS-mobile",
+          "shape": "V2",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 0,
+          "top1File": "packages/zod/src/v3/types.ts",
+          "expectedFile": "packages/zod/src/v4/core/schemas.ts",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "TSL-006",
+          "language": "typescript-lib",
+          "family": "JS-mobile",
+          "shape": "V2",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "packages/zod/src/v3/types.ts",
+          "expectedFile": "packages/zod/src/v4/core/schemas.ts",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "TSL-008",
+          "language": "typescript-lib",
+          "family": "JS-mobile",
+          "shape": "V2",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 0,
+          "top1File": "packages/zod/src/v3/types.ts",
+          "expectedFile": "packages/zod/src/v4/core/schemas.ts",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "DR-006",
+          "language": "dart",
+          "family": "JS-mobile",
+          "shape": "V2",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "pkgs/http/lib/src/request.dart",
+          "expectedFile": "pkgs/http/lib/src/response.dart",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "SC-004",
+          "language": "scala",
+          "family": "OO-monolithic",
+          "shape": "V7",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "readme.md",
+          "expectedFile": "requests/src/requests/Model.scala",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "ZG-001",
+          "language": "zig",
+          "family": "C-family",
+          "shape": "V4",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "src/config.zig",
+          "expectedFile": "src/request.zig",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "ZG-004",
+          "language": "zig",
+          "family": "C-family",
+          "shape": "V4",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "src/config.zig",
+          "expectedFile": "src/request.zig",
+          "expectedFileAnyOf": null
+        }
+      ],
+      "partialContainsSymbol": 16,
+      "partialMissingSymbol": 2,
+      "failRecallAt5Hits": 16,
+      "failRecallAt5Misses": 5,
+      "failNoTop1": 0,
+      "skipped": []
+    },
+    "ssFind": {
+      "label": "ss-find",
+      "jsonl": "core/prompt-optimization/data/query-shapes/ss-find/tracks/track-a-phase6-redo-ss-find-v8.jsonl",
+      "devGoldCount": 89,
+      "pass": 63,
+      "partial": 13,
+      "fail": 13,
+      "partialAudits": [
+        {
+          "goldId": "TS-008",
+          "language": "typescript",
+          "family": "JS-mobile",
+          "shape": "R3|Q4",
+          "expectedSymbol": "systemPrompt",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "lib/ai/prompts.ts",
+            "symbol": "regularPrompt",
+            "startLine": 47,
+            "endLine": 104,
+            "score": 0.4923206433653831
+          },
+          "chunkLines": 58,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "CS-001",
+          "language": "csharp",
+          "family": "OO-monolithic",
+          "shape": "R2|Q3",
+          "expectedSymbol": "NetworkSET",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "libs/server/Resp/BasicCommands.cs",
+            "symbol": null,
+            "startLine": 179,
+            "endLine": 340,
+            "score": 0.43802791833877563
+          },
+          "chunkLines": 162,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "CS-005",
+          "language": "csharp",
+          "family": "OO-monolithic",
+          "shape": "R2|Q3",
+          "expectedSymbol": "LoaderBlockCache",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "libs/server/Lua/LuaRunner.Loader.cs",
+            "symbol": "LuaRunner",
+            "startLine": 15,
+            "endLine": 518,
+            "score": 0.41663462221622466
+          },
+          "chunkLines": 504,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "CPP-003",
+          "language": "cpp",
+          "family": "C-family",
+          "shape": "R2|Q3",
+          "expectedSymbol": "ChosenTarget",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "hwy/targets.h",
+            "symbol": "hwy",
+            "startLine": 36,
+            "endLine": 381,
+            "score": 0.4898529350757599
+          },
+          "chunkLines": 346,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "CPP-006",
+          "language": "cpp",
+          "family": "C-family",
+          "shape": "R2|Q3",
+          "expectedSymbol": "AlignedDeleter",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "hwy/aligned_allocator.h",
+            "symbol": "hwy",
+            "startLine": 35,
+            "endLine": 468,
+            "score": 0.5649409368634224
+          },
+          "chunkLines": 434,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "JV-002",
+          "language": "java",
+          "family": "OO-monolithic",
+          "shape": "R2|Q3",
+          "expectedSymbol": "get",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "gson/src/main/java/com/google/gson/internal/ConstructorConstructor.java",
+            "symbol": "ConstructorConstructor",
+            "startLine": 45,
+            "endLine": 465,
+            "score": 0.56318598985672
+          },
+          "chunkLines": 421,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "JV-005",
+          "language": "java",
+          "family": "OO-monolithic",
+          "shape": "R2|Q3",
+          "expectedSymbol": "registerTypeAdapter",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "gson/src/main/java/com/google/gson/GsonBuilder.java",
+            "symbol": "GsonBuilder",
+            "startLine": 92,
+            "endLine": 1076,
+            "score": 0.3592430262267589
+          },
+          "chunkLines": 985,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "PY-002",
+          "language": "python",
+          "family": "Scripting-dynamic",
+          "shape": "R2|Q3",
+          "expectedSymbol": "Context",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "src/click/core.py",
+            "symbol": "make_context",
+            "startLine": 1210,
+            "endLine": 1245,
+            "score": 0.45912837982177734
+          },
+          "chunkLines": 36,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "RB-002",
+          "language": "ruby",
+          "family": "Scripting-dynamic",
+          "shape": "R2|Q3",
+          "expectedSymbol": "Request",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "lib/sinatra/base.rb",
+            "symbol": "Sinatra",
+            "startLine": 28,
+            "endLine": 2173,
+            "score": 0.31795665323734285
+          },
+          "chunkLines": 2146,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "C-002",
+          "language": "c",
+          "family": "C-family",
+          "shape": "R2|Q3",
+          "expectedSymbol": "redisConnectWithOptions",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "hiredis.c",
+            "symbol": "redisContext",
+            "startLine": 815,
+            "endLine": 832,
+            "score": 0.5723114013671875
+          },
+          "chunkLines": 18,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "C-005",
+          "language": "c",
+          "family": "C-family",
+          "shape": "R2|Q3",
+          "expectedSymbol": "redisConnect",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "hiredis.c",
+            "symbol": "timeval",
+            "startLine": 882,
+            "endLine": 927,
+            "score": 0.46548739075660706
+          },
+          "chunkLines": 46,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "TSL-001",
+          "language": "typescript-lib",
+          "family": "JS-mobile",
+          "shape": "R3|Q4",
+          "expectedSymbol": "safeParse",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "packages/zod/src/v4/core/parse.ts",
+            "symbol": "parseAsync",
+            "startLine": 51,
+            "endLine": 101,
+            "score": 0.49302765429019924
+          },
+          "chunkLines": 51,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        },
+        {
+          "goldId": "DR-008",
+          "language": "dart",
+          "family": "JS-mobile",
+          "shape": "R3|Q4",
+          "expectedSymbol": "HeadersWithSplitValues",
+          "expectedSymbolAnyOf": null,
+          "top1": {
+            "file": "pkgs/http/lib/src/base_response.dart",
+            "symbol": "BaseResponseWithUrl",
+            "startLine": 118,
+            "endLine": 171,
+            "score": 0.3491823673248291
+          },
+          "chunkLines": 54,
+          "containsSymbol_substring": true,
+          "containsSymbol_wordBoundary": true,
+          "readFailed": false
+        }
+      ],
+      "failAudits": [
+        {
+          "goldId": "RS-001",
+          "language": "rust",
+          "family": "Systems-modular-terse",
+          "shape": "R2|Q3",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "crates/ruff_linter/src/rules/flake8_type_checking/rules/typing_only_runtime_import.rs",
+          "expectedFile": "crates/ruff_linter/src/rules/isort/categorize.rs",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "KT-003",
+          "language": "kotlin",
+          "family": "OO-monolithic",
+          "shape": "R2|Q3",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "kotlinx-coroutines-core/concurrent/src/Builders.concurrent.kt",
+          "expectedFile": "kotlinx-coroutines-core/jvm/src/Builders.kt",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "CS-002",
+          "language": "csharp",
+          "family": "OO-monolithic",
+          "shape": "R2|Q3",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "libs/server/ServerConfig.cs",
+          "expectedFile": "libs/server/Resp/RespServerSession.cs",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "CS-003",
+          "language": "csharp",
+          "family": "OO-monolithic",
+          "shape": "R2|Q3",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "libs/storage/Tsavorite/cs/src/core/TsavoriteLog/TsavoriteLog.cs",
+          "expectedFile": "libs/server/StoreWrapper.cs",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "CS-008",
+          "language": "csharp",
+          "family": "OO-monolithic",
+          "shape": "R2|Q3",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "libs/client/ClientSession/AsyncPool.cs",
+          "expectedFile": "libs/storage/Tsavorite/cs/src/core/Device/AsyncPool.cs",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "CPP-008",
+          "language": "cpp",
+          "family": "C-family",
+          "shape": "R2|Q3",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 0,
+          "top1File": null,
+          "expectedFile": "hwy/targets.cc",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "PY-004",
+          "language": "python",
+          "family": "Scripting-dynamic",
+          "shape": "R2|Q3",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "src/click/core.py",
+          "expectedFile": "src/click/decorators.py",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "RB-006",
+          "language": "ruby",
+          "family": "Scripting-dynamic",
+          "shape": "R2|Q3",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "sinatra-contrib/lib/sinatra/respond_with.rb",
+          "expectedFile": "lib/sinatra/base.rb",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "GO-003",
+          "language": "go",
+          "family": "Systems-modular-terse",
+          "shape": "R2|Q3",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "middleware/route_headers.go",
+          "expectedFile": "mux.go",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "PHP-008",
+          "language": "php",
+          "family": "Scripting-dynamic",
+          "shape": "R2|Q3",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 0,
+          "top1File": "Slim/Routing/RouteParser.php",
+          "expectedFile": "Slim/App.php",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "C-004",
+          "language": "c",
+          "family": "C-family",
+          "shape": "R2|Q3",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "hiredis.c",
+          "expectedFile": "hiredis.h",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "ZG-001",
+          "language": "zig",
+          "family": "C-family",
+          "shape": "R2|Q3",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "src/config.zig",
+          "expectedFile": "src/request.zig",
+          "expectedFileAnyOf": null
+        },
+        {
+          "goldId": "ZG-004",
+          "language": "zig",
+          "family": "C-family",
+          "shape": "R2|Q3",
+          "fileRecallAt1": 0,
+          "fileRecallAt5": 1,
+          "top1File": "src/config.zig",
+          "expectedFile": "src/request.zig",
+          "expectedFileAnyOf": null
+        }
+      ],
+      "partialContainsSymbol": 13,
+      "partialMissingSymbol": 0,
+      "failRecallAt5Hits": 11,
+      "failRecallAt5Misses": 1,
+      "failNoTop1": 1,
+      "skipped": [
+        {
+          "goldId": "TS-003",
+          "reason": "no_matching_shape_row"
+        }
+      ]
+    }
+  }
+}
