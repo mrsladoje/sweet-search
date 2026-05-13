@@ -283,10 +283,21 @@ function _scoreSymbol(chunks, queryTerms, queryRaw) {
     const sym = (c.symbol || '').toLowerCase();
     if (!sym) continue;
     let s = 0;
-    if (sym && lowerRaw.includes(sym)) s += 2;            // raw query mentions the symbol
+    // Word-boundary match prevents short symbols from collecting +2 just for
+    // being a substring of an unrelated longer token in the query. Stage 3
+    // PHASE6_REDO diagnosis (2026-05-13) found two ss-semantic dev FAILs
+    // (JV-004 `Show getType` → `get` chunk got +2 from "get" ⊂ "gettype";
+    // LU-001 `trace _class metatable` → `class` chunk got +2 from "class"
+    // ⊂ "_class") where this substring-rule over-credited the wrong chunk.
+    // The word-boundary form still credits genuine mentions (e.g., "query"
+    // as a real query token still matches `query`-symbol chunks — ZG-001
+    // ambiguity is preserved). Structural rule, no per-language signal,
+    // no stopword growth.
+    const reBoundary = new RegExp(`(?:^|[^a-zA-Z0-9_])${_escapeRegex(sym)}(?=[^a-zA-Z0-9_]|$)`, 'i');
+    if (sym && reBoundary.test(lowerRaw)) s += 2;         // query mentions symbol as a word
     for (const t of queryTerms) {
       if (sym === t) s += 3;                              // exact name match
-      else if (sym.includes(t)) s += 1;                   // substring
+      else if (sym.includes(t)) s += 1;                   // substring (chunk symbol contains query token)
     }
     if (s > 0) scores.set(c.id, s);
   }
