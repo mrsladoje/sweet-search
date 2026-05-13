@@ -37,16 +37,28 @@
 - small chunk (≤ 5 L) wins: 3 (C-005, PY-004, RB-001)
 - symbol-collision with query term: 3 (JV-004 query has "get"; ZG-001/004 query has "query" → matches Zig HTTP-`query` method)
 
-### OverlayRequired (4 cases) — chunker-level bugs
+### OverlayRequired (4 cases) — RETRACTED: these are RANKER problems, NOT chunker bugs
 
-| gold | lang | gold range | reason |
-|---|---|---|---|
-| **CPP-003** | cpp | 166-207 (ChosenTarget struct) | Tree-sitter-c conditional-compilation (`std::atomic` vs plain) creates parse ambiguity per goldNotes |
-| **LU-004** | lua | 122-129 (List class) | List class chunks emitted for `List._create`/`._init` only; `List:append`/`:remove` (colon-method) not chunked |
-| **PY-006** | python | 173-219 (ParamType.convert impl) | 5 `@t.overload` + 1 impl; chunker likely emits overloads as separate chunks and misses the body at line 173 |
-| **ZG-005** | zig | 20-64 (Response struct) | Response struct chunk not emitted; only its methods (json, header, etc.) chunked |
+**Correction (2026-05-13, after user push-back)**: my initial classification assumed
+"no chunk in readSemantic's top-K returned spans = chunker didn't emit a chunk".
+That was wrong. `verify-chunker.mjs` queried the codebase DB directly and confirmed
+the chunker emits chunks AT the gold range for all 4 cases:
 
-These need **chunker fixes + reindex** to address — out of scope for runtime ranking work.
+| gold | lang | gold range | chunk-at-gold-range | symbol on that chunk | actual issue |
+|---|---|---|---|---|---|
+| CPP-003 | cpp | 166-207 (ChosenTarget) | **166-207 (42L) ✓** | `(null) type=code` | chunker emits the chunk but symbol-extraction failed (tree-sitter conditional-compilation); RANKER + symbol metadata gap |
+| LU-004 | lua | 122-129 (List) | **122-129 (8L) ✓** | `List type=function` | chunker emits 40 chunks named `List`; the one at gold range is just one of many. Ranker problem (which List chunk wins) |
+| PY-006 | python | 173-219 (convert) | **173-219 (47L) ✓** | `CompositeParamType type=class` | chunker correctly groups convert under its parent class; the gold's `expectedSymbol="convert"` mismatches chunk's `sym=CompositeParamType`. Data/ranker question, NOT chunker |
+| ZG-005 | zig | 20-64 (Response) | **20-64 (45L) ✓** | `Response type=struct` | chunker emits the right chunk with the right symbol; readSemantic's RRF cut dropped it before top-K. Pure ranker problem |
+
+**Implication**: zero chunker fixes / reindex needed. All 4 cases are addressable
+by ranker work in `core/search/search-read-semantic.js` only (already gated to
+ss-semantic by code path). ss-search / ss-find / GCSN unaffected by any fix here.
+
+The CPP-003 case has a secondary symbol-extraction gap (chunker doesn't know
+the 166-207 chunk is "ChosenTarget"), but the line range is right. A ranker
+fix that improves lexical-text matching could surface this chunk without any
+chunker change.
 
 ### Unclassified (1 case)
 
