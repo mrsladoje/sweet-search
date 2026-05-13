@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "description": "Behavioural rewrites of ast-tester probes — Stage 0.5 parallel benchmark",
+  "createdAt": "2026-05-13T19:17:15.864Z",
+  "rewriteModel": "deepseek-v4-flash",
+  "rewriteSeed": 42,
+  "rewriteTemperature": 0.3,
+  "language": "ruby",
+  "rewrites": [
+    {
+      "id": "RB-008-B",
+      "rewrittenFrom": "RB-008",
+      "rewrittenQuery": "Where is async Rack callback scheduled?",
+      "infeasible": false,
+      "rationale": "Captures the behaviour of intercepting async callbacks in Rack middleware.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "f6dc81520f37454cca78c5b2a71c8cf6be109cb1e8c850ae84df3f26efbdf88e",
+      "expectedFile": "lib/sinatra/base.rb",
+      "expectedSymbol": "ExtendedRack",
+      "family": "Scripting-dynamic",
+      "containingChunk": {
+        "startLine": 225,
+        "endLine": 256
+      },
+      "authoredAt": "2026-05-13T19:16:36.335Z"
+    }
+  ]
+}
