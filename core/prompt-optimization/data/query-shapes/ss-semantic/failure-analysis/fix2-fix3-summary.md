@@ -52,7 +52,7 @@ declaration). Zero typescript-lib regression on v5.
 
 | pattern | count | examples | next-session work |
 |---|---|---|---|
-| OverlayRequired (chunker bug) | 4 | CPP-003 ChosenTarget, LU-004 List, PY-006 convert overloads, ZG-005 Response | chunker fix + reindex (out of scope) |
+| ~~OverlayRequired (chunker bug)~~ **RETRACTED — ranker problem** | 4 | CPP-003 ChosenTarget, LU-004 List, PY-006 convert, ZG-005 Response | `verify-chunker.mjs` proved the chunker DOES emit chunks at the gold ranges (see stage3-taxonomy.md update). Pure ranker fixes needed — no chunker / reindex work |
 | wider-span-contains-gold | 4 | C-005 redisConnect, CPP-002 FunctionCache, DR-008 HeadersWithSplitValues, PY-004 command | harder ranker work; null-sym demote insufficient |
 | sym-collision (genuine NL ambiguity) | 2 | ZG-001 / ZG-004 (V2 query "Request parse query parameters?" — `query` chunk matches "query" as a real word) | hard — would need capitalization-aware symbol matching |
 | topK boundary | 1 | LU-003 deepcopy (top-1 in topK=8 audit, FAIL in topK=5 audit) | investigate fused vs LI re-rank ordering |
