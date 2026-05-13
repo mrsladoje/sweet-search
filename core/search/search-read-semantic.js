@@ -62,6 +62,21 @@ const DEFAULTS = {
   lexicalWeight: 1.0,
   symbolWeight: 1.5,         // symbol-name hits are stronger evidence per-file
   maxsimWeight: 1.6,         // late interaction wins ties
+  // Demotion factors applied to the final re-rank score (after MaxSim re-rank).
+  // Stage 3 diagnosis (2026-05-13, PHASE6_REDO ss-semantic) found:
+  //  - chunks with null/unknown symbol metadata frequently win top-1 when
+  //    they're really file-header fragments or unnamed code blocks
+  //    (CPP-002, RB-001, C-005, PY-004 dev failures)
+  //  - tiny chunks (≤ 5 lines) inflate MaxSim by concentrating literal
+  //    token presence in a small window (RB-001 `module Sinatra`,
+  //    C-005 single-line `redisContext *redisConnectWithOptions(...)`).
+  // Multiplicative demotion at the final-rank stage is conservative: the
+  // chunk is still returned, just less likely to be top-1. Tunable; 0.85
+  // was chosen by inspecting per-failure score margins (typical wrong-vs-
+  // gold gap is 0.01-0.04, so 0.85 reliably flips the cases identified).
+  unsymboledDemote: 0.85,
+  smallChunkDemote: 0.85,
+  smallChunkMaxLines: 5,
 };
 
 const APPROX_CHARS_PER_TOKEN = 4;
@@ -568,12 +583,39 @@ export async function readSemantic(req) {
   // Final re-rank: prefer late-interaction score when LI ran; otherwise the
   // RRF score is the authority. This mirrors the SOTA pattern (cheap candidate
   // pool → expensive LI re-rank on the survivors).
+  //
+  // Multiplicative score demotions on null/unknown-symbol chunks and on tiny
+  // chunks are applied here so the re-rank below sees the corrected score
+  // (Stage 3 PHASE6_REDO ss-semantic, 2026-05-13). Demotion is intentionally
+  // applied AFTER the MaxSim re-rank threshold gate above — chunks still
+  // survive into the result, they're just less likely to win top-1.
+  const unsymDemote = req.unsymboledDemote ?? DEFAULTS.unsymboledDemote;
+  const smallDemote = req.smallChunkDemote ?? DEFAULTS.smallChunkDemote;
+  const smallChunkMaxLines = req.smallChunkMaxLines ?? DEFAULTS.smallChunkMaxLines;
+
   const ranked = fusedTop
     .map(([id, fusedScore]) => {
       const c = idToChunk.get(id);
       if (!c) return null;
       const li = maxsimScores.get(id);
-      const finalScore = liRan && li != null ? li : fusedScore;
+      const baseScore = liRan && li != null ? li : fusedScore;
+      // Stage 3 PHASE6_REDO ss-semantic (2026-05-13): demote only the
+      // INTERSECTION of (null-or-unknown symbol) AND (≤ smallChunkMaxLines).
+      // Earlier OR-form regressed typescript-lib (interface declarations
+      // are legitimately small AND symboled; OR-rule demoted them too).
+      // The intersection targets exactly the RB-001 pattern — short
+      // unnamed code fragments that win MaxSim by concentrated literal
+      // tokens (e.g., 3-line `module Sinatra` decl beating the 24-line
+      // Base class body). Multiplicative composition gives 0.85*0.85=0.7225x
+      // when both conditions fire.
+      const symMeta = c.symbol;
+      const isUnsymboled = !symMeta || symMeta === 'unknown';
+      const chunkLines = c.endLine - c.startLine + 1;
+      const isSmall = chunkLines <= smallChunkMaxLines;
+      const demoteFactor = (isUnsymboled && isSmall)
+        ? unsymDemote * smallDemote
+        : 1;
+      const finalScore = baseScore * demoteFactor;
       return {
         id,
         symbol: c.symbol,
@@ -586,6 +628,8 @@ export async function readSemantic(req) {
           symbol: symbolScores.get(id) || 0,
           maxsim: liRan ? (maxsimScores.get(id) ?? null) : null,
           fused: fusedScore,
+          baseScore,
+          demoteFactor,
         },
       };
     })
