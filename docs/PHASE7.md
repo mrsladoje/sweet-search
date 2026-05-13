@@ -532,26 +532,21 @@ Decision at gate-failure time, not pre-committed.
 >   deterministic file-extension → family lookup; the agent does not reason about it.
 
 P6's `track-b-summary.json:perToolWinRates` is the **load-bearing input** to T1-T14 authoring for the
-**non-`ss-search` tools only** (`ss-find` / `ss-semantic` / `structural`). For `ss-search`, see the
-update box above and §4.2 — the family-conditioned recommendations are now in
-`recommendations-v2.json`. Even though no shape was promoted via BH-FDR (n=25 was below the noise floor
-for that gate), the directional Track B win-rate signal from qshape-v1 IS actionable for variant
-authoring of the other three tools. The signal is:
+**`structural` tool only** (the last remaining one without its own redo). `ss-search`, `ss-find`, and
+`ss-semantic` all have their own PHASE6_REDO artifacts now (see §4.2 below for the verbatim recommendations).
+Even though no shape was promoted via BH-FDR (n=25 was below the noise floor for that gate), the directional
+Track B win-rate signal from qshape-v1 IS actionable for variant authoring of `structural`. The signal is:
 
-**Top Track B win rates from P6 (qshape-v1, non-`ss-search` only)**:
+**Top Track B win rates from P6 (qshape-v1, `structural` only — the other tools have superseding redoes)**:
 
 | Tool | Top shape | Win rate | Signal |
 |---|---|---|---|
 | `structural` | `short+with-symbol+narrow-regex+interrogative+high-density` | 28% (7w/1L of 25) | **Strong**: structural prefers symbol + narrow regex + question form |
-| `ss-semantic` | `very-short+with-symbol+narrow-regex+imperative+high-density` | 25% | **Strong**: semantic likes very-short + symbol + narrow |
-| `ss-semantic` | `short+without-symbol+medium-regex+declarative+high-density` | 21% (0L of 24) | **Strong (no losses)**: semantic also OK with no-symbol + declarative |
-| `ss-semantic` | `short+with-symbol+narrow-regex+interrogative+high-density` | 21% | **Confirms** ss-semantic's preference for symbols |
 
-**Anti-signal (avoid_shapes from qshape-v1, non-`ss-search` only)**:
+**Anti-signal (avoid_shapes from qshape-v1, `structural` only)**:
 
 | Tool | Worst shape | Recall@1 |
 |---|---|---|
-| `ss-find` | `very-short+without-symbol+narrow-regex+imperative+high-density` | 0.143 |
 | `structural` | `very-short+with-symbol+narrow-regex+imperative+high-density` | 0.756 (worst FOR structural; still good in absolute terms) |
 
 **`ss-search` shape findings from PHASE6_REDO (qshape-v2, 2026-05-13, n=1,424 sweep rows over 18 languages)** — supersedes the deprecated qshape-v1 row above:
@@ -603,7 +598,20 @@ From the P6 directional signal, the variants encode these tool-specific recommen
   JS-mobile override gains +16.1pp symbol_recall (54.8% → 71%). The other 4 families tie or trail R5×Q3 by <8pp so they don't trigger overrides — a notably stable signal.
 
   **Strategy 3 — `popular_weighted` (agentic-tier, no family detection):** `R3 × Q3` (diversity-enforced 2nd-best — natural winner ties Strategy 1's R5×Q3). *"Build the regex as `\b(<family-keyword>)\s+<symbol>\b` — language-keyword + symbol at the definition site. Phrase the query as a short imperative with the symbol verbatim (4-8 tokens)."* Weighted agentic-tier symbol_recall 56.5%; the agent-runtime instruction is simpler than R5 (no sibling inference needed). Distinct from Strategy 1 so GEPA gets genuine candidate diversity.
-- **`[[ss-semantic]]`** (LI/MaxSim semantic): keep queries SHORT (≤4 tokens) with the symbol. Imperative or declarative both work; symbols dominate. Behavioral queries (multi-callback "what does X do") are this tool's weakness — route them away. *Pending its own Phase 6 redo.*
+- **`[[ss-semantic]]`** (in-file span retrieval): **PHASE6_REDO ss-semantic redo SHIPPED 2026-05-13** — `recommendations-v2-ss-semantic.json` ships THREE strategies, primary metric span top-1 IoU. Variants are REUSED VERBATIM from the ss-search V1-V7 corpus (the NL surface is identical; only the retrieval mechanism differs).
+
+  **Strategy 1 — `simple_global`:** V1 (avg IoU 0.332 across 144 ast-tester golds). *"Phrase a very short imperative query consisting of the target symbol verbatim, optionally with one descriptor word (≤ 3 tokens)."*
+
+  **Strategy 2 — `family_conditioned`:**
+  ```
+  if family == C-family:  use V2 (short interrogative + symbol, 4-8 tokens)
+  otherwise:              use V1 default
+  ```
+  C-family override gains +12.8pp IoU (V1 0.255 → V2 0.383). All other families top-out at V1 within 5pp of each other.
+
+  **Strategy 3 — `popular_weighted`:** V2 (diversity-enforced — natural agentic-tier winner matched Strategy 1). *"Phrase a short interrogative query (4-8 tokens) that contains the target symbol verbatim."* Distinct from Strategy 1 so GEPA gets a real second candidate.
+
+  Confirms the prior qshape-v1 directional hint that ss-semantic loves "very-short + symbol + narrow" — but adds the family-conditioned C-family→V2 finding and the popular-weighted V2 fallback for GEPA diversity.
 - **`[[structural]]`** (tree-sitter relationships): use interrogative form (`who calls X?`, `what does X depend on?`); short queries with the symbol; narrow regex anchors. Avoid imperative form for structural queries — it doesn't match the tool's relationship-verb model. *Pending its own Phase 6 redo.*
 
 These bullets go *verbatim* into the relevant T_i variant bodies. For `[[ss-search]]`, the bullet is regenerated from `recommendations-v2.json` whenever that artifact updates. For the other three tools, the bullets remain at the P6 directional-signal level until their respective redoes land — they are authored as *informed hypotheses* that GEPA will refine.
