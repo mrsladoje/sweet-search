@@ -1,8 +1,8 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "supersedes": "recommendations.json (runId partial-test-1778456156116)",
   "runId": "phase6-redo-v1",
-  "generatedAt": "2026-05-12T23:16:31.099Z",
+  "generatedAt": "2026-05-13T10:26:41.758Z",
   "plan_reference": "docs/PHASE6_REDO.md",
   "tool": "ss-search",
   "bhFdrQ": 0.1,
@@ -5789,6 +5789,19 @@
   "family_overrides_rationale": {
     "source": "core/prompt-optimization/data/query-shapes/overrides-v1.json",
     "explanation": "Manual user-supplied overrides honor the file_recall × symbol_recall tradeoff per family — see PHASE6_REDO.md §8 and the post-sweep analysis 2026-05-13."
+  },
+  "popular_weighted": {
+    "shape": "V1",
+    "weighting": "agentic-tier-2026",
+    "weighting_source": "GitHub Octoverse 2025 + JetBrains AI Pulse Jan 2026 + gradually.ai Claude Code/Codex 2026",
+    "weighted_recall_at_1": 0.5130813953488372,
+    "diversity_enforced": false,
+    "instruction_text": "When the target symbol is known, query with the symbol name only (≤ 3 tokens, imperative).",
+    "alt_so_tier": {
+      "shape": "V1",
+      "weighted_recall_at_1": 0.5089285714285714,
+      "weighting": "§7-stack-overflow-2024-tier"
+    }
   },
   "per_language_descriptive": {
     "java": {

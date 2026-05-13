@@ -39,11 +39,12 @@ const TRACKS_DIR = path.join(REPO_ROOT, 'core/prompt-optimization/data/query-sha
 const OUTPUT_PATH = path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/recommendations-v2.json');
 const WHITELIST_PATH = path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/leakage-whitelist.json');
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4; // bumped 2026-05-13 — added popular_weighted Strategy 3
 const SHAPES = ['V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7'];
 const BASELINE_SHAPE = 'V_baseline';
 
-// §7 popularity tier weights
+// §7 popularity tier weights (Stack-Overflow-2024-calibrated, retained as
+// `TIER_WEIGHTS_SO` for the legacy `weighted_aggregate` field).
 const TIER_WEIGHTS = Object.freeze({
   // Tier-1 (weight=3)
   javascript: 3, typescript: 3, python: 3, rust: 3, java: 3,
@@ -53,6 +54,18 @@ const TIER_WEIGHTS = Object.freeze({
   // an explicit entry for safety on raw inputs.
   'typescript-lib': 2,
   // Tier-3 (weight=1)
+  scala: 1, lua: 1, elixir: 1, zig: 1,
+});
+
+// Agentic-tier weights for the 2026-05-13 popular_weighted Strategy 3.
+// Calibrated from GitHub Octoverse 2025 + JetBrains AI Pulse Jan 2026 +
+// gradually.ai 2026 Claude Code / Codex stats. TS/Python/Rust are S-tier
+// because the Octoverse data explicitly ties the TypeScript rise to AI-
+// assisted-coding reliability.
+const TIER_WEIGHTS_AGENTIC = Object.freeze({
+  typescript: 5, python: 5, rust: 5, 'typescript-lib': 5,
+  javascript: 3, java: 3, go: 3, csharp: 3,
+  cpp: 2, c: 2, kotlin: 2, ruby: 2, dart: 2, php: 2,
   scala: 1, lua: 1, elixir: 1, zig: 1,
 });
 
@@ -546,6 +559,36 @@ async function main() {
       source: opts.overridesPath,
       explanation: 'Manual user-supplied overrides honor the file_recall × symbol_recall tradeoff per family — see PHASE6_REDO.md §8 and the post-sweep analysis 2026-05-13.',
     } : null,
+    // Strategy 3 — popular_weighted (2026-05-13 amendment per PHASE7 / GEPA
+    // diversity ask). Picks the shape that maximises agentic-tier-weighted
+    // primary-metric across 18 languages. Distinct from `default` so PHASE7
+    // gets three genuinely different ss-search variants for GEPA to evolve
+    // against (simple-global / family-conditioned / popular-weighted).
+    popular_weighted: (() => {
+      const agentic = pickWeightedShapeWinner({ byGold, weights: TIER_WEIGHTS_AGENTIC, metric: opts.primaryMetric, excludeShape: defaultDecision.shape });
+      const stackOverflow = pickWeightedShapeWinner({ byGold, weights: TIER_WEIGHTS, metric: opts.primaryMetric, excludeShape: defaultDecision.shape });
+      const entry = {
+        shape: agentic.shape,
+        weighting: 'agentic-tier-2026',
+        weighting_source: 'GitHub Octoverse 2025 + JetBrains AI Pulse Jan 2026 + gradually.ai Claude Code/Codex 2026',
+        weighted_recall_at_1: agentic.score,
+        diversity_enforced: agentic.diversityEnforced,
+        instruction_text: agentic.shape ? defaultInstructionText(agentic.shape) : null,
+        alt_so_tier: {
+          shape: stackOverflow.shape,
+          weighted_recall_at_1: stackOverflow.score,
+          weighting: '§7-stack-overflow-2024-tier',
+        },
+      };
+      if (agentic.naturalWinner) {
+        entry.natural_winner = {
+          shape: agentic.naturalWinner.shape,
+          weighted_recall_at_1: agentic.naturalWinner.score,
+          note: 'Natural agentic-tier winner; matched default so the 2nd-best shape was promoted instead for GEPA candidate diversity.',
+        };
+      }
+      return entry;
+    })(),
     per_language_descriptive: perLanguageDescriptive,
     not_promoted_due_to_fdr: tests
       .filter((t) => bh && !bh.results.find((r) => r.id === t.id && r.survives))
@@ -723,6 +766,40 @@ export function pickFamilyOverrides({ defaultDecision, cellTable, byGold, primar
     };
   }
   return out;
+}
+
+/**
+ * Pick the weighted-aggregate winning shape across all 18 languages under
+ * a supplied weighting scheme — used by Strategy 3 (popular_weighted)
+ * per the 2026-05-13 amendment.
+ *
+ * If `excludeShape` is supplied AND the natural winner equals it, returns
+ * the 2nd-best shape instead. The natural winner is recorded for
+ * transparency.
+ */
+export function pickWeightedShapeWinner({ byGold, weights, metric = 'fileRecallAt1', excludeShape = null }) {
+  const ranked = [];
+  for (const shape of SHAPES) {
+    let weightedSum = 0;
+    let weightSum = 0;
+    for (const lang of COVERED_LANGUAGES) {
+      const { mean: m } = perLanguageMean({ byGold, language: lang, shape, metric });
+      if (m == null) continue;
+      const w = weights[lang] ?? 1;
+      weightedSum += w * m;
+      weightSum += w;
+    }
+    if (weightSum > 0) ranked.push({ shape, score: weightedSum / weightSum });
+  }
+  ranked.sort((a, b) => b.score - a.score);
+  if (ranked.length === 0) return { shape: null, score: -1, diversityEnforced: false };
+  const natural = ranked[0];
+  if (!excludeShape || natural.shape !== excludeShape) {
+    return { ...natural, diversityEnforced: false };
+  }
+  const alt = ranked[1] ?? null;
+  if (!alt) return { ...natural, diversityEnforced: false };
+  return { ...alt, diversityEnforced: true, naturalWinner: natural };
 }
 
 /**
