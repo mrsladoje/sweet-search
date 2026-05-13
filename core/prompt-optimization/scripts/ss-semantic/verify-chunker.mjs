@@ -27,12 +27,23 @@ const REPO_ROOT = path.resolve(__dirname, '../../../..');
 const INPUTS_DIR = path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/inputs');
 const REPOS_PATH = path.join(REPO_ROOT, 'eval/ast-tester-probes/repos.json');
 
-const TARGETS = [
-  { lang: 'cpp',    goldId: 'CPP-003' },  // ChosenTarget struct, gold 166-207
-  { lang: 'lua',    goldId: 'LU-004'  },  // List class, gold 122-129
-  { lang: 'python', goldId: 'PY-006'  },  // ParamType.convert, gold 173-219
-  { lang: 'zig',    goldId: 'ZG-005'  },  // Response struct, gold 20-64
+// Default: all 11 v6 dev FAILs. Override via env: SS_VERIFY_GOLDS="lang/ID,lang/ID,..."
+const DEFAULT_TARGETS = [
+  { lang: 'c',      goldId: 'C-005'   },
+  { lang: 'cpp',    goldId: 'CPP-002' },
+  { lang: 'cpp',    goldId: 'CPP-003' },
+  { lang: 'dart',   goldId: 'DR-008'  },
+  { lang: 'lua',    goldId: 'LU-003'  },
+  { lang: 'lua',    goldId: 'LU-004'  },
+  { lang: 'python', goldId: 'PY-004'  },
+  { lang: 'python', goldId: 'PY-006'  },
+  { lang: 'zig',    goldId: 'ZG-001'  },
+  { lang: 'zig',    goldId: 'ZG-004'  },
+  { lang: 'zig',    goldId: 'ZG-005'  },
 ];
+const TARGETS = process.env.SS_VERIFY_GOLDS
+  ? process.env.SS_VERIFY_GOLDS.split(',').map((s) => { const [l, g] = s.split('/'); return { lang: l, goldId: g }; })
+  : DEFAULT_TARGETS;
 
 function loadReposManifest() {
   const raw = JSON.parse(fs.readFileSync(REPOS_PATH, 'utf8'));
