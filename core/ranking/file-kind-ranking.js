@@ -1170,6 +1170,15 @@ function extractIdentifierMentions(query) {
   for (const tok of tokens) {
     if (looksLikeStrictIdentifier(tok)) mentions.add(tok);
   }
+  // Also capture dotted compound identifiers. Lua (`tablex.deepcopy`),
+  // Python (`os.path.exists`), and Ruby's `Module.method` style produce
+  // code-graph entity names with embedded `.` — the single-token extractor
+  // splits these into `tablex` / `deepcopy`, which then never matches the
+  // chunk's actual entity name verbatim. The dotted form bypasses
+  // `looksLikeStrictIdentifier` because a `a.b` shape is inherently
+  // identifier-like (no English word contains a `.`).
+  const dotted = query.match(/\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b/g) || [];
+  for (const tok of dotted) mentions.add(tok);
   return mentions.size > 0 ? mentions : null;
 }
 
@@ -1209,17 +1218,62 @@ function identifierMentionBoost(result, mentions, opts = {}) {
     || result?.entity?.name
     || result?.symbol
     || '';
-  if (!symbol) return 1.0;
-  const symLower = String(symbol).toLowerCase();
   const skipTarget = opts._symbolExactTarget ? String(opts._symbolExactTarget).toLowerCase() : '';
   const norm = (s) => s.replace(/[_-]/g, '').toLowerCase();
-  const symNorm = norm(symLower);
+
+  // Path 1 — direct symbol comparison (existing behaviour). Fires when the
+  // chunk has a populated label that lexically matches a query mention.
+  if (symbol) {
+    const symLower = String(symbol).toLowerCase();
+    const symNorm = norm(symLower);
+    for (const mention of mentions) {
+      const mLower = mention.toLowerCase();
+      if (skipTarget && mLower === skipTarget) continue;
+      if (symLower === mLower || symNorm === norm(mLower)) {
+        return boost;
+      }
+    }
+    return 1.0;
+  }
+
+  // Path 2 — code-graph fallback (2026-05-13). Some LI indexes were built
+  // without populated `metadata.name` (e.g. the typescript ast-tester repo
+  // has every doc carrying `name: null`); without this fallback the boost
+  // short-circuits at Path 1 even when the chunk genuinely owns an entity
+  // matching a query mention. We look up each mention via
+  // `findEntityWithNameInRange` — same code-graph signal that F8's
+  // exactSymbolTargetEntity uses — and apply the same boost factor when a
+  // match exists. Cached per (file, startLine, endLine, mention) to avoid
+  // repeated SQLite queries.
+  //
+  // Format-gated by the caller (identifierMentions is built only when
+  // isAgentFormat is true), so this path is dormant on GCSN benchmark
+  // traffic. Structural improvement: fires only on null-name results, where
+  // Path 1 had no signal to act on anyway, so this strictly extends rather
+  // than overrides Path 1's coverage.
+  if (!opts.codeGraphRepo || typeof opts.codeGraphRepo.findEntityWithNameInRange !== 'function') {
+    return 1.0;
+  }
+  const file = resolveFilePath(result);
+  const meta = result?.metadata ?? {};
+  const sl = Number(result?.startLine ?? meta.startLine);
+  const el = Number(result?.endLine ?? meta.endLine);
+  if (!file || !Number.isFinite(sl) || !Number.isFinite(el)) return 1.0;
+  const cache = opts._entityNameCache;
   for (const mention of mentions) {
     const mLower = mention.toLowerCase();
     if (skipTarget && mLower === skipTarget) continue;
-    if (symLower === mLower || symNorm === norm(mLower)) {
-      return boost;
+    const cacheKey = cache ? `${file}|${sl}|${el}|mention:${mention}` : null;
+    let resolved;
+    if (cacheKey && cache.has(cacheKey)) {
+      resolved = cache.get(cacheKey);
+    } else {
+      try {
+        resolved = opts.codeGraphRepo.findEntityWithNameInRange(file, sl, el, mention);
+      } catch { resolved = null; }
+      if (cacheKey) cache.set(cacheKey, resolved);
     }
+    if (resolved) return boost;
   }
   return 1.0;
 }
