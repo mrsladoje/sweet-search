@@ -1,8 +1,8 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "supersedes": "recommendations.json (runId partial-test-1778456156116)",
   "runId": "phase6-redo-v1",
-  "generatedAt": "2026-05-13T10:26:41.758Z",
+  "generatedAt": "2026-05-13T22:27:03.314Z",
   "plan_reference": "docs/PHASE6_REDO.md",
   "tool": "ss-search",
   "bhFdrQ": 0.1,
@@ -63,6 +63,8 @@
         "familyAggregateBaseline_symbol": 0.33712121212121215,
         "familyAggregateCandidate_file": 0.6875,
         "familyAggregateCandidate_symbol": 0.40625,
+        "familyAggregateCandidate_relaxed_def": 0.5,
+        "familyAggregateCandidate_file_recall_at_5": 0.84375,
         "familyAggregateBaseline": 0.33712121212121215,
         "familyAggregateCandidate": 0.40625,
         "observedDiff": 0,
@@ -210,6 +212,8 @@
         "familyAggregateBaseline_symbol": 0.33712121212121215,
         "familyAggregateCandidate_file": 0.75,
         "familyAggregateCandidate_symbol": 0.34375,
+        "familyAggregateCandidate_relaxed_def": 0.5,
+        "familyAggregateCandidate_file_recall_at_5": 0.9375,
         "familyAggregateBaseline": 0.33712121212121215,
         "familyAggregateCandidate": 0.34375,
         "observedDiff": -0.0625,
@@ -357,6 +361,8 @@
         "familyAggregateBaseline_symbol": 0.33712121212121215,
         "familyAggregateCandidate_file": 0.35037878787878785,
         "familyAggregateCandidate_symbol": 0.17613636363636365,
+        "familyAggregateCandidate_relaxed_def": 0.06818181818181818,
+        "familyAggregateCandidate_file_recall_at_5": 0.6306818181818181,
         "familyAggregateBaseline": 0.33712121212121215,
         "familyAggregateCandidate": 0.17613636363636365,
         "observedDiff": -0.15217391304347827,
@@ -560,6 +566,8 @@
         "familyAggregateBaseline_symbol": 0.33712121212121215,
         "familyAggregateCandidate_file": 0.6875,
         "familyAggregateCandidate_symbol": 0.375,
+        "familyAggregateCandidate_relaxed_def": 0.5,
+        "familyAggregateCandidate_file_recall_at_5": 0.9375,
         "familyAggregateBaseline": 0.33712121212121215,
         "familyAggregateCandidate": 0.375,
         "observedDiff": -0.03125,
@@ -707,6 +715,8 @@
         "familyAggregateBaseline_symbol": 0.33712121212121215,
         "familyAggregateCandidate_file": 0.26136363636363635,
         "familyAggregateCandidate_symbol": 0.10984848484848485,
+        "familyAggregateCandidate_relaxed_def": 0.13068181818181818,
+        "familyAggregateCandidate_file_recall_at_5": 0.5,
         "familyAggregateBaseline": 0.33712121212121215,
         "familyAggregateCandidate": 0.10984848484848485,
         "observedDiff": -0.21739130434782608,
@@ -910,6 +920,8 @@
         "familyAggregateBaseline_symbol": 0.33712121212121215,
         "familyAggregateCandidate_file": 0.21780303030303028,
         "familyAggregateCandidate_symbol": 0.13068181818181818,
+        "familyAggregateCandidate_relaxed_def": 0.045454545454545456,
+        "familyAggregateCandidate_file_recall_at_5": 0.32765151515151514,
         "familyAggregateBaseline": 0.33712121212121215,
         "familyAggregateCandidate": 0.13068181818181818,
         "observedDiff": -0.1956521739130435,
@@ -1113,6 +1125,8 @@
         "familyAggregateBaseline_symbol": 0.33712121212121215,
         "familyAggregateCandidate_file": 0.71875,
         "familyAggregateCandidate_symbol": 0.4375,
+        "familyAggregateCandidate_relaxed_def": 0.53125,
+        "familyAggregateCandidate_file_recall_at_5": 0.9375,
         "familyAggregateBaseline": 0.33712121212121215,
         "familyAggregateCandidate": 0.4375,
         "observedDiff": 0.03125,
@@ -1262,6 +1276,8 @@
         "familyAggregateBaseline_symbol": 0.375,
         "familyAggregateCandidate_file": 0.8125,
         "familyAggregateCandidate_symbol": 0.625,
+        "familyAggregateCandidate_relaxed_def": 0.8125,
+        "familyAggregateCandidate_file_recall_at_5": 0.9375,
         "familyAggregateBaseline": 0.375,
         "familyAggregateCandidate": 0.625,
         "observedDiff": 0.125,
@@ -1345,6 +1361,8 @@
         "familyAggregateBaseline_symbol": 0.375,
         "familyAggregateCandidate_file": 0.75,
         "familyAggregateCandidate_symbol": 0.5625,
+        "familyAggregateCandidate_relaxed_def": 0.6875,
+        "familyAggregateCandidate_file_recall_at_5": 0.875,
         "familyAggregateBaseline": 0.375,
         "familyAggregateCandidate": 0.5625,
         "observedDiff": 0.0625,
@@ -1428,6 +1446,8 @@
         "familyAggregateBaseline_symbol": 0.375,
         "familyAggregateCandidate_file": 0.5,
         "familyAggregateCandidate_symbol": 0.29166666666666663,
+        "familyAggregateCandidate_relaxed_def": 0.29166666666666663,
+        "familyAggregateCandidate_file_recall_at_5": 0.75,
         "familyAggregateBaseline": 0.375,
         "familyAggregateCandidate": 0.29166666666666663,
         "observedDiff": -0.08333333333333333,
@@ -1543,6 +1563,8 @@
         "familyAggregateBaseline_symbol": 0.375,
         "familyAggregateCandidate_file": 0.875,
         "familyAggregateCandidate_symbol": 0.6875,
+        "familyAggregateCandidate_relaxed_def": 0.875,
+        "familyAggregateCandidate_file_recall_at_5": 1,
         "familyAggregateBaseline": 0.375,
         "familyAggregateCandidate": 0.6875,
         "observedDiff": 0.1875,
@@ -1626,6 +1648,8 @@
         "familyAggregateBaseline_symbol": 0.375,
         "familyAggregateCandidate_file": 0.125,
         "familyAggregateCandidate_symbol": 0.041666666666666664,
+        "familyAggregateCandidate_relaxed_def": 0.08333333333333333,
+        "familyAggregateCandidate_file_recall_at_5": 0.25,
         "familyAggregateBaseline": 0.375,
         "familyAggregateCandidate": 0.041666666666666664,
         "observedDiff": -0.3333333333333333,
@@ -1741,6 +1765,8 @@
         "familyAggregateBaseline_symbol": 0.375,
         "familyAggregateCandidate_file": 0.29166666666666663,
         "familyAggregateCandidate_symbol": 0.125,
+        "familyAggregateCandidate_relaxed_def": 0.125,
+        "familyAggregateCandidate_file_recall_at_5": 0.4166666666666667,
         "familyAggregateBaseline": 0.375,
         "familyAggregateCandidate": 0.125,
         "observedDiff": -0.25,
@@ -1856,6 +1882,8 @@
         "familyAggregateBaseline_symbol": 0.375,
         "familyAggregateCandidate_file": 0.875,
         "familyAggregateCandidate_symbol": 0.6875,
+        "familyAggregateCandidate_relaxed_def": 0.8125,
+        "familyAggregateCandidate_file_recall_at_5": 1,
         "familyAggregateBaseline": 0.375,
         "familyAggregateCandidate": 0.6875,
         "observedDiff": 0.1875,
@@ -1941,6 +1969,8 @@
         "familyAggregateBaseline_symbol": 0.37121212121212127,
         "familyAggregateCandidate_file": 0.625,
         "familyAggregateCandidate_symbol": 0.3333333333333333,
+        "familyAggregateCandidate_relaxed_def": 0.5833333333333334,
+        "familyAggregateCandidate_file_recall_at_5": 0.875,
         "familyAggregateBaseline": 0.37121212121212127,
         "familyAggregateCandidate": 0.3333333333333333,
         "observedDiff": -0.041666666666666664,
@@ -2056,6 +2086,8 @@
         "familyAggregateBaseline_symbol": 0.37121212121212127,
         "familyAggregateCandidate_file": 0.75,
         "familyAggregateCandidate_symbol": 0.2916666666666667,
+        "familyAggregateCandidate_relaxed_def": 0.5833333333333334,
+        "familyAggregateCandidate_file_recall_at_5": 0.9583333333333334,
         "familyAggregateBaseline": 0.37121212121212127,
         "familyAggregateCandidate": 0.2916666666666667,
         "observedDiff": -0.08333333333333333,
@@ -2171,6 +2203,8 @@
         "familyAggregateBaseline_symbol": 0.37121212121212127,
         "familyAggregateCandidate_file": 0.34595959595959597,
         "familyAggregateCandidate_symbol": 0.14393939393939395,
+        "familyAggregateCandidate_relaxed_def": 0.1414141414141414,
+        "familyAggregateCandidate_file_recall_at_5": 0.6616161616161617,
         "familyAggregateBaseline": 0.37121212121212127,
         "familyAggregateCandidate": 0.14393939393939395,
         "observedDiff": -0.22857142857142856,
@@ -2330,6 +2364,8 @@
         "familyAggregateBaseline_symbol": 0.37121212121212127,
         "familyAggregateCandidate_file": 0.7083333333333334,
         "familyAggregateCandidate_symbol": 0.375,
+        "familyAggregateCandidate_relaxed_def": 0.625,
+        "familyAggregateCandidate_file_recall_at_5": 0.9583333333333334,
         "familyAggregateBaseline": 0.37121212121212127,
         "familyAggregateCandidate": 0.375,
         "observedDiff": 0,
@@ -2445,6 +2481,8 @@
         "familyAggregateBaseline_symbol": 0.37121212121212127,
         "familyAggregateCandidate_file": 0.14393939393939395,
         "familyAggregateCandidate_symbol": 0.05808080808080809,
+        "familyAggregateCandidate_relaxed_def": 0.05555555555555555,
+        "familyAggregateCandidate_file_recall_at_5": 0.4570707070707071,
         "familyAggregateBaseline": 0.37121212121212127,
         "familyAggregateCandidate": 0.05808080808080809,
         "observedDiff": -0.3142857142857143,
@@ -2604,6 +2642,8 @@
         "familyAggregateBaseline_symbol": 0.37121212121212127,
         "familyAggregateCandidate_file": 0.28535353535353536,
         "familyAggregateCandidate_symbol": 0.1717171717171717,
+        "familyAggregateCandidate_relaxed_def": 0.08585858585858586,
+        "familyAggregateCandidate_file_recall_at_5": 0.4318181818181818,
         "familyAggregateBaseline": 0.37121212121212127,
         "familyAggregateCandidate": 0.1717171717171717,
         "observedDiff": -0.2,
@@ -2763,6 +2803,8 @@
         "familyAggregateBaseline_symbol": 0.37121212121212127,
         "familyAggregateCandidate_file": 0.6666666666666666,
         "familyAggregateCandidate_symbol": 0.3333333333333333,
+        "familyAggregateCandidate_relaxed_def": 0.5,
+        "familyAggregateCandidate_file_recall_at_5": 0.9166666666666666,
         "familyAggregateBaseline": 0.37121212121212127,
         "familyAggregateCandidate": 0.3333333333333333,
         "observedDiff": -0.041666666666666664,
@@ -2880,6 +2922,8 @@
         "familyAggregateBaseline_symbol": 0.4375,
         "familyAggregateCandidate_file": 0.71875,
         "familyAggregateCandidate_symbol": 0.625,
+        "familyAggregateCandidate_relaxed_def": 0.65625,
+        "familyAggregateCandidate_file_recall_at_5": 0.84375,
         "familyAggregateBaseline": 0.4375,
         "familyAggregateCandidate": 0.625,
         "observedDiff": 0.09375,
@@ -3027,6 +3071,8 @@
         "familyAggregateBaseline_symbol": 0.4375,
         "familyAggregateCandidate_file": 0.8125,
         "familyAggregateCandidate_symbol": 0.53125,
+        "familyAggregateCandidate_relaxed_def": 0.625,
+        "familyAggregateCandidate_file_recall_at_5": 0.90625,
         "familyAggregateBaseline": 0.4375,
         "familyAggregateCandidate": 0.53125,
         "observedDiff": 0,
@@ -3174,6 +3220,8 @@
         "familyAggregateBaseline_symbol": 0.4375,
         "familyAggregateCandidate_file": 0.3541666666666667,
         "familyAggregateCandidate_symbol": 0.22916666666666666,
+        "familyAggregateCandidate_relaxed_def": 0.125,
+        "familyAggregateCandidate_file_recall_at_5": 0.5208333333333334,
         "familyAggregateBaseline": 0.4375,
         "familyAggregateCandidate": 0.22916666666666666,
         "observedDiff": -0.20833333333333334,
@@ -3385,6 +3433,8 @@
         "familyAggregateBaseline_symbol": 0.4375,
         "familyAggregateCandidate_file": 0.6875,
         "familyAggregateCandidate_symbol": 0.4375,
+        "familyAggregateCandidate_relaxed_def": 0.5,
+        "familyAggregateCandidate_file_recall_at_5": 0.84375,
         "familyAggregateBaseline": 0.4375,
         "familyAggregateCandidate": 0.4375,
         "observedDiff": -0.09375,
@@ -3532,6 +3582,8 @@
         "familyAggregateBaseline_symbol": 0.4375,
         "familyAggregateCandidate_file": 0.1875,
         "familyAggregateCandidate_symbol": 0.125,
+        "familyAggregateCandidate_relaxed_def": 0.10416666666666666,
+        "familyAggregateCandidate_file_recall_at_5": 0.2916666666666667,
         "familyAggregateBaseline": 0.4375,
         "familyAggregateCandidate": 0.125,
         "observedDiff": -0.3125,
@@ -3743,6 +3795,8 @@
         "familyAggregateBaseline_symbol": 0.4375,
         "familyAggregateCandidate_file": 0.25,
         "familyAggregateCandidate_symbol": 0.16666666666666666,
+        "familyAggregateCandidate_relaxed_def": 0.125,
+        "familyAggregateCandidate_file_recall_at_5": 0.375,
         "familyAggregateBaseline": 0.4375,
         "familyAggregateCandidate": 0.16666666666666666,
         "observedDiff": -0.2708333333333333,
@@ -3954,6 +4008,8 @@
         "familyAggregateBaseline_symbol": 0.4375,
         "familyAggregateCandidate_file": 0.6875,
         "familyAggregateCandidate_symbol": 0.53125,
+        "familyAggregateCandidate_relaxed_def": 0.59375,
+        "familyAggregateCandidate_file_recall_at_5": 0.875,
         "familyAggregateBaseline": 0.4375,
         "familyAggregateCandidate": 0.53125,
         "observedDiff": 0,
@@ -4103,6 +4159,8 @@
         "familyAggregateBaseline_symbol": 0.5272727272727272,
         "familyAggregateCandidate_file": 0.825,
         "familyAggregateCandidate_symbol": 0.625,
+        "familyAggregateCandidate_relaxed_def": 0.625,
+        "familyAggregateCandidate_file_recall_at_5": 0.925,
         "familyAggregateBaseline": 0.5272727272727272,
         "familyAggregateCandidate": 0.625,
         "observedDiff": 0,
@@ -4282,6 +4340,8 @@
         "familyAggregateBaseline_symbol": 0.5272727272727272,
         "familyAggregateCandidate_file": 0.85,
         "familyAggregateCandidate_symbol": 0.575,
+        "familyAggregateCandidate_relaxed_def": 0.6,
+        "familyAggregateCandidate_file_recall_at_5": 0.9,
         "familyAggregateBaseline": 0.5272727272727272,
         "familyAggregateCandidate": 0.575,
         "observedDiff": -0.05,
@@ -4461,6 +4521,8 @@
         "familyAggregateBaseline_symbol": 0.5272727272727272,
         "familyAggregateCandidate_file": 0.5257575757575758,
         "familyAggregateCandidate_symbol": 0.3393939393939394,
+        "familyAggregateCandidate_relaxed_def": 0.21969696969696972,
+        "familyAggregateCandidate_file_recall_at_5": 0.693939393939394,
         "familyAggregateBaseline": 0.5272727272727272,
         "familyAggregateCandidate": 0.3393939393939394,
         "observedDiff": -0.1864406779661017,
@@ -4716,6 +4778,8 @@
         "familyAggregateBaseline_symbol": 0.5272727272727272,
         "familyAggregateCandidate_file": 0.825,
         "familyAggregateCandidate_symbol": 0.65,
+        "familyAggregateCandidate_relaxed_def": 0.7,
+        "familyAggregateCandidate_file_recall_at_5": 0.925,
         "familyAggregateBaseline": 0.5272727272727272,
         "familyAggregateCandidate": 0.65,
         "observedDiff": 0.025,
@@ -4895,6 +4959,8 @@
         "familyAggregateBaseline_symbol": 0.5272727272727272,
         "familyAggregateCandidate_file": 0.3757575757575758,
         "familyAggregateCandidate_symbol": 0.22424242424242422,
+        "familyAggregateCandidate_relaxed_def": 0.20606060606060606,
+        "familyAggregateCandidate_file_recall_at_5": 0.5106060606060606,
         "familyAggregateBaseline": 0.5272727272727272,
         "familyAggregateCandidate": 0.22424242424242422,
         "observedDiff": -0.3050847457627119,
@@ -5150,6 +5216,8 @@
         "familyAggregateBaseline_symbol": 0.5272727272727272,
         "familyAggregateCandidate_file": 0.30909090909090914,
         "familyAggregateCandidate_symbol": 0.1909090909090909,
+        "familyAggregateCandidate_relaxed_def": 0.1575757575757576,
+        "familyAggregateCandidate_file_recall_at_5": 0.5590909090909092,
         "familyAggregateBaseline": 0.5272727272727272,
         "familyAggregateCandidate": 0.1909090909090909,
         "observedDiff": -0.3389830508474576,
@@ -5405,6 +5473,8 @@
         "familyAggregateBaseline_symbol": 0.5272727272727272,
         "familyAggregateCandidate_file": 0.85,
         "familyAggregateCandidate_symbol": 0.675,
+        "familyAggregateCandidate_relaxed_def": 0.65,
+        "familyAggregateCandidate_file_recall_at_5": 0.975,
         "familyAggregateBaseline": 0.5272727272727272,
         "familyAggregateCandidate": 0.675,
         "observedDiff": 0.05,
@@ -5587,6 +5657,14 @@
       "symbol_recall": {
         "macro": 0.4273618538324421,
         "weighted": 0.40865800865800866
+      },
+      "relaxed_def_recall": {
+        "macro": 0.4073083778966132,
+        "weighted": 0.38701298701298703
+      },
+      "file_recall_at_5": {
+        "macro": 0.6867201426024955,
+        "weighted": 0.6662337662337662
       }
     },
     "V1": {
@@ -5597,6 +5675,14 @@
       "symbol_recall": {
         "macro": 0.5257352941176471,
         "weighted": 0.5089285714285714
+      },
+      "relaxed_def_recall": {
+        "macro": 0.6176470588235294,
+        "weighted": 0.6107142857142858
+      },
+      "file_recall_at_5": {
+        "macro": 0.8897058823529411,
+        "weighted": 0.8785714285714286
       }
     },
     "V2": {
@@ -5607,6 +5693,14 @@
       "symbol_recall": {
         "macro": 0.47058823529411764,
         "weighted": 0.45
+      },
+      "relaxed_def_recall": {
+        "macro": 0.5919117647058824,
+        "weighted": 0.5910714285714286
+      },
+      "file_recall_at_5": {
+        "macro": 0.9191176470588235,
+        "weighted": 0.9071428571428571
       }
     },
     "V3": {
@@ -5617,6 +5711,14 @@
       "symbol_recall": {
         "macro": 0.24019607843137258,
         "weighted": 0.2264069264069264
+      },
+      "relaxed_def_recall": {
+        "macro": 0.16443850267379678,
+        "weighted": 0.16082251082251084
+      },
+      "file_recall_at_5": {
+        "macro": 0.6506238859180036,
+        "weighted": 0.6387445887445886
       }
     },
     "V4": {
@@ -5627,6 +5729,14 @@
       "symbol_recall": {
         "macro": 0.5073529411764706,
         "weighted": 0.4607142857142857
+      },
+      "relaxed_def_recall": {
+        "macro": 0.625,
+        "weighted": 0.6
+      },
+      "file_recall_at_5": {
+        "macro": 0.9301470588235294,
+        "weighted": 0.9125
       }
     },
     "V5": {
@@ -5637,6 +5747,14 @@
       "symbol_recall": {
         "macro": 0.1339126559714795,
         "weighted": 0.1224025974025974
+      },
+      "relaxed_def_recall": {
+        "macro": 0.13302139037433156,
+        "weighted": 0.13149350649350647
+      },
+      "file_recall_at_5": {
+        "macro": 0.4342691622103387,
+        "weighted": 0.40205627705627706
       }
     },
     "V6": {
@@ -5647,6 +5765,14 @@
       "symbol_recall": {
         "macro": 0.1588680926916221,
         "weighted": 0.1462121212121212
+      },
+      "relaxed_def_recall": {
+        "macro": 0.10895721925133689,
+        "weighted": 0.09339826839826838
+      },
+      "file_recall_at_5": {
+        "macro": 0.43538324420677366,
+        "weighted": 0.42857142857142855
       }
     },
     "V7": {
@@ -5657,7 +5783,205 @@
       "symbol_recall": {
         "macro": 0.5404411764705882,
         "weighted": 0.5125
+      },
+      "relaxed_def_recall": {
+        "macro": 0.6066176470588235,
+        "weighted": 0.5982142857142857
+      },
+      "file_recall_at_5": {
+        "macro": 0.9411764705882353,
+        "weighted": 0.925
       }
+    }
+  },
+  "secondary_metrics": {
+    "_note": "Strict symbol_recall@1 is the headline; these secondaries quantify the F1 chunker-label artifact discovered by the 2026-05-13 cross-tool audit (core/prompt-optimization/data/query-shapes/cross-tool-benchmark-audit-2026-05-13.md). relaxed_def_recall_at_1 reads the top-1 chunk text from the locked AST-tester-probes repos and counts the row as PASS iff the expected symbol appears with a definition anchor (def/class/fn/struct/impl/...). file_recall_at_5 averages the already-stored fileRecallAt5 across rows. Both global scalars use weighted (§7 tier) aggregation, identical to the headline. Promotion rules remain on the strict rubric; the strategy WINNING CELLS (V7 default / V2 JS-mobile / V4 C-family) are unchanged. The argmax shape can differ under the relaxed rubric — see ranking_stability_check; this is a real signal the audit did not measure (the audit only spot-checked PARTIAL cases for the chosen winners and never compared all 7 shapes globally under relaxed_def).",
+    "global": {
+      "strict_symbol_recall_at_1": {
+        "V1": 0.5089285714285714,
+        "V2": 0.45,
+        "V3": 0.2264069264069264,
+        "V4": 0.4607142857142857,
+        "V5": 0.1224025974025974,
+        "V6": 0.1462121212121212,
+        "V7": 0.5125
+      },
+      "relaxed_def_recall_at_1": {
+        "V1": 0.6107142857142858,
+        "V2": 0.5910714285714286,
+        "V3": 0.16082251082251084,
+        "V4": 0.6,
+        "V5": 0.13149350649350647,
+        "V6": 0.09339826839826838,
+        "V7": 0.5982142857142857
+      },
+      "file_recall_at_5": {
+        "V1": 0.8785714285714286,
+        "V2": 0.9071428571428571,
+        "V3": 0.6387445887445886,
+        "V4": 0.9125,
+        "V5": 0.40205627705627706,
+        "V6": 0.42857142857142855,
+        "V7": 0.925
+      }
+    },
+    "by_family": {
+      "OO-monolithic": {
+        "strict_symbol_recall_at_1": {
+          "V1": 0.40625,
+          "V2": 0.34375,
+          "V3": 0.17613636363636365,
+          "V4": 0.375,
+          "V5": 0.10984848484848485,
+          "V6": 0.13068181818181818,
+          "V7": 0.4375
+        },
+        "relaxed_def_recall_at_1": {
+          "V1": 0.5,
+          "V2": 0.5,
+          "V3": 0.06818181818181818,
+          "V4": 0.5,
+          "V5": 0.13068181818181818,
+          "V6": 0.045454545454545456,
+          "V7": 0.53125
+        },
+        "file_recall_at_5": {
+          "V1": 0.84375,
+          "V2": 0.9375,
+          "V3": 0.6306818181818181,
+          "V4": 0.9375,
+          "V5": 0.5,
+          "V6": 0.32765151515151514,
+          "V7": 0.9375
+        }
+      },
+      "Systems-modular-terse": {
+        "strict_symbol_recall_at_1": {
+          "V1": 0.625,
+          "V2": 0.5625,
+          "V3": 0.29166666666666663,
+          "V4": 0.6875,
+          "V5": 0.041666666666666664,
+          "V6": 0.125,
+          "V7": 0.6875
+        },
+        "relaxed_def_recall_at_1": {
+          "V1": 0.8125,
+          "V2": 0.6875,
+          "V3": 0.29166666666666663,
+          "V4": 0.875,
+          "V5": 0.08333333333333333,
+          "V6": 0.125,
+          "V7": 0.8125
+        },
+        "file_recall_at_5": {
+          "V1": 0.9375,
+          "V2": 0.875,
+          "V3": 0.75,
+          "V4": 1,
+          "V5": 0.25,
+          "V6": 0.4166666666666667,
+          "V7": 1
+        }
+      },
+      "C-family": {
+        "strict_symbol_recall_at_1": {
+          "V1": 0.3333333333333333,
+          "V2": 0.2916666666666667,
+          "V3": 0.14393939393939395,
+          "V4": 0.375,
+          "V5": 0.05808080808080809,
+          "V6": 0.1717171717171717,
+          "V7": 0.3333333333333333
+        },
+        "relaxed_def_recall_at_1": {
+          "V1": 0.5833333333333334,
+          "V2": 0.5833333333333334,
+          "V3": 0.1414141414141414,
+          "V4": 0.625,
+          "V5": 0.05555555555555555,
+          "V6": 0.08585858585858586,
+          "V7": 0.5
+        },
+        "file_recall_at_5": {
+          "V1": 0.875,
+          "V2": 0.9583333333333334,
+          "V3": 0.6616161616161617,
+          "V4": 0.9583333333333334,
+          "V5": 0.4570707070707071,
+          "V6": 0.4318181818181818,
+          "V7": 0.9166666666666666
+        }
+      },
+      "JS-mobile": {
+        "strict_symbol_recall_at_1": {
+          "V1": 0.625,
+          "V2": 0.53125,
+          "V3": 0.22916666666666666,
+          "V4": 0.4375,
+          "V5": 0.125,
+          "V6": 0.16666666666666666,
+          "V7": 0.53125
+        },
+        "relaxed_def_recall_at_1": {
+          "V1": 0.65625,
+          "V2": 0.625,
+          "V3": 0.125,
+          "V4": 0.5,
+          "V5": 0.10416666666666666,
+          "V6": 0.125,
+          "V7": 0.59375
+        },
+        "file_recall_at_5": {
+          "V1": 0.84375,
+          "V2": 0.90625,
+          "V3": 0.5208333333333334,
+          "V4": 0.84375,
+          "V5": 0.2916666666666667,
+          "V6": 0.375,
+          "V7": 0.875
+        }
+      },
+      "Scripting-dynamic": {
+        "strict_symbol_recall_at_1": {
+          "V1": 0.625,
+          "V2": 0.575,
+          "V3": 0.3393939393939394,
+          "V4": 0.65,
+          "V5": 0.22424242424242422,
+          "V6": 0.1909090909090909,
+          "V7": 0.675
+        },
+        "relaxed_def_recall_at_1": {
+          "V1": 0.625,
+          "V2": 0.6,
+          "V3": 0.21969696969696972,
+          "V4": 0.7,
+          "V5": 0.20606060606060606,
+          "V6": 0.1575757575757576,
+          "V7": 0.65
+        },
+        "file_recall_at_5": {
+          "V1": 0.925,
+          "V2": 0.9,
+          "V3": 0.693939393939394,
+          "V4": 0.925,
+          "V5": 0.5106060606060606,
+          "V6": 0.5590909090909092,
+          "V7": 0.975
+        }
+      }
+    },
+    "ranking_stability_check": {
+      "_note": "argmax shape under each rubric, computed on weighted (§7 tier) global aggregates over all 144 ast-tester golds. On phase6-redo-v1 data the strict and relaxed argmax DIFFER (strict=V7 at 0.5125, V1 at 0.5089 — 0.36pp gap; relaxed=V1 at 0.6107, V7 third at 0.5982 — 1.25pp gap). The strict top-2 (V7, V1) are tied within sweep noise, and the relaxed rubric flips that order. This is a real signal the cross-tool audit (2026-05-13) did not measure — the audit only spot-checked PARTIAL cases for the WINNING shape (V7) and inferred rubric-robustness; this aggregator computes relaxed_def globally for ALL 7 shapes. The strategy winning cells (default=V7, JS-mobile=V2, C-family=V4) are unchanged regardless; the headline recommendation set is robust because gates pin the chosen shape, not because the rubric argmax is stable. recall_at_5_winner measures a different quantity (file in top-5 vs file at rank 1) and is informational only.",
+      "strict_winner": "V7",
+      "relaxed_winner": "V1",
+      "recall_at_5_winner": "V7"
+    },
+    "coverage": {
+      "rows_annotated": 683,
+      "rows_unloadable": 0,
+      "golds_without_inputs": 0
     }
   },
   "global_permutation_tests": {
@@ -5742,7 +6066,13 @@
       "fdrSurvives": false,
       "adjustedP": 0.7055294470552944
     },
-    "promotion_note": null
+    "promotion_note": null,
+    "secondary_metrics": {
+      "_note": "Triple-rubric view of the strict-winning shape. Strict number matches weighted_recall_at_1 by construction; relaxed_def_recall_at_1 and file_recall_at_5 are the audit's published secondaries.",
+      "strict_symbol_recall_at_1": 0.5125,
+      "relaxed_def_recall_at_1": 0.5982142857142857,
+      "file_recall_at_5": 0.925
+    }
   },
   "family_overrides": {
     "JS-mobile": {
@@ -5763,7 +6093,13 @@
         "file_recall": 0.8125,
         "symbol_recall": 0.53125
       },
-      "source": "manual"
+      "source": "manual",
+      "secondary_metrics": {
+        "_note": "Family-aggregate triple-rubric view of the override shape (uniform within-family means, same convention as family_aggregates).",
+        "strict_symbol_recall_at_1": 0.53125,
+        "relaxed_def_recall_at_1": 0.625,
+        "file_recall_at_5": 0.90625
+      }
     },
     "C-family": {
       "family": "C-family",
@@ -5783,7 +6119,13 @@
         "file_recall": 0.7083333333333334,
         "symbol_recall": 0.375
       },
-      "source": "manual"
+      "source": "manual",
+      "secondary_metrics": {
+        "_note": "Family-aggregate triple-rubric view of the override shape (uniform within-family means, same convention as family_aggregates).",
+        "strict_symbol_recall_at_1": 0.375,
+        "relaxed_def_recall_at_1": 0.625,
+        "file_recall_at_5": 0.9583333333333334
+      }
     }
   },
   "family_overrides_rationale": {
@@ -5797,6 +6139,12 @@
     "weighted_recall_at_1": 0.5130813953488372,
     "diversity_enforced": false,
     "instruction_text": "When the target symbol is known, query with the symbol name only (≤ 3 tokens, imperative).",
+    "secondary_metrics": {
+      "_note": "Triple-rubric view of the popular_weighted shape under agentic-tier weights (TS/Python/Rust=5, mainstream=3, longtail=1). All three numbers use the same weighting scheme so they're comparable to weighted_recall_at_1.",
+      "strict_symbol_recall_at_1": 0.5130813953488372,
+      "relaxed_def_recall_at_1": 0.6162790697674418,
+      "file_recall_at_5": 0.875
+    },
     "alt_so_tier": {
       "shape": "V1",
       "weighted_recall_at_1": 0.5089285714285714,
@@ -6639,7 +6987,13 @@
         "file_recall": 0.7083333333333334,
         "symbol_recall": 0.375
       },
-      "source": "manual"
+      "source": "manual",
+      "secondary_metrics": {
+        "_note": "Family-aggregate triple-rubric view of the override shape (uniform within-family means, same convention as family_aggregates).",
+        "strict_symbol_recall_at_1": 0.375,
+        "relaxed_def_recall_at_1": 0.625,
+        "file_recall_at_5": 0.9583333333333334
+      }
     }
   ],
   "doc_negative_regression_check": "pending-no-sweep-yet",

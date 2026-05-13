@@ -1,0 +1,464 @@
+{
+  "ssSearch": {
+    "strong": 12,
+    "weak": 3,
+    "commentOnly": 1,
+    "none": 0,
+    "audits": [
+      {
+        "goldId": "TS-007",
+        "language": "typescript",
+        "family": "JS-mobile",
+        "expectedSymbol": "entitlementsByUserType",
+        "top1Symbol": "Entitlements",
+        "top1Range": "lib/ai/entitlements.ts:1-14",
+        "classification": "strong",
+        "defLines": [
+          "7: export const entitlementsByUserType: Record<UserType, Entitlements> = {"
+        ],
+        "refLines": [],
+        "commentLines": []
+      },
+      {
+        "goldId": "TS-008",
+        "language": "typescript",
+        "family": "JS-mobile",
+        "expectedSymbol": "systemPrompt",
+        "top1Symbol": "regularPrompt",
+        "top1Range": "lib/ai/prompts.ts:47-104",
+        "classification": "strong",
+        "defLines": [
+          "66: export const systemPrompt = ({"
+        ],
+        "refLines": [],
+        "commentLines": []
+      },
+      {
+        "goldId": "RS-004",
+        "language": "rust",
+        "family": "Systems-modular-terse",
+        "expectedSymbol": "Violation",
+        "top1Symbol": "ViolationMetadata",
+        "top1Range": "crates/ruff_linter/src/violation.rs:49-99",
+        "classification": "strong",
+        "defLines": [
+          "49: pub trait Violation: ViolationMetadata + Sized {"
+        ],
+        "refLines": [],
+        "commentLines": [
+          "67: /// Returns the format strings used by [`message`](Violation::message).",
+          "85: /// This trait exists just to make implementing the [`Violation`] trait more"
+        ]
+      },
+      {
+        "goldId": "CS-002",
+        "language": "csharp",
+        "family": "OO-monolithic",
+        "expectedSymbol": "RespServerSession",
+        "top1Symbol": "LatencyMetrics",
+        "top1Range": "libs/server/Resp/RespServerSession.cs:42-57",
+        "classification": "strong",
+        "defLines": [
+          "45: internal sealed unsafe partial class RespServerSession : ServerSessionBase"
+        ],
+        "refLines": [],
+        "commentLines": []
+      },
+      {
+        "goldId": "CS-005",
+        "language": "csharp",
+        "family": "OO-monolithic",
+        "expectedSymbol": "LoaderBlockCache",
+        "top1Symbol": "PrepareLoaderBlockBytes",
+        "top1Range": "libs/server/Lua/LuaRunner.Loader.cs:375-517",
+        "classification": "weak",
+        "defLines": [],
+        "refLines": [
+          "471: var newCache = new LoaderBlockCache(allowedFunctions, asOps);"
+        ],
+        "commentLines": []
+      },
+      {
+        "goldId": "CPP-003",
+        "language": "cpp",
+        "family": "C-family",
+        "expectedSymbol": "ChosenTarget",
+        "top1Symbol": "hwy",
+        "top1Range": "hwy/targets.h:36-381",
+        "classification": "strong",
+        "defLines": [
+          "341: struct ChosenTarget {"
+        ],
+        "refLines": [],
+        "commentLines": [
+          "198: // For the ChosenTarget mask and index we use a different bit arrangement than",
+          "214: // The HWY_SCALAR/HWY_EMU128 bit in the ChosenTarget mask format."
+        ]
+      },
+      {
+        "goldId": "CPP-006",
+        "language": "cpp",
+        "family": "C-family",
+        "expectedSymbol": "AlignedDeleter",
+        "top1Symbol": "hwy",
+        "top1Range": "hwy/aligned_allocator.h:35-468",
+        "classification": "strong",
+        "defLines": [
+          "73: class AlignedDeleter {"
+        ],
+        "refLines": [
+          "75: AlignedDeleter() : free_(nullptr), opaque_ptr_(nullptr) {}",
+          "76: AlignedDeleter(FreePtr free_ptr, void* opaque_ptr)"
+        ],
+        "commentLines": []
+      },
+      {
+        "goldId": "CPP-008",
+        "language": "cpp",
+        "family": "C-family",
+        "expectedSymbol": "DetectTargets",
+        "top1Symbol": "x86",
+        "top1Range": "hwy/targets.cc:117-445",
+        "classification": "strong",
+        "defLines": [
+          "302: static int64_t DetectTargets() {"
+        ],
+        "refLines": [],
+        "commentLines": []
+      },
+      {
+        "goldId": "PY-004",
+        "language": "python",
+        "family": "Scripting-dynamic",
+        "expectedSymbol": "command",
+        "top1Symbol": "<anonymous:decorator>",
+        "top1Range": "src/click/decorators.py:258-321",
+        "classification": "weak",
+        "defLines": [],
+        "refLines": [
+          "309: return command(cls=cls, **attrs)(name)",
+          "311: return command(name, cls, **attrs)"
+        ],
+        "commentLines": [
+          "299: works otherwise the same as :func:`command` just that the `cls`"
+        ]
+      },
+      {
+        "goldId": "PY-006",
+        "language": "python",
+        "family": "Scripting-dynamic",
+        "expectedSymbol": "convert",
+        "top1Symbol": "CompositeParamType",
+        "top1Range": "src/click/types.py:173-219",
+        "classification": "strong",
+        "defLines": [
+          "193: def convert(",
+          "213: def convert("
+        ],
+        "refLines": [],
+        "commentLines": []
+      },
+      {
+        "goldId": "GO-003",
+        "language": "go",
+        "family": "Systems-modular-terse",
+        "expectedSymbol": "Use",
+        "top1Symbol": "ServeHTTP",
+        "top1Range": "mux.go:60-119",
+        "classification": "strong",
+        "defLines": [
+          "100: func (mx *Mux) Use(middlewares ...func(http.Handler) http.Handler) {"
+        ],
+        "refLines": [],
+        "commentLines": [
+          "94: // Use appends a middleware handler to the Mux middleware stack."
+        ]
+      },
+      {
+        "goldId": "C-002",
+        "language": "c",
+        "family": "C-family",
+        "expectedSymbol": "redisConnectWithOptions",
+        "top1Symbol": "redisContext",
+        "top1Range": "hiredis.c:815-832",
+        "classification": "strong",
+        "defLines": [
+          "815: redisContext *redisConnectWithOptions(const redisOptions *options) {"
+        ],
+        "refLines": [],
+        "commentLines": []
+      },
+      {
+        "goldId": "C-005",
+        "language": "c",
+        "family": "C-family",
+        "expectedSymbol": "redisConnect",
+        "top1Symbol": "timeval",
+        "top1Range": "hiredis.c:882-927",
+        "classification": "strong",
+        "defLines": [
+          "885: redisContext *redisConnect(const char *ip, int port) {"
+        ],
+        "refLines": [],
+        "commentLines": []
+      },
+      {
+        "goldId": "TSL-001",
+        "language": "typescript-lib",
+        "family": "JS-mobile",
+        "expectedSymbol": "safeParse",
+        "top1Symbol": "$SafeParse",
+        "top1Range": "packages/zod/src/v4/core/parse.ts:51-101",
+        "classification": "strong",
+        "defLines": [
+          "73: export const safeParse: $SafeParse = /* @__PURE__*/ _safeParse(errors.$ZodRealError);"
+        ],
+        "refLines": [],
+        "commentLines": []
+      },
+      {
+        "goldId": "DR-008",
+        "language": "dart",
+        "family": "JS-mobile",
+        "expectedSymbol": "HeadersWithSplitValues",
+        "top1Symbol": "BaseResponse",
+        "top1Range": "pkgs/http/lib/src/base_response.dart:11-87",
+        "classification": "comment-only",
+        "defLines": [],
+        "refLines": [],
+        "commentLines": [
+          "52: /// [HeadersWithSplitValues.headersSplitValues]. This is particularly"
+        ]
+      },
+      {
+        "goldId": "LU-001",
+        "language": "lua",
+        "family": "Scripting-dynamic",
+        "expectedSymbol": "_class",
+        "top1Symbol": "__index",
+        "top1Range": "lua/pl/class.lua:220-237",
+        "classification": "weak",
+        "defLines": [],
+        "refLines": [
+          "228: local c = _class(...)"
+        ],
+        "commentLines": []
+      }
+    ]
+  },
+  "ssFind": {
+    "strong": 12,
+    "weak": 1,
+    "commentOnly": 0,
+    "none": 0,
+    "audits": [
+      {
+        "goldId": "TS-008",
+        "language": "typescript",
+        "family": "JS-mobile",
+        "expectedSymbol": "systemPrompt",
+        "top1Symbol": "regularPrompt",
+        "top1Range": "lib/ai/prompts.ts:47-104",
+        "classification": "strong",
+        "defLines": [
+          "66: export const systemPrompt = ({"
+        ],
+        "refLines": [],
+        "commentLines": []
+      },
+      {
+        "goldId": "CS-001",
+        "language": "csharp",
+        "family": "OO-monolithic",
+        "expectedSymbol": "NetworkSET",
+        "top1Symbol": null,
+        "top1Range": "libs/server/Resp/BasicCommands.cs:179-340",
+        "classification": "strong",
+        "defLines": [
+          "282: private bool NetworkSET<TGarnetApi>(ref TGarnetApi storageApi)"
+        ],
+        "refLines": [],
+        "commentLines": []
+      },
+      {
+        "goldId": "CS-005",
+        "language": "csharp",
+        "family": "OO-monolithic",
+        "expectedSymbol": "LoaderBlockCache",
+        "top1Symbol": "LuaRunner",
+        "top1Range": "libs/server/Lua/LuaRunner.Loader.cs:15-518",
+        "classification": "strong",
+        "defLines": [
+          "20: private sealed record LoaderBlockCache(HashSet<string> AllowedFunctions, ReadOnlyMemory<byte> LoaderBlockBytes);",
+          "373: private static LoaderBlockCache CachedLoaderBlock;"
+        ],
+        "refLines": [
+          "471: var newCache = new LoaderBlockCache(allowedFunctions, asOps);"
+        ],
+        "commentLines": []
+      },
+      {
+        "goldId": "CPP-003",
+        "language": "cpp",
+        "family": "C-family",
+        "expectedSymbol": "ChosenTarget",
+        "top1Symbol": "hwy",
+        "top1Range": "hwy/targets.h:36-381",
+        "classification": "strong",
+        "defLines": [
+          "341: struct ChosenTarget {"
+        ],
+        "refLines": [],
+        "commentLines": [
+          "198: // For the ChosenTarget mask and index we use a different bit arrangement than",
+          "214: // The HWY_SCALAR/HWY_EMU128 bit in the ChosenTarget mask format."
+        ]
+      },
+      {
+        "goldId": "CPP-006",
+        "language": "cpp",
+        "family": "C-family",
+        "expectedSymbol": "AlignedDeleter",
+        "top1Symbol": "hwy",
+        "top1Range": "hwy/aligned_allocator.h:35-468",
+        "classification": "strong",
+        "defLines": [
+          "73: class AlignedDeleter {"
+        ],
+        "refLines": [
+          "75: AlignedDeleter() : free_(nullptr), opaque_ptr_(nullptr) {}",
+          "76: AlignedDeleter(FreePtr free_ptr, void* opaque_ptr)"
+        ],
+        "commentLines": []
+      },
+      {
+        "goldId": "JV-002",
+        "language": "java",
+        "family": "OO-monolithic",
+        "expectedSymbol": "get",
+        "top1Symbol": "ConstructorConstructor",
+        "top1Range": "gson/src/main/java/com/google/gson/internal/ConstructorConstructor.java:45-465",
+        "classification": "strong",
+        "defLines": [
+          "92: public <T> ObjectConstructor<T> get(TypeToken<T> typeToken) {",
+          "103: public <T> ObjectConstructor<T> get(TypeToken<T> typeToken, boolean allowUnsafe) {"
+        ],
+        "refLines": [
+          "93: return get(typeToken, true);",
+          "110: InstanceCreator<T> typeCreator = (InstanceCreator<T>) instanceCreators.get(type);"
+        ],
+        "commentLines": [
+          "91: /** Calls {@link #get(TypeToken, boolean)}, and allows usage of JDK Unsafe. */"
+        ]
+      },
+      {
+        "goldId": "JV-005",
+        "language": "java",
+        "family": "OO-monolithic",
+        "expectedSymbol": "registerTypeAdapter",
+        "top1Symbol": "GsonBuilder",
+        "top1Range": "gson/src/main/java/com/google/gson/GsonBuilder.java:92-1076",
+        "classification": "strong",
+        "defLines": [
+          "739: public GsonBuilder registerTypeAdapter(Type type, Object typeAdapter) {"
+        ],
+        "refLines": [],
+        "commentLines": []
+      },
+      {
+        "goldId": "PY-002",
+        "language": "python",
+        "family": "Scripting-dynamic",
+        "expectedSymbol": "Context",
+        "top1Symbol": "make_context",
+        "top1Range": "src/click/core.py:1210-1245",
+        "classification": "weak",
+        "defLines": [],
+        "refLines": [
+          "1214: parent: Context | None = None,",
+          "1216: ) -> Context:"
+        ],
+        "commentLines": [
+          "1218: off the parsing and create a new :class:`Context`.  It does not"
+        ]
+      },
+      {
+        "goldId": "RB-002",
+        "language": "ruby",
+        "family": "Scripting-dynamic",
+        "expectedSymbol": "Request",
+        "top1Symbol": "Sinatra",
+        "top1Range": "lib/sinatra/base.rb:28-2173",
+        "classification": "strong",
+        "defLines": [
+          "31: class Request < Rack::Request",
+          "31: class Request < Rack::Request"
+        ],
+        "refLines": [
+          "997: @request  = Request.new(env)",
+          "1242: body \"<h1>#{not_found? ? 'Not Found' : 'Bad Request'}</h1>\""
+        ],
+        "commentLines": [
+          "29: # The request object. See Rack::Request for more info:",
+          "30: # https://rubydoc.info/github/rack/rack/main/Rack/Request"
+        ]
+      },
+      {
+        "goldId": "C-002",
+        "language": "c",
+        "family": "C-family",
+        "expectedSymbol": "redisConnectWithOptions",
+        "top1Symbol": "redisContext",
+        "top1Range": "hiredis.c:815-832",
+        "classification": "strong",
+        "defLines": [
+          "815: redisContext *redisConnectWithOptions(const redisOptions *options) {"
+        ],
+        "refLines": [],
+        "commentLines": []
+      },
+      {
+        "goldId": "C-005",
+        "language": "c",
+        "family": "C-family",
+        "expectedSymbol": "redisConnect",
+        "top1Symbol": "timeval",
+        "top1Range": "hiredis.c:882-927",
+        "classification": "strong",
+        "defLines": [
+          "885: redisContext *redisConnect(const char *ip, int port) {"
+        ],
+        "refLines": [],
+        "commentLines": []
+      },
+      {
+        "goldId": "TSL-001",
+        "language": "typescript-lib",
+        "family": "JS-mobile",
+        "expectedSymbol": "safeParse",
+        "top1Symbol": "parseAsync",
+        "top1Range": "packages/zod/src/v4/core/parse.ts:51-101",
+        "classification": "strong",
+        "defLines": [
+          "73: export const safeParse: $SafeParse = /* @__PURE__*/ _safeParse(errors.$ZodRealError);"
+        ],
+        "refLines": [],
+        "commentLines": []
+      },
+      {
+        "goldId": "DR-008",
+        "language": "dart",
+        "family": "JS-mobile",
+        "expectedSymbol": "HeadersWithSplitValues",
+        "top1Symbol": "BaseResponseWithUrl",
+        "top1Range": "pkgs/http/lib/src/base_response.dart:118-171",
+        "classification": "strong",
+        "defLines": [
+          "150: extension HeadersWithSplitValues on BaseResponse {"
+        ],
+        "refLines": [],
+        "commentLines": []
+      }
+    ]
+  }
+}

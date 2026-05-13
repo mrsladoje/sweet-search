@@ -1,8 +1,8 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "tool": "ss-find",
   "runId": "phase6-redo-ss-find-v8",
-  "generatedAt": "2026-05-13T17:25:23.445Z",
+  "generatedAt": "2026-05-13T22:27:10.291Z",
   "plan_reference": "docs/PHASE6_REDO.md §12.1 + 2026-05-13 ss-find amendment",
   "primary_metric": "symbolRecallAt1",
   "grid": {
@@ -83,7 +83,13 @@
       "symbol_recall_at_1": 0.6503496503496503,
       "primary_metric": "symbolRecallAt1",
       "instruction_text": "[simple-global] For ss-find: build the regex as word-bounded literal: `\\b<symbol>\\b` — the canonical narrow anchor AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
-      "source": "best global symbol_recall@1 across 144 ast-tester golds"
+      "source": "best global symbol_recall@1 across 144 ast-tester golds",
+      "secondary_metrics": {
+        "_note": "Triple-rubric view of the strict-winning cell across all 144 ast-tester golds (uniform, unweighted). relaxed_def_recall_at_1 reads top-1 chunk text from the locked AST-tester-probes repos.",
+        "strict_symbol_recall_at_1": 0.6503496503496503,
+        "relaxed_def_recall_at_1": 0.7412587412587412,
+        "file_recall_at_5": 0.965034965034965
+      }
     },
     "family_conditioned": {
       "default": {
@@ -95,7 +101,13 @@
         "symbol_recall_at_1": 0.6503496503496503,
         "primary_metric": "symbolRecallAt1",
         "instruction_text": "[simple-global] For ss-find: build the regex as word-bounded literal: `\\b<symbol>\\b` — the canonical narrow anchor AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
-        "source": "family-conditioned default (= simple-global)"
+        "source": "family-conditioned default (= simple-global)",
+        "secondary_metrics": {
+          "_note": "Triple-rubric view of the strict-winning cell across all 144 ast-tester golds (uniform, unweighted). relaxed_def_recall_at_1 reads top-1 chunk text from the locked AST-tester-probes repos.",
+          "strict_symbol_recall_at_1": 0.6503496503496503,
+          "relaxed_def_recall_at_1": 0.7412587412587412,
+          "file_recall_at_5": 0.965034965034965
+        }
       },
       "overrides": {
         "JS-mobile": {
@@ -109,7 +121,13 @@
           "instruction_text": "[JS-mobile-override] For ss-find: build the regex as definition-anchored: `\\b<family-keyword>\\s+<symbol>\\b` — language-keyword + symbol; catches the def site AND phrase the semantic query as short interrogative + symbol verbatim (4-8 tokens) — e.g., \"how does <Symbol> work\".",
           "source": "family-best (Δ vs global = +16.1pp symbol_recall)",
           "delta_vs_default_symbol_recall": 0.16129032258064513,
-          "global_on_family_symbol_recall": 0.6451612903225806
+          "global_on_family_symbol_recall": 0.6451612903225806,
+          "secondary_metrics": {
+            "_note": "Triple-rubric view of the family-best cell for JS-mobile (uniform mean across JS-mobile golds only).",
+            "strict_symbol_recall_at_1": 0.8064516129032258,
+            "relaxed_def_recall_at_1": 0.8387096774193549,
+            "file_recall_at_5": 0.967741935483871
+          }
         }
       }
     },
@@ -124,6 +142,12 @@
       "instruction_text": "[popular-weighted (agentic-tier)] For ss-find: build the regex as small alternation: `\\b(<symbol>|<sibling1>|<sibling2>)\\b` — symbol + 2 graph/chunk siblings AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
       "source": "best weighted symbol_recall under agentic-tier weights (TS/Python/Rust=5, mainstream=3, longtail=1)",
       "diversity_enforced": false,
+      "secondary_metrics": {
+        "_note": "Triple-rubric view of the popular_weighted cell under agentic-tier weights (TS/Python/Rust=5, mainstream=3, longtail=1). All three numbers use the same weighting scheme so they're comparable.",
+        "strict_symbol_recall_at_1": 0.6276041666666666,
+        "relaxed_def_recall_at_1": 0.7135416666666666,
+        "file_recall_at_5": 0.9479166666666666
+      },
       "alt_so_tier": {
         "rCell": "R5",
         "qCell": "Q3",
@@ -141,247 +165,394 @@
     "R1|Q1": {
       "n": 143,
       "file": 116,
-      "sym": 82
+      "sym": 82,
+      "relaxed_def": 108,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 135
     },
     "R1|Q2": {
       "n": 143,
       "file": 109,
-      "sym": 66
+      "sym": 66,
+      "relaxed_def": 92,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 135
     },
     "R1|Q3": {
       "n": 143,
       "file": 114,
-      "sym": 92
+      "sym": 92,
+      "relaxed_def": 102,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 137
     },
     "R1|Q4": {
       "n": 143,
       "file": 116,
-      "sym": 87
+      "sym": 87,
+      "relaxed_def": 104,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 136
     },
     "R1|Q5": {
       "n": 143,
       "file": 111,
-      "sym": 72
+      "sym": 72,
+      "relaxed_def": 96,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 134
     },
     "R1|Q6": {
       "n": 143,
       "file": 103,
-      "sym": 63
+      "sym": 63,
+      "relaxed_def": 83,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 130
     },
     "R1|Q7": {
       "n": 143,
       "file": 104,
-      "sym": 69
+      "sym": 69,
+      "relaxed_def": 89,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 128
     },
     "R2|Q1": {
       "n": 143,
       "file": 119,
-      "sym": 82
+      "sym": 82,
+      "relaxed_def": 112,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 135
     },
     "R2|Q2": {
       "n": 143,
       "file": 114,
-      "sym": 69
+      "sym": 69,
+      "relaxed_def": 100,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 136
     },
     "R2|Q3": {
       "n": 143,
       "file": 117,
-      "sym": 93
+      "sym": 93,
+      "relaxed_def": 106,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 138
     },
     "R2|Q4": {
       "n": 143,
       "file": 122,
-      "sym": 88
+      "sym": 88,
+      "relaxed_def": 110,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 136
     },
     "R2|Q5": {
       "n": 143,
       "file": 113,
-      "sym": 74
+      "sym": 74,
+      "relaxed_def": 101,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 135
     },
     "R2|Q6": {
       "n": 143,
       "file": 106,
-      "sym": 63
+      "sym": 63,
+      "relaxed_def": 88,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 132
     },
     "R2|Q7": {
       "n": 143,
       "file": 106,
-      "sym": 71
+      "sym": 71,
+      "relaxed_def": 92,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 130
     },
     "R3|Q1": {
       "n": 143,
       "file": 89,
-      "sym": 71
+      "sym": 71,
+      "relaxed_def": 85,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 102
     },
     "R3|Q2": {
       "n": 143,
       "file": 90,
-      "sym": 65
+      "sym": 65,
+      "relaxed_def": 85,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 101
     },
     "R3|Q3": {
       "n": 143,
       "file": 95,
-      "sym": 84
+      "sym": 84,
+      "relaxed_def": 90,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 103
     },
     "R3|Q4": {
       "n": 143,
       "file": 92,
-      "sym": 81
+      "sym": 81,
+      "relaxed_def": 85,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 102
     },
     "R3|Q5": {
       "n": 143,
       "file": 95,
-      "sym": 70
+      "sym": 70,
+      "relaxed_def": 90,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 104
     },
     "R3|Q6": {
       "n": 143,
       "file": 94,
-      "sym": 66
+      "sym": 66,
+      "relaxed_def": 83,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 103
     },
     "R3|Q7": {
       "n": 143,
       "file": 97,
-      "sym": 72
+      "sym": 72,
+      "relaxed_def": 90,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 103
     },
     "R4|Q1": {
       "n": 143,
       "file": 86,
-      "sym": 53
+      "sym": 53,
+      "relaxed_def": 73,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 104
     },
     "R4|Q2": {
       "n": 143,
       "file": 69,
-      "sym": 36
+      "sym": 36,
+      "relaxed_def": 53,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 94
     },
     "R4|Q3": {
       "n": 143,
       "file": 87,
-      "sym": 63
+      "sym": 63,
+      "relaxed_def": 73,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 106
     },
     "R4|Q4": {
       "n": 143,
       "file": 87,
-      "sym": 59
+      "sym": 59,
+      "relaxed_def": 74,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 107
     },
     "R4|Q5": {
       "n": 143,
       "file": 84,
-      "sym": 46
+      "sym": 46,
+      "relaxed_def": 67,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 97
     },
     "R4|Q6": {
       "n": 143,
       "file": 74,
-      "sym": 37
+      "sym": 37,
+      "relaxed_def": 53,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 97
     },
     "R4|Q7": {
       "n": 143,
       "file": 71,
-      "sym": 39
+      "sym": 39,
+      "relaxed_def": 50,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 90
     },
     "R5|Q1": {
       "n": 143,
       "file": 95,
-      "sym": 67
+      "sym": 67,
+      "relaxed_def": 87,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 124
     },
     "R5|Q2": {
       "n": 143,
       "file": 92,
-      "sym": 56
+      "sym": 56,
+      "relaxed_def": 75,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 128
     },
     "R5|Q3": {
       "n": 143,
       "file": 117,
-      "sym": 93
+      "sym": 93,
+      "relaxed_def": 103,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 135
     },
     "R5|Q4": {
       "n": 143,
       "file": 113,
-      "sym": 82
+      "sym": 82,
+      "relaxed_def": 97,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 133
     },
     "R5|Q5": {
       "n": 143,
       "file": 92,
-      "sym": 59
+      "sym": 59,
+      "relaxed_def": 77,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 135
     },
     "R5|Q6": {
       "n": 143,
       "file": 92,
-      "sym": 52
+      "sym": 52,
+      "relaxed_def": 72,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 126
     },
     "R5|Q7": {
       "n": 143,
       "file": 96,
-      "sym": 60
+      "sym": 60,
+      "relaxed_def": 77,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 121
     },
     "R6|Q1": {
       "n": 144,
       "file": 93,
-      "sym": 59
+      "sym": 59,
+      "relaxed_def": 69,
+      "relaxed_def_n": 144,
+      "file_recall_at_5": 115
     },
     "R6|Q2": {
       "n": 144,
       "file": 78,
-      "sym": 37
+      "sym": 37,
+      "relaxed_def": 53,
+      "relaxed_def_n": 144,
+      "file_recall_at_5": 106
     },
     "R6|Q3": {
       "n": 144,
       "file": 105,
-      "sym": 79
+      "sym": 79,
+      "relaxed_def": 85,
+      "relaxed_def_n": 144,
+      "file_recall_at_5": 122
     },
     "R6|Q4": {
       "n": 144,
       "file": 99,
-      "sym": 67
+      "sym": 67,
+      "relaxed_def": 77,
+      "relaxed_def_n": 144,
+      "file_recall_at_5": 119
     },
     "R6|Q5": {
       "n": 144,
       "file": 85,
-      "sym": 45
+      "sym": 45,
+      "relaxed_def": 58,
+      "relaxed_def_n": 144,
+      "file_recall_at_5": 108
     },
     "R6|Q6": {
       "n": 144,
       "file": 78,
-      "sym": 39
+      "sym": 39,
+      "relaxed_def": 47,
+      "relaxed_def_n": 144,
+      "file_recall_at_5": 109
     },
     "R6|Q7": {
       "n": 144,
       "file": 75,
-      "sym": 41
+      "sym": 41,
+      "relaxed_def": 51,
+      "relaxed_def_n": 144,
+      "file_recall_at_5": 105
     },
     "R7|Q1": {
       "n": 143,
       "file": 73,
-      "sym": 49
+      "sym": 49,
+      "relaxed_def": 59,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 95
     },
     "R7|Q2": {
       "n": 143,
       "file": 62,
-      "sym": 35
+      "sym": 35,
+      "relaxed_def": 46,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 85
     },
     "R7|Q3": {
       "n": 143,
       "file": 84,
-      "sym": 62
+      "sym": 62,
+      "relaxed_def": 68,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 99
     },
     "R7|Q4": {
       "n": 143,
       "file": 79,
-      "sym": 59
+      "sym": 59,
+      "relaxed_def": 68,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 98
     },
     "R7|Q5": {
       "n": 143,
       "file": 80,
-      "sym": 47
+      "sym": 47,
+      "relaxed_def": 64,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 90
     },
     "R7|Q6": {
       "n": 143,
       "file": 68,
-      "sym": 36
+      "sym": 36,
+      "relaxed_def": 48,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 92
     },
     "R7|Q7": {
       "n": 143,
       "file": 65,
-      "sym": 37
+      "sym": 37,
+      "relaxed_def": 46,
+      "relaxed_def_n": 143,
+      "file_recall_at_5": 84
     }
   },
   "cell_table_by_family": {
@@ -389,1236 +560,2917 @@
       "R1|Q1": {
         "n": 32,
         "file": 26,
-        "sym": 17
+        "sym": 17,
+        "relaxed_def": 23,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 32
       },
       "R1|Q2": {
         "n": 32,
         "file": 24,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 18,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 32
       },
       "R1|Q3": {
         "n": 32,
         "file": 27,
-        "sym": 18
+        "sym": 18,
+        "relaxed_def": 23,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 31
       },
       "R1|Q4": {
         "n": 32,
         "file": 27,
-        "sym": 18
+        "sym": 18,
+        "relaxed_def": 23,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 32
       },
       "R1|Q5": {
         "n": 32,
         "file": 22,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 18,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 28
       },
       "R1|Q6": {
         "n": 32,
         "file": 19,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 13,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 28
       },
       "R1|Q7": {
         "n": 32,
         "file": 18,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 15,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 24
       },
       "R2|Q1": {
         "n": 32,
         "file": 27,
-        "sym": 17
+        "sym": 17,
+        "relaxed_def": 24,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 32
       },
       "R2|Q2": {
         "n": 32,
         "file": 25,
-        "sym": 11
+        "sym": 11,
+        "relaxed_def": 20,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 32
       },
       "R2|Q3": {
         "n": 32,
         "file": 27,
-        "sym": 19
+        "sym": 19,
+        "relaxed_def": 24,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 32
       },
       "R2|Q4": {
         "n": 32,
         "file": 27,
-        "sym": 18
+        "sym": 18,
+        "relaxed_def": 23,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 32
       },
       "R2|Q5": {
         "n": 32,
         "file": 22,
-        "sym": 13
+        "sym": 13,
+        "relaxed_def": 20,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 29
       },
       "R2|Q6": {
         "n": 32,
         "file": 19,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 14,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 28
       },
       "R2|Q7": {
         "n": 32,
         "file": 18,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 15,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 26
       },
       "R3|Q1": {
         "n": 32,
         "file": 13,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 13,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 14
       },
       "R3|Q2": {
         "n": 32,
         "file": 13,
-        "sym": 11
+        "sym": 11,
+        "relaxed_def": 13,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 13
       },
       "R3|Q3": {
         "n": 32,
         "file": 13,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 13,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 14
       },
       "R3|Q4": {
         "n": 32,
         "file": 13,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 13,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 13
       },
       "R3|Q5": {
         "n": 32,
         "file": 12,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 12,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 14
       },
       "R3|Q6": {
         "n": 32,
         "file": 12,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 10,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 13
       },
       "R3|Q7": {
         "n": 32,
         "file": 12,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 11,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 13
       },
       "R4|Q1": {
         "n": 32,
         "file": 19,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 16,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 25
       },
       "R4|Q2": {
         "n": 32,
         "file": 15,
-        "sym": 4
+        "sym": 4,
+        "relaxed_def": 9,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 22
       },
       "R4|Q3": {
         "n": 32,
         "file": 21,
-        "sym": 11
+        "sym": 11,
+        "relaxed_def": 16,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 25
       },
       "R4|Q4": {
         "n": 32,
         "file": 19,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 14,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 27
       },
       "R4|Q5": {
         "n": 32,
         "file": 19,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 12,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 23
       },
       "R4|Q6": {
         "n": 32,
         "file": 16,
-        "sym": 3
+        "sym": 3,
+        "relaxed_def": 9,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 21
       },
       "R4|Q7": {
         "n": 32,
         "file": 13,
-        "sym": 5
+        "sym": 5,
+        "relaxed_def": 7,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 17
       },
       "R5|Q1": {
         "n": 32,
         "file": 24,
-        "sym": 15
+        "sym": 15,
+        "relaxed_def": 20,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 28
       },
       "R5|Q2": {
         "n": 32,
         "file": 24,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 18,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 27
       },
       "R5|Q3": {
         "n": 32,
         "file": 28,
-        "sym": 19
+        "sym": 19,
+        "relaxed_def": 24,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 30
       },
       "R5|Q4": {
         "n": 32,
         "file": 27,
-        "sym": 18
+        "sym": 18,
+        "relaxed_def": 23,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 31
       },
       "R5|Q5": {
         "n": 32,
         "file": 21,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 17,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 30
       },
       "R5|Q6": {
         "n": 32,
         "file": 19,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 12,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 25
       },
       "R5|Q7": {
         "n": 32,
         "file": 16,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 13,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 21
       },
       "R6|Q1": {
         "n": 32,
         "file": 21,
-        "sym": 15
+        "sym": 15,
+        "relaxed_def": 18,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 27
       },
       "R6|Q2": {
         "n": 32,
         "file": 18,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 15,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 25
       },
       "R6|Q3": {
         "n": 32,
         "file": 25,
-        "sym": 17
+        "sym": 17,
+        "relaxed_def": 19,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 28
       },
       "R6|Q4": {
         "n": 32,
         "file": 24,
-        "sym": 16
+        "sym": 16,
+        "relaxed_def": 19,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 27
       },
       "R6|Q5": {
         "n": 32,
         "file": 17,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 13,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 23
       },
       "R6|Q6": {
         "n": 32,
         "file": 16,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 8,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 24
       },
       "R6|Q7": {
         "n": 32,
         "file": 12,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 9,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 20
       },
       "R7|Q1": {
         "n": 32,
         "file": 18,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 14,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 24
       },
       "R7|Q2": {
         "n": 32,
         "file": 19,
-        "sym": 4
+        "sym": 4,
+        "relaxed_def": 10,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 22
       },
       "R7|Q3": {
         "n": 32,
         "file": 22,
-        "sym": 13
+        "sym": 13,
+        "relaxed_def": 16,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 25
       },
       "R7|Q4": {
         "n": 32,
         "file": 19,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 15,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 25
       },
       "R7|Q5": {
         "n": 32,
         "file": 19,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 12,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 22
       },
       "R7|Q6": {
         "n": 32,
         "file": 15,
-        "sym": 3
+        "sym": 3,
+        "relaxed_def": 8,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 19
       },
       "R7|Q7": {
         "n": 32,
         "file": 13,
-        "sym": 4
+        "sym": 4,
+        "relaxed_def": 7,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 17
       }
     },
     "Systems-modular-terse": {
       "R1|Q1": {
         "n": 16,
         "file": 14,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 14,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R1|Q2": {
         "n": 16,
         "file": 14,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 11,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R1|Q3": {
         "n": 16,
         "file": 12,
-        "sym": 11
+        "sym": 11,
+        "relaxed_def": 12,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R1|Q4": {
         "n": 16,
         "file": 14,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 13,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R1|Q5": {
         "n": 16,
         "file": 13,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 11,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R1|Q6": {
         "n": 16,
         "file": 10,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 9,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R1|Q7": {
         "n": 16,
         "file": 13,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 13,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R2|Q1": {
         "n": 16,
         "file": 14,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 14,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R2|Q2": {
         "n": 16,
         "file": 14,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 12,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R2|Q3": {
         "n": 16,
         "file": 12,
-        "sym": 11
+        "sym": 11,
+        "relaxed_def": 12,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R2|Q4": {
         "n": 16,
         "file": 14,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 13,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R2|Q5": {
         "n": 16,
         "file": 13,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 11,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R2|Q6": {
         "n": 16,
         "file": 10,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 9,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R2|Q7": {
         "n": 16,
         "file": 13,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 13,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R3|Q1": {
         "n": 16,
         "file": 11,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 11,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 11
       },
       "R3|Q2": {
         "n": 16,
         "file": 11,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 11,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 11
       },
       "R3|Q3": {
         "n": 16,
         "file": 12,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 12,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 12
       },
       "R3|Q4": {
         "n": 16,
         "file": 12,
-        "sym": 11
+        "sym": 11,
+        "relaxed_def": 12,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 12
       },
       "R3|Q5": {
         "n": 16,
         "file": 11,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 11,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 12
       },
       "R3|Q6": {
         "n": 16,
         "file": 12,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 12,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 12
       },
       "R3|Q7": {
         "n": 16,
         "file": 12,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 12,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 12
       },
       "R4|Q1": {
         "n": 16,
         "file": 13,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 11,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 13
       },
       "R4|Q2": {
         "n": 16,
         "file": 10,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 8,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 14
       },
       "R4|Q3": {
         "n": 16,
         "file": 12,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 11,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 14
       },
       "R4|Q4": {
         "n": 16,
         "file": 14,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 12,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 14
       },
       "R4|Q5": {
         "n": 16,
         "file": 13,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 11,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 14
       },
       "R4|Q6": {
         "n": 16,
         "file": 11,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 9,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 14
       },
       "R4|Q7": {
         "n": 16,
         "file": 13,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 11,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 14
       },
       "R5|Q1": {
         "n": 16,
         "file": 8,
-        "sym": 5
+        "sym": 5,
+        "relaxed_def": 8,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 13
       },
       "R5|Q2": {
         "n": 16,
         "file": 10,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 8,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 15
       },
       "R5|Q3": {
         "n": 16,
         "file": 13,
-        "sym": 11
+        "sym": 11,
+        "relaxed_def": 12,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R5|Q4": {
         "n": 16,
         "file": 13,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 12,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R5|Q5": {
         "n": 16,
         "file": 8,
-        "sym": 4
+        "sym": 4,
+        "relaxed_def": 7,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 16
       },
       "R5|Q6": {
         "n": 16,
         "file": 9,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 8,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 15
       },
       "R5|Q7": {
         "n": 16,
         "file": 9,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 8,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 15
       },
       "R6|Q1": {
         "n": 16,
         "file": 10,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 8,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 10
       },
       "R6|Q2": {
         "n": 16,
         "file": 10,
-        "sym": 3
+        "sym": 3,
+        "relaxed_def": 6,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 12
       },
       "R6|Q3": {
         "n": 16,
         "file": 12,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 11,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 13
       },
       "R6|Q4": {
         "n": 16,
         "file": 14,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 13,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 14
       },
       "R6|Q5": {
         "n": 16,
         "file": 12,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 9,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 14
       },
       "R6|Q6": {
         "n": 16,
         "file": 10,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 7,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 14
       },
       "R6|Q7": {
         "n": 16,
         "file": 9,
-        "sym": 5
+        "sym": 5,
+        "relaxed_def": 7,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 13
       },
       "R7|Q1": {
         "n": 16,
         "file": 10,
-        "sym": 4
+        "sym": 4,
+        "relaxed_def": 6,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 13
       },
       "R7|Q2": {
         "n": 16,
         "file": 8,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 7,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 14
       },
       "R7|Q3": {
         "n": 16,
         "file": 13,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 12,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 14
       },
       "R7|Q4": {
         "n": 16,
         "file": 13,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 11,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 14
       },
       "R7|Q5": {
         "n": 16,
         "file": 13,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 11,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 14
       },
       "R7|Q6": {
         "n": 16,
         "file": 12,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 10,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 15
       },
       "R7|Q7": {
         "n": 16,
         "file": 12,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 10,
+        "relaxed_def_n": 16,
+        "file_recall_at_5": 13
       }
     },
     "C-family": {
       "R1|Q1": {
         "n": 24,
         "file": 15,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 14,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 19
       },
       "R1|Q2": {
         "n": 24,
         "file": 13,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 11,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 18
       },
       "R1|Q3": {
         "n": 24,
         "file": 17,
-        "sym": 11
+        "sym": 11,
+        "relaxed_def": 14,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 22
       },
       "R1|Q4": {
         "n": 24,
         "file": 17,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 15,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 22
       },
       "R1|Q5": {
         "n": 24,
         "file": 15,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 12,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 21
       },
       "R1|Q6": {
         "n": 24,
         "file": 13,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 10,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 19
       },
       "R1|Q7": {
         "n": 24,
         "file": 15,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 13,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 21
       },
       "R2|Q1": {
         "n": 24,
         "file": 16,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 15,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 19
       },
       "R2|Q2": {
         "n": 24,
         "file": 14,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 13,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 19
       },
       "R2|Q3": {
         "n": 24,
         "file": 18,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 15,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 22
       },
       "R2|Q4": {
         "n": 24,
         "file": 20,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 17,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 22
       },
       "R2|Q5": {
         "n": 24,
         "file": 16,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 13,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 21
       },
       "R2|Q6": {
         "n": 24,
         "file": 14,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 11,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 20
       },
       "R2|Q7": {
         "n": 24,
         "file": 16,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 13,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 21
       },
       "R3|Q1": {
         "n": 24,
         "file": 7,
-        "sym": 3
+        "sym": 3,
+        "relaxed_def": 7,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 10
       },
       "R3|Q2": {
         "n": 24,
         "file": 6,
-        "sym": 2
+        "sym": 2,
+        "relaxed_def": 6,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 10
       },
       "R3|Q3": {
         "n": 24,
         "file": 8,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 8,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 10
       },
       "R3|Q4": {
         "n": 24,
         "file": 8,
-        "sym": 5
+        "sym": 5,
+        "relaxed_def": 8,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 10
       },
       "R3|Q5": {
         "n": 24,
         "file": 8,
-        "sym": 4
+        "sym": 4,
+        "relaxed_def": 8,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 10
       },
       "R3|Q6": {
         "n": 24,
         "file": 8,
-        "sym": 3
+        "sym": 3,
+        "relaxed_def": 7,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 10
       },
       "R3|Q7": {
         "n": 24,
         "file": 8,
-        "sym": 4
+        "sym": 4,
+        "relaxed_def": 8,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 10
       },
       "R4|Q1": {
         "n": 24,
         "file": 10,
-        "sym": 5
+        "sym": 5,
+        "relaxed_def": 8,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 16
       },
       "R4|Q2": {
         "n": 24,
         "file": 8,
-        "sym": 4
+        "sym": 4,
+        "relaxed_def": 7,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 14
       },
       "R4|Q3": {
         "n": 24,
         "file": 14,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 10,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 18
       },
       "R4|Q4": {
         "n": 24,
         "file": 11,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 9,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 18
       },
       "R4|Q5": {
         "n": 24,
         "file": 12,
-        "sym": 3
+        "sym": 3,
+        "relaxed_def": 8,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 15
       },
       "R4|Q6": {
         "n": 24,
         "file": 12,
-        "sym": 2
+        "sym": 2,
+        "relaxed_def": 7,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 15
       },
       "R4|Q7": {
         "n": 24,
         "file": 11,
-        "sym": 4
+        "sym": 4,
+        "relaxed_def": 7,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 15
       },
       "R5|Q1": {
         "n": 24,
         "file": 14,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 13,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 20
       },
       "R5|Q2": {
         "n": 24,
         "file": 13,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 11,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 20
       },
       "R5|Q3": {
         "n": 24,
         "file": 19,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 15,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 22
       },
       "R5|Q4": {
         "n": 24,
         "file": 19,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 17,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 22
       },
       "R5|Q5": {
         "n": 24,
         "file": 14,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 12,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 21
       },
       "R5|Q6": {
         "n": 24,
         "file": 15,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 11,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 21
       },
       "R5|Q7": {
         "n": 24,
         "file": 18,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 14,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 20
       },
       "R6|Q1": {
         "n": 24,
         "file": 17,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 12,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 20
       },
       "R6|Q2": {
         "n": 24,
         "file": 11,
-        "sym": 3
+        "sym": 3,
+        "relaxed_def": 6,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 17
       },
       "R6|Q3": {
         "n": 24,
         "file": 19,
-        "sym": 11
+        "sym": 11,
+        "relaxed_def": 16,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 21
       },
       "R6|Q4": {
         "n": 24,
         "file": 17,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 12,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 21
       },
       "R6|Q5": {
         "n": 24,
         "file": 15,
-        "sym": 5
+        "sym": 5,
+        "relaxed_def": 9,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 18
       },
       "R6|Q6": {
         "n": 24,
         "file": 13,
-        "sym": 4
+        "sym": 4,
+        "relaxed_def": 7,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 17
       },
       "R6|Q7": {
         "n": 24,
         "file": 13,
-        "sym": 5
+        "sym": 5,
+        "relaxed_def": 9,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 18
       },
       "R7|Q1": {
         "n": 24,
         "file": 11,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 10,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 15
       },
       "R7|Q2": {
         "n": 24,
         "file": 7,
-        "sym": 4
+        "sym": 4,
+        "relaxed_def": 6,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 11
       },
       "R7|Q3": {
         "n": 24,
         "file": 15,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 10,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 18
       },
       "R7|Q4": {
         "n": 24,
         "file": 11,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 9,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 18
       },
       "R7|Q5": {
         "n": 24,
         "file": 11,
-        "sym": 4
+        "sym": 4,
+        "relaxed_def": 7,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 14
       },
       "R7|Q6": {
         "n": 24,
         "file": 9,
-        "sym": 3
+        "sym": 3,
+        "relaxed_def": 6,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 15
       },
       "R7|Q7": {
         "n": 24,
         "file": 11,
-        "sym": 5
+        "sym": 5,
+        "relaxed_def": 8,
+        "relaxed_def_n": 24,
+        "file_recall_at_5": 14
       }
     },
     "JS-mobile": {
       "R1|Q1": {
         "n": 31,
         "file": 26,
-        "sym": 20
+        "sym": 20,
+        "relaxed_def": 25,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R1|Q2": {
         "n": 31,
         "file": 24,
-        "sym": 15
+        "sym": 15,
+        "relaxed_def": 21,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R1|Q3": {
         "n": 31,
         "file": 24,
-        "sym": 20
+        "sym": 20,
+        "relaxed_def": 23,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R1|Q4": {
         "n": 31,
         "file": 25,
-        "sym": 19
+        "sym": 19,
+        "relaxed_def": 23,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R1|Q5": {
         "n": 31,
         "file": 23,
-        "sym": 14
+        "sym": 14,
+        "relaxed_def": 20,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R1|Q6": {
         "n": 31,
         "file": 26,
-        "sym": 14
+        "sym": 14,
+        "relaxed_def": 22,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 28
       },
       "R1|Q7": {
         "n": 31,
         "file": 24,
-        "sym": 14
+        "sym": 14,
+        "relaxed_def": 21,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R2|Q1": {
         "n": 31,
         "file": 27,
-        "sym": 20
+        "sym": 20,
+        "relaxed_def": 27,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R2|Q2": {
         "n": 31,
         "file": 26,
-        "sym": 15
+        "sym": 15,
+        "relaxed_def": 23,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R2|Q3": {
         "n": 31,
         "file": 26,
-        "sym": 20
+        "sym": 20,
+        "relaxed_def": 25,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R2|Q4": {
         "n": 31,
         "file": 28,
-        "sym": 19
+        "sym": 19,
+        "relaxed_def": 27,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R2|Q5": {
         "n": 31,
         "file": 23,
-        "sym": 14
+        "sym": 14,
+        "relaxed_def": 21,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R2|Q6": {
         "n": 31,
         "file": 28,
-        "sym": 14
+        "sym": 14,
+        "relaxed_def": 25,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R2|Q7": {
         "n": 31,
         "file": 25,
-        "sym": 15
+        "sym": 15,
+        "relaxed_def": 23,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R3|Q1": {
         "n": 31,
         "file": 29,
-        "sym": 22
+        "sym": 22,
+        "relaxed_def": 28,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 30
       },
       "R3|Q2": {
         "n": 31,
         "file": 29,
-        "sym": 18
+        "sym": 18,
+        "relaxed_def": 27,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 30
       },
       "R3|Q3": {
         "n": 31,
         "file": 30,
-        "sym": 23
+        "sym": 23,
+        "relaxed_def": 28,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 30
       },
       "R3|Q4": {
         "n": 31,
         "file": 30,
-        "sym": 25
+        "sym": 25,
+        "relaxed_def": 26,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 30
       },
       "R3|Q5": {
         "n": 31,
         "file": 29,
-        "sym": 18
+        "sym": 18,
+        "relaxed_def": 27,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 30
       },
       "R3|Q6": {
         "n": 31,
         "file": 30,
-        "sym": 17
+        "sym": 17,
+        "relaxed_def": 27,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 30
       },
       "R3|Q7": {
         "n": 31,
         "file": 30,
-        "sym": 19
+        "sym": 19,
+        "relaxed_def": 27,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 30
       },
       "R4|Q1": {
         "n": 31,
         "file": 19,
-        "sym": 13
+        "sym": 13,
+        "relaxed_def": 17,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 21
       },
       "R4|Q2": {
         "n": 31,
         "file": 12,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 10,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 16
       },
       "R4|Q3": {
         "n": 31,
         "file": 18,
-        "sym": 14
+        "sym": 14,
+        "relaxed_def": 16,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 20
       },
       "R4|Q4": {
         "n": 31,
         "file": 18,
-        "sym": 13
+        "sym": 13,
+        "relaxed_def": 16,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 21
       },
       "R4|Q5": {
         "n": 31,
         "file": 13,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 11,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 15
       },
       "R4|Q6": {
         "n": 31,
         "file": 12,
-        "sym": 6
+        "sym": 6,
+        "relaxed_def": 9,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 19
       },
       "R4|Q7": {
         "n": 31,
         "file": 15,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 12,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 18
       },
       "R5|Q1": {
         "n": 31,
         "file": 22,
-        "sym": 16
+        "sym": 16,
+        "relaxed_def": 21,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R5|Q2": {
         "n": 31,
         "file": 19,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 16,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 28
       },
       "R5|Q3": {
         "n": 31,
         "file": 24,
-        "sym": 20
+        "sym": 20,
+        "relaxed_def": 23,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R5|Q4": {
         "n": 31,
         "file": 21,
-        "sym": 14
+        "sym": 14,
+        "relaxed_def": 17,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R5|Q5": {
         "n": 31,
         "file": 17,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 13,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 29
       },
       "R5|Q6": {
         "n": 31,
         "file": 22,
-        "sym": 11
+        "sym": 11,
+        "relaxed_def": 18,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 28
       },
       "R5|Q7": {
         "n": 31,
         "file": 20,
-        "sym": 11
+        "sym": 11,
+        "relaxed_def": 17,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 28
       },
       "R6|Q1": {
         "n": 32,
         "file": 19,
-        "sym": 14
+        "sym": 14,
+        "relaxed_def": 15,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 27
       },
       "R6|Q2": {
         "n": 32,
         "file": 14,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 12,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 21
       },
       "R6|Q3": {
         "n": 32,
         "file": 21,
-        "sym": 17
+        "sym": 17,
+        "relaxed_def": 17,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 26
       },
       "R6|Q4": {
         "n": 32,
         "file": 18,
-        "sym": 13
+        "sym": 13,
+        "relaxed_def": 15,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 24
       },
       "R6|Q5": {
         "n": 32,
         "file": 12,
-        "sym": 9
+        "sym": 9,
+        "relaxed_def": 9,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 20
       },
       "R6|Q6": {
         "n": 32,
         "file": 13,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 10,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 22
       },
       "R6|Q7": {
         "n": 32,
         "file": 16,
-        "sym": 11
+        "sym": 11,
+        "relaxed_def": 13,
+        "relaxed_def_n": 32,
+        "file_recall_at_5": 22
       },
       "R7|Q1": {
         "n": 31,
         "file": 14,
-        "sym": 11
+        "sym": 11,
+        "relaxed_def": 12,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 16
       },
       "R7|Q2": {
         "n": 31,
         "file": 10,
-        "sym": 7
+        "sym": 7,
+        "relaxed_def": 8,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 13
       },
       "R7|Q3": {
         "n": 31,
         "file": 13,
-        "sym": 10
+        "sym": 10,
+        "relaxed_def": 11,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 16
       },
       "R7|Q4": {
         "n": 31,
         "file": 13,
-        "sym": 11
+        "sym": 11,
+        "relaxed_def": 12,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 16
       },
       "R7|Q5": {
         "n": 31,
         "file": 9,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 8,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 12
       },
       "R7|Q6": {
         "n": 31,
         "file": 9,
-        "sym": 5
+        "sym": 5,
+        "relaxed_def": 6,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 16
       },
       "R7|Q7": {
         "n": 31,
         "file": 10,
-        "sym": 8
+        "sym": 8,
+        "relaxed_def": 8,
+        "relaxed_def_n": 31,
+        "file_recall_at_5": 13
       }
     },
     "Scripting-dynamic": {
       "R1|Q1": {
         "n": 40,
         "file": 35,
-        "sym": 28
+        "sym": 28,
+        "relaxed_def": 32,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 39
       },
       "R1|Q2": {
         "n": 40,
         "file": 34,
-        "sym": 26
+        "sym": 26,
+        "relaxed_def": 31,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 40
       },
       "R1|Q3": {
         "n": 40,
         "file": 34,
-        "sym": 32
+        "sym": 32,
+        "relaxed_def": 30,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 39
       },
       "R1|Q4": {
         "n": 40,
         "file": 33,
-        "sym": 31
+        "sym": 31,
+        "relaxed_def": 30,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 37
       },
       "R1|Q5": {
         "n": 40,
         "file": 38,
-        "sym": 31
+        "sym": 31,
+        "relaxed_def": 35,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 40
       },
       "R1|Q6": {
         "n": 40,
         "file": 35,
-        "sym": 29
+        "sym": 29,
+        "relaxed_def": 29,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 39
       },
       "R1|Q7": {
         "n": 40,
         "file": 34,
-        "sym": 26
+        "sym": 26,
+        "relaxed_def": 27,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 38
       },
       "R2|Q1": {
         "n": 40,
         "file": 35,
-        "sym": 28
+        "sym": 28,
+        "relaxed_def": 32,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 39
       },
       "R2|Q2": {
         "n": 40,
         "file": 35,
-        "sym": 26
+        "sym": 26,
+        "relaxed_def": 32,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 40
       },
       "R2|Q3": {
         "n": 40,
         "file": 34,
-        "sym": 31
+        "sym": 31,
+        "relaxed_def": 30,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 39
       },
       "R2|Q4": {
         "n": 40,
         "file": 33,
-        "sym": 30
+        "sym": 30,
+        "relaxed_def": 30,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 37
       },
       "R2|Q5": {
         "n": 40,
         "file": 39,
-        "sym": 31
+        "sym": 31,
+        "relaxed_def": 36,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 40
       },
       "R2|Q6": {
         "n": 40,
         "file": 35,
-        "sym": 28
+        "sym": 28,
+        "relaxed_def": 29,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 39
       },
       "R2|Q7": {
         "n": 40,
         "file": 34,
-        "sym": 27
+        "sym": 27,
+        "relaxed_def": 28,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 38
       },
       "R3|Q1": {
         "n": 40,
         "file": 29,
-        "sym": 24
+        "sym": 24,
+        "relaxed_def": 26,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 37
       },
       "R3|Q2": {
         "n": 40,
         "file": 31,
-        "sym": 24
+        "sym": 24,
+        "relaxed_def": 28,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 37
       },
       "R3|Q3": {
         "n": 40,
         "file": 32,
-        "sym": 31
+        "sym": 31,
+        "relaxed_def": 29,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 37
       },
       "R3|Q4": {
         "n": 40,
         "file": 29,
-        "sym": 28
+        "sym": 28,
+        "relaxed_def": 26,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 37
       },
       "R3|Q5": {
         "n": 40,
         "file": 35,
-        "sym": 28
+        "sym": 28,
+        "relaxed_def": 32,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 38
       },
       "R3|Q6": {
         "n": 40,
         "file": 32,
-        "sym": 27
+        "sym": 27,
+        "relaxed_def": 27,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 38
       },
       "R3|Q7": {
         "n": 40,
         "file": 35,
-        "sym": 29
+        "sym": 29,
+        "relaxed_def": 32,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 38
       },
       "R4|Q1": {
         "n": 40,
         "file": 25,
-        "sym": 17
+        "sym": 17,
+        "relaxed_def": 21,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 29
       },
       "R4|Q2": {
         "n": 40,
         "file": 24,
-        "sym": 15
+        "sym": 15,
+        "relaxed_def": 19,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 28
       },
       "R4|Q3": {
         "n": 40,
         "file": 22,
-        "sym": 20
+        "sym": 20,
+        "relaxed_def": 20,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 29
       },
       "R4|Q4": {
         "n": 40,
         "file": 25,
-        "sym": 22
+        "sym": 22,
+        "relaxed_def": 23,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 27
       },
       "R4|Q5": {
         "n": 40,
         "file": 27,
-        "sym": 20
+        "sym": 20,
+        "relaxed_def": 25,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 30
       },
       "R4|Q6": {
         "n": 40,
         "file": 23,
-        "sym": 18
+        "sym": 18,
+        "relaxed_def": 19,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 28
       },
       "R4|Q7": {
         "n": 40,
         "file": 19,
-        "sym": 13
+        "sym": 13,
+        "relaxed_def": 13,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 26
       },
       "R5|Q1": {
         "n": 40,
         "file": 27,
-        "sym": 22
+        "sym": 22,
+        "relaxed_def": 25,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 34
       },
       "R5|Q2": {
         "n": 40,
         "file": 26,
-        "sym": 20
+        "sym": 20,
+        "relaxed_def": 22,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 38
       },
       "R5|Q3": {
         "n": 40,
         "file": 33,
-        "sym": 31
+        "sym": 31,
+        "relaxed_def": 29,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 38
       },
       "R5|Q4": {
         "n": 40,
         "file": 33,
-        "sym": 30
+        "sym": 30,
+        "relaxed_def": 28,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 35
       },
       "R5|Q5": {
         "n": 40,
         "file": 32,
-        "sym": 25
+        "sym": 25,
+        "relaxed_def": 28,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 39
       },
       "R5|Q6": {
         "n": 40,
         "file": 27,
-        "sym": 19
+        "sym": 19,
+        "relaxed_def": 23,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 37
       },
       "R5|Q7": {
         "n": 40,
         "file": 33,
-        "sym": 24
+        "sym": 24,
+        "relaxed_def": 25,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 37
       },
       "R6|Q1": {
         "n": 40,
         "file": 26,
-        "sym": 15
+        "sym": 15,
+        "relaxed_def": 16,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 31
       },
       "R6|Q2": {
         "n": 40,
         "file": 25,
-        "sym": 12
+        "sym": 12,
+        "relaxed_def": 14,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 31
       },
       "R6|Q3": {
         "n": 40,
         "file": 28,
-        "sym": 24
+        "sym": 24,
+        "relaxed_def": 22,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 34
       },
       "R6|Q4": {
         "n": 40,
         "file": 26,
-        "sym": 20
+        "sym": 20,
+        "relaxed_def": 18,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 33
       },
       "R6|Q5": {
         "n": 40,
         "file": 29,
-        "sym": 17
+        "sym": 17,
+        "relaxed_def": 18,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 33
       },
       "R6|Q6": {
         "n": 40,
         "file": 26,
-        "sym": 16
+        "sym": 16,
+        "relaxed_def": 15,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 32
       },
       "R6|Q7": {
         "n": 40,
         "file": 25,
-        "sym": 13
+        "sym": 13,
+        "relaxed_def": 13,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 32
       },
       "R7|Q1": {
         "n": 40,
         "file": 20,
-        "sym": 17
+        "sym": 17,
+        "relaxed_def": 17,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 27
       },
       "R7|Q2": {
         "n": 40,
         "file": 18,
-        "sym": 14
+        "sym": 14,
+        "relaxed_def": 15,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 25
       },
       "R7|Q3": {
         "n": 40,
         "file": 21,
-        "sym": 19
+        "sym": 19,
+        "relaxed_def": 19,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 26
       },
       "R7|Q4": {
         "n": 40,
         "file": 23,
-        "sym": 22
+        "sym": 22,
+        "relaxed_def": 21,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 25
       },
       "R7|Q5": {
         "n": 40,
         "file": 28,
-        "sym": 21
+        "sym": 21,
+        "relaxed_def": 26,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 28
       },
       "R7|Q6": {
         "n": 40,
         "file": 23,
-        "sym": 17
+        "sym": 17,
+        "relaxed_def": 18,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 27
       },
       "R7|Q7": {
         "n": 40,
         "file": 19,
-        "sym": 13
+        "sym": 13,
+        "relaxed_def": 13,
+        "relaxed_def_n": 40,
+        "file_recall_at_5": 27
       }
+    }
+  },
+  "secondary_metrics": {
+    "_note": "Strict symbol_recall@1 is the headline; these secondaries quantify the F1 chunker-label artifact discovered by the 2026-05-13 cross-tool audit (core/prompt-optimization/data/query-shapes/cross-tool-benchmark-audit-2026-05-13.md). 92-100% of ss-find PARTIALs are hidden PASSes — the chunk text DOES define the expected symbol; the chunker just labels the chunk with a sibling. relaxed_def_recall_at_1 reads the top-1 chunk text from the locked AST-tester-probes repos and counts the row as PASS iff the expected symbol appears with a definition anchor (def/class/fn/struct/impl/...). file_recall_at_5 aggregates the already-stored fileRecallAt5. Promotion rules remain on the strict rubric; the strategy WINNING CELLS (simple_global / family_conditioned / popular_weighted) are unchanged. The argmax cell can differ under the relaxed rubric — see ranking_stability_check; this is a real signal the audit did not measure.",
+    "global": {
+      "strict_symbol_recall_at_1": {
+        "R1|Q1": 0.5734265734265734,
+        "R1|Q2": 0.46153846153846156,
+        "R1|Q3": 0.6433566433566433,
+        "R1|Q4": 0.6083916083916084,
+        "R1|Q5": 0.5034965034965035,
+        "R1|Q6": 0.4405594405594406,
+        "R1|Q7": 0.4825174825174825,
+        "R2|Q1": 0.5734265734265734,
+        "R2|Q2": 0.4825174825174825,
+        "R2|Q3": 0.6503496503496503,
+        "R2|Q4": 0.6153846153846154,
+        "R2|Q5": 0.5174825174825175,
+        "R2|Q6": 0.4405594405594406,
+        "R2|Q7": 0.4965034965034965,
+        "R3|Q1": 0.4965034965034965,
+        "R3|Q2": 0.45454545454545453,
+        "R3|Q3": 0.5874125874125874,
+        "R3|Q4": 0.5664335664335665,
+        "R3|Q5": 0.48951048951048953,
+        "R3|Q6": 0.46153846153846156,
+        "R3|Q7": 0.5034965034965035,
+        "R4|Q1": 0.3706293706293706,
+        "R4|Q2": 0.2517482517482518,
+        "R4|Q3": 0.4405594405594406,
+        "R4|Q4": 0.4125874125874126,
+        "R4|Q5": 0.32167832167832167,
+        "R4|Q6": 0.25874125874125875,
+        "R4|Q7": 0.2727272727272727,
+        "R5|Q1": 0.46853146853146854,
+        "R5|Q2": 0.3916083916083916,
+        "R5|Q3": 0.6503496503496503,
+        "R5|Q4": 0.5734265734265734,
+        "R5|Q5": 0.4125874125874126,
+        "R5|Q6": 0.36363636363636365,
+        "R5|Q7": 0.4195804195804196,
+        "R6|Q1": 0.4097222222222222,
+        "R6|Q2": 0.2569444444444444,
+        "R6|Q3": 0.5486111111111112,
+        "R6|Q4": 0.4652777777777778,
+        "R6|Q5": 0.3125,
+        "R6|Q6": 0.2708333333333333,
+        "R6|Q7": 0.2847222222222222,
+        "R7|Q1": 0.34265734265734266,
+        "R7|Q2": 0.24475524475524477,
+        "R7|Q3": 0.43356643356643354,
+        "R7|Q4": 0.4125874125874126,
+        "R7|Q5": 0.32867132867132864,
+        "R7|Q6": 0.2517482517482518,
+        "R7|Q7": 0.25874125874125875
+      },
+      "relaxed_def_recall_at_1": {
+        "R1|Q1": 0.7552447552447552,
+        "R1|Q2": 0.6433566433566433,
+        "R1|Q3": 0.7132867132867133,
+        "R1|Q4": 0.7272727272727273,
+        "R1|Q5": 0.6713286713286714,
+        "R1|Q6": 0.5804195804195804,
+        "R1|Q7": 0.6223776223776224,
+        "R2|Q1": 0.7832167832167832,
+        "R2|Q2": 0.6993006993006993,
+        "R2|Q3": 0.7412587412587412,
+        "R2|Q4": 0.7692307692307693,
+        "R2|Q5": 0.7062937062937062,
+        "R2|Q6": 0.6153846153846154,
+        "R2|Q7": 0.6433566433566433,
+        "R3|Q1": 0.5944055944055944,
+        "R3|Q2": 0.5944055944055944,
+        "R3|Q3": 0.6293706293706294,
+        "R3|Q4": 0.5944055944055944,
+        "R3|Q5": 0.6293706293706294,
+        "R3|Q6": 0.5804195804195804,
+        "R3|Q7": 0.6293706293706294,
+        "R4|Q1": 0.5104895104895105,
+        "R4|Q2": 0.3706293706293706,
+        "R4|Q3": 0.5104895104895105,
+        "R4|Q4": 0.5174825174825175,
+        "R4|Q5": 0.46853146853146854,
+        "R4|Q6": 0.3706293706293706,
+        "R4|Q7": 0.34965034965034963,
+        "R5|Q1": 0.6083916083916084,
+        "R5|Q2": 0.5244755244755245,
+        "R5|Q3": 0.7202797202797203,
+        "R5|Q4": 0.6783216783216783,
+        "R5|Q5": 0.5384615384615384,
+        "R5|Q6": 0.5034965034965035,
+        "R5|Q7": 0.5384615384615384,
+        "R6|Q1": 0.4791666666666667,
+        "R6|Q2": 0.3680555555555556,
+        "R6|Q3": 0.5902777777777778,
+        "R6|Q4": 0.5347222222222222,
+        "R6|Q5": 0.4027777777777778,
+        "R6|Q6": 0.3263888888888889,
+        "R6|Q7": 0.3541666666666667,
+        "R7|Q1": 0.4125874125874126,
+        "R7|Q2": 0.32167832167832167,
+        "R7|Q3": 0.4755244755244755,
+        "R7|Q4": 0.4755244755244755,
+        "R7|Q5": 0.44755244755244755,
+        "R7|Q6": 0.3356643356643357,
+        "R7|Q7": 0.32167832167832167
+      },
+      "file_recall_at_5": {
+        "R1|Q1": 0.9440559440559441,
+        "R1|Q2": 0.9440559440559441,
+        "R1|Q3": 0.958041958041958,
+        "R1|Q4": 0.951048951048951,
+        "R1|Q5": 0.9370629370629371,
+        "R1|Q6": 0.9090909090909091,
+        "R1|Q7": 0.8951048951048951,
+        "R2|Q1": 0.9440559440559441,
+        "R2|Q2": 0.951048951048951,
+        "R2|Q3": 0.965034965034965,
+        "R2|Q4": 0.951048951048951,
+        "R2|Q5": 0.9440559440559441,
+        "R2|Q6": 0.9230769230769231,
+        "R2|Q7": 0.9090909090909091,
+        "R3|Q1": 0.7132867132867133,
+        "R3|Q2": 0.7062937062937062,
+        "R3|Q3": 0.7202797202797203,
+        "R3|Q4": 0.7132867132867133,
+        "R3|Q5": 0.7272727272727273,
+        "R3|Q6": 0.7202797202797203,
+        "R3|Q7": 0.7202797202797203,
+        "R4|Q1": 0.7272727272727273,
+        "R4|Q2": 0.6573426573426573,
+        "R4|Q3": 0.7412587412587412,
+        "R4|Q4": 0.7482517482517482,
+        "R4|Q5": 0.6783216783216783,
+        "R4|Q6": 0.6783216783216783,
+        "R4|Q7": 0.6293706293706294,
+        "R5|Q1": 0.8671328671328671,
+        "R5|Q2": 0.8951048951048951,
+        "R5|Q3": 0.9440559440559441,
+        "R5|Q4": 0.9300699300699301,
+        "R5|Q5": 0.9440559440559441,
+        "R5|Q6": 0.8811188811188811,
+        "R5|Q7": 0.8461538461538461,
+        "R6|Q1": 0.7986111111111112,
+        "R6|Q2": 0.7361111111111112,
+        "R6|Q3": 0.8472222222222222,
+        "R6|Q4": 0.8263888888888888,
+        "R6|Q5": 0.75,
+        "R6|Q6": 0.7569444444444444,
+        "R6|Q7": 0.7291666666666666,
+        "R7|Q1": 0.6643356643356644,
+        "R7|Q2": 0.5944055944055944,
+        "R7|Q3": 0.6923076923076923,
+        "R7|Q4": 0.6853146853146853,
+        "R7|Q5": 0.6293706293706294,
+        "R7|Q6": 0.6433566433566433,
+        "R7|Q7": 0.5874125874125874
+      }
+    },
+    "by_family": {
+      "OO-monolithic": {
+        "strict_symbol_recall_at_1": {
+          "R1|Q1": 0.53125,
+          "R1|Q2": 0.3125,
+          "R1|Q3": 0.5625,
+          "R1|Q4": 0.5625,
+          "R1|Q5": 0.375,
+          "R1|Q6": 0.21875,
+          "R1|Q7": 0.375,
+          "R2|Q1": 0.53125,
+          "R2|Q2": 0.34375,
+          "R2|Q3": 0.59375,
+          "R2|Q4": 0.5625,
+          "R2|Q5": 0.40625,
+          "R2|Q6": 0.25,
+          "R2|Q7": 0.375,
+          "R3|Q1": 0.375,
+          "R3|Q2": 0.34375,
+          "R3|Q3": 0.375,
+          "R3|Q4": 0.375,
+          "R3|Q5": 0.3125,
+          "R3|Q6": 0.28125,
+          "R3|Q7": 0.3125,
+          "R4|Q1": 0.3125,
+          "R4|Q2": 0.125,
+          "R4|Q3": 0.34375,
+          "R4|Q4": 0.28125,
+          "R4|Q5": 0.1875,
+          "R4|Q6": 0.09375,
+          "R4|Q7": 0.15625,
+          "R5|Q1": 0.46875,
+          "R5|Q2": 0.375,
+          "R5|Q3": 0.59375,
+          "R5|Q4": 0.5625,
+          "R5|Q5": 0.375,
+          "R5|Q6": 0.28125,
+          "R5|Q7": 0.375,
+          "R6|Q1": 0.46875,
+          "R6|Q2": 0.3125,
+          "R6|Q3": 0.53125,
+          "R6|Q4": 0.5,
+          "R6|Q5": 0.25,
+          "R6|Q6": 0.1875,
+          "R6|Q7": 0.21875,
+          "R7|Q1": 0.3125,
+          "R7|Q2": 0.125,
+          "R7|Q3": 0.40625,
+          "R7|Q4": 0.3125,
+          "R7|Q5": 0.1875,
+          "R7|Q6": 0.09375,
+          "R7|Q7": 0.125
+        },
+        "relaxed_def_recall_at_1": {
+          "R1|Q1": 0.71875,
+          "R1|Q2": 0.5625,
+          "R1|Q3": 0.71875,
+          "R1|Q4": 0.71875,
+          "R1|Q5": 0.5625,
+          "R1|Q6": 0.40625,
+          "R1|Q7": 0.46875,
+          "R2|Q1": 0.75,
+          "R2|Q2": 0.625,
+          "R2|Q3": 0.75,
+          "R2|Q4": 0.71875,
+          "R2|Q5": 0.625,
+          "R2|Q6": 0.4375,
+          "R2|Q7": 0.46875,
+          "R3|Q1": 0.40625,
+          "R3|Q2": 0.40625,
+          "R3|Q3": 0.40625,
+          "R3|Q4": 0.40625,
+          "R3|Q5": 0.375,
+          "R3|Q6": 0.3125,
+          "R3|Q7": 0.34375,
+          "R4|Q1": 0.5,
+          "R4|Q2": 0.28125,
+          "R4|Q3": 0.5,
+          "R4|Q4": 0.4375,
+          "R4|Q5": 0.375,
+          "R4|Q6": 0.28125,
+          "R4|Q7": 0.21875,
+          "R5|Q1": 0.625,
+          "R5|Q2": 0.5625,
+          "R5|Q3": 0.75,
+          "R5|Q4": 0.71875,
+          "R5|Q5": 0.53125,
+          "R5|Q6": 0.375,
+          "R5|Q7": 0.40625,
+          "R6|Q1": 0.5625,
+          "R6|Q2": 0.46875,
+          "R6|Q3": 0.59375,
+          "R6|Q4": 0.59375,
+          "R6|Q5": 0.40625,
+          "R6|Q6": 0.25,
+          "R6|Q7": 0.28125,
+          "R7|Q1": 0.4375,
+          "R7|Q2": 0.3125,
+          "R7|Q3": 0.5,
+          "R7|Q4": 0.46875,
+          "R7|Q5": 0.375,
+          "R7|Q6": 0.25,
+          "R7|Q7": 0.21875
+        },
+        "file_recall_at_5": {
+          "R1|Q1": 1,
+          "R1|Q2": 1,
+          "R1|Q3": 0.96875,
+          "R1|Q4": 1,
+          "R1|Q5": 0.875,
+          "R1|Q6": 0.875,
+          "R1|Q7": 0.75,
+          "R2|Q1": 1,
+          "R2|Q2": 1,
+          "R2|Q3": 1,
+          "R2|Q4": 1,
+          "R2|Q5": 0.90625,
+          "R2|Q6": 0.875,
+          "R2|Q7": 0.8125,
+          "R3|Q1": 0.4375,
+          "R3|Q2": 0.40625,
+          "R3|Q3": 0.4375,
+          "R3|Q4": 0.40625,
+          "R3|Q5": 0.4375,
+          "R3|Q6": 0.40625,
+          "R3|Q7": 0.40625,
+          "R4|Q1": 0.78125,
+          "R4|Q2": 0.6875,
+          "R4|Q3": 0.78125,
+          "R4|Q4": 0.84375,
+          "R4|Q5": 0.71875,
+          "R4|Q6": 0.65625,
+          "R4|Q7": 0.53125,
+          "R5|Q1": 0.875,
+          "R5|Q2": 0.84375,
+          "R5|Q3": 0.9375,
+          "R5|Q4": 0.96875,
+          "R5|Q5": 0.9375,
+          "R5|Q6": 0.78125,
+          "R5|Q7": 0.65625,
+          "R6|Q1": 0.84375,
+          "R6|Q2": 0.78125,
+          "R6|Q3": 0.875,
+          "R6|Q4": 0.84375,
+          "R6|Q5": 0.71875,
+          "R6|Q6": 0.75,
+          "R6|Q7": 0.625,
+          "R7|Q1": 0.75,
+          "R7|Q2": 0.6875,
+          "R7|Q3": 0.78125,
+          "R7|Q4": 0.78125,
+          "R7|Q5": 0.6875,
+          "R7|Q6": 0.59375,
+          "R7|Q7": 0.53125
+        }
+      },
+      "Systems-modular-terse": {
+        "strict_symbol_recall_at_1": {
+          "R1|Q1": 0.5625,
+          "R1|Q2": 0.5,
+          "R1|Q3": 0.6875,
+          "R1|Q4": 0.5625,
+          "R1|Q5": 0.4375,
+          "R1|Q6": 0.4375,
+          "R1|Q7": 0.5625,
+          "R2|Q1": 0.5625,
+          "R2|Q2": 0.5625,
+          "R2|Q3": 0.6875,
+          "R2|Q4": 0.5625,
+          "R2|Q5": 0.4375,
+          "R2|Q6": 0.4375,
+          "R2|Q7": 0.5625,
+          "R3|Q1": 0.625,
+          "R3|Q2": 0.625,
+          "R3|Q3": 0.75,
+          "R3|Q4": 0.6875,
+          "R3|Q5": 0.625,
+          "R3|Q6": 0.625,
+          "R3|Q7": 0.625,
+          "R4|Q1": 0.5,
+          "R4|Q2": 0.375,
+          "R4|Q3": 0.5625,
+          "R4|Q4": 0.5625,
+          "R4|Q5": 0.5,
+          "R4|Q6": 0.5,
+          "R4|Q7": 0.5,
+          "R5|Q1": 0.3125,
+          "R5|Q2": 0.375,
+          "R5|Q3": 0.6875,
+          "R5|Q4": 0.5,
+          "R5|Q5": 0.25,
+          "R5|Q6": 0.375,
+          "R5|Q7": 0.375,
+          "R6|Q1": 0.4375,
+          "R6|Q2": 0.1875,
+          "R6|Q3": 0.625,
+          "R6|Q4": 0.625,
+          "R6|Q5": 0.375,
+          "R6|Q6": 0.375,
+          "R6|Q7": 0.3125,
+          "R7|Q1": 0.25,
+          "R7|Q2": 0.375,
+          "R7|Q3": 0.625,
+          "R7|Q4": 0.5625,
+          "R7|Q5": 0.5,
+          "R7|Q6": 0.5,
+          "R7|Q7": 0.4375
+        },
+        "relaxed_def_recall_at_1": {
+          "R1|Q1": 0.875,
+          "R1|Q2": 0.6875,
+          "R1|Q3": 0.75,
+          "R1|Q4": 0.8125,
+          "R1|Q5": 0.6875,
+          "R1|Q6": 0.5625,
+          "R1|Q7": 0.8125,
+          "R2|Q1": 0.875,
+          "R2|Q2": 0.75,
+          "R2|Q3": 0.75,
+          "R2|Q4": 0.8125,
+          "R2|Q5": 0.6875,
+          "R2|Q6": 0.5625,
+          "R2|Q7": 0.8125,
+          "R3|Q1": 0.6875,
+          "R3|Q2": 0.6875,
+          "R3|Q3": 0.75,
+          "R3|Q4": 0.75,
+          "R3|Q5": 0.6875,
+          "R3|Q6": 0.75,
+          "R3|Q7": 0.75,
+          "R4|Q1": 0.6875,
+          "R4|Q2": 0.5,
+          "R4|Q3": 0.6875,
+          "R4|Q4": 0.75,
+          "R4|Q5": 0.6875,
+          "R4|Q6": 0.5625,
+          "R4|Q7": 0.6875,
+          "R5|Q1": 0.5,
+          "R5|Q2": 0.5,
+          "R5|Q3": 0.75,
+          "R5|Q4": 0.75,
+          "R5|Q5": 0.4375,
+          "R5|Q6": 0.5,
+          "R5|Q7": 0.5,
+          "R6|Q1": 0.5,
+          "R6|Q2": 0.375,
+          "R6|Q3": 0.6875,
+          "R6|Q4": 0.8125,
+          "R6|Q5": 0.5625,
+          "R6|Q6": 0.4375,
+          "R6|Q7": 0.4375,
+          "R7|Q1": 0.375,
+          "R7|Q2": 0.4375,
+          "R7|Q3": 0.75,
+          "R7|Q4": 0.6875,
+          "R7|Q5": 0.6875,
+          "R7|Q6": 0.625,
+          "R7|Q7": 0.625
+        },
+        "file_recall_at_5": {
+          "R1|Q1": 1,
+          "R1|Q2": 1,
+          "R1|Q3": 1,
+          "R1|Q4": 1,
+          "R1|Q5": 1,
+          "R1|Q6": 1,
+          "R1|Q7": 1,
+          "R2|Q1": 1,
+          "R2|Q2": 1,
+          "R2|Q3": 1,
+          "R2|Q4": 1,
+          "R2|Q5": 1,
+          "R2|Q6": 1,
+          "R2|Q7": 1,
+          "R3|Q1": 0.6875,
+          "R3|Q2": 0.6875,
+          "R3|Q3": 0.75,
+          "R3|Q4": 0.75,
+          "R3|Q5": 0.75,
+          "R3|Q6": 0.75,
+          "R3|Q7": 0.75,
+          "R4|Q1": 0.8125,
+          "R4|Q2": 0.875,
+          "R4|Q3": 0.875,
+          "R4|Q4": 0.875,
+          "R4|Q5": 0.875,
+          "R4|Q6": 0.875,
+          "R4|Q7": 0.875,
+          "R5|Q1": 0.8125,
+          "R5|Q2": 0.9375,
+          "R5|Q3": 1,
+          "R5|Q4": 1,
+          "R5|Q5": 1,
+          "R5|Q6": 0.9375,
+          "R5|Q7": 0.9375,
+          "R6|Q1": 0.625,
+          "R6|Q2": 0.75,
+          "R6|Q3": 0.8125,
+          "R6|Q4": 0.875,
+          "R6|Q5": 0.875,
+          "R6|Q6": 0.875,
+          "R6|Q7": 0.8125,
+          "R7|Q1": 0.8125,
+          "R7|Q2": 0.875,
+          "R7|Q3": 0.875,
+          "R7|Q4": 0.875,
+          "R7|Q5": 0.875,
+          "R7|Q6": 0.9375,
+          "R7|Q7": 0.8125
+        }
+      },
+      "C-family": {
+        "strict_symbol_recall_at_1": {
+          "R1|Q1": 0.3333333333333333,
+          "R1|Q2": 0.2916666666666667,
+          "R1|Q3": 0.4583333333333333,
+          "R1|Q4": 0.4166666666666667,
+          "R1|Q5": 0.3333333333333333,
+          "R1|Q6": 0.25,
+          "R1|Q7": 0.3333333333333333,
+          "R2|Q1": 0.3333333333333333,
+          "R2|Q2": 0.3333333333333333,
+          "R2|Q3": 0.5,
+          "R2|Q4": 0.5,
+          "R2|Q5": 0.375,
+          "R2|Q6": 0.25,
+          "R2|Q7": 0.3333333333333333,
+          "R3|Q1": 0.125,
+          "R3|Q2": 0.08333333333333333,
+          "R3|Q3": 0.25,
+          "R3|Q4": 0.20833333333333334,
+          "R3|Q5": 0.16666666666666666,
+          "R3|Q6": 0.125,
+          "R3|Q7": 0.16666666666666666,
+          "R4|Q1": 0.20833333333333334,
+          "R4|Q2": 0.16666666666666666,
+          "R4|Q3": 0.375,
+          "R4|Q4": 0.25,
+          "R4|Q5": 0.125,
+          "R4|Q6": 0.08333333333333333,
+          "R4|Q7": 0.16666666666666666,
+          "R5|Q1": 0.375,
+          "R5|Q2": 0.25,
+          "R5|Q3": 0.5,
+          "R5|Q4": 0.5,
+          "R5|Q5": 0.3333333333333333,
+          "R5|Q6": 0.2916666666666667,
+          "R5|Q7": 0.2916666666666667,
+          "R6|Q1": 0.3333333333333333,
+          "R6|Q2": 0.125,
+          "R6|Q3": 0.4583333333333333,
+          "R6|Q4": 0.3333333333333333,
+          "R6|Q5": 0.20833333333333334,
+          "R6|Q6": 0.16666666666666666,
+          "R6|Q7": 0.20833333333333334,
+          "R7|Q1": 0.2916666666666667,
+          "R7|Q2": 0.16666666666666666,
+          "R7|Q3": 0.4166666666666667,
+          "R7|Q4": 0.2916666666666667,
+          "R7|Q5": 0.16666666666666666,
+          "R7|Q6": 0.125,
+          "R7|Q7": 0.20833333333333334
+        },
+        "relaxed_def_recall_at_1": {
+          "R1|Q1": 0.5833333333333334,
+          "R1|Q2": 0.4583333333333333,
+          "R1|Q3": 0.5833333333333334,
+          "R1|Q4": 0.625,
+          "R1|Q5": 0.5,
+          "R1|Q6": 0.4166666666666667,
+          "R1|Q7": 0.5416666666666666,
+          "R2|Q1": 0.625,
+          "R2|Q2": 0.5416666666666666,
+          "R2|Q3": 0.625,
+          "R2|Q4": 0.7083333333333334,
+          "R2|Q5": 0.5416666666666666,
+          "R2|Q6": 0.4583333333333333,
+          "R2|Q7": 0.5416666666666666,
+          "R3|Q1": 0.2916666666666667,
+          "R3|Q2": 0.25,
+          "R3|Q3": 0.3333333333333333,
+          "R3|Q4": 0.3333333333333333,
+          "R3|Q5": 0.3333333333333333,
+          "R3|Q6": 0.2916666666666667,
+          "R3|Q7": 0.3333333333333333,
+          "R4|Q1": 0.3333333333333333,
+          "R4|Q2": 0.2916666666666667,
+          "R4|Q3": 0.4166666666666667,
+          "R4|Q4": 0.375,
+          "R4|Q5": 0.3333333333333333,
+          "R4|Q6": 0.2916666666666667,
+          "R4|Q7": 0.2916666666666667,
+          "R5|Q1": 0.5416666666666666,
+          "R5|Q2": 0.4583333333333333,
+          "R5|Q3": 0.625,
+          "R5|Q4": 0.7083333333333334,
+          "R5|Q5": 0.5,
+          "R5|Q6": 0.4583333333333333,
+          "R5|Q7": 0.5833333333333334,
+          "R6|Q1": 0.5,
+          "R6|Q2": 0.25,
+          "R6|Q3": 0.6666666666666666,
+          "R6|Q4": 0.5,
+          "R6|Q5": 0.375,
+          "R6|Q6": 0.2916666666666667,
+          "R6|Q7": 0.375,
+          "R7|Q1": 0.4166666666666667,
+          "R7|Q2": 0.25,
+          "R7|Q3": 0.4166666666666667,
+          "R7|Q4": 0.375,
+          "R7|Q5": 0.2916666666666667,
+          "R7|Q6": 0.25,
+          "R7|Q7": 0.3333333333333333
+        },
+        "file_recall_at_5": {
+          "R1|Q1": 0.7916666666666666,
+          "R1|Q2": 0.75,
+          "R1|Q3": 0.9166666666666666,
+          "R1|Q4": 0.9166666666666666,
+          "R1|Q5": 0.875,
+          "R1|Q6": 0.7916666666666666,
+          "R1|Q7": 0.875,
+          "R2|Q1": 0.7916666666666666,
+          "R2|Q2": 0.7916666666666666,
+          "R2|Q3": 0.9166666666666666,
+          "R2|Q4": 0.9166666666666666,
+          "R2|Q5": 0.875,
+          "R2|Q6": 0.8333333333333334,
+          "R2|Q7": 0.875,
+          "R3|Q1": 0.4166666666666667,
+          "R3|Q2": 0.4166666666666667,
+          "R3|Q3": 0.4166666666666667,
+          "R3|Q4": 0.4166666666666667,
+          "R3|Q5": 0.4166666666666667,
+          "R3|Q6": 0.4166666666666667,
+          "R3|Q7": 0.4166666666666667,
+          "R4|Q1": 0.6666666666666666,
+          "R4|Q2": 0.5833333333333334,
+          "R4|Q3": 0.75,
+          "R4|Q4": 0.75,
+          "R4|Q5": 0.625,
+          "R4|Q6": 0.625,
+          "R4|Q7": 0.625,
+          "R5|Q1": 0.8333333333333334,
+          "R5|Q2": 0.8333333333333334,
+          "R5|Q3": 0.9166666666666666,
+          "R5|Q4": 0.9166666666666666,
+          "R5|Q5": 0.875,
+          "R5|Q6": 0.875,
+          "R5|Q7": 0.8333333333333334,
+          "R6|Q1": 0.8333333333333334,
+          "R6|Q2": 0.7083333333333334,
+          "R6|Q3": 0.875,
+          "R6|Q4": 0.875,
+          "R6|Q5": 0.75,
+          "R6|Q6": 0.7083333333333334,
+          "R6|Q7": 0.75,
+          "R7|Q1": 0.625,
+          "R7|Q2": 0.4583333333333333,
+          "R7|Q3": 0.75,
+          "R7|Q4": 0.75,
+          "R7|Q5": 0.5833333333333334,
+          "R7|Q6": 0.625,
+          "R7|Q7": 0.5833333333333334
+        }
+      },
+      "JS-mobile": {
+        "strict_symbol_recall_at_1": {
+          "R1|Q1": 0.6451612903225806,
+          "R1|Q2": 0.4838709677419355,
+          "R1|Q3": 0.6451612903225806,
+          "R1|Q4": 0.6129032258064516,
+          "R1|Q5": 0.45161290322580644,
+          "R1|Q6": 0.45161290322580644,
+          "R1|Q7": 0.45161290322580644,
+          "R2|Q1": 0.6451612903225806,
+          "R2|Q2": 0.4838709677419355,
+          "R2|Q3": 0.6451612903225806,
+          "R2|Q4": 0.6129032258064516,
+          "R2|Q5": 0.45161290322580644,
+          "R2|Q6": 0.45161290322580644,
+          "R2|Q7": 0.4838709677419355,
+          "R3|Q1": 0.7096774193548387,
+          "R3|Q2": 0.5806451612903226,
+          "R3|Q3": 0.7419354838709677,
+          "R3|Q4": 0.8064516129032258,
+          "R3|Q5": 0.5806451612903226,
+          "R3|Q6": 0.5483870967741935,
+          "R3|Q7": 0.6129032258064516,
+          "R4|Q1": 0.41935483870967744,
+          "R4|Q2": 0.22580645161290322,
+          "R4|Q3": 0.45161290322580644,
+          "R4|Q4": 0.41935483870967744,
+          "R4|Q5": 0.2903225806451613,
+          "R4|Q6": 0.1935483870967742,
+          "R4|Q7": 0.2903225806451613,
+          "R5|Q1": 0.5161290322580645,
+          "R5|Q2": 0.3870967741935484,
+          "R5|Q3": 0.6451612903225806,
+          "R5|Q4": 0.45161290322580644,
+          "R5|Q5": 0.3225806451612903,
+          "R5|Q6": 0.3548387096774194,
+          "R5|Q7": 0.3548387096774194,
+          "R6|Q1": 0.4375,
+          "R6|Q2": 0.28125,
+          "R6|Q3": 0.53125,
+          "R6|Q4": 0.40625,
+          "R6|Q5": 0.28125,
+          "R6|Q6": 0.21875,
+          "R6|Q7": 0.34375,
+          "R7|Q1": 0.3548387096774194,
+          "R7|Q2": 0.22580645161290322,
+          "R7|Q3": 0.3225806451612903,
+          "R7|Q4": 0.3548387096774194,
+          "R7|Q5": 0.25806451612903225,
+          "R7|Q6": 0.16129032258064516,
+          "R7|Q7": 0.25806451612903225
+        },
+        "relaxed_def_recall_at_1": {
+          "R1|Q1": 0.8064516129032258,
+          "R1|Q2": 0.6774193548387096,
+          "R1|Q3": 0.7419354838709677,
+          "R1|Q4": 0.7419354838709677,
+          "R1|Q5": 0.6451612903225806,
+          "R1|Q6": 0.7096774193548387,
+          "R1|Q7": 0.6774193548387096,
+          "R2|Q1": 0.8709677419354839,
+          "R2|Q2": 0.7419354838709677,
+          "R2|Q3": 0.8064516129032258,
+          "R2|Q4": 0.8709677419354839,
+          "R2|Q5": 0.6774193548387096,
+          "R2|Q6": 0.8064516129032258,
+          "R2|Q7": 0.7419354838709677,
+          "R3|Q1": 0.9032258064516129,
+          "R3|Q2": 0.8709677419354839,
+          "R3|Q3": 0.9032258064516129,
+          "R3|Q4": 0.8387096774193549,
+          "R3|Q5": 0.8709677419354839,
+          "R3|Q6": 0.8709677419354839,
+          "R3|Q7": 0.8709677419354839,
+          "R4|Q1": 0.5483870967741935,
+          "R4|Q2": 0.3225806451612903,
+          "R4|Q3": 0.5161290322580645,
+          "R4|Q4": 0.5161290322580645,
+          "R4|Q5": 0.3548387096774194,
+          "R4|Q6": 0.2903225806451613,
+          "R4|Q7": 0.3870967741935484,
+          "R5|Q1": 0.6774193548387096,
+          "R5|Q2": 0.5161290322580645,
+          "R5|Q3": 0.7419354838709677,
+          "R5|Q4": 0.5483870967741935,
+          "R5|Q5": 0.41935483870967744,
+          "R5|Q6": 0.5806451612903226,
+          "R5|Q7": 0.5483870967741935,
+          "R6|Q1": 0.46875,
+          "R6|Q2": 0.375,
+          "R6|Q3": 0.53125,
+          "R6|Q4": 0.46875,
+          "R6|Q5": 0.28125,
+          "R6|Q6": 0.3125,
+          "R6|Q7": 0.40625,
+          "R7|Q1": 0.3870967741935484,
+          "R7|Q2": 0.25806451612903225,
+          "R7|Q3": 0.3548387096774194,
+          "R7|Q4": 0.3870967741935484,
+          "R7|Q5": 0.25806451612903225,
+          "R7|Q6": 0.1935483870967742,
+          "R7|Q7": 0.25806451612903225
+        },
+        "file_recall_at_5": {
+          "R1|Q1": 0.9354838709677419,
+          "R1|Q2": 0.9354838709677419,
+          "R1|Q3": 0.9354838709677419,
+          "R1|Q4": 0.9354838709677419,
+          "R1|Q5": 0.9354838709677419,
+          "R1|Q6": 0.9032258064516129,
+          "R1|Q7": 0.9354838709677419,
+          "R2|Q1": 0.9354838709677419,
+          "R2|Q2": 0.9354838709677419,
+          "R2|Q3": 0.9354838709677419,
+          "R2|Q4": 0.9354838709677419,
+          "R2|Q5": 0.9354838709677419,
+          "R2|Q6": 0.9354838709677419,
+          "R2|Q7": 0.9354838709677419,
+          "R3|Q1": 0.967741935483871,
+          "R3|Q2": 0.967741935483871,
+          "R3|Q3": 0.967741935483871,
+          "R3|Q4": 0.967741935483871,
+          "R3|Q5": 0.967741935483871,
+          "R3|Q6": 0.967741935483871,
+          "R3|Q7": 0.967741935483871,
+          "R4|Q1": 0.6774193548387096,
+          "R4|Q2": 0.5161290322580645,
+          "R4|Q3": 0.6451612903225806,
+          "R4|Q4": 0.6774193548387096,
+          "R4|Q5": 0.4838709677419355,
+          "R4|Q6": 0.6129032258064516,
+          "R4|Q7": 0.5806451612903226,
+          "R5|Q1": 0.9354838709677419,
+          "R5|Q2": 0.9032258064516129,
+          "R5|Q3": 0.9354838709677419,
+          "R5|Q4": 0.9354838709677419,
+          "R5|Q5": 0.9354838709677419,
+          "R5|Q6": 0.9032258064516129,
+          "R5|Q7": 0.9032258064516129,
+          "R6|Q1": 0.84375,
+          "R6|Q2": 0.65625,
+          "R6|Q3": 0.8125,
+          "R6|Q4": 0.75,
+          "R6|Q5": 0.625,
+          "R6|Q6": 0.6875,
+          "R6|Q7": 0.6875,
+          "R7|Q1": 0.5161290322580645,
+          "R7|Q2": 0.41935483870967744,
+          "R7|Q3": 0.5161290322580645,
+          "R7|Q4": 0.5161290322580645,
+          "R7|Q5": 0.3870967741935484,
+          "R7|Q6": 0.5161290322580645,
+          "R7|Q7": 0.41935483870967744
+        }
+      },
+      "Scripting-dynamic": {
+        "strict_symbol_recall_at_1": {
+          "R1|Q1": 0.7,
+          "R1|Q2": 0.65,
+          "R1|Q3": 0.8,
+          "R1|Q4": 0.775,
+          "R1|Q5": 0.775,
+          "R1|Q6": 0.725,
+          "R1|Q7": 0.65,
+          "R2|Q1": 0.7,
+          "R2|Q2": 0.65,
+          "R2|Q3": 0.775,
+          "R2|Q4": 0.75,
+          "R2|Q5": 0.775,
+          "R2|Q6": 0.7,
+          "R2|Q7": 0.675,
+          "R3|Q1": 0.6,
+          "R3|Q2": 0.6,
+          "R3|Q3": 0.775,
+          "R3|Q4": 0.7,
+          "R3|Q5": 0.7,
+          "R3|Q6": 0.675,
+          "R3|Q7": 0.725,
+          "R4|Q1": 0.425,
+          "R4|Q2": 0.375,
+          "R4|Q3": 0.5,
+          "R4|Q4": 0.55,
+          "R4|Q5": 0.5,
+          "R4|Q6": 0.45,
+          "R4|Q7": 0.325,
+          "R5|Q1": 0.55,
+          "R5|Q2": 0.5,
+          "R5|Q3": 0.775,
+          "R5|Q4": 0.75,
+          "R5|Q5": 0.625,
+          "R5|Q6": 0.475,
+          "R5|Q7": 0.6,
+          "R6|Q1": 0.375,
+          "R6|Q2": 0.3,
+          "R6|Q3": 0.6,
+          "R6|Q4": 0.5,
+          "R6|Q5": 0.425,
+          "R6|Q6": 0.4,
+          "R6|Q7": 0.325,
+          "R7|Q1": 0.425,
+          "R7|Q2": 0.35,
+          "R7|Q3": 0.475,
+          "R7|Q4": 0.55,
+          "R7|Q5": 0.525,
+          "R7|Q6": 0.425,
+          "R7|Q7": 0.325
+        },
+        "relaxed_def_recall_at_1": {
+          "R1|Q1": 0.8,
+          "R1|Q2": 0.775,
+          "R1|Q3": 0.75,
+          "R1|Q4": 0.75,
+          "R1|Q5": 0.875,
+          "R1|Q6": 0.725,
+          "R1|Q7": 0.675,
+          "R2|Q1": 0.8,
+          "R2|Q2": 0.8,
+          "R2|Q3": 0.75,
+          "R2|Q4": 0.75,
+          "R2|Q5": 0.9,
+          "R2|Q6": 0.725,
+          "R2|Q7": 0.7,
+          "R3|Q1": 0.65,
+          "R3|Q2": 0.7,
+          "R3|Q3": 0.725,
+          "R3|Q4": 0.65,
+          "R3|Q5": 0.8,
+          "R3|Q6": 0.675,
+          "R3|Q7": 0.8,
+          "R4|Q1": 0.525,
+          "R4|Q2": 0.475,
+          "R4|Q3": 0.5,
+          "R4|Q4": 0.575,
+          "R4|Q5": 0.625,
+          "R4|Q6": 0.475,
+          "R4|Q7": 0.325,
+          "R5|Q1": 0.625,
+          "R5|Q2": 0.55,
+          "R5|Q3": 0.725,
+          "R5|Q4": 0.7,
+          "R5|Q5": 0.7,
+          "R5|Q6": 0.575,
+          "R5|Q7": 0.625,
+          "R6|Q1": 0.4,
+          "R6|Q2": 0.35,
+          "R6|Q3": 0.55,
+          "R6|Q4": 0.45,
+          "R6|Q5": 0.45,
+          "R6|Q6": 0.375,
+          "R6|Q7": 0.325,
+          "R7|Q1": 0.425,
+          "R7|Q2": 0.375,
+          "R7|Q3": 0.475,
+          "R7|Q4": 0.525,
+          "R7|Q5": 0.65,
+          "R7|Q6": 0.45,
+          "R7|Q7": 0.325
+        },
+        "file_recall_at_5": {
+          "R1|Q1": 0.975,
+          "R1|Q2": 1,
+          "R1|Q3": 0.975,
+          "R1|Q4": 0.925,
+          "R1|Q5": 1,
+          "R1|Q6": 0.975,
+          "R1|Q7": 0.95,
+          "R2|Q1": 0.975,
+          "R2|Q2": 1,
+          "R2|Q3": 0.975,
+          "R2|Q4": 0.925,
+          "R2|Q5": 1,
+          "R2|Q6": 0.975,
+          "R2|Q7": 0.95,
+          "R3|Q1": 0.925,
+          "R3|Q2": 0.925,
+          "R3|Q3": 0.925,
+          "R3|Q4": 0.925,
+          "R3|Q5": 0.95,
+          "R3|Q6": 0.95,
+          "R3|Q7": 0.95,
+          "R4|Q1": 0.725,
+          "R4|Q2": 0.7,
+          "R4|Q3": 0.725,
+          "R4|Q4": 0.675,
+          "R4|Q5": 0.75,
+          "R4|Q6": 0.7,
+          "R4|Q7": 0.65,
+          "R5|Q1": 0.85,
+          "R5|Q2": 0.95,
+          "R5|Q3": 0.95,
+          "R5|Q4": 0.875,
+          "R5|Q5": 0.975,
+          "R5|Q6": 0.925,
+          "R5|Q7": 0.925,
+          "R6|Q1": 0.775,
+          "R6|Q2": 0.775,
+          "R6|Q3": 0.85,
+          "R6|Q4": 0.825,
+          "R6|Q5": 0.825,
+          "R6|Q6": 0.8,
+          "R6|Q7": 0.8,
+          "R7|Q1": 0.675,
+          "R7|Q2": 0.625,
+          "R7|Q3": 0.65,
+          "R7|Q4": 0.625,
+          "R7|Q5": 0.7,
+          "R7|Q6": 0.675,
+          "R7|Q7": 0.675
+        }
+      }
+    },
+    "ranking_stability_check": {
+      "_note": "argmax (R, Q) cell under each rubric, computed on uniform-across-golds means (same convention as simple_global). On phase6-redo-ss-find-v8 data, strict and relaxed argmax DIFFER: strict winner is R2|Q3 (sym 0.6503, tied with R5|Q3); relaxed winner is R2|Q1 (relaxed_def 0.7832), with R2|Q3 fourth at 0.7413 — a 4.2pp gap. This is a real signal the cross-tool audit (2026-05-13) did not measure — the audit only spot-checked PARTIAL cases for the WINNING cell (R2|Q3) and inferred rubric-robustness; this aggregator computes relaxed_def globally for ALL 49 cells. The strategy winning cells (simple_global=R2|Q3, JS-mobile override=R3|Q4, popular_weighted=R5|Q3) are unchanged; the headline recommendation set is robust because gates pin the chosen cells. recall_at_5_winner measures file-in-top-5 and is informational.",
+      "strict_winner": "R2|Q3",
+      "relaxed_winner": "R2|Q1",
+      "recall_at_5_winner": "R2|Q3"
+    },
+    "coverage": {
+      "rows_annotated": 4713,
+      "rows_unloadable": 0,
+      "golds_without_inputs": 0
     }
   },
   "manual_gates_pending": [
