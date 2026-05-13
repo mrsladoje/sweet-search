@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "tool": "ss-find",
-  "runId": "phase6-redo-ss-find-v2",
-  "generatedAt": "2026-05-13T14:10:19.580Z",
+  "runId": "phase6-redo-ss-find-v3",
+  "generatedAt": "2026-05-13T14:31:54.922Z",
   "plan_reference": "docs/PHASE6_REDO.md §12.1 + 2026-05-13 ss-find amendment",
   "primary_metric": "symbolRecallAt1",
   "grid": {
@@ -69,8 +69,8 @@
   "baseline": {
     "regex": "\\b<expectedSymbol>\\b (R2-narrow)",
     "query": "<gold.query> (the natural NL phrasing)",
-    "file_recall_at_1": 0.7692307692307693,
-    "symbol_recall_at_1": 0.5384615384615384,
+    "file_recall_at_1": 0.8181818181818182,
+    "symbol_recall_at_1": 0.5594405594405595,
     "n": 143
   },
   "strategies": {
@@ -79,8 +79,8 @@
       "qCell": "Q3",
       "rLabel": "word-bounded+literal",
       "qLabel": "short+with-symbol+imperative",
-      "file_recall_at_1": 0.7902097902097902,
-      "symbol_recall_at_1": 0.5944055944055944,
+      "file_recall_at_1": 0.8321678321678322,
+      "symbol_recall_at_1": 0.6083916083916084,
       "primary_metric": "symbolRecallAt1",
       "instruction_text": "[simple-global] For ss-find: build the regex as word-bounded literal: `\\b<symbol>\\b` — the canonical narrow anchor AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
       "source": "best global symbol_recall@1 across 144 ast-tester golds"
@@ -91,8 +91,8 @@
         "qCell": "Q3",
         "rLabel": "word-bounded+literal",
         "qLabel": "short+with-symbol+imperative",
-        "file_recall_at_1": 0.7902097902097902,
-        "symbol_recall_at_1": 0.5944055944055944,
+        "file_recall_at_1": 0.8321678321678322,
+        "symbol_recall_at_1": 0.6083916083916084,
         "primary_metric": "symbolRecallAt1",
         "instruction_text": "[simple-global] For ss-find: build the regex as word-bounded literal: `\\b<symbol>\\b` — the canonical narrow anchor AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
         "source": "family-conditioned default (= simple-global)"
@@ -100,16 +100,16 @@
       "overrides": {
         "JS-mobile": {
           "rCell": "R3",
-          "qCell": "Q3",
+          "qCell": "Q4",
           "rLabel": "definition-anchored+family-keyword",
-          "qLabel": "short+with-symbol+imperative",
-          "file_recall_at_1": 0.8709677419354839,
-          "symbol_recall_at_1": 0.6774193548387096,
+          "qLabel": "short+with-symbol+interrogative",
+          "file_recall_at_1": 0.967741935483871,
+          "symbol_recall_at_1": 0.8064516129032258,
           "primary_metric": "symbolRecallAt1",
-          "instruction_text": "[JS-mobile-override] For ss-find: build the regex as definition-anchored: `\\b<family-keyword>\\s+<symbol>\\b` — language-keyword + symbol; catches the def site AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
-          "source": "family-best (Δ vs global = +9.7pp symbol_recall)",
-          "delta_vs_default_symbol_recall": 0.09677419354838701,
-          "global_on_family_symbol_recall": 0.5806451612903226
+          "instruction_text": "[JS-mobile-override] For ss-find: build the regex as definition-anchored: `\\b<family-keyword>\\s+<symbol>\\b` — language-keyword + symbol; catches the def site AND phrase the semantic query as short interrogative + symbol verbatim (4-8 tokens) — e.g., \"how does <Symbol> work\".",
+          "source": "family-best (Δ vs global = +16.1pp symbol_recall)",
+          "delta_vs_default_symbol_recall": 0.16129032258064513,
+          "global_on_family_symbol_recall": 0.6451612903225806
         }
       }
     },
@@ -118,8 +118,8 @@
       "qCell": "Q3",
       "rLabel": "definition-anchored+family-keyword",
       "qLabel": "short+with-symbol+imperative",
-      "file_recall_at_1": 0.6796875,
-      "symbol_recall_at_1": 0.5703125,
+      "file_recall_at_1": 0.7083333333333334,
+      "symbol_recall_at_1": 0.5859375,
       "primary_metric": "symbolRecallAt1",
       "instruction_text": "[popular-weighted (agentic-tier)] For ss-find: build the regex as definition-anchored: `\\b<family-keyword>\\s+<symbol>\\b` — language-keyword + symbol; catches the def site AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
       "source": "best weighted symbol_recall under agentic-tier weights (TS/Python/Rust=5, mainstream=3, longtail=1)",
@@ -129,8 +129,8 @@
         "qCell": "Q3",
         "rLabel": "small-alternation+symbol+neighbours",
         "qLabel": "short+with-symbol+imperative",
-        "file_recall_at_1": 0.7467105263157895,
-        "symbol_recall_at_1": 0.5578007518796992,
+        "file_recall_at_1": 0.7960526315789473,
+        "symbol_recall_at_1": 0.5841165413533834,
         "primary_metric": "symbolRecallAt1",
         "instruction_text": "[popular-weighted (so-tier)] For ss-find: build the regex as small alternation: `\\b(<symbol>|<sibling1>|<sibling2>)\\b` — symbol + 2 graph/chunk siblings AND phrase the semantic query as short imperative + symbol verbatim (4-8 tokens) — e.g., \"find <Symbol> usage\".",
         "source": "best weighted symbol_recall under §7 Stack-Overflow tier weights — for reference"
@@ -140,228 +140,228 @@
   "cell_table_global": {
     "R1|Q1": {
       "n": 143,
-      "file": 104,
-      "sym": 73
+      "file": 115,
+      "sym": 80
     },
     "R1|Q2": {
       "n": 143,
-      "file": 100,
-      "sym": 60
+      "file": 109,
+      "sym": 65
     },
     "R1|Q3": {
       "n": 143,
-      "file": 109,
-      "sym": 84
+      "file": 116,
+      "sym": 86
     },
     "R1|Q4": {
       "n": 143,
-      "file": 109,
-      "sym": 75
+      "file": 116,
+      "sym": 79
     },
     "R1|Q5": {
       "n": 143,
-      "file": 101,
-      "sym": 66
+      "file": 111,
+      "sym": 71
     },
     "R1|Q6": {
       "n": 143,
-      "file": 91,
-      "sym": 58
+      "file": 103,
+      "sym": 65
     },
     "R1|Q7": {
       "n": 143,
-      "file": 97,
-      "sym": 66
+      "file": 103,
+      "sym": 68
     },
     "R2|Q1": {
       "n": 143,
-      "file": 108,
-      "sym": 74
+      "file": 117,
+      "sym": 80
     },
     "R2|Q2": {
       "n": 143,
-      "file": 105,
-      "sym": 64
+      "file": 113,
+      "sym": 67
     },
     "R2|Q3": {
       "n": 143,
-      "file": 113,
-      "sym": 85
+      "file": 119,
+      "sym": 87
     },
     "R2|Q4": {
       "n": 143,
-      "file": 112,
-      "sym": 76
+      "file": 120,
+      "sym": 80
     },
     "R2|Q5": {
       "n": 143,
-      "file": 102,
-      "sym": 68
+      "file": 112,
+      "sym": 72
     },
     "R2|Q6": {
       "n": 143,
-      "file": 94,
-      "sym": 60
+      "file": 105,
+      "sym": 65
     },
     "R2|Q7": {
       "n": 143,
-      "file": 99,
-      "sym": 68
+      "file": 105,
+      "sym": 70
     },
     "R3|Q1": {
       "n": 143,
-      "file": 86,
-      "sym": 67
+      "file": 90,
+      "sym": 69
     },
     "R3|Q2": {
       "n": 143,
-      "file": 88,
-      "sym": 63
+      "file": 90,
+      "sym": 64
     },
     "R3|Q3": {
       "n": 143,
-      "file": 92,
-      "sym": 78
+      "file": 95,
+      "sym": 80
     },
     "R3|Q4": {
       "n": 143,
-      "file": 88,
-      "sym": 73
+      "file": 92,
+      "sym": 77
     },
     "R3|Q5": {
       "n": 143,
-      "file": 94,
+      "file": 95,
       "sym": 69
     },
     "R3|Q6": {
       "n": 143,
-      "file": 90,
-      "sym": 66
+      "file": 94,
+      "sym": 68
     },
     "R3|Q7": {
       "n": 143,
-      "file": 95,
-      "sym": 70
+      "file": 97,
+      "sym": 72
     },
     "R4|Q1": {
+      "n": 143,
+      "file": 85,
+      "sym": 52
+    },
+    "R4|Q2": {
+      "n": 143,
+      "file": 68,
+      "sym": 34
+    },
+    "R4|Q3": {
+      "n": 143,
+      "file": 87,
+      "sym": 58
+    },
+    "R4|Q4": {
+      "n": 143,
+      "file": 85,
+      "sym": 53
+    },
+    "R4|Q5": {
+      "n": 143,
+      "file": 82,
+      "sym": 44
+    },
+    "R4|Q6": {
+      "n": 143,
+      "file": 73,
+      "sym": 38
+    },
+    "R4|Q7": {
+      "n": 143,
+      "file": 69,
+      "sym": 37
+    },
+    "R5|Q1": {
+      "n": 143,
+      "file": 93,
+      "sym": 63
+    },
+    "R5|Q2": {
+      "n": 143,
+      "file": 90,
+      "sym": 55
+    },
+    "R5|Q3": {
+      "n": 143,
+      "file": 115,
+      "sym": 87
+    },
+    "R5|Q4": {
+      "n": 143,
+      "file": 110,
+      "sym": 74
+    },
+    "R5|Q5": {
+      "n": 143,
+      "file": 91,
+      "sym": 57
+    },
+    "R5|Q6": {
+      "n": 143,
+      "file": 91,
+      "sym": 52
+    },
+    "R5|Q7": {
+      "n": 143,
+      "file": 95,
+      "sym": 59
+    },
+    "R6|Q1": {
+      "n": 144,
+      "file": 92,
+      "sym": 56
+    },
+    "R6|Q2": {
+      "n": 144,
+      "file": 77,
+      "sym": 37
+    },
+    "R6|Q3": {
+      "n": 144,
+      "file": 104,
+      "sym": 75
+    },
+    "R6|Q4": {
+      "n": 144,
+      "file": 97,
+      "sym": 61
+    },
+    "R6|Q5": {
+      "n": 144,
+      "file": 84,
+      "sym": 45
+    },
+    "R6|Q6": {
+      "n": 144,
+      "file": 77,
+      "sym": 41
+    },
+    "R6|Q7": {
+      "n": 144,
+      "file": 74,
+      "sym": 41
+    },
+    "R7|Q1": {
       "n": 143,
       "file": 75,
       "sym": 48
     },
-    "R4|Q2": {
-      "n": 143,
-      "file": 64,
-      "sym": 32
-    },
-    "R4|Q3": {
-      "n": 143,
-      "file": 82,
-      "sym": 56
-    },
-    "R4|Q4": {
-      "n": 143,
-      "file": 80,
-      "sym": 52
-    },
-    "R4|Q5": {
-      "n": 143,
-      "file": 79,
-      "sym": 43
-    },
-    "R4|Q6": {
-      "n": 143,
-      "file": 70,
-      "sym": 36
-    },
-    "R4|Q7": {
-      "n": 143,
-      "file": 63,
-      "sym": 34
-    },
-    "R5|Q1": {
-      "n": 143,
-      "file": 83,
-      "sym": 57
-    },
-    "R5|Q2": {
-      "n": 143,
-      "file": 76,
-      "sym": 47
-    },
-    "R5|Q3": {
-      "n": 143,
-      "file": 109,
-      "sym": 84
-    },
-    "R5|Q4": {
-      "n": 143,
-      "file": 100,
-      "sym": 68
-    },
-    "R5|Q5": {
-      "n": 143,
-      "file": 80,
-      "sym": 50
-    },
-    "R5|Q6": {
-      "n": 143,
-      "file": 77,
-      "sym": 47
-    },
-    "R5|Q7": {
-      "n": 143,
-      "file": 85,
-      "sym": 56
-    },
-    "R6|Q1": {
-      "n": 144,
-      "file": 84,
-      "sym": 52
-    },
-    "R6|Q2": {
-      "n": 144,
-      "file": 70,
-      "sym": 35
-    },
-    "R6|Q3": {
-      "n": 144,
-      "file": 95,
-      "sym": 70
-    },
-    "R6|Q4": {
-      "n": 144,
-      "file": 90,
-      "sym": 58
-    },
-    "R6|Q5": {
-      "n": 144,
-      "file": 77,
-      "sym": 44
-    },
-    "R6|Q6": {
-      "n": 144,
-      "file": 66,
-      "sym": 37
-    },
-    "R6|Q7": {
-      "n": 144,
-      "file": 70,
-      "sym": 40
-    },
-    "R7|Q1": {
-      "n": 143,
-      "file": 70,
-      "sym": 47
-    },
     "R7|Q2": {
       "n": 143,
-      "file": 57,
-      "sym": 32
+      "file": 61,
+      "sym": 33
     },
     "R7|Q3": {
       "n": 143,
-      "file": 79,
-      "sym": 53
+      "file": 83,
+      "sym": 55
     },
     "R7|Q4": {
       "n": 143,
@@ -370,90 +370,90 @@
     },
     "R7|Q5": {
       "n": 143,
-      "file": 73,
-      "sym": 43
+      "file": 79,
+      "sym": 45
     },
     "R7|Q6": {
       "n": 143,
-      "file": 66,
-      "sym": 35
+      "file": 68,
+      "sym": 37
     },
     "R7|Q7": {
       "n": 143,
-      "file": 56,
-      "sym": 31
+      "file": 63,
+      "sym": 34
     }
   },
   "cell_table_by_family": {
     "OO-monolithic": {
       "R1|Q1": {
         "n": 32,
-        "file": 24,
+        "file": 26,
         "sym": 15
       },
       "R1|Q2": {
         "n": 32,
-        "file": 21,
-        "sym": 9
+        "file": 24,
+        "sym": 10
       },
       "R1|Q3": {
         "n": 32,
-        "file": 25,
+        "file": 28,
         "sym": 16
       },
       "R1|Q4": {
         "n": 32,
-        "file": 25,
-        "sym": 15
+        "file": 28,
+        "sym": 16
       },
       "R1|Q5": {
         "n": 32,
-        "file": 19,
-        "sym": 11
+        "file": 22,
+        "sym": 12
       },
       "R1|Q6": {
         "n": 32,
-        "file": 15,
-        "sym": 7
+        "file": 19,
+        "sym": 8
       },
       "R1|Q7": {
         "n": 32,
-        "file": 16,
+        "file": 18,
         "sym": 12
       },
       "R2|Q1": {
         "n": 32,
-        "file": 25,
+        "file": 27,
         "sym": 15
       },
       "R2|Q2": {
         "n": 32,
-        "file": 23,
+        "file": 25,
         "sym": 11
       },
       "R2|Q3": {
         "n": 32,
-        "file": 26,
+        "file": 28,
         "sym": 17
       },
       "R2|Q4": {
         "n": 32,
-        "file": 24,
-        "sym": 15
+        "file": 27,
+        "sym": 16
       },
       "R2|Q5": {
         "n": 32,
-        "file": 19,
-        "sym": 12
+        "file": 22,
+        "sym": 13
       },
       "R2|Q6": {
         "n": 32,
-        "file": 15,
-        "sym": 8
+        "file": 19,
+        "sym": 9
       },
       "R2|Q7": {
         "n": 32,
-        "file": 16,
+        "file": 18,
         "sym": 12
       },
       "R3|Q1": {
@@ -493,7 +493,7 @@
       },
       "R4|Q1": {
         "n": 32,
-        "file": 16,
+        "file": 19,
         "sym": 9
       },
       "R4|Q2": {
@@ -503,62 +503,62 @@
       },
       "R4|Q3": {
         "n": 32,
-        "file": 20,
+        "file": 21,
         "sym": 10
       },
       "R4|Q4": {
         "n": 32,
-        "file": 18,
+        "file": 20,
         "sym": 8
       },
       "R4|Q5": {
         "n": 32,
-        "file": 17,
-        "sym": 5
+        "file": 19,
+        "sym": 6
       },
       "R4|Q6": {
         "n": 32,
-        "file": 15,
+        "file": 16,
         "sym": 3
       },
       "R4|Q7": {
         "n": 32,
-        "file": 12,
+        "file": 13,
         "sym": 5
       },
       "R5|Q1": {
         "n": 32,
-        "file": 20,
-        "sym": 13
+        "file": 24,
+        "sym": 14
       },
       "R5|Q2": {
         "n": 32,
-        "file": 21,
-        "sym": 11
+        "file": 24,
+        "sym": 12
       },
       "R5|Q3": {
         "n": 32,
-        "file": 26,
+        "file": 28,
         "sym": 17
       },
       "R5|Q4": {
         "n": 32,
-        "file": 26,
+        "file": 27,
         "sym": 16
       },
       "R5|Q5": {
         "n": 32,
-        "file": 17,
-        "sym": 10
+        "file": 21,
+        "sym": 12
       },
       "R5|Q6": {
         "n": 32,
-        "file": 14,
-        "sym": 8
+        "file": 19,
+        "sym": 10
       },
       "R5|Q7": {
         "n": 32,
-        "file": 15,
+        "file": 17,
         "sym": 12
       },
       "R6|Q1": {
@@ -568,8 +568,8 @@
       },
       "R6|Q2": {
         "n": 32,
-        "file": 17,
-        "sym": 9
+        "file": 18,
+        "sym": 10
       },
       "R6|Q3": {
         "n": 32,
@@ -578,17 +578,17 @@
       },
       "R6|Q4": {
         "n": 32,
-        "file": 23,
+        "file": 24,
         "sym": 15
       },
       "R6|Q5": {
         "n": 32,
-        "file": 16,
+        "file": 17,
         "sym": 8
       },
       "R6|Q6": {
         "n": 32,
-        "file": 15,
+        "file": 16,
         "sym": 7
       },
       "R6|Q7": {
@@ -598,18 +598,18 @@
       },
       "R7|Q1": {
         "n": 32,
-        "file": 15,
-        "sym": 8
+        "file": 18,
+        "sym": 9
       },
       "R7|Q2": {
         "n": 32,
-        "file": 16,
+        "file": 19,
         "sym": 4
       },
       "R7|Q3": {
         "n": 32,
-        "file": 20,
-        "sym": 10
+        "file": 21,
+        "sym": 11
       },
       "R7|Q4": {
         "n": 32,
@@ -618,17 +618,17 @@
       },
       "R7|Q5": {
         "n": 32,
-        "file": 16,
-        "sym": 5
+        "file": 19,
+        "sym": 6
       },
       "R7|Q6": {
         "n": 32,
-        "file": 14,
-        "sym": 2
+        "file": 15,
+        "sym": 3
       },
       "R7|Q7": {
         "n": 32,
-        "file": 11,
+        "file": 13,
         "sym": 4
       }
     },
@@ -640,7 +640,7 @@
       },
       "R1|Q2": {
         "n": 16,
-        "file": 13,
+        "file": 14,
         "sym": 8
       },
       "R1|Q3": {
@@ -655,7 +655,7 @@
       },
       "R1|Q5": {
         "n": 16,
-        "file": 12,
+        "file": 13,
         "sym": 7
       },
       "R1|Q6": {
@@ -675,7 +675,7 @@
       },
       "R2|Q2": {
         "n": 16,
-        "file": 13,
+        "file": 14,
         "sym": 9
       },
       "R2|Q3": {
@@ -690,7 +690,7 @@
       },
       "R2|Q5": {
         "n": 16,
-        "file": 12,
+        "file": 13,
         "sym": 7
       },
       "R2|Q6": {
@@ -740,7 +740,7 @@
       },
       "R4|Q1": {
         "n": 16,
-        "file": 12,
+        "file": 13,
         "sym": 8
       },
       "R4|Q2": {
@@ -775,13 +775,13 @@
       },
       "R5|Q1": {
         "n": 16,
-        "file": 5,
-        "sym": 3
+        "file": 7,
+        "sym": 5
       },
       "R5|Q2": {
         "n": 16,
-        "file": 7,
-        "sym": 5
+        "file": 10,
+        "sym": 6
       },
       "R5|Q3": {
         "n": 16,
@@ -790,32 +790,32 @@
       },
       "R5|Q4": {
         "n": 16,
-        "file": 11,
+        "file": 12,
         "sym": 7
       },
       "R5|Q5": {
         "n": 16,
-        "file": 7,
+        "file": 8,
         "sym": 4
       },
       "R5|Q6": {
         "n": 16,
-        "file": 8,
+        "file": 9,
         "sym": 6
       },
       "R5|Q7": {
         "n": 16,
-        "file": 8,
+        "file": 9,
         "sym": 6
       },
       "R6|Q1": {
         "n": 16,
-        "file": 9,
-        "sym": 6
+        "file": 10,
+        "sym": 7
       },
       "R6|Q2": {
         "n": 16,
-        "file": 9,
+        "file": 10,
         "sym": 3
       },
       "R6|Q3": {
@@ -825,17 +825,17 @@
       },
       "R6|Q4": {
         "n": 16,
-        "file": 13,
+        "file": 14,
         "sym": 10
       },
       "R6|Q5": {
         "n": 16,
-        "file": 11,
+        "file": 12,
         "sym": 6
       },
       "R6|Q6": {
         "n": 16,
-        "file": 9,
+        "file": 10,
         "sym": 6
       },
       "R6|Q7": {
@@ -845,7 +845,7 @@
       },
       "R7|Q1": {
         "n": 16,
-        "file": 9,
+        "file": 10,
         "sym": 4
       },
       "R7|Q2": {
@@ -1017,7 +1017,7 @@
       },
       "R4|Q7": {
         "n": 24,
-        "file": 9,
+        "file": 10,
         "sym": 4
       },
       "R5|Q1": {
@@ -1027,12 +1027,12 @@
       },
       "R5|Q2": {
         "n": 24,
-        "file": 10,
-        "sym": 5
+        "file": 11,
+        "sym": 6
       },
       "R5|Q3": {
         "n": 24,
-        "file": 17,
+        "file": 18,
         "sym": 12
       },
       "R5|Q4": {
@@ -1042,18 +1042,18 @@
       },
       "R5|Q5": {
         "n": 24,
-        "file": 11,
-        "sym": 6
+        "file": 13,
+        "sym": 7
       },
       "R5|Q6": {
         "n": 24,
-        "file": 12,
-        "sym": 6
+        "file": 14,
+        "sym": 7
       },
       "R5|Q7": {
         "n": 24,
-        "file": 13,
-        "sym": 4
+        "file": 16,
+        "sym": 5
       },
       "R6|Q1": {
         "n": 24,
@@ -1062,13 +1062,13 @@
       },
       "R6|Q2": {
         "n": 24,
-        "file": 10,
+        "file": 11,
         "sym": 3
       },
       "R6|Q3": {
         "n": 24,
-        "file": 18,
-        "sym": 10
+        "file": 19,
+        "sym": 11
       },
       "R6|Q4": {
         "n": 24,
@@ -1077,17 +1077,17 @@
       },
       "R6|Q5": {
         "n": 24,
-        "file": 11,
+        "file": 14,
         "sym": 4
       },
       "R6|Q6": {
         "n": 24,
-        "file": 11,
+        "file": 13,
         "sym": 4
       },
       "R6|Q7": {
         "n": 24,
-        "file": 11,
+        "file": 13,
         "sym": 5
       },
       "R7|Q1": {
@@ -1122,15 +1122,15 @@
       },
       "R7|Q7": {
         "n": 24,
-        "file": 9,
+        "file": 10,
         "sym": 4
       }
     },
     "JS-mobile": {
       "R1|Q1": {
         "n": 31,
-        "file": 23,
-        "sym": 18
+        "file": 26,
+        "sym": 20
       },
       "R1|Q2": {
         "n": 31,
@@ -1139,33 +1139,33 @@
       },
       "R1|Q3": {
         "n": 31,
-        "file": 22,
-        "sym": 18
+        "file": 25,
+        "sym": 20
       },
       "R1|Q4": {
         "n": 31,
-        "file": 23,
-        "sym": 17
+        "file": 25,
+        "sym": 18
       },
       "R1|Q5": {
         "n": 31,
-        "file": 21,
-        "sym": 13
+        "file": 23,
+        "sym": 14
       },
       "R1|Q6": {
+        "n": 31,
+        "file": 26,
+        "sym": 15
+      },
+      "R1|Q7": {
         "n": 31,
         "file": 24,
         "sym": 14
       },
-      "R1|Q7": {
-        "n": 31,
-        "file": 22,
-        "sym": 13
-      },
       "R2|Q1": {
         "n": 31,
-        "file": 24,
-        "sym": 18
+        "file": 27,
+        "sym": 20
       },
       "R2|Q2": {
         "n": 31,
@@ -1174,68 +1174,68 @@
       },
       "R2|Q3": {
         "n": 31,
-        "file": 24,
-        "sym": 18
+        "file": 27,
+        "sym": 20
       },
       "R2|Q4": {
         "n": 31,
-        "file": 26,
-        "sym": 17
+        "file": 28,
+        "sym": 18
       },
       "R2|Q5": {
-        "n": 31,
-        "file": 21,
-        "sym": 13
-      },
-      "R2|Q6": {
-        "n": 31,
-        "file": 26,
-        "sym": 14
-      },
-      "R2|Q7": {
         "n": 31,
         "file": 23,
         "sym": 14
       },
-      "R3|Q1": {
+      "R2|Q6": {
+        "n": 31,
+        "file": 28,
+        "sym": 15
+      },
+      "R2|Q7": {
         "n": 31,
         "file": 25,
-        "sym": 20
+        "sym": 15
+      },
+      "R3|Q1": {
+        "n": 31,
+        "file": 29,
+        "sym": 22
       },
       "R3|Q2": {
         "n": 31,
-        "file": 27,
-        "sym": 17
+        "file": 29,
+        "sym": 18
       },
       "R3|Q3": {
         "n": 31,
-        "file": 27,
-        "sym": 21
+        "file": 30,
+        "sym": 23
       },
       "R3|Q4": {
         "n": 31,
-        "file": 26,
-        "sym": 21
+        "file": 30,
+        "sym": 25
       },
       "R3|Q5": {
         "n": 31,
-        "file": 28,
+        "file": 29,
         "sym": 18
       },
       "R3|Q6": {
         "n": 31,
-        "file": 26,
-        "sym": 16
+        "file": 30,
+        "sym": 18
       },
       "R3|Q7": {
         "n": 31,
-        "file": 28,
-        "sym": 17
+        "file": 30,
+        "sym": 19
       },
       "R4|Q1": {
         "n": 31,
-        "file": 15,
-        "sym": 11
+        "file": 18,
+        "sym": 13
       },
       "R4|Q2": {
         "n": 31,
@@ -1244,12 +1244,12 @@
       },
       "R4|Q3": {
         "n": 31,
-        "file": 15,
-        "sym": 12
+        "file": 18,
+        "sym": 14
       },
       "R4|Q4": {
         "n": 31,
-        "file": 15,
+        "file": 17,
         "sym": 12
       },
       "R4|Q5": {
@@ -1264,27 +1264,27 @@
       },
       "R4|Q7": {
         "n": 31,
-        "file": 13,
-        "sym": 7
+        "file": 15,
+        "sym": 9
       },
       "R5|Q1": {
         "n": 31,
-        "file": 20,
-        "sym": 14
+        "file": 21,
+        "sym": 15
       },
       "R5|Q2": {
         "n": 31,
-        "file": 18,
-        "sym": 11
+        "file": 19,
+        "sym": 12
       },
       "R5|Q3": {
         "n": 31,
-        "file": 22,
-        "sym": 17
+        "file": 24,
+        "sym": 19
       },
       "R5|Q4": {
         "n": 31,
-        "file": 19,
+        "file": 21,
         "sym": 14
       },
       "R5|Q5": {
@@ -1294,18 +1294,18 @@
       },
       "R5|Q6": {
         "n": 31,
-        "file": 21,
+        "file": 22,
         "sym": 11
       },
       "R5|Q7": {
         "n": 31,
-        "file": 19,
-        "sym": 10
+        "file": 20,
+        "sym": 11
       },
       "R6|Q1": {
         "n": 32,
-        "file": 15,
-        "sym": 11
+        "file": 19,
+        "sym": 13
       },
       "R6|Q2": {
         "n": 32,
@@ -1314,28 +1314,28 @@
       },
       "R6|Q3": {
         "n": 32,
-        "file": 15,
-        "sym": 14
+        "file": 21,
+        "sym": 17
       },
       "R6|Q4": {
         "n": 32,
-        "file": 14,
-        "sym": 9
+        "file": 17,
+        "sym": 11
       },
       "R6|Q5": {
         "n": 32,
-        "file": 11,
-        "sym": 8
+        "file": 12,
+        "sym": 9
       },
       "R6|Q6": {
         "n": 32,
-        "file": 11,
-        "sym": 7
+        "file": 13,
+        "sym": 8
       },
       "R6|Q7": {
         "n": 32,
-        "file": 15,
-        "sym": 10
+        "file": 16,
+        "sym": 11
       },
       "R7|Q1": {
         "n": 31,
@@ -1349,8 +1349,8 @@
       },
       "R7|Q3": {
         "n": 31,
-        "file": 12,
-        "sym": 9
+        "file": 14,
+        "sym": 10
       },
       "R7|Q4": {
         "n": 31,
@@ -1359,8 +1359,8 @@
       },
       "R7|Q5": {
         "n": 31,
-        "file": 8,
-        "sym": 7
+        "file": 9,
+        "sym": 8
       },
       "R7|Q6": {
         "n": 31,
@@ -1369,80 +1369,80 @@
       },
       "R7|Q7": {
         "n": 31,
-        "file": 8,
-        "sym": 6
+        "file": 10,
+        "sym": 8
       }
     },
     "Scripting-dynamic": {
       "R1|Q1": {
         "n": 40,
-        "file": 29,
-        "sym": 23
+        "file": 35,
+        "sym": 28
       },
       "R1|Q2": {
         "n": 40,
-        "file": 29,
-        "sym": 21
+        "file": 34,
+        "sym": 25
       },
       "R1|Q3": {
         "n": 40,
-        "file": 33,
+        "file": 34,
         "sym": 28
       },
       "R1|Q4": {
         "n": 40,
-        "file": 31,
-        "sym": 25
-      },
-      "R1|Q5": {
-        "n": 40,
-        "file": 34,
-        "sym": 27
-      },
-      "R1|Q6": {
-        "n": 40,
-        "file": 29,
-        "sym": 24
-      },
-      "R1|Q7": {
-        "n": 40,
-        "file": 32,
-        "sym": 25
-      },
-      "R2|Q1": {
-        "n": 40,
-        "file": 31,
-        "sym": 24
-      },
-      "R2|Q2": {
-        "n": 40,
-        "file": 30,
-        "sym": 22
-      },
-      "R2|Q3": {
-        "n": 40,
         "file": 33,
         "sym": 27
       },
-      "R2|Q4": {
+      "R1|Q5": {
         "n": 40,
-        "file": 30,
-        "sym": 24
+        "file": 38,
+        "sym": 30
       },
-      "R2|Q5": {
+      "R1|Q6": {
+        "n": 40,
+        "file": 35,
+        "sym": 29
+      },
+      "R1|Q7": {
+        "n": 40,
+        "file": 34,
+        "sym": 26
+      },
+      "R2|Q1": {
         "n": 40,
         "file": 35,
         "sym": 28
       },
+      "R2|Q2": {
+        "n": 40,
+        "file": 35,
+        "sym": 25
+      },
+      "R2|Q3": {
+        "n": 40,
+        "file": 34,
+        "sym": 27
+      },
+      "R2|Q4": {
+        "n": 40,
+        "file": 33,
+        "sym": 26
+      },
+      "R2|Q5": {
+        "n": 40,
+        "file": 39,
+        "sym": 30
+      },
       "R2|Q6": {
         "n": 40,
-        "file": 30,
-        "sym": 25
+        "file": 35,
+        "sym": 28
       },
       "R2|Q7": {
         "n": 40,
-        "file": 32,
-        "sym": 26
+        "file": 34,
+        "sym": 27
       },
       "R3|Q1": {
         "n": 40,
@@ -1481,122 +1481,122 @@
       },
       "R4|Q1": {
         "n": 40,
-        "file": 22,
-        "sym": 15
+        "file": 25,
+        "sym": 17
       },
       "R4|Q2": {
         "n": 40,
-        "file": 20,
-        "sym": 12
+        "file": 24,
+        "sym": 14
       },
       "R4|Q3": {
         "n": 40,
-        "file": 21,
+        "file": 22,
         "sym": 16
       },
       "R4|Q4": {
         "n": 40,
-        "file": 24,
-        "sym": 18
+        "file": 25,
+        "sym": 19
       },
       "R4|Q5": {
         "n": 40,
-        "file": 26,
+        "file": 27,
         "sym": 19
       },
       "R4|Q6": {
         "n": 40,
-        "file": 21,
-        "sym": 16
+        "file": 23,
+        "sym": 18
       },
       "R4|Q7": {
         "n": 40,
-        "file": 16,
-        "sym": 10
+        "file": 18,
+        "sym": 11
       },
       "R5|Q1": {
-        "n": 40,
-        "file": 24,
-        "sym": 18
-      },
-      "R5|Q2": {
-        "n": 40,
-        "file": 20,
-        "sym": 15
-      },
-      "R5|Q3": {
-        "n": 40,
-        "file": 32,
-        "sym": 27
-      },
-      "R5|Q4": {
         "n": 40,
         "file": 27,
         "sym": 20
       },
+      "R5|Q2": {
+        "n": 40,
+        "file": 26,
+        "sym": 19
+      },
+      "R5|Q3": {
+        "n": 40,
+        "file": 33,
+        "sym": 28
+      },
+      "R5|Q4": {
+        "n": 40,
+        "file": 33,
+        "sym": 26
+      },
       "R5|Q5": {
         "n": 40,
-        "file": 28,
-        "sym": 20
+        "file": 32,
+        "sym": 24
       },
       "R5|Q6": {
         "n": 40,
-        "file": 22,
-        "sym": 16
+        "file": 27,
+        "sym": 18
       },
       "R5|Q7": {
         "n": 40,
-        "file": 30,
-        "sym": 24
+        "file": 33,
+        "sym": 25
       },
       "R6|Q1": {
         "n": 40,
-        "file": 23,
-        "sym": 14
+        "file": 26,
+        "sym": 15
       },
       "R6|Q2": {
         "n": 40,
-        "file": 20,
-        "sym": 11
+        "file": 24,
+        "sym": 12
       },
       "R6|Q3": {
         "n": 40,
-        "file": 26,
-        "sym": 21
+        "file": 28,
+        "sym": 22
       },
       "R6|Q4": {
         "n": 40,
-        "file": 24,
-        "sym": 17
+        "file": 26,
+        "sym": 18
       },
       "R6|Q5": {
         "n": 40,
-        "file": 28,
+        "file": 29,
         "sym": 18
       },
       "R6|Q6": {
         "n": 40,
-        "file": 20,
-        "sym": 13
+        "file": 25,
+        "sym": 16
       },
       "R6|Q7": {
         "n": 40,
-        "file": 23,
+        "file": 24,
         "sym": 13
       },
       "R7|Q1": {
         "n": 40,
-        "file": 21,
+        "file": 22,
         "sym": 17
       },
       "R7|Q2": {
         "n": 40,
-        "file": 17,
-        "sym": 12
+        "file": 18,
+        "sym": 13
       },
       "R7|Q3": {
         "n": 40,
-        "file": 20,
+        "file": 21,
         "sym": 15
       },
       "R7|Q4": {
@@ -1606,18 +1606,18 @@
       },
       "R7|Q5": {
         "n": 40,
-        "file": 26,
+        "file": 28,
         "sym": 20
       },
       "R7|Q6": {
         "n": 40,
-        "file": 22,
-        "sym": 16
+        "file": 23,
+        "sym": 17
       },
       "R7|Q7": {
         "n": 40,
-        "file": 16,
-        "sym": 10
+        "file": 18,
+        "sym": 11
       }
     }
   },
