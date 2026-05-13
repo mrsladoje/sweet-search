@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "description": "Behavioural rewrites of ast-tester probes — Stage 0.5 parallel benchmark",
+  "createdAt": "2026-05-13T19:17:15.863Z",
+  "rewriteModel": "deepseek-v4-flash",
+  "rewriteSeed": 42,
+  "rewriteTemperature": 0.3,
+  "language": "c",
+  "rewrites": [
+    {
+      "id": "C-008-B",
+      "rewrittenFrom": "C-008",
+      "rewrittenQuery": "find struct that chains async reply handlers",
+      "infeasible": false,
+      "rationale": "Captures the struct's purpose as a linked list node holding async reply callbacks.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "377392f6df75da1c147d76864bf070ff30aa6c72f38c42a71dd76e7c555d4650",
+      "expectedFile": "async.h",
+      "expectedSymbol": "redisCallback",
+      "family": "C-family",
+      "containingChunk": {
+        "startLine": 37,
+        "endLine": 64
+      },
+      "authoredAt": "2026-05-13T19:16:11.678Z"
+    },
+    {
+      "id": "C-004-B",
+      "rewrittenFrom": "C-004",
+      "rewrittenQuery": "where is parsed RESP data stored",
+      "infeasible": false,
+      "rationale": "This query asks for the data structure that holds parsed RESP response data.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "88ad72b0f2521d15f77955ba434887063caa6191072ed6fb5adaa637885aa2e6",
+      "expectedFile": "hiredis.h",
+      "expectedSymbol": "redisReply",
+      "family": "C-family",
+      "containingChunk": {
+        "startLine": 116,
+        "endLine": 162
+      },
+      "authoredAt": "2026-05-13T19:16:32.856Z"
+    }
+  ]
+}

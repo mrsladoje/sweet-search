@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "description": "Behavioural rewrites of ast-tester probes — Stage 0.5 parallel benchmark",
+  "createdAt": "2026-05-13T19:17:15.863Z",
+  "rewriteModel": "deepseek-v4-flash",
+  "rewriteSeed": 42,
+  "rewriteTemperature": 0.3,
+  "language": "cpp",
+  "rewrites": [
+    {
+      "id": "CPP-001-B",
+      "rewrittenFrom": "CPP-001",
+      "rewrittenQuery": "where to dispatch CPU features at runtime",
+      "infeasible": false,
+      "rationale": "Captures the function's role as the entry point for runtime dispatch based on CPU features, including mock and disabled targets.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "4829962124cb5f7db9a1a3f044a749a0c16ccca4ea552049c5854dfbf4c04426",
+      "expectedFile": "hwy/targets.cc",
+      "expectedSymbol": "SupportedTargets",
+      "family": "C-family",
+      "containingChunk": {
+        "startLine": 794,
+        "endLine": 835
+      },
+      "authoredAt": "2026-05-13T19:16:14.484Z"
+    },
+    {
+      "id": "CPP-002-B",
+      "rewrittenFrom": "CPP-002",
+      "rewrittenQuery": "Find the initial target update and dispatch",
+      "infeasible": false,
+      "rationale": "This query captures the behaviour where the first call triggers a target update and then dispatches to the best available implementation.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 2,
+      "outputSha256": "f732e8690135b8384269cd3008486216c647dd46945321df261c90d7acffd2ee",
+      "expectedFile": "hwy/highway.h",
+      "expectedSymbol": "FunctionCache",
+      "family": "C-family",
+      "containingChunk": {
+        "startLine": 389,
+        "endLine": 441
+      },
+      "authoredAt": "2026-05-13T19:17:01.117Z"
+    }
+  ]
+}

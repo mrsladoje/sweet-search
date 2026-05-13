@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "description": "Behavioural rewrites of ast-tester probes — Stage 0.5 parallel benchmark",
+  "createdAt": "2026-05-13T19:17:15.863Z",
+  "rewriteModel": "deepseek-v4-flash",
+  "rewriteSeed": 42,
+  "rewriteTemperature": 0.3,
+  "language": "go",
+  "rewrites": [
+    {
+      "id": "GO-007-B",
+      "rewrittenFrom": "GO-007",
+      "rewrittenQuery": "Locate the struct with a map of methods to endpoints.",
+      "infeasible": false,
+      "rationale": "This query captures the behavioural requirement of finding a tree node that stores per-method endpoint mappings, without referencing the symbol name.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "1bad7bb8167ff4496c91e3b2ee45993e0e086a1f28f716244ff6b03c075b01d8",
+      "expectedFile": "tree.go",
+      "expectedSymbol": "node",
+      "family": "Systems-modular-terse",
+      "containingChunk": {
+        "startLine": 1,
+        "endLine": 88
+      },
+      "authoredAt": "2026-05-13T19:16:11.889Z"
+    },
+    {
+      "id": "GO-004-B",
+      "rewrittenFrom": "GO-004",
+      "rewrittenQuery": "Find the concrete HTTP router struct.",
+      "infeasible": false,
+      "rationale": "Captures the intent to locate the Mux struct that implements HTTP request routing.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "a7373662f90dece3567c038a3e65babcd3fd0d2ea087d0fe5872c10af4cf3be9",
+      "expectedFile": "mux.go",
+      "expectedSymbol": "Mux",
+      "family": "Systems-modular-terse",
+      "containingChunk": {
+        "startLine": 1,
+        "endLine": 62
+      },
+      "authoredAt": "2026-05-13T19:16:14.117Z"
+    },
+    {
+      "id": "GO-003-B",
+      "rewrittenFrom": "GO-003",
+      "rewrittenQuery": "Register middleware before routes",
+      "infeasible": false,
+      "rationale": "Captures the middleware stacking behaviour before route handling.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "1856152ebd427eae673f3e2fd5774835f9e10607dc085c69436a6071752a0c61",
+      "expectedFile": "mux.go",
+      "expectedSymbol": "Use",
+      "family": "Systems-modular-terse",
+      "containingChunk": {
+        "startLine": 63,
+        "endLine": 119
+      },
+      "authoredAt": "2026-05-13T19:16:17.596Z"
+    }
+  ]
+}

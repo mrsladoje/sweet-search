@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "description": "Behavioural rewrites of ast-tester probes — Stage 0.5 parallel benchmark",
+  "createdAt": "2026-05-13T19:17:15.862Z",
+  "rewriteModel": "deepseek-v4-flash",
+  "rewriteSeed": 42,
+  "rewriteTemperature": 0.3,
+  "language": "kotlin",
+  "rewrites": [
+    {
+      "id": "KT-001-B",
+      "rewrittenFrom": "KT-001",
+      "rewrittenQuery": "find the class implementing job state machine",
+      "infeasible": false,
+      "rationale": "Captures the core behaviour of JobSupport as the implementation of the job state machine without naming the symbol.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "1c7d804bdd640bb7cec3f52d2d3f2b831631463d373a4a4f76f0dd867d501fb4",
+      "expectedFile": "kotlinx-coroutines-core/common/src/JobSupport.kt",
+      "expectedSymbol": "JobSupport",
+      "family": "OO-monolithic",
+      "containingChunk": {
+        "startLine": 23,
+        "endLine": 34
+      },
+      "authoredAt": "2026-05-13T19:15:52.822Z"
+    },
+    {
+      "id": "KT-002-B",
+      "rewrittenFrom": "KT-002",
+      "rewrittenQuery": "how to change coroutine dispatcher for a suspend block",
+      "infeasible": false,
+      "rationale": "This query captures the behaviour of switching the coroutine dispatcher (coroutine context) for executing a suspend block, which is the core purpose of withContext.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "1085f6c7f912043e9e3b58e3734b8b5ebc6c23475d30c48e291b734b1ec38287",
+      "expectedFile": "kotlinx-coroutines-core/common/src/Builders.common.kt",
+      "expectedSymbol": "withContext",
+      "family": "OO-monolithic",
+      "containingChunk": {
+        "startLine": 472,
+        "endLine": 515
+      },
+      "authoredAt": "2026-05-13T19:16:00.292Z"
+    }
+  ]
+}

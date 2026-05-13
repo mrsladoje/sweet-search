@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "description": "Behavioural rewrites of ast-tester probes — Stage 0.5 parallel benchmark",
+  "createdAt": "2026-05-13T19:17:15.864Z",
+  "rewriteModel": "deepseek-v4-flash",
+  "rewriteSeed": 42,
+  "rewriteTemperature": 0.3,
+  "language": "typescript-lib",
+  "rewrites": [
+    {
+      "id": "TSL-005-B",
+      "rewrittenFrom": "TSL-005",
+      "rewrittenQuery": "find the factory for non-throwing validation",
+      "infeasible": false,
+      "rationale": "Captures the behaviour of the _safeParse factory that builds a synchronous validation function returning success/error objects instead of throwing.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "348f350096c19ae7704f98084ada0b780a4e5f04871afec49167cdee8cd5a4d0",
+      "expectedFile": "packages/zod/src/v4/core/parse.ts",
+      "expectedSymbol": "_safeParse",
+      "family": "JS-mobile",
+      "containingChunk": {
+        "startLine": 51,
+        "endLine": 101
+      },
+      "authoredAt": "2026-05-13T19:16:27.957Z"
+    },
+    {
+      "id": "TSL-003-B",
+      "rewrittenFrom": "TSL-003",
+      "rewrittenQuery": "where is the OpenAPI spec builder?",
+      "infeasible": false,
+      "rationale": "Captures the behaviour of generating OpenAPI-compatible JSON Schema from Zod schemas.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "df53e93fcee1a983e9ec3dc77e6d6c7e3970d5e63d7a5bae62d3575114b68791",
+      "expectedFile": "packages/zod/src/v4/core/to-json-schema.ts",
+      "expectedSymbol": "toJSONSchema",
+      "family": "JS-mobile",
+      "containingChunk": {
+        "startLine": 14,
+        "endLine": 65
+      },
+      "authoredAt": "2026-05-13T19:16:32.444Z"
+    },
+    {
+      "id": "TSL-008-B",
+      "rewrittenFrom": "TSL-008",
+      "rewrittenQuery": "find variance modifiers on type parameters",
+      "infeasible": false,
+      "rationale": "The query captures the behavioral use of TypeScript variance annotations (out/in) on generic type parameters, without referencing the symbol name.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "fe74ce461cfd7d0f3c65e3413b676dfd2c49162a84c8b5b0131a944c2bd716e1",
+      "expectedFile": "packages/zod/src/v4/core/schemas.ts",
+      "expectedSymbol": "$ZodType",
+      "family": "JS-mobile",
+      "containingChunk": {
+        "startLine": 167,
+        "endLine": 188
+      },
+      "authoredAt": "2026-05-13T19:16:36.757Z"
+    }
+  ]
+}

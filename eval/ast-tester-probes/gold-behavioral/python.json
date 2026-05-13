@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "description": "Behavioural rewrites of ast-tester probes — Stage 0.5 parallel benchmark",
+  "createdAt": "2026-05-13T19:17:15.864Z",
+  "rewriteModel": "deepseek-v4-flash",
+  "rewriteSeed": 42,
+  "rewriteTemperature": 0.3,
+  "language": "python",
+  "rewrites": [
+    {
+      "id": "PY-008-B",
+      "rewrittenFrom": "PY-008",
+      "rewrittenQuery": "Find the class that validates and converts argument types",
+      "infeasible": false,
+      "rationale": "Captures the behaviour of validating and converting parameter values from command line or Python input.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "db11d9b89809a9ee2c86d5c1a76625fc4c9b097c8d5ff2ebc3ec320aa71127d9",
+      "expectedFile": "src/click/types.py",
+      "expectedSymbol": "ParamType",
+      "family": "Scripting-dynamic",
+      "containingChunk": {
+        "startLine": 37,
+        "endLine": 49
+      },
+      "authoredAt": "2026-05-13T19:16:37.564Z"
+    },
+    {
+      "id": "PY-003-B",
+      "rewrittenFrom": "PY-003",
+      "rewrittenQuery": "Where does it validate input against allowed set?",
+      "infeasible": false,
+      "rationale": "Captures the behaviour of checking a value against a fixed set of supported options, typical of the Choice type.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "5f0b4da5e20050b28c61aaed3288db9c5295ae403ee574a79c7b9b0fd9afb072",
+      "expectedFile": "src/click/types.py",
+      "expectedSymbol": "Choice",
+      "family": "Scripting-dynamic",
+      "containingChunk": {
+        "startLine": 253,
+        "endLine": 267
+      },
+      "authoredAt": "2026-05-13T19:16:41.257Z"
+    },
+    {
+      "id": "PY-007-B",
+      "rewrittenFrom": "PY-007",
+      "rewrittenQuery": "locate Click decorator factory",
+      "infeasible": false,
+      "rationale": "The query captures the function that creates a Click command decorator, which is the core behaviour.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "512d34903ba7d87c66e8f03df909aa9ed7d4bd1f6f199b4d2886e5d629ba98e0",
+      "expectedFile": "src/click/decorators.py",
+      "expectedSymbol": "command",
+      "family": "Scripting-dynamic",
+      "containingChunk": {
+        "startLine": 100,
+        "endLine": 165
+      },
+      "authoredAt": "2026-05-13T19:16:51.697Z"
+    },
+    {
+      "id": "PY-004-B",
+      "rewrittenFrom": "PY-004",
+      "rewrittenQuery": "Find the decorator for Click CLI entry points.",
+      "infeasible": false,
+      "rationale": "Captures the behaviour of the symbol as the Click command decorator that converts functions into CLI entry points.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "7de4853ccf5f26ec7e69fa7a9066fb99133fe80f31522a4d4e1b4adf65622006",
+      "expectedFile": "src/click/decorators.py",
+      "expectedSymbol": "command",
+      "family": "Scripting-dynamic",
+      "containingChunk": {
+        "startLine": 100,
+        "endLine": 165
+      },
+      "authoredAt": "2026-05-13T19:16:52.721Z"
+    },
+    {
+      "id": "PY-006-B",
+      "rewrittenFrom": "PY-006",
+      "rewrittenQuery": "how does the code process a value using a callable?",
+      "infeasible": false,
+      "rationale": "Captures the core behaviour of the convert method: applying a callable to a value and returning the result.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "e2433ba161ddd2b2651e3c4fb6c9f4ed06e5c740a5aa06c0f64867c0403282e4",
+      "expectedFile": "src/click/types.py",
+      "expectedSymbol": "convert",
+      "family": "Scripting-dynamic",
+      "containingChunk": {
+        "startLine": 173,
+        "endLine": 219
+      },
+      "authoredAt": "2026-05-13T19:16:56.138Z"
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "description": "Behavioural rewrites of ast-tester probes — Stage 0.5 parallel benchmark",
+  "createdAt": "2026-05-13T19:17:15.864Z",
+  "rewriteModel": "deepseek-v4-flash",
+  "rewriteSeed": 42,
+  "rewriteTemperature": 0.3,
+  "language": "typescript",
+  "rewrites": [
+    {
+      "id": "TS-003-B",
+      "rewrittenFrom": "TS-003",
+      "rewrittenQuery": "locate the chat route handler",
+      "infeasible": false,
+      "rationale": "Captures the intent to find the Next.js Route Handler that processes chat messages.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "44b82476af434c346c38f40276545ca722a293b04fd9156599bd34a83a1b35f2",
+      "expectedFile": "app/(chat)/api/chat/route.ts",
+      "expectedSymbol": null,
+      "family": "JS-mobile",
+      "containingChunk": {
+        "startLine": 1,
+        "endLine": 58
+      },
+      "authoredAt": "2026-05-13T19:16:23.764Z"
+    },
+    {
+      "id": "TS-002-B",
+      "rewrittenFrom": "TS-002",
+      "rewrittenQuery": "find the hook that detects if user reached end of container",
+      "infeasible": false,
+      "rationale": "Captures the behaviour of tracking scroll position relative to container bottom without using symbol substrings.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "bdb1da5eb5ddeaa20756c3d4a7c056102b21f8ba8b12aaedd371a39ff62118fb",
+      "expectedFile": "hooks/use-scroll-to-bottom.tsx",
+      "expectedSymbol": "useScrollToBottom",
+      "family": "JS-mobile",
+      "containingChunk": {
+        "startLine": 3,
+        "endLine": 22
+      },
+      "authoredAt": "2026-05-13T19:16:27.532Z"
+    },
+    {
+      "id": "TS-004-B",
+      "rewrittenFrom": "TS-004",
+      "rewrittenQuery": "find the const that creates the code metadata object",
+      "infeasible": false,
+      "rationale": "This query asks for the location where a const variable is instantiated with a new generic object typed with 'code' and Metadata, capturing the behavioural intent of the original symbol-anchored probe.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "7fc8f383ec7040706128d316b0cee1c6b060c6698e1663f1a7fb054317c115f3",
+      "expectedFile": "artifacts/code/client.tsx",
+      "expectedSymbol": "codeArtifact",
+      "family": "JS-mobile",
+      "containingChunk": {
+        "startLine": 69,
+        "endLine": 69
+      },
+      "authoredAt": "2026-05-13T19:16:47.499Z"
+    }
+  ]
+}

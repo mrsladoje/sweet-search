@@ -161,8 +161,15 @@ export function gradeSpans(input, spans) {
     return ov / (aLen + bLen - ov);
   }
 
-  // Top-1 IoU
-  const top = spans[0];
+  // Top-1 IoU — by SCORE not by line. readSemantic outputs spans in line
+  // order (for human readability in `_enforceCharBudget`), but the "top-1
+  // answer" for benchmark purposes is the highest-confidence span. User
+  // decision 2026-05-13: top-1 = max-score; output stays line-ordered.
+  // If a span has no `score` field (older JSONL re-grade path), fall back
+  // to spans[0] so the behaviour is backward-compatible.
+  const top = spans.some((s) => typeof s.score === 'number')
+    ? [...spans].sort((a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity))[0]
+    : spans[0];
   const top1_iou = iou(top.startLine, top.endLine, goldStart, goldEnd);
 
   // Max IoU across all spans
@@ -387,7 +394,7 @@ async function main() {
           shape: run.shape, shapeLabel: run.shapeLabel, query: run.query,
           expectedFile: input.expectedFile,
           goldRange: { startLine: input.containingChunk?.startLine, endLine: input.containingChunk?.endLine },
-          spans: spans.map((s) => ({ startLine: s.startLine, endLine: s.endLine })),
+          spans: spans.map((s) => ({ startLine: s.startLine, endLine: s.endLine, score: s.score })),
           verdict: graded.verdict, reason: graded.reason,
           top1_iou: graded.top1_iou, max_iou: graded.max_iou,
           coverage: graded.coverage, precision: graded.precision,

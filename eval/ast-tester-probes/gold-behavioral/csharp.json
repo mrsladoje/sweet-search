@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "description": "Behavioural rewrites of ast-tester probes — Stage 0.5 parallel benchmark",
+  "createdAt": "2026-05-13T19:17:15.863Z",
+  "rewriteModel": "deepseek-v4-flash",
+  "rewriteSeed": 42,
+  "rewriteTemperature": 0.3,
+  "language": "csharp",
+  "rewrites": [
+    {
+      "id": "CS-002-B",
+      "rewrittenFrom": "CS-002",
+      "rewrittenQuery": "Find the command dispatch switch",
+      "infeasible": false,
+      "rationale": "Captures the behaviour of the top-level switch expression that dispatches incoming RESP commands to their handlers.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "c46644b3f9c2a62002ce4717ce2081d2c72877dd0afb7cc2532bae390a06f3e0",
+      "expectedFile": "libs/server/Resp/RespServerSession.cs",
+      "expectedSymbol": "RespServerSession",
+      "family": "OO-monolithic",
+      "containingChunk": {
+        "startLine": 45,
+        "endLine": 57
+      },
+      "authoredAt": "2026-05-13T19:16:01.522Z"
+    },
+    {
+      "id": "CS-003-B",
+      "rewrittenFrom": "CS-003",
+      "rewrittenQuery": "find where AOF flush is awaited",
+      "infeasible": false,
+      "rationale": "This query captures the behaviour of waiting for an AOF flush/commit asynchronously.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "aaba30b91c5608bc09d751e2dad022b8725d9d2f047dc243c36a65c0c1c7b3ea",
+      "expectedFile": "libs/server/StoreWrapper.cs",
+      "expectedSymbol": "WaitForCommitAsync",
+      "family": "OO-monolithic",
+      "containingChunk": {
+        "startLine": 479,
+        "endLine": 528
+      },
+      "authoredAt": "2026-05-13T19:16:03.058Z"
+    }
+  ]
+}

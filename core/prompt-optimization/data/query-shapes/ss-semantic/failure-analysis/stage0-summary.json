@@ -1,0 +1,303 @@
+{
+  "runId": "phase6-redo-ss-semantic-v1",
+  "notes": "Stage 0 benchmark-shape audit. DEV ONLY. Per CLAUDE.md, held-out is not inspected here.",
+  "devN": 90,
+  "counts": {
+    "total": 90,
+    "pass": 30,
+    "partial": 46,
+    "fail": 14
+  },
+  "classifications": {
+    "pass": 30,
+    "partial-overlap-only": 30,
+    "wider-span-contains-gold": 24,
+    "tool-miss": 6
+  },
+  "classifications_pct": {
+    "pass": 33.3,
+    "partial-overlap-only": 33.3,
+    "wider-span-contains-gold": 26.7,
+    "tool-miss": 6.7
+  },
+  "perFamily": {
+    "C-family": {
+      "n": 15,
+      "pass": 4,
+      "partial": 5,
+      "fail": 6,
+      "classifications": {
+        "pass": 4,
+        "partial-overlap-only": 3,
+        "wider-span-contains-gold": 6,
+        "tool-miss": 2
+      }
+    },
+    "OO-monolithic": {
+      "n": 20,
+      "pass": 5,
+      "partial": 14,
+      "fail": 1,
+      "classifications": {
+        "pass": 5,
+        "wider-span-contains-gold": 8,
+        "partial-overlap-only": 7
+      }
+    },
+    "JS-mobile": {
+      "n": 20,
+      "pass": 12,
+      "partial": 7,
+      "fail": 1,
+      "classifications": {
+        "pass": 12,
+        "wider-span-contains-gold": 2,
+        "partial-overlap-only": 6
+      }
+    },
+    "Scripting-dynamic": {
+      "n": 25,
+      "pass": 7,
+      "partial": 12,
+      "fail": 6,
+      "classifications": {
+        "wider-span-contains-gold": 4,
+        "pass": 7,
+        "tool-miss": 4,
+        "partial-overlap-only": 10
+      }
+    },
+    "Systems-modular-terse": {
+      "n": 10,
+      "pass": 2,
+      "partial": 8,
+      "fail": 0,
+      "classifications": {
+        "wider-span-contains-gold": 4,
+        "partial-overlap-only": 4,
+        "pass": 2
+      }
+    }
+  },
+  "perLanguage": {
+    "c": {
+      "family": "C-family",
+      "n": 5,
+      "pass": 2,
+      "partial": 2,
+      "fail": 1,
+      "classifications": {
+        "pass": 2,
+        "partial-overlap-only": 1,
+        "wider-span-contains-gold": 2
+      }
+    },
+    "cpp": {
+      "family": "C-family",
+      "n": 5,
+      "pass": 2,
+      "partial": 1,
+      "fail": 2,
+      "classifications": {
+        "wider-span-contains-gold": 2,
+        "tool-miss": 1,
+        "pass": 2
+      }
+    },
+    "csharp": {
+      "family": "OO-monolithic",
+      "n": 5,
+      "pass": 3,
+      "partial": 2,
+      "fail": 0,
+      "classifications": {
+        "pass": 3,
+        "wider-span-contains-gold": 1,
+        "partial-overlap-only": 1
+      }
+    },
+    "dart": {
+      "family": "JS-mobile",
+      "n": 5,
+      "pass": 4,
+      "partial": 0,
+      "fail": 1,
+      "classifications": {
+        "pass": 4,
+        "wider-span-contains-gold": 1
+      }
+    },
+    "elixir": {
+      "family": "Scripting-dynamic",
+      "n": 5,
+      "pass": 3,
+      "partial": 2,
+      "fail": 0,
+      "classifications": {
+        "wider-span-contains-gold": 2,
+        "pass": 3
+      }
+    },
+    "go": {
+      "family": "Systems-modular-terse",
+      "n": 5,
+      "pass": 1,
+      "partial": 4,
+      "fail": 0,
+      "classifications": {
+        "wider-span-contains-gold": 3,
+        "partial-overlap-only": 1,
+        "pass": 1
+      }
+    },
+    "java": {
+      "family": "OO-monolithic",
+      "n": 5,
+      "pass": 0,
+      "partial": 4,
+      "fail": 1,
+      "classifications": {
+        "partial-overlap-only": 2,
+        "wider-span-contains-gold": 3
+      }
+    },
+    "javascript": {
+      "family": "JS-mobile",
+      "n": 5,
+      "pass": 2,
+      "partial": 3,
+      "fail": 0,
+      "classifications": {
+        "pass": 2,
+        "partial-overlap-only": 3
+      }
+    },
+    "kotlin": {
+      "family": "OO-monolithic",
+      "n": 5,
+      "pass": 2,
+      "partial": 3,
+      "fail": 0,
+      "classifications": {
+        "partial-overlap-only": 3,
+        "pass": 2
+      }
+    },
+    "lua": {
+      "family": "Scripting-dynamic",
+      "n": 5,
+      "pass": 1,
+      "partial": 1,
+      "fail": 3,
+      "classifications": {
+        "wider-span-contains-gold": 1,
+        "tool-miss": 2,
+        "pass": 1,
+        "partial-overlap-only": 1
+      }
+    },
+    "php": {
+      "family": "Scripting-dynamic",
+      "n": 5,
+      "pass": 1,
+      "partial": 4,
+      "fail": 0,
+      "classifications": {
+        "pass": 1,
+        "partial-overlap-only": 4
+      }
+    },
+    "python": {
+      "family": "Scripting-dynamic",
+      "n": 5,
+      "pass": 0,
+      "partial": 3,
+      "fail": 2,
+      "classifications": {
+        "partial-overlap-only": 3,
+        "tool-miss": 2
+      }
+    },
+    "ruby": {
+      "family": "Scripting-dynamic",
+      "n": 5,
+      "pass": 2,
+      "partial": 2,
+      "fail": 1,
+      "classifications": {
+        "wider-span-contains-gold": 1,
+        "partial-overlap-only": 2,
+        "pass": 2
+      }
+    },
+    "rust": {
+      "family": "Systems-modular-terse",
+      "n": 5,
+      "pass": 1,
+      "partial": 4,
+      "fail": 0,
+      "classifications": {
+        "pass": 1,
+        "partial-overlap-only": 3,
+        "wider-span-contains-gold": 1
+      }
+    },
+    "scala": {
+      "family": "OO-monolithic",
+      "n": 5,
+      "pass": 0,
+      "partial": 5,
+      "fail": 0,
+      "classifications": {
+        "wider-span-contains-gold": 4,
+        "partial-overlap-only": 1
+      }
+    },
+    "typescript": {
+      "family": "JS-mobile",
+      "n": 5,
+      "pass": 2,
+      "partial": 3,
+      "fail": 0,
+      "classifications": {
+        "partial-overlap-only": 3,
+        "pass": 2
+      }
+    },
+    "typescript-lib": {
+      "family": "JS-mobile",
+      "n": 5,
+      "pass": 4,
+      "partial": 1,
+      "fail": 0,
+      "classifications": {
+        "pass": 4,
+        "wider-span-contains-gold": 1
+      }
+    },
+    "zig": {
+      "family": "C-family",
+      "n": 5,
+      "pass": 0,
+      "partial": 2,
+      "fail": 3,
+      "classifications": {
+        "wider-span-contains-gold": 2,
+        "partial-overlap-only": 2,
+        "tool-miss": 1
+      }
+    }
+  },
+  "benchmarkShapeSignals": {
+    "iouThresholdArtifact_rate": 0,
+    "widerSpanContainsGold_rate": 26.7,
+    "failsWithContainingSpan_n": 8,
+    "failsWithContainingSpan_pct": 57.1,
+    "failsWithTop1FileHeader_n": 1,
+    "failsWithTop1FileHeader_pct": 7.1
+  },
+  "stageOneStopRule": {
+    "threshold": "If iouThresholdArtifact_rate + widerSpanContainsGold_rate > 50%, escalate before Stage 1.",
+    "currentSum": 26.7
+  }
+}

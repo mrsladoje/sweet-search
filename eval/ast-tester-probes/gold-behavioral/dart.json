@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "description": "Behavioural rewrites of ast-tester probes — Stage 0.5 parallel benchmark",
+  "createdAt": "2026-05-13T19:17:15.864Z",
+  "rewriteModel": "deepseek-v4-flash",
+  "rewriteSeed": 42,
+  "rewriteTemperature": 0.3,
+  "language": "dart",
+  "rewrites": [
+    {
+      "id": "DR-001-B",
+      "rewrittenFrom": "DR-001",
+      "rewrittenQuery": "find HTTP request resend with backoff",
+      "infeasible": false,
+      "rationale": "Captures the retry client's behaviour of resending HTTP requests with delay-based backoff.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "51303eac0a979d4d20ee1159c277426a6a4b79bbda6c23c054d561c507d44527",
+      "expectedFile": "pkgs/http/lib/retry.dart",
+      "expectedSymbol": "RetryClient",
+      "family": "JS-mobile",
+      "containingChunk": {
+        "startLine": 17,
+        "endLine": 57
+      },
+      "authoredAt": "2026-05-13T19:16:37.872Z"
+    },
+    {
+      "id": "DR-002-B",
+      "rewrittenFrom": "DR-002",
+      "rewrittenQuery": "build form data with files",
+      "infeasible": false,
+      "rationale": "Captures the behavior of constructing a multipart/form-data request containing form fields and file attachments.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "c6d116b57c04cc3551e07cfde8643eb2bc0e326894be7be37741189e76ea0617",
+      "expectedFile": "pkgs/http/lib/src/multipart_request.dart",
+      "expectedSymbol": "MultipartRequest",
+      "family": "JS-mobile",
+      "containingChunk": {
+        "startLine": 33,
+        "endLine": 80
+      },
+      "authoredAt": "2026-05-13T19:16:40.946Z"
+    }
+  ]
+}

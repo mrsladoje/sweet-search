@@ -1,0 +1,2061 @@
+{
+  "notes": "Stage 0.5 side-by-side: strict ast-tester (best-shape) vs behavioural rewrite, on the same 38 golds.",
+  "allPaired": {
+    "n": 38,
+    "strict": {
+      "PASS": 9,
+      "PARTIAL": 20,
+      "FAIL": 9
+    },
+    "behavioural": {
+      "PASS": 4,
+      "PARTIAL": 21,
+      "FAIL": 13
+    },
+    "flips": {
+      "FAIL→PASS": 1,
+      "FAIL→PARTIAL": 3,
+      "PASS→FAIL": 3,
+      "PARTIAL→PASS": 1,
+      "PASS→PARTIAL": 4,
+      "PARTIAL→FAIL": 5,
+      "same": 21
+    }
+  },
+  "devOnly": {
+    "n": 23,
+    "strict": {
+      "PASS": 8,
+      "PARTIAL": 11,
+      "FAIL": 4
+    },
+    "behavioural": {
+      "PASS": 3,
+      "PARTIAL": 11,
+      "FAIL": 9
+    },
+    "flips": {
+      "FAIL→PASS": 0,
+      "FAIL→PARTIAL": 2,
+      "PASS→FAIL": 3,
+      "PARTIAL→PASS": 1,
+      "PASS→PARTIAL": 3,
+      "PARTIAL→FAIL": 4,
+      "same": 10
+    }
+  },
+  "perFamilyDev": {
+    "C-family": {
+      "n": 4,
+      "strict": {
+        "PASS": 1,
+        "PARTIAL": 1,
+        "FAIL": 2
+      },
+      "behavioural": {
+        "PASS": 0,
+        "PARTIAL": 2,
+        "FAIL": 2
+      },
+      "flips": {
+        "FAIL→PASS": 0,
+        "FAIL→PARTIAL": 1,
+        "PASS→FAIL": 0,
+        "PARTIAL→PASS": 0,
+        "PASS→PARTIAL": 1,
+        "PARTIAL→FAIL": 1,
+        "same": 1
+      }
+    },
+    "OO-monolithic": {
+      "n": 6,
+      "strict": {
+        "PASS": 1,
+        "PARTIAL": 5,
+        "FAIL": 0
+      },
+      "behavioural": {
+        "PASS": 0,
+        "PARTIAL": 3,
+        "FAIL": 3
+      },
+      "flips": {
+        "FAIL→PASS": 0,
+        "FAIL→PARTIAL": 0,
+        "PASS→FAIL": 1,
+        "PARTIAL→PASS": 0,
+        "PASS→PARTIAL": 0,
+        "PARTIAL→FAIL": 2,
+        "same": 3
+      }
+    },
+    "JS-mobile": {
+      "n": 5,
+      "strict": {
+        "PASS": 3,
+        "PARTIAL": 2,
+        "FAIL": 0
+      },
+      "behavioural": {
+        "PASS": 1,
+        "PARTIAL": 2,
+        "FAIL": 2
+      },
+      "flips": {
+        "FAIL→PASS": 0,
+        "FAIL→PARTIAL": 0,
+        "PASS→FAIL": 2,
+        "PARTIAL→PASS": 0,
+        "PASS→PARTIAL": 0,
+        "PARTIAL→FAIL": 0,
+        "same": 3
+      }
+    },
+    "Systems-modular-terse": {
+      "n": 3,
+      "strict": {
+        "PASS": 2,
+        "PARTIAL": 1,
+        "FAIL": 0
+      },
+      "behavioural": {
+        "PASS": 1,
+        "PARTIAL": 1,
+        "FAIL": 1
+      },
+      "flips": {
+        "FAIL→PASS": 0,
+        "FAIL→PARTIAL": 0,
+        "PASS→FAIL": 0,
+        "PARTIAL→PASS": 0,
+        "PASS→PARTIAL": 1,
+        "PARTIAL→FAIL": 1,
+        "same": 1
+      }
+    },
+    "Scripting-dynamic": {
+      "n": 5,
+      "strict": {
+        "PASS": 1,
+        "PARTIAL": 2,
+        "FAIL": 2
+      },
+      "behavioural": {
+        "PASS": 1,
+        "PARTIAL": 3,
+        "FAIL": 1
+      },
+      "flips": {
+        "FAIL→PASS": 0,
+        "FAIL→PARTIAL": 1,
+        "PASS→FAIL": 0,
+        "PARTIAL→PASS": 1,
+        "PASS→PARTIAL": 1,
+        "PARTIAL→FAIL": 0,
+        "same": 2
+      }
+    }
+  },
+  "paired": [
+    {
+      "goldId": "C-008",
+      "language": "c",
+      "family": "C-family",
+      "isDev": true,
+      "strict": {
+        "query": "What does redisCallback next pointer do?",
+        "shape": "V2",
+        "verdict": "PASS",
+        "top1": 0.875,
+        "max": 0.875,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 35,
+            "endLine": 66,
+            "score": 0.4025181531906128
+          },
+          {
+            "startLine": 122,
+            "endLine": 151,
+            "score": 0.40123555064201355
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "find struct that chains async reply handlers",
+        "verdict": "PARTIAL",
+        "top1": 0.23931623931623933,
+        "max": 0.23931623931623933,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 32,
+            "score": 0.015625
+          },
+          {
+            "startLine": 35,
+            "endLine": 151,
+            "score": 0.4193870425224304
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "C-004",
+      "language": "c",
+      "family": "C-family",
+      "isDev": true,
+      "strict": {
+        "query": "What fields does redisReply contain?",
+        "shape": "V2",
+        "verdict": "PARTIAL",
+        "top1": 0.3533834586466165,
+        "max": 0.3533834586466165,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 32,
+            "endLine": 164,
+            "score": 0.47323980927467346
+          },
+          {
+            "startLine": 184,
+            "endLine": 243,
+            "score": 0.015625
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "where is parsed RESP data stored",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0,
+        "coverage": 0,
+        "spans": [
+          {
+            "startLine": 184,
+            "endLine": 304,
+            "score": 0.039938556067588324
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "CPP-001",
+      "language": "cpp",
+      "family": "C-family",
+      "isDev": false,
+      "strict": {
+        "query": "Where does SupportedTargets detect CPU architecture?",
+        "shape": "V2",
+        "verdict": "PARTIAL",
+        "top1": 0.021505376344086023,
+        "max": 0.021505376344086023,
+        "coverage": 0.047619047619047616,
+        "spans": [
+          {
+            "startLine": 114,
+            "endLine": 119,
+            "score": 0.4639793634414673
+          },
+          {
+            "startLine": 300,
+            "endLine": 372,
+            "score": 0.4460398852825165
+          },
+          {
+            "startLine": 444,
+            "endLine": 449,
+            "score": 0.4574138820171356
+          },
+          {
+            "startLine": 638,
+            "endLine": 680,
+            "score": 0.4460247755050659
+          },
+          {
+            "startLine": 743,
+            "endLine": 795,
+            "score": 0.5002213716506958
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "where to dispatch CPU features at runtime",
+        "verdict": "PARTIAL",
+        "top1": 0.44680851063829785,
+        "max": 0.44680851063829785,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 49,
+            "score": 0.015384615384615385
+          },
+          {
+            "startLine": 380,
+            "endLine": 432,
+            "score": 0.016129032258064516
+          },
+          {
+            "startLine": 743,
+            "endLine": 836,
+            "score": 0.01639344262295082
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "CPP-002",
+      "language": "cpp",
+      "family": "C-family",
+      "isDev": true,
+      "strict": {
+        "query": "How does FunctionCache invoke ChosenTarget?",
+        "shape": "V2",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0.9298245614035088,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 387,
+            "endLine": 443,
+            "score": 0.45005151629447937
+          },
+          {
+            "startLine": 615,
+            "endLine": 649,
+            "score": 0.4605771601200104
+          },
+          {
+            "startLine": 671,
+            "endLine": 732,
+            "score": 0.015873015873015872
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "Find the initial target update and dispatch",
+        "verdict": "PARTIAL",
+        "top1": 0.424,
+        "max": 0.424,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 367,
+            "endLine": 491,
+            "score": 0.40083926916122437
+          },
+          {
+            "startLine": 510,
+            "endLine": 533,
+            "score": 0.01639344262295082
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "CS-002",
+      "language": "csharp",
+      "family": "OO-monolithic",
+      "isDev": true,
+      "strict": {
+        "query": "find RespServerSession dispatch",
+        "shape": "V1",
+        "verdict": "PASS",
+        "top1": 0.7647058823529411,
+        "max": 0.7647058823529411,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 21,
+            "score": 0.4495198726654053
+          },
+          {
+            "startLine": 43,
+            "endLine": 59,
+            "score": 0.4658738374710083
+          },
+          {
+            "startLine": 119,
+            "endLine": 195,
+            "score": 0.44490644335746765
+          },
+          {
+            "startLine": 264,
+            "endLine": 304,
+            "score": 0.4384459853172302
+          },
+          {
+            "startLine": 798,
+            "endLine": 821,
+            "score": 0.4410984516143799
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "Find the command dispatch switch",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0,
+        "coverage": 0,
+        "spans": [
+          {
+            "startLine": 421,
+            "endLine": 469,
+            "score": 0.024193548387096774
+          },
+          {
+            "startLine": 755,
+            "endLine": 770,
+            "score": 0.03585771658060814
+          },
+          {
+            "startLine": 822,
+            "endLine": 837,
+            "score": 0.035342261904761904
+          },
+          {
+            "startLine": 1005,
+            "endLine": 1021,
+            "score": 0.037748058671268334
+          },
+          {
+            "startLine": 1173,
+            "endLine": 1244,
+            "score": 0.03800229621125144
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "CS-003",
+      "language": "csharp",
+      "family": "OO-monolithic",
+      "isDev": true,
+      "strict": {
+        "query": "find WaitForCommitAsync AOF",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.4854368932038835,
+        "max": 0.4854368932038835,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 282,
+            "endLine": 307,
+            "score": 0.015625
+          },
+          {
+            "startLine": 428,
+            "endLine": 530,
+            "score": 0.4987187087535858
+          },
+          {
+            "startLine": 620,
+            "endLine": 671,
+            "score": 0.4284994304180145
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "find where AOF flush is awaited",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0.019801980198019802,
+        "coverage": 0.04,
+        "spans": [
+          {
+            "startLine": 349,
+            "endLine": 392,
+            "score": 0.016129032258064516
+          },
+          {
+            "startLine": 428,
+            "endLine": 480,
+            "score": 0.01639344262295082
+          },
+          {
+            "startLine": 585,
+            "endLine": 671,
+            "score": 0.03951553706875459
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "DR-001",
+      "language": "dart",
+      "family": "JS-mobile",
+      "isDev": true,
+      "strict": {
+        "query": "use RetryClient",
+        "shape": "V1",
+        "verdict": "PASS",
+        "top1": 0.7735849056603774,
+        "max": 0.7735849056603774,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 15,
+            "endLine": 67,
+            "score": 0.6489949822425842
+          },
+          {
+            "startLine": 85,
+            "endLine": 115,
+            "score": 0.6154670715332031
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "find HTTP request resend with backoff",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0.9111111111111111,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 15,
+            "endLine": 59,
+            "score": 0.41471269726753235
+          },
+          {
+            "startLine": 61,
+            "endLine": 68,
+            "score": 0.43308594822883606
+          },
+          {
+            "startLine": 111,
+            "endLine": 153,
+            "score": 0.43457871675491333
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "DR-002",
+      "language": "dart",
+      "family": "JS-mobile",
+      "isDev": true,
+      "strict": {
+        "query": "find MultipartRequest fields",
+        "shape": "V1",
+        "verdict": "PASS",
+        "top1": 0.7058823529411765,
+        "max": 0.7058823529411765,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 31,
+            "endLine": 98,
+            "score": 0.41449031233787537
+          },
+          {
+            "startLine": 118,
+            "endLine": 136,
+            "score": 0.4072597622871399
+          },
+          {
+            "startLine": 167,
+            "endLine": 176,
+            "score": 0.03957816377171216
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "build form data with files",
+        "verdict": "PASS",
+        "top1": 0.9230769230769231,
+        "max": 0.9230769230769231,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 31,
+            "endLine": 82,
+            "score": 0.01639344262295082
+          },
+          {
+            "startLine": 86,
+            "endLine": 147,
+            "score": 0.016129032258064516
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "EL-005",
+      "language": "elixir",
+      "family": "Scripting-dynamic",
+      "isDev": false,
+      "strict": {
+        "query": "find Jason.Encoder",
+        "shape": "V1",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0,
+        "coverage": 0,
+        "spans": [
+          {
+            "startLine": 26,
+            "endLine": 32,
+            "score": 0.4866730272769928
+          },
+          {
+            "startLine": 35,
+            "endLine": 41,
+            "score": 0.48839685320854187
+          },
+          {
+            "startLine": 177,
+            "endLine": 183,
+            "score": 0.5178624987602234
+          },
+          {
+            "startLine": 195,
+            "endLine": 207,
+            "score": 0.5120237469673157
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "find protocol that serializes structs to JSON",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0,
+        "coverage": 0,
+        "spans": [
+          {
+            "startLine": 103,
+            "endLine": 173,
+            "score": 0.5078064799308777
+          },
+          {
+            "startLine": 211,
+            "endLine": 220,
+            "score": 0.418885201215744
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "GO-007",
+      "language": "go",
+      "family": "Systems-modular-terse",
+      "isDev": false,
+      "strict": {
+        "query": "find node.children",
+        "shape": "V1",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0,
+        "coverage": 0,
+        "spans": [
+          {
+            "startLine": 317,
+            "endLine": 432,
+            "score": 0.5026456117630005
+          },
+          {
+            "startLine": 542,
+            "endLine": 622,
+            "score": 0.039194139194139194
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "Locate the struct with a map of methods to endpoints.",
+        "verdict": "PARTIAL",
+        "top1": 0.013574660633484163,
+        "max": 0.013574660633484163,
+        "coverage": 0.03409090909090909,
+        "spans": [
+          {
+            "startLine": 86,
+            "endLine": 221,
+            "score": 0.4303852915763855
+          },
+          {
+            "startLine": 372,
+            "endLine": 402,
+            "score": 0.015625
+          },
+          {
+            "startLine": 772,
+            "endLine": 840,
+            "score": 0.015873015873015872
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "GO-004",
+      "language": "go",
+      "family": "Systems-modular-terse",
+      "isDev": true,
+      "strict": {
+        "query": "get Mux struct",
+        "shape": "V1",
+        "verdict": "PASS",
+        "top1": 0.96875,
+        "max": 0.96875,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 64,
+            "score": 0.5547879934310913
+          },
+          {
+            "startLine": 117,
+            "endLine": 290,
+            "score": 0.4750909209251404
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "Find the concrete HTTP router struct.",
+        "verdict": "PARTIAL",
+        "top1": 0.21379310344827587,
+        "max": 0.21379310344827587,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 290,
+            "score": 0.4180150628089905
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "GO-003",
+      "language": "go",
+      "family": "Systems-modular-terse",
+      "isDev": true,
+      "strict": {
+        "query": "Use Mux middleware",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.19655172413793104,
+        "max": 0.19655172413793104,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 290,
+            "score": 0.5052033066749573
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "Register middleware before routes",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0,
+        "coverage": 0,
+        "spans": [
+          {
+            "startLine": 233,
+            "endLine": 355,
+            "score": 0.40038493275642395
+          },
+          {
+            "startLine": 485,
+            "endLine": 527,
+            "score": 0.4063509404659271
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "JV-005",
+      "language": "java",
+      "family": "OO-monolithic",
+      "isDev": true,
+      "strict": {
+        "query": "Use registerTypeAdapter",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.3208955223880597,
+        "max": 0.3208955223880597,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 709,
+            "endLine": 842,
+            "score": 0.5258179903030396
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "Where to install custom serialization for a type?",
+        "verdict": "PARTIAL",
+        "top1": 0.027777777777777776,
+        "max": 0.027777777777777776,
+        "coverage": 0.06976744186046512,
+        "spans": [
+          {
+            "startLine": 356,
+            "endLine": 448,
+            "score": 0.039818548387096774
+          },
+          {
+            "startLine": 709,
+            "endLine": 739,
+            "score": 0.4206330180168152
+          },
+          {
+            "startLine": 780,
+            "endLine": 818,
+            "score": 0.04098360655737705
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "KT-001",
+      "language": "kotlin",
+      "family": "OO-monolithic",
+      "isDev": false,
+      "strict": {
+        "query": "inspect JobSupport",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.11538461538461539,
+        "max": 0.11538461538461539,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 21,
+            "endLine": 124,
+            "score": 0.46184131503105164
+          },
+          {
+            "startLine": 999,
+            "endLine": 1010,
+            "score": 0.4253115952014923
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "find the class implementing job state machine",
+        "verdict": "PARTIAL",
+        "top1": 0.06629834254143646,
+        "max": 0.06629834254143646,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 181,
+            "score": 0.492352157831192
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "KT-002",
+      "language": "kotlin",
+      "family": "OO-monolithic",
+      "isDev": true,
+      "strict": {
+        "query": "use withContext coroutine",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.1864406779661017,
+        "max": 0.1864406779661017,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 282,
+            "endLine": 517,
+            "score": 0.5761904120445251
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "how to change coroutine dispatcher for a suspend block",
+        "verdict": "PARTIAL",
+        "top1": 0.15602836879432624,
+        "max": 0.15602836879432624,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 319,
+            "endLine": 600,
+            "score": 0.5592480897903442
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "LU-005",
+      "language": "lua",
+      "family": "Scripting-dynamic",
+      "isDev": false,
+      "strict": {
+        "query": "Call Date.weekday_name",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.15789473684210525,
+        "max": 0.15789473684210525,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 39,
+            "endLine": 94,
+            "score": 0.03974167908594138
+          },
+          {
+            "startLine": 102,
+            "endLine": 122,
+            "score": 0.03873489694385217
+          },
+          {
+            "startLine": 220,
+            "endLine": 238,
+            "score": 0.6301880478858948
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "how to get weekday name",
+        "verdict": "PARTIAL",
+        "top1": 0.030612244897959183,
+        "max": 0.030612244897959183,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 129,
+            "endLine": 226,
+            "score": 0.6770364046096802
+          },
+          {
+            "startLine": 232,
+            "endLine": 238,
+            "score": 0.4810693562030792
+          },
+          {
+            "startLine": 346,
+            "endLine": 401,
+            "score": 0.016129032258064516
+          },
+          {
+            "startLine": 523,
+            "endLine": 530,
+            "score": 0.02459016393442623
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "LU-008",
+      "language": "lua",
+      "family": "Scripting-dynamic",
+      "isDev": true,
+      "strict": {
+        "query": "check stringx.isalpha",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.18181818181818182,
+        "max": 0.18181818181818182,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 53,
+            "endLine": 74,
+            "score": 0.7050405740737915
+          },
+          {
+            "startLine": 82,
+            "endLine": 96,
+            "score": 0.5047560334205627
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "find how to test if text has only letters",
+        "verdict": "PASS",
+        "top1": 0.5,
+        "max": 0.5,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 53,
+            "endLine": 60,
+            "score": 0.4822681248188019
+          },
+          {
+            "startLine": 67,
+            "endLine": 74,
+            "score": 0.42137953639030457
+          },
+          {
+            "startLine": 82,
+            "endLine": 89,
+            "score": 0.4527902901172638
+          },
+          {
+            "startLine": 229,
+            "endLine": 258,
+            "score": 0.039818548387096774
+          },
+          {
+            "startLine": 781,
+            "endLine": 806,
+            "score": 0.03873489694385217
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "PY-008",
+      "language": "python",
+      "family": "Scripting-dynamic",
+      "isDev": true,
+      "strict": {
+        "query": "show ParamType",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.23214285714285715,
+        "max": 0.23214285714285715,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 35,
+            "endLine": 90,
+            "score": 0.5770506262779236
+          },
+          {
+            "startLine": 609,
+            "endLine": 650,
+            "score": 0.5092765688896179
+          },
+          {
+            "startLine": 1216,
+            "endLine": 1287,
+            "score": 0.4850617051124573
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "Find the class that validates and converts argument types",
+        "verdict": "PARTIAL",
+        "top1": 0.23214285714285715,
+        "max": 0.23214285714285715,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 35,
+            "endLine": 90,
+            "score": 0.5921448469161987
+          },
+          {
+            "startLine": 424,
+            "endLine": 440,
+            "score": 0.4642740488052368
+          },
+          {
+            "startLine": 1108,
+            "endLine": 1166,
+            "score": 0.4689822793006897
+          },
+          {
+            "startLine": 1216,
+            "endLine": 1287,
+            "score": 0.4627593159675598
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "PY-003",
+      "language": "python",
+      "family": "Scripting-dynamic",
+      "isDev": false,
+      "strict": {
+        "query": "use Choice class",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.10135135135135136,
+        "max": 0.10135135135135136,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 251,
+            "endLine": 398,
+            "score": 0.6884362101554871
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "Where does it validate input against allowed set?",
+        "verdict": "PARTIAL",
+        "top1": 0.25862068965517243,
+        "max": 0.25862068965517243,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 134,
+            "endLine": 221,
+            "score": 0.03887587822014051
+          },
+          {
+            "startLine": 252,
+            "endLine": 309,
+            "score": 0.03968253968253968
+          },
+          {
+            "startLine": 789,
+            "endLine": 844,
+            "score": 0.03787878787878788
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "PY-007",
+      "language": "python",
+      "family": "Scripting-dynamic",
+      "isDev": false,
+      "strict": {
+        "query": "show command decorator",
+        "shape": "V1",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0,
+        "coverage": 0,
+        "spans": [
+          {
+            "startLine": 166,
+            "endLine": 217,
+            "score": 0.4352566599845886
+          },
+          {
+            "startLine": 427,
+            "endLine": 467,
+            "score": 0.42921939492225647
+          },
+          {
+            "startLine": 525,
+            "endLine": 552,
+            "score": 0.4522683322429657
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "locate Click decorator factory",
+        "verdict": "PASS",
+        "top1": 0.5546218487394958,
+        "max": 0.5546218487394958,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 49,
+            "endLine": 167,
+            "score": 0.4120232164859772
+          },
+          {
+            "startLine": 215,
+            "endLine": 323,
+            "score": 0.04021516393442623
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "PY-004",
+      "language": "python",
+      "family": "Scripting-dynamic",
+      "isDev": true,
+      "strict": {
+        "query": "use command",
+        "shape": "V1",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0,
+        "coverage": 0,
+        "spans": [
+          {
+            "startLine": 166,
+            "endLine": 217,
+            "score": 0.5074762105941772
+          },
+          {
+            "startLine": 322,
+            "endLine": 403,
+            "score": 0.4442346692085266
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "Find the decorator for Click CLI entry points.",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0.9428571428571428,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 98,
+            "endLine": 167,
+            "score": 0.47038155794143677
+          },
+          {
+            "startLine": 215,
+            "endLine": 257,
+            "score": 0.43985673785209656
+          },
+          {
+            "startLine": 350,
+            "endLine": 403,
+            "score": 0.4231260418891907
+          },
+          {
+            "startLine": 419,
+            "endLine": 467,
+            "score": 0.4789678454399109
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "PY-006",
+      "language": "python",
+      "family": "Scripting-dynamic",
+      "isDev": true,
+      "strict": {
+        "query": "convert type value",
+        "shape": "V1",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0,
+        "coverage": 0,
+        "spans": [
+          {
+            "startLine": 35,
+            "endLine": 136,
+            "score": 0.5103698968887329
+          },
+          {
+            "startLine": 1165,
+            "endLine": 1287,
+            "score": 0.5380277633666992
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "how does the code process a value using a callable?",
+        "verdict": "PARTIAL",
+        "top1": 0.35074626865671643,
+        "max": 0.35074626865671643,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 88,
+            "endLine": 221,
+            "score": 0.43380382657051086
+          },
+          {
+            "startLine": 929,
+            "endLine": 965,
+            "score": 0.016129032258064516
+          },
+          {
+            "startLine": 1016,
+            "endLine": 1025,
+            "score": 0.40688708424568176
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "RB-008",
+      "language": "ruby",
+      "family": "Scripting-dynamic",
+      "isDev": true,
+      "strict": {
+        "query": "find ExtendedRack",
+        "shape": "V1",
+        "verdict": "PASS",
+        "top1": 0.8888888888888888,
+        "max": 0.8888888888888888,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 223,
+            "endLine": 258,
+            "score": 0.4645339846611023
+          },
+          {
+            "startLine": 1206,
+            "endLine": 1273,
+            "score": 0.016129032258064516
+          },
+          {
+            "startLine": 1793,
+            "endLine": 1851,
+            "score": 0.015873015873015872
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "Where is async Rack callback scheduled?",
+        "verdict": "PARTIAL",
+        "top1": 0.3404255319148936,
+        "max": 0.3404255319148936,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 26,
+            "endLine": 41,
+            "score": 0.015384615384615385
+          },
+          {
+            "startLine": 165,
+            "endLine": 258,
+            "score": 0.04098360655737705
+          },
+          {
+            "startLine": 286,
+            "endLine": 348,
+            "score": 0.015625
+          },
+          {
+            "startLine": 619,
+            "endLine": 708,
+            "score": 0.015873015873015872
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "RS-002",
+      "language": "rust",
+      "family": "Systems-modular-terse",
+      "isDev": false,
+      "strict": {
+        "query": "find lint_fix FixTable",
+        "shape": "V1",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0.21649484536082475,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 47,
+            "endLine": 118,
+            "score": 0.47124189138412476
+          },
+          {
+            "startLine": 542,
+            "endLine": 638,
+            "score": 0.46908193826675415
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "find the iterative repair loop",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0,
+        "coverage": 0,
+        "spans": [
+          {
+            "startLine": 47,
+            "endLine": 118,
+            "score": 0.015873015873015872
+          },
+          {
+            "startLine": 576,
+            "endLine": 638,
+            "score": 0.016129032258064516
+          },
+          {
+            "startLine": 711,
+            "endLine": 776,
+            "score": 0.01639344262295082
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "RS-001",
+      "language": "rust",
+      "family": "Systems-modular-terse",
+      "isDev": true,
+      "strict": {
+        "query": "show ImportType isort",
+        "shape": "V1",
+        "verdict": "PASS",
+        "top1": 0.972972972972973,
+        "max": 0.972972972972973,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 74,
+            "score": 0.48396211862564087
+          },
+          {
+            "startLine": 90,
+            "endLine": 153,
+            "score": 0.01639344262295082
+          },
+          {
+            "startLine": 296,
+            "endLine": 350,
+            "score": 0.015873015873015872
+          },
+          {
+            "startLine": 374,
+            "endLine": 412,
+            "score": 0.016129032258064516
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "Locate the enum that classifies module sources into sections",
+        "verdict": "PASS",
+        "top1": 0.6545454545454545,
+        "max": 0.6545454545454545,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 110,
+            "score": 0.45992782711982727
+          },
+          {
+            "startLine": 281,
+            "endLine": 291,
+            "score": 0.4515099823474884
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "RS-007",
+      "language": "rust",
+      "family": "Systems-modular-terse",
+      "isDev": false,
+      "strict": {
+        "query": "find warn_user_once_by_id",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.4715447154471545,
+        "max": 0.4715447154471545,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 123,
+            "score": 0.47706714272499084
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "show macro that logs once per identifier",
+        "verdict": "PARTIAL",
+        "top1": 0.4715447154471545,
+        "max": 0.4715447154471545,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 123,
+            "score": 0.4306439757347107
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "SC-006",
+      "language": "scala",
+      "family": "OO-monolithic",
+      "isDev": false,
+      "strict": {
+        "query": "get Session",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.08695652173913043,
+        "max": 0.08695652173913043,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 29,
+            "endLine": 51,
+            "score": 0.5061076879501343
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "Locate stateful HTTP cookie manager",
+        "verdict": "PARTIAL",
+        "top1": 0.0392156862745098,
+        "max": 0.0392156862745098,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 51,
+            "score": 0
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "SC-005",
+      "language": "scala",
+      "family": "OO-monolithic",
+      "isDev": true,
+      "strict": {
+        "query": "find RequestFailedException",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.125,
+        "max": 0.125,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 2,
+            "endLine": 7,
+            "score": 0.48050907254219055
+          },
+          {
+            "startLine": 15,
+            "endLine": 30,
+            "score": 0.6526657342910767
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "find error wrapping response when check enabled",
+        "verdict": "PARTIAL",
+        "top1": 0.2857142857142857,
+        "max": 0.2857142857142857,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 24,
+            "endLine": 30,
+            "score": 0.01639344262295082
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "SC-004",
+      "language": "scala",
+      "family": "OO-monolithic",
+      "isDev": true,
+      "strict": {
+        "query": "show Response cookies",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.3333333333333333,
+        "max": 0.3333333333333333,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 165,
+            "endLine": 170,
+            "score": 0.024193548387096774
+          },
+          {
+            "startLine": 194,
+            "endLine": 199,
+            "score": 0.040719196192490745
+          },
+          {
+            "startLine": 208,
+            "endLine": 226,
+            "score": 0.01639344262295082
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "find the data structure storing HTTP reply with status and raw bytes",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0,
+        "coverage": 0,
+        "spans": [
+          {
+            "startLine": 131,
+            "endLine": 161,
+            "score": 0.03896103896103896
+          },
+          {
+            "startLine": 205,
+            "endLine": 212,
+            "score": 0.04098360655737705
+          },
+          {
+            "startLine": 229,
+            "endLine": 239,
+            "score": 0.40750017762184143
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "TS-003",
+      "language": "typescript",
+      "family": "JS-mobile",
+      "isDev": true,
+      "strict": {
+        "query": "call POST API",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.008130081300813009,
+        "max": 0.008130081300813009,
+        "coverage": 0.017241379310344827,
+        "spans": [
+          {
+            "startLine": 58,
+            "endLine": 123,
+            "score": 0.5592077374458313
+          },
+          {
+            "startLine": 322,
+            "endLine": 344,
+            "score": 0.42547786235809326
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "locate the chat route handler",
+        "verdict": "PARTIAL",
+        "top1": 0.008130081300813009,
+        "max": 0.008130081300813009,
+        "coverage": 0.017241379310344827,
+        "spans": [
+          {
+            "startLine": 58,
+            "endLine": 123,
+            "score": 0.5024543404579163
+          },
+          {
+            "startLine": 301,
+            "endLine": 344,
+            "score": 0.4192798435688019
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "TS-002",
+      "language": "typescript",
+      "family": "JS-mobile",
+      "isDev": false,
+      "strict": {
+        "query": "find useScrollToBottom",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.16,
+        "max": 0.16,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 125,
+            "score": 0.5683483481407166
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "find the hook that detects if user reached end of container",
+        "verdict": "PARTIAL",
+        "top1": 0.16,
+        "max": 0.16,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 125,
+            "score": 0.4375404715538025
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "TS-004",
+      "language": "typescript",
+      "family": "JS-mobile",
+      "isDev": true,
+      "strict": {
+        "query": "show codeArtifact",
+        "shape": "V1",
+        "verdict": "PARTIAL",
+        "top1": 0.008333333333333333,
+        "max": 0.008333333333333333,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 120,
+            "score": 0.4761061668395996
+          },
+          {
+            "startLine": 251,
+            "endLine": 287,
+            "score": 0.40917107462882996
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "find the const that creates the code metadata object",
+        "verdict": "PARTIAL",
+        "top1": 0.008695652173913044,
+        "max": 0.008695652173913044,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 115,
+            "score": 0.46876057982444763
+          },
+          {
+            "startLine": 117,
+            "endLine": 198,
+            "score": 0.016129032258064516
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "TSL-005",
+      "language": "typescript-lib",
+      "family": "JS-mobile",
+      "isDev": false,
+      "strict": {
+        "query": "find _safeParse factory",
+        "shape": "V1",
+        "verdict": "PASS",
+        "top1": 0.9272727272727272,
+        "max": 0.9272727272727272,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 49,
+            "endLine": 103,
+            "score": 0.40501344203948975
+          },
+          {
+            "startLine": 151,
+            "endLine": 196,
+            "score": 0.016129032258064516
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "find the factory for non-throwing validation",
+        "verdict": "PARTIAL",
+        "top1": 0.2602040816326531,
+        "max": 0.2602040816326531,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 196,
+            "score": 0
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "TSL-003",
+      "language": "typescript-lib",
+      "family": "JS-mobile",
+      "isDev": false,
+      "strict": {
+        "query": "use toJSONSchema",
+        "shape": "V1",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0.015384615384615385,
+        "coverage": 0.019230769230769232,
+        "spans": [
+          {
+            "startLine": 1,
+            "endLine": 14,
+            "score": 0.565824568271637
+          },
+          {
+            "startLine": 137,
+            "endLine": 145,
+            "score": 0.5769150853157043
+          },
+          {
+            "startLine": 357,
+            "endLine": 369,
+            "score": 0.5945135354995728
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "where is the OpenAPI spec builder?",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0,
+        "coverage": 0,
+        "spans": [
+          {
+            "startLine": 219,
+            "endLine": 299,
+            "score": 0.01639344262295082
+          },
+          {
+            "startLine": 447,
+            "endLine": 503,
+            "score": 0.016129032258064516
+          },
+          {
+            "startLine": 524,
+            "endLine": 596,
+            "score": 0.02459016393442623
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "TSL-008",
+      "language": "typescript-lib",
+      "family": "JS-mobile",
+      "isDev": true,
+      "strict": {
+        "query": "use $ZodType",
+        "shape": "V1",
+        "verdict": "PASS",
+        "top1": 0.7857142857142857,
+        "max": 0.7857142857142857,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 165,
+            "endLine": 192,
+            "score": 0.6018849611282349
+          },
+          {
+            "startLine": 2664,
+            "endLine": 2670,
+            "score": 0.5798555612564087
+          },
+          {
+            "startLine": 4347,
+            "endLine": 4423,
+            "score": 0.5356927514076233
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "find variance modifiers on type parameters",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0,
+        "coverage": 0,
+        "spans": [
+          {
+            "startLine": 1681,
+            "endLine": 1736,
+            "score": 0.03873489694385217
+          },
+          {
+            "startLine": 2129,
+            "endLine": 2167,
+            "score": 0.03814338235294118
+          },
+          {
+            "startLine": 2551,
+            "endLine": 2666,
+            "score": 0.04021516393442623
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "ZG-007",
+      "language": "zig",
+      "family": "C-family",
+      "isDev": false,
+      "strict": {
+        "query": "How does Dispatcher use Handler and ActionArg?",
+        "shape": "V2",
+        "verdict": "PARTIAL",
+        "top1": 0.3,
+        "max": 0.3,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 160,
+            "endLine": 179,
+            "score": 0.623397946357727
+          },
+          {
+            "startLine": 494,
+            "endLine": 523,
+            "score": 0.5387541055679321
+          },
+          {
+            "startLine": 2461,
+            "endLine": 2471,
+            "score": 0.44892024993896484
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "Return different function types based on handler",
+        "verdict": "PARTIAL",
+        "top1": 0.2222222222222222,
+        "max": 0.2222222222222222,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 84,
+            "endLine": 135,
+            "score": 0.0394703656998739
+          },
+          {
+            "startLine": 153,
+            "endLine": 179,
+            "score": 0.4760917127132416
+          },
+          {
+            "startLine": 498,
+            "endLine": 523,
+            "score": 0.03675176056338028
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "ZG-005",
+      "language": "zig",
+      "family": "C-family",
+      "isDev": true,
+      "strict": {
+        "query": "How does Response header method work?",
+        "shape": "V2",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0,
+        "coverage": 0,
+        "spans": [
+          {
+            "startLine": 83,
+            "endLine": 98,
+            "score": 0.5396168828010559
+          },
+          {
+            "startLine": 103,
+            "endLine": 112,
+            "score": 0.485017865896225
+          },
+          {
+            "startLine": 176,
+            "endLine": 189,
+            "score": 0.5044354200363159
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "find the HTTP reply builder struct",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0.9183673469387755,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 18,
+            "endLine": 66,
+            "score": 0.01639344262295082
+          },
+          {
+            "startLine": 185,
+            "endLine": 257,
+            "score": 0.016129032258064516
+          },
+          {
+            "startLine": 415,
+            "endLine": 423,
+            "score": 0.4005838632583618
+          },
+          {
+            "startLine": 473,
+            "endLine": 554,
+            "score": 0.015873015873015872
+          }
+        ]
+      }
+    },
+    {
+      "goldId": "ZG-002",
+      "language": "zig",
+      "family": "C-family",
+      "isDev": false,
+      "strict": {
+        "query": "What does Dispatcher return given Handler and ActionArg?",
+        "shape": "V2",
+        "verdict": "PARTIAL",
+        "top1": 0.3,
+        "max": 0.3,
+        "coverage": 1,
+        "spans": [
+          {
+            "startLine": 160,
+            "endLine": 179,
+            "score": 0.5870901346206665
+          },
+          {
+            "startLine": 494,
+            "endLine": 523,
+            "score": 0.47226575016975403
+          },
+          {
+            "startLine": 2355,
+            "endLine": 2364,
+            "score": 0.4451652467250824
+          }
+        ]
+      },
+      "behavioural": {
+        "query": "Build request handler type at compile time",
+        "verdict": "FAIL",
+        "top1": 0,
+        "max": 0,
+        "coverage": 0,
+        "spans": [
+          {
+            "startLine": 177,
+            "endLine": 189,
+            "score": 0.40536943078041077
+          },
+          {
+            "startLine": 231,
+            "endLine": 248,
+            "score": 0.4543311595916748
+          },
+          {
+            "startLine": 2271,
+            "endLine": 2276,
+            "score": 0.4031153619289398
+          },
+          {
+            "startLine": 2491,
+            "endLine": 2496,
+            "score": 0.4086672365665436
+          },
+          {
+            "startLine": 2499,
+            "endLine": 2504,
+            "score": 0.4070814549922943
+          }
+        ]
+      }
+    }
+  ]
+}

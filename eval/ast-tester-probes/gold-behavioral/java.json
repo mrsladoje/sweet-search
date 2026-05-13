@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "description": "Behavioural rewrites of ast-tester probes — Stage 0.5 parallel benchmark",
+  "createdAt": "2026-05-13T19:17:15.863Z",
+  "rewriteModel": "deepseek-v4-flash",
+  "rewriteSeed": 42,
+  "rewriteTemperature": 0.3,
+  "language": "java",
+  "rewrites": [
+    {
+      "id": "JV-005-B",
+      "rewrittenFrom": "JV-005",
+      "rewrittenQuery": "Where to install custom serialization for a type?",
+      "infeasible": false,
+      "rationale": "The query asks for the location that binds a custom serialization handler to a specific type, matching the behaviour of registerTypeAdapter.",
+      "validatorVerdict": "pass",
+      "authoringAttempt": 1,
+      "outputSha256": "aa504e729049c722f25d0177216dc3d1e27023c9e64ae5ee8ed56d6d82c7bab0",
+      "expectedFile": "gson/src/main/java/com/google/gson/GsonBuilder.java",
+      "expectedSymbol": "registerTypeAdapter",
+      "family": "OO-monolithic",
+      "containingChunk": {
+        "startLine": 738,
+        "endLine": 780
+      },
+      "authoredAt": "2026-05-13T19:16:11.658Z"
+    }
+  ]
+}
