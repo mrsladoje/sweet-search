@@ -806,6 +806,47 @@ int parse_token(const char* input, Token* out) {
       expect(out[0].file).toBe('lib/ai/prompts.ts');
     });
 
+    it('falls through from Path 1 to Path 2 when populated symbol does not match any mention', async () => {
+      // cAST sibling-merge case: chunk labeled `verifyNoTypeVariable` (first
+      // entity in the merge) but range [121, 168] also contains the gold's
+      // `getType` at 166-168. Path 1 finds no match for `verifyNoTypeVariable`
+      // against the query mention `getType`, then Path 2 looks up via
+      // code-graph and finds the contained sibling → boost fires.
+      const mod = await import('../../core/ranking/file-kind-ranking.js');
+      const mockRepo = {
+        findEntityWithNameInRange(filePath, sl, el, targetName) {
+          if (filePath === 'src/TypeToken.java' && sl <= 166 && el >= 168
+              && String(targetName).toLowerCase() === 'gettype') {
+            return { name: 'getType', type: 'method', startLine: 166, endLine: 168 };
+          }
+          return null;
+        },
+      };
+      const target = {
+        file: 'src/TypeToken.java',
+        startLine: 121,
+        endLine: 168,
+        symbol: 'verifyNoTypeVariable',   // sibling-merge labelled wrong sibling
+        symbolType: 'method',
+        score: 0.45,
+      };
+      const competitor = {
+        file: 'src/Other.java',
+        startLine: 1,
+        endLine: 50,
+        symbol: 'OtherMethod',
+        symbolType: 'method',
+        score: 0.50,
+      };
+      const out = mod.applyResultDemotions([competitor, target], {
+        query: 'where is getType defined',
+        format: 'agent_full',
+        codeGraphRepo: mockRepo,
+      });
+      // target gets ×1.15 via Path 2 fall-through (0.45 → 0.5175 > 0.50).
+      expect(out[0].file).toBe('src/TypeToken.java');
+    });
+
     it('Path 2 does not fire when format is not agent (GCSN invariance)', async () => {
       const mod = await import('../../core/ranking/file-kind-ranking.js');
       const mockRepo = {
