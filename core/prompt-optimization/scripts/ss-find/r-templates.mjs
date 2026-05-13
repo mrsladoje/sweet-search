@@ -35,7 +35,7 @@ export const FAMILY_DEF_KEYWORDS = Object.freeze({
   'OO-monolithic': '(public|private|protected|static|final|class|interface|enum|void|fun|object|val|var|def|sealed)',
   'Systems-modular-terse': '(pub\\s+fn|fn|struct|trait|impl|enum|type|const|static|func|var|use)',
   'C-family': '(static|inline|extern|class|struct|template|void|int|auto|namespace)',
-  'JS-mobile': '(function|const|let|var|class|export|async|abstract|void|Future|Stream)',
+  'JS-mobile': '(function|const|let|var|class|export|async|abstract|void|Future|Stream|interface|type|enum|namespace|extension|mixin|typedef)',
   'Scripting-dynamic': '(def|defp|defmodule|defmacro|defstruct|class|module|function|local function)',
 });
 
