@@ -70,6 +70,34 @@ describe('pickNeighborSymbols', () => {
   it('returns empty when no graph data', () => {
     expect(pickNeighborSymbols({ callers: [], callees: [] }, 2, 'X')).toEqual([]);
   });
+  it('rejects short generic graph-neighbour names that pollute alternation (Mode B fix 2026-05-13)', () => {
+    // Real failure case JV-004: gson has a graph-neighbour callsite named
+    // `get` (a 3-char generic verb). Including it in the R5 alternation
+    // makes `\\b(getType|getDeclaredClass|get)\\b` match every `get` in
+    // every getter — drowning the target chunk. Filter requires shape
+    // strength: length ≥ 5 OR underscore OR camelCase mid-token.
+    const graph = {
+      callers: [
+        { symbol: 'get' },                    // rejected: length 3, no shape
+        { symbol: 'set' },                    // rejected: length 3, no shape
+        { symbol: 'Use' },                    // rejected: length 3, no shape
+        { symbol: 'URL' },                    // rejected: length 3, no shape
+        { symbol: 'getDeclaredClass' },       // accepted: camelCase
+        { symbol: 'page_rank' },              // accepted: underscore
+        { symbol: 'Reader' },                 // accepted: length ≥ 5
+      ],
+      callees: [],
+      implementors: [],
+    };
+    const out = pickNeighborSymbols(graph, 5, 'getType');
+    expect(out).not.toContain('get');
+    expect(out).not.toContain('set');
+    expect(out).not.toContain('Use');
+    expect(out).not.toContain('URL');
+    expect(out).toContain('getDeclaredClass');
+    expect(out).toContain('page_rank');
+    expect(out).toContain('Reader');
+  });
 });
 
 describe('R1 — bare literal', () => {
