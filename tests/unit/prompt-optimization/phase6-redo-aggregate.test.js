@@ -18,6 +18,7 @@ import {
   checkLeakage,
   pickDefault,
   pickFamilyOverrides,
+  annotateRelaxedDef,
 } from '../../../core/prompt-optimization/scripts/aggregate-track-a.mjs';
 
 function row({ gold, language, family, goldClass = 'ast-tester', shape, recall, score = 0.9, error = null }) {
@@ -246,5 +247,64 @@ describe('pickDefault / pickFamilyOverrides', () => {
     const overrides = pickFamilyOverrides({ defaultDecision, cellTable, byGold });
     expect(overrides['OO-monolithic']?.shape).toBe('V4');
     expect(overrides['OO-monolithic']?.delta_vs_default).toBeCloseTo(0.2);
+  });
+});
+
+describe('annotateRelaxedDef — secondary metric annotation (2026-05-13 cross-tool audit)', () => {
+  it('returns 0 for rows with fileRecallAt1=0 without attempting to load chunk text', () => {
+    const rows = [
+      row({ gold: 'TS-001', language: 'typescript', family: 'JS-mobile', shape: 'V2', recall: 0 }),
+    ];
+    const { byGold } = bucketRows(rows);
+    // No input provided — gold is skipped.
+    const stats = annotateRelaxedDef({ byGold, inputs: new Map(), reposMap: new Map() });
+    expect(stats.skippedNoInput).toBe(1);
+    // Now with an input, file_recall=0 → relaxedDefAt1 = 0 (gated on file match).
+    const inputs = new Map([['TS-001', { goldId: 'TS-001', language: 'typescript', expectedSymbol: 'whatever' }]]);
+    annotateRelaxedDef({ byGold, inputs, reposMap: new Map() });
+    expect(byGold.get('TS-001').shapes.get('V2').relaxedDefAt1).toBe(0);
+  });
+
+  it('returns null when chunk text cannot be loaded (file mismatch but repo present)', () => {
+    // fileRecallAt1=1 so we'd try to load the chunk; reposMap is empty → unloadable → null.
+    const rows = [
+      row({ gold: 'TS-001', language: 'typescript', family: 'JS-mobile', shape: 'V2', recall: 1 }),
+    ];
+    const { byGold } = bucketRows(rows);
+    // The synthetic row has top1.score but no file/startLine/endLine; rowRelaxedDef returns 0
+    // because top1.file is null. So we need to set top1 explicitly to trigger the unloadable path.
+    byGold.get('TS-001').shapes.get('V2').top1 = { file: 'fake.ts', startLine: 1, endLine: 10 };
+    const inputs = new Map([['TS-001', { goldId: 'TS-001', language: 'typescript', expectedSymbol: 'whatever' }]]);
+    const stats = annotateRelaxedDef({ byGold, inputs, reposMap: new Map() });
+    expect(stats.unloadable).toBe(1);
+    expect(byGold.get('TS-001').shapes.get('V2').relaxedDefAt1).toBe(null);
+  });
+
+  it('honors expectedSymbolAnyOf when expectedSymbol is null', () => {
+    // Construct a row whose top1 chunk is a tiny inline file in /tmp,
+    // referenced via a synthetic reposMap entry that points at /tmp.
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const os = require('node:os');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relaxed-grading-test-'));
+    const fakeFile = path.join(tmpDir, 'a.ts');
+    fs.writeFileSync(fakeFile, 'export function alpha() { return 1; }\nexport function beta() { return 2; }\n');
+
+    const rows = [
+      row({ gold: 'TS-002', language: 'typescript', family: 'JS-mobile', shape: 'V2', recall: 1 }),
+    ];
+    const { byGold } = bucketRows(rows);
+    byGold.get('TS-002').shapes.get('V2').top1 = { file: 'a.ts', startLine: 1, endLine: 2 };
+
+    const inputs = new Map([['TS-002', {
+      goldId: 'TS-002', language: 'typescript',
+      expectedSymbol: null,
+      expectedSymbolAnyOf: ['gamma', 'beta'], // beta is defined in the chunk
+    }]]);
+    const reposMap = new Map([['typescript', { language: 'typescript', localPath: path.relative(path.resolve(__dirname, '../../..'), tmpDir) }]]);
+    annotateRelaxedDef({ byGold, inputs, reposMap });
+    expect(byGold.get('TS-002').shapes.get('V2').relaxedDefAt1).toBe(1);
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 });

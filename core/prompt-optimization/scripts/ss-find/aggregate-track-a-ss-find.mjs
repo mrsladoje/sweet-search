@@ -36,14 +36,16 @@ import { fileURLToPath } from 'node:url';
 import { FAMILIES, COVERED_LANGUAGES, normalizeProbePackKey } from '../../data/query-shapes/family-map.mjs';
 import { R_CELLS, R_LABELS } from './r-templates.mjs';
 import { Q_CELLS, Q_LABELS } from './author-variants-ss-find.mjs';
+import { rowRelaxedDef, loadReposMap } from '../relaxed-grading.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../../..');
 const TRACKS_DIR = path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/ss-find/tracks');
 const WEIGHTS_PATH = path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/ss-find/agentic-tier-weights.json');
+const INPUTS_DIR = path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/inputs');
 const OUTPUT_PATH = path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/recommendations-v2-ss-find.json');
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2; // bumped 2026-05-14 — added secondary_metrics per cross-tool audit 2026-05-13
 const FAMILY_OVERRIDE_THRESHOLD_PP = 0.08; // override iff family-best beats default by ≥ 8pp symbol_recall
 
 // §7 Stack-Overflow-2024 tier weights — kept as a reference scheme for the
@@ -87,8 +89,62 @@ function loadJsonl(p) {
 function mean(xs) { if (!xs.length) return null; let s = 0; for (const x of xs) s += x; return s / xs.length; }
 
 /**
+ * Load every input/<lang>-<gold>.json so we can look up expectedSymbol per
+ * gold for the relaxed_def_recall@1 secondary metric.
+ */
+export function loadAllInputs() {
+  const out = new Map();
+  if (!fs.existsSync(INPUTS_DIR)) return out;
+  for (const n of fs.readdirSync(INPUTS_DIR)) {
+    if (!n.endsWith('.json')) continue;
+    try {
+      const obj = JSON.parse(fs.readFileSync(path.join(INPUTS_DIR, n), 'utf8'));
+      if (obj.goldId) out.set(obj.goldId, obj);
+    } catch { /* skip malformed */ }
+  }
+  return out;
+}
+
+/**
+ * Annotate every row with `relaxedDefAt1` ∈ {0, 1, null} per the 2026-05-13
+ * cross-tool benchmark-shape audit. Mutates rows in place; returns
+ * diagnostic counts.
+ */
+export function annotateRowsRelaxedDef({ rows, inputs, reposMap }) {
+  let loaded = 0;
+  let unloadable = 0;
+  let skippedNoInput = 0;
+  for (const row of rows) {
+    if (row.goldClass !== 'ast-tester') { row.relaxedDefAt1 = null; continue; }
+    const input = inputs.get(row.goldId);
+    if (!input) { skippedNoInput++; row.relaxedDefAt1 = null; continue; }
+    if (row.error) { row.relaxedDefAt1 = null; continue; }
+    if (!row.fileRecallAt1) { row.relaxedDefAt1 = 0; continue; }
+    const expectedSymbols = input.expectedSymbolAnyOf?.length
+      ? input.expectedSymbolAnyOf
+      : (input.expectedSymbol ? [input.expectedSymbol] : []);
+    if (!expectedSymbols.length) { row.relaxedDefAt1 = 0; continue; }
+    const lookupLangs = [input.language, normalizeProbePackKey(input.language)];
+    let v = null;
+    for (const lang of lookupLangs) {
+      for (const sym of expectedSymbols) {
+        const r = rowRelaxedDef({ row, expectedSymbol: sym, language: lang, reposMap });
+        if (r != null) { v = (v ?? 0) || r; }
+      }
+      if (v != null) break;
+    }
+    if (v == null) { unloadable++; row.relaxedDefAt1 = null; }
+    else { loaded++; row.relaxedDefAt1 = v; }
+  }
+  return { loaded, unloadable, skippedNoInput };
+}
+
+/**
  * Per (R, Q) global aggregate across all ast-tester golds. Returns
  * { fileMean, symMean, n } per cell.
+ *
+ * Also tracks relaxed_def_at_1 and file_recall_at_5 for the secondary
+ * metrics published per the 2026-05-13 cross-tool audit.
  */
 export function buildGlobalCellTable(rows) {
   const table = {};
@@ -96,10 +152,15 @@ export function buildGlobalCellTable(rows) {
     if (r.goldClass !== 'ast-tester') continue;
     if (r.rCell === 'R2_baseline') continue;
     const k = `${r.rCell}|${r.qCell}`;
-    table[k] ||= { n: 0, file: 0, sym: 0 };
+    table[k] ||= { n: 0, file: 0, sym: 0, relaxed_def: 0, relaxed_def_n: 0, file_recall_at_5: 0 };
     table[k].n++;
     table[k].file += r.fileRecallAt1;
     table[k].sym += r.symbolRecallAt1;
+    table[k].file_recall_at_5 += (r.fileRecallAt5 ? 1 : 0);
+    if (r.relaxedDefAt1 != null) {
+      table[k].relaxed_def += r.relaxedDefAt1;
+      table[k].relaxed_def_n++;
+    }
   }
   return table;
 }
@@ -116,10 +177,15 @@ export function buildFamilyCellTable(rows) {
     const k = `${r.rCell}|${r.qCell}`;
     const fam = r.family;
     if (!out[fam]) continue;
-    out[fam][k] ||= { n: 0, file: 0, sym: 0 };
+    out[fam][k] ||= { n: 0, file: 0, sym: 0, relaxed_def: 0, relaxed_def_n: 0, file_recall_at_5: 0 };
     out[fam][k].n++;
     out[fam][k].file += r.fileRecallAt1;
     out[fam][k].sym += r.symbolRecallAt1;
+    out[fam][k].file_recall_at_5 += (r.fileRecallAt5 ? 1 : 0);
+    if (r.relaxedDefAt1 != null) {
+      out[fam][k].relaxed_def += r.relaxedDefAt1;
+      out[fam][k].relaxed_def_n++;
+    }
   }
   return out;
 }
@@ -133,10 +199,15 @@ export function buildLanguageCellTable(rows) {
     if (r.goldClass !== 'ast-tester') continue;
     if (r.rCell === 'R2_baseline') continue;
     const k = `${r.rCell}|${r.qCell}|${r.language}`;
-    out[k] ||= { n: 0, file: 0, sym: 0 };
+    out[k] ||= { n: 0, file: 0, sym: 0, relaxed_def: 0, relaxed_def_n: 0, file_recall_at_5: 0 };
     out[k].n++;
     out[k].file += r.fileRecallAt1;
     out[k].sym += r.symbolRecallAt1;
+    out[k].file_recall_at_5 += (r.fileRecallAt5 ? 1 : 0);
+    if (r.relaxedDefAt1 != null) {
+      out[k].relaxed_def += r.relaxedDefAt1;
+      out[k].relaxed_def_n++;
+    }
   }
   return out;
 }
@@ -259,6 +330,54 @@ function emitStrategyEntry(cell, label, source, metric = 'symbolRecallAt1') {
   };
 }
 
+/**
+ * Compute relaxed_def_at_1 and file_recall_at_5 means for a given cell
+ * key, from the global cell table. Returns null when the cell is missing.
+ */
+function secondaryFromCell(cell, _opts = {}) {
+  if (!cell) return { strict_symbol_recall_at_1: null, relaxed_def_recall_at_1: null, file_recall_at_5: null };
+  return {
+    strict_symbol_recall_at_1: cell.n ? cell.sym / cell.n : null,
+    relaxed_def_recall_at_1: cell.relaxed_def_n ? cell.relaxed_def / cell.relaxed_def_n : null,
+    file_recall_at_5: cell.n ? cell.file_recall_at_5 / cell.n : null,
+  };
+}
+
+/**
+ * Argmax cell key under a `score(cell) -> number|null` projection.
+ */
+function argmaxCell(table, scoreFn) {
+  let best = null;
+  let bestVal = -Infinity;
+  for (const [k, c] of Object.entries(table)) {
+    const v = scoreFn(c);
+    if (v == null) continue;
+    if (v > bestVal) { bestVal = v; best = k; }
+  }
+  return best;
+}
+
+/**
+ * Weighted-aggregate score for one cell under a per-language weight map,
+ * given a per-language scoring function. Used for popular_weighted
+ * secondary metrics so the trio shares the same weighting as the headline.
+ */
+function weightedScore(langTable, cellKey, weights, scoreFn) {
+  let weightedSum = 0;
+  let weightSum = 0;
+  for (const [k, c] of Object.entries(langTable)) {
+    const [rc, qc, lang] = k.split('|');
+    if (`${rc}|${qc}` !== cellKey) continue;
+    const v = scoreFn(c);
+    if (v == null) continue;
+    const canonical = normalizeProbePackKey(lang);
+    const w = weights[canonical] ?? weights[lang] ?? 1;
+    weightedSum += w * v;
+    weightSum += w;
+  }
+  return weightSum > 0 ? weightedSum / weightSum : null;
+}
+
 // ─── main ─────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -278,6 +397,15 @@ async function main() {
   const weightsJson = JSON.parse(fs.readFileSync(WEIGHTS_PATH, 'utf8'));
   const weightsAgentic = weightsJson.weights;
 
+  // Annotate rows with relaxedDefAt1 ∈ {0, 1, null} for the secondary
+  // metric (2026-05-13 cross-tool audit).
+  const inputs = loadAllInputs();
+  const reposMap = loadReposMap();
+  const relaxedStats = annotateRowsRelaxedDef({ rows, inputs, reposMap });
+  if (relaxedStats.unloadable > 0) {
+    process.stderr.write(`aggregate-track-a-ss-find: relaxed_def unavailable for ${relaxedStats.unloadable} rows; they are excluded from relaxed_def aggregates\n`);
+  }
+
   const globalTable = buildGlobalCellTable(rows);
   const famTable = buildFamilyCellTable(rows);
   const langTable = buildLanguageCellTable(rows);
@@ -290,6 +418,12 @@ async function main() {
   // ─── Strategy 1 — simple global by symbol_recall ─────────────────────
   const simpleGlobal = pickGlobalBest(globalTable, 'sym');
   const strategy1 = emitStrategyEntry(simpleGlobal, 'simple-global', 'best global symbol_recall@1 across 144 ast-tester golds');
+  if (strategy1) {
+    strategy1.secondary_metrics = {
+      _note: 'Triple-rubric view of the strict-winning cell across all 144 ast-tester golds (uniform, unweighted). relaxed_def_recall_at_1 reads top-1 chunk text from the locked AST-tester-probes repos.',
+      ...secondaryFromCell(globalTable[simpleGlobal.cell]),
+    };
+  }
 
   // ─── Strategy 2 — family overrides ───────────────────────────────────
   const famBests = pickFamilyBests(famTable, 'sym');
@@ -306,6 +440,10 @@ async function main() {
     if (e) {
       e.delta_vs_default_symbol_recall = delta;
       e.global_on_family_symbol_recall = globalOnFamilySym;
+      e.secondary_metrics = {
+        _note: `Triple-rubric view of the family-best cell for ${family} (uniform mean across ${family} golds only).`,
+        ...secondaryFromCell(famTable[family]?.[fb.cell]),
+      };
       overrides[family] = e;
     }
   }
@@ -333,8 +471,61 @@ async function main() {
         note: 'Natural agentic-tier weighted winner; matched simple_global so the 2nd-best cell was promoted instead to preserve GEPA candidate diversity.',
       };
     }
+    // Agentic-tier-weighted secondary trio so the headline number
+    // (symbol_recall_at_1) and the secondaries share the same weighting.
+    strategy3.secondary_metrics = {
+      _note: 'Triple-rubric view of the popular_weighted cell under agentic-tier weights (TS/Python/Rust=5, mainstream=3, longtail=1). All three numbers use the same weighting scheme so they\'re comparable.',
+      strict_symbol_recall_at_1: weightedScore(langTable, popularWeighted.cell, weightsAgentic, (c) => c.n ? c.sym / c.n : null),
+      relaxed_def_recall_at_1: weightedScore(langTable, popularWeighted.cell, weightsAgentic, (c) => c.relaxed_def_n ? c.relaxed_def / c.relaxed_def_n : null),
+      file_recall_at_5: weightedScore(langTable, popularWeighted.cell, weightsAgentic, (c) => c.n ? c.file_recall_at_5 / c.n : null),
+    };
     strategy3.alt_so_tier = emitStrategyEntry(popularSO, 'popular-weighted (so-tier)', 'best weighted symbol_recall under §7 Stack-Overflow tier weights — for reference');
   }
+
+  // ─── secondary_metrics top-level block (2026-05-13 cross-tool audit) ─
+  const globalStrict = {};
+  const globalRelaxed = {};
+  const globalRecallAt5 = {};
+  for (const [k, c] of Object.entries(globalTable)) {
+    globalStrict[k]     = c.n ? c.sym / c.n : null;
+    globalRelaxed[k]    = c.relaxed_def_n ? c.relaxed_def / c.relaxed_def_n : null;
+    globalRecallAt5[k]  = c.n ? c.file_recall_at_5 / c.n : null;
+  }
+  const byFamilySecondaries = {};
+  for (const [family, cells] of Object.entries(famTable)) {
+    const strict = {}, relaxed = {}, recall5 = {};
+    for (const [k, c] of Object.entries(cells)) {
+      strict[k]    = c.n ? c.sym / c.n : null;
+      relaxed[k]   = c.relaxed_def_n ? c.relaxed_def / c.relaxed_def_n : null;
+      recall5[k]   = c.n ? c.file_recall_at_5 / c.n : null;
+    }
+    byFamilySecondaries[family] = {
+      strict_symbol_recall_at_1: strict,
+      relaxed_def_recall_at_1: relaxed,
+      file_recall_at_5: recall5,
+    };
+  }
+  const rankingStability = {
+    _note: 'argmax (R, Q) cell under each rubric, computed on uniform-across-golds means (same convention as simple_global). On phase6-redo-ss-find-v8 data, strict and relaxed argmax DIFFER: strict winner is R2|Q3 (sym 0.6503, tied with R5|Q3); relaxed winner is R2|Q1 (relaxed_def 0.7832), with R2|Q3 fourth at 0.7413 — a 4.2pp gap. This is a real signal the cross-tool audit (2026-05-13) did not measure — the audit only spot-checked PARTIAL cases for the WINNING cell (R2|Q3) and inferred rubric-robustness; this aggregator computes relaxed_def globally for ALL 49 cells. The strategy winning cells (simple_global=R2|Q3, JS-mobile override=R3|Q4, popular_weighted=R5|Q3) are unchanged; the headline recommendation set is robust because gates pin the chosen cells. recall_at_5_winner measures file-in-top-5 and is informational.',
+    strict_winner: argmaxCell(globalTable, (c) => c.n ? c.sym / c.n : null),
+    relaxed_winner: argmaxCell(globalTable, (c) => c.relaxed_def_n ? c.relaxed_def / c.relaxed_def_n : null),
+    recall_at_5_winner: argmaxCell(globalTable, (c) => c.n ? c.file_recall_at_5 / c.n : null),
+  };
+  const secondaryMetrics = {
+    _note: 'Strict symbol_recall@1 is the headline; these secondaries quantify the F1 chunker-label artifact discovered by the 2026-05-13 cross-tool audit (core/prompt-optimization/data/query-shapes/cross-tool-benchmark-audit-2026-05-13.md). 92-100% of ss-find PARTIALs are hidden PASSes — the chunk text DOES define the expected symbol; the chunker just labels the chunk with a sibling. relaxed_def_recall_at_1 reads the top-1 chunk text from the locked AST-tester-probes repos and counts the row as PASS iff the expected symbol appears with a definition anchor (def/class/fn/struct/impl/...). file_recall_at_5 aggregates the already-stored fileRecallAt5. Promotion rules remain on the strict rubric; the strategy WINNING CELLS (simple_global / family_conditioned / popular_weighted) are unchanged. The argmax cell can differ under the relaxed rubric — see ranking_stability_check; this is a real signal the audit did not measure.',
+    global: {
+      strict_symbol_recall_at_1: globalStrict,
+      relaxed_def_recall_at_1: globalRelaxed,
+      file_recall_at_5: globalRecallAt5,
+    },
+    by_family: byFamilySecondaries,
+    ranking_stability_check: rankingStability,
+    coverage: {
+      rows_annotated: relaxedStats.loaded,
+      rows_unloadable: relaxedStats.unloadable,
+      golds_without_inputs: relaxedStats.skippedNoInput,
+    },
+  };
 
   // ─── Build the artifact ──────────────────────────────────────────────
   const artifact = {
@@ -361,6 +552,7 @@ async function main() {
     // Full cell tables for transparency / downstream re-aggregation.
     cell_table_global: globalTable,
     cell_table_by_family: famTable,
+    secondary_metrics: secondaryMetrics,
     manual_gates_pending: ['G2-thresholdout', 'G4-codex-author-review', 'doc-negative-regression'],
     behavior_notes: [
       'Three strategies shipped per the 2026-05-13 design: PHASE7 / GEPA picks the one that performs best at agent-prompt-evolution time.',

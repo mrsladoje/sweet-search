@@ -32,14 +32,16 @@ import { fileURLToPath } from 'node:url';
 import { pairedPermutationTest } from '../stats/paired-permutation.mjs';
 import { benjaminiHochberg } from '../stats/bh-fdr.mjs';
 import { FAMILIES, COVERED_LANGUAGES, normalizeProbePackKey } from '../data/query-shapes/family-map.mjs';
+import { rowRelaxedDef, loadReposMap } from './relaxed-grading.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const TRACKS_DIR = path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/tracks');
+const INPUTS_DIR = path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/inputs');
 const OUTPUT_PATH = path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/recommendations-v2.json');
 const WHITELIST_PATH = path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/leakage-whitelist.json');
 
-const SCHEMA_VERSION = 4; // bumped 2026-05-13 — added popular_weighted Strategy 3
+const SCHEMA_VERSION = 5; // bumped 2026-05-14 — added secondary_metrics (relaxed_def + file_recall_at_5) per cross-tool audit 2026-05-13
 const SHAPES = ['V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7'];
 const BASELINE_SHAPE = 'V_baseline';
 
@@ -123,6 +125,71 @@ function loadJsonl(p) {
     }
   }
   return rows;
+}
+
+/**
+ * Load every input/<lang>-<gold>.json so we can look up expectedSymbol per
+ * gold for the relaxed_def_recall@1 secondary metric.
+ */
+function loadAllInputs() {
+  const out = new Map();
+  if (!fs.existsSync(INPUTS_DIR)) return out;
+  for (const n of fs.readdirSync(INPUTS_DIR)) {
+    if (!n.endsWith('.json')) continue;
+    try {
+      const obj = JSON.parse(fs.readFileSync(path.join(INPUTS_DIR, n), 'utf8'));
+      if (obj.goldId) out.set(obj.goldId, obj);
+    } catch { /* skip malformed */ }
+  }
+  return out;
+}
+
+/**
+ * Annotate every row in `byGold` with `relaxedDefAt1` ∈ {0, 1, null} per the
+ * 2026-05-13 cross-tool benchmark-shape audit. The metric reads the locked
+ * eval/ast-tester-probes/_repos/<lang>/<file> chunk text and asks whether
+ * the expected symbol appears with a definition anchor (def/class/fn/...).
+ *
+ * Mutates rows in place. Returns aggregate stats (loaded vs unloadable) for
+ * diagnostics.
+ */
+export function annotateRelaxedDef({ byGold, inputs, reposMap }) {
+  let loaded = 0;
+  let skippedNoInput = 0;
+  let unloadable = 0;
+  for (const gold of byGold.values()) {
+    const input = inputs.get(gold.goldId);
+    if (!input) { skippedNoInput++; continue; }
+    // Use the canonical language for repo lookup. The audit script uses the
+    // raw language from the input (which can be 'typescript-lib'); the locked
+    // repos map has entries keyed on both 'typescript' and 'typescript-lib'
+    // — try the input's language first, then fall back to the canonical.
+    const lookupLangs = [input.language, normalizeProbePackKey(input.language)];
+    const expectedSymbols = input.expectedSymbolAnyOf?.length
+      ? input.expectedSymbolAnyOf
+      : (input.expectedSymbol ? [input.expectedSymbol] : []);
+    for (const row of gold.shapes.values()) {
+      if (row.error) { row.relaxedDefAt1 = null; continue; }
+      if (!row.fileRecallAt1) { row.relaxedDefAt1 = 0; continue; }
+      if (!expectedSymbols.length) { row.relaxedDefAt1 = 0; continue; }
+      let v = null;
+      for (const lang of lookupLangs) {
+        for (const sym of expectedSymbols) {
+          const r = rowRelaxedDef({ row, expectedSymbol: sym, language: lang, reposMap });
+          if (r != null) { v = (v ?? 0) || r; }
+        }
+        if (v != null) break;
+      }
+      if (v == null) {
+        unloadable++;
+        row.relaxedDefAt1 = null;
+      } else {
+        loaded++;
+        row.relaxedDefAt1 = v;
+      }
+    }
+  }
+  return { loaded, skippedNoInput, unloadable };
 }
 
 /**
@@ -218,7 +285,9 @@ export function perLanguageMean({ byGold, language, shape, metric = 'fileRecallA
     if (gold.language !== language) continue;
     const row = gold.shapes.get(shape);
     if (!row || row.error) continue;
-    recalls.push(row[metric]);
+    const v = row[metric];
+    if (v == null) continue; // skip rows where the metric is unavailable (e.g., relaxedDefAt1 unloadable)
+    recalls.push(v);
   }
   return { mean: mean(recalls), n: recalls.length };
 }
@@ -338,6 +407,18 @@ async function main() {
   const { byGold } = bucketRows(rows);
   const runId = rows[0]?.runId || path.basename(trackFile, '.jsonl').replace(/^track-a-/, '');
 
+  // Annotate every row with relaxedDefAt1 ∈ {0, 1, null} for the secondary
+  // metric introduced by the 2026-05-13 cross-tool benchmark-shape audit
+  // (core/prompt-optimization/data/query-shapes/cross-tool-benchmark-audit-
+  // 2026-05-13.md). The metric is a DEF-only relaxation of strict
+  // symbol_recall@1 that targets the F1 chunker-label artifact.
+  const inputs = loadAllInputs();
+  const reposMap = loadReposMap();
+  const relaxedStats = annotateRelaxedDef({ byGold, inputs, reposMap });
+  if (relaxedStats.unloadable > 0) {
+    process.stderr.write(`aggregate-track-a: relaxed_def unavailable for ${relaxedStats.unloadable} rows (chunk text could not be loaded); they are excluded from relaxed_def aggregates\n`);
+  }
+
   // Load manual overrides JSON if supplied. Spec: a small map of
   // { "family": "Vk" } that the user has hand-picked based on the full
   // file_recall + symbol_recall picture (e.g., "V2 for JS-mobile because
@@ -350,7 +431,10 @@ async function main() {
   }
 
   // Per-shape global aggregates — track BOTH metrics so the artifact records
-  // the full picture regardless of which one drives promotion.
+  // the full picture regardless of which one drives promotion. The
+  // `relaxed_def` and `file_recall_at_5` branches are SECONDARY metrics
+  // published per the 2026-05-13 cross-tool audit; they do not drive
+  // promotion (the strict winner is the headline).
   const globalAggs = {};
   for (const shape of [BASELINE_SHAPE, ...SHAPES]) {
     globalAggs[shape] = {
@@ -361,6 +445,14 @@ async function main() {
       symbol_recall: {
         macro: macroAggregate({ byGold, shape, metric: 'symbolRecallAt1' }),
         weighted: weightedAggregate({ byGold, shape, metric: 'symbolRecallAt1' }),
+      },
+      relaxed_def_recall: {
+        macro: macroAggregate({ byGold, shape, metric: 'relaxedDefAt1' }),
+        weighted: weightedAggregate({ byGold, shape, metric: 'relaxedDefAt1' }),
+      },
+      file_recall_at_5: {
+        macro: macroAggregate({ byGold, shape, metric: 'fileRecallAt5' }),
+        weighted: weightedAggregate({ byGold, shape, metric: 'fileRecallAt5' }),
       },
     };
   }
@@ -378,6 +470,8 @@ async function main() {
       const aggBaseSym  = perFamilyAggregate({ byGold, family, shape: BASELINE_SHAPE, metric: 'symbolRecallAt1' });
       const aggCandFile = perFamilyAggregate({ byGold, family, shape, metric: 'fileRecallAt1' });
       const aggCandSym  = perFamilyAggregate({ byGold, family, shape, metric: 'symbolRecallAt1' });
+      const aggCandRelaxed = perFamilyAggregate({ byGold, family, shape, metric: 'relaxedDefAt1' });
+      const aggCandFile5 = perFamilyAggregate({ byGold, family, shape, metric: 'fileRecallAt5' });
       let test = null;
       let belowFloor = false;
       if (baseline.length >= 5) {
@@ -393,6 +487,13 @@ async function main() {
         familyAggregateBaseline_symbol: aggBaseSym.mean,
         familyAggregateCandidate_file: aggCandFile.mean,
         familyAggregateCandidate_symbol: aggCandSym.mean,
+        // Secondary metrics (2026-05-13 cross-tool audit). Strict
+        // symbol_recall@1 remains the primary; these quantify the F1
+        // chunker-label artifact (relaxed_def_at_1 = chunk DEFINES the
+        // expected symbol; file_recall_at_5 = expected file appeared in
+        // top-5).
+        familyAggregateCandidate_relaxed_def: aggCandRelaxed.mean,
+        familyAggregateCandidate_file_recall_at_5: aggCandFile5.mean,
         // Back-compat: keep the primary-metric numbers in the legacy field name
         // so downstream consumers that have not migrated still work.
         familyAggregateBaseline: opts.primaryMetric === 'symbolRecallAt1' ? aggBaseSym.mean : aggBaseFile.mean,
@@ -537,6 +638,91 @@ async function main() {
   // sweep is wired in. Until then the field is "pending" rather than asserting.
   const docNegativeCheck = 'pending-no-sweep-yet';
 
+  // ─── secondary_metrics — published per 2026-05-13 cross-tool audit ───
+  // Strict symbol_recall@1 is the headline; these expose the F1
+  // chunker-label artifact (67-83% of ss-search PARTIALs are hidden PASSes
+  // per the audit). See cross-tool-benchmark-audit-2026-05-13.md for the
+  // full reasoning.
+  const secondaryMetricsNote = 'Strict symbol_recall@1 is the headline; these secondaries quantify the F1 chunker-label artifact discovered by the 2026-05-13 cross-tool audit (core/prompt-optimization/data/query-shapes/cross-tool-benchmark-audit-2026-05-13.md). relaxed_def_recall_at_1 reads the top-1 chunk text from the locked AST-tester-probes repos and counts the row as PASS iff the expected symbol appears with a definition anchor (def/class/fn/struct/impl/...). file_recall_at_5 averages the already-stored fileRecallAt5 across rows. Both global scalars use weighted (§7 tier) aggregation, identical to the headline. Promotion rules remain on the strict rubric; the strategy WINNING CELLS (V7 default / V2 JS-mobile / V4 C-family) are unchanged. The argmax shape can differ under the relaxed rubric — see ranking_stability_check; this is a real signal the audit did not measure (the audit only spot-checked PARTIAL cases for the chosen winners and never compared all 7 shapes globally under relaxed_def).';
+
+  function argmaxShape(perShape) {
+    let best = null;
+    let bestVal = -Infinity;
+    for (const [s, v] of Object.entries(perShape)) {
+      if (v == null) continue;
+      if (v > bestVal) { bestVal = v; best = s; }
+    }
+    return best;
+  }
+
+  const globalStrict = {};
+  const globalRelaxed = {};
+  const globalRecallAt5 = {};
+  for (const shape of SHAPES) {
+    globalStrict[shape] = globalAggs[shape]?.symbol_recall?.weighted ?? null;
+    globalRelaxed[shape] = globalAggs[shape]?.relaxed_def_recall?.weighted ?? null;
+    globalRecallAt5[shape] = globalAggs[shape]?.file_recall_at_5?.weighted ?? null;
+  }
+
+  const byFamilySecondaries = {};
+  for (const family of Object.keys(FAMILIES)) {
+    const strict = {}, relaxed = {}, recall5 = {};
+    for (const shape of SHAPES) {
+      const cell = cellTable[family]?.[shape];
+      strict[shape]  = cell?.familyAggregateCandidate_symbol ?? null;
+      relaxed[shape] = cell?.familyAggregateCandidate_relaxed_def ?? null;
+      recall5[shape] = cell?.familyAggregateCandidate_file_recall_at_5 ?? null;
+    }
+    byFamilySecondaries[family] = {
+      strict_symbol_recall_at_1: strict,
+      relaxed_def_recall_at_1: relaxed,
+      file_recall_at_5: recall5,
+    };
+  }
+
+  const rankingStability = {
+    _note: 'argmax shape under each rubric, computed on weighted (§7 tier) global aggregates over all 144 ast-tester golds. On phase6-redo-v1 data the strict and relaxed argmax DIFFER (strict=V7 at 0.5125, V1 at 0.5089 — 0.36pp gap; relaxed=V1 at 0.6107, V7 third at 0.5982 — 1.25pp gap). The strict top-2 (V7, V1) are tied within sweep noise, and the relaxed rubric flips that order. This is a real signal the cross-tool audit (2026-05-13) did not measure — the audit only spot-checked PARTIAL cases for the WINNING shape (V7) and inferred rubric-robustness; this aggregator computes relaxed_def globally for ALL 7 shapes. The strategy winning cells (default=V7, JS-mobile=V2, C-family=V4) are unchanged regardless; the headline recommendation set is robust because gates pin the chosen shape, not because the rubric argmax is stable. recall_at_5_winner measures a different quantity (file in top-5 vs file at rank 1) and is informational only.',
+    strict_winner: argmaxShape(globalStrict),
+    relaxed_winner: argmaxShape(globalRelaxed),
+    recall_at_5_winner: argmaxShape(globalRecallAt5),
+  };
+
+  const secondaryMetrics = {
+    _note: secondaryMetricsNote,
+    global: {
+      strict_symbol_recall_at_1: globalStrict,
+      relaxed_def_recall_at_1: globalRelaxed,
+      file_recall_at_5: globalRecallAt5,
+    },
+    by_family: byFamilySecondaries,
+    ranking_stability_check: rankingStability,
+    coverage: {
+      rows_annotated: relaxedStats.loaded,
+      rows_unloadable: relaxedStats.unloadable,
+      golds_without_inputs: relaxedStats.skippedNoInput,
+    },
+  };
+
+  // Attach per-strategy secondary trio. The strategies' headline numbers
+  // are NOT recomputed — only the secondary trio is added.
+  if (defaultDecision.shape) {
+    defaultDecision.secondary_metrics = {
+      _note: 'Triple-rubric view of the strict-winning shape. Strict number matches weighted_recall_at_1 by construction; relaxed_def_recall_at_1 and file_recall_at_5 are the audit\'s published secondaries.',
+      strict_symbol_recall_at_1: globalStrict[defaultDecision.shape],
+      relaxed_def_recall_at_1: globalRelaxed[defaultDecision.shape],
+      file_recall_at_5: globalRecallAt5[defaultDecision.shape],
+    };
+  }
+  for (const o of Object.values(overrides)) {
+    const cell = cellTable[o.family]?.[o.shape];
+    o.secondary_metrics = {
+      _note: 'Family-aggregate triple-rubric view of the override shape (uniform within-family means, same convention as family_aggregates).',
+      strict_symbol_recall_at_1: cell?.familyAggregateCandidate_symbol ?? null,
+      relaxed_def_recall_at_1: cell?.familyAggregateCandidate_relaxed_def ?? null,
+      file_recall_at_5: cell?.familyAggregateCandidate_file_recall_at_5 ?? null,
+    };
+  }
+
   const artifact = {
     schemaVersion: SCHEMA_VERSION,
     supersedes: 'recommendations.json (runId partial-test-1778456156116)',
@@ -552,6 +738,7 @@ async function main() {
     promotion_mode: opts.promotionMode,
     cell_table: cellTable,
     global_aggregates: globalAggs,
+    secondary_metrics: secondaryMetrics,
     global_permutation_tests: globalTests,
     default: defaultDecision,
     family_overrides: overrides,
@@ -567,6 +754,29 @@ async function main() {
     popular_weighted: (() => {
       const agentic = pickWeightedShapeWinner({ byGold, weights: TIER_WEIGHTS_AGENTIC, metric: opts.primaryMetric, excludeShape: defaultDecision.shape });
       const stackOverflow = pickWeightedShapeWinner({ byGold, weights: TIER_WEIGHTS, metric: opts.primaryMetric, excludeShape: defaultDecision.shape });
+      // Agentic-tier-weighted secondary metrics (relaxed_def, file_recall_at_5).
+      const agenticRelaxed = agentic.shape
+        ? pickWeightedShapeWinner({ byGold, weights: TIER_WEIGHTS_AGENTIC, metric: 'relaxedDefAt1' })
+        : null;
+      const agenticRecall5 = agentic.shape
+        ? pickWeightedShapeWinner({ byGold, weights: TIER_WEIGHTS_AGENTIC, metric: 'fileRecallAt5' })
+        : null;
+      // Score the popular_weighted shape under each rubric using the same
+      // weighting scheme — call pickWeightedShapeWinner with the shape
+      // forced via a small scan instead of plumbing a "score-only" helper.
+      function scoreShape(metric) {
+        if (!agentic.shape) return null;
+        let weightedSum = 0;
+        let weightSum = 0;
+        for (const lang of COVERED_LANGUAGES) {
+          const { mean: m } = perLanguageMean({ byGold, language: lang, shape: agentic.shape, metric });
+          if (m == null) continue;
+          const w = TIER_WEIGHTS_AGENTIC[lang] ?? 1;
+          weightedSum += w * m;
+          weightSum += w;
+        }
+        return weightSum > 0 ? weightedSum / weightSum : null;
+      }
       const entry = {
         shape: agentic.shape,
         weighting: 'agentic-tier-2026',
@@ -574,6 +784,12 @@ async function main() {
         weighted_recall_at_1: agentic.score,
         diversity_enforced: agentic.diversityEnforced,
         instruction_text: agentic.shape ? defaultInstructionText(agentic.shape) : null,
+        secondary_metrics: agentic.shape ? {
+          _note: 'Triple-rubric view of the popular_weighted shape under agentic-tier weights (TS/Python/Rust=5, mainstream=3, longtail=1). All three numbers use the same weighting scheme so they\'re comparable to weighted_recall_at_1.',
+          strict_symbol_recall_at_1: agentic.score,
+          relaxed_def_recall_at_1: scoreShape('relaxedDefAt1'),
+          file_recall_at_5: scoreShape('fileRecallAt5'),
+        } : null,
         alt_so_tier: {
           shape: stackOverflow.shape,
           weighted_recall_at_1: stackOverflow.score,
