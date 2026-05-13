@@ -22,6 +22,73 @@ import { getTreeSitterProvider } from '../infrastructure/tree-sitter-provider.js
 export const SCHEMA_VERSION = 2;
 
 /**
+ * Sentinel `end_line` clamp (2026-05-13). Lua-specific by design.
+ *
+ * Background: Lua's regex extractor uses `findEndLineKeyword` to find the
+ * `end` keyword that closes a function body. The helper tracks nesting
+ * depth across `if`/`while`/`for`/`function`/`do` keywords and decrements
+ * on `end`. When the depth counter mis-balances (control-flow keywords
+ * sharing line context with the closing `end`), the helper falls through
+ * to `return lines.length` (the file's last line), producing entities
+ * with end_line = EOF that structurally span half the file (LU-003:
+ * tablex.deepcopy at 118-120 got rendered as 98-999 because its
+ * preceding sibling cycle_aware_copy had bogus end_line=999).
+ *
+ * Gated to language='lua' EXPLICITLY because:
+ *   - Tree-sitter languages (Java, Python, JS, TS, Go, Rust, C, C++,
+ *     Ruby, etc.) get accurate end_lines from grammar-driven extraction —
+ *     this clamp's pattern doesn't apply.
+ *   - Other regex-path languages (zig, scala, kotlin, dart, elixir, php)
+ *     may have similar bugs but haven't been audited. Apply only after
+ *     per-language validation.
+ *
+ * Clamp condition (BOTH required):
+ *   1. cur.type ∈ NON_CONTAINER_TYPES (function-shaped — these cannot
+ *      legitimately contain a same-level sibling that starts inside them)
+ *   2. cur.end_line >= file_line_count (ends at-or-past EOF)
+ *   3. A later entity starts after cur.start_line and before cur.end_line.
+ *
+ * Clamp target: next entity's start_line - 1. Mutates in place.
+ *
+ * The container-type gate (NON_CONTAINER_TYPES) is a defence-in-depth
+ * even within Lua — Lua doesn't really have classes, but if a future
+ * change adds 'module' or 'class' types via metatable detection, they
+ * stay protected.
+ */
+const NON_CONTAINER_TYPES = new Set([
+  'function', 'method', 'arrowFunction', 'variable', 'const', 'field',
+  'decorator', 'assignedFunc', 'component', 'typeAlias',
+]);
+
+const LUA_CLAMP_ALLOWED_LANGUAGES = new Set(['lua']);
+
+export function clampSentinelEndLines(entities, fileLineCount, language) {
+  if (!Array.isArray(entities) || entities.length < 2) return entities;
+  if (fileLineCount == null || fileLineCount <= 0) return entities;
+  if (!LUA_CLAMP_ALLOWED_LANGUAGES.has(language)) return entities;
+  for (let i = 0; i < entities.length - 1; i++) {
+    const cur = entities[i];
+    if (!NON_CONTAINER_TYPES.has(cur?.type)) continue;
+    const curEnd = Number(cur?.end_line ?? 0);
+    if (!Number.isFinite(curEnd) || curEnd < fileLineCount) continue;
+    for (let j = i + 1; j < entities.length; j++) {
+      const next = entities[j];
+      const nextStart = Number(next?.start_line ?? 0);
+      const curStart = Number(cur?.start_line ?? 0);
+      if (!Number.isFinite(nextStart) || nextStart <= curStart) continue;
+      if (nextStart >= curEnd) break;
+      // Sentinel detected: clamp.
+      if (nextStart - 1 >= curStart) {
+        cur.end_line = nextStart - 1;
+      }
+      break;
+    }
+  }
+  return entities;
+}
+
+
+/**
  * Normalize an identifier into searchable alias tokens.
  * Splits camelCase, PascalCase, snake_case, digits and emits both
  * the split form and the collapsed alnum form.
@@ -1201,6 +1268,17 @@ export class GraphExtractor {
       }
     }
 
+    // Sentinel clamp (2026-05-13): Lua-only. The regex `findEndLineKeyword`
+    // falls through to `return lines.length` when the `end` keyword counter
+    // mis-balances (control-flow keywords sharing line context), producing
+    // entities with end_line=EOF that swallow subsequent siblings (LU-003:
+    // tablex.deepcopy at 118-120 was being rendered as 98-999 because the
+    // preceding sibling cycle_aware_copy had bogus end_line=999). The
+    // language gate inside clampSentinelEndLines is explicit — other
+    // regex-path languages (zig, scala, kotlin, etc.) are unaffected and
+    // would need per-language validation before opt-in.
+    clampSentinelEndLines(entities, lines.length, langInfo?.id);
+
     return { entities, relationships };
   }
 
@@ -1394,6 +1472,10 @@ export class GraphExtractor {
       .filter(Boolean);
   }
 
+  _clampSentinelEndLines(entities, fileLineCount) {
+    return clampSentinelEndLines(entities, fileLineCount);
+  }
+
   _normalizeTreeSitterEntities(filePath, symbols, language) {
     const dedupedBySymbolAndLine = new Map();
 
@@ -1424,9 +1506,14 @@ export class GraphExtractor {
       }
     }
 
-    return Array.from(dedupedBySymbolAndLine.values())
-      .sort((a, b) => a.start_line - b.start_line)
-      .map(({ rank, ...entity }) => entity);
+    const sorted = Array.from(dedupedBySymbolAndLine.values())
+      .sort((a, b) => a.start_line - b.start_line);
+    // Tree-sitter path: NO sentinel clamp. Tree-sitter parsers return
+    // accurate end_lines via grammar-driven extraction; the regex-path
+    // `findEndLineKeyword` fall-through is the only known source of the
+    // bogus-EOF pattern, and only Lua currently goes through that path
+    // (Lua has no tree-sitter grammar registered).
+    return sorted.map(({ rank, ...entity }) => entity);
   }
 
   _normalizeTreeSitterSymbolType(type, name) {
