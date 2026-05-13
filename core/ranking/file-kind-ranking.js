@@ -57,7 +57,12 @@ const EXAMPLES_RE = /(?:^|\/)_?examples?\//i;
 // directory conventions across JS/Python/Rust/Go that shipped without TESTS_RE
 // catching them (e.g. fastify integration/server.js was mis-classified as
 // 'implementation' until this update 2026-05-07).
-const TESTS_RE = /(?:^|\/)(?:tests?|spec|integration|e2e|fixtures?|__tests__|__mocks__|cypress|playwright)\/|\.test\.[a-z0-9]+$|_test\.[a-z0-9]+$|\.spec\.[a-z0-9]+$|_spec\.[a-z0-9]+$|\.e2e\.[a-z0-9]+$|_e2e\.[a-z0-9]+$/i;
+// 2026-05-13: added `(?:^|/)test\.(c|cpp|cc|h|hpp|py|rb|go|rs|js|ts|java|kt|scala|php|lua|zig|dart|ex|exs)$`
+// to catch bare `test.<ext>` files at repo root or any directory level
+// (hiredis convention — C-005 in ast-tester probes). Restricted to code
+// extensions only so `test.html`, `test.json`, `test.yaml` (legitimate
+// fixtures) aren't misclassified.
+const TESTS_RE = /(?:^|\/)(?:tests?|spec|integration|e2e|fixtures?|__tests__|__mocks__|cypress|playwright)\/|\.test\.[a-z0-9]+$|_test\.[a-z0-9]+$|\.spec\.[a-z0-9]+$|_spec\.[a-z0-9]+$|\.e2e\.[a-z0-9]+$|_e2e\.[a-z0-9]+$|(?:^|\/)test\.(?:c|cpp|cc|cxx|h|hpp|hh|py|rb|go|rs|js|ts|jsx|tsx|java|kt|scala|php|lua|zig|dart|ex|exs|swift|mjs|cjs|cs)$/i;
 const TYPES_RE = /\.d\.ts$|(?:^|\/)types\//i;
 // Ancillary files: configuration, lockfiles, CI manifests, container build
 // definitions. 2026-05-07 added Dockerfile / Containerfile / .dockerignore
