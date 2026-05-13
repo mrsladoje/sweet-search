@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-05-13",
+  "owner": "sweet-search-core",
+  "description": "Per-language popularity weights for the popular-weighted Strategy 3 recommendation in PHASE6_REDO ss-find / ss-search aggregators. Calibrated for agentic-coding deployment context (Claude Code / Codex / Cursor users in 2026) using GitHub Octoverse 2025, JetBrains Developer Ecosystem Survey 2025, gradually.ai Claude Code / Codex 2026 statistics, and the JetBrains April 2026 AI Pulse survey. Distinct from the §7 Stack-Overflow-2024 tier weights in two ways: (1) TypeScript / Python / Rust are S-tier (weight 5) because the Octoverse 2025 data explicitly ties TypeScript's rise to AI-assisted coding reliability; (2) Java / Go / C# / JS sit in A-tier (3) rather than the legacy Stack-Overflow tier-1 (3) — they remain mainstream, but the 2026 agentic-coding distribution skews stronger toward the typed + AI-native trio.",
+  "sources": [
+    "GitHub Octoverse 2025 (TypeScript overtook all in Aug 2025, +66.6% YoY; cite for agent-assisted-coding-favors-typed-languages quote)",
+    "JetBrains Developer Ecosystem 2025 + AI Pulse Jan 2026 (Claude Code 18% at-work usage, +6x YoY)",
+    "gradually.ai Claude Code / Codex statistics 2026 (Claude Code 46.3M downloads; SWE-Bench Verified benchmarks)",
+    "Stack Overflow 2025 (Rust 9-year admiration leader at 72-83%; Python +7pp AI-driven surge)"
+  ],
+  "weights": {
+    "_S_tier_5": ["typescript", "python", "rust", "typescript-lib"],
+    "_A_tier_3": ["javascript", "java", "go", "csharp"],
+    "_B_tier_2": ["cpp", "c", "kotlin", "ruby", "dart", "php"],
+    "_C_tier_1": ["scala", "lua", "elixir", "zig"],
+    "typescript": 5, "python": 5, "rust": 5, "typescript-lib": 5,
+    "javascript": 3, "java": 3, "go": 3, "csharp": 3,
+    "cpp": 2, "c": 2, "kotlin": 2, "ruby": 2, "dart": 2, "php": 2,
+    "scala": 1, "lua": 1, "elixir": 1, "zig": 1
+  }
+}

@@ -90,6 +90,11 @@ core/prompt-optimization/data/results/
 core/prompt-optimization/data/query-shapes/inputs/
 core/prompt-optimization/data/query-shapes/variants/
 core/prompt-optimization/data/query-shapes/tracks/
+# ss-find regenerable artifacts (preprocess inputs are shared with ss-search;
+# variants/tracks are ss-find-specific). Keep recommendations-v2-ss-find.json
+# + agentic-tier-weights.json + scripts/ tracked.
+core/prompt-optimization/data/query-shapes/ss-find/variants/
+core/prompt-optimization/data/query-shapes/ss-find/tracks/
 # Eval data: ignore downloaded datasets but track benchmark query files
 eval/data/gencodesearchnet/
 eval/data/m2crb/

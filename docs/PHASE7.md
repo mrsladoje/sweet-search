@@ -573,19 +573,36 @@ authoring of the other three tools. The signal is:
 
 From the P6 directional signal, the variants encode these tool-specific recommendations:
 
-- **`[[ss-search]]`** (NL hybrid retrieval): **family-conditioned, per PHASE6_REDO §10 + the 2026-05-13 qshape-v2 outcome**. The variant body emits a deterministic file-extension → family lookup (the same `family-map.mjs` used at sweep time) followed by the corresponding `instruction_text`:
+- **`[[ss-search]]`** (NL hybrid retrieval): **PHASE6_REDO ships THREE distinct strategies** in `recommendations-v2.json` (2026-05-13 amendment). Each strategy populates a separate T_i variant slot so GEPA can evolve and select empirically:
+
+  **Strategy 1 — `simple_global` (single shape, no family detection):** V7. *"Phrase a medium-length declarative noun-phrase query (9-15 tokens) that contains the target symbol verbatim and at least one domain-specific keyword. Skip leading verbs; use the form `<symbol> <symbolType> that <domain noun-phrase>`."*
+
+  **Strategy 2 — `family_conditioned` (family detection + overrides):**
   ```
-  classify target file → one of {OO-monolithic, Systems-modular-terse, C-family, JS-mobile, Scripting-dynamic, unknown}
-  if family == C-family:        use V4 instruction_text
-  if family == JS-mobile:       use V2 instruction_text
-  otherwise (incl. unknown):    use V7 instruction_text  ← default
+  classify target file → {OO-monolithic, Systems-modular-terse, C-family, JS-mobile, Scripting-dynamic, unknown}
+  if family == C-family:        use V4 (interrogative + symbol)
+  if family == JS-mobile:       use V2 (short interrogative + symbol)
+  otherwise (incl. unknown):    use V7 default
   ```
-  The verbatim `instruction_text` strings, baked from `recommendations-v2.json`:
-    - **Default (V7 — OO-monolithic, Systems-modular-terse, Scripting-dynamic, unknown)**: *"Phrase a medium-length declarative noun-phrase query (9-15 tokens, whitespace-split) that contains the target symbol verbatim and at least one domain-specific keyword. Skip leading verbs like 'how'/'what'; use the form `<symbol> <symbolType> that <domain noun-phrase>`."*
-    - **C-family override (V4)**: *"For C / C++ / Zig files, phrase a medium-length interrogative query (9-15 tokens) that contains the target symbol verbatim. Use 'how does X …' / 'where does X …' framing; mention at least one neighboring symbol from the same file when known."*
-    - **JS-mobile override (V2)**: *"For JS / TS / Dart files, phrase a short interrogative query (4-8 tokens) that contains the target symbol verbatim. Use 'how does X …' / 'where is X defined' framing."*
-  The single load-bearing input is `default.instruction_text` plus the two entries under `family_overrides` in `recommendations-v2.json`. The `family_overrides` set is **deliberately small** (only the two families whose data justified deviating from the default); other families inherit the V7 default. If a future re-run of `aggregate-track-a.mjs` produces a different recommendation, the verbatim strings above must be regenerated from the new artifact (`docs/PHASE6_REDO.md §15` checklist item).
-- **`[[ss-find]]`** (regex+find): require a narrow regex anchor. Avoid no-symbol short queries — they flood the candidate pool. *Pending its own Phase 6 redo against an `ss-find`-specific probe set.*
+    - C-family override (V4): *"For C / C++ / Zig files, phrase a medium-length interrogative query (9-15 tokens) that contains the target symbol verbatim. Use 'how does X …' / 'where does X …' framing; mention at least one neighboring symbol from the same file when known."*
+    - JS-mobile override (V2): *"For JS / TS / Dart files, phrase a short interrogative query (4-8 tokens) that contains the target symbol verbatim. Use 'how does X …' / 'where is X defined' framing."*
+
+  **Strategy 3 — `popular_weighted` (agentic-tier weighting, no family detection):** V1. *"Phrase a very-short imperative query (≤ 3 tokens, whitespace-split) consisting of just the target symbol — optionally one descriptor word. Goal: lean on the symbol verbatim and let the hybrid retrieval pipeline do the rest."* Calibrated on agentic-tier weights (TS/Python/Rust = 5) per the 2026 GitHub Octoverse + JetBrains AI Pulse data — winner 51.8% weighted symbol_recall vs V7 49.7%.
+- **`[[ss-find]]`** (regex+find): **PHASE6_REDO ss-find redo SHIPPED 2026-05-13** — `recommendations-v2-ss-find.json` ships THREE distinct strategies (7×7 = 49 R×Q grid swept across 144 ast-tester golds, n=7,157 rows). PHASE7 exposes each as a separate T_i variant slot.
+
+  **Strategy 1 — `simple_global` (no family detection):** `R5 × Q3`. *"Build the regex as `\b(<symbol>|<sibling1>|<sibling2>)\b` — small alternation: symbol + 2 graph-neighbour or chunk-sibling identifiers. Phrase the semantic query as a short imperative containing the symbol verbatim (4-8 tokens, e.g., 'find <Symbol> usage')."* Global symbol_recall 60% (+11pp over R2-narrow baseline).
+
+  **Strategy 2 — `family_conditioned` (family detection + 1 override):**
+  ```
+  classify target file → 5-family lookup (same family-map.mjs as ss-search)
+  if family == JS-mobile:       use R3 × Q4
+                                regex `\b(function|const|let|var|class|export|async|...)\s+<symbol>\b`
+                                query short interrogative + symbol (4-8 tokens, "how does X work")
+  otherwise:                    use R5 × Q3 default
+  ```
+  JS-mobile override gains +16.1pp symbol_recall (54.8% → 71%). The other 4 families tie or trail R5×Q3 by <8pp so they don't trigger overrides — a notably stable signal.
+
+  **Strategy 3 — `popular_weighted` (agentic-tier, no family detection):** `R3 × Q3` (diversity-enforced 2nd-best — natural winner ties Strategy 1's R5×Q3). *"Build the regex as `\b(<family-keyword>)\s+<symbol>\b` — language-keyword + symbol at the definition site. Phrase the query as a short imperative with the symbol verbatim (4-8 tokens)."* Weighted agentic-tier symbol_recall 56.5%; the agent-runtime instruction is simpler than R5 (no sibling inference needed). Distinct from Strategy 1 so GEPA gets genuine candidate diversity.
 - **`[[ss-semantic]]`** (LI/MaxSim semantic): keep queries SHORT (≤4 tokens) with the symbol. Imperative or declarative both work; symbols dominate. Behavioral queries (multi-callback "what does X do") are this tool's weakness — route them away. *Pending its own Phase 6 redo.*
 - **`[[structural]]`** (tree-sitter relationships): use interrogative form (`who calls X?`, `what does X depend on?`); short queries with the symbol; narrow regex anchors. Avoid imperative form for structural queries — it doesn't match the tool's relationship-verb model. *Pending its own Phase 6 redo.*
 
