@@ -730,6 +730,104 @@ int parse_token(const char* input, Token* out) {
       // No boost applied; score preserved.
       expect(out[0].score).toBeCloseTo(0.50, 2);
     });
+
+    it('extracts dotted compound identifiers (Lua/Python/Ruby style)', async () => {
+      // The single-token extractor splits `tablex.deepcopy` into `tablex` and
+      // `deepcopy` — neither matches the chunk's `name: 'tablex.deepcopy'`
+      // verbatim. The dotted-form extractor captures the compound identifier
+      // so Path 1's strict-equality check fires.
+      const mod = await import('../../core/ranking/file-kind-ranking.js');
+      // extractIdentifierMentions is not exported; verify behaviour through
+      // identifierMentionBoost which consumes its output via applyResultDemotions.
+      const target = {
+        file: 'lua/pl/tablex.lua',
+        startLine: 118,
+        endLine: 120,
+        symbol: 'tablex.deepcopy',
+        symbolType: 'function',
+        score: 0.45,
+      };
+      const competitor = {
+        file: 'lua/pl/tablex.lua',
+        startLine: 90,
+        endLine: 110,
+        symbol: 'cycle_aware_copy',
+        symbolType: 'function',
+        score: 0.50,
+      };
+      const out = mod.applyResultDemotions([competitor, target], {
+        query: 'deep copy table with tablex.deepcopy',
+        format: 'agent_full',
+      });
+      // tablex.deepcopy lower base but the dotted-form mention triggers
+      // ×1.15 boost (0.45 → 0.5175 > 0.50). cycle_aware_copy stays put.
+      expect(out[0].symbol).toBe('tablex.deepcopy');
+    });
+
+    it('falls back to code-graph lookup when result.name is null', async () => {
+      // Some LI indexes were built without populated metadata.name (e.g. the
+      // typescript ast-tester repo). When result.name is null AND a chunk
+      // contains an entity matching a query mention, the boost looks up via
+      // codeGraphRepo.findEntityWithNameInRange and applies the same ×1.15.
+      const mod = await import('../../core/ranking/file-kind-ranking.js');
+      const mockRepo = {
+        findEntityWithNameInRange(filePath, sl, el, targetName) {
+          if (filePath === 'lib/ai/prompts.ts' && sl <= 66 && el >= 80
+              && String(targetName).toLowerCase() === 'systemprompt') {
+            return { name: 'systemPrompt', type: 'arrowFunction', startLine: 66, endLine: 80 };
+          }
+          return null;
+        },
+      };
+      const target = {
+        file: 'lib/ai/prompts.ts',
+        startLine: 47,
+        endLine: 104,
+        symbol: null, // null-name LI metadata (Path 1 short-circuit)
+        symbolType: null,
+        score: 0.40,
+      };
+      const competitor = {
+        file: 'lib/ai/other.ts',
+        startLine: 1,
+        endLine: 50,
+        symbol: null,
+        symbolType: null,
+        score: 0.45,
+      };
+      const out = mod.applyResultDemotions([competitor, target], {
+        query: 'how does systemPrompt incorporate requestHints',
+        format: 'agent_full',
+        codeGraphRepo: mockRepo,
+      });
+      // Path 2 boost fires for target (its range contains the systemPrompt
+      // entity), not for competitor (mock returns null for any other file).
+      // 0.40 × 1.15 = 0.46 > 0.45 → target wins.
+      expect(out[0].file).toBe('lib/ai/prompts.ts');
+    });
+
+    it('Path 2 does not fire when format is not agent (GCSN invariance)', async () => {
+      const mod = await import('../../core/ranking/file-kind-ranking.js');
+      const mockRepo = {
+        findEntityWithNameInRange() {
+          // If called, the test would fail — Path 2 must skip entirely off-format.
+          throw new Error('codeGraphRepo should not be queried in non-agent format');
+        },
+      };
+      const chunk = {
+        file: 'lib/ai/prompts.ts',
+        startLine: 47,
+        endLine: 104,
+        symbol: null,
+        score: 0.50,
+      };
+      const out = mod.applyResultDemotions([chunk], {
+        query: 'systemPrompt requestHints',
+        codeGraphRepo: mockRepo,
+        // No format flag → not agent → identifierMentions is null → boost skipped.
+      });
+      expect(out[0].score).toBeCloseTo(0.50, 2);
+    });
   });
 
   it('honours result-demotion ablations', () => {
