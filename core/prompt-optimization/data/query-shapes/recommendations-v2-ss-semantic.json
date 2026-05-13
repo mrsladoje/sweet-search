@@ -1,0 +1,320 @@
+{
+  "schemaVersion": 1,
+  "tool": "ss-semantic",
+  "runId": "phase6-redo-ss-semantic-v1",
+  "generatedAt": "2026-05-13T10:52:37.763Z",
+  "plan_reference": "docs/PHASE6_REDO.md §12.1 + 2026-05-13 ss-semantic redo",
+  "primary_metric": "top1_iou",
+  "grid": {
+    "v_cells": [
+      "V1",
+      "V2",
+      "V3",
+      "V4",
+      "V5",
+      "V6",
+      "V7"
+    ],
+    "cells_per_gold": 7
+  },
+  "families": {
+    "OO-monolithic": {
+      "languages": [
+        "java",
+        "csharp",
+        "kotlin",
+        "scala"
+      ]
+    },
+    "Systems-modular-terse": {
+      "languages": [
+        "rust",
+        "go"
+      ]
+    },
+    "C-family": {
+      "languages": [
+        "c",
+        "cpp",
+        "zig"
+      ]
+    },
+    "JS-mobile": {
+      "languages": [
+        "javascript",
+        "typescript",
+        "typescript-lib",
+        "dart"
+      ]
+    },
+    "Scripting-dynamic": {
+      "languages": [
+        "python",
+        "ruby",
+        "php",
+        "lua",
+        "elixir"
+      ]
+    }
+  },
+  "baseline": {
+    "shape": "V_baseline (gold.query)",
+    "avg_top1_iou": 0.2657397762374884,
+    "n": 144
+  },
+  "strategies": {
+    "simple_global": {
+      "shape": "V1",
+      "primary_metric": "top1_iou",
+      "iou_score": 0.33153609601509804,
+      "instruction_text": "For ss-semantic (in-file span retrieval): phrase a very short imperative query consisting of the target symbol verbatim, optionally with one descriptor word (≤ 3 tokens).",
+      "source": "best global top1-IoU across 144 ast-tester golds"
+    },
+    "family_conditioned": {
+      "default": {
+        "shape": "V1",
+        "primary_metric": "top1_iou",
+        "iou_score": 0.33153609601509804,
+        "instruction_text": "For ss-semantic (in-file span retrieval): phrase a very short imperative query consisting of the target symbol verbatim, optionally with one descriptor word (≤ 3 tokens).",
+        "source": "family-conditioned default (= simple-global)"
+      },
+      "overrides": {
+        "C-family": {
+          "shape": "V2",
+          "iou_score": 0.38441533551093604,
+          "delta_vs_default_iou": 0.12766297073733723,
+          "global_on_family_iou": 0.2567523647735988,
+          "instruction_text": "For ss-semantic: phrase a short interrogative query (4-8 tokens) that contains the target symbol verbatim. Use \"how does X …\" / \"where is X …\" framing.",
+          "source": "family-best (Δ vs global = +12.8pp IoU)"
+        }
+      }
+    },
+    "popular_weighted_agentic": {
+      "shape": "V2",
+      "primary_metric": "top1_iou",
+      "iou_score": 0.31129512904063544,
+      "instruction_text": "For ss-semantic: phrase a short interrogative query (4-8 tokens) that contains the target symbol verbatim. Use \"how does X …\" / \"where is X …\" framing.",
+      "source": "2nd-best agentic-tier weighted IoU (top pick matched simple_global; promoted 2nd-best for GEPA diversity)",
+      "diversity_enforced": true,
+      "natural_winner": {
+        "shape": "V1",
+        "iou_score": 0.3541587886570386,
+        "note": "Natural agentic-tier winner; matched simple_global so 2nd-best was promoted instead for GEPA diversity."
+      },
+      "alt_so_tier": {
+        "shape": "V2",
+        "primary_metric": "top1_iou",
+        "iou_score": 0.31419030415785104,
+        "instruction_text": "For ss-semantic: phrase a short interrogative query (4-8 tokens) that contains the target symbol verbatim. Use \"how does X …\" / \"where is X …\" framing.",
+        "source": "best §7 Stack-Overflow-weighted IoU"
+      }
+    }
+  },
+  "cell_table_global": {
+    "V1": {
+      "n": 144,
+      "iou": 47.741197826174115,
+      "coverage": 117.65380570666935,
+      "precision": 35.27087934919882
+    },
+    "V2": {
+      "n": 144,
+      "iou": 43.75518154300801,
+      "coverage": 118.80044432018781,
+      "precision": 31.47206679625843
+    },
+    "V3": {
+      "n": 144,
+      "iou": 41.40500460354689,
+      "coverage": 109.4955811188862,
+      "precision": 30.453203417362783
+    },
+    "V4": {
+      "n": 144,
+      "iou": 37.6151077429053,
+      "coverage": 118.71856893106893,
+      "precision": 30.310532455344088
+    },
+    "V5": {
+      "n": 144,
+      "iou": 35.263179733935246,
+      "coverage": 96.07804326349306,
+      "precision": 25.166779562975258
+    },
+    "V6": {
+      "n": 144,
+      "iou": 35.61994788661465,
+      "coverage": 99.5988658588935,
+      "precision": 26.371684232520476
+    },
+    "V7": {
+      "n": 144,
+      "iou": 39.05114609572028,
+      "coverage": 120.20660008970565,
+      "precision": 30.602909415791032
+    }
+  },
+  "cell_table_by_family": {
+    "OO-monolithic": {
+      "V1": {
+        "n": 32,
+        "iou": 7.5671117386470295
+      },
+      "V2": {
+        "n": 32,
+        "iou": 5.679069910160036
+      },
+      "V3": {
+        "n": 32,
+        "iou": 4.919165950970544
+      },
+      "V4": {
+        "n": 32,
+        "iou": 4.754575784702129
+      },
+      "V5": {
+        "n": 32,
+        "iou": 3.3245049123537225
+      },
+      "V6": {
+        "n": 32,
+        "iou": 2.7691500362623604
+      },
+      "V7": {
+        "n": 32,
+        "iou": 5.220118135300498
+      }
+    },
+    "Systems-modular-terse": {
+      "V1": {
+        "n": 16,
+        "iou": 6.637030098573612
+      },
+      "V2": {
+        "n": 16,
+        "iou": 5.113482262653387
+      },
+      "V3": {
+        "n": 16,
+        "iou": 6.078607197675206
+      },
+      "V4": {
+        "n": 16,
+        "iou": 4.449937234637406
+      },
+      "V5": {
+        "n": 16,
+        "iou": 2.3703249094494403
+      },
+      "V6": {
+        "n": 16,
+        "iou": 3.5553056500375675
+      },
+      "V7": {
+        "n": 16,
+        "iou": 4.683467133961473
+      }
+    },
+    "C-family": {
+      "V1": {
+        "n": 24,
+        "iou": 6.162056754566372
+      },
+      "V2": {
+        "n": 24,
+        "iou": 9.225968052262465
+      },
+      "V3": {
+        "n": 24,
+        "iou": 6.685887351761841
+      },
+      "V4": {
+        "n": 24,
+        "iou": 6.379742475586612
+      },
+      "V5": {
+        "n": 24,
+        "iou": 5.255947595218385
+      },
+      "V6": {
+        "n": 24,
+        "iou": 6.930047578005977
+      },
+      "V7": {
+        "n": 24,
+        "iou": 7.562801600818036
+      }
+    },
+    "JS-mobile": {
+      "V1": {
+        "n": 32,
+        "iou": 16.19102236702502
+      },
+      "V2": {
+        "n": 32,
+        "iou": 12.682848115764138
+      },
+      "V3": {
+        "n": 32,
+        "iou": 13.760392230857308
+      },
+      "V4": {
+        "n": 32,
+        "iou": 11.965023860119112
+      },
+      "V5": {
+        "n": 32,
+        "iou": 14.466437395909429
+      },
+      "V6": {
+        "n": 32,
+        "iou": 13.54218612417016
+      },
+      "V7": {
+        "n": 32,
+        "iou": 11.63777817632068
+      }
+    },
+    "Scripting-dynamic": {
+      "V1": {
+        "n": 40,
+        "iou": 11.18397686736206
+      },
+      "V2": {
+        "n": 40,
+        "iou": 11.053813202167987
+      },
+      "V3": {
+        "n": 40,
+        "iou": 9.960951872281981
+      },
+      "V4": {
+        "n": 40,
+        "iou": 10.065828387860051
+      },
+      "V5": {
+        "n": 40,
+        "iou": 9.84596492100427
+      },
+      "V6": {
+        "n": 40,
+        "iou": 8.823258498138586
+      },
+      "V7": {
+        "n": 40,
+        "iou": 9.946981049319598
+      }
+    }
+  },
+  "manual_gates_pending": [
+    "G2-thresholdout",
+    "G4-codex-author-review",
+    "doc-negative-regression"
+  ],
+  "behavior_notes": [
+    "Three strategies shipped per the 2026-05-13 design. PHASE7 / GEPA picks empirically.",
+    "Primary metric = span top-1 IoU (intersection-over-union with the gold containing-chunk line range).",
+    "Doc-positive golds skipped (ss-semantic operates on a known file; doc-positive is \"find this file from a description\" — different intent).",
+    "Variants reused VERBATIM from the ss-search V1-V7 corpus — the agent NL surface is identical."
+  ]
+}
