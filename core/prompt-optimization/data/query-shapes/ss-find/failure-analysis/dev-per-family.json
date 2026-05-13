@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "source": "track-a-phase6-redo-ss-find-v1.jsonl",
+  "split": "dev",
+  "per_family": {
+    "C-family": {
+      "n": 15,
+      "pass": 7,
+      "partial": 4,
+      "fail": 4,
+      "pass_rate": 0.4667,
+      "fail_rate": 0.2667,
+      "file_recall_at_1": 0.7333,
+      "symbol_recall_at_1": 0.4667
+    },
+    "OO-monolithic": {
+      "n": 20,
+      "pass": 11,
+      "partial": 3,
+      "fail": 6,
+      "pass_rate": 0.55,
+      "fail_rate": 0.3,
+      "file_recall_at_1": 0.7,
+      "symbol_recall_at_1": 0.55
+    },
+    "JS-mobile": {
+      "n": 19,
+      "pass": 13,
+      "partial": 2,
+      "fail": 4,
+      "pass_rate": 0.6842,
+      "fail_rate": 0.2105,
+      "file_recall_at_1": 0.7895,
+      "symbol_recall_at_1": 0.6842
+    },
+    "Scripting-dynamic": {
+      "n": 25,
+      "pass": 18,
+      "partial": 3,
+      "fail": 4,
+      "pass_rate": 0.72,
+      "fail_rate": 0.16,
+      "file_recall_at_1": 0.84,
+      "symbol_recall_at_1": 0.72
+    },
+    "Systems-modular-terse": {
+      "n": 10,
+      "pass": 9,
+      "partial": 0,
+      "fail": 1,
+      "pass_rate": 0.9,
+      "fail_rate": 0.1,
+      "file_recall_at_1": 0.9,
+      "symbol_recall_at_1": 0.9
+    }
+  }
+}
