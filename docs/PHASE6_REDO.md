@@ -12,7 +12,9 @@
 
 Determine, **per language family**, the agent-instructable query shape that maximises `ss-search` retrieval quality on the existing 18-language AST-tester + doc-positive probe set. Output: a family-conditioned `recommendations.json` artifact that Phase 7 (T1-T15 variant authoring) consumes verbatim.
 
-**Scope is intentionally narrow**: this redo covers **only `ss-search`** (hybrid NL retrieval). Probe sets for the other three tools (`ss-find` / ColGrep, `ss-semantic` / `read-semantic`, `structural` / `trace`) are out of scope and will be authored separately when their probe-authoring rubric is finalised.
+**Scope is intentionally narrow**: this redo covers **only `ss-search`** (hybrid NL retrieval). Probe sets for the other three tools (`ss-find` / ColGrep, `ss-semantic` / `read-semantic`, `ss-trace` / `traceSymbol` in `core/search/search-trace.js`) are out of scope and will be authored separately when their probe-authoring rubric is finalised.
+
+> **Correction (2026-05-14)**: an earlier session of this program targeted the wrong code path for the fourth tool — `SweetSearch.structuralSearch` (NL-regex-parse-then-route mode) instead of `ss-trace` (the symbol-in/structural-context-out CLI primitive). The user clarified that `structuralSearch` is not used in production. The actual production primitive is `sweet-search trace <symbol>` → `traceSymbol()` → `StructuralContextBuilder.build()` in `core/graph/structural-context.js`. All mentions of "structural" as a tool name in this document should be read as referring to `ss-trace`. Artifacts produced under the wrong-path label (`recommendations-v2-structural.json`, the `structural/` script directory) are retracted; see the ss-trace handoff for cleanup steps.
 
 **Ship policy**: the artifact may declare a single global default + per-family overrides. A flat "one shape fits all" output is *allowed but not required* — if the empirical signal supports family-conditioned overrides at the promotion gates in §9, we ship them.
 
@@ -152,7 +154,7 @@ Hard authoring rules (enforced by post-generation validator, §5.3):
 
 ### §5.2 Authoring infrastructure — DeepSeek V4 Flash via direct API, no harness
 
-For this `ss-search` redo, **1,212 shape variants** (144 AST-tester × 7 cells + 68 doc-positive × 3 cells, per §5.1 scope rule) are produced by a deterministic preprocessing script + DeepSeek V4 Flash via direct HTTP API. **No harness for variant authoring** (no Claude Code headless, no opencode). The model never has filesystem access; the script does all filesystem work and hands the model curated context. The future per-tool redoes (`ss-find`, `ss-semantic`, `structural`, §12.1) layer ~440 additional gold-extraction calls on top of this same infrastructure but are out of scope for this redo's numbers. Track B (§6.3) does use a harness (Claude Code end-to-end), but that's a separate downstream step with a separate purpose — see §6.3 for scope.
+For this `ss-search` redo, **1,212 shape variants** (144 AST-tester × 7 cells + 68 doc-positive × 3 cells, per §5.1 scope rule) are produced by a deterministic preprocessing script + DeepSeek V4 Flash via direct HTTP API. **No harness for variant authoring** (no Claude Code headless, no opencode). The model never has filesystem access; the script does all filesystem work and hands the model curated context. The future per-tool redoes (`ss-find`, `ss-semantic`, `ss-trace`, §12.1) layer ~440 additional gold-extraction calls on top of this same infrastructure but are out of scope for this redo's numbers. Track B (§6.3) does use a harness (Claude Code end-to-end), but that's a separate downstream step with a separate purpose — see §6.3 for scope.
 
 **Why no harness for variant authoring**: per user memory `feedback_direct_api_for_stateless_calls`, harness calls are 50-100× slower than direct API for stateless work. Probe authoring is stateless once inputs are curated. Total wall time:
 
@@ -198,7 +200,7 @@ For this `ss-search` redo, **1,212 shape variants** (144 AST-tester × 7 cells +
        outputSha256 = sha256(parsed.query)   # for drift detection on re-runs
        write variants/<lang>-<gold.id>-<shape>.json
 
-3. (Future) extract-golds.mjs for ss-find/ss-semantic/structural redoes,
+3. (Future) extract-golds.mjs for ss-find/ss-semantic/ss-trace redoes,
    same pattern: deterministic enumeration (ripgrep / code-graph.db / chunker)
    + LLM for the small portion that needs paraphrasing.
 ```
@@ -661,7 +663,7 @@ The `instruction_text` strings go *verbatim* into the relevant Phase 7 T_i varia
 PHASE7.md §4.1 ("P6 grounding — reasoning HARD over Phase 6 data") currently cites the old `recommendations.json`'s `perToolWinRates`. After PHASE6_REDO ships:
 
 - **§4.1** rewrites to consume `recommendations-v2.json` instead. The "Top Track B win rates from P6" table is replaced with the family-conditioned default + overrides table.
-- **§4.2** ("Inferred per-tool guidance baked into variants") gets a new sub-bullet for `ss-search` only (this redo's scope): the verbatim `instruction_text` for the default plus per-family overrides. The other tools' bullets (`ss-find`, `ss-semantic`, `structural`) are unchanged for now; they will be updated when their respective Phase 6 redoes land.
+- **§4.2** ("Inferred per-tool guidance baked into variants") gets a new sub-bullet for `ss-search` only (this redo's scope): the verbatim `instruction_text` for the default plus per-family overrides. The other tools' bullets (`ss-find`, `ss-semantic`, `ss-trace`) are unchanged for now; they will be updated when their respective Phase 6 redoes land.
 - **§4.3** variant slate: the T_i bodies that previously embedded shape rules now embed a family-detection-then-shape pattern. Concretely, T1/T4/T5/T6/T10 expand from "Use a 4-8 token NL query with the symbol if known" to "If target file is in `OO-monolithic` family (Java/C#/Kotlin/Scala), use V4 medium+symbol+declarative; otherwise V2 short+symbol+interrogative" (illustrative; actual text depends on the recommendations-v2.json output).
 - **Family detection at agent runtime**: the agent classifies the *target file's language* (cheap — file extension via the §5.5.7 mapping table, shared between this redo's scripts and the Phase 7 variant bodies at `core/prompt-optimization/data/query-shapes/family-map.mjs`) → family lookup → shape selection. This is a single deterministic mapping table embedded in the system prompt, not a model decision. The mapping is identical at index time, sweep time, and agent runtime — one source of truth.
 
@@ -675,7 +677,7 @@ These are textual edits to PHASE7.md, not structural. PHASE7.md §3 (methodology
 |---|---|
 | `ss-find` / ColGrep shape sweep | Different tool, different cell space (regex anchor matters). Separate redo when its probe-authoring rubric stabilises (see §12.1 future work). |
 | `ss-semantic` / `read-semantic` shape sweep | Different tool. Probes need to be authored against single-file in-context retrieval, which is a different gold format (see §12.1). |
-| `structural` / `trace` shape sweep | Different tool. Relationship-verb cell space (`who calls X?` vs `where is X used?`) is its own grid (see §12.1). |
+| `ss-trace` (`traceSymbol` in `core/search/search-trace.js`) sweep | Different tool. Symbol-in, structural-context-out (callers + callees + impact rolled into one response). No NL query phrasing axis — the lever is options (`maxDepth`, `queryHint`, `tokenBudget`). See §12.1. |
 | New repos | 10-minute indexing budget. Existing 18-language AST-tester repos are reused. The Rust ruff repo (~85 min) is the only grandfathered outlier. |
 | Re-running Track B agent-in-loop on the prior fastify-only golds | Discarded per §2. New Track B (if it runs) uses the 18-language probe set. |
 | Indexing-time chunker changes | RS-008 fix is its own PR (Rust-fix handoff). This redo runs AFTER that fix lands and the index is rebuilt. |
@@ -688,7 +690,9 @@ User's stated intent: when probe-authoring rubrics stabilise for the other three
 
 1. **`ss-find` redo** — needs an `ss-find`-specific probe set whose gold is "regex anchor + symbol" and grades on regex-match-plus-symbol-retrieval. The shape cell space adds regex-anchor breadth as a dimension (narrow / medium / broad alternation). Likely outcome: V1 (very-short + symbol + narrow-regex) replicates as the dominant cell, since the prior partial Phase-6 sweep already pointed there for fastify.
 2. **`ss-semantic` redo** — needs golds authored against single-file in-context retrieval (the tool returns spans within one file). Shape grid is different: length and symbol-presence still matter, but the regex anchor dimension drops out (no regex in semantic mode); a "scoping verb" dimension may be added ("explain", "summarise", "find the section that").
-3. **`structural` redo** — needs golds authored around the tree-sitter relationship model (callers, callees, depends-on). The shape grid adds a "relationship verb" dimension (`who calls X?` / `what does X depend on?` / `where is X overridden?`).
+3. **`ss-trace` redo** — `traceSymbol(symbol, options)` is symbol-in / structural-context-out (callers + callees + impact rolled together). Probe golds derive from `code-graph.db` directly (same source as `graphNeighbors` already in `inputs/<lang>-<gold>.json`); the shape "grid" is options-conditioned, not query-shape-conditioned (`maxDepth`, `queryHint`, `tokenBudget` are the levers). Grading is Recall@K against the expected related-symbols set.
+
+   **2026-05-14 correction**: an earlier session of this program targeted `SweetSearch.structuralSearch` (the NL-regex-parse-then-route variant in `core/search/sweet-search.js`) under the label `structural`. That code path is not used in production. The actual production primitive is `ss-trace`. Artifacts produced under the wrong-path label (`recommendations-v2-structural.json`, `core/prompt-optimization/scripts/structural/`, `core/prompt-optimization/data/query-shapes/structural/`, `tests/unit/prompt-optimization/phase6-redo-structural.test.js`) are retracted. The ss-trace redo replaces them.
 
 Each future redo follows the same architectural pattern as this `ss-search` redo: 5 pre-registered families, deterministic Track A primary, optional scoped Track B, BH-FDR + Thresholdout + leakage + author + intrafamily-stability gates, family-conditioned `recommendations-v2-<tool>.json` output. The 5 families established in §4 are **shared** across all tools (they're language properties, not tool properties); the per-tool sweep produces its own per-family override map.
 
@@ -754,7 +758,7 @@ These must be committed BEFORE any sweep run. Checklist:
 - [ ] Track A runner extended to read AST-tester gold + doc-positive gold, write per-(language, gold, shape) rows to `tracks/track-a-<runId>.jsonl` per §5.5.1 layout. Honours `eligibleShapes` (no V1/V2/V4/V7 runs for doc-positive golds).
 - [ ] Spot-check: run §5.2 pipeline on 1 language (10-15 variants spanning V3/V5/V6 across both gold classes) and human-review for paraphrase quality before committing to full 1,212-variant sweep. Reject if V5/V6 quality rate < 70%.
 
-After all 12 boxes are ticked, sweep is unblocked. Estimated wall time after unlock: ~12-20 min for variant authoring + ~5 min for Track A sweep = **~17-25 min end-to-end for this `ss-search` redo**. (Per-tool wall time for the future ss-find / ss-semantic / structural redoes will be similar once their probe sets are authored — the same infra in §5.2-§5.5 is reused.)
+After all 12 boxes are ticked, sweep is unblocked. Estimated wall time after unlock: ~12-20 min for variant authoring + ~5 min for Track A sweep = **~17-25 min end-to-end for this `ss-search` redo**. (Per-tool wall time for the future ss-find / ss-semantic / ss-trace redoes will be similar once their probe sets are authored — the same infra in §5.2-§5.5 is reused.)
 
 ---
 
@@ -764,4 +768,4 @@ After all 12 boxes are ticked, sweep is unblocked. Estimated wall time after unl
 - **Feeds**: docs/PHASE7.md §4.1, §4.2, §4.3 (variant authoring with family-conditioned instruction_text)
 - **Depends on**: Rust RS-008 chunker fix (handoff message; not a doc)
 - **Compatible with**: SYSTEM_PROMPT_OPT_PLAN.md §0.5 (overfit controls) — all five gates of §9 are subsumed under the §0.5 dual-layer framework
-- **Out of scope but referenced**: separate Phase 6 redos for `ss-find`, `ss-semantic`, `structural` (future work)
+- **Out of scope but referenced**: separate Phase 6 redos for `ss-find`, `ss-semantic`, `ss-trace` (future work)
