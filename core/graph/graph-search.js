@@ -1035,7 +1035,11 @@ export class GraphSearch {
       // Create lookup map for fast access
       const entityMap = new Map(entities.map(e => [e.id, e]));
 
-      // P2 FIX: Batch fetch all relationships (outgoing + incoming) in single query
+      // P2 FIX: Batch fetch all relationships (outgoing + incoming) in single query.
+      // The UNION ALL binds `frontierIds` twice in one prepared statement, so the
+      // SQLite-parameter ceiling is reached at half the array length — guard the
+      // actual bind count, not the array length.
+      assertInClauseSize(2 * frontierIds.length, 'graph-search.frontier-relationships (double-bind UNION)');
       const relationships = this.db.prepare(`
         SELECT r.*, 'out' as direction, r.source_id as origin_id
         FROM relationships r
