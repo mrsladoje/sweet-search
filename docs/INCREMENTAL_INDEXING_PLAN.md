@@ -1,18 +1,24 @@
 # Incremental Indexing Plan
 
-> **Status:** Design proposal (2026-05-14). Supersedes the architectural
-> sections of `INCREMENTAL_INDEXING_TODO.md`; the TODO file remains the
-> canonical list of edge-case requirements (cold-start, empty-codebase,
-> exclude-list diff). This document focuses on the **reconcile architecture**
-> that the TODO defers.
+> **Status:** Design proposal. Originally drafted 2026-05-14; revised
+> 2026-05-15 after two passes of Gemini 3.1 Pro deep-think SOTA review
+> (§§ 35–36). Supersedes the architectural sections of
+> `INCREMENTAL_INDEXING_TODO.md`; the TODO file remains the canonical
+> list of edge-case requirements (cold-start, empty-codebase,
+> exclude-list diff). This document focuses on the **reconcile
+> architecture** that the TODO defers.
 >
 > **Research basis:** parallel SOTA review across HNSW, BM25/trigram,
 > ColBERT/PLAID, tree-sitter/symbol indexing, and production AI-coding tool
 > architectures (Cursor, Cody, Continue, Copilot, Windsurf, Aider, Claude
 > Code, Tabby, JetBrains, Zoekt). See `## References` for citation list.
 >
-> **Post-review:** A SOTA gap analysis was performed by Gemini 3.1 Pro
-> (deep-think) on 2026-05-15 and folded in. See § 35 for the diff log.
+> **Post-review:** Two passes of SOTA gap analysis were performed by
+> Gemini 3.1 Pro (deep-think) on 2026-05-15. The first pass found 11
+> design-level gaps (folded in per § 35); the second pass found 10
+> mechanical bugs in the first-pass corrections themselves plus 2
+> bonus items (folded in per § 36). Phase estimates revised upward
+> from 13 to 22 dev-days accordingly.
 >
 > **Constraint anchor:** CPU-only for the incremental path; GPU reserved for
 > cold full reindex and watermark-triggered async rebuilds.
@@ -326,7 +332,7 @@ mid = 8-core NVMe developer machine; high = 16+-core NVMe workstation).
 
 | Tier | Refresh policy | Watermark trigger | Rebuild cost (10 MLOC, low → high) |
 |---|---|---|---|
-| code-graph entities + FTS5 | live UPSERT + `('merge', 16)` per tick | `fts5_segment_count > 64` → `('optimize')` | seconds (`merge`) / 30 s – 5 min (`optimize`) |
+| code-graph entities + FTS5 | live UPSERT + `('merge', 16)` per tick | `fts5_segment_count > 64` → bounded `('merge', 500)` | seconds per-tick merge / 5–60 s for bounded merge on rebuild |
 | codebase.db vectors | live UPSERT every tick | none | n/a |
 | Float HNSW (USearch) | live `add()` + tombstone bitmap (no `remove()`) | `tombstone_fraction > 0.15` | 5–30 min at 500 K vectors, M=16 |
 | Binary HNSW + int8 sidecar | tombstone + append every tick | `dead_doc_ratio > 0.30` (existing) | 30 s – 5 min |
@@ -403,8 +409,16 @@ FTS5 `entities_trigram` updates trigger automatically on row changes.
      count stabilises below the watermark.
    - The same dual-cadence applies to `entities_fts` (porter unicode61
      tokenizer); both FTS5 tables need explicit merging.
-   - Track via `SELECT * FROM entities_trigram_data WHERE id < 10` to
-     read the internal segment count (FTS5 introspection).
+   - Track segment count via FTS5 introspection. The supported method
+     in SQLite ≥ 3.35 is the `<table>_config` and `<table>_data`
+     internal tables (see SQLite FTS5 docs §7); for our purposes the
+     pragmatic indicator is the number of distinct `segid` values in
+     `<name>_data`. Wrap behind a single helper
+     `fts5SegmentCount(db, tableName)` so the introspection query lives
+     in one place and can be replaced if SQLite changes its internals.
+     **Verify empirically against the running SQLite version in Phase 0
+     preflight** — FTS5 internal layout is documented but not part of
+     the stable API and varies subtly between SQLite versions.
 6. **`epoch_written INTEGER NOT NULL` column** on `entities` (and on
    `vectors` per § 7.2). Every UPSERT writes the current reconcile
    epoch. This is the **replay log the LSM rebase in § 10.3 reads
@@ -1157,7 +1171,7 @@ Use the existing seed-42 stratified split policy from CLAUDE.md.
   JSONL. Reasons: clean GPU lifecycle, no daemon CPU interference,
   trivial to kill/restart.
 
-### Phase 1 — Structural chunk IDs, content hash, encode-skip (~5 days)
+### Phase 1 — Structural chunk IDs, content hash, encode-skip (~7 days)
 
 This phase grew after the Gemini review: positional `chunk_id`s defeat
 the chunk-hash dedup on common edits, so the structural-ID rework is
@@ -1184,7 +1198,7 @@ prerequisite to the encode-skip savings.
 - [ ] **Gate:** GCSN dev MRR unchanged within noise floor; structural
   invariance test (§ 12.3) green.
 
-### Phase 2 — Unified reconcile tick (~3 days)
+### Phase 2 — Unified reconcile tick (~5 days)
 
 - [ ] Extract the per-file reconcile from `index-maintainer.mjs` into a
   `Reconciler` class in `core/indexing/reconciler.mjs`.
@@ -1201,7 +1215,7 @@ prerequisite to the encode-skip savings.
 - [ ] Implement the structural invariance test from § 12.3.
 - [ ] **Gate:** structural invariance test green; GCSN dev MRR unchanged.
 
-### Phase 3 — Watermarks & async rebuild executor (~3 days)
+### Phase 3 — Watermarks & async rebuild executor (~5 days)
 
 - [ ] Add tombstone counters to Float HNSW `.meta.json` and LI segment
   `.stale.bin` sidecars.
@@ -1244,8 +1258,14 @@ prerequisite to the encode-skip savings.
 - [ ] Document operator runbook for: stuck rebuild, dead-letter overflow,
   forced full rebuild.
 
-**Total estimate:** ~13 working days for one engineer focused. The
-existing primitives carry most of the load; this is mostly stitching.
+**Total estimate:** ~22 working days for one engineer focused
+(revised upward from the original 13 after the Gemini second-pass
+review added BigInt stat, occurrence-index disambiguation,
+`epoch_written` replay log, USearch reserve handling, MCP transaction
+hygiene coordination, FTS5 introspection helper, and per-tier
+change-log tables). The existing primitives still carry most of the
+load; this is mostly stitching plus the careful-but-mechanical fixes
+from §§ 35 and 36.
 
 ---
 
@@ -1320,6 +1340,13 @@ existing primitives carry most of the load; this is mostly stitching.
 | Format-gating regression slips in via "recency boost" | High (over time) | NL MRR regression | Format-gating rule + held-out CI |
 | Schema migration on `chunk_content_hash` column | Low | Cold start required | Auto-migrate at first daemon start; document |
 | Stale lockfile after crash | Medium | Daemon won't start | Phase 6 staleness recovery |
+| USearch capacity exhaustion if `index.reserve()` fails (OOM) | Low | Affected chunk lost from live HNSW until rebuild | § 7.3 emergency-rebuild path; search falls through to BM25 + LI |
+| Occurrence-index disambiguation logic bug → silent chunk loss | Medium | Identical siblings overwrite each other | § 7.2 unit tests cover the 5 cases including renamed-one-of-two-identical |
+| MCP server leaks read transactions → WAL bloat | High (long-term) | Disk fills; daemon TRUNCATE silently fails | § 27.2.1 mandates connection rotation + PASSIVE checkpoints; daemon emits WARN/ERROR with culprit pid |
+| `epoch_written` index write hot-spot on monotonic integer | Low | Insert latency creep over long sessions | § 36.5 open question; fallback is partial index on recent window |
+| FTS5 `('merge', 500)` rebuild wallclock unbounded under heavy churn | Medium | Rebuild scheduler queue grows | Watermark `fts5_segment_count > 64` plus per-tick `('merge', 16)` keeps segments below the threshold most of the time |
+| Tree-sitter mid-edit error nodes pollute entity index | Medium | Garbage entities visible briefly | § 20.1 metric + alert at 5% file-error rate; user can lengthen tick interval |
+| Held-out discipline violation slips back into iterative phases | Medium | Held-out set contaminated | § 24.6 phase-by-phase table; CI enforces dev-only for iterative; held-out runs are explicit one-shot tagged commits |
 
 ---
 
