@@ -392,13 +392,26 @@ FTS5 `entities_trigram` updates trigger automatically on row changes.
      `INSERT INTO entities_trigram(entities_trigram, rank) VALUES('merge', 16);`
      to merge up to 16 segments. Cheap (sub-100 ms typically).
    - During the rebuild scheduler: run
-     `INSERT INTO entities_trigram(entities_trigram) VALUES('optimize');`
-     when watermark `fts5_segment_count > 64` is crossed. This is the
-     expensive full optimization; defer it to the async path.
+     `INSERT INTO entities_trigram(entities_trigram, rank) VALUES('merge', 500);`
+     when watermark `fts5_segment_count > 64` is crossed. **Do not** use
+     `('optimize')` — it rewrites the entire FTS5 index in a single
+     transaction, instantly producing a WAL frame on the order of the
+     FTS5 index size (often 200–800 MB) and tripping the 256 MiB WAL
+     bloat alarm in § 8.4. The bounded `'merge', 500` performs the same
+     compaction work incrementally without single-transaction WAL
+     blowup. Repeat the bounded merge on successive ticks until segment
+     count stabilises below the watermark.
    - The same dual-cadence applies to `entities_fts` (porter unicode61
      tokenizer); both FTS5 tables need explicit merging.
    - Track via `SELECT * FROM entities_trigram_data WHERE id < 10` to
      read the internal segment count (FTS5 introspection).
+6. **`epoch_written INTEGER NOT NULL` column** on `entities` (and on
+   `vectors` per § 7.2). Every UPSERT writes the current reconcile
+   epoch. This is the **replay log the LSM rebase in § 10.3 reads
+   from** — without it the rebase has no way to ask "what changed
+   between ε₀ and ε_now" because SQLite's internal WAL is not
+   queryable for row-level change extraction. Index on `epoch_written`
+   to make the range scan cheap.
 
 **Verification.** Add a snapshot test: index → edit one file → reconcile →
 all OTHER files' entity rows must hash-equal their pre-reconcile state.
@@ -430,10 +443,21 @@ structural identity derived from the AST:
   Two chunks with identical containing symbol and identical signature
   hash to the same ID regardless of where they sit in the file.
 - **Anonymous chunk** (top-level statements, file header, JSX block, etc.):
-  `chunk_struct_id = xxhash3(file_path || parent_symbol_path || rolling_hash(normalized_content))`
+  `chunk_struct_id = xxhash3(file_path || parent_symbol_path || rolling_hash(normalized_content)) || "_" || occurrence_index_in_parent`
   using a rolling content hash that ignores leading/trailing whitespace
   and import-order shuffles in the parent block. Reorders within the
-  same parent → same ID.
+  same parent of *non-identical* siblings → same ID.
+  **The `occurrence_index_in_parent` suffix is mandatory.** Without it,
+  two identical statements in the same parent block — e.g.,
+  `if (err) return cb(err);` written twice in a function, two identical
+  `console.log("…");` lines, two identical guard clauses — would hash
+  to the same `chunk_struct_id` and silently overwrite each other in
+  the UPSERT. The occurrence index is computed within identical-content
+  siblings only (so inserting a non-identical sibling above an
+  identical pair does not shift their occurrence indices). Concretely:
+  for each anonymous chunk in source order under the same parent,
+  the occurrence index is the count of preceding siblings with the
+  same `(rolling_hash, parent_symbol_path)` tuple.
 - **Fallback for chunks that the AST can't disambiguate** (parser failure,
   unknown grammar): fall back to the existing positional ID but flag
   the chunk with `structural = false`. The encoder is still called for
@@ -450,10 +474,13 @@ structural identity derived from the AST:
   bound to its file — matches the existing entity ID scheme and
   simplifies "find references in this file".
 
-**Storage.** Add `chunk_struct_id TEXT NOT NULL` and
-`chunk_text_hash TEXT NOT NULL` columns to vectors table. Old positional
-`chunk_id` is preserved for backward compatibility; reconcile-v2 reads
-both, writes both, but the structural ID is authoritative.
+**Storage.** Add `chunk_struct_id TEXT NOT NULL`,
+`chunk_text_hash TEXT NOT NULL`, and `epoch_written INTEGER NOT NULL`
+columns to vectors table. Index `epoch_written` so the LSM rebase
+replay scan (§ 10.3) is O(changed rows), not O(table size). Old
+positional `chunk_id` is preserved for backward compatibility;
+reconcile-v2 reads both, writes both, but the structural ID is
+authoritative.
 
 **New behavior.**
 
@@ -541,6 +568,32 @@ new chunks is safe — but removals become tombstone-only.
      is monotonic; key collisions are impossible because we never reuse).
    Searches filter stale bits after retrieving top-k+slop candidates,
    not during graph traversal — preserves recall.
+
+2. **Capacity management (load-bearing under tombstone-only writes).**
+   USearch requires `max_elements` to be declared at `Index::init`.
+   Because the live path never calls `remove()`, the key space grows
+   monotonically: live vectors + tombstoned vectors, never reclaimed
+   until the next async rebuild. Without explicit capacity handling
+   the daemon will crash when `max_elements` is exhausted.
+   Required behavior:
+   - **At rebuild time**: over-allocate the new graph's `max_elements`
+     by the tombstone watermark margin plus a working headroom —
+     concretely `ceil(live_vectors × (1 + tombstone_watermark) × 1.10)`,
+     i.e. ~26 % over current live size at the 0.15 watermark.
+   - **At live-add time**: wrap `index.add()` in a try/catch on the
+     capacity exception. On exception:
+       1. Compute next capacity: `current_capacity × 1.25` (capped at
+          a hard ceiling of 100 M elements).
+       2. Call `index.reserve(next_capacity)`. This is a synchronous
+          graph-resize but cheap relative to a rebuild.
+       3. Retry the `add()`.
+       4. If `reserve` itself fails (out of memory), enqueue an
+          emergency rebuild and tombstone the failed chunk's
+          predecessor without adding the new vector — search will
+          fall through to BM25 + LI for that chunk until the rebuild
+          completes. Log ERROR.
+   - **Operator dashboard**: surface `hnsw_capacity_used = (live + tombstoned) / max_elements`
+     in the metrics JSON (§ 20.1). Alert if > 0.85.
 2. Track `removed_count` and `add_count` in `.meta.json` since last
    rebuild. Compute `tombstone_fraction = removed_count / total_count`
    and `delete_cycles = removed_count` (any vector removed and re-added
@@ -714,27 +767,48 @@ MCP servers.
    the last committed transaction, which the next reconcile tick
    reconstructs from disk content.
 3. **Active checkpoint policy.** WAL files grow unboundedly when at least
-   one reader is always active (the MCP server is exactly this pathology).
-   The plan must explicitly checkpoint:
-   - **Reader side (MCP server):** call
-     `sqlite3_wal_checkpoint_v2(SQLITE_CHECKPOINT_PASSIVE)` between
-     queries, or use `wal_autocheckpoint = 1000` (default 1000 pages)
-     plus periodically opening and closing a fresh write connection
-     to bump the checkpoint barrier.
+   one reader is always active. **Critical correction**: `TRUNCATE`
+   does *not* kill or force readers to release their snapshots —
+   SQLite is cooperative. If a reader is holding an active transaction,
+   `sqlite3_wal_checkpoint_v2(TRUNCATE)` returns `SQLITE_BUSY` and the
+   WAL is **not** truncated. The writer's checkpoint call is therefore
+   a *request*, not a *forcing function*. The MCP server (canonical
+   long-lived reader) must cooperate or the WAL grows regardless.
+   Three coordinated rules:
+   - **Reader side (MCP server, mandatory):** between queries, **close
+     the read transaction** — either via `COMMIT`/`ROLLBACK` of an
+     explicit transaction or by closing and reopening the database
+     connection. Holding a long-lived read transaction across many
+     queries (the most natural caching pattern) is the single
+     biggest cause of WAL bloat in production SQLite. Additionally,
+     call `sqlite3_wal_checkpoint_v2(SQLITE_CHECKPOINT_PASSIVE)`
+     every 100 queries; `PASSIVE` does not block readers and advances
+     the checkpoint frontier when feasible.
    - **Writer side (daemon):** after each successful tick, call
-     `sqlite3_wal_checkpoint_v2(SQLITE_CHECKPOINT_TRUNCATE)` once per
-     N ticks (default 60, i.e. once per hour at 60 s cadence). This
-     forces all readers to release their snapshot and the WAL to
-     truncate back to zero.
+     `sqlite3_wal_checkpoint_v2(SQLITE_CHECKPOINT_PASSIVE)`. Once per
+     N ticks (default 60), upgrade to `SQLITE_CHECKPOINT_TRUNCATE`
+     **and handle the BUSY return**: if BUSY, log INFO ("reader
+     holding back checkpoint") and try again next cycle. Do not
+     block on it. The daemon's TRUNCATE is opportunistic.
    - **Watermark.** If WAL file size exceeds 256 MiB (configurable),
-     force an immediate `TRUNCATE` checkpoint regardless of cadence.
-     Emit a warning if the size keeps growing despite the checkpoint —
-     indicates a reader that never closes its transaction.
+     log WARN with reader pid info (queried via SQLite shared-memory
+     introspection where supported, otherwise just file size). If it
+     exceeds 1 GiB, log ERROR with explicit operator remediation
+     ("MCP server is likely holding a long-lived read transaction;
+     restart MCP or reduce query-cache lifetime"). Never block the
+     daemon on the bloat condition.
 
-Without these three rules, `code-graph.db-wal` and `codebase.db-wal`
-will grow into the gigabytes within a week of a continuously-running
-MCP server. This is a known SQLite production failure mode (Tailscale,
-Litestream, and pgvector forums all document the same pathology).
+The cooperative model is the SQLite reality, not a sweet-search choice.
+Documenting it accurately matters because the previous draft implied
+that the writer could *force* the WAL to truncate; it cannot. Both
+sides must cooperate or the daemon's TRUNCATE silently no-ops while
+disk fills.
+
+Without these three rules — especially MCP-side transaction hygiene —
+`code-graph.db-wal` and `codebase.db-wal` will grow into the gigabytes
+within a week of a continuously-running MCP server. This is a known
+SQLite production failure mode (Tailscale, Litestream, and pgvector
+forums all document the same pathology).
 
 ### 8.5 Concurrent writers
 
@@ -810,6 +884,30 @@ dirty if (current.mtime != recorded.mtime)
 The inode check catches "atomic rename over existing path" (vim swap
 write, JetBrains safe-write); without it, a same-size same-mtime
 edit through the rename pattern is invisible.
+
+**Node.js BigInt inode caveat (load-bearing).** `fs.statSync(path).ino`
+returns a JavaScript `Number` (IEEE 754 double, 53-bit mantissa).
+Modern filesystems — APFS, ZFS, XFS, Btrfs in some configurations —
+issue 64-bit inodes that routinely exceed `Number.MAX_SAFE_INTEGER`
+(`2^53 - 1`). When that happens, Node silently truncates precision
+and two distinct files can compare equal in the `inode` field. The
+plan must:
+
+- Use `fs.statSync(path, { bigint: true })` (or `fs.promises.stat`
+  with the same option). Returns inode (and mtimeNs, size) as
+  `BigInt`.
+- Store the inode in `merkle-state.json` as a **string** (JSON has
+  no BigInt type; serializing as number would re-truncate).
+- Compare via BigInt equality after `BigInt(stored)` parse.
+
+Same caveat applies to `mtimeNs` (nanosecond timestamps exceed the
+safe integer range for any time after roughly the year 2255 — not
+load-bearing today, but the BigInt-everywhere policy is uniform and
+cheap, so apply consistently). `size` is bounded well within
+`Number.MAX_SAFE_INTEGER` for any reasonable file under
+`SWEET_SEARCH_MAX_FILE_BYTES` (1 MiB default) so it can stay
+`Number`, but using BigInt for all three is simpler than carrying
+the conditional.
 
 After this cheap fast-path, candidates go through full content
 hashing (§ 7.2). The mtime/size/inode tuple is a _hint_, not a
@@ -906,8 +1004,18 @@ Lock-respecting protocol:
    ε₀ + 2, ….
 3. **Bounded-iteration replay loop** (LSM compaction's "minor merge"):
    - Read current epoch ε_now.
-   - Replay (ε₀, ε_now] writes into `*.next` from the WAL of changes
-     recorded per-tier.
+   - Replay (ε₀, ε_now] writes into `*.next`. **The replay source is
+     the `epoch_written` column on the SQLite tables** (added per
+     §§ 7.1.6 and 7.2), not "the WAL." SQLite's internal WAL is not
+     queryable for row-level extraction; only an application-level
+     replay log works. The query is simply
+     `SELECT * FROM vectors WHERE epoch_written > :ε₀ AND epoch_written <= :ε_now;`
+     and likewise for `entities`. For tiers whose source-of-truth is
+     not SQLite (LI tokens, sparse-gram), the same `epoch_written`
+     pattern is applied via a small per-tier change-log table
+     (`li_change_log(chunk_struct_id, op, epoch_written)`,
+     `sparse_gram_change_log(file_path, epoch_written)`) maintained
+     by the reconcile tick.
    - If `ε_now - ε₀ > replay_threshold` (default 5), loop. Each pass
      narrows the gap.
    - Exit the loop when the gap stops shrinking (replay rate ≥ write
@@ -952,7 +1060,7 @@ over the lock; this version makes it explicit.
 | Vendored deps not in `.gitignore` | Files match include set | `.sweet-search-ignore` opt-in; hard cap warning above 200 k files |
 | Linux inotify exhaustion (ENOSPC) | Watcher returns error | Log remediation; fall back to 60-s polling for that subtree |
 | FSEvents glitch on macOS | Missed events | mtime sweep catches at next tick |
-| Crash during reconcile | Process exit before commit | Next tick replays via content-hash mismatch; lockfile cleared |
+| Crash during reconcile | Process exit before commit | Next tick replays via content-hash mismatch; lockfile cleared. **However**, HNSW `add()` is not idempotent (each call assigns a new key). A crash AFTER `index.add()` but BEFORE `merkle-state.json` commit leaks one duplicate vector per affected chunk into the live HNSW. The duplicate is **self-healing**: the next async rebuild (§ 10.3) reads the source-of-truth from `codebase.db` (which IS idempotent via UPSERT on `(file_path, chunk_struct_id)`) and constructs the new graph cleanly. Until then, search returns one stale + one fresh result per affected chunk — fusion + dedup at the result-set layer (§ 19) mitigates user-visible impact. Same logic applies to LI segment appends. Document explicitly: **the async rebuild is the garbage collector for crash-leaked vectors.** Do not attempt to make HNSW add idempotent (would require read-before-write on every add → unacceptable latency). |
 | Crash during rebuild | Rebuild process exit | Old artifact still live; rebuild-queue retries; dead-letter after N |
 | Worktree with shared index | Multiple processes, one lockfile | First takes lock, second blocks; document explicitly |
 | Config change (e.g. `.sweet-search.config.json` edit) | Config fingerprint mismatch | **Full reindex forced** (existing behavior in `incremental-tracker.js`) |
@@ -974,9 +1082,28 @@ Per CLAUDE.md and `memory/feedback_accuracy_nonnegotiable.md`:
   packs before merge.
 - The held-out GCSN 40 % is **never inspected per-query**; only aggregate
   metrics, only at milestones, only after dev passes.
-- A reconcile change that introduces a regression > the test noise floor
-  on aggregate MRR is reverted. No exceptions; this is the gating
-  criterion.
+- A reconcile change that introduces a regression greater than the test
+  noise floor on aggregate MRR is reverted. No exceptions; this is the
+  gating criterion.
+
+**Noise floor definition** (load-bearing, was previously left undefined):
+
+| Benchmark | Noise floor (absolute MRR) | Source |
+|---|---|---|
+| GCSN dev / held-out | **±0.005** | Empirical jitter measured across seed=42 reruns + AVX2 vs NEON summation order differences |
+| Retrieval-probes | **±1 PASS** (60-probe pack) | One-probe noise from chunker tie-breaking |
+| ast-tester-probes | **±1 PASS** (170-probe pack) | Parser-state nondeterminism |
+| structural-redo | **±1 PASS** | Same |
+
+An absolute regression of −0.005 MRR (0.5 percentage points) or worse on
+any benchmark is a regression. Anything tighter is noise.
+
+If a change shows an MRR delta that's within the noise band but
+*consistent in sign across multiple reruns* (3 of 3 reruns negative,
+even if each is −0.001), treat it as a soft regression and investigate
+before merging. CLAUDE.md `memory/feedback_dont_overrevert_chunker_fixes.md`
+applies in the reverse direction: do not auto-revert structurally
+correct changes that show 0-or-positive delta with no probe flips.
 
 ### 12.2 Format-gating
 
@@ -1315,6 +1442,18 @@ existing primitives carry most of the load; this is mostly stitching.
 | Resolved exclude array hashed in config fingerprint, not gitignore file | 2026-05-15 | Comment edits to `.gitignore` no longer trigger full reindex; semantic excludes do. |
 | Mtime-trap fix: `(mtime, size, inode) !=` not `mtime >` | 2026-05-15 | Equal-mtime within FS resolution makes second write invisible to `>` check. |
 | Adaptive tick interval, CPU budget, watermarks by hardware tier | 2026-05-15 | "Works on any machine" mandate — see § 34. |
+| Occurrence-indexed anonymous chunk IDs | 2026-05-15 | Gemini 2nd-pass: identical statements in same parent would collide and lose chunks under UPSERT. |
+| `epoch_written` column on `vectors` and `entities` | 2026-05-15 | Gemini 2nd-pass: LSM rebase needs an application-level replay log; SQLite WAL is not queryable. |
+| USearch capacity managed via `index.reserve()` on exception | 2026-05-15 | Gemini 2nd-pass: tombstone-only writes exhaust `max_elements` monotonically. |
+| WAL TRUNCATE is opportunistic, not forcing; MCP must close txns | 2026-05-15 | Gemini 2nd-pass: original draft overclaimed TRUNCATE semantics. |
+| FTS5 bounded `('merge', 500)` replaces `('optimize')` | 2026-05-15 | Gemini 2nd-pass: `'optimize'` trips own WAL bloat alarm. |
+| BigInt inode via `{ bigint: true }`; stored as JSON string | 2026-05-15 | Gemini 2nd-pass: 64-bit inodes silently truncate to Number on APFS/ZFS/XFS. |
+| WSL2 polling-only gated on FS-type, not OS detection | 2026-05-15 | Gemini 2nd-pass: native Linux paths (`/home/user/`) work fine in WSL2. |
+| `os.availableParallelism()` replaces manual cgroup parsing | 2026-05-15 | Gemini 2nd-pass: Node 18.14+ handles cgroup v1/v2, affinity, quotas natively. |
+| HNSW crash-leak documented as self-healing via rebuild | 2026-05-15 | Gemini 2nd-pass: `add()` is not idempotent; rebuild is the GC. |
+| Noise floor defined as ±0.005 absolute MRR | 2026-05-15 | Gemini 2nd-pass: previously undefined; AVX2/NEON jitter alone exceeds 0.001. |
+| Held-out validation pulled out of iterative phases | 2026-05-15 | Gemini 2nd-pass: original § 24.6 violated `feedback_heldout_discipline_strict`. |
+| `tree_sitter_error_nodes_seen` telemetry added | 2026-05-15 | Gemini 2nd-pass: mid-edit syntax errors produce garbage entities; need observability. |
 
 ---
 
@@ -1379,24 +1518,46 @@ JSON line per tick to `.sweet-search/reconcile-metrics.jsonl` (rotated daily):
   "chunks_total": 48,
   "chunks_encoded": 7,
   "chunks_hash_reused": 41,
+  "chunks_struct_stable": 36,
+  "tree_sitter_error_nodes_seen": 2,
+  "tree_sitter_files_with_errors": 1,
   "ops_per_tier": {
     "graph_upsert": 6, "graph_tombstone": 1,
     "vectors_upsert": 7, "vectors_delete": 3,
-    "hnsw_remove": 3, "hnsw_add": 7,
+    "hnsw_add": 7, "hnsw_tombstone": 3,
+    "hnsw_capacity_used": 0.42,
     "binary_hnsw_tombstone": 3, "binary_hnsw_append": 7,
     "li_segment_append": 7, "li_tombstone": 3,
-    "sparse_gram_rebuild": 1
+    "sparse_gram_rebuild": 1,
+    "fts5_merge_calls": 2
   },
   "watermarks": {
     "hnsw_tombstone_fraction": 0.082,
     "binary_hnsw_dead_doc_ratio": 0.11,
-    "li_segments_over_threshold": []
+    "li_segments_over_threshold": [],
+    "fts5_segment_count": 23
+  },
+  "wal": {
+    "code_graph_db_wal_bytes": 41943040,
+    "codebase_db_wal_bytes": 18874368,
+    "last_passive_checkpoint_ms_ago": 6014,
+    "last_truncate_attempted_ms_ago": 600100,
+    "last_truncate_busy": false
   },
   "rebuild_jobs_enqueued": 0,
   "cpu_budget_used_ms": 380,
   "cpu_budget_total_ms": 2000
 }
 ```
+
+The `tree_sitter_error_nodes_seen` field surfaces a risk noted by the
+second-pass review: edits saved mid-keystroke produce syntactically
+invalid source. Tree-sitter recovers and extracts entities anyway, but
+the entities may be garbage. The metric exists so operators (and CI)
+can detect a daemon that is repeatedly indexing broken code — a signal
+to lengthen the watcher debounce or tick interval. Alert if the
+running 1-hour average of `tree_sitter_files_with_errors / files_processed`
+exceeds 0.05.
 
 ### 20.2 Operator CLI surface
 
@@ -1647,11 +1808,31 @@ Already specified; the gating CI test.
 - ENOSPC from inotify → fallback to polling
 - Watcher floods with 100 k events in 1 s → dirty set bounded, no OOM
 
-### 24.6 A/B held-out
+### 24.6 A/B validation (dev vs held-out discipline)
 
-After Phase 5 sensitivity study, run GCSN held-out:
-- Cold-rebuild baseline vs reconcile-from-cold baseline → MRR must match
-- Cold-rebuild baseline vs reconcile-after-50-edits → MRR within noise
+Per CLAUDE.md and `memory/feedback_heldout_discipline_strict.md`, the
+held-out set is **one-shot, end-of-phase, aggregate-only**. Iterative
+validation that informs threshold choices (tombstone watermark,
+recompaction trigger, etc.) **must** run on dev.
+
+**Phase-by-phase contract:**
+
+| Phase | A/B validation pair | Run on |
+|---|---|---|
+| Phase 1 (chunk-hash, encode-skip) | cold-rebuild vs reconcile-from-cold | **dev** |
+| Phase 1 (chunk-hash, encode-skip) | cold-rebuild vs reconcile-after-1-edit | **dev** |
+| Phase 2 (unified tick) | reconcile-v1 vs reconcile-v2 with 50-edit trace | **dev** |
+| Phase 3 (watermarks + rebuild) | pre-watermark vs post-rebuild | **dev** |
+| Phase 5 (tombstone sensitivity) | sweep N∈{5,10,15,20,25,30}% tombstones | **dev** |
+| End of Phase 6 (production-hardening complete, all thresholds locked) | full reconcile pipeline vs cold rebuild, with the 50-edit trace | **held-out** (one-shot) |
+
+The held-out run at end of Phase 6 is the final sanity check before
+merging to `main`. If it fails, the team must **not** tune thresholds
+against the held-out failure — that contaminates the set. The correct
+response is to investigate the underlying mechanism on a new
+hand-crafted probe set, then either (a) reset to the previous merge
+commit and design forward, or (b) accept the regression as a known
+limitation and document it. Never tune to held-out.
 
 ### 24.7 Property-based / fuzz
 
@@ -1772,20 +1953,42 @@ When the daemon commits a new epoch, MCP must reload. Mechanism:
 - Alternative: file-watcher on `merkle-state.json` to push invalidation.
   More complex; defer.
 
-### 27.2.1 MCP and SQLite WAL discipline
+### 27.2.1 MCP and SQLite WAL discipline (mandatory)
 
 The MCP server is the canonical "long-lived reader" pathology for SQLite
-WAL (see § 8.4). Two rules MCP must follow:
+WAL. SQLite checkpointing is cooperative (see § 8.4): the writer cannot
+force a misbehaving reader to release its snapshot. The MCP server
+therefore **owns** the WAL-growth-prevention contract. Required rules:
 
-1. **Open a fresh read transaction per query.** Long-held read txns
-   pin the WAL frame at the open snapshot, preventing checkpoint.
-2. **Periodically call `wal_checkpoint(PASSIVE)`** between queries (every
-   N queries or every M seconds, whichever first; defaults
-   N=100, M=60s). The PASSIVE checkpoint never blocks readers; it
-   simply advances the checkpoint frontier when possible.
+1. **No long-lived read transactions across queries.** Either:
+   - (a) Use the higher-level driver's "implicit short transaction"
+     mode where each `prepare → step → finalize` is its own
+     auto-committed read transaction, OR
+   - (b) Explicitly `BEGIN DEFERRED` + `COMMIT` per query.
+   What the MCP server must **never** do: open a connection, run
+   `BEGIN`, then leave the connection idle between queries while
+   keeping the transaction open. This is the single most common WAL
+   bloat root cause.
+2. **Periodic `wal_checkpoint(PASSIVE)` self-call** between queries
+   (every N queries or every M seconds, whichever first; defaults
+   N=100, M=60s). `PASSIVE` never blocks; it advances the frontier
+   when possible. Does not require the txn to be closed but does
+   require no other connection to be in the middle of writing.
+3. **Connection rotation as a safety net.** Every 1 hour OR every
+   10 000 queries (whichever first), the MCP server closes its
+   read connection and opens a fresh one. Cheap (sub-ms on local
+   SQLite) and guarantees no stale snapshot can be held longer than
+   the rotation interval. Insurance against bugs that leave a txn
+   open accidentally.
+4. **Expose `wal_size_bytes` in the MCP `/health` endpoint** so an
+   external monitor can detect MCP-side WAL leaks even if the daemon
+   itself can't.
 
-Without these, the MCP server holds back the daemon's TRUNCATE checkpoint
-and WAL files grow unbounded.
+If the MCP server is not maintained by the sweet-search team (third-party
+binding), document these rules in the MCP integration guide and
+fail-loudly: if the daemon detects WAL > 1 GiB for > 10 minutes, log
+ERROR and emit a one-time warning to stderr identifying the likely
+culprit pid.
 
 ### 27.3 Can the MCP server BE the daemon?
 
@@ -1957,14 +2160,24 @@ re-running the research swarm:
 A concrete merge bar for the first PR (Phase 1 — chunk-content-hash &
 encode-skip from § 13):
 
-- [ ] Schema migration on `codebase.db`: `chunk_struct_id` and
-  `chunk_text_hash` columns added; tested with existing index
-  (auto-migrates; old positional `chunk_id` preserved).
+- [ ] Schema migration on `codebase.db`: `chunk_struct_id`,
+  `chunk_text_hash`, and `epoch_written` columns added; index on
+  `epoch_written` created; tested with existing index (auto-migrates;
+  old positional `chunk_id` preserved).
+- [ ] Schema migration on `code-graph.db::entities`: `epoch_written`
+  column + index added.
 - [ ] xxHash3 dependency added; `HASH_ALGORITHM` switch in place; SHA-256
   fallback verified for the compliance/audit override path.
 - [ ] AST chunker emits stable `chunk_struct_id` for both symbol-attached
-  and anonymous chunks; unit tests cover the three stability cases
-  (whitespace, top-of-file insert, rename).
+  and anonymous chunks. Unit tests cover **five** stability cases:
+  whitespace-only edit, top-of-file insert, function rename, **two
+  identical statements in same parent (occurrence-index disambiguation)**,
+  and **rename of one of two identical statements** (the renamed one
+  gets a new ID; the other keeps its `_0` suffix).
+- [ ] `fs.statSync(path, { bigint: true })` used in
+  `incremental-tracker.js`; inode stored as string in
+  `merkle-state.json`; comparison test on a synthetic
+  `inode > 2^53` filesystem (use APFS where available).
 - [ ] `STATE_VERSION` bumped to `'3.0'` only after Phase 2 lands; Phase 1
   stays at `'2.3'`.
 - [ ] Encode-skip path implemented in `indexer-build.js`; coverage test
@@ -2101,10 +2314,29 @@ The plan is architecture-agnostic. Concrete points:
 | Windows | `ReadDirectoryChangesW` via `notify` | path length 260 (legacy) or 32 K | NTFS reserved names, alternate streams | v2 |
 | WSL2 | inotify on the Linux side; events from Windows-mounted drives are unreliable | low | mtime resolution truncated when crossing boundary | polling-only mode |
 
-For WSL2 specifically: detect via `/proc/version` containing `microsoft`
-or `WSL`; force `SWEET_SEARCH_WATCH=0` regardless of user setting;
-emit notice "WSL2 detected — polling-only mode (watcher unreliable
-across Windows ↔ Linux boundary)".
+**WSL2 handling — refined.** The earlier blanket "WSL2 → polling-only"
+over-penalizes users with projects on the native Linux filesystem
+(`/home/user/project` on ext4) where inotify works perfectly. Inotify
+across the Windows ↔ Linux boundary (`9p`/`drvfs` mount under `/mnt/c/`)
+is unreliable; native Linux paths are fine.
+
+Refined detection:
+1. Check `/proc/version` for `microsoft`/`WSL` substring → flag WSL2.
+2. If flagged, resolve `projectRoot` via `realpath` and query the
+   mounted filesystem type. Two equivalent methods:
+   - Run `df -T projectRoot | awk 'NR==2 {print $2}'` and check the
+     filesystem column.
+   - Read `/proc/mounts` and find the longest-prefix-matching mount
+     point of `projectRoot`.
+3. Decision:
+   - `ext4` / `btrfs` / `xfs` / `zfs` / `tmpfs` → native Linux FS,
+     **allow the watcher** (respect the user's `SWEET_SEARCH_WATCH`
+     setting normally).
+   - `9p` / `drvfs` / `cifs` / `nfs` → cross-boundary FS, force
+     `SWEET_SEARCH_WATCH=0` regardless of user setting; emit notice
+     identifying the FS type as the cause.
+4. Log the detected `(WSL2, fs_type, mode)` triple at daemon startup
+   so users can audit why polling was forced.
 
 ### 34.7 No-GPU machines
 
@@ -2124,14 +2356,30 @@ runtime):
 
 When running inside Docker or a container:
 
-- Detect via `/proc/1/cgroup` (Linux) or `KUBERNETES_SERVICE_HOST`.
-- Read cgroup-imposed CPU and memory limits (`/sys/fs/cgroup/cpu.max`,
-  `memory.max`); use these as the budget basis, not `os.totalmem()`
-  which reports host RAM.
-- Disable the FSEvents-style watcher inside containers (mount events
-  are typically not propagated); use polling.
-- Lower the `mem_budget_fraction` default to 0.10 (10 %) of cgroup
-  limit to play nicely with sibling processes.
+- **Detect** via `/proc/1/cgroup` content (Linux) or
+  `KUBERNETES_SERVICE_HOST` env var.
+- **CPU budget**: use **`os.availableParallelism()`** (Node 18.14.0+),
+  which natively reads cgroup v1/v2 quotas, CPU affinity masks
+  (`sched_getaffinity`), and Windows process affinity, returning a
+  correct integer of usable cores. **Do not** manually parse
+  `/sys/fs/cgroup/cpu.max` — it's fragile across cgroup v1 vs v2,
+  fractional quotas (`150000 100000`), unlimited values (`max`), and
+  CPU affinity overrides. The Node API handles all of these.
+- **Memory budget**: read `/sys/fs/cgroup/memory.max` (v2) or
+  `/sys/fs/cgroup/memory/memory.limit_in_bytes` (v1) directly; Node has
+  no helper for this. Fall back to `os.totalmem()` if neither path
+  exists (non-containerised). Use the cgroup limit, not the host RAM,
+  as the basis for `mem_budget_fraction`.
+- **Watcher**: disable inside containers by default. Mount events from
+  the host are typically not propagated through Docker's default
+  overlay-fs driver; inotify on a bind-mounted host directory works in
+  some configurations but not all. Use polling.
+- **`mem_budget_fraction` default lowered to 0.10** (10 %) of cgroup
+  memory limit inside containers, to coexist with sibling processes.
+- **Disk class detection** (§ 34.1) may misclassify overlay filesystems
+  as `hdd` because of layered cache thrash during the probe. Override:
+  if cgroup-detected, default disk class to `ssd` unless the user
+  forces otherwise.
 
 ### 34.9 What stays constant across all tiers
 
@@ -2214,3 +2462,90 @@ These survived this round but deserve further scrutiny:
 
 These join the existing § 14.2 open questions list rather than blocking
 the plan.
+
+---
+
+## 36. Second-Pass Review Corrections (Gemini 3.1 Pro deep-think, 2026-05-15)
+
+After the first review's findings were folded in (§ 35), a second-pass
+deep-think review (33 k prompt tokens, 4 036 thinking tokens, 3.6 k
+output) was performed against the updated plan. The reviewer's verdict:
+"95 % of the way to a bulletproof engineering document" — but the
+implementations of the first-pass fixes contained mechanical bugs that
+would crash the daemon or silently lose data. All 10 findings + 2
+bonus items have been folded in.
+
+### 36.1 Critical mechanical bugs in the first-pass "fixes"
+
+| # | Finding | Severity | Where it landed |
+|---|---|---|---|
+| 1 | **Anonymous chunk ID collision** — identical statements (e.g., `if (err) return cb(err);` twice in a function) hash identically → UPSERT silently overwrites one and loses chunks | **critical** | § 7.2 amended with mandatory `occurrence_index_in_parent` suffix |
+| 2 | **LSM rebase had no replay log** — § 10.3 said "replay from the WAL of changes recorded per-tier" but no such WAL existed; SQLite's internal WAL is not queryable for row-level extraction. Rebase was physically unimplementable as written. | **critical** | § 7.1.6 and § 7.2 add `epoch_written INTEGER NOT NULL` columns with index; § 10.3 rewrites the replay-source clause |
+| 3 | **USearch capacity exhaustion** — tombstone-only writes never call `remove()`, so `max_elements` is exhausted monotonically; eventual `add()` throws → daemon crash. | **critical** | § 7.3 adds dynamic `index.reserve()` on capacity exception, rebuild-time over-allocation by tombstone margin, and a `hnsw_capacity_used` metric |
+| 4 | **`TRUNCATE` does not force readers** — the daemon's `wal_checkpoint(TRUNCATE)` returns `SQLITE_BUSY` when readers hold transactions; it does **not** kill them. The original draft implied otherwise. | high | § 8.4 rewritten with cooperative-checkpoint model; § 27.2.1 mandates MCP-side transaction hygiene |
+| 5 | **BigInt inode truncation** — `fs.statSync().ino` returns `Number`; modern FS (APFS/ZFS/XFS) routinely exceed `2^53 - 1` → silent precision loss → two distinct files appear identical. | high | § 9.1 amended: `{ bigint: true }` stat option; inode stored as string in `merkle-state.json` |
+| 6 | **FTS5 `'optimize'` self-trips own WAL alarm** — rewrites whole FTS5 index in single transaction → 200–800 MiB WAL frame → trips the 256 MiB bloat alarm in § 8.4. | medium | § 7.1 replaces `'optimize'` with bounded `'merge', 500` |
+| 7 | **WSL2 over-penalization** — original `WSL2 → polling-only` rule was too broad; native Linux paths work fine. | medium | § 34.6 refined: detect FS type via `df -T`; force polling only on `9p`/`drvfs`/`cifs`/`nfs` |
+| 8 | **`os.availableParallelism()` exists** — Node 18.14+ handles cgroup v1/v2, affinity masks, quotas natively. | low (cleanup) | § 34.8 replaces manual cgroup parsing |
+| 9 | **HNSW crash-leak between add and epoch-commit** — `add()` is not idempotent; crash mid-tick leaks duplicates. | medium | § 11 amended: documented as self-healing via async rebuild (which reads source-of-truth from idempotent `codebase.db` UPSERT). Made explicit so operators understand transient duplicate behavior. |
+| 10 | **Held-out discipline violation** — original § 24.6 ran the 50-edits A/B on held-out, contaminating the set. | high (methodological) | § 24.6 rewritten as a phase-by-phase table; held-out is one-shot at end of Phase 6 only |
+
+### 36.2 Bonus findings
+
+| Finding | Where it landed |
+|---|---|
+| Noise floor undefined → defined as ±0.005 absolute MRR | § 12.1 |
+| Tree-sitter mid-edit error visibility → metric added | § 20.1 (`tree_sitter_error_nodes_seen`, `tree_sitter_files_with_errors`) |
+
+### 36.3 Items the reviewer did NOT challenge
+
+- The five-tier architecture.
+- The 60 s reconcile cadence (with adaptive scaling).
+- Per-token int4 LI as the load-bearing structural property
+  (reviewer flagged the SSLX v4 trap and the plan agreed).
+- Content-hash dedup model.
+- Format-gating discipline.
+- Hardware-tier abstractions in § 34 in principle (only the
+  implementation specifics in § 34.6 / § 34.8 / § 9.1 had bugs).
+
+### 36.4 Lessons codified
+
+Three meta-rules learned from this review pass:
+
+1. **"We will replay from the WAL" is hand-waving until the schema
+   shows the column.** Any future rebase / GC / migration design must
+   explicitly name the source-of-truth table and column it queries.
+2. **OS APIs require version awareness.** Manually parsing OS
+   internals (cgroup files, mount tables) is fragile; prefer
+   language stdlib helpers (`os.availableParallelism()`,
+   `fs.statSync({ bigint: true })`) where they exist.
+3. **"This handles itself" claims need source citations.** SQLite's
+   "automatic" behaviors (FTS5 compaction, WAL checkpointing,
+   `TRUNCATE` semantics) are exactly the operations where production
+   pathologies live. Every "X handles compaction" in this plan was
+   either wrong (FTS5) or required reader cooperation (WAL); they
+   are now spelled out.
+
+### 36.5 What's still open
+
+The second-pass review explicitly noted some unresolved areas — these
+remain in § 14.2 as open questions:
+
+- USearch's actual auto-resize behavior in the JS binding (some
+  versions auto-grow; need empirical verification before relying on
+  the `reserve()` retry path).
+- FTS5 `'merge', 500` WAL impact at scale (the claim that it stays
+  bounded is theoretically correct but unmeasured on sweet-search's
+  actual code-graph.db).
+- Whether the `epoch_written` index choice (B-tree on a monotonically
+  increasing integer) creates write hot-spots; might need a partial
+  index `WHERE epoch_written > (max - 10000)` instead.
+
+### 36.6 Net change
+
+The plan grew from 2 216 lines to roughly 2 500 lines after this
+pass. No section was removed; eight sections were amended in place
+and one new section (§ 36) was added. Schema migrations expanded:
+the Phase 1 work now adds three columns (`chunk_struct_id`,
+`chunk_text_hash`, `epoch_written`) to `vectors` and one
+(`epoch_written`) to `entities`, plus indices.
