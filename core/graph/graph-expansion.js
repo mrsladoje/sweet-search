@@ -12,6 +12,24 @@
 // Default edge types to follow during expansion
 const DEFAULT_EDGE_TYPES = new Set(['imports', 'extends', 'implements', 'uses', 'calls']);
 
+// SQLite-variable-limit guard. Mirrors SAFE_IN_CLAUSE_BATCH in
+// core/infrastructure/db-utils.js; inlined here so this module stays
+// import-free (callers inject all dependencies). 2-hop expansion can in
+// principle balloon to thousands of IDs when a seed entity has many
+// outgoing edges; without this guard, an `IN(?,?,...)` over a >32k array
+// crashes with "too many SQL variables". Fail fast at 999 with a clear
+// message instead.
+const _SAFE_IN_CLAUSE_BATCH = 999;
+function _assertInClauseSize(n, label) {
+  if (n > _SAFE_IN_CLAUSE_BATCH) {
+    throw new RangeError(
+      `${label}: IN(?,?,...) clause would bind ${n} parameters, exceeding ` +
+      `SAFE_IN_CLAUSE_BATCH=${_SAFE_IN_CLAUSE_BATCH}. Chunk via ` +
+      `chunkedIn() in core/infrastructure/db-utils.js or upstream-cap the input.`
+    );
+  }
+}
+
 // Per-stage profiling hooks. No-op unless `globalThis.__stageTimings` is set
 // by scripts/profile-search-stages.mjs (same convention as search-hybrid.js
 // and search-postprocess.js).
@@ -79,6 +97,7 @@ export function loadChunkTexts(codebaseDbOrRepo, ids) {
   }
   // Legacy raw-DB path (backward compat)
   try {
+    _assertInClauseSize(ids.length, 'graph-expansion.getChunkTexts');
     const ph = ids.map(() => '?').join(',');
     const rows = codebaseDbOrRepo.prepare(
       `SELECT id, text FROM vectors WHERE id IN (${ph})`
@@ -437,6 +456,7 @@ function collectSeedIds(db, results) {
 export function expandOneHop(db, seedIds, edgeTypes) {
   const expanded = new Map();
   const seedArray = [...seedIds];
+  _assertInClauseSize(seedArray.length, 'graph-expansion.expandOneHop.seeds');
   const placeholders = seedArray.map(() => '?').join(',');
 
   // Forward edges: seed -> neighbor
@@ -500,6 +520,7 @@ export function expandSecondHop(db, seedIds, expanded, edgeTypes, options = {}) 
 
   const hop1Ids = [...expanded.keys()];
   if (hop1Ids.length === 0) return;
+  _assertInClauseSize(hop1Ids.length, 'graph-expansion.expand2Hop.forward');
 
   const ph = hop1Ids.map(() => '?').join(',');
 
@@ -593,6 +614,7 @@ export function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, op
 
   const hop1Ids = [...hop1Expanded.keys()];
   if (hop1Ids.length === 0) return { added: 0, budgetUsed: 0, candidates: 0 };
+  _assertInClauseSize(hop1Ids.length, 'graph-expansion.expand2HopRanked.hop1');
 
   const ph = hop1Ids.map(() => '?').join(',');
 
@@ -742,6 +764,7 @@ export function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, op
  */
 function lookupEntities(db, expandedIds, expansionMeta) {
   if (expandedIds.length === 0) return [];
+  _assertInClauseSize(expandedIds.length, 'graph-expansion.lookupEntities');
 
   const ph = expandedIds.map(() => '?').join(',');
   let entities;
@@ -927,6 +950,7 @@ export function applyTokenBudget(results, budget, options = {}) {
  */
 export function getExpansionStats(db, entityIds) {
   if (!entityIds || entityIds.length === 0) return { total: 0, byType: {} };
+  _assertInClauseSize(entityIds.length, 'graph-expansion.getExpansionStats');
 
   const ph = entityIds.map(() => '?').join(',');
   let rels;

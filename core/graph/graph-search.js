@@ -15,7 +15,7 @@
 
 import { existsSync } from 'fs';
 import { DB_PATHS, GRAPH_CONFIG } from '../infrastructure/config/index.js';
-import { applyReadPragmas } from '../infrastructure/db-utils.js';
+import { applyReadPragmas, assertInClauseSize } from '../infrastructure/db-utils.js';
 import { detectIntent, getIntentBoost } from '../query/intent-detector.js';
 import { applyMMR, shouldApplyMMR } from '../ranking/mmr.js';
 import { SYMBOL_KIND_WEIGHTS, DEFINITION_TYPES } from '../infrastructure/constants.js';
@@ -1024,6 +1024,7 @@ export class GraphSearch {
       if (frontierIds.length === 0) break;
 
       // Single query for all entities in this hop
+      assertInClauseSize(frontierIds.length, 'graph-search.frontier-fetch');
       const placeholders = frontierIds.map(() => '?').join(',');
       const entities = this.db.prepare(`
         SELECT * FROM entities
@@ -1942,6 +1943,7 @@ export class GraphSearch {
     for (let depth = 1; depth <= maxDepth && impacted.size < limit; depth++) {
       if (frontier.length === 0) break;
 
+      assertInClauseSize(frontier.length, 'graph-search.impact-frontier');
       const placeholders = frontier.map(() => '?').join(',');
       let dependents;
 
