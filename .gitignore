@@ -98,6 +98,9 @@ core/prompt-optimization/data/query-shapes/ss-find/tracks/
 # ss-semantic regenerable artifacts (reuses ss-search variants; only tracks
 # the sweep output). Keep recommendations-v2-ss-semantic.json + scripts/.
 core/prompt-optimization/data/query-shapes/ss-semantic/tracks/
+# ss-trace regenerable per-run output. Keep probes.json + recommendations-v2-
+# ss-trace.json + scripts/.
+core/prompt-optimization/data/query-shapes/ss-trace/tracks/
 # Eval data: ignore downloaded datasets but track benchmark query files
 eval/data/gencodesearchnet/
 eval/data/m2crb/
