@@ -46,7 +46,7 @@
         "dart"
       ]
     },
-    "Dynamic-scripting": {
+    "Scripting-dynamic": {
       "languages": [
         "python",
         "ruby",
@@ -153,7 +153,7 @@
           "tokenBudget": null,
           "k": 5
         },
-        "instruction_text": "[[ss-trace]] is symbol-in / structural-context-out. Call when you already know the target symbol and want callers, callees, and impact paths in one response. CLI: `sweet-search trace <symbol> [--in <file>] [--depth N] [--budget N]`. Pass the symbol verbatim — do NOT phrase as an NL question. Same defaults as simple_global apply per-family. The C-family / JS-mobile families have the strongest baseline (R@5 ≥ 0.93 callers, 1.0 callees); Dynamic-scripting (python/ruby/php) is the weakest (R@5=0.62 callers, R@5=0.83 callees) primarily because tree-sitter Python doesn't capture test-class-inherits-production-class edges (4 of 7 dev FAILs). For Python specifically, the impact tool's transitive expansion underperforms — prefer callees/callers calls when in Python."
+        "instruction_text": "[[ss-trace]] is symbol-in / structural-context-out. Call when you already know the target symbol and want callers, callees, and impact paths in one response. CLI: `sweet-search trace <symbol> [--in <file>] [--depth N] [--budget N]`. Pass the symbol verbatim — do NOT phrase as an NL question. Same defaults as simple_global apply per-family. The C-family / JS-mobile families have the strongest baseline (R@5 ≥ 0.93 callers, 1.0 callees); Scripting-dynamic (python/ruby/php) is the weakest (R@5=0.62 callers, R@5=0.83 callees) primarily because tree-sitter Python doesn't capture test-class-inherits-production-class edges (4 of 7 dev FAILs). For Python specifically, the impact tool's transitive expansion underperforms — prefer callees/callers calls when in Python."
       },
       "overrides": {
         "_note": "Override iff family-best Recall@5 beats default by ≥ 8pp. With only one options config measured, no family-best Recall@5 differs from the default — overrides are empty in this redo. Future option-sweeps will populate per-family options when the data supports it."
@@ -311,7 +311,7 @@
             "fail_rate": 0
           }
         },
-        "Dynamic-scripting": {
+        "Scripting-dynamic": {
           "callers": {
             "n": 13,
             "strict_recall_at_5": 0.6164,

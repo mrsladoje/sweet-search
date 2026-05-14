@@ -107,7 +107,7 @@ describe('recommendations-v2-ss-trace.json contract', () => {
     const families = Object.keys(fc.by_family_recall);
     expect(families).toContain('OO-monolithic');
     expect(families).toContain('JS-mobile');
-    expect(families).toContain('Dynamic-scripting');
+    expect(families).toContain('Scripting-dynamic');
     // Overrides should not have per-family options entries — only the
     // explanatory _note — because no family-best Recall@5 differs from
     // default when only one options config has been measured.

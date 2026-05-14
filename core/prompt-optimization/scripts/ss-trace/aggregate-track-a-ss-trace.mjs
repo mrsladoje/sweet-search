@@ -73,7 +73,7 @@ function familyOf(lang) {
   if (['rust', 'go'].includes(lang)) return 'Systems-modular-terse';
   if (['c', 'cpp', 'zig'].includes(lang)) return 'C-family';
   if (['javascript', 'typescript', 'typescript-lib', 'dart'].includes(lang)) return 'JS-mobile';
-  if (['python', 'ruby', 'php', 'elixir', 'lua'].includes(lang)) return 'Dynamic-scripting';
+  if (['python', 'ruby', 'php', 'elixir', 'lua'].includes(lang)) return 'Scripting-dynamic';
   return 'Other';
 }
 
@@ -97,7 +97,7 @@ function instructionText(strategy) {
     return `${common} Default options (maxDepth=3, adaptive 4k/8k/12k budget) are optimal across all 18 indexed languages: dev callers R@5=0.71, callees R@5=0.94, impact R@5=0.55 against graphNeighbors-derived gold (n=105 dev probes, 21 PASS callees, 27 PASS callers, 21 PASS impact). Add --in <file> when the symbol is ambiguous across files (Vec, Mux, get, App, Use have ≥2 entity rows in the indexed corpora).`;
   }
   if (strategy === 'family_conditioned') {
-    return `${common} Same defaults as simple_global apply per-family. The C-family / JS-mobile families have the strongest baseline (R@5 ≥ 0.93 callers, 1.0 callees); Dynamic-scripting (python/ruby/php) is the weakest (R@5=0.62 callers, R@5=0.83 callees) primarily because tree-sitter Python doesn't capture test-class-inherits-production-class edges (4 of 7 dev FAILs). For Python specifically, the impact tool's transitive expansion underperforms — prefer callees/callers calls when in Python.`;
+    return `${common} Same defaults as simple_global apply per-family. The C-family / JS-mobile families have the strongest baseline (R@5 ≥ 0.93 callers, 1.0 callees); Scripting-dynamic (python/ruby/php) is the weakest (R@5=0.62 callers, R@5=0.83 callees) primarily because tree-sitter Python doesn't capture test-class-inherits-production-class edges (4 of 7 dev FAILs). For Python specifically, the impact tool's transitive expansion underperforms — prefer callees/callers calls when in Python.`;
   }
   if (strategy === 'popular_weighted') {
     return `${common} Under 2026 agentic-tier weights (TS/Python/Rust=5, mainstream=3, longtail=1), the canonical defaults remain optimal. Python's higher weight surfaces its callers/impact failure modes — see family_conditioned guidance.`;
@@ -169,7 +169,7 @@ function main() {
     byRelWeighted[rel] = aggregate(r => r.relationshipType === rel, true);
   }
   const byFamily = {};
-  for (const fam of ['OO-monolithic', 'Systems-modular-terse', 'C-family', 'JS-mobile', 'Dynamic-scripting']) {
+  for (const fam of ['OO-monolithic', 'Systems-modular-terse', 'C-family', 'JS-mobile', 'Scripting-dynamic']) {
     byFamily[fam] = {};
     for (const rel of ['callers', 'callees', 'impact']) {
       byFamily[fam][rel] = aggregate(r => r.family === fam && r.relationshipType === rel);
@@ -208,7 +208,7 @@ function main() {
       'Systems-modular-terse': { languages: ['rust', 'go'] },
       'C-family': { languages: ['c', 'cpp', 'zig'] },
       'JS-mobile': { languages: ['javascript', 'typescript', 'typescript-lib', 'dart'] },
-      'Dynamic-scripting': { languages: ['python', 'ruby', 'php', 'elixir', 'lua'] },
+      'Scripting-dynamic': { languages: ['python', 'ruby', 'php', 'elixir', 'lua'] },
     },
     strategies: {
       simple_global: {
