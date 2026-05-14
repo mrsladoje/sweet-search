@@ -87,6 +87,7 @@ function parseArgs(argv) {
     skipThresholdout: false,
     allowIncompletePromotion: false,
     independentAuthor: 'sweet-search-core-secondary',
+    outPath: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -94,6 +95,7 @@ function parseArgs(argv) {
     else if (a === '--skip-thresholdout') o.skipThresholdout = true;
     else if (a === '--allow-incomplete-promotion') o.allowIncompletePromotion = true;
     else if (a === '--author') o.independentAuthor = argv[++i];
+    else if (a === '--out') o.outPath = argv[++i];
   }
   if (!o.runId) {
     process.stderr.write('promote: --run <runId> required\n');
@@ -853,7 +855,12 @@ function main() {
     goldsRaw, trackARecords, trackBRecords, runId: opts.runId, opts,
   });
 
-  const outPath = path.join(QSHAPE_DIR, 'recommendations.json');
+  // Output path: defaults to the canonical query-shapes/recommendations.json,
+  // overridable via --out for test isolation (so unit tests don't trample
+  // the canonical artifact PHASE7 consumes).
+  const outPath = opts.outPath
+    ? path.resolve(opts.outPath)
+    : path.join(QSHAPE_DIR, 'recommendations.json');
   writeFileSync(outPath, JSON.stringify(recommendations, null, 2) + '\n');
   process.stdout.write(`promote: recommendations → ${outPath}\n`);
   // (G3.) Reflect the actual gate set (5 baseline + IAA + Track B

@@ -95,16 +95,25 @@ function synthGoldsJson({ nGolds, repos }) {
   };
 }
 
+/**
+ * Run promote.mjs against a synthetic Track A/B fixture in `runDir`, writing
+ * the resulting recommendations.json to a per-test path under `runDir`.
+ *
+ * Returns { result, outPath } where `outPath` is the test-isolated output
+ * artifact (NOT the canonical
+ * core/prompt-optimization/data/query-shapes/recommendations.json — that
+ * artifact is consumed by PHASE7 and must never be trampled by tests).
+ */
 function runPromote(runId, runDir, extraArgs = []) {
+  const outPath = path.join(runDir, 'recommendations.json');
   const args = [
     'core/prompt-optimization/sweep/promote.mjs',
     '--run', runId,
+    '--out', outPath,
     ...extraArgs,
   ];
-  const env = { ...process.env, QSHAPE_TEST_RUN_DIR: runDir };
-  // Patch promote.mjs RESULTS_BASE via a wrapper would be ideal; instead the
-  // test fixture targets the real RESULTS_BASE under the configured runId.
-  return spawnSync('node', args, { cwd: REPO_ROOT, encoding: 'utf8' });
+  const result = spawnSync('node', args, { cwd: REPO_ROOT, encoding: 'utf8' });
+  return { result, outPath };
 }
 
 // ─── Krippendorff α (IAA helper) ──────────────────────────────────────────
@@ -222,12 +231,9 @@ describe('promote.mjs — gate composition', () => {
   });
 
   it('strict mode: skipped Thresholdout BLOCKS promotion', () => {
-    const r = runPromote(runId, runDir, ['--skip-thresholdout']);
+    const { result: r, outPath } = runPromote(runId, runDir, ['--skip-thresholdout']);
     expect(r.status).toBe(0);
-    const recs = JSON.parse(readFileSync(
-      path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/recommendations.json'),
-      'utf8',
-    ));
+    const recs = JSON.parse(readFileSync(outPath, 'utf8'));
     const ssFind = recs.per_tool['ss-find'];
     // best_shape was found, but Thresholdout was skipped → strict mode
     // refuses promotion.
@@ -238,12 +244,9 @@ describe('promote.mjs — gate composition', () => {
   });
 
   it('lenient mode (--allow-incomplete-promotion): skipped gate counts as pass but flags artifact', () => {
-    const r = runPromote(runId, runDir, ['--skip-thresholdout', '--allow-incomplete-promotion']);
+    const { result: r, outPath } = runPromote(runId, runDir, ['--skip-thresholdout', '--allow-incomplete-promotion']);
     expect(r.status).toBe(0);
-    const recs = JSON.parse(readFileSync(
-      path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/recommendations.json'),
-      'utf8',
-    ));
+    const recs = JSON.parse(readFileSync(outPath, 'utf8'));
     expect(recs.incomplete_promotion).toBe(true);
     // The artifact carries the strict/lenient signal independent of
     // per_tool gate outcomes — a downstream consumer cannot mistake this
@@ -252,24 +255,18 @@ describe('promote.mjs — gate composition', () => {
   });
 
   it('reports BH-FDR pair-floor exclusions in summary', () => {
-    const r = runPromote(runId, runDir, ['--skip-thresholdout']);
+    const { result: r, outPath } = runPromote(runId, runDir, ['--skip-thresholdout']);
     expect(r.status).toBe(0);
-    const recs = JSON.parse(readFileSync(
-      path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/recommendations.json'),
-      'utf8',
-    ));
+    const recs = JSON.parse(readFileSync(outPath, 'utf8'));
     expect(typeof recs.summary.bh_fdr_n_cells_considered).toBe('number');
     expect(typeof recs.summary.bh_fdr_n_cells_below_pair_floor).toBe('number');
     expect(recs.summary.bh_fdr_n_tested).toBeLessThanOrEqual(recs.summary.bh_fdr_n_cells_considered);
   });
 
   it('avoid_shapes carries reason_code and null instruction_text', () => {
-    const r = runPromote(runId, runDir, ['--skip-thresholdout']);
+    const { result: r, outPath } = runPromote(runId, runDir, ['--skip-thresholdout']);
     expect(r.status).toBe(0);
-    const recs = JSON.parse(readFileSync(
-      path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/recommendations.json'),
-      'utf8',
-    ));
+    const recs = JSON.parse(readFileSync(outPath, 'utf8'));
     if (recs.avoid_shapes.length > 0) {
       const a = recs.avoid_shapes[0];
       expect(a.reason_code).toBe('worst_observed_cell_mean');
@@ -310,12 +307,9 @@ describe('promote.mjs — repo stability + author check', () => {
   });
 
   it('flags ai-chatbot z-score outlier as repo_stability fail', () => {
-    const r = runPromote(runId, runDir, ['--skip-thresholdout']);
+    const { result: r, outPath } = runPromote(runId, runDir, ['--skip-thresholdout']);
     expect(r.status).toBe(0);
-    const recs = JSON.parse(readFileSync(
-      path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/recommendations.json'),
-      'utf8',
-    ));
+    const recs = JSON.parse(readFileSync(outPath, 'utf8'));
     const ssFind = recs.per_tool['ss-find'];
     // ai-chatbot recall@1 = 0 vs other repos' 1 → z = -2σ (failure).
     expect(['fail', 'pass']).toContain(ssFind.gate_results?.repo_stability);
@@ -323,12 +317,9 @@ describe('promote.mjs — repo stability + author check', () => {
   });
 
   it('per_tool block carries gold_authors_slice metadata', () => {
-    const r = runPromote(runId, runDir, ['--skip-thresholdout']);
+    const { result: r, outPath } = runPromote(runId, runDir, ['--skip-thresholdout']);
     expect(r.status).toBe(0);
-    const recs = JSON.parse(readFileSync(
-      path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/recommendations.json'),
-      'utf8',
-    ));
+    const recs = JSON.parse(readFileSync(outPath, 'utf8'));
     const ssFind = recs.per_tool['ss-find'];
     if (ssFind.independent_author_check) {
       expect(typeof ssFind.independent_author_check.gold_authors_slice).toBe('string');
@@ -371,12 +362,9 @@ describe('promote.mjs — IAA gate', () => {
       path.join(runDir, 'track-b-summary.json'),
       JSON.stringify({ runId, iaa: { status: 'pending-author', n_probes: 0, n_required: 30 } }, null, 2),
     );
-    const r = runPromote(runId, runDir, ['--skip-thresholdout']);
+    const { result: r, outPath } = runPromote(runId, runDir, ['--skip-thresholdout']);
     expect(r.status).toBe(0);
-    const recs = JSON.parse(readFileSync(
-      path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/recommendations.json'),
-      'utf8',
-    ));
+    const recs = JSON.parse(readFileSync(outPath, 'utf8'));
     const ssFind = recs.per_tool['ss-find'];
     expect(ssFind.gate_results.iaa).toBe('pending-author');
     expect(ssFind.promoted).toBe(false);
@@ -401,12 +389,9 @@ describe('promote.mjs — IAA gate', () => {
         },
       }, null, 2),
     );
-    const r = runPromote(runId, runDir, ['--skip-thresholdout', '--allow-incomplete-promotion']);
+    const { result: r, outPath } = runPromote(runId, runDir, ['--skip-thresholdout', '--allow-incomplete-promotion']);
     expect(r.status).toBe(0);
-    const recs = JSON.parse(readFileSync(
-      path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/recommendations.json'),
-      'utf8',
-    ));
+    const recs = JSON.parse(readFileSync(outPath, 'utf8'));
     const ssFind = recs.per_tool['ss-find'];
     expect(ssFind.gate_results.iaa).toBe('pass');
     expect(ssFind.iaa.alpha).toBeCloseTo(0.85, 2);
@@ -431,12 +416,9 @@ describe('promote.mjs — IAA gate', () => {
         },
       }, null, 2),
     );
-    const r = runPromote(runId, runDir, ['--skip-thresholdout']);
+    const { result: r, outPath } = runPromote(runId, runDir, ['--skip-thresholdout']);
     expect(r.status).toBe(0);
-    const recs = JSON.parse(readFileSync(
-      path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/recommendations.json'),
-      'utf8',
-    ));
+    const recs = JSON.parse(readFileSync(outPath, 'utf8'));
     const ssFind = recs.per_tool['ss-find'];
     expect(ssFind.gate_results.iaa).toBe('fail');
     expect(ssFind.promoted).toBe(false);
@@ -516,12 +498,9 @@ describe('promote.mjs — partial sweep diagnosis', () => {
   });
 
   it('reports partial_sweep_missing_repos when Track A covered only 1 dev repo', () => {
-    const r = runPromote(runId, runDir, ['--skip-thresholdout']);
+    const { result: r, outPath } = runPromote(runId, runDir, ['--skip-thresholdout']);
     expect(r.status).toBe(0);
-    const recs = JSON.parse(readFileSync(
-      path.join(REPO_ROOT, 'core/prompt-optimization/data/query-shapes/recommendations.json'),
-      'utf8',
-    ));
+    const recs = JSON.parse(readFileSync(outPath, 'utf8'));
     const ssFind = recs.per_tool['ss-find'];
     if (ssFind.best_shape && ssFind.gate_results.repo_stability === 'fail') {
       expect(ssFind.repo_stability_details?.reason_code).toBe('partial_sweep_missing_repos');
