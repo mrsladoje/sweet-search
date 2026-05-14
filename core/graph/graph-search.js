@@ -1787,19 +1787,41 @@ export class GraphSearch {
   }
 
   /**
+   * Resolve `entityName` to a single target entity row.
+   *
+   * Substring fallback (`name LIKE '%X%'`) is preserved so callers like
+   * `findCallers("HttpClient")` still resolve when only `MyHttpClient`
+   * exists in the index. But exact matches now sort first; otherwise short
+   * names like `Vec` silently resolved to substring siblings like
+   * `AlignedVector` because the prior `LIMIT 1` had no preference order.
+   */
+  _resolveStructuralTarget(entityName) {
+    return this.db.prepare(`
+      SELECT id, name, type, file_path FROM entities
+      WHERE (name = ? OR name LIKE ?)
+        AND stale_since IS NULL
+      ORDER BY
+        CASE WHEN name = ? THEN 0 ELSE 1 END,
+        CASE WHEN file_path LIKE '%/test/%' OR file_path LIKE 'test/%' OR file_path LIKE 'tests/%' THEN 1 ELSE 0 END,
+        CASE type
+          WHEN 'class' THEN 0 WHEN 'struct' THEN 0 WHEN 'trait' THEN 0
+          WHEN 'interface' THEN 1 WHEN 'enum' THEN 1 WHEN 'type' THEN 1 WHEN 'typeAlias' THEN 1
+          WHEN 'function' THEN 2 WHEN 'method' THEN 2
+          ELSE 3
+        END,
+        length(name) ASC
+      LIMIT 1
+    `).get(entityName, `%${entityName}%`, entityName);
+  }
+
+  /**
    * Find all callers of a given entity
    */
   async findCallers(entityName, options = {}) {
     await this.init();
     const { maxDepth = 2, limit = 50 } = options;
 
-    // Find target entity
-    const target = this.db.prepare(`
-      SELECT id, name, type, file_path FROM entities
-      WHERE (name = ? OR name LIKE ?)
-        AND stale_since IS NULL
-      LIMIT 1
-    `).get(entityName, `%${entityName}%`);
+    const target = this._resolveStructuralTarget(entityName);
 
     if (!target) return { results: [], stats: { found: false, query: entityName } };
 
@@ -1843,12 +1865,7 @@ export class GraphSearch {
     await this.init();
     const { limit = 50 } = options;
 
-    const source = this.db.prepare(`
-      SELECT id, name, type FROM entities
-      WHERE (name = ? OR name LIKE ?)
-        AND stale_since IS NULL
-      LIMIT 1
-    `).get(entityName, `%${entityName}%`);
+    const source = this._resolveStructuralTarget(entityName);
 
     if (!source) return { results: [], stats: { found: false } };
 
@@ -1912,12 +1929,7 @@ export class GraphSearch {
     await this.init();
     const { maxDepth = 3, limit = 100 } = options;
 
-    const target = this.db.prepare(`
-      SELECT id, name, type FROM entities
-      WHERE (name = ? OR name LIKE ?)
-        AND stale_since IS NULL
-      LIMIT 1
-    `).get(entityName, `%${entityName}%`);
+    const target = this._resolveStructuralTarget(entityName);
 
     if (!target) return { results: [], stats: { found: false } };
 
