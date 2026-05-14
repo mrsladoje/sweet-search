@@ -37,6 +37,9 @@ DATASETS = {
     "crosscodeeval":    "CrossCodeEval (cross-file, 4 langs)",
     "clarc":            "CLARC (C/C++ retrieval)",
     "m2crb":            "M2CRB (multilingual NL→code, ES/PT/DE/FR × Py/Java/JS)",
+    "cosqaplus":        "CoSQA+ (multi-choice NL→code, test-driven, Python)",
+    "coreb":            "CoREB (contamination-limited multitask, 5 langs, t2c)",
+    "bright-code":      "BRIGHT code subsets (LeetCode + Pony + StackOverflow)",
 }
 
 # --- Helpers ---------------------------------------------------------------
@@ -547,17 +550,50 @@ def download_crosscodeeval(max_per_lang=1000):
 # ClarcTeam/CLARC: splits like group1_original, group2_original
 # Schema: query_id, query_text, code_id, code_text, relevance
 
-CLARC_SPLITS = ["group1_original", "group2_original"]
+CLARC_SPLITS = [
+    "group1_original", "group2_original",
+    "group3_helper_as_part_of_groundtruth_original",
+]
 
 
-def download_clarc(max_per_lang=1000):
+def _clarc_lang(code, code_id):
+    """Best-effort C vs C++ classifier for CLARC code.
+
+    The HF dataset doesn't carry a language column; the project's original
+    downloader had a brittle 'std:: in code' heuristic that mis-labeled
+    889/106 split (real distribution is closer to 50/50 per the paper).
+    This version checks for stronger C++ signals while letting C be the
+    default — language label only feeds the per-language breakdown,
+    NOT retrieval, so a bias here is a reporting artifact only.
+    """
+    head = code[:600]
+    cpp_signals = (
+        "std::", "namespace ", "template<", "template <", "::",
+        "class ", "public:", "private:", "protected:", "virtual ",
+        "->std::", "<cstring>", "<vector>", "<string>", "<iostream>",
+        "nullptr", "inline bool", "constexpr",
+    )
+    if any(s in head for s in cpp_signals):
+        return "cpp"
+    return "c"
+
+
+def download_clarc(max_per_lang=None):
+    """Download CLARC (ICLR 2026) — full standard splits incl. Group 3.
+
+    CLARC is a (query, code, relevance) per-row dataset. For each split,
+    every query has exactly one positive code; the retrieval pool is the
+    union of code_ids in the same group. Queries are paragraph-length
+    descriptions (up to ~500 chars) — do NOT pass them through the
+    generic _q() helper, which would truncate mid-word.
+    """
     out_dir = DATA_DIR / "clarc"
     out_dir.mkdir(parents=True, exist_ok=True)
     c = _cached(out_dir)
     if c is not None:
         print(f"  CLARC: cached ({c})"); return c
 
-    print("  Downloading CLARC...")
+    print("  Downloading CLARC (ClarcTeam/CLARC)...")
     try:
         load_ds = _hf_load()
     except Exception as e:
@@ -570,23 +606,30 @@ def download_clarc(max_per_lang=1000):
     entries, seen = [], set()
     for split_name in CLARC_SPLITS:
         if split_name not in ds:
+            print(f"    {split_name}: not in dataset, skip")
             continue
-        print(f"    {split_name}...", end=" ")
+        print(f"    {split_name}...", end=" ", flush=True)
         ct = 0
         for row in ds[split_name]:
             if max_per_lang and ct >= max_per_lang: break
-            code = row.get("code_text", "")
-            query = row.get("query_text", "")
+            code = row.get("code_text", "") or ""
+            query = row.get("query_text", "") or ""
             relevance = int(row.get("relevance", 0))
             code_id = row.get("code_id", "")
             if not code or not query or relevance < 1: continue
             if code_id in seen: continue
             seen.add(code_id)
-            # Detect C vs C++: std:: or templates indicate C++
-            lang = "cpp" if ("std::" in code or "template" in code[:200] or
-                             "#include <" in code and ("vector" in code or "string" in code)) else "c"
-            entries.append({"query": _q(query), "doc_id": f"clarc/{lang}/{code_id}",
-                            "code": code, "language": lang, "func_name": code_id})
+            lang = _clarc_lang(code, code_id)
+            # IMPORTANT: do NOT truncate CLARC queries. They are designed
+            # as descriptive paragraphs (~150-500 chars) and the encoder
+            # context easily fits them. _q() would chop mid-word.
+            entries.append({
+                "query": str(query).strip(),
+                "doc_id": f"clarc/{lang}/{code_id}",
+                "code": code,
+                "language": lang,
+                "func_name": code_id,
+            })
             ct += 1
         print(f"{ct}")
 
@@ -664,12 +707,282 @@ def download_m2crb(max_per_lang=1000):
     print(f"    Total: {len(entries)}"); return len(entries)
 
 
+# --- 10. CoSQA+ -------------------------------------------------------------
+# thinkerhui/CoSQA_Plus on HF. Three JSON files:
+#   query.json                                      list of {query-idx, query}
+#   gpt4o_augment_codebase.json                     list of {code-idx, code}
+#   gpt4o_augment_query_code_pairs_for_search.json  list of {query-idx, code-idx, label}
+# We materialize multi-positive qrels (label=1) per query.
+
+def download_cosqaplus(max_queries=None):
+    """Download CoSQA+: multi-choice NL→Python code, test-driven labels."""
+    out_dir = DATA_DIR / "cosqaplus"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    c = _cached(out_dir)
+    if c is not None:
+        print(f"  CoSQA+: cached ({c})"); return c
+
+    print("  Downloading CoSQA+ (thinkerhui/CoSQA_Plus)...")
+    try:
+        from huggingface_hub import hf_hub_download
+    except Exception as e:
+        print(f"    Failed: {e}"); return 0
+
+    try:
+        qp = hf_hub_download("thinkerhui/CoSQA_Plus", "query.json", repo_type="dataset")
+        cp = hf_hub_download("thinkerhui/CoSQA_Plus", "gpt4o_augment_codebase.json", repo_type="dataset")
+        pp = hf_hub_download("thinkerhui/CoSQA_Plus", "gpt4o_augment_query_code_pairs_for_search.json", repo_type="dataset")
+        # Full pairs file gives ~5 candidates per query (mix of label=0 and label=1).
+        # The paper claims 20-per-query in Table V but the public HF release ships
+        # the ~5/query version. Used to populate candidate_doc_ids for paper-method
+        # restricted-pool evaluation (see --restrict-to-candidates).
+        ap = hf_hub_download("thinkerhui/CoSQA_Plus", "gpt4o_augment_query_code_pairs.json", repo_type="dataset")
+    except Exception as e:
+        print(f"    Download failed: {e}"); return 0
+
+    with open(qp) as f: queries = json.load(f)
+    with open(cp) as f: codes = json.load(f)
+    with open(pp) as f: pairs = json.load(f)
+    with open(ap) as f: all_pairs = json.load(f)
+
+    # Build code corpus indexed by code-idx
+    code_by_idx = {c["code-idx"]: c["code"] for c in codes}
+    query_by_idx = {q["query-idx"]: q["query"] for q in queries}
+
+    # Build qrels: query-idx -> [code-idx, ...] (positives only)
+    qrels = {}
+    for p in pairs:
+        if int(p.get("label", 0)) != 1:
+            continue
+        qrels.setdefault(p["query-idx"], []).append(p["code-idx"])
+
+    # Build per-query candidate sets from the full pairs file: query-idx ->
+    # [code-idx, ...] (mix of positives + judged negatives). Used by the
+    # paper-method evaluation mode where retrieval scope is restricted to
+    # the per-query candidate pool instead of the full 51k corpus.
+    cand_pool = {}
+    for p in all_pairs:
+        cand_pool.setdefault(p["query-idx"], []).append(p["code-idx"])
+
+    # Materialize corpus: only codes that appear as positives anywhere (keeps it
+    # focused on judged docs). Plus a sample of unjudged ones as hard distractors.
+    pos_code_ids = {cid for ids in qrels.values() for cid in ids}
+    cand_sizes = [len(v) for v in cand_pool.values()]
+    print(f"    queries={len(queries)} codes={len(codes)} qrels-queries={len(qrels)} positive-codes={len(pos_code_ids)}")
+    if cand_sizes:
+        print(f"    candidate-pool: min={min(cand_sizes)} median={sorted(cand_sizes)[len(cand_sizes)//2]} max={max(cand_sizes)} (avg {sum(cand_sizes)/len(cand_sizes):.1f}/query)")
+
+    # Use all positive codes as the searchable corpus (multi-choice retrieval).
+    # 51k codes is small; we keep the full corpus so distractor density matches
+    # the published benchmark.
+    corpus_ids = sorted(code_by_idx.keys())
+
+    with open(out_dir / "corpus.jsonl", "w") as f:
+        for cid in corpus_ids:
+            doc_id = f"cosqaplus/python/code_{cid}"
+            f.write(json.dumps({
+                "doc_id": doc_id, "code": code_by_idx[cid], "language": "python",
+                "func_name": f"code_{cid}", "repo": "", "path": "",
+            }) + "\n")
+
+    written = 0
+    with open(out_dir / "queries.jsonl", "w") as f:
+        for qidx, pos_cids in sorted(qrels.items()):
+            if max_queries and written >= max_queries: break
+            q_text = query_by_idx.get(qidx)
+            if not q_text: continue
+            rel_ids = [f"cosqaplus/python/code_{cid}" for cid in pos_cids]
+            # candidate_doc_ids: the per-query restricted pool from full pairs
+            # file. Always includes the relevant_doc_ids (positives). Used by
+            # the runner when --restrict-to-candidates is passed.
+            cand_cids = cand_pool.get(qidx, list(pos_cids))
+            # Defensive: make sure all positives are in the candidate set
+            # (they always should be — pairs.json is a superset of for_search.json)
+            cand_cids = sorted(set(cand_cids) | set(pos_cids))
+            cand_ids = [f"cosqaplus/python/code_{cid}" for cid in cand_cids]
+            f.write(json.dumps({
+                "query_id": f"CQP{written:05d}",
+                "query": _q(q_text),
+                "relevant_doc_ids": rel_ids,
+                "candidate_doc_ids": cand_ids,
+                "language": "python",
+            }) + "\n")
+            written += 1
+
+    print(f"    Corpus: {len(corpus_ids)}  Queries: {written}")
+    return written
+
+
+# --- 11. CoREB --------------------------------------------------------------
+# hq-bench/coreb-t2c-retrieval is the NL→code (text-to-code) subtask, the
+# closest match to our shape. BEIR-style parquet:
+#   corpus/corpus-00000-of-00001.parquet   {_id, text, language, ...}
+#   queries/queries-00000-of-00001.parquet {_id, text, language_constraint, ...}
+#   data/test-00000-of-00001.parquet       {query-id, corpus-id, score}
+
+def download_coreb(max_queries=None):
+    """Download CoREB (text-to-code retrieval subtask)."""
+    out_dir = DATA_DIR / "coreb"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    c = _cached(out_dir)
+    if c is not None:
+        print(f"  CoREB: cached ({c})"); return c
+
+    print("  Downloading CoREB t2c-retrieval (hq-bench/coreb-t2c-retrieval)...")
+    try:
+        import pandas as pd
+        from huggingface_hub import hf_hub_download
+    except Exception as e:
+        print(f"    Failed: {e}"); return 0
+
+    try:
+        corp = hf_hub_download("hq-bench/coreb-t2c-retrieval", "corpus/corpus-00000-of-00001.parquet", repo_type="dataset")
+        qry  = hf_hub_download("hq-bench/coreb-t2c-retrieval", "queries/queries-00000-of-00001.parquet", repo_type="dataset")
+        qrl  = hf_hub_download("hq-bench/coreb-t2c-retrieval", "data/test-00000-of-00001.parquet", repo_type="dataset")
+    except Exception as e:
+        print(f"    Download failed: {e}"); return 0
+
+    df_c = pd.read_parquet(corp)
+    df_q = pd.read_parquet(qry)
+    df_r = pd.read_parquet(qrl)
+
+    # Build qrels: query-id -> [corpus-id, ...] (positives only, score > 0)
+    qrels = {}
+    for _, row in df_r.iterrows():
+        if int(row["score"]) <= 0: continue
+        qrels.setdefault(row["query-id"], []).append(row["corpus-id"])
+
+    print(f"    corpus={len(df_c)} queries={len(df_q)} qrels-queries={len(qrels)}")
+
+    with open(out_dir / "corpus.jsonl", "w") as f:
+        for _, row in df_c.iterrows():
+            cid = row["_id"]
+            lang = str(row.get("language", "")).lower() or "unknown"
+            f.write(json.dumps({
+                "doc_id": f"coreb/{lang}/{cid}",
+                "code": str(row["text"]),
+                "language": lang,
+                "func_name": cid,
+                "repo": str(row.get("meta_source_problem_id", "")),
+                "path": "",
+            }) + "\n")
+
+    # Index corpus rows by _id → language so we can map corpus-id → doc_id
+    cid_to_lang = {row["_id"]: (str(row.get("language", "")).lower() or "unknown")
+                   for _, row in df_c.iterrows()}
+
+    written = 0
+    with open(out_dir / "queries.jsonl", "w") as f:
+        for _, row in df_q.iterrows():
+            if max_queries and written >= max_queries: break
+            qid = row["_id"]
+            pos = qrels.get(qid, [])
+            if not pos: continue
+            rel_ids = [f"coreb/{cid_to_lang.get(c, 'unknown')}/{c}" for c in pos]
+            # Query language: language_constraint if set, else "any".
+            # CoREB queries store the language as metadata only; the NL text
+            # is identical across language variants. Bake the constraint into
+            # the query text so the retriever can disambiguate the 5 corpus
+            # versions of each problem (no instruction-tuning required).
+            lc = str(row.get("language_constraint", "")).lower()
+            qlang = lc if lc and lc != "none" else "any"
+            qtext = _q(row["text"])
+            if qlang != "any":
+                qtext = f"In {qlang}, {qtext}"
+            f.write(json.dumps({
+                "query_id": f"CRB{written:05d}",
+                "query": qtext,
+                "relevant_doc_ids": rel_ids,
+                "language": qlang,
+            }) + "\n")
+            written += 1
+
+    print(f"    Corpus: {len(df_c)}  Queries: {written}")
+    return written
+
+
+# --- 12. BRIGHT code subsets ------------------------------------------------
+# xlangai/BRIGHT, code-relevant configs: leetcode, pony, stackoverflow.
+# documents/{config} → {id, content}
+# examples/{config}  → {query, reasoning, id, excluded_ids, gold_ids_long, gold_ids, gold_answer}
+
+_BRIGHT_CODE_SUBSETS = ["leetcode", "pony", "stackoverflow"]
+_BRIGHT_SUBSET_LANG = {"leetcode": "python", "pony": "pony", "stackoverflow": "any"}
+
+def download_bright_code(max_queries=None):
+    """Download BRIGHT code-relevant subsets (LeetCode + Pony + StackOverflow)."""
+    out_dir = DATA_DIR / "bright-code"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    c = _cached(out_dir)
+    if c is not None:
+        print(f"  BRIGHT-code: cached ({c})"); return c
+
+    print("  Downloading BRIGHT code subsets (xlangai/BRIGHT)...")
+    try:
+        load_ds = _hf_load()
+    except Exception as e:
+        print(f"    Failed: {e}"); return 0
+
+    # Doc IDs in BRIGHT are already namespaced like "leetcode/leetcode_11.txt".
+    # We prefix with bright/ to disambiguate from other benches and keep our
+    # repo/path metadata informative.
+    total_docs = 0
+    with open(out_dir / "corpus.jsonl", "w") as fc:
+        for subset in _BRIGHT_CODE_SUBSETS:
+            print(f"    docs/{subset}...", end=" ", flush=True)
+            try:
+                docs = load_ds("xlangai/BRIGHT", "documents", split=subset)
+            except Exception as e:
+                print(f"skip ({e})"); continue
+            lang = _BRIGHT_SUBSET_LANG[subset]
+            for row in docs:
+                doc_id = f"bright-code/{subset}/{row['id']}"
+                fc.write(json.dumps({
+                    "doc_id": doc_id,
+                    "code": str(row.get("content", ""))[:8000],  # cap absurdly long entries
+                    "language": lang,
+                    "func_name": row["id"],
+                    "repo": f"bright-{subset}",
+                    "path": row["id"],
+                }) + "\n")
+                total_docs += 1
+            print(f"{len(docs)}")
+
+    written = 0
+    with open(out_dir / "queries.jsonl", "w") as fq:
+        for subset in _BRIGHT_CODE_SUBSETS:
+            print(f"    queries/{subset}...", end=" ", flush=True)
+            try:
+                ex = load_ds("xlangai/BRIGHT", "examples", split=subset)
+            except Exception as e:
+                print(f"skip ({e})"); continue
+            lang = _BRIGHT_SUBSET_LANG[subset]
+            ct = 0
+            for row in ex:
+                if max_queries and written >= max_queries: break
+                gold = row.get("gold_ids", []) or []
+                if not gold: continue
+                rel_ids = [f"bright-code/{subset}/{gid}" for gid in gold]
+                fq.write(json.dumps({
+                    "query_id": f"BR{written:05d}",
+                    "query": _q(row["query"]),
+                    "relevant_doc_ids": rel_ids,
+                    "language": lang,
+                }) + "\n")
+                written += 1; ct += 1
+            print(f"{ct}")
+
+    print(f"    Corpus: {total_docs}  Queries: {written}")
+    return written
+
+
 # --- Main -------------------------------------------------------------------
 
 _DOWNLOADERS = [
     ("codesearchnet", "CodeSearchNet"), ("cosqa", "CosQA"), ("advtest", "AdvTest"),
     ("coir", "COIR"), ("coquir", "CoQuIR"), ("gencodesearchnet", "GenCodeSearchNet"),
     ("crosscodeeval", "CrossCodeEval"), ("clarc", "CLARC"), ("m2crb", "M2CRB"),
+    ("cosqaplus", "CoSQA+"), ("coreb", "CoREB"), ("bright-code", "BRIGHT-code"),
 ]
 
 _DISPATCH = {
@@ -682,6 +995,9 @@ _DISPATCH = {
     "crosscodeeval": lambda m: download_crosscodeeval(max_per_lang=m),
     "clarc":         lambda m: download_clarc(max_per_lang=m),
     "m2crb":         lambda m: download_m2crb(max_per_lang=m),
+    "cosqaplus":     lambda m: download_cosqaplus(max_queries=None),
+    "coreb":         lambda m: download_coreb(max_queries=None),
+    "bright-code":   lambda m: download_bright_code(max_queries=None),
 }
 
 
