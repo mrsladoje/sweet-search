@@ -521,7 +521,9 @@ Decision at gate-failure time, not pre-committed.
 > default + per-family overrides** instead of a single flat shape recommendation. T_i variant
 > bodies for the `[[ss-search]]` clauses must consume `recommendations-v2.json` schema, NOT the
 > deprecated `recommendations.json`. The other three tools (`ss-find`, `ss-semantic`, `ss-trace`)
-> retain the prior P6 directional signal in this section until their respective Phase-6 redoes land.
+> have shipped their own PHASE6_REDO artifacts (`recommendations-v2-ss-find.json`,
+> `recommendations-v2-ss-semantic.json`, `recommendations-v2-ss-trace.json`) — all four
+> per-tool artifacts now exist and supersede the legacy directional signal.
 >
 > The new schema expects two fields per consumer:
 > - `default.instruction_text` — global default, applied when family detection is unavailable or
@@ -531,14 +533,14 @@ Decision at gate-failure time, not pre-committed.
 >   Systems-modular-terse, C-family, JS-mobile, Scripting-dynamic). Family detection is a
 >   deterministic file-extension → family lookup; the agent does not reason about it.
 
-Three of four ss-* tools now have PHASE6_REDO artifacts — `ss-search`, `ss-find`, `ss-semantic`.
-The fourth (`ss-trace`) is pending its own redo. See §4.2 below for the verbatim recommendations.
-P6's `track-b-summary.json:perToolWinRates` is no longer the load-bearing input for the three
-shipped tools; the per-tool redo artifacts supersede it. For `ss-trace`, the qshape-v1
-directional row below is the interim signal.
+All four ss-* tools now have shipped PHASE6_REDO artifacts — `ss-search`, `ss-find`,
+`ss-semantic`, and `ss-trace` (shipped 2026-05-14 at commit `d70259b`). See §4.2 below
+for the verbatim per-tool recommendations.
+P6's `track-b-summary.json:perToolWinRates` is no longer the load-bearing input for any
+ss-* tool; the per-tool redo artifacts supersede it.
 
-**Historical qshape-v1 directional signal for `structural`/`ss-trace` (interim until ss-trace
-redo lands)** — the original P6 sweep flagged `structural` as preferring
+**Historical (retracted) qshape-v1 directional signal for `structural`/`ss-trace`** —
+the original P6 sweep flagged `structural` as preferring
 `short+with-symbol+narrow-regex+interrogative+high-density` at 28% win rate. A 2026-05-14
 session attempted a Phase 6 redo under that label but mistakenly targeted
 `SweetSearch.structuralSearch` (the NL-regex-parse-then-route variant in
@@ -550,7 +552,8 @@ produced under that session (`recommendations-v2-structural.json`,
 `core/prompt-optimization/data/query-shapes/structural/`,
 `tests/unit/prompt-optimization/phase6-redo-structural.test.js`) are **retracted**. The
 phrasing-tie finding from that session is also retracted — it applies to the wrong code path.
-A fresh `ss-trace` failure-analysis session will replace this row.
+**Replaced** by the correct-path ss-trace failure-analysis program shipped at commit `d70259b`
+(see §4.2 ss-trace bullet for the post-ship recommendations).
 
 **`ss-search` shape findings from PHASE6_REDO (qshape-v2, 2026-05-13, n=1,424 sweep rows over 18 languages)** — supersedes the deprecated qshape-v1 row above:
 
@@ -619,7 +622,7 @@ From the P6 directional signal, the variants encode these tool-specific recommen
   **Strategy 3 — `popular_weighted`:** V2 (diversity-enforced — natural agentic-tier winner matched Strategy 1). *"Phrase a short interrogative query (4-8 tokens) that contains the target symbol verbatim."* Distinct from Strategy 1 so GEPA gets a real second candidate.
 
   Confirms the prior qshape-v1 directional hint that ss-semantic loves "very-short + symbol + narrow" — but adds the family-conditioned C-family→V2 finding and the popular-weighted V2 fallback for GEPA diversity.
-- **`[[ss-trace]]`** (symbol-in, structural-context-out via `traceSymbol` → `StructuralContextBuilder.build`): **PHASE6_REDO redo SHIPPED 2026-05-14** (`recommendations-v2-ss-trace.json`, ss-trace failure-analysis program). The prior wrong-path session targeting `SweetSearch.structuralSearch` is retracted (see §12.1 above).
+- **`[[ss-trace]]`** (symbol-in, structural-context-out via `traceSymbol` → `StructuralContextBuilder.build`): **PHASE6_REDO redo SHIPPED 2026-05-14** at commit `d70259b` — `recommendations-v2-ss-trace.json` ships THREE strategies covering one canonical options config (`maxDepth=3, queryHint=null, tokenBudget=null, k=5`); no NL-query shape grid since ss-trace is symbol-in. Strategies converge on the same options but carry distinct `instruction_text` to drive GEPA candidate diversity. The prior wrong-path session targeting `SweetSearch.structuralSearch` is retracted (see §12.1 above).
 
   **Headline (dev / heldout, n=105 / 65)**:
 
@@ -637,9 +640,18 @@ From the P6 directional signal, the variants encode these tool-specific recommen
 
   Both user beliefs are correct in code; no code change made. The handoff's intended Fix 1 (SQL substring-fallback guard on `findCallers`) is also NOT applied — 0 of 7 dev FAILs have symbols of length < 5 where the guard would change behavior. Documented unapplied with empirical justification in `recommendations-v2-ss-trace.json:failure_analysis.fix_1_sql_substring_guard`.
 
-  **Strategy 1 — `simple_global`** (and Strategy 2 `family_conditioned` and Strategy 3 `popular_weighted` — all three converge on the same options since ss-trace has no NL-query shape grid; future option sweeps over `maxDepth ∈ {2,3,4}` and `queryHint` variants will populate distinct cells):
+  **Strategy 1 — `simple_global` (single config, no family detection):** *"`[[ss-trace]]` is symbol-in / structural-context-out. Call when you already know the target symbol and want callers, callees, and impact paths in one response. CLI: `sweet-search trace <symbol> [--in <file>] [--depth N] [--budget N]`. Pass the symbol verbatim — do NOT phrase as an NL question. Default options (maxDepth=3, adaptive 4k/8k/12k budget) are optimal across all 18 indexed languages: dev callers R@5=0.71, callees R@5=0.94, impact R@5=0.55 against graphNeighbors-derived gold (n=105 dev probes, 21 PASS callees, 27 PASS callers, 21 PASS impact). Add `--in <file>` when the symbol is ambiguous across files (`Vec`, `Mux`, `get`, `App`, `Use` have ≥2 entity rows in the indexed corpora)."*
 
-    *"`[[ss-trace]]` is symbol-in / structural-context-out. Call when you already know the target symbol and want callers, callees, and impact paths in one response. CLI: `sweet-search trace <symbol> [--in <file>] [--depth N] [--budget N]`. Pass the symbol verbatim — do NOT phrase as an NL question. Default options (maxDepth=3, adaptive 4k/8k/12k budget) are optimal across all 18 indexed languages. Add `--in <file>` when the symbol is ambiguous across files (`Vec`, `Mux`, `get`, `App`, `Use` have ≥2 entity rows in the indexed corpora). For Python specifically, the impact tool's transitive expansion underperforms — prefer direct callers / callees when in Python (graph-extractor gap on test-class inheritance)."*
+  **Strategy 2 — `family_conditioned` (family detection, no overrides triggered):**
+  ```
+  classify target file → 5-family lookup (same family-map.mjs as ss-search/ss-find)
+  no per-family override fires — single options config measured; no family-best R@5
+  beats default by ≥ 8pp (future maxDepth/queryHint sweeps may populate)
+  default applies to all families:
+  ```
+    Default (all families): *"`[[ss-trace]]` is symbol-in / structural-context-out. Call when you already know the target symbol and want callers, callees, and impact paths in one response. CLI: `sweet-search trace <symbol> [--in <file>] [--depth N] [--budget N]`. Pass the symbol verbatim — do NOT phrase as an NL question. Same defaults as simple_global apply per-family. The C-family / JS-mobile families have the strongest baseline (R@5 ≥ 0.93 callers, 1.0 callees); Dynamic-scripting (python/ruby/php) is the weakest (R@5=0.62 callers, R@5=0.83 callees) primarily because tree-sitter Python doesn't capture test-class-inherits-production-class edges (4 of 7 dev FAILs). For Python specifically, the impact tool's transitive expansion underperforms — prefer callees/callers calls when in Python."*
+
+  **Strategy 3 — `popular_weighted_agentic` (agentic-tier weighting, no family detection):** *"`[[ss-trace]]` is symbol-in / structural-context-out. Call when you already know the target symbol and want callers, callees, and impact paths in one response. CLI: `sweet-search trace <symbol> [--in <file>] [--depth N] [--budget N]`. Pass the symbol verbatim — do NOT phrase as an NL question. Under 2026 agentic-tier weights (TS/Python/Rust=5, mainstream=3, longtail=1), the canonical defaults remain optimal. Python's higher weight surfaces its callers/impact failure modes — see family_conditioned guidance."* Same `agentic-tier-weights.json` scheme as ss-find / ss-semantic; weighted callers R@5=0.67, callees R@5=0.93, impact R@5=0.49.
 
 These bullets go *verbatim* into the relevant T_i variant bodies. For `[[ss-search]]`, `[[ss-find]]`, `[[ss-semantic]]`, and `[[ss-trace]]`, the bullet is regenerated from the corresponding `recommendations-v2-*.json` whenever that artifact updates.
 
