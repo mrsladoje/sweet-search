@@ -62,7 +62,7 @@ function classifyFamily(lang) {
   if (['rust', 'go'].includes(lang)) return 'Systems-modular-terse';
   if (['c', 'cpp', 'zig'].includes(lang)) return 'C-family';
   if (['javascript', 'typescript', 'typescript-lib', 'dart'].includes(lang)) return 'JS-mobile';
-  if (['python', 'ruby', 'php', 'elixir', 'lua'].includes(lang)) return 'Dynamic-scripting';
+  if (['python', 'ruby', 'php', 'elixir', 'lua'].includes(lang)) return 'Scripting-dynamic';
   return 'Other';
 }
 
