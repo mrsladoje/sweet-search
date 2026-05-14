@@ -950,7 +950,11 @@ export function applyTokenBudget(results, budget, options = {}) {
  */
 export function getExpansionStats(db, entityIds) {
   if (!entityIds || entityIds.length === 0) return { total: 0, byType: {} };
-  _assertInClauseSize(entityIds.length, 'graph-expansion.getExpansionStats');
+  // The query interpolates `${ph}` twice (source_id IN OR target_id IN) and the
+  // `.all()` call binds entityIds twice in one prepared statement, so the
+  // SQLite-parameter ceiling is reached at half the array length — guard the
+  // actual bind count, not the array length.
+  _assertInClauseSize(2 * entityIds.length, 'graph-expansion.getExpansionStats (double-bind OR)');
 
   const ph = entityIds.map(() => '?').join(',');
   let rels;
