@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-14T10:43:19.174Z",
+  "discipline": "aggregate-only (BEIR/CoIR heldout)",
+  "totals": {
+    "PASS": 28,
+    "PARTIAL": 18,
+    "FAIL": 8,
+    "n": 54,
+    "fileRecallAt5": 53
+  },
+  "perFamily": {
+    "JS-mobile": {
+      "PASS": 5,
+      "PARTIAL": 5,
+      "FAIL": 2,
+      "n": 12,
+      "fr5": 11
+    },
+    "Systems-modular-terse": {
+      "PASS": 6,
+      "PARTIAL": 0,
+      "FAIL": 0,
+      "n": 6,
+      "fr5": 6
+    },
+    "OO-monolithic": {
+      "PASS": 4,
+      "PARTIAL": 6,
+      "FAIL": 2,
+      "n": 12,
+      "fr5": 12
+    },
+    "C-family": {
+      "PASS": 3,
+      "PARTIAL": 3,
+      "FAIL": 3,
+      "n": 9,
+      "fr5": 9
+    },
+    "Scripting-dynamic": {
+      "PASS": 10,
+      "PARTIAL": 4,
+      "FAIL": 1,
+      "n": 15,
+      "fr5": 15
+    }
+  }
+}
