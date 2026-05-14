@@ -1181,7 +1181,16 @@ function findAdditionalSymbolRelabel(result, queryWordsArr, queryWordsSet, opts)
 function extractIdentifierMentions(query) {
   if (!query || typeof query !== 'string') return null;
   const mentions = new Set();
-  const tokens = query.match(/\b[A-Za-z_][A-Za-z0-9_]*\b/g) || [];
+  // 2026-05-14: preserve leading `$` so identifiers like `$ZodType` /
+  // `$ZodTypeInternals` (zod v4/core public-API convention — structural
+  // interfaces are $-prefixed while runtime classes are not) round-trip
+  // through tokenization. Mirrors F10's fix for the F9 path (line ~1944)
+  // — the same parser inconsistency caused identifier-mention boost to
+  // fire on wrong chunks (v3/types.ts::ZodType) while missing the right
+  // chunk (v4/core/schemas.ts containing the $-prefixed entity). Path 2
+  // (`findEntityWithNameInRange`) is case-insensitive on `_`/`-` but NOT
+  // on `$`, so the mention must preserve the `$` to find the entity.
+  const tokens = query.match(/\$?[A-Za-z_][A-Za-z0-9_]*\b/g) || [];
   for (const tok of tokens) {
     if (looksLikeStrictIdentifier(tok)) mentions.add(tok);
   }
