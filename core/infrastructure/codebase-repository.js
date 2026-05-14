@@ -6,7 +6,7 @@
  */
 
 import Database from 'better-sqlite3';
-import { applyReadPragmas } from './db-utils.js';
+import { applyReadPragmas, assertInClauseSize } from './db-utils.js';
 
 export class CodebaseRepository {
   constructor(dbPath) {
@@ -40,6 +40,7 @@ export class CodebaseRepository {
   getEmbeddingsByIds(ids) {
     const uniqueIds = [...new Set(ids)];
     if (uniqueIds.length === 0) return new Map();
+    assertInClauseSize(uniqueIds.length, 'CodebaseRepository.getEmbeddingsByIds');
 
     const db = this._open();
     const placeholders = uniqueIds.map(() => '?').join(',');
@@ -67,6 +68,7 @@ export class CodebaseRepository {
   getChunkTexts(ids) {
     if (!ids || ids.length === 0) return new Map();
     try {
+      assertInClauseSize(ids.length, 'CodebaseRepository.getChunkTexts');
       const db = this._open();
       const ph = ids.map(() => '?').join(',');
       const rows = db.prepare(
@@ -128,6 +130,8 @@ export class CodebaseRepository {
     if (!clusterIds || clusterIds.length === 0) return [];
     const uniqueClusters = [...new Set(clusterIds)];
     const uniqueExclude = [...new Set(excludeIds)];
+    assertInClauseSize(uniqueClusters.length, 'CodebaseRepository.findSiblingsByClusterIds.clusters');
+    assertInClauseSize(uniqueExclude.length, 'CodebaseRepository.findSiblingsByClusterIds.exclude');
     const db = this._open();
 
     const clusterPh = uniqueClusters.map(() => '?').join(',');

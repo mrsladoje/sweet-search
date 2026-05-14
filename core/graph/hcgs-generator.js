@@ -399,12 +399,13 @@ async function generateSummariesForEntities(entityIds, options = {}) {
   } = options;
 
   const Database = (await import('better-sqlite3')).default;
-  const { applyReadPragmas } = await import('../infrastructure/db-utils.js');
+  const { applyReadPragmas, assertInClauseSize } = await import('../infrastructure/db-utils.js');
   const db = new Database(dbPath, { readonly: true });
   applyReadPragmas(db);
 
   try {
     // Fetch entities by IDs
+    assertInClauseSize(entityIds.length, 'hcgs-generator.fetchEntitiesByIds');
     const placeholders = entityIds.map(() => '?').join(',');
     const entities = db.prepare(`
       SELECT id, file_path, type, name, signature, doc_comment, parent_id, hierarchy_level

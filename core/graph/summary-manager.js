@@ -23,6 +23,7 @@ import { existsSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import { DB_PATHS } from '../infrastructure/config/index.js';
+import { chunkedInExec } from '../infrastructure/db-utils.js';
 
 // =============================================================================
 // CRASH-SAFE DISK PERSISTENCE
@@ -402,17 +403,20 @@ export async function markForRegeneration(dbPath = DB_PATHS.codeGraph, filePaths
   const Database = (await import('better-sqlite3')).default;
   const db = new Database(dbPath);
 
-  const placeholders = filePaths.map(() => '?').join(',');
-  const stmt = db.prepare(`
-    UPDATE entities
-    SET summary = NULL, summary_embedding = NULL
-    WHERE file_path IN (${placeholders})
-  `);
-
-  const result = stmt.run(...filePaths);
+  // Chunk to stay under SQLite's bound-parameter limit. Caller may pass
+  // tens of thousands of file paths on large initial mark-for-regeneration
+  // operations; an unchunked IN(?,?,...) crashes with "too many SQL
+  // variables". chunkedInExec wraps the per-batch run in a transaction.
+  const { changes } = chunkedInExec(
+    db,
+    `UPDATE entities
+        SET summary = NULL, summary_embedding = NULL
+      WHERE file_path IN (__IN_PLACEHOLDERS__)`,
+    filePaths,
+  );
   db.close();
 
-  return { marked: result.changes };
+  return { marked: changes };
 }
 
 /**

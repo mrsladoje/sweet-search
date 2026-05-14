@@ -8,7 +8,13 @@ export * from './config/index.js';
 export { default as config } from './config/index.js';
 
 // Database utilities
-export { applyReadPragmas } from './db-utils.js';
+export {
+  applyReadPragmas,
+  SAFE_IN_CLAUSE_BATCH,
+  assertInClauseSize,
+  chunkedIn,
+  chunkedInExec,
+} from './db-utils.js';
 
 // Repositories (DDD infrastructure layer)
 export { CodebaseRepository } from './codebase-repository.js';
