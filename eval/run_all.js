@@ -35,6 +35,9 @@ import './benchmarks/gencodesearchnet.js';
 import './benchmarks/crosscodeeval.js';
 import './benchmarks/clarc.js';
 import './benchmarks/m2crb.js';
+import './benchmarks/cosqaplus.js';
+import './benchmarks/coreb.js';
+import './benchmarks/bright-code.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
