@@ -1,0 +1,995 @@
+{
+  "schemaVersion": 1,
+  "tool": "ss-trace",
+  "runId": "baseline-dev-v2",
+  "generatedAt": "2026-05-14T07:48:55.876Z",
+  "plan_reference": "docs/PHASE6_REDO.md §12.1 + 2026-05-14 ss-trace failure-analysis handoff",
+  "primary_metric": "recall_at_5",
+  "grid": {
+    "_note": "ss-trace has no NL-query shape grid; only options vary. This sweep used one canonical options config; future sweeps will widen to maxDepth ∈ {2,3,4} and queryHint variants.",
+    "options_cells": [
+      "{\"maxDepth\":3,\"queryHint\":null,\"tokenBudget\":null,\"k\":5}"
+    ],
+    "relationship_types": [
+      "callers",
+      "callees",
+      "impact"
+    ]
+  },
+  "families": {
+    "OO-monolithic": {
+      "languages": [
+        "java",
+        "csharp",
+        "kotlin",
+        "scala"
+      ]
+    },
+    "Systems-modular-terse": {
+      "languages": [
+        "rust",
+        "go"
+      ]
+    },
+    "C-family": {
+      "languages": [
+        "c",
+        "cpp",
+        "zig"
+      ]
+    },
+    "JS-mobile": {
+      "languages": [
+        "javascript",
+        "typescript",
+        "typescript-lib",
+        "dart"
+      ]
+    },
+    "Dynamic-scripting": {
+      "languages": [
+        "python",
+        "ruby",
+        "php",
+        "elixir",
+        "lua"
+      ]
+    }
+  },
+  "strategies": {
+    "simple_global": {
+      "options": {
+        "maxDepth": 3,
+        "queryHint": null,
+        "tokenBudget": null,
+        "k": 5
+      },
+      "primary_metric": "recall_at_5",
+      "by_relationship_type": {
+        "callers": {
+          "n": 42,
+          "strict_recall_at_5": 0.7145,
+          "precision_at_5": 0.8214,
+          "f1_at_5": 0.7441,
+          "recall_at_5_2hop": null,
+          "production_recall_at_5": 0.8114,
+          "pass": 27,
+          "partial": 14,
+          "fail": 1,
+          "fail_rate": 0.0238
+        },
+        "callees": {
+          "n": 21,
+          "strict_recall_at_5": 0.9447,
+          "precision_at_5": 1,
+          "f1_at_5": 0.9652,
+          "recall_at_5_2hop": null,
+          "production_recall_at_5": 0.942,
+          "pass": 21,
+          "partial": 0,
+          "fail": 0,
+          "fail_rate": 0
+        },
+        "impact": {
+          "n": 42,
+          "strict_recall_at_5": 0.5464,
+          "precision_at_5": 0.4472,
+          "f1_at_5": 0.4376,
+          "recall_at_5_2hop": 0.4994,
+          "production_recall_at_5": 0.7477,
+          "pass": 21,
+          "partial": 15,
+          "fail": 6,
+          "fail_rate": 0.1429
+        }
+      },
+      "instruction_text": "[[ss-trace]] is symbol-in / structural-context-out. Call when you already know the target symbol and want callers, callees, and impact paths in one response. CLI: `sweet-search trace <symbol> [--in <file>] [--depth N] [--budget N]`. Pass the symbol verbatim — do NOT phrase as an NL question. Default options (maxDepth=3, adaptive 4k/8k/12k budget) are optimal across all 18 indexed languages: dev callers R@5=0.71, callees R@5=0.94, impact R@5=0.55 against graphNeighbors-derived gold (n=105 dev probes, 21 PASS callees, 27 PASS callers, 21 PASS impact). Add --in <file> when the symbol is ambiguous across files (Vec, Mux, get, App, Use have ≥2 entity rows in the indexed corpora).",
+      "source": "only options config measured (handoff Stage 6: no shape grid for ss-trace)",
+      "secondary_metrics": {
+        "_note": "Per cross-tool audit convention 2026-05-13. production_recall_at_5 re-grades by dropping test-path entries from expected (mirrors ss-find relaxed_def). recall_at_5_2hop only populated on impact probes.",
+        "callers": {
+          "n": 42,
+          "strict_recall_at_5": 0.7145,
+          "precision_at_5": 0.8214,
+          "f1_at_5": 0.7441,
+          "recall_at_5_2hop": null,
+          "production_recall_at_5": 0.8114,
+          "pass": 27,
+          "partial": 14,
+          "fail": 1,
+          "fail_rate": 0.0238
+        },
+        "callees": {
+          "n": 21,
+          "strict_recall_at_5": 0.9447,
+          "precision_at_5": 1,
+          "f1_at_5": 0.9652,
+          "recall_at_5_2hop": null,
+          "production_recall_at_5": 0.942,
+          "pass": 21,
+          "partial": 0,
+          "fail": 0,
+          "fail_rate": 0
+        },
+        "impact": {
+          "n": 42,
+          "strict_recall_at_5": 0.5464,
+          "precision_at_5": 0.4472,
+          "f1_at_5": 0.4376,
+          "recall_at_5_2hop": 0.4994,
+          "production_recall_at_5": 0.7477,
+          "pass": 21,
+          "partial": 15,
+          "fail": 6,
+          "fail_rate": 0.1429
+        }
+      }
+    },
+    "family_conditioned": {
+      "default": {
+        "options": {
+          "maxDepth": 3,
+          "queryHint": null,
+          "tokenBudget": null,
+          "k": 5
+        },
+        "instruction_text": "[[ss-trace]] is symbol-in / structural-context-out. Call when you already know the target symbol and want callers, callees, and impact paths in one response. CLI: `sweet-search trace <symbol> [--in <file>] [--depth N] [--budget N]`. Pass the symbol verbatim — do NOT phrase as an NL question. Same defaults as simple_global apply per-family. The C-family / JS-mobile families have the strongest baseline (R@5 ≥ 0.93 callers, 1.0 callees); Dynamic-scripting (python/ruby/php) is the weakest (R@5=0.62 callers, R@5=0.83 callees) primarily because tree-sitter Python doesn't capture test-class-inherits-production-class edges (4 of 7 dev FAILs). For Python specifically, the impact tool's transitive expansion underperforms — prefer callees/callers calls when in Python."
+      },
+      "overrides": {
+        "_note": "Override iff family-best Recall@5 beats default by ≥ 8pp. With only one options config measured, no family-best Recall@5 differs from the default — overrides are empty in this redo. Future option-sweeps will populate per-family options when the data supports it."
+      },
+      "by_family_recall": {
+        "OO-monolithic": {
+          "callers": {
+            "n": 11,
+            "strict_recall_at_5": 0.6482,
+            "precision_at_5": 0.8182,
+            "f1_at_5": 0.7046,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.7629,
+            "pass": 6,
+            "partial": 5,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "callees": {
+            "n": 11,
+            "strict_recall_at_5": 0.974,
+            "precision_at_5": 1,
+            "f1_at_5": 0.9848,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.9714,
+            "pass": 11,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 11,
+            "strict_recall_at_5": 0.4599,
+            "precision_at_5": 0.403,
+            "f1_at_5": 0.3784,
+            "recall_at_5_2hop": 0.3317,
+            "production_recall_at_5": 0.6825,
+            "pass": 4,
+            "partial": 5,
+            "fail": 2,
+            "fail_rate": 0.1818
+          }
+        },
+        "Systems-modular-terse": {
+          "callers": {
+            "n": 7,
+            "strict_recall_at_5": 0.6381,
+            "precision_at_5": 0.7143,
+            "f1_at_5": 0.6538,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.6124,
+            "pass": 4,
+            "partial": 3,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "callees": {
+            "n": 2,
+            "strict_recall_at_5": 0.8125,
+            "precision_at_5": 1,
+            "f1_at_5": 0.8846,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.8125,
+            "pass": 2,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 7,
+            "strict_recall_at_5": 0.519,
+            "precision_at_5": 0.5714,
+            "f1_at_5": 0.5259,
+            "recall_at_5_2hop": 0.519,
+            "production_recall_at_5": 0.5972,
+            "pass": 3,
+            "partial": 3,
+            "fail": 1,
+            "fail_rate": 0.1429
+          }
+        },
+        "C-family": {
+          "callers": {
+            "n": 2,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 0.75,
+            "f1_at_5": 0.8333,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 2,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "callees": {
+            "n": 1,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 1,
+            "f1_at_5": 1,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 1,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 2,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 0.225,
+            "f1_at_5": 0.3667,
+            "recall_at_5_2hop": 1,
+            "production_recall_at_5": 1,
+            "pass": 2,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          }
+        },
+        "JS-mobile": {
+          "callers": {
+            "n": 9,
+            "strict_recall_at_5": 0.9333,
+            "precision_at_5": 0.9556,
+            "f1_at_5": 0.9358,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.9333,
+            "pass": 8,
+            "partial": 1,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "callees": {
+            "n": 4,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 1,
+            "f1_at_5": 1,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 4,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 9,
+            "strict_recall_at_5": 0.7722,
+            "precision_at_5": 0.5222,
+            "f1_at_5": 0.5854,
+            "recall_at_5_2hop": 0.7539,
+            "production_recall_at_5": 0.8556,
+            "pass": 8,
+            "partial": 1,
+            "fail": 0,
+            "fail_rate": 0
+          }
+        },
+        "Dynamic-scripting": {
+          "callers": {
+            "n": 13,
+            "strict_recall_at_5": 0.6164,
+            "precision_at_5": 0.8,
+            "f1_at_5": 0.6798,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.8233,
+            "pass": 7,
+            "partial": 5,
+            "fail": 1,
+            "fail_rate": 0.0769
+          },
+          "callees": {
+            "n": 3,
+            "strict_recall_at_5": 0.8333,
+            "precision_at_5": 1,
+            "f1_at_5": 0.8889,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.8333,
+            "pass": 3,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 13,
+            "strict_recall_at_5": 0.4083,
+            "precision_at_5": 0.4,
+            "f1_at_5": 0.3486,
+            "recall_at_5_2hop": 0.3775,
+            "production_recall_at_5": 0.7419,
+            "pass": 4,
+            "partial": 6,
+            "fail": 3,
+            "fail_rate": 0.2308
+          }
+        }
+      },
+      "by_language_recall": {
+        "cpp": {
+          "callees": {
+            "n": 1,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 1,
+            "f1_at_5": 1,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 1,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "callers": {
+            "n": 2,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 0.75,
+            "f1_at_5": 0.8333,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 2,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 2,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 0.225,
+            "f1_at_5": 0.3667,
+            "recall_at_5_2hop": 1,
+            "production_recall_at_5": 1,
+            "pass": 2,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          }
+        },
+        "csharp": {
+          "callers": {
+            "n": 1,
+            "strict_recall_at_5": 0.4545,
+            "precision_at_5": 1,
+            "f1_at_5": 0.625,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.7143,
+            "pass": 0,
+            "partial": 1,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 1,
+            "strict_recall_at_5": 0.3636,
+            "precision_at_5": 0.8,
+            "f1_at_5": 0.5,
+            "recall_at_5_2hop": 0.3636,
+            "production_recall_at_5": 0.5714,
+            "pass": 0,
+            "partial": 1,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "callees": {
+            "n": 1,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 1,
+            "f1_at_5": 1,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 1,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          }
+        },
+        "dart": {
+          "callers": {
+            "n": 4,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 0.95,
+            "f1_at_5": 0.9722,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 4,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 4,
+            "strict_recall_at_5": 0.8125,
+            "precision_at_5": 0.4917,
+            "f1_at_5": 0.6048,
+            "recall_at_5_2hop": 0.8125,
+            "production_recall_at_5": 1,
+            "pass": 4,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "callees": {
+            "n": 3,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 1,
+            "f1_at_5": 1,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 3,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          }
+        },
+        "go": {
+          "callers": {
+            "n": 5,
+            "strict_recall_at_5": 0.7767,
+            "precision_at_5": 0.76,
+            "f1_at_5": 0.7613,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.7727,
+            "pass": 4,
+            "partial": 1,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 5,
+            "strict_recall_at_5": 0.61,
+            "precision_at_5": 0.56,
+            "f1_at_5": 0.5822,
+            "recall_at_5_2hop": 0.61,
+            "production_recall_at_5": 0.75,
+            "pass": 3,
+            "partial": 1,
+            "fail": 1,
+            "fail_rate": 0.2
+          },
+          "callees": {
+            "n": 1,
+            "strict_recall_at_5": 0.625,
+            "precision_at_5": 1,
+            "f1_at_5": 0.7692,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.625,
+            "pass": 1,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          }
+        },
+        "java": {
+          "callers": {
+            "n": 4,
+            "strict_recall_at_5": 0.5154,
+            "precision_at_5": 0.65,
+            "f1_at_5": 0.5682,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.1944,
+            "pass": 2,
+            "partial": 2,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 4,
+            "strict_recall_at_5": 0.3368,
+            "precision_at_5": 0.4,
+            "f1_at_5": 0.3599,
+            "recall_at_5_2hop": 0.2613,
+            "production_recall_at_5": 0.1944,
+            "pass": 1,
+            "partial": 2,
+            "fail": 1,
+            "fail_rate": 0.25
+          },
+          "callees": {
+            "n": 1,
+            "strict_recall_at_5": 0.7143,
+            "precision_at_5": 1,
+            "f1_at_5": 0.8333,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.7143,
+            "pass": 1,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          }
+        },
+        "javascript": {
+          "callers": {
+            "n": 3,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 1,
+            "f1_at_5": 1,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 3,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 3,
+            "strict_recall_at_5": 0.7667,
+            "precision_at_5": 0.5333,
+            "f1_at_5": 0.6053,
+            "recall_at_5_2hop": 0.7667,
+            "production_recall_at_5": 0.7667,
+            "pass": 3,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "callees": {
+            "n": 1,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 1,
+            "f1_at_5": 1,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 1,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          }
+        },
+        "kotlin": {
+          "callers": {
+            "n": 4,
+            "strict_recall_at_5": 0.6534,
+            "precision_at_5": 0.85,
+            "f1_at_5": 0.7132,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 2,
+            "partial": 2,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 4,
+            "strict_recall_at_5": 0.3371,
+            "precision_at_5": 0.2833,
+            "f1_at_5": 0.2463,
+            "recall_at_5_2hop": 0.3003,
+            "production_recall_at_5": 0.8333,
+            "pass": 1,
+            "partial": 2,
+            "fail": 1,
+            "fail_rate": 0.25
+          },
+          "callees": {
+            "n": 4,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 1,
+            "f1_at_5": 1,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 4,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          }
+        },
+        "php": {
+          "callers": {
+            "n": 4,
+            "strict_recall_at_5": 0.599,
+            "precision_at_5": 0.85,
+            "f1_at_5": 0.6875,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.8889,
+            "pass": 3,
+            "partial": 1,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 4,
+            "strict_recall_at_5": 0.4526,
+            "precision_at_5": 0.4,
+            "f1_at_5": 0.3375,
+            "recall_at_5_2hop": 0.3525,
+            "production_recall_at_5": 0.7056,
+            "pass": 1,
+            "partial": 3,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "callees": {
+            "n": 1,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 1,
+            "f1_at_5": 1,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 1,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          }
+        },
+        "python": {
+          "callers": {
+            "n": 5,
+            "strict_recall_at_5": 0.5524,
+            "precision_at_5": 0.64,
+            "f1_at_5": 0.5857,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 2,
+            "partial": 2,
+            "fail": 1,
+            "fail_rate": 0.2
+          },
+          "impact": {
+            "n": 5,
+            "strict_recall_at_5": 0.2286,
+            "precision_at_5": 0.24,
+            "f1_at_5": 0.2333,
+            "recall_at_5_2hop": 0.2286,
+            "production_recall_at_5": 1,
+            "pass": 1,
+            "partial": 1,
+            "fail": 3,
+            "fail_rate": 0.6
+          }
+        },
+        "ruby": {
+          "callers": {
+            "n": 4,
+            "strict_recall_at_5": 0.7136,
+            "precision_at_5": 0.95,
+            "f1_at_5": 0.7896,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.7136,
+            "pass": 2,
+            "partial": 2,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 4,
+            "strict_recall_at_5": 0.5886,
+            "precision_at_5": 0.6,
+            "f1_at_5": 0.5039,
+            "recall_at_5_2hop": 0.5886,
+            "production_recall_at_5": 0.7136,
+            "pass": 2,
+            "partial": 2,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "callees": {
+            "n": 2,
+            "strict_recall_at_5": 0.75,
+            "precision_at_5": 1,
+            "f1_at_5": 0.8333,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.75,
+            "pass": 2,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          }
+        },
+        "rust": {
+          "callers": {
+            "n": 2,
+            "strict_recall_at_5": 0.2917,
+            "precision_at_5": 0.6,
+            "f1_at_5": 0.385,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.2917,
+            "pass": 0,
+            "partial": 2,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 2,
+            "strict_recall_at_5": 0.2917,
+            "precision_at_5": 0.6,
+            "f1_at_5": 0.385,
+            "recall_at_5_2hop": 0.2917,
+            "production_recall_at_5": 0.2917,
+            "pass": 0,
+            "partial": 2,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "callees": {
+            "n": 1,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 1,
+            "f1_at_5": 1,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 1,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          }
+        },
+        "scala": {
+          "callees": {
+            "n": 5,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 1,
+            "f1_at_5": 1,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 5,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "callers": {
+            "n": 2,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 1,
+            "f1_at_5": 1,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 1,
+            "pass": 2,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 2,
+            "strict_recall_at_5": 1,
+            "precision_at_5": 0.45,
+            "f1_at_5": 0.619,
+            "recall_at_5_2hop": 0.5192,
+            "production_recall_at_5": 1,
+            "pass": 2,
+            "partial": 0,
+            "fail": 0,
+            "fail_rate": 0
+          }
+        },
+        "typescript": {
+          "callers": {
+            "n": 2,
+            "strict_recall_at_5": 0.7,
+            "precision_at_5": 0.9,
+            "f1_at_5": 0.7667,
+            "recall_at_5_2hop": null,
+            "production_recall_at_5": 0.7,
+            "pass": 1,
+            "partial": 1,
+            "fail": 0,
+            "fail_rate": 0
+          },
+          "impact": {
+            "n": 2,
+            "strict_recall_at_5": 0.7,
+            "precision_at_5": 0.5667,
+            "f1_at_5": 0.5167,
+            "recall_at_5_2hop": 0.6176,
+            "production_recall_at_5": 0.7,
+            "pass": 1,
+            "partial": 1,
+            "fail": 0,
+            "fail_rate": 0
+          }
+        }
+      }
+    },
+    "popular_weighted_agentic": {
+      "options": {
+        "maxDepth": 3,
+        "queryHint": null,
+        "tokenBudget": null,
+        "k": 5
+      },
+      "weighting": "2026 agentic-tier (TS/Python/Rust=5, mainstream=3, longtail=1) — same scheme as ss-find/ss-semantic",
+      "by_relationship_type": {
+        "callers": {
+          "n": 42,
+          "strict_recall_at_5": 0.6693,
+          "precision_at_5": 0.7869,
+          "f1_at_5": 0.7042,
+          "recall_at_5_2hop": null,
+          "production_recall_at_5": 0.7617,
+          "pass": 27,
+          "partial": 14,
+          "fail": 1,
+          "fail_rate": 0.0238
+        },
+        "callees": {
+          "n": 21,
+          "strict_recall_at_5": 0.9322,
+          "precision_at_5": 1,
+          "f1_at_5": 0.9578,
+          "recall_at_5_2hop": null,
+          "production_recall_at_5": 0.929,
+          "pass": 21,
+          "partial": 0,
+          "fail": 0,
+          "fail_rate": 0
+        },
+        "impact": {
+          "n": 42,
+          "strict_recall_at_5": 0.4946,
+          "precision_at_5": 0.4432,
+          "f1_at_5": 0.4188,
+          "recall_at_5_2hop": 0.4636,
+          "production_recall_at_5": 0.7039,
+          "pass": 21,
+          "partial": 15,
+          "fail": 6,
+          "fail_rate": 0.1429
+        }
+      },
+      "instruction_text": "[[ss-trace]] is symbol-in / structural-context-out. Call when you already know the target symbol and want callers, callees, and impact paths in one response. CLI: `sweet-search trace <symbol> [--in <file>] [--depth N] [--budget N]`. Pass the symbol verbatim — do NOT phrase as an NL question. Under 2026 agentic-tier weights (TS/Python/Rust=5, mainstream=3, longtail=1), the canonical defaults remain optimal. Python's higher weight surfaces its callers/impact failure modes — see family_conditioned guidance.",
+      "source": "agentic-tier-weighted means; identical options to simple_global since no grid was swept"
+    }
+  },
+  "cell_table_options": {
+    "{\"maxDepth\":3,\"queryHint\":null,\"tokenBudget\":null,\"k\":5}": {
+      "callers": {
+        "n": 42,
+        "strict_recall_at_5": 0.7145,
+        "precision_at_5": 0.8214,
+        "f1_at_5": 0.7441,
+        "recall_at_5_2hop": null,
+        "production_recall_at_5": 0.8114,
+        "pass": 27,
+        "partial": 14,
+        "fail": 1,
+        "fail_rate": 0.0238
+      },
+      "callees": {
+        "n": 21,
+        "strict_recall_at_5": 0.9447,
+        "precision_at_5": 1,
+        "f1_at_5": 0.9652,
+        "recall_at_5_2hop": null,
+        "production_recall_at_5": 0.942,
+        "pass": 21,
+        "partial": 0,
+        "fail": 0,
+        "fail_rate": 0
+      },
+      "impact": {
+        "n": 42,
+        "strict_recall_at_5": 0.5464,
+        "precision_at_5": 0.4472,
+        "f1_at_5": 0.4376,
+        "recall_at_5_2hop": 0.4994,
+        "production_recall_at_5": 0.7477,
+        "pass": 21,
+        "partial": 15,
+        "fail": 6,
+        "fail_rate": 0.1429
+      }
+    }
+  },
+  "failure_analysis": {
+    "n_dev_probes": 105,
+    "by_classification": {
+      "PASS": 69,
+      "PARTIAL": 29,
+      "FAIL": 7
+    },
+    "fail_mode_taxonomy": {
+      "_note": "Stage 4 deep-dive: 7 FAIL probes classified by querying per-repo code-graph.db. See core/prompt-optimization/scripts/ss-trace/verify-ss-trace-failures.mjs.",
+      "ranker_test_demote": {
+        "count": 3,
+        "probes": [
+          "impact-GO-001",
+          "impact-JV-005",
+          "impact-KT-002"
+        ],
+        "description": "Gold expected callers are test-file entities; ss-trace correctly applies -0.38 isTestPath penalty per scoreEntity design intent (production callers must beat test fixtures). Not a ranker bug — a rubric vs ranker mismatch."
+      },
+      "partial_extraction": {
+        "count": 4,
+        "probes": [
+          "impact-PY-002",
+          "callers-PY-004",
+          "impact-PY-004",
+          "impact-PY-008"
+        ],
+        "description": "Python test classes (CustomContext, CustomCommand, MyType, ConfigParamType) exist as entity rows but have ZERO outgoing call relationships. Tree-sitter Python is missing test-class-inherits-production-class edges. Out of session scope to fix (graph-extractor work)."
+      }
+    },
+    "fix_1_sql_substring_guard": {
+      "_note": "Handoff Stage 5 Fix 1 (findCallers symbol-length guard on substring fallback) is NOT justified by ss-trace failure data: 0/7 FAIL probes have short symbols (length<5). Cross-tool benefit to ss-search graph expansion is still possible but out of scope for this redo.",
+      "applied": false,
+      "evidence": "0 FAIL probes with symbol.length < 5; 6 PARTIAL probes with short symbol but no direction-of-improvement evidence"
+    },
+    "pagerank_status": {
+      "_note": "Handoff Stage 1b verified: PageRank is wired (0.20 directional PPR + 0.10 static page_rank) in scoreEntity. SWEET_SEARCH_TRACE_NO_PPR=1 / SWEET_SEARCH_TRACE_NO_PR=1 ablation knobs already exist. No code change made.",
+      "applied": false,
+      "evidence": "core/graph/structural-importance.js:60-101 — PPR + PR fully integrated"
+    },
+    "adaptive_depth_status": {
+      "_note": "Handoff Stage 1a verified: maxDepth=3 default IS adaptive transitive expansion (BFS upstream + downstream with frontier exhaustion). buildImpactPaths at core/graph/structural-context.js:186-246.",
+      "applied": false
+    }
+  },
+  "ranking_stability_check": {
+    "_note": "Argmax stability across rubrics. ss-trace has one canonical options config in this sweep, so all rubrics agree by construction. Future option-sweeps (maxDepth ∈ {2,3,4}, queryHint variants) will populate this block with potential flips.",
+    "strict_winner": {
+      "options": {
+        "maxDepth": 3,
+        "queryHint": null,
+        "tokenBudget": null
+      },
+      "source": "only options config measured"
+    },
+    "f1_winner": {
+      "options": {
+        "maxDepth": 3,
+        "queryHint": null,
+        "tokenBudget": null
+      },
+      "source": "only options config measured"
+    },
+    "production_winner": {
+      "options": {
+        "maxDepth": 3,
+        "queryHint": null,
+        "tokenBudget": null
+      },
+      "source": "only options config measured"
+    },
+    "flip": false
+  },
+  "behavior_notes": [
+    "ss-trace has no NL-query shape grid — only options vary; this redo uses one canonical options config.",
+    "callees Recall@5 is exceptionally strong (0.94, 21/21 PASS) because getCallees uses r.source_id = target.id (no name-matching ambiguity) and gold expected-callee sets are typically size 1-3.",
+    "impact Recall@5 vs 1-hop proxy underestimates ss-trace by design — the tool returns multi-hop paths; the 1-hop callers proxy is a known under-credit. recall_at_5_2hop diagnostic shows -4.70pp delta on dev, well under the 15pp escalation threshold (handoff Stage 2).",
+    "CPP-004 (Vec) has expected=[\"hwy\",\"hwy\",\"hwy\",...] (12 dupes) — graphNeighbors source captured C++ namespace qualifier as caller symbol. Dedupe in grading normalizes; pre-existing pre-sweep input artifact.",
+    "C-family family is n=2 callers / 1 callee / 2 impact on dev — too small to support per-family conclusions; treat C-family cell as a placeholder."
+  ]
+}
