@@ -419,13 +419,36 @@ FTS5 `entities_trigram` updates trigger automatically on row changes.
      **Verify empirically against the running SQLite version in Phase 0
      preflight** — FTS5 internal layout is documented but not part of
      the stable API and varies subtly between SQLite versions.
-6. **`epoch_written INTEGER NOT NULL DEFAULT 0` column** on `entities`
-   (and on `vectors` per § 7.2). Every UPSERT writes the current
-   reconcile epoch. This is the **replay log the LSM rebase in § 10.3
-   reads from** — without it the rebase has no way to ask "what
-   changed between ε₀ and ε_now" because SQLite's internal WAL is
-   not queryable for row-level change extraction. Index on
-   `epoch_written` to make the range scan cheap.
+6. **`epoch_written INTEGER NOT NULL DEFAULT 0` column** on `entities`.
+   Every UPSERT writes the current reconcile epoch.
+
+   **Honest scope note (post-third-pass).** The LSM rebase in § 10.3
+   was scoped to Float HNSW + Binary HNSW only; both read their
+   source-of-truth from `vectors`, not from `entities`. FTS5 has its
+   own internal LSM and compacts via `('merge', N)` calls inline at
+   each tick — there is **no async rebuild path that reads from
+   `entities`**. So `entities.epoch_written` is currently *unused* by
+   any rebuild consumer.
+
+   Three reasons to add the column anyway:
+   - **Audit trail**: when investigating a search regression, knowing
+     which tick introduced a given row is invaluable. Cheap insurance.
+   - **Operational telemetry**: per-tick counters of how many entities
+     each reconcile touched (`SELECT COUNT(*) WHERE epoch_written = ε`)
+     surfaces churn patterns useful for tuning the tick budget.
+   - **Future-proofing**: if a future workstream introduces an
+     async FTS5 rebuild path (e.g., to defragment after a major
+     schema migration), this column is the natural replay log.
+
+   Add the column + index; do not claim it's load-bearing. If the
+   audit/telemetry value isn't realized in v1, removing in v2 is a
+   single `ALTER TABLE DROP COLUMN`. The `DEFAULT 0` clause is still
+   load-bearing for rollback safety regardless of consumer (see
+   § 7.2 for the rationale).
+
+   The actually-load-bearing `epoch_written` column is on `vectors`
+   (§ 7.2) — that one *is* the LSM-rebase replay log for the two
+   HNSW tiers.
 
    **The `DEFAULT 0` clause is load-bearing for rollback safety.**
    Without a default, an older daemon (running on a checked-out
@@ -1315,9 +1338,12 @@ This phase grew after the Gemini review: positional `chunk_id`s defeat
 the chunk-hash dedup on common edits, so the structural-ID rework is
 prerequisite to the encode-skip savings.
 
-- [ ] Add `chunk_struct_id TEXT NOT NULL` and `chunk_text_hash TEXT NOT NULL`
-  columns to vectors table in `codebase.db` (auto-migrate; preserve
-  existing `chunk_id` for compatibility).
+- [ ] Add `chunk_struct_id TEXT NOT NULL DEFAULT ''`,
+  `chunk_text_hash TEXT NOT NULL DEFAULT ''`, and
+  `epoch_written INTEGER NOT NULL DEFAULT 0` columns to vectors table
+  in `codebase.db` (auto-migrate; preserve existing `chunk_id` for
+  compatibility). **`DEFAULT` clauses are mandatory for rollback
+  safety** — see § 7.2 rationale.
 - [ ] In `core/indexing/ast-chunker.js`, emit `chunk_struct_id` per § 7.2
   for symbol-attached and anonymous chunks. Keep positional `chunk_id`
   as fallback for parser failures.
