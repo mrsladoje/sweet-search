@@ -655,6 +655,13 @@ From the P6 directional signal, the variants encode these tool-specific recommen
 
 These bullets go *verbatim* into the relevant T_i variant bodies. For `[[ss-search]]`, `[[ss-find]]`, `[[ss-semantic]]`, and `[[ss-trace]]`, the bullet is regenerated from the corresponding `recommendations-v2-*.json` whenever that artifact updates.
 
+**Schema divergence across `recommendations-v2-*.json` artifacts (PHASE7 consumer alert)**: the four per-tool artifacts ship two distinct top-level shapes:
+
+- **ss-search** (`recommendations-v2.json`, `schemaVersion: 5`): top-level `{ default, family_overrides, popular_weighted, ... }` — the historical first-shipper schema.
+- **ss-find / ss-semantic / ss-trace** (`recommendations-v2-ss-{find,semantic,trace}.json`, `schemaVersion: 1–2`): nested `{ strategies: { simple_global, family_conditioned, popular_weighted_agentic } }` — the later, more uniform schema.
+
+The semantics are equivalent (each ships three strategies + per-family breakdown + secondary metrics) but the JSON paths differ. PHASE7 GEPA consumer code that ingests these artifacts must abstract over both shapes — e.g., normalize-on-read into a `{ tool, simple_global, family_conditioned, popular_weighted }` shape before reasoning about strategies uniformly. A schema migration to one canonical shape is deferred to a focused session post-PHASE7; aligning here would be a semantic rewrite, not housekeeping.
+
 ### §4.3 Variant slate
 
 The 14 hand-authored seed variants are organised along three orthogonal axes:
@@ -709,6 +716,8 @@ target_tokens: <n>
 ---
 
 ## §5 Probe set authoring
+
+> **Status (pre-PHASE7 housekeeping snapshot)**: the probe SET DESIGN (§5.1–§5.7) is fully pre-registered. The probe RECORDS themselves (`p7-dev-probes.json`, `p7-heldout-probes.json` under `frozen/`, `p7-rotation-pool.json`, `p7-adversarial-counter-probes.json` under `frozen/`) are **NOT yet authored**. Authoring is the workstream that precedes the GEPA launch and is the gating prerequisite for moving the `prereg/p7-v1-pre-probe` tag forward to `prereg/p7-v1`. The pre-probe tag (committed at the end of the 2026-05-14 housekeeping session) freezes the documented design, per-tool variant artifacts, baseline metrics snapshot, and overfit framework — everything except the probe records. Authoring methodology + sources are spec'd in §5.4; budget is in §8.2.
 
 ### §5.1 Dev probes (n=25)
 
@@ -798,16 +807,21 @@ File: `core/prompt-optimization/data/frozen/p7-adversarial-counter-probes.json`.
 
 | Tag | When | What it freezes |
 |---|---|---|
-| `prereg/p7-v1` | Before any GEPA run | T1–T14 variants, dev probes, held-out probes, mutation pool spec, judge panel, TARE config, decision log file initialized |
+| `prereg/p7-v1-pre-probe` | After pre-PHASE7 housekeeping, BEFORE probe authoring | Per-tool `recommendations-v2-*.json` artifacts, this `PHASE7.md` doc, the baseline-metrics snapshot under `eval/baselines/pre-phase7-snapshot.md`, mutation pool spec, judge panel, TARE config, GEPA config, overfit framework. Does NOT include probe records — those don't exist yet (see §5 status). |
+| `prereg/p7-v1` | After probe authoring, before any GEPA run | Everything in `prereg/p7-v1-pre-probe` + the probe records (`p7-dev-probes.json`, `frozen/p7-heldout-probes.json`, `p7-rotation-pool.json`, `frozen/p7-adversarial-counter-probes.json`) + decision log file initialized |
 | `release/p7-v1` | Before final headline-number release / Vault opening | The shipped winning prompt |
 
-Both tagged commits MUST include this `PHASE7.md` doc and the variant + probe files at the exact state used for the run.
+Both `prereg/*` tagged commits MUST include this `PHASE7.md` doc and the variant artifacts at the exact state used for the run. The `prereg/p7-v1` tag additionally includes the probe records.
 
 ### §6.2 The decision log
 
 `core/prompt-optimization/data/p7-decisions.md` is the **load-bearing artifact** for human-in-the-loop GEPA defensibility. It's append-only during the run and committed at `release/p7-v1`.
 
 Format per round entry: see §3.4.
+
+### §6.2.1 Baseline metrics — the "before" reference
+
+The pre-PHASE7 baseline-metrics snapshot is committed at `eval/baselines/pre-phase7-snapshot.md` (locked under `prereg/p7-v1-pre-probe`). It captures the exact `recommendations-v2-*.json` SHAs, the locked GCSN MRR@10 = 86.93%, the locked retrieval-probes count from `eval/retrieval-probes/post-perf-60.json`, per-tool dev + heldout aggregates from the most recent failure-analysis sessions (ss-search dev 55/18/17 + heldout 28/18/8; ss-find / ss-semantic latest commits; ss-trace callers 0.81 heldout / callees 0.94 / impact 0.75 from `d70259b`), and unit test counts (347 ranking + 823 search + 292 prompt-opt). This is the "before" picture every PHASE7 milestone compares against. Do NOT regenerate this artifact during the GEPA run — it's frozen at tag time.
 
 ### §6.3 What's NOT pre-registered (and why)
 
