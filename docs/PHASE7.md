@@ -5,7 +5,7 @@
 **Reviewed**: 2026-05-10 by (a) Gemini 3.1 Pro Deep Think — THREE PASSES (pass 1 = 13 findings; pass 2 = 12 adversarial findings incl. FATAL Round-11 re-baseline + Maximin race-to-middle + EAS + ghost-context-leak + AST-ification + language-transfer HOMP + pathology probes; pass 3 = SHIP-IT verdict + 3 minor tweaks). All Gemini findings integrated. (b) **GPT-5.5 xhigh** external review — the production target reviewing the plan from inside, surfacing 13 GPT-specific blindspots, methodology attacks, and operational footguns Gemini structurally missed (TPM-vs-RPM concurrency math, 0.15 cap utopia-point bug, asymmetric EAS that rewards GPT under-exploration, Java HOMP omitting GPT-5.5, stale joint-mean/latent-interp/ja-pivot residue, SCS reward-for-stable-wrongness, token-validator multiplicity gaps, OP-2 target-tagging, etc.) — all integrated; see §11.5 for the change-map. (c) **User catch** — reasoning-mode transfer gap: optimization runs against thinking-OFF, but power users run thinking-ON; closed by §3.5.2 reasoning-mode operational HOMP gate (Sonnet+thinking + GPT-5.5+reasoning on 15 held-out probes; +$6). Full critique trail at `docs/PHASE7-gemini-critique-2026-05-10.md` (Gemini pass 1), `docs/PHASE7-gemini-critique-2-2026-05-10.md` (pass 2), `docs/PHASE7-gemini-critique-3-2026-05-10.md` (pass 3), `docs/PHASE7-gpt5-5-critique-2026-05-10.md` (GPT-5.5 xhigh).
 **Depends on**:
 - **`ss-search` grounding (primary)** — `core/prompt-optimization/data/query-shapes/recommendations-v2.json` produced by PHASE6_REDO (see `docs/PHASE6_REDO.md`). Family-conditioned default + per-family overrides. Deprecates the prior P6 `qshape-v1` artifact for `ss-search`.
-- **Other-tools grounding (interim)** — P6 `qshape-v1` artifact (`recommendations.json`, Track A/B JSONLs at commit `7d9eb1d`) retained ONLY for the directional signal on `ss-find`, `ss-semantic`, `structural`. To be superseded when each tool's own Phase-6 redo lands (probe sets pending).
+- **Other-tools grounding (interim)** — P6 `qshape-v1` artifact (`recommendations.json`, Track A/B JSONLs at commit `7d9eb1d`) retained ONLY for the directional signal on `ss-find`, `ss-semantic`, `ss-trace`. ss-find / ss-semantic redoes have shipped (see §4.2). ss-trace redo is pending — a prior 2026-05-14 session mistakenly targeted `SweetSearch.structuralSearch` (the NL-regex-parse-then-route variant in `core/search/sweet-search.js`, NOT used in production) instead of `ss-trace`'s actual production path `traceSymbol` (in `core/search/search-trace.js` → `StructuralContextBuilder.build` in `core/graph/structural-context.js`); that session's artifacts are retracted.
 
 **Successor to**: docs/SYSTEM_PROMPT_OPT_PLAN.md §6, §8, §9, §11
 
@@ -159,7 +159,7 @@ The mutation operator pool was substantially redesigned after Gemini 3.1 Pro Dee
 | OP-1 | **Reflective rewrite** (Kimi K2.6) | Reads N=5 failure traces from the candidate's worst probes (joint-score ≤ 0.4), proposes a targeted edit | GEPA's native operator. Workhorse. |
 | OP-2 | **Contrastive Trajectory Crossover** (Kimi K2.6) | Find a probe where prompt A wins (≥0.8) and prompt B fails (≤0.4). Pass A's full tool-call trajectory + both prompts to Kimi + **the most recent manual-reflection hint as a hard negative constraint** (anti-schizophrenia per Gemini 2nd-pass §B3). **Trajectories MUST be target-tagged** (`target: 'sonnet'\|'gpt5_5'`) and the operator MUST identify whether the bottleneck is Sonnet-only, GPT-only, or joint (per GPT-5.5 review §B3 — anti-Sonnet-style import). When both targets have winning trajectories on the same probe, both are passed to Kimi as a **balanced pair** so the operator merges *behaviors compatible with both*, not just Sonnet's exploration cadence. When only one target has a winning trajectory, the operator is explicitly informed that the bottleneck is single-target and the other target needs different mechanism. Merge B's structural strengths with A's specific routing instructions, *while obeying the latest human-injected constraint*. | Empirically-grounded crossover. Compositional jumps grounded in actual agent behaviour, not abstract text similarity. **Replaces** the rejected latent-interp. |
 | OP-3 | **Persona / Constraint Pivot + AST-ification** (Sonnet 4.6 + rotated non-Anthropic generator per round) | Two-mode operator: (a) standard structural-format pivot (bullets → numbered lists, paragraphs → strict pseudocode layout) AND (b) **AST-ification of routing constraints** (per Gemini 2nd-pass §D1, with GPT-5.5 review §B4 fix): convert prose routing rules into pseudocode blocks **labelled `# routing policy pseudocode — NOT executable code` and prefer decision tables over fenced ```python``` for high-level routing**. GPT-5.5 can over-interpret fenced python as executable; explicit non-executable framing prevents this. LLMs process structured pseudocode at higher fidelity than dense English — fewer scope-ambiguity failures on conditional rules. Mode (a) is default; mode (b) fires on rounds where the candidate has ≥3 conditional routing rules in prose. **Generator rotation per GPT-5.5 review §C2**: Sonnet is default but every 3rd round uses Kimi K2.6 or GPT-5.5 to generate the pivot, so the family of paraphrase noise isn't single-Anthropic. | **Replaces** ja-pivot. 2026-era LLMs exhibit translation invariance. Format-pivot + pseudocode-routing guarantees surface variance, clear rule semantics, AND multi-family paraphrase distribution. |
-| OP-4 | **Tool-Signature Masking** (Kimi K2.6) | Temporarily alias `[[ss-search]] → [[TOOL_ALPHA]]`, `[[ss-find]] → [[TOOL_BETA]]`, `[[ss-semantic]] → [[TOOL_GAMMA]]`, `[[structural]] → [[TOOL_DELTA]]` in the candidate. Ask Kimi to optimize the prompt so an agent could correctly use these tools *based only on prompt descriptions, not lexical priors*. After mutation, map names back. **Domain-stripping** (per Gemini 2nd-pass §A3 — anti-ghost-context-leak): the OP-4 reflector system prompt MUST also strip the words "code", "repository", "search", "semantic", "regex" and instead frame the task as "optimizing a generic database retrieval tool (TOOL_ALPHA), a regex-anchor lookup tool (TOOL_BETA), a vector-similarity tool (TOOL_GAMMA), and a graph-traversal tool (TOOL_DELTA)". Without this, the reflector hallucinates the domain back into surrounding context, defeating the masking. | **Cognitive forcing**: breaks the agent's reliance on pre-trained "search/find/semantic" lexical priors. Forces unambiguous self-contained tool descriptions. |
+| OP-4 | **Tool-Signature Masking** (Kimi K2.6) | Temporarily alias `[[ss-search]] → [[TOOL_ALPHA]]`, `[[ss-find]] → [[TOOL_BETA]]`, `[[ss-semantic]] → [[TOOL_GAMMA]]`, `[[ss-trace]] → [[TOOL_DELTA]]` in the candidate. Ask Kimi to optimize the prompt so an agent could correctly use these tools *based only on prompt descriptions, not lexical priors*. After mutation, map names back. **Domain-stripping** (per Gemini 2nd-pass §A3 — anti-ghost-context-leak): the OP-4 reflector system prompt MUST also strip the words "code", "repository", "search", "semantic", "regex" and instead frame the task as "optimizing a generic database retrieval tool (TOOL_ALPHA), a regex-anchor lookup tool (TOOL_BETA), a vector-similarity tool (TOOL_GAMMA), and a graph-traversal tool (TOOL_DELTA)". Without this, the reflector hallucinates the domain back into surrounding context, defeating the masking. | **Cognitive forcing**: breaks the agent's reliance on pre-trained "search/find/semantic" lexical priors. Forces unambiguous self-contained tool descriptions. |
 | OP-5 | **The Pruner** (Kimi K2.6) | "Remove ~20% of words from this prompt without changing any operational rule, `[[token]]`, or behavioural expectation. Make it terse. **DO NOT alter the syntax, indentation, or logic of any pseudocode, `if/then` blocks, or fenced code blocks — restrict pruning to natural-language prose only.** This protects OP-3 AST-ified routing rules from accidental syntax destruction (per Gemini 3rd-pass §C1)." | **Bloat control.** GEPA's biggest failure mode is monotonic prompt inflation — reflectors add rules, never delete them. By round 20, prompts can balloon to 2,500+ tokens, diluting attention. Pruner provides downward pressure. Combined with the explicit length penalty in §3.7. The pseudocode-protection clause is critical because OP-3 AST-ification produces `if/then` routing blocks that "make it terse" would otherwise mangle (deleting `elif`, flattening indentation, dropping closing brackets). |
 
 **Per-round slot composition (3 mutations per round)**:
@@ -188,7 +188,7 @@ The following tokens are wrapped as `[[...]]` in T1–T14 source files and are p
 
 | Category | Tokens |
 |---|---|
-| Tool names | `[[ss-search]]`, `[[ss-find]]`, `[[ss-semantic]]`, `[[structural]]`, `[[ss-grep]]`, `[[ss-trace]]`, `[[ss-read]]` |
+| Tool names | `[[ss-search]]`, `[[ss-find]]`, `[[ss-semantic]]`, `[[ss-trace]]`, `[[ss-grep]]`, `[[ss-read]]` |
 | Format markers | `[[agent-format]]`, `[[json]]`, `[[regex]]` |
 | File-shape mentions | `[[expectedFiles]]`, `[[expectedSymbols]]`, `[[expectedFacts]]`, `[[no-match]]` |
 | Structural placeholders | code fences, regex literals, file-path patterns matching `^[a-zA-Z][a-zA-Z0-9_/.-]*\.(js|ts|tsx|jsx|py|rs|go|md)$` |
@@ -520,7 +520,7 @@ Decision at gate-failure time, not pre-committed.
 > by the PHASE6_REDO run (see `docs/PHASE6_REDO.md`). The new artifact ships a **family-conditioned
 > default + per-family overrides** instead of a single flat shape recommendation. T_i variant
 > bodies for the `[[ss-search]]` clauses must consume `recommendations-v2.json` schema, NOT the
-> deprecated `recommendations.json`. The other three tools (`ss-find`, `ss-semantic`, `structural`)
+> deprecated `recommendations.json`. The other three tools (`ss-find`, `ss-semantic`, `ss-trace`)
 > retain the prior P6 directional signal in this section until their respective Phase-6 redoes land.
 >
 > The new schema expects two fields per consumer:
@@ -531,18 +531,26 @@ Decision at gate-failure time, not pre-committed.
 >   Systems-modular-terse, C-family, JS-mobile, Scripting-dynamic). Family detection is a
 >   deterministic file-extension → family lookup; the agent does not reason about it.
 
-All four ss-* tools now have PHASE6_REDO artifacts — `ss-search`, `ss-find`, `ss-semantic`,
-and `structural`. See §4.2 below for the verbatim recommendations. P6's
-`track-b-summary.json:perToolWinRates` is no longer the load-bearing input for any tool's
-variant authoring; the per-tool redo artifacts supersede it.
+Three of four ss-* tools now have PHASE6_REDO artifacts — `ss-search`, `ss-find`, `ss-semantic`.
+The fourth (`ss-trace`) is pending its own redo. See §4.2 below for the verbatim recommendations.
+P6's `track-b-summary.json:perToolWinRates` is no longer the load-bearing input for the three
+shipped tools; the per-tool redo artifacts supersede it. For `ss-trace`, the qshape-v1
+directional row below is the interim signal.
 
-**Historical qshape-v1 directional signal (superseded, kept for cross-reference)** — the
-original P6 sweep flagged `structural` as preferring `short+with-symbol+narrow-regex+interrogative+high-density`
-at 28% win rate. The 2026-05-14 structural redo confirmed the parser-firing condition but
-discovered a stronger finding: phrasing is rank-equivalent once the parser fires (zero
-variance across all 5 phrasings within a relationship type, 170/170 probes). The qshape-v1
-"interrogative" preference was an artifact of which phrasings happened to fire the parser,
-not a ranking signal.
+**Historical qshape-v1 directional signal for `structural`/`ss-trace` (interim until ss-trace
+redo lands)** — the original P6 sweep flagged `structural` as preferring
+`short+with-symbol+narrow-regex+interrogative+high-density` at 28% win rate. A 2026-05-14
+session attempted a Phase 6 redo under that label but mistakenly targeted
+`SweetSearch.structuralSearch` (the NL-regex-parse-then-route variant in
+`core/search/sweet-search.js`, NOT used in production) instead of `ss-trace`'s actual
+production path `traceSymbol` (in `core/search/search-trace.js` →
+`StructuralContextBuilder.build` in `core/graph/structural-context.js`). The artifacts
+produced under that session (`recommendations-v2-structural.json`,
+`core/prompt-optimization/scripts/structural/`,
+`core/prompt-optimization/data/query-shapes/structural/`,
+`tests/unit/prompt-optimization/phase6-redo-structural.test.js`) are **retracted**. The
+phrasing-tie finding from that session is also retracted — it applies to the wrong code path.
+A fresh `ss-trace` failure-analysis session will replace this row.
 
 **`ss-search` shape findings from PHASE6_REDO (qshape-v2, 2026-05-13, n=1,424 sweep rows over 18 languages)** — supersedes the deprecated qshape-v1 row above:
 
@@ -611,35 +619,16 @@ From the P6 directional signal, the variants encode these tool-specific recommen
   **Strategy 3 — `popular_weighted`:** V2 (diversity-enforced — natural agentic-tier winner matched Strategy 1). *"Phrase a short interrogative query (4-8 tokens) that contains the target symbol verbatim."* Distinct from Strategy 1 so GEPA gets a real second candidate.
 
   Confirms the prior qshape-v1 directional hint that ss-semantic loves "very-short + symbol + narrow" — but adds the family-conditioned C-family→V2 finding and the popular-weighted V2 fallback for GEPA diversity.
-- **`[[structural]]`** (tree-sitter relationships): **PHASE6_REDO structural redo SHIPPED 2026-05-14** — `recommendations-v2-structural.json` ships THREE strategies per relationship type (callers / callees / impact), primary metric Recall@5 over the gold's `graphNeighbors` set. The redo covered 170 probes (68 callers + 34 callees + 68 impact) derived from existing AST-tester inputs that had non-empty graphNeighbors data, across 14 languages.
+- **`[[ss-trace]]`** (symbol-in, structural-context-out via `traceSymbol` → `StructuralContextBuilder.build`): **PHASE6_REDO redo RETRACTED 2026-05-14 — fresh redo PENDING.** A prior session targeted `SweetSearch.structuralSearch` (the NL-regex-parse-then-route variant in `core/search/sweet-search.js`) under this label and shipped `recommendations-v2-structural.json`. That code path is NOT used in production. The actual production primitive is `ss-trace` (`sweet-search trace <symbol>` → `core/search/search-trace.js:traceSymbol` → `core/graph/structural-context.js:StructuralContextBuilder.build`). Artifacts produced under the wrong-path label (`recommendations-v2-structural.json`, `core/prompt-optimization/scripts/structural/`, `core/prompt-optimization/data/query-shapes/structural/`, `tests/unit/prompt-optimization/phase6-redo-structural.test.js`) are retracted; cleanup steps are in the ss-trace handoff.
 
-  **Empirical headline** (load-bearing for GEPA): every phrasing inside a relationship type produces IDENTICAL Recall@5 (zero variance across P1-P5, 170/170 probes). This is because `structuralSearch.parseStructuralQuery` extracts `(structuralType, targetEntity)` from the NL query and discards the rest — once the parser fires, phrasing is rank-equivalent. The artifact's three strategies (simple_global / family_conditioned / popular_weighted) all collapse to the same canonical phrasing (P3 declarative) by tie-break. The recommendation for PHASE7 is "pick the canonical P3 for predictability; the parser absorbs all variance".
+  **Interim runtime contract** (until the ss-trace redo lands): use `ss-trace` when the agent already knows the target symbol AND wants structural context (callers + callees + impact rolled into one response). Pass `symbol` as the positional arg; optionally pass `--in <file>` to disambiguate, `--depth N` for transitive expansion (default 3), `--budget N` for token cap. The tool returns a single structural-context blob with all three relationship buckets — the agent does not pick a sub-mode the way the wrong-path `structuralSearch` parser did.
 
-  **Runtime contract** (agent picks phrasing per relationship type detected in the NL query):
-  ```
-  detect structural intent from the user's NL → {callers, callees, impact, none}
-  if intent == none:        do not use structural mode (fall back to hybrid/semantic)
-  if intent == callers:     phrase as "callers of <symbol>"            (P3 declarative)
-  if intent == callees:     phrase as "callees of <symbol>"            (P3 declarative)
-  if intent == impact:      phrase as "impact of refactoring <symbol>" (P3 declarative)
-  ```
+  **Interim instruction_text** (until v2 ships):
+    *"For `[[ss-trace]]`: call when the symbol is known and the goal is structural context (who calls X, what X calls, downstream impact). Pass the symbol verbatim; optionally narrow with `--in <file>` when the symbol is ambiguous across the codebase. Do NOT phrase as an NL question — `ss-trace` takes a symbol, not a query."*
 
-  **Strategy 1 — `simple_global` (per relationship type):**
-    - callers: *"For ss-* structural mode (callers): phrase the NL query as declarative — e.g., 'callers of \<symbol\>'."*
-    - callees: *"For ss-* structural mode (callees): phrase the NL query as declarative — e.g., 'callees of \<symbol\>'."*
-    - impact:  *"For ss-* structural mode (impact): phrase the NL query as declarative — e.g., 'impact of refactoring \<symbol\>'."*
+  **Pending work**: an ss-trace failure-analysis redo replaces the retracted artifacts. See the ss-trace handoff for scope (Recall@K against `graphNeighbors`-derived golds, options-conditioned levers `maxDepth` / `queryHint` / `tokenBudget`, verification of the two assumptions about adaptive transitive expansion default and PageRank-in-rank, the `findCallers` SQL fix that cross-cuts to ss-search graph-expansion).
 
-  **Strategy 2 — `family_conditioned` (per relationship type):** identical to Strategy 1 — no family overrides triggered. The override gate (family-best ≥ 8pp Recall@5 above default) cannot fire because all phrasings tie within a relationship type. This is a real finding, not a missing measurement. Documented as `family_conditioned.overrides: {}` in the artifact.
-
-  **Strategy 3 — `popular_weighted` (agentic-tier, per relationship type):** also identical to Strategy 1 — tie-break to P3 because per-language scores match across phrasings. The artifact emits `alt_so_tier` for reference (also P3).
-
-  **Quality data** (Recall@5 on dev split, n=105 probes / 525 rows): callers 0.298, callees 0.579, impact 0.242. The lower Recall@5 vs ss-search/ss-find reflects a tool-internal limitation: `findCallers`' SQL `WHERE (name = ? OR name LIKE '%X%') LIMIT 1` does not prefer exact matches over LIKE substring matches, so short symbol names (e.g., cpp `Vec`) resolve to arbitrary substring siblings. This is independent of phrasing and is a documented follow-up workstream (independent of this redo's prompt-shape charter).
-
-  **Impact ground-truth model**: 1-hop direct-callers-as-proxy. 2-hop closure recorded as diagnostic; sweep finds 2-hop minus 1-hop = +2.60pp (well under the 15pp escalation threshold) — tool is NOT doing transitive expansion that would invalidate 1-hop GT.
-
-  **Excluded from scope**: `implementations` relationship (only 17 inputs / 12% graph coverage; not on user-prioritized list). C-family probe coverage is genuinely thin (5 dev probes / 0 heldout) — documented as a known limitation in the artifact, not papered over by relaxing the gold-data filter.
-
-These bullets go *verbatim* into the relevant T_i variant bodies. For `[[ss-search]]`, `[[ss-find]]`, `[[ss-semantic]]`, and `[[structural]]`, the bullet is regenerated from the corresponding `recommendations-v2-*.json` whenever that artifact updates.
+These bullets go *verbatim* into the relevant T_i variant bodies. For `[[ss-search]]`, `[[ss-find]]`, and `[[ss-semantic]]`, the bullet is regenerated from the corresponding `recommendations-v2-*.json` whenever that artifact updates. For `[[ss-trace]]`, the bullet is the interim text above until the ss-trace redo lands `recommendations-v2-ss-trace.json`.
 
 ### §4.3 Variant slate
 
@@ -660,14 +649,14 @@ The 14 hand-authored seed variants are organised along three orthogonal axes:
 | T7 | Evidence-first | Terse | None | citation discipline; ignores P6 routing (control for shape-doesn't-matter hypothesis) | ~400 tokens |
 | T8 | Evidence-first | Medium | Multi-file flow | + minimal §4.2 routing for ss-semantic-avoidance only | ~700 tokens |
 | T9 | Evidence-first | Verbose | All | + §4.2 + structured citation requirements | ~1100 tokens |
-| T10 | Hybrid: tool + shape | Medium | None | full §4.1 + §4.2 + structural-prefers-interrogative | ~700 tokens |
+| T10 | Hybrid: tool + shape | Medium | None | full §4.1 + §4.2 + ss-trace symbol-not-query contract | ~700 tokens |
 | T11 | Hybrid: tool + evidence | Medium | None | §4.2 routing + citation discipline | ~700 tokens |
 | T12 | Minimal baseline (control) | Terse | None | NO P6 grounding (proves §4.1 helps) | ~250 tokens |
 | T13 | Aggressive "no-match-first" | Medium | `expectedNoMatch` | + §4.2 + early-exit logic | ~700 tokens |
 | T14 | Behavioral-query optimized | Medium | Multi-file flow + behavioral | + §4.2 + ripgrep-sink-trait-style multi-callback handling (the gold class P6 timed out on) | ~800 tokens |
 | T15 | **Hypothesis-Driven Backtracking** (per Gemini critique) | Medium | All + structured `<failure_analysis>` blocks | encodes "if a tool returns empty result, write `<failure_analysis>` explaining why the code wasn't there before invoking next tool"; leverages 2026-era LLM test-time-compute even with extended-thinking OFF | ~900 tokens |
 
-**Family-conditioned `ss-search` clauses (post-PHASE6_REDO supersession)**: every T_i whose body contains a `[[ss-search]]` clause and whose `p6_grounding` is `full` or `partial` must consume `recommendations-v2.json` (default + per-family overrides), NOT the deprecated flat `recommendations.json`. The other three tools' clauses (`[[ss-find]]`, `[[ss-semantic]]`, `[[structural]]`) continue to consume the old artifact until their respective Phase-6 redoes ship. T12 (the no-grounding control) remains literally control — no shape clauses for any tool.
+**Family-conditioned `ss-search` clauses (post-PHASE6_REDO supersession)**: every T_i whose body contains a `[[ss-search]]` clause and whose `p6_grounding` is `full` or `partial` must consume `recommendations-v2.json` (default + per-family overrides), NOT the deprecated flat `recommendations.json`. `[[ss-find]]` and `[[ss-semantic]]` clauses consume their own `recommendations-v2-*.json` artifacts (shipped). `[[ss-trace]]` clauses use the interim instruction_text in §4.2 until the ss-trace redo lands `recommendations-v2-ss-trace.json`. T12 (the no-grounding control) remains literally control — no shape clauses for any tool.
 
 **T12 (the no-grounding control) matters**: if T12 wins despite skipping §4.1 guidance, that's evidence that P6's directional signal didn't generalise. If T12 underperforms, the P6 grounding was load-bearing. Either way, useful. The family-conditioned ss-search supersession does NOT change T12's role — T12 stays grounding-free regardless of which P6 artifact is the live one.
 
@@ -766,11 +755,11 @@ This tests **verification, not just retrieval**. A prompt that blindly trusts fi
 
 ### §5.7 Adversarial counter-probes (per Gemini 2nd-pass §B4 — anti-self-fulfilling-prophecy)
 
-Risk: the probe author (human) subconsciously aligns dev probes with the P6 win-rate signal (e.g., authoring structural probes in interrogative form because P6 said `structural` likes interrogative). The GEPA loop would then trivially "validate" P6's signal — but only because the test was rigged.
+Risk: the probe author (human) subconsciously aligns dev probes with the P6 win-rate signal (e.g., authoring ss-trace probes in interrogative form because qshape-v1 said `structural` liked interrogative — a now-retracted signal since it targeted the wrong code path). The GEPA loop would then trivially "validate" P6's signal — but only because the test was rigged.
 
 **Mitigation — adversarial counter-probes**: pass 10 of the original 25 dev probes through Sonnet 4.6 with the system prompt:
 
-> *"Rewrite this code-search query so its surface form is HOSTILE to the following heuristic [insert P6 winRate guidance here, e.g., 'structural tools prefer interrogative + symbol + narrow regex']. Preserve the underlying user intent and gold answer exactly. Make the rewritten query violate the heuristic — terse imperative without symbol, or broad NL without anchor, etc."*
+> *"Rewrite this code-search query so its surface form is HOSTILE to the following heuristic [insert P6 winRate guidance here, e.g., 'ss-find narrow-regex + interrogative wins for JS-mobile']. Preserve the underlying user intent and gold answer exactly. Make the rewritten query violate the heuristic — terse imperative without symbol, or broad NL without anchor, etc."*
 
 These 10 adversarial counter-probes are added to the held-out set (NOT the dev set — they're a generalization gate, not a training signal). At the end of the run, the winning prompt is evaluated on them. If it scores within 15% of its dev-set score, the P6 signal generalised. If it crashes (>25% drop), the prompt was overfit to query-shape alignment.
 
@@ -1428,7 +1417,7 @@ All 6 questions are now locked. Decisions:
 3. **Probe corpus: deno 2.x** ✅ — for fresh hand-authored post-cutoff probes (covering the 30-40 non-P6-derived probes per §5.4). Most representative of typical Codex/Claude Code agentic-search use.
 4. **Manual reflection cadence: every round, AI-assisted** ✅ — between every round, Gemini 3.1 Pro Deep Think (`gemini-3.1-pro-preview` with `thinkingBudget: -1`) generates a reflection report on the round's results. User reviews Gemini's report, decides what to act on, logs the decision to `p7-decisions.md`. Cost: ~$0.07/round × 20 = ~$1.40 total. See §3.4 for protocol.
 5. **HOMP class B (Qwen 3.6 Plus): opencode CLI** ✅ — user prefers harness-realism over direct-API speed. Real Qwen users on opencode see the prompt through the same CLI overhead, including system-context injection. Using opencode CLI for HOMP makes the "does it transfer to opencode users?" claim more honest. The only call path in P7 that uses a CLI harness; documented as such in §10 risk register. **Reminder**: Qwen 3.6 Plus is HOMP-only, NOT a target — we ship a unified prompt optimised for Sonnet+GPT-5.5; Qwen validates cross-family transfer.
-6. **OP-4 Tool-Signature Masking aliases: randomized per call** ✅ — each call gets a fresh permutation of `[[TOOL_ALPHA/BETA/GAMMA/DELTA]]` aliases mapped to `[[ss-search/ss-find/ss-semantic/structural]]`. Mapping logged to the trajectory JSONL for audit. Prevents the optimizer from memorising the alias scheme and gaming it.
+6. **OP-4 Tool-Signature Masking aliases: randomized per call** ✅ — each call gets a fresh permutation of `[[TOOL_ALPHA/BETA/GAMMA/DELTA]]` aliases mapped to `[[ss-search/ss-find/ss-semantic/ss-trace]]`. Mapping logged to the trajectory JSONL for audit. Prevents the optimizer from memorising the alias scheme and gaming it.
 
 All locked. Ready for `prereg/p7-v1` tag.
 
