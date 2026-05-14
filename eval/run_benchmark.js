@@ -90,6 +90,13 @@ function parseArgs() {
     ablations: [],
     saveEvaluated: false,
     language: null,
+    // Paper-method evaluation: restrict retrieval scope to the per-query
+    // candidate pool (from queries.jsonl's `candidate_doc_ids` field).
+    // Used to match CoSQA+'s published evaluation methodology, where the
+    // candidate set is pre-selected (top-K by similarity in their paper),
+    // rather than retrieving over the full corpus. Default OFF — open-corpus
+    // retrieval is the harder + more realistic setup.
+    restrictToCandidates: false,
     // Dev/held-out split — see CLAUDE.md / AGENTS.md "Benchmark Methodology".
     // Default 'all' preserves the historical full-bench behaviour exactly.
     // Use --split=dev for iteration; --split=heldout / --split=all only at
@@ -122,6 +129,7 @@ function parseArgs() {
     }
     else if (arg === '--save-evaluated') opts.saveEvaluated = true;
     else if (arg.startsWith('--language=')) opts.language = arg.split('=')[1];
+    else if (arg === '--restrict-to-candidates') opts.restrictToCandidates = true;
     else if (arg.startsWith('--split=')) opts.split = normalizeSplit(arg.split('=')[1]);
     else if (arg === '--help' || arg === '-h') {
       console.log(`
@@ -167,6 +175,14 @@ Options:
                        no-ref-count-boost, no-name-precision
   --save-evaluated     Include compact per-query ranks and top results in JSON.
   --language=LANG      Restrict evaluation queries to one dataset language.
+  --restrict-to-candidates
+                       Paper-method eval: filter retrieval results to each
+                       query's pre-selected candidate pool (queries.jsonl
+                       must carry a 'candidate_doc_ids' field). Default OFF —
+                       open-corpus retrieval is the harder, more realistic
+                       setup. Used by CoSQA+ (full pairs file) to reproduce
+                       the published Table V methodology where the candidate
+                       set is restricted per query.
   --split=NAME         Dev/held-out split filter (dev|heldout|all)
                        [default: all]
                        'dev'     — iterate freely, inspect per-query results
@@ -244,6 +260,7 @@ async function main() {
     console.log(`  Ablations:   ${opts.ablations.join(', ')}`);
   }
   if (opts.saveEvaluated) console.log('  Save evals:  true');
+  if (opts.restrictToCandidates) console.log('  Restrict to candidates: ON (paper-method eval — filter to per-query candidate_doc_ids)');
 
   // 1. Load data
   const dataDir = path.join(__dirname, 'data', opts.dataset);
@@ -257,8 +274,11 @@ async function main() {
   }
 
   console.log('\n[1/5] Loading benchmark data...');
-  const corpus = loadJsonl(corpusFile);
-  let queries = loadJsonl(queriesFile);
+  // loadJsonl is sync for files < 256 MiB, Promise for larger; await works
+  // for both. Large-corpus benchmarks (BRIGHT-code: 761 MiB) hit V8's
+  // max-string-length without streaming.
+  const corpus = await loadJsonl(corpusFile);
+  let queries = await loadJsonl(queriesFile);
   const queriesBeforeSplit = queries.length;
 
   // Apply dev/held-out split. The split file is keyed on dataset name so
@@ -386,7 +406,27 @@ async function main() {
           ablations: opts.ablations.length ? opts.ablations : undefined,
         });
 
-        const evaluated = evaluateQuery(queryObj, results, docIdToFile);
+        // Paper-method eval: filter retrieved results down to the per-query
+        // candidate pool before scoring. This matches the published CoSQA+
+        // evaluation methodology (per-query restricted candidate set) and is
+        // a fair apples-to-apples comparison to their Table V numbers.
+        let scoredResults = results;
+        if (opts.restrictToCandidates && Array.isArray(queryObj.candidate_doc_ids) && queryObj.candidate_doc_ids.length > 0) {
+          const allowed = new Set();
+          for (const cid of queryObj.candidate_doc_ids) {
+            const fp = docIdToFile.get(cid);
+            if (fp) {
+              allowed.add(fp);
+              allowed.add(path.basename(fp));
+            }
+          }
+          scoredResults = results.filter(r => {
+            const f = r.file || '';
+            return allowed.has(f) || allowed.has(path.basename(f));
+          });
+        }
+
+        const evaluated = evaluateQuery(queryObj, scoredResults, docIdToFile);
         evaluated.latencyMs = latencyMs;
         evaluated.searchMode = mode;
         evaluatedQueries.push(evaluated);

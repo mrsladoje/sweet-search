@@ -1,6 +1,9 @@
 # Downloaded benchmark data (regenerate with: python download_data.py)
 data/gencodesearchnet/
 data/m2crb/
+data/cosqaplus/
+data/coreb/
+data/bright-code/
 # Track pattern benchmark query files (gold labels + contract)
 !data/pattern-benchmark*/
 !data/pattern-benchmark*/queries.jsonl
