@@ -7,6 +7,7 @@ import { existsSync, openSync, fsyncSync, closeSync, writeFileSync, readFileSync
 import path from 'path';
 
 import { DB_PATHS, HNSW_CONFIG, BINARY_HNSW_CONFIG } from '../infrastructure/config/index.js';
+import { chunkedIn } from '../infrastructure/db-utils.js';
 import { HNSWIndex } from '../vector-store/hnsw-index.js';
 import { LateInteractionIndex } from '../ranking/late-interaction-index.js';
 import { truncateForHNSW, getEmbeddings, getModelInfo, fisherYatesShuffle } from '../embedding/embedding-service.js';
@@ -395,14 +396,29 @@ export async function incrementalUpdateHNSW(dbPath, changedFiles, dryRun = false
   const Database = (await import('better-sqlite3')).default;
   const db = new Database(dbPath, { readonly: true });
 
-  const changedFileSet = new Set(changedFiles || []);
-  const placeholders = [...changedFileSet].map(() => '?').join(',');
-  const stmt = changedFileSet.size > 0
-    ? db.prepare(`SELECT rowid, id, file_path, embedding, metadata FROM vectors WHERE ${ALIAS_FILTER_SQL} AND file_path IN (${placeholders}) ORDER BY rowid`)
-    : db.prepare(`SELECT rowid, id, file_path, embedding, metadata FROM vectors WHERE ${ALIAS_FILTER_SQL} ORDER BY rowid`);
-
-  const rows = changedFileSet.size > 0 ? stmt.all(...changedFileSet) : [];
-  const totalNew = changedFileSet.size > 0 ? rows.length : 0;
+  const changedFileList = [...new Set(changedFiles || [])];
+  // Chunk the IN(?,?,...) clause to stay under SQLite's bound-parameter
+  // limit (default 32766, historic floor 999). Without chunking, a single
+  // indexing pass over >~32k changed files crashes with "too many SQL
+  // variables" — observed in production on CoSQA+ (51k docs) and BRIGHT
+  // (528k docs). See core/infrastructure/db-utils.js for the helper.
+  let rows = [];
+  if (changedFileList.length > 0) {
+    rows = chunkedIn(
+      db,
+      `SELECT rowid, id, file_path, embedding, metadata
+         FROM vectors
+        WHERE ${ALIAS_FILTER_SQL}
+          AND file_path IN (__IN_PLACEHOLDERS__)
+        ORDER BY rowid`,
+      changedFileList,
+    );
+    // Each batch is ORDER BY rowid internally, but batch boundaries break
+    // global monotonicity. The HNSW insertion loop below relies on rowid
+    // order for deterministic graph construction — re-sort explicitly.
+    rows.sort((a, b) => a.rowid - b.rowid);
+  }
+  const totalNew = rows.length;
 
   log(`Adding ${totalNew} new entries...`, 'yellow');
   let added = 0;
