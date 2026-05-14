@@ -1,0 +1,708 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-14T10:15:57.397Z",
+  "methodology": "DEV only, ast-tester only, strategy=agentic (V7 default, V2 JS-mobile, V4 C-family)",
+  "counts": {
+    "PASS": 51,
+    "PARTIAL": 18,
+    "FAIL": 21
+  },
+  "failModes": {
+    "db_missing": 0,
+    "file_not_indexed": 0,
+    "no_chunk_overlapping_gold": 0,
+    "chunk_overlaps_but_name_null": 3,
+    "chunk_overlaps_but_name_mismatch": 3,
+    "chunk_overlaps_with_correct_name": 15
+  },
+  "failWinnerKinds": {
+    "code": 19,
+    "doc": 2
+  },
+  "failRecallAt5": {
+    "hits": 16,
+    "fails": 21,
+    "pct": 76.2
+  },
+  "audits": [
+    {
+      "goldId": "CPP-002",
+      "language": "cpp",
+      "family": "C-family",
+      "shape": "V4",
+      "mode": "chunk_overlaps_with_correct_name",
+      "expectedFile": "hwy/highway.h",
+      "expectedSymbol": "FunctionCache",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "389-441",
+      "overlappingChunks": [
+        {
+          "range": "389-441",
+          "name": "FunctionCache",
+          "type": "struct"
+        }
+      ],
+      "top1": {
+        "file": "hwy/targets.h",
+        "symbol": "hwy",
+        "startLine": 36,
+        "endLine": 381,
+        "score": 0.3133383050560951,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 1,
+      "query": "How does FunctionCache's ChooseAndCall update the chosen target table?"
+    },
+    {
+      "goldId": "CPP-004",
+      "language": "cpp",
+      "family": "C-family",
+      "shape": "V4",
+      "mode": "chunk_overlaps_but_name_mismatch",
+      "expectedFile": "hwy/ops/generic_ops-inl.h",
+      "expectedSymbol": "Vec",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "36-50",
+      "overlappingChunks": [
+        {
+          "range": "36-50",
+          "name": "hwy",
+          "type": "namespace"
+        },
+        {
+          "range": "37-51",
+          "name": "HWY_NAMESPACE",
+          "type": "namespace"
+        },
+        {
+          "range": "37-91",
+          "name": "LaneType",
+          "type": "typeAlias"
+        }
+      ],
+      "top1": {
+        "file": "hwy/contrib/random/random-inl.h",
+        "symbol": "VectorXoshiro",
+        "startLine": 175,
+        "endLine": 344,
+        "score": 0.7702134000000005,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 0,
+      "query": "How does the using Vec = decltype(Zero(D())) type alias deduce the vector type?"
+    },
+    {
+      "goldId": "CS-003",
+      "language": "csharp",
+      "family": "OO-monolithic",
+      "shape": "V7",
+      "mode": "chunk_overlaps_with_correct_name",
+      "expectedFile": "libs/server/StoreWrapper.cs",
+      "expectedSymbol": "WaitForCommitAsync",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "479-528",
+      "overlappingChunks": [
+        {
+          "range": "479-528",
+          "name": "WaitForCommitAsync",
+          "type": "method"
+        }
+      ],
+      "top1": {
+        "file": "libs/server/Databases/IDatabaseManager.cs",
+        "symbol": "TakeOnDemandCheckpointAsync",
+        "startLine": 119,
+        "endLine": 285,
+        "score": 0.5584166049957275,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 1,
+      "query": "WaitForCommitAsync method that asynchronously waits for AOF commit completions from all databases"
+    },
+    {
+      "goldId": "CS-008",
+      "language": "csharp",
+      "family": "OO-monolithic",
+      "shape": "V7",
+      "mode": "chunk_overlaps_with_correct_name",
+      "expectedFile": "libs/storage/Tsavorite/cs/src/core/Device/AsyncPool.cs",
+      "expectedSymbol": "AsyncPool",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "9-29",
+      "overlappingChunks": [
+        {
+          "range": "9-29",
+          "name": "Tsavorite.core",
+          "type": "namespace"
+        },
+        {
+          "range": "10-15",
+          "name": null,
+          "type": "code"
+        },
+        {
+          "range": "16-35",
+          "name": "AsyncPool",
+          "type": "class"
+        },
+        {
+          "range": "16-16",
+          "name": null,
+          "type": "code"
+        },
+        {
+          "range": "17-95",
+          "name": "AsyncPool",
+          "type": "method"
+        }
+      ],
+      "top1": {
+        "file": "libs/client/ClientSession/AsyncPool.cs",
+        "symbol": "AsyncPool",
+        "startLine": 11,
+        "endLine": 142,
+        "score": 0.6723794192075729,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 1,
+      "query": "Generic AsyncPool supporting synchronous and asynchronous get with IDisposable constraint"
+    },
+    {
+      "goldId": "DR-006",
+      "language": "dart",
+      "family": "JS-mobile",
+      "shape": "V2",
+      "mode": "chunk_overlaps_with_correct_name",
+      "expectedFile": "pkgs/http/lib/src/response.dart",
+      "expectedSymbol": "Response",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "16-58",
+      "overlappingChunks": [
+        {
+          "range": "16-58",
+          "name": "Response",
+          "type": "class"
+        },
+        {
+          "range": "58-67",
+          "name": "fromStream",
+          "type": "function"
+        }
+      ],
+      "top1": {
+        "file": "pkgs/http/lib/src/request.dart",
+        "symbol": "Request",
+        "startLine": 15,
+        "endLine": 210,
+        "score": 0.4358591139316559,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 1,
+      "query": "Where is Response bodyBytes defined?"
+    },
+    {
+      "goldId": "JV-001",
+      "language": "java",
+      "family": "OO-monolithic",
+      "shape": "V7",
+      "mode": "chunk_overlaps_but_name_mismatch",
+      "expectedFile": "gson/src/main/java/com/google/gson/GsonBuilder.java",
+      "expectedSymbol": "serializeNulls",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "247-274",
+      "overlappingChunks": [
+        {
+          "range": "247-274",
+          "name": "excludeFieldsWithoutExposeAnnotation",
+          "type": "method"
+        }
+      ],
+      "top1": {
+        "file": "gson/src/main/java/com/google/gson/LongSerializationPolicy.java",
+        "symbol": "LongSerializationPolicy",
+        "startLine": 21,
+        "endLine": 83,
+        "score": 0.5702769041061401,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 1,
+      "query": "GsonBuilder's serializeNulls method that configures serialization of null fields in Gson"
+    },
+    {
+      "goldId": "JV-004",
+      "language": "java",
+      "family": "OO-monolithic",
+      "shape": "V7",
+      "mode": "chunk_overlaps_but_name_mismatch",
+      "expectedFile": "gson/src/main/java/com/google/gson/reflect/TypeToken.java",
+      "expectedSymbol": "getType",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "121-168",
+      "overlappingChunks": [
+        {
+          "range": "121-168",
+          "name": "verifyNoTypeVariable",
+          "type": "method"
+        }
+      ],
+      "top1": {
+        "file": "gson/src/main/java/com/google/gson/internal/bind/TypeAdapterRuntimeTypeWrapper.java",
+        "symbol": "TypeAdapterRuntimeTypeWrapper",
+        "startLine": 27,
+        "endLine": 103,
+        "score": 0.5182448971867563,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 0,
+      "query": "Method getType that returns the underlying runtime Type instance"
+    },
+    {
+      "goldId": "JV-005",
+      "language": "java",
+      "family": "OO-monolithic",
+      "shape": "V7",
+      "mode": "chunk_overlaps_with_correct_name",
+      "expectedFile": "gson/src/main/java/com/google/gson/GsonBuilder.java",
+      "expectedSymbol": "registerTypeAdapter",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "738-780",
+      "overlappingChunks": [
+        {
+          "range": "738-780",
+          "name": "registerTypeAdapter",
+          "type": "method"
+        }
+      ],
+      "top1": {
+        "file": "gson/src/main/java/com/google/gson/InstanceCreator.java",
+        "symbol": "InstanceCreator",
+        "startLine": 50,
+        "endLine": 93,
+        "score": 0.6099760816693307,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 1,
+      "query": "registerTypeAdapter method for custom JsonSerializer JsonDeserializer and InstanceCreator for a type"
+    },
+    {
+      "goldId": "KT-004",
+      "language": "kotlin",
+      "family": "OO-monolithic",
+      "shape": "V7",
+      "mode": "chunk_overlaps_with_correct_name",
+      "expectedFile": "kotlinx-coroutines-core/common/src/Builders.common.kt",
+      "expectedSymbol": "launch",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "200-213",
+      "overlappingChunks": [
+        {
+          "range": "200-213",
+          "name": "launch",
+          "type": "function"
+        }
+      ],
+      "top1": {
+        "file": "kotlinx-coroutines-core/common/src/CoroutineScope.kt",
+        "symbol": "coroutineScope",
+        "startLine": 812,
+        "endLine": 850,
+        "score": 0.6559599995613098,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 1,
+      "query": "launch function on CoroutineScope that accepts a suspend block and returns a Job"
+    },
+    {
+      "goldId": "PHP-008",
+      "language": "php",
+      "family": "Scripting-dynamic",
+      "shape": "V7",
+      "mode": "chunk_overlaps_with_correct_name",
+      "expectedFile": "Slim/App.php",
+      "expectedSymbol": "__construct",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "39-59",
+      "overlappingChunks": [
+        {
+          "range": "39-59",
+          "name": "App",
+          "type": "class"
+        },
+        {
+          "range": "39-39",
+          "name": null,
+          "type": "class"
+        },
+        {
+          "range": "40-106",
+          "name": "__construct",
+          "type": "method"
+        }
+      ],
+      "top1": {
+        "file": "Slim/Factory/AppFactory.php",
+        "symbol": "create",
+        "startLine": 48,
+        "endLine": 70,
+        "score": 0.4810844957828522,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 1,
+      "query": "Slim App __construct with multiple nullable typed parameters and default values"
+    },
+    {
+      "goldId": "PY-002",
+      "language": "python",
+      "family": "Scripting-dynamic",
+      "shape": "V7",
+      "mode": "chunk_overlaps_with_correct_name",
+      "expectedFile": "src/click/core.py",
+      "expectedSymbol": "Context",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "185-199",
+      "overlappingChunks": [
+        {
+          "range": "185-199",
+          "name": "Context",
+          "type": "class"
+        },
+        {
+          "range": "186-282",
+          "name": null,
+          "type": "code"
+        }
+      ],
+      "top1": {
+        "file": "docs/complex.md",
+        "symbol": "Contexts",
+        "startLine": 31,
+        "endLine": 49,
+        "score": 0.5048704147338867,
+        "presentation": "full"
+      },
+      "top1Kind": "doc",
+      "fileRecallAt5": 1,
+      "query": "Click Context that carries parent chain, shared object, and meta dict"
+    },
+    {
+      "goldId": "RB-001",
+      "language": "ruby",
+      "family": "Scripting-dynamic",
+      "shape": "V7",
+      "mode": "chunk_overlaps_with_correct_name",
+      "expectedFile": "lib/sinatra/base.rb",
+      "expectedSymbol": "Base",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "971-994",
+      "overlappingChunks": [
+        {
+          "range": "971-994",
+          "name": "Base",
+          "type": "class"
+        },
+        {
+          "range": "972-1049",
+          "name": "initialize",
+          "type": "method"
+        }
+      ],
+      "top1": {
+        "file": "rack-protection/lib/rack/protection/base.rb",
+        "symbol": "Base",
+        "startLine": 11,
+        "endLine": 145,
+        "score": 0.4730866718292237,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 1,
+      "query": "Sinatra::Base core class that owns route table and dispatch logic"
+    },
+    {
+      "goldId": "RB-006",
+      "language": "ruby",
+      "family": "Scripting-dynamic",
+      "shape": "V7",
+      "mode": "chunk_overlaps_with_correct_name",
+      "expectedFile": "lib/sinatra/base.rb",
+      "expectedSymbol": "Helpers",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "286-302",
+      "overlappingChunks": [
+        {
+          "range": "286-302",
+          "name": "Helpers",
+          "type": "module"
+        },
+        {
+          "range": "286-287",
+          "name": null,
+          "type": "module"
+        },
+        {
+          "range": "288-346",
+          "name": "status",
+          "type": "method"
+        }
+      ],
+      "top1": {
+        "file": "sinatra-contrib/lib/sinatra/haml_helpers.rb",
+        "symbol": "Sinatra",
+        "startLine": 1,
+        "endLine": 50,
+        "score": 0.5291404724121094,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 0,
+      "query": "Sinatra::Helpers module providing view and response helper methods to routes and filters"
+    },
+    {
+      "goldId": "RS-003",
+      "language": "rust",
+      "family": "Systems-modular-terse",
+      "shape": "V7",
+      "mode": "chunk_overlaps_with_correct_name",
+      "expectedFile": "crates/ruff_linter/src/checkers/ast/mod.rs",
+      "expectedSymbol": "Checker",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "196-208",
+      "overlappingChunks": [
+        {
+          "range": "196-208",
+          "name": "Checker",
+          "type": "struct"
+        },
+        {
+          "range": "196-236",
+          "name": null,
+          "type": "code"
+        }
+      ],
+      "top1": {
+        "file": "crates/ruff_linter/src/linter.rs",
+        "symbol": "check_path",
+        "startLine": 120,
+        "endLine": 373,
+        "score": 0.4875446856021881,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 1,
+      "query": "Checker AST visitor state machine that accumulates lint diagnostics"
+    },
+    {
+      "goldId": "RS-008",
+      "language": "rust",
+      "family": "Systems-modular-terse",
+      "shape": "V7",
+      "mode": "chunk_overlaps_with_correct_name",
+      "expectedFile": "crates/ruff_linter/src/packaging.rs",
+      "expectedSymbol": "detect_package_root",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "35-47",
+      "overlappingChunks": [
+        {
+          "range": "35-47",
+          "name": "detect_package_root",
+          "type": "function"
+        }
+      ],
+      "top1": {
+        "file": "crates/ruff_workspace/src/resolver.rs",
+        "symbol": "detect_package_root_with_cache",
+        "startLine": 275,
+        "endLine": 289,
+        "score": 0.5942808389663696,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 1,
+      "query": "The detect_package_root function that returns an Option of &Path from a given Path and namespace_packages"
+    },
+    {
+      "goldId": "SC-004",
+      "language": "scala",
+      "family": "OO-monolithic",
+      "shape": "V7",
+      "mode": "chunk_overlaps_with_correct_name",
+      "expectedFile": "requests/src/requests/Model.scala",
+      "expectedSymbol": "Response",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "196-197",
+      "overlappingChunks": [
+        {
+          "range": "196-197",
+          "name": "Response",
+          "type": "class"
+        }
+      ],
+      "top1": {
+        "file": "readme.md",
+        "symbol": "Response Content",
+        "startLine": 145,
+        "endLine": 175,
+        "score": 0.4740417003631592,
+        "presentation": "full"
+      },
+      "top1Kind": "doc",
+      "fileRecallAt5": 1,
+      "query": "Response that includes url, status code, headers, and binary body data"
+    },
+    {
+      "goldId": "TSL-004",
+      "language": "typescript-lib",
+      "family": "JS-mobile",
+      "shape": "V2",
+      "mode": "chunk_overlaps_but_name_null",
+      "expectedFile": "packages/zod/src/v4/core/schemas.ts",
+      "expectedSymbol": "$ZodType",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "167-188",
+      "overlappingChunks": [
+        {
+          "range": "167-188",
+          "name": null,
+          "type": "code"
+        }
+      ],
+      "top1": {
+        "file": "packages/zod/src/v3/types.ts",
+        "symbol": "ZodType",
+        "startLine": 158,
+        "endLine": 535,
+        "score": 0.6570303350687027,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 0,
+      "query": "How does $ZodType define schema output?"
+    },
+    {
+      "goldId": "TSL-006",
+      "language": "typescript-lib",
+      "family": "JS-mobile",
+      "shape": "V2",
+      "mode": "chunk_overlaps_but_name_null",
+      "expectedFile": "packages/zod/src/v4/core/schemas.ts",
+      "expectedSymbol": "$ZodTypeInternals",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "167-188",
+      "overlappingChunks": [
+        {
+          "range": "167-188",
+          "name": null,
+          "type": "code"
+        }
+      ],
+      "top1": {
+        "file": "packages/zod/src/v3/types.ts",
+        "symbol": "ZodType",
+        "startLine": 158,
+        "endLine": 535,
+        "score": 0.5090112686157227,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 1,
+      "query": "How does $ZodTypeInternals define output/infer?"
+    },
+    {
+      "goldId": "TSL-008",
+      "language": "typescript-lib",
+      "family": "JS-mobile",
+      "shape": "V2",
+      "mode": "chunk_overlaps_but_name_null",
+      "expectedFile": "packages/zod/src/v4/core/schemas.ts",
+      "expectedSymbol": "$ZodType",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "167-188",
+      "overlappingChunks": [
+        {
+          "range": "167-188",
+          "name": null,
+          "type": "code"
+        }
+      ],
+      "top1": {
+        "file": "packages/zod/src/v3/types.ts",
+        "symbol": "ZodType",
+        "startLine": 158,
+        "endLine": 535,
+        "score": 0.5315941080451011,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 0,
+      "query": "What variance modifiers does $ZodType use?"
+    },
+    {
+      "goldId": "ZG-001",
+      "language": "zig",
+      "family": "C-family",
+      "shape": "V4",
+      "mode": "chunk_overlaps_with_correct_name",
+      "expectedFile": "src/request.zig",
+      "expectedSymbol": "Request",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "22-83",
+      "overlappingChunks": [
+        {
+          "range": "22-83",
+          "name": "Request",
+          "type": "struct"
+        }
+      ],
+      "top1": {
+        "file": "src/config.zig",
+        "symbol": "Request",
+        "startLine": 72,
+        "endLine": 83,
+        "score": 0.6330944722890854,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 1,
+      "query": "How does the Request struct handle HTTP headers, body, and query params?"
+    },
+    {
+      "goldId": "ZG-004",
+      "language": "zig",
+      "family": "C-family",
+      "shape": "V4",
+      "mode": "chunk_overlaps_with_correct_name",
+      "expectedFile": "src/request.zig",
+      "expectedSymbol": "Request",
+      "expectedSymbolAnyOf": null,
+      "goldRange": "22-83",
+      "overlappingChunks": [
+        {
+          "range": "22-83",
+          "name": "Request",
+          "type": "struct"
+        }
+      ],
+      "top1": {
+        "file": "src/config.zig",
+        "symbol": "Request",
+        "startLine": 72,
+        "endLine": 83,
+        "score": 0.5464249116182328,
+        "presentation": "full"
+      },
+      "top1Kind": "code",
+      "fileRecallAt5": 1,
+      "query": "How does the httpz Request struct parse the querystring?"
+    }
+  ]
+}
