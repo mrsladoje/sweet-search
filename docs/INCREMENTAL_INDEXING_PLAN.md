@@ -1,12 +1,12 @@
 # Incremental Indexing Plan
 
-> **Status:** Design proposal. Originally drafted 2026-05-14; revised
+> **Status:** Execution plan. Originally drafted 2026-05-14; revised
 > 2026-05-15 after two passes of Gemini 3.1 Pro deep-think SOTA review
 > (§§ 35–36). Supersedes the architectural sections of
-> `INCREMENTAL_INDEXING_TODO.md`; the TODO file remains the canonical
-> list of edge-case requirements (cold-start, empty-codebase,
-> exclude-list diff). This document focuses on the **reconcile
-> architecture** that the TODO defers.
+> `INCREMENTAL_INDEXING_TODO.md` and folds in its edge-case requirements
+> for cold-start, empty-codebase, exclude-list diffs, model-backend
+> policy, and reconcile architecture. The TODO file is historical input;
+> this plan is the executable source of truth for incremental indexing.
 >
 > **Research basis:** parallel SOTA review across HNSW, BM25/trigram,
 > ColBERT/PLAID, tree-sitter/symbol indexing, and production AI-coding tool
@@ -20,8 +20,11 @@
 > bonus items (folded in per § 36). Phase estimates revised upward
 > from 13 to 22 dev-days accordingly. A later Codex review folded in
 > manifest pinning, exact encoder-input hashes, sparse-gram delta overlay,
-> and HNSW oversampling, revising the v1 estimate to 30-35 dev-days with
-> strict MVCC reader isolation deferred.
+> and HNSW oversampling. A follow-up encoder-metadata pass added explicit
+> dense / LI / dedup dependency tracking. The final execution pass promotes
+> strict reader isolation, HCGS invalidation, watcher default-on behavior,
+> cross-worktree ownership, SIMD tombstone filtering, and compressed queues
+> into v1 scope. Estimate: 40-48 dev-days.
 >
 > **Constraint anchor:** CPU-only for the incremental path. Dirty-file
 > reconcile and every automatic maintenance job it schedules must run on
@@ -29,7 +32,7 @@
 > reserved only for cold initial indexing or an explicit operator full
 > reindex outside the reconcile daemon. Watermark jobs are compaction/repair
 > work, not the path that makes an edit searchable.
-> See `INCREMENTAL_INDEXING_TODO.md` § "Model Backend for Incremental Runs".
+> See § 34.7 for the locked GPU/CPU policy.
 >
 > **Portability:** No part of this design is tied to specific hardware.
 > Where the original draft cited M3-class numbers, the plan now uses
@@ -57,8 +60,8 @@ provides scaffolding but does not yet drive the five indices lock-step.
 The plan is a **single reconcile tick** (60 s nominal, adaptive by hardware
 tier unless pinned by config) that:
 
-1. Maintains an in-memory dirty set fed by an optional Rust `notify` watcher,
-   a JSONL queue, and a periodic mtime backstop scan;
+1. Maintains an in-memory dirty set fed by a Rust `notify` watcher enabled by
+   default where supported, a JSONL queue, and a periodic mtime backstop scan;
 2. Coalesces by **per-file content hash** and **per-chunk content hash**,
    so format-on-save and import-shuffle storms become near no-ops;
 3. CPU-encodes only the survivors, bounded by a per-tick CPU budget;
@@ -79,7 +82,8 @@ The user-visible staleness contract is **≤ the configured tick interval**
 (60 s nominal) for any edit on a running system. Ordinary edits never require
 a full recalculation. Deterministic full reindex remains the fallback only for
 content-incompatible changes such as encoder/config fingerprint changes,
-corrupted state, or an explicit operator request.
+corrupted state, or an explicit operator request; it is never the response to
+an ordinary file edit.
 
 ---
 
@@ -122,14 +126,12 @@ corrupted state, or an explicit operator request.
   with the CPU-only incremental constraint and not actually requested.
 - **Cross-machine index sync.** No fleet, no shared cache, no CDN of
   prebuilt indices. Single workstation.
-- **Embedding model migration.** A future encoder upgrade
-  (e.g. CodeSage-Small-v2, see `memory/project_encoder_upgrade_scoping.md`)
-  is its own workstream. The reconcile model will need a dual-read window
-  during migration; out of scope here.
+- **Encoder research migration.** This plan handles the current encoder
+  fingerprint strictly: incompatible model/config changes take the writer
+  lock and rebuild from source. Designing a new embedding model is a separate
+  product/research project, not a skipped part of incremental reconciliation.
 - **A new ranking signal.** This is plumbing. No new boosts, demotions, or
-  format-gated signals are introduced. Per CLAUDE.md, any future signal
-  that piggybacks on freshness state (e.g. "recency boost") will be gated
-  on `_isAgentFormat` and validated on held-out — separate proposal.
+  format-gated signals are introduced by the reconcile path.
 - **Replacing the chunker, the encoder, or any ranking layer.** Reconcile
   consumes their outputs unchanged.
 - **Changing normal full indexing.** `npm run index`,
@@ -145,7 +147,7 @@ corrupted state, or an explicit operator request.
 
 1. **CPU-only incremental path.** GPU lifecycle round-trips dominate
    small-batch work on every platform we target (5–15 s on Apple Silicon,
-   similar on CUDA — see TODO § Model Backend). A typical incremental
+   similar on CUDA — see § 34.7). A typical incremental
    tick touches 1–5 files and finishes in well under 1 s of CPU work
    on a modern laptop. The reconcile path must not call `teardownAllModels`
    or `initIndexGpuPool`, must not consult `shouldArmGpu()`, and must not
@@ -167,7 +169,7 @@ corrupted state, or an explicit operator request.
 4. **Exclude-list unification.** All change detection, file discovery, and
    LI skip policy must resolve excludes through `loadProjectConfig(projectRoot)`
    in `core/infrastructure/config/search.js`. No ad-hoc ignore lists in any
-   new code path. (See TODO § Exclude List.)
+   new code path. (See § 14.2 resolved-exclude fingerprint.)
 5. **DDD boundaries.** Reconcile-v2 is its own bounded context under
    `core/incremental-indexing/`, separate from the cold/batch
    `core/indexing/` pipeline. Domain logic stays in that context; SQL,
@@ -249,8 +251,11 @@ line numbers are accurate as of 2026-05-14.
    "user runs `npm run index`".
 5. **No CPU budget cap per tick.** A large branch switch can saturate
    encoding and noticeably slow searches that share the encoder pool.
-6. **No optional file watcher.** Daemon polls every 30 s, which is fine
-   as a backstop but leaves a worst-case 30-s latency for a hint to arrive.
+6. **Watcher not wired into the target path.** Daemon polling is a necessary
+   backstop, but the target path also starts a `notify` watcher by default
+   where supported so ordinary edits enter the dirty set immediately. If the
+   watcher fails at startup or overflows, the mtime/content-hash sweep remains
+   the correctness mechanism.
 
 ---
 
@@ -260,8 +265,8 @@ Citations resolve to the full reference list in § References.
 
 1. **Production code-search converged on hybrid watcher + periodic
    reconcile.** Cursor reconciles a Merkle tree every 10 min, Zoekt polls
-   on a schedule + optional push webhook, JetBrains uses VFS events but
-   coalesces into batches, Continue defers to "once per day". Pure-watcher
+   on a schedule plus push webhooks, JetBrains uses VFS events but
+   coalesces into batches, Continue documents "once per day". Pure-watcher
    indexing is rare and fragile — VS Code itself falls back to 5-s polling
    on macOS due to FSEvents weirdness, and Linux's default 524 288 inotify
    limit is routinely exhausted by `node_modules`.
@@ -279,9 +284,10 @@ Citations resolve to the full reference list in § References.
    the safe subset supported by the current JS binding: append new vectors,
    tombstone superseded keys, oversample + filter at query time, and rebuild a
    clean replacement graph in the background only after measured drift or
-   crash recovery. A future native HNSW owner can add localized neighbor
-   repair; the Node reconcile path must not hand-roll pointer-level graph
-   surgery against an mmap'd library structure.
+   crash recovery. Localized neighbor surgery is not required for correctness
+   in this plan because the current USearch JS binding does not expose safe
+   pointer-level repair APIs; the measured replacement path is the executable
+   repair mechanism.
 4. **Do NOT adopt Lucene segment-per-graph at this scale.** It adds a
    per-segment query tax that is pure latency loss when the corpus fits
    in one mutable graph. The 2026 HNSW-Merger result (SIGMOD '26) makes
@@ -325,7 +331,7 @@ Citations resolve to the full reference list in § References.
 
 ```
 ┌─────────────────┐
-│ Rust notify     │── (optional, opt-in via SWEET_SEARCH_WATCH=1)
+│ Rust notify     │── (default-on where supported; fallback to polling)
 │ watcher         │
 └────────┬────────┘
          │ fsevent → path
@@ -342,20 +348,21 @@ Citations resolve to the full reference list in § References.
 │  ┌────────────────────────────────────────────────────────────┐  │
 │  │ 1. Drain dirty set ∪ mtime-advanced paths                  │  │
 │  │ 2. Apply unified excludes (loadProjectConfig)              │  │
-│  │ 3. Hash each candidate; drop unchanged (content-stable)    │  │
-│  │ 4. CPU budget gate: take up to N files / M chunks per tick │  │
-│  │ 5. Per file: tree-sitter parse → chunk → entity diff       │  │
-│  │ 6. Chunk-content-hash; drop unchanged chunks                │  │
-│  │ 7. CPU encode (dense + LI tokens) — ORT CPU only           │  │
-│  │ 8. Begin global epoch ε+1; apply per-tier writes:          │  │
+│  │ 3. Hash candidates; split content-dirty vs unchanged       │  │
+│  │ 4. Expand metadata-dirty set from encoder deps (§ 7.2.1)   │  │
+│  │ 5. CPU budget gate: take up to N files / M chunks per tick │  │
+│  │ 6. Per file: tree-sitter parse → chunk → entity diff       │  │
+│  │ 7. Exact input hashes; drop unchanged dense/LI payloads    │  │
+│  │ 8. CPU encode survivors (dense + LI tokens) — ORT CPU only │  │
+│  │ 9. Begin global epoch ε+1; apply per-tier writes:          │  │
 │  │      a. code-graph.db: UPSERT entities, mark stale_since   │  │
 │  │      b. codebase.db: UPSERT vectors                        │  │
 │  │      c. Float HNSW: tombstone old keys + add new vectors   │  │
 │  │      d. Binary HNSW: tombstone old, append new             │  │
 │  │      e. LI: append to growing segment, tombstone old docs  │  │
 │  │      f. sparse-gram: upsert per-file gram delta            │  │
-│  │ 9. Atomic publish: reconcile-manifest.json with epoch ε+1  │  │
-│  │ 10. Check watermarks → maybe schedule maintenance          │  │
+│  │ 10. Atomic publish: reconcile-manifest.json with epoch ε+1 │  │
+│  │ 11. Check watermarks → schedule maintenance when needed    │  │
 │  └────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────┘
          │
@@ -463,11 +470,10 @@ FTS5 `entities_trigram` updates trigger automatically on row changes.
      count stabilises below the watermark.
    - The same dual-cadence applies to `entities_fts` (porter unicode61
      tokenizer); both FTS5 tables need explicit merging.
-   - V1 accepts that FTS5 may expose ε+1 tokens in the small window between
-     SQLite commit and manifest publish. Query paths still join back to
-     active `entities` rows (`stale_since IS NULL`) as they do today, but
-     they do not add a mandatory MVCC epoch predicate until strict reader
-     isolation is proven necessary (§ 8.1.1).
+   - FTS5 rows must join back to epoch-visible `entities` rows. A reader
+     pinned to manifest epoch ε filters out rows written after ε and rows
+     retired at or before ε. There is no query path that trusts FTS5 tokens
+     without the entity visibility join.
    - Track segment count via FTS5 introspection. The supported method
      in SQLite ≥ 3.35 is the `<table>_config` and `<table>_data`
      internal tables (see SQLite FTS5 docs §7); for our purposes the
@@ -478,18 +484,24 @@ FTS5 `entities_trigram` updates trigger automatically on row changes.
      **Verify empirically against the running SQLite version in Phase 0
      preflight** — FTS5 internal layout is documented but not part of
      the stable API and varies subtly between SQLite versions.
-6. **`epoch_written INTEGER NOT NULL DEFAULT 0` on `entities` and
-   `relationships`.** Every reconcile write records the current epoch.
-   In v1 this column is audit / telemetry / HNSW-replay support, not a
-   mandatory query predicate. Structural queries continue to filter active
-   rows with existing semantics (`stale_since IS NULL` for entities).
+6. **Strict row visibility on graph tables.** Add
+   `logical_entity_id TEXT NOT NULL DEFAULT ''`,
+   `logical_relationship_id TEXT NOT NULL DEFAULT ''`,
+   `epoch_written INTEGER NOT NULL DEFAULT 0`, and
+   `epoch_retired INTEGER` to reconcile-owned graph rows. Every reconcile
+   write records the current epoch. Updates append a new visible version and
+   retire the previous logical row; removals retire the previous row and also
+   set `stale_since` for compatibility with existing queries. Structural and
+   indexed-grep query paths must filter:
 
-   **Honest isolation note.** Because `code-graph.db` is a stable SQLite
-   path, a reader can theoretically observe ε+1 committed rows in the
-   sub-second window before `reconcile-manifest.json` publishes ε+1. V1
-   accepts that tiny, self-healing window to avoid full MVCC complexity on
-   every graph query. Strict epoch predicates and retired-row versioning are
-   deferred to § 8.1.1 if this race becomes empirically visible.
+   ```sql
+   epoch_written <= :manifestEpoch
+     AND (epoch_retired IS NULL OR epoch_retired > :manifestEpoch)
+   ```
+
+   plus the existing active-row semantics where applicable. This removes the
+   SQLite WAL partial-visibility window even though `code-graph.db` remains a
+   stable path.
 
    **The `DEFAULT 0` clause is load-bearing for rollback safety.** Without
    a default, an older daemon (running on a checked-out earlier commit)
@@ -573,8 +585,10 @@ structural identity derived from the AST:
 `chunk_text_hash TEXT NOT NULL DEFAULT ''`,
 `embedding_input_hash TEXT NOT NULL DEFAULT ''`,
 `li_input_hash TEXT NOT NULL DEFAULT ''`,
-`metadata_fingerprint TEXT NOT NULL DEFAULT ''`, and
-`epoch_written INTEGER NOT NULL DEFAULT 0`. Index `epoch_written` so
+`metadata_fingerprint TEXT NOT NULL DEFAULT ''`,
+`logical_chunk_id TEXT NOT NULL DEFAULT ''`,
+`epoch_written INTEGER NOT NULL DEFAULT 0`, and
+`epoch_retired INTEGER`. Index `epoch_written` so
 the HNSW replacement replay scan (§ 10.3) is O(changed rows), not
 O(table size). Old positional `chunk_id` is preserved for backward
 compatibility; reconcile-v2 reads both, writes both, but the
@@ -607,16 +621,125 @@ treated as "needs assignment / needs encode" by the dedup path.
    - `li_input_hash = xxhash3(pickLiInput(chunk))`.
    Look up the existing row by `chunk_struct_id`. Reuse the dense embedding
    only if `embedding_input_hash` matches. Reuse / alias LI tokens only if
-   `li_input_hash` matches. This is the load-bearing guard that prevents
-   stale metadata-enriched embeddings after an import, scope, parent-symbol,
-   or LI-routing-policy change.
+   `li_input_hash` matches. Readers filter vectors with the same
+   manifest-epoch predicate used by graph queries:
+
+   ```sql
+   epoch_written <= :manifestEpoch
+     AND (epoch_retired IS NULL OR epoch_retired > :manifestEpoch)
+   ```
+
+   This is the load-bearing guard that prevents stale metadata-enriched
+   embeddings after an import, scope, parent-symbol, or LI-routing-policy
+   change, while also preventing a reader pinned to epoch ε from seeing ε+1
+   rows committed before manifest publish.
 3. **UPSERT keyed on `(file_path, chunk_struct_id)`.** Old chunks whose
-   structural ID is no longer present in the new parse → DELETE / tombstone
-   in the same per-file transaction. This preserves the v1 simplicity
-   trade-off: changed rows become visible when SQLite commits, and the
-   manifest publishes immediately after the tick's staged writes.
+   structural ID is no longer present in the new parse → retire/tombstone
+   in the same per-file transaction. Never hard-delete live-history rows
+   before the reader grace period has elapsed.
 4. The vectors and graph-entities updates for a single file commit in the
    same logical epoch (see § 8.1 atomicity).
+
+### 7.2.1 Encoder-input metadata dependencies
+
+Exact `embedding_input_hash` and `li_input_hash` comparisons are necessary
+but not sufficient: reconcile must also know **which stable chunks need their
+encoder inputs rebuilt** when metadata outside the raw chunk body changes.
+The implementation therefore maintains an `encoder_input_dependencies` sidecar
+or table keyed by dependency string:
+
+```text
+dependency_key -> { file_path, chunk_struct_id, consumers: dense|li|dedup }
+```
+
+When a dependency key changes, the owning file/chunk becomes
+**metadata-dirty** even if its source content hash is unchanged. Metadata-dirty
+chunks are parsed/enriched just far enough to rebuild `embedding_text`,
+`li_text`, `li_greedy_text`, and dedup annotations; then exact hashes decide
+whether any dense embedding or LI token matrix actually changes. This is how
+the plan avoids stale metadata without falling back to whole-file or
+whole-repo encoding.
+
+**Current dense embedding input taxonomy.** For code chunks,
+`embedding_text` is built from:
+
+- chunk body text;
+- relative path;
+- detected language;
+- chunk type and primary symbol;
+- parent symbol and parent type;
+- AST signature when the active embedding-text variant uses signatures;
+- sibling `additional_symbols` from tree-sitter sibling merge;
+- active embedding-text policy (`SWEET_SEARCH_EMBED_TEXT_VARIANT`,
+  `SWEET_SEARCH_EMBED_TEXT_CAP`, policy version);
+- post-chunk graph enrichment: same-file `# Scope` from entities whose ranges
+  contain the chunk, same-file `# Defines`, and same-file `# Uses` from import
+  relationship `target_name`s.
+
+For document chunks (`markdown`, `rst`, `plaintext`), dense input is built from
+body text plus relative path, language, chunk type, and section/title symbol.
+`header_hierarchy`, `frontmatter`, `content_type`, and table/code flags are
+stored metadata today; they become encoder dependencies only if a future input
+policy starts injecting them into `embedding_text`.
+
+**Current LI input taxonomy.** `pickLiInput()` routes by language:
+
+- Python and `JAVA_FAMILY` (`java`, `php`, `csharp`/`c#`, `kotlin`, `scala`)
+  use `chunk.li_text`. Python omits the path line; Java-family languages use
+  `normalizePathSlug(relativePath)`.
+- JavaScript/TypeScript/JSX/TSX, Ruby, Go, C/C++/Rust, and unknown languages
+  use `chunk.li_greedy_text` first, falling back to `embedding_text` and then
+  `li_text`. In production, `li_greedy_text` is the current/enriched form; it
+  intentionally does not follow research-only embedding variants.
+
+Therefore the LI dependency set is not identical to the dense dependency set.
+A policy change that affects `embedding_text` may not affect LI, and a
+language-path policy change may affect LI without changing dense input.
+Reconcile must compute and store the two hashes independently.
+
+**Current cross-file boundary.** The shipped encoder input does **not** include
+resolved callee bodies, callee signatures, caller counts, PageRank,
+relationship `target_id`, or imported target file metadata. It includes import
+**names** extracted from the same source file. Therefore, under the current
+policy, changing file `A` does not re-embed unchanged caller/importer file `B`
+merely because `B` calls a symbol in `A`; `B`'s encoder bytes have not changed.
+The code graph still updates relationships incrementally, and query-time
+structural search resolves cross-file relationships from the graph.
+
+**Future cross-file metadata rule.** If a future policy injects any external
+fact into encoder input — for example resolved import target signatures,
+callee symbol signatures, doc comments from imported modules, caller/callee
+counts, or graph centrality — that policy must register reverse dependencies
+before it ships:
+
+- `entity:<target_entity_id>` for target name/type/signature/doc-comment facts;
+- `relationship:<source_entity_id>` for caller/callee edge-derived facts;
+- `file-exports:<file_path>` for import/export surface facts;
+- `graph-centrality:<entity_id>` for PageRank/importance facts.
+
+When any of those external facts changes, the reconciler expands the dirty set
+to all dependent chunks, rebuilds their exact dense/LI inputs, and reuses
+payloads whose hashes still match. Adding cross-file metadata without this
+reverse dependency index is a correctness bug.
+
+**Dedup / alias metadata.** The dedup phase mutates chunks before dense and LI
+encoding with `simhash`, `clusterId`, `exemplarId`, `isExemplar`,
+`aliasJaccard`, and `liReuseEligible`. These fields do not change
+`embedding_text` or `pickLiInput()` bytes, but they do change whether a payload
+is encoded or aliased. Reconcile must treat dedup as a third cache consumer:
+
+- recompute dedup fingerprints for changed chunks;
+- look up candidate existing clusters from stored simhash/minhash bands;
+- reselect exemplars for affected clusters when a member changes or is
+  deleted;
+- repair dense aliases and LI aliases if `exemplarId` or `liReuseEligible`
+  changes, even when `embedding_input_hash` / `li_input_hash` for the alias
+  itself did not change.
+
+Do not let an input-hash cache hit skip dedup repair. The correct cache key for
+the stored payload is `(consumer, input_hash, policy_fingerprint, alias_source)`
+where `alias_source` is empty for real encodes and points to the exemplar for
+dedup aliases.
 
 **Hash choice: xxHash3, not SHA-256.** Sweet-search hashes for local
 deduplication, not cryptographic integrity. xxHash3 throughput is
@@ -683,17 +806,20 @@ new chunks is safe — but removals become tombstone-only.
 
 **New behavior.**
 
-1. Live path: for each chunk whose vector changed:
+1. Live path: for each chunk whose vector changed, prepare a `vectorOps`
+   batch during reconcile but apply the Float HNSW graph mutation only inside
+   the final publish writer lock (§ 8.3):
    - mark the old vector's key in `codebase-hnsw.idx.stale.bin`
-     (single bit per key, 64-byte aligned so AVX2/NEON SIMD can mask
-     later — see § 34.4),
+     (single bit per key, 64-byte aligned for AVX2/NEON SIMD masking —
+     see § 34.4),
    - `index.add(new_key, new_vec)` with a fresh key (existing key space
      is monotonic; key collisions are impossible because we never reuse),
-   - record `epoch_written = ε+1` for the new key in the HNSW metadata
-     sidecar for audit and replacement replay.
-   Searches filter stale bits after retrieving an adaptive oversampled
-   candidate set, not during graph traversal. The live update touches only
-   changed chunks; unchanged vectors are never reinserted.
+   - record `epoch_retired = ε+1` for the old key and `epoch_written = ε+1`
+     for the new key in the HNSW metadata sidecar for strict reader
+     visibility and replacement replay.
+   Searches filter stale/epoch-invisible bits after retrieving an adaptive
+   oversampled candidate set, not during graph traversal. The live update
+   touches only changed chunks; unchanged vectors are never reinserted.
 
    **Oversampling rule.** Let `s = tombstone_fraction` clamped to `[0, 0.5]`.
    For a requested `k`, retrieve:
@@ -762,7 +888,7 @@ new chunks is safe — but removals become tombstone-only.
    freshness).**
    - Run CPU low-priority only. HNSW replacement reads already-materialized
      vectors from `codebase.db`; it must not arm GPU or re-encode chunks.
-     If a future replacement path needs model inference, it still uses the
+     If a replacement path needs model inference, it still uses the
      ORT INT8 CPU encoder because it was scheduled by reconcile.
    - Build the clean graph in `.sweet-search/codebase-hnsw.idx.next` from
      the current `codebase.db` vectors snapshot while the live graph
@@ -907,10 +1033,23 @@ sparse refresh on every dirty tick.
 
 **Existing.** `core/graph/hcgs-generator.js` + `code-summaries.json`.
 
-**New behavior.** Out of scope for v1. HCGS regeneration is currently
-LLM-driven (or hierarchical roll-up) and orders of magnitude more
-expensive than encode. Keep the existing "regenerate on demand" model;
-revisit once the reconcile loop is stable.
+**New behavior: invalidate exactly, regenerate lazily.** HCGS summaries are
+not one of the five first-stage indices, but stale summaries can still poison
+reader trust. Reconcile therefore owns HCGS invalidation in v1:
+
+1. Store each summary with `source_entity_ids`, `source_chunk_struct_ids`,
+   `source_hashes`, `epoch_written`, and `epoch_retired`.
+2. When graph/vector deltas retire or replace any source entity/chunk, mark
+   the dependent summary retired in the same manifest epoch.
+3. Search and MCP must never serve a summary whose source epoch is not visible
+   in the pinned manifest. If a fresh summary is missing, omit it or trigger
+   existing on-demand regeneration; do not serve the stale text.
+4. Optional regeneration is low-priority CPU / existing provider policy and
+   happens outside the reconcile tick. Invalidation is the correctness
+   requirement; eager LLM regeneration is not.
+
+This keeps accuracy strict while avoiding a background LLM/API workload on
+every edit.
 
 ---
 
@@ -950,35 +1089,40 @@ manifest for the full query. There is no default mode where a query combines
 graph rows from ε+1 with vector rows from ε; tier mismatch is a bug and
 increments `manifest_epoch_mismatch_total`.
 
-**V1 SQLite visibility trade-off.** `code-graph.db` and `codebase.db` are
-stable SQLite path names. Manifest pinning cannot hide SQLite rows that have
-already committed to WAL before the ε+1 manifest is published. V1 accepts
-that sub-second partial-visibility window because:
+**Strict SQLite visibility rule.** `code-graph.db` and `codebase.db` are
+stable SQLite path names, so manifest pinning alone cannot hide rows that
+commit to WAL before the ε+1 manifest is published. V1 therefore implements
+strict row visibility rather than accepting a partial-epoch window:
 
-- reconcile commits changed files and publishes the manifest immediately
-  afterward;
-- the next query pins the new manifest and self-heals the view;
-- adding MVCC predicates to every graph/vector query increases scope,
-  storage, pruning complexity, and query cost before we know the race is
-  user-visible.
+- graph rows carry `logical_entity_id` / `logical_relationship_id`,
+  `epoch_written`, and `epoch_retired`;
+- vector rows carry `logical_chunk_id`, `epoch_written`, and
+  `epoch_retired`;
+- updates append a new row version and retire the previous logical row;
+- readers add
+  `epoch_written <= :manifestEpoch AND (epoch_retired IS NULL OR epoch_retired > :manifestEpoch)`
+  on every graph/vector query;
+- HNSW keys, binary-HNSW docs, LI docs, and sparse-gram delta records carry
+  equivalent epoch metadata or are named by an epoch-specific manifest entry;
+- retired row versions are pruned only after a reader grace period.
 
-`epoch_written` remains mandatory for audit, telemetry, and HNSW replacement
-replay. It is not a mandatory v1 query predicate.
+This costs extra predicates and storage, but it is the only model that gives
+"accuracy at all times" without relying on a self-healing next query.
 
-### 8.1.1 Strict Reader Isolation (Deferred)
+### 8.1.1 Reader grace and prune policy
 
-If production traces show user-visible mixed-epoch results, add strict MVCC
-in v2:
+Strict row visibility requires bounded history retention:
 
-- add `logical_entity_id`, `logical_chunk_id`, and `epoch_retired` columns;
-- change graph and vector writes to append-new-version + retire-old-version;
-- make readers add
-  `epoch_written <= :manifestEpoch AND (epoch_retired IS NULL OR epoch_retired > :manifestEpoch)`;
-- carry the same epoch visibility metadata on HNSW keys, binary-HNSW docs,
-  LI docs, and sparse-gram delta records;
-- prune retired versions only after a reader grace period.
-
-This is the correct strict model, but it is deliberately not v1 scope.
+1. Each process that can hold a manifest pins
+   `.sweet-search/readers/<pid>-<boot_id>.json` with `{ epoch, startedAt }`.
+2. Search updates the heartbeat before a query and deletes it when the query
+   completes; MCP also updates it around cached warm-reader operations.
+3. The prune job computes `min_live_epoch` across non-stale heartbeats.
+4. Retired SQLite rows, HNSW tombstones, LI docs, binary-HNSW docs, and
+   sparse-gram deltas older than `min_live_epoch` may be physically removed
+   during maintenance.
+5. Stale heartbeat files older than `READER_GRACE_MS` are ignored after
+   verifying the PID/boot id is not alive.
 
 ### 8.2 Per-file atomicity
 
@@ -1003,8 +1147,11 @@ adopted in § 7.3.** Three additional guarantees we add:
    reader observe the bit cleared. Tombstone clearing only happens
    during recompaction, which produces a new file → new mmap.
 3. **No HNSW graph topology mutation under live readers.** Per § 7.3,
-   `remove()` is never called on the live graph. This is the structural
-   guarantee that lets us claim mmap-safe concurrent reads.
+   `remove()` is never called on the live graph, and `add()` batches are
+   applied only while holding the final publish writer lock. Search takes the
+   corresponding shared read lock while pinning a manifest and traversing
+   Float HNSW. This is the strict-reader-isolation guarantee for the only
+   mutable mmap artifact whose topology can change in place.
 
 ### 8.4 SQLite WAL discipline
 
@@ -1074,10 +1221,12 @@ Two writer classes need explicit consideration:
 - **Full reindex via `npm run index`** must take the same lock. If the
   daemon is running, the full reindex waits for the current tick to
   commit, then runs to completion holding the lock. Daemon resumes after.
-- **Worktrees.** Stamp the DB directory using
-  `git rev-parse --git-common-dir` (not the worktree path), so multiple
-  worktrees share an index where appropriate. Documented; not implemented
-  in v1.
+- **Worktrees.** Stamp the DB directory using both `project_root` and
+  `git rev-parse --git-common-dir`. By default, each worktree owns its own
+  `.sweet-search/` directory; if a user configures a shared index path, the
+  common-dir stamp and lockfile enforce one writer across all worktrees. A
+  mismatched stamp aborts startup with a clear remediation message instead of
+  silently mixing histories.
 
 ### 8.6 Stale-lockfile recovery
 
@@ -1215,10 +1364,11 @@ truth — the content hash decides whether work runs.
 This alone delivers the staleness contract (≤ tick-interval seconds
 for any edit).
 
-### 9.2 Optional: Rust `notify` watcher
+### 9.2 Rust `notify` watcher
 
-Opt-in via `SWEET_SEARCH_WATCH=1`. Watcher updates the in-memory dirty set
-only; it does **not** trigger work directly. Reasons:
+Enabled by default where supported; `SWEET_SEARCH_WATCH=0` disables it.
+Watcher updates the in-memory dirty set only; it does **not** trigger work
+directly. Reasons:
 
 - Watcher events are advisory ("something may have changed in subtree T");
   the source of truth remains content-hash diff at tick time.
@@ -1274,7 +1424,7 @@ cadence.
 
 ### 10.2 Compaction executor
 
-A separate process (or worker thread; design TBD — see § Open Questions):
+A separate process:
 
 1. Polls `rebuild-queue.jsonl` every 30 s.
 2. For each pending maintenance job:
@@ -1379,14 +1529,14 @@ over the lock; this version makes it explicit.
 | Save-all from editor (Vim `:wa`, IntelliJ Save All) | Burst of WRITE events | 60-s coalescing; content-hash dedup |
 | Format-on-save (whitespace-only edit) | Content hash unchanged | Skip all encoding; no-op tick |
 | `node_modules/` dump (`npm install` against new lockfile) | Massive event burst | Default deny-list (independent of `.gitignore`) catches |
-| Vendored deps not in `.gitignore` | Files match include set | `.sweet-search-ignore` opt-in; hard cap warning above 200 k files |
+| Vendored deps not in `.gitignore` | Files match include set | `.sweet-search-ignore` support; hard cap warning above 200 k files |
 | Linux inotify exhaustion (ENOSPC) | Watcher returns error | Log remediation; fall back to 60-s polling for that subtree |
 | FSEvents glitch on macOS | Missed events | mtime sweep catches at next tick |
 | Crash during reconcile | Process exit before manifest publish | Readers keep the previous manifest; next tick replays via content-hash mismatch; lockfile cleared. **HNSW crash-leak guarantee**: HNSW `add()` is not idempotent (each call assigns a new key); a crash AFTER `index.add()` but BEFORE manifest publish can leak one duplicate vector per affected chunk into the live graph. **The stale-lockfile recovery path in § 8.6 enqueues an immediate Float HNSW background replacement (`reason = "crash_recovery"`) regardless of watermark state** — without this, duplicates can persist for weeks under light editing, occupying top-k slots and evicting valid results before § 19's fusion-layer dedup can filter them (silent recall drop). With the immediate replacement path: leak window is minutes (replacement wallclock), not months. Until replacement completes, fusion + dedup at the result-set layer (§ 19) mitigates user-visible impact. Same logic applies to LI segment appends; same immediate-maintenance trigger covers them. Do not attempt to make HNSW add idempotent (would require read-before-write on every add → unacceptable latency). |
 | Crash during maintenance | Maintenance process exit | Old artifact still live; rebuild-queue retries; dead-letter after N |
 | Worktree with shared index | Multiple processes, one lockfile | First takes lock, second blocks; document explicitly |
 | Config change (e.g. `.sweet-search.config.json` edit) | Config fingerprint mismatch | **Full reindex forced** (existing behavior in `incremental-tracker.js`) |
-| Encoder model upgrade | Config fingerprint mismatch | Full reindex; future: dual-read window (out of scope v1) |
+| Encoder model upgrade | Config fingerprint mismatch | Full reindex under the same writer lock; no mixed-model serving |
 | Disk full mid-stage | fsync failure | Abort, preserve old; log; surface to user |
 | GPU armed by explicit full-index process | Model-pool epoch mismatch | Reconcile waits for the existing model-pool epoch guard; automatic maintenance never arms GPU |
 | User runs `npm run index` while daemon is running | Lock contention | Daemon's current tick finishes; full reindex takes over; daemon resumes after |
@@ -1454,9 +1604,34 @@ output equals the cold-rebuild output for unchanged files.
 This catches phantom invalidation, ghost re-encoding, and the kind of
 silent breakage that an MRR test would miss until the next probe pass.
 
-### 12.4 Benchmark cadence
+### 12.4 Encoder metadata dependency tests
 
-- **Per-change / iteration:** GCSN dev (60 %) + structural invariance test.
+A second deterministic CI gate must prove that metadata-aware caching is
+correct for both today's encoder input policy and any future policy that
+injects cross-file facts:
+
+1. **Current policy, external callee edit:** file `B` calls a symbol in file
+   `A`; editing only `A`'s callee body must not re-encode stable chunks in
+   `B` unless `B`'s exact `embedding_input_hash` or `li_input_hash` changes.
+   The graph updates, but encoder payloads for unchanged `B` chunks stay
+   byte-identical.
+2. **Current policy, same-file metadata edit:** change only import/scope
+   metadata that affects `embedding_text`, `li_text`, or `li_greedy_text`.
+   Reconcile must mark affected chunks metadata-dirty, recompute exact input
+   hashes, and re-encode only the dense / LI consumer whose input changed.
+3. **Future external metadata fixture:** under a test-only policy that injects
+   resolved target signatures, changing the target signature in `A` must
+   trigger the registered `entity:<target_entity_id>` reverse dependency,
+   mark dependent `B` chunks metadata-dirty, and reuse cached payloads only
+   when the rebuilt exact input hash still matches.
+4. **Dedup alias repair:** changing or deleting a cluster exemplar must repair
+   dense and LI aliases for affected cluster members even when the members'
+   own encoder input hashes are unchanged.
+
+### 12.5 Benchmark cadence
+
+- **Per-change / iteration:** GCSN dev (60 %) + structural invariance test +
+  encoder metadata dependency tests.
 - **Pre-commit:** + the locked probe packs (retrieval-probes,
   ast-tester-probes, structural-redo).
 - **Pre-release:** + GCSN held-out (40 %) aggregate only.
@@ -1503,9 +1678,13 @@ empirical-verification requirements. Treat as a research spike, not a
   BigInts for `ino`, `size`, `mtimeNs` on the supported platforms
   (macOS, Linux, WSL2-with-ext4). Confirm `merkle-state.json`
   roundtrip preserves precision.
-- [ ] Decide maintenance-executor process model: separate process, worker
-  thread, or run-in-daemon. **Recommended:** separate process at
-  `core/incremental-indexing/application/maintenance-worker.mjs`,
+- [ ] **Run xxHash3 collision sanity check** on the working corpus and a
+  synthetic small-chunk corpus before making xxHash3 the default hash.
+- [ ] **Benchmark epoch visibility indices** on realistic vector and graph
+  tables: full `epoch_written` B-tree vs partial recent-window index. Lock
+  the faster choice before Phase 1 migration lands.
+- [ ] Implement the selected maintenance-executor process model: separate
+  process at `core/incremental-indexing/application/maintenance-worker.mjs`,
   communicated via the rebuild-queue JSONL. Reasons: predictable CPU
   scheduling, no daemon event-loop interference, trivial to kill/restart.
   The JSONL queue may retain the legacy `rebuild-queue` filename for
@@ -1515,7 +1694,7 @@ empirical-verification requirements. Treat as a research spike, not a
   `docs/INCREMENTAL_INDEXING_PREFLIGHT_RESULTS.md` so the empirical
   basis for the watermark thresholds is reproducible.
 
-### Phase 1 — Structural chunk IDs, input hashes, encode-skip (~8 days)
+### Phase 1 — Structural chunk IDs, input hashes, encode-skip (~10 days)
 
 This phase grew after the Gemini review: positional `chunk_id`s defeat
 the chunk-hash dedup on common edits, so the structural-ID rework is
@@ -1531,14 +1710,18 @@ full-index call sites behavior-compatible.
   `chunk_text_hash TEXT NOT NULL DEFAULT ''`,
   `embedding_input_hash TEXT NOT NULL DEFAULT ''`,
   `li_input_hash TEXT NOT NULL DEFAULT ''`,
-  `metadata_fingerprint TEXT NOT NULL DEFAULT ''`, and
-  `epoch_written INTEGER NOT NULL DEFAULT 0` columns to vectors table
-  in `codebase.db` (auto-migrate; preserve existing `chunk_id` for
-  compatibility). **`DEFAULT` clauses are mandatory for rollback
-  safety** — see § 7.2 rationale.
-- [ ] Add `epoch_written INTEGER NOT NULL DEFAULT 0` to graph tables touched
-  by reconcile (`entities` and `relationships`) for audit / telemetry. Do
-  not add mandatory MVCC predicates in v1.
+  `metadata_fingerprint TEXT NOT NULL DEFAULT ''`,
+  `logical_chunk_id TEXT NOT NULL DEFAULT ''`,
+  `epoch_written INTEGER NOT NULL DEFAULT 0`, and
+  `epoch_retired INTEGER` columns to vectors table in `codebase.db`
+  (auto-migrate; preserve existing `chunk_id` for compatibility).
+  **`DEFAULT` clauses are mandatory for rollback safety** — see § 7.2
+  rationale.
+- [ ] Add strict row-visibility columns to graph tables touched by reconcile:
+  `logical_entity_id TEXT NOT NULL DEFAULT ''`, `logical_relationship_id TEXT
+  NOT NULL DEFAULT ''`, `epoch_written INTEGER NOT NULL DEFAULT 0`, and
+  `epoch_retired INTEGER` as applicable. Query paths must filter by the
+  manifest-pinned epoch from § 8.1.
 - [ ] Add `core/incremental-indexing/domain/chunk-identity.mjs` to derive
   `chunk_struct_id` per § 7.2 for symbol-attached and anonymous chunks from
   existing chunker output / AST metadata. Keep positional `chunk_id` as
@@ -1552,24 +1735,47 @@ full-index call sites behavior-compatible.
   before reconcile encoder dispatch; look up by `chunk_struct_id`; reuse
   dense embeddings only on `embedding_input_hash` match and LI tokens only on
   `li_input_hash` match.
+- [ ] Add `encoder_input_dependencies` storage in the incremental-indexing
+  bounded context. Register dependency keys separately for dense, LI, and
+  dedup consumers: path, language, chunk type/symbol, parent metadata,
+  signatures, `additional_symbols`, same-file scope/import enrichment, active
+  policy fingerprint, and any future external graph facts from § 7.2.1.
+  Normal full indexing must not depend on this sidecar.
+- [ ] Implement metadata-dirty expansion: changed dependency keys mark stable
+  chunks for input rebuild, then exact `embedding_input_hash` / `li_input_hash`
+  comparisons decide whether each consumer actually re-encodes.
+- [ ] Treat dedup annotations as a third cache consumer. Recompute
+  fingerprints for changed chunks, reselect affected exemplars, and repair
+  dense / LI aliases when `exemplarId` or `liReuseEligible` changes.
 - [ ] Add tracing counters: chunks_struct_stable, chunks_text_unchanged,
-  chunks_encoded per tick.
+  chunks_metadata_dirty, chunks_dedup_repaired, chunks_encoded per tick.
 - [ ] Verify on:
   - "format file" no-op edit → 100 % chunks_text_unchanged.
   - "insert function at top of file" → all other chunks
     chunks_struct_stable; only one chunks_encoded.
   - "rename function" → only the renamed function's chunk encoded.
 - [ ] **Gate:** GCSN dev MRR unchanged within noise floor; structural
-  invariance test (§ 12.3) green.
+  invariance test (§ 12.3) and encoder metadata dependency tests (§ 12.4)
+  green.
 
-### Phase 2 — Unified reconcile tick + manifest publish (~6 days)
+### Phase 2 — Unified reconcile tick + strict manifest publish (~9 days)
 
 - [ ] Extract the per-file reconcile from `index-maintainer.mjs` into a
   `Reconciler` application service in
   `core/incremental-indexing/application/reconciler.mjs`.
-- [ ] Reconciler owns: dirty-set processing, content-hash diff, per-file
-  per-tier writes, and manifest publish.
+- [ ] Reconciler owns: dirty-set processing, content-hash diff,
+  encoder-dependency expansion, metadata-dirty input rebuild, per-file
+  per-tier writes, strict row visibility, reader heartbeat files, prune
+  grace periods, and manifest publish.
+- [ ] Implement manifest reader/writer locking for mutable artifacts:
+  search holds a shared read lock while pinning the manifest and traversing
+  Float HNSW; reconcile takes the writer lock for the final Float HNSW
+  `add()`/tombstone batch and manifest publish.
 - [ ] Daemon becomes a thin driver: timer → `reconciler.tick()`.
+- [ ] Implement dependency invalidation APIs:
+  - `collectChangedEncoderFacts(file, parsedEntities, relationships)`
+  - `expandMetadataDirtySet(changedDependencyKeys)`
+  - `repairDedupAliases(affectedClusters)`
 - [ ] Implement per-tier write methods:
   - `applyGraphDelta(file, parsedEntities)`
   - `applyVectorDelta(file, chunks, hashes)`
@@ -1577,6 +1783,13 @@ full-index call sites behavior-compatible.
   - `applyBinaryHNSWDelta(file, vectorOps)`
   - `applyLIDelta(file, tokenOps)`
   - `applySparseGramDelta(file, gramOps)`
+- [ ] Add manifest-epoch predicates to every graph/vector read path used by
+  `auto`, `structural`, `read`, `read-semantic`, `colgrep`, and
+  `indexed-grep`. Gate: a reader pinned to epoch ε cannot observe rows from
+  ε+1 even if SQLite committed them before manifest publish.
+- [ ] Implement HCGS summary invalidation from § 7.7. Gate: changed source
+  entity/chunk retires dependent summaries in the same epoch, and search/MCP
+  never serve a retired summary.
 - [ ] Implement the structural invariance test from § 12.3.
 - [ ] **Gate:** structural invariance test green; GCSN dev MRR unchanged.
 
@@ -1603,10 +1816,11 @@ full-index call sites behavior-compatible.
 - [ ] **Gate:** synthetic 20 % tombstone fraction triggers HNSW background
   replacement; post-replacement MRR within noise floor of cold-build MRR.
 
-### Phase 4 — Optional Rust `notify` watcher (~2 days)
+### Phase 4 — Rust `notify` watcher, default-on with polling backstop (~3 days)
 
 - [ ] Add `crates/sweet-search-native` binding for `notify` watcher.
-- [ ] Expose Node-side as opt-in via `SWEET_SEARCH_WATCH=1`.
+- [ ] Start watcher by default where supported; `SWEET_SEARCH_WATCH=0`
+  disables it, and WSL2 defaults to polling unless overridden.
 - [ ] Implement ENOSPC fallback to pure polling on Linux.
 - [ ] Default `.sweet-search-ignore` patterns; 200 k file cap warning.
 - [ ] **Gate:** with watcher enabled, latency from `write(2)` to dirty-set
@@ -1623,33 +1837,51 @@ full-index call sites behavior-compatible.
 - [ ] Lock the threshold in config; document the study in
   `docs/INCREMENTAL_INDEXING_RESULTS.md`.
 
-### Phase 6 — Production hardening (~2 days)
+### Phase 6 — Production hardening (~5 days)
 
 - [ ] Surface "index N seconds stale" in CLI output (Cursor doesn't,
   users complain; cheap, load-bearing for trust).
+- [ ] Implement reconcile interval auto-tuning from § 14.2 with a pinned-config
+  override.
+- [ ] Implement cross-worktree DB stamping and shared-index writer locking
+  from § 8.5.
+- [ ] Implement SIMD tombstone filtering for native HNSW/Binary-HNSW read
+  paths where the existing native layer is available; keep the scalar fallback
+  for unsupported CPUs, but the bitmap layout and tests must be SIMD-ready.
+- [ ] Implement zstd-compressed JSONL queue rotation for
+  `rebuild-queue.jsonl` and dead-letter files once a queue file exceeds
+  1 MiB; readers handle both plain and compressed segments.
 - [ ] Dead-letter inspection CLI (`sweet-search reconcile inspect`).
 - [ ] Lockfile staleness recovery (current owner crashed → take over).
 - [ ] Document operator runbook for: stuck maintenance, dead-letter overflow,
   forced HNSW replacement, sparse-gram compaction, or explicit full reindex.
 
-**Total estimate:** ~30-35 working days for one engineer focused
-(revised upward across the SOTA and Codex review passes). Phase 0 grew
+**Total estimate:** ~40-48 working days for one engineer focused
+(revised upward across the SOTA, Codex, encoder-metadata, and final
+execution passes).
+Phase 0 grew
 from 1 day → 3-5 days as empirical-verification work accumulated;
 implementation phases 1-3 grew due to BigInt-everywhere, occurrence-
-index disambiguation, exact encoder-input hashes, `epoch_written` replay
-log with `DEFAULT 0` rollback safety, USearch reserve handling, MCP
+index disambiguation, exact encoder-input hashes, strict row-visibility
+columns with `DEFAULT 0` rollback safety, USearch reserve handling, MCP
 transaction hygiene + DB-swap self-defense, FTS5 introspection helper,
 manifest pinning, sparse-gram v3 delta overlay, and the immediate HNSW
-replacement-on-crash-recovery path. The third-pass review trimmed scope by
+replacement-on-crash-recovery path. The encoder-metadata pass added the
+dense / LI / dedup dependency sidecar, metadata-dirty expansion, and dedup
+alias repair. The final execution pass added strict MVCC query predicates, HCGS
+invalidation, default-on watcher support, cross-worktree stamps, SIMD
+tombstone filtering, compressed queues, and interval auto-tuning. The
+third-pass review trimmed scope by
 removing per-tier change-log tables and the LSM rebase for short compactions
 (LI segments, sparse-gram); only Float HNSW and Binary HNSW use the
 bounded-replay rebase. The estimate is higher than the prior 25-day number
-because sparse-gram v3, manifest pinning, adaptive HNSW oversampling, and
-DB-swap hardening are real implementation work even with strict MVCC deferred.
+because sparse-gram v3, manifest pinning, adaptive HNSW oversampling,
+DB-swap hardening, strict reader isolation, and dependency-index correctness
+are real implementation work.
 
 ---
 
-## 14. Measurements & Open Questions
+## 14. Measurements & Locked Decisions
 
 ### 14.1 Measurements needed before merge
 
@@ -1674,36 +1906,36 @@ DB-swap hardening are real implementation work even with strict MVCC deferred.
    (10–50 files). Target: P99 below 50 % of the configured tick interval
    on every supported tier (so the tick never overruns into the next).
 
-### 14.2 Open questions deferred
+### 14.2 Locked decisions formerly treated as open
 
-1. **Reconcile interval auto-tuning.** Default 60 s; high-churn monorepos
-   might want 30 s, sleepy projects 300 s. Heuristic on observed dirty-set
-   churn rate. Out of scope for v1.
-2. **Cross-process concurrent reconcile.** Currently single-writer
-   lockfile; can two daemons (one per VS Code window) coordinate? Not
-   in v1; v1 enforces one.
-3. **Encoder model upgrade migration.** Dual-read window during a
-   re-embed pass. Tied to the CodeSage-Small-v2 workstream; out of scope.
-4. **Cross-worktree shared index.** `git common-dir`-keyed paths.
-   Documented; not implemented in v1.
-5. **HCGS summaries refresh policy.** Currently regenerate-on-demand;
-   should reconcile invalidate them? Defer.
-6. **Inotify-watcher pros/cons net-positive at sweet-search scale?**
-   The 60-s polling backstop may be enough that the watcher complexity
-   doesn't pay off. Default off; ship the timer first; revisit after
-   2 weeks of real use.
-7. **`.gitignore` content-hash inclusion in config fingerprint.**
-   ~~The TODO flags this as an open question.~~ **Resolved 2026-05-15:**
-   hash the **resolved exclude array** returned by
-   `loadProjectConfig(projectRoot)`, not the raw file. Adding a comment
-   line to `.gitignore` should not trigger a full reindex; adding
-   `**/build/**` should. The TODO's bidirectional exclude-diff already
-   describes the right downstream behavior — the fingerprint change is
-   what triggers it. Implementation: in
+1. **Reconcile interval auto-tuning ships in v1.** Default 60 s; auto-tune
+   within `[15 s, 300 s]` from dirty-set churn, last-tick wallclock, CPU
+   pressure, and maintenance backlog. User config may pin the interval.
+2. **Cross-process concurrent reconcile uses one writer.** Multiple daemons
+   may exist, but only the lock owner writes. Non-owner daemons become
+   watchers/queue producers or exit with a clear message, depending on
+   launch mode.
+3. **Encoder model/config upgrade is lock-held full rebuild.** Mixed-model
+   dual-read is not needed for this plan because a fingerprint mismatch is
+   content-incompatible with existing vectors. The rebuild is explicit,
+   serialized, and never confused with ordinary incremental edits.
+4. **Cross-worktree ownership is implemented.** DB stamps include
+   `project_root` and `git_common_dir`; shared-index mode is allowed only
+   when the stamp matches and the single-writer lock is acquired.
+5. **HCGS summaries are invalidated by reconcile.** Stale summaries are
+   retired immediately; regeneration remains on-demand so edits do not
+   trigger background LLM/API work.
+6. **Watcher starts by default where supported.** Polling remains the
+   correctness backstop. Watcher overflow or startup failure is a WARN plus
+   polling fallback, not a correctness failure.
+7. **Resolved excludes are part of the config fingerprint.** Hash the
+   **resolved exclude array** returned by `loadProjectConfig(projectRoot)`,
+   not the raw file. Adding a comment line to `.gitignore` should not trigger
+   a full reindex; adding `**/build/**` should. Implementation: in
    `core/indexing/incremental-tracker.js::buildConfigFingerprint`, add
-   `excludesHash = xxhash3(sorted(resolved_exclude_array).join('\n'))`
-   to the fingerprint tuple. The diff path described in the TODO does
-   the bidirectional reindex.
+   `excludesHash = xxhash3(sorted(resolved_exclude_array).join('\n'))` to the
+   fingerprint tuple. The diff path described in the prior TODO does the
+   bidirectional reindex.
 
 ---
 
@@ -1728,7 +1960,7 @@ DB-swap hardening are real implementation work even with strict MVCC deferred.
 | USearch capacity exhaustion if `index.reserve()` fails (OOM) | Low | Affected chunk lost from live HNSW until background replacement | § 7.3 emergency-maintenance path; search falls through to BM25 + LI |
 | Occurrence-index disambiguation logic bug → silent chunk loss | Medium | Identical siblings overwrite each other | § 7.2 unit tests cover the 5 cases including renamed-one-of-two-identical |
 | MCP server leaks read transactions → WAL bloat | High (long-term) | Disk fills; daemon TRUNCATE silently fails | § 27.2.1 mandates connection rotation + PASSIVE checkpoints; daemon emits WARN/ERROR with culprit pid |
-| `epoch_written` index write hot-spot on monotonic integer | Low | Insert latency creep over long sessions | § 36.5 open question; fallback is partial index on recent window |
+| `epoch_written` index write hot-spot on monotonic integer | Low | Insert latency creep over long sessions | Phase 0 benchmarks full vs partial epoch index and locks the faster choice |
 | FTS5 `('merge', 500)` maintenance wallclock unbounded under heavy churn | Medium | Maintenance queue grows | Watermark `fts5_segment_count > 64` plus per-tick `('merge', 16)` keeps segments below the threshold most of the time |
 | Tree-sitter mid-edit error nodes pollute entity index | Medium | Garbage entities visible briefly | § 20.1 metric + alert at 5% file-error rate; user can lengthen tick interval |
 | Held-out discipline violation slips back into iterative phases | Medium | Held-out set contaminated | § 24.6 phase-by-phase table; CI enforces dev-only for iterative; held-out runs are explicit one-shot tagged commits |
@@ -1820,7 +2052,8 @@ DB-swap hardening are real implementation work even with strict MVCC deferred.
 
 ### Internal references
 
-- `INCREMENTAL_INDEXING_TODO.md` — edge cases, cold start, exclude unification.
+- `INCREMENTAL_INDEXING_TODO.md` — historical input for edge cases, cold
+  start, and exclude unification; this plan is authoritative.
 - `INDEXED_GREP.md` — original dirty-overlay design (never implemented).
 - `LI_QUANTIZATION_STRATEGY.md` — per-token int4 design.
 - `CLAUDE.md` — ranking signal format-gating, benchmark methodology,
@@ -1836,19 +2069,19 @@ DB-swap hardening are real implementation work even with strict MVCC deferred.
 
 | Decision | Date | Rationale |
 |---|---|---|
-| CPU-only for incremental path | 2026-04-17 | GPU lifecycle (5–15 s) >> typical incremental work (< 1 s). See TODO. |
+| CPU-only for incremental path | 2026-04-17 | GPU lifecycle (5–15 s) >> typical incremental work (< 1 s). See § 34.7. |
 | 60 s reconcile interval | 2026-05-14 | Six times tighter than Cursor's 10 min; CPU encode budget permits. |
 | Mutable HNSW + tombstones + background clean replacement | 2026-05-14 | Lucene segment-per-graph is overkill at ≤500 K vectors; ordinary edits mutate only changed chunks. |
 | LI per-segment recompaction, no global rebuild | 2026-05-14 | Per-token int4 (no codebook) makes segment-local recompaction safe. |
 | Sparse-gram v3 per-file delta overlay + frozen weights | 2026-05-15 | Dirty ticks regenerate grams only for changed files under the active `weights_id`; background compaction copies postings, and whole-corpus re-gramming is allowed only for measured bigram-weight drift. |
-| Watcher opt-in, polling default | 2026-05-14 | Polling alone meets staleness contract; watcher adds complexity. |
-| Maintenance executor as separate process | 2026-05-14 (proposed) | Predictable low-priority CPU scheduling for background replacements; no daemon event-loop interference. |
+| Watcher default-on with polling backstop | 2026-05-14 / 2026-05-15 | Polling alone is correct but slower to notice edits; watcher gives immediate dirty-set membership and polling remains the correctness fallback. |
+| Maintenance executor as separate process | 2026-05-14 | Predictable low-priority CPU scheduling for background replacements; no daemon event-loop interference. |
 | Per-file (not per-chunk) atomicity | 2026-05-14 | Chunks already know their file; per-file commit is the natural unit. |
 | Single global epoch, not per-tier | 2026-05-14 | One source of truth for "did the index see this commit?". |
 | Float HNSW replacement trigger is measured, not fixed | 2026-05-14 / 2026-05-15 | 0.15 remains a provisional starting point, but live-candidate shortfall and MRR probe drift can trigger replacement earlier or later. |
 | LI per-segment recompaction watermark = 0.20 | 2026-05-14 | Bounds wasted bitmap scan; awaits validation. |
-| Skip HCGS in v1 reconcile | 2026-05-14 | LLM-driven cost dominates encode; revisit later. |
-| Skip cross-worktree shared index in v1 | 2026-05-14 | Lockfile alone is sufficient for one-writer model. |
+| HCGS invalidate in v1, regenerate lazily | 2026-05-14 / 2026-05-15 | Accuracy requires never serving stale summaries; minimal load requires avoiding eager LLM/API regeneration. |
+| Cross-worktree stamps and shared-index locking in v1 | 2026-05-14 / 2026-05-15 | Prevents silent history mixing while still allowing an explicit shared index path. |
 | AST-structural chunk IDs replace positional | 2026-05-15 | Gemini review: positional IDs defeat chunk-hash dedup on insertions. Fix is load-bearing for Phase 1 CPU savings. |
 | xxHash3 replaces SHA-256 for content dedup | 2026-05-15 | 15–30 GiB/s vs 1–2 GiB/s; cryptographic strength unnecessary for local dedup. |
 | FTS5 explicit `('merge', 16)` per tick + bounded `('merge', 500)` on watermark | 2026-05-15 | FTS5 does not auto-compact; daemons bloat GB/week without this. |
@@ -1860,7 +2093,7 @@ DB-swap hardening are real implementation work even with strict MVCC deferred.
 | Mtime-trap fix: `(mtime, size, inode) !=` not `mtime >` | 2026-05-15 | Equal-mtime within FS resolution makes second write invisible to `>` check. |
 | Adaptive tick interval, CPU budget, watermarks by hardware tier | 2026-05-15 | "Works on any machine" mandate — see § 34. |
 | Occurrence-indexed anonymous chunk IDs | 2026-05-15 | Gemini 2nd-pass: identical statements in same parent would collide and lose chunks under UPSERT. |
-| `epoch_written` audit columns on reconcile-owned rows | 2026-05-15 | Supports HNSW replacement replay, telemetry, and optional strict reader isolation later; SQLite WAL is not queryable as an application replay log. |
+| Strict epoch visibility columns on reconcile-owned rows | 2026-05-15 | Prevents stable-path SQLite readers from observing ε+1 rows while pinned to ε; SQLite WAL is not queryable as an application replay log. |
 | USearch capacity managed via `index.reserve()` on exception | 2026-05-15 | Gemini 2nd-pass: tombstone-only writes exhaust `max_elements` monotonically. |
 | WAL TRUNCATE is opportunistic, not forcing; MCP must close txns | 2026-05-15 | Gemini 2nd-pass: original draft overclaimed TRUNCATE semantics. |
 | FTS5 bounded `('merge', 500)` replaces `('optimize')` | 2026-05-15 | Gemini 2nd-pass: `'optimize'` trips own WAL bloat alarm. |
@@ -1909,8 +2142,9 @@ layer rather than the segment layer.
 
 ### 19.1 Staleness display
 
-CLI output adds an optional footer (off by default; on with `--show-staleness`
-or when `staleness > threshold`):
+CLI output adds a compact staleness footer whenever daemon metadata is
+available; `--show-staleness` forces it in quiet contexts and warnings appear
+when `staleness > threshold`:
 
 ```
 results...
@@ -2024,11 +2258,11 @@ detected hardware tier (see § 34). All can be overridden.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SWEET_SEARCH_RECONCILE_INTERVAL` | adaptive (30–180 s by tier; 60 s nominal) | Tick interval; min 10s, max 600s |
+| `SWEET_SEARCH_RECONCILE_INTERVAL` | adaptive (15–300 s by tier; 60 s nominal) | Tick interval; min 15s, max 300s unless user-pinned |
 | `SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS` | adaptive (~250 ms × physical_cores, capped at 4000) | Soft cap per tick |
 | `SWEET_SEARCH_RECONCILE_FILES_PER_TICK` | adaptive (10–200 by tier) | Hard cap on files processed per tick |
 | `SWEET_SEARCH_RECONCILE_DEBUG` | `0` | Verbose per-file logging |
-| `SWEET_SEARCH_WATCH` | `0` | Enable Rust notify watcher (opt-in) |
+| `SWEET_SEARCH_WATCH` | `1` where supported; `0` in WSL2/container defaults | Enable Rust notify watcher; polling remains the correctness backstop |
 | `SWEET_SEARCH_WATCH_DEBOUNCE_MS` | `200` | Watcher event coalescing window |
 | `SWEET_SEARCH_DAEMON` | `0` | Run as long-lived daemon vs one-shot |
 | `SWEET_SEARCH_REBUILD_NICE` | `10` (Unix) / `BELOW_NORMAL` (Win) | OS-priority knob for CPU background maintenance (name retained for compatibility) |
@@ -2122,7 +2356,9 @@ CPU work, not IDs.
 ### 22.3 Submodules
 
 `.gitmodules` submodules under the indexed root are treated as separate
-repos (skipped by default; opt-in via `.sweet-search.config.json` `submodules: true`).
+repos. Default behavior is to index the parent repo only; setting
+`.sweet-search.config.json` `submodules: true` creates separate reconcile
+ownership for each submodule.
 Independent submodule history means their `git common-dir` is different and
 their content lifecycle is independent of the parent.
 
@@ -2194,9 +2430,9 @@ scale. Documenting so the next author doesn't relitigate.
 | **PLAID-style shared k-means codebook** | ColBERTv2/PLAID | Centroid drift problem (PLAID-SHIRTTT). Sweet-search's per-token int4 avoids this entirely. |
 | **PLAID-SHIRTTT hierarchical re-clustering** | SIGIR '24 | Solves the centroid drift we don't have. Adds complexity for nothing. |
 | **Vespa-style fully mutable HNSW, no rebuilds** | Vespa | At ≤500 K vectors per repo even the slowest supported hardware tier can rebuild in minutes, not hours. Periodic compaction beats Vespa's "edit forever, never rebuild" once the rebuild is cheap. |
-| **Cursor's full Merkle tree** | Cursor blog | Their tree is for client/server reconciliation across an untrusted boundary. Local single-process can use per-file hashes directly. (Could revisit if we ever ship a CDN-cached index.) |
+| **Cursor's full Merkle tree** | Cursor blog | Their tree is for client/server reconciliation across an untrusted boundary. Local single-process can use per-file hashes directly. |
 | **Glean's stacked DBs / overlay** | Glean (Meta) | The stacked-DB abstraction shines at fanout (header touches 100 TUs). We don't have C++ #include-style fanout in the index — files are independent units. |
-| **JetBrains Shared Indexes CDN** | JetBrains | Pre-built indexes for common dependencies. Compelling for npm packages but a v2 feature; out of v1 scope. |
+| **JetBrains Shared Indexes CDN** | JetBrains | Pre-built remote dependency indexes are a distribution product, not part of local incremental correctness. |
 | **SCIP as the structural format** | Sourcegraph | Worth doing for interop (Searchfox, Glean), but doesn't change the reconcile design. Track as separate workstream. |
 | **Aider's per-prompt repo-map** | Aider | Zero staleness but high per-query cost. Wrong tradeoff for tools that re-query frequently. |
 | **Claude Code's no-index agentic-grep** | Anthropic | Token cost is the problem (Milvus measured 40 % waste). Sweet-search's selling point is fast pre-indexed retrieval; pivoting away defeats the purpose. |
@@ -2221,14 +2457,14 @@ scale. Documenting so the next author doesn't relitigate.
 ### 24.2 Integration tests
 
 - Fresh repo → first tick produces full state (cold-start replay)
-- Empty repo → empty-but-valid state (TODO § Empty codebase)
+- Empty repo → empty-but-valid state (§ 7.6 fallback weights)
 - Edit one file → reconcile → search returns new content (E2E)
 - Touch one file (no content change) → reconcile no-ops
 - Rename file → entity IDs preserved, paths updated
 - Delete file → tombstones across all five tiers
 - Branch switch → many files dirty; content-hash dedup → most are no-ops
 - Config change to excludes → exclude-diff applied bidirectionally
-  (per TODO § Exclude unification)
+  (per § 14.2 resolved-exclude fingerprint)
 
 ### 24.3 Structural invariance (§ 12.3)
 
@@ -2310,13 +2546,15 @@ Stale-bitmap sidecar requires changes to SSLX consumers. Two options:
   the bitmap is a separate file. Reader checks bitmap before doc; if
   bitmap absent, treats all docs as live. Backward-compatible. **Recommended.**
 - **(B) SSLX v4** with bitmap embedded in header. Cleaner long-term;
-  forces all consumers to upgrade. Defer.
+  forces all consumers to upgrade. Rejected for this execution plan because
+  the companion bitmap gives the same live/stale semantics with less reader
+  churn.
 
 ### 25.4 Dual-read window
 
-Not needed for v1: the migration is "drop old state, full reindex on new
-version." Encoder model upgrades will need a dual-read window later, but
-that's a separate workstream.
+Not needed for this plan: the migration is "drop old state, full reindex on
+new version" under the writer lock. Encoder research upgrades are separate
+product work and do not affect ordinary incremental edit reconciliation.
 
 ### 25.5 Rollback
 
@@ -2327,7 +2565,7 @@ re-run `npm run index` to rebuild state in v1 format. Document explicitly.
 
 - **Week 1:** flag off; reconcile-v2 code lands behind flag; one author
   uses it locally.
-- **Week 2:** flag opt-in for power users; held-out GCSN runs nightly to
+- **Week 2:** enable flag for power users; held-out GCSN runs nightly to
   catch regressions.
 - **Week 3:** flag on by default; v1 daemon remains as fallback (kept
   for one release cycle).
@@ -2391,8 +2629,8 @@ When the daemon commits a new epoch, MCP must reload. Mechanism:
 - MCP reads `reconcile-manifest.json` once per query. If the manifest epoch
   or any named artifact generation changed, reload the affected tier set and
   pin that manifest for the query. Cheap (single JSON read).
-- Alternative: file-watcher on `reconcile-manifest.json` to push invalidation.
-  More complex; defer.
+- MCP may also watch `reconcile-manifest.json` to pre-warm reloads, but the
+  per-query manifest read is mandatory and sufficient for correctness.
 
 ### 27.2.1 MCP and SQLite WAL discipline (mandatory)
 
@@ -2461,8 +2699,11 @@ three-file family (`.db`, `.db-wal`, `.db-shm`), not as a single file:
    live-name disk usage.
 10. Delete `.old.<epoch>` files only after a grace period and only if no
     process still has them open (best-effort via `lsof` on Unix). On
-    Windows this swap defense is v2; v1 logs and asks the operator to
-    restart long-lived readers.
+    Windows, first send a manifest-reload/drain request to MCP, close
+    daemon-owned handles, then use `MoveFileEx` replacement semantics with
+    retry/backoff. If another process still holds the file, the maintenance
+    job remains pending and visible in `sweet-search rebuild status`; it does
+    not corrupt or overwrite the live DB.
 
 The swap is heavy (full copy of `code-graph.db`, typically tens to
 hundreds of MiB) but bounded — it runs at most once per "misbehaving
@@ -2482,7 +2723,8 @@ Tempting (one process, one lock, low overhead). Rejected for v1 because:
 - MCP lifecycle is tied to the agent session; daemon should outlive it.
 - Separate processes = predictable CPU scheduling and failure isolation.
 
-Possible v2: spawn a node worker thread inside MCP for reconcile. Defer.
+Embedding reconcile inside MCP is rejected for this plan. The executable
+model is a separate daemon process plus MCP manifest reloads.
 
 ---
 
@@ -2545,7 +2787,9 @@ numbers, so the daemon scales gracefully from a 4 GiB Chromebook to a
   vectors plus ~30 % graph overhead = ~1.3 GiB. On tier-low hardware
   (4–8 GiB RAM) this is a meaningful share — the maintenance scheduler
   must check `available_ram > 1.5 × estimated_rebuild_footprint`
-  before arming; otherwise defer with reason `mem_pressure`.
+  before arming; otherwise reschedule with exponential backoff and reason
+  `mem_pressure`. The live index continues to serve through tombstone-aware
+  filtering and the CLI surfaces the pending maintenance state.
 - **mmap residency**: artifacts are mmap'd. The OS handles eviction
   under memory pressure; sweet-search does not pin pages. Verify
   `madvise(MADV_RANDOM)` is set on the HNSW mmap (the access pattern
@@ -2572,8 +2816,8 @@ peak during a multi-tier maintenance cycle.
 **Portability constraint.** Before staging maintenance, the scheduler
 must check available disk space: require `free_disk > 3 × tier_size`
 (stage + room for fsync + safety margin). On constrained machines
-(e.g., a laptop with 30 GiB free), the maintenance job is deferred and logged
-to dead-letter with reason `disk_full`; user must free space or run
+(e.g., a laptop with 30 GiB free), the maintenance job is rescheduled and
+surfaced with reason `disk_full`; user must free space or run
 `sweet-search rebuild force <tier>` after cleanup. **Never** silently
 overwrite the live artifact mid-maintenance.
 
@@ -2671,17 +2915,22 @@ encode-skip from § 13):
   `chunk_text_hash TEXT NOT NULL DEFAULT ''`,
   `embedding_input_hash TEXT NOT NULL DEFAULT ''`,
   `li_input_hash TEXT NOT NULL DEFAULT ''`,
-  `metadata_fingerprint TEXT NOT NULL DEFAULT ''`, and
-  `epoch_written INTEGER NOT NULL DEFAULT 0` columns added; index on
-  `epoch_written` created; tested with existing index (auto-migrates;
-  old positional `chunk_id` preserved). **`DEFAULT` clauses are
+  `metadata_fingerprint TEXT NOT NULL DEFAULT ''`,
+  `logical_chunk_id TEXT NOT NULL DEFAULT ''`,
+  `epoch_written INTEGER NOT NULL DEFAULT 0`, and
+  `epoch_retired INTEGER` columns added; epoch visibility index created;
+  tested with existing index (auto-migrates; old positional `chunk_id`
+  preserved). **`DEFAULT` clauses are
   mandatory for rollback safety — verify by running an older daemon
   against the migrated DB and confirming no `SQLITE_CONSTRAINT_NOTNULL`.**
 - [ ] Schema migration on `code-graph.db::entities`:
-  `epoch_written INTEGER NOT NULL DEFAULT 0` column + index added. Same
-  rollback-safety test.
+  `logical_entity_id TEXT NOT NULL DEFAULT ''`,
+  `epoch_written INTEGER NOT NULL DEFAULT 0`, and `epoch_retired INTEGER`
+  columns + visibility index added. Same rollback-safety test.
 - [ ] Schema migration on `code-graph.db::relationships`:
-  `epoch_written INTEGER NOT NULL DEFAULT 0` column + index added.
+  `logical_relationship_id TEXT NOT NULL DEFAULT ''`,
+  `epoch_written INTEGER NOT NULL DEFAULT 0`, and `epoch_retired INTEGER`
+  columns + visibility index added.
 - [ ] xxHash3 dependency added; `HASH_ALGORITHM` switch in place; SHA-256
   fallback verified for the compliance/audit override path.
 - [ ] AST chunker emits stable `chunk_struct_id` for both symbol-attached
@@ -2705,6 +2954,21 @@ encode-skip from § 13):
   affects `embedding_text` or `pickLiInput()`; reconcile must detect
   `embedding_input_hash` / `li_input_hash` changes and re-encode the
   affected dense / LI payload even if raw chunk content is unchanged.
+- [ ] Encoder dependency store implemented under
+  `core/incremental-indexing/`; dense, LI, and dedup dependency keys are
+  registered separately. Normal full indexing remains behavior-compatible and
+  does not read the dependency sidecar.
+- [ ] Current-policy cross-file test: editing callee body/signature in file
+  `A` does not re-encode unchanged caller chunks in file `B` unless `B`'s
+  rebuilt exact dense or LI input hash changes. Graph rows may change; stable
+  encoder payloads must not.
+- [ ] Future-policy reverse-dependency fixture: with a test-only policy that
+  injects resolved target signatures, changing the target signature expands
+  the metadata-dirty set through `entity:<target_entity_id>` and reuses
+  dense / LI payloads only on exact input-hash match.
+- [ ] Dedup alias repair test: changing/deleting an exemplar updates affected
+  aliases and `liReuseEligible` decisions without forcing unrelated chunks to
+  re-encode.
 - [ ] Per-tick counter exposed in metrics JSON.
 - [ ] GCSN dev MRR runs green vs `pre-incremental-reconcile-baseline`.
 - [ ] Locked probe packs (retrieval-probes, ast-tester-probes,
@@ -2717,7 +2981,7 @@ encode-skip from § 13):
   - link to this plan
   - which sections were touched
   - benchmark deltas
-  - any open questions deferred
+  - any measurement gates still pending for later phases
 
 This is the same shape of merge gate used for the `ss-search` Phase 6 v2
 audit and structural P6 redo work; reuse the rubric.
@@ -2780,7 +3044,7 @@ re-probed on next startup).
 | `mem_budget` | 256 MiB or 5 % RAM | 1 GiB or 5 % RAM | 5 GiB or 5 % RAM | Whichever is larger |
 | `sparse_gram_strategy` | delta-overlay | delta-overlay | delta-overlay | See § 7.6 |
 | `maintenance_concurrency` | 1 | 2 | 4 | Parallel tier maintenance during async pass |
-| `watcher_default_state` | off | off | off | Always opt-in (regardless of tier) |
+| `watcher_default_state` | on where supported | on where supported | on where supported | WSL2/container defaults may start polling-only; user override allowed |
 | `fts5_merge_pages` | 8 | 16 | 32 | Higher fan-in on machines that can afford it |
 | `wal_checkpoint_every_n_ticks` | 30 | 60 | 120 | Balance WAL growth vs OS write pressure |
 | `automatic_maintenance_uses_gpu` | no | no | no | Reconcile-owned work always stays CPU-only |
@@ -2802,9 +3066,8 @@ size rather than edit rate. Adaptive policy:
 
 - **Tombstone bitmap files** (`*.stale.bin`): 64-byte aligned to allow
   AVX-512/AVX2/NEON SIMD masking. Header records alignment + version.
-  Even though v1 reads scalar, the format must be SIMD-ready so the
-  future Rust read path is a zero-copy swap (see § 23, deferred SIMD
-  optimization).
+  V1 implements native SIMD masking where the native layer and CPU support it,
+  with scalar fallback for unsupported CPUs.
 - **HNSW mmap**: `madvise(MADV_RANDOM)` on the graph region;
   `MADV_SEQUENTIAL` on the vector storage region during cold-load.
 - **WAL on slow storage**: on `hdd` tier, increase
@@ -2834,10 +3097,10 @@ The plan is architecture-agnostic. Concrete points:
 |---|---|---|---|---|
 | macOS | FSEvents via `notify` | none | APFS case-insensitive default, snapshot semantics | primary |
 | Linux | inotify via `notify` | `max_user_watches` (524 288 default; large monorepos exhaust) | mtime resolution varies; symlink semantics differ | primary |
-| Windows | `ReadDirectoryChangesW` via `notify` | path length 260 (legacy) or 32 K | NTFS reserved names, alternate streams | v2 |
+| Windows | `ReadDirectoryChangesW` via `notify` | path length 260 (legacy) or 32 K | NTFS reserved names, alternate streams, stricter rename semantics for open SQLite files | required |
 | WSL2 | inotify on the Linux side; events from Windows-mounted drives are unreliable | low | mtime resolution truncated when crossing boundary | polling-only mode |
 
-**WSL2 handling — default off, user override.** The earlier blanket
+**WSL2 handling — polling default, user override.** The earlier blanket
 "WSL2 → polling-only" over-penalizes users on native Linux paths;
 an earlier draft proposed parsing `df -T` or `/proc/mounts` to detect
 the actual filesystem type, but that parser is brittle across Linux
@@ -2925,8 +3188,8 @@ correct index.
 ## 35. Post-Review Corrections (Gemini 3.1 Pro deep-think, 2026-05-15)
 
 A SOTA gap analysis was performed by Gemini 3.1 Pro (deep-think,
-4 236 thinking tokens). Eleven concrete findings; nine accepted and
-folded in, two deferred to v1.1.
+4 236 thinking tokens). Eleven concrete findings; all accepted into the
+execution plan.
 
 ### 35.1 Accepted and folded in
 
@@ -2940,14 +3203,14 @@ folded in, two deferred to v1.1.
 | 6 | **SQLite WAL checkpoint starvation** under long-lived MCP reader | § 8.4 specifies WAL checkpoint policy; § 27.2.1 adds MCP-side rules | high |
 | 7 | **`PRAGMA synchronous = NORMAL`** in WAL mode | § 7.1 added | quick win |
 | 8 | **xxHash3 replaces SHA-256** for content dedup (~15–30× throughput) | § 7.2; § 21 adds `SWEET_SEARCH_HASH_ALGORITHM` env override | medium |
-| 9 | **Resolved-exclude-array hash, not gitignore-file hash** | § 14.2.7 open question closed; method described | medium |
+| 9 | **Resolved-exclude-array hash, not gitignore-file hash** | § 14.2.7 resolved; method described | medium |
 
-### 35.2 Deferred
+### 35.2 Accepted in the final execution pass
 
-| # | Finding | Reason for deferral |
+| # | Finding | Where it landed |
 |---|---|---|
-| 10 | SIMD tombstone intersection during HNSW traversal | v1 reads tombstones scalar; § 34.4 mandates 64-byte aligned bitmap format so future Rust-side SIMD swap is zero-copy |
-| 11 | Zstd-dictionary-compressed JSONL queues | NVMe-class storage tolerates uncompressed queues; revisit if disk IO appears in P99 profiles |
+| 10 | SIMD tombstone intersection during HNSW traversal | § 13 Phase 6 implements SIMD-ready tombstone filtering with scalar fallback for unsupported CPUs |
+| 11 | Zstd-dictionary-compressed JSONL queues | § 13 Phase 6 implements compressed queue rotation once JSONL files exceed 1 MiB |
 
 ### 35.3 Items added beyond the review
 
@@ -2966,9 +3229,9 @@ The five-tier architecture, the 60 s reconcile cadence, the per-token
 int4 LI advantage, the content-hash dedup model, and the format-gating
 discipline were all left untouched — they survived independent review.
 
-### 35.5 What I'm still unsure about
+### 35.5 Measurement gates added
 
-These survived this round but deserve further scrutiny:
+These are mandatory measurement gates before rollout:
 
 - Whether the 60 s tick CPU budget is realistic across all three tiers
   on the actual corpus. The tier-stratified benchmark in § 14.1 (Phase 5)
@@ -2980,11 +3243,8 @@ These survived this round but deserve further scrutiny:
   before the watermark fires. The synthetic injection study in Phase 5
   must measure this directly, not just total tombstone fraction.
 - Whether xxHash3 collisions on small chunks (~100 bytes) are actually
-  bounded. Worth a one-shot collision test on the working corpus
+  bounded. Phase 0 must run the one-shot collision test on the working corpus
   before flipping the default.
-
-These join the existing § 14.2 open questions list rather than blocking
-the plan.
 
 ---
 
@@ -3049,10 +3309,10 @@ Three meta-rules learned from this review pass:
    either wrong (FTS5) or required reader cooperation (WAL); they
    are now spelled out.
 
-### 36.5 What's still open
+### 36.5 Measurement gates from second-pass review
 
-The second-pass review explicitly noted some unresolved areas — these
-remain in § 14.2 as open questions:
+The second-pass review explicitly noted areas that need empirical
+verification. They are Phase 0 / Phase 5 gates, not postponed scope:
 
 - USearch's actual auto-resize behavior in the JS binding (some
   versions auto-grow; need empirical verification before relying on
@@ -3060,19 +3320,18 @@ remain in § 14.2 as open questions:
 - FTS5 `'merge', 500` WAL impact at scale (the claim that it stays
   bounded is theoretically correct but unmeasured on sweet-search's
   actual code-graph.db).
-- Whether the `epoch_written` index choice (B-tree on a monotonically
-  increasing integer) creates write hot-spots; might need a partial
-  index `WHERE epoch_written > (max - 10000)` instead.
+- Whether the epoch visibility index choice (B-tree on monotonically
+  increasing `epoch_written`) creates write hot-spots. Phase 0 must benchmark
+  the full index and the partial index
+  `WHERE epoch_written > (max_epoch - 10000)` and lock the faster choice.
 
 ### 36.6 Net change
 
 The plan grew from 2 216 lines to roughly 2 500 lines after this
 pass. No section was removed; eight sections were amended in place
 and one new section (§ 36) was added. Schema migrations expanded:
-the Phase 1 work now adds six columns (`chunk_struct_id`,
-`chunk_text_hash`, `embedding_input_hash`, `li_input_hash`,
-`metadata_fingerprint`, `epoch_written`) to `vectors` and one
-(`epoch_written`) to each graph table touched by reconcile, plus indices.
+the Phase 1 work now adds structural/input-hash and strict visibility columns
+to `vectors` and graph tables, plus indices.
 
 ---
 
@@ -3129,7 +3388,7 @@ trims pull it back.
 
 - Empirical Phase 0 verification of USearch reserve semantics, FTS5
   introspection, FTS5 merge wallclock — all of these are now
-  blocking items on the Phase 0 checklist rather than vague TODOs.
+  blocking items on the Phase 0 checklist rather than vague notes.
 - The DB-swap self-defense mechanism (§ 27.2.1) is described in
   detail but unimplemented; needs an integration test that
   intentionally leaks an MCP read transaction and asserts the swap
@@ -3143,15 +3402,15 @@ trims pull it back.
 
 ### 37.6 Net change after review passes
 
-- Plan length: 2 216 → 2 578 → ~3 050 lines after the latest pass.
+- Plan length: 2 216 → 2 578 → ~3 400 lines after the latest pass.
 - Sections: 35 → 36 → 37.
-- Schema migrations: now 8 v1 columns (6 on `vectors`, 1 on
-  `entities`, 1 on `relationships`), all carrying `DEFAULT` clauses where
-  needed for rollback safety. Strict MVCC columns are deferred to § 8.1.1.
+- Schema migrations: now include structural/input-hash columns plus strict
+  epoch visibility columns on `vectors`, `entities`, and `relationships`,
+  all carrying `DEFAULT` clauses where needed for rollback safety.
   Phase 3 schema changes (per-tier change-logs) were
   **eliminated** by the LSM-rebase trim.
-- Decision log: 11 → 24 → 33 entries.
-- Total dev estimate: 13 → 22 → 25 → 30-35 days.
+- Decision log: 11 → 24 → 33+ entries.
+- Total dev estimate: 13 → 22 → 25 → 30-35 → 32-37 → 40-48 days.
 - Architectural complexity: peaked at the end of pass 2; deliberately
   reduced in pass 3 by removing per-tier change-log infrastructure.
   Net design is *simpler* than the post-§36 state while being *more*
