@@ -170,15 +170,32 @@ function hashContent(content) {
 // =============================================================================
 
 /**
- * Get file metadata (size and mtime in nanoseconds) via fs.stat()
+ * Get file metadata (size, mtime in nanoseconds, inode) via fs.stat().
+ *
+ * Per INCREMENTAL_INDEXING_PLAN.md § 9.1, the dirty-detection tuple is
+ * `(mtime_ns, size, inode)`. The naive `mtime > recorded` check misses a
+ * second write within the same FS resolution tick; the equality-on-tuple
+ * check plus inode detects atomic-rename-over-existing-path (vim swap
+ * write, JetBrains safe-write) which produces a new inode at the same
+ * path with identical mtime/size.
+ *
+ * 64-bit inodes from APFS/ZFS/XFS routinely exceed Number.MAX_SAFE_INTEGER;
+ * we therefore store inode as a JSON string (BigInt has no JSON type) and
+ * cast back via `BigInt(stored.inode)` for comparison. `mtime_ns` is
+ * already stored as a string for the same reason. `size` stays as a Number
+ * because every file in the index is bounded by SWEET_SEARCH_MAX_FILE_BYTES
+ * (1 MiB), well within safe integer range — but callers MUST treat the
+ * trio as one tuple for the comparison.
+ *
  * @param {string} filePath - Absolute path to file
- * @returns {Promise<{size: number, mtime_ns: bigint}>}
+ * @returns {Promise<{size: number, mtime_ns: string, inode: string}>}
  */
 async function getFileMetadata(filePath) {
   const stat = await fs.stat(filePath, { bigint: true });
   return {
     size: Number(stat.size),
-    mtime_ns: stat.mtimeNs.toString(), // Store as string for JSON serialization
+    mtime_ns: stat.mtimeNs.toString(),
+    inode: stat.ino.toString(),
   };
 }
 
@@ -202,9 +219,17 @@ function migrateFileEntry(entry) {
 }
 
 /**
- * Check if file metadata matches stored values (fast-path)
- * @param {Object} stored - Stored entry {hash, size, mtime_ns}
- * @param {Object} current - Current metadata {size, mtime_ns}
+ * Check if file metadata matches stored values (fast-path).
+ *
+ * Per INCREMENTAL_INDEXING_PLAN.md § 9.1 the comparison is the full
+ * `(mtime_ns, size, inode)` tuple. Inode is checked when present in
+ * the stored entry; rows migrated from a pre-inode state file have
+ * `stored.inode === undefined`, in which case we fall back to the
+ * mtime+size pair and rely on the content-hash path to catch any
+ * atomic-rename misses.
+ *
+ * @param {Object} stored - Stored entry {hash, size, mtime_ns, inode?}
+ * @param {Object} current - Current metadata {size, mtime_ns, inode}
  * @returns {boolean} - True if metadata matches (file unchanged)
  */
 function metadataMatches(stored, current) {
@@ -212,7 +237,16 @@ function metadataMatches(stored, current) {
   if (stored.size === null || stored.mtime_ns === null) {
     return false;
   }
-  return stored.size === current.size && stored.mtime_ns === current.mtime_ns;
+  if (stored.size !== current.size) return false;
+  if (stored.mtime_ns !== current.mtime_ns) return false;
+  // Inode is optional in legacy entries; treat missing as wildcard so
+  // upgrading a state file from a previous version doesn't force a full
+  // reindex. Once a fresh tick writes the inode the field becomes
+  // load-bearing for future comparisons.
+  if (stored.inode != null && current.inode != null && stored.inode !== current.inode) {
+    return false;
+  }
+  return true;
 }
 
 /**
