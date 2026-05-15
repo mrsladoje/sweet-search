@@ -23,9 +23,11 @@
 > and HNSW oversampling, revising the v1 estimate to 30-35 dev-days with
 > strict MVCC reader isolation deferred.
 >
-> **Constraint anchor:** CPU-only for the incremental path; GPU reserved for
-> cold initial indexing, explicit operator rebuilds, and background HNSW
-> replacement jobs after measured drift. Watermark jobs are compaction/repair
+> **Constraint anchor:** CPU-only for the incremental path. Dirty-file
+> reconcile and every automatic maintenance job it schedules must run on
+> CPU; dense and LI model inference uses the ORT INT8 CPU path. GPU is
+> reserved only for cold initial indexing or an explicit operator full
+> reindex outside the reconcile daemon. Watermark jobs are compaction/repair
 > work, not the path that makes an edit searchable.
 > See `INCREMENTAL_INDEXING_TODO.md` § "Model Backend for Incremental Runs".
 >
@@ -107,8 +109,10 @@ corrupted state, or an explicit operator request.
   missed, the periodic mtime sweep guarantees consistency within one tick.
 - **Reuse what works**: the existing `index-maintainer.mjs`,
   `incremental-tracker.js`, `incremental-parser.js`, and the
-  `entities.stale_since` soft-delete column are already shaped correctly.
-  The plan extends them, it does not replace them.
+  `entities.stale_since` soft-delete column are useful primitives. Current
+  edit-time graph refresh still rebuilds the DB; per-file UPSERT/tombstone
+  behavior in § 7.1 is new implementation work, not something already
+  shipping.
 
 ### Non-Goals
 
@@ -128,6 +132,12 @@ corrupted state, or an explicit operator request.
   on `_isAgentFormat` and validated on held-out — separate proposal.
 - **Replacing the chunker, the encoder, or any ranking layer.** Reconcile
   consumes their outputs unchanged.
+- **Changing normal full indexing.** `npm run index`,
+  `core/indexing/index-codebase-v21.js`, `indexer-phases.js`, and the
+  existing full-index GPU policy remain the cold/batch indexing path.
+  Reconcile-v2 may reuse pure helpers from that path, but it must not route
+  ordinary dirty ticks through the full-index phase orchestration and must not
+  change full-index behavior to make incremental work.
 
 ---
 
@@ -138,11 +148,13 @@ corrupted state, or an explicit operator request.
    similar on CUDA — see TODO § Model Backend). A typical incremental
    tick touches 1–5 files and finishes in well under 1 s of CPU work
    on a modern laptop. The reconcile path must not call `teardownAllModels`
-   or `initIndexGpuPool`. Only the **async maintenance scheduler** is
-   permitted to arm GPU, and only after the existing `shouldArmGpu` /
-   `GPU_ARMING_MIN_FILES` policy fires. Machines without a usable GPU
-   (most user laptops, CI runners, headless servers) skip the GPU path
-   entirely and run background maintenance on CPU low-priority — see § 34.
+   or `initIndexGpuPool`, must not consult `shouldArmGpu()`, and must not
+   use the full-indexing `GPU_ARMING_MIN_FILES` branch. Dense and
+   late-interaction encoder calls in reconcile use the ORT INT8 CPU model
+   unconditionally, even for branch switches or large dirty sets. Automatic
+   maintenance spawned by reconcile also runs CPU low-priority; GPU remains
+   available only to cold initial indexing or explicit operator full reindex
+   commands outside the daemon — see § 34.
 2. **Per-token int4 quantization preserved.** Sweet-search's late-interaction
    index uses per-token min/scale (no shared centroid codebook). This is
    the structural reason incremental LI is safe; do not introduce a global
@@ -156,13 +168,20 @@ corrupted state, or an explicit operator request.
    LI skip policy must resolve excludes through `loadProjectConfig(projectRoot)`
    in `core/infrastructure/config/search.js`. No ad-hoc ignore lists in any
    new code path. (See TODO § Exclude List.)
-5. **DDD boundaries.** Domain logic stays in the owning bounded context;
-   SQL and file I/O stay behind repositories/adapters; no direct cross-context
-   database access from scripts, daemons, or new watcher code.
+5. **DDD boundaries.** Reconcile-v2 is its own bounded context under
+   `core/incremental-indexing/`, separate from the cold/batch
+   `core/indexing/` pipeline. Domain logic stays in that context; SQL,
+   mmap artifacts, lockfiles, and file I/O sit behind repositories/adapters;
+   no direct cross-context database access from scripts, daemons, or watcher
+   code. Existing indexing modules may expose pure helper APIs, but the
+   reconcile context owns dirty-set processing, epoch manifests, per-tier
+   deltas, and maintenance scheduling.
 6. **No GPU + CPU model coexistence.** Per
    `memory/feedback_no_model_coexistence.md`, the reconcile tick must
    never be running while a GPU model is loaded for batch encoding,
-   and vice versa. Synchronize through the existing model-pool epoch.
+   and vice versa. The simplest v1 rule is stronger than coexistence
+   coordination: the daemon never arms GPU at all. Explicit full-index
+   commands still synchronize through the existing model-pool epoch.
 
 ---
 
@@ -216,13 +235,21 @@ line numbers are accurate as of 2026-05-14.
    epoch.
 2. **No per-chunk content hash**, so whitespace-only or import-shuffle edits
    still trigger encoding of unchanged chunks.
-3. **No watermark scheduler** — the binary-HNSW threshold in
+3. **Current incremental code is stale and not the target design.** It is
+   useful evidence for gaps, but it must not be treated as the reference
+   implementation for this plan. In particular, current code-graph and
+   sparse-gram refreshes are whole-corpus operations, LI re-emits the
+   segment set after an in-memory delta, and binary-HNSW can remain stale
+   below its threshold. Reconcile-v2 acceptance forbids those behaviors for
+   ordinary dirty ticks: only changed files/chunks may be re-parsed,
+   re-grammed, or re-encoded.
+4. **No watermark scheduler** — the binary-HNSW threshold in
    `artifact-rebuild-state.json` is the only one wired up; Float HNSW,
-   LI segments, and sparse-gram have no rebuild trigger beyond "user runs
-   `npm run index`".
-4. **No CPU budget cap per tick.** A large branch switch can saturate
+   LI segments, and sparse-gram have no clean-replacement trigger beyond
+   "user runs `npm run index`".
+5. **No CPU budget cap per tick.** A large branch switch can saturate
    encoding and noticeably slow searches that share the encoder pool.
-5. **No optional file watcher.** Daemon polls every 30 s, which is fine
+6. **No optional file watcher.** Daemon polls every 30 s, which is fine
    as a backstop but leaves a worst-case 30-s latency for a hint to arrive.
 
 ---
@@ -336,9 +363,9 @@ Citations resolve to the full reference list in § References.
 ┌──────────────────────────────────────────────────────────────────┐
 │  Async maintenance scheduler (background, low priority)          │
 │  — Tier: Float HNSW / Binary HNSW / LI segment / sparse-gram     │
-│  — Mode: GPU when shouldArmGpu() && idle, else CPU low-pri       │
+│  — Mode: CPU low-priority only; never arm GPU from reconcile     │
 │  — Output: staged compacted artifact → fsync → manifest publish  │
-│  — Coordination: model-pool epoch; no concurrent CPU + GPU       │
+│  — Coordination: explicit full-index jobs use model-pool epoch   │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -360,7 +387,7 @@ workstation). These costs are not paid on ordinary edits.
 | Float HNSW (USearch) | live `add()` + tombstone bitmap (no live `remove()`) | recall probe regression OR `tombstone_fraction > measured threshold` OR crash recovery | 5–30 min clean replacement graph, built in background only |
 | Binary HNSW + int8 sidecar | tombstone + append every tick | `dead_doc_ratio > 0.30` (existing) | 30 s – 5 min clean replacement artifact, built in background only |
 | LI segments (SSLX v3) | append to growing segment; tombstone in sealed | per-segment `stale_doc_ratio > 0.20` → recompact that one segment | per-segment, 1–30 s |
-| Sparse-gram artifact | regenerate grams only for changed files; append per-file delta segment | `delta_size_ratio > 0.10` OR too many delta segments | segment merge only; no whole-corpus retokenization |
+| Sparse-gram artifact | regenerate grams only for changed files using the active frozen bigram-weight table; append per-file delta segment | `delta_size_ratio > 0.10` OR too many delta segments; full re-gram only for measured bigram-weight drift | segment merge normally; rare weight refresh is background-only |
 
 Critical property: **every tier has both a synchronous "edit-time" path
 (cheap) and an asynchronous "compaction/repair" path (expensive).** No tier
@@ -733,8 +760,10 @@ new chunks is safe — but removals become tombstone-only.
    Phase 5 calibrates them on sweet-search data.
 6. **Background replacement path (compaction/repair, not edit-time
    freshness).**
-   - Run on GPU if `shouldArmGpu()` returns true and the model pool is
-     idle; else CPU low-priority.
+   - Run CPU low-priority only. HNSW replacement reads already-materialized
+     vectors from `codebase.db`; it must not arm GPU or re-encode chunks.
+     If a future replacement path needs model inference, it still uses the
+     ORT INT8 CPU encoder because it was scheduled by reconcile.
    - Build the clean graph in `.sweet-search/codebase-hnsw.idx.next` from
      the current `codebase.db` vectors snapshot while the live graph
      continues serving incremental add+tombstone updates.
@@ -803,20 +832,25 @@ segment. Atomic stage-and-swap already implemented at
 
 ### 7.6 Sparse-gram artifact
 
-**Existing.** Rust native artifact `codebase-sparse-grams.idx`, full
-rebuild only (`crates/sweet-search-native/src/sparse_gram.rs`).
+**Existing.** Rust native artifact `codebase-sparse-grams.idx`,
+whole-corpus build only (`crates/sweet-search-native/src/sparse_gram.rs`).
 
 **New behavior: per-file sparse deltas only.**
 
 Sparse grams must never retokenize the whole corpus for a normal dirty tick.
 The edit-time path regenerates grams only for changed files and writes those
-rows into a mutable overlay:
+rows into a mutable overlay. It also uses a **frozen bigram-weight table**
+identified by `weights_id`; normal edits do not recompute the frequency
+function, because changing that function changes gram extraction semantics
+for every file.
 
 1. Base artifact remains immutable: `codebase-sparse-grams.idx`.
 2. Delta directory:
    `codebase-sparse-grams.idx.deltas/{epoch}-{seq}.ssgrmdelta`.
-   Each delta record is keyed by stable `file_id = xxhash3(canonical_path)`
-   and carries `{file_path, content_hash, deleted, symbol_mask, grams}`.
+   Each delta record is keyed by stable `file_id = xxhash3(canonical_path)`,
+   carries `{file_path, content_hash, deleted, symbol_mask, weights_id,
+   grams}`, and is valid only against a base artifact with the same
+   `weights_id`.
 3. Query path mmap-unions base + delta:
    - If a file has no delta record, read base postings.
    - If a file has a newer delta record, mask that file's base postings and
@@ -824,6 +858,10 @@ rows into a mutable overlay:
    - If `deleted=true`, mask that file entirely.
 4. Delta records are append-only and idempotent. Writing the same
    `(file_id, content_hash)` twice is a no-op at query merge time.
+5. The reconcile tick maintains approximate bigram counts incrementally
+   by subtracting the previous per-file count sketch and adding the new
+   count sketch. These counts are telemetry and drift detection only; they
+   do not change the active `weights_id` on the foreground path.
 
 **Compaction path.** When `delta_size_ratio > 0.10`, `delta_segment_count >
 64`, or startup mmap-open cost crosses the query-latency budget, compact in
@@ -838,10 +876,32 @@ This compaction may rewrite the packed artifact file, but it does **not**
 re-read or re-gram unchanged source files. The CPU work remains proportional
 to changed files plus the postings-copy cost, not corpus retokenization.
 
+**Bigram-weight drift path.** The only sparse-gram maintenance job allowed to
+re-gram the whole corpus is a measured weight refresh. Trigger it only when:
+
+- the codebase has at least `MIN_CORPUS_BIGRAMS` observed bigrams;
+- the active `weights_id` is still the fallback table, or the
+  Jensen-Shannon divergence / top-N rank movement between active weights and
+  incrementally tracked corpus counts exceeds the Phase 5 threshold; and
+- query/probe metrics show that gram selectivity has degraded enough to
+  justify the background cost.
+
+That refresh builds a complete new base artifact under `*.next` using the new
+frozen weight table, publishes a new `weights_id` in the reconcile manifest,
+and leaves the old base+deltas serving until publish. This is a background
+accuracy/compactness repair, not part of edit freshness.
+
+**Empty or tiny codebase bootstrap.** If there are too few bigrams to derive a
+stable corpus-specific table, use a versioned hardcoded common-code bigram
+table as the fixed fallback. The current Rust `common_code_bigrams()` table is
+the right shape: deterministic, realistic enough for code, and strictly
+better than sampling a random weight function. As the repo fills, keep using
+that fallback until measured drift justifies a background weight refresh.
+
 The current v2 Rust artifact is monolithic, so this requires an `SSGRMIDX v3`
 reader format with a file directory and delta overlay. That is still a
-smaller and more correct change than rebuilding sparse grams on every dirty
-tick.
+smaller and more correct change than preserving the current whole-corpus
+sparse refresh on every dirty tick.
 
 ### 7.7 HCGS summaries cache
 
@@ -1218,11 +1278,12 @@ A separate process (or worker thread; design TBD — see § Open Questions):
 
 1. Polls `rebuild-queue.jsonl` every 30 s.
 2. For each pending maintenance job:
-   - Check whether GPU is idle and `shouldArmGpu()` returns true.
-   - If yes: arm GPU per existing model-pool API, run rebuild, tear down,
-     restore CPU pool.
-   - If no: run on CPU at `nice 10` (low priority) so it does not impact
+   - Run on CPU at `nice 10` (low priority) so it does not impact
      interactive search latency.
+   - Never call `shouldArmGpu()`, `initIndexGpuPool`, or
+     `teardownAllModels`. Automatic reconcile maintenance is part of the
+     incremental system and therefore inherits the ORT INT8 CPU-only
+     constraint.
 3. On success: stage → fsync → manifest publish → reset the tier's
    watermark counters.
 4. On failure: move job to dead-letter; preserve old artifact.
@@ -1322,12 +1383,12 @@ over the lock; this version makes it explicit.
 | Linux inotify exhaustion (ENOSPC) | Watcher returns error | Log remediation; fall back to 60-s polling for that subtree |
 | FSEvents glitch on macOS | Missed events | mtime sweep catches at next tick |
 | Crash during reconcile | Process exit before manifest publish | Readers keep the previous manifest; next tick replays via content-hash mismatch; lockfile cleared. **HNSW crash-leak guarantee**: HNSW `add()` is not idempotent (each call assigns a new key); a crash AFTER `index.add()` but BEFORE manifest publish can leak one duplicate vector per affected chunk into the live graph. **The stale-lockfile recovery path in § 8.6 enqueues an immediate Float HNSW background replacement (`reason = "crash_recovery"`) regardless of watermark state** — without this, duplicates can persist for weeks under light editing, occupying top-k slots and evicting valid results before § 19's fusion-layer dedup can filter them (silent recall drop). With the immediate replacement path: leak window is minutes (replacement wallclock), not months. Until replacement completes, fusion + dedup at the result-set layer (§ 19) mitigates user-visible impact. Same logic applies to LI segment appends; same immediate-maintenance trigger covers them. Do not attempt to make HNSW add idempotent (would require read-before-write on every add → unacceptable latency). |
-| Crash during rebuild | Rebuild process exit | Old artifact still live; rebuild-queue retries; dead-letter after N |
+| Crash during maintenance | Maintenance process exit | Old artifact still live; rebuild-queue retries; dead-letter after N |
 | Worktree with shared index | Multiple processes, one lockfile | First takes lock, second blocks; document explicitly |
 | Config change (e.g. `.sweet-search.config.json` edit) | Config fingerprint mismatch | **Full reindex forced** (existing behavior in `incremental-tracker.js`) |
 | Encoder model upgrade | Config fingerprint mismatch | Full reindex; future: dual-read window (out of scope v1) |
 | Disk full mid-stage | fsync failure | Abort, preserve old; log; surface to user |
-| GPU armed by another process | Model-pool epoch mismatch | Rebuild scheduler falls back to CPU low-pri |
+| GPU armed by explicit full-index process | Model-pool epoch mismatch | Reconcile waits for the existing model-pool epoch guard; automatic maintenance never arms GPU |
 | User runs `npm run index` while daemon is running | Lock contention | Daemon's current tick finishes; full reindex takes over; daemon resumes after |
 | `merkle-state.json` corruption | JSON parse failure on load | Treat as no prior state → full reindex |
 
@@ -1433,7 +1494,7 @@ empirical-verification requirements. Treat as a research spike, not a
 - [ ] **Empirically verify FTS5 `('merge', 500)` wallclock** on a
   realistically-bloated `entities_trigram` (synthesize 100 small
   delete+insert cycles to grow the segment count). Confirm < 30 s
-  rebuild-time budget per § 6.2.
+  maintenance-time budget per § 6.2.
 - [ ] **Verify `os.availableParallelism()` returns correct values**
   inside Docker, inside a cgroup-limited shell, and on bare metal.
   Compare against `os.cpus().length` to detect divergences worth
@@ -1442,11 +1503,14 @@ empirical-verification requirements. Treat as a research spike, not a
   BigInts for `ino`, `size`, `mtimeNs` on the supported platforms
   (macOS, Linux, WSL2-with-ext4). Confirm `merkle-state.json`
   roundtrip preserves precision.
-- [ ] Decide rebuild-executor process model: separate process, worker
+- [ ] Decide maintenance-executor process model: separate process, worker
   thread, or run-in-daemon. **Recommended:** separate process at
-  `core/indexing/rebuild-worker.mjs`, communicated via the rebuild-queue
-  JSONL. Reasons: clean GPU lifecycle, no daemon CPU interference,
-  trivial to kill/restart.
+  `core/incremental-indexing/application/maintenance-worker.mjs`,
+  communicated via the rebuild-queue JSONL. Reasons: predictable CPU
+  scheduling, no daemon event-loop interference, trivial to kill/restart.
+  The JSONL queue may retain the legacy `rebuild-queue` filename for
+  compatibility, but the implementation belongs to the incremental-indexing
+  bounded context. It must not arm GPU.
 - [ ] Document the Phase 0 measurements in
   `docs/INCREMENTAL_INDEXING_PREFLIGHT_RESULTS.md` so the empirical
   basis for the watermark thresholds is reproducible.
@@ -1456,6 +1520,12 @@ empirical-verification requirements. Treat as a research spike, not a
 This phase grew after the Gemini review: positional `chunk_id`s defeat
 the chunk-hash dedup on common edits, so the structural-ID rework is
 prerequisite to the encode-skip savings.
+
+Implementation lives in the new `core/incremental-indexing/` bounded
+context. The normal full indexer may keep emitting its existing positional
+`chunk_id`s; reconcile derives and stores structural/input hashes for its own
+delta path. If a helper must be shared, extract a pure helper API and keep the
+full-index call sites behavior-compatible.
 
 - [ ] Add `chunk_struct_id TEXT NOT NULL DEFAULT ''`,
   `chunk_text_hash TEXT NOT NULL DEFAULT ''`,
@@ -1469,16 +1539,19 @@ prerequisite to the encode-skip savings.
 - [ ] Add `epoch_written INTEGER NOT NULL DEFAULT 0` to graph tables touched
   by reconcile (`entities` and `relationships`) for audit / telemetry. Do
   not add mandatory MVCC predicates in v1.
-- [ ] In `core/indexing/ast-chunker.js`, emit `chunk_struct_id` per § 7.2
-  for symbol-attached and anonymous chunks. Keep positional `chunk_id`
-  as fallback for parser failures.
+- [ ] Add `core/incremental-indexing/domain/chunk-identity.mjs` to derive
+  `chunk_struct_id` per § 7.2 for symbol-attached and anonymous chunks from
+  existing chunker output / AST metadata. Keep positional `chunk_id` as
+  fallback for parser failures. Do not require normal indexing to consume
+  the new ID.
 - [ ] Wire xxHash3 (via the existing native crate or `xxhash-wasm`)
   behind a `HASH_ALGORITHM` switch defaulting to `xxhash3`.
-- [ ] In `indexer-build.js`, compute `chunk_text_hash`,
-  `metadata_fingerprint`, `embedding_input_hash`, and `li_input_hash`
-  after graph enrichment but before encoder dispatch; look up by
-  `chunk_struct_id`; reuse dense embeddings only on `embedding_input_hash`
-  match and LI tokens only on `li_input_hash` match.
+- [ ] In `core/incremental-indexing/infrastructure/vector-delta-writer.mjs`,
+  compute `chunk_text_hash`, `metadata_fingerprint`,
+  `embedding_input_hash`, and `li_input_hash` after graph enrichment but
+  before reconcile encoder dispatch; look up by `chunk_struct_id`; reuse
+  dense embeddings only on `embedding_input_hash` match and LI tokens only on
+  `li_input_hash` match.
 - [ ] Add tracing counters: chunks_struct_stable, chunks_text_unchanged,
   chunks_encoded per tick.
 - [ ] Verify on:
@@ -1492,7 +1565,8 @@ prerequisite to the encode-skip savings.
 ### Phase 2 — Unified reconcile tick + manifest publish (~6 days)
 
 - [ ] Extract the per-file reconcile from `index-maintainer.mjs` into a
-  `Reconciler` class in `core/indexing/reconciler.mjs`.
+  `Reconciler` application service in
+  `core/incremental-indexing/application/reconciler.mjs`.
 - [ ] Reconciler owns: dirty-set processing, content-hash diff, per-file
   per-tier writes, and manifest publish.
 - [ ] Daemon becomes a thin driver: timer → `reconciler.tick()`.
@@ -1512,14 +1586,20 @@ prerequisite to the encode-skip savings.
   `.stale.bin` sidecars.
 - [ ] Implement watermark evaluation at end of each tick; emit maintenance
   jobs to `rebuild-queue.jsonl` (queue name retained for compatibility).
-- [ ] Implement `core/indexing/rebuild-worker.mjs`:
+- [ ] Implement `core/incremental-indexing/application/maintenance-worker.mjs`:
   - Process model: separate node process spawned by the daemon.
-  - GPU coordination: `shouldArmGpu()` + idle check.
+  - CPU-only assertion: fail the job if it attempts to call GPU model-pool
+    APIs; all automatic maintenance runs low-priority CPU.
   - Stage-and-manifest-publish with epoch rebase (§ 10.3).
 - [ ] Implement LI per-segment recompaction.
 - [ ] Implement sparse-gram v3 delta overlay and compaction. Gate: editing
   one file regenerates grams for exactly one file and does not read every
   source file.
+- [ ] Implement sparse-gram `weights_id`, fallback common-code bigram table,
+  per-file bigram count sketches, and drift-triggered background weight
+  refresh. Gate: empty/tiny codebase uses fallback weights; normal edits do
+  not change `weights_id`; only the explicit drift-refresh job re-grams the
+  corpus.
 - [ ] **Gate:** synthetic 20 % tombstone fraction triggers HNSW background
   replacement; post-replacement MRR within noise floor of cold-build MRR.
 
@@ -1580,13 +1660,17 @@ DB-swap hardening are real implementation work even with strict MVCC deferred.
    machine, high-core workstation — see § 34 for tier definitions).
    Chunks-per-second determines the per-tick CPU budget on each tier.
 3. **Per-segment LI recompaction wallclock** at the 10 K-doc cap, also
-   per tier. Confirms the "single-segment rebuild fits in a tick"
+   per tier. Confirms the "single-segment compaction fits in a tick"
    budget on the slowest target tier.
 4. **Sparse-gram delta wallclock** on the actual target corpus, per tier:
    one-file delta write, 50-file burst delta write, query-time base+delta
    union overhead, and background compaction wallclock. Confirms the v3
    delta overlay keeps ordinary edits proportional to changed files.
-5. **Reconcile tick wallclock** end-to-end on a realistic edit burst
+5. **Sparse-gram bigram-weight drift threshold.** Measure fallback weights
+   vs corpus-specific weights on dev repos; choose the divergence/selectivity
+   threshold where a background weight refresh is worth the cost. Empty and
+   tiny repos must stay on the hardcoded common-code table.
+6. **Reconcile tick wallclock** end-to-end on a realistic edit burst
    (10–50 files). Target: P99 below 50 % of the configured tick interval
    on every supported tier (so the tick never overruns into the next).
 
@@ -1636,10 +1720,10 @@ DB-swap hardening are real implementation work even with strict MVCC deferred.
 | Inotify exhaustion on Linux | Medium (large repos) | Watcher fails | ENOSPC detection → polling fallback |
 | FSEvents glitch on macOS | Medium | Missed events | mtime sweep catches at next tick |
 | Daemon crash mid-tick | Low | Inconsistent partial state | Per-file atomicity; next tick replays |
-| Config fingerprint changes for benign reason | Medium | Full reindex blocks user | Only fingerprint provider+model+dim; not pipeline-version edits |
+| Config fingerprint changes for benign reason | Medium | Full reindex blocks user | Fingerprint only content-affecting inputs: model/provider/dim, resolved excludes, and schema/format versions that actually change index bytes |
 | LI per-segment recompaction blocks reconcile | Low | Latency spike | Run via maintenance worker, not in reconcile tick |
 | Format-gating regression slips in via "recency boost" | High (over time) | NL MRR regression | Format-gating rule + held-out CI |
-| Schema migration on `chunk_content_hash` column | Low | Cold start required | Auto-migrate at first daemon start; document |
+| Schema migration on structural/input-hash vector columns | Low | Cold start required | Auto-migrate at first daemon start; document |
 | Stale lockfile after crash | Medium | Daemon won't start | Phase 6 staleness recovery |
 | USearch capacity exhaustion if `index.reserve()` fails (OOM) | Low | Affected chunk lost from live HNSW until background replacement | § 7.3 emergency-maintenance path; search falls through to BM25 + LI |
 | Occurrence-index disambiguation logic bug → silent chunk loss | Medium | Identical siblings overwrite each other | § 7.2 unit tests cover the 5 cases including renamed-one-of-two-identical |
@@ -1671,8 +1755,11 @@ DB-swap hardening are real implementation work even with strict MVCC deferred.
    right default for a single workstation**, because edit-time delta costs
    scale with changed files rather than corpus size. Hardware tiers may tune
    the interval, but the CLI must expose the actual configured staleness.
-5. **CPU for incremental, GPU for batch** is forced by the GPU lifecycle
-   cost. The plan threads this constraint through every tier explicitly.
+5. **CPU for incremental, GPU only for explicit batch indexing** is forced
+   by the GPU lifecycle cost. Dirty-file reconcile, metadata-sensitive
+   re-encoding, HNSW replacement, LI compaction, sparse-gram compaction, and
+   sparse bigram-weight refresh all stay on CPU. Only cold initial indexing
+   or an explicit operator full reindex may use the existing GPU path.
 6. **The existing primitives carry most of the load.** This is plumbing,
    not new science.
 
@@ -1753,9 +1840,9 @@ DB-swap hardening are real implementation work even with strict MVCC deferred.
 | 60 s reconcile interval | 2026-05-14 | Six times tighter than Cursor's 10 min; CPU encode budget permits. |
 | Mutable HNSW + tombstones + background clean replacement | 2026-05-14 | Lucene segment-per-graph is overkill at ≤500 K vectors; ordinary edits mutate only changed chunks. |
 | LI per-segment recompaction, no global rebuild | 2026-05-14 | Per-token int4 (no codebook) makes segment-local recompaction safe. |
-| Sparse-gram v3 per-file delta overlay | 2026-05-15 | Dirty ticks regenerate grams only for changed files; background compaction copies existing postings plus deltas without retokenizing unchanged source. |
+| Sparse-gram v3 per-file delta overlay + frozen weights | 2026-05-15 | Dirty ticks regenerate grams only for changed files under the active `weights_id`; background compaction copies postings, and whole-corpus re-gramming is allowed only for measured bigram-weight drift. |
 | Watcher opt-in, polling default | 2026-05-14 | Polling alone meets staleness contract; watcher adds complexity. |
-| Maintenance executor as separate process | 2026-05-14 (proposed) | Clean GPU lifecycle for explicit rebuilds and background replacements; no daemon CPU interference. |
+| Maintenance executor as separate process | 2026-05-14 (proposed) | Predictable low-priority CPU scheduling for background replacements; no daemon event-loop interference. |
 | Per-file (not per-chunk) atomicity | 2026-05-14 | Chunks already know their file; per-file commit is the natural unit. |
 | Single global epoch, not per-tier | 2026-05-14 | One source of truth for "did the index see this commit?". |
 | Float HNSW replacement trigger is measured, not fixed | 2026-05-14 / 2026-05-15 | 0.15 remains a provisional starting point, but live-candidate shortfall and MRR probe drift can trigger replacement earlier or later. |
@@ -1920,7 +2007,8 @@ exceeds 0.05.
 - Per-tick INFO line summarizing the metric JSON above
 - Per-file DEBUG when `SWEET_SEARCH_RECONCILE_DEBUG=1`
 - WARN on: dirty-set growth above threshold, ENOSPC, rebuild dead-letter,
-  lock contention, watermark crossing, GPU armed/torn down
+  lock contention, watermark crossing, or an automatic maintenance job
+  attempting to arm GPU
 - ERROR on: per-tier write failure, corrupted state file, schema mismatch
 
 Logs go to `.sweet-search/logs/reconcile-YYYY-MM-DD.log` with 7-day retention.
@@ -1972,9 +2060,8 @@ detected hardware tier (see § 34). All can be overridden.
       "binaryHnswDeadRatio": 0.30,
       "liSegmentStaleRatio": 0.20
     },
-    "rebuild": {
-      "useGpuWhenIdle": true,
-      "minFilesForGpuArm": 20,
+    "maintenance": {
+      "useGpu": false,
       "niceLevel": 10
     },
     "showStaleness": "auto"
@@ -1986,6 +2073,11 @@ Config changes that mutate watermarks or interval **do not** trigger a full
 reindex (they don't affect index content). Config changes that mutate
 `exclude`, `respectGitignore`, or model selection **do** trigger one
 (existing fingerprint behavior).
+
+`reconcile.maintenance.useGpu` is intentionally fixed false in v1. It exists
+only to make the policy visible in config dumps; setting it true is ignored
+and logged as unsupported. The full-indexing path may keep its separate GPU
+arming policy, but the reconcile daemon never inherits it.
 
 ---
 
@@ -2388,7 +2480,7 @@ Tempting (one process, one lock, low overhead). Rejected for v1 because:
 - MCP needs query latency predictability; reconcile work would compete
   for the same node thread.
 - MCP lifecycle is tied to the agent session; daemon should outlive it.
-- Separate processes = clean GPU lifecycle management.
+- Separate processes = predictable CPU scheduling and failure isolation.
 
 Possible v2: spawn a node worker thread inside MCP for reconcile. Defer.
 
@@ -2408,6 +2500,25 @@ Reconcile design must be **language-agnostic at the boundary**:
   JSON or NDJSON formats consumable from both.
 - The reconcile **timer** stays in Node for v1 (daemon is .mjs); future
   port to Rust is a refactor, not a redesign.
+
+### 28.1 Incremental-indexing bounded context
+
+Create a new DDD bounded context:
+
+```text
+core/incremental-indexing/
+  domain/              # dirty sets, epochs, chunk identity, sparse weights
+  application/         # Reconciler, maintenance worker, command handlers
+  infrastructure/      # SQLite/artifact/HNSW/LI/sparse adapters
+```
+
+`core/indexing/` remains the cold/batch full-indexing bounded context. The
+incremental context may import pure helpers from `core/indexing/`,
+`core/graph/`, `core/vector-store/`, `core/ranking/`, and
+`core/infrastructure/`, but it must not modify the full-index orchestration
+to satisfy incremental requirements. Any shared extraction must be
+behavior-preserving for `npm run index` and covered by a regression test that
+compares full-index outputs before/after the helper extraction.
 
 ---
 
@@ -2639,7 +2750,7 @@ At daemon startup, the reconciler probes:
 | Total RAM | `os.totalmem()` |
 | Available RAM | `os.freemem()` plus a buffer cache estimate |
 | Storage class | Synthetic 4 KiB random-read benchmark against `.sweet-search/` for 100 ms; classify as `nvme` (≥ 50 K IOPS), `ssd` (5–50 K IOPS), or `hdd` (< 5 K IOPS) |
-| GPU presence | Existing `shouldArmGpu()` check |
+| GPU presence | Not used by reconcile; explicit full-index commands may still use existing `shouldArmGpu()` policy outside the daemon |
 | ARM SHA / SHA-NI | Probe via Node `crypto.getHashes()` + microbench on 1 MiB |
 | OS / kernel | `os.platform()`, `os.release()` |
 | Filesystem type | `statfs()` where available (Linux); on macOS check `df -T` parse |
@@ -2672,7 +2783,7 @@ re-probed on next startup).
 | `watcher_default_state` | off | off | off | Always opt-in (regardless of tier) |
 | `fts5_merge_pages` | 8 | 16 | 32 | Higher fan-in on machines that can afford it |
 | `wal_checkpoint_every_n_ticks` | 30 | 60 | 120 | Balance WAL growth vs OS write pressure |
-| `rebuild_uses_gpu` | n/a | if available + idle | if available + idle | Low tier rarely has GPU; fall through to CPU |
+| `automatic_maintenance_uses_gpu` | no | no | no | Reconcile-owned work always stays CPU-only |
 
 ### 34.3 Adaptive backstop budget
 
@@ -2750,20 +2861,19 @@ knows whether their project is on `/mnt/c/` or `~/projects/`, and
 the daemon trusts them. The fallback-on-watcher-init-failure handles
 the case where they get it wrong.
 
-### 34.7 No-GPU machines
+### 34.7 GPU policy
 
-On machines where `shouldArmGpu()` returns false at every check (CI
-runners, headless servers, older Intel/AMD without compatible GPU
-runtime):
+Reconcile-owned work behaves the same whether `shouldArmGpu()` would return
+true or false:
 
-- **Cold full reindex** runs on CPU. Wallclock scales with corpus
-  size and core count; emit progress logging every 10 % so operators
-  know it's making progress.
+- **Cold initial indexing / explicit full reindex** is outside reconcile and
+  may use the existing batch GPU policy. It still takes the writer lock so
+  the daemon cannot run concurrently.
 - **Async maintenance / HNSW replacements** run on CPU with `nice 10`
   priority.
 - **No teardown / no arm** — the model-pool stays in its initialized
-  state forever. Simplifies the reconcile/maintenance boundary on these
-  machines.
+  ORT INT8 CPU state for the daemon. This is mandatory even on machines
+  with a compatible GPU.
 
 ### 34.8 Container & sandbox awareness
 
@@ -2807,7 +2917,7 @@ When running inside Docker or a container:
 
 Sweet-search treats hardware tier as **a knob on speed and frequency,
 not on safety or quality**. A user on a four-core laptop gets longer
-reconcile intervals and slower rebuilds; they do **not** get a less
+reconcile intervals and slower maintenance; they do **not** get a less
 correct index.
 
 ---
@@ -2894,7 +3004,7 @@ bonus items have been folded in.
 |---|---|---|---|
 | 1 | **Anonymous chunk ID collision** — identical statements (e.g., `if (err) return cb(err);` twice in a function) hash identically → UPSERT silently overwrites one and loses chunks | **critical** | § 7.2 amended with mandatory `occurrence_index_in_parent` suffix |
 | 2 | **LSM rebase had no replay log** — § 10.3 said "replay from the WAL of changes recorded per-tier" but no such WAL existed; SQLite's internal WAL is not queryable for row-level extraction. Rebase was physically unimplementable as written. | **critical** | § 7.1.6 and § 7.2 add `epoch_written INTEGER NOT NULL` columns with index; § 10.3 rewrites the replay-source clause |
-| 3 | **USearch capacity exhaustion** — tombstone-only writes never call `remove()`, so `max_elements` is exhausted monotonically; eventual `add()` throws → daemon crash. | **critical** | § 7.3 adds dynamic `index.reserve()` on capacity exception, rebuild-time over-allocation by tombstone margin, and a `hnsw_capacity_used` metric |
+| 3 | **USearch capacity exhaustion** — tombstone-only writes never call `remove()`, so `max_elements` is exhausted monotonically; eventual `add()` throws → daemon crash. | **critical** | § 7.3 adds dynamic `index.reserve()` on capacity exception, replacement-build over-allocation by tombstone margin, and a `hnsw_capacity_used` metric |
 | 4 | **`TRUNCATE` does not force readers** — the daemon's `wal_checkpoint(TRUNCATE)` returns `SQLITE_BUSY` when readers hold transactions; it does **not** kill them. The original draft implied otherwise. | high | § 8.4 rewritten with cooperative-checkpoint model; § 27.2.1 mandates MCP-side transaction hygiene |
 | 5 | **BigInt inode truncation** — `fs.statSync().ino` returns `Number`; modern FS (APFS/ZFS/XFS) routinely exceed `2^53 - 1` → silent precision loss → two distinct files appear identical. | high | § 9.1 amended: `{ bigint: true }` stat option; inode stored as string in `merkle-state.json` |
 | 6 | **FTS5 `'optimize'` self-trips own WAL alarm** — rewrites whole FTS5 index in single transaction → 200–800 MiB WAL frame → trips the 256 MiB bloat alarm in § 8.4. | medium | § 7.1 replaces `'optimize'` with bounded `'merge', 500` |
