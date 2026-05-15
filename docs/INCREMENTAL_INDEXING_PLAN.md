@@ -18,10 +18,15 @@
 > design-level gaps (folded in per § 35); the second pass found 10
 > mechanical bugs in the first-pass corrections themselves plus 2
 > bonus items (folded in per § 36). Phase estimates revised upward
-> from 13 to 22 dev-days accordingly.
+> from 13 to 22 dev-days accordingly. A later Codex review folded in
+> manifest pinning, exact encoder-input hashes, sparse-gram delta overlay,
+> and HNSW oversampling, revising the v1 estimate to 30-35 dev-days with
+> strict MVCC reader isolation deferred.
 >
 > **Constraint anchor:** CPU-only for the incremental path; GPU reserved for
-> cold full reindex and watermark-triggered async rebuilds.
+> cold initial indexing, explicit operator rebuilds, and background HNSW
+> replacement jobs after measured drift. Watermark jobs are compaction/repair
+> work, not the path that makes an edit searchable.
 > See `INCREMENTAL_INDEXING_TODO.md` § "Model Backend for Incremental Runs".
 >
 > **Portability:** No part of this design is tied to specific hardware.
@@ -42,22 +47,25 @@ Float HNSW (`codebase-hnsw.idx`), Binary HNSW + int8 sidecar
 (`codebase-binary-hnsw.idx*`), late-interaction SSLX segments
 (`codebase-late-interaction.db.segments/`), sparse-gram artifact
 (`codebase-sparse-grams.idx`), and the code-graph SQLite database
-(`code-graph.db`, includes `entities_trigram` FTS5). Each currently
-requires a full rebuild on any file change; the partial daemon at
-`core/indexing/index-maintainer.mjs` provides the scaffolding but does
-not yet drive the five indices lock-step.
+(`code-graph.db`, includes `entities_trigram` FTS5). Today, the
+production-safe refresh path effectively treats a file change as a full
+index refresh; the partial daemon at `core/indexing/index-maintainer.mjs`
+provides scaffolding but does not yet drive the five indices lock-step.
 
-The plan is a **single 60-second reconcile tick** that:
+The plan is a **single reconcile tick** (60 s nominal, adaptive by hardware
+tier unless pinned by config) that:
 
 1. Maintains an in-memory dirty set fed by an optional Rust `notify` watcher,
    a JSONL queue, and a periodic mtime backstop scan;
 2. Coalesces by **per-file content hash** and **per-chunk content hash**,
    so format-on-save and import-shuffle storms become near no-ops;
 3. CPU-encodes only the survivors, bounded by a per-tick CPU budget;
-4. Updates all five indices in lock-step with atomic per-tier swaps;
-5. Tracks **per-tier rebuild watermarks** (tombstone fraction, dead-doc
-   ratio, segment stale percentage) and schedules **async full rebuilds**
-   when crossed — these are the only paths permitted to use GPU.
+4. Updates all five indices in lock-step and publishes them through one
+   epoch manifest so readers pin to a consistent tier set;
+5. Tracks **per-tier maintenance watermarks** (tombstone fraction, dead-doc
+   ratio, segment stale percentage) and schedules **background compaction /
+   replacement** when crossed. Those jobs clean drift and disk bloat; they
+   are not required for changed files to become searchable.
 
 This shape matches the cross-industry SOTA (Cursor's 10-min Merkle reconcile,
 Zoekt's pull-poll + scheduled merge, JetBrains' VFS-driven incremental,
@@ -65,9 +73,11 @@ Aider's per-prompt repo-map). Sweet-search has one structural advantage worth
 preserving: **per-token int4 quantization with no shared codebook**, which
 makes incremental late-interaction safe in a way that PLAID/EMVB are not.
 
-The user-visible staleness contract is **<60 seconds for any edit** on a
-running system, with a deterministic fallback to full rebuild whenever a
-watermark crosses or the config fingerprint invalidates.
+The user-visible staleness contract is **≤ the configured tick interval**
+(60 s nominal) for any edit on a running system. Ordinary edits never require
+a full recalculation. Deterministic full reindex remains the fallback only for
+content-incompatible changes such as encoder/config fingerprint changes,
+corrupted state, or an explicit operator request.
 
 ---
 
@@ -75,8 +85,11 @@ watermark crosses or the config fingerprint invalidates.
 
 ### Goals
 
-- **Staleness ≤ 60 s** for any single-file edit on a watched repo, measured
-  from `write(2)` return to next search query seeing the new content.
+- **Staleness ≤ configured tick interval** for any single-file edit on a
+  watched repo, measured from `write(2)` return to next search query seeing
+  the new content. The default target is 60 s; hardware auto-tuning may
+  lengthen or shorten the interval, and the CLI must report the configured
+  value.
 - **No MRR regression** on GCSN dev set or any locked baseline probe pack.
   This is the gating quality criterion; any reconcile change that regresses
   aggregate MRR by more than the per-test noise floor is reverted.
@@ -88,6 +101,8 @@ watermark crosses or the config fingerprint invalidates.
   `SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS`.
 - **All five indices kept in lock-step**: an observer must never see, for
   example, the trigram index showing a function that the LI index does not.
+  Readers enforce this by loading a single published epoch manifest rather
+  than independently opening whatever tier file changed most recently.
 - **Deterministic correctness backstop**: even if every watcher event is
   missed, the periodic mtime sweep guarantees consistency within one tick.
 - **Reuse what works**: the existing `index-maintainer.mjs`,
@@ -123,11 +138,11 @@ watermark crosses or the config fingerprint invalidates.
    similar on CUDA — see TODO § Model Backend). A typical incremental
    tick touches 1–5 files and finishes in well under 1 s of CPU work
    on a modern laptop. The reconcile path must not call `teardownAllModels`
-   or `initIndexGpuPool`. Only the **async rebuild scheduler** is
+   or `initIndexGpuPool`. Only the **async maintenance scheduler** is
    permitted to arm GPU, and only after the existing `shouldArmGpu` /
    `GPU_ARMING_MIN_FILES` policy fires. Machines without a usable GPU
    (most user laptops, CI runners, headless servers) skip the GPU path
-   entirely and run rebuilds on CPU low-priority — see § 34.
+   entirely and run background maintenance on CPU low-priority — see § 34.
 2. **Per-token int4 quantization preserved.** Sweet-search's late-interaction
    index uses per-token min/scale (no shared centroid codebook). This is
    the structural reason incremental LI is safe; do not introduce a global
@@ -187,11 +202,11 @@ line numbers are accurate as of 2026-05-14.
 | Primitive | Location | What it does today |
 |---|---|---|
 | Content-hash tracker | `core/indexing/incremental-tracker.js:163` | SHA-256 (16-char) per file + size + mtime_ns; `STATE_VERSION='2.3'` |
-| Config fingerprint | `incremental-tracker.js:42-158` | provider + model + dim + hnswDim; mismatch forces full rebuild |
+| Config fingerprint | `incremental-tracker.js:42-158` | provider + model + dim + hnswDim; mismatch forces full reindex |
 | Tree-sitter incremental parse | `core/indexing/incremental-parser.js` | `getChangedRanges` + line-diff fallback; emits invalidated chunk + entity IDs |
 | HNSW remove-and-readd | `indexer-ann.js:345` | `index.remove(key)` then re-insert by file_path |
 | Entity tombstone | `core/graph/graph-extractor.js:1738-1777` | `stale_since INTEGER` column; daemon prunes after 30 d |
-| LI atomic swap | `indexer-phases.js:108` | `*-stage.segments` → live atomic rename |
+| LI staged publish | `indexer-phases.js:108` | `*-stage.segments` → live rename |
 | Daemon queue + lock | `index-maintainer.mjs:148-150, 617` | `atomicAcquireQueue`, single-instance lockfile |
 
 ### Gap analysis (what is missing)
@@ -227,13 +242,19 @@ Citations resolve to the full reference list in § References.
    content-addressed Merkle tree absorbs branch switches and save-all
    storms transparently. Sweet-search already implements this in
    `incremental-tracker.js`.
-3. **HNSW at ≤500 K vectors: insertion is essentially free
-   (0.3–1 ms/vec).** The dominant failure mode is **deletion damage**:
-   ~3-4 % unreachable points after ~3 000 mixed delete/insert cycles
-   (arXiv:2407.07871), and graph quality drift past ~10–20 % tombstones.
-   Lazy tombstone + filter at top-k + async full rebuild on watermark
-   crossing is the production-validated playbook (Qdrant, Weaviate,
-   Cosmos DB DiskANN).
+3. **HNSW at ≤500 K vectors: insertion is the cheap, correct live path.**
+   USearch exposes `add()` and `remove()`, and current graph-index research
+   (FreshDiskANN / IP-DiskANN / MN-RU) agrees that real-time inserts and
+   deletes should be reflected incrementally, with periodic graph repair only
+   when accumulated update debt starts hurting recall. This is a borrowed
+   design principle, not a direct implementation of those papers' Vamana /
+   DiskANN neighbor-repair algorithms. Sweet-search v1 uses
+   the safe subset supported by the current JS binding: append new vectors,
+   tombstone superseded keys, oversample + filter at query time, and rebuild a
+   clean replacement graph in the background only after measured drift or
+   crash recovery. A future native HNSW owner can add localized neighbor
+   repair; the Node reconcile path must not hand-roll pointer-level graph
+   surgery against an mmap'd library structure.
 4. **Do NOT adopt Lucene segment-per-graph at this scale.** It adds a
    per-segment query tax that is pure latency loss when the corpus fits
    in one mutable graph. The 2026 HNSW-Merger result (SIGMOD '26) makes
@@ -251,11 +272,12 @@ Citations resolve to the full reference list in § References.
    TieredMergePolicy, Tantivy LogMergePolicy, Zoekt compound-shard
    merging, GitHub Blackbird's content-addressed Kafka pipeline — all
    variants of the same pattern (immutable segments + tombstone bitset +
-   background merge). On NVMe-class storage with ≥ 8 cores, the
-   sparse-gram artifact rebuilds in 1–3 s for 10 MLOC, which on the
-   "fast" hardware tier collapses the merge-policy debate to "just
-   rebuild it". On slower hardware tiers the design falls back to the
-   delta-segment + merge pattern (§ 7.6).
+   background merge). Sweet-search should follow that pattern for sparse
+   grams too: regenerate grams only for changed files, write those as a
+   per-file delta segment, and compact segments in the background by copying
+   existing postings plus changed-file replacements. A dirty tick must never
+   retokenize the whole corpus just because the monolithic v2 artifact is
+   currently easier to rebuild.
 7. **Tree-sitter incremental parse is <1 ms/edit.** rust-analyzer's
    salsa framework demonstrates the broader pattern: per-file isolated
    extraction, cross-file resolution at query time, content-hash early
@@ -287,7 +309,7 @@ Citations resolve to the full reference list in § References.
 │ (path → flag)   │◄──── 60-s mtime backstop sweep
 └────────┬────────┘
          │
-         ▼  every 60 s (configurable via SWEET_SEARCH_RECONCILE_INTERVAL)
+         ▼  every configured interval (60 s nominal; SWEET_SEARCH_RECONCILE_INTERVAL)
 ┌──────────────────────────────────────────────────────────────────┐
 │  Reconcile tick                                                  │
 │  ┌────────────────────────────────────────────────────────────┐  │
@@ -301,21 +323,21 @@ Citations resolve to the full reference list in § References.
 │  │ 8. Begin global epoch ε+1; apply per-tier writes:          │  │
 │  │      a. code-graph.db: UPSERT entities, mark stale_since   │  │
 │  │      b. codebase.db: UPSERT vectors                        │  │
-│  │      c. Float HNSW: remove(old keys) + add(new vectors)    │  │
+│  │      c. Float HNSW: tombstone old keys + add new vectors   │  │
 │  │      d. Binary HNSW: tombstone old, append new             │  │
 │  │      e. LI: append to growing segment, tombstone old docs  │  │
-│  │      f. sparse-gram: queue for rebuild trigger             │  │
-│  │ 9. Atomic state commit: merkle-state.json with epoch ε+1   │  │
-│  │ 10. Check watermarks → maybe schedule rebuild              │  │
+│  │      f. sparse-gram: upsert per-file gram delta            │  │
+│  │ 9. Atomic publish: reconcile-manifest.json with epoch ε+1  │  │
+│  │ 10. Check watermarks → maybe schedule maintenance          │  │
 │  └────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────┘
          │
          ▼  watermark crossing only
 ┌──────────────────────────────────────────────────────────────────┐
-│  Async rebuild scheduler (background, low priority)              │
+│  Async maintenance scheduler (background, low priority)          │
 │  — Tier: Float HNSW / Binary HNSW / LI segment / sparse-gram     │
 │  — Mode: GPU when shouldArmGpu() && idle, else CPU low-pri       │
-│  — Output: staged artifact → fsync → atomic rename → swap        │
+│  — Output: staged compacted artifact → fsync → manifest publish  │
 │  — Coordination: model-pool epoch; no concurrent CPU + GPU       │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -326,22 +348,25 @@ Each index has a different cost-to-rebuild and a different acceptable
 staleness profile. Treating them uniformly under one schedule is the
 mistake that has made every "just throw it in the watcher" design fail.
 
-Rebuild costs are listed as **ranges spanning hardware tiers low → high**
-(see § 34 for tier definitions: roughly low = 4-core SATA-SSD laptop;
-mid = 8-core NVMe developer machine; high = 16+-core NVMe workstation).
+Compaction/replacement costs are listed as **ranges spanning hardware tiers
+low → high** (see § 34 for tier definitions: roughly low = 4-core SATA-SSD
+laptop; mid = 8-core NVMe developer machine; high = 16+-core NVMe
+workstation). These costs are not paid on ordinary edits.
 
-| Tier | Refresh policy | Watermark trigger | Rebuild cost (10 MLOC, low → high) |
+| Tier | Edit-time refresh policy | Compaction / replacement trigger | Background cost (10 MLOC, low → high) |
 |---|---|---|---|
-| code-graph entities + FTS5 | live UPSERT + `('merge', 16)` per tick | `fts5_segment_count > 64` → bounded `('merge', 500)` | seconds per-tick merge / 5–60 s for bounded merge on rebuild |
+| code-graph entities + FTS5 | live per-file UPSERT + tombstone + `('merge', 16)` per tick | `fts5_segment_count > 64` → bounded `('merge', 500)` | seconds per-tick merge / 5–60 s for bounded merge; no graph full rebuild |
 | codebase.db vectors | live UPSERT every tick | none | n/a |
-| Float HNSW (USearch) | live `add()` + tombstone bitmap (no `remove()`) | `tombstone_fraction > 0.15` | 5–30 min at 500 K vectors, M=16 |
-| Binary HNSW + int8 sidecar | tombstone + append every tick | `dead_doc_ratio > 0.30` (existing) | 30 s – 5 min |
+| Float HNSW (USearch) | live `add()` + tombstone bitmap (no live `remove()`) | recall probe regression OR `tombstone_fraction > measured threshold` OR crash recovery | 5–30 min clean replacement graph, built in background only |
+| Binary HNSW + int8 sidecar | tombstone + append every tick | `dead_doc_ratio > 0.30` (existing) | 30 s – 5 min clean replacement artifact, built in background only |
 | LI segments (SSLX v3) | append to growing segment; tombstone in sealed | per-segment `stale_doc_ratio > 0.20` → recompact that one segment | per-segment, 1–30 s |
-| Sparse-gram artifact | adaptive: fast-rebuild OR delta-merge by tier | fast: `dirty_files > 0`; slow: `delta_size_ratio > 0.10` | 1–30 s |
+| Sparse-gram artifact | regenerate grams only for changed files; append per-file delta segment | `delta_size_ratio > 0.10` OR too many delta segments | segment merge only; no whole-corpus retokenization |
 
 Critical property: **every tier has both a synchronous "edit-time" path
-(cheap) and an asynchronous "rebuild-time" path (expensive).** No tier is
-allowed to block the reconcile tick on its expensive path.
+(cheap) and an asynchronous "compaction/repair" path (expensive).** No tier
+is allowed to block the reconcile tick on its expensive path, and no
+watermark compaction is required for the changed file itself to become
+queryable.
 
 ### 6.3 Why one schedule, not one timer per tier
 
@@ -350,8 +375,8 @@ Earlier drafts considered a per-tier cadence (e.g. HNSW every 60 s, LI every
 
 - Searches read all tiers together; if they disagree about "is this function
   still here?", ranking signals diverge and MRR jitters.
-- A single global epoch makes the "did the index see this commit?" question
-  answerable from `merkle-state.json` alone.
+- A single global epoch manifest makes the "did the index see this commit?"
+  question answerable from `reconcile-manifest.json`.
 - Per-tier scheduling tempts per-tier hotfixes that drift away from the
   unified design (the failure mode that caused this plan to be written).
 
@@ -372,14 +397,16 @@ FTS5 `entities_trigram` updates trigger automatically on row changes.
    matches:
    - **Existing & content-stable** (id matches, signature_hash matches):
      no-op.
-   - **Existing but signature changed**: UPDATE row; clear `stale_since`.
-   - **New**: INSERT.
-   - **Removed**: SET `stale_since = epoch_now` (do not DELETE; the
-     30-day prune in the daemon eventually reaps).
-2. Relationships re-extracted per file, written into `relationships`
-   table after entity diff. Cross-file references resolve at query time
-   (existing pattern in `core/graph/graph-search.js`), so we never
-   recompute global cross-file state on edit.
+   - **Existing but signature changed**: UPDATE row; clear `stale_since`;
+     set `epoch_written = ε+1`.
+   - **New**: INSERT with `epoch_written = ε+1`.
+   - **Removed**: SET `stale_since = epoch_now` and
+     `epoch_written = ε+1` (do not hard DELETE; the prune job eventually
+     reaps).
+2. Relationships re-extracted per file and written with
+   `epoch_written = ε+1` after entity diff. Cross-file references resolve
+   at query time (existing pattern in `core/graph/graph-search.js`), so we
+   never recompute global cross-file state on edit.
 3. Wrap each file's diff in a `BEGIN IMMEDIATE` transaction; commit per file
    (not per tick) so a partial-tick crash leaves a consistent DB.
 4. **PRAGMA synchronous=NORMAL** in WAL mode. Default `synchronous=FULL`
@@ -397,7 +424,7 @@ FTS5 `entities_trigram` updates trigger automatically on row changes.
    - End of every reconcile tick: run
      `INSERT INTO entities_trigram(entities_trigram, rank) VALUES('merge', 16);`
      to merge up to 16 segments. Cheap (sub-100 ms typically).
-   - During the rebuild scheduler: run
+   - During the maintenance scheduler: run
      `INSERT INTO entities_trigram(entities_trigram, rank) VALUES('merge', 500);`
      when watermark `fts5_segment_count > 64` is crossed. **Do not** use
      `('optimize')` — it rewrites the entire FTS5 index in a single
@@ -409,6 +436,11 @@ FTS5 `entities_trigram` updates trigger automatically on row changes.
      count stabilises below the watermark.
    - The same dual-cadence applies to `entities_fts` (porter unicode61
      tokenizer); both FTS5 tables need explicit merging.
+   - V1 accepts that FTS5 may expose ε+1 tokens in the small window between
+     SQLite commit and manifest publish. Query paths still join back to
+     active `entities` rows (`stale_since IS NULL`) as they do today, but
+     they do not add a mandatory MVCC epoch predicate until strict reader
+     isolation is proven necessary (§ 8.1.1).
    - Track segment count via FTS5 introspection. The supported method
      in SQLite ≥ 3.35 is the `<table>_config` and `<table>_data`
      internal tables (see SQLite FTS5 docs §7); for our purposes the
@@ -419,47 +451,26 @@ FTS5 `entities_trigram` updates trigger automatically on row changes.
      **Verify empirically against the running SQLite version in Phase 0
      preflight** — FTS5 internal layout is documented but not part of
      the stable API and varies subtly between SQLite versions.
-6. **`epoch_written INTEGER NOT NULL DEFAULT 0` column** on `entities`.
-   Every UPSERT writes the current reconcile epoch.
+6. **`epoch_written INTEGER NOT NULL DEFAULT 0` on `entities` and
+   `relationships`.** Every reconcile write records the current epoch.
+   In v1 this column is audit / telemetry / HNSW-replay support, not a
+   mandatory query predicate. Structural queries continue to filter active
+   rows with existing semantics (`stale_since IS NULL` for entities).
 
-   **Honest scope note (post-third-pass).** The LSM rebase in § 10.3
-   was scoped to Float HNSW + Binary HNSW only; both read their
-   source-of-truth from `vectors`, not from `entities`. FTS5 has its
-   own internal LSM and compacts via `('merge', N)` calls inline at
-   each tick — there is **no async rebuild path that reads from
-   `entities`**. So `entities.epoch_written` is currently *unused* by
-   any rebuild consumer.
+   **Honest isolation note.** Because `code-graph.db` is a stable SQLite
+   path, a reader can theoretically observe ε+1 committed rows in the
+   sub-second window before `reconcile-manifest.json` publishes ε+1. V1
+   accepts that tiny, self-healing window to avoid full MVCC complexity on
+   every graph query. Strict epoch predicates and retired-row versioning are
+   deferred to § 8.1.1 if this race becomes empirically visible.
 
-   Three reasons to add the column anyway:
-   - **Audit trail**: when investigating a search regression, knowing
-     which tick introduced a given row is invaluable. Cheap insurance.
-   - **Operational telemetry**: per-tick counters of how many entities
-     each reconcile touched (`SELECT COUNT(*) WHERE epoch_written = ε`)
-     surfaces churn patterns useful for tuning the tick budget.
-   - **Future-proofing**: if a future workstream introduces an
-     async FTS5 rebuild path (e.g., to defragment after a major
-     schema migration), this column is the natural replay log.
-
-   Add the column + index; do not claim it's load-bearing. If the
-   audit/telemetry value isn't realized in v1, removing in v2 is a
-   single `ALTER TABLE DROP COLUMN`. The `DEFAULT 0` clause is still
-   load-bearing for rollback safety regardless of consumer (see
-   § 7.2 for the rationale).
-
-   The actually-load-bearing `epoch_written` column is on `vectors`
-   (§ 7.2) — that one *is* the LSM-rebase replay log for the two
-   HNSW tiers.
-
-   **The `DEFAULT 0` clause is load-bearing for rollback safety.**
-   Without a default, an older daemon (running on a checked-out
-   earlier commit) executing the original `INSERT INTO entities (...)`
-   path without `epoch_written` would trigger
-   `SQLITE_CONSTRAINT_NOTNULL` and crash-loop permanently. With the
-   default, the older daemon's writes land cleanly with
-   `epoch_written = 0`, which is below any reconcile epoch and
-   therefore correctly treated as "ancient" by the rebase replay
-   query. Same migration pattern applies to the `vectors` columns
-   in § 7.2.
+   **The `DEFAULT 0` clause is load-bearing for rollback safety.** Without
+   a default, an older daemon (running on a checked-out earlier commit)
+   executing the original `INSERT INTO entities (...)` path without
+   `epoch_written` would trigger `SQLITE_CONSTRAINT_NOTNULL` and
+   crash-loop permanently. With the default, older writes land cleanly with
+   `epoch_written = 0`. Same migration pattern applies to the `vectors`
+   columns in § 7.2.
 
 **Verification.** Add a snapshot test: index → edit one file → reconcile →
 all OTHER files' entity rows must hash-equal their pre-reconcile state.
@@ -532,9 +543,12 @@ structural identity derived from the AST:
 
 **Storage.** Add columns to vectors table:
 `chunk_struct_id TEXT NOT NULL DEFAULT ''`,
-`chunk_text_hash TEXT NOT NULL DEFAULT ''`, and
+`chunk_text_hash TEXT NOT NULL DEFAULT ''`,
+`embedding_input_hash TEXT NOT NULL DEFAULT ''`,
+`li_input_hash TEXT NOT NULL DEFAULT ''`,
+`metadata_fingerprint TEXT NOT NULL DEFAULT ''`, and
 `epoch_written INTEGER NOT NULL DEFAULT 0`. Index `epoch_written` so
-the LSM rebase replay scan (§ 10.3) is O(changed rows), not
+the HNSW replacement replay scan (§ 10.3) is O(changed rows), not
 O(table size). Old positional `chunk_id` is preserved for backward
 compatibility; reconcile-v2 reads both, writes both, but the
 structural ID is authoritative.
@@ -543,22 +557,38 @@ structural ID is authoritative.
 § 7.1.6 for the same rationale on `entities.epoch_written`). Without
 them, an older daemon on a previous commit executing its existing
 INSERT path would trigger `SQLITE_CONSTRAINT_NOTNULL` and crash-loop.
-The empty-string default for the IDs is harmless — reconcile-v2's
-next pass on the file will UPSERT the correct value before any
-search reads the row. Empty `chunk_struct_id` rows are treated as
-"needs structural assignment" by the dedup path.
+The empty-string default for structural IDs and input hashes is harmless:
+reconcile-v2's next pass on the file will write the correct values. Empty
+`chunk_struct_id`, `embedding_input_hash`, or `li_input_hash` rows are
+treated as "needs assignment / needs encode" by the dedup path.
 
 **New behavior.**
 
-1. **Hash chunks first, encode second.** For each chunk, compute
-   `chunk_text_hash = xxhash3(chunk.content)`. Look up the existing row
-   by `chunk_struct_id`. If `chunk_text_hash` matches the stored value,
-   reuse the stored embedding — no encoder call. This is where the CPU
-   savings actually live.
-2. **UPSERT keyed on `(file_path, chunk_struct_id)`.** Old chunks whose
-   structural ID is no longer present in the new parse → DELETE in the
-   same transaction.
-3. The vectors and graph-entities updates for a single file commit in the
+1. **Build metadata-enriched encoder inputs before hashing.** The existing
+   cold path does parse → graph enrichment → `embedding_text` and separate
+   LI routing (`li_text` / `li_greedy_text`). Reconcile must preserve that
+   order exactly. It is not enough to hash raw chunk content, because scope,
+   parent symbol, sibling symbols, imports, language policy, and active
+   embedding-text variant can change the bytes sent to the dense encoder or
+   LI encoder even when the source body is stable.
+2. **Hash exact encoder inputs before encoding.** For each chunk compute:
+   - `chunk_text_hash = xxhash3(chunk.content)` for structural no-op
+     diagnostics;
+   - `metadata_fingerprint = xxhash3(stableJson(metadata fields that affect
+     encoder text) || EMBED_TEXT_POLICY_VERSION || LI_INPUT_POLICY_VERSION)`;
+   - `embedding_input_hash = xxhash3(chunk.embedding_text)`;
+   - `li_input_hash = xxhash3(pickLiInput(chunk))`.
+   Look up the existing row by `chunk_struct_id`. Reuse the dense embedding
+   only if `embedding_input_hash` matches. Reuse / alias LI tokens only if
+   `li_input_hash` matches. This is the load-bearing guard that prevents
+   stale metadata-enriched embeddings after an import, scope, parent-symbol,
+   or LI-routing-policy change.
+3. **UPSERT keyed on `(file_path, chunk_struct_id)`.** Old chunks whose
+   structural ID is no longer present in the new parse → DELETE / tombstone
+   in the same per-file transaction. This preserves the v1 simplicity
+   trade-off: changed rows become visible when SQLite commits, and the
+   manifest publishes immediately after the tick's staged writes.
+4. The vectors and graph-entities updates for a single file commit in the
    same logical epoch (see § 8.1 atomicity).
 
 **Hash choice: xxHash3, not SHA-256.** Sweet-search hashes for local
@@ -615,7 +645,7 @@ dead node, or loop. Two responses are valid:
   reader latency impact is bounded.
 - **(B) Tombstone-only writes (preferred).** Never call `remove()` on
   the live path. Mark vectors stale in a sidecar bitmap, filter at the
-  top-k boundary during search. The async rebuild path eventually
+  top-k boundary during search. The background replacement path eventually
   produces a new graph with the dead vectors absent. This is the
   Lucene `liveDocs` pattern.
 
@@ -631,9 +661,27 @@ new chunks is safe — but removals become tombstone-only.
      (single bit per key, 64-byte aligned so AVX2/NEON SIMD can mask
      later — see § 34.4),
    - `index.add(new_key, new_vec)` with a fresh key (existing key space
-     is monotonic; key collisions are impossible because we never reuse).
-   Searches filter stale bits after retrieving top-k+slop candidates,
-   not during graph traversal — preserves recall.
+     is monotonic; key collisions are impossible because we never reuse),
+   - record `epoch_written = ε+1` for the new key in the HNSW metadata
+     sidecar for audit and replacement replay.
+   Searches filter stale bits after retrieving an adaptive oversampled
+   candidate set, not during graph traversal. The live update touches only
+   changed chunks; unchanged vectors are never reinserted.
+
+   **Oversampling rule.** Let `s = tombstone_fraction` clamped to `[0, 0.5]`.
+   For a requested `k`, retrieve:
+
+   ```
+   candidate_k = min(max(k + 64, ceil(k / max(0.05, 1 - s) * 2)), k * 20)
+   ```
+
+   If fewer than `k` live candidates remain after filtering and the hard cap
+   has not been reached, retry once at `candidate_k * 2`. Emit
+   `hnsw_live_candidate_shortfall` when the retry still returns fewer than
+   `k`; this is an immediate drift signal and should enqueue a background
+   replacement graph. The exact constants are tuned in Phase 5, but the
+   shape is mandatory: oversampling scales with tombstone pressure, not a
+   fixed `top-k+slop` guess.
 
 2. **Sequential `add()` per file (mandatory).** USearch JS binding
    exposes `index.add()` as a synchronous call in the standard
@@ -651,55 +699,64 @@ new chunks is safe — but removals become tombstone-only.
    USearch requires `max_elements` to be declared at `Index::init`.
    Because the live path never calls `remove()`, the key space grows
    monotonically: live vectors + tombstoned vectors, never reclaimed
-   until the next async rebuild. Without explicit capacity handling
+   until the next background replacement. Without explicit capacity handling
    the daemon will crash when `max_elements` is exhausted.
    Required behavior:
-   - **At rebuild time**: over-allocate the new graph's `max_elements`
-     by the tombstone watermark margin plus a working headroom —
-     concretely `ceil(live_vectors × (1 + tombstone_watermark) × 1.10)`,
-     i.e. ~26 % over current live size at the 0.15 watermark.
+   - **At replacement-build time**: over-allocate the new graph's `max_elements`
+     by the active tombstone watermark margin plus a working headroom —
+     concretely `ceil(live_vectors × (1 + tombstone_watermark) × 1.10)`.
+     With the provisional 0.15 watermark this is ~26 % over current live
+     size; Phase 5 tunes the actual trigger using shortfall/MRR data.
    - **At live-add time**: wrap `index.add()` in a try/catch on the
      capacity exception. On exception:
        1. Compute next capacity: `current_capacity × 1.25` (capped at
           a hard ceiling of 100 M elements).
        2. Call `index.reserve(next_capacity)`. This is a synchronous
-          graph-resize but cheap relative to a rebuild.
+          graph-resize but cheap relative to a clean replacement.
        3. Retry the `add()`.
        4. If `reserve` itself fails (out of memory), enqueue an
-          emergency rebuild and tombstone the failed chunk's
+          emergency replacement and tombstone the failed chunk's
           predecessor without adding the new vector — search will
-          fall through to BM25 + LI for that chunk until the rebuild
+          fall through to BM25 + LI for that chunk until the replacement
           completes. Log ERROR.
    - **Operator dashboard**: surface `hnsw_capacity_used = (live + tombstoned) / max_elements`
      in the metrics JSON (§ 20.1). Alert if > 0.85.
-2. Track `removed_count` and `add_count` in `.meta.json` since last
-   rebuild. Compute `tombstone_fraction = removed_count / total_count`
+4. Track `removed_count` and `add_count` in `.meta.json` since last
+   clean replacement. Compute `tombstone_fraction = removed_count / total_count`
    and `delete_cycles = removed_count` (any vector removed and re-added
    counts as one cycle).
-3. **Watermark.** When `tombstone_fraction > 0.15` OR `delete_cycles > 1000`,
-   enqueue a rebuild job in the async scheduler.
-4. **Rebuild path.**
+5. **Watermark.** When `tombstone_fraction > measured_threshold`, when
+   `delete_cycles > measured_cycle_threshold`, or when live-candidate
+   shortfall / dev-probe MRR shows drift beyond the noise floor, enqueue a
+   background replacement job in the async maintenance scheduler. The starting
+   defaults are `0.15` tombstone fraction and `1000` delete cycles until
+   Phase 5 calibrates them on sweet-search data.
+6. **Background replacement path (compaction/repair, not edit-time
+   freshness).**
    - Run on GPU if `shouldArmGpu()` returns true and the model pool is
      idle; else CPU low-priority.
-   - Build the new graph in `.sweet-search/codebase-hnsw.idx.next` from
-     the current `codebase.db` vectors snapshot.
-   - On success: fsync, atomic rename → live; reset `removed_count` and
-     `delete_cycles`; bump epoch.
+   - Build the clean graph in `.sweet-search/codebase-hnsw.idx.next` from
+     the current `codebase.db` vectors snapshot while the live graph
+     continues serving incremental add+tombstone updates.
+   - Rebase final vector changes under the writer lock (§ 10.3), publish
+     through the epoch manifest, reset `removed_count` and `delete_cycles`,
+     and keep the old mmap target for one tick for active readers.
    - On failure: leave existing index in place; log to dead-letter.
 
-**Why 0.15 tombstone fraction?** arXiv:2407.07871 documents ~3–4 % graph
-unreachability after thousands of cycles; we want a margin well below that
-limit. 0.15 is also the default Qdrant `deleted_threshold`. The probe pack
-should re-run at synthetic 5 / 10 / 15 / 20 % tombstone fractions before
-we commit to this number (see § Measurements). Note that since we have
-adopted tombstone-only writes (see "Concurrency caveat" above), this is
-also the trigger that bounds tombstone bitmap pressure and graph
-quality drift simultaneously.
+**Why not in-place edge surgery in v1?** Current research shows real
+incremental graph repair is possible, but it requires ownership of the graph
+adjacency structure and careful concurrency control around in-neighbor
+patching. The current USearch JS surface gives us safe `add()` / `remove()`
+operations, but not a supported localized neighbor-repair API. Until
+sweet-search owns that native layer, the pragmatic SOTA path is changed-only
+live mutation plus measured background replacement when drift appears. That
+matches the user's desired behavior: no foreground full HNSW rebuild, and a
+clean graph can replace the drifted one later without blocking edits.
 
 ### 7.4 Binary HNSW + int8 sidecar
 
 **Existing.** `core/vector-store/binary-hnsw-index.js` and
-`core/indexing/artifact-builder.js`. Already gates rebuild on
+`core/indexing/artifact-builder.js`. Already gates replacement on
 `artifact-rebuild-state.json::accumulatedChanges`.
 
 **New behavior.**
@@ -708,11 +765,12 @@ quality drift simultaneously.
    honor the tombstone bitset (already supported pattern in Lucene-style
    storage; needs implementation here).
 2. **Watermark.** Existing threshold; keep current value unless probe
-   metrics suggest otherwise. Increase if rebuild storms appear under
+   metrics suggest otherwise. Increase if replacement storms appear under
    normal editing.
-3. **Rebuild path.** Stage-2 int8 sidecar is regenerated as a single
-   atomic unit with the binary HNSW — they must always be the same
-   epoch. Stage to `*.next`, fsync, swap together.
+3. **Background replacement path.** Stage-2 int8 sidecar is regenerated as
+   a single atomic unit with the binary HNSW — they must always be the same
+   epoch. Stage to `*.next`, fsync, publish through the epoch manifest
+   together.
 
 ### 7.5 Late-interaction segments (SSLX v3)
 
@@ -732,7 +790,8 @@ segment. Atomic stage-and-swap already implemented at
 3. **Per-segment watermark.** Track `stale_doc_count` per segment.
    When `stale_doc_count / segment_doc_count > 0.20`, schedule a
    **per-segment recompaction**: read all live docs in that segment,
-   re-emit a new SSLX file under `*.next`, atomic swap. This is bounded
+   re-emit a new SSLX file under `*.next`, fsync it, and publish the
+   replacement generation through the reconcile manifest. This is bounded
    to ≤ 10 K docs → seconds of CPU work.
 4. **No global LI rebuild path.** Per-segment recompaction is enough;
    sweet-search's no-codebook design means there's no centroid to
@@ -747,30 +806,42 @@ segment. Atomic stage-and-swap already implemented at
 **Existing.** Rust native artifact `codebase-sparse-grams.idx`, full
 rebuild only (`crates/sweet-search-native/src/sparse_gram.rs`).
 
-**New behavior (adaptive to hardware tier — see § 34).**
+**New behavior: per-file sparse deltas only.**
 
-1. **Rebuild budget probe at daemon start.** Measure the actual
-   sparse-gram rebuild wallclock against the current corpus on the
-   current hardware. Use the result to pick one of two strategies:
-   - **Fast-rebuild tier** (rebuild ≤ 3 s): just rebuild every reconcile
-     tick when the dirty set is non-empty. Simple and correct. Default
-     on modern NVMe + multi-core machines.
-   - **Slow-rebuild tier** (rebuild > 3 s): use delta-segment + periodic
-     merge. The live path appends per-file gram deltas to
-     `codebase-sparse-grams.idx.delta`; query path mmap-unions live +
-     delta; merge into base when delta size > 10 % of base OR every
-     N ticks (default 60). This path matches Lucene's append-only
-     segment model.
-2. **Watermark.** Fast tier: `dirty_files > 0` triggers rebuild. Slow
-   tier: `delta_size_ratio > 0.10` triggers merge.
-3. Stage to `*.next`, fsync, atomic rename. Rust artifact is mmap'd,
-   so the swap takes effect on the next mmap of the new path.
+Sparse grams must never retokenize the whole corpus for a normal dirty tick.
+The edit-time path regenerates grams only for changed files and writes those
+rows into a mutable overlay:
 
-The plan's original draft assumed fast-tier only ("M3 Max NVMe rebuilds
-in 1–2 s"). The slow-tier delta-merge path makes the same architecture
-work on a CI runner, a developer laptop with a SATA SSD, or a workstation
-under heavy concurrent load. Selection is automatic; no operator
-configuration needed.
+1. Base artifact remains immutable: `codebase-sparse-grams.idx`.
+2. Delta directory:
+   `codebase-sparse-grams.idx.deltas/{epoch}-{seq}.ssgrmdelta`.
+   Each delta record is keyed by stable `file_id = xxhash3(canonical_path)`
+   and carries `{file_path, content_hash, deleted, symbol_mask, grams}`.
+3. Query path mmap-unions base + delta:
+   - If a file has no delta record, read base postings.
+   - If a file has a newer delta record, mask that file's base postings and
+     read postings from the latest delta record.
+   - If `deleted=true`, mask that file entirely.
+4. Delta records are append-only and idempotent. Writing the same
+   `(file_id, content_hash)` twice is a no-op at query merge time.
+
+**Compaction path.** When `delta_size_ratio > 0.10`, `delta_segment_count >
+64`, or startup mmap-open cost crosses the query-latency budget, compact in
+the background:
+
+- Read the existing base artifact's postings for unchanged files.
+- Overlay the latest delta record for changed/deleted files.
+- Emit a new base artifact under `*.next`.
+- Publish through the epoch manifest.
+
+This compaction may rewrite the packed artifact file, but it does **not**
+re-read or re-gram unchanged source files. The CPU work remains proportional
+to changed files plus the postings-copy cost, not corpus retokenization.
+
+The current v2 Rust artifact is monolithic, so this requires an `SSGRMIDX v3`
+reader format with a file directory and delta overlay. That is still a
+smaller and more correct change than rebuilding sparse grams on every dirty
+tick.
 
 ### 7.7 HCGS summaries cache
 
@@ -785,33 +856,77 @@ revisit once the reconcile loop is stable.
 
 ## 8. Atomicity, Consistency, and Concurrency
 
-### 8.1 Epoch model
+### 8.1 Epoch manifest model
 
-Define a monotonically-increasing **reconcile epoch** ε, stored as an
-integer in `merkle-state.json`. Each tick:
+Define a monotonically-increasing **reconcile epoch** ε. `merkle-state.json`
+continues to store file hashes and the latest durable epoch, but readers do
+not assemble tier paths directly from it. Readers load one atomic
+`reconcile-manifest.json` that names the exact tier artifacts and sidecars
+for the published epoch:
+
+```json
+{
+  "epoch": 12847,
+  "codeGraph": { "path": "code-graph.db", "epoch": 12847 },
+  "vectors": { "path": "codebase.db", "epoch": 12847 },
+  "hnsw": { "path": "codebase-hnsw.idx", "stale": "codebase-hnsw.idx.stale.bin", "epoch": 12847 },
+  "binaryHnsw": { "path": "codebase-binary-hnsw.idx", "epoch": 12847 },
+  "lateInteraction": { "manifest": "codebase-late-interaction.db.segments/manifest.json", "epoch": 12847 },
+  "sparseGram": { "base": "codebase-sparse-grams.idx", "deltas": ["codebase-sparse-grams.idx.deltas/12847-0.ssgrmdelta"], "epoch": 12847 }
+}
+```
+
+Each tick:
 
 1. Reads current epoch ε.
-2. Stages all writes with epoch ε+1.
-3. Commits via single update to `merkle-state.json::epoch = ε+1`. This
-   commit is fsync'd and atomic (POSIX rename of the staged JSON).
-4. Searches see ε+1 on their next state read.
+2. Stages all per-tier writes with epoch ε+1.
+3. Fsyncs changed tier files / sidecars.
+4. Writes `reconcile-manifest.json.tmp`, fsyncs it and its directory, then
+   atomically renames it over `reconcile-manifest.json`.
+5. Updates `merkle-state.json::epoch = ε+1` after manifest publish.
 
-Per-tier files written during the tick carry the epoch in their metadata.
-A search that finds, for example, a graph row at epoch ε+1 but a vector
-at epoch ε can either:
+Searches pin one manifest at query start and use only paths named by that
+manifest for the full query. There is no default mode where a query combines
+graph rows from ε+1 with vector rows from ε; tier mismatch is a bug and
+increments `manifest_epoch_mismatch_total`.
 
-- (Default) treat both as valid since per-file UPSERT preserves
-  consistency for completed files; OR
-- (Strict mode) skip results whose tier epochs disagree, logging the
-  discrepancy.
+**V1 SQLite visibility trade-off.** `code-graph.db` and `codebase.db` are
+stable SQLite path names. Manifest pinning cannot hide SQLite rows that have
+already committed to WAL before the ε+1 manifest is published. V1 accepts
+that sub-second partial-visibility window because:
+
+- reconcile commits changed files and publishes the manifest immediately
+  afterward;
+- the next query pins the new manifest and self-heals the view;
+- adding MVCC predicates to every graph/vector query increases scope,
+  storage, pruning complexity, and query cost before we know the race is
+  user-visible.
+
+`epoch_written` remains mandatory for audit, telemetry, and HNSW replacement
+replay. It is not a mandatory v1 query predicate.
+
+### 8.1.1 Strict Reader Isolation (Deferred)
+
+If production traces show user-visible mixed-epoch results, add strict MVCC
+in v2:
+
+- add `logical_entity_id`, `logical_chunk_id`, and `epoch_retired` columns;
+- change graph and vector writes to append-new-version + retire-old-version;
+- make readers add
+  `epoch_written <= :manifestEpoch AND (epoch_retired IS NULL OR epoch_retired > :manifestEpoch)`;
+- carry the same epoch visibility metadata on HNSW keys, binary-HNSW docs,
+  LI docs, and sparse-gram delta records;
+- prune retired versions only after a reader grace period.
+
+This is the correct strict model, but it is deliberately not v1 scope.
 
 ### 8.2 Per-file atomicity
 
 Per § 7.1, each file's graph + vectors + HNSW + LI + sparse-gram updates
-commit per file. Crash mid-tick: the next tick re-discovers the unfinished
-files via content-hash mismatch and replays. **Files are the unit of
-atomicity, not chunks** — a chunk update without its sibling chunk update
-is fine because every chunk knows which file it belongs to.
+are staged per file. Crash mid-tick before manifest publish: readers keep
+using the previous manifest, and the next tick re-discovers unfinished files
+via content-hash mismatch and replays. **Files are the unit of reconcile
+work, but the manifest is the unit of reader visibility.**
 
 ### 8.3 Concurrent readers
 
@@ -921,30 +1036,30 @@ Implement once and reuse across daemon + reindex + worker processes.
 **Crash-leak recovery (load-bearing for HNSW correctness).** When a
 stale lockfile is detected and cleared on startup, the daemon may
 have crashed mid-tick after appending vectors to the live HNSW but
-before committing the epoch bump in `merkle-state.json` (§ 11
+before publishing the new epoch manifest (§ 11
 documents this leak scenario). The leaked duplicates are
-"self-healing via async rebuild" *only* if a rebuild is actually
+"self-healing via background replacement" *only* if replacement is actually
 scheduled — but watermarks may not cross for weeks under light
 editing, during which duplicates pollute top-k results and silently
 degrade recall (see § 19 dedup at fusion).
 
 Therefore, on stale-lockfile recovery, the daemon must:
 
-1. **Enqueue an immediate Float HNSW rebuild** to the rebuild queue
-   with `reason = "crash_recovery"`, bypassing the 0.15 tombstone
-   watermark. Same for any tier whose live path uses
-   non-idempotent appends (LI segments — append-only with separate
+1. **Enqueue an immediate Float HNSW background replacement** to the
+   maintenance queue with `reason = "crash_recovery"`, bypassing the
+   ordinary tombstone/drift watermarks. Same for any tier whose live path
+   uses non-idempotent appends (LI segments — append-only with separate
    tombstone state; same crash hazard).
 2. Mark the relevant per-tier epoch metadata with a `dirty_recovery`
-   flag so the rebuild-queue inspector can show the operator why an
-   out-of-band rebuild fired.
+   flag so the maintenance-queue inspector can show the operator why an
+   out-of-band replacement fired.
 3. Continue normal operation in parallel — the live indices remain
-   readable with the temporary duplicate pollution; the rebuild will
+   readable with the temporary duplicate pollution; the replacement will
    replace them within minutes.
 
 Without this step, the "self-healing" claim in § 11 silently fails
 for the most common failure path (OS kill, power loss between
-`index.add()` and epoch commit).
+`index.add()` and manifest publish).
 
 ---
 
@@ -1085,60 +1200,63 @@ User edits file
 
 ---
 
-## 10. Watermark & Rebuild Scheduler
+## 10. Watermark & Compaction Scheduler
 
 ### 10.1 Watermark evaluation
 
-At end of each tick (after commit), evaluate per-tier watermarks. Trigger
-a rebuild by appending to a rebuild queue (`.sweet-search/rebuild-queue.jsonl`).
+At end of each tick (after manifest publish), evaluate per-tier watermarks.
+Trigger background maintenance by appending to a compaction queue
+(`.sweet-search/rebuild-queue.jsonl`, name retained for compatibility).
 
-The queue, not the daemon, owns rebuild execution. This keeps the reconcile
-tick fast and lets rebuilds run on a separate cadence.
+The queue, not the daemon, owns maintenance execution. This keeps the
+reconcile tick fast and lets compaction / replacement run on a separate
+cadence.
 
-### 10.2 Rebuild executor
+### 10.2 Compaction executor
 
 A separate process (or worker thread; design TBD — see § Open Questions):
 
 1. Polls `rebuild-queue.jsonl` every 30 s.
-2. For each pending rebuild:
+2. For each pending maintenance job:
    - Check whether GPU is idle and `shouldArmGpu()` returns true.
    - If yes: arm GPU per existing model-pool API, run rebuild, tear down,
      restore CPU pool.
    - If no: run on CPU at `nice 10` (low priority) so it does not impact
      interactive search latency.
-3. On success: stage → atomic swap → reset the tier's watermark counters.
+3. On success: stage → fsync → manifest publish → reset the tier's
+   watermark counters.
 4. On failure: move job to dead-letter; preserve old artifact.
 
 ### 10.3 Coordination with reconcile (scope-bounded)
 
-**Two regimes by rebuild wallclock.** The bounded-replay LSM rebase
-described below is only justified when the rebuild takes long enough
+**Two regimes by maintenance wallclock.** The bounded-replay rebase
+described below is only justified when replacement takes long enough
 that holding the writer lock for its duration would create
 user-visible reconcile starvation. Concretely:
 
-| Tier | Typical rebuild | Coordination model |
+| Tier | Typical maintenance | Coordination model |
 |---|---|---|
-| **Float HNSW** | 5–30 min | **LSM rebase** (this section) — bounded pre-lock replay + lock-held final swap |
-| **Binary HNSW + int8 sidecar** | 30 s – 5 min | **LSM rebase** (same pattern, smaller replay set) |
-| **LI per-segment recompaction** | 1–30 s | **Simple lock-held rebuild** — acquire `index-maintainer.lock`, recompact the one segment, atomic-swap that segment file, release. Reconcile pauses for at most 30 s, invisible at 60 s tick cadence. |
-| **Sparse-gram** | 1–30 s | **Simple lock-held rebuild** — same pattern as LI. |
+| **Float HNSW** | 5–30 min clean replacement | **LSM rebase** (this section) — bounded pre-lock replay + lock-held final manifest publish |
+| **Binary HNSW + int8 sidecar** | 30 s – 5 min clean replacement | **LSM rebase** (same pattern, smaller replay set) |
+| **LI per-segment recompaction** | 1–30 s | **Simple lock-held compaction** — acquire `index-maintainer.lock`, recompact the one segment, publish manifest, release. Reconcile pauses for at most 30 s, invisible at nominal 60 s tick cadence. |
+| **Sparse-gram delta compaction** | 1–30 s postings merge | **Simple lock-held manifest publish** — compute compacted base from existing postings + changed-file deltas outside the lock; hold the lock only for final publish. No source-file retokenization for unchanged files. |
 | **FTS5 bounded `('merge', 500)`** | ms – seconds | **In-line** during reconcile tick; no separate rebuild path needed. |
 
 Restricting the LSM rebase to the two HNSW tiers eliminates the
 need for `li_change_log` / `sparse_gram_change_log` tables; the
-simple lock-held rebuilds for those tiers read the source-of-truth
-from SQLite directly with no replay required.
+simple lock-held compactions for those tiers read from their own segment /
+delta source-of-truth with no replay table required.
 
-**LSM rebase for HNSW (Float and Binary).** During a rebuild, the
+**LSM rebase for HNSW (Float and Binary).** During a background replacement, the
 reconcile tick continues normally. New edits land in the live HNSW
-via the tombstone-only `add()` path. When the rebuild completes, it
+via the tombstone-only `add()` path. When the replacement build completes, it
 must rebase onto current state. The race window between "replay
-drained" and "swap committed" is the hazard; **the swap must hold
-the writer lock so no edit can land in it.**
+drained" and "manifest published" is the hazard; **the final publish must
+hold the writer lock so no edit can land in it.**
 
 Lock-respecting protocol:
 
-1. Rebuild starts: read the current `merkle-state.json::epoch` as ε₀.
+1. Replacement starts: read the current `merkle-state.json::epoch` as ε₀.
    Snapshot the source data (vectors / LI tokens) at ε₀. No lock held;
    reconcile continues writing.
 2. Build the new artifact in `*.next` from the ε₀ snapshot. This is the
@@ -1155,8 +1273,8 @@ Lock-respecting protocol:
      for Float HNSW, and the same plus binary-fingerprint
      recomputation for Binary HNSW. Both tiers source from the same
      idempotent vectors table, so no separate per-tier change-log is
-     needed. (LI segment recompaction and sparse-gram rebuild use
-     simple lock-held rebuilds — see the two-regime table above —
+     needed. (LI segment recompaction and sparse-gram delta compaction use
+     simple lock-held manifest publish — see the two-regime table above —
      and therefore have no replay-log requirement.)
    - If `ε_now - ε₀ > replay_threshold` (default 5), loop. Each pass
      narrows the gap.
@@ -1167,7 +1285,8 @@ Lock-respecting protocol:
 5. With lock held: replay any final epochs since the last bounded loop
    iteration. The set is now small and bounded because we hold the
    lock — no new writes can land.
-6. Fsync, atomic rename `*.next` → live. Bump per-tier epoch metadata.
+6. Fsync, write the new manifest entry, and atomically publish
+   `reconcile-manifest.json`. Bump per-tier epoch metadata.
 7. Release lock.
 8. Tombstone counters reset for that tier; old artifact left in place
    for one more tick in case a reader is still mmap'd to it, then
@@ -1176,14 +1295,14 @@ Lock-respecting protocol:
 **Why bounded replay before locking.** Holding the writer lock through
 the full replay starves the reconcile tick → editor staleness spikes.
 Bounded iteration narrows the gap pre-lock so the lock is held for
-milliseconds, not the rebuild's full wallclock.
+milliseconds, not the replacement build's full wallclock.
 
 **Pathological case: replay rate < write rate.** If the user is running
 a continuous codemod (e.g., a 100 K-line refactor script), the replay
 loop never converges. The hard cap (10 passes) bails out and the
-rebuild scheduler re-enqueues — the second attempt will succeed once
+maintenance scheduler re-enqueues — the second attempt will succeed once
 the codemod completes. Log a WARN if replay caps are hit > 3× in
-succession (operator signal: rebuild is starving).
+succession (operator signal: replacement is starving).
 
 This is the **classic LSM rebase pattern** as deployed in RocksDB,
 LevelDB, and Cassandra compaction. The plan's prior draft glossed
@@ -1202,7 +1321,7 @@ over the lock; this version makes it explicit.
 | Vendored deps not in `.gitignore` | Files match include set | `.sweet-search-ignore` opt-in; hard cap warning above 200 k files |
 | Linux inotify exhaustion (ENOSPC) | Watcher returns error | Log remediation; fall back to 60-s polling for that subtree |
 | FSEvents glitch on macOS | Missed events | mtime sweep catches at next tick |
-| Crash during reconcile | Process exit before commit | Next tick replays via content-hash mismatch; lockfile cleared. **HNSW crash-leak guarantee**: HNSW `add()` is not idempotent (each call assigns a new key); a crash AFTER `index.add()` but BEFORE `merkle-state.json` commit leaks one duplicate vector per affected chunk into the live graph. **The stale-lockfile recovery path in § 8.6 enqueues an immediate Float HNSW rebuild (`reason = "crash_recovery"`) regardless of watermark state** — without this, duplicates can persist for weeks under light editing, occupying top-k slots and evicting valid results before § 19's fusion-layer dedup can filter them (silent recall drop). With the immediate rebuild path: leak window is minutes (rebuild wallclock), not months. Until the rebuild completes, fusion + dedup at the result-set layer (§ 19) mitigates user-visible impact. Same logic applies to LI segment appends; same immediate-rebuild trigger covers them. Do not attempt to make HNSW add idempotent (would require read-before-write on every add → unacceptable latency). |
+| Crash during reconcile | Process exit before manifest publish | Readers keep the previous manifest; next tick replays via content-hash mismatch; lockfile cleared. **HNSW crash-leak guarantee**: HNSW `add()` is not idempotent (each call assigns a new key); a crash AFTER `index.add()` but BEFORE manifest publish can leak one duplicate vector per affected chunk into the live graph. **The stale-lockfile recovery path in § 8.6 enqueues an immediate Float HNSW background replacement (`reason = "crash_recovery"`) regardless of watermark state** — without this, duplicates can persist for weeks under light editing, occupying top-k slots and evicting valid results before § 19's fusion-layer dedup can filter them (silent recall drop). With the immediate replacement path: leak window is minutes (replacement wallclock), not months. Until replacement completes, fusion + dedup at the result-set layer (§ 19) mitigates user-visible impact. Same logic applies to LI segment appends; same immediate-maintenance trigger covers them. Do not attempt to make HNSW add idempotent (would require read-before-write on every add → unacceptable latency). |
 | Crash during rebuild | Rebuild process exit | Old artifact still live; rebuild-queue retries; dead-letter after N |
 | Worktree with shared index | Multiple processes, one lockfile | First takes lock, second blocks; document explicitly |
 | Config change (e.g. `.sweet-search.config.json` edit) | Config fingerprint mismatch | **Full reindex forced** (existing behavior in `incremental-tracker.js`) |
@@ -1332,26 +1451,34 @@ empirical-verification requirements. Treat as a research spike, not a
   `docs/INCREMENTAL_INDEXING_PREFLIGHT_RESULTS.md` so the empirical
   basis for the watermark thresholds is reproducible.
 
-### Phase 1 — Structural chunk IDs, content hash, encode-skip (~7 days)
+### Phase 1 — Structural chunk IDs, input hashes, encode-skip (~8 days)
 
 This phase grew after the Gemini review: positional `chunk_id`s defeat
 the chunk-hash dedup on common edits, so the structural-ID rework is
 prerequisite to the encode-skip savings.
 
 - [ ] Add `chunk_struct_id TEXT NOT NULL DEFAULT ''`,
-  `chunk_text_hash TEXT NOT NULL DEFAULT ''`, and
+  `chunk_text_hash TEXT NOT NULL DEFAULT ''`,
+  `embedding_input_hash TEXT NOT NULL DEFAULT ''`,
+  `li_input_hash TEXT NOT NULL DEFAULT ''`,
+  `metadata_fingerprint TEXT NOT NULL DEFAULT ''`, and
   `epoch_written INTEGER NOT NULL DEFAULT 0` columns to vectors table
   in `codebase.db` (auto-migrate; preserve existing `chunk_id` for
   compatibility). **`DEFAULT` clauses are mandatory for rollback
   safety** — see § 7.2 rationale.
+- [ ] Add `epoch_written INTEGER NOT NULL DEFAULT 0` to graph tables touched
+  by reconcile (`entities` and `relationships`) for audit / telemetry. Do
+  not add mandatory MVCC predicates in v1.
 - [ ] In `core/indexing/ast-chunker.js`, emit `chunk_struct_id` per § 7.2
   for symbol-attached and anonymous chunks. Keep positional `chunk_id`
   as fallback for parser failures.
 - [ ] Wire xxHash3 (via the existing native crate or `xxhash-wasm`)
   behind a `HASH_ALGORITHM` switch defaulting to `xxhash3`.
-- [ ] In `indexer-build.js`, compute `chunk_text_hash` before encoder
-  dispatch; look up by `chunk_struct_id`; if hash matches, reuse stored
-  embedding (zero encoder calls).
+- [ ] In `indexer-build.js`, compute `chunk_text_hash`,
+  `metadata_fingerprint`, `embedding_input_hash`, and `li_input_hash`
+  after graph enrichment but before encoder dispatch; look up by
+  `chunk_struct_id`; reuse dense embeddings only on `embedding_input_hash`
+  match and LI tokens only on `li_input_hash` match.
 - [ ] Add tracing counters: chunks_struct_stable, chunks_text_unchanged,
   chunks_encoded per tick.
 - [ ] Verify on:
@@ -1362,12 +1489,12 @@ prerequisite to the encode-skip savings.
 - [ ] **Gate:** GCSN dev MRR unchanged within noise floor; structural
   invariance test (§ 12.3) green.
 
-### Phase 2 — Unified reconcile tick (~5 days)
+### Phase 2 — Unified reconcile tick + manifest publish (~6 days)
 
 - [ ] Extract the per-file reconcile from `index-maintainer.mjs` into a
   `Reconciler` class in `core/indexing/reconciler.mjs`.
 - [ ] Reconciler owns: dirty-set processing, content-hash diff, per-file
-  per-tier writes, epoch commit.
+  per-tier writes, and manifest publish.
 - [ ] Daemon becomes a thin driver: timer → `reconciler.tick()`.
 - [ ] Implement per-tier write methods:
   - `applyGraphDelta(file, parsedEntities)`
@@ -1375,23 +1502,26 @@ prerequisite to the encode-skip savings.
   - `applyHNSWDelta(file, vectorOps)`
   - `applyBinaryHNSWDelta(file, vectorOps)`
   - `applyLIDelta(file, tokenOps)`
-  - `markSparseGramDirty(file)`
+  - `applySparseGramDelta(file, gramOps)`
 - [ ] Implement the structural invariance test from § 12.3.
 - [ ] **Gate:** structural invariance test green; GCSN dev MRR unchanged.
 
-### Phase 3 — Watermarks & async rebuild executor (~5 days)
+### Phase 3 — Watermarks, HNSW tuning, sparse v3, maintenance executor (~8–10 days)
 
 - [ ] Add tombstone counters to Float HNSW `.meta.json` and LI segment
   `.stale.bin` sidecars.
-- [ ] Implement watermark evaluation at end of each tick; emit rebuild
-  jobs to `rebuild-queue.jsonl`.
+- [ ] Implement watermark evaluation at end of each tick; emit maintenance
+  jobs to `rebuild-queue.jsonl` (queue name retained for compatibility).
 - [ ] Implement `core/indexing/rebuild-worker.mjs`:
   - Process model: separate node process spawned by the daemon.
   - GPU coordination: `shouldArmGpu()` + idle check.
-  - Stage-and-swap with epoch rebase (§ 10.3).
+  - Stage-and-manifest-publish with epoch rebase (§ 10.3).
 - [ ] Implement LI per-segment recompaction.
-- [ ] **Gate:** synthetic 20 % tombstone fraction triggers rebuild;
-  post-rebuild MRR within noise floor of cold-rebuild MRR.
+- [ ] Implement sparse-gram v3 delta overlay and compaction. Gate: editing
+  one file regenerates grams for exactly one file and does not read every
+  source file.
+- [ ] **Gate:** synthetic 20 % tombstone fraction triggers HNSW background
+  replacement; post-replacement MRR within noise floor of cold-build MRR.
 
 ### Phase 4 — Optional Rust `notify` watcher (~2 days)
 
@@ -1402,7 +1532,7 @@ prerequisite to the encode-skip savings.
 - [ ] **Gate:** with watcher enabled, latency from `write(2)` to dirty-set
   membership < 100 ms; same MRR as polling-only path.
 
-### Phase 5 — Tombstone-fraction sensitivity study (~1 day)
+### Phase 5 — Tombstone-fraction sensitivity study (~2 days)
 
 - [ ] Synthetic injection harness: take current dev index, randomly mark
   N % of vectors as tombstoned, do not rebuild, run GCSN dev.
@@ -1419,22 +1549,23 @@ prerequisite to the encode-skip savings.
   users complain; cheap, load-bearing for trust).
 - [ ] Dead-letter inspection CLI (`sweet-search reconcile inspect`).
 - [ ] Lockfile staleness recovery (current owner crashed → take over).
-- [ ] Document operator runbook for: stuck rebuild, dead-letter overflow,
-  forced full rebuild.
+- [ ] Document operator runbook for: stuck maintenance, dead-letter overflow,
+  forced HNSW replacement, sparse-gram compaction, or explicit full reindex.
 
-**Total estimate:** ~25 working days for one engineer focused
-(revised upward across the three SOTA review passes). Phase 0 grew
+**Total estimate:** ~30-35 working days for one engineer focused
+(revised upward across the SOTA and Codex review passes). Phase 0 grew
 from 1 day → 3-5 days as empirical-verification work accumulated;
 implementation phases 1-3 grew due to BigInt-everywhere, occurrence-
-index disambiguation, `epoch_written` replay log with `DEFAULT 0`
-rollback safety, USearch reserve handling, MCP transaction hygiene +
-DB-swap self-defense, FTS5 introspection helper, and the immediate-
-rebuild-on-crash-recovery path. The third-pass review trimmed scope
-by removing per-tier change-log tables and the LSM rebase for
-fast-rebuild tiers (LI segments, sparse-gram); only Float HNSW and
-Binary HNSW use the bounded-replay rebase. The existing primitives
-still carry most of the load; this is mostly stitching plus the
-careful-but-mechanical fixes from §§ 35, 36, and 37.
+index disambiguation, exact encoder-input hashes, `epoch_written` replay
+log with `DEFAULT 0` rollback safety, USearch reserve handling, MCP
+transaction hygiene + DB-swap self-defense, FTS5 introspection helper,
+manifest pinning, sparse-gram v3 delta overlay, and the immediate HNSW
+replacement-on-crash-recovery path. The third-pass review trimmed scope by
+removing per-tier change-log tables and the LSM rebase for short compactions
+(LI segments, sparse-gram); only Float HNSW and Binary HNSW use the
+bounded-replay rebase. The estimate is higher than the prior 25-day number
+because sparse-gram v3, manifest pinning, adaptive HNSW oversampling, and
+DB-swap hardening are real implementation work even with strict MVCC deferred.
 
 ---
 
@@ -1451,9 +1582,10 @@ careful-but-mechanical fixes from §§ 35, 36, and 37.
 3. **Per-segment LI recompaction wallclock** at the 10 K-doc cap, also
    per tier. Confirms the "single-segment rebuild fits in a tick"
    budget on the slowest target tier.
-4. **Sparse-gram rebuild wallclock** on the actual target corpus, per
-   tier. Determines whether the fast-rebuild or delta-merge strategy
-   from § 7.6 is selected at daemon startup.
+4. **Sparse-gram delta wallclock** on the actual target corpus, per tier:
+   one-file delta write, 50-file burst delta write, query-time base+delta
+   union overhead, and background compaction wallclock. Confirms the v3
+   delta overlay keeps ordinary edits proportional to changed files.
 5. **Reconcile tick wallclock** end-to-end on a realistic edit burst
    (10–50 files). Target: P99 below 50 % of the configured tick interval
    on every supported tier (so the tick never overruns into the next).
@@ -1498,22 +1630,22 @@ careful-but-mechanical fixes from §§ 35, 36, and 37.
 | Phantom invalidation re-encodes unchanged chunks | Medium | CPU waste, no correctness impact | Structural invariance test (§ 12.3) |
 | Reconcile MRR regression | Medium | Quality regression | Pre-merge GCSN dev + locked probes; pre-release held-out |
 | Tombstone watermark too high → search recall drops | Medium | Quality regression | Phase 5 sensitivity study + margin |
-| Tombstone watermark too low → rebuild storms | Low | CPU waste | Watch rebuild frequency; adjust threshold |
-| Async rebuild rebase races a live edit | Medium | Lost write | LSM rebase pattern (§ 10.3); test concurrent edit + rebuild |
+| Tombstone watermark too low → replacement storms | Low | CPU waste | Watch replacement frequency; adjust threshold |
+| Async replacement rebase races a live edit | Medium | Lost write | LSM rebase pattern (§ 10.3); test concurrent edit + replacement |
 | Watcher overwhelms dirty set (50 k events) | Low | Memory bloat | Path dedup at insertion; bounded set size |
 | Inotify exhaustion on Linux | Medium (large repos) | Watcher fails | ENOSPC detection → polling fallback |
 | FSEvents glitch on macOS | Medium | Missed events | mtime sweep catches at next tick |
 | Daemon crash mid-tick | Low | Inconsistent partial state | Per-file atomicity; next tick replays |
 | Config fingerprint changes for benign reason | Medium | Full reindex blocks user | Only fingerprint provider+model+dim; not pipeline-version edits |
-| LI per-segment recompaction blocks reconcile | Low | Latency spike | Run via rebuild-worker, not in reconcile tick |
+| LI per-segment recompaction blocks reconcile | Low | Latency spike | Run via maintenance worker, not in reconcile tick |
 | Format-gating regression slips in via "recency boost" | High (over time) | NL MRR regression | Format-gating rule + held-out CI |
 | Schema migration on `chunk_content_hash` column | Low | Cold start required | Auto-migrate at first daemon start; document |
 | Stale lockfile after crash | Medium | Daemon won't start | Phase 6 staleness recovery |
-| USearch capacity exhaustion if `index.reserve()` fails (OOM) | Low | Affected chunk lost from live HNSW until rebuild | § 7.3 emergency-rebuild path; search falls through to BM25 + LI |
+| USearch capacity exhaustion if `index.reserve()` fails (OOM) | Low | Affected chunk lost from live HNSW until background replacement | § 7.3 emergency-maintenance path; search falls through to BM25 + LI |
 | Occurrence-index disambiguation logic bug → silent chunk loss | Medium | Identical siblings overwrite each other | § 7.2 unit tests cover the 5 cases including renamed-one-of-two-identical |
 | MCP server leaks read transactions → WAL bloat | High (long-term) | Disk fills; daemon TRUNCATE silently fails | § 27.2.1 mandates connection rotation + PASSIVE checkpoints; daemon emits WARN/ERROR with culprit pid |
 | `epoch_written` index write hot-spot on monotonic integer | Low | Insert latency creep over long sessions | § 36.5 open question; fallback is partial index on recent window |
-| FTS5 `('merge', 500)` rebuild wallclock unbounded under heavy churn | Medium | Rebuild scheduler queue grows | Watermark `fts5_segment_count > 64` plus per-tick `('merge', 16)` keeps segments below the threshold most of the time |
+| FTS5 `('merge', 500)` maintenance wallclock unbounded under heavy churn | Medium | Maintenance queue grows | Watermark `fts5_segment_count > 64` plus per-tick `('merge', 16)` keeps segments below the threshold most of the time |
 | Tree-sitter mid-edit error nodes pollute entity index | Medium | Garbage entities visible briefly | § 20.1 metric + alert at 5% file-error rate; user can lengthen tick interval |
 | Held-out discipline violation slips back into iterative phases | Medium | Held-out set contaminated | § 24.6 phase-by-phase table; CI enforces dev-only for iterative; held-out runs are explicit one-shot tagged commits |
 
@@ -1521,10 +1653,12 @@ careful-but-mechanical fixes from §§ 35, 36, and 37.
 
 ## 16. Why This Design (Argument Summary)
 
-1. **Single-tier rebuilds at sweet-search scale are seconds, not hours.**
-   That collapses the segment-vs-mutable debate to "mutable + tombstone +
-   async rebuild." Lucene's segment model exists because rebuild at billion
-   scale is impossible; sweet-search is at 500 K vectors per repo.
+1. **Ordinary edits are per-file / per-chunk deltas; maintenance is
+   background compaction.** That collapses the segment-vs-mutable debate to
+   "mutable live path + tombstones / deltas + clean replacement when drift
+   is measured." Lucene's segment model exists because rebuilding at billion
+   scale is impossible; sweet-search is at local-repo scale, but the
+   foreground path still must not retokenize or re-embed unchanged files.
 2. **Per-token int4 with no shared codebook is the load-bearing property
    for safe incremental LI.** PLAID-class designs cannot do this safely
    without PLAID-SHIRTTT hierarchical re-clustering; sweet-search can,
@@ -1533,10 +1667,10 @@ careful-but-mechanical fixes from §§ 35, 36, and 37.
    editor pathologies** (save-all, format-on-save, branch switch,
    generated-code dumps). Cursor proved this at scale; sweet-search
    already implements it; the plan extends it to chunk level.
-4. **60-s reconcile is six times tighter than Cursor and is the right
-   number for a single workstation**, because rebuild costs scale
-   sub-linearly with corpus size and the user's edit-to-search latency
-   tolerance is much higher than they realize.
+4. **A nominal 60-s reconcile is six times tighter than Cursor and is the
+   right default for a single workstation**, because edit-time delta costs
+   scale with changed files rather than corpus size. Hardware tiers may tune
+   the interval, but the CLI must expose the actual configured staleness.
 5. **CPU for incremental, GPU for batch** is forced by the GPU lifecycle
    cost. The plan threads this constraint through every tier explicitly.
 6. **The existing primitives carry most of the load.** This is plumbing,
@@ -1617,42 +1751,44 @@ careful-but-mechanical fixes from §§ 35, 36, and 37.
 |---|---|---|
 | CPU-only for incremental path | 2026-04-17 | GPU lifecycle (5–15 s) >> typical incremental work (< 1 s). See TODO. |
 | 60 s reconcile interval | 2026-05-14 | Six times tighter than Cursor's 10 min; CPU encode budget permits. |
-| Mutable HNSW + tombstones + async rebuild | 2026-05-14 | Lucene segment-per-graph is overkill at ≤500 K vectors. |
+| Mutable HNSW + tombstones + background clean replacement | 2026-05-14 | Lucene segment-per-graph is overkill at ≤500 K vectors; ordinary edits mutate only changed chunks. |
 | LI per-segment recompaction, no global rebuild | 2026-05-14 | Per-token int4 (no codebook) makes segment-local recompaction safe. |
-| Sparse-gram fast-rebuild vs delta-merge (adaptive) | 2026-05-15 | Fast-tier hardware rebuilds in seconds → just rebuild; slow-tier or large corpus → delta-merge. Auto-selected at daemon startup based on measured wallclock. |
+| Sparse-gram v3 per-file delta overlay | 2026-05-15 | Dirty ticks regenerate grams only for changed files; background compaction copies existing postings plus deltas without retokenizing unchanged source. |
 | Watcher opt-in, polling default | 2026-05-14 | Polling alone meets staleness contract; watcher adds complexity. |
-| Rebuild executor as separate process | 2026-05-14 (proposed) | Clean GPU lifecycle; no daemon CPU interference. |
+| Maintenance executor as separate process | 2026-05-14 (proposed) | Clean GPU lifecycle for explicit rebuilds and background replacements; no daemon CPU interference. |
 | Per-file (not per-chunk) atomicity | 2026-05-14 | Chunks already know their file; per-file commit is the natural unit. |
 | Single global epoch, not per-tier | 2026-05-14 | One source of truth for "did the index see this commit?". |
-| Float HNSW tombstone watermark = 0.15 (tentative) | 2026-05-14 | Matches Qdrant default; awaits sensitivity study. |
+| Float HNSW replacement trigger is measured, not fixed | 2026-05-14 / 2026-05-15 | 0.15 remains a provisional starting point, but live-candidate shortfall and MRR probe drift can trigger replacement earlier or later. |
 | LI per-segment recompaction watermark = 0.20 | 2026-05-14 | Bounds wasted bitmap scan; awaits validation. |
 | Skip HCGS in v1 reconcile | 2026-05-14 | LLM-driven cost dominates encode; revisit later. |
 | Skip cross-worktree shared index in v1 | 2026-05-14 | Lockfile alone is sufficient for one-writer model. |
 | AST-structural chunk IDs replace positional | 2026-05-15 | Gemini review: positional IDs defeat chunk-hash dedup on insertions. Fix is load-bearing for Phase 1 CPU savings. |
 | xxHash3 replaces SHA-256 for content dedup | 2026-05-15 | 15–30 GiB/s vs 1–2 GiB/s; cryptographic strength unnecessary for local dedup. |
-| FTS5 explicit `('merge', 16)` per tick + `('optimize')` on rebuild | 2026-05-15 | FTS5 does not auto-compact; daemons bloat GB/week without this. |
+| FTS5 explicit `('merge', 16)` per tick + bounded `('merge', 500)` on watermark | 2026-05-15 | FTS5 does not auto-compact; daemons bloat GB/week without this. |
 | HNSW tombstone-only writes (no live `remove()`) | 2026-05-15 | Eliminates USearch concurrent-remove safety question; aligns with LI / Binary HNSW tombstone model. |
 | `PRAGMA synchronous = NORMAL` in WAL mode | 2026-05-15 | Default `FULL` adds 10–30 ms fsync per file commit on common filesystems; blows tick budget at 50 files. |
 | WAL checkpoint policy explicit (passive on read, truncate on tick N) | 2026-05-15 | Long-lived MCP reader prevents auto-checkpoint; WAL grows GB without intervention. |
-| LSM rebase replays bounded then locks for final swap | 2026-05-15 | Lockless replay-then-swap drops writes in the race window. |
+| LSM rebase replays bounded then locks for final manifest publish | 2026-05-15 | Lockless replay-then-publish drops writes in the race window. |
 | Resolved exclude array hashed in config fingerprint, not gitignore file | 2026-05-15 | Comment edits to `.gitignore` no longer trigger full reindex; semantic excludes do. |
 | Mtime-trap fix: `(mtime, size, inode) !=` not `mtime >` | 2026-05-15 | Equal-mtime within FS resolution makes second write invisible to `>` check. |
 | Adaptive tick interval, CPU budget, watermarks by hardware tier | 2026-05-15 | "Works on any machine" mandate — see § 34. |
 | Occurrence-indexed anonymous chunk IDs | 2026-05-15 | Gemini 2nd-pass: identical statements in same parent would collide and lose chunks under UPSERT. |
-| `epoch_written` column on `vectors` and `entities` | 2026-05-15 | Gemini 2nd-pass: LSM rebase needs an application-level replay log; SQLite WAL is not queryable. |
+| `epoch_written` audit columns on reconcile-owned rows | 2026-05-15 | Supports HNSW replacement replay, telemetry, and optional strict reader isolation later; SQLite WAL is not queryable as an application replay log. |
 | USearch capacity managed via `index.reserve()` on exception | 2026-05-15 | Gemini 2nd-pass: tombstone-only writes exhaust `max_elements` monotonically. |
 | WAL TRUNCATE is opportunistic, not forcing; MCP must close txns | 2026-05-15 | Gemini 2nd-pass: original draft overclaimed TRUNCATE semantics. |
 | FTS5 bounded `('merge', 500)` replaces `('optimize')` | 2026-05-15 | Gemini 2nd-pass: `'optimize'` trips own WAL bloat alarm. |
 | BigInt inode via `{ bigint: true }`; stored as JSON string | 2026-05-15 | Gemini 2nd-pass: 64-bit inodes silently truncate to Number on APFS/ZFS/XFS. |
 | WSL2 polling-only gated on FS-type, not OS detection | 2026-05-15 | Gemini 2nd-pass: native Linux paths (`/home/user/`) work fine in WSL2. |
 | `os.availableParallelism()` replaces manual cgroup parsing | 2026-05-15 | Gemini 2nd-pass: Node 18.14+ handles cgroup v1/v2, affinity, quotas natively. |
-| HNSW crash-leak documented as self-healing via rebuild | 2026-05-15 | Gemini 2nd-pass: `add()` is not idempotent; rebuild is the GC. |
+| HNSW crash-leak documented as self-healing via background replacement | 2026-05-15 | Gemini 2nd-pass: `add()` is not idempotent; clean replacement is the GC. |
 | Noise floor defined as ±0.005 absolute MRR | 2026-05-15 | Gemini 2nd-pass: previously undefined; AVX2/NEON jitter alone exceeds 0.001. |
 | Held-out validation pulled out of iterative phases | 2026-05-15 | Gemini 2nd-pass: original § 24.6 violated `feedback_heldout_discipline_strict`. |
 | `tree_sitter_error_nodes_seen` telemetry added | 2026-05-15 | Gemini 2nd-pass: mid-edit syntax errors produce garbage entities; need observability. |
 | `epoch_written INTEGER NOT NULL DEFAULT 0` on schema migrations | 2026-05-15 | Gemini 3rd-pass: NOT NULL without default crashes older daemons on rollback. |
-| LSM rebase scoped to Float + Binary HNSW only | 2026-05-15 | Gemini 3rd-pass: simple lock-held rebuild is sufficient when rebuild < 30s; drops `li_change_log` / `sparse_gram_change_log` complexity entirely. |
-| Immediate HNSW rebuild on stale-lockfile recovery | 2026-05-15 | Gemini 3rd-pass: crash-leak "self-healing" only works if a rebuild is scheduled; light editing wouldn't cross watermark for months. |
+| LSM rebase scoped to Float + Binary HNSW only | 2026-05-15 | Gemini 3rd-pass: simple lock-held manifest publish is sufficient when compaction < 30s; drops `li_change_log` / `sparse_gram_change_log` complexity entirely. |
+| Immediate HNSW replacement on stale-lockfile recovery | 2026-05-15 | Gemini 3rd-pass: crash-leak "self-healing" only works if replacement is scheduled; light editing wouldn't cross watermark for months. |
+| Single epoch manifest for reader lock-step | 2026-05-15 | Prevents a query from mixing graph/vectors/LI/sparse artifacts from different epochs. |
+| Exact encoder-input hashes for dense + LI reuse | 2026-05-15 | Raw chunk text hash is insufficient because metadata-enriched `embedding_text` and `pickLiInput()` bytes affect model inputs. |
 | Sequential `index.add()` per file (no `Promise.all`) | 2026-05-15 | Gemini 3rd-pass: parallel adds racing on `reserve()` would oversize allocation. |
 | BigInt uniform across all stat fields (size, mtimeNs, ino) | 2026-05-15 | Gemini 3rd-pass: `{ bigint: true }` returns all fields as BigInt; mixing types breaks equality. |
 | WSL2 polling-only as DEFAULT not FORCED; user override allowed | 2026-05-15 | Gemini 3rd-pass: `df -T` parsing too brittle; let user decide if on native ext4. |
@@ -1675,7 +1811,7 @@ it encounters a tombstoned row.
 | `read` | `CodebaseRepository` + disk | Always reads disk; no index staleness possible | n/a |
 | `read-semantic` | LI segments + vectors for span ranking | Stale bitmap honored during posting-list walk; spans recomputed from disk text | Yes — explicit warning if span source mtime is newer than index epoch |
 | `colgrep` | ripgrep (disk) + LI rerank | ripgrep is always fresh; LI rerank skips tombstoned doc IDs | n/a (ripgrep side is live) |
-| `indexed-grep` | sparse-gram artifact + FTS5 trigram | Sparse-gram rebuilt every dirty tick (no tombstones needed); FTS5 has no tombstones (SQLite manages) | Minor — `--show-staleness` |
+| `indexed-grep` | sparse-gram base + per-file deltas + FTS5 trigram | Sparse-gram query masks base postings for files with newer delta records; FTS5 has no app-level tombstones (SQLite manages row updates) | Minor — `--show-staleness` |
 
 **Critical rule.** A tool that reads multiple tiers (`auto`, `read-semantic`)
 must filter tombstones **after** scoring/fusion, not before. Filtering before
@@ -1692,13 +1828,13 @@ or when `staleness > threshold`):
 ```
 results...
 ─────────
-index epoch: 12847   age: 23s   dirty files: 2   last rebuild: HNSW 4m ago
+index epoch: 12847   age: 23s   dirty files: 2   last maintenance: HNSW 4m ago
 ```
 
 Three-tier alert:
 - **green** (< 60 s, 0 dirty): hidden
 - **yellow** (60–300 s, or < 5 dirty): one-liner footer
-- **red** (> 300 s, or > 5 dirty, or rebuild-queue backlog): explicit warning
+- **red** (> 300 s, or > 5 dirty, or maintenance-queue backlog): explicit warning
 
 Inspired by Cursor's missing staleness signal (community complaint vector);
 worth the bytes.
@@ -1732,7 +1868,8 @@ JSON line per tick to `.sweet-search/reconcile-metrics.jsonl` (rotated daily):
     "hnsw_capacity_used": 0.42,
     "binary_hnsw_tombstone": 3, "binary_hnsw_append": 7,
     "li_segment_append": 7, "li_tombstone": 3,
-    "sparse_gram_rebuild": 1,
+    "sparse_gram_delta_upsert": 1,
+    "sparse_gram_compaction": 0,
     "fts5_merge_calls": 2
   },
   "watermarks": {
@@ -1748,7 +1885,7 @@ JSON line per tick to `.sweet-search/reconcile-metrics.jsonl` (rotated daily):
     "last_truncate_attempted_ms_ago": 600100,
     "last_truncate_busy": false
   },
-  "rebuild_jobs_enqueued": 0,
+  "maintenance_jobs_enqueued": 0,
   "cpu_budget_used_ms": 380,
   "cpu_budget_total_ms": 2000
 }
@@ -1772,8 +1909,8 @@ exceeds 0.05.
 | `sweet-search reconcile inspect <path>` | Show why a path is dirty (hash diff, last seen epoch) |
 | `sweet-search reconcile pause` / `resume` | Pause the daemon timer without killing it |
 | `sweet-search reconcile reset` | Drop dirty set, force full mtime sweep on next tick |
-| `sweet-search rebuild status` | Show rebuild queue, last completion, dead-letter count |
-| `sweet-search rebuild force <tier>` | Schedule immediate rebuild of `hnsw` / `binary-hnsw` / `li` / `sparse-gram` |
+| `sweet-search rebuild status` | Show maintenance queue, last completion, dead-letter count |
+| `sweet-search rebuild force <tier>` | Schedule immediate maintenance: HNSW clean replacement, binary-HNSW replacement, LI segment compaction, or sparse-gram delta compaction |
 | `sweet-search rebuild dead-letter [--clear]` | Inspect or clear the dead-letter queue |
 | `sweet-search index --add <path>` | Hint a file as dirty (writes to JSONL queue) |
 | `sweet-search index --full` | Force full reindex (the existing `npm run index`) |
@@ -1806,12 +1943,12 @@ detected hardware tier (see § 34). All can be overridden.
 | `SWEET_SEARCH_WATCH` | `0` | Enable Rust notify watcher (opt-in) |
 | `SWEET_SEARCH_WATCH_DEBOUNCE_MS` | `200` | Watcher event coalescing window |
 | `SWEET_SEARCH_DAEMON` | `0` | Run as long-lived daemon vs one-shot |
-| `SWEET_SEARCH_REBUILD_NICE` | `10` (Unix) / `BELOW_NORMAL` (Win) | OS-priority knob for CPU rebuilds |
-| `SWEET_SEARCH_HNSW_TOMBSTONE_THRESHOLD` | `0.15` | Float HNSW rebuild trigger |
-| `SWEET_SEARCH_BINARY_HNSW_DEAD_THRESHOLD` | `0.30` | Binary HNSW rebuild trigger |
+| `SWEET_SEARCH_REBUILD_NICE` | `10` (Unix) / `BELOW_NORMAL` (Win) | OS-priority knob for CPU background maintenance (name retained for compatibility) |
+| `SWEET_SEARCH_HNSW_TOMBSTONE_THRESHOLD` | `0.15` | Float HNSW background replacement trigger |
+| `SWEET_SEARCH_BINARY_HNSW_DEAD_THRESHOLD` | `0.30` | Binary HNSW background replacement trigger |
 | `SWEET_SEARCH_LI_SEGMENT_STALE_THRESHOLD` | `0.20` | LI per-segment recompaction trigger |
 | `SWEET_SEARCH_FTS5_MERGE_PAGES` | `16` | FTS5 incremental merge fan-in per tick |
-| `SWEET_SEARCH_FTS5_OPTIMIZE_SEGMENT_THRESHOLD` | `64` | Trigger full `'optimize'` when segment count exceeds |
+| `SWEET_SEARCH_FTS5_MERGE_SEGMENT_THRESHOLD` | `64` | Trigger bounded `('merge', 500)` cycles when segment count exceeds |
 | `SWEET_SEARCH_WAL_CHECKPOINT_EVERY_N_TICKS` | `60` | Force TRUNCATE checkpoint cadence |
 | `SWEET_SEARCH_WAL_SIZE_WARN_MB` | `256` | WAL bloat warning threshold |
 | `SWEET_SEARCH_MAX_FILE_BYTES` | `1048576` | Skip files larger than 1 MiB (existing) |
@@ -1865,13 +2002,20 @@ documented or got bitten by. We pre-empt them.
 - Editor "atomic save": `WRITE foo.ts.tmp`, `RENAME foo.ts.tmp → foo.ts`.
 
 **Detection.** Content-hash dedup is the answer: if a "new" file's content
-hash matches a "deleted" file's content hash, treat as rename — preserve the
-existing entity IDs / vector keys, update file_path only. Else treat as
-add + delete.
+hash matches a "deleted" file's content hash, treat it as a rename for CPU
+reuse and tombstone planning. Do **not** preserve entity IDs or
+`chunk_struct_id`s, because both are intentionally path-bound. Instead:
 
-**Why this matters.** The `entities.id = sha256(file:type:name)` keying
-means a rename WITHOUT the dedup would change every entity's ID, exploding
-the diff. The dedup keeps entity IDs stable across renames.
+- mark old path rows/docs/vectors tombstoned;
+- create new path rows/docs/vector keys with the correct path-bound IDs;
+- reuse dense embedding bytes and LI token matrices when
+  `embedding_input_hash` / `li_input_hash` match after metadata rebuild;
+- avoid encoder calls for unchanged content.
+
+**Why this matters.** The `entities.id = sha256(file:type:name)` keying and
+the chosen `chunk_struct_id` both include `file_path`, so preserving IDs
+across rename would violate the identity contract. Rename dedup preserves
+CPU work, not IDs.
 
 ### 22.2 Symlinks
 
@@ -2026,7 +2170,7 @@ recompaction trigger, etc.) **must** run on dev.
 | Phase 1 (chunk-hash, encode-skip) | cold-rebuild vs reconcile-from-cold | **dev** |
 | Phase 1 (chunk-hash, encode-skip) | cold-rebuild vs reconcile-after-1-edit | **dev** |
 | Phase 2 (unified tick) | reconcile-v1 vs reconcile-v2 with 50-edit trace | **dev** |
-| Phase 3 (watermarks + rebuild) | pre-watermark vs post-rebuild | **dev** |
+| Phase 3 (watermarks + maintenance) | pre-watermark vs post-maintenance | **dev** |
 | Phase 5 (tombstone sensitivity) | sweep N∈{5,10,15,20,25,30}% tombstones | **dev** |
 | End of Phase 6 (production-hardening complete, all thresholds locked) | full reconcile pipeline vs cold rebuild, with the 50-edit trace | **held-out** (one-shot) |
 
@@ -2078,7 +2222,7 @@ Stale-bitmap sidecar requires changes to SSLX consumers. Two options:
 
 ### 25.4 Dual-read window
 
-Not needed for v1: the migration is "drop old state, full rebuild on new
+Not needed for v1: the migration is "drop old state, full reindex on new
 version." Encoder model upgrades will need a dual-read window later, but
 that's a separate workstream.
 
@@ -2152,9 +2296,10 @@ no changes needed.
 The MCP server caches loaded indices in memory for low-latency reuse.
 When the daemon commits a new epoch, MCP must reload. Mechanism:
 
-- MCP polls `merkle-state.json::epoch` once per query. If changed, reload
-  per-tier artifacts. Cheap (single JSON read).
-- Alternative: file-watcher on `merkle-state.json` to push invalidation.
+- MCP reads `reconcile-manifest.json` once per query. If the manifest epoch
+  or any named artifact generation changed, reload the affected tier set and
+  pin that manifest for the query. Cheap (single JSON read).
+- Alternative: file-watcher on `reconcile-manifest.json` to push invalidation.
   More complex; defer.
 
 ### 27.2.1 MCP and SQLite WAL discipline (mandatory)
@@ -2198,30 +2343,41 @@ culprit pid.
 TRUNCATE keeps returning BUSY).** Logging alone does not prevent the
 user's disk from filling when a third-party MCP holds open read
 transactions. The daemon therefore needs a forcing function it can
-execute unilaterally:
+execute unilaterally, but this path must treat WAL databases as a
+three-file family (`.db`, `.db-wal`, `.db-shm`), not as a single file:
 
-1. **VACUUM INTO a fresh database** at
+1. Acquire `index-maintainer.lock` and pause reconcile writes.
+2. Open a fresh daemon connection and run a best-effort
+   `PRAGMA wal_checkpoint(PASSIVE)`. If `TRUNCATE` is still BUSY, continue;
+   the swap path exists for exactly this case.
+3. **VACUUM INTO a fresh database** at
    `.sweet-search/code-graph.db.swap` (and the same for
-   `codebase.db.swap` if it's the bloated one). VACUUM INTO produces
-   a defragmented copy without holding write locks against the
-   source.
-2. **Quiesce daemon writes** — pause the reconcile tick momentarily.
-3. **Atomic rename** `code-graph.db.swap` → `code-graph.db`. POSIX
-   `rename(2)` is atomic at the directory-entry level; the misbehaving
-   reader keeps its open file descriptor pointing at the *old* inode,
-   which is now unlinked (and will be reclaimed by the OS once that
-   reader closes its handle). New `open()` calls resolve to the
-   fresh, WAL-free file.
-4. **Reopen daemon's own connections** to the new file.
-5. **Resume reconcile tick.**
-6. Log INFO with the old WAL size and the freed disk amount.
+   `codebase.db.swap` if it's the bloated one). `VACUUM INTO` produces a
+   consistent snapshot of the source database.
+4. Fsync the swap database and its directory.
+5. Close all daemon-owned SQLite connections to the source DB.
+6. Rename the old DB family out of the live names:
+   `code-graph.db` → `code-graph.db.old.<epoch>`,
+   `code-graph.db-wal` → `code-graph.db-wal.old.<epoch>` if present, and
+   `code-graph.db-shm` → `code-graph.db-shm.old.<epoch>` if present.
+   A misbehaving reader with open file descriptors can continue reading the
+   old inode family; new opens will not attach an old WAL to the new DB.
+7. Rename `code-graph.db.swap` → `code-graph.db`.
+8. Reopen daemon connections, set `journal_mode=WAL`, run read/write pragmas,
+   and publish a manifest epoch that points at the reopened DB.
+9. Resume reconcile tick and log INFO with the old WAL size and reclaimed
+   live-name disk usage.
+10. Delete `.old.<epoch>` files only after a grace period and only if no
+    process still has them open (best-effort via `lsof` on Unix). On
+    Windows this swap defense is v2; v1 logs and asks the operator to
+    restart long-lived readers.
 
 The swap is heavy (full copy of `code-graph.db`, typically tens to
 hundreds of MiB) but bounded — it runs at most once per "misbehaving
 MCP detected" episode, which itself requires 10 minutes of sustained
-WAL bloat to trigger. The misbehaving MCP eventually crashes/restarts
-on its own (closing the old fd, freeing the unlinked inode) and the
-swap path returns to dormant.
+WAL bloat to trigger. The old files are deliberately renamed rather than
+immediately unlinked so the operator can inspect them and so active readers
+are not surprised by path reuse.
 
 Document the trigger in operator metrics (`db_swap_count` in § 20.1)
 so this defense is visible rather than mysterious.
@@ -2274,9 +2430,9 @@ numbers, so the daemon scales gracefully from a 4 GiB Chromebook to a
 - **Encoder pool**: existing pool sizing remains. On low-RAM machines
   the existing pool already self-limits via batch-size knobs; verify
   the reconcile path inherits the same limits.
-- **HNSW heap during rebuild**: 500 K × 512-dim float32 ≈ 1 GiB of
+- **HNSW heap during background replacement**: 500 K × 512-dim float32 ≈ 1 GiB of
   vectors plus ~30 % graph overhead = ~1.3 GiB. On tier-low hardware
-  (4–8 GiB RAM) this is a meaningful share — the rebuild scheduler
+  (4–8 GiB RAM) this is a meaningful share — the maintenance scheduler
   must check `available_ram > 1.5 × estimated_rebuild_footprint`
   before arming; otherwise defer with reason `mem_pressure`.
 - **mmap residency**: artifacts are mmap'd. The OS handles eviction
@@ -2294,20 +2450,21 @@ numbers, so the daemon scales gracefully from a 4 GiB Chromebook to a
   letter has 100-entry cap.
 - Logs: 7-day rotation; ~10 MiB/day worst case.
 
-### 29.3 Disk usage at rebuild time
+### 29.3 Disk usage during background maintenance
 
-Rebuild stages to `*.next`, then renames. Peak disk usage during rebuild
-is 2× the tier's steady-state. Float HNSW at 500 K × 512-dim float32 ≈
+Maintenance stages to `*.next`, then publishes through the manifest. Peak
+disk usage during replacement/compaction is 2× the tier's steady-state.
+Float HNSW at 500 K × 512-dim float32 ≈
 1 GiB; binary HNSW ≈ 256 MiB; LI segments ≈ as-is. Worst-case 4–5 GiB
-peak during a multi-tier rebuild.
+peak during a multi-tier maintenance cycle.
 
-**Portability constraint.** Before staging a rebuild, the scheduler
+**Portability constraint.** Before staging maintenance, the scheduler
 must check available disk space: require `free_disk > 3 × tier_size`
 (stage + room for fsync + safety margin). On constrained machines
-(e.g., a laptop with 30 GiB free), the rebuild is deferred and logged
+(e.g., a laptop with 30 GiB free), the maintenance job is deferred and logged
 to dead-letter with reason `disk_full`; user must free space or run
 `sweet-search rebuild force <tier>` after cleanup. **Never** silently
-overwrite the live artifact mid-rebuild.
+overwrite the live artifact mid-maintenance.
 
 The cold full-index also benefits from this check; add to
 `indexer-utils.js` and reuse.
@@ -2364,7 +2521,7 @@ re-running the research swarm:
 | Tabby ML | Cron / manual | Hours | tree-sitter chunk | BM25 + embed |
 | JetBrains | VFS events | Live | File/symbol/PSI | Inverted + stub + semantic |
 | Zoekt | Pull poll + push | 8h merge / 2min poll | Trigram per shard | trigram + LSIF/SCIP |
-| **Sweet-search (this plan)** | **Hybrid watcher + 60 s tick** | **60 s** | **Per-file content-hash + per-chunk hash** | **All 5 lock-step** |
+| **Sweet-search (this plan)** | **Hybrid watcher + nominal 60 s tick** | **configured interval** | **Per-file content-hash + exact dense/LI input hash** | **All 5 via epoch manifest** |
 
 ---
 
@@ -2373,7 +2530,8 @@ re-running the research swarm:
 - **Epoch** — monotonically increasing reconcile generation counter.
 - **Tick** — one execution of the reconcile loop.
 - **Dirty set** — in-memory set of paths suspected of having changed.
-- **Watermark** — per-tier threshold that triggers an async rebuild.
+- **Watermark** — per-tier threshold that triggers async maintenance
+  (compaction, clean replacement, or bounded merge).
 - **Tombstone** — soft-delete marker; row still on disk, hidden from queries.
 - **Centroid drift** — k-means quantization quality decay as new data
   arrives. Not applicable to sweet-search (no shared codebook).
@@ -2383,8 +2541,9 @@ re-running the research swarm:
 - **Reconcile** — the periodic work that drains the dirty set and updates
   all five indices.
 - **Live path** — the per-tick cheap update path (UPSERT, append, tombstone).
-- **Rebuild path** — the async expensive path that produces a fresh
-  artifact and atomically swaps it in.
+- **Maintenance path** — the async expensive path that compacts segments,
+  produces a clean replacement artifact, or runs bounded FTS5 merges, then
+  publishes via the epoch manifest.
 - **Live doc / stale doc** — LI segment doc whose tombstone bit is unset / set.
 - **content-hash** — SHA-256 truncated to 16 chars, computed over file bytes.
 - **chunk-hash** — same, but computed over chunk text after chunker output.
@@ -2396,16 +2555,22 @@ re-running the research swarm:
 A concrete merge bar for the first PR (Phase 1 — chunk-content-hash &
 encode-skip from § 13):
 
-- [ ] Schema migration on `codebase.db`: `chunk_struct_id TEXT NOT NULL DEFAULT ''`,
-  `chunk_text_hash TEXT NOT NULL DEFAULT ''`, and
+- [ ] Schema migration on `codebase.db`:
+  `chunk_struct_id TEXT NOT NULL DEFAULT ''`,
+  `chunk_text_hash TEXT NOT NULL DEFAULT ''`,
+  `embedding_input_hash TEXT NOT NULL DEFAULT ''`,
+  `li_input_hash TEXT NOT NULL DEFAULT ''`,
+  `metadata_fingerprint TEXT NOT NULL DEFAULT ''`, and
   `epoch_written INTEGER NOT NULL DEFAULT 0` columns added; index on
   `epoch_written` created; tested with existing index (auto-migrates;
   old positional `chunk_id` preserved). **`DEFAULT` clauses are
   mandatory for rollback safety — verify by running an older daemon
   against the migrated DB and confirming no `SQLITE_CONSTRAINT_NOTNULL`.**
 - [ ] Schema migration on `code-graph.db::entities`:
+  `epoch_written INTEGER NOT NULL DEFAULT 0` column + index added. Same
+  rollback-safety test.
+- [ ] Schema migration on `code-graph.db::relationships`:
   `epoch_written INTEGER NOT NULL DEFAULT 0` column + index added.
-  Same rollback-safety test.
 - [ ] xxHash3 dependency added; `HASH_ALGORITHM` switch in place; SHA-256
   fallback verified for the compliance/audit override path.
 - [ ] AST chunker emits stable `chunk_struct_id` for both symbol-attached
@@ -2425,6 +2590,10 @@ encode-skip from § 13):
   stays at `'2.3'`.
 - [ ] Encode-skip path implemented in `indexer-build.js`; coverage test
   shows zero encodes on whitespace-only edit.
+- [ ] Metadata-input safety test: change only import/scope metadata that
+  affects `embedding_text` or `pickLiInput()`; reconcile must detect
+  `embedding_input_hash` / `li_input_hash` changes and re-encode the
+  affected dense / LI payload even if raw chunk content is unchanged.
 - [ ] Per-tick counter exposed in metrics JSON.
 - [ ] GCSN dev MRR runs green vs `pre-incremental-reconcile-baseline`.
 - [ ] Locked probe packs (retrieval-probes, ast-tester-probes,
@@ -2498,8 +2667,8 @@ re-probed on next startup).
 | `chunks_per_encode_batch` | 8 | 32 | 64 | Encoder batching; throughput vs latency |
 | `max_repo_files` | 50 K | 200 K | 500 K | Hard cap; warn at 50 % of cap |
 | `mem_budget` | 256 MiB or 5 % RAM | 1 GiB or 5 % RAM | 5 GiB or 5 % RAM | Whichever is larger |
-| `sparse_gram_strategy` | delta-merge | adaptive (probe at start) | fast-rebuild | See § 7.6 |
-| `rebuild_concurrency` | 1 | 2 | 4 | Parallel tier rebuilds during async pass |
+| `sparse_gram_strategy` | delta-overlay | delta-overlay | delta-overlay | See § 7.6 |
+| `maintenance_concurrency` | 1 | 2 | 4 | Parallel tier maintenance during async pass |
 | `watcher_default_state` | off | off | off | Always opt-in (regardless of tier) |
 | `fts5_merge_pages` | 8 | 16 | 32 | Higher fan-in on machines that can afford it |
 | `wal_checkpoint_every_n_ticks` | 30 | 60 | 120 | Balance WAL growth vs OS write pressure |
@@ -2590,9 +2759,10 @@ runtime):
 - **Cold full reindex** runs on CPU. Wallclock scales with corpus
   size and core count; emit progress logging every 10 % so operators
   know it's making progress.
-- **Async rebuilds** run on CPU with `nice 10` priority.
+- **Async maintenance / HNSW replacements** run on CPU with `nice 10`
+  priority.
 - **No teardown / no arm** — the model-pool stays in its initialized
-  state forever. Simplifies the reconcile/rebuild boundary on these
+  state forever. Simplifies the reconcile/maintenance boundary on these
   machines.
 
 ### 34.8 Container & sandbox awareness
@@ -2654,9 +2824,9 @@ folded in, two deferred to v1.1.
 |---|---|---|---|
 | 1 | **Positional `chunk_id` defeats chunk-hash dedup** on top-of-file inserts (verified against `ast-chunker.js:814-905`) | § 7.2 rewritten with AST-structural ID scheme | **critical** — Phase 1 fails without this |
 | 2 | **mtime equality trap** — naive `>` check misses second write within FS resolution tick | § 9.1 fixed to `(mtime, size, inode) !=` tuple | high |
-| 3 | **FTS5 does NOT auto-compact** — plan's "SQLite handles compaction" claim was false | § 7.1 added explicit `('merge', 16)` per tick + `('optimize')` watermark | **critical** — daemon bloats GB/week without this |
+| 3 | **FTS5 does NOT auto-compact** — plan's "SQLite handles compaction" claim was false | § 7.1 added explicit `('merge', 16)` per tick + bounded `('merge', 500)` watermark | **critical** — daemon bloats GB/week without this |
 | 4 | **USearch concurrent `remove()` may be unsafe** vs concurrent readers | § 7.3 adopts tombstone-only writes (no live `remove()`); § 8.3 updates the concurrent-reader guarantees | **critical** — daemon crash hazard |
-| 5 | **LSM rebase race window** between replay end and atomic swap | § 10.3 rewritten with bounded-replay + lock-held final swap | high — lost-write hazard |
+| 5 | **LSM rebase race window** between replay end and publish | § 10.3 rewritten with bounded-replay + lock-held final manifest publish | high — lost-write hazard |
 | 6 | **SQLite WAL checkpoint starvation** under long-lived MCP reader | § 8.4 specifies WAL checkpoint policy; § 27.2.1 adds MCP-side rules | high |
 | 7 | **`PRAGMA synchronous = NORMAL`** in WAL mode | § 7.1 added | quick win |
 | 8 | **xxHash3 replaces SHA-256** for content dedup (~15–30× throughput) | § 7.2; § 21 adds `SWEET_SEARCH_HASH_ALGORITHM` env override | medium |
@@ -2730,7 +2900,7 @@ bonus items have been folded in.
 | 6 | **FTS5 `'optimize'` self-trips own WAL alarm** — rewrites whole FTS5 index in single transaction → 200–800 MiB WAL frame → trips the 256 MiB bloat alarm in § 8.4. | medium | § 7.1 replaces `'optimize'` with bounded `'merge', 500` |
 | 7 | **WSL2 over-penalization** — original `WSL2 → polling-only` rule was too broad; native Linux paths work fine. | medium | § 34.6 refined: detect FS type via `df -T`; force polling only on `9p`/`drvfs`/`cifs`/`nfs` |
 | 8 | **`os.availableParallelism()` exists** — Node 18.14+ handles cgroup v1/v2, affinity masks, quotas natively. | low (cleanup) | § 34.8 replaces manual cgroup parsing |
-| 9 | **HNSW crash-leak between add and epoch-commit** — `add()` is not idempotent; crash mid-tick leaks duplicates. | medium | § 11 amended: documented as self-healing via async rebuild (which reads source-of-truth from idempotent `codebase.db` UPSERT). Made explicit so operators understand transient duplicate behavior. |
+| 9 | **HNSW crash-leak between add and epoch-commit** — `add()` is not idempotent; crash mid-tick leaks duplicates. | medium | § 11 amended: documented as self-healing via background replacement (which reads source-of-truth from idempotent `codebase.db` UPSERT). Made explicit so operators understand transient duplicate behavior. |
 | 10 | **Held-out discipline violation** — original § 24.6 ran the 50-edits A/B on held-out, contaminating the set. | high (methodological) | § 24.6 rewritten as a phase-by-phase table; held-out is one-shot at end of Phase 6 only |
 
 ### 36.2 Bonus findings
@@ -2789,9 +2959,10 @@ remain in § 14.2 as open questions:
 The plan grew from 2 216 lines to roughly 2 500 lines after this
 pass. No section was removed; eight sections were amended in place
 and one new section (§ 36) was added. Schema migrations expanded:
-the Phase 1 work now adds three columns (`chunk_struct_id`,
-`chunk_text_hash`, `epoch_written`) to `vectors` and one
-(`epoch_written`) to `entities`, plus indices.
+the Phase 1 work now adds six columns (`chunk_struct_id`,
+`chunk_text_hash`, `embedding_input_hash`, `li_input_hash`,
+`metadata_fingerprint`, `epoch_written`) to `vectors` and one
+(`epoch_written`) to each graph table touched by reconcile, plus indices.
 
 ---
 
@@ -2822,7 +2993,7 @@ gaps, and architectural-paranoia trims.
 |---|---|---|---|
 | 2.1 | `li_change_log` / `sparse_gram_change_log` had no schema, location, or truncation policy → unbounded growth | high | **Eliminated entirely** by § 37.3.1 trim (LSM rebase no longer applies to those tiers). |
 | 2.2 | `epoch_written INTEGER NOT NULL` without `DEFAULT 0` crashes older daemons on git-rollback | **ship-stopper, trivial fix** | § 7.1.6 + § 7.2 add `DEFAULT 0`; § 33 checklist updated. |
-| 2.3 | HNSW crash-leak "self-healing" only fires at watermark crossing → could be weeks under light editing | high | § 8.6 + § 11 amended: stale-lockfile recovery enqueues immediate Float HNSW rebuild bypassing watermark. |
+| 2.3 | HNSW crash-leak "self-healing" only fires at watermark crossing → could be weeks under light editing | high | § 8.6 + § 11 amended: stale-lockfile recovery enqueues immediate Float HNSW background replacement bypassing watermark. |
 | 2.4 | BigInt stat mixed-type comparison: `100n !== 100` always true | high | § 9.1 amended with uniform BigInt cast for all three stat fields. |
 
 ### 37.3 Architectural-paranoia trims
@@ -2833,7 +3004,7 @@ trims pull it back.
 
 | # | Trim | Rationale | Where it landed |
 |---|---|---|---|
-| 3.1 | **LSM rebase restricted to Float HNSW + Binary HNSW only** | Sparse-gram and LI per-segment rebuilds take 1–30 s; simply taking the lock for the rebuild duration is invisible at 60 s tick cadence. The bounded-replay loop is unnecessary. | § 10.3 rewritten with two-regime table; `li_change_log` / `sparse_gram_change_log` references removed. |
+| 3.1 | **LSM rebase restricted to Float HNSW + Binary HNSW only** | Sparse-gram and LI per-segment compactions take 1–30 s; simply taking the lock for final manifest publish is invisible at nominal 60 s tick cadence. The bounded-replay loop is unnecessary. | § 10.3 rewritten with two-regime table; `li_change_log` / `sparse_gram_change_log` references removed. |
 | 3.2 | **Phase 0 estimate 1 day → 3–5 days** | Empirical-verification work accumulated across all three review passes (USearch behavior, FTS5 introspection, FTS5 merge wallclock, `os.availableParallelism()`, BigInt stat). | § 13 Phase 0 rewritten with concrete verification checklist; output document named (`INCREMENTAL_INDEXING_PREFLIGHT_RESULTS.md`). |
 | 3.3 | **Drop `df -T` / `/proc/mounts` parsing for WSL2 FS detection** | The parser was brittle across distros + WSL versions; a parser exception at startup would crash the daemon. Trust the user instead. | § 34.6 rewritten: WSL2 defaults `SWEET_SEARCH_WATCH=0`, user can override; watcher init failure falls back to polling rather than crashing. |
 
@@ -2860,16 +3031,17 @@ trims pull it back.
   CI step that fails any PR touching the reconcile path if held-out
   is invoked from a non-tagged commit.
 
-### 37.6 Net change after three passes
+### 37.6 Net change after review passes
 
-- Plan length: 2 216 → 2 578 → ~2 750 lines after this pass.
+- Plan length: 2 216 → 2 578 → ~3 050 lines after the latest pass.
 - Sections: 35 → 36 → 37.
-- Schema migrations: still 4 columns (3 on `vectors`, 1 on
-  `entities`), but all now carry `DEFAULT` clauses for rollback
-  safety. Phase 3 schema changes (per-tier change-logs) were
+- Schema migrations: now 8 v1 columns (6 on `vectors`, 1 on
+  `entities`, 1 on `relationships`), all carrying `DEFAULT` clauses where
+  needed for rollback safety. Strict MVCC columns are deferred to § 8.1.1.
+  Phase 3 schema changes (per-tier change-logs) were
   **eliminated** by the LSM-rebase trim.
 - Decision log: 11 → 24 → 33 entries.
-- Total dev estimate: 13 → 22 → 25 days.
+- Total dev estimate: 13 → 22 → 25 → 30-35 days.
 - Architectural complexity: peaked at the end of pass 2; deliberately
   reduced in pass 3 by removing per-tier change-log infrastructure.
   Net design is *simpler* than the post-§36 state while being *more*
