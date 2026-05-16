@@ -25,6 +25,7 @@
  */
 
 import { ReconcileCounters } from '../domain/reconcile-counters.mjs';
+import { nextInterval } from '../domain/interval-autotune.mjs';
 import {
   buildNextManifest,
   readManifest,
@@ -32,6 +33,7 @@ import {
   zeroManifest,
 } from '../infrastructure/manifest.mjs';
 import { beginRead, endRead, minLiveEpoch } from '../infrastructure/reader-heartbeat.mjs';
+import { verifyStamp, writeStamp, formatStampMismatch } from '../infrastructure/worktree-stamp.mjs';
 
 /**
  * Adapter contract (Phase 2 declaration):
@@ -67,21 +69,44 @@ export class Reconciler {
    * @param {Function} [options.now]         Injectable clock for tests.
    * @param {{info:Function, warn:Function, error:Function}} [options.logger]
    */
-  constructor({ stateDir, adapters, config = {}, now = Date.now, logger = console }) {
+  constructor({ stateDir, adapters, config = {}, now = Date.now, logger = console, projectRoot = null }) {
     if (!stateDir) throw new Error('Reconciler: stateDir is required');
     if (!adapters) throw new Error('Reconciler: adapters are required');
     this.stateDir = stateDir;
+    this.projectRoot = projectRoot;
     this.adapters = adapters;
     this.config = {
       intervalMs: config.intervalMs ?? DEFAULT_TICK_INTERVAL_MS,
       cpuBudgetMs: config.cpuBudgetMs ?? DEFAULT_CPU_BUDGET_MS,
       filesPerTick: config.filesPerTick ?? DEFAULT_FILES_PER_TICK,
+      autotuneInterval: config.autotuneInterval ?? false,
+      pinnedIntervalMs: config.pinnedIntervalMs ?? false,
       ...config,
     };
     this.now = now;
     this.logger = logger;
     this._lastEpoch = 0;
     this._running = false;
+  }
+
+  /**
+   * Verify the worktree stamp before any tick. Plan § 8.5 / § 14.2.4 —
+   * cross-worktree mixing is a silent footgun; verify or mint a stamp
+   * before the daemon writes to this state dir.
+   *
+   * @returns {{ok:boolean, reason?:string}}
+   */
+  verifyStartup() {
+    if (!this.projectRoot) return { ok: true, reason: 'no-project-root' };
+    const check = verifyStamp(this.stateDir, this.projectRoot);
+    if (!check.ok) {
+      this.logger.error?.(formatStampMismatch(check));
+      return check;
+    }
+    if (check.reason === 'absent') {
+      writeStamp(this.stateDir, this.projectRoot);
+    }
+    return { ok: true, reason: check.reason };
   }
 
   /**
@@ -182,6 +207,24 @@ export class Reconciler {
 
       counters.set('tick_ms', this.now() - startedAt);
       counters.set('ts', startedAt / 1000);
+
+      // Interval auto-tune (plan § 14.2.1). Skipped when the operator pins
+      // a fixed interval via `config.pinnedIntervalMs` or
+      // `config.autotuneInterval === false`.
+      if (this.config.autotuneInterval && !this.config.pinnedIntervalMs) {
+        const tuned = nextInterval({
+          currentMs: this.config.intervalMs,
+          lastTickMs: counters._fields.tick_ms,
+          dirtyAtTickStart: dirty.length,
+          cpuLoadAvg: this.config.cpuLoadAvg ?? 0,
+          maintenanceBacklog: this.config.maintenanceBacklog ?? 0,
+        });
+        if (tuned.nextMs !== this.config.intervalMs) {
+          this.logger.info?.(`[reconciler] interval ${this.config.intervalMs}ms → ${tuned.nextMs}ms (${tuned.reasons.join(',')})`);
+          this.config.intervalMs = tuned.nextMs;
+        }
+      }
+
       return counters.snapshot();
     } finally {
       this._running = false;
