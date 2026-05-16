@@ -628,3 +628,66 @@ indexing-time hit.
   rejected as an embedding provider (March 2026, no quality improvement
   over CodeRankEmbed on GCSN).
 
+---
+
+## 33. FTS5 `ORDER BY rank` with Pre-Configured Weights (latency-only)
+
+**Status**: Not started. Distilled from the deleted `LEXICAL_FIX_PLAN_V2.md`
+— the one survivor from that doc (Fix 10 path-token boost already shipped,
+Fix 11 optimize already shipped, other fixes either deferred or skipped as
+speculative ranking signals).
+
+### 33.1 The Problem
+
+Current BM25F queries in `core/graph/graph-search.js:145` (and the related
+RRF helper in `core/search/search-rrf.js:206`) use:
+
+```sql
+SELECT ... bm25(entities_fts, 10.0, 4.0, 5.0, 1.0) AS score
+...
+ORDER BY score
+```
+
+SQLite FTS5 docs explicitly state that `ORDER BY rank` with weights
+pre-configured on the table is faster than calling `bm25()` in the SELECT
+because it uses an optimized internal code path that can short-circuit
+evaluation once the top-k is known.
+
+### 33.2 Fix
+
+Configure rank once per connection (or after table creation):
+
+```sql
+INSERT INTO entities_fts(entities_fts, rank) VALUES('rank', 'bm25(10.0, 4.0, 5.0, 1.0)');
+```
+
+Then rewrite the query to:
+
+```sql
+SELECT e.id, e.file_path, e.type, e.name, e.signature, e.doc_comment,
+       e.start_line, e.end_line, e.package, e.parent_class, rank AS score
+FROM entities_fts
+JOIN entities e ON entities_fts.rowid = e.rowid
+WHERE entities_fts MATCH ?
+  AND e.stale_since IS NULL
+ORDER BY rank
+LIMIT ?
+```
+
+### 33.3 Expected Impact
+
+Latency-only, zero accuracy change. SQLite docs and benchmarks suggest
+small-but-real p50/p95 lexical-path latency reduction. Bigger absolute
+win on warm queries that already short-circuit on early limit hits.
+
+### 33.4 Action Items
+
+- Add the `INSERT INTO entities_fts(entities_fts, rank) VALUES('rank', ...)`
+  config in the BM25F schema setup path (next to FTS5 table creation in
+  `core/graph/graph-extractor.js`)
+- Rewrite the BM25F query call sites in `core/graph/graph-search.js:145`
+  and `core/search/search-rrf.js:206` to use `rank AS score` /
+  `ORDER BY rank` instead of inlining `bm25(entities_fts, ...)`
+- Add a quick microbench on a fixed lexical query set to confirm the
+  latency win is real on our schema/corpus (zero-risk merge gate)
+
