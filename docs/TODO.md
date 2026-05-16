@@ -468,3 +468,163 @@ agents.** The LLM saves one full tool call cycle.
 **Accuracy**: No change to search quality. But the LLM gets better information to
 decide which additional results to read (line ranges show chunk size), which may
 improve downstream task completion.
+
+---
+
+## 30. Block-Level Role Demotion (extends file-kind ranker)
+
+**Status**: Not started. Cheapest of the three SOTA upgrades distilled from
+the deleted `docs/SOTA_RESEARCH_2026_FIXES.md`.
+
+### 30.1 The Problem
+
+Our current file-kind demotion (Dockerfile, Cargo.lock, settings.yaml, etc.)
+operates at the file level. Mixed-content files like `settings.rs` contain
+both declarative blocks AND real implementation — they get penalized as a
+whole even though their impl blocks are legitimate code. Sourcegraph Cody
+(RecSys 2024, arXiv 2408.05344) and cAST (CMU 2025, arXiv 2506.15655) both
+argue demotion should happen at the **AST block level** — function /
+method / type definition / config block — not the file level.
+
+### 30.2 Fix
+
+Extend `core/ranking/file-kind-ranking.js` to read chunk-level metadata
+(`chunk.role` or equivalent — declaration vs impl vs config) from the
+existing cAST chunker rather than just `chunk.file_kind`. Demote
+declaration/config blocks while leaving impl blocks at full score.
+
+Required:
+
+- Verify the cAST chunker exports role/kind metadata at the block level
+- Thread that metadata through to the file-kind ranker
+- Decide per-language what counts as a "demotable" block (Rust derive impls,
+  Python stubs, etc.)
+- Gate on `format == 'agent'` per CLAUDE.md ranking-signal policy
+
+### 30.3 Expected Impact
+
+Low-to-medium. Smaller absolute upside than §31 or §32 but cheapest
+implementation — mostly plumbing on existing infrastructure. Biggest
+beneficiary is mixed-content files (Rust `mod.rs`, `lib.rs`, `settings.rs`)
+where file-level demotion is too coarse.
+
+### 30.4 References
+
+- Sourcegraph Cody (RecSys 2024, arXiv 2408.05344) — block-level priors
+- cAST (CMU 2025, arXiv 2506.15655) — AST-aware chunking
+
+---
+
+## 31. Proper BM25F Multi-Field Indexing
+
+**Status**: Not started. Our current symbol-exact boost is a post-hoc
+multiplicative cousin of real BM25F.
+
+### 31.1 The Problem
+
+We do a 1.30× post-hoc multiplicative boost when `chunk.symbol` matches
+the query's target identifier. Sourcegraph's "Keeping it boring (and
+relevant) with BM25F" (April 2025) reports **+20% on real code-search
+workloads** by indexing symbols/filenames/contents as separate BM25 fields
+and weighting them inside the scoring math (~3× weight on the symbol
+field). The post-hoc multiplier captures the direction but not the
+magnitude.
+
+### 31.2 Fix
+
+Re-index with a multi-field BM25F schema:
+
+- field `contents` (existing body text)
+- field `symbol` (chunk name / function name)
+- field `filename` (file basename)
+- per-field length normalization (k1, b) tuned per field
+- weighted sum inside the FTS5 scoring
+
+Coordinate with downstream dense + LI fusion so the BM25F score replaces
+the current BM25-on-contents score cleanly.
+
+### 31.3 Format Gating (Required)
+
+Per CLAUDE.md "Ranking Signal Format-Gating" and memory
+`feedback_format_gate_boosts`: BM25F-style signals hurt GCSN NL queries by
+~0.07pp if ungated. Sourcegraph's +20% claim is specifically on code-search
+workloads (developer queries with identifier shape), which is exactly what
+`format == 'agent'` captures. Gate on agent format from day one.
+
+### 31.4 Expected Impact
+
+Up to +20% on agent-format / code-shaped queries (per Sourcegraph). Zero
+impact on NL queries by construction (gated off). Significant work — full
+re-index with new schema — but the gain is the largest measured win in
+the SOTA literature for this class of fix.
+
+### 31.5 References
+
+- Sourcegraph "Keeping it boring (and relevant) with BM25F"
+  (April 2025) — +20% on code search
+- Robertson & Zaragoza (2009) "The Probabilistic Relevance Framework: BM25 and Beyond"
+- Pérez-Iglesias et al. "BM25/BM25F in Lucene" (arXiv 0911.5046)
+
+---
+
+## 32. Contextual Retrieval (Anthropic-style, ~49% claimed gain)
+
+**Status**: Not started. Highest claimed gain in the SOTA literature, but
+also the biggest implementation commitment of the three.
+
+### 32.1 The Problem
+
+Standard chunk embeddings see only the chunk text. A 30-line function
+embedded in isolation loses all surrounding context (parent class, file
+purpose, module-level intent). For code search this hurts disambiguation
+between e.g. two `parse()` functions in different modules.
+
+### 32.2 Fix (Anthropic Contextual Retrieval)
+
+At index time, for every chunk, generate a short context paragraph via a
+small LLM (Haiku-class) describing the chunk's role within its parent
+file/module. Prepend that context to the chunk text before embedding. The
+retrieved chunk then carries its situational metadata inside its embedding.
+
+Anthropic's announcement reports **~49% reduction in failure rate** on
+their evals when adding context. Independent users have corroborated
+substantial gains, though magnitude varies by corpus.
+
+### 32.3 Implementation Sketch
+
+- One LLM call per chunk at index time (Haiku-class is sufficient)
+- Cache contexts keyed by `chunk_id` so re-indexing is idempotent
+- Prepend context to the embedding input only — do NOT change the stored
+  chunk text (so display + tools see the real code, not the LLM-generated
+  context)
+- Re-index entire corpus once; incremental indexing reuses cached contexts
+  for unchanged chunks
+- Provide a `SWEET_SEARCH_CONTEXTUAL_RETRIEVAL=0` kill switch for users
+  who don't want the indexing cost
+
+### 32.4 Cost Considerations
+
+- ~10k LLM calls per full re-index of a medium codebase. At Haiku pricing
+  that's on the order of $1-3 per codebase per full re-index — cheap.
+- Indexing latency adds non-trivially — likely 2-3× current index time on
+  cold start. Cached contexts amortize this for incremental indexing.
+- Quality risk: if the LLM generates wrong/garbage context, the embedding
+  learns wrong signal. Need a sanity gate (length, format) on context
+  output before accepting it.
+
+### 32.5 Expected Impact
+
+Largest claimed gain in the SOTA literature (~49% failure-rate reduction).
+Has not been validated on Sweet Search's actual benchmarks. Worth a formal
+A/B against current state, but only after deciding it's worth the
+indexing-time hit.
+
+### 32.6 References
+
+- Anthropic "Contextual Retrieval" (2024) — original announcement,
+  +49% failure-rate reduction figure
+- Voyage AI's "Contextualized Chunk Embeddings" is the same idea via a
+  managed API; we'd implement the local-LLM version since Voyage was
+  rejected as an embedding provider (March 2026, no quality improvement
+  over CodeRankEmbed on GCSN).
+
