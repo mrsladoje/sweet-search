@@ -17,9 +17,10 @@
  * `process.env.SWEET_SEARCH_GPU` / `INDEX_GPU_BACKEND` to a value other
  * than the CPU defaults.
  *
- * Phase 0 ships this scaffold. Phase 3 wires it to the `rebuild-queue.jsonl`
- * (legacy filename retained per plan § 13 Phase 0) and adds the per-tier
- * compaction handlers.
+ * The worker drains `rebuild-queue.jsonl` (legacy filename retained per
+ * plan § 13 Phase 0). Jobs are acknowledged only after their tier handler
+ * succeeds; unknown tiers remain queued; repeated failures move to the
+ * dead-letter file.
  *
  * Process model:
  *   - The daemon spawns this worker via `child_process.spawn` with
@@ -32,6 +33,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import Database from 'better-sqlite3';
+import { fts5Merge } from '../infrastructure/sqlite-fts5.mjs';
 
 const FORBIDDEN_GPU_FLAGS = [
   'SWEET_SEARCH_GPU',          // sweet-search canonical knob
@@ -63,8 +66,8 @@ export function assertCpuOnlyEnvironment(env = process.env) {
  * one-shot listener to `process.emit('warning')` and a guard that re-asserts
  * after any dynamic import. Most importantly we never *statically* import
  * `core/indexing/model-pool.js`, `core/indexing/indexer-pool.js`, or any
- * inference adapter from this file. Phase 3 will pass per-tier work to
- * domain helpers that themselves are CPU-only.
+ * inference adapter from this file. Per-tier work must be implemented by
+ * CPU-only domain helpers.
  *
  * The runtime guard catches dependency drift: if a future helper imports
  * the GPU pool transitively, the `shouldArmGpu` symbol resolution will
@@ -74,9 +77,9 @@ export function assertCpuOnlyEnvironment(env = process.env) {
  * @returns {void}
  */
 export function installGpuLoadGuard() {
-  // Stub: Phase 0 ships the contract; Phase 3 enriches with concrete
-  // resolution guards. Today, the assertion in assertCpuOnlyEnvironment
-  // is the load-bearing check.
+  // The current worker uses CPU-only maintenance handlers. This hook remains
+  // as the single place to add module-resolution guards if a future handler
+  // grows a transitive model dependency.
 }
 
 /**
@@ -103,6 +106,26 @@ function defaultDeadLetterPath(stateDir) {
   return path.join(stateDir, DEAD_LETTER_FILENAME);
 }
 
+function writeMaintenanceQueue(stateDir, jobs, appendedRaw = '') {
+  fs.mkdirSync(stateDir, { recursive: true });
+  const data = jobs.map((job) => JSON.stringify(job)).join('\n');
+  fs.writeFileSync(defaultQueuePath(stateDir), (data ? data + '\n' : '') + appendedRaw);
+}
+
+function readQueueSnapshot(stateDir) {
+  const p = defaultQueuePath(stateDir);
+  if (!fs.existsSync(p)) return { raw: '', lines: [] };
+  const raw = fs.readFileSync(p, 'utf-8');
+  return { raw, lines: raw.split('\n').filter((line) => line.trim()) };
+}
+
+function appendedQueueTail(stateDir, originalRaw) {
+  const p = defaultQueuePath(stateDir);
+  if (!fs.existsSync(p)) return '';
+  const current = fs.readFileSync(p, 'utf-8');
+  return current.startsWith(originalRaw) ? current.slice(originalRaw.length) : '';
+}
+
 /**
  * Append a job descriptor to the rebuild queue. Atomic per call (single
  * `fs.appendFileSync`), so concurrent enqueuers from the daemon and CLI
@@ -119,8 +142,8 @@ export function enqueueMaintenanceJob(stateDir, job) {
 
 /**
  * Read the queue and return all jobs in insertion order. Idempotent — does
- * not mutate the file. Phase 3's executor will rotate the file once a job is
- * acknowledged, mirroring the existing index-maintainer JSONL pattern.
+ * not mutate the file. `processMaintenanceQueue` rewrites the queue after
+ * acknowledging successful jobs.
  *
  * @param {string} stateDir
  * @returns {object[]}
@@ -160,24 +183,129 @@ export function appendDeadLetter(stateDir, job, err) {
   fs.appendFileSync(defaultDeadLetterPath(stateDir), line);
 }
 
+export function defaultMaintenanceHandlers(stateDir) {
+  return {
+    fts5: async (job) => {
+      const payload = job?.payload || {};
+      const dbPath = payload.dbPath || payload.databasePath || path.join(stateDir, payload.dbFile || 'code-graph.db');
+      const tableNames = payload.tableName || payload.table
+        ? [payload.tableName || payload.table]
+        : ['entities_fts', 'entities_trigram'];
+      const pages = Number.isFinite(payload.pages) && payload.pages > 0 ? payload.pages : 500;
+      if (!fs.existsSync(dbPath)) throw new Error(`fts5 maintenance database not found: ${dbPath}`);
+      const db = new Database(dbPath);
+      try {
+        const merged = [];
+        for (const tableName of tableNames) {
+          const exists = db.prepare(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
+          ).get(tableName);
+          if (!exists) continue;
+          fts5Merge(db, tableName, pages);
+          merged.push(tableName);
+        }
+        if (merged.length === 0) {
+          throw new Error(`fts5 maintenance found no FTS5 tables in ${dbPath}`);
+        }
+        return { dbPath, tableNames: merged, pages };
+      } finally {
+        db.close();
+      }
+    },
+  };
+}
+
+/**
+ * Drain maintenance jobs in insertion order. Success removes a job from the
+ * queue; handler failure retries until `maxAttempts`, then dead-letters.
+ * Jobs without a registered handler remain queued for a future worker.
+ *
+ * @param {string} stateDir
+ * @param {{handlers?:object, maxJobs?:number, maxAttempts?:number}} [options]
+ */
+export async function processMaintenanceQueue(stateDir, options = {}) {
+  const handlers = options.handlers || {};
+  const maxJobs = Number.isInteger(options.maxJobs) && options.maxJobs > 0 ? options.maxJobs : Infinity;
+  const maxAttempts = Number.isInteger(options.maxAttempts) && options.maxAttempts > 0 ? options.maxAttempts : 3;
+  const remaining = [];
+  const summary = {
+    seen: 0,
+    succeeded: 0,
+    failed: 0,
+    retried: 0,
+    deadLettered: 0,
+    deferred: 0,
+    malformed: 0,
+    remaining: 0,
+  };
+
+  let attempted = 0;
+  const snapshot = readQueueSnapshot(stateDir);
+  for (const line of snapshot.lines) {
+    let job;
+    try {
+      job = JSON.parse(line);
+    } catch (err) {
+      summary.malformed += 1;
+      appendDeadLetter(stateDir, { tier: 'malformed', raw: line }, err);
+      continue;
+    }
+
+    summary.seen += 1;
+    const handler = handlers[job.tier] || handlers.default;
+    if (!handler || attempted >= maxJobs) {
+      summary.deferred += 1;
+      remaining.push(job);
+      continue;
+    }
+
+    attempted += 1;
+    try {
+      await handler(job);
+      summary.succeeded += 1;
+    } catch (err) {
+      summary.failed += 1;
+      const attempts = Number.isInteger(job.attempts) ? job.attempts + 1 : 1;
+      const next = {
+        ...job,
+        attempts,
+        lastError: err?.message ?? String(err),
+        lastTriedAt: new Date().toISOString(),
+      };
+      if (attempts >= maxAttempts) {
+        summary.deadLettered += 1;
+        appendDeadLetter(stateDir, next, err);
+      } else {
+        summary.retried += 1;
+        remaining.push(next);
+      }
+    }
+  }
+
+  writeMaintenanceQueue(stateDir, remaining, appendedQueueTail(stateDir, snapshot.raw));
+  summary.remaining = readMaintenanceQueue(stateDir).length;
+  return summary;
+}
+
 async function main() {
   assertCpuOnlyEnvironment();
   installGpuLoadGuard();
 
-  // Phase 0 scaffold: just print a heartbeat and exit. Phase 3 replaces this
-  // with the JSONL poll loop and per-tier dispatcher.
   const stateDir = process.env.SWEET_SEARCH_STATE_DIR
     || path.resolve(process.cwd(), '.sweet-search');
-  const pending = readMaintenanceQueue(stateDir);
-  // eslint-disable-next-line no-console
+  const drain = await processMaintenanceQueue(stateDir, {
+    handlers: defaultMaintenanceHandlers(stateDir),
+    maxJobs: Number.parseInt(process.env.SWEET_SEARCH_MAINTENANCE_MAX_JOBS || '50', 10),
+    maxAttempts: Number.parseInt(process.env.SWEET_SEARCH_MAINTENANCE_MAX_ATTEMPTS || '3', 10),
+  });
   console.log(JSON.stringify({
     worker: 'maintenance',
-    phase: 0,
+    phase: 'queue-drain',
     stateDir,
-    pendingJobs: pending.length,
+    pendingJobs: drain.remaining,
+    drain,
     cpuOnly: true,
   }));
-  // Exit cleanly: Phase 0 is observational only.
   process.exit(0);
 }
 
@@ -186,7 +314,6 @@ const invokedDirectly = process.argv[1]
       || process.argv[1].endsWith('/maintenance-worker.mjs'));
 if (invokedDirectly) {
   main().catch((err) => {
-    // eslint-disable-next-line no-console
     console.error('[maintenance-worker]', err);
     process.exit(1);
   });

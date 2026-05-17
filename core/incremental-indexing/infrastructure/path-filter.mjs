@@ -23,6 +23,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { loadProjectConfig } from '../../infrastructure/config/search.js';
 
 const DEFAULT_DENY_DIRS = Object.freeze([
   'node_modules',
@@ -85,25 +86,41 @@ export function loadIgnoreFile(filePath) {
 }
 
 function patternToRegex(pattern) {
-  // Convert glob to RegExp. Supports `*`, `**`, `?`, and `/` boundaries.
-  // Order matters: escape regex metacharacters FIRST, then expand globs,
-  // and finally wrap with boundary anchors. The earlier ordering escaped
-  // its own boundary suffix because the suffix was appended before the
-  // escape pass — leaving `fixtures($|/)` to become `fixtures\(\$\|/\)`.
-  let p = pattern;
+  // Convert the subset of gitignore-style globbing used by the shared
+  // sweet-search config. In particular, leading `**/` must match root-level
+  // files too (`**/package-lock.json` matches `package-lock.json`).
+  let p = String(pattern || '').replace(/\\/g, '/');
   let dirOnly = false;
   if (p.startsWith('/')) p = p.slice(1);
   if (p.endsWith('/')) { p = p.slice(0, -1); dirOnly = true; }
+  const hasSlash = p.includes('/');
 
-  const escaped = p
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*/g, '<<DOUBLESTAR>>')
-    .replace(/\*/g, '[^/]*')
-    .replace(/\?/g, '[^/]')
-    .replace(/<<DOUBLESTAR>>/g, '.*');
+  let body = '';
+  for (let i = 0; i < p.length; i++) {
+    if (p.startsWith('**/', i)) {
+      body += '(?:.*/)?';
+      i += 2;
+      continue;
+    }
+    if (p.startsWith('/**', i) && i + 3 === p.length) {
+      body += '(?:/.*)?';
+      i += 2;
+      continue;
+    }
+    if (p.startsWith('**', i)) {
+      body += '.*';
+      i += 1;
+      continue;
+    }
+    const ch = p[i];
+    if (ch === '*') body += '[^/]*';
+    else if (ch === '?') body += '[^/]';
+    else body += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  }
 
-  const tail = dirOnly ? '(/|$)' : '($|/)';
-  return new RegExp('(^|/)' + escaped + tail);
+  const prefix = hasSlash ? '^' : '(?:^|.*/)';
+  const suffix = dirOnly ? '(?:/.*)?$' : '$';
+  return new RegExp(prefix + body + suffix);
 }
 
 /**
@@ -111,14 +128,22 @@ function patternToRegex(pattern) {
  *
  * The filter is true for paths that should be **excluded**.
  *
- * @param {{ignoreFile?:string, extraPatterns?:string[], allowSweetSearchDir?:boolean}} [opts]
+ * @param {{projectRoot?:string, ignoreFile?:string, extraPatterns?:string[], allowSweetSearchDir?:boolean}} [opts]
  * @returns {(relativePath:string)=>boolean}
  */
 export function buildPathFilter(opts = {}) {
   const patterns = [];
+  if (opts.projectRoot) {
+    for (const p of loadProjectConfig(opts.projectRoot).exclude || []) {
+      if (opts.allowSweetSearchDir && String(p).includes('.sweet-search')) continue;
+      patterns.push(p);
+    }
+  }
   for (const p of (opts.extraPatterns || [])) patterns.push(p);
-  if (opts.ignoreFile) {
-    for (const p of loadIgnoreFile(opts.ignoreFile)) patterns.push(p);
+  const ignoreFile = opts.ignoreFile
+    || (opts.projectRoot ? path.join(opts.projectRoot, '.sweet-search-ignore') : null);
+  if (ignoreFile) {
+    for (const p of loadIgnoreFile(ignoreFile)) patterns.push(p);
   }
   const regexes = patterns.map(patternToRegex);
   const denyDirs = new Set(DEFAULT_DENY_DIRS);

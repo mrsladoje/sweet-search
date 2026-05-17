@@ -17,6 +17,28 @@ function normalizePath(p) {
   return p.replace(/\\/g, '/');
 }
 
+function chunkPath(chunk) {
+  return firstSafeRelativePath(
+    chunk?.metadata?.relative_path,
+    chunk?.metadata?.path,
+    chunk?.metadata?.file_path,
+    chunk?.file,
+    chunk?.metadata?.file,
+  ) || '';
+}
+
+function firstSafeRelativePath(...candidates) {
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const normalized = candidate.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+/g, '/');
+    if (!normalized || normalized === '.' || normalized.startsWith('/')) continue;
+    if (/^[A-Za-z]:\//.test(normalized)) continue;
+    if (normalized === '..' || normalized.startsWith('../') || normalized.includes('/../')) continue;
+    return normalized;
+  }
+  return null;
+}
+
 const _excludesByRoot = new Map();
 
 function getExcludes(projectRoot) {
@@ -93,24 +115,26 @@ export function applyIndexingChunkPolicy(chunks, options = {}) {
   const fileFirstReason = new Map();
 
   for (const chunk of chunks) {
-    if (!chunk?.file) continue;
-    if (fileFirstReason.has(chunk.file)) continue;
+    const file = chunkPath(chunk);
+    if (!file) continue;
+    if (fileFirstReason.has(file)) continue;
 
     let reason = null;
-    if (isExcludedByConfig(chunk.file, projectRoot)) {
+    if (isExcludedByConfig(file, projectRoot)) {
       reason = 'excluded';
     } else {
       const text = chunk.text || chunk.content || '';
       if (chunkLooksGenerated(text)) reason = 'generated';
     }
-    fileFirstReason.set(chunk.file, reason);
+    fileFirstReason.set(file, reason);
   }
 
   const kept = [];
   const skipped = [];
   const stats = emptyStats();
   for (const chunk of chunks) {
-    const reason = chunk?.file ? fileFirstReason.get(chunk.file) : null;
+    const file = chunkPath(chunk);
+    const reason = file ? fileFirstReason.get(file) : null;
     if (reason) {
       skipped.push(chunk);
       stats[reason]++;
@@ -119,8 +143,8 @@ export function applyIndexingChunkPolicy(chunks, options = {}) {
       kept.push(chunk);
     }
   }
-  stats.skippedFiles = new Set(skipped.map((c) => c.file).filter(Boolean)).size;
-  stats.keptFiles = new Set(kept.map((c) => c.file).filter(Boolean)).size;
+  stats.skippedFiles = new Set(skipped.map(chunkPath).filter(Boolean)).size;
+  stats.keptFiles = new Set(kept.map(chunkPath).filter(Boolean)).size;
   return { kept, skipped, stats };
 }
 
@@ -136,5 +160,6 @@ function emptyStats() {
 
 export const _internals = {
   GENERATED_MARKERS,
+  chunkPath,
   resetCache,
 };

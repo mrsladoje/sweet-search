@@ -29,11 +29,18 @@
  *
  *   * `path:<relative_path>`            — file-level identity facts.
  *   * `lang:<relative_path>`            — language detection result for the file.
+ *   * `chunk-type:<relative_path>`      — chunk kind selected by the chunker.
+ *   * `symbol:<relative_path>`          — primary chunk symbol metadata.
+ *   * `signature:<relative_path>`       — AST signature metadata.
+ *   * `additional-symbols:<relative_path>` — sibling symbols injected into text.
  *   * `policy:embed:<n>`                — bumps when embed-text policy changes.
  *   * `policy:li:<n>`                   — bumps when LI input policy changes.
  *   * `parent:<relative_path>:<parent>` — same-file parent symbol identity.
  *   * `same-file-symbols:<relative_path>` — set of symbols defined in this file.
  *   * `same-file-imports:<relative_path>` — set of import target names in this file.
+ *   * `same-file-scope:<relative_path>` — same-file scope/defines/uses enrichment.
+ *   * `dedup-cluster:<cluster_id>`      — dedup cluster membership.
+ *   * `dedup-exemplar:<exemplar_id>`    — dedup alias target.
  *   * `entity:<entity_id>`              — future cross-file rule (plan § 7.2.1).
  *   * `relationship:<source_entity_id>` — future cross-file rule.
  *   * `file-exports:<relative_path>`    — future cross-file rule.
@@ -48,6 +55,14 @@
  * The same chunk can register multiple `(key, consumer)` pairs.
  */
 
+import {
+  DEDUP_INPUT_POLICY_VERSION,
+  EMBED_TEXT_POLICY_VERSION,
+  LI_INPUT_POLICY_VERSION,
+} from './encoder-input.mjs';
+
+const MAX_DEPENDENCY_KEYS_PER_QUERY = 900;
+
 /**
  * Build the same-file dependency set for a single chunk. The reconcile
  * tick calls this **after** graph enrichment so the inputs already
@@ -59,30 +74,52 @@
 export function collectChunkDependencies(chunk) {
   if (!chunk) return [];
   const meta = chunk.metadata || {};
-  const rel = meta.relative_path || meta.file || meta.file_path || '';
-  const lang = (meta.language || '').toLowerCase();
+  const rel = meta.relative_path || meta.path || meta.file_path || chunk.file || meta.file || '';
   const parent = meta.parent_symbol || '';
+  const parentType = meta.parent_type || '';
+  const clusterId = meta.clusterId || '';
+  const exemplarId = meta.exemplarId || '';
   const deps = [];
+  const push = (dependencyKey, consumers) => {
+    for (const consumer of consumers) {
+      deps.push({ dependency_key: dependencyKey, consumer });
+    }
+  };
 
   if (rel) {
-    deps.push({ dependency_key: `path:${rel}`, consumer: 'dense' });
-    deps.push({ dependency_key: `path:${rel}`, consumer: 'li' });
-    deps.push({ dependency_key: `lang:${rel}`, consumer: 'dense' });
-    deps.push({ dependency_key: `lang:${rel}`, consumer: 'li' });
-    deps.push({ dependency_key: `same-file-symbols:${rel}`, consumer: 'dense' });
-    deps.push({ dependency_key: `same-file-imports:${rel}`, consumer: 'dense' });
+    const encoderConsumers = ['dense', 'li'];
+    push(`path:${rel}`, encoderConsumers);
+    push(`lang:${rel}`, encoderConsumers);
+    push(`chunk-type:${rel}`, encoderConsumers);
+    push(`symbol:${rel}`, encoderConsumers);
+    push(`signature:${rel}`, encoderConsumers);
+    push(`additional-symbols:${rel}`, encoderConsumers);
+    push(`same-file-symbols:${rel}`, encoderConsumers);
+    push(`same-file-imports:${rel}`, encoderConsumers);
+    push(`same-file-scope:${rel}`, encoderConsumers);
   }
   if (parent && rel) {
-    deps.push({ dependency_key: `parent:${rel}:${parent}`, consumer: 'dense' });
+    push(`parent:${rel}:${parent}`, ['dense', 'li']);
+  }
+  if (parentType && rel) {
+    push(`parent-type:${rel}:${parentType}`, ['dense', 'li']);
+  }
+  if (clusterId) {
+    deps.push({ dependency_key: `dedup-cluster:${clusterId}`, consumer: 'dedup' });
+  }
+  if (exemplarId) {
+    deps.push({ dependency_key: `dedup-exemplar:${exemplarId}`, consumer: 'dedup' });
+  }
+  if (Object.hasOwn(meta, 'liReuseEligible')) {
+    const key = clusterId ? `dedup-li-reuse:${clusterId}` : 'dedup-li-reuse';
+    deps.push({ dependency_key: key, consumer: 'dedup' });
   }
   // Policy fingerprints. Any consumer of these keys is the canonical place
   // to invalidate cached encoder payloads after a policy bump.
-  deps.push({ dependency_key: 'policy:embed', consumer: 'dense' });
-  deps.push({ dependency_key: 'policy:li', consumer: 'li' });
-  deps.push({ dependency_key: 'policy:dedup', consumer: 'dedup' });
+  deps.push({ dependency_key: `policy:embed:${EMBED_TEXT_POLICY_VERSION}`, consumer: 'dense' });
+  deps.push({ dependency_key: `policy:li:${LI_INPUT_POLICY_VERSION}`, consumer: 'li' });
+  deps.push({ dependency_key: `policy:dedup:${DEDUP_INPUT_POLICY_VERSION}`, consumer: 'dedup' });
 
-  void lang; // currently only used as a fingerprint input; keeping the
-              // binding so a future taxonomy expansion has a clean home.
   return deps;
 }
 
@@ -123,12 +160,25 @@ export function persistDependencies(db, filePath, chunkStructId, deps) {
  */
 export function dependentsOf(db, keys) {
   if (!Array.isArray(keys) || keys.length === 0) return [];
-  const placeholders = keys.map(() => '?').join(',');
-  return db.prepare(`
-    SELECT DISTINCT file_path, chunk_struct_id, consumer
-    FROM encoder_input_dependencies
-    WHERE dependency_key IN (${placeholders})
-  `).all(...keys);
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; i < keys.length; i += MAX_DEPENDENCY_KEYS_PER_QUERY) {
+    const batch = keys.slice(i, i + MAX_DEPENDENCY_KEYS_PER_QUERY);
+    const placeholders = batch.map(() => '?').join(',');
+    const rows = db.prepare(`
+      SELECT DISTINCT file_path, chunk_struct_id, consumer
+      FROM encoder_input_dependencies
+      WHERE dependency_key IN (${placeholders})
+      ORDER BY file_path, chunk_struct_id, consumer
+    `).all(...batch);
+    for (const row of rows) {
+      const key = `${row.file_path}\0${row.chunk_struct_id}\0${row.consumer}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(row);
+    }
+  }
+  return out;
 }
 
 /**

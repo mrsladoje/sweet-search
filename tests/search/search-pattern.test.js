@@ -11,6 +11,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import path from 'path';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import os from 'os';
 
 import {
@@ -27,6 +28,8 @@ import {
   mergeRegexIntoQuery,
   normalizeLiteralClauses,
   normalizeSearchPath,
+  generateRegexMatches,
+  ensureSparseGramIndex,
   querySparseGramCandidates,
   readFileRange,
   getChunkLocationMap,
@@ -40,6 +43,18 @@ import {
   resolveSparseSymbolMask,
   SPARSE_SYMBOL_MASKS,
 } from '../../core/infrastructure/native-sparse-gram.js';
+import {
+  appendDeltaRecord,
+  fileIdFor,
+  FALLBACK_WEIGHTS_ID,
+} from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
+
+function sparseDeltaPin(basePath, epoch) {
+  return {
+    sparseGramDeltas: [`${path.basename(basePath)}.deltas/${epoch}-0.ssgrmdelta`],
+    sparseGramWeightsId: FALLBACK_WEIGHTS_ID,
+  };
+}
 
 // =============================================================================
 // extractRequiredLiteralsHeuristic
@@ -94,6 +109,21 @@ describe('extractLiteralClauses', () => {
 // =============================================================================
 
 describe('querySparseGramCandidates', () => {
+  it('does not reuse a loaded sparse gram reader for a different requested path', () => {
+    const loaded = { queryLiterals: vi.fn() };
+    const searcher = {
+      sparseGramIndex: loaded,
+      _sparseGramLoadedPath: path.join(os.tmpdir(), 'old-sparse.idx'),
+      sparseGramIndexPath: path.join(os.tmpdir(), 'old-sparse.idx'),
+    };
+
+    const missingPath = path.join(os.tmpdir(), `missing-sparse-${Date.now()}.idx`);
+
+    expect(ensureSparseGramIndex(searcher, { sparseGramIndexPath: missingPath })).toBeNull();
+    expect(searcher.sparseGramIndex).toBeNull();
+    expect(searcher._sparseGramLoadedPath).toBeNull();
+  });
+
   it('returns disabled when gram index is disabled', () => {
     const searcher = {
       sparseGramIndex: {
@@ -180,6 +210,668 @@ describe('querySparseGramCandidates', () => {
       files: null,
     });
   });
+
+  it('returns an eligible empty candidate set without broad fallback', () => {
+    const searcher = {
+      sparseGramIndex: {
+        queryLiterals: vi.fn().mockReturnValue({
+          eligible: true,
+          files: [],
+          totalFiles: 10,
+          gramsUsed: 1,
+        }),
+      },
+    };
+
+    expect(querySparseGramCandidates(searcher, [['AbsentNeedle']])).toEqual({
+      eligible: true,
+      reason: 'ok',
+      totalFiles: 10,
+      gramsUsed: 1,
+      denseGramsTouched: 0,
+      sparseGramsTouched: 0,
+      candidateFiles: 0,
+      files: [],
+    });
+  });
+
+  it('generateRegexMatches short-circuits known-empty sparse candidates', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-sg-empty-'));
+    await fs.mkdir(path.join(tmpDir, 'src'), { recursive: true });
+    await fs.writeFile(path.join(tmpDir, 'src', 'hit.js'), 'export const absentNeedle = 1;\n');
+    try {
+      const searcher = {
+        sparseGramIndex: {
+          queryLiterals: vi.fn().mockReturnValue({
+            eligible: true,
+            files: [],
+            totalFiles: 1,
+            gramsUsed: 1,
+          }),
+          getAllFiles: vi.fn().mockReturnValue(['src/hit.js']),
+        },
+      };
+
+      const result = await generateRegexMatches(searcher, 'absentNeedle', tmpDir, {
+        fixedString: true,
+        lightweightParse: true,
+      });
+
+      expect(result.matchingFiles).toEqual([]);
+      expect(result.indexedMatches).toEqual([]);
+      expect(result.stats.plannerRoute).toBe('empty_gram_candidates');
+      expect(result.stats.filesScanned).toBe(0);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('overlays sparse-gram delta records onto native candidates', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-sg-overlay-'));
+    const basePath = path.join(tmpDir, 'codebase-sparse-grams.idx');
+    await fs.writeFile(basePath, 'base');
+    try {
+      appendDeltaRecord(basePath, 5, {
+        fileId: fileIdFor('src/new.js'),
+        filePath: 'src/new.js',
+        contentHash: 'new',
+        deleted: false,
+        symbolMask: 0,
+        weightsId: FALLBACK_WEIGHTS_ID,
+        grams: [],
+      });
+      appendDeltaRecord(basePath, 5, {
+        fileId: fileIdFor('src/old.js'),
+        filePath: 'src/old.js',
+        contentHash: '',
+        deleted: true,
+        symbolMask: 0,
+        weightsId: FALLBACK_WEIGHTS_ID,
+        grams: [],
+      });
+
+      const searcher = {
+        sparseGramIndexPath: basePath,
+        manifestEpoch: 5,
+        ...sparseDeltaPin(basePath, 5),
+        sparseGramIndex: {
+          queryLiterals: vi.fn().mockReturnValue({
+            eligible: true,
+            files: ['src/old.js', 'src/base.js'],
+            totalFiles: 2,
+            gramsUsed: 1,
+          }),
+        },
+      };
+
+      expect(querySparseGramCandidates(searcher, [['Needle']])).toEqual({
+        eligible: true,
+        reason: 'ok',
+        totalFiles: 3,
+        gramsUsed: 1,
+        denseGramsTouched: 0,
+        sparseGramsTouched: 0,
+        candidateFiles: 2,
+        files: ['src/base.js', 'src/new.js'],
+      });
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses sparse-gram delta grams instead of scanning every changed file for every query', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-sg-overlay-grams-'));
+    const basePath = path.join(tmpDir, 'codebase-sparse-grams.idx');
+    await fs.writeFile(basePath, 'base');
+    try {
+      appendDeltaRecord(basePath, 5, {
+        fileId: fileIdFor('src/new.js'),
+        filePath: 'src/new.js',
+        contentHash: 'new',
+        deleted: false,
+        symbolMask: 0,
+        weightsId: FALLBACK_WEIGHTS_ID,
+        grams: [['nee', 1], ['eed', 1]],
+      });
+
+      const searcher = {
+        sparseGramIndexPath: basePath,
+        manifestEpoch: 5,
+        ...sparseDeltaPin(basePath, 5),
+        sparseGramIndex: {
+          extractLiteralCoveringGrams: vi.fn((literals) => ({
+            eligible: true,
+            grams: literals[0] === 'Needle' ? ['nee'] : ['abs'],
+            weightsId: FALLBACK_WEIGHTS_ID,
+          })),
+          queryLiterals: vi.fn().mockReturnValue({
+            eligible: true,
+            files: [],
+            totalFiles: 1,
+            gramsUsed: 1,
+          }),
+        },
+      };
+
+      expect(querySparseGramCandidates(searcher, [['Needle']]).files).toEqual(['src/new.js']);
+      expect(querySparseGramCandidates(searcher, [['Absent']]).files).toEqual([]);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('normalizes absolute sparse base candidates before applying tombstone deltas', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-sg-overlay-abs-'));
+    const basePath = path.join(tmpDir, 'codebase-sparse-grams.idx');
+    await fs.writeFile(basePath, 'base');
+    try {
+      appendDeltaRecord(basePath, 5, {
+        fileId: fileIdFor('src/new.js'),
+        filePath: 'src/new.js',
+        contentHash: 'new',
+        deleted: false,
+        symbolMask: 0,
+        weightsId: FALLBACK_WEIGHTS_ID,
+        grams: [],
+      });
+      appendDeltaRecord(basePath, 5, {
+        fileId: fileIdFor('src/old.js'),
+        filePath: 'src/old.js',
+        contentHash: '',
+        deleted: true,
+        symbolMask: 0,
+        weightsId: FALLBACK_WEIGHTS_ID,
+        grams: [],
+      });
+
+      const searcher = {
+        projectRoot: tmpDir,
+        sparseGramIndexPath: basePath,
+        manifestEpoch: 5,
+        ...sparseDeltaPin(basePath, 5),
+        sparseGramIndex: {
+          queryLiterals: vi.fn().mockReturnValue({
+            eligible: true,
+            files: [path.join(tmpDir, 'src/old.js'), path.join(tmpDir, 'src/base.js')],
+            totalFiles: 2,
+            gramsUsed: 1,
+          }),
+        },
+      };
+
+      expect(querySparseGramCandidates(searcher, [['Needle']]).files).toEqual([
+        'src/base.js',
+        'src/new.js',
+      ]);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('normalizes sparse delta absolute paths through project-root realpaths', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-sg-overlay-link-'));
+    const realRoot = path.join(tmpDir, 'real');
+    const linkRoot = path.join(tmpDir, 'link');
+    await fs.mkdir(path.join(realRoot, 'src'), { recursive: true });
+    fsSync.symlinkSync(realRoot, linkRoot, 'dir');
+    const basePath = path.join(linkRoot, 'codebase-sparse-grams.idx');
+    await fs.writeFile(basePath, 'base');
+    try {
+      appendDeltaRecord(basePath, 5, {
+        fileId: fileIdFor('src/new.js'),
+        filePath: path.join(realRoot, 'src/new.js'),
+        contentHash: 'new',
+        deleted: false,
+        symbolMask: 0,
+        weightsId: FALLBACK_WEIGHTS_ID,
+        grams: [],
+      });
+      appendDeltaRecord(basePath, 5, {
+        fileId: fileIdFor('src/old.js'),
+        filePath: path.join(realRoot, 'src/old.js'),
+        contentHash: '',
+        deleted: true,
+        symbolMask: 0,
+        weightsId: FALLBACK_WEIGHTS_ID,
+        grams: [],
+      });
+
+      const searcher = {
+        projectRoot: linkRoot,
+        sparseGramIndexPath: basePath,
+        manifestEpoch: 5,
+        ...sparseDeltaPin(basePath, 5),
+        sparseGramIndex: {
+          queryLiterals: vi.fn().mockReturnValue({
+            eligible: true,
+            files: [path.join(realRoot, 'src/old.js'), path.join(realRoot, 'src/base.js')],
+            totalFiles: 2,
+            gramsUsed: 1,
+          }),
+        },
+      };
+
+      expect(querySparseGramCandidates(searcher, [['Needle']]).files).toEqual([
+        'src/base.js',
+        'src/new.js',
+      ]);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('pins sparse-gram deltas to the reader manifest epoch', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-sg-pin-'));
+    const basePath = path.join(tmpDir, 'codebase-sparse-grams.idx');
+    await fs.writeFile(basePath, 'base');
+    try {
+      appendDeltaRecord(basePath, 6, {
+        fileId: fileIdFor('src/future.js'),
+        filePath: 'src/future.js',
+        contentHash: 'future',
+        deleted: false,
+        symbolMask: 0,
+        weightsId: FALLBACK_WEIGHTS_ID,
+        grams: [],
+      });
+
+      const searcher = {
+        sparseGramIndexPath: basePath,
+        manifestEpoch: 5,
+        ...sparseDeltaPin(basePath, 6),
+        sparseGramIndex: {
+          queryLiterals: vi.fn().mockReturnValue({
+            eligible: true,
+            files: ['src/base.js'],
+            totalFiles: 1,
+            gramsUsed: 1,
+          }),
+        },
+      };
+
+      expect(querySparseGramCandidates(searcher, [['Needle']]).files).toEqual(['src/base.js']);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('honors the manifest sparse-gram delta allowlist instead of scanning stale segments', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-sg-manifest-deltas-'));
+    const basePath = path.join(tmpDir, 'codebase-sparse-grams.idx');
+    await fs.writeFile(basePath, 'base');
+    try {
+      appendDeltaRecord(basePath, 7, {
+        fileId: fileIdFor('src/listed.js'),
+        filePath: 'src/listed.js',
+        contentHash: 'listed',
+        deleted: false,
+        symbolMask: 0,
+        weightsId: FALLBACK_WEIGHTS_ID,
+        grams: [],
+      });
+      await fs.writeFile(
+        path.join(`${basePath}.deltas`, '7-1.ssgrmdelta'),
+        JSON.stringify({
+          fileId: fileIdFor('src/stale-unlisted.js'),
+          filePath: 'src/stale-unlisted.js',
+          contentHash: 'stale',
+          deleted: false,
+          symbolMask: 0,
+          weightsId: FALLBACK_WEIGHTS_ID,
+          grams: [],
+        }) + '\n',
+      );
+      await fs.writeFile(path.join(tmpDir, 'reconcile-manifest.json'), JSON.stringify({
+        epoch: 7,
+        sparseGram: {
+          base: 'codebase-sparse-grams.idx',
+          epoch: 7,
+          weightsId: FALLBACK_WEIGHTS_ID,
+          deltas: ['codebase-sparse-grams.idx.deltas/7-0.ssgrmdelta'],
+        },
+      }));
+
+      const searcher = {
+        sparseGramIndexPath: basePath,
+        sparseGramIndex: {
+          queryLiterals: vi.fn().mockReturnValue({
+            eligible: true,
+            files: ['src/base.js'],
+            totalFiles: 1,
+            gramsUsed: 1,
+          }),
+        },
+      };
+
+      expect(querySparseGramCandidates(searcher, [['Needle']]).files).toEqual([
+        'src/base.js',
+        'src/listed.js',
+      ]);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not scan sparse-gram delta directories without a manifest allowlist', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-sg-no-manifest-scan-'));
+    const basePath = path.join(tmpDir, 'codebase-sparse-grams.idx');
+    await fs.writeFile(basePath, 'base');
+    try {
+      appendDeltaRecord(basePath, 7, {
+        fileId: fileIdFor('src/unpublished.js'),
+        filePath: 'src/unpublished.js',
+        contentHash: 'unpublished',
+        deleted: false,
+        symbolMask: 0,
+        weightsId: FALLBACK_WEIGHTS_ID,
+        grams: [],
+      });
+
+      const searcher = {
+        sparseGramIndexPath: basePath,
+        manifestEpoch: 7,
+        sparseGramIndex: {
+          queryLiterals: vi.fn().mockReturnValue({
+            eligible: true,
+            files: ['src/base.js'],
+            totalFiles: 1,
+            gramsUsed: 1,
+          }),
+        },
+      };
+
+      expect(querySparseGramCandidates(searcher, [['Needle']]).files).toEqual(['src/base.js']);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('honors manifest delta allowlists when the sparse base path is nested', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-sg-nested-manifest-'));
+    const artifactDir = path.join(tmpDir, 'artifacts');
+    const basePath = path.join(artifactDir, 'codebase-sparse-grams.idx');
+    await fs.mkdir(artifactDir, { recursive: true });
+    await fs.writeFile(basePath, 'base');
+    try {
+      appendDeltaRecord(basePath, 7, {
+        fileId: fileIdFor('src/listed.js'),
+        filePath: 'src/listed.js',
+        contentHash: 'listed',
+        deleted: false,
+        symbolMask: 0,
+        weightsId: FALLBACK_WEIGHTS_ID,
+        grams: [],
+      });
+      await fs.writeFile(
+        path.join(`${basePath}.deltas`, '7-1.ssgrmdelta'),
+        JSON.stringify({
+          fileId: fileIdFor('src/stale-unlisted.js'),
+          filePath: 'src/stale-unlisted.js',
+          contentHash: 'stale',
+          deleted: false,
+          symbolMask: 0,
+          weightsId: FALLBACK_WEIGHTS_ID,
+          grams: [],
+        }) + '\n',
+      );
+      await fs.writeFile(path.join(tmpDir, 'reconcile-manifest.json'), JSON.stringify({
+        epoch: 7,
+        sparseGram: {
+          base: 'artifacts/codebase-sparse-grams.idx',
+          epoch: 7,
+          weightsId: FALLBACK_WEIGHTS_ID,
+          deltas: ['artifacts/codebase-sparse-grams.idx.deltas/7-0.ssgrmdelta'],
+        },
+      }));
+
+      const searcher = {
+        _manifestStateDir: tmpDir,
+        sparseGramIndexPath: basePath,
+        sparseGramIndex: {
+          queryLiterals: vi.fn().mockReturnValue({
+            eligible: true,
+            files: ['src/base.js'],
+            totalFiles: 1,
+            gramsUsed: 1,
+          }),
+        },
+      };
+
+      expect(querySparseGramCandidates(searcher, [['Needle']]).files).toEqual([
+        'src/base.js',
+        'src/listed.js',
+      ]);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not follow manifest sparse-gram delta paths outside the delta directory', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-sg-manifest-escape-'));
+    const basePath = path.join(tmpDir, 'codebase-sparse-grams.idx');
+    await fs.writeFile(basePath, 'base');
+    try {
+      await fs.mkdir(path.join(tmpDir, 'outside'), { recursive: true });
+      await fs.writeFile(
+        path.join(tmpDir, 'outside', '7-9.ssgrmdelta'),
+        JSON.stringify({
+          fileId: fileIdFor('src/escaped.js'),
+          filePath: 'src/escaped.js',
+          contentHash: 'escaped',
+          deleted: false,
+          symbolMask: 0,
+          weightsId: FALLBACK_WEIGHTS_ID,
+          grams: [],
+        }) + '\n',
+      );
+      await fs.writeFile(path.join(tmpDir, 'reconcile-manifest.json'), JSON.stringify({
+        epoch: 7,
+        sparseGram: {
+          base: 'codebase-sparse-grams.idx',
+          epoch: 7,
+          weightsId: FALLBACK_WEIGHTS_ID,
+          deltas: ['codebase-sparse-grams.idx.deltas/../outside/7-9.ssgrmdelta'],
+        },
+      }));
+
+      const searcher = {
+        sparseGramIndexPath: basePath,
+        sparseGramIndex: {
+          queryLiterals: vi.fn().mockReturnValue({
+            eligible: true,
+            files: ['src/base.js'],
+            totalFiles: 1,
+            gramsUsed: 1,
+          }),
+        },
+      };
+
+      expect(querySparseGramCandidates(searcher, [['Needle']]).files).toEqual(['src/base.js']);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores sparse-gram deltas stamped with a different weightsId than the base manifest', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-sg-weights-'));
+    const basePath = path.join(tmpDir, 'codebase-sparse-grams.idx');
+    await fs.writeFile(basePath, 'base');
+    await fs.writeFile(path.join(tmpDir, 'reconcile-manifest.json'), JSON.stringify({
+      epoch: 5,
+      sparseGram: { base: 'codebase-sparse-grams.idx', epoch: 5, weightsId: 'base-v2', deltas: [] },
+    }));
+    try {
+      appendDeltaRecord(basePath, 5, {
+        fileId: fileIdFor('src/new.js'),
+        filePath: 'src/new.js',
+        contentHash: 'new',
+        deleted: false,
+        symbolMask: 0,
+        weightsId: 'base-v1',
+        grams: [],
+      });
+      appendDeltaRecord(basePath, 5, {
+        fileId: fileIdFor('src/old.js'),
+        filePath: 'src/old.js',
+        contentHash: '',
+        deleted: true,
+        symbolMask: 0,
+        weightsId: 'base-v1',
+        grams: [],
+      });
+
+      const searcher = {
+        sparseGramIndexPath: basePath,
+        manifestEpoch: 5,
+        sparseGramIndex: {
+          queryLiterals: vi.fn().mockReturnValue({
+            eligible: true,
+            files: ['src/old.js', 'src/base.js'],
+            totalFiles: 2,
+            gramsUsed: 1,
+          }),
+        },
+      };
+
+      expect(querySparseGramCandidates(searcher, [['Needle']]).files).toEqual([
+        'src/old.js',
+        'src/base.js',
+      ]);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not use sparse deltas as a complete candidate set when the base index is unavailable', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-sg-no-base-'));
+    const basePath = path.join(tmpDir, 'missing-sparse-grams.idx');
+    try {
+      appendDeltaRecord(basePath, 3, {
+        fileId: fileIdFor('src/new.js'),
+        filePath: 'src/new.js',
+        contentHash: 'new',
+        deleted: false,
+        symbolMask: 0,
+        weightsId: FALLBACK_WEIGHTS_ID,
+        grams: [],
+      });
+
+      expect(querySparseGramCandidates({
+        sparseGramIndexPath: basePath,
+        manifestEpoch: 3,
+      }, [['Needle']])).toEqual({
+        eligible: false,
+        reason: 'not_loaded',
+        totalFiles: 0,
+        gramsUsed: 0,
+        denseGramsTouched: 0,
+        sparseGramsTouched: 0,
+        candidateFiles: 0,
+        files: null,
+      });
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back instead of returning overlay-only candidates when native sparse narrowing is ineligible', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-sg-ineligible-'));
+    const basePath = path.join(tmpDir, 'codebase-sparse-grams.idx');
+    await fs.writeFile(basePath, 'base');
+    try {
+      appendDeltaRecord(basePath, 4, {
+        fileId: fileIdFor('src/new.js'),
+        filePath: 'src/new.js',
+        contentHash: 'new',
+        deleted: false,
+        symbolMask: 0,
+        weightsId: FALLBACK_WEIGHTS_ID,
+        grams: [],
+      });
+
+      const searcher = {
+        sparseGramIndexPath: basePath,
+        manifestEpoch: 4,
+        ...sparseDeltaPin(basePath, 4),
+        sparseGramIndex: {
+          queryLiterals: vi.fn().mockReturnValue({
+            eligible: false,
+            totalFiles: 10,
+            files: [],
+            gramsUsed: 1,
+            denseGramsTouched: 2,
+            sparseGramsTouched: 3,
+          }),
+        },
+      };
+
+      expect(querySparseGramCandidates(searcher, [['Needle']])).toEqual({
+        eligible: false,
+        reason: 'not_eligible',
+        totalFiles: 10,
+        gramsUsed: 1,
+        denseGramsTouched: 2,
+        sparseGramsTouched: 3,
+        candidateFiles: 0,
+        files: null,
+      });
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('skips unified native sparse search when deltas must be overlaid', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-sg-e2e-'));
+    const srcDir = path.join(tmpDir, 'src');
+    const basePath = path.join(tmpDir, 'codebase-sparse-grams.idx');
+    await fs.mkdir(srcDir, { recursive: true });
+    await fs.writeFile(path.join(srcDir, 'new.js'), 'export const freshNeedle = 1;\n');
+    await fs.writeFile(basePath, 'base');
+    try {
+      appendDeltaRecord(basePath, 7, {
+        fileId: fileIdFor('src/new.js'),
+        filePath: 'src/new.js',
+        contentHash: 'fresh',
+        deleted: false,
+        symbolMask: 0,
+        weightsId: FALLBACK_WEIGHTS_ID,
+        grams: [],
+      });
+
+      const searcher = {
+        projectRoot: tmpDir,
+        sparseGramIndexPath: basePath,
+        manifestEpoch: 7,
+        ...sparseDeltaPin(basePath, 7),
+        sparseGramIndex: {
+          searchFull: vi.fn().mockReturnValue({
+            eligible: true,
+            totalFiles: 1,
+            candidateFiles: 0,
+            matches: [],
+            scannedFiles: 0,
+          }),
+          queryLiterals: vi.fn().mockReturnValue({
+            eligible: true,
+            files: [],
+            totalFiles: 1,
+            gramsUsed: 1,
+          }),
+          getAllFiles: vi.fn().mockReturnValue([]),
+        },
+      };
+
+      const result = await generateRegexMatches(searcher, 'freshNeedle', tmpDir, {
+        sparseGramIndexPath: basePath,
+        lightweightParse: true,
+      });
+
+      expect(searcher.sparseGramIndex.searchFull).not.toHaveBeenCalled();
+      expect(result.matchingFiles).toEqual(['src/new.js']);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 // =============================================================================
@@ -236,6 +928,29 @@ describe('buildChunkLocationMap', () => {
     expect(map.size).toBe(0);
   });
 
+  it('includes alias pointer spans in the chunk location map', () => {
+    const liIndex = makeLiIndex([
+      { id: 'exemplar', meta: { file: 'src/exemplar.js', startLine: 1, endLine: 5 } },
+    ]);
+    liIndex.aliasPointers = new Map([
+      ['alias', {
+        exemplarId: 'exemplar',
+        metadata: { file: 'src/alias.js', startLine: 10, endLine: 12, type: 'function', name: 'aliasFn' },
+      }],
+    ]);
+
+    const map = buildChunkLocationMap(liIndex);
+
+    expect(map.get('src/exemplar.js')?.[0]?.id).toBe('exemplar');
+    expect(map.get('src/alias.js')?.[0]).toMatchObject({
+      id: 'alias',
+      startLine: 10,
+      endLine: 12,
+      type: 'function',
+      name: 'aliasFn',
+    });
+  });
+
   it('returns empty map for empty index', () => {
     const liIndex = makeLiIndex([]);
     const map = buildChunkLocationMap(liIndex);
@@ -288,6 +1003,17 @@ describe('findChunkForLine', () => {
 
   it('returns null for line after last chunk', () => {
     expect(findChunkForLine(intervals, 101)).toBeNull();
+  });
+
+  it('finds a containing parent interval when later overlapping siblings end before the line', () => {
+    const overlapping = [
+      { startLine: 1, endLine: 100, id: 'parent' },
+      { startLine: 20, endLine: 25, id: 'child-a' },
+      { startLine: 30, endLine: 35, id: 'child-b' },
+    ];
+
+    expect(findChunkForLine(overlapping, 90)).toBe('parent');
+    expect(findChunkForLine(overlapping, 22)).toBe('child-a');
   });
 
   it('returns null for undefined/null/empty intervals', () => {
@@ -462,6 +1188,54 @@ describe('getChunkLocationMap', () => {
     const map2 = getChunkLocationMap.call(mockThis);
     expect(map2).not.toBe(map1);
     expect(map2.size).toBe(2);
+  });
+
+  it('rebuilds when alias pointer count changes without a new token document', () => {
+    const docs = new Map([
+      ['c1', { metadata: { file: 'a.js', startLine: 1, endLine: 10 } }],
+    ]);
+    const aliases = new Map();
+    const mockThis = {
+      lateInteractionIndex: { documents: docs, aliasPointers: aliases },
+    };
+
+    const map1 = getChunkLocationMap.call(mockThis);
+    expect(map1.has('alias.js')).toBe(false);
+
+    aliases.set('alias-c1', {
+      targetId: 'c1',
+      metadata: { file: 'alias.js', startLine: 20, endLine: 25 },
+    });
+    const map2 = getChunkLocationMap.call(mockThis);
+
+    expect(map2).not.toBe(map1);
+    expect(map2.get('alias.js')?.[0]?.id).toBe('alias-c1');
+  });
+
+  it('rebuilds when the late-interaction index object changes with the same document count', () => {
+    const firstIndex = {
+      documents: new Map([
+        ['old', { metadata: { file: 'old.js', startLine: 1, endLine: 10 } }],
+      ]),
+    };
+    const secondIndex = {
+      documents: new Map([
+        ['new', { metadata: { file: 'new.js', startLine: 20, endLine: 30 } }],
+      ]),
+    };
+    const mockThis = {
+      lateInteractionIndex: firstIndex,
+    };
+
+    const map1 = getChunkLocationMap.call(mockThis);
+    expect(map1.get('old.js')?.[0]?.id).toBe('old');
+
+    mockThis.lateInteractionIndex = secondIndex;
+    const map2 = getChunkLocationMap.call(mockThis);
+
+    expect(map2).not.toBe(map1);
+    expect(map2.has('old.js')).toBe(false);
+    expect(map2.get('new.js')?.[0]?.id).toBe('new');
   });
 });
 
@@ -1037,5 +1811,20 @@ describe('normalizeSearchPath', () => {
 
   it('normalizes backslashes to forward slashes', () => {
     expect(normalizeSearchPath('/project', 'src\\auth\\service.js')).toBe('src/auth/service.js');
+  });
+
+  it('normalizes absolute paths that use the realpath spelling of a symlinked search root', async () => {
+    const base = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-normalize-'));
+    try {
+      const realRoot = path.join(base, 'real');
+      const linkRoot = path.join(base, 'link');
+      await fs.mkdir(path.join(realRoot, 'src'), { recursive: true });
+      await fs.writeFile(path.join(realRoot, 'src', 'auth.js'), 'export const auth = true;\n');
+      fsSync.symlinkSync(realRoot, linkRoot, 'dir');
+
+      expect(normalizeSearchPath(linkRoot, path.join(realRoot, 'src', 'auth.js'))).toBe('src/auth.js');
+    } finally {
+      await fs.rm(base, { recursive: true, force: true });
+    }
   });
 });

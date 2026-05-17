@@ -2,6 +2,7 @@ use memmap2::Mmap;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use rayon::prelude::*;
+use sha1::{Digest, Sha1};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
@@ -19,6 +20,8 @@ pub(crate) const WEIGHT_TABLE_LEN: usize = ASCII_DIM * ASCII_DIM;
 pub(crate) const MIN_SPAN_LEN: usize = 3;
 pub(crate) const MAX_GRAM_LEN: usize = 12;
 pub(crate) const MIN_CORPUS_BIGRAMS: u64 = 4096;
+const FALLBACK_WEIGHTS_ID: &str = "common-code-bigram-v1";
+const CORPUS_WEIGHTS_ID_PREFIX: &str = "corpus-bigram-v1";
 const FLAG_USED_FALLBACK_WEIGHTS: u32 = 1 << 0;
 const FLAG_DENSE_POSTINGS: u8 = 1 << 0;
 
@@ -59,6 +62,26 @@ struct ColumnBuild {
     data: Vec<u8>,
 }
 
+fn sparse_gram_weights_id(used_fallback_weights: bool, weights: &[f32]) -> String {
+    if used_fallback_weights {
+        return FALLBACK_WEIGHTS_ID.to_string();
+    }
+
+    let mut hasher = Sha1::new();
+    hasher.update(b"sweet-search-sparse-gram-weights-v1\0");
+    for weight in weights {
+        hasher.update(weight.to_le_bytes());
+    }
+    let digest = hasher.finalize();
+    let mut suffix = String::with_capacity(16);
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    for byte in digest.iter().take(8) {
+        suffix.push(HEX[(byte >> 4) as usize] as char);
+        suffix.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    format!("{CORPUS_WEIGHTS_ID_PREFIX}-{suffix}")
+}
+
 enum CandidateSet {
     Dense(Vec<u64>),
     Sparse(Vec<u32>),
@@ -72,6 +95,7 @@ pub struct SparseGramBuildResult {
     pub sparse_grams: u32,
     pub postings: u32,
     pub used_fallback_weights: bool,
+    pub weights_id: String,
 }
 
 #[napi(object)]
@@ -93,6 +117,20 @@ pub struct SparseGramIndexStats {
     pub sparse_grams: u32,
     pub postings: u32,
     pub used_fallback_weights: bool,
+    pub weights_id: String,
+}
+
+#[napi(object)]
+pub struct SparseGramExtractionResult {
+    pub weights_id: String,
+    pub grams: Vec<String>,
+}
+
+#[napi(object)]
+pub struct SparseGramRequiredGramsResult {
+    pub eligible: bool,
+    pub grams: Vec<String>,
+    pub weights_id: String,
 }
 
 /// Sorted gram table — binary search replaces HashMap for zero-allocation lookups.
@@ -1046,7 +1084,37 @@ impl NativeSparseGramIndex {
             sparse_grams: self.header.sparse_grams,
             postings: self.header.total_postings,
             used_fallback_weights: self.header.flags & FLAG_USED_FALLBACK_WEIGHTS != 0,
+            weights_id: sparse_gram_weights_id(
+                self.header.flags & FLAG_USED_FALLBACK_WEIGHTS != 0,
+                &self.weights,
+            ),
         }
+    }
+
+    #[napi]
+    pub fn extract_index_grams(&self, content: String) -> SparseGramExtractionResult {
+        SparseGramExtractionResult {
+            weights_id: sparse_gram_weights_id(
+                self.header.flags & FLAG_USED_FALLBACK_WEIGHTS != 0,
+                &self.weights,
+            ),
+            grams: extract_sparse_gram_strings(&content, &self.weights),
+        }
+    }
+
+    #[napi]
+    pub fn extract_literal_covering_grams(
+        &self,
+        literals: Vec<String>,
+    ) -> SparseGramRequiredGramsResult {
+        extract_required_gram_strings(
+            &literals,
+            &self.weights,
+            sparse_gram_weights_id(
+                self.header.flags & FLAG_USED_FALLBACK_WEIGHTS != 0,
+                &self.weights,
+            ),
+        )
     }
 }
 
@@ -1248,7 +1316,17 @@ pub fn build_sparse_gram_index(
         sparse_grams,
         postings: total_postings,
         used_fallback_weights,
+        weights_id: sparse_gram_weights_id(used_fallback_weights, &weights),
     })
+}
+
+#[napi]
+pub fn extract_sparse_gram_delta(content: String) -> SparseGramExtractionResult {
+    let weights = build_fallback_weights();
+    SparseGramExtractionResult {
+        weights_id: FALLBACK_WEIGHTS_ID.to_string(),
+        grams: extract_sparse_gram_strings(&content, &weights),
+    }
 }
 
 impl NativeSparseGramIndex {
@@ -1793,6 +1871,62 @@ pub(crate) fn collect_normalized_spans(text: &str) -> Vec<Vec<u8>> {
     }
 
     spans
+}
+
+fn extract_sparse_gram_strings(text: &str, weights: &[f32]) -> Vec<String> {
+    let mut grams = HashSet::new();
+    for span in collect_normalized_spans(text) {
+        for gram in extract_sparse_grams(&span, weights) {
+            grams.insert(gram);
+        }
+    }
+    let mut grams = grams.into_iter().collect::<Vec<_>>();
+    grams.sort_unstable();
+    grams
+}
+
+fn extract_required_gram_strings(
+    literals: &[String],
+    weights: &[f32],
+    weights_id: String,
+) -> SparseGramRequiredGramsResult {
+    if literals.is_empty() {
+        return SparseGramRequiredGramsResult {
+            eligible: false,
+            grams: Vec::new(),
+            weights_id,
+        };
+    }
+
+    let mut grams = HashSet::new();
+    for literal in literals {
+        let Some(normalized) = normalize_literal(literal) else {
+            return SparseGramRequiredGramsResult {
+                eligible: false,
+                grams: Vec::new(),
+                weights_id,
+            };
+        };
+        let required = extract_covering_grams(&normalized, weights);
+        if required.is_empty() {
+            return SparseGramRequiredGramsResult {
+                eligible: false,
+                grams: Vec::new(),
+                weights_id,
+            };
+        }
+        for gram in required {
+            grams.insert(gram.to_string());
+        }
+    }
+
+    let mut grams = grams.into_iter().collect::<Vec<_>>();
+    grams.sort_unstable();
+    SparseGramRequiredGramsResult {
+        eligible: true,
+        grams,
+        weights_id,
+    }
 }
 
 /// Extract the minimal covering set of sparse grams from a span (query time).

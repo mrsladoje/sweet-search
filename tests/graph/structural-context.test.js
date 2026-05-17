@@ -6,6 +6,7 @@ import { tmpdir } from 'os';
 import { StructuralContextBuilder, formatStructuralContext } from '../../core/graph/index.js';
 import { callsiteHints } from '../../core/graph/structural-callsite-hints.js';
 import { extractHeaderContext } from '../../core/graph/structural-header-context.js';
+import { writeManifest, zeroManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 
 function writeFileLines(root, file, lines) {
   const abs = join(root, file);
@@ -89,6 +90,70 @@ function createGraphDb(dbPath) {
   rel.run(6, 2, 'handleSubmit', 'calls', 1, 5);
   rel.run(8, 8, 'current_app.make_response', 'calls', 1, 4);
   rel.run(24, null, 'res.render', 'calls', 1, 3);
+  db.close();
+}
+
+function writeGraphManifest(root, epoch) {
+  writeManifest(root, {
+    ...zeroManifest({ codeGraph: 'code-graph.db' }),
+    epoch,
+    codeGraph: { path: 'code-graph.db', epoch },
+  });
+}
+
+function createEpochGraphDb(dbPath) {
+  const db = new Database(dbPath);
+  db.exec(`
+    CREATE TABLE entities (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      file_path TEXT,
+      start_line INTEGER,
+      end_line INTEGER,
+      signature TEXT,
+      doc_comment TEXT,
+      summary TEXT,
+      package TEXT,
+      parent_class TEXT,
+      search_text TEXT,
+      name_alias TEXT,
+      stale_since INTEGER DEFAULT NULL,
+      epoch_written INTEGER,
+      epoch_retired INTEGER
+    );
+    CREATE TABLE relationships (
+      id INTEGER PRIMARY KEY,
+      source_id INTEGER,
+      target_id INTEGER,
+      target_name TEXT,
+      type TEXT,
+      weight REAL DEFAULT 1.0,
+      context_line INTEGER,
+      full_import_path TEXT,
+      epoch_written INTEGER,
+      epoch_retired INTEGER
+    );
+  `);
+  const ent = db.prepare(`
+    INSERT INTO entities
+      (id, name, type, file_path, start_line, end_line, signature, summary, search_text, stale_since, epoch_written, epoch_retired)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  ent.run(1, 'Widget', 'function', 'src/old-widget.js', 1, 4, 'function Widget() {', 'Old widget', '', 1111, 1, 3);
+  ent.run(2, 'Widget', 'function', 'src/new-widget.js', 1, 4, 'function Widget() {', 'New widget', '', null, 3, null);
+  ent.run(3, 'Caller', 'function', 'src/caller.js', 1, 5, 'function Caller() {', 'Calls widget', '', null, 1, null);
+  ent.run(4, 'OldOnly', 'function', 'src/old-only.js', 1, 3, 'function OldOnly() {', 'Old callee', '', 2222, 1, 3);
+  ent.run(5, 'NewOnly', 'function', 'src/new-only.js', 1, 3, 'function NewOnly() {', 'New callee', '', null, 3, null);
+
+  const rel = db.prepare(`
+    INSERT INTO relationships (source_id, target_id, target_name, type, weight, context_line, epoch_written, epoch_retired)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  rel.run(3, 1, 'Widget', 'calls', 1, 2, 1, 3);
+  rel.run(3, 2, 'Widget', 'calls', 1, 2, 3, null);
+  rel.run(1, 4, 'OldOnly', 'calls', 1, 2, 1, 3);
+  rel.run(2, 5, 'NewOnly', 'calls', 1, 2, 3, null);
   db.close();
 }
 
@@ -281,6 +346,173 @@ describe('StructuralContextBuilder', () => {
     });
 
     expect(result.target.filePath).toBe('src/regex/error.rs');
+  });
+
+  it('uses the adjacent manifest epoch for structural candidates and relationships', () => {
+    builder?.close();
+    rmSync(root, { recursive: true, force: true });
+    root = mkdtempSync(join(tmpdir(), 'sweet-trace-epoch-'));
+    dbPath = join(root, 'code-graph.db');
+    createEpochGraphDb(dbPath);
+    writeFileLines(root, 'src/old-widget.js', ['function Widget() {', '  return OldOnly()', '}']);
+    writeFileLines(root, 'src/new-widget.js', ['function Widget() {', '  return NewOnly()', '}']);
+    writeFileLines(root, 'src/caller.js', ['function Caller() {', '  return Widget()', '}']);
+    writeFileLines(root, 'src/old-only.js', ['function OldOnly() {', '  return true', '}']);
+    writeFileLines(root, 'src/new-only.js', ['function NewOnly() {', '  return true', '}']);
+
+    writeGraphManifest(root, 2);
+    builder = new StructuralContextBuilder({ projectRoot: root, graphDbPath: dbPath });
+    const epoch2 = builder.build('Widget', { tokenBudget: 4000, maxDepth: 2 });
+    expect(epoch2.target.filePath).toBe('src/old-widget.js');
+    expect(epoch2.sections.callers.items.map(item => item.name)).toContain('Caller');
+    expect(epoch2.sections.callees.items.map(item => item.name)).toContain('OldOnly');
+    expect(epoch2.sections.callees.items.map(item => item.name)).not.toContain('NewOnly');
+
+    builder.close();
+    writeGraphManifest(root, 4);
+    builder = new StructuralContextBuilder({ projectRoot: root, graphDbPath: dbPath });
+    const epoch4 = builder.build('Widget', { tokenBudget: 4000, maxDepth: 2 });
+    expect(epoch4.target.filePath).toBe('src/new-widget.js');
+    expect(epoch4.sections.callees.items.map(item => item.name)).toContain('NewOnly');
+    expect(epoch4.sections.callees.items.map(item => item.name)).not.toContain('OldOnly');
+  });
+
+  it('hides HCGS summaries retired at the adjacent manifest epoch', () => {
+    builder?.close();
+    rmSync(root, { recursive: true, force: true });
+    root = mkdtempSync(join(tmpdir(), 'sweet-trace-hcgs-'));
+    dbPath = join(root, 'code-graph.db');
+    createEpochGraphDb(dbPath);
+    writeFileLines(root, 'src/old-widget.js', ['function Widget() {', '  return OldOnly()', '}']);
+    writeFileLines(root, 'src/old-only.js', ['function OldOnly() {', '  return true', '}']);
+
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE hcgs_summary_metadata (
+        entity_id TEXT PRIMARY KEY,
+        source_entity_ids TEXT NOT NULL,
+        source_chunk_struct_ids TEXT NOT NULL,
+        source_hashes TEXT NOT NULL,
+        epoch_written INTEGER NOT NULL DEFAULT 0,
+        epoch_retired INTEGER
+      ) WITHOUT ROWID
+    `);
+    db.prepare(`
+      INSERT INTO hcgs_summary_metadata (
+        entity_id, source_entity_ids, source_chunk_struct_ids, source_hashes, epoch_written, epoch_retired
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run('1', '[]', '[]', '{}', 1, 2);
+    db.close();
+
+    writeGraphManifest(root, 1);
+    builder = new StructuralContextBuilder({ projectRoot: root, graphDbPath: dbPath });
+    expect(builder.build('Widget', { tokenBudget: 4000 }).target.summary).toBe('Old widget');
+
+    builder.close();
+    writeGraphManifest(root, 2);
+    builder = new StructuralContextBuilder({ projectRoot: root, graphDbPath: dbPath });
+    const result = builder.build('Widget', { tokenBudget: 4000 });
+    expect(result.target.filePath).toBe('src/old-widget.js');
+    expect(result.target.summary).toBe('');
+  });
+
+  it('does not cache live HCGS summary visibility after sidecar retirement', () => {
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE hcgs_summary_metadata (
+        entity_id TEXT PRIMARY KEY,
+        source_entity_ids TEXT NOT NULL,
+        source_chunk_struct_ids TEXT NOT NULL,
+        source_hashes TEXT NOT NULL,
+        epoch_written INTEGER NOT NULL DEFAULT 0,
+        epoch_retired INTEGER
+      ) WITHOUT ROWID
+    `);
+    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('Live process summary', 1);
+    db.prepare(`
+      INSERT INTO hcgs_summary_metadata (
+        entity_id, source_entity_ids, source_chunk_struct_ids, source_hashes, epoch_written, epoch_retired
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run('1', '[]', '[]', '{}', 1, null);
+    db.close();
+
+    expect(builder.build('processOrder', { tokenBudget: 4000 }).target.summary).toBe('Live process summary');
+
+    const writer = new Database(dbPath);
+    writer.prepare('UPDATE hcgs_summary_metadata SET epoch_retired = ? WHERE entity_id = ?').run(2, '1');
+    writer.close();
+
+    expect(builder.build('processOrder', { tokenBudget: 4000 }).target.summary).toBe('');
+  });
+
+  it('detects HCGS sidecar creation after a live structural reader has opened', () => {
+    expect(builder.build('processOrder', { tokenBudget: 4000 }).target.summary).toBe('Coordinates validation and commit');
+
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE hcgs_summary_metadata (
+        entity_id TEXT PRIMARY KEY,
+        source_entity_ids TEXT NOT NULL,
+        source_chunk_struct_ids TEXT NOT NULL,
+        source_hashes TEXT NOT NULL,
+        epoch_written INTEGER NOT NULL DEFAULT 0,
+        epoch_retired INTEGER
+      ) WITHOUT ROWID
+    `);
+    db.prepare(`
+      INSERT INTO hcgs_summary_metadata (
+        entity_id, source_entity_ids, source_chunk_struct_ids, source_hashes, epoch_written, epoch_retired
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run('1', '[]', '[]', '{}', 1, 2);
+    db.close();
+
+    expect(builder.build('processOrder', { tokenBudget: 4000 }).target.summary).toBe('');
+  });
+
+  it('opens the code graph path named by the adjacent manifest', () => {
+    builder?.close();
+    rmSync(root, { recursive: true, force: true });
+    root = mkdtempSync(join(tmpdir(), 'sweet-trace-manifest-path-'));
+    dbPath = join(root, 'code-graph.db');
+    createGraphDb(dbPath);
+    createEpochGraphDb(join(root, 'code-graph-epoch-4.db'));
+    writeFileLines(root, 'src/new-widget.js', ['function Widget() {', '  return NewOnly()', '}']);
+    writeFileLines(root, 'src/new-only.js', ['function NewOnly() {', '  return true', '}']);
+    writeManifest(root, {
+      ...zeroManifest({ codeGraph: 'code-graph-epoch-4.db' }),
+      epoch: 4,
+      codeGraph: { path: 'code-graph-epoch-4.db', epoch: 4 },
+    });
+
+    builder = new StructuralContextBuilder({ projectRoot: root, graphDbPath: dbPath });
+    const result = builder.build('Widget', { tokenBudget: 4000, maxDepth: 2 });
+    expect(result.target.filePath).toBe('src/new-widget.js');
+    expect(result.sections.callees.items.map(item => item.name)).toContain('NewOnly');
+  });
+
+  it('uses the manifest code graph path when an explicit epoch is supplied', () => {
+    builder?.close();
+    rmSync(root, { recursive: true, force: true });
+    root = mkdtempSync(join(tmpdir(), 'sweet-trace-explicit-manifest-path-'));
+    dbPath = join(root, 'code-graph.db');
+    createGraphDb(dbPath);
+    createEpochGraphDb(join(root, 'code-graph-epoch-4.db'));
+    writeFileLines(root, 'src/old-widget.js', ['function Widget() {', '  return OldOnly()', '}']);
+    writeFileLines(root, 'src/new-widget.js', ['function Widget() {', '  return NewOnly()', '}']);
+    writeFileLines(root, 'src/caller.js', ['function Caller() {', '  return Widget()', '}']);
+    writeFileLines(root, 'src/old-only.js', ['function OldOnly() {', '  return true', '}']);
+    writeFileLines(root, 'src/new-only.js', ['function NewOnly() {', '  return true', '}']);
+    writeManifest(root, {
+      ...zeroManifest({ codeGraph: 'code-graph-epoch-4.db' }),
+      epoch: 4,
+      codeGraph: { path: 'code-graph-epoch-4.db', epoch: 4 },
+    });
+
+    builder = new StructuralContextBuilder({ projectRoot: root, graphDbPath: dbPath, manifestEpoch: 2 });
+    const result = builder.build('Widget', { tokenBudget: 4000, maxDepth: 2 });
+    expect(result.target.filePath).toBe('src/old-widget.js');
+    expect(result.sections.callees.items.map(item => item.name)).toContain('OldOnly');
+    expect(result.sections.callees.items.map(item => item.name)).not.toContain('NewOnly');
   });
 
   it('surfaces same-file related definitions from target identifiers', () => {

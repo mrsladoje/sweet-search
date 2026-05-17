@@ -14,7 +14,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Reconciler } from '../../core/incremental-indexing/application/reconciler.mjs';
-import { readManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
+import {
+  readManifest,
+  writeManifest,
+  zeroManifest,
+} from '../../core/incremental-indexing/infrastructure/manifest.mjs';
+import {
+  enqueueMaintenanceJob,
+  readMaintenanceQueue,
+} from '../../core/incremental-indexing/application/maintenance-worker.mjs';
 
 function makeAdapter(overrides = {}) {
   return {
@@ -57,9 +65,11 @@ describe('Reconciler / tick lifecycle', () => {
 
   it('honors filesPerTick when more dirty files exist than budget', async () => {
     const dirty = ['a.js', 'b.js', 'c.js', 'd.js', 'e.js'];
+    const requeued = [];
     let handed = 0;
     const adapter = makeAdapter({
       readDirtySet: async () => dirty,
+      requeueDirtyFiles: async (files) => { requeued.push(...files); },
       hashFile: async (file) => {
         handed += 1;
         return { file, contentUnchanged: false, chunks: [] };
@@ -75,7 +85,39 @@ describe('Reconciler / tick lifecycle', () => {
     expect(handed).toBe(3);
     expect(snap.files_processed).toBe(3);
     expect(snap.dirty_paths_seen).toBe(5);
+    expect(snap.dirty_paths_deferred).toBe(2);
+    expect(requeued).toEqual(['d.js', 'e.js']);
     expect(snap.chunks_encoded).toBe(3);
+  });
+
+  it('honors cpuBudgetMs between files and requeues the tail', async () => {
+    const dirty = ['a.js', 'b.js', 'c.js'];
+    const requeued = [];
+    const handed = [];
+    let nowMs = 0;
+    const adapter = makeAdapter({
+      readDirtySet: async () => dirty,
+      requeueDirtyFiles: async (files) => { requeued.push(...files); },
+      hashFile: async (file) => {
+        handed.push(file);
+        nowMs += 11;
+        return { file, contentUnchanged: false, chunks: [] };
+      },
+      applyVectorDelta: async () => ({ ops: { vectors_upsert: 1 }, chunksEncoded: 1, chunksTotal: 1 }),
+    });
+    const r = new Reconciler({
+      stateDir,
+      adapters: adapter,
+      now: () => nowMs,
+      config: { filesPerTick: 10, cpuBudgetMs: 10 },
+    });
+
+    const snap = await r.tick();
+
+    expect(handed).toEqual(['a.js']);
+    expect(snap.files_processed).toBe(1);
+    expect(snap.dirty_paths_deferred).toBe(2);
+    expect(requeued).toEqual(['b.js', 'c.js']);
   });
 
   it('counts files whose content is unchanged separately', async () => {
@@ -111,6 +153,308 @@ describe('Reconciler / tick lifecycle', () => {
     expect(snap.ops_per_tier.li_tombstone).toBe(2);
     expect(snap.chunks_encoded).toBe(4);
     expect(snap.chunks_hash_reused).toBe(1);
+  });
+
+  it('publishes adapter-provided tier descriptors into the next manifest', async () => {
+    const adapter = makeAdapter({
+      readDirtySet: async () => ['x.js'],
+      applyGraphDelta: async () => ({
+        ops: { graph_upsert: 1 },
+        manifest: { path: 'code-graph.next.db' },
+      }),
+      applyVectorDelta: async () => ({
+        ops: { vectors_upsert: 1 },
+        vectorOps: [{ id: 'x' }],
+        tokenOps: [{ id: 'x' }],
+        gramOps: [{ file: 'x.js' }],
+        manifest: { path: 'codebase.next.db' },
+      }),
+      applyHNSWDelta: async () => ({
+        ops: { hnsw_add: 1 },
+        manifest: { path: 'codebase-hnsw.next.idx', stale: 'codebase-hnsw.next.idx.stale.bin' },
+      }),
+      applyBinaryHNSWDelta: async () => ({
+        ops: { binary_hnsw_append: 1 },
+        manifest: { path: 'codebase-binary-hnsw.next.idx' },
+      }),
+      applyLIDelta: async () => ({
+        ops: { li_segment_append: 1 },
+        manifest: { manifest: 'codebase-late-interaction.next.db.segments/manifest.json' },
+      }),
+      applySparseGramDelta: async () => ({
+        ops: { sparse_gram_delta_upsert: 1 },
+        manifest: {
+          base: 'codebase-sparse-grams.idx',
+          deltas: ['codebase-sparse-grams.idx.deltas/1-0.ssgrmdelta'],
+          weightsId: 'weights-v2',
+        },
+      }),
+    });
+    const r = new Reconciler({ stateDir, adapters: adapter });
+
+    await r.tick();
+    const manifest = readManifest(stateDir);
+
+    expect(manifest.codeGraph.path).toBe('code-graph.next.db');
+    expect(manifest.vectors.path).toBe('codebase.next.db');
+    expect(manifest.hnsw).toMatchObject({
+      path: 'codebase-hnsw.next.idx',
+      stale: 'codebase-hnsw.next.idx.stale.bin',
+      epoch: 1,
+    });
+    expect(manifest.binaryHnsw.path).toBe('codebase-binary-hnsw.next.idx');
+    expect(manifest.lateInteraction.manifest).toBe('codebase-late-interaction.next.db.segments/manifest.json');
+    expect(manifest.sparseGram).toMatchObject({
+      deltas: ['codebase-sparse-grams.idx.deltas/1-0.ssgrmdelta'],
+      weightsId: 'weights-v2',
+      epoch: 1,
+    });
+  });
+
+  it('merges sparse-gram delta allowlists across multiple dirty files', async () => {
+    const adapter = makeAdapter({
+      readDirtySet: async () => ['a.js', 'b.js'],
+      applySparseGramDelta: async (file) => ({
+        ops: { sparse_gram_delta_upsert: 1 },
+        manifest: {
+          deltas: [`codebase-sparse-grams.idx.deltas/1-${file[0]}.ssgrmdelta`],
+        },
+      }),
+    });
+    const r = new Reconciler({ stateDir, adapters: adapter });
+
+    await r.tick();
+    const manifest = readManifest(stateDir);
+
+    expect(manifest.sparseGram.deltas).toEqual([
+      'codebase-sparse-grams.idx.deltas/1-a.ssgrmdelta',
+      'codebase-sparse-grams.idx.deltas/1-b.ssgrmdelta',
+    ]);
+  });
+
+  it('carries forward previous sparse-gram delta allowlists when appending a new delta', async () => {
+    const previous = zeroManifest({
+      sparseBase: 'codebase-sparse-grams.idx',
+      sparseDeltas: ['codebase-sparse-grams.idx.deltas/5-old.ssgrmdelta'],
+      weightsId: 'weights-v2',
+    });
+    previous.epoch = 5;
+    previous.sparseGram.epoch = 5;
+    writeManifest(stateDir, previous);
+    const adapter = makeAdapter({
+      readDirtySet: async () => ['c.js'],
+      applySparseGramDelta: async () => ({
+        ops: { sparse_gram_delta_upsert: 1 },
+        manifest: {
+          deltas: ['codebase-sparse-grams.idx.deltas/6-new.ssgrmdelta'],
+        },
+      }),
+    });
+    const r = new Reconciler({ stateDir, adapters: adapter });
+
+    await r.tick();
+    const manifest = readManifest(stateDir);
+
+    expect(manifest.epoch).toBe(6);
+    expect(manifest.sparseGram).toMatchObject({
+      base: 'codebase-sparse-grams.idx',
+      weightsId: 'weights-v2',
+      epoch: 6,
+    });
+    expect(manifest.sparseGram.deltas).toEqual([
+      'codebase-sparse-grams.idx.deltas/5-old.ssgrmdelta',
+      'codebase-sparse-grams.idx.deltas/6-new.ssgrmdelta',
+    ]);
+  });
+
+  it('replaces sparse-gram delta allowlists when a new compacted base is published', async () => {
+    const previous = zeroManifest({
+      sparseBase: 'codebase-sparse-grams.idx',
+      sparseDeltas: ['codebase-sparse-grams.idx.deltas/5-old.ssgrmdelta'],
+      weightsId: 'weights-v2',
+    });
+    previous.epoch = 5;
+    previous.sparseGram.epoch = 5;
+    writeManifest(stateDir, previous);
+    const adapter = makeAdapter({
+      readDirtySet: async () => ['c.js'],
+      applySparseGramDelta: async () => ({
+        ops: { sparse_gram_delta_upsert: 1 },
+        manifest: {
+          base: 'codebase-sparse-grams.compacted.idx',
+          deltas: [],
+        },
+      }),
+    });
+    const r = new Reconciler({ stateDir, adapters: adapter });
+
+    await r.tick();
+    const manifest = readManifest(stateDir);
+
+    expect(manifest.epoch).toBe(6);
+    expect(manifest.sparseGram).toMatchObject({
+      base: 'codebase-sparse-grams.compacted.idx',
+      deltas: [],
+      weightsId: 'weights-v2',
+      epoch: 6,
+    });
+  });
+
+  it('clears sparse-gram delta allowlists when a compacted base omits deltas', async () => {
+    const previous = zeroManifest({
+      sparseBase: 'codebase-sparse-grams.idx',
+      sparseDeltas: ['codebase-sparse-grams.idx.deltas/5-old.ssgrmdelta'],
+      weightsId: 'weights-v2',
+    });
+    previous.epoch = 5;
+    previous.sparseGram.epoch = 5;
+    writeManifest(stateDir, previous);
+    const adapter = makeAdapter({
+      readDirtySet: async () => ['c.js'],
+      applySparseGramDelta: async () => ({
+        ops: { sparse_gram_delta_upsert: 1 },
+        manifest: { base: 'codebase-sparse-grams.compacted.idx' },
+      }),
+    });
+    const r = new Reconciler({ stateDir, adapters: adapter });
+
+    await r.tick();
+    const manifest = readManifest(stateDir);
+
+    expect(manifest.sparseGram).toMatchObject({
+      base: 'codebase-sparse-grams.compacted.idx',
+      deltas: [],
+      weightsId: 'weights-v2',
+      epoch: 6,
+    });
+  });
+
+  it('clears sparse-gram delta allowlists when the active weightsId changes', async () => {
+    const previous = zeroManifest({
+      sparseBase: 'codebase-sparse-grams.idx',
+      sparseDeltas: ['codebase-sparse-grams.idx.deltas/5-old.ssgrmdelta'],
+      weightsId: 'weights-v2',
+    });
+    previous.epoch = 5;
+    previous.sparseGram.epoch = 5;
+    writeManifest(stateDir, previous);
+    const adapter = makeAdapter({
+      readDirtySet: async () => ['c.js'],
+      applySparseGramDelta: async () => ({
+        ops: { sparse_gram_delta_upsert: 1 },
+        manifest: { weightsId: 'weights-v3' },
+      }),
+    });
+    const r = new Reconciler({ stateDir, adapters: adapter });
+
+    await r.tick();
+    const manifest = readManifest(stateDir);
+
+    expect(manifest.sparseGram).toMatchObject({
+      base: 'codebase-sparse-grams.idx',
+      deltas: [],
+      weightsId: 'weights-v3',
+      epoch: 6,
+    });
+  });
+
+  it('evaluates maintenance watermarks and enqueues jobs during the tick', async () => {
+    const adapter = makeAdapter({
+      readMaintenanceState: () => ({
+        fts5: { segmentCount: 70 },
+        sparseGram: { deltaSizeRatio: 0.2 },
+      }),
+      scheduleMaintenance: async (job) => enqueueMaintenanceJob(stateDir, job),
+    });
+    const r = new Reconciler({ stateDir, adapters: adapter });
+
+    const snap = await r.tick();
+    const jobs = readMaintenanceQueue(stateDir);
+
+    expect(snap.maintenance_jobs_enqueued).toBe(2);
+    expect(jobs.map((job) => job.tier).sort()).toEqual(['fts5', 'sparse_gram']);
+    expect(jobs.every((job) => job.epoch === 1)).toBe(true);
+  });
+
+  it('accepts precomputed maintenance jobs from the adapter', async () => {
+    const scheduled = [];
+    const adapter = makeAdapter({
+      readMaintenanceState: () => [
+        { tier: 'li_segment', reason: 'stale_doc_ratio', payload: { segmentId: 's1' } },
+      ],
+      scheduleMaintenance: async (job) => scheduled.push(job),
+    });
+    const r = new Reconciler({ stateDir, adapters: adapter });
+
+    const snap = await r.tick();
+
+    expect(snap.maintenance_jobs_enqueued).toBe(1);
+    expect(scheduled[0]).toMatchObject({ tier: 'li_segment', epoch: 1 });
+  });
+
+  it('does not schedule maintenance when manifest publish fails', async () => {
+    const scheduled = [];
+    const requeued = [];
+    const adapter = makeAdapter({
+      readDirtySet: async () => ['x'],
+      readMaintenanceState: () => [
+        { tier: 'fts5', reason: 'segment_count', payload: { segmentCount: 70 } },
+      ],
+      scheduleMaintenance: async (job) => scheduled.push(job),
+      requeueDirtyFiles: async (files) => { requeued.push(...files); },
+      persistManifest: async () => {
+        throw new Error('manifest write failed');
+      },
+    });
+    const r = new Reconciler({ stateDir, adapters: adapter });
+
+    await expect(r.tick()).rejects.toThrow(/manifest write failed/);
+    expect(scheduled).toEqual([]);
+    expect(requeued).toEqual(['x']);
+    expect(readManifest(stateDir)).toBeNull();
+  });
+
+  it('does not duplicate already-requeued budget tails when publish fails', async () => {
+    const requeueCalls = [];
+    const adapter = makeAdapter({
+      readDirtySet: async () => ['a.js', 'b.js', 'c.js', 'd.js'],
+      requeueDirtyFiles: async (files) => { requeueCalls.push([...files]); },
+      applyVectorDelta: async () => ({ ops: { vectors_upsert: 1 }, chunksEncoded: 1, chunksTotal: 1 }),
+      persistManifest: async () => {
+        throw new Error('manifest write failed');
+      },
+    });
+    const r = new Reconciler({
+      stateDir,
+      adapters: adapter,
+      config: { filesPerTick: 2 },
+    });
+
+    await expect(r.tick()).rejects.toThrow(/manifest write failed/);
+
+    expect(requeueCalls).toEqual([
+      ['c.js', 'd.js'],
+      ['a.js', 'b.js'],
+    ]);
+    expect(new Set(requeueCalls.flat()).size).toBe(4);
+  });
+
+  it('requeues the drained dirty snapshot when a per-file update fails before publish', async () => {
+    const dirty = ['a.js', 'b.js', 'c.js'];
+    const requeued = [];
+    const adapter = makeAdapter({
+      readDirtySet: async () => dirty,
+      requeueDirtyFiles: async (files) => { requeued.push(...files); },
+      applyVectorDelta: async (file) => {
+        if (file === 'b.js') throw new Error('vector delta failed');
+        return { ops: { vectors_upsert: 1 }, chunksEncoded: 1, chunksTotal: 1 };
+      },
+    });
+    const r = new Reconciler({ stateDir, adapters: adapter });
+
+    await expect(r.tick()).rejects.toThrow(/vector delta failed/);
+    expect(requeued).toEqual(dirty);
+    expect(readManifest(stateDir)).toBeNull();
   });
 
   it('refuses re-entrance during an in-flight tick', async () => {

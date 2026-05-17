@@ -81,7 +81,7 @@ async function child(lang, goldId) {
   const fam = input.family || FAMILY_OF_LANG[lang];
   const shape = BEST_SHAPE(fam);
   const variant = JSON.parse(fs.readFileSync(path.join(VARIANTS_DIR, `${lang}-${goldId}-${shape}.json`), 'utf8'));
-  const { readSemantic } = await import('../../../search/search-read-semantic.js');
+  const { readSemantic } = await import('../../search-runtime.mjs');
   // Use a large topK to see the FULL candidate pool, then identify
   // where the gold-overlapping chunk ranks.
   const resp = await readSemantic({

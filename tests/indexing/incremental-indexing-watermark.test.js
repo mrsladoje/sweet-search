@@ -73,10 +73,10 @@ describe('watermark / evaluator', () => {
   it('emits sparse-gram job on either delta-size or segment-count breach', () => {
     expect(evaluateWatermarks({
       sparseGram: { deltaSizeRatio: 0.15, deltaSegmentCount: 0 },
-    })[0].tier).toBe('sparse_gram');
+    })[0]).toMatchObject({ tier: 'sparse_gram', reason: 'delta_size_ratio' });
     expect(evaluateWatermarks({
       sparseGram: { deltaSizeRatio: 0, deltaSegmentCount: 100 },
-    })[0].tier).toBe('sparse_gram');
+    })[0]).toMatchObject({ tier: 'sparse_gram', reason: 'delta_segment_count' });
   });
 
   it('emits an fts5 job past the segment threshold', () => {

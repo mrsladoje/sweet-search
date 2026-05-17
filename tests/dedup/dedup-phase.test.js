@@ -132,6 +132,22 @@ describe('selectExemplar', () => {
     expect(selectExemplar(members).idx).toBe(1);
   });
 
+  it('uses canonical metadata paths before chunk.file when breaking ties', () => {
+    const members = [
+      { idx: 0, chunk: { text: 'same', file: 'a.js', id: '0', metadata: { path: 'src/z.js' } } },
+      { idx: 1, chunk: { text: 'same', file: 'z.js', id: '1', metadata: { path: 'src/a.js' } } },
+    ];
+    expect(selectExemplar(members).idx).toBe(1);
+  });
+
+  it('ignores unsafe metadata paths when breaking ties', () => {
+    const members = [
+      { idx: 0, chunk: { text: 'same', file: 'z.js', id: '0', metadata: { path: '../a.js' } } },
+      { idx: 1, chunk: { text: 'same', file: 'b.js', id: '1' } },
+    ];
+    expect(selectExemplar(members).idx).toBe(1);
+  });
+
   it('ties on path break by lowest hash/id', () => {
     const members = [
       { idx: 0, chunk: { text: 'x', file: 'a.js', id: '222', metadata: { hash: '222' } } },

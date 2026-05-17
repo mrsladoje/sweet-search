@@ -24,6 +24,7 @@ import {
   filterLive,
   tombstoneFraction,
 } from '../../core/incremental-indexing/infrastructure/tombstone-bitmap.mjs';
+import { popcount as runtimePopcount } from '../../core/infrastructure/tombstone-bitmap-reader.js';
 
 describe('tombstone-bitmap / shape', () => {
   it('createBitmap rejects non-positive capacities', () => {
@@ -82,10 +83,30 @@ describe('tombstone-bitmap / persistence', () => {
     expect(isSet(back, 6)).toBe(false);
   });
 
+  it('creates the parent directory on first save', () => {
+    const b = createBitmap(64);
+    setBit(b, 3);
+    const target = path.join(dir, 'nested', 'bm.bin');
+    saveBitmap(target, b);
+
+    expect(isSet(loadBitmap(target), 3)).toBe(true);
+  });
+
   it('rejects mismatched magic / version', () => {
     const target = path.join(dir, 'bm.bin');
     fs.writeFileSync(target, Buffer.alloc(128, 0));
     expect(() => loadBitmap(target)).toThrow(/magic/);
+  });
+
+  it('rejects truncated payloads with a valid header', () => {
+    const target = path.join(dir, 'bm.bin');
+    const header = Buffer.alloc(64);
+    Buffer.from('SSTB', 'ascii').copy(header, 0);
+    header.writeUInt32LE(1, 4);
+    header.writeBigUInt64LE(1024n, 8);
+    fs.writeFileSync(target, Buffer.concat([header, Buffer.alloc(8)]));
+
+    expect(() => loadBitmap(target)).toThrow(/truncated payload/);
   });
 });
 
@@ -117,6 +138,13 @@ describe('tombstone-bitmap / popcount and filterLive', () => {
     const b = createBitmap(2048);
     for (const i of [0, 7, 31, 32, 63, 64, 1024, 2047]) setBit(b, i);
     expect(popcount(b)).toBe(8);
+  });
+
+  it('popcount ignores 64-byte alignment padding beyond capacity', () => {
+    const b = createBitmap(3);
+    b.payload.fill(0xff);
+    expect(popcount(b)).toBe(3);
+    expect(runtimePopcount(b)).toBe(3);
   });
 
   it('filterLive drops tombstoned indices', () => {

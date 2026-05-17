@@ -71,10 +71,28 @@ describe('sparse-gram-delta', () => {
     expect(map.get(id).epoch).toBe(2);
   });
 
+  it('resolveLatestRecords honors a pinned maxEpoch', () => {
+    const id = fileIdFor('src/a.js');
+    appendDeltaRecord(basePath, 1, {
+      fileId: id, filePath: 'src/a.js', contentHash: 'old', deleted: false,
+      symbolMask: 0, weightsId: FALLBACK_WEIGHTS_ID, grams: [],
+    });
+    appendDeltaRecord(basePath, 2, {
+      fileId: id, filePath: 'src/a.js', contentHash: 'new', deleted: false,
+      symbolMask: 0, weightsId: FALLBACK_WEIGHTS_ID, grams: [],
+    });
+    expect(listDeltaSegments(basePath, { maxEpoch: 1 }).map((s) => s.epoch)).toEqual([1]);
+    const pinned = resolveLatestRecords(basePath, { maxEpoch: 1 });
+    expect(pinned.get(id).record.contentHash).toBe('old');
+    expect(pinned.get(id).epoch).toBe(1);
+  });
+
   it('recordFileDeletion writes a deleted record', () => {
     recordFileDeletion(basePath, 3, 'src/a.js');
     const map = resolveLatestRecords(basePath);
-    expect(map.get(fileIdFor('src/a.js')).record.deleted).toBe(true);
+    const record = map.get(fileIdFor('src/a.js')).record;
+    expect(record.deleted).toBe(true);
+    expect(record.weightsId).toBe(FALLBACK_WEIGHTS_ID);
   });
 
   it('deltaSizeStats reports ratio + segment count', () => {

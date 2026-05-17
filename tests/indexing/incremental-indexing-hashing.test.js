@@ -25,6 +25,12 @@ describe('hashing / contentHash', () => {
     expect(h).toMatch(/^[a-f0-9]{16}$/);
   });
 
+  it('defaults to xxHash3-64 rather than the xxHash64 fallback', () => {
+    expect(contentHashSync('')).toBe('2d06800538d394c2');
+    expect(contentHashSync('hello')).toBe('9555e8555c62dcfd');
+    expect(contentHashSync('a'.repeat(64))).toBe('2dddcef07d26ee8c');
+  });
+
   it('is deterministic across repeated calls', async () => {
     expect(await contentHash('foo')).toBe(await contentHash('foo'));
     expect(contentHashSync('foo')).toBe(contentHashSync('foo'));

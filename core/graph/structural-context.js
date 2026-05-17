@@ -278,6 +278,7 @@ export class StructuralContextBuilder {
     this.projectRoot = options.projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
     this.repo = options.repository || new StructuralContextRepository(options.graphDbPath || DB_PATHS.codeGraph, {
       projectRoot: this.projectRoot,
+      manifestEpoch: options.manifestEpoch,
     });
   }
 

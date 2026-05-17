@@ -67,10 +67,30 @@ describe('pollingBackstopSweep', () => {
   it('does not double-enqueue paths the watcher has already pushed', async () => {
     fs.writeFileSync(path.join(projectRoot, 'a.js'), '1');
     const dirty = new DirtySet();
-    dirty.add(path.join(projectRoot, 'a.js'));
+    dirty.add(path.join(fs.realpathSync.native(projectRoot), 'a.js'));
     const stats = await pollingBackstopSweep(projectRoot, () => false, dirty);
     expect(stats.filesEnqueued).toBe(0);
     expect(dirty.size).toBe(1);
+  });
+
+  it('can use stat metadata to enqueue only genuinely dirty files', async () => {
+    fs.mkdirSync(path.join(projectRoot, 'src'));
+    fs.writeFileSync(path.join(projectRoot, 'src', 'clean.js'), '1');
+    fs.writeFileSync(path.join(projectRoot, 'src', 'dirty.js'), '2');
+    fs.writeFileSync(path.join(projectRoot, 'src', 'also-clean.js'), '3');
+
+    const dirty = new DirtySet();
+    const stats = await pollingBackstopSweep(
+      projectRoot,
+      () => false,
+      dirty,
+      ({ relPath, stat }) => stat.isFile() && relPath === 'src/dirty.js',
+    );
+
+    expect(stats.filesSeen).toBe(3);
+    expect(stats.filesEnqueued).toBe(1);
+    expect(stats.filesSkippedUnchanged).toBe(2);
+    expect(dirty.peek()).toEqual([path.join(fs.realpathSync.native(projectRoot), 'src', 'dirty.js').replace(/\\/g, '/')]);
   });
 });
 
@@ -108,5 +128,30 @@ describe('FileWatcher', () => {
     // Either it warned (typical) or silently noop'd (some platforms).
     await w.stop();
     expect(warnings.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it('_handleEvent ignores paths that resolve outside the project root', async () => {
+    const dirty = new DirtySet();
+    const w = new FileWatcher({ projectRoot, dirtySet: dirty, debounceMs: 10 });
+    w._handleEvent('../outside.js');
+    await new Promise((r) => setTimeout(r, 25));
+    expect(dirty.size).toBe(0);
+  });
+
+  it.skipIf(process.platform === 'win32')('_handleEvent ignores paths under symlinks that escape the project root', async () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'sweet-search-watch-outside-'));
+    try {
+      fs.writeFileSync(path.join(outside, 'secret.js'), 'export const secret = true;\n');
+      fs.symlinkSync(outside, path.join(projectRoot, 'linked-outside'), 'dir');
+
+      const dirty = new DirtySet();
+      const w = new FileWatcher({ projectRoot, dirtySet: dirty, debounceMs: 10 });
+      w._handleEvent('linked-outside/secret.js');
+      await new Promise((r) => setTimeout(r, 25));
+
+      expect(dirty.size).toBe(0);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
 });

@@ -4,8 +4,10 @@
  * One explicit agent primitive for callers, callees, and impact context.
  */
 
+import { dirname } from 'node:path';
 import { DB_PATHS } from '../infrastructure/config/index.js';
 import { StructuralContextBuilder, formatStructuralContext } from '../graph/structural-context.js';
+import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
 
 function parseArgs(args) {
   const opts = {
@@ -40,14 +42,22 @@ function parseArgs(args) {
 }
 
 export function traceSymbol(symbol, options = {}) {
+  const graphDbPath = options.graphDbPath || DB_PATHS.codeGraph;
+  const readPin = beginPinnedRead({
+    stateDir: dirname(graphDbPath),
+    epoch: options.manifestEpoch,
+    meta: { tool: 'trace', symbol: String(symbol).slice(0, 200) },
+  });
   const builder = new StructuralContextBuilder({
     projectRoot: options.projectRoot,
-    graphDbPath: options.graphDbPath || DB_PATHS.codeGraph,
+    graphDbPath,
+    manifestEpoch: options.manifestEpoch ?? readPin?.epoch,
   });
   try {
     return builder.build(symbol, options);
   } finally {
     builder.close();
+    endPinnedRead(readPin);
   }
 }
 

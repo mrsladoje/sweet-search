@@ -7,7 +7,7 @@
  *
  * Features:
  * - Deferred merkle check (7s delay, ZERO startup latency)
- * - 45-second periodic merkle check (mtime/size fast-path)
+ * - 45-second periodic merkle check (mtime/size/inode fast-path)
  * - Full incremental index: FTS5, HNSW, Binary HNSW, Code Graph (full), HCGS
  * - Global lock file prevents race with manual /index-codebase
  * - Soft delete for removed files (handles branch switches, prune after 30d)
@@ -39,7 +39,7 @@
 
 import { readFileSync, writeFileSync, existsSync, unlinkSync, renameSync, appendFileSync, mkdirSync, openSync, closeSync, constants } from 'node:fs';
 import fs from 'node:fs/promises';
-import { dirname, join, relative, isAbsolute } from 'node:path';
+import { dirname, join, relative, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
@@ -149,6 +149,7 @@ const QUEUE_FILE = join(DATA_DIR, 'index-maintainer-queue.jsonl');
 const PROCESSING_FILE = join(DATA_DIR, 'index-maintainer-queue.processing.jsonl');
 const LOCK_FILE = join(DATA_DIR, 'index-maintainer.lock');
 const DEADLETTER_FILE = join(DATA_DIR, 'index-maintainer-deadletter.jsonl');
+const PAUSE_FILE = join(DATA_DIR, 'reconcile-pause.json');
 
 // Export configuration for testing
 export const CONFIG = {
@@ -158,6 +159,7 @@ export const CONFIG = {
   PROCESSING_FILE,
   LOCK_FILE,
   DEADLETTER_FILE,
+  PAUSE_FILE,
 };
 
 // Indexer paths
@@ -523,6 +525,145 @@ function refreshLock() {
 export function ensureDataDir() {
   if (!existsSync(DATA_DIR)) {
     mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+export function isReconcilePaused(stateDir = DATA_DIR) {
+  const pauseFile = join(stateDir, 'reconcile-pause.json');
+  try {
+    const payload = JSON.parse(readFileSync(pauseFile, 'utf-8'));
+    return {
+      paused: payload?.paused !== false,
+      pausedAt: payload?.pausedAt || null,
+      reason: payload?.reason || null,
+      filePath: pauseFile,
+    };
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      log('WARN', `Ignoring unreadable reconcile pause state: ${err.message}`);
+    }
+    return { paused: false, filePath: pauseFile };
+  }
+}
+
+export function reconcileV2Requested(env = process.env) {
+  const raw = env.SWEET_SEARCH_RECONCILE_V2;
+  if (raw == null || raw === '') return false;
+  const normalized = String(raw).trim().toLowerCase();
+  return normalized !== '0' && normalized !== 'false' && normalized !== 'off';
+}
+
+export function assertReconcileV2NotSilentlyIgnored(env = process.env) {
+  if (!reconcileV2Requested(env)) return;
+}
+
+function reconcileV2Context(env = process.env) {
+  const projectRoot = resolve(env.SWEET_SEARCH_PROJECT_ROOT || PROJECT_ROOT);
+  const stateDir = resolve(env.SWEET_SEARCH_STATE_DIR || join(projectRoot, '.sweet-search'));
+  return { projectRoot, stateDir };
+}
+
+function reconcileV2IntervalMs(env = process.env) {
+  const raw = env.SWEET_SEARCH_RECONCILE_INTERVAL_MS || env.SWEET_SEARCH_RECONCILE_INTERVAL;
+  const parsed = Number.parseInt(raw || '', 10);
+  return Number.isFinite(parsed) && parsed >= 1000 ? parsed : POLL_INTERVAL;
+}
+
+function readStateLock(lockFile) {
+  try {
+    const parsed = JSON.parse(readFileSync(lockFile, 'utf-8'));
+    return Number.isInteger(parsed.pid) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStateLock(lockFile) {
+  safeWriteFileSync(lockFile, JSON.stringify({
+    pid: process.pid,
+    timestamp: Date.now(),
+    startTime: getProcessStartTime(),
+  }));
+}
+
+function acquireStateLock(stateDir) {
+  mkdirSync(stateDir, { recursive: true });
+  const lockFile = join(stateDir, 'index-maintainer.lock');
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fd = openSync(lockFile, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+      writeFileSync(fd, JSON.stringify({ pid: process.pid, timestamp: Date.now(), startTime: getProcessStartTime() }));
+      closeSync(fd);
+      return { acquired: true, lockFile };
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      const existing = readStateLock(lockFile);
+      const stale = !existing || !isPidRunning(existing.pid, existing.startTime) || Date.now() - existing.timestamp > LOCK_STALE_THRESHOLD;
+      if (!stale) return { acquired: false, lockFile };
+      try { unlinkSync(lockFile); } catch {}
+    }
+  }
+  return { acquired: false, lockFile };
+}
+
+function releaseStateLock(lockFile) {
+  try {
+    const existing = readStateLock(lockFile);
+    if (existing?.pid === process.pid) unlinkSync(lockFile);
+  } catch {}
+}
+
+async function runReconcileV2Tick(ctx) {
+  const { runProductionReconcileTick } = await import('../incremental-indexing/application/production-reconciler.mjs');
+  const counters = await runProductionReconcileTick({
+    projectRoot: ctx.projectRoot,
+    stateDir: ctx.stateDir,
+    logger: {
+      info: (msg) => log('INFO', msg),
+      warn: (msg) => log('WARN', msg),
+      error: (msg) => log('ERROR', msg),
+    },
+  });
+  log('INFO', `Reconcile v2 tick complete: epoch=${counters.epoch}, processed=${counters.files_processed}, unchanged=${counters.content_unchanged}`);
+  return counters;
+}
+
+async function runReconcileV2Main({ runOnce, merkleOnce }) {
+  const ctx = reconcileV2Context();
+  mkdirSync(ctx.stateDir, { recursive: true });
+  if (runOnce || merkleOnce) {
+    await runReconcileV2Tick(ctx);
+    return;
+  }
+
+  const lock = acquireStateLock(ctx.stateDir);
+  if (!lock.acquired) {
+    log('INFO', `Another reconcile v2 maintainer is running for ${ctx.stateDir}, exiting.`);
+    return;
+  }
+  log('INFO', `Reconcile v2 lock acquired (PID: ${process.pid})`);
+
+  const intervalMs = reconcileV2IntervalMs();
+  const refresh = setInterval(() => writeStateLock(lock.lockFile), LOCK_REFRESH_INTERVAL);
+  const shutdown = () => { shutdownRequested = true; };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+  process.on('exit', () => releaseStateLock(lock.lockFile));
+
+  try {
+    while (!shutdownRequested) {
+      const pause = isReconcilePaused(ctx.stateDir);
+      if (pause.paused) {
+        log('INFO', `Automatic reconcile v2 work paused${pause.pausedAt ? ` since ${pause.pausedAt}` : ''}`);
+      } else {
+        await runReconcileV2Tick(ctx);
+      }
+      await new Promise((resolveSleep) => setTimeout(resolveSleep, intervalMs));
+    }
+  } finally {
+    clearInterval(refresh);
+    releaseStateLock(lock.lockFile);
+    log('INFO', 'Reconcile v2 shutdown complete');
   }
 }
 
@@ -962,7 +1103,7 @@ function releaseGlobalIndexLock() {
 
 /**
  * Perform merkle-state check for ALL file changes (internal + external).
- * Uses mtime/size fast-path for efficiency (~0.1ms per unchanged file).
+ * Uses mtime/size/inode fast-path for efficiency (~0.1ms per unchanged file).
  *
  * @returns {Promise<{checked: boolean, toIndex: string[], toRemove: string[], stats: Object}>}
  */
@@ -972,7 +1113,7 @@ async function performMerkleCheck() {
 
   try {
     // Dynamically import incremental tracker
-    const { getChangedFiles, updateState } = await import('../../core/incremental-tracker.js');
+    const { getChangedFiles, updateState } = await import('./incremental-tracker.js');
 
     // H3 FIX: Use dynamic loader with fallback paths
     const fg = await loadFastGlob();
@@ -987,7 +1128,7 @@ async function performMerkleCheck() {
       return { checked: true, toIndex: [], toRemove: [], stats: { totalFiles: 0 } };
     }
 
-    // Use incremental tracker to detect changes (mtime/size fast-path)
+    // Use incremental tracker to detect changes (mtime/size/inode fast-path)
     const { toIndex, toRemove, currentHashes, fastPathStats } = await getChangedFiles(allFiles, PROJECT_ROOT);
 
     const duration = Date.now() - startTime;
@@ -1521,6 +1662,12 @@ async function main() {
 
   // L1 FIX: Updated version to v3
   log('INFO', 'Starting index maintainer daemon v3...');
+  assertReconcileV2NotSilentlyIgnored();
+  if (reconcileV2Requested()) {
+    log('INFO', 'SWEET_SEARCH_RECONCILE_V2 enabled; using production Reconciler adapters');
+    await runReconcileV2Main({ runOnce, merkleOnce });
+    return;
+  }
 
   // Ensure .sweet-search directory exists
   ensureDataDir();
@@ -1580,6 +1727,23 @@ async function main() {
     log('INFO', 'Lock released, goodbye.');
   });
 
+  let pauseLogged = false;
+  const automaticWorkPaused = () => {
+    const pause = isReconcilePaused();
+    if (pause.paused) {
+      if (!pauseLogged) {
+        log('INFO', `Automatic reconcile work paused${pause.pausedAt ? ` since ${pause.pausedAt}` : ''}`);
+        pauseLogged = true;
+      }
+      return true;
+    }
+    if (pauseLogged) {
+      log('INFO', 'Automatic reconcile work resumed');
+      pauseLogged = false;
+    }
+    return false;
+  };
+
   // Refresh lock periodically to prevent stale detection
   const lockRefreshInterval = setInterval(() => {
     if (!shutdownRequested) {
@@ -1600,6 +1764,7 @@ async function main() {
     try {
       if (shutdownRequested) return;
       startupTimeout = null;  // Clear reference after execution
+      if (automaticWorkPaused()) return;
       log('INFO', `Running deferred first merkle check (after ${STARTUP_DELAY}ms delay)...`);
       await runMerkleCheckAndIndex();
     } catch (err) {
@@ -1614,6 +1779,7 @@ async function main() {
   const merkleCheckInterval = setInterval(async () => {
     try {
       if (shutdownRequested) return;
+      if (automaticWorkPaused()) return;
       log('INFO', 'Running periodic merkle check...');
       await runMerkleCheckAndIndex();
     } catch (err) {
@@ -1626,6 +1792,11 @@ async function main() {
   let consecutiveEmptyPolls = 0;
 
   while (!shutdownRequested) {
+    if (automaticWorkPaused()) {
+      await new Promise(r => setTimeout(r, POLL_INTERVAL));
+      continue;
+    }
+
     // H5 FIX: Atomic queue check and process (prevents race between peek and acquire)
     const result = await atomicCheckAndProcessQueue({ dryRun });
 

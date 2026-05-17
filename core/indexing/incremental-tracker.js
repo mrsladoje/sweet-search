@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Incremental Indexing Tracker v2.3
+ * Incremental Indexing Tracker v2.4
  *
  * Tracks file changes using content hashes to enable incremental reindexing.
  * Only files that have changed since last index are reprocessed.
@@ -11,9 +11,14 @@
  * - Forces full reindex when config fingerprint mismatches
  * - Prevents silent dimension mismatch corruption
  *
- * Sweet Search v2.3: mtime/size fast-path optimization (Phase 0.3)
- * - Stores { hash, size, mtime_ns } per file instead of just hash
- * - Fast-path: skip content read if (size, mtime_ns) match stored values
+ * Sweet Search v2.3: mtime/size/inode fast-path optimization (Phase 0.3)
+ *
+ * Sweet Search v2.4: xxHash3 content hashes
+ * - Uses the shared incremental hashing wrapper and records the hash
+ *   algorithm in the config fingerprint.
+ * - SHA/xxHash state mismatches force a controlled full reindex.
+ * - Stores { hash, size, mtime_ns, inode } per file instead of just hash
+ * - Fast-path: skip content read if (size, mtime_ns, inode) match stored values
  * - 10-50x speedup for typical incremental checks when few/no files changed
  * - Backward compatible migration from v2.2 (hash-only format)
  *
@@ -23,17 +28,17 @@
 import fs from 'fs/promises';
 import { existsSync, openSync, fsyncSync, closeSync } from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 import { DB_PATHS, EMBEDDING_CONFIG } from '../infrastructure/config/index.js';
+import { contentHashSync, HASH_ALGORITHM } from '../incremental-indexing/infrastructure/hashing.mjs';
 
 const STATE_PATH = DB_PATHS.merkle;
 
 // =============================================================================
-// CONFIG FINGERPRINT (Sweet Search v2.3)
+// CONFIG FINGERPRINT (Sweet Search v2.4)
 // Detects embedding provider/dimension changes that require full reindex
 // =============================================================================
 
-const STATE_VERSION = '2.3';
+const STATE_VERSION = '2.4';
 
 /**
  * Build config fingerprint from current embedding configuration
@@ -48,6 +53,7 @@ function buildConfigFingerprint() {
     // Quantization pipeline version — bump when changing the embedding pipeline
     // to invalidate all existing indexes. v2 = int8 quantized embeddings.
     pipelineVersion: 2,
+    hashAlgorithm: HASH_ALGORITHM,
     version: STATE_VERSION,
   };
 }
@@ -122,6 +128,18 @@ function validateConfigFingerprint(storedFingerprint) {
     };
   }
 
+  if (storedFingerprint.hashAlgorithm !== current.hashAlgorithm) {
+    return {
+      valid: false,
+      reason: 'hash_algorithm_changed',
+      details: {
+        previous: storedFingerprint.hashAlgorithm ?? 'unknown',
+        current: current.hashAlgorithm,
+        message: `Content hash algorithm changed: ${storedFingerprint.hashAlgorithm ?? 'unknown'} -> ${current.hashAlgorithm}`,
+      },
+    };
+  }
+
   // State version upgrade (may require reindex for new features)
   if (storedFingerprint.version !== current.version) {
     // Version 2.1 -> 2.2 is backward compatible, just add fingerprint
@@ -137,7 +155,7 @@ function validateConfigFingerprint(storedFingerprint) {
         },
       };
     }
-    // Version 2.2 -> 2.3 is backward compatible (adds mtime/size fast-path)
+    // Version 2.2 -> 2.3 is backward compatible (adds mtime/size/inode fast-path)
     // First run will read all files but store new format with metadata
     if (storedFingerprint.version === '2.2' && current.version === '2.3') {
       return {
@@ -147,21 +165,29 @@ function validateConfigFingerprint(storedFingerprint) {
         details: {
           previous: storedFingerprint.version,
           current: current.version,
-          message: `State version upgraded: ${storedFingerprint.version} -> ${current.version} (mtime/size fast-path enabled)`,
+          message: `State version upgraded: ${storedFingerprint.version} -> ${current.version} (mtime/size/inode fast-path enabled)`,
         },
       };
     }
-    // Future incompatible versions would return valid: false here
+    return {
+      valid: false,
+      reason: 'state_version_changed',
+      details: {
+        previous: storedFingerprint.version,
+        current: current.version,
+        message: `State version changed: ${storedFingerprint.version} -> ${current.version}`,
+      },
+    };
   }
 
   return { valid: true };
 }
 
 /**
- * Compute SHA-256 hash of file content
+ * Compute the configured content hash of file content.
  */
 function hashContent(content) {
-  return crypto.createHash('sha256').update(content).digest('hex').slice(0, 16);
+  return contentHashSync(content);
 }
 
 // =============================================================================
@@ -181,19 +207,16 @@ function hashContent(content) {
  *
  * 64-bit inodes from APFS/ZFS/XFS routinely exceed Number.MAX_SAFE_INTEGER;
  * we therefore store inode as a JSON string (BigInt has no JSON type) and
- * cast back via `BigInt(stored.inode)` for comparison. `mtime_ns` is
- * already stored as a string for the same reason. `size` stays as a Number
- * because every file in the index is bounded by SWEET_SEARCH_MAX_FILE_BYTES
- * (1 MiB), well within safe integer range — but callers MUST treat the
- * trio as one tuple for the comparison.
+ * cast back via `BigInt(stored.inode)` for comparison. `mtime_ns` and `size`
+ * are stored the same way so the tuple has one type policy end to end.
  *
  * @param {string} filePath - Absolute path to file
- * @returns {Promise<{size: number, mtime_ns: string, inode: string}>}
+ * @returns {Promise<{size: string, mtime_ns: string, inode: string}>}
  */
 async function getFileMetadata(filePath) {
   const stat = await fs.stat(filePath, { bigint: true });
   return {
-    size: Number(stat.size),
+    size: stat.size.toString(),
     mtime_ns: stat.mtimeNs.toString(),
     inode: stat.ino.toString(),
   };
@@ -202,8 +225,8 @@ async function getFileMetadata(filePath) {
 /**
  * Migrate legacy file entry (hash-only string) to new format
  * Used for backward compatibility with v2.2 state files
- * @param {string|Object} entry - Either a hash string (v2.2) or {hash, size, mtime_ns} object (v2.3)
- * @returns {Object|null} - Returns {hash, size, mtime_ns} or null if entry needs full check
+ * @param {string|Object} entry - Either a hash string (v2.2) or {hash, size, mtime_ns, inode?} object (v2.3)
+ * @returns {Object|null} - Returns {hash, size, mtime_ns, inode?} or null if entry needs full check
  */
 function migrateFileEntry(entry) {
   // v2.3 format: already an object with hash, size, mtime_ns
@@ -218,15 +241,23 @@ function migrateFileEntry(entry) {
   return null;
 }
 
+function statFieldToBigIntString(value) {
+  if (value === null || value === undefined) return null;
+  try {
+    return BigInt(value).toString();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Check if file metadata matches stored values (fast-path).
  *
  * Per INCREMENTAL_INDEXING_PLAN.md § 9.1 the comparison is the full
- * `(mtime_ns, size, inode)` tuple. Inode is checked when present in
- * the stored entry; rows migrated from a pre-inode state file have
- * `stored.inode === undefined`, in which case we fall back to the
- * mtime+size pair and rely on the content-hash path to catch any
- * atomic-rename misses.
+ * `(mtime_ns, size, inode)` tuple. A stored entry without an inode is
+ * deliberately not fast-path eligible: the next run pays one content read
+ * and rewrites the complete tuple, which closes the atomic-rename hole for
+ * state files produced before inode persistence landed.
  *
  * @param {Object} stored - Stored entry {hash, size, mtime_ns, inode?}
  * @param {Object} current - Current metadata {size, mtime_ns, inode}
@@ -237,16 +268,10 @@ function metadataMatches(stored, current) {
   if (stored.size === null || stored.mtime_ns === null) {
     return false;
   }
-  if (stored.size !== current.size) return false;
-  if (stored.mtime_ns !== current.mtime_ns) return false;
-  // Inode is optional in legacy entries; treat missing as wildcard so
-  // upgrading a state file from a previous version doesn't force a full
-  // reindex. Once a fresh tick writes the inode the field becomes
-  // load-bearing for future comparisons.
-  if (stored.inode != null && current.inode != null && stored.inode !== current.inode) {
-    return false;
-  }
-  return true;
+  if (statFieldToBigIntString(stored.size) !== statFieldToBigIntString(current.size)) return false;
+  if (statFieldToBigIntString(stored.mtime_ns) !== statFieldToBigIntString(current.mtime_ns)) return false;
+  if (stored.inode == null || current.inode == null) return false;
+  return statFieldToBigIntString(stored.inode) === statFieldToBigIntString(current.inode);
 }
 
 /**
@@ -353,7 +378,7 @@ async function saveState(state) {
 /**
  * Determine which files need reindexing
  *
- * Sweet Search v2.3: mtime/size fast-path optimization
+ * Sweet Search v2.3: mtime/size/inode fast-path optimization
  * - First: fs.stat() to get size and mtime (single syscall, ~0.1ms)
  * - If metadata matches stored values: skip content read (fast-path)
  * - If metadata differs: read content and compute hash (slow-path)
@@ -399,13 +424,18 @@ export async function getChangedFiles(allFiles, projectRoot) {
           const filePath = path.join(projectRoot, file);
           try {
             const [content, metadata] = await Promise.all([
-              fs.readFile(filePath, 'utf-8'),
+              fs.readFile(filePath),
               getFileMetadata(filePath),
             ]);
             const hash = hashContent(content);
             return {
               file,
-              data: { hash, size: metadata.size, mtime_ns: metadata.mtime_ns },
+              data: {
+                hash,
+                size: metadata.size,
+                mtime_ns: metadata.mtime_ns,
+                inode: metadata.inode,
+              },
               error: null,
             };
           } catch (err) {
@@ -484,6 +514,7 @@ export async function getChangedFiles(allFiles, projectRoot) {
           hash: storedEntry.hash,
           size: metadata.size,
           mtime_ns: metadata.mtime_ns,
+          inode: metadata.inode,
         };
         unchanged.push(file);
         fastPathStats.hits++;
@@ -499,7 +530,7 @@ export async function getChangedFiles(allFiles, projectRoot) {
       const contentResults = await Promise.all(
         needsContentRead.map(async ({ file, filePath, metadata, storedEntry }) => {
           try {
-            const content = await fs.readFile(filePath, 'utf-8');
+            const content = await fs.readFile(filePath);
             const hash = hashContent(content);
             return { file, hash, metadata, storedEntry, error: null };
           } catch (err) {
@@ -519,6 +550,7 @@ export async function getChangedFiles(allFiles, projectRoot) {
           hash,
           size: metadata.size,
           mtime_ns: metadata.mtime_ns,
+          inode: metadata.inode,
         };
 
         // Check if file actually changed (compare hashes)
@@ -678,7 +710,10 @@ export async function getPhaseProgress() {
     const currentFp = buildConfigFingerprint();
     if (data.configFingerprint?.provider !== currentFp.provider ||
         data.configFingerprint?.model !== currentFp.model ||
-        data.configFingerprint?.dimension !== currentFp.dimension) {
+        data.configFingerprint?.dimension !== currentFp.dimension ||
+        data.configFingerprint?.hnswDimension !== currentFp.hnswDimension ||
+        data.configFingerprint?.hashAlgorithm !== currentFp.hashAlgorithm ||
+        data.configFingerprint?.version !== currentFp.version) {
       return null;
     }
     return data;
@@ -770,10 +805,10 @@ Config-Aware Cache Invalidation (Sweet Search v2.3):
   This prevents silent dimension mismatch corruption when switching
   between providers (e.g., Voyage -> Mistral).
 
-mtime/size Fast-Path Optimization (Sweet Search v2.3):
-  Each file entry now stores { hash, size, mtime_ns } instead of just hash.
+mtime/size/inode Fast-Path Optimization (Sweet Search v2.3):
+  Each file entry now stores { hash, size, mtime_ns, inode } instead of just hash.
   On incremental checks, fs.stat() is called first (~0.1ms per file).
-  If (size, mtime_ns) match stored values, content read is skipped entirely.
+  If (size, mtime_ns, inode) match stored values, content read is skipped entirely.
 
   This provides 10-50x speedup for typical incremental checks when
   few or no files have changed. First run after upgrade reads all files

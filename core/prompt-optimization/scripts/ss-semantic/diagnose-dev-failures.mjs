@@ -176,7 +176,7 @@ async function orchestrate() {
 
 async function child(lang, goldIdsCsv) {
   const goldIds = goldIdsCsv.split(',').filter(Boolean);
-  const { readSemantic } = await import('../../../search/search-read-semantic.js');
+  const { readSemantic } = await import('../../search-runtime.mjs');
   for (const goldId of goldIds) {
     const input = loadInput(lang, goldId);
     const fam = input.family || FAMILY_OF_LANG[lang];

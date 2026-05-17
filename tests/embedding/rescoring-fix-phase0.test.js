@@ -17,6 +17,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync, mkdirSync, rmSync } from 'fs';
 import path from 'path';
+import { createBitmap, saveBitmap, setBit, loadBitmap } from '../../core/incremental-indexing/infrastructure/tombstone-bitmap.mjs';
 
 const TEST_DIR = path.join(import.meta.dirname, '..', '..', '__test_fixtures__', 'rescoring-phase0');
 
@@ -95,6 +96,250 @@ describe('Phase 0: Rescoring Fix Correctness', () => {
 
       const index = new BinaryHNSWIndex({ indexPath });
       await expect(index.load(indexPath)).rejects.toThrow('Pipeline version mismatch');
+    });
+
+    it('BinaryHNSWIndex.search filters tombstoned docs from the stale bitmap', async () => {
+      const { BinaryHNSWIndex } = await import('../../core/vector-store/index.js');
+
+      const indexPath = path.join(TEST_DIR, 'binary-stale-test.idx');
+      const stalePath = `${indexPath}.stale.bin`;
+      const index = new BinaryHNSWIndex({
+        indexPath,
+        stalePath,
+        dimension: 1,
+        floatDimension: 8,
+        M: 2,
+        efSearch: 4,
+      });
+      index.resetForBuild();
+      await index.add('doc-a', new Uint8Array([0]), { rank: 1 });
+      await index.add('doc-b', new Uint8Array([255]), { rank: 2 });
+
+      const bitmap = createBitmap(2);
+      setBit(bitmap, 0);
+      saveBitmap(stalePath, bitmap);
+
+      const result = await index.search(new Uint8Array([0]), 2);
+      expect(result.results.map((r) => r.id)).not.toContain('doc-a');
+      expect(result.results.map((r) => r.id)).toContain('doc-b');
+      expect(result.total).toBe(1);
+    });
+
+    it('BinaryHNSWIndex.getInt8Vector hides tombstoned vectors from rescoring', async () => {
+      const { BinaryHNSWIndex } = await import('../../core/vector-store/index.js');
+
+      const indexPath = path.join(TEST_DIR, 'binary-stale-int8-test.idx');
+      const stalePath = `${indexPath}.stale.bin`;
+      const index = new BinaryHNSWIndex({
+        indexPath,
+        stalePath,
+        dimension: 1,
+        floatDimension: 8,
+        M: 2,
+        efSearch: 4,
+      });
+      index.resetForBuild();
+      await index.add('doc-a', new Uint8Array([0]), { rank: 1 }, new Int8Array([1, 2, 3]));
+      await index.add('doc-b', new Uint8Array([255]), { rank: 2 }, new Int8Array([4, 5, 6]));
+
+      expect(Array.from(index.getInt8Vector('doc-a'))).toEqual([1, 2, 3]);
+
+      const bitmap = createBitmap(2);
+      setBit(bitmap, 0);
+      saveBitmap(stalePath, bitmap);
+
+      expect(index.getInt8Vector('doc-a')).toBeUndefined();
+      expect(Array.from(index.getInt8Vector('doc-b'))).toEqual([4, 5, 6]);
+    });
+
+    it('BinaryHNSWIndex.resetForBuild clears stale int8 rescoring vectors', async () => {
+      const { BinaryHNSWIndex } = await import('../../core/vector-store/index.js');
+
+      const index = new BinaryHNSWIndex({
+        indexPath: path.join(TEST_DIR, 'binary-reset-int8.idx'),
+        dimension: 1,
+        floatDimension: 8,
+        M: 2,
+        efSearch: 4,
+      });
+      index.resetForBuild();
+      await index.add('old-doc', new Uint8Array([0]), {}, new Int8Array([1, 2, 3]));
+      expect(Array.from(index.getInt8Vector('old-doc'))).toEqual([1, 2, 3]);
+
+      index.resetForBuild();
+      await index.add('fresh-doc', new Uint8Array([255]), {}, new Int8Array([4, 5, 6]));
+
+      expect(index.getInt8Vector('old-doc')).toBeUndefined();
+      expect(Array.from(index.getInt8Vector('fresh-doc'))).toEqual([4, 5, 6]);
+      expect(index.getStats().int8VectorCount).toBe(1);
+    });
+
+    it('BinaryHNSWIndex ignores and omits orphan int8 sidecar rows', async () => {
+      const { BinaryHNSWIndex } = await import('../../core/vector-store/index.js');
+      const { readFile } = await import('fs/promises');
+
+      const indexPath = path.join(TEST_DIR, 'binary-orphan-int8.idx');
+      const index = new BinaryHNSWIndex({
+        indexPath,
+        dimension: 1,
+        floatDimension: 8,
+        M: 2,
+        efSearch: 4,
+      });
+      index.resetForBuild();
+      await index.add('fresh-doc', new Uint8Array([255]), {}, new Int8Array([4, 5, 6]));
+      index.int8Vectors.set('orphan-doc', new Int8Array([9, 9, 9]));
+
+      expect(index.getInt8Vector('orphan-doc')).toBeUndefined();
+
+      await index.save(indexPath);
+      const int8Data = JSON.parse(await readFile(indexPath.replace('.idx', '.int8.json'), 'utf-8'));
+
+      expect(int8Data).toEqual({ 'fresh-doc': [4, 5, 6] });
+    });
+
+    it('BinaryHNSWIndex.load clears previous int8 vectors when the next artifact has no int8 sidecar', async () => {
+      const { BinaryHNSWIndex } = await import('../../core/vector-store/index.js');
+
+      const withInt8Path = path.join(TEST_DIR, 'binary-load-with-int8.idx');
+      const withoutInt8Path = path.join(TEST_DIR, 'binary-load-without-int8.idx');
+
+      const withInt8 = new BinaryHNSWIndex({
+        indexPath: withInt8Path,
+        dimension: 1,
+        floatDimension: 8,
+        M: 2,
+        efSearch: 4,
+      });
+      withInt8.resetForBuild();
+      await withInt8.add('old-doc', new Uint8Array([0]), {}, new Int8Array([1, 2, 3]));
+      await withInt8.save(withInt8Path);
+
+      const withoutInt8 = new BinaryHNSWIndex({
+        indexPath: withoutInt8Path,
+        dimension: 1,
+        floatDimension: 8,
+        M: 2,
+        efSearch: 4,
+      });
+      withoutInt8.resetForBuild();
+      await withoutInt8.add('fresh-doc', new Uint8Array([255]), {});
+      await withoutInt8.save(withoutInt8Path);
+      expect(existsSync(withoutInt8Path.replace('.idx', '.int8.json'))).toBe(false);
+
+      await withInt8.load(withInt8Path);
+      expect(Array.from(withInt8.getInt8Vector('old-doc'))).toEqual([1, 2, 3]);
+
+      await withInt8.load(withoutInt8Path);
+
+      expect(withInt8.getInt8Vector('old-doc')).toBeUndefined();
+      expect(withInt8.getStats().int8VectorCount).toBe(0);
+    });
+
+    it('BinaryHNSWIndex.save removes stale int8 sidecars when a replacement has no int8 vectors', async () => {
+      const { BinaryHNSWIndex } = await import('../../core/vector-store/index.js');
+
+      const indexPath = path.join(TEST_DIR, 'binary-save-removes-int8.idx');
+      const int8Path = indexPath.replace('.idx', '.int8.json');
+      const index = new BinaryHNSWIndex({
+        indexPath,
+        dimension: 1,
+        floatDimension: 8,
+        M: 2,
+        efSearch: 4,
+      });
+      index.resetForBuild();
+      await index.add('old-doc', new Uint8Array([0]), {}, new Int8Array([1, 2, 3]));
+      await index.save(indexPath);
+      expect(existsSync(int8Path)).toBe(true);
+
+      index.resetForBuild();
+      await index.add('fresh-doc', new Uint8Array([255]), {});
+      await index.save(indexPath);
+
+      expect(existsSync(int8Path)).toBe(false);
+
+      const loaded = new BinaryHNSWIndex({ indexPath });
+      await loaded.load(indexPath);
+      expect(loaded.vectors.map(v => v.id)).toEqual(['fresh-doc']);
+      expect(loaded.getStats().int8VectorCount).toBe(0);
+    });
+
+    it('BinaryHNSWIndex.save removes stale calibration sidecars when replacement is symmetric', async () => {
+      const { BinaryHNSWIndex } = await import('../../core/vector-store/index.js');
+
+      const indexPath = path.join(TEST_DIR, 'binary-save-removes-calibration.idx');
+      const calibPath = indexPath.replace('.idx', '.calibration.json');
+      const index = new BinaryHNSWIndex({
+        indexPath,
+        dimension: 1,
+        floatDimension: 8,
+        M: 2,
+        efSearch: 4,
+      });
+      index.resetForBuild();
+      index.useAsymmetric = true;
+      index.centroid = new Float32Array([1, 2, 3]);
+      index.signVector = new Float32Array([1, -1, 1]);
+      await index.add('old-doc', new Uint8Array([0]), {});
+      await index.save(indexPath);
+      expect(existsSync(calibPath)).toBe(true);
+
+      index.resetForBuild();
+      await index.add('fresh-doc', new Uint8Array([255]), {});
+      await index.save(indexPath);
+
+      expect(existsSync(calibPath)).toBe(false);
+    });
+
+    it('BinaryHNSWIndex clean rebuild removes stale sidecars from the replaced artifact', async () => {
+      const { BinaryHNSWIndex } = await import('../../core/vector-store/index.js');
+
+      const indexPath = path.join(TEST_DIR, 'binary-clean-rebuild.idx');
+      const stalePath = `${indexPath}.stale.bin`;
+      const oldBitmap = createBitmap(1);
+      setBit(oldBitmap, 0);
+      saveBitmap(stalePath, oldBitmap);
+
+      const index = new BinaryHNSWIndex({
+        indexPath,
+        stalePath,
+        dimension: 1,
+        floatDimension: 8,
+        M: 2,
+        efSearch: 4,
+      });
+      index.resetForBuild();
+      await index.add('fresh-doc', new Uint8Array([0]), {}, new Int8Array([1, 2, 3]));
+      await index.save(indexPath);
+
+      expect(loadBitmap(stalePath)).toBeNull();
+    });
+
+    it('createBinaryHNSWIndex loads sidecar artifacts even when the .idx placeholder is absent', async () => {
+      const { BinaryHNSWIndex, createBinaryHNSWIndex } = await import('../../core/vector-store/index.js');
+
+      const indexPath = path.join(TEST_DIR, 'binary-factory-sidecar.idx');
+      const index = new BinaryHNSWIndex({
+        indexPath,
+        dimension: 1,
+        floatDimension: 8,
+        M: 2,
+        efSearch: 4,
+      });
+      index.resetForBuild();
+      await index.add('doc-sidecar', new Uint8Array([0]), { file: 'src/a.js' }, new Int8Array([1, 2, 3]));
+      await index.save(indexPath);
+
+      expect(existsSync(indexPath)).toBe(false);
+      expect(existsSync(indexPath.replace('.idx', '.meta.json'))).toBe(true);
+      expect(existsSync(indexPath.replace('.idx', '.vectors.json'))).toBe(true);
+      expect(existsSync(indexPath.replace('.idx', '.graph.json'))).toBe(true);
+
+      const loaded = await createBinaryHNSWIndex({ indexPath });
+
+      expect(loaded.vectors.map(v => v.id)).toEqual(['doc-sidecar']);
+      expect(Array.from(loaded.getInt8Vector('doc-sidecar'))).toEqual([1, 2, 3]);
     });
   });
 

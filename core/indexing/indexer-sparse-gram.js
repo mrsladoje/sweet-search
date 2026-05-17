@@ -9,6 +9,8 @@ import {
   hasNativeSparseGramSupport,
   resolveSparseSymbolMask,
 } from '../infrastructure/native-sparse-gram.js';
+import { contentHash } from '../incremental-indexing/infrastructure/hashing.mjs';
+import { FALLBACK_WEIGHTS_ID } from '../incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 import { atomicSwapDatabase, log } from './indexer-utils.js';
 
 async function unlinkIfExists(filePath) {
@@ -28,23 +30,54 @@ async function collectFileSymbolMasks(codeFiles) {
   const db = new Database(DB_PATHS.codebase, { readonly: true });
 
   try {
-    const rows = db.prepare('SELECT file_path, metadata FROM vectors').iterate();
-    for (const row of rows) {
-      if (!masks.has(row.file_path)) continue;
-      try {
-        const metadata = JSON.parse(row.metadata || '{}');
-        const typeMask = resolveSparseSymbolMask(metadata.type);
-        if (typeMask === 0) continue;
-        masks.set(row.file_path, masks.get(row.file_path) | typeMask);
-      } catch {
-        // Ignore malformed metadata rows; sparse gram build is best effort.
-      }
-    }
+    collectFileSymbolMasksFromDb(db, codeFiles, masks);
   } finally {
     db.close();
   }
 
   return codeFiles.map((filePath) => masks.get(filePath) || 0);
+}
+
+async function resolveSparseGramWeightsId(result, artifactPath) {
+  if (typeof result?.weightsId === 'string' && result.weightsId) {
+    return result.weightsId;
+  }
+  if (typeof result?.weights_id === 'string' && result.weights_id) {
+    return result.weights_id;
+  }
+  if (result?.usedFallbackWeights) return FALLBACK_WEIGHTS_ID;
+  const artifactBytes = await fs.readFile(artifactPath);
+  return `corpus-bigram-v1-${await contentHash(artifactBytes)}`;
+}
+
+function collectFileSymbolMasksFromDb(db, codeFiles, existingMasks = null) {
+  const masks = existingMasks || new Map(codeFiles.map((filePath) => [filePath, 0]));
+  const liveSql = liveVectorSql(db);
+  const rows = db.prepare(`SELECT file_path, metadata FROM vectors WHERE ${liveSql}`).iterate();
+  for (const row of rows) {
+    if (!masks.has(row.file_path)) continue;
+    try {
+      const metadata = JSON.parse(row.metadata || '{}');
+      const typeMask = resolveSparseSymbolMask(metadata.type);
+      if (typeMask === 0) continue;
+      masks.set(row.file_path, masks.get(row.file_path) | typeMask);
+    } catch {
+      // Ignore malformed metadata rows; sparse gram build is best effort.
+    }
+  }
+  return codeFiles.map((filePath) => masks.get(filePath) || 0);
+}
+
+function hasVectorColumn(db, column) {
+  try {
+    return db.prepare('PRAGMA table_info(vectors)').all().some((col) => col.name === column);
+  } catch (_err) {
+    return false;
+  }
+}
+
+function liveVectorSql(db) {
+  return hasVectorColumn(db, 'epoch_retired') ? 'epoch_retired IS NULL' : '1=1';
 }
 
 export async function buildSparseGramArtifact(allFiles, dryRun) {
@@ -85,14 +118,22 @@ export async function buildSparseGramArtifact(allFiles, dryRun) {
       fileSymbolMasks,
       outputPath: stagedPath,
     });
+    const weightsId = await resolveSparseGramWeightsId(result, stagedPath);
     await atomicSwapDatabase(stagedPath, DB_PATHS.sparseGramIndex);
     log(
       `Sparse gram artifact promoted (${result.filesIndexed} files, ${result.grams} grams, ${result.postings} postings)`,
       'green'
     );
-    return result;
+    return { ...result, weightsId };
   } catch (err) {
     await unlinkIfExists(stagedPath);
     throw err;
   }
 }
+
+export const __TEST__ = {
+  collectFileSymbolMasks,
+  collectFileSymbolMasksFromDb,
+  liveVectorSql,
+  resolveSparseGramWeightsId,
+};

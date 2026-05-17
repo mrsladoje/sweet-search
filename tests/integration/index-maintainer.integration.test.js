@@ -24,6 +24,9 @@ import {
   cleanupProcessingFile,
   requeueEntries,
   ensureDataDir,
+  isReconcilePaused,
+  reconcileV2Requested,
+  assertReconcileV2NotSilentlyIgnored,
   CONFIG,
 } from '../../core/indexing/index-maintainer.mjs';
 
@@ -63,6 +66,46 @@ function createQueueFile(queuePath, entries) {
 // =============================================================================
 // parseQueueContent Tests (Pure function, no side effects)
 // =============================================================================
+
+describe('isReconcilePaused (Real Implementation)', () => {
+  let testDir;
+
+  beforeEach(() => {
+    testDir = createTestDir();
+  });
+
+  afterEach(() => {
+    cleanupTestDir(testDir);
+  });
+
+  it('reads the operator pause marker used by reconcile pause/resume', () => {
+    expect(isReconcilePaused(testDir).paused).toBe(false);
+
+    writeFileSync(join(testDir, 'reconcile-pause.json'), JSON.stringify({
+      paused: true,
+      pausedAt: '2026-05-17T00:00:00.000Z',
+      reason: 'test',
+    }));
+
+    const state = isReconcilePaused(testDir);
+    expect(state.paused).toBe(true);
+    expect(state.pausedAt).toBe('2026-05-17T00:00:00.000Z');
+    expect(state.reason).toBe('test');
+  });
+});
+
+describe('reconcile v2 rollout guard (Real Implementation)', () => {
+  it('recognizes the v2 flag without rejecting production adapter mode', () => {
+    expect(reconcileV2Requested({ SWEET_SEARCH_RECONCILE_V2: '1' })).toBe(true);
+    expect(reconcileV2Requested({ SWEET_SEARCH_RECONCILE_V2: 'true' })).toBe(true);
+    expect(reconcileV2Requested({ SWEET_SEARCH_RECONCILE_V2: '0' })).toBe(false);
+    expect(reconcileV2Requested({ SWEET_SEARCH_RECONCILE_V2: 'off' })).toBe(false);
+
+    expect(() => assertReconcileV2NotSilentlyIgnored({
+      SWEET_SEARCH_RECONCILE_V2: '1',
+    })).not.toThrow();
+  });
+});
 
 describe('parseQueueContent (Real Implementation)', () => {
   it('should parse valid JSONL content', () => {

@@ -107,7 +107,7 @@ const searchDeps = { getSearcher };
 const traceDeps = { PROJECT_ROOT };
 const indexDeps = { PROJECT_ROOT, coreDir };
 const healthDeps = { getConfig, PROJECT_ROOT };
-const repoMapDeps = { coreDir };
+const repoMapDeps = { coreDir, PROJECT_ROOT };
 const vocabDeps = { coreDir };
 
 // ---------------------------------------------------------------------------

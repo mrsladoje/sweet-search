@@ -260,7 +260,7 @@ describe('Sparse-gram delta (plan § 7.6)', () => {
     fs.writeFileSync(base, Buffer.alloc(1000));
     appendDeltaRecord(base, 1, {
       fileId: fileIdFor('a'), filePath: 'a', contentHash: 'h',
-      deleted: false, symbolMask: 0, weightsId: 'default-v1', grams: [],
+      deleted: false, symbolMask: 0, weightsId: FALLBACK_WEIGHTS_ID, grams: [],
     });
     const stats = deltaSizeStats(base);
     expect(stats.baseBytes).toBe(1000);

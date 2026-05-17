@@ -59,9 +59,8 @@ export function resolveSearchSymbolFilter(options = {}) {
 export function buildChunkLocationMap(liIndex) {
   const map = new Map();
 
-  for (const [id, doc] of liIndex.documents) {
-    const meta = doc.metadata;
-    if (!meta?.file || meta.startLine == null || meta.endLine == null) continue;
+  const addInterval = (id, meta) => {
+    if (!meta?.file || meta.startLine == null || meta.endLine == null) return;
 
     let bucket = map.get(meta.file);
     if (!bucket) {
@@ -75,11 +74,24 @@ export function buildChunkLocationMap(liIndex) {
       type: meta.type || null,
       name: meta.name || null,
     });
+  };
+
+  for (const [id, doc] of liIndex.documents) {
+    addInterval(id, doc.metadata);
+  }
+
+  for (const [id, ptr] of liIndex.aliasPointers || []) {
+    addInterval(id, ptr.metadata);
   }
 
   // Sort each file's intervals by startLine for binary search
   for (const bucket of map.values()) {
     bucket.sort((a, b) => a.startLine - b.startLine);
+    let maxEnd = -Infinity;
+    for (const interval of bucket) {
+      maxEnd = Math.max(maxEnd, interval.endLine);
+      interval._maxEndSoFar = maxEnd;
+    }
   }
 
   return map;
@@ -90,6 +102,7 @@ export function findChunkIntervalForLine(intervals, lineNumber) {
 
   let lo = 0;
   let hi = intervals.length - 1;
+  let candidateIdx = -1;
 
   while (lo <= hi) {
     const mid = (lo + hi) >>> 1;
@@ -97,11 +110,36 @@ export function findChunkIntervalForLine(intervals, lineNumber) {
 
     if (lineNumber < iv.startLine) {
       hi = mid - 1;
-    } else if (lineNumber > iv.endLine) {
-      lo = mid + 1;
     } else {
-      return { interval: iv, index: mid };
+      candidateIdx = mid;
+      lo = mid + 1;
     }
+  }
+
+  if (candidateIdx < 0) return null;
+
+  let best = null;
+  let bestIdx = -1;
+  for (let i = candidateIdx; i >= 0; i--) {
+    const iv = intervals[i];
+    if (iv.startLine > lineNumber) continue;
+    if (iv._maxEndSoFar != null && iv._maxEndSoFar < lineNumber) break;
+    if (iv.endLine < lineNumber) continue;
+
+    // Prefer the tightest containing interval; if spans tie, prefer the
+    // later-starting interval because it is usually the nested symbol chunk.
+    if (
+      !best ||
+      (iv.endLine - iv.startLine) < (best.endLine - best.startLine) ||
+      ((iv.endLine - iv.startLine) === (best.endLine - best.startLine) && iv.startLine > best.startLine)
+    ) {
+      best = iv;
+      bestIdx = i;
+    }
+  }
+
+  if (best) {
+    return { interval: best, index: bestIdx };
   }
 
   return null;
@@ -270,12 +308,18 @@ export function buildBareGrepResults(matches, options = {}) {
  * Rebuilds only when the LI index document count changes (re-index).
  */
 export function getChunkLocationMap() {
-  const currentSize = this.lateInteractionIndex.documents.size;
-  if (this._chunkLocationMap && this._chunkLocationMapSize === currentSize) {
+  const currentSize = this.lateInteractionIndex.documents.size
+    + (this.lateInteractionIndex.aliasPointers?.size || 0);
+  if (
+    this._chunkLocationMap
+    && this._chunkLocationMapSize === currentSize
+    && this._chunkLocationMapIndex === this.lateInteractionIndex
+  ) {
     return this._chunkLocationMap;
   }
   this._chunkLocationMap = buildChunkLocationMap(this.lateInteractionIndex);
   this._chunkLocationMapSize = currentSize;
+  this._chunkLocationMapIndex = this.lateInteractionIndex;
   return this._chunkLocationMap;
 }
 
@@ -314,6 +358,11 @@ export function getCodebaseChunkTypeMap(searcher) {
 
   for (const bucket of map.values()) {
     bucket.sort((a, b) => a.startLine - b.startLine);
+    let maxEnd = -Infinity;
+    for (const interval of bucket) {
+      maxEnd = Math.max(maxEnd, interval.endLine);
+      interval._maxEndSoFar = maxEnd;
+    }
   }
 
   searcher._codebaseChunkTypeMap = map;

@@ -16,7 +16,25 @@ function lengthOf(chunk) {
 }
 
 function pathOf(chunk) {
-  return chunk.file || chunk.metadata?.path || '';
+  return firstSafeRelativePath(
+    chunk.metadata?.relative_path,
+    chunk.metadata?.path,
+    chunk.metadata?.file_path,
+    chunk.file,
+    chunk.metadata?.file,
+  ) || '';
+}
+
+function firstSafeRelativePath(...candidates) {
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const normalized = candidate.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+/g, '/');
+    if (!normalized || normalized === '.' || normalized.startsWith('/')) continue;
+    if (/^[A-Za-z]:\//.test(normalized)) continue;
+    if (normalized === '..' || normalized.startsWith('../') || normalized.includes('/../')) continue;
+    return normalized;
+  }
+  return null;
 }
 
 function hashOf(chunk) {

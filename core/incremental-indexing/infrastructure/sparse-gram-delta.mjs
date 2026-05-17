@@ -38,9 +38,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { contentHashSync } from './hashing.mjs';
+import { DEFAULT_SPARSE_GRAM_WEIGHTS_ID } from './manifest.mjs';
 
 export const DELTA_DIR_SUFFIX = '.deltas';
 export const DELTA_FILE_EXT = '.ssgrmdelta';
+/**
+ * Versioned hardcoded common-code bigram-weight table. Plan § 7.6 empty-/
+ * tiny-codebase bootstrap. The actual bigram weights live in the Rust
+ * native crate (`crates/sweet-search-native/src/sparse_gram.rs`); this
+ * module only carries the *identifier* of the fallback table so the
+ * reconciler can stamp deltas with the same `weightsId` the base artifact
+ * used.
+ */
+export const FALLBACK_WEIGHTS_ID = DEFAULT_SPARSE_GRAM_WEIGHTS_ID;
 
 /**
  * Compute the canonical `file_id` for a path. Plan § 7.6 step 2.
@@ -76,28 +86,46 @@ export function appendDeltaRecord(baseArtifactPath, epoch, record) {
   if (!record || !record.fileId) {
     throw new Error('appendDeltaRecord: record.fileId is required');
   }
-  fs.mkdirSync(deltaDirFor(baseArtifactPath), { recursive: true });
+  const deltaDir = deltaDirFor(baseArtifactPath);
+  fs.mkdirSync(deltaDir, { recursive: true });
   const filePath = deltaSegmentPath(baseArtifactPath, epoch, 0);
-  fs.appendFileSync(filePath, JSON.stringify(record) + '\n');
+  const fd = fs.openSync(filePath, 'a');
+  try {
+    fs.writeSync(fd, JSON.stringify(record) + '\n');
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  try {
+    const dirFd = fs.openSync(deltaDir, 'r');
+    try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
+  } catch {
+    // Some test/container filesystems reject directory fsync; the data fsync
+    // above is the required durability boundary.
+  }
 }
 
 /**
  * Enumerate delta segment files (sorted by epoch, then sequence).
  *
  * @param {string} baseArtifactPath
+ * @param {{maxEpoch?:number}} [opts]
  * @returns {Array<{path:string, epoch:number, seq:number}>}
  */
-export function listDeltaSegments(baseArtifactPath) {
+export function listDeltaSegments(baseArtifactPath, opts = {}) {
   const dir = deltaDirFor(baseArtifactPath);
   if (!fs.existsSync(dir)) return [];
+  const maxEpoch = Number.isInteger(opts.maxEpoch) ? opts.maxEpoch : Infinity;
   const out = [];
   for (const name of fs.readdirSync(dir)) {
     if (!name.endsWith(DELTA_FILE_EXT)) continue;
     const match = name.match(/^(\d+)-(\d+)\.ssgrmdelta$/);
     if (!match) continue;
+    const epoch = Number(match[1]);
+    if (epoch > maxEpoch) continue;
     out.push({
       path: path.join(dir, name),
-      epoch: Number(match[1]),
+      epoch,
       seq: Number(match[2]),
     });
   }
@@ -110,11 +138,12 @@ export function listDeltaSegments(baseArtifactPath) {
  * no-op at query merge time; the *last* record wins.
  *
  * @param {string} baseArtifactPath
+ * @param {{maxEpoch?:number}} [opts]
  * @returns {Map<string, {record:object, segmentPath:string, epoch:number}>}
  */
-export function resolveLatestRecords(baseArtifactPath) {
+export function resolveLatestRecords(baseArtifactPath, opts = {}) {
   const latest = new Map();
-  for (const seg of listDeltaSegments(baseArtifactPath)) {
+  for (const seg of listDeltaSegments(baseArtifactPath, opts)) {
     const raw = fs.readFileSync(seg.path, 'utf-8');
     for (const line of raw.split('\n')) {
       const trimmed = line.trim();
@@ -167,7 +196,7 @@ export function deltaSizeStats(baseArtifactPath) {
  * @param {number} epoch
  * @param {string} canonicalPath
  */
-export function recordFileDeletion(baseArtifactPath, epoch, canonicalPath, weightsId = 'default-v1') {
+export function recordFileDeletion(baseArtifactPath, epoch, canonicalPath, weightsId = FALLBACK_WEIGHTS_ID) {
   appendDeltaRecord(baseArtifactPath, epoch, {
     fileId: fileIdFor(canonicalPath),
     filePath: canonicalPath,
@@ -178,13 +207,3 @@ export function recordFileDeletion(baseArtifactPath, epoch, canonicalPath, weigh
     grams: [],
   });
 }
-
-/**
- * Versioned hardcoded common-code bigram-weight table. Plan § 7.6 empty-/
- * tiny-codebase bootstrap. The actual bigram weights live in the Rust
- * native crate (`crates/sweet-search-native/src/sparse_gram.rs`); this
- * module only carries the *identifier* of the fallback table so the
- * reconciler can stamp deltas with the same `weightsId` the base artifact
- * used.
- */
-export const FALLBACK_WEIGHTS_ID = 'common-code-bigram-v1';

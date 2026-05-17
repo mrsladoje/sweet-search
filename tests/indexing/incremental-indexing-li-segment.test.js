@@ -85,6 +85,17 @@ describe('li-segment-state', () => {
     expect(byId['seg-001.bin']).toBe(0);
   });
 
+  it('staleDocRatio ignores tombstone bits beyond the current docCount', () => {
+    const seg = path.join(dir, 'seg-000.bin');
+    fs.writeFileSync(seg, Buffer.alloc(0));
+    const state = openSegmentState(seg, 100);
+    tombstoneDoc(state, 99);
+    persistSegmentState(state);
+
+    const reopened = openSegmentState(seg, 10);
+    expect(staleDocRatio(reopened)).toBe(0);
+  });
+
   it('filterLiveDocs drops tombstoned indices', () => {
     const seg = path.join(dir, 'seg-000.bin');
     fs.writeFileSync(seg, Buffer.alloc(0));

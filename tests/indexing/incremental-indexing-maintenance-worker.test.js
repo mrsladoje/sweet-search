@@ -1,8 +1,8 @@
 /**
  * Tests for core/incremental-indexing/application/maintenance-worker.mjs
  *
- * Plan § 0 / § 13 Phase 0:
- *   - Phase 0 ships the worker scaffold + CPU-only assertion.
+ * Plan § 0 / § 13:
+ *   - The worker enforces CPU-only execution and drains maintenance jobs.
  *   - The rebuild queue is append-only JSONL named `rebuild-queue.jsonl`
  *     (legacy filename retained).
  *   - The dead-letter file is `rebuild-queue.dead-letter.jsonl`.
@@ -12,11 +12,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import Database from 'better-sqlite3';
 import {
   assertCpuOnlyEnvironment,
   enqueueMaintenanceJob,
   readMaintenanceQueue,
   appendDeadLetter,
+  defaultMaintenanceHandlers,
+  processMaintenanceQueue,
   QUEUE_FILENAME,
   DEAD_LETTER_FILENAME,
 } from '../../core/incremental-indexing/application/maintenance-worker.mjs';
@@ -85,5 +88,121 @@ describe('maintenance-worker / queue', () => {
     expect(parsed.job.tier).toBe('float_hnsw');
     expect(parsed.error.message).toBe('staging failed');
     expect(typeof parsed.deadAt).toBe('string');
+  });
+
+  it('processes successful jobs and removes them from the queue', async () => {
+    const handled = [];
+    enqueueMaintenanceJob(stateDir, { tier: 'float_hnsw', reason: 'a', epoch: 1 });
+    enqueueMaintenanceJob(stateDir, { tier: 'li_segment', reason: 'b', epoch: 2 });
+
+    const summary = await processMaintenanceQueue(stateDir, {
+      handlers: {
+        float_hnsw: async (job) => handled.push(job.tier),
+        li_segment: async (job) => handled.push(job.tier),
+      },
+    });
+
+    expect(handled).toEqual(['float_hnsw', 'li_segment']);
+    expect(summary.succeeded).toBe(2);
+    expect(readMaintenanceQueue(stateDir)).toEqual([]);
+  });
+
+  it('preserves jobs appended while the worker is acknowledging a snapshot', async () => {
+    enqueueMaintenanceJob(stateDir, { tier: 'float_hnsw', reason: 'a', epoch: 1 });
+
+    const summary = await processMaintenanceQueue(stateDir, {
+      handlers: {
+        float_hnsw: async () => {
+          enqueueMaintenanceJob(stateDir, { tier: 'fts5', reason: 'later', epoch: 2 });
+        },
+      },
+    });
+
+    expect(summary.succeeded).toBe(1);
+    expect(readMaintenanceQueue(stateDir).map((job) => job.tier)).toEqual(['fts5']);
+  });
+
+  it('keeps jobs with no handler pending instead of acknowledging them', async () => {
+    enqueueMaintenanceJob(stateDir, { tier: 'binary_hnsw', reason: 'dead_doc_ratio', epoch: 1 });
+
+    const summary = await processMaintenanceQueue(stateDir, { handlers: {} });
+
+    expect(summary.deferred).toBe(1);
+    expect(readMaintenanceQueue(stateDir).map((job) => job.tier)).toEqual(['binary_hnsw']);
+  });
+
+  it('retries failed jobs before dead-lettering them', async () => {
+    enqueueMaintenanceJob(stateDir, { tier: 'sparse_gram', reason: 'delta_size_ratio', epoch: 1 });
+
+    const first = await processMaintenanceQueue(stateDir, {
+      maxAttempts: 2,
+      handlers: { sparse_gram: async () => { throw new Error('compaction failed'); } },
+    });
+    expect(first.retried).toBe(1);
+    expect(readMaintenanceQueue(stateDir)[0].attempts).toBe(1);
+
+    const second = await processMaintenanceQueue(stateDir, {
+      maxAttempts: 2,
+      handlers: { sparse_gram: async () => { throw new Error('compaction failed again'); } },
+    });
+    expect(second.deadLettered).toBe(1);
+    expect(readMaintenanceQueue(stateDir)).toEqual([]);
+    const text = fs.readFileSync(path.join(stateDir, DEAD_LETTER_FILENAME), 'utf-8');
+    expect(JSON.parse(text.trim()).job.tier).toBe('sparse_gram');
+  });
+
+  it('moves malformed queue lines to dead-letter and keeps valid jobs', async () => {
+    fs.writeFileSync(path.join(stateDir, QUEUE_FILENAME),
+      'not-json\n' + JSON.stringify({ tier: 'li_segment', reason: 'ok', epoch: 1 }) + '\n');
+
+    const summary = await processMaintenanceQueue(stateDir, { handlers: {} });
+
+    expect(summary.malformed).toBe(1);
+    expect(summary.deferred).toBe(1);
+    expect(readMaintenanceQueue(stateDir).map((job) => job.tier)).toEqual(['li_segment']);
+    const dead = JSON.parse(fs.readFileSync(path.join(stateDir, DEAD_LETTER_FILENAME), 'utf-8').trim());
+    expect(dead.job.tier).toBe('malformed');
+  });
+
+  it('executes built-in fts5 maintenance against a real SQLite FTS5 table', async () => {
+    const dbPath = path.join(stateDir, 'code-graph.db');
+    const db = new Database(dbPath);
+    db.exec('CREATE VIRTUAL TABLE entities_fts USING fts5(name)');
+    db.prepare('INSERT INTO entities_fts(name) VALUES (?)').run('Widget');
+    db.close();
+    enqueueMaintenanceJob(stateDir, {
+      tier: 'fts5',
+      reason: 'fts5_segment_count',
+      epoch: 1,
+      payload: { dbPath, tableName: 'entities_fts', pages: 16 },
+    });
+
+    const summary = await processMaintenanceQueue(stateDir, {
+      handlers: defaultMaintenanceHandlers(stateDir),
+    });
+
+    expect(summary.succeeded).toBe(1);
+    expect(readMaintenanceQueue(stateDir)).toEqual([]);
+  });
+
+  it('merges both graph FTS5 tables for a default fts5 maintenance job', async () => {
+    const dbPath = path.join(stateDir, 'code-graph.db');
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE VIRTUAL TABLE entities_fts USING fts5(name);
+      CREATE VIRTUAL TABLE entities_trigram USING fts5(name, tokenize='trigram');
+    `);
+    db.prepare('INSERT INTO entities_fts(name) VALUES (?)').run('Widget');
+    db.prepare('INSERT INTO entities_trigram(name) VALUES (?)').run('Widget');
+    db.close();
+
+    const result = await defaultMaintenanceHandlers(stateDir).fts5({
+      tier: 'fts5',
+      reason: 'fts5_segment_count',
+      epoch: 1,
+      payload: { dbPath, pages: 16 },
+    });
+
+    expect(result.tableNames.sort()).toEqual(['entities_fts', 'entities_trigram']);
   });
 });

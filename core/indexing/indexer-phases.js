@@ -16,6 +16,8 @@ import { runDedupPhase, formatDedupSummary } from './dedup/dedup-phase.js';
 import { DEDUP_CONFIG } from '../infrastructure/config/index.js';
 import { incrementalUpdateHNSW, buildHNSWIndex, buildLateInteractionIndex, buildQuantizedArtifactsPhase } from './indexer-ann.js';
 import { buildSparseGramArtifact } from './indexer-sparse-gram.js';
+import { publishIndexerManifest } from './indexer-manifest.js';
+import { contentHashSync } from '../incremental-indexing/infrastructure/hashing.mjs';
 import {
   configureLocalModelRuntime,
   resetLocalModelRuntime,
@@ -696,7 +698,7 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
 }
 
 export async function updateIncrementalStatePhase(options = {}) {
-  const { dryRun, fullReindex, incrementalInfo, allFiles, vectorStats, graphStats } = options;
+  const { dryRun, fullReindex, incrementalInfo, allFiles, vectorStats, graphStats, manifestStateDir, sparseGramResult } = options;
 
   if (dryRun) return;
 
@@ -709,18 +711,18 @@ export async function updateIncrementalStatePhase(options = {}) {
     log('\nIncremental state updated', 'green');
   } else if (fullReindex) {
     const hashes = {};
-    const crypto = await import('crypto');
     for (const file of allFiles) {
       try {
         const fullPath = path.join(PROJECT_ROOT, file);
         const [content, stat] = await Promise.all([
-          fs.readFile(fullPath, 'utf-8'),
-          fs.stat(fullPath).catch(() => null),
+          fs.readFile(fullPath),
+          fs.stat(fullPath, { bigint: true }).catch(() => null),
         ]);
         hashes[file] = {
-          hash: crypto.createHash('sha256').update(content).digest('hex').slice(0, 16),
-          size: stat?.size ?? null,
-          mtime_ns: stat ? String(BigInt(Math.round(stat.mtimeMs)) * 1000000n) : null,
+          hash: contentHashSync(content),
+          size: stat ? stat.size.toString() : null,
+          mtime_ns: stat ? stat.mtimeNs.toString() : null,
+          inode: stat ? stat.ino.toString() : null,
         };
       } catch (e) { /* skip */ }
     }
@@ -731,6 +733,11 @@ export async function updateIncrementalStatePhase(options = {}) {
     });
     log('\nIncremental state saved', 'green');
   }
+  publishIndexerManifest({
+    ...(manifestStateDir ? { stateDir: manifestStateDir } : {}),
+    ...(sparseGramResult ? { sparseGramResult } : {}),
+  });
+  log('Reconcile manifest published', 'green');
 }
 
 export function printSummaryPhase(options) {

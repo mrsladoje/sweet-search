@@ -4,14 +4,16 @@
  * Plan § 8.1.1. Strict row visibility requires bounded history retention:
  * retired rows cannot be physically pruned until every live reader has
  * advanced past their epoch. We track each reader's pinned epoch via a
- * small JSON file under `.sweet-search/readers/<pid>-<boot>.json` so the
- * maintenance scheduler can compute `min_live_epoch` across non-stale
- * heartbeats.
+ * small JSON file under `.sweet-search/readers/<pid>-<boot>-<read>.json`
+ * so the maintenance scheduler can compute `min_live_epoch` across
+ * non-stale heartbeats. The per-read token is load-bearing: a long-lived
+ * MCP/server process can run concurrent queries pinned to different
+ * manifest epochs, and those pins must not overwrite each other.
  *
  * Lifecycle:
  *   - Each reader process (sweet-search CLI, MCP server, etc.) calls
  *     `beginRead(stateDir, epoch)` before a query and `endRead` when it
- *     finishes. The heartbeat file holds `{ epoch, pid, bootId, startedAt }`.
+ *     finishes. The heartbeat file holds `{ epoch, pid, bootId, readId, startedAt }`.
  *   - The reconcile maintenance worker enumerates the heartbeats and:
  *     - drops files whose process no longer exists,
  *     - returns `min({live readers}.epoch)` as the prune frontier.
@@ -29,13 +31,23 @@ import path from 'node:path';
 
 export const READER_GRACE_MS = 60 * 60 * 1000; // 1h default
 const HEARTBEAT_DIR = 'readers';
+let heartbeatSeq = 0;
 
 function heartbeatDir(stateDir) {
   return path.join(stateDir, HEARTBEAT_DIR);
 }
 
-function heartbeatPath(stateDir, pid, bootId) {
-  return path.join(heartbeatDir(stateDir), `${pid}-${bootId}.json`);
+function heartbeatPath(stateDir, pid, bootId, readId = null) {
+  const suffix = readId ? `-${readId}` : '';
+  return path.join(heartbeatDir(stateDir), `${pid}-${bootId}${suffix}.json`);
+}
+
+function nextReadId() {
+  heartbeatSeq = (heartbeatSeq + 1) >>> 0;
+  const time = Date.now().toString(36);
+  const seq = heartbeatSeq.toString(36);
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${time}-${seq}-${rand}`;
 }
 
 /**
@@ -70,23 +82,25 @@ export function bootIdStub() {
  * @param {number} epoch
  * @param {object} [meta]   Optional caller-supplied metadata (mcp-session-id,
  *                           query, etc.) — stored verbatim for diagnostics.
- * @returns {{pid:number, bootId:string, path:string}}
+ * @returns {{pid:number, bootId:string, readId:string, path:string}}
  */
 export function beginRead(stateDir, epoch, meta = {}) {
   const dir = heartbeatDir(stateDir);
   fs.mkdirSync(dir, { recursive: true });
   const pid = process.pid;
   const bootId = bootIdStub();
-  const p = heartbeatPath(stateDir, pid, bootId);
+  const readId = nextReadId();
+  const p = heartbeatPath(stateDir, pid, bootId, readId);
   const payload = {
     epoch,
     pid,
     bootId,
+    readId,
     startedAt: new Date().toISOString(),
     meta,
   };
   fs.writeFileSync(p, JSON.stringify(payload));
-  return { pid, bootId, path: p };
+  return { pid, bootId, readId, path: p };
 }
 
 /**
@@ -94,13 +108,17 @@ export function beginRead(stateDir, epoch, meta = {}) {
  * to delete its file when the query completes.
  *
  * @param {string} stateDir
- * @param {{pid:number, bootId:string}|undefined} record  Return value of beginRead.
+ * @param {{pid:number, bootId:string, readId?:string, path?:string}|undefined} record
+ *        Return value of beginRead.
  */
 export function endRead(stateDir, record) {
   const pid = record?.pid ?? process.pid;
   const bootId = record?.bootId ?? bootIdStub();
+  const p = typeof record?.path === 'string'
+    ? record.path
+    : heartbeatPath(stateDir, pid, bootId, record?.readId ?? null);
   try {
-    fs.unlinkSync(heartbeatPath(stateDir, pid, bootId));
+    fs.unlinkSync(p);
   } catch {
     // Ignore — the heartbeat may have been swept by the maintenance scheduler.
   }
@@ -129,7 +147,7 @@ export function isReaderAlive(pid, bootId) {
  * pinned epoch.
  *
  * @param {string} stateDir
- * @returns {Array<{epoch:number, pid:number, bootId:string, startedAt:string, meta:object}>}
+ * @returns {Array<{epoch:number, pid:number, bootId:string, readId?:string, startedAt:string, meta:object}>}
  */
 export function liveReaders(stateDir) {
   const dir = heartbeatDir(stateDir);
@@ -142,6 +160,10 @@ export function liveReaders(stateDir) {
       payload = JSON.parse(fs.readFileSync(p, 'utf-8'));
     } catch {
       // Malformed — drop after grace.
+      tryUnlinkAfterGrace(p);
+      continue;
+    }
+    if (!Number.isInteger(payload.epoch) || !Number.isInteger(payload.pid) || typeof payload.bootId !== 'string') {
       tryUnlinkAfterGrace(p);
       continue;
     }

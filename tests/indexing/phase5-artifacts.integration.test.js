@@ -78,7 +78,8 @@ describe('Phase 5: Artifact Builder Contract', () => {
   /**
    * Create a minimal codebase.db with synthetic vectors for testing
    */
-  async function createTestCodebaseDb(vectorCount = 10, dimension = 512) {
+  async function createTestCodebaseDb(vectorCount = 10, dimension = 512, options = {}) {
+    const retired = new Set(options.retiredIndexes || []);
     // Remove existing test DB
     try {
       await fs.unlink(TEST_CODEBASE_DB);
@@ -100,15 +101,17 @@ describe('Phase 5: Artifact Builder Contract', () => {
         session_id TEXT,
         tags TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        ${retired.size > 0 ? ', epoch_retired INTEGER' : ''}
       )
     `);
     db.exec('CREATE INDEX IF NOT EXISTS idx_vectors_file_path ON vectors(file_path)');
 
     // Insert synthetic vectors
-    const stmt = db.prepare(`
-      INSERT INTO vectors (id, file_path, embedding, text, metadata)
-      VALUES (?, ?, ?, ?, ?)
-    `);
+    const stmt = db.prepare(retired.size > 0
+      ? `INSERT INTO vectors (id, file_path, embedding, text, metadata, epoch_retired)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      : `INSERT INTO vectors (id, file_path, embedding, text, metadata)
+         VALUES (?, ?, ?, ?, ?)`);
 
     const insertMany = db.transaction(() => {
       for (let i = 0; i < vectorCount; i++) {
@@ -124,13 +127,15 @@ describe('Phase 5: Artifact Builder Contract', () => {
           embedding[j] /= norm;
         }
 
-        stmt.run(
+        const args = [
           `test-file-${i}.js:${i * 10}`,
           `test-file-${i}.js`,
           Buffer.from(embedding.buffer),
           `Test content for file ${i}`,
-          JSON.stringify({ file: `test-file-${i}.js`, type: 'code' })
-        );
+          JSON.stringify({ file: `test-file-${i}.js`, type: 'code' }),
+        ];
+        if (retired.size > 0) args.push(retired.has(i) ? 7 : null);
+        stmt.run(...args);
       }
     });
 
@@ -240,6 +245,33 @@ describe('Phase 5: Artifact Builder Contract', () => {
 
       // The indexer expects result.int8.count - this will throw!
       // This test serves as documentation that the contract is broken.
+    });
+
+    it('excludes epoch-retired vectors from binary HNSW, int8, and float-store artifacts', async () => {
+      await createTestCodebaseDb(5, 512, { retiredIndexes: [1, 3] });
+
+      const result = await buildFromCodebaseDb(TEST_CODEBASE_DB, {
+        hnswIndexPath: TEST_HNSW_INDEX,
+        floatDimension: 512,
+      });
+
+      expect(result.stats.totalVectors).toBe(3);
+      expect(result.hnsw.totalVectors).toBe(3);
+
+      const int8Data = JSON.parse(await fs.readFile(TEST_INT8_SIDECAR, 'utf-8'));
+      expect(Object.keys(int8Data).sort()).toEqual([
+        'test-file-0.js:0',
+        'test-file-2.js:20',
+        'test-file-4.js:40',
+      ]);
+      const floatStoreIds = JSON.parse(
+        await fs.readFile(result.hnsw.floatStorePath.replace(/\.bin$/, '.ids.json'), 'utf-8')
+      );
+      expect(floatStoreIds).toEqual([
+        'test-file-0.js:0',
+        'test-file-2.js:20',
+        'test-file-4.js:40',
+      ]);
     });
   });
 

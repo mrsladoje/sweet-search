@@ -4,29 +4,13 @@
  * Returns exact bytes from disk. The vectors index may attach symbol/chunk
  * metadata for indexed files, but the returned `text` always comes from
  * `node:fs`, never from the (truncated) DB column.
- *
- * Design notes:
- *   - Filesystem is ground truth. Never return DB-stored text as content.
- *   - Batch up to 20 files; per-file errors do not fail the batch.
- *   - Warm-process cache keyed by `path|size|mtimeMs` avoids re-reading hot
- *     files; line-offset table lets line-range reads avoid materialising the
- *     whole content for large files.
- *
- * DDD: this module lives in the search/ application layer (allowed to import
- * infrastructure for filesystem grounding and chunk metadata).
  */
 
-import { promises as fs, statSync } from 'node:fs';
+import { promises as fs, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
-import { DB_PATHS } from '../infrastructure/config/index.js';
-
-// ---------------------------------------------------------------------------
-// Cache — keyed by absolutePath|size|mtimeMs (any change invalidates).
-// Bounded LRU. Entries hold either the full text + line-offset table, or just
-// the line-offset table for very large files where we deliberately avoid
-// caching the whole content.
-// ---------------------------------------------------------------------------
+import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
+import { withPinnedRead } from './search-reader-pin.js';
 
 const CACHE_MAX_ENTRIES = 64;
 const CACHE_LARGE_FILE_BYTES = 4 * 1024 * 1024; // 4MB — switch to range-read mode
@@ -45,22 +29,22 @@ function _cacheTouch(key, value) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Repository singleton — lazy and tolerant of a missing/empty DB.
-// ---------------------------------------------------------------------------
-
-let _repo = null;
-function _getRepo() {
-  if (_repo === null) {
-    try { _repo = new CodebaseRepository(DB_PATHS.codebase); }
-    catch { _repo = false; }
+const _repos = new Map();
+function _getRepo(projectRoot) {
+  const dbPath = _codebasePathForProject(projectRoot);
+  if (!_repos.has(dbPath)) {
+    try { _repos.set(dbPath, new CodebaseRepository(dbPath)); }
+    catch { _repos.set(dbPath, false); }
   }
-  return _repo || null;
+  return _repos.get(dbPath) || null;
 }
 
-// ---------------------------------------------------------------------------
-// Path resolution helpers
-// ---------------------------------------------------------------------------
+function _codebasePathForProject(projectRoot) {
+  const root = path.resolve(projectRoot || process.cwd());
+  if (root === path.resolve(PROJECT_ROOT || process.cwd())) return DB_PATHS.codebase;
+  const stateDir = path.basename(path.dirname(DB_PATHS.codebase || '.sweet-search/codebase.db'));
+  return path.join(root, stateDir, 'codebase.db');
+}
 
 function _resolvePath(p, projectRoot) {
   if (!p) throw new Error('path is required');
@@ -70,10 +54,24 @@ function _resolvePath(p, projectRoot) {
 
 function _projectRelative(absPath, projectRoot) {
   const root = projectRoot || process.cwd();
-  const rel = path.relative(root, absPath);
-  // Inside the project root → use relative form (matches vectors.file_path).
-  // Outside → keep the absolute path (no chunks will match anyway).
-  return rel.startsWith('..') || path.isAbsolute(rel) ? absPath : rel;
+  const normalized = _normalizeRelativePath(path.relative(root, absPath));
+  if (normalized) return normalized;
+  try {
+    return _normalizeRelativePath(
+      path.relative(realpathSync.native(root), realpathSync.native(absPath)),
+    ) || absPath;
+  } catch {
+    return absPath;
+  }
+}
+
+function _normalizeRelativePath(rel) {
+  const normalized = rel.replace(/\\/g, '/').replace(/^\.\//, '');
+  return (
+    normalized && !normalized.startsWith('../') && !path.isAbsolute(normalized)
+      ? normalized
+      : null
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -217,8 +215,8 @@ function _metaEndLine(meta) {
       : null;
 }
 
-function _attachIndexMetadata(filePathRel) {
-  const repo = _getRepo();
+function _attachIndexMetadata(filePathRel, projectRoot) {
+  const repo = _getRepo(projectRoot);
   if (!repo) return { indexed: false, chunks: [], language: null };
 
   const rows = repo.getChunksByFilePath(filePathRel);
@@ -258,7 +256,7 @@ function _attachIndexMetadata(filePathRel) {
  * @param {boolean} [req.includeMetadata=true] - attach index chunks/language
  * @returns {Promise<Object>}
  */
-export async function readFile(req) {
+async function _readFileUnpinned(req) {
   const t0 = performance.now();
   const projectRoot = req.projectRoot || process.cwd();
   const absPath = _resolvePath(req.path, projectRoot);
@@ -291,7 +289,7 @@ export async function readFile(req) {
   let chunks = [];
   let indexed = false;
   if (req.includeMetadata !== false) {
-    const meta = _attachIndexMetadata(relForIndex);
+    const meta = _attachIndexMetadata(relForIndex, projectRoot);
     indexed = meta.indexed;
     chunks = meta.chunks;
     language = meta.language;
@@ -323,6 +321,14 @@ export async function readFile(req) {
   };
 }
 
+export async function readFile(req) {
+  const projectRoot = req?.projectRoot || process.cwd();
+  return withPinnedRead(
+    { projectRoot, meta: { tool: 'read', path: req?.path ?? null, count: 1 } },
+    () => _readFileUnpinned({ ...req, projectRoot }),
+  );
+}
+
 /**
  * Batch read — up to 20 files in parallel. Per-file failures are returned
  * inline; the batch never throws unless `files` is malformed.
@@ -340,15 +346,18 @@ export async function readFiles(files, opts = {}) {
   if (files.length > 20) {
     throw new Error(`read accepts at most 20 files; got ${files.length}`);
   }
-  const t0 = performance.now();
-  const results = await Promise.all(files.map(f => readFile({
-    path: f.path,
-    startLine: f.startLine,
-    endLine: f.endLine,
-    projectRoot: opts.projectRoot,
-    includeMetadata: opts.includeMetadata !== false,
-  })));
-  return { files: results, totalMs: +(performance.now() - t0).toFixed(2) };
+  const projectRoot = opts.projectRoot || process.cwd();
+  return withPinnedRead({ projectRoot, meta: { tool: 'read', count: files.length } }, async () => {
+    const t0 = performance.now();
+    const results = await Promise.all(files.map(f => _readFileUnpinned({
+      path: f.path,
+      startLine: f.startLine,
+      endLine: f.endLine,
+      projectRoot,
+      includeMetadata: opts.includeMetadata !== false,
+    })));
+    return { files: results, totalMs: +(performance.now() - t0).toFixed(2) };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -385,12 +394,6 @@ export function formatReadResults(results, format = 'agent') {
 
 // ---------------------------------------------------------------------------
 // CLI handler
-// Usage:
-//   sweet-search read path/to/file.ts
-//   sweet-search read path/to/file.ts --lines 45-92
-//   sweet-search read a.ts b.ts c.ts
-//   sweet-search read path/to/file.ts --json
-//   sweet-search read path/to/file.ts --raw
 // ---------------------------------------------------------------------------
 
 function _parseLineRange(spec) {
@@ -477,5 +480,8 @@ export async function handleReadCli(args) {
 // Test-only export — clears caches between unit tests.
 export function __resetReadCachesForTests() {
   _cache.clear();
-  _repo = null;
+  for (const repo of _repos.values()) repo?.close?.();
+  _repos.clear();
 }
+
+export const __testing = { projectRelative: _projectRelative, codebasePathForProject: _codebasePathForProject };

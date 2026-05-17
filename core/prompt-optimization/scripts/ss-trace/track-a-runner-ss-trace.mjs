@@ -55,7 +55,7 @@ function parseArgs(argv) {
 }
 function toCamel(s) { return s.replace(/-([a-z])/g, (_, c) => c.toUpperCase()); }
 
-const { traceSymbol } = await import(path.join(REPO_ROOT, 'core/search/search-trace.js'));
+const { traceSymbol } = await import('../../search-runtime.mjs');
 
 function predictedSymbols(result, probe) {
   if (!result.target) return [];

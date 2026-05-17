@@ -143,6 +143,41 @@ describe('graph-expansion', () => {
       expect(ids).not.toContain('e');
     });
 
+    it('honors manifest epoch visibility for retired relationship targets', () => {
+      const epochDb = createTestDb();
+      try {
+        epochDb.exec(`
+          ALTER TABLE entities ADD COLUMN epoch_written INTEGER NOT NULL DEFAULT 0;
+          ALTER TABLE entities ADD COLUMN epoch_retired INTEGER;
+          ALTER TABLE relationships ADD COLUMN epoch_written INTEGER NOT NULL DEFAULT 0;
+          ALTER TABLE relationships ADD COLUMN epoch_retired INTEGER;
+          UPDATE entities SET epoch_written = 1;
+          UPDATE relationships SET epoch_written = 1;
+          UPDATE entities SET epoch_retired = 3 WHERE id = 'b';
+          UPDATE relationships SET epoch_retired = 3 WHERE source_id = 'a' AND target_id = 'b';
+          INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line, stale_since, epoch_written, epoch_retired)
+          VALUES ('b2', 'src/b2.js', 'class', 'ServiceB2', 'class ServiceB2', 1, 30, NULL, 3, NULL);
+          INSERT INTO relationships (source_id, target_id, target_name, type, weight, epoch_written, epoch_retired)
+          VALUES ('a', 'b2', 'ServiceB2', 'imports', 1.0, 3, NULL);
+        `);
+
+        const oldView = expandResults(epochDb, [{ id: 'a', score: 10 }], {
+          expandMode: '1hop',
+          manifestEpoch: 2,
+        }).map(r => r.id || r.entity_id);
+        expect(oldView).toContain('b');
+        expect(oldView).not.toContain('b2');
+
+        const currentView = expandResults(epochDb, [{ id: 'a', score: 10 }], {
+          expandMode: '1hop',
+        }).map(r => r.id || r.entity_id);
+        expect(currentView).toContain('b2');
+        expect(currentView).not.toContain('b');
+      } finally {
+        epochDb.close();
+      }
+    });
+
     it('expanded results have is_expanded: true', () => {
       const results = [{ id: 'a', score: 10, file: 'src/a.js', name: 'ServiceA' }];
       const expanded = expandResults(db, results, { expandMode: '1hop' });

@@ -7,7 +7,17 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import Database from 'better-sqlite3';
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -15,7 +25,9 @@ import {
   readFiles,
   formatReadResults,
   __resetReadCachesForTests,
+  __testing,
 } from '../../core/search/search-read.js';
+import { withPinnedRead } from '../../core/search/search-reader-pin.js';
 
 let TMP;
 
@@ -118,9 +130,133 @@ describe('readFile — single file', () => {
     expect(r.indexed).toBe(false);
     expect(r.chunks).toEqual([]);
   });
+
+  it('attaches metadata from the requested projectRoot index, not the process root', async () => {
+    writeTmp('src/e.js', 'function e() { return 1; }\n');
+    const stateDir = path.join(TMP, '.sweet-search');
+    mkdirSync(stateDir, { recursive: true });
+    const db = new Database(path.join(stateDir, 'codebase.db'));
+    try {
+      db.exec(`
+        CREATE TABLE vectors (
+          id TEXT PRIMARY KEY,
+          file_path TEXT,
+          text TEXT,
+          metadata TEXT
+        )
+      `);
+      db.prepare('INSERT INTO vectors (id, file_path, text, metadata) VALUES (?, ?, ?, ?)').run(
+        'chunk-e',
+        'src/e.js',
+        'function e() { return 1; }',
+        JSON.stringify({
+          language: 'javascript',
+          symbol: 'e',
+          chunk_type: 'function',
+          line_start: 1,
+          line_end: 1,
+          signature: 'function e()',
+        }),
+      );
+    } finally {
+      db.close();
+    }
+
+    const r = await readFile({ path: 'src/e.js', projectRoot: TMP });
+
+    expect(r.indexed).toBe(true);
+    expect(r.language).toBe('javascript');
+    expect(r.chunks).toEqual([
+      {
+        id: 'chunk-e',
+        symbol: 'e',
+        type: 'function',
+        startLine: 1,
+        endLine: 1,
+        signature: 'function e()',
+      },
+    ]);
+  });
+
+  it('attaches metadata from the manifest-selected vectors database', async () => {
+    writeTmp('src/f.js', 'function f() { return 2; }\n');
+    const stateDir = path.join(TMP, '.sweet-search');
+    const nestedDir = path.join(stateDir, 'nested');
+    mkdirSync(nestedDir, { recursive: true });
+    writeFileSync(path.join(stateDir, 'reconcile-manifest.json'), JSON.stringify({
+      epoch: 9,
+      vectors: { path: 'nested/codebase.db', epoch: 9 },
+    }));
+    const db = new Database(path.join(nestedDir, 'codebase.db'));
+    try {
+      db.exec(`
+        CREATE TABLE vectors (
+          id TEXT PRIMARY KEY,
+          file_path TEXT,
+          text TEXT,
+          metadata TEXT,
+          epoch_written INTEGER NOT NULL DEFAULT 0,
+          epoch_retired INTEGER
+        )
+      `);
+      db.prepare('INSERT INTO vectors (id, file_path, text, metadata, epoch_written) VALUES (?, ?, ?, ?, ?)').run(
+        'chunk-f',
+        'src/f.js',
+        'function f() { return 2; }',
+        JSON.stringify({
+          language: 'javascript',
+          symbol: 'f',
+          chunk_type: 'function',
+          line_start: 1,
+          line_end: 1,
+          signature: 'function f()',
+        }),
+        9,
+      );
+    } finally {
+      db.close();
+    }
+
+    const r = await readFile({ path: 'src/f.js', projectRoot: TMP });
+
+    expect(r.indexed).toBe(true);
+    expect(r.chunks[0]).toMatchObject({
+      id: 'chunk-f',
+      symbol: 'f',
+      startLine: 1,
+      endLine: 1,
+    });
+  });
+
+  it('normalizes realpath-spelled files under a symlink-spelled project root for index lookup', () => {
+    const realRoot = path.join(TMP, 'real');
+    const linkRoot = path.join(TMP, 'link');
+    mkdirSync(path.join(realRoot, 'src'), { recursive: true });
+    writeFileSync(path.join(realRoot, 'src/a.js'), 'const a = 1;\n');
+    symlinkSync(realRoot, linkRoot, 'dir');
+
+    expect(__testing.projectRelative(path.join(realRoot, 'src/a.js'), linkRoot)).toBe('src/a.js');
+  });
 });
 
 describe('readFiles — batch', () => {
+  it('pins and releases the reconcile reader heartbeat while work is in flight', async () => {
+    const stateDir = path.join(TMP, '.sweet-search');
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(path.join(stateDir, 'reconcile-manifest.json'), JSON.stringify({ epoch: 12 }));
+
+    await withPinnedRead({ projectRoot: TMP, meta: { tool: 'test-read' } }, async () => {
+      const readerDir = path.join(stateDir, 'readers');
+      const files = readdirSync(readerDir);
+      expect(files).toHaveLength(1);
+      const payload = JSON.parse(readFileSync(path.join(readerDir, files[0]), 'utf-8'));
+      expect(payload).toMatchObject({ epoch: 12, meta: { tool: 'test-read' } });
+    });
+
+    const readerDir = path.join(stateDir, 'readers');
+    expect(existsSync(readerDir) ? readdirSync(readerDir) : []).toEqual([]);
+  });
+
   it('reads up to 20 files and returns per-file results', async () => {
     writeTmp('one.txt', 'A');
     writeTmp('two.txt', 'B\nC');

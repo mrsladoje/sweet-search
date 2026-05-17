@@ -116,7 +116,9 @@ export function evaluateWatermarks(state, config = DEFAULT_WATERMARKS) {
       || (sparse.deltaSegmentCount ?? 0) > config.sparseDeltaSegmentCount) {
     jobs.push({
       tier: 'sparse_gram',
-      reason: 'delta_size_ratio',
+      reason: (sparse.deltaSizeRatio ?? 0) > config.sparseDeltaRatio
+        ? 'delta_size_ratio'
+        : 'delta_segment_count',
       payload: {
         deltaSizeRatio: sparse.deltaSizeRatio ?? 0,
         deltaSegmentCount: sparse.deltaSegmentCount ?? 0,

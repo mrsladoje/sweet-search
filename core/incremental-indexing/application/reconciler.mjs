@@ -13,11 +13,10 @@
  *   - prune grace periods,
  *   - manifest publish.
  *
- * Phase 2 lands the SHELL: the service class, the tick scaffold, and the
- * boundary types. Phase 3 plugs in the per-tier write adapters (HNSW, LI,
- * sparse-gram) and the maintenance scheduler. The legacy
- * `core/indexing/index-maintainer.mjs` daemon continues to drive the
- * existing path until the v2 flag flips.
+ * The reconciler coordinates adapter-provided per-tier deltas, enforces
+ * tick budgets, schedules maintenance jobs from watermarks, and publishes
+ * the manifest. Concrete graph/vector/HNSW/LI/sparse writes stay behind
+ * the injected adapters.
  *
  * The reconciler is intentionally pure of I/O orchestration — it accepts
  * dependency-injected adapters so unit tests can drive every tick through
@@ -32,6 +31,7 @@ import {
   writeManifest,
   zeroManifest,
 } from '../infrastructure/manifest.mjs';
+import { evaluateWatermarks, loadWatermarkConfig } from '../domain/watermark-scheduler.mjs';
 import { beginRead, endRead, minLiveEpoch } from '../infrastructure/reader-heartbeat.mjs';
 import { verifyStamp, writeStamp, formatStampMismatch } from '../infrastructure/worktree-stamp.mjs';
 
@@ -40,6 +40,7 @@ import { verifyStamp, writeStamp, formatStampMismatch } from '../infrastructure/
  *
  *   {
  *     readDirtySet():            Promise<DirtyFile[]>,
+ *     requeueDirtyFiles(files):   Promise<void>,       // optional budget tail
  *     hashFile(file):            Promise<{ contentHash, metadata }>,
  *     loadCurrentManifest():     object|null,
  *     persistManifest(manifest): Promise<void>,
@@ -49,16 +50,95 @@ import { verifyStamp, writeStamp, formatStampMismatch } from '../infrastructure/
  *     applyBinaryHNSWDelta(file, vectorOps, epoch): Promise<{ ops }>,
  *     applyLIDelta(file, tokenOps, epoch):        Promise<{ ops }>,
  *     applySparseGramDelta(file, gramOps, epoch): Promise<{ ops }>,
- *     scheduleMaintenance(reason, payload):       void,
+ *     // Any apply* call may also return either:
+ *     //   { manifest: {...tier descriptor...} }
+ *     // or:
+ *     //   { manifestTiers: { sparseGram: {...}, hnsw: {...} } }
+ *     // These descriptors are merged into the next epoch manifest.
+ *     readMaintenanceState(ctx):                  Promise<object>|object,
+ *     scheduleMaintenance(job):                   Promise<void>|void,
  *   }
  *
- * The Phase 3 maintenance scheduler will be a separate file; Phase 2 just
- * accepts the function reference so the contract is fixed early.
+ * Maintenance scheduling uses `domain/watermark-scheduler.mjs`; the adapter
+ * persists emitted jobs to the queue used by `maintenance-worker.mjs`.
  */
 
 const DEFAULT_TICK_INTERVAL_MS = 60_000;
 const DEFAULT_CPU_BUDGET_MS = 2_000;
 const DEFAULT_FILES_PER_TICK = 50;
+
+const MANIFEST_TIER_KEYS = new Set([
+  'codeGraph',
+  'vectors',
+  'hnsw',
+  'binaryHnsw',
+  'lateInteraction',
+  'sparseGram',
+]);
+
+function isPlainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function collectManifestTier(target, tier, result) {
+  if (!result) return;
+  if (isPlainObject(result.manifest)) {
+    mergeManifestTiers(target, { [tier]: result.manifest });
+  }
+  if (isPlainObject(result.manifestTiers)) {
+    mergeManifestTiers(target, result.manifestTiers);
+  }
+}
+
+function mergeManifestTiers(target, update) {
+  if (!isPlainObject(update)) return target;
+  for (const [tier, descriptor] of Object.entries(update)) {
+    if (!MANIFEST_TIER_KEYS.has(tier) || !isPlainObject(descriptor)) continue;
+    target[tier] = mergeTierDescriptor(target[tier] || {}, descriptor);
+  }
+  return target;
+}
+
+function mergeTierDescriptor(previous, next) {
+  const merged = { ...previous, ...next };
+  if (Array.isArray(previous.deltas) || Array.isArray(next.deltas)) {
+    merged.deltas = [
+      ...new Set([
+        ...(Array.isArray(previous.deltas) ? previous.deltas : []),
+        ...(Array.isArray(next.deltas) ? next.deltas : []),
+      ]),
+    ];
+  }
+  return merged;
+}
+
+function finalizeManifestTiers(previousManifest, tiers) {
+  const out = { ...tiers };
+  if (isPlainObject(out.sparseGram)) {
+    const previousSparse = previousManifest?.sparseGram || {};
+    const baseChanged = typeof out.sparseGram.base === 'string'
+      && out.sparseGram.base !== previousSparse.base;
+    const weightsChanged = typeof out.sparseGram.weightsId === 'string'
+      && out.sparseGram.weightsId !== previousSparse.weightsId;
+    if (baseChanged || weightsChanged) {
+      out.sparseGram = {
+        ...out.sparseGram,
+        deltas: Array.isArray(out.sparseGram.deltas) ? out.sparseGram.deltas : [],
+      };
+    } else if (Array.isArray(out.sparseGram.deltas)) {
+      out.sparseGram = {
+        ...out.sparseGram,
+        deltas: [
+          ...new Set([
+            ...(Array.isArray(previousSparse.deltas) ? previousSparse.deltas : []),
+            ...out.sparseGram.deltas,
+          ]),
+        ],
+      };
+    }
+  }
+  return out;
+}
 
 export class Reconciler {
   /**
@@ -135,10 +215,9 @@ export class Reconciler {
   /**
    * Run one reconcile tick. Returns the counters snapshot for the tick.
    *
-   * Phase 2 implementation walks the dirty set through the adapter
-   * contract; Phase 3 wires real tier writes. For now the adapters
-   * decide whether to actually do anything — the reconciler enforces
-   * the budget, atomicity, and manifest publish protocol.
+   * Walk the dirty set through the adapter contract. Adapters own concrete
+   * tier writes; the reconciler enforces budget, maintenance scheduling,
+   * and manifest publication.
    *
    * @returns {Promise<object>}
    */
@@ -151,22 +230,28 @@ export class Reconciler {
     const counters = new ReconcileCounters();
     const epoch = this.nextEpoch();
     counters.set('epoch', epoch);
+    let dirty = [];
+    let dirtyCursor = 0;
+    let deferredRequeued = false;
+    let manifestPublished = false;
 
     try {
-      const dirty = await this.adapters.readDirtySet();
+      dirty = await this.adapters.readDirtySet();
       counters.set('dirty_paths_seen', dirty.length);
 
-      // Drain the dirty set under the CPU + file budget. Phase 5 tunes
-      // the limit per hardware tier; Phase 2 enforces a soft cap.
-      const budget = Math.min(this.config.filesPerTick, dirty.length);
-      const files = dirty.slice(0, budget);
       counters.set('cpu_budget_total_ms', this.config.cpuBudgetMs);
 
       // Track per-file outcomes for the tick summary.
       const tierOps = {};
+      const manifestTiers = {};
       const filesProcessed = [];
 
-      for (const file of files) {
+      for (; dirtyCursor < dirty.length; dirtyCursor += 1) {
+        const filesAttempted = counters._fields.files_processed + counters._fields.content_unchanged;
+        if (filesAttempted >= this.config.filesPerTick) break;
+        if (filesAttempted > 0 && this.now() - startedAt >= this.config.cpuBudgetMs) break;
+
+        const file = dirty[dirtyCursor];
         const hashes = await this.adapters.hashFile(file);
         if (hashes && hashes.contentUnchanged) {
           counters.observeContentUnchanged();
@@ -174,6 +259,7 @@ export class Reconciler {
         }
         const fileRes = await this._reconcileOneFile(file, epoch, hashes);
         filesProcessed.push({ file, ...fileRes });
+        mergeManifestTiers(manifestTiers, fileRes?.manifestTiers);
         counters.inc('files_processed');
         counters.inc('chunks_total', fileRes?.chunksTotal ?? 0);
         counters.inc('chunks_encoded', fileRes?.chunksEncoded ?? 0);
@@ -194,6 +280,20 @@ export class Reconciler {
         }
       }
 
+      const deferredFiles = dirty.slice(dirtyCursor);
+      if (deferredFiles.length > 0) {
+        counters.inc('dirty_paths_deferred', deferredFiles.length);
+        if (this.adapters.requeueDirtyFiles) {
+          await this.adapters.requeueDirtyFiles(deferredFiles);
+          deferredRequeued = true;
+        } else {
+          this.logger.warn?.(
+            `[reconciler] ${deferredFiles.length} dirty paths exceeded the per-tick budget; ` +
+            'adapter has no requeueDirtyFiles hook',
+          );
+        }
+      }
+
       // Publish the new manifest. Plan § 8.1 step 4: write to *.tmp,
       // fsync, atomic rename, fsync parent dir. `writeManifest` already
       // does that.
@@ -201,9 +301,17 @@ export class Reconciler {
         ? this.adapters.loadCurrentManifest()
         : readManifest(this.stateDir))
         ?? zeroManifest({});
-      const manifest = buildNextManifest(previous, { epoch, tiers: {} });
+      const manifest = buildNextManifest(previous, {
+        epoch,
+        tiers: finalizeManifestTiers(previous, manifestTiers),
+      });
       await this._publishManifest(manifest);
+      manifestPublished = true;
       this._lastEpoch = epoch;
+
+      // Plan § 6.1 step 11: maintenance observes a successfully-published
+      // epoch. Never enqueue jobs for an epoch whose manifest did not land.
+      await this._scheduleMaintenance(epoch, counters, tierOps, filesProcessed);
 
       counters.set('tick_ms', this.now() - startedAt);
       counters.set('ts', startedAt / 1000);
@@ -226,34 +334,46 @@ export class Reconciler {
       }
 
       return counters.snapshot();
+    } catch (err) {
+      if (!manifestPublished && dirty.length > 0) {
+        const filesToRequeue = deferredRequeued ? dirty.slice(0, dirtyCursor) : dirty;
+        if (filesToRequeue.length > 0) {
+          await this._tryRequeueDirtyAfterFailure(filesToRequeue, err);
+        }
+      }
+      throw err;
     } finally {
       this._running = false;
     }
   }
 
   async _reconcileOneFile(file, epoch, hashes) {
-    // Phase 2 dispatches to the per-tier adapter methods. Adapters can
-    // return undefined when they have no work; Phase 3 wires the
-    // actual deltas through.
+    // Dispatch to per-tier adapter methods. Adapters can return undefined
+    // when a tier has no work for this file.
     const ops = {};
     const graph = await this.adapters.applyGraphDelta?.(file, hashes, epoch);
+    const manifestTiers = {};
+    collectManifestTier(manifestTiers, 'codeGraph', graph);
     if (graph?.ops?.graph_upsert != null) ops.graph_upsert = graph.ops.graph_upsert;
     if (graph?.ops?.graph_tombstone != null) ops.graph_tombstone = graph.ops.graph_tombstone;
     const vec = await this.adapters.applyVectorDelta?.(file, hashes?.chunks ?? [], hashes, epoch);
+    collectManifestTier(manifestTiers, 'vectors', vec);
     if (vec?.ops?.vectors_upsert != null) ops.vectors_upsert = vec.ops.vectors_upsert;
     if (vec?.ops?.vectors_delete != null) ops.vectors_delete = vec.ops.vectors_delete;
-    // HNSW / Binary / LI / sparse-gram are Phase 3 wiring; we still call
-    // through so adapter contract is exercised even when no work happens.
     const hnsw = await this.adapters.applyHNSWDelta?.(file, vec?.vectorOps ?? [], epoch);
+    collectManifestTier(manifestTiers, 'hnsw', hnsw);
     if (hnsw?.ops?.hnsw_add != null) ops.hnsw_add = hnsw.ops.hnsw_add;
     if (hnsw?.ops?.hnsw_tombstone != null) ops.hnsw_tombstone = hnsw.ops.hnsw_tombstone;
     const bin = await this.adapters.applyBinaryHNSWDelta?.(file, vec?.vectorOps ?? [], epoch);
+    collectManifestTier(manifestTiers, 'binaryHnsw', bin);
     if (bin?.ops?.binary_hnsw_append != null) ops.binary_hnsw_append = bin.ops.binary_hnsw_append;
     if (bin?.ops?.binary_hnsw_tombstone != null) ops.binary_hnsw_tombstone = bin.ops.binary_hnsw_tombstone;
     const li = await this.adapters.applyLIDelta?.(file, vec?.tokenOps ?? [], epoch);
+    collectManifestTier(manifestTiers, 'lateInteraction', li);
     if (li?.ops?.li_segment_append != null) ops.li_segment_append = li.ops.li_segment_append;
     if (li?.ops?.li_tombstone != null) ops.li_tombstone = li.ops.li_tombstone;
     const sg = await this.adapters.applySparseGramDelta?.(file, vec?.gramOps ?? [], epoch);
+    collectManifestTier(manifestTiers, 'sparseGram', sg);
     if (sg?.ops?.sparse_gram_delta_upsert != null) ops.sparse_gram_delta_upsert = sg.ops.sparse_gram_delta_upsert;
 
     return {
@@ -265,8 +385,31 @@ export class Reconciler {
       chunksMetadataDirty: vec?.chunksMetadataDirty ?? 0,
       chunksDedupRepaired: vec?.chunksDedupRepaired ?? 0,
       treeSitterErrorNodes: graph?.treeSitterErrorNodes ?? 0,
+      manifestTiers,
       ops,
     };
+  }
+
+  async _scheduleMaintenance(epoch, counters, tierOps, filesProcessed) {
+    if (!this.adapters.readMaintenanceState) return;
+    const state = await this.adapters.readMaintenanceState({
+      epoch,
+      tierOps,
+      filesProcessed,
+      counters: counters.snapshot(),
+    });
+    const jobs = Array.isArray(state)
+      ? state
+      : evaluateWatermarks(state || {}, this.config.watermarks || loadWatermarkConfig());
+    if (jobs.length === 0) return;
+    if (!this.adapters.scheduleMaintenance) {
+      this.logger.warn?.(`[reconciler] ${jobs.length} maintenance jobs crossed watermarks; adapter has no scheduleMaintenance hook`);
+      return;
+    }
+    for (const job of jobs) {
+      await this.adapters.scheduleMaintenance({ ...job, epoch: job.epoch ?? epoch });
+      counters.inc('maintenance_jobs_enqueued');
+    }
   }
 
   async _publishManifest(manifest) {
@@ -275,6 +418,24 @@ export class Reconciler {
       return;
     }
     writeManifest(this.stateDir, manifest);
+  }
+
+  async _tryRequeueDirtyAfterFailure(files, cause) {
+    if (!this.adapters.requeueDirtyFiles) {
+      this.logger.warn?.(
+        `[reconciler] tick failed before manifest publish and ${files.length} dirty paths were drained; ` +
+        'adapter has no requeueDirtyFiles hook',
+      );
+      return;
+    }
+    try {
+      await this.adapters.requeueDirtyFiles(files);
+    } catch (requeueErr) {
+      this.logger.error?.(
+        `[reconciler] failed to requeue ${files.length} dirty paths after tick failure ` +
+        `(${cause?.message ?? cause}): ${requeueErr?.message ?? requeueErr}`,
+      );
+    }
   }
 
   // ----- Reader heartbeat helpers (exposed for tests; production callers

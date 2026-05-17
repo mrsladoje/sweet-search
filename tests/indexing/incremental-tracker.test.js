@@ -1,9 +1,9 @@
 /**
  * Incremental Tracker Tests
  *
- * Tests for the incremental indexing tracker (v2.3):
- * - mtime/size fast-path optimization (Sweet Search v2.3)
- * - Config fingerprint validation (Sweet Search v2.3)
+ * Tests for the incremental indexing tracker:
+ * - mtime/size/inode fast-path optimization
+ * - Config fingerprint validation
  * - ENOSPC (disk full) error handling (C4)
  * - Missing vs corrupt state file detection (E3)
  *
@@ -13,9 +13,9 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { join } from 'path';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, statSync } from 'fs';
 import { tmpdir } from 'os';
-import { createHash } from 'crypto';
+import { contentHashSync, HASH_ALGORITHM } from '../../core/incremental-indexing/infrastructure/hashing.mjs';
 
 // =============================================================================
 // UNIT TESTS FOR ISOLATED LOGIC (no fs mocking needed)
@@ -26,12 +26,10 @@ describe('Hash Computation Logic', () => {
    * Replicates the hash logic from incremental-tracker.js
    */
   function computeContentHash(content) {
-    const hash = createHash('sha256');
-    hash.update(content);
-    return hash.digest('hex').slice(0, 16);
+    return contentHashSync(content);
   }
 
-  it('should compute SHA-256 hash truncated to 16 chars', () => {
+  it('should compute the configured content hash truncated to 16 chars', () => {
     const hash = computeContentHash('test content');
 
     expect(hash).toHaveLength(16);
@@ -68,7 +66,7 @@ describe('Hash Computation Logic', () => {
 });
 
 describe('Config Fingerprint Logic', () => {
-  const STATE_VERSION = '2.3';
+  const STATE_VERSION = '2.4';
 
   /**
    * Replicates the config fingerprint builder from incremental-tracker.js
@@ -79,6 +77,7 @@ describe('Config Fingerprint Logic', () => {
       model: config.model,
       dimension: config.dimension,
       hnswDimension: config.hnswDimension,
+      hashAlgorithm: HASH_ALGORITHM,
       version: STATE_VERSION,
     };
   }
@@ -107,12 +106,16 @@ describe('Config Fingerprint Logic', () => {
       return { valid: false, reason: 'hnsw_dimension_changed', details: { previous: stored.hnswDimension, current: current.hnswDimension } };
     }
 
-    // Version upgrade is OK (minor version)
-    const storedMajor = parseFloat(stored.version);
-    const currentMajor = parseFloat(current.version);
+    if (stored.hashAlgorithm !== current.hashAlgorithm) {
+      return { valid: false, reason: 'hash_algorithm_changed', details: { previous: stored.hashAlgorithm, current: current.hashAlgorithm } };
+    }
 
-    if (storedMajor < currentMajor) {
+    if (stored.version === '2.2' && current.version === '2.3') {
       return { valid: true, migrated: true, reason: 'version_upgrade' };
+    }
+
+    if (stored.version !== current.version) {
+      return { valid: false, reason: 'state_version_changed', details: { previous: stored.version, current: current.version } };
     }
 
     return { valid: true };
@@ -133,13 +136,14 @@ describe('Config Fingerprint Logic', () => {
       model: 'voyage-code-3',
       dimension: 1024,
       hnswDimension: 512,
-      version: '2.3',
+      hashAlgorithm: HASH_ALGORITHM,
+      version: '2.4',
     });
   });
 
   it('should detect provider change', () => {
-    const stored = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, version: '2.3' };
-    const current = { provider: 'mistral', model: 'm', dimension: 1024, hnswDimension: 512, version: '2.3' };
+    const stored = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, hashAlgorithm: HASH_ALGORITHM, version: '2.4' };
+    const current = { provider: 'mistral', model: 'm', dimension: 1024, hnswDimension: 512, hashAlgorithm: HASH_ALGORITHM, version: '2.4' };
 
     const result = validateFingerprint(stored, current);
 
@@ -148,8 +152,8 @@ describe('Config Fingerprint Logic', () => {
   });
 
   it('should detect model change', () => {
-    const stored = { provider: 'voyage', model: 'voyage-code-2', dimension: 1024, hnswDimension: 512, version: '2.3' };
-    const current = { provider: 'voyage', model: 'voyage-code-3', dimension: 1024, hnswDimension: 512, version: '2.3' };
+    const stored = { provider: 'voyage', model: 'voyage-code-2', dimension: 1024, hnswDimension: 512, hashAlgorithm: HASH_ALGORITHM, version: '2.4' };
+    const current = { provider: 'voyage', model: 'voyage-code-3', dimension: 1024, hnswDimension: 512, hashAlgorithm: HASH_ALGORITHM, version: '2.4' };
 
     const result = validateFingerprint(stored, current);
 
@@ -158,8 +162,8 @@ describe('Config Fingerprint Logic', () => {
   });
 
   it('should detect dimension change', () => {
-    const stored = { provider: 'voyage', model: 'm', dimension: 768, hnswDimension: 384, version: '2.3' };
-    const current = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, version: '2.3' };
+    const stored = { provider: 'voyage', model: 'm', dimension: 768, hnswDimension: 384, hashAlgorithm: HASH_ALGORITHM, version: '2.4' };
+    const current = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, hashAlgorithm: HASH_ALGORITHM, version: '2.4' };
 
     const result = validateFingerprint(stored, current);
 
@@ -167,9 +171,9 @@ describe('Config Fingerprint Logic', () => {
     expect(result.reason).toBe('dimension_changed');
   });
 
-  it('should allow version upgrade', () => {
-    const stored = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, version: '2.2' };
-    const current = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, version: '2.3' };
+  it('should allow the legacy 2.2 to 2.3 metadata-only version upgrade', () => {
+    const stored = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, hashAlgorithm: HASH_ALGORITHM, version: '2.2' };
+    const current = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, hashAlgorithm: HASH_ALGORITHM, version: '2.3' };
 
     const result = validateFingerprint(stored, current);
 
@@ -178,9 +182,29 @@ describe('Config Fingerprint Logic', () => {
     expect(result.reason).toBe('version_upgrade');
   });
 
+  it('should detect hash algorithm changes', () => {
+    const stored = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, hashAlgorithm: 'sha256', version: '2.4' };
+    const current = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, hashAlgorithm: 'xxhash3', version: '2.4' };
+
+    const result = validateFingerprint(stored, current);
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe('hash_algorithm_changed');
+  });
+
+  it('should reject incompatible state version changes', () => {
+    const stored = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, hashAlgorithm: HASH_ALGORITHM, version: '2.3' };
+    const current = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, hashAlgorithm: HASH_ALGORITHM, version: '2.4' };
+
+    const result = validateFingerprint(stored, current);
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe('state_version_changed');
+  });
+
   it('should accept matching fingerprints', () => {
-    const stored = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, version: '2.3' };
-    const current = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, version: '2.3' };
+    const stored = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, hashAlgorithm: HASH_ALGORITHM, version: '2.4' };
+    const current = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, hashAlgorithm: HASH_ALGORITHM, version: '2.4' };
 
     const result = validateFingerprint(stored, current);
 
@@ -188,7 +212,7 @@ describe('Config Fingerprint Logic', () => {
   });
 
   it('should handle missing stored fingerprint', () => {
-    const current = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, version: '2.3' };
+    const current = { provider: 'voyage', model: 'm', dimension: 1024, hnswDimension: 512, hashAlgorithm: HASH_ALGORITHM, version: '2.4' };
 
     const result = validateFingerprint(null, current);
 
@@ -197,7 +221,7 @@ describe('Config Fingerprint Logic', () => {
   });
 });
 
-describe('mtime/size Fast-Path Logic', () => {
+describe('mtime/size/inode Fast-Path Logic', () => {
   /**
    * Determines if fast-path can be used (skip content read)
    */
@@ -205,43 +229,60 @@ describe('mtime/size Fast-Path Logic', () => {
     if (!storedEntry) return false;
     if (typeof storedEntry === 'string') return false; // v2.2 format - need migration
 
-    const sizeMatches = storedEntry.size === currentStat.size;
-    const mtimeMatches = storedEntry.mtime_ns === currentStat.mtime_ns;
+    const sizeMatches = BigInt(storedEntry.size) === BigInt(currentStat.size);
+    const mtimeMatches = BigInt(storedEntry.mtime_ns) === BigInt(currentStat.mtime_ns);
+    const inodeMatches = storedEntry.inode != null
+      && currentStat.inode != null
+      && BigInt(storedEntry.inode) === BigInt(currentStat.inode);
 
-    return sizeMatches && mtimeMatches;
+    return sizeMatches && mtimeMatches && inodeMatches;
   }
 
-  it('should use fast-path when size and mtime match', () => {
-    const stored = { hash: 'abc123', size: 1000, mtime_ns: '1735670400000000000' };
-    const current = { size: 1000, mtime_ns: '1735670400000000000' };
+  it('should use fast-path when size, mtime, and inode match', () => {
+    const stored = { hash: 'abc123', size: '1000', mtime_ns: '1735670400000000000', inode: '42' };
+    const current = { size: '1000', mtime_ns: '1735670400000000000', inode: '42' };
 
     expect(canUseFastPath(stored, current)).toBe(true);
   });
 
   it('should NOT use fast-path when size differs', () => {
-    const stored = { hash: 'abc123', size: 1000, mtime_ns: '1735670400000000000' };
-    const current = { size: 2000, mtime_ns: '1735670400000000000' };
+    const stored = { hash: 'abc123', size: '1000', mtime_ns: '1735670400000000000', inode: '42' };
+    const current = { size: '2000', mtime_ns: '1735670400000000000', inode: '42' };
+
+    expect(canUseFastPath(stored, current)).toBe(false);
+  });
+
+  it('should NOT use fast-path when the stored inode is missing', () => {
+    const stored = { hash: 'abc123', size: '1000', mtime_ns: '1735670400000000000' };
+    const current = { size: '1000', mtime_ns: '1735670400000000000', inode: '42' };
 
     expect(canUseFastPath(stored, current)).toBe(false);
   });
 
   it('should NOT use fast-path when mtime differs', () => {
-    const stored = { hash: 'abc123', size: 1000, mtime_ns: '1735670400000000000' };
-    const current = { size: 1000, mtime_ns: '1735680000000000000' };
+    const stored = { hash: 'abc123', size: '1000', mtime_ns: '1735670400000000000', inode: '42' };
+    const current = { size: '1000', mtime_ns: '1735680000000000000', inode: '42' };
+
+    expect(canUseFastPath(stored, current)).toBe(false);
+  });
+
+  it('should NOT use fast-path when inode differs', () => {
+    const stored = { hash: 'abc123', size: '1000', mtime_ns: '1735670400000000000', inode: '42' };
+    const current = { size: '1000', mtime_ns: '1735670400000000000', inode: '43' };
 
     expect(canUseFastPath(stored, current)).toBe(false);
   });
 
   it('should NOT use fast-path for new files', () => {
     const stored = null;
-    const current = { size: 1000, mtime_ns: '1735670400000000000' };
+    const current = { size: '1000', mtime_ns: '1735670400000000000', inode: '42' };
 
     expect(canUseFastPath(stored, current)).toBe(false);
   });
 
   it('should NOT use fast-path for v2.2 format (string hash only)', () => {
     const stored = 'abc123def456'; // v2.2 format
-    const current = { size: 1000, mtime_ns: '1735670400000000000' };
+    const current = { size: '1000', mtime_ns: '1735670400000000000', inode: '42' };
 
     expect(canUseFastPath(stored, current)).toBe(false);
   });
@@ -329,7 +370,7 @@ describe('State Format Migration', () => {
    */
   function needsMigration(entry) {
     if (typeof entry === 'string') return true; // v2.2 format
-    if (!entry.size || !entry.mtime_ns) return true; // Missing new fields
+    if (!entry.size || !entry.mtime_ns || !entry.inode) return true; // Missing new fields
     return false;
   }
 
@@ -345,8 +386,12 @@ describe('State Format Migration', () => {
     expect(needsMigration({ hash: 'abc', size: 100 })).toBe(true);
   });
 
+  it('should detect missing inode field', () => {
+    expect(needsMigration({ hash: 'abc', size: '100', mtime_ns: '123' })).toBe(true);
+  });
+
   it('should accept v2.3 format', () => {
-    expect(needsMigration({ hash: 'abc', size: 100, mtime_ns: '123' })).toBe(false);
+    expect(needsMigration({ hash: 'abc', size: '100', mtime_ns: '123', inode: '456' })).toBe(false);
   });
 });
 
@@ -432,6 +477,81 @@ describe('Incremental Tracker - Integration Tests', () => {
       expect(result.toIndex).toContain('b.txt');
       expect(result.unchanged.length).toBe(0);
       expect(result.toRemove.length).toBe(0);
+    });
+
+    it('persists the full size/mtime/inode stat tuple as strings', async () => {
+      writeFileSync(join(projectRoot, 'tuple.txt'), 'tuple content');
+
+      const tracker = await import('../../core/indexing/incremental-tracker.js');
+      const result = await tracker.getChangedFiles(['tuple.txt'], projectRoot);
+
+      expect(result.currentHashes['tuple.txt']).toMatchObject({
+        hash: contentHashSync('tuple content'),
+        size: expect.any(String),
+        mtime_ns: expect.any(String),
+        inode: expect.any(String),
+      });
+    });
+
+    it('hashes file bytes instead of decoded UTF-8 strings', async () => {
+      const bytes = Buffer.from([0xff, 0x61, 0x00, 0x62]);
+      writeFileSync(join(projectRoot, 'bytes.txt'), bytes);
+
+      const tracker = await import('../../core/indexing/incremental-tracker.js');
+      const result = await tracker.getChangedFiles(['bytes.txt'], projectRoot);
+
+      expect(result.currentHashes['bytes.txt'].hash).toBe(contentHashSync(bytes));
+    });
+
+    it('does not fast-path when only the stored inode differs', async () => {
+      const fileName = 'inode.txt';
+      const filePath = join(projectRoot, fileName);
+      const content = 'same content';
+      writeFileSync(filePath, content);
+      const stat = statSync(filePath, { bigint: true });
+      const hash = contentHashSync(content);
+
+      const tracker = await import('../../core/indexing/incremental-tracker.js');
+      await tracker.updateState({
+        [fileName]: {
+          hash,
+          size: stat.size.toString(),
+          mtime_ns: stat.mtimeNs.toString(),
+          inode: '0',
+        },
+      });
+
+      const result = await tracker.getChangedFiles([fileName], projectRoot);
+
+      expect(result.unchanged).toEqual([fileName]);
+      expect(result.fastPathStats.hits).toBe(0);
+      expect(result.fastPathStats.contentReads).toBe(1);
+      expect(result.currentHashes[fileName].inode).toBe(stat.ino.toString());
+    });
+
+    it('does not fast-path when the stored inode is missing', async () => {
+      const fileName = 'missing-inode.txt';
+      const filePath = join(projectRoot, fileName);
+      const content = 'same content';
+      writeFileSync(filePath, content);
+      const stat = statSync(filePath, { bigint: true });
+      const hash = contentHashSync(content);
+
+      const tracker = await import('../../core/indexing/incremental-tracker.js');
+      await tracker.updateState({
+        [fileName]: {
+          hash,
+          size: stat.size.toString(),
+          mtime_ns: stat.mtimeNs.toString(),
+        },
+      });
+
+      const result = await tracker.getChangedFiles([fileName], projectRoot);
+
+      expect(result.unchanged).toEqual([fileName]);
+      expect(result.fastPathStats.hits).toBe(0);
+      expect(result.fastPathStats.contentReads).toBe(1);
+      expect(result.currentHashes[fileName].inode).toBe(stat.ino.toString());
     });
 
     it('should detect removed files after state update', async () => {
@@ -527,7 +647,7 @@ describe('ENOSPC Error Handling (C4)', () => {
     expect(typeof tracker.updateState).toBe('function');
 
     // Valid state should not throw
-    const validState = { 'test.txt': { hash: 'abc', size: 100, mtime_ns: '123' } };
+    const validState = { 'test.txt': { hash: 'abc', size: '100', mtime_ns: '123', inode: '456' } };
     await expect(tracker.updateState(validState)).resolves.not.toThrow();
   });
 });
@@ -573,6 +693,7 @@ describe('Missing vs Corrupt State Detection (E3)', () => {
     expect(currentFingerprint).toHaveProperty('provider');
     expect(currentFingerprint).toHaveProperty('model');
     expect(currentFingerprint).toHaveProperty('dimension');
+    expect(currentFingerprint).toHaveProperty('hashAlgorithm', HASH_ALGORITHM);
     expect(currentFingerprint).toHaveProperty('version');
   });
 });
@@ -596,7 +717,7 @@ describe('Atomic Write Pattern', () => {
     const tracker = await import('../../core/indexing/incremental-tracker.js');
 
     // Perform an update
-    await tracker.updateState({ 'test.txt': { hash: 'abc', size: 100, mtime_ns: '123' } });
+    await tracker.updateState({ 'test.txt': { hash: 'abc', size: '100', mtime_ns: '123', inode: '456' } });
 
     // The state file should exist but no .tmp file
     // Note: This test relies on internal behavior but validates crash safety
@@ -620,6 +741,7 @@ describe('Config Fingerprint Integration', () => {
     expect(fingerprint).toHaveProperty('model');
     expect(fingerprint).toHaveProperty('dimension');
     expect(fingerprint).toHaveProperty('hnswDimension');
+    expect(fingerprint).toHaveProperty('hashAlgorithm', HASH_ALGORITHM);
     expect(fingerprint).toHaveProperty('version');
 
     // Version should be semver-like

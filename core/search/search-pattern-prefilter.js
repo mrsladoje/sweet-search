@@ -23,6 +23,7 @@ import {
   searchLines as _searchLines,
   searchFull as _searchFull,
 } from '../infrastructure/native-sparse-gram.js';
+import { applySparseDeltaOverlay, liveOverlayFiles, loadSparseDeltaOverlay } from './search-pattern-sparse-overlay.js';
 
 // Re-export for search-pattern.js (avoids circular import through native-sparse-gram.js)
 export const resolveSparseSymbolMask = _resolveSparseSymbolMask;
@@ -35,8 +36,13 @@ export const queryAndGrepLines = _queryAndGrepLines;
 export const queryAndGrepFull = _queryAndGrepFull;
 export const searchLines = _searchLines;
 export const searchFull = _searchFull;
-import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
-import { CODE_FILE_EXTENSIONS } from '../infrastructure/constants.js';
+export {
+  applySparseDeltaOverlay,
+  getSparseGramAllFilesWithOverlay,
+  loadSparseDeltaOverlay,
+  sparseDeltaOverlayHasChanges,
+} from './search-pattern-sparse-overlay.js';
+import { DB_PATHS } from '../infrastructure/config/index.js';
 import { isRipgrepCodePath, resolveSearchSymbolFilter } from './search-pattern-chunks.js';
 
 // =============================================================================
@@ -251,12 +257,18 @@ export function ensureSparseGramIndex(searcher, options = {}) {
   if (!searcher) return null;
   const useGramIndex = options.useGramIndex ?? options.gramIndex ?? true;
   if (!useGramIndex) return null;
-  if (searcher.sparseGramIndex) return searcher.sparseGramIndex;
-
   const indexPath = options.sparseGramIndexPath || searcher.sparseGramIndexPath || DB_PATHS.sparseGramIndex;
+  if (searcher.sparseGramIndex) {
+    if (!searcher._sparseGramLoadedPath || searcher._sparseGramLoadedPath === indexPath) {
+      return searcher.sparseGramIndex;
+    }
+    searcher.sparseGramIndex = null;
+    searcher._sparseGramLoadedPath = null;
+  }
   const loaded = loadSparseGramIndex(indexPath);
   if (loaded) {
     searcher.sparseGramIndex = loaded;
+    searcher._sparseGramLoadedPath = indexPath;
   }
   return loaded;
 }
@@ -289,6 +301,8 @@ export function querySparseGramCandidates(searcher, literalClauses, options = {}
   }
 
   try {
+    const symbolMask = _resolveSparseSymbolMask(resolveSearchSymbolFilter(options));
+    const overlay = loadSparseDeltaOverlay(searcher, options);
     const sparseGramIndex = ensureSparseGramIndex(searcher, options);
     if (!sparseGramIndex) {
       return {
@@ -305,7 +319,6 @@ export function querySparseGramCandidates(searcher, literalClauses, options = {}
 
     const maxCandidateFiles = options.maxGramCandidateFiles ?? 100000;
     const maxCandidateRatio = options.maxGramCandidateRatio ?? 1.0;
-    const symbolMask = _resolveSparseSymbolMask(resolveSearchSymbolFilter(options));
     const combined = new Set();
     let totalFiles = 0;
     let gramsUsed = 0;
@@ -346,13 +359,22 @@ export function querySparseGramCandidates(searcher, literalClauses, options = {}
       gramsUsed += result.gramsUsed || 0;
       denseGramsTouched += result.denseGramsTouched || 0;
       sparseGramsTouched += result.sparseGramsTouched || 0;
-      const clauseFiles = Array.isArray(result.files)
+      const baseClauseFiles = Array.isArray(result.files)
         ? result.files.filter(isRipgrepCodePath)
         : [];
+      const clauseFiles = applySparseDeltaOverlay(
+        baseClauseFiles,
+        overlay,
+        symbolMask || 0,
+        searcher?.projectRoot || options.projectRoot,
+        clause,
+        sparseGramIndex,
+      );
+      const clauseTotalFiles = (result.totalFiles || 0) + liveOverlayFiles(overlay, symbolMask || 0).length;
+      totalFiles = Math.max(totalFiles, clauseTotalFiles);
       if (
-        clauseFiles.length === 0 ||
         clauseFiles.length > maxCandidateFiles ||
-        (result.totalFiles > 0 && (clauseFiles.length / result.totalFiles) > maxCandidateRatio)
+        (clauseTotalFiles > 0 && (clauseFiles.length / clauseTotalFiles) > maxCandidateRatio)
       ) {
         return {
           eligible: false,
@@ -370,7 +392,6 @@ export function querySparseGramCandidates(searcher, literalClauses, options = {}
 
     const files = [...combined];
     if (
-      files.length === 0 ||
       files.length > maxCandidateFiles ||
       (totalFiles > 0 && (files.length / totalFiles) > maxCandidateRatio)
     ) {
@@ -409,4 +430,3 @@ export function querySparseGramCandidates(searcher, literalClauses, options = {}
     };
   }
 }
-

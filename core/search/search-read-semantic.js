@@ -30,10 +30,12 @@
  */
 
 import path from 'node:path';
+import fs from 'node:fs';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
-import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
+import { DB_PATHS, LATE_INTERACTION_CONFIG, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 import { readFile as readFileExact } from './search-read.js';
+import { withPinnedRead } from './search-reader-pin.js';
 
 // Applies the user's persisted LI model exactly once per (projectRoot, env)
 // pair so encodeQuery/_getLateInteractionIndex below see the right variant.
@@ -85,36 +87,155 @@ const APPROX_CHARS_PER_TOKEN = 4;
 // Module-level lazy singletons
 // ---------------------------------------------------------------------------
 
-let _repo = null;
-function _getRepo() {
-  if (_repo === null) {
-    try { _repo = new CodebaseRepository(DB_PATHS.codebase); }
-    catch { _repo = false; }
+const RECONCILE_MANIFEST_FILENAME = 'reconcile-manifest.json';
+
+function _projectKey(projectRoot) {
+  return path.resolve(projectRoot || PROJECT_ROOT || process.cwd());
+}
+
+function _dataDirName() {
+  const dir = path.basename(path.dirname(DB_PATHS.codebase || ''));
+  return dir && dir !== '.' ? dir : '.sweet-search';
+}
+
+function _stateDirForProject(projectRoot) {
+  const root = _projectKey(projectRoot);
+  if (root === path.resolve(PROJECT_ROOT)) return path.dirname(DB_PATHS.codebase);
+  return path.join(root, _dataDirName());
+}
+
+function _codebasePathForProject(projectRoot, manifest = null) {
+  const descriptor = manifest?.vectors?.path || manifest?.vectors?.dbPath;
+  if (descriptor) {
+    return _resolveStatePath(projectRoot, descriptor);
   }
-  return _repo || null;
+  return _defaultCodebasePathForProject(projectRoot);
+}
+
+function _defaultCodebasePathForProject(projectRoot) {
+  const root = _projectKey(projectRoot);
+  if (root === path.resolve(PROJECT_ROOT)) return DB_PATHS.codebase;
+  return path.join(_stateDirForProject(root), 'codebase.db');
+}
+
+function _readReconcileManifest(projectRoot) {
+  try {
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(_stateDirForProject(projectRoot), RECONCILE_MANIFEST_FILENAME), 'utf-8'),
+    );
+    return Number.isInteger(manifest?.epoch) ? manifest : null;
+  } catch {
+    return null;
+  }
+}
+
+function _resolveStatePath(projectRoot, filePath) {
+  if (!filePath) return null;
+  if (path.isAbsolute(filePath)) return filePath;
+  return path.join(_stateDirForProject(projectRoot), filePath);
+}
+
+function _lateInteractionIndexPath(projectRoot, manifest) {
+  const descriptor = manifest?.lateInteraction?.path
+    || manifest?.lateInteraction?.indexPath
+    || manifest?.lateInteraction?.manifest;
+  if (descriptor) {
+    const resolved = _resolveStatePath(projectRoot, descriptor);
+    const segmentDir = path.dirname(resolved);
+    return segmentDir.endsWith('.segments')
+      ? segmentDir.slice(0, -'.segments'.length)
+      : resolved;
+  }
+  const root = _projectKey(projectRoot);
+  if (root === path.resolve(PROJECT_ROOT)) return DB_PATHS.lateInteraction;
+  if (DB_PATHS.lateInteraction && fs.existsSync(DB_PATHS.lateInteraction)) {
+    return DB_PATHS.lateInteraction;
+  }
+  return path.join(_stateDirForProject(root), path.basename(DB_PATHS.lateInteraction));
+}
+
+function _sourceStaleness(projectRoot, filePathRel) {
+  const manifest = _readReconcileManifest(projectRoot);
+  const publishedMs = Date.parse(manifest?.publishedAt || '');
+  if (!Number.isFinite(publishedMs)) return null;
+  try {
+    const abs = path.isAbsolute(filePathRel)
+      ? filePathRel
+      : path.resolve(projectRoot, filePathRel);
+    const stat = fs.statSync(abs);
+    if (stat.mtimeMs <= publishedMs) return null;
+    return {
+      stale: true,
+      indexEpoch: manifest.epoch,
+      indexPublishedAt: manifest.publishedAt,
+      sourceMtime: stat.mtime.toISOString(),
+      warning: 'source file is newer than the semantic index; spans were selected from stale index metadata and text was reread from disk',
+    };
+  } catch {
+    return null;
+  }
+}
+
+const _repos = new Map();
+function _getRepo(projectRoot) {
+  const key = _projectKey(projectRoot);
+  const manifest = _readReconcileManifest(projectRoot);
+  const dbPath = _codebasePathForProject(projectRoot, manifest);
+  const baseDbPath = _defaultCodebasePathForProject(projectRoot);
+  let entry = _repos.get(key);
+  if (!entry || entry.dbPath !== dbPath || entry.baseDbPath !== baseDbPath) {
+    entry?.repo?.close?.();
+    try {
+      entry = { dbPath, baseDbPath, repo: new CodebaseRepository(baseDbPath) };
+      _repos.set(key, entry);
+    } catch {
+      return null;
+    }
+  }
+  const repo = entry.repo;
+  repo.refreshManifestEpoch?.();
+  return repo;
 }
 
 let _liIndex = null;
 let _liInitPromise = null;
-async function _getLateInteractionIndex() {
-  if (_liIndex) return _liIndex;
+let _liProjectKey = null;
+let _liManifestEpoch = null;
+async function _getLateInteractionIndex(projectRoot) {
+  const projectKey = _projectKey(projectRoot);
+  const manifest = _readReconcileManifest(projectRoot);
+  const manifestEpoch = Number.isInteger(manifest?.epoch) ? manifest.epoch : null;
+  const samePin = _liProjectKey === projectKey && _liManifestEpoch === manifestEpoch;
+  if (_liIndex !== null && samePin) return _liIndex || null;
+  if (_liIndex !== null && !samePin) {
+    _liIndex = null;
+    _liInitPromise = null;
+  }
   if (_liInitPromise) return _liInitPromise;
   if (!LATE_INTERACTION_CONFIG?.enabled) return null;
   _liInitPromise = (async () => {
     try {
       const { LateInteractionIndex } = await import('../ranking/late-interaction-index.js');
-      const idx = new LateInteractionIndex({});
+      const idx = new LateInteractionIndex({
+        indexPath: _lateInteractionIndexPath(projectRoot, manifest),
+      });
       await idx.init();
       // If the index is empty (no segments, no docs), treat as unavailable —
       // saves a noisy warning later when scoreWithLateInteraction runs.
       if (!idx.documents || idx.documents.size === 0) {
         _liIndex = false;
+        _liProjectKey = projectKey;
+        _liManifestEpoch = manifestEpoch;
         return null;
       }
       _liIndex = idx;
+      _liProjectKey = projectKey;
+      _liManifestEpoch = manifestEpoch;
       return idx;
     } catch {
       _liIndex = false;
+      _liProjectKey = projectKey;
+      _liManifestEpoch = manifestEpoch;
       return null;
     } finally {
       _liInitPromise = null;
@@ -145,7 +266,26 @@ function _projectRelative(absOrRelPath, projectRoot) {
     ? absOrRelPath
     : path.resolve(root, absOrRelPath);
   const rel = path.relative(root, abs);
-  return rel.startsWith('..') || path.isAbsolute(rel) ? abs : rel;
+  const normalized = _normalizeRelativePath(rel);
+  if (normalized) return normalized;
+  try {
+    const realRel = path.relative(
+      fs.realpathSync.native(root),
+      fs.realpathSync.native(abs),
+    );
+    return _normalizeRelativePath(realRel) || abs;
+  } catch {
+    return abs;
+  }
+}
+
+function _normalizeRelativePath(rel) {
+  const normalized = rel.replace(/\\/g, '/').replace(/^\.\//, '');
+  if (!normalized || normalized === '..' || normalized.startsWith('../') || normalized.includes('/../')) {
+    return null;
+  }
+  if (path.isAbsolute(normalized)) return null;
+  return normalized;
 }
 
 function _parseMeta(rawMeta) {
@@ -191,7 +331,7 @@ function _escapeRegex(s) {
 // ---------------------------------------------------------------------------
 
 async function _loadFileChunks(filePathRel, projectRoot) {
-  const repo = _getRepo();
+  const repo = _getRepo(projectRoot);
   if (!repo) return { chunks: [], language: null };
   const rows = repo.getChunksByFilePath(filePathRel);
   if (rows.length === 0) return { chunks: [], language: null };
@@ -304,14 +444,17 @@ function _scoreSymbol(chunks, queryTerms, queryRaw) {
   return scores;
 }
 
-async function _scoreLateInteraction(chunks, query) {
+async function _scoreLateInteraction(chunks, query, projectRoot) {
   if (chunks.length === 0) return { scores: new Map(), ran: false };
-  const liIndex = await _getLateInteractionIndex();
+  const liIndex = await _getLateInteractionIndex(projectRoot);
   if (!liIndex) return { scores: new Map(), ran: false };
 
-  // Only score chunks whose IDs actually appear in the LI index.
+  // Only score chunks whose IDs actually appear in the LI index. Use the
+  // public availability API so alias pointers and live tombstone sidecars
+  // share the same visibility contract as normal search.
+  const available = liIndex.hasTokens(chunks.map(c => c.id));
   const candidates = chunks
-    .filter(c => liIndex.documents.has(c.id))
+    .filter(c => available.has(c.id))
     .map(c => ({ id: c.id, score: 0 }));
   if (candidates.length === 0) return { scores: new Map(), ran: false };
 
@@ -483,7 +626,7 @@ function _fallbackSpanFromText(fileText, totalLines, maxChars) {
  * @param {boolean} [req.verbose=false] - include timings + signal contributions
  * @returns {Promise<Object>}
  */
-export async function readSemantic(req) {
+async function _readSemanticUnpinned(req) {
   const t0 = performance.now();
   if (!req || !req.path) throw new Error('path is required');
   if (!req.query || !String(req.query).trim()) throw new Error('query is required');
@@ -491,6 +634,7 @@ export async function readSemantic(req) {
   const projectRoot = req.projectRoot || process.cwd();
   _ensurePersistedLiModelApplied(projectRoot);
   const filePathRel = _projectRelative(req.path, projectRoot);
+  const staleness = _sourceStaleness(projectRoot, filePathRel);
 
   const topK = req.topK ?? DEFAULTS.topK;
   const threshold = req.threshold ?? DEFAULTS.threshold;
@@ -519,6 +663,7 @@ export async function readSemantic(req) {
       spans: fallback.ok ? [_fallbackSpanFromRead(fallback, maxChars)] : [],
       charsReturned: fallback.ok ? Math.min((fallback.text || '').length, maxChars) : 0,
       approxTokensReturned: fallback.ok ? Math.ceil(Math.min((fallback.text || '').length, maxChars) / APPROX_CHARS_PER_TOKEN) : 0,
+      ...(staleness ? { staleness, warnings: [staleness.warning] } : {}),
       timings: { totalMs: +(performance.now() - t0).toFixed(2) },
     };
   }
@@ -540,7 +685,7 @@ export async function readSemantic(req) {
   const tLex1 = performance.now();
 
   const tLi0 = performance.now();
-  const { scores: maxsimScores, ran: liRan } = await _scoreLateInteraction(chunks, req.query);
+  const { scores: maxsimScores, ran: liRan } = await _scoreLateInteraction(chunks, req.query, projectRoot);
   const tLi1 = performance.now();
 
   // Threshold gate on MaxSim — drop chunks whose LI score is too low. This
@@ -576,6 +721,7 @@ export async function readSemantic(req) {
       charsReturned: Math.min(fileText.length, maxChars),
       approxTokensReturned: Math.ceil(Math.min(fileText.length, maxChars) / APPROX_CHARS_PER_TOKEN),
       signals: verbose ? { liRan, lexicalHits: 0, symbolHits: 0, maxsimHits: 0 } : undefined,
+      ...(staleness ? { staleness, warnings: [staleness.warning] } : {}),
       timings: verbose ? {
         loadMs: +(tLoad1 - tLoad0).toFixed(2),
         lexicalMs: +(tLex1 - tLex0).toFixed(2),
@@ -662,6 +808,7 @@ export async function readSemantic(req) {
     spans,
     charsReturned: charsUsed,
     approxTokensReturned: Math.ceil(charsUsed / APPROX_CHARS_PER_TOKEN),
+    ...(staleness ? { staleness, warnings: [staleness.warning] } : {}),
     signals: verbose ? {
       liRan,
       lexicalHits: lexicalScores.size,
@@ -679,6 +826,21 @@ export async function readSemantic(req) {
   };
 }
 
+export async function readSemantic(req) {
+  const projectRoot = req?.projectRoot || process.cwd();
+  return withPinnedRead(
+    {
+      projectRoot,
+      meta: {
+        tool: 'read-semantic',
+        path: req?.path ?? null,
+        query: req?.query ? String(req.query).slice(0, 200) : null,
+      },
+    },
+    () => _readSemanticUnpinned({ ...req, projectRoot }),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Formatting
 // ---------------------------------------------------------------------------
@@ -694,6 +856,9 @@ export function formatReadSemanticResult(result, format = 'agent') {
   if (!result.ok) {
     lines.push(`[error]`);
     return lines.join('\n');
+  }
+  for (const warning of result.warnings || []) {
+    lines.push(`[warning] ${warning}`);
   }
   for (const span of result.spans) {
     const label = span.symbols && span.symbols.length
@@ -781,9 +946,12 @@ export async function handleReadSemanticCli(args) {
 
 // Test-only export — clears caches between unit tests.
 export function __resetReadSemanticCachesForTests() {
-  _repo = null;
+  for (const entry of _repos.values()) entry?.repo?.close?.();
+  _repos.clear();
   _liIndex = null;
   _liInitPromise = null;
+  _liProjectKey = null;
+  _liManifestEpoch = null;
   _encodeQueryFn = null;
   _appliedLiPerRoot.clear();
 }

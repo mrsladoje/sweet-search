@@ -13,13 +13,23 @@
  */
 
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, statSync } from 'fs';
 import path from 'path';
 import { HNSW_CONFIG, DB_PATHS, EMBEDDING_CONFIG } from '../infrastructure/config/index.js';
+import {
+  createBitmap,
+  loadBitmap,
+  resizeBitmap,
+  saveBitmap,
+  setBit,
+  isSet,
+} from '../infrastructure/tombstone-bitmap-reader.js';
 
 // =============================================================================
 // HNSW INDEX CLASS (USearch Implementation)
 // =============================================================================
+
+const HNSW_MAX_ELEMENTS_HARD_CEILING = 100_000_000;
 
 export class HNSWIndex {
   constructor(options = {}) {
@@ -30,6 +40,7 @@ export class HNSWIndex {
     this.efSearch = options.efSearch || HNSW_CONFIG.efSearch;
     this.metric = options.metric || HNSW_CONFIG.metric;
     this.indexPath = options.indexPath || DB_PATHS.hnswIndex;
+    this.stalePath = options.stalePath || `${this.indexPath}.stale.bin`;
 
     this.index = null;
     this.idMap = new Map();      // string id -> numeric key
@@ -41,6 +52,7 @@ export class HNSWIndex {
     this.useFallback = false;
     this.vectors = [];           // Fallback: store all vectors
     this.usearchModule = null;
+    this._staleBitmapCache = null;
   }
 
   /**
@@ -73,6 +85,8 @@ export class HNSWIndex {
         dimensions: this.dimension,
         quantization: 'f32',
       });
+      this._reserveNativeCapacity(this.maxElements);
+      this.useFallback = false;
 
       console.log(`HNSW: Using USearch (${usearchMetric}, dim=${this.dimension}, M=${this.M})`);
     } catch (err) {
@@ -111,20 +125,58 @@ export class HNSWIndex {
       return key;
     }
 
-    // Add new
-    const key = this.nextKey++;
+    // Add new. Commit maps only after native add succeeds; otherwise a
+    // transient native failure would leave a row visible without a graph node.
+    const key = this.nextKey;
+
+    if (!this.useFallback && this.index) {
+      this._addNativeVector(key, vecArray);
+    } else {
+      this.vectors[key] = { id, vector: normalized, metadata };
+    }
+
+    this.nextKey++;
     this.idMap.set(id, key);
     this.reverseMap.set(key, id);
     this.metadata.set(id, metadata);
 
-    if (!this.useFallback && this.index) {
-      // USearch: add(key, vector)
+    return key;
+  }
+
+  _addNativeVector(key, vecArray) {
+    try {
       this.index.add(BigInt(key), vecArray);
-    } else {
-      this.vectors.push({ id, vector: normalized, metadata });
+      return;
+    } catch (err) {
+      if (!isNativeCapacityError(err)) {
+        throw err;
+      }
     }
 
-    return key;
+    const nextCapacity = this._nextNativeCapacity();
+    if (!this._reserveNativeCapacity(nextCapacity)) {
+      throw new Error(
+        `HNSW capacity exhausted at ${this.maxElements} elements and native reserve() is unavailable`
+      );
+    }
+    this.index.add(BigInt(key), vecArray);
+  }
+
+  _nextNativeCapacity() {
+    const current = Math.max(1, this.maxElements, this.nextKey + 1);
+    return Math.min(
+      HNSW_MAX_ELEMENTS_HARD_CEILING,
+      Math.max(current + 1, Math.ceil(current * 1.25), this.nextKey + 1)
+    );
+  }
+
+  _reserveNativeCapacity(capacity) {
+    if (!this.index || typeof this.index.reserve !== 'function') return false;
+    const nextCapacity = Math.min(HNSW_MAX_ELEMENTS_HARD_CEILING, Math.ceil(capacity));
+    if (!Number.isFinite(nextCapacity) || nextCapacity <= 0) return false;
+    this.index.reserve(nextCapacity);
+    this.maxElements = Math.max(this.maxElements, nextCapacity);
+    return true;
   }
 
   /**
@@ -144,10 +196,89 @@ export class HNSWIndex {
   /**
    * Search for k nearest neighbors
    */
+  _loadStaleBitmap() {
+    let stat;
+    try {
+      stat = statSync(this.stalePath, { bigint: true });
+    } catch {
+      this._staleBitmapCache = null;
+      return null;
+    }
+    const statKey = `${stat.mtimeNs}:${stat.ctimeNs}:${stat.size}`;
+
+    if (
+      this._staleBitmapCache
+      && this._staleBitmapCache.statKey === statKey
+    ) {
+      return this._staleBitmapCache.bitmap;
+    }
+
+    try {
+      const bitmap = loadBitmap(this.stalePath);
+      this._staleBitmapCache = { statKey, bitmap };
+      return bitmap;
+    } catch (err) {
+      if (process.env.SWEET_DEBUG) {
+        console.debug(`[HNSW] ignoring unreadable stale bitmap ${this.stalePath}: ${err.message}`);
+      }
+      this._staleBitmapCache = { statKey, bitmap: null };
+      return null;
+    }
+  }
+
+  _isKeyStale(key, bitmap) {
+    return bitmap ? isSet(bitmap, key) : false;
+  }
+
+  _markKeyStale(key) {
+    const capacity = Math.max(key + 1, this.nextKey, 1);
+    let bitmap = null;
+    try {
+      bitmap = loadBitmap(this.stalePath);
+    } catch (err) {
+      if (process.env.SWEET_DEBUG) {
+        console.debug(`[HNSW] replacing unreadable stale bitmap ${this.stalePath}: ${err.message}`);
+      }
+    }
+    bitmap = bitmap ? resizeBitmap(bitmap, capacity) : createBitmap(capacity);
+    setBit(bitmap, key);
+    saveBitmap(this.stalePath, bitmap);
+    this._staleBitmapCache = null;
+  }
+
+  async clearStaleBitmap() {
+    await fs.rm(this.stalePath, { force: true });
+    this._staleBitmapCache = null;
+  }
+
+  _oversampleTarget(k, bitmap) {
+    const searchable = this._searchableKeyCount();
+    const live = this._liveCount(bitmap);
+    const tombstoned = Math.max(0, searchable - live);
+    if (tombstoned === 0) return k;
+    const s = Math.max(0, Math.min(tombstoned / Math.max(1, searchable), 0.5));
+    return Math.min(Math.max(k + 64, Math.ceil(k / Math.max(0.05, 1 - s) * 2)), k * 20);
+  }
+
+  _searchableKeyCount() {
+    if (this.useFallback) return this.vectors.length;
+    return Math.max(this.nextKey, this.idMap.size);
+  }
+
+  _liveCount(bitmap) {
+    if (!bitmap) return this.idMap.size;
+    let live = 0;
+    for (const key of this.reverseMap.keys()) {
+      if (!this._isKeyStale(key, bitmap)) live++;
+    }
+    return live;
+  }
+
   async search(queryVector, k = 10) {
     await this.init();
 
     const start = performance.now();
+    const staleBitmap = this._loadStaleBitmap();
 
     // Truncate and normalize query
     const truncated = queryVector.length > this.dimension
@@ -160,38 +291,50 @@ export class HNSWIndex {
     if (!this.useFallback && this.index) {
       // Use native USearch
       const vecArray = new Float32Array(normalized);
-      const actualK = Math.min(k, this.idMap.size);  // Use live count, not nextKey
+      const candidateK = this._oversampleTarget(k, staleBitmap);
+      const actualK = Math.min(candidateK, this._searchableKeyCount());
 
       if (actualK === 0) {
         results = [];
       } else {
-        const searchResult = this.index.search(vecArray, actualK);
+        const collect = (limit) => {
+          const searchResult = this.index.search(vecArray, limit);
+          const collected = [];
+          // USearch returns { keys: BigUint64Array, distances: Float32Array, count: number }
+          const count = searchResult.count || searchResult.keys?.length || 0;
 
-        results = [];
-        // USearch returns { keys: BigUint64Array, distances: Float32Array, count: number }
-        const count = searchResult.count || searchResult.keys?.length || 0;
+          for (let i = 0; i < count; i++) {
+            const key = Number(searchResult.keys[i]);
+            if (this._isKeyStale(key, staleBitmap)) continue;
+            const id = this.reverseMap.get(key);
+            if (id) {
+              // Convert distance to similarity (cosine distance to similarity)
+              const distance = searchResult.distances[i];
+              const score = this.metric === 'cosine' ? 1 - distance : -distance;
 
-        for (let i = 0; i < count; i++) {
-          const key = Number(searchResult.keys[i]);
-          const id = this.reverseMap.get(key);
-          if (id) {
-            // Convert distance to similarity (cosine distance to similarity)
-            const distance = searchResult.distances[i];
-            const score = this.metric === 'cosine' ? 1 - distance : -distance;
-
-            results.push({
-              id,
-              score,
-              metadata: this.metadata.get(id) || {},
-            });
+              collected.push({
+                id,
+                score,
+                metadata: this.metadata.get(id) || {},
+              });
+              if (collected.length >= k) break;
+            }
           }
+          return collected;
+        };
+
+        results = collect(actualK);
+        const retryK = Math.min(actualK * 2, this._searchableKeyCount());
+        if (results.length < k && retryK > actualK) {
+          results = collect(retryK);
         }
       }
     } else {
       // Pure JS fallback: O(N) scan
       results = this.vectors
-        .filter(v => v !== null)
-        .map(v => ({
+        .map((v, key) => ({ v, key }))
+        .filter(({ v, key }) => v !== null && !this._isKeyStale(key, staleBitmap))
+        .map(({ v }) => ({
           id: v.id,
           score: this.cosineSimilarity(normalized, v.vector),
           metadata: v.metadata || {},
@@ -207,7 +350,7 @@ export class HNSWIndex {
       latency_us: Math.round(latency * 1000), // microseconds
       latency_ms: latency.toFixed(3),
       k,
-      total: this.idMap.size,  // Accurate live count
+      total: this._liveCount(staleBitmap),
       usedFallback: this.useFallback,
     };
   }
@@ -217,9 +360,10 @@ export class HNSWIndex {
    */
   async get(id) {
     if (!this.idMap.has(id)) return null;
+    const key = this.idMap.get(id);
+    if (this._isKeyStale(key, this._loadStaleBitmap())) return null;
 
     if (this.useFallback) {
-      const key = this.idMap.get(id);
       return this.vectors[key];
     }
 
@@ -236,15 +380,7 @@ export class HNSWIndex {
     if (!this.idMap.has(id)) return false;
 
     const key = this.idMap.get(id);
-
-    // USearch supports remove
-    if (!this.useFallback && this.index?.remove) {
-      try {
-        this.index.remove(BigInt(key));
-      } catch (err) {
-        // Ignore removal errors
-      }
-    }
+    this._markKeyStale(key);
 
     if (this.useFallback) {
       this.vectors[key] = null;
@@ -366,6 +502,10 @@ export class HNSWIndex {
         this.vectors = JSON.parse(await fs.readFile(vectorsPath, 'utf-8'));
         this.useFallback = true;
         console.log(`HNSW: Loaded ${this.vectors.length} vectors from ${vectorsPath} (fallback)`);
+      } else if (!state.useFallback && (state.idMap?.length || state.nextKey || 0) > 0) {
+        throw new Error(
+          `HNSW native artifact is missing or unreadable for ${indexPath}; refusing to serve stale metadata without vectors`
+        );
       } else {
         // Initialize empty fallback
         this.useFallback = true;
@@ -432,9 +572,15 @@ export class HNSWIndex {
     this.metadata.clear();
     this.nextKey = 0;
     this.vectors = [];
+    await this.clearStaleBitmap();
     this.index = null;
     await this.init();
   }
+}
+
+function isNativeCapacityError(err) {
+  const message = String(err?.message || err).toLowerCase();
+  return /\b(capacity|reserve|max\s*elements?|max_elements|full|allocation|out of memory|oom)\b/.test(message);
 }
 
 // =============================================================================
@@ -447,13 +593,18 @@ export class HNSWIndex {
 export async function createHNSWIndex(options = {}) {
   const index = new HNSWIndex(options);
 
-  if (options.load && existsSync(options.indexPath || DB_PATHS.hnswIndex)) {
+  if (options.load && hnswArtifactsExist(options.indexPath || DB_PATHS.hnswIndex)) {
     await index.load(options.indexPath);
   } else {
     await index.init();
   }
 
   return index;
+}
+
+function hnswArtifactsExist(indexPath) {
+  const metaPath = indexPath.replace('.idx', '.meta.json');
+  return existsSync(metaPath);
 }
 
 // =============================================================================

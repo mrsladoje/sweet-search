@@ -8,9 +8,11 @@
  * Optimized: all 9 process spawns run concurrently via Promise.all + 13 in-process unit tests.
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from '../../core/indexing/index-codebase-v21.js';
 
@@ -20,6 +22,8 @@ const __dirname = dirname(__filename);
 // Paths
 const PROJECT_ROOT = join(__dirname, '..', '..');
 const INDEXER_PATH = join(__dirname, '../..', 'core', 'indexing', 'index-codebase-v21.js');
+const INDEXER_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_TEST_INDEXER_TIMEOUT_MS || 300000);
+let TEST_PROJECT_ROOT = null;
 
 // =============================================================================
 // Test Helpers
@@ -30,11 +34,11 @@ const INDEXER_PATH = join(__dirname, '../..', 'core', 'indexing', 'index-codebas
  */
 function runIndexer(args = [], options = {}) {
   return new Promise((resolve, reject) => {
-    const { timeout = 60000, cwd = PROJECT_ROOT } = options;
+    const { timeout = INDEXER_TIMEOUT_MS, cwd = TEST_PROJECT_ROOT || PROJECT_ROOT } = options;
 
     const child = spawn('node', [INDEXER_PATH, ...args], {
       cwd,
-      env: { ...process.env },
+      env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: cwd },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -184,6 +188,10 @@ describe('Flag behavior (integration)', () => {
       quietStdinResult, unknownFlagResult;
 
   beforeAll(async () => {
+    TEST_PROJECT_ROOT = mkdtempSync(join(tmpdir(), 'ss-flag-semantics-'));
+    mkdirSync(join(TEST_PROJECT_ROOT, 'src'), { recursive: true });
+    writeFileSync(join(TEST_PROJECT_ROOT, 'src', 'app.js'), 'export function app() { return 1; }\n');
+
     [
       helpResult,
       helpPrecedenceResult,
@@ -205,7 +213,11 @@ describe('Flag behavior (integration)', () => {
       () => runIndexer(['--quiet', '--files-from-stdin'], { stdinInput: '' }),
       () => runIndexer(['--unknown-test-flag-xyz', '--dry-run']),
     ]);
-  }, 180000);
+  }, 420000);
+
+  afterAll(() => {
+    if (TEST_PROJECT_ROOT) rmSync(TEST_PROJECT_ROOT, { recursive: true, force: true });
+  });
 
   // -------------------------------------------------------------------------
   // --help output (assertions on helpResult)

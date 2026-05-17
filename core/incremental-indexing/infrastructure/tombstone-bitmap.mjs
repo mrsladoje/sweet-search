@@ -24,6 +24,7 @@
  */
 
 import fs from 'node:fs';
+import path from 'node:path';
 
 const HEADER_MAGIC = Buffer.from('SSTB', 'ascii');
 const HEADER_VERSION = 1;
@@ -78,6 +79,10 @@ export function loadBitmap(filePath) {
     throw new Error(`loadBitmap: unsupported version ${version}`);
   }
   const capacity = Number(raw.readBigUInt64LE(8));
+  const expectedLength = HEADER_RESERVED + payloadByteLength(capacity);
+  if (raw.length < expectedLength) {
+    throw new Error(`loadBitmap: ${filePath} truncated payload (${raw.length} bytes, expected ${expectedLength})`);
+  }
   const payload = raw.subarray(HEADER_RESERVED, HEADER_RESERVED + payloadByteLength(capacity));
   return {
     capacity,
@@ -92,6 +97,7 @@ export function loadBitmap(filePath) {
  * @param {{capacity:number, payload:Buffer}} bitmap
  */
 export function saveBitmap(filePath, bitmap) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmp = filePath + '.tmp';
   const header = Buffer.alloc(HEADER_RESERVED);
   HEADER_MAGIC.copy(header, 0);
@@ -107,6 +113,12 @@ export function saveBitmap(filePath, bitmap) {
     fs.closeSync(fd);
   }
   fs.renameSync(tmp, filePath);
+  try {
+    const dirFd = fs.openSync(path.dirname(filePath), 'r');
+    try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
+  } catch {
+    // Best-effort: some tmpfs/container filesystems reject directory fsync.
+  }
 }
 
 /**
@@ -161,18 +173,28 @@ export function isSet(bitmap, index) {
  */
 export function popcount(bitmap) {
   let count = 0;
-  // popcount via Brian Kernighan's algorithm, 32 bits at a time.
   const buf = bitmap.payload;
-  for (let i = 0; i + 4 <= buf.length; i += 4) {
+  const fullBytes = Math.floor(bitmap.capacity / BITS_PER_BYTE);
+  const wordBytes = fullBytes - (fullBytes % 4);
+  // popcount via Brian Kernighan's algorithm, 32 bits at a time. Only
+  // count bytes covered by capacity; 64-byte alignment padding is not data.
+  for (let i = 0; i < wordBytes; i += 4) {
     let x = buf.readUInt32LE(i);
     while (x !== 0) {
       x &= x - 1;
       count += 1;
     }
   }
-  // Tail bytes (alignment usually keeps this empty but cover the path).
-  for (let i = buf.length - (buf.length % 4); i < buf.length; i++) {
+  for (let i = wordBytes; i < fullBytes; i++) {
     let b = buf[i];
+    while (b !== 0) {
+      b &= b - 1;
+      count += 1;
+    }
+  }
+  const tailBits = bitmap.capacity % BITS_PER_BYTE;
+  if (tailBits > 0) {
+    let b = buf[fullBytes] & ((1 << tailBits) - 1);
     while (b !== 0) {
       b &= b - 1;
       count += 1;

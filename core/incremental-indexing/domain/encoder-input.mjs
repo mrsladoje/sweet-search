@@ -16,8 +16,8 @@
  *
  *   * Late-interaction (`pickLiInput`):
  *       - same body
- *       - language-routed input variant (Python omits the path line,
- *         Java-family uses a path slug, JS/TS/etc. use the greedy form)
+ *       - language-routed input variant (Python and Java-family use
+ *         `li_text`; JS/TS/etc. use the greedy form)
  *       - LI input policy fingerprint
  *
  *   * Dedup (`simhash` / `clusterId` / `exemplarId` / `liReuseEligible`):
@@ -51,35 +51,30 @@ export const DEDUP_INPUT_POLICY_VERSION = 1;
 
 /**
  * Language taxonomy used by `pickLiInput`. The reconcile path mirrors the
- * production helper at `core/ranking/late-interaction-index.js`; we keep a
- * local mirror to avoid an upward dependency from `infrastructure` into
- * `ranking`. Any change to the production taxonomy must update this table
- * AND bump LI_INPUT_POLICY_VERSION.
+ * production helper at `core/indexing/indexer-ann.js`; we keep a local
+ * mirror so the incremental domain logic remains dependency-light. Any
+ * change to the production taxonomy must update this table AND bump
+ * LI_INPUT_POLICY_VERSION.
  */
-const LI_TEXT_LANGS = new Set(['python']);
-const LI_TEXT_JAVA_FAMILY = new Set(['java', 'php', 'csharp', 'c#', 'kotlin', 'scala']);
+const LI_TEXT_LANGS = new Set(['python', 'java', 'php', 'csharp', 'c#', 'kotlin', 'scala']);
 // Everything else (JS/TS/JSX/TSX, Ruby, Go, C/C++/Rust, unknown) uses
 // li_greedy_text → embedding_text → li_text.
 
 /**
- * Normalise a path for the LI Java-family slug. Lowercased, slashes flipped
- * to dots, file-extension dropped. This mirrors the production helper.
+ * Normalise a path for the LI Java-family slug. This mirrors
+ * `core/indexing/ast-chunker.js::normalizePathSlug`: strip only the
+ * trailing generated `_<hex>` suffix before the extension.
  *
  * @param {string} relativePath
  */
 export function normalizePathSlug(relativePath) {
-  if (typeof relativePath !== 'string') return '';
-  return relativePath
-    .toLowerCase()
-    .replace(/\\/g, '/')
-    .replace(/^[/.]+/, '')
-    .replace(/\.[A-Za-z0-9]+$/, '')
-    .replace(/\//g, '.');
+  if (!relativePath) return relativePath;
+  return String(relativePath).replace(/_[0-9a-f]{6,}(\.[a-zA-Z0-9]+)$/, '$1');
 }
 
 /**
  * Return the LI input text for a chunk per the language taxonomy. Mirrors
- * `pickLiInput()` in `core/ranking/late-interaction-index.js`.
+ * `pickLiInput()` in `core/indexing/indexer-ann.js`.
  *
  * @param {object} chunk     Enriched chunk with `metadata.language`,
  *                            `metadata.relative_path`, `li_text`,
@@ -89,21 +84,16 @@ export function normalizePathSlug(relativePath) {
 export function pickLiInputText(chunk) {
   if (!chunk) return '';
   const meta = chunk.metadata || {};
-  const language = (meta.language || '').toLowerCase();
+  const language = meta.language;
   const liText = chunk.li_text || '';
   const liGreedy = chunk.li_greedy_text || '';
   const embedText = chunk.embedding_text || chunk.text || chunk.content || '';
 
   if (LI_TEXT_LANGS.has(language)) {
-    // Python omits the path line entirely. The production helper strips a
-    // leading `# ...\n` from li_text; we keep parity by trusting the
-    // upstream li_text to already match.
+    // Python omits the path line and Java-family slug-stripping happens
+    // when the chunker builds `li_text`; the hasher must not reconstruct
+    // a second, different policy here.
     return liText || embedText;
-  }
-  if (LI_TEXT_JAVA_FAMILY.has(language)) {
-    const slug = normalizePathSlug(meta.relative_path || meta.file || meta.file_path || '');
-    const body = liText || embedText;
-    return slug ? `${slug}\n${body}` : body;
   }
   // Default route: li_greedy_text → embedding_text → li_text.
   return liGreedy || embedText || liText;
@@ -169,6 +159,28 @@ export function dedupFingerprint(chunk) {
   }));
 }
 
+function chunkRelativePath(chunk, meta = chunk?.metadata || {}) {
+  return firstSafeRelativePath(
+    meta.relative_path,
+    meta.path,
+    meta.file_path,
+    chunk?.file,
+    meta.file,
+  );
+}
+
+function firstSafeRelativePath(...candidates) {
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const normalized = candidate.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+/g, '/');
+    if (!normalized || normalized === '.' || normalized.startsWith('/')) continue;
+    if (/^[A-Za-z]:\//.test(normalized)) continue;
+    if (normalized === '..' || normalized.startsWith('../') || normalized.includes('/../')) continue;
+    return normalized;
+  }
+  return null;
+}
+
 /**
  * Convenience: compute all three hashes plus the raw `chunk_text_hash` and
  * `metadata_fingerprint` in one pass.
@@ -191,7 +203,7 @@ export function chunkInputHashes(chunk) {
     embedding_input_hash: denseInputHash(chunk),
     li_input_hash: liInputHash(chunk),
     metadata_fingerprint: contentHashSync(stableStringify({
-      relative_path: meta.relative_path ?? meta.file ?? meta.file_path ?? null,
+      relative_path: chunkRelativePath(chunk, meta),
       language: meta.language ?? null,
       chunk_type: meta.chunk_type ?? null,
       symbol: meta.symbol ?? null,

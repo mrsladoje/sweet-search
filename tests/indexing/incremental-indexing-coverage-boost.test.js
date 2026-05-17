@@ -36,6 +36,7 @@ import {
 import {
   chunkInputHashes, denseInputHash, liInputHash, pickLiInputText,
   normalizePathSlug, dedupFingerprint, metadataFingerprint,
+  DEDUP_INPUT_POLICY_VERSION, EMBED_TEXT_POLICY_VERSION, LI_INPUT_POLICY_VERSION,
 } from '../../core/incremental-indexing/domain/encoder-input.mjs';
 import {
   collectChunkDependencies, persistDependencies, dependentsOf, forgetFile,
@@ -253,14 +254,14 @@ describe('chunk-identity.mjs — edge branches', () => {
 
 describe('encoder-input.mjs — language routing branches', () => {
   it('normalizePathSlug handles non-string', () => {
-    expect(normalizePathSlug(null)).toBe('');
-    expect(normalizePathSlug(undefined)).toBe('');
+    expect(normalizePathSlug(null)).toBe(null);
+    expect(normalizePathSlug(undefined)).toBe(undefined);
   });
 
-  it('normalizePathSlug lowercases, flips slashes, drops extension', () => {
-    expect(normalizePathSlug('Src/Foo/Bar.JS')).toBe('src.foo.bar');
-    expect(normalizePathSlug('/leading/slash/file.ts')).toBe('leading.slash.file');
-    expect(normalizePathSlug('a\\b\\c.py')).toBe('a.b.c');
+  it('normalizePathSlug strips only generated hex suffixes', () => {
+    expect(normalizePathSlug('repo/Table_366c13.js')).toBe('repo/Table.js');
+    expect(normalizePathSlug('src/Foo/Bar.JS')).toBe('src/Foo/Bar.JS');
+    expect(normalizePathSlug('a\\b\\c.py')).toBe('a\\b\\c.py');
   });
 
   it('pickLiInputText Python uses li_text, omits path', () => {
@@ -278,12 +279,12 @@ describe('encoder-input.mjs — language routing branches', () => {
     expect(pickLiInputText(c)).toBe('fallback');
   });
 
-  it('pickLiInputText Java-family prepends path slug', () => {
+  it('pickLiInputText Java-family uses li_text verbatim', () => {
     const c = {
       metadata: { language: 'java', relative_path: 'src/com/foo/Bar.java' },
-      li_text: 'public class Bar {}',
+      li_text: '# src/com/foo/Bar.java\npublic class Bar {}',
     };
-    expect(pickLiInputText(c)).toBe('src.com.foo.bar\npublic class Bar {}');
+    expect(pickLiInputText(c)).toBe('# src/com/foo/Bar.java\npublic class Bar {}');
   });
 
   it('pickLiInputText Java-family handles missing path (slug empty)', () => {
@@ -294,7 +295,7 @@ describe('encoder-input.mjs — language routing branches', () => {
   it('pickLiInputText all Java-family languages route the same way', () => {
     for (const lang of ['java', 'php', 'csharp', 'c#', 'kotlin', 'scala']) {
       const c = { metadata: { language: lang, relative_path: 'p/Q.x' }, li_text: 'body' };
-      expect(pickLiInputText(c)).toBe('p.q\nbody');
+      expect(pickLiInputText(c)).toBe('body');
     }
   });
 
@@ -395,8 +396,12 @@ describe('encoder-deps.mjs — dependency tracking branches', () => {
     const deps = collectChunkDependencies(c);
     const keys = deps.map((d) => d.dependency_key);
     expect(keys).toEqual(expect.arrayContaining([
-      'path:a.js', 'lang:a.js', 'same-file-symbols:a.js', 'same-file-imports:a.js',
-      'policy:embed', 'policy:li', 'policy:dedup',
+      'path:a.js', 'lang:a.js', 'chunk-type:a.js', 'symbol:a.js',
+      'signature:a.js', 'additional-symbols:a.js',
+      'same-file-symbols:a.js', 'same-file-imports:a.js', 'same-file-scope:a.js',
+      `policy:embed:${EMBED_TEXT_POLICY_VERSION}`,
+      `policy:li:${LI_INPUT_POLICY_VERSION}`,
+      `policy:dedup:${DEDUP_INPUT_POLICY_VERSION}`,
     ]));
   });
 
@@ -505,9 +510,15 @@ describe('dirty-set.mjs — branches', () => {
   });
 
   it('canonicaliseInsideRoot accepts paths inside root', () => {
-    const root = '/tmp/proj';
-    expect(canonicaliseInsideRoot(root, 'src/a.js')).toBe('/tmp/proj/src/a.js');
-    expect(canonicaliseInsideRoot(root, '/tmp/proj/inner/x')).toBe('/tmp/proj/inner/x');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-dirty-root-'));
+    try {
+      const realRoot = fs.realpathSync.native(root);
+      const expected = (p) => p.replace(/\\/g, '/');
+      expect(canonicaliseInsideRoot(root, 'src/a.js')).toBe(expected(path.join(realRoot, 'src/a.js')));
+      expect(canonicaliseInsideRoot(root, path.join(root, 'inner/x'))).toBe(expected(path.join(realRoot, 'inner/x')));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('canonicaliseInsideRoot rejects non-string', () => {
@@ -691,10 +702,10 @@ describe('sqlite-fts5.mjs — structure record and varint branches', () => {
 
   it('readVarint handles 9-byte continuation tail', () => {
     const { readVarint } = fts5Testing;
-    // Construct a 9-byte continuation chain that uses the 8th-byte full path
-    const buf = Buffer.from([0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x42]);
+    // Construct a 9-byte continuation chain that uses the 9th-byte full path
+    const buf = Buffer.from([0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x42]);
     const r = readVarint(buf, 0);
-    expect(r.consumed).toBe(8);
+    expect(r.consumed).toBe(9);
     expect(typeof r.value).toBe('bigint');
   });
 });

@@ -28,7 +28,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { SweetSearch } from '../../../search/sweet-search.js';
+import { SweetSearch } from '../../search-runtime.mjs';
 import { buildAllRegexCells, R_CELLS, R_LABELS } from './r-templates.mjs';
 import { Q_CELLS, Q_LABELS } from './author-variants-ss-find.mjs';
 

@@ -38,7 +38,6 @@ if (process.env.SWEET_SEARCH_UV_THREADPOOL_SIZE && !process.env.UV_THREADPOOL_SI
 }
 
 import { existsSync } from 'fs';
-
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 import { resolveRelationshipTargets } from '../graph/relationship-resolver.js';
@@ -53,25 +52,21 @@ import {
   atomicSwapDatabase,
   readFilesFromStdin, discoverFiles,
 } from './indexer-utils.js';
-
 import {
   buildCodeGraph, createVectorSchema, ensureVectorSchema,
   buildInsertItems, insertVectors, pipelinedEmbedAndInsert,
   buildVectorIndex,
 } from './indexer-build.js';
-
 import {
   incrementalUpdateHNSW, buildHNSWIndex,
   buildLateInteractionIndex, buildQuantizedArtifactsPhase,
 } from './indexer-ann.js';
-
 import {
   runPhase,
   discoverFilesPhase, determineFilesToIndexPhase,
   buildCodeGraphWithHCGSPhase, buildVectorsAndArtifactsPhase,
   updateIncrementalStatePhase, printSummaryPhase,
 } from './indexer-phases.js';
-
 // =============================================================================
 // CLI ARGUMENT PARSING
 // =============================================================================
@@ -363,6 +358,7 @@ Output:
     // PHASE 4: Vectors + HNSW + Artifacts (if not --graph-only)
     // =========================================================================
     let vectorStats = { chunks: 0, embeddings: 0 };
+    let sparseGramResult = null;
 
     if (!graphOnly) {
       const vectorsResult = await runPhase('Vectors + HNSW + Artifacts', buildVectorsAndArtifactsPhase, {
@@ -384,6 +380,7 @@ Output:
       }
 
       vectorStats = vectorsResult.result.vectorStats;
+      sparseGramResult = vectorsResult.result.sparseGramResult;
     } else if (hcgsPromise) {
       const hcgsResult = await hcgsPromise;
       if (hcgsResult && !hcgsResult.error) {
@@ -401,6 +398,7 @@ Output:
       allFiles,
       vectorStats,
       graphStats,
+      sparseGramResult,
     });
 
     // =========================================================================

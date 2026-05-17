@@ -4,6 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { CodebaseRepository } from '../../core/infrastructure/codebase-repository.js';
+import { writeManifest, zeroManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 
 // Helper: create a temp DB with the vectors schema and seed data
 function createTestDb(rows = []) {
@@ -27,6 +28,44 @@ function createTestDb(rows = []) {
   }
   db.close();
   return { dbPath, tmpDir };
+}
+
+function createVisibilityDb(rows = []) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codebase-repo-visibility-'));
+  const dbPath = path.join(tmpDir, 'codebase.db');
+  writeVisibilityDb(dbPath, rows);
+  return { dbPath, tmpDir };
+}
+
+function writeVisibilityDb(dbPath, rows = []) {
+  const db = new Database(dbPath);
+  db.exec(`
+    CREATE TABLE vectors (
+      id TEXT PRIMARY KEY,
+      file_path TEXT NOT NULL,
+      embedding BLOB,
+      text TEXT,
+      metadata TEXT,
+      epoch_written INTEGER,
+      epoch_retired INTEGER
+    )
+  `);
+  const insert = db.prepare(`
+    INSERT INTO vectors (id, file_path, embedding, text, metadata, epoch_written, epoch_retired)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const row of rows) {
+    insert.run(
+      row.id,
+      row.file_path,
+      row.embedding ?? null,
+      row.text ?? null,
+      row.metadata ?? null,
+      Object.hasOwn(row, 'epoch_written') ? row.epoch_written : 0,
+      row.epoch_retired ?? null,
+    );
+  }
+  db.close();
 }
 
 function makeEmbedding(values) {
@@ -274,6 +313,154 @@ describe('CodebaseRepository', () => {
       repo = new CodebaseRepository(dbPath);
 
       expect(repo.scanAllVectors()).toHaveLength(0);
+    });
+  });
+
+  describe('incremental epoch visibility', () => {
+    it('hides retired vectors by default across repository reads', () => {
+      const emb = makeEmbedding([1.0]);
+      ({ dbPath, tmpDir } = createVisibilityDb([
+        { id: 'old', file_path: 'a.js', embedding: emb, text: 'old', metadata: JSON.stringify({ clusterId: 'c1' }), epoch_written: 1, epoch_retired: 2 },
+        { id: 'live', file_path: 'a.js', embedding: emb, text: 'live', metadata: JSON.stringify({ clusterId: 'c1' }), epoch_written: 2, epoch_retired: null },
+      ]));
+      repo = new CodebaseRepository(dbPath);
+
+      expect([...repo.iterateVectors()].map((r) => r.id)).toEqual(['live']);
+      expect([...repo.getChunkTexts(['old', 'live']).keys()]).toEqual(['live']);
+      expect([...repo.getEmbeddingsByIds(['old', 'live']).keys()]).toEqual(['live']);
+      expect(repo.getChunksByFilePath('a.js').map((r) => r.id)).toEqual(['live']);
+      expect(repo.scanAllVectors().map((r) => r.id)).toEqual(['live']);
+      expect(repo.findSiblingsByClusterIds(['c1']).map((r) => r.id)).toEqual(['live']);
+    });
+
+    it('honors a pinned manifest epoch when one is supplied', () => {
+      const emb = makeEmbedding([1.0]);
+      ({ dbPath, tmpDir } = createVisibilityDb([
+        { id: 'old', file_path: 'a.js', embedding: emb, text: 'old', metadata: '{}', epoch_written: 1, epoch_retired: 3 },
+        { id: 'new', file_path: 'a.js', embedding: emb, text: 'new', metadata: '{}', epoch_written: 3, epoch_retired: null },
+      ]));
+      repo = new CodebaseRepository(dbPath, { manifestEpoch: 2 });
+
+      expect([...repo.iterateVectors()].map((r) => r.id)).toEqual(['old']);
+      expect(repo.getChunksByFilePath('a.js').map((r) => r.id)).toEqual(['old']);
+      expect([...repo.getEmbeddingsByIds(['old', 'new']).keys()]).toEqual(['old']);
+    });
+
+    it('auto-pins the adjacent reconcile manifest when present', () => {
+      const emb = makeEmbedding([1.0]);
+      ({ dbPath, tmpDir } = createVisibilityDb([
+        { id: 'old', file_path: 'a.js', embedding: emb, text: 'old', metadata: '{}', epoch_written: 1, epoch_retired: 3 },
+        { id: 'new', file_path: 'a.js', embedding: emb, text: 'new', metadata: '{}', epoch_written: 3, epoch_retired: null },
+      ]));
+      const manifest = zeroManifest({});
+      manifest.epoch = 2;
+      writeManifest(tmpDir, manifest);
+
+      repo = new CodebaseRepository(dbPath);
+      expect([...repo.iterateVectors()].map((r) => r.id)).toEqual(['old']);
+    });
+
+    it('opens the vectors database named by the adjacent reconcile manifest', () => {
+      const emb = makeEmbedding([1.0]);
+      ({ dbPath, tmpDir } = createVisibilityDb([
+        { id: 'default-db', file_path: 'a.js', embedding: emb, text: 'default', metadata: '{}', epoch_written: 2, epoch_retired: null },
+      ]));
+      writeVisibilityDb(path.join(tmpDir, 'vectors-epoch-2.db'), [
+        { id: 'manifest-db', file_path: 'a.js', embedding: emb, text: 'manifest', metadata: '{}', epoch_written: 2, epoch_retired: null },
+      ]);
+      const manifest = zeroManifest({ vectors: 'vectors-epoch-2.db' });
+      manifest.epoch = 2;
+      manifest.vectors = { path: 'vectors-epoch-2.db', epoch: 2 };
+      writeManifest(tmpDir, manifest);
+
+      repo = new CodebaseRepository(dbPath);
+      expect([...repo.iterateVectors()].map((r) => r.id)).toEqual(['manifest-db']);
+    });
+
+    it('uses the manifest vectors path when an explicit epoch is supplied', () => {
+      const emb = makeEmbedding([1.0]);
+      ({ dbPath, tmpDir } = createVisibilityDb([
+        { id: 'default-db', file_path: 'a.js', embedding: emb, text: 'default', metadata: '{}', epoch_written: 2, epoch_retired: null },
+      ]));
+      writeVisibilityDb(path.join(tmpDir, 'vectors-epoch-2.db'), [
+        { id: 'manifest-db', file_path: 'a.js', embedding: emb, text: 'manifest', metadata: '{}', epoch_written: 2, epoch_retired: null },
+      ]);
+      const manifest = zeroManifest({ vectors: 'vectors-epoch-2.db' });
+      manifest.epoch = 7;
+      manifest.vectors = { path: 'vectors-epoch-2.db', epoch: 7 };
+      writeManifest(tmpDir, manifest);
+
+      repo = new CodebaseRepository(dbPath, { manifestEpoch: 2 });
+      expect([...repo.iterateVectors()].map((r) => r.id)).toEqual(['manifest-db']);
+    });
+
+    it('refreshes adjacent manifest epochs for long-lived readers', () => {
+      const emb = makeEmbedding([1.0]);
+      ({ dbPath, tmpDir } = createVisibilityDb([
+        { id: 'old', file_path: 'a.js', embedding: emb, text: 'old', metadata: '{}', epoch_written: 1, epoch_retired: 3 },
+        { id: 'new', file_path: 'a.js', embedding: emb, text: 'new', metadata: '{}', epoch_written: 3, epoch_retired: null },
+      ]));
+      const manifest = zeroManifest({});
+      manifest.epoch = 2;
+      writeManifest(tmpDir, manifest);
+      repo = new CodebaseRepository(dbPath);
+      expect([...repo.iterateVectors()].map((r) => r.id)).toEqual(['old']);
+
+      manifest.epoch = 3;
+      writeManifest(tmpDir, manifest);
+      repo.refreshManifestEpoch();
+      expect([...repo.iterateVectors()].map((r) => r.id)).toEqual(['new']);
+    });
+
+    it('reopens the vectors database when a manifest refresh follows an atomic DB swap', () => {
+      const emb = makeEmbedding([1.0]);
+      ({ dbPath, tmpDir } = createVisibilityDb([
+        { id: 'before-swap', file_path: 'a.js', embedding: emb, text: 'old', metadata: '{}', epoch_written: 1, epoch_retired: null },
+      ]));
+      const manifest = zeroManifest({});
+      manifest.epoch = 1;
+      writeManifest(tmpDir, manifest);
+
+      repo = new CodebaseRepository(dbPath);
+      expect([...repo.iterateVectors()].map((r) => r.id)).toEqual(['before-swap']);
+
+      const replacement = path.join(tmpDir, 'replacement.db');
+      const db = new Database(replacement);
+      db.exec(`
+        CREATE TABLE vectors (
+          id TEXT PRIMARY KEY,
+          file_path TEXT NOT NULL,
+          embedding BLOB,
+          text TEXT,
+          metadata TEXT,
+          epoch_written INTEGER,
+          epoch_retired INTEGER
+        )
+      `);
+      db.prepare(`
+        INSERT INTO vectors (id, file_path, embedding, text, metadata, epoch_written, epoch_retired)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run('after-swap', 'a.js', emb, 'new', '{}', 2, null);
+      db.close();
+      fs.renameSync(replacement, dbPath);
+
+      manifest.epoch = 2;
+      writeManifest(tmpDir, manifest);
+      repo.refreshManifestEpoch();
+
+      expect([...repo.iterateVectors()].map((r) => r.id)).toEqual(['after-swap']);
+    });
+
+    it('treats legacy rows with null epoch_written as visible when a manifest is pinned', () => {
+      const emb = makeEmbedding([1.0]);
+      ({ dbPath, tmpDir } = createVisibilityDb([
+        { id: 'legacy', file_path: 'a.js', embedding: emb, text: 'legacy', metadata: '{}', epoch_written: null, epoch_retired: null },
+        { id: 'future', file_path: 'a.js', embedding: emb, text: 'future', metadata: '{}', epoch_written: 7, epoch_retired: null },
+      ]));
+      repo = new CodebaseRepository(dbPath, { manifestEpoch: 3 });
+
+      expect([...repo.iterateVectors()].map((r) => r.id)).toEqual(['legacy']);
+      expect(repo.getChunksByFilePath('a.js').map((r) => r.id)).toEqual(['legacy']);
     });
   });
 

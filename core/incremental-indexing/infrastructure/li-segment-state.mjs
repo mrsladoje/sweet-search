@@ -21,7 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   createBitmap, loadBitmap, saveBitmap,
-  resizeBitmap, setBit, popcount, isSet, filterLive,
+  resizeBitmap, setBit, isSet, filterLive,
 } from './tombstone-bitmap.mjs';
 
 export const STALE_SIDECAR_EXT = '.stale.bin';
@@ -78,7 +78,11 @@ export function persistSegmentState(segmentState) {
  */
 export function staleDocRatio(segmentState) {
   if (segmentState.docCount === 0) return 0;
-  return popcount(segmentState.bitmap) / segmentState.docCount;
+  let tombstoned = 0;
+  for (let i = 0; i < segmentState.docCount; i += 1) {
+    if (isSet(segmentState.bitmap, i)) tombstoned += 1;
+  }
+  return tombstoned / segmentState.docCount;
 }
 
 /**
