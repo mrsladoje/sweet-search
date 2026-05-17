@@ -14,6 +14,9 @@ import { resolveRelationshipTargets } from '../graph/relationship-resolver.js';
 import { populatePageRankColumn } from '../graph/structural-pagerank.js';
 import { getEmbeddings, getModelInfo } from '../embedding/embedding-service.js';
 import { configureJournalMode, checkpointWal, atomicSwapDatabase, log, logProgress } from './indexer-utils.js';
+import { assignStructuralIds } from '../incremental-indexing/domain/chunk-identity.mjs';
+import { chunkInputHashes } from '../incremental-indexing/domain/encoder-input.mjs';
+import { migrateVectorsSchema } from '../incremental-indexing/infrastructure/schema-migrations.mjs';
 
 // =============================================================================
 // CHUNK ENRICHMENT — scope chains + imports from code-graph.db
@@ -62,7 +65,7 @@ async function enrichChunksFromGraph(chunks, ASTChunker) {
     let enriched = 0;
 
     for (const chunk of chunks) {
-      const filePath = chunk.file || chunk.metadata?.path;
+      const filePath = chunkFilePath(chunk);
       if (!filePath) continue;
 
       // Only enrich chunks with a known symbol (skip generic 'unknown' text chunks)
@@ -233,6 +236,7 @@ export function createVectorSchema(db) {
   `);
   db.exec('CREATE INDEX IF NOT EXISTS idx_vectors_session ON vectors(session_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_vectors_file_path ON vectors(file_path)');
+  migrateVectorsSchema(db);
 }
 
 export function ensureVectorSchema(db) {
@@ -263,25 +267,30 @@ export function ensureVectorSchema(db) {
     db.exec('CREATE INDEX IF NOT EXISTS idx_vectors_file_path ON vectors(file_path)');
     log('  Schema migration complete', 'dim');
   }
+  migrateVectorsSchema(db);
 }
 
-export function buildInsertItems(chunks, embeddings, modelInfo) {
+export function buildInsertItems(chunks, embeddings, modelInfo, annotations = null, options = {}) {
   const items = [];
+  const chunkAnnotations = annotations || annotateChunksForVectorInsert(chunks);
+  const epochWritten = Number.isInteger(options.epochWritten) ? options.epochWritten : 0;
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
     const embedding = embeddings[i];
 
     if (!embedding || embedding.length === 0) continue;
+    const ann = chunkAnnotations[i];
+    const filePath = chunkFilePath(chunk);
 
     items.push({
       id: chunk.id,
-      filePath: chunk.file,
+      filePath,
       embeddingBlob: embedding instanceof Float32Array
         ? Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength)
         : Buffer.from(new Float32Array(embedding).buffer),
       text: (chunk.text || chunk.content || '').slice(0, 2000),
       metadata: JSON.stringify({
-        file: chunk.file,
+        file: filePath,
         type: chunk.metadata?.chunk_type || 'code',
         name: chunk.metadata?.symbol || null,
         startLine: chunk.metadata?.line_start || null,
@@ -298,9 +307,115 @@ export function buildInsertItems(chunks, embeddings, modelInfo) {
       sessionId: `codebase-v22-${modelInfo.provider}`,
       tags: JSON.stringify(['codebase', chunk.metadata?.language || 'unknown']),
       createdAt: new Date().toISOString(),
+      chunkStructId: ann?.chunkStructId || '',
+      chunkTextHash: ann?.hashes?.chunk_text_hash || '',
+      embeddingInputHash: ann?.hashes?.embedding_input_hash || '',
+      liInputHash: ann?.hashes?.li_input_hash || '',
+      metadataFingerprint: ann?.hashes?.metadata_fingerprint || '',
+      logicalChunkId: ann?.chunkStructId || chunk.id,
+      epochWritten,
+      epochRetired: null,
     });
   }
   return items;
+}
+
+function chunkFilePath(chunk) {
+  return firstSafeRelativePath(
+    chunk?.metadata?.relative_path,
+    chunk?.metadata?.path,
+    chunk?.metadata?.file_path,
+    chunk?.file,
+    chunk?.metadata?.file,
+  ) || '';
+}
+
+function firstSafeRelativePath(...candidates) {
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const normalized = candidate.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+/g, '/');
+    if (!normalized || normalized === '.' || normalized.startsWith('/')) continue;
+    if (/^[A-Za-z]:\//.test(normalized)) continue;
+    if (normalized === '..' || normalized.startsWith('../') || normalized.includes('/../')) continue;
+    return normalized;
+  }
+  return null;
+}
+
+function annotateChunksForVectorInsert(chunks) {
+  const annotations = new Array(chunks.length);
+  const byFile = new Map();
+  for (let i = 0; i < chunks.length; i++) {
+    const filePath = chunkFilePath(chunks[i]);
+    if (!byFile.has(filePath)) byFile.set(filePath, []);
+    byFile.get(filePath).push(i);
+  }
+  for (const [filePath, indices] of byFile.entries()) {
+    const fileChunks = indices.map((idx) => chunks[idx]);
+    const ids = assignStructuralIds(fileChunks, filePath);
+    for (let i = 0; i < indices.length; i++) {
+      const idx = indices[i];
+      annotations[idx] = {
+        ...ids[i],
+        hashes: chunkInputHashes(chunks[idx]),
+      };
+    }
+  }
+  return annotations;
+}
+
+function vectorInsertColumns(db) {
+  const columns = new Set(db.prepare('PRAGMA table_info(vectors)').all().map((c) => c.name));
+  return [
+    'id',
+    'file_path',
+    'embedding',
+    'text',
+    'metadata',
+    'session_id',
+    'tags',
+    'created_at',
+    'chunk_struct_id',
+    'chunk_text_hash',
+    'embedding_input_hash',
+    'li_input_hash',
+    'metadata_fingerprint',
+    'logical_chunk_id',
+    'epoch_written',
+    'epoch_retired',
+  ].filter((column) => columns.has(column));
+}
+
+function vectorInsertValue(item, column) {
+  switch (column) {
+    case 'id': return item.id;
+    case 'file_path': return item.filePath;
+    case 'embedding': return item.embeddingBlob;
+    case 'text': return item.text;
+    case 'metadata': return item.metadata;
+    case 'session_id': return item.sessionId;
+    case 'tags': return item.tags;
+    case 'created_at': return item.createdAt;
+    case 'chunk_struct_id': return item.chunkStructId ?? '';
+    case 'chunk_text_hash': return item.chunkTextHash ?? '';
+    case 'embedding_input_hash': return item.embeddingInputHash ?? '';
+    case 'li_input_hash': return item.liInputHash ?? '';
+    case 'metadata_fingerprint': return item.metadataFingerprint ?? '';
+    case 'logical_chunk_id': return item.logicalChunkId ?? item.chunkStructId ?? item.id;
+    case 'epoch_written': return item.epochWritten ?? 0;
+    case 'epoch_retired': return item.epochRetired ?? null;
+    default: return item[column];
+  }
+}
+
+function prepareVectorInsert(db) {
+  const columns = vectorInsertColumns(db);
+  const quoted = columns.map((column) => `"${column}"`).join(', ');
+  const placeholders = columns.map(() => '?').join(', ');
+  return {
+    columns,
+    stmt: db.prepare(`INSERT OR REPLACE INTO vectors (${quoted}) VALUES (${placeholders})`),
+  };
 }
 
 /**
@@ -316,23 +431,11 @@ export function insertAliasVectors(db, aliases, modelInfo) {
     'SELECT embedding, metadata FROM vectors WHERE id = ?'
   );
 
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO vectors (id, file_path, embedding, text, metadata, session_id, tags, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+  const { stmt, columns } = prepareVectorInsert(db);
 
   const insertBatch = db.transaction((items) => {
     for (const item of items) {
-      stmt.run(
-        item.id,
-        item.filePath,
-        item.embeddingBlob,
-        item.text,
-        item.metadata,
-        item.sessionId,
-        item.tags,
-        item.createdAt,
-      );
+      stmt.run(...columns.map((column) => vectorInsertValue(item, column)));
     }
   });
 
@@ -353,11 +456,13 @@ export function insertAliasVectors(db, aliases, modelInfo) {
   }
 
   const items = [];
+  const annotations = annotateChunksForVectorInsert(aliases);
   const nowIso = new Date().toISOString();
   let missing = 0;
   let dimension = null;
 
-  for (const alias of aliases) {
+  for (let i = 0; i < aliases.length; i++) {
+    const alias = aliases[i];
     const exemplarId = alias.metadata?.exemplarId;
     if (!exemplarId) continue;
     const row = fetchExemplar.get(exemplarId);
@@ -368,14 +473,16 @@ export function insertAliasVectors(db, aliases, modelInfo) {
     if (dimension === null) {
       dimension = Math.floor(row.embedding.length / 4);
     }
+    const ann = annotations[i];
+    const filePath = chunkFilePath(alias);
 
     items.push({
       id: alias.id,
-      filePath: alias.file,
+      filePath,
       embeddingBlob: row.embedding, // copy exemplar's Float32 BLOB verbatim
       text: (alias.text || alias.content || '').slice(0, 2000),
       metadata: JSON.stringify({
-        file: alias.file,
+        file: filePath,
         type: alias.metadata?.chunk_type || 'code',
         name: alias.metadata?.symbol || null,
         startLine: alias.metadata?.line_start || null,
@@ -391,6 +498,14 @@ export function insertAliasVectors(db, aliases, modelInfo) {
       sessionId: `codebase-v22-${modelInfo.provider}`,
       tags: JSON.stringify(['codebase', alias.metadata?.language || 'unknown']),
       createdAt: nowIso,
+      chunkStructId: ann?.chunkStructId || '',
+      chunkTextHash: ann?.hashes?.chunk_text_hash || '',
+      embeddingInputHash: ann?.hashes?.embedding_input_hash || '',
+      liInputHash: ann?.hashes?.li_input_hash || '',
+      metadataFingerprint: ann?.hashes?.metadata_fingerprint || '',
+      logicalChunkId: ann?.chunkStructId || alias.id,
+      epochWritten: 0,
+      epochRetired: null,
     });
   }
 
@@ -406,48 +521,36 @@ export function insertAliasVectors(db, aliases, modelInfo) {
   return items.length;
 }
 
-export function insertVectors(db, chunks, embeddings, modelInfo) {
+export function insertVectorItems(db, items) {
   const BATCH_INSERT_SIZE = 2000;
 
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO vectors (id, file_path, embedding, text, metadata, session_id, tags, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+  const { stmt, columns } = prepareVectorInsert(db);
 
   const insertBatch = db.transaction((items) => {
     for (const item of items) {
-      stmt.run(
-        item.id,
-        item.filePath,
-        item.embeddingBlob,
-        item.text,
-        item.metadata,
-        item.sessionId,
-        item.tags,
-        item.createdAt
-      );
+      stmt.run(...columns.map((column) => vectorInsertValue(item, column)));
     }
   });
-
-  const items = buildInsertItems(chunks, embeddings, modelInfo);
 
   for (let i = 0; i < items.length; i += BATCH_INSERT_SIZE) {
     insertBatch(items.slice(i, i + BATCH_INSERT_SIZE));
   }
 }
 
+export function insertVectors(db, chunks, embeddings, modelInfo, annotations = null, options = {}) {
+  insertVectorItems(db, buildInsertItems(chunks, embeddings, modelInfo, annotations, options));
+}
+
 export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, modelInfo, logProgressFn, embeddingOptions = {}, logFn, writeFlushRows = 128) {
   let writeBuffer = [];
   let embeddingCount = 0;
+  const allAnnotations = annotateChunksForVectorInsert(allChunks);
 
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO vectors (id, file_path, embedding, text, metadata, session_id, tags, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+  const { stmt, columns } = prepareVectorInsert(db);
 
   const insertBatch = db.transaction((items) => {
     for (const item of items) {
-      stmt.run(item.id, item.filePath, item.embeddingBlob, item.text, item.metadata, item.sessionId, item.tags, item.createdAt);
+      stmt.run(...columns.map((column) => vectorInsertValue(item, column)));
     }
   });
 
@@ -467,6 +570,7 @@ export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, m
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
     const batchChunks = allChunks.slice(i, i + batchSize);
+    const batchAnnotations = allAnnotations.slice(i, i + batchSize);
 
     // Overlap: flush accumulated writes while embedding is in-flight
     const batchResultsPromise = getEmbeddings(batch, progressOptions);
@@ -479,7 +583,7 @@ export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, m
     const batchEmbeddings = batchResults.map(r => r.embedding);
     embeddingCount += batchEmbeddings.length;
 
-    const batchItems = buildInsertItems(batchChunks, batchEmbeddings, modelInfo);
+    const batchItems = buildInsertItems(batchChunks, batchEmbeddings, modelInfo, batchAnnotations);
     writeBuffer.push(...batchItems);
 
     if (!useInternalProgress) {
@@ -558,7 +662,7 @@ export async function chunkFiles(files) {
     if (chunk.embedding_text) {
       return chunk.embedding_text.slice(0, _embCap);
     }
-    return `${chunk.file} ${chunk.metadata?.symbol || ''}\n${(chunk.text || chunk.content || '').slice(0, 1500)}`;
+    return `${chunkFilePath(chunk)} ${chunk.metadata?.symbol || ''}\n${(chunk.text || chunk.content || '').slice(0, 1500)}`;
   });
 
   return { allChunks, texts };

@@ -124,6 +124,7 @@ describe('Phase 1 encode-skip verification', () => {
     expect(diff.counters.miss).toBe(0);
     expect(diff.counters.retire).toBe(0);
     expect(diff.toEncode.length).toBe(0);
+    expect(diff.toReuse.every((row) => row.textOnly === true)).toBe(true);
   });
 
   it('insert function at top → 1 encode + N-1 reuse', () => {
@@ -200,6 +201,32 @@ describe('Phase 1 encode-skip verification', () => {
       'SELECT epoch_retired FROM vectors WHERE chunk_struct_id = ?',
     ).get(ann1[1].chunkStructId);
     expect(orphan.epoch_retired).toBe(2);
+  });
+
+  it('edit function body with stable structural id → re-encodes and retires previous row', () => {
+    const initial = [
+      symbolChunk('foo', 'return 1;'),
+      symbolChunk('bar', 'return 2;'),
+    ];
+    const ann1 = annotateChunksForDelta(initial, 'src/file.js');
+    materialise(db, initial, ann1, /* epoch */ 1);
+
+    const edited = [
+      symbolChunk('foo', 'return 10;'), // same symbol/signature, changed encoder input
+      symbolChunk('bar', 'return 2;'),
+    ];
+    const ann2 = annotateChunksForDelta(edited, 'src/file.js');
+    expect(ann2[0].chunkStructId).toBe(ann1[0].chunkStructId);
+    const diff = diffChunks(edited, ann2, snapshotFileRows(db, 'src/file.js'));
+    applyDiff(db, 'src/file.js', diff, /* epoch */ 2);
+
+    expect(diff.toEncode.length).toBe(1);
+    expect(diff.toEncode[0].prevRow.id).toContain(ann1[0].chunkStructId);
+    expect(diff.toReuse.length).toBe(1);
+    const oldFoo = db.prepare(
+      'SELECT epoch_retired FROM vectors WHERE chunk_struct_id = ? AND epoch_written = 1',
+    ).get(ann1[0].chunkStructId);
+    expect(oldFoo.epoch_retired).toBe(2);
   });
 
   it('reconcile counters reflect a clean tick across the four scenarios', () => {

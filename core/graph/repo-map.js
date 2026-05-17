@@ -17,6 +17,16 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import { DB_PATHS } from '../infrastructure/config/index.js';
 import { applyReadPragmas } from '../infrastructure/db-utils.js';
+import {
+  createCodeGraphVisibility,
+  entityVisibilityParams,
+  entityVisibilitySql,
+  readAdjacentManifest,
+  readAdjacentManifestEpoch,
+  relationshipVisibilityParams,
+  relationshipVisibilitySql,
+  resolveManifestCodeGraphPath,
+} from '../infrastructure/code-graph-visibility.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -119,24 +129,32 @@ export function pageRank(outEdges, allNodes, opts = {}) {
 /**
  * Load graph data from the code-graph.db SQLite database.
  * @param {string} [dbPath] - Path to code-graph.db
+ * @param {{ manifestEpoch?: number }} [opts]
  * @returns {{ entities: Array, relationships: Array }}
  */
-export function loadGraph(dbPath) {
-  const resolvedPath = dbPath || DB_PATHS.codeGraph;
+export function loadGraph(dbPath, opts = {}) {
+  const basePath = dbPath || DB_PATHS.codeGraph;
+  const manifest = opts.manifest || readAdjacentManifest(basePath);
+  const resolvedPath = resolveManifestCodeGraphPath(basePath, manifest);
   const db = new Database(resolvedPath, { readonly: true, timeout: 5000 });
   applyReadPragmas(db);
 
   try {
+    const manifestEpoch = Number.isInteger(opts.manifestEpoch)
+      ? opts.manifestEpoch
+      : (Number.isInteger(manifest?.epoch) ? manifest.epoch : readAdjacentManifestEpoch(resolvedPath));
+    const visibility = createCodeGraphVisibility(db, manifestEpoch);
     const entities = db.prepare(`
       SELECT id, file_path, type, name, signature, start_line, end_line
       FROM entities
-      WHERE stale_since IS NULL
-    `).all();
+      WHERE ${entityVisibilitySql(visibility)}
+    `).all(...entityVisibilityParams(visibility));
 
     const relationships = db.prepare(`
       SELECT source_id, target_id, target_name, type, weight
       FROM relationships
-    `).all();
+      WHERE ${relationshipVisibilitySql(visibility, '')}
+    `).all(...relationshipVisibilityParams(visibility));
 
     return { entities, relationships };
   } finally {
@@ -335,6 +353,7 @@ function buildMapText(entries) {
  * @param {string} [opts.dbPath] - Override code-graph.db path
  * @param {string[]} [opts.focusFiles] - Boost scores for entities in these files
  * @param {string[]} [opts.focusEntities] - Boost scores for these entity names
+ * @param {number} [opts.manifestEpoch] - Optional pinned manifest epoch for incremental readers
  * @returns {{ text: string, entityCount: number, fileCount: number, totalEntities: number, pageRankTimeMs: number }}
  */
 export function generateRepoMap(opts = {}) {
@@ -342,7 +361,10 @@ export function generateRepoMap(opts = {}) {
   const start = Date.now();
 
   // 1. Load graph from SQLite
-  const graph = loadGraph(opts.dbPath);
+  const graph = loadGraph(opts.dbPath, {
+    manifest: opts.manifest,
+    manifestEpoch: opts.manifestEpoch,
+  });
 
   if (graph.entities.length === 0) {
     return {

@@ -6,21 +6,88 @@
  */
 
 import Database from 'better-sqlite3';
+import fs from 'node:fs';
+import path from 'node:path';
 import { applyReadPragmas, assertInClauseSize } from './db-utils.js';
 
+function readAdjacentManifest(dbPath) {
+  try {
+    const manifestPath = path.join(path.dirname(dbPath), 'reconcile-manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    return Number.isInteger(manifest?.epoch) ? manifest : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveManifestVectorsPath(dbPath, manifest = readAdjacentManifest(dbPath)) {
+  const descriptor = manifest?.vectors?.path || manifest?.vectors?.dbPath;
+  if (!descriptor || typeof descriptor !== 'string') return dbPath;
+  return path.isAbsolute(descriptor) ? descriptor : path.join(path.dirname(dbPath), descriptor);
+}
+
 export class CodebaseRepository {
-  constructor(dbPath) {
-    this._dbPath = dbPath;
+  constructor(dbPath, options = {}) {
+    this._baseDbPath = dbPath;
+    this._explicitManifestEpoch = Number.isInteger(options.manifestEpoch);
+    this._manifestEpoch = this._explicitManifestEpoch ? options.manifestEpoch : null;
+    const manifest = this._explicitManifestEpoch ? readAdjacentManifest(this._baseDbPath) : null;
+    this._dbPath = this._explicitManifestEpoch
+      ? resolveManifestVectorsPath(this._baseDbPath, manifest)
+      : dbPath;
     this._db = null;
+    this._hasEpochVisibility = null;
+    if (!this._explicitManifestEpoch) {
+      this._syncAdjacentManifest();
+    }
+  }
+
+  _syncAdjacentManifest() {
+    if (this._explicitManifestEpoch) return false;
+    const manifest = readAdjacentManifest(this._baseDbPath);
+    const nextEpoch = Number.isInteger(manifest?.epoch) ? manifest.epoch : null;
+    const nextDbPath = resolveManifestVectorsPath(this._baseDbPath, manifest);
+    const changed = nextEpoch !== this._manifestEpoch || nextDbPath !== this._dbPath;
+    this._manifestEpoch = nextEpoch;
+    this._dbPath = nextDbPath;
+    if (changed) {
+      this.close();
+    }
+    return changed;
+  }
+
+  refreshManifestEpoch() {
+    this._syncAdjacentManifest();
+    return this._manifestEpoch;
+  }
+
+  getManifestEpoch() {
+    return this._manifestEpoch;
   }
 
   /** Lazy read-only connection with optimized pragmas. */
   _open() {
+    this._syncAdjacentManifest();
     if (!this._db) {
       this._db = new Database(this._dbPath, { readonly: true });
       applyReadPragmas(this._db);
     }
     return this._db;
+  }
+
+  _visibility(db) {
+    if (this._hasEpochVisibility === null) {
+      const cols = db.prepare('PRAGMA table_info(vectors)').all().map((c) => c.name);
+      this._hasEpochVisibility = cols.includes('epoch_written') && cols.includes('epoch_retired');
+    }
+    if (!this._hasEpochVisibility) return { sql: '', params: [] };
+    if (this._manifestEpoch !== null) {
+      return {
+        sql: '(epoch_written IS NULL OR epoch_written <= ?) AND (epoch_retired IS NULL OR epoch_retired > ?)',
+        params: [this._manifestEpoch, this._manifestEpoch],
+      };
+    }
+    return { sql: 'epoch_retired IS NULL', params: [] };
   }
 
   /**
@@ -29,7 +96,10 @@ export class CodebaseRepository {
    */
   * iterateVectors() {
     const db = this._open();
-    yield* db.prepare('SELECT id, embedding, text, metadata, file_path FROM vectors').iterate();
+    const visibility = this._visibility(db);
+    const where = visibility.sql ? ` WHERE ${visibility.sql}` : '';
+    yield* db.prepare(`SELECT id, embedding, text, metadata, file_path FROM vectors${where}`)
+      .iterate(...visibility.params);
   }
 
   /**
@@ -44,9 +114,11 @@ export class CodebaseRepository {
 
     const db = this._open();
     const placeholders = uniqueIds.map(() => '?').join(',');
+    const visibility = this._visibility(db);
+    const visibilityClause = visibility.sql ? ` AND ${visibility.sql}` : '';
     const rows = db.prepare(
-      `SELECT id, embedding FROM vectors WHERE id IN (${placeholders})`
-    ).all(...uniqueIds);
+      `SELECT id, embedding FROM vectors WHERE id IN (${placeholders})${visibilityClause}`
+    ).all(...uniqueIds, ...visibility.params);
 
     const result = new Map();
     for (const row of rows) {
@@ -71,9 +143,11 @@ export class CodebaseRepository {
       assertInClauseSize(ids.length, 'CodebaseRepository.getChunkTexts');
       const db = this._open();
       const ph = ids.map(() => '?').join(',');
+      const visibility = this._visibility(db);
+      const visibilityClause = visibility.sql ? ` AND ${visibility.sql}` : '';
       const rows = db.prepare(
-        `SELECT id, text FROM vectors WHERE id IN (${ph})`
-      ).all(...ids);
+        `SELECT id, text FROM vectors WHERE id IN (${ph})${visibilityClause}`
+      ).all(...ids, ...visibility.params);
       return new Map(rows.map(r => [r.id, r.text]));
     } catch {
       return new Map();
@@ -93,9 +167,11 @@ export class CodebaseRepository {
     if (!filePath) return [];
     try {
       const db = this._open();
+      const visibility = this._visibility(db);
+      const visibilityClause = visibility.sql ? ` AND ${visibility.sql}` : '';
       return db.prepare(
-        'SELECT id, file_path, text, metadata FROM vectors WHERE file_path = ? ORDER BY id'
-      ).all(filePath);
+        `SELECT id, file_path, text, metadata FROM vectors WHERE file_path = ?${visibilityClause} ORDER BY id`
+      ).all(filePath, ...visibility.params);
     } catch {
       return [];
     }
@@ -107,10 +183,14 @@ export class CodebaseRepository {
    * @returns {Array<{id, embedding: Buffer, text: string, metadata: string}>}
    */
   scanAllVectors() {
+    this._syncAdjacentManifest();
     const db = new Database(this._dbPath, { readonly: true });
     applyReadPragmas(db);
     try {
-      return db.prepare('SELECT id, embedding, text, metadata FROM vectors').all();
+      const visibility = this._visibility(db);
+      const where = visibility.sql ? ` WHERE ${visibility.sql}` : '';
+      return db.prepare(`SELECT id, embedding, text, metadata FROM vectors${where}`)
+        .all(...visibility.params);
     } finally {
       db.close();
     }
@@ -137,14 +217,16 @@ export class CodebaseRepository {
     const clusterPh = uniqueClusters.map(() => '?').join(',');
     const excludePh = uniqueExclude.map(() => '?').join(',');
     const excludeClause = uniqueExclude.length > 0 ? ` AND id NOT IN (${excludePh})` : '';
+    const visibility = this._visibility(db);
+    const visibilityClause = visibility.sql ? ` AND ${visibility.sql}` : '';
 
     const sql = `
       SELECT id, file_path, text, metadata
       FROM vectors
-      WHERE json_extract(metadata, '$.clusterId') IN (${clusterPh})${excludeClause}
+      WHERE json_extract(metadata, '$.clusterId') IN (${clusterPh})${excludeClause}${visibilityClause}
     `;
 
-    return db.prepare(sql).all(...uniqueClusters, ...uniqueExclude);
+    return db.prepare(sql).all(...uniqueClusters, ...uniqueExclude, ...visibility.params);
   }
 
   close() {
@@ -152,5 +234,6 @@ export class CodebaseRepository {
       this._db.close();
       this._db = null;
     }
+    this._hasEpochVisibility = null;
   }
 }

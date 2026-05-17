@@ -81,6 +81,22 @@ describe('path-filter / ignore file', () => {
     const f = buildPathFilter({ allowSweetSearchDir: true });
     expect(f('.sweet-search/state.json')).toBe(false);
   });
+
+  it('projectRoot filter uses shared loadProjectConfig excludes', () => {
+    fs.writeFileSync(path.join(dir, '.sweet-search.config.json'), JSON.stringify({
+      exclude: ['**/fixtures/**'],
+    }));
+    const f = buildPathFilter({ projectRoot: dir });
+    expect(f('package-lock.json')).toBe(true); // default shared config
+    expect(f('fixtures/generated.js')).toBe(true); // project config at repo root
+    expect(f('nested/fixtures/generated.js')).toBe(true);
+    expect(f('src/index.js')).toBe(false);
+  });
+
+  it('allowSweetSearchDir also lifts the shared config .sweet-search exclude', () => {
+    const f = buildPathFilter({ projectRoot: dir, allowSweetSearchDir: true });
+    expect(f('.sweet-search/reconcile-manifest.json')).toBe(false);
+  });
 });
 
 describe('repo-size cap', () => {

@@ -530,6 +530,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
           codebaseDb: this.codebaseRepo,
           readFileLines,
           format: options.format,
+          manifestEpoch: this.graphSearch?.getManifestEpoch?.(),
           ...(intentEdgeTypes && !graphExpandOptions.edgeTypes ? { edgeTypes: intentEdgeTypes } : {}),
           ...graphExpandOptions,
         });

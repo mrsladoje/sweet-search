@@ -60,7 +60,8 @@ describe('hashing.mjs — backend resolution + sha256 fallback', () => {
       const mod = await import('../../core/incremental-indexing/infrastructure/hashing.mjs?v=sha');
       // If ?v= is treated as ESM query, fall back to the existing module.
       const out = mod.contentHashSync('hello');
-      expect(out.length).toBe(16);
+      expect(out).toBe('2cf24dba5fb0a30e');
+      expect(mod.HASH_ALGORITHM).toBe('sha256');
     } finally {
       if (prev === undefined) delete process.env.SWEET_SEARCH_HASH_ALGORITHM;
       else process.env.SWEET_SEARCH_HASH_ALGORITHM = prev;

@@ -78,7 +78,7 @@ async function child(lang, goldId, shape) {
   process.stdout.write(`Symbol: ${input.expectedSymbol} | File: ${input.expectedFile}\n`);
   process.stdout.write(`Gold containingChunk: lines ${input.containingChunk.startLine}-${input.containingChunk.endLine}\n`);
 
-  const { readSemantic } = await import('../../../search/search-read-semantic.js');
+  const { readSemantic } = await import('../../search-runtime.mjs');
   const resp = await readSemantic({
     path: input.expectedFile,
     query: variant.query,

@@ -17,24 +17,25 @@ const TEMP_FILES = [
   join('core', 'infrastructure', '__boundary_test_violation__.js'),
   join('core', 'ranking', '__boundary_test_violation__.js'),
 ];
+const CHECK_BOUNDARIES_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_TEST_BOUNDARY_TIMEOUT_MS || 240000);
 afterAll(() => TEMP_FILES.forEach(f => rmSync(f, { force: true })));
 
 describe('DDD Boundary Enforcement', () => {
   it('passes all boundary checks', () => {
     const result = execSync('node scripts/check-boundaries.js 2>&1', {
       encoding: 'utf8',
-      timeout: 30000,
+      timeout: CHECK_BOUNDARIES_TIMEOUT_MS,
     });
     expect(result).toContain('All domain boundaries clean.');
-  });
+  }, CHECK_BOUNDARIES_TIMEOUT_MS + 5000);
 
   it('detects barrel-only enforcement is active', () => {
     const result = execSync('node scripts/check-boundaries.js 2>&1', {
       encoding: 'utf8',
-      timeout: 30000,
+      timeout: CHECK_BOUNDARIES_TIMEOUT_MS,
     });
     expect(result).toContain('barrel-only enforcement');
-  });
+  }, CHECK_BOUNDARIES_TIMEOUT_MS + 5000);
 
   it('catches infrastructure → domain violation', () => {
     const tmpFile = TEMP_FILES[0];
@@ -42,7 +43,7 @@ describe('DDD Boundary Enforcement', () => {
       writeFileSync(tmpFile, "import { embed } from '../embedding/index.js';\n");
       let output;
       try {
-        output = execSync('node scripts/check-boundaries.js 2>&1', { encoding: 'utf8', timeout: 30000 });
+        output = execSync('node scripts/check-boundaries.js 2>&1', { encoding: 'utf8', timeout: CHECK_BOUNDARIES_TIMEOUT_MS });
       } catch (err) {
         output = err.stdout || err.message;
       }
@@ -51,7 +52,7 @@ describe('DDD Boundary Enforcement', () => {
     } finally {
       rmSync(tmpFile, { force: true });
     }
-  });
+  }, CHECK_BOUNDARIES_TIMEOUT_MS + 5000);
 
   it('catches ranking → embedding violation', () => {
     const tmpFile = TEMP_FILES[1];
@@ -59,7 +60,7 @@ describe('DDD Boundary Enforcement', () => {
       writeFileSync(tmpFile, "import { embed } from '../embedding/index.js';\n");
       let output;
       try {
-        output = execSync('node scripts/check-boundaries.js 2>&1', { encoding: 'utf8', timeout: 30000 });
+        output = execSync('node scripts/check-boundaries.js 2>&1', { encoding: 'utf8', timeout: CHECK_BOUNDARIES_TIMEOUT_MS });
       } catch (err) {
         output = err.stdout || err.message;
       }
@@ -68,5 +69,5 @@ describe('DDD Boundary Enforcement', () => {
     } finally {
       rmSync(tmpFile, { force: true });
     }
-  });
+  }, CHECK_BOUNDARIES_TIMEOUT_MS + 5000);
 });

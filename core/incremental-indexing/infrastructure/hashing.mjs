@@ -28,8 +28,11 @@
  */
 
 import crypto from 'node:crypto';
+import { createRequire } from 'node:module';
 
 const ALGO_ENV = (process.env.SWEET_SEARCH_HASH_ALGORITHM || 'xxhash3').toLowerCase();
+export const HASH_ALGORITHM = ALGO_ENV === 'sha256' ? 'sha256' : 'xxhash3';
+const require = createRequire(import.meta.url);
 const PURE_JS_PRIME64_1 = 0x9E3779B185EBCA87n;
 const PURE_JS_PRIME64_2 = 0xC2B2AE3D27D4EB4Fn;
 const PURE_JS_PRIME64_3 = 0x165667B19E3779F9n;
@@ -40,6 +43,13 @@ const MASK64 = 0xFFFFFFFFFFFFFFFFn;
 let nativeXxh3 = null;
 let nodeRsXxh3 = null;
 let resolved = false;
+
+function toHex64(value) {
+  if (typeof value === 'string') {
+    return value.length >= 16 ? value.slice(-16).toLowerCase() : value.padStart(16, '0').toLowerCase();
+  }
+  return (typeof value === 'bigint' ? value : BigInt(value)).toString(16).padStart(16, '0');
+}
 
 function rotl64(x, r) {
   return ((x << BigInt(r)) | (x >> BigInt(64 - r))) & MASK64;
@@ -157,6 +167,55 @@ function bufFromInput(input) {
   throw new TypeError(`hashing: unsupported input type ${typeof input}`);
 }
 
+function makeNativeXxh3(mod) {
+  if (!mod || typeof mod.xxhash3_64 !== 'function') return null;
+  return (buf) => toHex64(mod.xxhash3_64(buf));
+}
+
+function makeNodeRsXxh3(mod) {
+  if (!mod) return null;
+  const ns = mod.default && (mod.default.xxh3 || mod.default.Xxh3) ? mod.default : mod;
+  if (ns.xxh3 && typeof ns.xxh3.xxh64 === 'function') {
+    return (buf) => toHex64(ns.xxh3.xxh64(buf));
+  }
+  const Xxh3 = ns.Xxh3 || ns.xxh3;
+  if (Xxh3 && typeof Xxh3.oneShotHashU64 === 'function') {
+    return (buf) => toHex64(Xxh3.oneShotHashU64(buf));
+  }
+  if (Xxh3 && typeof Xxh3.h64 === 'function') {
+    return (buf) => toHex64(Xxh3.h64(buf));
+  }
+  if (Xxh3 && typeof Xxh3.withSeed === 'function') {
+    return (buf) => {
+      const hasher = Xxh3.withSeed(0n);
+      hasher.update(buf);
+      return toHex64(hasher.digest());
+    };
+  }
+  return null;
+}
+
+function resolveBackendsSync() {
+  if (ALGO_ENV === 'sha256') {
+    resolved = true;
+    return;
+  }
+  try {
+    nativeXxh3 = makeNativeXxh3(require('../../../crates/sweet-search-native/index.js'));
+  } catch {
+    // Native crate not built or missing the export; try the package dependency.
+  }
+  if (!nativeXxh3) {
+    try {
+      nodeRsXxh3 = makeNodeRsXxh3(require('@node-rs/xxhash'));
+    } catch {
+      // Dependency not installed or native package failed to load; async resolver
+      // and the portable fallback still keep hashing functional.
+    }
+  }
+  resolved = Boolean(nativeXxh3 || nodeRsXxh3);
+}
+
 async function resolveBackends() {
   if (resolved) return;
   resolved = true;
@@ -164,12 +223,7 @@ async function resolveBackends() {
   // Resolve native crate (preferred).
   try {
     const mod = await import('../../../crates/sweet-search-native/index.js');
-    if (mod && typeof mod.xxhash3_64 === 'function') {
-      nativeXxh3 = (buf) => {
-        const hex = mod.xxhash3_64(buf);
-        return typeof hex === 'string' ? hex : hex.toString(16).padStart(16, '0');
-      };
-    }
+    nativeXxh3 = makeNativeXxh3(mod);
   } catch {
     // Native crate not built or missing the export; fall through.
   }
@@ -178,16 +232,7 @@ async function resolveBackends() {
   if (!nativeXxh3) {
     try {
       const mod = await import('@node-rs/xxhash');
-      if (mod && (mod.Xxh3 || mod.xxh3)) {
-        const x = mod.Xxh3 || mod.xxh3;
-        nodeRsXxh3 = (buf) => {
-          // Both Xxh3.oneShotHashU64 and xxh3.h64 paths normalize to a BigInt.
-          const v = typeof x.oneShotHashU64 === 'function'
-            ? x.oneShotHashU64(buf)
-            : x.h64(buf);
-          return (typeof v === 'bigint' ? v : BigInt(v)).toString(16).padStart(16, '0');
-        };
-      }
+      nodeRsXxh3 = makeNodeRsXxh3(mod);
     } catch {
       // Package not installed; pure-JS fallback wins.
     }
@@ -249,3 +294,5 @@ export const __testing = {
   stableStringify,
   resolveBackends,
 };
+
+resolveBackendsSync();

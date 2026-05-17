@@ -15,6 +15,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
+import { writeManifest, zeroManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 import {
   pageRank,
   buildAdjacency,
@@ -281,6 +282,214 @@ describe('renderRepoMap', () => {
     const firstIdx = result.text.indexOf('first');
     const secondIdx = result.text.indexOf('second');
     expect(firstIdx).toBeLessThan(secondIdx);
+  });
+});
+
+function writeGraphManifest(stateDir, epoch) {
+  writeManifest(stateDir, {
+    ...zeroManifest({ codeGraph: 'code-graph.db' }),
+    epoch,
+    codeGraph: { path: 'code-graph.db', epoch },
+  });
+}
+
+describe('loadGraph epoch visibility', () => {
+  it('uses the adjacent manifest to load the matching entity and relationship versions', () => {
+    const tmpDir = mkdtempSync(path.join(tmpdir(), 'repo-map-epoch-'));
+    const dbPath = path.join(tmpDir, 'code-graph.db');
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE entities (
+        id TEXT PRIMARY KEY,
+        file_path TEXT,
+        type TEXT,
+        name TEXT,
+        signature TEXT,
+        start_line INTEGER,
+        end_line INTEGER,
+        stale_since INTEGER,
+        epoch_written INTEGER,
+        epoch_retired INTEGER
+      );
+      CREATE TABLE relationships (
+        source_id TEXT,
+        target_id TEXT,
+        target_name TEXT,
+        type TEXT,
+        weight REAL,
+        epoch_written INTEGER,
+        epoch_retired INTEGER
+      );
+    `);
+    const ent = db.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    ent.run('caller', 'src/caller.js', 'function', 'Caller', 'function Caller()', 1, 5, null, 1, null);
+    ent.run('old', 'src/old.js', 'function', 'Widget', 'function Widget()', 1, 5, 1111, 1, 3);
+    ent.run('new', 'src/new.js', 'function', 'Widget', 'function Widget()', 1, 5, null, 3, null);
+    ent.run('future', 'src/future.js', 'function', 'FutureWidget', 'function FutureWidget()', 1, 5, null, 7, null);
+    const rel = db.prepare('INSERT INTO relationships VALUES (?, ?, ?, ?, ?, ?, ?)');
+    rel.run('caller', 'old', 'Widget', 'calls', 1, 1, 3);
+    rel.run('caller', 'new', 'Widget', 'calls', 1, 3, null);
+    rel.run('caller', 'future', 'FutureWidget', 'calls', 1, 7, null);
+    db.close();
+
+    try {
+      writeGraphManifest(tmpDir, 2);
+      expect(loadGraph(dbPath).entities.map((row) => row.id).sort()).toEqual(['caller', 'old']);
+      expect(loadGraph(dbPath).relationships.map((row) => row.target_id)).toEqual(['old']);
+
+      const epoch4 = loadGraph(dbPath, { manifestEpoch: 4 });
+      expect(epoch4.entities.map((row) => row.id).sort()).toEqual(['caller', 'new']);
+      expect(epoch4.relationships.map((row) => row.target_id)).toEqual(['new']);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('loads the code graph database path named by the adjacent manifest', () => {
+    const tmpDir = mkdtempSync(path.join(tmpdir(), 'repo-map-manifest-path-'));
+    const dbPath = path.join(tmpDir, 'code-graph.db');
+    const manifestDbPath = path.join(tmpDir, 'code-graph-epoch-2.db');
+    const createDb = (targetPath, id, filePath) => {
+      const db = new Database(targetPath);
+      db.exec(`
+        CREATE TABLE entities (
+          id TEXT PRIMARY KEY,
+          file_path TEXT,
+          type TEXT,
+          name TEXT,
+          signature TEXT,
+          start_line INTEGER,
+          end_line INTEGER,
+          stale_since INTEGER
+        );
+        CREATE TABLE relationships (
+          source_id TEXT,
+          target_id TEXT,
+          target_name TEXT,
+          type TEXT,
+          weight REAL
+        );
+      `);
+      db.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, filePath, 'function', id, `function ${id}()`, 1, 5, null);
+      db.close();
+    };
+    createDb(dbPath, 'defaultDb', 'src/default.js');
+    createDb(manifestDbPath, 'manifestDb', 'src/manifest.js');
+
+    try {
+      writeManifest(tmpDir, {
+        ...zeroManifest({ codeGraph: 'code-graph-epoch-2.db' }),
+        epoch: 2,
+        codeGraph: { path: 'code-graph-epoch-2.db', epoch: 2 },
+      });
+
+      const graph = loadGraph(dbPath);
+      expect(graph.entities.map((row) => row.id)).toEqual(['manifestDb']);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses a supplied manifest object so callers can keep path and epoch pinned together', () => {
+    const tmpDir = mkdtempSync(path.join(tmpdir(), 'repo-map-pinned-manifest-'));
+    const dbPath = path.join(tmpDir, 'code-graph.db');
+    const pinnedDbPath = path.join(tmpDir, 'code-graph-pinned.db');
+    const createDb = (targetPath, id) => {
+      const db = new Database(targetPath);
+      db.exec(`
+        CREATE TABLE entities (
+          id TEXT PRIMARY KEY,
+          file_path TEXT,
+          type TEXT,
+          name TEXT,
+          signature TEXT,
+          start_line INTEGER,
+          end_line INTEGER,
+          stale_since INTEGER,
+          epoch_written INTEGER,
+          epoch_retired INTEGER
+        );
+        CREATE TABLE relationships (
+          source_id TEXT,
+          target_id TEXT,
+          target_name TEXT,
+          type TEXT,
+          weight REAL,
+          epoch_written INTEGER,
+          epoch_retired INTEGER
+        );
+      `);
+      db.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, `src/${id}.js`, 'function', id, `function ${id}()`, 1, 5, null, 3, null);
+      db.close();
+    };
+    createDb(dbPath, 'defaultDb');
+    createDb(pinnedDbPath, 'pinnedDb');
+
+    try {
+      const graph = loadGraph(dbPath, {
+        manifest: { epoch: 3, codeGraph: { path: 'code-graph-pinned.db', epoch: 3 } },
+        manifestEpoch: 3,
+      });
+      expect(graph.entities.map((row) => row.id)).toEqual(['pinnedDb']);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('generateRepoMap epoch visibility', () => {
+  it('honors an explicit manifestEpoch instead of the adjacent manifest epoch', () => {
+    const tmpDir = mkdtempSync(path.join(tmpdir(), 'repo-map-generate-epoch-'));
+    const dbPath = path.join(tmpDir, 'code-graph.db');
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE entities (
+        id TEXT PRIMARY KEY,
+        file_path TEXT,
+        type TEXT,
+        name TEXT,
+        signature TEXT,
+        start_line INTEGER,
+        end_line INTEGER,
+        stale_since INTEGER,
+        epoch_written INTEGER,
+        epoch_retired INTEGER
+      );
+      CREATE TABLE relationships (
+        source_id TEXT,
+        target_id TEXT,
+        target_name TEXT,
+        type TEXT,
+        weight REAL,
+        epoch_written INTEGER,
+        epoch_retired INTEGER
+      );
+    `);
+    const ent = db.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    ent.run('caller', 'src/caller.js', 'function', 'Caller', 'function Caller()', 1, 5, null, 1, null);
+    ent.run('legacy', 'src/legacy.js', 'function', 'LegacyWidget', 'function LegacyWidget()', 1, 5, 1111, 1, 3);
+    ent.run('current', 'src/current.js', 'function', 'CurrentWidget', 'function CurrentWidget()', 1, 5, null, 3, null);
+    const rel = db.prepare('INSERT INTO relationships VALUES (?, ?, ?, ?, ?, ?, ?)');
+    rel.run('caller', 'legacy', 'LegacyWidget', 'calls', 1, 1, 3);
+    rel.run('caller', 'current', 'CurrentWidget', 'calls', 1, 3, null);
+    db.close();
+
+    try {
+      writeGraphManifest(tmpDir, 4);
+
+      const result = generateRepoMap({
+        dbPath,
+        manifestEpoch: 2,
+        tokenBudget: 5000,
+      });
+
+      expect(result.text).toContain('LegacyWidget');
+      expect(result.text).not.toContain('CurrentWidget');
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
 

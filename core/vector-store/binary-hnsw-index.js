@@ -27,7 +27,7 @@
  */
 
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, statSync } from 'fs';
 import path from 'path';
 import { BINARY_HNSW_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
 import {
@@ -37,6 +37,7 @@ import {
 } from '../infrastructure/quantization.js';
 import { wasmHammingDistance as hammingDistance } from '../infrastructure/simd-distance.js';
 import { TypedMinHeap, TypedMaxHeap, VisitedList } from './binary-heap.js';
+import { loadBitmap, isSet } from '../infrastructure/tombstone-bitmap-reader.js';
 
 // Current quantization pipeline version. Bump when the encoding pipeline changes
 // (centroid subtraction, rotation, quantization scheme). Indexes built with a
@@ -60,6 +61,7 @@ export class BinaryHNSWIndex {
     this.maxElements = options.maxElements || BINARY_HNSW_CONFIG.maxElements;
 
     this.indexPath = options.indexPath || DB_PATHS.binaryHnswIndex;
+    this.stalePath = options.stalePath || `${this.indexPath}.stale.bin`;
 
     // Storage
     this.vectors = [];           // Array of { id, binary: Uint8Array, metadata }
@@ -81,12 +83,15 @@ export class BinaryHNSWIndex {
     this.centroid = null;       // Float32Array — dataset centroid
     this.signVector = null;     // Float32Array — random ±1 for WHT rotation
     this.useAsymmetric = false; // Enabled after calibration
+    this._staleBitmapCache = null;
+    this._cleanBuild = false;
   }
 
   /** Reset to empty state for a fresh build (skips loading from disk). */
   resetForBuild() {
     this.vectors = [];
     this.idToIndex = new Map();
+    this.int8Vectors.clear();
     this.graph = [];
     this.entryPoint = -1;
     this.maxLevel = 0;
@@ -94,6 +99,12 @@ export class BinaryHNSWIndex {
     this.signVector = null;
     this.useAsymmetric = false;
     this.initialized = true;
+    this._staleBitmapCache = null;
+    this._cleanBuild = true;
+  }
+
+  _stalePathForIndex(indexPath = this.indexPath) {
+    return indexPath === this.indexPath ? this.stalePath : `${indexPath}.stale.bin`;
   }
 
   /**
@@ -422,6 +433,7 @@ export class BinaryHNSWIndex {
     await this.init();
 
     const start = performance.now();
+    const staleBitmap = this._loadStaleBitmap();
 
     if (this.vectors.length === 0) {
       return { results: [], latency_us: 0, k, total: 0 };
@@ -449,12 +461,12 @@ export class BinaryHNSWIndex {
     }
 
     // Adaptive ef: easy queries get a smaller budget, hard queries get more
-    let ef = Math.max(k, this.efSearch);
+    let ef = Math.max(this._oversampleTarget(k, staleBitmap), this.efSearch);
     const greedyDist = hammingDistance(this.vectors[currentNode].binary, queryBinary);
     const maxDist = this.dimension * 8;
     const greedyQuality = 1 - (greedyDist / maxDist);
     if (greedyQuality > 0.85) {
-      ef = Math.max(k, Math.round(ef * 0.6));
+      ef = Math.max(this._oversampleTarget(k, staleBitmap), Math.round(ef * 0.6));
     } else if (greedyQuality < 0.55) {
       ef = Math.round(ef * 1.5);
     }
@@ -462,6 +474,15 @@ export class BinaryHNSWIndex {
     // Level 0 search — pure Hamming, no asymmetric in the traversal loop
     const searchResult = this.searchLayerQuery(currentNode, queryBinary, ef, 0);
     let candidates = searchResult.candidates;
+
+    candidates = candidates.filter(c => !this._isIndexStale(c.idx, staleBitmap));
+    if (candidates.length < k && ef < this.vectors.length) {
+      const retryEf = Math.min(this.vectors.length, ef * 2);
+      if (retryEf > ef) {
+        const retry = this.searchLayerQuery(currentNode, queryBinary, retryEf, 0);
+        candidates = retry.candidates.filter(c => !this._isIndexStale(c.idx, staleBitmap));
+      }
+    }
 
     // Return top k
     const results = candidates.slice(0, k).map(c => ({
@@ -478,11 +499,67 @@ export class BinaryHNSWIndex {
       latency_us: Math.round(latency * 1000),
       latency_ms: latency.toFixed(3),
       k,
-      total: this.vectors.length,
+      total: this._liveVectorCount(staleBitmap),
       visitedNodes: searchResult.visitedCount,
       adaptiveEf: ef,
       useAsymmetric: this.useAsymmetric,
     };
+  }
+
+  _loadStaleBitmap() {
+    if (!existsSync(this.stalePath)) {
+      this._staleBitmapCache = null;
+      return null;
+    }
+    let stat;
+    try {
+      stat = statSync(this.stalePath, { bigint: true });
+    } catch {
+      this._staleBitmapCache = null;
+      return null;
+    }
+    const statKey = `${stat.mtimeNs}:${stat.ctimeNs}:${stat.size}`;
+
+    if (
+      this._staleBitmapCache
+      && this._staleBitmapCache.statKey === statKey
+    ) {
+      return this._staleBitmapCache.bitmap;
+    }
+
+    try {
+      const bitmap = loadBitmap(this.stalePath);
+      this._staleBitmapCache = { statKey, bitmap };
+      return bitmap;
+    } catch (err) {
+      if (process.env.SWEET_DEBUG) {
+        console.debug(`[BinaryHNSW] ignoring unreadable stale bitmap ${this.stalePath}: ${err.message}`);
+      }
+      this._staleBitmapCache = { statKey, bitmap: null };
+      return null;
+    }
+  }
+
+  _isIndexStale(idx, bitmap) {
+    return bitmap ? isSet(bitmap, idx) : false;
+  }
+
+  _liveVectorCount(bitmap) {
+    if (!bitmap) return this.vectors.length;
+    let live = 0;
+    for (let i = 0; i < this.vectors.length; i++) {
+      if (!this._isIndexStale(i, bitmap)) live++;
+    }
+    return live;
+  }
+
+  _oversampleTarget(k, bitmap) {
+    if (!bitmap) return k;
+    const live = this._liveVectorCount(bitmap);
+    const tombstoned = Math.max(0, this.vectors.length - live);
+    if (tombstoned === 0) return k;
+    const s = Math.max(0, Math.min(tombstoned / Math.max(1, this.vectors.length), 0.5));
+    return Math.min(Math.max(k + 64, Math.ceil(k / Math.max(0.05, 1 - s) * 2)), k * 20);
   }
 
   /**
@@ -633,6 +710,11 @@ export class BinaryHNSWIndex {
    * Get int8 vector for rescoring
    */
   getInt8Vector(id) {
+    const idx = this.idToIndex.get(id);
+    if (idx === undefined) return undefined;
+    if (this._isIndexStale(idx, this._loadStaleBitmap())) {
+      return undefined;
+    }
     return this.int8Vectors.get(id);
   }
 
@@ -675,23 +757,38 @@ export class BinaryHNSWIndex {
     const graphPath = indexPath.replace('.idx', '.graph.json');
     await fs.writeFile(graphPath, JSON.stringify(this.graph));
 
-    // Save int8 vectors if any
+    // Save int8 vectors if any; remove a stale optional sidecar when a clean
+    // replacement no longer has stage-2 vectors for this artifact.
+    const int8Path = indexPath.replace('.idx', '.int8.json');
+    const int8Data = {};
     if (this.int8Vectors.size > 0) {
-      const int8Data = {};
+      const liveIds = new Set(this.vectors.map(v => v.id));
       for (const [id, vec] of this.int8Vectors) {
+        if (!liveIds.has(id)) continue;
         int8Data[id] = Array.from(vec);
       }
-      const int8Path = indexPath.replace('.idx', '.int8.json');
+    }
+    if (Object.keys(int8Data).length > 0) {
       await fs.writeFile(int8Path, JSON.stringify(int8Data));
+    } else {
+      await fs.rm(int8Path, { force: true });
     }
 
     // Save asymmetric calibration data (centroid + rotation signs)
+    const calibPath = indexPath.replace('.idx', '.calibration.json');
     if (this.useAsymmetric && this.centroid && this.signVector) {
-      const calibPath = indexPath.replace('.idx', '.calibration.json');
       await fs.writeFile(calibPath, JSON.stringify({
         centroid: Array.from(this.centroid),
         signVector: Array.from(this.signVector),
       }));
+    } else {
+      await fs.rm(calibPath, { force: true });
+    }
+
+    if (this._cleanBuild) {
+      await fs.rm(this._stalePathForIndex(indexPath), { force: true });
+      this._staleBitmapCache = null;
+      this._cleanBuild = false;
     }
 
     console.log(`BinaryHNSW: Saved ${this.vectors.length} vectors to ${indexPath} (asymmetric=${this.useAsymmetric})`);
@@ -730,6 +827,8 @@ export class BinaryHNSWIndex {
     this.maxLevel = meta.maxLevel;
     this.entryPoint = meta.entryPoint;
     this.useAsymmetric = meta.useAsymmetric || false;
+    this.centroid = null;
+    this.signVector = null;
 
     // Load vectors
     const vectorsData = JSON.parse(await fs.readFile(vectorsPath, 'utf-8'));
@@ -749,9 +848,9 @@ export class BinaryHNSWIndex {
     this.graph = JSON.parse(await fs.readFile(graphPath, 'utf-8'));
 
     // Load int8 vectors if available
+    this.int8Vectors.clear();
     if (existsSync(int8Path)) {
       const int8Data = JSON.parse(await fs.readFile(int8Path, 'utf-8'));
-      this.int8Vectors.clear();
       for (const [id, vec] of Object.entries(int8Data)) {
         this.int8Vectors.set(id, new Int8Array(vec));
       }
@@ -808,6 +907,9 @@ export class BinaryHNSWIndex {
     this.graph = [];
     this.entryPoint = -1;
     this.maxLevel = 0;
+    await fs.rm(this.stalePath, { force: true });
+    this._staleBitmapCache = null;
+    this._cleanBuild = false;
   }
 }
 
@@ -818,7 +920,7 @@ export class BinaryHNSWIndex {
 export async function createBinaryHNSWIndex(options = {}) {
   const index = new BinaryHNSWIndex(options);
 
-  if (options.load !== false && existsSync(options.indexPath || DB_PATHS.binaryHnswIndex)) {
+  if (options.load !== false && binaryHnswArtifactsExist(options.indexPath || DB_PATHS.binaryHnswIndex)) {
     try {
       await index.load(options.indexPath);
     } catch (err) {
@@ -830,6 +932,12 @@ export async function createBinaryHNSWIndex(options = {}) {
   }
 
   return index;
+}
+
+function binaryHnswArtifactsExist(indexPath) {
+  return existsSync(indexPath.replace('.idx', '.meta.json'))
+    && existsSync(indexPath.replace('.idx', '.vectors.json'))
+    && existsSync(indexPath.replace('.idx', '.graph.json'));
 }
 
 // =============================================================================

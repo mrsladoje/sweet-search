@@ -5,7 +5,10 @@
  * and round-trip drain.
  */
 
-import { describe, it, expect } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, realpathSync, symlinkSync } from 'node:fs';
+import path from 'node:path';
+import { tmpdir } from 'node:os';
+import { afterEach, describe, it, expect } from 'vitest';
 import {
   DirtySet,
   canonicaliseInsideRoot,
@@ -72,17 +75,49 @@ describe('DirtySet / overflow policy', () => {
 });
 
 describe('canonicaliseInsideRoot', () => {
+  const tempRoots = [];
+
+  function makeRoot() {
+    const base = realpathSync.native(tmpdir());
+    const root = mkdtempSync(path.join(base, 'ss-dirty-set-'));
+    tempRoots.push(root);
+    return root;
+  }
+
+  afterEach(() => {
+    while (tempRoots.length > 0) {
+      rmSync(tempRoots.pop(), { recursive: true, force: true });
+    }
+  });
+
   it('returns an absolute project-anchored path', () => {
-    const out = canonicaliseInsideRoot('/projects/repo', 'src/a.js');
-    expect(out).toBe('/projects/repo/src/a.js');
+    const root = makeRoot();
+    const out = canonicaliseInsideRoot(root, 'src/a.js');
+    expect(out).toBe(path.join(realpathSync.native(root), 'src/a.js').replace(/\\/g, '/'));
   });
 
   it('rejects paths that escape the root', () => {
-    expect(canonicaliseInsideRoot('/projects/repo', '../etc/passwd')).toBeNull();
-    expect(canonicaliseInsideRoot('/projects/repo', '/etc/passwd')).toBeNull();
+    const root = makeRoot();
+    expect(canonicaliseInsideRoot(root, '../etc/passwd')).toBeNull();
+    expect(canonicaliseInsideRoot(root, '/etc/passwd')).toBeNull();
   });
 
   it('returns the root itself when input is `.`', () => {
-    expect(canonicaliseInsideRoot('/projects/repo', '.')).toBe('/projects/repo');
+    const root = makeRoot();
+    expect(canonicaliseInsideRoot(root, '.')).toBe(realpathSync.native(root).replace(/\\/g, '/'));
+  });
+
+  it('accepts absolute paths that reach the same root through realpath spelling', () => {
+    const base = makeRoot();
+    const realRoot = path.join(base, 'real');
+    const linkRoot = path.join(base, 'link');
+    mkdirSync(realRoot);
+    symlinkSync(realRoot, linkRoot, 'dir');
+
+    const fromLink = canonicaliseInsideRoot(linkRoot, 'src/a.js');
+    const fromReal = canonicaliseInsideRoot(linkRoot, path.join(realRoot, 'src/a.js'));
+
+    expect(fromLink).toBe(path.join(realRoot, 'src/a.js').replace(/\\/g, '/'));
+    expect(fromReal).toBe(fromLink);
   });
 });

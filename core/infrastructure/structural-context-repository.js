@@ -8,69 +8,31 @@ import { rankStructuralCandidates } from './structural-candidate-ranker.js';
 import { findAssignedMemberDefinitions, findSameFileDefinition } from './structural-source-definitions.js';
 import { shouldTrustQualifiedResolution } from './structural-qualified-resolution.js';
 import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } from './structural-graph-signals.js';
-const ACTIVE = 'stale_since IS NULL';
-
-function clampLimit(value, fallback, max) {
-  const n = Number.parseInt(value ?? fallback, 10);
-  if (!Number.isFinite(n) || n <= 0) return fallback;
-  return Math.max(1, Math.min(max, n));
-}
-
-function lowerCamel(name) {
-  if (!name) return '';
-  return name.charAt(0).toLowerCase() + name.slice(1);
-}
-
-function rowToEntity(row, prefix = '') {
-  if (!row) return null;
-  return {
-    id: row[`${prefix}id`],
-    name: row[`${prefix}name`],
-    type: row[`${prefix}type`],
-    filePath: row[`${prefix}file_path`],
-    startLine: row[`${prefix}start_line`],
-    endLine: row[`${prefix}end_line`],
-    signature: row[`${prefix}signature`] || '',
-    summary: row[`${prefix}summary`] || '',
-    parentClass: row[`${prefix}parent_class`] || null,
-    package: row[`${prefix}package`] || null,
-  };
-}
-
-function callTargetAliases(targetName) {
-  const raw = String(targetName || '').trim();
-  if (!raw) return [];
-  const out = [raw];
-  const bound = raw.match(/^(.+)\.(bind|call|apply)$/);
-  if (bound) out.push(bound[1]);
-  if (raw.includes('::')) out.push(raw.split('::').filter(Boolean).pop());
-  return [...new Set(out)];
-}
-
-function qualifiedTargetName(targetName) {
-  const base = String(targetName || '').trim().replace(/\.(bind|call|apply)$/, '').replace(/::/g, '.');
-  if (!base.includes('.')) return null;
-  const parts = base.split('.').filter(Boolean);
-  return parts.length > 1 ? parts[parts.length - 1] : null;
-}
-
-function isTestPath(filePath = '') {
-  return /(^|\/)(__tests__|tests?|spec|fixtures|examples?|docs?)(\/|$)|[-_.](test|spec)\.[cm]?[jt]sx?$|_test\.go$/.test(filePath);
-}
-
-function placeholders(values) {
-  return values.map(() => '?').join(',');
-}
+import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
+import { callTargetAliases, clampLimit, isTestPath, lowerCamel, placeholders, qualifiedTargetName, rowToEntity } from './structural-context-utils.js';
 
 export class StructuralContextRepository {
   constructor(dbPath, opts = {}) {
-    this.dbPath = dbPath;
+    this._readerVisibility = new CodeGraphReaderVisibility(dbPath, opts);
+    this.dbPath = this._readerVisibility.dbPath;
     this.projectRoot = opts.projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
     this.db = null;
     this.fileCache = new Map();
   }
 
+  _syncAdjacentManifest() {
+    const changed = this._readerVisibility.sync(() => this.close());
+    this.dbPath = this._readerVisibility.dbPath;
+    return changed;
+  }
+
+  refreshManifestEpoch() {
+    this._syncAdjacentManifest();
+    return this._readerVisibility.manifestEpoch;
+  }
+
   _open() {
+    this._syncAdjacentManifest();
     if (!this.db) {
       if (!existsSync(this.dbPath)) return null;
       this.db = new Database(this.dbPath, { readonly: true });
@@ -84,36 +46,55 @@ export class StructuralContextRepository {
       this.db.close();
       this.db = null;
     }
+    this._readerVisibility.reset();
   }
+
+  _entityFromRow(row, prefix = '') {
+    const entity = rowToEntity(row, prefix);
+    const db = this.db;
+    if (entity?.summary && db && !this._readerVisibility.summaryVisible(db, entity.id)) {
+      return { ...entity, summary: '' };
+    }
+    return entity;
+  }
+
+  _entitySql(db, alias = '') { return this._readerVisibility.entitySql(db, alias); }
+  _entityParams(db) { return this._readerVisibility.entityParams(db); }
+  _relationshipSql(db, alias = 'r') { return this._readerVisibility.relationshipSql(db, alias); }
+  _relationshipParams(db) { return this._readerVisibility.relationshipParams(db); }
 
   _resolveUnresolvedTarget(targetName) {
     const db = this._open();
     const names = callTargetAliases(targetName);
     if (!db || names.length === 0) return null;
+    const entitySql = this._entitySql(db);
+    const entityParams = this._entityParams(db);
     const rows = db.prepare(`
       SELECT id, name, type, file_path, start_line, end_line, signature,
              summary, parent_class, package
       FROM entities
-      WHERE ${ACTIVE}
+      WHERE ${entitySql}
         AND (${names.map(() => 'name = ?').join(' OR ')})
       ORDER BY
         CASE WHEN file_path LIKE '%/test/%' OR file_path LIKE 'test/%' OR file_path LIKE 'tests/%' THEN 1 ELSE 0 END,
         length(name),
         (end_line - start_line) ASC
       LIMIT 1
-    `).all(...names);
-    return rowToEntity(rows[0]);
+    `).all(...entityParams, ...names);
+    return this._entityFromRow(rows[0]);
   }
 
   _resolveQualifiedAlternative(targetName, excludeId) {
     const db = this._open();
     const name = qualifiedTargetName(targetName);
     if (!db || !name || !excludeId) return null;
+    const entitySql = this._entitySql(db);
+    const entityParams = this._entityParams(db);
     const rows = db.prepare(`
       SELECT id, name, type, file_path, start_line, end_line, signature,
              summary, parent_class, package
       FROM entities
-      WHERE ${ACTIVE}
+      WHERE ${entitySql}
         AND lower(name) = lower(?)
         AND id <> ?
       ORDER BY
@@ -121,20 +102,21 @@ export class StructuralContextRepository {
         CASE type WHEN 'method' THEN 0 WHEN 'function' THEN 1 ELSE 2 END,
         (end_line - start_line) ASC
       LIMIT 8
-    `).all(name, excludeId);
-    return rows.map(row => rowToEntity(row))
+    `).all(...entityParams, name, excludeId);
+    return rows.map(row => this._entityFromRow(row))
       .sort((a, b) => Number(isTestPath(a.filePath)) - Number(isTestPath(b.filePath)))[0] || null;
   }
 
   _findAssignedMemberDefinitions(symbol) {
     const db = this._open();
     if (!db || !symbol) return [];
+    const entitySql = this._entitySql(db);
     const rows = db.prepare(`
       SELECT DISTINCT file_path FROM entities
-      WHERE ${ACTIVE} AND file_path IS NOT NULL
+      WHERE ${entitySql} AND file_path IS NOT NULL
       ORDER BY CASE WHEN file_path LIKE '%/test/%' OR file_path LIKE 'test/%' OR file_path LIKE 'tests/%' OR file_path LIKE '%/examples/%' OR file_path LIKE 'examples/%' THEN 1 ELSE 0 END, file_path
       LIMIT 120
-    `).all();
+    `).all(...this._entityParams(db));
     return findAssignedMemberDefinitions({
       name: symbol,
       files: rows.map(r => r.file_path),
@@ -155,6 +137,8 @@ export class StructuralContextRepository {
       : null;
     const nameWhere = names.map(() => 'lower(name) = lower(?)').join(' OR ');
     const params = [...names];
+    const entitySql = this._entitySql(db);
+    const entityParams = this._entityParams(db);
     let fileWhere = '';
     if (filePath) {
       fileWhere = 'AND (file_path = ? OR file_path LIKE ?)';
@@ -165,7 +149,7 @@ export class StructuralContextRepository {
       SELECT id, name, type, file_path, start_line, end_line, signature,
              summary, parent_class, package
       FROM entities
-      WHERE ${ACTIVE}
+      WHERE ${entitySql}
         AND (${nameWhere})
         ${fileWhere}
       ORDER BY
@@ -183,10 +167,10 @@ export class StructuralContextRepository {
         END,
         (end_line - start_line) ASC
       LIMIT ?
-    `).all(...params, raw, raw, limit);
+    `).all(...entityParams, ...params, raw, raw, limit);
     if (exactRows.length) {
       const members = this._findAssignedMemberDefinitions(raw);
-      const candidates = [...members, ...exactRows.map(row => rowToEntity(row))].filter(Boolean);
+      const candidates = [...members, ...exactRows.map(row => this._entityFromRow(row))].filter(Boolean);
       return rankStructuralCandidates(candidates, { queryHint: opts.queryHint, readFileRange: this.readFileRange.bind(this) });
     }
 
@@ -202,14 +186,14 @@ export class StructuralContextRepository {
       SELECT id, name, type, file_path, start_line, end_line, signature,
              summary, parent_class, package
       FROM entities
-      WHERE ${ACTIVE}
+      WHERE ${entitySql}
         AND lower(name) LIKE lower(?)
         ${likeFileWhere}
       ORDER BY
         CASE WHEN file_path LIKE '%/test/%' OR file_path LIKE 'test/%' OR file_path LIKE 'tests/%' THEN 1 ELSE 0 END,
         length(name), (end_line - start_line) ASC
       LIMIT ?
-    `).all(...likeParams, limit).map(row => rowToEntity(row));
+    `).all(...entityParams, ...likeParams, limit).map(row => this._entityFromRow(row));
     return rankStructuralCandidates([...members, ...likeRows].filter(Boolean), { queryHint: opts.queryHint, readFileRange: this.readFileRange.bind(this) });
   }
 
@@ -225,6 +209,8 @@ export class StructuralContextRepository {
       `%.${target.name}`,
       `%::${target.name}`,
     ];
+    const entitySql = this._entitySql(db, 'e');
+    const relationshipSql = this._relationshipSql(db, 'r');
     const rows = db.prepare(`
       SELECT DISTINCT
         e.id, e.name, e.type, e.file_path, e.start_line, e.end_line,
@@ -233,7 +219,8 @@ export class StructuralContextRepository {
       FROM relationships r
       JOIN entities e ON e.id = r.source_id
       WHERE r.type IN (${placeholders(types)})
-        AND e.${ACTIVE}
+        AND ${entitySql}
+        AND ${relationshipSql}
         AND e.id <> ?
         AND (
           r.target_id = ?
@@ -245,9 +232,9 @@ export class StructuralContextRepository {
         )
       ORDER BY r.weight DESC, e.file_path, r.context_line
       LIMIT ?
-    `).all(...types, target.id, target.id, ...patterns, limit);
+    `).all(...types, ...this._entityParams(db), ...this._relationshipParams(db), target.id, target.id, ...patterns, limit);
     return rows.map(row => ({
-      ...rowToEntity(row),
+      ...this._entityFromRow(row),
       relationship: row.rel_type,
       contextLine: row.context_line || null,
       targetName: row.target_name || null,
@@ -258,32 +245,30 @@ export class StructuralContextRepository {
   getAliasCallers(target, opts = {}) {
     const db = this._open();
     if (!db || !target?.id) return [];
-    return findAliasCallers({
-      db,
-      target,
-      readFileRange: this.readFileRange.bind(this),
-      limit: clampLimit(opts.limit, 40, 200),
-    });
+    return findAliasCallers({ db, target, readFileRange: this.readFileRange.bind(this), limit: clampLimit(opts.limit, 40, 200), entityVisibilitySql: this._entitySql(db), entityVisibilityParams: this._entityParams(db), mapEntity: row => this._entityFromRow(row) });
   }
 
   getCallees(target, opts = {}) {
     const db = this._open();
     if (!db || !target?.id) return [];
     const limit = clampLimit(opts.limit, 120, 500);
+    const entitySql = this._entitySql(db, 'e');
+    const relationshipSql = this._relationshipSql(db, 'r');
     const rows = db.prepare(`
       SELECT
         e.id, e.name, e.type, e.file_path, e.start_line, e.end_line,
         e.signature, e.summary, e.parent_class, e.package,
         r.context_line, r.target_name, r.weight, r.type as rel_type
       FROM relationships r
-      LEFT JOIN entities e ON e.id = r.target_id AND e.${ACTIVE}
+      LEFT JOIN entities e ON e.id = r.target_id AND ${entitySql}
       WHERE r.source_id = ?
         AND r.type = 'calls'
+        AND ${relationshipSql}
       ORDER BY r.context_line, r.weight DESC
       LIMIT ?
-    `).all(target.id, limit);
+    `).all(...this._entityParams(db), target.id, ...this._relationshipParams(db), limit);
     return rows.map((row, idx) => {
-      let resolved = row.id ? rowToEntity(row) : (this._resolveUnresolvedTarget(row.target_name) || {
+      let resolved = row.id ? this._entityFromRow(row) : (this._resolveUnresolvedTarget(row.target_name) || {
         id: `external:${idx}:${row.target_name || 'unknown'}`,
         name: row.target_name || 'external',
         type: 'external',
@@ -323,6 +308,8 @@ export class StructuralContextRepository {
     const nameParams = includeNamePattern
       ? [target.name, `${lowerCamel(target.name)}.%`, `%.${target.name}`, `%::${target.name}`]
       : [];
+    const entitySql = this._entitySql(db, 'e');
+    const relationshipSql = this._relationshipSql(db, 'r');
 
     const rows = db.prepare(`
       SELECT DISTINCT
@@ -331,15 +318,16 @@ export class StructuralContextRepository {
         r.target_id, r.target_name, r.context_line, r.weight, r.type as rel_type
       FROM relationships r
       JOIN entities e ON e.id = r.source_id
-      WHERE e.${ACTIVE}
+      WHERE ${entitySql}
+        AND ${relationshipSql}
         AND r.type IN (${placeholders(types)})
         AND (r.target_id IN (${placeholders(ids)}) ${nameClause})
       ORDER BY r.weight DESC, e.file_path, r.context_line
       LIMIT ?
-    `).all(...types, ...ids, ...nameParams, limit);
+    `).all(...this._entityParams(db), ...this._relationshipParams(db), ...types, ...ids, ...nameParams, limit);
 
     return rows.map(row => ({
-      ...rowToEntity(row),
+      ...this._entityFromRow(row),
       relationship: row.rel_type,
       targetId: row.target_id || null,
       targetName: row.target_name || null,
@@ -356,6 +344,8 @@ export class StructuralContextRepository {
     const types = opts.types?.length
       ? opts.types
       : ['calls', 'uses', 'implements', 'extends', 'overrides'];
+    const entitySql = this._entitySql(db, 'e');
+    const relationshipSql = this._relationshipSql(db, 'r');
 
     const rows = db.prepare(`
       SELECT
@@ -363,15 +353,16 @@ export class StructuralContextRepository {
         e.id, e.name, e.type, e.file_path, e.start_line, e.end_line,
         e.signature, e.summary, e.parent_class, e.package
       FROM relationships r
-      LEFT JOIN entities e ON e.id = r.target_id AND e.${ACTIVE}
+      LEFT JOIN entities e ON e.id = r.target_id AND ${entitySql}
       WHERE r.source_id IN (${placeholders(ids)})
         AND r.type IN (${placeholders(types)})
+        AND ${relationshipSql}
       ORDER BY r.weight DESC, r.source_id, r.context_line
       LIMIT ?
-    `).all(...ids, ...types, limit);
+    `).all(...this._entityParams(db), ...ids, ...types, ...this._relationshipParams(db), limit);
 
     return rows.map((row, idx) => {
-      let resolved = row.id ? rowToEntity(row) : (this._resolveUnresolvedTarget(row.target_name) || {
+      let resolved = row.id ? this._entityFromRow(row) : (this._resolveUnresolvedTarget(row.target_name) || {
         id: `external:${row.source_id}:${idx}:${row.target_name || 'unknown'}`,
         name: row.target_name || 'external',
         type: 'external',
@@ -402,13 +393,16 @@ export class StructuralContextRepository {
     const ids = [...new Set((entityIds || []).filter(id => id && !String(id).startsWith('external:')))];
     const out = new Map(ids.map(id => [id, { fanIn: 0, fanOut: 0 }]));
     if (!db || ids.length === 0) return out;
+    const relationshipSql = this._relationshipSql(db, '');
+    const relationshipParams = this._relationshipParams(db);
 
     const inRows = db.prepare(`
       SELECT target_id as id, COUNT(DISTINCT source_id) as n
       FROM relationships
       WHERE target_id IN (${placeholders(ids)})
+        AND ${relationshipSql}
       GROUP BY target_id
-    `).all(...ids);
+    `).all(...ids, ...relationshipParams);
     for (const row of inRows) {
       if (out.has(row.id)) out.get(row.id).fanIn = row.n || 0;
     }
@@ -417,8 +411,9 @@ export class StructuralContextRepository {
       SELECT source_id as id, COUNT(DISTINCT COALESCE(target_id, target_name)) as n
       FROM relationships
       WHERE source_id IN (${placeholders(ids)})
+        AND ${relationshipSql}
       GROUP BY source_id
-    `).all(...ids);
+    `).all(...ids, ...relationshipParams);
     for (const row of outRows) {
       if (out.has(row.id)) out.get(row.id).fanOut = row.n || 0;
     }
@@ -427,17 +422,20 @@ export class StructuralContextRepository {
 
   /** Precomputed PageRank values for a batch of entity IDs (0 for missing). */
   getPageRank(entityIds) {
-    return fetchPageRank(this._open(), entityIds);
+    const db = this._open();
+    return fetchPageRank(db, entityIds, { entityVisibilitySql: db ? this._entitySql(db) : undefined, entityVisibilityParams: db ? this._entityParams(db) : undefined });
   }
 
   /** One-hop reverse edges (callers) for Forward Push backward subgraph. */
   getFrontierBackwardEdges(frontierIds, opts = {}) {
-    return fetchFrontierBackwardEdges(this._open(), frontierIds, opts);
+    const db = this._open();
+    return fetchFrontierBackwardEdges(db, frontierIds, { ...opts, relationshipVisibilitySql: db ? this._relationshipSql(db, '') : undefined, relationshipVisibilityParams: db ? this._relationshipParams(db) : undefined });
   }
 
   /** One-hop forward edges (callees) for Forward Push forward subgraph. */
   getFrontierForwardEdges(frontierIds, opts = {}) {
-    return fetchFrontierForwardEdges(this._open(), frontierIds, opts);
+    const db = this._open();
+    return fetchFrontierForwardEdges(db, frontierIds, { ...opts, relationshipVisibilitySql: db ? this._relationshipSql(db, '') : undefined, relationshipVisibilityParams: db ? this._relationshipParams(db) : undefined });
   }
 
   findSameFileDefinition(name, filePath) { return findSameFileDefinition({ name, filePath, readFileRange: this.readFileRange.bind(this) }); }
@@ -445,7 +443,8 @@ export class StructuralContextRepository {
   getEntityCount() {
     const db = this._open();
     if (!db) return 0;
-    return db.prepare(`SELECT COUNT(*) as n FROM entities WHERE ${ACTIVE}`).get()?.n || 0;
+    return db.prepare(`SELECT COUNT(*) as n FROM entities WHERE ${this._entitySql(db)}`)
+      .get(...this._entityParams(db))?.n || 0;
   }
 
   readFileRange(filePath, startLine, endLine) {

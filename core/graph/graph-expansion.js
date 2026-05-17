@@ -30,6 +30,66 @@ function _assertInClauseSize(n, label) {
   }
 }
 
+const _VISIBILITY_CACHE = new WeakMap();
+
+function _sqlAliasPrefix(alias = '') {
+  if (!alias) return '';
+  const normalized = String(alias).endsWith('.') ? String(alias).slice(0, -1) : String(alias);
+  return normalized ? `${normalized}.` : '';
+}
+
+function _visibilityInfo(db) {
+  let cached = _VISIBILITY_CACHE.get(db);
+  if (cached) return cached;
+  const hasColumns = (table, columns) => {
+    try {
+      const names = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
+      return columns.every((c) => names.has(c));
+    } catch {
+      return false;
+    }
+  };
+  cached = {
+    entities: hasColumns('entities', ['epoch_written', 'epoch_retired']),
+    relationships: hasColumns('relationships', ['epoch_written', 'epoch_retired']),
+  };
+  _VISIBILITY_CACHE.set(db, cached);
+  return cached;
+}
+
+function _entityVisibility(db, manifestEpoch, alias = '', options = {}) {
+  const prefix = _sqlAliasPrefix(alias);
+  let sql;
+  if (!_visibilityInfo(db).entities) {
+    sql = `${prefix}stale_since IS NULL`;
+  } else if (Number.isInteger(manifestEpoch)) {
+    sql = `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
+      AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)
+      AND (${prefix}stale_since IS NULL OR (${prefix}epoch_retired IS NOT NULL AND ${prefix}epoch_retired > ?))`;
+  } else {
+    sql = `${prefix}stale_since IS NULL AND ${prefix}epoch_retired IS NULL`;
+  }
+  return {
+    sql: options.allowNullJoined ? `(${sql} OR ${prefix}id IS NULL)` : sql,
+    params: _visibilityInfo(db).entities && Number.isInteger(manifestEpoch)
+      ? [manifestEpoch, manifestEpoch, manifestEpoch]
+      : [],
+  };
+}
+
+function _relationshipVisibility(db, manifestEpoch, alias = '') {
+  const prefix = _sqlAliasPrefix(alias);
+  if (!_visibilityInfo(db).relationships) return { sql: '1=1', params: [] };
+  if (Number.isInteger(manifestEpoch)) {
+    return {
+      sql: `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
+        AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)`,
+      params: [manifestEpoch, manifestEpoch],
+    };
+  }
+  return { sql: `${prefix}epoch_retired IS NULL`, params: [] };
+}
+
 // Per-stage profiling hooks. No-op unless `globalThis.__stageTimings` is set
 // by scripts/profile-search-stages.mjs (same convention as search-hybrid.js
 // and search-postprocess.js).
@@ -234,6 +294,7 @@ export function expandResults(db, results, options = {}) {
     codebaseDb = null,
     readFileLines = null,
     format = null,
+    manifestEpoch = null,
   } = options;
   // F1 envelope cap (2026-05-07): drop graph-expanded entities whose line span
   // exceeds maxEnvelopeLines. The taxonomy diagnosed mega-class envelopes
@@ -266,13 +327,13 @@ export function expandResults(db, results, options = {}) {
 
   // Collect entity IDs from results
   const __t_seeds = __ptStart();
-  const seedIds = collectSeedIds(db, results);
+  const seedIds = collectSeedIds(db, results, { manifestEpoch });
   __ptEnd('expand:collectSeedIds', __t_seeds);
   if (seedIds.size === 0) return results;
 
   // 1-hop expansion: find neighbors via forward + reverse edges
   const __t_hop1 = __ptStart();
-  const expanded = expandOneHop(db, seedIds, edgeTypes);
+  const expanded = expandOneHop(db, seedIds, edgeTypes, { manifestEpoch });
   __ptEnd('expand:expandOneHop', __t_hop1);
 
   // 2-hop expansion (if requested)
@@ -286,6 +347,7 @@ export function expandResults(db, results, options = {}) {
         hnswIndex,
         semanticWeight: clampedSemanticWeight,
         cosineSimilarity,
+        manifestEpoch,
       });
     } else {
       expandSecondHop(db, seedIds, expanded, edgeTypes, {
@@ -293,6 +355,7 @@ export function expandResults(db, results, options = {}) {
         hnswIndex,
         semanticWeight: clampedSemanticWeight,
         cosineSimilarity,
+        manifestEpoch,
       });
     }
     __ptEnd(adaptiveHop2 ? 'expand:expandSecondHopAdaptive' : 'expand:expandSecondHop', __t_hop2);
@@ -303,7 +366,7 @@ export function expandResults(db, results, options = {}) {
   // Look up entity details for expanded IDs, respecting maxExpanded
   const expandedIds = [...expanded.keys()].slice(0, maxExpanded);
   const __t_lookup = __ptStart();
-  let expandedResults = lookupEntities(db, expandedIds, expanded);
+  let expandedResults = lookupEntities(db, expandedIds, expanded, { manifestEpoch });
   __ptEnd('expand:lookupEntities', __t_lookup);
 
   // F1 envelope cap: drop expanded entities exceeding line cap (agent format only).
@@ -356,7 +419,7 @@ export function expandResults(db, results, options = {}) {
  * @param {Array} results
  * @returns {Set<string>}
  */
-function collectSeedIds(db, results) {
+function collectSeedIds(db, results, options = {}) {
   const seedIds = new Set();
   const needsLineMatch = [];
 
@@ -389,12 +452,13 @@ function collectSeedIds(db, results) {
   // needsLineMatch results in one collectSeedIds call.
   let findStmt;
   try {
+    const entityVis = _entityVisibility(db, options.manifestEpoch);
     findStmt = db.prepare(`
       SELECT id FROM entities
       WHERE file_path = ?
         AND start_line <= ?
         AND end_line >= ?
-        AND stale_since IS NULL
+        AND ${entityVis.sql}
       ORDER BY (end_line - start_line) ASC
       LIMIT 1
     `);
@@ -434,7 +498,7 @@ function collectSeedIds(db, results) {
     // matches the JS `bestSize` selection in the prior implementation
     // exactly: same overlap predicate, same tie-breaker.
     try {
-      const row = findStmt.get(filePath, lineEnd, lineStart);
+      const row = findStmt.get(filePath, lineEnd, lineStart, ..._entityVisibility(db, options.manifestEpoch).params);
       if (row?.id) seedIds.add(row.id);
     } catch {
       // Skip this result; preserves prior behavior of silently dropping
@@ -453,7 +517,7 @@ function collectSeedIds(db, results) {
  * @param {Set<string>} edgeTypes
  * @returns {Map<string, {via: string, direction: string, score: number, hops?: number}>}
  */
-export function expandOneHop(db, seedIds, edgeTypes) {
+export function expandOneHop(db, seedIds, edgeTypes, options = {}) {
   const expanded = new Map();
   const seedArray = [...seedIds];
   _assertInClauseSize(seedArray.length, 'graph-expansion.expandOneHop.seeds');
@@ -462,10 +526,12 @@ export function expandOneHop(db, seedIds, edgeTypes) {
   // Forward edges: seed -> neighbor
   let forwardRels;
   try {
+    const relVis = _relationshipVisibility(db, options.manifestEpoch);
     forwardRels = db.prepare(`
       SELECT DISTINCT target_id, type FROM relationships
       WHERE source_id IN (${placeholders}) AND target_id IS NOT NULL
-    `).all(...seedArray);
+        AND ${relVis.sql}
+    `).all(...seedArray, ...relVis.params);
   } catch {
     forwardRels = [];
   }
@@ -473,10 +539,12 @@ export function expandOneHop(db, seedIds, edgeTypes) {
   // Reverse edges: neighbor -> seed
   let reverseRels;
   try {
+    const relVis = _relationshipVisibility(db, options.manifestEpoch);
     reverseRels = db.prepare(`
       SELECT DISTINCT source_id, type FROM relationships
       WHERE target_id IN (${placeholders}) AND source_id IS NOT NULL
-    `).all(...seedArray);
+        AND ${relVis.sql}
+    `).all(...seedArray, ...relVis.params);
   } catch {
     reverseRels = [];
   }
@@ -526,10 +594,12 @@ export function expandSecondHop(db, seedIds, expanded, edgeTypes, options = {}) 
 
   let hop2Forward;
   try {
+    const relVis = _relationshipVisibility(db, options.manifestEpoch);
     hop2Forward = db.prepare(`
       SELECT source_id, target_id, type FROM relationships
       WHERE source_id IN (${ph}) AND target_id IS NOT NULL
-    `).all(...hop1Ids);
+        AND ${relVis.sql}
+    `).all(...hop1Ids, ...relVis.params);
   } catch {
     return;
   }
@@ -626,11 +696,13 @@ export function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, op
   const typeList = [...edgeTypes].map(t => `'${t}'`).join(',');
   let degreeMap;
   try {
+    const relVis = _relationshipVisibility(db, options.manifestEpoch);
     const degRows = db.prepare(`
       SELECT source_id, COUNT(*) as deg FROM relationships
       WHERE source_id IN (${ph}) AND type IN (${typeList})
+        AND ${relVis.sql}
       GROUP BY source_id
-    `).all(...hop1Ids);
+    `).all(...hop1Ids, ...relVis.params);
     degreeMap = new Map(degRows.map(r => [r.source_id, r.deg]));
   } catch {
     degreeMap = new Map();
@@ -639,12 +711,15 @@ export function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, op
   // Query candidate 2-hop targets with source, weights, and line ranges
   let rawCandidates;
   try {
+    const entityVis = _entityVisibility(db, options.manifestEpoch, 'e');
+    const relVis = _relationshipVisibility(db, options.manifestEpoch, 'r');
     rawCandidates = db.prepare(`
       SELECT r.source_id, r.target_id, r.type, r.weight, e.file_path, e.start_line, e.end_line
       FROM relationships r
-      JOIN entities e ON e.id = r.target_id AND e.stale_since IS NULL
+      JOIN entities e ON e.id = r.target_id AND ${entityVis.sql}
       WHERE r.source_id IN (${ph}) AND r.target_id IS NOT NULL
-    `).all(...hop1Ids);
+        AND ${relVis.sql}
+    `).all(...entityVis.params, ...hop1Ids, ...relVis.params);
   } catch {
     return { added: 0, budgetUsed: 0, candidates: 0 };
   }
@@ -762,17 +837,18 @@ export function expandSecondHopAdaptive(db, seedIds, hop1Expanded, edgeTypes, op
  * @param {Map<string, Object>} expansionMeta
  * @returns {Array}
  */
-function lookupEntities(db, expandedIds, expansionMeta) {
+function lookupEntities(db, expandedIds, expansionMeta, options = {}) {
   if (expandedIds.length === 0) return [];
   _assertInClauseSize(expandedIds.length, 'graph-expansion.lookupEntities');
 
   const ph = expandedIds.map(() => '?').join(',');
   let entities;
   try {
+    const entityVis = _entityVisibility(db, options.manifestEpoch);
     entities = db.prepare(`
       SELECT id, file_path, type, name, signature, start_line, end_line
-      FROM entities WHERE id IN (${ph}) AND stale_since IS NULL
-    `).all(...expandedIds);
+      FROM entities WHERE id IN (${ph}) AND ${entityVis.sql}
+    `).all(...expandedIds, ...entityVis.params);
   } catch {
     return [];
   }
@@ -948,7 +1024,7 @@ export function applyTokenBudget(results, budget, options = {}) {
  * @param {string[]} entityIds
  * @returns {{ total: number, byType: Record<string, number> }}
  */
-export function getExpansionStats(db, entityIds) {
+export function getExpansionStats(db, entityIds, options = {}) {
   if (!entityIds || entityIds.length === 0) return { total: 0, byType: {} };
   // The query interpolates `${ph}` twice (source_id IN OR target_id IN) and the
   // `.all()` call binds entityIds twice in one prepared statement, so the
@@ -959,12 +1035,14 @@ export function getExpansionStats(db, entityIds) {
   const ph = entityIds.map(() => '?').join(',');
   let rels;
   try {
+    const relVis = _relationshipVisibility(db, options.manifestEpoch);
     rels = db.prepare(`
       SELECT type, COUNT(*) as count FROM relationships
       WHERE (source_id IN (${ph}) OR target_id IN (${ph}))
       AND source_id IS NOT NULL AND target_id IS NOT NULL
+      AND ${relVis.sql}
       GROUP BY type
-    `).all(...entityIds, ...entityIds);
+    `).all(...entityIds, ...entityIds, ...relVis.params);
   } catch {
     return { total: 0, byType: {} };
   }

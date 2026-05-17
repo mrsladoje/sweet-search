@@ -1157,13 +1157,21 @@ describe('Index Maintainer v3', () => {
 
   describe('performMerkleCheck', () => {
     /**
-     * Simulates merkle check logic with mtime/size fast-path.
+     * Simulates merkle check logic with mtime/size/inode fast-path.
      */
     function simulateMerkleCheck(allFiles, storedState) {
       const toIndex = [];
       const toRemove = [];
       const currentHashes = {};
       const fastPathStats = { hits: 0, misses: 0, contentReads: 0 };
+      const statTupleMatches = (stored, current) => (
+        stored?.size != null
+        && stored?.mtime_ns != null
+        && stored?.inode != null
+        && BigInt(stored.size) === BigInt(current.size)
+        && BigInt(stored.mtime_ns) === BigInt(current.mtime_ns)
+        && BigInt(stored.inode) === BigInt(current.inode)
+      );
 
       // Check current files
       for (const file of allFiles) {
@@ -1171,13 +1179,14 @@ describe('Index Maintainer v3', () => {
 
         // Simulated current file metadata
         const current = {
-          size: file.length * 100,
+          size: String(file.length * 100),
           mtime_ns: Date.now().toString(),
+          inode: String(file.length * 10),
         };
 
         // Fast-path check
         if (stored && typeof stored === 'object') {
-          if (stored.size === current.size && stored.mtime_ns === current.mtime_ns) {
+          if (statTupleMatches(stored, current)) {
             fastPathStats.hits++;
             currentHashes[file] = stored;
             continue;
@@ -1192,6 +1201,7 @@ describe('Index Maintainer v3', () => {
           hash: `hash_${file}`,
           size: current.size,
           mtime_ns: current.mtime_ns,
+          inode: current.inode,
         };
 
         currentHashes[file] = newHash;
@@ -1215,8 +1225,8 @@ describe('Index Maintainer v3', () => {
       const allFiles = ['src/A.java', 'src/B.java', 'src/NEW.java'];
       const storedState = {
         files: {
-          'src/A.java': { hash: 'hash_A', size: 1100, mtime_ns: Date.now().toString() },
-          'src/B.java': { hash: 'hash_B', size: 1100, mtime_ns: Date.now().toString() },
+          'src/A.java': { hash: 'hash_A', size: '1100', mtime_ns: Date.now().toString(), inode: '100' },
+          'src/B.java': { hash: 'hash_B', size: '1100', mtime_ns: Date.now().toString(), inode: '100' },
         },
       };
 
@@ -1239,13 +1249,25 @@ describe('Index Maintainer v3', () => {
         const toRemove = [];
         const currentHashes = {};
         const fastPathStats = { hits: 0, misses: 0, contentReads: 0 };
+        const statTupleMatches = (stored, current) => (
+          stored?.size != null
+          && stored?.mtime_ns != null
+          && stored?.inode != null
+          && BigInt(stored.size) === BigInt(current.size)
+          && BigInt(stored.mtime_ns) === BigInt(current.mtime_ns)
+          && BigInt(stored.inode) === BigInt(current.inode)
+        );
 
         for (const file of files) {
           const stored = storedState.files[file];
-          const current = currentMetadata[file] || { size: file.length * 100, mtime_ns: Date.now().toString() };
+          const current = currentMetadata[file] || {
+            size: String(file.length * 100),
+            mtime_ns: Date.now().toString(),
+            inode: String(file.length * 10),
+          };
 
           if (stored && typeof stored === 'object') {
-            if (stored.size === current.size && stored.mtime_ns === current.mtime_ns) {
+            if (statTupleMatches(stored, current)) {
               fastPathStats.hits++;
               currentHashes[file] = stored;
               continue;
@@ -1254,7 +1276,12 @@ describe('Index Maintainer v3', () => {
 
           fastPathStats.misses++;
           fastPathStats.contentReads++;
-          const newHash = { hash: `hash_${file}`, size: current.size, mtime_ns: current.mtime_ns };
+          const newHash = {
+            hash: `hash_${file}`,
+            size: current.size,
+            mtime_ns: current.mtime_ns,
+            inode: current.inode,
+          };
           currentHashes[file] = newHash;
           if (!stored || stored.hash !== newHash.hash) {
             toIndex.push(file);
@@ -1267,15 +1294,15 @@ describe('Index Maintainer v3', () => {
       // Stored state with known size and mtime
       const storedState = {
         files: {
-          'src/A.java': { hash: 'hash_src/A.java', size: 1100, mtime_ns: '1735670400000' },
-          'src/B.java': { hash: 'hash_src/B.java', size: 1100, mtime_ns: '1735670400000' },
+          'src/A.java': { hash: 'hash_src/A.java', size: '1100', mtime_ns: '1735670400000', inode: '11' },
+          'src/B.java': { hash: 'hash_src/B.java', size: '1100', mtime_ns: '1735670400000', inode: '12' },
         },
       };
 
       // Current metadata that matches stored exactly
       const currentMetadata = {
-        'src/A.java': { size: 1100, mtime_ns: '1735670400000' },
-        'src/B.java': { size: 1100, mtime_ns: '1735670400000' },
+        'src/A.java': { size: '1100', mtime_ns: '1735670400000', inode: '11' },
+        'src/B.java': { size: '1100', mtime_ns: '1735670400000', inode: '12' },
       };
 
       const result = simulateMerkleCheckWithFastPath(allFiles, storedState, currentMetadata);
@@ -1289,9 +1316,9 @@ describe('Index Maintainer v3', () => {
       const allFiles = ['src/A.java'];
       const storedState = {
         files: {
-          'src/A.java': { hash: 'hash_A', size: 1100, mtime_ns: Date.now().toString() },
-          'src/B.java': { hash: 'hash_B', size: 1100, mtime_ns: '123' },
-          'src/DELETED.java': { hash: 'hash_D', size: 1400, mtime_ns: '456' },
+          'src/A.java': { hash: 'hash_A', size: '1100', mtime_ns: Date.now().toString(), inode: '100' },
+          'src/B.java': { hash: 'hash_B', size: '1100', mtime_ns: '123', inode: '100' },
+          'src/DELETED.java': { hash: 'hash_D', size: '1400', mtime_ns: '456', inode: '140' },
         },
       };
 
@@ -1309,8 +1336,9 @@ describe('Index Maintainer v3', () => {
         files: {
           'src/A.java': {
             hash: 'old_hash',
-            size: 500, // Different size
+            size: '500', // Different size
             mtime_ns: timestamp,
+            inode: '110',
           },
         },
       };
@@ -1327,8 +1355,9 @@ describe('Index Maintainer v3', () => {
         files: {
           'src/A.java': {
             hash: 'old_hash',
-            size: 1100, // Same size
+            size: '1100', // Same size
             mtime_ns: '123456789', // Different mtime
+            inode: '110',
           },
         },
       };
@@ -1348,7 +1377,7 @@ describe('Index Maintainer v3', () => {
 
       // Fast-path should fail for string format
       function canUseFastPath(stored) {
-        return stored && typeof stored === 'object' && stored.size && stored.mtime_ns;
+        return stored && typeof stored === 'object' && stored.size && stored.mtime_ns && stored.inode;
       }
 
       expect(canUseFastPath(storedState.files['src/A.java'])).toBe(false);

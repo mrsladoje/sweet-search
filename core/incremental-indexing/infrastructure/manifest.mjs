@@ -23,7 +23,7 @@
  *                          "epoch": 12847 },
  *     "sparseGram":     { "base": "codebase-sparse-grams.idx",
  *                          "deltas": ["codebase-sparse-grams.idx.deltas/12847-0.ssgrmdelta"],
- *                          "weightsId": "default-v1",
+ *                          "weightsId": "common-code-bigram-v1",
  *                          "epoch": 12847 }
  *   }
  *
@@ -37,6 +37,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export const MANIFEST_FILENAME = 'reconcile-manifest.json';
+export const DEFAULT_SPARSE_GRAM_WEIGHTS_ID = 'common-code-bigram-v1';
 
 function manifestPath(stateDir) {
   return path.join(stateDir, MANIFEST_FILENAME);
@@ -76,7 +77,7 @@ export function zeroManifest(paths) {
     sparseGram: {
       base: paths.sparseBase || 'codebase-sparse-grams.idx',
       deltas: paths.sparseDeltas || [],
-      weightsId: paths.weightsId || 'default-v1',
+      weightsId: paths.weightsId || DEFAULT_SPARSE_GRAM_WEIGHTS_ID,
       epoch: 0,
     },
   };
@@ -184,7 +185,8 @@ export function buildNextManifest(prev, delta) {
  * @returns {string}
  */
 export function epochVisibilityPredicate(alias = '') {
-  const a = alias.length > 0 ? `${alias}.` : '';
+  const normalizedAlias = alias.endsWith('.') ? alias.slice(0, -1) : alias;
+  const a = normalizedAlias.length > 0 ? `${normalizedAlias}.` : '';
   return (
     `${a}epoch_written <= :manifestEpoch ` +
     `AND (${a}epoch_retired IS NULL OR ${a}epoch_retired > :manifestEpoch)`

@@ -79,11 +79,11 @@ async function initWasm() {
       initDone = true;
 
       if (nativeMaxsim) {
-        console.log('[MaxSim] Tier 1: Native Rust + Rayon (parallel SIMD)');
+        console.error('[MaxSim] Tier 1: Native Rust + Rayon (parallel SIMD)');
       } else if (maxsimExports || wasmExports?.maxsim_f32) {
-        console.log('[MaxSim] Tier 2: WASM SIMD f32x4');
+        console.error('[MaxSim] Tier 2: WASM SIMD f32x4');
       } else {
-        console.log('[MaxSim] Tier 3: JS fallback');
+        console.error('[MaxSim] Tier 3: JS fallback');
       }
 
       return true;

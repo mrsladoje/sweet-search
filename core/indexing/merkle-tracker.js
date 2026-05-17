@@ -7,16 +7,17 @@
  * and selective re-indexing. Supports atomic updates and persistent state.
  */
 
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { createHash } from 'crypto';
+import { readFile, mkdir, open, rename, unlink } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import { existsSync } from 'fs';
+import { contentHashSync, HASH_ALGORITHM } from '../incremental-indexing/infrastructure/hashing.mjs';
 
 export class MerkleTracker {
   constructor(statePath = '.sweet-search/merkle/codebase-state.json') {
     this.statePath = resolve(statePath);
     this.state = {
-      version: 1,
+      version: 2,
+      hashAlgorithm: HASH_ALGORITHM,
       lastFullIndex: null,
       lastIncrementalIndex: null,
       stats: {
@@ -34,7 +35,7 @@ export class MerkleTracker {
         const content = await readFile(this.statePath, 'utf8');
         const loaded = JSON.parse(content);
 
-        if (loaded.version !== 1) {
+        if (loaded.version !== 2 || loaded.hashAlgorithm !== HASH_ALGORITHM) {
           console.warn(`Unknown state version ${loaded.version}, starting fresh`);
           return;
         }
@@ -57,18 +58,26 @@ export class MerkleTracker {
 
       const tmpPath = `${this.statePath}.tmp`;
       const content = JSON.stringify(this.state, null, 2);
-      await writeFile(tmpPath, content, 'utf8');
-      await writeFile(this.statePath, content, 'utf8');
-
+      let handle = await open(tmpPath, 'w');
       try {
-        const { unlink } = await import('fs/promises');
-        if (existsSync(tmpPath)) {
-          await unlink(tmpPath);
-        }
-      } catch (e) {}
+        await handle.writeFile(content, 'utf8');
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      await rename(tmpPath, this.statePath);
+      try {
+        handle = await open(dir, 'r');
+        try { await handle.sync(); } finally { await handle.close(); }
+      } catch {
+        // Some container/tmpfs filesystems reject directory fsync.
+      }
 
       console.log(`Saved tracking state: ${this.state.stats.totalFiles} files, ${this.state.stats.totalChunks} chunks`);
     } catch (error) {
+      try {
+        await unlink(`${this.statePath}.tmp`);
+      } catch {}
       console.error('Failed to save tracking state:', error.message);
       throw error;
     }
@@ -85,7 +94,7 @@ export class MerkleTracker {
     const changed = [];
     for (const filePath of allFiles) {
       try {
-        const content = await readFile(filePath, 'utf8');
+        const content = await readFile(filePath);
         const hash = MerkleTracker.computeHash(content);
         if (this.needsReindex(filePath, hash)) {
           changed.push(filePath);
@@ -107,7 +116,7 @@ export class MerkleTracker {
 
     if (!contentHash) {
       try {
-        const content = await readFile(filePath, 'utf8');
+        const content = await readFile(filePath);
         contentHash = MerkleTracker.computeHash(content);
         size = content.length;
       } catch (err) {
@@ -165,7 +174,8 @@ export class MerkleTracker {
 
   clear() {
     this.state = {
-      version: 1,
+      version: 2,
+      hashAlgorithm: HASH_ALGORITHM,
       lastFullIndex: null,
       lastIncrementalIndex: null,
       stats: {
@@ -187,14 +197,11 @@ export class MerkleTracker {
   }
 
   static computeHash(content) {
-    return createHash('sha256')
-      .update(content)
-      .digest('hex')
-      .slice(0, 16);
+    return contentHashSync(content);
   }
 
   static async computeFileHash(filePath) {
-    const content = await readFile(filePath, 'utf8');
+    const content = await readFile(filePath);
     return MerkleTracker.computeHash(content);
   }
 }

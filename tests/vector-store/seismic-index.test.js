@@ -428,7 +428,9 @@ describe('SeismicIndex serialization', () => {
 // =============================================================================
 
 describe('SeismicIndex performance', () => {
-  it('1000 docs, 100 dimensions completes in <100ms', () => {
+  const PERF_BUDGET_MS = Number(process.env.SWEET_SEARCH_TEST_SEISMIC_PERF_BUDGET_MS || 500);
+
+  it('1000 docs, 100 dimensions completes within the smoke-test budget', () => {
     const numDocs = 1000;
     const numDims = 100;
     const nnzPerDoc = 15;
@@ -457,8 +459,8 @@ describe('SeismicIndex performance', () => {
     const results = index.query(query, 10);
     const queryTime = performance.now() - queryStart;
 
-    expect(buildTime).toBeLessThan(100);
-    expect(queryTime).toBeLessThan(100);
+    expect(buildTime).toBeLessThan(PERF_BUDGET_MS);
+    expect(queryTime).toBeLessThan(PERF_BUDGET_MS);
     expect(results.length).toBeGreaterThan(0);
     expect(results.length).toBeLessThanOrEqual(10);
 

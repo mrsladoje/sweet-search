@@ -13,9 +13,12 @@
  *     keeps the most recent entries and emits a `dropped` count via the
  *     callback so the next polling backstop sweep can re-discover them.
  *
- * The set is pure JS — no I/O, no global state, suitable for testing.
+ * The set has no global state. Path canonicalisation uses filesystem
+ * realpaths when an ancestor exists so watcher events cannot enter the
+ * dirty set through symlink escapes.
  */
 
+import fs from 'node:fs';
 import path from 'node:path';
 
 const DEFAULT_MAX = 100_000;
@@ -161,7 +164,10 @@ export class DirtySet {
 /**
  * Resolve a path to its canonical absolute form within a project root.
  * Plan § 22.1 / § 22.4: canonicalise to drop case-insensitive collisions
- * and to anchor paths inside the indexed tree.
+ * and to anchor paths inside the indexed tree. The lexical check catches
+ * `../` traversal; the realpath check catches symlink parents that point
+ * outside the worktree while still allowing delete events for missing
+ * files under a real in-tree parent.
  *
  * @param {string} projectRoot
  * @param {string} relativeOrAbsolute
@@ -169,11 +175,59 @@ export class DirtySet {
  */
 export function canonicaliseInsideRoot(projectRoot, relativeOrAbsolute) {
   if (typeof relativeOrAbsolute !== 'string') return null;
-  const abs = path.isAbsolute(relativeOrAbsolute)
+  const absoluteInput = path.isAbsolute(relativeOrAbsolute);
+  const abs = absoluteInput
     ? relativeOrAbsolute
     : path.resolve(projectRoot, relativeOrAbsolute);
-  const resolved = path.resolve(abs);
-  const root = path.resolve(projectRoot);
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
-  return resolved.replace(/\\/g, '/');
+  const resolvedAbs = path.resolve(abs);
+  const resolvedRoot = path.resolve(projectRoot);
+  if (!absoluteInput && !isInsidePath(resolvedRoot, resolvedAbs)) return null;
+
+  const rootReal = realpathOrNull(resolvedRoot);
+  if (!rootReal) return null;
+
+  const existing = nearestExistingAncestor(
+    resolvedAbs,
+    absoluteInput ? path.parse(resolvedAbs).root : resolvedRoot,
+  );
+  if (!existing) return null;
+  const existingReal = realpathOrNull(existing.path);
+  if (!existingReal) return null;
+
+  const materializedReal = existing.rest
+    ? path.join(existingReal, existing.rest)
+    : existingReal;
+  if (!isInsidePath(rootReal, materializedReal)) return null;
+
+  return materializedReal.replace(/\\/g, '/');
+}
+
+function isInsidePath(root, candidate) {
+  const rel = path.relative(root, candidate);
+  return rel === '' || (rel && !rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+function realpathOrNull(filePath) {
+  try {
+    return fs.realpathSync.native(filePath);
+  } catch {
+    return null;
+  }
+}
+
+function nearestExistingAncestor(absPath, root) {
+  let current = absPath;
+  const rest = [];
+  while (isInsidePath(root, current)) {
+    try {
+      fs.lstatSync(current);
+      return { path: current, rest: rest.join(path.sep) };
+    } catch (err) {
+      if (err?.code !== 'ENOENT' && err?.code !== 'ENOTDIR') return null;
+      if (current === root) return null;
+      rest.unshift(path.basename(current));
+      current = path.dirname(current);
+    }
+  }
+  return null;
 }

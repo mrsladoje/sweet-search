@@ -10,7 +10,7 @@
  */
 
 import { spawn, execFileSync } from 'child_process';
-import { existsSync, readdirSync } from 'fs';
+import { existsSync, realpathSync, readdirSync } from 'fs';
 import { StringDecoder } from 'string_decoder';
 import path from 'path';
 import { RIPGREP_CODE_TYPE_GLOB } from '../infrastructure/constants.js';
@@ -134,7 +134,28 @@ export function normalizeSearchPath(searchDir, filePath) {
   const relative = path.isAbsolute(filePath)
     ? path.relative(searchDir, filePath)
     : filePath;
-  return relative.replace(/\\/g, '/').replace(/^\.\//, '');
+  const normalized = normalizeRelativeSearchPath(relative);
+  if (normalized) return normalized;
+  if (path.isAbsolute(filePath)) {
+    try {
+      const realRelative = path.relative(
+        realpathSync.native(searchDir),
+        realpathSync.native(filePath),
+      );
+      return normalizeRelativeSearchPath(realRelative);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function normalizeRelativeSearchPath(relative) {
+  const normalized = relative.replace(/\\/g, '/').replace(/^\.\//, '');
+  if (!normalized || normalized === '..' || normalized.startsWith('../') || normalized.includes('/../')) {
+    return null;
+  }
+  return normalized;
 }
 
 export function chunkRipgrepFiles(files) {

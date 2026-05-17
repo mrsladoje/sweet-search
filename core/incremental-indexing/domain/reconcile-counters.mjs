@@ -16,6 +16,7 @@ const DEFAULT_FIELDS = Object.freeze({
   tick_ms: 0,
 
   dirty_paths_seen: 0,
+  dirty_paths_deferred: 0,
   content_unchanged: 0,
   files_processed: 0,
 

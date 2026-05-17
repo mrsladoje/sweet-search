@@ -40,6 +40,7 @@
   "files": [
     "core/*.js",
     "core/infrastructure/",
+    "core/incremental-indexing/",
     "core/embedding/",
     "core/indexing/",
     "core/search/",
@@ -124,6 +125,7 @@
   "dependencies": {
     "@babel/helper-validator-identifier": "^7.28.5",
     "@modelcontextprotocol/sdk": "^1.26.0",
+    "@node-rs/xxhash": "^1.7.6",
     "better-sqlite3": "^11.7.0",
     "fast-glob": "^3.3.3",
     "franc-min": "^6.2.0",

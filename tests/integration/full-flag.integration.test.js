@@ -12,9 +12,9 @@
  * tests reference cached results (avoids ~20 redundant sequential spawns).
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
-import { mkdirSync, rmSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -25,6 +25,8 @@ const __dirname = dirname(__filename);
 // Paths
 const PROJECT_ROOT = join(__dirname, '..', '..');
 const INDEXER_PATH = join(__dirname, '../..', 'core', 'indexing', 'index-codebase-v21.js');
+const INDEXER_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_TEST_INDEXER_TIMEOUT_MS || 300000);
+let TEST_PROJECT_ROOT = null;
 
 // =============================================================================
 // Test Helpers
@@ -35,11 +37,11 @@ const INDEXER_PATH = join(__dirname, '../..', 'core', 'indexing', 'index-codebas
  */
 function runIndexer(args = [], options = {}) {
   return new Promise((resolve, reject) => {
-    const { timeout = 60000, cwd = PROJECT_ROOT } = options;
+    const { timeout = INDEXER_TIMEOUT_MS, cwd = TEST_PROJECT_ROOT || PROJECT_ROOT } = options;
 
     const child = spawn('node', [INDEXER_PATH, ...args], {
       cwd,
-      env: { ...process.env },
+      env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: cwd },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -89,6 +91,10 @@ async function runInBatches(taskFns, batchSize = 3) {
 let helpResult, fullDryResult, fullQuietDryResult, statsResult, graphOnlyDryResult, invalidFlagResult;
 
 beforeAll(async () => {
+  TEST_PROJECT_ROOT = mkdtempSync(join(tmpdir(), 'ss-full-flag-'));
+  mkdirSync(join(TEST_PROJECT_ROOT, 'src'), { recursive: true });
+  writeFileSync(join(TEST_PROJECT_ROOT, 'src', 'app.js'), 'export function app() { return 1; }\n');
+
   [helpResult, fullDryResult, fullQuietDryResult, statsResult, graphOnlyDryResult, invalidFlagResult] =
     await runInBatches([
       () => runIndexer(['--help']),
@@ -98,7 +104,11 @@ beforeAll(async () => {
       () => runIndexer(['--full', '--graph-only', '--dry-run']),
       () => runIndexer(['--invalid-test-flag-xyz', '--dry-run']),
     ]);
-}, 120000);
+}, 360000);
+
+afterAll(() => {
+  if (TEST_PROJECT_ROOT) rmSync(TEST_PROJECT_ROOT, { recursive: true, force: true });
+});
 
 // =============================================================================
 // --full Flag Documentation Tests

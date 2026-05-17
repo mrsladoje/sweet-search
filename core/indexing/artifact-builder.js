@@ -56,6 +56,20 @@ import { BinaryHNSWIndex } from '../vector-store/binary-hnsw-index.js';
 import { truncateForHNSW, fisherYatesShuffle, normalizedFloatToInt8, floatToBinary } from '../infrastructure/quantization.js';
 import { FloatVectorStore, getFloatStorePath } from '../vector-store/float-vector-store.js';
 
+function hasVectorColumn(db, column) {
+  try {
+    return db.prepare('PRAGMA table_info(vectors)').all().some((col) => col.name === column);
+  } catch (_err) {
+    return false;
+  }
+}
+
+function liveVectorSql(db, alias = '') {
+  if (!hasVectorColumn(db, 'epoch_retired')) return '1=1';
+  const prefix = alias ? `${alias}.` : '';
+  return `${prefix}epoch_retired IS NULL`;
+}
+
 // =============================================================================
 // THRESHOLD CHECKING FUNCTIONS
 // =============================================================================
@@ -387,7 +401,8 @@ async function buildHnswIndexFromDb(db, options = {}) {
   } = options;
 
   const dimension = options.dimension || Math.ceil(floatDimension / 8);
-  const totalVectors = db.prepare('SELECT COUNT(*) as c FROM vectors').get().c;
+  const vectorWhere = liveVectorSql(db);
+  const totalVectors = db.prepare(`SELECT COUNT(*) as c FROM vectors WHERE ${vectorWhere}`).get().c;
 
   const index = new BinaryHNSWIndex({
     dimension,
@@ -408,19 +423,20 @@ async function buildHnswIndexFromDb(db, options = {}) {
     db.exec('CREATE TEMP TABLE IF NOT EXISTS artifact_order (pos INTEGER PRIMARY KEY, vector_rowid INTEGER)');
     db.exec('DELETE FROM artifact_order');
 
-    let indices = Array.from({ length: totalVectors }, (_, i) => i + 1); // 1-based rowids
+    const rowidRows = db.prepare(`SELECT rowid FROM vectors WHERE ${vectorWhere} ORDER BY rowid`).all();
+    let indices = rowidRows.map((row) => row.rowid);
 
     if (insertionOrder === 'shuffle') {
       fisherYatesShuffle(indices);
     } else if (insertionOrder === 'diversity') {
-      const filePaths = db.prepare('SELECT metadata FROM vectors ORDER BY rowid').all().map(r => {
-        try { return JSON.parse(r.metadata)?.file || '_unknown'; } catch (_e) { return '_unknown'; }
-      });
+      const rows = db.prepare(`SELECT rowid, metadata FROM vectors WHERE ${vectorWhere} ORDER BY rowid`).all();
       const buckets = new Map();
-      for (let i = 0; i < filePaths.length; i++) {
-        const dir = filePaths[i].replace(/\/[^/]+$/, '') || '_unknown';
+      for (const row of rows) {
+        let filePath = '_unknown';
+        try { filePath = JSON.parse(row.metadata)?.file || '_unknown'; } catch (_e) {}
+        const dir = filePath.replace(/\/[^/]+$/, '') || '_unknown';
         if (!buckets.has(dir)) buckets.set(dir, []);
-        buckets.get(dir).push(i + 1);
+        buckets.get(dir).push(row.rowid);
       }
       const dirs = [...buckets.keys()];
       fisherYatesShuffle(dirs);
@@ -448,7 +464,7 @@ async function buildHnswIndexFromDb(db, options = {}) {
       ORDER BY o.pos
     `);
   } else {
-    stmt = db.prepare('SELECT id, embedding, metadata FROM vectors ORDER BY rowid');
+    stmt = db.prepare(`SELECT id, embedding, metadata FROM vectors WHERE ${vectorWhere} ORDER BY rowid`);
   }
 
   const startTime = performance.now();
@@ -578,11 +594,12 @@ export async function saveArtifacts(hnswIndex) {
  */
 /** Build and save a FloatVectorStore by streaming from SQLite cursor. */
 async function buildAndSaveFloatStoreFromDb(db, floatDimension, floatStorePath) {
-  const totalVectors = db.prepare('SELECT COUNT(*) as c FROM vectors').get().c;
+  const vectorWhere = liveVectorSql(db);
+  const totalVectors = db.prepare(`SELECT COUNT(*) as c FROM vectors WHERE ${vectorWhere}`).get().c;
   console.log(`Building float vector store (${totalVectors} vectors, ${floatDimension}d)...`);
   const floatStore = new FloatVectorStore();
   const floatEntries = [];
-  const stmt = db.prepare('SELECT id, embedding FROM vectors ORDER BY rowid');
+  const stmt = db.prepare(`SELECT id, embedding FROM vectors WHERE ${vectorWhere} ORDER BY rowid`);
   for (const row of stmt.iterate()) {
     const embedding = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.length / 4);
     floatEntries.push({
@@ -619,7 +636,7 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
   const db = new Database(codebaseDbPath, insertionOrder === 'sequential' ? { readonly: true } : {});
   applyReadPragmas(db);
 
-  const totalVectors = db.prepare('SELECT COUNT(*) as c FROM vectors').get().c;
+  const totalVectors = db.prepare(`SELECT COUNT(*) as c FROM vectors WHERE ${liveVectorSql(db)}`).get().c;
 
   console.log(`Found ${totalVectors} vectors`);
 
