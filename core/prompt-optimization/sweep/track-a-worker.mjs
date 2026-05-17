@@ -106,7 +106,7 @@ async function getSweetSearch() {
       `track-a-worker: SWEET_SEARCH_PROJECT_ROOT=${PROJECT_ROOT} missing .sweet-search index`
     );
   }
-  const { SweetSearch } = await import(path.join(REPO_ROOT, 'core/search/sweet-search.js'));
+  const { SweetSearch } = await import('../search-runtime.mjs');
   _ss = new SweetSearch({ projectRoot: PROJECT_ROOT });
   await _ss.init();
   return _ss;
@@ -171,7 +171,7 @@ async function callSsSemantic(tuple) {
     return { results: [], latency_ms: Date.now() - t0, raw: { skipped: 'no-gold-file' } };
   }
   const PROJECT_ROOT = process.env.SWEET_SEARCH_PROJECT_ROOT;
-  const { readSemantic } = await import(path.join(REPO_ROOT, 'core/search/search-read-semantic.js'));
+  const { readSemantic } = await import('../search-runtime.mjs');
   const r = await readSemantic({
     path: file,
     query: tuple.query,

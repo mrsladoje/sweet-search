@@ -35,16 +35,18 @@ const DEFAULT_REL_TYPES = ['calls', 'uses', 'implements', 'extends', 'overrides'
  * @param {Array<string|number>} entityIds
  * @returns {Map<string|number, number>}
  */
-export function fetchPageRank(db, entityIds) {
+export function fetchPageRank(db, entityIds, opts = {}) {
   const ids = dropExternalIds(entityIds);
   const out = new Map(ids.map(id => [id, 0]));
   if (!db || ids.length === 0) return out;
+  const entitySql = opts.entityVisibilitySql || 'stale_since IS NULL';
+  const entityParams = opts.entityVisibilityParams || [];
   try {
     const rows = db.prepare(`
       SELECT id, COALESCE(page_rank, 0) AS pr
       FROM entities
-      WHERE id IN (${placeholders(ids)}) AND stale_since IS NULL
-    `).all(...ids);
+      WHERE id IN (${placeholders(ids)}) AND ${entitySql}
+    `).all(...ids, ...entityParams);
     for (const row of rows) {
       if (out.has(row.id)) out.set(row.id, Number.isFinite(row.pr) ? row.pr : 0);
     }
@@ -72,14 +74,17 @@ export function fetchFrontierBackwardEdges(db, frontierIds, opts = {}) {
   if (!db || ids.length === 0) return [];
   const limit = clampLimit(opts.limit, 4000, 20000);
   const types = opts.types?.length ? opts.types : DEFAULT_REL_TYPES;
+  const relationshipSql = opts.relationshipVisibilitySql || '1=1';
+  const relationshipParams = opts.relationshipVisibilityParams || [];
   const rows = db.prepare(`
     SELECT source_id, target_id, COALESCE(weight, 1.0) AS weight
     FROM relationships
     WHERE target_id IN (${placeholders(ids)})
       AND source_id IS NOT NULL
       AND type IN (${placeholders(types)})
+      AND ${relationshipSql}
     LIMIT ?
-  `).all(...ids, ...types, limit);
+  `).all(...ids, ...types, ...relationshipParams, limit);
   return rows.map(row => ({ from: row.target_id, to: row.source_id, weight: row.weight }));
 }
 
@@ -101,13 +106,16 @@ export function fetchFrontierForwardEdges(db, frontierIds, opts = {}) {
   if (!db || ids.length === 0) return [];
   const limit = clampLimit(opts.limit, 4000, 20000);
   const types = opts.types?.length ? opts.types : DEFAULT_REL_TYPES;
+  const relationshipSql = opts.relationshipVisibilitySql || '1=1';
+  const relationshipParams = opts.relationshipVisibilityParams || [];
   const rows = db.prepare(`
     SELECT source_id, target_id, COALESCE(weight, 1.0) AS weight
     FROM relationships
     WHERE source_id IN (${placeholders(ids)})
       AND target_id IS NOT NULL
       AND type IN (${placeholders(types)})
+      AND ${relationshipSql}
     LIMIT ?
-  `).all(...ids, ...types, limit);
+  `).all(...ids, ...types, ...relationshipParams, limit);
   return rows.map(row => ({ from: row.source_id, to: row.target_id, weight: row.weight }));
 }

@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../../..');
 process.env.SWEET_SEARCH_PROJECT_ROOT = REPO_ROOT;
 
-const { traceSymbol } = await import(path.join(REPO_ROOT, 'core/search/search-trace.js'));
+const { traceSymbol } = await import('../../search-runtime.mjs');
 
 const SYMBOL = process.argv[2] || 'StructuralContextBuilder';
 

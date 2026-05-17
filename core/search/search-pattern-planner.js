@@ -13,9 +13,10 @@
 import {
   extractLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates,
   ensureSparseGramIndex,
+  sparseDeltaOverlayHasChanges, getSparseGramAllFilesWithOverlay,
   hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches,
   nativeGrepFilesWithMatchesFixed, nativeGrepLines, nativeGrepFull,
-  getSparseGramAllFiles, queryAndGrepLines, queryAndGrepFull,
+  queryAndGrepLines, queryAndGrepFull,
   searchLines, searchFull, resolveSparseSymbolMask,
 } from './search-pattern-prefilter.js';
 import { CODE_FILE_EXTENSIONS } from '../infrastructure/constants.js';
@@ -30,10 +31,12 @@ import { _getRgCapabilities, runRipgrepFilesWithMatches, runRipgrepJson, normali
  * Native grep bypasses ripgrep, so we must normalize here.
  */
 function normalizeNativeMatches(matches, searchDir) {
-  for (const m of matches) {
-    m.file = normalizeSearchPath(searchDir, m.file);
+  const out = [];
+  for (const m of matches || []) {
+    const file = normalizeSearchPath(searchDir, m.file);
+    if (file) out.push({ ...m, file });
   }
-  return matches;
+  return out;
 }
 
 // Cached once at module load — passed to Rust for code extension filtering.
@@ -61,7 +64,8 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
   // Rust internally: tries gram narrowing → if eligible, greps candidates; if not, greps all files.
   // Eliminates the JS planner, separate getSparseGramAllFiles call, and multiple NAPI crossings.
   const useGramIndex = options.useGramIndex ?? options.gramIndex ?? true;
-  const canUseUnifiedSearch = !fixedString && globs.length === 0;
+  const hasSparseDeltaOverlay = sparseDeltaOverlayHasChanges(searcher, options);
+  const canUseUnifiedSearch = !fixedString && globs.length === 0 && !hasSparseDeltaOverlay;
   if (canUseUnifiedSearch) {
     const sparseGramIndex = ensureSparseGramIndex(searcher, options);
     if (sparseGramIndex) {
@@ -173,6 +177,62 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
   const gramCandidateFiles = gramLookupResult?.candidateFiles || 0;
   const gramTotalFiles = gramLookupResult?.totalFiles || 0;
   const gramSelectivity = gramTotalFiles > 0 ? gramCandidateFiles / gramTotalFiles : null;
+  const narrowedThreshold = options.narrowedJsonThreshold ?? 300;
+  const directJsonThreshold = options.directJsonFileThreshold ?? 4096;
+
+  if (gramLookupResult?.eligible === true && Array.isArray(gramLookupResult.files) && gramLookupResult.files.length === 0) {
+    return {
+      indexedMatches: [],
+      overlayMatches: [],
+      matchingFiles: [],
+      stats: {
+        nativeGrepUsed: false,
+        candidateGenTime_ms: Math.round(performance.now() - start),
+        grepTime_ms: 0,
+        literalFilterTime_ms: 0,
+        gramLookupTime_ms: Math.round(gramLookupTime),
+        filesConsidered: gramTotalFiles,
+        filesScanned: 0,
+        filesSkipped: 0,
+        dirtyOverlayFiles: 0,
+        candidateFilesBeforeFilter: 0,
+        candidateFilesAfterFilter: 0,
+        candidateReductionRatio: 0,
+        literalExtractionHit: literalPlan.clauses.length > 0,
+        literalExtractionSource: literalPlan.source,
+        gramLookupReason: gramLookupResult.reason || 'ok',
+        prefilterDiscarded: false,
+        prefilterDiscardedCount: 0,
+        denseGramsTouched: gramLookupResult.denseGramsTouched || 0,
+        sparseGramsTouched: gramLookupResult.sparseGramsTouched || 0,
+        gramFalsePositiveRatio: 0,
+        grepStrategy: 'none',
+        plannerRoute: 'empty_gram_candidates',
+        gramSelectivity,
+        plannerInputs: {
+          narrowedFileCount: 0,
+          gramCandidateFiles,
+          gramTotalFiles,
+          narrowedThreshold,
+          directJsonThreshold,
+          skipLiteralPrefilter: true,
+        },
+        symbolTypeFilter,
+        trackerLastIndex: null,
+        grepMatches: 0,
+        stageTiming: {
+          literalExtractionTime_ms: +literalExtractionTime.toFixed(3),
+          gramQueryTime_ms: +gramLookupTime.toFixed(3),
+          regexBuildTime_ms: 0,
+          literalPrefilterTime_ms: 0,
+          plannerTime_ms: 0,
+          grepVerifyTime_ms: 0,
+          napiOverheadTime_ms: 0,
+          resultMaterializationTime_ms: 0,
+        },
+      },
+    };
+  }
 
   const fileGramTooBroad = gramLookupResult?.eligible === false && gramLookupResult?.reason === 'too_broad';
 
@@ -190,7 +250,9 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
   const sparseForAllFiles = (!fixedString && globs.length === 0)
     ? ensureSparseGramIndex(searcher, options)
     : null;
-  const allIndexedFiles = sparseForAllFiles ? getSparseGramAllFiles(sparseForAllFiles) : null;
+  const allIndexedFiles = sparseForAllFiles
+    ? getSparseGramAllFilesWithOverlay(searcher, sparseForAllFiles, options)
+    : null;
   const canNativeGrepAll = Array.isArray(allIndexedFiles) && allIndexedFiles.length > 0;
 
   const skipLiteralPrefilter = gramTooBroad || gramSaysBroad || canNativeGrepAll;
@@ -246,9 +308,6 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
   // ==========================================================================
   // Cost-model query planner
   // ==========================================================================
-
-  const narrowedThreshold = options.narrowedJsonThreshold ?? 300;
-  const directJsonThreshold = options.directJsonFileThreshold ?? 4096;
 
   let plannerRoute;
   let grepStrategy;

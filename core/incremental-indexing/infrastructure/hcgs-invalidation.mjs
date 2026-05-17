@@ -154,7 +154,8 @@ export function retireDependentSummaries(db, sources, epoch) {
  * @returns {string}
  */
 export function summaryVisibilityPredicate(alias = '') {
-  const a = alias.length > 0 ? `${alias}.` : '';
+  const normalizedAlias = String(alias || '').endsWith('.') ? String(alias).slice(0, -1) : String(alias || '');
+  const a = normalizedAlias.length > 0 ? `${normalizedAlias}.` : '';
   return (
     `${a}epoch_written <= :manifestEpoch ` +
     `AND (${a}epoch_retired IS NULL OR ${a}epoch_retired > :manifestEpoch)`

@@ -100,6 +100,52 @@ async function writeLiIndex() {
   await idx.save();
 }
 
+async function writeAliasLiIndex() {
+  const idx = new LateInteractionIndex({
+    tokenDim: 4,
+    useInt8: false,
+    quantBits: 32,
+    indexPath: path.join(mockState.tmpDir, 'late-interaction.db'),
+    modelId: 'lateon-code',
+  });
+  idx.initialized = true;
+  await idx.add('target-exemplar', [[1, 0, 0, 0]], { name: 'targetExemplar' });
+  idx.addAlias('alias-chunk', 'target-exemplar', 'cluster-target', {
+    file: 'src/li-alias.js',
+    startLine: 1,
+    endLine: 3,
+    type: 'function',
+    name: 'aliasBeta',
+  });
+  await idx.save();
+}
+
+async function writeSingleDocLiIndex(indexPath, docId) {
+  const idx = new LateInteractionIndex({
+    tokenDim: 4,
+    useInt8: false,
+    quantBits: 32,
+    indexPath,
+    modelId: 'lateon-code',
+  });
+  idx.initialized = true;
+  await idx.add(docId, [[1, 0, 0, 0]], { name: docId });
+  await idx.save();
+}
+
+function writeProjectManifest(epoch, liIndexBasename) {
+  const stateDir = path.join(PROJECT, '.sweet-search');
+  mkdirSync(stateDir, { recursive: true });
+  writeFileSync(path.join(stateDir, 'reconcile-manifest.json'), JSON.stringify({
+    epoch,
+    lateInteraction: {
+      manifest: `${liIndexBasename}.segments/manifest.json`,
+      epoch,
+    },
+    vectors: { path: 'codebase.db', epoch },
+  }));
+}
+
 describe('readSemantic — real late-interaction index path', () => {
   it('loads a persisted LI index, runs MaxSim, and returns the matching disk span', async () => {
     writeProject('src/li.js', [
@@ -149,5 +195,95 @@ describe('readSemantic — real late-interaction index path', () => {
     expect(result.spans[0].symbols).toEqual(['beta']);
     expect(result.spans[0].text).toBe('function beta() {\n  return "chosen by vectors";\n}\n');
     expect(result.spans[0].text).not.toContain('DB TEXT');
+  });
+
+  it('scores LI alias chunks through the exemplar token matrix', async () => {
+    writeProject('src/li-alias.js', [
+      'function aliasBeta() {',
+      '  return "chosen through alias";',
+      '}',
+      '',
+    ].join('\n'));
+    addRow('alias-chunk', 'src/li-alias.js', {
+      language: 'javascript',
+      symbol: 'aliasBeta',
+      chunk_type: 'function',
+      line_start: 1,
+      line_end: 3,
+    });
+    await writeAliasLiIndex();
+
+    const result = await readSemantic({
+      path: 'src/li-alias.js',
+      query: 'semantic target',
+      topK: 1,
+      threshold: 0,
+      contextLines: 0,
+      projectRoot: PROJECT,
+      verbose: true,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.signals.liRan).toBe(true);
+    expect(result.spans[0].chunkIds).toEqual(['alias-chunk']);
+    expect(result.spans[0].text).toBe('function aliasBeta() {\n  return "chosen through alias";\n}\n');
+  });
+
+  it('reloads the LI singleton when the reconcile manifest epoch advances', async () => {
+    writeProject('src/li.js', [
+      'function alpha() {',
+      '  return "first manifest";',
+      '}',
+      '',
+      'function beta() {',
+      '  return "second manifest";',
+      '}',
+      '',
+    ].join('\n'));
+    addRow('alpha-chunk', 'src/li.js', {
+      language: 'javascript',
+      symbol: 'alpha',
+      chunk_type: 'function',
+      line_start: 1,
+      line_end: 3,
+    });
+    addRow('beta-chunk', 'src/li.js', {
+      language: 'javascript',
+      symbol: 'beta',
+      chunk_type: 'function',
+      line_start: 5,
+      line_end: 7,
+    });
+
+    const stateDir = path.join(PROJECT, '.sweet-search');
+    mkdirSync(stateDir, { recursive: true });
+    await writeSingleDocLiIndex(path.join(stateDir, 'li-first.db'), 'alpha-chunk');
+    await writeSingleDocLiIndex(path.join(stateDir, 'li-second.db'), 'beta-chunk');
+
+    writeProjectManifest(1, 'li-first.db');
+    const first = await readSemantic({
+      path: 'src/li.js',
+      query: 'semantic target',
+      topK: 1,
+      threshold: 0,
+      contextLines: 0,
+      projectRoot: PROJECT,
+      verbose: true,
+    });
+    expect(first.signals.liRan).toBe(true);
+    expect(first.spans[0].chunkIds).toEqual(['alpha-chunk']);
+
+    writeProjectManifest(2, 'li-second.db');
+    const second = await readSemantic({
+      path: 'src/li.js',
+      query: 'semantic target',
+      topK: 1,
+      threshold: 0,
+      contextLines: 0,
+      projectRoot: PROJECT,
+      verbose: true,
+    });
+    expect(second.signals.liRan).toBe(true);
+    expect(second.spans[0].chunkIds).toEqual(['beta-chunk']);
   });
 });

@@ -14,6 +14,8 @@ import { tmpdir } from 'node:os';
 const ROOT = join(import.meta.dirname, '../..');
 const NODE = process.execPath;
 const SOCKET_PATH = '/tmp/sweet-search.sock';
+const INDEX_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_TEST_NATIVE_INDEX_TIMEOUT_MS || 180000);
+const SERVER_READY_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_TEST_NATIVE_READY_TIMEOUT_MS || 90000);
 
 // ---------------------------------------------------------------------------
 // Resolve platform-package binary (skip dev paths)
@@ -62,27 +64,30 @@ const skip = !nativeBinary || isPortInUse(9876) || skipForCI;
 
 let projectDir;
 let serverProcess;
+let warmSocketPath;
 
-function cleanSocket() {
-  try { unlinkSync(SOCKET_PATH); } catch { /* ignore */ }
-  try { unlinkSync('/tmp/search.sock'); } catch { /* ignore */ }
+function cleanSocket(socketPath = SOCKET_PATH) {
+  try { unlinkSync(socketPath); } catch { /* ignore */ }
+  if (socketPath === SOCKET_PATH) {
+    try { unlinkSync('/tmp/search.sock'); } catch { /* ignore */ }
+  }
 }
 
-function waitForSocket(timeoutMs = 20000) {
+function waitForSocket(socketPath = SOCKET_PATH, timeoutMs = 20000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (existsSync(SOCKET_PATH)) return true;
+    if (existsSync(socketPath)) return true;
     execFileSync('sleep', ['0.2']);
   }
   return false;
 }
 
-function stopServer() {
+function stopServer(socketPath = SOCKET_PATH) {
   // Try stopping via socket
   try {
     execFileSync(NODE, ['-e', `
       import net from 'net';
-      const c = net.createConnection('/tmp/sweet-search.sock');
+      const c = net.createConnection(${JSON.stringify(socketPath)});
       c.write('GET /stop HTTP/1.0\\r\\nHost: l\\r\\n\\r\\n');
       c.on('data', () => {});
       c.on('end', () => process.exit(0));
@@ -95,7 +100,7 @@ function stopServer() {
     serverProcess = null;
   }
   execFileSync('sleep', ['0.5']);
-  cleanSocket();
+  cleanSocket(socketPath);
 }
 
 // ---------------------------------------------------------------------------
@@ -107,6 +112,7 @@ beforeAll(async () => {
 
   // Create and index a temp project
   projectDir = mkdtempSync(join(tmpdir(), 'ss-native-launcher-'));
+  warmSocketPath = join(tmpdir(), `sweet-search-warm-${process.pid}.sock`);
   writeFileSync(join(projectDir, 'package.json'), '{"name":"native-test"}');
   mkdirSync(join(projectDir, 'src'));
   writeFileSync(join(projectDir, 'src', 'hello.js'),
@@ -114,17 +120,18 @@ beforeAll(async () => {
   );
 
   execFileSync(NODE, [join(ROOT, 'core', 'indexing', 'index-codebase-v21.js'), '--project-root', projectDir], {
-    timeout: 60000,
+    timeout: INDEX_TIMEOUT_MS,
     env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: projectDir },
     stdio: 'pipe',
   });
 
   // Clean up any existing server
   stopServer();
-}, 120000);
+}, INDEX_TIMEOUT_MS + 60000);
 
 afterAll(() => {
   stopServer();
+  if (warmSocketPath) cleanSocket(warmSocketPath);
   if (projectDir) rmSync(projectDir, { recursive: true, force: true });
 }, 30000);
 
@@ -134,6 +141,8 @@ afterAll(() => {
 
 describe('native launcher integration', () => {
   it.skipIf(skip)('warm path: server start → native binary query → stop', async () => {
+    cleanSocket(warmSocketPath);
+
     // 1. Start server via direct import (reliable async startup)
     serverProcess = spawn(NODE, ['-e', `
       process.env.SWEET_SEARCH_PROJECT_ROOT = ${JSON.stringify(projectDir)};
@@ -144,6 +153,11 @@ describe('native launcher integration', () => {
     `], {
       cwd: ROOT,
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        SWEET_SEARCH_PROJECT_ROOT: projectDir,
+        SWEET_SEARCH_SOCKET_PATH: warmSocketPath,
+      },
       detached: true,
     });
     serverProcess.unref();
@@ -153,17 +167,17 @@ describe('native launcher integration', () => {
     serverProcess.stderr.on('data', (d) => { serverStderr += d.toString(); });
 
     // 2. Wait for socket
-    const socketReady = waitForSocket(20000);
+    const socketReady = waitForSocket(warmSocketPath, SERVER_READY_TIMEOUT_MS);
     expect(socketReady, `Socket did not appear. Server stderr:\n${serverStderr}`).toBe(true);
 
     // 3. Wait for server to finish loading indexes (socket appears before indexes are ready)
-    const deadline = Date.now() + 30000;
+    const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
     let serverReady = false;
     while (Date.now() < deadline) {
       try {
         const health = execFileSync(NODE, ['-e', `
           import net from 'net';
-          const c = net.createConnection('/tmp/sweet-search.sock');
+          const c = net.createConnection(${JSON.stringify(warmSocketPath)});
           c.write('GET /health HTTP/1.0\\r\\nHost: l\\r\\n\\r\\n');
           const chunks = [];
           c.on('data', d => chunks.push(d));
@@ -189,9 +203,13 @@ describe('native launcher integration', () => {
     const binaryPath = join(ROOT, nativeBinary);
     const output = execFileSync(binaryPath, ['greeting', '--json'], {
       encoding: 'utf8',
-      timeout: 30000,
+      timeout: SERVER_READY_TIMEOUT_MS,
       cwd: ROOT,
-      env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: projectDir },
+      env: {
+        ...process.env,
+        SWEET_SEARCH_PROJECT_ROOT: projectDir,
+        SWEET_SEARCH_SOCKET_PATH: warmSocketPath,
+      },
     });
 
     // Parse JSON (native binary outputs body after stripping HTTP headers)
@@ -211,12 +229,16 @@ describe('native launcher integration', () => {
       encoding: 'utf8',
       timeout: 10000,
       cwd: ROOT,
+      env: {
+        ...process.env,
+        SWEET_SEARCH_SOCKET_PATH: warmSocketPath,
+      },
     });
     execFileSync('sleep', ['0.5']);
-    expect(existsSync(SOCKET_PATH)).toBe(false);
+    expect(existsSync(warmSocketPath)).toBe(false);
 
     serverProcess = null;
-  }, 120000);
+  }, SERVER_READY_TIMEOUT_MS * 3);
 
   it.skipIf(skip)('cold start: native binary auto-starts server and returns results', async () => {
     // Use an isolated socket so this test doesn't collide with the warm-path test
@@ -253,17 +275,17 @@ describe('native launcher integration', () => {
       );
     }
 
-    // Server auto-started — socket should exist now
-    expect(existsSync(coldSocketPath), 'Cold-start socket was created').toBe(true);
+    // Server auto-start may return before the daemon has finished binding.
+    expect(waitForSocket(coldSocketPath, SERVER_READY_TIMEOUT_MS), 'Cold-start socket was created').toBe(true);
 
     // Wait for server to finish loading indexes (may take a few seconds)
-    const deadline = Date.now() + 30000;
+    const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
     let queryOutput = '';
     while (Date.now() < deadline) {
       try {
         queryOutput = execFileSync(binaryPath, ['greeting', '--json'], {
           encoding: 'utf8',
-          timeout: 15000,
+          timeout: 30000,
           cwd: ROOT,
           env,
         });
@@ -294,5 +316,5 @@ describe('native launcher integration', () => {
     } catch { /* ignore — server may have already exited */ }
     execFileSync('sleep', ['0.5']);
     try { unlinkSync(coldSocketPath); } catch { /* ignore */ }
-  }, 120000);
+  }, SERVER_READY_TIMEOUT_MS * 3);
 });

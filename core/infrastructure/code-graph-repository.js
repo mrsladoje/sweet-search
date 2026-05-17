@@ -11,21 +11,114 @@
 import Database from 'better-sqlite3';
 import { existsSync, statSync } from 'fs';
 import { applyReadPragmas } from './db-utils.js';
+import { readAdjacentManifest, resolveManifestCodeGraphPath, sqlAliasPrefix } from './code-graph-visibility.js';
 
 export class CodeGraphRepository {
-  constructor(dbPath) {
-    this._dbPath = dbPath;
+  constructor(dbPath, options = {}) {
+    this._baseDbPath = dbPath;
+    this._explicitManifestEpoch = Number.isInteger(options.manifestEpoch);
+    this._manifestEpoch = this._explicitManifestEpoch ? options.manifestEpoch : null;
+    const manifest = this._explicitManifestEpoch ? readAdjacentManifest(this._baseDbPath) : null;
+    this._dbPath = this._explicitManifestEpoch
+      ? resolveManifestCodeGraphPath(this._baseDbPath, manifest)
+      : dbPath;
     this._db = null;
+    this._hasEntityEpochVisibility = null;
+    this._hasRelationshipEpochVisibility = null;
+    if (!this._explicitManifestEpoch) {
+      this._syncAdjacentManifest();
+    }
+  }
+
+  _syncAdjacentManifest() {
+    if (this._explicitManifestEpoch) return false;
+    const manifest = readAdjacentManifest(this._baseDbPath);
+    const nextEpoch = Number.isInteger(manifest?.epoch) ? manifest.epoch : null;
+    const nextDbPath = resolveManifestCodeGraphPath(this._baseDbPath, manifest);
+    const changed = nextEpoch !== this._manifestEpoch || nextDbPath !== this._dbPath;
+    this._manifestEpoch = nextEpoch;
+    this._dbPath = nextDbPath;
+    if (changed) {
+      this.close();
+    }
+    return changed;
+  }
+
+  refreshManifestEpoch() {
+    this._syncAdjacentManifest();
+    return this._manifestEpoch;
+  }
+
+  getManifestEpoch() {
+    return this._manifestEpoch;
+  }
+
+  _resetDerivedCaches() {
+    this._refCountExact = null;
+    this._refSuffixSafe = null;
+    this._refBareRelationshipFanout = null;
+    this._refCountIndex = null;
   }
 
   /** Lazy read-only connection with optimized pragmas. */
   _open() {
+    this._syncAdjacentManifest();
     if (!this._db) {
       if (!existsSync(this._dbPath)) return null;
       this._db = new Database(this._dbPath, { readonly: true });
       applyReadPragmas(this._db);
     }
     return this._db;
+  }
+
+  _hasColumns(db, table, columns) {
+    const rows = db.prepare(`PRAGMA table_info(${table})`).all();
+    const names = new Set(rows.map((row) => row.name));
+    return columns.every((column) => names.has(column));
+  }
+
+  _ensureVisibilityInfo(db) {
+    if (this._hasEntityEpochVisibility === null) {
+      this._hasEntityEpochVisibility = this._hasColumns(db, 'entities', ['epoch_written', 'epoch_retired']);
+    }
+    if (this._hasRelationshipEpochVisibility === null) {
+      this._hasRelationshipEpochVisibility = this._hasColumns(db, 'relationships', ['epoch_written', 'epoch_retired']);
+    }
+  }
+
+  _entityVisibilitySql(db, alias = '') {
+    this._ensureVisibilityInfo(db);
+    const prefix = sqlAliasPrefix(alias);
+    if (!this._hasEntityEpochVisibility) return `${prefix}stale_since IS NULL`;
+    if (this._manifestEpoch !== null) {
+      return `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
+        AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)
+        AND (${prefix}stale_since IS NULL OR (${prefix}epoch_retired IS NOT NULL AND ${prefix}epoch_retired > ?))`;
+    }
+    return `${prefix}stale_since IS NULL AND ${prefix}epoch_retired IS NULL`;
+  }
+
+  _entityVisibilityParams(db) {
+    this._ensureVisibilityInfo(db);
+    if (!this._hasEntityEpochVisibility || this._manifestEpoch === null) return [];
+    return [this._manifestEpoch, this._manifestEpoch, this._manifestEpoch];
+  }
+
+  _relationshipVisibilitySql(db, alias = 'r') {
+    this._ensureVisibilityInfo(db);
+    if (!this._hasRelationshipEpochVisibility) return '1=1';
+    const prefix = sqlAliasPrefix(alias);
+    if (this._manifestEpoch !== null) {
+      return `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
+        AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)`;
+    }
+    return `${prefix}epoch_retired IS NULL`;
+  }
+
+  _relationshipVisibilityParams(db) {
+    this._ensureVisibilityInfo(db);
+    if (!this._hasRelationshipEpochVisibility || this._manifestEpoch === null) return [];
+    return [this._manifestEpoch, this._manifestEpoch];
   }
 
   /**
@@ -51,10 +144,10 @@ export class CodeGraphRepository {
         WHERE file_path = ?
           AND start_line <= ?
           AND end_line >= ?
-          AND (stale_since IS NULL)
+          AND ${this._entityVisibilitySql(db)}
         ORDER BY (end_line - start_line) ASC
         LIMIT 1
-      `).get(filePath, startLine, endLine);
+      `).get(filePath, startLine, endLine, ...this._entityVisibilityParams(db));
       if (!row) return null;
       return {
         id: row.id,
@@ -116,9 +209,9 @@ export class CodeGraphRepository {
       // Engine struct at gin.go:92-189 split across chunks 92-133 and 134-189).
       const containedRows = db.prepare(`
         SELECT name, type, start_line, end_line FROM entities
-        WHERE file_path = ? AND start_line >= ? AND end_line <= ? AND (stale_since IS NULL)
+        WHERE file_path = ? AND start_line >= ? AND end_line <= ? AND ${this._entityVisibilitySql(db)}
         ORDER BY (end_line - start_line) DESC
-      `).all(filePath, startLine, endLine);
+      `).all(filePath, startLine, endLine, ...this._entityVisibilityParams(db));
       for (const row of containedRows) {
         if (!row.name) continue;
         const nLower = String(row.name).toLowerCase();
@@ -128,9 +221,9 @@ export class CodeGraphRepository {
       }
       const startsInRows = db.prepare(`
         SELECT name, type, start_line, end_line FROM entities
-        WHERE file_path = ? AND start_line >= ? AND start_line <= ? AND (stale_since IS NULL)
+        WHERE file_path = ? AND start_line >= ? AND start_line <= ? AND ${this._entityVisibilitySql(db)}
         ORDER BY (end_line - start_line) DESC
-      `).all(filePath, startLine, endLine);
+      `).all(filePath, startLine, endLine, ...this._entityVisibilityParams(db));
       for (const row of startsInRows) {
         if (!row.name) continue;
         const nLower = String(row.name).toLowerCase();
@@ -158,10 +251,10 @@ export class CodeGraphRepository {
         WHERE file_path = ?
           AND start_line >= ?
           AND start_line <= ?
-          AND (stale_since IS NULL)
+          AND ${this._entityVisibilitySql(db)}
         ORDER BY start_line ASC, (end_line - start_line) ASC
         LIMIT 1
-      `).get(filePath, startLine, endLine);
+      `).get(filePath, startLine, endLine, ...this._entityVisibilityParams(db));
       if (!row) return null;
       return {
         id: row.id,
@@ -202,10 +295,10 @@ export class CodeGraphRepository {
         WHERE file_path = ?
           AND start_line >= ?
           AND start_line <= ?
-          AND (stale_since IS NULL)
+          AND ${this._entityVisibilitySql(db)}
         ORDER BY start_line ASC
         LIMIT 64
-      `).all(filePath, startLine, endLine);
+      `).all(filePath, startLine, endLine, ...this._entityVisibilityParams(db));
       return rows.map(row => ({
         id: row.id,
         name: row.name,
@@ -232,8 +325,8 @@ export class CodeGraphRepository {
       const row = db.prepare(`
         SELECT id, name, type, file_path, start_line, end_line, parent_class
         FROM entities
-        WHERE id = ? AND (stale_since IS NULL)
-      `).get(entityId);
+        WHERE id = ? AND ${this._entityVisibilitySql(db)}
+      `).get(entityId, ...this._entityVisibilityParams(db));
       if (!row) return null;
       return {
         id: row.id, name: row.name, type: row.type,
@@ -275,13 +368,17 @@ export class CodeGraphRepository {
                e.id as e_id, e.name as e_name, e.type as e_type,
                e.file_path as e_file, e.start_line as e_start, e.end_line as e_end
         FROM relationships r
-        LEFT JOIN entities e ON e.id = r.target_id AND (e.stale_since IS NULL)
+        LEFT JOIN entities e ON e.id = r.target_id AND ${this._entityVisibilitySql(db, 'e')}
         WHERE r.source_id = ?
+        AND ${this._relationshipVisibilitySql(db, 'r')}
+        AND (r.target_id IS NULL OR e.id IS NOT NULL)
         ${types ? `AND r.type IN (${types.map(() => '?').join(',')})` : ''}
         ORDER BY (CASE WHEN r.target_id IS NULL THEN 1 ELSE 0 END), r.weight DESC
         LIMIT ?
       `;
-      const args = types ? [sourceId, ...types, limit] : [sourceId, limit];
+      const args = types
+        ? [...this._entityVisibilityParams(db), sourceId, ...this._relationshipVisibilityParams(db), ...types, limit]
+        : [...this._entityVisibilityParams(db), sourceId, ...this._relationshipVisibilityParams(db), limit];
       const rows = db.prepare(baseSql).all(...args);
       return rows.map(r => ({
         type: r.rel_type,
@@ -340,14 +437,14 @@ export class CodeGraphRepository {
         FROM entities
         WHERE name IN (${uniq.map(() => '?').join(',')})
           AND type IN (${types.map(() => '?').join(',')})
-          AND (stale_since IS NULL)
+          AND ${this._entityVisibilitySql(db)}
           ${excludeFile ? 'AND file_path != ?' : ''}
         ORDER BY (end_line - start_line) ASC
         LIMIT ?
       `;
       const args = excludeFile
-        ? [...uniq, ...types, excludeFile, limit]
-        : [...uniq, ...types, limit];
+        ? [...uniq, ...types, ...this._entityVisibilityParams(db), excludeFile, limit]
+        : [...uniq, ...types, ...this._entityVisibilityParams(db), limit];
       const rows = db.prepare(sql).all(...args);
       // De-dup by name+type, keeping the first (smallest body).
       const seen = new Set();
@@ -392,11 +489,11 @@ export class CodeGraphRepository {
         FROM entities
         WHERE lower(name) IN (${uniq.map(() => '?').join(',')})
           AND type IN (${types.map(() => '?').join(',')})
-          AND (stale_since IS NULL)
+          AND ${this._entityVisibilitySql(db)}
         ORDER BY (end_line - start_line) ASC
         LIMIT ?
       `;
-      const rows = db.prepare(sql).all(...uniq, ...types, limit);
+      const rows = db.prepare(sql).all(...uniq, ...types, ...this._entityVisibilityParams(db), limit);
       return rows.map(row => ({
         id: row.id,
         name: row.name,
@@ -448,11 +545,11 @@ export class CodeGraphRepository {
         FROM entities
         WHERE lower(name) IN (${uniq.map(() => '?').join(',')})
           AND type NOT IN (${exclude.map(() => '?').join(',')})
-          AND (stale_since IS NULL)
+          AND ${this._entityVisibilitySql(db)}
         ORDER BY (end_line - start_line) ASC
         LIMIT ?
       `;
-      const rows = db.prepare(sql).all(...uniq, ...exclude, limit);
+      const rows = db.prepare(sql).all(...uniq, ...exclude, ...this._entityVisibilityParams(db), limit);
       return rows.map(row => ({
         id: row.id,
         name: row.name,
@@ -498,10 +595,10 @@ export class CodeGraphRepository {
         FROM entities
         WHERE lower(name) IN (${uniq.map(() => '?').join(',')})
           AND type NOT IN (${exclude.map(() => '?').join(',')})
-          AND (stale_since IS NULL)
+          AND ${this._entityVisibilitySql(db)}
         GROUP BY lname
       `;
-      const rows = db.prepare(sql).all(...uniq, ...exclude);
+      const rows = db.prepare(sql).all(...uniq, ...exclude, ...this._entityVisibilityParams(db));
       const map = new Map();
       for (const r of rows) map.set(r.lname, r.count);
       // Names with no row are absent — caller treats absent as 0.
@@ -532,13 +629,17 @@ export class CodeGraphRepository {
                e.id as e_id, e.name as e_name, e.type as e_type,
                e.file_path as e_file, e.start_line as e_start, e.end_line as e_end
         FROM relationships r
-        LEFT JOIN entities e ON e.id = r.source_id AND (e.stale_since IS NULL)
+        LEFT JOIN entities e ON e.id = r.source_id AND ${this._entityVisibilitySql(db, 'e')}
         WHERE r.target_id = ?
+        AND ${this._relationshipVisibilitySql(db, 'r')}
+        AND e.id IS NOT NULL
         ${types ? `AND r.type IN (${types.map(() => '?').join(',')})` : ''}
         ORDER BY r.weight DESC
         LIMIT ?
       `;
-      const args = types ? [targetId, ...types, limit] : [targetId, limit];
+      const args = types
+        ? [...this._entityVisibilityParams(db), targetId, ...this._relationshipVisibilityParams(db), ...types, limit]
+        : [...this._entityVisibilityParams(db), targetId, ...this._relationshipVisibilityParams(db), limit];
       const rows = db.prepare(baseSql).all(...args);
       return rows.map(r => ({
         type: r.rel_type,
@@ -589,11 +690,14 @@ export class CodeGraphRepository {
     })();
     try {
       const rows = db.prepare(`
-        SELECT target_name, COUNT(*) as cnt
-        FROM relationships
-        WHERE type = 'calls' AND target_name IS NOT NULL AND target_name != ''
+        SELECT r.target_name, COUNT(*) as cnt
+        FROM relationships r
+        LEFT JOIN entities e ON e.id = r.target_id AND ${this._entityVisibilitySql(db, 'e')}
+        WHERE r.type = 'calls' AND r.target_name IS NOT NULL AND r.target_name != ''
+          AND ${this._relationshipVisibilitySql(db, 'r')}
+          AND (r.target_id IS NULL OR e.id IS NOT NULL)
         GROUP BY target_name
-      `).all();
+      `).all(...this._entityVisibilityParams(db), ...this._relationshipVisibilityParams(db));
 
       for (const row of rows) {
         const tn = row.target_name;
@@ -693,7 +797,39 @@ export class CodeGraphRepository {
     const db = this._open();
     if (!db) return null;
     try {
-      // Check if any entity for this file is stale
+      if (this._hasColumns(db, 'entities', ['epoch_written', 'epoch_retired'])) {
+        const visible = db.prepare(`
+          SELECT 1 FROM entities
+          WHERE file_path = ? AND ${this._entityVisibilitySql(db)}
+          LIMIT 1
+        `).get(filePath, ...this._entityVisibilityParams(db));
+        if (visible) return { staleSince: null };
+
+        const staleSql = this._manifestEpoch !== null
+          ? `
+            SELECT stale_since
+            FROM entities
+            WHERE file_path = ?
+              AND stale_since IS NOT NULL
+              AND (epoch_written IS NULL OR epoch_written <= ?)
+              AND (epoch_retired IS NULL OR epoch_retired <= ?)
+            ORDER BY stale_since DESC
+            LIMIT 1
+          `
+          : `
+            SELECT stale_since
+            FROM entities
+            WHERE file_path = ?
+              AND stale_since IS NOT NULL
+            ORDER BY stale_since DESC
+            LIMIT 1
+          `;
+        const staleArgs = this._manifestEpoch !== null
+          ? [filePath, this._manifestEpoch, this._manifestEpoch]
+          : [filePath];
+        const staleRow = db.prepare(staleSql).get(...staleArgs);
+        return staleRow ? { staleSince: staleRow.stale_since || null } : null;
+      }
       const row = db.prepare(`
         SELECT stale_since, MIN(ROWID) as first_row
         FROM entities
@@ -729,5 +865,8 @@ export class CodeGraphRepository {
       this._db.close();
       this._db = null;
     }
+    this._hasEntityEpochVisibility = null;
+    this._hasRelationshipEpochVisibility = null;
+    this._resetDerivedCaches();
   }
 }

@@ -1,4 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+import { createBitmap, saveBitmap, setBit, loadBitmap, isSet } from '../../core/incremental-indexing/infrastructure/tombstone-bitmap.mjs';
 
 // ---------------------------------------------------------------------------
 // Mock heavy native dependencies BEFORE importing the module under test.
@@ -14,6 +18,7 @@ const mockMethods = {
     count: 2,
   }),
   remove: vi.fn(),
+  reserve: vi.fn(),
   save: vi.fn(),
   load: vi.fn(),
 };
@@ -23,6 +28,7 @@ function MockUsearchIndex() {
   this.add = mockMethods.add;
   this.search = mockMethods.search;
   this.remove = mockMethods.remove;
+  this.reserve = mockMethods.reserve;
   this.save = mockMethods.save;
   this.load = mockMethods.load;
 }
@@ -69,6 +75,7 @@ function resetMocks() {
     count: 2,
   });
   mockMethods.remove.mockClear();
+  mockMethods.reserve.mockClear();
   mockMethods.save.mockClear();
   mockMethods.load.mockClear();
 }
@@ -124,6 +131,16 @@ describe('HNSWIndex constructor', () => {
   it('should not have initialized the native index until init() is called', () => {
     const idx = new HNSWIndex();
     expect(idx.index).toBeNull();
+  });
+
+  it('clears stale fallback mode after a successful native init', async () => {
+    const idx = new HNSWIndex();
+    idx.useFallback = true;
+
+    await idx.init();
+
+    expect(idx.index).not.toBeNull();
+    expect(idx.useFallback).toBe(false);
   });
 });
 
@@ -203,6 +220,66 @@ describe('createHNSWIndex', () => {
     expect(idx.M).toBe(48);
     expect(idx.efConstruction).toBe(500);
   });
+
+  it('reserves the configured native capacity during initialization', async () => {
+    await createHNSWIndex({ dimension: 64, maxElements: 1234 });
+    expect(mockMethods.reserve).toHaveBeenCalledWith(1234);
+  });
+
+  it('loads fallback sidecar artifacts even when the .idx placeholder is absent', async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sweet-search-hnsw-factory-'));
+    try {
+      const indexPath = join(tmpDir, 'saved.idx');
+      writeFileSync(indexPath.replace('.idx', '.meta.json'), JSON.stringify({
+        dimension: 7,
+        maxElements: 123,
+        M: 4,
+        efConstruction: 9,
+        efSearch: 11,
+        metric: 'cosine',
+        nextKey: 0,
+        idMap: [],
+        metadata: [],
+        useFallback: true,
+      }));
+      writeFileSync(indexPath.replace('.idx', '.vectors.json'), '[]');
+
+      expect(existsSync(indexPath)).toBe(false);
+
+      const idx = await createHNSWIndex({ indexPath, load: true, dimension: 64 });
+
+      expect(idx.dimension).toBe(7);
+      expect(idx.maxElements).toBe(123);
+      expect(idx.useFallback).toBe(true);
+      expect(idx.vectors).toEqual([]);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses native metadata without a native graph or fallback vectors', async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sweet-search-hnsw-missing-native-'));
+    try {
+      const indexPath = join(tmpDir, 'saved.idx');
+      writeFileSync(indexPath.replace('.idx', '.meta.json'), JSON.stringify({
+        dimension: 7,
+        maxElements: 123,
+        M: 4,
+        efConstruction: 9,
+        efSearch: 11,
+        metric: 'cosine',
+        nextKey: 1,
+        idMap: [['doc', 0]],
+        metadata: [['doc', { file: 'doc.js' }]],
+        useFallback: false,
+      }));
+
+      await expect(createHNSWIndex({ indexPath, load: true, dimension: 64 }))
+        .rejects.toThrow(/native artifact is missing/i);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 // =============================================================================
@@ -211,11 +288,21 @@ describe('createHNSWIndex', () => {
 
 describe('HNSWIndex operations', () => {
   let idx;
+  let suiteTmpDir;
 
   beforeEach(async () => {
     resetMocks();
-    idx = new HNSWIndex({ dimension: 4 });
+    suiteTmpDir = mkdtempSync(join(tmpdir(), 'sweet-search-hnsw-ops-'));
+    idx = new HNSWIndex({
+      dimension: 4,
+      indexPath: join(suiteTmpDir, 'codebase-hnsw.idx'),
+      stalePath: join(suiteTmpDir, 'codebase-hnsw.idx.stale.bin'),
+    });
     await idx.init();
+  });
+
+  afterEach(() => {
+    if (suiteTmpDir) rmSync(suiteTmpDir, { recursive: true, force: true });
   });
 
   // -------------------------------------------------------------------------
@@ -282,6 +369,38 @@ describe('HNSWIndex operations', () => {
       expect(vecArray[0]).toBeCloseTo(1.0, 5);
       expect(vecArray[1]).toBeCloseTo(0.0, 5);
     });
+
+    it('reserves more native capacity and retries when USearch is full', async () => {
+      idx.maxElements = 4;
+      mockMethods.reserve.mockClear();
+      mockMethods.add
+        .mockImplementationOnce(() => {
+          throw new Error('capacity exceeded');
+        })
+        .mockImplementationOnce(() => undefined);
+
+      const key = await idx.add('doc-a', [1, 0, 0, 0]);
+
+      expect(key).toBe(0);
+      expect(mockMethods.reserve).toHaveBeenCalledWith(5);
+      expect(mockMethods.add).toHaveBeenCalledTimes(2);
+      expect(idx.maxElements).toBe(5);
+      expect(idx.idMap.get('doc-a')).toBe(0);
+      expect(idx.nextKey).toBe(1);
+    });
+
+    it('does not publish maps when native add fails for a non-capacity error', async () => {
+      mockMethods.add.mockImplementationOnce(() => {
+        throw new Error('dimension mismatch');
+      });
+
+      await expect(idx.add('bad-doc', [1, 0, 0, 0])).rejects.toThrow('dimension mismatch');
+
+      expect(idx.idMap.has('bad-doc')).toBe(false);
+      expect(idx.reverseMap.size).toBe(0);
+      expect(idx.metadata.has('bad-doc')).toBe(false);
+      expect(idx.nextKey).toBe(0);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -336,6 +455,24 @@ describe('HNSWIndex operations', () => {
       expect(response).toHaveProperty('total', 2);
       expect(response).toHaveProperty('usedFallback', false);
       expect(typeof response.latency_us).toBe('number');
+    });
+
+    it('filters tombstoned HNSW keys from the stale bitmap', async () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), 'sweet-search-hnsw-stale-'));
+      try {
+        const stalePath = join(tmpDir, 'codebase-hnsw.idx.stale.bin');
+        idx.stalePath = stalePath;
+        const bitmap = createBitmap(2);
+        setBit(bitmap, 0);
+        saveBitmap(stalePath, bitmap);
+
+        const response = await idx.search([1, 0, 0, 0], 2);
+
+        expect(response.results.map((r) => r.id)).toEqual(['doc-b']);
+        expect(response.total).toBe(1);
+      } finally {
+        rmSync(tmpDir, { recursive: true, force: true });
+      }
     });
 
     it('should return empty results when index has no vectors', async () => {
@@ -415,11 +552,22 @@ describe('HNSWIndex operations', () => {
       expect(removed).toBe(false);
     });
 
-    it('should call usearch index.remove with BigInt key', async () => {
+    it('should not call usearch index.remove on the live graph', async () => {
       await idx.add('doc-a', [1, 0, 0, 0]);
       await idx.remove('doc-a');
 
-      expect(mockMethods.remove).toHaveBeenCalledWith(0n);
+      expect(mockMethods.remove).not.toHaveBeenCalled();
+    });
+
+    it('marks the stale bitmap bit for a removed key', async () => {
+      await idx.add('doc-a', [1, 0, 0, 0]);
+      await idx.add('doc-b', [0, 1, 0, 0]);
+
+      await idx.remove('doc-a');
+
+      const bitmap = loadBitmap(idx.stalePath);
+      expect(isSet(bitmap, 0)).toBe(true);
+      expect(isSet(bitmap, 1)).toBe(false);
     });
 
     it('should clean up idMap, reverseMap, and metadata', async () => {
@@ -429,6 +577,26 @@ describe('HNSWIndex operations', () => {
       expect(idx.idMap.has('doc-a')).toBe(false);
       expect(idx.reverseMap.has(0)).toBe(false);
       expect(idx.metadata.has('doc-a')).toBe(false);
+    });
+
+    it('oversamples metadata-tombstoned keys left in the native graph', async () => {
+      await idx.add('doc-a', [1, 0, 0, 0]);
+      await idx.add('doc-b', [0, 1, 0, 0]);
+      await idx.add('doc-c', [0, 0, 1, 0]);
+      await idx.remove('doc-a');
+      mockMethods.search.mockImplementation((_vec, limit) => ({
+        keys: limit > 1 ? new BigUint64Array([0n, 1n]) : new BigUint64Array([0n]),
+        distances: limit > 1 ? new Float32Array([0.01, 0.2]) : new Float32Array([0.01]),
+        count: limit > 1 ? 2 : 1,
+      }));
+
+      const result = await idx.search([1, 0, 0, 0], 1);
+
+      expect(mockMethods.search.mock.calls[0][1]).toBeGreaterThan(1);
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0].id).toBe('doc-b');
+      expect(result.results[0].score).toBeCloseTo(0.8);
+      expect(result.total).toBe(2);
     });
   });
 
@@ -463,6 +631,21 @@ describe('HNSWIndex operations', () => {
       expect(result).toEqual({ id: 'doc-a', metadata: { file: 'a.js' } });
     });
 
+    it('should return null for a tombstoned id', async () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), 'sweet-search-hnsw-get-stale-'));
+      try {
+        await idx.add('doc-a', [1, 0, 0, 0], { file: 'a.js' });
+        idx.stalePath = join(tmpDir, 'codebase-hnsw.idx.stale.bin');
+        const bitmap = createBitmap(1);
+        setBit(bitmap, 0);
+        saveBitmap(idx.stalePath, bitmap);
+
+        expect(await idx.get('doc-a')).toBeNull();
+      } finally {
+        rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
     it('should return null for a non-existent id', async () => {
       const result = await idx.get('nope');
       expect(result).toBeNull();
@@ -477,6 +660,9 @@ describe('HNSWIndex operations', () => {
     it('should reset all internal state', async () => {
       await idx.add('doc-a', [1, 0, 0, 0]);
       await idx.add('doc-b', [0, 1, 0, 0]);
+      await idx.remove('doc-a');
+      expect(loadBitmap(idx.stalePath)).not.toBeNull();
+
       await idx.clear();
 
       expect(idx.idMap.size).toBe(0);
@@ -484,6 +670,7 @@ describe('HNSWIndex operations', () => {
       expect(idx.metadata.size).toBe(0);
       expect(idx.nextKey).toBe(0);
       expect(idx.getStats().totalVectors).toBe(0);
+      expect(loadBitmap(idx.stalePath)).toBeNull();
     });
   });
 

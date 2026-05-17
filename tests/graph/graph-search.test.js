@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { join } from 'path';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { GraphSearch } from '../../core/graph/index.js';
 
@@ -142,9 +142,65 @@ function insertTestRelationships(db) {
   insertRel.run(6, 5, 'StaleService', 'calls', 1.0, 40); // StaleController calls StaleService
 }
 
+function addEpochVisibilityColumns(db) {
+  db.exec(`
+    ALTER TABLE entities ADD COLUMN epoch_written INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE entities ADD COLUMN epoch_retired INTEGER;
+    ALTER TABLE relationships ADD COLUMN epoch_written INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE relationships ADD COLUMN epoch_retired INTEGER;
+  `);
+}
+
+function insertEpochVisibilityFixture(db) {
+  const insertEntity = db.prepare(`
+    INSERT INTO entities (
+      id, name, type, file_path, start_line, end_line, signature,
+      doc_comment, search_text, name_alias, stale_since, epoch_written, epoch_retired
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  insertEntity.run(10, 'PaymentService', 'class', 'src/old/payment.js', 1, 20, 'class PaymentService {}', 'old payment', 'PaymentService old payment', 'payment service', null, 1, 3);
+  insertEntity.run(11, 'PaymentService', 'class', 'src/new/payment.js', 1, 20, 'class PaymentService {}', 'new payment', 'PaymentService new payment', 'payment service', null, 3, null);
+  insertEntity.run(12, 'RemovedService', 'class', 'src/old/removed.js', 1, 20, 'class RemovedService {}', 'removed service', 'RemovedService', 'removed service', 1704067200, 1, 3);
+  insertEntity.run(13, 'FutureService', 'class', 'src/future/service.js', 1, 20, 'class FutureService {}', 'future service', 'FutureService', 'future service', null, 7, null);
+  insertEntity.run(20, 'Caller', 'class', 'src/caller.js', 1, 20, 'class Caller {}', 'caller', 'Caller payment', 'caller', null, 1, null);
+
+  const insertRel = db.prepare(`
+    INSERT INTO relationships (
+      source_id, target_id, target_name, type, weight, context_line, epoch_written, epoch_retired
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  insertRel.run(20, 10, 'PaymentService', 'calls', 1.0, 7, 1, 3);
+  insertRel.run(20, 11, 'PaymentService', 'calls', 1.0, 8, 3, null);
+}
+
 // =============================================================================
 // STALE ENTRY FILTERING TESTS (C1)
 // =============================================================================
+
+describe('GraphSearch - SQL Alias Handling', () => {
+  it('normalizes dotted aliases in visibility and summary SQL fragments', () => {
+    const graphSearch = new GraphSearch('/tmp/non-existent-code-graph.db');
+    try {
+      graphSearch._manifestEpoch = 4;
+      graphSearch._hasEntityEpochVisibility = true;
+      graphSearch._hasRelationshipEpochVisibility = true;
+      graphSearch._hasHcgsSummaryMetadata = true;
+
+      expect(graphSearch._entityVisibilitySql('e.')).toContain('e.epoch_written');
+      expect(graphSearch._entityVisibilitySql('e.')).not.toContain('e..');
+      expect(graphSearch._entityVisibilitySql('e')).toBe(graphSearch._entityVisibilitySql('e.'));
+      expect(graphSearch._relationshipVisibilitySql('r.')).toContain('r.epoch_written');
+      expect(graphSearch._relationshipVisibilitySql('r.')).not.toContain('r..');
+      expect(graphSearch._relationshipVisibilitySql('r')).toBe(graphSearch._relationshipVisibilitySql('r.'));
+      expect(graphSearch._summaryJoinSql('entities.')).toContain('hm.entity_id = entities.id');
+      expect(graphSearch._summaryJoinSql('entities.')).not.toContain('entities..');
+      expect(graphSearch._summarySelectSql('entities.')).toContain('entities.summary');
+      expect(graphSearch._summarySelectSql('entities.')).not.toContain('entities..');
+    } finally {
+      graphSearch.close();
+    }
+  });
+});
 
 describe('GraphSearch - Stale Entry Filtering (C1)', () => {
   let testDir;
@@ -260,6 +316,322 @@ describe('GraphSearch - Stale Entry Filtering (C1)', () => {
       // Should NOT include stale related entities
       expect(names).not.toContain('StaleService');
     });
+  });
+});
+
+describe('GraphSearch - Reconcile Epoch Visibility', () => {
+  let testDir;
+  let dbPath;
+  let graphSearch;
+
+  beforeEach(() => {
+    testDir = mkdtempSync(join(tmpdir(), 'graph-search-epoch-'));
+    dbPath = join(testDir, 'test-graph.db');
+    const db = createTestDatabase(dbPath);
+    addEpochVisibilityColumns(db);
+    insertEpochVisibilityFixture(db);
+    db.close();
+  });
+
+  afterEach(() => {
+    if (graphSearch) {
+      graphSearch.close();
+      graphSearch = null;
+    }
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  it('pins FTS5/trigram/entity reads to the supplied manifest epoch', async () => {
+    graphSearch = new GraphSearch(dbPath, { manifestEpoch: 2 });
+    await graphSearch.init();
+
+    const { results } = await graphSearch.bm25Search('PaymentService', 10);
+    expect(results.map((r) => r.file)).toEqual(['src/old/payment.js']);
+    expect((await graphSearch.searchByName('PaymentService')).map((r) => r.file_path)).toEqual(['src/old/payment.js']);
+    expect((await graphSearch.searchByFile('payment.js')).map((r) => r.file_path)).toEqual(['src/old/payment.js']);
+    expect((await graphSearch.getEntity(10))?.file_path).toBe('src/old/payment.js');
+    expect(await graphSearch.getEntity(11)).toBeNull();
+    expect((await graphSearch.bm25Search('FutureService', 10)).results).toHaveLength(0);
+  });
+
+  it('uses adjacent reconcile-manifest.json when no explicit epoch is supplied', async () => {
+    writeFileSync(join(testDir, 'reconcile-manifest.json'), JSON.stringify({ epoch: 2 }));
+    graphSearch = new GraphSearch(dbPath);
+    await graphSearch.init();
+
+    const { results } = await graphSearch.bm25SearchRaw('PaymentService', 10);
+    expect(results.map((r) => r.file)).toEqual(['src/old/payment.js']);
+  });
+
+  it('opens the code graph path named by the adjacent reconcile manifest', async () => {
+    const manifestDbPath = join(testDir, 'code-graph-epoch-5.db');
+    const db = createTestDatabase(manifestDbPath);
+    addEpochVisibilityColumns(db);
+    db.prepare(`
+      INSERT INTO entities (
+        id, name, type, file_path, start_line, end_line, signature,
+        doc_comment, search_text, name_alias, stale_since, epoch_written, epoch_retired
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      30,
+      'ManifestService',
+      'class',
+      'src/manifest/service.js',
+      1,
+      20,
+      'class ManifestService {}',
+      'manifest graph',
+      'ManifestService manifest graph',
+      'manifest service',
+      null,
+      5,
+      null,
+    );
+    db.close();
+    writeFileSync(join(testDir, 'reconcile-manifest.json'), JSON.stringify({
+      epoch: 5,
+      codeGraph: { path: 'code-graph-epoch-5.db', epoch: 5 },
+    }));
+
+    graphSearch = new GraphSearch(dbPath);
+    await graphSearch.init();
+
+    const { results } = await graphSearch.bm25SearchRaw('ManifestService', 10);
+    expect(results.map((r) => r.file)).toEqual(['src/manifest/service.js']);
+    expect((await graphSearch.bm25SearchRaw('PaymentService', 10)).results).toHaveLength(0);
+  });
+
+  it('uses the manifest code graph path when an explicit epoch is supplied', async () => {
+    const manifestDbPath = join(testDir, 'code-graph-epoch-5.db');
+    const db = createTestDatabase(manifestDbPath);
+    addEpochVisibilityColumns(db);
+    db.prepare(`
+      INSERT INTO entities (
+        id, name, type, file_path, start_line, end_line, signature,
+        doc_comment, search_text, name_alias, stale_since, epoch_written, epoch_retired
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      31,
+      'PinnedManifestService',
+      'class',
+      'src/manifest/pinned.js',
+      1,
+      20,
+      'class PinnedManifestService {}',
+      'manifest graph',
+      'PinnedManifestService manifest graph',
+      'pinned manifest service',
+      null,
+      5,
+      null,
+    );
+    db.close();
+    writeFileSync(join(testDir, 'reconcile-manifest.json'), JSON.stringify({
+      epoch: 7,
+      codeGraph: { path: 'code-graph-epoch-5.db', epoch: 7 },
+    }));
+
+    graphSearch = new GraphSearch(dbPath, { manifestEpoch: 5 });
+    await graphSearch.init();
+
+    const { results } = await graphSearch.bm25SearchRaw('PinnedManifestService', 10);
+    expect(results.map((r) => r.file)).toEqual(['src/manifest/pinned.js']);
+    expect((await graphSearch.bm25SearchRaw('PaymentService', 10)).results).toHaveLength(0);
+  });
+
+  it('refreshes adjacent manifest changes for long-lived graph readers', async () => {
+    graphSearch = new GraphSearch(dbPath);
+    await graphSearch.init();
+    expect((await graphSearch.bm25SearchRaw('PaymentService', 10)).results.map((r) => r.file)).toEqual(['src/new/payment.js']);
+
+    writeFileSync(join(testDir, 'reconcile-manifest.json'), JSON.stringify({ epoch: 2 }));
+    graphSearch.refreshManifestEpoch();
+
+    expect((await graphSearch.bm25SearchRaw('PaymentService', 10)).results.map((r) => r.file)).toEqual(['src/old/payment.js']);
+  });
+
+  it('hides retired rows by default and keeps unretired live rows visible', async () => {
+    graphSearch = new GraphSearch(dbPath);
+    await graphSearch.init();
+
+    const { results } = await graphSearch.bm25Search('PaymentService', 10);
+    expect(results.map((r) => r.file)).toEqual(['src/new/payment.js']);
+    expect((await graphSearch.bm25Search('FutureService', 10)).results).toHaveLength(1);
+    expect((await graphSearch.bm25Search('RemovedService', 10)).results).toHaveLength(0);
+  });
+
+  it('keeps rows retired after the pinned epoch visible even when stale_since is set', async () => {
+    graphSearch = new GraphSearch(dbPath, { manifestEpoch: 2 });
+    await graphSearch.init();
+
+    const { results } = await graphSearch.bm25Search('RemovedService', 10);
+    expect(results.map((r) => r.file)).toEqual(['src/old/removed.js']);
+  });
+
+  it('does not report future-retired entities as stale for a pinned reader', async () => {
+    graphSearch = new GraphSearch(dbPath, { manifestEpoch: 2 });
+    await graphSearch.init();
+
+    const staleAtEpoch2 = await graphSearch.getStaleEntityIds();
+    expect(staleAtEpoch2.has(12)).toBe(false);
+    graphSearch.close();
+
+    graphSearch = new GraphSearch(dbPath);
+    await graphSearch.init();
+    const staleNow = await graphSearch.getStaleEntityIds();
+    expect(staleNow.has(12)).toBe(true);
+  });
+
+  it('filters relationship expansion by entity and relationship epochs', async () => {
+    graphSearch = new GraphSearch(dbPath, { manifestEpoch: 2 });
+    await graphSearch.init();
+
+    const relatedAtEpoch2 = await graphSearch.getRelated(20);
+    expect(relatedAtEpoch2.map((r) => r.file_path)).toEqual(['src/old/payment.js']);
+    graphSearch.close();
+
+    graphSearch = new GraphSearch(dbPath);
+    await graphSearch.init();
+    const relatedNow = await graphSearch.getRelated(20);
+    expect(relatedNow.map((r) => r.file_path)).toEqual(['src/new/payment.js']);
+  });
+
+  it('does not resolve a hidden target_id relationship by target_name fallback', async () => {
+    const db = new Database(dbPath);
+    try {
+      db.prepare(`
+        INSERT INTO entities (
+          id, name, type, file_path, start_line, end_line, signature,
+          doc_comment, search_text, name_alias, stale_since, epoch_written, epoch_retired
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(14, 'CollisionService', 'class', 'src/collision.js', 1, 20, 'class CollisionService {}', 'collision', 'CollisionService', 'collision service', null, 1, null);
+      db.prepare(`
+        INSERT INTO relationships (
+          source_id, target_id, target_name, type, weight, context_line, epoch_written, epoch_retired
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(20, 13, 'CollisionService', 'calls', 9.0, 9, 2, null);
+    } finally {
+      db.close();
+    }
+
+    graphSearch = new GraphSearch(dbPath, { manifestEpoch: 2 });
+    await graphSearch.init();
+
+    const related = await graphSearch.getRelated(20);
+    expect(related.map((r) => r.name)).not.toContain('CollisionService');
+  });
+
+  it('does not return summaries retired at the pinned manifest epoch', async () => {
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE hcgs_summary_metadata (
+        entity_id TEXT PRIMARY KEY,
+        source_entity_ids TEXT NOT NULL,
+        source_chunk_struct_ids TEXT NOT NULL,
+        source_hashes TEXT NOT NULL,
+        epoch_written INTEGER NOT NULL DEFAULT 0,
+        epoch_retired INTEGER
+      ) WITHOUT ROWID
+    `);
+    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('stale old summary', 10);
+    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('stale caller summary', 20);
+    db.prepare(`
+      INSERT INTO hcgs_summary_metadata (
+        entity_id, source_entity_ids, source_chunk_struct_ids, source_hashes, epoch_written, epoch_retired
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run('10', '[]', '[]', '{}', 1, 2);
+    db.prepare(`
+      INSERT INTO hcgs_summary_metadata (
+        entity_id, source_entity_ids, source_chunk_struct_ids, source_hashes, epoch_written, epoch_retired
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run('20', '[]', '[]', '{}', 1, 2);
+    db.close();
+
+    graphSearch = new GraphSearch(dbPath, { manifestEpoch: 2 });
+    await graphSearch.init();
+
+    const { byName } = await graphSearch.findEntitiesBatch([{ name: 'PaymentService' }]);
+    expect(byName.get('PaymentService')?.file_path).toBe('src/old/payment.js');
+    expect(byName.get('PaymentService')?.summary).toBeNull();
+
+    const entity = await graphSearch.getEntity(10);
+    expect(entity?.summary).toBeNull();
+
+    const related = await graphSearch.getRelated(20);
+    expect(related.find((row) => row.id === 10)?.summary).toBeNull();
+
+    expect((await graphSearch.searchByName('PaymentService')).find((row) => row.id === 10)?.summary).toBeNull();
+    expect((await graphSearch.searchByFile('old/payment.js')).find((row) => row.id === 10)?.summary).toBeNull();
+
+    const callers = await graphSearch.findCallers('PaymentService');
+    expect(callers.results.find((row) => row.name === 'Caller')?.summary).toBeNull();
+
+    const impact = await graphSearch.findImpact('PaymentService', { maxDepth: 1 });
+    expect(impact.results.find((row) => row.name === 'Caller')?.summary).toBeNull();
+
+    const expanded = await graphSearch.expandGraph([10], 1);
+    expect(expanded.find((row) => row.id === 10)?.summary).toBeNull();
+  });
+
+  it('does not cache live HCGS summary visibility after sidecar retirement', async () => {
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE hcgs_summary_metadata (
+        entity_id TEXT PRIMARY KEY,
+        source_entity_ids TEXT NOT NULL,
+        source_chunk_struct_ids TEXT NOT NULL,
+        source_hashes TEXT NOT NULL,
+        epoch_written INTEGER NOT NULL DEFAULT 0,
+        epoch_retired INTEGER
+      ) WITHOUT ROWID
+    `);
+    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('live summary', 11);
+    db.prepare(`
+      INSERT INTO hcgs_summary_metadata (
+        entity_id, source_entity_ids, source_chunk_struct_ids, source_hashes, epoch_written, epoch_retired
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run('11', '[]', '[]', '{}', 3, null);
+    db.close();
+
+    graphSearch = new GraphSearch(dbPath);
+    await graphSearch.init();
+    expect((await graphSearch.getEntity(11))?.summary).toBe('live summary');
+
+    const writer = new Database(dbPath);
+    writer.prepare('UPDATE hcgs_summary_metadata SET epoch_retired = ? WHERE entity_id = ?').run(4, '11');
+    writer.close();
+
+    expect((await graphSearch.getEntity(11))?.summary).toBeNull();
+  });
+
+  it('detects HCGS sidecar creation after a live reader has opened', async () => {
+    const db = new Database(dbPath);
+    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('pre-sidecar summary', 11);
+    db.close();
+
+    graphSearch = new GraphSearch(dbPath);
+    await graphSearch.init();
+    expect((await graphSearch.getEntity(11))?.summary).toBe('pre-sidecar summary');
+
+    const writer = new Database(dbPath);
+    writer.exec(`
+      CREATE TABLE hcgs_summary_metadata (
+        entity_id TEXT PRIMARY KEY,
+        source_entity_ids TEXT NOT NULL,
+        source_chunk_struct_ids TEXT NOT NULL,
+        source_hashes TEXT NOT NULL,
+        epoch_written INTEGER NOT NULL DEFAULT 0,
+        epoch_retired INTEGER
+      ) WITHOUT ROWID
+    `);
+    writer.prepare(`
+      INSERT INTO hcgs_summary_metadata (
+        entity_id, source_entity_ids, source_chunk_struct_ids, source_hashes, epoch_written, epoch_retired
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run('11', '[]', '[]', '{}', 3, 4);
+    writer.close();
+
+    expect((await graphSearch.getEntity(11))?.summary).toBeNull();
   });
 });
 

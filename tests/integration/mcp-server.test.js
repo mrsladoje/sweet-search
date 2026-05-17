@@ -341,31 +341,39 @@ describe('MCP Server stdout hygiene', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
-    const rawStdout = await new Promise((resolve, reject) => {
-      let buf = '';
-      child.stdout.on('data', (chunk) => { buf += chunk.toString(); });
+    const { stdout: rawStdout, stderr: rawStderr } = await new Promise((resolve, reject) => {
+      let stdout = '';
+      let stderr = '';
+      let done = false;
+      let sigkillTimer;
+      const close = () => {
+        if (done) return;
+        done = true;
+        try { child.stdin.end(); } catch { /* ignore */ }
+        try { child.kill('SIGTERM'); } catch { /* ignore */ }
+        sigkillTimer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* ignore */ } }, 1000);
+      };
+
+      child.stdout.on('data', (chunk) => {
+        stdout += chunk.toString();
+        if (stdout.split('\n').some(line => line.trim())) close();
+      });
+      child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
       child.on('error', reject);
 
       // Send messages
-      (async () => {
-        for (const msg of messages) {
-          child.stdin.write(msg + '\n');
-          await new Promise(r => setTimeout(r, 100));
-        }
-        // Wait for response, then terminate
-        await new Promise(r => setTimeout(r, 1500));
-        child.stdin.end();
-        child.kill('SIGTERM');
-      })();
+      for (const msg of messages) child.stdin.write(msg + '\n');
 
-      child.on('close', () => resolve(buf));
-      // Safety: force-kill after 5s
-      setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 5000);
+      child.on('close', () => {
+        clearTimeout(sigkillTimer);
+        resolve({ stdout, stderr });
+      });
+      setTimeout(close, 10000);
     });
 
     // Every non-empty line on stdout must be valid JSON-RPC
     const lines = rawStdout.split('\n').filter(l => l.trim());
-    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.length, `No JSON-RPC stdout lines. stderr:\n${rawStderr}`).toBeGreaterThan(0);
 
     for (const line of lines) {
       const parsed = JSON.parse(line); // will throw if not valid JSON

@@ -40,6 +40,8 @@ describe('chunk-identity / pure helpers', () => {
     expect(normalizeSignature('function  foo(x) {')).toBe('function foo(x)');
     expect(normalizeSignature('function foo(x){')).toBe('function foo(x)');
     expect(normalizeSignature('  function   foo(x)   ')).toBe('function foo(x)');
+    expect(normalizeSignature('async function foo (a , b ) {')).toBe('async function foo(a,b)');
+    expect(normalizeSignature('const foo = (a , b) => {')).toBe('const foo=(a,b)=>');
   });
 
   it('normalizeAnonymousContent drops blank lines and trims', () => {
@@ -66,7 +68,7 @@ describe('chunk-identity / pure helpers', () => {
 describe('chunk-identity / six structural invariants', () => {
   it('1. whitespace-only edits (indent / trailing spaces / blank lines) keep every ID stable', () => {
     const a = [
-      symbolChunk('foo', 'function foo(x) {'),
+      symbolChunk('foo', 'function foo ( x ) {'),
       symbolChunk('bar', 'function bar(y) {'),
       anonymousChunk('main', '  console.log(1);\n  doWork();\n'),
     ];

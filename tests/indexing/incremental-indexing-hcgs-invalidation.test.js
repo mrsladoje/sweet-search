@@ -66,6 +66,12 @@ describe('hcgs-invalidation', () => {
     );
   });
 
+  it('summaryVisibilityPredicate accepts aliases with a trailing dot', () => {
+    expect(summaryVisibilityPredicate('m.')).toBe(
+      'm.epoch_written <= :manifestEpoch AND (m.epoch_retired IS NULL OR m.epoch_retired > :manifestEpoch)',
+    );
+  });
+
   it('pruneRetiredSummaries removes rows older than the prune frontier', () => {
     recordSummary(db, 'ent-1', { sourceEntityIds: ['ent-A'], sourceChunkStructIds: [], sourceHashes: {}, epoch: 1 });
     retireDependentSummaries(db, { retiredEntityIds: ['ent-A'], retiredChunkStructIds: [] }, 5);

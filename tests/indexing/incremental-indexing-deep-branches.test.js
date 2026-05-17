@@ -228,9 +228,10 @@ describe('maintenance-worker — main() smoke test via child_process', () => {
     const out = r.stdout.trim();
     const parsed = JSON.parse(out);
     expect(parsed.worker).toBe('maintenance');
-    expect(parsed.phase).toBe(0);
+    expect(parsed.phase).toBe('queue-drain');
     expect(parsed.cpuOnly).toBe(true);
     expect(parsed.pendingJobs).toBe(0);
+    expect(parsed.drain.succeeded).toBe(0);
   });
 
   it('worker counts pending jobs from the queue file', () => {
@@ -248,6 +249,7 @@ describe('maintenance-worker — main() smoke test via child_process', () => {
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout.trim());
     expect(parsed.pendingJobs).toBe(2);
+    expect(parsed.drain.deferred).toBe(2);
   });
 
   it('worker refuses to start with GPU env flag set', () => {

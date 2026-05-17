@@ -62,19 +62,27 @@ function lineOfIndex(text, index) {
   return line;
 }
 
-export function findAliasCallers({ db, target, readFileRange, limit = 40 }) {
+export function findAliasCallers({
+  db,
+  target,
+  readFileRange,
+  limit = 40,
+  entityVisibilitySql: entitySql = ACTIVE,
+  entityVisibilityParams: entityParams = [],
+  mapEntity = rowToEntity,
+}) {
   if (!db || !target?.filePath || !target?.name) return [];
   const files = db.prepare(`
     SELECT DISTINCT file_path
     FROM entities
-    WHERE ${ACTIVE} AND file_path IS NOT NULL
+    WHERE ${entitySql} AND file_path IS NOT NULL
     ORDER BY CASE WHEN file_path LIKE '%/test/%' OR file_path LIKE 'test/%' OR file_path LIKE 'tests/%' THEN 1 ELSE 0 END, file_path
     LIMIT 1000
-  `).all();
+  `).all(...entityParams);
   const entityAtLine = db.prepare(`
     SELECT id, name, type, file_path, start_line, end_line, signature, summary, parent_class, package
     FROM entities
-    WHERE ${ACTIVE} AND file_path = ? AND start_line <= ? AND end_line >= ?
+    WHERE ${entitySql} AND file_path = ? AND start_line <= ? AND end_line >= ?
     ORDER BY (end_line - start_line) ASC
     LIMIT 1
   `);
@@ -99,13 +107,13 @@ export function findAliasCallers({ db, target, readFileRange, limit = 40 }) {
       const re = pattern.re;
       for (const match of text.matchAll(re)) {
         const line = lineOfIndex(text, match.index || 0);
-        const entity = entityAtLine.get(filePath, line, line);
+        const entity = entityAtLine.get(...entityParams, filePath, line, line);
         if (!entity || entity.id === target.id) continue;
         const targetName = match[0].replace(/\s*\($/, '') || pattern.targetName;
         const key = `${entity.id}:${line}:${targetName}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        out.push({ ...rowToEntity(entity), relationship: 'calls', contextLine: line, targetName, weight: 0.82 });
+        out.push({ ...mapEntity(entity), relationship: 'calls', contextLine: line, targetName, weight: 0.82 });
         if (out.length >= limit) return out;
       }
     }

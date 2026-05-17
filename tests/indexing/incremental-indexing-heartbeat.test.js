@@ -30,11 +30,17 @@ describe('reader-heartbeat', () => {
     expect(fs.existsSync(path.join(dir, 'readers'))).toBe(true);
   });
 
-  it('writes a single file per (pid, bootId) pair', () => {
-    beginRead(dir, 1);
-    beginRead(dir, 2); // same pid+boot → overwrites in place
+  it('writes a distinct file per concurrent read in the same process', () => {
+    const first = beginRead(dir, 1);
+    const second = beginRead(dir, 2);
     const files = fs.readdirSync(path.join(dir, 'readers'));
-    expect(files.length).toBe(1);
+    expect(files.length).toBe(2);
+    expect(first.path).not.toBe(second.path);
+    expect(minLiveEpoch(dir)).toBe(1);
+    endRead(dir, first);
+    expect(minLiveEpoch(dir)).toBe(2);
+    endRead(dir, second);
+    expect(minLiveEpoch(dir)).toBeNull();
   });
 
   it('endRead unlinks the heartbeat', () => {

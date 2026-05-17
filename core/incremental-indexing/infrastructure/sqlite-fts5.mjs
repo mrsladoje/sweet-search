@@ -25,15 +25,15 @@ function readVarint(buf, offset) {
   // SQLite varints are big-endian, up to 9 bytes, high-bit continuation.
   let value = 0n;
   let consumed = 0;
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 9; i++) {
     if (offset + i >= buf.length) {
       throw new Error(`fts5 varint truncated at offset ${offset + i} (buffer len ${buf.length})`);
     }
     const byte = buf[offset + i];
-    if (i === 7) {
-      // The 9th byte (i.e. up to 8 high bits + 8 bytes of payload) uses all 8 bits.
+    if (i === 8) {
+      // The 9th byte uses all 8 bits.
       value = (value << 8n) | BigInt(byte);
-      consumed = 8;
+      consumed = 9;
       break;
     }
     value = (value << 7n) | BigInt(byte & 0x7F);
@@ -167,7 +167,7 @@ export function fts5Merge(db, tableName, pages) {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tableName)) {
     throw new Error(`fts5Merge: invalid table name ${tableName}`);
   }
-  if (!Number.isFinite(pages) || pages <= 0) {
+  if (!Number.isInteger(pages) || pages <= 0) {
     throw new Error(`fts5Merge: pages must be a positive integer, got ${pages}`);
   }
   db.prepare(`INSERT INTO ${tableName}(${tableName}, rank) VALUES('merge', ?)`).run(pages);

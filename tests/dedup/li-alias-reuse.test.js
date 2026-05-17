@@ -36,13 +36,26 @@ describe('LI alias reuse', () => {
     const { idx, indexPath, dir } = await makeIndex();
     try {
       await idx.add('chunk-a', [[1, 1, 1, 1]], {});
-      idx.addAlias('chunk-b', 'chunk-a', 'cluster-xyz', {});
+      idx.addAlias('chunk-b', 'chunk-a', 'cluster-xyz', {
+        file: 'alias.js',
+        startLine: 7,
+        endLine: 9,
+        type: 'function',
+        name: 'aliasFn',
+      });
       await idx.save();
 
       const reloaded = new LateInteractionIndex({ indexPath, tokenDim: 4, maxTokens: 16, quantBits: 32 });
       await reloaded.init();
       expect(reloaded.aliasPointers.size).toBe(1);
       expect(reloaded.aliasPointers.get('chunk-b').exemplarId).toBe('chunk-a');
+      expect(reloaded.aliasPointers.get('chunk-b').metadata).toMatchObject({
+        file: 'alias.js',
+        startLine: 7,
+        endLine: 9,
+        type: 'function',
+        name: 'aliasFn',
+      });
       expect(reloaded.getTokens('chunk-b')).toEqual(reloaded.getTokens('chunk-a'));
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -73,6 +86,25 @@ describe('LI alias reuse', () => {
       expect(flatB.numTokens).toBe(flatA.numTokens);
       expect(flatB.dim).toBe(flatA.dim);
       expect(Array.from(flatB.flat)).toEqual(Array.from(flatA.flat));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('scoreWithLateInteraction scores alias candidates through exemplar tokens', async () => {
+    const { idx, dir } = await makeIndex();
+    try {
+      await idx.add('chunk-a', [[1, 0, 0, 0]], {});
+      idx.addAlias('chunk-b', 'chunk-a', 'cluster-xyz', {});
+
+      const scored = await idx.scoreWithLateInteraction(
+        [[1, 0, 0, 0]],
+        [{ id: 'chunk-b', score: 0.01 }],
+      );
+
+      expect(scored).toHaveLength(1);
+      expect(scored[0].id).toBe('chunk-b');
+      expect(scored[0].lateInteractionScore).toBeGreaterThan(0.5);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

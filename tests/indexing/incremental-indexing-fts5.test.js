@@ -78,6 +78,10 @@ describe('fts5Merge', () => {
     expect(() => fts5Merge(db, 't', -1)).toThrow();
   });
 
+  it('rejects fractional page budgets', () => {
+    expect(() => fts5Merge(db, 't', 1.5)).toThrow(/positive integer/);
+  });
+
   it('runs cleanly on an empty table', () => {
     expect(() => fts5Merge(db, 't', 16)).not.toThrow();
   });

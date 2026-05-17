@@ -285,7 +285,7 @@ async function main() {
 
   // Child mode: lazy-import readSemantic so its DB_PATHS captures the
   // SWEET_SEARCH_PROJECT_ROOT the orchestrator set for THIS child.
-  const { readSemantic } = await import('../../../search/search-read-semantic.js');
+  const { readSemantic } = await import('../../search-runtime.mjs');
 
   const reposMap = loadReposManifest();
   const inputs = loadAllInputs().filter((i) => i.goldClass === 'ast-tester');

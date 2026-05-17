@@ -80,6 +80,7 @@ export function mergeRegexIntoQuery(query, regex) {
 // =============================================================================
 
 export async function bareGrep(query, routing, options = {}) {
+  await this?._refreshManifestPins?.({ reloadScope: 'grep' });
   const regex = options.regex || query;
   const searchDir = this?.projectRoot || options.projectRoot || PROJECT_ROOT;
   const maxMatches = options.maxMatches ?? 0;
@@ -162,6 +163,7 @@ export async function bareGrep(query, routing, options = {}) {
  * Uses `this` — must be wired onto SweetSearch.prototype.
  */
 export async function patternSearch(query, routing, options = {}) {
+  await this?._refreshManifestPins?.({ reloadScope: 'all' });
   const {
     regex,
     k = 10,
@@ -319,7 +321,7 @@ export async function patternSearch(query, routing, options = {}) {
 
   let rankedResults = scored.map((s, rank) => {
     const doc = this.lateInteractionIndex.documents.get(s.id);
-    const meta = doc?.metadata || {};
+    const meta = doc?.metadata || this.lateInteractionIndex.aliasPointers?.get(s.id)?.metadata || {};
     const text = readFileRange(fileCache, meta.file, meta.startLine, meta.endLine, this.projectRoot);
 
     return {
@@ -399,7 +401,7 @@ export async function patternSearch(query, routing, options = {}) {
       const key = `${m.file}:${m.line}`;
       if (seen.has(key)) continue;
       seen.add(key);
-
+      const content = m.content || readFileRange(fileCache, m.file, m.line, m.line, this.projectRoot) || m.matchText || '';
       results.push({
         id: `unindexed:${m.file}:${m.line}`,
         file: m.file,
@@ -407,8 +409,8 @@ export async function patternSearch(query, routing, options = {}) {
         type: 'code',
         startLine: m.line,
         endLine: m.line,
-        text: m.content,
-        content: m.content,
+        text: content,
+        content,
         score: 0,
         lateInteractionScore: 0,
         rank: results.length + 1,

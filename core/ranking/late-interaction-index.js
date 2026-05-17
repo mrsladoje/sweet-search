@@ -11,12 +11,13 @@
  */
 
 import fs from 'fs/promises';
-import { existsSync, createWriteStream, createReadStream } from 'fs';
+import { existsSync, createWriteStream, createReadStream, statSync } from 'fs';
 import path from 'path';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { wasmMaxSimF32, wasmMaxSimDequantPerToken, wasmMaxSimDequant4Bit, nativeMaxSimBatch, nativeMaxSimBatchPerToken, nativeMaxSimBatch4Bit, initWasm, isNativeMaxSimAvailable, isNativePerTokenAvailable, isNative4BitAvailable } from '../infrastructure/simd-distance.js';
 import { fastRotate, generateSignVector, calibrateWUSH, wushRotate } from '../infrastructure/quantization.js';
 import { poolTokens } from './late-interaction-model.js';
+import { loadBitmap, isSet } from '../infrastructure/tombstone-bitmap-reader.js';
 
 // =============================================================================
 // CRC32 (IEEE 802.3 polynomial, used for SSLX segment footer checksum)
@@ -373,6 +374,8 @@ export class LateInteractionIndex {
     this._segments = []; // { path, count } of flushed segments
     this._segmentDir = null;
     this._segmentSize = options.segmentSize || LI_SEGMENT_SIZE;
+    this._docSegmentPositions = new Map(); // doc id -> { segmentPath, docIndex }
+    this._staleBitmapCache = new Map(); // segment path -> { mtimeMs, size, bitmap }
   }
 
   /**
@@ -899,7 +902,12 @@ export class LateInteractionIndex {
     }
     const entries = [];
     for (const [aliasId, ptr] of this.aliasPointers) {
-      entries.push({ aliasId, exemplarId: ptr.exemplarId, clusterId: ptr.clusterId });
+      entries.push({
+        aliasId,
+        exemplarId: ptr.exemplarId,
+        clusterId: ptr.clusterId,
+        metadata: ptr.metadata || {},
+      });
     }
     const payload = { version: 1, count: entries.length, aliases: entries };
     await fs.writeFile(this._aliasSidecarPath(indexPath), JSON.stringify(payload));
@@ -913,13 +921,13 @@ export class LateInteractionIndex {
       const payload = JSON.parse(raw);
       if (!payload || !Array.isArray(payload.aliases)) return;
       this.aliasPointers.clear();
-      for (const { aliasId, exemplarId, clusterId } of payload.aliases) {
+      for (const { aliasId, exemplarId, clusterId, metadata } of payload.aliases) {
         // Orphan guard: drop aliases whose exemplar is no longer in documents.
         // Happens if the file containing the exemplar was removed between
         // save and load (incremental re-index removed the exemplar file
         // but did not re-run dedup over the alias files).
         if (!this.documents.has(exemplarId)) continue;
-        this.aliasPointers.set(aliasId, { exemplarId, clusterId, metadata: {} });
+        this.aliasPointers.set(aliasId, { exemplarId, clusterId, metadata: metadata || {} });
       }
     } catch (_e) {
       // Malformed sidecar — treat as absent; aliases will be skipped at query time.
@@ -928,6 +936,7 @@ export class LateInteractionIndex {
 
   getTokens(id) {
     const resolved = this._resolveForRead(id);
+    if (this.isDocumentTombstoned(resolved)) return null;
     const doc = this.documents.get(resolved);
     if (!doc) return null;
 
@@ -964,6 +973,7 @@ export class LateInteractionIndex {
    */
   getTokensFlat(id) {
     const resolved = this._resolveForRead(id);
+    if (this.isDocumentTombstoned(resolved)) return null;
     const doc = this.documents.get(resolved);
     if (!doc) return null;
 
@@ -1154,6 +1164,49 @@ export class LateInteractionIndex {
     }
 
     return totalScore / effectiveQuery.length;
+  }
+
+  _loadSegmentStaleBitmap(segmentPath) {
+    const sidecarPath = segmentPath + '.stale.bin';
+    let stat;
+    try {
+      stat = statSync(sidecarPath, { bigint: true });
+    } catch {
+      this._staleBitmapCache.delete(segmentPath);
+      return null;
+    }
+    const statKey = `${stat.mtimeNs}:${stat.ctimeNs}:${stat.size}`;
+
+    const cached = this._staleBitmapCache.get(segmentPath);
+    if (cached && cached.statKey === statKey) {
+      return cached.bitmap;
+    }
+
+    try {
+      const bitmap = loadBitmap(sidecarPath);
+      this._staleBitmapCache.set(segmentPath, {
+        statKey,
+        bitmap,
+      });
+      return bitmap;
+    } catch (err) {
+      if (process.env.SWEET_DEBUG) {
+        console.debug(`[LateInteraction] ignoring unreadable stale bitmap ${sidecarPath}: ${err.message}`);
+      }
+      this._staleBitmapCache.set(segmentPath, {
+        statKey,
+        bitmap: null,
+      });
+      return null;
+    }
+  }
+
+  isDocumentTombstoned(docId) {
+    if (!docId) return false;
+    const position = this._docSegmentPositions.get(docId);
+    if (!position) return false;
+    const bitmap = this._loadSegmentStaleBitmap(position.segmentPath);
+    return bitmap ? isSet(bitmap, position.docIndex) : false;
   }
 
   /**
@@ -1419,11 +1472,14 @@ export class LateInteractionIndex {
     // public `id` is the entity id from the code graph. Honouring _liChunkId
     // lets expanded candidates participate in MaxSim rerank.
     const docIdOf = (c) => c._liChunkId || c.id;
+    const lookupDocIdOf = (c) => this._resolveForRead(docIdOf(c));
 
     if (useFlatPath && !this.useTokenWeights) {
       const groups = { bit4: [], perToken: [], perDoc: [] };
       for (const candidate of toScore) {
-        const doc = this.documents.get(docIdOf(candidate));
+        const lookupDocId = lookupDocIdOf(candidate);
+        if (this.isDocumentTombstoned(lookupDocId)) continue;
+        const doc = this.documents.get(lookupDocId);
         if (!doc) continue;
         if (doc.quantBits === 4 && doc.minArray && doc.tokenNorms) {
           groups.bit4.push({ candidate, doc });
@@ -1444,6 +1500,11 @@ export class LateInteractionIndex {
         const scores = scoreFn(queryFlat, effectiveQueryTokens.length, scoringDim, nativeCands);
         if (scores) {
           for (let i = 0; i < group.length; i++) {
+            if (this.isDocumentTombstoned(lookupDocIdOf(group[i].candidate))) {
+              pushFallback(group[i].candidate, { _liTombstoned: true });
+              nativeScored.add(group[i].candidate.id);
+              continue;
+            }
             pushScored(group[i].candidate, scores[i]);
             nativeScored.add(group[i].candidate.id);
           }
@@ -1459,7 +1520,12 @@ export class LateInteractionIndex {
     // Try WASM fused kernels first (avoids JS-side dequant), fall back to JS dequant + wasmMaxSimF32.
     for (const candidate of toScore) {
       if (nativeScored.has(candidate.id)) continue;
-      const doc = this.documents.get(docIdOf(candidate));
+      const docId = lookupDocIdOf(candidate);
+      if (this.isDocumentTombstoned(docId)) {
+        pushFallback(candidate, { _liTombstoned: true });
+        continue;
+      }
+      const doc = this.documents.get(docId);
       if (!doc) { pushFallback(candidate); continue; }
 
       if (useFlatPath) {
@@ -1494,7 +1560,7 @@ export class LateInteractionIndex {
         }
 
         // JS dequant → WASM f32 or JS fallback
-        const flatData = this.getTokensFlat(docIdOf(candidate));
+        const flatData = this.getTokensFlat(docId);
         if (flatData) {
           pushScored(candidate, this.maxSimScoreFlat(
             effectiveQueryTokens, flatData.flat, flatData.numTokens, flatData.dim,
@@ -1504,7 +1570,7 @@ export class LateInteractionIndex {
           pushFallback(candidate);
         }
       } else {
-        const docTokens = this.getTokens(docIdOf(candidate));
+        const docTokens = this.getTokens(docId);
         if (docTokens) {
           pushScored(candidate, this.maxSimScore(effectiveQueryTokens, docTokens, pruneOpts));
         } else {
@@ -1997,14 +2063,21 @@ export class LateInteractionIndex {
     if (manifest.modelId) this.modelId = manifest.modelId;
 
     this.documents.clear();
+    this._docSegmentPositions.clear();
+    this._staleBitmapCache.clear();
 
     const isSSLX = manifest.format === 'sslx-v3';
 
     for (const seg of manifest.segments) {
       const segPath = path.join(segmentDir, seg.path);
       const docs = await this._readSegmentFile(segPath);
+      const staleBitmap = this._loadSegmentStaleBitmap(segPath);
 
-      for (const doc of docs) {
+      for (let docIndex = 0; docIndex < docs.length; docIndex++) {
+        const doc = docs[docIndex];
+        if (staleBitmap && isSet(staleBitmap, docIndex)) {
+          continue;
+        }
         // SSLX reader returns typed arrays directly; legacy LISE returns plain arrays
         const tokens = (doc.tokens instanceof Int8Array || doc.tokens instanceof Float32Array || doc.tokens instanceof Uint8Array)
           ? doc.tokens
@@ -2033,6 +2106,7 @@ export class LateInteractionIndex {
         if (doc.preNorms) entry.preNorms = doc.preNorms;
 
         this.documents.set(doc.id, entry);
+        this._docSegmentPositions.set(doc.id, { segmentPath: segPath, docIndex });
       }
     }
 
@@ -2273,9 +2347,10 @@ export class LateInteractionIndex {
   hasTokens(chunkIds) {
     const available = new Set();
     for (const id of chunkIds) {
-      if (this.documents.has(id)) { available.add(id); continue; }
-      const ptr = this.aliasPointers.get(id);
-      if (ptr && this.documents.has(ptr.exemplarId)) available.add(id);
+      const resolved = this._resolveForRead(id);
+      if (!this.documents.has(resolved)) continue;
+      if (this.isDocumentTombstoned(resolved)) continue;
+      available.add(id);
     }
     return available;
   }

@@ -61,6 +61,28 @@ export function pickLiInput(chunk) {
   return chunk.li_greedy_text || chunk.embedding_text || chunk.li_text || chunk.text || chunk.content || '';
 }
 
+function chunkFilePath(chunk) {
+  return firstSafeRelativePath(
+    chunk?.metadata?.relative_path,
+    chunk?.metadata?.path,
+    chunk?.metadata?.file_path,
+    chunk?.file,
+    chunk?.metadata?.file,
+  ) || '';
+}
+
+function firstSafeRelativePath(...candidates) {
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const normalized = candidate.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+/g, '/');
+    if (!normalized || normalized === '.' || normalized.startsWith('/')) continue;
+    if (/^[A-Za-z]:\//.test(normalized)) continue;
+    if (normalized === '..' || normalized.startsWith('../') || normalized.includes('/../')) continue;
+    return normalized;
+  }
+  return null;
+}
+
 function fsyncFile(filePath) {
   const fd = openSync(filePath, 'r');
   try { fsyncSync(fd); } finally { closeSync(fd); }
@@ -109,13 +131,38 @@ function cleanupCheckpoint(indexPath) {
 // list at the exemplar's rank position.
 const ALIAS_FILTER_SQL = "json_extract(metadata, '$.exemplarId') IS NULL";
 
+function hasVectorColumn(db, column) {
+  try {
+    return db.prepare('PRAGMA table_info(vectors)').all().some((col) => col.name === column);
+  } catch (_err) {
+    return false;
+  }
+}
+
+function aliasFilterSql(alias = '') {
+  if (!alias) return ALIAS_FILTER_SQL;
+  const prefix = alias ? `${alias}.` : '';
+  return `json_extract(${prefix}metadata, '$.exemplarId') IS NULL`;
+}
+
+function liveVectorSql(db, alias = '') {
+  if (!hasVectorColumn(db, 'epoch_retired')) return '1=1';
+  const prefix = alias ? `${alias}.` : '';
+  return `${prefix}epoch_retired IS NULL`;
+}
+
+function vectorIndexWhere(db, alias = '') {
+  return `${aliasFilterSql(alias)} AND ${liveVectorSql(db, alias)}`;
+}
+
 function* streamVectorsFromDb(db, _dim, order = 'sequential') {
+  const vectorWhere = vectorIndexWhere(db);
   if (order !== 'sequential') {
     db.exec('CREATE TEMP TABLE IF NOT EXISTS hnsw_order (pos INTEGER PRIMARY KEY, vector_rowid INTEGER)');
     db.exec('DELETE FROM hnsw_order');
 
     const rowidRows = db
-      .prepare(`SELECT rowid FROM vectors WHERE ${ALIAS_FILTER_SQL} ORDER BY rowid`)
+      .prepare(`SELECT rowid FROM vectors WHERE ${vectorWhere} ORDER BY rowid`)
       .all();
     let indices = rowidRows.map((r) => r.rowid);
 
@@ -123,7 +170,7 @@ function* streamVectorsFromDb(db, _dim, order = 'sequential') {
       fisherYatesShuffle(indices);
     } else if (order === 'diversity') {
       const pathRows = db
-        .prepare(`SELECT rowid, file_path FROM vectors WHERE ${ALIAS_FILTER_SQL} ORDER BY rowid`)
+        .prepare(`SELECT rowid, file_path FROM vectors WHERE ${vectorWhere} ORDER BY rowid`)
         .all();
       const filePaths = pathRows.map((r) => r.file_path);
       const permutationPositions = diversityFirstPermutationRowids(filePaths);
@@ -156,7 +203,7 @@ function* streamVectorsFromDb(db, _dim, order = 'sequential') {
     db.exec('DROP TABLE IF EXISTS temp.hnsw_order');
   } else {
     const stmt = db.prepare(
-      `SELECT rowid, id, file_path, embedding, metadata FROM vectors WHERE ${ALIAS_FILTER_SQL} ORDER BY rowid`,
+      `SELECT rowid, id, file_path, embedding, metadata FROM vectors WHERE ${vectorWhere} ORDER BY rowid`,
     );
     for (const row of stmt.iterate()) {
       yield {
@@ -408,7 +455,7 @@ export async function incrementalUpdateHNSW(dbPath, changedFiles, dryRun = false
       db,
       `SELECT rowid, id, file_path, embedding, metadata
          FROM vectors
-        WHERE ${ALIAS_FILTER_SQL}
+        WHERE ${vectorIndexWhere(db)}
           AND file_path IN (__IN_PLACEHOLDERS__)
         ORDER BY rowid`,
       changedFileList,
@@ -471,7 +518,7 @@ export async function buildHNSWIndex(dbPath, dryRun = false) {
   const db = new Database(dbPath, orderMode === 'sequential' ? { readonly: true } : {});
 
   const totalVectors = db
-    .prepare(`SELECT COUNT(*) as c FROM vectors WHERE ${ALIAS_FILTER_SQL}`)
+    .prepare(`SELECT COUNT(*) as c FROM vectors WHERE ${vectorIndexWhere(db)}`)
     .get().c;
   if (totalVectors === 0) {
     db.close();
@@ -515,7 +562,10 @@ export async function buildHNSWIndex(dbPath, dryRun = false) {
         // vectors already in the checkpoint. Without this, add() reuses keys
         // from 0 and the final .meta.json would be incomplete.
         const metaStmt = db.prepare(
-          'SELECT id, file_path, metadata FROM vectors WHERE rowid <= ? ORDER BY rowid'
+          `SELECT id, file_path, metadata
+             FROM vectors
+            WHERE rowid <= ? AND ${vectorIndexWhere(db)}
+            ORDER BY rowid`
         );
         let restoredKey = 0;
         for (const row of metaStmt.iterate(resumeFromRowId)) {
@@ -608,6 +658,7 @@ export async function buildHNSWIndex(dbPath, dryRun = false) {
     }
 
     await index.save();
+    await index.clearStaleBitmap();
     buildCompleted = true;
 
     // Clean up checkpoint files after successful completion
@@ -929,7 +980,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
         const tokens = tokenArrays[j];
         if (tokens && tokens.length > 0) {
           await liIndex.add(chunk.id, tokens, {
-            file: chunk.file,
+            file: chunkFilePath(chunk),
             name: chunk.metadata?.symbol,
             type: chunk.metadata?.chunk_type,
             startLine: chunk.metadata?.line_start || null,
@@ -1034,7 +1085,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
         continue;
       }
       liIndex.addAlias(alias.id, exemplarId, clusterId, {
-        file: alias.file,
+        file: chunkFilePath(alias),
         name: alias.metadata?.symbol,
         type: alias.metadata?.chunk_type,
         startLine: alias.metadata?.line_start || null,
@@ -1057,6 +1108,12 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
 
   return { ...liStats, added: totalAdded, removed, saveToPath };
 }
+
+export const __TEST__ = {
+  chunkFilePath,
+  vectorIndexWhere,
+  liveVectorSql,
+};
 
 // =============================================================================
 // PHASE 5: BINARY HNSW + INT8 QUANTIZED ARTIFACTS

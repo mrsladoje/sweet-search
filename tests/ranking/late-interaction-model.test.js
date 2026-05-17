@@ -3,6 +3,7 @@ import fsPromises from 'fs/promises';
 import { mkdtempSync, writeFileSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { createBitmap, saveBitmap, setBit } from '../../core/incremental-indexing/infrastructure/tombstone-bitmap.mjs';
 
 // Mock onnxruntime-node and @huggingface/transformers for unit tests
 // (don't download real models in CI)
@@ -620,6 +621,87 @@ describe('Phase 4: 4-bit SSLX save/load roundtrip', () => {
       // Verify dequantized values are reasonable
       const tokens = idx2.getTokens('doc1');
       expect(tokens[0][0]).toBeCloseTo(0.5, 0);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('skips docs marked in SSLX segment stale bitmaps', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sweet-search-li-stale-'));
+    const indexPath = join(tmpDir, 'late-interaction.db');
+
+    try {
+      const idx = new LateInteractionIndex({
+        tokenDim: 4, quantBits: 4, useInt8: true, whtSeed: 0,
+        indexPath, segmentSize: 2,
+      });
+      idx.initialized = true;
+
+      await idx.add('doc1', [[0.5, 0.3, -0.2, 0.8]]);
+      await idx.add('doc2', [[0.1, -0.4, 0.6, 0.2]]);
+      await idx.save();
+
+      const segmentPath = join(indexPath + '.segments', 'segment-0000.bin');
+      const bitmap = createBitmap(2);
+      setBit(bitmap, 0);
+      saveBitmap(segmentPath + '.stale.bin', bitmap);
+
+      const loaded = new LateInteractionIndex({
+        tokenDim: 4, quantBits: 4, useInt8: true, whtSeed: 0,
+        indexPath,
+      });
+      await loaded.load();
+
+      expect(loaded.documents.has('doc1')).toBe(false);
+      expect(loaded.documents.has('doc2')).toBe(true);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('honors stale bitmap changes during scoring for long-lived LI readers', async () => {
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const tmpDir = mkdtempSync(join(tmpdir(), 'sweet-search-li-stale-live-'));
+    const indexPath = join(tmpDir, 'late-interaction.db');
+
+    try {
+      const idx = new LateInteractionIndex({
+        tokenDim: 4, quantBits: 4, useInt8: true, whtSeed: 0,
+        indexPath, segmentSize: 2,
+      });
+      idx.initialized = true;
+
+      await idx.add('doc1', [[0.5, 0.3, -0.2, 0.8]]);
+      await idx.add('doc2', [[0.1, -0.4, 0.6, 0.2]]);
+      await idx.save();
+
+      const loaded = new LateInteractionIndex({
+        tokenDim: 4, quantBits: 4, useInt8: true, whtSeed: 0,
+        indexPath,
+      });
+      await loaded.load();
+      loaded.initialized = true;
+      expect(loaded.documents.has('doc1')).toBe(true);
+
+      const segmentPath = join(indexPath + '.segments', 'segment-0000.bin');
+      const bitmap = createBitmap(2);
+      setBit(bitmap, 0);
+      saveBitmap(segmentPath + '.stale.bin', bitmap);
+      loaded.addAlias('doc1-alias', 'doc1', 'cluster-doc1', {});
+
+      const available = loaded.hasTokens(['doc1', 'doc1-alias', 'doc2']);
+      expect(available.has('doc1')).toBe(false);
+      expect(available.has('doc1-alias')).toBe(false);
+      expect(available.has('doc2')).toBe(true);
+      expect(loaded.getTokens('doc1')).toBeNull();
+      expect(loaded.getTokensFlat('doc1')).toBeNull();
+
+      const scored = await loaded.scoreWithLateInteraction(
+        [[0.5, 0.3, -0.2, 0.8]],
+        [{ id: 'doc1', score: 0.9 }, { id: 'doc2', score: 0.1 }],
+      );
+      expect(scored.find((r) => r.id === 'doc1')._liTombstoned).toBe(true);
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }

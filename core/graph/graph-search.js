@@ -19,6 +19,7 @@ import { applyReadPragmas, assertInClauseSize } from '../infrastructure/db-utils
 import { detectIntent, getIntentBoost } from '../query/intent-detector.js';
 import { applyMMR, shouldApplyMMR } from '../ranking/mmr.js';
 import { SYMBOL_KIND_WEIGHTS, DEFINITION_TYPES } from '../infrastructure/constants.js';
+import { readAdjacentManifest, resolveManifestCodeGraphPath, sqlAliasPrefix } from '../infrastructure/code-graph-visibility.js';
 
 // Fix 9: Abbreviation expansion dictionary for common software abbreviations
 const ABBREVIATION_EXPANSIONS = {
@@ -44,17 +45,54 @@ const ABBREVIATION_EXPANSIONS = {
 // =============================================================================
 
 export class GraphSearch {
-  constructor(dbPath = DB_PATHS.codeGraph) {
-    this.dbPath = dbPath;
+  constructor(dbPath = DB_PATHS.codeGraph, options = {}) {
+    this._baseDbPath = dbPath;
+    this._explicitManifestEpoch = Number.isInteger(options.manifestEpoch);
+    this._manifestEpoch = this._explicitManifestEpoch ? options.manifestEpoch : null;
+    const manifest = this._explicitManifestEpoch ? readAdjacentManifest(this._baseDbPath) : null;
+    this.dbPath = this._explicitManifestEpoch
+      ? resolveManifestCodeGraphPath(this._baseDbPath, manifest)
+      : dbPath;
     this.db = null;
     this.hasFts5 = false;
     this.hasTrigram = false;
+    this._hasEntityEpochVisibility = false;
+    this._hasRelationshipEpochVisibility = false;
+    this._hasHcgsSummaryMetadata = false;
+    this._summaryVisibilityCache = new Map();
+    if (!this._explicitManifestEpoch) {
+      this._syncAdjacentManifest();
+    }
+  }
+
+  _syncAdjacentManifest() {
+    if (this._explicitManifestEpoch) return false;
+    const manifest = readAdjacentManifest(this._baseDbPath);
+    const nextEpoch = Number.isInteger(manifest?.epoch) ? manifest.epoch : null;
+    const nextDbPath = resolveManifestCodeGraphPath(this._baseDbPath, manifest);
+    const changed = nextEpoch !== this._manifestEpoch || nextDbPath !== this.dbPath;
+    this._manifestEpoch = nextEpoch;
+    this.dbPath = nextDbPath;
+    if (changed) {
+      this.close();
+    }
+    return changed;
+  }
+
+  refreshManifestEpoch() {
+    this._syncAdjacentManifest();
+    return this._manifestEpoch;
+  }
+
+  getManifestEpoch() {
+    return this._manifestEpoch;
   }
 
   /**
    * Initialize database connection (synchronous with better-sqlite3)
    */
   async init() {
+    this._syncAdjacentManifest();
     if (this.db) return;
 
     if (!existsSync(this.dbPath)) {
@@ -80,6 +118,16 @@ export class GraphSearch {
         this.hasTrigram = false;
       }
 
+      const entityCols = db.prepare('PRAGMA table_info(entities)').all().map((c) => c.name);
+      this._hasEntityEpochVisibility = entityCols.includes('epoch_written')
+        && entityCols.includes('epoch_retired');
+      const relCols = db.prepare('PRAGMA table_info(relationships)').all().map((c) => c.name);
+      this._hasRelationshipEpochVisibility = relCols.includes('epoch_written')
+        && relCols.includes('epoch_retired');
+      this._hasHcgsSummaryMetadata = !!db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='hcgs_summary_metadata'",
+      ).get();
+
       // Detect FTS5 column count to warn about schema mismatches with old databases.
       // The bm25() weights are positional — wrong column count produces wrong ranking.
       if (this.hasFts5) {
@@ -102,6 +150,7 @@ export class GraphSearch {
       // Prepare failures on optional FTS paths should degrade to existing fallbacks.
       if (this.hasFts5) {
         try {
+          const entityVis = this._entityVisibilitySql('e');
           this._stmtFts5 = db.prepare(`
             SELECT
               e.id, e.file_path, e.type, e.name, e.signature,
@@ -110,7 +159,7 @@ export class GraphSearch {
             FROM entities_fts
             JOIN entities e ON entities_fts.rowid = e.rowid
             WHERE entities_fts MATCH ?
-              AND e.stale_since IS NULL
+              AND ${entityVis}
             ORDER BY score
             LIMIT ?
           `);
@@ -122,6 +171,7 @@ export class GraphSearch {
 
       if (this.hasTrigram) {
         try {
+          const entityVis = this._entityVisibilitySql('e');
           this._stmtTrigram = db.prepare(`
             SELECT
               e.id, e.file_path, e.type, e.name, e.signature,
@@ -130,7 +180,7 @@ export class GraphSearch {
             FROM entities_trigram
             JOIN entities e ON entities_trigram.rowid = e.rowid
             WHERE entities_trigram MATCH ?
-              AND e.stale_since IS NULL
+              AND ${entityVis}
             ORDER BY score
             LIMIT ?
           `);
@@ -141,15 +191,19 @@ export class GraphSearch {
       }
 
       this._stmtEntityById = db.prepare(
-        'SELECT * FROM entities WHERE id = ? AND stale_since IS NULL'
+        `SELECT * FROM entities WHERE id = ? AND ${this._entityVisibilitySql('')}`
       );
 
       this._stmtOutRels = db.prepare(`
         SELECT e.*, r.type as rel_type, r.weight as rel_weight
         FROM relationships r
-        JOIN entities e ON e.id = r.target_id OR e.name = r.target_name
+        JOIN entities e ON (
+          (r.target_id IS NOT NULL AND e.id = r.target_id)
+          OR (r.target_id IS NULL AND e.name = r.target_name)
+        )
         WHERE r.source_id = ?
-          AND e.stale_since IS NULL
+          AND ${this._entityVisibilitySql('e')}
+          AND ${this._relationshipVisibilitySql('r')}
         LIMIT 20
       `);
 
@@ -158,7 +212,8 @@ export class GraphSearch {
         FROM relationships r
         JOIN entities e ON e.id = r.source_id
         WHERE (r.target_id = ? OR r.target_name = (SELECT name FROM entities WHERE id = ?))
-          AND e.stale_since IS NULL
+          AND ${this._entityVisibilitySql('e')}
+          AND ${this._relationshipVisibilitySql('r')}
         LIMIT 20
       `);
 
@@ -174,6 +229,107 @@ export class GraphSearch {
       db.close();
       throw err;
     }
+  }
+
+  _entityVisibilitySql(alias = 'e', options = {}) {
+    const prefix = sqlAliasPrefix(alias);
+    let sql;
+    if (!this._hasEntityEpochVisibility) {
+      sql = `${prefix}stale_since IS NULL`;
+    } else if (this._manifestEpoch !== null) {
+      // For a pinned reader, a row retired after the pinned epoch remains
+      // visible even if the compatibility stale_since flag has been set.
+      sql = `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
+        AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)
+        AND (${prefix}stale_since IS NULL OR (${prefix}epoch_retired IS NOT NULL AND ${prefix}epoch_retired > ?))`;
+    } else {
+      sql = `${prefix}stale_since IS NULL AND ${prefix}epoch_retired IS NULL`;
+    }
+    if (options.allowNullJoined) {
+      return `(${sql} OR ${prefix}id IS NULL)`;
+    }
+    return sql;
+  }
+
+  _entityVisibilityParams() {
+    if (!this._hasEntityEpochVisibility || this._manifestEpoch === null) return [];
+    return [this._manifestEpoch, this._manifestEpoch, this._manifestEpoch];
+  }
+
+  _relationshipVisibilitySql(alias = 'r') {
+    if (!this._hasRelationshipEpochVisibility) return '1=1';
+    const prefix = sqlAliasPrefix(alias);
+    if (this._manifestEpoch !== null) {
+      return `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
+        AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)`;
+    }
+    return `${prefix}epoch_retired IS NULL`;
+  }
+
+  _relationshipVisibilityParams() {
+    if (!this._hasRelationshipEpochVisibility || this._manifestEpoch === null) return [];
+    return [this._manifestEpoch, this._manifestEpoch];
+  }
+
+  _summaryJoinSql(entityAlias = '') {
+    if (!this._hasHcgsSummaryMetadata) return '';
+    const prefix = sqlAliasPrefix(entityAlias);
+    return `LEFT JOIN hcgs_summary_metadata hm ON hm.entity_id = ${prefix}id`;
+  }
+
+  _summarySelectSql(entityAlias = '') {
+    const prefix = sqlAliasPrefix(entityAlias);
+    if (!this._hasHcgsSummaryMetadata) return `${prefix}summary`;
+    if (this._manifestEpoch !== null) {
+      return `CASE WHEN hm.entity_id IS NOT NULL
+        AND (hm.epoch_written IS NULL OR hm.epoch_written <= ?)
+        AND (hm.epoch_retired IS NULL OR hm.epoch_retired > ?)
+        THEN ${prefix}summary ELSE NULL END AS summary`;
+    }
+    return `CASE WHEN hm.entity_id IS NOT NULL AND hm.epoch_retired IS NULL
+      THEN ${prefix}summary ELSE NULL END AS summary`;
+  }
+
+  _summaryVisibilityParams() {
+    if (!this._hasHcgsSummaryMetadata || this._manifestEpoch === null) return [];
+    return [this._manifestEpoch, this._manifestEpoch];
+  }
+
+  _summaryVisibleForEntity(entityId) {
+    if (!this._hasHcgsSummaryMetadata && this.db) {
+      this._hasHcgsSummaryMetadata = !!this.db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='hcgs_summary_metadata'",
+      ).get();
+    }
+    if (!this._hasHcgsSummaryMetadata || entityId == null) return true;
+    if (this._manifestEpoch === null) {
+      const row = this.db.prepare(`
+        SELECT epoch_retired
+        FROM hcgs_summary_metadata
+        WHERE entity_id = ?
+      `).get(String(entityId));
+      return row ? row.epoch_retired == null : false;
+    }
+    const key = `${entityId}:${this._manifestEpoch ?? 'live'}`;
+    if (this._summaryVisibilityCache.has(key)) return this._summaryVisibilityCache.get(key);
+    const row = this.db.prepare(`
+      SELECT epoch_written, epoch_retired
+      FROM hcgs_summary_metadata
+      WHERE entity_id = ?
+    `).get(String(entityId));
+    const visible = row
+      ? (this._manifestEpoch !== null
+        ? (row.epoch_written == null || row.epoch_written <= this._manifestEpoch)
+          && (row.epoch_retired == null || row.epoch_retired > this._manifestEpoch)
+        : row.epoch_retired == null)
+      : false;
+    this._summaryVisibilityCache.set(key, visible);
+    return visible;
+  }
+
+  _rowWithVisibleSummary(row) {
+    if (!row || row.summary == null || this._summaryVisibleForEntity(row.id)) return row;
+    return { ...row, summary: null };
   }
 
   /**
@@ -223,14 +379,14 @@ export class GraphSearch {
         start_line, end_line, package, parent_class, search_text
       FROM entities
       WHERE ${likeConditions || '1=1'}
-        AND stale_since IS NULL
+        AND ${this._entityVisibilitySql('')}
       ORDER BY
         CASE WHEN name LIKE ? THEN 0 ELSE 1 END,
         length(name)
       LIMIT ?
     `);
 
-    const rows = stmt.all(...likeParams, `%${query}%`, limit);
+    const rows = stmt.all(...likeParams, ...this._entityVisibilityParams(), `%${query}%`, limit);
 
     let rank = 0;
     for (const row of rows) {
@@ -287,13 +443,18 @@ export class GraphSearch {
     await this.init();
     if (!this._stmtEntityByName) {
       this._stmtEntityByName = this.db.prepare(`
-        SELECT id, name, type, signature, summary, file_path, start_line
+        SELECT id, name, type, signature, ${this._summarySelectSql('entities')}, file_path, start_line
         FROM entities
-        WHERE name = ? AND stale_since IS NULL
+        ${this._summaryJoinSql('entities')}
+        WHERE name = ? AND ${this._entityVisibilitySql('entities')}
         LIMIT 1
       `);
     }
-    return this._stmtEntityByName.get(name) || null;
+    return this._rowWithVisibleSummary(this._stmtEntityByName.get(
+      ...this._summaryVisibilityParams(),
+      name,
+      ...this._entityVisibilityParams(),
+    )) || null;
   }
 
   /**
@@ -304,14 +465,21 @@ export class GraphSearch {
     await this.init();
     if (!this._stmtEntityByLocation) {
       this._stmtEntityByLocation = this.db.prepare(`
-        SELECT id, name, type, signature, summary, file_path, start_line
+        SELECT id, name, type, signature, ${this._summarySelectSql('entities')}, file_path, start_line
         FROM entities
+        ${this._summaryJoinSql('entities')}
         WHERE file_path LIKE ? AND start_line <= ? AND end_line >= ?
-          AND stale_since IS NULL
+          AND ${this._entityVisibilitySql('entities')}
         LIMIT 1
       `);
     }
-    return this._stmtEntityByLocation.get(`%${filePath}%`, line, line) || null;
+    return this._rowWithVisibleSummary(this._stmtEntityByLocation.get(
+      ...this._summaryVisibilityParams(),
+      `%${filePath}%`,
+      line,
+      line,
+      ...this._entityVisibilityParams(),
+    )) || null;
   }
 
   /**
@@ -340,14 +508,19 @@ export class GraphSearch {
     if (names.size > 0) {
       if (!this._stmtEntityByName) {
         this._stmtEntityByName = this.db.prepare(`
-          SELECT id, name, type, signature, summary, file_path, start_line
+          SELECT id, name, type, signature, ${this._summarySelectSql('entities')}, file_path, start_line
           FROM entities
-          WHERE name = ? AND stale_since IS NULL
+          ${this._summaryJoinSql('entities')}
+          WHERE name = ? AND ${this._entityVisibilitySql('entities')}
           LIMIT 1
         `);
       }
       for (const name of names) {
-        const entity = this._stmtEntityByName.get(name);
+        const entity = this._rowWithVisibleSummary(this._stmtEntityByName.get(
+          ...this._summaryVisibilityParams(),
+          name,
+          ...this._entityVisibilityParams(),
+        ));
         if (entity) byName.set(name, entity);
       }
     }
@@ -356,17 +529,24 @@ export class GraphSearch {
     if (locations.length > 0) {
       if (!this._stmtEntityByLocation) {
         this._stmtEntityByLocation = this.db.prepare(`
-          SELECT id, name, type, signature, summary, file_path, start_line
+          SELECT id, name, type, signature, ${this._summarySelectSql('entities')}, file_path, start_line
           FROM entities
+          ${this._summaryJoinSql('entities')}
           WHERE file_path LIKE ? AND start_line <= ? AND end_line >= ?
-            AND stale_since IS NULL
+            AND ${this._entityVisibilitySql('entities')}
           LIMIT 1
         `);
       }
       for (const { file, line } of locations) {
         const key = `${file}:${line}`;
         if (byLocation.has(key)) continue;
-        const entity = this._stmtEntityByLocation.get(`%${file}%`, line, line);
+        const entity = this._rowWithVisibleSummary(this._stmtEntityByLocation.get(
+          ...this._summaryVisibilityParams(),
+          `%${file}%`,
+          line,
+          line,
+          ...this._entityVisibilityParams(),
+        ));
         if (entity) byLocation.set(key, entity);
       }
     }
@@ -382,7 +562,14 @@ export class GraphSearch {
     await this.init();
     const result = new Set();
     try {
-      const rows = this.db.prepare('SELECT id FROM entities WHERE stale_since IS NOT NULL').all();
+      const rows = this._hasEntityEpochVisibility && this._manifestEpoch !== null
+        ? this.db.prepare(`
+            SELECT id FROM entities
+            WHERE stale_since IS NOT NULL
+              AND (epoch_written IS NULL OR epoch_written <= ?)
+              AND (epoch_retired IS NULL OR epoch_retired <= ?)
+          `).all(this._manifestEpoch, this._manifestEpoch)
+        : this.db.prepare('SELECT id FROM entities WHERE stale_since IS NOT NULL').all();
       for (const row of rows) result.add(row.id);
     } catch {
       // Column may not exist in older indexes
@@ -418,6 +605,7 @@ export class GraphSearch {
     this._stmtInRels = null;
     this._stmtEntityByName = null;
     this._stmtEntityByLocation = null;
+    this._summaryVisibilityCache = new Map();
     if (this.db) {
       this.db.close();
       this.db = null;
@@ -452,7 +640,11 @@ export class GraphSearch {
       if (useNameRestriction) {
         restrictedAttempted = true;
         try {
-          rows = this._stmtFts5.all(`name : ${this.sanitizeFtsQuery(query)}`, limit);
+          rows = this._stmtFts5.all(
+            `name : ${this.sanitizeFtsQuery(query)}`,
+            ...this._entityVisibilityParams(),
+            limit,
+          );
         } catch (err) {
           this.log(`[bm25Search] Name-restricted FTS5 query failed: ${err.message}`);
           rows = [];
@@ -463,7 +655,11 @@ export class GraphSearch {
       if (rows.length === 0) {
         restrictedFallback = restrictedAttempted;
         try {
-          rows = this._stmtFts5.all(this.sanitizeFtsQuery(query), limit);
+          rows = this._stmtFts5.all(
+            this.sanitizeFtsQuery(query),
+            ...this._entityVisibilityParams(),
+            limit,
+          );
         } catch (err) {
           this.log(`[bm25Search] FTS5 query failed: ${err.message}`);
           rows = [];
@@ -481,7 +677,11 @@ export class GraphSearch {
       try {
         // Trigram search - just use the raw query (trigram handles substrings)
         const escaped = query.replace(/"/g, '""');
-        const trigramRows = this._stmtTrigram.all(`"${escaped}"`, limit);
+        const trigramRows = this._stmtTrigram.all(
+          `"${escaped}"`,
+          ...this._entityVisibilityParams(),
+          limit,
+        );
 
         this._mergeRows(results, trigramRows, 'trigram', 0.9);
       } catch (err) {
@@ -494,7 +694,11 @@ export class GraphSearch {
       try {
         const expandedForm = this.expandIdentifierQuery(query);
         if (expandedForm && expandedForm !== this.sanitizeFtsQuery(query)) {
-          const expandedRows = this._stmtFts5.all(expandedForm, limit);
+          const expandedRows = this._stmtFts5.all(
+            expandedForm,
+            ...this._entityVisibilityParams(),
+            limit,
+          );
           this._mergeRows(results, expandedRows, 'fts5_expanded', 0.85);
         }
       } catch (err) {
@@ -507,7 +711,11 @@ export class GraphSearch {
       try {
         const abbrQuery = this.expandAbbreviations(query);
         if (abbrQuery) {
-          const abbrRows = this._stmtFts5.all(abbrQuery, limit);
+          const abbrRows = this._stmtFts5.all(
+            abbrQuery,
+            ...this._entityVisibilityParams(),
+            limit,
+          );
           this._mergeRows(results, abbrRows, 'fts5_abbr', 0.8);
         }
       } catch (err) {
@@ -559,7 +767,11 @@ export class GraphSearch {
 
       if (useNameRestriction) {
         try {
-          rows = this._stmtFts5.all(`name : ${this.sanitizeFtsQuery(query)}`, limit);
+          rows = this._stmtFts5.all(
+            `name : ${this.sanitizeFtsQuery(query)}`,
+            ...this._entityVisibilityParams(),
+            limit,
+          );
         } catch (err) {
           this.log(`[bm25SearchRaw] Name-restricted FTS5 query failed: ${err.message}`);
           rows = [];
@@ -568,7 +780,11 @@ export class GraphSearch {
 
       if (rows.length === 0) {
         try {
-          rows = this._stmtFts5.all(this.sanitizeFtsQuery(query), limit);
+          rows = this._stmtFts5.all(
+            this.sanitizeFtsQuery(query),
+            ...this._entityVisibilityParams(),
+            limit,
+          );
         } catch (err) {
           this.log(`[bm25SearchRaw] FTS5 query failed: ${err.message}`);
           rows = [];
@@ -584,7 +800,11 @@ export class GraphSearch {
     if (this.hasTrigram && results.length < 3 && query.length >= 3) {
       try {
         const escapedRaw = query.replace(/"/g, '""');
-        const trigramRows = this._stmtTrigram.all(`"${escapedRaw}"`, limit);
+        const trigramRows = this._stmtTrigram.all(
+          `"${escapedRaw}"`,
+          ...this._entityVisibilityParams(),
+          limit,
+        );
         this._mergeRows(results, trigramRows, 'trigram_raw', 0.9);
       } catch (err) {
         this.log(`[bm25SearchRaw] Trigram query failed: ${err.message}`);
@@ -972,7 +1192,7 @@ export class GraphSearch {
   async searchByName(name, type = null) {
     await this.init();
 
-    let query = `SELECT * FROM entities WHERE name = ? AND stale_since IS NULL`;
+    let query = 'SELECT * FROM entities WHERE name = ?';
     const params = [name];
 
     if (type) {
@@ -980,10 +1200,12 @@ export class GraphSearch {
       params.push(type);
     }
 
+    query += ` AND ${this._entityVisibilitySql('')}`;
     query += ' LIMIT 50';
 
     const stmt = this.db.prepare(query);
-    return stmt.all(...params);
+    return stmt.all(...params, ...this._entityVisibilityParams())
+      .map(row => this._rowWithVisibleSummary(row));
   }
 
   /**
@@ -995,12 +1217,13 @@ export class GraphSearch {
     const stmt = this.db.prepare(`
       SELECT * FROM entities
       WHERE file_path LIKE ?
-        AND stale_since IS NULL
+        AND ${this._entityVisibilitySql('')}
       ORDER BY start_line
       LIMIT 100
     `);
 
-    return stmt.all(`%${pathPattern}%`);
+    return stmt.all(`%${pathPattern}%`, ...this._entityVisibilityParams())
+      .map(row => this._rowWithVisibleSummary(row));
   }
 
   /**
@@ -1029,8 +1252,8 @@ export class GraphSearch {
       const entities = this.db.prepare(`
         SELECT * FROM entities
         WHERE id IN (${placeholders})
-        AND stale_since IS NULL
-      `).all(...frontierIds);
+        AND ${this._entityVisibilitySql('')}
+      `).all(...frontierIds, ...this._entityVisibilityParams());
 
       // Create lookup map for fast access
       const entityMap = new Map(entities.map(e => [e.id, e]));
@@ -1045,14 +1268,23 @@ export class GraphSearch {
         FROM relationships r
         JOIN entities e ON r.target_id = e.id
         WHERE r.source_id IN (${placeholders})
-        AND e.stale_since IS NULL
+        AND ${this._entityVisibilitySql('e')}
+        AND ${this._relationshipVisibilitySql('r')}
         UNION ALL
         SELECT r.*, 'in' as direction, r.target_id as origin_id
         FROM relationships r
         JOIN entities e ON r.source_id = e.id
         WHERE r.target_id IN (${placeholders})
-        AND e.stale_since IS NULL
-      `).all(...frontierIds, ...frontierIds);
+        AND ${this._entityVisibilitySql('e')}
+        AND ${this._relationshipVisibilitySql('r')}
+      `).all(
+        ...frontierIds,
+        ...this._entityVisibilityParams(),
+        ...this._relationshipVisibilityParams(),
+        ...frontierIds,
+        ...this._entityVisibilityParams(),
+        ...this._relationshipVisibilityParams(),
+      );
 
       // Group relationships by their origin entity
       const relMap = new Map();
@@ -1064,7 +1296,7 @@ export class GraphSearch {
 
       // Process all entities without additional queries
       for (const entityId of frontierIds) {
-        const entity = entityMap.get(entityId);
+        const entity = this._rowWithVisibleSummary(entityMap.get(entityId));
         if (entity) {
           expanded.set(entityId, {
             ...entity,
@@ -1095,7 +1327,9 @@ export class GraphSearch {
    */
   async getEntity(entityId) {
     await this.init();
-    return this._stmtEntityById.get(entityId) || null;
+    return this._rowWithVisibleSummary(
+      this._stmtEntityById.get(entityId, ...this._entityVisibilityParams()),
+    ) || null;
   }
 
   /**
@@ -1107,8 +1341,13 @@ export class GraphSearch {
     const results = [];
 
     // Find outgoing relationships (cached prepared statement)
-    const outRows = this._stmtOutRels.all(entityId);
-    for (const row of outRows) {
+    const outRows = this._stmtOutRels.all(
+      entityId,
+      ...this._entityVisibilityParams(),
+      ...this._relationshipVisibilityParams(),
+    );
+    for (const rawRow of outRows) {
+      const row = this._rowWithVisibleSummary(rawRow);
       results.push({
         ...row,
         direction: 'outgoing',
@@ -1116,8 +1355,14 @@ export class GraphSearch {
     }
 
     // Find incoming relationships (cached prepared statement)
-    const inRows = this._stmtInRels.all(entityId, entityId);
-    for (const row of inRows) {
+    const inRows = this._stmtInRels.all(
+      entityId,
+      entityId,
+      ...this._entityVisibilityParams(),
+      ...this._relationshipVisibilityParams(),
+    );
+    for (const rawRow of inRows) {
+      const row = this._rowWithVisibleSummary(rawRow);
       results.push({
         ...row,
         direction: 'incoming',
@@ -1695,7 +1940,7 @@ export class GraphSearch {
           )
           -- Only match top-level definition types, not methods
           AND e.type IN ('class', 'interface', 'struct', 'enum', 'function', 'type', 'component')
-          AND e.stale_since IS NULL
+          AND ${this._entityVisibilitySql('e')}
           ORDER BY
             match_priority,
             CASE e.type
@@ -1708,7 +1953,13 @@ export class GraphSearch {
             length(e.name)
           LIMIT 5
         `);
-        const rows = stmt.all(queryLower, queryLower, queryLower, queryLower);
+        const rows = stmt.all(
+          queryLower,
+          queryLower,
+          queryLower,
+          queryLower,
+          ...this._entityVisibilityParams(),
+        );
         resolve(rows);
       } catch (err) {
         this.log(`Definition search error: ${err.message}`);
@@ -1804,7 +2055,7 @@ export class GraphSearch {
     return this.db.prepare(`
       SELECT id, name, type, file_path FROM entities
       WHERE (name = ? OR name LIKE ?)
-        AND stale_since IS NULL
+        AND ${this._entityVisibilitySql('')}
       ORDER BY
         CASE WHEN name = ? THEN 0 ELSE 1 END,
         CASE WHEN file_path LIKE '%/test/%' OR file_path LIKE 'test/%' OR file_path LIKE 'tests/%' THEN 1 ELSE 0 END,
@@ -1816,7 +2067,7 @@ export class GraphSearch {
         END,
         length(name) ASC
       LIMIT 1
-    `).get(entityName, `%${entityName}%`, entityName);
+    `).get(entityName, `%${entityName}%`, ...this._entityVisibilityParams(), entityName);
   }
 
   /**
@@ -1848,14 +2099,22 @@ export class GraphSearch {
         OR r.target_name LIKE ?
         OR r.target_name LIKE ?
       )
-        AND e.stale_since IS NULL
+        AND ${this._entityVisibilitySql('e')}
+        AND ${this._relationshipVisibilitySql('r')}
       ORDER BY e.file_path, r.context_line
       LIMIT ?
-    `).all(target.id, targetNamePattern, `${target.name}.%`, limit);
+    `).all(
+      target.id,
+      targetNamePattern,
+      `${target.name}.%`,
+      ...this._entityVisibilityParams(),
+      ...this._relationshipVisibilityParams(),
+      limit,
+    );
 
     return {
       results: callers.map(c => ({
-        ...c,
+        ...this._rowWithVisibleSummary(c),
         relationship: 'calls',
         depth: 1,
       })),
@@ -1881,22 +2140,31 @@ export class GraphSearch {
       FROM relationships r
       LEFT JOIN entities e ON e.id = r.target_id OR e.name = r.target_name
       WHERE r.source_id = ? AND r.type = 'calls'
-        AND (e.stale_since IS NULL OR e.id IS NULL)
+        AND ${this._entityVisibilitySql('e', { allowNullJoined: true })}
+        AND ${this._relationshipVisibilitySql('r')}
       ORDER BY r.context_line
       LIMIT ?
-    `).all(source.id, limit);
+    `).all(
+      source.id,
+      ...this._entityVisibilityParams(),
+      ...this._relationshipVisibilityParams(),
+      limit,
+    );
 
     return {
-      results: callees.map(c => ({
-        id: c.id,
-        name: c.name || c.target_name,
-        type: c.type || 'external',
-        file_path: c.file_path,
-        start_line: c.start_line,
-        signature: c.signature,
-        call_line: c.call_line,
-        relationship: 'calls',
-      })),
+      results: callees.map(c => {
+        const row = this._rowWithVisibleSummary(c);
+        return {
+          id: row.id,
+          name: row.name || row.target_name,
+          type: row.type || 'external',
+          file_path: row.file_path,
+          start_line: row.start_line,
+          signature: row.signature,
+          call_line: row.call_line,
+          relationship: 'calls',
+        };
+      }),
       stats: { sourceEntity: source.name, totalCallees: callees.length },
     };
   }
@@ -1916,13 +2184,23 @@ export class GraphSearch {
       JOIN entities e ON e.id = r.source_id
       WHERE (r.target_name = ? OR r.target_name LIKE ?)
         AND r.type IN ('implements', 'extends')
-        AND e.stale_since IS NULL
+        AND ${this._entityVisibilitySql('e')}
+        AND ${this._relationshipVisibilitySql('r')}
       ORDER BY e.name
       LIMIT ?
-    `).all(interfaceName, `%${interfaceName}%`, limit);
+    `).all(
+      interfaceName,
+      `%${interfaceName}%`,
+      ...this._entityVisibilityParams(),
+      ...this._relationshipVisibilityParams(),
+      limit,
+    );
 
     return {
-      results: implementations.map(i => ({ ...i, relationship: i.rel_type })),
+      results: implementations.map(i => ({
+        ...this._rowWithVisibleSummary(i),
+        relationship: i.rel_type,
+      })),
       stats: { targetInterface: interfaceName, totalImplementations: implementations.length },
     };
   }
@@ -1960,9 +2238,15 @@ export class GraphSearch {
           FROM relationships r
           JOIN entities e ON e.id = r.source_id
           WHERE (r.target_id IN (${placeholders}) OR r.target_name LIKE ?)
-            AND e.stale_since IS NULL
+            AND ${this._entityVisibilitySql('e')}
+            AND ${this._relationshipVisibilitySql('r')}
           LIMIT 50
-        `).all(...frontier, targetNamePattern);
+        `).all(
+          ...frontier,
+          targetNamePattern,
+          ...this._entityVisibilityParams(),
+          ...this._relationshipVisibilityParams(),
+        );
       } else {
         // Subsequent depths: only match by target_id
         dependents = this.db.prepare(`
@@ -1972,16 +2256,17 @@ export class GraphSearch {
           FROM relationships r
           JOIN entities e ON e.id = r.source_id
           WHERE r.target_id IN (${placeholders})
-            AND e.stale_since IS NULL
+            AND ${this._entityVisibilitySql('e')}
+            AND ${this._relationshipVisibilitySql('r')}
           LIMIT 50
-        `).all(...frontier);
+        `).all(...frontier, ...this._entityVisibilityParams(), ...this._relationshipVisibilityParams());
       }
 
       const nextFrontier = [];
       for (const dep of dependents) {
         if (!impacted.has(dep.id) && dep.id !== target.id) {
           impacted.set(dep.id, {
-            ...dep,
+            ...this._rowWithVisibleSummary(dep),
             relationship: dep.rel_type,
             depth,
             riskScore: (4 - depth) / 3, // Higher for closer dependencies

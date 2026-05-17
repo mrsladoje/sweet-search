@@ -22,6 +22,7 @@ import {
   buildNextManifest,
   epochVisibilityPredicate,
 } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
+import { FALLBACK_WEIGHTS_ID } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 
 describe('manifest / zero state', () => {
   it('produces every tier slot at epoch 0', () => {
@@ -30,7 +31,7 @@ describe('manifest / zero state', () => {
     for (const key of ['codeGraph', 'vectors', 'hnsw', 'binaryHnsw', 'lateInteraction', 'sparseGram']) {
       expect(m[key].epoch).toBe(0);
     }
-    expect(m.sparseGram.weightsId).toBe('default-v1');
+    expect(m.sparseGram.weightsId).toBe(FALLBACK_WEIGHTS_ID);
   });
 });
 
@@ -112,6 +113,12 @@ describe('manifest / epochVisibilityPredicate', () => {
 
   it('emits a table-qualified form', () => {
     expect(epochVisibilityPredicate('v')).toBe(
+      'v.epoch_written <= :manifestEpoch AND (v.epoch_retired IS NULL OR v.epoch_retired > :manifestEpoch)',
+    );
+  });
+
+  it('accepts aliases with a trailing dot', () => {
+    expect(epochVisibilityPredicate('v.')).toBe(
       'v.epoch_written <= :manifestEpoch AND (v.epoch_retired IS NULL OR v.epoch_retired > :manifestEpoch)',
     );
   });

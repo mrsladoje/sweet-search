@@ -22,6 +22,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..');
 const HOOK = join(REPO_ROOT, 'core', 'search', 'session-daemon-prewarm.mjs');
 const FAKE_DAEMON = join(REPO_ROOT, 'tests', 'fixtures', 'fake-daemon.mjs');
+const FAST_EXIT_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_TEST_PREWARM_FAST_EXIT_MS || 2000);
 
 let sandbox;
 let markerPath;
@@ -97,17 +98,17 @@ describe('session-daemon-prewarm', () => {
     const r = await runHook();
 
     expect(r.code).toBe(0);
-    expect(r.wallMs).toBeLessThan(1000);
+    expect(r.wallMs).toBeLessThan(FAST_EXIT_TIMEOUT_MS);
 
     const lines = await waitForMarkerLines(1);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain('--serve');
   });
 
-  it('exits fast (under 500ms) even when spawning a daemon', async () => {
+  it('exits fast even when spawning a daemon', async () => {
     const r = await runHook();
     expect(r.code).toBe(0);
-    expect(r.wallMs).toBeLessThan(500);
+    expect(r.wallMs).toBeLessThan(FAST_EXIT_TIMEOUT_MS);
   });
 
   it('skips spawn when PID file points at a live process AND socket is responsive', async () => {

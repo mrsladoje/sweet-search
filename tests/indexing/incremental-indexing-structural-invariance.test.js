@@ -210,6 +210,25 @@ function coldIndex(vectorsDb, graphDb, corpus, epoch = 1) {
   return fileSnapshots;
 }
 
+function graphRowsForFile(graphDb, filePath) {
+  return graphDb.prepare(`
+    SELECT id, file_path, type, name, signature_hash, logical_entity_id,
+           epoch_written, epoch_retired
+    FROM entities
+    WHERE file_path = ?
+    ORDER BY id
+  `).all(filePath);
+}
+
+function dependencyRowsForFile(graphDb, filePath) {
+  return graphDb.prepare(`
+    SELECT dependency_key, file_path, chunk_struct_id, consumer
+    FROM encoder_input_dependencies
+    WHERE file_path = ?
+    ORDER BY dependency_key, chunk_struct_id, consumer
+  `).all(filePath);
+}
+
 /**
  * Reconcile one file against the existing DB state. Mirrors what the
  * Phase 3 vector adapter will do: diff, encode missing, write rows.
@@ -272,7 +291,7 @@ describe('Structural invariance (plan § 12.3)', () => {
     try { graphDb.close(); } catch {}
   });
 
-  it('editing ONE file leaves every other file byte-identical at the vectors layer', () => {
+  it('editing ONE file leaves every other file byte-identical at the vectors, graph, and dependency layers', () => {
     // Fixture corpus: 4 files, each with 3 chunks (mix of symbol + anon).
     const corpus = {
       'src/a.js': [
@@ -297,6 +316,12 @@ describe('Structural invariance (plan § 12.3)', () => {
       ],
     };
     const snap = coldIndex(vectorsDb, graphDb, corpus, /* epoch */ 1);
+    const graphSnap = new Map();
+    const depSnap = new Map();
+    for (const filePath of Object.keys(corpus)) {
+      graphSnap.set(filePath, graphRowsForFile(graphDb, filePath));
+      depSnap.set(filePath, dependencyRowsForFile(graphDb, filePath));
+    }
     const coldEncodes = getEncodeCount();
     expect(coldEncodes).toBe(12); // 4 files × 3 chunks
 
@@ -339,6 +364,9 @@ describe('Structural invariance (plan § 12.3)', () => {
         expect(rows[i].epoch_written).toBe(1);
         expect(rows[i].epoch_retired).toBeNull();
       }
+
+      expect(graphRowsForFile(graphDb, otherFile)).toEqual(graphSnap.get(otherFile));
+      expect(dependencyRowsForFile(graphDb, otherFile)).toEqual(depSnap.get(otherFile));
     }
   });
 

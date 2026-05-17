@@ -360,19 +360,25 @@ export async function checkHealth({ getConfig, PROJECT_ROOT }) {
 
 /**
  * @param {{ tokenBudget: number, focusFiles?: string[], focusEntities?: string[] }} args
- * @param {{ coreDir: string }} deps
+ * @param {{ coreDir: string, PROJECT_ROOT?: string }} deps
  */
-export async function handleRepoMap({ tokenBudget, focusFiles, focusEntities }, { coreDir }) {
+export async function handleRepoMap({ tokenBudget, focusFiles, focusEntities }, { coreDir, PROJECT_ROOT }) {
   try {
-    const { generateRepoMap } = await import(
-      path.join(coreDir, 'graph', 'index.js')
-    );
+    const [{ generateRepoMap }, { withPinnedRead }] = await Promise.all([
+      import(path.join(coreDir, 'graph', 'index.js')),
+      import(path.join(coreDir, 'search', 'search-reader-pin.js')),
+    ]);
 
-    const result = generateRepoMap({
+    const result = await withPinnedRead({
+      projectRoot: PROJECT_ROOT,
+      meta: { tool: 'repo-map' },
+    }, (manifestEpoch, pin) => generateRepoMap({
       tokenBudget,
       focusFiles,
       focusEntities,
-    });
+      manifest: pin?.manifest,
+      manifestEpoch: manifestEpoch ?? undefined,
+    }));
 
     const summary = `Repo map: ${result.entityCount}/${result.totalEntities} entities across ${result.fileCount} files (${result.pageRankTimeMs}ms)`;
     const text = `${summary}\n\n${result.text}`;

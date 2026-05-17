@@ -179,6 +179,7 @@ describe('Reader heartbeat + grace (plan § 8.1.1)', () => {
     const payload = JSON.parse(fs.readFileSync(r.path, 'utf-8'));
     expect(payload.epoch).toBe(42);
     expect(payload.pid).toBe(process.pid);
+    expect(payload.readId).toBe(r.readId);
   });
 
   it('beginRead stores caller metadata for diagnostics', () => {
@@ -244,14 +245,21 @@ describe('Reader heartbeat + grace (plan § 8.1.1)', () => {
 
   it('minLiveEpoch returns the lowest pinned epoch', () => {
     const a = beginRead(stateDir, 50);
-    // Force a second concurrent heartbeat at lower epoch by manual write.
     const r1 = beginRead(stateDir, 30);
-    const m = minLiveEpoch(stateDir);
-    // We can only have one live entry per (pid, boot) — the second overwrites
-    // the first. The min is the most-recent epoch (30 here).
-    expect(m).toBe(30);
-    endRead(stateDir, a);
+    expect(a.path).not.toBe(r1.path);
+    expect(minLiveEpoch(stateDir)).toBe(30);
     endRead(stateDir, r1);
+    expect(minLiveEpoch(stateDir)).toBe(50);
+    endRead(stateDir, a);
+    expect(minLiveEpoch(stateDir)).toBeNull();
+  });
+
+  it('ignores live heartbeat files without a valid integer epoch', () => {
+    const dir = path.join(stateDir, 'readers');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'bad-epoch.json'),
+      JSON.stringify({ epoch: '7', pid: process.pid, bootId: bootIdStub(), startedAt: '2026' }));
+    expect(liveReaders(stateDir)).toEqual([]);
   });
 
   it('isReaderAlive: current process + matching boot is alive', () => {

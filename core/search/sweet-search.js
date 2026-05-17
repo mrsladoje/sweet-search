@@ -10,7 +10,7 @@
  */
 
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, LATE_INTERACTION_CONFIG, EMBEDDING_CONFIG, SEISMIC_CONFIG, CASCADE_CONFIG, loadProjectConfig, shouldUseLocalReranker } from '../infrastructure/config/index.js';
 import { getGlobalLocalReranker } from '../ranking/local-reranker.js';
@@ -44,6 +44,7 @@ import * as hybrid from './search-hybrid.js';
 import * as postprocess from './search-postprocess.js';
 import * as pattern from './search-pattern.js';
 import { packageForAgent } from './context-expander.js';
+import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
 
 export { ROUTE_ALPHAS } from './search-fusion.js';
 
@@ -111,12 +112,25 @@ export class SweetSearch {
     // standard model path on every search. Env var still wins; see
     // applyPersistedLiModel for the full precedence ladder.
     this._liModelApply = applyPersistedLiModel(projectRoot);
+    const explicitLiModel = options.lateInteractionOptions?.modelId;
+    if (typeof explicitLiModel === 'string' && LATE_INTERACTION_CONFIG.models[explicitLiModel]) {
+      const before = LATE_INTERACTION_CONFIG.model;
+      LATE_INTERACTION_CONFIG.model = explicitLiModel;
+      this._liModelApply = {
+        applied: explicitLiModel,
+        before,
+        source: 'option',
+        persistedModel: this._liModelApply.persistedModel,
+        changed: explicitLiModel !== before,
+      };
+    }
     const projectConfig = loadProjectConfig(projectRoot);
     const projectCascade = projectConfig.cascade || {};
     const envOrProject = (envKey, cascadeKey, configKey) =>
       process.env[envKey] != null ? CASCADE_CONFIG[configKey] : projectCascade[cascadeKey];
 
     this.graphDbPath = options.graphDbPath || DB_PATHS.codeGraph;
+    this._manifestGraphDbPath = this.graphDbPath;
     this.graphSearch = new GraphSearch(this.graphDbPath);
     this.codeGraphRepo = new CodeGraphRepository(this.graphDbPath);
     this.hnswPath = options.hnswPath || DB_PATHS.hnswIndex;
@@ -127,6 +141,8 @@ export class SweetSearch {
     this.lateInteractionIndex = new LateInteractionIndex(options.lateInteractionOptions || {});
     this.router = new QueryRouter();
     this.codebaseDbPath = options.codebaseDbPath || DB_PATHS.codebase;
+    this._manifestCodebaseDbPath = this.codebaseDbPath;
+    this._manifestStateDir = path.dirname(this._manifestCodebaseDbPath);
     this.sparseGramIndexPath = options.sparseGramIndexPath || DB_PATHS.sparseGramIndex;
     this.verbose = options.verbose ?? LOGGING.verbose;
     this.timing = options.timing ?? LOGGING.timing;
@@ -179,10 +195,23 @@ export class SweetSearch {
       ?? CASCADE_CONFIG.shadowMode;
     setRepoMapModule({ pageRank, loadGraph, buildAdjacency });
     this._qualityScorer = null;
-    this.codebaseRepo = new CodebaseRepository(this.codebaseDbPath);
+    this.codebaseRepo = new CodebaseRepository(this._manifestCodebaseDbPath);
     this.sparseGramIndex = null;
+    this._sparseGramLoadedPath = null;
     this.grepInitialized = false;
     this.initialized = false;
+    this._lateInteractionOptions = { ...(options.lateInteractionOptions || {}) };
+    this._artifactManifestEpoch = null;
+  }
+
+  _clearChunkLocationCache() {
+    this._chunkLocationMap = null;
+    this._chunkLocationMapSize = 0;
+    this._chunkLocationMapIndex = null;
+  }
+
+  _clearCodebaseChunkTypeCache() {
+    this._codebaseChunkTypeMap = null;
   }
 
   /** @deprecated Use codebaseRepo methods instead. Bridge for legacy callers. */
@@ -195,6 +224,8 @@ export class SweetSearch {
   async init() {
     if (this.initialized) return;
     const start = Date.now();
+
+    this._syncManifestPaths(this._readReconcileManifest());
 
     this.hasGraphIndex = existsSync(this.graphDbPath);
     this.hasHnswIndex = existsSync(this.hnswPath.replace('.idx', '.meta.json'));
@@ -321,6 +352,7 @@ export class SweetSearch {
       try {
         this.sparseGramIndex = loadSparseGramIndex(this.sparseGramIndexPath);
         if (this.sparseGramIndex) {
+          this._sparseGramLoadedPath = this.sparseGramIndexPath;
           const stats = this.sparseGramIndex.getStats();
           this.log(
             `SparseGram: Loaded ${stats.grams} grams across ${stats.totalFiles} files ` +
@@ -333,6 +365,7 @@ export class SweetSearch {
         this.log(`SparseGram: Failed to load: ${err.message}`);
         this.hasSparseGramIndex = false;
         this.sparseGramIndex = null;
+        this._sparseGramLoadedPath = null;
       }
     }
 
@@ -364,19 +397,228 @@ export class SweetSearch {
     }
 
     this.initialized = true;
+    this._artifactManifestEpoch = this._readReconcileManifest()?.epoch ?? null;
     this.log(`SweetSearch: Initialized in ${Date.now() - start}ms`);
+  }
+
+  _readReconcileManifest() {
+    try {
+      const manifestPath = path.join(this._manifestStateDir, 'reconcile-manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      return Number.isInteger(manifest?.epoch) ? manifest : null;
+    } catch {
+      return null;
+    }
+  }
+
+  _resolveStatePath(filePath) {
+    if (!filePath) return null;
+    if (path.isAbsolute(filePath)) return filePath;
+    return path.join(this._manifestStateDir, filePath);
+  }
+
+  _manifestArtifactPaths(manifest) {
+    if (!manifest) return {};
+    let liIndexPath = null;
+    const liDescriptor = manifest.lateInteraction?.path
+      || manifest.lateInteraction?.indexPath
+      || manifest.lateInteraction?.manifest;
+    if (liDescriptor) {
+      const resolved = this._resolveStatePath(liDescriptor);
+      const segmentDir = path.dirname(resolved);
+      liIndexPath = segmentDir.endsWith('.segments')
+        ? segmentDir.slice(0, -'.segments'.length)
+        : resolved;
+    }
+    return {
+      codebaseDbPath: this._resolveStatePath(manifest.vectors?.path),
+      graphDbPath: this._resolveStatePath(manifest.codeGraph?.path),
+      hnswPath: this._resolveStatePath(manifest.hnsw?.path),
+      hnswStalePath: this._resolveStatePath(manifest.hnsw?.stale),
+      binaryHnswPath: this._resolveStatePath(manifest.binaryHnsw?.path),
+      binaryHnswStalePath: this._resolveStatePath(manifest.binaryHnsw?.stale),
+      lateInteractionIndexPath: liIndexPath,
+      sparseGramIndexPath: this._resolveStatePath(manifest.sparseGram?.base),
+    };
+  }
+
+  _syncManifestPaths(manifest) {
+    const paths = this._manifestArtifactPaths(manifest);
+    if (!manifest) {
+      this.sparseGramDeltas = null;
+      this.sparseGramWeightsId = null;
+    }
+    if (paths.codebaseDbPath && paths.codebaseDbPath !== this.codebaseDbPath) {
+      this.codebaseRepo?.close?.();
+      this.codebaseDbPath = paths.codebaseDbPath;
+      this.codebaseRepo = new CodebaseRepository(this._manifestCodebaseDbPath);
+      this._clearCodebaseChunkTypeCache();
+    }
+    if (paths.graphDbPath && paths.graphDbPath !== this.graphDbPath) {
+      this.graphSearch?.close?.();
+      this.codeGraphRepo?.close?.();
+      this.graphDbPath = paths.graphDbPath;
+      this.graphSearch = new GraphSearch(this._manifestGraphDbPath);
+      this.codeGraphRepo = new CodeGraphRepository(this._manifestGraphDbPath);
+    }
+    if (paths.hnswPath && (paths.hnswPath !== this.hnswPath || paths.hnswStalePath !== this.hnswIndex?.stalePath)) {
+      this.hnswPath = paths.hnswPath;
+      this.hnswIndex = new HNSWIndex({ indexPath: this.hnswPath, stalePath: paths.hnswStalePath || `${this.hnswPath}.stale.bin` });
+    }
+    if (paths.binaryHnswPath && (paths.binaryHnswPath !== this.binaryHnswPath || paths.binaryHnswStalePath !== this.binaryHnswIndex?.stalePath)) {
+      this.binaryHnswPath = paths.binaryHnswPath;
+      this.binaryHnswIndex = new BinaryHNSWIndex({ indexPath: this.binaryHnswPath, stalePath: paths.binaryHnswStalePath || `${this.binaryHnswPath}.stale.bin` });
+    }
+    if (paths.lateInteractionIndexPath && paths.lateInteractionIndexPath !== this.lateInteractionIndex?.indexPath) {
+      this._lateInteractionOptions = { ...this._lateInteractionOptions, indexPath: paths.lateInteractionIndexPath };
+      this.lateInteractionIndex = new LateInteractionIndex(this._lateInteractionOptions);
+      this._clearChunkLocationCache();
+    }
+    if (paths.sparseGramIndexPath && paths.sparseGramIndexPath !== this.sparseGramIndexPath) {
+      this.sparseGramIndexPath = paths.sparseGramIndexPath;
+      this.sparseGramIndex = null;
+      this._sparseGramLoadedPath = null;
+    }
+    if (typeof manifest?.sparseGram?.weightsId === 'string') {
+      this.sparseGramWeightsId = manifest.sparseGram.weightsId;
+    }
+    if (Array.isArray(manifest?.sparseGram?.deltas)) {
+      this.sparseGramDeltas = manifest.sparseGram.deltas.filter((entry) => typeof entry === 'string');
+    } else if (manifest?.sparseGram) {
+      this.sparseGramDeltas = null;
+    }
+  }
+
+  async _reloadManifestArtifacts(manifest, options = {}) {
+    this._syncManifestPaths(manifest);
+    const reloadScope = options.reloadScope || 'all';
+    const grepOnly = reloadScope === 'grep';
+
+    if (!grepOnly) {
+      this.hasBinaryHnswIndex = existsSync(this.binaryHnswPath.replace('.idx', '.meta.json'));
+    }
+    if (!grepOnly && this.hasBinaryHnswIndex && this.use3Stage) {
+      try {
+        const nextBinary = new BinaryHNSWIndex({
+          indexPath: this.binaryHnswPath,
+          stalePath: this.binaryHnswIndex?.stalePath || `${this.binaryHnswPath}.stale.bin`,
+        });
+        await nextBinary.load();
+        this.binaryHnswIndex = nextBinary;
+        this.floatVectorStore = new FloatVectorStore();
+        await this.floatVectorStore.load(getFloatStorePath(this.binaryHnswPath));
+      } catch (err) {
+        this.log(`BinaryHNSW: Failed to reload after manifest publish: ${err.message}`);
+        this.hasBinaryHnswIndex = false;
+      }
+    }
+
+    if (!grepOnly) {
+      this.hasHnswIndex = existsSync(this.hnswPath.replace('.idx', '.meta.json'));
+    }
+    if (!grepOnly && this.hasHnswIndex) {
+      try {
+        const nextHnsw = new HNSWIndex({
+          indexPath: this.hnswPath,
+          stalePath: this.hnswIndex?.stalePath || `${this.hnswPath}.stale.bin`,
+        });
+        await nextHnsw.load(undefined, { mmap: true });
+        this.hnswIndex = nextHnsw;
+      } catch (err) {
+        this.log(`HNSW: Failed to reload after manifest publish: ${err.message}`);
+        this.hasHnswIndex = false;
+      }
+    }
+
+    if (!grepOnly) {
+      this.hasLateInteractionIndex = existsSync(this.lateInteractionIndex.indexPath);
+    }
+    if (!grepOnly && this.hasLateInteractionIndex) {
+      try {
+        const nextLi = new LateInteractionIndex(this._lateInteractionOptions);
+        await nextLi.init();
+        this.lateInteractionIndex = nextLi;
+        this._clearChunkLocationCache();
+        const liManifest = {
+          modelId: this.lateInteractionIndex.modelId ?? null,
+          tokenDim: this.lateInteractionIndex.tokenDim ?? null,
+          modelMismatch: this.lateInteractionIndex.modelMismatch === true,
+          exists: true,
+        };
+        const resolved = resolveSearchRerankPolicy({
+          optionOverride: this._liPolicyOptionOverride,
+          env: process.env,
+          persisted: this._liPolicyPersisted,
+          indexManifest: liManifest,
+          activeConfigModel: LATE_INTERACTION_CONFIG.model,
+        });
+        this._liPolicyResolved = resolved;
+        this.useLateInteraction = LATE_INTERACTION_CONFIG.enabled && resolved.effective;
+      } catch (err) {
+        this.log(`LateInteraction: Failed to reload after manifest publish: ${err.message}`);
+        this.hasLateInteractionIndex = false;
+        this.useLateInteraction = false;
+        this._clearChunkLocationCache();
+      }
+    }
+
+    this.hasSparseGramIndex = existsSync(this.sparseGramIndexPath);
+    if (this.hasSparseGramIndex) {
+      try {
+        this.sparseGramIndex = loadSparseGramIndex(this.sparseGramIndexPath);
+        this._sparseGramLoadedPath = this.sparseGramIndex ? this.sparseGramIndexPath : null;
+      } catch (err) {
+        this.log(`SparseGram: Failed to reload after manifest publish: ${err.message}`);
+        this.hasSparseGramIndex = false;
+        this.sparseGramIndex = null;
+        this._sparseGramLoadedPath = null;
+      }
+    } else {
+      this.sparseGramIndex = null;
+      this._sparseGramLoadedPath = null;
+    }
+  }
+
+  async _refreshManifestPins(options = {}) {
+    const manifest = this._readReconcileManifest();
+    const previousArtifactEpoch = this._artifactManifestEpoch;
+    const previousCodebaseEpoch = this.codebaseRepo?.getManifestEpoch?.();
+    const manifestEpoch = Number.isInteger(manifest?.epoch) ? manifest.epoch : null;
+    const shouldReloadArtifacts = manifestEpoch !== null
+      && previousArtifactEpoch !== manifestEpoch
+      && (this.initialized || this.grepInitialized);
+    this._syncManifestPaths(manifest);
+    const codebaseEpoch = this.codebaseRepo?.refreshManifestEpoch?.();
+    if (previousCodebaseEpoch !== codebaseEpoch) {
+      this._clearCodebaseChunkTypeCache();
+    }
+    const graphEpoch = this.graphSearch?.refreshManifestEpoch?.();
+    this.codeGraphRepo?.refreshManifestEpoch?.();
+    // Regex/sparse-gram helpers are not repository-backed, so expose the
+    // query-pinned epoch on the searcher for their delta overlay reader.
+    this.manifestEpoch = manifestEpoch !== null
+      ? manifestEpoch
+      : (Number.isInteger(codebaseEpoch) ? codebaseEpoch : graphEpoch);
+    if (shouldReloadArtifacts) {
+      await this._reloadManifestArtifacts(manifest, options);
+    }
+    if (manifestEpoch !== null) {
+      this._artifactManifestEpoch = manifestEpoch;
+    }
   }
 
   async initGrepOnly() {
     if (this.grepInitialized || this.initialized) return;
     const start = Date.now();
 
+    this._syncManifestPaths(this._readReconcileManifest());
     this.hasCodebaseIndex = existsSync(this.codebaseDbPath);
     this.hasSparseGramIndex = existsSync(this.sparseGramIndexPath);
     if (this.hasSparseGramIndex) {
       try {
         this.sparseGramIndex = loadSparseGramIndex(this.sparseGramIndexPath);
         if (this.sparseGramIndex) {
+          this._sparseGramLoadedPath = this.sparseGramIndexPath;
           const stats = this.sparseGramIndex.getStats();
           this.log(
             `SparseGram: Loaded ${stats.grams} grams across ${stats.totalFiles} files ` +
@@ -389,10 +631,12 @@ export class SweetSearch {
         this.log(`SparseGram: Failed to load: ${err.message}`);
         this.hasSparseGramIndex = false;
         this.sparseGramIndex = null;
+        this._sparseGramLoadedPath = null;
       }
     }
 
     this.grepInitialized = true;
+    this._artifactManifestEpoch = this._readReconcileManifest()?.epoch ?? null;
     this.log(`SweetSearch: Grep-only initialized in ${Date.now() - start}ms`);
   }
 
@@ -411,7 +655,14 @@ export class SweetSearch {
     } else {
       await this.init();
     }
+    await this._refreshManifestPins({ reloadScope: mode === 'grep' ? 'grep' : 'all' });
 
+    const readPin = beginPinnedRead({
+      stateDir: this._manifestStateDir,
+      epoch: this.manifestEpoch,
+      meta: { tool: 'search', mode, query: String(query).slice(0, 200) },
+    });
+    try {
     const start = Date.now();
     const stats = { query };
 
@@ -675,6 +926,9 @@ export class SweetSearch {
     }
 
     return postRetrievalResult;
+    } finally {
+      endPinnedRead(readPin);
+    }
   }
 
   /** Structural search path (GraphRAG structural queries — opt-in via explicit flag) */

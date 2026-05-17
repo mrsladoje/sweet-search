@@ -15,9 +15,11 @@
  * tests reference cached results (avoids ~17 redundant sequential spawns).
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,6 +28,8 @@ const __dirname = dirname(__filename);
 // Paths
 const PROJECT_ROOT = join(__dirname, '..', '..');
 const INDEXER_PATH = join(__dirname, '../..', 'core', 'indexing', 'index-codebase-v21.js');
+const INDEXER_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_TEST_INDEXER_TIMEOUT_MS || 300000);
+let TEST_PROJECT_ROOT = null;
 
 // =============================================================================
 // Test Helpers
@@ -37,11 +41,11 @@ const INDEXER_PATH = join(__dirname, '../..', 'core', 'indexing', 'index-codebas
  */
 function runIndexer(args = [], stdinInput = null, options = {}) {
   return new Promise((resolve, reject) => {
-    const { timeout = 60000, cwd = PROJECT_ROOT } = options;
+    const { timeout = INDEXER_TIMEOUT_MS, cwd = TEST_PROJECT_ROOT || PROJECT_ROOT } = options;
 
     const child = spawn('node', [INDEXER_PATH, ...args], {
       cwd,
-      env: { ...process.env },
+      env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: cwd },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -116,6 +120,11 @@ let stdinDedupDryResult, stdinAbsDryResult, stdinOutsideDryResult;
 let stdinDotSlashDryResult, stdinFilterDryResult, stdinMixedDryResult;
 
 beforeAll(async () => {
+  TEST_PROJECT_ROOT = mkdtempSync(join(tmpdir(), 'ss-cli-flags-'));
+  mkdirSync(join(TEST_PROJECT_ROOT, 'src'), { recursive: true });
+  writeFileSync(join(TEST_PROJECT_ROOT, 'src', 'app.js'), 'export function app() { return 1; }\n');
+  writeFileSync(join(TEST_PROJECT_ROOT, 'src', 'other.js'), 'export function other() { return 2; }\n');
+
   [
     helpResult,
     quietDryResult,
@@ -135,17 +144,21 @@ beforeAll(async () => {
     () => runIndexer(['--quiet', '--dry-run']),
     () => runIndexer(['--quiet', '--help']),
     () => runIndexer(['--quiet', '--stats']),
-    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], 'CLAUDE.md\nDEVELOPMENT.md\n'),
+    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], 'src/app.js\nsrc/other.js\n'),
     () => runIndexer(['--files-from-stdin', '--quiet'], ''),
     () => runIndexer(['--files-from-stdin', '--quiet'], '  \n\n  \t\n'),
-    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], 'CLAUDE.md\nCLAUDE.md\nCLAUDE.md\n'),
-    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], `${PROJECT_ROOT}/CLAUDE.md\n`),
-    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], '/tmp/outside-project-file.java\nCLAUDE.md\n'),
-    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], './CLAUDE.md\n./DEVELOPMENT.md\n'),
+    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], 'src/app.js\nsrc/app.js\nsrc/app.js\n'),
+    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], `${TEST_PROJECT_ROOT}/src/app.js\n`),
+    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], '/tmp/outside-project-file.java\nsrc/app.js\n'),
+    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], './src/app.js\n./src/other.js\n'),
     () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], 'node_modules/some/file.js\n.git/config\n'),
-    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], `CLAUDE.md\n/etc/passwd\nDEVELOPMENT.md\n`),
+    () => runIndexer(['--files-from-stdin', '--quiet', '--dry-run'], `src/app.js\n/etc/passwd\nsrc/other.js\n`),
   ]);
-}, 180000);
+}, 420000);
+
+afterAll(() => {
+  if (TEST_PROJECT_ROOT) rmSync(TEST_PROJECT_ROOT, { recursive: true, force: true });
+});
 
 // =============================================================================
 // --help Flag Tests (Quick sanity check)

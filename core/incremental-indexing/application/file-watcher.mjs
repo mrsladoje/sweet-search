@@ -20,6 +20,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { canonicaliseInsideRoot } from '../infrastructure/dirty-set.mjs';
 
 const DEFAULT_DEBOUNCE_MS = 200;
 
@@ -96,7 +97,8 @@ export class FileWatcher {
   _handleEvent(filename) {
     const norm = filename.replace(/\\/g, '/');
     if (this.isExcluded(norm)) return;
-    const abs = path.resolve(this.projectRoot, filename);
+    const abs = canonicaliseInsideRoot(this.projectRoot, filename);
+    if (!abs) return;
 
     // Debounce: editor "atomic save" patterns emit CREATE/WRITE/RENAME
     // bursts. Coalesce within `debounceMs` then push once.
@@ -146,11 +148,13 @@ export class FileWatcher {
  * @param {string} projectRoot
  * @param {(rel:string)=>boolean} isExcluded
  * @param {import('../infrastructure/dirty-set.mjs').DirtySet} dirtySet
+ * @param {(entry:{absPath:string, relPath:string, stat:fs.Stats})=>boolean|Promise<boolean>} [shouldEnqueue]
  * @returns {Promise<{filesSeen:number, filesEnqueued:number}>}
  */
-export async function pollingBackstopSweep(projectRoot, isExcluded, dirtySet) {
+export async function pollingBackstopSweep(projectRoot, isExcluded, dirtySet, shouldEnqueue = null) {
   let filesSeen = 0;
   let filesEnqueued = 0;
+  let filesSkippedUnchanged = 0;
   async function walk(dir, rel) {
     let entries;
     try {
@@ -168,16 +172,26 @@ export async function pollingBackstopSweep(projectRoot, isExcluded, dirtySet) {
       }
       if (!entry.isFile()) continue;
       filesSeen += 1;
-      // The reconcile tick decides via `metadataMatches` whether the file
-      // is truly dirty; here we just enqueue the candidate. The watcher
-      // path already filtered; the polling path catches anything the
-      // watcher missed.
-      if (!dirtySet.has(childAbs)) {
-        dirtySet.add(childAbs, 'polling');
+      const canonicalAbs = canonicaliseInsideRoot(projectRoot, childAbs);
+      if (!canonicalAbs) continue;
+      if (shouldEnqueue) {
+        let stat;
+        try {
+          stat = await fs.promises.stat(canonicalAbs);
+        } catch {
+          continue;
+        }
+        if (!await shouldEnqueue({ absPath: canonicalAbs, relPath: childRel, stat })) {
+          filesSkippedUnchanged += 1;
+          continue;
+        }
+      }
+      if (!dirtySet.has(canonicalAbs)) {
+        dirtySet.add(canonicalAbs, 'polling');
         filesEnqueued += 1;
       }
     }
   }
   await walk(projectRoot, '');
-  return { filesSeen, filesEnqueued };
+  return { filesSeen, filesEnqueued, filesSkippedUnchanged };
 }

@@ -142,7 +142,7 @@ async function main() {
   const isChild = process.env.SS_SEMANTIC_CHILD_OUT === 'jsonl';
   if (!isChild) return orchestrate(opts);
 
-  const { readSemantic } = await import('../../../search/search-read-semantic.js');
+  const { readSemantic } = await import('../../search-runtime.mjs');
 
   const reposMap = loadReposManifest();
   const allRows = loadBehaviouralRows();

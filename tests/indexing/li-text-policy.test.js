@@ -9,10 +9,14 @@
  * for everything else).
  */
 
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 import { ASTChunker, JAVA_FAMILY, normalizePathSlug } from '../../core/indexing/ast-chunker.js';
-import { pickLiInput } from '../../core/indexing/indexer-ann.js';
+import { pickLiInput, __TEST__ as indexerAnnTest } from '../../core/indexing/indexer-ann.js';
+import { applyIndexingChunkPolicy, _internals as indexingPolicyInternals } from '../../core/indexing/indexing-file-policy.js';
 
 const PROJECT_ROOT = process.cwd();
 
@@ -129,6 +133,24 @@ describe('LI text policy v6.2', () => {
       expect(c.metadata.language).toBe('python');
       expect(pickLiInput(c)).toBe(c.li_text);
     });
+
+    it('resolves canonical metadata paths before chunk.file for LI metadata', () => {
+      expect(indexerAnnTest.chunkFilePath({
+        file: 'x.py',
+        metadata: { path: 'src/x.py', language: 'python' },
+      })).toBe('src/x.py');
+      expect(indexerAnnTest.chunkFilePath({
+        file: 'ignored.py',
+        metadata: { relative_path: 'pkg/x.py', path: 'src/x.py' },
+      })).toBe('pkg/x.py');
+    });
+
+    it('ignores traversal-looking metadata paths before falling back to chunk.file', () => {
+      expect(indexerAnnTest.chunkFilePath({
+        file: 'http.js',
+        metadata: { path: '../../../../private/var/tmp/project/http.js' },
+      })).toBe('http.js');
+    });
   });
 
   describe('byte-for-byte parity with greedy R2 for JS/Ruby/Go', () => {
@@ -145,6 +167,44 @@ describe('LI text policy v6.2', () => {
       for (const c of samples) {
         expect(pickLiInput(c)).toBe(c.embedding_text);
       }
+    });
+  });
+
+  describe('shared indexing path policy', () => {
+    it('applies LI skip patterns to canonical metadata paths before chunk.file', async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-li-skip-'));
+      const oldSkipFile = process.env.SWEET_SEARCH_LI_SKIP_FILE;
+      try {
+        const skipFile = path.join(tmpDir, 'li-skip.txt');
+        await fs.writeFile(skipFile, 'src/generated/**\n');
+        process.env.SWEET_SEARCH_LI_SKIP_FILE = skipFile;
+        indexingPolicyInternals.resetCache();
+
+        const result = applyIndexingChunkPolicy([{
+          file: 'x.js',
+          text: 'export const x = 1;',
+          metadata: { path: 'src/generated/x.js' },
+        }]);
+
+        expect(result.kept).toEqual([]);
+        expect(result.skipped).toHaveLength(1);
+        expect(result.stats).toMatchObject({ excluded: 1, skippedFiles: 1 });
+      } finally {
+        if (oldSkipFile === undefined) delete process.env.SWEET_SEARCH_LI_SKIP_FILE;
+        else process.env.SWEET_SEARCH_LI_SKIP_FILE = oldSkipFile;
+        indexingPolicyInternals.resetCache();
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it('does not let unsafe metadata paths drive LI skip decisions', () => {
+      const chunk = {
+        file: 'safe/x.js',
+        text: 'export const x = 1;',
+        metadata: { path: '../src/generated/x.js' },
+      };
+
+      expect(indexingPolicyInternals.chunkPath(chunk)).toBe('safe/x.js');
     });
   });
 });
