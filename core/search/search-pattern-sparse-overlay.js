@@ -73,11 +73,29 @@ function sparseManifestStateDirs(searcher, options = {}, indexPath) {
   ].filter((dir, idx, dirs) => typeof dir === 'string' && dir && dirs.indexOf(dir) === idx);
 }
 
+// Negative cache for stateDirs known to lack reconcile-manifest.json.
+// 1s TTL bounds staleness when reconcile later starts publishing.
+const _sparseManifestAbsentAt = new Map();
+const SPARSE_MANIFEST_ABSENT_TTL_MS = 1000;
+
+export function _resetSparseManifestAbsentCache() {
+  _sparseManifestAbsentAt.clear();
+}
+
 function readSparseManifest(searcher, options, indexPath) {
   const dirs = sparseManifestStateDirs(searcher, options, indexPath);
+  const now = Date.now();
   for (const dir of dirs) {
+    const absentAt = _sparseManifestAbsentAt.get(dir);
+    if (absentAt !== undefined && now - absentAt < SPARSE_MANIFEST_ABSENT_TTL_MS) {
+      continue;
+    }
     const manifest = readSparseManifestFromDir(dir);
-    if (manifest) return manifest;
+    if (manifest) {
+      _sparseManifestAbsentAt.delete(dir);
+      return manifest;
+    }
+    _sparseManifestAbsentAt.set(dir, now);
   }
   return null;
 }
