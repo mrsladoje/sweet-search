@@ -16,14 +16,38 @@ export function searchStateDir(projectRoot = process.cwd()) {
   return path.join(root, dataDirName());
 }
 
+// Negative cache for stateDirs known to have no reconcile-manifest.json.
+// 1s TTL bounds staleness if reconcile starts publishing after first probe.
+// Cleared per-stateDir whenever a manifest is observed.
+const _manifestAbsentAt = new Map();
+const MANIFEST_ABSENT_TTL_MS = 1000;
+
+export function _resetManifestAbsentCache() {
+  _manifestAbsentAt.clear();
+}
+
 export function beginPinnedRead({ projectRoot, stateDir, epoch, meta } = {}) {
+  // Caller signaled "I already checked and there is no pinned epoch".
+  // Heartbeat has no GC contract to honor without an epoch — no-op.
+  if (epoch === null) return null;
   const resolvedStateDir = stateDir || (projectRoot ? searchStateDir(projectRoot) : null);
   if (!resolvedStateDir) return null;
+  // Skip readManifest when we recently observed it was absent at this path.
+  if (!Number.isInteger(epoch)) {
+    const absentAt = _manifestAbsentAt.get(resolvedStateDir);
+    if (absentAt !== undefined && Date.now() - absentAt < MANIFEST_ABSENT_TTL_MS) {
+      return null;
+    }
+  }
   const manifest = Number.isInteger(epoch) ? null : readManifest(resolvedStateDir);
   const manifestEpoch = Number.isInteger(epoch)
     ? epoch
     : manifest?.epoch;
-  if (!Number.isInteger(manifestEpoch)) return null;
+  if (!Number.isInteger(manifestEpoch)) {
+    _manifestAbsentAt.set(resolvedStateDir, Date.now());
+    return null;
+  }
+  _manifestAbsentAt.delete(resolvedStateDir);
   return {
     stateDir: resolvedStateDir,
     epoch: manifestEpoch,
