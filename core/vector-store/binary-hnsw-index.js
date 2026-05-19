@@ -719,12 +719,27 @@ export class BinaryHNSWIndex {
   }
 
   /**
-   * Save index to disk
+   * Save index to disk.
+   *
+   * Publish semantics: every sidecar is written to a sibling
+   * `<path>.tmp.<pid>` then atomically renamed into its canonical
+   * name. Cross-process readers loading the index never observe a
+   * torn `(meta, vectors, graph, int8)` tuple — POSIX `rename` is
+   * atomic per-file, and the publish order below puts the
+   * descriptor (`.meta.json`) LAST so that any reader that observes
+   * the new meta.json is guaranteed to read the matching data
+   * sidecars alongside it.
+   *
+   * The brief window between data renames remains: a reader can
+   * still observe `(NEW vectors, OLD graph)` for a few microseconds.
+   * The size of the rebuilt index makes this window negligible on
+   * the existing single-writer process model; a deeper fix would
+   * publish all sidecars via a single packaged artifact under
+   * versioned manifest paths.
    */
   async save(indexPath = this.indexPath) {
     await fs.mkdir(path.dirname(indexPath), { recursive: true });
 
-    // Save metadata
     const meta = {
       dimension: this.dimension,
       floatDimension: this.floatDimension,
@@ -740,50 +755,58 @@ export class BinaryHNSWIndex {
       savedAt: new Date().toISOString(),
     };
 
-    const metaPath = indexPath.replace('.idx', '.meta.json');
-    await fs.writeFile(metaPath, JSON.stringify(meta, null, 2));
-
-    // Save vectors (binary + metadata)
     const vectorsData = this.vectors.map(v => ({
       id: v.id,
       binary: Array.from(v.binary),
       metadata: v.metadata,
     }));
 
+    const metaPath = indexPath.replace('.idx', '.meta.json');
     const vectorsPath = indexPath.replace('.idx', '.vectors.json');
-    await fs.writeFile(vectorsPath, JSON.stringify(vectorsData));
-
-    // Save graph structure
     const graphPath = indexPath.replace('.idx', '.graph.json');
-    await fs.writeFile(graphPath, JSON.stringify(this.graph));
-
-    // Save int8 vectors if any; remove a stale optional sidecar when a clean
-    // replacement no longer has stage-2 vectors for this artifact.
     const int8Path = indexPath.replace('.idx', '.int8.json');
-    const int8Data = {};
+    const calibPath = indexPath.replace('.idx', '.calibration.json');
+    const pidSuffix = `.tmp.${process.pid}`;
+
+    // Stage all sidecars to sibling temp paths.
+    await fs.writeFile(metaPath + pidSuffix, JSON.stringify(meta, null, 2));
+    await fs.writeFile(vectorsPath + pidSuffix, JSON.stringify(vectorsData));
+    await fs.writeFile(graphPath + pidSuffix, JSON.stringify(this.graph));
+
+    let stagedInt8 = false;
     if (this.int8Vectors.size > 0) {
       const liveIds = new Set(this.vectors.map(v => v.id));
+      const int8Data = {};
       for (const [id, vec] of this.int8Vectors) {
         if (!liveIds.has(id)) continue;
         int8Data[id] = Array.from(vec);
       }
-    }
-    if (Object.keys(int8Data).length > 0) {
-      await fs.writeFile(int8Path, JSON.stringify(int8Data));
-    } else {
-      await fs.rm(int8Path, { force: true });
+      if (Object.keys(int8Data).length > 0) {
+        await fs.writeFile(int8Path + pidSuffix, JSON.stringify(int8Data));
+        stagedInt8 = true;
+      }
     }
 
-    // Save asymmetric calibration data (centroid + rotation signs)
-    const calibPath = indexPath.replace('.idx', '.calibration.json');
+    let stagedCalib = false;
     if (this.useAsymmetric && this.centroid && this.signVector) {
-      await fs.writeFile(calibPath, JSON.stringify({
+      await fs.writeFile(calibPath + pidSuffix, JSON.stringify({
         centroid: Array.from(this.centroid),
         signVector: Array.from(this.signVector),
       }));
-    } else {
-      await fs.rm(calibPath, { force: true });
+      stagedCalib = true;
     }
+
+    // Atomic publish in safety order: data sidecars first, descriptor
+    // (.meta.json) LAST. Optional sidecars without staged content are
+    // unlinked from the canonical path so the canonical state matches
+    // the staged tuple exactly.
+    await fs.rename(vectorsPath + pidSuffix, vectorsPath);
+    await fs.rename(graphPath + pidSuffix, graphPath);
+    if (stagedInt8) await fs.rename(int8Path + pidSuffix, int8Path);
+    else await fs.rm(int8Path, { force: true });
+    if (stagedCalib) await fs.rename(calibPath + pidSuffix, calibPath);
+    else await fs.rm(calibPath, { force: true });
+    await fs.rename(metaPath + pidSuffix, metaPath);
 
     if (this._cleanBuild) {
       await fs.rm(this._stalePathForIndex(indexPath), { force: true });
@@ -795,7 +818,19 @@ export class BinaryHNSWIndex {
   }
 
   /**
-   * Load index from disk
+   * Load index from disk.
+   *
+   * Torn-publish handling: `save()` publishes data sidecars and
+   * `.meta.json` via separate atomic renames. A reader that opens the
+   * index in the microsecond window between renames can observe a torn
+   * `(meta, vectors)` pair where `meta.entryPoint` references an index
+   * past `vectors.length`. The first `search()` call would then
+   * `TypeError` on `this.vectors[entryPoint].binary`. To keep fresh
+   * readers crash-free we re-read the pair up to three times on
+   * `(vectorCount, entryPoint)` inconsistency — the publish window
+   * closes in microseconds so a brief retry self-heals it. A persistent
+   * mismatch surfaces as an explicit load error rather than a deferred
+   * search crash.
    */
   async load(indexPath = this.indexPath) {
     const metaPath = indexPath.replace('.idx', '.meta.json');
@@ -807,16 +842,38 @@ export class BinaryHNSWIndex {
       throw new Error(`Index metadata not found: ${metaPath}`);
     }
 
-    // Load metadata
-    const meta = JSON.parse(await fs.readFile(metaPath, 'utf-8'));
-
-    // Validate pipeline version — mismatched indexes must be rebuilt
-    const storedVersion = meta.pipelineVersion || 1;
+    // Validate pipeline version first — a stale on-disk artifact from a
+    // previous quantization scheme is a callable-level error, not a
+    // torn-publish race, and the caller needs the specific message to
+    // route to the rebuild path.
+    const initialMeta = JSON.parse(await fs.readFile(metaPath, 'utf-8'));
+    const storedVersion = initialMeta.pipelineVersion || 1;
     if (storedVersion !== PIPELINE_VERSION) {
       throw new Error(
         `Pipeline version mismatch: index=${storedVersion}, current=${PIPELINE_VERSION}. ` +
         `Index must be rebuilt (quantization pipeline changed).`
       );
+    }
+
+    let meta;
+    let vectorsData;
+    let attempt = 0;
+    while (true) {
+      meta = attempt === 0 ? initialMeta : JSON.parse(await fs.readFile(metaPath, 'utf-8'));
+      vectorsData = JSON.parse(await fs.readFile(vectorsPath, 'utf-8'));
+      const consistent = meta.vectorCount === vectorsData.length
+        && (meta.entryPoint === -1 || meta.entryPoint < vectorsData.length);
+      if (consistent) break;
+      if (attempt >= 2) {
+        throw new Error(
+          `BinaryHNSW: persistent meta/vectors inconsistency at ${indexPath} ` +
+          `(meta.vectorCount=${meta.vectorCount}, vectors.length=${vectorsData.length}, ` +
+          `entryPoint=${meta.entryPoint})`
+        );
+      }
+      // Brief delay to let an in-flight save() finish its second rename.
+      await new Promise((resolve) => setTimeout(resolve, 5 * (attempt + 1)));
+      attempt += 1;
     }
 
     this.dimension = meta.dimension;
@@ -830,8 +887,7 @@ export class BinaryHNSWIndex {
     this.centroid = null;
     this.signVector = null;
 
-    // Load vectors
-    const vectorsData = JSON.parse(await fs.readFile(vectorsPath, 'utf-8'));
+    // Vectors already read above as part of the consistency probe.
     this.vectors = vectorsData.map(v => ({
       id: v.id,
       binary: new Uint8Array(v.binary),

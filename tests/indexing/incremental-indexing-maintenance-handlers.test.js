@@ -380,3 +380,142 @@ describe('reclamationHandlers registry', () => {
     expect(typeof h.li_segment).toBe('function');
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * Cross-process publish atomicity                                     *
+ *                                                                     *
+ * These tests pin the contract that maintenance handlers leave the    *
+ * canonical artifacts consistent for cross-process readers:           *
+ *   - sparse: the reconcile manifest's `sparseGram.deltas` list MUST  *
+ *     reference only segments that exist on disk after compaction.    *
+ *   - HNSW/binary HNSW: no `.tmp.<pid>` staging files leak past a     *
+ *     successful save (atomic publish protocol).                      *
+ * ------------------------------------------------------------------ */
+
+describe('cross-process publish atomicity', () => {
+  let stateDir;
+  beforeEach(() => { stateDir = mkState('atomic'); });
+  afterEach(() => fs.rmSync(stateDir, { recursive: true, force: true }));
+
+  it('sparseGramHandler updates the reconcile manifest to point at the surviving segment', async () => {
+    const base = path.join(stateDir, 'codebase-sparse-grams.idx');
+    // Bootstrap with 3 delta segments.
+    appendDeltaRecord(base, 1, { fileId: 'aa', filePath: 'a.js', contentHash: 'h1', deleted: false, symbolMask: 0, weightsId: 'w1', grams: [['x', 1]] });
+    appendDeltaRecord(base, 2, { fileId: 'bb', filePath: 'b.js', contentHash: 'h2', deleted: false, symbolMask: 0, weightsId: 'w1', grams: [['y', 1]] });
+    appendDeltaRecord(base, 3, { fileId: 'cc', filePath: 'c.js', contentHash: 'h3', deleted: false, symbolMask: 0, weightsId: 'w1', grams: [['z', 1]] });
+
+    // Bootstrap a manifest whose deltas list references those 3 segments.
+    const { writeManifest, zeroManifest } = await import('../../core/incremental-indexing/infrastructure/manifest.mjs');
+    const segsBefore = listDeltaSegments(base);
+    const manifest = zeroManifest({});
+    manifest.epoch = 5;
+    manifest.sparseGram.deltas = segsBefore.map((s) =>
+      path.relative(stateDir, s.path).replace(/\\/g, '/'),
+    );
+    writeManifest(stateDir, manifest);
+
+    const out = await sparseGramHandler({}, { stateDir });
+    expect(out.skipped).toBeUndefined();
+    expect(out.manifestUpdated).toBe(true);
+
+    // The directory now has the single compacted segment.
+    const segsAfter = listDeltaSegments(base);
+    expect(segsAfter.length).toBe(1);
+
+    // The reconcile manifest's deltas list MUST point at the surviving
+    // segment AND nothing else (otherwise fresh cross-process readers
+    // would resolve zero records until the next reconcile tick).
+    const { readManifest } = await import('../../core/incremental-indexing/infrastructure/manifest.mjs');
+    const reloaded = readManifest(stateDir);
+    expect(reloaded.sparseGram.deltas.length).toBe(1);
+    const absolute = path.resolve(stateDir, reloaded.sparseGram.deltas[0]);
+    expect(fs.existsSync(absolute)).toBe(true);
+    expect(absolute).toBe(segsAfter[0].path);
+  });
+
+  it('floatHnswHandler leaves no orphan `.tmp.<pid>` files', async () => {
+    const indexPath = path.join(stateDir, 'codebase-hnsw.idx');
+    const stalePath = indexPath + '.stale.bin';
+    // Bootstrap the DB with embeddings — the handler reads `embedding`
+    // from `vectors` and re-encodes into a fresh index. Live = a, c
+    // (the handler also walks the DB to discover live rows).
+    bootstrapVectorDb(stateDir, [
+      { id: 'a', embedding: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8] },
+      { id: 'b', embedding: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] },
+      { id: 'c', embedding: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0] },
+    ]);
+    const idx = new HNSWIndex({ indexPath, stalePath, dimension: 8 });
+    await idx.init();
+    for (const id of ['a', 'b', 'c']) await idx.add(id, new Float32Array(8).fill(0.1));
+    await idx.save(indexPath);
+    // Mark `b` stale via the bitmap so the handler doesn't take the
+    // early-return "no-stale-vectors" path. The DB walk still sees all
+    // three live rows; that's fine — the handler rebuilds from the DB.
+    const bitmap = createBitmap(8);
+    setBit(bitmap, idx.idMap.get('b'));
+    saveBitmap(stalePath, bitmap);
+
+    const out = await floatHnswHandler({}, { stateDir });
+    expect(out.skipped).toBeUndefined();
+    expect(out.atomicPublish).toBe(true);
+
+    // No `.tmp.<pid>` orphans for any sidecar this handler touches.
+    const orphans = fs.readdirSync(stateDir).filter((name) => name.includes('.tmp.'));
+    expect(orphans).toEqual([]);
+
+    // Canonical sidecars are in place.
+    expect(fs.existsSync(indexPath.replace('.idx', '.meta.json'))).toBe(true);
+    // .usearch only present when usearch native loader is reachable.
+    const usearchPath = indexPath.replace('.idx', '.usearch');
+    const vectorsPath = indexPath.replace('.idx', '.vectors.json');
+    expect(fs.existsSync(usearchPath) || fs.existsSync(vectorsPath)).toBe(true);
+  });
+
+  it('BinaryHNSWIndex.load detects a persistent torn (meta, vectors) pair and refuses', async () => {
+    const indexPath = path.join(stateDir, 'codebase-binary-hnsw.idx');
+    const idx = new BinaryHNSWIndex({ indexPath, floatDimension: 32 });
+    await idx.init();
+    for (let i = 0; i < 3; i += 1) {
+      await idx.add(`vec-${i}`, makeBinary(i), { name: `n${i}` }, null);
+    }
+    await idx.save(indexPath);
+
+    // Forge a torn pair: meta claims 99 vectors with entryPoint=42,
+    // vectors.json still has 3. The microsecond publish-window
+    // scenario in production; here we make it permanent so the load
+    // guard's terminal-throw path is deterministic.
+    const metaPath = indexPath.replace('.idx', '.meta.json');
+    const realMeta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    fs.writeFileSync(metaPath, JSON.stringify({ ...realMeta, vectorCount: 99, entryPoint: 42 }, null, 2));
+
+    const reloader = new BinaryHNSWIndex({ indexPath });
+    await expect(reloader.load(indexPath)).rejects.toThrow(/persistent meta\/vectors inconsistency/);
+  });
+
+  it('binaryHnswHandler leaves no orphan `.tmp.<pid>` files', async () => {
+    const indexPath = path.join(stateDir, 'codebase-binary-hnsw.idx');
+    const stalePath = indexPath + '.stale.bin';
+    const idx = new BinaryHNSWIndex({ indexPath, floatDimension: 32 });
+    await idx.init();
+    for (let i = 0; i < 4; i += 1) {
+      await idx.add(`vec-${i}`, makeBinary(i), { name: `n${i}` }, null);
+    }
+    await idx.save(indexPath);
+
+    const bitmap = createBitmap(8);
+    setBit(bitmap, 1);
+    saveBitmap(stalePath, bitmap);
+
+    const out = await binaryHnswHandler({}, { stateDir });
+    expect(out.skipped).toBeUndefined();
+    expect(out.atomicPublish).toBe(true);
+
+    const orphans = fs.readdirSync(stateDir).filter((name) => name.includes('.tmp.'));
+    expect(orphans).toEqual([]);
+
+    // Canonical sidecars are all present.
+    for (const suffix of ['meta.json', 'vectors.json', 'graph.json']) {
+      expect(fs.existsSync(indexPath.replace('.idx', '.' + suffix))).toBe(true);
+    }
+  });
+});

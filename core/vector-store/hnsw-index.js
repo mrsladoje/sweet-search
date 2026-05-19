@@ -394,7 +394,22 @@ export class HNSWIndex {
   }
 
   /**
-   * Save index to disk
+   * Save index to disk.
+   *
+   * Publish semantics: each sidecar is written to a sibling
+   * `<path>.tmp.<pid>` and then `renameSync`'d into its canonical name.
+   * On POSIX, atomic rename keeps existing mmaps valid against the
+   * unlinked old inode — without this, a cross-process reader that
+   * holds a `usearch.view()` mmap over the canonical .usearch file
+   * would SIGBUS / SIGSEGV the moment the next reconcile tick or
+   * maintenance pass truncates+writes the file in place.
+   *
+   * Publish ORDER: data first (.usearch / .vectors.json), then
+   * .meta.json LAST. A fresh reader that successfully reads the new
+   * meta.json is guaranteed to read the matching data sidecar
+   * alongside it. The brief residual window — `(OLD meta, NEW
+   * .usearch)` — yields MISSING results (keys beyond the new index
+   * size are absent) instead of GARBAGE results.
    */
   async save(indexPath = this.indexPath) {
     await fs.mkdir(path.dirname(indexPath), { recursive: true });
@@ -413,19 +428,24 @@ export class HNSWIndex {
       useFallback: this.useFallback,
     };
 
-    // Save metadata
     const metaPath = indexPath.replace('.idx', '.meta.json');
-    await fs.writeFile(metaPath, JSON.stringify(state, null, 2));
+    const metaTmpPath = `${metaPath}.tmp.${process.pid}`;
+    await fs.writeFile(metaTmpPath, JSON.stringify(state, null, 2));
 
     if (!this.useFallback && this.index) {
-      // Save USearch index (uses .usearch extension)
       const usearchPath = indexPath.replace('.idx', '.usearch');
-      this.index.save(usearchPath);
+      const usearchTmpPath = `${usearchPath}.tmp.${process.pid}`;
+      this.index.save(usearchTmpPath);
+      // Atomic rename: data first, descriptor last.
+      await fs.rename(usearchTmpPath, usearchPath);
+      await fs.rename(metaTmpPath, metaPath);
       console.log(`HNSW: Saved ${this.nextKey} vectors to ${usearchPath} (USearch)`);
     } else {
-      // Save fallback vectors
       const vectorsPath = indexPath.replace('.idx', '.vectors.json');
-      await fs.writeFile(vectorsPath, JSON.stringify(this.vectors));
+      const vectorsTmpPath = `${vectorsPath}.tmp.${process.pid}`;
+      await fs.writeFile(vectorsTmpPath, JSON.stringify(this.vectors));
+      await fs.rename(vectorsTmpPath, vectorsPath);
+      await fs.rename(metaTmpPath, metaPath);
       console.log(`HNSW: Saved ${this.vectors.length} vectors to ${vectorsPath} (fallback)`);
     }
   }
