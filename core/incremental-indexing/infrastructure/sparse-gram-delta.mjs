@@ -190,6 +190,108 @@ export function deltaSizeStats(baseArtifactPath) {
 }
 
 /**
+ * Compact the delta directory in place.
+ *
+ * Reads all delta segments, resolves the latest record per fileId, writes
+ * a single new segment that supersedes them, then deletes the segments
+ * the compaction consumed.
+ *
+ * Naming: the new segment uses `{maxEpoch}-{seq}` with `seq > 0` so it
+ * sorts AFTER any existing `{maxEpoch}-0` segment the reconciler wrote.
+ * Future reconcile ticks at epoch > maxEpoch keep monotonic ordering.
+ *
+ * Atomicity: write `*.compacting.tmp`, fsync, rename to the final name,
+ * THEN delete the consumed segments. A crash between rename and delete
+ * leaves the compacted file in place; the next round consumes everything
+ * including the compacted file and resolves to the same records (the
+ * compacted file's seq is highest, so its records win).
+ *
+ * Deleted-file records (`deleted: true`) are preserved by default — they
+ * suppress base postings at query time. Pass `{ dropTombstones: true }`
+ * to discard them; only safe when the caller has confirmed the matching
+ * fileId is gone from the base artifact too.
+ *
+ * @param {string} baseArtifactPath
+ * @param {{dropTombstones?:boolean}} [opts]
+ * @returns {{
+ *   compactedPath: string|null,
+ *   consumedSegments: number,
+ *   recordsWritten: number,
+ *   tombstonedDropped: number,
+ *   skipped: 'too-few-segments'|null,
+ * }}
+ */
+export function compactDeltaSegments(baseArtifactPath, opts = {}) {
+  const dropTombstones = !!opts.dropTombstones;
+  const segments = listDeltaSegments(baseArtifactPath);
+  if (segments.length <= 1) {
+    return { compactedPath: null, consumedSegments: 0, recordsWritten: 0, tombstonedDropped: 0, skipped: 'too-few-segments' };
+  }
+  const maxEpoch = segments[segments.length - 1].epoch;
+  const maxSeqAtMaxEpoch = segments
+    .filter((s) => s.epoch === maxEpoch)
+    .reduce((m, s) => Math.max(m, s.seq), -1);
+  const compactSeq = Math.max(maxSeqAtMaxEpoch + 1, 1);
+
+  const latest = new Map();
+  for (const seg of segments) {
+    const raw = fs.readFileSync(seg.path, 'utf-8');
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let record;
+      try { record = JSON.parse(trimmed); } catch { continue; }
+      if (!record.fileId) continue;
+      latest.set(record.fileId, record);
+    }
+  }
+
+  let tombstonedDropped = 0;
+  if (dropTombstones) {
+    for (const [fileId, rec] of latest) {
+      if (rec.deleted) {
+        latest.delete(fileId);
+        tombstonedDropped += 1;
+      }
+    }
+  }
+
+  const deltaDir = deltaDirFor(baseArtifactPath);
+  const targetName = `${maxEpoch}-${compactSeq}${DELTA_FILE_EXT}`;
+  const targetPath = path.join(deltaDir, targetName);
+  const tmpPath = targetPath + '.compacting.tmp';
+
+  const fd = fs.openSync(tmpPath, 'w');
+  try {
+    for (const record of latest.values()) {
+      fs.writeSync(fd, JSON.stringify(record) + '\n');
+    }
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tmpPath, targetPath);
+  try {
+    const dirFd = fs.openSync(deltaDir, 'r');
+    try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
+  } catch { /* best-effort dir fsync */ }
+
+  let consumed = 0;
+  for (const seg of segments) {
+    if (seg.path === targetPath) continue;
+    try { fs.unlinkSync(seg.path); consumed += 1; } catch { /* tolerate concurrent deletion */ }
+  }
+
+  return {
+    compactedPath: targetPath,
+    consumedSegments: consumed,
+    recordsWritten: latest.size,
+    tombstonedDropped,
+    skipped: null,
+  };
+}
+
+/**
  * Mark a file as deleted from the indexed corpus. Plan § 22.8.
  *
  * @param {string} baseArtifactPath

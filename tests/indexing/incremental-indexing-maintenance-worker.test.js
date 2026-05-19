@@ -20,6 +20,7 @@ import {
   appendDeadLetter,
   defaultMaintenanceHandlers,
   processMaintenanceQueue,
+  jobsAreCoalescible,
   QUEUE_FILENAME,
   DEAD_LETTER_FILENAME,
 } from '../../core/incremental-indexing/application/maintenance-worker.mjs';
@@ -183,6 +184,43 @@ describe('maintenance-worker / queue', () => {
 
     expect(summary.succeeded).toBe(1);
     expect(readMaintenanceQueue(stateDir)).toEqual([]);
+  });
+
+  it('coalesces identical pending jobs at enqueue time', () => {
+    const r1 = enqueueMaintenanceJob(stateDir, { tier: 'sparse_gram', reason: 'delta_size_ratio', epoch: 1, payload: {} });
+    expect(r1.enqueued).toBe(true);
+    const r2 = enqueueMaintenanceJob(stateDir, { tier: 'sparse_gram', reason: 'delta_size_ratio', epoch: 2, payload: {} });
+    expect(r2.enqueued).toBe(false);
+    expect(r2.coalescedWith).toMatchObject({ tier: 'sparse_gram', reason: 'delta_size_ratio' });
+    expect(readMaintenanceQueue(stateDir).length).toBe(1);
+  });
+
+  it('coalesces li_segment jobs only when payload.segmentId matches', () => {
+    enqueueMaintenanceJob(stateDir, { tier: 'li_segment', reason: 'stale_doc_ratio', epoch: 1, payload: { segmentId: 'segment-0000.bin' } });
+    const dup = enqueueMaintenanceJob(stateDir, { tier: 'li_segment', reason: 'stale_doc_ratio', epoch: 2, payload: { segmentId: 'segment-0000.bin' } });
+    const diff = enqueueMaintenanceJob(stateDir, { tier: 'li_segment', reason: 'stale_doc_ratio', epoch: 2, payload: { segmentId: 'segment-0001.bin' } });
+    expect(dup.enqueued).toBe(false);
+    expect(diff.enqueued).toBe(true);
+    expect(readMaintenanceQueue(stateDir).map((j) => j.payload.segmentId).sort()).toEqual(['segment-0000.bin', 'segment-0001.bin']);
+  });
+
+  it('does NOT coalesce a retried job (preserves attempts/dead-letter accounting)', () => {
+    // Manually write a job that has already been retried once. A fresh
+    // enqueue of the "same" tier must NOT coalesce against it — coalescing
+    // would erase the attempt count and let the job loop forever.
+    fs.writeFileSync(
+      path.join(stateDir, QUEUE_FILENAME),
+      JSON.stringify({ tier: 'sparse_gram', reason: 'delta_size_ratio', epoch: 1, attempts: 1, lastError: 'boom' }) + '\n',
+    );
+    const result = enqueueMaintenanceJob(stateDir, { tier: 'sparse_gram', reason: 'delta_size_ratio', epoch: 2 });
+    expect(result.enqueued).toBe(true);
+    expect(readMaintenanceQueue(stateDir).length).toBe(2);
+  });
+
+  it('can be force-appended with coalesce:false', () => {
+    enqueueMaintenanceJob(stateDir, { tier: 'fts5', reason: 'fts5_segment_count', epoch: 1 });
+    enqueueMaintenanceJob(stateDir, { tier: 'fts5', reason: 'fts5_segment_count', epoch: 2 }, { coalesce: false });
+    expect(readMaintenanceQueue(stateDir).length).toBe(2);
   });
 
   it('merges both graph FTS5 tables for a default fts5 maintenance job', async () => {

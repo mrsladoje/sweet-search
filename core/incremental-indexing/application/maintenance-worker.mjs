@@ -35,6 +35,7 @@ import path from 'node:path';
 import process from 'node:process';
 import Database from 'better-sqlite3';
 import { fts5Merge } from '../infrastructure/sqlite-fts5.mjs';
+import { reclamationHandlers } from './maintenance-handlers.mjs';
 
 const FORBIDDEN_GPU_FLAGS = [
   'SWEET_SEARCH_GPU',          // sweet-search canonical knob
@@ -127,17 +128,56 @@ function appendedQueueTail(stateDir, originalRaw) {
 }
 
 /**
+ * Two pending jobs are "equivalent" when they would do the same work.
+ * Coalescing here keeps the queue bounded even when the watermark
+ * scheduler emits the same tier/reason every tick (the steady state for
+ * sparse_gram + binary_hnsw on a churning fixture — see the post-fix
+ * soak's 489-deep queue at 30s before this change).
+ *
+ * Granularity:
+ *   - li_segment: keyed on payload.segmentId (one job per segment).
+ *   - everything else: keyed on (tier, reason).
+ *
+ * Jobs that have already been retried (`attempts > 0`) are NEVER
+ * coalesced away: they carry the prior failure context and the
+ * dead-letter path depends on attempt counts being monotone per-job.
+ */
+export function jobsAreCoalescible(a, b) {
+  if (!a || !b) return false;
+  if (a.tier !== b.tier) return false;
+  if (a.reason !== b.reason) return false;
+  if ((a.attempts || 0) > 0 || (b.attempts || 0) > 0) return false;
+  if (a.tier === 'li_segment') {
+    return (a.payload?.segmentId ?? null) === (b.payload?.segmentId ?? null);
+  }
+  return true;
+}
+
+/**
  * Append a job descriptor to the rebuild queue. Atomic per call (single
  * `fs.appendFileSync`), so concurrent enqueuers from the daemon and CLI
  * never tear a line.
  *
+ * By default the call coalesces against existing pending jobs (see
+ * `jobsAreCoalescible`). Pass `{ coalesce: false }` to force-append
+ * (callers that intentionally want to retry the same tier work).
+ *
  * @param {string} stateDir   `.sweet-search/` directory
  * @param {object} job
+ * @param {{coalesce?:boolean}} [opts]
+ * @returns {{enqueued:boolean, coalescedWith?:object}}
  */
-export function enqueueMaintenanceJob(stateDir, job) {
+export function enqueueMaintenanceJob(stateDir, job, opts = {}) {
   fs.mkdirSync(stateDir, { recursive: true });
+  const coalesce = opts.coalesce !== false;
+  if (coalesce) {
+    const existing = readMaintenanceQueue(stateDir);
+    const match = existing.find((pending) => jobsAreCoalescible(pending, job));
+    if (match) return { enqueued: false, coalescedWith: match };
+  }
   const line = JSON.stringify({ ...job, createdAt: job.createdAt ?? new Date().toISOString() }) + '\n';
   fs.appendFileSync(defaultQueuePath(stateDir), line);
+  return { enqueued: true };
 }
 
 /**
@@ -185,6 +225,7 @@ export function appendDeadLetter(stateDir, job, err) {
 
 export function defaultMaintenanceHandlers(stateDir) {
   return {
+    ...reclamationHandlers(stateDir),
     fts5: async (job) => {
       const payload = job?.payload || {};
       const dbPath = payload.dbPath || payload.databasePath || path.join(stateDir, payload.dbFile || 'code-graph.db');

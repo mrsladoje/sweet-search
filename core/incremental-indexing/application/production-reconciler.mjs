@@ -9,8 +9,8 @@ import { buildPathFilter } from '../infrastructure/path-filter.mjs';
 import { contentHashSync } from '../infrastructure/hashing.mjs';
 import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import { annotateChunksForDelta, snapshotFileRows, diffChunks, applyDiff } from '../infrastructure/vector-delta-writer.mjs';
-import { appendDeltaRecord, deltaSizeStats, FALLBACK_WEIGHTS_ID, fileIdFor, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
-import { fts5Merge, fts5SegmentCount } from '../infrastructure/sqlite-fts5.mjs';
+import { appendDeltaRecord, FALLBACK_WEIGHTS_ID, fileIdFor, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
+import { fts5Merge } from '../infrastructure/sqlite-fts5.mjs';
 import { insertEntity, insertRelationships, markBinaryStale } from './production-reconciler-helpers.mjs';
 import { createGraphSchema, GraphExtractor } from '../../graph/graph-extractor.js';
 import { createVectorSchema, ensureVectorSchema, buildInsertItems, insertVectorItems } from '../../indexing/indexer-build.js';
@@ -21,6 +21,7 @@ import { BinaryHNSWIndex } from '../../vector-store/binary-hnsw-index.js';
 import { floatToBinary, normalizedFloatToInt8, truncateForHNSW } from '../../infrastructure/quantization.js';
 import { extractSparseGramDeltaRecord } from '../../infrastructure/native-sparse-gram.js';
 import { migrateEntitiesSchema, migrateRelationshipsSchema } from '../infrastructure/schema-migrations.mjs';
+import { readMaintenanceState as readMaintenanceStateFromArtifacts } from '../infrastructure/maintenance-state-reader.mjs';
 
 const DIRTY_QUEUE = 'index-maintainer-queue.jsonl';
 const PROCESSING_QUEUE = 'index-maintainer-queue.processing.jsonl';
@@ -451,14 +452,7 @@ class ProductionReconcileAdapter {
   }
 
   readMaintenanceState() {
-    const graph = path.join(this.stateDir, 'code-graph.db');
-    let ftsMax = 0;
-    if (fs.existsSync(graph)) {
-      const db = new Database(graph, { readonly: true });
-      try { ftsMax = Math.max(fts5SegmentCount(db, 'entities_fts'), fts5SegmentCount(db, 'entities_trigram')); } catch {} finally { db.close(); }
-    }
-    const sparse = deltaSizeStats(path.join(this.stateDir, 'codebase-sparse-grams.idx'));
-    return { fts5: { segmentCount: ftsMax }, sparseGram: { deltaSizeRatio: sparse.ratio, deltaSegmentCount: sparse.deltaSegments } };
+    return readMaintenanceStateFromArtifacts(this.stateDir);
   }
 
   persistManifest(manifest) {

@@ -92,32 +92,125 @@ export function nextInterval(input) {
 }
 
 /**
- * Compute the starting interval from a fresh process. Honours
- * `SWEET_SEARCH_RECONCILE_INTERVAL` (in seconds; legacy semantics) when
- * set; otherwise picks the hardware-tier default from the table in plan
- * § 34.2.
+ * Hardware-aware tier table for the startup interval.
  *
- * @param {{tier:'low'|'mid'|'high', env?:NodeJS.ProcessEnv}} options
+ *   low   → CPU-only / low RAM / pre-M3 / no usable GPU             → 60 s
+ *   mid   → "strong" machine (M3/M4 base or pro, mid-tier CUDA)     → 30 s
+ *   high  → "very strong" workstation (Max/Ultra, strong CUDA + RAM) → 20 s
+ *
+ * 15 s remains the auto-tune floor (`MIN_MS`); we deliberately keep it OFF
+ * the startup table because the soak (eval/results/incremental-soak/REPORT.md)
+ * only validated 15 s on this machine and the tuner can drift up to 60 s
+ * under CPU pressure anyway.
+ */
+const TIER_TABLE = Object.freeze({ low: 60_000, mid: 30_000, high: 20_000 });
+
+/**
+ * `SWEET_SEARCH_RECONCILE_PROFILE` lets operators pin the startup interval
+ * by intent rather than by tier. `balanced` is a no-op (falls through to
+ * the hardware-tier table); `fresh` and `conservative` pin like an env
+ * override would.
+ */
+const PROFILE_TABLE = Object.freeze({
+  fresh: 20_000,
+  balanced: null,
+  conservative: 60_000,
+});
+
+function clampInterval(ms) {
+  return Math.min(Math.max(ms, MIN_MS), MAX_MS);
+}
+
+/**
+ * Map a `core/infrastructure/hardware-capability.js` descriptor to a
+ * reconcile-interval tier. Conservative: we only escalate to `high` when
+ * we have specific evidence (Max/Ultra Apple Silicon or a 16 GB+ CUDA
+ * card); everything else collapses to `mid` (strong) or `low` (CPU-only
+ * / unknown).
+ *
+ * @param {object|null} hw  detectHardwareCapability() output
+ * @returns {'low'|'mid'|'high'}
+ */
+export function tierForHardware(hw) {
+  if (!hw) return 'low';
+  if (hw.appleSilicon) {
+    const variant = (hw.appleSilicon.variant || '').toLowerCase();
+    const generation = hw.appleSilicon.generation || 0;
+    if (variant === 'max' || variant === 'ultra') return 'high';
+    if (generation >= 3) return 'mid';
+    if (variant === 'pro') return 'mid';
+    return 'low';
+  }
+  if (hw.cudaAvailable && hw.nvidiaGpu) {
+    const vramMb = Number(hw.nvidiaGpu.memoryMB) || 0;
+    if (vramMb >= 16_384) return 'high';
+    return 'mid';
+  }
+  const totalMemGB = Number(hw.totalMemGB) || 0;
+  const cores = Number(hw.logicalCores) || 0;
+  if (totalMemGB >= 32 && cores >= 12) return 'mid';
+  return 'low';
+}
+
+/**
+ * Compute the starting interval from a fresh process.
+ *
+ * Precedence (highest first):
+ *   1. `SWEET_SEARCH_RECONCILE_INTERVAL_MS` (milliseconds)
+ *   2. `SWEET_SEARCH_RECONCILE_INTERVAL`    (seconds — legacy semantics)
+ *   3. `SWEET_SEARCH_RECONCILE_PROFILE` ∈ {fresh, balanced, conservative}
+ *   4. `tier` argument (low/mid/high) OR `hardware` descriptor resolved
+ *      via `tierForHardware()`
+ *
+ * Values are clamped into `[MIN_MS, MAX_MS]`. 15 s stays the auto-tune
+ * floor only; the startup table never picks it.
+ *
+ * @param {{
+ *   tier?: 'low'|'mid'|'high',
+ *   env?: NodeJS.ProcessEnv,
+ *   hardware?: object|null,
+ * }} options
  * @returns {{intervalMs:number, pinned:boolean, source:string}}
  */
-export function startupInterval({ tier, env = process.env }) {
-  const raw = env.SWEET_SEARCH_RECONCILE_INTERVAL;
-  if (raw !== undefined && raw !== '') {
-    const seconds = Number(raw);
-    if (Number.isFinite(seconds) && seconds > 0) {
-      return {
-        intervalMs: Math.min(Math.max(seconds * 1000, MIN_MS), MAX_MS),
-        pinned: true,
-        source: 'env-override',
-      };
+export function startupInterval({ tier, env = process.env, hardware = null } = {}) {
+  const rawMs = env.SWEET_SEARCH_RECONCILE_INTERVAL_MS;
+  if (rawMs !== undefined && rawMs !== '') {
+    const ms = Number(rawMs);
+    if (Number.isFinite(ms) && ms > 0) {
+      return { intervalMs: clampInterval(ms), pinned: true, source: 'env-override-ms' };
     }
   }
-  const table = { low: 180_000, mid: 60_000, high: 30_000 };
+  const rawSec = env.SWEET_SEARCH_RECONCILE_INTERVAL;
+  if (rawSec !== undefined && rawSec !== '') {
+    const seconds = Number(rawSec);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      return { intervalMs: clampInterval(seconds * 1000), pinned: true, source: 'env-override' };
+    }
+  }
+  const rawProfile = env.SWEET_SEARCH_RECONCILE_PROFILE;
+  if (rawProfile !== undefined && rawProfile !== '') {
+    const profile = String(rawProfile).trim().toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(PROFILE_TABLE, profile)) {
+      const pinnedMs = PROFILE_TABLE[profile];
+      if (pinnedMs != null) {
+        return { intervalMs: clampInterval(pinnedMs), pinned: true, source: `profile-${profile}` };
+      }
+      // `balanced` falls through to the hardware-tier table by design.
+    }
+  }
+  let resolvedTier = tier;
+  if (!resolvedTier && hardware) resolvedTier = tierForHardware(hardware);
+  if (!resolvedTier) resolvedTier = 'mid';
+  const intervalMs = TIER_TABLE[resolvedTier] ?? NOMINAL_MS;
   return {
-    intervalMs: table[tier] ?? NOMINAL_MS,
+    intervalMs,
     pinned: false,
-    source: `tier-${tier ?? 'mid'}`,
+    source: `tier-${resolvedTier}`,
   };
 }
 
-export const __testing = { MIN_MS, MAX_MS, NOMINAL_MS, TARGET_TICK_WALLCLOCK_FRACTION, MAX_RATIO_CHANGE_PER_TICK };
+export const __testing = {
+  MIN_MS, MAX_MS, NOMINAL_MS,
+  TARGET_TICK_WALLCLOCK_FRACTION, MAX_RATIO_CHANGE_PER_TICK,
+  TIER_TABLE, PROFILE_TABLE,
+};
