@@ -35,7 +35,8 @@ import Database from 'better-sqlite3';
 import { BinaryHNSWIndex } from '../../vector-store/binary-hnsw-index.js';
 import { HNSWIndex } from '../../vector-store/hnsw-index.js';
 import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
-import { compactDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
+import { compactDeltaSegments, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
+import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import {
   loadBitmap, popcount, isSet, createBitmap, saveBitmap,
 } from '../infrastructure/tombstone-bitmap.mjs';
@@ -57,11 +58,41 @@ export async function sparseGramHandler(job, { stateDir }) {
   if (result.skipped) {
     return { skipped: result.skipped };
   }
+
+  // Cross-process readers pin the reconcile manifest's `sparseGram.deltas`
+  // list at query start. Compaction just unlinked those segments, so
+  // anything resolved through the pinned list now returns 0 records until
+  // the next reconcile tick rewrites the list. Repair in place — atomic
+  // via `writeManifest` (tmp+rename).
+  //
+  // Manifest update is best-effort: compaction itself already published
+  // the new segment at a canonical filename; if the manifest update fails
+  // the worst case is fresh readers degrade until the next reconcile tick
+  // republishes the list. That's still a regression worth flagging, hence
+  // we surface the failure in the job result.
+  let manifestUpdated = false;
+  let manifestError = null;
+  try {
+    const manifest = readManifest(stateDir);
+    if (manifest?.sparseGram) {
+      const remaining = listDeltaSegments(base);
+      manifest.sparseGram.deltas = remaining.map((seg) =>
+        path.relative(stateDir, seg.path).replace(/\\/g, '/'),
+      );
+      writeManifest(stateDir, manifest);
+      manifestUpdated = true;
+    }
+  } catch (err) {
+    manifestError = err?.message || String(err);
+  }
+
   return {
     tier: 'sparse_gram',
     consumedSegments: result.consumedSegments,
     recordsWritten: result.recordsWritten,
     compactedPath: path.relative(stateDir, result.compactedPath).replace(/\\/g, '/'),
+    manifestUpdated,
+    ...(manifestError ? { manifestError } : {}),
   };
 }
 
@@ -90,6 +121,10 @@ export async function binaryHnswHandler(job, { stateDir }) {
     return { skipped: 'no-stale-vectors', dropped: 0 };
   }
 
+  // Rebuild the index in memory and let `BinaryHNSWIndex.save()`
+  // publish via its tmp+rename protocol — every sidecar is staged then
+  // atomically renamed (data first, .meta.json last) so fresh readers
+  // don't see torn `(meta, vectors, graph, int8)` tuples.
   const fresh = new BinaryHNSWIndex({
     indexPath,
     floatDimension: existing.floatDimension,
@@ -110,6 +145,7 @@ export async function binaryHnswHandler(job, { stateDir }) {
     kept: live.length,
     dropped,
     staleBitmapCleared: true,
+    atomicPublish: true,
   };
 }
 
@@ -160,6 +196,9 @@ export async function floatHnswHandler(job, { stateDir }) {
     return { skipped: 'no-stale-vectors', dropped: 0 };
   }
 
+  // Rebuild the index in memory and let `HNSWIndex.save()` publish via
+  // its tmp+rename protocol — that protocol keeps any cross-process
+  // `usearch.view()` mmap valid against the unlinked old inode.
   const fresh = new HNSWIndex({
     indexPath,
     stalePath,
@@ -187,6 +226,7 @@ export async function floatHnswHandler(job, { stateDir }) {
     kept: liveRows.length,
     dropped: Math.max(0, liveIdsBefore.size - liveRows.length),
     staleBitmapCleared: true,
+    atomicPublish: true,
   };
 }
 
