@@ -234,12 +234,12 @@ describe('maintenance-worker — main() smoke test via child_process', () => {
     expect(parsed.drain.succeeded).toBe(0);
   });
 
-  it('worker counts pending jobs from the queue file', () => {
+  it('worker drains float_hnsw and li_segment jobs against empty artifacts as no-op successes', () => {
     fs.mkdirSync(stateDir, { recursive: true });
     const qPath = path.join(stateDir, 'rebuild-queue.jsonl');
     fs.writeFileSync(qPath,
-      JSON.stringify({ tier: 'float_hnsw', reason: 'r', epoch: 1 }) + '\n' +
-      JSON.stringify({ tier: 'li_segment', reason: 'r', epoch: 2 }) + '\n',
+      JSON.stringify({ tier: 'float_hnsw', reason: 'r', epoch: 1, payload: {} }) + '\n' +
+      JSON.stringify({ tier: 'li_segment', reason: 'r', epoch: 2, payload: { segmentId: 'segment-0000.bin' } }) + '\n',
     );
     const r = spawnSync('node', [WORKER_PATH], {
       env: { ...process.env, SWEET_SEARCH_STATE_DIR: stateDir },
@@ -248,8 +248,12 @@ describe('maintenance-worker — main() smoke test via child_process', () => {
     });
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout.trim());
-    expect(parsed.pendingJobs).toBe(2);
-    expect(parsed.drain.deferred).toBe(2);
+    // float_hnsw + li_segment now have real handlers; without artifacts
+    // on disk both return `{ skipped: 'no-index' / 'no-li-index' }`,
+    // which the worker accounts as `succeeded`.
+    expect(parsed.pendingJobs).toBe(0);
+    expect(parsed.drain.succeeded).toBe(2);
+    expect(parsed.drain.deferred).toBe(0);
   });
 
   it('worker refuses to start with GPU env flag set', () => {

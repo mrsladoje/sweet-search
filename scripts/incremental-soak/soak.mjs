@@ -24,6 +24,11 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
+import {
+  processMaintenanceQueue,
+  defaultMaintenanceHandlers,
+  readMaintenanceQueue,
+} from '../../core/incremental-indexing/application/maintenance-worker.mjs';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import { generateInitialFixture } from './fixture.mjs';
 import { GroundTruth } from './ground-truth.mjs';
@@ -46,6 +51,8 @@ function parseArgs(argv) {
     label: '',
     keepFixture: false,
     cleanCycle: false,
+    drainMaintenance: true,
+    maintenanceMaxJobsPerTick: 8,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -61,6 +68,9 @@ function parseArgs(argv) {
     else if (a === '--label') args.label = argv[++i];
     else if (a === '--keep-fixture') args.keepFixture = true;
     else if (a === '--clean-cycle') args.cleanCycle = true;
+    else if (a === '--drain-maintenance') args.drainMaintenance = true;
+    else if (a === '--no-drain-maintenance') args.drainMaintenance = false;
+    else if (a === '--maintenance-max-jobs') args.maintenanceMaxJobsPerTick = Number(argv[++i]);
     else if (a === '--help' || a === '-h') { printHelp(); process.exit(0); }
   }
   return args;
@@ -81,6 +91,8 @@ function printHelp() {
   --label <s>                  label written into JSONL events
   --keep-fixture               don't delete fixture on success
   --clean-cycle                periodically forces a reconcile gap to exercise crash-recovery edges
+  --no-drain-maintenance       skip the after-tick maintenance drain (default: drain enabled)
+  --maintenance-max-jobs <n>   per-tick maintenance drain bound (default 8)
 `);
 }
 
@@ -185,6 +197,43 @@ async function main() {
   const vectorEncoder = fakeVectorEncoder();
   const liEncoder = fakeLiEncoder();
 
+  const maintenanceStats = {
+    drainsAttempted: 0,
+    drainsErrored: 0,
+    jobsSeen: 0,
+    jobsSucceeded: 0,
+    jobsDeferred: 0,
+    jobsRetried: 0,
+    jobsDeadLettered: 0,
+    finalQueueDepth: 0,
+    drainErrorSamples: [],
+  };
+
+  async function drainMaintenance() {
+    if (!args.drainMaintenance) return null;
+    maintenanceStats.drainsAttempted += 1;
+    try {
+      const summary = await processMaintenanceQueue(stateDir, {
+        handlers: defaultMaintenanceHandlers(stateDir),
+        maxJobs: args.maintenanceMaxJobsPerTick,
+      });
+      maintenanceStats.jobsSeen += summary.seen;
+      maintenanceStats.jobsSucceeded += summary.succeeded;
+      maintenanceStats.jobsDeferred += summary.deferred;
+      maintenanceStats.jobsRetried += summary.retried;
+      maintenanceStats.jobsDeadLettered += summary.deadLettered;
+      if (summary.seen > 0) emit({ phase: 'maintenance_drain', summary });
+      return summary;
+    } catch (err) {
+      maintenanceStats.drainsErrored += 1;
+      if (maintenanceStats.drainErrorSamples.length < 5) {
+        maintenanceStats.drainErrorSamples.push(err?.message || String(err));
+      }
+      emit({ phase: 'maintenance_drain_error', error: err?.message || String(err) });
+      return null;
+    }
+  }
+
   const tickFn = async () => {
     const startedAt = Date.now();
     try {
@@ -199,6 +248,7 @@ async function main() {
       });
       const took = Date.now() - startedAt;
       emit({ phase: 'tick_complete', took, counters });
+      await drainMaintenance();
       return { ok: true, counters, took };
     } catch (err) {
       const took = Date.now() - startedAt;
@@ -361,6 +411,15 @@ async function main() {
   const finalViolations = checkInvariants(finalObs, ground);
   emit({ phase: 'final_check', manifest: finalObs.manifest, violations: finalViolations });
 
+  if (args.drainMaintenance) {
+    try {
+      maintenanceStats.finalQueueDepth = readMaintenanceQueue(stateDir).length;
+    } catch {
+      maintenanceStats.finalQueueDepth = -1;
+    }
+  }
+  emit({ phase: 'maintenance_stats', stats: maintenanceStats });
+
   // === Summary ===
   const allStaleness = pendingMutations.filter((m) => m.firstVisibleAt).map((m) => m.staleness);
   allStaleness.sort((a, b) => a - b);
@@ -384,6 +443,7 @@ async function main() {
     finalViolationCount: finalViolations.length,
     finalViolations: finalViolations.slice(0, 50),
     pendingHistory: pendingMutations.slice(0, 50),
+    maintenance: maintenanceStats,
   };
   fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
   emit({ phase: 'summary', summary });
