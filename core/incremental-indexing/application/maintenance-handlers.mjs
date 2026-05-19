@@ -54,28 +54,31 @@ function float32FromBuffer(buffer) {
 
 export async function sparseGramHandler(job, { stateDir }) {
   const base = path.join(stateDir, 'codebase-sparse-grams.idx');
-  const result = compactDeltaSegments(base, { dropTombstones: false });
+  // Stage the compaction in deferred-delete mode. The compacted segment is
+  // already on disk via tmp+rename; the consumed old segments stay until
+  // we have rewritten the reconcile manifest (or confirmed nobody is
+  // pinning the old paths). This closes the microsecond window in which a
+  // cross-process reader holding the OLD manifest's `sparseGram.deltas`
+  // list could resolve `recordsResolved = 0` against deleted files.
+  const result = compactDeltaSegments(base, { dropTombstones: false, deferDelete: true });
   if (result.skipped) {
     return { skipped: result.skipped };
   }
 
-  // Cross-process readers pin the reconcile manifest's `sparseGram.deltas`
-  // list at query start. Compaction just unlinked those segments, so
-  // anything resolved through the pinned list now returns 0 records until
-  // the next reconcile tick rewrites the list. Repair in place — atomic
-  // via `writeManifest` (tmp+rename).
-  //
-  // Manifest update is best-effort: compaction itself already published
-  // the new segment at a canonical filename; if the manifest update fails
-  // the worst case is fresh readers degrade until the next reconcile tick
-  // republishes the list. That's still a regression worth flagging, hence
-  // we surface the failure in the job result.
+  const consumedSet = new Set(result.consumedSegmentPaths);
   let manifestUpdated = false;
   let manifestError = null;
+  let hadSparseGramPin = false;
   try {
     const manifest = readManifest(stateDir);
     if (manifest?.sparseGram) {
-      const remaining = listDeltaSegments(base);
+      hadSparseGramPin = true;
+      // Future-of-disk list: everything currently in the delta dir minus
+      // the segments we are about to unlink. In the steady state that is
+      // just the compacted segment; filtering keeps us correct if a
+      // reconcile tick somehow slipped in another segment between
+      // compaction and manifest write.
+      const remaining = listDeltaSegments(base).filter((seg) => !consumedSet.has(seg.path));
       manifest.sparseGram.deltas = remaining.map((seg) =>
         path.relative(stateDir, seg.path).replace(/\\/g, '/'),
       );
@@ -86,9 +89,22 @@ export async function sparseGramHandler(job, { stateDir }) {
     manifestError = err?.message || String(err);
   }
 
+  // Publish gate. Only delete the old segments once the new manifest is
+  // live (or we know nobody is pinning the old paths). On a manifest write
+  // failure we leave the old segments in place; the next maintenance pass
+  // re-runs the compaction across both the leftover compacted file and
+  // the old segments, then re-attempts the manifest publish.
+  let unlinked = 0;
+  const safeToUnlink = manifestUpdated || !hadSparseGramPin;
+  if (safeToUnlink) {
+    for (const segPath of result.consumedSegmentPaths) {
+      try { fs.unlinkSync(segPath); unlinked += 1; } catch { /* tolerate concurrent deletion */ }
+    }
+  }
+
   return {
     tier: 'sparse_gram',
-    consumedSegments: result.consumedSegments,
+    consumedSegments: unlinked,
     recordsWritten: result.recordsWritten,
     compactedPath: path.relative(stateDir, result.compactedPath).replace(/\\/g, '/'),
     manifestUpdated,

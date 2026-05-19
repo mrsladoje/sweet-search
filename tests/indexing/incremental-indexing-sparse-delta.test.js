@@ -19,8 +19,10 @@ import {
   resolveLatestRecords,
   recordFileDeletion,
   deltaSizeStats,
+  compactDeltaSegments,
   FALLBACK_WEIGHTS_ID,
 } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
+import { resolveLatestSparseGramDeltaRecords } from '../../core/infrastructure/sparse-gram-delta-reader.js';
 
 describe('sparse-gram-delta', () => {
   let dir;
@@ -93,6 +95,45 @@ describe('sparse-gram-delta', () => {
     const record = map.get(fileIdFor('src/a.js')).record;
     expect(record.deleted).toBe(true);
     expect(record.weightsId).toBe(FALLBACK_WEIGHTS_ID);
+  });
+
+  it('compactDeltaSegments default mode unlinks old segments immediately', () => {
+    appendDeltaRecord(basePath, 1, { fileId: 'a', filePath: 'a', contentHash: 'h', deleted: false, symbolMask: 0, weightsId: 'w', grams: [] });
+    appendDeltaRecord(basePath, 2, { fileId: 'b', filePath: 'b', contentHash: 'h', deleted: false, symbolMask: 0, weightsId: 'w', grams: [] });
+    appendDeltaRecord(basePath, 3, { fileId: 'c', filePath: 'c', contentHash: 'h', deleted: false, symbolMask: 0, weightsId: 'w', grams: [] });
+    const before = listDeltaSegments(basePath).map((s) => s.path);
+    const result = compactDeltaSegments(basePath);
+    expect(result.skipped).toBeNull();
+    expect(result.consumedSegments).toBe(3);
+    expect(result.consumedSegmentPaths).toEqual([]);
+    for (const oldPath of before) expect(fs.existsSync(oldPath)).toBe(false);
+    expect(fs.existsSync(result.compactedPath)).toBe(true);
+  });
+
+  it('compactDeltaSegments deferDelete writes the compacted file but keeps consumed segments on disk', () => {
+    appendDeltaRecord(basePath, 1, { fileId: 'a', filePath: 'a.js', contentHash: 'h1', deleted: false, symbolMask: 0, weightsId: 'w', grams: [['g1', 1]] });
+    appendDeltaRecord(basePath, 2, { fileId: 'b', filePath: 'b.js', contentHash: 'h2', deleted: false, symbolMask: 0, weightsId: 'w', grams: [['g2', 1]] });
+    appendDeltaRecord(basePath, 3, { fileId: 'c', filePath: 'c.js', contentHash: 'h3', deleted: false, symbolMask: 0, weightsId: 'w', grams: [['g3', 1]] });
+    const before = listDeltaSegments(basePath).map((s) => s.path);
+
+    const result = compactDeltaSegments(basePath, { deferDelete: true });
+    expect(result.skipped).toBeNull();
+    expect(result.consumedSegmentPaths.length).toBe(3);
+    expect(result.consumedSegments).toBe(3);
+
+    // Compacted segment present.
+    expect(fs.existsSync(result.compactedPath)).toBe(true);
+    // ALL old segments still present.
+    for (const p of before) expect(fs.existsSync(p)).toBe(true);
+
+    // A reader holding the OLD manifest's segment list (the three pre-
+    // compaction paths) still resolves every record — proves the staged-
+    // compaction window is reader-safe.
+    const pinnedToOld = resolveLatestSparseGramDeltaRecords(basePath, { segments: before });
+    expect(pinnedToOld.size).toBe(3);
+    expect(pinnedToOld.get('a').record.contentHash).toBe('h1');
+    expect(pinnedToOld.get('b').record.contentHash).toBe('h2');
+    expect(pinnedToOld.get('c').record.contentHash).toBe('h3');
   });
 
   it('deltaSizeStats reports ratio + segment count', () => {
