@@ -42,6 +42,8 @@ import fs from 'node:fs/promises';
 import { dirname, join, relative, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { startupInterval, tierForHardware } from '../incremental-indexing/domain/interval-autotune.mjs';
+import { detectHardwareCapability } from '../infrastructure/hardware-capability.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -563,10 +565,34 @@ function reconcileV2Context(env = process.env) {
   return { projectRoot, stateDir };
 }
 
+/**
+ * Resolve the reconcile-v2 tick interval at daemon startup.
+ *
+ * Delegates to `startupInterval` in the incremental-indexing domain so the
+ * daemon path and the domain module share the same env precedence and
+ * hardware-tier semantics. The hardware capability is detected lazily and
+ * passed in; explicit `tier` overrides via `opts.tier` short-circuit it.
+ *
+ * @param {{env?:NodeJS.ProcessEnv, hardware?:object, tier?:'low'|'mid'|'high'}} [opts]
+ * @returns {{intervalMs:number, pinned:boolean, source:string, tier:string|null}}
+ */
+export function resolveReconcileV2Interval(opts = {}) {
+  const env = opts.env || process.env;
+  let hardware = opts.hardware;
+  if (hardware === undefined) {
+    try {
+      hardware = detectHardwareCapability();
+    } catch {
+      hardware = null;
+    }
+  }
+  const tier = opts.tier || (hardware ? tierForHardware(hardware) : null);
+  const result = startupInterval({ tier: tier || undefined, env, hardware });
+  return { ...result, tier };
+}
+
 function reconcileV2IntervalMs(env = process.env) {
-  const raw = env.SWEET_SEARCH_RECONCILE_INTERVAL_MS || env.SWEET_SEARCH_RECONCILE_INTERVAL;
-  const parsed = Number.parseInt(raw || '', 10);
-  return Number.isFinite(parsed) && parsed >= 1000 ? parsed : POLL_INTERVAL;
+  return resolveReconcileV2Interval({ env }).intervalMs;
 }
 
 function readStateLock(lockFile) {
@@ -628,11 +654,86 @@ async function runReconcileV2Tick(ctx) {
   return counters;
 }
 
+/**
+ * Inline-drain decision for the reconcile daemon.
+ *
+ * Returns true unless the operator opts out via
+ * `SWEET_SEARCH_MAINTENANCE_INLINE=0|false|off`. The daemon owns the only
+ * `index-maintainer.lock` for this state dir, so a single inline drain
+ * inside the daemon process is the simplest "no two workers racing"
+ * topology — no child-process supervisor needed.
+ *
+ * @param {NodeJS.ProcessEnv} [env]
+ */
+export function maintenanceInlineEnabled(env = process.env) {
+  const raw = env.SWEET_SEARCH_MAINTENANCE_INLINE;
+  if (raw == null || raw === '') return true;
+  const normalized = String(raw).trim().toLowerCase();
+  return normalized !== '0' && normalized !== 'false' && normalized !== 'off';
+}
+
+function maintenanceInlineMaxJobs(env = process.env) {
+  const raw = Number.parseInt(env.SWEET_SEARCH_MAINTENANCE_MAX_JOBS_PER_TICK || '', 10);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return 8;
+}
+
+function maintenanceInlineMaxAttempts(env = process.env) {
+  const raw = Number.parseInt(env.SWEET_SEARCH_MAINTENANCE_MAX_ATTEMPTS || '', 10);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return 3;
+}
+
+/**
+ * Bounded inline drain of the maintenance queue, intended to be called
+ * after a successful reconcile tick. Returns the drain summary, or
+ * `{skipped: true, reason}` when inline mode is disabled or the worker
+ * call throws (we never let maintenance failures crash the daemon).
+ *
+ * Exported so tests and the daemon main loop call the same code path.
+ *
+ * @param {{stateDir:string, env?:NodeJS.ProcessEnv}} ctx
+ */
+export async function drainMaintenanceInline(ctx) {
+  const env = ctx.env || process.env;
+  if (!maintenanceInlineEnabled(env)) {
+    return { skipped: true, reason: 'inline-disabled' };
+  }
+  let processMaintenanceQueue;
+  let defaultMaintenanceHandlers;
+  try {
+    ({ processMaintenanceQueue, defaultMaintenanceHandlers } = await import(
+      '../incremental-indexing/application/maintenance-worker.mjs'
+    ));
+  } catch (err) {
+    log('WARN', `Maintenance worker import failed: ${err?.message ?? err}`);
+    return { skipped: true, reason: 'import-failed' };
+  }
+  try {
+    const summary = await processMaintenanceQueue(ctx.stateDir, {
+      handlers: defaultMaintenanceHandlers(ctx.stateDir),
+      maxJobs: maintenanceInlineMaxJobs(env),
+      maxAttempts: maintenanceInlineMaxAttempts(env),
+    });
+    if (summary.seen > 0) {
+      log('INFO',
+        `Maintenance drain: seen=${summary.seen}, succeeded=${summary.succeeded}, ` +
+        `deferred=${summary.deferred}, retried=${summary.retried}, ` +
+        `deadLettered=${summary.deadLettered}, remaining=${summary.remaining}`);
+    }
+    return summary;
+  } catch (err) {
+    log('WARN', `Maintenance drain failed (continuing reconcile): ${err?.message ?? err}`);
+    return { skipped: true, reason: 'drain-error', error: err?.message ?? String(err) };
+  }
+}
+
 async function runReconcileV2Main({ runOnce, merkleOnce }) {
   const ctx = reconcileV2Context();
   mkdirSync(ctx.stateDir, { recursive: true });
   if (runOnce || merkleOnce) {
     await runReconcileV2Tick(ctx);
+    await drainMaintenanceInline(ctx);
     return;
   }
 
@@ -643,7 +744,9 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   }
   log('INFO', `Reconcile v2 lock acquired (PID: ${process.pid})`);
 
-  const intervalMs = reconcileV2IntervalMs();
+  const resolved = resolveReconcileV2Interval();
+  const intervalMs = resolved.intervalMs;
+  log('INFO', `Reconcile v2 interval ${intervalMs}ms (source=${resolved.source}${resolved.tier ? `, tier=${resolved.tier}` : ''})`);
   const refresh = setInterval(() => writeStateLock(lock.lockFile), LOCK_REFRESH_INTERVAL);
   const shutdown = () => { shutdownRequested = true; };
   process.on('SIGTERM', shutdown);
@@ -656,7 +759,12 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
       if (pause.paused) {
         log('INFO', `Automatic reconcile v2 work paused${pause.pausedAt ? ` since ${pause.pausedAt}` : ''}`);
       } else {
-        await runReconcileV2Tick(ctx);
+        try {
+          await runReconcileV2Tick(ctx);
+          await drainMaintenanceInline(ctx);
+        } catch (err) {
+          log('ERROR', `Reconcile v2 tick failed: ${err?.message ?? err}`);
+        }
       }
       await new Promise((resolveSleep) => setTimeout(resolveSleep, intervalMs));
     }
