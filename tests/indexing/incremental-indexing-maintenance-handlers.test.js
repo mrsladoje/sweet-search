@@ -433,6 +433,117 @@ describe('cross-process publish atomicity', () => {
     expect(absolute).toBe(segsAfter[0].path);
   });
 
+  it('sparseGramHandler keeps consumed segments alive across the staged window (no manifest/file order race)', async () => {
+    // The publish-order contract: compacted segment is written FIRST, then
+    // the reconcile manifest is rewritten, and only AFTER that are the
+    // consumed old segments unlinked. We assert this by injecting a
+    // failing `writeManifest` step — that simulates a crash exactly at
+    // the moment the false-negative window used to open. The old segments
+    // MUST still be on disk and a manifest-pinned reader MUST still
+    // resolve every record.
+    const base = path.join(stateDir, 'codebase-sparse-grams.idx');
+    appendDeltaRecord(base, 1, { fileId: 'aa', filePath: 'a.js', contentHash: 'h1', deleted: false, symbolMask: 0, weightsId: 'w1', grams: [['x', 1]] });
+    appendDeltaRecord(base, 2, { fileId: 'bb', filePath: 'b.js', contentHash: 'h2', deleted: false, symbolMask: 0, weightsId: 'w1', grams: [['y', 1]] });
+    appendDeltaRecord(base, 3, { fileId: 'cc', filePath: 'c.js', contentHash: 'h3', deleted: false, symbolMask: 0, weightsId: 'w1', grams: [['z', 1]] });
+    const segsBefore = listDeltaSegments(base).map((s) => s.path);
+
+    const { writeManifest, zeroManifest, readManifest } = await import('../../core/incremental-indexing/infrastructure/manifest.mjs');
+    const manifest = zeroManifest({});
+    manifest.epoch = 5;
+    manifest.sparseGram.deltas = segsBefore.map((s) => path.relative(stateDir, s).replace(/\\/g, '/'));
+    writeManifest(stateDir, manifest);
+
+    // Force the handler's manifest-write step to throw. `writeManifest`
+    // opens `reconcile-manifest.json.tmp` for writing — if we create a
+    // DIRECTORY at that path, the open fails with EISDIR and the handler
+    // surfaces it as `manifestError`. This is the surgical equivalent of
+    // a crash exactly at the publish-order window.
+    const tmpManifestBlocker = path.join(stateDir, 'reconcile-manifest.json.tmp');
+    fs.mkdirSync(tmpManifestBlocker, { recursive: true });
+
+    let out;
+    try {
+      out = await sparseGramHandler({}, { stateDir });
+    } finally {
+      fs.rmdirSync(tmpManifestBlocker);
+    }
+
+    // Handler reports the failure but does not throw.
+    expect(out.skipped).toBeUndefined();
+    expect(out.manifestUpdated).toBe(false);
+    expect(out.manifestError).toBeTruthy();
+
+    // The compacted segment IS present (atomic temp+rename succeeded).
+    const allSegs = listDeltaSegments(base);
+    expect(allSegs.length).toBe(4);
+
+    // ALL old segments are STILL on disk. This is the heart of the fix —
+    // the publish-order window is closed.
+    for (const oldPath of segsBefore) expect(fs.existsSync(oldPath)).toBe(true);
+
+    // The manifest still pins the OLD segment list (write failed).
+    const stillOld = readManifest(stateDir);
+    expect(stillOld.sparseGram.deltas.length).toBe(3);
+
+    // A cross-process reader pinning the old manifest's segments list
+    // RESOLVES EVERY RECORD — no microsecond zero-records window.
+    const { resolveLatestSparseGramDeltaRecords } = await import('../../core/infrastructure/sparse-gram-delta-reader.js');
+    const records = resolveLatestSparseGramDeltaRecords(base, { segments: stillOld.sparseGram.deltas.map((s) => path.join(stateDir, s)) });
+    expect(records.size).toBe(3);
+    expect(records.get('aa').record.contentHash).toBe('h1');
+    expect(records.get('bb').record.contentHash).toBe('h2');
+    expect(records.get('cc').record.contentHash).toBe('h3');
+  });
+
+  it('sparseGramHandler converges idempotently on the next run after a crash before manifest rewrite', async () => {
+    // Simulate the crash window: write a compacted segment via deferDelete,
+    // then DO NOT update the manifest and DO NOT unlink old segments.
+    // Re-run the handler and assert it converges (single segment + manifest
+    // updated, all old segments gone).
+    const base = path.join(stateDir, 'codebase-sparse-grams.idx');
+    appendDeltaRecord(base, 1, { fileId: 'aa', filePath: 'a.js', contentHash: 'h1', deleted: false, symbolMask: 0, weightsId: 'w1', grams: [['x', 1]] });
+    appendDeltaRecord(base, 2, { fileId: 'bb', filePath: 'b.js', contentHash: 'h2', deleted: false, symbolMask: 0, weightsId: 'w1', grams: [['y', 1]] });
+    appendDeltaRecord(base, 3, { fileId: 'cc', filePath: 'c.js', contentHash: 'h3', deleted: false, symbolMask: 0, weightsId: 'w1', grams: [['z', 1]] });
+    const segsBefore = listDeltaSegments(base).map((s) => s.path);
+
+    const { writeManifest, zeroManifest, readManifest } = await import('../../core/incremental-indexing/infrastructure/manifest.mjs');
+    const { compactDeltaSegments } = await import('../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs');
+    const manifest = zeroManifest({});
+    manifest.epoch = 5;
+    manifest.sparseGram.deltas = segsBefore.map((s) => path.relative(stateDir, s).replace(/\\/g, '/'));
+    writeManifest(stateDir, manifest);
+
+    // Simulate the "crashed midway" state: compacted segment exists, old
+    // segments still exist, manifest still references old segments.
+    const staged = compactDeltaSegments(base, { deferDelete: true });
+    expect(fs.existsSync(staged.compactedPath)).toBe(true);
+    for (const p of segsBefore) expect(fs.existsSync(p)).toBe(true);
+
+    // Now re-run the handler — it must converge.
+    const out = await sparseGramHandler({}, { stateDir });
+    expect(out.skipped).toBeUndefined();
+    expect(out.manifestUpdated).toBe(true);
+
+    const after = listDeltaSegments(base);
+    expect(after.length).toBe(1);
+
+    // Old segments all gone.
+    for (const oldPath of segsBefore) expect(fs.existsSync(oldPath)).toBe(false);
+    // The first crashed-but-written compacted segment is also gone — it
+    // was consumed by the second compaction.
+    expect(fs.existsSync(staged.compactedPath)).toBe(false);
+
+    // Manifest now references the surviving compacted segment.
+    const finalManifest = readManifest(stateDir);
+    expect(finalManifest.sparseGram.deltas.length).toBe(1);
+    expect(path.resolve(stateDir, finalManifest.sparseGram.deltas[0])).toBe(after[0].path);
+
+    // All three records preserved.
+    const { resolveLatestSparseGramDeltaRecords } = await import('../../core/infrastructure/sparse-gram-delta-reader.js');
+    const records = resolveLatestSparseGramDeltaRecords(base, { segments: finalManifest.sparseGram.deltas.map((s) => path.join(stateDir, s)) });
+    expect(records.size).toBe(3);
+  });
+
   it('floatHnswHandler leaves no orphan `.tmp.<pid>` files', async () => {
     const indexPath = path.join(stateDir, 'codebase-hnsw.idx');
     const stalePath = indexPath + '.stale.bin';
