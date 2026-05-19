@@ -193,8 +193,8 @@ export function deltaSizeStats(baseArtifactPath) {
  * Compact the delta directory in place.
  *
  * Reads all delta segments, resolves the latest record per fileId, writes
- * a single new segment that supersedes them, then deletes the segments
- * the compaction consumed.
+ * a single new segment that supersedes them, and (by default) deletes the
+ * segments the compaction consumed.
  *
  * Naming: the new segment uses `{maxEpoch}-{seq}` with `seq > 0` so it
  * sorts AFTER any existing `{maxEpoch}-0` segment the reconciler wrote.
@@ -206,16 +206,24 @@ export function deltaSizeStats(baseArtifactPath) {
  * including the compacted file and resolves to the same records (the
  * compacted file's seq is highest, so its records win).
  *
+ * `deferDelete: true` stages the compaction without unlinking consumed
+ * segments — the caller is responsible for deleting `consumedSegmentPaths`
+ * once it has published whatever derived state needs to change atomically
+ * with the unlink (e.g. the reconcile manifest's `sparseGram.deltas`
+ * list). Until the caller deletes them, every reader — including readers
+ * pinning the OLD manifest's segments — still resolves every record.
+ *
  * Deleted-file records (`deleted: true`) are preserved by default — they
  * suppress base postings at query time. Pass `{ dropTombstones: true }`
  * to discard them; only safe when the caller has confirmed the matching
  * fileId is gone from the base artifact too.
  *
  * @param {string} baseArtifactPath
- * @param {{dropTombstones?:boolean}} [opts]
+ * @param {{dropTombstones?:boolean, deferDelete?:boolean}} [opts]
  * @returns {{
  *   compactedPath: string|null,
  *   consumedSegments: number,
+ *   consumedSegmentPaths: string[],
  *   recordsWritten: number,
  *   tombstonedDropped: number,
  *   skipped: 'too-few-segments'|null,
@@ -223,9 +231,17 @@ export function deltaSizeStats(baseArtifactPath) {
  */
 export function compactDeltaSegments(baseArtifactPath, opts = {}) {
   const dropTombstones = !!opts.dropTombstones;
+  const deferDelete = !!opts.deferDelete;
   const segments = listDeltaSegments(baseArtifactPath);
   if (segments.length <= 1) {
-    return { compactedPath: null, consumedSegments: 0, recordsWritten: 0, tombstonedDropped: 0, skipped: 'too-few-segments' };
+    return {
+      compactedPath: null,
+      consumedSegments: 0,
+      consumedSegmentPaths: [],
+      recordsWritten: 0,
+      tombstonedDropped: 0,
+      skipped: 'too-few-segments',
+    };
   }
   const maxEpoch = segments[segments.length - 1].epoch;
   const maxSeqAtMaxEpoch = segments
@@ -276,15 +292,23 @@ export function compactDeltaSegments(baseArtifactPath, opts = {}) {
     try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
   } catch { /* best-effort dir fsync */ }
 
+  const consumedSegmentPaths = segments
+    .filter((seg) => seg.path !== targetPath)
+    .map((seg) => seg.path);
+
   let consumed = 0;
-  for (const seg of segments) {
-    if (seg.path === targetPath) continue;
-    try { fs.unlinkSync(seg.path); consumed += 1; } catch { /* tolerate concurrent deletion */ }
+  if (deferDelete) {
+    consumed = consumedSegmentPaths.length;
+  } else {
+    for (const segPath of consumedSegmentPaths) {
+      try { fs.unlinkSync(segPath); consumed += 1; } catch { /* tolerate concurrent deletion */ }
+    }
   }
 
   return {
     compactedPath: targetPath,
     consumedSegments: consumed,
+    consumedSegmentPaths: deferDelete ? consumedSegmentPaths : [],
     recordsWritten: latest.size,
     tombstonedDropped,
     skipped: null,
