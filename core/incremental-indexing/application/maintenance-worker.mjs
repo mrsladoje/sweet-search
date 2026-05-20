@@ -261,13 +261,23 @@ export function defaultMaintenanceHandlers(stateDir) {
  * queue; handler failure retries until `maxAttempts`, then dead-letters.
  * Jobs without a registered handler remain queued for a future worker.
  *
+ * Draining is bounded by EITHER a job cap (`maxJobs`, a hard ceiling when
+ * set) OR a wall-clock budget (`budgetMs`). The budget lets the daemon keep
+ * pace with a growing backlog without starving the reconcile tick: it
+ * drains as many jobs as fit in the window rather than a fixed tiny count.
+ * The first eligible job always runs (so a sub-job-duration budget still
+ * makes forward progress); the budget gates only subsequent jobs.
+ *
  * @param {string} stateDir
- * @param {{handlers?:object, maxJobs?:number, maxAttempts?:number}} [options]
+ * @param {{handlers?:object, maxJobs?:number, maxAttempts?:number, budgetMs?:number, now?:()=>number}} [options]
  */
 export async function processMaintenanceQueue(stateDir, options = {}) {
   const handlers = options.handlers || {};
   const maxJobs = Number.isInteger(options.maxJobs) && options.maxJobs > 0 ? options.maxJobs : Infinity;
   const maxAttempts = Number.isInteger(options.maxAttempts) && options.maxAttempts > 0 ? options.maxAttempts : 3;
+  const budgetMs = Number.isFinite(options.budgetMs) && options.budgetMs > 0 ? options.budgetMs : Infinity;
+  const clock = typeof options.now === 'function' ? options.now : Date.now;
+  const startMs = clock();
   const remaining = [];
   const summary = {
     seen: 0,
@@ -294,7 +304,8 @@ export async function processMaintenanceQueue(stateDir, options = {}) {
 
     summary.seen += 1;
     const handler = handlers[job.tier] || handlers.default;
-    if (!handler || attempted >= maxJobs) {
+    const overBudget = budgetMs !== Infinity && attempted > 0 && (clock() - startMs) >= budgetMs;
+    if (!handler || attempted >= maxJobs || overBudget) {
       summary.deferred += 1;
       remaining.push(job);
       continue;
@@ -334,9 +345,11 @@ async function main() {
 
   const stateDir = process.env.SWEET_SEARCH_STATE_DIR
     || path.resolve(process.cwd(), '.sweet-search');
+  const budgetRaw = Number.parseInt(process.env.SWEET_SEARCH_MAINTENANCE_BUDGET_MS || '', 10);
   const drain = await processMaintenanceQueue(stateDir, {
     handlers: defaultMaintenanceHandlers(stateDir),
     maxJobs: Number.parseInt(process.env.SWEET_SEARCH_MAINTENANCE_MAX_JOBS || '50', 10),
+    budgetMs: Number.isFinite(budgetRaw) && budgetRaw > 0 ? budgetRaw : undefined,
     maxAttempts: Number.parseInt(process.env.SWEET_SEARCH_MAINTENANCE_MAX_ATTEMPTS || '3', 10),
   });
   console.log(JSON.stringify({

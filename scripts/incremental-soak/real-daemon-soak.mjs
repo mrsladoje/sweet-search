@@ -471,6 +471,15 @@ function measureArtifacts(stateDir) {
       } else if (n.endsWith('.bin')) liSegments += 1;
     }
   } catch { /* no LI segments */ }
+  // Active segment count (what fresh readers load via the manifest) vs. the
+  // on-disk `.bin` count above (which includes quarantined-but-not-yet-swept
+  // files during the merge grace window).
+  let liManifestSegments = 0;
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(liSegDir, 'manifest.json'), 'utf-8'));
+    liManifestSegments = Array.isArray(m.segments) ? m.segments.length : 0;
+  } catch { /* no manifest */ }
+  const liQuarantineEntries = countLines(path.join(liSegDir, 'pending-delete.jsonl'));
 
   let binaryHnswRows = 0; let binaryHnswTombstones = 0;
   try {
@@ -489,6 +498,8 @@ function measureArtifacts(stateDir) {
     },
     sparseDeltaSegments,
     liSegments,
+    liManifestSegments,
+    liQuarantineEntries,
     liStaleSidecars,
     liTombstones,
     binaryHnswRows,

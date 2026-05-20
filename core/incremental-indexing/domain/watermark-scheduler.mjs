@@ -27,9 +27,13 @@ export const DEFAULT_WATERMARKS = Object.freeze({
   hnswDeleteCycles: 1000,
   binaryHnswDeadRatio: 0.30,
   liSegmentStaleRatio: 0.20,
+  liSmallSegmentCount: 16,
+  liSegmentCount: 200,
   sparseDeltaRatio: 0.10,
   sparseDeltaSegmentCount: 64,
   fts5SegmentCount: 64,
+  retiredVectorCount: 5000,
+  retiredVectorRatio: 0.25,
 });
 
 /**
@@ -49,9 +53,13 @@ export function loadWatermarkConfig(env = process.env) {
     hnswDeleteCycles: num('SWEET_SEARCH_HNSW_DELETE_CYCLES', DEFAULT_WATERMARKS.hnswDeleteCycles),
     binaryHnswDeadRatio: num('SWEET_SEARCH_BINARY_HNSW_DEAD_THRESHOLD', DEFAULT_WATERMARKS.binaryHnswDeadRatio),
     liSegmentStaleRatio: num('SWEET_SEARCH_LI_SEGMENT_STALE_THRESHOLD', DEFAULT_WATERMARKS.liSegmentStaleRatio),
+    liSmallSegmentCount: num('SWEET_SEARCH_LI_SMALL_SEGMENT_THRESHOLD', DEFAULT_WATERMARKS.liSmallSegmentCount),
+    liSegmentCount: num('SWEET_SEARCH_LI_SEGMENT_COUNT_THRESHOLD', DEFAULT_WATERMARKS.liSegmentCount),
     sparseDeltaRatio: num('SWEET_SEARCH_SPARSE_DELTA_RATIO', DEFAULT_WATERMARKS.sparseDeltaRatio),
     sparseDeltaSegmentCount: num('SWEET_SEARCH_SPARSE_DELTA_SEGCOUNT', DEFAULT_WATERMARKS.sparseDeltaSegmentCount),
     fts5SegmentCount: num('SWEET_SEARCH_FTS5_MERGE_SEGMENT_THRESHOLD', DEFAULT_WATERMARKS.fts5SegmentCount),
+    retiredVectorCount: num('SWEET_SEARCH_VECTOR_GC_COUNT_THRESHOLD', DEFAULT_WATERMARKS.retiredVectorCount),
+    retiredVectorRatio: num('SWEET_SEARCH_VECTOR_GC_RATIO_THRESHOLD', DEFAULT_WATERMARKS.retiredVectorRatio),
   };
 }
 
@@ -111,6 +119,29 @@ export function evaluateWatermarks(state, config = DEFAULT_WATERMARKS) {
       });
     }
   }
+  // Segment-count growth bound: collapse many small live segments into
+  // fewer larger ones. One coalesced batch job regardless of count.
+  const liStats = state.liSegmentStats || {};
+  const liSmallOver = (liStats.smallSegmentCount ?? 0) > config.liSmallSegmentCount;
+  const liCountOver = (liStats.segmentCount ?? 0) > config.liSegmentCount;
+  // Also re-fire when files are quarantined for deferred deletion: the merge
+  // handler runs the grace-gated quarantine sweep, so this keeps unreferenced
+  // segment files from lingering after churn settles (the sweep is otherwise
+  // only invoked when a count-driven merge is due).
+  const liPendingDelete = (liStats.pendingDeleteFiles ?? 0) > 0;
+  if (liSmallOver || liCountOver || liPendingDelete) {
+    jobs.push({
+      tier: 'li_segments',
+      reason: liSmallOver ? 'small_segment_count'
+        : liCountOver ? 'segment_count'
+        : 'pending_delete',
+      payload: {
+        segmentCount: liStats.segmentCount ?? 0,
+        smallSegmentCount: liStats.smallSegmentCount ?? 0,
+        pendingDeleteFiles: liStats.pendingDeleteFiles ?? 0,
+      },
+    });
+  }
   const sparse = state.sparseGram || {};
   if ((sparse.deltaSizeRatio ?? 0) > config.sparseDeltaRatio
       || (sparse.deltaSegmentCount ?? 0) > config.sparseDeltaSegmentCount) {
@@ -131,6 +162,22 @@ export function evaluateWatermarks(state, config = DEFAULT_WATERMARKS) {
       tier: 'fts5',
       reason: 'fts5_segment_count',
       payload: { segmentCount: fts5.segmentCount },
+    });
+  }
+  // Retired-vector physical GC: bound `codebase.db` growth once enough rows
+  // have been tombstoned. One coalesced job; the handler is reader-safe.
+  const vec = state.vectors || {};
+  if ((vec.retiredCount ?? 0) > config.retiredVectorCount
+      || (vec.retiredRatio ?? 0) > config.retiredVectorRatio) {
+    jobs.push({
+      tier: 'vector_gc',
+      reason: (vec.retiredCount ?? 0) > config.retiredVectorCount
+        ? 'retired_count'
+        : 'retired_ratio',
+      payload: {
+        retiredCount: vec.retiredCount ?? 0,
+        retiredRatio: vec.retiredRatio ?? 0,
+      },
     });
   }
   return jobs;

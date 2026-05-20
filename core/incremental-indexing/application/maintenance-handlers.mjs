@@ -36,6 +36,9 @@ import { BinaryHNSWIndex } from '../../vector-store/binary-hnsw-index.js';
 import { HNSWIndex } from '../../vector-store/hnsw-index.js';
 import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
 import { compactDeltaSegments, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
+import { mergeLiSegments, LI_MERGE_GRACE_MS } from '../infrastructure/li-segment-merge.mjs';
+import { runVectorGc } from '../infrastructure/vector-gc.mjs';
+import { minLiveEpoch } from '../infrastructure/reader-heartbeat.mjs';
 import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import {
   loadBitmap, popcount, isSet, createBitmap, saveBitmap,
@@ -363,6 +366,48 @@ export async function liSegmentHandler(job, { stateDir }) {
 }
 
 /* ------------------------------------------------------------------ *
+ * li_segments (batch merge)                                           *
+ * ------------------------------------------------------------------ */
+
+/**
+ * Batch-merge small live LI segments into fewer larger segments so the
+ * segment count stays bounded (the per-segment `li_segment` handler only
+ * compacts within a segment; it never reduces the count). Idempotent and
+ * crash-safe — see `infrastructure/li-segment-merge.mjs`. Honors
+ * `SWEET_SEARCH_LI_MERGE_GRACE_MS` for the quarantine grace window.
+ */
+export async function liSegmentsHandler(job, { stateDir }) {
+  const graceRaw = Number.parseInt(process.env.SWEET_SEARCH_LI_MERGE_GRACE_MS || '', 10);
+  const graceMs = Number.isFinite(graceRaw) && graceRaw >= 0 ? graceRaw : LI_MERGE_GRACE_MS;
+  // A `pending_delete` re-fire only needs the cheap quarantine/orphan sweep —
+  // never reload the full index just to unlink a few deferred files.
+  const sweepOnly = job?.reason === 'pending_delete';
+  return mergeLiSegments(stateDir, { graceMs, sweepOnly });
+}
+
+/* ------------------------------------------------------------------ *
+ * vector_gc (retired-row physical prune)                             *
+ * ------------------------------------------------------------------ */
+
+/**
+ * Physically delete retired `codebase.db` vector rows that no live or
+ * future reader can observe. Reader-safe (see
+ * `infrastructure/vector-gc.mjs`); never throws on a missing DB. Batch
+ * size / per-run cap tunable via `SWEET_SEARCH_VECTOR_GC_BATCH` and
+ * `SWEET_SEARCH_VECTOR_GC_MAX_ROWS`.
+ */
+export function vectorGcHandler(job, { stateDir }) {
+  const batchRaw = Number.parseInt(process.env.SWEET_SEARCH_VECTOR_GC_BATCH || '', 10);
+  const maxRaw = Number.parseInt(process.env.SWEET_SEARCH_VECTOR_GC_MAX_ROWS || '', 10);
+  return runVectorGc(stateDir, {
+    minLiveEpoch,
+    readManifest,
+    batchSize: Number.isFinite(batchRaw) && batchRaw > 0 ? batchRaw : undefined,
+    maxRows: Number.isFinite(maxRaw) && maxRaw > 0 ? maxRaw : undefined,
+  });
+}
+
+/* ------------------------------------------------------------------ *
  * Registry                                                            *
  * ------------------------------------------------------------------ */
 
@@ -378,5 +423,7 @@ export function reclamationHandlers(stateDir) {
     binary_hnsw: (job) => binaryHnswHandler(job, { stateDir }),
     float_hnsw: (job) => floatHnswHandler(job, { stateDir }),
     li_segment: (job) => liSegmentHandler(job, { stateDir }),
+    li_segments: (job) => liSegmentsHandler(job, { stateDir }),
+    vector_gc: (job) => vectorGcHandler(job, { stateDir }),
   };
 }

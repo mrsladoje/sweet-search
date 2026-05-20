@@ -25,9 +25,33 @@ import {
 } from './tombstone-bitmap.mjs';
 
 export const STALE_SIDECAR_EXT = '.stale.bin';
+/** SSLX sealed-segment capacity (docs). Mirrors LI_SEGMENT_SIZE in
+ *  core/ranking/late-interaction-index.js; a segment with fewer docs is
+ *  "small" and a candidate for batch merge. */
+export const LI_SEGMENT_SIZE = 10_000;
 
 function staleSidecarPath(segmentPath) {
   return segmentPath + STALE_SIDECAR_EXT;
+}
+
+/**
+ * Next monotonic segment sequence number for a segment manifest. Persisted
+ * as `manifest.nextSeq`; bootstrapped from the max existing `segment-<n>`
+ * index so segment naming stays collision-proof even after the batch merge
+ * removes segments out of order. Both the reconcile write path and the
+ * merge handler bump this counter.
+ *
+ * @param {object} manifest
+ * @returns {number}
+ */
+export function nextSegmentSeq(manifest) {
+  if (Number.isInteger(manifest?.nextSeq)) return manifest.nextSeq;
+  let maxIdx = -1;
+  for (const seg of manifest?.segments || []) {
+    const m = typeof seg?.path === 'string' && seg.path.match(/segment-(\d+)\.bin$/);
+    if (m) maxIdx = Math.max(maxIdx, Number(m[1]));
+  }
+  return maxIdx + 1;
 }
 
 /**
