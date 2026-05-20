@@ -98,8 +98,31 @@ export function readBinaryHnswState(stateDir) {
   if (total <= 0) return empty;
   let bitmap = null;
   try { bitmap = loadBitmap(path.join(stateDir, 'codebase-binary-hnsw.idx.stale.bin')); } catch { bitmap = null; }
-  const dead = bitmap ? popcount(bitmap) : 0;
-  return { deadDocRatio: dead / total };
+  const markedDead = bitmap ? popcount(bitmap) : 0;
+  // True dead count is divergence from codebase.db (the liveness authority):
+  // binary rows that are no longer live there, whether or not their stale bit
+  // was ever set. This catches a retire that never reached the binary tier so
+  // binaryHnswHandler (codebase.db-sourced) is scheduled to reclaim it. Falls
+  // back to the stale-bitmap popcount when codebase.db is unavailable.
+  let divergentDead = 0;
+  const dbPath = path.join(stateDir, 'codebase.db');
+  if (fs.existsSync(dbPath)) {
+    const db = new Database(dbPath, { readonly: true });
+    try {
+      const cols = db.prepare('PRAGMA table_info(vectors)').all().map((c) => c.name);
+      if (cols.includes('epoch_retired')) {
+        const live = db.prepare('SELECT COUNT(*) AS n FROM vectors WHERE epoch_retired IS NULL').get().n || 0;
+        divergentDead = Math.max(0, total - live);
+      }
+    } catch { divergentDead = 0; } finally { db.close(); }
+  }
+  const dead = Math.max(markedDead, divergentDead);
+  // Rows retired in codebase.db whose binary stale bit was never set. This is
+  // the precise signature of a retire that failed to reach the binary tier;
+  // surfacing it lets the scheduler reclaim promptly instead of waiting for the
+  // dead-doc ratio to cross its threshold from unrelated churn.
+  const unexplainedDead = Math.max(0, divergentDead - markedDead);
+  return { deadDocRatio: dead / total, unexplainedDead };
 }
 
 /**

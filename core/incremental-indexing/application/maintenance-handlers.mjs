@@ -120,6 +120,28 @@ export async function sparseGramHandler(job, { stateDir }) {
  * binary_hnsw                                                         *
  * ------------------------------------------------------------------ */
 
+/**
+ * Read the set of live vector ids from `codebase.db` (`epoch_retired IS NULL`).
+ * `codebase.db` is the source of truth for vector liveness; the Binary-HNSW
+ * stale bitmap is a derived query-time cache that can drift from it if a retire
+ * op fails to reach the binary tier. Returns `null` when the DB / column is
+ * unavailable so the caller can fall back to the stale bitmap.
+ */
+function readLiveVectorIds(stateDir) {
+  const dbPath = path.join(stateDir, 'codebase.db');
+  if (!fs.existsSync(dbPath)) return null;
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const cols = db.prepare('PRAGMA table_info(vectors)').all().map((c) => c.name);
+    if (!cols.includes('epoch_retired')) return null;
+    return new Set(db.prepare('SELECT id FROM vectors WHERE epoch_retired IS NULL').all().map((r) => r.id));
+  } catch {
+    return null;
+  } finally {
+    db.close();
+  }
+}
+
 export async function binaryHnswHandler(job, { stateDir }) {
   const indexPath = path.join(stateDir, 'codebase-binary-hnsw.idx');
   const metaPath = path.join(stateDir, 'codebase-binary-hnsw.meta.json');
@@ -128,16 +150,24 @@ export async function binaryHnswHandler(job, { stateDir }) {
   const existing = new BinaryHNSWIndex({ indexPath });
   await existing.load(indexPath);
 
+  // Liveness authority is codebase.db, NOT the binary stale bitmap. This makes
+  // binary reclamation self-healing and consistent with floatHnswHandler
+  // (which already rebuilds from `vectors WHERE epoch_retired IS NULL`): a
+  // vector retired in codebase.db is dropped here even if its binary stale bit
+  // was never set. Falls back to the stale bitmap only when codebase.db is
+  // unavailable.
+  const liveIds = readLiveVectorIds(stateDir);
   const staleBitmap = existing._loadStaleBitmap();
   const live = [];
   for (let i = 0; i < existing.vectors.length; i += 1) {
-    if (staleBitmap && isSet(staleBitmap, i)) continue;
     const v = existing.vectors[i];
+    const isStale = liveIds ? !liveIds.has(v.id) : (staleBitmap && isSet(staleBitmap, i));
+    if (isStale) continue;
     const int8 = existing.int8Vectors.get(v.id) || null;
     live.push({ id: v.id, binary: v.binary, metadata: v.metadata, int8 });
   }
   const dropped = existing.vectors.length - live.length;
-  if (!staleBitmap || dropped === 0) {
+  if (dropped === 0) {
     return { skipped: 'no-stale-vectors', dropped: 0 };
   }
 
