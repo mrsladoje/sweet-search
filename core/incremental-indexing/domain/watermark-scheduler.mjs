@@ -106,11 +106,15 @@ export function evaluateWatermarks(state, config = DEFAULT_WATERMARKS) {
     });
   }
   const binH = state.binaryHnsw || {};
-  if ((binH.deadDocRatio ?? 0) > config.binaryHnswDeadRatio) {
+  // Reclaim on the dead-doc ratio (batched) OR on any *unexplained* divergence
+  // from codebase.db — a vector retired there but never stale-marked in the
+  // binary index. The latter is reader-visible (the coarse index surfaces a
+  // retired vector) and the handler is codebase.db-sourced, so heal promptly.
+  if ((binH.deadDocRatio ?? 0) > config.binaryHnswDeadRatio || (binH.unexplainedDead ?? 0) > 0) {
     jobs.push({
       tier: 'binary_hnsw',
-      reason: 'dead_doc_ratio',
-      payload: { deadDocRatio: binH.deadDocRatio },
+      reason: (binH.unexplainedDead ?? 0) > 0 ? 'codebase_divergence' : 'dead_doc_ratio',
+      payload: { deadDocRatio: binH.deadDocRatio ?? 0, unexplainedDead: binH.unexplainedDead ?? 0 },
     });
   }
   const liSegs = state.liSegments || [];

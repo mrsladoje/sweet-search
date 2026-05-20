@@ -252,12 +252,24 @@ function spawnReader({ id, stateDir, projectRoot, emit }) {
     pending.clear();
   });
 
+  // A reader can close its stdin between our `exited` check and the write
+  // (e.g. mid-restart), which surfaces as an EPIPE 'error' on the pipe. Without
+  // a listener Node treats it as an unhandled 'error' and kills the
+  // orchestrator. Mark the reader dead and let in-flight calls reject/time out.
+  child.stdin.on('error', () => { exited = true; });
+
   function call(cmd, args = undefined, timeoutMs = 30_000) {
     if (exited) return Promise.reject(new Error('reader already exited'));
     const cid = nextId++;
     const promise = new Promise((resolve, reject) => { pending.set(cid, { resolve, reject }); });
     const line = JSON.stringify({ id: cid, cmd, ...(args !== undefined ? { args } : {}) }) + '\n';
-    child.stdin.write(line);
+    try {
+      child.stdin.write(line);
+    } catch (err) {
+      exited = true;
+      pending.delete(cid);
+      return Promise.reject(new Error(`reader stdin write failed: ${err?.message ?? err}`));
+    }
     const timer = setTimeout(() => {
       if (pending.has(cid)) {
         pending.get(cid).reject(new Error(`reader call ${cmd} timed out after ${timeoutMs}ms`));
