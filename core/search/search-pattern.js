@@ -17,6 +17,7 @@ import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { generateRegexMatches } from './search-pattern-planner.js';
 import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, readFileRange } from './search-pattern-chunks.js';
 import { isRipgrepAvailable, runRipgrepJson } from './search-pattern-ripgrep.js';
+import { ensureSparseGramIndex } from './search-pattern-prefilter.js';
 import { packageForAgent } from './context-expander.js';
 import { applyFileKindRanking, applyResultDemotions } from '../ranking/file-kind-ranking.js';
 
@@ -76,6 +77,55 @@ export function mergeRegexIntoQuery(query, regex) {
 }
 
 // =============================================================================
+// Grep engine selection — native in-process grep vs ripgrep fallback
+// =============================================================================
+
+/**
+ * Whether native in-process grep can serve this request without ripgrep.
+ *
+ * Native unified/narrowed grep (searchFull/searchLines + nativeGrep*) covers
+ * plain-regex queries whenever a sparse-gram index is loaded. The loaded index
+ * object only exposes searchFull/searchLines when the native addon built it, so
+ * their presence is a reliable signal that native grep is available — and it
+ * keeps the check deterministic for tests that supply a mock index.
+ *
+ * Fixed-string and glob queries are gated off the native path in
+ * generateRegexMatches, so they still require ripgrep as the fallback engine.
+ */
+function nativeGrepCanServe(searcher, options = {}) {
+  const fixedString = options.fixedString ?? false;
+  const globs = options.globs ?? [];
+  if (fixedString || (Array.isArray(globs) && globs.length > 0)) return false;
+  const index = ensureSparseGramIndex(searcher, options);
+  return !!(index && typeof index.searchFull === 'function' && typeof index.searchLines === 'function');
+}
+
+/**
+ * Fail fast when no grep engine can serve the request. Native in-process grep
+ * is preferred and needs no external binary; ripgrep is an optional fallback
+ * (required only for fixed-string/glob queries, or when the native addon/index
+ * is absent). Throws a single actionable error naming both engines when neither
+ * is available — generateRegexMatches itself prefers native and only reaches a
+ * ripgrep call in the fallback branches this guard protects.
+ *
+ * @returns {Promise<boolean>} true when native grep will serve (ripgrep unused)
+ */
+async function ensureGrepEngineAvailable(searcher, options, label) {
+  if (nativeGrepCanServe(searcher, options)) return true;
+  if (await isRipgrepAvailable()) return false;
+
+  const fixedString = options.fixedString ?? false;
+  const globs = options.globs ?? [];
+  const reason = (fixedString || (Array.isArray(globs) && globs.length > 0))
+    ? 'fixed-string and glob queries use the ripgrep fallback, which is not installed'
+    : 'native grep is unavailable (no sparse-gram index built, or the native addon is missing) and ripgrep is not installed';
+  throw new Error(
+    `${label} needs an in-process grep engine, but none is available: ${reason}. ` +
+    'Re-index to build the native sparse-gram index, or install ripgrep (brew install ripgrep).'
+  );
+}
+
+// =============================================================================
 // Bare grep (wired onto SweetSearch.prototype)
 // =============================================================================
 
@@ -93,9 +143,10 @@ export async function bareGrep(query, routing, options = {}) {
     throw new Error('Bare grep requires a regex or fixed-string pattern.');
   }
 
-  if (!await isRipgrepAvailable()) {
-    throw new Error('Bare grep requires ripgrep (rg). Install: brew install ripgrep');
-  }
+  // Native in-process grep serves this when a sparse-gram index is loaded;
+  // ripgrep is only required for fixed-string/glob queries or when native is
+  // unavailable. Throws a clear error only when neither engine can run.
+  await ensureGrepEngineAvailable(this, options, 'Bare grep');
 
   // Disable chunk gram for bare grep — bare grep uses file:line matches, not chunk IDs.
   const candidateResult = await generateRegexMatches(this || {}, regex, searchDir, options);
@@ -183,9 +234,10 @@ export async function patternSearch(query, routing, options = {}) {
     throw new Error('Pattern search requires a late interaction index. Re-index with late interaction enabled.');
   }
 
-  if (!await isRipgrepAvailable()) {
-    throw new Error('Pattern search requires ripgrep (rg). Install: brew install ripgrep');
-  }
+  // Native in-process grep serves candidate generation when a sparse-gram index
+  // is loaded; ripgrep is only required for fixed-string/glob queries or when
+  // native is unavailable. Throws a clear error only when neither engine runs.
+  await ensureGrepEngineAvailable(this, options, 'Pattern search');
 
   await this.lateInteractionIndex.init();
 
