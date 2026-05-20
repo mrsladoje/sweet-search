@@ -44,6 +44,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { startupInterval, tierForHardware } from '../incremental-indexing/domain/interval-autotune.mjs';
 import { detectHardwareCapability } from '../infrastructure/hardware-capability.js';
+import { sweepStaleArtifactTemps, DEFAULT_TMP_SWEEP_MAX_AGE_MS } from '../incremental-indexing/infrastructure/artifact-temp-sweep.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -685,6 +686,21 @@ function maintenanceInlineMaxAttempts(env = process.env) {
 }
 
 /**
+ * Grace window for the startup orphan-temp sweep. A staging temp older than
+ * this is a crash orphan (the rename that would publish it never happened);
+ * a younger one might belong to a concurrent in-flight writer and is left
+ * alone. Tunable via `SWEET_SEARCH_TMP_SWEEP_MAX_AGE_MS`; `0` disables the
+ * age gate (sweep everything that matches).
+ *
+ * @param {NodeJS.ProcessEnv} [env]
+ */
+function tmpSweepMaxAgeMs(env = process.env) {
+  const raw = Number.parseInt(env.SWEET_SEARCH_TMP_SWEEP_MAX_AGE_MS || '', 10);
+  if (Number.isFinite(raw) && raw >= 0) return raw;
+  return DEFAULT_TMP_SWEEP_MAX_AGE_MS;
+}
+
+/**
  * Bounded inline drain of the maintenance queue, intended to be called
  * after a successful reconcile tick. Returns the drain summary, or
  * `{skipped: true, reason}` when inline mode is disabled or the worker
@@ -743,6 +759,21 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
     return;
   }
   log('INFO', `Reconcile v2 lock acquired (PID: ${process.pid})`);
+
+  // Crash-orphan sweep. We hold the exclusive state lock, so any staging
+  // temp left over (`*.tmp.<pid>`, `*.compacting.tmp`, `*.json.tmp`,
+  // `*.bin.tmp`, `*.selfheal.tmp`) is from a writer that died before its
+  // rename. Age-gated; never touches canonical artifacts, queues, WAL, or
+  // the lockfile (see artifact-temp-sweep.mjs). Best-effort: never let
+  // cleanup failure stop the daemon from starting.
+  try {
+    const sweep = sweepStaleArtifactTemps(ctx.stateDir, { maxAgeMs: tmpSweepMaxAgeMs() });
+    if (sweep.removed > 0) {
+      log('INFO', `Swept ${sweep.removed} orphaned staging temp(s) (${sweep.bytesReclaimed} bytes) from ${ctx.stateDir}`);
+    }
+  } catch (err) {
+    log('WARN', `Artifact temp sweep failed (continuing startup): ${err?.message ?? err}`);
+  }
 
   const resolved = resolveReconcileV2Interval();
   const intervalMs = resolved.intervalMs;

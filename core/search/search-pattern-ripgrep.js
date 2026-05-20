@@ -218,6 +218,10 @@ async function executeRipgrep({
       outputMode === 'json' ? '--json' : '--files-with-matches',
       '--type-add', RIPGREP_CODE_TYPE,
       '--type', 'code',
+      // Suppress I/O error messages (e.g. a candidate file deleted during the
+      // reconcile window). ripgrep still exits 2 on such errors but stderr
+      // stays empty; pattern-syntax errors still surface on stderr.
+      '--no-messages',
     ];
 
     if (maxCount > 0) args.push('--max-count', String(maxCount));
@@ -259,7 +263,11 @@ async function executeRipgrep({
     proc.stderr.on('data', (chunk) => { stderr += chunk; });
 
     proc.on('close', (code) => {
-      if (code !== 0 && code !== 1) {
+      // code 2 with empty stderr = benign I/O error (a candidate file vanished
+      // mid-flight under concurrent reconcile); use whatever matched rather
+      // than failing the whole query. Real errors (bad regex) keep stderr.
+      const benignIoError = code === 2 && stderr.trim() === '';
+      if (code !== 0 && code !== 1 && !benignIoError) {
         reject(new Error(`ripgrep failed (code ${code}): ${stderr.slice(0, 200)}`));
         return;
       }
@@ -392,6 +400,10 @@ async function executeRipgrepStreaming({
       '--json',
       '--type-add', RIPGREP_CODE_TYPE,
       '--type', 'code',
+      // Suppress I/O error messages (e.g. a candidate file deleted during the
+      // reconcile window). ripgrep still exits 2 on such errors but stderr
+      // stays empty; pattern-syntax errors still surface on stderr.
+      '--no-messages',
     ];
 
     if (maxCount > 0) args.push('--max-count', String(maxCount));
@@ -493,7 +505,10 @@ async function executeRipgrepStreaming({
         }
       }
 
-      if (killed || code === 0 || code === 1) {
+      // code 2 with empty stderr = benign I/O error (a candidate file vanished
+      // mid-flight under concurrent reconcile); resolve with what matched.
+      const benignIoError = code === 2 && stderr.trim() === '';
+      if (killed || code === 0 || code === 1 || benignIoError) {
         resolve(matches);
         return;
       }
