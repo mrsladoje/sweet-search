@@ -84,6 +84,40 @@ describe('watermark / evaluator', () => {
     expect(jobs.length).toBe(1);
     expect(jobs[0].tier).toBe('fts5');
   });
+
+  it('emits ONE coalescible li_segments batch job past the small-segment threshold', () => {
+    const jobs = evaluateWatermarks({ liSegmentStats: { segmentCount: 30, smallSegmentCount: 25 } });
+    expect(jobs.length).toBe(1);
+    expect(jobs[0]).toMatchObject({ tier: 'li_segments', reason: 'small_segment_count' });
+  });
+
+  it('emits an li_segments job on the absolute segment-count backstop', () => {
+    const jobs = evaluateWatermarks({ liSegmentStats: { segmentCount: 250, smallSegmentCount: 0 } });
+    expect(jobs[0]).toMatchObject({ tier: 'li_segments', reason: 'segment_count' });
+  });
+
+  it('does NOT emit li_segments when small segments are within threshold', () => {
+    expect(evaluateWatermarks({ liSegmentStats: { segmentCount: 10, smallSegmentCount: 10 } })).toEqual([]);
+  });
+
+  it('re-fires li_segments to drain quarantined files even with one active segment', () => {
+    const jobs = evaluateWatermarks({ liSegmentStats: { segmentCount: 1, smallSegmentCount: 1, pendingDeleteFiles: 11 } });
+    expect(jobs[0]).toMatchObject({ tier: 'li_segments', reason: 'pending_delete' });
+  });
+
+  it('emits a vector_gc job past the retired-count threshold', () => {
+    const jobs = evaluateWatermarks({ vectors: { retiredCount: 6000, retiredRatio: 0.1 } });
+    expect(jobs[0]).toMatchObject({ tier: 'vector_gc', reason: 'retired_count' });
+  });
+
+  it('emits a vector_gc job past the retired-ratio threshold', () => {
+    const jobs = evaluateWatermarks({ vectors: { retiredCount: 100, retiredRatio: 0.4 } });
+    expect(jobs[0]).toMatchObject({ tier: 'vector_gc', reason: 'retired_ratio' });
+  });
+
+  it('does NOT emit vector_gc below both thresholds', () => {
+    expect(evaluateWatermarks({ vectors: { retiredCount: 100, retiredRatio: 0.05 } })).toEqual([]);
+  });
 });
 
 describe('watermark / hnsw oversampling', () => {
