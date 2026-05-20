@@ -244,3 +244,66 @@ describe('maintenance-worker / queue', () => {
     expect(result.tableNames.sort()).toEqual(['entities_fts', 'entities_trigram']);
   });
 });
+
+describe('maintenance-worker / adaptive drain', () => {
+  let stateDir;
+  beforeEach(() => { stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-maint-drain-')); });
+  afterEach(() => fs.rmSync(stateDir, { recursive: true, force: true }));
+
+  function enqueueN(n, tier = 'fts5') {
+    for (let i = 0; i < n; i += 1) {
+      // Distinct reasons so coalescing does not collapse them.
+      enqueueMaintenanceJob(stateDir, { tier, reason: `r${i}`, epoch: i }, { coalesce: false });
+    }
+  }
+
+  it('drains the whole backlog when only a generous budget is set (no fixed cap)', async () => {
+    enqueueN(40);
+    let handled = 0;
+    const summary = await processMaintenanceQueue(stateDir, {
+      handlers: { fts5: async () => { handled += 1; } },
+      budgetMs: 10_000,
+    });
+    expect(handled).toBe(40);
+    expect(summary.succeeded).toBe(40);
+    expect(readMaintenanceQueue(stateDir)).toEqual([]);
+  });
+
+  it('stops at the time budget and defers the rest (always runs >= 1 job)', async () => {
+    enqueueN(20);
+    let handled = 0;
+    let virtualNow = 1000;
+    const summary = await processMaintenanceQueue(stateDir, {
+      handlers: { fts5: async () => { handled += 1; virtualNow += 100; } },
+      budgetMs: 250, // room for ~3 jobs after the first free one
+      now: () => virtualNow,
+    });
+    // First job is always attempted; budget gates the rest.
+    expect(handled).toBeGreaterThanOrEqual(1);
+    expect(handled).toBeLessThan(20);
+    expect(summary.deferred).toBe(20 - handled);
+    expect(readMaintenanceQueue(stateDir).length).toBe(20 - handled);
+  });
+
+  it('honors an explicit maxJobs hard cap even with budget headroom', async () => {
+    enqueueN(20);
+    let handled = 0;
+    const summary = await processMaintenanceQueue(stateDir, {
+      handlers: { fts5: async () => { handled += 1; } },
+      maxJobs: 5,
+      budgetMs: 10_000,
+    });
+    expect(handled).toBe(5);
+    expect(summary.deferred).toBe(15);
+  });
+
+  it('still retries/dead-letters failures under a budget drain', async () => {
+    enqueueMaintenanceJob(stateDir, { tier: 'fts5', reason: 'boom', epoch: 1 }, { coalesce: false });
+    const failing = { fts5: async () => { throw new Error('boom'); } };
+    let s = await processMaintenanceQueue(stateDir, { handlers: failing, budgetMs: 5000, maxAttempts: 2 });
+    expect(s.retried).toBe(1);
+    s = await processMaintenanceQueue(stateDir, { handlers: failing, budgetMs: 5000, maxAttempts: 2 });
+    expect(s.deadLettered).toBe(1);
+    expect(readMaintenanceQueue(stateDir)).toEqual([]);
+  });
+});

@@ -673,10 +673,34 @@ export function maintenanceInlineEnabled(env = process.env) {
   return normalized !== '0' && normalized !== 'false' && normalized !== 'off';
 }
 
+/**
+ * Per-tick job cap for the inline drain. When the operator sets
+ * `SWEET_SEARCH_MAINTENANCE_MAX_JOBS_PER_TICK` it is honored as a hard
+ * ceiling; otherwise the drain is bounded by the wall-clock budget
+ * (`maintenanceInlineBudgetMs`) instead of a fixed tiny count, so it can
+ * keep pace with a growing backlog. Returns `undefined` (→ no job cap) in
+ * the unset case.
+ *
+ * @param {NodeJS.ProcessEnv} [env]
+ */
 function maintenanceInlineMaxJobs(env = process.env) {
   const raw = Number.parseInt(env.SWEET_SEARCH_MAINTENANCE_MAX_JOBS_PER_TICK || '', 10);
   if (Number.isFinite(raw) && raw > 0) return raw;
-  return 8;
+  return undefined;
+}
+
+/**
+ * Wall-clock budget (ms) for one inline maintenance drain. Bounds how long
+ * the drain may run after a reconcile tick so it never starves reconcile,
+ * while still adapting to backlog. Tunable via
+ * `SWEET_SEARCH_MAINTENANCE_BUDGET_MS`.
+ *
+ * @param {NodeJS.ProcessEnv} [env]
+ */
+function maintenanceInlineBudgetMs(env = process.env) {
+  const raw = Number.parseInt(env.SWEET_SEARCH_MAINTENANCE_BUDGET_MS || '', 10);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return 1500;
 }
 
 function maintenanceInlineMaxAttempts(env = process.env) {
@@ -729,6 +753,7 @@ export async function drainMaintenanceInline(ctx) {
     const summary = await processMaintenanceQueue(ctx.stateDir, {
       handlers: defaultMaintenanceHandlers(ctx.stateDir),
       maxJobs: maintenanceInlineMaxJobs(env),
+      budgetMs: maintenanceInlineBudgetMs(env),
       maxAttempts: maintenanceInlineMaxAttempts(env),
     });
     if (summary.seen > 0) {

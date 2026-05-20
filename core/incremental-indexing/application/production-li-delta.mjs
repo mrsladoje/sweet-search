@@ -7,6 +7,7 @@ import {
   openSegmentState,
   tombstoneDoc,
   persistSegmentState,
+  nextSegmentSeq,
 } from '../infrastructure/li-segment-state.mjs';
 
 function readJson(filePath, fallback = null) {
@@ -41,6 +42,7 @@ function manifestFromIndex(index) {
     whtSeed: index.whtSeed || 0,
     whtOrdering: index.whtOrdering || 'natural',
     totalDocuments: 0,
+    nextSeq: 0,
     segments: [],
   };
 }
@@ -60,10 +62,12 @@ async function appendGrowingSegment(indexPath, index, docs) {
   const manifest = existing?.manifest || manifestFromIndex(index);
   await fsp.mkdir(segmentDir, { recursive: true });
 
-  const segName = `segment-${String(manifest.segments.length).padStart(4, '0')}.bin`;
+  const seq = nextSegmentSeq(manifest);
+  const segName = `segment-${String(seq).padStart(4, '0')}.bin`;
   const segPath = path.join(segmentDir, segName);
   await index._writeSegmentFile(segPath, docs);
   manifest.segments.push({ path: segName, count: docs.size });
+  manifest.nextSeq = seq + 1;
   manifest.totalDocuments = (manifest.totalDocuments || 0) + docs.size;
 
   await writeJsonAtomic(manifestPath, manifest);

@@ -19,7 +19,7 @@ import Database from 'better-sqlite3';
 
 import { loadBitmap, popcount, tombstoneFraction } from './tombstone-bitmap.mjs';
 import { deltaSizeStats } from './sparse-gram-delta.mjs';
-import { evaluateSegmentRatios } from './li-segment-state.mjs';
+import { evaluateSegmentRatios, LI_SEGMENT_SIZE } from './li-segment-state.mjs';
 import { fts5SegmentCount } from './sqlite-fts5.mjs';
 
 function readJson(filePath) {
@@ -131,9 +131,71 @@ export function readLiSegmentsState(stateDir) {
 }
 
 /**
+ * LI segment-count stats for the batch-merge watermark. `smallSegmentCount`
+ * is the number of sealed segments below the SSLX capacity — the ones that
+ * accumulate ~1/tick and that the merge collapses. Legacy / missing indices
+ * return zeros.
+ */
+export function readLiSegmentStats(stateDir) {
+  const empty = { segmentCount: 0, smallSegmentCount: 0, pendingDeleteFiles: 0 };
+  const stubPath = path.join(stateDir, 'codebase-late-interaction.db');
+  if (!fs.existsSync(stubPath)) return empty;
+  const stub = readJson(stubPath);
+  if (!stub || stub.format !== 'segmented' || !stub.segmentDir) return empty;
+  const segmentDir = path.resolve(stateDir, stub.segmentDir);
+  const manifestPath = path.join(segmentDir, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) return empty;
+  const manifest = readJson(manifestPath);
+  if (!manifest || !Array.isArray(manifest.segments)) return empty;
+  let small = 0;
+  for (const seg of manifest.segments) {
+    if (Number.isFinite(seg?.count) && seg.count < LI_SEGMENT_SIZE) small += 1;
+  }
+  // Quarantined (deferred-delete) segment files awaiting a grace-gated sweep.
+  // Surfaced so the watermark can re-trigger the merge handler to drain them
+  // even when no segment-count merge is otherwise due.
+  let pendingDeleteFiles = 0;
+  const pendingPath = path.join(segmentDir, 'pending-delete.jsonl');
+  try {
+    for (const line of fs.readFileSync(pendingPath, 'utf-8').split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const entry = JSON.parse(trimmed);
+        if (entry && Array.isArray(entry.paths)) pendingDeleteFiles += entry.paths.length;
+      } catch { /* skip torn line */ }
+    }
+  } catch { /* no pending-delete journal */ }
+  return { segmentCount: manifest.segments.length, smallSegmentCount: small, pendingDeleteFiles };
+}
+
+/**
+ * Retired-vector counts in `codebase.db` for the physical-GC watermark.
+ * `retiredCount` = rows with a non-null `epoch_retired`; `retiredRatio` =
+ * retired / total. Returns zeros when the DB / table / column is absent.
+ */
+export function readVectorGcState(stateDir) {
+  const empty = { retiredCount: 0, retiredRatio: 0, totalCount: 0 };
+  const dbPath = path.join(stateDir, 'codebase.db');
+  if (!fs.existsSync(dbPath)) return empty;
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const cols = db.prepare('PRAGMA table_info(vectors)').all().map((c) => c.name);
+    if (!cols.includes('epoch_retired')) return empty;
+    const total = db.prepare('SELECT COUNT(*) AS n FROM vectors').get().n || 0;
+    const retired = db.prepare('SELECT COUNT(*) AS n FROM vectors WHERE epoch_retired IS NOT NULL').get().n || 0;
+    return { retiredCount: retired, retiredRatio: total > 0 ? retired / total : 0, totalCount: total };
+  } catch {
+    return empty;
+  } finally {
+    db.close();
+  }
+}
+
+/**
  * One-shot bundle for the reconciler adapter. Returns the full shape
  * `evaluateWatermarks` expects: `fts5 / sparseGram / floatHnsw /
- * binaryHnsw / liSegments`.
+ * binaryHnsw / liSegments / liSegmentStats / vectors`.
  */
 export function readMaintenanceState(stateDir) {
   return {
@@ -142,5 +204,7 @@ export function readMaintenanceState(stateDir) {
     floatHnsw: readFloatHnswState(stateDir),
     binaryHnsw: readBinaryHnswState(stateDir),
     liSegments: readLiSegmentsState(stateDir),
+    liSegmentStats: readLiSegmentStats(stateDir),
+    vectors: readVectorGcState(stateDir),
   };
 }
