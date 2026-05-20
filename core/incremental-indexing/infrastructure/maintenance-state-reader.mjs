@@ -193,9 +193,58 @@ export function readVectorGcState(stateDir) {
 }
 
 /**
+ * Retired-row counts in `code-graph.db` for the graph physical-GC watermark.
+ * `retiredEntities` / `retiredRelationships` = rows with a non-null
+ * `epoch_retired`; `retiredEntityRatio` = retiredEntities / totalEntities.
+ * `retiredRows` is the combined entity+relationship tombstone count used by
+ * the count watermark. Returns zeros when the DB / tables / column are absent.
+ */
+export function readGraphGcState(stateDir) {
+  const empty = {
+    retiredEntities: 0, retiredRelationships: 0, retiredSummaries: 0,
+    retiredRows: 0, totalEntities: 0, retiredEntityRatio: 0,
+  };
+  const dbPath = path.join(stateDir, 'code-graph.db');
+  if (!fs.existsSync(dbPath)) return empty;
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const tableHas = (table, column) => {
+      try { return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column); }
+      catch { return false; }
+    };
+    let retiredEntities = 0;
+    let totalEntities = 0;
+    if (tableHas('entities', 'epoch_retired')) {
+      totalEntities = db.prepare('SELECT COUNT(*) AS n FROM entities').get().n || 0;
+      retiredEntities = db.prepare('SELECT COUNT(*) AS n FROM entities WHERE epoch_retired IS NOT NULL').get().n || 0;
+    }
+    let retiredRelationships = 0;
+    if (tableHas('relationships', 'epoch_retired')) {
+      retiredRelationships = db.prepare('SELECT COUNT(*) AS n FROM relationships WHERE epoch_retired IS NOT NULL').get().n || 0;
+    }
+    let retiredSummaries = 0;
+    if (tableHas('hcgs_summary_metadata', 'epoch_retired')) {
+      retiredSummaries = db.prepare('SELECT COUNT(*) AS n FROM hcgs_summary_metadata WHERE epoch_retired IS NOT NULL').get().n || 0;
+    }
+    return {
+      retiredEntities,
+      retiredRelationships,
+      retiredSummaries,
+      retiredRows: retiredEntities + retiredRelationships,
+      totalEntities,
+      retiredEntityRatio: totalEntities > 0 ? retiredEntities / totalEntities : 0,
+    };
+  } catch {
+    return empty;
+  } finally {
+    db.close();
+  }
+}
+
+/**
  * One-shot bundle for the reconciler adapter. Returns the full shape
  * `evaluateWatermarks` expects: `fts5 / sparseGram / floatHnsw /
- * binaryHnsw / liSegments / liSegmentStats / vectors`.
+ * binaryHnsw / liSegments / liSegmentStats / vectors / graph`.
  */
 export function readMaintenanceState(stateDir) {
   return {
@@ -206,5 +255,6 @@ export function readMaintenanceState(stateDir) {
     liSegments: readLiSegmentsState(stateDir),
     liSegmentStats: readLiSegmentStats(stateDir),
     vectors: readVectorGcState(stateDir),
+    graph: readGraphGcState(stateDir),
   };
 }

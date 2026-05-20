@@ -34,6 +34,8 @@ export const DEFAULT_WATERMARKS = Object.freeze({
   fts5SegmentCount: 64,
   retiredVectorCount: 5000,
   retiredVectorRatio: 0.25,
+  retiredGraphRowCount: 5000,
+  retiredGraphRowRatio: 0.25,
 });
 
 /**
@@ -60,6 +62,8 @@ export function loadWatermarkConfig(env = process.env) {
     fts5SegmentCount: num('SWEET_SEARCH_FTS5_MERGE_SEGMENT_THRESHOLD', DEFAULT_WATERMARKS.fts5SegmentCount),
     retiredVectorCount: num('SWEET_SEARCH_VECTOR_GC_COUNT_THRESHOLD', DEFAULT_WATERMARKS.retiredVectorCount),
     retiredVectorRatio: num('SWEET_SEARCH_VECTOR_GC_RATIO_THRESHOLD', DEFAULT_WATERMARKS.retiredVectorRatio),
+    retiredGraphRowCount: num('SWEET_SEARCH_GRAPH_GC_COUNT_THRESHOLD', DEFAULT_WATERMARKS.retiredGraphRowCount),
+    retiredGraphRowRatio: num('SWEET_SEARCH_GRAPH_GC_RATIO_THRESHOLD', DEFAULT_WATERMARKS.retiredGraphRowRatio),
   };
 }
 
@@ -177,6 +181,26 @@ export function evaluateWatermarks(state, config = DEFAULT_WATERMARKS) {
       payload: {
         retiredCount: vec.retiredCount ?? 0,
         retiredRatio: vec.retiredRatio ?? 0,
+      },
+    });
+  }
+  // Retired-graph-row physical GC: bound `code-graph.db` growth once enough
+  // entity/relationship/summary rows have been tombstoned. One coalesced job;
+  // the handler is reader-safe and keeps the external-content FTS5 indices
+  // consistent.
+  const graph = state.graph || {};
+  if ((graph.retiredRows ?? 0) > config.retiredGraphRowCount
+      || (graph.retiredEntityRatio ?? 0) > config.retiredGraphRowRatio) {
+    jobs.push({
+      tier: 'graph_gc',
+      reason: (graph.retiredRows ?? 0) > config.retiredGraphRowCount
+        ? 'retired_count'
+        : 'retired_ratio',
+      payload: {
+        retiredRows: graph.retiredRows ?? 0,
+        retiredEntities: graph.retiredEntities ?? 0,
+        retiredRelationships: graph.retiredRelationships ?? 0,
+        retiredEntityRatio: graph.retiredEntityRatio ?? 0,
       },
     });
   }

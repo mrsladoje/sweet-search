@@ -48,6 +48,7 @@ import { fileURLToPath } from 'node:url';
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
 import { readManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 import { listDeltaSegments } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
+import { readGraphGcState, readFts5State } from '../../core/incremental-indexing/infrastructure/maintenance-state-reader.mjs';
 import { loadBitmap, popcount } from '../../core/infrastructure/tombstone-bitmap-reader.js';
 import { generateInitialFixture } from './fixture.mjs';
 import { GroundTruth } from './ground-truth.mjs';
@@ -489,6 +490,12 @@ function measureArtifacts(stateDir) {
     if (bm) binaryHnswTombstones = popcount(bm);
   } catch { /* no binary hnsw */ }
 
+  // Graph tombstone growth indicators (the code-graph.db GC target). Uses the
+  // production maintenance-state reader so the soak measures exactly what the
+  // watermark scheduler sees. Degrades to zeros when the DB is absent.
+  const graph = readGraphGcState(stateDir);
+  const graphFts = readFts5State(stateDir);
+
   return {
     bytes: {
       vectorsDb: safeStatSize(path.join(stateDir, 'codebase.db')),
@@ -505,6 +512,12 @@ function measureArtifacts(stateDir) {
     binaryHnswRows,
     binaryHnswTombstones,
     binaryHnswTombstoneRatio: binaryHnswRows > 0 ? +(binaryHnswTombstones / binaryHnswRows).toFixed(4) : 0,
+    graphRetiredEntities: graph.retiredEntities,
+    graphRetiredRelationships: graph.retiredRelationships,
+    graphRetiredSummaries: graph.retiredSummaries,
+    graphTotalEntities: graph.totalEntities,
+    graphRetiredEntityRatio: +(graph.retiredEntityRatio || 0).toFixed(4),
+    graphFtsSegmentCount: graphFts.segmentCount,
     maintenanceQueueDepth: countLines(path.join(stateDir, 'rebuild-queue.jsonl')),
     deadLetterDepth: countLines(path.join(stateDir, 'rebuild-queue.dead-letter.jsonl')),
     dirtyQueueDepth: countLines(path.join(stateDir, 'index-maintainer-queue.jsonl')),
