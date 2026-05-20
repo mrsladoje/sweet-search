@@ -38,6 +38,7 @@ import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
 import { compactDeltaSegments, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
 import { mergeLiSegments, LI_MERGE_GRACE_MS } from '../infrastructure/li-segment-merge.mjs';
 import { runVectorGc } from '../infrastructure/vector-gc.mjs';
+import { runGraphGc } from '../infrastructure/graph-gc.mjs';
 import { minLiveEpoch } from '../infrastructure/reader-heartbeat.mjs';
 import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import {
@@ -408,6 +409,29 @@ export function vectorGcHandler(job, { stateDir }) {
 }
 
 /* ------------------------------------------------------------------ *
+ * graph_gc (retired graph-row physical prune)                         *
+ * ------------------------------------------------------------------ */
+
+/**
+ * Physically delete retired `code-graph.db` rows (entities + relationships +
+ * HCGS summaries) that no live or future reader can observe, keeping the
+ * external-content FTS5 indices consistent. Reader-safe (see
+ * `infrastructure/graph-gc.mjs`); never throws on a missing DB. Batch size /
+ * per-run cap tunable via `SWEET_SEARCH_GRAPH_GC_BATCH` and
+ * `SWEET_SEARCH_GRAPH_GC_MAX_ROWS`.
+ */
+export function graphGcHandler(job, { stateDir }) {
+  const batchRaw = Number.parseInt(process.env.SWEET_SEARCH_GRAPH_GC_BATCH || '', 10);
+  const maxRaw = Number.parseInt(process.env.SWEET_SEARCH_GRAPH_GC_MAX_ROWS || '', 10);
+  return runGraphGc(stateDir, {
+    minLiveEpoch,
+    readManifest,
+    batchSize: Number.isFinite(batchRaw) && batchRaw > 0 ? batchRaw : undefined,
+    maxRows: Number.isFinite(maxRaw) && maxRaw > 0 ? maxRaw : undefined,
+  });
+}
+
+/* ------------------------------------------------------------------ *
  * Registry                                                            *
  * ------------------------------------------------------------------ */
 
@@ -425,5 +449,6 @@ export function reclamationHandlers(stateDir) {
     li_segment: (job) => liSegmentHandler(job, { stateDir }),
     li_segments: (job) => liSegmentsHandler(job, { stateDir }),
     vector_gc: (job) => vectorGcHandler(job, { stateDir }),
+    graph_gc: (job) => graphGcHandler(job, { stateDir }),
   };
 }
