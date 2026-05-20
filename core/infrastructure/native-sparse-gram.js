@@ -200,6 +200,20 @@ export function hasNativeSparseGramSupport() {
   return !!loadAddon();
 }
 
+/**
+ * Whether the native addon exposes the in-process grep functions
+ * (native_grep_lines / native_grep_full). When true, ss-grep / ss-pattern can
+ * run regex matching in-process without spawning ripgrep.
+ */
+export function isNativeGrepAvailable() {
+  const addon = loadAddon();
+  return !!(
+    addon &&
+    typeof addon.nativeGrepLines === 'function' &&
+    typeof addon.nativeGrepFull === 'function'
+  );
+}
+
 export function buildSparseGramIndexArtifact({ projectRoot, files, fileSymbolMasks = [], outputPath }) {
   const addon = loadAddon();
   if (!addon) {
