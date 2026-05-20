@@ -176,7 +176,11 @@ export class Probe {
       for (const name of fs.readdirSync(segDir)) {
         const full = path.join(segDir, name);
         if (!name.endsWith('.bin')) continue;
-        const stat = fs.statSync(full);
+        // An in-flight LI merge can delete a quarantined segment between this
+        // readdir and the stat (TOCTOU). That's a benign concurrent-merge race
+        // in measurement code, not a product defect — skip the vanished file.
+        let stat;
+        try { stat = fs.statSync(full); } catch { continue; }
         const isStale = name.endsWith('.stale.bin');
         segments.push({ name, size: stat.size, isStale });
       }
@@ -187,8 +191,15 @@ export class Probe {
 
   _readSparse() {
     const basePath = path.join(this.stateDir, 'codebase-sparse-grams.idx');
-    const deltas = listDeltaSegments(basePath);
-    const records = resolveLatestRecords(basePath);
+    // These helpers list the delta dir and read each file directly; a
+    // concurrent sparse compaction can unlink a delta between the listdir and
+    // the read (TOCTOU). Production search resolves deltas via the manifest's
+    // gated list, so this is a measurement-only race — tolerate it and report
+    // partial sparse state rather than failing the whole surface probe.
+    let deltas = [];
+    let records = new Map();
+    try { deltas = listDeltaSegments(basePath); } catch { /* concurrent compaction unlink */ }
+    try { records = resolveLatestRecords(basePath); } catch { /* concurrent compaction unlink */ }
     return { basePath, deltas, records };
   }
 }
