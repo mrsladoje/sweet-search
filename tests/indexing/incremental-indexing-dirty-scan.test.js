@@ -45,59 +45,59 @@ afterEach(() => {
 });
 
 describe('scanDirtyAndEnqueue', () => {
-  it('enqueues a brand-new file not present in merkle-state', () => {
+  it('enqueues a brand-new file not present in merkle-state', async () => {
     writeFileSync(join(sandbox, 'src/new.js'), 'export const a = 1;\n', 'utf-8');
     writeMerkle({}); // nothing known yet
 
-    const res = scanDirtyAndEnqueue({ projectRoot: sandbox, stateDir });
+    const res = await scanDirtyAndEnqueue({ projectRoot: sandbox, stateDir });
 
     expect(res.added).toBe(1);
     expect(queuedPaths()).toContain('src/new.js');
   });
 
-  it('enqueues a modified file (stat differs from merkle baseline)', () => {
+  it('enqueues a modified file (stat differs from merkle baseline)', async () => {
     const p = join(sandbox, 'src/mod.js');
     writeFileSync(p, 'export const a = 1;\n', 'utf-8');
     writeMerkle({ 'src/mod.js': statTuple(p) });
 
     // Mutate so size + mtime change.
     writeFileSync(p, 'export const a = 1;\nexport const b = 2;\n', 'utf-8');
-    const res = scanDirtyAndEnqueue({ projectRoot: sandbox, stateDir });
+    const res = await scanDirtyAndEnqueue({ projectRoot: sandbox, stateDir });
 
     expect(res.modified).toBe(1);
     expect(queuedPaths()).toContain('src/mod.js');
   });
 
-  it('does NOT enqueue an unchanged file', () => {
+  it('does NOT enqueue an unchanged file', async () => {
     const p = join(sandbox, 'src/same.js');
     writeFileSync(p, 'export const a = 1;\n', 'utf-8');
     writeMerkle({ 'src/same.js': statTuple(p) });
 
-    const res = scanDirtyAndEnqueue({ projectRoot: sandbox, stateDir });
+    const res = await scanDirtyAndEnqueue({ projectRoot: sandbox, stateDir });
 
     expect(res.enqueued).toBe(0);
     expect(queuedPaths()).not.toContain('src/same.js');
   });
 
-  it('enqueues a deleted file that is still in merkle-state', () => {
+  it('enqueues a deleted file that is still in merkle-state', async () => {
     const p = join(sandbox, 'src/gone.js');
     writeFileSync(p, 'export const a = 1;\n', 'utf-8');
     writeMerkle({ 'src/gone.js': statTuple(p) });
     rmSync(p);
 
-    const res = scanDirtyAndEnqueue({ projectRoot: sandbox, stateDir });
+    const res = await scanDirtyAndEnqueue({ projectRoot: sandbox, stateDir });
 
     expect(res.deleted).toBe(1);
     expect(queuedPaths()).toContain('src/gone.js');
   });
 
-  it('respects the path filter (excluded paths are skipped)', () => {
+  it('respects the path filter (excluded paths are skipped)', async () => {
     writeFileSync(join(sandbox, 'src/keep.js'), 'a', 'utf-8');
     writeFileSync(join(sandbox, 'src/skip.js'), 'b', 'utf-8');
     writeMerkle({});
 
     const isExcluded = (rel) => rel.endsWith('skip.js');
-    const res = scanDirtyAndEnqueue({ projectRoot: sandbox, stateDir, isExcluded });
+    const res = await scanDirtyAndEnqueue({ projectRoot: sandbox, stateDir, isExcluded });
 
     const q = queuedPaths();
     expect(q).toContain('src/keep.js');
@@ -105,7 +105,7 @@ describe('scanDirtyAndEnqueue', () => {
     expect(res.enqueued).toBe(1);
   });
 
-  it('de-dupes against paths already in the queue', () => {
+  it('de-dupes against paths already in the queue', async () => {
     writeFileSync(join(sandbox, 'src/dup.js'), 'a', 'utf-8');
     writeMerkle({});
     // Pre-seed the queue with the same path.
@@ -115,7 +115,7 @@ describe('scanDirtyAndEnqueue', () => {
       'utf-8',
     );
 
-    const res = scanDirtyAndEnqueue({ projectRoot: sandbox, stateDir });
+    const res = await scanDirtyAndEnqueue({ projectRoot: sandbox, stateDir });
 
     expect(res.enqueued).toBe(0);
     // Still exactly one entry — not appended twice.
