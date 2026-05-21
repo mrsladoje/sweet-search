@@ -6,6 +6,7 @@
 // Compile: cargo build --release
 
 use std::env;
+use std::fs;
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -13,13 +14,67 @@ use std::process::{self, Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
-const DEFAULT_SOCKET_PATH: &str = "/tmp/sweet-search.sock";
-const SOCKET_PATH_LEGACY: &str = "/tmp/search.sock";
 const BUFFER_SIZE: usize = 16384;
 
-/// Return the socket path from $SWEET_SEARCH_SOCKET_PATH or the default.
+/// FNV-1a 64-bit of a string's UTF-8 bytes → 16 lowercase hex chars.
+/// MUST match core/search/server-identity.js::fnv1a64Hex so the native CLI and
+/// the JS server derive the SAME per-project socket (C3 isolation).
+fn fnv1a64_hex(s: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325; // FNV offset basis
+    for byte in s.as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3); // FNV prime
+    }
+    format!("{hash:016x}")
+}
+
+/// Pure socket derivation: an explicit override wins; otherwise a per-project
+/// hashed path. Kept side-effect-free for unit tests.
+fn derive_socket(explicit_override: Option<&str>, project_root: &str) -> String {
+    match explicit_override {
+        Some(p) if !p.is_empty() => p.to_string(),
+        _ => format!("/tmp/sweet-search-{}.sock", fnv1a64_hex(project_root)),
+    }
+}
+
+/// Canonicalise a path (resolve symlinks, e.g. macOS /tmp → /private/tmp).
+/// Falls back to a lexical absolute path when the path does not exist yet.
+fn canonicalize_path(p: &Path) -> PathBuf {
+    fs::canonicalize(p).unwrap_or_else(|_| {
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            env::current_dir().map(|c| c.join(p)).unwrap_or_else(|_| p.to_path_buf())
+        }
+    })
+}
+
+/// Canonical project root: nearest ancestor of cwd (or $SWEET_SEARCH_PROJECT_ROOT)
+/// holding a `.sweet-search/` state dir, else the canonical base. Mirrors
+/// core/search/server-identity.js::resolveProjectRoot.
+fn resolve_project_root() -> PathBuf {
+    let base = match env::var("SWEET_SEARCH_PROJECT_ROOT") {
+        Ok(v) if !v.is_empty() => canonicalize_path(Path::new(&v)),
+        _ => canonicalize_path(&env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
+    };
+    let mut dir = base.clone();
+    loop {
+        if dir.join(".sweet-search").exists() {
+            return dir;
+        }
+        match dir.parent() {
+            Some(parent) if parent != dir => dir = parent.to_path_buf(),
+            _ => break,
+        }
+    }
+    base
+}
+
+/// Per-project socket path (or the explicit $SWEET_SEARCH_SOCKET_PATH override).
+/// No legacy `/tmp/search.sock` fallback — that was the C3 cross-project leak.
 fn socket_path() -> String {
-    env::var("SWEET_SEARCH_SOCKET_PATH").unwrap_or_else(|_| DEFAULT_SOCKET_PATH.to_string())
+    let ovr = env::var("SWEET_SEARCH_SOCKET_PATH").ok();
+    derive_socket(ovr.as_deref(), &resolve_project_root().to_string_lossy())
 }
 
 // ANSI color codes (matching ss-fast.c)
@@ -190,11 +245,12 @@ fn build_url(opts: &Options) -> String {
 }
 
 fn find_socket() -> Option<String> {
+    // Only this project's socket (explicit override or per-project derived). No
+    // global legacy `/tmp/search.sock` fallback — it routed project B's queries
+    // to project A's server (C3).
     let primary = socket_path();
     if Path::new(&primary).exists() {
         Some(primary)
-    } else if Path::new(SOCKET_PATH_LEGACY).exists() {
-        Some(SOCKET_PATH_LEGACY.to_string())
     } else {
         None
     }
@@ -256,11 +312,15 @@ fn auto_start_server() -> Option<String> {
         None => return None,
     };
 
-    // Spawn server in background.
-    // Inherit env so SWEET_SEARCH_SOCKET_PATH passes through to the Node server.
+    // Spawn server in background. Inherit env (so SWEET_SEARCH_SOCKET_PATH passes
+    // through) and pin SWEET_SEARCH_PROJECT_ROOT to our canonical root so the JS
+    // server derives the SAME per-project socket we'll connect to, and the
+    // maintainer targets the right project (C3 + canonical /tmp vs /private/tmp).
+    let project_root = resolve_project_root();
     let spawn_result = Command::new("node")
         .arg(script)
         .arg("--serve")
+        .env("SWEET_SEARCH_PROJECT_ROOT", &project_root)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -548,5 +608,49 @@ mod tests {
         // The npm sibling location must be among the attempted paths.
         assert!(tried.iter().any(|p| p
             == &PathBuf::from("/proj/node_modules/sweet-search/core/start-server.js")));
+    }
+
+    // --- C3: project-scoped socket derivation -----------------------------
+
+    #[test]
+    fn fnv1a64_matches_known_vectors() {
+        // Canonical FNV-1a/64 of "abc"; the empty string is the offset basis.
+        assert_eq!(fnv1a64_hex(""), "cbf29ce484222325");
+        assert_eq!(fnv1a64_hex("abc"), "e71fa2190541574b");
+    }
+
+    #[test]
+    fn fnv1a64_agrees_with_js_for_project_roots() {
+        // These MUST equal core/search/server-identity.js::fnv1a64Hex output
+        // (see its test) so the native CLI and JS server agree on the socket.
+        assert_eq!(fnv1a64_hex("/private/tmp/projA"), "16fc53080a86469a");
+        assert_eq!(fnv1a64_hex("/private/tmp/projB"), "16fc52080a8644e7");
+    }
+
+    #[test]
+    fn explicit_override_wins_over_derived_socket() {
+        assert_eq!(
+            derive_socket(Some("/tmp/custom.sock"), "/private/tmp/projA"),
+            "/tmp/custom.sock"
+        );
+        // Empty override is ignored (falls back to derived).
+        assert!(derive_socket(Some(""), "/private/tmp/projA").starts_with("/tmp/sweet-search-"));
+    }
+
+    #[test]
+    fn two_projects_get_different_sockets() {
+        let a = derive_socket(None, "/private/tmp/projA");
+        let b = derive_socket(None, "/private/tmp/projB");
+        assert_ne!(a, b);
+        assert_eq!(a, "/tmp/sweet-search-16fc53080a86469a.sock");
+        assert_eq!(b, "/tmp/sweet-search-16fc52080a8644e7.sock");
+    }
+
+    #[test]
+    fn derived_socket_is_stable_for_same_root() {
+        assert_eq!(
+            derive_socket(None, "/private/tmp/projA"),
+            derive_socket(None, "/private/tmp/projA")
+        );
     }
 }

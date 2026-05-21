@@ -13,15 +13,17 @@ import { existsSync } from 'fs';
 import { LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { clearCache } from '../embedding/embedding-cache.js';
 import { launchMaintainer } from '../indexing/maintainer-launcher.mjs';
+import { projectSocketPath, projectPidFile, tcpPort } from './server-identity.js';
 
 // =============================================================================
 // Server constants
 // =============================================================================
 
+// Default TCP port — only bound when the operator opts in via
+// SWEET_SEARCH_TCP_PORT (C3: a single global TCP port collides across projects
+// and leaks queries between them; the per-project Unix socket is the default
+// transport). Exported for back-compat references.
 export const SEARCH_SERVER_PORT = 9876;
-export const SEARCH_SERVER_SOCKET = process.env.SWEET_SEARCH_SOCKET_PATH || '/tmp/sweet-search.sock';
-export const SEARCH_SERVER_SOCKET_LEGACY = '/tmp/search.sock';
-export const SEARCH_SERVER_PIDFILE = '/tmp/sweet-search-server.pid';
 export const SEARCH_SERVER_TIMEOUT_MS = 30_000;
 export const SEARCH_SERVER_MAX_URL_LENGTH = 16_384;
 export const SEARCH_SERVER_MAX_QUERY_LENGTH = 2_000;
@@ -127,6 +129,14 @@ function buildJsonSearchResponse(results, stats, totalTime) {
 
 export async function startServer() {
   const http = await import('http');
+
+  // Per-project server identity (C3). The Unix socket + pidfile are derived from
+  // the canonical project root so each project gets its own server and never
+  // answers another project's queries. TCP is opt-in (off by default) — a single
+  // global TCP port both collides (EADDRINUSE) and leaks across projects.
+  const socketPath = projectSocketPath();
+  const pidFile = projectPidFile();
+  const httpPort = tcpPort();
 
   // Dynamic import to avoid circular dependency
   const { default: SweetSearch } = await import('./sweet-search.js');
@@ -327,13 +337,10 @@ export async function startServer() {
       res.end('Shutting down...\n');
       if (tcpServer) tcpServer.close();
       if (unixServer) unixServer.close();
-      try { await fs.unlink(SEARCH_SERVER_PIDFILE); } catch (err) {
+      try { await fs.unlink(pidFile); } catch (err) {
         if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
       }
-      try { await fs.unlink(SEARCH_SERVER_SOCKET); } catch (err) {
-        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
-      }
-      try { await fs.unlink(SEARCH_SERVER_SOCKET_LEGACY); } catch (err) {
+      try { await fs.unlink(socketPath); } catch (err) {
         if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
       }
       process.exit(0);
@@ -343,20 +350,29 @@ export async function startServer() {
     }
   };
 
-  // TCP server (port 9876) - backward compatible
-  tcpServer = http.createServer(handleRequest);
-  tcpServer.setTimeout(SEARCH_SERVER_TIMEOUT_MS);
-  if ('requestTimeout' in tcpServer) tcpServer.requestTimeout = SEARCH_SERVER_TIMEOUT_MS;
-  if ('headersTimeout' in tcpServer) tcpServer.headersTimeout = SEARCH_SERVER_TIMEOUT_MS + 5_000;
-  tcpServer.listen(SEARCH_SERVER_PORT);
-  console.log(`[Server] TCP listening on http://localhost:${SEARCH_SERVER_PORT}`);
+  // TCP server — opt-in only (SWEET_SEARCH_TCP_PORT). Bound non-fatally so a
+  // port already in use never crashes the server (C3: it used to be bound
+  // unconditionally on 9876 and a second project's server died on EADDRINUSE).
+  if (httpPort != null) {
+    tcpServer = http.createServer(handleRequest);
+    tcpServer.setTimeout(SEARCH_SERVER_TIMEOUT_MS);
+    if ('requestTimeout' in tcpServer) tcpServer.requestTimeout = SEARCH_SERVER_TIMEOUT_MS;
+    if ('headersTimeout' in tcpServer) tcpServer.headersTimeout = SEARCH_SERVER_TIMEOUT_MS + 5_000;
+    tcpServer.on('error', (err) => {
+      console.error(`[Server] TCP bind on ${httpPort} failed (continuing on Unix socket): ${err?.code || err?.message || err}`);
+      try { tcpServer.close(); } catch { /* ignore */ }
+      tcpServer = null;
+    });
+    tcpServer.listen(httpPort, '127.0.0.1');
+    console.log(`[Server] TCP listening on http://127.0.0.1:${httpPort}`);
+  }
 
-  // Unix socket server (/tmp/sweet-search.sock) - 30-50% faster
+  // Unix socket server (per-project) - primary transport, 30-50% faster than TCP
   unixServer = http.createServer(handleRequest);
   unixServer.setTimeout(SEARCH_SERVER_TIMEOUT_MS);
   if ('requestTimeout' in unixServer) unixServer.requestTimeout = SEARCH_SERVER_TIMEOUT_MS;
   if ('headersTimeout' in unixServer) unixServer.headersTimeout = SEARCH_SERVER_TIMEOUT_MS + 5_000;
-  try { await fs.unlink(SEARCH_SERVER_SOCKET); } catch (err) {
+  try { await fs.unlink(socketPath); } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   } // Remove stale socket
   // Set restrictive umask while the socket file is created.
@@ -373,25 +389,17 @@ export async function startServer() {
       };
       unixServer.once('listening', onListening);
       unixServer.once('error', onError);
-      unixServer.listen(SEARCH_SERVER_SOCKET);
+      unixServer.listen(socketPath);
     });
   } finally {
     process.umask(prevUmask);
   }
   // Belt-and-suspenders: also chmod explicitly in case umask was ineffective.
-  try { (await import('node:fs')).chmodSync(SEARCH_SERVER_SOCKET, 0o700); } catch (err) {
+  try { (await import('node:fs')).chmodSync(socketPath, 0o700); } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   }
-  console.log(`[Server] Unix socket listening on ${SEARCH_SERVER_SOCKET}`);
-  console.log(`[Server] Fast access: curl --unix-socket ${SEARCH_SERVER_SOCKET} "http://localhost/search?q=query"`);
-
-  // Legacy socket symlink for backward compatibility (/tmp/search.sock -> /tmp/sweet-search.sock)
-  try { await fs.unlink(SEARCH_SERVER_SOCKET_LEGACY); } catch (err) {
-    if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
-  }
-  try { await fs.symlink(SEARCH_SERVER_SOCKET, SEARCH_SERVER_SOCKET_LEGACY); } catch (err) {
-    if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
-  }
+  console.log(`[Server] Unix socket listening on ${socketPath}`);
+  console.log(`[Server] Fast access: curl --unix-socket ${socketPath} "http://localhost/search?q=query"`);
 
   console.log('[Server] Initializing indexes (one-time cost)...');
   (async () => {
@@ -399,7 +407,7 @@ export async function startServer() {
       await searcher.init();
       initTimeMs = Date.now() - initStartedAt;
       serverReady = true;
-      await fs.writeFile(SEARCH_SERVER_PIDFILE, process.pid.toString(), { mode: 0o644 });
+      await fs.writeFile(pidFile, process.pid.toString(), { mode: 0o644 });
       console.log(`[Server] Indexes loaded in ${initTimeMs}ms`);
     } catch (err) {
       initError = err;
@@ -428,16 +436,13 @@ export async function startServer() {
   // Handle graceful shutdown
   process.on('SIGINT', async () => {
     console.log('\n[Server] Shutting down...');
-    tcpServer.close();
+    if (tcpServer) tcpServer.close();
     unixServer.close();
     searcher.close();
-    try { await fs.unlink(SEARCH_SERVER_PIDFILE); } catch (err) {
+    try { await fs.unlink(pidFile); } catch (err) {
       if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
     }
-    try { await fs.unlink(SEARCH_SERVER_SOCKET); } catch (err) {
-      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
-    }
-    try { await fs.unlink(SEARCH_SERVER_SOCKET_LEGACY); } catch (err) {
+    try { await fs.unlink(socketPath); } catch (err) {
       if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
     }
     process.exit(0);
@@ -495,9 +500,12 @@ export async function queryServer(query, options = {}) {
     if (format && format.startsWith('agent')) params.set('format', format);
     if (tokenBudget) params.set('budget', tokenBudget.toString());
 
-    const url = `http://localhost:${SEARCH_SERVER_PORT}/search?${params.toString()}`;
-
-    http.get(url, (res) => {
+    // Per-project Unix socket (C3) — the canonical local transport.
+    const req = http.request({
+      socketPath: projectSocketPath(),
+      path: `/search?${params.toString()}`,
+      method: 'GET',
+    }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
@@ -507,7 +515,9 @@ export async function queryServer(query, options = {}) {
           reject(new Error('Invalid server response'));
         }
       });
-    }).on('error', reject);
+    });
+    req.on('error', reject);
+    req.end();
   });
 }
 
@@ -523,7 +533,7 @@ export async function getServerHealth({ timeoutMs = 1000 } = {}) {
   try {
     const http = await import('http');
     return await new Promise((resolve) => {
-      const req = http.get(`http://localhost:${SEARCH_SERVER_PORT}/health`, (res) => {
+      const req = http.request({ socketPath: projectSocketPath(), path: '/health', method: 'GET' }, (res) => {
         let payload = '';
         res.on('data', chunk => { payload += chunk; });
         res.on('end', () => {
@@ -534,6 +544,7 @@ export async function getServerHealth({ timeoutMs = 1000 } = {}) {
       });
       req.on('error', () => resolve(null));
       req.setTimeout(timeoutMs, () => { req.destroy(); resolve(null); });
+      req.end();
     });
   } catch {
     return null;
@@ -551,7 +562,7 @@ export async function stopServer({ timeoutMs = 5000 } = {}) {
     const http = await import('http');
     return await new Promise((resolve) => {
       const req = http.request({
-        socketPath: SEARCH_SERVER_SOCKET, path: '/stop', method: 'GET',
+        socketPath: projectSocketPath(), path: '/stop', method: 'GET',
       }, (res) => {
         res.on('data', () => {});
         res.on('end', () => resolve(true));
@@ -646,7 +657,7 @@ export async function isServerRunning() {
   try {
     const http = await import('http');
     return new Promise((resolve) => {
-      const req = http.get(`http://localhost:${SEARCH_SERVER_PORT}/health`, (res) => {
+      const req = http.request({ socketPath: projectSocketPath(), path: '/health', method: 'GET' }, (res) => {
         let payload = '';
         res.on('data', chunk => { payload += chunk; });
         res.on('end', () => {
@@ -664,6 +675,7 @@ export async function isServerRunning() {
       });
       req.on('error', () => resolve(false));
       req.setTimeout(500, () => { req.destroy(); resolve(false); });
+      req.end();
     });
   } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
