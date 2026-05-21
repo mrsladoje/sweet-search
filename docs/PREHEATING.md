@@ -6,6 +6,34 @@ Session preheating eliminates cold-start latency by warming caches, TLS connecti
 
 ## Daemon launch (current mechanism)
 
+### Startup layers — what actually guarantees freshness
+
+Default-on incremental indexing must not depend on any one editor's hooks. There
+are three layers that can start the maintainer, all routing through one shared,
+idempotent launcher (`core/indexing/maintainer-launcher.mjs`):
+
+1. **Core warm search-server first-use — the durable guarantee.** Every normal
+   `sweet-search` use goes through the warm search server (the native CLI
+   auto-starts it on first query via `auto_start_server()`). `startServer()`
+   calls the shared launcher once at startup, so the default-on reconcile
+   maintainer starts on first use **regardless of Claude / Codex / MCP**. This is
+   the layer you can rely on. It starts the daemon detached and returns — it does
+   **not** run a blocking reconcile tick (the maintainer runs its own first tick
+   at t=0 in its own process; blocking the first query on indexing would add
+   latency and risk flakiness).
+2. **Claude / Codex SessionStart hooks — best-effort prewarm/convenience.** They
+   call the same launcher so the maintainer is already warming while you read the
+   first reply. They are *not* the hard guarantee: Codex hooks are interactive
+   only, require `[features] hooks = true` + `/hooks` trust, and **`codex exec`
+   does not fire SessionStart**. See "Codex CLI" below.
+3. **MCP server startup — optional.** If (and only if) MCP is enabled/configured,
+   its startup calls the same launcher too. MCP is never installed or required
+   for incremental indexing.
+
+All three are idempotent and lock-guarded: the maintainer's own `O_EXCL`
+`index-maintainer.lock` is the hard no-duplicate guarantee, so calling the
+launcher from several layers (or repeatedly) never starts a second maintainer.
+
 > **Status (2026-05)**: the `session-preheat.sh` bash wrapper described in the
 > sections below was replaced by a single Node SessionStart hook,
 > `core/search/session-daemon-prewarm.mjs`. References to `session-preheat.sh`,
@@ -39,7 +67,9 @@ store, HNSW / binary-HNSW, late-interaction segments, the sparse-gram index, and
 the code graph. As of 2026-05 it is **on by default** — a retrieval index that
 silently goes stale is worse than useless for agents.
 
-The prewarm hook spawns it detached unless any of these hold:
+All three startup layers above call the one shared launcher
+(`core/indexing/maintainer-launcher.mjs` → `launchMaintainer()`), which spawns it
+detached unless any of these hold:
 
 - **Opt-out** — `SWEET_SEARCH_RECONCILE_V2` is `0`, `false`, or `off`.
 - **No index yet** — the project has no `.sweet-search/` state dir (nothing to
@@ -47,10 +77,12 @@ The prewarm hook spawns it detached unless any of these hold:
 - **Already running** — a live `index-maintainer.lock` is held in the state dir.
 - **Entry missing** — the maintainer module isn't present.
 
-The hook pins `SWEET_SEARCH_PROJECT_ROOT` to the session cwd so the package copy
-targets the right project (its `PROJECT_ROOT` would otherwise resolve to the
-package root). Single-instance is guaranteed two ways: the hook skips when a live
-lock exists, and the daemon itself takes an `O_EXCL` `index-maintainer.lock` on
+The launcher pins `SWEET_SEARCH_PROJECT_ROOT` to the resolved project root so the
+package copy targets the right project (its `PROJECT_ROOT` would otherwise
+resolve to the package root). It is stdout-clean (stderr only, and only when
+verbose) so machine-readable commands stay parseable, and it returns fast.
+Single-instance is guaranteed two ways: the launcher skips when a live lock
+exists, and the daemon itself takes an `O_EXCL` `index-maintainer.lock` on
 startup — a second maintainer for the same state dir exits immediately
 ("Another reconcile v2 maintainer is running").
 
@@ -111,29 +143,35 @@ is left in place (harmless, possibly shared).
 **To actually run the hook, you must do two things init cannot do for you:**
 
 1. **Enable hooks.** Set `[features] hooks = true` in `config.toml` (init does
-   this in the project file by default), or start Codex with `codex --enable
-   hooks`. If your Codex only honors the user-level flag, re-run init with
-   `--codex-enable-global-hooks` (writes `~/.codex/config.toml`).
+   this in the project file by default), or start Codex with
+   `codex --enable hooks`. If your Codex only honors the user-level flag, re-run
+   init with `--codex-enable-global-hooks` (writes `~/.codex/config.toml`).
 2. **Review/trust repo-local hooks.** Run `/hooks` inside Codex to review and
    trust the project's `.codex/hooks.json` before Codex will run it.
 
-> **Status: experimental / best-effort.** Codex hooks are themselves marked
-> EXPERIMENTAL (`features.hooks`, available since ~v0.114; the flag was briefly
-> named `codex_hooks` and is now deprecated in favor of `hooks` as of v0.132).
-> There is also an **open upstream report (openai/codex#17532)** that repo-local
-> hook config may not fire in interactive sessions on some versions. This wiring
-> is verified at the file/schema level (unit tests) and matches the documented
-> hook shape, but has **not** been validated firing inside a live Codex session.
-> If it doesn't fire: confirm `[features] hooks = true` is honored (try the
-> user-level flag / `codex --enable hooks`), trust the project with `/hooks`,
-> check that issue, or fall back to starting the maintainer manually:
-> `node <pkg>/core/indexing/index-maintainer.mjs` with `SWEET_SEARCH_PROJECT_ROOT`
-> set to the project.
+> **Status: best-effort convenience layer — NOT the freshness guarantee.** Live
+> validation against Codex CLI **v0.132** found the Codex hook path too fragile to
+> rely on:
+> - `hooks` is a **stable** feature in 0.132 (`codex features list` → `hooks
+>   stable true`); the older `codex_hooks` is deprecated and warns.
+> - Hook **trust is persisted** in `~/.codex/config.toml` under `[hooks.state]`,
+>   keyed by the hooks.json **absolute path + content hash** — so editing the
+>   hook (e.g. re-running init) invalidates trust and re-requires `/hooks`.
+> - **`codex exec` (non-interactive) does NOT fire SessionStart hooks** — a
+>   `--json` run emits no `session_start` event. SessionStart is interactive-only.
+> - Interactive firing additionally needs `/hooks` review/trust (or the
+>   per-invocation `--dangerously-bypass-hook-trust`).
+>
+> Because of all that, **the maintainer's freshness guarantee does not live in
+> Codex hooks** — it lives in the core warm search-server first-use startup (see
+> "Startup layers" above), which runs regardless of editor. The Codex hook is
+> kept only as an extra prewarm convenience for interactive Codex sessions.
 
-Independent of all the above, the native `sweet-search` CLI still auto-starts the
-*search server* on first query (via the Rust CLI's `auto_start_server()`), so
-search works under any agent — only the incremental **maintainer** needs the hook
-(or a manual start / an open Claude Code session on the same project).
+Independent of all the above, the native `sweet-search` CLI auto-starts the
+*search server* on first query (via the Rust CLI's `auto_start_server()`), and
+that server startup now also starts the default-on maintainer through the shared
+launcher — so under **any** agent (Codex included), normal search use keeps the
+index fresh without depending on hooks or MCP.
 
 ## Architecture
 
