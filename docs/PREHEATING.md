@@ -82,13 +82,54 @@ wallclock, CPU pressure, and maintenance backlog, and never overlaps ticks.
   escalating to SIGKILL after a short grace) and clears its lock, alongside
   stopping the search daemon.
 
-> **Non–Claude-Code environments**: the auto-launch is a Claude Code SessionStart
-> hook. Other agents/CLIs (e.g. Codex) do not trigger `.claude/settings.json`
-> hooks, so they will not auto-start the maintainer. The native `sweet-search`
-> CLI still auto-starts the *search server* on first query, but not the
-> maintainer — start it manually (`node <pkg>/core/indexing/index-maintainer.mjs`
-> with `SWEET_SEARCH_PROJECT_ROOT` set to the project) or keep a Claude Code
-> session open.
+### Codex CLI (`--codex`)
+
+The auto-launch above is a **Claude Code** SessionStart hook (`.claude/settings.json`).
+Other agents don't read that file. For the OpenAI Codex CLI, `sweet-search init
+--codex` wires the equivalent, reusing the same `session-daemon-prewarm.mjs`
+launcher (it's harness-agnostic — reads only env/cwd, writes nothing to stdout):
+
+- **`.codex/hooks.json`** — a `SessionStart` hook (`matcher: "startup|resume"`)
+  whose command is git-root anchored:
+  `cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node <relpath>`.
+  Codex runs hook commands with the *session* cwd (which may be a subdirectory),
+  so a bare relative path is unreliable — anchoring to the git root fixes both
+  path resolution and the launcher's own project-root detection without writing
+  a machine-specific absolute path into the (often committed) file.
+- **`[features] codex_hooks = true`** in the project `.codex/config.toml` — added
+  via a comment-preserving, append-if-absent edit (no TOML round-trip). With
+  `--codex-enable-global-hooks` the same flag is also enabled in the user-level
+  `~/.codex/config.toml`.
+- **`AGENTS.md`** — `--codex` implies `--agents` (Codex's instruction file).
+
+`uninstall` removes the sweet-search-owned `SessionStart` entry from
+`.codex/hooks.json` (deleting the file if it was the only entry); the config-flag
+is left in place (harmless, possibly shared).
+
+> **Status: experimental / best-effort.** Codex hooks are themselves marked
+> EXPERIMENTAL (`features.codex_hooks`, ~v0.114+). Two things `init` cannot
+> guarantee:
+> 1. **The feature flag may need to be user-global.** We set it project-locally
+>    by default; depending on the Codex version (the key name also drifted
+>    `hooks` → `codex_hooks`) you may need it in `~/.codex/config.toml` —
+>    re-run with `--codex-enable-global-hooks`, or pass `codex -c
+>    features.codex_hooks=true`.
+> 2. **Project trust.** Codex only loads repo-local `.codex/` hooks once the
+>    project is trusted.
+>
+> There is also an **open upstream report (openai/codex#17532)** that repo-local
+> hook config may not fire in interactive sessions on some versions. This wiring
+> has been verified at the file/schema level (unit tests) and matches the
+> documented hook shape, but has **not** been validated firing inside a live
+> Codex session. If it doesn't fire, verify the flag + trust, check that issue,
+> or fall back to starting the maintainer manually:
+> `node <pkg>/core/indexing/index-maintainer.mjs` with `SWEET_SEARCH_PROJECT_ROOT`
+> set to the project.
+
+Independent of all the above, the native `sweet-search` CLI still auto-starts the
+*search server* on first query (via the Rust CLI's `auto_start_server()`), so
+search works under any agent — only the incremental **maintainer** needs the hook
+(or a manual start / an open Claude Code session on the same project).
 
 ## Architecture
 

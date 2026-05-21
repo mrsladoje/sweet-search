@@ -68,12 +68,18 @@ describe('registerCodexSessionStartHook', () => {
 
     const doc = readHooks();
     expect(doc.hooks.SessionStart).toHaveLength(1);
-    const handler = doc.hooks.SessionStart[0].hooks[0];
+    const group = doc.hooks.SessionStart[0];
+    // Matcher mirrors the official Codex SessionStart example (start/resume).
+    expect(group.matcher).toBe('startup|resume');
+    const handler = group.hooks[0];
     expect(handler.type).toBe('command');
     expect(handler.command).toContain(PREWARM_HOOK_FILENAME);
-    expect(handler.command.startsWith('node ')).toBe(true);
     expect(typeof handler.timeout).toBe('number');
-    // Filename alone is the marker — no shell-comment trick.
+    // Resolves from the git root (not a bare relative path) per the Codex
+    // docs, and invokes node.
+    expect(handler.command).toContain('git rev-parse --show-toplevel');
+    expect(handler.command).toContain('node ');
+    // No shell-comment marker trick.
     expect(handler.command).not.toContain('#');
   });
 

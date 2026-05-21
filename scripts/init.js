@@ -992,7 +992,14 @@ export function registerCodexSessionStartHook({ projectRoot, packageRoot, skippe
     };
   }
 
-  const command = `node ${hookPath}`;
+  // Codex runs hook commands with the *session* cwd, and per its hooks docs a
+  // session "may be started from a subdirectory", so a bare relative path is
+  // unreliable — the docs explicitly recommend resolving from the git root.
+  // We `cd` to the git toplevel first (falling back to the current dir outside
+  // a repo), which fixes both path resolution AND the launcher's own
+  // `process.cwd()` project-root detection, while staying machine-portable
+  // (no absolute path is written into the often-committed hooks.json).
+  const command = `cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node ${JSON.stringify(hookPath)}`;
   const codexDir = join(projectRoot, '.codex');
   const hooksPath = join(codexDir, CODEX_HOOKS_FILENAME);
 
@@ -1008,9 +1015,12 @@ export function registerCodexSessionStartHook({ projectRoot, packageRoot, skippe
   doc.hooks = doc.hooks || {};
   const sessionStart = Array.isArray(doc.hooks.SessionStart) ? doc.hooks.SessionStart : [];
 
-  // Codex `timeout` is in seconds (cf. its hooks docs); the launcher detaches
-  // and returns in well under a second, so a small budget is plenty.
+  // `matcher` mirrors the official Codex SessionStart example: fire on a new
+  // session and on resume (the cases where the daemon may not be running yet).
+  // `timeout` is in seconds (per Codex's hooks docs); the launcher detaches and
+  // returns in well under a second, so a small budget is plenty.
   const entry = {
+    matcher: 'startup|resume',
     hooks: [
       {
         type: 'command',
