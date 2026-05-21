@@ -11,7 +11,7 @@ import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import { annotateChunksForDelta, snapshotFileRows, diffChunks, applyDiff } from '../infrastructure/vector-delta-writer.mjs';
 import { appendDeltaRecord, FALLBACK_WEIGHTS_ID, fileIdFor, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
 import { fts5Merge } from '../infrastructure/sqlite-fts5.mjs';
-import { insertEntity, insertRelationships, markBinaryStale } from './production-reconciler-helpers.mjs';
+import { insertEntity, insertRelationships, markBinaryStale, maintainFloatStore } from './production-reconciler-helpers.mjs';
 import { createGraphSchema, GraphExtractor } from '../../graph/graph-extractor.js';
 import { createVectorSchema, ensureVectorSchema, buildInsertItems, insertVectorItems } from '../../indexing/indexer-build.js';
 import { ASTChunker, JAVA_FAMILY } from '../../indexing/ast-chunker.js';
@@ -409,16 +409,24 @@ class ProductionReconcileAdapter {
     const indexPath = path.join(this.stateDir, 'codebase-binary-hnsw.idx');
     const index = new BinaryHNSWIndex({ indexPath, stalePath: `${indexPath}.stale.bin`, floatDimension: this.modelInfo.hnswDimension });
     try { await index.load(indexPath); } catch { await index.init(); }
+    const binaryVectorsBefore = index.idToIndex?.size ?? 0;
     let append = 0; let tombstone = 0;
+    const floatUpserts = [];
+    const floatRemoveIds = [];
     for (const op of ops) {
-      if (op.retireId && markBinaryStale(index, op.retireId)) tombstone += 1;
+      if (op.retireId) {
+        if (markBinaryStale(index, op.retireId)) tombstone += 1;
+        floatRemoveIds.push(op.retireId);
+      }
       if (op.addId && op.embedding) {
         const truncated = truncateForHNSW(op.embedding, this.modelInfo.hnswDimension);
         await index.add(op.addId, floatToBinary(truncated), op.metadata || {}, normalizedFloatToInt8(truncated));
+        floatUpserts.push({ id: op.addId, vector: truncated });
         append += 1;
       }
     }
     await index.save(indexPath);
+    await maintainFloatStore(indexPath, { upserts: floatUpserts, removeIds: floatRemoveIds, binaryVectorsBefore, dimension: this.modelInfo.hnswDimension });
     return { ops: { binary_hnsw_append: append, binary_hnsw_tombstone: tombstone }, manifest: { path: 'codebase-binary-hnsw.idx' } };
   }
 

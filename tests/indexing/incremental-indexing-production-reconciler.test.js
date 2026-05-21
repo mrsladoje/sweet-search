@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
 import { resolveLatestRecords } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
+import { FloatVectorStore } from '../../core/vector-store/float-vector-store.js';
 
 const MODEL_INFO = Object.freeze({
   provider: 'test',
@@ -111,6 +112,19 @@ function binaryArtifacts(stateDir) {
   };
 }
 
+async function floatStore(stateDir) {
+  const store = new FloatVectorStore();
+  const binPath = join(stateDir, 'codebase-float-vectors.bin');
+  const loaded = await store.load(binPath);
+  return { loaded, store };
+}
+
+async function floatStoreIds(stateDir) {
+  const { loaded, store } = await floatStore(stateDir);
+  if (!loaded) return null;
+  return new Set(store.idToIndex.keys());
+}
+
 async function liDocumentIds(stateDir) {
   const index = new LateInteractionIndex({
     indexPath: join(stateDir, 'codebase-late-interaction.db'),
@@ -204,6 +218,13 @@ describe('production incremental Reconciler', () => {
     expect(new Set(binaryArtifacts(stateDir).vectors.map((row) => row.id))).toEqual(new Set(live1.map((row) => row.id)));
     expect(new Set(Object.keys(binaryArtifacts(stateDir).int8))).toEqual(new Set(live1.map((row) => row.id)));
     expect(await liDocumentIds(stateDir)).toEqual(new Set(live1.map((row) => row.id)));
+    // Stage 2.5 float store: an empty baseline grows into a real float store
+    // (not just the SQLite fallback) and its id-set matches the live rows.
+    const float1 = await floatStore(stateDir);
+    expect(float1.loaded).toBe(true);
+    expect(float1.store.dimension).toBe(MODEL_INFO.hnswDimension);
+    expect(new Set(float1.store.idToIndex.keys())).toEqual(new Set(live1.map((row) => row.id)));
+    expect(float1.store.get(live1[0].id)).toHaveLength(MODEL_INFO.hnswDimension);
     expect(readJson(join(stateDir, 'codebase-late-interaction.db'))).toMatchObject({
       format: 'segmented',
       segmentDir: 'codebase-late-interaction.db.segments',
@@ -253,6 +274,9 @@ describe('production incremental Reconciler', () => {
     expect(existsSync(join(stateDir, 'codebase-binary-hnsw.idx.stale.bin'))).toBe(true);
     expect(hnswLiveIds(stateDir)).toEqual(new Set(live2.map((row) => row.id)));
     expect(await liDocumentIds(stateDir)).toEqual(new Set(live2.map((row) => row.id)));
+    // Modify: float store replaces retired vectors with the new ones — id-set
+    // tracks the live rows exactly, leaving no stale/duplicate vectors behind.
+    expect(await floatStoreIds(stateDir)).toEqual(new Set(live2.map((row) => row.id)));
     expect(existsSync(join(stateDir, 'codebase-late-interaction.db.segments', 'segment-0000.bin.stale.bin'))).toBe(true);
     expect(sparseLatest(stateDir)).toMatchObject({ filePath: 'src/sample.js', deleted: false });
 
@@ -265,10 +289,55 @@ describe('production incremental Reconciler', () => {
     expect(graphRows(stateDir).entities.filter((row) => row.epoch_retired == null)).toEqual([]);
     expect(hnswLiveIds(stateDir).size).toBe(0);
     expect(Object.keys(binaryArtifacts(stateDir).int8)).toEqual([]);
+    // Delete: the float store empties out so semantic search cannot rescore a
+    // retired doc. The store stays valid/loadable at zero entries.
+    expect((await floatStoreIds(stateDir)).size).toBe(0);
     expect((await liDocumentIds(stateDir)).size).toBe(0);
     expect(existsSync(join(stateDir, 'codebase-late-interaction.db.segments', 'segment-0001.bin.stale.bin'))).toBe(true);
     expect(sparseLatest(stateDir)).toMatchObject({ filePath: 'src/sample.js', deleted: true });
     expect(readJson(join(stateDir, 'merkle-state.json')).files['src/sample.js']).toBeUndefined();
     expect(readdirSync(stateDir)).toContain('reconcile-metrics.jsonl');
+  });
+
+  it('appends a new file onto an existing float store without dropping prior docs', async () => {
+    writeFileSync(sourceFile, [
+      'export function alphaThing(input) {',
+      '  return input.trim();',
+      '}',
+      '',
+    ].join('\n'));
+    enqueue(stateDir, 'src/sample.js');
+    const first = await tick();
+    expect(first.files_processed).toBe(1);
+
+    const live1 = vectorRows(stateDir).filter((row) => row.epoch_retired == null);
+    const float1Ids = await floatStoreIds(stateDir);
+    expect(float1Ids).toEqual(new Set(live1.map((row) => row.id)));
+
+    // Non-empty baseline: add a SECOND file. The float store must keep the
+    // first file's vectors and gain the second's — never replace wholesale.
+    const secondFile = join(projectRoot, 'src', 'other.js');
+    writeFileSync(secondFile, [
+      'export function betaThing(value) {',
+      '  return value * 2;',
+      '}',
+      '',
+    ].join('\n'));
+    enqueue(stateDir, 'src/other.js');
+    const second = await tick();
+    expect(second.epoch).toBe(2);
+    expect(second.ops_per_tier.binary_hnsw_append).toBeGreaterThan(0);
+
+    const live2 = vectorRows(stateDir).filter((row) => row.epoch_retired == null);
+    const live2Ids = new Set(live2.map((row) => row.id));
+    const float2Ids = await floatStoreIds(stateDir);
+
+    // Float store id-set equals the binary HNSW id-set equals the live rows,
+    // and it is a strict superset of the first file's ids.
+    expect(float2Ids).toEqual(live2Ids);
+    expect(new Set(binaryArtifacts(stateDir).vectors.map((row) => row.id))).toEqual(live2Ids);
+    for (const id of float1Ids) expect(float2Ids.has(id)).toBe(true);
+    expect(live2.some((row) => row.file_path === 'src/sample.js')).toBe(true);
+    expect(live2.some((row) => row.file_path === 'src/other.js')).toBe(true);
   });
 });
