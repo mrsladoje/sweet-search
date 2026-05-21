@@ -8,6 +8,7 @@ import { dirname } from 'node:path';
 import { DB_PATHS } from '../infrastructure/config/index.js';
 import { StructuralContextBuilder, formatStructuralContext } from '../graph/structural-context.js';
 import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
+import { emitToolIdentityAuto } from './cli-decoration.js';
 
 function parseArgs(args) {
   const opts = {
@@ -17,6 +18,8 @@ function parseArgs(args) {
     tokenBudget: null,
     maxDepth: 3,
     json: false,
+    plain: false,
+    noBanner: false,
   };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -30,6 +33,16 @@ function parseArgs(args) {
       opts.maxDepth = Number.parseInt(args[++i], 10);
     } else if (arg === '--json') {
       opts.json = true;
+    } else if (arg === '--no-banner') {
+      opts.noBanner = true;
+    } else if (arg === '--format' && args[i + 1]) {
+      const v = args[++i];
+      if (v === 'json') opts.json = true;
+      else if (v === 'plain') opts.plain = true;
+    } else if (arg.startsWith('--format=')) {
+      const v = arg.slice('--format='.length);
+      if (v === 'json') opts.json = true;
+      else if (v === 'plain') opts.plain = true;
     } else if (arg === '--help' || arg === '-h') {
       opts.help = true;
     } else if (!arg.startsWith('-') && !opts.symbol) {
@@ -72,6 +85,8 @@ Options:
   --depth <n>       Impact depth, 1-4 (default: 3)
   --budget <n>      Token budget, 1000-16000 (default: adaptive 4k/8k/12k)
   --json            Output structured JSON
+  --format <fmt>    plain (no banner) or json
+  --no-banner       Suppress the identity line
 
 Examples:
   sweet-search trace processOrder
@@ -81,8 +96,12 @@ Examples:
   }
 
   const result = traceSymbol(opts.symbol, opts);
-  if (opts.json) console.log(JSON.stringify(result, null, 2));
-  else console.log(formatStructuralContext(result));
+  if (opts.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  emitToolIdentityAuto('trace', opts.symbol, { plain: opts.plain, noBanner: opts.noBanner });
+  console.log(formatStructuralContext(result));
 }
 
 export { formatStructuralContext };

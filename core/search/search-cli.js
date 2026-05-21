@@ -1,8 +1,9 @@
 /**
  * Search CLI Module
  *
- * Extracted from sweet-search.js (SOLID refactor).
- * Contains all CLI/terminal code: styling, pixel art, argument parsing, runCli.
+ * Extracted from sweet-search.js (SOLID refactor). Argument parsing + runCli.
+ * Decoration rendering lives in cli-decoration.js; the where-to-emit decision
+ * lives in output-policy.js.
  *
  * IMPORTANT: Uses dynamic import() for sweet-search.js and search-server.js
  * references to avoid circular dependencies.
@@ -17,177 +18,8 @@ import {
   formatSummaryFirst,
   formatMiddleRes,
 } from './search-format.js';
-
-// =============================================================================
-// CLI STYLING (ANSI truecolor w/ fallback)
-// =============================================================================
-
-export const STYLE = (() => {
-  // 5 shades of dark blue (edge -> center)
-  const colors = {
-    darkest:       { r: 6,   g: 10,  b: 31  },
-    darker:        { r: 10,  g: 17,  b: 52  },
-    dark:          { r: 14,  g: 24,  b: 73  },
-    lightDark:     { r: 18,  g: 32,  b: 95  },
-    lightestDark:  { r: 22,  g: 40,  b: 116 },
-    border:        { r: 90,  g: 115, b: 220 },
-    white:         { r: 255, g: 255, b: 255 },
-  };
-
-  const reset = '\x1b[0m';
-  const bold = '\x1b[1m';
-
-  const lerp = (c1, c2, t) => ({
-    r: Math.round(c1.r + (c2.r - c1.r) * t),
-    g: Math.round(c1.g + (c2.g - c1.g) * t),
-    b: Math.round(c1.b + (c2.b - c1.b) * t),
-  });
-
-  // Convert RGB to xterm-256 color code (fallback for terminals without truecolor)
-  const rgbToAnsi256 = (r, g, b) => {
-    // Grayscale range
-    if (r === g && g === b) {
-      if (r < 8) return 16;
-      if (r > 248) return 231;
-      return Math.round(((r - 8) / 247) * 24) + 232;
-    }
-
-    const to6 = (v) => Math.round((v / 255) * 5);
-    const rr = to6(r);
-    const gg = to6(g);
-    const bb = to6(b);
-    return 16 + (36 * rr) + (6 * gg) + bb;
-  };
-
-  const fg24 = (c) => `\x1b[38;2;${c.r};${c.g};${c.b}m`;
-  const bg24 = (c) => `\x1b[48;2;${c.r};${c.g};${c.b}m`;
-
-  const fg256 = (c) => `\x1b[38;5;${rgbToAnsi256(c.r, c.g, c.b)}m`;
-  const bg256 = (c) => `\x1b[48;5;${rgbToAnsi256(c.r, c.g, c.b)}m`;
-
-  const detectColorMode = () => {
-    const forced = (process.env.SWEET_SEARCH_COLOR_MODE || process.env.SMART_SEARCH_COLOR_MODE || '').trim().toLowerCase();
-    if (forced === 'none' || forced === '0' || forced === 'off') return 'none';
-    if (forced === '256' || forced === 'ansi256' || forced === 'xterm256') return 'ansi256';
-    if (forced === 'truecolor' || forced === '24bit' || forced === 'rgb') return 'truecolor';
-
-    if (process.env.NO_COLOR) return 'none';
-
-    const colorterm = process.env.COLORTERM || '';
-    if (/truecolor|24bit/i.test(colorterm)) return 'truecolor';
-
-    // Windows Terminal + VS Code terminals are typically truecolor-capable.
-    if (process.env.WT_SESSION || process.env.TERM_PROGRAM === 'vscode') return 'truecolor';
-
-    const term = process.env.TERM || '';
-    if (/256color/i.test(term)) return 'ansi256';
-
-    return 'none';
-  };
-
-  const colorMode = detectColorMode(); // 'truecolor' | 'ansi256' | 'none'
-  const fg = colorMode === 'truecolor' ? fg24 : colorMode === 'ansi256' ? fg256 : () => '';
-  const bg = colorMode === 'truecolor' ? bg24 : colorMode === 'ansi256' ? bg256 : () => '';
-
-  const headerStyleEnv = (process.env.SWEET_SEARCH_HEADER_STYLE || process.env.SMART_SEARCH_HEADER_STYLE || '').trim().toLowerCase();
-  const headerStyle =
-    headerStyleEnv === 'zones' || headerStyleEnv === 'gradient'
-      ? headerStyleEnv
-      : (colorMode === 'truecolor' ? 'gradient' : 'zones');
-
-  return {
-    colors,
-    fg,
-    bg,
-    reset: colorMode === 'none' ? '' : reset,
-    bold: colorMode === 'none' ? '' : bold,
-    lerp,
-    colorMode,
-    headerStyle,
-  };
-})();
-
-// 2-line pixel art using half-blocks - SWEET SEARCH
-const SWEET_SEARCH_L1 = '█▀▀ █ █ █ █▀▀ █▀▀ ▀█▀  █▀▀ █▀▀ ▄▀▄ █▀▄ █▀▀ █▄█';
-const SWEET_SEARCH_L2 = '▄▄█ ▀▄█▄▀ ██▄ ██▄  █   ▄▄█ ██▄ █▀█ ██▄ █▄▄ █▀█';
-
-/**
- * Print styled header - 2-line pixel art with query on right = 2 content lines.
- */
-export function printStyledHeader(query) {
-  const width = Math.min(process.stdout.columns || 80, 80);
-  const { colors, fg, bg, reset, bold } = STYLE;
-
-  const artLen = SWEET_SEARCH_L2.length;
-  const maxQueryLen = width - artLen - 8;
-  const displayQuery = query.length > maxQueryLen
-    ? query.slice(0, maxQueryLen - 3) + '...'
-    : query;
-
-  const palette = [
-    colors.darkest,
-    colors.darker,
-    colors.dark,
-    colors.lightDark,
-    colors.lightestDark,
-  ];
-
-  const getBgColor = (i, w) => {
-    const pos = i / Math.max(1, w - 1);
-    const t = 1 - Math.abs(0.5 - pos) * 2;
-    const zone = Math.min(Math.floor(t * palette.length), palette.length - 1);
-    return palette[zone];
-  };
-
-  const buildLine = (leftContent, rightContent = null, isArt = false) => {
-    let result = '';
-    const leftPad = 2;
-    const rightPad = 2;
-    const rightStart = rightContent ? width - rightPad - rightContent.length : width;
-
-    for (let i = 0; i < width; i++) {
-      const bgColor = getBgColor(i, width);
-      const leftCharIdx = i - leftPad;
-      const rightCharIdx = i - rightStart;
-
-      if (rightContent && rightCharIdx >= 0 && rightCharIdx < rightContent.length) {
-        result += bold + fg(colors.white) + bg(bgColor) + rightContent[rightCharIdx];
-      } else if (leftCharIdx >= 0 && leftCharIdx < leftContent.length) {
-        const fgColor = isArt ? colors.border : colors.white;
-        result += bold + fg(fgColor) + bg(bgColor) + leftContent[leftCharIdx];
-      } else {
-        result += bg(bgColor) + ' ';
-      }
-    }
-    return result + reset;
-  };
-
-  const queryStr = `"${displayQuery}"`;
-
-  console.log('');
-  console.log(buildLine(SWEET_SEARCH_L1, null, true));
-  console.log(buildLine(SWEET_SEARCH_L2, queryStr, true));
-}
-
-/**
- * Print styled stats line
- */
-export function printStyledStats(stats, isWarm = false) {
-  const { colors, fg, reset } = STYLE;
-  const mode = stats.routing?.mode || stats.mode || 'auto';
-  const pathType = stats.path || 'hybrid';
-  const timeMs = stats.server_ms || stats.total_ms || 0;
-
-  const modeIcon = { lexical: '⚡', semantic: '🧠', hybrid: '⚗️', structural: '🔗', auto: '✨' }[mode] || '◆';
-  const warmIcon = isWarm ? `${fg(colors.border)}●${reset}` : `${fg(colors.darker)}○${reset}`;
-
-  console.log(
-    `  ${modeIcon} ${fg(colors.white)}${mode}${reset} ` +
-    `${fg(colors.dark)}│${reset} ${fg(colors.border)}${pathType}${reset} ` +
-    `${fg(colors.dark)}│${reset} ${fg(colors.white)}${timeMs}ms${reset} ${warmIcon}`
-  );
-  console.log('');
-}
+import { detectOutputPolicy } from './output-policy.js';
+import { emitDecoration } from './cli-decoration.js';
 
 // =============================================================================
 // CLI entry point
@@ -231,7 +63,14 @@ Options:
   --summary         HCGS summary-first output (10x token reduction)
   --mid             Middle-res view: signature + docstring (5x token reduction)
   --json            Output as JSON
+  --format <fmt>    Output format: plain (no banner/color), json
+  --no-banner       Suppress the decorative banner (keep text results)
   --verbose, -v     Enable verbose logging
+
+Decoration is auto by default (shown only where it is token-free). Override with
+SWEET_SEARCH_DECORATION=never (always plain) or =always (force the banner onto
+stdout even when captured — you accept the added token cost). NO_COLOR disables
+ANSI color.
   --cold            Force cold start (skip auto-start server)
   --serve           Manually start server (usually not needed)
 
@@ -316,6 +155,8 @@ Examples:
     let fusion = 'cc';
     let useLateInteraction = LATE_INTERACTION_CONFIG.enabled;
     let json = false;
+    let outputFormat = null;    // e.g. 'plain' — disables decoration but keeps text results
+    let noBanner = false;
     let verbose = false;
     let summaryFirst = false;
     let middleRes = false;
@@ -365,6 +206,14 @@ Examples:
         LATE_INTERACTION_CONFIG.model = arg.split('=')[1];
       } else if (arg === '--json') {
         json = true;
+      } else if (arg === '--no-banner') {
+        noBanner = true;
+      } else if (arg === '--format' && args[i + 1]) {
+        outputFormat = args[++i];
+        if (outputFormat === 'json') json = true;
+      } else if (arg.startsWith('--format=')) {
+        outputFormat = arg.slice('--format='.length);
+        if (outputFormat === 'json') json = true;
       } else if (arg === '--summary') {
         summaryFirst = true;
       } else if (arg === '--mid') {
@@ -406,6 +255,16 @@ Examples:
       console.error('Error: Query required');
       process.exit(1);
     }
+
+    // Decide where decoration may go (token-free channels only). Computed once;
+    // both the warm and cold paths consult it.
+    const outputPolicy = detectOutputPolicy({
+      json,
+      format: outputFormat,
+      noBanner,
+      env: process.env,
+      stream: process.stdout,
+    });
 
     // Check if warm server is running (unless --cold)
     let serverRunning = !forceCold && await isServerRunning();
@@ -452,8 +311,7 @@ Examples:
           if (json) {
             console.log(JSON.stringify({ results, stats }, null, 2));
           } else {
-            printStyledHeader(query);
-            printStyledStats(stats, true);
+            emitDecoration(outputPolicy, query, stats, true);
 
             // Use pure formatting helpers (no full SweetSearch instantiation needed).
             // Contract note: formatResults currently only depends on `this` for
@@ -521,8 +379,7 @@ Examples:
         if (json) {
           console.log(JSON.stringify({ results, stats }, null, 2));
         } else {
-          printStyledHeader(query);
-          printStyledStats(stats, false);
+          emitDecoration(outputPolicy, query, stats, false);
 
           if (stats.path === 'structural') {
             console.log(searcher.formatStructuralResults(results, stats));
