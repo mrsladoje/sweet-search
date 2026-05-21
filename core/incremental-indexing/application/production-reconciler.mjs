@@ -146,6 +146,14 @@ export function createProductionReconciler(options = {}) {
   });
 }
 
+/**
+ * Run a single reconcile tick. This is a PURE primitive: given a dirty set it
+ * will build tier artifacts from scratch if none exist. Callers in the default-
+ * on path MUST first confirm a complete baseline via
+ * `infrastructure/baseline-readiness.mjs::hasCompleteBaseIndex` — the
+ * reconciler must never be the first index builder for a non-empty repo (the
+ * maintainer daemon and the operator `reconcile tick` command apply that gate).
+ */
 export async function runProductionReconcileTick(options = {}) {
   const reconciler = createProductionReconciler(options);
   const startup = reconciler.verifyStartup();

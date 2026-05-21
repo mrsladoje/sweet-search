@@ -402,14 +402,24 @@ export async function semanticSearch3Stage(query, options = {}) {
         floatVectors = await this._loadFloatVectors(poolIds);
         if (floatVectors && floatVectors.size > 0) {
           for (const c of pool) {
-            const fv = floatVectors.get(c.id);
+            let fv = floatVectors.get(c.id);
             if (fv) {
-              // Phase 2 fix: dimension mismatch is a correctness bug, not a
-              // recoverable condition. Fail loud so it gets fixed at index time.
-              if (fv.length !== queryFloat.length) {
+              // codebase.db stores full-dim (e.g. 768d) embeddings, but the
+              // query, HNSW, and direct-access float store all operate at
+              // hnswDimension (e.g. 512d). When the direct-access float store is
+              // absent — e.g. an index bootstrapped purely via incremental
+              // reconcile, which does not build it — this SQLite fallback hands
+              // back full-dim rows. Truncate to the query dimension (the same
+              // matryoshka prefix the rest of the pipeline uses) so the score is
+              // comparable. A vector SHORTER than the query dim is genuinely
+              // misaligned and unrecoverable — keep failing loud so it gets
+              // fixed at index time.
+              if (fv.length > queryFloat.length) {
+                fv = truncateForHNSW(fv, queryFloat.length);
+              } else if (fv.length < queryFloat.length) {
                 throw new Error(
                   `Stage 2.5 dimension mismatch: query=${queryFloat.length}, doc=${fv.length} (id=${c.id}). ` +
-                  'Re-index to align stored vectors with current hnswDimension.'
+                  'Stored vector is shorter than the query dimension — re-index to align.'
                 );
               }
               let dot = 0;
