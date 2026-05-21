@@ -19,7 +19,33 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import Database from 'better-sqlite3';
 import { contentHashSync } from '../../core/incremental-indexing/infrastructure/hashing.mjs';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
+
+/**
+ * Seed a complete baseline so a default-on reconcile tick is allowed to run.
+ * Mirrors what the full indexer's final phase produces: a published manifest,
+ * a merkle-state carrying a `config_fingerprint` (the marker the reconciler
+ * never writes itself), and a real vectors DB. Without this, the baseline gate
+ * keeps reconcile dormant (`waiting_for_initial_index`).
+ */
+function seedBaseline(stateDir, epoch = 1) {
+  writeFileSync(join(stateDir, 'reconcile-manifest.json'), JSON.stringify({
+    epoch,
+    publishedAt: new Date().toISOString(),
+    vectors: { path: 'codebase.db', epoch },
+  }));
+  writeFileSync(join(stateDir, 'merkle-state.json'), JSON.stringify({
+    version: '2.4',
+    config_fingerprint: { provider: 'test', model: 'fake', dimension: 8, hnswDimension: 8, pipelineVersion: 2 },
+    files: {},
+    lastIndex: new Date().toISOString(),
+    stats: { totalFiles: 0 },
+  }));
+  const db = new Database(join(stateDir, 'codebase.db'));
+  try { createVectorSchema(db); } finally { db.close(); }
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..');
@@ -259,19 +285,54 @@ describe('sweet-search reconcile/rebuild — CLI dispatcher', () => {
 
   it('runs one production reconcile tick without invoking the legacy indexer', () => {
     const { projectRoot, stateDir } = makeState();
+    seedBaseline(stateDir); // baseline gate: a tick only runs once a baseline exists
     const r = run(['reconcile', 'tick', '--json', '--project-root', projectRoot, '--state-dir', stateDir]);
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout);
     expect(parsed.ok).toBe(true);
     expect(parsed.kind).toBe('tick');
-    expect(parsed.counters.epoch).toBe(1);
+    expect(parsed.counters.epoch).toBe(2); // bumped from the seeded baseline epoch 1
     expect(parsed.counters.dirty_paths_seen).toBe(0);
     expect(parsed.counters.files_processed).toBe(0);
     expect(existsSync(join(stateDir, 'reconcile-manifest.json'))).toBe(true);
     expect(existsSync(join(stateDir, 'index-maintainer-queue.processing.jsonl'))).toBe(false);
   });
 
+  it('refuses a reconcile tick before a baseline exists (waiting_for_initial_index)', () => {
+    const { projectRoot, stateDir } = makeState();
+    const r = run(['reconcile', 'tick', '--json', '--project-root', projectRoot, '--state-dir', stateDir]);
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.kind).toBe('tick');
+    expect(parsed.skipped).toBe(true);
+    expect(parsed.reason).toBe('waiting_for_initial_index');
+    // No partial index built by the reconciler.
+    expect(existsSync(join(stateDir, 'reconcile-manifest.json'))).toBe(false);
+    expect(existsSync(join(stateDir, 'codebase.db'))).toBe(false);
+  });
+
   it('routes SWEET_SEARCH_RECONCILE_V2 maintainer --once through the production tick', () => {
+    const { projectRoot, stateDir } = makeState();
+    seedBaseline(stateDir);
+    const maintainer = join(REPO_ROOT, 'core', 'indexing', 'index-maintainer.mjs');
+    const r = spawnSync(process.execPath, [maintainer, '--once'], {
+      encoding: 'utf-8',
+      timeout: 20_000,
+      env: {
+        ...process.env,
+        SWEET_SEARCH_RECONCILE_V2: '1',
+        SWEET_SEARCH_PROJECT_ROOT: projectRoot,
+        SWEET_SEARCH_STATE_DIR: stateDir,
+      },
+    });
+
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('SWEET_SEARCH_RECONCILE_V2 enabled');
+    expect(readFileSync(join(stateDir, 'reconcile-manifest.json'), 'utf-8')).toContain('"epoch": 2');
+    expect(existsSync(join(stateDir, 'index-maintainer-queue.processing.jsonl'))).toBe(false);
+  });
+
+  it('maintainer --once stays dormant before a baseline (no partial index)', () => {
     const { projectRoot, stateDir } = makeState();
     const maintainer = join(REPO_ROOT, 'core', 'indexing', 'index-maintainer.mjs');
     const r = spawnSync(process.execPath, [maintainer, '--once'], {
@@ -287,7 +348,10 @@ describe('sweet-search reconcile/rebuild — CLI dispatcher', () => {
 
     expect(r.status).toBe(0);
     expect(r.stderr).toContain('SWEET_SEARCH_RECONCILE_V2 enabled');
-    expect(readFileSync(join(stateDir, 'reconcile-manifest.json'), 'utf-8')).toContain('"epoch": 1');
-    expect(existsSync(join(stateDir, 'index-maintainer-queue.processing.jsonl'))).toBe(false);
+    expect(r.stderr).toContain('waiting_for_initial_index');
+    // The reconciler never became the first index builder.
+    expect(existsSync(join(stateDir, 'reconcile-manifest.json'))).toBe(false);
+    expect(existsSync(join(stateDir, 'codebase.db'))).toBe(false);
+    expect(existsSync(join(stateDir, 'code-graph.db'))).toBe(false);
   });
 });

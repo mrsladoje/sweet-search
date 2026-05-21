@@ -45,6 +45,7 @@ import { spawn } from 'node:child_process';
 import { startupInterval, tierForHardware, reconcileEnablement } from '../incremental-indexing/domain/interval-autotune.mjs';
 import { detectHardwareCapability } from '../infrastructure/hardware-capability.js';
 import { sweepStaleArtifactTemps, DEFAULT_TMP_SWEEP_MAX_AGE_MS } from '../incremental-indexing/infrastructure/artifact-temp-sweep.mjs';
+import { hasCompleteBaseIndex, WAITING_FOR_INITIAL_INDEX } from '../incremental-indexing/infrastructure/baseline-readiness.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -652,7 +653,21 @@ function releaseStateLock(lockFile) {
   } catch {}
 }
 
-async function runReconcileV2Tick(ctx) {
+export async function runReconcileV2Tick(ctx) {
+  // Baseline gate: the incremental reconciler must NEVER be the first index
+  // builder for a non-empty repo (product contract). Until the normal full
+  // indexing path has produced a complete baseline, stay dormant — skip BOTH
+  // the dirty-scan producer (so we don't enqueue the whole tree) AND the
+  // reconcile consumer (so we don't create partial codebase.db / code-graph.db
+  // / HNSW / LI / sparse artifacts that make search think the repo is indexed).
+  // No queue/artifact mutation here; the launcher still spawns the daemon, but
+  // each tick is a no-op until `sweet-search index` lands a baseline.
+  const baseline = hasCompleteBaseIndex(ctx.stateDir);
+  if (!baseline.ready) {
+    log('INFO', `${WAITING_FOR_INITIAL_INDEX}: no complete baseline yet (${baseline.reason}); run "sweet-search index" first — reconcile dormant`);
+    return { skipped: true, reason: WAITING_FOR_INITIAL_INDEX, baseline: baseline.reason };
+  }
+
   // Producer step: diff the working tree against merkle-state.json and enqueue
   // add/modify/delete hints, so ordinary edits are reconciled WITHOUT requiring
   // `sweet-search index --add` or an editor hook (release-gate finding C1). Runs

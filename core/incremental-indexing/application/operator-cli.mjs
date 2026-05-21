@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { readManifest } from '../infrastructure/manifest.mjs';
+import { baselineStatus, WAITING_FOR_INITIAL_INDEX } from '../infrastructure/baseline-readiness.mjs';
 import { canonicaliseInsideRoot } from '../infrastructure/dirty-set.mjs';
 import { contentHashSync } from '../infrastructure/hashing.mjs';
 import {
@@ -201,10 +202,12 @@ function statusSnapshot(ctx) {
     byTier[tier] = (byTier[tier] || 0) + 1;
   }
   const lastTick = lastTicks.at(-1) ?? null;
+  const baseline = baselineStatus(ctx.stateDir);
   return {
     projectRoot: ctx.projectRoot,
     stateDir: ctx.stateDir,
     reconcile: reconcileConfigSnapshot(),
+    baseline,
     lock: lockSnapshot(ctx.stateDir),
     manifest: manifest
       ? { present: true, epoch: manifest.epoch ?? 0, publishedAt: manifest.publishedAt ?? null }
@@ -416,6 +419,9 @@ function print(payload, json) {
       console.log(`reconcile v2: ${r.enabled ? 'enabled' : 'disabled'} (${r.source})   interval: ${r.interval.ms}ms (${r.interval.source})`);
       if (!r.enabled && r.disabledReason) console.log(`disabled reason: ${r.disabledReason}`);
     }
+    if (payload.baseline && !payload.baseline.ready) {
+      console.log(`baseline: ${WAITING_FOR_INITIAL_INDEX} (${payload.baseline.reason}) — run "sweet-search index" first`);
+    }
     console.log(`index epoch: ${payload.manifest.epoch}   dirty files: ${payload.dirty.pending + payload.dirty.processing}   rebuild backlog: ${payload.rebuild.pending}`);
     if (payload.lock?.present) {
       console.log(`maintainer lock: pid ${payload.lock.pid} (${payload.lock.alive ? 'alive' : 'stale'})`);
@@ -448,6 +454,10 @@ function print(payload, json) {
     return;
   }
   if (payload.kind === 'tick') {
+    if (payload.skipped) {
+      console.log(`reconcile tick skipped: ${WAITING_FOR_INITIAL_INDEX} (${payload.baseline?.reason ?? 'no-baseline'}) — run "sweet-search index" first`);
+      return;
+    }
     console.log(`reconcile tick epoch ${payload.counters?.epoch ?? 'unknown'} (${payload.counters?.files_processed ?? 0} file(s) processed)`);
     return;
   }
@@ -483,6 +493,21 @@ export async function handleIncrementalCli(command, args) {
       return print({ kind: 'resume', ...resumeReconcile(ctx) }, opts.json);
     }
     if (sub === 'tick') {
+      // Baseline gate: a reconcile tick must not be the first index builder.
+      // Refuse (without touching artifacts) until `sweet-search index` lands a
+      // complete baseline — mirrors the default-on maintainer's dormancy.
+      const baseline = baselineStatus(ctx.stateDir);
+      if (!baseline.ready) {
+        return print({
+          kind: 'tick',
+          ok: false,
+          skipped: true,
+          reason: WAITING_FOR_INITIAL_INDEX,
+          baseline,
+          projectRoot: ctx.projectRoot,
+          stateDir: ctx.stateDir,
+        }, opts.json);
+      }
       const counters = await preserveJsonStdout(opts.json, async () => {
         const { runProductionReconcileTick } = await import('./production-reconciler.mjs');
         return runProductionReconcileTick({
