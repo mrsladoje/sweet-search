@@ -12,6 +12,7 @@
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative } from 'node:path';
+import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -78,6 +79,8 @@ export function parseInitArgs(args) {
     noClaude: false,
     skipPromptReminders: false, // P2: --no-prompt-reminders (default OFF)
     enforceTools: false,        // P3: --enforce-tools (default OFF — opt-in strict mode)
+    codex: false,                // --codex: wire the Codex CLI SessionStart hook
+    codexEnableGlobalHooks: false, // --codex-enable-global-hooks: also enable the flag in ~/.codex/config.toml
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -160,6 +163,18 @@ export function parseInitArgs(args) {
     } else if (arg === '--cursor') {
       // P1: opt INTO writing .cursor/rules/sweet-search.mdc.
       result.optInHarnesses.add('cursor');
+    } else if (arg === '--codex') {
+      // Wire the Codex CLI: write a SessionStart hook into .codex/hooks.json
+      // (Codex's hook surface) reusing the same launcher as the Claude prewarm
+      // hook, and ship AGENTS.md (Codex's instruction file) by implying
+      // --agents. Independent of --no-claude (writes .codex/, not .claude/).
+      result.codex = true;
+      result.optInHarnesses.add('agents');
+    } else if (arg === '--codex-enable-global-hooks') {
+      // Opt-in: also enable the `codex_hooks` feature flag in the user-level
+      // ~/.codex/config.toml. Off by default because it writes outside the
+      // project into the user's hand-curated global config.
+      result.codexEnableGlobalHooks = true;
     } else if (arg === '--no-prompt-reminders') {
       // P2: skip the UserPromptSubmit reminder hook. Default-on because
       // the reminder is the cheapest available shift-left for tool
@@ -933,6 +948,169 @@ export function registerPrewarmSessionStartHook({
 }
 
 // ---------------------------------------------------------------------------
+// Codex CLI SessionStart hook (--codex)
+// ---------------------------------------------------------------------------
+
+export const CODEX_HOOKS_FILENAME = 'hooks.json';
+
+/**
+ * Register (or update) a Codex CLI SessionStart hook in `.codex/hooks.json`
+ * that launches the search server + incremental-index maintainer on every
+ * Codex session — the Codex analogue of `registerPrewarmSessionStartHook`.
+ * Reuses the same harness-agnostic launcher (`session-daemon-prewarm.mjs`,
+ * matched by `PREWARM_HOOK_FILENAME`), which reads only env/cwd and writes
+ * nothing to stdout, so it is safe under Codex's hook contract.
+ *
+ * Codex hook schema (developers.openai.com/codex/hooks):
+ *   { "hooks": { "SessionStart": [ { "hooks": [ { type, command, timeout } ] } ] } }
+ *
+ * Non-destructive + idempotent: preserves other events/entries and replaces
+ * the sweet-search-owned entry (matched by the launcher filename) instead of
+ * appending a duplicate. Refuses to write a machine-specific absolute path
+ * into the (often committed) `.codex/hooks.json`, mirroring the Claude path.
+ *
+ * NOTE: hooks only fire when Codex's `codex_hooks` feature flag is enabled and
+ * the project `.codex/` layer is trusted — neither of which a project init can
+ * fully guarantee. `ensureCodexHooksFeatureFlag` handles the flag (best-effort)
+ * and the init report prints the trust caveat.
+ *
+ * @returns {{status:'registered'|'skipped'|'error', detail:string, hookPath?:string}}
+ */
+export function registerCodexSessionStartHook({ projectRoot, packageRoot, skipped = false } = {}) {
+  if (skipped) return { status: 'skipped', detail: '--skip-prewarm-hook flag' };
+
+  const hookScriptAbs = join(packageRoot, 'core', 'search', PREWARM_HOOK_FILENAME);
+  if (!existsSync(hookScriptAbs)) {
+    return { status: 'error', detail: `hook script missing: ${hookScriptAbs}` };
+  }
+
+  const hookPath = relative(projectRoot, hookScriptAbs);
+  if (hookPath.startsWith('..') || isAbsolute(hookPath)) {
+    return {
+      status: 'skipped',
+      detail: 'package lives outside projectRoot (hoisted / linked / global install) — re-run with --skip-prewarm-hook to silence this',
+    };
+  }
+
+  const command = `node ${hookPath}`;
+  const codexDir = join(projectRoot, '.codex');
+  const hooksPath = join(codexDir, CODEX_HOOKS_FILENAME);
+
+  let doc = {};
+  if (existsSync(hooksPath)) {
+    try {
+      doc = JSON.parse(readFileSync(hooksPath, 'utf-8'));
+    } catch (err) {
+      return { status: 'error', detail: `existing .codex/hooks.json is not valid JSON: ${err.message}` };
+    }
+  }
+
+  doc.hooks = doc.hooks || {};
+  const sessionStart = Array.isArray(doc.hooks.SessionStart) ? doc.hooks.SessionStart : [];
+
+  // Codex `timeout` is in seconds (cf. its hooks docs); the launcher detaches
+  // and returns in well under a second, so a small budget is plenty.
+  const entry = {
+    hooks: [
+      {
+        type: 'command',
+        command,
+        timeout: 10,
+      },
+    ],
+  };
+
+  const ownedIdx = sessionStart.findIndex((group) =>
+    Array.isArray(group?.hooks) &&
+    group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_FILENAME))
+  );
+
+  if (ownedIdx >= 0) {
+    sessionStart[ownedIdx] = entry;
+  } else {
+    sessionStart.push(entry);
+  }
+  doc.hooks.SessionStart = sessionStart;
+
+  try {
+    mkdirSync(codexDir, { recursive: true });
+    const tmpPath = hooksPath + '.tmp';
+    writeFileSync(tmpPath, JSON.stringify(doc, null, 2) + '\n', 'utf-8');
+    renameSync(tmpPath, hooksPath);
+  } catch (err) {
+    return { status: 'error', detail: err.message };
+  }
+
+  return {
+    status: 'registered',
+    detail: ownedIdx >= 0 ? 'updated existing entry' : 'added new entry',
+    hookPath,
+  };
+}
+
+/**
+ * Ensure `[features] codex_hooks = true` is present in a Codex `config.toml`,
+ * preserving the file's existing content + comments. This is a targeted text
+ * edit (no TOML round-trip) so a hand-curated config is never reformatted or
+ * stripped of comments.
+ *
+ * Behaviour:
+ *   - already enabled (`codex_hooks` or legacy `hooks` = true) → no-op ('already')
+ *   - the key is present but set to a non-true value → leave it ('present-other')
+ *   - a `[features]` table exists → insert the key directly under its header
+ *   - no `[features]` table → append a fresh block at EOF
+ *   - file absent + `create` → create it; absent + no `create` → 'absent'
+ *
+ * @param {string} configPath
+ * @param {{create?:boolean}} [opts]
+ * @returns {{status:'created'|'added'|'already'|'present-other'|'absent'|'error', path:string, detail?:string}}
+ */
+export function ensureCodexHooksFeatureFlag(configPath, { create = false } = {}) {
+  const exists = existsSync(configPath);
+  if (!exists && !create) return { status: 'absent', path: configPath };
+
+  let text = '';
+  if (exists) {
+    try {
+      text = readFileSync(configPath, 'utf-8');
+    } catch (err) {
+      return { status: 'error', path: configPath, detail: `read failed: ${err.message}` };
+    }
+  }
+
+  // Already enabled (current `codex_hooks` or legacy `hooks` key) → nothing to do.
+  if (/^[ \t]*(codex_hooks|hooks)[ \t]*=[ \t]*true\b/m.test(text)) {
+    return { status: 'already', path: configPath };
+  }
+  // Present but explicitly non-true → respect the user's choice; don't add a
+  // duplicate key (which would make the TOML invalid).
+  if (/^[ \t]*(codex_hooks|hooks)[ \t]*=/m.test(text)) {
+    return { status: 'present-other', path: configPath };
+  }
+
+  let next;
+  if (!exists || text.trim() === '') {
+    next = '[features]\ncodex_hooks = true\n';
+  } else if (/^[ \t]*\[features\][ \t]*$/m.test(text)) {
+    next = text.replace(/^([ \t]*\[features\][ \t]*)$/m, '$1\ncodex_hooks = true');
+  } else {
+    const sep = text.endsWith('\n') ? '' : '\n';
+    next = `${text}${sep}\n[features]\ncodex_hooks = true\n`;
+  }
+
+  try {
+    mkdirSync(dirname(configPath), { recursive: true });
+    const tmp = configPath + '.tmp';
+    writeFileSync(tmp, next, 'utf-8');
+    renameSync(tmp, configPath);
+  } catch (err) {
+    return { status: 'error', path: configPath, detail: `write failed: ${err.message}` };
+  }
+
+  return { status: exists ? 'added' : 'created', path: configPath };
+}
+
+// ---------------------------------------------------------------------------
 // /sweet-index skill installation
 // ---------------------------------------------------------------------------
 
@@ -1054,6 +1232,21 @@ Options:
                             an @import file when --no-symlink-instruction-files).
   --cursor                  Also ship .cursor/rules/sweet-search.mdc with
                             sweet-search frontmatter.
+  --codex                   Wire the Codex CLI: write a SessionStart hook into
+                            .codex/hooks.json (reusing the same launcher as the
+                            Claude prewarm hook, so Codex sessions also start the
+                            search server + default-on incremental maintainer),
+                            enable [features] codex_hooks=true in the project
+                            .codex/config.toml, and ship AGENTS.md (implies
+                            --agents). Independent of --no-claude. Codex must
+                            trust the project for repo-local hooks to load; if
+                            your Codex only honors the user-level feature flag,
+                            add --codex-enable-global-hooks.
+  --codex-enable-global-hooks
+                            With --codex, also enable codex_hooks=true in the
+                            user-level ~/.codex/config.toml (append-if-absent,
+                            comment-preserving). Off by default because it writes
+                            outside the project into your global Codex config.
   --no-symlink-instruction-files
                             Write GEMINI.md as a regular file with an @import
                             line rather than a symlink to the canonical file.
@@ -1470,6 +1663,51 @@ export async function runInit(args) {
     });
     if (parsed.verbose || prewarmHookReport.status === 'error') {
       process.stderr.write(`[init] Prewarm hook: ${prewarmHookReport.status} — ${prewarmHookReport.detail}\n`);
+    }
+  }
+
+  // 11.6. Codex CLI session-start hook (opt-in via --codex). Mirrors the
+  //       Claude prewarm hook but writes Codex's hook surface (.codex/hooks.json)
+  //       and reuses the same launcher. Independent of --no-claude (it touches
+  //       .codex/, never .claude/). Two things init can't fully guarantee — the
+  //       `codex_hooks` feature flag (we set it project-locally; user-global only
+  //       with --codex-enable-global-hooks) and project trust — are surfaced as
+  //       post-init instructions rather than assumed.
+  let codexHookReport = null;
+  if (parsed.codex) {
+    codexHookReport = registerCodexSessionStartHook({
+      projectRoot,
+      packageRoot: PACKAGE_ROOT,
+      skipped: parsed.skipPrewarmHook,
+    });
+    const projectFlag = ensureCodexHooksFeatureFlag(
+      join(projectRoot, '.codex', 'config.toml'),
+      { create: true },
+    );
+    let globalFlag = null;
+    if (parsed.codexEnableGlobalHooks) {
+      globalFlag = ensureCodexHooksFeatureFlag(
+        join(homedir(), '.codex', 'config.toml'),
+        { create: true },
+      );
+    }
+
+    process.stderr.write(`[init] Codex hook: ${codexHookReport.status} — ${codexHookReport.detail}\n`);
+    process.stderr.write(`[init] Codex feature flag (project .codex/config.toml): ${projectFlag.status}\n`);
+    if (globalFlag) {
+      process.stderr.write(`[init] Codex feature flag (~/.codex/config.toml): ${globalFlag.status}\n`);
+    }
+    if (codexHookReport.status === 'registered') {
+      process.stderr.write(
+        `[init] Codex setup needs two things init can't do for you:\n` +
+        `         1. Enable hooks: [features] codex_hooks = true in config.toml ` +
+        `(older Codex: hooks = true).\n` +
+        (parsed.codexEnableGlobalHooks
+          ? `            Set in ~/.codex/config.toml (status: ${globalFlag?.status}).\n`
+          : `            Set in ./.codex/config.toml (status: ${projectFlag.status}). If your Codex only\n` +
+            `            honors the user-level flag, re-run with --codex-enable-global-hooks.\n`) +
+        `         2. Trust this project in Codex so repo-local .codex/ hooks load.\n`,
+      );
     }
   }
 
