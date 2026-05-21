@@ -20,11 +20,11 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, openSync, closeSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, openSync, closeSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { stopRunningDaemon } from '../../scripts/uninstall.js';
+import { stopRunningDaemon, stopRunningMaintainer } from '../../scripts/uninstall.js';
 
 let sandbox;
 let pidFile;
@@ -165,5 +165,99 @@ describe('stopRunningDaemon', () => {
     // PID-file fallback remains safe and cleans up without projectRoot.
     expect(typeof result.gracefulAttempted).toBe('boolean');
     expect(result.pidFileRemoved).toBe(true);
+  });
+});
+
+// -------------------------------------------------------------------------
+
+describe('stopRunningMaintainer', () => {
+  function writeLock(stateDir, pid) {
+    writeFileSync(
+      join(stateDir, 'index-maintainer.lock'),
+      JSON.stringify({ pid, timestamp: Date.now() }),
+      'utf-8',
+    );
+  }
+
+  it('SIGTERMs a running maintainer recorded in the lock and removes the lock', async () => {
+    const child = spawnLongRunningChild();
+    try {
+      writeLock(sandbox, child.pid);
+      expect(pidAlive(child.pid)).toBe(true);
+
+      const result = stopRunningMaintainer({ stateDir: sandbox });
+
+      expect(result.present).toBe(true);
+      expect(result.pid).toBe(child.pid);
+      expect(result.signalled).toBe(true);
+      expect(result.lockRemoved).toBe(true);
+
+      await child.wait();
+      expect(pidAlive(child.pid)).toBe(false);
+      expect(existsSync(join(sandbox, 'index-maintainer.lock'))).toBe(false);
+    } finally {
+      child.kill();
+    }
+  });
+
+  it('removes a stale lock whose pid is dead without signalling', () => {
+    writeLock(sandbox, 2147483600); // very high pid, unlikely to be live
+
+    const result = stopRunningMaintainer({ stateDir: sandbox });
+
+    expect(result.present).toBe(true);
+    expect(result.signalled).toBe(false);
+    expect(result.killed).toBe(false);
+    expect(result.lockRemoved).toBe(true);
+    expect(existsSync(join(sandbox, 'index-maintainer.lock'))).toBe(false);
+  });
+
+  it('no-ops when no lock file exists', () => {
+    const result = stopRunningMaintainer({ stateDir: sandbox });
+    expect(result.present).toBe(false);
+    expect(result.signalled).toBe(false);
+    expect(result.lockRemoved).toBe(false);
+  });
+
+  it('tolerates garbage lock content (still removes the lock)', () => {
+    writeFileSync(join(sandbox, 'index-maintainer.lock'), 'not json at all\n', 'utf-8');
+
+    expect(() => stopRunningMaintainer({ stateDir: sandbox })).not.toThrow();
+    expect(existsSync(join(sandbox, 'index-maintainer.lock'))).toBe(false);
+  });
+
+  it('does not signal processes outside the lock (scope safety)', async () => {
+    const a = spawnLongRunningChild();
+    const b = spawnLongRunningChild();
+    try {
+      writeLock(sandbox, a.pid);
+
+      stopRunningMaintainer({ stateDir: sandbox });
+
+      await a.wait();
+      expect(pidAlive(a.pid)).toBe(false); // a stopped
+      expect(pidAlive(b.pid)).toBe(true);  // b untouched
+    } finally {
+      a.kill();
+      b.kill();
+    }
+  });
+
+  it('resolves the state dir from projectRoot when stateDir is omitted', () => {
+    const stateDir = join(sandbox, '.sweet-search');
+    mkdirSync(stateDir, { recursive: true });
+    writeLock(stateDir, 2147483600);
+
+    const result = stopRunningMaintainer({ projectRoot: sandbox });
+
+    expect(result.present).toBe(true);
+    expect(result.lockRemoved).toBe(true);
+    expect(existsSync(join(stateDir, 'index-maintainer.lock'))).toBe(false);
+  });
+
+  it('no-ops safely when neither projectRoot nor stateDir is provided', () => {
+    expect(() => stopRunningMaintainer({})).not.toThrow();
+    const result = stopRunningMaintainer({});
+    expect(result.present).toBe(false);
   });
 });
