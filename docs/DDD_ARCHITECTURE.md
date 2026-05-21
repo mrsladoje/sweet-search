@@ -220,12 +220,14 @@ Public surface (exposed through `core/infrastructure/index.js`):
 
 `candleGpuBackend` ∈ `{ 'metal', 'cuda', null }` and
 `inferenceBackendPreference` ∈ `{ 'coreml-cascade', 'candle-metal',
-'candle-cuda', 'candle-cpu' }`. The CUDA branch combines a `nvidia-smi`
+'candle-cuda', 'ort-cpu' }`. The CUDA branch combines a `nvidia-smi`
 probe (installed GPU descriptor) with an addon-side
 `Device::new_cuda(0)` probe via the NAPI export `native_cuda_available()`
 — both must succeed for `cudaAvailable === true`.
 
-Never throws. Unknown hardware degrades to `candle-cpu` fallback. The module
+Never throws. A host with no usable accelerator degrades to the `ort-cpu`
+fallback — the optimized ORT INT8 CPU path used for both indexing and
+queries; candle/native is never armed on CPU. The module
 depends on `node:child_process`, `node:os`, `node:module`, and
 `./native-resolver.js` for the addon probe; it does NOT import the
 `index.js` barrel, so `scripts/init.js` can consume it without import

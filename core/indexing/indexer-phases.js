@@ -23,7 +23,7 @@ import {
   resetLocalModelRuntime,
 } from '../embedding/embedding-local-model.js';
 import { isNativeInferenceAvailable } from '../infrastructure/native-inference.js';
-import { teardownAllModels, initIndexGpuPool, teardownIndexGpuPool, warmupQueryCpuModels, GPU_ARMING_MIN_FILES } from './model-pool.js';
+import { teardownAllModels, initIndexGpuPool, teardownIndexGpuPool, warmupQueryCpuModels, GPU_ARMING_MIN_FILES, isIndexAcceleratorAvailable } from './model-pool.js';
 import {
   configureLateInteractionRuntime,
   resetLateInteractionRuntime,
@@ -425,34 +425,47 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
   }
 
   // The embedding worker pool uses ORT INT8 CPU in each worker. It must only
-  // be active when the query-time encoder ALSO uses ORT INT8 CPU, otherwise
+  // be active when the index-time encoder ALSO uses ORT INT8 CPU, otherwise
   // the stored index and the query vectors live in different embedding spaces
-  // (gencodesearchnet 83% → 58% MRR regression). Two cases where that's true:
+  // (gencodesearchnet 83% → 58% MRR regression — queries are always ORT INT8
+  // CPU). Three cases where index-time embed is ORT INT8 CPU:
   //   1. Native inference isn't available at all (pre-native hosts).
-  //   2. SWEET_SEARCH_EMBED_USE_CPU=1 — the user opted into CPU embed on
+  //   2. No usable accelerator (Metal/CoreML/CUDA) — even if the native addon
+  //      is installed, the native model is never loaded on a no-accelerator
+  //      host (see model-pool.initIndexGpuPool), so embed dispatch falls to
+  //      ORT INT8. Running the pool here makes that path multi-threaded
+  //      instead of inline.
+  //   3. SWEET_SEARCH_EMBED_USE_CPU=1 — the user opted into CPU embed on
   //      both sides (index + query), so pool ORT embed matches dispatcher
-  //      ORT embed. This is the "ORT embed on CPU ‖ native LI on Metal"
+  //      ORT embed. This is the "ORT embed on CPU ‖ native LI on accelerator"
   //      pipeline that maximises index throughput by running embed and LI
   //      on different devices.
   //
   // The historical `!shouldParallelLI` gate existed for the all-CPU era where
   // pool workers and parallel LI both wanted CPU and fought. In the CPU-embed
-  // + Metal-LI world, that conflict goes away — pool workers do ORT on CPU
-  // cores, the main thread drives Metal LI dispatches (negligible CPU), no
-  // contention. So when `SWEET_SEARCH_EMBED_USE_CPU=1` we lift the gate and
-  // let the pool run alongside parallel LI.
+  // + accelerator-LI world, that conflict goes away — pool workers do ORT on
+  // CPU cores, the main thread drives accelerator LI dispatches (negligible
+  // CPU), no contention. So when `SWEET_SEARCH_EMBED_USE_CPU=1` (and LI is on
+  // a real accelerator) we lift the gate and let the pool run alongside
+  // parallel LI. On a no-accelerator host LI is also on ORT CPU, so the gate
+  // stays in force and pool + parallel LI take turns rather than contend.
   const forceEmbedCpu = process.env.SWEET_SEARCH_EMBED_USE_CPU === '1';
-  const queryTimeEmbedIsCpu = !isNativeInferenceAvailable() || forceEmbedCpu;
-  // When LI is on Metal (native), pool + parallelLI is safe — the LI driver
-  // is just dispatching commands, not competing for CPU cores.
-  const liOnMetal = isNativeInferenceAvailable() && !noLateInteraction;
-  const allowPoolWithParallelLi = forceEmbedCpu && liOnMetal;
+  const indexTimeEmbedIsCpu = !isNativeInferenceAvailable()
+    || !isIndexAcceleratorAvailable()
+    || forceEmbedCpu;
+  // LI runs on a native accelerator only when one is actually armed. When it
+  // is, pool + parallelLI is safe — the LI driver is just dispatching GPU
+  // commands, not competing for CPU cores.
+  const liOnAccelerator = isNativeInferenceAvailable()
+    && isIndexAcceleratorAvailable()
+    && !noLateInteraction;
+  const allowPoolWithParallelLi = forceEmbedCpu && liOnAccelerator;
   const useEmbeddingPool = !dryRun
     && filesToIndex.length > 0
     && EMBEDDING_CONFIG.provider === 'local'
     && resourcePlan.useWorkerPool
     && (!shouldParallelLI || allowPoolWithParallelLi)
-    && queryTimeEmbedIsCpu;
+    && indexTimeEmbedIsCpu;
 
   if (!dryRun && EMBEDDING_CONFIG.provider === 'local' && filesToIndex.length > 0) {
     configureLocalModelRuntime({ intraOpThreads: embeddingThreads });
@@ -502,15 +515,26 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
   // run a dummy forward pass to compile Metal pipelines / CoreML variants
   // / BLAS threads.
   //
+  // No-accelerator skip: a host with no usable Metal / CoreML / CUDA
+  // accelerator indexes on the optimized ORT INT8 CPU path and never arms
+  // candle/native. `isIndexAcceleratorAvailable()` gates this even when the
+  // optional native addon is installed (e.g. Linux + the CUDA package but a
+  // failed/absent CUDA runtime, or SWEET_SEARCH_CUDA=0) — the JS layer is the
+  // authoritative selector; we never lean on Rust degrading loadWithDevice()
+  // to CPU. Skipping arming also skips the teardown/CPU-rewarm lifecycle in
+  // the `finally` below, so a CPU-only full reindex simply runs on ORT CPU.
+  //
   // Small-changeset skip: incremental runs with fewer than
   // GPU_ARMING_MIN_FILES files keep the ORT CPU path. The GPU load +
   // warmup + teardown + CPU rewarm round-trip costs 5–15s on M3 class
   // hardware and would dwarf the actual work (<1s per file on CPU).
-  // Full reindex always arms the GPU regardless of file count.
+  // Full reindex always arms the GPU regardless of file count — but only
+  // when an accelerator exists.
   const shouldArmGpu = !dryRun
     && filesToIndex.length > 0
     && EMBEDDING_CONFIG.provider === 'local'
     && isNativeInferenceAvailable()
+    && isIndexAcceleratorAvailable()
     && (fullReindex || filesToIndex.length >= GPU_ARMING_MIN_FILES);
 
   if (shouldArmGpu) {
@@ -533,6 +557,8 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     }
   } else if (!dryRun && filesToIndex.length > 0 && filesToIndex.length < GPU_ARMING_MIN_FILES) {
     log(`Small changeset (${filesToIndex.length} < ${GPU_ARMING_MIN_FILES} files) — using ORT CPU`, 'dim');
+  } else if (!dryRun && filesToIndex.length > 0 && !isIndexAcceleratorAvailable()) {
+    log('No inference accelerator detected — indexing on ORT INT8 CPU', 'dim');
   }
 
   try {

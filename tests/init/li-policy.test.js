@@ -13,6 +13,8 @@ import { describe, it, expect } from 'vitest';
 import {
   coerceLiModelChoice,
   filterModelKeysForLiChoice,
+  filterModelKeysForAccelerator,
+  hasUsableIndexAccelerator,
   parseInitArgs,
   resolveLiPolicyChoices,
 } from '../../scripts/init.js';
@@ -119,6 +121,154 @@ describe('filterModelKeysForLiChoice', () => {
     const before = [...sample];
     filterModelKeysForLiChoice(sample, LI_MODEL_NONE);
     expect(sample).toEqual(before);
+  });
+});
+
+describe('filterModelKeysForAccelerator', () => {
+  // Real registry keys so the registry-driven classification
+  // (isNativeAcceleratedModel) is exercised end-to-end.
+  const fullSet = [
+    'lateon-code',
+    'lateon-code-fp32',
+    'lateon-code-edge',
+    'lateon-code-edge-fp32',
+    'coderankembed-int8',
+    'coderankembed-fp32',
+    'all-minilm-l6-v2',
+  ];
+
+  it('hasAccelerator=true keeps every key (accelerator hosts fetch FP32)', () => {
+    expect(filterModelKeysForAccelerator(fullSet, { hasAccelerator: true })).toEqual(fullSet);
+  });
+
+  it('hasAccelerator=false drops native FP32 safetensors, keeps ORT/query/cache', () => {
+    const filtered = filterModelKeysForAccelerator(fullSet, { hasAccelerator: false });
+    expect(filtered).toEqual([
+      'lateon-code',
+      'lateon-code-edge',
+      'coderankembed-int8',
+      'all-minilm-l6-v2',
+    ]);
+    // The three FP32 backbones are gone…
+    expect(filtered).not.toContain('coderankembed-fp32');
+    expect(filtered).not.toContain('lateon-code-fp32');
+    expect(filtered).not.toContain('lateon-code-edge-fp32');
+    // …but the ORT INT8 embedding + cache models stay.
+    expect(filtered).toContain('coderankembed-int8');
+    expect(filtered).toContain('all-minilm-l6-v2');
+  });
+
+  it('defaults to keeping everything when hasAccelerator is unspecified', () => {
+    expect(filterModelKeysForAccelerator(fullSet)).toEqual(fullSet);
+    expect(filterModelKeysForAccelerator(fullSet, {})).toEqual(fullSet);
+  });
+
+  it('does not mutate its input', () => {
+    const before = [...fullSet];
+    filterModelKeysForAccelerator(fullSet, { hasAccelerator: false });
+    expect(fullSet).toEqual(before);
+  });
+});
+
+describe('hasUsableIndexAccelerator', () => {
+  it('is true only when hardware has an accelerator and native inference is available', () => {
+    expect(hasUsableIndexAccelerator({
+      capability: { inferenceBackendPreference: 'candle-metal' },
+      nativeInferenceAvailable: true,
+    })).toBe(true);
+    expect(hasUsableIndexAccelerator({
+      capability: { inferenceBackendPreference: 'candle-cuda' },
+      nativeInferenceAvailable: true,
+    })).toBe(true);
+    expect(hasUsableIndexAccelerator({
+      capability: { inferenceBackendPreference: 'coreml-cascade' },
+      nativeInferenceAvailable: true,
+    })).toBe(true);
+  });
+
+  it('is false on ORT CPU fallback even when native inference is loadable', () => {
+    expect(hasUsableIndexAccelerator({
+      capability: { inferenceBackendPreference: 'ort-cpu' },
+      nativeInferenceAvailable: true,
+    })).toBe(false);
+  });
+
+  it('is false for missing or unknown capability values', () => {
+    expect(hasUsableIndexAccelerator({
+      capability: undefined,
+      nativeInferenceAvailable: true,
+    })).toBe(false);
+    expect(hasUsableIndexAccelerator({
+      capability: { inferenceBackendPreference: 'unknown-backend' },
+      nativeInferenceAvailable: true,
+    })).toBe(false);
+  });
+
+  it('is false when native inference is disabled or unavailable even on accelerator hardware', () => {
+    expect(hasUsableIndexAccelerator({
+      capability: { inferenceBackendPreference: 'candle-metal' },
+      nativeInferenceAvailable: false,
+    })).toBe(false);
+    expect(hasUsableIndexAccelerator({
+      capability: { inferenceBackendPreference: 'candle-cuda' },
+      nativeInferenceAvailable: null,
+    })).toBe(false);
+  });
+});
+
+describe('LI + accelerator filtering compose (init fetch order)', () => {
+  // Mirrors runInit: getModelsForProfile → filterModelKeysForLiChoice →
+  // filterModelKeysForAccelerator. Real registry keys throughout.
+  const fullSet = [
+    'lateon-code',
+    'lateon-code-fp32',
+    'lateon-code-edge',
+    'lateon-code-edge-fp32',
+    'coderankembed-int8',
+    'coderankembed-fp32',
+    'all-minilm-l6-v2',
+  ];
+  const compose = (liModel, hasAccelerator) =>
+    filterModelKeysForAccelerator(
+      filterModelKeysForLiChoice(fullSet, liModel),
+      { hasAccelerator },
+    );
+
+  it('standard LI, CPU-only host → ORT LI + ORT embed + cache, no FP32', () => {
+    expect(compose(LI_MODEL_STANDARD, false)).toEqual([
+      'lateon-code',
+      'coderankembed-int8',
+      'all-minilm-l6-v2',
+    ]);
+  });
+
+  it('edge LI, CPU-only host → edge ORT LI + ORT embed + cache, no FP32', () => {
+    expect(compose(LI_MODEL_EDGE, false)).toEqual([
+      'lateon-code-edge',
+      'coderankembed-int8',
+      'all-minilm-l6-v2',
+    ]);
+  });
+
+  it('liModel=none, CPU-only host → only ORT embed + cache', () => {
+    expect(compose(LI_MODEL_NONE, false)).toEqual([
+      'coderankembed-int8',
+      'all-minilm-l6-v2',
+    ]);
+  });
+
+  it('standard LI, accelerator host → keeps standard FP32 backbones, no edge FP32', () => {
+    const final = compose(LI_MODEL_STANDARD, true);
+    expect(final).toContain('lateon-code-fp32');
+    expect(final).toContain('coderankembed-fp32');
+    expect(final).not.toContain('lateon-code-edge-fp32'); // dropped by LI filter
+  });
+
+  it('edge LI, accelerator host → keeps edge FP32 backbones, no standard FP32', () => {
+    const final = compose(LI_MODEL_EDGE, true);
+    expect(final).toContain('lateon-code-edge-fp32');
+    expect(final).toContain('coderankembed-fp32');
+    expect(final).not.toContain('lateon-code-fp32'); // dropped by LI filter
   });
 });
 

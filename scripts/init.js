@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   getModelEntry, getModelsForProfile, getSkippedOptInModels, MODEL_REGISTRY, fetchModel, getModelCacheDir,
+  isNativeAcceleratedModel,
   getPlatformInfo, resolveNativeAddon, resolveNativeBinary,
   detectHardwareCapability,
   getCoremlCascadeState, getCoremlCascadeReport, fetchCoremlCascade,
@@ -40,6 +41,7 @@ import { ALL_HARNESSES, injectAgentInstructions } from './inject-agent-instructi
 import { writeClaudeRules } from './write-claude-rules.js';
 import { installPromptReminderHook } from './install-prompt-reminders.js';
 import { installToolEnforcement } from './install-tool-enforcement.js';
+import { isNativeInferenceAvailable } from '../core/infrastructure/native-inference.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -589,11 +591,53 @@ export function filterModelKeysForLiChoice(modelKeys, liModel) {
   return modelKeys;
 }
 
+/**
+ * Drop native-accelerated FP32 safetensors keys on CPU-only hosts. Those
+ * artifacts (coderankembed-fp32, lateon-code-fp32, lateon-code-edge-fp32) are
+ * loaded only by the candle/native accelerated indexing path (Metal / CoreML
+ * cascade / CUDA); a no-accelerator host indexes with ORT INT8 CPU and never
+ * loads them, so fetching ~1.2 GB of FP32 weights is pure waste.
+ *
+ * `hasAccelerator` is derived from the hardware-capability snapshot plus
+ * native-inference availability by the caller. Order-preserving +
+ * non-mutating: returns a new array.
+ * Classification of "is this a native FP32 model" lives in the registry
+ * (`isNativeAcceleratedModel`), so this stays a thin policy filter.
+ *
+ * Only an explicit `hasAccelerator: false` triggers filtering — `undefined`
+ * (flag omitted) and `true` both keep every key. That makes an accidental
+ * omission safe (it never silently drops the FP32 backbones).
+ */
+export function filterModelKeysForAccelerator(modelKeys, { hasAccelerator } = {}) {
+  if (hasAccelerator !== false) return modelKeys;
+  return modelKeys.filter((k) => !isNativeAcceleratedModel(k));
+}
+
+/**
+ * Init-time accelerator availability for model shipping. A hardware
+ * accelerator only counts when native inference can actually load it; hosts
+ * with SWEET_SEARCH_NATIVE_INFERENCE=0, no native addon, or a native load
+ * failure index on ORT INT8 CPU and should skip native FP32 safetensors.
+ */
+export function hasUsableIndexAccelerator({
+  capability,
+  nativeInferenceAvailable = true,
+} = {}) {
+  if (nativeInferenceAvailable !== true) return false;
+  return capability?.inferenceBackendPreference === 'coreml-cascade'
+    || capability?.inferenceBackendPreference === 'candle-metal'
+    || capability?.inferenceBackendPreference === 'candle-cuda';
+}
+
 export async function downloadModelsForProfile(profile, options = {}) {
   let modelKeys = getModelsForProfile(profile);
   if (options.liModel) {
     modelKeys = filterModelKeysForLiChoice(modelKeys, options.liModel);
   }
+  // CPU-only hosts skip native FP32 safetensors. The filter only drops keys
+  // when `hasAccelerator` is explicitly false; an unset option (legacy
+  // callers, accelerator hosts) preserves the "fetch everything" behavior.
+  modelKeys = filterModelKeysForAccelerator(modelKeys, { hasAccelerator: options.hasAccelerator });
   if (modelKeys.length === 0) {
     return { results: new Map(), totalDownloaded: 0, totalCached: 0, failures: [] };
   }
@@ -1304,7 +1348,8 @@ Options:
   --skip-cuda               Force-disable the CUDA backend even when an
                             NVIDIA GPU and the -cuda native package are
                             detected. Equivalent to SWEET_SEARCH_CUDA=0.
-                            Indexing falls back to candle-cpu.
+                            Indexing falls back to ORT INT8 CPU (and native
+                            FP32 safetensors are skipped at fetch time).
   --no-agent-instructions   Skip the agent-instruction injection layer
                             entirely (no CLAUDE.md, no AGENTS.md, no
                             GEMINI.md, no Cursor rule, no
@@ -1430,7 +1475,25 @@ export async function runInit(args) {
   //      and final config write all see the same choices. Uses an early
   //      hardware capability snapshot for the recommendation; the snapshot
   //      is recomputed later for the runtime config (cheap + cacheable).
+  //
+  // --skip-cuda: translate to SWEET_SEARCH_CUDA=0 BEFORE the first
+  // detectHardwareCapability() call below, which caches its result. Setting it
+  // here (not just before step 8) ensures the early snapshot used for model
+  // fetching, the persisted runtime config, and the cascade decision all see
+  // CUDA as disabled — a --skip-cuda host is treated as CPU-only end to end.
+  if (parsed.skipCuda && !process.env.SWEET_SEARCH_CUDA) {
+    process.env.SWEET_SEARCH_CUDA = '0';
+  }
   const earlyCapability = detectHardwareCapability();
+  const nativeInferenceAvailable = isNativeInferenceAvailable();
+  // A host has a usable accelerator only when hardware detection found one AND
+  // native inference can actually load. If native inference is disabled or the
+  // addon is absent/unloadable, init skips native FP32 safetensors because
+  // indexing will stay on ORT INT8 CPU at runtime.
+  const hasAccelerator = hasUsableIndexAccelerator({
+    capability: earlyCapability,
+    nativeInferenceAvailable,
+  });
   let liChoices;
   try {
     liChoices = await resolveLiPolicyChoices({
@@ -1484,11 +1547,24 @@ export async function runInit(args) {
   //    variants; 'edge' skips standard variants. Saves disk + bandwidth on
   //    constrained installs.
   const allModelKeys = getModelsForProfile(profile);
-  const modelKeys = filterModelKeysForLiChoice(allModelKeys, liChoices.liModel);
-  const skippedByLiChoice = allModelKeys.filter((k) => !modelKeys.includes(k));
+  const liFilteredKeys = filterModelKeysForLiChoice(allModelKeys, liChoices.liModel);
+  // CPU-only hosts (no Metal/CoreML/CUDA) skip native FP32 safetensors. Apply
+  // the same filter to the keys handed to verification below, so we only verify
+  // what we actually fetched — verifyRuntime checks on-disk presence and would
+  // otherwise FAIL on the intentionally-absent FP32 artifacts.
+  const modelKeys = filterModelKeysForAccelerator(liFilteredKeys, { hasAccelerator });
+  const skippedByLiChoice = allModelKeys.filter((k) => !liFilteredKeys.includes(k));
+  const skippedByAccelerator = liFilteredKeys.filter((k) => !modelKeys.includes(k));
   if (skippedByLiChoice.length > 0 && parsed.verbose) {
     process.stderr.write(
       `[init]   liModel=${liChoices.liModel} → skipping ${skippedByLiChoice.length} model key(s): ${skippedByLiChoice.join(', ')}\n`,
+    );
+  }
+  if (skippedByAccelerator.length > 0) {
+    process.stderr.write(
+      `[init]   no inference accelerator (${earlyCapability.inferenceBackendPreference}) → `
+      + `skipping ${skippedByAccelerator.length} native FP32 model key(s): ${skippedByAccelerator.join(', ')} `
+      + `(indexing uses ORT INT8 CPU)\n`,
     );
   }
   const skippedOptIns = getSkippedOptInModels(profile);
@@ -1513,6 +1589,7 @@ export async function runInit(args) {
     const downloadResult = await downloadModelsForProfile(profile, {
       force: parsed.force,
       liModel: liChoices.liModel,
+      hasAccelerator,
     });
 
     modelResults = downloadResult.results;
@@ -1541,13 +1618,6 @@ export async function runInit(args) {
     process.stderr.write(`[init] Models: ${cached} cached, ${downloaded} downloaded\n`);
   } else {
     process.stderr.write(`[init] No models required for profile "${profile}"\n`);
-  }
-
-  // --skip-cuda: translate to SWEET_SEARCH_CUDA=0 so the shared
-  // capability detection on hardware-capability.js honors it. Set before
-  // detectHardwareCapability() runs because that call caches its result.
-  if (parsed.skipCuda && !process.env.SWEET_SEARCH_CUDA) {
-    process.env.SWEET_SEARCH_CUDA = '0';
   }
 
   // 8. Resolve hardware capability + CoreML cascade state.

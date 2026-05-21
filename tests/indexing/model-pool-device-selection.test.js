@@ -3,53 +3,61 @@
  * and the cascade-dir helper in core/infrastructure/native-inference.js.
  *
  * These helpers are the branch points that decide whether GPU indexing
- * goes through Metal, CUDA, or CPU. Direct unit coverage here means a
- * one-character typo in the preference strings (e.g. "candle-cuda" vs
- * "candel-cuda") is caught at test time rather than at a user's first
- * `sweet-search init` on a RunPod instance.
+ * goes through Metal, CUDA, or no accelerator (ORT INT8 CPU). Direct unit
+ * coverage here means a one-character typo in the preference strings (e.g.
+ * "candle-cuda" vs "candel-cuda") is caught at test time rather than at a
+ * user's first `sweet-search init` on a RunPod instance. It also pins the
+ * critical invariant that "no accelerator" resolves to `null` (ORT INT8 CPU
+ * indexing), never to a candle-on-CPU device kind.
  */
 
 import { describe, it, expect } from 'vitest';
 
-import { selectDeviceKindFromPreference } from '../../core/indexing/model-pool.js';
+import { selectAcceleratorDeviceKind } from '../../core/indexing/model-pool.js';
 import { pickCascadeDirForDevice } from '../../core/infrastructure/native-inference.js';
 
-describe('selectDeviceKindFromPreference', () => {
+describe('selectAcceleratorDeviceKind', () => {
   it('maps coreml-cascade → metal', () => {
-    expect(selectDeviceKindFromPreference('coreml-cascade')).toBe('metal');
+    expect(selectAcceleratorDeviceKind('coreml-cascade')).toBe('metal');
   });
 
   it('maps candle-metal → metal', () => {
-    expect(selectDeviceKindFromPreference('candle-metal')).toBe('metal');
+    expect(selectAcceleratorDeviceKind('candle-metal')).toBe('metal');
   });
 
   it('maps candle-cuda → cuda', () => {
-    expect(selectDeviceKindFromPreference('candle-cuda')).toBe('cuda');
+    expect(selectAcceleratorDeviceKind('candle-cuda')).toBe('cuda');
   });
 
-  it('maps candle-cpu → cpu', () => {
-    expect(selectDeviceKindFromPreference('candle-cpu')).toBe('cpu');
+  it('maps ort-cpu → null (no native device — ORT INT8 CPU indexing)', () => {
+    expect(selectAcceleratorDeviceKind('ort-cpu')).toBeNull();
   });
 
-  it('maps unknown preferences → cpu (safe default)', () => {
-    expect(selectDeviceKindFromPreference('unknown-backend')).toBe('cpu');
-    expect(selectDeviceKindFromPreference(undefined)).toBe('cpu');
-    expect(selectDeviceKindFromPreference(null)).toBe('cpu');
-    expect(selectDeviceKindFromPreference('')).toBe('cpu');
+  it('maps candle-cpu → null defensively (no accelerator must never load candle on CPU)', () => {
+    // The detector no longer emits 'candle-cpu', but a stale persisted value
+    // must still resolve to "no native device", not the candle CPU path.
+    expect(selectAcceleratorDeviceKind('candle-cpu')).toBeNull();
+  });
+
+  it('maps unknown / falsy preferences → null (safe default)', () => {
+    expect(selectAcceleratorDeviceKind('unknown-backend')).toBeNull();
+    expect(selectAcceleratorDeviceKind(undefined)).toBeNull();
+    expect(selectAcceleratorDeviceKind(null)).toBeNull();
+    expect(selectAcceleratorDeviceKind('')).toBeNull();
   });
 
   it('is stable across ALL current preference strings', () => {
-    // Mirror the explicit enumeration in hardware-capability.js — if a
-    // new preference is added there without updating this helper,
-    // this test catches it by returning 'cpu' instead of the intended device.
+    // Mirror the explicit enumeration in hardware-capability.js — if a new
+    // accelerator preference is added there without updating this helper,
+    // this test catches it by returning null instead of the intended device.
     const table = {
       'coreml-cascade': 'metal',
       'candle-metal': 'metal',
       'candle-cuda': 'cuda',
-      'candle-cpu': 'cpu',
+      'ort-cpu': null,
     };
     for (const [pref, expected] of Object.entries(table)) {
-      expect(selectDeviceKindFromPreference(pref)).toBe(expected);
+      expect(selectAcceleratorDeviceKind(pref)).toBe(expected);
     }
   });
 });
