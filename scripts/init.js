@@ -171,9 +171,11 @@ export function parseInitArgs(args) {
       result.codex = true;
       result.optInHarnesses.add('agents');
     } else if (arg === '--codex-enable-global-hooks') {
-      // Opt-in: also enable the `[features] hooks` feature flag in the
-      // user-level ~/.codex/config.toml. Off by default because it writes
-      // outside the project into the user's hand-curated global config.
+      // Legacy/advanced opt-in: also enable the `[features] hooks` feature flag
+      // in the user-level ~/.codex/config.toml. NOT required for the normal
+      // path — `--codex` already enables the flag in the project config. Off by
+      // default because it writes outside the project into the user's
+      // hand-curated global config.
       result.codexEnableGlobalHooks = true;
     } else if (arg === '--no-prompt-reminders') {
       // P2: skip the UserPromptSubmit reminder hook. Default-on because
@@ -1151,6 +1153,60 @@ export function ensureCodexHooksFeatureFlag(configPath, { create = false } = {})
   return write(next, exists ? 'added' : 'created');
 }
 
+/**
+ * Build the post-init Codex guidance message (or `null` when the hook wasn't
+ * registered). Pure / string-only so the UX wording can be unit-tested without
+ * spawning init.
+ *
+ * `init --codex` is the COMPLETE normal setup — it has already written the hook
+ * and enabled the canonical `[features] hooks = true` in the project config — so
+ * this message frames `/hooks` trust as the ONLY remaining manual step. It never
+ * tells the user they must pass `--codex-enable-global-hooks` (a legacy/advanced
+ * opt-in), and it never names the deprecated `codex_hooks` key.
+ *
+ * @param {{hookStatus:string, projectFlagStatus:string}} params
+ * @returns {string|null}
+ */
+export function formatCodexSetupGuidance({ hookStatus, projectFlagStatus } = {}) {
+  if (hookStatus !== 'registered') return null;
+
+  // `created` / `added` / `already` / `migrated` all mean the canonical
+  // `[features] hooks = true` is now present in the project config — so init has
+  // done the enable and the only manual step left is project trust via `/hooks`.
+  const projectEnabled = ['created', 'added', 'already', 'migrated'].includes(projectFlagStatus);
+  if (projectEnabled) {
+    return (
+      `[init] Codex is set up. Project hooks are enabled ` +
+      `([features] hooks = true in ./.codex/config.toml).\n` +
+      `         One manual step remains (init can't do it for you):\n` +
+      `           • Run \`/hooks\` inside Codex to review and trust the repo-local\n` +
+      `             .codex/hooks.json before Codex will run it.\n` +
+      `         Notes:\n` +
+      `           • Index freshness does NOT depend on this hook — the sweet-search\n` +
+      `             CLI/warm-server starts the incremental maintainer on first use\n` +
+      `             under any agent. The Codex hook is only an early prewarm.\n` +
+      `           • \`codex exec\` (non-interactive) does not fire SessionStart hooks.\n` +
+      `           • MCP is optional and not required for incremental indexing.\n`
+    );
+  }
+
+  if (projectFlagStatus === 'present-other') {
+    return (
+      `[init] Codex hook written, but ./.codex/config.toml already sets ` +
+      `[features] hooks to a non-true value — left as-is.\n` +
+      `         Set \`hooks = true\` (or run \`codex --enable hooks\`), then trust\n` +
+      `         the hook with \`/hooks\` in Codex. Index freshness still works\n` +
+      `         without it (CLI/warm-server first-use).\n`
+    );
+  }
+
+  return (
+    `[init] Codex hook written, but enabling [features] hooks in ` +
+    `./.codex/config.toml did not succeed (status: ${projectFlagStatus}).\n` +
+    `         Set \`hooks = true\` manually, then trust the hook with \`/hooks\`.\n`
+  );
+}
+
 // ---------------------------------------------------------------------------
 // /sweet-index skill installation
 // ---------------------------------------------------------------------------
@@ -1273,25 +1329,29 @@ Options:
                             an @import file when --no-symlink-instruction-files).
   --cursor                  Also ship .cursor/rules/sweet-search.mdc with
                             sweet-search frontmatter.
-  --codex                   Wire the Codex CLI: write a SessionStart hook into
-                            .codex/hooks.json (reusing the same launcher as the
-                            Claude prewarm hook, so Codex sessions also start the
-                            search server + default-on incremental maintainer),
-                            enable [features] hooks = true in the project
-                            .codex/config.toml (migrating a deprecated codex_hooks
-                            flag if present), and ship AGENTS.md (implies
-                            --agents). Independent of --no-claude. You must enable
-                            hooks ([features] hooks = true, or 'codex --enable
-                            hooks') and review/trust repo-local hooks with /hooks
-                            in Codex for the project hook to run; if your Codex
-                            only honors the user-level flag, add
-                            --codex-enable-global-hooks.
+  --codex                   Complete Codex CLI setup (the normal path): write a
+                            SessionStart hook into .codex/hooks.json (reusing the
+                            same launcher as the Claude prewarm hook, so Codex
+                            sessions also start the search server + default-on
+                            incremental maintainer), enable [features] hooks = true
+                            in the project .codex/config.toml (migrating a
+                            deprecated codex_hooks flag if present), and ship
+                            AGENTS.md (implies --agents). Independent of
+                            --no-claude. The only remaining manual step is to
+                            review/trust the repo-local hook with /hooks inside
+                            Codex. Index freshness does NOT depend on this hook —
+                            the sweet-search CLI/warm-server starts the maintainer
+                            on first use under any agent; the hook is just an early
+                            prewarm. MCP is optional and not required.
   --codex-enable-global-hooks
-                            With --codex, also enable [features] hooks = true in
-                            the user-level ~/.codex/config.toml (append-if-absent,
-                            comment-preserving, migrates a deprecated codex_hooks).
-                            Off by default because it writes outside the project
-                            into your global Codex config.
+                            [legacy/advanced] Not needed for normal setup — the
+                            project-level flag written by --codex is sufficient.
+                            Use only to deliberately migrate the user-level
+                            ~/.codex/config.toml: enables [features] hooks = true
+                            there too (append-if-absent, comment-preserving,
+                            migrates a deprecated codex_hooks). Off by default
+                            because it writes outside the project into your global
+                            Codex config.
   --no-symlink-instruction-files
                             Write GEMINI.md as a regular file with an @import
                             line rather than a symlink to the canonical file.
@@ -1711,13 +1771,18 @@ export async function runInit(args) {
     }
   }
 
-  // 11.6. Codex CLI session-start hook (opt-in via --codex). Mirrors the
-  //       Claude prewarm hook but writes Codex's hook surface (.codex/hooks.json)
-  //       and reuses the same launcher. Independent of --no-claude (it touches
-  //       .codex/, never .claude/). Two things init can't fully guarantee — the
-  //       `codex_hooks` feature flag (we set it project-locally; user-global only
-  //       with --codex-enable-global-hooks) and project trust — are surfaced as
-  //       post-init instructions rather than assumed.
+  // 11.6. Codex CLI session-start hook + feature flag (opt-in via --codex).
+  //       `--codex` is the COMPLETE normal Codex setup: it writes Codex's hook
+  //       surface (.codex/hooks.json), enables the canonical [features] hooks
+  //       flag in the PROJECT .codex/config.toml (migrating a deprecated
+  //       codex_hooks), and ships AGENTS.md. Independent of --no-claude (it
+  //       touches .codex/, never .claude/). The one thing init can't do for the
+  //       user is project trust — surfaced as a single `/hooks` instruction. The
+  //       user-level global flag is a legacy/advanced opt-in
+  //       (--codex-enable-global-hooks), never required for the normal path. The
+  //       Codex hook is a prewarm convenience only: default index freshness is
+  //       guaranteed by the core CLI/warm-server first-use launcher regardless of
+  //       editor or MCP.
   let codexHookReport = null;
   if (parsed.codex) {
     codexHookReport = registerCodexSessionStartHook({
@@ -1742,19 +1807,11 @@ export async function runInit(args) {
     if (globalFlag) {
       process.stderr.write(`[init] Codex [features] hooks flag (~/.codex/config.toml): ${globalFlag.status}\n`);
     }
-    if (codexHookReport.status === 'registered') {
-      process.stderr.write(
-        `[init] Codex setup needs two things init can't do for you:\n` +
-        `         1. Enable hooks: set [features] hooks = true in config.toml ` +
-        `(or run \`codex --enable hooks\`).\n` +
-        (parsed.codexEnableGlobalHooks
-          ? `            Set in ~/.codex/config.toml (status: ${globalFlag?.status}).\n`
-          : `            Set in ./.codex/config.toml (status: ${projectFlag.status}). If your Codex only\n` +
-            `            honors the user-level flag, re-run with --codex-enable-global-hooks.\n`) +
-        `         2. Review/trust repo-local hooks with \`/hooks\` in Codex so the\n` +
-        `            project .codex/hooks.json is allowed to run.\n`,
-      );
-    }
+    const guidance = formatCodexSetupGuidance({
+      hookStatus: codexHookReport.status,
+      projectFlagStatus: projectFlag.status,
+    });
+    if (guidance) process.stderr.write(guidance);
   }
 
   // 12-15. Inject the sweet-search policy across coding-agent harnesses.

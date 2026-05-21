@@ -1,7 +1,9 @@
 /**
  * Tests for the `init --codex` wiring: the Codex CLI SessionStart hook
- * (.codex/hooks.json), the `codex_hooks` feature-flag editor for config.toml,
- * and the uninstall counterpart.
+ * (.codex/hooks.json), the canonical `[features] hooks = true` feature-flag
+ * editor for config.toml (which also migrates the deprecated `codex_hooks`),
+ * and the uninstall counterpart. `init --codex` is the complete normal Codex
+ * setup; the only remaining manual step is `/hooks` trust.
  *
  * Mirrors tests/init/prewarm-hook.test.js (the Claude prewarm equivalent):
  *   - merge is non-destructive (preserves other events/entries)
@@ -25,6 +27,7 @@ const INIT_CLI = join(REPO_ROOT, 'scripts', 'init.js');
 import {
   registerCodexSessionStartHook,
   ensureCodexHooksFeatureFlag,
+  formatCodexSetupGuidance,
   CODEX_HOOKS_FILENAME,
   PREWARM_HOOK_FILENAME,
 } from '../../scripts/init.js';
@@ -408,6 +411,85 @@ describe('init --codex (end-to-end flag wiring)', () => {
     expect(r.stderr).toContain('[features] hooks');
     expect(r.stderr).not.toMatch(/codex_hooks\s*=\s*true/);
   });
+
+  it('init --codex alone enables the project flag, never writes the global config, and never pushes --codex-enable-global-hooks or .mcp.json', () => {
+    // No --codex-enable-global-hooks: the normal path must be self-sufficient.
+    // (In this harness the CLI runs from the repo, so the hook script lives
+    // outside the temp project and hook *registration* is skipped — the project
+    // config flag write and the output wording are exercised regardless. The
+    // registered-hook success message is covered by formatCodexSetupGuidance
+    // unit tests and the packed-install smoke.)
+    const r = spawnSync(
+      process.execPath,
+      [INIT_CLI, '--codex', '--profile', 'core'],
+      { cwd: proj, env: { ...process.env, HOME: home }, encoding: 'utf-8', timeout: 60_000 },
+    );
+    expect(r.status).toBe(0);
+
+    // Project feature flag is the canonical one, never the deprecated key.
+    const projCfg = readFileSync(join(proj, '.codex', 'config.toml'), 'utf-8');
+    expect(projCfg).toMatch(/^hooks\s*=\s*true/m);
+    expect(projCfg).not.toMatch(/codex_hooks/);
+
+    // No global config write without the explicit legacy flag.
+    expect(existsSync(join(home, '.codex', 'config.toml'))).toBe(false);
+
+    // Output names the canonical flag and never pushes the legacy global flag or
+    // the deprecated key for the normal path.
+    expect(r.stderr).toContain('[features] hooks');
+    expect(r.stderr).not.toContain('--codex-enable-global-hooks');
+    expect(r.stderr).not.toMatch(/codex_hooks\s*=\s*true/);
+
+    // init --codex never creates an MCP config.
+    expect(existsSync(join(proj, '.mcp.json'))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatCodexSetupGuidance — the registered-hook UX message (pure)
+// ---------------------------------------------------------------------------
+
+describe('formatCodexSetupGuidance', () => {
+  it('returns null when the hook was not registered (skipped / error)', () => {
+    expect(formatCodexSetupGuidance({ hookStatus: 'skipped', projectFlagStatus: 'created' })).toBeNull();
+    expect(formatCodexSetupGuidance({ hookStatus: 'error', projectFlagStatus: 'created' })).toBeNull();
+  });
+
+  for (const status of ['created', 'added', 'already', 'migrated']) {
+    it(`frames /hooks as the only manual step when the project flag is '${status}'`, () => {
+      const msg = formatCodexSetupGuidance({ hookStatus: 'registered', projectFlagStatus: status });
+      expect(msg).toBeTypeOf('string');
+      // The canonical flag is reported as already enabled by init.
+      expect(msg).toContain('[features] hooks = true');
+      // The only remaining manual step is /hooks trust.
+      expect(msg).toContain('/hooks');
+      // Never instructs the user to pass the legacy global flag for the normal path.
+      expect(msg).not.toContain('--codex-enable-global-hooks');
+      // Never names the deprecated key.
+      expect(msg).not.toMatch(/codex_hooks/);
+      // Surfaces the durable, hook-independent guarantee + MCP-optional so users
+      // don't think the hook is load-bearing.
+      expect(msg).toMatch(/first use/i);
+      expect(msg).toMatch(/MCP is optional/i);
+      // Notes the codex exec caveat.
+      expect(msg).toContain('codex exec');
+    });
+  }
+
+  it("tells the user to set hooks = true when the project config explicitly disabled it ('present-other')", () => {
+    const msg = formatCodexSetupGuidance({ hookStatus: 'registered', projectFlagStatus: 'present-other' });
+    expect(msg).toContain('hooks = true');
+    expect(msg).toContain('/hooks');
+    expect(msg).not.toContain('--codex-enable-global-hooks');
+    expect(msg).not.toMatch(/codex_hooks/);
+  });
+
+  it('reports the failure status and still points at /hooks for any other flag status', () => {
+    const msg = formatCodexSetupGuidance({ hookStatus: 'registered', projectFlagStatus: 'error' });
+    expect(msg).toContain('error');
+    expect(msg).toContain('/hooks');
+    expect(msg).not.toContain('--codex-enable-global-hooks');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -422,5 +504,18 @@ describe('docs/PREHEATING.md Codex section', () => {
     expect(doc).toContain('codex --enable hooks');
     // Never presents the deprecated flag as the value to set.
     expect(doc).not.toMatch(/codex_hooks\s*=\s*true/);
+  });
+
+  it('frames init --codex as the normal setup and names the durable, hook-independent guarantee', () => {
+    const doc = readFileSync(join(REPO_ROOT, 'docs', 'PREHEATING.md'), 'utf-8');
+    // init --codex is the complete normal setup.
+    expect(doc).toMatch(/init\s+--codex/);
+    expect(doc).toMatch(/complete normal setup/i);
+    // The durable guarantee is the CLI/warm-server first-use launcher, not hooks.
+    expect(doc).toMatch(/first[- ]use/i);
+    // `codex exec` does not prove SessionStart behaviour.
+    expect(doc).toContain('codex exec');
+    // MCP remains optional / unrelated to default indexing.
+    expect(doc).toMatch(/MCP/);
   });
 });
