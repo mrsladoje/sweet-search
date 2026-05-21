@@ -202,11 +202,11 @@ describe('detectHardwareCapability', () => {
       'coreml-cascade',
       'candle-metal',
       'candle-cuda',
-      'candle-cpu',
+      'ort-cpu',
     ]).toContain(hw.inferenceBackendPreference);
   });
 
-  it('inferenceBackendPreference follows the cascade→metal→cuda→cpu priority', () => {
+  it('inferenceBackendPreference follows the cascade→metal→cuda→ort-cpu priority', () => {
     const hw = detectHardwareCapability();
     if (hw.coremlCascadeEligible) {
       expect(hw.inferenceBackendPreference).toBe('coreml-cascade');
@@ -215,7 +215,9 @@ describe('detectHardwareCapability', () => {
     } else if (hw.candleGpuBackend === 'cuda') {
       expect(hw.inferenceBackendPreference).toBe('candle-cuda');
     } else {
-      expect(hw.inferenceBackendPreference).toBe('candle-cpu');
+      // No usable accelerator → the optimized ORT INT8 CPU path, never
+      // candle-cpu (which would diverge from the ORT INT8 query encoder).
+      expect(hw.inferenceBackendPreference).toBe('ort-cpu');
     }
   });
 
