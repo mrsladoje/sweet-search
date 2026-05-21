@@ -8,7 +8,7 @@
 use std::env;
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{self, Command, Stdio};
 use std::thread;
 use std::time::Duration;
@@ -250,12 +250,10 @@ fn auto_start_server() -> Option<String> {
     // Find the core/start-server.js relative to the binary or cwd
     let server_script = find_server_script();
     let script = match &server_script {
+        // find_server_script() prints a detailed "tried these locations"
+        // diagnostic on failure, so we just bail here.
         Some(s) => s.as_str(),
-        None => {
-            eprintln!("{FA}Error:{R} Cannot find core/start-server.js");
-            eprintln!("Start server manually: node core/start-server.js");
-            return None;
-        }
+        None => return None,
     };
 
     // Spawn server in background.
@@ -285,34 +283,114 @@ fn auto_start_server() -> Option<String> {
     None
 }
 
-fn find_server_script() -> Option<String> {
-    // Use core/start-server.js — a minimal entry point that avoids the circular
-    // import in sweet-search.js which causes Node's "unsettled top-level await" exit.
-    let script_name = "core/start-server.js";
+/// Pure resolver for `core/start-server.js`. Given the cwd, the binary path, an
+/// optional explicit override, and an existence predicate, return the first
+/// candidate that exists plus the ordered list of locations tried (used for the
+/// failure diagnostic). Side-effect-free so it can be unit-tested without the
+/// real filesystem. The server entry is a minimal module that avoids the
+/// circular import in sweet-search.js (Node "unsettled top-level await" exit).
+///
+/// Lookup order:
+///   0. `$SWEET_SEARCH_SERVER_ENTRY` (explicit override, same env the JS
+///      prewarm hook honors).
+///   1. `<cwd>/core/start-server.js` — dev repo run from its own root.
+///   2. `<cwd ancestor>/node_modules/sweet-search/core/start-server.js` — npm
+///      install, invoked anywhere inside the consuming project.
+///   3a. `<binary ancestor>/core/start-server.js` — dev binary in
+///      `crates/sweet-search-cli/target/release/`.
+///   3b. when a binary ancestor is `node_modules` (the published binary lives in
+///      `node_modules/@sweet-search/native-*/`), its sibling
+///      `node_modules/sweet-search/core/start-server.js`.
+fn resolve_server_script(
+    cwd: &Path,
+    exe: Option<&Path>,
+    server_entry_override: Option<&str>,
+    exists: &dyn Fn(&Path) -> bool,
+) -> (Option<PathBuf>, Vec<PathBuf>) {
+    let rel = Path::new("core").join("start-server.js");
+    let mut tried: Vec<PathBuf> = Vec::new();
 
-    // Try relative to current working directory
-    let cwd_script = Path::new(script_name);
-    if cwd_script.exists() {
-        if let Ok(abs) = cwd_script.canonicalize() {
-            return Some(abs.to_string_lossy().into_owned());
+    // 0. Explicit override.
+    if let Some(entry) = server_entry_override {
+        if !entry.is_empty() {
+            let p = PathBuf::from(entry);
+            if exists(&p) {
+                return (Some(p), tried);
+            }
+            tried.push(p);
         }
-        return Some(cwd_script.to_string_lossy().into_owned());
     }
 
-    // Try relative to the binary location
-    if let Ok(exe) = env::current_exe() {
+    // 1. cwd-relative (dev repo run from its root).
+    let cwd_script = cwd.join(&rel);
+    if exists(&cwd_script) {
+        return (Some(cwd_script), tried);
+    }
+    tried.push(cwd_script);
+
+    // 2. cwd upward: <ancestor>/node_modules/sweet-search/core/start-server.js.
+    for ancestor in cwd.ancestors() {
+        let candidate = ancestor.join("node_modules").join("sweet-search").join(&rel);
+        if exists(&candidate) {
+            return (Some(candidate), tried);
+        }
+        tried.push(candidate);
+    }
+
+    // 3. binary path upward.
+    if let Some(exe) = exe {
         if let Some(dir) = exe.parent() {
-            // Binary might be in crates/sweet-search-cli/target/release/ or repo root
             for ancestor in dir.ancestors() {
-                let candidate = ancestor.join(script_name);
-                if candidate.exists() {
-                    return Some(candidate.to_string_lossy().into_owned());
+                // 3a. repo-relative (dev: crates/sweet-search-cli/target/release).
+                let candidate = ancestor.join(&rel);
+                if exists(&candidate) {
+                    return (Some(candidate), tried);
+                }
+                tried.push(candidate);
+
+                // 3b. npm sibling: the published binary sits in
+                // node_modules/@sweet-search/native-*/, and the same node_modules
+                // also holds the `sweet-search` package with the JS server entry.
+                if ancestor.file_name().map(|n| n == "node_modules").unwrap_or(false) {
+                    let sibling = ancestor.join("sweet-search").join(&rel);
+                    if exists(&sibling) {
+                        return (Some(sibling), tried);
+                    }
+                    tried.push(sibling);
                 }
             }
         }
     }
 
-    None
+    (None, tried)
+}
+
+fn find_server_script() -> Option<String> {
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let exe = env::current_exe().ok();
+    let override_env = env::var("SWEET_SEARCH_SERVER_ENTRY").ok();
+    let exists = |p: &Path| p.exists();
+
+    let (found, tried) =
+        resolve_server_script(&cwd, exe.as_deref(), override_env.as_deref(), &exists);
+
+    match found {
+        Some(p) => {
+            // Canonicalize for a stable absolute path; fall back to the raw path.
+            let resolved = p.canonicalize().unwrap_or(p);
+            Some(resolved.to_string_lossy().into_owned())
+        }
+        None => {
+            eprintln!("{FA}Error:{R} Cannot find core/start-server.js. Tried:");
+            for t in &tried {
+                eprintln!("  - {}", t.display());
+            }
+            eprintln!(
+                "Set $SWEET_SEARCH_SERVER_ENTRY to the path of start-server.js to override."
+            );
+            None
+        }
+    }
 }
 
 fn main() {
@@ -388,5 +466,87 @@ fn main() {
     if let Err(e) = do_request(&socket, &url, show_header, Some(&query)) {
         eprintln!("{FA}Error:{R} {e}");
         process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// Build an existence predicate that returns true only for the given paths.
+    fn exists_set(paths: &[&str]) -> impl Fn(&Path) -> bool {
+        let set: HashSet<PathBuf> = paths.iter().map(PathBuf::from).collect();
+        move |p: &Path| set.contains(p)
+    }
+
+    #[test]
+    fn override_env_wins_when_it_exists() {
+        let exists = exists_set(&["/custom/start-server.js"]);
+        let (found, _) = resolve_server_script(
+            Path::new("/proj"),
+            Some(Path::new("/proj/node_modules/.bin/sweet-search")),
+            Some("/custom/start-server.js"),
+            &exists,
+        );
+        assert_eq!(found, Some(PathBuf::from("/custom/start-server.js")));
+    }
+
+    #[test]
+    fn dev_repo_cwd_relative_resolves() {
+        let exists = exists_set(&["/repo/core/start-server.js"]);
+        let (found, _) =
+            resolve_server_script(Path::new("/repo"), None, None, &exists);
+        assert_eq!(found, Some(PathBuf::from("/repo/core/start-server.js")));
+    }
+
+    #[test]
+    fn npm_install_resolves_from_cwd_upward() {
+        // Invoked from a subdir of a project that installed the package.
+        let target = "/proj/node_modules/sweet-search/core/start-server.js";
+        let exists = exists_set(&[target]);
+        let (found, _) = resolve_server_script(
+            Path::new("/proj/src/deep"),
+            None,
+            None,
+            &exists,
+        );
+        assert_eq!(found, Some(PathBuf::from(target)));
+    }
+
+    #[test]
+    fn npm_published_binary_resolves_sibling_package() {
+        // The published binary lives in node_modules/@sweet-search/native-*/.
+        // cwd is unrelated so the cwd-upward branch can't find it; resolution
+        // must come from walking up the binary path to node_modules.
+        let target = "/proj/node_modules/sweet-search/core/start-server.js";
+        let exists = exists_set(&[target]);
+        let (found, _) = resolve_server_script(
+            Path::new("/somewhere/else"),
+            Some(Path::new(
+                "/proj/node_modules/@sweet-search/native-darwin-arm64/sweet-search",
+            )),
+            None,
+            &exists,
+        );
+        assert_eq!(found, Some(PathBuf::from(target)));
+    }
+
+    #[test]
+    fn missing_everywhere_returns_none_with_tried_locations() {
+        let exists = exists_set(&[]);
+        let (found, tried) = resolve_server_script(
+            Path::new("/proj"),
+            Some(Path::new(
+                "/proj/node_modules/@sweet-search/native-darwin-arm64/sweet-search",
+            )),
+            None,
+            &exists,
+        );
+        assert_eq!(found, None);
+        assert!(!tried.is_empty());
+        // The npm sibling location must be among the attempted paths.
+        assert!(tried.iter().any(|p| p
+            == &PathBuf::from("/proj/node_modules/sweet-search/core/start-server.js")));
     }
 }

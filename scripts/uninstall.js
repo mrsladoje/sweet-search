@@ -802,6 +802,30 @@ export async function runUninstall(args) {
     }
   }
 
+  // Stop the running daemon + maintainer BEFORE deleting .sweet-search/. The
+  // maintainer records its pid in .sweet-search/index-maintainer.lock; if we
+  // removed the state dir first, stopRunningMaintainer() would have no pid to
+  // signal — the maintainer would leak and, because its tick loop recreates the
+  // state dir (mkdirSync), resurrect the very directory we just deleted. So this
+  // must run after the confirmation/dry-run gates but before any removal.
+  const daemonResult = stopRunningDaemon({ projectRoot });
+  if (daemonResult.killed) {
+    console.log('  Stopped: running prewarm daemon (SIGKILL via PID file)');
+  } else if (daemonResult.gracefulAttempted) {
+    console.log('  Stopped: running prewarm daemon (graceful via CLI)');
+  }
+  // If neither happened, daemon wasn't running — silent.
+
+  const maintainerResult = stopRunningMaintainer({ projectRoot });
+  if (maintainerResult.killed) {
+    console.log(`  Stopped: incremental-index maintainer (SIGKILL after grace, pid ${maintainerResult.pid})`);
+  } else if (maintainerResult.signalled) {
+    console.log(`  Stopped: incremental-index maintainer (SIGTERM, pid ${maintainerResult.pid})`);
+  } else if (maintainerResult.lockRemoved) {
+    console.log('  Cleared: stale incremental-index maintainer lock');
+  }
+  // If none happened, the maintainer wasn't running — silent.
+
   // Remove
   let removed = 0;
   let kept = 0;
@@ -925,29 +949,6 @@ export async function runUninstall(args) {
     console.log(`  Failed to remove tool-enforcement: ${toolEnforcementResult.detail}`);
     kept++;
   }
-
-  // Stop any daemon that an earlier SessionStart hook spawned. Otherwise the
-  // old daemon keeps running and holding the socket after uninstall, which
-  // surprises users. Never throws — `stopRunningDaemon` swallows every error.
-  const daemonResult = stopRunningDaemon({ projectRoot });
-  if (daemonResult.killed) {
-    console.log('  Stopped: running prewarm daemon (SIGKILL via PID file)');
-  } else if (daemonResult.gracefulAttempted) {
-    console.log('  Stopped: running prewarm daemon (graceful via CLI)');
-  }
-  // If neither happened, daemon wasn't running — silent.
-
-  // Stop the incremental-index maintainer the prewarm hook auto-launches, so
-  // it doesn't keep ticking against a project whose tooling was just removed.
-  const maintainerResult = stopRunningMaintainer({ projectRoot });
-  if (maintainerResult.killed) {
-    console.log(`  Stopped: incremental-index maintainer (SIGKILL after grace, pid ${maintainerResult.pid})`);
-  } else if (maintainerResult.signalled) {
-    console.log(`  Stopped: incremental-index maintainer (SIGTERM, pid ${maintainerResult.pid})`);
-  } else if (maintainerResult.lockRemoved) {
-    console.log('  Cleared: stale incremental-index maintainer lock');
-  }
-  // If none happened, the maintainer wasn't running — silent.
 
   // Purge npm packages
   if (parsed.purge) {
