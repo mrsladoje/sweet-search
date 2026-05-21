@@ -225,6 +225,63 @@ export function stopRunningDaemon({
   return result;
 }
 
+const MAINTAINER_LOCK_FILENAME = 'index-maintainer.lock';
+
+/** Synchronous sleep (uninstall is one-shot; a sub-second block is fine). */
+function sleepSyncMs(ms) {
+  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch { /* ignore */ }
+}
+
+/** Is this pid alive right now? EPERM (foreign owner) counts as alive. */
+function pidAlive(pid) {
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (err) { return err.code === 'EPERM'; }
+}
+
+/**
+ * Stop a reconcile-v2 incremental-index maintainer that an earlier SessionStart
+ * prewarm hook auto-launched. The maintainer records its pid in
+ * `<stateDir>/index-maintainer.lock`.
+ *
+ * Strategy:
+ *   1. SIGTERM for a clean shutdown (the daemon flushes + releases its lock).
+ *   2. Escalate to SIGKILL if it is still alive after a short grace. Its tick
+ *      interval can be up to 5 minutes — far longer than uninstall can wait —
+ *      so we do not block for graceful exit. Maintainer writes are atomic
+ *      temp+rename, so a SIGKILL is crash-safe (validated by the RC soak +
+ *      crash probe).
+ *   3. Remove the lock file so the next start is clean.
+ *
+ * Never throws — every branch swallows errors (the daemon may not be running).
+ *
+ * Returns `{ present, pid, signalled, killed, lockRemoved }`.
+ */
+export function stopRunningMaintainer({
+  projectRoot,
+  stateDir = projectRoot ? join(projectRoot, DATA_DIR_NAME) : null,
+} = {}) {
+  const result = { present: false, pid: null, signalled: false, killed: false, lockRemoved: false };
+  if (!stateDir) return result;
+  const lockFile = join(stateDir, MAINTAINER_LOCK_FILENAME);
+  if (!existsSync(lockFile)) return result;
+  result.present = true;
+
+  let pid = null;
+  try { pid = Number(JSON.parse(readFileSync(lockFile, 'utf-8')).pid); } catch { pid = null; }
+
+  if (pidAlive(pid)) {
+    result.pid = pid;
+    try { process.kill(pid, 'SIGTERM'); result.signalled = true; } catch { /* ignore */ }
+    sleepSyncMs(300);
+    if (pidAlive(pid)) {
+      try { process.kill(pid, 'SIGKILL'); result.killed = true; } catch { /* ignore */ }
+    }
+  }
+
+  try { unlinkSync(lockFile); result.lockRemoved = true; } catch { /* ignore */ }
+  return result;
+}
+
 /**
  * Remove the index-maintainer daemon hook init copied into
  * `.claude/hooks/index-maintainer.mjs`. Only removes the file when it
@@ -778,6 +835,18 @@ export async function runUninstall(args) {
     console.log('  Stopped: running prewarm daemon (graceful via CLI)');
   }
   // If neither happened, daemon wasn't running — silent.
+
+  // Stop the incremental-index maintainer the prewarm hook auto-launches, so
+  // it doesn't keep ticking against a project whose tooling was just removed.
+  const maintainerResult = stopRunningMaintainer({ projectRoot });
+  if (maintainerResult.killed) {
+    console.log(`  Stopped: incremental-index maintainer (SIGKILL after grace, pid ${maintainerResult.pid})`);
+  } else if (maintainerResult.signalled) {
+    console.log(`  Stopped: incremental-index maintainer (SIGTERM, pid ${maintainerResult.pid})`);
+  } else if (maintainerResult.lockRemoved) {
+    console.log('  Cleared: stale incremental-index maintainer lock');
+  }
+  // If none happened, the maintainer wasn't running — silent.
 
   // Purge npm packages
   if (parsed.purge) {

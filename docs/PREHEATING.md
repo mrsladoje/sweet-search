@@ -2,9 +2,98 @@
 
 > **HCGS Status (2026-05)**: HCGS is disabled by default (`HCGS_CONFIG.enabled = false`); references below describe the original design. Flip the flag to re-enable.
 
-Session preheating eliminates cold-start latency by warming caches, TLS connections, and ML model runtimes before the first user query arrives. It runs automatically at the start of every Claude Code session via a hook that invokes the preheat shell script.
+Session preheating eliminates cold-start latency by warming caches, TLS connections, and ML model runtimes before the first user query arrives. It runs automatically at the start of every Claude Code session via a Claude Code SessionStart hook (`core/search/session-daemon-prewarm.mjs`).
+
+## Daemon launch (current mechanism)
+
+> **Status (2026-05)**: the `session-preheat.sh` bash wrapper described in the
+> sections below was replaced by a single Node SessionStart hook,
+> `core/search/session-daemon-prewarm.mjs`. References to `session-preheat.sh`,
+> port `9876`, and `core/sweet-search.js --serve` describe the earlier design and
+> are kept for historical context. The hook talks to the daemon over the Unix
+> socket `/tmp/sweet-search.sock`, not an HTTP port.
+
+`sweet-search init` registers one SessionStart entry in `.claude/settings.json`:
+
+```
+node <pkg>/core/search/session-daemon-prewarm.mjs
+```
+
+On every Claude Code session start the hook launches **two** independent,
+fully-detached background processes, then exits immediately so the session is
+never blocked. The two launches sit in separate `try` blocks — a stuck or
+already-running server never prevents the maintainer from starting, and vice
+versa:
+
+1. **Search server** — `core/start-server.js --serve`. Skipped when the Unix
+   socket already accepts a connection (a healthy server is up). A tmp lockfile
+   (`/tmp/sweet-search-prewarm.lock`) stops two concurrent sessions from both
+   spawning.
+2. **Index maintainer (incremental indexing)** — see below.
+
+### Index maintainer auto-launch
+
+The maintainer (`core/indexing/index-maintainer.mjs`, spawned as the **package**
+copy) keeps the index fresh by reconciling file changes into FTS5, the vector
+store, HNSW / binary-HNSW, late-interaction segments, the sparse-gram index, and
+the code graph. As of 2026-05 it is **on by default** — a retrieval index that
+silently goes stale is worse than useless for agents.
+
+The prewarm hook spawns it detached unless any of these hold:
+
+- **Opt-out** — `SWEET_SEARCH_RECONCILE_V2` is `0`, `false`, or `off`.
+- **No index yet** — the project has no `.sweet-search/` state dir (nothing to
+  maintain; run `sweet-search index` first).
+- **Already running** — a live `index-maintainer.lock` is held in the state dir.
+- **Entry missing** — the maintainer module isn't present.
+
+The hook pins `SWEET_SEARCH_PROJECT_ROOT` to the session cwd so the package copy
+targets the right project (its `PROJECT_ROOT` would otherwise resolve to the
+package root). Single-instance is guaranteed two ways: the hook skips when a live
+lock exists, and the daemon itself takes an `O_EXCL` `index-maintainer.lock` on
+startup — a second maintainer for the same state dir exits immediately
+("Another reconcile v2 maintainer is running").
+
+#### Tick interval (machine-adaptive)
+
+The startup tick interval is chosen from the detected hardware tier:
+
+| Tier | Machine | Interval |
+|------|---------|----------|
+| low  | CPU-only / low RAM / pre-M3 / unknown / detection-failed | 60s |
+| mid  | M3/M4 base or Pro, mid-tier CUDA, 32 GB+ RAM & 12+ cores | 30s |
+| high | Apple Max/Ultra, 16 GB+ CUDA | 20s |
+
+15s is the auto-tune floor (`MIN_MS`) only, never a startup default. Explicit
+overrides win: `SWEET_SEARCH_RECONCILE_INTERVAL_MS` (ms),
+`SWEET_SEARCH_RECONCILE_INTERVAL` (seconds), or `SWEET_SEARCH_RECONCILE_PROFILE`
+(`fresh` / `balanced` / `conservative`) — all clamped to `[15s, 300s]`. From the
+startup value the tuner adapts within the band based on dirty-set churn, tick
+wallclock, CPU pressure, and maintenance backlog, and never overlaps ticks.
+
+#### Inspect, opt out, and stop
+
+- **Disable**: `export SWEET_SEARCH_RECONCILE_V2=0` (prevents auto-launch and
+  routes any manually-started daemon to the legacy path).
+- **Inspect**: `sweet-search reconcile status` reports enabled/source, the
+  resolved interval (ms / source / tier), dirty/backlog/dead-letter counts, and
+  the maintainer lock (present / pid / alive / stale).
+- **Stop**: `sweet-search uninstall` stops a running maintainer (SIGTERM,
+  escalating to SIGKILL after a short grace) and clears its lock, alongside
+  stopping the search daemon.
+
+> **Non–Claude-Code environments**: the auto-launch is a Claude Code SessionStart
+> hook. Other agents/CLIs (e.g. Codex) do not trigger `.claude/settings.json`
+> hooks, so they will not auto-start the maintainer. The native `sweet-search`
+> CLI still auto-starts the *search server* on first query, but not the
+> maintainer — start it manually (`node <pkg>/core/indexing/index-maintainer.mjs`
+> with `SWEET_SEARCH_PROJECT_ROOT` set to the project) or keep a Claude Code
+> session open.
 
 ## Architecture
+
+> _Historical design (pre-2026-05). See **Daemon launch (current mechanism)**
+> above for how sessions start the server + maintainer today._
 
 The system uses a **thin-bash + smart-JS** two-file pattern:
 
