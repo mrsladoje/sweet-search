@@ -26,17 +26,15 @@ import { existsSync, readFileSync, openSync, writeSync, closeSync, unlinkSync } 
 import { connect } from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { launchMaintainer } from '../indexing/maintainer-launcher.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const SERVER_ENTRY = process.env.SWEET_SEARCH_SERVER_ENTRY || join(__dirname, '..', 'start-server.js');
-const MAINTAINER_ENTRY = process.env.SWEET_SEARCH_MAINTAINER_ENTRY
-  || join(__dirname, '..', 'indexing', 'index-maintainer.mjs');
 const SOCKET_PATH = process.env.SWEET_SEARCH_SOCKET_PATH || '/tmp/sweet-search.sock';
 const PID_FILE = process.env.SWEET_SEARCH_PID_FILE || '/tmp/sweet-search-server.pid';
 const LOCK_PATH = process.env.SWEET_SEARCH_PREWARM_LOCK || '/tmp/sweet-search-prewarm.lock';
 const SOCKET_PROBE_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_PREWARM_PROBE_MS ?? 300);
-const MAINTAINER_LOCK_FILENAME = 'index-maintainer.lock';
 
 const verbose = !!process.env.SWEET_SEARCH_PREWARM_VERBOSE;
 const log = (msg) => {
@@ -131,80 +129,6 @@ function releaseLock(fd) {
 }
 
 /**
- * Opt-out check for the reconcile-v2 maintainer. Mirrors the off-tokens of
- * `reconcileEnablement` in
- * core/incremental-indexing/domain/interval-autotune.mjs (the canonical
- * default-on policy). Inlined so this launcher stays dependency-free and
- * fast to start; the off-token contract (0/false/off) is stable.
- */
-function maintainerOptedOut(env) {
-  const raw = env.SWEET_SEARCH_RECONCILE_V2;
-  if (raw == null || raw === '') return false; // default-on
-  const n = String(raw).trim().toLowerCase();
-  return n === '0' || n === 'false' || n === 'off';
-}
-
-/** Resolve the project's reconcile state dir the same way the daemon does. */
-function maintainerStateDir(env, cwd) {
-  if (env.SWEET_SEARCH_STATE_DIR) return env.SWEET_SEARCH_STATE_DIR;
-  const root = env.SWEET_SEARCH_PROJECT_ROOT || cwd;
-  return join(root, '.sweet-search');
-}
-
-/** True when a daemon already holds a live maintainer lock for this state dir. */
-function maintainerAlive(stateDir) {
-  const lockFile = join(stateDir, MAINTAINER_LOCK_FILENAME);
-  if (!existsSync(lockFile)) return false;
-  try {
-    const { pid } = JSON.parse(readFileSync(lockFile, 'utf-8'));
-    return pidAlive(Number(pid));
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Spawn the reconcile-v2 maintainer detached unless: the user opted out, the
- * entry is missing, the project has no index yet (no .sweet-search), or a
- * live maintainer already holds the lock. The daemon's own O_EXCL state lock
- * is the real single-instance guard — the liveness probe here just avoids
- * spawning a process that would immediately exit.
- */
-function maybeSpawnMaintainer() {
-  const env = process.env;
-  if (maintainerOptedOut(env)) {
-    log('maintainer disabled via SWEET_SEARCH_RECONCILE_V2 opt-out');
-    return;
-  }
-  if (!existsSync(MAINTAINER_ENTRY)) {
-    log(`maintainer entry missing: ${MAINTAINER_ENTRY}`);
-    return;
-  }
-  const stateDir = maintainerStateDir(env, process.cwd());
-  if (!existsSync(stateDir)) {
-    log(`no index state dir (${stateDir}); skipping maintainer (run sweet-search index first)`);
-    return;
-  }
-  if (maintainerAlive(stateDir)) {
-    log('maintainer already running for this state dir');
-    return;
-  }
-  const child = spawn(process.execPath, [MAINTAINER_ENTRY], {
-    detached: true,
-    stdio: 'ignore',
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      // The package copy resolves PROJECT_ROOT from its own __dirname, so we
-      // pin the project root to the session cwd explicitly.
-      SWEET_SEARCH_PROJECT_ROOT: env.SWEET_SEARCH_PROJECT_ROOT || process.cwd(),
-    },
-  });
-  child.unref();
-  log(`maintainer spawned (pid ${child.pid}, detached)`);
-}
-
-/**
  * Spawn the detached search server unless it is already responsive or another
  * concurrent prewarm hook is mid-spawn. Returns (does not exit) so the
  * maintainer launch below always runs.
@@ -248,7 +172,11 @@ try {
 }
 
 try {
-  maybeSpawnMaintainer();
+  // Delegate to the shared launcher (core/indexing/maintainer-launcher.mjs).
+  // The hook is a best-effort convenience layer; the durable guarantee lives in
+  // the warm search-server startup, which calls this same launcher. Pass our
+  // verbose-gated logger so output keeps the prewarm prefix + stays stderr-only.
+  launchMaintainer({ log });
 } catch (err) {
   log(`maintainer prewarm non-fatal: ${err?.message || err}`);
 }

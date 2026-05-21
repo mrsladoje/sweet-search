@@ -335,6 +335,15 @@ describe('session-daemon-prewarm — maintainer auto-launch', () => {
     expect(lines).toHaveLength(1);
   });
 
+  it('delegates to the shared launcher rather than duplicating maintainer logic', () => {
+    const src = readFileSync(HOOK, 'utf-8');
+    // Imports + calls the shared launcher.
+    expect(src).toMatch(/import\s*\{\s*launchMaintainer\s*\}\s*from\s*['"]\.\.\/indexing\/maintainer-launcher\.mjs['"]/);
+    expect(src).toMatch(/launchMaintainer\(/);
+    // No longer carries the old duplicated spawn helper.
+    expect(src).not.toContain('function maybeSpawnMaintainer');
+  });
+
   it('starts the server and the maintainer independently on a fresh session', async () => {
     // Both spawn paths active, sharing one marker (server writes --serve,
     // maintainer does not). Proves the two launches are independent.

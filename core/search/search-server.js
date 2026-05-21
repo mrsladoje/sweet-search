@@ -12,6 +12,7 @@ import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import { LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { clearCache } from '../embedding/embedding-cache.js';
+import { launchMaintainer } from '../indexing/maintainer-launcher.mjs';
 
 // =============================================================================
 // Server constants
@@ -406,6 +407,20 @@ export async function startServer() {
       console.error(`[Server] Initialization failed after ${initTimeMs}ms: ${err?.message || err}`);
     }
   })();
+
+  // Durable, non-MCP incremental-indexing guarantee: every normal sweet-search
+  // use spins up the warm search server (the native CLI auto-starts it on first
+  // query), so starting the default-on reconcile maintainer here means the index
+  // stays fresh regardless of Claude/Codex/MCP hooks. We deliberately just start
+  // the daemon detached and return — NOT run a blocking reconcile tick — because
+  // the maintainer runs its own first tick at t=0 in its own process; blocking
+  // server readiness / the first query on indexing work would add latency and
+  // risk flakiness. The launcher is idempotent + lock-guarded (no duplicates).
+  try {
+    launchMaintainer({ cwd: process.cwd() });
+  } catch (err) {
+    if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] maintainer launch: ${err?.message || err}\n`);
+  }
 
   // Alias for graceful shutdown
   const server = tcpServer;

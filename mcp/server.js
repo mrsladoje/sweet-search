@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { existsSync, statSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { launchMaintainer } from '../core/indexing/maintainer-launcher.mjs';
 
 import {
   SearchOutputSchema,
@@ -395,6 +396,18 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(`[sweet-search-mcp] Server started (project: ${PROJECT_ROOT})`);
+
+  // MCP is opt-in (only runs when the user configures it). When it IS running,
+  // reuse the SAME shared launcher so the default-on maintainer starts here too
+  // — but MCP is never REQUIRED for incremental indexing (the warm search-server
+  // path is the durable guarantee). stdout is the MCP protocol channel, so the
+  // launcher's stdout-clean contract is load-bearing; never let it break MCP.
+  try {
+    const result = launchMaintainer({ cwd: PROJECT_ROOT });
+    if (result.spawned) console.error(`[sweet-search-mcp] incremental maintainer started (pid ${result.pid})`);
+  } catch (err) {
+    console.error(`[sweet-search-mcp] maintainer launch (non-fatal): ${err?.message || err}`);
+  }
 }
 
 main().catch((err) => {
