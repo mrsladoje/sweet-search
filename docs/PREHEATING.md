@@ -96,33 +96,37 @@ launcher (it's harness-agnostic — reads only env/cwd, writes nothing to stdout
   so a bare relative path is unreliable — anchoring to the git root fixes both
   path resolution and the launcher's own project-root detection without writing
   a machine-specific absolute path into the (often committed) file.
-- **`[features] codex_hooks = true`** in the project `.codex/config.toml` — added
-  via a comment-preserving, append-if-absent edit (no TOML round-trip). With
-  `--codex-enable-global-hooks` the same flag is also enabled in the user-level
-  `~/.codex/config.toml`.
+- **`[features] hooks = true`** in the project `.codex/config.toml` — the
+  canonical feature flag as of Codex v0.132+ — added via a comment-preserving,
+  append-if-absent edit (no TOML round-trip). A deprecated `codex_hooks` flag
+  from an older Codex / older sweet-search is **migrated** to `hooks` in place
+  (Codex now warns on `codex_hooks`). With `--codex-enable-global-hooks` the same
+  flag is also set in the user-level `~/.codex/config.toml`.
 - **`AGENTS.md`** — `--codex` implies `--agents` (Codex's instruction file).
 
 `uninstall` removes the sweet-search-owned `SessionStart` entry from
 `.codex/hooks.json` (deleting the file if it was the only entry); the config-flag
 is left in place (harmless, possibly shared).
 
+**To actually run the hook, you must do two things init cannot do for you:**
+
+1. **Enable hooks.** Set `[features] hooks = true` in `config.toml` (init does
+   this in the project file by default), or start Codex with `codex --enable
+   hooks`. If your Codex only honors the user-level flag, re-run init with
+   `--codex-enable-global-hooks` (writes `~/.codex/config.toml`).
+2. **Review/trust repo-local hooks.** Run `/hooks` inside Codex to review and
+   trust the project's `.codex/hooks.json` before Codex will run it.
+
 > **Status: experimental / best-effort.** Codex hooks are themselves marked
-> EXPERIMENTAL (`features.codex_hooks`, ~v0.114+). Two things `init` cannot
-> guarantee:
-> 1. **The feature flag may need to be user-global.** We set it project-locally
->    by default; depending on the Codex version (the key name also drifted
->    `hooks` → `codex_hooks`) you may need it in `~/.codex/config.toml` —
->    re-run with `--codex-enable-global-hooks`, or pass `codex -c
->    features.codex_hooks=true`.
-> 2. **Project trust.** Codex only loads repo-local `.codex/` hooks once the
->    project is trusted.
->
+> EXPERIMENTAL (`features.hooks`, available since ~v0.114; the flag was briefly
+> named `codex_hooks` and is now deprecated in favor of `hooks` as of v0.132).
 > There is also an **open upstream report (openai/codex#17532)** that repo-local
 > hook config may not fire in interactive sessions on some versions. This wiring
-> has been verified at the file/schema level (unit tests) and matches the
-> documented hook shape, but has **not** been validated firing inside a live
-> Codex session. If it doesn't fire, verify the flag + trust, check that issue,
-> or fall back to starting the maintainer manually:
+> is verified at the file/schema level (unit tests) and matches the documented
+> hook shape, but has **not** been validated firing inside a live Codex session.
+> If it doesn't fire: confirm `[features] hooks = true` is honored (try the
+> user-level flag / `codex --enable hooks`), trust the project with `/hooks`,
+> check that issue, or fall back to starting the maintainer manually:
 > `node <pkg>/core/indexing/index-maintainer.mjs` with `SWEET_SEARCH_PROJECT_ROOT`
 > set to the project.
 
