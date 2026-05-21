@@ -5,7 +5,8 @@ import Database from 'better-sqlite3';
 
 import { Reconciler } from './reconciler.mjs';
 import { enqueueMaintenanceJob } from './maintenance-worker.mjs';
-import { buildPathFilter } from '../infrastructure/path-filter.mjs';
+import { createAdmissionPolicy } from '../../indexing/admission-policy.js';
+import { applyIndexingChunkPolicy } from '../../indexing/indexing-file-policy.js';
 import { contentHashSync } from '../infrastructure/hashing.mjs';
 import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import { annotateChunksForDelta, snapshotFileRows, diffChunks, applyDiff } from '../infrastructure/vector-delta-writer.mjs';
@@ -168,7 +169,14 @@ class ProductionReconcileAdapter {
     this.vectorEncoder = options.vectorEncoder || ((texts) => getEmbeddings(texts, { useCache: false }));
     this.liEncoder = options.liEncoder || null;
     this.modelInfo = options.modelInfo || getModelInfo();
-    this.pathFilter = buildPathFilter({ projectRoot: this.projectRoot });
+    // Shared admission policy — the SAME include/exclude/.sweet-search-ignore/
+    // .gitignore/size gates full indexing applies. Used as the second safety
+    // gate: queued files full indexing would skip are never reconciled, and a
+    // previously-indexed file that is now inadmissible is retired (see
+    // readDirtySet → _retireSet → hashFile).
+    this.admission = options.admissionPolicy || createAdmissionPolicy({ projectRoot: this.projectRoot });
+    this._retireSet = new Set();
+    this._liSkipFiles = new Set();
     this.hashes = new Map();
     this.touched = new Map();
   }
@@ -191,21 +199,51 @@ class ProductionReconcileAdapter {
     };
   }
 
-  readDirtySet() {
+  async readDirtySet() {
     fs.mkdirSync(this.stateDir, { recursive: true });
     const processing = path.join(this.stateDir, PROCESSING_QUEUE);
     const queue = path.join(this.stateDir, DIRTY_QUEUE);
     if (!fs.existsSync(processing) && fs.existsSync(queue)) {
       fs.renameSync(queue, processing);
     }
-    const files = [];
+    const rels = [];
     const seen = new Set();
     for (const entry of readJsonl(processing)) {
       const rel = relPath(this.projectRoot, entry.file_path || entry.path || entry.filePath || '');
-      if (!rel || this.pathFilter(rel) || seen.has(rel)) continue;
+      if (!rel || seen.has(rel)) continue;
       seen.add(rel);
-      files.push(rel);
+      rels.push(rel);
     }
+
+    // Second admission gate. A queued file that full indexing would skip is
+    // dropped if it was never indexed, and retired if it was (so the index
+    // converges to a fresh full rebuild). Existence + shape + size are sync;
+    // gitignore is ONE batched check over the admissible candidates.
+    const merkle = readJson(path.join(this.stateDir, MERKLE_STATE), { files: {} }).files || {};
+    const info = rels.map((rel) => {
+      const abs = path.join(this.projectRoot, rel);
+      const exists = fs.existsSync(abs);
+      const shapeOk = this.admission.admitsShape(rel);
+      const sizeOk = exists && shapeOk ? !this.admission.isOversizedAbs(abs) : false;
+      return { rel, exists, shapeOk, sizeOk };
+    });
+    const gitignored = await this.admission.gitignoredSet(
+      info.filter((i) => i.exists && i.shapeOk && i.sizeOk).map((i) => i.rel),
+    );
+
+    const files = [];
+    const retire = new Set();
+    for (const i of info) {
+      const admitted = i.exists && i.shapeOk && i.sizeOk && !gitignored.has(i.rel);
+      if (admitted) {
+        files.push(i.rel);
+      } else if (merkle[i.rel]) {
+        files.push(i.rel); // previously indexed → keep so hashFile retires it
+        retire.add(i.rel);
+      }
+      // else: never indexed and inadmissible → drop
+    }
+    this._retireSet = retire;
     return files;
   }
 
@@ -220,7 +258,10 @@ class ProductionReconcileAdapter {
     const rel = typeof file === 'string' ? file : file.path;
     const abs = path.join(this.projectRoot, rel);
     const merkle = readJson(path.join(this.stateDir, MERKLE_STATE), { files: {} });
-    if (!fs.existsSync(abs)) {
+    // Deleted on disk, or flagged inadmissible by readDirtySet (a previously
+    // indexed file that became excluded/oversized/gitignored): retire it so all
+    // tiers tombstone and the merkle entry is dropped.
+    if (!fs.existsSync(abs) || this._retireSet.has(rel)) {
       const h = { file: rel, deleted: true, contentHash: '', chunks: [] };
       this.hashes.set(rel, h);
       return h;
@@ -337,6 +378,14 @@ class ProductionReconcileAdapter {
       }
       const parsed = await new ASTChunker({ projectRoot: this.projectRoot }).parseFile(rel, hashes.content);
       chunks = await enrichChunksFromGraph(parsed.map((chunk, i) => ({ ...chunk, file: rel, id: `${rel}:${chunk.metadata?.line_start || 0}-${chunk.metadata?.line_end || chunk.metadata?.line_start || 0}:${i}` })), this.stateDir);
+      // LI generated-content parity: decide ONCE, from the file's full chunk set
+      // (exactly like full indexing's per-file applyIndexingChunkPolicy), whether
+      // late interaction skips this file. Embeddings/graph/sparse still index it.
+      // Stored per-file so applyLIDelta drops adds even when only a non-first
+      // chunk changed and the @generated first chunk was hash-reused.
+      const liKept = applyIndexingChunkPolicy(chunks, { projectRoot: this.projectRoot }).kept;
+      if (chunks.length > 0 && liKept.length === 0) this._liSkipFiles.add(rel);
+      else this._liSkipFiles.delete(rel);
       const annotations = annotateChunksForDelta(chunks, rel);
       const snap = snapshotFileRows(db, rel);
       const delta = diffChunks(chunks, annotations, snap);
@@ -430,12 +479,22 @@ class ProductionReconcileAdapter {
     return { ops: { binary_hnsw_append: append, binary_hnsw_tombstone: tombstone }, manifest: { path: 'codebase-binary-hnsw.idx' } };
   }
 
-  async applyLIDelta(_file, ops) {
+  async applyLIDelta(file, ops) {
     if (!Array.isArray(ops) || ops.length === 0) return { ops: { li_segment_append: 0, li_tombstone: 0 } };
+    // LI generated-content parity: full indexing's buildLateInteractionIndex runs
+    // applyIndexingChunkPolicy so @generated / config-excluded files never reach
+    // the LI encoder, while embeddings/graph/sparse still index them. The skip is
+    // a per-file decision computed in applyVectorDelta. Drop this file's LI adds
+    // when flagged; retire ops always flow through (a file that becomes generated
+    // tombstones its old LI docs and adds none — net retire from LI only).
+    const rel = typeof file === 'string' ? file : file?.path;
+    const filteredOps = (rel && this._liSkipFiles.has(rel))
+      ? ops.filter((op) => !(op.addId && op.chunk))
+      : ops;
     const { applyLateInteractionDelta } = await import('./production-li-delta.mjs');
     const { appended, tombstone } = await applyLateInteractionDelta({
       indexPath: path.join(this.stateDir, 'codebase-late-interaction.db'),
-      ops,
+      ops: filteredOps,
       liEncoder: this.liEncoder,
       pickLiInput,
     });

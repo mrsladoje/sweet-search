@@ -676,11 +676,11 @@ export async function runReconcileV2Tick(ctx) {
   try {
     const { dirtyScanEnabled, scanDirtyAndEnqueue } = await import('../incremental-indexing/application/dirty-scan.mjs');
     if (dirtyScanEnabled()) {
-      const { buildPathFilter } = await import('../incremental-indexing/infrastructure/path-filter.mjs');
-      const isExcluded = buildPathFilter({ projectRoot: ctx.projectRoot });
-      const scan = scanDirtyAndEnqueue({ projectRoot: ctx.projectRoot, stateDir: ctx.stateDir, isExcluded });
+      const { createAdmissionPolicy } = await import('../indexing/admission-policy.js');
+      const admissionPolicy = createAdmissionPolicy({ projectRoot: ctx.projectRoot });
+      const scan = await scanDirtyAndEnqueue({ projectRoot: ctx.projectRoot, stateDir: ctx.stateDir, admissionPolicy });
       if (scan.enqueued > 0) {
-        log('INFO', `Dirty scan enqueued ${scan.enqueued} file(s) (added=${scan.added}, modified=${scan.modified}, deleted=${scan.deleted})`);
+        log('INFO', `Dirty scan enqueued ${scan.enqueued} file(s) (added=${scan.added}, modified=${scan.modified}, deleted=${scan.deleted}, retired=${scan.retired})`);
       }
     }
   } catch (err) {
