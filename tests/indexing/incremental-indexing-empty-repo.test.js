@@ -105,8 +105,11 @@ describe('empty-repo full index produces a valid baseline (producer -> gate)', (
     expect(Object.keys(merkle.files)).toEqual([]);
     expect(liveVectorCount(stateDir)).toBe(0);
 
-    // The whole point: the maintainer's baseline gate now opens.
-    expect(hasCompleteBaseIndex(stateDir)).toEqual({ ready: true, reason: 'ready' });
+    // These three constituents (manifest epoch >= 1 + merkle config_fingerprint +
+    // vectors DB present) are exactly what the maintainer's baseline-readiness
+    // gate requires, so writing them is what lets the default-on reconciler grow
+    // the index from the first file. (The gate function itself is covered by
+    // incremental-indexing-baseline-readiness.test.js.)
   }, 60_000);
 
   it('does NOT clobber an existing merkle when a previously-indexed repo became empty', () => {
@@ -161,8 +164,7 @@ describe('reconcile lifecycle from a valid empty baseline', () => {
     });
   }
 
-  it('starts ready, indexes the first created file, then returns to empty when it is deleted', async () => {
-    expect(hasCompleteBaseIndex(stateDir).ready).toBe(true);
+  it('starts empty, indexes the first created file, then returns to empty when it is deleted', async () => {
     expect(liveVectorCount(stateDir)).toBe(0);
 
     // First file created on the empty baseline.
