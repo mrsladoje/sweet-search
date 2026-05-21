@@ -13,9 +13,14 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const INIT_CLI = join(REPO_ROOT, 'scripts', 'init.js');
 
 import {
   registerCodexSessionStartHook,
@@ -167,12 +172,14 @@ describe('ensureCodexHooksFeatureFlag', () => {
     configPath = join(projectRoot, '.codex', 'config.toml');
   });
 
-  it('creates config.toml with the [features] block when absent and create=true', () => {
+  it('creates config.toml with the canonical [features] hooks = true when absent and create=true', () => {
     const result = ensureCodexHooksFeatureFlag(configPath, { create: true });
     expect(result.status).toBe('created');
     const text = readFileSync(configPath, 'utf-8');
     expect(text).toMatch(/\[features\]/);
-    expect(text).toMatch(/codex_hooks\s*=\s*true/);
+    expect(text).toMatch(/^hooks\s*=\s*true/m);
+    // Never writes the deprecated key as the primary flag.
+    expect(text).not.toMatch(/codex_hooks/);
   });
 
   it('reports absent without writing when the file is missing and create=false', () => {
@@ -181,9 +188,9 @@ describe('ensureCodexHooksFeatureFlag', () => {
     expect(existsSync(configPath)).toBe(false);
   });
 
-  it('is a no-op when codex_hooks=true is already present', () => {
+  it('is a no-op when the canonical hooks = true is already present', () => {
     mkdirSync(join(projectRoot, '.codex'), { recursive: true });
-    const original = '# my config\n[features]\ncodex_hooks = true\n';
+    const original = '# my config\n[features]\nhooks = true\n';
     writeFileSync(configPath, original, 'utf-8');
 
     const result = ensureCodexHooksFeatureFlag(configPath, { create: true });
@@ -191,17 +198,49 @@ describe('ensureCodexHooksFeatureFlag', () => {
     expect(readFileSync(configPath, 'utf-8')).toBe(original);
   });
 
-  it('treats the legacy `hooks = true` flag as already-enabled', () => {
+  it('migrates a deprecated codex_hooks = true to the canonical hooks = true', () => {
     mkdirSync(join(projectRoot, '.codex'), { recursive: true });
-    writeFileSync(configPath, '[features]\nhooks = true\n', 'utf-8');
+    writeFileSync(configPath, '[features]\ncodex_hooks = true\n', 'utf-8');
 
     const result = ensureCodexHooksFeatureFlag(configPath, { create: true });
-    expect(result.status).toBe('already');
+    expect(result.status).toBe('migrated');
+    const text = readFileSync(configPath, 'utf-8');
+    expect(text).toMatch(/^hooks\s*=\s*true/m);
+    expect(text).not.toMatch(/codex_hooks/);
   });
 
-  it('leaves an explicit non-true value alone (no duplicate key)', () => {
+  it('migrates codex_hooks without corrupting surrounding comments', () => {
     mkdirSync(join(projectRoot, '.codex'), { recursive: true });
-    const original = '[features]\ncodex_hooks = false\n';
+    writeFileSync(
+      configPath,
+      '# top comment\n[features]\ncodex_hooks = true # keep this inline note\nweb_search = true\n',
+      'utf-8',
+    );
+
+    const result = ensureCodexHooksFeatureFlag(configPath, { create: true });
+    expect(result.status).toBe('migrated');
+    const text = readFileSync(configPath, 'utf-8');
+    expect(text).toContain('# top comment');
+    expect(text).toContain('# keep this inline note');   // inline comment preserved
+    expect(text).toContain('web_search = true');         // sibling key preserved
+    expect(text).toMatch(/^hooks\s*=\s*true # keep this inline note$/m);
+    expect(text).not.toMatch(/codex_hooks/);
+  });
+
+  it('strips a deprecated codex_hooks line when canonical hooks = true is already set', () => {
+    mkdirSync(join(projectRoot, '.codex'), { recursive: true });
+    writeFileSync(configPath, '[features]\nhooks = true\ncodex_hooks = true\n', 'utf-8');
+
+    const result = ensureCodexHooksFeatureFlag(configPath, { create: true });
+    expect(result.status).toBe('migrated');
+    const text = readFileSync(configPath, 'utf-8');
+    expect(text).toMatch(/^hooks\s*=\s*true/m);
+    expect(text).not.toMatch(/codex_hooks/);
+  });
+
+  it('leaves an explicit non-true canonical value alone (no duplicate key)', () => {
+    mkdirSync(join(projectRoot, '.codex'), { recursive: true });
+    const original = '[features]\nhooks = false\n';
     writeFileSync(configPath, original, 'utf-8');
 
     const result = ensureCodexHooksFeatureFlag(configPath, { create: true });
@@ -218,7 +257,8 @@ describe('ensureCodexHooksFeatureFlag', () => {
     const text = readFileSync(configPath, 'utf-8');
     expect(text).toContain('# top comment');
     expect(text).toContain('web_search = true # inline comment');
-    expect(text).toMatch(/\[features\]\s*\ncodex_hooks = true/);
+    expect(text).toMatch(/\[features\]\s*\nhooks = true/);
+    expect(text).not.toMatch(/codex_hooks/);
   });
 
   it('appends a new [features] block when none exists, preserving prior content', () => {
@@ -231,7 +271,8 @@ describe('ensureCodexHooksFeatureFlag', () => {
     const text = readFileSync(configPath, 'utf-8');
     expect(text.startsWith(original)).toBe(true);          // prior content intact
     expect(text).toContain('# header comment');
-    expect(text).toMatch(/\[features\]\ncodex_hooks = true/);
+    expect(text).toMatch(/\[features\]\nhooks = true/);
+    expect(text).not.toMatch(/codex_hooks/);
   });
 });
 
@@ -320,5 +361,66 @@ describe('register + remove round-trip', () => {
     const after = readHooks();
     expect(after.hooks.SessionStart).toHaveLength(1);
     expect(after.hooks.SessionStart[0].hooks[0].command).toContain('other');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// End-to-end: `init --codex` writes the canonical flag + names it in output
+// ---------------------------------------------------------------------------
+
+describe('init --codex (end-to-end flag wiring)', () => {
+  let home;
+  let proj;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'ss-codex-home-'));
+    proj = mkdtempSync(join(tmpdir(), 'ss-codex-e2e-'));
+    writeFileSync(join(proj, 'package.json'), '{"name":"tmp","version":"1.0.0"}\n', 'utf-8');
+  });
+
+  afterEach(() => {
+    for (const d of [home, proj]) {
+      try { rmSync(d, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  it('writes [features] hooks = true to project + global config and names hooks (not codex_hooks) in output', () => {
+    // HOME is redirected to a temp dir so the global-flag write never touches
+    // the real ~/.codex. --profile core avoids any model downloads.
+    const r = spawnSync(
+      process.execPath,
+      [INIT_CLI, '--codex', '--codex-enable-global-hooks', '--profile', 'core'],
+      { cwd: proj, env: { ...process.env, HOME: home }, encoding: 'utf-8', timeout: 60_000 },
+    );
+    expect(r.status).toBe(0);
+
+    // Project flag.
+    const projCfg = readFileSync(join(proj, '.codex', 'config.toml'), 'utf-8');
+    expect(projCfg).toMatch(/^hooks\s*=\s*true/m);
+    expect(projCfg).not.toMatch(/codex_hooks/);
+
+    // Global flag (in the redirected HOME, not the real one).
+    const globalCfg = readFileSync(join(home, '.codex', 'config.toml'), 'utf-8');
+    expect(globalCfg).toMatch(/^hooks\s*=\s*true/m);
+    expect(globalCfg).not.toMatch(/codex_hooks/);
+
+    // Init output names the canonical flag, never the deprecated one.
+    expect(r.stderr).toContain('[features] hooks');
+    expect(r.stderr).not.toMatch(/codex_hooks\s*=\s*true/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Docs consistency with current Codex behavior
+// ---------------------------------------------------------------------------
+
+describe('docs/PREHEATING.md Codex section', () => {
+  it('documents the canonical flag, /hooks trust, and codex --enable hooks', () => {
+    const doc = readFileSync(join(REPO_ROOT, 'docs', 'PREHEATING.md'), 'utf-8');
+    expect(doc).toMatch(/hooks = true/);
+    expect(doc).toContain('/hooks');
+    expect(doc).toContain('codex --enable hooks');
+    // Never presents the deprecated flag as the value to set.
+    expect(doc).not.toMatch(/codex_hooks\s*=\s*true/);
   });
 });

@@ -171,9 +171,9 @@ export function parseInitArgs(args) {
       result.codex = true;
       result.optInHarnesses.add('agents');
     } else if (arg === '--codex-enable-global-hooks') {
-      // Opt-in: also enable the `codex_hooks` feature flag in the user-level
-      // ~/.codex/config.toml. Off by default because it writes outside the
-      // project into the user's hand-curated global config.
+      // Opt-in: also enable the `[features] hooks` feature flag in the
+      // user-level ~/.codex/config.toml. Off by default because it writes
+      // outside the project into the user's hand-curated global config.
       result.codexEnableGlobalHooks = true;
     } else if (arg === '--no-prompt-reminders') {
       // P2: skip the UserPromptSubmit reminder hook. Default-on because
@@ -969,10 +969,10 @@ export const CODEX_HOOKS_FILENAME = 'hooks.json';
  * appending a duplicate. Refuses to write a machine-specific absolute path
  * into the (often committed) `.codex/hooks.json`, mirroring the Claude path.
  *
- * NOTE: hooks only fire when Codex's `codex_hooks` feature flag is enabled and
- * the project `.codex/` layer is trusted — neither of which a project init can
- * fully guarantee. `ensureCodexHooksFeatureFlag` handles the flag (best-effort)
- * and the init report prints the trust caveat.
+ * NOTE: hooks only fire when Codex's `[features] hooks` flag is enabled and the
+ * project `.codex/` layer is trusted (reviewed via `/hooks`) — neither of which
+ * a project init can fully guarantee. `ensureCodexHooksFeatureFlag` handles the
+ * flag (best-effort) and the init report prints the trust caveat.
  *
  * @returns {{status:'registered'|'skipped'|'error', detail:string, hookPath?:string}}
  */
@@ -1059,21 +1059,31 @@ export function registerCodexSessionStartHook({ projectRoot, packageRoot, skippe
 }
 
 /**
- * Ensure `[features] codex_hooks = true` is present in a Codex `config.toml`,
- * preserving the file's existing content + comments. This is a targeted text
- * edit (no TOML round-trip) so a hand-curated config is never reformatted or
- * stripped of comments.
+ * Ensure the canonical Codex hooks feature flag `[features] hooks = true` is
+ * present in a Codex `config.toml`, preserving the file's existing content +
+ * comments. Targeted text edit (no TOML round-trip) so a hand-curated config is
+ * never reformatted.
+ *
+ * `hooks` is the canonical key as of Codex v0.132+. The earlier `codex_hooks`
+ * key is deprecated (Codex now prints a deprecation warning for it), so this
+ * function also MIGRATES a legacy `codex_hooks` flag to `hooks` instead of
+ * writing the deprecated name. Legacy handling is deliberate: users who ran an
+ * older sweet-search (which wrote `codex_hooks`) or older Codex shouldn't be
+ * left with a deprecated, warning-producing flag.
  *
  * Behaviour:
- *   - already enabled (`codex_hooks` or legacy `hooks` = true) → no-op ('already')
- *   - the key is present but set to a non-true value → leave it ('present-other')
- *   - a `[features]` table exists → insert the key directly under its header
+ *   - `hooks = true` already present → no-op ('already'); if a deprecated
+ *     `codex_hooks` line also lingers, strip it ('migrated')
+ *   - `hooks` present but non-true → respect the user's choice ('present-other')
+ *   - legacy `codex_hooks` present (no `hooks` key) → rename the key to `hooks`
+ *     in place, preserving its value + inline comment ('migrated')
+ *   - a `[features]` table exists → insert `hooks = true` under its header
  *   - no `[features]` table → append a fresh block at EOF
  *   - file absent + `create` → create it; absent + no `create` → 'absent'
  *
  * @param {string} configPath
  * @param {{create?:boolean}} [opts]
- * @returns {{status:'created'|'added'|'already'|'present-other'|'absent'|'error', path:string, detail?:string}}
+ * @returns {{status:'created'|'added'|'migrated'|'already'|'present-other'|'absent'|'error', path:string, detail?:string}}
  */
 export function ensureCodexHooksFeatureFlag(configPath, { create = false } = {}) {
   const exists = existsSync(configPath);
@@ -1088,36 +1098,57 @@ export function ensureCodexHooksFeatureFlag(configPath, { create = false } = {})
     }
   }
 
-  // Already enabled (current `codex_hooks` or legacy `hooks` key) → nothing to do.
-  if (/^[ \t]*(codex_hooks|hooks)[ \t]*=[ \t]*true\b/m.test(text)) {
+  const write = (next, status) => {
+    try {
+      mkdirSync(dirname(configPath), { recursive: true });
+      const tmp = configPath + '.tmp';
+      writeFileSync(tmp, next, 'utf-8');
+      renameSync(tmp, configPath);
+    } catch (err) {
+      return { status: 'error', path: configPath, detail: `write failed: ${err.message}` };
+    }
+    return { status, path: configPath };
+  };
+
+  // `^[ \t]*hooks` cannot match a `codex_hooks` line (the prefix differs), so
+  // these canonical-key checks never collide with the legacy key.
+  const HOOKS_TRUE = /^[ \t]*hooks[ \t]*=[ \t]*true\b/m;
+  const HOOKS_ANY = /^[ \t]*hooks[ \t]*=/m;
+  const LEGACY_ANY = /^[ \t]*codex_hooks[ \t]*=/m;
+  const LEGACY_LINE = /^[ \t]*codex_hooks[ \t]*=.*(?:\r?\n)?/m;
+
+  // Canonical flag already enabled.
+  if (HOOKS_TRUE.test(text)) {
+    if (LEGACY_ANY.test(text)) {
+      // Strip the deprecated `codex_hooks` line so Codex v0.132+ stops warning.
+      return write(text.replace(LEGACY_LINE, ''), 'migrated');
+    }
     return { status: 'already', path: configPath };
   }
-  // Present but explicitly non-true → respect the user's choice; don't add a
-  // duplicate key (which would make the TOML invalid).
-  if (/^[ \t]*(codex_hooks|hooks)[ \t]*=/m.test(text)) {
+
+  // Canonical flag present but explicitly non-true → respect the user's choice;
+  // don't add a duplicate key (which would make the TOML invalid).
+  if (HOOKS_ANY.test(text)) {
     return { status: 'present-other', path: configPath };
   }
 
+  // Deprecated `codex_hooks` present (no canonical key) → migrate the key name
+  // in place, preserving its value and any inline comment.
+  if (LEGACY_ANY.test(text)) {
+    return write(text.replace(/^([ \t]*)codex_hooks([ \t]*=.*)$/m, '$1hooks$2'), 'migrated');
+  }
+
+  // Neither key present → add the canonical flag.
   let next;
   if (!exists || text.trim() === '') {
-    next = '[features]\ncodex_hooks = true\n';
+    next = '[features]\nhooks = true\n';
   } else if (/^[ \t]*\[features\][ \t]*$/m.test(text)) {
-    next = text.replace(/^([ \t]*\[features\][ \t]*)$/m, '$1\ncodex_hooks = true');
+    next = text.replace(/^([ \t]*\[features\][ \t]*)$/m, '$1\nhooks = true');
   } else {
     const sep = text.endsWith('\n') ? '' : '\n';
-    next = `${text}${sep}\n[features]\ncodex_hooks = true\n`;
+    next = `${text}${sep}\n[features]\nhooks = true\n`;
   }
-
-  try {
-    mkdirSync(dirname(configPath), { recursive: true });
-    const tmp = configPath + '.tmp';
-    writeFileSync(tmp, next, 'utf-8');
-    renameSync(tmp, configPath);
-  } catch (err) {
-    return { status: 'error', path: configPath, detail: `write failed: ${err.message}` };
-  }
-
-  return { status: exists ? 'added' : 'created', path: configPath };
+  return write(next, exists ? 'added' : 'created');
 }
 
 // ---------------------------------------------------------------------------
@@ -1246,17 +1277,21 @@ Options:
                             .codex/hooks.json (reusing the same launcher as the
                             Claude prewarm hook, so Codex sessions also start the
                             search server + default-on incremental maintainer),
-                            enable [features] codex_hooks=true in the project
-                            .codex/config.toml, and ship AGENTS.md (implies
-                            --agents). Independent of --no-claude. Codex must
-                            trust the project for repo-local hooks to load; if
-                            your Codex only honors the user-level feature flag,
-                            add --codex-enable-global-hooks.
+                            enable [features] hooks = true in the project
+                            .codex/config.toml (migrating a deprecated codex_hooks
+                            flag if present), and ship AGENTS.md (implies
+                            --agents). Independent of --no-claude. You must enable
+                            hooks ([features] hooks = true, or 'codex --enable
+                            hooks') and review/trust repo-local hooks with /hooks
+                            in Codex for the project hook to run; if your Codex
+                            only honors the user-level flag, add
+                            --codex-enable-global-hooks.
   --codex-enable-global-hooks
-                            With --codex, also enable codex_hooks=true in the
-                            user-level ~/.codex/config.toml (append-if-absent,
-                            comment-preserving). Off by default because it writes
-                            outside the project into your global Codex config.
+                            With --codex, also enable [features] hooks = true in
+                            the user-level ~/.codex/config.toml (append-if-absent,
+                            comment-preserving, migrates a deprecated codex_hooks).
+                            Off by default because it writes outside the project
+                            into your global Codex config.
   --no-symlink-instruction-files
                             Write GEMINI.md as a regular file with an @import
                             line rather than a symlink to the canonical file.
@@ -1703,20 +1738,21 @@ export async function runInit(args) {
     }
 
     process.stderr.write(`[init] Codex hook: ${codexHookReport.status} — ${codexHookReport.detail}\n`);
-    process.stderr.write(`[init] Codex feature flag (project .codex/config.toml): ${projectFlag.status}\n`);
+    process.stderr.write(`[init] Codex [features] hooks flag (project .codex/config.toml): ${projectFlag.status}\n`);
     if (globalFlag) {
-      process.stderr.write(`[init] Codex feature flag (~/.codex/config.toml): ${globalFlag.status}\n`);
+      process.stderr.write(`[init] Codex [features] hooks flag (~/.codex/config.toml): ${globalFlag.status}\n`);
     }
     if (codexHookReport.status === 'registered') {
       process.stderr.write(
         `[init] Codex setup needs two things init can't do for you:\n` +
-        `         1. Enable hooks: [features] codex_hooks = true in config.toml ` +
-        `(older Codex: hooks = true).\n` +
+        `         1. Enable hooks: set [features] hooks = true in config.toml ` +
+        `(or run \`codex --enable hooks\`).\n` +
         (parsed.codexEnableGlobalHooks
           ? `            Set in ~/.codex/config.toml (status: ${globalFlag?.status}).\n`
           : `            Set in ./.codex/config.toml (status: ${projectFlag.status}). If your Codex only\n` +
             `            honors the user-level flag, re-run with --codex-enable-global-hooks.\n`) +
-        `         2. Trust this project in Codex so repo-local .codex/ hooks load.\n`,
+        `         2. Review/trust repo-local hooks with \`/hooks\` in Codex so the\n` +
+        `            project .codex/hooks.json is allowed to run.\n`,
       );
     }
   }
