@@ -196,9 +196,9 @@ export function printStyledStats(stats, isWarm = false) {
 export async function runCli(args) {
   // Dynamic imports to avoid circular dependencies
   const { default: SweetSearch } = await import('./sweet-search.js');
-  const { startServer, queryServer, isServerRunning, autoSpawnServer,
-          SEARCH_SERVER_SOCKET, SEARCH_SERVER_SOCKET_LEGACY, SEARCH_SERVER_PORT
+  const { startServer, queryServer, isServerRunning, autoSpawnServer
         } = await import('./search-server.js');
+  const { projectSocketPath } = await import('./server-identity.js');
 
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     console.log(`
@@ -276,28 +276,15 @@ Examples:
         req.end();
       });
 
-      // F-06: Stop via Unix socket first so CLI behavior matches server policy.
+      // Stop this project's server via its per-project Unix socket (C3). No
+      // legacy/global fallback — that would risk stopping another project's
+      // server.
+      const socketPath = projectSocketPath();
       let stopResponse = null;
-      if (existsSync(SEARCH_SERVER_SOCKET)) {
-        stopResponse = await requestStop({
-          socketPath: SEARCH_SERVER_SOCKET,
-          path: '/stop',
-          method: 'GET',
-        });
-      } else if (existsSync(SEARCH_SERVER_SOCKET_LEGACY)) {
-        stopResponse = await requestStop({
-          socketPath: SEARCH_SERVER_SOCKET_LEGACY,
-          path: '/stop',
-          method: 'GET',
-        });
+      if (existsSync(socketPath)) {
+        stopResponse = await requestStop({ socketPath, path: '/stop', method: 'GET' });
       } else {
-        // Backward-compatible fallback for older servers without Unix socket.
-        stopResponse = await requestStop({
-          hostname: 'localhost',
-          port: SEARCH_SERVER_PORT,
-          path: '/stop',
-          method: 'GET',
-        });
+        stopResponse = { statusCode: 0, body: 'no server running for this project' };
       }
 
       if (stopResponse.statusCode === 200) {

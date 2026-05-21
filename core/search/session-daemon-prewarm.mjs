@@ -27,12 +27,15 @@ import { connect } from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchMaintainer } from '../indexing/maintainer-launcher.mjs';
+import { projectSocketPath, projectPidFile } from './server-identity.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const SERVER_ENTRY = process.env.SWEET_SEARCH_SERVER_ENTRY || join(__dirname, '..', 'start-server.js');
-const SOCKET_PATH = process.env.SWEET_SEARCH_SOCKET_PATH || '/tmp/sweet-search.sock';
-const PID_FILE = process.env.SWEET_SEARCH_PID_FILE || '/tmp/sweet-search-server.pid';
+// Per-project socket/pidfile (C3) — honors SWEET_SEARCH_SOCKET_PATH /
+// SWEET_SEARCH_PID_FILE overrides, otherwise derives from the canonical root.
+const SOCKET_PATH = projectSocketPath();
+const PID_FILE = projectPidFile();
 const LOCK_PATH = process.env.SWEET_SEARCH_PREWARM_LOCK || '/tmp/sweet-search-prewarm.lock';
 const SOCKET_PROBE_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_PREWARM_PROBE_MS ?? 300);
 

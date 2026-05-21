@@ -38,6 +38,16 @@ function pidAlive(pid) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Poll `cond` until it returns true or the deadline elapses. */
+async function waitUntil(cond, timeoutMs, intervalMs = 50) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (cond()) return true;
+    await sleep(intervalMs);
+  }
+  return cond();
+}
+
 describe('runUninstall ordering — maintainer stopped before .sweet-search removed', () => {
   let sandbox;
   let stateDir;
@@ -74,19 +84,22 @@ describe('runUninstall ordering — maintainer stopped before .sweet-search remo
       setInterval(write, 40);
     `;
     child = spawn(process.execPath, ['-e', standin], { stdio: 'ignore' });
-    await sleep(200);
+    // Poll (not a fixed sleep) until the stand-in has written its lock — robust
+    // under the full suite's parallel load.
+    await waitUntil(() => existsSync(lockFile), 5000);
     expect(existsSync(lockFile)).toBe(true);
     expect(pidAlive(child.pid)).toBe(true);
 
     process.chdir(sandbox);
     await runUninstall(['--force', '--keep-models']);
 
-    // SIGKILL escalation needs a brief grace window.
-    await sleep(250);
+    // The maintainer must be stopped (SIGTERM→SIGKILL escalation needs a grace
+    // window); poll until the process is gone.
+    await waitUntil(() => !pidAlive(child.pid), 5000);
     expect(pidAlive(child.pid)).toBe(false);
 
-    // Because the maintainer was killed BEFORE deletion, it cannot recreate the
-    // state dir. Wait several tick intervals to be sure no resurrection occurs.
+    // Because it was killed BEFORE deletion it cannot recreate the state dir.
+    // A dead process can't resurrect it; a brief settle confirms it stays gone.
     await sleep(250);
     expect(existsSync(stateDir)).toBe(false);
   });
