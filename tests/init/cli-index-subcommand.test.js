@@ -108,6 +108,57 @@ describe('sweet-search reconcile/rebuild — CLI dispatcher', () => {
     expect(parsed.pause.paused).toBe(false);
     expect(parsed.rebuild.pending).toBe(1);
     expect(parsed.rebuild.byTier.sparse_gram).toBe(1);
+    // Default-on health guardrails are surfaced in status.
+    expect(parsed.reconcile).toBeDefined();
+    expect(typeof parsed.reconcile.enabled).toBe('boolean');
+    expect(typeof parsed.reconcile.source).toBe('string');
+    expect(parsed.reconcile.interval.ms).toBeGreaterThan(0);
+    expect(typeof parsed.reconcile.interval.source).toBe('string');
+    // No maintainer lock written → reported absent (not stale, not crashed).
+    expect(parsed.lock.present).toBe(false);
+  });
+
+  it('reports reconcile disabled + interval-override source under opt-out', () => {
+    const { projectRoot, stateDir } = makeState();
+    const r = run(
+      ['reconcile', 'status', '--json', '--project-root', projectRoot, '--state-dir', stateDir],
+      { SWEET_SEARCH_RECONCILE_V2: '0', SWEET_SEARCH_RECONCILE_INTERVAL_MS: '45000' },
+    );
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.reconcile.enabled).toBe(false);
+    expect(parsed.reconcile.source).toBe('env-disabled');
+    expect(parsed.reconcile.disabledReason).toContain('0');
+    expect(parsed.reconcile.interval.ms).toBe(45000);
+    expect(parsed.reconcile.interval.source).toBe('env-override-ms');
+  });
+
+  it('surfaces a live maintainer lock, and flags a dead one as stale', () => {
+    const { projectRoot, stateDir } = makeState();
+
+    writeFileSync(join(stateDir, 'index-maintainer.lock'), JSON.stringify({
+      pid: process.pid,
+      timestamp: Date.now(),
+    }));
+    const live = run(['reconcile', 'status', '--json', '--project-root', projectRoot, '--state-dir', stateDir]);
+    expect(live.status).toBe(0);
+    const liveParsed = JSON.parse(live.stdout);
+    expect(liveParsed.lock.present).toBe(true);
+    expect(liveParsed.lock.pid).toBe(process.pid);
+    expect(liveParsed.lock.alive).toBe(true);
+    expect(liveParsed.lock.stale).toBe(false);
+
+    // A very high PID unlikely to be in use → reported present but stale.
+    writeFileSync(join(stateDir, 'index-maintainer.lock'), JSON.stringify({
+      pid: 2147483600,
+      timestamp: Date.now(),
+    }));
+    const dead = run(['reconcile', 'status', '--json', '--project-root', projectRoot, '--state-dir', stateDir]);
+    expect(dead.status).toBe(0);
+    const deadParsed = JSON.parse(dead.stdout);
+    expect(deadParsed.lock.present).toBe(true);
+    expect(deadParsed.lock.alive).toBe(false);
+    expect(deadParsed.lock.stale).toBe(true);
   });
 
   it('inspects queued files and reports hash/stat diffs against merkle state', () => {

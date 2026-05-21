@@ -42,7 +42,7 @@ import fs from 'node:fs/promises';
 import { dirname, join, relative, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { startupInterval, tierForHardware } from '../incremental-indexing/domain/interval-autotune.mjs';
+import { startupInterval, tierForHardware, reconcileEnablement } from '../incremental-indexing/domain/interval-autotune.mjs';
 import { detectHardwareCapability } from '../infrastructure/hardware-capability.js';
 import { sweepStaleArtifactTemps, DEFAULT_TMP_SWEEP_MAX_AGE_MS } from '../incremental-indexing/infrastructure/artifact-temp-sweep.mjs';
 
@@ -549,11 +549,23 @@ export function isReconcilePaused(stateDir = DATA_DIR) {
   }
 }
 
+/**
+ * Full enablement status for the reconcile-v2 incremental indexer. Delegates
+ * to the incremental-indexing domain policy (`reconcileEnablement`) so the
+ * daemon and the operator `status` surface share one source of truth.
+ *
+ * Default-on: a missing/empty `SWEET_SEARCH_RECONCILE_V2` means enabled. Opt
+ * out with `0` / `false` / `off`.
+ *
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {{enabled:boolean, source:string, raw:string|null}}
+ */
+export function reconcileV2Status(env = process.env) {
+  return reconcileEnablement(env);
+}
+
 export function reconcileV2Requested(env = process.env) {
-  const raw = env.SWEET_SEARCH_RECONCILE_V2;
-  if (raw == null || raw === '') return false;
-  const normalized = String(raw).trim().toLowerCase();
-  return normalized !== '0' && normalized !== 'false' && normalized !== 'off';
+  return reconcileEnablement(env).enabled;
 }
 
 export function assertReconcileV2NotSilentlyIgnored(env = process.env) {
@@ -1826,12 +1838,19 @@ async function main() {
 
   // L1 FIX: Updated version to v3
   log('INFO', 'Starting index maintainer daemon v3...');
-  assertReconcileV2NotSilentlyIgnored();
-  if (reconcileV2Requested()) {
-    log('INFO', 'SWEET_SEARCH_RECONCILE_V2 enabled; using production Reconciler adapters');
+  const v2 = reconcileV2Status();
+  if (v2.enabled) {
+    if (v2.source === 'env-enabled') {
+      log('INFO', 'SWEET_SEARCH_RECONCILE_V2 enabled; using production Reconciler adapters');
+    } else if (v2.source === 'env-enabled-permissive') {
+      log('WARN', `SWEET_SEARCH_RECONCILE_V2="${v2.raw}" not recognized; treating as enabled (use 0/false/off to disable). Using production Reconciler adapters`);
+    } else {
+      log('INFO', 'Incremental reconcile v2 enabled by default (opt out with SWEET_SEARCH_RECONCILE_V2=0); using production Reconciler adapters');
+    }
     await runReconcileV2Main({ runOnce, merkleOnce });
     return;
   }
+  log('INFO', 'Incremental reconcile v2 disabled via SWEET_SEARCH_RECONCILE_V2; using legacy queue/merkle path');
 
   // Ensure .sweet-search directory exists
   ensureDataDir();
