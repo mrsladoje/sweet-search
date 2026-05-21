@@ -25,7 +25,7 @@
  *   3. Batch dot product for Stage 2.5 candidates
  */
 
-import { readFile, writeFile } from 'fs/promises';
+import { readFile, writeFile, rename } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import { float32BatchDot } from '../infrastructure/simd-distance.js';
@@ -81,19 +81,29 @@ export class FloatVectorStore {
 
   /**
    * Save to disk: binary file + ID map JSON.
+   *
+   * Both files are written via temp-file + atomic rename so a crash mid-write
+   * never leaves a half-written artifact, and a concurrent reader either sees
+   * the whole previous version or the whole new one. The binary is renamed
+   * first; if a crash interleaves the two renames, the next load sees a new
+   * binary against the old ID map — the count guard in `load()` rejects that
+   * mismatch and Stage 2.5 cleanly falls back to SQLite until re-reconciled.
+   *
    * @param {string} binPath - Path for binary file (e.g., foo.float-vectors.bin)
    */
   async save(binPath) {
     if (!this.loaded) throw new Error('FloatVectorStore: nothing to save');
 
-    // Write binary file
-    await writeFile(binPath, Buffer.from(this.buffer));
-
-    // Write ID map
     const idsPath = binPath.replace(/\.bin$/, '.ids.json');
     const ids = new Array(this.count);
     for (const [id, idx] of this.idToIndex) ids[idx] = id;
-    await writeFile(idsPath, JSON.stringify(ids));
+
+    const binTmp = `${binPath}.tmp.${process.pid}`;
+    const idsTmp = `${idsPath}.tmp.${process.pid}`;
+    await writeFile(binTmp, Buffer.from(this.buffer));
+    await writeFile(idsTmp, JSON.stringify(ids));
+    await rename(binTmp, binPath);
+    await rename(idsTmp, idsPath);
   }
 
   /**
@@ -131,6 +141,17 @@ export class FloatVectorStore {
     // Read ID map
     const idsJson = await readFile(idsPath, 'utf-8');
     const ids = JSON.parse(idsJson);
+
+    // Reject a torn binary/ID-map pair (e.g. a crash between the two atomic
+    // renames in save()). A mismatched count means the index→ID mapping would
+    // be wrong; refuse to load so Stage 2.5 falls back to SQLite instead.
+    if (ids.length !== this.count) {
+      this.buffer = null;
+      this.data = null;
+      this.count = 0;
+      return false;
+    }
+
     this.idToIndex = new Map();
     for (let i = 0; i < ids.length; i++) {
       this.idToIndex.set(ids[i], i);
@@ -138,6 +159,75 @@ export class FloatVectorStore {
 
     this.loaded = true;
     return true;
+  }
+
+  /**
+   * Load an existing store, or initialise an empty mutable one at the given
+   * dimension when no store exists on disk yet. Used by the incremental
+   * reconcile path so the first add after an empty baseline produces a real
+   * float store rather than relying on the SQLite fallback.
+   *
+   * When a store loads, its on-disk dimension wins (it is authoritative for
+   * the vectors already stored); `dimension` only seeds a fresh empty store.
+   *
+   * @param {string} binPath
+   * @param {number} dimension
+   * @returns {Promise<boolean>} true if an existing store was loaded, false if initialised empty
+   */
+  async loadOrInit(binPath, dimension) {
+    let loaded = false;
+    try {
+      loaded = await this.load(binPath);
+    } catch {
+      loaded = false; // corrupt/torn store → treat as empty and rebuild from delta
+    }
+    if (loaded) return true;
+
+    this.dimension = dimension;
+    this.count = 0;
+    this.idToIndex = new Map();
+    this.data = new Float32Array(0);
+    this.buffer = null;
+    this.loaded = true;
+    return false;
+  }
+
+  /**
+   * Apply incremental upserts/removes and rebuild the contiguous buffer.
+   *
+   * Writer-side only (the reconcile maintainer). The read hot path
+   * (get/batchScore over the contiguous buffer) is untouched; readers reload
+   * the rebuilt store from disk after the manifest publishes.
+   *
+   * Upserts replace any existing vector for the same ID. Removes drop the ID.
+   * The rebuilt buffer preserves no particular order — IDs are addressed via
+   * the idToIndex map, never by position.
+   *
+   * @param {{upserts?: Array<{id: string, vector: Float32Array|number[]}>, removeIds?: Iterable<string>}} delta
+   * @returns {{count: number}}
+   */
+  applyDelta({ upserts = [], removeIds = [] } = {}) {
+    // Materialise current id → vector. Subarrays view the old buffer; build()
+    // copies their values into a freshly allocated buffer before the old one
+    // is dropped, so the aliasing is safe.
+    const entries = new Map();
+    if (this.loaded && this.data && this.count > 0) {
+      for (const [id, idx] of this.idToIndex) {
+        const offset = idx * this.dimension;
+        entries.set(id, this.data.subarray(offset, offset + this.dimension));
+      }
+    }
+
+    for (const id of removeIds) entries.delete(id);
+    for (const { id, vector } of upserts) {
+      if (!id || !vector) continue;
+      entries.set(id, vector);
+    }
+
+    const list = [];
+    for (const [id, vector] of entries) list.push({ id, vector });
+    this.build(list, this.dimension);
+    return { count: this.count };
   }
 
   /**

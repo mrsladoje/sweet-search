@@ -1,4 +1,6 @@
+import { existsSync } from 'node:fs';
 import { normalizeIdentifier } from '../../graph/graph-extractor.js';
+import { FloatVectorStore, getFloatStorePath } from '../../vector-store/float-vector-store.js';
 import {
   loadBitmap,
   createBitmap,
@@ -71,4 +73,35 @@ export function markBinaryStale(index, id) {
   index.int8Vectors.delete(id);
   index._staleBitmapCache = null;
   return true;
+}
+
+/**
+ * Maintain the Stage 2.5 float vector store (`codebase-float-vectors.bin`) as a
+ * sidecar of the binary HNSW index. The search runtime derives its path from
+ * the binary HNSW path, loads/reloads the two together, and full indexing
+ * builds them together — so the float store is conceptually part of the binary
+ * HNSW tier, exactly like the int8 sidecar. Keeping it in lockstep here lets
+ * reconcile-created docs get true float rescoring in Stage 2.5 instead of
+ * falling back to SQLite.
+ *
+ * Skips when the store is absent but the binary HNSW already held vectors: a
+ * store built from the delta alone would be missing every baseline doc and
+ * would mis-score them. That abnormal state keeps the existing SQLite fallback
+ * until a full rebuild restores the store.
+ *
+ * @param {string} binaryHnswPath
+ * @param {object} delta
+ * @param {Array<{id: string, vector: Float32Array}>} delta.upserts
+ * @param {string[]} delta.removeIds
+ * @param {number} delta.binaryVectorsBefore  Live binary-HNSW vectors before this delta.
+ * @param {number} delta.dimension            hnswDimension to seed a fresh empty store.
+ */
+export async function maintainFloatStore(binaryHnswPath, { upserts, removeIds, binaryVectorsBefore, dimension }) {
+  if (upserts.length === 0 && removeIds.length === 0) return;
+  const floatStorePath = getFloatStorePath(binaryHnswPath);
+  if (!existsSync(floatStorePath) && binaryVectorsBefore > 0) return;
+  const store = new FloatVectorStore();
+  await store.loadOrInit(floatStorePath, dimension);
+  store.applyDelta({ upserts, removeIds });
+  await store.save(floatStorePath);
 }
