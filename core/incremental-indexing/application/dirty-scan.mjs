@@ -15,12 +15,22 @@
  * for the files it processes, so the next scan sees them as unchanged — the
  * queue does not grow without bound.
  *
+ * Admission: it uses the SAME `admission-policy` full indexing uses, so a file a
+ * fresh `sweet-search index` would skip (wrong extension, gitignored, excluded,
+ * oversized) is never newly enqueued, and a file full indexing would admit is
+ * eligible. Gitignore is evaluated in ONE batched `git check-ignore` per tick,
+ * never per file.
+ *
+ * Current-session convergence: a previously-indexed file that is deleted, or
+ * that becomes excluded / oversized / gitignored, is enqueued so the consumer
+ * retires it — incremental results then match a fresh full rebuild. (The
+ * consumer is the authority on admit-vs-retire; this producer only decides what
+ * to enqueue.)
+ *
  * Design notes:
- *   - Uses the same path-filter the reconciler uses (deny-dirs/exts + project
- *     ignore rules), matching the polling-backstop semantics in
- *     `file-watcher.mjs`. Non-code files that slip through reconcile to a no-op.
- *   - Stat-only diff keeps it O(files) with no file reads; large trees are
- *     bounded by `maxEnqueue`.
+ *   - Walks the whole tree each tick (pruning denied directories) so the "seen"
+ *     set is complete and unchanged-but-now-excluded files are not mistaken for
+ *     deletions; only the *enqueue* list is bounded by `maxEnqueue`.
  *   - De-dupes against paths already in the dirty/processing queues so repeated
  *     ticks before a slow reconcile don't pile up duplicates.
  *   - Opt-out: `SWEET_SEARCH_RECONCILE_SCAN=0|false|off` disables just the
@@ -29,6 +39,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+
+import { createAdmissionPolicy } from '../../indexing/admission-policy.js';
 
 const DIRTY_QUEUE = 'index-maintainer-queue.jsonl';
 const PROCESSING_QUEUE = 'index-maintainer-queue.processing.jsonl';
@@ -50,12 +62,6 @@ function readMerkleFiles(stateDir) {
   } catch {
     return {};
   }
-}
-
-/** Same shape merkle-state.json stores, so comparisons are apples-to-apples. */
-function statTuple(absPath) {
-  const stat = fs.statSync(absPath, { bigint: true });
-  return { size: stat.size.toString(), mtime_ns: stat.mtimeNs.toString() };
 }
 
 /** Project-relative paths already queued (dirty + in-flight), forward-slashed. */
@@ -88,31 +94,32 @@ function alreadyQueued(stateDir) {
  * @param {object} opts
  * @param {string} opts.projectRoot
  * @param {string} opts.stateDir
- * @param {(rel:string)=>boolean} [opts.isExcluded]   true ⇒ skip this path
+ * @param {object} [opts.admissionPolicy]   Shared admission policy (created from projectRoot if omitted).
+ * @param {(rel:string)=>boolean} [opts.isExcluded]   Extra deny predicate layered on the policy.
  * @param {number} [opts.maxEnqueue]
- * @returns {{enqueued:number, added:number, modified:number, deleted:number, files:string[]}}
+ * @returns {Promise<{enqueued:number, added:number, modified:number, deleted:number, retired:number, files:string[]}>}
  */
-export function scanDirtyAndEnqueue({ projectRoot, stateDir, isExcluded, maxEnqueue = DEFAULT_MAX_ENQUEUE }) {
-  const exclude = typeof isExcluded === 'function' ? isExcluded : () => false;
+export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPolicy, isExcluded, maxEnqueue = DEFAULT_MAX_ENQUEUE }) {
+  const policy = admissionPolicy || createAdmissionPolicy({ projectRoot });
+  const extraDeny = typeof isExcluded === 'function' ? isExcluded : null;
   const merkle = readMerkleFiles(stateDir);
   const queued = alreadyQueued(stateDir);
-  const seen = new Set();
-  const toEnqueue = [];
-  let added = 0;
-  let modified = 0;
-  let deleted = 0;
+  const maxFileSize = BigInt(policy.maxFileSize);
 
   // Never enqueue the maintainer's own state dir — its queues/manifests/db are
-  // not source files and must be skipped regardless of the caller's filter.
+  // not source files and must be skipped regardless of the policy.
   const stateDirResolved = path.resolve(stateDir);
   const isStateDir = (abs) => {
     const r = path.resolve(abs);
     return r === stateDirResolved || r.startsWith(stateDirResolved + path.sep);
   };
 
-  // 1. Walk the current tree for new + modified files.
+  // 1. Full walk: classify every present file; prune denied directories so we
+  //    never descend node_modules/.git/etc. `present` keeps shape-rejected
+  //    merkle files too (they must be retired).
+  const present = new Map(); // rel -> { isNew, changed, shapeOk, sizeOk }
   const stack = [projectRoot];
-  while (stack.length && toEnqueue.length < maxEnqueue) {
+  while (stack.length) {
     const dir = stack.pop();
     let entries;
     try {
@@ -124,50 +131,87 @@ export function scanDirtyAndEnqueue({ projectRoot, stateDir, isExcluded, maxEnqu
       const abs = path.join(dir, ent.name);
       if (isStateDir(abs)) continue;
       const rel = path.relative(projectRoot, abs).replace(/\\/g, '/');
-      if (!rel || exclude(rel)) continue;
+      if (!rel) continue;
       if (ent.isDirectory()) {
+        if (policy.isExcluded(rel) || (extraDeny && extraDeny(rel))) continue; // prune subtree
         stack.push(abs);
         continue;
       }
       if (!ent.isFile()) continue;
-      seen.add(rel);
       const prev = merkle[rel];
-      let isNew = false;
-      let changed = false;
-      if (!prev) {
-        isNew = true;
-        changed = true;
-      } else {
-        try {
-          const cur = statTuple(abs);
-          changed = cur.size !== String(prev.size) || cur.mtime_ns !== String(prev.mtime_ns);
-        } catch {
-          continue;
-        }
+      const shapeOk = policy.admitsShape(rel) && !(extraDeny && extraDeny(rel));
+      if (!shapeOk) {
+        // New rejected files are dropped; previously-indexed ones are retired.
+        if (prev) present.set(rel, { isNew: false, changed: false, shapeOk: false, sizeOk: false });
+        continue;
       }
-      if (changed && !queued.has(rel)) {
-        toEnqueue.push(rel);
-        queued.add(rel);
-        if (isNew) added += 1;
-        else modified += 1;
+      let stat;
+      try {
+        stat = fs.statSync(abs, { bigint: true });
+      } catch {
+        if (prev) present.set(rel, { isNew: false, changed: false, shapeOk: false, sizeOk: false });
+        continue;
       }
-      if (toEnqueue.length >= maxEnqueue) break;
+      const sizeOk = stat.size <= maxFileSize;
+      const isNew = !prev;
+      const changed = isNew
+        ? true
+        : (stat.size.toString() !== String(prev.size) || stat.mtimeNs.toString() !== String(prev.mtime_ns));
+      present.set(rel, { isNew, changed, shapeOk: true, sizeOk });
     }
   }
 
-  // 2. Deletions: merkle-known files that no longer exist on disk.
+  // 2. Gitignore: ONE batched check over admissible (shape+size OK) files. This
+  //    catches both new files dropped into a gitignored path and previously
+  //    indexed files whose `.gitignore` status changed.
+  const gitCandidates = [];
+  for (const [rel, v] of present) {
+    if (v.shapeOk && v.sizeOk) gitCandidates.push(rel);
+  }
+  const gitignored = await policy.gitignoredSet(gitCandidates);
+
+  // 3. Decide enqueues. Admitted+changed → reindex; previously-indexed but no
+  //    longer admitted → retire.
+  const toEnqueue = [];
+  let added = 0;
+  let modified = 0;
+  let deleted = 0;
+  let retired = 0;
+  const enqueue = (rel) => {
+    toEnqueue.push(rel);
+    queued.add(rel);
+  };
+
+  for (const [rel, v] of present) {
+    if (toEnqueue.length >= maxEnqueue) break;
+    const admitted = v.shapeOk && v.sizeOk && !gitignored.has(rel);
+    if (admitted) {
+      if (v.changed && !queued.has(rel)) {
+        enqueue(rel);
+        v.isNew ? (added += 1) : (modified += 1);
+      }
+    } else if (merkle[rel] && !queued.has(rel)) {
+      enqueue(rel);
+      retired += 1;
+    }
+  }
+
+  // 4. Merkle-known files not seen in the walk: deleted (gone) or living under a
+  //    directory that just became denied. Either way, retire.
   for (const rel of Object.keys(merkle)) {
     if (toEnqueue.length >= maxEnqueue) break;
-    if (seen.has(rel) || queued.has(rel) || exclude(rel)) continue;
+    if (present.has(rel) || queued.has(rel)) continue;
     if (!fs.existsSync(path.join(projectRoot, rel))) {
-      toEnqueue.push(rel);
-      queued.add(rel);
+      enqueue(rel);
       deleted += 1;
+    } else {
+      enqueue(rel);
+      retired += 1;
     }
   }
 
   if (toEnqueue.length === 0) {
-    return { enqueued: 0, added: 0, modified: 0, deleted: 0, files: [] };
+    return { enqueued: 0, added: 0, modified: 0, deleted: 0, retired: 0, files: [] };
   }
 
   fs.mkdirSync(stateDir, { recursive: true });
@@ -178,5 +222,5 @@ export function scanDirtyAndEnqueue({ projectRoot, stateDir, isExcluded, maxEnqu
     .join('');
   fs.appendFileSync(path.join(stateDir, DIRTY_QUEUE), lines);
 
-  return { enqueued: toEnqueue.length, added, modified, deleted, files: toEnqueue };
+  return { enqueued: toEnqueue.length, added, modified, deleted, retired, files: toEnqueue };
 }
