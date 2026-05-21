@@ -129,6 +129,7 @@
     "better-sqlite3": "^11.7.0",
     "fast-glob": "^3.3.3",
     "franc-min": "^6.2.0",
+    "minimatch": "^10.1.1",
     "onnxruntime-node": "^1.24.3",
     "p-limit": "^6.2.0",
     "sharp": "^0.34.5",
@@ -143,7 +144,6 @@
     "@vitest/coverage-v8": "^4.0.16",
     "eslint": "^9.39.4",
     "fast-check": "^4.5.3",
-    "minimatch": "^10.1.1",
     "p-map": "^7.0.4",
     "typescript": "^5.9.3",
     "vitest": "^4.0.16"
