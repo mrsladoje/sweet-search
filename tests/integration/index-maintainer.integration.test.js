@@ -26,6 +26,7 @@ import {
   ensureDataDir,
   isReconcilePaused,
   reconcileV2Requested,
+  reconcileV2Status,
   assertReconcileV2NotSilentlyIgnored,
   CONFIG,
 } from '../../core/indexing/index-maintainer.mjs';
@@ -95,15 +96,38 @@ describe('isReconcilePaused (Real Implementation)', () => {
 });
 
 describe('reconcile v2 rollout guard (Real Implementation)', () => {
-  it('recognizes the v2 flag without rejecting production adapter mode', () => {
+  it('is enabled by default when the env var is absent or empty (default-on)', () => {
+    expect(reconcileV2Requested({})).toBe(true);
+    expect(reconcileV2Requested({ SWEET_SEARCH_RECONCILE_V2: '' })).toBe(true);
+  });
+
+  it('honours explicit enable values', () => {
     expect(reconcileV2Requested({ SWEET_SEARCH_RECONCILE_V2: '1' })).toBe(true);
     expect(reconcileV2Requested({ SWEET_SEARCH_RECONCILE_V2: 'true' })).toBe(true);
-    expect(reconcileV2Requested({ SWEET_SEARCH_RECONCILE_V2: '0' })).toBe(false);
-    expect(reconcileV2Requested({ SWEET_SEARCH_RECONCILE_V2: 'off' })).toBe(false);
+    expect(reconcileV2Requested({ SWEET_SEARCH_RECONCILE_V2: 'on' })).toBe(true);
+  });
 
+  it('honours explicit opt-out values', () => {
+    expect(reconcileV2Requested({ SWEET_SEARCH_RECONCILE_V2: '0' })).toBe(false);
+    expect(reconcileV2Requested({ SWEET_SEARCH_RECONCILE_V2: 'false' })).toBe(false);
+    expect(reconcileV2Requested({ SWEET_SEARCH_RECONCILE_V2: 'off' })).toBe(false);
+  });
+
+  it('exposes a structured status with the source of the decision', () => {
+    expect(reconcileV2Status({})).toMatchObject({ enabled: true, source: 'default-on' });
+    expect(reconcileV2Status({ SWEET_SEARCH_RECONCILE_V2: '1' }))
+      .toMatchObject({ enabled: true, source: 'env-enabled' });
+    expect(reconcileV2Status({ SWEET_SEARCH_RECONCILE_V2: '0' }))
+      .toMatchObject({ enabled: false, source: 'env-disabled' });
+    expect(reconcileV2Status({ SWEET_SEARCH_RECONCILE_V2: 'bogus' }))
+      .toMatchObject({ enabled: true, source: 'env-enabled-permissive' });
+  });
+
+  it('assertReconcileV2NotSilentlyIgnored never throws for enabled configs', () => {
     expect(() => assertReconcileV2NotSilentlyIgnored({
       SWEET_SEARCH_RECONCILE_V2: '1',
     })).not.toThrow();
+    expect(() => assertReconcileV2NotSilentlyIgnored({})).not.toThrow();
   });
 });
 

@@ -10,6 +10,7 @@ import {
   nextInterval,
   startupInterval,
   tierForHardware,
+  reconcileEnablement,
   __testing,
 } from '../../core/incremental-indexing/domain/interval-autotune.mjs';
 
@@ -101,8 +102,14 @@ describe('interval / startupInterval / tier table', () => {
     expect(startupInterval({ tier: 'high', env: {} }).intervalMs).toBe(20_000);
   });
 
-  it('defaults to mid when neither tier nor hardware is supplied', () => {
-    expect(startupInterval({ env: {} }).intervalMs).toBe(30_000);
+  it('defaults to the conservative low tier (60s) when neither tier nor hardware is supplied', () => {
+    // Unknown / detection-failed hardware → 60s, not 30s. In production
+    // resolveReconcileV2Interval always threads a detected descriptor; this
+    // bootstrap fallback only fires when detection threw or a caller passes
+    // nothing, and 60s is the safe default for an unknown machine.
+    const out = startupInterval({ env: {} });
+    expect(out.intervalMs).toBe(60_000);
+    expect(out.source).toBe('tier-low');
   });
 
   it('resolves tier from hardware descriptor when explicit tier absent', () => {
@@ -206,5 +213,44 @@ describe('interval / nextInterval', () => {
       maintenanceBacklog: 0,
     });
     expect(out.nextMs).toBeGreaterThanOrEqual(__testing.MIN_MS);
+  });
+});
+
+describe('reconcileEnablement (default-on rollout policy)', () => {
+  it('is enabled by default when SWEET_SEARCH_RECONCILE_V2 is absent', () => {
+    const out = reconcileEnablement({});
+    expect(out.enabled).toBe(true);
+    expect(out.source).toBe('default-on');
+    expect(out.raw).toBeNull();
+  });
+
+  it('is enabled by default when SWEET_SEARCH_RECONCILE_V2 is empty', () => {
+    const out = reconcileEnablement({ SWEET_SEARCH_RECONCILE_V2: '' });
+    expect(out.enabled).toBe(true);
+    expect(out.source).toBe('default-on');
+  });
+
+  it('is disabled by the explicit off-tokens 0 / false / off (case-insensitive)', () => {
+    for (const v of ['0', 'false', 'off', 'FALSE', 'Off', ' off ']) {
+      const out = reconcileEnablement({ SWEET_SEARCH_RECONCILE_V2: v });
+      expect(out.enabled).toBe(false);
+      expect(out.source).toBe('env-disabled');
+      expect(out.raw).toBe(v);
+    }
+  });
+
+  it('is enabled by the explicit on-tokens 1 / true / on (case-insensitive)', () => {
+    for (const v of ['1', 'true', 'on', 'TRUE', 'On']) {
+      const out = reconcileEnablement({ SWEET_SEARCH_RECONCILE_V2: v });
+      expect(out.enabled).toBe(true);
+      expect(out.source).toBe('env-enabled');
+    }
+  });
+
+  it('treats any other non-empty value as permissive-enabled (back-compat)', () => {
+    const out = reconcileEnablement({ SWEET_SEARCH_RECONCILE_V2: 'yes-please' });
+    expect(out.enabled).toBe(true);
+    expect(out.source).toBe('env-enabled-permissive');
+    expect(out.raw).toBe('yes-please');
   });
 });

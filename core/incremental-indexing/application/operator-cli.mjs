@@ -5,11 +5,19 @@ import { readManifest } from '../infrastructure/manifest.mjs';
 import { canonicaliseInsideRoot } from '../infrastructure/dirty-set.mjs';
 import { contentHashSync } from '../infrastructure/hashing.mjs';
 import {
+  reconcileEnablement,
+  startupInterval,
+  tierForHardware,
+} from '../domain/interval-autotune.mjs';
+import { detectHardwareCapability } from '../../infrastructure/hardware-capability.js';
+import {
   DEAD_LETTER_FILENAME,
   QUEUE_FILENAME,
   enqueueMaintenanceJob,
   readMaintenanceQueue,
 } from './maintenance-worker.mjs';
+
+const MAINTAINER_LOCK = 'index-maintainer.lock';
 
 const DIRTY_QUEUE = 'index-maintainer-queue.jsonl';
 const PROCESSING_QUEUE = 'index-maintainer-queue.processing.jsonl';
@@ -114,6 +122,72 @@ function deadLetterSnapshot(stateDir) {
   return readJsonl(path.join(stateDir, DEAD_LETTER_FILENAME));
 }
 
+/**
+ * Whether a process id is currently alive. EPERM (a live process owned by
+ * another user) counts as alive; ESRCH (no such process) counts as dead.
+ */
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === 'EPERM';
+  }
+}
+
+/**
+ * Reconcile-v2 enablement + resolved startup interval, for the operator
+ * `status` surface. Reads the same domain policy + hardware-tier logic the
+ * daemon uses so `status` reflects what a fresh daemon would actually do.
+ */
+function reconcileConfigSnapshot(env = process.env) {
+  const enablement = reconcileEnablement(env);
+  let hardware = null;
+  try {
+    hardware = detectHardwareCapability();
+  } catch {
+    hardware = null;
+  }
+  const tier = hardware ? tierForHardware(hardware) : null;
+  const interval = startupInterval({ tier: tier || undefined, env, hardware });
+  return {
+    enabled: enablement.enabled,
+    source: enablement.source,
+    disabledReason: enablement.enabled
+      ? null
+      : `SWEET_SEARCH_RECONCILE_V2=${enablement.raw}`,
+    interval: {
+      ms: interval.intervalMs,
+      source: interval.source,
+      tier,
+      pinned: interval.pinned,
+    },
+  };
+}
+
+/**
+ * Maintainer lock state for the state dir: whether a daemon currently holds
+ * the lock, its pid, and whether that pid is alive (a present-but-dead lock
+ * is stale and will be cleared on the next daemon start).
+ */
+function lockSnapshot(stateDir) {
+  const lockFile = path.join(stateDir, MAINTAINER_LOCK);
+  const payload = readJson(lockFile);
+  if (!payload || !Number.isInteger(payload.pid)) {
+    return { present: false, filePath: lockFile };
+  }
+  const alive = pidAlive(payload.pid);
+  return {
+    present: true,
+    filePath: lockFile,
+    pid: payload.pid,
+    alive,
+    stale: !alive,
+    startedAt: payload.timestamp ? new Date(payload.timestamp).toISOString() : null,
+  };
+}
+
 function statusSnapshot(ctx) {
   const manifest = readManifest(ctx.stateDir);
   const dirty = dirtySnapshot(ctx.stateDir);
@@ -126,9 +200,12 @@ function statusSnapshot(ctx) {
     const tier = job.tier || 'unknown';
     byTier[tier] = (byTier[tier] || 0) + 1;
   }
+  const lastTick = lastTicks.at(-1) ?? null;
   return {
     projectRoot: ctx.projectRoot,
     stateDir: ctx.stateDir,
+    reconcile: reconcileConfigSnapshot(),
+    lock: lockSnapshot(ctx.stateDir),
     manifest: manifest
       ? { present: true, epoch: manifest.epoch ?? 0, publishedAt: manifest.publishedAt ?? null }
       : { present: false, epoch: 0, publishedAt: null },
@@ -146,8 +223,10 @@ function statusSnapshot(ctx) {
     },
     metrics: {
       lastTicks,
-      lastMaintenance: lastTicks.at(-1)?.last_maintenance ?? null,
-      watermarks: lastTicks.at(-1)?.watermarks ?? null,
+      lastTickAt: lastTick?.published_at ?? lastTick?.publishedAt ?? lastTick?.ts ?? null,
+      lastError: lastTick?.last_error ?? null,
+      lastMaintenance: lastTick?.last_maintenance ?? null,
+      watermarks: lastTick?.watermarks ?? null,
     },
   };
 }
@@ -332,9 +411,18 @@ function print(payload, json) {
     return;
   }
   if (payload.kind === 'status') {
+    if (payload.reconcile) {
+      const r = payload.reconcile;
+      console.log(`reconcile v2: ${r.enabled ? 'enabled' : 'disabled'} (${r.source})   interval: ${r.interval.ms}ms (${r.interval.source})`);
+      if (!r.enabled && r.disabledReason) console.log(`disabled reason: ${r.disabledReason}`);
+    }
     console.log(`index epoch: ${payload.manifest.epoch}   dirty files: ${payload.dirty.pending + payload.dirty.processing}   rebuild backlog: ${payload.rebuild.pending}`);
+    if (payload.lock?.present) {
+      console.log(`maintainer lock: pid ${payload.lock.pid} (${payload.lock.alive ? 'alive' : 'stale'})`);
+    }
     if (payload.pause?.paused) console.log(`reconcile paused since ${payload.pause.pausedAt || 'unknown'}`);
     if (payload.rebuild.deadLetters > 0) console.log(`dead letters: ${payload.rebuild.deadLetters}`);
+    if (payload.metrics.lastError) console.log(`last error: ${payload.metrics.lastError}`);
     if (payload.metrics.lastTicks.length > 0) console.log(`last ticks: ${payload.metrics.lastTicks.length}`);
     return;
   }
