@@ -653,6 +653,25 @@ function releaseStateLock(lockFile) {
 }
 
 async function runReconcileV2Tick(ctx) {
+  // Producer step: diff the working tree against merkle-state.json and enqueue
+  // add/modify/delete hints, so ordinary edits are reconciled WITHOUT requiring
+  // `sweet-search index --add` or an editor hook (release-gate finding C1). Runs
+  // before the consume step below; best-effort so a scan failure never blocks
+  // reconcile of already-queued work.
+  try {
+    const { dirtyScanEnabled, scanDirtyAndEnqueue } = await import('../incremental-indexing/application/dirty-scan.mjs');
+    if (dirtyScanEnabled()) {
+      const { buildPathFilter } = await import('../incremental-indexing/infrastructure/path-filter.mjs');
+      const isExcluded = buildPathFilter({ projectRoot: ctx.projectRoot });
+      const scan = scanDirtyAndEnqueue({ projectRoot: ctx.projectRoot, stateDir: ctx.stateDir, isExcluded });
+      if (scan.enqueued > 0) {
+        log('INFO', `Dirty scan enqueued ${scan.enqueued} file(s) (added=${scan.added}, modified=${scan.modified}, deleted=${scan.deleted})`);
+      }
+    }
+  } catch (err) {
+    log('WARN', `Dirty scan failed (continuing with queued hints): ${err?.message ?? err}`);
+  }
+
   const { runProductionReconcileTick } = await import('../incremental-indexing/application/production-reconciler.mjs');
   const counters = await runProductionReconcileTick({
     projectRoot: ctx.projectRoot,
