@@ -12,9 +12,10 @@
  *   - `sysctl` is a cheap (~5 ms) one-shot call. The result is cached so
  *     repeated consumers (init, native-inference, uninstall) all share one
  *     detection. Hardware doesn't change at runtime.
- *   - Never throws. Unknown hardware degrades to "candle-cpu fallback" —
- *     this module is only advisory; absence of a capability is never an
- *     error.
+ *   - Never throws. Unknown / no-accelerator hardware degrades to the
+ *     "ort-cpu" preference — the optimized ORT INT8 CPU path used for both
+ *     indexing and queries. It never means "load candle on CPU". This
+ *     module is only advisory; absence of a capability is never an error.
  *   - Unknown new Apple chips (e.g. an M5 shipped after this file) are
  *     admitted as cascade-eligible via the ">= 3" rule — we prefer
  *     optimistic new-hardware behavior to silently refusing to try.
@@ -214,7 +215,10 @@ function probeAddonCudaAvailability() {
  *   cudaReason                   — human string explaining eligible/not
  *   candleGpuBackend             — "metal" | "cuda" | null
  *   inferenceBackendPreference   — "coreml-cascade" | "candle-metal"
- *                                  | "candle-cuda" | "candle-cpu"
+ *                                  | "candle-cuda" | "ort-cpu"
+ *                                  ("ort-cpu" = no usable accelerator →
+ *                                   optimized ORT INT8 CPU for indexing
+ *                                   and queries; candle is never armed)
  */
 export function detectHardwareCapability() {
   if (_cached) return _cached;
@@ -281,7 +285,7 @@ export function detectHardwareCapability() {
   // Candle GPU backend availability.
   //   darwin-arm64 → metal (bundled with the darwin-arm64 native package)
   //   linux-*-gnu + NVIDIA + cuda-enabled addon → cuda
-  //   everything else → null (falls through to candle CPU)
+  //   everything else → null (falls through to ORT INT8 CPU)
   let candleGpuBackend = null;
   if (platform === 'darwin' && arch === 'arm64') {
     candleGpuBackend = 'metal';
@@ -289,10 +293,16 @@ export function detectHardwareCapability() {
     candleGpuBackend = 'cuda';
   }
 
-  // Preference order: coreml-cascade > candle-metal > candle-cuda > candle-cpu.
+  // Preference order: coreml-cascade > candle-metal > candle-cuda > ort-cpu.
   // coreml-cascade and candle-cuda never co-exist on the same host
   // (one is darwin, the other is linux), so the ordering is orthogonal
   // in practice.
+  //
+  // The no-accelerator fallback is 'ort-cpu', NOT 'candle-cpu': a host with
+  // no usable Metal / CoreML / CUDA accelerator indexes (and queries) on the
+  // optimized ORT INT8 CPU path. candle/native FP32 on CPU is slower AND
+  // lives in a different embedding space than the ORT INT8 query encoder, so
+  // it must never be the fallback. See AGENTS.md + core/indexing/model-pool.js.
   let inferenceBackendPreference;
   if (coremlCascadeEligible) {
     inferenceBackendPreference = 'coreml-cascade';
@@ -301,7 +311,7 @@ export function detectHardwareCapability() {
   } else if (candleGpuBackend === 'cuda') {
     inferenceBackendPreference = 'candle-cuda';
   } else {
-    inferenceBackendPreference = 'candle-cpu';
+    inferenceBackendPreference = 'ort-cpu';
   }
 
   _cached = Object.freeze({

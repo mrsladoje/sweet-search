@@ -5,9 +5,11 @@
  * Context: `SWEET_SEARCH_LI_HYBRID=1` alone is not enough. The Metal
  * command queue is shared with the parallel embed phase by default, so
  * hybrid must be refused unless parallel embed is disabled OR embed is
- * forced onto the CPU ORT path. Without this guard, a user who naively
- * flips the hybrid env var hits pathological underperformance with no
- * warning (tests/diagnose-hybrid-hang.js — the file name is the tell).
+ * forced onto the CPU ORT path. It must also be refused when there is no
+ * real accelerator; "hybrid" cannot mean candle/native on CPU. Without
+ * these guards, a user who naively flips the hybrid env var hits pathological
+ * underperformance with no warning (tests/diagnose-hybrid-hang.js — the file
+ * name is the tell).
  *
  * See `core/indexing/indexer-ann.js::decideHybridDispatcher` for the
  * policy itself. The runtime call site in `buildLateInteractionIndex`
@@ -51,6 +53,16 @@ describe('decideHybridDispatcher (runtime hybrid guard policy)', () => {
       expect(decision.reason).toBe('ok');
     }
   );
+
+  it('refuses hybrid when no accelerator is available', () => {
+    const decision = decideHybridDispatcher({
+      env: { SWEET_SEARCH_LI_HYBRID: '1' },
+      parallelLateInteraction: false,
+      acceleratorAvailable: false,
+    });
+    expect(decision.armed).toBe(false);
+    expect(decision.reason).toBe('no-accelerator');
+  });
 
   it('refuses hybrid when parallelLateInteraction=true (Metal contended by embed)', () => {
     const decision = decideHybridDispatcher({

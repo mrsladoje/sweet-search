@@ -14,6 +14,7 @@ import { truncateForHNSW, getEmbeddings, getModelInfo, fisherYatesShuffle } from
 import { buildFromCodebaseDb as buildQuantizedArtifacts, shouldSkipArtifactRebuild, updateArtifactState, ARTIFACT_THRESHOLDS } from './artifact-builder.js';
 import { log, logProgress } from './indexer-utils.js';
 import { JAVA_FAMILY } from './ast-chunker.js';
+import { isIndexAcceleratorAvailable } from './model-pool.js';
 
 // =============================================================================
 // DURABLE WRITE HELPERS (Phase E — fsync ordering for checkpoint safety)
@@ -240,11 +241,15 @@ function* streamVectorsFromDb(db, _dim, order = 'sequential') {
 export function decideHybridDispatcher({
   env = process.env,
   parallelLateInteraction = false,
+  acceleratorAvailable = true,
 } = {}) {
   const hybridEnv = (env.SWEET_SEARCH_LI_HYBRID ?? '').trim().toLowerCase();
   const hybridEnabled = hybridEnv === '1' || hybridEnv === 'true' || hybridEnv === 'on';
   if (!hybridEnabled) {
     return { armed: false, reason: 'not-enabled' };
+  }
+  if (!acceleratorAvailable) {
+    return { armed: false, reason: 'no-accelerator' };
   }
   // SWEET_SEARCH_LI_USE_CPU implies single-encoder CPU path — skip the
   // bidirectional cursor (which would still try to use the GPU encoder).
@@ -897,11 +902,17 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     const hybridDecision = decideHybridDispatcher({
       env: process.env,
       parallelLateInteraction: EMBEDDING_CONFIG.parallelLateInteraction === true,
+      acceleratorAvailable: isIndexAcceleratorAvailable(),
     });
     if (!hybridDecision.armed && hybridDecision.reason === 'metal-contended-by-embed') {
       log(
         'LateInteraction hybrid: ignored — SWEET_SEARCH_LI_HYBRID requires SWEET_SEARCH_PARALLEL_LI=0 '
         + 'OR SWEET_SEARCH_EMBED_USE_CPU=1 (Metal queue is shared with parallel embed phase)',
+        'yellow'
+      );
+    } else if (!hybridDecision.armed && hybridDecision.reason === 'no-accelerator') {
+      log(
+        'LateInteraction hybrid: ignored — no inference accelerator detected; using ORT CPU',
         'yellow'
       );
     }

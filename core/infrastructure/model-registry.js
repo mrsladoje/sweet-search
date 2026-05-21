@@ -86,6 +86,10 @@ export const MODEL_REGISTRY = {
     hfId: 'nomic-ai/CodeRankEmbed',
     profile: 'full',
     description: 'Local embedding model (FP32 safetensors, 768d) for native inference',
+    // Loaded only by the candle/native inference path, which is armed
+    // exclusively for accelerated indexing (Metal / CoreML cascade / CUDA).
+    // CPU-only hosts index with ORT INT8 and never load this — init skips it.
+    nativeAccelerated: true,
     files: [
       { path: 'model.safetensors', sizeBytes: 546938168, sha256: '827529bcd58aef0d9082e66eeff7e7d53a02f62bd005f841a26b3d3e2fb17ebe' },
       { path: 'config.json', sizeBytes: 1525, sha256: null },
@@ -96,6 +100,8 @@ export const MODEL_REGISTRY = {
     hfId: 'lightonai/LateOn-Code',
     profile: 'full',
     description: 'Late interaction model (FP32 safetensors, backbone 768d) for native inference',
+    // Native-accelerated only — see coderankembed-fp32 above.
+    nativeAccelerated: true,
     files: [
       { path: 'model.safetensors', sizeBytes: 596076280, sha256: '45c40bb4ba6b45f0c66b2deb3d27dd06efc3af23c78c8093b8cad2af61c683b2' },
       { path: '1_Dense/model.safetensors', sizeBytes: 393304, sha256: '22ea6a53cad3ed034934b5db7a214a0bcc28ff4cc440babea44029989e4bbcca' },
@@ -107,6 +113,8 @@ export const MODEL_REGISTRY = {
     hfId: 'lightonai/LateOn-Code-edge',
     profile: 'full',
     description: 'Late interaction edge model (FP32 safetensors, backbone 256d, 2-stage projection) for native inference',
+    // Native-accelerated only — see coderankembed-fp32 above.
+    nativeAccelerated: true,
     files: [
       { path: 'model.safetensors', sizeBytes: 67195976, sha256: '7ffc36b8ff71367249cd5220dbdd4bdbe177bc0e305b2e978a8b598bd8296f04' },
       { path: '1_Dense/model.safetensors', sizeBytes: 524376, sha256: '9efb17fcb2106cd8fcb01d57a9cd9c997a487ad20630ec8e44ce3f9d89efe0a7' },
@@ -158,6 +166,18 @@ export const MODEL_REGISTRY = {
  */
 export function getModelEntry(key) {
   return MODEL_REGISTRY[key] || null;
+}
+
+/**
+ * Whether a model is a native-accelerated FP32 artifact (safetensors loaded
+ * by the candle/native inference path). These are only used for accelerated
+ * indexing on Metal / CoreML cascade / CUDA hosts; a CPU-only host indexes
+ * with ORT INT8 and never loads them, so init skips them by default (~1.2 GB
+ * of downloads avoided). Marked with `nativeAccelerated: true` in the
+ * registry entry. Returns false for unknown keys.
+ */
+export function isNativeAcceleratedModel(key) {
+  return Boolean(MODEL_REGISTRY[key]?.nativeAccelerated);
 }
 
 /**

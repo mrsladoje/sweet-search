@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MODEL_REGISTRY, getModelEntry, getModelsForProfile } from '../../core/infrastructure/model-registry.js';
+import { MODEL_REGISTRY, getModelEntry, getModelsForProfile, isNativeAcceleratedModel } from '../../core/infrastructure/model-registry.js';
 
 describe('model-registry', () => {
   it('every model has required fields', () => {
@@ -118,5 +118,38 @@ describe('model-registry', () => {
         expect(f.sha256, `lateon-code-edge-fp32 ${f.path} missing sha256`).toBeTruthy();
       }
     }
+  });
+
+  // ── Native-accelerated classification (CPU-only fetch gating) ──
+
+  it('marks exactly the native FP32 safetensors as nativeAccelerated', () => {
+    // Loaded only by the candle/native accelerated path (Metal/CoreML/CUDA);
+    // CPU-only hosts skip these at init.
+    expect(isNativeAcceleratedModel('coderankembed-fp32')).toBe(true);
+    expect(isNativeAcceleratedModel('lateon-code-fp32')).toBe(true);
+    expect(isNativeAcceleratedModel('lateon-code-edge-fp32')).toBe(true);
+  });
+
+  it('does NOT mark ORT / query / cache / reranker models as nativeAccelerated', () => {
+    expect(isNativeAcceleratedModel('coderankembed-int8')).toBe(false);
+    expect(isNativeAcceleratedModel('lateon-code')).toBe(false);
+    expect(isNativeAcceleratedModel('lateon-code-edge')).toBe(false);
+    expect(isNativeAcceleratedModel('all-minilm-l6-v2')).toBe(false);
+    expect(isNativeAcceleratedModel('gte-reranker-modernbert-base')).toBe(false);
+    expect(isNativeAcceleratedModel('ms-marco-tinybert')).toBe(false);
+  });
+
+  it('returns false for unknown / missing keys', () => {
+    expect(isNativeAcceleratedModel('nonexistent')).toBe(false);
+    expect(isNativeAcceleratedModel(undefined)).toBe(false);
+  });
+
+  it('nativeAccelerated keys are exactly the *-fp32 safetensors family', () => {
+    // Guards against a future FP32 entry being added without the marker,
+    // which would re-introduce the CPU-only over-fetch bug.
+    const marked = Object.keys(MODEL_REGISTRY).filter((k) => isNativeAcceleratedModel(k));
+    expect(marked.sort()).toEqual(
+      ['coderankembed-fp32', 'lateon-code-edge-fp32', 'lateon-code-fp32'].sort(),
+    );
   });
 });

@@ -85,6 +85,19 @@ The standard `lateon-code` model is the active LI variant by default;
 or the `--late-interaction-model=lateon-code-edge` CLI flag and is wired
 through both ORT and native (Metal/CoreML/CUDA) paths.
 
+**Accelerator gating of the FP32 native backbones.** The three "Native
+(Metal/CUDA) path" FP32 safetensors above (`coderankembed-fp32`,
+`lateon-code-fp32`, `lateon-code-edge-fp32`) are loaded only by the
+candle/native inference path, which is armed exclusively for accelerated
+indexing. On a host with no usable accelerator — `darwin-x64`, Linux without
+a working CUDA addon, `SWEET_SEARCH_CUDA=0`/`--skip-cuda`, or any host whose
+`inferenceBackendPreference` resolves to `ort-cpu` — init **skips** those
+~1.2 GB of FP32 weights entirely. Such hosts index (and query) on the
+optimized ORT INT8 CPU path, so the FP32 backbones would never load. The ORT
+INT8 embedding (`coderankembed-int8`), the active LI ONNX model (unless
+`--li-model none`), and the semantic cache model (`all-minilm-l6-v2`) are
+still fetched; opt-in reranker env vars are still honored.
+
 All artifacts are verified with SHA256 checksums from
 `core/infrastructure/model-registry.js`. The registry lists every model
 with `profile: 'full'`. Note: `core/infrastructure/manifest.json` currently
@@ -564,7 +577,12 @@ binary; `scripts/uninstall.js` is a no-op for CUDA.
 - `--skip-cuda` on `sweet-search init` — translates to
   `SWEET_SEARCH_CUDA=0` for the current process
 - `SWEET_SEARCH_CUDA=0` env var — force-disables CUDA detection; indexing
-  falls back to candle-cpu
+  falls back to the optimized ORT INT8 CPU path (`inferenceBackendPreference`
+  becomes `ort-cpu`; candle/native is never armed and the FP32 backbones are
+  skipped at init)
+- `SWEET_SEARCH_NATIVE_INFERENCE=0` env var — force-disables native inference
+  entirely; init treats the host as non-accelerated for FP32 fetch gating, so
+  indexing stays on ORT INT8 CPU even if Metal/CUDA hardware is present
 - `SWEET_SEARCH_NATIVE_DEVICE=cpu` — forces the Rust addon to return CPU
   from `select_device()` regardless of hardware
 

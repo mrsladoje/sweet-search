@@ -32,18 +32,20 @@ lifecycle end-to-end:
    fighting with the GPU models about to be loaded.
 2. **Detect best backend** via `hardware-capability.js` —
    `coreml-cascade` on M3+ Apple Silicon, `candle-metal` on M1/M2,
-   `candle-cpu` elsewhere.
-3. **Load GPU models + warmup forward pass** — compiles Metal pipelines,
-   CoreML variant bundles, and BLAS thread pools so the first indexing
-   batch pays no cold-start cost.
+   `candle-cuda` on Linux + NVIDIA, and the optimized **ORT INT8 CPU** path
+   on any host with no usable accelerator (no GPU models are loaded there).
+3. **Load GPU models + warmup forward pass** (accelerator hosts only) —
+   compiles Metal pipelines, CoreML variant bundles, and BLAS thread pools
+   so the first indexing batch pays no cold-start cost.
 4. **Index the codebase** — code graph, vector embeddings, HNSW,
    late-interaction index, quantized artifacts, sparse-gram index.
 5. **Kill GPU models** — releases Metal queues and Neural Engine.
 6. **Load + warmup ORT CPU models** — both embedding and LI get one dummy
    forward pass so the first query after indexing is warm.
 
-On small-changeset incremental runs (under 20 files), the indexer skips the
-GPU swap entirely — the load/warmup overhead would dwarf the actual work.
+On small-changeset incremental runs (under 20 files) — and on any host with
+no usable accelerator — the indexer skips the GPU swap entirely and indexes on
+the optimized ORT INT8 CPU path.
 
 ## Usage
 

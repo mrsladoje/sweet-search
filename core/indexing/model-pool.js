@@ -45,16 +45,43 @@ export const GPU_ARMING_MIN_FILES = 20;
 
 /**
  * Translate a hardware-capability `inferenceBackendPreference` string into
- * the deviceKind that the native addon expects ("cpu" | "metal" | "cuda").
+ * the ACCELERATOR deviceKind the native addon should arm — or `null` when
+ * the host has no usable accelerator and indexing must stay on ORT INT8 CPU.
+ *
+ *   coreml-cascade | candle-metal → 'metal'
+ *   candle-cuda                   → 'cuda'
+ *   ort-cpu | candle-cpu | unknown / falsy → null   (no native arming)
+ *
+ * `candle-cpu` is mapped to `null` too — deliberately. "No accelerator" must
+ * never resolve to "load candle on CPU": that path ships FP32 safetensors and
+ * lives in a different embedding space than the ORT INT8 query encoder
+ * (a measured MRR regression). The only non-accelerator preference the
+ * detector emits today is 'ort-cpu'; 'candle-cpu' is handled defensively in
+ * case a stale persisted value ever reaches this function.
  *
  * Pure function, exported for unit testing. Keeps the mapping in one place
- * so adding a future backend (e.g. "candle-rocm") is a single-location
+ * so adding a future accelerator (e.g. "candle-rocm") is a single-location
  * edit that both init-time reporting and runtime dispatch consume.
  */
-export function selectDeviceKindFromPreference(pref) {
+export function selectAcceleratorDeviceKind(pref) {
   if (pref === 'coreml-cascade' || pref === 'candle-metal') return 'metal';
   if (pref === 'candle-cuda') return 'cuda';
-  return 'cpu';
+  return null;
+}
+
+/**
+ * Whether this process can use an inference accelerator (Metal / CoreML
+ * cascade / CUDA) for indexing. Requires both accelerator-capable hardware
+ * and a loadable/enabled native addon. When false, indexing stays on the
+ * optimized ORT INT8 CPU path and the GPU arm → teardown → CPU-rewarm
+ * lifecycle is skipped entirely. Reads the cached hardware-capability
+ * snapshot, so it's cheap to call repeatedly.
+ */
+export function isIndexAcceleratorAvailable() {
+  if (!isNativeInferenceAvailable()) return false;
+  return selectAcceleratorDeviceKind(
+    detectHardwareCapability().inferenceBackendPreference,
+  ) !== null;
 }
 
 let _gpuDiag = null;
@@ -90,7 +117,21 @@ export async function initIndexGpuPool({ includeLi = true } = {}) {
   const hw = detectHardwareCapability();
   const pref = hw.inferenceBackendPreference;
 
-  const deviceKind = selectDeviceKindFromPreference(pref);
+  const deviceKind = selectAcceleratorDeviceKind(pref);
+
+  // No usable accelerator → do NOT load native/candle models. Indexing
+  // proceeds on the ORT INT8 CPU path (inline or via the embedding worker
+  // pool). This is the authoritative JS-side guard: even if a CPU-only host
+  // happens to have the native addon installed (an optional package), we
+  // never arm candle on CPU here — that would ship FP32 safetensors and
+  // diverge from the ORT INT8 query encoder. callers (indexer-phases) already
+  // gate on isIndexAcceleratorAvailable(); this early-return keeps
+  // initIndexGpuPool independently correct and ensures we never lean on the
+  // Rust layer silently degrading loadWithDevice('metal'|'cuda') to CPU.
+  if (deviceKind === null) {
+    _gpuDiag = { backend: 'ort-cpu', embedLoadMs: 0, embedWarmMs: 0, liLoadMs: 0, liWarmMs: 0 };
+    return _gpuDiag;
+  }
 
   let embedLoadMs = 0;
   let embedWarmMs = 0;
