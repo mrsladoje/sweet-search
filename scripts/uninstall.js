@@ -479,9 +479,9 @@ export function removePrewarmSessionStartHook(projectRoot, { dryRun = false } = 
  * `.codex/hooks.json`. Mirrors `removePrewarmSessionStartHook`: only the
  * sweet-search-owned entry (matched by the launcher filename) is spliced out;
  * other events/entries are preserved. When our entry was the only content the
- * file is deleted rather than left as an empty shell. The `codex_hooks` feature
- * flag in config.toml is intentionally left in place — it's harmless and may be
- * shared with other tooling.
+ * file is deleted rather than left as an empty shell. The `[features] hooks`
+ * feature flag in config.toml is intentionally left in place — it's harmless and
+ * may be shared with other tooling.
  *
  * Returns `{ status, detail }`:
  *   removed    — our entry was spliced out (file rewritten or deleted)
