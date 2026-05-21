@@ -36,6 +36,7 @@ import { DB_PATHS, LATE_INTERACTION_CONFIG, PROJECT_ROOT } from '../infrastructu
 import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 import { readFile as readFileExact } from './search-read.js';
 import { withPinnedRead } from './search-reader-pin.js';
+import { emitToolIdentityAuto } from './cli-decoration.js';
 
 // Applies the user's persisted LI model exactly once per (projectRoot, env)
 // pair so encodeQuery/_getLateInteractionIndex below see the right variant.
@@ -883,10 +884,18 @@ function _parseArgs(args) {
   const positional = [];
   let format = 'agent';
   let topK; let threshold; let contextLines; let maxChars; let maxTokens; let verbose = false;
+  let plain = false; let noBanner = false;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--json') format = 'json';
     else if (a === '--agent') format = 'agent';
+    else if (a === '--no-banner') noBanner = true;
+    else if (a === '--format' || a.startsWith('--format=')) {
+      const v = a === '--format' ? args[++i] : a.slice('--format='.length);
+      if (v === 'json' || v === 'agent') format = v;
+      else if (v === 'plain') plain = true;
+      else throw new Error(`unknown --format value: ${v}`);
+    }
     else if (a === '--verbose') verbose = true;
     else if (a === '--top' || a === '--top-k' || a === '-k') topK = +args[++i];
     else if (a === '--threshold') threshold = +args[++i];
@@ -897,7 +906,7 @@ function _parseArgs(args) {
     else if (a.startsWith('--')) throw new Error(`unknown flag: ${a}`);
     else positional.push(a);
   }
-  return { positional, format, topK, threshold, contextLines, maxChars, maxTokens, verbose };
+  return { positional, format, topK, threshold, contextLines, maxChars, maxTokens, verbose, plain, noBanner };
 }
 
 function _printHelp() {
@@ -914,6 +923,8 @@ function _printHelp() {
     '  --max-chars <n>     Hard cap on returned text (default: 8000)',
     '  --max-tokens <n>    Convenience cap (~chars/4)',
     '  --json              Emit JSON',
+    '  --format <fmt>      json | agent | plain (plain = no identity line)',
+    '  --no-banner         Suppress the identity line',
     '  --verbose           Include timings + per-signal scores',
     '',
   ].join('\n'));
@@ -939,6 +950,9 @@ export async function handleReadSemanticCli(args) {
     maxTokens: parsed.maxTokens,
     verbose: parsed.verbose,
   });
+  if (parsed.format !== 'json') {
+    emitToolIdentityAuto('read-semantic', `${file} · "${query}"`, { plain: parsed.plain, noBanner: parsed.noBanner });
+  }
   process.stdout.write(formatReadSemanticResult(result, parsed.format));
   if (parsed.format !== 'json') process.stdout.write('\n');
   process.exit(result.ok ? 0 : 1);
