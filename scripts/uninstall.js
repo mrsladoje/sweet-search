@@ -22,12 +22,7 @@ import { removeAgentInstructions } from './inject-agent-instructions.js';
 import { removeClaudeRules } from './write-claude-rules.js';
 import { removePromptReminderHook } from './install-prompt-reminders.js';
 import { removeToolEnforcement } from './install-tool-enforcement.js';
-
-// Default paths for the running daemon. Env-overridable so both the prewarm
-// hook, the CLI, and this module agree on where to look. Tests pass custom
-// values to `stopRunningDaemon` for isolation.
-const DEFAULT_PID_FILE = process.env.SWEET_SEARCH_PID_FILE || '/tmp/sweet-search-server.pid';
-const DEFAULT_SOCKET_PATH = process.env.SWEET_SEARCH_SOCKET_PATH || '/tmp/sweet-search.sock';
+import { projectSocketPath, projectPidFile } from '../core/search/server-identity.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -179,8 +174,12 @@ export function getCoremlCascadeRemovals() {
  */
 export function stopRunningDaemon({
   projectRoot,
-  pidFile = DEFAULT_PID_FILE,
-  socketPath = DEFAULT_SOCKET_PATH,
+  // Per-project socket/pidfile (C3) — derived from this project's root so
+  // uninstalling project A never stops project B's server. Honors explicit
+  // SWEET_SEARCH_SOCKET_PATH / SWEET_SEARCH_PID_FILE overrides. Tests pass
+  // explicit values for isolation.
+  pidFile = projectPidFile(process.env, projectRoot || process.cwd()),
+  socketPath = projectSocketPath(process.env, projectRoot || process.cwd()),
 } = {}) {
   const result = { gracefulAttempted: false, killed: false, pidFileRemoved: false, socketRemoved: false };
 
