@@ -475,6 +475,84 @@ export function removePrewarmSessionStartHook(projectRoot, { dryRun = false } = 
   return { status: 'removed', detail: `spliced out ${sessionStart.length - filtered.length} entry` };
 }
 
+/**
+ * Remove the Codex CLI SessionStart hook entry that `--codex` init wrote into
+ * `.codex/hooks.json`. Mirrors `removePrewarmSessionStartHook`: only the
+ * sweet-search-owned entry (matched by the launcher filename) is spliced out;
+ * other events/entries are preserved. When our entry was the only content the
+ * file is deleted rather than left as an empty shell. The `codex_hooks` feature
+ * flag in config.toml is intentionally left in place — it's harmless and may be
+ * shared with other tooling.
+ *
+ * Returns `{ status, detail }`:
+ *   removed    — our entry was spliced out (file rewritten or deleted)
+ *   not-found  — no .codex/hooks.json, no SessionStart, or no matching entry
+ *   dry-run    — would remove (no write)
+ *   error      — non-fatal (unreadable / invalid JSON / write failed)
+ */
+export function removeCodexSessionStartHook(projectRoot, { dryRun = false } = {}) {
+  const hooksPath = join(projectRoot, '.codex', 'hooks.json');
+  if (!existsSync(hooksPath)) {
+    return { status: 'not-found', detail: 'no .codex/hooks.json' };
+  }
+
+  let raw;
+  try {
+    raw = readFileSync(hooksPath, 'utf-8');
+  } catch (err) {
+    return { status: 'error', detail: `read failed: ${err.message}` };
+  }
+
+  let doc;
+  try {
+    doc = JSON.parse(raw);
+  } catch (err) {
+    return { status: 'error', detail: `.codex/hooks.json is not valid JSON: ${err.message}` };
+  }
+
+  const sessionStart = doc?.hooks?.SessionStart;
+  if (!Array.isArray(sessionStart) || sessionStart.length === 0) {
+    return { status: 'not-found', detail: 'no SessionStart entries' };
+  }
+
+  const filtered = sessionStart.filter((group) =>
+    !(Array.isArray(group?.hooks) &&
+      group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_FILENAME)))
+  );
+
+  if (filtered.length === sessionStart.length) {
+    return { status: 'not-found', detail: 'no matching entry' };
+  }
+
+  if (dryRun) {
+    return { status: 'dry-run', detail: `would remove ${sessionStart.length - filtered.length} entry` };
+  }
+
+  if (filtered.length === 0) {
+    delete doc.hooks.SessionStart;
+    if (doc.hooks && Object.keys(doc.hooks).length === 0) {
+      delete doc.hooks;
+    }
+  } else {
+    doc.hooks.SessionStart = filtered;
+  }
+
+  try {
+    if (doc && Object.keys(doc).length === 0) {
+      // Our hook was the only content — remove the file rather than leave `{}`.
+      unlinkSync(hooksPath);
+    } else {
+      const tmpPath = hooksPath + '.tmp';
+      writeFileSync(tmpPath, JSON.stringify(doc, null, 2) + '\n', 'utf-8');
+      renameSync(tmpPath, hooksPath);
+    }
+  } catch (err) {
+    return { status: 'error', detail: `write failed: ${err.message}` };
+  }
+
+  return { status: 'removed', detail: `spliced out ${sessionStart.length - filtered.length} entry` };
+}
+
 // ---------------------------------------------------------------------------
 // Optional native package list (derived from package.json)
 // ---------------------------------------------------------------------------
@@ -630,11 +708,15 @@ export async function runUninstall(args) {
   const toolEnforcementPreview = removeToolEnforcement({ projectRoot, dryRun: true });
   const hasToolEnforcement = toolEnforcementPreview.status === 'dry-run';
 
+  // Codex CLI SessionStart hook (.codex/hooks.json), written by `init --codex`.
+  const codexHookPreview = removeCodexSessionStartHook(projectRoot, { dryRun: true });
+  const hasCodexHook = codexHookPreview.status === 'dry-run';
+
   // Nothing to remove?
   if (
     removals.length === 0 && !hasHookEntry && !hasSkillEntry && !hasIndexMaintainerHook
     && !agentInstructionsTouched && !hasClaudeRules
-    && !hasPromptReminder && !hasToolEnforcement
+    && !hasPromptReminder && !hasToolEnforcement && !hasCodexHook
   ) {
     console.log('Nothing to remove — Sweet Search is not initialized in this project.');
     return;
@@ -674,6 +756,9 @@ export async function runUninstall(args) {
   if (hasToolEnforcement) {
     console.log(`    tool-enforcement strict mode (${toolEnforcementPreview.detail})`);
   }
+  if (hasCodexHook) {
+    console.log(`    Codex SessionStart hook (.codex/hooks.json)`);
+  }
   console.log(`  Total: ${formatBytes(totalBytes)}`);
   if (parsed.keepModels) {
     console.log('  Model cache: kept (--keep-models)');
@@ -694,6 +779,10 @@ export async function runUninstall(args) {
       console.log(`  Would also remove: index-maintainer hook (${dryMaintainer.detail})`);
     } else if (dryMaintainer.status === 'skipped') {
       console.log(`  Would skip: index-maintainer hook — ${dryMaintainer.detail}`);
+    }
+    const dryCodex = removeCodexSessionStartHook(projectRoot, { dryRun: true });
+    if (dryCodex.status === 'dry-run') {
+      console.log(`  Would also remove: Codex SessionStart hook (.codex/hooks.json — ${dryCodex.detail})`);
     }
     console.log('Dry run — nothing was removed.');
     return;
@@ -777,6 +866,18 @@ export async function runUninstall(args) {
     console.log(`  Failed to remove index-maintainer hook: ${indexMaintainerResult.detail}`);
     kept++;
   }
+
+  // Reverse the Codex SessionStart hook written by `init --codex`. The
+  // config.toml feature flag is left in place (harmless, possibly shared).
+  const codexHookResult = removeCodexSessionStartHook(projectRoot, { dryRun: parsed.dryRun });
+  if (codexHookResult.status === 'removed') {
+    console.log(`  Removed: Codex SessionStart hook (.codex/hooks.json — ${codexHookResult.detail})`);
+    removed++;
+  } else if (codexHookResult.status === 'error') {
+    console.log(`  Failed to remove Codex SessionStart hook: ${codexHookResult.detail}`);
+    kept++;
+  }
+  // 'not-found' and 'dry-run' are silent in the main output.
 
   // P1: strip agent-instruction marker blocks across all five harness files.
   // The marker contract guarantees we never delete user prose outside of it.
