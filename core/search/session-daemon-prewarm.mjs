@@ -30,10 +30,13 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const SERVER_ENTRY = process.env.SWEET_SEARCH_SERVER_ENTRY || join(__dirname, '..', 'start-server.js');
+const MAINTAINER_ENTRY = process.env.SWEET_SEARCH_MAINTAINER_ENTRY
+  || join(__dirname, '..', 'indexing', 'index-maintainer.mjs');
 const SOCKET_PATH = process.env.SWEET_SEARCH_SOCKET_PATH || '/tmp/sweet-search.sock';
 const PID_FILE = process.env.SWEET_SEARCH_PID_FILE || '/tmp/sweet-search-server.pid';
 const LOCK_PATH = process.env.SWEET_SEARCH_PREWARM_LOCK || '/tmp/sweet-search-prewarm.lock';
 const SOCKET_PROBE_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_PREWARM_PROBE_MS ?? 300);
+const MAINTAINER_LOCK_FILENAME = 'index-maintainer.lock';
 
 const verbose = !!process.env.SWEET_SEARCH_PREWARM_VERBOSE;
 const log = (msg) => {
@@ -127,23 +130,99 @@ function releaseLock(fd) {
   try { unlinkSync(LOCK_PATH); } catch { /* ignore */ }
 }
 
-try {
+/**
+ * Opt-out check for the reconcile-v2 maintainer. Mirrors the off-tokens of
+ * `reconcileEnablement` in
+ * core/incremental-indexing/domain/interval-autotune.mjs (the canonical
+ * default-on policy). Inlined so this launcher stays dependency-free and
+ * fast to start; the off-token contract (0/false/off) is stable.
+ */
+function maintainerOptedOut(env) {
+  const raw = env.SWEET_SEARCH_RECONCILE_V2;
+  if (raw == null || raw === '') return false; // default-on
+  const n = String(raw).trim().toLowerCase();
+  return n === '0' || n === 'false' || n === 'off';
+}
+
+/** Resolve the project's reconcile state dir the same way the daemon does. */
+function maintainerStateDir(env, cwd) {
+  if (env.SWEET_SEARCH_STATE_DIR) return env.SWEET_SEARCH_STATE_DIR;
+  const root = env.SWEET_SEARCH_PROJECT_ROOT || cwd;
+  return join(root, '.sweet-search');
+}
+
+/** True when a daemon already holds a live maintainer lock for this state dir. */
+function maintainerAlive(stateDir) {
+  const lockFile = join(stateDir, MAINTAINER_LOCK_FILENAME);
+  if (!existsSync(lockFile)) return false;
+  try {
+    const { pid } = JSON.parse(readFileSync(lockFile, 'utf-8'));
+    return pidAlive(Number(pid));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Spawn the reconcile-v2 maintainer detached unless: the user opted out, the
+ * entry is missing, the project has no index yet (no .sweet-search), or a
+ * live maintainer already holds the lock. The daemon's own O_EXCL state lock
+ * is the real single-instance guard — the liveness probe here just avoids
+ * spawning a process that would immediately exit.
+ */
+function maybeSpawnMaintainer() {
+  const env = process.env;
+  if (maintainerOptedOut(env)) {
+    log('maintainer disabled via SWEET_SEARCH_RECONCILE_V2 opt-out');
+    return;
+  }
+  if (!existsSync(MAINTAINER_ENTRY)) {
+    log(`maintainer entry missing: ${MAINTAINER_ENTRY}`);
+    return;
+  }
+  const stateDir = maintainerStateDir(env, process.cwd());
+  if (!existsSync(stateDir)) {
+    log(`no index state dir (${stateDir}); skipping maintainer (run sweet-search index first)`);
+    return;
+  }
+  if (maintainerAlive(stateDir)) {
+    log('maintainer already running for this state dir');
+    return;
+  }
+  const child = spawn(process.execPath, [MAINTAINER_ENTRY], {
+    detached: true,
+    stdio: 'ignore',
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      // The package copy resolves PROJECT_ROOT from its own __dirname, so we
+      // pin the project root to the session cwd explicitly.
+      SWEET_SEARCH_PROJECT_ROOT: env.SWEET_SEARCH_PROJECT_ROOT || process.cwd(),
+    },
+  });
+  child.unref();
+  log(`maintainer spawned (pid ${child.pid}, detached)`);
+}
+
+/**
+ * Spawn the detached search server unless it is already responsive or another
+ * concurrent prewarm hook is mid-spawn. Returns (does not exit) so the
+ * maintainer launch below always runs.
+ */
+async function prewarmServer() {
   if (await daemonHealthy()) {
     log('daemon already responsive on socket');
-    process.exit(0);
+    return;
   }
-
   if (!existsSync(SERVER_ENTRY)) {
     log(`server entry missing: ${SERVER_ENTRY}`);
-    process.exit(0);
+    return;
   }
-
   const lockFd = acquireLock();
   if (lockFd === null) {
     log('another prewarm hook already holds the lock; skipping');
-    process.exit(0);
+    return;
   }
-
   try {
     // Fully detach: new session, no stdio, parent can exit while daemon loads.
     const child = spawn(process.execPath, [SERVER_ENTRY, '--serve'], {
@@ -157,8 +236,21 @@ try {
   } finally {
     releaseLock(lockFd);
   }
+}
+
+// The search server and the index maintainer are independent: a stuck/already
+// running server must not stop the maintainer from starting, and vice versa.
+// Each is isolated in its own try so one failing never blocks the other.
+try {
+  await prewarmServer();
 } catch (err) {
-  log(`non-fatal: ${err?.message || err}`);
+  log(`server prewarm non-fatal: ${err?.message || err}`);
+}
+
+try {
+  maybeSpawnMaintainer();
+} catch (err) {
+  log(`maintainer prewarm non-fatal: ${err?.message || err}`);
 }
 
 process.exit(0);

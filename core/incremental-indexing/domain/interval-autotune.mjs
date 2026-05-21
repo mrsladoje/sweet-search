@@ -200,13 +200,52 @@ export function startupInterval({ tier, env = process.env, hardware = null } = {
   }
   let resolvedTier = tier;
   if (!resolvedTier && hardware) resolvedTier = tierForHardware(hardware);
-  if (!resolvedTier) resolvedTier = 'mid';
+  // Unknown / detection-failed hardware → the conservative `low` (60 s) tier.
+  // In production `resolveReconcileV2Interval` always threads a detected
+  // descriptor, so this fallback only fires when detection threw or a caller
+  // passes neither tier nor hardware; 60 s is the safe default for a machine
+  // we know nothing about.
+  if (!resolvedTier) resolvedTier = 'low';
   const intervalMs = TIER_TABLE[resolvedTier] ?? NOMINAL_MS;
   return {
     intervalMs,
     pinned: false,
     source: `tier-${resolvedTier}`,
   };
+}
+
+/**
+ * Whether reconcile-v2 incremental indexing should run, given the process
+ * environment. This is the single source of truth for the `default-on`
+ * rollout policy; the index-maintainer daemon and the operator `status`
+ * surface both delegate here so they can never disagree.
+ *
+ * Policy:
+ *   - missing / empty `SWEET_SEARCH_RECONCILE_V2`  → enabled  (source `default-on`)
+ *   - `0` / `false` / `off`                        → disabled (source `env-disabled`)
+ *   - `1` / `true` / `on`                          → enabled  (source `env-enabled`)
+ *   - any other non-empty value                    → enabled  (source `env-enabled-permissive`)
+ *
+ * The permissive branch matches the historical behaviour (anything not an
+ * explicit off-token enabled v2); callers may surface a warning so a typo'd
+ * value isn't silently treated as enabled.
+ *
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {{enabled:boolean, source:'default-on'|'env-disabled'|'env-enabled'|'env-enabled-permissive', raw:string|null}}
+ */
+export function reconcileEnablement(env = process.env) {
+  const raw = env.SWEET_SEARCH_RECONCILE_V2;
+  if (raw == null || raw === '') {
+    return { enabled: true, source: 'default-on', raw: null };
+  }
+  const normalized = String(raw).trim().toLowerCase();
+  if (normalized === '0' || normalized === 'false' || normalized === 'off') {
+    return { enabled: false, source: 'env-disabled', raw: String(raw) };
+  }
+  if (normalized === '1' || normalized === 'true' || normalized === 'on') {
+    return { enabled: true, source: 'env-enabled', raw: String(raw) };
+  }
+  return { enabled: true, source: 'env-enabled-permissive', raw: String(raw) };
 }
 
 export const __testing = {
