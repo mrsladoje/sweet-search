@@ -28,19 +28,26 @@ export const SEARCH_SERVER_TIMEOUT_MS = 30_000;
 export const SEARCH_SERVER_MAX_URL_LENGTH = 16_384;
 export const SEARCH_SERVER_MAX_QUERY_LENGTH = 2_000;
 
-function buildTextSearchResponse(results, stats, totalTime, { summary = false, mid = false } = {}) {
+function buildTextSearchResponse(results, stats, totalTime, { summary = false, mid = false, color = true, decorate = true } = {}) {
   const routeMode = stats?.routing?.mode || 'auto';
   const icon = routeMode === 'lexical' ? '⚡' : routeMode === 'semantic' ? '🧠' : '✨';
-  const W = '\x1b[1;38;5;231m';
-  const D = '\x1b[38;5;245m';
-  const G = '\x1b[38;5;114m';
-  const R = '\x1b[0m';
-  const Y = '\x1b[38;5;220m';
-  const C = '\x1b[38;5;51m';
+  // Color is opt-out: the native CLI passes color=false whenever its result
+  // stream is captured (an agent pipe / Claude side-channel), so ANSI never
+  // enters captured output. A real human terminal keeps color.
+  const W = color ? '\x1b[1;38;5;231m' : '';
+  const D = color ? '\x1b[38;5;245m' : '';
+  const G = color ? '\x1b[38;5;114m' : '';
+  const R = color ? '\x1b[0m' : '';
+  const Y = color ? '\x1b[38;5;220m' : '';
+  const C = color ? '\x1b[38;5;51m' : '';
 
-  let out = `  ${icon} ${W}${routeMode}${R} ${D}|${R} ${W}${totalTime}ms${R} ${G}●${R}\n`;
-
-  out += '\n';
+  // The stats prelude (mode | ms ●) is decoration: the native CLI passes
+  // decorate=false for captured output so the body is results-only.
+  let out = '';
+  if (decorate) {
+    out += `  ${icon} ${W}${routeMode}${R} ${D}|${R} ${W}${totalTime}ms${R} ${G}●${R}\n`;
+    out += '\n';
+  }
 
   if (!results || results.length === 0) {
     out += 'No results\n';
@@ -210,6 +217,8 @@ export async function startServer() {
 
       // Output format options
       const format = url.searchParams.get('format') || 'json';
+      const useColor = url.searchParams.get('color') !== 'false';
+      const decorate = url.searchParams.get('decorate') !== 'false';
       const summary = url.searchParams.get('summary') === 'true';
       const mid = url.searchParams.get('mid') === 'true';
 
@@ -288,7 +297,7 @@ export async function startServer() {
           const totalTime = Date.now() - start;
 
           if (format === 'text') {
-            const out = buildTextSearchResponse(results, stats, totalTime, { summary, mid });
+            const out = buildTextSearchResponse(results, stats, totalTime, { summary, mid, color: useColor, decorate });
             res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
             res.end(out);
           } else {

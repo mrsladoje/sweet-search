@@ -1,9 +1,7 @@
 /**
- * sweet-search read — filesystem-grounded file reader.
- *
- * Returns exact bytes from disk. The vectors index may attach symbol/chunk
- * metadata for indexed files, but the returned `text` always comes from
- * `node:fs`, never from the (truncated) DB column.
+ * sweet-search read — filesystem-grounded file reader. Returns exact bytes from
+ * disk; the vectors index may attach symbol/chunk metadata, but the returned
+ * `text` always comes from node:fs, never from the (truncated) DB column.
  */
 
 import { promises as fs, realpathSync, statSync } from 'node:fs';
@@ -11,6 +9,7 @@ import path from 'node:path';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
 import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { withPinnedRead } from './search-reader-pin.js';
+import { emitToolIdentityAuto } from './cli-decoration.js';
 
 const CACHE_MAX_ENTRIES = 64;
 const CACHE_LARGE_FILE_BYTES = 4 * 1024 * 1024; // 4MB — switch to range-read mode
@@ -121,7 +120,6 @@ async function _readFromDisk(absPath) {
   const isLarge = stat.size > CACHE_LARGE_FILE_BYTES;
   const entry = {
     text: isLarge ? null : buf.toString('utf8'),
-    bufferRef: isLarge ? null : null, // not held — text is the canonical form
     lineOffsets,
     size: stat.size,
     mtimeMs: stat.mtimeMs,
@@ -412,13 +410,21 @@ function _parseArgs(args) {
   let startLine = null;
   let endLine = null;
   let includeMetadata = true;
+  let plain = false;
+  let noBanner = false;
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--json') format = 'json';
     else if (a === '--raw') format = 'raw';
     else if (a === '--agent') format = 'agent';
     else if (a === '--no-metadata') includeMetadata = false;
-    else if (a === '--lines') {
+    else if (a === '--no-banner') noBanner = true;
+    else if (a === '--format' || a.startsWith('--format=')) {
+      const v = a === '--format' ? args[++i] : a.slice('--format='.length);
+      if (v === 'json' || v === 'raw' || v === 'agent') format = v;
+      else if (v === 'plain') plain = true;
+      else throw new Error(`unknown --format value: ${v}`);
+    } else if (a === '--lines') {
       const [s, e] = _parseLineRange(args[++i]);
       startLine = s; endLine = e;
     } else if (a === '--help' || a === '-h') {
@@ -430,7 +436,7 @@ function _parseArgs(args) {
       positional.push(a);
     }
   }
-  return { positional, format, startLine, endLine, includeMetadata };
+  return { positional, format, startLine, endLine, includeMetadata, plain, noBanner };
 }
 
 function _printHelp() {
@@ -446,6 +452,8 @@ function _printHelp() {
     '  --json            Emit JSON (machine-readable)',
     '  --raw             Emit raw text only (no fences/headers)',
     '  --agent           Default — markdown fenced block + symbol hints',
+    '  --format <fmt>    json | raw | agent | plain (plain = no identity line)',
+    '  --no-banner       Suppress the identity line',
     '  --no-metadata     Skip index metadata attachment',
     '',
   ].join('\n'));
@@ -470,6 +478,10 @@ export async function handleReadCli(args) {
     endLine: wantsRange ? parsed.endLine : undefined,
   }));
   const out = await readFiles(files, { includeMetadata: parsed.includeMetadata });
+  if (parsed.format !== 'json') {
+    const detail = files.length === 1 ? files[0].path : `${files.length} files`;
+    emitToolIdentityAuto('read', detail, { plain: parsed.plain, noBanner: parsed.noBanner });
+  }
   process.stdout.write(formatReadResults(out, parsed.format));
   if (parsed.format !== 'json') process.stdout.write('\n');
   // Non-zero exit if every file failed (so shell pipelines see the error).
