@@ -67,6 +67,7 @@ import {
   buildCodeGraphWithHCGSPhase, buildVectorsAndArtifactsPhase,
   updateIncrementalStatePhase, printSummaryPhase,
 } from './indexer-phases.js';
+import { establishEmptyBaseline } from './indexer-empty-baseline.js';
 // =============================================================================
 // CLI ARGUMENT PARSING
 // =============================================================================
@@ -270,6 +271,8 @@ Output:
     const { allFiles, stdinFiles, earlyExit: discoveryEarlyExit, exitReason: discoveryExitReason } = discoveryResult.result;
 
     if (discoveryEarlyExit) {
+      // Empty repo: write a coherent zero-row baseline (see indexer-empty-baseline.js).
+      if (!dryRun && discoveryExitReason === 'no_files') await establishEmptyBaseline();
       if (quiet) {
         console.log(JSON.stringify({ success: true, filesProcessed: 0, reason: discoveryExitReason }));
       }
