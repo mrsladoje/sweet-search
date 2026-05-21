@@ -118,8 +118,9 @@ wallclock, CPU pressure, and maintenance backlog, and never overlaps ticks.
 
 The auto-launch above is a **Claude Code** SessionStart hook (`.claude/settings.json`).
 Other agents don't read that file. For the OpenAI Codex CLI, `sweet-search init
---codex` wires the equivalent, reusing the same `session-daemon-prewarm.mjs`
-launcher (it's harness-agnostic — reads only env/cwd, writes nothing to stdout):
+--codex` is the **complete normal setup** — one command, no extra flags. It wires
+the Codex equivalent, reusing the same `session-daemon-prewarm.mjs` launcher (it's
+harness-agnostic — reads only env/cwd, writes nothing to stdout):
 
 - **`.codex/hooks.json`** — a `SessionStart` hook (`matcher: "startup|resume"`)
   whose command is git-root anchored:
@@ -129,25 +130,35 @@ launcher (it's harness-agnostic — reads only env/cwd, writes nothing to stdout
   path resolution and the launcher's own project-root detection without writing
   a machine-specific absolute path into the (often committed) file.
 - **`[features] hooks = true`** in the project `.codex/config.toml` — the
-  canonical feature flag as of Codex v0.132+ — added via a comment-preserving,
-  append-if-absent edit (no TOML round-trip). A deprecated `codex_hooks` flag
-  from an older Codex / older sweet-search is **migrated** to `hooks` in place
-  (Codex now warns on `codex_hooks`). With `--codex-enable-global-hooks` the same
-  flag is also set in the user-level `~/.codex/config.toml`.
+  canonical feature flag (hooks are a **stable**, current-Codex feature, v0.132+).
+  `init --codex` enables it for the project itself via a comment-preserving,
+  append-if-absent edit (no TOML round-trip), so you do **not** need a separate
+  enable step. A deprecated `codex_hooks` flag from an older Codex / older
+  sweet-search is **migrated** to `hooks` in place (Codex now warns on
+  `codex_hooks`). The user-level `~/.codex/config.toml` is left untouched unless
+  you pass the legacy/advanced `--codex-enable-global-hooks` (not required for
+  normal setup).
 - **`AGENTS.md`** — `--codex` implies `--agents` (Codex's instruction file).
+- **MCP is not touched.** `init --codex` never writes `.mcp.json`; MCP stays
+  optional and unrelated to default incremental indexing.
 
 `uninstall` removes the sweet-search-owned `SessionStart` entry from
 `.codex/hooks.json` (deleting the file if it was the only entry); the config-flag
 is left in place (harmless, possibly shared).
 
-**To actually run the hook, you must do two things init cannot do for you:**
+**The only manual step `init --codex` can't do for you is project trust:**
 
-1. **Enable hooks.** Set `[features] hooks = true` in `config.toml` (init does
-   this in the project file by default), or start Codex with
-   `codex --enable hooks`. If your Codex only honors the user-level flag, re-run
-   init with `--codex-enable-global-hooks` (writes `~/.codex/config.toml`).
-2. **Review/trust repo-local hooks.** Run `/hooks` inside Codex to review and
-   trust the project's `.codex/hooks.json` before Codex will run it.
+- **Review/trust repo-local hooks.** Run `/hooks` inside Codex to review and
+  trust the project's `.codex/hooks.json` before Codex will run it. (If you ever
+  need to toggle the feature itself, `codex --enable hooks` does that — but
+  `init --codex` already sets `[features] hooks = true` in the project config, so
+  the normal path doesn't need it.)
+
+Even if you skip the `/hooks` trust step, **default index freshness is still
+guaranteed** — it does not live in the Codex hook. The core warm search-server
+first-use launcher (see "Startup layers" above) starts the incremental maintainer
+on first `sweet-search` use under any agent, Codex included. The Codex hook is
+purely an early prewarm convenience.
 
 > **Status: best-effort convenience layer — NOT the freshness guarantee.** Live
 > validation against Codex CLI **v0.132** found the Codex hook path too fragile to
