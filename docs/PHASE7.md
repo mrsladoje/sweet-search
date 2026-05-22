@@ -26,14 +26,14 @@ Produce a **single shipped sweet-search agent system prompt** that maximises joi
 - **MiMo-V2.5-Pro** (Xiaomi) — primary HOMP class
 - **Qwen 3.6 Plus via opencode CLI** — secondary HOMP class (proves the unified prompt transfers to open-weights even though we didn't optimise on it)
 
-**Headline claim if results land**: "An empirically-evolved sweet-search agent system prompt that achieves [+X pp] Maximin (worst-target) score over default phrasing across Sonnet 4.6 and GPT-5.5-instant, with no per-target absolute regression > 0.15 (§3.7.1 admission cap), robust to paraphrasing (correctness-weighted SCS ≥ 0.8), and validated on two held-out model classes (MiMo-V2.5-Pro, Qwen 3.6 Plus) plus a Java language-transfer probe set on both production targets (§3.5.1)."
+**Headline claim if results land**: "An empirically-evolved sweet-search agent system prompt that achieves [+X pp] Maximin (worst-target) score over default phrasing across Sonnet 4.6 and GPT-5.5-instant, with no per-target absolute regression > 0.15 (§3.7.1 admission cap), robust to paraphrasing (correctness-weighted SCS ≥ 0.8), and validated on two held-out model classes (MiMo-V2.5-Pro, Qwen 3.6 Plus) plus a Java language-transfer probe set on both production targets (§3.5.1), plus a held-out Vault (n=20) opened exactly once as the final untouched confirmation number."
 
 **Reasoning mode policy**: ALL evaluation runs in **non-reasoning mode** for parity. Both production targets default to non-reasoning, so this matches deployment reality. Reasoning-mode wins are a separate post-hoc claim, not part of the headline.
 
 **Out of scope for this run**:
 - Full §11.6 5-of-5 disjoint jury (we use a 3-of-3 minimum)
 - Replication across seeds (single seed=42 run; replication is a follow-up)
-- Vault opening (deferred to release/`p7-v1` tag — see §13)
+- Larger publication-tier probe sets (60 dev / 40 sealed / 80 vault) — this run uses a credible supporting-contribution sizing instead (30 dev / 25 held-out / 20 vault; see §2.4)
 
 ---
 
@@ -91,15 +91,16 @@ Implementation: extends `eval/agent-read-workflows/judge-runner.js` with `runMoo
 | Manual reflection cadence | **After every round** (see §3.4) | Human-in-the-loop GEPA |
 | Persistence | **Append-only JSONL after every mutation, screen, confirm, TARE step** | Resume MUST work after crash — see §7.4 |
 
-### §2.4 Probe sets (three-tier)
+### §2.4 Probe sets (four-tier)
 
 | Tier | n | Purpose | Inspection rules |
 |---|---|---|---|
-| **Dev** | 25 | GEPA loop free inspection, manual reflection | Free per-query inspection |
-| **Held-out** | 15 | Frozen sanity-check after GEPA convergence | NEVER inspect during evolution |
-| **Robustness pivots** (post-convergence) | 5 paraphrases × 25 dev + 15 held-out (computed only on the winner) | SCS metric for paraphrase invariance | Computed once, after winner selected |
+| **Dev** | 30 | GEPA loop free inspection, manual reflection | Free per-query inspection |
+| **Held-out** | 25 | Frozen sanity-check after GEPA convergence | NEVER inspect during evolution |
+| **Vault** | 20 | Final untouched confirmation — opened EXACTLY ONCE on the shipped winner after selection + all gates; reported, never optimized against (§5.8) | NEVER inspect; opened once at end of run |
+| **Robustness pivots** (post-convergence) | 6 paraphrases × (15 dev + the full 25 held-out) = 40 probes (computed only on the winner) | SCS metric for paraphrase invariance | Computed once, after winner selected |
 
-**Note**: This is engineering-tier, NOT publication-tier. For publication, expand dev to 60 + Sealed-1 to 40 + Vault to 80 per §11.2 of original plan.
+**Note**: This sizing (30 dev / 25 held-out / 20 vault) targets a *supporting-contribution* publishability bar — credible as one section of a systems paper, where the prompt-opt result is reported as a paired/directional claim backed by triangulation (HOMP × 2 families, SCS, language-transfer, pre-registration, the once-opened Vault), NOT as a precise standalone point estimate. For GEPA-as-the-primary-contribution (a methods paper whose headline IS the prompt-opt number), the bar rises to 60 dev / 40 sealed / 80 vault per §11.2 of original plan. The held-out (n=25) is the published number; n=25 paired is roughly where a directional claim stops feeling anecdotal (≈±15pp CI vs ≈±20pp at n=15).
 
 ### §2.5 Cost envelope
 
@@ -117,7 +118,7 @@ The loop is **joint across both targets** (Sonnet 4.6 + GPT-5.5-instant). Per ro
 2. **Mutation** — Generate 3 candidates per the §3.2 portfolio.
 3. **Screening** — Each mutation evaluated on 8 probes × **both targets** = 16 agent runs per mutation. Maximin × EAS `final_score` is the screen metric.
 4. **Persistence checkpoint** — Append every screen result (one JSONL row per (mutation, probe, target)) to `core/prompt-optimization/data/results/p7-v1/gepa-trajectory.jsonl`. **Run is fully resumable from this file at any point.** See §7.4.
-5. **Confirmation** — Top survivor re-evaluated on full 25 probes × 2 targets = 50 runs. Append to JSONL.
+5. **Confirmation** — Top survivor re-evaluated on full 30 probes × 2 targets = 60 runs. Append to JSONL.
 6. **TARE-style selection gate** — Compute paraphrase-sharpness for the survivor on the Maximin × EAS score (see §3.3). Selection uses dual objective: `final_score` AND `1 − sharpness`.
 7. **Pareto update** — Add survivor to front if it Pareto-dominates any incumbent on the joint two-objective space, AND passes the §3.7.1 step-9 0.15 admission cap relative to the *displaced incumbent*.
 8. **Manual reflection checkpoint** — User reviews top 3 failures **separately per target** (per GPT-5.5 review §E2): the report distinguishes Sonnet-only failures, GPT-only failures, and joint failures (both targets ≤ 0.4). Logs decisions in `core/prompt-optimization/data/p7-decisions.md` (see §3.4).
@@ -131,9 +132,9 @@ The loop is **joint across both targets** (Sonnet 4.6 + GPT-5.5-instant). Per ro
 
 **Hard cap**: 25 rounds total, no exceptions.
 
-**Mid-run probe rotation** (anti-overfit, per Gemini 3.1 Deep Think review): At **start of round 11**, rotate 5 fresh probes into the dev set, retiring the 5 probes with lowest score-variance across the current Pareto front (i.e. the "easy" probes everyone already mastered — they no longer discriminate). Held-out probes stay frozen. This prevents the GEPA loop from over-fitting the original 25 dev probes when there are 60+ candidates in flight. New probes drawn from a held-aside pool of 10 authored at the same time as the dev set (committed under `prereg/p7-v1` so the rotation is pre-registered, not post-hoc).
+**Mid-run probe rotation** (anti-overfit, per Gemini 3.1 Deep Think review): At **start of round 11**, rotate 5 fresh probes into the dev set, retiring the 5 probes with lowest score-variance across the current Pareto front (i.e. the "easy" probes everyone already mastered — they no longer discriminate). Held-out probes stay frozen. This prevents the GEPA loop from over-fitting the original 30 dev probes when there are 60+ candidates in flight. New probes drawn from a held-aside pool of 13 authored at the same time as the dev set (committed under `prereg/p7-v1` so the rotation is pre-registered, not post-hoc).
 
-**Pareto-front re-baseline at rotation** (FATAL fix per Gemini second-pass review §B1): At the **exact moment of rotation** (start of round 11), the GEPA driver MUST re-evaluate the entire current Pareto front (typically 6 variants) on the 5 new probes BEFORE scoring any new mutations. Without this step, Round 12 candidates are evaluated on the new probes while incumbents are scored on old probes — apples-to-oranges Pareto comparison. Cost: 6 variants × 5 new probes × 2 targets = **60 extra agent runs** (~$5). Mathematically non-negotiable. After re-baseline, all variants on the front have scores covering the *same* 25 probes (the 20 retained + 5 newly rotated in).
+**Pareto-front re-baseline at rotation** (FATAL fix per Gemini second-pass review §B1): At the **exact moment of rotation** (start of round 11), the GEPA driver MUST re-evaluate the entire current Pareto front (typically 6 variants) on the 5 new probes BEFORE scoring any new mutations. Without this step, Round 12 candidates are evaluated on the new probes while incumbents are scored on old probes — apples-to-oranges Pareto comparison. Cost: 6 variants × 5 new probes × 2 targets = **60 extra agent runs** (~$5). Mathematically non-negotiable. After re-baseline, all variants on the front have scores covering the *same* 30 probes (the 25 retained + 5 newly rotated in).
 
 **Dynamic hard-negative probe weighting** (per Gemini, with GPT-5.5 review §C5 noise-floor fix): from round 5 onward, each probe's contribution to the score is reweighted by its variance across the current Pareto front:
 
@@ -300,8 +301,8 @@ After every GEPA round, the reflection step is **AI-assisted by Gemini 3.1 Pro D
 
 After GEPA converges, the **single unified winning variant** is replayed on:
 
-- **HOMP class A — MiMo-V2.5-Pro** (Xiaomi family) — 30 probes (15 dev + 15 held-out)
-- **HOMP class B — Qwen 3.6 Plus via opencode CLI** (alibaba family) — 30 probes (same)
+- **HOMP class A — MiMo-V2.5-Pro** (Xiaomi family) — 30-probe subset (15 dev + 15 held-out)
+- **HOMP class B — Qwen 3.6 Plus via opencode CLI** (alibaba family) — 30-probe subset (same)
 
 **Pass criterion**: HOMP score on each class ≥ 0.7 × (Maximin × EAS `final_score` on Sonnet+GPT-5.5). Below this floor, the prompt is flagged "model-class-specific" and shipped with the caveat documented.
 
@@ -341,12 +342,12 @@ There's a counter-case: prompt optimization on non-reasoning models *generally* 
 
 - **Class A (operational)**: Sonnet 4.6 with **extended-thinking ON** (Anthropic API `thinking: { type: 'enabled', budget_tokens: 8000 }`)
 - **Class B (operational)**: GPT-5.5 reasoning variant (the non-`-instant` tier; OpenAI direct API)
-- Run the unified winning prompt against each on the **15 held-out probes** (NOT dev — held-out is intentionally untouched).
+- Run the unified winning prompt against each on the **25 held-out probes** (NOT dev — held-out is intentionally untouched).
 - **Pass criterion**: each operational HOMP class must score **≥ 0.7 × final_score** on the held-out probes — identical to the model-family HOMP gate (§3.5).
 
 **Why 0.7× and not 0.85×**: reasoning-mode is a different operational regime, not a different model. We expect *some* drift (reasoning may waste tool calls relative to EAS calibration); 0.7× catches catastrophic failure without rejecting normal mode-drift.
 
-**Cost**: 15 probes × 2 modes = 30 runs. Reasoning premium adds roughly 2-3× per call (~$0.20 vs ~$0.06 baseline). **Total: ~$6 — fits inside the $99 buffer below the $420 hard cap.**
+**Cost**: 25 probes × 2 modes = 50 runs. Reasoning premium adds roughly 2-3× per call (~$0.20 vs ~$0.06 baseline). **Total: ~$10 — fits inside the ~$37 buffer below the $420 hard cap.**
 
 **Scheduling**: runs at the same point as the model-family HOMP (§3.5) — after winner selection, before final ship gate. Implementation: `core/prompt-optimization/sweep/p7-reasoning-homp.mjs`.
 
@@ -367,13 +368,13 @@ After unified-winner selection:
    - 1 deterministic structural paraphrase (programmatic: rules → table form, table → rules form; family-free)
    - 1 OP-4 Tool-Signature Mask + roundtrip (kimi family)
    - 1 manual hand-edit
-2. Evaluate winner + 6 paraphrases (= 7 prompt versions) on (15 dev + 15 held-out) = 30 probes × **2 production targets** = 420 agent runs.
+2. Evaluate winner + 6 paraphrases (= 7 prompt versions) on **40 probes (15 dev + the full 25 held-out)** × **2 production targets** = 560 agent runs. (The full untouched held-out anchors the robustness claim; the dev portion stays a 15-probe subset since on-distribution invariance is the secondary signal.)
 3. Compute **Semantic Consistency Score (SCS)** per [ParaConsist (2026)](https://arxiv.org/abs/2605.04665):
    - **Answer Consistency** (AC): `# probes where ≥5 of 7 prompts agree on answer / 30`
    - **Semantic Similarity** (SS): mean cosine similarity of output embeddings (**Gemini Embedding 2**, 768-dim) across the 7 prompts per probe
    - **Length Stability** (LS): `1 − stddev(token_count) / mean(token_count)` per probe, then averaged
    - **SCS** = harmonic mean(AC, SS, LS)
-   - **Correctness-weighted SCS** (per GPT-5.5 review §C3 — anti-stable-wrongness): `cw_SCS = SCS × min_paraphrase_accuracy` where `min_paraphrase_accuracy` is the lowest-accuracy paraphrase's correctness-on-gold across the 30 probes. A prompt that consistently gives the same WRONG answer scores high on naive SCS; correctness-weighting collapses it.
+   - **Correctness-weighted SCS** (per GPT-5.5 review §C3 — anti-stable-wrongness): `cw_SCS = SCS × min_paraphrase_accuracy` where `min_paraphrase_accuracy` is the lowest-accuracy paraphrase's correctness-on-gold across the 40 probes. A prompt that consistently gives the same WRONG answer scores high on naive SCS; correctness-weighting collapses it.
 4. **Report**: per-target SCS, cw_SCS, and per-paraphrase accuracy delta.
 5. **Ship gate**: **cw_SCS ≥ 0.8 across both targets jointly, AND minimum-paraphrase accuracy ≥ 0.6 on both targets** (per GPT-5.5 review §C3 — naive SCS alone is gameable). Naive SCS is reported but does not gate.
 
@@ -385,14 +386,14 @@ Beyond paraphrasing the system prompt, we also evaluate the winner against **deg
 
 **Multi-source degradation** (per GPT-5.5 review §C4 — anti-Sonnet-author-bias):
 
-1. **Deterministic templates** (10 of 25 — family-free, no LLM): drop the trailing `?`, lowercase everything, drop articles ("the"/"a"/"an"), abbreviate package names (`fastify` → `fty`), wrong file extension (`.tsx` → `.js`), partial-stacktrace fragment, telegraphic style.
-2. **Sonnet-generated** (8 of 25): Sonnet 4.6 with prompt: *"Rewrite this query as a tired developer would type it into a search bar at 2am: lowercase, missing punctuation, telegraphic, possibly missing context words. Preserve the user's underlying intent. Output the rewritten query only."*
-3. **GPT-5.5-generated** (7 of 25): GPT-5.5 with the same prompt — ensures degradation distribution isn't single-family.
+1. **Deterministic templates** (12 of 30 — family-free, no LLM): drop the trailing `?`, lowercase everything, drop articles ("the"/"a"/"an"), abbreviate package names (`fastify` → `fty`), wrong file extension (`.tsx` → `.js`), partial-stacktrace fragment, telegraphic style.
+2. **Sonnet-generated** (9 of 30): Sonnet 4.6 with prompt: *"Rewrite this query as a tired developer would type it into a search bar at 2am: lowercase, missing punctuation, telegraphic, possibly missing context words. Preserve the user's underlying intent. Output the rewritten query only."*
+3. **GPT-5.5-generated** (9 of 30): GPT-5.5 with the same prompt — ensures degradation distribution isn't single-family.
 4. Run the winning system prompt against both targets on these 25 degraded queries.
 5. Compute the score delta vs the well-formed query baseline.
 6. **Pass criterion**: degraded-query Maximin score drops by ≤20% on each target individually. If GPT-5.5 alone drops by >20%, that's a target-asymmetry signal — §3.7.3 gate-failure flow kicks in.
 
-**Cost**: 25 degraded queries × 2 targets = 50 extra agent runs ≈ $4 (degradation generation: ~$0.10 amortized).
+**Cost**: 30 degraded queries × 2 targets = 60 extra agent runs ≈ $5 (degradation generation: ~$0.10 amortized).
 
 This is a real shipping concern, not just a publication signal. Production-deployed prompts encounter degraded queries constantly; this gate prevents shipping a brittle artifact.
 
@@ -487,6 +488,7 @@ We ship **one** prompt, not per-target prompts. Gemini 3.1 Pro Deep Think identi
     - **Robustness gate**: passes correctness-weighted SCS ≥ 0.8 on both targets (§3.6)
     - **Length cap**: ship variant ≤ 2000 tokens
 11. **Ship file**: `core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md` — one file, the unified prompt, headed with a YAML front-matter block citing the run ID, both raw per-target scores, joint Maximin score, EAS factor, avg tool calls, length, length-penalty, final score, SCS, HOMP scores per class incl. language-transfer.
+12. **Vault confirmation (opened EXACTLY ONCE)**: after the winner is selected and all gates above pass, open the 20-probe Vault (`frozen/p7-vault-probes.json`) and evaluate the shipped winner on it ONCE × 2 targets. This is a **pure confirmation/report, NOT a selection or gate** — the winner is never re-selected on Vault scores (that would burn the set). Report rule: if the Vault Maximin is within ~15% of held-out, the result generalizes and the **Vault number becomes the headline**; a >25% drop is a documented overfit finding, disclosed with a caveated headline. Record in the YAML front-matter alongside the held-out scores. See §5.8.
 
 #### §3.7.2 Why Maximin (with the §3.7.1 step 9 admission constraint)
 
@@ -494,7 +496,7 @@ Gemini's first pass suggested Z-score normalization OR Maximin. We chose Maximin
 
 - Maximin is interpretable: "the prompt is at least X-good on every target." Reviewers and users get this immediately.
 - Maximin matches the user-facing claim: "this prompt does well for MOST users" requires no user is left worse than X.
-- Z-score normalization requires estimating per-target variance, which is itself noisy at n=25 probes.
+- Z-score normalization requires estimating per-target variance, which is itself noisy at n=30 probes.
 
 **However, Maximin alone is insufficient** (Gemini's second pass critique §A1): in zero-sum target preferences (e.g., Sonnet wants verbose, GPT-5.5 wants terse), Maximin mathematically mandates a "race to the middle" that ships per-target regressions. The 0.15 absolute-degradation hard constraint (§3.7.1 step 9) closes that loophole. Without it, Maximin would happily promote a variant that scores 0.55/0.55 over a variant that scored 0.9/0.2 — a +0.35 Maximin gain but a -0.35 catastrophic regression for the high-target users.
 
@@ -719,14 +721,14 @@ target_tokens: <n>
 
 > **Status (pre-PHASE7 housekeeping snapshot)**: the probe SET DESIGN (§5.1–§5.7) is fully pre-registered. The probe RECORDS themselves (`p7-dev-probes.json`, `p7-heldout-probes.json` under `frozen/`, `p7-rotation-pool.json`, `p7-adversarial-counter-probes.json` under `frozen/`) are **NOT yet authored**. Authoring is the workstream that precedes the GEPA launch and is the gating prerequisite for moving the `prereg/p7-v1-pre-probe` tag forward to `prereg/p7-v1`. The pre-probe tag (committed at the end of the 2026-05-14 housekeeping session) freezes the documented design, per-tool variant artifacts, baseline metrics snapshot, and overfit framework — everything except the probe records. Authoring methodology + sources are spec'd in §5.4; budget is in §8.2.
 
-### §5.1 Dev probes (n=25)
+### §5.1 Dev probes (n=30)
 
 Stratified by:
 
-- **Repo**: 5 from each of fastify, gin, flask, ripgrep, ai-chatbot (the 5 P6 dev repos)
-- **Difficulty**: 8 easy, 12 medium, 5 hard (matches a real-user query distribution)
-- **Stratum**: 8 literal-lookup, 8 multi-file-flow, 5 behavioral, 4 no-match (negative cases)
-- **Trick-probe ratio**: 7 out of 25 = 28% (under the 30% Gemini-3rd-pass §C2 cap to keep the dev set representative of production traffic, not an adversarial gauntlet). Composition: 4 pathology probes from §5.5 (1 wrong-extension + 1 flooding + 2 rabbit-hole) + 3 distractor probes from §5.6. The remaining 3 pathology probes (2 wrong-extension + 1 flooding + 0 rabbit-hole) are deferred to the rotation pool — see §5.3.
+- **Repo**: 6 from each of fastify, gin, flask, ripgrep, ai-chatbot (the 5 P6 dev repos)
+- **Difficulty**: 9 easy, 15 medium, 6 hard (matches a real-user query distribution)
+- **Stratum**: 10 literal-lookup, 10 multi-file-flow, 6 behavioral, 4 no-match (negative cases)
+- **Trick-probe ratio**: 7 out of 30 = 23% (under the 30% Gemini-3rd-pass §C2 cap to keep the dev set representative of production traffic, not an adversarial gauntlet). Composition: 4 pathology probes from §5.5 (1 wrong-extension + 1 flooding + 2 rabbit-hole) + 3 distractor probes from §5.6. The remaining 3 pathology probes (2 wrong-extension + 1 flooding + 0 rabbit-hole) are deferred to the rotation pool — see §5.3.
 
 Each probe is a JSON record:
 ```json
@@ -746,7 +748,7 @@ Each probe is a JSON record:
 
 File: `core/prompt-optimization/data/p7-dev-probes.json`
 
-### §5.2 Held-out probes (n=15)
+### §5.2 Held-out probes (n=25)
 
 Same structure, frozen. **Authored at the same time as dev to prevent post-hoc bias** but not inspected until winner selection. File: `core/prompt-optimization/data/frozen/p7-heldout-probes.json` — committed under a `frozen/` directory at pre-registration time.
 
@@ -759,13 +761,13 @@ To support the mid-run probe rotation at round 11 (§3.1), **13 probes** are aut
 
 These probes are NOT used during rounds 1–10. At the start of round 11, the 5 lowest-variance dev probes (those everyone has mastered — i.e. `score_variance_across_pareto < 0.1`) are retired and replaced as follows: 2 of the 3 deferred-pathology probes guaranteed-promoted in (the agent must demonstrate it has learned the basics by round 11; this is the test), then 3 highest-difficulty standard rotation probes drawn deterministically by author-assigned difficulty rating.
 
-Rationale: prevents over-fitting to the original 25 dev probes when the GEPA loop has evaluated 60+ candidates against them, and concentrates the trick-probe evaluation in the second half of the run when the agent has mastered the literal-lookup baseline. The rotation membership is pre-registered (committed under `prereg/p7-v1`), so the swap is deterministic and not post-hoc.
+Rationale: prevents over-fitting to the original 30 dev probes when the GEPA loop has evaluated 60+ candidates against them, and concentrates the trick-probe evaluation in the second half of the run when the agent has mastered the literal-lookup baseline. The rotation membership is pre-registered (committed under `prereg/p7-v1`), so the swap is deterministic and not post-hoc.
 
 ### §5.4 Sources for probe content
 
-- **5 probes** drawn from P6 golds NOT in P6's 25-gold subsample (avoids leakage; uses the remaining 65 golds from the 90-gold P6 pool).
-- **30-40 hand-authored fresh probes** covering scenarios P6 missed (FreshStack-style post-cutoff repos, error-recovery scenarios, multi-callback behavioural queries that P6's `ripgrep:sink-trait` revealed as hard).
-- **All 50 probes** (25 dev + 15 held-out + 10 rotation) labeled by author + date + difficulty + stratum in YAML front-matter.
+- **8 probes** drawn from P6 golds NOT in P6's 25-gold subsample (avoids leakage; uses the remaining 65 golds from the 90-gold P6 pool).
+- **~80 hand-authored fresh probes** covering scenarios P6 missed (FreshStack-style post-cutoff repos, error-recovery scenarios, multi-callback behavioural queries that P6's `ripgrep:sink-trait` revealed as hard).
+- **All 88 core probes** (30 dev + 25 held-out + 13 rotation + 20 vault) labeled by author + date + difficulty + stratum in YAML front-matter.
 
 ### §5.5 Pathology probes — code-search domain failure modes (per Gemini 2nd-pass §C, 3rd-pass §C2 dilution)
 
@@ -781,7 +783,7 @@ Result: **4 pathology probes in dev** (within the 28% trick-probe budget when co
 
 ### §5.6 Poisoned/distractor probes (per Gemini 2nd-pass §D3)
 
-3 of the 25 dev probes contain **adversarial distractor files** in the target repository:
+3 of the 30 dev probes contain **adversarial distractor files** in the target repository:
 
 - A file named *exactly what the user is searching for* (e.g., `auth_v2_new.ts`) but containing **deprecated or wrong code with a "moved to X" comment**. The correct answer is the file the comment points to.
 
@@ -791,13 +793,24 @@ This tests **verification, not just retrieval**. A prompt that blindly trusts fi
 
 Risk: the probe author (human) subconsciously aligns dev probes with the P6 win-rate signal (e.g., authoring ss-trace probes in interrogative form because qshape-v1 said `structural` liked interrogative — a now-retracted signal since it targeted the wrong code path). The GEPA loop would then trivially "validate" P6's signal — but only because the test was rigged.
 
-**Mitigation — adversarial counter-probes**: pass 10 of the original 25 dev probes through Sonnet 4.6 with the system prompt:
+**Mitigation — adversarial counter-probes**: pass 10 of the original 30 dev probes through Sonnet 4.6 with the system prompt:
 
 > *"Rewrite this code-search query so its surface form is HOSTILE to the following heuristic [insert P6 winRate guidance here, e.g., 'ss-find narrow-regex + interrogative wins for JS-mobile']. Preserve the underlying user intent and gold answer exactly. Make the rewritten query violate the heuristic — terse imperative without symbol, or broad NL without anchor, etc."*
 
 These 10 adversarial counter-probes are added to the held-out set (NOT the dev set — they're a generalization gate, not a training signal). At the end of the run, the winning prompt is evaluated on them. If it scores within 15% of its dev-set score, the P6 signal generalised. If it crashes (>25% drop), the prompt was overfit to query-shape alignment.
 
 File: `core/prompt-optimization/data/frozen/p7-adversarial-counter-probes.json`. Cost: 10 probes × 2 targets at the end of the run = 20 agent runs ≈ $1.
+
+### §5.8 Vault probes (n=20) — final untouched confirmation
+
+20 probes authored at the same time as dev/held-out, stratified identically (repo / difficulty / stratum balance), and committed frozen under `core/prompt-optimization/data/frozen/p7-vault-probes.json` at the `prereg/p7-v1` tag.
+
+- Drawn from sources **disjoint from dev, held-out, and rotation** (remaining P6 golds + fresh post-cutoff authoring) to avoid leakage; cross-checked at pre-reg time.
+- **NEVER inspected** — not during evolution, not at convergence, not during HOMP/SCS. Opened EXACTLY ONCE on the shipped winner at the very end of the run (§4 step 12).
+- **Reported, not optimized against.** The Vault never feeds selection, gates, or hand-edits. Its only job is to produce one credible, single-touch generalization number. Vault within ~15% of held-out → result generalizes, Vault becomes the headline. >25% drop → documented overfit finding, headline caveated; the winner is NOT reselected.
+- Cost: 20 probes × 2 targets = 40 agent runs ≈ $3.40.
+
+File: `core/prompt-optimization/data/frozen/p7-vault-probes.json`.
 
 ---
 
@@ -808,7 +821,7 @@ File: `core/prompt-optimization/data/frozen/p7-adversarial-counter-probes.json`.
 | Tag | When | What it freezes |
 |---|---|---|
 | `prereg/p7-v1-pre-probe` | After pre-PHASE7 housekeeping, BEFORE probe authoring | Per-tool `recommendations-v2-*.json` artifacts, this `PHASE7.md` doc, the baseline-metrics snapshot under `eval/baselines/pre-phase7-snapshot.md`, mutation pool spec, judge panel, TARE config, GEPA config, overfit framework. Does NOT include probe records — those don't exist yet (see §5 status). |
-| `prereg/p7-v1` | After probe authoring, before any GEPA run | Everything in `prereg/p7-v1-pre-probe` + the probe records (`p7-dev-probes.json`, `frozen/p7-heldout-probes.json`, `p7-rotation-pool.json`, `frozen/p7-adversarial-counter-probes.json`) + decision log file initialized |
+| `prereg/p7-v1` | After probe authoring, before any GEPA run | Everything in `prereg/p7-v1-pre-probe` + the probe records (`p7-dev-probes.json`, `frozen/p7-heldout-probes.json`, `p7-rotation-pool.json`, `frozen/p7-adversarial-counter-probes.json`, `frozen/p7-vault-probes.json`) + decision log file initialized |
 | `release/p7-v1` | Before final headline-number release / Vault opening | The shipped winning prompt |
 
 Both `prereg/*` tagged commits MUST include this `PHASE7.md` doc and the variant artifacts at the exact state used for the run. The `prereg/p7-v1` tag additionally includes the probe records.
@@ -979,7 +992,7 @@ Before starting a real run, `node core/prompt-optimization/sweep/p7-preflight.mj
 | Disk space | ≥ 5GB free under `core/prompt-optimization/data/results/` | yes |
 | Git tree clean (or near-clean) | `git status --short` shows ≤ 2 modified files (the run produces uncommitted artifacts) | warn if dirty |
 | Pre-registration tag | `prereg/p7-v1` exists and points to current HEAD | yes — else require `--allow-no-prereg` flag |
-| Probe sets exist + frozen | `p7-dev-probes.json` and `frozen/p7-heldout-probes.json` both exist; held-out file is git-tracked at the prereg tag | yes |
+| Probe sets exist + frozen | `p7-dev-probes.json`, `frozen/p7-heldout-probes.json`, and `frozen/p7-vault-probes.json` all exist; held-out + vault files git-tracked at the prereg tag | yes |
 | Variant slate complete | T1.md … T14.md all exist with valid YAML front-matter | 14 files, all valid |
 | Decision log initialized | `p7-decisions.md` exists with at least the header | yes |
 
@@ -1044,10 +1057,11 @@ Rule: **NO CLI harness for any stateless call** — judges, reflector, synthesiz
 | Task | Estimated effort |
 |---|---|
 | T1–T14 variant authoring (seeded from P6 winRate data) | 0.5 day |
-| 25 dev probes | 0.5 day |
-| 15 held-out probes (then frozen) | 0.5 day |
+| 30 dev probes | 0.5 day |
+| 25 held-out probes (then frozen) | 0.5 day |
+| 20 vault probes (then frozen, opened once at end) | 0.5 day |
 | Pre-reg doc finalization + tag | 0.25 day |
-| **Total** | **~1.75 days** |
+| **Total** | **~2.25 days** |
 
 ### §7.3 Run execution
 
@@ -1072,36 +1086,38 @@ Rule: **NO CLI harness for any stateless call** — judges, reflector, synthesiz
 - **ja-pivot in the loop removed** (translation-invariance concern). Replaced by OP-3 Persona Pivot — same cost (Sonnet calls), better diversity.
 - **Two new operators added**: OP-4 Tool-Signature Masking (Kimi calls), OP-5 Pruner (Kimi calls). Both cheap.
 - **Maximin objective**: identical compute cost to mean — same per-probe agent runs, just different aggregation.
-- **Mid-run probe rotation**: 5 new probes drawn from the 10-probe held-aside pool at round 11. No marginal cost in run-time (same 25 probes per round, just different membership).
+- **Mid-run probe rotation**: 5 new probes drawn from the 13-probe held-aside pool at round 11. No marginal cost in run-time (same 30 probes per round, just different membership).
 - **Dynamic hard-negative probe weighting**: zero marginal cost, just changes the score formula.
 
 **Joint per-target workload** (Sonnet 4.6 + GPT-5.5-instant):
 
 | Bucket | Per joint round | × rounds | Joint runs |
 |---|---|---|---|
-| Variant ablation (T1–T15 × 25 probes × 2 targets) | 375 × 2 = 750 | 1 | **750** |
-| GEPA evolution (3 mutations × 8 screen × 2 + 1 survivor × 25 confirm × 2 = 98) | 98 | 20 | **1960** |
+| Variant ablation (T1–T15 × 30 probes × 2 targets) | 450 × 2 = 900 | 1 | **900** |
+| GEPA evolution (3 mutations × 8 screen × 2 + 1 survivor × 30 confirm × 2 = 108) | 108 | 20 | **2160** |
 | TARE adversarial (Pareto-gated; ~30% of survivors qualify; 3 paraphrases × 8 screen × 2 targets × ~6 qualifying candidates) | — | — | **~150** |
-| Super-variants ablation (5 super × 25 × 2) | — | — | **250** |
-| Held-out validation (1 winner × 15 × 2) | — | — | **30** |
-| Robustness pivots (6 paraphrases × 30 × 2) | — | — | **360** |
+| Super-variants ablation (5 super × 30 × 2) | — | — | **300** |
+| Held-out validation (1 winner × 25 × 2) | — | — | **50** |
+| Robustness pivots (6 paraphrases × 40 probes [15 dev + 25 full held-out] × 2) | — | — | **480** |
 | Round-11 Pareto-front re-baseline (6 incumbents × 5 new probes × 2 targets) — Gemini 2nd-pass §B1 | — | — | **60** |
 | GPT-5.5 added to Java language-transfer HOMP (10 probes × 1 extra target) — GPT-5.5 review §B2 | — | — | **10** |
-| Reasoning-mode operational HOMP (Sonnet thinking-ON + GPT-5.5 reasoning × 15 held-out probes) — §3.5.2 user catch | — | — | **30** |
-| Lazy-user degraded queries (25 × 2 targets) — Gemini 2nd-pass §D5 | — | — | **50** |
+| Reasoning-mode operational HOMP (Sonnet thinking-ON + GPT-5.5 reasoning × 25 held-out probes) — §3.5.2 user catch | — | — | **50** |
+| Lazy-user degraded queries (30 × 2 targets) — Gemini 2nd-pass §D5 | — | — | **60** |
 | Adversarial counter-probes on winner (10 × 2) — Gemini 2nd-pass §B4 | — | — | **20** |
 | Language-transfer HOMP probes (10 × Sonnet only as the production check) — Gemini 2nd-pass §E | — | — | **10** |
-| **Total joint runs** | | | **~3680** |
+| Vault confirmation (1 winner × 20 × 2, opened once) — §5.8 | — | — | **40** |
+| **Total joint runs** | | | **~4290** |
 
 Cost split:
 
 | Target | Runs | Per-run | Cost |
 |---|---|---|---|
-| Sonnet 4.6 (Anthropic direct API, $3/$15 per 1M, ~10K in + 2K out) | ~1820 | $0.06 | **$109** |
-| GPT-5.5-instant (OpenAI direct API, $5/$30 per 1M, ~10K in + 2K out) | ~1820 | $0.11 | **$200** |
+| Sonnet 4.6 (Anthropic direct API, $3/$15 per 1M, ~10K in + 2K out) | ~2120 | $0.06 | **$127** |
+| GPT-5.5-instant (OpenAI direct API, $5/$30 per 1M, ~10K in + 2K out) | ~2120 | $0.11 | **$233** |
+| Reasoning-mode operational HOMP premium (50 runs × ~$0.20) — §3.5.2 | 50 | ~$0.20 | **$10** |
 | (optional) GPT-5.4 backwards-compat replay of winner (~30 probes × $0.055) | 30 | $0.055 | **$1.65** |
 
-**Targets total: ~$309 + $2 backwards-compat replay**.
+**Targets total: ~$370 + $2 backwards-compat replay** (base split excludes the 50 reasoning-HOMP runs, which carry the premium row above).
 
 Other roles:
 
@@ -1114,17 +1130,17 @@ Other roles:
 | OP-5 Pruner (Kimi K2.6, smaller call ~3K in + 1K out) | ~6 calls × $0.008 | $0.05 |
 | TARE adversarial paraphraser (Sonnet 4.6, Pareto-gated) | ~18 calls × $0.045 | $0.81 |
 | Synthesizer (Kimi K2.6 reasoning) | 5 super-variant merges × $0.013 | $0.07 |
-| Judges (3-panel × 2 swaps × ~15 candidates × 25 probes × 2 targets) | ~4500 calls × $0.0007 avg | $3.15 |
+| Judges (3-panel × 2 swaps × ~15 candidates × 30 probes × 2 targets) | ~5400 calls × $0.0007 avg | $3.78 |
 | HOMP class A — MiMo-V2.5-Pro × 30 probes | 30 runs × $0.011 | $0.33 |
 | HOMP class B — Qwen 3.6 Plus × 30 probes | 30 runs × $0.022 | $0.66 |
-| SCS robustness embeddings (Gemini Embedding 2 for SS metric only — NOT for any mutation operator anymore) | ~250 calls × ~1K tokens × $0.20/1M | $0.05 |
+| SCS robustness embeddings (Gemini Embedding 2 for SS metric only — NOT for any mutation operator anymore) | ~350 calls × ~1K tokens × $0.20/1M | $0.07 |
 | IAA (judge-only cost; human time NOT included) | ~180 calls × $0.0007 | $0.13 |
 
-**Other roles total: ~$9** (incl. $1.40 AI-assisted reflection + new lazy-user query degrader at ~$0.30 + adversarial counter-probe authoring via Sonnet at ~$0.25).
+**Other roles total: ~$10** (incl. $1.40 AI-assisted reflection + new lazy-user query degrader at ~$0.30 + adversarial counter-probe authoring via Sonnet at ~$0.25).
 
-**Headline total: ~$327** (incl. $2 backwards-compat replay + $1.40 Gemini Deep Think reviews + ~$10 of Gemini 2nd-pass-driven additions + ~$1 of GPT-5.5 review-driven additions + **$6 reasoning-mode operational HOMP** per §3.5.2 — Sonnet thinking-ON + GPT-5.5 reasoning over 15 held-out probes, validating transfer to power-user reasoning mode), with safety buffer = **$420 hard cap**. **One-time $50 OpenAI Tier-2 upgrade is operationally mandatory** (per GPT-5.5 review §D1) but not part of the run cost — it's a prerequisite for reasonable wall-time.
+**Headline total: ~$383** (the probe-tier bump to 30 dev / 25 held-out / 20 vault plus full-25-held-out SCS adds ~$56 over the prior ~$327; incl. $2 backwards-compat replay + $1.40 Gemini Deep Think reviews + ~$10 of Gemini 2nd-pass-driven additions + ~$1 of GPT-5.5 review-driven additions + **$10 reasoning-mode operational HOMP** per §3.5.2 — Sonnet thinking-ON + GPT-5.5 reasoning over 25 held-out probes, validating transfer to power-user reasoning mode — + **~$3.40 once-opened Vault** per §5.8 + **~$10 full-25-held-out SCS** per §3.6), with safety buffer (~$37) = **$420 hard cap**. **One-time $50 OpenAI Tier-2 upgrade is operationally mandatory** (per GPT-5.5 review §D1) but not part of the run cost — it's a prerequisite for reasonable wall-time.
 
-This is **$99 more than a GPT-5.4 run would cost**. The user accepted this premium for pretrain future-proofing; rationale documented in §11.2.
+This is **~$115 more than a GPT-5.4 run would cost** (the gap grows with the larger probe tiers since GPT-5.5 runs are 2× the price). The user accepted this premium for pretrain future-proofing; rationale documented in §11.2.
 
 **Mid-run early-stop**: actual cost may be substantially lower if the patience rule fires before round 20. A run that converges at round 12 saves ~$80 (8 rounds × ~$10/round). User reviews convergence between rounds and can call early stop at any point — see §3.1 patience + plateau-breakthrough rules.
 
@@ -1133,17 +1149,17 @@ This is **$99 more than a GPT-5.4 run would cost**. The user accepted this premi
 | Cut | Savings | Trade-off |
 |---|---|---|
 | Reduce GEPA rounds 20 → 15, patience 5 → 3 | -$45 → **~$162** | Risk: not at convergence on hard probes; plateau-breakthrough rule helps |
-| Reduce dev probes 25 → 20 | -$28 → **~$179** | n=20 is workable; below pair-floor for some BH-FDR-style stats but those are out-of-scope here |
+| Reduce dev probes 30 → 25 | -$30 → **~$353** | n=25 still solid; reverts the dev half of the 30/25/20 bump |
 | Drop OP-4 Tool-Signature Masking (revert slot 3 to OP-3/OP-5 cycle of 2) | negligible savings | Lose the cognitive-forcing operator — methodologically less creative |
-| Disable mid-run probe rotation | $0 | Higher overfit risk on the original 25 |
+| Disable mid-run probe rotation | $0 | Higher overfit risk on the original 30 |
 | Reduce SCS post-convergence paraphrases 6 → 4 | -$3 | Marginal; not worth |
 | **All cuts above** | → **~$130** | Methodologically thinner but still defensible |
 
-### §8.2 Recommended bundle ($207 with $270 cap)
+### §8.2 Recommended bundle (~$383 with $420 cap)
 
-Keep the full 20 rounds, full TARE Pareto-gating, full 6-paraphrase SCS, 25-probe dev, mid-run probe rotation, and ALL five mutation operators. **The methodology is the value-add over P6 and over the original draft of this plan** — don't cut it.
+Keep the full 20 rounds, full TARE Pareto-gating, full 6-paraphrase SCS over the full 25 held-out (40 probes), the 30-probe dev / 25-probe held-out / 20-probe once-opened Vault sizing, mid-run probe rotation, and ALL five mutation operators. **The methodology is the value-add over P6 and over the original draft of this plan** — don't cut it.
 
-The user explicitly chose to invest in scientific rigour while remaining budget-conscious. ~$207 (down from the original ~$227 estimate, even after adding GPT-5.4 and the new operators) is the right answer for that intent.
+The user explicitly chose to invest in scientific rigour while remaining budget-conscious. ~$383 — one run, well under the user's ~$1000 ceiling, sized for *supporting-contribution* publishability (the held-out at n=25, full-25-held-out SCS, + a once-opened Vault) rather than a second run — is the right answer for that intent. The dominant single lever is the held-out 15→25 bump (the published number); the dev 25→30 bump mainly tightens the dev→held-out generalization gap.
 
 ---
 
@@ -1159,8 +1175,8 @@ core/prompt-optimization/
 │   │   ├── T1.md  ... T15.md                 (15 seed variants, P6-grounded per §4.2,
 │   │   │                                      T15 = Hypothesis-Driven Backtracking,
 │   │   │                                      with [[token]] markers and YAML front-matter)
-│   ├── p7-dev-probes.json                    (25 probes — see §5.1)
-│   ├── p7-rotation-pool.json                 (10 probes — held aside for mid-run rotation
+│   ├── p7-dev-probes.json                    (30 probes — see §5.1)
+│   ├── p7-rotation-pool.json                 (13 probes — held aside for mid-run rotation
 │   │                                          at round 11; see §5.3)
 │   ├── p7-pathology-probes.json              (7 probes — wrong-extension, flooding,
 │   │                                          rabbit-hole; see §5.5; included in dev set)
@@ -1172,8 +1188,10 @@ core/prompt-optimization/
 │   │                                          Sonnet-only; ≥0.6 score required to ship)
 │   ├── p7-lazyuser-probes.json               (degraded-query versions of dev probes; §3.6.1)
 │   ├── frozen/
-│   │   └── p7-heldout-probes.json            (15 probes — DO NOT INSPECT during evolution;
-│   │                                          tracked under prereg/p7-v1 tag)
+│   │   ├── p7-heldout-probes.json            (25 probes — DO NOT INSPECT during evolution;
+│   │   │                                      tracked under prereg/p7-v1 tag)
+│   │   └── p7-vault-probes.json              (20 probes — opened ONCE on the winner at end
+│   │                                          of run; NEVER inspected during evolution; §5.8)
 │   ├── p7-decisions.md                       (append-only manual reflection log; §3.4)
 │   └── p7-final/
 │       ├── sweet-search-system-prompt.md     (THE shipped unified prompt; §3.7)
@@ -1259,10 +1277,10 @@ tests/unit/prompt-optimization/
 | **Single seed=42 run; no replication** | Document; replicate with seed=43 only if a result is on the publication path | Variance bounds unmeasured |
 | **DeepSeek reflector overlap** — DSv4-Flash judge correlates with potential future DSv4-Pro reflector use | Currently use Kimi K2.6 reflector → no overlap | None for this run |
 | **Held-out probes may overlap with P6 golds** by accident | Probes drawn from non-P6 sources; cross-check at pre-reg time | Audit at tag time |
-| **HOMP uses single held-out class (MiMo-V2.5-Pro)** | Document. For publication path, add Llama-3.3-70B as second HOMP class for ~$1 extra | Acceptable for engineering tier |
+| **HOMP transfer evidence depth** | Two held-out classes used (MiMo-V2.5-Pro + Qwen 3.6 Plus); for publication path add a 3rd class for ~$1 extra | Acceptable; 2 classes already matches pub-tier minimum |
 | **CLI harness still used for Qwen/opencode HOMP class** | Unavoidable IF DashScope direct API isn't available. NOT used for any judge or reflector. Pre-flight checks DashScope first. | Acceptable |
 | **SCS metric uses Gemini Embedding 2** | Code-specialised, multimodal, well-established (March 2026 release). Document choice. | Acceptable |
-| **Vault not opened in this phase** | Defer to release-track follow-up (separate run) | Headline number not "vault-validated" |
+| **Vault opened once on the winner (n=20)** | Authored + frozen at prereg; opened EXACTLY ONCE at end of run; reported not optimized against (§5.8) | Headline IS vault-validated at n=20; small-n CI disclosed |
 | **20 rounds may not converge for hard tasks** | Patience rule + plateau-breakthrough extension + manual reflection are the convergence proxies. Document max-rounds-hit as a finding if it happens. | Acceptable per GEPA literature (10-50 rounds is the published range) |
 | **GPT-5.5-instant pricing changed mid-2026** ($2.50/$15 → $5/$30 in 7 weeks) | If pricing changes again before P7 runs, use GPT-5.4 (stable at $2.50/$15) to lock cost. Pre-flight script logs the resolved per-call price. | Cost variance bound by pre-flight |
 | **Sonnet 4.6 Tier-2 vs Tier-3 RPM ceiling** (1000 vs 2000 RPM) | At Tier 2 with ~30 concurrent calls, we're 30 RPM observed — well within. Pre-flight checks current Anthropic tier and warns if Tier 1 (50 RPM cap). | Acceptable |
@@ -1271,7 +1289,7 @@ tests/unit/prompt-optimization/
 | **Joint scoring variance asymmetry** (Gemini risk A2) | Mean would chase higher-variance target's deltas. **Mitigated by Maximin** (§3.7) — Pareto improvements must benefit BOTH targets, not just the noisier one. | Resolved |
 | **"Compromise prompt" mode collapse** (Gemini risk D1) | Pareto front fills with mediocre-on-both prompts rather than great-on-both, if the targets have fundamentally different routing preferences. | Mitigated by Maximin: the loop is forced to find prompts that are *jointly* high. If Maximin can't break a target asymmetry above floor, the §3.7.3 gate-failure flow kicks in (caveat-ship or 3-objective re-run). |
 | **GEPA prompt bloat** (Gemini risk C3) | Reflectors monotonically add rules; prompts balloon to 2,500+ tokens by round 20, diluting attention. | Mitigated by length penalty (§3.7) + OP-5 Pruner (§3.2) + 2000-token ship hard cap. |
-| **Overfitting 25 probes over 20 rounds** (Gemini risk D2) | 60+ candidates evaluated against only 25 probes → severe overfit risk to dev quirks. | Mitigated by mid-run probe rotation at round 11 (§3.1) + dynamic hard-negative weighting that down-weights saturated probes. |
+| **Overfitting 30 probes over 20 rounds** (Gemini risk D2) | 60+ candidates evaluated against only 30 probes → overfit risk to dev quirks. | Mitigated by mid-run probe rotation at round 11 (§3.1) + dynamic hard-negative weighting that down-weights saturated probes + the once-opened Vault (§5.8) as the final overfit check. |
 | **`[[token]]` whitespace corruption** (Gemini risk D3) | Translators/paraphrasers return `[[ ss-search ]]` with extra spaces inside brackets, breaking strict regex validation. | Mitigated by `[[token]]` validator's whitespace normalization step (§3.2.1). Strict regex first normalizes `[[\s*X\s*]]` → `[[X]]`. |
 | **Reflective rewrites get stuck in lexical-prior loops** (e.g., overemphasising "search" because the tool has "search" in its name) | The reflector's prompt mutations might converge on tropes that exploit lexical priors rather than describing tool behaviours unambiguously. | Mitigated by OP-4 Tool-Signature Masking (§3.2): periodically re-aliases tool names to break lexical-prior reliance, forcing self-describing prompt content. |
 | **Pareto-gated TARE may miss occasionally-brittle prompts** | A candidate that doesn't make the Pareto front by task score gets discarded WITHOUT TARE — but might have been borderline-Pareto and brittle. | Acceptable: those candidates wouldn't have entered the front anyway. The methodological point of TARE is to filter brittle Pareto entrants; non-entrants don't need filtering. |
@@ -1298,7 +1316,7 @@ tests/unit/prompt-optimization/
 | **n=6 Pareto noise overweighted as discriminative variance** (GPT-5.5 review §C5) | Small-front variance can be judge-noise rather than probe difficulty. | Mitigated by 2-round stability gate (variance only counts after probe evaluated ≥2 rounds) + judge-noise floor of 0.05 in §3.1 weighting. |
 | **Forensic-metadata gap in JSONL telemetry** (GPT-5.5 review §D4) | Without model_id/api_path/temperature/commit/probe_hash/token_counts/judge_panel logged, post-hoc explanation of GPT-vs-Sonnet deltas is impossible. | Mitigated by extending confirm-event schema (§7.4) to log all forensic metadata. |
 | **Fenced-python pseudocode over-literally interpreted** (GPT-5.5 review §B4) | GPT-5.5 may treat ```python``` blocks as executable examples rather than routing-policy pseudocode. | Mitigated by labelling pseudocode blocks `# routing policy pseudocode — NOT executable code` and preferring decision tables for high-level routing. |
-| **Reasoning-mode transfer gap — power users run thinking ON; we optimise OFF** (user catch, post-GPT-review) | Optimization runs against `extended-thinking=OFF` Sonnet and `GPT-5.5-instant` (non-reasoning) for cost and production-default parity. Power users — disproportionately the prompt-quality-sensitive cohort — flip thinking ON. EAS per-stratum windows, AST-ified routing, stateful-summarization rules, and Pruner-driven length cuts all may misfire under reasoning. | Mitigated by §3.5.2 reasoning-mode operational HOMP gate: 30 runs (~$6) on Sonnet+thinking-ON and GPT-5.5-reasoning over the 15 held-out probes. Pass criterion ≥0.7× `final_score` per class. Fail → ship-with-caveat OR §3.7.3 fork to reasoning-as-5th-objective extension run (~$80). Validates transfer, doesn't optimise for it — accepted cost/insurance trade. |
+| **Reasoning-mode transfer gap — power users run thinking ON; we optimise OFF** (user catch, post-GPT-review) | Optimization runs against `extended-thinking=OFF` Sonnet and `GPT-5.5-instant` (non-reasoning) for cost and production-default parity. Power users — disproportionately the prompt-quality-sensitive cohort — flip thinking ON. EAS per-stratum windows, AST-ified routing, stateful-summarization rules, and Pruner-driven length cuts all may misfire under reasoning. | Mitigated by §3.5.2 reasoning-mode operational HOMP gate: 50 runs (~$10) on Sonnet+thinking-ON and GPT-5.5-reasoning over the 25 held-out probes. Pass criterion ≥0.7× `final_score` per class. Fail → ship-with-caveat OR §3.7.3 fork to reasoning-as-5th-objective extension run (~$80). Validates transfer, doesn't optimise for it — accepted cost/insurance trade. |
 
 ---
 
@@ -1307,9 +1325,9 @@ tests/unit/prompt-optimization/
 | Dimension | Original §11 spec | This P7 plan | Trade-off |
 |---|---|---|---|
 | Judge panel | 5-of-5 disjoint + 1 adversarial | 3-of-3 disjoint | -3 judges, +practical |
-| Probe sets | 60 dev + 40 sealed-1 + 80 vault | 25 dev + 15 held-out + 0 vault | smaller n, no Vault |
+| Probe sets | 60 dev + 40 sealed-1 + 80 vault | 30 dev + 25 held-out + 20 vault | smaller n; Vault now included (opened once) |
 | Replication | ≥2 seeds | 1 seed | no variance bounds |
-| HOMP | ≥2 classes | 1 class (MiMo-V2.5-Pro) | weaker transfer evidence |
+| HOMP | ≥2 classes | 2 classes (MiMo-V2.5-Pro + Qwen 3.6 Plus) | matches pub-tier on HOMP |
 | GEPA rounds | not pinned | 20 with patience=5 | typical range |
 | Sharpness/robustness | not in original | TARE-style selection + SCS reporting | **stronger than original** |
 | Pre-registration | yes | yes (`prereg/p7-v1` tag) | ✓ |
@@ -1319,7 +1337,7 @@ tests/unit/prompt-optimization/
 | Mutation operators | 14 hand-authored seeds + naive paraphrase | 5-operator portfolio: Reflective + Trajectory-Crossover + Persona-Pivot + Tool-Mask + Pruner | **stronger than original** |
 | Score aggregation | not specified | Maximin + length penalty + dynamic hard-negative weighting | **stronger than original** |
 | Probe rotation | static probe set | mid-run rotation at round 11 (anti-overfit) | **stronger than original** |
-| Total cost | $400-1000+ implied | ~$320 (post-Gemini-2nd-pass revisions; user kept GPT-5.5) | -65-70% |
+| Total cost | $400-1000+ implied | ~$383 (30/25/20 tiers + full-held-out SCS; user kept GPT-5.5) | one run, well under $1000 |
 | Publication-tier | yes | engineering with publication-grade methodology where it costs $1 | most of the value, fraction of the cost |
 
 ### §11.1 What Gemini 3.1 Pro Deep Think changed (2026-05-10 review)
@@ -1465,18 +1483,18 @@ All locked. Ready for `prereg/p7-v1` tag.
 ## §13 Next steps
 
 1. **Now**: review this PHASE7.md; resolve the 7 open questions in §12.
-2. **Day 1**: author T1–T14 seeds (P6-grounded per §4.2) + dev/held-out probes (per §5).
+2. **Day 1**: author T1–T14 seeds (P6-grounded per §4.2) + dev / held-out / vault probes (per §5).
 3. **Day 2**: implement direct-API runners (Anthropic, OpenAI, Moonshot, MiniMax, MiMo, Qwen-DashScope) + Gemini Embedding 2 client. Unit-test the `[[token]]` preservation.
 4. **Day 3**: implement GEPA driver + Pareto-gated TARE + the 5-operator portfolio (OP-1 reflective, OP-2 trajectory-crossover with target-tagging, OP-3 persona-pivot+AST-ification with rotated generators + non-executable labelling, OP-4 tool-mask with domain-stripping, OP-5 Pruner with pseudocode-protection). Implement EAS (per-target per-stratum + evidence-adequacy), 0.15 admission cap (relative to displaced incumbent), TPM-aware token-bucket scheduler, persistence/resume with `fs.fsyncSync`, full-metadata JSONL telemetry (§7.4), pre-flight checklist (§7.5), verbose logger (§7.6). Unit-test crash-resume + token-validator multiplicity/alias gates.
 5. **Day 4**: dry-run on 3 probes × 1 round to validate end-to-end (cost: ~$1). Fix bugs.
 6. **Day 5**: tag `prereg/p7-v1`. Push. Run pre-flight script. If it fails, fix and re-tag.
 7. **Days 6–8**: run full GEPA (joint Sonnet 4.6 + GPT-5.5-instant). Manual reflection between rounds. Trajectory written to disk continuously — resumable.
-8. **Day 9**: HOMP (MiMo + Qwen) + language-transfer HOMP (Java × MiMo + Sonnet + GPT-5.5) + **reasoning-mode operational HOMP** (Sonnet thinking-ON + GPT-5.5 reasoning over 15 held-out probes; §3.5.2) + correctness-weighted SCS + GPT-5.4 backwards-compat replay (~$2-5) + winning prompt selection.
+8. **Day 9**: HOMP (MiMo + Qwen) + language-transfer HOMP (Java × MiMo + Sonnet + GPT-5.5) + **reasoning-mode operational HOMP** (Sonnet thinking-ON + GPT-5.5 reasoning over 25 held-out probes; §3.5.2) + correctness-weighted SCS + GPT-5.4 backwards-compat replay (~$2-5) + winning prompt selection. Then **open the Vault ONCE** on the selected winner (20 probes × 2 targets; §5.8) — the final untouched confirmation number.
 9. **Day 10**: write up `core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md` + `recommendations.json` + the run report.
 10. **Day 11**: tag `release/p7-v1`. Push. Update CLAUDE.md / sweet-search MCP to ship the new prompt.
 
 Optional (publication path):
-- **Day 12+**: open Vault on `release` tag for headline-number computation. Replicate with seed=43. Add 3rd HOMP class. ~$50-100 marginal.
+- **Day 12+**: replicate with seed=43 for variance bounds. Add a 3rd HOMP class. Expand to full publication-tier probe sets (60 dev / 40 sealed / 80 vault) only if GEPA becomes the *primary* paper contribution. ~$50-100 marginal.
 
 ---
 
@@ -1517,7 +1535,7 @@ GPT-5.5 pricing: $5 input / $30 output per 1M tokens. Per-call estimate (~10K in
 
 - **Pretrain future-proofing**: GPT-5.5 is plausibly a new base model (corroborated by 2× pricing jump and discrete April 23, 2026 launch). Future GPT-5.6, 5.7, 6.0 will be 5.5-derived → longer artifact shelf-life.
 - **Production trajectory**: OpenAI is migrating Codex paid tiers to 5.5 as default. Optimising for 5.4 today means re-optimising when users move.
-- **Cost premium accepted**: ~$99 more than 5.4 plan. Worth it for shelf-life.
+- **Cost premium accepted**: ~$115 more than 5.4 plan (at the 30/25/20 sizing). Worth it for shelf-life.
 
 **Backwards compat to GPT-5.4**: post-hoc replay of the winning variant on GPT-5.4 over held-out probes (~$2-5). Pass criterion: ≥90% of joint score preserved on 5.4. If pass: ship as universal. If fail: ship as "GPT-5.5+ generation" with a note for 5.4 users.
 
