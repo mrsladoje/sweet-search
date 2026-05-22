@@ -49,7 +49,7 @@ Produce a **single shipped sweet-search agent system prompt** that maximises joi
 | Merge Synthesizer | **Kimi K2.6 reasoning** (same) | Same justification | moonshot |
 | OP-3 paraphraser (Persona/Constraint Pivot, replaces ja-pivot) | **Sonnet 4.6** + at least 1 non-Anthropic generator per round (rotate Kimi K2.6 / GPT-5.5; per GPT-5.5 review §C2 — anti-Anthropic-paraphrase-bias) | Strong instruction-follower for "preserve intent, vary surface, freeze [[tokens]]"; rotation breaks single-family paraphrase distribution | anthropic + rotated |
 | TARE adversarial paraphraser | **Sonnet 4.6** + ≥1 non-Anthropic per K=3 paraphrases (deterministic structural + Kimi or GPT-5.5; per GPT-5.5 review §C2) | Robustness must be measured against multi-family paraphrase noise | mixed |
-| Lazy-user query degrader (§3.6.1) | **Deterministic templates** + **GPT-5.5** as alternate generator (per GPT-5.5 review §C4 — anti-Sonnet-author-bias) | Templates: dropped symbols, wrong extension, abbreviated package names, partial stacktrace fragments | mixed |
+| Agent-query degrader/emitter (§3.6.1) | **Sonnet 4.6 / Opus 4.7 / GPT-5.5 / MiMo / Qwen** (agent-delegation paraphrase + cross-model emission) + **deterministic templates** (CLI-style) | Models emit agent-delegation phrasings + natural cross-model query shapes; templates cover the CLI/human minority | mixed |
 | Judge 1 (deepseek family) | **DeepSeek-V4-Flash** (direct API) | Tested 99.9% clean in P6 after `max_tokens: 4096` fix | deepseek |
 | Judge 2 (google family) | **Gemini-3.1-Flash-Lite** (direct API) | Tested 100% clean in P6 | google |
 | Judge 3 (minimax family) | **MiniMax M2.7** non-reasoning (direct MiniMax API) | Cheap, reliable instruction-follower; clean family vs all targets and other judges | minimax |
@@ -69,7 +69,7 @@ Per the lesson learned in P6 (CLI harness is 50–100× slower than direct API f
 | Agent runs (target) | CLI harness OR direct API per target's needs | Agents use tools; harness justified |
 | Reflector / Synthesizer | **Direct API** | Stateless; no tools needed |
 | Judges | **Direct API** | Stateless; no tools needed |
-| Paraphraser (OP-3 / TARE / lazy-user degrader) | **Direct API** | Stateless |
+| Paraphraser (OP-3 / TARE / agent-query degrader) | **Direct API** | Stateless |
 | HOMP replay | **Direct API or CLI**, depending on model | Whichever is cheaper |
 
 Implementation: extends `eval/agent-read-workflows/judge-runner.js` with `runMoonshotDirect`, `runMiniMaxDirect`, `runOpenAIDirect`, `runMiMoDirect`. Pattern mirrors existing `runDeepseekDirect` and `runGeminiDirect`.
@@ -347,7 +347,7 @@ There's a counter-case: prompt optimization on non-reasoning models *generally* 
 
 **Why 0.7× and not 0.85×**: reasoning-mode is a different operational regime, not a different model. We expect *some* drift (reasoning may waste tool calls relative to EAS calibration); 0.7× catches catastrophic failure without rejecting normal mode-drift.
 
-**Cost**: 25 probes × 2 modes = 50 runs. Reasoning premium adds roughly 2-3× per call (~$0.20 vs ~$0.06 baseline). **Total: ~$10 — fits inside the ~$37 buffer below the $420 hard cap.**
+**Cost**: 25 probes × 2 modes = 50 runs. Reasoning premium adds roughly 2-3× per call (~$0.20 vs ~$0.06 baseline). **Total: ~$10 — fits inside the ~$34 buffer below the $420 hard cap.**
 
 **Scheduling**: runs at the same point as the model-family HOMP (§3.5) — after winner selection, before final ship gate. Implementation: `core/prompt-optimization/sweep/p7-reasoning-homp.mjs`.
 
@@ -378,24 +378,37 @@ After unified-winner selection:
 4. **Report**: per-target SCS, cw_SCS, and per-paraphrase accuracy delta.
 5. **Ship gate**: **cw_SCS ≥ 0.8 across both targets jointly, AND minimum-paraphrase accuracy ≥ 0.6 on both targets** (per GPT-5.5 review §C3 — naive SCS alone is gameable). Naive SCS is reported but does not gate.
 
-#### §3.6.1 Lazy-user query robustness (per Gemini 2nd-pass §D5)
+#### §3.6.1 Agent-mediated query robustness (per Gemini 2nd-pass §D5; re-scoped — sweet-search is consumed by agents, not humans)
 
-Beyond paraphrasing the system prompt, we also evaluate the winner against **degraded versions of the dev queries** — what real production users actually type. Sweet-search dev probes are well-formed ("Where is the Sink trait defined in the ripgrep repo?"); real users write garbage ("sink trait broken why").
+**Re-scoping (why the original "lazy-user / tired-developer-at-2am" framing was wrong)**: that framing modelled a *human → sweet-search* pipeline. But sweet-search's production traffic is *human → parent agent (Claude Code / Codex) → sweet-search agent → [[ss-search]] / [[ss-grep]] / [[ss-find]]*. By the time a task reaches the sweet-search agent's system prompt it is **already an LLM-generated string** — cleaned up, structured, phrased in agent-typical ways — not a human typing telegraphic garbage. The dominant real-world variance is therefore **cross-model query-formulation shape** (Sonnet → interrogative "Where is X defined?"; GPT → imperative "Find the definition of X."; Opus → fuller context with file hints; reasoning models → narrower, symbol-anchored; smaller delegators → over-/under-decomposing), NOT missing-punctuation human typos. Direct-human input (CLI `[[ss-grep]]`, API power-users during exploration) is real but a small minority (~5–15% of traffic), so the human-typo case is **rebalanced down, not deleted**.
+
+We evaluate the winner against agent-formulated / varied versions of the **30 dev queries**, distributed to match the production reality:
+
+| Bucket | n (dev probes) | Variants | Source | Distribution it represents |
+|---|---|---|---|---|
+| **A — Agent-delegation paraphrase** | 20 | 1 each (20) | Generators rotated across Sonnet 4.6 / Opus 4.7 / GPT-5.5-instant / MiMo / Qwen, prompt: *"Rewrite this as a parent coding agent delegating a search task to a search sub-agent — include the symbol if known, anchor file hints if known, omit conversational fluff. Preserve the underlying intent and gold target. Output the delegated query only."* | The **dominant** production distribution |
+| **B — Cross-model query-shape variance** | 6 | 4 each (24) | The same underlying intent *emitted* (not instructed-paraphrased) by 4 distinct families — Sonnet (anthropic) / GPT-5.5 (openai) / MiMo (xiaomi) / Qwen (alibaba) — each given the task + gold symbol and asked to formulate the search query it would issue; record what each naturally produces | Measures the **shape-variance the prompt must absorb**; the production-critical signal |
+| **C — Deterministic templates (CLI-style)** | 2 | 1 each (2) | Family-free, no LLM: drop articles, abbreviate package names, lowercase, wrong extension | Power-user direct CLI invocation |
+| **D — "Tired developer" (rare direct human)** | 2 | 1 each (2) | The old §3.6.1 framing, kept for completeness: telegraphic, missing punctuation, lowercase | Rare direct human input |
+
+Covers all 30 dev probes (20 + 6 + 2 + 2); **48 query-variants** total.
+
+**Gold-validity guard**: every generator/emitter is handed the probe's `[[expectedSymbols]]`/`[[expectedFiles]]` and instructed to preserve the underlying intent and gold target. This stops a "natural" bucket-B emission from drifting to a *different* answer — so a score drop reflects prompt brittleness, not query drift.
 
 **Procedure**:
+1. Generate the 48 variants (buckets A–D) via direct API (stateless).
+2. Run the winning system prompt against **both targets** on all 48 variants = 96 agent runs.
+3. Compute the score delta vs the well-formed-query baseline, and **query-shape cw_SCS** across bucket B's 4 emissions per probe (reuses the §3.6 correctness-weighted SCS machinery).
+4. **Pass criteria** (per target, individually):
+   - Aggregate degraded Maximin drop ≤ 20%.
+   - **Bucket A alone** (the dominant distribution) drop ≤ 20% — so the small C/D buckets cannot mask an agent-delegation failure.
+   - **Bucket B target-asymmetry check**: if one family's emitted phrasings (e.g. GPT-emitted) drop > 20% while another's (e.g. Sonnet-emitted) do not, that is a target-asymmetry EAS won't catch → §3.7.3 gate-failure flow.
 
-**Multi-source degradation** (per GPT-5.5 review §C4 — anti-Sonnet-author-bias):
+**Bonus signal (free)**: bucket B directly measures the cross-model query-formulation variance the sweet-search agent prompt must be robust to in the first place — a prompt that aces its own paraphrases but craters on GPT/Qwen-emitted phrasings is target-asymmetric, which feeds the Pareto front. This overlaps the §3.5 HOMP classes (MiMo, Qwen), which are doing double duty: testing whether the prompt *runs* on those models AND whether *their query-formulation* stresses it — relevant because a user on Claude Code may delegate search to a Qwen sub-agent. (Restructuring §3.5 to make that explicit is deferred; bucket B probes it directly here.)
 
-1. **Deterministic templates** (12 of 30 — family-free, no LLM): drop the trailing `?`, lowercase everything, drop articles ("the"/"a"/"an"), abbreviate package names (`fastify` → `fty`), wrong file extension (`.tsx` → `.js`), partial-stacktrace fragment, telegraphic style.
-2. **Sonnet-generated** (9 of 30): Sonnet 4.6 with prompt: *"Rewrite this query as a tired developer would type it into a search bar at 2am: lowercase, missing punctuation, telegraphic, possibly missing context words. Preserve the user's underlying intent. Output the rewritten query only."*
-3. **GPT-5.5-generated** (9 of 30): GPT-5.5 with the same prompt — ensures degradation distribution isn't single-family.
-4. Run the winning system prompt against both targets on these 25 degraded queries.
-5. Compute the score delta vs the well-formed query baseline.
-6. **Pass criterion**: degraded-query Maximin score drops by ≤20% on each target individually. If GPT-5.5 alone drops by >20%, that's a target-asymmetry signal — §3.7.3 gate-failure flow kicks in.
+**Cost**: 48 variants × 2 targets = 96 agent runs ≈ $8 (variant generation across 5 families: ~$0.60 amortized).
 
-**Cost**: 30 degraded queries × 2 targets = 60 extra agent runs ≈ $5 (degradation generation: ~$0.10 amortized).
-
-This is a real shipping concern, not just a publication signal. Production-deployed prompts encounter degraded queries constantly; this gate prevents shipping a brittle artifact.
+This is a real shipping concern, not just a publication signal: production sweet-search sees agent-formulated queries constantly, and this gate prevents shipping an artifact brittle to the *actual* query distribution.
 
 This (combined with SCS) is the publishable robustness claim that ICLR/NeurIPS reviewers expect.
 
@@ -881,7 +894,7 @@ The work breakdown:
 | **Stateful summarization rule** baked into T2/T8/T13/T14/T15 seed variants | content of variant files | included in authoring |
 | **Pathology probes** + **poisoned/distractor probes** + **adversarial counter-probes** authoring | distinct sub-tools in `author-probes.mjs` | 0.5 day |
 | **Language-transfer HOMP probe authoring** (10 probes on Java/C# repository post-cutoff) | one-time human authoring | 0.5 day |
-| **Lazy-user query degrader** (Sonnet 4.6 query-rewriter for §3.6.1) | inline in scs.mjs | 0.25 day |
+| **Agent-query degrader — deterministic templates** (CLI-style, for §3.6.1) | inline in `agent-query-degrader.mjs` | 0.25 day |
 | Unit tests for new code (incl. token-validator whitespace, Maximin + 0.15 admission, EAS, Pareto-rebaseline at round 11) | `tests/unit/prompt-optimization/p7-*.test.js` | 1.5 day |
 | **TPM-aware token-bucket scheduler** + tests for TPM enforcement (per GPT-5.5 review §D1) | `core/prompt-optimization/sweep/p7-token-bucket.mjs` (new) | 0.5 day |
 | **Real-fsync persistence wrapper** + kill-9 recovery test (per GPT-5.5 review §D2) | extend `p7-persist.mjs` | 0.25 day |
@@ -893,7 +906,7 @@ The work breakdown:
 | **Correctness-weighted SCS** + minimum-paraphrase-accuracy gate (per GPT-5.5 review §C3) | inline in `scs.mjs` | 0.25 day |
 | **Hard-negative weighting noise floor + 2-round stability gate** (per GPT-5.5 review §C5) | inline in `gepa.mjs` | 0.25 day |
 | **Forensic-metadata JSONL extension** (per GPT-5.5 review §D4) | inline in `gepa.mjs` + `judge-runner.js` | 0.5 day |
-| **Multi-source lazy-user degrader** (deterministic + Sonnet + GPT-5.5) (per GPT-5.5 review §C4) | inline in `lazy-user-degrader.mjs` | 0.5 day |
+| **Multi-family agent-query degrader + cross-model emitter** (Sonnet/Opus/GPT-5.5/MiMo/Qwen; per GPT-5.5 review §C4, re-scoped §3.6.1) | `agent-query-degrader.mjs` | 0.5 day |
 | **OpenAI tier ≥ 2 pre-flight check** (per GPT-5.5 review §D1) | inline in `p7-preflight.mjs` | 0.25 day |
 | **Reasoning-mode operational HOMP runner** (Sonnet thinking-ON + GPT-5.5 reasoning over held-out probes; §3.5.2 — user catch) | `core/prompt-optimization/sweep/p7-reasoning-homp.mjs` (new) | 0.5 day |
 | **Total** | | **~14.5 days** |
@@ -947,7 +960,7 @@ P6 burned hours when a run died at hour 3 with no resume path. P7 must NOT repea
        "_kind": "pareto-rejection",
        "round": 7,
        "mutation_hash": "abc123",
-       "reason": "0.15-cap-violation" | "dominated" | "language-transfer-gate" | "scs-gate" | "lazy-user-gate",
+       "reason": "0.15-cap-violation" | "dominated" | "language-transfer-gate" | "scs-gate" | "agent-query-gate",
        "target_degraded": "sonnet" | "gpt5_5" | null,
        "drop": 0.22,
        "incumbent_being_compared": "T7-r3"
@@ -1102,22 +1115,22 @@ Rule: **NO CLI harness for any stateless call** — judges, reflector, synthesiz
 | Round-11 Pareto-front re-baseline (6 incumbents × 5 new probes × 2 targets) — Gemini 2nd-pass §B1 | — | — | **60** |
 | GPT-5.5 added to Java language-transfer HOMP (10 probes × 1 extra target) — GPT-5.5 review §B2 | — | — | **10** |
 | Reasoning-mode operational HOMP (Sonnet thinking-ON + GPT-5.5 reasoning × 25 held-out probes) — §3.5.2 user catch | — | — | **50** |
-| Lazy-user degraded queries (30 × 2 targets) — Gemini 2nd-pass §D5 | — | — | **60** |
+| Agent-mediated query robustness (48 variants × 2 targets) — Gemini 2nd-pass §D5, re-scoped §3.6.1 | — | — | **96** |
 | Adversarial counter-probes on winner (10 × 2) — Gemini 2nd-pass §B4 | — | — | **20** |
 | Language-transfer HOMP probes (10 × Sonnet only as the production check) — Gemini 2nd-pass §E | — | — | **10** |
 | Vault confirmation (1 winner × 20 × 2, opened once) — §5.8 | — | — | **40** |
-| **Total joint runs** | | | **~4290** |
+| **Total joint runs** | | | **~4326** |
 
 Cost split:
 
 | Target | Runs | Per-run | Cost |
 |---|---|---|---|
-| Sonnet 4.6 (Anthropic direct API, $3/$15 per 1M, ~10K in + 2K out) | ~2120 | $0.06 | **$127** |
-| GPT-5.5-instant (OpenAI direct API, $5/$30 per 1M, ~10K in + 2K out) | ~2120 | $0.11 | **$233** |
+| Sonnet 4.6 (Anthropic direct API, $3/$15 per 1M, ~10K in + 2K out) | ~2140 | $0.06 | **$128** |
+| GPT-5.5-instant (OpenAI direct API, $5/$30 per 1M, ~10K in + 2K out) | ~2140 | $0.11 | **$235** |
 | Reasoning-mode operational HOMP premium (50 runs × ~$0.20) — §3.5.2 | 50 | ~$0.20 | **$10** |
 | (optional) GPT-5.4 backwards-compat replay of winner (~30 probes × $0.055) | 30 | $0.055 | **$1.65** |
 
-**Targets total: ~$370 + $2 backwards-compat replay** (base split excludes the 50 reasoning-HOMP runs, which carry the premium row above).
+**Targets total: ~$373 + $2 backwards-compat replay** (base split excludes the 50 reasoning-HOMP runs, which carry the premium row above).
 
 Other roles:
 
@@ -1136,9 +1149,9 @@ Other roles:
 | SCS robustness embeddings (Gemini Embedding 2 for SS metric only — NOT for any mutation operator anymore) | ~350 calls × ~1K tokens × $0.20/1M | $0.07 |
 | IAA (judge-only cost; human time NOT included) | ~180 calls × $0.0007 | $0.13 |
 
-**Other roles total: ~$10** (incl. $1.40 AI-assisted reflection + new lazy-user query degrader at ~$0.30 + adversarial counter-probe authoring via Sonnet at ~$0.25).
+**Other roles total: ~$10** (incl. $1.40 AI-assisted reflection + multi-family agent-query degrader/emitter at ~$0.60 + adversarial counter-probe authoring via Sonnet at ~$0.25).
 
-**Headline total: ~$383** (the probe-tier bump to 30 dev / 25 held-out / 20 vault plus full-25-held-out SCS adds ~$56 over the prior ~$327; incl. $2 backwards-compat replay + $1.40 Gemini Deep Think reviews + ~$10 of Gemini 2nd-pass-driven additions + ~$1 of GPT-5.5 review-driven additions + **$10 reasoning-mode operational HOMP** per §3.5.2 — Sonnet thinking-ON + GPT-5.5 reasoning over 25 held-out probes, validating transfer to power-user reasoning mode — + **~$3.40 once-opened Vault** per §5.8 + **~$10 full-25-held-out SCS** per §3.6), with safety buffer (~$37) = **$420 hard cap**. **One-time $50 OpenAI Tier-2 upgrade is operationally mandatory** (per GPT-5.5 review §D1) but not part of the run cost — it's a prerequisite for reasonable wall-time.
+**Headline total: ~$386** (the probe-tier bump to 30 dev / 25 held-out / 20 vault plus full-25-held-out SCS adds ~$56 over the prior ~$327, plus ~$3 for the re-scoped agent-mediated query robustness gate; incl. $2 backwards-compat replay + $1.40 Gemini Deep Think reviews + ~$10 of Gemini 2nd-pass-driven additions + ~$1 of GPT-5.5 review-driven additions + **$10 reasoning-mode operational HOMP** per §3.5.2 — Sonnet thinking-ON + GPT-5.5 reasoning over 25 held-out probes, validating transfer to power-user reasoning mode — + **~$3.40 once-opened Vault** per §5.8 + **~$10 full-25-held-out SCS** per §3.6 + **~$8 agent-mediated query robustness** per §3.6.1), with safety buffer (~$34) = **$420 hard cap**. **One-time $50 OpenAI Tier-2 upgrade is operationally mandatory** (per GPT-5.5 review §D1) but not part of the run cost — it's a prerequisite for reasonable wall-time.
 
 This is **~$115 more than a GPT-5.4 run would cost** (the gap grows with the larger probe tiers since GPT-5.5 runs are 2× the price). The user accepted this premium for pretrain future-proofing; rationale documented in §11.2.
 
@@ -1149,17 +1162,17 @@ This is **~$115 more than a GPT-5.4 run would cost** (the gap grows with the lar
 | Cut | Savings | Trade-off |
 |---|---|---|
 | Reduce GEPA rounds 20 → 15, patience 5 → 3 | -$45 → **~$162** | Risk: not at convergence on hard probes; plateau-breakthrough rule helps |
-| Reduce dev probes 30 → 25 | -$30 → **~$353** | n=25 still solid; reverts the dev half of the 30/25/20 bump |
+| Reduce dev probes 30 → 25 | -$30 → **~$356** | n=25 still solid; reverts the dev half of the 30/25/20 bump |
 | Drop OP-4 Tool-Signature Masking (revert slot 3 to OP-3/OP-5 cycle of 2) | negligible savings | Lose the cognitive-forcing operator — methodologically less creative |
 | Disable mid-run probe rotation | $0 | Higher overfit risk on the original 30 |
 | Reduce SCS post-convergence paraphrases 6 → 4 | -$3 | Marginal; not worth |
 | **All cuts above** | → **~$130** | Methodologically thinner but still defensible |
 
-### §8.2 Recommended bundle (~$383 with $420 cap)
+### §8.2 Recommended bundle (~$386 with $420 cap)
 
 Keep the full 20 rounds, full TARE Pareto-gating, full 6-paraphrase SCS over the full 25 held-out (40 probes), the 30-probe dev / 25-probe held-out / 20-probe once-opened Vault sizing, mid-run probe rotation, and ALL five mutation operators. **The methodology is the value-add over P6 and over the original draft of this plan** — don't cut it.
 
-The user explicitly chose to invest in scientific rigour while remaining budget-conscious. ~$383 — one run, well under the user's ~$1000 ceiling, sized for *supporting-contribution* publishability (the held-out at n=25, full-25-held-out SCS, + a once-opened Vault) rather than a second run — is the right answer for that intent. The dominant single lever is the held-out 15→25 bump (the published number); the dev 25→30 bump mainly tightens the dev→held-out generalization gap.
+The user explicitly chose to invest in scientific rigour while remaining budget-conscious. ~$386 — one run, well under the user's ~$1000 ceiling, sized for *supporting-contribution* publishability (the held-out at n=25, full-25-held-out SCS, an agent-mediated query-robustness gate, + a once-opened Vault) rather than a second run — is the right answer for that intent. The dominant single lever is the held-out 15→25 bump (the published number); the dev 25→30 bump mainly tightens the dev→held-out generalization gap.
 
 ---
 
@@ -1186,7 +1199,7 @@ core/prompt-optimization/
 │   │                                          §5.7; evaluated only at end of run)
 │   ├── p7-langtransfer-probes.json           (10 Java-language HOMP probes; §3.5.1;
 │   │                                          Sonnet-only; ≥0.6 score required to ship)
-│   ├── p7-lazyuser-probes.json               (degraded-query versions of dev probes; §3.6.1)
+│   ├── p7-agent-query-probes.json            (agent-mediated query variants of dev probes; §3.6.1)
 │   ├── frozen/
 │   │   ├── p7-heldout-probes.json            (25 probes — DO NOT INSPECT during evolution;
 │   │   │                                      tracked under prereg/p7-v1 tag)
@@ -1233,9 +1246,9 @@ core/prompt-optimization/
     │                                          admission constraint; §3.7.1)
     ├── pareto-rebaseline.mjs                  (Round-11 Pareto-front re-baselining on the
     │                                          new probe set; §3.1)
-    ├── lazy-user-degrader.mjs                 (multi-source query degrader: deterministic
-    │                                          templates + Sonnet + GPT-5.5; §3.6.1 per
-    │                                          GPT-5.5 review §C4)
+    ├── agent-query-degrader.mjs               (multi-family agent-query degrader + cross-model
+    │                                          emitter: deterministic templates + Sonnet/Opus/
+    │                                          GPT-5.5/MiMo/Qwen; §3.6.1 re-scoped)
     ├── p7-token-bucket.mjs                    (TPM-aware concurrency scheduler; §7.7
     │                                          per GPT-5.5 review §D1)
     ├── p7-persist.mjs                          (extends with appendFsynced wrapper using
@@ -1301,7 +1314,7 @@ tests/unit/prompt-optimization/
 | **Gold-probe self-fulfilling prophecy** (Gemini 2nd-pass §B4) | Author subconsciously aligns dev probes with P6 win-rate signal → GEPA trivially "validates" P6 because the test is rigged. | Mitigated by adversarial counter-probes (§5.7): 10 dev probes rewritten by Sonnet with anti-P6-shape phrasing, evaluated on the winner at end of run. Score within 15% of dev = generalised; >25% drop = overfit. |
 | **Domain-specific code-search pathologies undetected** (Gemini 2nd-pass §C) | Wrong-extension death loop, context-window flooding (minified file traps), transitive rabbit hole — all common production failures with no probe coverage. | Mitigated by §5.5 pathology probes: 7 dev probes specifically encode these failure modes so GEPA discovers prompt-level defenses naturally. |
 | **Frankenstein-prompt language overfit** (Gemini 2nd-pass §E) | Optimised prompt over-fits AST patterns of dev repos (JS/Go/Py/Rs/TS). Production user deploys on C++/Java/C# → silent regression. | Mitigated by §3.5.1 language-transfer HOMP: 10 probes on a Java repository (post-cutoff), evaluated on Sonnet. ≥0.6 score required to ship. |
-| **Brittle to lazy/degraded user queries** (Gemini 2nd-pass §D5) | Prompt optimised for well-formed dev queries; production users type "sink trait broken why" — score collapses. | Mitigated by §3.6.1 lazy-user robustness pivot: degraded query versions of dev probes; ≤20% score drop required. |
+| **Brittle to the production query distribution** (Gemini 2nd-pass §D5, re-scoped) | Prompt optimised for well-formed dev queries; but production queries are **agent-formulated** (parent agent → sweet-search agent) with cross-model shape variance — not human typos. | Mitigated by §3.6.1 agent-mediated query robustness: agent-delegation paraphrase (dominant) + cross-model query-shape variance + small CLI/human buckets; ≤20% drop per target, with bucket-A-alone and bucket-B target-asymmetry checks. |
 | **RIF (Retrieval-Induced Forgetting) drift in late-turn trajectories** (Gemini 2nd-pass §D2) | Long agent trajectories push system-prompt instructions out of attention; by turn 4, agent forgets routing rules. | Mitigated by §3.2.3 stateful-summarization rule baked into T2/T8/T13/T14/T15 seed variants. |
 | **Concurrency math wrong — TPM not RPM is the binding constraint** (GPT-5.5 review §D1) | Naive RPM ceiling at Tier 1 GPT-5.5 = 30 concurrent calls × 12K tokens = 360K tokens in flight = 12× over 30K TPM ceiling. Run would 429-storm minute-one. | Mitigated by TPM-aware token-bucket scheduler (§7.7) + pre-flight check that flags Tier 1 as operationally insufficient and recommends $50 Tier-2 upgrade. |
 | **0.15 cap utopia-point bug in Gemini's own fix** (GPT-5.5 review §C1) | Comparing degradation to per-target Pareto MAXIMA (different specialist incumbents) creates a "utopia point" constraint that systematically rejects genuinely joint-improving candidates. | Mitigated by changing cap baseline to **the displaced incumbent** (or current joint-best when not displacing) instead of per-target maxima. Worked example in §3.7.1 step 9. |
@@ -1312,7 +1325,7 @@ tests/unit/prompt-optimization/
 | **OP-2 trajectory style imports Sonnet** (GPT-5.5 review §B3) | Crossover not target-tagged → Kimi may learn Sonnet's exploration cadence as the universal "winning" pattern. | Mitigated by target-tagging requirement on trajectories + balanced-pair crossover when both targets have winning trajectories + bottleneck-tagging (Sonnet-only / GPT-only / joint). |
 | **SCS rewards stable wrongness** (GPT-5.5 review §C3) | Naive consistency metric rewards a prompt that consistently gives the SAME WRONG answer. | Mitigated by correctness-weighted SCS = SCS × min_paraphrase_accuracy as the ship gate, with minimum-paraphrase-accuracy floor of 0.6. Naive SCS reported but no longer gates. |
 | **appendFileSync doesn't fsync — durability bug** (GPT-5.5 review §D2) | Crash mid-round can lose recent JSONL events; resume picks up at wrong point. | Mitigated by `appendFsynced` wrapper using explicit `openSync → writeSync → fsyncSync → closeSync`. Kill-9-recovery unit test. |
-| **Single-family TARE / lazy-user paraphrase distribution** (GPT-5.5 review §C2/§C4) | Sonnet-only paraphrase generation tests Anthropic-style robustness only. | Mitigated by TARE K=3 requiring ≥1 non-Anthropic paraphrase + OP-3 generator rotation Sonnet/Kimi/GPT-5.5 + lazy-user multi-source degradation (10 deterministic templates + 8 Sonnet + 7 GPT-5.5). |
+| **Single-family TARE / query-degradation distribution** (GPT-5.5 review §C2/§C4) | Sonnet-only paraphrase generation tests Anthropic-style robustness only. | Mitigated by TARE K=3 requiring ≥1 non-Anthropic paraphrase + OP-3 generator rotation Sonnet/Kimi/GPT-5.5 + §3.6.1 agent-query degradation across 5 families (Sonnet/Opus/GPT-5.5/MiMo/Qwen) incl. natural cross-model emission. |
 | **n=6 Pareto noise overweighted as discriminative variance** (GPT-5.5 review §C5) | Small-front variance can be judge-noise rather than probe difficulty. | Mitigated by 2-round stability gate (variance only counts after probe evaluated ≥2 rounds) + judge-noise floor of 0.05 in §3.1 weighting. |
 | **Forensic-metadata gap in JSONL telemetry** (GPT-5.5 review §D4) | Without model_id/api_path/temperature/commit/probe_hash/token_counts/judge_panel logged, post-hoc explanation of GPT-vs-Sonnet deltas is impossible. | Mitigated by extending confirm-event schema (§7.4) to log all forensic metadata. |
 | **Fenced-python pseudocode over-literally interpreted** (GPT-5.5 review §B4) | GPT-5.5 may treat ```python``` blocks as executable examples rather than routing-policy pseudocode. | Mitigated by labelling pseudocode blocks `# routing policy pseudocode — NOT executable code` and preferring decision tables for high-level routing. |
@@ -1337,7 +1350,7 @@ tests/unit/prompt-optimization/
 | Mutation operators | 14 hand-authored seeds + naive paraphrase | 5-operator portfolio: Reflective + Trajectory-Crossover + Persona-Pivot + Tool-Mask + Pruner | **stronger than original** |
 | Score aggregation | not specified | Maximin + length penalty + dynamic hard-negative weighting | **stronger than original** |
 | Probe rotation | static probe set | mid-run rotation at round 11 (anti-overfit) | **stronger than original** |
-| Total cost | $400-1000+ implied | ~$383 (30/25/20 tiers + full-held-out SCS; user kept GPT-5.5) | one run, well under $1000 |
+| Total cost | $400-1000+ implied | ~$386 (30/25/20 tiers + full-held-out SCS + agent-query gate; user kept GPT-5.5) | one run, well under $1000 |
 | Publication-tier | yes | engineering with publication-grade methodology where it costs $1 | most of the value, fraction of the cost |
 
 ### §11.1 What Gemini 3.1 Pro Deep Think changed (2026-05-10 review)
