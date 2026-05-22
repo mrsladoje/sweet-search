@@ -8,8 +8,11 @@
  *   - all 15 variants load with well-formed front-matter + body
  *   - front-matter passes the §4.3 schema (required keys, enums, positive tokens)
  *   - T12 is the grounding-free control; T7 + T12 are the only `none` variants
- *   - `none` variants embed NO verbatim §4.2 bullet; grounded variants embed ≥1
- *   - `full` variants embed the verbatim ss-trace bullet
+ *   - consumer-clean contract: no body leaks optimizer-internal provenance
+ *     (Phase-6 labels, recall metrics, "dev FAILs", tree-sitter, shape labels);
+ *     capability-card framing (no persona) + native-tools boundary in all 15
+ *   - grounded variants carry compiled query-shaping guidance; `full` variants
+ *     encode the ss-trace symbol-not-query contract ("never an NL question")
  *   - the §3.2.3 stateful-summary rule appears in exactly T2/T8/T13/T14/T15,
  *     matching operators-opus's canonical STATEFUL_SUMMARY_RULE verbatim
  *   - T15 (and only T15) carries the Hypothesis-Driven `<failure_analysis>` block
@@ -41,37 +44,40 @@ import { STATEFUL_SUMMARY_RULE } from '../../../core/prompt-optimization/sweep/o
 // Shared mutation-rejection reason set (§3.2.1 / §7.4) — asserted below for M11.
 import { MUTATION_REJECTION_REASONS } from '../../../core/prompt-optimization/sweep/p7-shared.mjs';
 
-// ─── verbatim §4.2 instruction_text fragments (pulled from recommendations-v2-*.json) ─
+// ─── consumer-clean contract ──────────────────────────────────────────────────
+// The §4.2 findings are COMPILED into bare directives, not pasted verbatim. The
+// recommendations-v2-*.json bullets carry optimizer-internal provenance (Phase-6
+// labels, recall deltas, "dev FAILs", tree-sitter notes) that the consuming agent
+// has no knowledge of and cannot act on — so the shipped variant bodies must be
+// free of it. These constants encode that contract.
 
-const SS_SEARCH_DEFAULT =
-  'Use a medium declarative phrase (9-15 tokens) that includes the symbol verbatim and domain-specific terms.';
-const SS_SEARCH_JSMOBILE = 'phrase a short interrogative query (4-8 tokens) that includes the symbol verbatim';
-const SS_SEARCH_CFAMILY = 'Use a medium interrogative query (9-15 tokens) that includes the symbol verbatim.';
-const SS_SEARCH_POPULAR = 'query with the symbol name only (≤ 3 tokens, imperative)';
-const SS_FIND_SIMPLE = '[simple-global] For ss-find: build the regex as word-bounded literal:';
-const SS_FIND_JSMOBILE = '[JS-mobile-override] For ss-find: build the regex as definition-anchored:';
-const SS_FIND_POPULAR = '[popular-weighted (agentic-tier)] For ss-find: build the regex as small alternation:';
-const SS_SEM_SIMPLE =
-  'For ss-semantic (in-file span retrieval): phrase a very short imperative query consisting of the target symbol verbatim';
-const SS_SEM_INTERROG =
-  'For ss-semantic: phrase a short interrogative query (4-8 tokens) that contains the target symbol verbatim.';
-// Common prefix shared by all three ss-trace strategy instruction_texts.
-const SS_TRACE_PREFIX =
-  '[[ss-trace]] is symbol-in / structural-context-out. Call when you already know the target symbol and want callers, callees, and impact paths in one response.';
-
-/** Every distinctive verbatim §4.2 bullet fragment. */
-const ALL_BULLETS = [
-  SS_SEARCH_DEFAULT,
-  SS_SEARCH_JSMOBILE,
-  SS_SEARCH_CFAMILY,
-  SS_SEARCH_POPULAR,
-  SS_FIND_SIMPLE,
-  SS_FIND_JSMOBILE,
-  SS_FIND_POPULAR,
-  SS_SEM_SIMPLE,
-  SS_SEM_INTERROG,
-  SS_TRACE_PREFIX,
+/** Optimizer-internal provenance that must NEVER reach a consumer-facing body. */
+const PROVENANCE_PATTERNS = [
+  /Phase ?6/i, // "Phase 6 data"
+  /R@\d/, // recall@k metrics, e.g. "R@5=0.62"
+  /\d+ ?pp\b/, // percentage-point deltas, e.g. "18-29 pp"
+  /dev FAILs?/i, // "4 of 7 dev FAILs"
+  /agentic-tier/i, // optimization weighting, e.g. "2026 agentic-tier weights"
+  /tree-sitter/i, // parser implementation detail
+  /\bIoU\b/, // span-overlap metric
+  /symbol_recall/i, // metric name
+  /graphNeighbors/i, // gold-construction internal
+  /\bV[1-9]\b/, // internal shape labels V1..V7
+  /\d+ indexed languages/i, // corpus-size brag
 ];
+
+/** Persona framing we rejected in favour of a capability card (§4.3 review). */
+const PERSONA_OPENING = 'You are the sweet-search agent';
+/** Capability-card header fragment every variant must use. */
+const CAPABILITY_HEADER = 'code search tool';
+/** The native-tools boundary every variant must establish. */
+const NATIVE_TOOLS_BOUNDARY = 'raw grep/ripgrep';
+/** Compiled ss-trace symbol-not-query contract (replaces the old verbatim bullet).
+ *  Phrasing varies across variants ("never an NL question" / "NEVER call [[ss-trace]]
+ *  with an NL question"); the invariant is that the NL-question prohibition is stated. */
+const SS_TRACE_CONTRACT = /\bNL question\b/i;
+/** Compiled ss-trace Python weak-spot compensation directive. */
+const SS_TRACE_PY_RULE = 'prefer callers/callees over impact';
 
 const KNOWN_TOKEN_NAMES = new Set([
   'ss-search',
@@ -158,9 +164,9 @@ describe('p7 variant slate — front-matter schema', () => {
   });
 });
 
-// ─── grounding semantics (§4.1/§4.2/§4.3) ─────────────────────────────────────
+// ─── consumer-clean contract (§4.3 review — no provenance, capability card) ────
 
-describe('p7 variant slate — P6 grounding', () => {
+describe('p7 variant slate — consumer-clean contract', () => {
   it('T12 is the grounding-free control', () => {
     const t12 = byId.get('T12');
     expect(t12.frontMatter.strategy).toBe('control');
@@ -172,32 +178,58 @@ describe('p7 variant slate — P6 grounding', () => {
     expect(none).toEqual(['T12', 'T7']);
   });
 
-  it('`none` variants embed NO verbatim §4.2 bullet', () => {
+  it('no variant body leaks optimizer-internal provenance', () => {
     for (const v of variants) {
-      if (v.frontMatter.p6_grounding !== 'none') continue;
-      for (const bullet of ALL_BULLETS) {
-        expect(v.body.includes(bullet), `${v.id} should NOT contain a §4.2 bullet`).toBe(false);
+      for (const re of PROVENANCE_PATTERNS) {
+        expect(re.test(v.body), `${v.id} leaks provenance ${re}`).toBe(false);
       }
     }
   });
 
-  it('grounded variants embed ≥1 verbatim §4.2 bullet', () => {
+  it('no variant uses the rejected persona opening', () => {
+    for (const v of variants) {
+      expect(v.body.includes(PERSONA_OPENING), `${v.id} persona opening`).toBe(false);
+    }
+  });
+
+  it('every variant uses the capability-card framing', () => {
+    for (const v of variants) {
+      expect(v.body.includes(CAPABILITY_HEADER), `${v.id} capability-card header`).toBe(true);
+    }
+  });
+
+  it('every variant establishes the native-tools boundary', () => {
+    for (const v of variants) {
+      expect(v.body.includes(NATIVE_TOOLS_BOUNDARY), `${v.id} native-tools boundary`).toBe(true);
+    }
+  });
+
+  it('grounded variants carry compiled query-shaping guidance', () => {
     for (const v of variants) {
       if (v.frontMatter.p6_grounding === 'none') continue;
-      const found = ALL_BULLETS.filter((b) => v.body.includes(b));
-      expect(found.length, `${v.id} embeds a verbatim §4.2 bullet`).toBeGreaterThan(0);
+      expect(
+        /symbol verbatim|word-bounded|declarative|interrogative/.test(v.body),
+        `${v.id} compiled shaping guidance`,
+      ).toBe(true);
     }
   });
 
-  it('`full`-grounding variants embed the verbatim ss-trace bullet', () => {
+  it('`none` variants carry no family-conditioning', () => {
+    for (const v of variants) {
+      if (v.frontMatter.p6_grounding !== 'none') continue;
+      expect(/C-family|JS-mobile/.test(v.body), `${v.id} should be family-free`).toBe(false);
+    }
+  });
+
+  it('`full`-grounding variants encode the ss-trace symbol-not-query contract', () => {
     for (const v of variants) {
       if (v.frontMatter.p6_grounding !== 'full') continue;
-      expect(v.body.includes(SS_TRACE_PREFIX), `${v.id} ss-trace verbatim`).toBe(true);
+      expect(SS_TRACE_CONTRACT.test(v.body), `${v.id} ss-trace contract`).toBe(true);
     }
   });
 
-  it('the ss-search default bullet appears verbatim somewhere in the slate', () => {
-    expect(variants.some((v) => v.body.includes(SS_SEARCH_DEFAULT))).toBe(true);
+  it('the compiled ss-trace Python weak-spot directive appears in the slate', () => {
+    expect(variants.some((v) => v.body.includes(SS_TRACE_PY_RULE))).toBe(true);
   });
 });
 
