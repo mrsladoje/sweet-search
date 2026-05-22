@@ -24,25 +24,25 @@ export const DEFAULT_DATA_DIR = path.resolve(__dirname, '../data');
  * MIMO_API_KEY accepts TOGETHER_API_KEY as a fallback (for MiMo/Qwen hosting).
  */
 export function checkApiKeys(env) {
-  const required = [
-    'ANTHROPIC_API_KEY',
-    'OPENAI_API_KEY',
-    'DEEPSEEK_API_KEY',
-    'GEMINI_API_KEY',
-    'MOONSHOT_API_KEY',
-    'MINIMAX_API_KEY',
-  ];
+  // OpenRouter single-key mode satisfies the OpenAI-compatible providers
+  // (GPT-5.5, Kimi, MiniMax, MiMo, Qwen). Anthropic (Sonnet target), DeepSeek
+  // and Gemini (embeddings — no OpenRouter endpoint) always need direct keys.
+  const hasOR = !!(env.OPENROUTER_API_KEY && env.OPENROUTER_API_KEY.length >= 10);
+  const alwaysDirect = ['ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY', 'GEMINI_API_KEY'];
+  const orCovered = ['OPENAI_API_KEY', 'MOONSHOT_API_KEY', 'MINIMAX_API_KEY'];
+  const required = hasOR ? alwaysDirect : [...alwaysDirect, ...orCovered];
   const missing = required.filter((k) => !env[k] || env[k].length < 10);
   const mimoOk =
+    hasOR ||
     (env.MIMO_API_KEY && env.MIMO_API_KEY.length >= 10) ||
     (env.TOGETHER_API_KEY && env.TOGETHER_API_KEY.length >= 10);
 
   const msgs = [];
   if (missing.length > 0) msgs.push(`Missing/short API keys: ${missing.join(', ')}`);
-  if (!mimoOk) msgs.push('MIMO_API_KEY (or TOGETHER_API_KEY fallback) not set or too short');
+  if (!mimoOk) msgs.push('MIMO_API_KEY (or TOGETHER_API_KEY fallback, or OPENROUTER_API_KEY) not set or too short');
 
   if (msgs.length > 0) return { ok: false, message: msgs.join('; ') };
-  return { ok: true, message: 'All API keys present and ≥10 chars' };
+  return { ok: true, message: hasOR ? 'All required keys present (OpenRouter single-key mode)' : 'All API keys present and ≥10 chars' };
 }
 
 /**
@@ -81,6 +81,12 @@ export async function smokeLineages({ runJudge } = {}) {
  * Returns ok:false + recommendation to pay $50 if tier < 2, unless allowTier1 is set.
  */
 export async function checkOpenAITier({ fetchFn, env, allowTier1 = false } = {}) {
+  // OpenRouter single-key mode: GPT-5.5 is served via OpenRouter's pooled
+  // capacity, which has no per-account OpenAI usage-tier gate. The tier check
+  // is therefore not applicable — skip it.
+  if (env && env.OPENROUTER_API_KEY && !env.OPENAI_API_KEY) {
+    return { ok: true, message: 'GPT-5.5 routed via OpenRouter; OpenAI per-account tier gate N/A' };
+  }
   const apiKey = env && env.OPENAI_API_KEY;
   if (!apiKey) return { ok: false, message: 'OPENAI_API_KEY not set' };
 
