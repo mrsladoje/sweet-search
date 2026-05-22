@@ -1,0 +1,432 @@
+/**
+ * Phase 7 — GEPA loop driver (§3.1, §3.2, §3.7.1, §7.4, §7.6).
+ *
+ * Wires the LANDED wave-1 modules (eas / tare / pareto-rebaseline /
+ * token-validator / OP-2..5 / persist / token-bucket / variant-loader) plus the
+ * inline OP-1 reflective rewrite (gepa-mutate) into the joint Maximin loop:
+ *
+ *   1 selection → 2 mutation (3-slot portfolio) → 3 screen (8 probes × 2)
+ *   → 4 persist → 5 confirm (full dev × 2) → 6 Pareto-gated TARE
+ *   → 7 Pareto update (0.15 admission cap) → 8 (manual reflection) → 9 patience
+ *   + round-11 rotation & re-baseline + dynamic hard-negative weighting.
+ *
+ * The agent-evaluation seam (`evaluateCandidate`) and the model caller
+ * (`callModel`) are INJECTABLE — the live run uses the real harness
+ * (gepa-evaluate.makeRealEvaluateCandidate + judge-runner.runJudge); tests +
+ * `--dry-run` pass deterministic stubs so nothing here needs network.
+ *
+ * Resume (§7.4): every round atomically checkpoints the full loop state to
+ * pareto-current.json AND appends audit events to gepa-trajectory.jsonl; on
+ * `--resume` the loop reloads the checkpoint (cross-checked against
+ * persist.resumeState) and continues only the missing rounds.
+ */
+
+import { appendFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { DEFAULTS, EVENT_KINDS, TARGET_LIST, hashContent } from './p7-shared.mjs';
+import {
+  appendFsynced,
+  atomicWriteJSON,
+  loadTrajectory,
+  loadParetoCurrent,
+  resumeState,
+  trajectoryPath,
+  promptBankPath,
+  paretoCurrentPath,
+} from './p7-persist.mjs';
+import { rebaselineFront } from './pareto-rebaseline.mjs';
+import { paretoGatedTare } from './tare.mjs';
+import { buildCandidate, computeProbeWeights, topFailures, scoreCandidateOnProbes } from './gepa-scoring.mjs';
+import {
+  planSlots,
+  selectParent,
+  attemptParetoAdmission,
+  buildFrontFrom,
+  lowestVarianceProbes,
+  plateauBreakthrough,
+} from './gepa-pareto.mjs';
+import { generateMutations, generateAdversarialParaphrases } from './gepa-mutate.mjs';
+import { mulberry32 } from '../stats/rng.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, '../../..');
+export const SMOKE_PROBES_PATH = path.join(REPO_ROOT, 'core', 'prompt-optimization', 'data', 'p7-smoke-probes.json');
+
+// ─── deterministic per-round RNG (resume-safe) ──────────────────────────────
+
+/**
+ * Per-round RNG derived from (seed, round) so a resumed run reproduces the
+ * exact randomness of a fresh run for any not-yet-executed round.
+ */
+export function roundRng(seed, round) {
+  const s = (Math.imul(seed >>> 0, 2654435761) ^ Math.imul(round, 40503)) >>> 0;
+  return mulberry32(s);
+}
+
+// ─── verbose logger (§7.6) ──────────────────────────────────────────────────
+
+export function makeLogger({ logPath, stream = process.stdout, now = () => Date.now(), enabled = true } = {}) {
+  const ts = () => new Date(now()).toISOString().slice(11, 19);
+  return (line) => {
+    if (!enabled) return;
+    const out = `[${ts()}] gepa: ${line}\n`;
+    try { stream.write(out); } catch { /* */ }
+    if (logPath) { try { appendFileSync(logPath, out); } catch { /* */ } }
+  };
+}
+
+// ─── dry-run stubs (offline; CLI --dry-run default) ─────────────────────────
+
+/** Deterministic stub agent evaluator — score is a hash of (prompt,probe,target). */
+export function makeDryRunEvaluate() {
+  return async ({ promptText, probe, target }) => {
+    const h = hashContent(`${promptText}|${probe.id}|${target}`);
+    const s = Number.parseInt(h.slice(2, 10), 16) / 0xffffffff;
+    const calls = 1 + Math.floor(s * 4);
+    return {
+      score: s,
+      toolCalls: calls,
+      finalAnswerEmitted: true,
+      usedReadOrGrep: s > 0.2,
+      trajectory: { toolCalls: Array.from({ length: calls }, () => ({ name: 'ss-search' })), answer: `ans-${probe.id}-${target}` },
+      wallMs: 1,
+    };
+  };
+}
+
+/** Deterministic stub model — echoes the fenced candidate body (token-preserving). */
+export function makeDryRunCallModel() {
+  return async ({ userPrompt }) => {
+    const m = userPrompt.match(/```\n([\s\S]*?)\n```/);
+    return { text: m ? m[1] : userPrompt, isError: false };
+  };
+}
+
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+export function normalizeVariant(v) {
+  return { id: v.id, prompt: v.prompt ?? v.body ?? '' };
+}
+
+function jointBestFinal(front) {
+  return front.reduce((hi, x) => Math.max(hi, x.finalScore), -Infinity);
+}
+
+// ─── the loop ───────────────────────────────────────────────────────────────
+
+/**
+ * Run the GEPA loop. Returns the final state ({ front, convergence, rounds,
+ * stoppedReason, probeSetIds }). All randomness, time, persistence paths, the
+ * agent evaluator, and the model caller are injectable.
+ *
+ * @param {object} opts — see inline defaults; `evaluateCandidate` + `callModel`
+ *   + `variants` + `devProbes` are required for a real run (the CLI supplies them).
+ */
+export async function runGepa(opts = {}) {
+  const {
+    runId = 'p7-dry',
+    variants = [],
+    devProbes = [],
+    rotationPool = [],
+    evaluateCandidate,
+    callModel,
+    seed = 42,
+    maxRounds = DEFAULTS.maxRounds,
+    hardCap = DEFAULTS.hardCapRounds,
+    patience = DEFAULTS.patienceRounds,
+    rotationRound = DEFAULTS.rotationRound,
+    rotationSwapCount = DEFAULTS.rotationSwapCount,
+    screenProbeCount = DEFAULTS.screenProbes,
+    frontSize = DEFAULTS.paretoFrontSize,
+    paretoCap = DEFAULTS.paretoAdmissionCap,
+    resume = false,
+    bucket = null,
+    now = () => Date.now(),
+    reflectionHint,
+  } = opts;
+
+  if (typeof evaluateCandidate !== 'function') throw new TypeError('runGepa: evaluateCandidate is required');
+  if (typeof callModel !== 'function') throw new TypeError('runGepa: callModel is required');
+
+  const paths = opts.paths || {
+    trajectory: trajectoryPath(runId),
+    promptBank: promptBankPath(runId),
+    paretoCurrent: paretoCurrentPath(runId),
+  };
+  const log = opts.log || makeLogger({ logPath: opts.logPath ?? `/tmp/${runId}-run.log`, now, enabled: opts.verbose !== false });
+
+  // persistence closures
+  const appendEvent = (ev) => appendFsynced(paths.trajectory, ev);
+  const seenPrompts = new Set();
+  const recordPrompt = (hash, text) => {
+    if (seenPrompts.has(hash)) return;
+    seenPrompts.add(hash);
+    appendFsynced(paths.promptBank, { _kind: 'prompt', hash, text });
+  };
+  const mkCandidate = (args) => buildCandidate({ ...args, evaluateCandidate, bucket });
+
+  // probe lookups (resume reconstructs probe records from ids)
+  const allProbes = [...devProbes, ...rotationPool];
+  const allById = Object.fromEntries(allProbes.map((p) => [p.id, p]));
+
+  let front;
+  let probeSet;
+  let convergence;
+  let patienceCounter;
+  let roundsEvaluatedByProbe;
+  let startRound;
+  let maxRoundsEff = maxRounds;
+  let plateauExtended = false;
+
+  if (resume) {
+    const ckpt = loadParetoCurrent(paths.paretoCurrent);
+    const rs = resumeState({ trajectoryPath: paths.trajectory }); // §7.4 cross-check
+    for (const ev of loadTrajectory(paths.promptBank)) {
+      if (ev._kind === 'prompt' && ev.hash) seenPrompts.add(ev.hash);
+    }
+    if (!ckpt) throw new Error(`runGepa --resume: no checkpoint at ${paths.paretoCurrent}`);
+    front = ckpt.front;
+    probeSet = (ckpt.probeSetIds || devProbes.map((p) => p.id)).map((id) => allById[id]).filter(Boolean);
+    convergence = ckpt.convergence || [];
+    patienceCounter = ckpt.patienceCounter || 0;
+    roundsEvaluatedByProbe = ckpt.roundsEvaluatedByProbe || {};
+    plateauExtended = ckpt.plateauExtended ?? false;
+    // Honor the caller's new maxRounds; only keep a stored plateau EXTENSION
+    // (never shrink to the partial run's smaller cap).
+    maxRoundsEff = plateauExtended ? Math.max(maxRounds, ckpt.maxRoundsEffective ?? maxRounds) : maxRounds;
+    startRound = (ckpt.lastCompletedRound ?? rs.lastRound ?? 0) + 1;
+    log(`resume: checkpoint round ${ckpt.lastCompletedRound}, trajectory lastRound ${rs.lastRound}, continuing from round ${startRound}`);
+  } else if (opts.initialFront) {
+    // Test/seed injection: start from a pre-built front (skips the seeding eval).
+    probeSet = devProbes.slice();
+    convergence = [];
+    patienceCounter = 0;
+    roundsEvaluatedByProbe = {};
+    startRound = 1;
+    front = opts.initialFront;
+    log(`injected front: ${front.length}/${frontSize}, joint_best=${jointBestFinal(front).toFixed(3)}`);
+  } else {
+    probeSet = devProbes.slice();
+    convergence = [];
+    patienceCounter = 0;
+    roundsEvaluatedByProbe = {};
+    startRound = 1;
+    // ── seed front from T_i variants (§4.3) ──
+    const seeds = [];
+    const seedWeights = probeSet.map(() => 1.0); // round 0 < hardNegativeStartRound
+    for (const v0 of variants.map(normalizeVariant)) {
+      const cand = await mkCandidate({ id: v0.id, prompt: v0.prompt, sourceOp: 'seed', parentHash: null, probes: probeSet, weights: seedWeights });
+      appendEvent({ _kind: EVENT_KINDS.MUTATION, round: 0, source_op: 'seed', new_prompt_hash: cand.hash, parent_hash: null });
+      recordPrompt(cand.hash, cand.prompt);
+      seeds.push(cand);
+    }
+    front = buildFrontFrom(seeds, frontSize);
+    appendEvent({ _kind: EVENT_KINDS.PARETO_UPDATE, round: 0, front: front.map((f) => f.hash), added: null, evicted: [] });
+    log(`seeded front: ${front.length}/${frontSize} from ${seeds.length} variants, joint_best=${jointBestFinal(front).toFixed(3)}`);
+  }
+
+  let stoppedReason = 'max-rounds';
+  let lastRoundRun = startRound - 1;
+
+  for (let round = startRound; round <= maxRoundsEff && round <= hardCap; round++) {
+    lastRoundRun = round;
+    const btState = plateauBreakthrough(convergence) ? 'YES' : 'NO';
+    log(`round ${round} start, fronts=${front.length}, patience=${patienceCounter}/${patience}, plateau-bt=${btState}`);
+
+    // ── round-11 rotation + Pareto re-baseline BEFORE scoring mutations (§3.1) ──
+    if (round === rotationRound && rotationPool.length > 0) {
+      const activeIds = probeSet.map((p) => p.id);
+      const retire = lowestVarianceProbes({ front, probeIds: activeIds, count: rotationSwapCount });
+      const newProbes = rotationPool.slice(0, rotationSwapCount).filter((p) => !activeIds.includes(p.id));
+      const before = front.map((f) => f.id);
+      const rebaseEval = async (incumbent, probe) => {
+        const r = await scoreCandidateOnProbes({ candidate: { prompt: incumbent.prompt }, probes: [probe], evaluateCandidate, bucket });
+        incumbent.detail = { ...(incumbent.detail || {}), ...r.detail };
+        return r.perProbeMaximin[0];
+      };
+      const { updatedFront, runCount } = await rebaselineFront({ front, newProbes, evaluate: rebaseEval });
+      front = updatedFront;
+      for (const inc of front) for (const pid of retire) delete inc.scores[pid];
+      probeSet = probeSet.filter((p) => !retire.includes(p.id)).concat(newProbes);
+      for (const pid of retire) delete roundsEvaluatedByProbe[pid];
+      appendEvent({
+        _kind: EVENT_KINDS.PARETO_REBASELINE,
+        round,
+        before_front: before,
+        after_rebaseline_scores: Object.fromEntries(front.map((f) => [f.id, f.scores])),
+        evictions: retire,
+        runs: runCount,
+      });
+      log(`round ${round} rebaseline: retired ${retire.length} low-variance probes, re-scored ${front.length} incumbents on ${newProbes.length} new (${runCount} runs)`);
+    }
+
+    const activeIds = probeSet.map((p) => p.id);
+    const probeById = Object.fromEntries(probeSet.map((p) => [p.id, p]));
+    const rRng = roundRng(seed, round);
+
+    // ── 1 selection + 2 mutation portfolio ──
+    const parent = selectParent({ front, rng: rRng });
+    const slots = planSlots({ round, front, probeIds: activeIds, rotationRound });
+    const failures = topFailures({ candidate: parent, probes: probeSet, limit: 5 });
+    const muts = await generateMutations({ slots, parent, failures, probeById, round, callModel, rng: rRng, reflectionHint });
+
+    const accepted = [];
+    let slotIdx = 0;
+    for (const m of muts) {
+      slotIdx += 1;
+      if (!m.accepted) {
+        const reasons = (m.rejection?.failures || []).map((f) => f.reason).join(',') || m.rejection?.reason || 'token-validation';
+        appendEvent({ _kind: EVENT_KINDS.MUTATION_REJECTION, round, source_op: m.sourceOp, parent_hash: m.parentHash, reason: reasons, failures: m.rejection?.failures ?? null });
+        log(`round ${round} mut ${slotIdx}/${muts.length} ${m.sourceOp} REJECTED (${reasons})`);
+        continue;
+      }
+      const hash = hashContent(m.mutated);
+      appendEvent({ _kind: EVENT_KINDS.MUTATION, round, source_op: m.sourceOp, new_prompt_hash: hash, parent_hash: m.parentHash });
+      recordPrompt(hash, m.mutated);
+      accepted.push({ ...m, hash });
+      log(`round ${round} mut ${slotIdx}/${muts.length} ${m.sourceOp} on ${parent.id} → ${hash.slice(0, 10)}`);
+    }
+
+    // ── 3 screen (8 probes × 2 targets) ──
+    let survivor = null;
+    if (accepted.length > 0) {
+      const screenProbes = probeSet.slice(0, screenProbeCount);
+      const screenIds = screenProbes.map((p) => p.id);
+      const screenWeights = computeProbeWeights({ front, probeIds: screenIds, round, roundsEvaluatedByProbe });
+      let best = null;
+      for (const m of accepted) {
+        const cand = await mkCandidate({ id: `${parent.id}-r${round}-${m.sourceOp}`, prompt: m.mutated, sourceOp: m.sourceOp, parentHash: m.parentHash, probes: screenProbes, weights: screenWeights });
+        for (const pid of screenIds) {
+          for (const target of TARGET_LIST) {
+            const d = cand.detail[pid][target];
+            appendEvent({ _kind: EVENT_KINDS.SCREEN, round, mutation_hash: cand.hash, probe_id: pid, target, score: d.score, tool_calls: d.traj.toolCalls.length });
+          }
+        }
+        log(`round ${round} screen ${m.sourceOp} ${cand.hash.slice(0, 10)} final=${cand.finalScore.toFixed(3)}`);
+        if (!best || cand.finalScore > best.finalScore) best = cand;
+      }
+
+      // ── 5 confirm (full dev × 2) ──
+      const fullWeights = computeProbeWeights({ front, probeIds: activeIds, round, roundsEvaluatedByProbe });
+      survivor = await mkCandidate({ id: best.id, prompt: best.prompt, sourceOp: best.sourceOp, parentHash: best.parentHash, probes: probeSet, weights: fullWeights });
+      for (const pid of activeIds) {
+        for (const target of TARGET_LIST) {
+          const d = survivor.detail[pid][target];
+          appendEvent({
+            _kind: EVENT_KINDS.CONFIRM,
+            round,
+            mutation_hash: survivor.hash,
+            prompt_hash: survivor.hash,
+            probe_id: pid,
+            probe_stratum: probeById[pid]?.stratum ?? null,
+            target,
+            raw_sonnet: survivor.detail[pid].sonnet.score,
+            raw_gpt5_5: survivor.detail[pid].gpt5_5.score,
+            maximin_base: survivor.scores[pid],
+            tool_calls: d.traj.toolCalls.length,
+            eas_factor: survivor.efficiencyFactor,
+            length_penalty: survivor.lengthPenalty,
+            final_score: survivor.finalScore,
+            judge_panel: ['deepseek-v4-flash', 'gemini-3.1-flash-lite', 'minimax-m2.7'],
+          });
+        }
+      }
+      log(`round ${round} confirm ${activeIds.length}×2 sonnet=${survivor.score_sonnet.toFixed(3)} gpt5.5=${survivor.score_gpt5_5.toFixed(3)} final=${survivor.finalScore.toFixed(3)}`);
+
+      // ── 6 Pareto-gated TARE ──
+      const screenWeightsForTare = computeProbeWeights({ front, probeIds: screenIds, round, roundsEvaluatedByProbe });
+      const tare = await paretoGatedTare({
+        candidate: { prompt: survivor.prompt, taskScore: survivor.finalScore },
+        front: front.map((f) => ({ taskScore: f.finalScore })),
+        generateParaphrases: (prompt, k) => generateAdversarialParaphrases({ prompt, k, callModel }),
+        evaluate: async (promptText) => {
+          const sc = await mkCandidate({ id: 'tare', prompt: promptText, sourceOp: 'manual', parentHash: survivor.hash, probes: screenProbes, weights: screenWeightsForTare });
+          return sc.finalScore;
+        },
+      });
+      if (tare.ran) {
+        survivor.sharpnessScore = tare.sharpnessScore;
+        appendEvent({ _kind: EVENT_KINDS.TARE_ADVERSARIAL, round, mutation_hash: survivor.hash, sharpness: tare.sharpness, sharpness_score: tare.sharpnessScore, n: tare.evaluations.length });
+        log(`round ${round} tare sharpness=${tare.sharpness.toFixed(3)} → sharpness_score=${tare.sharpnessScore.toFixed(3)}`);
+      }
+
+      // ── 7 Pareto update (0.15 admission cap) ──
+      const adm = attemptParetoAdmission({ candidate: survivor, front, cap: paretoCap, frontSize });
+      if (adm.admitted) {
+        front = adm.newFront;
+        appendEvent({ _kind: EVENT_KINDS.PARETO_UPDATE, round, front: front.map((f) => f.hash), added: survivor.hash, evicted: adm.evicted });
+        log(`round ${round} pareto: ADD ${survivor.hash.slice(0, 10)}${adm.evicted.length ? `, evict ${adm.evicted.join(',')}` : ''}`);
+      } else {
+        appendEvent({ _kind: EVENT_KINDS.PARETO_REJECTION, round, mutation_hash: survivor.hash, reason: adm.reason, target_degraded: adm.target_degraded?.[0] ?? null, drop: adm.drop, incumbent_being_compared: adm.incumbent });
+        log(`round ${round} pareto: REJECT ${survivor.hash.slice(0, 10)} (${adm.reason})`);
+      }
+    } else {
+      log(`round ${round} no accepted mutations — front unchanged`);
+    }
+
+    // ── 9 patience / plateau-breakthrough ──
+    const bestNow = jointBestFinal(front);
+    const prevBest = convergence.length > 0 ? convergence[convergence.length - 1] : -Infinity;
+    convergence.push(bestNow);
+    if (bestNow - prevBest <= DEFAULTS.patienceDelta) patienceCounter += 1;
+    else patienceCounter = 0;
+
+    for (const pid of activeIds) roundsEvaluatedByProbe[pid] = (roundsEvaluatedByProbe[pid] || 0) + 1;
+
+    // checkpoint (atomic) — full resumable state (§7.4)
+    atomicWriteJSON(paths.paretoCurrent, {
+      runId,
+      lastCompletedRound: round,
+      maxRoundsEffective: maxRoundsEff,
+      plateauExtended,
+      patienceCounter,
+      convergence,
+      roundsEvaluatedByProbe,
+      probeSetIds: probeSet.map((p) => p.id),
+      front,
+    });
+
+    log(`round ${round} summary: joint_best=${bestNow.toFixed(3)} n_pareto=${front.length} patience=${patienceCounter}/${patience}`);
+
+    if (patienceCounter >= patience) {
+      if (plateauBreakthrough(convergence) && !plateauExtended) {
+        plateauExtended = true;
+        maxRoundsEff = Math.min(hardCap, round + DEFAULTS.plateauExtendRounds);
+        patienceCounter = 0;
+        log(`round ${round} plateau-breakthrough: extending ${DEFAULTS.plateauExtendRounds} rounds (to ${maxRoundsEff})`);
+      } else {
+        stoppedReason = 'patience';
+        log(`round ${round} STOP: patience ${patienceCounter}/${patience} exhausted`);
+        break;
+      }
+    }
+  }
+
+  if (lastRoundRun >= hardCap) stoppedReason = stoppedReason === 'patience' ? 'patience' : 'hard-cap';
+
+  return {
+    runId,
+    front,
+    convergence,
+    rounds: lastRoundRun,
+    stoppedReason,
+    probeSetIds: probeSet.map((p) => p.id),
+    winner: front.slice().sort((a, b) => b.finalScore - a.finalScore)[0] ?? null,
+  };
+}
+
+// ─── CLI (delegated to gepa-cli.mjs to keep this file < 500 lines) ──────────
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  // No top-level await here: gepa-cli.mjs imports THIS module, so awaiting its
+  // import before this module finishes evaluating would deadlock the ESM cycle.
+  // Deferring via .then() lets gepa.mjs finish (exports ready) first.
+  import('./gepa-cli.mjs')
+    .then(({ mainCli }) => mainCli(process.argv.slice(2)))
+    .catch((e) => {
+      console.error('gepa: fatal —', e?.stack || e?.message || e);
+      process.exit(1);
+    });
+}

@@ -1,0 +1,612 @@
+/**
+ * Unit tests for the Phase 7 direct-API runners added to
+ * eval/agent-read-workflows/judge-runner.js:
+ *   - buildAnthropicPayload / parseAnthropicResponse  (anthropic-api lineage)
+ *   - buildOpenAIPayload   / parseOpenAIResponse      (openai-api + compat shim)
+ *   - runJudge dispatch: anthropic-api, openai-api, moonshot, minimax, mimo,
+ *                        qwen, dashscope
+ *   - parseJudgeModelSpec: new heuristic prefixes
+ *
+ * All HTTP is injected via `_internal.fetch`; no real network calls.
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+import {
+  parseJudgeModelSpec,
+  buildAnthropicPayload,
+  parseAnthropicResponse,
+  buildOpenAIPayload,
+  parseOpenAIResponse,
+  runJudge,
+  _internal,
+} from '../../../eval/agent-read-workflows/judge-runner.js';
+
+// ─── parseJudgeModelSpec — new lineage prefixes ──────────────────────────────
+
+describe('parseJudgeModelSpec — new lineage heuristics', () => {
+  it('kimi- prefix → moonshot', () => {
+    expect(parseJudgeModelSpec('kimi-k2.6').lineage).toBe('moonshot');
+  });
+
+  it('moonshot- prefix → moonshot', () => {
+    expect(parseJudgeModelSpec('moonshot-v1').lineage).toBe('moonshot');
+  });
+
+  it('minimax prefix → minimax', () => {
+    expect(parseJudgeModelSpec('minimax-m2.7').lineage).toBe('minimax');
+  });
+
+  it('abab prefix → minimax', () => {
+    expect(parseJudgeModelSpec('abab6.5s-chat').lineage).toBe('minimax');
+  });
+
+  it('mimo prefix → mimo', () => {
+    expect(parseJudgeModelSpec('mimo-v2.5-pro').lineage).toBe('mimo');
+  });
+
+  it('qwen prefix → qwen (not opencode)', () => {
+    expect(parseJudgeModelSpec('qwen3.6-plus').lineage).toBe('qwen');
+    expect(parseJudgeModelSpec('qwen2.5-72b').lineage).toBe('qwen');
+  });
+
+  it('explicit anthropic-api:model form', () => {
+    expect(parseJudgeModelSpec('anthropic-api:claude-sonnet-4-6')).toEqual({
+      lineage: 'anthropic-api', model: 'claude-sonnet-4-6',
+    });
+  });
+
+  it('explicit openai-api:model form', () => {
+    expect(parseJudgeModelSpec('openai-api:gpt-4.1')).toEqual({
+      lineage: 'openai-api', model: 'gpt-4.1',
+    });
+  });
+
+  it('explicit moonshot:model form', () => {
+    expect(parseJudgeModelSpec('moonshot:kimi-k2.6')).toEqual({
+      lineage: 'moonshot', model: 'kimi-k2.6',
+    });
+  });
+
+  it('explicit minimax:model form', () => {
+    expect(parseJudgeModelSpec('minimax:abab6.5s-chat')).toEqual({
+      lineage: 'minimax', model: 'abab6.5s-chat',
+    });
+  });
+
+  it('explicit mimo:model form', () => {
+    expect(parseJudgeModelSpec('mimo:MiMo-V2.5-Pro')).toEqual({
+      lineage: 'mimo', model: 'MiMo-V2.5-Pro',
+    });
+  });
+
+  it('explicit qwen:model form', () => {
+    expect(parseJudgeModelSpec('qwen:qwen3.6-plus')).toEqual({
+      lineage: 'qwen', model: 'qwen3.6-plus',
+    });
+  });
+
+  it('explicit dashscope:model form', () => {
+    expect(parseJudgeModelSpec('dashscope:qwen3.6-plus')).toEqual({
+      lineage: 'dashscope', model: 'qwen3.6-plus',
+    });
+  });
+
+  it('llama-/mistral-/command- still route to opencode', () => {
+    expect(parseJudgeModelSpec('llama-4-instruct-70b').lineage).toBe('opencode');
+    expect(parseJudgeModelSpec('mistral-large').lineage).toBe('opencode');
+    expect(parseJudgeModelSpec('command-r-plus').lineage).toBe('opencode');
+  });
+});
+
+// ─── buildAnthropicPayload ───────────────────────────────────────────────────
+
+describe('buildAnthropicPayload', () => {
+  it('emits {model, system, messages, max_tokens, temperature}', () => {
+    const p = buildAnthropicPayload({
+      model: 'claude-sonnet-4-6',
+      systemPrompt: 'system text',
+      userPrompt: 'user text',
+    });
+    expect(p.model).toBe('claude-sonnet-4-6');
+    expect(p.system).toBe('system text');
+    expect(p.messages).toEqual([{ role: 'user', content: 'user text' }]);
+    expect(p.max_tokens).toBe(4096);
+    expect(p.temperature).toBe(0);
+  });
+
+  it('omits `system` key when systemPrompt is falsy', () => {
+    const p = buildAnthropicPayload({ userPrompt: 'u' });
+    expect('system' in p).toBe(false);
+    const p2 = buildAnthropicPayload({ userPrompt: 'u', systemPrompt: '' });
+    expect('system' in p2).toBe(false);
+  });
+
+  it('adds thinking block when thinking arg is a number (§3.5.2)', () => {
+    const p = buildAnthropicPayload({ userPrompt: 'u', thinking: 1024 });
+    expect(p.thinking).toEqual({ type: 'enabled', budget_tokens: 1024 });
+  });
+
+  it('does NOT add thinking when arg is absent', () => {
+    const p = buildAnthropicPayload({ userPrompt: 'u' });
+    expect('thinking' in p).toBe(false);
+  });
+
+  it('forces temperature to 1 when thinking is enabled (API constraint)', () => {
+    // Extended thinking is incompatible with temperature != 1 → API 400.
+    const p = buildAnthropicPayload({ userPrompt: 'u', thinking: 1024, temperature: 0 });
+    expect(p.temperature).toBe(1);
+    // ...but leaves temperature untouched when thinking is OFF.
+    const p2 = buildAnthropicPayload({ userPrompt: 'u', temperature: 0 });
+    expect(p2.temperature).toBe(0);
+  });
+
+  it('lifts max_tokens above budget_tokens when thinking budget exceeds it (§3.5.2)', () => {
+    // §3.5.2 uses budget_tokens:8000; default max_tokens 4096 would 400.
+    const p = buildAnthropicPayload({ userPrompt: 'u', thinking: 8000 });
+    expect(p.max_tokens).toBeGreaterThan(8000);
+    // Caller-supplied max_tokens already above the budget is preserved.
+    const p2 = buildAnthropicPayload({ userPrompt: 'u', thinking: 2000, maxTokens: 16000 });
+    expect(p2.max_tokens).toBe(16000);
+  });
+
+  it('defaults model to claude-sonnet-4-6', () => {
+    const p = buildAnthropicPayload({ userPrompt: 'u' });
+    expect(p.model).toBe('claude-sonnet-4-6');
+  });
+
+  it('respects custom maxTokens and temperature', () => {
+    const p = buildAnthropicPayload({ userPrompt: 'u', maxTokens: 512, temperature: 0.3 });
+    expect(p.max_tokens).toBe(512);
+    expect(p.temperature).toBe(0.3);
+  });
+});
+
+// ─── parseAnthropicResponse ──────────────────────────────────────────────────
+
+describe('parseAnthropicResponse', () => {
+  it('concatenates text blocks and skips thinking blocks', () => {
+    const json = {
+      content: [
+        { type: 'thinking', thinking: 'internal chain-of-thought' },
+        { type: 'text', text: 'hello ' },
+        { type: 'text', text: 'world' },
+      ],
+    };
+    expect(parseAnthropicResponse(json)).toBe('hello world');
+  });
+
+  it('returns empty string when content array is empty', () => {
+    expect(parseAnthropicResponse({ content: [] })).toBe('');
+  });
+
+  it('returns empty string when content key is missing', () => {
+    expect(parseAnthropicResponse({})).toBe('');
+    expect(parseAnthropicResponse(null)).toBe('');
+  });
+
+  it('skips non-text blocks (tool_use, etc.)', () => {
+    const json = {
+      content: [
+        { type: 'tool_use', id: 'x', name: 'ss-search', input: {} },
+        { type: 'text', text: 'answer' },
+      ],
+    };
+    expect(parseAnthropicResponse(json)).toBe('answer');
+  });
+});
+
+// ─── buildOpenAIPayload ──────────────────────────────────────────────────────
+
+describe('buildOpenAIPayload', () => {
+  it('emits OpenAI-compatible {model, messages, temperature, max_tokens, stream:false}', () => {
+    const p = buildOpenAIPayload({
+      model: 'gpt-5.5', systemPrompt: 'sys', userPrompt: 'usr',
+    });
+    expect(p.model).toBe('gpt-5.5');
+    expect(p.messages).toEqual([
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'usr' },
+    ]);
+    expect(p.temperature).toBe(0);
+    expect(p.max_tokens).toBe(4096);
+    expect(p.stream).toBe(false);
+  });
+
+  it('omits system message when systemPrompt is falsy', () => {
+    const p = buildOpenAIPayload({ userPrompt: 'u' });
+    expect(p.messages).toEqual([{ role: 'user', content: 'u' }]);
+  });
+
+  it('respects custom temperature and maxTokens', () => {
+    const p = buildOpenAIPayload({ userPrompt: 'u', temperature: 0.7, maxTokens: 512 });
+    expect(p.temperature).toBe(0.7);
+    expect(p.max_tokens).toBe(512);
+  });
+
+  it('defaults model to gpt-4.1', () => {
+    const p = buildOpenAIPayload({ userPrompt: 'u' });
+    expect(p.model).toBe('gpt-4.1');
+  });
+});
+
+// ─── parseOpenAIResponse ─────────────────────────────────────────────────────
+
+describe('parseOpenAIResponse', () => {
+  it('extracts choices[0].message.content', () => {
+    expect(parseOpenAIResponse({
+      choices: [{ message: { content: 'hello' } }],
+    })).toBe('hello');
+  });
+
+  it('returns empty on missing choices', () => {
+    expect(parseOpenAIResponse({})).toBe('');
+    expect(parseOpenAIResponse({ choices: [] })).toBe('');
+    expect(parseOpenAIResponse(null)).toBe('');
+  });
+});
+
+// ─── runJudge dispatch helpers ────────────────────────────────────────────────
+
+function makeFetch(responseJson) {
+  return vi.fn(async () => ({
+    ok: true,
+    json: async () => responseJson,
+  }));
+}
+
+function makeFetchError(status, body = 'error body') {
+  return vi.fn(async () => ({
+    ok: false, status,
+    text: async () => body,
+  }));
+}
+
+// ─── runJudge — anthropic-api lineage ────────────────────────────────────────
+
+describe('runJudge — anthropic-api', () => {
+  let origFetch;
+  beforeEach(() => { origFetch = _internal.fetch; });
+  afterEach(() => {
+    _internal.fetch = origFetch;
+    delete process.env.ANTHROPIC_API_KEY;
+  });
+
+  it('routes through fetch and parses content blocks', async () => {
+    process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
+    _internal.fetch = makeFetch({
+      content: [{ type: 'text', text: 'anthropic verdict' }],
+      usage: { input_tokens: 10, output_tokens: 5 },
+    });
+    const r = await runJudge({
+      lineage: 'anthropic-api', model: 'claude-sonnet-4-6',
+      systemPrompt: 'judge', userPrompt: 'rate this',
+    });
+    expect(r.isError).toBe(false);
+    expect(r.text).toBe('anthropic verdict');
+    expect(r.lineage).toBe('anthropic-api');
+    expect(r.model).toBe('claude-sonnet-4-6');
+    expect(typeof r.latencyMs).toBe('number');
+    expect(_internal.fetch).toHaveBeenCalledWith(
+      'https://api.anthropic.com/v1/messages',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'x-api-key': 'test-anthropic-key',
+          'anthropic-version': '2023-06-01',
+        }),
+      }),
+    );
+  });
+
+  it('errors when ANTHROPIC_API_KEY is not set', async () => {
+    const r = await runJudge({
+      lineage: 'anthropic-api', model: 'claude-sonnet-4-6',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(true);
+    expect(r.error).toMatch(/ANTHROPIC_API_KEY/);
+  });
+
+  it('non-OK HTTP response → isError with status in raw', async () => {
+    process.env.ANTHROPIC_API_KEY = 'test-key';
+    _internal.fetch = makeFetchError(401, 'unauthorized');
+    const r = await runJudge({
+      lineage: 'anthropic-api', model: 'claude-sonnet-4-6',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(true);
+    expect(r.raw.status).toBe(401);
+  });
+
+  it('thinking blocks are stripped from response text', async () => {
+    process.env.ANTHROPIC_API_KEY = 'test-key';
+    _internal.fetch = makeFetch({
+      content: [
+        { type: 'thinking', thinking: 'chain of thought' },
+        { type: 'text', text: 'final answer' },
+      ],
+    });
+    const r = await runJudge({
+      lineage: 'anthropic-api', model: 'claude-sonnet-4-6',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.text).toBe('final answer');
+  });
+
+  it('thinking arg flows onto the wire with corrected temperature/max_tokens (§3.5.2)', async () => {
+    process.env.ANTHROPIC_API_KEY = 'test-key';
+    _internal.fetch = makeFetch({ content: [{ type: 'text', text: 'ok' }] });
+    await runJudge({
+      lineage: 'anthropic-api', model: 'claude-sonnet-4-6',
+      systemPrompt: 'judge', userPrompt: 'rate', thinking: 8000,
+    });
+    const body = JSON.parse(_internal.fetch.mock.calls[0][1].body);
+    expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 8000 });
+    expect(body.temperature).toBe(1);
+    expect(body.max_tokens).toBeGreaterThan(8000);
+  });
+});
+
+// ─── runJudge — openai-api lineage ───────────────────────────────────────────
+
+describe('runJudge — openai-api', () => {
+  let origFetch;
+  beforeEach(() => { origFetch = _internal.fetch; });
+  afterEach(() => {
+    _internal.fetch = origFetch;
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  it('routes through fetch to OpenAI endpoint and parses choices', async () => {
+    process.env.OPENAI_API_KEY = 'test-openai-key';
+    _internal.fetch = makeFetch({
+      choices: [{ message: { content: 'openai reply' } }],
+      usage: { prompt_tokens: 10, completion_tokens: 5 },
+    });
+    const r = await runJudge({
+      lineage: 'openai-api', model: 'gpt-5.5',
+      systemPrompt: 'sys', userPrompt: 'usr',
+    });
+    expect(r.isError).toBe(false);
+    expect(r.text).toBe('openai reply');
+    expect(_internal.fetch).toHaveBeenCalledWith(
+      'https://api.openai.com/v1/chat/completions',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer test-openai-key' }),
+      }),
+    );
+  });
+
+  it('errors when OPENAI_API_KEY is not set', async () => {
+    const r = await runJudge({
+      lineage: 'openai-api', model: 'gpt-5.5',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(true);
+    expect(r.error).toMatch(/OPENAI_API_KEY/);
+  });
+
+  it('non-OK HTTP → isError', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    _internal.fetch = makeFetchError(429, 'rate limited');
+    const r = await runJudge({
+      lineage: 'openai-api', model: 'gpt-5.5',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(true);
+    expect(r.raw.status).toBe(429);
+  });
+});
+
+// ─── runJudge — moonshot lineage ─────────────────────────────────────────────
+
+describe('runJudge — moonshot', () => {
+  let origFetch;
+  beforeEach(() => { origFetch = _internal.fetch; });
+  afterEach(() => {
+    _internal.fetch = origFetch;
+    delete process.env.MOONSHOT_API_KEY;
+  });
+
+  it('routes to moonshot endpoint and parses choices', async () => {
+    process.env.MOONSHOT_API_KEY = 'test-moonshot-key';
+    _internal.fetch = makeFetch({
+      choices: [{ message: { content: 'kimi reply' } }],
+    });
+    const r = await runJudge({
+      lineage: 'moonshot', model: 'kimi-k2.6',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(false);
+    expect(r.text).toBe('kimi reply');
+    expect(_internal.fetch).toHaveBeenCalledWith(
+      'https://api.moonshot.ai/v1/chat/completions',
+      expect.anything(),
+    );
+  });
+
+  it('errors when MOONSHOT_API_KEY is not set', async () => {
+    const r = await runJudge({
+      lineage: 'moonshot', model: 'kimi-k2.6',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(true);
+    expect(r.error).toMatch(/MOONSHOT_API_KEY/);
+  });
+});
+
+// ─── runJudge — minimax lineage ──────────────────────────────────────────────
+
+describe('runJudge — minimax', () => {
+  let origFetch;
+  beforeEach(() => { origFetch = _internal.fetch; });
+  afterEach(() => {
+    _internal.fetch = origFetch;
+    delete process.env.MINIMAX_API_KEY;
+  });
+
+  it('routes to MiniMax non-standard path and parses choices', async () => {
+    process.env.MINIMAX_API_KEY = 'test-minimax-key';
+    _internal.fetch = makeFetch({
+      choices: [{ message: { content: 'minimax reply' } }],
+    });
+    const r = await runJudge({
+      lineage: 'minimax', model: 'abab6.5s-chat',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(false);
+    expect(r.text).toBe('minimax reply');
+    // MiniMax uses /text/chatcompletion_v2, NOT /chat/completions
+    expect(_internal.fetch).toHaveBeenCalledWith(
+      'https://api.minimax.io/v1/text/chatcompletion_v2',
+      expect.anything(),
+    );
+  });
+
+  it('errors when MINIMAX_API_KEY is not set', async () => {
+    const r = await runJudge({
+      lineage: 'minimax', model: 'abab6.5s-chat',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(true);
+    expect(r.error).toMatch(/MINIMAX_API_KEY/);
+  });
+});
+
+// ─── runJudge — mimo lineage ─────────────────────────────────────────────────
+
+describe('runJudge — mimo', () => {
+  let origFetch;
+  beforeEach(() => { origFetch = _internal.fetch; });
+  afterEach(() => {
+    _internal.fetch = origFetch;
+    delete process.env.MIMO_API_KEY;
+    delete process.env.TOGETHER_API_KEY;
+  });
+
+  it('uses MIMO_API_KEY direct endpoint when set', async () => {
+    process.env.MIMO_API_KEY = 'test-mimo-key';
+    _internal.fetch = makeFetch({
+      choices: [{ message: { content: 'mimo reply' } }],
+    });
+    const r = await runJudge({
+      lineage: 'mimo', model: 'MiMo-V2.5-Pro',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(false);
+    expect(r.text).toBe('mimo reply');
+    expect(_internal.fetch).toHaveBeenCalledWith(
+      'https://api.mimo.ai/v1/chat/completions',
+      expect.anything(),
+    );
+  });
+
+  it('falls back to Together.AI when only TOGETHER_API_KEY is set', async () => {
+    process.env.TOGETHER_API_KEY = 'test-together-key';
+    _internal.fetch = makeFetch({
+      choices: [{ message: { content: 'together-mimo reply' } }],
+    });
+    const r = await runJudge({
+      lineage: 'mimo', model: 'xiaomi/MiMo-7B-RL-v2.5',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(false);
+    expect(_internal.fetch).toHaveBeenCalledWith(
+      'https://api.together.xyz/v1/chat/completions',
+      expect.anything(),
+    );
+  });
+
+  it('MIMO_API_KEY takes precedence over TOGETHER_API_KEY', async () => {
+    process.env.MIMO_API_KEY = 'mimo-key';
+    process.env.TOGETHER_API_KEY = 'together-key';
+    _internal.fetch = makeFetch({ choices: [{ message: { content: 'ok' } }] });
+    await runJudge({ lineage: 'mimo', model: 'x', systemPrompt: '', userPrompt: 'u' });
+    expect(_internal.fetch).toHaveBeenCalledWith(
+      'https://api.mimo.ai/v1/chat/completions',
+      expect.anything(),
+    );
+  });
+
+  it('errors when neither MIMO_API_KEY nor TOGETHER_API_KEY is set', async () => {
+    const r = await runJudge({
+      lineage: 'mimo', model: 'MiMo-V2.5-Pro',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(true);
+    expect(r.error).toMatch(/MIMO_API_KEY/);
+  });
+});
+
+// ─── runJudge — qwen / dashscope lineages ────────────────────────────────────
+
+describe('runJudge — qwen/dashscope', () => {
+  let origFetch;
+  beforeEach(() => { origFetch = _internal.fetch; });
+  afterEach(() => {
+    _internal.fetch = origFetch;
+    delete process.env.DASHSCOPE_API_KEY;
+    delete process.env.TOGETHER_API_KEY;
+  });
+
+  it('qwen lineage uses DASHSCOPE_API_KEY endpoint', async () => {
+    process.env.DASHSCOPE_API_KEY = 'test-dashscope-key';
+    _internal.fetch = makeFetch({
+      choices: [{ message: { content: 'qwen reply' } }],
+    });
+    const r = await runJudge({
+      lineage: 'qwen', model: 'qwen3.6-plus',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(false);
+    expect(r.text).toBe('qwen reply');
+    expect(_internal.fetch).toHaveBeenCalledWith(
+      'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
+      expect.anything(),
+    );
+  });
+
+  it('dashscope lineage is an alias for qwen runner', async () => {
+    process.env.DASHSCOPE_API_KEY = 'test-key';
+    _internal.fetch = makeFetch({
+      choices: [{ message: { content: 'dashscope reply' } }],
+    });
+    const r = await runJudge({
+      lineage: 'dashscope', model: 'qwen3.6-plus',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(false);
+    expect(r.text).toBe('dashscope reply');
+    expect(_internal.fetch).toHaveBeenCalledWith(
+      'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
+      expect.anything(),
+    );
+  });
+
+  it('falls back to Together.AI when only TOGETHER_API_KEY is set', async () => {
+    process.env.TOGETHER_API_KEY = 'test-together-key';
+    _internal.fetch = makeFetch({
+      choices: [{ message: { content: 'together-qwen reply' } }],
+    });
+    const r = await runJudge({
+      lineage: 'qwen', model: 'Qwen/Qwen2.5-72B-Instruct',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(false);
+    expect(_internal.fetch).toHaveBeenCalledWith(
+      'https://api.together.xyz/v1/chat/completions',
+      expect.anything(),
+    );
+  });
+
+  it('errors when neither DASHSCOPE_API_KEY nor TOGETHER_API_KEY is set', async () => {
+    const r = await runJudge({
+      lineage: 'qwen', model: 'qwen3.6-plus',
+      systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(true);
+    expect(r.error).toMatch(/DASHSCOPE_API_KEY/);
+  });
+});

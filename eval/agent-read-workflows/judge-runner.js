@@ -75,17 +75,37 @@ export function parseJudgeModelSpec(spec) {
   if (lc.startsWith('deepseek-') || lc.startsWith('ds-')) {
     return { lineage: 'deepseek', model: spec };
   }
-  if (lc.startsWith('llama-') || lc.startsWith('qwen') || lc.startsWith('mistral-') || lc.startsWith('command-')) {
+  if (lc.startsWith('kimi') || lc.startsWith('moonshot')) {
+    return { lineage: 'moonshot', model: spec };
+  }
+  if (lc.startsWith('minimax') || lc.startsWith('abab')) {
+    return { lineage: 'minimax', model: spec };
+  }
+  if (lc.startsWith('mimo')) {
+    return { lineage: 'mimo', model: spec };
+  }
+  if (lc.startsWith('qwen')) {
+    return { lineage: 'qwen', model: spec };
+  }
+  if (lc.startsWith('llama-') || lc.startsWith('mistral-') || lc.startsWith('command-')) {
     return { lineage: 'opencode', model: spec };
   }
   throw new RangeError(
     `parseJudgeModelSpec: cannot infer lineage from "${spec}" — use explicit "lineage:model" form ` +
-    `(anthropic|openai|google|deepseek|opencode)`,
+    `(anthropic|anthropic-api|openai|openai-api|google|google-api|deepseek|deepseek-api|` +
+    `opencode|moonshot|minimax|mimo|qwen|dashscope)`,
   );
 }
 
 function isKnownLineage(s) {
-  return ['anthropic', 'openai', 'google', 'google-api', 'deepseek', 'deepseek-api', 'opencode'].includes(s);
+  return [
+    'anthropic', 'anthropic-api',
+    'openai', 'openai-api',
+    'google', 'google-api',
+    'deepseek', 'deepseek-api',
+    'opencode',
+    'moonshot', 'minimax', 'mimo', 'qwen', 'dashscope',
+  ].includes(s);
 }
 
 // ─── normalized adapter contract ─────────────────────────────────────────
@@ -116,13 +136,20 @@ export async function runJudge(req) {
   let r;
   try {
     switch (req.lineage) {
-      case 'anthropic':    r = await runAnthropic(req); break;
-      case 'openai':       r = await runCodex(req, timeoutMs); break;
-      case 'google':       r = await runGemini(req, timeoutMs); break;
-      case 'google-api':   r = await runGeminiDirect(req, timeoutMs); break;
-      case 'deepseek':     r = await runDeepseekViaClaude(req, timeoutMs); break;
-      case 'deepseek-api': r = await runDeepseekDirect(req, timeoutMs); break;
-      case 'opencode':     r = await runOpencode(req, timeoutMs); break;
+      case 'anthropic':     r = await runAnthropic(req); break;
+      case 'anthropic-api': r = await runAnthropicDirect(req, timeoutMs); break;
+      case 'openai':        r = await runCodex(req, timeoutMs); break;
+      case 'openai-api':    r = await runOpenAIDirect(req, timeoutMs); break;
+      case 'google':        r = await runGemini(req, timeoutMs); break;
+      case 'google-api':    r = await runGeminiDirect(req, timeoutMs); break;
+      case 'deepseek':      r = await runDeepseekViaClaude(req, timeoutMs); break;
+      case 'deepseek-api':  r = await runDeepseekDirect(req, timeoutMs); break;
+      case 'opencode':      r = await runOpencode(req, timeoutMs); break;
+      case 'moonshot':      r = await runMoonshotDirect(req, timeoutMs); break;
+      case 'minimax':       r = await runMiniMaxDirect(req, timeoutMs); break;
+      case 'mimo':          r = await runMiMoDirect(req, timeoutMs); break;
+      case 'qwen':          // fall-through: qwen and dashscope share the runner
+      case 'dashscope':     r = await runQwenDirect(req, timeoutMs); break;
       default: throw new Error(`runJudge: unknown lineage ${req.lineage}`);
     }
   } catch (e) {
@@ -502,6 +529,376 @@ export function parseGeminiDirectResponse(json) {
     return cand.content.parts.map((p) => p.text || '').join('');
   }
   return '';
+}
+
+// ─── Anthropic Messages API (raw HTTPS, direct path) ─────────────────────
+//
+// For stateless / budget-controlled judging that does not need the claude CLI
+// harness. Mirrors the same rationale as `deepseek-api` / `google-api`:
+// lower per-call latency, cleaner HTTP error codes, no subprocess overhead.
+//
+// §3.5.2 thinking support: pass `thinking` (integer budget_tokens) to enable
+// extended thinking mode for any claude-3-7+ model.
+//
+// Env: ANTHROPIC_API_KEY
+
+async function runAnthropicDirect({ model, systemPrompt, userPrompt, maxTokens, temperature, thinking }, timeoutMs) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error('runAnthropicDirect: ANTHROPIC_API_KEY not set in environment');
+  }
+  const fetchFn = _internal.fetch || globalThis.fetch;
+  if (typeof fetchFn !== 'function') {
+    throw new Error('runAnthropicDirect: global fetch unavailable (Node 18+ required)');
+  }
+  const body = buildAnthropicPayload({ model, systemPrompt, userPrompt, maxTokens, temperature, thinking });
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetchFn('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      return {
+        text: '', isError: true,
+        raw: { status: res.status, body: errText.slice(0, 1000), viaHarness: 'raw-api' },
+      };
+    }
+    const json = await res.json();
+    return {
+      text: parseAnthropicResponse(json),
+      isError: false,
+      raw: { usage: json.usage, model: json.model, viaHarness: 'raw-api' },
+    };
+  } catch (e) {
+    return {
+      text: '', isError: true, error: e.message || String(e),
+      raw: { viaHarness: 'raw-api', aborted: ctrl.signal.aborted },
+    };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/**
+ * Pure builder for the Anthropic Messages API payload. Exported for unit tests
+ * so the wire format is pinned.
+ *
+ * Extended-thinking constraints (§3.5.2 reasoning-mode HOMP uses budget_tokens:8000):
+ * the Anthropic API rejects (400) a `thinking`-enabled request unless
+ *   1. `temperature` is 1 — extended thinking is incompatible with temperature /
+ *      top_p / top_k modification, and
+ *   2. `max_tokens` is strictly greater than `thinking.budget_tokens` (the
+ *      visible answer needs room *after* the thinking trace).
+ * When `thinking` is set we therefore force temperature→1 and lift max_tokens
+ * above the budget (keeping the caller's `maxTokens` as post-thinking headroom).
+ * Without these guards a `{thinking:8000}` call with the default temperature=0 /
+ * max_tokens=4096 is a guaranteed 400.
+ *
+ * @param {object} opts
+ * @param {string} [opts.model]        — defaults to 'claude-sonnet-4-6'
+ * @param {string} [opts.systemPrompt] — mapped to top-level `system` key
+ * @param {string}  opts.userPrompt
+ * @param {number} [opts.maxTokens=4096] — answer budget; when thinking is on this
+ *                                         is headroom *above* budget_tokens
+ * @param {number} [opts.temperature=0] — forced to 1 when thinking is enabled
+ * @param {number} [opts.thinking]     — if set: adds thinking:{type:'enabled',budget_tokens} (§3.5.2)
+ */
+export function buildAnthropicPayload({ model, systemPrompt, userPrompt, maxTokens = 4096, temperature = 0, thinking } = {}) {
+  const body = {
+    model: model || 'claude-sonnet-4-6',
+    messages: [{ role: 'user', content: userPrompt }],
+    max_tokens: maxTokens,
+    temperature,
+  };
+  if (systemPrompt) body.system = systemPrompt;
+  if (thinking != null) {
+    body.thinking = { type: 'enabled', budget_tokens: thinking };
+    body.temperature = 1;                       // constraint (1) — required by the API
+    if (body.max_tokens <= thinking) {          // constraint (2) — answer needs room after the trace
+      body.max_tokens = thinking + maxTokens;
+    }
+  }
+  return body;
+}
+
+/**
+ * Pull the assistant text out of an Anthropic Messages API response.
+ * Content is an array of content blocks; concat text blocks, ignore thinking
+ * blocks and any other block types.
+ */
+export function parseAnthropicResponse(json) {
+  if (!json || !Array.isArray(json.content) || json.content.length === 0) return '';
+  return json.content
+    .filter((b) => b && b.type === 'text' && typeof b.text === 'string')
+    .map((b) => b.text)
+    .join('');
+}
+
+// ─── shared OpenAI-compatible runner ─────────────────────────────────────────
+//
+// All OpenAI-compatible providers (openai-api, moonshot, minimax, mimo, qwen)
+// share this single HTTP implementation. Per-provider runners resolve their
+// key + baseUrl + optional chatPath override and delegate here.
+//
+// `chatPath` defaults to '/chat/completions'; MiniMax overrides to
+// '/text/chatcompletion_v2' (same OpenAI response shape, different path).
+//
+// `extraBody` is merged into the JSON body last — use it for provider
+// extensions such as `reasoning_effort` (OpenAI o-series) or `temperature`
+// overrides.
+
+/**
+ * @param {object} opts
+ * @param {string}  opts.baseUrl
+ * @param {string}  opts.apiKey
+ * @param {string}  opts.model
+ * @param {string} [opts.systemPrompt]
+ * @param {string}  opts.userPrompt
+ * @param {number} [opts.temperature=0]
+ * @param {number} [opts.maxTokens=4096]
+ * @param {object} [opts.extraBody]    — merged into payload (provider extensions)
+ * @param {string} [opts.chatPath='/chat/completions']
+ * @param {number} [timeoutMs]
+ * @returns {Promise<{text:string, isError:boolean, raw:object, latencyMs:number}>}
+ */
+async function runOpenAICompatible(
+  { baseUrl, apiKey, model, systemPrompt, userPrompt, temperature = 0, maxTokens = 4096, extraBody, chatPath = '/chat/completions' },
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+) {
+  const fetchFn = _internal.fetch || globalThis.fetch;
+  if (typeof fetchFn !== 'function') {
+    throw new Error('runOpenAICompatible: global fetch unavailable (Node 18+ required)');
+  }
+  const payload = buildOpenAIPayload({ model, systemPrompt, userPrompt, temperature, maxTokens });
+  const body = extraBody ? { ...payload, ...extraBody } : payload;
+  const url = `${baseUrl}${chatPath}`;
+  const t0 = Date.now();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetchFn(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      return {
+        text: '', isError: true,
+        raw: { status: res.status, body: errText.slice(0, 1000), viaHarness: 'raw-api' },
+        latencyMs: Date.now() - t0,
+      };
+    }
+    const json = await res.json();
+    return {
+      text: parseOpenAIResponse(json),
+      isError: false,
+      raw: { usage: json.usage, model: json.model, viaHarness: 'raw-api' },
+      latencyMs: Date.now() - t0,
+    };
+  } catch (e) {
+    return {
+      text: '', isError: true, error: e.message || String(e),
+      raw: { viaHarness: 'raw-api', aborted: ctrl.signal.aborted },
+      latencyMs: Date.now() - t0,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Pure builder for the OpenAI Chat Completions payload. Exported as the pinned
+ * wire format used by all OpenAI-compatible runners (deepseek-api borrows the
+ * same shape independently). temperature=0 for deterministic judging;
+ * max_tokens=4096 matches buildDeepseekPayload.
+ *
+ * @param {object} opts
+ * @param {string} [opts.model]          — defaults to 'gpt-4.1'
+ * @param {string} [opts.systemPrompt]
+ * @param {string}  opts.userPrompt
+ * @param {number} [opts.temperature=0]
+ * @param {number} [opts.maxTokens=4096]
+ */
+export function buildOpenAIPayload({ model, systemPrompt, userPrompt, temperature = 0, maxTokens = 4096 } = {}) {
+  const messages = [];
+  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+  messages.push({ role: 'user', content: userPrompt });
+  return {
+    model: model || 'gpt-4.1',
+    messages,
+    temperature,
+    max_tokens: maxTokens,
+    stream: false,
+  };
+}
+
+/** Pull the assistant text out of an OpenAI Chat Completions response. */
+export function parseOpenAIResponse(json) {
+  if (!json || !Array.isArray(json.choices) || json.choices.length === 0) return '';
+  const c = json.choices[0];
+  if (typeof c.message?.content === 'string') return c.message.content;
+  return '';
+}
+
+// ─── OpenAI Chat Completions (raw HTTPS, direct path) ────────────────────────
+//
+// `openai-api` lineage: stateless/batch judging without the codex CLI harness.
+// Supports `reasoning_effort` for o1/o3-series models (passed via `extraBody`).
+//
+// Env: OPENAI_API_KEY
+
+async function runOpenAIDirect({ model, systemPrompt, userPrompt, maxTokens, temperature, reasoningEffort }, timeoutMs) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('runOpenAIDirect: OPENAI_API_KEY not set in environment');
+  }
+  return runOpenAICompatible(
+    {
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey, model, systemPrompt, userPrompt,
+      temperature: temperature ?? 0,
+      maxTokens: maxTokens ?? 4096,
+      extraBody: reasoningEffort ? { reasoning_effort: reasoningEffort } : undefined,
+    },
+    timeoutMs,
+  );
+}
+
+// ─── Moonshot AI / Kimi (OpenAI-compatible) ───────────────────────────────────
+//
+// `moonshot` lineage. kimi- prefix heuristic routes here automatically.
+// Default model: kimi-k2.6 (Kimi K2.6).
+//
+// Env: MOONSHOT_API_KEY
+
+async function runMoonshotDirect({ model, systemPrompt, userPrompt, maxTokens, temperature }, timeoutMs) {
+  const apiKey = process.env.MOONSHOT_API_KEY;
+  if (!apiKey) {
+    throw new Error('runMoonshotDirect: MOONSHOT_API_KEY not set in environment');
+  }
+  return runOpenAICompatible(
+    {
+      baseUrl: 'https://api.moonshot.ai/v1',
+      apiKey,
+      model: model || 'kimi-k2.6',
+      systemPrompt, userPrompt,
+      temperature: temperature ?? 0,
+      maxTokens: maxTokens ?? 4096,
+    },
+    timeoutMs,
+  );
+}
+
+// ─── MiniMax (OpenAI chat shape, non-standard path) ───────────────────────────
+//
+// `minimax` lineage. abab- prefix heuristic routes here automatically.
+// Non-standard path: /text/chatcompletion_v2 (OpenAI response shape preserved).
+// Default model: abab6.5s-chat (M2.7 family).
+//
+// Env: MINIMAX_API_KEY
+
+async function runMiniMaxDirect({ model, systemPrompt, userPrompt, maxTokens, temperature }, timeoutMs) {
+  const apiKey = process.env.MINIMAX_API_KEY;
+  if (!apiKey) {
+    throw new Error('runMiniMaxDirect: MINIMAX_API_KEY not set in environment');
+  }
+  return runOpenAICompatible(
+    {
+      baseUrl: 'https://api.minimax.io/v1',
+      apiKey,
+      model: model || 'abab6.5s-chat',
+      systemPrompt, userPrompt,
+      temperature: temperature ?? 0,
+      maxTokens: maxTokens ?? 4096,
+      chatPath: '/text/chatcompletion_v2',
+    },
+    timeoutMs,
+  );
+}
+
+// ─── Xiaomi MiMo (OpenAI-compatible) ─────────────────────────────────────────
+//
+// `mimo` lineage. Key resolution (first-wins):
+//   1. MIMO_API_KEY  → MiMo direct endpoint (https://api.mimo.ai/v1)
+//   2. TOGETHER_API_KEY → Together.AI (https://api.together.xyz/v1)
+//      with model mapped to MiMo's Together slug.
+//
+// Default model (MIMO_API_KEY path):   MiMo-V2.5-Pro
+// Default model (TOGETHER_API_KEY path): xiaomi/MiMo-7B-RL-v2.5
+//
+// Env: MIMO_API_KEY (preferred) or TOGETHER_API_KEY (fallback)
+
+async function runMiMoDirect({ model, systemPrompt, userPrompt, maxTokens, temperature }, timeoutMs) {
+  const mimoKey = process.env.MIMO_API_KEY;
+  const togetherKey = process.env.TOGETHER_API_KEY;
+  if (!mimoKey && !togetherKey) {
+    throw new Error('runMiMoDirect: set MIMO_API_KEY (direct) or TOGETHER_API_KEY (Together fallback)');
+  }
+  const apiKey = mimoKey || togetherKey;
+  const baseUrl = mimoKey ? 'https://api.mimo.ai/v1' : 'https://api.together.xyz/v1';
+  const defaultModel = mimoKey ? 'MiMo-V2.5-Pro' : 'xiaomi/MiMo-7B-RL-v2.5';
+  return runOpenAICompatible(
+    {
+      baseUrl, apiKey,
+      model: model || defaultModel,
+      systemPrompt, userPrompt,
+      temperature: temperature ?? 0,
+      maxTokens: maxTokens ?? 4096,
+    },
+    timeoutMs,
+  );
+}
+
+// ─── Qwen / DashScope (OpenAI-compatible) ─────────────────────────────────────
+//
+// `qwen` / `dashscope` lineage. qwen- prefix heuristic routes here.
+// Key resolution (first-wins):
+//   1. DASHSCOPE_API_KEY → Alibaba DashScope international endpoint
+//   2. TOGETHER_API_KEY  → Together.AI (fallback)
+//
+// Note: §12 q5 uses the opencode CLI for the HOMP-B *agent* path.
+// This runner is the stateless/DashScope path for direct judge calls.
+//
+// Default model (DASHSCOPE_API_KEY path): qwen3.6-plus
+// Default model (TOGETHER_API_KEY path):  Qwen/Qwen2.5-72B-Instruct
+//
+// Env: DASHSCOPE_API_KEY (preferred) or TOGETHER_API_KEY (fallback)
+
+async function runQwenDirect({ model, systemPrompt, userPrompt, maxTokens, temperature }, timeoutMs) {
+  const dashscope = process.env.DASHSCOPE_API_KEY;
+  const together = process.env.TOGETHER_API_KEY;
+  if (!dashscope && !together) {
+    throw new Error('runQwenDirect: set DASHSCOPE_API_KEY (DashScope) or TOGETHER_API_KEY (Together fallback)');
+  }
+  const apiKey = dashscope || together;
+  const baseUrl = dashscope
+    ? 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1'
+    : 'https://api.together.xyz/v1';
+  const defaultModel = dashscope ? 'qwen3.6-plus' : 'Qwen/Qwen2.5-72B-Instruct';
+  return runOpenAICompatible(
+    {
+      baseUrl, apiKey,
+      model: model || defaultModel,
+      systemPrompt, userPrompt,
+      temperature: temperature ?? 0,
+      maxTokens: maxTokens ?? 4096,
+    },
+    timeoutMs,
+  );
 }
 
 // ─── google / gemini CLI (agent mode) ─────────────────────────────────────

@@ -1,0 +1,118 @@
+{
+  "_note": "DRY-RUN fixtures — NOT prereg probes. These ~5 smoke probes exist solely to exercise the author-probes tooling. See docs/PHASE7.md §5 for the real probe authoring workstream (40 dev / 30 held-out / 25 vault across 10 languages).",
+  "probes": [
+    {
+      "id": "smoke-001",
+      "repo": "ripgrep",
+      "language": "rust",
+      "stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "Where is the search_parallel function defined?",
+      "expectedFiles": [
+        "crates/core/main.rs"
+      ],
+      "expectedSymbols": [
+        "search_parallel"
+      ],
+      "expectedFacts": [
+        "search_parallel accepts HiArgs and SearchMode parameters and returns anyhow::Result<bool>"
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "smoke": true,
+      "author": "probe-author-agent",
+      "date": "2026-05-22",
+      "notes": "Verified: crates/core/main.rs:160 — fn search_parallel(args: &HiArgs, mode: SearchMode) -> anyhow::Result<bool>"
+    },
+    {
+      "id": "smoke-002",
+      "repo": "gin",
+      "language": "go",
+      "stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "Where is the Abort method on gin Context defined and what does it do?",
+      "expectedFiles": [
+        "context.go"
+      ],
+      "expectedSymbols": [
+        "Abort"
+      ],
+      "expectedFacts": [
+        "Abort sets the index to abortIndex to prevent pending handlers from executing"
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "smoke": true,
+      "author": "probe-author-agent",
+      "date": "2026-05-22",
+      "notes": "Verified: context.go:207 — func (c *Context) Abort()"
+    },
+    {
+      "id": "smoke-003",
+      "repo": "fastify",
+      "language": "javascript",
+      "stratum": "multi-file-flow",
+      "difficulty": "medium",
+      "query": "How does the onRequest lifecycle hook get invoked when a fastify route is matched?",
+      "expectedFiles": [
+        "lib/route.js",
+        "lib/hooks.js"
+      ],
+      "expectedSymbols": [
+        "buildRouting",
+        "onRequestHookRunner"
+      ],
+      "expectedFacts": [
+        "buildRouting requires onRequestHookRunner from hooks.js and calls it when context.onRequest is non-null"
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 5,
+      "smoke": true,
+      "author": "probe-author-agent",
+      "date": "2026-05-22",
+      "notes": "Verified: lib/route.js:6 requires onRequestHookRunner from ./hooks; lib/route.js:557 calls it; lib/hooks.js:276 defines it"
+    },
+    {
+      "id": "smoke-004",
+      "repo": "flask",
+      "language": "python",
+      "stratum": "behavioral",
+      "difficulty": "hard",
+      "query": "How does Flask push and pop the request context around a WSGI request dispatch?",
+      "expectedFiles": [
+        "src/flask/app.py",
+        "src/flask/ctx.py"
+      ],
+      "expectedSymbols": [
+        "wsgi_app",
+        "push"
+      ],
+      "expectedFacts": [
+        "wsgi_app calls ctx.push() before full_dispatch_request and pops the context in a finally block"
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "smoke": true,
+      "author": "probe-author-agent",
+      "date": "2026-05-22",
+      "notes": "Verified: src/flask/app.py:1566 wsgi_app; ctx.push() at app.py:1596; AppContext.push() at src/flask/ctx.py:416"
+    },
+    {
+      "id": "smoke-005",
+      "repo": "ripgrep",
+      "language": "rust",
+      "stratum": "no-match",
+      "difficulty": "easy",
+      "query": "Where is the HTTP connection pool implemented in ripgrep?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [],
+      "expectedNoMatch": true,
+      "max_turns": 4,
+      "smoke": true,
+      "author": "probe-author-agent",
+      "date": "2026-05-22",
+      "notes": "Verified no-match: 0 results for http_client/connection_pool/HttpClient in eval/repos/ripgrep/crates/ — ripgrep has no HTTP networking code"
+    }
+  ]
+}

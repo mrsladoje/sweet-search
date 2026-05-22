@@ -61,9 +61,9 @@ describe('parseJudgeModelSpec', () => {
     });
   });
 
-  it('prefix heuristic: llama / qwen / mistral / command → opencode', () => {
+  it('prefix heuristic: llama / mistral / command → opencode', () => {
     expect(parseJudgeModelSpec('llama-4-instruct-70b').lineage).toBe('opencode');
-    expect(parseJudgeModelSpec('qwen3.6-max').lineage).toBe('opencode');
+    expect(parseJudgeModelSpec('mistral-large').lineage).toBe('opencode');
   });
 
   it('throws on unresolvable bare token', () => {
