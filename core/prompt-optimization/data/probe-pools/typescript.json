@@ -105,14 +105,14 @@
       "stratum": "behavioral",
       "difficulty": "medium",
       "query": "How does the chat API set up resumable streaming so a dropped client can reconnect to an in-progress response?",
-      "expectedFiles": ["app/(chat)/api/chat/route.ts"],
-      "expectedSymbols": ["getStreamContext"],
-      "expectedFacts": ["getStreamContext in app/(chat)/api/chat/route.ts wraps createResumableStreamContext({ waitUntil: after }) in a try/catch and returns null on failure, so the route degrades gracefully when resumable streaming is unavailable."],
+      "expectedFiles": ["app/(chat)/api/chat/route.ts", "lib/db/queries.ts"],
+      "expectedSymbols": ["getStreamContext", "createStreamId", "createNewResumableStream"],
+      "expectedFacts": ["getStreamContext wraps createResumableStreamContext({ waitUntil: after }) in a try/catch; when REDIS_URL is set, consumeSseStream generates a stream id, persists it with createStreamId({ streamId, chatId }), then registers the SSE stream with streamContext.createNewResumableStream(streamId, () => sseStream). If Redis/context setup is unavailable, the route skips resumable streaming gracefully."],
       "expectedNoMatch": false,
       "max_turns": 6,
       "author": "ts-author",
       "date": "2026-05-23",
-      "notes": "Verified: `grep -n \"function getStreamContext\" app/(chat)/api/chat/route.ts` -> :50; `grep -n \"createResumableStreamContext({ waitUntil: after })\" app/(chat)/api/chat/route.ts` -> :52 (returns null in catch, used at :310 `const streamContext = getStreamContext();`). Import at :12 from 'resumable-stream'."
+      "notes": "Verified: `grep -n \"function getStreamContext\" app/(chat)/api/chat/route.ts` -> :50; `grep -n \"createResumableStreamContext({ waitUntil: after })\" app/(chat)/api/chat/route.ts` -> :52 (returns null in catch). `grep -n \"REDIS_URL\\|createStreamId\\|createNewResumableStream\" app/(chat)/api/chat/route.ts` -> REDIS_URL guard :306, createStreamId :313, createNewResumableStream :314. `grep -n \"export async function createStreamId\" lib/db/queries.ts` -> :597."
     },
     {
       "id": "ts-008",
