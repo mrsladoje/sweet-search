@@ -398,14 +398,24 @@ describe('checkPreregTag', () => {
 
 describe('checkProbeSets', () => {
   const dataDir = '/fake/data';
-  const present = mockFs({
+
+  // The three originally-checked files (dev / held-out / vault).
+  const ORIGINAL_THREE = {
     [path.join(dataDir, 'p7-dev-probes.json')]: '[]',
     [path.join(dataDir, 'frozen', 'p7-heldout-probes.json')]: '[]',
     [path.join(dataDir, 'frozen', 'p7-vault-probes.json')]: '[]',
-  });
+  };
 
-  it('passes when all three probe sets exist', () => {
-    expect(checkProbeSets({ fs: present, dataDir }).ok).toBe(true);
+  // The full prereg manifest (PHASE7.md:866): all six probe-set files.
+  const ALL_SIX = {
+    ...ORIGINAL_THREE,
+    [path.join(dataDir, 'frozen', 'p7-langtransfer-probes.json')]: '[]',
+    [path.join(dataDir, 'p7-rotation-pool.json')]: '[]',
+    [path.join(dataDir, 'frozen', 'p7-adversarial-counter-probes.json')]: '[]',
+  };
+
+  it('passes when all six prereg-manifest probe sets exist', () => {
+    expect(checkProbeSets({ fs: mockFs(ALL_SIX), dataDir }).ok).toBe(true);
   });
 
   it('reports "not yet authored — run gated" when missing', () => {
@@ -413,6 +423,22 @@ describe('checkProbeSets', () => {
     expect(r.ok).toBe(false);
     expect(r.message).toContain('not yet authored');
     expect(r.message).toContain('p7-dev-probes.json');
+  });
+
+  // M10 regression: with ONLY the original three present, the run must still be
+  // gated because the langtransfer / rotation / counter sets (prereg manifest,
+  // PHASE7.md:866) are absent — otherwise a run passes pre-flight and then
+  // crashes/skips the §3.5.1 OOD gate.
+  it('gates when only the original three exist and lists the three newly-required missing files', () => {
+    const r = checkProbeSets({ fs: mockFs(ORIGINAL_THREE), dataDir });
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain('frozen/p7-langtransfer-probes.json');
+    expect(r.message).toContain('p7-rotation-pool.json');
+    expect(r.message).toContain('frozen/p7-adversarial-counter-probes.json');
+    // The original three are present, so they must NOT be reported as missing.
+    expect(r.message).not.toContain('p7-dev-probes.json');
+    expect(r.message).not.toContain('p7-heldout-probes.json');
+    expect(r.message).not.toContain('p7-vault-probes.json');
   });
 });
 

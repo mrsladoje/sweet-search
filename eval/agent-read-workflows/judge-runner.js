@@ -33,6 +33,94 @@ import { spawn as nodeSpawn } from 'node:child_process';
 
 const DEFAULT_TIMEOUT_MS = 90000;
 
+// ─── shared retry/backoff (CC3 / B5 / M6) ────────────────────────────────────
+//
+// Modeled on core/prompt-optimization/scripts/deepseek-client.mjs
+// (classifyResponse + BACKOFF_LADDER_MS). Every direct-API runner returns a
+// normalized {isError, raw:{status}} shape on a non-2xx; the runJudge wrapper
+// below classifies that result and retries with this ladder:
+//   429            → retry, backoff honoring Retry-After (cap at ladder)
+//   5xx            → retry once (then surface the error)
+//   empty-text-200 → retry (DeepSeek/reasoning gotcha, M6)
+//   4xx (non-429)  → fatal, no retry
+const BACKOFF_LADDER_MS = [1000, 2000, 4000, 8000, 16000];
+const MAX_SERVER_RETRIES = 1;       // 5xx → one retry, matching deepseek-client
+const MAX_RATE_LIMIT_RETRIES = BACKOFF_LADDER_MS.length; // bounded for judges (one-shot judging)
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Pure HTTP-status disposition (mirrors deepseek-client.classifyResponse).
+ *   ok | retry-rate-limit | retry-server | fatal
+ */
+export function classifyResponseStatus(status) {
+  if (status >= 200 && status < 300) return 'ok';
+  if (status === 429) return 'retry-rate-limit';
+  if (status >= 500 && status < 600) return 'retry-server';
+  return 'fatal';
+}
+
+/**
+ * Post-parse classifier (M6): a successful HTTP 200 whose parsed assistant
+ * text is empty is the reasoning-model gotcha (whole budget consumed by the
+ * reasoning trace; see project_deepseek_max_tokens_reasoning). Treat it as a
+ * RETRYABLE error so the runJudge wrapper re-issues the call. A non-empty 200
+ * passes straight through as success.
+ *
+ * @param {string} text   — parsed assistant text
+ * @param {object} raw    — provider-specific raw metadata (usage, model, …)
+ * @returns {{text:string, isError:boolean, error?:string, raw:object}}
+ */
+function classifyEmptyText200(text, raw) {
+  if (typeof text !== 'string' || text.trim() === '') {
+    return { text: '', isError: true, error: 'empty-text-200', raw };
+  }
+  return { text, isError: false, raw };
+}
+
+/**
+ * Decide retry disposition for a runner RESULT (not a raw HTTP response).
+ * Direct runners surface non-2xx as {isError:true, raw:{status}} and the M6
+ * empty-200 case as {isError:true, error:'empty-text-200'}. Returns one of:
+ *   'ok' | 'retry-rate-limit' | 'retry-server' | 'retry-empty' | 'fatal'
+ * Errors with no recognizable status (network/abort/timeout/missing-key) are
+ * treated as 'fatal' — those are either non-transient config errors or already
+ * one-shot-retried inside the runner's AbortController path.
+ */
+function classifyRunnerResult(r) {
+  if (!r || !r.isError) return 'ok';
+  if (r.error === 'empty-text-200') return 'retry-empty';
+  const status = r.raw && typeof r.raw.status === 'number' ? r.raw.status : undefined;
+  if (status === undefined) return 'fatal';
+  const disp = classifyResponseStatus(status);
+  return disp === 'ok' ? 'fatal' : disp; // a non-2xx that classifies 'ok' shouldn't happen
+}
+
+/**
+ * Read the `Retry-After` header off a fetch Response (defensive: `headers`
+ * may be absent in test fakes). Returns the raw header value or undefined.
+ */
+function readRetryAfter(res) {
+  try {
+    return res && res.headers && typeof res.headers.get === 'function'
+      ? (res.headers.get('retry-after') ?? undefined)
+      : undefined;
+  } catch { return undefined; }
+}
+
+/** Parse a Retry-After header (seconds or HTTP-date) into ms, or null. */
+function retryAfterMs(raw) {
+  const ra = raw && raw.retryAfter;
+  if (ra == null) return null;
+  const secs = Number(ra);
+  if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
+  const when = Date.parse(ra);
+  if (Number.isFinite(when)) return Math.max(0, when - Date.now());
+  return null;
+}
+
 /**
  * Resolve a `--judge-models` token into { lineage, model }.
  *
@@ -131,35 +219,91 @@ function isKnownLineage(s) {
  * @returns {Promise<JudgeRunResult>}
  */
 export async function runJudge(req) {
-  const t0 = Date.now();
   const timeoutMs = req.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  let r;
-  try {
-    switch (req.lineage) {
-      case 'anthropic':     r = await runAnthropic(req); break;
-      case 'anthropic-api': r = await runAnthropicDirect(req, timeoutMs); break;
-      case 'openai':        r = await runCodex(req, timeoutMs); break;
-      case 'openai-api':    r = await runOpenAIDirect(req, timeoutMs); break;
-      case 'google':        r = await runGemini(req, timeoutMs); break;
-      case 'google-api':    r = await runGeminiDirect(req, timeoutMs); break;
-      case 'deepseek':      r = await runDeepseekViaClaude(req, timeoutMs); break;
-      case 'deepseek-api':  r = await runDeepseekDirect(req, timeoutMs); break;
-      case 'opencode':      r = await runOpencode(req, timeoutMs); break;
-      case 'moonshot':      r = await runMoonshotDirect(req, timeoutMs); break;
-      case 'minimax':       r = await runMiniMaxDirect(req, timeoutMs); break;
-      case 'mimo':          r = await runMiMoDirect(req, timeoutMs); break;
-      case 'qwen':          // fall-through: qwen and dashscope share the runner
-      case 'dashscope':     r = await runQwenDirect(req, timeoutMs); break;
-      default: throw new Error(`runJudge: unknown lineage ${req.lineage}`);
+
+  // Dispatch a single attempt, measuring its OWN latency so a retried call
+  // reports the latency of the attempt that actually returned.
+  async function dispatch() {
+    const t0 = Date.now();
+    let r;
+    try {
+      switch (req.lineage) {
+        case 'anthropic':     r = await runAnthropic(req); break;
+        case 'anthropic-api': r = await runAnthropicDirect(req, timeoutMs); break;
+        case 'openai':        r = await runCodex(req, timeoutMs); break;
+        case 'openai-api':    r = await runOpenAIDirect(req, timeoutMs); break;
+        case 'google':        r = await runGemini(req, timeoutMs); break;
+        case 'google-api':    r = await runGeminiDirect(req, timeoutMs); break;
+        case 'deepseek':      r = await runDeepseekViaClaude(req, timeoutMs); break;
+        case 'deepseek-api':  r = await runDeepseekDirect(req, timeoutMs); break;
+        case 'opencode':      r = await runOpencode(req, timeoutMs); break;
+        case 'moonshot':      r = await runMoonshotDirect(req, timeoutMs); break;
+        case 'minimax':       r = await runMiniMaxDirect(req, timeoutMs); break;
+        case 'mimo':          r = await runMiMoDirect(req, timeoutMs); break;
+        case 'qwen':          // fall-through: qwen and dashscope share the runner
+        case 'dashscope':     r = await runQwenDirect(req, timeoutMs); break;
+        default: throw new Error(`runJudge: unknown lineage ${req.lineage}`);
+      }
+    } catch (e) {
+      return {
+        text: '', isError: true, error: e.message || String(e),
+        latencyMs: Date.now() - t0,
+      };
     }
-  } catch (e) {
-    return {
-      lineage: req.lineage, model: req.model,
-      text: '', isError: true, error: e.message || String(e),
-      latencyMs: Date.now() - t0,
-    };
+    return { ...r, latencyMs: Date.now() - t0 };
   }
-  return { ...r, lineage: req.lineage, model: req.model, latencyMs: Date.now() - t0 };
+
+  // CC3/B5/M6: shared retry/backoff wrapper. ALL callers (the disjoint-family
+  // judge panel AND gepa-mutate's callModel) benefit. Classification mirrors
+  // deepseek-client: 429 → backoff ladder honoring Retry-After; 5xx → one
+  // retry; empty-text-200 → retry; 4xx (non-429) and unrecognized errors →
+  // fatal (no retry). retryCount is surfaced on the result + result.raw.
+  const sleepFn = _internal.sleep || sleep;
+  let retryCount = 0;
+  let rateLimitTries = 0;
+  let serverTries = 0;
+  let emptyTries = 0;
+  let r;
+  // Bounded loop: the only paths that `continue` are the retryable ones, each
+  // guarded by its own try-counter, so this terminates.
+  while (true) {
+    r = await dispatch();
+    const disp = classifyRunnerResult(r);
+    if (disp === 'ok' || disp === 'fatal') break;
+
+    if (disp === 'retry-rate-limit') {
+      if (rateLimitTries >= MAX_RATE_LIMIT_RETRIES) break;
+      const ladderIdx = Math.min(rateLimitTries, BACKOFF_LADDER_MS.length - 1);
+      const headerMs = retryAfterMs(r.raw);
+      const delay = headerMs != null ? headerMs : BACKOFF_LADDER_MS[ladderIdx];
+      rateLimitTries++; retryCount++;
+      await sleepFn(delay);
+      continue;
+    }
+    if (disp === 'retry-server') {
+      if (serverTries >= MAX_SERVER_RETRIES) break;
+      serverTries++; retryCount++;
+      await sleepFn(BACKOFF_LADDER_MS[0]);
+      continue;
+    }
+    if (disp === 'retry-empty') {
+      // empty-text-200: bound by the rate-limit budget so a model stuck in
+      // reasoning-only mode can't loop forever.
+      if (emptyTries >= MAX_RATE_LIMIT_RETRIES) break;
+      emptyTries++; retryCount++;
+      await sleepFn(BACKOFF_LADDER_MS[Math.min(emptyTries - 1, BACKOFF_LADDER_MS.length - 1)]);
+      continue;
+    }
+    break;
+  }
+
+  return {
+    ...r,
+    lineage: req.lineage,
+    model: req.model,
+    retryCount,
+    raw: { ...(r.raw || {}), retryCount },
+  };
 }
 
 // ─── anthropic (claude-runner.js wrapper) ─────────────────────────────────
@@ -408,16 +552,21 @@ async function runDeepseekDirect({ model, systemPrompt, userPrompt }, timeoutMs)
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
+      // Surface status + Retry-After so the runJudge retry wrapper (CC3/B5)
+      // can classify (429/5xx/4xx) and honor backoff timing.
       return {
-        text: '', isError: true, raw: { status: res.status, body: errText.slice(0, 1000), viaHarness: 'raw-api' },
+        text: '', isError: true,
+        raw: { status: res.status, retryAfter: readRetryAfter(res), body: errText.slice(0, 1000), viaHarness: 'raw-api' },
       };
     }
     const json = await res.json();
-    return {
-      text: parseDeepseekResponse(json),
-      isError: false,
-      raw: { usage: json.usage, model: json.model, viaHarness: 'raw-api' },
-    };
+    // M6: a successful 200 whose parsed text is empty is the DeepSeek /
+    // reasoning-model gotcha (whole budget spent on the reasoning trace,
+    // see project_deepseek_max_tokens_reasoning). Classify it as a RETRYABLE
+    // error so the runJudge retry wrapper re-issues the call.
+    return classifyEmptyText200(parseDeepseekResponse(json), {
+      usage: json.usage, model: json.model, viaHarness: 'raw-api',
+    });
   } finally {
     clearTimeout(t);
   }
@@ -485,16 +634,17 @@ async function runGeminiDirect({ model, systemPrompt, userPrompt }, timeoutMs) {
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
+      // Surface status + Retry-After so the runJudge retry wrapper (CC3/B5)
+      // can classify (429/5xx/4xx) and honor backoff timing.
       return {
-        text: '', isError: true, raw: { status: res.status, body: errText.slice(0, 1000), viaHarness: 'raw-api' },
+        text: '', isError: true,
+        raw: { status: res.status, retryAfter: readRetryAfter(res), body: errText.slice(0, 1000), viaHarness: 'raw-api' },
       };
     }
     const json = await res.json();
-    return {
-      text: parseGeminiDirectResponse(json),
-      isError: false,
-      raw: { usage: json.usageMetadata, model: json.modelVersion, viaHarness: 'raw-api' },
-    };
+    return classifyEmptyText200(parseGeminiDirectResponse(json), {
+      usage: json.usageMetadata, model: json.modelVersion, viaHarness: 'raw-api',
+    });
   } catch (e) {
     return {
       text: '', isError: true, error: e.message || String(e),
@@ -573,11 +723,9 @@ async function runAnthropicDirect({ model, systemPrompt, userPrompt, maxTokens, 
       };
     }
     const json = await res.json();
-    return {
-      text: parseAnthropicResponse(json),
-      isError: false,
-      raw: { usage: json.usage, model: json.model, viaHarness: 'raw-api' },
-    };
+    return classifyEmptyText200(parseAnthropicResponse(json), {
+      usage: json.usage, model: json.model, viaHarness: 'raw-api',
+    });
   } catch (e) {
     return {
       text: '', isError: true, error: e.message || String(e),
@@ -667,18 +815,23 @@ export function parseAnthropicResponse(json) {
  * @param {number} [opts.maxTokens=4096]
  * @param {object} [opts.extraBody]    — merged into payload (provider extensions)
  * @param {string} [opts.chatPath='/chat/completions']
+ * @param {boolean} [opts.useCompletionTokens=false] — M7/§3.5.2 reasoning-class
+ *        calls: build the payload with `max_completion_tokens` (NOT max_tokens)
+ *        and temperature:1 (reasoning models reject max_tokens / temperature:0).
  * @param {number} [timeoutMs]
  * @returns {Promise<{text:string, isError:boolean, raw:object, latencyMs:number}>}
  */
 async function runOpenAICompatible(
-  { baseUrl, apiKey, model, systemPrompt, userPrompt, temperature = 0, maxTokens = 4096, extraBody, chatPath = '/chat/completions' },
+  { baseUrl, apiKey, model, systemPrompt, userPrompt, temperature = 0, maxTokens = 4096, extraBody, chatPath = '/chat/completions', useCompletionTokens = false },
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ) {
   const fetchFn = _internal.fetch || globalThis.fetch;
   if (typeof fetchFn !== 'function') {
     throw new Error('runOpenAICompatible: global fetch unavailable (Node 18+ required)');
   }
-  const payload = buildOpenAIPayload({ model, systemPrompt, userPrompt, temperature, maxTokens });
+  const payload = useCompletionTokens
+    ? buildOpenAIReasoningPayload({ model, systemPrompt, userPrompt, maxCompletionTokens: maxTokens })
+    : buildOpenAIPayload({ model, systemPrompt, userPrompt, temperature, maxTokens });
   const body = extraBody ? { ...payload, ...extraBody } : payload;
   const url = `${baseUrl}${chatPath}`;
   const t0 = Date.now();
@@ -696,17 +849,19 @@ async function runOpenAICompatible(
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
+      // Surface status + Retry-After so the runJudge retry wrapper (CC3/B5)
+      // can classify (429/5xx/4xx) and honor backoff timing.
       return {
         text: '', isError: true,
-        raw: { status: res.status, body: errText.slice(0, 1000), viaHarness: 'raw-api' },
+        raw: { status: res.status, retryAfter: readRetryAfter(res), body: errText.slice(0, 1000), viaHarness: 'raw-api' },
         latencyMs: Date.now() - t0,
       };
     }
     const json = await res.json();
     return {
-      text: parseOpenAIResponse(json),
-      isError: false,
-      raw: { usage: json.usage, model: json.model, viaHarness: 'raw-api' },
+      ...classifyEmptyText200(parseOpenAIResponse(json), {
+        usage: json.usage, model: json.model, viaHarness: 'raw-api',
+      }),
       latencyMs: Date.now() - t0,
     };
   } catch (e) {
@@ -746,6 +901,36 @@ export function buildOpenAIPayload({ model, systemPrompt, userPrompt, temperatur
   };
 }
 
+/**
+ * Sibling builder for reasoning-class OpenAI Chat Completions calls
+ * (M7 / §3.5.2 reasoning-mode HOMP). Reasoning models (gpt-5.5-reasoning,
+ * o-series) REJECT `max_tokens` + `temperature:0`: they require
+ * `max_completion_tokens` and `temperature:1`. This builder emits exactly
+ * that shape and deliberately OMITS `max_tokens`, so a malformed reasoning
+ * call (the M7 bug) cannot slip through.
+ *
+ * `buildOpenAIPayload` is left untouched for the many non-reasoning callers
+ * that import it.
+ *
+ * @param {object} opts
+ * @param {string} [opts.model]
+ * @param {string} [opts.systemPrompt]
+ * @param {string}  opts.userPrompt
+ * @param {number} [opts.maxCompletionTokens=4096]
+ */
+export function buildOpenAIReasoningPayload({ model, systemPrompt, userPrompt, maxCompletionTokens = 4096 } = {}) {
+  const messages = [];
+  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+  messages.push({ role: 'user', content: userPrompt });
+  return {
+    model: model || 'gpt-4.1',
+    messages,
+    temperature: 1,                       // reasoning models require temperature:1
+    max_completion_tokens: maxCompletionTokens, // NOT max_tokens
+    stream: false,
+  };
+}
+
 /** Pull the assistant text out of an OpenAI Chat Completions response. */
 export function parseOpenAIResponse(json) {
   if (!json || !Array.isArray(json.choices) || json.choices.length === 0) return '';
@@ -761,7 +946,7 @@ export function parseOpenAIResponse(json) {
 //
 // Env: OPENAI_API_KEY
 
-async function runOpenAIDirect({ model, systemPrompt, userPrompt, maxTokens, temperature, reasoningEffort }, timeoutMs) {
+async function runOpenAIDirect({ model, systemPrompt, userPrompt, maxTokens, temperature, reasoningEffort, useCompletionTokens }, timeoutMs) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error('runOpenAIDirect: OPENAI_API_KEY not set in environment');
@@ -772,6 +957,9 @@ async function runOpenAIDirect({ model, systemPrompt, userPrompt, maxTokens, tem
       apiKey, model, systemPrompt, userPrompt,
       temperature: temperature ?? 0,
       maxTokens: maxTokens ?? 4096,
+      // M7/§3.5.2: when reasoning-class, switch to max_completion_tokens +
+      // temperature:1. `reasoningEffort` is the o-series provider extension.
+      useCompletionTokens: useCompletionTokens === true,
       extraBody: reasoningEffort ? { reasoning_effort: reasoningEffort } : undefined,
     },
     timeoutMs,
@@ -1072,6 +1260,9 @@ export function parseOpencodeOutput(stdout) {
 export const _internal = {
   spawn: nodeSpawn,
   fetch: globalThis.fetch,
+  // Injectable sleep so the runJudge retry/backoff wrapper (CC3/B5/M6) does
+  // not actually wait during unit tests.
+  sleep,
 };
 
 async function spawnCapture(cmd, args, { timeoutMs, env = process.env, cwd } = {}) {

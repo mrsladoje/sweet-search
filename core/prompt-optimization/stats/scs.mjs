@@ -27,6 +27,13 @@ import { DEFAULTS } from '../sweep/p7-shared.mjs';
  * Cosine similarity between two numeric vectors.
  * Returns 0 if either vector has zero norm.
  *
+ * NOTE (m14): this intentionally duplicates eval/agent-read-workflows/
+ * embeddings.js's cosine. The two differ on the length-mismatch contract — the
+ * embeddings.js copy returns 0, this one THROWS a RangeError — and SCS
+ * deliberately uses its own (fail-loud) copy so a mis-shaped embedding batch is
+ * caught rather than silently scored 0. Do NOT consolidate without preserving
+ * the throw-on-mismatch behaviour here.
+ *
  * @param {number[]} a
  * @param {number[]} b
  * @returns {number} value in [-1, 1]
@@ -110,9 +117,15 @@ export function answerConsistency({ perProbeAnswers, answersAgree }) {
  * For each probe, compute the mean pairwise cosine of the N embedding
  * vectors, then average over probes.
  *
+ * NOTE (m12): SS is typically in [0, 1] but cosine can legitimately go
+ * negative, so SS ∈ [-1, 1] in general. A negative SS hard-fails the ship
+ * gate by design — `scs()` collapses to 0 when ANY component ≤ 0, which is the
+ * conservative/safe choice: a prompt whose paraphrases produce anti-correlated
+ * answer embeddings should NOT ship.
+ *
  * @param {object} args
  * @param {number[][][]} args.perProbeEmbeddings — outer: probes; inner: N vectors
- * @returns {number} SS in [0, 1] (typically; can be negative with adversarial vectors)
+ * @returns {number} SS in [-1, 1] (typically [0, 1]; negative under adversarial/anti-correlated vectors)
  */
 export function semanticSimilarity({ perProbeEmbeddings }) {
   if (!Array.isArray(perProbeEmbeddings) || perProbeEmbeddings.length === 0) {
@@ -172,7 +185,9 @@ export function lengthStability({ perProbeTokenCounts }) {
 
 /**
  * SCS = harmonic mean(AC, SS, LS).
- * Any zero component collapses the harmonic mean to 0 (guarded).
+ * Any non-positive component (≤ 0) collapses the harmonic mean to 0 (guarded).
+ * This includes a legitimately NEGATIVE SS (cosine can be < 0) — a negative-SS
+ * prompt hard-fails by design (m12); see semanticSimilarity for rationale.
  *
  * @param {object} args
  * @param {number} args.ac

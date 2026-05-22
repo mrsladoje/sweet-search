@@ -70,11 +70,18 @@ export function toProbeRun(evalResult, probe) {
  * so a live run never 429-storms (§7.7). Sequential awaiting keeps the loop
  * deterministic for resume; the bucket enforces the rate ceiling.
  *
+ * M3 — token-bucket actuals reconciliation: `acquire` is charged the measured
+ * static estimate (prompt + query tokens in; a fixed output estimate), and after
+ * `evaluateCandidate` returns, the bucket's most-recent entry is reconciled to
+ * the real `r.usage.agent.{input_tokens,output_tokens}` so heavy multi-file
+ * probes throttle correctly. Backward-compatible: the dry-run / test stubs
+ * return NO `usage` field, so reconcile is skipped and `detail[*].usage` is null.
+ *
  * @param {object} args
  * @param {{ prompt: string }} args.candidate
  * @param {object[]} args.probes
  * @param {(a:{promptText:string,probe:object,target:string})=>Promise<object>} args.evaluateCandidate
- * @param {{ sonnet?: {acquire:Function}, gpt5_5?: {acquire:Function} }|null} [args.bucket]
+ * @param {{ sonnet?: {acquire:Function,reconcile?:Function}, gpt5_5?: {acquire:Function,reconcile?:Function} }|null} [args.bucket]
  */
 export async function scoreCandidateOnProbes({ candidate, probes, evaluateCandidate, bucket = null }) {
   if (typeof evaluateCandidate !== 'function') {
@@ -87,15 +94,35 @@ export async function scoreCandidateOnProbes({ candidate, probes, evaluateCandid
   const detail = {};
   const sonnetScores = [];
   const gptScores = [];
+  // Reasonable per-call output estimate for the token bucket. The agent answer
+  // is short relative to its ~12K-token input window; reconcile() corrects it
+  // to the real output count once usage is available.
+  const OUT_TOKENS_EST = 2000;
 
   for (const probe of probes) {
     const runs = {};
+    const usageByTarget = {};
     for (const target of TARGET_LIST) {
+      const inEst = estimateTokens(candidate.prompt) + estimateTokens(probe.query || '');
       if (bucket && bucket[target] && typeof bucket[target].acquire === 'function') {
-        await bucket[target].acquire({ target });
+        await bucket[target].acquire({ inTokens: inEst, outTokens: OUT_TOKENS_EST, target });
       }
       const r = await evaluateCandidate({ promptText: candidate.prompt, probe, target });
       runs[target] = r;
+      usageByTarget[target] = r.usage ?? null;
+      // M3 reconcile estimate→actual when the runner surfaced real usage. The
+      // dry-run / test stubs omit usage → skip (no-op, no throw).
+      const agentUsage = r.usage?.agent;
+      if (
+        bucket && bucket[target] && typeof bucket[target].reconcile === 'function' &&
+        agentUsage &&
+        (typeof agentUsage.input_tokens === 'number' || typeof agentUsage.output_tokens === 'number')
+      ) {
+        bucket[target].reconcile({
+          inTokens: typeof agentUsage.input_tokens === 'number' ? agentUsage.input_tokens : undefined,
+          outTokens: typeof agentUsage.output_tokens === 'number' ? agentUsage.output_tokens : undefined,
+        });
+      }
       runsByTarget[target].push(toProbeRun(r, probe));
     }
     const mm = maximinPerProbe(runs.sonnet.score, runs.gpt5_5.score);
@@ -105,8 +132,8 @@ export async function scoreCandidateOnProbes({ candidate, probes, evaluateCandid
     sonnetScores.push(runs.sonnet.score);
     gptScores.push(runs.gpt5_5.score);
     detail[probe.id] = {
-      sonnet: { score: runs.sonnet.score, traj: runs.sonnet.trajectory || { toolCalls: [], answer: '' } },
-      gpt5_5: { score: runs.gpt5_5.score, traj: runs.gpt5_5.trajectory || { toolCalls: [], answer: '' } },
+      sonnet: { score: runs.sonnet.score, traj: runs.sonnet.trajectory || { toolCalls: [], answer: '' }, usage: usageByTarget.sonnet },
+      gpt5_5: { score: runs.gpt5_5.score, traj: runs.gpt5_5.trajectory || { toolCalls: [], answer: '' }, usage: usageByTarget.gpt5_5 },
     };
   }
 

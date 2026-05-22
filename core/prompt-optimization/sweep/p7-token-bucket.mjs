@@ -189,7 +189,20 @@ export function createTokenBucket({
    * Block asynchronously until both token and request budgets allow the call,
    * then record consumption.
    *
+   * The recorded entry initially holds the *estimated* token counts (or whatever
+   * `inTokens`/`outTokens` the caller passed). After the real API call returns,
+   * the caller SHOULD invoke `reconcile({ inTokens, outTokens })` to swap the
+   * estimate for the measured actuals so the rolling-window accounting reflects
+   * reality (see M3). Usage pattern:
+   *
+   *     await bucket.acquire({ inTokens: estIn, outTokens: estOut, target });
+   *     const usage = await runCall(...);
+   *     bucket.reconcile({ inTokens: usage.input_tokens, outTokens: usage.output_tokens });
+   *
    * @param {{ inTokens?: number, outTokens?: number, target?: string }} opts
+   * @returns {{ ts: number, requests: number, inTokens: number, outTokens: number }}
+   *   The recorded entry reference (also the bucket's most-recent entry, which
+   *   `reconcile` adjusts in place).
    */
   async function acquire({ inTokens = estIn, outTokens = estOut, target } = {}) {
     let wait = computeWait(now(), inTokens, outTokens);
@@ -202,7 +215,35 @@ export function createTokenBucket({
       wait = computeWait(now(), inTokens, outTokens);
     }
     // Record this call's consumption at the current timestamp.
-    entries.push({ ts: now(), requests: 1, inTokens, outTokens });
+    const entry = { ts: now(), requests: 1, inTokens, outTokens };
+    entries.push(entry);
+    return entry;
+  }
+
+  /**
+   * M3 — actuals reconciliation. Adjust the MOST-RECENTLY-recorded entry's
+   * token counts from the static estimate charged at `acquire` time to the
+   * measured actuals returned by the API call. This keeps the rolling-window
+   * TPM accounting honest: heavy multi-file probes that under-count at estimate
+   * time get corrected upward (so the next `acquire` throttles appropriately),
+   * and light probes get corrected downward (so we don't over-throttle).
+   *
+   * Operates on the last entry pushed by `acquire`. Guarded against being
+   * called with no prior `acquire`: if `entries` is empty it is a no-op and
+   * returns `null` (never throws).
+   *
+   * Either field may be omitted to leave that dimension unchanged.
+   *
+   * @param {{ inTokens?: number, outTokens?: number }} actuals
+   * @returns {{ ts: number, requests: number, inTokens: number, outTokens: number } | null}
+   *   The adjusted entry, or `null` if there was no entry to reconcile.
+   */
+  function reconcile({ inTokens, outTokens } = {}) {
+    if (entries.length === 0) return null;
+    const entry = entries[entries.length - 1];
+    if (inTokens !== undefined && inTokens !== null) entry.inTokens = inTokens;
+    if (outTokens !== undefined && outTokens !== null) entry.outTokens = outTokens;
+    return entry;
   }
 
   /** Return rolling-window stats at the current instant. */
@@ -225,7 +266,90 @@ export function createTokenBucket({
     _sleep = fn;
   }
 
-  return { acquire, stats, _setSleep };
+  /**
+   * M2 — serialize the rolling-window state to a JSON-safe snapshot so a
+   * resumed run can re-seed in-flight token accounting (else a fresh bucket
+   * believes it has a full budget and bursts `max_concurrent` immediately →
+   * the §7.7 Tier-1 "429-storm minute one").
+   *
+   * Prunes stale entries first so the snapshot only carries entries still
+   * inside the active window at serialize time. Returns a deep copy — mutating
+   * the snapshot does not affect the live bucket.
+   *
+   * @returns {{ entries: Array<{ ts: number, requests: number, inTokens: number, outTokens: number }>, throttledMs: number }}
+   */
+  function serialize() {
+    const active = activeEntries(now());
+    return {
+      entries: active.map((e) => ({
+        ts: e.ts,
+        requests: e.requests,
+        inTokens: e.inTokens,
+        outTokens: e.outTokens,
+      })),
+      throttledMs,
+    };
+  }
+
+  /**
+   * M2 — restore rolling-window state from a `serialize()` snapshot. Re-seeds
+   * `entries` (and `throttledMs`), pruning anything already outside the window
+   * relative to the current `now()` (timestamps from the persisted run may be
+   * old). Replaces any existing state.
+   *
+   * Tolerant of partial/missing snapshots: a falsy `state`, or one lacking
+   * `entries`, is treated as an empty restore (no throw).
+   *
+   * @param {{ entries?: Array<{ ts: number, requests?: number, inTokens?: number, outTokens?: number }>, throttledMs?: number }} state
+   */
+  function restore(state) {
+    const cutoff = now() - WINDOW_MS;
+    const incoming = (state && Array.isArray(state.entries)) ? state.entries : [];
+    entries = incoming
+      .filter((e) => e && typeof e.ts === 'number' && e.ts > cutoff)
+      .map((e) => ({
+        ts: e.ts,
+        requests: e.requests ?? 1,
+        inTokens: e.inTokens ?? 0,
+        outTokens: e.outTokens ?? 0,
+      }));
+    if (state && typeof state.throttledMs === 'number') {
+      throttledMs = state.throttledMs;
+    }
+  }
+
+  /**
+   * M2 — pessimistic resume guard. Fills the current rolling window with
+   * synthetic max load (at `now()`) sufficient that the next `acquire` is
+   * throttled for ~one `WINDOW_MS`. This is the safe default the resume caller
+   * invokes when no serialized state is available (or in addition to it): a
+   * resumed run is forced into a one-window cooldown so it cannot burst
+   * `max_concurrent` against limits that may already be consumed by the
+   * interrupted run's in-flight calls.
+   *
+   * The synthetic load saturates whichever limits are configured (rpm / itpm /
+   * otpm) so that a single subsequent `acquire(estIn/estOut)` cannot fit until
+   * these entries roll off the window. All synthetic entries are stamped at the
+   * current `now()`, so they expire exactly `WINDOW_MS` later.
+   *
+   * Additive to whatever entries already exist; does not clear prior state.
+   */
+  function primeForResume() {
+    const ts = now();
+    // Saturate each configured limit so the next normal-sized acquire must wait
+    // for these entries to age out (~WINDOW_MS).
+    const synthRequests = rpm && rpm > 0 ? rpm : 1;
+    const synthIn = itpm && itpm > 0 ? itpm : 0;
+    const synthOut = otpm && otpm > 0 ? otpm : 0;
+    entries.push({
+      ts,
+      requests: synthRequests,
+      inTokens: synthIn,
+      outTokens: synthOut,
+    });
+  }
+
+  return { acquire, reconcile, stats, serialize, restore, primeForResume, _setSleep };
 }
 
 // ─── convenience: recommendConcurrency ──────────────────────────────────────

@@ -30,6 +30,7 @@ import {
   uniqueTokens,
   splitFrontMatter,
   VARIANT_IDS,
+  VARIANTS_DIR,
   STRATEGIES,
   VERBOSITIES,
   GROUNDINGS,
@@ -37,6 +38,8 @@ import {
 
 // Canonical §3.2.3 rule lives in operators-opus's files; op-pruner re-exports it.
 import { STATEFUL_SUMMARY_RULE } from '../../../core/prompt-optimization/sweep/op-pruner.mjs';
+// Shared mutation-rejection reason set (§3.2.1 / §7.4) — asserted below for M11.
+import { MUTATION_REJECTION_REASONS } from '../../../core/prompt-optimization/sweep/p7-shared.mjs';
 
 // ─── verbatim §4.2 instruction_text fragments (pulled from recommendations-v2-*.json) ─
 
@@ -351,5 +354,69 @@ describe('variant-loader — splitFrontMatter', () => {
 
   it('throws when the fences are missing', () => {
     expect(() => splitFrontMatter('no front matter here')).toThrow();
+  });
+
+  it('parses a CRLF file identically to LF (m10 regression)', () => {
+    const crlf = '---\r\nid: T1\r\n---\r\nhello [[ss-search]]\r\n';
+    const { frontMatterBlock, body } = splitFrontMatter(crlf);
+    expect(frontMatterBlock).toBe('id: T1');
+    expect(body).toBe('hello [[ss-search]]\n');
+  });
+
+  it('tolerates trailing whitespace on the `---` fence lines (m10 regression)', () => {
+    const trailing = '---  \nid: T1\n---\t\nhello [[ss-search]]\n';
+    const { frontMatterBlock, body } = splitFrontMatter(trailing);
+    expect(frontMatterBlock).toBe('id: T1');
+    expect(body).toBe('hello [[ss-search]]\n');
+  });
+
+  it('tolerates a body that does not end in a newline (m10 regression)', () => {
+    const { frontMatterBlock, body } = splitFrontMatter('---\nid: T1\n---\nno trailing newline');
+    expect(frontMatterBlock).toBe('id: T1');
+    expect(body).toBe('no trailing newline');
+  });
+
+  it('handles an empty body after the closing fence', () => {
+    const { frontMatterBlock, body } = splitFrontMatter('---\nid: T1\n---\n');
+    expect(frontMatterBlock).toBe('id: T1');
+    expect(body).toBe('');
+  });
+});
+
+// ─── path sandboxing (m11) ────────────────────────────────────────────────────
+
+describe('variant-loader — VARIANTS_DIR sandbox', () => {
+  it('loads canonical ids and bare filenames inside the sandbox', () => {
+    expect(loadVariant('T1').id).toBe('T1');
+    expect(loadVariant('T1.md').id).toBe('T1');
+  });
+
+  it('rejects an absolute path OUTSIDE VARIANTS_DIR (m11 regression)', () => {
+    expect(() => loadVariant('/etc/passwd')).toThrow(/sandbox|outside/i);
+  });
+
+  it('rejects an absolute `..`-traversal path that escapes the sandbox', () => {
+    // `resolve` collapses the `..` segments; the resulting path lives outside
+    // VARIANTS_DIR and must be refused before any filesystem read.
+    expect(() => loadVariant(`${VARIANTS_DIR}/../../secret.md`)).toThrow(/sandbox|outside/i);
+  });
+
+  it('basename-strips a relative traversal so it stays inside the sandbox', () => {
+    // A relative path's basename is resolved against VARIANTS_DIR, so it cannot
+    // escape — it fails (if at all) only with a filesystem ENOENT, never a
+    // sandbox-escape error.
+    expect(() => loadVariant('../../../../etc/hosts.md')).not.toThrow(/sandbox|outside/i);
+  });
+});
+
+// ─── shared mutation-rejection reasons (m6 / M11) ─────────────────────────────
+
+describe('p7-shared — MUTATION_REJECTION_REASONS', () => {
+  it('includes the OP-5 fenced-block-altered reason (M11 support)', () => {
+    expect(MUTATION_REJECTION_REASONS).toContain('fenced-block-altered');
+  });
+
+  it("retains the reserved (never-emitted) 'whitespace-norm' reason (m6)", () => {
+    expect(MUTATION_REJECTION_REASONS).toContain('whitespace-norm');
   });
 });

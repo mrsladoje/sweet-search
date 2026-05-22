@@ -48,6 +48,7 @@ import {
   plateauBreakthrough,
 } from './gepa-pareto.mjs';
 import { generateMutations, generateAdversarialParaphrases } from './gepa-mutate.mjs';
+import { buildReplayMap, makeResumeReplayEvaluate, buildConfirmEvent } from './gepa-finalize.mjs';
 import { mulberry32 } from '../stats/rng.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -73,6 +74,10 @@ export function makeLogger({ logPath, stream = process.stdout, now = () => Date.
     if (!enabled) return;
     const out = `[${ts()}] gepa: ${line}\n`;
     try { stream.write(out); } catch { /* */ }
+    // m1: this verbose run-log uses bare appendFileSync (NO fsync) — it is
+    // NON-LOAD-BEARING by design. The durable audit source is the fsync-backed
+    // JSONL trajectory (appendFsynced); the log is a human-readable convenience
+    // and must NOT be promoted into the resume/recovery hot path.
     if (logPath) { try { appendFileSync(logPath, out); } catch { /* */ } }
   };
 }
@@ -165,7 +170,23 @@ export async function runGepa(opts = {}) {
     seenPrompts.add(hash);
     appendFsynced(paths.promptBank, { _kind: 'prompt', hash, text });
   };
-  const mkCandidate = (args) => buildCandidate({ ...args, evaluateCandidate, bucket });
+  // ── B1 resume-replay layer (§7.4 "no re-spending") ──
+  // On resume, build a per-(round,kind,mutation_hash,probe,target) replay map
+  // from the persisted trajectory and wrap evaluateCandidate so an already-paid
+  // screen/confirm call replays its score instead of re-hitting the network.
+  // For a fresh run the wrapper is an identity pass-through (empty maps).
+  // §7.4 resume cross-check, computed once (also feeds the B1 replay layer).
+  const rs = resume ? resumeState({ trajectoryPath: paths.trajectory }) : null;
+  const replayLayer = resume
+    ? makeResumeReplayEvaluate({
+        evaluateCandidate,
+        completedStepIds: rs.completedStepIds,
+        replayMap: buildReplayMap(paths.trajectory),
+      })
+    : makeResumeReplayEvaluate({ evaluateCandidate, completedStepIds: new Set(), replayMap: new Map() });
+  const replayEvaluate = replayLayer.evaluate;
+  const enterStep = replayLayer.enterStep;
+  const mkCandidate = (args) => buildCandidate({ ...args, evaluateCandidate: replayEvaluate, bucket });
 
   // probe lookups (resume reconstructs probe records from ids)
   const allProbes = [...devProbes, ...rotationPool];
@@ -182,11 +203,23 @@ export async function runGepa(opts = {}) {
 
   if (resume) {
     const ckpt = loadParetoCurrent(paths.paretoCurrent);
-    const rs = resumeState({ trajectoryPath: paths.trajectory }); // §7.4 cross-check
     for (const ev of loadTrajectory(paths.promptBank)) {
       if (ev._kind === 'prompt' && ev.hash) seenPrompts.add(ev.hash);
     }
-    if (!ckpt) throw new Error(`runGepa --resume: no checkpoint at ${paths.paretoCurrent}`);
+    if (!ckpt) {
+      // m2: pareto-current.json is the authoritative resume source. If it is
+      // lost but the trajectory survived, we cannot safely reconstruct the
+      // FULL front (incumbent per-probe scores/details aren't all replayable),
+      // so we still fail fast — but with an actionable message naming the last
+      // pareto-update round so an operator can decide. We do NOT silently
+      // continue from a partial front (that would be worse than failing).
+      const lastPareto = rs?.paretoUpdates?.length ? rs.paretoUpdates[rs.paretoUpdates.length - 1].round : 'none';
+      throw new Error(
+        `runGepa --resume: no checkpoint at ${paths.paretoCurrent} ` +
+        `(trajectory has ${rs?.paretoUpdates?.length ?? 0} pareto-update event(s), last at round ${lastPareto}). ` +
+        `pareto-current.json is the authoritative front snapshot; restore it before resuming.`,
+      );
+    }
     front = ckpt.front;
     probeSet = (ckpt.probeSetIds || devProbes.map((p) => p.id)).map((id) => allById[id]).filter(Boolean);
     convergence = ckpt.convergence || [];
@@ -232,6 +265,7 @@ export async function runGepa(opts = {}) {
 
   for (let round = startRound; round <= maxRoundsEff && round <= hardCap; round++) {
     lastRoundRun = round;
+    let pendingParetoEvent = null; // M1(a): appended only AFTER the checkpoint
     const btState = plateauBreakthrough(convergence) ? 'YES' : 'NO';
     log(`round ${round} start, fronts=${front.length}, patience=${patienceCounter}/${patience}, plateau-bt=${btState}`);
 
@@ -242,7 +276,7 @@ export async function runGepa(opts = {}) {
       const newProbes = rotationPool.slice(0, rotationSwapCount).filter((p) => !activeIds.includes(p.id));
       const before = front.map((f) => f.id);
       const rebaseEval = async (incumbent, probe) => {
-        const r = await scoreCandidateOnProbes({ candidate: { prompt: incumbent.prompt }, probes: [probe], evaluateCandidate, bucket });
+        const r = await scoreCandidateOnProbes({ candidate: { prompt: incumbent.prompt }, probes: [probe], evaluateCandidate: replayEvaluate, bucket });
         incumbent.detail = { ...(incumbent.detail || {}), ...r.detail };
         return r.perProbeMaximin[0];
       };
@@ -297,6 +331,9 @@ export async function runGepa(opts = {}) {
       const screenWeights = computeProbeWeights({ front, probeIds: screenIds, round, roundsEvaluatedByProbe });
       let best = null;
       for (const m of accepted) {
+        // B1: set the resume-replay context to THIS mutation's screen pass so
+        // already-paid screen scores replay instead of re-spending on resume.
+        enterStep({ kind: EVENT_KINDS.SCREEN, round, mutationHash: hashContent(m.mutated) });
         const cand = await mkCandidate({ id: `${parent.id}-r${round}-${m.sourceOp}`, prompt: m.mutated, sourceOp: m.sourceOp, parentHash: m.parentHash, probes: screenProbes, weights: screenWeights });
         for (const pid of screenIds) {
           for (const target of TARGET_LIST) {
@@ -310,40 +347,34 @@ export async function runGepa(opts = {}) {
 
       // ── 5 confirm (full dev × 2) ──
       const fullWeights = computeProbeWeights({ front, probeIds: activeIds, round, roundsEvaluatedByProbe });
+      // B1: switch the resume-replay context to the survivor's confirm pass.
+      enterStep({ kind: EVENT_KINDS.CONFIRM, round, mutationHash: hashContent(best.prompt) });
       survivor = await mkCandidate({ id: best.id, prompt: best.prompt, sourceOp: best.sourceOp, parentHash: best.parentHash, probes: probeSet, weights: fullWeights });
       for (const pid of activeIds) {
         for (const target of TARGET_LIST) {
           const d = survivor.detail[pid][target];
-          appendEvent({
-            _kind: EVENT_KINDS.CONFIRM,
-            round,
-            mutation_hash: survivor.hash,
-            prompt_hash: survivor.hash,
-            probe_id: pid,
-            probe_stratum: probeById[pid]?.stratum ?? null,
-            target,
-            raw_sonnet: survivor.detail[pid].sonnet.score,
-            raw_gpt5_5: survivor.detail[pid].gpt5_5.score,
-            maximin_base: survivor.scores[pid],
-            tool_calls: d.traj.toolCalls.length,
-            eas_factor: survivor.efficiencyFactor,
-            length_penalty: survivor.lengthPenalty,
-            final_score: survivor.finalScore,
-            judge_panel: ['deepseek-v4-flash', 'gemini-3.1-flash-lite', 'minimax-m2.7'],
-          });
+          appendEvent(buildConfirmEvent({ round, survivor, probe: probeById[pid], pid, target, d }));
         }
       }
       log(`round ${round} confirm ${activeIds.length}×2 sonnet=${survivor.score_sonnet.toFixed(3)} gpt5.5=${survivor.score_gpt5_5.toFixed(3)} final=${survivor.finalScore.toFixed(3)}`);
 
+      // B1: TARE paraphrases are fresh prompts (no persisted score to replay);
+      // clear the replay context so TARE evals always run live.
+      enterStep(null);
+
       // ── 6 Pareto-gated TARE ──
       const screenWeightsForTare = computeProbeWeights({ front, probeIds: screenIds, round, roundsEvaluatedByProbe });
+      // M4/m3: TARE sharpness + the would-enter gate operate on the JOINT
+      // MAXIMIN task score (§3.7.1 step 7), NOT finalScore. Folding EAS-factor
+      // and length-penalty variation into "sharpness" would measure composite
+      // brittleness instead of ANSWER brittleness.
       const tare = await paretoGatedTare({
-        candidate: { prompt: survivor.prompt, taskScore: survivor.finalScore },
-        front: front.map((f) => ({ taskScore: f.finalScore })),
+        candidate: { prompt: survivor.prompt, taskScore: survivor.taskScore },
+        front: front.map((f) => ({ taskScore: f.taskScore })),
         generateParaphrases: (prompt, k) => generateAdversarialParaphrases({ prompt, k, callModel }),
         evaluate: async (promptText) => {
           const sc = await mkCandidate({ id: 'tare', prompt: promptText, sourceOp: 'manual', parentHash: survivor.hash, probes: screenProbes, weights: screenWeightsForTare });
-          return sc.finalScore;
+          return sc.taskScore;
         },
       });
       if (tare.ran) {
@@ -353,13 +384,17 @@ export async function runGepa(opts = {}) {
       }
 
       // ── 7 Pareto update (0.15 admission cap) ──
+      // M1(a): the front mutates here, but the PARETO_UPDATE/PARETO_REJECTION
+      // event is appended AFTER the atomic checkpoint below — so a crash between
+      // the append and the checkpoint can never orphan a pareto-update the
+      // checkpoint (the single source of truth on resume) doesn't reflect.
       const adm = attemptParetoAdmission({ candidate: survivor, front, cap: paretoCap, frontSize });
       if (adm.admitted) {
         front = adm.newFront;
-        appendEvent({ _kind: EVENT_KINDS.PARETO_UPDATE, round, front: front.map((f) => f.hash), added: survivor.hash, evicted: adm.evicted });
+        pendingParetoEvent = { _kind: EVENT_KINDS.PARETO_UPDATE, round, front: front.map((f) => f.hash), added: survivor.hash, evicted: adm.evicted };
         log(`round ${round} pareto: ADD ${survivor.hash.slice(0, 10)}${adm.evicted.length ? `, evict ${adm.evicted.join(',')}` : ''}`);
       } else {
-        appendEvent({ _kind: EVENT_KINDS.PARETO_REJECTION, round, mutation_hash: survivor.hash, reason: adm.reason, target_degraded: adm.target_degraded?.[0] ?? null, drop: adm.drop, incumbent_being_compared: adm.incumbent });
+        pendingParetoEvent = { _kind: EVENT_KINDS.PARETO_REJECTION, round, mutation_hash: survivor.hash, reason: adm.reason, target_degraded: adm.target_degraded?.[0] ?? null, drop: adm.drop, incumbent_being_compared: adm.incumbent };
         log(`round ${round} pareto: REJECT ${survivor.hash.slice(0, 10)} (${adm.reason})`);
       }
     } else {
@@ -387,6 +422,11 @@ export async function runGepa(opts = {}) {
       probeSetIds: probeSet.map((p) => p.id),
       front,
     });
+
+    // M1(a): NOW the front is durably checkpointed — append the Pareto telemetry.
+    // If a crash happens before this append, resume trusts ckpt.front (which
+    // already reflects the admission) and simply re-derives; no orphaned row.
+    if (pendingParetoEvent) appendEvent(pendingParetoEvent);
 
     log(`round ${round} summary: joint_best=${bestNow.toFixed(3)} n_pareto=${front.length} patience=${patienceCounter}/${patience}`);
 
