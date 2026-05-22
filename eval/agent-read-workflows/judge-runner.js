@@ -939,6 +939,47 @@ export function parseOpenAIResponse(json) {
   return '';
 }
 
+// ─── OpenRouter single-key consolidation ─────────────────────────────────────
+//
+// When OPENROUTER_API_KEY is set, the OpenAI-compatible target/judge/HOMP
+// lineages route through OpenRouter with ONE key, the model id rewritten to the
+// OpenRouter slug. This lets a single key drive GPT-5.5, Kimi, MiniMax, MiMo and
+// Qwen. Anthropic (Sonnet target — production parity), Gemini (no OpenRouter
+// embeddings endpoint; SCS needs the direct API) and DeepSeek keep their direct
+// paths. When OPENROUTER_API_KEY is unset every runner uses its direct endpoint
+// exactly as before, so existing behaviour + tests are unchanged.
+//
+// NOTE (§3.6 reproducibility): OpenRouter may route open-weight models to a
+// sub-provider whose quantisation/backend can vary. Fine for smoke + dev
+// iteration; for the published HOMP (MiMo/Qwen) and judge numbers, pin the
+// provider (provider.order + allow_fallbacks:false) or use the direct keys.
+export const OPENROUTER_SLUGS = Object.freeze({
+  'openai-api': 'openai/gpt-5.5',
+  moonshot: 'moonshotai/kimi-k2.6',
+  minimax: 'minimax/minimax-m2.7',
+  mimo: 'xiaomi/mimo-v2.5-pro',
+  qwen: 'qwen/qwen3.6-plus',
+  dashscope: 'qwen/qwen3.6-plus',
+});
+
+/**
+ * Resolve OpenRouter routing for a lineage when OPENROUTER_API_KEY is set.
+ * @param {string} lineage
+ * @returns {{apiKey:string, baseUrl:string, model:string, chatPath:string}|null}
+ */
+function resolveOpenRouter(lineage) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) return null;
+  const model = OPENROUTER_SLUGS[lineage];
+  if (!model) return null;
+  return {
+    apiKey,
+    baseUrl: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+    model,
+    chatPath: '/chat/completions',
+  };
+}
+
 // ─── OpenAI Chat Completions (raw HTTPS, direct path) ────────────────────────
 //
 // `openai-api` lineage: stateless/batch judging without the codex CLI harness.
@@ -947,20 +988,31 @@ export function parseOpenAIResponse(json) {
 // Env: OPENAI_API_KEY
 
 async function runOpenAIDirect({ model, systemPrompt, userPrompt, maxTokens, temperature, reasoningEffort, useCompletionTokens }, timeoutMs) {
-  const apiKey = process.env.OPENAI_API_KEY;
+  // OpenRouter single-key mode (preferred when set), else OPENAI_API_KEY direct.
+  // OPENAI_BASE_URL still lets you point OpenAI-direct at a custom proxy.
+  const or = resolveOpenRouter('openai-api');
+  const apiKey = or?.apiKey ?? process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    throw new Error('runOpenAIDirect: OPENAI_API_KEY not set in environment');
+    throw new Error('runOpenAIDirect: OPENAI_API_KEY not set in environment (or set OPENROUTER_API_KEY for OpenRouter routing)');
   }
+  // OpenRouter has no gpt-5.5-instant SKU; approximate the non-reasoning target
+  // by forcing minimal reasoning — UNLESS the caller explicitly requested
+  // reasoning (M7/§3.5.2 reasoning-mode HOMP). reasoningEffort still wins.
+  const orReasoningMin = or && !useCompletionTokens && !reasoningEffort
+    ? { reasoning: { effort: 'minimal' } }
+    : undefined;
   return runOpenAICompatible(
     {
-      baseUrl: 'https://api.openai.com/v1',
-      apiKey, model, systemPrompt, userPrompt,
+      baseUrl: or?.baseUrl ?? process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
+      apiKey,
+      model: or?.model ?? model,
+      systemPrompt, userPrompt,
       temperature: temperature ?? 0,
       maxTokens: maxTokens ?? 4096,
       // M7/§3.5.2: when reasoning-class, switch to max_completion_tokens +
       // temperature:1. `reasoningEffort` is the o-series provider extension.
       useCompletionTokens: useCompletionTokens === true,
-      extraBody: reasoningEffort ? { reasoning_effort: reasoningEffort } : undefined,
+      extraBody: reasoningEffort ? { reasoning_effort: reasoningEffort } : orReasoningMin,
     },
     timeoutMs,
   );
@@ -974,15 +1026,16 @@ async function runOpenAIDirect({ model, systemPrompt, userPrompt, maxTokens, tem
 // Env: MOONSHOT_API_KEY
 
 async function runMoonshotDirect({ model, systemPrompt, userPrompt, maxTokens, temperature }, timeoutMs) {
-  const apiKey = process.env.MOONSHOT_API_KEY;
+  const or = resolveOpenRouter('moonshot');
+  const apiKey = or?.apiKey ?? process.env.MOONSHOT_API_KEY;
   if (!apiKey) {
-    throw new Error('runMoonshotDirect: MOONSHOT_API_KEY not set in environment');
+    throw new Error('runMoonshotDirect: MOONSHOT_API_KEY not set in environment (or set OPENROUTER_API_KEY for OpenRouter routing)');
   }
   return runOpenAICompatible(
     {
-      baseUrl: 'https://api.moonshot.ai/v1',
+      baseUrl: or?.baseUrl ?? 'https://api.moonshot.ai/v1',
       apiKey,
-      model: model || 'kimi-k2.6',
+      model: or?.model ?? model ?? 'kimi-k2.6',
       systemPrompt, userPrompt,
       temperature: temperature ?? 0,
       maxTokens: maxTokens ?? 4096,
@@ -1000,19 +1053,21 @@ async function runMoonshotDirect({ model, systemPrompt, userPrompt, maxTokens, t
 // Env: MINIMAX_API_KEY
 
 async function runMiniMaxDirect({ model, systemPrompt, userPrompt, maxTokens, temperature }, timeoutMs) {
-  const apiKey = process.env.MINIMAX_API_KEY;
+  const or = resolveOpenRouter('minimax');
+  const apiKey = or?.apiKey ?? process.env.MINIMAX_API_KEY;
   if (!apiKey) {
-    throw new Error('runMiniMaxDirect: MINIMAX_API_KEY not set in environment');
+    throw new Error('runMiniMaxDirect: MINIMAX_API_KEY not set in environment (or set OPENROUTER_API_KEY for OpenRouter routing)');
   }
   return runOpenAICompatible(
     {
-      baseUrl: 'https://api.minimax.io/v1',
+      baseUrl: or?.baseUrl ?? 'https://api.minimax.io/v1',
       apiKey,
-      model: model || 'abab6.5s-chat',
+      model: or?.model ?? model ?? 'abab6.5s-chat',
       systemPrompt, userPrompt,
       temperature: temperature ?? 0,
       maxTokens: maxTokens ?? 4096,
-      chatPath: '/text/chatcompletion_v2',
+      // MiniMax-direct uses a non-standard path; OpenRouter uses the standard one.
+      chatPath: or?.chatPath ?? '/text/chatcompletion_v2',
     },
     timeoutMs,
   );
@@ -1031,10 +1086,22 @@ async function runMiniMaxDirect({ model, systemPrompt, userPrompt, maxTokens, te
 // Env: MIMO_API_KEY (preferred) or TOGETHER_API_KEY (fallback)
 
 async function runMiMoDirect({ model, systemPrompt, userPrompt, maxTokens, temperature }, timeoutMs) {
+  const or = resolveOpenRouter('mimo');
+  if (or) {
+    return runOpenAICompatible(
+      {
+        baseUrl: or.baseUrl, apiKey: or.apiKey, model: or.model,
+        systemPrompt, userPrompt,
+        temperature: temperature ?? 0,
+        maxTokens: maxTokens ?? 4096,
+      },
+      timeoutMs,
+    );
+  }
   const mimoKey = process.env.MIMO_API_KEY;
   const togetherKey = process.env.TOGETHER_API_KEY;
   if (!mimoKey && !togetherKey) {
-    throw new Error('runMiMoDirect: set MIMO_API_KEY (direct) or TOGETHER_API_KEY (Together fallback)');
+    throw new Error('runMiMoDirect: set MIMO_API_KEY (direct) or TOGETHER_API_KEY (Together fallback) — or OPENROUTER_API_KEY for OpenRouter routing');
   }
   const apiKey = mimoKey || togetherKey;
   const baseUrl = mimoKey ? 'https://api.mimo.ai/v1' : 'https://api.together.xyz/v1';
@@ -1067,10 +1134,22 @@ async function runMiMoDirect({ model, systemPrompt, userPrompt, maxTokens, tempe
 // Env: DASHSCOPE_API_KEY (preferred) or TOGETHER_API_KEY (fallback)
 
 async function runQwenDirect({ model, systemPrompt, userPrompt, maxTokens, temperature }, timeoutMs) {
+  const or = resolveOpenRouter('qwen');
+  if (or) {
+    return runOpenAICompatible(
+      {
+        baseUrl: or.baseUrl, apiKey: or.apiKey, model: or.model,
+        systemPrompt, userPrompt,
+        temperature: temperature ?? 0,
+        maxTokens: maxTokens ?? 4096,
+      },
+      timeoutMs,
+    );
+  }
   const dashscope = process.env.DASHSCOPE_API_KEY;
   const together = process.env.TOGETHER_API_KEY;
   if (!dashscope && !together) {
-    throw new Error('runQwenDirect: set DASHSCOPE_API_KEY (DashScope) or TOGETHER_API_KEY (Together fallback)');
+    throw new Error('runQwenDirect: set DASHSCOPE_API_KEY (DashScope) or TOGETHER_API_KEY (Together fallback) — or OPENROUTER_API_KEY for OpenRouter routing');
   }
   const apiKey = dashscope || together;
   const baseUrl = dashscope

@@ -110,6 +110,24 @@ describe('checkApiKeys', () => {
     expect(r.ok).toBe(false);
     expect(r.message).toContain('MIMO_API_KEY');
   });
+
+  it('OpenRouter key alone covers OpenAI/Moonshot/MiniMax/MiMo (single-key mode)', () => {
+    const r = checkApiKeys({
+      ANTHROPIC_API_KEY: 'sk-ant-0123456789',
+      DEEPSEEK_API_KEY: 'sk-deepseek-0123456789',
+      GEMINI_API_KEY: 'gem-0123456789',
+      OPENROUTER_API_KEY: 'sk-or-0123456789',
+    });
+    expect(r.ok).toBe(true);
+    expect(r.message).toMatch(/OpenRouter/);
+  });
+
+  it('OpenRouter does NOT substitute for the always-direct keys (Anthropic/DeepSeek/Gemini)', () => {
+    const r = checkApiKeys({ OPENROUTER_API_KEY: 'sk-or-0123456789' });
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain('ANTHROPIC_API_KEY');
+    expect(r.message).toContain('GEMINI_API_KEY');
+  });
 });
 
 // ─── smokeLineages ──────────────────────────────────────────────────────────────
@@ -147,6 +165,12 @@ describe('smokeLineages', () => {
 describe('checkOpenAITier', () => {
   it('fails when OPENAI_API_KEY is unset', async () => {
     expect((await checkOpenAITier({ env: {} })).ok).toBe(false);
+  });
+
+  it('skips the tier gate in OpenRouter mode (OPENROUTER set, OPENAI unset)', async () => {
+    const r = await checkOpenAITier({ env: { OPENROUTER_API_KEY: 'sk-or-0123456789' } });
+    expect(r.ok).toBe(true);
+    expect(r.message).toMatch(/OpenRouter/);
   });
 
   it('passes Tier 2 (rpm header ≥ 5000)', async () => {

@@ -239,16 +239,26 @@ export async function judgePanelScore({ probe, answer, panel = JUDGE_PANEL, runJ
 
 /**
  * Minimal codex-exec agent runner for the gpt5_5 target. Mirrors the
- * runClaudeAgent contract (tool-call capture + final text). Codex's --json
- * event schema has shifted across versions; the parser is defensive but you
- * MUST verify it against the live codex build before the real run.
+ * runClaudeAgent contract (tool-call capture + final text). Verified against
+ * codex-cli 0.132 (thread/turn/item event schema); `parseCodexAgentStream` is
+ * pinned by a fixture test so a future codex schema shift fails loudly.
  */
-export async function runCodexAgent({ prompt, systemAppend, model, cwd, sweetSearchBinDir, timeoutMs = 240000 }) {
+export async function runCodexAgent({ prompt, systemAppend, model, cwd, sweetSearchBinDir, reasoningEffort = 'low', timeoutMs = 240000 }) {
   const { spawn } = await import('node:child_process');
   const merged = systemAppend ? `[SYSTEM]\n${systemAppend}\n\n[USER]\n${prompt}` : prompt;
-  const args = ['exec', '--dangerously-bypass-approvals-and-sandbox', '--json'];
-  if (model) args.push('-m', model);
-  args.push(merged);
+  // codex has no "gpt-5.5-instant" SKU (it exits 1 / turn.failed); the valid
+  // GPT-5.5 model is "gpt-5.5". Honor §2.1's non-reasoning "instant" intent with
+  // the lowest reasoning effort codex accepts ("low"; "minimal" is rejected),
+  // overriding the user's config default (e.g. xhigh). Verified vs codex-cli 0.132.
+  const codexModel = (!model || /instant/i.test(model)) ? 'gpt-5.5' : model;
+  const args = [
+    'exec',
+    '--dangerously-bypass-approvals-and-sandbox',
+    '--json',
+    '-c', `model_reasoning_effort="${reasoningEffort}"`,
+    '-m', codexModel,
+    merged,
+  ];
   const env = { ...process.env };
   if (sweetSearchBinDir) env.PATH = [sweetSearchBinDir, env.PATH].filter(Boolean).join(':');
   if (cwd) env.SWEET_SEARCH_PROJECT_ROOT = cwd;
@@ -270,39 +280,48 @@ export async function runCodexAgent({ prompt, systemAppend, model, cwd, sweetSea
     proc.on('exit', (code) => { clearTimeout(timer); resolve({ stdout, stderr, exitCode: code ?? 0, timedOut }); });
   });
 
-  const { toolCalls, answer } = parseCodexAgentStream(r.stdout);
+  const { toolCalls, answer, usage } = parseCodexAgentStream(r.stdout);
   return {
     toolCalls,
     finalResultText: answer,
     finalAssistantText: answer,
+    usage,
+    modelUsed: codexModel,
     wallMs: Date.now() - t0,
     isError: r.exitCode !== 0 || r.timedOut,
     exitCode: r.exitCode,
   };
 }
 
-/** Parse codex --json JSONL for tool calls + the final assistant text. */
+/**
+ * Parse codex `exec --json` JSONL. codex-cli 0.132 schema: thread.* / turn.* /
+ * item.{started,completed}. Tool calls = completed `command_execution` items;
+ * the final answer = the last `agent_message` item's text; usage = turn.completed.
+ * (Pre-0.132 the code looked for function_call/tool_call types that never exist
+ * in this build — that returned 0 tool calls + empty answer. B1, 2026-05-22.)
+ */
 export function parseCodexAgentStream(stdout) {
   const toolCalls = [];
   let answer = '';
-  if (!stdout) return { toolCalls, answer };
+  let usage = null;
+  if (!stdout) return { toolCalls, answer, usage };
   for (const line of stdout.split('\n')) {
     const t = line.trim();
     if (!t || t[0] !== '{') continue;
     let ev;
     try { ev = JSON.parse(t); } catch { continue; }
-    const type = ev.type || ev.msg?.type;
-    if (type && /function_call|tool_call|command|exec/i.test(type)) {
-      toolCalls.push({ name: ev.name || ev.tool || ev.command || 'tool', input: ev.arguments || ev.input || ev.command || {} });
-    }
-    const cand = ev.text || ev.message || ev.content || ev.assistant_message || ev.final_response || (ev.delta && ev.delta.text) || '';
-    if (typeof cand === 'string' && cand) answer = cand;
-    else if (Array.isArray(cand)) {
-      const txt = cand.filter((b) => b && b.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('');
-      if (txt) answer = txt;
+    if (ev.type === 'item.completed' && ev.item) {
+      const it = ev.item;
+      if (it.type === 'command_execution') {
+        toolCalls.push({ name: it.command || 'command', input: { command: it.command, exit_code: it.exit_code } });
+      } else if (it.type === 'agent_message' && typeof it.text === 'string' && it.text) {
+        answer = it.text; // last agent_message wins
+      }
+    } else if (ev.type === 'turn.completed' && ev.usage) {
+      usage = ev.usage; // { input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens }
     }
   }
-  return { toolCalls, answer };
+  return { toolCalls, answer, usage };
 }
 
 // ─── the default real evaluateCandidate factory ─────────────────────────────
@@ -371,14 +390,15 @@ export function makeRealEvaluateCandidate({
         sweetSearchBinDir,
         timeoutMs,
       });
-      // codex-exec surfaces no usage → token fields null.
+      // codex-cli 0.132 turn.completed exposes usage (input/cached/output/reasoning).
+      const u = run.usage || null;
       agentUsage = {
-        model_id: models.gpt5_5,
+        model_id: run.modelUsed || models.gpt5_5,
         api_path: 'codex-exec',
         temperature: null,
-        input_tokens: null,
-        output_tokens: null,
-        cache_read_tokens: null,
+        input_tokens: typeof u?.input_tokens === 'number' ? u.input_tokens : null,
+        output_tokens: typeof u?.output_tokens === 'number' ? u.output_tokens : null,
+        cache_read_tokens: typeof u?.cached_input_tokens === 'number' ? u.cached_input_tokens : null,
         retry_count: typeof run.retryCount === 'number' ? run.retryCount : null,
       };
     }

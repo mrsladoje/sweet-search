@@ -25,6 +25,7 @@ import {
   buildJudgeUserPrompt,
   JUDGE_PANEL,
   JUDGE_SYSTEM_PROMPT,
+  parseCodexAgentStream,
 } from '../../../core/prompt-optimization/sweep/gepa-evaluate.mjs';
 import { hashContent } from '../../../core/prompt-optimization/sweep/p7-shared.mjs';
 import { estimateTokens } from '../../../core/prompt-optimization/sweep/variant-loader.mjs';
@@ -216,5 +217,42 @@ describe('judge prompt builders (unchanged)', () => {
     expect(up).toMatch(/where is the parser entrypoint/);
     expect(up).toMatch(/found it/);
     expect(JUDGE_SYSTEM_PROMPT).toMatch(/strict grader/);
+  });
+});
+
+// Fixture pinned to the real codex-cli 0.132 `exec --json` schema (B1, 2026-05-22).
+// If a future codex build changes the event shape, these fail loudly instead of
+// silently returning 0 tool calls + empty answer (the original bug).
+const CODEX_0132_JSONL = [
+  '{"type":"thread.started","thread_id":"t1"}',
+  '{"type":"item.completed","item":{"id":"item_0","type":"error","message":"`[features].codex_hooks` is deprecated."}}',
+  '{"type":"turn.started"}',
+  '{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc \'ss-search parser\'","status":"in_progress"}}',
+  '{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc \'ss-search parser\'","aggregated_output":"hit\\n","exit_code":0,"status":"completed"}}',
+  '{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"The parser entrypoint is in src/main.rs"}}',
+  '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":42,"reasoning_output_tokens":0}}',
+].join('\n');
+
+describe('parseCodexAgentStream — codex-cli 0.132 schema (B1)', () => {
+  it('extracts command_execution tool calls, the agent_message answer, and usage', () => {
+    const { toolCalls, answer, usage } = parseCodexAgentStream(CODEX_0132_JSONL);
+    expect(toolCalls).toHaveLength(1); // only the COMPLETED command, not the in_progress start
+    expect(toolCalls[0].name).toMatch(/ss-search/);
+    expect(answer).toBe('The parser entrypoint is in src/main.rs');
+    expect(usage).toEqual({ input_tokens: 100, cached_input_tokens: 20, output_tokens: 42, reasoning_output_tokens: 0 });
+  });
+
+  it('ignores the deprecation error item (does not leak it into the answer)', () => {
+    const { answer } = parseCodexAgentStream(CODEX_0132_JSONL);
+    expect(answer).not.toMatch(/deprecated/);
+  });
+
+  it('returns empty result for empty stdout', () => {
+    expect(parseCodexAgentStream('')).toEqual({ toolCalls: [], answer: '', usage: null });
+  });
+
+  it('does not match the pre-0.132 function_call/tool_call event names', () => {
+    const legacy = '{"type":"function_call","name":"ss-search"}\n{"type":"tool_call","tool":"ss-grep"}';
+    expect(parseCodexAgentStream(legacy).toolCalls).toHaveLength(0);
   });
 });

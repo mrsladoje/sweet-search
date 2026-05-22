@@ -26,6 +26,11 @@ import {
 
 // ─── parseJudgeModelSpec — new lineage prefixes ──────────────────────────────
 
+// Hermetic guard: a developer shell may export OPENROUTER_API_KEY (single-key
+// mode). Clear it before every test so the direct-endpoint assertions below stay
+// stable; the dedicated OpenRouter describe sets it explicitly per-test.
+beforeEach(() => { delete process.env.OPENROUTER_API_KEY; });
+
 describe('parseJudgeModelSpec — new lineage heuristics', () => {
   it('kimi- prefix → moonshot', () => {
     expect(parseJudgeModelSpec('kimi-k2.6').lineage).toBe('moonshot');
@@ -621,6 +626,53 @@ describe('runJudge — qwen/dashscope', () => {
     });
     expect(r.isError).toBe(true);
     expect(r.error).toMatch(/DASHSCOPE_API_KEY/);
+  });
+});
+
+// ─── runJudge — OpenRouter single-key routing ────────────────────────────────
+
+describe('runJudge — OpenRouter single-key mode (OPENROUTER_API_KEY)', () => {
+  let origFetch;
+  beforeEach(() => {
+    origFetch = _internal.fetch;
+    process.env.OPENROUTER_API_KEY = 'sk-or-test-0123456789';
+  });
+  afterEach(() => {
+    _internal.fetch = origFetch;
+    delete process.env.OPENROUTER_API_KEY;
+  });
+
+  const cases = [
+    { lineage: 'openai-api', inModel: 'gpt-5.5-instant', slug: 'openai/gpt-5.5' },
+    { lineage: 'moonshot',   inModel: 'kimi-k2.6',       slug: 'moonshotai/kimi-k2.6' },
+    { lineage: 'minimax',    inModel: 'abab6.5s-chat',   slug: 'minimax/minimax-m2.7' },
+    { lineage: 'mimo',       inModel: 'MiMo-V2.5-Pro',   slug: 'xiaomi/mimo-v2.5-pro' },
+    { lineage: 'qwen',       inModel: 'qwen3.6-plus',    slug: 'qwen/qwen3.6-plus' },
+  ];
+
+  for (const { lineage, inModel, slug } of cases) {
+    it(`${lineage} routes to openrouter.ai with slug ${slug} + the OR key`, async () => {
+      _internal.fetch = makeFetch({ choices: [{ message: { content: 'or reply' } }] });
+      const r = await runJudge({ lineage, model: inModel, systemPrompt: '', userPrompt: 'u' });
+      expect(r.isError).toBe(false);
+      expect(r.text).toBe('or reply');
+      const [url, opts] = _internal.fetch.mock.calls[0];
+      expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
+      expect(opts.headers.Authorization).toBe('Bearer sk-or-test-0123456789');
+      expect(JSON.parse(opts.body).model).toBe(slug);
+    });
+  }
+
+  it('GPT-5.5 forces minimal reasoning to approximate the instant target', async () => {
+    _internal.fetch = makeFetch({ choices: [{ message: { content: 'ok' } }] });
+    await runJudge({ lineage: 'openai-api', model: 'gpt-5.5-instant', systemPrompt: '', userPrompt: 'u' });
+    expect(JSON.parse(_internal.fetch.mock.calls[0][1].body).reasoning).toEqual({ effort: 'minimal' });
+  });
+
+  it('MiniMax uses the standard /chat/completions path via OpenRouter (not the direct v2 path)', async () => {
+    _internal.fetch = makeFetch({ choices: [{ message: { content: 'ok' } }] });
+    await runJudge({ lineage: 'minimax', model: 'abab6.5s-chat', systemPrompt: '', userPrompt: 'u' });
+    expect(_internal.fetch.mock.calls[0][0]).toBe('https://openrouter.ai/api/v1/chat/completions');
   });
 });
 
