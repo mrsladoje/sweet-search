@@ -13,6 +13,8 @@
  *   --rounds N          override max rounds
  *   --variants-dir DIR  override the T_i variants directory
  *   --probes FILE       dev-probes JSON for a real run (required for non-dry)
+ *   --smoke-probes N    (with --dry-run) cap smoke probes to the first N
+ *   --smoke-variants N  (with --dry-run) cap seed variants to the first N (≤2)
  *   --skip-preflight    skip the §7.5 pre-flight gate (NOT recommended)
  */
 
@@ -28,6 +30,22 @@ import {
   SMOKE_PROBES_PATH,
 } from './gepa.mjs';
 
+/**
+ * Mutator calls to Kimi K2.6 (moonshot) run heavy reasoning on large reflective /
+ * crossover prompts that routinely exceed the 90s judge default (≈60s even on a
+ * small prompt) → timeout → "model-error" (B2, smoke 2026-05-22). Give moonshot
+ * mutator calls a generous timeout + token headroom; judges keep the fast
+ * default. Explicit per-call timeoutMs/maxTokens still win (spread last).
+ */
+export const MOONSHOT_MUTATOR_TIMEOUT_MS = 300000;
+export const MOONSHOT_MUTATOR_MAX_TOKENS = 8192;
+export function withMutatorCallDefaults(req) {
+  if (req && req.lineage === 'moonshot') {
+    return { timeoutMs: MOONSHOT_MUTATOR_TIMEOUT_MS, maxTokens: MOONSHOT_MUTATOR_MAX_TOKENS, ...req };
+  }
+  return req;
+}
+
 export function parseArgs(argv) {
   const o = { run: 'p7-v1', resume: false, dryRun: false, real: false, skipPreflight: false };
   for (let i = 0; i < argv.length; i++) {
@@ -40,6 +58,8 @@ export function parseArgs(argv) {
     else if (a === '--rounds') o.rounds = Number.parseInt(argv[++i], 10);
     else if (a === '--variants-dir') o.variantsDir = argv[++i];
     else if (a === '--probes') o.probesFile = argv[++i];
+    else if (a === '--smoke-probes') o.smokeProbes = Number.parseInt(argv[++i], 10);
+    else if (a === '--smoke-variants') o.smokeVariants = Number.parseInt(argv[++i], 10);
   }
   return o;
 }
@@ -55,15 +75,20 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
   // ── dry-run: fully offline by default ──
   if (o.dryRun) {
     const { loadVariant } = await import('./variant-loader.mjs');
-    const probes = JSON.parse(readFileSync(SMOKE_PROBES_PATH, 'utf8')).probes;
-    const variants = ['T1', 'T2'].map((id) => normalizeVariant(loadVariant(id)));
+    let probes = JSON.parse(readFileSync(SMOKE_PROBES_PATH, 'utf8')).probes;
+    // --smoke-probes/--smoke-variants trim the matrix for a cheap real smoke
+    // (e.g. 1×1×2-targets ≈ $0.30 vs the full 5×2).
+    if (Number.isInteger(o.smokeProbes) && o.smokeProbes > 0) probes = probes.slice(0, o.smokeProbes);
+    let variantIds = ['T1', 'T2'];
+    if (Number.isInteger(o.smokeVariants) && o.smokeVariants > 0) variantIds = variantIds.slice(0, o.smokeVariants);
+    const variants = variantIds.map((id) => normalizeVariant(loadVariant(id)));
     let evaluateCandidate = makeDryRunEvaluate();
     let callModel = makeDryRunCallModel();
     if (o.real) {
       const { makeRealEvaluateCandidate } = await import('./gepa-evaluate.mjs');
       const { runJudge } = await import('../../../eval/agent-read-workflows/judge-runner.js');
       evaluateCandidate = makeRealEvaluateCandidate();
-      callModel = (req) => runJudge(req);
+      callModel = (req) => runJudge(withMutatorCallDefaults(req));
     }
     const result = await runGepa({
       runId: o.run === 'p7-v1' ? 'p7-dry' : o.run,
@@ -128,7 +153,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
     devProbes,
     rotationPool: probesDoc.rotationPool ?? [],
     evaluateCandidate: makeRealEvaluateCandidate(),
-    callModel: (req) => runJudge(req),
+    callModel: (req) => runJudge(withMutatorCallDefaults(req)),
     maxRounds: o.rounds ?? DEFAULTS.maxRounds,
     resume: o.resume,
     bucket,
