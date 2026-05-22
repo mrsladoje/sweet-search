@@ -90,11 +90,29 @@ export function attemptParetoAdmission({
 
   let baselineId = null;
   if (dominated.length > 0) {
-    let chosen = null;
-    for (const inc of dominated) {
-      const adm = capFor(inc);
-      if (adm.ok) { chosen = { inc, adm }; break; }
-      if (!chosen || maxDropOf(adm) < maxDropOf(chosen.adm)) chosen = { inc, adm };
+    // M1(b): deterministic displaced-incumbent selection. Among dominated
+    // incumbents that PASS the 0.15 cap, pick by a STABLE key (lowest
+    // finalScore, then id) instead of "first to pass" — otherwise the recorded
+    // displaced incumbent is array-order-dependent and can differ on re-run,
+    // making PARETO_UPDATE telemetry non-reproducible. If none pass, the
+    // rejection records the LEAST-violating incumbent (also stably ordered).
+    const stableKey = (inc) => [inc.finalScore, String(inc.id ?? '')];
+    const lessStable = (a, b) => (a[0] !== b[0] ? a[0] < b[0] : a[1] < b[1]);
+    const scored = dominated.map((inc) => ({ inc, adm: capFor(inc) }));
+    const passing = scored.filter((s) => s.adm.ok);
+    let chosen;
+    if (passing.length > 0) {
+      chosen = passing.reduce((best, s) =>
+        lessStable(stableKey(s.inc), stableKey(best.inc)) ? s : best);
+    } else {
+      // No dominated incumbent passes → reject; pick the least-violating one,
+      // tie-broken by the same stable key for reproducibility.
+      chosen = scored.reduce((best, s) => {
+        const db = maxDropOf(best.adm);
+        const ds = maxDropOf(s.adm);
+        if (ds !== db) return ds < db ? s : best;
+        return lessStable(stableKey(s.inc), stableKey(best.inc)) ? s : best;
+      });
     }
     baselineId = chosen.inc.id;
     if (!chosen.adm.ok) {
@@ -112,13 +130,86 @@ export function attemptParetoAdmission({
   const evicted = dominated.map((d) => d.id);
   let newFront = f.filter((inc) => !dominated.includes(inc));
   newFront.push(candidate);
+  // M5: 2-objective-aware overflow trim. Evicting the lowest-finalScore member
+  // collapses the (finalScore, 1−sharpness) front toward top-6-by-finalScore,
+  // dropping a Pareto-optimal robust-but-lower-finalScore variant. Instead we
+  // (1) prefer to evict a member DOMINATED within the candidate front, then
+  // (2) fall back to the LEAST crowding-distance member over BOTH objectives,
+  // which preserves the extremes (incl. the most-robust point).
   while (newFront.length > frontSize) {
-    const lo = newFront.reduce((m, x) => (x.finalScore < m.finalScore ? x : m));
-    newFront = newFront.filter((x) => x !== lo);
-    evicted.push(lo.id);
+    const victim = pickOverflowVictim(newFront);
+    newFront = newFront.filter((x) => x !== victim);
+    evicted.push(victim.id);
   }
 
   return { admitted: true, reason: null, target_degraded: [], drop: null, incumbent: baselineId, evicted, newFront };
+}
+
+/**
+ * Pick which member to evict when the front overflows (M5). Two-objective aware
+ * over (finalScore max, sharpnessScore max):
+ *   1. If any member is dominated by another in the current set, evict the
+ *      lowest-finalScore dominated one (it is strictly Pareto-inferior).
+ *   2. Else evict the member with the SMALLEST crowding distance — the most
+ *      redundant interior point — so the boundary extremes (highest finalScore
+ *      AND highest robustness) are retained. Boundary points get +∞ crowding
+ *      and are never evicted while an interior point exists. Deterministic ties
+ *      break on lowest finalScore then id.
+ *
+ * @param {object[]} members
+ * @returns {object} the member to evict
+ */
+export function pickOverflowVictim(members) {
+  const stable = (a, b) => (a.finalScore !== b.finalScore ? a.finalScore < b.finalScore : String(a.id ?? '') < String(b.id ?? ''));
+  // (1) dominated members first.
+  const dominatedSet = members.filter((m) => members.some((o) => o !== m && dominates(o, m)));
+  if (dominatedSet.length > 0) {
+    return dominatedSet.reduce((lo, x) => (stable(x, lo) ? x : lo));
+  }
+  // (2) crowding distance over both objectives.
+  const crowd = crowdingDistances(members);
+  let victim = members[0];
+  let best = crowd.get(victim);
+  for (const m of members) {
+    const c = crowd.get(m);
+    if (c < best || (c === best && stable(m, victim))) { victim = m; best = c; }
+  }
+  return victim;
+}
+
+/**
+ * NSGA-II-style crowding distance over the two Pareto objectives
+ * (finalScore, sharpnessScore). Boundary (min/max) members on either objective
+ * receive Infinity so they are never the smallest-crowding victim while an
+ * interior member exists.
+ *
+ * @param {object[]} members
+ * @returns {Map<object, number>}
+ */
+export function crowdingDistances(members) {
+  const dist = new Map(members.map((m) => [m, 0]));
+  if (members.length <= 2) {
+    for (const m of members) dist.set(m, Infinity);
+    return dist;
+  }
+  const objectives = [
+    (m) => m.finalScore,
+    (m) => (m.sharpnessScore ?? 1.0),
+  ];
+  for (const obj of objectives) {
+    const sorted = [...members].sort((a, b) => obj(a) - obj(b));
+    const lo = obj(sorted[0]);
+    const hi = obj(sorted[sorted.length - 1]);
+    const range = hi - lo || 1;
+    dist.set(sorted[0], Infinity);
+    dist.set(sorted[sorted.length - 1], Infinity);
+    for (let i = 1; i < sorted.length - 1; i++) {
+      const prev = dist.get(sorted[i]);
+      if (prev === Infinity) continue;
+      dist.set(sorted[i], prev + (obj(sorted[i + 1]) - obj(sorted[i - 1])) / range);
+    }
+  }
+  return dist;
 }
 
 /**
@@ -187,6 +278,43 @@ export function findCrossoverPair({ front, probeIds }) {
 }
 
 /**
+ * m8 — detect a TRUE OP-2 balanced pair: two incumbents where each WINS one
+ * production target and LOSES the other on the same probe (e.g. A wins on
+ * Sonnet, B wins on GPT-5.5). A balanced crossover of such a pair can construct
+ * a genuinely joint-improving child, vs the winner-vs-loser pair `findCrossoverPair`
+ * returns (which only carries one direction). Requires per-target detail on the
+ * incumbents (inc.detail[pid][target].score); returns null when unavailable.
+ *
+ * NOTE: the wiring in gepa-mutate.generateMutations currently consumes only the
+ * winner-vs-loser pair from `findCrossoverPair`; this helper exposes the balanced
+ * signal so a follow-up can pass both per-target trajectories of one candidate to
+ * OP-2. Kept side-effect-free + tested; the orchestration upgrade is a documented
+ * follow-up (the OP-2 operator already supports the balanced construction).
+ *
+ * @returns {{ probeId:string, sonnetWinner:object, gptWinner:object }|null}
+ */
+export function findBalancedPair({ front, probeIds }) {
+  const f = front || [];
+  for (const pid of probeIds) {
+    const withDetail = f.filter((inc) => inc.detail?.[pid]?.sonnet && inc.detail?.[pid]?.gpt5_5);
+    let sonnetWinner = null;
+    let gptWinner = null;
+    for (const inc of withDetail) {
+      const sScore = inc.detail[pid].sonnet.score;
+      const gScore = inc.detail[pid].gpt5_5.score;
+      // A "Sonnet specialist on this probe": clearly better on Sonnet than GPT.
+      if (sScore >= 0.8 && gScore <= 0.4 && (!sonnetWinner || sScore > sonnetWinner.detail[pid].sonnet.score)) sonnetWinner = inc;
+      // A "GPT specialist on this probe": clearly better on GPT than Sonnet.
+      if (gScore >= 0.8 && sScore <= 0.4 && (!gptWinner || gScore > gptWinner.detail[pid].gpt5_5.score)) gptWinner = inc;
+    }
+    if (sonnetWinner && gptWinner && sonnetWinner !== gptWinner) {
+      return { probeId: pid, sonnetWinner, gptWinner };
+    }
+  }
+  return null;
+}
+
+/**
  * Per-round 3-slot mutation plan (§3.2):
  *   slot 1 → OP-1 reflective (always)
  *   slot 2 → OP-2 trajectory-crossover when a mismatch pair exists, else 2nd OP-1
@@ -196,7 +324,13 @@ export function planSlots({ round, front, probeIds, rotationRound = DEFAULTS.rot
   const slots = [{ op: 'reflective', kind: 'primary' }];
   const pair = findCrossoverPair({ front, probeIds });
   slots.push(pair ? { op: 'trajectory-crossover', pair } : { op: 'reflective', kind: 'secondary' });
-  slots.push({ op: slot3Op(round, rotationRound) });
+  let slot3 = slot3Op(round, rotationRound);
+  // m7: explicit guard so OP-5 Pruner never runs before round 3 (it needs the
+  // AST-ified routing from OP-3 to exist before it can safely prune). Today this
+  // is emergent from SLOT3_CYCLE ordering + runPruner's minTokens no-op, but make
+  // it explicit so a future reordering can't silently prune a tiny round-1 prompt.
+  if (slot3 === 'pruner' && round < 3) slot3 = 'persona-pivot';
+  slots.push({ op: slot3 });
   return slots;
 }
 

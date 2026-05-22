@@ -4,6 +4,12 @@
  * Removes ~20% of PROSE-ONLY content from the candidate while preserving every
  * [[token]], every operational rule, and every pseudocode/fenced block.
  *
+ * Fenced/pseudocode-block survival is ENFORCED, not merely prompted (M11): every
+ * triple-backtick fenced block and every `# routing policy pseudocode` block from
+ * the source must reappear byte-identically in the model output, or the mutation
+ * is rejected with reason `fenced-block-altered`. This guards OP-3 AST-ified
+ * routing rules from a model that preserves [[token]]s but mangles indentation.
+ *
  * Also exports STATEFUL_SUMMARY_RULE (§3.2.3) — re-exported here for
  * convenience; canonical source is op-persona-pivot.mjs.
  */
@@ -44,6 +50,70 @@ export function buildPrunerPrompt({ candidate }) {
     `## Prompt to prune\n\`\`\`\n${candidate}\n\`\`\`\n\nPruned prompt:`;
 
   return { systemPrompt, userPrompt };
+}
+
+// ─── protected-block extraction (M11 — enforce, don't merely prompt) ───────────
+
+/**
+ * Extract the set of blocks that MUST survive the pruning pass byte-identically:
+ *   (1) every triple-backtick fenced code block, delimited by ``` … ```
+ *       (the captured string includes its own opening/closing fences), and
+ *   (2) any `# routing policy pseudocode` block — the heading line plus the
+ *       contiguous run of non-blank lines that follow it (the OP-3 AST-ified
+ *       routing layout the Pruner is forbidden to mangle).
+ *
+ * Each protected block is returned verbatim (no trimming). runPruner asserts
+ * every returned string survives as a literal substring of the model output.
+ *
+ * @param {string} text — source candidate
+ * @returns {string[]} protected block strings, in source order
+ */
+export function extractProtectedBlocks(text) {
+  if (typeof text !== 'string') throw new TypeError('extractProtectedBlocks: string required');
+
+  const blocks = [];
+
+  // (1) Triple-backtick fenced blocks. Non-greedy so adjacent fences don't merge.
+  //     `[\s\S]` matches across newlines; the captured group spans fence-to-fence.
+  const fenceRe = /```[\s\S]*?```/g;
+  for (const m of text.matchAll(fenceRe)) {
+    blocks.push(m[0]);
+  }
+
+  // (2) `# routing policy pseudocode` blocks. The heading may carry a trailing
+  //     qualifier (e.g. "— NOT executable code"); we anchor on the heading and
+  //     capture through the trailing contiguous non-blank lines.
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*#\s*routing policy pseudocode/i.test(lines[i])) {
+      const start = i;
+      let end = i + 1;
+      // Consume the contiguous (non-blank) body that follows the heading.
+      while (end < lines.length && lines[end].trim() !== '') end++;
+      blocks.push(lines.slice(start, end).join('\n'));
+      i = end; // skip past the consumed block
+    }
+  }
+
+  return blocks;
+}
+
+/**
+ * Check that every protected block from the source survives byte-identically in
+ * the mutated output (as a literal substring). Returns the list of failures.
+ *
+ * @param {string} source  — source candidate
+ * @param {string} mutated — model output
+ * @returns {Array<{ reason: string, block: string }>} one entry per altered/missing block
+ */
+export function checkProtectedBlocks(source, mutated) {
+  const failures = [];
+  for (const block of extractProtectedBlocks(source)) {
+    if (!mutated.includes(block)) {
+      failures.push({ reason: 'fenced-block-altered', block });
+    }
+  }
+  return failures;
 }
 
 // ─── async runner ─────────────────────────────────────────────────────────────
@@ -97,6 +167,25 @@ export async function runPruner({ candidate, callModel, minTokens }) {
     // If after stripping the sentinel there's no usable body, fall back to original.
     const recovered = afterSkip.length > 10 ? afterSkip : candidate;
     return { mutated: recovered, accepted: true, skipped: true };
+  }
+
+  // M11 — enforce (not merely prompt) fenced/pseudocode-block survival.
+  // Every protected block from the SOURCE must survive byte-identically in the
+  // model output; a model that flattens indentation, drops `elif`, or otherwise
+  // mangles a fenced/pseudocode block (while preserving every [[token]]) is
+  // rejected here, before the token-only validateMutation gate.
+  const blockFailures = checkProtectedBlocks(candidate, rawMutated);
+  if (blockFailures.length > 0) {
+    return {
+      mutated: candidate,
+      accepted: false,
+      rejection: {
+        _kind: EVENT_KINDS.MUTATION_REJECTION,
+        op: 'pruner',
+        reason: 'fenced-block-altered',
+        failures: blockFailures,
+      },
+    };
   }
 
   const validation = validateMutation({ source: candidate, mutated: rawMutated, op: 'pruner' });

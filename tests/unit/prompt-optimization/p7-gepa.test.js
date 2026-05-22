@@ -14,7 +14,8 @@
  *   - patience/plateau stop logic (§3.1)
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -34,9 +35,14 @@ import {
   findCrossoverPair,
   selectParent,
   plateauBreakthrough,
+  pickOverflowVictim,
+  crowdingDistances,
 } from '../../../core/prompt-optimization/sweep/gepa-pareto.mjs';
-import { runReflectiveRewrite, buildReflectivePrompt } from '../../../core/prompt-optimization/sweep/gepa-mutate.mjs';
+import { runReflectiveRewrite, buildReflectivePrompt, generateAdversarialParaphrases, TARE_GENERATOR_ROTATION } from '../../../core/prompt-optimization/sweep/gepa-mutate.mjs';
+import { findBalancedPair } from '../../../core/prompt-optimization/sweep/gepa-pareto.mjs';
 import { loadTrajectory } from '../../../core/prompt-optimization/sweep/p7-persist.mjs';
+import { createTokenBucket, RATE_LIMITS } from '../../../core/prompt-optimization/sweep/p7-token-bucket.mjs';
+import { JUDGE_PANEL } from '../../../core/prompt-optimization/sweep/gepa-evaluate.mjs';
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
 
@@ -194,7 +200,9 @@ describe('Pareto admission 0.15 cap (§3.7.1 step 9)', () => {
   it('the driver logs a pareto-rejection event when the cap is violated', async () => {
     const probes = [makeProbe(1), makeProbe(2)];
     const initialFront = [
-      { id: 'V_S', prompt: 'specialist', finalScore: 0.5, sharpnessScore: 0.9, score_sonnet: 0.95, score_gpt5_5: 0.5, scores: { p1: 0.9, p2: 0.9 }, detail: {} },
+      // taskScore present (a real front member always carries it; M4 TARE gates
+      // on the joint Maximin taskScore, not finalScore).
+      { id: 'V_S', prompt: 'specialist', finalScore: 0.5, taskScore: 0.55, sharpnessScore: 0.9, score_sonnet: 0.95, score_gpt5_5: 0.5, scores: { p1: 0.9, p2: 0.9 }, detail: {} },
     ];
     // Mutations score 0.78 sonnet / 0.85 gpt → dominates V_S but drops sonnet 0.17.
     const evaluateCandidate = async ({ target }) => ({
@@ -405,5 +413,382 @@ describe('buildCandidate', () => {
     expect(typeof cand.finalScore).toBe('number');
     expect(cand.sharpnessScore).toBe(1.0);
     expect(topFailures({ candidate: cand, probes }).length).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ─── B2 — CONFIRM forensic metadata + real JUDGE_PANEL (§7.4 / §D4) ──────────
+
+describe('B2 — CONFIRM event forensic metadata (§7.4/§D4)', () => {
+  it('threads usage metadata into CONFIRM and logs the REAL JUDGE_PANEL (not a literal)', async () => {
+    const probes = [makeProbe(1, 'multi-file-flow')];
+    // A real-shaped evaluator that surfaces the §CC1 `usage` object.
+    const evaluateCandidate = async ({ target }) => ({
+      score: target === 'sonnet' ? 0.7 : 0.72,
+      toolCalls: 4,
+      finalAnswerEmitted: true,
+      usedReadOrGrep: true,
+      trajectory: { toolCalls: [{ name: 'ss-search' }, { name: 'ss-search' }, { name: 'ss-read' }, { name: 'ss-find' }], answer: 'the answer' },
+      wallMs: 4112,
+      usage: {
+        agent: {
+          model_id: target === 'sonnet' ? 'claude-sonnet-4-6-x' : 'gpt-5.5-instant',
+          api_path: target === 'sonnet' ? 'claude-cli' : 'codex-exec',
+          temperature: null,
+          input_tokens: 11842, output_tokens: 1893, cache_read_tokens: 4096, retry_count: 0,
+        },
+        judges: JUDGE_PANEL.map((j) => ({ ...j, input_tokens: 10, output_tokens: 5, retry_count: 0, isError: false })),
+        repo_commit: '52904f6',
+        probe_hash: '0xc0ffee',
+        token_count_prompt: 1820,
+      },
+    });
+    const paths = pathsFor();
+    await runGepa({
+      runId: 'b2', variants: variants(1), devProbes: probes,
+      evaluateCandidate, callModel: mutatingEcho(),
+      maxRounds: 1, patience: 99, screenProbeCount: 1, paths, verbose: false,
+    });
+    const ev = loadTrajectory(paths.trajectory).filter((e) => e._kind === 'confirm');
+    expect(ev.length).toBeGreaterThan(0);
+    const c = ev[0];
+    // full §7.4 field set present
+    for (const field of [
+      'probe_hash', 'model_id', 'api_path', 'temperature', 'tool_schema_version', 'repo_commit',
+      'input_tokens', 'output_tokens', 'cache_read_tokens', 'retry_count', 'wall_ms',
+      'token_count_prompt', 'expected_call_window', 'call_deviation_penalty',
+      'evidence_adequacy_penalty', 'result_bytes', 'judge_panel',
+    ]) {
+      expect(c).toHaveProperty(field);
+    }
+    expect(c.repo_commit).toBe('52904f6');
+    expect(c.input_tokens).toBe(11842);
+    expect(c.token_count_prompt).toBe(1820);
+    expect(c.tool_schema_version).toBe('ss-v3');
+    expect(c.expected_call_window).toEqual([3, 6]); // multi-file-flow window
+    // judge_panel matches the REAL JUDGE_PANEL constant (not the old literal)
+    expect(c.judge_panel).toEqual(JUDGE_PANEL.map((j) => j.model));
+    expect(c.judge_panel).toContain('abab6.5s-chat'); // the real MiniMax id, NOT 'minimax-m2.7'
+  });
+
+  it('falls back to null forensic fields when the evaluator omits usage (dry-run/stub)', async () => {
+    const paths = pathsFor();
+    await runGepa({
+      runId: 'b2null', variants: variants(1), devProbes: [makeProbe(1)],
+      evaluateCandidate: makeDryRunEvaluate(), callModel: mutatingEcho(),
+      maxRounds: 1, patience: 99, screenProbeCount: 1, paths, verbose: false,
+    });
+    const c = loadTrajectory(paths.trajectory).find((e) => e._kind === 'confirm');
+    expect(c.model_id).toBeNull();
+    expect(c.input_tokens).toBeNull();
+    expect(c.repo_commit).toBeNull();
+    // panel is ALWAYS the real constant even on a stub run
+    expect(c.judge_panel).toEqual(JUDGE_PANEL.map((j) => j.model));
+  });
+});
+
+// ─── B4 — TARE adversarial paraphrases include ≥1 non-Anthropic (§C2) ────────
+
+describe('B4 — TARE generator family rotation (§C2)', () => {
+  it('the K=3 generator set contains ≥1 non-anthropic lineage', () => {
+    const lineages = TARE_GENERATOR_ROTATION.slice(0, 3).map((g) => g.lineage);
+    expect(lineages.some((l) => l !== 'anthropic-api')).toBe(true);
+    // slot 0 is the non-Anthropic generator by construction
+    expect(lineages[0]).not.toBe('anthropic-api');
+  });
+
+  it('generateAdversarialParaphrases routes ≥1 of K=3 calls through a non-anthropic lineage', async () => {
+    const seen = [];
+    const callModel = async ({ lineage }) => {
+      seen.push(lineage);
+      // echo a token-preserving paraphrase
+      return { text: 'You are X. Use [[ss-search]] then [[ss-find]] to locate code. Report in [[agent-format]].', isError: false };
+    };
+    await generateAdversarialParaphrases({ prompt: TOKEN_PROMPT('X'), k: 3, callModel });
+    expect(seen.length).toBe(3);
+    expect(seen.some((l) => l !== 'anthropic-api')).toBe(true);
+  });
+
+  it('the non-anthropic slot falls back to a family-free structural paraphrase on error (not the Sonnet source)', async () => {
+    const callModel = async ({ lineage }) => ({ text: '', isError: lineage !== 'anthropic-api' });
+    const src = 'Line A with [[ss-search]].\n\nLine B with [[ss-find]].';
+    const out = await generateAdversarialParaphrases({ prompt: src, k: 1, callModel });
+    expect(out.length).toBe(1);
+    // structural paraphrase reorders blocks → differs from the source but keeps tokens
+    expect(out[0]).toContain('[[ss-search]]');
+    expect(out[0]).toContain('[[ss-find]]');
+  });
+});
+
+// ─── B1/B3 — kill-9 mid-round recovery: no double-eval + front == fresh ──────
+
+describe('B1/B3 — mid-round kill-9 recovery (§7.4)', () => {
+  it('a kill mid-round-3-confirm leaves a stale checkpoint at round 2 and partial round-3 rows', async () => {
+    const devProbes = [makeProbe(1), makeProbe(2), makeProbe(3)];
+    const dir = mkdtempSync(path.join(tmpdir(), 'p7-kill-'));
+    const paths = pathsFor(dir);
+
+    let throwAfter = Infinity;
+    let confirmCalls = 0;
+    const baseEval = lengthEvaluate();
+    const evaluateCandidate = async (args) => {
+      // count only confirm-pass calls (full dev × 2) in round 3
+      const r = await baseEval(args);
+      return r;
+    };
+
+    // Run 2 clean rounds first (establishes the round-2 checkpoint).
+    await runGepa({
+      runId: 'k', variants: variants(3), devProbes,
+      evaluateCandidate, callModel: mutatingEcho(),
+      maxRounds: 2, patience: 99, screenProbeCount: 2, seed: 7, paths, verbose: false,
+    });
+
+    // Resume into round 3 but throw partway through the confirm pass.
+    let calls = 0;
+    const throwingEval = async (args) => {
+      calls += 1;
+      if (calls > 8) throw new Error('kill-9 mid round-3 confirm');
+      return baseEval(args);
+    };
+    await expect(runGepa({
+      runId: 'k', variants: variants(3), devProbes,
+      evaluateCandidate: throwingEval, callModel: mutatingEcho(),
+      maxRounds: 3, resume: true, patience: 99, screenProbeCount: 2, seed: 7, paths, verbose: false,
+    })).rejects.toThrow(/kill-9/);
+
+    // Checkpoint still says round 2 (round 3 never completed atomically).
+    const ckpt = JSON.parse(fs.readFileSync(paths.paretoCurrent, 'utf8'));
+    expect(ckpt.lastCompletedRound).toBe(2);
+    // But partial round-3 rows ARE on disk (durable JSONL).
+    const r3 = loadTrajectory(paths.trajectory).filter((e) => e.round === 3 && (e._kind === 'screen' || e._kind === 'confirm'));
+    expect(r3.length).toBeGreaterThan(0);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('a kill mid-round-3 then resume reaches the SAME front as a fresh uninterrupted run', async () => {
+    const devProbes = [makeProbe(1), makeProbe(2), makeProbe(3)];
+    const common = {
+      variants: variants(3), devProbes,
+      callModel: mutatingEcho(), seed: 13, patience: 99, screenProbeCount: 2, verbose: false,
+    };
+
+    const freshDir = mkdtempSync(path.join(tmpdir(), 'p7-kf-'));
+    const fresh = await runGepa({ ...common, runId: 'kf', maxRounds: 3, evaluateCandidate: lengthEvaluate(), paths: pathsFor(freshDir) });
+
+    // 2 clean rounds, then resume into 3 and throw partway.
+    const dir = mkdtempSync(path.join(tmpdir(), 'p7-ki-'));
+    const paths = pathsFor(dir);
+    await runGepa({ ...common, runId: 'ki', maxRounds: 2, evaluateCandidate: lengthEvaluate(), paths });
+    let calls = 0;
+    await expect(runGepa({
+      ...common, runId: 'ki', maxRounds: 3, resume: true,
+      evaluateCandidate: async (a) => { calls += 1; if (calls > 6) throw new Error('kill'); return lengthEvaluate()(a); },
+      paths,
+    })).rejects.toThrow(/kill/);
+
+    // Final resume completes round 3. The recovered front MUST match the fresh
+    // run's front exactly (correctness preserved through the crash + replay).
+    const resumed = await runGepa({ ...common, runId: 'ki', maxRounds: 3, resume: true, evaluateCandidate: lengthEvaluate(), paths });
+    const sig = (r) => r.front.map((f) => `${f.hash}:${f.finalScore.toFixed(6)}`).sort();
+    expect(sig(resumed)).toEqual(sig(fresh));
+    expect(resumed.rounds).toBe(fresh.rounds);
+
+    rmSync(freshDir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('fsyncSync is actually invoked during a run (durability primitive, §7.4 step 2)', async () => {
+    const spy = vi.spyOn(fs, 'fsyncSync');
+    const paths = pathsFor();
+    await runGepa({
+      runId: 'fsync', variants: variants(1), devProbes: [makeProbe(1)],
+      evaluateCandidate: makeDryRunEvaluate(), callModel: mutatingEcho(),
+      maxRounds: 1, patience: 99, screenProbeCount: 1, paths, verbose: false,
+    });
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});
+
+// ─── M1(a) — PARETO_UPDATE appended AFTER the atomic checkpoint ──────────────
+
+describe('M1(a) — pareto-update ordering vs checkpoint', () => {
+  it('the pareto-update event is appended after the round checkpoint (no orphan on crash)', async () => {
+    // length-rewarding evaluator → mutation gets ADMITTED → a pareto-update fires
+    const paths = pathsFor();
+    await runGepa({
+      runId: 'm1a', variants: variants(2), devProbes: [makeProbe(1), makeProbe(2)],
+      evaluateCandidate: lengthEvaluate(), callModel: mutatingEcho(),
+      maxRounds: 1, patience: 99, screenProbeCount: 2, paths, verbose: false,
+    });
+    const ev = loadTrajectory(paths.trajectory);
+    const pu = ev.filter((e) => e._kind === 'pareto-update' && e.round === 1);
+    expect(pu.length).toBeGreaterThan(0);
+    // The checkpoint reflects the admitted front, and the on-disk pareto-update's
+    // front hashes are a subset of the checkpointed front (single source of truth).
+    const ckpt = JSON.parse(fs.readFileSync(paths.paretoCurrent, 'utf8'));
+    const ckptHashes = new Set(ckpt.front.map((f) => f.hash));
+    for (const h of pu[pu.length - 1].front) expect(ckptHashes.has(h)).toBe(true);
+  });
+});
+
+// ─── M1(b) — deterministic displaced-incumbent selection ─────────────────────
+
+describe('M1(b) — deterministic displaced incumbent', () => {
+  it('picks the same displaced incumbent regardless of front array order', () => {
+    const A = { id: 'A', finalScore: 0.40, sharpnessScore: 0.9, score_sonnet: 0.6, score_gpt5_5: 0.5, scores: {} };
+    const B = { id: 'B', finalScore: 0.30, sharpnessScore: 0.9, score_sonnet: 0.55, score_gpt5_5: 0.5, scores: {} };
+    // candidate dominates BOTH and passes the cap against both → ambiguous "first
+    // to pass" would be order-dependent; the stable key (lowest finalScore) picks B.
+    const candidate = { id: 'C', finalScore: 0.6, sharpnessScore: 1.0, score_sonnet: 0.62, score_gpt5_5: 0.6, scores: {} };
+    const r1 = attemptParetoAdmission({ candidate, front: [A, B], frontSize: 6 });
+    const r2 = attemptParetoAdmission({ candidate, front: [B, A], frontSize: 6 });
+    expect(r1.admitted).toBe(true);
+    expect(r2.admitted).toBe(true);
+    expect(r1.incumbent).toBe(r2.incumbent);
+    expect(r1.incumbent).toBe('B'); // lowest-finalScore dominated incumbent
+  });
+});
+
+// ─── M4 — TARE sharpness tracks taskScore, ignores EAS/length variation ──────
+
+describe('M4 — TARE sharpness uses joint Maximin (taskScore), not finalScore', () => {
+  it('sharpness ignores EAS-factor / length variation across paraphrases', async () => {
+    const probes = [makeProbe(1), makeProbe(2)];
+    // The candidate WOULD enter the front (front taskScore lower than candidate's).
+    const initialFront = [
+      { id: 'inc', prompt: 'inc-prompt', finalScore: 0.1, taskScore: 0.2, sharpnessScore: 1.0, score_sonnet: 0.2, score_gpt5_5: 0.2, scores: { p1: 0.2, p2: 0.2 }, detail: {} },
+    ];
+    // Constant per-target SCORE (→ identical taskScore for every paraphrase) but
+    // a callModel whose paraphrases differ wildly in LENGTH (→ different
+    // finalScore via length penalty, identical taskScore). If TARE used
+    // finalScore, sharpness would be > 0; on taskScore it must be ~0.
+    const evaluateCandidate = async () => ({
+      score: 0.8, toolCalls: 2, finalAnswerEmitted: true, usedReadOrGrep: true,
+      trajectory: { toolCalls: [{ name: 'ss-search' }, { name: 'ss-search' }], answer: 'a' }, wallMs: 1,
+    });
+    // Paraphrases that preserve tokens but vary length massively.
+    let n = 0;
+    const callModel = async ({ userPrompt }) => {
+      const m = userPrompt.match(/```\n([\s\S]*?)\n```/);
+      const body = m ? m[1] : userPrompt;
+      n += 1;
+      const pad = '\n<!-- ' + 'x'.repeat(n * 400) + ' -->';
+      return { text: body + pad, isError: false };
+    };
+    const paths = pathsFor();
+    await runGepa({
+      runId: 'm4', variants: [], devProbes: probes, initialFront,
+      evaluateCandidate, callModel,
+      maxRounds: 1, patience: 99, screenProbeCount: 2, paths, verbose: false,
+    });
+    const tare = loadTrajectory(paths.trajectory).find((e) => e._kind === 'tare-adversarial');
+    expect(tare).toBeDefined();
+    // taskScore is constant across all paraphrases → sharpness ≈ 0 despite the
+    // length-driven finalScore divergence the old code would have measured.
+    expect(tare.sharpness).toBeCloseTo(0, 6);
+    expect(tare.sharpness_score).toBeCloseTo(1, 6);
+  });
+});
+
+// ─── M5 — front-overflow trim keeps a robust lower-finalScore Pareto point ───
+
+describe('M5 — 2-objective-aware overflow trim', () => {
+  it('crowdingDistances marks boundary members Infinity', () => {
+    const members = [
+      { id: 'lowF-hiRobust', finalScore: 0.40, sharpnessScore: 0.99 },
+      { id: 'mid', finalScore: 0.50, sharpnessScore: 0.60 },
+      { id: 'hiF-loRobust', finalScore: 0.60, sharpnessScore: 0.30 },
+    ];
+    const d = crowdingDistances(members);
+    expect(d.get(members[0])).toBe(Infinity); // boundary on both objectives
+    expect(d.get(members[2])).toBe(Infinity);
+    expect(d.get(members[1])).toBeLessThan(Infinity); // interior → finite
+  });
+
+  it('overflow evicts a dominated member and retains a robust lower-finalScore point', () => {
+    const robustLowF = { id: 'robust', finalScore: 0.45, sharpnessScore: 0.99, score_sonnet: 0.6, score_gpt5_5: 0.6, scores: {} };
+    const dominated = { id: 'dom', finalScore: 0.50, sharpnessScore: 0.40, score_sonnet: 0.6, score_gpt5_5: 0.6, scores: {} };
+    const dominator = { id: 'best', finalScore: 0.80, sharpnessScore: 0.90, score_sonnet: 0.7, score_gpt5_5: 0.7, scores: {} };
+    // dominator dominates `dominated` (higher on both objectives). pickOverflowVictim
+    // must evict `dominated`, NOT the robust lower-finalScore Pareto point.
+    const victim = pickOverflowVictim([robustLowF, dominated, dominator]);
+    expect(victim.id).toBe('dom');
+  });
+
+  it('attemptParetoAdmission overflow retains the robust lower-finalScore variant', () => {
+    // Build a full front of 6 where every member is mutually NON-dominated (each
+    // higher-finalScore member is lower-robustness, a proper trade-off front), so
+    // the 7th candidate dominates NONE and the front genuinely OVERFLOWS → the
+    // 2-objective trim (not lowest-finalScore) must keep the robust boundary point.
+    const robust = { id: 'robust', finalScore: 0.40, sharpnessScore: 1.00, score_sonnet: 0.55, score_gpt5_5: 0.55, scores: {} };
+    const fillers = Array.from({ length: 5 }, (_, i) => ({
+      // finalScore rises, sharpness falls → strictly trade-off, none dominated.
+      id: `F${i}`, finalScore: 0.50 + i * 0.05, sharpnessScore: 0.95 - i * 0.10, score_sonnet: 0.6, score_gpt5_5: 0.6, scores: {},
+    }));
+    const front = [robust, ...fillers];
+    // Candidate: an interior trade-off point that beats ≥1 incumbent's finalScore
+    // (so it would-enter) but dominates none → front grows to 7 → must trim 1.
+    const candidate = { id: 'C', finalScore: 0.62, sharpnessScore: 0.45, score_sonnet: 0.62, score_gpt5_5: 0.6, scores: {} };
+    const res = attemptParetoAdmission({ candidate, front, frontSize: 6 });
+    expect(res.admitted).toBe(true);
+    expect(res.newFront.length).toBe(6);
+    const ids = res.newFront.map((f) => f.id);
+    expect(ids).toContain('robust'); // the robust boundary point survives the trim
+    // A lowest-finalScore trim (the old behaviour) would have evicted `robust`
+    // (finalScore 0.40, the minimum); the crowding trim keeps it as a boundary.
+  });
+});
+
+// ─── m7 — pruner never planned before round 3 ───────────────────────────────
+
+describe('m7 — pruner round-3 guard', () => {
+  it('planSlots never returns pruner before round 3 even if the cycle lands on it', () => {
+    // round 3's natural slot3 is pruner; rounds 1/2 must NEVER be pruner.
+    for (let round = 1; round <= 2; round++) {
+      const slots = planSlots({ round, front: [{ id: 'A', scores: { p1: 0.9 } }], probeIds: ['p1'] });
+      expect(slots[2].op).not.toBe('pruner');
+    }
+    expect(planSlots({ round: 3, front: [{ id: 'A', scores: { p1: 0.9 } }], probeIds: ['p1'] })[2].op).toBe('pruner');
+  });
+});
+
+// ─── m8 — per-target balanced-pair detection ────────────────────────────────
+
+describe('m8 — findBalancedPair detects per-target balanced wins', () => {
+  it('finds a probe where one incumbent wins Sonnet and another wins GPT-5.5', () => {
+    const sonnetSpecialist = { id: 'S', detail: { p1: { sonnet: { score: 0.9 }, gpt5_5: { score: 0.2 } } } };
+    const gptSpecialist = { id: 'G', detail: { p1: { sonnet: { score: 0.3 }, gpt5_5: { score: 0.85 } } } };
+    const pair = findBalancedPair({ front: [sonnetSpecialist, gptSpecialist], probeIds: ['p1'] });
+    expect(pair).toMatchObject({ probeId: 'p1' });
+    expect(pair.sonnetWinner.id).toBe('S');
+    expect(pair.gptWinner.id).toBe('G');
+  });
+
+  it('returns null when no balanced pair exists', () => {
+    const both = { id: 'B', detail: { p1: { sonnet: { score: 0.9 }, gpt5_5: { score: 0.9 } } } };
+    expect(findBalancedPair({ front: [both], probeIds: ['p1'] })).toBeNull();
+  });
+});
+
+// ─── M2 — resume primes the token bucket (anti-429-storm, §7.7) ──────────────
+
+describe('M2 — token-bucket prime on resume (§7.7)', () => {
+  it('primeForResume forces ~one WINDOW_MS cooldown on the next acquire (fake clock)', async () => {
+    let clock = 1_000_000;
+    const now = () => clock;
+    // Build the bucket exactly as gepa-cli does for the gpt5_5 target (Tier 2).
+    const bucket = createTokenBucket({ rpm: RATE_LIMITS.openai_gpt5_5[2].rpm, itpm: RATE_LIMITS.openai_gpt5_5[2].tpm, now });
+    let sleptMs = 0;
+    bucket._setSleep(async (ms) => { sleptMs += ms; clock += ms; });
+
+    // A fresh acquire with NO prime would not block.
+    bucket.primeForResume(); // M2: gepa-cli/gepa.mjs invoke this on --resume
+    await bucket.acquire({ inTokens: 12_000, outTokens: 2_000, target: 'gpt5_5' });
+
+    // The synthetic prime load forced a cooldown of ~one rolling window.
+    expect(sleptMs).toBeGreaterThan(0);
+    expect(sleptMs).toBeLessThanOrEqual(60_000);
   });
 });

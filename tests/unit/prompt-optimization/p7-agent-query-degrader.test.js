@@ -115,6 +115,24 @@ describe('abbreviatePackages', () => {
     const result = abbreviatePackages('mypackage.MyClass function');
     expect(result.trim().length).toBeGreaterThan(0);
   });
+
+  it('abbreviates a dotted identifier to its last segment (fastify.register → register)', () => {
+    const result = abbreviatePackages('register a route via fastify.register');
+    expect(result).toContain('register');
+    expect(result).not.toContain('fastify.register');
+  });
+
+  it('does NOT mangle a file-path segment containing a slash (m9 regression)', () => {
+    // The old regex stripped `route.` from `src/route.ts`, yielding `src/ts`.
+    const result = abbreviatePackages('open the handler in src/route.ts now');
+    expect(result).toContain('src/route.ts');
+    expect(result).not.toContain('src/ts');
+  });
+
+  it('preserves a multi-segment path with extension intact', () => {
+    const result = abbreviatePackages('lib/server/app.config.ts holds the config');
+    expect(result).toContain('lib/server/app.config.ts');
+  });
 });
 
 describe('lowercaseWrongExt', () => {

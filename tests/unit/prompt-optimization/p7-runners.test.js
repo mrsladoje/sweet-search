@@ -17,7 +17,9 @@ import {
   buildAnthropicPayload,
   parseAnthropicResponse,
   buildOpenAIPayload,
+  buildOpenAIReasoningPayload,
   parseOpenAIResponse,
+  classifyResponseStatus,
   runJudge,
   _internal,
 } from '../../../eval/agent-read-workflows/judge-runner.js';
@@ -352,9 +354,16 @@ describe('runJudge — anthropic-api', () => {
 
 describe('runJudge — openai-api', () => {
   let origFetch;
-  beforeEach(() => { origFetch = _internal.fetch; });
+  let origSleep;
+  beforeEach(() => {
+    origFetch = _internal.fetch;
+    origSleep = _internal.sleep;
+    // Fake sleep so the retry/backoff wrapper does not actually wait.
+    _internal.sleep = vi.fn(async () => {});
+  });
   afterEach(() => {
     _internal.fetch = origFetch;
+    _internal.sleep = origSleep;
     delete process.env.OPENAI_API_KEY;
   });
 
@@ -388,7 +397,9 @@ describe('runJudge — openai-api', () => {
     expect(r.error).toMatch(/OPENAI_API_KEY/);
   });
 
-  it('non-OK HTTP → isError', async () => {
+  it('persistent 429 → retried then surfaced as isError with status', async () => {
+    // Spec (CC3/B5): a 429 is retryable. A fetch that always 429s exhausts the
+    // ladder and surfaces isError:true with the final status + a retryCount.
     process.env.OPENAI_API_KEY = 'test-key';
     _internal.fetch = makeFetchError(429, 'rate limited');
     const r = await runJudge({
@@ -397,6 +408,8 @@ describe('runJudge — openai-api', () => {
     });
     expect(r.isError).toBe(true);
     expect(r.raw.status).toBe(429);
+    expect(r.retryCount).toBeGreaterThan(0);
+    expect(_internal.sleep).toHaveBeenCalled();
   });
 });
 
@@ -608,5 +621,289 @@ describe('runJudge — qwen/dashscope', () => {
     });
     expect(r.isError).toBe(true);
     expect(r.error).toMatch(/DASHSCOPE_API_KEY/);
+  });
+});
+
+// ─── retry helpers — sequenced-fetch fixtures ────────────────────────────────
+
+/**
+ * Build a fetch mock that returns each entry of `responses` on successive
+ * calls (clamping to the last entry once exhausted). Each entry is one of:
+ *   { ok:true,  json }                  — a 2xx with a JSON body
+ *   { ok:false, status[, retryAfter] }  — a non-2xx, optional Retry-After header
+ */
+function makeSequencedFetch(responses) {
+  let i = 0;
+  return vi.fn(async () => {
+    const spec = responses[Math.min(i, responses.length - 1)];
+    i++;
+    if (spec.ok) {
+      return { ok: true, json: async () => spec.json };
+    }
+    return {
+      ok: false,
+      status: spec.status,
+      text: async () => spec.body ?? 'err',
+      headers: { get: (h) => (h.toLowerCase() === 'retry-after' ? (spec.retryAfter ?? null) : null) },
+    };
+  });
+}
+
+// ─── classifyResponseStatus (pure) ───────────────────────────────────────────
+
+describe('classifyResponseStatus', () => {
+  it('2xx → ok', () => {
+    expect(classifyResponseStatus(200)).toBe('ok');
+    expect(classifyResponseStatus(204)).toBe('ok');
+  });
+  it('429 → retry-rate-limit', () => {
+    expect(classifyResponseStatus(429)).toBe('retry-rate-limit');
+  });
+  it('5xx → retry-server', () => {
+    expect(classifyResponseStatus(500)).toBe('retry-server');
+    expect(classifyResponseStatus(503)).toBe('retry-server');
+  });
+  it('4xx (non-429) → fatal', () => {
+    expect(classifyResponseStatus(400)).toBe('fatal');
+    expect(classifyResponseStatus(401)).toBe('fatal');
+    expect(classifyResponseStatus(404)).toBe('fatal');
+  });
+});
+
+// ─── B5 — shared retry/backoff wrapper (CC3) ─────────────────────────────────
+
+describe('runJudge retry wrapper (B5/CC3)', () => {
+  let origFetch;
+  let origSleep;
+  let sleepSpy;
+  beforeEach(() => {
+    origFetch = _internal.fetch;
+    origSleep = _internal.sleep;
+    sleepSpy = vi.fn(async () => {});
+    _internal.sleep = sleepSpy;     // injectable: no real waiting
+    process.env.OPENAI_API_KEY = 'test-key';
+  });
+  afterEach(() => {
+    _internal.fetch = origFetch;
+    _internal.sleep = origSleep;
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  it('429-then-200 → retries and returns the eventual 200 with isError:false', async () => {
+    _internal.fetch = makeSequencedFetch([
+      { ok: false, status: 429 },
+      { ok: true, json: { choices: [{ message: { content: 'recovered reply' } }] } },
+    ]);
+    const r = await runJudge({
+      lineage: 'openai-api', model: 'gpt-5.5', systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(false);
+    expect(r.text).toBe('recovered reply');
+    expect(r.retryCount).toBe(1);
+    expect(r.raw.retryCount).toBe(1);
+    expect(_internal.fetch).toHaveBeenCalledTimes(2);
+    expect(sleepSpy).toHaveBeenCalledTimes(1); // backoff sleep happened
+  });
+
+  it('429 honors Retry-After header for the backoff delay', async () => {
+    _internal.fetch = makeSequencedFetch([
+      { ok: false, status: 429, retryAfter: '3' }, // 3 seconds
+      { ok: true, json: { choices: [{ message: { content: 'ok' } }] } },
+    ]);
+    const r = await runJudge({
+      lineage: 'openai-api', model: 'gpt-5.5', systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(false);
+    expect(sleepSpy).toHaveBeenCalledWith(3000); // Retry-After: 3s → 3000ms
+  });
+
+  it('4xx (400) → fatal, no retry', async () => {
+    _internal.fetch = makeSequencedFetch([
+      { ok: false, status: 400 },
+      { ok: true, json: { choices: [{ message: { content: 'should not reach' } }] } },
+    ]);
+    const r = await runJudge({
+      lineage: 'openai-api', model: 'gpt-5.5', systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(true);
+    expect(r.raw.status).toBe(400);
+    expect(r.retryCount).toBe(0);
+    expect(_internal.fetch).toHaveBeenCalledTimes(1); // no retry
+    expect(sleepSpy).not.toHaveBeenCalled();
+  });
+
+  it('5xx → retried once then succeeds', async () => {
+    _internal.fetch = makeSequencedFetch([
+      { ok: false, status: 503 },
+      { ok: true, json: { choices: [{ message: { content: 'after-5xx' } }] } },
+    ]);
+    const r = await runJudge({
+      lineage: 'openai-api', model: 'gpt-5.5', systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(false);
+    expect(r.text).toBe('after-5xx');
+    expect(r.retryCount).toBe(1);
+    expect(_internal.fetch).toHaveBeenCalledTimes(2);
+    expect(sleepSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('5xx → retried only ONCE (persistent 5xx surfaces as error)', async () => {
+    _internal.fetch = makeSequencedFetch([{ ok: false, status: 500 }]); // always 500
+    const r = await runJudge({
+      lineage: 'openai-api', model: 'gpt-5.5', systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(true);
+    expect(r.raw.status).toBe(500);
+    expect(r.retryCount).toBe(1);             // exactly one server retry
+    expect(_internal.fetch).toHaveBeenCalledTimes(2); // original + 1 retry
+  });
+});
+
+// ─── M6 — empty-text-200 detection + retry ───────────────────────────────────
+
+describe('empty-text-200 (M6)', () => {
+  let origFetch;
+  let origSleep;
+  beforeEach(() => {
+    origFetch = _internal.fetch;
+    origSleep = _internal.sleep;
+    _internal.sleep = vi.fn(async () => {});
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.DEEPSEEK_API_KEY = 'test-key';
+    process.env.ANTHROPIC_API_KEY = 'test-key';
+    process.env.GEMINI_API_KEY = 'test-key';
+  });
+  afterEach(() => {
+    _internal.fetch = origFetch;
+    _internal.sleep = origSleep;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.DEEPSEEK_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+  });
+
+  it('a 200 with empty content is classified isError:true error:empty-text-200 and retried', async () => {
+    // First 200 carries empty content (reasoning-only); second 200 has text.
+    _internal.fetch = makeSequencedFetch([
+      { ok: true, json: { choices: [{ message: { content: '   ' } }] } }, // whitespace-only
+      { ok: true, json: { choices: [{ message: { content: 'real verdict' } }] } },
+    ]);
+    const r = await runJudge({
+      lineage: 'openai-api', model: 'gpt-5.5', systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(false);
+    expect(r.text).toBe('real verdict');
+    expect(r.retryCount).toBe(1);
+    expect(_internal.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('persistent empty-text-200 surfaces error:empty-text-200 (DeepSeek path)', async () => {
+    _internal.fetch = makeSequencedFetch([
+      { ok: true, json: { choices: [{ message: { content: '' } }] } }, // always empty
+    ]);
+    const r = await runJudge({
+      lineage: 'deepseek-api', model: 'deepseek-v4-flash', systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(true);
+    expect(r.error).toBe('empty-text-200');
+    expect(r.retryCount).toBeGreaterThan(0); // it tried to recover
+  });
+
+  it('empty-text-200 detected on the Anthropic path', async () => {
+    _internal.fetch = makeSequencedFetch([
+      { ok: true, json: { content: [{ type: 'thinking', thinking: 'cot only' }] } }, // no text block
+      { ok: true, json: { content: [{ type: 'text', text: 'final' }] } },
+    ]);
+    const r = await runJudge({
+      lineage: 'anthropic-api', model: 'claude-sonnet-4-6', systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(false);
+    expect(r.text).toBe('final');
+    expect(r.retryCount).toBe(1);
+  });
+
+  it('empty-text-200 detected on the Gemini path', async () => {
+    _internal.fetch = makeSequencedFetch([
+      { ok: true, json: { candidates: [{ content: { parts: [{ text: '' }] } }] } }, // empty
+      { ok: true, json: { candidates: [{ content: { parts: [{ text: 'gemini final' }] } }] } },
+    ]);
+    const r = await runJudge({
+      lineage: 'google-api', model: 'gemini-3.1-flash-lite', systemPrompt: '', userPrompt: 'u',
+    });
+    expect(r.isError).toBe(false);
+    expect(r.text).toBe('gemini final');
+    expect(r.retryCount).toBe(1);
+  });
+});
+
+// ─── M7 — reasoning payload (max_completion_tokens + temperature:1) ───────────
+
+describe('buildOpenAIReasoningPayload (M7)', () => {
+  it('emits max_completion_tokens (NOT max_tokens) + temperature:1', () => {
+    const p = buildOpenAIReasoningPayload({
+      model: 'gpt-5.5', systemPrompt: 'sys', userPrompt: 'usr', maxCompletionTokens: 8000,
+    });
+    expect(p.max_completion_tokens).toBe(8000);
+    expect('max_tokens' in p).toBe(false);
+    expect(p.temperature).toBe(1);
+    expect(p.stream).toBe(false);
+    expect(p.messages).toEqual([
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'usr' },
+    ]);
+  });
+
+  it('defaults max_completion_tokens to 4096', () => {
+    const p = buildOpenAIReasoningPayload({ userPrompt: 'u' });
+    expect(p.max_completion_tokens).toBe(4096);
+    expect('max_tokens' in p).toBe(false);
+  });
+
+  it('buildOpenAIPayload remains unchanged (max_tokens + temperature:0)', () => {
+    const p = buildOpenAIPayload({ userPrompt: 'u' });
+    expect(p.max_tokens).toBe(4096);
+    expect(p.temperature).toBe(0);
+    expect('max_completion_tokens' in p).toBe(false);
+  });
+});
+
+describe('runOpenAIDirect reasoning vs non-reasoning wire shape (M7)', () => {
+  let origFetch;
+  let origSleep;
+  beforeEach(() => {
+    origFetch = _internal.fetch;
+    origSleep = _internal.sleep;
+    _internal.sleep = vi.fn(async () => {});
+    process.env.OPENAI_API_KEY = 'test-key';
+  });
+  afterEach(() => {
+    _internal.fetch = origFetch;
+    _internal.sleep = origSleep;
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  it('useCompletionTokens:true → body has max_completion_tokens + temperature:1, no max_tokens', async () => {
+    _internal.fetch = makeFetch({ choices: [{ message: { content: 'ok' } }] });
+    await runJudge({
+      lineage: 'openai-api', model: 'gpt-5.5-reasoning',
+      systemPrompt: 'sys', userPrompt: 'usr',
+      useCompletionTokens: true, maxTokens: 8000,
+    });
+    const body = JSON.parse(_internal.fetch.mock.calls[0][1].body);
+    expect(body.max_completion_tokens).toBe(8000);
+    expect('max_tokens' in body).toBe(false);
+    expect(body.temperature).toBe(1);
+  });
+
+  it('without useCompletionTokens → body has max_tokens + temperature:0 (unchanged)', async () => {
+    _internal.fetch = makeFetch({ choices: [{ message: { content: 'ok' } }] });
+    await runJudge({
+      lineage: 'openai-api', model: 'gpt-5.5',
+      systemPrompt: 'sys', userPrompt: 'usr',
+    });
+    const body = JSON.parse(_internal.fetch.mock.calls[0][1].body);
+    expect(body.max_tokens).toBe(4096);
+    expect(body.temperature).toBe(0);
+    expect('max_completion_tokens' in body).toBe(false);
   });
 });

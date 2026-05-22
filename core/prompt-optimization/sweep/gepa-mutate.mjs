@@ -96,22 +96,72 @@ export const TARE_PARAPHRASE_SYSTEM_PROMPT =
   'paraphrased prompt, no preamble.';
 
 /**
- * Generate K adversarial paraphrases of `prompt` (Sonnet 4.6, §3.3). Each is
- * token-validated; a paraphrase that corrupts a [[token]] falls back to the
- * source so TARE never measures sharpness against a broken variant.
+ * Per-paraphrase generator lineage rotation (§C2 / B4).
+ *
+ * §C2 / §2.1 require the TARE K=3 set to include ≥1 NON-Anthropic paraphrase:
+ * Sonnet is itself a TARGET, so an all-Sonnet set measures only in-family
+ * invariance — exactly the brittleness the gate exists to catch. We rotate
+ * slot 0 through a non-Anthropic generator (Kimi K2.6 / moonshot family) while
+ * keeping the rest on Sonnet, so the K=3 set spans ≥2 families.
+ *
+ * Each entry: { lineage, model }. Slot 0 is non-Anthropic by construction.
+ */
+export const TARE_GENERATOR_ROTATION = Object.freeze([
+  { lineage: 'moonshot', model: 'kimi-k2.6' },        // non-Anthropic (§C2 requirement)
+  { lineage: 'anthropic-api', model: 'claude-sonnet-4-6' },
+  { lineage: 'anthropic-api', model: 'claude-sonnet-4-6' },
+]);
+
+/**
+ * Deterministic, family-free structural paraphrase fallback (B4). When the
+ * non-Anthropic LLM generator errors, we still want a non-Anthropic paraphrase
+ * in the K=3 set rather than collapsing back to Sonnet. This applies a
+ * lightweight, token-preserving structural transform (sentence reordering of
+ * non-[[token]] lines) so the set retains a genuinely out-of-family variant.
+ * It NEVER touches [[tokens]] (it only reorders whole lines) and is validated
+ * downstream like any other paraphrase.
+ */
+export function structuralParaphrase(prompt) {
+  const lines = String(prompt).split('\n');
+  // Reverse the order of contiguous prose blocks (blank-line separated) while
+  // keeping each block's internal lines intact — a maximal-register-shift,
+  // semantics-preserving, token-preserving structural edit.
+  const blocks = [];
+  let cur = [];
+  for (const ln of lines) {
+    if (ln.trim() === '') { blocks.push(cur); blocks.push(['']); cur = []; }
+    else cur.push(ln);
+  }
+  if (cur.length) blocks.push(cur);
+  const reordered = blocks.reverse().flat();
+  return reordered.join('\n');
+}
+
+/**
+ * Generate K adversarial paraphrases of `prompt` (§3.3 / §C2). The generators
+ * are ROTATED across families so the K=3 set always contains ≥1 NON-Anthropic
+ * paraphrase (B4): slot 0 = Kimi K2.6 (moonshot) with a deterministic
+ * structural fallback if it errors; slots 1..K-1 = Sonnet 4.6 (the §3.3 default).
+ * Each paraphrase is token-validated; one that corrupts a [[token]] falls back
+ * to the source so TARE never measures sharpness against a broken variant.
  */
 export async function generateAdversarialParaphrases({ prompt, k, callModel }) {
   if (typeof callModel !== 'function') throw new TypeError('generateAdversarialParaphrases: callModel must be a function');
   const out = [];
   for (let i = 0; i < k; i++) {
+    const gen = TARE_GENERATOR_ROTATION[i % TARE_GENERATOR_ROTATION.length];
     const result = await callModel({
-      lineage: 'anthropic-api',
-      model: 'claude-sonnet-4-6',
+      lineage: gen.lineage,
+      model: gen.model,
       systemPrompt: TARE_PARAPHRASE_SYSTEM_PROMPT,
       userPrompt: `## Prompt\n\`\`\`\n${prompt}\n\`\`\`\n\nAdversarial paraphrase #${i + 1}:`,
     });
     if (result.isError) {
-      out.push(prompt);
+      // For the non-Anthropic slot, fall back to the family-free structural
+      // paraphrase (NOT the Sonnet source) so the set keeps ≥1 OOF variant.
+      const fallbackRaw = gen.lineage !== 'anthropic-api' ? structuralParaphrase(prompt) : prompt;
+      const fv = validateMutation({ source: prompt, mutated: fallbackRaw, op: 'tare-paraphrase' });
+      out.push(fv.ok ? fv.normalized : prompt);
       continue;
     }
     const validation = validateMutation({ source: prompt, mutated: result.text ?? '', op: 'tare-paraphrase' });
@@ -133,6 +183,14 @@ function pickTrajForProbe(incumbent, probeId, fallbackTarget) {
 
 /**
  * Generate the 3 slot mutations for a round (§3.2 slot composition).
+ *
+ * m8 (documented deferral): OP-2 here consumes only the winner-vs-loser pair
+ * carried on `slot.pair` (from gepa-pareto.findCrossoverPair). The TRUE balanced
+ * OP-2 pair (each incumbent winning one production target, losing the other) is
+ * now detectable via gepa-pareto.findBalancedPair, and op-trajectory-crossover
+ * already supports the balanced construction; wiring that signal through the slot
+ * plan is a minimal follow-up (no behavioural change today — winner-vs-loser is
+ * a valid, narrower OP-2 input).
  *
  * @param {object} args
  * @param {object[]} args.slots      — from gepa-pareto.planSlots

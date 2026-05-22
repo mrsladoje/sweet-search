@@ -224,6 +224,212 @@ describe('createTokenBucket', () => {
   });
 });
 
+// ─── reconcile (M3 — actuals reconciliation) ─────────────────────────────────
+
+describe('createTokenBucket.reconcile (M3)', () => {
+  it('swaps the last entry estimate for a larger measured actual in the window', async () => {
+    let fakeNow = 0;
+    const bucket = createTokenBucket({ itpm: 30_000, estIn: 12_000, now: () => fakeNow });
+    bucket._setSleep(async (ms) => { fakeNow += ms; });
+
+    // acquire charges the static estimate (12_000 in / 2_000 out)
+    await bucket.acquire({ inTokens: 12_000, outTokens: 2_000, target: 'sonnet' });
+    expect(bucket.stats().windowInTokens).toBe(12_000);
+    expect(bucket.stats().windowOutTokens).toBe(2_000);
+
+    // Heavy multi-file probe actually consumed more than estimated.
+    bucket.reconcile({ inTokens: 20_000, outTokens: 3_000 });
+
+    const s = bucket.stats();
+    expect(s.windowInTokens).toBe(20_000); // actual, not the 12_000 estimate
+    expect(s.windowOutTokens).toBe(3_000);
+    expect(s.windowRequests).toBe(1);      // still a single request
+  });
+
+  it('subsequent acquire is throttled given the corrected (larger) load', async () => {
+    let fakeNow = 0;
+    const bucket = createTokenBucket({ itpm: 30_000, estIn: 12_000, now: () => fakeNow });
+    bucket._setSleep(async (ms) => { fakeNow += ms; });
+
+    // Estimate (12K) would have left room for a second 12K call (24K <= 30K),
+    // but the real call burned 25K. After reconcile, a second 12K call (25+12
+    // = 37K > 30K) must throttle.
+    await bucket.acquire({ inTokens: 12_000, outTokens: 0 });
+    bucket.reconcile({ inTokens: 25_000 });
+
+    await bucket.acquire({ inTokens: 12_000, outTokens: 0 });
+    expect(bucket.stats().throttledMs).toBeGreaterThan(0);
+  });
+
+  it('reconcile leaves out unspecified dimension unchanged', async () => {
+    let fakeNow = 0;
+    const bucket = createTokenBucket({ now: () => fakeNow });
+    bucket._setSleep(async (ms) => { fakeNow += ms; });
+
+    await bucket.acquire({ inTokens: 12_000, outTokens: 2_000 });
+    bucket.reconcile({ inTokens: 18_000 }); // only correct input
+
+    const s = bucket.stats();
+    expect(s.windowInTokens).toBe(18_000);
+    expect(s.windowOutTokens).toBe(2_000); // untouched
+  });
+
+  it('reconcile only adjusts the MOST-RECENT entry', async () => {
+    let fakeNow = 0;
+    const bucket = createTokenBucket({ now: () => fakeNow });
+    bucket._setSleep(async (ms) => { fakeNow += ms; });
+
+    await bucket.acquire({ inTokens: 1_000, outTokens: 100 });
+    await bucket.acquire({ inTokens: 2_000, outTokens: 200 });
+    bucket.reconcile({ inTokens: 9_000, outTokens: 900 });
+
+    const s = bucket.stats();
+    // first entry untouched (1_000/100), second corrected (9_000/900)
+    expect(s.windowInTokens).toBe(10_000);
+    expect(s.windowOutTokens).toBe(1_000);
+  });
+
+  it('reconcile without a prior acquire is a guarded no-op (no throw, returns null)', () => {
+    const bucket = createTokenBucket({ itpm: 30_000, estIn: 12_000, now: () => 0 });
+    let result;
+    expect(() => { result = bucket.reconcile({ inTokens: 5_000, outTokens: 500 }); }).not.toThrow();
+    expect(result).toBeNull();
+    const s = bucket.stats();
+    expect(s.windowInTokens).toBe(0);
+    expect(s.windowRequests).toBe(0);
+  });
+
+  it('reconcile() with no args is a no-op-ish (entry unchanged)', async () => {
+    let fakeNow = 0;
+    const bucket = createTokenBucket({ now: () => fakeNow });
+    bucket._setSleep(async (ms) => { fakeNow += ms; });
+    await bucket.acquire({ inTokens: 5_000, outTokens: 500 });
+    expect(() => bucket.reconcile()).not.toThrow();
+    const s = bucket.stats();
+    expect(s.windowInTokens).toBe(5_000);
+    expect(s.windowOutTokens).toBe(500);
+  });
+
+  it('acquire returns the recorded entry handle', async () => {
+    let fakeNow = 0;
+    const bucket = createTokenBucket({ now: () => fakeNow });
+    bucket._setSleep(async (ms) => { fakeNow += ms; });
+    const handle = await bucket.acquire({ inTokens: 7_000, outTokens: 700 });
+    expect(handle).toMatchObject({ requests: 1, inTokens: 7_000, outTokens: 700 });
+    expect(typeof handle.ts).toBe('number');
+  });
+});
+
+// ─── serialize / restore / primeForResume (M2 — resume) ──────────────────────
+
+describe('createTokenBucket serialize/restore (M2)', () => {
+  it('serialize returns a JSON-safe snapshot of the active window', async () => {
+    let fakeNow = 0;
+    const bucket = createTokenBucket({ itpm: 100_000, estIn: 10_000, now: () => fakeNow });
+    bucket._setSleep(async (ms) => { fakeNow += ms; });
+
+    await bucket.acquire({ inTokens: 10_000, outTokens: 1_000 });
+    await bucket.acquire({ inTokens: 20_000, outTokens: 2_000 });
+
+    const snap = bucket.serialize();
+    // round-trips through JSON unchanged
+    expect(JSON.parse(JSON.stringify(snap))).toEqual(snap);
+    expect(snap.entries).toHaveLength(2);
+    expect(snap.entries[0]).toMatchObject({ requests: 1, inTokens: 10_000, outTokens: 1_000 });
+    expect(typeof snap.throttledMs).toBe('number');
+  });
+
+  it('a NEW bucket restored from a snapshot reflects the restored window load', async () => {
+    let fakeNow = 0;
+    const src = createTokenBucket({ itpm: 100_000, estIn: 10_000, now: () => fakeNow });
+    src._setSleep(async (ms) => { fakeNow += ms; });
+    await src.acquire({ inTokens: 10_000, outTokens: 1_000 });
+    await src.acquire({ inTokens: 20_000, outTokens: 2_000 });
+    const snap = src.serialize();
+
+    // Fresh bucket on the same clock
+    const dst = createTokenBucket({ itpm: 100_000, estIn: 10_000, now: () => fakeNow });
+    dst._setSleep(async (ms) => { fakeNow += ms; });
+    expect(dst.stats().windowInTokens).toBe(0); // empty before restore
+
+    dst.restore(snap);
+    const s = dst.stats();
+    expect(s.windowRequests).toBe(2);
+    expect(s.windowInTokens).toBe(30_000);
+    expect(s.windowOutTokens).toBe(3_000);
+  });
+
+  it('restore prunes entries already aged out of the window relative to now()', () => {
+    // Snapshot recorded at ts=0; we resume at fakeNow well past WINDOW_MS for one entry.
+    let fakeNow = 0;
+    const snap = {
+      entries: [
+        { ts: 0,      requests: 1, inTokens: 10_000, outTokens: 1_000 }, // aged out at now=61_000
+        { ts: 30_000, requests: 1, inTokens: 20_000, outTokens: 2_000 }, // still inside (61_000-60_000=1_000 < 30_000)
+      ],
+      throttledMs: 1234,
+    };
+    fakeNow = 61_000;
+    const bucket = createTokenBucket({ itpm: 100_000, estIn: 10_000, now: () => fakeNow });
+    bucket._setSleep(async (ms) => { fakeNow += ms; });
+    bucket.restore(snap);
+
+    const s = bucket.stats();
+    expect(s.windowRequests).toBe(1);       // only the ts=30_000 entry survives
+    expect(s.windowInTokens).toBe(20_000);
+    expect(s.throttledMs).toBe(1234);       // throttledMs carried over
+  });
+
+  it('restore tolerates a missing/partial snapshot without throwing', () => {
+    const bucket = createTokenBucket({ itpm: 100_000, estIn: 10_000, now: () => 0 });
+    expect(() => bucket.restore(undefined)).not.toThrow();
+    expect(() => bucket.restore({})).not.toThrow();
+    expect(bucket.stats().windowRequests).toBe(0);
+  });
+
+  it('primeForResume forces the very next acquire to block for ~WINDOW_MS', async () => {
+    let fakeNow = 0;
+    let waited = 0;
+    const bucket = createTokenBucket({ rpm: 2, itpm: 30_000, estIn: 12_000, now: () => fakeNow });
+    bucket._setSleep(async (ms) => { waited += ms; fakeNow += ms; });
+
+    bucket.primeForResume();
+    // The synthetic max load saturates the window — next acquire must wait.
+    await bucket.acquire({ inTokens: 12_000, outTokens: 2_000 });
+
+    expect(bucket.stats().throttledMs).toBeGreaterThan(0);
+    // It blocked for approximately one full window (~60s).
+    expect(waited).toBeGreaterThanOrEqual(59_000);
+    expect(waited).toBeLessThanOrEqual(61_000);
+  });
+
+  it('primeForResume cooldown clears after the window so traffic resumes', async () => {
+    let fakeNow = 0;
+    const bucket = createTokenBucket({ rpm: 2, itpm: 30_000, estIn: 12_000, now: () => fakeNow });
+    bucket._setSleep(async (ms) => { fakeNow += ms; });
+
+    bucket.primeForResume();
+    // Advance past the window manually; the synthetic load should age out.
+    fakeNow = 61_000;
+    await bucket.acquire({ inTokens: 12_000, outTokens: 2_000 });
+    expect(bucket.stats().throttledMs).toBe(0); // no wait needed once primed load expired
+  });
+
+  it('serialize/restore + acquire/reconcile coexist with no API regression', async () => {
+    let fakeNow = 0;
+    const bucket = createTokenBucket({ now: () => fakeNow });
+    bucket._setSleep(async (ms) => { fakeNow += ms; });
+    // existing methods still present and behaving
+    expect(typeof bucket.acquire).toBe('function');
+    expect(typeof bucket.stats).toBe('function');
+    expect(typeof bucket._setSleep).toBe('function');
+    expect(typeof bucket.reconcile).toBe('function');
+    expect(typeof bucket.serialize).toBe('function');
+    expect(typeof bucket.restore).toBe('function');
+    expect(typeof bucket.primeForResume).toBe('function');
+  });
+});
+
 // ─── recommendConcurrency ────────────────────────────────────────────────────
 
 describe('recommendConcurrency', () => {

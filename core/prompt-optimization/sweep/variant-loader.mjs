@@ -18,7 +18,7 @@
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve, isAbsolute, basename } from 'node:path';
+import { dirname, resolve, isAbsolute, basename, sep } from 'node:path';
 
 import { PROTECTED_TOKEN_RE } from './p7-shared.mjs';
 
@@ -176,22 +176,42 @@ export function parseFrontMatter(block) {
  */
 export function splitFrontMatter(raw) {
   if (typeof raw !== 'string') throw new TypeError('splitFrontMatter: string required');
-  const m = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  // Normalise line endings first so CRLF / lone-CR files parse identically.
+  const normalised = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  // Allow optional trailing whitespace on the `---` fence lines and tolerate a
+  // body that does not end in a newline (`\n---` closing fence may be followed
+  // by `\n`, EOF, or arbitrary body content).
+  const m = normalised.match(/^---[ \t]*\n([\s\S]*?)\n---[ \t]*(?:\n([\s\S]*))?$/);
   if (!m) throw new Error('splitFrontMatter: missing or malformed `---` front-matter fences');
-  return { frontMatterBlock: m[1], body: m[2] };
+  return { frontMatterBlock: m[1], body: m[2] ?? '' };
 }
 
 // ─── path resolution ──────────────────────────────────────────────────────────
 
-/** Resolve an id ('T7'), a bare filename ('T7.md'), or a path to an absolute file path. */
+/**
+ * Resolve an id ('T7'), a bare filename ('T7.md'), or a path to an absolute
+ * file path. The resolved path is asserted to live INSIDE `VARIANTS_DIR` —
+ * absolute paths or `..` traversal that escape the sandbox are rejected
+ * (CLAUDE.md path-sanitisation mandate). Callers pass 'T1'..'T15' / 'T1.md',
+ * which always resolve inside the sandbox.
+ */
 function resolveVariantPath(idOrPath) {
   if (typeof idOrPath !== 'string' || idOrPath.length === 0) {
     throw new TypeError('loadVariant: id or path string required');
   }
+  let resolved;
   if (idOrPath.includes('/') || idOrPath.endsWith('.md')) {
-    return isAbsolute(idOrPath) ? idOrPath : resolve(VARIANTS_DIR, basename(idOrPath));
+    resolved = isAbsolute(idOrPath) ? resolve(idOrPath) : resolve(VARIANTS_DIR, basename(idOrPath));
+  } else {
+    resolved = resolve(VARIANTS_DIR, `${idOrPath}.md`);
   }
-  return resolve(VARIANTS_DIR, `${idOrPath}.md`);
+  // Sandbox guard: the resolved path must be the dir itself or a descendant.
+  if (resolved !== VARIANTS_DIR && !resolved.startsWith(VARIANTS_DIR + sep)) {
+    throw new Error(
+      `loadVariant: refusing to load "${idOrPath}" outside the variants sandbox (${VARIANTS_DIR})`,
+    );
+  }
+  return resolved;
 }
 
 // ─── public loaders ───────────────────────────────────────────────────────────

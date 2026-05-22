@@ -2,7 +2,7 @@
 
 **Created**: 2026-05-10
 **Status**: Draft, ready for pre-registration tag and implementation
-**Reviewed**: 2026-05-10 by (a) Gemini 3.1 Pro Deep Think — THREE PASSES (pass 1 = 13 findings; pass 2 = 12 adversarial findings incl. FATAL Round-11 re-baseline + Maximin race-to-middle + EAS + ghost-context-leak + AST-ification + language-transfer HOMP + pathology probes; pass 3 = SHIP-IT verdict + 3 minor tweaks). All Gemini findings integrated. (b) **GPT-5.5 xhigh** external review — the production target reviewing the plan from inside, surfacing 13 GPT-specific blindspots, methodology attacks, and operational footguns Gemini structurally missed (TPM-vs-RPM concurrency math, 0.15 cap utopia-point bug, asymmetric EAS that rewards GPT under-exploration, Java HOMP omitting GPT-5.5, stale joint-mean/latent-interp/ja-pivot residue, SCS reward-for-stable-wrongness, token-validator multiplicity gaps, OP-2 target-tagging, etc.) — all integrated; see §11.5 for the change-map. (c) **User catch** — reasoning-mode transfer gap: optimization runs against thinking-OFF, but power users run thinking-ON; closed by §3.5.2 reasoning-mode operational HOMP gate (Sonnet+thinking + GPT-5.5+reasoning on 15 held-out probes; +$6).
+**Reviewed**: 2026-05-10 by (a) Gemini 3.1 Pro Deep Think — THREE PASSES (pass 1 = 13 findings; pass 2 = 12 adversarial findings incl. FATAL Round-11 re-baseline + Maximin race-to-middle + EAS + ghost-context-leak + AST-ification + language-transfer HOMP + pathology probes; pass 3 = SHIP-IT verdict + 3 minor tweaks). All Gemini findings integrated. (b) **GPT-5.5 xhigh** external review — the production target reviewing the plan from inside, surfacing 13 GPT-specific blindspots, methodology attacks, and operational footguns Gemini structurally missed (TPM-vs-RPM concurrency math, 0.15 cap utopia-point bug, asymmetric EAS that rewards GPT under-exploration, Java HOMP omitting GPT-5.5, stale joint-mean/latent-interp/ja-pivot residue, SCS reward-for-stable-wrongness, token-validator multiplicity gaps, OP-2 target-tagging, etc.) — all integrated; see §11.5 for the change-map. (c) **User catch** — reasoning-mode transfer gap: optimization runs against thinking-OFF, but power users run thinking-ON; closed by §3.5.2 reasoning-mode operational HOMP gate (Sonnet+thinking + GPT-5.5+reasoning on the full 30 held-out probes; ~$12 — see §3.5.2 and the cost table §11.4).
 **Depends on**:
 - **`ss-search` grounding (primary)** — `core/prompt-optimization/data/query-shapes/recommendations-v2.json` produced by PHASE6_REDO (see `docs/PHASE6_REDO.md`). Family-conditioned default + per-family overrides. Deprecates the prior P6 `qshape-v1` artifact for `ss-search`.
 - **Other-tools grounding** — P6 `qshape-v1` artifact (`recommendations.json`, Track A/B JSONLs at commit `7d9eb1d`) is now superseded by per-tool v2 artifacts (`recommendations-v2-ss-find.json`, `recommendations-v2-ss-semantic.json`, `recommendations-v2-ss-trace.json`). All four tools have shipped Phase 6 redoes; see §4.2.
@@ -371,7 +371,7 @@ After unified-winner selection:
    - 1 manual hand-edit
 2. Evaluate winner + 6 paraphrases (= 7 prompt versions) on **45 probes (15 dev + the full 30 held-out)** × **2 production targets** = 630 agent runs. (The full untouched held-out anchors the robustness claim; the dev portion stays a 15-probe subset since on-distribution invariance is the secondary signal.)
 3. Compute **Semantic Consistency Score (SCS)** per [ParaConsist (2026)](https://arxiv.org/abs/2605.04665):
-   - **Answer Consistency** (AC): `# probes where ≥5 of 7 prompts agree on answer / 30`
+   - **Answer Consistency** (AC): `# probes where ≥5 of 7 prompts agree on answer / N` (where `N` = the probe count being scored — here the 45 probes of step 2, i.e. 15 dev + the full 30 held-out; `scs.mjs` `computeScsReport` divides by `N`, not a hardcoded 30)
    - **Semantic Similarity** (SS): mean cosine similarity of output embeddings (**Gemini Embedding 2**, 768-dim) across the 7 prompts per probe
    - **Length Stability** (LS): `1 − stddev(token_count) / mean(token_count)` per probe, then averaged
    - **SCS** = harmonic mean(AC, SS, LS)
@@ -383,7 +383,7 @@ After unified-winner selection:
 
 **Re-scoping (why the original "lazy-user / tired-developer-at-2am" framing was wrong)**: that framing modelled a *human → sweet-search* pipeline. But sweet-search's production traffic is *human → parent agent (Claude Code / Codex) → sweet-search agent → [[ss-search]] / [[ss-grep]] / [[ss-find]]*. By the time a task reaches the sweet-search agent's system prompt it is **already an LLM-generated string** — cleaned up, structured, phrased in agent-typical ways — not a human typing telegraphic garbage. The dominant real-world variance is therefore **cross-model query-formulation shape** (Sonnet → interrogative "Where is X defined?"; GPT → imperative "Find the definition of X."; Opus → fuller context with file hints; reasoning models → narrower, symbol-anchored; smaller delegators → over-/under-decomposing), NOT missing-punctuation human typos. Direct-human input (CLI `[[ss-grep]]`, API power-users during exploration) is real but a small minority (~5–15% of traffic), so the human-typo case is **rebalanced down, not deleted**.
 
-We evaluate the winner against agent-formulated / varied versions of the **30 dev queries**, distributed to match the production reality:
+We evaluate the winner against agent-formulated / varied versions of the **40 dev queries**, distributed to match the production reality:
 
 | Bucket | n (dev probes) | Variants | Source | Distribution it represents |
 |---|---|---|---|---|
@@ -760,7 +760,17 @@ The 5 P6 anchors preserve the T1–T14 P6 winRate grounding (§4.1/§4.2) and th
 
 **Split mechanics**: per in-distribution language, author probes then stratify-split by seed=42 into dev (4/language), held-out (3/language), vault (2–3/language), with the secondary stratum/difficulty marginals (§5.1) maintained globally. Held-out and vault therefore measure *same-distribution* generalization; the OOD pool measures *cross-language* generalization — the two axes are kept distinct.
 
-**Reproducibility action (pre-reg)**: the ast-tester repos are SHA-locked in `repos.json`. The **5 P6 anchor repos under `eval/repos/` are NOT yet SHA-pinned** — pin them to explicit SHAs in a probe-repos manifest at `prereg/p7-v1` (the ast-tester set already has this; the P6 set must match for reproducibility).
+**Reproducibility action (pre-reg)**: BOTH repo pools are already SHA-pinned. The 13 ast-tester repos (10 in-distribution + the OOD set) are SHA-locked in `eval/ast-tester-probes/repos.json`. The **5 P6 anchor repos ARE also SHA-pinned**, in `eval/read-workflows/repo-manifest.json` (the `manifest.json`-declared source of truth, matching `eval/scripts/fetch-benchmark-repos.js`):
+
+| P6 anchor (language) | Repo | Pinned SHA |
+|---|---|---|
+| fastify (JS) | `fastify/fastify` | `39f0f24233cf6da2fef48551f51be2f589f7d5d0` |
+| vercel/ai-chatbot (TS) | `vercel/ai-chatbot` | `107a43a8039bb4f19d0ced4ff3445e2523d14305` |
+| gin (Go) | `gin-gonic/gin` | `d3ffc9985281dcf4d3bef604cce4e662b1a327a6` |
+| flask (Python) | `pallets/flask` | `7ef2946fb5151b745df30201b8c27790cac53875` |
+| ripgrep (Rust) | `BurntSushi/ripgrep` | `4519153e5e461527f4bca45b042fff45c4ec6fb9` |
+
+(The TS anchor's SHA is identical to the ast-tester `typescript` entry in `repos.json` — same `vercel/ai-chatbot` commit — so there is no cross-manifest drift. `repo-manifest.json` also pins an extra `express` JS repo that is *not* a P7 anchor; ignore it for P7.) **Pre-reg requirement**: these five SHAs must be carried verbatim into the `prereg/p7-v1` probe-repos manifest so the P6 set matches the ast-tester set for reproducibility — copy them from `repo-manifest.json`, do not re-resolve `eval/repos/` working trees.
 
 ### §5.1 Dev probes (n=40)
 
@@ -1501,7 +1511,7 @@ After Gemini's three-pass ship-it verdict, we commissioned an external review by
 
 **Cost impact of GPT-5.5 review integrations**: +$1 (Java HOMP for GPT-5.5 +$0.50, GPT-5.5 lazy-user generator +$0.30 amortized, GPT-5.5 OP-3 rotation +$0.20 amortized). New total: **~$321, hard cap $420**.
 
-**Additional user-caught gap (post-GPT-review)**: §3.5.2 reasoning-mode operational HOMP gate adds $6 (15 held-out probes × 2 reasoning modes × ~$0.20 reasoning premium). New running total: **~$327, hard cap unchanged at $420**.
+**Additional user-caught gap (post-GPT-review)**: §3.5.2 reasoning-mode operational HOMP gate adds ~$12 (the full 30 held-out probes × 2 reasoning modes × ~$0.20 reasoning premium — see §3.5.2). *(Historical snapshot: at the time this change-map was written the gate was scoped to 15 held-out probes / +$6 and the running total read **~$327, hard cap $420**. Both were later superseded — the held-out set was widened to 30 (§3.5.2) and the authoritative current totals are the **~$470 headline / $550 hard cap** in §11.4. This line is retained as a historical change-map entry, not the live total.)*
 
 **Operational readiness change**: tier-2 OpenAI billing is now operationally mandatory. This is a $50 one-time pre-flight cost, not added to the run budget — it's a prerequisite for the run wall-time being reasonable.
 

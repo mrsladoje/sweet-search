@@ -5,8 +5,11 @@
  *  1. Smoke probes: all smoke:true, no duplicate IDs, valid against ProbeSchema.
  *  2. stratifiedSplit determinism: same seed → identical split; different seed → different.
  *  3. Language stratification: each language's probes distributed across partitions
- *     in the expected proportions (dev/heldout/vault).
- *  4. On-disk smoke fixture loads and validates cleanly.
+ *     in the expected proportions (dev/heldout/vault). The split produces ONLY
+ *     dev/held-out/vault — NO `rotation` bucket (M12, §5.3 is a standalone file).
+ *  4. Per-language vault count: number (uniform) OR { language: count } map summing
+ *     to 25 across 10 languages (§5.8). Leftover/shortfall surfaces as a RangeError.
+ *  5. On-disk smoke fixture loads and validates cleanly.
  *
  * DOES NOT test real prereg probe content — that is a separate human workstream.
  */
@@ -158,7 +161,9 @@ describe('generateSmokeProbes', () => {
 
 describe('stratifiedSplit — determinism', () => {
   const langs = ['javascript', 'python', 'rust'];
-  const probes = makeProbeSet(langs, 10);
+  // Exactly dev(4)+heldout(3)+vault(2) = 9 per language — the split now enforces an
+  // exact accounting (no remainder bucket), so each group must consume exactly that.
+  const probes = makeProbeSet(langs, 9);
 
   it('same seed → identical split (ids match exactly)', () => {
     const r1 = stratifiedSplit({ probes, seed: 42 });
@@ -166,13 +171,12 @@ describe('stratifiedSplit — determinism', () => {
     expect(r1.dev.map(p => p.id)).toEqual(r2.dev.map(p => p.id));
     expect(r1.heldout.map(p => p.id)).toEqual(r2.heldout.map(p => p.id));
     expect(r1.vault.map(p => p.id)).toEqual(r2.vault.map(p => p.id));
-    expect(r1.rotation.map(p => p.id)).toEqual(r2.rotation.map(p => p.id));
   });
 
   it('different seed → different split (at least one partition differs)', () => {
     const r42  = stratifiedSplit({ probes, seed: 42 });
     const r999 = stratifiedSplit({ probes, seed: 999 });
-    // With 30 probes spread over 3 languages, the shuffles should differ for at
+    // With 27 probes spread over 3 languages, the shuffles should differ for at
     // least one language. Assert that at least one partition's id list differs.
     const devSame = JSON.stringify(r42.dev.map(p => p.id)) === JSON.stringify(r999.dev.map(p => p.id));
     const heldSame = JSON.stringify(r42.heldout.map(p => p.id)) === JSON.stringify(r999.heldout.map(p => p.id));
@@ -181,66 +185,55 @@ describe('stratifiedSplit — determinism', () => {
 
   it('all probes appear exactly once across all partitions', () => {
     const r = stratifiedSplit({ probes, seed: 42 });
-    const all = [...r.dev, ...r.heldout, ...r.vault, ...r.rotation];
+    const all = [...r.dev, ...r.heldout, ...r.vault];
     expect(all.length).toBe(probes.length);
     const ids = new Set(all.map(p => p.id));
     expect(ids.size).toBe(probes.length);
   });
 
-  it('returns all four partitions as arrays', () => {
+  it('returns exactly the dev/heldout/vault partitions as arrays — NO rotation key (M12)', () => {
     const r = stratifiedSplit({ probes, seed: 42 });
     expect(Array.isArray(r.dev)).toBe(true);
     expect(Array.isArray(r.heldout)).toBe(true);
     expect(Array.isArray(r.vault)).toBe(true);
-    expect(Array.isArray(r.rotation)).toBe(true);
+    // §5.3 rotation pool is a STANDALONE file, not a split remainder — the split
+    // must never emit a `rotation` bucket (or anything that could be mistaken for it).
+    expect('rotation' in r).toBe(false);
+    expect(r.rotation).toBeUndefined();
+    expect(Object.keys(r).sort()).toEqual(['dev', 'heldout', 'vault']);
   });
 });
 
 // ─── 3. Language stratification ───────────────────────────────────────────────
 
 describe('stratifiedSplit — language stratification', () => {
-  it('each language gets at most perLanguage.dev probes in dev', () => {
+  it('each language gets exactly perLanguage.dev probes in dev', () => {
     const langs = ['go', 'rust', 'python', 'javascript'];
-    const probes = makeProbeSet(langs, 10);
+    const probes = makeProbeSet(langs, 9); // 4+3+2 = 9 per lang
     const r = stratifiedSplit({ probes, seed: 42, perLanguage: { dev: 4, heldout: 3, vault: 2 } });
 
     for (const lang of langs) {
-      const langDev = r.dev.filter(p => p.language === lang);
-      expect(langDev.length).toBeLessThanOrEqual(4);
+      expect(r.dev.filter(p => p.language === lang).length).toBe(4);
     }
   });
 
-  it('with 10+ probes per language, dev/heldout/vault counts match perLanguage defaults', () => {
+  it('with exactly dev+heldout+vault per language, counts match perLanguage defaults', () => {
     const langs = ['go', 'rust', 'python'];
-    const probes = makeProbeSet(langs, 12); // 12 per lang → 4+3+2=9 assigned, 3 to rotation
+    const probes = makeProbeSet(langs, 9); // 9 per lang → 4+3+2, no remainder
     const r = stratifiedSplit({ probes, seed: 42 });
 
     for (const lang of langs) {
       expect(r.dev.filter(p => p.language === lang).length).toBe(4);
       expect(r.heldout.filter(p => p.language === lang).length).toBe(3);
       expect(r.vault.filter(p => p.language === lang).length).toBe(2);
-      expect(r.rotation.filter(p => p.language === lang).length).toBe(3);
     }
-  });
-
-  it('with fewer probes than the dev target, all go to dev (none to heldout/vault)', () => {
-    // 2 probes, dev target = 4 → both go to dev, heldout = vault = rotation = 0
-    const probes = [
-      makeProbe('rust-0', 'rust'),
-      makeProbe('rust-1', 'rust'),
-    ];
-    const r = stratifiedSplit({ probes, seed: 42 });
-    expect(r.dev.length).toBe(2);
-    expect(r.heldout.length).toBe(0);
-    expect(r.vault.length).toBe(0);
-    expect(r.rotation.length).toBe(0);
   });
 
   it('different languages do not interfere — adding a new language leaves existing splits unchanged', () => {
     const langA = ['rust'];
     const langB = ['python'];
-    const probesA = makeProbeSet(langA, 10);
-    const probesB = makeProbeSet(langB, 10);
+    const probesA = makeProbeSet(langA, 9);
+    const probesB = makeProbeSet(langB, 9);
 
     const rA    = stratifiedSplit({ probes: probesA, seed: 42 });
     const rAB   = stratifiedSplit({ probes: [...probesA, ...probesB], seed: 42 });
@@ -253,7 +246,7 @@ describe('stratifiedSplit — language stratification', () => {
 
   it('perLanguage override is honoured', () => {
     const langs = ['go', 'rust'];
-    const probes = makeProbeSet(langs, 12);
+    const probes = makeProbeSet(langs, 11); // 5+4+2 = 11 per lang
     const r = stratifiedSplit({ probes, seed: 42, perLanguage: { dev: 5, heldout: 4, vault: 2 } });
 
     for (const lang of langs) {
@@ -263,12 +256,107 @@ describe('stratifiedSplit — language stratification', () => {
     }
   });
 
-  it('empty probe array returns empty partitions', () => {
+  it('empty probe array returns empty dev/heldout/vault partitions (no rotation)', () => {
     const r = stratifiedSplit({ probes: [], seed: 42 });
     expect(r.dev.length).toBe(0);
     expect(r.heldout.length).toBe(0);
     expect(r.vault.length).toBe(0);
-    expect(r.rotation.length).toBe(0);
+    expect('rotation' in r).toBe(false);
+  });
+});
+
+// ─── 3b. Per-language vault count (number | map) → vault total 25 (§5.8) ───────
+
+describe('stratifiedSplit — per-language vault count (§5.8)', () => {
+  // 10 in-distribution languages, vault 2–3 per language summing to 25.
+  const TEN_LANGS = [
+    'javascript', 'typescript', 'go', 'python', 'rust',
+    'java', 'cpp', 'csharp', 'ruby', 'kotlin',
+  ];
+  // 3/3/3/3/3 + 2/2/2/2/2 = 25 vault across 10 langs.
+  const VAULT_MAP = {
+    javascript: 3, typescript: 3, go: 3, python: 3, rust: 3,
+    java: 2, cpp: 2, csharp: 2, ruby: 2, kotlin: 2,
+  };
+
+  /** Build a probe set with EXACTLY dev+heldout+vault[lang] probes per language. */
+  function makeBalancedSet(vaultMap, dev = 4, heldout = 3) {
+    const probes = [];
+    for (const lang of TEN_LANGS) {
+      const n = dev + heldout + vaultMap[lang];
+      for (let i = 0; i < n; i++) {
+        const stratum = STRATA[i % STRATA.length];
+        const difficulty = DIFFICULTIES[i % DIFFICULTIES.length];
+        probes.push(makeProbe(`${lang}-probe-${i}`, lang, stratum, difficulty));
+      }
+    }
+    return probes;
+  }
+
+  it('vault map yields dev=4/lang, heldout=3/lang, and vault per the map (totals 40/30/25)', () => {
+    const probes = makeBalancedSet(VAULT_MAP);
+    const r = stratifiedSplit({ probes, seed: 42, perLanguage: { dev: 4, heldout: 3, vault: VAULT_MAP } });
+
+    expect(r.dev.length).toBe(40);     // 4 × 10
+    expect(r.heldout.length).toBe(30); // 3 × 10
+    expect(r.vault.length).toBe(25);   // 3×5 + 2×5
+
+    for (const lang of TEN_LANGS) {
+      expect(r.dev.filter(p => p.language === lang).length).toBe(4);
+      expect(r.heldout.filter(p => p.language === lang).length).toBe(3);
+      expect(r.vault.filter(p => p.language === lang).length).toBe(VAULT_MAP[lang]);
+    }
+    // M12: still no rotation bucket even on the canonical 40/30/25 input.
+    expect('rotation' in r).toBe(false);
+  });
+
+  it('uniform numeric vault still works (vault=2/lang → 20 total)', () => {
+    const uniformMap = Object.fromEntries(TEN_LANGS.map(l => [l, 2]));
+    const probes = makeBalancedSet(uniformMap);
+    const r = stratifiedSplit({ probes, seed: 42, perLanguage: { dev: 4, heldout: 3, vault: 2 } });
+    expect(r.vault.length).toBe(20);
+    for (const lang of TEN_LANGS) {
+      expect(r.vault.filter(p => p.language === lang).length).toBe(2);
+    }
+  });
+
+  it('vault map missing a language present in the probe set throws a clear RangeError', () => {
+    const probes = makeBalancedSet(VAULT_MAP);
+    const incompleteMap = { ...VAULT_MAP };
+    delete incompleteMap.kotlin;
+    expect(() => stratifiedSplit({
+      probes, seed: 42, perLanguage: { dev: 4, heldout: 3, vault: incompleteMap },
+    })).toThrow(/no entry for language "kotlin"/);
+  });
+});
+
+// ─── 3c. Leftover / shortfall surface as RangeError (no silent drop) ──────────
+
+describe('stratifiedSplit — leftover / shortfall accounting (M12)', () => {
+  it('a language with MORE probes than dev+heldout+vault throws naming the language + leftover', () => {
+    const langs = ['rust', 'go'];
+    // 11 per lang but dev+heldout+vault = 9 → 2 leftover per language (rust sorts first).
+    const probes = makeProbeSet(langs, 11);
+    expect(() => stratifiedSplit({ probes, seed: 42 }))
+      .toThrow(/language "go".*11 probes.*2 leftover/s);
+  });
+
+  it('leftover error does NOT silently drop probes (it throws, not truncates)', () => {
+    const probes = makeProbeSet(['python'], 10); // 1 leftover (10 vs 9)
+    expect(() => stratifiedSplit({ probes, seed: 42 })).toThrow(RangeError);
+  });
+
+  it('a language with FEWER probes than required throws naming the language + shortfall', () => {
+    // 2 probes, dev+heldout+vault = 9 → short by 7. Old behavior dumped all to dev;
+    // new behavior surfaces the shortfall instead of silently under-filling.
+    const probes = [makeProbe('rust-0', 'rust'), makeProbe('rust-1', 'rust')];
+    expect(() => stratifiedSplit({ probes, seed: 42 }))
+      .toThrow(/language "rust".*only 2 probes.*short by 7/s);
+  });
+
+  it('exact count (dev+heldout+vault) does NOT throw', () => {
+    const probes = makeProbeSet(['go'], 9);
+    expect(() => stratifiedSplit({ probes, seed: 42 })).not.toThrow();
   });
 });
 

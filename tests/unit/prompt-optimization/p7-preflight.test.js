@@ -101,9 +101,13 @@ describe('runPreflight', () => {
   function greenFs() {
     const files = {
       [path.join(home, '.gemini', 'settings.json')]: JSON.stringify({ selectedType: 'gemini-api-key' }),
+      // Full prereg manifest (PHASE7.md:866) — all six probe-set files.
       [path.join(dataDir, 'p7-dev-probes.json')]: '[]',
       [path.join(dataDir, 'frozen', 'p7-heldout-probes.json')]: '[]',
       [path.join(dataDir, 'frozen', 'p7-vault-probes.json')]: '[]',
+      [path.join(dataDir, 'frozen', 'p7-langtransfer-probes.json')]: '[]',
+      [path.join(dataDir, 'p7-rotation-pool.json')]: '[]',
+      [path.join(dataDir, 'frozen', 'p7-adversarial-counter-probes.json')]: '[]',
       [path.join(dataDir, 'p7-decisions.md')]: '# Decisions',
     };
     for (let i = 1; i <= 15; i++) {
@@ -200,5 +204,28 @@ describe('runPreflight', () => {
       exec: greenExec, fs: greenFs(), home, dataDir, allowTier1Gpt5: true,
     });
     expect(bypassed.checks.find((c) => c.name === 'openai-tier').ok).toBe(true);
+  });
+
+  // m13 regression: the Anthropic Tier-1 escape hatch must be plumbed from
+  // runPreflight → checkAnthropicTier so a transient Anthropic outage / Tier-1
+  // result can be bypassed by the operator (mirrors --allow-tier-1-gpt5).
+  it('honours --allow-tier-1 (Anthropic) by passing it to the Anthropic tier check', async () => {
+    const tier1Fetch = mockFetch({
+      headers: {
+        'x-ratelimit-limit-requests': '5000',       // OpenAI Tier 2
+        'anthropic-ratelimit-requests-limit': '50',  // Anthropic Tier 1
+      },
+    });
+    const gated = await runPreflight({
+      env: FULL_KEYS, smoke: greenSmoke, fetchFn: tier1Fetch,
+      exec: greenExec, fs: greenFs(), home, dataDir, allowTier1: false,
+    });
+    expect(gated.checks.find((c) => c.name === 'anthropic-tier').ok).toBe(false);
+
+    const bypassed = await runPreflight({
+      env: FULL_KEYS, smoke: greenSmoke, fetchFn: tier1Fetch,
+      exec: greenExec, fs: greenFs(), home, dataDir, allowTier1: true,
+    });
+    expect(bypassed.checks.find((c) => c.name === 'anthropic-tier').ok).toBe(true);
   });
 });
