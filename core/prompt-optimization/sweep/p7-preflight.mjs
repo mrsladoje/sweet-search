@@ -18,6 +18,7 @@
  *   home        — home directory path (default os.homedir())
  *   dataDir     — path to core/prompt-optimization/data/ (default computed)
  *   allowTier1Gpt5  — suppress OpenAI Tier-1 hard-block
+ *   allowTier1      — suppress Anthropic Tier-1 hard-block
  *   allowNoPrereg   — suppress missing-tag hard-block
  */
 
@@ -78,6 +79,7 @@ export {
  *   home?: string,
  *   dataDir?: string,
  *   allowTier1Gpt5?: boolean,
+ *   allowTier1?: boolean,
  *   allowNoPrereg?: boolean,
  * }} opts
  * @returns {Promise<{ ok: boolean, checks: Array<{name:string,ok:boolean,message:string}>, snapshot: object }>}
@@ -92,6 +94,7 @@ export async function runPreflight({
   home = os.homedir(),
   dataDir = DEFAULT_DATA_DIR,
   allowTier1Gpt5 = false,
+  allowTier1 = false,
   allowNoPrereg = false,
 } = {}) {
   const checks = [];
@@ -108,7 +111,7 @@ export async function runPreflight({
   add('openai-tier', await checkOpenAITier({ fetchFn, env, allowTier1: allowTier1Gpt5 }));
 
   // 4. Anthropic tier
-  add('anthropic-tier', await checkAnthropicTier({ fetchFn, env }));
+  add('anthropic-tier', await checkAnthropicTier({ fetchFn, env, allowTier1 }));
 
   // 5. Token-bucket self-test
   add('token-bucket-self-test', await tokenBucketSelfTest());
@@ -152,6 +155,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
   const run = args.find((a, i) => args[i - 1] === '--run') || 'p7-v1';
   const allowTier1Gpt5 = args.includes('--allow-tier-1-gpt5');
+  const allowTier1 = args.includes('--allow-tier-1');
   const allowNoPrereg = args.includes('--allow-no-prereg');
 
   const defaultExec = async (cmd) => {
@@ -167,6 +171,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const result = await runPreflight({
     run,
     allowTier1Gpt5,
+    allowTier1,
     allowNoPrereg,
     exec: defaultExec,
   });

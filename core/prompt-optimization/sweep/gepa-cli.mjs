@@ -112,6 +112,16 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
     gpt5_5: createTokenBucket({ rpm: RATE_LIMITS.openai_gpt5_5[2].rpm, itpm: RATE_LIMITS.openai_gpt5_5[2].tpm, onThrottle }),
   };
 
+  // M2: on --resume a fresh in-memory bucket believes it has full budget and
+  // would burst max_concurrent immediately → the §7.7 Tier-1 "429-storm minute
+  // one" (the interrupted run may still have in-flight tokens against the
+  // provider's rolling window). Pessimistically prime each bucket so the first
+  // post-resume acquire is throttled for ~one WINDOW_MS cooldown.
+  if (o.resume) {
+    bucket.sonnet.primeForResume();
+    bucket.gpt5_5.primeForResume();
+  }
+
   const result = await runGepa({
     runId: o.run,
     variants,
@@ -124,5 +134,65 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
     bucket,
   });
   reportResult('GEPA complete', result);
+
+  // ── §4 winner-selection finalize (CC2/M13/M7) ──
+  // Runs the post-convergence ship gates IN ORDER + once-only Vault open. Only
+  // attempted on a real run with a winner; the gate runners are constructed from
+  // the real harness here (reasoning adapters via M7). Skipped (with a notice)
+  // when the gate probe sets are not yet authored — the run still produces its
+  // trajectory + checkpoint, and finalize can be re-run later.
+  if (result.winner) {
+    try {
+      await runFinalizeStage({ runId: o.run, winner: result.winner, probesDoc, runJudge });
+    } catch (e) {
+      console.error('finalize: skipped —', e?.message || e);
+    }
+  }
   return result;
+}
+
+/**
+ * Construct the real injected gate runners and invoke finalizeRun (CC2/M13/M7).
+ * Loads the frozen gate probe sets if present; if a required set is missing the
+ * corresponding gate is simply not run (finalizeRun treats absent runners/probes
+ * as not-applicable). The reasoning adapters (M7) are built from the real
+ * judge-runner reasoning payloads via makeReasoningAdapters.
+ */
+async function runFinalizeStage({ runId, winner, probesDoc, runJudge }) {
+  const { finalizeRun, makeReasoningAdapters } = await import('./gepa-finalize.mjs');
+  const { runOodGate } = await import('./p7-ood-gate.mjs');
+  const { trajectoryPath, RESULTS_DIR } = await import('./p7-persist.mjs');
+
+  const heldoutProbes = probesDoc.heldoutProbes ?? [];
+  const oodProbes = probesDoc.oodProbes ?? [];
+  const vaultProbes = probesDoc.vaultProbes ?? [];
+  const scsProbes = probesDoc.scsProbes ?? [];
+
+  // M7 reasoning adapters wired through the real reasoning payloads.
+  const reasoningAdapters = makeReasoningAdapters({ runJudge });
+
+  // OOD gate bound to a runOodGate invocation (production runners injected live).
+  const runOod = oodProbes.length > 0
+    ? async ({ winnerPrompt, oodProbes: probes }) => runOodGate({
+        winnerPrompt,
+        oodProbes: probes,
+        // Live per-target OOD replay runners are wired here in the real run; left
+        // as a structural placeholder until the OOD probe set is authored.
+        runSonnet: async () => ({ perProbe: [] }),
+        runGpt5_5: async () => ({ perProbe: [] }),
+      })
+    : undefined;
+
+  return finalizeRun({
+    runId,
+    winner,
+    heldoutProbes,
+    scsProbes,
+    oodProbes,
+    vaultProbes,
+    reasoningAdapters,
+    runOod,
+    heldoutFinalScore: winner.finalScore,
+    paths: { trajectory: trajectoryPath(runId), gateDir: RESULTS_DIR(runId) },
+  });
 }

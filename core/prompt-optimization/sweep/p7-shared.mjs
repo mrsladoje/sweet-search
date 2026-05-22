@@ -130,11 +130,12 @@ export const EVENT_KINDS = Object.freeze({
 });
 
 export const MUTATION_REJECTION_REASONS = Object.freeze([
-  'whitespace-norm',
+  'whitespace-norm', // reserved: whitespace is silently normalized, never emitted as a rejection (m6)
   'missing-token',
   'multiplicity-changed',
   'unmapped-alias',
   'surplus-token',
+  'fenced-block-altered', // OP-5 pruner: fenced/pseudocode block not byte-identical (M11)
 ]);
 
 export const PARETO_REJECTION_REASONS = Object.freeze([

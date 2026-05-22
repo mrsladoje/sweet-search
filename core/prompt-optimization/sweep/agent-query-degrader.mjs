@@ -64,16 +64,29 @@ export function dropArticles(q) {
 }
 
 /**
- * Abbreviate common package/namespace prefixes (e.g. "node:" → "", long
- * dotted paths → last segment). Simulates CLI muscle-memory shortcuts.
+ * Abbreviate common package/namespace prefixes (e.g. "node:" → "", dotted
+ * identifiers → last segment). Simulates CLI muscle-memory shortcuts.
+ *
+ * Only DOTTED-IDENTIFIER contexts are abbreviated (`fastify.register` →
+ * `register`); tokens containing a slash are file paths and are left intact
+ * (`src/route.ts` stays `src/route.ts`, not `src/ts`). We strip the dotted
+ * prefix per whitespace-delimited token so a `/` anywhere in the token vetoes
+ * the rewrite.
  *
  * @param {string} q
  * @returns {string}
  */
 export function abbreviatePackages(q) {
   return q
-    .replace(/\bnode:/g, '')                           // node:fs → fs
-    .replace(/\b(?:@[a-z0-9-]+\/)?[a-z0-9-]+\./g, '') // pkg.Class → Class  (leading seg)
+    .replace(/\bnode:/g, '') // node:fs → fs
+    .split(/(\s+)/) // keep separators so whitespace is preserved
+    .map((tok) => {
+      if (tok.includes('/')) return tok; // file path — never abbreviate
+      // pkg.Class / @scope/pkg already excluded above; strip leading dotted
+      // segments on a slash-free token: fastify.register → register
+      return tok.replace(/^(?:[A-Za-z0-9_-]+\.)+([A-Za-z0-9_-]+)$/, '$1');
+    })
+    .join('')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }

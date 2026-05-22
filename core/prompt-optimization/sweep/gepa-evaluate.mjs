@@ -33,14 +33,86 @@
  *     scoring — not the reasoning path.
  */
 
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runClaudeAgent } from '../../../eval/agent-read-workflows/claude-runner.js';
 import { runJudge, _internal as judgeInternal } from '../../../eval/agent-read-workflows/judge-runner.js';
+import { hashContent } from './p7-shared.mjs';
+import { estimateTokens } from './variant-loader.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
+
+/**
+ * Thrown by `judgePanelScore` (B6) when EVERY panelist errors after the
+ * judge-runner's internal retries are exhausted. A 0 here would be
+ * indistinguishable from a real unanimous-wrong verdict and would silently
+ * corrupt maximin / Pareto selection on a $470 run — so we fail loudly and let
+ * `scoreCandidateOnProbes` propagate, keeping the run resumable. Carries the
+ * per-judge errors for forensic logging.
+ */
+export class AllJudgesFailedError extends Error {
+  /** @param {Array<{model:string,lineage:string,error:string}>} judgeErrors */
+  constructor(judgeErrors = []) {
+    super(`all ${judgeErrors.length} judge(s) failed after retries`);
+    this.name = 'AllJudgesFailedError';
+    this.judgeErrors = judgeErrors;
+  }
+}
+
+/**
+ * Normalize a runJudge result's provider-specific `raw.usage` into the canonical
+ * `{ input_tokens, output_tokens }` pair (null where unavailable). Handles:
+ *   - deepseek / openai-compatible: { prompt_tokens, completion_tokens }
+ *   - gemini:                       usageMetadata { promptTokenCount, candidatesTokenCount }
+ *   - anthropic:                    { input_tokens, output_tokens }
+ *
+ * @param {object} usage  — result.raw.usage (any of the shapes above) or null
+ * @returns {{ input_tokens: number|null, output_tokens: number|null }}
+ */
+export function normalizeJudgeUsage(usage) {
+  if (!usage || typeof usage !== 'object') {
+    return { input_tokens: null, output_tokens: null };
+  }
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  // anthropic-style takes priority (explicit input_tokens/output_tokens).
+  if (usage.input_tokens !== undefined || usage.output_tokens !== undefined) {
+    return { input_tokens: num(usage.input_tokens), output_tokens: num(usage.output_tokens) };
+  }
+  // deepseek / openai-compatible chat-completions usage.
+  if (usage.prompt_tokens !== undefined || usage.completion_tokens !== undefined) {
+    return { input_tokens: num(usage.prompt_tokens), output_tokens: num(usage.completion_tokens) };
+  }
+  // gemini usageMetadata.
+  if (usage.promptTokenCount !== undefined || usage.candidatesTokenCount !== undefined) {
+    return { input_tokens: num(usage.promptTokenCount), output_tokens: num(usage.candidatesTokenCount) };
+  }
+  return { input_tokens: null, output_tokens: null };
+}
+
+/**
+ * Best-effort `git rev-parse HEAD` for a repo dir, memoized per-dir in a module
+ * Map (CC1 `repo_commit`). Returns null on any failure (not a git repo, git
+ * unavailable, etc.) — the metadata is forensic, never load-bearing.
+ */
+const _repoCommitCache = new Map();
+export function repoCommitFor(repoCwd) {
+  if (typeof repoCwd !== 'string' || repoCwd.length === 0) return null;
+  if (_repoCommitCache.has(repoCwd)) return _repoCommitCache.get(repoCwd);
+  let commit = null;
+  try {
+    commit = execFileSync('git', ['-C', repoCwd, 'rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim() || null;
+  } catch {
+    commit = null;
+  }
+  _repoCommitCache.set(repoCwd, commit);
+  return commit;
+}
 
 /** sweet-search tool names exposed to the agent (kept as Bash-shim CLI calls). */
 export const SWEET_SEARCH_TOOLS = ['Bash', 'Read'];
@@ -98,20 +170,69 @@ export function parseJudgeScore(text) {
   return null;
 }
 
-/** Median of the panel judges' scores (robust to one judge outlier/failure). */
-export async function judgePanelScore({ probe, answer, panel = JUDGE_PANEL, runJudgeFn = runJudge }) {
+/**
+ * Median of the panel judges' scores (robust to one judge outlier/failure),
+ * plus the per-judge usage metadata the CONFIRM-event writer needs (CC1).
+ *
+ * Returns `{ score, judges }`:
+ *   - `score`  — median of the valid (non-errored) verdicts in [0,1]
+ *   - `judges` — one normalized entry per panelist:
+ *       { model, lineage, input_tokens, output_tokens, retry_count, isError }
+ *     (token fields normalized from the provider-specific raw.usage shapes via
+ *     `normalizeJudgeUsage`; null where unavailable).
+ *
+ * B6: when EVERY panelist errors (after runJudge's internal 429/5xx/empty-200
+ * retries), this THROWS `AllJudgesFailedError` rather than coercing the score to
+ * 0. A 0 is indistinguishable from a real unanimous-wrong verdict and would
+ * corrupt maximin / Pareto selection; `scoreCandidateOnProbes` propagates the
+ * throw so a $470 run fails loudly and stays resumable.
+ *
+ * CC3 (optional seam): if `judgeBucket` is provided, `await judgeBucket.acquire`
+ * is called before each runJudge call. Default undefined = ungated (runJudge's
+ * retry wrapper already absorbs transient judge 429s).
+ *
+ * @returns {Promise<{ score: number, judges: object[] }>}
+ */
+export async function judgePanelScore({ probe, answer, panel = JUDGE_PANEL, runJudgeFn = runJudge, judgeBucket }) {
   const userPrompt = buildJudgeUserPrompt({ probe, answer });
-  const verdicts = await Promise.all(
+  const results = await Promise.all(
     panel.map(async ({ lineage, model }) => {
+      if (judgeBucket && typeof judgeBucket.acquire === 'function') {
+        await judgeBucket.acquire({ target: `${lineage}:${model}` });
+      }
       const r = await runJudgeFn({ lineage, model, systemPrompt: JUDGE_SYSTEM_PROMPT, userPrompt });
-      return r.isError ? null : parseJudgeScore(r.text);
+      const usage = normalizeJudgeUsage(r.raw?.usage);
+      return {
+        lineage,
+        model,
+        score: r.isError ? null : parseJudgeScore(r.text),
+        isError: !!r.isError,
+        error: r.isError ? (r.error || 'judge-error') : undefined,
+        retryCount: typeof r.retryCount === 'number' ? r.retryCount : null,
+        usage,
+      };
     }),
   );
-  const valid = verdicts.filter((v) => typeof v === 'number');
-  if (valid.length === 0) return 0;
+
+  const judges = results.map((j) => ({
+    model: j.model,
+    lineage: j.lineage,
+    input_tokens: j.usage.input_tokens,
+    output_tokens: j.usage.output_tokens,
+    retry_count: j.retryCount,
+    isError: j.isError,
+  }));
+
+  const valid = results.filter((j) => typeof j.score === 'number').map((j) => j.score);
+  if (valid.length === 0) {
+    throw new AllJudgesFailedError(
+      results.map((j) => ({ model: j.model, lineage: j.lineage, error: j.error || 'judge-error' })),
+    );
+  }
   valid.sort((a, b) => a - b);
   const mid = Math.floor(valid.length / 2);
-  return valid.length % 2 ? valid[mid] : (valid[mid - 1] + valid[mid]) / 2;
+  const score = valid.length % 2 ? valid[mid] : (valid[mid - 1] + valid[mid]) / 2;
+  return { score, judges };
 }
 
 // ─── codex agent (GPT-5.5-instant) ──────────────────────────────────────────
@@ -200,6 +321,7 @@ const SS_TOOL_RE = /ss-(read|grep|trace|semantic|find|search)|\bRead\b|\bGrep\b/
  * @param {{sonnet:string,gpt5_5:string}} [opts.models]
  * @param {Array<{lineage,model}>} [opts.judgePanel]
  * @param {Function} [opts.runJudgeFn]      — override for tests
+ * @param {{acquire:Function}} [opts.judgeBucket] — optional judge-call gate (CC3)
  * @param {number} [opts.timeoutMs]
  */
 export function makeRealEvaluateCandidate({
@@ -209,11 +331,13 @@ export function makeRealEvaluateCandidate({
   models = { sonnet: 'claude-sonnet-4-6', gpt5_5: 'gpt-5.5-instant' },
   judgePanel = JUDGE_PANEL,
   runJudgeFn = runJudge,
+  judgeBucket,
   timeoutMs = 240000,
 } = {}) {
   return async function evaluateCandidate({ promptText, probe, target }) {
     const repoCwd = path.join(reposDir, probe.repo);
     let run;
+    let agentUsage;
     if (target === 'sonnet') {
       run = await runClaudeAgent({
         prompt: buildAgentUserPrompt(probe),
@@ -226,6 +350,18 @@ export function makeRealEvaluateCandidate({
         projectRoot: repoCwd,
         timeoutMs,
       });
+      // claude-runner surfaces the Anthropic result-event usage at run.usage
+      // ({input_tokens, output_tokens, cache_read_input_tokens, ...}) + retryCount.
+      const u = run.usage || null;
+      agentUsage = {
+        model_id: models.sonnet,
+        api_path: 'claude-cli',
+        temperature: null, // CLI default; not overridden
+        input_tokens: typeof u?.input_tokens === 'number' ? u.input_tokens : null,
+        output_tokens: typeof u?.output_tokens === 'number' ? u.output_tokens : null,
+        cache_read_tokens: typeof u?.cache_read_input_tokens === 'number' ? u.cache_read_input_tokens : null,
+        retry_count: typeof run.retryCount === 'number' ? run.retryCount : null,
+      };
     } else {
       run = await runCodexAgent({
         prompt: buildAgentUserPrompt(probe),
@@ -235,11 +371,23 @@ export function makeRealEvaluateCandidate({
         sweetSearchBinDir,
         timeoutMs,
       });
+      // codex-exec surfaces no usage → token fields null.
+      agentUsage = {
+        model_id: models.gpt5_5,
+        api_path: 'codex-exec',
+        temperature: null,
+        input_tokens: null,
+        output_tokens: null,
+        cache_read_tokens: null,
+        retry_count: typeof run.retryCount === 'number' ? run.retryCount : null,
+      };
     }
 
     const calls = Array.isArray(run.toolCalls) ? run.toolCalls : [];
     const finalText = run.finalResultText || run.finalAssistantText || '';
-    const score = await judgePanelScore({ probe, answer: finalText, panel: judgePanel, runJudgeFn });
+    const { score, judges } = await judgePanelScore({
+      probe, answer: finalText, panel: judgePanel, runJudgeFn, judgeBucket,
+    });
 
     return {
       score,
@@ -248,6 +396,15 @@ export function makeRealEvaluateCandidate({
       usedReadOrGrep: calls.some((tc) => SS_TOOL_RE.test(tc.name || '')),
       trajectory: { toolCalls: calls.map((t) => ({ name: t.name, input: t.input })), answer: finalText.slice(0, 2000) },
       wallMs: run.wallMs ?? 0,
+      // CC1 — real run-metadata + token usage threaded out for the CONFIRM event
+      // (B2) and the token-bucket reconcile (M3). Lands in detail[pid][target].usage.
+      usage: {
+        agent: agentUsage,
+        judges,
+        repo_commit: repoCommitFor(repoCwd),
+        probe_hash: hashContent(`${probe.id}|${probe.query}`),
+        token_count_prompt: estimateTokens(promptText),
+      },
     };
   };
 }

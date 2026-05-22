@@ -402,14 +402,22 @@ export async function checkPreregTag({ exec, allowNoPrereg = false } = {}) {
 }
 
 /**
- * Verify the three required probe set files exist.
- * These are authored separately — failing here means "not yet authored".
+ * Verify the required probe set files exist.
+ *
+ * These are the full prereg manifest (§ PHASE7.md:866): dev/held-out/vault plus
+ * the language-transfer (OOD §3.5.1), rotation-pool (§5.3 mid-run rotation), and
+ * adversarial-counter (§5.7) sets. They are authored separately — failing here
+ * means "not yet authored". Without the OOD/rotation/counter files a run could
+ * pass pre-flight, then crash or silently skip the §3.5.1 OOD gate.
  */
 export function checkProbeSets({ fs: fsArg = fsActual, dataDir = DEFAULT_DATA_DIR } = {}) {
   const required = [
-    { name: 'p7-dev-probes.json',              abs: path.join(dataDir, 'p7-dev-probes.json') },
-    { name: 'frozen/p7-heldout-probes.json',   abs: path.join(dataDir, 'frozen', 'p7-heldout-probes.json') },
-    { name: 'frozen/p7-vault-probes.json',     abs: path.join(dataDir, 'frozen', 'p7-vault-probes.json') },
+    { name: 'p7-dev-probes.json',                       abs: path.join(dataDir, 'p7-dev-probes.json') },
+    { name: 'frozen/p7-heldout-probes.json',            abs: path.join(dataDir, 'frozen', 'p7-heldout-probes.json') },
+    { name: 'frozen/p7-vault-probes.json',              abs: path.join(dataDir, 'frozen', 'p7-vault-probes.json') },
+    { name: 'frozen/p7-langtransfer-probes.json',       abs: path.join(dataDir, 'frozen', 'p7-langtransfer-probes.json') },
+    { name: 'p7-rotation-pool.json',                    abs: path.join(dataDir, 'p7-rotation-pool.json') },
+    { name: 'frozen/p7-adversarial-counter-probes.json', abs: path.join(dataDir, 'frozen', 'p7-adversarial-counter-probes.json') },
   ];
   const missing = required.filter((f) => !fsArg.existsSync(f.abs)).map((f) => f.name);
   if (missing.length > 0) {
