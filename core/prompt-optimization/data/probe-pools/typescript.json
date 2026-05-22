@@ -9,12 +9,12 @@
       "query": "Where is the generateUUID helper defined?",
       "expectedFiles": ["lib/utils.ts"],
       "expectedSymbols": ["generateUUID"],
-      "expectedFacts": ["generateUUID is exported from lib/utils.ts and returns a UUID string built from a template with crypto-random hex digits."],
+      "expectedFacts": ["generateUUID is exported from lib/utils.ts and returns a UUID-shaped string built from an x/y template using Math.random-generated hex nibbles."],
       "expectedNoMatch": false,
       "max_turns": 3,
       "author": "ts-author",
       "date": "2026-05-23",
-      "notes": "Verified: `grep -n \"export function generateUUID\" lib/utils.ts` -> lib/utils.ts:49 `export function generateUUID(): string {`. Unique definition; symbol-anchored quick hit."
+      "notes": "Verified: `grep -n \"export function generateUUID\" lib/utils.ts` -> lib/utils.ts:49 `export function generateUUID(): string {`. Body uses `Math.random()` in an x/y template replacement, not crypto randomness. Unique definition; symbol-anchored quick hit."
     },
     {
       "id": "ts-002",
