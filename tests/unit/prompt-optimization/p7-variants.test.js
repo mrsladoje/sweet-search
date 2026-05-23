@@ -55,14 +55,20 @@ import { MUTATION_REJECTION_REASONS } from '../../../core/prompt-optimization/sw
 const PROVENANCE_PATTERNS = [
   /Phase ?6/i, // "Phase 6 data"
   /R@\d/, // recall@k metrics, e.g. "R@5=0.62"
+  /recall ?@ ?\d/i, // spelled "recall@5"
+  /recall ?at ?\d/i, // spelled "recall at 5"
   /\d+ ?pp\b/, // percentage-point deltas, e.g. "18-29 pp"
+  /percentage points?/i, // spelled-out deltas
   /dev FAILs?/i, // "4 of 7 dev FAILs"
   /agentic-tier/i, // optimization weighting, e.g. "2026 agentic-tier weights"
   /tree-sitter/i, // parser implementation detail
   /\bIoU\b/, // span-overlap metric
   /symbol_recall/i, // metric name
   /graphNeighbors/i, // gold-construction internal
-  /\bV[1-9]\b/, // internal shape labels V1..V7
+  /recommendations-v2/i, // source-artifact filename
+  /\bwinners?\b/i, // "V7/V4 winners", "the winner"
+  /\bbenchmark/i, // benchmarking vocabulary
+  /\bV\d+\b/, // internal shape labels V1..V7 (and V10+)
   /\d+ indexed languages/i, // corpus-size brag
 ];
 
@@ -72,12 +78,33 @@ const PERSONA_OPENING = 'You are the sweet-search agent';
 const CAPABILITY_HEADER = 'code search tool';
 /** The native-tools boundary every variant must establish. */
 const NATIVE_TOOLS_BOUNDARY = 'raw grep/ripgrep';
+/** Native-tools fallback clause — every body (incl. the T12 control) carries it (§4.5). */
+const FALLBACK_PHRASE = 'Fall back to plain grep';
 /** Compiled ss-trace symbol-not-query contract (replaces the old verbatim bullet).
  *  Phrasing varies across variants ("never an NL question" / "NEVER call [[ss-trace]]
  *  with an NL question"); the invariant is that the NL-question prohibition is stated. */
 const SS_TRACE_CONTRACT = /\bNL question\b/i;
 /** Compiled ss-trace Python weak-spot compensation directive. */
 const SS_TRACE_PY_RULE = 'prefer callers/callees over impact';
+/** Shell-wrapper call syntax every body must teach so agents invoke the CLI
+ *  shims (eval/agent-read-workflows/bin/) instead of hunting for a literal tool
+ *  named [[ss-find]]. §4.5 wrapper-syntax contract. */
+const WRAPPER_SNIPPETS = [
+  'ss-search "<query>"',
+  'ss-find "<query>" --regex "<regex>"',
+  'ss-semantic <file> "<query>"',
+  'ss-trace <symbol>',
+  'ss-grep "<regex>"',
+  'ss-read <file>',
+];
+/** Hard tool-call counters replaced by sufficiency-based stopping (§4.5). */
+const HARD_CAP_PATTERNS = [
+  /cap at \d/i,
+  /after two attempts/i,
+  /do not continue/i,
+  /at most \d+ hops/i,
+  /two failed attempts/i,
+];
 
 const KNOWN_TOKEN_NAMES = new Set([
   'ss-search',
@@ -230,6 +257,43 @@ describe('p7 variant slate — consumer-clean contract', () => {
 
   it('the compiled ss-trace Python weak-spot directive appears in the slate', () => {
     expect(variants.some((v) => v.body.includes(SS_TRACE_PY_RULE))).toBe(true);
+  });
+
+  it('every body teaches the shell-wrapper call syntax for all six tools', () => {
+    for (const v of variants) {
+      for (const s of WRAPPER_SNIPPETS) {
+        expect(v.body.includes(s), `${v.id} missing wrapper syntax: ${s}`).toBe(true);
+      }
+    }
+  });
+
+  it('no body imposes a hard tool-call / hop counter', () => {
+    for (const v of variants) {
+      for (const re of HARD_CAP_PATTERNS) {
+        expect(re.test(v.body), `${v.id} has a hard cap ${re}`).toBe(false);
+      }
+    }
+  });
+
+  it('every body (incl. the T12 control) carries the native-tools fallback clause', () => {
+    for (const v of variants) {
+      expect(v.body.includes(FALLBACK_PHRASE), `${v.id} missing fallback clause`).toBe(true);
+    }
+  });
+
+  it('family-conditioned variants handle an unknown symbol/file (→ default shaping)', () => {
+    for (const v of variants) {
+      if (!v.body.includes('C-family')) continue;
+      expect(v.body.includes('lead with domain terms'), `${v.id} missing unknown-hint fallback`).toBe(true);
+    }
+  });
+
+  it('no-match variants give no-symbol (conceptual) negative guidance', () => {
+    for (const v of variants) {
+      const sh = v.frontMatter.special_handling;
+      if (!(Array.isArray(sh) && sh.includes('no-match'))) continue;
+      expect(v.body.includes('no obvious symbol'), `${v.id} missing no-symbol no-match guidance`).toBe(true);
+    }
   });
 });
 

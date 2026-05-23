@@ -52,6 +52,7 @@ export function toProbeRun(evalResult, probe) {
     calls: evalResult.toolCalls,
     finalAnswerEmitted: !!evalResult.finalAnswerEmitted,
     usedReadOrGrep: !!evalResult.usedReadOrGrep,
+    usedNativeSearch: !!evalResult.usedNativeSearch,
     ...(Array.isArray(probe.expected_call_window)
       ? { expected_call_window: probe.expected_call_window }
       : {}),

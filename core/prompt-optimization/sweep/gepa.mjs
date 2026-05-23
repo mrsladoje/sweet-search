@@ -95,6 +95,9 @@ export function makeDryRunEvaluate() {
       toolCalls: calls,
       finalAnswerEmitted: true,
       usedReadOrGrep: s > 0.2,
+      usedSweetSearch: s > 0.2,
+      usedNativeSearch: false,
+      usedNativeRead: false,
       trajectory: { toolCalls: Array.from({ length: calls }, () => ({ name: 'ss-search' })), answer: `ans-${probe.id}-${target}` },
       wallMs: 1,
     };
