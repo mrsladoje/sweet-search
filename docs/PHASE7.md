@@ -78,7 +78,7 @@ Implementation: extends `eval/agent-read-workflows/judge-runner.js` with `runMoo
 
 | Parameter | Value | Rationale |
 |---|---|---|
-| Initial variants | 14 (T1–T14, hand-authored, P6-grounded — see §4) | Standard slate per §6 of the original plan |
+| Initial variants | 15 (T1–T15, hand-authored, P6-grounded + consumer-clean per §4.5 — see §4) | Standard 14-slate + T15 (Hypothesis-Driven Backtracking) |
 | Pareto front size | 6 (joint front across both targets) | Balances diversity and selection pressure |
 | Max rounds | **20** | Above the typical convergence point |
 | Patience | **5 rounds** without improvement on Maximin score with EAS modifier (Δ ≤ 1pp on `final_score` per §3.7.1) | Standard early-stop |
@@ -185,7 +185,7 @@ This forces the LLM to re-attend to the core objective mid-trajectory, breaking 
 
 #### §3.2.1 Tokens that MUST be preserved verbatim through any paraphrase
 
-The following tokens are wrapped as `[[...]]` in T1–T14 source files and are protected through ALL paraphrase/mutation operators that produce text variants:
+The following tokens are wrapped as `[[...]]` in T1–T15 source files and are protected through ALL paraphrase/mutation operators that produce text variants:
 
 | Category | Tokens |
 |---|---|
@@ -454,9 +454,20 @@ We ship **one** prompt, not per-target prompts. Gemini 3.1 Pro Deep Think identi
    if final_answer_emitted AND no_read_or_grep_tool_call AND probe.stratum != 'no-match':
        evidence_adequacy_penalty[target] += 0.10
 
+   # Native-search contamination penalty (Codex review round 2; §4.5):
+   # The eval corpus is fully indexed + static, so reaching for native grep/rg
+   # instead of the ss-* tools bypasses the retrieval being optimized. Tool use is
+   # classified from BOTH the tool NAME and the shell command (Claude wraps ss-* in
+   # Bash → name='Bash', command in input.command); ss-grep/ss-read are never
+   # counted as native. usedReadOrGrep (the evidence flag) = ss OR native (any
+   # evidence); usedNativeSearch drives this separate penalty.
+   if used_native_search[target]:           # native grep/rg/ripgrep on the indexed corpus
+       native_search_penalty[target] += 0.10
+
    # Aggregate efficiency factor — per-target then min:
    per_target_factor[target] = 1 − mean(call_deviation_penalty[target] over probes)
                                  − mean(evidence_adequacy_penalty[target] over probes)
+                                 − mean(native_search_penalty[target] over probes)
    efficiency_factor(variant) = min(per_target_factor['sonnet'], per_target_factor['gpt5_5'])
    ```
 
@@ -680,7 +691,7 @@ The semantics are equivalent (each ships three strategies + per-family breakdown
 
 ### §4.3 Variant slate
 
-The 14 hand-authored seed variants are organised along three orthogonal axes:
+The 15 hand-authored seed variants (the standard 14 + T15) are organised along three orthogonal axes:
 
 - **Strategy emphasis**: tool-routing-first vs query-shape-first vs evidence-first
 - **Verbosity**: terse / medium / verbose
@@ -758,6 +769,33 @@ A shipped system prompt must contain only what audience (2) can act on. The orig
 
 **Open question — family-conditioning cost.** The per-family `ss-search`/`ss-find` shaping tables (classify file → C-family / JS-mobile / default → distinct shape) are the single largest token line-item remaining in the grounded variants, and the deltas that justified them lived in the now-stripped metrics. Whether the family table earns its token cost vs a single robust default is left to GEPA + the T12 control to answer empirically; it was deliberately NOT removed in this pass (removing it would be a design change, not a cleanup).
 
+### §4.5.1 Codex review round 2 — additional fixes (2026-05-23)
+
+A second external review (GPT-5.5 / Codex) on the consumer-clean commit surfaced four blocking issues that materially change *what the GEPA run optimizes*, plus prompt-body tightenings. All are now fixed; the run should NOT start without them.
+
+**Blocker A — shell-wrapper call syntax (operational, not provenance).** The ss-* tools are CLI shims on `PATH` (`eval/agent-read-workflows/bin/`), invoked through the shell — they are NOT native tool names. The seed bodies named `[[ss-find]]` etc. but never told the agent the call shape, so a non-Claude agent could hunt for a literal tool named `[[ss-find]]`. Every body now carries a **"Calling the tools"** block mapping each sentinel to its real CLI signature (verified against the shims):
+```
+[[ss-search]]  → ss-search "<query>" [-k N]
+[[ss-find]]    → ss-find "<query>" --regex "<regex>" [-k N]
+[[ss-semantic]]→ ss-semantic <file> "<query>"
+[[ss-trace]]   → ss-trace <symbol> [--in <file>]
+[[ss-grep]]    → ss-grep "<regex>" [-k N]
+[[ss-read]]    → ss-read <file> [start] [end]
+```
+
+**Blocker B — Bash-command telemetry misclassification (anti-Sonnet bias).** `usedReadOrGrep` was computed as `SS_TOOL_RE.test(tc.name)`. For Claude, ss-* runs through Bash so `tc.name === 'Bash'` (the command is in `tc.input.command`) → every Claude run that used ss-* was scored as "no evidence" and hit the 0.10 evidence-adequacy penalty, while Claude's *native* `Read` tool (name `'Read'`) was wrongly credited. Fix: `classifyToolUse(toolCalls)` in `gepa-evaluate.mjs` inspects **name + command** and returns `{ ss, nativeSearch, nativeRead }`; `usedReadOrGrep = ss || nativeSearch || nativeRead`, plus the new `usedSweetSearch / usedNativeSearch / usedNativeRead` fields. (Codex confirmed the eval slot: Sonnet gets the variant via `--append-system-prompt`, Codex via an `[SYSTEM]` block — host-agent context, so the capability-card framing is correct.)
+
+**Blocker C — native-fallback eval contamination.** The production-correct "fall back to plain grep" clause would let native grep rescue ss-* misses on the fully-indexed, static eval corpus, so GEPA could optimize "try sweet-search, then grep" instead of sweet-search quality. Fix: the §3.7.1 EAS now applies `nativeSearchPenalty` (DEFAULTS, initial 0.10) per run where `usedNativeSearch` is true; the CONFIRM event logs `native_search_penalty` per (probe, target) so the native-fallback rate is measurable on the first smoke (validate the magnitude then). The fallback clause stays in the prompt (production robustness) but is now scored as a defect in eval — consistent, not contradictory: a prompt good at ss-* never triggers it.
+
+**Prompt-body tightenings (Codex round 2):**
+- **Unknown symbol/file → Default.** Family-conditioned shaping assumed the target file/symbol was already known. Every family variant now states: *"If the target symbol or file is unknown, lead with domain terms (Default shaping) and switch to symbol-anchored shaping once a candidate symbol appears."* — fixing both the "assumes file known" gap and the "Always include the symbol" backfire when the symbol is unknown.
+- **No-symbol (conceptual) no-match.** No-match guidance assumed a concrete symbol exists. Every no-match variant (T3/T6/T9/T13/T15) now adds: *"For a conceptual query with no obvious symbol, first try 2–3 likely lexical anchors or a broad [[ss-search]]; only conclude [[no-match]] after those also come up empty."*
+- **T12 fallback parity.** The grounding-free control now carries the same native-tools fallback clause as the rest of the slate, so the boundary is held constant across the experiment (only strategy/shape varies).
+
+**Test contract (round 2).** `p7-variants.test.js` adds: wrapper-syntax present for all six tools in every body; no hard-cap counters (`cap at N` / `after two attempts` / `do NOT continue` / `at most N hops`); fallback clause in every body incl. T12; broadened provenance scan (`recall@N`, `recall at N`, `percentage points`, `winner(s)`, `benchmark`, `recommendations-v2`, `\bV\d+\b`); unknown-hint default in family variants; no-symbol guidance in no-match variants. `p7-evaluate.test.js` adds `classifyToolUse` tests (Claude Bash-wrap, Codex command-name, native grep, ss-grep guard, native Read, query-string false-positive, malformed input). `p7-eas.test.js` adds native-search-penalty tests (applied, back-compat when absent, stacks with evidence penalty). Suite after round 2: full P7 unit suite green (1097 prompt-optimization tests).
+
+**Deferred (Codex agreed not to block): `[[expectedFiles]]` / `[[expectedSymbols]]` / `[[expectedFacts]]` naming.** These read as benchmark-flavored to a production agent. They are NOT renamed here because they are protected sentinels wired through the probe schema (`ProbeSchema` in `p7-shared.mjs`), the judge prompt builder (`buildJudgeUserPrompt`), `KNOWN_TOKEN_NAMES`, the token validator, and every probe JSON — a cross-cutting rename with real regression risk. Tracked as a later contract cleanup.
+
 ---
 
 ## §5 Probe set authoring
@@ -783,7 +821,7 @@ Probe sets are **stratified by language** per the CLAUDE.md benchmark methodolog
 | Ruby | sinatra/sinatra | ast-tester (SHA-locked) | `eval/ast-tester-probes/_repos/ruby` |
 | Kotlin | kotlinx.coroutines | ast-tester (SHA-locked) | `eval/ast-tester-probes/_repos/kotlin` |
 
-The 5 P6 anchors preserve the T1–T14 P6 winRate grounding (§4.1/§4.2) and the §5.4 P6-gold reuse; the 5 added languages bring structurally-distinct AST shapes (Java wildcard generics + getter/setter, C++ header/impl split + templates, C# partial classes, Ruby mixins + `class << self`, Kotlin suspend/structured-concurrency).
+The 5 P6 anchors preserve the T1–T15 P6 winRate grounding (§4.1/§4.2) and the §5.4 P6-gold reuse; the 5 added languages bring structurally-distinct AST shapes (Java wildcard generics + getter/setter, C++ header/impl split + templates, C# partial classes, Ruby mixins + `class << self`, Kotlin suspend/structured-concurrency).
 
 **Out-of-distribution (OOD) pool — 8 languages** (§3.5.1 winner-only transfer gate; never in the optimization loop): C (hiredis), Dart (dart-lang/http), Elixir (jason), Lua (Penlight), PHP (Slim), Scala (requests-scala), Swift (Alamofire), Zig (http.zig) — all SHA-locked in `eval/ast-tester-probes/repos.json`.
 
@@ -1137,7 +1175,7 @@ Rule: **NO CLI harness for any stateless call** — judges, reflector, synthesiz
 
 | Task | Estimated effort |
 |---|---|
-| T1–T14 variant authoring (seeded from P6 winRate data) | 0.5 day |
+| T1–T15 variant authoring (seeded from P6 winRate data) | 0.5 day |
 | 40 dev probes (10 languages) | 1.5 day |
 | 30 held-out probes (10 languages, frozen) | 1.0 day |
 | 25 vault probes (10 languages, frozen, opened once at end) | 1.0 day |
@@ -1566,7 +1604,7 @@ All locked. Ready for `prereg/p7-v1` tag.
 ## §13 Next steps
 
 1. **Now**: review this PHASE7.md; resolve the 7 open questions in §12.
-2. **Day 1**: author T1–T14 seeds (P6-grounded per §4.2) + dev / held-out / vault probes across 10 in-distribution languages + 40 OOD language-transfer probes across 8 languages (per §5.0/§5).
+2. **Day 1**: author T1–T15 seeds (P6-grounded per §4.2, consumer-clean per §4.5) + dev / held-out / vault probes across 10 in-distribution languages + 40 OOD language-transfer probes across 8 languages (per §5.0/§5).
 3. **Day 2**: implement direct-API runners (Anthropic, OpenAI, Moonshot, MiniMax, MiMo, Qwen-DashScope) + Gemini Embedding 2 client. Unit-test the `[[token]]` preservation.
 4. **Day 3**: implement GEPA driver + Pareto-gated TARE + the 5-operator portfolio (OP-1 reflective, OP-2 trajectory-crossover with target-tagging, OP-3 persona-pivot+AST-ification with rotated generators + non-executable labelling, OP-4 tool-mask with domain-stripping, OP-5 Pruner with pseudocode-protection). Implement EAS (per-target per-stratum + evidence-adequacy), 0.15 admission cap (relative to displaced incumbent), TPM-aware token-bucket scheduler, persistence/resume with `fs.fsyncSync`, full-metadata JSONL telemetry (§7.4), pre-flight checklist (§7.5), verbose logger (§7.6). Unit-test crash-resume + token-validator multiplicity/alias gates.
 5. **Day 4**: dry-run on 3 probes × 1 round to validate end-to-end (cost: ~$1). Fix bugs.

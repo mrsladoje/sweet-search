@@ -326,7 +326,39 @@ export function parseCodexAgentStream(stdout) {
 
 // ─── the default real evaluateCandidate factory ─────────────────────────────
 
-const SS_TOOL_RE = /ss-(read|grep|trace|semantic|find|search)|\bRead\b|\bGrep\b/i;
+// Tool-use classification (§3.7.1 evidence-adequacy + §4.5 native-fallback
+// contamination). Claude wraps ss-* in Bash, so the Anthropic tool NAME is
+// 'Bash'/'Read' and the real command lives in tc.input.command; Codex sets
+// tc.name to the full command string. We MUST inspect both name and command —
+// the prior `SS_TOOL_RE.test(tc.name)` test silently scored every Claude
+// Bash-wrapped ss-* call as "no evidence" (and rewarded Claude's NATIVE Read).
+const SS_TOOL_RE = /\bss-(search|find|semantic|trace|grep|read)\b/i;
+const NATIVE_SEARCH_RE = /\b(rg|ripgrep|grep|egrep|fgrep|ag|ack)\b/i;
+const NATIVE_READ_RE = /\b(cat|head|tail|less|more|nl)\b/i;
+
+/**
+ * Classify an agent's tool calls into sweet-search vs native-search vs
+ * native-read use. Robust to both runner shapes (Claude: name='Bash'/'Read',
+ * command in input.command; Codex: name=command string). An ss-* call (incl.
+ * ss-grep / ss-read) is NEVER counted as native — the ss guard wins first.
+ *
+ * @param {Array<{name?:string, input?:{command?:string}}>} toolCalls
+ * @returns {{ ss: boolean, nativeSearch: boolean, nativeRead: boolean }}
+ */
+export function classifyToolUse(toolCalls) {
+  let ss = false;
+  let nativeSearch = false;
+  let nativeRead = false;
+  for (const tc of Array.isArray(toolCalls) ? toolCalls : []) {
+    const name = typeof tc?.name === 'string' ? tc.name : '';
+    const cmd = typeof tc?.input?.command === 'string' ? tc.input.command : '';
+    const hay = `${name} ${cmd}`;
+    if (SS_TOOL_RE.test(hay)) { ss = true; continue; } // ss-grep/ss-read are NOT native
+    if (NATIVE_SEARCH_RE.test(hay)) nativeSearch = true;
+    if (name === 'Read' || NATIVE_READ_RE.test(hay)) nativeRead = true;
+  }
+  return { ss, nativeSearch, nativeRead };
+}
 
 /**
  * Build the live `evaluateCandidate`. The returned function is what the loop
@@ -409,11 +441,21 @@ export function makeRealEvaluateCandidate({
       probe, answer: finalText, panel: judgePanel, runJudgeFn, judgeBucket,
     });
 
+    // Classify tool use from name + command so Bash-wrapped ss-* (the Claude
+    // path) is correctly credited as evidence, and native grep/read is measured
+    // separately for the §4.5 native-fallback contamination penalty.
+    const toolUse = classifyToolUse(calls);
+
     return {
       score,
       toolCalls: calls.length,
       finalAnswerEmitted: finalText.trim().length > 0,
-      usedReadOrGrep: calls.some((tc) => SS_TOOL_RE.test(tc.name || '')),
+      // Any retrieval/read evidence (ss OR native) — drives the evidence-adequacy
+      // penalty (a final answer with NO tool evidence is the reward-hack we punish).
+      usedReadOrGrep: toolUse.ss || toolUse.nativeSearch || toolUse.nativeRead,
+      usedSweetSearch: toolUse.ss,
+      usedNativeSearch: toolUse.nativeSearch,
+      usedNativeRead: toolUse.nativeRead,
       trajectory: { toolCalls: calls.map((t) => ({ name: t.name, input: t.input })), answer: finalText.slice(0, 2000) },
       wallMs: run.wallMs ?? 0,
       // CC1 — real run-metadata + token usage threaded out for the CONFIRM event

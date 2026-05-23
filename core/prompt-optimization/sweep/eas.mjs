@@ -67,7 +67,10 @@ function _runPenalties(run) {
     run.finalAnswerEmitted && !run.usedReadOrGrep && run.stratum !== 'no-match'
       ? DEFAULTS.evidenceAdequacyPenalty
       : 0;
-  return { lo, hi, under, over, callDevPenalty, evidencePenalty };
+  // Native-search contamination (§4.5): reaching for native grep/rg on the
+  // fully-indexed eval corpus bypasses the ss-* retrieval being optimized.
+  const nativeSearchPenalty = run.usedNativeSearch ? DEFAULTS.nativeSearchPenalty : 0;
+  return { lo, hi, under, over, callDevPenalty, evidencePenalty, nativeSearchPenalty };
 }
 
 /**
@@ -77,13 +80,15 @@ function _runPenalties(run) {
  * Per target, per stratum:
  *   call_deviation_penalty = 0.02 × (max(0, lo−calls) + max(0, calls−hi))
  *   evidence_adequacy_penalty = 0.10 when finalAnswerEmitted && !usedReadOrGrep && stratum≠'no-match'
- *   per_target_factor = 1 − mean(call_dev) − mean(evidence)
+ *   native_search_penalty = 0.10 when usedNativeSearch (§4.5 contamination)
+ *   per_target_factor = 1 − mean(call_dev) − mean(evidence) − mean(native_search)
  *
  * The overall factor = min across targets (Maximin-consistent — a variant cannot
  * exploit Sonnet's good behaviour to mask GPT-5.5 under-exploration).
  *
  * @typedef {{ stratum: string, calls: number, finalAnswerEmitted: boolean,
- *             usedReadOrGrep: boolean, expected_call_window?: [number,number] }} ProbeRun
+ *             usedReadOrGrep: boolean, usedNativeSearch?: boolean,
+ *             expected_call_window?: [number,number] }} ProbeRun
  *
  * @param {object} args
  * @param {{ sonnet?: ProbeRun[], gpt5_5?: ProbeRun[], [key: string]: ProbeRun[] }} args.perTarget
@@ -107,23 +112,26 @@ export function efficiencyFactor({ perTarget }) {
     }
     let totalCallDev = 0;
     let totalEvidence = 0;
+    let totalNativeSearch = 0;
     const runDetails = [];
 
     for (const run of runs) {
       if (typeof run.calls !== 'number' || !Number.isFinite(run.calls)) {
         throw new TypeError(`efficiencyFactor: each run.calls must be a finite number`);
       }
-      const { lo, hi, under, over, callDevPenalty, evidencePenalty } = _runPenalties(run);
+      const { lo, hi, under, over, callDevPenalty, evidencePenalty, nativeSearchPenalty } = _runPenalties(run);
       totalCallDev += callDevPenalty;
       totalEvidence += evidencePenalty;
-      runDetails.push({ stratum: run.stratum, calls: run.calls, lo, hi, under, over, callDevPenalty, evidencePenalty });
+      totalNativeSearch += nativeSearchPenalty;
+      runDetails.push({ stratum: run.stratum, calls: run.calls, lo, hi, under, over, callDevPenalty, evidencePenalty, nativeSearchPenalty });
     }
 
     const meanCallDev = totalCallDev / runs.length;
     const meanEvidence = totalEvidence / runs.length;
-    const factor = 1 - meanCallDev - meanEvidence;
+    const meanNativeSearch = totalNativeSearch / runs.length;
+    const factor = 1 - meanCallDev - meanEvidence - meanNativeSearch;
     perTargetFactor[target] = factor;
-    breakdown[target] = { meanCallDev, meanEvidence, factor, runs: runDetails };
+    breakdown[target] = { meanCallDev, meanEvidence, meanNativeSearch, factor, runs: runDetails };
   }
 
   const factor = Math.min(...Object.values(perTargetFactor));

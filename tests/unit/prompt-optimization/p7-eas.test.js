@@ -166,6 +166,45 @@ describe('efficiencyFactor — evidence-adequacy penalty', () => {
   });
 });
 
+// ─── efficiencyFactor — native-search contamination penalty (§4.5) ────────────
+
+describe('efficiencyFactor — native-search penalty', () => {
+  it('applies the native-search penalty when usedNativeSearch=true', () => {
+    const result = efficiencyFactor({
+      perTarget: {
+        sonnet: [{ stratum: 'literal-lookup', calls: 2, finalAnswerEmitted: true, usedReadOrGrep: true, usedNativeSearch: true }],
+      },
+    });
+    expect(result.breakdown.sonnet.runs[0].nativeSearchPenalty).toBeCloseTo(DEFAULTS.nativeSearchPenalty, 10);
+    expect(result.breakdown.sonnet.meanNativeSearch).toBeCloseTo(DEFAULTS.nativeSearchPenalty, 10);
+    expect(result.breakdown.sonnet.factor).toBeCloseTo(1 - DEFAULTS.nativeSearchPenalty, 10);
+  });
+
+  it('does NOT apply the native-search penalty when usedNativeSearch is absent/false (back-compat)', () => {
+    const result = efficiencyFactor({
+      perTarget: {
+        sonnet: [{ stratum: 'literal-lookup', calls: 2, finalAnswerEmitted: true, usedReadOrGrep: true }],
+      },
+    });
+    expect(result.breakdown.sonnet.runs[0].nativeSearchPenalty).toBe(0);
+    expect(result.breakdown.sonnet.meanNativeSearch).toBe(0);
+    expect(result.breakdown.sonnet.factor).toBe(1);
+  });
+
+  it('stacks with the evidence penalty (native grep + unsupported answer)', () => {
+    // ss never used, native grep used, then a final answer with no ss evidence.
+    const result = efficiencyFactor({
+      perTarget: {
+        sonnet: [{ stratum: 'behavioral', calls: 4, finalAnswerEmitted: true, usedReadOrGrep: false, usedNativeSearch: true }],
+      },
+    });
+    const run = result.breakdown.sonnet.runs[0];
+    expect(run.evidencePenalty).toBeCloseTo(DEFAULTS.evidenceAdequacyPenalty, 10);
+    expect(run.nativeSearchPenalty).toBeCloseTo(DEFAULTS.nativeSearchPenalty, 10);
+    expect(result.breakdown.sonnet.factor).toBeCloseTo(1 - DEFAULTS.evidenceAdequacyPenalty - DEFAULTS.nativeSearchPenalty, 10);
+  });
+});
+
 // ─── efficiencyFactor — min-aggregation across targets ────────────────────────
 
 describe('efficiencyFactor — min aggregation', () => {

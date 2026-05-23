@@ -69,6 +69,11 @@ export const DEFAULTS = Object.freeze({
   callDeviationPenaltyPerCall: 0.02,
   // Evidence-adequacy penalty for unsupported finals on non-trivial probes.
   evidenceAdequacyPenalty: 0.1,
+  // Native-search contamination penalty (§4.5): the eval corpus is fully
+  // indexed + static, so reaching for native grep/rg instead of the ss-* tools
+  // bypasses the retrieval being optimized. Penalize per run that used native
+  // search. Initial value — validate the native-fallback rate on first smoke.
+  nativeSearchPenalty: 0.1,
   // Hard-negative weighting (§3.1): noise floor + clip + stability gate.
   judgeNoiseFloor: 0.05,
   varianceWeightClip: [0.1, 2.0],
@@ -238,7 +243,10 @@ export function clip(x, lo, hi) {
  * @property {number}  score              — judge-panel correctness in [0,1]
  * @property {number}  toolCalls
  * @property {boolean} finalAnswerEmitted
- * @property {boolean} usedReadOrGrep     — any read/grep/trace tool call?
+ * @property {boolean} usedReadOrGrep     — any retrieval/read evidence (ss OR native)?
+ * @property {boolean} usedSweetSearch    — used an ss-* tool?
+ * @property {boolean} usedNativeSearch   — used native grep/rg (contamination)?
+ * @property {boolean} usedNativeRead     — used native Read/cat (telemetry)?
  * @property {number}  wallMs
  *
  * @typedef {object} VariantMeta  parsed YAML front-matter of a T_i file

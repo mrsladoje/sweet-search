@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { DEFAULTS, EVENT_KINDS, hashContent, callWindowFor } from './p7-shared.mjs';
 import { atomicWriteJSON, appendFsynced, loadTrajectory } from './p7-persist.mjs';
 import { runReasoningHomp } from './p7-reasoning-homp.mjs';
-import { JUDGE_PANEL } from './gepa-evaluate.mjs';
+import { JUDGE_PANEL, classifyToolUse } from './gepa-evaluate.mjs';
 import { computeScsReport } from '../stats/scs.mjs';
 import { runReflection, buildReflectionPackage } from './p7-reflect.mjs';
 import { estimateTokens } from './variant-loader.mjs';
@@ -78,6 +78,11 @@ export function buildConfirmEvent({ round, survivor, probe, pid, target, d }) {
   // usedReadOrGrep, so it is left null when non-derivable (no-match strata are
   // exempt → 0).
   const evidencePenalty = (probe && probe.stratum === 'no-match') ? 0 : null;
+  // Native-search contamination penalty (§4.5), derived from the recorded
+  // trajectory so the CONFIRM log surfaces native-fallback per (probe,target).
+  const nativeSearchPenalty = Array.isArray(d?.traj?.toolCalls)
+    ? (classifyToolUse(d.traj.toolCalls).nativeSearch ? DEFAULTS.nativeSearchPenalty : 0)
+    : null;
   return {
     _kind: EVENT_KINDS.CONFIRM,
     round,
@@ -99,6 +104,7 @@ export function buildConfirmEvent({ round, survivor, probe, pid, target, d }) {
     expected_call_window: win,
     call_deviation_penalty: callDeviation,
     evidence_adequacy_penalty: evidencePenalty,
+    native_search_penalty: nativeSearchPenalty,
     eas_factor: survivor.efficiencyFactor,
     token_count_prompt: usage?.token_count_prompt ?? survivor.tokenCount ?? null,
     length_penalty: survivor.lengthPenalty,
