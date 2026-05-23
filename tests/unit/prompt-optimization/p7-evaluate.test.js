@@ -26,6 +26,7 @@ import {
   JUDGE_PANEL,
   JUDGE_SYSTEM_PROMPT,
   parseCodexAgentStream,
+  classifyToolUse,
 } from '../../../core/prompt-optimization/sweep/gepa-evaluate.mjs';
 import { hashContent } from '../../../core/prompt-optimization/sweep/p7-shared.mjs';
 import { estimateTokens } from '../../../core/prompt-optimization/sweep/variant-loader.mjs';
@@ -254,5 +255,50 @@ describe('parseCodexAgentStream — codex-cli 0.132 schema (B1)', () => {
   it('does not match the pre-0.132 function_call/tool_call event names', () => {
     const legacy = '{"type":"function_call","name":"ss-search"}\n{"type":"tool_call","tool":"ss-grep"}';
     expect(parseCodexAgentStream(legacy).toolCalls).toHaveLength(0);
+  });
+});
+
+// ─── classifyToolUse — name + command (Claude Bash-wrap vs Codex command-name) ─
+
+describe('classifyToolUse', () => {
+  it('credits a Claude Bash-wrapped ss-search call (name=Bash, cmd in input.command)', () => {
+    // The bug this guards: testing tc.name alone scored every Claude ss-* call
+    // as "no evidence" and applied the evidence-adequacy penalty (eas.mjs:67).
+    const r = classifyToolUse([{ name: 'Bash', input: { command: 'ss-search "where is foo defined" -k 5' } }]);
+    expect(r).toEqual({ ss: true, nativeSearch: false, nativeRead: false });
+  });
+
+  it('credits a Codex command-name ss-find call (name = full command string)', () => {
+    const r = classifyToolUse([{ name: 'ss-find "x" --regex "\\bX\\b"', input: { command: 'ss-find "x" --regex "\\bX\\b"' } }]);
+    expect(r.ss).toBe(true);
+    expect(r.nativeSearch).toBe(false);
+  });
+
+  it('flags native grep/rg in a Bash command as nativeSearch, not ss', () => {
+    expect(classifyToolUse([{ name: 'Bash', input: { command: 'grep -rn foo .' } }]))
+      .toEqual({ ss: false, nativeSearch: true, nativeRead: false });
+    expect(classifyToolUse([{ name: 'rg foo', input: { command: 'rg foo' } }]).nativeSearch).toBe(true);
+  });
+
+  it('never counts ss-grep / ss-read as native (the ss guard wins first)', () => {
+    expect(classifyToolUse([{ name: 'Bash', input: { command: 'ss-grep "\\bfoo\\b"' } }]))
+      .toEqual({ ss: true, nativeSearch: false, nativeRead: false });
+    expect(classifyToolUse([{ name: 'Bash', input: { command: 'ss-read src/x.js 10 40' } }]).ss).toBe(true);
+  });
+
+  it('flags Claude native Read tool and shell cat as nativeRead', () => {
+    expect(classifyToolUse([{ name: 'Read', input: { file_path: 'a.js' } }]).nativeRead).toBe(true);
+    expect(classifyToolUse([{ name: 'Bash', input: { command: 'cat a.js' } }]).nativeRead).toBe(true);
+  });
+
+  it('does not false-positive on grep mentioned inside an ss-search query string', () => {
+    const r = classifyToolUse([{ name: 'Bash', input: { command: 'ss-search "where is the grep handler"' } }]);
+    expect(r).toEqual({ ss: true, nativeSearch: false, nativeRead: false });
+  });
+
+  it('handles empty / malformed input safely', () => {
+    expect(classifyToolUse([])).toEqual({ ss: false, nativeSearch: false, nativeRead: false });
+    expect(classifyToolUse(null)).toEqual({ ss: false, nativeSearch: false, nativeRead: false });
+    expect(classifyToolUse([{}, { name: 42 }])).toEqual({ ss: false, nativeSearch: false, nativeRead: false });
   });
 });
