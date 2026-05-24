@@ -7,6 +7,11 @@ import { describe, it, expect } from 'vitest';
 import {
   taskScore,
   efficiencyFactor,
+  accuracyDesirability,
+  assertNativeBaselineCoverage,
+  minimizeRelativeDesirability,
+  nativeRelativeScore,
+  normalizeNativeBaselineByTarget,
   lengthPenalty,
   finalScore,
   probeWeight,
@@ -250,6 +255,78 @@ describe('efficiencyFactor — min aggregation', () => {
     expect(() =>
       efficiencyFactor({ perTarget: { sonnet: [] } }),
     ).toThrow(TypeError);
+  });
+});
+
+// ─── native-relative desirability ────────────────────────────────────────────
+
+describe('native-relative desirability', () => {
+  it('rewards beating native call count and penalizes worse-than-native call count', () => {
+    expect(minimizeRelativeDesirability({
+      value: 2,
+      nativeValue: 4,
+      targetRatio: DEFAULTS.nativeCallTargetRatio,
+      failRatio: DEFAULTS.nativeCallFailRatio,
+      minTarget: 1,
+    })).toBe(1);
+    expect(minimizeRelativeDesirability({
+      value: 4,
+      nativeValue: 4,
+      targetRatio: DEFAULTS.nativeCallTargetRatio,
+      failRatio: DEFAULTS.nativeCallFailRatio,
+      minTarget: 1,
+    })).toBeCloseTo(0.5, 10);
+    expect(minimizeRelativeDesirability({
+      value: 6,
+      nativeValue: 4,
+      targetRatio: DEFAULTS.nativeCallTargetRatio,
+      failRatio: DEFAULTS.nativeCallFailRatio,
+      minTarget: 1,
+    })).toBe(0);
+  });
+
+  it('sets accuracy desirability against a native floor and target', () => {
+    expect(accuracyDesirability({ accuracy: 0.86, nativeAccuracy: 0.9 })).toBe(0);
+    expect(accuracyDesirability({ accuracy: 0.95, nativeAccuracy: 0.9 })).toBe(1);
+    expect(accuracyDesirability({ accuracy: 0.91, nativeAccuracy: 0.9 })).toBeGreaterThan(0);
+  });
+
+  it('normalizes row baselines and gives max score when all three objectives beat native', () => {
+    const baseline = normalizeNativeBaselineByTarget({
+      baselines: [
+        { target: 'sonnet', probe_id: 'p1', accuracy: 0.9, tool_calls: 4, agent_tokens: 1000 },
+        { target: 'gpt-5.5', probe_id: 'p1', accuracy: 0.9, tool_calls: 4, agent_tokens: 1000 },
+      ],
+    });
+    const r = nativeRelativeScore({
+      baselineByTarget: baseline,
+      perTarget: {
+        sonnet: [{ probeId: 'p1', score: 0.95, calls: 2, tokens: 650 }],
+        gpt5_5: [{ probeId: 'p1', score: 0.96, calls: 1, tokens: 500 }],
+      },
+    });
+    expect(r.factor).toBeCloseTo(1, 10);
+    expect(r.breakdown.sonnet.runs[0].desirability).toMatchObject({ accuracy: 1, calls: 1, tokens: 1, overall: 1 });
+  });
+
+  it('requires a complete baseline for every scored target/probe', () => {
+    expect(() =>
+      nativeRelativeScore({
+        baselineByTarget: { sonnet: { p1: { score: 0.9, calls: 4, tokens: 1000 } } },
+        perTarget: { sonnet: [{ probeId: 'p2', score: 0.95, calls: 2, tokens: 650 }] },
+      }),
+    ).toThrow(RangeError);
+  });
+
+  it('checks full baseline coverage before a paid run starts', () => {
+    const baseline = {
+      sonnet: { p1: { score: 0.9, calls: 4, tokens: 1000 } },
+      gpt5_5: { p1: { score: 0.9, calls: 4, tokens: 1000 } },
+    };
+    expect(assertNativeBaselineCoverage({ baselineByTarget: baseline, probes: [{ id: 'p1' }] })).toBeTruthy();
+    expect(() =>
+      assertNativeBaselineCoverage({ baselineByTarget: baseline, probes: [{ id: 'p1' }, { id: 'p2' }] }),
+    ).toThrow(/missing 2 row/);
   });
 });
 

@@ -49,11 +49,12 @@ function makeWinner(over = {}) {
 describe('B1 — buildReplayMap + makeResumeReplayEvaluate (§7.4 no re-spending)', () => {
   it('buildReplayMap indexes SCREEN + CONFIRM scores by (round,kind,mutation_hash,probe,target)', () => {
     const tPath = path.join(tmp, 'traj.jsonl');
-    appendFsynced(tPath, { _kind: 'screen', round: 3, mutation_hash: '0xabc', probe_id: 'p1', target: 'sonnet', score: 0.81, tool_calls: 2 });
-    appendFsynced(tPath, { _kind: 'confirm', round: 3, mutation_hash: '0xdef', probe_id: 'p2', target: 'gpt5_5', raw_sonnet: 0.6, raw_gpt5_5: 0.55, tool_calls: 4 });
+    appendFsynced(tPath, { _kind: 'screen', round: 3, mutation_hash: '0xabc', probe_id: 'p1', target: 'sonnet', score: 0.81, tool_calls: 2, input_tokens: 100, output_tokens: 20 });
+    appendFsynced(tPath, { _kind: 'confirm', round: 3, mutation_hash: '0xdef', probe_id: 'p2', target: 'gpt5_5', raw_sonnet: 0.6, raw_gpt5_5: 0.55, tool_calls: 4, input_tokens: 200, output_tokens: 30 });
     appendFsynced(tPath, { _kind: 'mutation', round: 3, new_prompt_hash: '0xabc' }); // ignored
     const map = buildReplayMap(tPath);
     expect(map.get(replayKey({ kind: 'screen', round: 3, mutationHash: '0xabc', probeId: 'p1', target: 'sonnet' })).score).toBeCloseTo(0.81);
+    expect(map.get(replayKey({ kind: 'screen', round: 3, mutationHash: '0xabc', probeId: 'p1', target: 'sonnet' })).usage.agent.input_tokens).toBe(100);
     // confirm row stores the per-target raw score for the row's target
     expect(map.get(replayKey({ kind: 'confirm', round: 3, mutationHash: '0xdef', probeId: 'p2', target: 'gpt5_5' })).score).toBeCloseTo(0.55);
     expect(map.size).toBe(2);
@@ -61,7 +62,7 @@ describe('B1 — buildReplayMap + makeResumeReplayEvaluate (§7.4 no re-spending
 
   it('replays a completed step instead of calling the evaluator; runs live for an unpaid step', async () => {
     const tPath = path.join(tmp, 'traj.jsonl');
-    appendFsynced(tPath, { _kind: 'screen', round: 3, mutation_hash: '0xm1', probe_id: 'p1', target: 'sonnet', score: 0.9, tool_calls: 3 });
+    appendFsynced(tPath, { _kind: 'screen', round: 3, mutation_hash: '0xm1', probe_id: 'p1', target: 'sonnet', score: 0.9, tool_calls: 3, input_tokens: 100, output_tokens: 20 });
     const map = buildReplayMap(tPath);
     const completed = new Set([replayKey({ kind: 'screen', round: 3, mutationHash: '0xm1', probeId: 'p1', target: 'sonnet' })]);
 
@@ -74,6 +75,7 @@ describe('B1 — buildReplayMap + makeResumeReplayEvaluate (§7.4 no re-spending
     const replayed = await layer.evaluate({ probe: { id: 'p1' }, target: 'sonnet', promptText: 'x' });
     expect(replayed.replayed).toBe(true);
     expect(replayed.score).toBeCloseTo(0.9); // persisted score, NOT 0.123
+    expect(replayed.usage.agent).toMatchObject({ input_tokens: 100, output_tokens: 20 });
     expect(liveCalls).toBe(0); // no API call paid for the already-completed step
 
     // an UNPAID (probe,target) under the same context → live call
@@ -98,7 +100,7 @@ describe('B1 — buildReplayMap + makeResumeReplayEvaluate (§7.4 no re-spending
 
 describe('B2 — buildConfirmEvent forensic shape', () => {
   it('threads usage + the REAL judge panel and derives the EAS window', () => {
-    const survivor = { hash: '0xs', detail: { p1: { sonnet: { score: 0.7 }, gpt5_5: { score: 0.6 } } }, scores: { p1: 0.6 }, efficiencyFactor: 0.98, lengthPenalty: 0.04, finalScore: 0.55, tokenCount: 1200 };
+    const survivor = { hash: '0xs', detail: { p1: { sonnet: { score: 0.7 }, gpt5_5: { score: 0.6 } } }, scores: { p1: 0.6 }, efficiencyFactor: 0.98, nativeRelative: { factor: 0.82, perTargetFactor: { sonnet: 0.84, gpt5_5: 0.82 } }, lengthPenalty: 0.04, finalScore: 0.55, tokenCount: 1200 };
     const d = {
       score: 0.7,
       traj: { toolCalls: [{}, {}, {}, {}], answer: 'hello' },
@@ -110,6 +112,8 @@ describe('B2 — buildConfirmEvent forensic shape', () => {
     expect(ev.input_tokens).toBe(100);
     expect(ev.expected_call_window).toEqual([3, 6]);
     expect(ev.call_deviation_penalty).toBeCloseTo(0, 6); // 4 calls in [3,6]
+    expect(ev.native_relative_factor).toBeCloseTo(0.82, 6);
+    expect(ev.native_relative_target_factors.gpt5_5).toBeCloseTo(0.82, 6);
     expect(ev.result_bytes).toBe(Buffer.byteLength('hello', 'utf8'));
     expect(ev.tool_schema_version).toBe('ss-v3');
   });

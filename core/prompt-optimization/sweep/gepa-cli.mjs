@@ -13,6 +13,7 @@
  *   --rounds N          override max rounds
  *   --variants-dir DIR  override the T_i variants directory
  *   --probes FILE       dev-probes JSON for a real run (required for non-dry)
+ *   --native-baseline FILE  native rg+Read baseline JSON for relative scoring
  *   --smoke-probes N    (with --dry-run) cap smoke probes to the first N
  *   --smoke-variants N  (with --dry-run) cap seed variants to the first N (≤2)
  *   --skip-preflight    skip the §7.5 pre-flight gate (NOT recommended)
@@ -21,6 +22,7 @@
 import { readFileSync } from 'node:fs';
 
 import { DEFAULTS } from './p7-shared.mjs';
+import { assertNativeBaselineCoverage } from './eas.mjs';
 import { appendFsynced, trajectoryPath } from './p7-persist.mjs';
 import {
   runGepa,
@@ -58,6 +60,7 @@ export function parseArgs(argv) {
     else if (a === '--rounds') o.rounds = Number.parseInt(argv[++i], 10);
     else if (a === '--variants-dir') o.variantsDir = argv[++i];
     else if (a === '--probes') o.probesFile = argv[++i];
+    else if (a === '--native-baseline') o.nativeBaselineFile = argv[++i];
     else if (a === '--smoke-probes') o.smokeProbes = Number.parseInt(argv[++i], 10);
     else if (a === '--smoke-variants') o.smokeVariants = Number.parseInt(argv[++i], 10);
   }
@@ -128,7 +131,15 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
 
   const probesDoc = JSON.parse(readFileSync(o.probesFile, 'utf8'));
   const devProbes = probesDoc.probes ?? probesDoc;
+  const rotationPool = probesDoc.rotationPool ?? [];
   const variants = loadAllVariants().map(normalizeVariant);
+  let nativeBaselineByTarget = null;
+  if (o.nativeBaselineFile) {
+    nativeBaselineByTarget = assertNativeBaselineCoverage({
+      baselineByTarget: JSON.parse(readFileSync(o.nativeBaselineFile, 'utf8')),
+      probes: [...devProbes, ...rotationPool],
+    });
+  }
 
   // TPM-aware token buckets per target (§7.7); defaults to Tier 2.
   const onThrottle = (ev) => appendFsynced(trajectoryPath(o.run), ev);
@@ -151,12 +162,13 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
     runId: o.run,
     variants,
     devProbes,
-    rotationPool: probesDoc.rotationPool ?? [],
+    rotationPool,
     evaluateCandidate: makeRealEvaluateCandidate(),
     callModel: (req) => runJudge(withMutatorCallDefaults(req)),
     maxRounds: o.rounds ?? DEFAULTS.maxRounds,
     resume: o.resume,
     bucket,
+    nativeBaselineByTarget,
   });
   reportResult('GEPA complete', result);
 

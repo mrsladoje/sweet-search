@@ -13,7 +13,7 @@
  *    Pareto maxima (anti-utopia-point fix per GPT-5.5 review §C1).
  */
 
-import { callWindowFor, clip, DEFAULTS } from './p7-shared.mjs';
+import { callWindowFor, clip, DEFAULTS, normalizeTarget, TARGET_LIST } from './p7-shared.mjs';
 
 // ─── task score ───────────────────────────────────────────────────────────────
 
@@ -137,6 +137,236 @@ export function efficiencyFactor({ perTarget }) {
   const factor = Math.min(...Object.values(perTargetFactor));
 
   return { factor, perTargetFactor, breakdown };
+}
+
+// ─── native-relative desirability scoring ───────────────────────────────────
+
+function _finiteNumber(name, value, { min = -Infinity, max = Infinity, minExclusive = false } = {}) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new TypeError(`${name} must be a finite number`);
+  }
+  if ((minExclusive ? value <= min : value < min) || value > max) {
+    throw new RangeError(`${name} must be in range`);
+  }
+  return value;
+}
+
+function _metric(obj, keys) {
+  for (const key of keys) {
+    if (obj && typeof obj[key] === 'number' && Number.isFinite(obj[key])) return obj[key];
+  }
+  return undefined;
+}
+
+function _baselineMetrics(row, label) {
+  const score = _metric(row, ['score', 'accuracy']);
+  const calls = _metric(row, ['calls', 'toolCalls', 'tool_calls']);
+  const tokens = _metric(row, ['tokens', 'agentTokens', 'agent_tokens', 'totalTokens', 'total_tokens']);
+  return {
+    score: _finiteNumber(`${label}.score`, score, { min: 0, max: 1 }),
+    calls: _finiteNumber(`${label}.calls`, calls, { min: 0, minExclusive: true }),
+    tokens: _finiteNumber(`${label}.tokens`, tokens, { min: 0, minExclusive: true }),
+  };
+}
+
+function _normalizeBaselineRows(rows) {
+  const out = {};
+  rows.forEach((row, i) => {
+    const target = normalizeTarget(row.target ?? row.model ?? row.provider ?? '');
+    const probeId = row.probeId ?? row.probe_id ?? row.id;
+    if (typeof probeId !== 'string' || probeId.length === 0) {
+      throw new TypeError(`native baseline row ${i}: probeId/probe_id is required`);
+    }
+    out[target] ??= {};
+    out[target][probeId] = _baselineMetrics(row, `native baseline ${target}.${probeId}`);
+  });
+  return out;
+}
+
+function _normalizeBaselineObject(source) {
+  if (source == null || typeof source !== 'object' || Array.isArray(source)) {
+    throw new TypeError('native baseline must be an object or row array');
+  }
+  const out = {};
+  for (const [rawTarget, targetRows] of Object.entries(source)) {
+    const target = normalizeTarget(rawTarget);
+    out[target] ??= {};
+    if (Array.isArray(targetRows)) {
+      targetRows.forEach((row, i) => {
+        const probeId = row.probeId ?? row.probe_id ?? row.id;
+        if (typeof probeId !== 'string' || probeId.length === 0) {
+          throw new TypeError(`native baseline ${target}[${i}]: probeId/probe_id is required`);
+        }
+        out[target][probeId] = _baselineMetrics(row, `native baseline ${target}.${probeId}`);
+      });
+      continue;
+    }
+    if (targetRows == null || typeof targetRows !== 'object') {
+      throw new TypeError(`native baseline ${target} must be an object or array`);
+    }
+    for (const [probeId, row] of Object.entries(targetRows)) {
+      out[target][probeId] = _baselineMetrics(row, `native baseline ${target}.${probeId}`);
+    }
+  }
+  return out;
+}
+
+/**
+ * Normalize supported native-baseline JSON shapes into:
+ *   { sonnet: { [probeId]: { score, calls, tokens } }, gpt5_5: { ... } }
+ *
+ * Supported input:
+ *   - { nativeBaselineByTarget: { sonnet: { p1: {...} } } }
+ *   - { baselineByTarget: { sonnet: [{ probeId:'p1', ... }] } }
+ *   - { baselines: [{ target:'sonnet', probe_id:'p1', ... }] }
+ *   - [{ target:'sonnet', probeId:'p1', ... }]
+ */
+export function normalizeNativeBaselineByTarget(doc) {
+  if (Array.isArray(doc)) return _normalizeBaselineRows(doc);
+  if (doc == null || typeof doc !== 'object') {
+    throw new TypeError('native baseline document must be an object or array');
+  }
+  if (doc.nativeBaselineByTarget) return _normalizeBaselineObject(doc.nativeBaselineByTarget);
+  if (doc.baselineByTarget) return _normalizeBaselineObject(doc.baselineByTarget);
+  if (doc.baselines) {
+    if (!Array.isArray(doc.baselines)) throw new TypeError('native baseline baselines must be an array');
+    return _normalizeBaselineRows(doc.baselines);
+  }
+  return _normalizeBaselineObject(doc);
+}
+
+/**
+ * Fail fast before spending agent calls if a native-relative GEPA run does not
+ * have complete baseline rows for every scored (target, probe).
+ */
+export function assertNativeBaselineCoverage({ baselineByTarget, probes, targets = TARGET_LIST }) {
+  const baseline = normalizeNativeBaselineByTarget(baselineByTarget);
+  const missing = [];
+  for (const rawTarget of targets) {
+    const target = normalizeTarget(rawTarget);
+    for (const probe of probes || []) {
+      const probeId = probe?.id;
+      if (typeof probeId !== 'string' || probeId.length === 0) {
+        throw new TypeError('assertNativeBaselineCoverage: every probe must have an id');
+      }
+      if (!baseline[target]?.[probeId]) missing.push(`${target}.${probeId}`);
+    }
+  }
+  if (missing.length > 0) {
+    const suffix = missing.length > 5 ? `, ... +${missing.length - 5} more` : '';
+    throw new RangeError(`native baseline missing ${missing.length} row(s): ${missing.slice(0, 5).join(', ')}${suffix}`);
+  }
+  return baseline;
+}
+
+/**
+ * Accuracy desirability: 0 below the acceptable floor, 1 at/above target.
+ * The floor is max(absolute floor, native accuracy - slack); target is
+ * max(target floor, native accuracy + lift), capped at 1.
+ */
+export function accuracyDesirability({ accuracy, nativeAccuracy }) {
+  const a = _finiteNumber('accuracyDesirability.accuracy', accuracy, { min: 0, max: 1 });
+  const base = _finiteNumber('accuracyDesirability.nativeAccuracy', nativeAccuracy, { min: 0, max: 1 });
+  const floor = Math.max(DEFAULTS.nativeAccuracyFloor, base - DEFAULTS.nativeAccuracySlack);
+  const target = Math.min(1, Math.max(DEFAULTS.nativeAccuracyTargetFloor, base + DEFAULTS.nativeAccuracyTargetLift));
+  if (a <= floor) return 0;
+  if (a >= target) return 1;
+  return clip((a - floor) / (target - floor), 0, 1);
+}
+
+/**
+ * Minimize-one-metric desirability relative to native rg+Read. Scores 1 once
+ * the candidate reaches the target ratio, 0 at/above the fail ratio.
+ */
+export function minimizeRelativeDesirability({ value, nativeValue, targetRatio, failRatio, minTarget = 0 }) {
+  const v = _finiteNumber('minimizeRelativeDesirability.value', value, { min: 0 });
+  const base = _finiteNumber('minimizeRelativeDesirability.nativeValue', nativeValue, { min: 0, minExclusive: true });
+  const target = Math.max(minTarget, base * targetRatio);
+  const fail = base * failRatio;
+  if (fail <= target) throw new RangeError('minimizeRelativeDesirability: fail threshold must be greater than target');
+  if (v <= target) return 1;
+  if (v >= fail) return 0;
+  return clip((fail - v) / (fail - target), 0, 1);
+}
+
+function _weightedGeomean(parts, weights) {
+  let total = 0;
+  let sum = 0;
+  for (const [key, d] of Object.entries(parts)) {
+    const w = weights[key] ?? 0;
+    if (w <= 0) continue;
+    const v = clip(_finiteNumber(`desirability.${key}`, d, { min: 0, max: 1 }), 0, 1);
+    if (v === 0) return 0;
+    total += w;
+    sum += w * Math.log(v);
+  }
+  if (total <= 0) throw new RangeError('nativeRelativeScore: desirability weights must have positive sum');
+  return Math.exp(sum / total);
+}
+
+/**
+ * Native-relative scalar score for GEPA. Per run, accuracy/calls/tokens are
+ * transformed to desirabilities and combined with a weighted geometric mean.
+ * Per-target factors are the mean of probe-level desirabilities; final factor
+ * is min across targets to keep the joint Maximin discipline.
+ *
+ * @typedef {{ probeId:string, score:number, calls:number, tokens:number }} NativeProbeRun
+ * @param {object} args
+ * @param {{ [target:string]: NativeProbeRun[] }} args.perTarget
+ * @param {{ [target:string]: { [probeId:string]: { score:number, calls:number, tokens:number } } }} args.baselineByTarget
+ * @param {{ accuracy?:number, calls?:number, tokens?:number }} [args.weights]
+ */
+export function nativeRelativeScore({ perTarget, baselineByTarget, weights = DEFAULTS.nativeRelativeWeights }) {
+  if (perTarget == null || typeof perTarget !== 'object' || Array.isArray(perTarget)) {
+    throw new TypeError('nativeRelativeScore: perTarget must be a plain object');
+  }
+  const baseline = normalizeNativeBaselineByTarget(baselineByTarget);
+  const perTargetFactor = {};
+  const breakdown = {};
+
+  for (const [target, runs] of Object.entries(perTarget)) {
+    if (!Array.isArray(runs) || runs.length === 0) {
+      throw new TypeError(`nativeRelativeScore: perTarget.${target} must be a non-empty array`);
+    }
+    const targetBaseline = baseline[normalizeTarget(target)];
+    if (!targetBaseline) throw new RangeError(`nativeRelativeScore: missing native baseline for target ${target}`);
+    let total = 0;
+    const details = [];
+    for (const run of runs) {
+      const probeId = run.probeId ?? run.id;
+      if (typeof probeId !== 'string' || probeId.length === 0) {
+        throw new TypeError('nativeRelativeScore: each run must include probeId');
+      }
+      const base = targetBaseline[probeId];
+      if (!base) throw new RangeError(`nativeRelativeScore: missing native baseline for ${target}.${probeId}`);
+      const score = _finiteNumber(`nativeRelativeScore.${target}.${probeId}.score`, run.score, { min: 0, max: 1 });
+      const calls = _finiteNumber(`nativeRelativeScore.${target}.${probeId}.calls`, run.calls, { min: 0 });
+      const tokens = _finiteNumber(`nativeRelativeScore.${target}.${probeId}.tokens`, run.tokens, { min: 0, minExclusive: true });
+      const desirability = {
+        accuracy: accuracyDesirability({ accuracy: score, nativeAccuracy: base.score }),
+        calls: minimizeRelativeDesirability({
+          value: calls,
+          nativeValue: base.calls,
+          targetRatio: DEFAULTS.nativeCallTargetRatio,
+          failRatio: DEFAULTS.nativeCallFailRatio,
+          minTarget: 1,
+        }),
+        tokens: minimizeRelativeDesirability({
+          value: tokens,
+          nativeValue: base.tokens,
+          targetRatio: DEFAULTS.nativeTokenTargetRatio,
+          failRatio: DEFAULTS.nativeTokenFailRatio,
+        }),
+      };
+      const overall = _weightedGeomean(desirability, weights);
+      total += overall;
+      details.push({ probeId, score, nativeScore: base.score, calls, nativeCalls: base.calls, tokens, nativeTokens: base.tokens, desirability: { ...desirability, overall } });
+    }
+    perTargetFactor[target] = total / runs.length;
+    breakdown[target] = { factor: perTargetFactor[target], runs: details };
+  }
+
+  return { factor: Math.min(...Object.values(perTargetFactor)), perTargetFactor, breakdown };
 }
 
 // ─── length penalty ───────────────────────────────────────────────────────────

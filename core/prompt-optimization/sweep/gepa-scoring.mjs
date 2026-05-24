@@ -25,6 +25,7 @@ import {
 import {
   taskScore,
   efficiencyFactor,
+  nativeRelativeScore,
   lengthPenalty,
   finalScore,
   probeWeight,
@@ -45,11 +46,30 @@ export function populationVariance(arr) {
   return mean(arr.map((x) => (x - m) * (x - m)));
 }
 
+function agentTokenCount(usage) {
+  const agent = usage?.agent;
+  if (!agent || typeof agent !== 'object') return null;
+  if (typeof agent.total_tokens === 'number' && Number.isFinite(agent.total_tokens)) return agent.total_tokens;
+  if (typeof agent.totalTokens === 'number' && Number.isFinite(agent.totalTokens)) return agent.totalTokens;
+  let total = 0;
+  let seen = false;
+  for (const key of ['input_tokens', 'output_tokens']) {
+    if (typeof agent[key] === 'number' && Number.isFinite(agent[key])) {
+      total += agent[key];
+      seen = true;
+    }
+  }
+  return seen && total > 0 ? total : null;
+}
+
 /** Map an evaluateCandidate result + probe → the ProbeRun shape EAS expects. */
 export function toProbeRun(evalResult, probe) {
   return {
+    probeId: probe.id,
     stratum: probe.stratum,
+    score: evalResult.score,
     calls: evalResult.toolCalls,
+    tokens: agentTokenCount(evalResult.usage),
     finalAnswerEmitted: !!evalResult.finalAnswerEmitted,
     usedReadOrGrep: !!evalResult.usedReadOrGrep,
     usedNativeSearch: !!evalResult.usedNativeSearch,
@@ -152,12 +172,16 @@ export async function scoreCandidateOnProbes({ candidate, probes, evaluateCandid
 /**
  * Compose the §3.7.1 final score from a scored candidate.
  *
- * @returns {{ taskScore:number, efficiencyFactor:number, lengthPenalty:number, finalScore:number }}
+ * @returns {{ taskScore:number, efficiencyFactor:number, lengthPenalty:number, finalScore:number, nativeRelative?:object }}
  */
-export function computeFinalScoreFor({ perProbeMaximin, weights, runsByTarget, tokenCount }) {
+export function computeFinalScoreFor({ perProbeMaximin, weights, runsByTarget, tokenCount, nativeBaselineByTarget = null }) {
   const ts = taskScore({ perProbeMaximin, weights });
   const ef = efficiencyFactor({ perTarget: runsByTarget }).factor;
   const lp = lengthPenalty(tokenCount);
+  if (nativeBaselineByTarget) {
+    const nr = nativeRelativeScore({ perTarget: runsByTarget, baselineByTarget: nativeBaselineByTarget });
+    return { taskScore: ts, efficiencyFactor: ef, lengthPenalty: lp, finalScore: nr.factor - lp, nativeRelative: nr };
+  }
   const fs = finalScore({ taskScore: ts, efficiencyFactor: ef, lengthPenalty: lp });
   return { taskScore: ts, efficiencyFactor: ef, lengthPenalty: lp, finalScore: fs };
 }
@@ -178,6 +202,7 @@ export async function buildCandidate({
   weights,
   evaluateCandidate,
   bucket = null,
+  nativeBaselineByTarget = null,
 }) {
   const tokenCount = estimateTokens(prompt);
   const scored = await scoreCandidateOnProbes({ candidate: { prompt }, probes, evaluateCandidate, bucket });
@@ -186,6 +211,7 @@ export async function buildCandidate({
     weights: weights ?? scored.probeIds.map(() => 1),
     runsByTarget: scored.runsByTarget,
     tokenCount,
+    nativeBaselineByTarget,
   });
   return {
     id,
@@ -203,6 +229,7 @@ export async function buildCandidate({
     efficiencyFactor: fs.efficiencyFactor,
     lengthPenalty: fs.lengthPenalty,
     finalScore: fs.finalScore,
+    nativeRelative: fs.nativeRelative ?? null,
     sharpnessScore: 1.0,
   };
 }

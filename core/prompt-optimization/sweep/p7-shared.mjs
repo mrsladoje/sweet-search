@@ -74,6 +74,17 @@ export const DEFAULTS = Object.freeze({
   // bypasses the retrieval being optimized. Penalize per run that used native
   // search. Initial value — validate the native-fallback rate on first smoke.
   nativeSearchPenalty: 0.1,
+  // Native-relative GEPA scoring. These make the scalar objective reward
+  // beating native rg+Read on accuracy, tool-call count, and agent tokens.
+  nativeRelativeWeights: { accuracy: 0.6, calls: 0.25, tokens: 0.15 },
+  nativeAccuracyFloor: 0.8,
+  nativeAccuracySlack: 0.03,
+  nativeAccuracyTargetLift: 0.02,
+  nativeAccuracyTargetFloor: 0.95,
+  nativeCallTargetRatio: 0.5,
+  nativeCallFailRatio: 1.5,
+  nativeTokenTargetRatio: 0.65,
+  nativeTokenFailRatio: 1.5,
   // Hard-negative weighting (§3.1): noise floor + clip + stability gate.
   judgeNoiseFloor: 0.05,
   varianceWeightClip: [0.1, 2.0],
