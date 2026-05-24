@@ -131,7 +131,7 @@ const server = new McpServer({
 // ---------------------------------------------------------------------------
 
 server.registerTool('search', {
-  description: 'Hybrid code search (semantic + lexical + structural). USE INSTEAD OF native Grep for code-discovery tasks. Pass `format="agent"` to get ranked hits with auto-expanded, self-contained code blocks — no follow-up Read needed. Pass `regex` for ColGrep pattern search (regex anchor + semantic re-rank), `structural=true` for callers/callees/impact, or omit for hybrid auto-routing. Default `format="benchmark"` is for retrieval-quality measurement, not agent consumption.',
+  description: 'Hybrid code search (semantic + lexical + structural). USE INSTEAD OF native Grep for code-discovery tasks. Returns ranked, auto-expanded, self-contained code blocks by default (`format="agent"`) — no follow-up Read needed. Pass `regex` for ColGrep pattern search (regex anchor + semantic re-rank), `structural=true` for callers/callees/impact, or omit for hybrid auto-routing. Pass `format="benchmark"` only for retrieval-quality measurement, not agent consumption.',
   inputSchema: {
     query: z.string().min(1).max(1000).describe('Search query (1-1000 chars)'),
     k: z.number().int().min(1).max(200).default(10).describe('Number of results (1-200)'),
@@ -141,8 +141,8 @@ server.registerTool('search', {
       .describe('Force structural graph search mode (callers, callees, implementations)'),
     regex: z.string().max(4096).optional()
       .describe('Regex pattern for ColGrep pattern search (implies mode=pattern)'),
-    format: z.enum(['benchmark', 'agent', 'agent_preview', 'agent_full']).default('benchmark').optional()
-      .describe('Output format. Use "agent" for agent consumption (ranked, self-contained code blocks). "benchmark" is for retrieval-quality measurement.'),
+    format: z.enum(['benchmark', 'agent', 'agent_preview', 'agent_full']).default('agent').optional()
+      .describe('Output format. Default "agent" returns ranked, self-contained code blocks for agent consumption. Use "benchmark" only for retrieval-quality measurement.'),
     tokenBudget: z.number().int().min(500).max(16000).optional()
       .describe('Agent mode: optional token budget override. Omit to let the tool pick.'),
   },
