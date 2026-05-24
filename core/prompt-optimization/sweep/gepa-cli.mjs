@@ -19,7 +19,9 @@
  *   --skip-preflight    skip the §7.5 pre-flight gate (NOT recommended)
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { DEFAULTS } from './p7-shared.mjs';
 import { assertNativeBaselineCoverage } from './eas.mjs';
@@ -31,6 +33,10 @@ import {
   makeDryRunCallModel,
   SMOKE_PROBES_PATH,
 } from './gepa.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+/** Frozen §3.5.1 OOD language-transfer probe set (loaded if not bundled in --probes). */
+const OOD_PROBES_FILE = path.join(__dirname, '../data/frozen/p7-langtransfer-probes.json');
 
 /**
  * Mutator calls to Kimi K2.6 (moonshot) run heavy reasoning on large reflective /
@@ -201,22 +207,32 @@ async function runFinalizeStage({ runId, winner, probesDoc, runJudge }) {
   const { trajectoryPath, RESULTS_DIR } = await import('./p7-persist.mjs');
 
   const heldoutProbes = probesDoc.heldoutProbes ?? [];
-  const oodProbes = probesDoc.oodProbes ?? [];
+  // OOD probes (§3.5.1): prefer the run's probesDoc; otherwise load the frozen,
+  // pre-registered language-transfer set (40 probes / 8 OOD languages).
+  let oodProbes = probesDoc.oodProbes ?? [];
+  if (oodProbes.length === 0 && existsSync(OOD_PROBES_FILE)) {
+    const oodDoc = JSON.parse(readFileSync(OOD_PROBES_FILE, 'utf8'));
+    oodProbes = oodDoc.probes ?? oodDoc;
+  }
   const vaultProbes = probesDoc.vaultProbes ?? [];
   const scsProbes = probesDoc.scsProbes ?? [];
 
   // M7 reasoning adapters wired through the real reasoning payloads.
   const reasoningAdapters = makeReasoningAdapters({ runJudge });
 
-  // OOD gate bound to a runOodGate invocation (production runners injected live).
+  // OOD gate (§3.5.1): replay the winner on each OOD probe per PRODUCTION target
+  // via the real harness (resolveRepoCwd now maps the 8 ast-tester OOD repos).
+  // Gate decision = Sonnet + GPT-5.5; MiMo is reported-only and intentionally
+  // left unwired here (optional runMimo, non-gating). Each per-target stream is
+  // sequential per-probe, so the two concurrent streams stay rate-limited.
+  const { makeRealEvaluateCandidate, makeOodReplayRunner } = await import('./gepa-evaluate.mjs');
+  const evaluateOod = makeRealEvaluateCandidate();
   const runOod = oodProbes.length > 0
     ? async ({ winnerPrompt, oodProbes: probes }) => runOodGate({
         winnerPrompt,
         oodProbes: probes,
-        // Live per-target OOD replay runners are wired here in the real run; left
-        // as a structural placeholder until the OOD probe set is authored.
-        runSonnet: async () => ({ perProbe: [] }),
-        runGpt5_5: async () => ({ perProbe: [] }),
+        runSonnet: makeOodReplayRunner({ evaluate: evaluateOod, target: 'sonnet' }),
+        runGpt5_5: makeOodReplayRunner({ evaluate: evaluateOod, target: 'gpt5_5' }),
       })
     : undefined;
 

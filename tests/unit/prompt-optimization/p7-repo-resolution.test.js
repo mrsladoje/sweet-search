@@ -18,7 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { resolveRepoCwd } from '../../../core/prompt-optimization/sweep/gepa-evaluate.mjs';
-import { IN_DISTRIBUTION } from '../../../core/prompt-optimization/sweep/author-probes.mjs';
+import { IN_DISTRIBUTION, OOD_DISTRIBUTION } from '../../../core/prompt-optimization/sweep/author-probes.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const DEFAULT_REPOS = path.join(REPO_ROOT, 'eval', 'repos');
@@ -33,10 +33,14 @@ const TIERS = [
   ['heldout', 'core/prompt-optimization/data/frozen/p7-heldout-probes.json'],
   ['vault', 'core/prompt-optimization/data/frozen/p7-vault-probes.json'],
   ['smoke', 'core/prompt-optimization/data/p7-smoke-probes.json'],
+  ['ood', 'core/prompt-optimization/data/frozen/p7-langtransfer-probes.json'],
 ];
 
-// Expected absolute path per (language:repo), straight from the single source of truth.
-const EXPECTED = new Map(IN_DISTRIBUTION.map((x) => [`${x.language}:${x.repo}`, path.resolve(REPO_ROOT, x.path)]));
+// Expected absolute path per (language:repo), straight from the single source of
+// truth (in-distribution anchors + OOD ast-tester repos).
+const EXPECTED = new Map(
+  [...IN_DISTRIBUTION, ...OOD_DISTRIBUTION].map((x) => [`${x.language}:${x.repo}`, path.resolve(REPO_ROOT, x.path)]),
+);
 
 // ─── known mappings (hermetic) ────────────────────────────────────────────────
 
@@ -55,6 +59,23 @@ describe('resolveRepoCwd — known mappings', () => {
       ['garnet', 'csharp', 'eval/ast-tester-probes/_repos/csharp'],
       ['kotlinx.coroutines', 'kotlin', 'eval/ast-tester-probes/_repos/kotlin'],
       ['sinatra', 'ruby', 'eval/ast-tester-probes/_repos/ruby'],
+    ];
+    for (const [repo, language, rel] of cases) {
+      expect(resolveRepoCwd({ repo, language }, { reposDir: DEFAULT_REPOS }))
+        .toBe(path.join(REPO_ROOT, rel));
+    }
+  });
+
+  it('maps the 8 OOD repos to eval/ast-tester-probes/_repos/<language>', () => {
+    const cases = [
+      ['hiredis', 'C', 'eval/ast-tester-probes/_repos/c'],
+      ['http', 'Dart', 'eval/ast-tester-probes/_repos/dart'],
+      ['jason', 'Elixir', 'eval/ast-tester-probes/_repos/elixir'],
+      ['Penlight', 'Lua', 'eval/ast-tester-probes/_repos/lua'],
+      ['Slim', 'PHP', 'eval/ast-tester-probes/_repos/php'],
+      ['requests-scala', 'Scala', 'eval/ast-tester-probes/_repos/scala'],
+      ['Alamofire', 'Swift', 'eval/ast-tester-probes/_repos/swift'],
+      ['http.zig', 'Zig', 'eval/ast-tester-probes/_repos/zig'],
     ];
     for (const [repo, language, rel] of cases) {
       expect(resolveRepoCwd({ repo, language }, { reposDir: DEFAULT_REPOS }))
