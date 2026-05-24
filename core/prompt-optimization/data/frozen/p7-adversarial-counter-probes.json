@@ -1,0 +1,263 @@
+{
+  "_note": "PHASE7 §5.7 adversarial counter-probes. 10 hostile-surface rewrites of dev probes (one per in-distribution language): SAME gold, query rephrased to VIOLATE the P6 include-symbol-verbatim shaping heuristic (no symbol, broad/terse). Winner-only held-out generalization gate: drop=(devTaskScore-counterMaximin)/devTaskScore; <=0.15 generalised, >0.25 overfit (gate fails). Authored 2026-05-24 by 2 Opus subagents + Opus review; gold byte-matches the source dev probe; no expectedSymbol leaks into any query.",
+  "schemaVersion": 1,
+  "createdAt": "2026-05-24",
+  "tier": "adversarial-counter",
+  "probes": [
+    {
+      "id": "cpp-002-cp",
+      "repo": "highway",
+      "language": "cpp",
+      "stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "I need to pin down a SIMD vector to a precise, compile-time count of active elements that stays the same even on hardware whose native vector width can vary at runtime, and have it reject counts that aren't a power of two or that overflow the platform maximum. What should I reach for and what enforces those rules under the hood?",
+      "expectedFiles": [
+        "hwy/ops/shared-inl.h"
+      ],
+      "expectedSymbols": [
+        "FixedTag",
+        "FixedTagChecker"
+      ],
+      "expectedFacts": [
+        "FixedTag<T, kNumLanes> is a using-alias that resolves to detail::FixedTagChecker<T, kNumLanes>::type, where the checker static_asserts kNumLanes is non-zero and does not exceed HWY_LANES(T)"
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "adversarial-counter",
+      "source_probe_id": "cpp-002",
+      "violated_heuristic": "C/C++ family: short/medium interrogative + target symbol verbatim",
+      "author": "counter-A-author",
+      "date": "2026-05-24",
+      "notes": "COUNTER-PROBE of cpp-002. Violates: C/C++ interrogative+symbol shape. Hostile rewrite: removed the verbatim symbol tokens FixedTag/FixedTagChecker and the lure CappedTag, dropped the path/identifier token kNumLanes, and replaced the crisp short interrogative with a long, winding conceptual prose description of the behavior (exact compile-time lane count, scalable-target invariance, power-of-two + max-lanes enforcement). Gold unchanged + re-verified: grep -n 'using FixedTag' hwy/ops/shared-inl.h -> :423; grep -n 'struct FixedTagChecker' -> :367 (static_assert kNumLanes != 0 and kNumLanes <= HWY_LANES(T) at :374-375). Answerable to the same gold because the FixedTag doc comment (shared-inl.h:409-412) describes it verbatim as 'a tag describing a vector with *exactly* kNumLanes active lanes, even on targets with scalable vectors ... Requires kNumLanes to be a power of two not exceeding HWY_LANES(T)', and the enforcement (static_asserts) lives only in FixedTagChecker; no other tag alias matches 'exactly N lanes + power-of-two + max enforcement'."
+    },
+    {
+      "id": "csharp-003-cp",
+      "repo": "garnet",
+      "language": "csharp",
+      "stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "When a client sends a no-argument liveness heartbeat to check the connection is alive, where is the no-arg branch that writes the fixed acknowledgement back over the wire actually implemented? Note it's split out of the main session class that only routes the heartbeat to it.",
+      "expectedFiles": [
+        "libs/server/Resp/BasicCommands.cs"
+      ],
+      "expectedSymbols": [
+        "NetworkPING"
+      ],
+      "expectedFacts": [
+        "The PING handler NetworkPING() is implemented in the BasicCommands.cs partial of RespServerSession, not in RespServerSession.cs (which only dispatches RespCommand.PING to it)."
+      ],
+      "expectedNoMatch": false,
+      "distractor": true,
+      "max_turns": 3,
+      "tier": "adversarial-counter",
+      "source_probe_id": "csharp-003",
+      "violated_heuristic": "Java/C# family: medium declarative + domain keyword, with the target symbol named verbatim",
+      "author": "counter-A-author",
+      "date": "2026-05-24",
+      "notes": "COUNTER-PROBE of csharp-003. Violates: C# declarative-with-symbol shape. Hostile rewrite: removed the verbatim symbol NetworkPING, removed the protocol tokens PING and PONG (replaced with the concept 'no-argument liveness heartbeat' / 'fixed acknowledgement'), and removed the class-name lure RespServerSession from a leading position (kept only the generic 'main session class' description). Gold unchanged + re-verified: grep -n 'NetworkPING' libs/server/Resp/BasicCommands.cs -> 'private bool NetworkPING()' at :824; it writes CmdStrings.RESP_PONG / SUSCRIBE_PONG (the fixed PONG acknowledgement). Distractor preserved: RespServerSession.cs only dispatches it (RespCommand.PING => ... NetworkPING() at :803) and does NOT define it (grep -cn 'private bool NetworkPING' RespServerSession.cs -> 0). Answerable to the same gold because the no-argument PING branch (parseState.Count == 0 => NetworkPING) is the only handler matching 'no-arg liveness heartbeat that writes the fixed ack', and it lives solely in the BasicCommands.cs partial."
+    },
+    {
+      "id": "go-004-cp",
+      "repo": "gin",
+      "language": "go",
+      "stratum": "literal-lookup",
+      "difficulty": "medium",
+      "distractor": true,
+      "query": "Configure the guard string the framework sticks in front of a JSON array body to stop it being read as executable script. Which engine-level configuration method overrides that leading anti-hijacking token?",
+      "expectedFiles": [
+        "gin.go"
+      ],
+      "expectedSymbols": [
+        "SecureJsonPrefix"
+      ],
+      "expectedFacts": [
+        "Engine.SecureJsonPrefix assigns its argument to engine.secureJSONPrefix, which Context.SecureJSON later prepends; the render-side SecureJSON type only consumes a Prefix field, it does not configure it"
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "adversarial-counter",
+      "source_probe_id": "go-004",
+      "violated_heuristic": "Go (default family): medium declarative + domain keyword, with the target symbol named verbatim",
+      "author": "counter-A-author",
+      "date": "2026-05-24",
+      "notes": "COUNTER-PROBE of go-004. Violates: Go declarative-with-symbol shape. Hostile rewrite: removed the verbatim symbol token SecureJsonPrefix and the literal 'while(1);' string, and avoided the path/identifier tokens 'secureJson'/'prefix' as written (recast as 'guard string' / 'leading anti-hijacking token' and the JSON-hijacking anti-pattern conceptually). Kept it terse-imperative + a follow-up about the engine-level configuration method. Gold unchanged + re-verified: grep -n 'func (engine \\*Engine) SecureJsonPrefix' gin.go -> :265 (sets engine.secureJSONPrefix at :266; field at :176; default 'while(1);' at :224). Distractor preserved: render/json.go SecureJSON.Render (:94) consumes a Prefix field but does NOT configure the engine. Answerable to the same gold because the only engine-level setter that overrides the leading JSON-array anti-hijacking string is Engine.SecureJsonPrefix in gin.go; the render type merely emits whatever prefix it is handed."
+    },
+    {
+      "id": "java-002-cp",
+      "repo": "gson",
+      "language": "java",
+      "stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "Inside a custom serialization-strategy factory, how do I obtain the converter that the library would have picked for a type if my own factory weren't in the way — i.e. fetch the next handler in the chain after the current one so I can wrap and delegate to it?",
+      "expectedFiles": [
+        "gson/src/main/java/com/google/gson/Gson.java"
+      ],
+      "expectedSymbols": [
+        "getDelegateAdapter"
+      ],
+      "expectedFacts": [
+        "getDelegateAdapter is defined in Gson.java and returns the TypeAdapter that would be used for a type by the factories registered after the one passed as skipPast"
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "adversarial-counter",
+      "source_probe_id": "java-002",
+      "violated_heuristic": "Java (default family): medium declarative + domain keyword, with the target symbol named verbatim",
+      "author": "counter-A-author",
+      "date": "2026-05-24",
+      "notes": "COUNTER-PROBE of java-002. Violates: Java declarative-with-symbol shape. Hostile rewrite: removed the verbatim symbol getDelegateAdapter and the verbatim API tokens TypeAdapterFactory / TypeAdapter, recast as a conceptual 'serialization-strategy factory', 'converter', 'next handler in the chain after the current one', 'wrap and delegate'. Phrased as a how-do-I conceptual question rather than a where-is-X-defined symbol lookup. Gold unchanged + re-verified: grep -n 'getDelegateAdapter' gson/src/main/java/com/google/gson/Gson.java -> 'public <T> TypeAdapter<T> getDelegateAdapter(TypeAdapterFactory skipPast, TypeToken<T> type)' at :451; doc 399-450 shows the canonical 'gson.getDelegateAdapter(this, type)' wrap-and-delegate pattern and 'skip all factories registered before skipPast'. Answerable to the same gold because the only method that returns the adapter the library would use 'by the factories registered after the one passed as skipPast' is getDelegateAdapter, defined in Gson.java."
+    },
+    {
+      "id": "js-009-cp",
+      "repo": "fastify",
+      "language": "javascript",
+      "stratum": "literal-lookup",
+      "difficulty": "hard",
+      "query": "Track down the single hand-edited source object that all the framework's out-of-the-box server settings are originally typed into — the canonical place a maintainer would change a default value, not any machine-generated copy of it.",
+      "expectedFiles": [
+        "build/build-validation.js"
+      ],
+      "expectedSymbols": [
+        "defaultInitOptions"
+      ],
+      "expectedFacts": [
+        "The hand-authored defaultInitOptions object lives in build/build-validation.js, and lib/config-validator.js is the autogenerated AJV validator that merely serializes a copy of it"
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "pathology": "flooding",
+      "hard_for_tools": true,
+      "tier": "adversarial-counter",
+      "source_probe_id": "js-009",
+      "violated_heuristic": "JS/TS family: short/medium interrogative + target symbol (and option-name identifier tokens) verbatim",
+      "author": "counter-A-author",
+      "date": "2026-05-24",
+      "notes": "COUNTER-PROBE of js-009. Violates: JS interrogative+symbol shape. Hostile rewrite: removed the verbatim symbol defaultInitOptions AND the concrete option-name identifier tokens (connectionTimeout, bodyLimit, pluginTimeout) that acted as strong path/identifier hints, recast as a terse imperative ('Track down the single hand-edited source object ...') describing the source-of-truth-vs-generated-copy distinction conceptually. Gold unchanged + re-verified: grep -n 'const defaultInitOptions' build/build-validation.js -> :25 (hand-authored object). Flooding distractor preserved: grep -n 'defaultInitOptions' lib/config-validator.js -> :1265 in a 1266-line file whose line 1 reads 'This file is autogenerated by build/build-validation.js, do not edit' (wc -l = 1266). Answerable to the same gold because there is exactly one hand-edited source-of-truth object for the framework's default server settings (build/build-validation.js:25); every other copy is the machine-generated AJV serialization the query explicitly excludes ('not any machine-generated copy of it')."
+    },
+    {
+      "id": "kotlin-002-cp",
+      "repo": "kotlinx.coroutines",
+      "language": "kotlin",
+      "stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "where does starting a fire-and-forget concurrent child task off a scope actually build the backing job object and kick it off — the genuine builder body, not the deprecated stubs that just forward to it?",
+      "expectedFiles": [
+        "kotlinx-coroutines-core/common/src/Builders.common.kt"
+      ],
+      "expectedSymbols": [
+        "launch"
+      ],
+      "expectedFacts": [
+        "The real CoroutineScope.launch (in Builders.common.kt) takes context, start and a suspend block, builds newCoroutineContext(context), then creates a LazyStandaloneCoroutine if start.isLazy else a StandaloneCoroutine, and returns it as a Job after calling coroutine.start"
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "adversarial-counter",
+      "source_probe_id": "kotlin-002",
+      "violated_heuristic": "medium declarative + domain keyword WITH the target symbol verbatim (non-JS/TS language). Source spelled out 'CoroutineScope.launch', 'StandaloneCoroutine', 'deprecated overloads' — all symbol/CamelCase tokens.",
+      "author": "counter-B-author",
+      "date": "2026-05-24",
+      "notes": "COUNTER-PROBE of kotlin-002. Violates: include-target-symbol-verbatim shape (Kotlin = medium declarative + domain keyword). Hostile rewrite: dropped every symbol token ('launch', 'CoroutineScope', 'StandaloneCoroutine', 'Builders', 'Job') and described behaviour conceptually ('fire-and-forget concurrent child task off a scope', 'build the backing job object and kick it off', 'genuine builder body not the forwarding stubs'). Gold unchanged + re-verified: grep -n 'public fun CoroutineScope.launch' Builders.common.kt -> :200; body (lines 200-216) builds newCoroutineContext then StandaloneCoroutine/LazyStandaloneCoroutine, calls coroutine.start, returns coroutine (a Job). The two distractors Guidance.kt:184 & :251 are @Deprecated overloads that only delegate. Answerable to the same gold because the conceptual phrasing ('builds the backing job object and kicks it off, not the deprecated forwarding stubs') uniquely fingerprints the constructing body in Builders.common.kt:200 versus the two shim overloads that merely forward — same disambiguation the original gold relied on, now expressed without naming the symbol."
+    },
+    {
+      "id": "python-010-cp",
+      "repo": "flask",
+      "language": "python",
+      "stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "how does the framework hand back a file that lives under a given folder when the filename comes straight from the incoming URL, without letting a malicious path escape outside that folder?",
+      "expectedFiles": [
+        "src/flask/helpers.py"
+      ],
+      "expectedSymbols": [
+        "send_from_directory"
+      ],
+      "expectedFacts": [
+        "send_from_directory (helpers.py:543) serves a file from within a directory using werkzeug safe_join and delegates to send_file"
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "adversarial-counter",
+      "source_probe_id": "python-010",
+      "violated_heuristic": "medium declarative + domain keyword that already half-names the symbol ('serves a file from within a directory using a client-supplied path' is nearly the snake_case name 'send_from_directory' spread across words).",
+      "author": "counter-B-author",
+      "date": "2026-05-24",
+      "notes": "COUNTER-PROBE of python-010. Violates: phrasing that mirrors the snake_case target tokens (send / from / directory). Hostile rewrite: avoids 'send', 'from', 'directory' as ordered tokens and 'safe_join' / 'helpers'; uses everyday wording ('hand back a file that lives under a given folder', 'filename comes straight from the incoming URL', 'malicious path escape outside that folder'). Gold unchanged + re-verified: grep -n 'def send_from_directory' src/flask/helpers.py -> :543; docstring confirms 'secure way to serve files from a folder', 'Uses safe_join to ensure the path coming from the client is not maliciously crafted to point outside the specified directory'. Answerable to the same gold because the security framing (client-supplied filename + confined to a folder + reject path traversal) is exactly what distinguishes this helper from the plain send_file at helpers.py:417 (which takes a trusted path and has no safe_join confinement) — so the rewrite still resolves uniquely to send_from_directory."
+    },
+    {
+      "id": "ruby-001-cp",
+      "repo": "sinatra",
+      "language": "ruby",
+      "stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "what's the call inside a route that aborts the rest of the handler immediately and hands back whatever response value you give it?",
+      "expectedFiles": [
+        "lib/sinatra/base.rb"
+      ],
+      "expectedSymbols": [
+        "halt"
+      ],
+      "expectedFacts": [
+        "Base#halt (base.rb:1028) immediately stops a request by calling throw :halt with the given response"
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "adversarial-counter",
+      "source_probe_id": "ruby-001",
+      "violated_heuristic": "medium declarative + domain keyword with the target symbol verbatim. Source said 'how is it implemented' and effectively asked for the symbol 'halt' as a Sinatra method by name/concept.",
+      "author": "counter-B-author",
+      "date": "2026-05-24",
+      "notes": "COUNTER-PROBE of ruby-001. Violates: include-target-symbol-verbatim (Ruby = medium declarative + domain keyword). Hostile rewrite: never writes 'halt' (nor 'stop'/'throw'); describes behaviour as 'aborts the rest of the handler immediately and hands back whatever response value you give it'. Gold unchanged + re-verified: grep -n 'def halt' lib/sinatra/base.rb -> :1028; body 'throw :halt, response' (lines 1028-1031), preceding comment 'Exit the current block, halts any further processing of the request, and returns the specified response'. Answerable to the same gold because 'abort the rest of the handler now and return the given response' uniquely matches halt's comment/body and excludes the nearby distractors pass (line 1036, passes control to the NEXT route, does not return a response you supply), redirect (line 310, sends a redirect not your arbitrary value) and error (line 347, raises error handling) — same intent, no symbol named."
+    },
+    {
+      "id": "rust-001-cp",
+      "repo": "ripgrep",
+      "language": "rust",
+      "stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "the routine that takes a plain literal string and rewrites it so it matches itself as a filename wildcard pattern, by wrapping each special wildcard character (the question-mark, star, square brackets and curly braces) in brackets and leaving everything else untouched",
+      "expectedFiles": [
+        "crates/globset/src/lib.rs"
+      ],
+      "expectedSymbols": [
+        "escape"
+      ],
+      "expectedFacts": [
+        "globset::escape wraps each of the glob meta characters ? * [ ] { } in square brackets (e.g. * becomes [*]) while passing all other characters through unchanged"
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "adversarial-counter",
+      "source_probe_id": "rust-001",
+      "violated_heuristic": "medium declarative naming the target symbol verbatim ('the public escape function') plus the disambiguating path token 'globset'.",
+      "author": "counter-B-author",
+      "date": "2026-05-24",
+      "notes": "COUNTER-PROBE of rust-001. Violates: include-target-symbol-verbatim + path-token anchor. Hostile rewrite: drops 'escape', 'globset', and 'crate'; describes behaviour ('rewrites a literal so it matches itself as a filename wildcard pattern by wrapping each wildcard meta char in brackets, passing others through'). Gold unchanged + re-verified: grep -n 'pub fn escape' crates/globset/src/lib.rs -> :1035; body (1035-1052) brackets '? * [ ] { }' (e.g. * -> [*]) and copies other chars; doctest shows escape(\"foo*bar\") == \"foo[*]bar\". Answerable to the same gold (NOT ambiguous with the other escape at crates/cli/src/escape.rs:26) because that one 'Escapes arbitrary bytes into a human readable string' converting \\t \\r \\n / non-printables to hex — nothing to do with filename wildcard patterns or bracketing glob meta chars. The rewrite's 'filename wildcard pattern' + 'wrap each wildcard char in brackets' framing fingerprints the globset glob-escaper exclusively, matching the original's 'glob pattern'/'meta characters' disambiguation without naming the symbol or crate."
+    },
+    {
+      "id": "ts-003-cp",
+      "repo": "ai-chatbot",
+      "language": "typescript",
+      "stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "where's the lookup table that decides how many messages per hour each kind of account is allowed to send?",
+      "expectedFiles": [
+        "lib/ai/entitlements.ts"
+      ],
+      "expectedSymbols": [
+        "entitlementsByUserType"
+      ],
+      "expectedFacts": [
+        "entitlementsByUserType in lib/ai/entitlements.ts maps each UserType (guest, regular) to an Entitlements object whose maxMessagesPerHour is 10."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "adversarial-counter",
+      "source_probe_id": "ts-003",
+      "violated_heuristic": "TS family = short/medium INTERROGATIVE WITH the symbol; source put the exact CamelCase symbol 'entitlementsByUserType' verbatim inside the question.",
+      "author": "counter-B-author",
+      "date": "2026-05-24",
+      "notes": "COUNTER-PROBE of ts-003. Violates: short interrogative + symbol-verbatim (TS family shape). Hostile rewrite keeps the interrogative grammar (still a 'where's…?' question, so it isn't trivially off-shape) but strips every symbol/identifier token: no 'entitlementsByUserType', 'UserType', 'maxMessagesPerHour', 'Entitlements', 'entitlements' — replaced with plain English ('lookup table', 'how many messages per hour each kind of account is allowed to send'). Gold unchanged + re-verified: grep -n 'entitlementsByUserType' lib/ai/entitlements.ts -> :7 'export const entitlementsByUserType: Record<UserType, Entitlements> = {' with guest/regular each maxMessagesPerHour: 10 (lines 8-13). Answerable to the same gold because the per-account-type hourly message cap config is defined uniquely in entitlements.ts (the only other reference is its consumer app/(chat)/api/chat/route.ts:96 which merely reads entitlementsByUserType[userType].maxMessagesPerHour); the description 'lookup table mapping each account kind to its per-hour message allowance' fingerprints the definition object, same target as the original."
+    }
+  ]
+}

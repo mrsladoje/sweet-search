@@ -73,16 +73,12 @@ export function buildConfirmEvent({ round, survivor, probe, pid, target, d }) {
   const callDeviation = win != null
     ? DEFAULTS.callDeviationPenaltyPerCall * (Math.max(0, lo - toolCalls) + Math.max(0, toolCalls - hi))
     : null;
-  // Evidence-adequacy penalty (§3.7.1 step 4): a per-probe slice is not
-  // separable from the survivor's aggregate EAS factor here without re-deriving
-  // usedReadOrGrep, so it is left null when non-derivable (no-match strata are
-  // exempt → 0).
+  // Evidence-adequacy penalty (§3.7.1 step 4): null when non-derivable from the
+  // survivor's aggregate EAS factor here (no-match strata exempt → 0).
   const evidencePenalty = (probe && probe.stratum === 'no-match') ? 0 : null;
-  // Native-search contamination penalty (§4.5), derived from the recorded
-  // trajectory so the CONFIRM log surfaces native-fallback per (probe,target).
+  // Native-search contamination penalty (§4.5) from the recorded trajectory.
   const nativeSearchPenalty = Array.isArray(d?.traj?.toolCalls)
-    ? (classifyToolUse(d.traj.toolCalls).nativeSearch ? DEFAULTS.nativeSearchPenalty : 0)
-    : null;
+    ? (classifyToolUse(d.traj.toolCalls).nativeSearch ? DEFAULTS.nativeSearchPenalty : 0) : null;
   return {
     _kind: EVENT_KINDS.CONFIRM,
     round,
@@ -381,10 +377,11 @@ export async function finalizeRun({
   heldoutProbes = [],
   scsProbes = [],
   oodProbes = [],
+  counterProbes = [],
   vaultProbes = [],
-  // injected gate runners
-  runFamilyHomp,          // ({winnerPrompt, probes, baseFinalScore}) => {classes:{...}, pass}
+  runFamilyHomp,          // injected gate runner: ({winnerPrompt, probes, baseFinalScore}) => {classes:{...}, pass}
   runOod,                 // bound runOodGate-shaped fn ({winnerPrompt, oodProbes}) => OodGateResult
+  runCounterProbe,        // bound runCounterProbeGate-shaped fn ({winnerPrompt, counterProbes, devScore}) => CounterProbeGateResult
   reasoningAdapters,      // { runSonnetThinking, runGptReasoning }
   scsEvaluate, scsEmbed,  // for computeScsReport
   scsPrompts,             // winner + paraphrases (N prompts)
@@ -431,6 +428,13 @@ export async function finalizeRun({
     gates.ood = await runOod({ winnerPrompt: winner.prompt, oodProbes });
     persistGate(paths, 'ood', gates.ood);
     if (!gates.ood.pass) { report.blockedBy = 'ood'; return report; }
+  }
+
+  // ── 3b. §5.7 adversarial counter-probe gate (fails only on >25% overfit drop vs dev taskScore) ──
+  if (typeof runCounterProbe === 'function' && counterProbes.length > 0) {
+    gates.counterProbe = await runCounterProbe({ winnerPrompt: winner.prompt, counterProbes, devScore: typeof winner.taskScore === 'number' ? winner.taskScore : baseFinalScore });
+    persistGate(paths, 'counter-probe', gates.counterProbe);
+    if (!gates.counterProbe.pass) { report.blockedBy = 'counter-probe'; return report; }
   }
 
   // ── 4. reasoning-mode HOMP ≥ 0.7× (§3.5.2) ──

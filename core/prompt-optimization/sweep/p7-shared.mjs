@@ -95,6 +95,9 @@ export const DEFAULTS = Object.freeze({
   hompPassRatio: 0.7, // §3.5 / §3.5.2 — ≥0.7× final_score
   oodMaximinGate: 0.55, // §3.5.1 — aggregate Maximin on both targets
   oodPerLanguageWeakSpot: 0.4, // single-language flag threshold
+  // §5.7 adversarial counter-probe generalization gate (drop vs dev taskScore).
+  counterProbeGeneralizeDrop: 0.15, // ≤15% drop ⇒ P6 signal generalised
+  counterProbeOverfitDrop: 0.25, // >25% drop ⇒ overfit to query-shape (gate fails)
   scsShipGate: 0.8, // §3.6 — correctness-weighted SCS
   minParaphraseAccuracy: 0.6, // §3.6 — accuracy floor under paraphrase
   agentQueryMaxDrop: 0.2, // §3.6.1 — ≤20% degraded drop per target/bucket
