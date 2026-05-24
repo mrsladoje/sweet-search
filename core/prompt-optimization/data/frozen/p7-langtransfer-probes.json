@@ -1,0 +1,983 @@
+{
+  "_note": "PHASE7 §3.5.1 out-of-distribution (OOD) language-transfer gate. 40 probes = 5 each on 8 languages NOT in the in-distribution pool, run winner-only on Sonnet+GPT-5.5 (gate) + MiMo (reported) to detect overfit to the 10 in-distribution AST shapes. SHA-locked repos in eval/ast-tester-probes/repos.json. Authored 2026-05-24 by 8 Opus subagents (gold grep-verified) + 4 Opus adversarial reviewers (40/40 PASS). Strata per language: 2 literal-lookup, 1 multi-file-flow, 1 behavioral, 1 no-match. Dart/Elixir/Lua/Scala/Zig use the regex-fallback chunker (tagged in notes). NOTE: the dart repo working tree is trimmed to pkgs/http/ (that trimmed tree IS the indexed corpus). Probe.language uses the capitalized OOD_LANGUAGES convention (C/Dart/Elixir/Lua/PHP/Scala/Swift/Zig) so the §3.5.1 per-language scorecard buckets correctly (runOodGate keys on probe.language, default catalog = OOD_LANGUAGES, capitalized).",
+  "schemaVersion": 1,
+  "createdAt": "2026-05-24",
+  "tier": "ood-langtransfer",
+  "languages": [
+    "C",
+    "Dart",
+    "Elixir",
+    "Lua",
+    "PHP",
+    "Scala",
+    "Swift",
+    "Zig"
+  ],
+  "regexFallbackChunker": [
+    "Dart",
+    "Elixir",
+    "Lua",
+    "Scala",
+    "Zig"
+  ],
+  "probes": [
+    {
+      "id": "c-ood-01",
+      "repo": "hiredis",
+      "language": "C",
+      "stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "Which struct holds a parsed reply from the server, with fields for an integer, a double, a string buffer, and a vector of nested elements?",
+      "expectedFiles": [
+        "hiredis.h"
+      ],
+      "expectedSymbols": [
+        "redisReply"
+      ],
+      "expectedFacts": [
+        "The redisReply struct in hiredis.h is defined as a typedef'd struct whose members include int type, long long integer, double dval, char *str, size_t elements, and struct redisReply **element for nested array replies."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "ood-langtransfer",
+      "author": "ood-c-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'typedef struct redisReply' hiredis.h -> hiredis.h:120; read hiredis.h:120-132 confirms members `int type;` (121), `long long integer;` (122), `double dval;` (123), `size_t len;` (124), `char *str;` (125), `size_t elements;` (130), `struct redisReply **element;` (131), closing `} redisReply;` (132). All cited fields literally present at SHA 1d18adbf41."
+    },
+    {
+      "id": "c-ood-02",
+      "repo": "hiredis",
+      "language": "C",
+      "stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "Find the function-pointer typedef used as the prototype for an async reply callback that receives the async context plus two void pointers.",
+      "expectedFiles": [
+        "async.h"
+      ],
+      "expectedSymbols": [
+        "redisCallbackFn"
+      ],
+      "expectedFacts": [
+        "redisCallbackFn is declared in async.h as `typedef void (redisCallbackFn)(struct redisAsyncContext*, void*, void*);` and is referenced as a `redisCallbackFn *fn` member inside the redisCallback struct."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "ood-langtransfer",
+      "author": "ood-c-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'redisCallbackFn)' async.h -> async.h:44 `typedef void (redisCallbackFn)(struct redisAsyncContext*, void*, void*);`; grep -n 'typedef struct redisCallback' async.h -> async.h:45; read async.h:45-51 confirms the redisCallback struct contains `redisCallbackFn *fn;` (async.h:47). Grammar-edge: parenthesised typedef name with function-type signature. True at SHA 1d18adbf41."
+    },
+    {
+      "id": "c-ood-03",
+      "repo": "hiredis",
+      "language": "C",
+      "stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "When the async event loop is told the socket is readable, trace how it pulls a fully-parsed reply: which public reply-getter does the callback processor call, and what low-level reader entry point ultimately drains the buffer?",
+      "expectedFiles": [
+        "async.c",
+        "hiredis.c",
+        "read.c"
+      ],
+      "expectedSymbols": [
+        "redisProcessCallbacks",
+        "redisGetReply",
+        "redisGetReplyFromReader",
+        "redisReaderGetReply"
+      ],
+      "expectedFacts": [
+        "redisProcessCallbacks in async.c loops calling redisGetReply (in hiredis.c), which via redisNextInBandReplyFromReader calls redisGetReplyFromReader (hiredis.c), which calls redisReaderGetReply on c->reader in read.c to drain the buffered bytes into a parsed reply object."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "ood-langtransfer",
+      "author": "ood-c-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: chain spans 3 files. async.c: grep -n 'void redisProcessCallbacks' async.c -> async.c:570; the loop body `while((status = redisGetReply(c,&reply)) == REDIS_OK)` at async.c:575 calls into hiredis.c. hiredis.c: grep -n 'int redisGetReply(redisContext' hiredis.c -> hiredis.c:1073; its body calls redisNextInBandReplyFromReader (hiredis.c:1078) which calls redisGetReplyFromReader (defined hiredis.c:1052, called at hiredis.c:1066). read.c: redisGetReplyFromReader body is `if (redisReaderGetReply(c->reader, reply) == REDIS_ERR)` (hiredis.c:1053) -> grep -n 'int redisReaderGetReply(redisReader' read.c -> read.c:742, whose loop `while (r->ridx >= 0) if (processItem(r) != REDIS_OK) break;` (read.c:767-769) parses the buffer. Every link confirmed by read at SHA 1d18adbf41."
+    },
+    {
+      "id": "c-ood-04",
+      "repo": "hiredis",
+      "language": "C",
+      "stratum": "behavioral",
+      "difficulty": "hard",
+      "query": "How does the printf-style command builder turn a format string like \"SET %s %b\" into bytes on the wire? Explain how arguments are split and how the RESP multi-bulk framing is assembled.",
+      "expectedFiles": [
+        "hiredis.c"
+      ],
+      "expectedSymbols": [
+        "redisvFormatCommand"
+      ],
+      "expectedFacts": [
+        "redisvFormatCommand splits the format string into arguments on spaces and interpolates specifiers (%s C-strings, %b binary-safe strings that consume a pointer plus an explicit size_t length, %% a literal percent, and printf-style integer/float specifiers via sdscatvprintf), then assembles a RESP command by writing a `*<argc>\\r\\n` multi-bulk header followed by `$<len>\\r\\n<bytes>\\r\\n` for each argument."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "ood-langtransfer",
+      "author": "ood-c-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'int redisvFormatCommand' hiredis.c -> hiredis.c:323. Argument splitting on space: `if (*c == ' ')` pushes curarg into curargv and starts a fresh sdsempty() (hiredis.c:346-358). %s case reads char* and strlen (hiredis.c:373-378); %b case `arg = va_arg(ap,char*); size = va_arg(ap,size_t);` consumes pointer + length (hiredis.c:379-384); %% -> literal '%' (hiredis.c:385-387); printf fallback builds _format and calls sdscatvprintf (hiredis.c:388-488, sdscatvprintf at 479). RESP framing: multi-bulk header `pos = sprintf(cmd,\"*%d\\r\\n\",argc);` (hiredis.c:523), per-arg `pos += sprintf(cmd+pos,\"$%zu\\r\\n\",sdslen(curargv[j]));` then memcpy of the bytes then `cmd[pos++]='\\r'; cmd[pos++]='\\n';` (hiredis.c:525-530). All facts read directly from hiredis.c:323-558 at SHA 1d18adbf41."
+    },
+    {
+      "id": "c-ood-05",
+      "repo": "hiredis",
+      "language": "C",
+      "stratum": "no-match",
+      "difficulty": "medium",
+      "query": "Where does the client compute the Redis Cluster hash slot for a key (CRC16) and follow MOVED/ASK redirections to route the command to the owning node?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [],
+      "expectedNoMatch": true,
+      "max_turns": 4,
+      "tier": "ood-langtransfer",
+      "author": "ood-c-author",
+      "date": "2026-05-24",
+      "notes": "ABSENCE VERIFICATION: hiredis is a single-connection client and has NO Redis Cluster support (slot routing lives in the separate hiredis-cluster library). Searched all source files: `grep -rniwE 'cluster' --include='*.c' --include='*.h' .` (excluding examples/) -> 0 hits; `grep -rniw 'crc16' --include='*.c' --include='*.h' .` -> 0 hits; `grep -rniE 'hash.?slot|key.?slot|getslot' --include='*.c' --include='*.h' .` -> 0 hits; `grep -rnwE 'MOVED|ASK|ASKING' --include='*.c' --include='*.h' .` (excluding examples/) -> 0 hits. Whole-repo source check `grep -rniwE 'crc16|clusterNode|clusterSlot|redisCluster|hashslot' .` (excluding .git/vectors.db/.sweet-search/.agentic-qe) -> 0 hits. No slot-hashing or MOVED/ASK redirection code exists at SHA 1d18adbf41."
+    },
+    {
+      "id": "dart-ood-01",
+      "repo": "http",
+      "language": "Dart",
+      "stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "where is the exception type that an http call throws when a request fails?",
+      "expectedFiles": [
+        "pkgs/http/lib/src/exception.dart"
+      ],
+      "expectedSymbols": [
+        "ClientException"
+      ],
+      "expectedFacts": [
+        "ClientException is declared as `class ClientException implements Exception` in pkgs/http/lib/src/exception.dart.",
+        "ClientException stores a `final String message` and a nullable `final Uri? uri` describing the failed request."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "ood-langtransfer",
+      "author": "ood-dart-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'class ClientException implements Exception' pkgs/http/lib/src/exception.dart -> exception.dart:6; grep -n 'final String message' -> exception.dart:7; grep -n 'final Uri? uri' -> exception.dart:10; constructor `ClientException(this.message, [this.uri])` at exception.dart:12. Top-level clearly-named class; regex-fallback chunker (Dart has no tree-sitter grammar) should anchor on `class ClientException`."
+    },
+    {
+      "id": "dart-ood-02",
+      "repo": "http",
+      "language": "Dart",
+      "stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "factory constructor that wraps raw byte data into a multipart form file part",
+      "expectedFiles": [
+        "pkgs/http/lib/src/multipart_file.dart"
+      ],
+      "expectedSymbols": [
+        "MultipartFile",
+        "fromBytes"
+      ],
+      "expectedFacts": [
+        "MultipartFile is declared as `class MultipartFile` in pkgs/http/lib/src/multipart_file.dart.",
+        "`factory MultipartFile.fromBytes(String field, List<int> value, {String? filename, MediaType? contentType})` builds a MultipartFile from an in-memory byte list."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "ood-langtransfer",
+      "author": "ood-dart-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'class MultipartFile' pkgs/http/lib/src/multipart_file.dart -> multipart_file.dart:17; grep -n 'factory MultipartFile.fromBytes' -> multipart_file.dart:60; body at lines 60-64 returns `MultipartFile(field, stream, value.length, filename: filename, contentType: contentType)`. Symbol-anchored on a top-level class + named factory; regex-fallback chunker (no Dart grammar)."
+    },
+    {
+      "id": "dart-ood-03",
+      "repo": "http",
+      "language": "Dart",
+      "stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "when I call the top-level http.read helper, how does the request get a client and where does it raise an error on a non-2xx status?",
+      "expectedFiles": [
+        "pkgs/http/lib/http.dart",
+        "pkgs/http/lib/src/base_client.dart",
+        "pkgs/http/lib/src/exception.dart"
+      ],
+      "expectedSymbols": [
+        "read",
+        "_withClient",
+        "BaseClient",
+        "_checkResponseSuccess",
+        "ClientException"
+      ],
+      "expectedFacts": [
+        "The top-level `read` function in pkgs/http/lib/http.dart delegates to `_withClient((client) => client.read(url, headers: headers))`.",
+        "`_withClient` in pkgs/http/lib/http.dart constructs `var client = Client();`, runs the callback, and closes the client in a `finally` block.",
+        "BaseClient.read in pkgs/http/lib/src/base_client.dart calls `_checkResponseSuccess`, which throws a `ClientException` (defined in pkgs/http/lib/src/exception.dart) when the response status indicates failure."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "ood-langtransfer",
+      "author": "ood-dart-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: top-level `Future<String> read(...)` -> http.dart:148-149 delegates to `_withClient((client) => client.read(url, headers: headers))`; `_withClient` body -> http.dart:167-174 (`var client = Client();` / `try { return await fn(client); } finally { client.close(); }`). BaseClient.read -> base_client.dart:50 calls `_checkResponseSuccess(url, response)` at base_client.dart:52; `_checkResponseSuccess` -> base_client.dart:97 throws `ClientException('$message.', url)` at base_client.dart:103. ClientException defined at exception.dart:6. Genuine 3-file flow across http.dart -> base_client.dart -> exception.dart. Regex-fallback chunker (no Dart grammar); all anchors are clearly-named top-level symbols."
+    },
+    {
+      "id": "dart-ood-04",
+      "repo": "http",
+      "language": "Dart",
+      "stratum": "behavioral",
+      "difficulty": "hard",
+      "query": "how does the dart http client automatically resend a failed request, and what backoff delay does it use between attempts?",
+      "expectedFiles": [
+        "pkgs/http/lib/retry.dart"
+      ],
+      "expectedSymbols": [
+        "RetryClient",
+        "send",
+        "_defaultDelay"
+      ],
+      "expectedFacts": [
+        "RetryClient is declared as `final class RetryClient extends BaseClient` in pkgs/http/lib/retry.dart and wraps an inner client to retry failing requests.",
+        "RetryClient.send loops with `for (;;)`, re-sending the request via `_inner.send` and giving up once the retry counter `i` reaches `_retries` (default 3).",
+        "The default backoff is exponential: `_defaultDelay` returns `const Duration(milliseconds: 500) * math.pow(1.5, retryCount)`."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "ood-langtransfer",
+      "author": "ood-dart-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'final class RetryClient extends BaseClient' pkgs/http/lib/retry.dart -> retry.dart:17; `Future<StreamedResponse> send(BaseRequest request)` at retry.dart:113 with `for (;;)` loop (~retry.dart:122) calling `await _inner.send(...)` and `if (i == _retries ...) rethrow/return`; default retries=3 at retry.dart:62; `Duration Function(int retryCount) delay = _defaultDelay` at retry.dart:65; `_defaultDelay` at retry.dart:186-187 -> `const Duration(milliseconds: 500) * math.pow(1.5, retryCount)`. Behavioral 'how does X work' anchored on a top-level named class; regex-fallback chunker (no Dart grammar)."
+    },
+    {
+      "id": "dart-ood-05",
+      "repo": "http",
+      "language": "Dart",
+      "stratum": "no-match",
+      "difficulty": "medium",
+      "query": "where can I register a request/response interceptor middleware to transform every outgoing request and incoming response?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [],
+      "expectedNoMatch": true,
+      "max_turns": 4,
+      "tier": "ood-langtransfer",
+      "author": "ood-dart-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION (absence): no interceptor/middleware mechanism in the indexed corpus. The dart-lang/http monorepo working tree is trimmed to pkgs/http/ (sibling packages ok_http/cupertino_http/cronet_http are deleted from the tree); the sweet-search index covers exactly this working-tree corpus. Within pkgs/http/: 'grep -rni interceptor --include=*.dart' -> 0 real hits (the only 'onResponse' substring hits are the variable jsonResponse in example/main.dart:14,16); the clients are RetryClient/MockClient/BaseClient/BrowserClient/IOClient with no pluggable interceptor chain (unlike Dio/axios/OkHttp). CAVEAT: sibling packages OUTSIDE the indexed corpus DO contain interceptor code in git history at this SHA -- the no-match holds for the indexed pkgs/http/ corpus the agent searches, not full monorepo history. Plausible-but-absent; expectedNoMatch. Regex-fallback chunker (no Dart grammar)."
+    },
+    {
+      "id": "elixir-ood-01",
+      "repo": "jason",
+      "language": "Elixir",
+      "stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "where is the exception type that gets returned when JSON parsing fails",
+      "expectedFiles": [
+        "lib/decoder.ex"
+      ],
+      "expectedSymbols": [
+        "Jason.DecodeError"
+      ],
+      "expectedFacts": [
+        "Jason.DecodeError is an exception module defined via defexception with the fields :position, :token, and :data.",
+        "Jason.DecodeError defines a message/1 function that formats human-readable errors describing the byte and position where decoding failed."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "ood-langtransfer",
+      "author": "ood-elixir-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'defmodule Jason.DecodeError' lib/decoder.ex -> lib/decoder.ex:1; grep -n 'defexception' lib/decoder.ex -> lib/decoder.ex:4 ('defexception [:position, :token, :data]'); 'def message(' clauses at lib/decoder.ex:6,9,12 (read-confirmed). Top-level defmodule with a clearly-named dotted symbol, captured by the chunker's `module /defmodule\\s+([\\w.]+)/` rule even under the regex-fallback chunker (Elixir has no tree-sitter grammar)."
+    },
+    {
+      "id": "elixir-ood-02",
+      "repo": "jason",
+      "language": "Elixir",
+      "stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "function that takes encoded JSON and returns it indented and human readable",
+      "expectedFiles": [
+        "lib/formatter.ex"
+      ],
+      "expectedSymbols": [
+        "Jason.Formatter",
+        "pretty_print",
+        "pretty_print_to_iodata"
+      ],
+      "expectedFacts": [
+        "Jason.Formatter.pretty_print/2 pretty-prints JSON-encoded input and returns a binary by piping through pretty_print_to_iodata/2 then IO.iodata_to_binary/1.",
+        "pretty_print_to_iodata/2 accepts options including :indent (default two spaces) and :line_separator (default newline)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "ood-langtransfer",
+      "author": "ood-elixir-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'defmodule Jason.Formatter' lib/formatter.ex -> lib/formatter.ex:1; grep -n 'def pretty_print' lib/formatter.ex -> def pretty_print(input, opts \\\\ []) at lib/formatter.ex:51 and def pretty_print_to_iodata(input, opts \\\\ []) at lib/formatter.ex:67. Read-confirmed pretty_print pipes |> pretty_print_to_iodata(opts) |> IO.iodata_to_binary() (lib/formatter.ex:51-55), and parse_opts sets indent default '  ' and line default '\\n' (lib/formatter.ex:68). Clearly-named top-level def symbols captured by the regex-fallback chunker's `def /def\\s+(\\w+)/` rule."
+    },
+    {
+      "id": "elixir-ood-03",
+      "repo": "jason",
+      "language": "Elixir",
+      "stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "trace how the public decode entry point hands off to the actual byte-level JSON parser",
+      "expectedFiles": [
+        "lib/jason.ex",
+        "lib/decoder.ex"
+      ],
+      "expectedSymbols": [
+        "decode",
+        "Jason.Decoder",
+        "parse"
+      ],
+      "expectedFacts": [
+        "Jason.decode/2 in lib/jason.ex converts the input to a binary with IO.iodata_to_binary/1 and then calls Decoder.parse/2.",
+        "Jason.Decoder.parse/2 (lib/decoder.ex) performs the byte-level parse and returns {:ok, value} on success or {:error, %DecodeError{}} when it catches a thrown position/token error."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "ood-langtransfer",
+      "author": "ood-elixir-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: two-file flow confirmed by read. lib/jason.ex:68 'def decode(input, opts \\\\ [])'; lib/jason.ex:69 'input = IO.iodata_to_binary(input)'; lib/jason.ex:70 'Decoder.parse(input, format_decode_opts(opts))' (grep -n 'Decoder.parse' lib/jason.ex -> 70). Target: grep -n 'def parse' lib/decoder.ex -> lib/decoder.ex:48 'def parse(data, opts) when is_binary(data)'; returns confirmed at lib/decoder.ex:63 '{:ok, value}' and lib/decoder.ex:58/60 '{:error, %DecodeError{...}}'. 'Decoder' is the alias for Jason.Decoder (alias Jason.{DecodeError, Codegen} unrelated; Jason aliases Jason.{Encode, Decoder, ...} at lib/jason.ex:6). Spans 2 files via a direct cross-module call edge. The regex-fallback chunker captures both `def decode` and `def parse` via the `def` rule."
+    },
+    {
+      "id": "elixir-ood-04",
+      "repo": "jason",
+      "language": "Elixir",
+      "stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "how does the ~j sigil decode a JSON literal at compile time",
+      "expectedFiles": [
+        "lib/sigil.ex"
+      ],
+      "expectedSymbols": [
+        "Jason.Sigil",
+        "sigil_j"
+      ],
+      "expectedFacts": [
+        "The sigil_j macro has a clause matching a string literal with no interpolation ({:<<>>, _meta, [string]} guarded by is_binary(string)) that calls Jason.decode! at compile time and wraps the result in Macro.escape/1.",
+        "Sigil modifiers are mapped to decode options by mods_to_opts/1, e.g. ?a -> {:keys, :atoms} and ?c -> {:strings, :copy}."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "ood-langtransfer",
+      "author": "ood-elixir-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'defmodule Jason.Sigil' lib/sigil.ex -> lib/sigil.ex:1. Compile-time path read-confirmed: lib/sigil.ex:42 'defmacro sigil_j({:<<>>, _meta, [string]}, modifiers) when is_binary(string)' and lib/sigil.ex:43 'Macro.escape(Jason.decode!(string, mods_to_opts(modifiers)))'. Modifier mapping read-confirmed in mods_to_opts/1 at lib/sigil.ex:74-83 ('?a -> {:keys, :atoms}' line 77, '?c -> {:strings, :copy}' line 80). defmacro symbols captured by the regex-fallback chunker's `macro /defmacro\\s+(\\w+)/` rule (\\w matches sigil_j)."
+    },
+    {
+      "id": "elixir-ood-05",
+      "repo": "jason",
+      "language": "Elixir",
+      "stratum": "no-match",
+      "difficulty": "medium",
+      "query": "validate a decoded JSON document against a JSON Schema definition",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [],
+      "expectedNoMatch": true,
+      "max_turns": 4,
+      "tier": "ood-langtransfer",
+      "author": "ood-elixir-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION (absence): jason is a pure parse/generate library with no JSON Schema support. grep -rni 'validate_schema|json_schema|schema_validate|defmodule Jason.Schema|defmodule Jason.Validator' lib/ -> 0 hits (exit 1). grep -rni 'json.schema|jsonschema|draft-0' lib/ test/ README.md -> 0 hits (exit 1). Whole-repo grep -rniE 'schema|validat' over lib/ test/ README.md mix.exs (excluding json_test_suite/formatter_test_suite fixtures) yields only unrelated matches: README.md:62/68 use 'schema:' in an Absinthe/GraphQL config example where Jason is merely the json_codec, and test/encode_test.exs:167/180 '@derive validate `except:`/`only:`' test the @derive option-key check, NOT JSON Schema validation. No Jason.Schema / Jason.Validator module or validation API exists at this SHA. Plausible-but-absent (regex-fallback chunker cannot have chunked a symbol that does not exist)."
+    },
+    {
+      "id": "lua-ood-01",
+      "repo": "Penlight",
+      "language": "Lua",
+      "stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "which Penlight string helper checks that every character in a string is a letter",
+      "expectedFiles": [
+        "lua/pl/stringx.lua"
+      ],
+      "expectedSymbols": [
+        "stringx.isalpha"
+      ],
+      "expectedFacts": [
+        "stringx.isalpha returns true only when the input string consists entirely of alphabetic characters, implemented as find(s,'^%a+$') == 1."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "ood-langtransfer",
+      "author": "ood-lua-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'function stringx.isalpha' lua/pl/stringx.lua -> stringx.lua:55; sed -n '55,58p' confirms body `assert_string(1,s); return find(s,'^%a+$') == 1`. Module-prefixed `.` form so entity extraction's [\\w.]+ regex preserves the dotted symbol stringx.isalpha (regex-fallback chunker — Lua has no tree-sitter grammar)."
+    },
+    {
+      "id": "lua-ood-02",
+      "repo": "Penlight",
+      "language": "Lua",
+      "stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "Penlight utility that recursively clones a nested table while keeping its metatable and surviving cyclic references",
+      "expectedFiles": [
+        "lua/pl/tablex.lua"
+      ],
+      "expectedSymbols": [
+        "tablex.deepcopy"
+      ],
+      "expectedFacts": [
+        "tablex.deepcopy delegates to the local cycle_aware_copy helper, which recursively copies keys and values, records visited tables in a cache to reproduce cycles, and copies the original table's metatable onto the result."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "ood-langtransfer",
+      "author": "ood-lua-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'function tablex.deepcopy' lua/pl/tablex.lua -> tablex.lua:118; body (118-120) is `return cycle_aware_copy(t,{})`. grep -n 'cycle_aware_copy' tablex.lua -> tablex.lua:98 (local function def), 106 (recursive key/value copy), 119 (call site). sed -n '98,110p' confirms `cache[t]` cycle guard and `setmetatable(res,mt)`. Doc comment lines 111-116 state it supports cycles and copies the metatable. Dotted symbol preserved by [\\w.]+ entity extraction (regex-fallback chunker)."
+    },
+    {
+      "id": "lua-ood-03",
+      "repo": "Penlight",
+      "language": "Lua",
+      "stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "trace how calling keys() on a Penlight Map yields an object you can chain List operations on",
+      "expectedFiles": [
+        "lua/pl/Map.lua",
+        "lua/pl/tablex.lua",
+        "lua/pl/List.lua"
+      ],
+      "expectedSymbols": [
+        "Map.keys",
+        "tablex.keys",
+        "List._create"
+      ],
+      "expectedFacts": [
+        "In Map.lua, Map.keys is aliased directly to tablex.keys.",
+        "tablex.keys in tablex.lua returns its result wrapped by the local makelist helper, which calls setmetatable(l, require('pl.List')), so the returned table gets pl.List as its metatable and exposes List methods."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "ood-langtransfer",
+      "author": "ood-lua-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: Cross-file chain over 3 files. (1) grep -n 'Map.keys = tablex.keys' lua/pl/Map.lua -> Map.lua:43 (aliases Map.keys to tablex.keys); Map.lua:12 `local tablex = require 'pl.tablex'`. (2) grep -n 'function tablex.keys' lua/pl/tablex.lua -> tablex.lua:585; body (585-588) is `return makelist(tablex.pairmap(keys_op,t))`. (3) grep -n 'makelist' tablex.lua -> tablex.lua:26 `local function makelist(l)` whose body (line 27) is `return setmetatable(l, require('pl.List'))`. (4) List._create anchored at lua/pl/List.lua:53 (grep -n 'function List._create') confirms pl.List is the resolved module providing List methods. Flow: Map.keys -> tablex.keys -> makelist -> pl.List metatable. Regex-fallback chunker: tablex.keys / tablex.pairmap dotted forms preserved by [\\w.]+ extraction; List._create dotted form preserved; Map.keys is an assignment (not `function ...`) so it may surface as an assigned-name entity rather than a function chunk — a downstream miss on Map.keys specifically should not be mis-attributed to prompt brittleness."
+    },
+    {
+      "id": "lua-ood-04",
+      "repo": "Penlight",
+      "language": "Lua",
+      "stratum": "behavioral",
+      "difficulty": "hard",
+      "query": "how does Penlight's class system set up inheritance, constructors, and instance creation under the hood",
+      "expectedFiles": [
+        "lua/pl/class.lua"
+      ],
+      "expectedSymbols": [
+        "_class"
+      ],
+      "expectedFacts": [
+        "The local _class factory in class.lua copies the base class into the new class via tupdate, stores it as c._base, and tracks a _parent_with_init reference so that derived constructors can invoke the parent's _init.",
+        "_class installs the is_a, class_of, and cast introspection methods on the class and wires mt.__call so that calling the class as a function (Classname(args)) builds an instance, optionally via _create, sets its metatable, and runs the constructor."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "ood-langtransfer",
+      "author": "ood-lua-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'local function _class' lua/pl/class.lua -> class.lua:128. Exact grep lines: `tupdate(c,base,plain)` class.lua:144 (shallow-copies base into c); `c._base = base` class.lua:145; `if base and rawget(base,'_init') then c._parent_with_init = base end` class.lua:155; `mt.__call = function(class_tbl,...)` class.lua:164 with `if rawget(c,'_create') then obj = c._create(...) end` class.lua:166, `setmetatable(obj,c)` class.lua:168, and constructor via `call_ctor(c,obj,...)` class.lua:171; `c.is_a = is_a` class.lua:193, `c.class_of = class_of` class.lua:194, `c.cast = cast` class.lua:195. Internal `local function` so entity extraction emits `_class` as the function chunk (regex-fallback chunker, no tree-sitter); the public `class` is `class = setmetatable({},...)` at class.lua:216 (assigned table, not a function chunk)."
+    },
+    {
+      "id": "lua-ood-05",
+      "repo": "Penlight",
+      "language": "Lua",
+      "stratum": "no-match",
+      "difficulty": "medium",
+      "query": "Penlight function to parse a JSON string into a Lua table and serialize a table back to JSON",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [],
+      "expectedNoMatch": true,
+      "max_turns": 4,
+      "tier": "ood-langtransfer",
+      "author": "ood-lua-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION (absence): Penlight ships no JSON support. grep -rni 'json' lua/pl/ -> 0 hits; grep -rni 'json' lua/ (whole library tree) -> 0 hits; no lua/pl/json.lua module file (ls lua/pl/ | grep -i json -> none); grep -rni 'deserialize' over all .lua files repo-wide -> 0 hits; grep -rliE 'json|deserialize' --*.lua repo-wide -> no matching files. Plausible-but-absent: Penlight provides Lua-table pretty-printing/serialization (pl/pretty.lua) and CSV/delimited data (pl/data.lua), but no JSON encode/decode/parse anywhere. Any retrieval result MUST be a false positive. (regex-fallback chunker — Lua has no tree-sitter grammar)."
+    },
+    {
+      "id": "php-ood-01",
+      "repo": "Slim",
+      "language": "PHP",
+      "stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "where does Slim actually send the finished PSR-7 response back to the client",
+      "expectedFiles": [
+        "Slim/ResponseEmitter.php"
+      ],
+      "expectedSymbols": [
+        "ResponseEmitter",
+        "emit"
+      ],
+      "expectedFacts": [
+        "The ResponseEmitter class is responsible for sending a PSR-7 ResponseInterface to the client.",
+        "ResponseEmitter::emit() writes the headers, status line, and (when the response is not empty) the body to the output."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "ood-langtransfer",
+      "author": "ood-php-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'class ResponseEmitter' Slim/ResponseEmitter.php -> ResponseEmitter.php:26; grep -n 'public function emit(' Slim/ResponseEmitter.php -> ResponseEmitter.php:38. Read confirms emit() (lines 38-53) calls emitHeaders (line 58), emitStatusLine (line 73), and emitBody (line 87) when !isResponseEmpty. App::run() (App.php:194-195) instantiates `new ResponseEmitter()` and calls `$responseEmitter->emit($response)`, confirming this is the client-send path."
+    },
+    {
+      "id": "php-ood-02",
+      "repo": "Slim",
+      "language": "PHP",
+      "stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "which request content types does Slim parse out of the box for the parsed body, and where are those default parsers wired up",
+      "expectedFiles": [
+        "Slim/Middleware/BodyParsingMiddleware.php"
+      ],
+      "expectedSymbols": [
+        "BodyParsingMiddleware",
+        "registerDefaultBodyParsers",
+        "registerBodyParser"
+      ],
+      "expectedFacts": [
+        "BodyParsingMiddleware::registerDefaultBodyParsers() registers parsers for the media types application/json, application/x-www-form-urlencoded, application/xml, and text/xml.",
+        "registerDefaultBodyParsers() is invoked from the BodyParsingMiddleware constructor, and each default parser is added via registerBodyParser()."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "ood-langtransfer",
+      "author": "ood-php-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'class BodyParsingMiddleware' Slim/Middleware/BodyParsingMiddleware.php -> :36; grep -n 'function registerDefaultBodyParsers' -> :97; default parsers registered at registerBodyParser('application/json' :99, 'application/x-www-form-urlencoded' :110, 'application/xml' :135, 'text/xml' :136. Constructor (line 46-53) calls $this->registerDefaultBodyParsers() at line 48. registerBodyParser defined at :71."
+    },
+    {
+      "id": "php-ood-03",
+      "repo": "Slim",
+      "language": "PHP",
+      "stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "after routing finishes, how does Slim hand the matched route and routing results to later code through the request, and how is that data read back",
+      "expectedFiles": [
+        "Slim/Middleware/RoutingMiddleware.php",
+        "Slim/Routing/RouteContext.php"
+      ],
+      "expectedSymbols": [
+        "RoutingMiddleware",
+        "performRouting",
+        "RouteContext",
+        "fromRequest",
+        "ROUTING_RESULTS"
+      ],
+      "expectedFacts": [
+        "RoutingMiddleware::performRouting() stores routing data on the request as PSR-7 attributes using the RouteContext::ROUTE_PARSER, RouteContext::ROUTING_RESULTS, and RouteContext::ROUTE constants.",
+        "RouteContext::fromRequest() reads those same request attributes back and throws a RuntimeException if routeParser or routingResults are null (i.e. routing has not been completed)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "ood-langtransfer",
+      "author": "ood-php-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION (writer side): grep -n 'function performRouting' Slim/Middleware/RoutingMiddleware.php -> :57; withAttribute(RouteContext::ROUTE_PARSER ...) at :59; withAttribute(RouteContext::ROUTING_RESULTS ...) at :64; withAttribute(RouteContext::ROUTE ...) at :73. VERIFICATION (reader side): grep -n 'final class RouteContext' Slim/Routing/RouteContext.php -> :19; const ROUTE_PARSER :23, const ROUTING_RESULTS :25, const ROUTE :21; static function fromRequest :29 calls getAttribute(self::ROUTE_PARSER) :32 and getAttribute(self::ROUTING_RESULTS) :33, throwing RuntimeException 'Cannot create RouteContext before routing has been completed' at :37 when null. Genuine 2-file producer/consumer flow over shared request-attribute constants."
+    },
+    {
+      "id": "php-ood-04",
+      "repo": "Slim",
+      "language": "PHP",
+      "stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "how does Slim's default error handler decide whether to return the error as JSON, XML, plain text or HTML",
+      "expectedFiles": [
+        "Slim/Handlers/ErrorHandler.php"
+      ],
+      "expectedSymbols": [
+        "ErrorHandler",
+        "determineContentType",
+        "determineRenderer"
+      ],
+      "expectedFacts": [
+        "ErrorHandler::determineContentType() inspects the request's Accept header and intersects it with the keys of the $errorRenderers map to pick a supported content type.",
+        "ErrorHandler::determineRenderer() looks up the chosen content type in the $errorRenderers map (application/json, application/xml, text/xml, text/html, text/plain) and falls back to the default renderer, then resolves it via the CallableResolver."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "ood-langtransfer",
+      "author": "ood-php-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'class ErrorHandler' Slim/Handlers/ErrorHandler.php -> :48; $errorRenderers map declared at :65-71 with keys application/json (JsonErrorRenderer), application/xml + text/xml (XmlErrorRenderer), text/html (HtmlErrorRenderer), text/plain (PlainTextErrorRenderer); determineContentType :169 reads getHeaderLine('Accept') :171 and array_intersect(explode(',', acceptHeader), array_keys($this->errorRenderers)) :172-175; determineRenderer :213 selects $this->errorRenderers[$this->contentType] or $this->defaultErrorRenderer (HtmlErrorRenderer::class, :55) and resolves via $this->callableResolver->resolve($renderer) :221."
+    },
+    {
+      "id": "php-ood-05",
+      "repo": "Slim",
+      "language": "PHP",
+      "stratum": "no-match",
+      "difficulty": "medium",
+      "query": "the rate-limiting / throttling middleware that counts incoming requests per client and rejects them once a configured number-of-requests-per-time-window threshold is exceeded",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [],
+      "expectedNoMatch": true,
+      "max_turns": 4,
+      "tier": "ood-langtransfer",
+      "author": "ood-php-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION (absence): grep -rni --include='*.php' 'ratelimit|rate_limit|throttl|requests per' Slim/ tests/ -> the ONLY hit is a passive doc-string in Slim/Exception/HttpTooManyRequestsException.php:27 ('...has surpassed its rate limit...'), which is a static 429 HTTP exception class (code 429, message 'Too many requests.') with NO counting, NO time-window logic, NO middleware behavior. find Slim tests -iname '*ratelimit*' -o -iname '*throttl*' -> zero files. Slim/Middleware/ contains only BodyParsing, ContentLength, Error, MethodOverride, OutputBuffering, Routing middleware (verified via find Slim/Middleware -name '*.php'); none implement request counting or per-client throttling. Slim is a deliberately minimal micro-framework: no rate-limiting/throttling middleware exists at this SHA. The 429 exception is plausible-but-absent decoy: it names the concept but provides no rate-limiting mechanism."
+    },
+    {
+      "id": "scala-ood-01",
+      "repo": "requests-scala",
+      "language": "Scala",
+      "stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "which exception is raised when an HTTP request comes back with a 4xx or 5xx status code",
+      "expectedFiles": [
+        "requests/src/requests/Exceptions.scala"
+      ],
+      "expectedSymbols": [
+        "RequestFailedException"
+      ],
+      "expectedFacts": [
+        "RequestFailedException is declared as `class RequestFailedException(val response: Response)` and extends RequestsException.",
+        "Its message embeds the failing response url and statusCode via `s\"Request to ${response.url} failed with status code ${response.statusCode}...\"`."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "author": "ood-scala-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'class RequestFailedException' requests/src/requests/Exceptions.scala -> Exceptions.scala:26 ('class RequestFailedException(val response: Response)'); read Exceptions.scala:26-29 confirms `extends RequestsException(s\"Request to ${response.url} failed with status code ${response.statusCode}\\n${response.text()}\")`. The raise site is grep -n 'throw new RequestFailedException' requests/src/requests/Requester.scala -> Requester.scala:500, guarded by `if (...is2xx || !check) ... else { ... throw new RequestFailedException(...) }` (Requester.scala:495-510), confirming it fires on non-2xx (non-304) responses when check=true. Anchored on a clearly-named top-level class (regex-fallback chunker)."
+    },
+    {
+      "id": "scala-ood-02",
+      "repo": "requests-scala",
+      "language": "Scala",
+      "stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "where is the lookup table that maps numeric HTTP status codes to their human-readable phrases like 200 OK and 404 Not Found",
+      "expectedFiles": [
+        "requests/src/requests/StatusMessages.scala"
+      ],
+      "expectedSymbols": [
+        "StatusMessages",
+        "byStatusCode"
+      ],
+      "expectedFacts": [
+        "StatusMessages is a top-level `object StatusMessages` exposing `val byStatusCode: Map[Int, String]`.",
+        "byStatusCode maps integer status codes to phrase strings, e.g. 200 -> \"OK\" and 404 is included in the map."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "author": "ood-scala-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'object StatusMessages\\|byStatusCode' requests/src/requests/StatusMessages.scala -> StatusMessages.scala:3 ('object StatusMessages {') and StatusMessages.scala:4 ('val byStatusCode: Map[Int, String] = Map('); read StatusMessages.scala:9 confirms '200 -> \"OK\"' and StatusMessages.scala:29 confirms '400 -> \"Bad Request\"' (404 also present in the same Map literal). Consumed at grep -rn 'StatusMessages.byStatusCode' requests/src/ -> Requester.scala:433 and Requester.scala:469 via `StatusMessages.byStatusCode.getOrElse(responseCode, \"\")`. Anchored on a clearly-named top-level object + val (regex-fallback chunker)."
+    },
+    {
+      "id": "scala-ood-03",
+      "repo": "requests-scala",
+      "language": "Scala",
+      "stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "trace how a client-side PKCS12 certificate flows from the Cert config type into the SSLContext used to build the HttpClient",
+      "expectedFiles": [
+        "requests/src/requests/Model.scala",
+        "requests/src/requests/Util.scala",
+        "requests/src/requests/Requester.scala"
+      ],
+      "expectedSymbols": [
+        "Cert",
+        "P12",
+        "clientCertSSLContext",
+        "buildHttpClient"
+      ],
+      "expectedFacts": [
+        "The client cert config is the ADT `sealed trait Cert` with variant `case class P12(p12: String, pwd: Option[String] = None) extends Cert` in Model.scala.",
+        "Util.clientCertSSLContext pattern-matches on `Cert.P12(path, password)`, loads a PKCS12 KeyStore from that path, and returns a configured SSLContext.",
+        "BaseSession.buildHttpClient calls `Util.clientCertSSLContext(cert, verifySslCerts)` when cert != null to set the HttpClient's sslContext."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "author": "ood-scala-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION (genuine 3-file flow): (1) ADT defn — grep -n 'sealed trait Cert\\|case class P12' requests/src/requests/Model.scala -> Model.scala:285 ('sealed trait Cert') and Model.scala:289 ('case class P12(p12: String, pwd: Option[String] = None) extends Cert'). (2) cert->SSLContext — grep -n 'clientCertSSLContext' requests/src/requests/Util.scala -> Util.scala:45 (def signature); read Util.scala:48-65 confirms `cert match { case Cert.P12(path, password) => ... ks = java.security.KeyStore.getInstance(\"PKCS12\"); ks.load(new FileInputStream(path), pass); ... sc.init(keyManagers, ...); sc }`. (3) SSLContext->HttpClient — grep -n 'clientCertSSLContext\\|buildHttpClient' requests/src/requests/Requester.scala -> Requester.scala:93 ('Util.clientCertSSLContext(cert, verifySslCerts)') inside BaseSession.buildHttpClient (def at Requester.scala:75), reached via `if (cert != null)` at Requester.scala:92. Spans Model.scala + Util.scala + Requester.scala. All four symbols anchored on clearly-named top-level/companion members (regex-fallback chunker)."
+    },
+    {
+      "id": "scala-ood-04",
+      "repo": "requests-scala",
+      "language": "Scala",
+      "stratum": "behavioral",
+      "difficulty": "hard",
+      "query": "how does the streaming request loop automatically follow HTTP redirects while keeping cookies across the hops",
+      "expectedFiles": [
+        "requests/src/requests/Requester.scala"
+      ],
+      "expectedSymbols": [
+        "stream",
+        "persistCookies",
+        "redirectedFrom"
+      ],
+      "expectedFacts": [
+        "Requester.stream detects a redirect when the response code starts with '3', is not '304', and maxRedirects > 0, then recursively re-invokes stream with the Location header as the new url.",
+        "On the recursive redirect call maxRedirects is decremented (`maxRedirects = maxRedirects - 1`) and the prior Response is threaded through as `redirectedFrom = Some(current)`.",
+        "Cookies are persisted across hops by the local persistCookies() helper, which (when sess.persistCookies) parses Set-Cookie headers and stores them into sess.cookies before the redirect recursion."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "author": "ood-scala-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: read requests/src/requests/Requester.scala:421-463 — redirect guard `if (responseCode.toString.startsWith(\"3\") && responseCode.toString != \"304\" && maxRedirects > 0)` (Requester.scala:421-425); newUrl from `current.headers(\"location\").head` (Requester.scala:439); recursive `stream(url = new URL(url1, newUrl).toString, ... maxRedirects = maxRedirects - 1, ... redirectedFrom = Some(current), ...).readBytesThrough(f)` (Requester.scala:440-463, decrement at :454, redirectedFrom at :461). Cookie persistence: grep -n 'persistCookies' Requester.scala -> local def at Requester.scala:410, `if (sess.persistCookies) sess.cookies.synchronized { ... headerFields.get(\"set-cookie\") ... HttpCookie.parse(_) ... foreach(c => sess.cookies(c.getName) = c) }` (Requester.scala:410-419), invoked before the redirect recursion at Requester.scala:438. The stream def signature with `redirectedFrom: Option[Response] = None` is at Requester.scala:289. Anchored on the clearly-named top-level `def stream` in case class Requester (regex-fallback chunker)."
+    },
+    {
+      "id": "scala-ood-05",
+      "repo": "requests-scala",
+      "language": "Scala",
+      "stratum": "no-match",
+      "difficulty": "medium",
+      "query": "how do I open a persistent WebSocket connection and handle incoming text frames with this HTTP client",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [],
+      "expectedNoMatch": true,
+      "max_turns": 4,
+      "author": "ood-scala-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION (absence): requests-scala is a synchronous request/response HTTP client with no WebSocket support. Whole-repo sweep across all 14 .scala files (find . -name '*.scala' | wc -l -> 14): grep -rni 'websocket|ws://|wss://|upgrade.*websocket|Sec-WebSocket|onMessage|onTextFrame' . -> exit 1, zero matches. Targeted source-tree sweep grep -rni 'websocket|ws://|wss://' requests/src/ -> exit 1, zero matches. No frame/handshake/upgrade API exists; the public surface is Requester.apply/stream (GET/POST/etc.) only. Plausible-but-absent for an HTTP client (regex-fallback chunker)."
+    },
+    {
+      "id": "swift-ood-01",
+      "repo": "Alamofire",
+      "language": "Swift",
+      "stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "where are the HTTP verb constants like GET and POST defined as a raw-representable value type",
+      "expectedFiles": [
+        "Source/Core/HTTPMethod.swift"
+      ],
+      "expectedSymbols": [
+        "HTTPMethod"
+      ],
+      "expectedFacts": [
+        "HTTPMethod is declared as `public struct HTTPMethod: RawRepresentable, Equatable, Hashable, Sendable`.",
+        "HTTPMethod exposes verb constants as static lets including `static let get = HTTPMethod(rawValue: \"GET\")` and `static let post = HTTPMethod(rawValue: \"POST\")`.",
+        "HTTPMethod stores its verb string in a `public let rawValue: String` property."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "ood-langtransfer",
+      "author": "ood-swift-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION (SHA 7595cbcf59): grep -n 'struct HTTPMethod' Source/Core/HTTPMethod.swift -> HTTPMethod.swift:29 'public struct HTTPMethod: RawRepresentable, Equatable, Hashable, Sendable {'; read confirms static let get (line 35), static let post (line 43), static let delete (line 33); 'public let rawValue: String' at line 51. All facts literally present in the checked-out file."
+    },
+    {
+      "id": "swift-ood-02",
+      "repo": "Alamofire",
+      "language": "Swift",
+      "stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "swift class that pins server certificates and rejects connections whose cert chain doesn't match a bundled certificate",
+      "expectedFiles": [
+        "Source/Features/ServerTrustEvaluation.swift"
+      ],
+      "expectedSymbols": [
+        "PinnedCertificatesTrustEvaluator"
+      ],
+      "expectedFacts": [
+        "PinnedCertificatesTrustEvaluator is declared as `public final class PinnedCertificatesTrustEvaluator: ServerTrustEvaluating`.",
+        "PinnedCertificatesTrustEvaluator implements `func evaluate(_ trust: SecTrust, forHost host: String) throws` to validate server trust.",
+        "When none of the pinned certificate data appears in the server certificate data, evaluate throws `AFError.serverTrustEvaluationFailed` with a `.certificatePinningFailed` reason."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "ood-langtransfer",
+      "author": "ood-swift-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION (SHA 7595cbcf59): grep -n 'final class PinnedCertificatesTrustEvaluator' Source/Features/ServerTrustEvaluation.swift -> line 229 'public final class PinnedCertificatesTrustEvaluator: ServerTrustEvaluating {'; protocol 'public protocol ServerTrustEvaluating' at line 80; read confirms 'public func evaluate(_ trust: SecTrust, forHost host: String) throws' at line 258, and the disjoint-set check throwing 'AFError.serverTrustEvaluationFailed(reason: .certificatePinningFailed(host: host,' at lines 277-279."
+    },
+    {
+      "id": "swift-ood-03",
+      "repo": "Alamofire",
+      "language": "Swift",
+      "stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "trace how a request interceptor both adapts an outgoing request and decides whether to retry it after a failure, and where the concrete exponential-backoff implementation lives",
+      "expectedFiles": [
+        "Source/Features/RequestInterceptor.swift",
+        "Source/Features/RetryPolicy.swift"
+      ],
+      "expectedSymbols": [
+        "RequestInterceptor",
+        "RequestAdapter",
+        "RequestRetrier",
+        "RetryResult",
+        "RetryPolicy"
+      ],
+      "expectedFacts": [
+        "RequestInterceptor is a protocol composition declared as `public protocol RequestInterceptor: RequestAdapter, RequestRetrier {}`, combining the RequestAdapter (adapt) and RequestRetrier (retry) protocols.",
+        "RequestRetrier's retry method reports its decision via the `RetryResult` enum, which includes the `.retryWithDelay(TimeInterval)` case.",
+        "RetryPolicy is the concrete RequestInterceptor whose `retry(_:for:dueTo:completion:)` returns `.retryWithDelay` with an exponentially-backed-off delay."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "ood-langtransfer",
+      "author": "ood-swift-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION (SHA 7595cbcf59): File 1 Source/Features/RequestInterceptor.swift -> 'public protocol RequestAdapter: Sendable {' line 39; 'public protocol RequestRetrier: Sendable {' line 101; 'public enum RetryResult: Sendable {' line 67 with 'case retryWithDelay(TimeInterval)' line 71; 'public protocol RequestInterceptor: RequestAdapter, RequestRetrier {}' line 119. File 2 Source/Features/RetryPolicy.swift -> 'open class RetryPolicy: @unchecked Sendable, RequestInterceptor {' line 29; 'open func retry(_ request: Request,' line 308 returning 'completion(.retryWithDelay(pow(Double(exponentialBackoffBase), Double(request.retryCount)) * exponentialBackoffScale))' at line 313. Spans 2 files; flow verified end-to-end."
+    },
+    {
+      "id": "swift-ood-04",
+      "repo": "Alamofire",
+      "language": "Swift",
+      "stratum": "behavioral",
+      "difficulty": "medium",
+      "query": "how does the retry policy compute the wait time between retries and what are its default limits",
+      "expectedFiles": [
+        "Source/Features/RetryPolicy.swift"
+      ],
+      "expectedSymbols": [
+        "RetryPolicy"
+      ],
+      "expectedFacts": [
+        "RetryPolicy's retry method computes the delay as `pow(Double(exponentialBackoffBase), Double(request.retryCount)) * exponentialBackoffScale`, i.e. base raised to the current retry count, scaled.",
+        "The default exponential backoff base is 2 (`static let defaultExponentialBackoffBase: UInt = 2`) and the default scale is 0.5 (`static let defaultExponentialBackoffScale: Double = 0.5`).",
+        "Retries only happen while `request.retryCount < retryLimit` and `shouldRetry` is true, otherwise the policy returns `.doNotRetry`; the default retry limit is 2."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "ood-langtransfer",
+      "author": "ood-swift-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION (SHA 7595cbcf59): Source/Features/RetryPolicy.swift read confirms 'static let defaultRetryLimit: UInt = 2' line 31; 'static let defaultExponentialBackoffBase: UInt = 2' line 34; 'static let defaultExponentialBackoffScale: Double = 0.5' line 37; retry() body lines 308-317: guard 'if request.retryCount < retryLimit, shouldRetry(request: request, dueTo: error)' line 312, 'completion(.retryWithDelay(pow(Double(exponentialBackoffBase), Double(request.retryCount)) * exponentialBackoffScale))' line 313, else 'completion(.doNotRetry)' line 315. All behavioral facts literally true."
+    },
+    {
+      "id": "swift-ood-05",
+      "repo": "Alamofire",
+      "language": "Swift",
+      "stratum": "no-match",
+      "difficulty": "medium",
+      "query": "GraphQL query builder and GraphQL operation client for composing typed GraphQL requests in alamofire",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [],
+      "expectedNoMatch": true,
+      "max_turns": 4,
+      "tier": "ood-langtransfer",
+      "author": "ood-swift-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION (SHA 7595cbcf59): Alamofire is a REST/HTTP-over-URLSession networking library with no GraphQL support, making a 'GraphQL query builder/client' plausible-but-absent. Confirmed zero hits: `grep -rni 'graphql' Source/` -> no output (exit 0, empty); `git grep -ni 'graphql' 7595cbcf59` -> no output (empty); `git grep -niw 'gql\\|graphql\\|graph_ql' 7595cbcf59` -> no output. No GraphQL identifier, type, file, or doc reference exists anywhere in the tracked repo at this SHA. (Note: an unrelated `HTTPMethod.query` HTTP-verb constant exists but is the SQL-adjacent QUERY method, not GraphQL.)"
+    },
+    {
+      "id": "zig-ood-01",
+      "repo": "http.zig",
+      "language": "Zig",
+      "stratum": "literal-lookup",
+      "difficulty": "easy",
+      "query": "where is the reusable byte buffer pool that workers rent slots from",
+      "expectedFiles": [
+        "src/buffer.zig"
+      ],
+      "expectedSymbols": [
+        "Pool"
+      ],
+      "expectedFacts": [
+        "src/buffer.zig defines `pub const Pool = struct` as a pool of reusable byte buffers.",
+        "Pool.init allocates `count` buffers each of `buffer_size` bytes and returns an error union `!Pool`.",
+        "Pool.release returns a `.pooled` buffer to the pool by incrementing `available`."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "ood-langtransfer",
+      "author": "ood-zig-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'pub const Pool = struct' src/buffer.zig -> src/buffer.zig:25; grep -n 'pub fn init(io: Io, allocator: Allocator, count: usize, buffer_size: usize) !Pool' src/buffer.zig -> src/buffer.zig:35 (errdefer cleanup at lines 37,40-44; allocates count buffers of buffer_size at lines 46-52); grep -n 'pub fn release(self: \\*Pool, buffer: Buffer) void' src/buffer.zig -> src/buffer.zig:140 (pooled branch restores slot at lines 144-150). Read src/buffer.zig:1-164. Clearly-named top-level `pub const Pool = struct` symbol; safe under the regex-fallback chunker (no tree-sitter grammar for Zig)."
+    },
+    {
+      "id": "zig-ood-02",
+      "repo": "http.zig",
+      "language": "Zig",
+      "stratum": "literal-lookup",
+      "difficulty": "medium",
+      "query": "splitting a raw request target into path and query string components",
+      "expectedFiles": [
+        "src/url.zig"
+      ],
+      "expectedSymbols": [
+        "Url",
+        "parse"
+      ],
+      "expectedFacts": [
+        "src/url.zig defines `pub const Url = struct` with `raw`, `path`, and `query` fields.",
+        "Url.parse splits the raw target at the first '?' so everything before it becomes `path` and everything after becomes `query`.",
+        "When there is no '?' in the raw target, Url.parse leaves `query` as an empty string and sets `path` to the whole raw value."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 3,
+      "tier": "ood-langtransfer",
+      "author": "ood-zig-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'pub const Url = struct' src/url.zig -> src/url.zig:12 (fields raw/path/query at lines 13-15); grep -n 'pub fn parse(raw: \\[\\]const u8) Url' src/url.zig -> src/url.zig:17. Read src/url.zig:12-40: parse uses std.mem.indexOfScalar(u8, raw, '?') (line 21); if found, path=raw[0..index] and query=raw[index+1..] (lines 22-23); else query defaults to \"\" (line 19) and path stays the full raw (line 18). Top-level `pub const Url = struct` + `pub fn parse` — both clean anchors under the regex-fallback chunker."
+    },
+    {
+      "id": "zig-ood-03",
+      "repo": "http.zig",
+      "language": "Zig",
+      "stratum": "multi-file-flow",
+      "difficulty": "hard",
+      "query": "how are percent-encoded query string keys and values decoded when a handler reads the parsed query parameters",
+      "expectedFiles": [
+        "src/request.zig",
+        "src/url.zig"
+      ],
+      "expectedSymbols": [
+        "query",
+        "parseQuery",
+        "unescape"
+      ],
+      "expectedFacts": [
+        "Request.query in src/request.zig returns the cached query map if `qs_read` is set, otherwise it calls the private parseQuery.",
+        "parseQuery in src/request.zig splits the raw query on '&', then on '=', and calls Url.unescape on each key and value before adding them to the StringKeyValue map.",
+        "Url.unescape in src/url.zig decodes percent-encoded sequences and converts '+' to ' ', returning the input unchanged when nothing needs unescaping."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "ood-langtransfer",
+      "author": "ood-zig-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION (spans 2 files): grep -n 'pub fn query(self: \\*Request)' src/request.zig -> src/request.zig:140 (returns self.qs when qs_read, else self.parseQuery() at lines 141-144); grep -n 'fn parseQuery' src/request.zig -> src/request.zig:225 (splits raw on '&' line 236, on '=' line 238, calls `Url.unescape(allocator, buf, ...)` on key line 239 and value line 244, then qs.add line 249); grep -n 'pub fn unescape(allocator: Allocator' src/url.zig -> src/url.zig:56 (handles '%' hex decode lines 63-68, '+' -> ' ' per comment line 50-51 + has_plus line 69, returns input unchanged when nothing to unescape lines 77-80). Cross-file call confirmed: `Url` imported in src/request.zig:11 `const Url = @import(\"url.zig\").Url`. Read src/request.zig:140-262 and src/url.zig:42-106. Symbols are top-level/struct-method anchors safe under the regex-fallback chunker (Zig has no tree-sitter grammar)."
+    },
+    {
+      "id": "zig-ood-04",
+      "repo": "http.zig",
+      "language": "Zig",
+      "stratum": "behavioral",
+      "difficulty": "hard",
+      "query": "how does the router pick which handler matches an incoming url including path params and wildcard fallbacks",
+      "expectedFiles": [
+        "src/router.zig"
+      ],
+      "expectedSymbols": [
+        "getRoute",
+        "route",
+        "Router"
+      ],
+      "expectedFacts": [
+        "getRoute in src/router.zig walks the URL one '/'-delimited segment at a time, descending the Part trie for each segment.",
+        "For each segment getRoute prefers an exact child part, then a param part (recording the segment value via params.addValue), then a glob child, falling back to the most specific glob_all route when nothing matches.",
+        "Router.route dispatches to getRoute based on the HTTP method, returning an optional pointer to a DispatchableAction (null when no route matches)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "ood-langtransfer",
+      "author": "ood-zig-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION: grep -n 'fn getRoute(comptime A: type' src/router.zig -> src/router.zig:461. Read src/router.zig:461-520: iterates segments via std.mem.indexOfScalarPos for '/' (line 480); tracks most-specific glob_all fallback (lines 483-487); per segment tries exact `route_part.parts.getPtr(part)` (line 489), then `route_part.param_part` with `params.addValue(part)` (lines 491-493), then `route_part.glob` (lines 494-495), else returns glob_all fallback or null (lines 496-502); final action returns with param_names bound (lines 506-513). grep -n 'pub fn route(self: \\*Self, m: httpz.Method' src/router.zig -> src/router.zig:76 (switch on method dispatching to getRoute, returns ?*const DispatchableAction, lines 76-91); grep -n 'pub fn Router(comptime Handler: type' src/router.zig -> src/router.zig:27. `getRoute` is a top-level `fn`, `route` is a struct method inside `Router` — both clean name anchors under the regex-fallback chunker."
+    },
+    {
+      "id": "zig-ood-05",
+      "repo": "http.zig",
+      "language": "Zig",
+      "stratum": "no-match",
+      "difficulty": "medium",
+      "query": "request rate limiting middleware that throttles clients with a token bucket and returns 429 too many requests",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [],
+      "expectedNoMatch": true,
+      "max_turns": 4,
+      "tier": "ood-langtransfer",
+      "author": "ood-zig-author",
+      "date": "2026-05-24",
+      "notes": "VERIFICATION (absence, whole repo): grep -rni 'rate.\\?limit|throttl|ratelimit|leaky.\\?bucket|token.\\?bucket|requests.\\?per.\\?second|too.\\?many.\\?requests|429' --include='*.zig' . -> ONLY hit is src/response.zig:236, where `429` is a bare HTTP status-code literal inside a comptime status-line inline-switch list (`...428, 429, 431, 451...`), NOT any rate-limiting logic. No `rateLimit`, `throttle`, `token bucket`, `leaky bucket`, or 'Too Many Requests' handling exists anywhere in src/, examples/, or tests. The library's middleware set (src/middleware/) contains only Cors (src/middleware/Cors.zig) and a base middleware.zig — no rate limiter. Plausible-but-absent: an HTTP server framework could ship a rate-limiter, but http.zig at SHA 569bba10f2 does not. Regex-fallback chunker note (Zig has no tree-sitter grammar): a downstream miss here would be the correct no-match result, not a chunker artifact. This probe uses the regex-fallback chunker."
+    }
+  ]
+}

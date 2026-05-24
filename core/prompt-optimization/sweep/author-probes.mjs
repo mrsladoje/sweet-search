@@ -70,6 +70,27 @@ export const IN_DISTRIBUTION = Object.freeze([
   { language: 'kotlin',     repo: 'kotlinx.coroutines',  path: 'eval/ast-tester-probes/_repos/kotlin' },
 ]);
 
+/**
+ * 8 out-of-distribution languages + repos for the §3.5.1 language-transfer gate
+ * (winner-only). All are SHA-locked ast-tester repos under
+ * eval/ast-tester-probes/_repos/<language>. Dart/Elixir/Lua/Scala/Zig use the
+ * regex-fallback chunker (no tree-sitter grammar). `repo` = repo name (matches
+ * probe.repo in p7-langtransfer-probes.json); `path` = on-disk location.
+ */
+// `language` uses the capitalized OOD_LANGUAGES convention (the §3.5.1 per-language
+// scorecard in p7-ood-gate.mjs keys on probe.language against OOD_LANGUAGES); the
+// on-disk `path` dirs are lowercase.
+export const OOD_DISTRIBUTION = Object.freeze([
+  { language: 'C',      repo: 'hiredis',         path: 'eval/ast-tester-probes/_repos/c' },
+  { language: 'Dart',   repo: 'http',            path: 'eval/ast-tester-probes/_repos/dart' },
+  { language: 'Elixir', repo: 'jason',           path: 'eval/ast-tester-probes/_repos/elixir' },
+  { language: 'Lua',    repo: 'Penlight',        path: 'eval/ast-tester-probes/_repos/lua' },
+  { language: 'PHP',    repo: 'Slim',            path: 'eval/ast-tester-probes/_repos/php' },
+  { language: 'Scala',  repo: 'requests-scala',  path: 'eval/ast-tester-probes/_repos/scala' },
+  { language: 'Swift',  repo: 'Alamofire',       path: 'eval/ast-tester-probes/_repos/swift' },
+  { language: 'Zig',    repo: 'http.zig',        path: 'eval/ast-tester-probes/_repos/zig' },
+]);
+
 // ─── §5.7 adversarial counter-probe rewrite prompt ───────────────────────────
 
 /**

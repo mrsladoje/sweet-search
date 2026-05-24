@@ -41,7 +41,7 @@ import { runClaudeAgent } from '../../../eval/agent-read-workflows/claude-runner
 import { runJudge, _internal as judgeInternal } from '../../../eval/agent-read-workflows/judge-runner.js';
 import { hashContent } from './p7-shared.mjs';
 import { estimateTokens } from './variant-loader.mjs';
-import { IN_DISTRIBUTION } from './author-probes.mjs';
+import { IN_DISTRIBUTION, OOD_DISTRIBUTION } from './author-probes.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
@@ -56,11 +56,12 @@ const REPO_ROOT = path.resolve(__dirname, '../../..');
 // dev/heldout/vault sets) would run with a bad cwd and the ss-* shims would
 // exit(2) "no index" → silent ~0 scores → corrupted GEPA signal. Mirrors
 // p7-deepseek-flash-baseline.mjs:repoCwdFor (same IN_DISTRIBUTION source).
+const ALL_REPO_ENTRIES = [...IN_DISTRIBUTION, ...OOD_DISTRIBUTION];
 const REPO_PATH_BY_KEY = new Map(
-  IN_DISTRIBUTION.map((x) => [`${x.language}:${x.repo}`, path.resolve(REPO_ROOT, x.path)]),
+  ALL_REPO_ENTRIES.map((x) => [`${x.language}:${x.repo}`, path.resolve(REPO_ROOT, x.path)]),
 );
 const REPO_PATH_BY_NAME = new Map(
-  IN_DISTRIBUTION.map((x) => [x.repo, path.resolve(REPO_ROOT, x.path)]),
+  ALL_REPO_ENTRIES.map((x) => [x.repo, path.resolve(REPO_ROOT, x.path)]),
 );
 
 /**
@@ -508,6 +509,36 @@ export function makeRealEvaluateCandidate({
         token_count_prompt: estimateTokens(promptText),
       },
     };
+  };
+}
+
+// ─── OOD language-transfer gate replay runner (§3.5.1) ──────────────────────
+
+/**
+ * Build a per-target replay runner for the OOD language-transfer gate
+ * (p7-ood-gate.runOodGate). Replays the winning prompt on each OOD probe via the
+ * injected `evaluate` (default = makeRealEvaluateCandidate's evaluateCandidate)
+ * and returns the `{ perProbe: [{ language, probeId, score }] }` shape runOodGate
+ * expects. Sequential per-probe so each target stream stays naturally
+ * rate-limited; the two production-target streams run concurrently inside
+ * runOodGate. probe.language MUST match the OOD_LANGUAGES casing so the
+ * per-language scorecard buckets correctly.
+ *
+ * @param {{ evaluate: Function, target: 'sonnet'|'gpt5_5' }} args
+ * @returns {(winnerPrompt:string, probes:object[])=>Promise<{perProbe:object[]}>}
+ */
+export function makeOodReplayRunner({ evaluate, target }) {
+  if (typeof evaluate !== 'function') throw new TypeError('makeOodReplayRunner: evaluate must be a function');
+  if (target !== 'sonnet' && target !== 'gpt5_5') {
+    throw new RangeError(`makeOodReplayRunner: target must be 'sonnet'|'gpt5_5' (got ${target})`);
+  }
+  return async function replayOod(winnerPrompt, probes) {
+    const perProbe = [];
+    for (const probe of probes) {
+      const r = await evaluate({ promptText: winnerPrompt, probe, target });
+      perProbe.push({ language: probe.language, probeId: probe.id, score: r.score });
+    }
+    return { perProbe };
   };
 }
 
