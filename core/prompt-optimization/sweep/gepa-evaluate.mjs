@@ -41,9 +41,49 @@ import { runClaudeAgent } from '../../../eval/agent-read-workflows/claude-runner
 import { runJudge, _internal as judgeInternal } from '../../../eval/agent-read-workflows/judge-runner.js';
 import { hashContent } from './p7-shared.mjs';
 import { estimateTokens } from './variant-loader.mjs';
+import { IN_DISTRIBUTION } from './author-probes.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
+
+// ─── repo path resolution (single source of truth: author-probes IN_DISTRIBUTION) ─
+//
+// The 5 P6 anchors live under eval/repos/<repo>; the 5 SHA-locked ast-tester
+// language repos live under eval/ast-tester-probes/_repos/<language>. A naive
+// path.join(reposDir, probe.repo) ONLY finds the anchors — the ast-tester repos
+// (highway/garnet/gson/kotlinx.coroutines/sinatra) would resolve to nonexistent
+// eval/repos/<repo> dirs, so every cpp/csharp/java/kotlin/ruby probe (~50% of the
+// dev/heldout/vault sets) would run with a bad cwd and the ss-* shims would
+// exit(2) "no index" → silent ~0 scores → corrupted GEPA signal. Mirrors
+// p7-deepseek-flash-baseline.mjs:repoCwdFor (same IN_DISTRIBUTION source).
+const REPO_PATH_BY_KEY = new Map(
+  IN_DISTRIBUTION.map((x) => [`${x.language}:${x.repo}`, path.resolve(REPO_ROOT, x.path)]),
+);
+const REPO_PATH_BY_NAME = new Map(
+  IN_DISTRIBUTION.map((x) => [x.repo, path.resolve(REPO_ROOT, x.path)]),
+);
+
+/**
+ * Resolve a probe's on-disk repo cwd. Prefers the IN_DISTRIBUTION map (which
+ * carries the ast-tester paths keyed by language:repo, then by repo); falls back
+ * to <reposDir>/<repo> for any repo not in the map (custom / future repos).
+ *
+ * @param {{repo:string, language?:string}} probe
+ * @param {{reposDir:string}} opts
+ * @returns {string} absolute repo cwd
+ */
+export function resolveRepoCwd(probe, { reposDir } = {}) {
+  if (!probe || typeof probe.repo !== 'string') {
+    throw new TypeError('resolveRepoCwd: probe.repo string required');
+  }
+  if (probe.language && REPO_PATH_BY_KEY.has(`${probe.language}:${probe.repo}`)) {
+    return REPO_PATH_BY_KEY.get(`${probe.language}:${probe.repo}`);
+  }
+  if (REPO_PATH_BY_NAME.has(probe.repo)) {
+    return REPO_PATH_BY_NAME.get(probe.repo);
+  }
+  return path.join(reposDir ?? path.join(REPO_ROOT, 'eval', 'repos'), probe.repo);
+}
 
 /**
  * Thrown by `judgePanelScore` (B6) when EVERY panelist errors after the
@@ -386,7 +426,7 @@ export function makeRealEvaluateCandidate({
   timeoutMs = 240000,
 } = {}) {
   return async function evaluateCandidate({ promptText, probe, target }) {
-    const repoCwd = path.join(reposDir, probe.repo);
+    const repoCwd = resolveRepoCwd(probe, { reposDir });
     let run;
     let agentUsage;
     if (target === 'sonnet') {
