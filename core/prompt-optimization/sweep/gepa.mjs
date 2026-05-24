@@ -151,6 +151,7 @@ export async function runGepa(opts = {}) {
     paretoCap = DEFAULTS.paretoAdmissionCap,
     resume = false,
     bucket = null,
+    nativeBaselineByTarget = null,
     now = () => Date.now(),
     reflectionHint,
   } = opts;
@@ -189,7 +190,7 @@ export async function runGepa(opts = {}) {
     : makeResumeReplayEvaluate({ evaluateCandidate, completedStepIds: new Set(), replayMap: new Map() });
   const replayEvaluate = replayLayer.evaluate;
   const enterStep = replayLayer.enterStep;
-  const mkCandidate = (args) => buildCandidate({ ...args, evaluateCandidate: replayEvaluate, bucket });
+  const mkCandidate = (args) => buildCandidate({ ...args, evaluateCandidate: replayEvaluate, bucket, nativeBaselineByTarget });
 
   // probe lookups (resume reconstructs probe records from ids)
   const allProbes = [...devProbes, ...rotationPool];
@@ -341,7 +342,17 @@ export async function runGepa(opts = {}) {
         for (const pid of screenIds) {
           for (const target of TARGET_LIST) {
             const d = cand.detail[pid][target];
-            appendEvent({ _kind: EVENT_KINDS.SCREEN, round, mutation_hash: cand.hash, probe_id: pid, target, score: d.score, tool_calls: d.traj.toolCalls.length });
+            appendEvent({
+              _kind: EVENT_KINDS.SCREEN,
+              round,
+              mutation_hash: cand.hash,
+              probe_id: pid,
+              target,
+              score: d.score,
+              tool_calls: d.traj.toolCalls.length,
+              input_tokens: d.usage?.agent?.input_tokens ?? null,
+              output_tokens: d.usage?.agent?.output_tokens ?? null,
+            });
           }
         }
         log(`round ${round} screen ${m.sourceOp} ${cand.hash.slice(0, 10)} final=${cand.finalScore.toFixed(3)}`);
