@@ -24,6 +24,12 @@ describe('gepa-cli parseArgs — smoke-trim flags', () => {
     expect(o.smokeProbes).toBeUndefined();
     expect(o.smokeVariants).toBeUndefined();
   });
+
+  it('parses the native-baseline file path for real GEPA scoring', () => {
+    const o = parseArgs(['--probes', 'dev.json', '--native-baseline', 'native.json']);
+    expect(o.probesFile).toBe('dev.json');
+    expect(o.nativeBaselineFile).toBe('native.json');
+  });
 });
 
 describe('withMutatorCallDefaults — Kimi reasoning timeout (B2)', () => {

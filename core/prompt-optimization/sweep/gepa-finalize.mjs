@@ -106,6 +106,8 @@ export function buildConfirmEvent({ round, survivor, probe, pid, target, d }) {
     evidence_adequacy_penalty: evidencePenalty,
     native_search_penalty: nativeSearchPenalty,
     eas_factor: survivor.efficiencyFactor,
+    native_relative_factor: survivor.nativeRelative?.factor ?? null,
+    native_relative_target_factors: survivor.nativeRelative?.perTargetFactor ?? null,
     token_count_prompt: usage?.token_count_prompt ?? survivor.tokenCount ?? null,
     length_penalty: survivor.lengthPenalty,
     final_score: survivor.finalScore,
@@ -143,7 +145,7 @@ export function replayKey({ kind, round, mutationHash, probeId, target }) {
  * are NOT re-issued (B1 / §7.4 "no re-spending").
  *
  * @param {string} trajectoryFilePath
- * @returns {Map<string, { score:number, toolCalls:number }>}
+ * @returns {Map<string, { score:number, toolCalls:number, usage?:object }>}
  */
 export function buildReplayMap(trajectoryFilePath) {
   const map = new Map();
@@ -163,7 +165,13 @@ export function buildReplayMap(trajectoryFilePath) {
       probeId: ev.probe_id,
       target: ev.target,
     });
-    map.set(key, { score, toolCalls: typeof ev.tool_calls === 'number' ? ev.tool_calls : 1 });
+    const inputTokens = typeof ev.input_tokens === 'number' ? ev.input_tokens : null;
+    const outputTokens = typeof ev.output_tokens === 'number' ? ev.output_tokens : null;
+    map.set(key, {
+      score,
+      toolCalls: typeof ev.tool_calls === 'number' ? ev.tool_calls : 1,
+      usage: inputTokens != null || outputTokens != null ? { agent: { input_tokens: inputTokens, output_tokens: outputTokens } } : null,
+    });
   }
   return map;
 }
@@ -175,13 +183,12 @@ export function buildReplayMap(trajectoryFilePath) {
  * `completedStepIds` AND `replayMap`, returns a synthetic result from the
  * persisted score (NO API call) — else delegates to the real evaluator. Replayed
  * results carry `replayed:true` and reconstruct only the fields the loop reads
- * (score / toolCalls / a minimal trajectory); usage is null on replay (the
- * original CONFIRM row already holds the forensic metadata).
+ * (score / toolCalls / token usage / a minimal trajectory).
  *
  * @param {object} args
  * @param {Function} args.evaluateCandidate — the real injected evaluator
  * @param {Set<string>} args.completedStepIds — from resumeState
- * @param {Map<string,{score:number,toolCalls:number}>} args.replayMap
+ * @param {Map<string,{score:number,toolCalls:number,usage?:object}>} args.replayMap
  * @param {(n:number)=>void} [args.onReplay] — forensic counter hook
  * @returns {{ evaluate: Function, enterStep: Function, replayedCount: () => number }}
  */
@@ -208,7 +215,7 @@ export function makeResumeReplayEvaluate({ evaluateCandidate, completedStepIds, 
         target: args.target,
       });
       if (completed.has(key) && map.has(key)) {
-        const { score, toolCalls } = map.get(key);
+        const { score, toolCalls, usage } = map.get(key);
         replayed += 1;
         if (onReplay) onReplay(replayed);
         return {
@@ -217,6 +224,7 @@ export function makeResumeReplayEvaluate({ evaluateCandidate, completedStepIds, 
           finalAnswerEmitted: true,
           usedReadOrGrep: true,
           trajectory: { toolCalls: Array.from({ length: toolCalls }, () => ({ name: 'replayed' })), answer: '' },
+          usage: usage ?? null,
           wallMs: 0,
           replayed: true,
         };

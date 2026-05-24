@@ -19,6 +19,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  computeFinalScoreFor,
   scoreCandidateOnProbes,
 } from '../../../core/prompt-optimization/sweep/gepa-scoring.mjs';
 import { AllJudgesFailedError } from '../../../core/prompt-optimization/sweep/gepa-evaluate.mjs';
@@ -195,6 +196,27 @@ describe('scoreCandidateOnProbes — core outputs (§3.7.1)', () => {
     expect(scored.scores).toEqual({ p1: 0.6, p2: 0.4 });
     expect(scored.score_sonnet).toBeCloseTo(0.7, 10);
     expect(scored.score_gpt5_5).toBeCloseTo(0.65, 10);
+  });
+});
+
+describe('computeFinalScoreFor — native-relative scoring', () => {
+  it('uses native-relative accuracy/calls/tokens when a baseline is provided', () => {
+    const fs = computeFinalScoreFor({
+      perProbeMaximin: [0.95],
+      weights: [1],
+      tokenCount: 0,
+      runsByTarget: {
+        sonnet: [{ probeId: 'p1', score: 0.95, stratum: 'literal-lookup', calls: 2, tokens: 650, finalAnswerEmitted: true, usedReadOrGrep: true }],
+        gpt5_5: [{ probeId: 'p1', score: 0.96, stratum: 'literal-lookup', calls: 1, tokens: 500, finalAnswerEmitted: true, usedReadOrGrep: true }],
+      },
+      nativeBaselineByTarget: {
+        sonnet: { p1: { score: 0.9, calls: 4, tokens: 1000 } },
+        gpt5_5: { p1: { score: 0.9, calls: 4, tokens: 1000 } },
+      },
+    });
+    expect(fs.taskScore).toBeCloseTo(0.95, 10);
+    expect(fs.nativeRelative.factor).toBeCloseTo(1, 10);
+    expect(fs.finalScore).toBeCloseTo(1, 10);
   });
 });
 

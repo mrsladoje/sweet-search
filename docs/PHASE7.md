@@ -20,13 +20,13 @@ Produce a **single shipped sweet-search agent system prompt** that maximises joi
 
 …using a reflective evolutionary loop (GEPA) that is **engineering-effective** (with documented human-in-the-loop reflection) AND **scientifically defensible at submission tier** (TARE-style sharpness-aware selection, disjoint-family judge panel, HOMP, paraphrase-invariance reporting).
 
-**Ship policy: ONE unified prompt.** The selection objective is `mean(score_sonnet, score_gpt5.5)` across the dev probe set. We do NOT ship per-target prompts — the goal is a single universal prompt that does best for MOST users.
+**Ship policy: ONE unified prompt.** The selection objective is the §3.7.1 native-relative `final_score` when a frozen native rg+Read baseline is supplied: correctness, tool-call count, and agent-token use are all scored relative to native search on the same probe and target, then aggregated with Maximin discipline across Sonnet 4.6 and GPT-5.5-instant. We do NOT ship per-target prompts — the goal is a single universal prompt that does best for MOST users.
 
 **Held-out model classes (HOMP, not targets)**:
 - **MiMo-V2.5-Pro** (Xiaomi) — primary HOMP class
 - **Qwen 3.6 Plus via opencode CLI** — secondary HOMP class (proves the unified prompt transfers to open-weights even though we didn't optimise on it)
 
-**Headline claim if results land**: "An empirically-evolved sweet-search agent system prompt that achieves [+X pp] Maximin (worst-target) score over default phrasing across Sonnet 4.6 and GPT-5.5-instant, with no per-target absolute regression > 0.15 (§3.7.1 admission cap), robust to paraphrasing (correctness-weighted SCS ≥ 0.8), and validated on two held-out model classes (MiMo-V2.5-Pro, Qwen 3.6 Plus) plus an 8-language out-of-distribution transfer set on both production targets (§3.5.1), plus a held-out Vault (n=25) opened exactly once as the final untouched confirmation number."
+**Headline claim if results land**: "An empirically-evolved sweet-search agent system prompt that improves native-relative code-search desirability over default phrasing across Sonnet 4.6 and GPT-5.5-instant — preserving accuracy while reducing tool calls and agent tokens versus native rg+Read — with no per-target absolute accuracy regression > 0.15 (§3.7.1 admission cap), robust to paraphrasing (correctness-weighted SCS ≥ 0.8), and validated on two held-out model classes (MiMo-V2.5-Pro, Qwen 3.6 Plus) plus an 8-language out-of-distribution transfer set on both production targets (§3.5.1), plus a held-out Vault (n=25) opened exactly once as the final untouched confirmation number."
 
 **Reasoning mode policy**: ALL evaluation runs in **non-reasoning mode** for parity. Both production targets default to non-reasoning, so this matches deployment reality. Reasoning-mode wins are a separate post-hoc claim, not part of the headline.
 
@@ -81,13 +81,13 @@ Implementation: extends `eval/agent-read-workflows/judge-runner.js` with `runMoo
 | Initial variants | 15 (T1–T15, hand-authored, P6-grounded + consumer-clean per §4.5 — see §4) | Standard 14-slate + T15 (Hypothesis-Driven Backtracking) |
 | Pareto front size | 6 (joint front across both targets) | Balances diversity and selection pressure |
 | Max rounds | **20** | Above the typical convergence point |
-| Patience | **5 rounds** without improvement on Maximin score with EAS modifier (Δ ≤ 1pp on `final_score` per §3.7.1) | Standard early-stop |
+| Patience | **5 rounds** without improvement on §3.7.1 `final_score` (native-relative when `--native-baseline` is supplied; legacy Maximin × EAS fallback otherwise) | Standard early-stop |
 | Plateau-breakthrough rule | If patience triggers but the *trajectory* shows step-changes within the last 3 rounds, **extend by 3 more rounds** before final stop | Catches GEPA-style "compositional jumps" — see §3.1 |
 | Mutations per round | **3** (portfolio — see §3.2) | GAAPO-style portfolio |
 | Reasoning mode for evaluation | **OFF** for both targets | Production-parity (see §1) |
 | Screening probes per mutation | 8 (× 2 targets = 16 runs) | Cheap filter before full eval |
 | Confirmation probes (survivor) | 40 = full dev (× 2 targets = 80 runs) | Joint scoring requires both targets |
-| Joint score formula | **Maximin**: `min(score_sonnet, score_gpt5.5)` per probe × EAS efficiency factor − length penalty (full formula §3.7.1); Pareto admission additionally gated by 0.15 absolute-degradation cap relative to **the displaced incumbent** (NOT global per-target Pareto maxima — per GPT-5.5 review §C1, anti-utopia-point fix) | Unified-prompt ship policy (§3.7) |
+| Joint score formula | **Native-relative desirability** when a frozen native rg+Read baseline is supplied: accuracy / tool calls / agent tokens are transformed to desirabilities with weights 0.60 / 0.25 / 0.15, combined by weighted geometric mean per probe-target, averaged per target, then aggregated by `min(sonnet, gpt5_5)` and length-penalized. Legacy Maximin × EAS remains a fallback and diagnostic. Pareto admission is still gated by the 0.15 absolute accuracy-degradation cap relative to **the displaced incumbent** (NOT global per-target Pareto maxima — per GPT-5.5 review §C1, anti-utopia-point fix). | Unified-prompt ship policy (§3.7); aligns the optimizer with accuracy, speed, and token savings |
 | Manual reflection cadence | **After every round** (see §3.4) | Human-in-the-loop GEPA |
 | Persistence | **Append-only JSONL after every mutation, screen, confirm, TARE step** | Resume MUST work after crash — see §7.4 |
 
@@ -114,13 +114,13 @@ Implementation: extends `eval/agent-read-workflows/judge-runner.js` with `runMoo
 
 The loop is **joint across both targets** (Sonnet 4.6 + GPT-5.5-instant). Per round:
 
-1. **Selection** — Sample candidate from joint Pareto front (stochastic; weighted by per-probe wins on the **Maximin × EAS final_score** of §3.7.1).
+1. **Selection** — Sample candidate from joint Pareto front (stochastic; weighted by per-probe wins on the §3.7.1 `final_score`: native-relative when the baseline is present, legacy Maximin × EAS otherwise).
 2. **Mutation** — Generate 3 candidates per the §3.2 portfolio.
-3. **Screening** — Each mutation evaluated on 8 probes × **both targets** = 16 agent runs per mutation. Maximin × EAS `final_score` is the screen metric.
+3. **Screening** — Each mutation evaluated on 8 probes × **both targets** = 16 agent runs per mutation. The §3.7.1 `final_score` is the screen metric.
 4. **Persistence checkpoint** — Append every screen result (one JSONL row per (mutation, probe, target)) to `core/prompt-optimization/data/results/p7-v1/gepa-trajectory.jsonl`. **Run is fully resumable from this file at any point.** See §7.4.
 5. **Confirmation** — Top survivor re-evaluated on full 40 probes × 2 targets = 80 runs. Append to JSONL.
-6. **TARE-style selection gate** — Compute paraphrase-sharpness for the survivor on the Maximin × EAS score (see §3.3). Selection uses dual objective: `final_score` AND `1 − sharpness`.
-7. **Pareto update** — Add survivor to front if it Pareto-dominates any incumbent on the joint two-objective space, AND passes the §3.7.1 step-9 0.15 admission cap relative to the *displaced incumbent*.
+6. **TARE-style selection gate** — Compute paraphrase-sharpness for the survivor on the task-only Maximin score (see §3.3). Selection uses dual objective: `final_score` AND `1 − sharpness`; token/call efficiency belongs in `final_score`, not in the sharpness variance measurement.
+7. **Pareto update** — Add survivor to front if it Pareto-dominates any incumbent on the joint two-objective space, AND passes the §3.7.1 step-11 0.15 accuracy-admission cap relative to the *displaced incumbent*.
 8. **Manual reflection checkpoint** — User reviews top 3 failures **separately per target** (per GPT-5.5 review §E2): the report distinguishes Sonnet-only failures, GPT-only failures, and joint failures (both targets ≤ 0.4). Logs decisions in `core/prompt-optimization/data/p7-decisions.md` (see §3.4).
 9. **Patience check** — If Δ`final_score`-best ≤ 1pp for 5 rounds, evaluate plateau-breakthrough rule (see below). If still flat, stop.
 
@@ -144,7 +144,18 @@ raw_variance = variance_of_scores_across_pareto(probe)
 # require ≥2 rounds of evaluation for variance to count, plus a noise floor
 if rounds_evaluated(probe) < 2: weight(probe) = 1.0  # neutral until stable
 else: weight(probe) = clip(max(raw_variance, judge_noise_floor=0.05), 0.1, 2.0)
-final_score(variant) = weighted_min(maximin_per_probe(variant), weights=weight) × eas_factor − length_penalty
+task_score(variant) = weighted_mean(maximin_per_probe(variant), weights=weight)
+if native_baseline_present:
+    # Per probe-target: desirability = weighted_geomean(
+    #   accuracy_desirability^0.60,
+    #   call_desirability^0.25,
+    #   token_desirability^0.15
+    # )
+    native_relative = min(mean(desirability over sonnet probes),
+                          mean(desirability over gpt5_5 probes))
+    final_score(variant) = native_relative − length_penalty
+else:
+    final_score(variant) = task_score(variant) × eas_factor − length_penalty
 ```
 
 Probes everyone solves (low variance) get weighted ~0.1; probes that genuinely discriminate (high variance) get weighted ~2.0. This is the IR-learning-to-rank insight (LambdaMART-style query weighting) applied to prompt evolution: the optimizer spends pressure on the *frontier of difficulty*, not on already-mastered probes. The 2-round stability gate prevents single-round judge-noise from being upweighted as if it were genuine probe difficulty (per GPT-5.5 review §C5).
@@ -304,7 +315,7 @@ After GEPA converges, the **single unified winning variant** is replayed on:
 - **HOMP class A — MiMo-V2.5-Pro** (Xiaomi family) — 30-probe subset (15 dev + 15 held-out)
 - **HOMP class B — Qwen 3.6 Plus via opencode CLI** (alibaba family) — 30-probe subset (same)
 
-**Pass criterion**: HOMP score on each class ≥ 0.7 × (Maximin × EAS `final_score` on Sonnet+GPT-5.5). Below this floor, the prompt is flagged "model-class-specific" and shipped with the caveat documented.
+**Pass criterion**: HOMP score on each class ≥ 0.7 × §3.7.1 `final_score` on Sonnet+GPT-5.5. Below this floor, the prompt is flagged "model-class-specific" and shipped with the caveat documented.
 
 This catches the common failure mode where an optimised prompt is tuned to specific quirks of the target model classes (Anthropic + OpenAI) and doesn't transfer to open-weights families.
 
@@ -413,14 +424,14 @@ This is a real shipping concern, not just a publication signal: production sweet
 
 This (combined with SCS) is the publishable robustness claim that ICLR/NeurIPS reviewers expect.
 
-### §3.7 Single unified prompt — ship policy (Maximin + length penalty, post-Gemini-review)
+### §3.7 Single unified prompt — ship policy (native-relative + Maximin discipline)
 
 We ship **one** prompt, not per-target prompts. Gemini 3.1 Pro Deep Think identified two specific issues with the original mean-based scoring that this section now addresses:
 
-- **Variance asymmetry trap**: if GPT-5.4 has higher score variance across probes than Sonnet 4.6, mean-scoring would implicitly become a GPT-5.4 optimizer (chasing the larger absolute deltas in its score space). **Solution**: switch to **Maximin** scoring, which forces the loop to always improve the *weaker* target.
+- **Variance asymmetry trap**: if GPT-5.5 has higher score variance across probes than Sonnet 4.6, mean-scoring would implicitly become a GPT-5.5 optimizer (chasing the larger absolute deltas in its score space). **Solution**: keep **Maximin discipline** across targets: per-probe task scoring uses worst-target correctness, and native-relative selection takes the minimum target mean after per-target desirability aggregation.
 - **GEPA prompt bloat**: reflectors monotonically add rules, never delete them. By round 20 prompts can balloon to 2,500+ tokens, diluting attention. **Solution**: explicit length penalty in the score formula + the OP-5 Pruner mutation operator (§3.2).
 
-#### §3.7.1 Selection mechanics (post-Gemini-second-pass)
+#### §3.7.1 Selection mechanics (native-relative objective)
 
 1. **Per-target raw score**: for each (variant, probe), compute `score_sonnet(variant, probe)` and `score_gpt5.5(variant, probe)` independently. Each is in `[0, 1]`.
 2. **Per-probe joint score** (Maximin): `joint_per_probe(variant, probe) = min(score_sonnet, score_gpt5.5)` — the worse of the two targets on that probe.
@@ -428,7 +439,7 @@ We ship **one** prompt, not per-target prompts. Gemini 3.1 Pro Deep Think identi
    ```
    task_score(variant) = Σ weight(probe) × joint_per_probe(variant, probe) / Σ weight(probe)
    ```
-4. **Efficiency-Adjusted Scoring** (EAS, per Gemini second-pass §B2 + GPT-5.5 review §B1 — symmetric anti-gluttony AND anti-early-stop, per-target per-stratum): the original Gemini formula penalised over-exploration (Sonnet failure mode) but not under-exploration (GPT-5.5 failure mode = "one plausible lexical hit, confident final"). Fix: per-target, per-stratum expected-call windows + evidence-adequacy penalty:
+4. **Legacy Efficiency-Adjusted Scoring** (EAS, per Gemini second-pass §B2 + GPT-5.5 review §B1 — symmetric anti-gluttony AND anti-early-stop, per-target per-stratum): this remains computed and logged as a diagnostic/fallback. In paid GEPA runs, the primary scalar objective is the native-relative score in step 6. EAS still catches two behaviors worth inspecting: over-exploration (Sonnet failure mode) and under-exploration ("one plausible lexical hit, confident final" GPT-5.5 failure mode).
 
    ```
    # Per-stratum expected calls (authored at probe time, in the probe JSON):
@@ -472,19 +483,57 @@ We ship **one** prompt, not per-target prompts. Gemini 3.1 Pro Deep Think identi
    ```
 
    The `min` aggregation is structurally consistent with Maximin: a variant cannot pretend efficiency is fine because Sonnet's call distribution averages out GPT-5.5's reckless early-stops. Probe-stratum-aware windows mean a literal-lookup probe doesn't get penalised for 1 call, but a multi-file probe with 1 call (i.e., no-real-search) DOES.
-5. **Length penalty**:
+5. **Native rg+Read baseline requirement** (primary paid-run objective): before a production GEPA run, freeze a per-target, per-probe native rg+Read baseline containing accuracy, tool-call count, and agent-token count for every probe the loop can score (the exact dev set, plus the rotation pool if rotation is enabled). The CLI flag is `--native-baseline <file>`. Missing baseline metrics for any scored `(target, probe)` are fatal; the run must fail rather than silently falling back to accuracy-only scoring.
+
+   Accepted baseline JSON shapes are normalized to:
+   ```json
+   {
+     "sonnet": {
+       "probe-id": { "score": 0.90, "calls": 4, "tokens": 12000 }
+     },
+     "gpt5_5": {
+       "probe-id": { "score": 0.88, "calls": 5, "tokens": 13500 }
+     }
+   }
+   ```
+
+   Row form is also accepted (`baselines: [{ target, probe_id, accuracy, tool_calls, agent_tokens }]`). Targets are canonicalized (`gpt-5.5`, `gpt5_5`, and OpenAI-family labels map to `gpt5_5`).
+
+6. **Native-relative desirability** (primary scalar when the baseline exists):
+   ```
+   accuracy_floor = max(0.80, native_accuracy − 0.03)
+   accuracy_target = min(1.00, max(0.95, native_accuracy + 0.02))
+   d_accuracy = 0 below floor, 1 at/above target, linear between
+
+   d_calls  = 1 at <= 0.50 × native_calls, 0 at >= 1.50 × native_calls
+   d_tokens = 1 at <= 0.65 × native_tokens, 0 at >= 1.50 × native_tokens
+
+   probe_target_desirability =
+       weighted_geomean(d_accuracy^0.60, d_calls^0.25, d_tokens^0.15)
+
+   native_relative =
+       min(mean(probe_target_desirability for sonnet),
+           mean(probe_target_desirability for gpt5_5))
+   ```
+
+   The weighted geometric mean is deliberate: a prompt cannot compensate for a near-zero accuracy desirability by being cheap, and cannot compensate for extreme tool/token waste by scoring marginally well. This gives GEPA actual headroom even when the raw accuracy baseline is high (e.g. 0.935), because it can still improve call and token efficiency while preserving accuracy.
+
+7. **Length penalty**:
    ```
    length_penalty(variant) = 0.05 × (token_count(variant) / 1000)
    ```
-   So a 1000-token prompt loses 5pp; a 2500-token prompt loses 12.5pp.
-6. **Final variant score**:
+   So a 1000-token prompt loses 5pp; a 2500-token prompt loses 12.5pp. This prompt-bloat guard is retained even though agent tokens are already part of the native-relative objective.
+8. **Final variant score**:
    ```
-   final_score = task_score × efficiency_factor − length_penalty
+   if native_baseline_present:
+       final_score = native_relative − length_penalty
+   else:
+       final_score = task_score × efficiency_factor − length_penalty
    ```
-   This composite is what the Pareto front orders on.
-7. **TARE sharpness** uses Maximin too: `sharpness = max(joint_min_score_i) − min(joint_min_score_i)` over candidate + 3 adversarial paraphrases.
-8. **Pareto front** (6-element) on two objectives: `final_score` (max), `1 − sharpness` (max).
-9. **Pareto admission hard constraint** (FATAL fix per Gemini second-pass §A1, with GPT-5.5 review §C1 anti-utopia-point fix — Maximin race-to-the-middle guard): A candidate cannot enter the Pareto front if it degrades EITHER target's score by more than **0.15** relative to the **incumbent it would displace** (NOT relative to global per-target Pareto maxima — those may be different specialist prompts, creating a "utopia point" constraint that rejects genuinely joint-improving candidates).
+   This composite is what the Pareto front orders on. `task_score` and `efficiency_factor` stay recorded for diagnostics and for no-baseline dry runs.
+9. **TARE sharpness** uses task-only Maximin: `sharpness = max(joint_min_score_i) − min(joint_min_score_i)` over candidate + 3 adversarial paraphrases. Tool-call and token efficiency are not folded into sharpness; otherwise a cheaper paraphrase could look "robust" for the wrong reason.
+10. **Pareto front** (6-element) on two objectives: `final_score` (max), `1 − sharpness` (max).
+11. **Pareto admission hard constraint** (FATAL fix per Gemini second-pass §A1, with GPT-5.5 review §C1 anti-utopia-point fix — Maximin race-to-the-middle guard): A candidate cannot enter the Pareto front if it degrades EITHER target's raw accuracy score by more than **0.15** relative to the **incumbent it would displace** (NOT relative to global per-target Pareto maxima — those may be different specialist prompts, creating a "utopia point" constraint that rejects genuinely joint-improving candidates).
 
    ```
    # Find which incumbent the candidate would displace:
@@ -499,23 +548,23 @@ We ship **one** prompt, not per-target prompts. Gemini 3.1 Pro Deep Think identi
 
    if (baseline_sonnet − candidate_sonnet > 0.15) OR
       (baseline_gpt5_5 − candidate_gpt5_5 > 0.15):
-        REJECT (don't add to Pareto, even if Maximin × EAS final_score is higher)
+        REJECT (don't add to Pareto, even if final_score is higher)
    ```
 
    **Why displaced-incumbent-relative**: Pareto front may have V_S = (0.91 Sonnet, 0.50 GPT) and V_G = (0.50 Sonnet, 0.91 GPT) as specialist incumbents. The aggregate per-target maxima are (0.91, 0.91) — a "utopia point" no actual incumbent achieves. A new candidate V_C = (0.75, 0.85) is genuinely joint-improving (Maximin 0.75 > both incumbents' 0.50), would Pareto-dominate V_G, and the 0.15 check should compare to V_G (the displaced incumbent: |0.50 − 0.75| = 0 violation on Sonnet, |0.91 − 0.85| = 0.06 violation on GPT — passes). Comparing to per-target maxima (0.91 Sonnet) would reject V_C at 0.91 − 0.75 = 0.16 — incorrectly rejecting the actual joint improvement. GPT-5.5 review §C1 catches Gemini's original 0.15-cap formulation as buggy.
 
    Without this guard at all, Maximin can mathematically *mandate* shipping a per-target regression. Example: V_A = (Sonnet 0.9, GPT 0.2), V_B = (Sonnet 0.55, GPT 0.55). Maximin prefers V_B (0.55 > 0.2), but V_B is a -0.35 regression for Sonnet users. The 0.15 cap rejects this trade.
-10. **Final winner** = the Pareto-front variant with **highest `final_score`**, subject to:
+12. **Final winner** = the Pareto-front variant with **highest `final_score`**, subject to:
     - **Floor**: per-target dev score ≥ 0.5 (no collapsed targets)
     - **HOMP gate**: passes both HOMP classes at ≥ 0.7× `final_score` (see §3.5)
     - **Language-transfer gate**: passes the language-absent-from-dev HOMP probe set (§3.5.1) at ≥ 0.6 — anti-Frankenstein-prompt guard per Gemini second-pass §E
     - **Reasoning-mode operational HOMP**: passes both reasoning-on classes (Sonnet thinking-ON + GPT-5.5 reasoning) at ≥ 0.7× `final_score` on held-out probes (§3.5.2). Fails → ship-with-caveat for power users, OR fork to reasoning-as-5th-objective extension run.
     - **Robustness gate**: passes correctness-weighted SCS ≥ 0.8 on both targets (§3.6)
     - **Length cap**: ship variant ≤ 2000 tokens
-11. **Ship file**: `core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md` — one file, the unified prompt, headed with a YAML front-matter block citing the run ID, both raw per-target scores, joint Maximin score, EAS factor, avg tool calls, length, length-penalty, final score, SCS, HOMP scores per class incl. language-transfer.
-12. **Vault confirmation (opened EXACTLY ONCE)**: after the winner is selected and all gates above pass, open the 25-probe Vault (`frozen/p7-vault-probes.json`) and evaluate the shipped winner on it ONCE × 2 targets. This is a **pure confirmation/report, NOT a selection or gate** — the winner is never re-selected on Vault scores (that would burn the set). Report rule: if the Vault Maximin is within ~15% of held-out, the result generalizes and the **Vault number becomes the headline**; a >25% drop is a documented overfit finding, disclosed with a caveated headline. Record in the YAML front-matter alongside the held-out scores. See §5.8.
+13. **Ship file**: `core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md` — one file, the unified prompt, headed with a YAML front-matter block citing the run ID, both raw per-target scores, joint Maximin score, native-relative factor, EAS diagnostic factor, avg tool calls, agent-token totals, length, length-penalty, final score, SCS, HOMP scores per class incl. language-transfer.
+14. **Vault confirmation (opened EXACTLY ONCE)**: after the winner is selected and all gates above pass, open the 25-probe Vault (`frozen/p7-vault-probes.json`) and evaluate the shipped winner on it ONCE × 2 targets. This is a **pure confirmation/report, NOT a selection or gate** — the winner is never re-selected on Vault scores (that would burn the set). Report rule: if the Vault Maximin and native-relative aggregate are within ~15% of held-out, the result generalizes and the **Vault number becomes the headline**; a >25% drop is a documented overfit finding, disclosed with a caveated headline. Record in the YAML front-matter alongside the held-out scores. See §5.8.
 
-#### §3.7.2 Why Maximin (with the §3.7.1 step 9 admission constraint)
+#### §3.7.2 Why Maximin discipline still matters (with the §3.7.1 step 11 admission constraint)
 
 Gemini's first pass suggested Z-score normalization OR Maximin. We chose Maximin because:
 
@@ -523,9 +572,9 @@ Gemini's first pass suggested Z-score normalization OR Maximin. We chose Maximin
 - Maximin matches the user-facing claim: "this prompt does well for MOST users" requires no user is left worse than X.
 - Z-score normalization requires estimating per-target variance, which is itself noisy at n=40 probes.
 
-**However, Maximin alone is insufficient** (Gemini's second pass critique §A1): in zero-sum target preferences (e.g., Sonnet wants verbose, GPT-5.5 wants terse), Maximin mathematically mandates a "race to the middle" that ships per-target regressions. The 0.15 absolute-degradation hard constraint (§3.7.1 step 9) closes that loophole. Without it, Maximin would happily promote a variant that scores 0.55/0.55 over a variant that scored 0.9/0.2 — a +0.35 Maximin gain but a -0.35 catastrophic regression for the high-target users.
+**However, Maximin alone is insufficient** (Gemini's second pass critique §A1): in zero-sum target preferences (e.g., Sonnet wants verbose, GPT-5.5 wants terse), Maximin mathematically mandates a "race to the middle" that ships per-target regressions. The 0.15 absolute-degradation hard constraint (§3.7.1 step 11) closes that loophole. Without it, Maximin would happily promote a variant that scores 0.55/0.55 over a variant that scored 0.9/0.2 — a +0.35 Maximin gain but a -0.35 catastrophic regression for the high-target users.
 
-The combination — Maximin scoring + 0.15 hard constraint + EAS efficiency factor — is the load-bearing ship policy after both Gemini review passes.
+The current combination — native-relative desirability + Maximin target aggregation + 0.15 raw-accuracy hard constraint + EAS diagnostics/fallback — is the load-bearing ship policy after the 2026-05-24 judging review.
 
 #### §3.7.3 If gates fail
 
@@ -955,6 +1004,26 @@ Format per round entry: see §3.4.
 
 The pre-PHASE7 baseline-metrics snapshot is committed at `eval/baselines/pre-phase7-snapshot.md` (locked under `prereg/p7-v1-pre-probe`). It captures the exact `recommendations-v2-*.json` SHAs, the locked GCSN MRR@10 = 86.93%, the locked retrieval-probes count from `eval/retrieval-probes/post-perf-60.json`, per-tool dev + heldout aggregates from the most recent failure-analysis sessions (ss-search dev 55/18/17 + heldout 28/18/8; ss-find / ss-semantic latest commits; ss-trace callers 0.81 heldout / callees 0.94 / impact 0.75 from `d70259b`), and unit test counts (347 ranking + 823 search + 292 prompt-opt). This is the "before" picture every PHASE7 milestone compares against. Do NOT regenerate this artifact during the GEPA run — it's frozen at tag time.
 
+### §6.2.2 Native rg+Read baseline — the optimizer reference
+
+Before any paid GEPA run that claims speed or token savings, generate and freeze a native rg+Read baseline over every probe the loop can score (the exact dev probe set, plus the rotation pool if rotation is enabled) and both production targets. This baseline is the denominator for the §3.7.1 native-relative objective; without it, the optimizer only has the legacy accuracy/EAS fallback and the 0.935-style raw-accuracy ceiling leaves too little useful selection pressure.
+
+Required metrics per `(target, probe)`:
+
+- `score` / `accuracy`: judged correctness in [0, 1].
+- `calls` / `tool_calls`: native rg+Read tool-call count for the successful answer trajectory.
+- `tokens` / `agent_tokens`: agent input + output tokens for that trajectory. Cached-read tokens may be logged separately but are not added again when the provider already includes them in input accounting.
+
+The GEPA CLI consumes the frozen file with:
+
+```bash
+node core/prompt-optimization/sweep/gepa-cli.mjs \
+  --probes core/prompt-optimization/data/p7-dev-probes.json \
+  --native-baseline core/prompt-optimization/data/frozen/p7-native-rg-read-baseline.json
+```
+
+If budget permits, run 2-3 native rg+Read repeats per target/probe and store the aggregate used for scoring (`mean` or `median`, recorded in the file). Missing target/probe rows, non-finite scores, non-positive call counts, or non-positive token counts are fatal; the run should stop before spending GEPA money. Held-out and Vault baselines may be generated for reporting, but per-query held-out/Vault details remain sealed according to §2.4.
+
 ### §6.3 What's NOT pre-registered (and why)
 
 - **Termination round**: patience-rule based, not pre-committed. Documented at the end.
@@ -1006,6 +1075,7 @@ The work breakdown:
 | **Real-fsync persistence wrapper** + kill-9 recovery test (per GPT-5.5 review §D2) | extend `p7-persist.mjs` | 0.25 day |
 | **Token-validator multiplicity + unmapped-alias + surplus-token rejection** + tests (per GPT-5.5 review §B5) | extend `token-validator.mjs` | 0.25 day |
 | **Per-target per-stratum EAS + evidence-adequacy penalty** (per GPT-5.5 review §B1) | inline in `eas.mjs` | 0.5 day |
+| **Native rg+Read baseline loader + native-relative desirability objective** (accuracy / calls / tokens; §3.7.1 and §6.2.2) | `eas.mjs`, `gepa-scoring.mjs`, `gepa-cli.mjs`, `gepa-finalize.mjs` | 0.5 day |
 | **Pareto admission cap relative to displaced incumbent** (per GPT-5.5 review §C1) | inline in `gepa.mjs` | 0.25 day |
 | **OP-2 target-tagged trajectory ingestion + balanced-pair logic** (per GPT-5.5 review §B3) | inline in `op-trajectory-crossover.mjs` | 0.25 day |
 | **OP-3 generator rotation (Sonnet/Kimi/GPT-5.5) + non-executable pseudocode labelling** (per GPT-5.5 review §C2/§B4) | inline in `op-persona-pivot.mjs` | 0.25 day |
@@ -1023,7 +1093,7 @@ P6 burned hours when a run died at hour 3 with no resume path. P7 must NOT repea
 
 1. **Append-only JSONL** — `core/prompt-optimization/data/results/p7-v1/gepa-trajectory.jsonl` is written to after EVERY:
    - Mutation generation (one row per mutation: `_kind: 'mutation', round: N, source_op: 'reflective|trajectory-crossover|persona-pivot|tool-mask|pruner', new_prompt_hash: ..., parent_hash: ...`)
-   - Screen result (one row per (mutation × probe × target): `_kind: 'screen', mutation_hash: ..., probe_id: ..., target: 'sonnet|gpt-5.5', score: ..., wall_ms: ..., tool_calls: ...`)
+   - Screen result (one row per (mutation × probe × target): `_kind: 'screen', mutation_hash: ..., probe_id: ..., target: 'sonnet|gpt-5.5', score: ..., wall_ms: ..., tool_calls: ..., input_tokens: ..., output_tokens: ...`). Screen token fields are required for native-relative resume replay; a resumed run must not re-spend already-paid screen calls merely to recover token usage.
    - Confirm result — must include the **full EAS modifier breakdown PLUS forensic run metadata** (per Gemini 3rd-pass §E + GPT-5.5 review §D4 — without these, GPT-vs-Sonnet deltas cannot be explained post-hoc):
      ```json
      {
@@ -1048,6 +1118,8 @@ P6 burned hours when a run died at hour 3 with no resume path. P7 must NOT repea
        "call_deviation_penalty": 0.0,
        "evidence_adequacy_penalty": 0.0,
        "eas_factor": 1.0,
+       "native_relative_factor": 0.84,
+       "native_relative_target_factors": {"sonnet": 0.86, "gpt5_5": 0.84},
        "token_count_prompt": 1820,
        "length_penalty": 0.091,
        "final_score": 0.619,
@@ -1407,16 +1479,17 @@ tests/unit/prompt-optimization/
 | **Sonnet 4.6 Tier-2 vs Tier-3 RPM ceiling** (1000 vs 2000 RPM) | At Tier 2 with ~30 concurrent calls, we're 30 RPM observed — well within. Pre-flight checks current Anthropic tier and warns if Tier 1 (50 RPM cap). | Acceptable |
 | **Rate-limit changes mid-run** (provider tier downgrades, quota changes) | Verbose logger detects spike in 429s; auto-throttle cuts the affected lineage's concurrency in half until the next round. Trajectory records all retries. | Acceptable |
 | **`[[token]]` preservation can fail silently in paraphrase** | Post-translation validator REJECTS any mutation missing source `[[...]]` tokens. Logged as translation failure, no silent drop. | Mitigated |
-| **Joint scoring variance asymmetry** (Gemini risk A2) | Mean would chase higher-variance target's deltas. **Mitigated by Maximin** (§3.7) — Pareto improvements must benefit BOTH targets, not just the noisier one. | Resolved |
-| **"Compromise prompt" mode collapse** (Gemini risk D1) | Pareto front fills with mediocre-on-both prompts rather than great-on-both, if the targets have fundamentally different routing preferences. | Mitigated by Maximin: the loop is forced to find prompts that are *jointly* high. If Maximin can't break a target asymmetry above floor, the §3.7.3 gate-failure flow kicks in (caveat-ship or 3-objective re-run). |
+| **Joint scoring variance asymmetry** (Gemini risk A2) | Mean would chase higher-variance target's deltas. **Mitigated by Maximin discipline** (§3.7): raw task score uses worst-target correctness, and native-relative scoring takes the minimum target mean. Pareto improvements must benefit BOTH targets, not just the noisier one. | Resolved |
+| **"Compromise prompt" mode collapse** (Gemini risk D1) | Pareto front fills with mediocre-on-both prompts rather than great-on-both, if the targets have fundamentally different routing preferences. | Mitigated by Maximin target aggregation and the 0.15 accuracy cap: the loop is forced to find prompts that are *jointly* high without silently sacrificing a target. If target asymmetry remains below floor, the §3.7.3 gate-failure flow kicks in (caveat-ship or 3-objective re-run). |
 | **GEPA prompt bloat** (Gemini risk C3) | Reflectors monotonically add rules; prompts balloon to 2,500+ tokens by round 20, diluting attention. | Mitigated by length penalty (§3.7) + OP-5 Pruner (§3.2) + 2000-token ship hard cap. |
 | **Overfitting 40 probes over 20 rounds** (Gemini risk D2) | 60+ candidates evaluated against only 40 probes → overfit risk to dev quirks. | Mitigated by mid-run probe rotation at round 11 (§3.1) + dynamic hard-negative weighting + **10-language stratified dev** (§5.0, no single-language overfit) + the once-opened Vault (§5.8) and 8-language OOD gate (§3.5.1) as final overfit checks. |
 | **`[[token]]` whitespace corruption** (Gemini risk D3) | Translators/paraphrasers return `[[ ss-search ]]` with extra spaces inside brackets, breaking strict regex validation. | Mitigated by `[[token]]` validator's whitespace normalization step (§3.2.1). Strict regex first normalizes `[[\s*X\s*]]` → `[[X]]`. |
 | **Reflective rewrites get stuck in lexical-prior loops** (e.g., overemphasising "search" because the tool has "search" in its name) | The reflector's prompt mutations might converge on tropes that exploit lexical priors rather than describing tool behaviours unambiguously. | Mitigated by OP-4 Tool-Signature Masking (§3.2): periodically re-aliases tool names to break lexical-prior reliance, forcing self-describing prompt content. |
 | **Pareto-gated TARE may miss occasionally-brittle prompts** | A candidate that doesn't make the Pareto front by task score gets discarded WITHOUT TARE — but might have been borderline-Pareto and brittle. | Acceptable: those candidates wouldn't have entered the front anyway. The methodological point of TARE is to filter brittle Pareto entrants; non-entrants don't need filtering. |
-| **Maximin race-to-the-middle catastrophe** (Gemini 2nd-pass §A1) | A variant scoring (Sonnet 0.55, GPT 0.55) Pareto-dominates (Sonnet 0.9, GPT 0.2) on Maximin (0.55 > 0.2), but the dominator ships a -0.35 catastrophic regression for Sonnet users. | Mitigated by §3.7.1 step 9: 0.15 absolute-degradation hard constraint. No Pareto admission if either target's score drops by >0.15 vs current joint-best. |
+| **Maximin race-to-the-middle catastrophe** (Gemini 2nd-pass §A1) | A variant scoring (Sonnet 0.55, GPT 0.55) Pareto-dominates (Sonnet 0.9, GPT 0.2) on Maximin (0.55 > 0.2), but the dominator ships a -0.35 catastrophic regression for Sonnet users. | Mitigated by §3.7.1 step 11: 0.15 raw-accuracy degradation hard constraint. No Pareto admission if either target's accuracy score drops by >0.15 vs the displaced incumbent. |
 | **Round 11 probe rotation discontinuity** (Gemini 2nd-pass §B1) | After rotation, new mutations are evaluated on new probes while incumbents have scores from old probes — apples-to-oranges Pareto comparison. Could permanently lock new mutations out of the front. | Mitigated by Pareto-front re-baseline at rotation (§3.1): 6 incumbents × 5 new probes × 2 targets = 60 extra runs (~$5). Mathematically non-negotiable. |
-| **PRP judge verbosity bias rewards tool-call gluttony** (Gemini 2nd-pass §B2) | LLM-as-judge prefers more-tokens-of-reasoning answers, not more-efficient answers. Without a counter-pressure, GEPA evolves a 5-tool-call-per-probe prompt that destroys production rate limits. | Mitigated by Efficiency-Adjusted Scoring (§3.7.1 step 4): `efficiency_factor = 1 − 0.02 × max(0, avg_tool_calls − 3)`. Surgical tool use Pareto-dominates exhaustive use. |
+| **Accuracy-only judging leaves no optimization headroom** (user catch, 2026-05-24) | A raw dev score around 0.935 can look "done" while the agent still wastes tool calls and tokens compared with native rg+Read. Accuracy-only GEPA then optimizes judge prose instead of production value. | Mitigated by §3.7.1 native-relative desirability: accuracy, tool-call count, and agent tokens are all rewarded/penalized against a frozen native baseline, with 0.60 / 0.25 / 0.15 weights and geometric aggregation. |
+| **PRP judge verbosity bias rewards tool-call gluttony** (Gemini 2nd-pass §B2) | LLM-as-judge prefers more-tokens-of-reasoning answers, not more-efficient answers. Without a counter-pressure, GEPA evolves a 5-tool-call-per-probe prompt that destroys production rate limits. | Mitigated by native-relative call/token desirability (§3.7.1 step 6), plus EAS diagnostics/fallback (§3.7.1 step 4). Surgical tool use Pareto-dominates exhaustive use only when accuracy is preserved. |
 | **OP-2 trajectory-crossover schizophrenia** (Gemini 2nd-pass §B3) | OP-2 acts as genetic memory — resurrects deprecated behaviors that the human just penalized via manual reflection in the previous round. Prompt becomes self-contradictory. | Mitigated by passing latest manual-reflection hint to OP-2 as a hard negative constraint (§3.2 OP-2 row). |
 | **Tool-Signature Masking ghost-context leak** (Gemini 2nd-pass §A3) | Reflector sees `[[TOOL_ALPHA]]` but knows it's optimizing a code-search agent — hallucinates "search" / "code" / "repository" back into the surrounding context, defeating the masking. | Mitigated by domain-stripping in OP-4's reflector system prompt (§3.2 OP-4 row). Reflector is told it's optimizing "generic database retrieval / regex anchor / vector similarity / graph traversal" tools — no code-domain words. |
 | **Gold-probe self-fulfilling prophecy** (Gemini 2nd-pass §B4) | Author subconsciously aligns dev probes with P6 win-rate signal → GEPA trivially "validates" P6 because the test is rigged. | Mitigated by adversarial counter-probes (§5.7): 10 dev probes rewritten by Sonnet with anti-P6-shape phrasing, evaluated on the winner at end of run. Score within 15% of dev = generalised; >25% drop = overfit. |
@@ -1425,8 +1498,8 @@ tests/unit/prompt-optimization/
 | **Brittle to the production query distribution** (Gemini 2nd-pass §D5, re-scoped) | Prompt optimised for well-formed dev queries; but production queries are **agent-formulated** (parent agent → sweet-search agent) with cross-model shape variance — not human typos. | Mitigated by §3.6.1 agent-mediated query robustness: agent-delegation paraphrase (dominant) + cross-model query-shape variance + small CLI/human buckets; ≤20% drop per target, with bucket-A-alone and bucket-B target-asymmetry checks. |
 | **RIF (Retrieval-Induced Forgetting) drift in late-turn trajectories** (Gemini 2nd-pass §D2) | Long agent trajectories push system-prompt instructions out of attention; by turn 4, agent forgets routing rules. | Mitigated by §3.2.3 stateful-summarization rule baked into T2/T8/T13/T14/T15 seed variants. |
 | **Concurrency math wrong — TPM not RPM is the binding constraint** (GPT-5.5 review §D1) | Naive RPM ceiling at Tier 1 GPT-5.5 = 30 concurrent calls × 12K tokens = 360K tokens in flight = 12× over 30K TPM ceiling. Run would 429-storm minute-one. | Mitigated by TPM-aware token-bucket scheduler (§7.7) + pre-flight check that flags Tier 1 as operationally insufficient and recommends $50 Tier-2 upgrade. |
-| **0.15 cap utopia-point bug in Gemini's own fix** (GPT-5.5 review §C1) | Comparing degradation to per-target Pareto MAXIMA (different specialist incumbents) creates a "utopia point" constraint that systematically rejects genuinely joint-improving candidates. | Mitigated by changing cap baseline to **the displaced incumbent** (or current joint-best when not displacing) instead of per-target maxima. Worked example in §3.7.1 step 9. |
-| **Stale rejected-plan residue in §1/§2/§13/§7.6/§3.x** (GPT-5.5 review §D3) | joint-mean references throughout, ja-pivot/latent-interp still in §2.1 roles, §13 day-3 still says "implement latent-interp + ja-pivot", verbose-logging examples reference dead operators. Implementers will follow stale sections. | Mitigated by sweep through §1, §2.1, §2.3, §3.1, §3.4, §3.5, §3.5.1, §3.6, §3.6.1, §7.6, §13 replacing all stale references with current Maximin × EAS / trajectory-crossover / persona-pivot terminology. |
+| **0.15 cap utopia-point bug in Gemini's own fix** (GPT-5.5 review §C1) | Comparing degradation to per-target Pareto MAXIMA (different specialist incumbents) creates a "utopia point" constraint that systematically rejects genuinely joint-improving candidates. | Mitigated by changing cap baseline to **the displaced incumbent** (or current joint-best when not displacing) instead of per-target maxima. Worked example in §3.7.1 step 11. |
+| **Stale rejected-plan residue in §1/§2/§13/§7.6/§3.x** (GPT-5.5 review §D3) | joint-mean references throughout, ja-pivot/latent-interp still in §2.1 roles, §13 day-3 still says "implement latent-interp + ja-pivot", verbose-logging examples reference dead operators. Implementers will follow stale sections. | Mitigated by sweep through §1, §2.1, §2.3, §3.1, §3.4, §3.5, §3.5.1, §3.6, §3.6.1, §7.6, §13 replacing all stale references with then-current Maximin × EAS / trajectory-crossover / persona-pivot terminology. §11.6 supersedes the live scalar objective with native-relative scoring. |
 | **Language-transfer omits GPT-5.5** (GPT-5.5 review §B2) | Direct Sonnet bias — only Sonnet validates language transfer despite GPT-5.5 being a production target. | Mitigated: §3.5.1 OOD set (40 probes × 8 languages) runs on MiMo + Sonnet + GPT-5.5; pass criterion ≥0.55 aggregate Maximin on BOTH production targets, with per-language scorecard. |
 | **Asymmetric EAS — GPT-5.5 early-stop unpenalized** (GPT-5.5 review §B1) | Original Gemini formula penalised over-exploration (Sonnet failure mode) but rewarded under-exploration ("one plausible lexical hit, confident final" — GPT-5.5 failure mode). | Mitigated by per-target per-stratum expected-call windows + evidence-adequacy penalty for unsupported finals. EAS aggregated as `min` across targets to be Maximin-consistent. |
 | **Token validator gaps — multiplicity / unmapped aliases / surplus tokens** (GPT-5.5 review §B5) | Validator only checked presence; missed multiplicity drift, unmapped `[[TOOL_*]]` survival, and operator-invented surplus sentinels. Silent prompt corruption risk. | Mitigated by extending validator (§3.2.1) to record source multiplicity, require same multiplicity in output, reject unmapped OP-4 aliases, reject surplus protected tokens. New `mutation-rejection` JSONL events per failure mode. |
@@ -1562,8 +1635,8 @@ After Gemini's three-pass ship-it verdict, we commissioned an external review by
 | GPT-5.5 review finding | Severity | Section affected | Change |
 |---|---|---|---|
 | **D1: Concurrency math wrong — TPM is the binding constraint, not RPM** (Tier 1 GPT-5.5: 30 calls × 12K tokens = 360K in flight = 12× over 30K TPM, would 429-storm minute-one) | CRITICAL | §7.7, §7.5 | Replaced RPM-only ceiling with TPM-aware token-bucket: `min(RPM, ITPM/in, OTPM/out)`. Added pre-flight tier check that flags Tier 1 as operationally insufficient (recommends $50 Tier 2 upgrade — cuts wall-time from ~12 days to ~2 days). |
-| **D3: Stale rejected-plan residue** (joint-mean references throughout, ja-pivot/latent-interp in §2.1 roles, §13 day-3 still says "implement latent-interp + ja-pivot", logging examples reference dead operators) | CRITICAL | §1, §2.1, §2.3, §3.1, §3.4, §3.5, §3.5.1, §3.6, §3.6.1, §7.6, §13 | All stale references replaced with current Maximin × EAS final_score formula and current operator names (trajectory-crossover, persona-pivot+AST-ification). Implementers will no longer follow the rejected design. |
-| **C1: 0.15 cap utopia-point bug** (Gemini's own fix introduced the bug — comparing to per-target Pareto MAXIMA rejects genuinely joint-improving candidates that fall under different specialist incumbents) | CRITICAL | §3.7.1 step 9 | Cap baseline now relative to the **displaced incumbent** (or current joint-best when not displacing), NOT global per-target Pareto maxima. Worked example showing V_C=(0.75, 0.85) correctly admitted instead of incorrectly rejected. |
+| **D3: Stale rejected-plan residue** (joint-mean references throughout, ja-pivot/latent-interp in §2.1 roles, §13 day-3 still says "implement latent-interp + ja-pivot", logging examples reference dead operators) | CRITICAL | §1, §2.1, §2.3, §3.1, §3.4, §3.5, §3.5.1, §3.6, §3.6.1, §7.6, §13 | All stale references replaced with the then-current Maximin × EAS final_score formula and current operator names (trajectory-crossover, persona-pivot+AST-ification). §11.6 later supersedes the live scalar objective with native-relative scoring. |
+| **C1: 0.15 cap utopia-point bug** (Gemini's own fix introduced the bug — comparing to per-target Pareto MAXIMA rejects genuinely joint-improving candidates that fall under different specialist incumbents) | CRITICAL | §3.7.1 step 11 | Cap baseline now relative to the **displaced incumbent** (or current joint-best when not displacing), NOT global per-target Pareto maxima. Worked example showing V_C=(0.75, 0.85) correctly admitted instead of incorrectly rejected. |
 | **B2: Java HOMP omits GPT-5.5** (direct Sonnet bias — only Sonnet validates language-transfer despite GPT-5.5 being a production target) | CRITICAL | §3.5.1 | Added GPT-5.5 to the language-transfer probe runners: 10 probes × 3 evaluations (MiMo + Sonnet + GPT-5.5). Pass criterion now requires ≥0.6 Maximin on BOTH targets. +$0.50 cost. |
 | **B1: EAS asymmetric — penalizes over-exploration but not under-exploration** (Sonnet-style gluttony penalised, GPT-5.5-style early-stop rewarded) | HIGH | §3.7.1 step 4 | Replaced global averaged formula with per-target, per-stratum expected-call windows + evidence-adequacy penalty for unsupported final answers. EAS aggregated as `min` across targets to be Maximin-consistent. |
 | **B5: Token validator incomplete** (only checks presence; misses multiplicity changes, surplus tokens, unmapped OP-4 aliases — silent prompt corruption risk) | HIGH | §3.2.1 | Validator now records source multiplicity, requires same multiplicity in output, rejects unmapped `[[TOOL_*]]` aliases, rejects surplus protected tokens. New `mutation-rejection` JSONL events with specific failure modes. |
@@ -1583,6 +1656,24 @@ After Gemini's three-pass ship-it verdict, we commissioned an external review by
 **Operational readiness change**: tier-2 OpenAI billing is now operationally mandatory. This is a $50 one-time pre-flight cost, not added to the run budget — it's a prerequisite for the run wall-time being reasonable.
 
 **Decision**: ship after these pre-registration fixes (now integrated). The plan now goes to `prereg/p7-v1` tagging.
+
+### §11.6 What the 2026-05-24 judging review changed
+
+User review flagged that a 0.935-ish dev accuracy baseline is too high for useful GEPA pressure if the scalar objective only judges correctness. That critique is accepted. The production goal is not just "answer correctly"; it is to beat native rg+Read on all three dimensions that matter to users:
+
+- accuracy: preserve or improve correctness against both targets;
+- speed proxy: use fewer tool calls for the same correct answer;
+- token savings: spend fewer agent tokens for the same correct answer.
+
+Integrated changes:
+
+| Finding | Section affected | Change |
+|---|---|---|
+| Accuracy-only scoring leaves little room for GEPA to optimize and can reward verbose judge-pleasing answers. | §3.7.1, §6.2.2, §10 | Added native-relative desirability against a frozen native rg+Read baseline. Accuracy / calls / tokens use weights 0.60 / 0.25 / 0.15 and weighted-geometric aggregation. |
+| Resume replay must preserve token usage, not just score/tool calls. | §7.4 | SCREEN/CONFIRM events carry agent input/output tokens so resumed runs can recompute native-relative scores without re-spending API calls. |
+| Documentation still described Maximin × EAS as the primary scalar. | §1, §2.3, §3.1, §3.7.1, §13 | Reframed Maximin × EAS as fallback/diagnostic when no native baseline is supplied; paid GEPA runs should use `--native-baseline`. |
+
+**Decision**: do not spend the full GEPA budget until the native rg+Read baseline file exists and validates for every dev `(target, probe)` row.
 
 ---
 
@@ -1606,10 +1697,10 @@ All locked. Ready for `prereg/p7-v1` tag.
 1. **Now**: review this PHASE7.md; resolve the 7 open questions in §12.
 2. **Day 1**: author T1–T15 seeds (P6-grounded per §4.2, consumer-clean per §4.5) + dev / held-out / vault probes across 10 in-distribution languages + 40 OOD language-transfer probes across 8 languages (per §5.0/§5).
 3. **Day 2**: implement direct-API runners (Anthropic, OpenAI, Moonshot, MiniMax, MiMo, Qwen-DashScope) + Gemini Embedding 2 client. Unit-test the `[[token]]` preservation.
-4. **Day 3**: implement GEPA driver + Pareto-gated TARE + the 5-operator portfolio (OP-1 reflective, OP-2 trajectory-crossover with target-tagging, OP-3 persona-pivot+AST-ification with rotated generators + non-executable labelling, OP-4 tool-mask with domain-stripping, OP-5 Pruner with pseudocode-protection). Implement EAS (per-target per-stratum + evidence-adequacy), 0.15 admission cap (relative to displaced incumbent), TPM-aware token-bucket scheduler, persistence/resume with `fs.fsyncSync`, full-metadata JSONL telemetry (§7.4), pre-flight checklist (§7.5), verbose logger (§7.6). Unit-test crash-resume + token-validator multiplicity/alias gates.
+4. **Day 3**: implement GEPA driver + Pareto-gated TARE + the 5-operator portfolio (OP-1 reflective, OP-2 trajectory-crossover with target-tagging, OP-3 persona-pivot+AST-ification with rotated generators + non-executable labelling, OP-4 tool-mask with domain-stripping, OP-5 Pruner with pseudocode-protection). Implement native-relative scoring against a frozen rg+Read baseline, EAS diagnostics/fallback (per-target per-stratum + evidence-adequacy), 0.15 admission cap (relative to displaced incumbent), TPM-aware token-bucket scheduler, persistence/resume with `fs.fsyncSync`, full-metadata JSONL telemetry (§7.4), pre-flight checklist (§7.5), verbose logger (§7.6). Unit-test crash-resume + token-validator multiplicity/alias gates.
 5. **Day 4**: dry-run on 3 probes × 1 round to validate end-to-end (cost: ~$1). Fix bugs.
-6. **Day 5**: tag `prereg/p7-v1`. Push. Run pre-flight script. If it fails, fix and re-tag.
-7. **Days 6–8**: run full GEPA (joint Sonnet 4.6 + GPT-5.5-instant). Manual reflection between rounds. Trajectory written to disk continuously — resumable.
+6. **Day 5**: generate/freeze the native rg+Read baseline file (§6.2.2), tag `prereg/p7-v1`, push, and run the pre-flight script. If it fails, fix and re-tag before any GEPA spend.
+7. **Days 6–8**: run full GEPA (joint Sonnet 4.6 + GPT-5.5-instant) with `--native-baseline`. Manual reflection between rounds. Trajectory written to disk continuously — resumable.
 8. **Day 9**: HOMP (MiMo + Qwen) + **8-language OOD language-transfer** (40 probes × MiMo + Sonnet + GPT-5.5; §3.5.1) + **reasoning-mode operational HOMP** (Sonnet thinking-ON + GPT-5.5 reasoning over 30 held-out probes; §3.5.2) + correctness-weighted SCS + GPT-5.4 backwards-compat replay (~$2-5) + winning prompt selection. Then **open the Vault ONCE** on the selected winner (25 probes × 2 targets; §5.8) — the final untouched confirmation number.
 9. **Day 10**: write up `core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md` + `recommendations.json` + the run report.
 10. **Day 11**: tag `release/p7-v1`. Push. Update CLAUDE.md / sweet-search MCP to ship the new prompt.
