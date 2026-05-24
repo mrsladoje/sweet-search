@@ -110,11 +110,20 @@ async function cmdGrep(args) {
 }
 
 async function cmdFind(args) {
+  // ColGrep pattern search with token-budgeted agent packaging — returns the
+  // FULL useful answer (ranked code blocks + confidence + sufficiency), the same
+  // agent packaging ss-search emits. ss-grep is the short/locator counterpart, so
+  // ss-find defaults to the full answer: it saves the follow-up read entirely.
+  // (Mirrors the agent-in-the-loop H2H adapter eval/agent-eval/tools/
+  // pattern-agent-tools.js, which calls search(...,{format:'agent'}).)
+  let format = 'agent';
+  if (args.includes('--full')) { format = 'agent_full'; args.splice(args.indexOf('--full'), 1); }
+  if (args.includes('--xl'))   { format = 'agent_full_xl'; args.splice(args.indexOf('--xl'), 1); }
   const k = +parseShortFlag(args, ['-k', '--top'], 6);
   const regex = parseFlag(args, '--regex', '');
   const query = args[0];
   if (!query) {
-    process.stderr.write('Usage: ss-find "<query>" --regex "<regex>" [-k N]\n');
+    process.stderr.write('Usage: ss-find "<query>" --regex "<regex>" [--full|--xl] [-k N]\n');
     process.exit(2);
   }
   const effectiveRegex = regex || '';
@@ -123,18 +132,39 @@ async function cmdFind(args) {
     process.stderr.write(`[ss-find] no late-interaction index — falling back to ss-grep\n`);
     return cmdGrep([effectiveRegex || query, '-k', String(k)]);
   }
-  const result = await s.patternSearch(query, null, {
+  const response = await s.patternSearch(query, null, {
     regex: effectiveRegex || `\\b\\w+\\b`,
     k,
-    format: 'benchmark',
+    format,
   });
-  process.stdout.write(`# ss-find: ColGrep top ${result.results.length} for "${query}" /${effectiveRegex || '*'}/\n`);
-  for (const r of result.results) {
-    const sym = r.name ? ` [${r.type || 'code'}: ${r.name}]` : '';
-    const preview = (r.text || '').split('\n')[0].slice(0, 140);
-    process.stdout.write(`${r.file}:${r.startLine}-${r.endLine}${sym}\n  ${preview}\n`);
+
+  // Header (visible to agent)
+  process.stdout.write(`# ss-find: ColGrep ${response.results?.length || 0} for "${query}" /${effectiveRegex || '*'}/` +
+    ` budget=${response.tokenBudget} used=${response.tokensUsed} subMode=${response.subMode ?? format}\n`);
+  if (response.confidence) {
+    process.stdout.write(`# confidence=${response.confidence}${response.confidenceReason ? ' (' + response.confidenceReason + ')' : ''}` +
+      `${response.sufficient ? ' sufficient=YES' : ' sufficient=no'}\n`);
   }
-  if (result.results.length === 0) process.stdout.write('(no matches)\n');
+
+  // Per-result blocks — identical shape to ss-search's agent packaging.
+  for (const r of response.results || []) {
+    const sym = r.symbol ? ` [${r.symbolType || 'code'}: ${r.symbol}]` : '';
+    const kind = r.expansionKind ? ` kind=${r.expansionKind}` : '';
+    const stale = r.stale ? ' STALE' : '';
+    process.stdout.write(`\n## #${r.rank} ${r.file}:${r.startLine}-${r.endLine}${sym} (${r.presentation}${kind}${stale}) score=${(r.score || 0).toFixed(3)}\n`);
+    if (r.headerContext) {
+      process.stdout.write(`### imports\n\`\`\`\n${r.headerContext}\n\`\`\`\n`);
+    }
+    if (r.code) {
+      process.stdout.write(`\`\`\`\n${r.code}\n\`\`\`\n`);
+    } else if (r.summary) {
+      process.stdout.write(`${r.summary}\n`);
+    }
+    if (r.neighbors && r.neighbors.rendered) {
+      process.stdout.write(`### related (1-hop graph, ~${r.neighbors.tokens} tok)\n${r.neighbors.rendered}\n`);
+    }
+  }
+  if (!response.results || response.results.length === 0) process.stdout.write('(no matches)\n');
   process.exit(0);
 }
 

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # ss-find: ColGrep / patternSearch — regex candidates re-ranked by MaxSim
-# against your natural-language query. Use for behavioural / semantic
-# questions where lexical alone won't pinpoint the chunk.
+# against your natural-language query, returned as the FULL agent answer
+# (ranked code blocks + confidence/sufficiency), so no follow-up read is needed.
+# Use for behavioural / semantic questions where lexical alone won't pinpoint the
+# chunk. (ss-grep is the short file:line locator.)
 #
-# Usage:  ss-find "<query>" --regex "<regex>" [-k N]
+# Usage:  ss-find "<query>" --regex "<regex>" [--full|--xl] [-k N]
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 TMPERR=$(mktemp)
 node "$DIR/_ss-helpers.mjs" find "$@" 2>"$TMPERR"
