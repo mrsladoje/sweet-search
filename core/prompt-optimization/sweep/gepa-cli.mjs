@@ -37,6 +37,8 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** Frozen §3.5.1 OOD language-transfer probe set (loaded if not bundled in --probes). */
 const OOD_PROBES_FILE = path.join(__dirname, '../data/frozen/p7-langtransfer-probes.json');
+/** Frozen §5.7 adversarial counter-probe set (loaded if not bundled in --probes). */
+const COUNTER_PROBES_FILE = path.join(__dirname, '../data/frozen/p7-adversarial-counter-probes.json');
 
 /**
  * Mutator calls to Kimi K2.6 (moonshot) run heavy reasoning on large reflective /
@@ -204,6 +206,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
 async function runFinalizeStage({ runId, winner, probesDoc, runJudge }) {
   const { finalizeRun, makeReasoningAdapters } = await import('./gepa-finalize.mjs');
   const { runOodGate } = await import('./p7-ood-gate.mjs');
+  const { runCounterProbeGate } = await import('./p7-counter-probe-gate.mjs');
   const { trajectoryPath, RESULTS_DIR } = await import('./p7-persist.mjs');
 
   const heldoutProbes = probesDoc.heldoutProbes ?? [];
@@ -213,6 +216,12 @@ async function runFinalizeStage({ runId, winner, probesDoc, runJudge }) {
   if (oodProbes.length === 0 && existsSync(OOD_PROBES_FILE)) {
     const oodDoc = JSON.parse(readFileSync(OOD_PROBES_FILE, 'utf8'));
     oodProbes = oodDoc.probes ?? oodDoc;
+  }
+  // Counter-probes (§5.7): prefer probesDoc; otherwise load the frozen set.
+  let counterProbes = probesDoc.counterProbes ?? [];
+  if (counterProbes.length === 0 && existsSync(COUNTER_PROBES_FILE)) {
+    const cpDoc = JSON.parse(readFileSync(COUNTER_PROBES_FILE, 'utf8'));
+    counterProbes = cpDoc.probes ?? cpDoc;
   }
   const vaultProbes = probesDoc.vaultProbes ?? [];
   const scsProbes = probesDoc.scsProbes ?? [];
@@ -236,15 +245,29 @@ async function runFinalizeStage({ runId, winner, probesDoc, runJudge }) {
       })
     : undefined;
 
+  // §5.7 counter-probe gate: same replay machinery; compares the winner's
+  // counter-probe maximin to its dev taskScore (fails only on >25% overfit drop).
+  const runCounterProbe = counterProbes.length > 0
+    ? async ({ winnerPrompt, counterProbes: probes, devScore }) => runCounterProbeGate({
+        winnerPrompt,
+        counterProbes: probes,
+        devScore,
+        runSonnet: makeOodReplayRunner({ evaluate: evaluateOod, target: 'sonnet' }),
+        runGpt5_5: makeOodReplayRunner({ evaluate: evaluateOod, target: 'gpt5_5' }),
+      })
+    : undefined;
+
   return finalizeRun({
     runId,
     winner,
     heldoutProbes,
     scsProbes,
     oodProbes,
+    counterProbes,
     vaultProbes,
     reasoningAdapters,
     runOod,
+    runCounterProbe,
     heldoutFinalScore: winner.finalScore,
     paths: { trajectory: trajectoryPath(runId), gateDir: RESULTS_DIR(runId) },
   });
