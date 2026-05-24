@@ -113,12 +113,8 @@ const KNOWN_TOKEN_NAMES = new Set([
   'ss-trace',
   'ss-grep',
   'ss-read',
-  'agent-format',
   'json',
   'regex',
-  'expectedFiles',
-  'expectedSymbols',
-  'expectedFacts',
   'no-match',
 ]);
 
@@ -350,6 +346,18 @@ describe('p7 variant slate — protected [[tokens]]', () => {
 
   it('every variant routes through [[ss-search]]', () => {
     for (const v of variants) expect(v.body.includes('[[ss-search]]'), `${v.id}`).toBe(true);
+  });
+
+  it('no body references gold-schema or the undefined agent-format token (§4.5 item 6)', () => {
+    // expectedFiles/Symbols/Facts are the probe GOLD field names + the judge's
+    // reward rubric (coaching them couples the optimization to the grader — the
+    // output-layer analog of §5.7 query-shape overfit). [[agent-format]] is an
+    // undefined label (no glossary ships) that adds no actionable signal. The
+    // answer contract is worded in plain consumer language instead, so none of
+    // these tokens may appear in a body.
+    for (const v of variants) {
+      expect(/\[\[(expectedFiles|expectedSymbols|expectedFacts|agent-format)\]\]/.test(v.body), `${v.id} references a removed token`).toBe(false);
+    }
   });
 });
 

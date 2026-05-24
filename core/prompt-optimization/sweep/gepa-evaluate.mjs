@@ -172,7 +172,7 @@ export function buildAgentUserPrompt(probe) {
   return (
     `Task: ${probe.query}\n\n` +
     `Use the sweet-search tools to locate the answer in this repository, then ` +
-    `respond in the requested agent format. Stay within ${probe.max_turns} tool calls.`
+    `report which file(s) and symbol(s) answer it and how. Stay within ${probe.max_turns} tool calls.`
   );
 }
 
