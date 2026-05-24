@@ -224,6 +224,51 @@ describe('CC2/M13 — finalizeRun winner-selection gates (§4 steps 10–12)', (
     expect(existsSync(path.join(tmp, 'gates', 'gate-ood.json'))).toBe(true);
   });
 
+  it('runs the §5.7 counter-probe gate AFTER OOD, blocks on overfit, and feeds it the RAW dev taskScore', async () => {
+    const calls = [];
+    let seenDevScore = null;
+    const runFamilyHomp = async () => { calls.push('family'); return { pass: true }; };
+    const runOod = async () => { calls.push('ood'); return { pass: true, maximin_sonnet: 0.6, maximin_gpt: 0.6 }; };
+    const runCounterProbe = async ({ devScore }) => { calls.push('counter'); seenDevScore = devScore; return { pass: false, overfit: true, drop: 0.4, counterMaximin: 0.42 }; };
+    const reasoningAdapters = { runSonnetThinking: async () => { calls.push('reason'); return { score: 1 }; }, runGptReasoning: async () => ({ score: 1 }) };
+
+    const r = await finalizeRun({
+      winner: makeWinner(), // taskScore 0.70, finalScore 0.66 — distinct on purpose
+      heldoutProbes: [{ id: 'h' }], oodProbes: [{ id: 'o' }], counterProbes: [{ id: 'c' }],
+      runFamilyHomp, runOod, runCounterProbe, reasoningAdapters,
+      paths: { trajectory: path.join(tmp, 't.jsonl'), gateDir: gateDir() },
+    });
+    expect(r.ship).toBe(false);
+    expect(r.blockedBy).toBe('counter-probe');
+    // ordering: family → ood → counter; reasoning never reached (short-circuit)
+    expect(calls).toEqual(['family', 'ood', 'counter']);
+    // baseline is the winner's RAW taskScore (0.70), NOT the penalized finalScore (0.66)
+    expect(seenDevScore).toBe(0.70);
+    expect(existsSync(path.join(tmp, 'gates', 'gate-counter-probe.json'))).toBe(true);
+  });
+
+  it('lets the run proceed past a GENERALISED counter-probe gate (pass) on to reasoning/vault', async () => {
+    const calls = [];
+    const r = await finalizeRun({
+      winner: makeWinner(),
+      heldoutProbes: [{ id: 'h' }], oodProbes: [{ id: 'o' }], counterProbes: [{ id: 'c' }], vaultProbes: [{ id: 'v' }],
+      runFamilyHomp: async () => { calls.push('family'); return { pass: true }; },
+      runOod: async () => { calls.push('ood'); return { pass: true, maximin_sonnet: 0.6, maximin_gpt: 0.6 }; },
+      runCounterProbe: async () => { calls.push('counter'); return { pass: true, generalised: true, drop: 0.05, counterMaximin: 0.665 }; },
+      reasoningAdapters: makeReasoningAdapters({ replayProbe: async () => { calls.push('reason'); return 0.9; } }),
+      evaluateVault: async () => { calls.push('vault'); return { maximin: 0.62 }; },
+      heldoutFinalScore: 0.66,
+      paths: { trajectory: path.join(tmp, 't.jsonl'), gateDir: gateDir() },
+      shipFilePath: path.join(tmp, 'p7-final', 'ship-cp.md'),
+    });
+    expect(r.blockedBy).toBeNull();
+    expect(r.ship).toBe(true);
+    // counter ran strictly between ood and reasoning, and the run reached the vault
+    expect(calls.indexOf('counter')).toBeGreaterThan(calls.indexOf('ood'));
+    expect(calls.indexOf('counter')).toBeLessThan(calls.indexOf('reason'));
+    expect(calls).toContain('vault');
+  });
+
   it('passes all gates, writes the ship-file, and opens the Vault EXACTLY ONCE at the end', async () => {
     let vaultOpens = 0;
     const order = [];
