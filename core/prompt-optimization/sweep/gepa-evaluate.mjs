@@ -39,7 +39,7 @@ import { fileURLToPath } from 'node:url';
 
 import { runClaudeAgent } from '../../../eval/agent-read-workflows/claude-runner.js';
 import { runJudge, _internal as judgeInternal } from '../../../eval/agent-read-workflows/judge-runner.js';
-import { runAnthropicApiAgent, runOpenRouterApiAgent } from './p7-api-agent-runner.mjs';
+import { AGENT_TOOL_CALL_CAP, runAnthropicApiAgent, runOpenRouterApiAgent } from './p7-api-agent-runner.mjs';
 import { runCodexAgent } from './p7-codex-runner.mjs';
 import { hashContent } from './p7-shared.mjs';
 import { estimateTokens } from './variant-loader.mjs';
@@ -176,7 +176,7 @@ export function buildAgentUserPrompt(probe) {
   return (
     `Task: ${probe.query}\n\n` +
     `Use the sweet-search tools to locate the answer in this repository, then ` +
-    `report which file(s) and symbol(s) answer it and how. Stay within ${probe.max_turns} tool calls.`
+    `report which file(s) and symbol(s) answer it and how. Use as many tool calls as you need; stop as soon as your evidence covers the answer.`
   );
 }
 
@@ -341,7 +341,7 @@ export function makeRealEvaluateCandidate({
   judgePanel = JUDGE_PANEL,
   runJudgeFn = runJudge,
   judgeBucket,
-  timeoutMs = 240000,
+  timeoutMs = undefined, // defer to the runner's env-configurable generous default (no tight cap)
 } = {}) {
   return async function evaluateCandidate({ promptText, probe, target }) {
     const repoCwd = resolveRepoCwd(probe, { reposDir });
@@ -355,7 +355,7 @@ export function makeRealEvaluateCandidate({
         cwd: repoCwd,
         sweetSearchBinDir,
         timeoutMs,
-        maxToolCalls: Math.max(6, (probe.max_turns ?? 8) + 4),
+        maxToolCalls: AGENT_TOOL_CALL_CAP,
         allowSweetSearch: true,
       };
       run = agentProvider === 'api'
@@ -388,7 +388,7 @@ export function makeRealEvaluateCandidate({
         cwd: repoCwd,
         sweetSearchBinDir,
         timeoutMs,
-        maxToolCalls: Math.max(6, (probe.max_turns ?? 8) + 4),
+        maxToolCalls: AGENT_TOOL_CALL_CAP,
         allowSweetSearch: true,
       };
       run = agentProvider === 'api'

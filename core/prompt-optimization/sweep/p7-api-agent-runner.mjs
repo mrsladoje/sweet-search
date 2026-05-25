@@ -4,8 +4,23 @@ import path from 'node:path';
 
 import { OPENROUTER_SLUGS } from '../../../eval/agent-read-workflows/judge-runner.js';
 
-const DEFAULT_TIMEOUT_MS = 240000;
-const TOOL_TIMEOUT_MS = 30000;
+// Tool-call ceiling + timeouts are intentionally GENEROUS and env-configurable.
+// They are runaway/hang guards only — NOT behavioural caps. Trajectory length is
+// shaped by the evolved system prompt and PUNISHED by the calls-desirability term
+// (weight 0.25), never truncated to a tight budget. Under LI/embedding contention
+// a single ss-* tool call (and the whole run) can legitimately take many minutes;
+// killing those would corrupt the accuracy signal. Set any *_TIMEOUT_MS env to 0
+// to disable that timeout entirely (a hung lane then blocks the run — only do this
+// when babysitting). `envInt` accepts 0; falls back to the default otherwise.
+function envInt(name, dflt) {
+  const v = process.env[name];
+  if (v === undefined || v === '') return dflt;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : dflt;
+}
+export const AGENT_TOOL_CALL_CAP = envInt('P7_AGENT_TOOL_CALL_CAP', 40);
+const DEFAULT_TIMEOUT_MS = envInt('P7_AGENT_HTTP_TIMEOUT_MS', 1_800_000); // 30 min per model call
+const TOOL_TIMEOUT_MS = envInt('P7_AGENT_TOOL_TIMEOUT_MS', 1_800_000);    // 30 min per tool exec
 const MAX_TOOL_OUTPUT_CHARS = 12000;
 
 export const _apiAgentInternal = {
@@ -142,7 +157,7 @@ export async function runAnthropicApiAgent(req) {
     messages.push({ role: 'assistant', content });
     const results = [];
     for (const use of uses) {
-      if (toolCalls.length >= (req.maxToolCalls ?? 32)) {
+      if (toolCalls.length >= (req.maxToolCalls ?? AGENT_TOOL_CALL_CAP)) {
         results.push({ type: 'tool_result', tool_use_id: use.id, is_error: true, content: 'tool call limit reached' });
         continue;
       }
@@ -206,7 +221,7 @@ export async function runOpenRouterApiAgent(req) {
       const name = use.function?.name || use.name;
       const input = parseJsonArgs(use.function?.arguments);
       const tc = { id: use.id, name, input, tIndex: toolCalls.length };
-      if (toolCalls.length >= (req.maxToolCalls ?? 32)) {
+      if (toolCalls.length >= (req.maxToolCalls ?? AGENT_TOOL_CALL_CAP)) {
         messages.push({ role: 'tool', tool_call_id: use.id, content: 'tool call limit reached' });
         continue;
       }
@@ -252,7 +267,7 @@ async function postOpenRouter({ apiKey, body, timeoutMs }) {
 async function postJson(url, headers, body, timeoutMs, fetchFn) {
   if (typeof fetchFn !== 'function') throw new Error('API agent runner requires fetch');
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const timer = timeoutMs ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
   try {
     const res = await fetchFn(url, {
       method: 'POST',
@@ -284,7 +299,7 @@ async function bashTool(input, req) {
   if (!validation.ok) return { isError: true, content: validation.message };
   const env = { ...process.env, SWEET_SEARCH_PROJECT_ROOT: req.cwd };
   if (req.sweetSearchBinDir) env.PATH = [req.sweetSearchBinDir, env.PATH].filter(Boolean).join(':');
-  const run = await spawnCapture('/bin/zsh', ['-lc', command], { cwd: req.cwd, env, timeoutMs: TOOL_TIMEOUT_MS });
+  const run = await spawnCapture('/bin/zsh', ['-lc', command], { cwd: req.cwd, env, timeoutMs: req.toolTimeoutMs ?? TOOL_TIMEOUT_MS });
   const content = [`exit ${run.exitCode}`, run.stdout, run.stderr && `stderr:\n${run.stderr}`].filter(Boolean).join('\n');
   return { isError: run.exitCode !== 0 || run.timedOut, content: truncate(content, MAX_TOOL_OUTPUT_CHARS) };
 }
@@ -333,7 +348,7 @@ function commandReadsSweetSearch(command) {
 }
 
 function maxRounds(req) {
-  return Math.max(1, Math.min(40, (req.maxToolCalls ?? 32) + 2));
+  return Math.max(1, (req.maxToolCalls ?? AGENT_TOOL_CALL_CAP) + 2);
 }
 
 export function addAnthropicUsage(total, usage) {
@@ -397,11 +412,11 @@ async function spawnCapture(cmd, args, { cwd, env, timeoutMs }) {
     let stderr = '';
     let timedOut = false;
     const proc = _apiAgentInternal.spawn(cmd, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
-    const timer = setTimeout(() => {
+    const timer = timeoutMs ? setTimeout(() => {
       timedOut = true;
       try { proc.kill('SIGTERM'); } catch { /* noop */ }
       setTimeout(() => { try { proc.kill('SIGKILL'); } catch { /* noop */ } }, 1000).unref();
-    }, timeoutMs);
+    }, timeoutMs) : null;
     proc.stdout?.on('data', (d) => { stdout += d.toString('utf8'); });
     proc.stderr?.on('data', (d) => { stderr += d.toString('utf8'); });
     proc.on('error', (err) => {
