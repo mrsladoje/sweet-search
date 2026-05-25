@@ -133,8 +133,15 @@ export async function checkOpenAITier({ fetchFn, env, allowTier1 = false } = {})
 }
 
 /**
- * Check Anthropic API tier ≥ 2 via a minimal models request.
- * Infers tier from the x-ratelimit-limit-requests response header.
+ * Check Anthropic API tier ≥ 2.
+ * Infers tier from the anthropic-ratelimit-requests-limit response header.
+ *
+ * NOTE: tier must be read from the Messages API. `GET /v1/models` carries NO
+ * `anthropic-ratelimit-*` headers, so probing it reads 0 and misreports Tier 1
+ * for every account (verified 2026-05-26: a real Tier-2 key whose
+ * /v1/messages response shows requests-limit=1000 got flagged Tier 1). We send
+ * a minimal 1-token `POST /v1/messages` (≈$0.00001) to read the real limits;
+ * the headers are returned even on a 429, so the inference is robust.
  */
 export async function checkAnthropicTier({ fetchFn, env, allowTier1 = false } = {}) {
   const apiKey = env && env.ANTHROPIC_API_KEY;
@@ -148,12 +155,18 @@ export async function checkAnthropicTier({ fetchFn, env, allowTier1 = false } = 
   }
 
   try {
-    const resp = await fetchFn('https://api.anthropic.com/v1/models', {
-      method: 'GET',
+    const resp = await fetchFn('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
       headers: {
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
       },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1,
+        messages: [{ role: 'user', content: 'hi' }],
+      }),
     });
 
     // Anthropic rate-limit headers: anthropic-ratelimit-requests-limit
