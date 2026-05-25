@@ -46,14 +46,25 @@ export function populationVariance(arr) {
   return mean(arr.map((x) => (x - m) * (x - m)));
 }
 
-function agentTokenCount(usage) {
+export function agentTokenCount(usage) {
   const agent = usage?.agent;
   if (!agent || typeof agent !== 'object') return null;
+  const cached = typeof agent.cache_read_tokens === 'number' && Number.isFinite(agent.cache_read_tokens)
+    ? agent.cache_read_tokens
+    : (typeof agent.cached_input_tokens === 'number' && Number.isFinite(agent.cached_input_tokens) ? agent.cached_input_tokens : null);
+  if (typeof agent.input_tokens === 'number' || typeof agent.output_tokens === 'number') {
+    const input = typeof agent.input_tokens === 'number' && Number.isFinite(agent.input_tokens) ? agent.input_tokens : 0;
+    const output = typeof agent.output_tokens === 'number' && Number.isFinite(agent.output_tokens) ? agent.output_tokens : 0;
+    // Codex/OpenAI reports cached input as a subset of input_tokens; Claude
+    // reports cache reads separately. Subtract only when it is clearly included.
+    const billableInput = cached != null && cached > 0 && cached <= input ? input - cached : input;
+    return billableInput + output > 0 ? billableInput + output : null;
+  }
   if (typeof agent.total_tokens === 'number' && Number.isFinite(agent.total_tokens)) return agent.total_tokens;
   if (typeof agent.totalTokens === 'number' && Number.isFinite(agent.totalTokens)) return agent.totalTokens;
-  let total = 0;
   let seen = false;
-  for (const key of ['input_tokens', 'output_tokens']) {
+  let total = 0;
+  for (const key of ['prompt_tokens', 'completion_tokens']) {
     if (typeof agent[key] === 'number' && Number.isFinite(agent[key])) {
       total += agent[key];
       seen = true;

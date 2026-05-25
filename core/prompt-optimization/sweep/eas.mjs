@@ -162,10 +162,28 @@ function _baselineMetrics(row, label) {
   const score = _metric(row, ['score', 'accuracy']);
   const calls = _metric(row, ['calls', 'toolCalls', 'tool_calls']);
   const tokens = _metric(row, ['tokens', 'agentTokens', 'agent_tokens', 'totalTokens', 'total_tokens']);
-  return {
+  const overheadTokens = _metric(row, ['overheadTokens', 'overhead_tokens', 'fixedTokens', 'fixed_tokens', 'tokenFloor', 'token_floor']);
+  const out = {
     score: _finiteNumber(`${label}.score`, score, { min: 0, max: 1 }),
     calls: _finiteNumber(`${label}.calls`, calls, { min: 0, minExclusive: true }),
     tokens: _finiteNumber(`${label}.tokens`, tokens, { min: 0, minExclusive: true }),
+  };
+  if (overheadTokens !== undefined) {
+    out.overheadTokens = _finiteNumber(`${label}.overheadTokens`, overheadTokens, { min: 0 });
+  }
+  return out;
+}
+
+function _workTokens(totalTokens, overheadTokens = 0) {
+  return Math.max(1, totalTokens - overheadTokens);
+}
+
+function _effectiveTokenPair({ runTokens, base }) {
+  const overheadTokens = typeof base.overheadTokens === 'number' ? base.overheadTokens : 0;
+  return {
+    overheadTokens,
+    tokensForScoring: _workTokens(runTokens, overheadTokens),
+    nativeTokensForScoring: _workTokens(base.tokens, overheadTokens),
   };
 }
 
@@ -307,6 +325,9 @@ function _weightedGeomean(parts, weights) {
 /**
  * Native-relative scalar score for GEPA. Per run, accuracy/calls/tokens are
  * transformed to desirabilities and combined with a weighted geometric mean.
+ * If a baseline row carries overheadTokens/overhead_tokens, token desirability
+ * is computed on max(1, totalTokens - overheadTokens) for both the candidate
+ * and native baseline. Raw total tokens are still reported in the breakdown.
  * Per-target factors are the mean of probe-level desirabilities; final factor
  * is min across targets to keep the joint Maximin discipline.
  *
@@ -342,6 +363,7 @@ export function nativeRelativeScore({ perTarget, baselineByTarget, weights = DEF
       const score = _finiteNumber(`nativeRelativeScore.${target}.${probeId}.score`, run.score, { min: 0, max: 1 });
       const calls = _finiteNumber(`nativeRelativeScore.${target}.${probeId}.calls`, run.calls, { min: 0 });
       const tokens = _finiteNumber(`nativeRelativeScore.${target}.${probeId}.tokens`, run.tokens, { min: 0, minExclusive: true });
+      const tokenPair = _effectiveTokenPair({ runTokens: tokens, base });
       const desirability = {
         accuracy: accuracyDesirability({ accuracy: score, nativeAccuracy: base.score }),
         calls: minimizeRelativeDesirability({
@@ -352,15 +374,27 @@ export function nativeRelativeScore({ perTarget, baselineByTarget, weights = DEF
           minTarget: 1,
         }),
         tokens: minimizeRelativeDesirability({
-          value: tokens,
-          nativeValue: base.tokens,
+          value: tokenPair.tokensForScoring,
+          nativeValue: tokenPair.nativeTokensForScoring,
           targetRatio: DEFAULTS.nativeTokenTargetRatio,
           failRatio: DEFAULTS.nativeTokenFailRatio,
         }),
       };
       const overall = _weightedGeomean(desirability, weights);
       total += overall;
-      details.push({ probeId, score, nativeScore: base.score, calls, nativeCalls: base.calls, tokens, nativeTokens: base.tokens, desirability: { ...desirability, overall } });
+      details.push({
+        probeId,
+        score,
+        nativeScore: base.score,
+        calls,
+        nativeCalls: base.calls,
+        tokens,
+        nativeTokens: base.tokens,
+        overheadTokens: tokenPair.overheadTokens,
+        tokensForScoring: tokenPair.tokensForScoring,
+        nativeTokensForScoring: tokenPair.nativeTokensForScoring,
+        desirability: { ...desirability, overall },
+      });
     }
     perTargetFactor[target] = total / runs.length;
     breakdown[target] = { factor: perTargetFactor[target], runs: details };

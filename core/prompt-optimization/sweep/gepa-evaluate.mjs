@@ -39,9 +39,13 @@ import { fileURLToPath } from 'node:url';
 
 import { runClaudeAgent } from '../../../eval/agent-read-workflows/claude-runner.js';
 import { runJudge, _internal as judgeInternal } from '../../../eval/agent-read-workflows/judge-runner.js';
+import { runAnthropicApiAgent, runOpenRouterApiAgent } from './p7-api-agent-runner.mjs';
+import { runCodexAgent } from './p7-codex-runner.mjs';
 import { hashContent } from './p7-shared.mjs';
 import { estimateTokens } from './variant-loader.mjs';
 import { IN_DISTRIBUTION, OOD_DISTRIBUTION } from './author-probes.mjs';
+
+export { runCodexAgent, parseCodexAgentStream, extractCodexErrorMessages } from './p7-codex-runner.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
@@ -276,95 +280,6 @@ export async function judgePanelScore({ probe, answer, panel = JUDGE_PANEL, runJ
   return { score, judges };
 }
 
-// ─── codex agent (GPT-5.5-instant) ──────────────────────────────────────────
-
-/**
- * Minimal codex-exec agent runner for the gpt5_5 target. Mirrors the
- * runClaudeAgent contract (tool-call capture + final text). Verified against
- * codex-cli 0.132 (thread/turn/item event schema); `parseCodexAgentStream` is
- * pinned by a fixture test so a future codex schema shift fails loudly.
- */
-export async function runCodexAgent({ prompt, systemAppend, model, cwd, sweetSearchBinDir, reasoningEffort = 'low', timeoutMs = 240000 }) {
-  const { spawn } = await import('node:child_process');
-  const merged = systemAppend ? `[SYSTEM]\n${systemAppend}\n\n[USER]\n${prompt}` : prompt;
-  // codex has no "gpt-5.5-instant" SKU (it exits 1 / turn.failed); the valid
-  // GPT-5.5 model is "gpt-5.5". Honor §2.1's non-reasoning "instant" intent with
-  // the lowest reasoning effort codex accepts ("low"; "minimal" is rejected),
-  // overriding the user's config default (e.g. xhigh). Verified vs codex-cli 0.132.
-  const codexModel = (!model || /instant/i.test(model)) ? 'gpt-5.5' : model;
-  const args = [
-    'exec',
-    '--dangerously-bypass-approvals-and-sandbox',
-    '--json',
-    '-c', `model_reasoning_effort="${reasoningEffort}"`,
-    '-m', codexModel,
-    merged,
-  ];
-  const env = { ...process.env };
-  if (sweetSearchBinDir) env.PATH = [sweetSearchBinDir, env.PATH].filter(Boolean).join(':');
-  if (cwd) env.SWEET_SEARCH_PROJECT_ROOT = cwd;
-
-  const t0 = Date.now();
-  const r = await new Promise((resolve) => {
-    let stdout = '';
-    let stderr = '';
-    let timedOut = false;
-    const proc = spawn('codex', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
-    const timer = setTimeout(() => {
-      timedOut = true;
-      try { proc.kill('SIGTERM'); } catch { /* */ }
-      setTimeout(() => { try { proc.kill('SIGKILL'); } catch { /* */ } }, 2000).unref();
-    }, timeoutMs);
-    proc.stdout.on('data', (d) => { stdout += d.toString('utf8'); });
-    proc.stderr.on('data', (d) => { stderr += d.toString('utf8'); });
-    proc.on('error', (err) => { clearTimeout(timer); resolve({ stdout, stderr: stderr + err.message, exitCode: -1, timedOut }); });
-    proc.on('exit', (code) => { clearTimeout(timer); resolve({ stdout, stderr, exitCode: code ?? 0, timedOut }); });
-  });
-
-  const { toolCalls, answer, usage } = parseCodexAgentStream(r.stdout);
-  return {
-    toolCalls,
-    finalResultText: answer,
-    finalAssistantText: answer,
-    usage,
-    modelUsed: codexModel,
-    wallMs: Date.now() - t0,
-    isError: r.exitCode !== 0 || r.timedOut,
-    exitCode: r.exitCode,
-  };
-}
-
-/**
- * Parse codex `exec --json` JSONL. codex-cli 0.132 schema: thread.* / turn.* /
- * item.{started,completed}. Tool calls = completed `command_execution` items;
- * the final answer = the last `agent_message` item's text; usage = turn.completed.
- * (Pre-0.132 the code looked for function_call/tool_call types that never exist
- * in this build — that returned 0 tool calls + empty answer. B1, 2026-05-22.)
- */
-export function parseCodexAgentStream(stdout) {
-  const toolCalls = [];
-  let answer = '';
-  let usage = null;
-  if (!stdout) return { toolCalls, answer, usage };
-  for (const line of stdout.split('\n')) {
-    const t = line.trim();
-    if (!t || t[0] !== '{') continue;
-    let ev;
-    try { ev = JSON.parse(t); } catch { continue; }
-    if (ev.type === 'item.completed' && ev.item) {
-      const it = ev.item;
-      if (it.type === 'command_execution') {
-        toolCalls.push({ name: it.command || 'command', input: { command: it.command, exit_code: it.exit_code } });
-      } else if (it.type === 'agent_message' && typeof it.text === 'string' && it.text) {
-        answer = it.text; // last agent_message wins
-      }
-    } else if (ev.type === 'turn.completed' && ev.usage) {
-      usage = ev.usage; // { input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens }
-    }
-  }
-  return { toolCalls, answer, usage };
-}
-
 // ─── the default real evaluateCandidate factory ─────────────────────────────
 
 // Tool-use classification (§3.7.1 evidence-adequacy + §4.5 native-fallback
@@ -411,6 +326,7 @@ export function classifyToolUse(toolCalls) {
  * @param {string} [opts.reposDir]          — where probe repos live (default eval/repos)
  * @param {string} [opts.sweetSearchBinDir] — dir to prepend to PATH for the ss-* shim
  * @param {{sonnet:string,gpt5_5:string}} [opts.models]
+ * @param {'cli'|'api'} [opts.agentProvider]
  * @param {Array<{lineage,model}>} [opts.judgePanel]
  * @param {Function} [opts.runJudgeFn]      — override for tests
  * @param {{acquire:Function}} [opts.judgeBucket] — optional judge-call gate (CC3)
@@ -421,6 +337,7 @@ export function makeRealEvaluateCandidate({
   reposDir = path.join(REPO_ROOT, 'eval', 'repos'),
   sweetSearchBinDir = path.join(REPO_ROOT, 'eval', 'agent-read-workflows', 'bin'),
   models = { sonnet: 'claude-sonnet-4-6', gpt5_5: 'gpt-5.5-instant' },
+  agentProvider = process.env.P7_AGENT_PROVIDER || 'cli',
   judgePanel = JUDGE_PANEL,
   runJudgeFn = runJudge,
   judgeBucket,
@@ -431,23 +348,31 @@ export function makeRealEvaluateCandidate({
     let run;
     let agentUsage;
     if (target === 'sonnet') {
-      run = await runClaudeAgent({
+      const req = {
         prompt: buildAgentUserPrompt(probe),
         systemAppend: promptText,
         model: models.sonnet,
         cwd: repoCwd,
-        allowedTools: SWEET_SEARCH_TOOLS,
-        addDirs: [repoCwd],
-        extraPathEntries: [sweetSearchBinDir],
-        projectRoot: repoCwd,
+        sweetSearchBinDir,
         timeoutMs,
-      });
+        maxToolCalls: Math.max(6, (probe.max_turns ?? 8) + 4),
+        allowSweetSearch: true,
+      };
+      run = agentProvider === 'api'
+        ? await runAnthropicApiAgent(req)
+        : await runClaudeAgent({
+            ...req,
+            allowedTools: SWEET_SEARCH_TOOLS,
+            addDirs: [repoCwd],
+            extraPathEntries: [sweetSearchBinDir],
+            projectRoot: repoCwd,
+          });
       // claude-runner surfaces the Anthropic result-event usage at run.usage
       // ({input_tokens, output_tokens, cache_read_input_tokens, ...}) + retryCount.
       const u = run.usage || null;
       agentUsage = {
-        model_id: models.sonnet,
-        api_path: 'claude-cli',
+        model_id: run.modelUsed || models.sonnet,
+        api_path: run.apiPath || 'claude-cli',
         temperature: null, // CLI default; not overridden
         input_tokens: typeof u?.input_tokens === 'number' ? u.input_tokens : null,
         output_tokens: typeof u?.output_tokens === 'number' ? u.output_tokens : null,
@@ -455,19 +380,24 @@ export function makeRealEvaluateCandidate({
         retry_count: typeof run.retryCount === 'number' ? run.retryCount : null,
       };
     } else {
-      run = await runCodexAgent({
+      const req = {
         prompt: buildAgentUserPrompt(probe),
         systemAppend: promptText,
         model: models.gpt5_5,
         cwd: repoCwd,
         sweetSearchBinDir,
         timeoutMs,
-      });
+        maxToolCalls: Math.max(6, (probe.max_turns ?? 8) + 4),
+        allowSweetSearch: true,
+      };
+      run = agentProvider === 'api'
+        ? await runOpenRouterApiAgent(req)
+        : await runCodexAgent(req);
       // codex-cli 0.132 turn.completed exposes usage (input/cached/output/reasoning).
       const u = run.usage || null;
       agentUsage = {
         model_id: run.modelUsed || models.gpt5_5,
-        api_path: 'codex-exec',
+        api_path: run.apiPath || 'codex-exec',
         temperature: null,
         input_tokens: typeof u?.input_tokens === 'number' ? u.input_tokens : null,
         output_tokens: typeof u?.output_tokens === 'number' ? u.output_tokens : null,
