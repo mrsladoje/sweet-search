@@ -26,10 +26,19 @@ import {
   JUDGE_PANEL,
   JUDGE_SYSTEM_PROMPT,
   parseCodexAgentStream,
+  extractCodexErrorMessages,
   classifyToolUse,
 } from '../../../core/prompt-optimization/sweep/gepa-evaluate.mjs';
 import { hashContent } from '../../../core/prompt-optimization/sweep/p7-shared.mjs';
 import { estimateTokens } from '../../../core/prompt-optimization/sweep/variant-loader.mjs';
+import {
+  buildAnthropicAgentPayload,
+  buildOpenRouterAgentPayload,
+  resolveOpenRouterAgentModel,
+  validateBashCommand,
+  addOpenAIUsage,
+  addAnthropicUsage,
+} from '../../../core/prompt-optimization/sweep/p7-api-agent-runner.mjs';
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
 
@@ -255,6 +264,66 @@ describe('parseCodexAgentStream — codex-cli 0.132 schema (B1)', () => {
   it('does not match the pre-0.132 function_call/tool_call event names', () => {
     const legacy = '{"type":"function_call","name":"ss-search"}\n{"type":"tool_call","tool":"ss-grep"}';
     expect(parseCodexAgentStream(legacy).toolCalls).toHaveLength(0);
+  });
+});
+
+describe('extractCodexErrorMessages', () => {
+  it('extracts user-visible Codex failure messages from JSONL', () => {
+    const jsonl = [
+      '{"type":"thread.started","thread_id":"t1"}',
+      '{"type":"item.completed","item":{"id":"item_0","type":"error","message":"config warning"}}',
+      '{"type":"error","message":"usage limit"}',
+      '{"type":"turn.failed","error":{"message":"usage limit"}}',
+    ].join('\n');
+
+    expect(extractCodexErrorMessages(jsonl)).toEqual(['config warning', 'usage limit']);
+  });
+});
+
+describe('API-backed Phase 7 agent runner helpers', () => {
+  it('builds Anthropic tool-use payloads with Bash and Read tools', () => {
+    const p = buildAnthropicAgentPayload({
+      model: 'claude-sonnet-4-6',
+      systemPrompt: 'system',
+      messages: [{ role: 'user', content: 'task' }],
+    });
+    expect(p.system).toMatch(/system/);
+    expect(p.tools.map((t) => t.name)).toEqual(['Bash', 'Read']);
+    expect(p.tool_choice).toEqual({ type: 'auto' });
+  });
+
+  it('routes GPT-5.5 through the OpenRouter slug with minimal reasoning', () => {
+    const p = buildOpenRouterAgentPayload({
+      model: 'gpt-5.5-instant',
+      systemPrompt: 'system',
+      messages: [{ role: 'user', content: 'task' }],
+    });
+    expect(resolveOpenRouterAgentModel('gpt-5.5-instant')).toBe('openai/gpt-5.5');
+    expect(p.model).toBe('openai/gpt-5.5');
+    expect(p.reasoning).toEqual({ effort: 'minimal' });
+    expect(p.tools.map((t) => t.function.name)).toEqual(['Bash', 'Read']);
+  });
+
+  it('blocks sweet-search and write/network shell commands for native API baselines', () => {
+    expect(validateBashCommand('rg -n "foo" .').ok).toBe(true);
+    expect(validateBashCommand('ss-search foo').ok).toBe(false);
+    expect(validateBashCommand('ss-search foo', { allowSweetSearch: true }).ok).toBe(true);
+    expect(validateBashCommand("rg foo . --glob '!.sweet-search/**'").ok).toBe(true);
+    expect(validateBashCommand('cat .sweet-search/index.json').ok).toBe(false);
+    expect(validateBashCommand('curl https://example.com').ok).toBe(false);
+    expect(validateBashCommand('sed -i s/a/b/ file.js').ok).toBe(false);
+  });
+
+  it('accounts stateless API replay context as cached input for scoring parity', () => {
+    const openai = { input_tokens: 0, output_tokens: 0, cached_input_tokens: 0, max_input_tokens: 0 };
+    addOpenAIUsage(openai, { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 0 } });
+    addOpenAIUsage(openai, { prompt_tokens: 150, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 0 } });
+    expect(openai).toMatchObject({ input_tokens: 250, output_tokens: 30, cached_input_tokens: 100, max_input_tokens: 150 });
+
+    const anthropic = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, max_input_tokens: 0 };
+    addAnthropicUsage(anthropic, { input_tokens: 80, output_tokens: 5 });
+    addAnthropicUsage(anthropic, { input_tokens: 120, output_tokens: 7 });
+    expect(anthropic).toMatchObject({ input_tokens: 200, output_tokens: 12, cache_read_input_tokens: 80, max_input_tokens: 120 });
   });
 });
 
