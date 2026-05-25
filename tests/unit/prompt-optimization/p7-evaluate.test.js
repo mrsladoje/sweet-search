@@ -14,7 +14,7 @@
  * NO network: a fake runJudgeFn is injected everywhere.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   judgePanelScore,
@@ -40,6 +40,10 @@ import {
   addOpenAIUsage,
   addAnthropicUsage,
   AGENT_TOOL_CALL_CAP,
+  classifyAgentStatus,
+  runAnthropicApiAgent,
+  runOpenRouterApiAgent,
+  _apiAgentInternal,
 } from '../../../core/prompt-optimization/sweep/p7-api-agent-runner.mjs';
 
 describe('tool-call ceiling + sufficiency framing (no tight truncation)', () => {
@@ -357,6 +361,110 @@ describe('API-backed Phase 7 agent runner helpers', () => {
     addAnthropicUsage(anthropic, { input_tokens: 80, output_tokens: 5 });
     addAnthropicUsage(anthropic, { input_tokens: 120, output_tokens: 7 });
     expect(anthropic).toMatchObject({ input_tokens: 200, output_tokens: 12, cache_read_input_tokens: 80, max_input_tokens: 120 });
+  });
+});
+
+// ─── agent runner transient-error retry (the §Q2 fix) ───────────────────────
+//
+// The paid agent loop now retries transient 429/5xx/network faults instead of
+// turning them into an empty answer (→ judged ~0 → contaminated probe score).
+// HTTP is injected via _apiAgentInternal.fetch; sleep is stubbed so the backoff
+// ladder does not actually wait.
+describe('agent runner transient-error retry (mirrors judge ladder)', () => {
+  const jsonRes = (json) => ({
+    ok: true, status: 200,
+    json: async () => json,
+    text: async () => JSON.stringify(json),
+    headers: { get: () => null },
+  });
+  const errRes = (status, body = 'err', retryAfter) => ({
+    ok: false, status,
+    json: async () => ({}),
+    text: async () => body,
+    headers: { get: (h) => (String(h).toLowerCase() === 'retry-after' ? (retryAfter ?? null) : null) },
+  });
+  const seqFetch = (items) => vi.fn(async () => {
+    const next = items.shift();
+    if (next === undefined) throw new Error('seqFetch: no more responses queued');
+    return typeof next === 'function' ? next() : next;
+  });
+
+  let origFetch, origSleep, origAnthKey, origOrKey;
+  beforeEach(() => {
+    origFetch = _apiAgentInternal.fetch;
+    origSleep = _apiAgentInternal.sleep;
+    origAnthKey = process.env.ANTHROPIC_API_KEY;
+    origOrKey = process.env.OPENROUTER_API_KEY;
+    process.env.ANTHROPIC_API_KEY = 'test-anth-key';
+    process.env.OPENROUTER_API_KEY = 'test-or-key';
+    _apiAgentInternal.sleep = async () => {}; // no real backoff waits
+  });
+  afterEach(() => {
+    _apiAgentInternal.fetch = origFetch;
+    _apiAgentInternal.sleep = origSleep;
+    if (origAnthKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = origAnthKey;
+    if (origOrKey === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = origOrKey;
+  });
+
+  it('classifyAgentStatus: 429→rate-limit, 5xx/network→server, 4xx/timeout→fatal', () => {
+    expect(classifyAgentStatus(429)).toBe('retry-rate-limit');
+    expect(classifyAgentStatus(503)).toBe('retry-server');
+    expect(classifyAgentStatus('network')).toBe('retry-server');
+    expect(classifyAgentStatus('timeout')).toBe('fatal');
+    expect(classifyAgentStatus(401)).toBe('fatal');
+    expect(classifyAgentStatus(400)).toBe('fatal');
+  });
+
+  it('Anthropic agent: transient 429 then 200 → succeeds, retryCount=1', async () => {
+    _apiAgentInternal.fetch = seqFetch([
+      errRes(429, 'slow down', '0'),
+      jsonRes({ content: [{ type: 'text', text: 'the answer' }], usage: { input_tokens: 5, output_tokens: 3 } }),
+    ]);
+    const r = await runAnthropicApiAgent({ prompt: 'task', model: 'claude-sonnet-4-6', cwd: process.cwd() });
+    expect(r.isError).toBe(false);
+    expect(r.finalResultText).toBe('the answer');
+    expect(r.retryCount).toBe(1);
+    expect(_apiAgentInternal.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('Anthropic agent: persistent 429 → exhausts ladder, isError, bounded calls', async () => {
+    _apiAgentInternal.fetch = vi.fn(async () => errRes(429, 'rate', '0'));
+    const r = await runAnthropicApiAgent({ prompt: 'task', cwd: process.cwd() });
+    expect(r.isError).toBe(true);
+    expect(r.retryCount).toBe(5); // AGENT_MAX_RATE_LIMIT_RETRIES
+    expect(_apiAgentInternal.fetch).toHaveBeenCalledTimes(6); // 1 initial + 5 retries
+  });
+
+  it('Anthropic agent: 4xx (401) is fatal — no retry', async () => {
+    _apiAgentInternal.fetch = vi.fn(async () => errRes(401, 'unauthorized'));
+    const r = await runAnthropicApiAgent({ prompt: 'task', cwd: process.cwd() });
+    expect(r.isError).toBe(true);
+    expect(r.retryCount).toBe(0);
+    expect(_apiAgentInternal.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('OpenRouter agent: transient 503 then 200 → succeeds, retryCount=1', async () => {
+    _apiAgentInternal.fetch = seqFetch([
+      errRes(503, 'upstream down'),
+      jsonRes({ choices: [{ message: { content: 'ok', tool_calls: [] } }], usage: { prompt_tokens: 7, completion_tokens: 2 } }),
+    ]);
+    const r = await runOpenRouterApiAgent({ prompt: 'task', model: 'gpt-5.5-instant', cwd: process.cwd() });
+    expect(r.isError).toBe(false);
+    expect(r.finalResultText).toBe('ok');
+    expect(r.retryCount).toBe(1);
+    expect(_apiAgentInternal.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('OpenRouter agent: network throw then 200 → retried as transient', async () => {
+    let n = 0;
+    _apiAgentInternal.fetch = vi.fn(async () => {
+      if (n++ === 0) throw new Error('fetch failed'); // ECONNRESET-style transient
+      return jsonRes({ choices: [{ message: { content: 'recovered', tool_calls: [] } }], usage: {} });
+    });
+    const r = await runOpenRouterApiAgent({ prompt: 'task', model: 'gpt-5.5-instant', cwd: process.cwd() });
+    expect(r.isError).toBe(false);
+    expect(r.finalResultText).toBe('recovered');
+    expect(r.retryCount).toBe(1);
   });
 });
 
