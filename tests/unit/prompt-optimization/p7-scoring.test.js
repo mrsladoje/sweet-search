@@ -214,6 +214,22 @@ describe('computeFinalScoreFor — native-relative scoring', () => {
     }, makeProbe(1)).tokens).toBe(10228);
   });
 
+  it('counts Anthropic cache-creation tokens as work (rolling-cache fix)', () => {
+    // Cached Sonnet: input_tokens collapses to ~0, bulk of unique input lands in
+    // cache_creation. Without counting it the run reads as output-only (degenerate).
+    expect(agentTokenCount({
+      agent: { input_tokens: 8, cache_read_tokens: 14390, cache_creation_tokens: 7100, output_tokens: 1519 },
+    })).toBe(8 + 7100 + 1519);
+    // GPT path is unchanged: no cache_creation field → term is 0.
+    expect(agentTokenCount({
+      agent: { input_tokens: 35987, cache_read_tokens: 28777, output_tokens: 845 },
+    })).toBe(35987 - 28777 + 845);
+    // accepts the provider-native field name too
+    expect(agentTokenCount({
+      agent: { input_tokens: 8, cache_read_input_tokens: 14390, cache_creation_input_tokens: 7100, output_tokens: 1519 },
+    })).toBe(8 + 7100 + 1519);
+  });
+
   it('uses native-relative accuracy/calls/tokens when a baseline is provided', () => {
     const fs = computeFinalScoreFor({
       perProbeMaximin: [0.95],

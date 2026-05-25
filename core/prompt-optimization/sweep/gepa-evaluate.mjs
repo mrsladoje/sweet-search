@@ -377,6 +377,7 @@ export function makeRealEvaluateCandidate({
         input_tokens: typeof u?.input_tokens === 'number' ? u.input_tokens : null,
         output_tokens: typeof u?.output_tokens === 'number' ? u.output_tokens : null,
         cache_read_tokens: typeof u?.cache_read_input_tokens === 'number' ? u.cache_read_input_tokens : null,
+        cache_creation_tokens: typeof u?.cache_creation_input_tokens === 'number' ? u.cache_creation_input_tokens : null,
         retry_count: typeof run.retryCount === 'number' ? run.retryCount : null,
       };
     } else {
