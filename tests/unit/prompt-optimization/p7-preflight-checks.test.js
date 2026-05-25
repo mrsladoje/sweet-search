@@ -217,6 +217,22 @@ describe('checkAnthropicTier', () => {
     const r = await checkAnthropicTier({ fetchFn, env: FULL_KEYS, allowTier1: false });
     expect(r.ok).toBe(false);
   });
+
+  // Regression (2026-05-26): tier MUST be probed via POST /v1/messages, not
+  // GET /v1/models. The /v1/models endpoint carries no anthropic-ratelimit-*
+  // headers, so probing it read 0 and misreported a real Tier-2 key as Tier 1.
+  it('probes POST /v1/messages (not GET /v1/models) so rate-limit headers exist', async () => {
+    let calledUrl, calledInit;
+    const fetchFn = async (url, init) => {
+      calledUrl = url; calledInit = init;
+      return { ok: true, headers: { get: (k) => (k === 'anthropic-ratelimit-requests-limit' ? '1000' : null) }, json: async () => ({}) };
+    };
+    const r = await checkAnthropicTier({ fetchFn, env: FULL_KEYS });
+    expect(calledUrl).toBe('https://api.anthropic.com/v1/messages');
+    expect(calledInit.method).toBe('POST');
+    expect(calledInit.body).toContain('max_tokens');
+    expect(r.ok).toBe(true);
+  });
 });
 
 // ─── tokenBucketSelfTest ────────────────────────────────────────────────────────
