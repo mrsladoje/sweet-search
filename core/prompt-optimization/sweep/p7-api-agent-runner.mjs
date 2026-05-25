@@ -26,6 +26,7 @@ const MAX_TOOL_OUTPUT_CHARS = 12000;
 export const _apiAgentInternal = {
   fetch: globalThis.fetch,
   spawn: nodeSpawn,
+  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 };
 
 const BASH_TOOL = {
@@ -142,12 +143,15 @@ export async function runAnthropicApiAgent(req) {
   let finalText = '';
   let isError = false;
   let stderrPreview = '';
+  let retryCount = 0;
+  let timedOut = false;
 
   for (let round = 0; round < maxRounds(req); round++) {
     const body = buildAnthropicAgentPayload({ model: req.model, systemPrompt: req.systemAppend, messages });
     const r = await postAnthropic({ apiKey, body, timeoutMs: req.timeoutMs ?? DEFAULT_TIMEOUT_MS });
+    retryCount += r.retryCount || 0;
     addAnthropicUsage(usage, r.json?.usage);
-    if (r.error) { isError = true; stderrPreview = r.error; break; }
+    if (r.error) { isError = true; stderrPreview = r.error; timedOut = r.status === 'timeout'; break; }
 
     const content = Array.isArray(r.json.content) ? r.json.content : [];
     const text = content.filter((b) => b.type === 'text').map((b) => b.text || '').join('');
@@ -179,7 +183,8 @@ export async function runAnthropicApiAgent(req) {
     wallMs: Date.now() - started,
     isError,
     exitCode: isError ? 1 : 0,
-    timedOut: false,
+    timedOut,
+    retryCount,
     stderrPreview,
   };
 }
@@ -195,12 +200,15 @@ export async function runOpenRouterApiAgent(req) {
   let isError = false;
   let stderrPreview = '';
   let emptyTurns = 0;
+  let retryCount = 0;
+  let timedOut = false;
 
   for (let round = 0; round < maxRounds(req); round++) {
     const body = buildOpenRouterAgentPayload({ model: req.model, systemPrompt: req.systemAppend, messages });
     const r = await postOpenRouter({ apiKey, body, timeoutMs: req.timeoutMs ?? DEFAULT_TIMEOUT_MS });
+    retryCount += r.retryCount || 0;
     addOpenAIUsage(usage, r.json?.usage);
-    if (r.error) { isError = true; stderrPreview = r.error; break; }
+    if (r.error) { isError = true; stderrPreview = r.error; timedOut = r.status === 'timeout'; break; }
 
     const msg = r.json.choices?.[0]?.message || {};
     if (typeof msg.content === 'string' && msg.content) finalText = msg.content;
@@ -241,18 +249,95 @@ export async function runOpenRouterApiAgent(req) {
     wallMs: Date.now() - started,
     isError,
     exitCode: isError ? 1 : 0,
-    timedOut: false,
+    timedOut,
+    retryCount,
     stderrPreview,
   };
 }
 
+// ─── transient-error retry for the paid agent HTTP calls ─────────────────────
+//
+// The agent loop is the expensive surface (~1330 runs/gen-1). A transient 429,
+// 5xx, or network blip MUST NOT silently become an empty answer (→ judged ~0 →
+// contaminated probe score / mis-shaped Pareto front). The judges already retry
+// (judge-runner.js classifyResponseStatus); the agent runners did not. This
+// mirrors that ladder:
+//   429            → retry, honoring Retry-After (capped), bounded by the ladder
+//   5xx / network  → retry (bounded by AGENT_MAX_SERVER_RETRIES)
+//   4xx (non-429)  → fatal, no retry (config error — retrying can't help)
+//   our timeout    → fatal, no retry (the AbortController already waited the full
+//                    P7_AGENT_HTTP_TIMEOUT_MS; a retry just re-waits 30 min)
+const AGENT_BACKOFF_LADDER_MS = [1000, 2000, 4000, 8000, 16000];
+const AGENT_MAX_RATE_LIMIT_RETRIES = AGENT_BACKOFF_LADDER_MS.length;
+const AGENT_MAX_SERVER_RETRIES = 2;
+const RETRY_AFTER_CAP_MS = 60_000;
+
+/** Pure disposition for an ERRORED postJson result's `status`. */
+export function classifyAgentStatus(status) {
+  if (status === 429) return 'retry-rate-limit';
+  if (typeof status === 'number' && status >= 500 && status < 600) return 'retry-server';
+  if (status === 'network') return 'retry-server';
+  return 'fatal'; // 4xx, our 'timeout' abort, or anything unrecognized
+}
+
+function backoffMs(n) {
+  return AGENT_BACKOFF_LADDER_MS[Math.min(n, AGENT_BACKOFF_LADDER_MS.length - 1)];
+}
+
+function readRetryAfter(res) {
+  try {
+    return res && res.headers && typeof res.headers.get === 'function'
+      ? (res.headers.get('retry-after') ?? undefined)
+      : undefined;
+  } catch { return undefined; }
+}
+
+/** Parse a Retry-After header (seconds or HTTP-date) into ms, or null. */
+function retryAfterMs(raw) {
+  if (raw == null) return null;
+  const secs = Number(raw);
+  if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
+  const when = Date.parse(raw);
+  if (Number.isFinite(when)) return Math.max(0, when - Date.now());
+  return null;
+}
+
+/**
+ * POST with bounded retry on transient failures. Returns the same shape as
+ * postJson plus `retryCount` (number of retries spent; 0 on first-try success
+ * or a fatal first response).
+ */
+async function postJsonWithRetry(url, headers, body, timeoutMs, fetchFn) {
+  const sleep = _apiAgentInternal.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
+  let rateRetries = 0;
+  let serverRetries = 0;
+  let attempts = 0;
+  for (;;) {
+    const res = await postJson(url, headers, body, timeoutMs, fetchFn);
+    if (!res.error) return { ...res, retryCount: attempts };
+    const disp = classifyAgentStatus(res.status);
+    if (disp === 'retry-rate-limit' && rateRetries < AGENT_MAX_RATE_LIMIT_RETRIES) {
+      const ra = retryAfterMs(res.retryAfter);
+      const wait = ra != null ? Math.min(ra, RETRY_AFTER_CAP_MS) : backoffMs(rateRetries);
+      rateRetries += 1; attempts += 1;
+      await sleep(wait);
+      continue;
+    }
+    if (disp === 'retry-server' && serverRetries < AGENT_MAX_SERVER_RETRIES) {
+      await sleep(backoffMs(serverRetries));
+      serverRetries += 1; attempts += 1;
+      continue;
+    }
+    return { ...res, retryCount: attempts };
+  }
+}
+
 async function postAnthropic({ apiKey, body, timeoutMs }) {
   const fetchFn = _apiAgentInternal.fetch || globalThis.fetch;
-  const res = await postJson('https://api.anthropic.com/v1/messages', {
+  return postJsonWithRetry('https://api.anthropic.com/v1/messages', {
     'x-api-key': apiKey,
     'anthropic-version': '2023-06-01',
   }, body, timeoutMs, fetchFn);
-  return res;
 }
 
 async function postOpenRouter({ apiKey, body, timeoutMs }) {
@@ -261,7 +346,7 @@ async function postOpenRouter({ apiKey, body, timeoutMs }) {
   const headers = {};
   if (process.env.OPENROUTER_SITE_URL) headers['HTTP-Referer'] = process.env.OPENROUTER_SITE_URL;
   if (process.env.OPENROUTER_APP_NAME) headers['X-Title'] = process.env.OPENROUTER_APP_NAME;
-  return postJson(`${base}/chat/completions`, { ...headers, Authorization: `Bearer ${apiKey}` }, body, timeoutMs, fetchFn);
+  return postJsonWithRetry(`${base}/chat/completions`, { ...headers, Authorization: `Bearer ${apiKey}` }, body, timeoutMs, fetchFn);
 }
 
 async function postJson(url, headers, body, timeoutMs, fetchFn) {
@@ -277,11 +362,15 @@ async function postJson(url, headers, body, timeoutMs, fetchFn) {
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      return { error: `HTTP ${res.status}: ${text.slice(0, 1000)}`, json: null };
+      return { error: `HTTP ${res.status}: ${text.slice(0, 1000)}`, json: null, status: res.status, retryAfter: readRetryAfter(res) };
     }
-    return { error: null, json: await res.json() };
+    return { error: null, json: await res.json(), status: res.status };
   } catch (e) {
-    return { error: e?.message || String(e), json: null };
+    // Our own AbortController timeout fires AbortError; treat that as fatal (a
+    // retry would just re-wait the full timeout). Any other throw is a transient
+    // network fault (ECONNRESET / "fetch failed") and is retryable.
+    const status = e?.name === 'AbortError' ? 'timeout' : 'network';
+    return { error: e?.message || String(e), json: null, status };
   } finally {
     clearTimeout(timer);
   }
