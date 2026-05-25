@@ -30,6 +30,12 @@ describe('gepa-cli parseArgs — smoke-trim flags', () => {
     expect(o.probesFile).toBe('dev.json');
     expect(o.nativeBaselineFile).toBe('native.json');
   });
+
+  it('parses the paid-run agent provider override', () => {
+    const o = parseArgs(['--probes', 'dev.json', '--agent-provider', 'api']);
+    expect(o.agentProvider).toBe('api');
+    expect(() => parseArgs(['--agent-provider', 'subscription'])).toThrow(/unknown --agent-provider/);
+  });
 });
 
 describe('withMutatorCallDefaults — Kimi reasoning timeout (B2)', () => {

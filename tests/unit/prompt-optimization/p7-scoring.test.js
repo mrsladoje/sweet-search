@@ -19,8 +19,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  agentTokenCount,
   computeFinalScoreFor,
   scoreCandidateOnProbes,
+  toProbeRun,
 } from '../../../core/prompt-optimization/sweep/gepa-scoring.mjs';
 import { AllJudgesFailedError } from '../../../core/prompt-optimization/sweep/gepa-evaluate.mjs';
 import { estimateTokens } from '../../../core/prompt-optimization/sweep/variant-loader.mjs';
@@ -200,6 +202,18 @@ describe('scoreCandidateOnProbes — core outputs (§3.7.1)', () => {
 });
 
 describe('computeFinalScoreFor — native-relative scoring', () => {
+  it('counts marginal agent tokens without double-counting cached Codex input', () => {
+    expect(agentTokenCount({ agent: { input_tokens: 55008, cache_read_tokens: 36480, output_tokens: 460 } })).toBe(18988);
+    expect(agentTokenCount({ agent: { input_tokens: 6, cache_read_tokens: 109269, output_tokens: 770 } })).toBe(776);
+    expect(toProbeRun({
+      score: 1,
+      toolCalls: 2,
+      finalAnswerEmitted: true,
+      usedReadOrGrep: true,
+      usage: { agent: { input_tokens: 41505, cache_read_tokens: 31872, output_tokens: 595 } },
+    }, makeProbe(1)).tokens).toBe(10228);
+  });
+
   it('uses native-relative accuracy/calls/tokens when a baseline is provided', () => {
     const fs = computeFinalScoreFor({
       perProbeMaximin: [0.95],

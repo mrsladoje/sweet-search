@@ -309,6 +309,26 @@ describe('native-relative desirability', () => {
     expect(r.breakdown.sonnet.runs[0].desirability).toMatchObject({ accuracy: 1, calls: 1, tokens: 1, overall: 1 });
   });
 
+  it('scores token savings on overhead-adjusted work tokens when baseline overhead is supplied', () => {
+    const r = nativeRelativeScore({
+      baselineByTarget: {
+        gpt5_5: {
+          p1: { score: 0.95, calls: 4, tokens: 12000, overhead_tokens: 10000 },
+        },
+      },
+      perTarget: {
+        gpt5_5: [{ probeId: 'p1', score: 0.97, calls: 4, tokens: 11300 }],
+      },
+      weights: { accuracy: 0, calls: 0, tokens: 1 },
+    });
+    const row = r.breakdown.gpt5_5.runs[0];
+    expect(row.overheadTokens).toBe(10000);
+    expect(row.nativeTokensForScoring).toBe(2000);
+    expect(row.tokensForScoring).toBe(1300);
+    expect(row.desirability.tokens).toBe(1);
+    expect(r.factor).toBe(1);
+  });
+
   it('requires a complete baseline for every scored target/probe', () => {
     expect(() =>
       nativeRelativeScore({

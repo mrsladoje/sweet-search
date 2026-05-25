@@ -60,19 +60,20 @@ Produce a **single shipped sweet-search agent system prompt** that maximises joi
 
 **Anthropic family note**: Sonnet 4.6 appears as both Target A AND as a paraphraser/degrader. This is *not* a §11.6 violation because the paraphraser is doing single-shot stateless generation — it never sees task evaluation feedback, never participates in selection or judging. The role-shape is entirely different from a jury slot. Per GPT-5.5 review §C2/§C4, we additionally rotate non-Anthropic generators (Kimi K2.6 / GPT-5.5 / deterministic templates) so paraphrase diversity isn't single-family-biased.
 
-### §2.2 Direct-API everywhere except agents
+### §2.2 Direct-API by default for paid runs
 
 Per the lesson learned in P6 (CLI harness is 50–100× slower than direct API for stateless calls):
 
 | Call type | Path | Why |
 |---|---|---|
-| Agent runs (target) | CLI harness OR direct API per target's needs | Agents use tools; harness justified |
+| Agent runs (paid target) | **Direct API tool loop**: Sonnet via `ANTHROPIC_API_KEY`, GPT-5.5 via `OPENROUTER_API_KEY` | Avoids Claude/Codex subscription quotas while preserving measured Bash/Read / ss-* tool calls |
+| Agent runs (development smoke) | CLI harness allowed with `--agent-provider cli` | Useful for subscription-backed local debugging only; not the production GEPA spend path |
 | Reflector / Synthesizer | **Direct API** | Stateless; no tools needed |
 | Judges | **Direct API** | Stateless; no tools needed |
 | Paraphraser (OP-3 / TARE / agent-query degrader) | **Direct API** | Stateless |
 | HOMP replay | **Direct API or CLI**, depending on model | Whichever is cheaper |
 
-Implementation: extends `eval/agent-read-workflows/judge-runner.js` with `runMoonshotDirect`, `runMiniMaxDirect`, `runOpenAIDirect`, `runMiMoDirect`. Pattern mirrors existing `runDeepseekDirect` and `runGeminiDirect`.
+Implementation: target agent evaluation uses `p7-api-agent-runner.mjs` for paid runs. It implements an explicit local tool loop over the Anthropic Messages API and OpenRouter Chat Completions API. `gepa-cli.mjs` real runs default to `--agent-provider api`; `--dry-run --real` defaults to `cli` unless overridden. Stateless model calls continue through `eval/agent-read-workflows/judge-runner.js` direct runners.
 
 ### §2.3 GEPA configuration
 
@@ -87,7 +88,7 @@ Implementation: extends `eval/agent-read-workflows/judge-runner.js` with `runMoo
 | Reasoning mode for evaluation | **OFF** for both targets | Production-parity (see §1) |
 | Screening probes per mutation | 8 (× 2 targets = 16 runs) | Cheap filter before full eval |
 | Confirmation probes (survivor) | 40 = full dev (× 2 targets = 80 runs) | Joint scoring requires both targets |
-| Joint score formula | **Native-relative desirability** when a frozen native rg+Read baseline is supplied: accuracy / tool calls / agent tokens are transformed to desirabilities with weights 0.60 / 0.25 / 0.15, combined by weighted geometric mean per probe-target, averaged per target, then aggregated by `min(sonnet, gpt5_5)` and length-penalized. Legacy Maximin × EAS remains a fallback and diagnostic. Pareto admission is still gated by the 0.15 absolute accuracy-degradation cap relative to **the displaced incumbent** (NOT global per-target Pareto maxima — per GPT-5.5 review §C1, anti-utopia-point fix). | Unified-prompt ship policy (§3.7); aligns the optimizer with accuracy, speed, and token savings |
+| Joint score formula | **Native-relative desirability** when a frozen native rg+Read baseline is supplied: accuracy / tool calls / agent tokens are transformed to desirabilities with weights 0.60 / 0.25 / 0.15, combined by weighted geometric mean per probe-target, averaged per target, then aggregated by `min(sonnet, gpt5_5)` and length-penalized. Token desirability uses overhead-adjusted work tokens when the baseline supplies `overhead_tokens`, so fixed CLI/system context does not drown out retrieval-token savings. Legacy Maximin × EAS remains a fallback and diagnostic. Pareto admission is still gated by the 0.15 absolute accuracy-degradation cap relative to **the displaced incumbent** (NOT global per-target Pareto maxima — per GPT-5.5 review §C1, anti-utopia-point fix). | Unified-prompt ship policy (§3.7); aligns the optimizer with accuracy, speed, and token savings |
 | Manual reflection cadence | **After every round** (see §3.4) | Human-in-the-loop GEPA |
 | Persistence | **Append-only JSONL after every mutation, screen, confirm, TARE step** | Resume MUST work after crash — see §7.4 |
 
@@ -489,15 +490,15 @@ We ship **one** prompt, not per-target prompts. Gemini 3.1 Pro Deep Think identi
    ```json
    {
      "sonnet": {
-       "probe-id": { "score": 0.90, "calls": 4, "tokens": 12000 }
+       "probe-id": { "score": 0.90, "calls": 4, "tokens": 12000, "overhead_tokens": 7000 }
      },
      "gpt5_5": {
-       "probe-id": { "score": 0.88, "calls": 5, "tokens": 13500 }
+       "probe-id": { "score": 0.88, "calls": 5, "tokens": 13500, "overhead_tokens": 7800 }
      }
    }
    ```
 
-   Row form is also accepted (`baselines: [{ target, probe_id, accuracy, tool_calls, agent_tokens }]`). Targets are canonicalized (`gpt-5.5`, `gpt5_5`, and OpenAI-family labels map to `gpt5_5`).
+   Row form is also accepted (`baselines: [{ target, probe_id, accuracy, tool_calls, agent_tokens, overhead_tokens }]`). Targets are canonicalized (`gpt-5.5`, `gpt5_5`, and OpenAI-family labels map to `gpt5_5`).
 
 6. **Native-relative desirability** (primary scalar when the baseline exists):
    ```
@@ -506,7 +507,9 @@ We ship **one** prompt, not per-target prompts. Gemini 3.1 Pro Deep Think identi
    d_accuracy = 0 below floor, 1 at/above target, linear between
 
    d_calls  = 1 at <= 0.50 × native_calls, 0 at >= 1.50 × native_calls
-   d_tokens = 1 at <= 0.65 × native_tokens, 0 at >= 1.50 × native_tokens
+   work_tokens = max(1, total_tokens − overhead_tokens)   # overhead optional
+   native_work_tokens = max(1, native_tokens − overhead_tokens)
+   d_tokens = 1 at <= 0.65 × native_work_tokens, 0 at >= 1.50 × native_work_tokens
 
    probe_target_desirability =
        weighted_geomean(d_accuracy^0.60, d_calls^0.25, d_tokens^0.15)
@@ -1017,16 +1020,31 @@ Required metrics per `(target, probe)`:
 - `score` / `accuracy`: judged correctness in [0, 1].
 - `calls` / `tool_calls`: native rg+Read tool-call count for the successful answer trajectory.
 - `tokens` / `agent_tokens`: agent input + output tokens for that trajectory. Cached-read tokens may be logged separately but are not added again when the provider already includes them in input accounting.
+- API-backed agent loops are stateless HTTP conversations. Their raw provider usage logs total input across turns, but scoring treats repeated replayed chat history as `cached_input_tokens` / `cache_read_input_tokens` and scores effective tokens as `input_tokens - cached + output_tokens`, matching the Codex cached-input convention.
+- `overhead_tokens` (optional but recommended for CLI targets): measured no-tool fixed harness overhead for the same target/workspace. When present, token desirability is scored on `max(1, tokens - overhead_tokens)` for both native and candidate rows, while raw total tokens remain logged for cost reporting.
 
 The GEPA CLI consumes the frozen file with:
 
 ```bash
 node core/prompt-optimization/sweep/gepa-cli.mjs \
   --probes core/prompt-optimization/data/p7-dev-probes.json \
+  --agent-provider api \
   --native-baseline core/prompt-optimization/data/frozen/p7-native-rg-read-baseline.json
 ```
 
-If budget permits, run 2-3 native rg+Read repeats per target/probe and store the aggregate used for scoring (`mean` or `median`, recorded in the file). Missing target/probe rows, non-finite scores, non-positive call counts, or non-positive token counts are fatal; the run should stop before spending GEPA money. Held-out and Vault baselines may be generated for reporting, but per-query held-out/Vault details remain sealed according to §2.4.
+Generate the frozen native baseline with the same paid-run target path:
+
+```bash
+node core/prompt-optimization/sweep/p7-native-rg-read-baseline.mjs \
+  --tier dev \
+  --targets sonnet,gpt5_5 \
+  --repeats 3 \
+  --judge-panel deepseek \
+  --policy default-native \
+  --agent-provider api
+```
+
+If budget permits, run 2-3 native rg+Read repeats per target/probe and store the aggregate used for scoring (`mean` or `median`, recorded in the file). CLI-only development baselines may still use `--agent-provider cli`; for those, also run a cheap no-tool overhead calibration per `(target, repo)` and attach it to each row as `overhead_tokens`; this prevents the optimizer from under-rewarding narrower retrieval output. Missing target/probe rows, non-finite scores, non-positive call counts, or non-positive token counts are fatal; the run should stop before spending GEPA money. Held-out and Vault baselines may be generated for reporting, but per-query held-out/Vault details remain sealed according to §2.4.
 
 ### §6.3 What's NOT pre-registered (and why)
 
@@ -1176,9 +1194,9 @@ Before starting a real run, `node core/prompt-optimization/sweep/p7-preflight.mj
 
 | Check | What it does | Pass criterion |
 |---|---|---|
-| API keys present | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `GEMINI_API_KEY`, `MOONSHOT_API_KEY`, `MINIMAX_API_KEY`, `MIMO_API_KEY` (or Together fallback for MiMo / Qwen) | All defined and ≥10 chars |
+| API keys present | `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, `GEMINI_API_KEY`; direct OpenAI-compatible provider keys only if OpenRouter is not used | All required paid-run keys defined and ≥10 chars |
 | Smoke each lineage | One short call to each direct API (system="say hi", user="ok") | All return non-empty text within 30s |
-| OpenAI tier ≥ 2 | `GET https://api.openai.com/v1/usage/tier` (or compute from observed RPM) | Tier ≥ 2 — else surface "wall-time will be 6× longer at Tier 1; pay $50 to upgrade" and require `--allow-tier-1-gpt5` flag (per GPT-5.5 review §D1) |
+| OpenAI tier ≥ 2 | Only when using direct `OPENAI_API_KEY`; skipped in OpenRouter mode | Tier ≥ 2 for direct OpenAI, or "N/A: GPT-5.5 routed via OpenRouter" |
 | Anthropic tier ≥ 2 | check via headers from a smoke call | Tier ≥ 2 — Tier 1 throughput is too constrained for a 20-round run |
 | Token-bucket scheduler self-test | feed scheduler 100 fake calls; verify it blocks at TPM ceiling | scheduler enforces TPM, not just RPM |
 | Embedding API smoke | Call Gemini Embedding 2 with "test" → expect 768-dim vector | Vector returned, correct dim |
@@ -1674,6 +1692,7 @@ Integrated changes:
 | Finding | Section affected | Change |
 |---|---|---|
 | Accuracy-only scoring leaves little room for GEPA to optimize and can reward verbose judge-pleasing answers. | §3.7.1, §6.2.2, §10 | Added native-relative desirability against a frozen native rg+Read baseline. Accuracy / calls / tokens use weights 0.60 / 0.25 / 0.15 and weighted-geometric aggregation. |
+| Codex CLI total tokens include a large fixed harness/system context, so raw total-token ratios can under-reward retrieval-token savings. | §3.7.1, §6.2.2 | Added optional `overhead_tokens`; when present, token desirability uses overhead-adjusted work tokens while raw total tokens remain recorded for cost. |
 | Resume replay must preserve token usage, not just score/tool calls. | §7.4 | SCREEN/CONFIRM events carry agent input/output tokens so resumed runs can recompute native-relative scores without re-spending API calls. |
 | Documentation still described Maximin × EAS as the primary scalar. | §1, §2.3, §3.1, §3.7.1, §13 | Reframed Maximin × EAS as fallback/diagnostic when no native baseline is supplied; paid GEPA runs should use `--native-baseline`. |
 

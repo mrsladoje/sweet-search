@@ -14,6 +14,7 @@
  *   --variants-dir DIR  override the T_i variants directory
  *   --probes FILE       dev-probes JSON for a real run (required for non-dry)
  *   --native-baseline FILE  native rg+Read baseline JSON for relative scoring
+ *   --agent-provider api|cli  real GEPA agent runtime [api for real, cli for --dry-run --real]
  *   --smoke-probes N    (with --dry-run) cap smoke probes to the first N
  *   --smoke-variants N  (with --dry-run) cap seed variants to the first N (≤2)
  *   --skip-preflight    skip the §7.5 pre-flight gate (NOT recommended)
@@ -69,8 +70,12 @@ export function parseArgs(argv) {
     else if (a === '--variants-dir') o.variantsDir = argv[++i];
     else if (a === '--probes') o.probesFile = argv[++i];
     else if (a === '--native-baseline') o.nativeBaselineFile = argv[++i];
+    else if (a === '--agent-provider') o.agentProvider = argv[++i];
     else if (a === '--smoke-probes') o.smokeProbes = Number.parseInt(argv[++i], 10);
     else if (a === '--smoke-variants') o.smokeVariants = Number.parseInt(argv[++i], 10);
+  }
+  if (o.agentProvider && !['api', 'cli'].includes(o.agentProvider)) {
+    throw new Error(`unknown --agent-provider ${o.agentProvider}`);
   }
   return o;
 }
@@ -98,7 +103,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
     if (o.real) {
       const { makeRealEvaluateCandidate } = await import('./gepa-evaluate.mjs');
       const { runJudge } = await import('../../../eval/agent-read-workflows/judge-runner.js');
-      evaluateCandidate = makeRealEvaluateCandidate();
+      evaluateCandidate = makeRealEvaluateCandidate({ agentProvider: o.agentProvider ?? 'cli' });
       callModel = (req) => runJudge(withMutatorCallDefaults(req));
     }
     const result = await runGepa({
@@ -171,7 +176,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
     variants,
     devProbes,
     rotationPool,
-    evaluateCandidate: makeRealEvaluateCandidate(),
+    evaluateCandidate: makeRealEvaluateCandidate({ agentProvider: o.agentProvider ?? 'api' }),
     callModel: (req) => runJudge(withMutatorCallDefaults(req)),
     maxRounds: o.rounds ?? DEFAULTS.maxRounds,
     resume: o.resume,
@@ -188,7 +193,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
   // trajectory + checkpoint, and finalize can be re-run later.
   if (result.winner) {
     try {
-      await runFinalizeStage({ runId: o.run, winner: result.winner, probesDoc, runJudge });
+      await runFinalizeStage({ runId: o.run, winner: result.winner, probesDoc, runJudge, agentProvider: o.agentProvider ?? 'api' });
     } catch (e) {
       console.error('finalize: skipped —', e?.message || e);
     }
@@ -203,7 +208,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
  * as not-applicable). The reasoning adapters (M7) are built from the real
  * judge-runner reasoning payloads via makeReasoningAdapters.
  */
-async function runFinalizeStage({ runId, winner, probesDoc, runJudge }) {
+async function runFinalizeStage({ runId, winner, probesDoc, runJudge, agentProvider = 'api' }) {
   const { finalizeRun, makeReasoningAdapters } = await import('./gepa-finalize.mjs');
   const { runOodGate } = await import('./p7-ood-gate.mjs');
   const { runCounterProbeGate } = await import('./p7-counter-probe-gate.mjs');
@@ -235,7 +240,7 @@ async function runFinalizeStage({ runId, winner, probesDoc, runJudge }) {
   // left unwired here (optional runMimo, non-gating). Each per-target stream is
   // sequential per-probe, so the two concurrent streams stay rate-limited.
   const { makeRealEvaluateCandidate, makeOodReplayRunner } = await import('./gepa-evaluate.mjs');
-  const evaluateOod = makeRealEvaluateCandidate();
+  const evaluateOod = makeRealEvaluateCandidate({ agentProvider });
   const runOod = oodProbes.length > 0
     ? async ({ winnerPrompt, oodProbes: probes }) => runOodGate({
         winnerPrompt,
