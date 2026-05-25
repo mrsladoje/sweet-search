@@ -289,6 +289,23 @@ describe('createTokenBucket.reconcile (M3)', () => {
     expect(s.windowOutTokens).toBe(1_000);
   });
 
+  it('reconcile({entry}) targets the GIVEN entry, not the most-recent (concurrency-safe)', async () => {
+    let fakeNow = 0;
+    const bucket = createTokenBucket({ now: () => fakeNow });
+    bucket._setSleep(async (ms) => { fakeNow += ms; });
+
+    const first = await bucket.acquire({ inTokens: 1_000, outTokens: 100 });
+    await bucket.acquire({ inTokens: 2_000, outTokens: 200 }); // newer entry pushed after
+    // Reconcile the FIRST (older) entry by reference — simulates an out-of-order
+    // completion under the parallel agent pool.
+    bucket.reconcile({ inTokens: 9_000, outTokens: 900, entry: first });
+
+    const s = bucket.stats();
+    // first corrected (9_000/900), second untouched (2_000/200)
+    expect(s.windowInTokens).toBe(11_000);
+    expect(s.windowOutTokens).toBe(1_100);
+  });
+
   it('reconcile without a prior acquire is a guarded no-op (no throw, returns null)', () => {
     const bucket = createTokenBucket({ itpm: 30_000, estIn: 12_000, now: () => 0 });
     let result;

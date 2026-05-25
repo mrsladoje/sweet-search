@@ -228,22 +228,24 @@ export function createTokenBucket({
    * time get corrected upward (so the next `acquire` throttles appropriately),
    * and light probes get corrected downward (so we don't over-throttle).
    *
-   * Operates on the last entry pushed by `acquire`. Guarded against being
-   * called with no prior `acquire`: if `entries` is empty it is a no-op and
-   * returns `null` (never throws).
+   * Operates on the entry passed in `entry` (the value `acquire` returned) —
+   * REQUIRED for correctness under concurrency, where the last-pushed entry may
+   * belong to another in-flight call. When `entry` is omitted it falls back to
+   * the last entry pushed (back-compatible with the sequential caller). Guarded
+   * against no prior `acquire`: empty/absent → no-op returning `null` (never throws).
    *
-   * Either field may be omitted to leave that dimension unchanged.
+   * Either token field may be omitted to leave that dimension unchanged.
    *
-   * @param {{ inTokens?: number, outTokens?: number }} actuals
+   * @param {{ inTokens?: number, outTokens?: number, entry?: object }} actuals
    * @returns {{ ts: number, requests: number, inTokens: number, outTokens: number } | null}
    *   The adjusted entry, or `null` if there was no entry to reconcile.
    */
-  function reconcile({ inTokens, outTokens } = {}) {
-    if (entries.length === 0) return null;
-    const entry = entries[entries.length - 1];
-    if (inTokens !== undefined && inTokens !== null) entry.inTokens = inTokens;
-    if (outTokens !== undefined && outTokens !== null) entry.outTokens = outTokens;
-    return entry;
+  function reconcile({ inTokens, outTokens, entry = null } = {}) {
+    const target = entry ?? (entries.length === 0 ? null : entries[entries.length - 1]);
+    if (!target) return null;
+    if (inTokens !== undefined && inTokens !== null) target.inTokens = inTokens;
+    if (outTokens !== undefined && outTokens !== null) target.outTokens = outTokens;
+    return target;
   }
 
   /** Return rolling-window stats at the current instant. */

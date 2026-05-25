@@ -109,27 +109,86 @@ export function toProbeRun(evalResult, probe) {
  * EAS), per-target aggregate scores (for the 0.15 admission cap), and a compact
  * per-probe detail map (used by OP-2 trajectory crossover + reflection traces).
  *
- * Concurrency is gated through the optional `bucket` (token-bucket per target)
- * so a live run never 429-storms (§7.7). Sequential awaiting keeps the loop
- * deterministic for resume; the bucket enforces the rate ceiling.
+ * Concurrency: `concurrency` (default 1) bounds how many agent trajectories run
+ * at once. Units are flattened to (probe × target) so the pool fills with up to
+ * `concurrency` trajectories of ANY target ("N agents in flight, of all kinds").
+ * Results are reassembled in probe order, so the output is deterministic for
+ * resume regardless of completion order. The optional per-target `bucket`
+ * (token-bucket) still enforces the provider rate ceiling so a live run never
+ * 429-storms (§7.7). `concurrency: 1` reproduces the original sequential path.
  *
- * M3 — token-bucket actuals reconciliation: `acquire` is charged the measured
- * static estimate (prompt + query tokens in; a fixed output estimate), and after
- * `evaluateCandidate` returns, the bucket's most-recent entry is reconciled to
- * the real `r.usage.agent.{input_tokens,output_tokens}` so heavy multi-file
- * probes throttle correctly. Backward-compatible: the dry-run / test stubs
- * return NO `usage` field, so reconcile is skipped and `detail[*].usage` is null.
+ * M3 — token-bucket actuals reconciliation: `acquire` is charged the static
+ * estimate (prompt + query tokens in; a fixed output estimate) and returns this
+ * call's entry; after `evaluateCandidate` returns, that SPECIFIC entry is
+ * reconciled to the real `r.usage.agent.{input_tokens,output_tokens}` (passing
+ * the entry keeps reconcile correct under concurrency). Backward-compatible: the
+ * dry-run / test stubs return NO `usage`, so reconcile is skipped and `detail[*].usage` is null.
  *
  * @param {object} args
  * @param {{ prompt: string }} args.candidate
  * @param {object[]} args.probes
  * @param {(a:{promptText:string,probe:object,target:string})=>Promise<object>} args.evaluateCandidate
  * @param {{ sonnet?: {acquire:Function,reconcile?:Function}, gpt5_5?: {acquire:Function,reconcile?:Function} }|null} [args.bucket]
+ * @param {number} [args.concurrency=1]
  */
-export async function scoreCandidateOnProbes({ candidate, probes, evaluateCandidate, bucket = null }) {
+export async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const lanes = Math.max(1, Math.min((limit | 0) || 1, items.length || 1));
+  async function lane() {
+    for (let i = cursor++; i < items.length; i = cursor++) {
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: lanes }, lane));
+  return results;
+}
+
+export async function scoreCandidateOnProbes({ candidate, probes, evaluateCandidate, bucket = null, concurrency = 1 }) {
   if (typeof evaluateCandidate !== 'function') {
     throw new TypeError('scoreCandidateOnProbes: evaluateCandidate must be a function');
   }
+  // Reasonable per-call output estimate for the token bucket. The agent answer
+  // is short relative to its ~12K-token input window; reconcile() corrects it
+  // to the real output count once usage is available.
+  const OUT_TOKENS_EST = 2000;
+
+  // Flatten to (probe × target) units; the bounded pool runs up to `concurrency`
+  // agent trajectories of any target concurrently.
+  const tasks = [];
+  for (const probe of probes) {
+    for (const target of TARGET_LIST) tasks.push({ probe, target });
+  }
+  const taskResults = await mapWithConcurrency(tasks, concurrency, async ({ probe, target }) => {
+    const inEst = estimateTokens(candidate.prompt) + estimateTokens(probe.query || '');
+    let entry = null;
+    if (bucket && bucket[target] && typeof bucket[target].acquire === 'function') {
+      entry = await bucket[target].acquire({ inTokens: inEst, outTokens: OUT_TOKENS_EST, target });
+    }
+    const r = await evaluateCandidate({ promptText: candidate.prompt, probe, target });
+    // M3 reconcile estimate→actual on THIS call's entry (safe under concurrency).
+    const agentUsage = r.usage?.agent;
+    if (
+      bucket && bucket[target] && typeof bucket[target].reconcile === 'function' &&
+      agentUsage &&
+      (typeof agentUsage.input_tokens === 'number' || typeof agentUsage.output_tokens === 'number')
+    ) {
+      bucket[target].reconcile({
+        inTokens: typeof agentUsage.input_tokens === 'number' ? agentUsage.input_tokens : undefined,
+        outTokens: typeof agentUsage.output_tokens === 'number' ? agentUsage.output_tokens : undefined,
+        entry,
+      });
+    }
+    return { probeId: probe.id, target, r };
+  });
+
+  // Reassemble in probe order — deterministic for resume regardless of completion order.
+  const runByProbe = new Map();
+  for (const { probeId, target, r } of taskResults) {
+    if (!runByProbe.has(probeId)) runByProbe.set(probeId, {});
+    runByProbe.get(probeId)[target] = r;
+  }
+
   const perProbeMaximin = [];
   const probeIds = [];
   const runsByTarget = { sonnet: [], gpt5_5: [] };
@@ -137,37 +196,9 @@ export async function scoreCandidateOnProbes({ candidate, probes, evaluateCandid
   const detail = {};
   const sonnetScores = [];
   const gptScores = [];
-  // Reasonable per-call output estimate for the token bucket. The agent answer
-  // is short relative to its ~12K-token input window; reconcile() corrects it
-  // to the real output count once usage is available.
-  const OUT_TOKENS_EST = 2000;
-
   for (const probe of probes) {
-    const runs = {};
-    const usageByTarget = {};
-    for (const target of TARGET_LIST) {
-      const inEst = estimateTokens(candidate.prompt) + estimateTokens(probe.query || '');
-      if (bucket && bucket[target] && typeof bucket[target].acquire === 'function') {
-        await bucket[target].acquire({ inTokens: inEst, outTokens: OUT_TOKENS_EST, target });
-      }
-      const r = await evaluateCandidate({ promptText: candidate.prompt, probe, target });
-      runs[target] = r;
-      usageByTarget[target] = r.usage ?? null;
-      // M3 reconcile estimate→actual when the runner surfaced real usage. The
-      // dry-run / test stubs omit usage → skip (no-op, no throw).
-      const agentUsage = r.usage?.agent;
-      if (
-        bucket && bucket[target] && typeof bucket[target].reconcile === 'function' &&
-        agentUsage &&
-        (typeof agentUsage.input_tokens === 'number' || typeof agentUsage.output_tokens === 'number')
-      ) {
-        bucket[target].reconcile({
-          inTokens: typeof agentUsage.input_tokens === 'number' ? agentUsage.input_tokens : undefined,
-          outTokens: typeof agentUsage.output_tokens === 'number' ? agentUsage.output_tokens : undefined,
-        });
-      }
-      runsByTarget[target].push(toProbeRun(r, probe));
-    }
+    const runs = runByProbe.get(probe.id);
+    for (const target of TARGET_LIST) runsByTarget[target].push(toProbeRun(runs[target], probe));
     const mm = maximinPerProbe(runs.sonnet.score, runs.gpt5_5.score);
     probeIds.push(probe.id);
     perProbeMaximin.push(mm);
@@ -175,8 +206,8 @@ export async function scoreCandidateOnProbes({ candidate, probes, evaluateCandid
     sonnetScores.push(runs.sonnet.score);
     gptScores.push(runs.gpt5_5.score);
     detail[probe.id] = {
-      sonnet: { score: runs.sonnet.score, traj: runs.sonnet.trajectory || { toolCalls: [], answer: '' }, usage: usageByTarget.sonnet },
-      gpt5_5: { score: runs.gpt5_5.score, traj: runs.gpt5_5.trajectory || { toolCalls: [], answer: '' }, usage: usageByTarget.gpt5_5 },
+      sonnet: { score: runs.sonnet.score, traj: runs.sonnet.trajectory || { toolCalls: [], answer: '' }, usage: runs.sonnet.usage ?? null },
+      gpt5_5: { score: runs.gpt5_5.score, traj: runs.gpt5_5.trajectory || { toolCalls: [], answer: '' }, usage: runs.gpt5_5.usage ?? null },
     };
   }
 
@@ -225,9 +256,10 @@ export async function buildCandidate({
   evaluateCandidate,
   bucket = null,
   nativeBaselineByTarget = null,
+  concurrency = 1,
 }) {
   const tokenCount = estimateTokens(prompt);
-  const scored = await scoreCandidateOnProbes({ candidate: { prompt }, probes, evaluateCandidate, bucket });
+  const scored = await scoreCandidateOnProbes({ candidate: { prompt }, probes, evaluateCandidate, bucket, concurrency });
   const fs = computeFinalScoreFor({
     perProbeMaximin: scored.perProbeMaximin,
     weights: weights ?? scored.probeIds.map(() => 1),
