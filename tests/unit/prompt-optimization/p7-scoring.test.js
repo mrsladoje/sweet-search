@@ -21,6 +21,7 @@ import { describe, expect, it } from 'vitest';
 import {
   agentTokenCount,
   computeFinalScoreFor,
+  mapWithConcurrency,
   scoreCandidateOnProbes,
   toProbeRun,
 } from '../../../core/prompt-optimization/sweep/gepa-scoring.mjs';
@@ -50,10 +51,12 @@ function makeFakeBucket() {
   const make = () => {
     const acquires = [];
     const reconciles = [];
+    const entries = [];
     return {
       acquires,
       reconciles,
-      async acquire(args) { acquires.push(args); return { ...args }; },
+      entries,
+      async acquire(args) { acquires.push(args); const e = { ...args }; entries.push(e); return e; },
       reconcile(args) { reconciles.push(args); return args; },
     };
   };
@@ -92,8 +95,11 @@ describe('scoreCandidateOnProbes — M3 token-bucket reconcile (§7.7)', () => {
 
     // reconcile swapped estimate→actual using the real agent usage.
     expect(bucket.sonnet.reconciles).toHaveLength(1);
-    expect(bucket.sonnet.reconciles[0]).toEqual({ inTokens: 11111, outTokens: 333 });
-    expect(bucket.gpt5_5.reconciles[0]).toEqual({ inTokens: 22222, outTokens: 444 });
+    expect(bucket.sonnet.reconciles[0]).toMatchObject({ inTokens: 11111, outTokens: 333 });
+    expect(bucket.gpt5_5.reconciles[0]).toMatchObject({ inTokens: 22222, outTokens: 444 });
+    // reconcile targets THIS call's acquire entry (correctness under concurrency).
+    expect(bucket.sonnet.reconciles[0].entry).toBe(bucket.sonnet.entries[0]);
+    expect(bucket.gpt5_5.reconciles[0].entry).toBe(bucket.gpt5_5.entries[0]);
   });
 
   it('a stub returning NO usage → reconcile NOT called, no throw, detail usage === null', async () => {
@@ -152,6 +158,78 @@ describe('scoreCandidateOnProbes — M3 token-bucket reconcile (§7.7)', () => {
     });
     const scored = await scoreCandidateOnProbes({ candidate: { prompt: PROMPT }, probes, evaluateCandidate, bucket: null });
     expect(scored.perProbeMaximin).toEqual([0.4]); // min(0.4, 0.9)
+  });
+});
+
+// ─── bounded-concurrency parallelization (agent pool) ─────────────────────────
+
+describe('mapWithConcurrency', () => {
+  it('preserves input order regardless of completion order', async () => {
+    // Later items resolve sooner — output must still be in input order.
+    const out = await mapWithConcurrency([30, 10, 20, 5], 4, (ms, i) =>
+      new Promise((r) => setTimeout(() => r(`${i}:${ms}`), ms)));
+    expect(out).toEqual(['0:30', '1:10', '2:20', '3:5']);
+  });
+
+  it('never exceeds the concurrency limit in flight', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    await mapWithConcurrency(Array.from({ length: 20 }, (_, i) => i), 3, async () => {
+      inFlight++; peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight--;
+    });
+    expect(peak).toBeLessThanOrEqual(3);
+    expect(peak).toBeGreaterThan(1); // actually parallel, not serialized
+  });
+
+  it('limit=1 is a plain in-order sequential map', async () => {
+    const seen = [];
+    await mapWithConcurrency([1, 2, 3], 1, async (x) => { seen.push(x); });
+    expect(seen).toEqual([1, 2, 3]);
+  });
+});
+
+describe('scoreCandidateOnProbes — concurrency is result-equivalent to sequential', () => {
+  // Deterministic stub: score depends only on (probe, target), so parallel vs
+  // sequential MUST produce byte-identical aggregates + ordering.
+  const probes = [makeProbe(1), makeProbe(2), makeProbe(3), makeProbe(4), makeProbe(5)];
+  const evaluateCandidate = async ({ probe, target }) => {
+    await new Promise((r) => setTimeout(r, Math.floor(Math.random() * 8))); // jitter completion order
+    const base = Number(probe.id.slice(1)) / 10;
+    return {
+      score: target === 'sonnet' ? base : Math.min(1, base + 0.1),
+      toolCalls: 2, finalAnswerEmitted: true, usedReadOrGrep: true,
+      trajectory: { toolCalls: [], answer: '' }, wallMs: 1,
+      usage: { agent: { input_tokens: 100, output_tokens: 10 }, judges: [] },
+    };
+  };
+
+  it('concurrency=10 yields the same probeIds/scores/perProbeMaximin as concurrency=1', async () => {
+    const seq = await scoreCandidateOnProbes({ candidate: { prompt: PROMPT }, probes, evaluateCandidate, concurrency: 1 });
+    const par = await scoreCandidateOnProbes({ candidate: { prompt: PROMPT }, probes, evaluateCandidate, concurrency: 10 });
+    expect(par.probeIds).toEqual(seq.probeIds);
+    expect(par.scores).toEqual(seq.scores);
+    expect(par.perProbeMaximin).toEqual(seq.perProbeMaximin);
+    expect(par.score_sonnet).toEqual(seq.score_sonnet);
+    expect(par.score_gpt5_5).toEqual(seq.score_gpt5_5);
+    expect(par.runsByTarget.sonnet.map((r) => r.score)).toEqual(seq.runsByTarget.sonnet.map((r) => r.score));
+  });
+
+  it('runs agent evaluations in parallel up to the limit', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const probeEval = async () => {
+      inFlight++; peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 10));
+      inFlight--;
+      return { score: 0.5, toolCalls: 1, finalAnswerEmitted: true, usedReadOrGrep: true, trajectory: { toolCalls: [], answer: '' }, wallMs: 1 };
+    };
+    await scoreCandidateOnProbes({ candidate: { prompt: PROMPT }, probes, evaluateCandidate: probeEval, concurrency: 6 });
+    // 5 probes × 2 targets = 10 units; with limit 6, peak should exceed the
+    // sequential ceiling of 1 and stay ≤ 6.
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(6);
   });
 });
 

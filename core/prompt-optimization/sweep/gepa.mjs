@@ -152,6 +152,7 @@ export async function runGepa(opts = {}) {
     resume = false,
     bucket = null,
     nativeBaselineByTarget = null,
+    concurrency = 1,
     now = () => Date.now(),
     reflectionHint,
   } = opts;
@@ -190,7 +191,7 @@ export async function runGepa(opts = {}) {
     : makeResumeReplayEvaluate({ evaluateCandidate, completedStepIds: new Set(), replayMap: new Map() });
   const replayEvaluate = replayLayer.evaluate;
   const enterStep = replayLayer.enterStep;
-  const mkCandidate = (args) => buildCandidate({ ...args, evaluateCandidate: replayEvaluate, bucket, nativeBaselineByTarget });
+  const mkCandidate = (args) => buildCandidate({ ...args, evaluateCandidate: replayEvaluate, bucket, nativeBaselineByTarget, concurrency });
 
   // probe lookups (resume reconstructs probe records from ids)
   const allProbes = [...devProbes, ...rotationPool];
@@ -280,7 +281,7 @@ export async function runGepa(opts = {}) {
       const newProbes = rotationPool.slice(0, rotationSwapCount).filter((p) => !activeIds.includes(p.id));
       const before = front.map((f) => f.id);
       const rebaseEval = async (incumbent, probe) => {
-        const r = await scoreCandidateOnProbes({ candidate: { prompt: incumbent.prompt }, probes: [probe], evaluateCandidate: replayEvaluate, bucket });
+        const r = await scoreCandidateOnProbes({ candidate: { prompt: incumbent.prompt }, probes: [probe], evaluateCandidate: replayEvaluate, bucket, concurrency });
         incumbent.detail = { ...(incumbent.detail || {}), ...r.detail };
         return r.perProbeMaximin[0];
       };
