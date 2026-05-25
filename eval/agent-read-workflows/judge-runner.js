@@ -767,7 +767,10 @@ export function buildAnthropicPayload({ model, systemPrompt, userPrompt, maxToke
     max_tokens: maxTokens,
     temperature,
   };
-  if (systemPrompt) body.system = systemPrompt;
+  // Cache the (reused) system prompt as an ephemeral block — paraphraser /
+  // TARE / SCS / reasoning-HOMP batches reissue the same system across many
+  // stateless calls within the 5-min TTL. The unique userPrompt stays uncached.
+  if (systemPrompt) body.system = [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }];
   if (thinking != null) {
     body.thinking = { type: 'enabled', budget_tokens: thinking };
     body.temperature = 1;                       // constraint (1) — required by the API

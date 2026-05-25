@@ -1,0 +1,566 @@
+{
+  "sonnet": {
+    "cpp-005": {
+      "score": 1,
+      "calls": 10,
+      "tokens": 7153,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "cpp-002": {
+      "score": 0.3,
+      "calls": 7,
+      "tokens": 3892,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "cpp-008": {
+      "score": 1,
+      "calls": 6,
+      "tokens": 6608,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "cpp-004": {
+      "score": 1,
+      "calls": 10,
+      "tokens": 11860,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "csharp-004": {
+      "score": 0.7,
+      "calls": 10,
+      "tokens": 11333,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "csharp-005": {
+      "score": 1,
+      "calls": 10,
+      "tokens": 10138,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "csharp-008": {
+      "score": 1,
+      "calls": 7,
+      "tokens": 5854,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "csharp-003": {
+      "score": 1,
+      "calls": 6,
+      "tokens": 4775,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "go-005": {
+      "score": 1,
+      "calls": 5,
+      "tokens": 5913,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "go-006": {
+      "score": 1,
+      "calls": 9,
+      "tokens": 5300,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "go-008": {
+      "score": 1,
+      "calls": 3,
+      "tokens": 4206,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "java-002": {
+      "score": 1,
+      "calls": 3,
+      "tokens": 4911,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "java-001": {
+      "score": 1,
+      "calls": 3,
+      "tokens": 2597,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "java-004": {
+      "score": 1,
+      "calls": 10,
+      "tokens": 11478,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "js-008": {
+      "score": 1,
+      "calls": 8,
+      "tokens": 11363,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "js-007": {
+      "score": 1,
+      "calls": 9,
+      "tokens": 11936,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "js-005": {
+      "score": 1,
+      "calls": 9,
+      "tokens": 14451,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "kotlin-002": {
+      "score": 1,
+      "calls": 6,
+      "tokens": 6506,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "kotlin-008": {
+      "score": 1,
+      "calls": 5,
+      "tokens": 7678,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "kotlin-007": {
+      "score": 1,
+      "calls": 10,
+      "tokens": 12015,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "kotlin-009": {
+      "score": 1,
+      "calls": 7,
+      "tokens": 7377,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "python-010": {
+      "score": 1,
+      "calls": 5,
+      "tokens": 4867,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "python-007": {
+      "score": 1,
+      "calls": 7,
+      "tokens": 6290,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "python-009": {
+      "score": 1,
+      "calls": 5,
+      "tokens": 3823,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "ruby-008": {
+      "score": 1,
+      "calls": 7,
+      "tokens": 7529,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "ruby-001": {
+      "score": 1,
+      "calls": 7,
+      "tokens": 4875,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "ruby-004": {
+      "score": 1,
+      "calls": 5,
+      "tokens": 4973,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "rust-001": {
+      "score": 1,
+      "calls": 3,
+      "tokens": 2747,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "rust-005": {
+      "score": 1,
+      "calls": 7,
+      "tokens": 6293,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "rust-004": {
+      "score": 1,
+      "calls": 10,
+      "tokens": 8713,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "rust-010": {
+      "score": 1,
+      "calls": 4,
+      "tokens": 4567,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "ts-005": {
+      "score": 1,
+      "calls": 6,
+      "tokens": 6096,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "ts-003": {
+      "score": 1,
+      "calls": 3,
+      "tokens": 2304,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "ts-008": {
+      "score": 1,
+      "calls": 10,
+      "tokens": 5950,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "go-004": {
+      "score": 1,
+      "calls": 6,
+      "tokens": 7793,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "java-005": {
+      "score": 1,
+      "calls": 8,
+      "tokens": 9758,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "js-009": {
+      "score": 1,
+      "calls": 6,
+      "tokens": 7529,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "python-005": {
+      "score": 1,
+      "calls": 10,
+      "tokens": 10261,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "ruby-002": {
+      "score": 1,
+      "calls": 4,
+      "tokens": 4759,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    },
+    "ts-002": {
+      "score": 1,
+      "calls": 5,
+      "tokens": 2961,
+      "repeats": 1,
+      "overhead_tokens": 1008
+    }
+  },
+  "gpt5_5": {
+    "cpp-005": {
+      "score": 1,
+      "calls": 5,
+      "tokens": 9155,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "cpp-002": {
+      "score": 1,
+      "calls": 3,
+      "tokens": 5391,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "cpp-008": {
+      "score": 1,
+      "calls": 4,
+      "tokens": 3571,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "cpp-004": {
+      "score": 1,
+      "calls": 10,
+      "tokens": 14778,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "csharp-004": {
+      "score": 0.75,
+      "calls": 10,
+      "tokens": 18146,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "csharp-005": {
+      "score": 1,
+      "calls": 10,
+      "tokens": 17442,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "csharp-008": {
+      "score": 1,
+      "calls": 9,
+      "tokens": 7703,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "csharp-003": {
+      "score": 1,
+      "calls": 7,
+      "tokens": 6756,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "go-005": {
+      "score": 1,
+      "calls": 3,
+      "tokens": 5974,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "go-006": {
+      "score": 1,
+      "calls": 5,
+      "tokens": 4048,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "go-008": {
+      "score": 1,
+      "calls": 4,
+      "tokens": 4273,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "java-002": {
+      "score": 1,
+      "calls": 3,
+      "tokens": 3905,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "java-001": {
+      "score": 1,
+      "calls": 2,
+      "tokens": 4372,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "java-004": {
+      "score": 1,
+      "calls": 6,
+      "tokens": 11926,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "js-008": {
+      "score": 1,
+      "calls": 10,
+      "tokens": 18078,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "js-007": {
+      "score": 1,
+      "calls": 8,
+      "tokens": 13160,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "js-005": {
+      "score": 1,
+      "calls": 10,
+      "tokens": 12024,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "kotlin-002": {
+      "score": 1,
+      "calls": 4,
+      "tokens": 4917,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "kotlin-008": {
+      "score": 1,
+      "calls": 4,
+      "tokens": 8454,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "kotlin-007": {
+      "score": 1,
+      "calls": 3,
+      "tokens": 8427,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "kotlin-009": {
+      "score": 1,
+      "calls": 9,
+      "tokens": 12890,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "python-010": {
+      "score": 1,
+      "calls": 2,
+      "tokens": 4530,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "python-007": {
+      "score": 1,
+      "calls": 5,
+      "tokens": 5839,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "python-009": {
+      "score": 1,
+      "calls": 8,
+      "tokens": 9030,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "ruby-008": {
+      "score": 1,
+      "calls": 6,
+      "tokens": 6903,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "ruby-001": {
+      "score": 1,
+      "calls": 4,
+      "tokens": 3653,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "ruby-004": {
+      "score": 1,
+      "calls": 6,
+      "tokens": 4537,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "rust-001": {
+      "score": 1,
+      "calls": 3,
+      "tokens": 4099,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "rust-005": {
+      "score": 1,
+      "calls": 9,
+      "tokens": 10911,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "rust-004": {
+      "score": 1,
+      "calls": 9,
+      "tokens": 13317,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "rust-010": {
+      "score": 1,
+      "calls": 9,
+      "tokens": 10624,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "ts-005": {
+      "score": 1,
+      "calls": 6,
+      "tokens": 5912,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "ts-003": {
+      "score": 1,
+      "calls": 3,
+      "tokens": 1432,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "ts-008": {
+      "score": 1,
+      "calls": 10,
+      "tokens": 6423,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "go-004": {
+      "score": 1,
+      "calls": 5,
+      "tokens": 4143,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "java-005": {
+      "score": 1,
+      "calls": 6,
+      "tokens": 7325,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "js-009": {
+      "score": 1,
+      "calls": 7,
+      "tokens": 8433,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "python-005": {
+      "score": 1,
+      "calls": 9,
+      "tokens": 7965,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "ruby-002": {
+      "score": 1,
+      "calls": 6,
+      "tokens": 8378,
+      "repeats": 1,
+      "overhead_tokens": 468
+    },
+    "ts-002": {
+      "score": 0,
+      "calls": 3,
+      "tokens": 3366,
+      "repeats": 1,
+      "overhead_tokens": 468
+    }
+  }
+}

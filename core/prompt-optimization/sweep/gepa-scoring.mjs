@@ -52,13 +52,24 @@ export function agentTokenCount(usage) {
   const cached = typeof agent.cache_read_tokens === 'number' && Number.isFinite(agent.cache_read_tokens)
     ? agent.cache_read_tokens
     : (typeof agent.cached_input_tokens === 'number' && Number.isFinite(agent.cached_input_tokens) ? agent.cached_input_tokens : null);
+  // Anthropic reports first-occurrence (cache-write) tokens in a SEPARATE
+  // `cache_creation_input_tokens` field, excluded from `input_tokens`. Under the
+  // agent's rolling cache, that is where the bulk of unique input lands — so it
+  // MUST be counted as work, else cached Sonnet runs collapse to output-only and
+  // their token desirability is degenerate. OpenAI has no such field (first
+  // occurrence is an uncached cache-miss already inside prompt_tokens), so this
+  // term is 0 for GPT and the OpenAI accounting is unchanged.
+  const cacheCreation = typeof agent.cache_creation_tokens === 'number' && Number.isFinite(agent.cache_creation_tokens)
+    ? agent.cache_creation_tokens
+    : (typeof agent.cache_creation_input_tokens === 'number' && Number.isFinite(agent.cache_creation_input_tokens) ? agent.cache_creation_input_tokens : 0);
   if (typeof agent.input_tokens === 'number' || typeof agent.output_tokens === 'number') {
     const input = typeof agent.input_tokens === 'number' && Number.isFinite(agent.input_tokens) ? agent.input_tokens : 0;
     const output = typeof agent.output_tokens === 'number' && Number.isFinite(agent.output_tokens) ? agent.output_tokens : 0;
     // Codex/OpenAI reports cached input as a subset of input_tokens; Claude
     // reports cache reads separately. Subtract only when it is clearly included.
     const billableInput = cached != null && cached > 0 && cached <= input ? input - cached : input;
-    return billableInput + output > 0 ? billableInput + output : null;
+    const work = billableInput + cacheCreation + output;
+    return work > 0 ? work : null;
   }
   if (typeof agent.total_tokens === 'number' && Number.isFinite(agent.total_tokens)) return agent.total_tokens;
   if (typeof agent.totalTokens === 'number' && Number.isFinite(agent.totalTokens)) return agent.totalTokens;

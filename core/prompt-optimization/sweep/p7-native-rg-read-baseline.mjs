@@ -24,7 +24,12 @@ const DATA_DIR = path.join(REPO_ROOT, 'core', 'prompt-optimization', 'data');
 
 const TIER_FILES = Object.freeze({ dev: path.join(DATA_DIR, 'p7-dev-probes.json'), heldout: path.join(DATA_DIR, 'frozen', 'p7-heldout-probes.json'), vault: path.join(DATA_DIR, 'frozen', 'p7-vault-probes.json'), smoke: path.join(DATA_DIR, 'p7-smoke-probes.json') });
 
-const PANEL_CHOICES = Object.freeze({ default: JUDGE_PANEL, dual: JUDGE_PANEL.filter((j) => j.lineage === 'deepseek-api' || j.lineage === 'google-api'), deepseek: JUDGE_PANEL.filter((j) => j.lineage === 'deepseek-api') });
+const PANEL_CHOICES = Object.freeze({
+  default: JUDGE_PANEL,
+  dual: JUDGE_PANEL.filter((j) => j.lineage === 'deepseek-api' || j.lineage === 'google-api'),
+  deepseek: JUDGE_PANEL.filter((j) => j.lineage === 'deepseek-api'),
+  gemini: JUDGE_PANEL.filter((j) => j.lineage === 'google-api'),
+});
 
 const POLICY_CHOICES = new Set(['default-native', 'rg-read']);
 const DEFAULT_NATIVE_DENYLIST = Object.freeze(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'WebFetch', 'WebSearch']);
@@ -95,7 +100,7 @@ function parseArgs(argv) {
 function printUsage() {
   console.log(`Usage: node core/prompt-optimization/sweep/p7-native-rg-read-baseline.mjs [flags]
 Flags: --tier dev|heldout|vault|smoke --probes FILE --ids id1,id2 --limit N --offset N
-  --targets sonnet,gpt5_5 --repeats N --judge-panel default|dual|deepseek
+  --targets sonnet,gpt5_5 --repeats N --judge-panel default|dual|deepseek|gemini
   --policy default-native|rg-read --agent-provider api|cli --calibrate-overhead
   --run RUN_ID --resume`);
 }
@@ -145,7 +150,7 @@ function systemAppendFor(policy) {
 function usageFor(target, run, modelId) {
   const u = run.usage || null;
   if (target === 'sonnet') {
-    return { model_id: run.modelUsed || modelId, api_path: run.apiPath || 'claude-cli', input_tokens: typeof u?.input_tokens === 'number' ? u.input_tokens : null, output_tokens: typeof u?.output_tokens === 'number' ? u.output_tokens : null, cache_read_tokens: typeof u?.cache_read_input_tokens === 'number' ? u.cache_read_input_tokens : null };
+    return { model_id: run.modelUsed || modelId, api_path: run.apiPath || 'claude-cli', input_tokens: typeof u?.input_tokens === 'number' ? u.input_tokens : null, output_tokens: typeof u?.output_tokens === 'number' ? u.output_tokens : null, cache_read_tokens: typeof u?.cache_read_input_tokens === 'number' ? u.cache_read_input_tokens : null, cache_creation_tokens: typeof u?.cache_creation_input_tokens === 'number' ? u.cache_creation_input_tokens : null };
   }
   return { model_id: run.modelUsed || modelId, api_path: run.apiPath || 'codex-exec', input_tokens: typeof u?.input_tokens === 'number' ? u.input_tokens : null, output_tokens: typeof u?.output_tokens === 'number' ? u.output_tokens : null, cache_read_tokens: typeof u?.cached_input_tokens === 'number' ? u.cached_input_tokens : null };
 }
@@ -282,6 +287,7 @@ function normalizeStoredRow(row) {
     input_tokens: row.input_tokens,
     output_tokens: row.output_tokens,
     cache_read_tokens: row.cache_read_tokens,
+    cache_creation_tokens: row.cache_creation_tokens,
   });
   return tokens == null ? row : { ...row, tokens };
 }
@@ -416,6 +422,7 @@ async function main(argv = process.argv.slice(2)) {
           input_tokens: agent.usage.input_tokens,
           output_tokens: agent.usage.output_tokens,
           cache_read_tokens: agent.usage.cache_read_tokens,
+          cache_creation_tokens: agent.usage.cache_creation_tokens,
           model_id: agent.usage.model_id,
           api_path: agent.usage.api_path,
           used_native_search: agent.toolUse.nativeSearch,

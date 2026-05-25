@@ -59,11 +59,38 @@ function openAITools() {
   }));
 }
 
+const EPHEMERAL = Object.freeze({ type: 'ephemeral' });
+
+// Anthropic prompt caching for the multi-turn tool loop. The cache prefix is
+// ordered tools → system → messages, so a single breakpoint on `system` caches
+// the static tools+system prefix, and a *rolling* breakpoint on the final
+// content block caches the whole conversation prefix turn-over-turn (this is
+// where the savings live — tool outputs up to MAX_TOOL_OUTPUT_CHARS are re-sent
+// every turn). OpenRouter/OpenAI cache automatically and need no markers.
+//
+// We clone the message list rather than mutating the caller's growing array, so
+// stale breakpoints can never accumulate past Anthropic's 4-breakpoint limit:
+// every request carries exactly two (system + the current last block).
+export function withRollingCache(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return messages;
+  const out = messages.slice();
+  const lastIdx = out.length - 1;
+  const last = out[lastIdx];
+  let content = last.content;
+  if (typeof content === 'string') content = [{ type: 'text', text: content }];
+  else if (Array.isArray(content)) content = content.slice();
+  else return messages;
+  if (content.length === 0) return messages;
+  content[content.length - 1] = { ...content[content.length - 1], cache_control: EPHEMERAL };
+  out[lastIdx] = { ...last, content };
+  return out;
+}
+
 export function buildAnthropicAgentPayload({ model, systemPrompt, messages, maxTokens = 4096 }) {
   return {
     model: model || 'claude-sonnet-4-6',
-    system: apiAgentSystem(systemPrompt),
-    messages,
+    system: [{ type: 'text', text: apiAgentSystem(systemPrompt), cache_control: EPHEMERAL }],
+    messages: withRollingCache(messages),
     max_tokens: maxTokens,
     temperature: 0,
     tools: [BASH_TOOL, READ_TOOL],
@@ -94,7 +121,7 @@ export async function runAnthropicApiAgent(req) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('runAnthropicApiAgent: ANTHROPIC_API_KEY not set');
   const started = Date.now();
-  const usage = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, max_input_tokens: 0 };
+  const usage = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, max_input_tokens: 0 };
   const messages = [{ role: 'user', content: req.prompt }];
   const toolCalls = [];
   let finalText = '';
@@ -165,9 +192,9 @@ export async function runOpenRouterApiAgent(req) {
     const uses = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
     if (uses.length === 0) {
       if (finalText) break;
-      if (emptyTurns === 0 && toolCalls.length > 0) {
+      if (emptyTurns === 0) {
         emptyTurns++;
-        messages.push({ role: 'user', content: 'No final answer was emitted. Based on the tool results above, answer the original task now. If the checks found no relevant match, say no match found and name the checks run.' });
+        messages.push({ role: 'user', content: toolCalls.length > 0 ? 'No final answer was emitted. Based on the tool results above, answer the original task now. If the checks found no relevant match, say no match found and name the checks run.' : 'No tool call or final answer was emitted. Use the available Bash/Read tools to investigate the original task, then answer with cited files and facts.' });
         continue;
       }
       isError = true;
@@ -315,6 +342,10 @@ export function addAnthropicUsage(total, usage) {
   total.input_tokens += input;
   total.output_tokens += num(usage.output_tokens);
   total.provider_cache_read_input_tokens = (total.provider_cache_read_input_tokens ?? 0) + num(usage.cache_read_input_tokens);
+  // First-occurrence (cache-write) tokens — excluded from input_tokens by the
+  // API. The rolling cache routes the bulk of unique input here; sum it so the
+  // work-token metric reflects real work, not just output (see agentTokenCount).
+  total.cache_creation_input_tokens = (total.cache_creation_input_tokens ?? 0) + num(usage.cache_creation_input_tokens);
   total.max_input_tokens = Math.max(total.max_input_tokens ?? 0, input);
   total.cache_read_input_tokens = Math.max(total.provider_cache_read_input_tokens, total.input_tokens - total.max_input_tokens);
 }

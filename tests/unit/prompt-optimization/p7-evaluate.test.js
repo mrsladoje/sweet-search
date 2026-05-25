@@ -287,9 +287,26 @@ describe('API-backed Phase 7 agent runner helpers', () => {
       systemPrompt: 'system',
       messages: [{ role: 'user', content: 'task' }],
     });
-    expect(p.system).toMatch(/system/);
+    expect(p.system[0].text).toMatch(/system/);
+    expect(p.system[0].cache_control).toEqual({ type: 'ephemeral' });
     expect(p.tools.map((t) => t.name)).toEqual(['Bash', 'Read']);
     expect(p.tool_choice).toEqual({ type: 'auto' });
+    // rolling cache breakpoint lands on the final message's last content block
+    expect(p.messages.at(-1).content.at(-1).cache_control).toEqual({ type: 'ephemeral' });
+  });
+
+  it('keeps exactly two cache breakpoints across a growing tool-loop transcript', () => {
+    const grown = [
+      { role: 'user', content: 'task' },
+      { role: 'assistant', content: [{ type: 'text', text: 'thinking' }, { type: 'tool_use', id: 't1', name: 'Bash', input: {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'rg output' }] },
+    ];
+    const p = buildAnthropicAgentPayload({ systemPrompt: 'sys', messages: grown });
+    const marks = JSON.stringify(p.messages).split('"cache_control"').length - 1;
+    expect(marks).toBe(1); // exactly one rolling breakpoint in messages (+1 on system)
+    expect(p.messages.at(-1).content.at(-1).cache_control).toEqual({ type: 'ephemeral' });
+    // caller's array is never mutated
+    expect(grown.at(-1).content.at(-1).cache_control).toBeUndefined();
   });
 
   it('routes GPT-5.5 through the OpenRouter slug with minimal reasoning', () => {
