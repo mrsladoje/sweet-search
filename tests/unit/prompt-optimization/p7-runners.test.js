@@ -116,7 +116,7 @@ describe('buildAnthropicPayload', () => {
       userPrompt: 'user text',
     });
     expect(p.model).toBe('claude-sonnet-4-6');
-    expect(p.system).toBe('system text');
+    expect(p.system).toEqual([{ type: 'text', text: 'system text', cache_control: { type: 'ephemeral' } }]);
     expect(p.messages).toEqual([{ role: 'user', content: 'user text' }]);
     expect(p.max_tokens).toBe(4096);
     expect(p.temperature).toBe(0);
