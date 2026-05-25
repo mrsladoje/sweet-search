@@ -12,7 +12,7 @@ import {
   resolveRepoCwd,
   runCodexAgent,
 } from './gepa-evaluate.mjs';
-import { runAnthropicApiAgent, runOpenRouterApiAgent } from './p7-api-agent-runner.mjs';
+import { AGENT_TOOL_CALL_CAP, runAnthropicApiAgent, runOpenRouterApiAgent } from './p7-api-agent-runner.mjs';
 import { assertNativeBaselineCoverage } from './eas.mjs';
 import { agentTokenCount } from './gepa-scoring.mjs';
 import { RESULTS_DIR, appendFsynced, atomicWriteJSON } from './p7-persist.mjs';
@@ -60,7 +60,7 @@ function parseArgs(argv) {
     judgePanel: 'default',
     policy: 'default-native',
     calibrateOverhead: false,
-    timeoutMs: 240000,
+    timeoutMs: 1_800_000, // generous; LI/embedding contention can make legit runs take many minutes (--timeout-ms to override)
     resume: false,
     agentProvider: process.env.P7_AGENT_PROVIDER || 'api',
     models: { sonnet: 'claude-sonnet-4-6', gpt5_5: 'gpt-5.5-instant' },
@@ -133,7 +133,7 @@ function buildNativePrompt(probe, policy) {
   const workflow = policy === 'rg-read'
     ? 'Use native rg/grep/find plus focused file reads only.'
     : 'Use your normal/default code-reading workflow for this agent. Do not use sweet-search or ss-* wrappers.';
-  return [`Task: ${probe.query}`, '', `Stay within ${probe.max_turns} tool calls if possible.`, workflow, 'Final answer: cite the relevant file paths, symbols, and facts. If absent, say no match found and name the checks you ran.'].join('\n');
+  return [`Task: ${probe.query}`, '', 'Use as many tool calls as you need; stop as soon as your evidence covers the answer.', workflow, 'Final answer: cite the relevant file paths, symbols, and facts. If absent, say no match found and name the checks you ran.'].join('\n');
 }
 
 function systemAppendFor(policy) {
@@ -173,7 +173,7 @@ async function runNativeAgent({ probe, target, models, policy, timeoutMs, agentP
       addDirs: [cwd],
       projectRoot: cwd,
       timeoutMs,
-      maxToolCalls: Math.max(6, (probe.max_turns ?? 8) + 4),
+      maxToolCalls: AGENT_TOOL_CALL_CAP,
       allowSweetSearch: false,
     };
     if (agentProvider === 'api') {
@@ -194,7 +194,7 @@ async function runNativeAgent({ probe, target, models, policy, timeoutMs, agentP
       cwd,
       sweetSearchBinDir: null,
       timeoutMs,
-      maxToolCalls: Math.max(6, (probe.max_turns ?? 8) + 4),
+      maxToolCalls: AGENT_TOOL_CALL_CAP,
       allowSweetSearch: false,
     };
     run = agentProvider === 'api' ? await runOpenRouterApiAgent(agentReq) : await runCodexAgent(agentReq);

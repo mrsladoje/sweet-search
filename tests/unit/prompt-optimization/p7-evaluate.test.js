@@ -28,6 +28,7 @@ import {
   parseCodexAgentStream,
   extractCodexErrorMessages,
   classifyToolUse,
+  buildAgentUserPrompt,
 } from '../../../core/prompt-optimization/sweep/gepa-evaluate.mjs';
 import { hashContent } from '../../../core/prompt-optimization/sweep/p7-shared.mjs';
 import { estimateTokens } from '../../../core/prompt-optimization/sweep/variant-loader.mjs';
@@ -38,7 +39,22 @@ import {
   validateBashCommand,
   addOpenAIUsage,
   addAnthropicUsage,
+  AGENT_TOOL_CALL_CAP,
 } from '../../../core/prompt-optimization/sweep/p7-api-agent-runner.mjs';
+
+describe('tool-call ceiling + sufficiency framing (no tight truncation)', () => {
+  it('AGENT_TOOL_CALL_CAP is a generous runaway guard (40), not a tight per-probe budget', () => {
+    expect(AGENT_TOOL_CALL_CAP).toBe(40);
+  });
+
+  it('buildAgentUserPrompt no longer injects a numeric "stay within N" budget', () => {
+    const p = buildAgentUserPrompt({ query: 'find the thing', max_turns: 3 });
+    expect(p).not.toMatch(/stay within/i);
+    expect(p).not.toMatch(/\b3 tool calls\b/);
+    expect(p).toMatch(/as many tool calls as you need/i);
+    expect(p).toMatch(/stop as soon as your evidence covers the answer/i);
+  });
+});
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
 
