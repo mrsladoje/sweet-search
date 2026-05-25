@@ -17,6 +17,8 @@
  *   --agent-provider api|cli  real GEPA agent runtime [api for real, cli for --dry-run --real]
  *   --smoke-probes N    (with --dry-run) cap smoke probes to the first N
  *   --smoke-variants N  (with --dry-run) cap seed variants to the first N (≤2)
+ *   --concurrency N     bounded # of agent trajectories in flight (any target); default 1
+ *   --skip-finalize     skip the post-convergence winner-only ship gates (e.g. one-generation runs)
  *   --skip-preflight    skip the §7.5 pre-flight gate (NOT recommended)
  */
 
@@ -73,9 +75,14 @@ export function parseArgs(argv) {
     else if (a === '--agent-provider') o.agentProvider = argv[++i];
     else if (a === '--smoke-probes') o.smokeProbes = Number.parseInt(argv[++i], 10);
     else if (a === '--smoke-variants') o.smokeVariants = Number.parseInt(argv[++i], 10);
+    else if (a === '--concurrency') o.concurrency = Number.parseInt(argv[++i], 10);
+    else if (a === '--skip-finalize') o.skipFinalize = true;
   }
   if (o.agentProvider && !['api', 'cli'].includes(o.agentProvider)) {
     throw new Error(`unknown --agent-provider ${o.agentProvider}`);
+  }
+  if (o.concurrency !== undefined && (!Number.isInteger(o.concurrency) || o.concurrency < 1)) {
+    throw new Error('--concurrency must be a positive integer');
   }
   return o;
 }
@@ -116,6 +123,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
       maxRounds: o.rounds ?? 1,
       patience: DEFAULTS.patienceRounds,
       resume: o.resume,
+      concurrency: o.concurrency ?? 1,
     });
     reportResult('DRY-RUN complete', result);
     return result;
@@ -182,6 +190,7 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
     resume: o.resume,
     bucket,
     nativeBaselineByTarget,
+    concurrency: o.concurrency ?? 1,
   });
   reportResult('GEPA complete', result);
 
@@ -190,8 +199,10 @@ export async function mainCli(rawArgv = process.argv.slice(2)) {
   // attempted on a real run with a winner; the gate runners are constructed from
   // the real harness here (reasoning adapters via M7). Skipped (with a notice)
   // when the gate probe sets are not yet authored — the run still produces its
-  // trajectory + checkpoint, and finalize can be re-run later.
-  if (result.winner) {
+  // trajectory + checkpoint, and finalize can be re-run later. `--skip-finalize`
+  // bypasses it entirely (e.g. running a single generation to inspect, with no
+  // end-of-run winner-only gate spend).
+  if (result.winner && !o.skipFinalize) {
     try {
       await runFinalizeStage({ runId: o.run, winner: result.winner, probesDoc, runJudge, agentProvider: o.agentProvider ?? 'api' });
     } catch (e) {

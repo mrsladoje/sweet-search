@@ -36,6 +36,18 @@ describe('gepa-cli parseArgs — smoke-trim flags', () => {
     expect(o.agentProvider).toBe('api');
     expect(() => parseArgs(['--agent-provider', 'subscription'])).toThrow(/unknown --agent-provider/);
   });
+
+  it('parses --concurrency (agent-pool size) and validates it', () => {
+    expect(parseArgs(['--probes', 'dev.json', '--concurrency', '10']).concurrency).toBe(10);
+    expect(parseArgs(['--probes', 'dev.json']).concurrency).toBeUndefined(); // defaults to 1 downstream
+    expect(() => parseArgs(['--concurrency', '0'])).toThrow(/--concurrency must be a positive integer/);
+    expect(() => parseArgs(['--concurrency', 'lots'])).toThrow(/--concurrency must be a positive integer/);
+  });
+
+  it('parses --skip-finalize (bypass winner-only ship gates)', () => {
+    expect(parseArgs(['--probes', 'dev.json', '--skip-finalize']).skipFinalize).toBe(true);
+    expect(parseArgs(['--probes', 'dev.json']).skipFinalize).toBeUndefined();
+  });
 });
 
 describe('withMutatorCallDefaults — Kimi reasoning timeout (B2)', () => {
